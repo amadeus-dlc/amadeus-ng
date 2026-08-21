@@ -27,6 +27,30 @@ pub mod state {
             "Field not found in state file: \"{field}\". Cannot update — refusing to silently no-op."
         )
     }
+
+    /// 出典: `aidlc-lib.ts:6453` (upstream 03 §5.6)。
+    pub const FILE_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+
+    /// `readStateFile` の不在時文言。
+    #[must_use]
+    pub fn file_not_found(path: &str) -> String {
+        format!("State file not found: {path}")
+    }
+}
+
+/// 監査ロック関連の逐語文言。
+pub mod lock {
+    use super::GoldenStatus;
+
+    /// 出典: `aidlc-audit.ts:543` (upstream 03 §6.8)。
+    pub const ACQUIRE_FAILED_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+
+    /// acquire 予算超過の呼出側翻訳文言 (`acquireAuditLock` は `false` を返し、呼出側が
+    /// この文言へ翻訳する — 11-workspace §4 の `AcquireError::Exhausted` に対応)。
+    #[must_use]
+    pub const fn acquire_failed() -> &'static str {
+        "Failed to acquire audit lock after retries"
+    }
 }
 
 /// bolt / autonomy 関連の逐語文言。
@@ -50,6 +74,22 @@ mod tests {
         assert_eq!(
             super::bolt::invalid_mode("turbo"),
             "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
+        );
+    }
+
+    #[test]
+    fn file_not_found_is_verbatim() {
+        assert_eq!(
+            super::state::file_not_found("/ws/aidlc-state.md"),
+            "State file not found: /ws/aidlc-state.md"
+        );
+    }
+
+    #[test]
+    fn acquire_failed_is_verbatim() {
+        assert_eq!(
+            super::lock::acquire_failed(),
+            "Failed to acquire audit lock after retries"
         );
     }
 
