@@ -6,10 +6,13 @@
 //! (`none < advisory < adversarial` — 01 §125) へ統合し、本型は依存参照へ移行する。
 
 /// レビュークラス。`reviewer` を宣言したステージのみが持つ。
+///
+/// `derive(Ord)` は宣言順に従うため、正準の強度順 (`advisory < adversarial` — low-wins 束の
+/// 上位 2 値) に合わせて **`Advisory` を先に宣言**する。`min` / ソートが強度順に一致する。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ReviewClass {
-    Adversarial,
     Advisory,
+    Adversarial,
 }
 
 /// 閉集合外の値。
@@ -17,7 +20,7 @@ pub enum ReviewClass {
 pub struct UnknownReviewClass(pub String);
 
 impl ReviewClass {
-    pub const ALL: [ReviewClass; 2] = [ReviewClass::Adversarial, ReviewClass::Advisory];
+    pub const ALL: [ReviewClass; 2] = [ReviewClass::Advisory, ReviewClass::Adversarial];
 
     /// # Errors
     ///
@@ -43,6 +46,13 @@ impl ReviewClass {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn the_order_matches_the_canonical_strength_lattice() {
+        // low-wins 束 (none < advisory < adversarial — 01 §125) の上位 2 値の順序
+        assert!(ReviewClass::Advisory < ReviewClass::Adversarial);
+        assert_eq!(ReviewClass::ALL.iter().min(), Some(&ReviewClass::Advisory));
+    }
 
     #[test]
     fn both_values_round_trip_and_unknown_is_rejected() {

@@ -71,6 +71,28 @@ impl StageNumber {
     pub const fn seq(&self) -> u32 {
         self.seq
     }
+
+    /// `numericStageOrder` そのもの — phase → seq の**整数比較のみ**。
+    ///
+    /// 前置ゼロ違い (`"1.01"` と `"1.1"`) は **`Equal`** を返す (upstream の比較関数と同じ)。
+    /// 数値順ソートは本比較＋**安定ソート**で行うこと — 同値は upstream 同様に文書順が残る。
+    /// `Ord` は `Eq` との整合のために生表現で決着させる別物なので、数値順の経路に使わない。
+    #[must_use]
+    pub const fn numeric_cmp(&self, other: &StageNumber) -> Ordering {
+        if self.phase_index != other.phase_index {
+            if self.phase_index < other.phase_index {
+                return Ordering::Less;
+            }
+            return Ordering::Greater;
+        }
+        if self.seq != other.seq {
+            if self.seq < other.seq {
+                return Ordering::Less;
+            }
+            return Ordering::Greater;
+        }
+        Ordering::Equal
+    }
 }
 
 /// `<phaseIndex>` / `<seq>` セグメントの数値化。前置ゼロは受理する (`parseInt` 相当)。
@@ -92,13 +114,12 @@ fn parse_segment(segment: &str, when_empty: StageNumberError) -> Result<u32, Sta
 }
 
 impl Ord for StageNumber {
-    /// `numericStageOrder` — phase → seq の整数比較。
+    /// `Eq` (生表現の等値) と整合する全順序。整数組で比較し、前置ゼロ違いは生表現で決着させる。
     ///
-    /// 前置ゼロ違い (`"1.01"` と `"1.1"`) は整数として同値なので、`Ord` / `Eq` の
-    /// 整合性を保つために最後に生表現で決定的に決着させる。
+    /// **数値順の経路には使わない** — `numericStageOrder` の意味論は `numeric_cmp` が担う
+    /// (同値を `Equal` にし、安定ソートで文書順が残る)。こちらはマップキー等の用途。
     fn cmp(&self, other: &StageNumber) -> Ordering {
-        (self.phase_index, self.seq)
-            .cmp(&(other.phase_index, other.seq))
+        self.numeric_cmp(other)
             .then_with(|| self.raw.cmp(&other.raw))
     }
 }
@@ -140,6 +161,15 @@ mod tests {
         // 前置ゼロも逐語保存され、整数値としては同値だが別の値として扱う
         assert_eq!(n("1.01").seq(), 1);
         assert_ne!(n("1.01"), n("1.1"));
+    }
+
+    #[test]
+    fn numeric_cmp_treats_leading_zero_variants_as_equal_while_ord_stays_total() {
+        // numericStageOrder の意味論: 整数比較のみ (前置ゼロ違いは同値)
+        assert_eq!(n("1.01").numeric_cmp(&n("1.1")), Ordering::Equal);
+        assert_eq!(n("1.9").numeric_cmp(&n("1.10")), Ordering::Less);
+        // Ord は Eq との整合のため生表現で決着する別物
+        assert_ne!(n("1.01").cmp(&n("1.1")), Ordering::Equal);
     }
 
     #[test]

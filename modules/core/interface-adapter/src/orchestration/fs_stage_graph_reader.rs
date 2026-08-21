@@ -593,6 +593,12 @@ fn parse_scope_metadata(path: &Path, content: &str) -> Result<ScopeMetadata, Gra
     let mut freeform_default = false;
 
     for line in body.lines() {
+        // インデントされた行は未知キーのブロックマッピング配下 (入れ子) の中身であり、
+        // トップレベルキーとして解釈しない — trim してから split すると `plugin:` 配下の
+        // `name: acme` が `name` を上書きし、寛容パース (「未知キーは黙って無視」) が壊れる。
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -789,6 +795,19 @@ mod tests {
         );
         let err = parse_scope_metadata(scope_path(), "---\nname: \"\"\n---\n").unwrap_err();
         assert!(matches!(err, GraphReadError::ScopeFile { .. }));
+    }
+
+    #[test]
+    fn indented_lines_under_an_unknown_block_key_are_not_top_level_keys() {
+        // 未知キー `plugin:` のブロック配下に name / skeleton が現れても、トップレベルの
+        // name を上書きせず、skeleton の不正値検査にも掛からない (寛容パースの契約)。
+        let metadata = parse_scope_metadata(
+            scope_path(),
+            "---\nname: feature\nplugin:\n  name: acme\n  skeleton: enabled\n---\n",
+        )
+        .unwrap();
+        assert_eq!(metadata.name(), "feature");
+        assert_eq!(metadata.skeleton(), None);
     }
 
     #[test]

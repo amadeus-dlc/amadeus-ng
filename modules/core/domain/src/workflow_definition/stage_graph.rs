@@ -88,7 +88,9 @@ impl StageGraph {
     #[must_use]
     pub fn numeric_order(&self) -> Vec<&StageNode> {
         let mut ordered: Vec<&StageNode> = self.nodes.iter().collect();
-        ordered.sort_by(|a, b| a.number().cmp(b.number()));
+        // numericStageOrder = 整数比較のみ。sort_by は安定ソートなので、
+        // 前置ゼロ違いの同値は upstream 同様に文書順が残る。
+        ordered.sort_by(|a, b| a.number().numeric_cmp(b.number()));
         ordered
     }
 
@@ -151,6 +153,23 @@ mod tests {
             .map(|n| n.slug().as_str())
             .collect();
         assert_eq!(numeric, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn numeric_order_keeps_document_order_for_numerically_equal_numbers() {
+        // 前置ゼロ違い ("1.01" と "1.1") は numericStageOrder で同値 — upstream の
+        // 安定ソートと同じく文書順が残る (生表現の辞書順 "1.01" < "1.1" に並べ替えない)
+        let graph = StageGraph::new(vec![
+            node("first", "1.1", PhaseId::Ideation, &[]),
+            node("second", "1.01", PhaseId::Ideation, &[]),
+        ])
+        .unwrap();
+        let numeric: Vec<&str> = graph
+            .numeric_order()
+            .iter()
+            .map(|n| n.slug().as_str())
+            .collect();
+        assert_eq!(numeric, vec!["first", "second"]);
     }
 
     #[test]

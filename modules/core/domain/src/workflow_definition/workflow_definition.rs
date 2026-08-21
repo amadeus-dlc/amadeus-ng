@@ -518,7 +518,9 @@ mod tests {
                     );
                 }
                 for w in sub.windows(2) {
-                    prop_assert!(w[0].number() <= w[1].number());
+                    prop_assert!(
+                        w[0].number().numeric_cmp(w[1].number()) != std::cmp::Ordering::Greater
+                    );
                 }
                 let expected = wd
                     .graph()

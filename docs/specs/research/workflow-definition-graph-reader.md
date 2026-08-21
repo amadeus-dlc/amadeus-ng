@@ -364,13 +364,13 @@ Scope file ${filePath} has invalid skeleton value "${skeleton}". Expected "on" o
 | **エラー生成が例外 throw** | Rust は `Result` でよい。**逐語文言と exit code と stdout を汚染しないことだけ**が契約 |
 | **`display_order` という名前** | [S] `04-stage-protocol.md:107` が `stage-definition.md` から引く旧名。**実フィールドは `number`** ([S] `01-workflow-model.md` §3.2/§8.2 が正)。旧名に追随しないこと |
 
-### 6.3 Rust で serde を使うときの明示的な設計判断 (要オーナー裁定)
+### 6.3 Rust で serde を使うときの明示的な設計判断 (→ 2026-08-22 裁定済み — 12 §10 表)
 
 upstream が「ロード時無検証」であるのに対し、serde はパース時に構造を強制する。**この差は観測可能になりうる**ので、次を明示的に決める必要がある:
 
 1. **未知フィールドを許容する** (`deny_unknown_fields` を付けない)。プラグインや将来版が `FIELD_ORDER` を増やしても、既存 amadeus-ng が読めなくなってはならない (実際 [G] fork は `plugin_source` / `bundle` / `category` を独自追加している)。
 2. **欠損 optional は `Option` / 空 default**。`#[serde(default)]` を配列・マップに付ける。
-3. **どこまでを parse エラーにするか**: 本家は「`mode` が未知文字列」でも load は通り、使用時に初めて壊れる。Rust で `mode` を enum にすると load 時に落ちる。**「グラフ全体が読めない」と「1 ノードが使えない」の観測差**が出るため、`mode` / `execution` / `phase` / `review_class` を厳格 enum にするか、`Unknown(String)` を持つ寛容 enum にするかを決める必要がある (推奨: `phase` / `execution` / `review_class` は厳格、`mode` は `agent-team` を含む閉集合＋未知は使用時エラー、で §6.1-14 を満たす)。
+3. **どこまでを parse エラーにするか**: 本家は「`mode` が未知文字列」でも load は通り、使用時に初めて壊れる。Rust で `mode` を enum にすると load 時に落ちる。**「グラフ全体が読めない」と「1 ノードが使えない」の観測差**が出る。抽出時の推奨は「`mode` のみ使用時エラー」だったが、**裁定 (2026-08-22、12 §10 表 #3) は全列挙を load 時厳格に統一**: ドメイン型に `Unknown` variant を持たせず Always Valid を維持し、観測差は手編集グラフの未知値に限られるため fail-loud 側に倒す。`agent-team` は閉集合 variant として保持し使用時拒否 (12 F11) が §6.1-14 を満たす。
 4. **数値の型**: `reviewer_max_iterations` は整数型に固定 (ADR 0001 決定 4「整数は整数型で持つ」)。
 5. **`enabled` の欠損 = true** (`Option<bool>` の `None` を有効とみなす)。ただし「削除される」のか「`false` が立つ」のかは §8 の未確定事項。
 
@@ -405,7 +405,7 @@ upstream が「ロード時無検証」であるのに対し、serde はパー�
 - `summary_confirmation` の値域。[S] は `summary_confirmation: required` の観測値と「27 ステージが宣言」しか示さない。列挙型なのか (`required` / `optional` / …)、boolean 相当なのかが未確定。
 - §5.5 の逐語エラー文言 3 種 (`Stage graph not readable at …` / `… is not valid JSON: …` / `Unknown scope: "…". Valid scopes: …`) と scope frontmatter の 2 種は [F] v2.2.0 と [G] fork で完全一致していたが、**ピン留め `3c3146cf` での逐語確認が未了**。D6 で「LLM エージェントの分岐条件になっている逐語文言」は互換必須なので、文言カタログ (ADR 0002) に載せる前に確定が必要。
 - `AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` / `AIDLC_SCOPE_MAPPING` が [S] `03-state-audit-runtime.md` §2.3 の環境変数一覧に載っていない。テストシーム専用なので D6 の互換対象に含めるかどうか (含めるなら Rust 側にも同名で用意するか) がオーナー裁定事項。
-- serde による構造的パースをどこまで厳格にするか (§6.3-3)。upstream は「ロード時無検証」なので、`mode` に未知値が入ったグラフは load を通り使用時に壊れる。Rust で enum 化すると load 時に落ち、「グラフ全体が読めない」対「1 ノードだけ使えない」という観測差が生じる。推奨は `phase` / `execution` / `review_class` を厳格 enum、`mode` は `agent-team` を含む閉集合＋未知は使用時エラー、だが要裁定。
+- ~~serde による構造的パースをどこまで厳格にするか (§6.3-3)~~ → **2026-08-22 裁定済み (12 §10 表 #3)**: 全列挙を load 時厳格に統一。観測差は手編集グラフの未知値に限られ fail-loud 側に倒す。ゴールデン採取での正規データ全数 load 確認のみ残る。
 - `scope-grid.json` 欠損時の「グラフから転置して導出」フォールバックを Rust でも実装するか。dist 配布では必ず両方揃うので実質デッドパスだが、`compile` を実装しないスライス 1 では「グリッドが無い」= 設定ミスとして fatal にしたほうが診断が良い可能性がある。逸脱台帳行きかどうかの判断が要る。
 - 項目 3 のスコープに **`<harness>/scopes/aidlc-*.md` の frontmatter パーサ**が含まれるか。`validScopes()` の権威が `.md` 存在である以上、grid だけでは `Unknown scope` 判定も zero-EXECUTE 判定も成立しない。Issue #7 項目 3 の記述は 2 ファイルしか挙げていないため、スコープの明示的な拡張が必要 (本書 §4 は 3 入力前提で書いてある)。
 - `stage-graph.json` の配列順 (文書順) と `numericStageOrder` ソート順が乖離しうるケースの扱い。本家では compile が数値順にソートして emit するので実質一致するが、`nextInScopeStage` は文書順、`subgraphForScope` は再ソートという 2 経路が残っている。amadeus-ng が「読み込み時に必ず数値順に正規化する」ことを選ぶと、手編集グラフに対する挙動が本家と分岐する。仕様として文書順保持を義務づけるか、正規化を許すかの裁定 (`12-workflow-definition.md` §8 F2 は**文書順保持を暫定規範**として採用済み)。
