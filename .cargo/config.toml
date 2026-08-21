@@ -1,4 +1,4 @@
-# `cargo lint` — Tell, Don't Ask 違反の再発防止に特化した独立リンター (tools/lint)。
+# `cargo lint` — docs/memory の設計ルールを機械強制する独立リンター (tools/lint)。
 # workspace 非メンバーの detached クレートなので、明示的に manifest-path を渡す。
 [alias]
 lint = "run --quiet --manifest-path tools/lint/Cargo.toml --"

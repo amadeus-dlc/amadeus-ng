@@ -2,7 +2,7 @@
 
 **裁定日**: 2026-08-22（オーナー、共通ルール）
 **適用例**: フィールド可視性スイープ PR（`UnknownPhase(pub String)` 型の全面見直し）
-**機械強制**: `cargo lint` ルール化予定（`no-public-fields`）
+**機械強制**: `cargo lint`（`no-public-fields` — 無制限 `pub` フィールドをフィールドごとに検出。`pub(crate)` 等の restricted visibility は非検出）
 
 ## ルール
 

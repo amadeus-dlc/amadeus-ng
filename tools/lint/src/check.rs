@@ -4,8 +4,9 @@
 //! 単体テストで固定できる。検出例の無いルールは追加しない (このリポジトリの Quint ゲートと
 //! 同じ DoD)。
 //!
-//! 検出の哲学: getter の存在そのものは咎めない。**他オブジェクトから状態を抜き出して
-//! 所有者の判断を呼出側で代行する**濫用パターンだけを検出する。
+//! 検出の哲学 (R1 / R2): getter の存在そのものは咎めない。**他オブジェクトから状態を抜き出して
+//! 所有者の判断を呼出側で代行する**濫用パターンだけを検出する。R3 はこの前段 — アクセサを
+//! 経由せず内部構造をそのまま公開する `pub` フィールドを禁じる。
 
 use std::collections::BTreeSet;
 
@@ -17,6 +18,15 @@ use syn::visit::Visit;
 pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
 /// R2: reap 適格判定の境界規約を interface-adapter で再実装している。
 pub(crate) const RULE_REAP_DECISION_LOCALITY: &str = "reap-decision-locality";
+/// R3: struct が内部構造を `pub` フィールドとしてそのまま公開している
+/// (`docs/memory/field-visibility.md`)。
+///
+/// 検出境界: **無制限の `pub` だけ**を検出する。`pub(crate)` / `pub(super)` /
+/// `pub(in path)` といった制限付き可視性は検出しない — ルール文書が
+/// 「`pub(crate)` は同一クレート内の実装詳細共有にのみ許す」と条件付きで認めており、
+/// 無条件の検出は過剰だから。`enum` の変種フィールドは言語仕様上 private にできず
+/// (syn 上も可視性を持たない) 対象外。
+pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
 const CHECKBOX_OWNER: &str = "modules/core/domain/src/workspace/checkbox.rs";
@@ -30,6 +40,8 @@ const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished
 `// amadeus-lint: allow(checkbox-vocabulary) — 理由` で理由を明示する";
 const REAP_HELP: &str = "reap 適格判定は core_domain::workspace::lock_protocol::reap_eligible に\
 委譲する (境界規約 `>` の単一実装)";
+const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アクセサ \
+(as_str / message / フィールド名) と必要なら new() を公開する — docs/memory/field-visibility.md";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +120,17 @@ impl Visitor {
         });
     }
 
+    fn push_public_field(&mut self, line: usize, name: &str) {
+        self.findings.push(Finding {
+            rule: RULE_NO_PUBLIC_FIELDS,
+            line,
+            message: format!(
+                "struct の pub フィールド `{name}` — 内部構造の直接公開 (field-visibility 違反)"
+            ),
+            help: NO_PUBLIC_FIELDS_HELP,
+        });
+    }
+
     fn push_reap(&mut self, line: usize) {
         self.findings.push(Finding {
             rule: RULE_REAP_DECISION_LOCALITY,
@@ -163,6 +186,25 @@ impl<'ast> Visit<'ast> for Visitor {
             }
         }
         syn::visit::visit_expr_match(self, node);
+    }
+
+    /// R3: struct のフィールド (名前付き / tuple) が無制限の `pub` を持つ。
+    /// 所見はフィールドごとに 1 件、行番号はそのフィールドの span を指す。
+    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
+        for (index, field) in node.fields.iter().enumerate() {
+            if !matches!(field.vis, syn::Visibility::Public(_)) {
+                continue;
+            }
+            let name = field
+                .ident
+                .as_ref()
+                .map_or_else(|| index.to_string(), ToString::to_string);
+            // 属性 (doc コメント) を含む `field.span()` ではなく `pub` トークンの span を
+            // 使う。抑制コメントは所見行の直前行に置く規約なので、行は `pub` を指す方がよい。
+            let line = field.vis.span().start().line;
+            self.push_public_field(line, &name);
+        }
+        syn::visit::visit_item_struct(self, node);
     }
 
     /// R2: 比較二項式のオペランドが `stale_ms` / `held_ticks` に触れている。
@@ -623,6 +665,149 @@ fn red(age: u64, stale_ms: u64) -> bool {
 }
 "#;
         assert!(check(ADAPTER_PATH, source).is_empty());
+    }
+
+    // ---- R3 赤例 (フィールド可視性スイープ前に実在した形) ------------------
+
+    #[test]
+    fn r3_detects_public_tuple_struct_field() {
+        // スイープ前の `UnknownPhase` はエラー文字列を裸で公開していた。
+        let source = r#"
+pub struct UnknownPhase(pub String);
+"#;
+        let findings = check(DOMAIN_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_NO_PUBLIC_FIELDS]);
+        assert_eq!(findings[0].line, 2, "tuple フィールドの span を指すこと");
+        assert!(
+            findings[0].message.contains("`0`"),
+            "tuple フィールドは index を message に含めること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r3_reports_one_finding_per_named_public_field() {
+        // スイープ前の `UnknownScope` は 2 フィールドとも pub だった。
+        let source = r#"
+pub struct UnknownScope {
+    pub scope: String,
+    pub valid_scopes: Vec<String>,
+}
+"#;
+        let findings = check(DOMAIN_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![RULE_NO_PUBLIC_FIELDS, RULE_NO_PUBLIC_FIELDS],
+            "pub フィールドごとに 1 所見"
+        );
+        assert_eq!(findings[0].line, 3, "1 件目は scope のフィールド行");
+        assert_eq!(findings[1].line, 4, "2 件目は valid_scopes のフィールド行");
+        assert!(findings[0].message.contains("`scope`"));
+        assert!(findings[1].message.contains("`valid_scopes`"));
+    }
+
+    #[test]
+    fn r3_applies_outside_domain_paths_too() {
+        // R2 と違い適用範囲はリポジトリ全体 (modules/ 配下の非テストコード)。
+        let source = r#"
+pub struct Snapshot(pub Vec<u8>);
+"#;
+        assert_eq!(
+            rules(&check(ADAPTER_PATH, source)),
+            vec![RULE_NO_PUBLIC_FIELDS]
+        );
+    }
+
+    // ---- R3 緑例 ---------------------------------------------------------
+
+    #[test]
+    fn r3_allows_private_fields_with_accessors() {
+        // スイープ後の現行形。
+        let source = r#"
+pub struct UnknownPhase(String);
+
+impl UnknownPhase {
+    pub fn new(phase: String) -> Self {
+        Self(phase)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+pub struct UnknownScope {
+    scope: String,
+    valid_scopes: Vec<String>,
+}
+
+impl UnknownScope {
+    pub fn scope(&self) -> &str {
+        &self.scope
+    }
+
+    pub fn valid_scopes(&self) -> &[String] {
+        &self.valid_scopes
+    }
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r3_ignores_enum_variant_fields() {
+        // enum の変種フィールドは言語仕様上 private にできないので対象外。
+        let source = r#"
+pub enum E {
+    V { x: u32 },
+    W(String),
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r3_ignores_restricted_visibility() {
+        // pub(crate) は同一クレート内の実装詳細共有として条件付きで許される。
+        let source = r#"
+pub struct Inner {
+    pub(crate) shared: u32,
+    pub(super) parent_only: u32,
+    pub(in crate::workspace) scoped: u32,
+}
+
+pub struct Wrapper(pub(crate) String);
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r3_ignores_cfg_test_modules_and_integration_tests() {
+        let source = r#"
+#[cfg(test)]
+mod tests {
+    pub struct Fixture {
+        pub scope: String,
+    }
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+
+        let bare = r#"
+pub struct Fixture(pub String);
+"#;
+        assert!(check(ADAPTER_TEST_PATH, bare).is_empty());
+    }
+
+    #[test]
+    fn r3_is_suppressed_by_a_matching_allow_comment() {
+        let source = r#"
+pub struct Wire {
+    // amadeus-lint: allow(no-public-fields) — serde の外部表現 (境界の DTO)
+    pub scope: String,
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
     }
 
     // ---- 共通 ------------------------------------------------------------

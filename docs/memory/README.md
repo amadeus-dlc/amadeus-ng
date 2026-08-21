@@ -8,4 +8,4 @@
 | --- | --- | --- |
 | [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ | `cargo lint`（checkbox-vocabulary / reap-decision-locality） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準（未リント化） |
-| [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由 | `cargo lint` ルール化予定 |
+| [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由 | `cargo lint`（no-public-fields） |
