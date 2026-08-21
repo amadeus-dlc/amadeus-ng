@@ -167,16 +167,6 @@ impl WorkflowExecution {
         ((after + 1)..self.stage_count()).find(|&s| self.in_scope(s))
     }
 
-    const fn is_in_flight(cb: CheckboxState) -> bool {
-        matches!(
-            cb,
-            CheckboxState::Pending
-                | CheckboxState::InProgress
-                | CheckboxState::AwaitingApproval
-                | CheckboxState::Revising
-        )
-    }
-
     fn running(&self) -> bool {
         self.status == Status::Running && !self.parked_active()
     }
@@ -192,7 +182,7 @@ impl WorkflowExecution {
             return EngineSignal::Done;
         }
         let cb = self.checkbox[self.cursor];
-        if Self::is_in_flight(cb) {
+        if cb.is_in_flight() {
             if self.effective_plan(self.cursor) == PlanAction::Skip {
                 return EngineSignal::EngineError;
             }
@@ -391,9 +381,8 @@ impl WorkflowExecution {
                 let cur = self.cursor;
                 for u in cur..target {
                     let cb = self.checkbox[u];
-                    let skip_current =
-                        u == cur && Self::is_in_flight(cb) && cb != CheckboxState::Pending;
-                    let skip_between = u > cur && Self::is_in_flight(cb);
+                    let skip_current = u == cur && cb.is_active();
+                    let skip_between = u > cur && cb.is_in_flight();
                     if skip_current || skip_between {
                         self.checkbox[u] = CheckboxState::Skipped;
                     }

@@ -14,6 +14,7 @@
 //! - release は識別子ごとの深度カウンタで管理し、深度 0 に戻るときのみ rm -rf する。
 
 use core_domain::workspace::lock_identity::LockIdentity;
+use core_domain::workspace::lock_protocol::reap_eligible;
 use core_use_case::workspace::clock::Clock;
 use core_use_case::workspace::process_probe::ProcessProbe;
 use core_use_case::workspace::workspace_lock::{
@@ -39,6 +40,14 @@ struct OwnerStamp {
     pid: i32,
     started_at_ms: u64,
     reap_live_owner_after_stale: bool,
+}
+
+impl OwnerStamp {
+    /// CAS の同一性 (`stampMatches` 相当): 保持者の同一性は `pid` と `startedAtMs` で決まる。
+    /// `reapLiveOwnerAfterStale` はポリシー宣言であり同一性の一部ではない。
+    const fn names_same_holder(&self, other: &OwnerStamp) -> bool {
+        self.pid == other.pid && self.started_at_ms == other.started_at_ms
+    }
 }
 
 fn serialize_owner_stamp(stamp: &OwnerStamp) -> String {
@@ -154,9 +163,10 @@ impl FsWorkspaceLock {
 
         let reapable = match &stamp_before {
             Some(stamp) => {
+                // reap 適格判定はドメインの単一実装 (lock_protocol::reap_eligible) に委譲する
                 let alive = self.process_probe.is_alive(stamp.pid);
                 let age = self.clock.now_ms().saturating_sub(stamp.started_at_ms);
-                !alive || age > self.stale_ms
+                reap_eligible(alive, age, self.stale_ms)
             }
             None => match fs::metadata(lock_dir).and_then(|m| m.modified()) {
                 Ok(modified) => {
@@ -196,7 +206,7 @@ impl FsWorkspaceLock {
 
         let matches = match (&stamp_before, &stamp_after) {
             (None, None) => true,
-            (Some(a), Some(b)) => a.pid == b.pid && a.started_at_ms == b.started_at_ms,
+            (Some(a), Some(b)) => a.names_same_holder(b),
             _ => false,
         };
 

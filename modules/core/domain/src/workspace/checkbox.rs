@@ -40,6 +40,30 @@ impl CheckboxState {
             _ => return None,
         })
     }
+
+    // ---- 分類述語 (マーカー語彙の分類は本型が所有する — Tell, Don't Ask)。
+    //      呼出側で変種集合を再列挙しないこと。 ----
+
+    /// 未終了 (in-flight)。upstream `next` の in-flight 判定 (02 §5.1 手順 10-2) の集合:
+    /// `pending / in-progress / awaiting-approval / revising`。
+    /// 「checkbox 行の欠落も in-flight」の扱いは行の存否を知る呼出側の責務。
+    #[must_use]
+    pub const fn is_in_flight(self) -> bool {
+        !self.is_finished()
+    }
+
+    /// 終了済み (`completed` / `skipped`) — 前進走査 (`nextInScopeStage`) が読み飛ばす集合。
+    #[must_use]
+    pub const fn is_finished(self) -> bool {
+        matches!(self, CheckboxState::Completed | CheckboxState::Skipped)
+    }
+
+    /// 着手済み (in-flight のうち `pending` を除く: `in-progress / awaiting-approval /
+    /// revising`)。jump forward が skipped 化する「現ステージ」の条件 (09 §3)。
+    #[must_use]
+    pub const fn is_active(self) -> bool {
+        self.is_in_flight() && !matches!(self, CheckboxState::Pending)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -187,5 +211,27 @@ not a checkbox line
             set_checkbox(SAMPLE, "no-such-stage", CheckboxState::Completed),
             Err(CheckboxWriteError::MissingStage("no-such-stage".into()))
         );
+    }
+
+    #[test]
+    fn classification_predicates_partition_the_six_markers() {
+        use CheckboxState::{AwaitingApproval, Completed, InProgress, Pending, Revising, Skipped};
+        let all = [
+            Pending,
+            InProgress,
+            AwaitingApproval,
+            Revising,
+            Completed,
+            Skipped,
+        ];
+        for cb in all {
+            // in-flight と finished は補集合
+            assert_ne!(cb.is_in_flight(), cb.is_finished(), "{cb:?}");
+            // active = in-flight ∧ ¬pending
+            assert_eq!(cb.is_active(), cb.is_in_flight() && cb != Pending, "{cb:?}");
+        }
+        assert!(Pending.is_in_flight() && !Pending.is_active());
+        assert!(Revising.is_active());
+        assert!(Completed.is_finished() && Skipped.is_finished());
     }
 }

@@ -161,10 +161,10 @@ impl WorkflowDefinition {
         }
         let start = self.graph.index_of(after).map_or(0, |i| i + 1);
         self.graph.nodes()[start..].iter().find(|node| {
-            if matches!(
-                checkboxes.get(node.slug()),
-                Some(CheckboxState::Completed | CheckboxState::Skipped)
-            ) {
+            if checkboxes
+                .get(node.slug())
+                .is_some_and(|cb| cb.is_finished())
+            {
                 return false;
             }
             self.effective_plan_action(suffixes, scope, node.slug()) == Some(PlanAction::Execute)

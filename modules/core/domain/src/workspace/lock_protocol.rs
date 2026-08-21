@@ -52,6 +52,17 @@ pub struct LockProtocol {
     threshold: u32,
 }
 
+/// reap 適格性 (audit_lock.qnt `actReap` のガードそのもの) — 死んだ所有者、または保持経過が
+/// しきい値を**厳密に**超えた保持者だけが奪取可能。W2 (生きた閾値以内の保持者からは決して
+/// 奪わない) の単一実装であり、モデル (`LockProtocol::reap`) と実 Gateway
+/// (`FsWorkspaceLock::try_reap`) の両方がこの関数を呼ぶ — 境界規約 (`>`) を 2 箇所に
+/// 重複させないための Tell-Don't-Ask 装置。時間の単位は呼出側で揃える (モデルは tick、
+/// 実 Gateway は ms)。
+#[must_use]
+pub const fn reap_eligible(owner_alive: bool, held_elapsed: u64, stale_threshold: u64) -> bool {
+    !owner_alive || held_elapsed > stale_threshold
+}
+
 impl LockProtocol {
     /// `process_count` 個のプロセス (全員生存) と閾値でロックを初期化する
     /// (`audit_lock.qnt` の `init` — `dirOwner=-1`, `depth=0`, その他すべて 0/false)。
@@ -287,7 +298,11 @@ impl LockProtocol {
             return Err(LockError::CannotReapOwnLock);
         }
         let owner_alive = self.alive[owner];
-        if owner_alive && self.held_ticks <= self.threshold {
+        if !reap_eligible(
+            owner_alive,
+            u64::from(self.held_ticks),
+            u64::from(self.threshold),
+        ) {
             return Err(LockError::ReapNotEligible);
         }
         self.dir_owner = Some(p);
@@ -370,6 +385,15 @@ mod tests {
         // 死んだ所有者からは held_ticks によらず即 reap 可能
         lock.reap(1).unwrap();
         assert_eq!(lock.dir_owner(), Some(1));
+    }
+
+    #[test]
+    fn reap_eligibility_is_dead_owner_or_strict_threshold_excess() {
+        // 生存 ∧ ちょうど閾値 → 不適格 (厳密超過のみ)
+        assert!(!reap_eligible(true, 3, 3));
+        assert!(reap_eligible(true, 4, 3));
+        // 死んだ所有者は経過によらず即適格
+        assert!(reap_eligible(false, 0, 3));
     }
 
     #[test]
