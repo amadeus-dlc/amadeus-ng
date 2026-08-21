@@ -136,7 +136,7 @@ fn assert_signal(sig: EngineSignal, m: &ModelState, step: usize) {
     }
 }
 
-fn replay(path: &std::path::Path) {
+fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>) {
     let text = std::fs::read_to_string(path).unwrap();
     let trace: Value = serde_json::from_str(&text).unwrap();
     let states: Vec<ModelState> = trace["states"]
@@ -151,6 +151,7 @@ fn replay(path: &std::path::Path) {
     assert_projection(&agg, m0, 0);
 
     for (i, m) in states.iter().enumerate().skip(1) {
+        seen.insert(m.last_action.clone());
         let prev = &states[i - 1];
         match m.last_action.as_str() {
             // 観測アクション (状態不変)
@@ -215,12 +216,41 @@ fn workflow_execution_conforms_to_every_committed_engine_loop_trace() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../tests/conformance/fixtures/engine_loop");
     let mut count = 0;
+    let mut seen = std::collections::BTreeSet::new();
     for entry in std::fs::read_dir(&dir).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_some_and(|e| e == "json") {
-            replay(&path);
+            replay(&path, &mut seen);
             count += 1;
         }
     }
     assert!(count >= 6, "expected committed fixtures, found {count}");
+    // アクション網羅: 全アクションが少なくとも 1 つのコミット済みトレースに現れること。
+    // 初回 6 シードの探索は report_revised / report_skipped を一度も踏んでおらず、該当
+    // アームは fixture に対して死文だった。負形式インライン不変条件
+    // (--invariant 'not(lastAction == "...")') で採取した trace-0x101 / trace-0x202 で
+    // 補完済み — 稀アクションを含む fixture の消失退行をここで防ぐ。
+    for action in [
+        "next",
+        "next_parked",
+        "done_stutter",
+        "report_stale",
+        "report_forward",
+        "report_awaiting_approval",
+        "report_rejected",
+        "report_revised",
+        "report_skipped",
+        "jump_forward",
+        "jump_backward",
+        "jump_redo",
+        "park",
+        "unpark",
+        "recompose",
+        "set_autonomy",
+    ] {
+        assert!(
+            seen.contains(action),
+            "no committed trace exercises action {action}"
+        );
+    }
 }
