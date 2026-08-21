@@ -1,0 +1,14 @@
+amadeus-ng
+Copyright Amadeus Project. All Rights Reserved.
+
+This project is a Rust reimplementation of AI-DLC Workflows
+(https://github.com/awslabs/aidlc-workflows), pinned at upstream commit
+3c3146cfd7cef33020d48e8d48d4e80d0f8c2820 (v2.6.40, branch v2).
+
+The upstream project is licensed under MIT-0 (MIT No Attribution):
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+The methodology assets (stages, agent personas, protocols, rules) and the
+verbatim wording contracts carried by this project derive from that upstream
+work. MIT-0 imposes no attribution requirement; this notice is kept for
+traceability and courtesy.
