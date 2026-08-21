@@ -60,7 +60,7 @@ D3・D4 は Rust と相性がよい。newtype と enum で Domain Primitive を�
 | A5 | タイムスタンプと文字列単位の契約表 | ISO-8601 の受理集合（JS `Date.parse` と chrono の差）、長さ・切詰・ソートの単位（JS UTF-16 / Rust byte）を契約ごとに明記した対応表。 |
 | A6 | マニフェスト形式 | TOML＋serde を推奨案とする。upstream の `emit()`（任意 TS コード）は組み込み emitter trait に置換。「ハーネス追加はビルドエントリ編集ゼロ」の約束との緊張を記録して判断する。 |
 | A7 | upstream 追従戦略 | CHANGELOG エントリ単位の定期 diff レビュー、逸脱台帳（upstream 挙動 / amadeus 挙動 / 理由 / 分類）による一元管理、追従を打ち切る条件。 |
-| A8 | リポジトリ構成 | 本リポジトリ（docs ブランチ = ドキュメント）と Rust コードの置き場所（main ブランチのモノレポ構成か、分離か）。 |
+| A8 | リポジトリ構成 | **確定済み（ADR 0005）**: モノレポ（main に docs とコード同居）。`modules/{core,shared,infra-io,app,harness}` 構成、層＝クレートで逆依存はビルドエラー、コンテキストは当面モジュール（最初の切り出しは verification 述語クレート）。ライセンスは `MIT OR Apache-2.0` デュアルを workspace 既定に設定。 |
 | A9 | Quint の適用範囲と運用 | 対象はオーケストレーション（最優先: intent ライフサイクル × `next`/`report`、jump/park/resume、ゲート）、ロック/監査（クラッシュをアクションに含めた並行モデル）、フック/センサー判定（フェーズ C）に絞る。ステージグラフのコンパイル不変条件は状態遷移ではないため Rust の proptest で足りる見込み。モデルの配置、CI ゲート（毎 PR は `quint run` のシミュレーション、Apalache による `quint verify` はエンジン変更時と nightly）、ITF トレース準拠層の設計をここで確定する。 |
 | A10 | 可観測性（OTel） | **確定済み（ADR 0004）**: 計装は `tracing`、エクスポートは OpenTelemetry。監査台帳が真実源で、テレメトリは派生（append 成功後 emit、fail-open）。トレース境界は 1 ターン = 1 トレース（prompt-submit / Stop フックがターンコンテキストを発行・クローズ）、エクスポートは flush 方式で開始し較正で detached ワーカーへエスカレート可。 |
 

@@ -1,0 +1,15 @@
+[package]
+name = "core-interface-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+core-use-case = { workspace = true }
+core-domain = { workspace = true }
+audit-events = { workspace = true }
+directive-schema = { workspace = true }
+canon-json = { workspace = true }
+message-catalog = { workspace = true }
+infra-io = { workspace = true }
