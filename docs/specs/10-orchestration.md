@@ -95,7 +95,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 ## 6. 不変条件表（強制手段つき）
 
-E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](formal/orchestration/engine_loop.qnt)（slice 1 v2）、I16〜I17 が [`formal/orchestration/stop_hook.qnt`](formal/orchestration/stop_hook.qnt)（v1）、I14 が [`formal/workspace/audit_lock.qnt`](formal/workspace/audit_lock.qnt)（v3）に実在する — 第一陣 3 モジュールすべて green・mutation 検査力確認済み。
+E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../formal/orchestration/engine_loop.qnt)（slice 1 v2）、I16〜I17 が [`formal/orchestration/stop_hook.qnt`](../../formal/orchestration/stop_hook.qnt)（v1）、I14 が [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3）に実在する — 第一陣 3 モジュールすべて green・mutation 検査力確認済み。
 
 | # | 不変条件 | 強制 | E4 定義名 / 備考 |
 | --- | --- | --- | --- |
