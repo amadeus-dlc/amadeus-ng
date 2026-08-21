@@ -35,20 +35,26 @@ pub const DEFAULT_LOCK_STALE_MS: u64 = 600_000;
 /// 未スタンプ dir の既定猶予 (upstream `unstampedGraceMs()`, 03 §6.8)。
 pub const DEFAULT_UNSTAMPED_GRACE_MS: u64 = 5_000;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 struct OwnerStamp {
     pid: i32,
     started_at_ms: u64,
     reap_live_owner_after_stale: bool,
 }
 
-impl OwnerStamp {
-    /// CAS の同一性 (`stampMatches` 相当): 保持者の同一性は `pid` と `startedAtMs` で決まる。
-    /// `reapLiveOwnerAfterStale` はポリシー宣言であり同一性の一部ではない。
-    const fn names_same_holder(&self, other: &OwnerStamp) -> bool {
+/// 等価 = 保持者の同一性 (`pid` + `startedAtMs`) — rename-CAS の `stampMatches` 相当。
+/// `reapLiveOwnerAfterStale` は保持者が宣言する**ポリシー**であって同一性の一部ではない
+/// (upstream owner.json の任意フィールド `token?` も同様)。ドメイン上の同値関係は
+/// 名前付きメソッドではなく `Eq`/`PartialEq` で表現する (統一方針 — 驚き最小化)。
+///
+/// TODO(golden: stage-0): upstream `stampMatches` の比較対象フィールドはピン留め実測で確定。
+impl PartialEq for OwnerStamp {
+    fn eq(&self, other: &OwnerStamp) -> bool {
         self.pid == other.pid && self.started_at_ms == other.started_at_ms
     }
 }
+
+impl Eq for OwnerStamp {}
 
 fn serialize_owner_stamp(stamp: &OwnerStamp) -> String {
     format!(
@@ -206,7 +212,7 @@ impl FsWorkspaceLock {
 
         let matches = match (&stamp_before, &stamp_after) {
             (None, None) => true,
-            (Some(a), Some(b)) => a.names_same_holder(b),
+            (Some(a), Some(b)) => a == b,
             _ => false,
         };
 
@@ -293,6 +299,30 @@ mod tests {
 
     fn budget(max_retries: u32, retry_interval_ms: u64) -> AcquireBudget {
         AcquireBudget::new(max_retries, Duration::from_millis(retry_interval_ms))
+    }
+
+    #[test]
+    fn owner_stamp_equality_is_holder_identity_not_policy() {
+        let a = OwnerStamp {
+            pid: 42,
+            started_at_ms: 1_000,
+            reap_live_owner_after_stale: true,
+        };
+        // ポリシーフラグ違いは同一保持者 (同じ acquire イベント由来)
+        let b = OwnerStamp {
+            reap_live_owner_after_stale: false,
+            ..a
+        };
+        assert_eq!(a, b);
+        // pid / startedAtMs 違いは別保持者
+        assert_ne!(a, OwnerStamp { pid: 43, ..a });
+        assert_ne!(
+            a,
+            OwnerStamp {
+                started_at_ms: 2_000,
+                ..a
+            }
+        );
     }
 
     #[test]
