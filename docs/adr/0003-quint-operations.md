@@ -18,7 +18,7 @@ D9 で Quint 採用は確定済み。未決なのは適用範囲の確定、モ�
    - `formal/orchestration/engine_loop.qnt` — directive loop＋ApprovalGate（skeleton 往復含む）＋CheckboxState/effectivePlanAction＋park・jump・per-unit カーソルの合成モデル
    - `formal/orchestration/stop_hook.qnt` — forwarding loop（no-progress counter・carve-out）
    - `formal/workspace/audit_lock.qnt` — 監査ロック＋audit-first（クラッシュ・reap・再入を含む）
-   A8 確定までのドラフトは本リポジトリの `docs/specs/formal/` に置き、コード側成立時に移す。
+   A8 確定（ADR 0005）に伴いリポジトリルート `formal/` へ移設済み。
 4. **CI 構成**:
    - 毎 PR: `quint typecheck` ＋ `quint run --seed <固定値> --max-samples <明示値（初期値 1000、較正で調整）>` をモデルごとに実行。**シード固定でも `--max-samples` を明示しなければ 1 トレースに縮退する**（環境実測）ため、明示を必須とする。この構成は決定的で高速。**検査範囲は invariant のみ**で、temporal 性質はここでは検査されない。
    - nightly ＋エンジン関連変更時: シードなしのランダム実行（サンプル数大きめ。失敗時は quint が出力する再現用シードを記録）と `quint verify`（Apalache — invariant ＋ **temporal**。JVM を CI にセットアップ）。
