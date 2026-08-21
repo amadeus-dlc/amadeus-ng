@@ -2,7 +2,7 @@
 
 # タスク 3 抽出結果: per-unit 実行機構 (wave / unit lifecycle / Build-and-Test loop-back / unit-major)
 
-出典表記: `01` = 01-workflow-model.md, `02` = 02-orchestration-engine.md, `03` = 03-state-audit-runtime.md, `04` = 04-stage-protocol.md, `06` = 06-sensors.md, `07` = 07-hooks.md, `09` = 09-cli-tools.md (いずれも `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/`)。「L」は as-built 仕様ファイルの行番号、バッククォート内 `:n` は upstream ソースコードの行番号引用。
+出典表記: `01` = 01-workflow-model.md, `02` = 02-orchestration-engine.md, `03` = 03-state-audit-runtime.md, `04` = 04-stage-protocol.md, `06` = 06-sensors.md, `07` = 07-hooks.md, `09` = 09-cli-tools.md (いずれも `docs/upstream/specs/`)。「L」は as-built 仕様ファイルの行番号、バッククォート内 `:n` は upstream ソースコードの行番号引用。
 
 ---
 
@@ -201,4 +201,4 @@ happy path (branch 10) では in-flight ステージに対しまず `tryEmitSwar
 | §13 learnings ritual の 3 免除の 1 つが「unfinished per-unit iterations」(ステージ唯一の最終ゲートまで繰延)。「A `gate: false` iteration does not run it」(`stage-protocol.md:964`) | 04 §11.2 L566 |
 | fork/merge・worktree パス導出・HOLD-MERGE は既存抽出 `docs/docs/specs/research/workspace-lock-fork-worktree.md` 側 (本抽出では対象外) | — |
 
-対象ファイル: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md`, `02-orchestration-engine.md`, `03-state-audit-runtime.md`, `04-stage-protocol.md`, `06-sensors.md`, `07-hooks.md`, `09-cli-tools.md`
+対象ファイル: `docs/upstream/specs/01-workflow-model.md`, `02-orchestration-engine.md`, `03-state-audit-runtime.md`, `04-stage-protocol.md`, `06-sensors.md`, `07-hooks.md`, `09-cli-tools.md`

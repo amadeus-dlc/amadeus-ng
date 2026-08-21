@@ -15,7 +15,7 @@ amadeus-ng は、aidlc-workflows（TypeScript + bun 実装）を Rust で再実�
 | D1 | 実装言語 | Rust。ユーザー環境のランタイム前提（bun）を排し、プリビルドバイナリで配布する。 |
 | D2 | 仕様の構造 | ドメインモデル起点で新規に書く。upstream 13 本はサブシステム別の as-built 仕様として凍結参照し、書き換え対象にはしない。 |
 | D3 | ドメインモデルの流儀 | Always Valid Domain Model / Domain Primitive を採用する。不正な状態は型で表現不能にし、検証は境界（パース時）で行う。 |
-| D4 | アーキテクチャ | クリーンアーキテクチャを踏襲する。ドメイン層 → ユースケース層 → インターフェイスアダプタ層（Gateways / Controllers / Presenters）の 3 層は依存が常に内向き。これに横断の**インフラストラクチャ層**（技術基盤。上記 3 層のどこからでも利用可）を加えるが、**I/O の責務（ファイル・プロセス・git・ネットワーク/RPC・データソース）はインフラ層に置かず、インターフェイスアダプタ層の Gateways が担う**。詳細は `01-domain-model.md` §7。 |
+| D4 | アーキテクチャ | クリーンアーキテクチャを踏襲する。ドメイン層 → ユースケース層 → インターフェイスアダプタ層（Gateways / Controllers / Presenters）の 3 層は依存が常に内向き。横断の**インフラストラクチャ層**は 2 群に分ける: **純粋部品**（正準 JSON・文言カタログ・ハッシュ等）は 3 層のどこからでも利用可、**infra-io**（アトミック書込・spawn 基盤・テレメトリ配線）は Gateways を含むアダプタ層と composition root のみが依存できる。**I/O の責務（ファイル・プロセス・git・ネットワーク/RPC・データソース）は Gateways が担う**。各層は独立 Cargo クレートで逆依存はビルドエラー。詳細は `01-domain-model.md` §7。 |
 | D5 | 初期スコープ | Claude Code 1 ハーネス＋決定論コアの縦切り。センサー・プラグイン・他 6 ハーネス・配布パイプライン一般化は後続フェーズ。 |
 | D6 | 命名・互換（初期フェーズ） | aidlc 互換を維持する。範囲の定義は §2 を参照。amadeus ブランドへの全面改名は stage-1 安定後に改めて判断し、それまで逸脱台帳に保留として記録する。 |
 | D7 | 仕様書の言語 | 日本語正本のみ。upstream 流の英語正本＋ `.ja.md` 対訳体制は採らない（凍結済み upstream 参照は英語のまま）。 |
@@ -93,9 +93,9 @@ D3・D4 は Rust と相性がよい。newtype と enum で Domain Primitive を�
 | 文書 | 内容 | 状態 |
 | --- | --- | --- |
 | `00-policy.md` | 本書 | 確定 |
-| `01-domain-model.md` | ユビキタス言語とコンテキストマップ | 次に着手 |
-| `10-` 以降 | コンテキスト別仕様。各文書はドメインモデル（集約・Domain Primitive・不変条件）→ ユースケース → アダプタ（CLI/フック）→ インフラの順に記述し、「契約」節で `docs/upstream/specs/` の該当箇所を参照する | `10-orchestration.md` ドラフト済み（slice 1、レビュー待ち）。`formal/orchestration/engine_loop.qnt` slice 1 green |
-| `docs/adr/` | 横断決定（A1〜A8 ほか） | 未着手 |
+| `01-domain-model.md` | ユビキタス言語とコンテキストマップ | 策定済み |
+| `10-` 以降 | コンテキスト別仕様。各文書はドメインモデル（集約・Domain Primitive・不変条件）→ ユースケース → アダプタ（CLI/フック）→ インフラの順に記述し、「契約」節で `docs/upstream/specs/` の該当箇所を参照する | `10-orchestration.md`（slice 1＋2）・`11-workspace.md` ドラフト済み。Quint 第一陣 3/3 green（`formal/`） |
+| `docs/adr/` | 横断決定（A1〜A10） | 0001〜0004（A2 / A3 / A9 / A10）**Accepted**。残りは A8 → A1 → A4/A5/A6 → A7 |
 | `docs/specs/deviations.md` | 逸脱台帳 | 作成済み（#1 コマンド綴り写像、#2 M12 バグ修正） |
 
 コンテキストの候補は分析から 7 つ見えている: **ワークフロー定義**（Phase / Stage / Scope / グラフコンパイル）、**オーケストレーション**（Directive / Gate / エンジンループ）、**ワークスペース**（Space / Intent / 状態 / 監査 / ロック）、**知識**（Memory / Rules / Learnings）、**検証**（Sensor / Hook ガード）、**配布**（Manifest / Harness / パッケージング）、**プラグイン**。境界の確定は `01-domain-model.md` で行う。
@@ -141,7 +141,7 @@ D3・D4 は Rust と相性がよい。newtype と enum で Domain Primitive を�
 | R2 | JS RegExp と Rust regex の意味論差（lookaround 非対応、`\b` や `i` フラグの Unicode 挙動差）による受理集合の静かな乖離 | upstream の全 regex を棚卸しし、パターンごとに受理/拒否のゴールデン表を作る |
 | R3 | Windows 対応の仕様間矛盾（POSIX 前提の防御機構が未定義のまま Windows バイナリだけ出荷される「動くが守られていない」ビルド） | 初期フェーズは macOS / Linux のみと明記。Windows はフェーズ D 以降で防御の等価物定義とセットで |
 | R4 | バイナリ×資産のバージョンスキュー（upstream は dist 再コピーで原子的に一致していた） | A1 のバージョンハンドシェイク＋doctor 照合 |
-| R5 | 逐語文言・コマンド綴り置換の非原子性（置換漏れ 1 箇所が LLM エージェントの静かな挙動破壊になる） | A3 の文言カタログ＋旧綴り（`bun `、`.ts`）残骸を grep する CI ゲート |
+| R5 | 逐語文言・コマンド綴り置換の非原子性（置換漏れ 1 箇所が LLM エージェントの静かな挙動破壊になる） | A3 の文言カタログ＋旧綴り（`"bun "` 起動形・`.ts`）残骸を grep する CI ゲート |
 | R6 | `process::exit` がデストラクタを走らせない（Bun の「exit 時 finally スキップ」と同型の罠）、panic が「フックは fail-open」契約を破る | A4 の規約と clippy 強制。加えてクラッシュをアクションに含めた Quint ロックモデルで「全経路でロック解放」を検査（A9） |
 | R7 | ダイジェスト計算の不一致による冪等ガードの誤発火（TS 版が書いたワークスペースを開いた瞬間に「変化あり」と誤検知） | ダイジェスト計算も互換対象とし、upstream 実ワークスペースを食わせる互換テストで固定。「既知形式だがダイジェスト不一致」時の安全側挙動を契約化 |
 | R8 | `Date.parse` の寛容さを chrono で機械置換すると受理集合が変わる | A5 の契約表＋upstream 実データのゴールデン |

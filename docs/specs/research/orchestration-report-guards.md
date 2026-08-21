@@ -209,9 +209,9 @@ stateDiagram-v2
 - `--single` は `advance/approve/complete-workflow` への到達不能性 (mechanically incapable) が不変条件。
 
 典拠ファイル (絶対パス):
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md (§3.1, §6, §7.1–7.4, §9, §11, §13, 測定表)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md (§5.4, §5.5, §5.7, §6.4, §6.6, L112)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md (§4.1, §4.2, §4.4, §5.5, §11.2)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md (L238)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md (L327, L334)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md (L279)
+- docs/upstream/specs/02-orchestration-engine.md (§3.1, §6, §7.1–7.4, §9, §11, §13, 測定表)
+- docs/upstream/specs/03-state-audit-runtime.md (§5.4, §5.5, §5.7, §6.4, §6.6, L112)
+- docs/upstream/specs/04-stage-protocol.md (§4.1, §4.2, §4.4, §5.5, §11.2)
+- docs/upstream/specs/07-hooks.md (L238)
+- docs/upstream/specs/08-memory-rules-learnings.md (L327, L334)
+- docs/upstream/specs/09-cli-tools.md (L279)

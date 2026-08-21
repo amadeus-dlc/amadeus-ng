@@ -6,7 +6,7 @@
 
 # タスク 1 抽出結果: 状態ファイルと Space/Intent の契約の完全列挙
 
-典拠: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md` (upstream v2.6.40, commit `3c3146cf`)。表中の「03:Lnnn」は同ファイルの行番号、`aidlc-*.ts:nnn` は upstream コードの行番号 (仕様に記載のまま転記)。補助典拠として `08-memory-rules-learnings.md` (以下 08)、`09-cli-tools.md` (以下 09) を明示のうえ使用。
+典拠: `docs/upstream/specs/03-state-audit-runtime.md` (upstream v2.6.40, commit `3c3146cf`)。表中の「03:Lnnn」は同ファイルの行番号、`aidlc-*.ts:nnn` は upstream コードの行番号 (仕様に記載のまま転記)。補助典拠として `08-memory-rules-learnings.md` (以下 08)、`09-cli-tools.md` (以下 09) を明示のうえ使用。
 
 ---
 
@@ -319,6 +319,6 @@ export const DEFAULT_SPACE = "default";                 // aidlc-lib.ts:591
 | 03 に無いもの | 新規 space の継承規則は 08 §2.4、space verb の CLI 面は 09 §aidlc-utility が典拠。11-workspace.md で引用する場合は出典を 03 と混同しないこと | 08:L70-72, 09:L171-182 |
 
 ソースファイル:
-- `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md` (主典拠、全 1268 行読了)
-- `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md` (space 継承規則)
-- `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md` (space verb / switch エラー文言)
+- `docs/upstream/specs/03-state-audit-runtime.md` (主典拠、全 1268 行読了)
+- `docs/upstream/specs/08-memory-rules-learnings.md` (space 継承規則)
+- `docs/upstream/specs/09-cli-tools.md` (space verb / switch エラー文言)

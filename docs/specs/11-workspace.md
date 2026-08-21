@@ -37,7 +37,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 | 型 | 定義 | 強制 |
 | --- | --- | --- |
 | `SpaceName` | `/^[a-z][a-z0-9-]*$/` — 「生のまま `join()` に到達してはならないパスセグメント」 | E2 |
-| `IntentId` | UUIDv7（48-bit Unix-ms プレフィクス。文字列ソート＝作成順。暗号学的 tail） | E2 |
+| `IntentId` | UUIDv7（48-bit Unix-ms プレフィクス＋暗号学的 random tail）。文字列ソートの順序保証は**ミリ秒粒度**（同一ミリ秒内は非保証 — upstream 同等。単調カウンタは導入しない） | E2 |
 | `IntentDirName` | `<YYMMDD>-<slug(label,24)>`。衝突は `-2`… `-1000` まで、以後 loud throw。予約ラベル 8 語（help / list / switch / create / archive / rename / show / birth）拒否 | E2 |
 | `CloneId` | `/^[a-z0-9]{1,32}$/`。欠如時 12 hex mint → **再読で並行初回鋳造が単一トークンに収束**。machine-local（gitignore）が本質 | E2＋E5（運用） |
 | `ShardName` | `<host(小文字化・[a-z0-9-]圧縮・48 字上限・空なら"host")>-<cloneId>.md` | E1（構成関数） |
@@ -54,7 +54,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 | サービス | 内容 |
 | --- | --- |
-| `render_audit_block` | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?|\n|U+2028|U+2029`）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
+| `render_audit_block` | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
 | `find_all_events` | shard 横断の順序: timestamp（秒精度 ISO）ソート＋バッファ位置 tiebreak。**通常読取は決して fail-closed しない**（authority 比較の同秒 fail-closed は orchestration の述語側 — B9）。出力は順序付き専用型（外部から構築・再ソート不能 — W15 の E1 装置） |
 | `classify_state_version` | 4 分類の単一実装（W7） |
 | `state_writers` | `set_field`（無言 no-op）/ `set_field_strict`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `set_or_insert_field` / `remove_field` の 4 種。純粋な string→string |
@@ -96,12 +96,12 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 ## 6. 不変条件表（強制手段つき）
 
-E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](formal/workspace/audit_lock.qnt)（v2 — **green・mutation テスト 9/9・到達性 witness 5 本モジュール内定義**）に実在する。
+E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](formal/workspace/audit_lock.qnt)（v3 — **10 不変条件 green・mutation 10/10・到達性 witness 7 本モジュール内定義**）に実在する。
 
 | # | 不変条件 | 強制 | E4 定義名 / 備考 |
 | --- | --- | --- | --- |
-| W1 | audit-first: 監査 emit が state 書込に先行し、emit 失敗（throw）時は state を書かない。read → decide → emit → write が 1 クリティカルセクション | E3+E4 | `audit_lock::audit_first`（state が進むステップでは必ず監査も進む） |
-| W2 | 生きている閾値未満のロック保持者からは決して奪わない（reap は ESRCH または stale 超過のみ）。**経路を問わず**保持者間の直接移転も同条件に限る（acquire 経由の横取りも不可）。未スタンプ dir の猶予保護は E3 のみ（モデルは常時スタンプ済みの抽象 — slice 2 候補） | E3+E4 | `audit_lock::no_reap_of_live_fresh`（reap 経路）＋`audit_lock::lock_no_steal`（経路非依存の移転条件 — 本モデルにおける相互排他の実質検査）＋`audit_lock::reaper_alive` |
+| W1 | audit-first: 監査 emit が state 書込に先行し、emit 失敗（throw）時は state を書かない。read → decide → emit → write が 1 クリティカルセクション。**emit 成功〜state 書込の間のクラッシュは「監査済み・state 未書込」という到達可能な中間状態**であり（R6）、回復は reap ＋冪等 replay guard が受け皿 | E3+E4 | `audit_lock::audit_first`（state 書込は emit 済みトランザクション内でのみ）＋`audit_lock::pending_only_with_lock`。中間状態と回復の到達性は `w_crash_mid_txn` / `w_recovery_after_mid_txn_crash` |
+| W2 | 生きている閾値未満のロック保持者からは決して奪わない（reap は ESRCH または stale **厳密超過**（年齢 > 閾値）のみ — upstream の `> lockStaleMs()` に一致）。**経路を問わず**保持者間の直接移転も同条件に限る（acquire 経由の横取りも不可）。未スタンプ dir の猶予保護は E3 のみ（モデルは常時スタンプ済みの抽象 — slice 2 候補） | E3+E4 | `audit_lock::no_reap_of_live_fresh`（reap 経路）＋`audit_lock::lock_no_steal`（経路非依存の移転条件 — 本モデルにおける相互排他の実質検査）＋`audit_lock::reaper_alive` |
 | W3 | 台帳・状態への書込はロック保持者のみ。解放も保持者のみ | E3+E4 | `audit_lock::writes_require_ownership`＋`audit_lock::release_requires_ownership` |
 | W4 | ロックは identity ごとの深度カウンタで再入可。深度 0 でのみ解放。深度とロック在否は常に整合 | E3+E4 | `audit_lock::depth_consistent`＋`audit_lock::reentrant_release_keeps_lock` |
 | W5 | クラッシュ（exit ハンドラなし）ではロックが**そのまま残って** stale 化し（状態を変えない）、以後 reap で回復可能 | E3+E4（safety）/ E4 予定（liveness） | safety は `audit_lock::crash_leaves_lock`。回復経路の実在はモジュール内 witness（`w_dead_owner_reap` / `w_threshold_reap` — CI は負形式で violation = pass）。「解放または reap 可能」の temporal liveness は定義名を与えた上で `quint verify`（nightly）に載せるまで E4 と数えない |
@@ -131,6 +131,7 @@ E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](form
 - v2 で状態遷移レベルの不変条件 4 本を追加（`lock_no_steal` — 経路非依存の移転条件で相互排他の実質検査 / `release_requires_ownership` / `reaper_alive` / `crash_leaves_lock`）。**9 不変条件 green（5000×40）＋ mutation 9/9**（9 変異がそれぞれ狙いの不変条件で検出。多重防御も確認 — reap ガード除去は `no_reap_of_live_fresh` と `lock_no_steal` の両方が捕捉）。
 - **到達性 witness 5 本をモジュール内に定義**（`w_threshold_reap` / `w_dead_owner_reap` / `w_deep_release` / `w_emit_fail` / `w_full_unwind`）。CI は負形式（`--invariant "not(w_x)"`）で実行し violation = 経路実在 = pass と読む。green のままなら経路がモデルから消えた退行（例: tick 凍結で閾値 reap が到達不能になる）を検出できる — ファイル外の一時的な反証 run では退行に盲目だった穴の是正。
 - v2 でも維持する抽象化はモデルヘッダに完全列挙（二相 acquire と未スタンプ猶予・取得予算・reapLiveOwnerAfterStale・rename CAS の内部状態・バッチ原子性 — slice 2 候補）。「解放または reap 可能」の temporal liveness は定義名を与えて `quint verify`（nightly）に載せるまで E4 と数えない（W5）。
+- **v3（PR #2 レビュー反映）**: audit-first のクリティカルセクションを emit / write の 2 段に分割し、「監査済み・state 未書込」の crash 中間状態（R6 の核心）を到達可能にした（`w_crash_mid_txn` → reap 回復 `w_recovery_after_mid_txn_crash`）。stale 境界を upstream の厳密超過（`>`）に一致。10 不変条件 green（5000×50）＋ mutation 10/10（emit なし state 書込の新変異を含む）＋ witness 7/7。
 - 第一陣は 3/3 完了（`engine_loop` v2 / `audit_lock` v2 / `stop_hook` v1）。総括は 10-orchestration §9 の第 3 回記録と ADR 0003 試行条項。
 
 ## 9. 実装ノート — 仕様と実装の分離

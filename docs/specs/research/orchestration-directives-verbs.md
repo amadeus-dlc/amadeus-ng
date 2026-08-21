@@ -250,8 +250,8 @@ stdout に `{"decision":"block","reason":…}`(:206)。reason は**on-task conti
 
 ## 補遺: 関連ファイルパス
 
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md(§3.2 emission、§4 protocol、§5 next ladder、§8 jump、§9 single、§11 park)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md(§9.7 recompose 8 ガード)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md(§5.6 set-autonomy、§5 bolt、§6 swarm)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md(§7 Stop hook)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md(Construction Autonomy Mode の M12 不整合)
+- docs/upstream/specs/02-orchestration-engine.md(§3.2 emission、§4 protocol、§5 next ladder、§8 jump、§9 single、§11 park)
+- docs/upstream/specs/01-workflow-model.md(§9.7 recompose 8 ガード)
+- docs/upstream/specs/09-cli-tools.md(§5.6 set-autonomy、§5 bolt、§6 swarm)
+- docs/upstream/specs/07-hooks.md(§7 Stop hook)
+- docs/upstream/specs/03-state-audit-runtime.md(Construction Autonomy Mode の M12 不整合)

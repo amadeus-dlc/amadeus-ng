@@ -221,7 +221,7 @@ batch 番号は join key: "The batch number is carried into the `Batch number` a
 | batch 完了 | 全 unit 判定後 | `SWARM_COMPLETED {Batch number, Converged count, Failed count}` | exit: 失敗 or merge 失敗が 1 つでもあれば 2、なければ 0 |
 
 出典ファイル (絶対パス):
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md (§5.7, §6.1-6.9, §8.6-8.7)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md (§4.1, §4.3-4.4, §5.1-5.2)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md (§5.4-5.5, §6.1-6.5, §7)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md (§6.5-6.6: イベント登録簿と authority class)
+- docs/upstream/specs/09-cli-tools.md (§5.7, §6.1-6.9, §8.6-8.7)
+- docs/upstream/specs/02-orchestration-engine.md (§4.1, §4.3-4.4, §5.1-5.2)
+- docs/upstream/specs/04-stage-protocol.md (§5.4-5.5, §6.1-6.5, §7)
+- docs/upstream/specs/03-state-audit-runtime.md (§6.5-6.6: イベント登録簿と authority class)

@@ -2542,372 +2542,372 @@
   {
    "name": "packaging pipeline (per-harness build)",
    "description": "ハーネスごとに 6 つの順序付き状態を通過するビルドプロセス: COPY(core) → COPY(harness) → COMPILE(stage graph + scope grid) → GENERATE(per-stage runners) → EMIT(manifest 宣言時のみの条件分岐) → REFRESH(オーケストレータスキルの生成テーブル)。COMPILE の出力が REFRESH の入力になるという順序依存があり、EMIT は manifest の宣言有無で分岐する (§4.2)。Quint では順序保証と条件付きステップのモデル化候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+   "source": "docs/upstream/specs/00-overview.md"
   },
   {
    "name": "drift guard verdict (--check)",
    "description": "build-to-temp → diff → verdict の検証機械。各ツリーを一時ディレクトリへビルドし、コミット済み dist/ とバイト単位で比較し、ファイルごとに MISSING / DIFFERS / ORPHAN の 3 つの問題クラスへ分類する。問題が 1 つでもあれば FAILED (exit 1、最大 40 行出力)、ゼロなら in-sync (成功メッセージ) の 2 終端状態 (§4.5)。付随する不変条件として --check 時の AIDLC_TIER_CAP 無視 (§4.7) がある。dist がコミットされ続けるという前提の下での「生成物 = ソースの純関数」検証としてモデル化価値が高い。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+   "source": "docs/upstream/specs/00-overview.md"
   },
   {
    "name": "version-changelog sync lifecycle",
    "description": "バージョンバンプの状態機械: (ユーザー可視の変更) → 同一コミットで AIDLC_VERSION バンプ + CHANGELOG 見出し追加 + README バッジ更新 → t68 と ci-changelog-guard による同期検証 (見出し一意性・エントリ削除禁止・4 面一致)。並行バンプ衝突時は後着 PR がリベース + 再バンプ + 見出し改名で回復する遷移を持つ (§6.2)。パッチ蓄積 → マイナーカットでの統合というリリースサイクルの上位遷移もある (§6.3)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+   "source": "docs/upstream/specs/00-overview.md"
   },
   {
    "name": "distribution upgrade lifecycle",
    "description": "ユーザー側配布物の状態遷移: installed(旧) → dist/ ツリー再コピー (copied だが未反映) → フレッシュセッション開始 → 反映済み。コピーだけではスキル・エージェント・ルールは有効化されず、セッション開始時ロードで初めて遷移が完了する (§6.4、README.md:455)。インストーラ不在のため CHANGELOG の Upgrade 節が遷移の唯一の駆動指示となる。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+   "source": "docs/upstream/specs/00-overview.md"
   },
   {
    "name": "Phase Progress",
    "description": "状態ファイルの Phase Progress 行が持つフェーズ単位の状態機械。状態は Pending / Active / Skipped / Verified の 4 値 (§2.3)。フェーズ境界越え (完了ステージと次ステージの phase 比較で検出) の瞬間に、完了フェーズが Verified へ、突入フェーズが Active へ同時に反転し、PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED の 3 イベントがこの順で発行される (§2.2)。PHASE_VERIFIED は無条件で、検証の実体はコンダクタ実行プロトコル。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+   "source": "docs/upstream/specs/01-workflow-model.md"
   },
   {
    "name": "Stage checkbox",
    "description": "状態ファイルのステージ単位チェックボックス状態機械。[ ] 未着手 → [-] 進行中 → [?] 承認待ち (gate open) → [x] 完了が基本経路で、ゲートでユーザが拒否すると [?] → [R] 改訂中、--stage/--phase ジャンプで [S] スキップに遷移する (§2.3)。この語彙は composer の recompose ガードが読む: flip できるのは pending ([ ]) のみで、[x]/[-]/[S] は凍結される (§9.2, §9.7)。Quint モデル化の第一候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+   "source": "docs/upstream/specs/01-workflow-model.md"
   },
   {
    "name": "Skeleton stance resolution",
    "description": "walking-skeleton ゲートのスタンス解決機械。未分類 → エンジンがアンカーステージ (スコープで最初の Construction EXECUTE ステージ) に gate: \"unresolved\" を発行 → コンダクタが report --skeleton-stance で on / off / scope-dependent を状態フィールド \"Skeleton Stance\" に記録 → scope-dependent はスコープ既定 (skeleton: frontmatter) へフォールバックして再帰 → 次の next で boolean 解決 (§6.4)。resolveSkeletonGate はどのスタンスでも true を返し、決定論は「分類済みであること」にある。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+   "source": "docs/upstream/specs/01-workflow-model.md"
   },
   {
    "name": "Construction Autonomy Mode",
    "description": "Construction のバッチゲート自律化の状態機械。未設定 (gated 扱い) → Bolt 1 後の ladder prompt で選択 → \"autonomous\" (per-batch ゲート無効) または gated のまま (§6.4)。fail-closed: \"autonomous\" の完全一致以外 (空・\"gated\"・未知値) はすべて not-granted。autonomous の間は recompose が拒否される (§9.7) ため、計画再形成と自律実行が同時に走らないことの証明対象になる。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+   "source": "docs/upstream/specs/01-workflow-model.md"
   },
   {
    "name": "effectivePlanAction (per-stage plan action)",
    "description": "ステージ単位の計画所属の状態機械。基底値はスコープグリッドの EXECUTE / SKIP で、ライブ状態ファイルのステージ別サフィックスが読み取り時に上書きする (§9.7)。遷移 (flip) は recompose verb のみが行え、8 つのガード (pending のみ・カーソル前方のみ・アンカー不動・strict 差分検証など) に守られる。凍結規則 ([x]/[-]/[S] は不変) とアンカー不動性を合わせ、Stage checkbox 機械との合成で Quint モデル化する価値が高い。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+   "source": "docs/upstream/specs/01-workflow-model.md"
   },
   {
    "name": "Stage checkbox lifecycle",
    "description": "ステージごとのチェックボックス状態機械: pending / in-progress / awaiting-approval / revising / completed / skipped。遷移は report がディスパッチする aidlc-state.ts サブコマンドでのみコミットされる — gate-start (in-progress→awaiting-approval)、reject --feedback (in-progress|awaiting-approval→revising)、revise (revising→awaiting-approval)、approve (awaiting-approval→completed、自己委譲で advance/complete-workflow)、skip (in-progress|revising→skipped)。jump execute は forward で介在 in-flight を skipped、backward/redo で pending に巻き戻し、ターゲットを in-progress にする (§7.3, §8)。Quint モデル化の最有力候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Conductor–engine directive loop",
    "description": "エンジンループ全体のプロトコル状態機械 (§13): next → (load-steering → continue)* → run-stage → [質問/要約確認/成果物/レビュアー/learnings] → report awaiting-approval (gate-start) → 承認ゲート → report approved (approve→advance|complete-workflow) → next の反復。Request Changes 時は rejected → Keep/Modify/Redo → revised → ゲート再提示のループ。終端状態は done / parked / error で、report 側ディスパッチはチェックボックス状態 × ゲート有無 × 終局性の決定表 (§7.3 フローチャート)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Rule-delivery continuation",
    "description": "load-steering チャンク配送のカーソル状態機械 (§10): part 1..N を continue_token で前進し、payload.i === chunks.length で terminal の run-stage に到達。ステージ/bundle/directive ダイジェスト不一致、存在しないパート、MAC 不一致、state ハッシュ不一致、route ハッシュ不一致、graph からのステージ消失のいずれでも fail-closed で「fresh next で part 1 から」に戻る。カーソル前進はトランザクショナルで、競合時は非コミットのまま再試行。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Gate resolution (skeleton round-trip)",
    "description": "computeGate の 3 値状態: false (initialization) / \"unresolved\" (skeleton-gate ステージ & stance 未記録) / true (それ以外) (§6)。unresolved は conductor の stance 分類 → report --skeleton-stance <on|off|scope-dependent> → set-skeleton-stance 記録 → 再 next で決定済みゲートへ、という往復でのみ解消される。現行実装では全 stance が true に解決される。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Workflow park/resume",
    "description": "ワークフローレベルの中断状態機械 (§11): Running → park (WORKFLOW_PARKED、Parked/Parked At Stage 書き込み) → parked directive で終端。再入は --resume が unpark (WORKFLOW_UNPARKED) を名指しし、次の next で resume ask (resume / redo / jump / start fresh の 4 択) が提示され、各ルートへ分岐する。park 分岐は Parked At Stage === Current Stage の間のみ有効 (stale-by-progress) で、明示的再入フラグで自己無効化。autonomous では park 自体が拒否される。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Swarm batch progression",
    "description": "autonomous Construction の Bolt バッチ状態機械 (§5.2): 未収束ユニット群 → invoke-swarm 発行 (1 next = 1 バッチ前進) → ユニットごとの SWARM_UNIT_CONVERGED 集積 → 全ユニット収束 → swarm_settled: true の settle run-stage (レビュアー剥離、ゲート再入のみ、本体再実行禁止)。進捗キーは監査行でありディスクアーティファクトではない。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Per-unit iteration cursor",
    "description": "for_each: unit-of-work ステージの反復カーソル (§5.2): 未カバーユニットを順に gate=false の run-stage で emit (conductor は report せず next 再実行) → 未カバーが尽きたら最後のユニットへ実ゲート付きで再 emit (ゲートが発火する唯一の directive)。カバレッジ判定はディスク上の per-unit アーティファクト + UNIT_COMPLETED レシート。skeleton-gate 未解決時は反復自体が遅延される。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+   "source": "docs/upstream/specs/02-orchestration-engine.md"
   },
   {
    "name": "Stage checkbox lifecycle (CheckboxState)",
    "description": "各ステージ行の 6 状態: pending `[ ]` → in-progress `[-]` → awaiting-approval `[?]` → (revising `[R]` ⇄ awaiting-approval) → completed `[x]`、または skipped `[S]` (§5.4)。遷移の駆動は engine-owned な advance/gate-start/approve/reject/revise/skip 動詞 (§5.7) で、advance は現在ステージ一致・冪等リプレイガード・レビュアー受領証・artifact 検証のガードスタックを通過した場合のみ [x] に進める。マーカー (run-state) とサフィクス EXECUTE/SKIP (プラン) は同一行の互いに素なフィールドで独立に遷移する。Quint モデル化の最有力候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Workflow lifecycle",
    "description": "WORKFLOW_STARTED → (WORKFLOW_PARKED ⇄ WORKFLOW_UNPARKED)* → WORKFLOW_COMPLETED (§6.5 の必須イベント族)。park は Runtime State に Parked/Parked At Stage フィールドを挿入し unpark が除去する (§5.3)。park は自律 Construction 下と Status=Completed のとき拒否される (§5.7)。intent レジストリの status は birth で in-flight、完了で終端 status に遷移する (§4.2)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Unit lifecycle",
    "description": "unit start → (pause ⇄ resume)* → complete。単一アクティブユニット不変条件を強制し、自律スワームがステージを所有するときは拒否、ユニットは権威 DAG に存在する必要がある (§5.7)。complete は受領証コミット前に全必須 artifact のディスク存在を検証する (claim-1 inversion)。state の Active Unit / Unit State / Unit Pause Reason / Unit Next Action の 4 フィールドはキャッシュで、監査 (UNIT_STARTED/PAUSED/RESUMED/COMPLETED) が真実の源 (§5.3)。境界識別は Run floor トークンで、cross-shard 等時刻は AMBIGUOUS フロアへ劣化する (§6.4)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Audit lock lifecycle",
    "description": "free → (mkdir 成功) held+stamped → released (rm -rf)、競合時は EEXIST → 所有者判定 → 死亡 (ESRCH) または閾値超過 (10 分) なら rename-CAS で reap → 再取得、生存かつ未満なら sleep+retry を予算内で反復 (§6.8)。未スタンプディレクトリは 5 秒猶予で保護。プロセス内は識別子ごとの深度カウンタで再入し、exit ハンドラが process.exit 経由の脱出でも解放する。並行性検証 (steal の CAS と restore の残余レース含む) の Quint モデル化価値が高い。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Audit shard fork/merge (worktree mirror)",
    "description": "main shard → audit-fork (boundary+sourceHash 記録、AUDIT_FORKED emit、worktree shard を whole-file 確立) → worktree で追記のみ → audit-merge (delta 検証: ブロック境界・Event/Timestamp 各 1・既知イベント・非 merge-protected、main の prefix-hash 一致確認) → main へ delta 追記 + AUDIT_MERGED (§6.9)。再 fork は provably current のときのみ、3 種の拒否 (未マージ作業・fork 行不一致・prefix 相違) と改竄/切り詰め検出の拒否状態を持つ。冪等・破損検出の性質検証候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Phase progress",
    "description": "state ファイルの Phase Progress 行が Pending → Active → Verified、または Skipped の 4 値を取る (§5.3)。advance がフェーズ境界で行をフリップし、PHASE_STARTED / PHASE_COMPLETED / PHASE_VERIFIED のトリオを emit する (§5.7)。セクションは display-only で、行不在は遷移を失敗させない (setPhaseProgress は意図的 no-op)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Sensor firing (result states)",
    "description": "SENSOR_FIRED → SENSOR_PASSED | SENSOR_FAILED | SENSOR_BUDGET_OVERRIDE のディスパッチャ 3 終端に、runtime-graph 側の孤児状態 \"incomplete\" (終端行未観測) を加えた 4 状態 (§6.5, §7.3)。並列ファンアウトした発火の開始/終端ペアリングは行位置でなく 8-hex の Fire id で行う (§6.4)。詳細意味論は 06-sensors 所有のため、モデル化はペアリング規則に限定するのが妥当。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+   "source": "docs/upstream/specs/03-state-audit-runtime.md"
   },
   {
    "name": "Stage lifecycle (ステージ進行状態機械)",
    "description": "状態は not-started [ ] / in-progress [-] / awaiting-approval [?] / revising [R] / completed [x] / skipped [S]。TaskUpdate の activeForm 内 [slug] を PostToolUse フックがパースして [-] に同期し、本文実行後 (reviewer 宣言時は terminal REVIEW_COMPLETED 後) に学びの儀式を独立人間ターンで実行、report --result awaiting-approval で [?] へ。approved で [x] + 自動前進、rejected で [R] (Revision Count 増加)、produces 変更を伴う revision は reviewer 再実行後 revised で [?] に復帰。CONDITIONAL の不適用は report --result skipped で [S] (STAGE_SKIPPED、進捗カウント除外、completed への書き換え禁止)。§11 の mermaid stateDiagram が正本で、Quint モデル化の最有力候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "Review receipt lifecycle (レビューレシート状態機械)",
    "description": "REVIEW_REQUESTED → dispatch → 完了判定: `## Review` 節が厳密 1 つ + 正準判定行 1 つで READY / NOT-READY、それ以外の 3 形は INCOMPLETE。INCOMPLETE は --retry-pending を厳密 1 回 (反復非消費) → なお不完全なら NOT-READY の terminal レシートを強制記録。terminal レシート後は produces[] への書き込みが freeze され (REVIEW_FREEZE_BLOCKED)、書き込みによる無効化 → stale-receipt 回復レビュー厳密 1 回 → 再無効化 → recovery-spent (人間の GATE_REJECTED のみが試行リセット)。スキャンは STAGE_STARTED / GATE_REJECTED / 最新 produces 書き込みで floored され、Stage + Reviewer 両一致必須 (§5.3-5.5)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "Swarm batch loop (スワーム・バッチ状態機械)",
    "description": "invoke-swarm → §12b 全ユニットのプラン + Plan Approval (本ワークスペース、fork 前必須) → prepare (ユニットごと worktree) → fan-out → check ループ (非ゼロは再試行 or エスカレーション判断) → reviewer 宣言時は worktree 内 terminal レシート → finalize。finalize exit 0 は report せず next 再実行 (残バッチ → 次の invoke-swarm、全収束 → swarm_settled: true の gate-only run-stage で儀式 + ゲートのみ)。exit 2 は halt-and-ask シームへ。merge_failures は finalize 再実行のみで prepare 再実行禁止 (§7 の mermaid flowchart が正本)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "Unit lifecycle (ユニット・ライフサイクル状態機械)",
    "description": "settle 方式にモード遷移がある: レシートゼロの artifact-only モードから、最初の unit start / complete でレシートモードへ片方向 sticky 遷移し「成果物ファイルだけでは settle しない」。個別ユニットは unit start (同一ステージに open ユニットがあると拒否) → open → unit pause (reason + next-action 必須) → paused (最優先ルート + ループ hard-stop、unit resume まで他作業禁止) → open → unit complete (全必須成果物の実在通常ファイル検証)。per-Unit ゲートは未 settle 中 gate: false、実ゲートは最終ユニット settle 後に厳密 1 回 (§6.4)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "Build-and-Test loop-back (ビルド・テスト後退ループ状態機械)",
    "description": "Build and Test の失敗診断 → Loop-Back Log に `### Loop-back N` 追記 (エントリ数そのものが上限 3/intent の境界) → エンジン印字の aidlc-jump.ts execute で後方 STAGE_JUMPED → 再入は 2 分岐: artifact-only ワークフローは gate: true 高速経路 + 再入 override、receipt-mode ワークフローは per-unit directive で unit start/complete を再鋳造。どちらも適用ユニットごとの新レビュー必須 (STAGE_JUMPED が全先行レシートを無効化)。上限到達で halt-and-ask (impact-estimated 変種 / Retry with fix を欠く no-fix 変種)。クラッシュ検出: 最新エントリに planned fix があり対応する STAGE_JUMPED が無ければジャンプを再実行 (§6.3, §10.1)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "Wave entry review state (ウェーブ・エントリのレビュー状態語彙)",
    "description": "per-unit バッチウェーブの各エントリが持つ閉じたレビュー状態集合: outstanding → retry-required / repair-required / recovery-required → escalation-required (回復消費済み — レビュー再要求もユニット完了も禁止、人間へ halt)、および settled の READY / terminal の NOT-READY / not-required。ブロッキング質問は entry.required_produces からパスを留保することでエントリを open に保つ。閉語彙のため Quint の enum 型モデル化に好適 (§6.4 :261-265)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "Skeleton stance resolution (スケルトン姿勢解決の小状態機械)",
    "description": "エンジンが gate: \"unresolved\" (GATE_UNRESOLVED) を発行 → コンダクタが `## Walking Skeleton` 節を org → team → project の順に解決 (最specific非空が勝ち、practices が bolt-plan マーカーに優先し PRACTICES_OVERRIDE 先行発行) → on / off / scope-dependent に分類 → report --skeleton-stance → 次の next が boolean gate 付きで同一ステージを再発行。エンジンが計算できない唯一のゲート値を LLM に委ねて戻す往復プロトコルの代表例 (§6.2)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+   "source": "docs/upstream/specs/04-stage-protocol.md"
   },
   {
    "name": "reviewer iteration loop",
    "description": "ステージ完了前のレビュー反復の状態機械。dispatch (REVIEW_REQUESTED 記録) → 判定読み取り (READY / NOT-READY を含む ## Review セクションの検査) → NOT-READY なら reviewer_max_iterations (宣言 2、advisory 解決時は 1 に固定) まで再レビュー → 終端レシート (REVIEW_COMPLETED + verdict) 記録。判定なしで終わった試行は incomplete attempt となり --retry-pending でちょうど 1 回再試行 (反復を消費しない)、2 回目も不完全なら終端 NOT-READY。終端レシート後は review freeze 状態 (produces[] 書き込み凍結) に遷移し、人間のゲート承認で解除される。NOT-READY でもワークフローはブロックされず人間ゲートに到達する。Quint モデル化の最有力候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+   "source": "docs/upstream/specs/05-agents.md"
   },
   {
    "name": "stage completion precondition (receipts and evidence)",
    "description": "ステージが完了可能になるまでの証跡蓄積の状態機械。実行中 → (subagent/mob なら) 全サポートの contribution file が **Collaborator:** マーカーつきで存在 (pipeline は PIPELINE_LINK_COMPLETED レシート) → (reviewer 宣言ステージなら) fresh REVIEW_COMPLETED が監査台帳に存在 (per-unit なら全適用ユニット分) → 完了パス (approve / advance / finalize / complete-workflow) が受理。どちらかの証跡が欠ける間、ゲート進入と完了は拒否される。エスケープハッチは AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 (寄稿証跡のみ)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+   "source": "docs/upstream/specs/05-agents.md"
   },
   {
    "name": "reviewer-scope enforcement window",
    "description": "per-unit レビューの読み取り境界強制のライフサイクル。非強制 (レコードなし、fail-open) → コンダクタが .aidlc-reviewer-dispatch.json を書いて強制ウィンドウ開始 → フックがツールコールごとに判定 (派遣ユニット許可 / sweep 遮断 / exempt-path 完全一致のみ sibling 許可、遮断時は exit 2 + REVIEWER_SCOPE_BLOCKED 監査行) → 判定読み取り後にコンダクタがレコードを削除、または REVIEWER_DISPATCH_TTL_MS 超過で stale となり非強制へ戻る。すべての異常系 (不正 JSON、未知ツール、非レビュアー身分、例外) は fail-open。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+   "source": "docs/upstream/specs/05-agents.md"
   },
   {
    "name": "composer scope-grid lifecycle (three moments)",
    "description": "コンポーザによる EXECUTE/SKIP グリッドの提案・確定の状態機械。3 つの起動モーメント (front: ワークフロー未存在 / report: スキャンレポートが captured intent / in-flight: 実行中ワークフロー) から入り、エントロピー 5 成分の推定 → グリッド構成 → 人間の明示承認 → 書き込み (detect --json が印字する 2 パスのみ; in-flight とストック scope 一致時は書き込みスキップ)。in-flight では PENDING かつカーソルより先のステージのみ EXECUTE⇄SKIP を反転でき、walking-skeleton ゲートアンカーは不変。反転の適用は決定的な recompose 動詞経由のみで、コンポーザ自身は状態ファイルを編集しない。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+   "source": "docs/upstream/specs/05-agents.md"
   },
   {
    "name": "per-mode stage dispatch flow",
    "description": "run-stage ディレクティブ受領後のコンダクタの分岐実行フロー。mode = inline: inline_context_paths の全読了 (ブロッキング前提条件) → リード + 全サポートペルソナを採用して実行、派遣なし。mode = mob: リードペルソナのみ読了 → リードとしてドラフト → 全サポートを並列派遣 (相互盲目、最大 2 ラウンド、objection triage)。mode = subagent/pipeline: インライン文脈なし、全参加者を Task 派遣 (subagent はハブ&スポーク、pipeline は宣言順連鎖で各リンクが上流を参照)。全モード共通で、reviewer 宣言があれば最後に必ず別サブエージェントとしてレビュアーを起動する。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+   "source": "docs/upstream/specs/05-agents.md"
   },
   {
    "name": "Sensor fire transaction",
    "description": "手動 fire / フック経由の1回の発火のライフサイクル (§3.5)。事前検証 (未検証→検証済、失敗なら FIRED 行なしで exit 1) → ロック下で SENSOR_FIRED 発行 → ロック外で worker spawnSync → 真理表で分類 → FAILED なら詳細ファイルを wx+rename で書く (書込失敗は PASSED+Note へ降格) → ロック下で終端行発行 → exit 0。ロックは2短窓のみで spawn を跨がない点と、orphan-FIRED prevention が不変条件。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+   "source": "docs/upstream/specs/06-sensors.md"
   },
   {
    "name": "Verdict classification (truth table)",
    "description": "spawn 結果から終端イベントへの決定表 (§3.6)。分岐 a (timeout SIGTERM→BUDGET_OVERRIDE) が分岐 0 (spawn error→PASSED) に先行必須という順序制約付き。SENSOR_FAILED に至るのは status 0 + JSON pass:false の1経路のみで、他の異常系 (exit 127 / bad-output / 外部 SIGTERM / exit-<n> / 他シグナル) はすべて Note 付き PASSED に fail-open する。Quint での網羅性・分岐順序検証の好候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+   "source": "docs/upstream/specs/06-sensors.md"
   },
   {
    "name": "Fire-terminal pairing lifecycle",
    "description": "監査ランタイムでの FIRED 行と終端行のペアリング状態 (§4)。fired (未ペア) → paired (Fire id 一致、重複は最新 timestamp が勝つ) または incomplete (閉じたステージ窓内で即時、それ以外は監査 max timestamp 基準の決定的 60 秒カットオフ)。Date.now() を使わず再コンパイルがバイト等価という決定性不変条件を持つ。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+   "source": "docs/upstream/specs/06-sensors.md"
   },
   {
    "name": "PostToolUse hook guard chain",
    "description": "aidlc-run-sensors.ts の 11 段順序付きガードパイプライン (§3.2)。各段は skip (return 0) / 続行 に分岐し、終端は「エントリごとの glob 一致→dispatcher spawn」か「recordHookDrop 記録付き drop (timeout / spawn error / dispatcher exit <n>)」。全経路が exit 0 で終わるという G5 契約と、.aidlc-sensors/ 再帰ガードが安全性不変条件。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+   "source": "docs/upstream/specs/06-sensors.md"
   },
   {
    "name": "Sensor proposal and install (§13 learning gate)",
    "description": "learning 受理からセンサー有効化まで (§7.2c)。Check 型 learning 受理 → 単一監査ロックトランザクション内で manifest scaffold + bindSensorToStage の2書き込み → SENSOR_PROPOSED 発行 → 次のグラフコンパイルで sensors_applicable に載って有効化。再提案は (origin stage, sensor id) で重複排除、再バインドは冪等 no-op、framework 配布下への scaffold は拒否、という遷移ガードを持つ。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+   "source": "docs/upstream/specs/06-sensors.md"
   },
   {
    "name": "edge_block classification (parseBoltDag)",
    "description": "required-sections の unit-of-work-dependency.md 限定検査における units: エッジブロックの分類 (§5.1)。ok / absent (fenced yaml units: ブロックなし) / malformed (パース throw・0エントリ・重複ユニット名・自己依存・未知依存) / cyclic (依存サイクル検出) の4値で、ok 以外は所見1件追加 + 強制 pass:false。traceability の unit 交差検証にも同じ DAG が使われる小型の分類機械。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+   "source": "docs/upstream/specs/06-sensors.md"
   },
   {
    "name": "Session lifecycle event loop",
    "description": "SessionStart を起点に UserPromptSubmit → PreToolUse → tool 実行 → PostToolUse のツールループが回り、Stop が decision:block でループへ再入するか allow でターンを終える。PreCompact はホストの圧縮時、SessionEnd は終端に 1 回、SubagentStop はループ内で発火する (§4 の mermaid 図)。フック発火順序とイベント所有権 (SESSION_COMPACTED は PreCompact のみ) の整合性が不変条件。Quint でのイベント順序モデル化の第一候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+   "source": "docs/upstream/specs/07-hooks.md"
   },
   {
    "name": "Stop-hook block decision and no-progress counter",
    "description": "carve-out 0〜9 を固定順に評価 (resume wait は next プローブより前) し、どれも許可しなければエンジンをプローブして PENDING なら block。永続カウンタ {signature, count} は同一 progress signature で +1、新署名で 1 にリセット、記録なし + stop_hook_active で 2 種付け、nextCount >= cap (autonomous 8 / interactive 2) で解放、done/parked/ハンドオフ境界で resetGuard が 0 化する (§7.2–7.4)。「レコードは判定前に書く」順序と、cap による罠回避が安全性の核。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+   "source": "docs/upstream/specs/07-hooks.md"
   },
   {
    "name": "Review freeze window",
    "description": "レシートなし → 新鮮な終端レシート (READY または終端 NOT-READY) 保持 → 凍結中 (produces[] 書き込み拒否) の 3 状態。解除遷移は GATE_REJECTED / STAGE_JUMPED / WORKFLOW_STARTED、またはステージの completed/skipped 化。cap 未満の敵対的 NOT-READY は非終端で凍結しない (§5.3)。エンジンの freshReviewReceipts と鮮度判定を共有するため、フックとエンジンの状態観が乖離しないことが不変条件。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+   "source": "docs/upstream/specs/07-hooks.md"
   },
   {
    "name": "Active-directive marker (compaction invalidation & resume wait)",
    "description": "PreCompact 時、マーカーが v2・自セッション所有・project/intent/state ダイジェスト一致のときのみ context_epoch をバンプし kind を \"error\" に書き換え part/parts/continue_token をクリア。外来・不整合な圧縮は coordination-neutral として no-op (§4.3)。別の腕として、kind \"ask\" + resume.status \"waiting\" + sessionless owner + state digest 一致 + 非 autonomous のとき resume wait ラッチとして Stop を許可し、next プローブによる ask 上書きを防ぐため先読みされる (§7.4)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+   "source": "docs/upstream/specs/07-hooks.md"
   },
   {
    "name": "Reviewer dispatch record lifecycle",
    "description": "§12a step 1 でコンダクタが書き、step 3 で削除。存在 + 6h TTL 内 + 同一性一致 (agent_type または scoped_registration) の間だけ read-scope 強制が有効。期限切れは unlink + 無視 (orphaned drop)、malformed は enforcement skip、record 不在時の review-only エージェントの construction/ 接触は 10 分レートの advisory drop (§5.4)。書く者と消す者が同一 (コンダクタ) で、強制者 (フック) は観測のみという分担。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+   "source": "docs/upstream/specs/07-hooks.md"
   },
   {
    "name": "Session-intent binding",
    "description": "セッションは未スタンプ → STARTED 系でスタンプ → resume 時に別の解決可能 UUID なら REBIND OFFER 提示 + 即再スタンプ、と遷移する (§4.1)。intent 誕生時に呼び出し元セッションが既にスタンプ済みなら上書きせず handoff レシート (5 分 TTL) を発行し、Stop フック carve-out 0 が消費する (§8.1, §7.4)。SessionEnd の帰属は未知 intent スタンプや未スタンプ + アクティブ UUID でカーソルフォールバックを拒否するフェイルクローズ (§4.4)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+   "source": "docs/upstream/specs/07-hooks.md"
   },
   {
    "name": "load-steering 配送継続 (steering delivery continuation)",
    "description": "状態: バンドル解決済み → part i 配送済み (i=1..N) → 最終継続で run-stage 発行。遷移は conductor の continue <token> 呼び出しで進み、HMAC トークンによりステートレスに位置を検証する (§5.2)。エラー遷移は 4 つ (バンドル/ディレクティブハッシュ移動・part 範囲外・トークン不正/欠落・配送中のワークフロー状態変化) で、すべて『fresh next で part 1 から再始動』という単一の回復状態に収束する。読み取り/UTF-8 エラーは配送開始前にステージ未開始のままエラーディレクティブへ遷移する (§5.1)。Quint モデル化に好適 (有限状態 + 明示的な完全性条件)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+   "source": "docs/upstream/specs/08-memory-rules-learnings.md"
   },
   {
    "name": "§13 学習リトゥアル (Learnings Ritual pipeline)",
    "description": "状態: diary 蓄積 → surface (読み取り専用、(space,intent) ピン) → 構造化質問 (keep/skip + 追加ノート) → 入場矛盾チェック (clear / contradicts) → persist → 承認ゲート (§8)。contradicts 分岐ではユーザが revise / skip / escalate の 3 遷移を持ち、オーバーライド遷移は存在しない。バイパス条件 (initialization ステージ、single: true) と延期条件 (未完了のユニット反復) がガードとして入る。tool-as-actor の役割分担 (ツール/オーケストレータ LLM/ユーザ) が遷移の実行主体を分ける。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+   "source": "docs/upstream/specs/08-memory-rules-learnings.md"
   },
   {
    "name": "persist 冪等性 dedup (cid dedup outcomes)",
    "description": "選択ごとに 2 述語 (hasRow: 監査行の存在、hasLine: ファイル内 cid マーカーの存在) を評価する 4 状態機械 (§8.6): 両真→no-op、行あり線なし→行のみ書き込み (クラッシュ回復遷移)、両偽→書き込み + RULE_LEARNED 発行。hasLine あり hasRow なしのケースは仕様に明記されないが、batchRuleHashes によるバッチ内抑止が第 3 のガードとして重なる。クラッシュ回復の正しさを検証する Quint モデル候補として価値が高い。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+   "source": "docs/upstream/specs/08-memory-rules-learnings.md"
   },
   {
    "name": "DocumentKB 抽出状態 (extraction states)",
    "description": "6 状態の凍結列挙 (§10.4): extracted / no_extractable_text / extractor_unavailable / extraction_failed / unsupported_type / invalidated。sync が再試行遷移を駆動し (extractor_unavailable は detectedType による mime 再プローブ、invalidated は再抽出)、invalidated は source_revision ≠ sha256 から導出される派生状態でもある。文書行自体は onboard→indexed→(updated | rebound)→tombstoned (removed_at 非空) のライフサイクルを持ち、rebind が tombstone を解除する逆遷移を提供する (§10.5)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+   "source": "docs/upstream/specs/08-memory-rules-learnings.md"
   },
   {
    "name": "practices 承認レシート (practices affirmation receipt)",
    "description": "状態: 未承認 (Practices Affirmed Timestamp 空/プレースホルダ) → practices-promote 成功で承認済み (PRACTICES_AFFIRMED 発行 + タイムスタンプ書き込み) → GATE_REJECTED / STAGE_REVISING / STAGE_STARTED フロアイベントでレシート無効化 → 再昇格で再承認 (§7.2)。エンジンは report --result approved 時に『有効なタイムスタンプ + フロアイベントより後の PRACTICES_AFFIRMED 行』の合成条件で検証する。失敗経路は PRACTICES_OVERRIDE。doctor の staleness 行は 90 日閾値で fresh/stale/future-dated を助言的に分類する直交軸 (§7.1)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+   "source": "docs/upstream/specs/08-memory-rules-learnings.md"
   },
   {
    "name": "practices-promote トランザクション (8-step fail-closed)",
    "description": "アンサンブル再検証 → ドラフト 2 読み → ターゲット 2 読み → メモリ内構築 (team: replaceSection×5、project: appendUnderHeading×2) → project 書き込み → team 書き込み → ロック内監査 (PRACTICES_AFFIRMED + タイムスタンプ) の直列 8 段で、各段の失敗は fail-closed に PRACTICES_OVERRIDE + 非ゼロ終了へ遷移する (§7.2)。project 先行書き込みにより部分失敗時の不変条件 (team.md 無傷) が保たれる。書き込み順序の安全性を検証するモデル候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+   "source": "docs/upstream/specs/08-memory-rules-learnings.md"
   },
   {
    "name": "Bolt lifecycle",
    "description": "BOLT_STARTED を起点に BOLT_COMPLETED / BOLT_FAILED(abort は BOLT_FAILED + Reason: aborted の再利用)へ遷移する。--worktree 付き start は検証 → BOLT_STARTED → state-fork → audit-fork → fragment-fork の固定順で、各 fork 失敗は回復用 BOLT_FAILED を出して失敗状態へ落ちる。complete --merge は Merge-Held ゲート通過後に state/audit/fragment の merge 三連を実行し、abort --discard のみ discard 先・監査後の逆順。失敗エンベロープの stage × reason enum(§5.4)が遷移失敗の全分類を持つため Quint モデル化に好適。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "Swarm batch convergence",
    "description": "prepare(unit ごとに worktree create + bolt start、成功分のみ SWARM_STARTED にスタンプ)→ コンダクタのファンアウト + check ループ(advisory、exit 0 は green かつ untampered のみ)→ finalize が claimed unit を 6 段ガード連鎖(stamp → attempt 一致 → worktree → confinement → tamper → green+receipt+binding)で converged / error に判定し、未 claim は failed(unsatisfiable | budget-exhausted | cap-exhausted)。converged は直列 merge-back 後に SWARM_UNIT_CONVERGED、失敗は SWARM_UNIT_FAILED + SWARM_BATON_RETURNED、締めに SWARM_COMPLETED。マージ失敗した converged unit はどの行も得ず exit 2 でコンダクタへバトンが返る — この「行なし」中間状態が最重要の検証対象。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "Worktree lifecycle",
    "description": "absent → created(WORKTREE_CREATED、pre-audit ガード: base 存在・ディレクトリ/ブランチ非既存)→ merged(WORKTREE_MERGED)または discarded(WORKTREE_DISCARDED、冪等で already-discarded は無発行)。merge はコンフリクトで worktree を保存して exit 1 の分岐があり、merged 後は binding 種別(source-bound / bypassed / neither)ごとに異なるクリーンアップ経路を辿る。クリーンアップ失敗は [merge-succeeded:<sha>] 前置の孤児状態として残り、doctor が回収する。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "Construction Autonomy Mode",
    "description": "gated ⇄ autonomous の 2 状態。gated → autonomous の昇格は単一 withAuditLock 内で human presence guard(humanActedSinceGate)を要求し、autonomous → gated の降格は presence 不要で無条件。書き込み動詞は set-autonomy のみで、遷移ごとに AUTONOMY_MODE_SET を発行する。autonomous 状態は code-generation の swarm prepare に CodeGenerationApproval 全 unit 必須という追加ガードを誘発する。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "HOLD-MERGE (Merge-Held flag)",
    "description": "per-Bolt forked 状態ファイル上の not-held ⇄ held の 2 状態で、set / clear とも冪等。held の間は complete --merge が拒否され、halt-and-ask シーケンスの途中でマージが着地できないことを保証する。forked 状態ファイル欠如は not-held と読むが、欠如ファイルへの setMergeHeld は hard error という非対称がある。監査イベントを持たない純内部状態のため、モデル化すると可視イベントとの独立性を検証できる。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "Code Generation approval",
    "description": "pending(回答空欄/全アンダースコア)→ approved(Approve Plan 回答 + approval fingerprint 一致)へ遷移し、memory・scope・test strategy・project type の変化で contract_sha256 が不一致になると stale へ、plan/instructions の変更で fingerprint 不一致へ失効する。fingerprint の再発行は Answer を空欄へ戻してからのみ許される anti-forgery 遷移制約を持つ(§8.6–8.7)。7 チェックの固定順・最初の失敗勝ちが状態判定関数そのもの。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "Ledger fold cursor",
    "description": "transcript ファイルごとのカーソルが FoldMode(holdback / seal-main / flush-all)で駆動される。holdback は各ファイルの最後の message-id group を pending に保持し、seal-main はメイン transcript の group のみ閉じ、flush-all はエンジン境界または Stop で全 group を閉じる。pending group の所有権(stageSlug / sessionKey / workflowKey)は捕捉時点で固定され、ライフサイクルツールが状態を進めた後の fold でも捕捉時の帰属が再利用される(§9.3–9.4)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+   "source": "docs/upstream/specs/09-cli-tools.md"
   },
   {
    "name": "buildTree packaging pipeline",
    "description": "dist ツリー組み立ての逐次パイプライン: coreDirs コピー → harnessFiles コピー → onboarding 描画 → memory/active-space/memory-seed 出力 → stage graph コンパイル → harness.json → (skipRunnerGen でなければ) runner 生成 → (emit があれば) emit() → 生成スキル領域リフレッシュ → inventory 返却 (§4)。分岐は skipRunnerGen と emit の 2 つのみで、順序制約 (memory は compile 前、領域リフレッシュは emit 後) と「in-tree ツール非ゼロ終了で全体中断」が遷移規則。write/check の 2 モードは outRoot が違うだけで同一遷移をたどる。Quint で順序不変条件 (2c < compile, emit < refresh) をモデル化する価値がある。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+   "source": "docs/upstream/specs/10-distribution-harnesses.md"
   },
   {
    "name": "drift check verdict (--check)",
    "description": "mkdtemp への一時ビルド → コミット済み dist/<name>/ との全ルート byte diff → 問題ゼロなら in-sync (exit 0)、1 つ以上なら MISSING / DIFFERS / ORPHAN を最大 40 行印字して exit 1 (§6.1)。名指し check ではトップレベル orphan スイープが抑制される (full=false) という遷移バリアントを持つ (§6.2)。AIDLC_TIER_CAP が check モードで無視されるというモード依存入力もある。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+   "source": "docs/upstream/specs/10-distribution-harnesses.md"
   },
   {
    "name": "Cursor installer managed-file lifecycle",
    "description": "receipt 駆動の per-file 状態機械: 不在 → seeded (ハッシュを receipt に記録) / 既存ファイルは「前回 receipt と一致 (未改変)」→ rewrite、「runtime-owned」→ rewrite、「改変済み」→ collision、「receipt にあるが出荷されなくなった」→ 未改変なら remove・改変済みなら collision (§10.1)。グローバル遷移は preflight (symlink/escape 拒否) → 計画 → collision が 1 つでもあれば書き込み前 abort → apply → プラグインルーティング再構築。aidlc/spaces/ と active-space は seed-only の吸収状態 (決して rewrite されない)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+   "source": "docs/upstream/specs/10-distribution-harnesses.md"
   },
   {
    "name": "workspace-sync reconcile transaction",
    "description": "ロック取得 → preflight → 生成ファイルの staging → 可逆リネームによる install → 成功で commit、apply エラーで rollback (§10.4)。orphan checkout は削除状態へ直行せず、--force + preflight 通過時のみ quarantine 状態 (.aidlc-workspace-sync-recovery-* に保持) へ遷移する。トランザクション + 隔離という珍しく厳格な除去安全モデルで、Quint モデル化の好候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+   "source": "docs/upstream/specs/10-distribution-harnesses.md"
   },
   {
    "name": "default memory tree self-heal",
    "description": "デフォルト space のメソッドツリーの 2 状態: absent → (ensureWorkspaceDirs が memory-seed からコピー) → present、present → present (no-op) (§10.3)。existsSync ガードにより厳密冪等で、「default tree never churns」不変条件を担う。エンジンのみコピーしたインストールの回復経路。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+   "source": "docs/upstream/specs/10-distribution-harnesses.md"
   },
   {
    "name": "active-space repointing",
    "description": "include 面の状態は「default にピン留め (出荷形)」と「space X を指す」の間を repointHarnessIncludes が遷移させる (§10.2)。default の間は呼び出しがバイト同一 no-op という自己ループで、packager の transform (cursor ペルソナのピン留め §5) がこの初期状態の byte 再現性を保証する。orchestration/workspace の fork・resume モデルと合流させる候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+   "source": "docs/upstream/specs/10-distribution-harnesses.md"
   },
   {
    "name": "ComposeRun (compose 実行ライフサイクル)",
    "description": "フック発火 → ガード連鎖 (AI-DLC プロジェクトでなければ無音終了 / プラグインルート不在・旧エンジン・ロック不取得は drop して終了) → ロック取得 → 書き込みトランザクション開始 → no-clobber コピー + contribution マージ → 再コンパイル判定 (changed ∨ graphMissingPluginStage ∨ retryPending)。compile 失敗で「全ロールバック + retry marker 書き込み」、成功で「commit + SKILL.md 生成領域更新 + ランナー再生成 + retry marker 除去」。どの経路でも最後にロック解放と drops フラッシュに合流し、呼び出し元へは決して throw しない (§5)。Quint モデル化の第一候補: ロック・トランザクション・自己修復 (retry marker / graphMissingPluginStage) の交差を持つ。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+   "source": "docs/upstream/specs/11-plugin-system.md"
   },
   {
    "name": "PluginActivation (プラグインの設置×選択の直交状態)",
    "description": "プラグインは {未設置, 設置済み} × {有効, 無効} の直交 2 軸を動く。compose が「未設置→設置済み」(ファイルコピー; 無効でも copy は進むが contribution マージは進まない §6.4)、select-plugins が「有効↔無効」を遷移させる。無効化遷移では strip (sidecar 基準で merged contribution を除去) → 選択書き込み → 再生成チェーンが走り、失敗時はスナップショット復元で遷移前状態へ戻る。stranded workflow guard は無効化遷移そのものを拒否しうる。再有効化は次回セッション開始の compose 再マージで contribution が復元される (§4.3, §6.4, §6.5)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+   "source": "docs/upstream/specs/11-plugin-system.md"
   },
   {
    "name": "FragmentSplice (fragment ブロックの冪等スプライス)",
    "description": "対象ステージ内の (plugin, anchor, order) キーごとに 3 状態遷移: 同ハッシュのマーカーが既在 → no-op (冪等)、異ハッシュで既在 → ハッシュ限定の閉マーカーまでの旧ブロック丸ごと置換 (アップグレード)、不在 → 任意プラグインの同アンカー peer ブロック間の (order, plugin) 順位置へ挿入。閉マーカー欠落は「そのまま放置 + drop」の縮退状態 (§6.3)。strip 側はマーカーマッチのみで除去し、非対マーカーは doctor 領域として残る (§6.5)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+   "source": "docs/upstream/specs/11-plugin-system.md"
   },
   {
    "name": "DropsFile (フック健全性シグナルのライフサイクル)",
    "description": "プラグインごとの plugin-compose-<KEY>.drops ファイルは 2 状態のライブシグナル: drop を出した実行が「上書き作成」、drop ゼロのクリーン実行が「削除」(自己クリア)。--doctor は [degraded] 行を含む状態を failing、advisory のみを passing と読む。履歴でなく現在の健全性を表す点で、監査ログ (追記型) と対照的な状態機械 (§5.4)。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+   "source": "docs/upstream/specs/11-plugin-system.md"
   },
   {
    "name": "Runner tier pipeline",
    "description": "ランナー main() の逐次ゲート機械 (§3.3 の mermaid 図)。状態は smoke → unit → (Claude preflight) → integration → e2e(非TUI) → TUI preflight → TUI群 → summary → exit。遷移規則: smoke に 1 ファイルでも FAIL があれば即座に全体を中断する唯一の fail-fast、Claude preflight 失敗は claudeGateOpen=false への遷移 (中断ではなくライブ系のみ SKIP)、TUI preflight 失敗は折り込み TUI 群のスキップ。終端で exit コード = 失敗ファイル数。Quint モデル化の第一候補。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+   "source": "docs/upstream/specs/12-testing-ci.md"
   },
   {
    "name": "claudeGateOpen live gating",
    "description": "ライブ実行可否を表す 2 状態フラグ (open/closed)。初期 open で、(1) Claude preflight (t19) の失敗、(2) --no-llm / AIDLC_NO_LLM=1 のいずれかで closed に遷移し、以後は復帰しない。closed のとき本体導出された Claude-required set (52 ファイル) が名前指定で SKIP される。9 個の LIVE_MODEL_GATES 環境変数 (--no-llm で一斉に \"0\") との合成でファイルごとの実行/SKIP が決まる。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+   "source": "docs/upstream/specs/12-testing-ci.md"
   },
   {
    "name": "Per-file execution lifecycle",
    "description": "各テストファイルのライフサイクル: START → (spawn: bun test + JUnit) → .meta 正規化 → PASS | FAIL → DONE、または claudeGateOpen closed 時の SKIP。STATUS 判定は failed>0 ∨ bunRc≠0 で FAIL、outfile 不在 + rc≠0 のクラッシュ時は failed=1 を合成 (空スイートとの XML 同一性の曖昧性を rc チャネルで解消)。集計は STATUS=FAIL のファイル単位で failedFiles を加算し、exit 値に直結する。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+   "source": "docs/upstream/specs/12-testing-ci.md"
   },
   {
    "name": "Coverage unit status and ratchet",
    "description": "各ユニットの状態分類: covered / UNDER-MECHANISM / DEFERRED-tui / UNCOVERED。判定は guarantee principle (主張の最大 mechanism ランク >= unit の minMechanism ランク)。加えてクラス単位のラチェットが「covered 数はベースラインを下回れない」という単調非減少不変条件を課し、freshness diff が committed registry と再生成結果のバイト同一を要求する。単調性 + 同一性の 2 不変条件を持つ小さな機械として Quint モデル化に好適。",
-   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+   "source": "docs/upstream/specs/12-testing-ci.md"
   }
  ]
 }

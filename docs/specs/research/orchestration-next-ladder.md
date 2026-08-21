@@ -226,5 +226,5 @@ skeleton-gate アンカーの scope 別解決 (01-workflow-model.md §6.4):
 ---
 
 ## 出典ファイル
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md (§2.1, §3.1, §3.2, §4.1-4.5, §5, §5.1, §5.2, §6, §10, §11, Measurement notes)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md (§5.5 scope 選択, §6.4 skeleton gate)
+- docs/upstream/specs/02-orchestration-engine.md (§2.1, §3.1, §3.2, §4.1-4.5, §5, §5.1, §5.2, §6, §10, §11, Measurement notes)
+- docs/upstream/specs/01-workflow-model.md (§5.5 scope 選択, §6.4 skeleton gate)

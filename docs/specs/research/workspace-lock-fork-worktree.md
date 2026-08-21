@@ -97,7 +97,7 @@
 | 1 | pre-emit ガード (fail clean) | `main audit not found at <p>; start a workflow first …` / `worktree directory not found at <p>; run aidlc-worktree create first` | L948-950 |
 | 2 | per-intent ロック下で main をスナップショット | `boundary = bytes.length`、`sourceHash = sha256(bytes)` — **バイト長 + SHA-256 のピン留め** | L951-952 |
 | 3 | `AUDIT_FORKED` emit | フィールド: `Bolt slug`、`Source Audit Hash`、`Fork Boundary`。`expectedIdentity` prefix チェックでピン — スナップショットと emit の間に並行 append が滑り込めない | L953-955 |
-| 4 | clone-id トークンを worktree へコピー → shard を worktree に**ホールファイル tmp+rename** で書込 (`writeBufferAtomic(wtAuditPath, mainAfterFork)`) — aidlc-audit.ts 内で append でない唯一の台帳バイト書込 | | L956-957; `aidlc-audit.ts:1232-1239`, `:1252` |
+| 4 | clone-id トークンを worktree へコピー → shard を worktree に**ホールファイル tmp+rename** で書込 (`writeBufferAtomic(wtAuditPath, mainAfterFork)`) — aidlc-audit.ts 内で append でない唯一の台帳バイト書込 | L956-957; `aidlc-audit.ts:1232-1239`, `:1252` |
 
 再 fork の許容 (03 §6.9 L959-966):
 
@@ -280,7 +280,7 @@ delta = `wtContent.slice(fork.end)` のみ append (03 §6.9 L968-984; `aidlc-aud
 | --- | --- | --- |
 | 場所 | `aidlc/.aidlc-sessions/` — per-conversation session→intent map (gitignored)。スタンプは `aidlc/.aidlc-sessions/<id>` (id は Claude Code session_id) | 03 §3.1 L134, §3.4 L224/L244 (*"per-user runtime state keyed by Claude Code session_id, never shared truth"*); 07 §4.1 L118 |
 | スタンプ書込 | SessionStart フックが STARTED 系イベント時に live intent UUID をスタンプ。`resume` で**別の・まだ解決可能な** UUID がスタンプ済みなら `INTENT REBIND OFFER: This conversation was working …` で始まるオファーを合成 (Codex では `$aidlc`、他では `/aidlc` の正確な切替コマンドを名指し)。**オファー提示と同時に live intent へ即再スタンプ** — 辞退されても usage が旧 workflow に付かない | 07 §4.1 L118; `aidlc-session-start.ts:181-192` |
-| intent birth 時の束縛 | PostToolUse (`aidlc-rebuild-stage-graph.ts`) の `bindCreatedIntentToInvokingSession` が tool response を regex `/(?:Intent created:|Migrated flat workspace into intent:)\s*([A-Za-z0-9._-]+)\s+\(space:\s*([A-Za-z0-9._-]+)\)/` で照合し、新 intent の UUID を呼び出し session_id へスタンプ | 07 §7 L323; `:74-76` |
+| intent birth 時の束縛 | PostToolUse (`aidlc-rebuild-stage-graph.ts`) の `bindCreatedIntentToInvokingSession` が tool response を regex `/(?:Intent created:\|Migrated flat workspace into intent:)\s*([A-Za-z0-9._-]+)\s+\(space:\s*([A-Za-z0-9._-]+)\)/` で照合し、新 intent の UUID を呼び出し session_id へスタンプ | 07 §7 L323; `:74-76` |
 
 ### 6.2 handoff receipt の TTL
 
@@ -297,10 +297,10 @@ Session カテゴリは 5 種で **hook-owned** と分類: `SESSION_STARTED` `SE
 | イベント | 所有フック | 契約 | 典拠 |
 | --- | --- | --- | --- |
 | `SESSION_STARTED` / `SESSION_RESUMED` | `aidlc-session-start.ts` (SessionStart) | source マッピング (逐語): `startup → SESSION_STARTED`, `clear → SESSION_STARTED`, `resume → SESSION_RESUMED`, `malformed → SESSION_STARTED`, `compact`/`unknown` → **emit なし** | 07 §4.1 L117; `:134-139` |
-| `SESSION_COMPACTED` | `aidlc-validate-state.ts` (PreCompact) が所有 — *"firing it twice would pollute the audit trail"*。フィールド `Current Stage`・`State Validity` (`valid`/`invalid`)、audit ファイル存在時のみ | 07 §4.3 L141, §4.1 L117; `aidlc-session-start.ts:17-18` |
+| `SESSION_COMPACTED` | `aidlc-validate-state.ts` (PreCompact) | 所有理由 — *"firing it twice would pollute the audit trail"*。フィールド `Current Stage`・`State Validity` (`valid`/`invalid`)、audit ファイル存在時のみ | 07 §4.3 L141, §4.1 L117; `aidlc-session-start.ts:17-18` |
 | `SESSION_ENDED` | `aidlc-session-end.ts` (SessionEnd) | `Reason` フィールド付き (stdin に無ければ `unknown`)。帰属は fail-closed: 未知 intent へのスタンプは drop `session <id> is stamped to unknown intent <uuid>; refusing active-cursor fallback`; active UUID を持つ workspace での未スタンプ session は shared-cursor fallback 拒否。*"ending a session does NOT complete the workflow. This event is observability only"* | 07 §4.4 L143-147 |
 | `HUMAN_TURN` | prompt-submit フック (`aidlc-record-human-turn.ts`; Kiro 系はアダプタが `markHumanTurn` seam へインライン、Copilot は audit 半分のみインライン) | `CLI_PROTECTED_EVENT_TYPES` に属し、audit CLI 直接 emit は `AIDLC_ALLOW_DIRECT_AUDIT_EVENTS=1` なしでは拒否 | 03 §6.6 L815-819; 07 L387 |
-| (関連) authority 拒否文言 | `Direct emission of <E> is blocked: it is an authority-bearing receipt owned by its emitting tool or hook (gate resolutions and approvals come from aidlc-orchestrate.ts report, interview answers and reviews from aidlc-log.ts, human presence from the prompt-submit hook). The audit CLI appends diagnostic events only.` / 予約セット (8 種、構成員は 03 では非列挙): `<E> is reserved for its owning hook/tool and cannot be appended through the public audit CLI.` | 03 §6.6 L821, L825 |
+| (関連) authority 拒否文言 | — | `Direct emission of <E> is blocked: it is an authority-bearing receipt owned by its emitting tool or hook (gate resolutions and approvals come from aidlc-orchestrate.ts report, interview answers and reviews from aidlc-log.ts, human presence from the prompt-submit hook). The audit CLI appends diagnostic events only.` / 予約セット (8 種、構成員は 03 では非列挙): `<E> is reserved for its owning hook/tool and cannot be appended through the public audit CLI.` | 03 §6.6 L821, L825 |
 
 ### 6.4 audit_lock.qnt に関わる補足の順序事実 (03 §6.4)
 
@@ -311,8 +311,8 @@ Session カテゴリは 5 種で **hook-owned** と分類: `SESSION_STARTED` `SE
 ---
 
 **関連ファイル (絶対パス)**:
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md (§2.3, §3.3-3.4, §4.5, §5.3, §5.7, §6.4-6.11, §7.5)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md (§5.2-5.5, §6.5, §7, §11 L842, §12 L904, §14 L1046)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md (§5, §5.1, §5.3)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md (§2, §4.1-4.4, §7 L291/L323, L425)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/specs/01-domain-model.md (L63, L145-147, L168-170: 裁定 B4/B5/B6)
+- docs/upstream/specs/03-state-audit-runtime.md (§2.3, §3.3-3.4, §4.5, §5.3, §5.7, §6.4-6.11, §7.5)
+- docs/upstream/specs/09-cli-tools.md (§5.2-5.5, §6.5, §7, §11 L842, §12 L904, §14 L1046)
+- docs/upstream/specs/11-plugin-system.md (§5, §5.1, §5.3)
+- docs/upstream/specs/07-hooks.md (§2, §4.1-4.4, §7 L291/L323, L425)
+- docs/specs/01-domain-model.md (L63, L145-147, L168-170: 裁定 B4/B5/B6)

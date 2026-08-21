@@ -4,7 +4,7 @@
 
 # タスク 2: 監査台帳の契約の完全列挙
 
-対象ファイル: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md` (主典拠)、`/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md` (フック発行イベント)
+対象ファイル: `docs/upstream/specs/03-state-audit-runtime.md` (主典拠)、`docs/upstream/specs/07-hooks.md` (フック発行イベント)
 
 ---
 

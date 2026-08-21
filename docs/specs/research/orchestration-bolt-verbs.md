@@ -239,7 +239,7 @@ Build-and-Test loop-back 側の halt-and-ask 2 変種 (04§6.3 L399, constructio
 ---
 
 主な出典ファイル (絶対パス):
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md (§5: L208-304, §2.4: L67, §6.5-6.9: L376-441, §7.6: L549-551, §15: L1046-1047, Measurement notes: L1080, L1094)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md (§6: L371-427, §7: L431-467)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md (L505, L522, L631, L789-792, L1145-1146)
-- /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md (L292, L429)
+- docs/upstream/specs/09-cli-tools.md (§5: L208-304, §2.4: L67, §6.5-6.9: L376-441, §7.6: L549-551, §15: L1046-1047, Measurement notes: L1080, L1094)
+- docs/upstream/specs/04-stage-protocol.md (§6: L371-427, §7: L431-467)
+- docs/upstream/specs/03-state-audit-runtime.md (L505, L522, L631, L789-792, L1145-1146)
+- docs/upstream/specs/02-orchestration-engine.md (L292, L429)

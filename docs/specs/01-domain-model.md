@@ -98,7 +98,7 @@ flowchart TB
 
 **集約候補**: `Intent`（集約ルート。birth は単一チョークポイント）、`Space`、`StateFile`、`AuditShard`、`WorkspaceLock`、`Worktree`。
 
-**Domain Primitive 候補**: `SpaceName`（`/^[a-z][a-z0-9-]*$/` — E2）、`IntentId`（UUIDv7、文字列ソート＝作成順）、`CloneId`（12 hex、machine-local が本質）、`CheckboxState`（6 状態 — E1）、`StateVersion`（ok / unparseable / past / future の分類器つき）、`EventType`（86 語の閉集合 — E1。型は監査イベントスキーマの Published Language クレートに置き、各イベントファミリの意味論は所有コンテキストが定義する。workspace が所有するのは閉集合の強制と台帳機構）、`AuthorityClass`（CLI_RESERVED / CLI_PROTECTED / MERGE_PROTECTED）。
+**Domain Primitive 候補**: `SpaceName`（`/^[a-z][a-z0-9-]*$/` — E2）、`IntentId`（UUIDv7。文字列ソートは**ミリ秒粒度**で作成順 — 48-bit Unix-ms プレフィクスによる。同一ミリ秒内は random tail のため非保証（upstream 同等の挙動を D6 で維持し、順序契約はこの粒度に留める））、`CloneId`（12 hex、machine-local が本質）、`CheckboxState`（6 状態 — E1）、`StateVersion`（ok / unparseable / past / future の分類器つき）、`EventType`（86 語の閉集合 — E1。型は監査イベントスキーマの Published Language クレートに置き、各イベントファミリの意味論は所有コンテキストが定義する。workspace が所有するのは閉集合の強制と台帳機構）、`AuthorityClass`（CLI_RESERVED / CLI_PROTECTED / MERGE_PROTECTED）。
 
 **代表不変条件**: 「監査 emit が state 書き込みに先行し、emit 失敗時は state を書かない」（E3+E4 — audit-first はロックモデルの中心不変条件）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）、「生きている閾値未満のロック保持者からは決して奪わない」（E4 — クラッシュをアクションに含めて検査。方針書 R6）。
 
@@ -136,7 +136,7 @@ flowchart TB
 
 **Domain Primitive 候補**: `HarnessName`（7 値 + 発見ベース）、`HarnessDir`（衝突台帳: 「harness」の多義解消）、`RulesRename`、`HarnessToken`（`{{HARNESS_DIR}}`）。
 
-**代表不変条件**: 「dist = source の純関数（バイトパリティ）」（E3 + 正準シリアライザ A2 が前提）、「T5 以外のテキスト変形禁止」（E3）、「memory 出力は compile より前、emit は領域リフレッシュより前」（E4 — パイプライン順序不変条件）。
+**代表不変条件**: 「dist = source の純関数（バイトパリティ）」（E3 + 正準シリアライザ A2 が前提）、「許可されたテキスト変形は T5 とコマンド綴り変換（ADR 0002 決定 7 の第 2 号）の**閉集合のみ**」（E3）、「memory 出力は compile より前、emit は領域リフレッシュより前」（E4 — パイプライン順序不変条件）。
 
 **状態機械**: buildTree pipeline、drift check verdict、installer managed-file lifecycle、workspace-sync reconcile、memory tree self-heal、active-space repointing。
 
@@ -249,7 +249,7 @@ crate 構成の確定は実装開始時（A8 以降）に行うが、本書の�
 
 ## 8. 次のステップ
 
-本書の裁定を前提に、コンテキスト別仕様（10 番台）を「domain → use case → adapter → infra、契約節で upstream 参照、全不変条件に E1〜E5」の型で書き進める。着手順はフェーズ計画（方針書 §5.2）に従い、orchestration と workspace を最初に置く。その際 A2（正準 JSON）・A3（文言カタログ）・A9（Quint 運用）の ADR を先行させる。
+本書の裁定を前提に、コンテキスト別仕様（10 番台）を「domain → use case → adapter → infra、契約節で upstream 参照、全不変条件に E1〜E5」の型で書き進める。着手順はフェーズ計画（方針書 §5.2）に従い、orchestration と workspace を最初に置く。前提となる A2（正準 JSON）・A3（文言カタログ）・A9（Quint 運用）・A10（可観測性）の ADR は 0001〜0004 として確定済み。
 
 ---
 
