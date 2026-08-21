@@ -1,0 +1,71 @@
+//! `Verdict` — `report --result` の受理 10 語 (02 §7.1)。`approved` / `completed` /
+//! `complete` / `done` は**相互交換可能な同義語** (コミットするサブコマンドは呼出側でなく
+//! エンジンが選ぶ)。`resume` / `resumed` も同義。未知語は Err (逐語拒否は Presenter 側)。
+
+/// 正規化済み verdict (パースの結果としてのみ得られる)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Verdict {
+    /// approved / completed / complete / done の正規化先。
+    Forward,
+    AwaitingApproval,
+    Rejected,
+    Revised,
+    /// resume / resumed の正規化先。
+    Resume,
+    Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownVerdict(pub String);
+
+/// 受理語の正準列挙 (エラーメッセージ描画用 — 順序も upstream の提示順)。
+pub const ACCEPTED_RESULTS: &[&str] = &[
+    "approved",
+    "completed",
+    "complete",
+    "done",
+    "awaiting-approval",
+    "rejected",
+    "revised",
+    "resume",
+    "resumed",
+    "skipped",
+];
+
+impl Verdict {
+    /// # Errors
+    ///
+    /// 受理 10 語以外は `UnknownVerdict` で拒否する (逐語の拒否文言は Presenter 側)。
+    pub fn parse(s: &str) -> Result<Verdict, UnknownVerdict> {
+        Ok(match s {
+            "approved" | "completed" | "complete" | "done" => Verdict::Forward,
+            "awaiting-approval" => Verdict::AwaitingApproval,
+            "rejected" => Verdict::Rejected,
+            "revised" => Verdict::Revised,
+            "resume" | "resumed" => Verdict::Resume,
+            "skipped" => Verdict::Skipped,
+            other => return Err(UnknownVerdict(other.to_string())),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_four_forward_synonyms_normalize_to_one_verdict() {
+        for s in ["approved", "completed", "complete", "done"] {
+            assert_eq!(Verdict::parse(s), Ok(Verdict::Forward));
+        }
+    }
+
+    #[test]
+    fn all_ten_accepted_words_parse_and_unknown_is_rejected() {
+        assert_eq!(ACCEPTED_RESULTS.len(), 10);
+        for s in ACCEPTED_RESULTS {
+            assert!(Verdict::parse(s).is_ok());
+        }
+        assert_eq!(Verdict::parse("ok"), Err(UnknownVerdict("ok".into())));
+    }
+}

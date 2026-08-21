@@ -1,0 +1,3 @@
+# テストコードでは unwrap / expect を許可 (プロダクトコードでは workspace lint で deny)
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 core-interface-adapter = { workspace = true }
 infra-io = { workspace = true }

@@ -21,13 +21,38 @@ pub mod state {
     pub const FIELD_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
 
     /// `setFieldStrict` の拒否文言 — 「無言 no-op は検出不能なドリフト」の強制。
+    #[must_use]
     pub fn field_not_found(field: &str) -> String {
-        format!("Field not found in state file: \"{field}\". Cannot update — refusing to silently no-op.")
+        format!(
+            "Field not found in state file: \"{field}\". Cannot update — refusing to silently no-op."
+        )
+    }
+}
+
+/// bolt / autonomy 関連の逐語文言。
+pub mod bolt {
+    use super::GoldenStatus;
+
+    /// 出典: `aidlc-bolt.ts:808` (upstream 09 §5.6)。
+    pub const INVALID_MODE_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+
+    /// `set-autonomy --mode` の不正値拒否 (CLI 引数境界は 2 値厳密パース — 10 §2.2)。
+    #[must_use]
+    pub fn invalid_mode(mode: &str) -> String {
+        format!("Invalid --mode: {mode}. Must be 'autonomous' or 'gated'.")
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn invalid_mode_is_verbatim() {
+        assert_eq!(
+            super::bolt::invalid_mode("turbo"),
+            "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
+        );
+    }
+
     #[test]
     fn field_not_found_is_verbatim() {
         assert_eq!(

@@ -9,11 +9,13 @@ pub struct ShardName(String);
 
 impl ShardName {
     /// ホスト名正規化を含む唯一の構成関数 (E1 — 構成関数以外でこの型は作れない)。
+    #[must_use]
     pub fn compose(raw_host: &str, clone_id: &CloneId) -> ShardName {
         let host = normalize_host(raw_host);
         ShardName(format!("{host}-{}.md", clone_id.as_str()))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -49,7 +51,11 @@ fn normalize_host(raw: &str) -> String {
     while out.ends_with('-') {
         out.pop();
     }
-    if out.is_empty() { "host".to_string() } else { out }
+    if out.is_empty() {
+        "host".to_string()
+    } else {
+        out
+    }
 }
 
 #[cfg(test)]
@@ -62,8 +68,14 @@ mod tests {
 
     #[test]
     fn lowercases_and_squashes_disallowed_runs_into_single_dashes() {
-        assert_eq!(ShardName::compose("My Mac.local", &cid()).as_str(), "my-mac-local-abc123.md");
-        assert_eq!(ShardName::compose("dev__box!!01", &cid()).as_str(), "dev-box-01-abc123.md");
+        assert_eq!(
+            ShardName::compose("My Mac.local", &cid()).as_str(),
+            "my-mac-local-abc123.md"
+        );
+        assert_eq!(
+            ShardName::compose("dev__box!!01", &cid()).as_str(),
+            "dev-box-01-abc123.md"
+        );
     }
 
     #[test]

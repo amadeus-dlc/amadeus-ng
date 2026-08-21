@@ -18,10 +18,14 @@ pub enum SpaceNameError {
 
 impl SpaceName {
     /// default space (ディスクに何もなくても常に有効 — upstream 特例)。
+    #[must_use]
     pub fn default_space() -> SpaceName {
         SpaceName("default".to_string())
     }
 
+    /// # Errors
+    ///
+    /// 空・先頭非 `[a-z]`・`[a-z0-9-]` 以外の文字を拒否する。
     pub fn parse(s: &str) -> Result<SpaceName, SpaceNameError> {
         let mut chars = s.chars();
         match chars.next() {
@@ -37,6 +41,7 @@ impl SpaceName {
         Ok(SpaceName(s.to_string()))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }

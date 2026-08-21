@@ -16,7 +16,8 @@ pub enum CheckboxState {
 }
 
 impl CheckboxState {
-    pub fn marker(self) -> char {
+    #[must_use]
+    pub const fn marker(self) -> char {
         match self {
             CheckboxState::Pending => ' ',
             CheckboxState::InProgress => '-',
@@ -27,7 +28,8 @@ impl CheckboxState {
         }
     }
 
-    pub fn from_marker(c: char) -> Option<CheckboxState> {
+    #[must_use]
+    pub const fn from_marker(c: char) -> Option<CheckboxState> {
         Some(match c {
             ' ' => CheckboxState::Pending,
             '-' => CheckboxState::InProgress,
@@ -49,6 +51,7 @@ pub struct CheckboxEntry {
 }
 
 /// Stage Progress 行のパース。文法に一致しない行は黙って無視する (upstream 同等の寛容パース)。
+#[must_use]
 pub fn parse_checkboxes(content: &str) -> Vec<CheckboxEntry> {
     let mut out = Vec::new();
     for line in content.lines() {
@@ -88,6 +91,9 @@ pub enum CheckboxWriteError {
 }
 
 /// marker のみを書き換える (rest と suffix には触れない — 互いに素なフィールド編集)。
+/// # Errors
+///
+/// 対象 slug の行が存在しなければ `MissingStage`。
 pub fn set_checkbox(
     content: &str,
     slug: &str,
@@ -104,7 +110,11 @@ pub fn set_checkbox(
                 let mut rebuilt = String::with_capacity(line.len());
                 rebuilt.push_str(&line[..prefix_len]);
                 rebuilt.push(state.marker());
-                let after_marker = line[prefix_len..].chars().next().map(char::len_utf8).unwrap_or(1);
+                let after_marker = line[prefix_len..]
+                    .chars()
+                    .next()
+                    .map(char::len_utf8)
+                    .unwrap_or(1);
                 rebuilt.push_str(&line[prefix_len + after_marker..]);
                 out.push(rebuilt);
             }
@@ -122,6 +132,7 @@ pub fn set_checkbox(
 }
 
 /// `Completed` フィールド同期のための集計 (upstream `countCheckboxes`)。
+#[must_use]
 pub fn count_completed(content: &str) -> usize {
     parse_checkboxes(content)
         .iter()
@@ -162,7 +173,8 @@ not a checkbox line
 
     #[test]
     fn set_checkbox_edits_only_the_marker_and_preserves_the_rest_verbatim() {
-        let updated = set_checkbox(SAMPLE, "requirements-analysis", CheckboxState::Completed).unwrap();
+        let updated =
+            set_checkbox(SAMPLE, "requirements-analysis", CheckboxState::Completed).unwrap();
         assert!(updated.contains("- [x] requirements-analysis — Requirements Analysis — EXECUTE"));
         // 他の行は不変
         assert!(updated.contains("- [ ] domain-modeling — Domain Modeling — SKIP"));

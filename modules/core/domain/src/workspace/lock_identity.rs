@@ -14,7 +14,12 @@ pub struct LockIdentity(String);
 
 impl LockIdentity {
     /// intent スコープのロック識別子 (3 成分)。
-    pub fn for_intent(realpath_project_dir: &str, space: &SpaceName, intent_dir_name: &str) -> LockIdentity {
+    #[must_use]
+    pub fn for_intent(
+        realpath_project_dir: &str,
+        space: &SpaceName,
+        intent_dir_name: &str,
+    ) -> LockIdentity {
         LockIdentity(format!(
             "{realpath_project_dir}\u{0}{}\u{0}{intent_dir_name}",
             space.as_str()
@@ -23,11 +28,15 @@ impl LockIdentity {
 
     /// workspace センチネルロック (2 成分 — space 成分は落ちる)。
     /// `intents.json` の全変更はこのバケットを取る。
+    #[must_use]
     pub fn for_workspace(realpath_project_dir: &str) -> LockIdentity {
-        LockIdentity(format!("{realpath_project_dir}\u{0}{WORKSPACE_LOCK_SENTINEL}"))
+        LockIdentity(format!(
+            "{realpath_project_dir}\u{0}{WORKSPACE_LOCK_SENTINEL}"
+        ))
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }
 }

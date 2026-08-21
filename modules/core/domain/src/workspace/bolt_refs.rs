@@ -22,6 +22,9 @@ pub enum BoltRefsError {
 
 impl BoltRefs {
     /// 受理形: `""` / `[empty list]` / `[a, b]` (upstream `parseRefsList`)。
+    /// # Errors
+    ///
+    /// ブラケット不整合・空要素は `Malformed`。
     pub fn parse(s: &str) -> Result<BoltRefs, BoltRefsError> {
         let t = s.trim();
         if t.is_empty() || t == EMPTY_LIST_LITERAL {
@@ -52,6 +55,9 @@ impl BoltRefs {
         }
     }
 
+    /// # Errors
+    ///
+    /// 重複 slug は `DuplicateSlug` (無言 no-op しない)。
     pub fn append_slug(&mut self, slug: &str) -> Result<(), BoltRefsError> {
         if !self.0.insert(slug.to_string()) {
             return Err(BoltRefsError::DuplicateSlug(slug.to_string()));
@@ -59,6 +65,9 @@ impl BoltRefs {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 不在 slug は `MissingSlug` (無言 no-op しない)。
     pub fn remove_slug(&mut self, slug: &str) -> Result<(), BoltRefsError> {
         if !self.0.remove(slug) {
             return Err(BoltRefsError::MissingSlug(slug.to_string()));
@@ -66,14 +75,17 @@ impl BoltRefs {
         Ok(())
     }
 
+    #[must_use]
     pub fn contains(&self, slug: &str) -> bool {
         self.0.contains(slug)
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -93,7 +105,10 @@ mod tests {
     #[test]
     fn empty_forms_parse_and_emit_the_literal() {
         assert_eq!(BoltRefs::parse("").unwrap().emit(), "[empty list]");
-        assert_eq!(BoltRefs::parse("[empty list]").unwrap().emit(), "[empty list]");
+        assert_eq!(
+            BoltRefs::parse("[empty list]").unwrap().emit(),
+            "[empty list]"
+        );
     }
 
     #[test]
@@ -105,8 +120,14 @@ mod tests {
     #[test]
     fn append_and_remove_refuse_to_silently_no_op() {
         let mut refs = BoltRefs::parse("[a]").unwrap();
-        assert_eq!(refs.append_slug("a"), Err(BoltRefsError::DuplicateSlug("a".into())));
-        assert_eq!(refs.remove_slug("b"), Err(BoltRefsError::MissingSlug("b".into())));
+        assert_eq!(
+            refs.append_slug("a"),
+            Err(BoltRefsError::DuplicateSlug("a".into()))
+        );
+        assert_eq!(
+            refs.remove_slug("b"),
+            Err(BoltRefsError::MissingSlug("b".into()))
+        );
         refs.append_slug("b").unwrap();
         refs.remove_slug("a").unwrap();
         assert_eq!(refs.emit(), "[b]");
