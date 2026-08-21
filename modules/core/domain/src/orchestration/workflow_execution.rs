@@ -207,6 +207,9 @@ impl WorkflowExecution {
         }
         let s = self.cursor;
         let cb = self.checkbox[s];
+        // I7 ゲート前提 — forward が受理する checkbox 集合は本集約が所有する遷移の前提であって、
+        // CheckboxState の一般分類 (in-flight / finished / active) ではない。
+        // amadeus-lint: allow(checkbox-vocabulary) — 上記により述語化せず前提集合を明示する
         if !matches!(
             cb,
             CheckboxState::InProgress | CheckboxState::AwaitingApproval
@@ -267,6 +270,9 @@ impl WorkflowExecution {
             return Err(CommandError::InvalidTarget(s));
         }
         let cb = self.checkbox[s];
+        // I7 ゲート前提 — reject が受理する checkbox 集合は本集約が所有する遷移の前提であって、
+        // CheckboxState の一般分類 (in-flight / finished / active) ではない。
+        // amadeus-lint: allow(checkbox-vocabulary) — 上記により述語化せず前提集合を明示する
         if !matches!(
             cb,
             CheckboxState::InProgress | CheckboxState::AwaitingApproval
@@ -309,6 +315,9 @@ impl WorkflowExecution {
         }
         let s = self.cursor;
         let cb = self.checkbox[s];
+        // I13 skipped 受理前提 — 本集約が所有する遷移の前提集合であって、
+        // CheckboxState の一般分類 (in-flight / finished / active) ではない。
+        // amadeus-lint: allow(checkbox-vocabulary) — 上記により述語化せず前提集合を明示する
         if !matches!(cb, CheckboxState::InProgress | CheckboxState::Revising) {
             return Err(CommandError::CheckboxPrecondition {
                 stage: s,
