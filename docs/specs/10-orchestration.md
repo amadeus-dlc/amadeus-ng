@@ -77,7 +77,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 | `StateFileReader` / `StateFileWriter` | 状態ファイルの読取／アトミック書込。**`Next` ユースケースには Writer を注入しない**（read-only 不変条件の型による強制） | workspace コンテキストの公開サービスへ委譲 |
 | `AuditLedgerAppender` | audit-first の追記（emit 失敗で状態書込を中止） | 同上 |
 | `AuditLedgerReader` | `humanActedSinceGate` 等の述語用の射影読取 | 同上 |
-| `StageGraphReader` | `stage-graph.json` / `scope-grid.json`（Published Language）の読取 | canon-json コーデックを内部に持つ Gateway |
+| `StageGraphReader` | `stage-graph.json` / `scope-grid.json`（Published Language）の読取。3 入力の形状・読込失敗態度・述語 5 種の規範は [`12-workflow-definition.md`](12-workflow-definition.md)（workflow-definition スライス 1）が所有 | canon-json コーデックを内部に持つ Gateway |
 | `WorkspaceLock` | `withAuditLock` 相当（再入・reap は workspace 所有） | workspace の供給サービス |
 | `MarkerStore` | active-directive marker / turn マーカー / steering MAC キー（`.aidlc-steering-token-key` — I8 の例外 2 つの書込面）のマシンローカル書き込み。原則 advisory — 失敗は throw しない。**例外**: Copilot-commit アームのみ発行失敗が work directive の発行自体を拒否する fail-closed（Copilot ハーネスは D5 の初期スコープ外だが、ポート契約として記録） | Gateway |
 

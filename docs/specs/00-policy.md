@@ -94,7 +94,7 @@ D3・D4 は Rust と相性がよい。newtype と enum で Domain Primitive を�
 | --- | --- | --- |
 | `00-policy.md` | 本書 | 確定 |
 | `01-domain-model.md` | ユビキタス言語とコンテキストマップ | 策定済み |
-| `10-` 以降 | コンテキスト別仕様。各文書はドメインモデル（集約・Domain Primitive・不変条件）→ ユースケース → アダプタ（CLI/フック）→ インフラの順に記述し、「契約」節で `docs/upstream/specs/` の該当箇所を参照する | `10-orchestration.md`（slice 1＋2）・`11-workspace.md` ドラフト済み。Quint 第一陣 3/3 green（`formal/`） |
+| `10-` 以降 | コンテキスト別仕様。各文書はドメインモデル（集約・Domain Primitive・不変条件）→ ユースケース → アダプタ（CLI/フック）→ インフラの順に記述し、「契約」節で `docs/upstream/specs/` の該当箇所を参照する | `10-orchestration.md`（slice 1＋2）・`11-workspace.md`・`12-workflow-definition.md`（slice 1 = グラフリーダ）ドラフト済み。Quint 第一陣 3/3 green（`formal/`） |
 | `docs/adr/` | 横断決定（A1〜A10） | 0001〜0004（A2 / A3 / A9 / A10）**Accepted**。残りは A8 → A1 → A4/A5/A6 → A7 |
 | `docs/specs/deviations.md` | 逸脱台帳 | 作成済み（#1 コマンド綴り写像、#2 M12 バグ修正） |
 
