@@ -14,7 +14,19 @@ pub enum SkeletonDefault {
 
 /// 閉集合外の値 (upstream: `has invalid skeleton value "..." . Expected "on" or "off".`)。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownSkeletonDefault(pub String);
+pub struct UnknownSkeletonDefault(String);
+
+impl UnknownSkeletonDefault {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownSkeletonDefault {
+        UnknownSkeletonDefault(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl SkeletonDefault {
     pub const ALL: [SkeletonDefault; 2] = [SkeletonDefault::On, SkeletonDefault::Off];
@@ -26,7 +38,7 @@ impl SkeletonDefault {
         Ok(match s {
             "on" => SkeletonDefault::On,
             "off" => SkeletonDefault::Off,
-            other => return Err(UnknownSkeletonDefault(other.to_string())),
+            other => return Err(UnknownSkeletonDefault::new(other)),
         })
     }
 
@@ -50,7 +62,19 @@ pub enum ReviewCapValue {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownReviewCap(pub String);
+pub struct UnknownReviewCap(String);
+
+impl UnknownReviewCap {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownReviewCap {
+        UnknownReviewCap(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl ReviewCapValue {
     pub const ALL: [ReviewCapValue; 3] = [
@@ -67,7 +91,7 @@ impl ReviewCapValue {
             "adversarial" => ReviewCapValue::Adversarial,
             "advisory" => ReviewCapValue::Advisory,
             "none" => ReviewCapValue::None,
-            other => return Err(UnknownReviewCap(other.to_string())),
+            other => return Err(UnknownReviewCap::new(other)),
         })
     }
 
@@ -223,14 +247,17 @@ mod tests {
         for s in SkeletonDefault::ALL {
             assert_eq!(SkeletonDefault::parse(s.as_str()).unwrap(), s);
         }
-        assert_eq!(
-            SkeletonDefault::parse("maybe"),
-            Err(UnknownSkeletonDefault("maybe".to_string()))
-        );
+        // 閉集合外は生値を逐語で持ち帰る (upstream 文言 `has invalid skeleton value "..."` の材料)
+        let rejected = SkeletonDefault::parse("maybe").unwrap_err();
+        assert_eq!(rejected.as_str(), "maybe");
+        assert_eq!(rejected, UnknownSkeletonDefault::new("maybe"));
         for r in ReviewCapValue::ALL {
             assert_eq!(ReviewCapValue::parse(r.as_str()).unwrap(), r);
         }
-        assert!(ReviewCapValue::parse("").is_err());
+        // 空文字も閉集合外。空のまま逐語保持する (既定値へフォールスルーさせない)
+        let rejected = ReviewCapValue::parse("").unwrap_err();
+        assert_eq!(rejected.as_str(), "");
+        assert_eq!(rejected, UnknownReviewCap::new(""));
     }
 
     proptest! {

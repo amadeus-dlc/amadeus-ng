@@ -33,9 +33,31 @@ use crate::workspace::checkbox::CheckboxState;
 /// 必要な材料をそのまま保持する (文言化は文言カタログ側の責務)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownScope {
-    pub scope: String,
+    scope: String,
     /// 有効スコープ名 (辞書順)。
-    pub valid_scopes: Vec<String>,
+    valid_scopes: Vec<String>,
+}
+
+impl UnknownScope {
+    #[must_use]
+    pub fn new(scope: impl Into<String>, valid_scopes: Vec<String>) -> UnknownScope {
+        UnknownScope {
+            scope: scope.into(),
+            valid_scopes,
+        }
+    }
+
+    /// 拒否されたスコープ名。
+    #[must_use]
+    pub fn scope(&self) -> &str {
+        &self.scope
+    }
+
+    /// 有効スコープ名 (辞書順)。
+    #[must_use]
+    pub fn valid_scopes(&self) -> &[String] {
+        &self.valid_scopes
+    }
 }
 
 /// ワークフロー定義の読取モデル (以後 immutable)。
@@ -124,14 +146,13 @@ impl WorkflowDefinition {
     /// **未知スコープで `Err` を返すのはこの述語だけ**である (非対称契約)。
     pub fn subgraph_for_scope(&self, scope: &str) -> Result<Vec<&StageNode>, UnknownScope> {
         if !self.is_valid_scope(scope) {
-            return Err(UnknownScope {
-                scope: scope.to_string(),
-                valid_scopes: self
-                    .valid_scopes()
+            return Err(UnknownScope::new(
+                scope,
+                self.valid_scopes()
                     .into_iter()
                     .map(str::to_string)
                     .collect(),
-            });
+            ));
         }
         // 列が無い有効スコープは zero-EXECUTE (エラーではない)。
         Ok(self
@@ -298,8 +319,8 @@ mod tests {
     fn unknown_scopes_are_asymmetric_error_here_none_everywhere_else() {
         let wd = sample();
         let err = wd.subgraph_for_scope("gamma").unwrap_err();
-        assert_eq!(err.scope, "gamma");
-        assert_eq!(err.valid_scopes, vec!["alpha", "beta", "delta"]);
+        assert_eq!(err.scope(), "gamma");
+        assert_eq!(err.valid_scopes(), ["alpha", "beta", "delta"]);
         assert_eq!(
             wd.next_in_scope_stage(
                 &slug("bootstrap"),
@@ -587,8 +608,8 @@ mod tests {
             let wd = build(&specs);
             prop_assume!(!wd.is_valid_scope(&name));
             let err = wd.subgraph_for_scope(&name).unwrap_err();
-            prop_assert_eq!(err.scope.as_str(), name.as_str());
-            prop_assert_eq!(err.valid_scopes, vec!["alpha".to_string(), "beta".to_string(), "delta".to_string()]);
+            prop_assert_eq!(err.scope(), name.as_str());
+            prop_assert_eq!(err.valid_scopes(), ["alpha", "beta", "delta"]);
             let after = wd.graph().at(0).unwrap().slug().clone();
             prop_assert!(
                 wd.next_in_scope_stage(&after, &name, &BTreeMap::new(), &BTreeMap::new())

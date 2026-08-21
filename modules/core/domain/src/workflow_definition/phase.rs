@@ -13,7 +13,19 @@ pub enum PhaseId {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownPhase(pub String);
+pub struct UnknownPhase(String);
+
+impl UnknownPhase {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownPhase {
+        UnknownPhase(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl PhaseId {
     /// 宣言順の全値 (フェーズ走査の唯一の正本)。
@@ -35,7 +47,7 @@ impl PhaseId {
             "inception" => PhaseId::Inception,
             "construction" => PhaseId::Construction,
             "operation" => PhaseId::Operation,
-            other => return Err(UnknownPhase(other.to_string())),
+            other => return Err(UnknownPhase::new(other)),
         })
     }
 
@@ -91,10 +103,10 @@ mod tests {
         for p in PhaseId::ALL {
             assert_eq!(PhaseId::parse(p.as_str()).unwrap(), p);
         }
-        assert_eq!(
-            PhaseId::parse("Initialization"),
-            Err(UnknownPhase("Initialization".to_string()))
-        );
+        // 拒否された生値は逐語で持ち帰る (文言化は Presenter 側の責務)
+        let rejected = PhaseId::parse("Initialization").unwrap_err();
+        assert_eq!(rejected.as_str(), "Initialization");
+        assert_eq!(rejected, UnknownPhase::new("Initialization"));
         assert!(PhaseId::parse("delivery").is_err());
     }
 

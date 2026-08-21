@@ -8,7 +8,21 @@ use std::path::Path;
 /// 状態ファイル読取の失敗 (upstream `readStateFile` — 不在時 `State file not found: <path>`)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateFileReadError {
-    pub message: String,
+    message: String,
+}
+
+impl StateFileReadError {
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> StateFileReadError {
+        StateFileReadError {
+            message: message.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// 状態ファイル書込の失敗。

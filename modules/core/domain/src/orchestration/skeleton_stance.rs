@@ -9,7 +9,19 @@ pub enum SkeletonStance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownStance(pub String);
+pub struct UnknownStance(String);
+
+impl UnknownStance {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownStance {
+        UnknownStance(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl SkeletonStance {
     /// # Errors
@@ -20,7 +32,7 @@ impl SkeletonStance {
             "on" => SkeletonStance::On,
             "off" => SkeletonStance::Off,
             "scope-dependent" => SkeletonStance::ScopeDependent,
-            other => return Err(UnknownStance(other.to_string())),
+            other => return Err(UnknownStance::new(other)),
         })
     }
 
@@ -43,6 +55,9 @@ mod tests {
         for s in ["on", "off", "scope-dependent"] {
             assert_eq!(SkeletonStance::parse(s).unwrap().as_str(), s);
         }
-        assert!(SkeletonStance::parse("maybe").is_err());
+        // 3 値以外は生値を逐語で持ち帰る
+        let rejected = SkeletonStance::parse("maybe").unwrap_err();
+        assert_eq!(rejected.as_str(), "maybe");
+        assert_eq!(rejected, UnknownStance::new("maybe"));
     }
 }

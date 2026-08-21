@@ -68,10 +68,41 @@ impl CheckboxState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckboxEntry {
-    pub state: CheckboxState,
-    pub slug: String,
+    state: CheckboxState,
+    slug: String,
     /// em dash 以降のテキスト (verbatim 保存 — title や EXECUTE/SKIP サフィックスを含む)。
-    pub rest: String,
+    rest: String,
+}
+
+impl CheckboxEntry {
+    #[must_use]
+    pub fn new(
+        state: CheckboxState,
+        slug: impl Into<String>,
+        rest: impl Into<String>,
+    ) -> CheckboxEntry {
+        CheckboxEntry {
+            state,
+            slug: slug.into(),
+            rest: rest.into(),
+        }
+    }
+
+    #[must_use]
+    pub const fn state(&self) -> CheckboxState {
+        self.state
+    }
+
+    #[must_use]
+    pub fn slug(&self) -> &str {
+        &self.slug
+    }
+
+    /// em dash 以降のテキスト (verbatim 保存 — title や EXECUTE/SKIP サフィックスを含む)。
+    #[must_use]
+    pub fn rest(&self) -> &str {
+        &self.rest
+    }
 }
 
 /// Stage Progress 行のパース。文法に一致しない行は黙って無視する (upstream 同等の寛容パース)。
@@ -101,11 +132,7 @@ fn parse_line(line: &str) -> Option<CheckboxEntry> {
     }
     let tail = tail.strip_prefix('—').unwrap_or(tail);
     let tail = tail.trim_start_matches([' ', '\t']);
-    Some(CheckboxEntry {
-        state,
-        slug: slug.to_string(),
-        rest: tail.to_string(),
-    })
+    Some(CheckboxEntry::new(state, slug, tail))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,7 +154,7 @@ pub fn set_checkbox(
     let mut out: Vec<String> = Vec::new();
     for line in content.lines() {
         match parse_line(line) {
-            Some(entry) if entry.slug == slug => {
+            Some(entry) if entry.slug() == slug => {
                 found = true;
                 // 元の行の marker 1 文字だけを置換 (前後は verbatim 保存)
                 let prefix_len = "- [".len();
@@ -160,7 +187,7 @@ pub fn set_checkbox(
 pub fn count_completed(content: &str) -> usize {
     parse_checkboxes(content)
         .iter()
-        .filter(|e| e.state == CheckboxState::Completed)
+        .filter(|e| e.state() == CheckboxState::Completed)
         .count()
 }
 
@@ -185,14 +212,14 @@ not a checkbox line
     fn parses_all_six_marker_states_and_ignores_non_matching_lines() {
         let entries = parse_checkboxes(SAMPLE);
         assert_eq!(entries.len(), 6);
-        assert_eq!(entries[0].state, CheckboxState::Completed);
-        assert_eq!(entries[1].state, CheckboxState::InProgress);
-        assert_eq!(entries[2].state, CheckboxState::Pending);
-        assert_eq!(entries[3].state, CheckboxState::AwaitingApproval);
-        assert_eq!(entries[4].state, CheckboxState::Revising);
-        assert_eq!(entries[5].state, CheckboxState::Skipped);
-        assert_eq!(entries[0].slug, "intent-capture");
-        assert_eq!(entries[2].rest, "Domain Modeling — SKIP");
+        assert_eq!(entries[0].state(), CheckboxState::Completed);
+        assert_eq!(entries[1].state(), CheckboxState::InProgress);
+        assert_eq!(entries[2].state(), CheckboxState::Pending);
+        assert_eq!(entries[3].state(), CheckboxState::AwaitingApproval);
+        assert_eq!(entries[4].state(), CheckboxState::Revising);
+        assert_eq!(entries[5].state(), CheckboxState::Skipped);
+        assert_eq!(entries[0].slug(), "intent-capture");
+        assert_eq!(entries[2].rest(), "Domain Modeling — SKIP");
     }
 
     #[test]

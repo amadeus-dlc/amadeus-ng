@@ -16,7 +16,19 @@ pub enum Verdict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownVerdict(pub String);
+pub struct UnknownVerdict(String);
+
+impl UnknownVerdict {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownVerdict {
+        UnknownVerdict(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// 受理語の正準列挙 (エラーメッセージ描画用 — 順序も upstream の提示順)。
 pub const ACCEPTED_RESULTS: &[&str] = &[
@@ -44,7 +56,7 @@ impl Verdict {
             "revised" => Verdict::Revised,
             "resume" | "resumed" => Verdict::Resume,
             "skipped" => Verdict::Skipped,
-            other => return Err(UnknownVerdict(other.to_string())),
+            other => return Err(UnknownVerdict::new(other)),
         })
     }
 }
@@ -66,6 +78,9 @@ mod tests {
         for s in ACCEPTED_RESULTS {
             assert!(Verdict::parse(s).is_ok());
         }
-        assert_eq!(Verdict::parse("ok"), Err(UnknownVerdict("ok".into())));
+        // 受理語以外は生値を逐語で持ち帰る (逐語の拒否文言は Presenter が組む)
+        let rejected = Verdict::parse("ok").unwrap_err();
+        assert_eq!(rejected.as_str(), "ok");
+        assert_eq!(rejected, UnknownVerdict::new("ok"));
     }
 }

@@ -17,7 +17,19 @@ pub enum ReviewClass {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownReviewClass(pub String);
+pub struct UnknownReviewClass(String);
+
+impl UnknownReviewClass {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownReviewClass {
+        UnknownReviewClass(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl ReviewClass {
     pub const ALL: [ReviewClass; 2] = [ReviewClass::Advisory, ReviewClass::Adversarial];
@@ -29,7 +41,7 @@ impl ReviewClass {
         Ok(match s {
             "adversarial" => ReviewClass::Adversarial,
             "advisory" => ReviewClass::Advisory,
-            other => return Err(UnknownReviewClass(other.to_string())),
+            other => return Err(UnknownReviewClass::new(other)),
         })
     }
 
@@ -59,10 +71,10 @@ mod tests {
         for r in ReviewClass::ALL {
             assert_eq!(ReviewClass::parse(r.as_str()).unwrap(), r);
         }
-        assert_eq!(
-            ReviewClass::parse("Adversarial"),
-            Err(UnknownReviewClass("Adversarial".to_string()))
-        );
+        // 大文字始まりは閉集合外。生値を逐語で持ち帰る
+        let rejected = ReviewClass::parse("Adversarial").unwrap_err();
+        assert_eq!(rejected.as_str(), "Adversarial");
+        assert_eq!(rejected, UnknownReviewClass::new("Adversarial"));
     }
 
     proptest! {

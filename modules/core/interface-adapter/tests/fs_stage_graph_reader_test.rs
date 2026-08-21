@@ -241,11 +241,11 @@ fn a_full_read_maps_every_field_group_onto_the_domain_model() {
         Some(["service".to_string(), "ui".to_string()].as_slice())
     );
     assert_eq!(node.consumes().len(), 2);
-    assert!(node.consumes()[0].required);
-    assert_eq!(node.consumes()[0].conditional_on, None);
-    assert!(!node.consumes()[1].required);
+    assert!(node.consumes()[0].required());
+    assert_eq!(node.consumes()[0].conditional_on(), None);
+    assert!(!node.consumes()[1].required());
     assert_eq!(
-        node.consumes()[1].conditional_on,
+        node.consumes()[1].conditional_on(),
         Some(BrownfieldGreenfield::Brownfield)
     );
     assert_eq!(node.requires_stage(), [slug("requirements-analysis")]);
@@ -260,8 +260,8 @@ fn a_full_read_maps_every_field_group_onto_the_domain_model() {
 
     // F4: オブジェクト配列のまま保持し、directive 射影は別 API で取り出す。
     assert_eq!(node.rules_in_context().len(), 2);
-    assert_eq!(node.rules_in_context()[0].scope, RuleScope::Org);
-    assert_eq!(node.rules_in_context()[1].scope, RuleScope::Phase);
+    assert_eq!(node.rules_in_context()[0].scope(), RuleScope::Org);
+    assert_eq!(node.rules_in_context()[1].scope(), RuleScope::Phase);
     assert_eq!(
         node.rule_paths(),
         [
@@ -270,10 +270,7 @@ fn a_full_read_maps_every_field_group_onto_the_domain_model() {
         ]
     );
     assert_eq!(node.sensors_applicable().len(), 1);
-    assert_eq!(
-        node.sensors_applicable()[0].matches.as_deref(),
-        Some("**/*.rs")
-    );
+    assert_eq!(node.sensors_applicable()[0].matches(), Some("**/*.rs"));
     assert_eq!(node.sensor_ids(), ["code-quality"]);
 
     // キー不在の任意フィールドは既定値のまま。
@@ -517,8 +514,8 @@ fn f_a_grid_column_without_an_identity_file_is_invisible_to_the_runtime() {
 
     // 未知スコープの非対称: subgraph だけが Err、他は None / 空。
     let error = definition.subgraph_for_scope("ghost").unwrap_err();
-    assert_eq!(error.scope, "ghost");
-    assert_eq!(error.valid_scopes, ["bugfix", "express", "feature"]);
+    assert_eq!(error.scope(), "ghost");
+    assert_eq!(error.valid_scopes(), ["bugfix", "express", "feature"]);
     assert_eq!(
         definition.first_in_scope_stage_of_phase(PhaseId::Ideation, "ghost"),
         None

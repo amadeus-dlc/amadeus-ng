@@ -31,7 +31,22 @@ impl AutonomyMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidModeArg {
     /// upstream 逐語の拒否文言 (文言カタログ経由)。
-    pub message: String,
+    message: String,
+}
+
+impl InvalidModeArg {
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> InvalidModeArg {
+        InvalidModeArg {
+            message: message.into(),
+        }
+    }
+
+    /// upstream 逐語の拒否文言。
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// CLI `--mode` 引数の厳密パース (Controller 規約: 値オブジェクト初期化がバリデーション)。
@@ -42,9 +57,7 @@ pub fn parse_mode_arg(s: &str) -> Result<AutonomyMode, InvalidModeArg> {
     match s {
         "autonomous" => Ok(AutonomyMode::Autonomous),
         "gated" => Ok(AutonomyMode::Gated),
-        other => Err(InvalidModeArg {
-            message: msg::invalid_mode(other),
-        }),
+        other => Err(InvalidModeArg::new(msg::invalid_mode(other))),
     }
 }
 
@@ -73,7 +86,7 @@ mod tests {
         assert_eq!(parse_mode_arg("gated"), Ok(AutonomyMode::Gated));
         let err = parse_mode_arg("turbo").unwrap_err();
         assert_eq!(
-            err.message,
+            err.message(),
             "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
         );
     }

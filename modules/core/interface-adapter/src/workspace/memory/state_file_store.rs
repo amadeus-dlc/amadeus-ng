@@ -32,12 +32,11 @@ impl InMemoryStateFileStore {
 
 impl StateFileStore for InMemoryStateFileStore {
     fn read(&self, path: &Path) -> Result<String, StateFileReadError> {
-        self.files
-            .get(path)
-            .cloned()
-            .ok_or_else(|| StateFileReadError {
-                message: message_catalog::state::file_not_found(&path.display().to_string()),
-            })
+        self.files.get(path).cloned().ok_or_else(|| {
+            StateFileReadError::new(message_catalog::state::file_not_found(
+                &path.display().to_string(),
+            ))
+        })
     }
 
     fn write_atomic(&mut self, path: &Path, content: &str) -> Result<(), StateFileWriteError> {
@@ -59,7 +58,7 @@ mod tests {
     fn read_reports_not_found_for_unseeded_paths() {
         let store = InMemoryStateFileStore::new();
         let err = store.read(Path::new("/nope")).unwrap_err();
-        assert!(err.message.starts_with("State file not found: "));
+        assert!(err.message().starts_with("State file not found: "));
     }
 
     #[test]

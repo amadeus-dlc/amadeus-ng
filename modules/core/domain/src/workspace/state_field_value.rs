@@ -7,7 +7,20 @@ use std::fmt;
 pub struct StateFieldValue(String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnsafeLineChar(pub char);
+pub struct UnsafeLineChar(char);
+
+impl UnsafeLineChar {
+    #[must_use]
+    pub const fn new(value: char) -> UnsafeLineChar {
+        UnsafeLineChar(value)
+    }
+
+    /// 拒否のきっかけになったコードポイント。
+    #[must_use]
+    pub const fn value(&self) -> char {
+        self.0
+    }
+}
 
 /// 拒否対象の判定 (upstream `hasUnsafeSingleLineCharacter` と同一集合)。
 #[must_use]
@@ -22,7 +35,7 @@ impl StateFieldValue {
     /// C0 制御・DEL・U+2028・U+2029 を含む値は `UnsafeLineChar` で拒否する。
     pub fn parse(s: &str) -> Result<StateFieldValue, UnsafeLineChar> {
         match unsafe_line_char(s) {
-            Some(c) => Err(UnsafeLineChar(c)),
+            Some(c) => Err(UnsafeLineChar::new(c)),
             None => Ok(StateFieldValue(s.to_string())),
         }
     }
@@ -51,6 +64,20 @@ mod tests {
         assert!(StateFieldValue::parse("a\u{7f}b").is_err());
         assert!(StateFieldValue::parse("a\u{2028}b").is_err());
         assert!(StateFieldValue::parse("a\u{2029}b").is_err());
+    }
+
+    #[test]
+    fn the_rejection_names_the_first_offending_code_point() {
+        // 走査順に**最初に**見つかった 1 文字が拒否理由として返る
+        assert_eq!(StateFieldValue::parse("a\tb\nc").unwrap_err().value(), '\t');
+        assert_eq!(
+            StateFieldValue::parse("a\u{2028}b").unwrap_err(),
+            UnsafeLineChar::new('\u{2028}')
+        );
+        assert_eq!(
+            StateFieldValue::parse("a\u{7f}").unwrap_err().value(),
+            '\u{7f}'
+        );
     }
 
     #[test]

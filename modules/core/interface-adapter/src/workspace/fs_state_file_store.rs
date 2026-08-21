@@ -25,13 +25,11 @@ impl StateFileStore for FsStateFileStore {
     fn read(&self, path: &Path) -> Result<String, StateFileReadError> {
         fs::read_to_string(path).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
-                StateFileReadError {
-                    message: message_catalog::state::file_not_found(&path.display().to_string()),
-                }
+                StateFileReadError::new(message_catalog::state::file_not_found(
+                    &path.display().to_string(),
+                ))
             } else {
-                StateFileReadError {
-                    message: e.to_string(),
-                }
+                StateFileReadError::new(e.to_string())
             }
         })
     }
@@ -74,7 +72,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let store = FsStateFileStore::new();
         let err = store.read(&dir.path().join("aidlc-state.md")).unwrap_err();
-        assert!(err.message.starts_with("State file not found: "));
+        assert!(err.message().starts_with("State file not found: "));
     }
 
     #[test]
@@ -94,7 +92,7 @@ mod tests {
         let store = FsStateFileStore::new();
         // ディレクトリの read_to_string は NotFound 以外 (EISDIR) で失敗する
         let err = store.read(dir.path()).unwrap_err();
-        assert!(!err.message.starts_with("State file not found: "));
+        assert!(!err.message().starts_with("State file not found: "));
     }
 
     #[test]

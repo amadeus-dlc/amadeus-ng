@@ -16,7 +16,19 @@ pub enum StageMode {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownStageMode(pub String);
+pub struct UnknownStageMode(String);
+
+impl UnknownStageMode {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownStageMode {
+        UnknownStageMode(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl StageMode {
     /// 宣言順の全値。
@@ -38,7 +50,7 @@ impl StageMode {
             "pipeline" => StageMode::Pipeline,
             "mob" => StageMode::Mob,
             "agent-team" => StageMode::AgentTeam,
-            other => return Err(UnknownStageMode(other.to_string())),
+            other => return Err(UnknownStageMode::new(other)),
         })
     }
 
@@ -82,10 +94,10 @@ mod tests {
             StageMode::parse("agent-team").unwrap(),
             StageMode::AgentTeam
         );
-        assert_eq!(
-            StageMode::parse("agent_team"),
-            Err(UnknownStageMode("agent_team".to_string()))
-        );
+        // 綴り違い (`-` ではなく `_`) は閉集合外。生値を逐語で持ち帰る
+        let rejected = StageMode::parse("agent_team").unwrap_err();
+        assert_eq!(rejected.as_str(), "agent_team");
+        assert_eq!(rejected, UnknownStageMode::new("agent_team"));
         assert!(StageMode::parse("swarm").is_err());
     }
 

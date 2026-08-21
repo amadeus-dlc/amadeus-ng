@@ -10,8 +10,8 @@ use std::time::Duration;
 /// (upstream `acquireAuditLock(maxRetries, retryMs)` — 03 §6.8)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AcquireBudget {
-    pub max_retries: u32,
-    pub retry_interval: Duration,
+    max_retries: u32,
+    retry_interval: Duration,
 }
 
 impl AcquireBudget {
@@ -21,6 +21,18 @@ impl AcquireBudget {
             max_retries,
             retry_interval,
         }
+    }
+
+    /// reap による即時再試行を除く retry 回数。
+    #[must_use]
+    pub const fn max_retries(&self) -> u32 {
+        self.max_retries
+    }
+
+    /// retry 1 回あたりの待機時間。
+    #[must_use]
+    pub const fn retry_interval(&self) -> Duration {
+        self.retry_interval
     }
 }
 

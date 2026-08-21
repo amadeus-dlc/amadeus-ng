@@ -34,7 +34,19 @@ pub enum RuleScope {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownRuleScope(pub String);
+pub struct UnknownRuleScope(String);
+
+impl UnknownRuleScope {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownRuleScope {
+        UnknownRuleScope(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl RuleScope {
     pub const ALL: [RuleScope; 4] = [
@@ -53,7 +65,7 @@ impl RuleScope {
             "team" => RuleScope::Team,
             "project" => RuleScope::Project,
             "phase" => RuleScope::Phase,
-            other => return Err(UnknownRuleScope(other.to_string())),
+            other => return Err(UnknownRuleScope::new(other)),
         })
     }
 
@@ -74,8 +86,28 @@ impl RuleScope {
 /// ならない (レポート §5.1-18)。active space への rebase は別経路の責務。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleInContext {
-    pub path: String,
-    pub scope: RuleScope,
+    path: String,
+    scope: RuleScope,
+}
+
+impl RuleInContext {
+    #[must_use]
+    pub fn new(path: impl Into<String>, scope: RuleScope) -> RuleInContext {
+        RuleInContext {
+            path: path.into(),
+            scope,
+        }
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> RuleScope {
+        self.scope
+    }
 }
 
 /// compile 時に manifest から逐語スナップショットしたセンサー適用宣言。
@@ -83,10 +115,41 @@ pub struct RuleInContext {
 /// フック側は fire 時に manifest を再オープンしない (レポート §2.2 #28)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SensorRef {
-    pub id: String,
-    pub path: String,
+    id: String,
+    path: String,
     /// capability glob の逐語コピー (欠損しうる)。
-    pub matches: Option<String>,
+    matches: Option<String>,
+}
+
+impl SensorRef {
+    #[must_use]
+    pub fn new(
+        id: impl Into<String>,
+        path: impl Into<String>,
+        matches: Option<String>,
+    ) -> SensorRef {
+        SensorRef {
+            id: id.into(),
+            path: path.into(),
+            matches,
+        }
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// capability glob の逐語コピー (欠損しうる)。
+    #[must_use]
+    pub fn matches(&self) -> Option<&str> {
+        self.matches.as_deref()
+    }
 }
 
 /// `consumes[].conditional_on` の閉集合。
@@ -98,7 +161,19 @@ pub enum BrownfieldGreenfield {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownBrownfieldGreenfield(pub String);
+pub struct UnknownBrownfieldGreenfield(String);
+
+impl UnknownBrownfieldGreenfield {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownBrownfieldGreenfield {
+        UnknownBrownfieldGreenfield(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl BrownfieldGreenfield {
     pub const ALL: [BrownfieldGreenfield; 2] = [
@@ -113,7 +188,7 @@ impl BrownfieldGreenfield {
         Ok(match s {
             "brownfield" => BrownfieldGreenfield::Brownfield,
             "greenfield" => BrownfieldGreenfield::Greenfield,
-            other => return Err(UnknownBrownfieldGreenfield(other.to_string())),
+            other => return Err(UnknownBrownfieldGreenfield::new(other)),
         })
     }
 
@@ -129,9 +204,41 @@ impl BrownfieldGreenfield {
 /// 入力成果物の宣言。`required: false` は欠損しても無言で落ちる (レポート §2.2 #15)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsumeDecl {
-    pub artifact: String,
-    pub required: bool,
-    pub conditional_on: Option<BrownfieldGreenfield>,
+    artifact: String,
+    required: bool,
+    conditional_on: Option<BrownfieldGreenfield>,
+}
+
+impl ConsumeDecl {
+    #[must_use]
+    pub fn new(
+        artifact: impl Into<String>,
+        required: bool,
+        conditional_on: Option<BrownfieldGreenfield>,
+    ) -> ConsumeDecl {
+        ConsumeDecl {
+            artifact: artifact.into(),
+            required,
+            conditional_on,
+        }
+    }
+
+    /// 成果物の語彙名 (パスではない)。
+    #[must_use]
+    pub fn artifact(&self) -> &str {
+        &self.artifact
+    }
+
+    /// `false` は欠損しても無言で落ちる。
+    #[must_use]
+    pub const fn required(&self) -> bool {
+        self.required
+    }
+
+    #[must_use]
+    pub const fn conditional_on(&self) -> Option<BrownfieldGreenfield> {
+        self.conditional_on
+    }
 }
 
 /// コンパイル済みグラフの 1 ノード。フィールドは `FIELD_ORDER` の 28 エントリに 1:1 対応する。
@@ -356,10 +463,7 @@ impl StageNode {
     /// directive 上の `sensors_applicable` は **id の `string[]`** に潰れる。
     #[must_use]
     pub fn sensor_ids(&self) -> Vec<&str> {
-        self.sensors_applicable
-            .iter()
-            .map(|s| s.id.as_str())
-            .collect()
+        self.sensors_applicable.iter().map(SensorRef::id).collect()
     }
 
     /// directive 上の `rules_in_context` は**パスの `string[]`** に潰れる (順序は宣言順)。
@@ -368,7 +472,7 @@ impl StageNode {
     pub fn rule_paths(&self) -> Vec<&str> {
         self.rules_in_context
             .iter()
-            .map(|r| r.path.as_str())
+            .map(RuleInContext::path)
             .collect()
     }
 }
@@ -610,26 +714,23 @@ mod tests {
     fn rules_and_sensors_keep_their_object_shape_and_project_to_strings_on_demand() {
         let n = node("s", "1.1")
             .rules_in_context(vec![
-                RuleInContext {
-                    path: "aidlc/spaces/default/memory/org.md".to_string(),
-                    scope: RuleScope::Org,
-                },
-                RuleInContext {
-                    path: "aidlc/spaces/default/memory/ideation.md".to_string(),
-                    scope: RuleScope::Phase,
-                },
+                RuleInContext::new("aidlc/spaces/default/memory/org.md", RuleScope::Org),
+                RuleInContext::new("aidlc/spaces/default/memory/ideation.md", RuleScope::Phase),
             ])
-            .sensors_applicable(vec![SensorRef {
-                id: "no-todo".to_string(),
-                path: ".claude/sensors/no-todo.md".to_string(),
-                matches: Some("**/*.rs".to_string()),
-            }])
+            .sensors_applicable(vec![SensorRef::new(
+                "no-todo",
+                ".claude/sensors/no-todo.md",
+                Some("**/*.rs".to_string()),
+            )])
             .build();
         // 格納形はオブジェクト配列 (scope / path / matches が生きている)
-        assert_eq!(n.rules_in_context()[1].scope, RuleScope::Phase);
+        assert_eq!(n.rules_in_context()[1].scope(), RuleScope::Phase);
+        assert_eq!(n.sensors_applicable()[0].matches(), Some("**/*.rs"));
+        // センサーの id と path は別物 — 射影 (`sensor_ids`) が潰すのは id 側だけ
+        assert_eq!(n.sensors_applicable()[0].id(), "no-todo");
         assert_eq!(
-            n.sensors_applicable()[0].matches.as_deref(),
-            Some("**/*.rs")
+            n.sensors_applicable()[0].path(),
+            ".claude/sensors/no-todo.md"
         );
         // directive 射影は文字列配列
         assert_eq!(n.sensor_ids(), vec!["no-todo"]);
@@ -657,32 +758,37 @@ mod tests {
         for r in RuleScope::ALL {
             assert_eq!(RuleScope::parse(r.as_str()).unwrap(), r);
         }
-        assert!(RuleScope::parse("space").is_err());
+        // 閉集合外は生値を逐語で持ち帰る (`space` は別語彙であって rule scope ではない)
+        let unknown_scope = RuleScope::parse("space").unwrap_err();
+        assert_eq!(unknown_scope.as_str(), "space");
+        assert_eq!(unknown_scope, UnknownRuleScope::new("space"));
         for b in BrownfieldGreenfield::ALL {
             assert_eq!(BrownfieldGreenfield::parse(b.as_str()).unwrap(), b);
         }
-        assert!(BrownfieldGreenfield::parse("bluefield").is_err());
+        let unknown_field = BrownfieldGreenfield::parse("bluefield").unwrap_err();
+        assert_eq!(unknown_field.as_str(), "bluefield");
+        assert_eq!(unknown_field, UnknownBrownfieldGreenfield::new("bluefield"));
     }
 
     #[test]
     fn consumes_keeps_required_and_conditional_on_separate() {
         let n = node("s", "1.1")
             .consumes(vec![
-                ConsumeDecl {
-                    artifact: "requirements".to_string(),
-                    required: true,
-                    conditional_on: None,
-                },
-                ConsumeDecl {
-                    artifact: "codebase-analysis".to_string(),
-                    required: false,
-                    conditional_on: Some(BrownfieldGreenfield::Brownfield),
-                },
+                ConsumeDecl::new("requirements", true, None),
+                ConsumeDecl::new(
+                    "codebase-analysis",
+                    false,
+                    Some(BrownfieldGreenfield::Brownfield),
+                ),
             ])
             .build();
-        assert!(n.consumes()[0].required);
+        assert_eq!(n.consumes()[0].artifact(), "requirements");
+        assert!(n.consumes()[0].required());
+        assert_eq!(n.consumes()[0].conditional_on(), None);
+        assert_eq!(n.consumes()[1].artifact(), "codebase-analysis");
+        assert!(!n.consumes()[1].required());
         assert_eq!(
-            n.consumes()[1].conditional_on,
+            n.consumes()[1].conditional_on(),
             Some(BrownfieldGreenfield::Brownfield)
         );
     }
@@ -722,17 +828,15 @@ mod tests {
             let n = node("s", "1.1")
                 .sensors_applicable(
                     ids.iter()
-                        .map(|id| SensorRef {
-                            id: id.clone(),
-                            path: format!(".claude/sensors/{id}.md"),
-                            matches: None,
+                        .map(|id| {
+                            SensorRef::new(id.clone(), format!(".claude/sensors/{id}.md"), None)
                         })
                         .collect(),
                 )
                 .rules_in_context(
                     paths
                         .iter()
-                        .map(|p| RuleInContext { path: p.clone(), scope: RuleScope::Project })
+                        .map(|p| RuleInContext::new(p.clone(), RuleScope::Project))
                         .collect(),
                 )
                 .build();

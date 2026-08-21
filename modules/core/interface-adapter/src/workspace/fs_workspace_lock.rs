@@ -241,7 +241,7 @@ impl WorkspaceLock for FsWorkspaceLock {
         }
 
         let lock_dir = FsWorkspaceLock::lock_dir_path(&self.base_dir, identity);
-        let mut attempts_left = budget.max_retries;
+        let mut attempts_left = budget.max_retries();
         loop {
             match fs::create_dir(&lock_dir) {
                 Ok(()) => {
@@ -260,7 +260,7 @@ impl WorkspaceLock for FsWorkspaceLock {
                         return Err(AcquireError::Exhausted);
                     }
                     attempts_left -= 1;
-                    std::thread::sleep(budget.retry_interval);
+                    std::thread::sleep(budget.retry_interval());
                 }
                 Err(e) => {
                     return Err(AcquireError::Io {

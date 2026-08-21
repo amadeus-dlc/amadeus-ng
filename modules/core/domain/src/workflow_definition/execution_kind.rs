@@ -12,19 +12,31 @@ pub enum ExecutionKind {
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownExecutionDeclaration(pub String);
+pub struct UnknownExecutionKind(String);
+
+impl UnknownExecutionKind {
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownExecutionKind {
+        UnknownExecutionKind(value.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl ExecutionKind {
     pub const ALL: [ExecutionKind; 2] = [ExecutionKind::Always, ExecutionKind::Conditional];
 
     /// # Errors
     ///
-    /// 2 値 (大文字) 以外は `UnknownExecutionDeclaration` で拒否する。
-    pub fn parse(s: &str) -> Result<ExecutionKind, UnknownExecutionDeclaration> {
+    /// 2 値 (大文字) 以外は `UnknownExecutionKind` で拒否する。
+    pub fn parse(s: &str) -> Result<ExecutionKind, UnknownExecutionKind> {
         Ok(match s {
             "ALWAYS" => ExecutionKind::Always,
             "CONDITIONAL" => ExecutionKind::Conditional,
-            other => return Err(UnknownExecutionDeclaration(other.to_string())),
+            other => return Err(UnknownExecutionKind::new(other)),
         })
     }
 
@@ -53,10 +65,10 @@ mod tests {
         for e in ExecutionKind::ALL {
             assert_eq!(ExecutionKind::parse(e.as_str()).unwrap(), e);
         }
-        assert_eq!(
-            ExecutionKind::parse("always"),
-            Err(UnknownExecutionDeclaration("always".to_string()))
-        );
+        // 小文字は閉集合外。拒否理由の材料として生値を逐語で持ち帰る
+        let rejected = ExecutionKind::parse("always").unwrap_err();
+        assert_eq!(rejected.as_str(), "always");
+        assert_eq!(rejected, UnknownExecutionKind::new("always"));
     }
 
     #[test]
