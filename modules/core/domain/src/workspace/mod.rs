@@ -5,6 +5,7 @@ pub mod bolt_refs;
 pub mod checkbox;
 pub mod clone_id;
 pub mod lock_identity;
+pub mod lock_protocol;
 pub mod shard_name;
 pub mod space_name;
 pub mod state_field_value;
