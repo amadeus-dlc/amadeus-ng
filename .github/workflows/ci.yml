@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: cargo test
+        run: cargo test --workspace
+
+  quint:
+    name: quint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install quint
+        run: npm i -g @informalsystems/quint@0.32.0
+
+      - name: Run quint gate (ADR 0003 決定 4)
+        run: bash scripts/quint-gate.sh
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # scripts/coverage.sh --base の相対ゲートで base ref の全履歴を worktree
+          # チェックアウトする必要があるため、shallow clone (既定) では不足する。
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # cargo-llvm-cov の実行に rustc 同梱の llvm-tools が必要
+          components: llvm-tools
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Run coverage gate (pull_request — absolute + relative)
+        if: github.event_name == 'pull_request'
+        run: bash scripts/coverage.sh --base "origin/${{ github.base_ref }}"
+
+      - name: Run coverage gate (workflow_dispatch — absolute only)
+        if: github.event_name != 'pull_request'
+        run: bash scripts/coverage.sh
