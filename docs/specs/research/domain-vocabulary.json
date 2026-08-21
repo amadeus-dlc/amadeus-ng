@@ -1,0 +1,2913 @@
+{
+ "meta": {
+  "generated": "2026-08-22",
+  "source": "upstream specs 13 docs (awslabs/aidlc-workflows v2 @ 3c3146cf, v2.6.40) — 15-agent extraction workflow",
+  "extracted_terms_raw": 337,
+  "glossary_terms": 125,
+  "state_machines": 74
+ },
+ "glossary": [
+  {
+   "term": "Phase",
+   "kind": "value",
+   "definition_ja": "ワークフローの背骨をなす5つの順序付き語彙 (initialization, ideation, inception, construction, operation)。順序はステージ番号の整数プレフィックスと全順序 (numericStageOrder) の両方を決める。initialization はブートストラップ専用でフェーズルールファイルを持たない唯一のフェーズ。フェーズ境界越えは PHASE_COMPLETED → PHASE_VERIFIED → PHASE_STARTED の3連監査イベントを固定順で発行する。",
+   "invariants": [
+    "ステージファイルの親ディレクトリ名が5フェーズ以外ならコンパイル時ハードエラー",
+    "フェーズ別ステージ数は 3/7/9/7/7 の計33",
+    "PHASE_VERIFIED は無条件発行 — トレーサビリティ検査はコンダクタ実行のガバナンスプロトコル (コードが正)"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "00-overview.md",
+    "01-workflow-model.md"
+   ]
+  },
+  {
+   "term": "Stage",
+   "kind": "entity",
+   "definition_ja": "ワークフローの実行単位。core/aidlc-common/stages/<phase>/<slug>.md に1ステージ1ファイル (全33) で定義され、閉じた YAML frontmatter スキーマ (必須12/任意15/予約4、未知キー拒否) とコンダクタ向け本文 (## Steps / ## Sensors / ## Learn) からなる。コンパイルで番号・rules_in_context・sensors_applicable が付与される。",
+   "invariants": [
+    "ファイル名 stem == slug、slug 重複はハードエラー",
+    "番号は常にエンジン付与 (著者の number: は相対順序ヒント)",
+    "ステージ本文は不変 — 認可された変更は frontmatter の sensors: リスト追記のみ"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "00-overview.md",
+    "01-workflow-model.md",
+    "04-stage-protocol.md"
+   ],
+   "aliases": [
+    "stage file"
+   ]
+  },
+  {
+   "term": "Scope",
+   "kind": "entity",
+   "definition_ja": "どのステージを実行するかを決める「identity ファイル + グリッド列」の2ファイル1スコープの概念。ストックは11個 (enterprise, feature, classic, workshop, mvp, infra, security-patch, express, poc, refactor, bugfix)。実体は全33ステージ上の EXECUTE/SKIP グリッドで、有効性は .md ファイルの存在 (validScopes) で決まる。解決は state > --scope > キーワード推論 > 既定ラダー (DEFAULT_SCOPE=classic) の優先順。",
+   "invariants": [
+    "initialization の3ステージは転置の特例で全スコープ EXECUTE",
+    "キーワード推論はアルファベット順 first-match で決定論的、重複キーワードはハードエラー",
+    "freeform_default: true は有効スコープ中高々1つ"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "00-overview.md",
+    "01-workflow-model.md"
+   ],
+   "aliases": [
+    "scope (EXECUTE/SKIP grid)",
+    "scope selection"
+   ]
+  },
+  {
+   "term": "Depth",
+   "kind": "value",
+   "definition_ja": "Minimal / Standard / Comprehensive の3段階ダイヤル。ステージあたりの質問量 (~2-4 / ~5-8 / ~8-12+) を決める「モデル向け助言」で、エンジンの決定は一切これに依存しない。既定はアクティブスコープの depth: frontmatter、--depth で上書き可。",
+   "invariants": [
+    "不明値は loud failure",
+    "機械強制されない (no engine decision routes on it)",
+    "変更は DEPTH_CHANGED 監査イベントを発行"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "04-stage-protocol.md"
+   ]
+  },
+  {
+   "term": "TestStrategy",
+   "kind": "value",
+   "definition_ja": "minimal / standard / comprehensive の3値で Depth から独立した軸。実効値は「スコープの testStrategy: override があればそれ、なければ実効 Depth」。Depth と異なり機械消費され、combineTestObligations が strategy_volume と scope_floor の合成義務レコードを生成する。Minimal 戦略のモデル名は Nyquist model。",
+   "invariants": [
+    "不明値は standard に静かにフォールバック",
+    "scope floor は加算的かつ直交 — どちらの義務も他方を置き換えない",
+    "変更は TEST_STRATEGY_CHANGED を発行"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md"
+   ]
+  },
+  {
+   "term": "Tier",
+   "kind": "value",
+   "definition_ja": "エージェント (ペルソナ) 単位で判断量を表す語彙。judgment > balanced > templated の高→低順で、クランプ (capTier) に効く。出荷14エージェントは 9/2/3 の分布。キャップはパック時解決で、AIDLC_TIER_CAP 環境変数 (one-shot) が memory 層の tier_cap: frontmatter (永続、org→team→project last-writer-wins) に勝つ。Depth・TestStrategy とは完全に別軸。",
+   "invariants": [
+    "Tier は下がるだけで上がらない (templated 方向のみ)",
+    "不明な env 値・不明 tier は throw",
+    "drift guard (--check) 時は AIDLC_TIER_CAP を意図的に無視"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "00-overview.md",
+    "01-workflow-model.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "tier",
+    "AIDLC_TIER_CAP",
+    "tier_cap"
+   ]
+  },
+  {
+   "term": "mode",
+   "kind": "value",
+   "definition_ja": "ステージの通信トポロジ宣言。inline / subagent / pipeline / mob / agent-team の5値 (agent-team は予約・未使用)、分布は 29/2/1/1。inline はコンダクタが全ペルソナを採用、subagent はハブ&スポーク派遣、pipeline は宣言順連鎖、mob はリードのみインライン+サポート並列。レビューループは mode と直交。",
+   "invariants": [
+    "pipeline / mob は非空 support_agents 必須",
+    "swarm 発火は for_each: unit-of-work かつ mode: subagent の完全一致",
+    "agent-team を読むコードは明示的に throw 必須"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "04-stage-protocol.md",
+    "05-agents.md"
+   ]
+  },
+  {
+   "term": "execution",
+   "kind": "value",
+   "definition_ja": "ステージ著者が宣言する適用可能性の軸で ALWAYS | CONDITIONAL の2値 (11/22)。CONDITIONAL のステージだけが実行時に condition 不成立を理由に自己スキップ (report --result skipped) できる。グリッドの所属 (membership) ともゲート軸とも直交する。",
+   "invariants": [
+    "非 CONDITIONAL の report --result skipped は plan が SKIP でない限り拒否",
+    "ALWAYS でもスコープで SKIP になり得る"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md"
+   ]
+  },
+  {
+   "term": "Unit of Work",
+   "kind": "entity",
+   "definition_ja": "units-generation (2.7) が生成する作業分解単位。kind (service / spec / ui / packaging / library の閉語彙) を持ち、for_each: unit-of-work を宣言する5ステージ (functional-design, nfr-requirements, nfr-design, infrastructure-design, code-generation) が Unit ごとに1回ずつ繰り返される。produces_kinds が kind 別に成果物適用を刈り込む (directive パスとカバレッジ集合の両方)。unit start/complete/pause/resume のライフサイクルレシート (UNIT_*) を刻み、一度レシートがあると receipt mode に固定される。",
+   "invariants": [
+    "unit complete は全必須成果物のディスク上実在を検証",
+    "paused ユニットは最優先ルートで hard-stop",
+    "express は units-generation を SKIP するため Unit DAG が構造的に到達不能"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "04-stage-protocol.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "for_each: unit-of-work",
+    "produces_kinds",
+    "unit"
+   ]
+  },
+  {
+   "term": "consumes",
+   "kind": "value",
+   "definition_ja": "ステージが入力に取る成果物の宣言 ({artifact, required, conditional_on?} のエントリ列)。required はアクティブプラン内スコープの表明で、生産者が SKIP されれば moot になり gracefully degrade する。directive 発行時にディスク上に存在するパスのみが載り、欠落必須入力は expected: true/false 注釈付きで consumes_absent へ移る。",
+   "invariants": [
+    "conditional_on は brownfield | greenfield のみ",
+    "存在しない任意入力は「入力ではなく、決してギャップではない」",
+    "producer なしの required consume はコンパイルエラー、スコープパス外は advisory"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md"
+   ],
+   "aliases": [
+    "produces",
+    "consumes_absent"
+   ]
+  },
+  {
+   "term": "artifact",
+   "kind": "value",
+   "definition_ja": "ステージの produces / optional_produces / consumes が指す kebab-case の語彙トークン (122名)。パスではなく名前で、artifactFilename が <name>.md に写像 (唯一の例外 traceability → traceability.json)。パス解決は <record>/<phase>/<slug>/、per-unit は <record>/construction/<unit>/<slug>/。語彙トークン (workflow-definition) と record ツリー上の実ファイル (workspace) の2面を持つ。",
+   "invariants": [
+    "frontmatter の outputs: プロースは記述専用で produces が機械的正本",
+    "codekb ステージ (reverse-engineering) のみ space レベルの codekb dir"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md"
+   ]
+  },
+  {
+   "term": "compileStageGraph",
+   "kind": "process",
+   "definition_ja": "唯一の YAML→JSON 変換パイプライン。全ステージファイル・エージェント名簿・ルール・センサーマニフェストを読み、stage-graph.json と scope-grid.json を同一インメモリステージから lockstep で出力する。番号付与は既存行ピン留め+新規 slug の Kahn 順で、非協調プラグイン同士の番号衝突は原理的に不可能 (engine-assigned numbering)。",
+   "invariants": [
+    "エッジローカル順序 — 全 requires_stage エッジで依存側が必ず小さい番号",
+    "未知の sensor id はコンパイル時に throw (fail loud at compile, not at fire time)",
+    "再番号は決して行われない (in-flight の slug キー状態を守る)"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "11-plugin-system.md"
+   ],
+   "aliases": [
+    "engine-assigned stage numbering",
+    "aidlc-graph compile"
+   ]
+  },
+  {
+   "term": "stage-graph.json / scope-grid.json",
+   "kind": "artifact",
+   "definition_ja": "コンパイル済みの正準 JSON 対。stage-graph.json は全33ステージのコンパイル済みノード (固定28フィールド順)、scope-grid.json はスコープ名→全ステージ EXECUTE/SKIP マップ。ソースツリーに存在せず dist/<harness>/tools/data/ のみに置かれ、ハーネス間差分はセンサーパスのみ (grid は byte-identical)。実行時は grid が計画の所属を決め、状態ファイルのステージ別サフィックスが読み取り時に上書きできる。",
+   "invariants": [
+    "全ステージは明示的に EXECUTE か SKIP (欠落はエラー)",
+    "composer は書き込み後に compile を実行してはならない (ランタイムは JSON を verbatim に読む)",
+    "compile --check がバイト同一再現を強制"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "00-overview.md",
+    "01-workflow-model.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "rules_in_context / sensors_applicable",
+   "kind": "value",
+   "definition_ja": "コンパイル時に各ステージノードへ焼き込まれるエンリッチメント配列。rules_in_context は org/team/project + 一致 phase のルール表示パス (長さ3か4)、sensors_applicable はステージの sensors: 宣言をマニフェストと結合した {id, path, matches?} 行。いずれもルーティングメタデータで、本文は別途配送される。フックは実行時にマニフェストを再読込しない (BGP 安定性)。",
+   "invariants": [
+    "著者がステージ YAML に書くと拒否 (コンパイル済みノード専用)",
+    "コンパイルは default スペースにピン留め、配送時にアクティブスペースで上書き"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "06-sensors.md",
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "agent (persona)",
+   "kind": "entity",
+   "definition_ja": "core/agents/ の .md ファイル (YAML frontmatter + 本文) として定義されるドメイン専門家ペルソナ。全14: 11ドメインエキスパート + 2レビュー専用 + 1コンポーザ。ペルソナは採用 (adopt) または派遣 (dispatch) される。全14が disallowedTools: Task を宣言し、委譲されたエージェントはサブエージェントを生成できず、ライフサイクル動詞も実行できない。ハーネス側の実行時サブエージェントとは区別する。",
+   "invariants": [
+    "core/agents/ はちょうど14ファイル、tier: 欠落はパック時エラー",
+    "唯一の authored ツール制限は disallowedTools: Task",
+    "name / display_name 欠落・重複スラッグは拒否"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "00-overview.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "agent roster",
+    "persona",
+    "disallowedTools: Task"
+   ]
+  },
+  {
+   "term": "lead_agent / support_agents",
+   "kind": "role",
+   "definition_ja": "ステージ frontmatter で指名される参加エージェント。lead_agent はちょうど1スラッグ必須で produces[] 成果物を所有、support_agents は配列 (空可、キー必須) で mode に従い参加形態が変わる。roster クロスチェックあり (擬似スラッグ orchestrator のみ免除)。ペルソナ側の Supporting 宣言はランタイムに影響しない — エンジンが読むのはステージ frontmatter のみ。",
+   "invariants": [
+    "pipeline / mob は非空 support_agents 必須",
+    "inline ステージでのサポート派遣は禁止",
+    "subagent / mob のサポートは contribution file が完了証跡"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "05-agents.md"
+   ]
+  },
+  {
+   "term": "composer",
+   "kind": "role",
+   "definition_ja": "非ストックのスコープグリッドの唯一の生成者である委任エージェント (aidlc-composer-agent、tier: judgment)。「スコープとは全33ステージ上の EXECUTE/SKIP グリッドであり、composer が原理的見積りでグリッドを構成し、決定論的エンジンは承認されたグリッドを走らせるだけ」というモデルに立つ。front / report / in-flight の3モーメントを持つ。",
+   "invariants": [
+    "提案は必ず validate-grid 通過後に提示 (Never show an invalid grid)、集計はツールの summary を verbatim コピー",
+    "明示的な人間承認前に書き込まない。書き込みは identity ファイルと scopeGridPath の2点のみ、書き込み後の compile 禁止",
+    "in-flight では pending かつカーソルより先のみ flip 可、walking-skeleton アンカーは不動"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "aidlc-composer-agent",
+    "composer agent"
+   ]
+  },
+  {
+   "term": "ARS / fold",
+   "kind": "value",
+   "definition_ja": "composer のスクリーニング用具。ARS (Autonomy Risk Score) は5エントロピー成分 (IAE/CSU/VE/R/UA、各 [0,1]) の重み付き合成を 0-100 バンドに写像した未較正の助言指数で、全定数は ars-priors.json が単一の真実。fold は正の EV テストに優越する包摂テストで、貢献が他ステージにカバー済みのステージを SKIP する (既定8行、各行に un-SKIP トリガ)。",
+   "invariants": [
+    "合成値は必ずツールが計算 (computed by the tool, never by hand)",
+    "スカラーで決定論的ルーティングはしない — 選択は成分バンドと fold 規律",
+    "ars-priors.json の読み込みは fail-loud (重み和≠1.0 は throw)"
+   ],
+   "context": "workflow-definition",
+   "sources": [
+    "01-workflow-model.md",
+    "05-agents.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "ARS",
+    "Autonomy Risk Score",
+    "entropy components",
+    "fold"
+   ]
+  },
+  {
+   "term": "engine",
+   "kind": "role",
+   "definition_ja": "決定的 CLI (aidlc-orchestrate.ts)。ワークフロー状態とコンパイル済みステージグラフを読み、「次に何が起こるか」への回答として型付き Directive をちょうど1つ stdout に emit する。次ステージ決定・終局性・ジャンプ方向・ゲート状態・パス解決を所有し、逸脱を起こさず、質問せず、エージェントを spawn しない。サブコマンドは next / continue / report / park。全ハーネスでバイト同一。",
+   "invariants": [
+    "1回の呼び出しで正確に1つの JSON 行 (28KiB 超は emit 拒否、half-emitted directive を出さない)",
+    "状態遷移ロジックを再実装せず aidlc-state.ts / aidlc-audit.ts サブコマンドに委譲",
+    "非ハッピーパスは sibling CLI の stderr を verbatim 中継"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ]
+  },
+  {
+   "term": "conductor",
+   "kind": "role",
+   "definition_ja": "モデル側の転送ループの担い手 (ライブの /aidlc メインセッション)。engine から directive を1つ受け、その1手を実行し report で返す反復を回す。エンジンに代行できない知識労働 — ステージ実行品質、AskUserQuestion レンダリング、walking-skeleton stance や自由記述の分類、swarm の fan-out — を所有する。憲章は conductor.md (conductor persona) としてワークフロー最初の run-stage に in-band で焼き込まれる。frontmatter の予約擬似スラッグ orchestrator と同一概念だがエージェントファイルは持たない。",
+   "invariants": [
+    "ライフサイクル動詞を直接呼ばずチェックボックスを手編集しない — 必ず report 経由",
+    "委任されたリード・サポート・レビュアーは artifact-scoped であってコンダクタではない",
+    "ステージ日誌 (memory.md) がコンダクタが手で維持する唯一のファイル"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md",
+    "05-agents.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "orchestrator",
+    "conductor persona",
+    "main session"
+   ]
+  },
+  {
+   "term": "Directive",
+   "kind": "value",
+   "definition_ja": "engine が stdout に出す型付き JSON メッセージ。kind による判別共用体で10種定義・8種構築 (load-steering, run-stage, invoke-swarm, ask, print, error, done, parked / present-gate と dispatch-subagent はプレースホルダ)。validateDirective がコードベース唯一の信頼境界キャスト。サイズ上限 DIRECTIVE_MAX_BYTES = 28KiB (common harness floor)。",
+   "invariants": [
+    "narration は全 kind で合法な表示専用フィールドでルーティング意味を持たない",
+    "未知キー・型違反・cross-field 規則違反は全件列挙で拒否",
+    "gate フィールドは boolean または literal \"unresolved\" のみ"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ]
+  },
+  {
+   "term": "next",
+   "kind": "process",
+   "definition_ja": "「次に何が起こるか」を決める読み取り専用サブコマンド。handleNext は21分岐の平坦なラダーで (観測状態 + グラフ) → directive kind を決定。birth・jump commit・scope/config 変更などのミューテーションは自ら実行せず、print directive で実行すべきコマンドを名指しするだけ。scope 解決は state > --scope > positional > env > default のラダーを所有する。",
+   "invariants": [
+    "ワークフロー状態を書かない (例外は steering MAC キーと active-directive marker のマシンローカル書き込み2つのみ)",
+    "有効プランが SKIP のステージには run-stage を emit しない",
+    "birth は決して next が実行しない (duplicate-birth guard が ask に変換)"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ],
+   "aliases": [
+    "scope resolution ladder"
+   ]
+  },
+  {
+   "term": "report",
+   "kind": "process",
+   "definition_ja": "エンジンループの書き込み半分。aidlc-state.ts の遷移サブコマンド群へのディスパッチャで遷移ロジックを再実装しない。受理 verdict は10個 (approved/completed/complete/done は互換同義語)、caller ではなく engine がコミットするサブコマンド (gate-start/reject/revise/approve/advance/complete-workflow/skip) を選ぶ。ゲート付き未完了ステージの report は human-presence guard により人間の正確な承認選択 (--user-input) を要求する。",
+   "invariants": [
+    "ガード順序は固定13段 (state-version → … → human-presence)",
+    "カーソルが進んだ completed の再 report は冪等 done (stale re-report guard)",
+    "skipped は明示 --stage・CONDITIONAL または plan SKIP・nonblank --reason を要求"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ],
+   "aliases": [
+    "human-presence guard"
+   ]
+  },
+  {
+   "term": "run-stage",
+   "kind": "value",
+   "definition_ja": "ステージ1つの実行を指令する中心的 directive 封筒。ルーティング (stage, lead_agent, mode, sensors_applicable)、コンテキスト (inline_context_paths, consumes, rules_in_context)、成果 (produces, memory_path)、統制 (gate, reviewer, review_class, next_stage)、反復 (unit, wave, swarm_settled, single) を運ぶ。コンパイル済みグラフの射影。inline_context_paths の読了はブロッキング前提条件 (8KiB で打ち切り)。",
+   "invariants": [
+    "consumes には emit 時点でディスク上に存在する宣言入力のみ",
+    "next_stage は engine 解決値で承認ゲートに verbatim 使用 (推測禁止)",
+    "swarm_settled: true の再入ではステージ本体もレビュアーも再実行禁止"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "inline_context_paths"
+   ]
+  },
+  {
+   "term": "load-steering / continue_token",
+   "kind": "process",
+   "definition_ja": "run-stage に先立ちアクティブスペースのルール本文を有界チャンク (Markdown 見出し境界分割、20KiB 目標) で in-band 搬送する directive kind と、その継続用 HMAC-SHA256 署名トークン。conductor は rules_content を順に適用し report せず直ちに continue <token> する。トークンはステージ・スコープ・各ダイジェスト・ピン留めフィールドを運び、鍵はマシンローカル (.aidlc-steering-token-key)。",
+   "invariants": [
+    "ルール読み取り失敗は blocking (error directive)",
+    "MAC 不一致・ダイジェスト移動・型表違反は fail-closed で「fresh next で part 1 から」",
+    "load-steering は report の対象にならない"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "ask",
+   "kind": "value",
+   "definition_ja": "構造化質問をレンダリングさせて停止する directive kind。engine は決して自分で質問しない。通常型は回答が report --user-input で返り、ask_type: \"new-work-routing\" 亜型は回答が next 経由でルーティングされる。レンダリングはハーネス annex (question-rendering.md) が規範。",
+   "invariants": [
+    "question ブロックの echo はプロトコル違反 — 必ず AskUserQuestion でレンダリング",
+    "質問最大4・選択肢最大4最低2",
+    "Continue to <next_stage> は run-stage の値を verbatim 描画"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md"
+   ]
+  },
+  {
+   "term": "Gate",
+   "kind": "policy",
+   "definition_ja": "ステージ完了時の人間承認 (approval gate)。3層構造: (1) 静的決定 computeGate — initialization のみ false、skeleton-gate ステージで stance 未記録なら \"unresolved\"、他は true。(2) conductor の儀式 — HARD STOP RULE (提示後ターン即終了)、Approve / Request Changes の2択固定、3回 Request Changes で「Accept as-is」脱出口。(3) 承認前提条件の強制は aidlc-state.ts handleApprove 側 (report-only ガードはバイパス可能だから)。human-presence gate は前回ゲート解決以降の HUMAN_TURN を要求する。",
+   "invariants": [
+    "gate 軸は execution 軸と直交",
+    "per-unit 反復ではゲート発火は最後の1枚の directive のみ",
+    "ゲート質問と学びの儀式は同一メッセージで開かない (QUESTION_ANSWERED が STAGE_AWAITING_APPROVAL に先行)",
+    "スコープのゲート数は gridCostSummary の閉形式で UI とエンジンが一致"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "01-workflow-model.md",
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "approval gate",
+    "computeGate",
+    "human-presence gate",
+    "承認ゲート"
+   ]
+  },
+  {
+   "term": "walking skeleton",
+   "kind": "policy",
+   "definition_ja": "Construction 入りで最小の端到端実装をまず通す儀式とそのゲート規律。ゲートアンカーは「そのスコープで最初の Construction EXECUTE ステージ」として常に導出される (skeleton-gate stage、ハードコード禁止)。stance (on / off / scope-dependent) はチーム文書の自由記述からエンジンが計算できない唯一のゲート値で、engine は gate: \"unresolved\" を発行し、conductor が分類して report --skeleton-stance で返し、次の next が boolean を解決する。実スケルトンのゲート承認直後に ladder prompt が1回だけ発火し autonomy mode を決める。",
+   "invariants": [
+    "composer / recompose はアンカーを動かす flip を拒否",
+    "stance 解決順は org.md → team.md → project.md で最も具体的な非空記述が勝つ",
+    "swarm arm は skeleton-gate ステージでは発火しない"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "01-workflow-model.md",
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md"
+   ],
+   "aliases": [
+    "skeleton-gate stage",
+    "walking-skeleton stance",
+    "Skeleton Stance"
+   ]
+  },
+  {
+   "term": "Construction Autonomy Mode",
+   "kind": "value",
+   "definition_ja": "Construction のバッチ単位ゲートを外すか否かの状態フィールド (autonomous / gated の2値)。正確な文字列 \"autonomous\" のみが per-batch ゲートを無効化し、未設定・空・未知値はすべて gated と読む fail-closed 設計。aidlc-bolt set-autonomy --mode だけが書き込み AUTONOMY_MODE_SET を発行。自律モードでも code-generation 失敗の halt-and-ask と loop-back 上限到達は人間に諮る。",
+   "invariants": [
+    "Autonomy is NEVER inferred — ladder prompt での明示選択のみ",
+    "autonomous への昇格のみ human presence guard を要する (降格は不要)",
+    "autonomy 有効中は recompose と park が拒否される"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "01-workflow-model.md",
+    "04-stage-protocol.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "autonomy mode",
+    "ladder prompt"
+   ]
+  },
+  {
+   "term": "jump",
+   "kind": "process",
+   "definition_ja": "--stage/--phase によるワークフローカーソルの移動。resolve (純読取: 帰属検証と方向計算) と execute (ミューテーションのコミット) に分離。方向は index 比較で forward / backward / redo。forward は介在ステージを skipped に、backward はターゲットと下流を pending に戻す。",
+   "invariants": [
+    "initialization へのジャンプは INIT_JUMP_ERROR で拒否",
+    "STAGE_JUMPED + STAGE_STARTED を emit、監査 emit 失敗は状態書き込みを中止",
+    "作用対象は常に有効プラン (state のサフィックスが grid に勝つ)"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ]
+  },
+  {
+   "term": "park",
+   "kind": "process",
+   "definition_ja": "ワークフローを意図的に中断保存する操作。WORKFLOW_PARKED を emit し Parked / Parked At Stage フィールドを書き、終端の parked directive を返す。parked は done と区別された kind で「in-scope ステージが pending のまま意図的に中断」を意味し、Stop hook は parked を terminal allow として扱う。",
+   "invariants": [
+    "autonomous 中は park 拒否 (再開する人間がいない)",
+    "park 分岐は明示的再入フラグで自己無効化し、Parked At Stage === Current Stage の間のみ発火"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ]
+  },
+  {
+   "term": "single-stage mode",
+   "kind": "process",
+   "definition_ja": "--single によるステージ1つの隔離実行モード。核心不変条件は「メインワークフローの Current Stage に決して触れない」。メイン状態を読まず、gate=false、conductor persona 強制添付で emit され、commit は監査 append のみで advance/approve を呼ばないため機構的にメインを前進させられない。監査レシートは synthetic workflow id (single-stage:<slug>) でタグ付けされ、メインの完了証跡ガードを決して満たさない。",
+   "invariants": [
+    "initialization ステージは --single 不可",
+    "report --single は明示 --stage 必須、forward verdict のみ受理",
+    "learnings 儀式・workflow gate・park を行わない"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ],
+   "aliases": [
+    "synthetic workflow id"
+   ]
+  },
+  {
+   "term": "stage runner",
+   "kind": "artifact",
+   "definition_ja": "aidlc-runner-gen.ts が runnable ステージ (initialization 以外の30) ごとに生成する per-stage の SKILL.md スキル。本文は next --stage <slug> --single → プロトコル読取 → report --single --result completed の3ステップ。同ツールは非ステージランナー /aidlc-init と /aidlc-compose、runner: true の5スコープの scope-runner も生成する。生成は冪等。",
+   "invariants": [
+    "ランナースキルは決して手書きされない — 常に生成",
+    "init ステージにランナーを作らない (常にエラーになるコマンドを作らない)"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "runner skill",
+    "scope-runner"
+   ]
+  },
+  {
+   "term": "per-unit iteration",
+   "kind": "process",
+   "definition_ja": "for_each: unit-of-work ステージを Unit ごとに1 directive ずつ発行する反復方式。カバレッジはディスク上の per-unit アーティファクト (receipt mode 時は UNIT_COMPLETED も) で判定し、engine は最初の未カバーユニットを gate=false で emit、conductor は report せず next を再実行する。未カバーが尽きると最後のユニットに実ゲートを載せて再 emit する。",
+   "invariants": [
+    "ゲートは最終の再 emit された directive でのみ発火",
+    "skeleton-gate 未解決時は反復を遅延",
+    "完了証跡ガードは per-unit カバレッジを検査し paused-unit を拒否"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md"
+   ]
+  },
+  {
+   "term": "swarm",
+   "kind": "process",
+   "definition_ja": "Construction の per-unit code-generation を自律並列実行する仕組み。engine は Construction + for_each: unit-of-work + mode: subagent + autonomy=autonomous の4条件で invoke-swarm directive を発行し、conductor が fan-out とリトライを所有、aidlc-swarm.ts (prepare / check / finalize) が収束判定・マージ・監査の決定論的レフェリーとなる。check は advisory、finalize が権威で claim された全ユニットを6段ガードで再検証する (lying-conductor guard: tamper guard = 保護テストファイルの git diff 検査、green 再実行、レシート照合)。バッチ前進は SWARM_UNIT_CONVERGED 監査行でキーイングされ、全収束後 swarm_settled: true の settle run-stage が出る。",
+   "invariants": [
+    "SWARM_* 6イベントの唯一の発行者は aidlc-swarm.ts (conductor prose は監査を発行しない)",
+    "マージ未着地の converged unit には SWARM_UNIT_CONVERGED を発行しない",
+    "SwarmAttemptStamp {stage, floor} の厳密一致で旧試行の replay を防ぐ",
+    "reviewer 付きでは worktree 内の terminal REVIEW_COMPLETED がなければ claim 不可"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "invoke-swarm",
+    "SWARM_UNIT_CONVERGED",
+    "SwarmAttemptStamp",
+    "tamper guard"
+   ]
+  },
+  {
+   "term": "Bolt",
+   "kind": "entity",
+   "definition_ja": "Construction における「1つの Unit (または依存で結ばれた少数の Unit 群) に対するステージ 3.1-3.5 の1回の実行」(§9 用語集のユーザー向け公開語)。aidlc-bolt.ts が start / complete / fail / abort / set-autonomy / hold-merge 等8サブコマンドでライフサイクルを所有し、BOLT_STARTED / BOLT_COMPLETED / BOLT_FAILED / AUTONOMY_MODE_SET の唯一の発行者。--worktree 付き start は state / audit / fragment の三層 fork を合成する。HOLD-MERGE (Merge-Held フィールド) はマルチ失敗 halt-and-ask 中のマージ着地を防ぐ内部協調状態。",
+   "invariants": [
+    "fork 順序: 検証 → BOLT_STARTED → state-fork → audit-fork → fragment-fork",
+    "abort は BOLT_ABORTED を導入せず BOLT_FAILED + Reason: aborted を再利用",
+    "zero-Unit directive は通常ステージとして1回実行 (Bolt 儀式は非空 Unit DAG のみ)"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "04-stage-protocol.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "batch number",
+    "HOLD-MERGE",
+    "unit DAG"
+   ]
+  },
+  {
+   "term": "Build-and-Test failure loop-back",
+   "kind": "process",
+   "definition_ja": "Build and Test (3.6) が生成コードに根本原因を持つ失敗を診断したとき code-generation (3.5) へ後方ジャンプする公認例外。回数の正本は監査ではなく test-results.md の ## Loop-Back Log エントリ数 (intent あたり最大3)。失敗実行は in-flight のまま残され、儀式は成功実行まで繰り延べられる。",
+   "invariants": [
+    "ジャンプは必ずエンジンの print した execute コマンドを verbatim 実行 (手組み禁止)",
+    "後方ジャンプの STAGE_JUMPED は全先行レビューレシートを無効化",
+    "候補 fix なしの「Retry with fix」提示は捏造 fix と同罪"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "04-stage-protocol.md"
+   ]
+  },
+  {
+   "term": "protocol module",
+   "kind": "artifact",
+   "definition_ja": "ステージ実行の実挙動を定める規約ファイル群。全ステージ必須の基底 stage-protocol.md と6条件付きモジュール (reviewer / ensemble / construction / swarm / governance / recovery)。前4つは directive.protocol_modules で告知され、governance / recovery はワークフローイベントで散文条件ロード。4ファイルは7ハーネス分のバインディング小節 (harness binding) を持ち、アクティブハーネスに一致する小節のみ使う。",
+   "invariants": [
+    "告知集合は閉じている (VALID_PROTOCOL_MODULES = reviewer, ensemble, construction, swarm)",
+    "dispatch-subagent からは protocol_modules がフィルタされる (委任ワーカーはコンダクタではない)",
+    "AIDLC_USE_SWARM=1 の Dynamic Workflow 分岐は Claude Code 小節のみ有効"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "04-stage-protocol.md"
+   ],
+   "aliases": [
+    "harness binding",
+    "stage-protocol.md"
+   ]
+  },
+  {
+   "term": "questions file",
+   "kind": "artifact",
+   "definition_ja": "ステージごとの <slug>-questions.md。「常に真実の源」で、全保留質問が空の [Answer]: タグ付きでターン終了前に書き込まれる (Stop フックがこれで真の人間待ちを区別)。3対話モード (Guide me / I'll edit the file / Chat) は全て Consolidated Summary Confirmation に収斂し、その回答は正確な字面のみ有効で decision/answer レシート対に裏付けられる。",
+   "invariants": [
+    "ツールは自己選択回答・後続人間ターンなしの回答を拒否",
+    "回答収集後の Answer analysis と Contradiction detection は必須",
+    "summary_confirmation は完了時に precondition として強制"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "04-stage-protocol.md"
+   ],
+   "aliases": [
+    "Consolidated Summary Confirmation"
+   ]
+  },
+  {
+   "term": "contribution file",
+   "kind": "artifact",
+   "definition_ja": "ensemble 実行 (subagent / mob) で各 support agent が <record>/<phase>/<stage>/contributions/<agent-slug>.md に自筆する寄与ファイル。1行目は verbatim の identity marker (**Collaborator:** <agent-slug>)。mob と supports 付き subagent の決定的な完了証跡で、欠落・不正形の間はゲート進入と完了が拒否される。pipeline では代わりに PIPELINE_LINK_COMPLETED レシートが証跡。",
+   "invariants": [
+    "contributions/ の外に書かない — produces[] 成果物はリードのみが編集",
+    "rejection・jump・後続ステージ開始は証跡をリセット、--single のレシートは本流を満たさない",
+    "脱出口は AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 のみ"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "04-stage-protocol.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "checkEnsembleEvidence",
+    "PIPELINE_LINK_COMPLETED"
+   ]
+  },
+  {
+   "term": "forwarding loop",
+   "kind": "policy",
+   "definition_ja": "「エンジンがすべてのルーティングを所有する」規律。conductor がターンを終えようとすると Stop フックが next をプローブし、指示が PENDING なら decision:block で停止をブロックし継続文を注入する。注入文はオンタスク継続のみで、侵害されたエンジンでもセッションを乗っ取れない。安全弁として no-progress cap (progress signature = stage::stateSha::directiveFingerprint が同一のままのブロックを数え、autonomous 8 / 通常 2 で解放) と、固定順の許可経路 carve-out (handoff レシート / done / parked / ask / human-wait / 未回答質問 / 会話ターン等) を持つ。",
+   "invariants": [
+    "継続文は5形、エンジンプローブは 10 秒制限で失敗時は停止許可",
+    "progress signature の state 成分は Last Updated 行を除外 (意味的変更のみカウンタをリセット)",
+    "resume wait は必ず next プローブの前に読む"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "Stop hook",
+    "no-progress cap",
+    "progress signature",
+    "carve-out",
+    "aidlc-continue-workflow"
+   ]
+  },
+  {
+   "term": "state-transition guard",
+   "kind": "policy",
+   "definition_ja": "「ワークフローのライフサイクルとルーティングはコンダクタ所有」を強制する規律とそのフック。(a) aidlc-state.ts のエンジン所有11動詞 (set, checkbox, advance, finalize, complete-workflow, gate-start, approve, reject, revise, skip, park) は直接呼び出しを拒否し、AIDLC_STATE_TRANSITION_OWNER の PID 束縛マーカー (orchestrate:<ppid>) を要求。(b) agent_type 非空の委任エージェントは orchestrate の next/report/park、jump、fork/merge 等の一切の境界横断コマンドを拒否される。",
+   "invariants": [
+    "マーカーは PID 束縛 — 静的トークンのコピーでは通らない",
+    "委任スキャナはコマンド置換・eval を深さ8まで再帰し、解決不能には fail-closed",
+    "バイパスは AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS=1 のみ"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "05-agents.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "engine-owned state transitions",
+    "delegated lifecycle command"
+   ]
+  },
+  {
+   "term": "recompose",
+   "kind": "process",
+   "definition_ja": "実行中ワークフローの計画を再形成する決定論的 in-flight 書き込み verb (recompose --skip --add)。ライブ状態ファイル上のステージ別 EXECUTE/SKIP サフィックスを flip し、読み取り時 (effectivePlanAction) にスコープグリッドを上書きする。composer の in-flight 提案が着地する唯一の経路。",
+   "invariants": [
+    "ガード列: Running 必須 / autonomy 中拒否 / pending かつカーソル前方のみ / walking-skeleton アンカー不動 / strict 検証は差分評価 (flip が新規に導入する starvation のみ拒否)",
+    "starved required input は「助言ではなく拒否」"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "01-workflow-model.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "effectivePlanAction"
+   ]
+  },
+  {
+   "term": "active-directive marker",
+   "kind": "artifact",
+   "definition_ja": "load-steering / run-stage の emit ごとに書かれるマシンローカルのマーカーファイル。state ダイジェスト・attempt id・コマンド/結果ダイジェストを運び、next の読み取り専用不変条件への2つの明示的例外の1つ。消費者はフック群 (センサーの active stage 解決、plan approval guard 等)。",
+   "invariants": [
+    "ルーティングに対して advisory — 書き込み失敗は throw しない",
+    "例外は Copilot-commit arm のみ fail-closed"
+   ],
+   "context": "orchestration",
+   "sources": [
+    "02-orchestration-engine.md",
+    "06-sensors.md",
+    "07-hooks.md"
+   ]
+  },
+  {
+   "term": "Space",
+   "kind": "entity",
+   "definition_ja": "ワークスペース aidlc/spaces/<space>/ 配下に memory/・knowledge/・codekb/・intents/ の4サブツリーを束ねるチーム作業単位のコンテナ。default space はディスクに何もなくても常に有効。新規スペースは default の org.md のみを継承し (team/project は1行スタブ)、自チームのプラクティスは自ら獲得する設計。",
+   "invariants": [
+    "名前は /^[a-z][a-z0-9-]*$/ に一致必須 (パスセグメント検証)",
+    "activeSpace() は決して throw せず未設定時は \"default\""
+   ],
+   "context": "workspace",
+   "sources": [
+    "00-overview.md",
+    "03-state-audit-runtime.md",
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "Intent",
+   "kind": "entity",
+   "definition_ja": "1つのワークフロー実行の記録単位。正準 ID は UUIDv7 (文字列ソート=作成順)、ディレクトリ名は <YYMMDD>-<短ラベル> で ID と意図的に分離。誕生 (birth) は createIntent が唯一のチョークポイント。space ごとのレジストリ intents.json (uuid, slug, dirName, scope, status) がディレクトリと join され、activeIntent() の null は正当な「まだワークフローがない」状態。",
+   "invariants": [
+    "aidlc-state.md を持つディレクトリのみが実レコード",
+    "intents.json の変更はワークスペースロック (__workspace__ バケット) 下で実行",
+    "ラベルは予約名 (help, list, switch 等) を使えない"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ],
+   "aliases": [
+    "intents.json",
+    "intent record"
+   ]
+  },
+  {
+   "term": "aidlc-state.md",
+   "kind": "artifact",
+   "definition_ja": "intent ごとに1つの Markdown 状態ファイル。9つの ## セクションと単一行フィールド (- **Field**: value) からなり、スキーマバージョンは State Version (現在 8、classifyStateVersion が ok/unparseable/past/future に分類する唯一の分類器)。書き込みは tmp+rename でアトミック、read-only ファイルは意図的な書き込みバリアとして尊重。ユニット系フィールドは監査ログが真実の源で state はキャッシュ。",
+   "invariants": [
+    "フィールド値は単一行必須 (制御文字・U+2028/9 拒否)",
+    "全 read-modify-write は withAuditLock 内で監査先行 (audit-first)",
+    "状態機械遷移は setFieldStrict (silent no-op は throw)"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ],
+   "aliases": [
+    "state file",
+    "State Version",
+    "状態ファイル"
+   ]
+  },
+  {
+   "term": "CheckboxState",
+   "kind": "value",
+   "definition_ja": "state ファイルの Stage Progress 行を成す6状態のチェックボックス文法: [ ] pending / [-] in-progress / [?] awaiting-approval / [R] revising / [x] completed / [S] skipped。行形式は em ダッシュ区切りで、マーカー (実行状態) と EXECUTE/SKIP サフィックス (プラン) は同一行の互いに素なフィールド — だから recompose と jump がきれいに合成できる。",
+   "invariants": [
+    "setCheckbox はマーカーのみ、setStageSuffix はサフィックスのみを書き換える",
+    "countCheckboxes の集計が Completed フィールドの同期元"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "audit shard",
+   "kind": "artifact",
+   "definition_ja": "監査ログの実体。<record>/audit/<host>-<cloneId>.md という clone ごとの Markdown ブロックストリーム (JSONL ではない、シーケンス番号なし)。shard 名にホスト名と clone id を埋め込み、並行 clone 間の git マージ衝突を構造的に排除する。intent 未解決時は space レベル shard が台帳になり、DOCUMENT_* は常に space レベル。",
+   "invariants": [
+    "追記専用 — 唯一の例外は audit-fork のワークツリーミラー確立",
+    "追記パスは封じ込め検査・シンボリックリンク拒否・O_APPEND|O_NOFOLLOW を通る",
+    "値の行終端はエスケープされ第二の Event 行の偽造を防ぐ"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "audit event",
+   "kind": "event",
+   "definition_ja": "監査ログに追記される構造化イベント。VALID_EVENT_TYPES は86イベントの閉集合 (22カテゴリ)、命名規約は SUBJECT_PAST_VERB。うち8つ (WORKFLOW_/PHASE_/STAGE_ の STARTED/COMPLETED 系) が MANDATORY。順序保証はタイムスタンプ (秒精度) + バッファ位置のタイブレークのみ。ARTIFACT_CREATED/UPDATED、SESSION_*、STAGE_JUMPED 等のファミリを含む。",
+   "invariants": [
+    "新イベント型の発明禁止 — 名前はテーブルに正確一致",
+    "呼び出し側の Event キー供給は禁止 (multiline クエリ偽装防止)",
+    "ステージ完了は常に STAGE_COMPLETED (固有名の代用禁止)"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "監査イベント",
+    "VALID_EVENT_TYPES"
+   ]
+  },
+  {
+   "term": "clone id",
+   "kind": "value",
+   "definition_ja": "clone (checkout) ごとの監査 shard トークン。aidlc/.aidlc-clone-id に12 hex 文字で永続化される。gitignore されることが本質 — 「コミットで旅をしない」ことが clone 間の相異性を保証し、並行監査追記の git マージ衝突を除去する。",
+   "invariants": [
+    "必ず machine-local (コミットされると全 clone が shard を共有して衝突)",
+    "fork/merge サブプロセスは main checkout の clone id をワークツリーへスレッドする"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "active-space / active-intent cursor",
+   "kind": "value",
+   "definition_ja": "ユーザーごとのナビゲーション用ポインタファイル2つ (aidlc/active-space と spaces/<space>/intents/active-intent)。書き込みは best-effort、両方 gitignore され、リゾルバは不在を許容する。インストーラは missing 時にシードするだけで決して上書きしない。",
+   "invariants": [
+    "カーソルは共有状態にしてはならない (チームメイトが別 space/intent を正当に指す)",
+    "ensureActiveSpaceCursor は linkSync の no-replace でアトミック"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "audit lock",
+   "kind": "policy",
+   "definition_ja": "os.tmpdir() 内の mkdir-EEXIST ディレクトリとして実装されたクロスプロセスミューテックス。ロック識別子は realpath(projectDir) + space + intent の合成で、intent 省略時は予約センチネル __workspace__。owner.json スタンプを持ち、死んだ所有者か閾値超過 (既定10分) のみ rename CAS で reap できる。compose とエンジンが共有する (AIDLC_WORKSPACE_LOCK_OWNER_PID)。",
+   "invariants": [
+    "withAuditLock は識別子ごとの深度カウンタで再入可能",
+    "生きている閾値未満の保持者からは決して奪わない"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "11-plugin-system.md"
+   ],
+   "aliases": [
+    "workspace lock",
+    "withAuditLock"
+   ]
+  },
+  {
+   "term": "audit-first invariant",
+   "kind": "policy",
+   "definition_ja": "全 read-modify-write ハンドラは withAuditLock 内で「読む → 決める → 監査を emit → state を書く」を1クリティカルセクションとして実行し、監査行の emit が state 書き込みに先行する規律。監査 emit が throw すれば state 書き込みはスキップされ、「state は変わったが監査に痕跡がない」状態が構造的に起こらない。",
+   "invariants": [
+    "appendAuditEntries はディスクに触る前に全エントリを検証し1ロック1書き込み",
+    "並行 emitter がブロック間に割り込めない"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "authority classes",
+   "kind": "policy",
+   "definition_ja": "「誰がどの監査イベントを発行できるか」の3つの重なり合う拒否リスト。CLI_RESERVED (8) はパース前拒否、CLI_PROTECTED (18) は handleAppend で拒否 (env でバイパス可)、MERGE_PROTECTED (26 + DOCUMENT_* プレフィクス) はワークツリー delta に乗ることを永久に禁じる。人間権威 (HUMAN_TURN, GATE_*)、レビュアーレシート、referee 帳簿が保護対象。",
+   "invariants": [
+    "MERGE_PROTECTED は意図的に明示列挙 (プレフィクス黒リストは bolt merge を回復不能にした実績)",
+    "嘘をつくコンダクタへの防御は finalize 時の再検証であって delta フィルタリングではない"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "fork / merge (state, audit, fragment)",
+   "kind": "process",
+   "definition_ja": "Bolt を隔離実行するための三層 fork/merge。aidlc-state.ts fork/merge が状態ファイルを、aidlc-audit.ts audit-fork/audit-merge が監査シャードを、aidlc-runtime.ts fragment-fork/merge がランタイムグラフ断片を分岐・合流させる。audit-fork は main shard の boundary バイト長と SHA-256 を AUDIT_FORKED 行にピン留めし、audit-merge は fork 境界以降の delta のみをブロック検証・prefix-hash 照合の上 main に追記する。",
+   "invariants": [
+    "merge の prefix-hash 不一致は「mid-Bolt tampering suspected」で拒否",
+    "delta はブロック境界で終わり、各ブロックは Event と Timestamp をちょうど1つ持ち merge-protected でないこと",
+    "Bolt 内のエントリ順は保存、Bolt 間はマージ完了順"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "audit-fork",
+    "audit-merge",
+    "STATE_FORKED / STATE_MERGED"
+   ]
+  },
+  {
+   "term": "Worktree",
+   "kind": "entity",
+   "definition_ja": "Bolt ごとの git worktree プリミティブ。ディレクトリ <project>/.aidlc/worktrees/bolt-<slug>、ブランチ bolt-<slug> に「導出され、渡されない」。create/merge/discard/list/verify/info の6サブコマンドで、変異系は WORKTREE_* イベントを audit-first で発行。merge strategy は squash/merge/rebase の3値。ワークツリーは同一相対レイアウトのレコードツリー鏡像 (worktree mirror) を持ち、監査 shard 名は main の clone id を使う。",
+   "invariants": [
+    "create/merge/discard はメイン checkout からのみ実行可",
+    "source-bound な Bolt のマージ対象は可動ブランチではなく不変レビュー済みコミット",
+    "discard は冪等 (already-discarded は無発行)"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "Bolt worktree",
+    "worktree mirror",
+    "merge strategy",
+    "WORKTREE_* events"
+   ]
+  },
+  {
+   "term": "runtime-graph.json",
+   "kind": "artifact",
+   "definition_ja": "<record>/runtime-graph.json に置かれる具現化された派生ビュー — 構造的な stage-graph.json (プラン) に対するデータプレーン側の鏡 (観測結果)。コンパイラ (aidlc-runtime.ts compile) は純粋な観測者で、監査ログと memory.md だけを読んで書く。gitignore され再導出可能。summary はこのスナップショットのみを読む数値 API で、3つの読み取り専用セッションスキルが全数値をここから引く。遷移級監査イベントごとに rebuild-stage-graph フックが自動再コンパイルする。",
+   "invariants": [
+    "決定性 — 同一監査ログ → バイト同値な出力",
+    "summary は監査を再走査しない (グラフの純関数、LLM 側カウントなし)",
+    "不正・循環の unit DAG は bolt_dag ノードを丸ごと省略"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "summary",
+    "aidlc-runtime compile"
+   ]
+  },
+  {
+   "term": "HUMAN_TURN / humanActedSinceGate",
+   "kind": "event",
+   "definition_ja": "HUMAN_TURN は prompt-submit フックが emit する人間在席証跡イベント (presence-only、プロンプト本文は読まない)。humanActedSinceGate は「前回のゲート解決以降に人間が行動したか」を監査ログから判定する権威検査で、承認捏造を防ぐ human-presence gate の基盤。監査 shard は運用証跡であり改竄不能な著者性境界ではない、と仕様が明記する。",
+   "invariants": [
+    "最新 HUMAN_TURN が別 shard の最新ゲート解決と同一秒なら fail closed (新しいターンを要求)",
+    "鋳造は完全フェイルオープン (失敗が人間のターンをブロックしない)",
+    "AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1 で無効化可"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "HUMAN_TURN",
+    "humanActedSinceGate"
+   ]
+  },
+  {
+   "term": "committed vs ignored split",
+   "kind": "policy",
+   "definition_ja": "ワークスペースの何を git 共有し何をローカルに留めるかの規律。経験則は「ユーザーごとのカーソルとマシンローカルなランタイム/派生状態は ignore、共有作業 (メソッド、レジストリ、state、監査 shard、artifact) はコミット」。gitignore は11グロブで各々にインライン根拠が記録される。",
+   "invariants": [
+    ".gitattributes merge=union は意図的に使わない (複数行監査ブロック破壊が実証済み)",
+    "runtime-graph.json・.aidlc-* スクラッチは決して共有真実にならない"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "WorkspaceManifest (repos.json)",
+   "kind": "artifact",
+   "definition_ja": "multi-repo checkout マニフェスト {org, repos[]} のスキーマ。aidlc/ ワークスペースツリーとは無関係の「別の workspace」。aidlc-workspace-sync が宣言済みで不在の sibling リポジトリを clone し管理 .gitignore を維持する消費者。",
+   "invariants": [
+    "repo 名は単一パスセグメント (区切り文字・.. 禁止)、重複禁止",
+    "解決パスはワークスペースルートの immediate child (封じ込め再検査)",
+    "ランタイムはディスク実態が真実 (disk wins at runtime)"
+   ],
+   "context": "workspace",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "repos.json",
+    "aidlc-workspace-sync"
+   ]
+  },
+  {
+   "term": "workspace shell",
+   "kind": "artifact",
+   "definition_ja": "各ハーネスツリーが同梱する aidlc/ ディレクトリ。ビルド済みの spaces/default/memory/ メソッドツリーを含み、これがないと /aidlc --doctor の「workspace shell ready」チェックが失敗する。ランタイム状態は spaces/<space>/intents/ の下に置かれ gitignore される。アップグレードの実体は dist ツリー (このシェル含む) の再コピー。",
+   "invariants": [
+    "全ハーネスツリーが aidlc/ シェルを同梱",
+    "再コピー後、スキル/ルールの反映にはセッション再開が必要"
+   ],
+   "context": "workspace",
+   "sources": [
+    "00-overview.md"
+   ],
+   "aliases": [
+    "Upgrade clause"
+   ]
+  },
+  {
+   "term": "session-intent stamp / SESSION_*",
+   "kind": "artifact",
+   "definition_ja": "aidlc/.aidlc-sessions/<id> のセッション→intent スタンプと、セッション可観測性の監査イベント族 (SESSION_STARTED / RESUMED / ENDED / COMPACTED)。resume 時に別 UUID が刻まれていれば INTENT REBIND OFFER を提示しつつ即再スタンプする (usage 帰属を守る)。intent 誕生時は handoff receipt (5分 TTL) が既存スタンプを上書きせず書かれ、Stop フックの carve-out 0 が消費する。PreCompact は recovery breadcrumb を書く。",
+   "invariants": [
+    "SESSION_COMPACTED の所有者は PreCompact フックのみ",
+    "SessionEnd の帰属はスタンプに対し fail-closed",
+    "セッション終了はワークフローを完了しない (可観測性のみ)"
+   ],
+   "context": "workspace",
+   "sources": [
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "session-intent handoff receipt",
+    "recovery breadcrumb",
+    "SESSION_STARTED / SESSION_RESUMED / SESSION_ENDED / SESSION_COMPACTED"
+   ]
+  },
+  {
+   "term": "Memory",
+   "kind": "entity",
+   "definition_ja": "スペースごとの階層化ルールツリー aidlc/spaces/<space>/memory/ (org.md・team.md・project.md・phases/<phase>.md・templates/)。rule scope は org | team | project | phase の4値でファイル名から導出される (ドキュメントの5層説明に対し実装は4層、stage 層は将来予約)。core/memory/ で一度だけ著述され配送される。学習ループ (Learnings Ritual) と practices-promote だけが認可されたライター。",
+   "invariants": [
+    "認可された決定的ライターはちょうど2つ (practices-promote と learnings persist)",
+    "走査は (SCOPE_PRIORITY, path) で決定的ソート",
+    "正規表現に一致しないファイルは黙って無視される"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "00-overview.md",
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "memory layer",
+    "rule scope",
+    "階層化メソッド"
+   ]
+  },
+  {
+   "term": "strict-additive rule model",
+   "kind": "policy",
+   "definition_ja": "適用可能な全ルールを連結しすべてが実行時に適用されるという解決モデル。ドロップロジック・オーバーライド・enforcement キーワードは存在しない。狭い層が広い方針に矛盾する場合は実行時ではなく入場ゲート (admission gate: §13 memory gate の LLM 矛盾チェックと practices-discovery の人間承認) で拒否される。",
+   "invariants": [
+    "No drop logic, no overrides, no enforcement keyword",
+    "ユーザによるオーバーライド経路はない — conflict-clear または user-escalated のみが書き込みに進む",
+    "書き込み後のドリフトは doctor が非ブロッキングで検出"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "admission gate"
+   ]
+  },
+  {
+   "term": "Learnings Ritual",
+   "kind": "process",
+   "definition_ja": "完了メッセージと承認ゲートの間で走る §13 儀式パイプライン: diary 捕捉 → surface (読み取り専用の候補切り出し) → 構造化質問 → 入場矛盾チェック → 決定的 persist の5ステップ。tool-as-actor 構造 — 決定的ツール aidlc-learnings.ts が検出・表出・ルーティング・書き込み、オーケストレータ LLM が質問描画と矛盾チェック、ユーザが keep/heading/scope を決める。persist は単一 withAuditLock 内で cid マーカー (本文 SHA-256 の内容アドレス) により冪等に書き込む。",
+   "invariants": [
+    "書き込み面は project/team.md の practice 行とセンサーマニフェストの2つだけ (org 拡大経路なし、ステージ本文不変)",
+    "候補ゼロでも質問必須、QUESTION_ANSWERED 行が儀式実行の監査証明",
+    "surface 時点の (space, intent) を verbatim にピン留めし誤帰属を防ぐ",
+    "免除は bootstrap 初期化・--single・未完 per-unit 反復のみ"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "04-stage-protocol.md",
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "surface",
+    "persist",
+    "cid marker",
+    "§13"
+   ]
+  },
+  {
+   "term": "stage diary (memory.md)",
+   "kind": "artifact",
+   "definition_ja": "各ステージが <record>/<phase>/<stage>/memory.md に保持する観察日誌。## Interpretations / Deviations / Tradeoffs / Open questions の4見出しに ISO タイムスタンプ付きエントリを書き溜める、コンダクタが手で維持する唯一のファイル。学習儀式の唯一の入力源。エントリゼロで承認されたステージには MEMORY_EMPTY 監査行が emit される。Memory 層 (per-space) とは完全に別物 (per-stage)。",
+   "invariants": [
+    "初期化は冪等 — 再入・resume・loop-back を跨いで蓄積エントリを保持",
+    "不在 (null) と空 (0) は意味的に区別される",
+    "承認時に削除・移動禁止 (§13 ゲートが読む)"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "04-stage-protocol.md",
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "memory diary",
+    "ステージ日誌",
+    "MEMORY_EMPTY"
+   ]
+  },
+  {
+   "term": "RULE_LEARNED / SENSOR_PROPOSED",
+   "kind": "event",
+   "definition_ja": "persist が発する監査イベント対。RULE_LEARNED は学びのプラクティス行書き込み (dedup 同一性は Content-Hash)、SENSOR_PROPOSED は検証チェック型の学びからのセンサーマニフェスト設置 + ステージ bind (dedup キーは (stage, sensor id))。knowledge から verification への橋渡しイベント。",
+   "invariants": [
+    "書き込みとイベント発行は同一 withAuditLock 内",
+    "フレームワーク配布物 (dist/) 配下へのセンサー設置は拒否",
+    "bind の効力発生は次のグラフコンパイルから"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "06-sensors.md",
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "practices-promote / PRACTICES_AFFIRMED",
+   "kind": "process",
+   "definition_ja": "practices-discovery ステージの人間承認を method ファイルへ反映する決定的ライター (aidlc-state.ts practices-promote) と、その成功時のみ発行できる予約監査イベント。team.md へは5固定セクションの replaceSection、project.md へは (affirmed <date>) スタンプ付き行の追記。エンジンは report --result approved 時にフロアイベントより後の PRACTICES_AFFIRMED 行を要求する。",
+   "invariants": [
+    "発行主体は practices-promote のみ (memory 昇格の成功なしにレシートを鋳造できない)",
+    "手順1でアンサンブル再検証 (contribution file の identity marker 照合)",
+    "ゲート却下は先行する昇格レシートを無効化"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "team knowledge",
+   "kind": "artifact",
+   "definition_ja": "2層知識の Tier 2 — スペースレベルの aidlc/spaces/<space>/knowledge/ ツリー (aidlc-shared/ と <agent>/)。Tier 1 はフレームワーク方法論 (<harness>/knowledge/、不変)。space 内の全 intent を横断してドメイン知識が蓄積するよう意図的に per-intent ではなく space 直下に置かれ、ensure-exists で遅延作成される (SEED では作らない)。",
+   "invariants": [
+    "ディレクトリに置かれた任意の .md がロードされる (特別な命名規則なし)",
+    "README テンプレートの shared/ 表記は誤りで、コードが読むのは aidlc-shared/"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "05-agents.md",
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "DocumentKB",
+   "kind": "entity",
+   "definition_ja": "スペース知識配下のドキュメントカタログ機構。documents/ (ユーザ管理の原本) と documentkb/ (ツール管理・再構築可能な派生、index.json + 文書ごとの metadata.json/content.md) からなり、aidlc-knowledge.ts の7動詞で操作する。顧客供給文書は徹底的に非信頼データとして扱われる (内容もファイル名も untrusted)。extraction state は6要素の凍結列挙。",
+   "invariants": [
+    "文書内の命令文はタスクを変えず権限を与えない (data-not-instructions)",
+    "抽出キャップ: 30秒 / 50 PDF ページ / 200,000 文字、truncated フラグ付き",
+    "全書き込みはジャーナル化され単一の rename() がコミットポイント",
+    "カタログに read-write、ワークフロー状態に read-only"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "05-agents.md",
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "documentkb",
+    "extraction state",
+    "aidlc-knowledge"
+   ]
+  },
+  {
+   "term": "knowledge loading order",
+   "kind": "policy",
+   "definition_ja": "11のドメインペルソナ全員が持つ同一の6段階知識読み込み順: (1) active space の memory 3ファイル → (2) ハーネスの knowledge/aidlc-shared/ → (3) knowledge/<agent>/ → (4) space の knowledge/aidlc-shared/ → (5) space の knowledge/<agent>/ → (6) consumes 契約の先行成果物。ステップ1はペルソナごとに特殊化される (例: developer は ## Testing Contract 欠落時にコード生成せず停止)。",
+   "invariants": [
+    "6段の順序は11ペルソナ全員で同一",
+    "2レビュアーとコンポーザは Knowledge Loading セクションを持たない"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "05-agents.md",
+    "08-memory-rules-learnings.md"
+   ]
+  },
+  {
+   "term": "rule bundle",
+   "kind": "artifact",
+   "definition_ja": "アクティブステージの rules_in_context[].path を解決・読込・重複除去して得る規則束。deliver-stage-rules フック (PreToolUse) が全 AI-DLC サブエージェントのブリーフに SHA-256 ダイジェスト付き番兵コメントで区切って付加し、コンダクタ→サブエージェント境界での規則到達を決定論化する。エンジンとフックが同じ aidlc-steering ライブラリを共有するため、両ホップは乖離しえない。substantive rule text 判定が未記入テンプレートをバンドルから落とす。",
+   "invariants": [
+    "読めない規則ファイルは exit 2 (ステージは開始されていない)",
+    "出力上限 512KiB、超過時は部分書き込みなしで拒否",
+    "composer は唯一の免除エージェント、再付加は冪等"
+   ],
+   "context": "knowledge",
+   "sources": [
+    "07-hooks.md",
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "aidlc-deliver-stage-rules",
+    "substantive rule text"
+   ]
+  },
+  {
+   "term": "Sensor",
+   "kind": "entity",
+   "definition_ja": "エージェントが書いたばかりのファイルに対して走る決定的 (非LLM) チェック。マニフェスト + ワーカースクリプトの対で定義され、ステージへのバインドは第三の書き込み。判定は常に advisory で、コードにブロッキング経路が存在しない — SENSOR_FAILED は「REPORTED, not enforced」で承認ゲートの人間が判断する。エンジンと状態コードはセンサー判定を一切読まない。",
+   "invariants": [
+    "全出荷マニフェストが default_severity: advisory (他の値はスキーマ拒否)",
+    "ディスパッチャはセンサー判定では常に exit 0",
+    "出荷はマニフェスト6 + ワーカー6の対"
+   ],
+   "context": "verification",
+   "sources": [
+    "00-overview.md",
+    "06-sensors.md"
+   ],
+   "aliases": [
+    "sensor",
+    "advisory"
+   ]
+  },
+  {
+   "term": "SensorManifest",
+   "kind": "artifact",
+   "definition_ja": "YAML frontmatter 付き Markdown のセンサー能力記述子。harness の sensors/ 直下に aidlc-<id>.md として置かれフラットスキャンで発見される。必須は id/kind/command/default_severity/description。matches (glob) がセンサー発火の唯一のフィルタで、フックは Bun.Glob、fire コマンドは独自 globToRegex で同じパターンを評価する。ルール側の pairing フィールドがセンサー相棒を宣言できる。",
+   "invariants": [
+    "id はファイル名ステムと一致必須、同一 id の2マニフェストは重複エラー",
+    "matches を持たないエントリは決して発火しない、空の matches は検証エラー",
+    "input_schema / output_schema はパースされない散文契約"
+   ],
+   "context": "verification",
+   "sources": [
+    "06-sensors.md",
+    "08-memory-rules-learnings.md"
+   ],
+   "aliases": [
+    "matches",
+    "pairing"
+   ]
+  },
+  {
+   "term": "sensor dispatcher / worker",
+   "kind": "role",
+   "definition_ja": "dispatcher (aidlc-sensor.ts、list/describe/fire) はセンサー発火の唯一の実行主体で、id ごとの引数アームをワーカーへスレッドし、spawn 結果を verdict truth table で SENSOR_PASSED / FAILED / BUDGET_OVERRIDE に分類する。worker (aidlc-sensor-<id>.ts) はグラフ非依存の実チェックで、stdout に pass と findings_count を含む単一 JSON を出す。SENSOR_FAILED になるのは status 0 かつ pass===false の1分岐だけで、インフラ的失敗は Note 付き PASSED に落ちる (fail-open)。",
+   "invariants": [
+    "監査ロックは FIRED と terminal 行の2短窓のみ保持し spawn 中は保持しない",
+    "exit 127 = tool-unavailable の静かな PASS、その他非ゼロ = script-error",
+    "presentConsumes フィルタが scope で skip された producer の consume を落とし偽の FAILED を防ぐ"
+   ],
+   "context": "verification",
+   "sources": [
+    "06-sensors.md"
+   ],
+   "aliases": [
+    "sensor dispatcher",
+    "sensor worker",
+    "verdict truth table",
+    "presentConsumes"
+   ]
+  },
+  {
+   "term": "fire (センサー発火経路)",
+   "kind": "process",
+   "definition_ja": "2経路: (A) PostToolUse sensor hook — Write|Edit で11段ガードを通過したエントリごとにディスパッチャを spawn する自動経路 (常に exit 0、ブロックしない)。(B) 手動 fire — aidlc-sensor.ts fire <id> --stage --output-path で、8項目の事前検証はすべて監査行を書く前に exit 1 する (orphan-FIRED prevention)。どちらも matches フィルタを適用し、人間呼び出しも shape 契約をバイパスできない。",
+   "invariants": [
+    "active stage は active-directive marker 優先、Current Stage フォールバック",
+    ".aidlc-sensors/ への書き込みは再帰ガードでスキップ",
+    "サブプロセス上限は既定90秒"
+   ],
+   "context": "verification",
+   "sources": [
+    "06-sensors.md"
+   ],
+   "aliases": [
+    "PostToolUse sensor hook",
+    "aidlc-run-sensors"
+   ]
+  },
+  {
+   "term": "SENSOR_* events / Fire id",
+   "kind": "event",
+   "definition_ja": "センサー監査イベント族。SENSOR_FIRED (発火冒頭) と終端行 (PASSED / FAILED / BUDGET_OVERRIDE) は8-hex の Fire id でペアリングされる (並列発火で終端行が交錯するため位置ではペアにしない)。SENSOR_FAILED 時のみ detail file (<record>/.aidlc-sensors/<stage>/<sensor-id>-<fire-id>.md) が書かれ worker の stdout JSON 全文を保持する。孤児 FIRED は決定的60秒カットオフで incomplete。",
+   "invariants": [
+    "ペアリングは Fire id、監査行インデックスではない",
+    "detail 書き込み失敗は判定を PASSED + Note に降格しペアを失わない",
+    "真の合格には Note が付かない (script-error 系 Note で区別)"
+   ],
+   "context": "verification",
+   "sources": [
+    "03-state-audit-runtime.md",
+    "06-sensors.md"
+   ],
+   "aliases": [
+    "SENSOR_FIRED",
+    "SENSOR_PASSED",
+    "SENSOR_FAILED",
+    "SENSOR_BUDGET_OVERRIDE",
+    "Fire id",
+    "detail file"
+   ]
+  },
+  {
+   "term": "出荷センサー6種",
+   "kind": "entity",
+   "definition_ja": "framework 出荷の6センサー: required-sections (文書の H2 フロア≥2 + テンプレート見出し包含)、upstream-coverage (consume 成果物の参照検査、カバレッジはステージ出力全体の性質)、linter (bunx eslint@10、pass = errorCount===0)、type-check (bunx tsc --project --noEmit、全プロジェクト診断を対象ファイルへ後段フィルタ)、traceability (traceability.json と上流 ID 集合の突合、fail-closed)、claim-sources (intent-capture 成果物の出所タグ検証)。",
+   "invariants": [
+    "traceability は期待集合を解決できない全経路が失敗 (上流欠落は vacuous pass でなく失敗)",
+    "claim-sources のタグは描画文書上で可視の literal text のみカウント",
+    "linter は eslint@10 ピン留め (素の bunx eslint は誤 PASS 退化)"
+   ],
+   "context": "verification",
+   "sources": [
+    "06-sensors.md"
+   ],
+   "aliases": [
+    "required-sections",
+    "upstream-coverage",
+    "linter",
+    "type-check",
+    "traceability",
+    "claim-sources"
+   ]
+  },
+  {
+   "term": "two-write install",
+   "kind": "process",
+   "definition_ja": "センサー追加の正準手順: マニフェスト (+ワーカー) の書き込みと、対象ステージ frontmatter の sensors: リストへの id 追記の2書き込み (pull-authoring)。設置ルートは framework tier / plugin tier / project tier (§13 学習ゲート経由) の3つ。frontmatter リストがステージファイルへの唯一公認の変更。",
+   "invariants": [
+    "project tier では persist が2書き込みを単一監査ロックトランザクションで行い SENSOR_PROPOSED を発行",
+    "バインド済みへの再バインドは冪等 no-op",
+    "効力発生は次のグラフコンパイルから"
+   ],
+   "context": "verification",
+   "sources": [
+    "06-sensors.md"
+   ]
+  },
+  {
+   "term": "reviewer",
+   "kind": "role",
+   "definition_ja": "ステージ frontmatter の reviewer: で宣言され、常に別サブエージェントとして派遣される (決してインラインでない) レビュー専用エージェント。出荷は product-lead (5ステージ) と architecture-reviewer (8ステージ) の2体、両者 tier: balanced / maxTurns: 60。唯一許可される書き込みは主成果物への ## Review 節1個の追記で、ビルダーの memory.md / plan.md は渡されず独立判断を形成する。応答1行目は **Reviewer:** <slug> の identity marker (SUBAGENT_COMPLETED の200文字切り詰めで第1行のみ生存保証されるため)。判定は READY / NOT-READY の正準トークン (READY = Critical 0 かつ Major ≤ 2)。",
+   "invariants": [
+    "ビルダーと直接通信しない、ワークフローをブロックしない (最終判断は人間ゲート)",
+    "turn budget 到達で警告なく停止しうる — 「verdict がある方が verdict なしより常に勝る」",
+    "節欠落・判定なし・重複は verdict ではなく incomplete attempt"
+   ],
+   "context": "verification",
+   "sources": [
+    "04-stage-protocol.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "review verdict",
+    "READY / NOT-READY",
+    "maxTurns",
+    "SUBAGENT_COMPLETED"
+   ]
+  },
+  {
+   "term": "review_class",
+   "kind": "value",
+   "definition_ja": "レビューの強度を表す値: adversarial (反証・修理ループ、reviewer_max_iterations 既定2) | advisory (正規フロー厳密1回、iterations 1 固定、所見はゲートで verbatim 引用し人間が triage) | none (実効解決値のみ、レビュアーブロック全体を省略)。実効クラスは ステージ宣言 → scope の review_cap → 状態ファイルの Review Override の単調下方3層 (low-wins、none:0 < advisory:1 < adversarial:2) で解決される。宣言なしはコンパイル時 adversarial に既定化。",
+   "invariants": [
+    "cap / override はクラスを下げるだけで決して上げない、宣言のないレビュアーを作れない",
+    "review_class / reviewer_max_iterations は reviewer 宣言を要求 (compile 時拒否)",
+    "adversarial 既定の5ステージ = for_each: unit-of-work の5ステージと厳密一致"
+   ],
+   "context": "verification",
+   "sources": [
+    "01-workflow-model.md",
+    "02-orchestration-engine.md",
+    "04-stage-protocol.md",
+    "05-agents.md"
+   ],
+   "aliases": [
+    "review_cap",
+    "Review Override",
+    "reviewer_max_iterations"
+   ]
+  },
+  {
+   "term": "review receipt",
+   "kind": "event",
+   "definition_ja": "REVIEW_REQUESTED / REVIEW_COMPLETED の対で監査台帳に刻まれるレビューの権威レシート。全完了パス (approve/advance/finalize/complete-workflow) は fresh な REVIEW_COMPLETED なしにレビュアー宣言ステージを拒否する。以後パスが続かないレシートは terminal で、記録からゲート承認までの produces[] 書き込みはレシートを無効化する。判定なしの派遣は --retry-pending でちょうど1回再試行 (反復を消費しない)、2回目も不完全なら終端 NOT-READY レシートを記録しゲートを deadlock させない。",
+   "invariants": [
+    "レシートスキャンは floored — STAGE_STARTED / GATE_REJECTED / 最新 produces 書き込み以後の行のみ有効",
+    "行は Stage と Reviewer の両方に一致必須 (自己認証は満たさない)",
+    "per-unit ステージは適用ユニットごとに1レシート必要"
+   ],
+   "context": "verification",
+   "sources": [
+    "04-stage-protocol.md",
+    "05-agents.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "REVIEW_REQUESTED / REVIEW_COMPLETED",
+    "terminal review receipt"
+   ]
+  },
+  {
+   "term": "review freeze",
+   "kind": "policy",
+   "definition_ja": "終端レビューレシートを持つステージの宣言済み produces[] への書き込みを、ゲート承認まで拒否する書き込み凍結。enforcement 可能ハーネスでは aidlc-review-freeze.ts PreToolUse フックが書き込み自体を REVIEW_FREEZE_BLOCKED で拒否する (シェル書き込みは Write/Edit の監査フィードを通らないため Bash のリダイレクトも検査)。記録済み GATE_REJECTED のみが revision 経路のために freeze を解除する。",
+   "invariants": [
+    "終端 NOT-READY も READY と全く同様に凍結する",
+    "cap 未満の敵対的 NOT-READY は非終端のままで修理ループが編集を続けられる",
+    "エンジンの床をリセットするのと同じイベントで凍結も自動解除"
+   ],
+   "context": "verification",
+   "sources": [
+    "04-stage-protocol.md",
+    "05-agents.md",
+    "07-hooks.md"
+   ]
+  },
+  {
+   "term": "reviewer read scope",
+   "kind": "policy",
+   "definition_ja": "per-unit レビュアーに課される読み取り境界: 他ユニットの construction/<other-unit>/ をファイルオープンでも grep/glob/シェルパターンでも読んではならない。唯一の例外は現ユニット設計が明示する統合点 spot-check の owning file。コンダクタが派遣直前に reviewer dispatch record (<record>/.aidlc-reviewer-dispatch.json、exempt パス列付き) を書き、aidlc-reviewer-scope.ts PreToolUse フックが機械強制する (Kiro IDE を除く6ハーネス)。",
+   "invariants": [
+    "強制は fail-open (レコード欠落・TTL 超過・不正 JSON は許可)、パス中の未解決シェル変数は fail-closed",
+    "遮断時は exit 2 + REVIEWER_SCOPE_BLOCKED 監査行",
+    "レコードは判定読み取り後に必ず削除 (残存は後続の無関係作業を拒否し続ける)"
+   ],
+   "context": "verification",
+   "sources": [
+    "04-stage-protocol.md",
+    "05-agents.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "reviewer dispatch record",
+    "REVIEWER_SCOPE_BLOCKED"
+   ]
+  },
+  {
+   "term": "PreToolUse guard",
+   "kind": "policy",
+   "definition_ja": "プローズだけでは守られなかった順序を強制する4つの PreToolUse ガード: state-transition-guard (ライフサイクル所有権)、plan-approval-guard (生成前の計画承認)、review-freeze (レシート後の書き込み凍結)、reviewer-scope (ユニット外読み取り禁止)。各々窓を狭く絞り、窓の外では fail-open し (壊れた stdin・state 欠如・throw はすべて許可)、拒否を監査行として記録する。",
+   "invariants": [
+    "拒否監査は短いロック予算下 (遅いブロックより advisory 行のドロップが好ましい)",
+    "各ガードに決定的な無効化環境変数 (AIDLC_DISABLE_*) がある",
+    "fail-open は4ガードの性質であり全 flow-altering フックの性質ではない"
+   ],
+   "context": "verification",
+   "sources": [
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "fail-open",
+    "exit 2 + stderr がブロック"
+   ]
+  },
+  {
+   "term": "plan approval guard",
+   "kind": "policy",
+   "definition_ja": "code-generation ステージにおける developer-agent のディスパッチを、指紋付きで承認された計画が揃うまで拒否するガード。プロンプトが正確に1つの AIDLC-UNIT: マーカーで既知ユニットを指名し、6つの証拠ビット (planExists / instructionsExist / approved / contractValid / fingerprintValid / contractHash) を満たし、AIDLC-TESTING-CONTRACT マーカーが現在の contract hash に一致することを要る。動機は「コードを先に生成して計画を後付けした」実地の失敗。",
+   "invariants": [
+    "code-generation-plan.md は「生成への INPUT であり、決して遡及的サマリではない」",
+    "ブロックは PLAN_APPROVAL_BLOCKED を発行",
+    "既知ユニット = コンパイル済み Bolt DAG ∪ ディスク上の construction/<unit>/"
+   ],
+   "context": "verification",
+   "sources": [
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "AIDLC-UNIT marker",
+    "AIDLC-TESTING-CONTRACT marker"
+   ]
+  },
+  {
+   "term": "Testing Posture",
+   "kind": "policy",
+   "definition_ja": "memory 3層の ## Testing Posture 節から Code Generation の決定的実行契約を1つ解決する仕組み。層優先は project → team → org → fallback (methodology test-after)。メソドロジー語彙は tdd / bdd / atdd / test-after / custom の5値で、構造化フィールドと散文検出の2経路で分類される。TestStrategy (量の軸) とは別軸で、contract の obligations で交差する。",
+   "invariants": [
+    "狭い層が広い層の methodology と矛盾したらハード衝突 (ランタイム上書き不可)",
+    "構造化フィールドの語彙外値はハードエラー、散文の曖昧はその層を選択しない (null)"
+   ],
+   "context": "verification",
+   "sources": [
+    "09-cli-tools.md"
+   ]
+  },
+  {
+   "term": "Testing Contract",
+   "kind": "artifact",
+   "definition_ja": "解決済み Testing Posture の成果物 (version: 1)。methodology / ordering / obligations / plan_profile / input_sha256 等を持ち、contract_sha256 = canonical-JSON の hashObject が付与される。code-generation-plan.md の ## Testing Contract 見出し下に fenced JSON block として埋め込まれ、読み取り時にハッシュ再計算一致を検証される。",
+   "invariants": [
+    "obligations は strategy_volume と scope_floor の独立2軸を「どちらも他方を置換しない」規則で合成",
+    "input_sha256 は raw 節対象 — コメントのみの変更でも stale な承認を無効化",
+    "plan_profile は必ず structure ステップと runner ステップで始まる"
+   ],
+   "context": "verification",
+   "sources": [
+    "09-cli-tools.md"
+   ]
+  },
+  {
+   "term": "CodeGenerationApproval / approval fingerprint",
+   "kind": "policy",
+   "definition_ja": "Code Generation 承認ゲートの述語。plan・instructions・questions の3ファイルを読み、固定順・最初の失敗勝ちの7チェック (存在 → contract 有効 → 鮮度 → Approve Plan 明示回答 → fingerprint 一致) で判定する。approval fingerprint は hashObject({plan, instructions, testing_contract}) で「人間の承認が何に対する承認か」をハッシュで束縛する。dispatch ガードと swarm referee の両方が同じ述語を消費する。",
+   "invariants": [
+    "anti-forgery: plan が承認済みの間は fingerprint を再発行しない",
+    "承認後に plan / instructions / contract のいずれかが変わると承認が失効",
+    "autonomous の code-generation prepare は worktree fork 前に全 unit へ承認を要求"
+   ],
+   "context": "verification",
+   "sources": [
+    "09-cli-tools.md"
+   ]
+  },
+  {
+   "term": "reviewed-source binding",
+   "kind": "process",
+   "definition_ja": "レビュー済みアプリケーションソースのバイト列を、Bolt ブランチを動かさずに不変コミットとして具現化する処理。一時 GIT_INDEX_FILE でコミットし、framework 所有パスを HEAD から復元して「後続のソースマージがアプリケーションソースのみを運ぶ」ようにする。以後この Bolt は source-bound となりマージ対象がこの不変コミットになる。workspace_requires ステージでは Source Fingerprint の再計算照合が全完了経路に追加される。",
+   "invariants": [
+    "コミットは framework identity で行い ambient git config に依存しない",
+    "reviewed Source Commit が利用不能なら worktree merge は拒否",
+    "source-bound convergence の rebase は拒否"
+   ],
+   "context": "verification",
+   "sources": [
+    "04-stage-protocol.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "Source Fingerprint",
+    "source-bound"
+   ]
+  },
+  {
+   "term": "phase boundary verification",
+   "kind": "process",
+   "definition_ja": "3つのフェーズ境界 (Ideation→Inception、Inception→Construction、Construction→Operation) でトレーサビリティを検証する governance モジュールのプロセス。各フェーズ最終ステージ承認後に走り、verification.md の方法論を読み、結果を <record>/verification/ に書き、欠落リンク・孤児成果物をユーザーに提示してから PHASE_VERIFIED をログする。コンダクタ実行のガバナンスプロトコルで、エンジン内に決定論的ゲートは存在しない。",
+   "invariants": [
+    "Initialization→Ideation には governance 境界チェックが存在しない",
+    "訂正の永続ルール化は §13 の管轄 (ここではない)"
+   ],
+   "context": "verification",
+   "sources": [
+    "01-workflow-model.md",
+    "04-stage-protocol.md"
+   ]
+  },
+  {
+   "term": "harness",
+   "kind": "entity",
+   "definition_ja": "AI コーディングアシスタントごとの配布ターゲット (claude, codex, copilot, cursor, kiro, kiro-ide, opencode の7つ) と、その per-CLI 表面を定義する harness/<name>/ ディレクトリ。発見はハードコードではなく manifest.ts の走査。実行時判別の権威は tools/data/harness.json の name (copilot/opencode は .aidlc、kiro/kiro-ide は .kiro を意図的に共有するため)。プロジェクトルート解決とエンジンルート解決は別関数で、混同が最多バグ原因。",
+   "invariants": [
+    "ハーネス追加は harness/<n>/ + manifest 1行 (+任意の emit.ts) のみ",
+    "Mutation is project-owned — explicit/packaged ルートへの書き込み禁止",
+    "決定的エンジンは全ハーネスでバイト同一、シェルのみ異なる"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "03-state-audit-runtime.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "core",
+   "kind": "artifact",
+   "definition_ja": "唯一のハーネス中立なソースオブトゥルースとなるディレクトリ。ツール、ステージ、エージェント、メモリ、スコープ、センサー、知識、フック、セッションスキル、テンプレートの10サブディレクトリ。編集規律は「core/ (または harness/<name>/) を編集せよ、dist/ は決して編集するな」。",
+   "invariants": [
+    "手編集が許されるのは core/・harness/<name>/・plugins/<name>/ のみ",
+    "コンパイル済みデータは core/ に存在せず dist/ にのみ存在"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md"
+   ]
+  },
+  {
+   "term": "dist",
+   "kind": "artifact",
+   "definition_ja": "packager が core/ + harness/ + plugins/ から生成する配布ツリー群。7ハーネスツリー + dist/plugins/ の計8ターゲットで、生成物でありながらコミットされバイトパリティでガードされる。ユーザーはこのツリーを自プロジェクトへコピーして使う (アップグレード = 再コピー)。",
+   "invariants": [
+    "dist/ は手編集禁止 — generated projection output, never source",
+    "各ハーネスツリーは aidlc/ ワークスペースシェルと .gitignore を同梱"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "three zones",
+   "kind": "policy",
+   "definition_ja": "リポジトリの統治原理。「AI-DLC が何であるか (core/)、各ハーネスがどう話すか (harness/)、ユーザーが何をコピーするか (dist/)」の3ゾーンに分かれ、編集してよいのは最初の2つのみで、3つ目は packager が再生成する。",
+   "invariants": [
+    "hand-authored ゾーンのみ編集可",
+    "generated ゾーンは packager 出力とコミットが常に一致"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md"
+   ]
+  },
+  {
+   "term": "HarnessManifest",
+   "kind": "value",
+   "definition_ja": "各ハーネスが実装する宣言的データ契約 (harness/<name>/manifest.ts)。name / harnessDir / tierFlavor / coreDirs / harnessFiles / frontmatterAdditions / rulesRename / onboarding / emit 等を持つ。設計規則は「manifest は DATA であり、ハーネスが寄与しうる唯一の CODE はオプションの emit() プラグイン」。manifest.ts の存在自体がハーネスの発見条件。",
+   "invariants": [
+    "frontmatterAdditions の未対応エントリ・YAML key 衝突はビルド中断",
+    "発見結果はソートされビルドと --check の順序が安定"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "manifest",
+    "manifest.ts"
+   ]
+  },
+  {
+   "term": "transform (T5) / {{HARNESS_DIR}}",
+   "kind": "policy",
+   "definition_ja": "「唯一許可されたテキスト変換クラス」。.md ファイルのみに固定順で適用: (1) reviewer-knowledge 吸収 → (2) {{HARNESS_DIR}} トークンの harnessDir 値 (.claude, .kiro, .codex, .cursor, .aidlc の5種) への置換 → (3) rules リネーム → (4) tier frontmatter 投影 → (5) cursor ペルソナの memory ピン留め。.json / .ts はバイト無変換。claude も同じトークンを担う peer harness。",
+   "invariants": [
+    "これ以外のテキスト変形は禁止 (one-core-N-harnesses の同一性保証)",
+    "構造的分岐は emit() でのみ表現可能"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "HARNESS_DIR token",
+    "harnessDir",
+    "T5"
+   ]
+  },
+  {
+   "term": "rulesRename",
+   "kind": "value",
+   "definition_ja": "ハーネスがルールディレクトリを呼ぶ名前 (kiro 系: \"steering\"、codex: \"aidlc-rules\"、他は null)。今日では prose 内の rules/ 言及の書き換えと harness.json の rulesSubdir 供給のみで、ディレクトリの投影は行われない (core/rules/ は存在しない)。Kiro が steering を自動ロードするからこそ「rules ARE the always-on layer」としてこの名が選ばれた。",
+   "invariants": [
+    "kiro 配布に steering ディレクトリは1つも投影されない",
+    "リネームは置換後の harness-dir 形にアンカーされる"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "packaging pipeline",
+   "kind": "process",
+   "definition_ja": "scripts/package.ts の buildTree が実行する唯一のビルドエントリ。coreDirs コピー (T5 変換) → harnessFiles コピー → onboarding 描画 → memory ツリー出力 → stage graph コンパイル (シードは既存 JSON の番号・名前のみブートストラップ) → harness.json 書き出し → runner 生成 → emit() → 生成スキル領域リフレッシュの順。write と check は outRoot が異なるだけで同一パイプライン。",
+   "invariants": [
+    "memory 出力は compile より前 (rules_in_context の解決元)",
+    "生成テーブル領域は do NOT hand-edit マーカーで保護され、不正マーカーはビルド中断",
+    "in-tree ツールの非ゼロ終了はビルド全体を中断"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "buildTree",
+    "package.ts"
+   ]
+  },
+  {
+   "term": "emit()",
+   "kind": "process",
+   "definition_ja": "harness/<name>/emit.ts としてハーネスが提供できる唯一のコード拡張点。宣言的な manifest 行では表現できない構造的分岐 (codex の TOML / .agents 生成、copilot の .github シェル、opencode の .opencode) を担う。7ハーネス中3つが持つ。AIDLC plugin (plugin.json を持つ拡張パッケージ) とは別概念。",
+   "invariants": [
+    "manifest が宣言した場合のみ実行",
+    "所有サブツリーを rmSync でクリーンスイープしてから書く",
+    "渡された tierCap を再解決してはならない"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "drift guard (--check)",
+   "kind": "policy",
+   "definition_ja": "package.ts --check が実装する freshness-diff イディオム。各ツリーを一時ディレクトリにビルドし、コミット済み dist/ とバイト単位で diff する冪等性ゲート。問題は MISSING in dist / DIFFERS / ORPHAN in dist の3クラスで、1つでもあれば exit 1。CI の最初のブロッキングゲート。",
+   "invariants": [
+    "--check 時は AIDLC_TIER_CAP を意図的に無視",
+    "compile はコミット済み stage-graph.json / scope-grid.json をバイト同一に再現しなければならない",
+    ".gitattributes が全プラットフォームで LF を固定 (改行正規化はガード全体を落とす)"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "--check",
+    "freshness-diff",
+    "byte parity"
+   ]
+  },
+  {
+   "term": "AIDLC_VERSION / changelog discipline",
+   "kind": "policy",
+   "definition_ja": "フレームワークバージョンの単一ソースオブトゥルース (aidlc-version.ts、手編集) と、「ユーザーに見える PR はすべてバージョンと CHANGELOG 見出しを同一コミットでバンプする」規律。t68 テストと ci-changelog-guard が同一の見出し正規表現をロックステップで共有して強制する。",
+   "invariants": [
+    "AIDLC_VERSION 代入は正確に1箇所、CHANGELOG 最新見出し・README バッジ・CLI 出力と一致",
+    "既存 CHANGELOG エントリの削除禁止",
+    "doc 掃除・内部リファクタ・テストのみの変更はバンプしない"
+   ],
+   "context": "distribution",
+   "sources": [
+    "00-overview.md"
+   ]
+  },
+  {
+   "term": "tier projection",
+   "kind": "process",
+   "definition_ja": "packager が authored な tier: 値を各ハーネスネイティブの model/effort キーへ書き換えるプロセス。TIER_PROJECTIONS が単一の真実で、null = キー省略 = ハーネスのセッション既定。manifest の tierFlavor がどの列を使うかを決める。Kiro/Copilot/Cursor スロットは型レベルで model-only。",
+   "invariants": [
+    "/agents/ 配下の *-agent.md にのみ適用、tier: 行欠落はハードビルド失敗",
+    "tier_cap と AIDLC_TIER_CAP が low-wins で全射影をクランプ",
+    "Codex は per-agent turn cap キーがないため maxTurns 参照の散文自体を書き換える"
+   ],
+   "context": "distribution",
+   "sources": [
+    "05-agents.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "TIER_PROJECTIONS",
+    "tierFlavor"
+   ]
+  },
+  {
+   "term": "harness projection (agent surface)",
+   "kind": "process",
+   "definition_ja": "14エージェントを7ハーネスそれぞれのネイティブなエージェント表面へ変換するプロセス (Claude: model/effort 付き .md、Codex: .toml + 参照 .md、Kiro: .md + 手書き agent JSON 15個、等)。build-time knowledge absorption は、常に派遣される2レビュアーの knowledge/<agent>/*.md を provenance コメント付きで .md 本文へ吸収する (レビュアー集合はステージ frontmatter から導出、ハードコードでない)。",
+   "invariants": [
+    "全7ハーネス配布物が全14エージェントを受け取る",
+    "Kiro JSON のみが真の per-agent ツール絞り込み",
+    "Copilot の実スポーン面 .github/agents/ には吸収が届かない (既知の穴)"
+   ],
+   "context": "distribution",
+   "sources": [
+    "05-agents.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "build-time knowledge absorption",
+    "reviewer knowledge absorption"
+   ]
+  },
+  {
+   "term": "hook adapter",
+   "kind": "artifact",
+   "definition_ja": "17本のコアフック本体はバイト共有され、非 Claude ハーネスごとに1つの authored adapter がネイティブペイロードを ClaudeCodeHookInput 形へ正規化し、コアフックへサブプロセスでパイプし stdout と終了コードを中継する。ハーネスの能力差 (Codex の二重配送と apply_patch 展開、Copilot の SessionEnd 非登録、Kiro IDE のシェル不可視等) はアダプタと専用コードパスで吸収される。",
+   "invariants": [
+    "Stop フックの decision:block は Codex で verbatim に通過",
+    "kiro と kiro-ide の同名アダプタは別ファイル"
+   ],
+   "context": "distribution",
+   "sources": [
+    "07-hooks.md",
+    "10-distribution-harnesses.md"
+   ],
+   "aliases": [
+    "harness adapter",
+    "ClaudeCodeHookInput"
+   ]
+  },
+  {
+   "term": "harness.json",
+   "kind": "artifact",
+   "definition_ja": "packager が tools/data/harness.json へ emit するハーネス記述子。name / harnessDir / rulesSubdir / runnerFrontmatterAdditions 等を持ち、ランタイムの配布判別とルールサブディレクトリ解決の source of truth。plugins キーは packager が決して書かず、プラグイン選択がインストール済みツリーに追加する。",
+   "invariants": [
+    "毎ビルド fresh なオブジェクトを構築 — 手書きフィールドは --check で落ちる",
+    "harnessDir を共有するハーネスペアの実行時判別はこのファイルの name による"
+   ],
+   "context": "distribution",
+   "sources": [
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "memory-seed",
+   "kind": "artifact",
+   "definition_ja": "core/memory/ の内容を1ビルドで2か所へ出力するうちのエンジン同梱コピー (<harnessDir>/tools/data/memory-seed/)。エンジンのみコピーしたインストールの自己修復ソースで、ensureWorkspaceDirs が default space のメソッドツリー不在時に限りコピーアウトする。「never SEED ルールに対する意図的で GUARDED な例外」。",
+   "invariants": [
+    "コピーアウトは宛先不在時のみ (existsSync ガードで厳密冪等)",
+    "既存メモリを決して上書きしない"
+   ],
+   "context": "distribution",
+   "sources": [
+    "08-memory-rules-learnings.md",
+    "10-distribution-harnesses.md"
+   ]
+  },
+  {
+   "term": "plugin",
+   "kind": "entity",
+   "definition_ja": "AI-DLC インストールに stage / scope / agent / knowledge / sensor / tool を追加し、既存コアステージを宣言的 contribution で加算的に変更する拡張パッケージ。plugins/<name>/ に .aidlc-plugin/plugin.json と core 同形のサブツリーを持つ。拡張モデルはインストール時合成 (実行時ロードなし) で、内容は物理的にハーネスツリーへコピーされる。compose 後、エンジンは plugin: キー以外ではコアと合成済みプラグインステージを区別できない。",
+   "invariants": [
+    "contribution は加算のみ — コアの上書き・削除・並べ替えは不可能",
+    "プラグイン所有ステージの slug は <plugin>- 接頭辞必須",
+    "現在は参照 fixture の test-pro が1つだけ出荷"
+   ],
+   "context": "plugin",
+   "sources": [
+    "00-overview.md",
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "contribution",
+   "kind": "artifact",
+   "definition_ja": "contributions/<phase>/<target-slug>.md の宣言的ファイルで、コアステージのインストール済みソース .md に構造的マージ (adds) と散文断片 (fragments) を加算する (コンパイル済み JSON ではなくソースへ — だから再コンパイルをまたいで永続)。実装済みマージ面は produces / sensors / consumes / scopes / required_sections の5つのみで、他キーは advisory drop 付き no-op。",
+   "invariants": [
+    "すべて加算 (set union) — 2プラグイン間の構造面衝突は原理的に起きない",
+    "requires_stage は contribution 経由でマージ不可",
+    "有効化されたプラグインのみ contribution がマージされる"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ],
+   "aliases": [
+    "overlay",
+    "adds"
+   ]
+  },
+  {
+   "term": "plugin manifest (.aidlc-plugin/plugin.json)",
+   "kind": "artifact",
+   "definition_ja": "プラグインの name / version / dependencies / aidlc.contributes を宣言するマニフェスト。実体はパッケージング入力+ドキュメント成果物でランタイム権限を持たない。dependencies はリゾルバが存在せず宣言のみ、aidlc.contributes はディスカバリに使われない (ディレクトリ名ハードコード)。compose 時の識別はホスト側マニフェストの aidlc- 接頭辞を剥がして復元される。",
+   "invariants": [
+    "name はプラグインディレクトリ basename と一致必須",
+    "不正な JSON は packager が loud に失敗"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "compose",
+   "kind": "process",
+   "definition_ja": "ホストの SessionStart 等のフックから起動され、プラグイン内容をプロジェクトのハーネスツリーへ合成するインストール時マージアルゴリズム (compose.ts、全プラグイン・全ハーネスで同一バイト)。共有ワークスペースロック下でスナップショット式書き込みトランザクションを開き、precheck (スキーマ・所有権・衝突・発見可能性の4ゲート) → no-clobber コピー (既存宛先は決して上書きせず、差分ありは衝突 drop、同一は無音スキップ) → contribution マージを行い、変化があればグラフを再コンパイルする。plugin sync はプラグインルート群へのファンアウト動詞。",
+   "invariants": [
+    "compose は呼び出し元に決して throw しない (失敗はホストセッションを壊さない)",
+    "コンパイル失敗時は全書き込みをロールバックし retry marker を残す (次回強制再コンパイルで自己修復)",
+    "すべてのマージは冪等"
+   ],
+   "context": "plugin",
+   "sources": [
+    "10-distribution-harnesses.md",
+    "11-plugin-system.md"
+   ],
+   "aliases": [
+    "compose hook",
+    "no-clobber copy",
+    "precheck",
+    "retry marker",
+    "plugin sync",
+    "compose write transaction"
+   ]
+  },
+  {
+   "term": "host plugin projection",
+   "kind": "artifact",
+   "definition_ja": "packager が (プラグイン × ハーネス) ごとに dist/plugins/<plugin>/<harness>/ へ描画する配布形態 (第8の dist ターゲット)。ホストマニフェスト (id は aidlc-<plugin>)、marketplace.json、compose フック配線、7つの contentDirs ツリーからなる。著作されたツリーそのままでは配布されない。",
+   "invariants": [
+    "全7ハーネスが投影を受け取る (ターゲットは各 manifest から導出、ハードコード禁止)",
+    "dist/plugins/ も同じドリフトガードの対象",
+    "Cursor だけは agents/ を aidlc/agents/ に退避"
+   ],
+   "context": "plugin",
+   "sources": [
+    "10-distribution-harnesses.md",
+    "11-plugin-system.md"
+   ],
+   "aliases": [
+    "dist/plugins"
+   ]
+  },
+  {
+   "term": "plugin selection",
+   "kind": "policy",
+   "definition_ja": "合成 (ファイル設置) とは直交する有効化機構。harness.json の plugins 配列キーが選択で、キー不在は「全て有効」。aidlc plugin select はロック下で選択を書き、無効化プラグインの contribution を strip し、compile / runner-gen を再導出し、PLUGIN_SELECTION_CHANGED を監査する。selection closure invariant: 有効ステージの required artifact の生産者が全て無効なら compile が失敗する (ordering edge は doctor advisory のみ)。stranded workflow guard: 生きているワークフロー依存を座礁させる選択は拒否される。",
+   "invariants": [
+    "initialization phase のステージは選択に関係なく常に有効",
+    "失敗時は3スナップショット + strip 済みステージファイルを復元",
+    "座礁条件は Scope 所有 or pending EXECUTE の2つ (拒否であって警告ではない)"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ],
+   "aliases": [
+    "selection closure invariant",
+    "stranded workflow guard",
+    "PLUGIN_SELECTION_CHANGED"
+   ]
+  },
+  {
+   "term": "fragment / anchor",
+   "kind": "value",
+   "definition_ja": "contribution の散文挿入単位とその位置参照。fragments エントリ (anchor + order) と本文の ## fragment: ブロックが「アンカーラベルごとの FIFO」で対にされる。挿入ブロックは FNV-1a ハッシュを開閉マーカーに含む自己区切りセンチネルで包まれ、同ハッシュは no-op、異ハッシュは丸ごと置換、不在は (order, plugin) 順に挿入。anchor は after-step:<n> / before-step:<n> / end-of-steps / in:<Section> の4形式のみ。",
+   "invariants": [
+    "適用順は常に (order, plugin) — フック発火順に依存しない",
+    "解決失敗はすべて drop 付き散文破棄",
+    "本文分割はフェンス認識 (コードフェンス内の ## fragment: は区切りにならない)"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "contribution sidecar / strip",
+   "kind": "artifact",
+   "definition_ja": "構造的 adds にはファイル内証跡がないため、compose が実際にマージした値を plugin-contrib-<KEY>.json に記録するブックキーピング (sidecar) と、無効化時にそれを消費して記録された値だけを正確に除去する処理 (strip)。prose fragment はセンチネルマーカー自身が証跡で sidecar 不要。再有効化時の復元はプラグイン自身の再 compose に依存する。",
+   "invariants": [
+    "sidecar エントリは実行間で union (冪等再実行が記録を侵食しない)",
+    "strip は recompile より前に走る",
+    "対になっていないマーカーはそのまま残す (doctor 領域)"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "drop (recordDrop)",
+   "kind": "event",
+   "definition_ja": "compose の no-silent-failure 契約の単位。スキップ・劣化・破棄されたすべてのアクションは severity 付き (degraded / advisory) で記録され、plugin-compose-<KEY>.drops に一括フラッシュされる。「履歴ではなくライブシグナル」で、毎実行上書き・クリーン実行で削除。doctor は degraded 行を含むファイルを failing として集計する。",
+   "invariants": [
+    "プラグインごとに別ファイル (別プラグインの劣化シグナルを消せない)",
+    "[degraded] 1行で doctor が fail、advisory のみなら pass"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "aidlc reserved namespace",
+   "kind": "policy",
+   "definition_ja": "aidlc および aidlc-* 接頭辞はコアの名前空間で、プラグイン名としては packaging・compile・compose の独立点で拒否される。機械的理由はランナーパス衝突 (runnerDirName はコアに aidlc-<slug>、プラグインに bare slug を出す)。逆にセンサーマニフェストのファイル名は aidlc-<id>.md 形式が必須という「逆向きの規約」がある。",
+   "invariants": [
+    "所有権チェックは4独立点 (packager / compose precheck / contribution parse / compiler)",
+    "プラグイン所有ステージ slug は <plugin>- 接頭辞必須"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "plugin ownership key (plugin:)",
+   "kind": "value",
+   "definition_ja": "ステージ / scope / agent の frontmatter に置く任意フィールドで、所有プラグインの識別子を宣言する。compile がグラフノードへ逐語コピーし、選択適用が削除または enabled: false 化する。scope の所有判定もこのキーによる (名前接頭辞規則ではない)。共有ユーザー空間では「このファイルは我々のもの」というマーカーとしても機能する。",
+   "invariants": [
+    "plugin: aidlc / aidlc-* は compile が throw",
+    "選択適用はグラフノード単位"
+   ],
+   "context": "plugin",
+   "sources": [
+    "11-plugin-system.md"
+   ]
+  },
+  {
+   "term": "AI-DLC",
+   "kind": "process",
+   "definition_ja": "AWS が定義する「構造化・ゲート制御された AI 駆動ソフトウェア開発のメソドロジー」(AI-Driven Development Life Cycle)。upstream リポジトリはその「ネイティブなマルチハーネス実装」で、機能面は5フェーズ・33ステージ・14エージェント・11スコープ・3深度・3テスト戦略・承認ゲート・監査トレイル・学習ループとして列挙される。実装が正、文書は従 (as-built 原則)。",
+   "invariants": [
+    "メソドロジーと実装は明示的に区別される",
+    "配布物は実行可能サービスではなく、ユーザーが自プロジェクトへコピーする生成済み配布物"
+   ],
+   "context": "cross-cutting",
+   "sources": [
+    "00-overview.md"
+   ]
+  },
+  {
+   "term": "Hook",
+   "kind": "process",
+   "definition_ja": "AI-DLC の「決定論的背骨」— モデルが実行を忘れても必ず走る層。ホストハーネスのライフサイクルイベントから起動され、stdin の JSON を読み終了コード (と任意の stdout JSON) で応答する17本の TypeScript スクリプト (バイト共有、全ハーネスが bun 経由で実行)。終了契約は Advisory (常に exit 0、11本) と Flow-altering (6本: exit 2 + stderr がブロックする PreToolUse 系5本と decision:block の Stop フック)。監査イベント出力・セッションライフサイクル・強制 (enforcement)・ルール配送に跨る横断機構。",
+   "invariants": [
+    "フックは17本で固定、TTY なら stdin 読み取り前に早期終了",
+    "監査ファイルを自ら作成しない (既存の場合のみ発行するフックがある)",
+    "多くはハートビートと drop 記録を書き doctor が読む"
+   ],
+   "context": "cross-cutting",
+   "sources": [
+    "00-overview.md",
+    "06-sensors.md",
+    "07-hooks.md"
+   ],
+   "aliases": [
+    "hook",
+    "Advisory / Flow-altering"
+   ]
+  },
+  {
+   "term": "voice contract",
+   "kind": "policy",
+   "definition_ja": "ユーザーが読む全メッセージを支配する語彙規約。engine, directive, conductor, harness, scope grid, steering, swarm, mint, birth, ARS 成分名などの内部予約語彙をチャット叙述に出してはならず、代替表現テーブルに従う。カーブアウトは2つ: ツールが印字を指示した文字列の VERBATIM 印字と、監査イベント名・状態マーカー・フラグ・パス・slug の正確な綴り。",
+   "invariants": [
+    "MANDATORY on every stage, every gate, every message the user reads",
+    "raw の question spec をトランスクリプトにエコーするのはプロトコル違反"
+   ],
+   "context": "cross-cutting",
+   "sources": [
+    "04-stage-protocol.md"
+   ]
+  },
+  {
+   "term": "session skill",
+   "kind": "artifact",
+   "definition_ja": "core/skills/ 配下のセッション横断スキル。実測4ディレクトリ: aidlc-knowledge (DocumentKB 操作)、aidlc-outcomes-pack、aidlc-replay、aidlc-session-cost。後3者は読み取り専用で全数値を runtime-graph の summary から引き、ステージポインタを進めず監査イベントを emit しない。",
+   "invariants": [
+    "README/AGENTS.md の「3 skills」記述は誤りで実装 (4) が正 (as-built 原則)",
+    "消費スキルは read-only"
+   ],
+   "context": "cross-cutting",
+   "sources": [
+    "00-overview.md",
+    "03-state-audit-runtime.md"
+   ]
+  },
+  {
+   "term": "usage ledger",
+   "kind": "artifact",
+   "definition_ja": "aidlc/.aidlc-sessions/usage-ledger.json (schemaVersion 3) にトークン数とコストを永続する台帳。fold-usage フックが Claude transcript の新規追記バイトのみを畳み込み (FoldMode: holdback / seal-main / flush-all)、STAGE_COMPLETED / WORKFLOW_COMPLETED のロールアップと statusline が消費する。producer は Claude ハーネス限定で、他ハーネスは静かに no-data へ縮退。",
+   "invariants": [
+    "絶対的堅牢性契約: 何もスローしない (失敗パスは既存 ledger 無変更)",
+    "Cost USD は三状態 (フィールド無し / null / 数値) — 決してコストを捏造しない",
+    "トークン計数セマンティクス変更時は version を上げ旧合計を破棄"
+   ],
+   "context": "cross-cutting",
+   "sources": [
+    "07-hooks.md",
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "fold-usage",
+    "statusline"
+   ]
+  },
+  {
+   "term": "doctor",
+   "kind": "process",
+   "definition_ja": "環境・フック配線・状態/監査ドリフト・リークしたロック・孤児 worktree などを検査するライブヘルスチェック (aidlc-utility doctor) と、--doctor --export の redacted 自己診断バンドルの総称。両者は同一の DoctorFinding モデルから生成され、別々の診断規則を発達させられない。verification (Sensor / レビュー) とは別系統の自己診断。",
+   "invariants": [
+    "exit code はレガシー環境チェックのみが駆動し、ワークフロー診断は advisory",
+    "cold-safe: pristine プロジェクトでは何も作らない純読取り",
+    "バンドルは書き込み前に redaction (生ファイル・成果物本文を決して含めない)"
+   ],
+   "context": "cross-cutting",
+   "sources": [
+    "09-cli-tools.md"
+   ],
+   "aliases": [
+    "--doctor",
+    "DoctorFinding",
+    "hooks-health"
+   ]
+  }
+ ],
+ "collisions": [
+  {
+   "term": "harness",
+   "issue": "最低3義の衝突: (1) 配布ターゲットとしてのホスト CLI とその harness/<name>/ 定義ディレクトリ、(2) tests/harness/ のテストドライバ群・「AI-DLC test harness」という全スイート呼称、(3) docs/harness-engineering/。さらに (1) の内部でも「実行環境」「配布定義」「dist の配布物」「harnessDir (エンジン配置ディレクトリ)」の顔がある。upstream 自身 (AGENTS.md:39) が命名衝突と明記。",
+   "proposal": "正準は (1) Harness = 配布ターゲット。エンジン配置ディレクトリは HarnessDir、テスト側は TestDriver / TestSuite と呼び分け、amadeus-ng のユビキタス言語からテスト用法を排除する。"
+  },
+  {
+   "term": "scope",
+   "issue": "少なくとも4義: (1) Scope 設定 (11ストック + composed、実体は EXECUTE/SKIP グリッド)、(2) rule scope (org/team/project/phase のルール階層)、(3) reviewer read scope (レビュアーの読み取り境界)、(4) Kiro agent JSON のツール/パス scope。ドメインの中心語なのに多義。",
+   "proposal": "正準の Scope は (1) のみ。(2) は RuleLayer (ルール層)、(3) は ReviewerReadBoundary、(4) はハーネス実装詳細として用語集から除外する。"
+  },
+  {
+   "term": "memory.md",
+   "issue": "同名ファイルの完全な別物2つ: per-stage のステージ日誌 (<record>/<phase>/<stage>/memory.md、コンダクタ手書き) と、per-space の Memory 層ファイル (aidlc/spaces/<space>/memory/{org,team,project}.md、ツールが書く永続実践知)。レビュアーに渡されない「memory.md」は前者。",
+   "proposal": "前者を StageDiary (ステージ日誌)、後者を MemoryLayer (メモリ層) と型名レベルで分離する。ファイル名は upstream 互換で維持しつつ、ドメインモデル上の名前を分ける。"
+  },
+  {
+   "term": "plugin",
+   "issue": "2義: (1) AIDLC plugin (plugin.json を持つメソドロジー拡張パッケージ) と (2) emit() plugin (ハーネスのビルド時コード拡張点 — 仕様自身が \"an optional emit() plugin\" と呼ぶ)。",
+   "proposal": "(1) を正準の Plugin とし、(2) は EmitExtension / エミッタと呼んで plugin の語を使わない。"
+  },
+  {
+   "term": "tier",
+   "issue": "3義: (1) エージェントの Tier (judgment/balanced/templated、モデル/エフォート投影)、(2) センサー設置の framework/plugin/project tier (設置ルート)、(3) テストの test tier (smoke/unit/integration/e2e)。さらに Depth (ワークフロー深度) との混同を仕様自身が頻出ポイントと明記。",
+   "proposal": "(1) を AgentTier として正準化、(2) は InstallRoute (設置経路)、(3) は TestLevel。Depth とは別軸であることを用語集の定義に必ず併記する。"
+  },
+  {
+   "term": "gate",
+   "issue": "多層多義: (1) 承認ゲート (computeGate の静的決定 / conductor の儀式 / handleApprove の強制の3層)、(2) admission gate (ルール入場ゲート)、(3) live model gate (テストの環境変数ゲート)、(4) TUI capability gate。加えて gate 軸と execution 軸の直交も混同されやすい。",
+   "proposal": "正準の Gate = 承認ゲート (ApprovalGate) とし、3層 (決定/儀式/強制) の責務分担をドメインモデルに明記。(2) は AdmissionCheck、(3)(4) はテスト基盤語彙として除外。"
+  },
+  {
+   "term": "knowledge",
+   "issue": "3つの別の木が全て knowledge と呼ばれる: (1) 出荷方法論知識 (<harness>/knowledge/、不変)、(2) team knowledge (space レベルのチーム所有ツリー)、(3) DocumentKB (documents/ + documentkb/ のカタログ)。仕様自身が「混同が最大の危険」と警告。",
+   "proposal": "(1) MethodologyKnowledge、(2) TeamKnowledge、(3) DocumentKB と3語に分離し、bare の knowledge を単独では使わない。"
+  },
+  {
+   "term": "workspace",
+   "issue": "2義: (1) aidlc/ ワークスペースツリー (Space/Intent/状態/監査の器 = workspace コンテキストの主対象) と (2) repos.json の multi-repo checkout (WorkspaceManifest / aidlc-workspace-sync)。仕様自身が「a different \"workspace\"」と注記。",
+   "proposal": "(1) を正準の Workspace とし、(2) は RepoWorkspace / WorkspaceManifest と限定名で呼ぶ。"
+  },
+  {
+   "term": "conductor / orchestrator / persona",
+   "issue": "conductor・orchestrator・main session は同一役割の別名で、orchestrator はステージ frontmatter の lead_agent 予約擬似スラッグとしても現れる。さらに conductor persona (役割横断の憲章) と agent persona (ステージエージェント定義) で persona も2義。orchestrator skill (ハーネスのスキル文書) とも紛らわしい。",
+   "proposal": "役割名は Conductor に統一。frontmatter 値としての orchestrator は「予約擬似スラッグ」として値の語彙に留める。ConductorCharter (conductor persona) と AgentPersona を型名で分離する。"
+  },
+  {
+   "term": "graph",
+   "issue": "3つの別のグラフ: (1) stage graph (定義のコンパイル結果 = プラン)、(2) runtime graph (監査ログから具現化した観測結果)、(3) unit DAG (Construction の unit 依存グラフ)。stage-graph.json と runtime-graph.json は名前が似るが軸が違う。",
+   "proposal": "StageGraph (プラン) / RuntimeGraph (観測) / UnitDag の3語を厳密に使い分け、無修飾の「グラフ」を禁止する。"
+  },
+  {
+   "term": "compose / compile / recompose",
+   "issue": "compose (プラグインのファイル合成)、compile (ステージグラフ構築)、recompose (実行中プランの EXECUTE/SKIP flip) が近縁綴りで別概念。compose が compile を呼ぶ関係でもある。composer (エージェント) は compose (プラグイン合成) を行わない。",
+   "proposal": "PluginCompose / GraphCompile / PlanRecompose と限定名で呼び、composer エージェントの成果は「グリッド構成 (grid composition)」と表現して plugin compose と区別する。"
+  },
+  {
+   "term": "steering",
+   "issue": "3義: (1) load-steering directive (エンジンのルール本文配送)、(2) Kiro の rulesRename 先ディレクトリ名 steering (= rules のハーネスネイティブ名)、(3) 本プロジェクト (kiro-style SDD) 側の .kiro/steering/。(1) と (2) は同一概念の別レイヤだが、(3) は無関係。",
+   "proposal": "upstream ドメインでは RuleDelivery (load-steering) と Rules (常時ロード層) で語り、steering は「Kiro におけるルールディレクトリのネイティブ名」という註記に格下げする。"
+  },
+  {
+   "term": "runner",
+   "issue": "2義: (1) stage runner (per-stage 生成 SKILL.md、--single 実行の入口) と (2) ハーネスのオーケストレータ runner SKILL.md (conductor の転送ループを載せる)。スコープの runner: true フラグ (scope-runner 生成) も加わる。",
+   "proposal": "StageRunner / OrchestratorSkill / ScopeRunner と3語に分離する。"
+  },
+  {
+   "term": "receipt / fingerprint",
+   "issue": "receipt: review receipt (レビュー権威レシート) と session-intent handoff receipt (セッション所有権引き継ぎ) が同語別概念。fingerprint: approval fingerprint (計画承認)、progress signature の directiveFingerprint (停滞検知)、Source Fingerprint (ソース鮮度)、Artifact Fingerprint と4系統。",
+   "proposal": "ReviewReceipt / SessionHandoffReceipt、ApprovalFingerprint / ProgressSignature / SourceFingerprint / ArtifactFingerprint と、修飾子必須の複合名に統一する。"
+  },
+  {
+   "term": "skipped / done / SKIP",
+   "issue": "「skipped」は (1) execution 軸の自己スキップ (report --result skipped)、(2) グリッドのプラン SKIP、(3) チェックボックス [S] の3箇所に現れる。「done」は report の verdict 語と directive kind の両方にある。コード自身が effectivePlanAction との混同を警告。",
+   "proposal": "プランは PlanAction (EXECUTE/SKIP)、実行結果は StageOutcome (completed/skipped)、表記は CheckboxState と3層を型で分離。done は verdict 側を approved 系同義語として正規化し、directive kind の done を終端 Directive として別型にする。"
+  },
+  {
+   "term": "sync",
+   "issue": "2義: aidlc-workspace-sync (multi-repo 調停) と plugin sync (プラグイン合成のファンアウト)。",
+   "proposal": "WorkspaceSync / PluginSync と常に修飾付きで呼ぶ。"
+  }
+ ],
+ "straddlers": [
+  {
+   "term": "walking skeleton",
+   "contexts": [
+    "workflow-definition",
+    "orchestration",
+    "workspace"
+   ],
+   "note": "skeleton: on|off はスコープ frontmatter (workflow-definition)、gate:\"unresolved\" の発行と stance 分類・解決は orchestration、Skeleton Stance フィールドは状態ファイル (workspace) に住む。主所有は orchestration としたが、アンカー導出規則 (最初の Construction EXECUTE ステージ) は workflow-definition との共有カーネル。"
+  },
+  {
+   "term": "recompose",
+   "contexts": [
+    "workflow-definition",
+    "orchestration",
+    "workspace"
+   ],
+   "note": "意図 (計画の再形成) は workflow-definition、実行時ガード列と effectivePlanAction は orchestration、書き込み先 (状態ファイルのステージ別サフィックス) は workspace。orchestration 所有・grid 意味論は workflow-definition 参照、という契約にするのが素直。"
+  },
+  {
+   "term": "stage-graph.json / scope-grid.json",
+   "contexts": [
+    "workflow-definition",
+    "distribution"
+   ],
+   "note": "意味論 (ノードスキーマ・グリッド転置・番号規則) は workflow-definition が所有するが、生成・シード契約・バイト再現・配置 (dist のみ) は distribution の packaging が担う。「形状と配送」の責務分割を明文化すべき。"
+  },
+  {
+   "term": "review_class",
+   "contexts": [
+    "workflow-definition",
+    "verification",
+    "orchestration"
+   ],
+   "note": "3入力の合成値: ステージ宣言 (workflow-definition)、スコープの review_cap (workflow-definition の frontmatter)、Review Override (workspace の状態フィールド)。解決規則と意味論は verification 所有、run-stage への搬送は orchestration。"
+  },
+  {
+   "term": "Hook",
+   "contexts": [
+    "verification",
+    "workspace",
+    "orchestration",
+    "knowledge",
+    "distribution"
+   ],
+   "note": "17本の内訳が複数コンテキストに散る: PreToolUse ガード4本は verification、監査/セッション系は workspace、Stop フック (forwarding loop) は orchestration、deliver-stage-rules は knowledge、per-harness アダプタは distribution。「Hook」自体は cross-cutting の機構とし、個別フックを各コンテキストに帰属させる。"
+  },
+  {
+   "term": "HUMAN_TURN / humanActedSinceGate",
+   "contexts": [
+    "workspace",
+    "orchestration",
+    "verification"
+   ],
+   "note": "emit 責務はフック (verification/cross-cutting)、保存と順序付け (fail-closed の同秒規則) は workspace、消費 (承認ゲートの human-presence 判定) は orchestration。3仕様に跨る代表的イベント。"
+  },
+  {
+   "term": "Learnings Ritual",
+   "contexts": [
+    "knowledge",
+    "orchestration",
+    "verification"
+   ],
+   "note": "トリガと順序制御 (ゲート前の独立人間ターン、QUESTION_ANSWERED 先行) は orchestration の契約、書き込み面 (project/team.md) と admission ゲートは knowledge、センサー scaffold (SENSOR_PROPOSED) は verification への橋渡し。主所有は knowledge。"
+  },
+  {
+   "term": "SENSOR_PROPOSED",
+   "contexts": [
+    "knowledge",
+    "verification"
+   ],
+   "note": "発行主体は knowledge 側の learnings persist だが、効果 (センサーマニフェスト設置 + ステージ bind) は verification 領域。コンテキスト間の公開イベントとして契約化する価値がある。"
+  },
+  {
+   "term": "Tier",
+   "contexts": [
+    "workflow-definition",
+    "distribution",
+    "knowledge"
+   ],
+   "note": "authored な tier: 値はペルソナ定義 (workflow-definition)、TIER_PROJECTIONS / tierFlavor / cap 投影は distribution、永続 tier_cap は memory 層 (knowledge) の frontmatter に住む。値の語彙を workflow-definition 所有、投影とキャップ機構を distribution 所有と分けるべき。"
+  },
+  {
+   "term": "Unit of Work",
+   "contexts": [
+    "workflow-definition",
+    "orchestration",
+    "workspace",
+    "verification"
+   ],
+   "note": "定義元は inception のプランニング成果物 (workflow-definition)、per-unit 反復・Bolt・swarm の実行は orchestration、ライフサイクルレシートと worktree は workspace、per-unit レビュー規律は verification。エンティティ定義は workflow-definition、ライフサイクルは orchestration とする。"
+  },
+  {
+   "term": "rules_in_context",
+   "contexts": [
+    "workflow-definition",
+    "knowledge",
+    "orchestration"
+   ],
+   "note": "パス配列のコンパイル時凍結は workflow-definition (compile)、内容の実体と実質性判定は knowledge (memory 層)、配送 (load-steering / rule bundle) は orchestration。パスは compile、本文はライブ読み、という D2 の分担が境界そのもの。"
+  },
+  {
+   "term": "Testing Posture / Testing Contract",
+   "contexts": [
+    "knowledge",
+    "verification",
+    "workflow-definition"
+   ],
+   "note": "入力は memory 3層 (knowledge)、出力は Code Generation の承認ゲート契約 (verification)、TestStrategy との合成義務は workflow-definition の軸と交差する。解決機構と契約は verification 所有とし、memory 節の書式は knowledge 側に置く。"
+  },
+  {
+   "term": "state-transition guard",
+   "contexts": [
+    "orchestration",
+    "workspace",
+    "verification"
+   ],
+   "note": "「動詞の所有権」ポリシー自体は orchestration (コンダクタ所有原則)、フィールドライタとガード実装は workspace (aidlc-state.ts)、フックによる機械強制は verification の PreToolUse ガード。ポリシーと強制器を分けて記述すべき。"
+  },
+  {
+   "term": "memory-seed",
+   "contexts": [
+    "distribution",
+    "knowledge",
+    "workspace"
+   ],
+   "note": "内容は Memory 層 (knowledge)、生成と二重出力は distribution の packaging、自己修復先は workspace (spaces/default/memory/)。「配送・自己修復機構」に限定した distribution 用語として使う。"
+  },
+  {
+   "term": "artifact",
+   "contexts": [
+    "workflow-definition",
+    "workspace"
+   ],
+   "note": "語彙トークン (produces/consumes の名前空間、122名) は workflow-definition、record ツリー上の実ファイルとパス規約・ARTIFACT_CREATED/UPDATED 監査は workspace。ArtifactName (語彙) と ArtifactFile (実体) の2型に分けると Rust 再実装で自然。"
+  },
+  {
+   "term": "stage runner",
+   "contexts": [
+    "orchestration",
+    "distribution"
+   ],
+   "note": "実行意味論 (--single ループの3ステップ) は orchestration、生成場所・frontmatter 注入・パリティ検査は distribution の packaging。生成物としての正本は runner-gen、配送検証は drift guard。"
+  }
+ ],
+ "boundary_scenarios": [
+  {
+   "scenario": "recompose によるインフライトの scope 変更: Construction 実行中に composer が in-flight モーメントでカーソルより先の 2 ステージを SKIP→EXECUTE に反転提案し、人間承認後に recompose verb が flip を適用する。ただし flip は scope-grid.json を書き換えず live state file のステージ別 EXECUTE/SKIP サフィックスとして書かれ、8 つのガード (pending のみ・カーソル前方のみ・autonomy 中は拒否・walking-skeleton アンカー不動・strict 差分検証) が通過条件になる。読み取り側は effectivePlanAction が grid (定義) + サフィックス (ランタイム上書き) を合成する。",
+   "tension": "EXECUTE/SKIP という計画語彙と strict 検証・アンカー計算は workflow-definition の意味論だが、flip の可否はカーソル位置・CheckboxState・Construction Autonomy Mode という orchestration のランタイム事実に依存し、書き込み先は workspace の状態ファイル。「計画の再形成」が定義時か実行時かで 3 コンテキストが引っ張り合う。",
+   "proposal": "workflow-definition は静的計画 (scope grid、アンカー計算、strict 差分検証) を純関数として所有し、grid は immutable とする。recompose verb と 8 ガードは orchestration の集約 (実行中ワークフロー) に対するコマンドとしてモデル化し、workspace は永続化のみを担う。effectivePlanAction は orchestration 所有の read model と定義し、「grid は定義の成果物・overlay はランタイムの所有物」を境界規約として 01-domain-model.md に明記する。"
+  },
+  {
+   "scenario": "learnings 採否ゲートと sensor scaffold の two-write install: Learnings Ritual で Check 型 learning が keep されると、単一監査ロックのトランザクション内で SensorManifest scaffold (verification の成果物) + bindSensorToStage (workflow-definition の stage frontmatter への sensors: 追記) の 2 書き込みが走り SENSOR_PROPOSED が発行される。有効化は次の graph compile で sensors_applicable に載った時点。",
+   "tension": "採否判定 (org.md との矛盾チェック、admission gate) は knowledge の責務だが、生成物は verification の SensorManifest で、bind 先は workflow-definition の定義ファイル。1 つのアトミックなトランザクションが 3 コンテキストの成果物を同時に書く。",
+   "proposal": "admission gate は knowledge に置く (学びの受け入れ判断は知識管理の政策)。SENSOR_PROPOSED / RULE_LEARNED をコンテキスト間ドメインイベントとし、manifest の所有と scaffold の妥当性検証は verification、stage frontmatter への binding は workflow-definition の公開コマンド経由に分解する。Rust 実装ではロック共有をやめ、(origin stage, sensor id) の冪等性を利用したイベント駆動の結果整合、または orchestration に置くプロセスマネージャで 2 書き込みを順序付ける。"
+  },
+  {
+   "scenario": "per-agent tier のハーネス別投影: agent persona は tier (意味的な能力段位) を宣言し、pack 時に TIER_PROJECTIONS 表が tierFlavor (claude/codex/kiro/...) 列で具体モデル指定へ投影する。cap は memory files の tier_cap: frontmatter (org→team→project の last-writer-wins、knowledge 層) と AIDLC_TIER_CAP 環境変数が低位勝ちで clamp し、しかも --check (drift guard) では env cap が無視される。",
+   "tension": "tier の意味論は workflow-definition、投影表とバイト再現性 (dist = source の純関数) は distribution、cap の出所は knowledge。knowledge 由来の設定がビルド入力へ漏れると drift guard の純関数性が壊れるため、上流は check モードで cap を無視するという歪みを抱えている。",
+   "proposal": "semantic tier は workflow-definition の Domain Primitive として定義する。TIER_PROJECTIONS は distribution 内の ACL (semantic tier → harness 固有語彙への翻訳表) と位置づける。cap を含むすべての pack 時入力を distribution の BuildInput 値オブジェクトに明示列挙して注入し、knowledge がビルドへ直接手を伸ばさない構造にする。check モードでの cap 無視は BuildInput の正規化規則として distribution が所有し、仕様化する。"
+  },
+  {
+   "scenario": "プラグイン contribution のビルド時マージとランタイム活性化の跨り: セッション開始の compose hook が no-clobber copy + fragment splice + stage graph 再コンパイル + runner 再生成を workspace lock 下のトランザクションで行う。一方 dist/plugins のプラグイン投影はビルド時に packaging pipeline が作る。無効化 (select-plugins) は strip + 再生成チェーンで、stranded workflow guard が実行中ワークフローの有無を見て無効化自体を拒否しうる。",
+   "tension": "plugin は「配布ツリーの合成 (distribution 的作業)」「グラフ再コンパイル (workflow-definition のサービス)」「ロックとトランザクション (workspace の機構)」「実行中ワークフローの保護 (orchestration の事実)」の 4 者に跨り、contribution という同一概念がビルド時とランタイムで別の顔を持つ。",
+   "proposal": "plugin コンテキストの所有物は contribution のライフサイクル (plugin selection、fragment splice、strip、sidecar、retry marker、selection closure invariant) に限定する。compile は workflow-definition の、runner 生成は distribution のサービス呼び出しとし、plugin は両者の customer。stranded workflow guard は orchestration への読み取り専用クエリと定義する。ビルド時の dist/plugins 投影は distribution 所有とし、plugin パッケージは distribution のパッケージ規約に conform する側と整理する。"
+  },
+  {
+   "scenario": "intent の fork/merge 中の監査: Bolt が --worktree 付きで state-fork → audit-fork → fragment-fork を固定順に実行し、worktree 内では SWARM_UNIT_CONVERGED などの orchestration イベントが audit shard へ追記される。audit-merge は delta 検証 (ブロック境界・既知イベント・非 merge-protected) + main の prefix-hash 一致で main へ追記する。merge 失敗した converged unit は「どの監査行も得ない」中間状態のまま exit 2 でコンダクタへバトンが返る。",
+   "tension": "shard の fork/merge 整合性規則は workspace の機構だが、「どのイベント種別が merge-protected か」「行なし中間状態からの復旧手順」は orchestration のプロセス知識。監査という 1 つの台帳に、機構の所有者と意味の所有者が同居する。",
+   "proposal": "workspace は ledger mechanics (audit-fork/audit-merge、prefix-hash 検証、audit-first invariant、audit lock) をイベント意味論から独立に所有し、イベント行は opaque として扱う。merge-protected 属性はイベントスキーマ (Published Language) 上の宣言として与え、workspace はスキーマ駆動で判定する。merge 失敗 converged unit の復旧 (SWARM_BATON_RETURNED 以降の再 finalize) は orchestration のサーガとしてモデル化する。"
+  },
+  {
+   "scenario": "compileStageGraph の呼び出し元二重性: 同一のコンパイラが (a) pack 時に buildTree (distribution) から、(b) セッション開始の compose hook (plugin) から呼ばれる。(a) の失敗はビルド全体の中断、(b) の失敗は plugin トランザクション全体のロールバック + retry marker 書き込みという別々の補償を持つ。",
+   "tension": "workflow-definition のコア機能が 2 つの別ライフサイクル (ビルド時/ランタイム) に埋め込まれる。コンパイラを distribution 側へ寄せると plugin が distribution に依存する歪みが生まれ、plugin 側へ寄せると定義の正準性が散逸する。",
+   "proposal": "コンパイラは workflow-definition の純粋ドメインサービス (入力: stage files + plugin contributions、出力: stage-graph.json / scope-grid.json) として 1 箇所に置き、distribution と plugin は共に customer とする。stage-graph.json のスキーマは upstream 互換方針により Published Language として凍結する。失敗時の補償 (中断 vs ロールバック + retry marker) は各呼び出し元コンテキストの責務と明記する。"
+  },
+  {
+   "scenario": "review_class の宣言と執行の分離: review_class は stage frontmatter で宣言され (workflow-definition)、コンパイル済みグラフ経由で conductor のレビュアー派遣判断に使われ (orchestration)、レビュー契約と受領証の意味論は verification が持つ。用語ダイジェスト自体が 01 では policy、02/04/05 では value と kind の分類を揺らしており、所有者の曖昧さが既に表面化している。",
+   "tension": "列挙型の定義を verification に置くと workflow-definition が宣言のために verification へ依存し、workflow-definition に置くと verification が他文脈の型でレビュー契約を判定することになる。",
+   "proposal": "review_class の列挙と各値の契約的意味 (どの深さのレビューを誰が行うか) は verification が正準所有する。workflow-definition の stage 属性は「verification の Published Language を参照する外部キー」とし、値の妥当性検証はコンパイル時に verification 提供のスキーマで行う。ユビキタス言語表では review_class を verification の用語として登録し、workflow-definition には参照のみと注記する。"
+  },
+  {
+   "scenario": "Fire id ペアリングと runtime-graph の畳み込み: sensor の SENSOR_FIRED 行と終端行 (PASSED/FAILED/BUDGET_OVERRIDE) のペアリングは 8-hex の Fire id で行われ、閉じたステージ窓・監査 max timestamp 基準の決定的 60 秒カットオフ・Date.now() 不使用という詳細規則がある。この規則は 03 (workspace の runtime-graph compile) に記述されるが、発火意味論の正本は 06 (verification)。ダイジェストでは runtime-graph.json の context が unsure と workspace に割れている。",
+   "tension": "workspace の runtime-graph コンパイラが verification のイベント意味論 (incomplete 分類を含む) を実装しており、意味論の変更が 2 仕様の同期を要求する。",
+   "proposal": "ペアリング規則 (Fire id キー、カットオフ、incomplete 分類) は verification 所有の仕様とし、workspace はそれを「イベントスキーマに付随する宣言的 folding 規則」として受け取る。runtime-graph.json という成果物の器は workspace 所有、sensor 区画の畳み込みロジックは verification 提供、と分割することで runtime-graph.json の二重分類を解消する。"
+  },
+  {
+   "scenario": "HUMAN_TURN と humanActedSinceGate: HUMAN_TURN は hooks が記録する監査イベントで、human-presence guard (autonomy 昇格の前提) と Construction Autonomy Mode の gated→autonomous 遷移が withAuditLock 内でこれを述語 humanActedSinceGate として消費する。ダイジェストでは HUMAN_TURN の context が cross-cutting と workspace に揺れている。",
+   "tension": "「人間が行動した」という事実の記録は workspace の台帳だが、「最後のゲート以降に行動したか」という導出述語とそれに基づく昇格可否は orchestration の政策。上流では述語の関与する状態が状態ファイルに置かれるため、記録と政策が同居して見える。",
+   "proposal": "workspace は HUMAN_TURN の記録 (事実) のみを所有する。humanActedSinceGate は orchestration の導出述語 (監査台帳の射影) として定義し、状態ファイル上の関連フィールドは「キャッシュであり真実源は監査」という 03 の原則をコンテキスト境界の規約に昇格させる。ユビキタス言語では HUMAN_TURN を workspace のイベント、human-presence guard を orchestration の政策として別項登録する。"
+  },
+  {
+   "scenario": "review freeze の鮮度計算共有: 終端 REVIEW_COMPLETED 後の produces[] 書き込み凍結は hook guard が執行するが、受領証の鮮度判定 (STAGE_STARTED / GATE_REJECTED / 最新 produces 書き込みによる floor) はエンジンの freshReviewReceipts と同一でなければならず、上流仕様も「フックとエンジンの状態観が乖離しないこと」を不変条件として明記している。",
+   "tension": "同一述語を orchestration (advance のガードスタック) と verification (freeze 執行) が別実装する誘惑があり、事実上の Shared Kernel が暗黙に存在する。乖離すればエンジンは進めるのにフックが凍結する (またはその逆) という分裂状態になる。",
+   "proposal": "受領証の鮮度・凍結述語を verification 所有の単一モジュール (Rust ではクレート) に置き、orchestration はそれを依存として呼ぶ。これで暗黙の Shared Kernel を「verification 所有 + orchestration 利用」の Customer/Supplier に格下げする。フロアイベントの列挙 (GATE_REJECTED / STAGE_JUMPED / WORKFLOW_STARTED) はイベントスキーマの Published Language に載せ、両者が同じ宣言を読む構造にする。"
+  },
+  {
+   "scenario": "walking skeleton stance の解決: エンジンが gate:\"unresolved\" を発行し、conductor が `## Walking Skeleton` 節を org → team → project (knowledge の memory 層) の順に解決、practices が bolt-plan マーカーに優先して PRACTICES_OVERRIDE を先行発行し、scope-dependent の場合は scope の skeleton: frontmatter (workflow-definition) にフォールバック、結果は report --skeleton-stance で状態ファイル (workspace) に記録される。",
+   "tension": "1 つのゲート値の解決に knowledge (memory 節の優先解決)、workflow-definition (scope 既定とアンカー計算)、orchestration (unresolved→resolved の往復プロトコル)、workspace (stance の記録) の 4 者が絡む。「エンジンが計算できない唯一のゲート値」という特異点が境界を曖昧にする。",
+   "proposal": "stance 解決は orchestration のプロセス (政策) として所有し、knowledge と workflow-definition は「優先順位付き設定ソースの供給者」と位置づける。優先順序 (practices > scope default) 自体は orchestration の政策として明文化し、knowledge は内容のみ供給する。アンカー計算 (スコープで最初の Construction EXECUTE ステージ) は workflow-definition の純関数として切り出し、アンカー不動性は recompose ガード (orchestration) がその関数を呼んで検証する形にする。"
+  },
+  {
+   "scenario": "memory-seed と stage diary のホスティング: distribution が memory-seed を出荷し、ensureWorkspaceDirs が absent→present の自己修復コピーで default space のメソッドツリーを保証する。ランタイムでは stage diary (memory.md) が workspace のパス階層に書かれ、Learnings Ritual (knowledge) が surface → persist で読む。同じ memory.md に 3 コンテキストが触れる。",
+   "tension": "distribution (シードの出荷と自己修復)、workspace (space/intent スコープのパスと存在保証)、knowledge (diary の内容意味論と儀式) が同一ファイル群を巡って引っ張り合う。「default tree never churns」不変条件はどこの所有物かも曖昧。",
+   "proposal": "knowledge が文書スキーマとライフサイクル (diary 蓄積 → surface → persist) を所有する。workspace は space/intent スコープの汎用ストレージと存在保証 (self-heal) を提供する供給者とし、内容には関与しない。memory-seed は「knowledge のスキーマに conform する distribution の成果物」と定義し、シード内容の妥当性は knowledge のスキーマで検証する。churn 禁止不変条件は workspace の存在保証仕様に置く。"
+  },
+  {
+   "scenario": "Worktree と HOLD-MERGE: swarm が unit ごとに worktree create + bolt start し、halt-and-ask シーケンス中のマージ着地を防ぐ HOLD-MERGE フラグは per-Bolt の forked 状態ファイル上に置かれ complete --merge を拒否する。HOLD-MERGE は監査イベントを持たない純内部状態で、forked 状態ファイル欠如は not-held と読むが欠如ファイルへの setMergeHeld は hard error という非対称を持つ。",
+   "tension": "worktree/fork/merge の機構と WORKTREE_* イベントは workspace の所有だが、「halt-and-ask の途中でマージさせない」という意図は orchestration の政策。政策フラグが workspace の成果物 (forked state file) に物理的に埋まっている。",
+   "proposal": "workspace は fork/merge 機構と整合性 (WORKTREE_* イベント、コンフリクト時の worktree 保存、孤児回収) を所有する。HOLD-MERGE は orchestration の政策値として定義し、workspace には opaque な保留フラグの保存機能としてだけ渡す (set/clear の冪等性と非対称エラーは workspace の保存 API 仕様)。監査イベントを持たない設計は「可視イベントと独立な内部状態」として orchestration 側の仕様に明記する。"
+  },
+  {
+   "scenario": "stage runner の帰属二重性: per-stage runner は buildTree が生成する dist 成果物 (00-overview は distribution に分類) だが、その中身は next/report の directive protocol (02 は orchestration の artifact に分類) を焼き込んだもの。用語ダイジェスト自体が同一用語を 2 コンテキストに分類している。さらに upgrade はツリー再コピー + フレッシュセッションでのみ反映され、ランタイムに distribution は存在しない。",
+   "tension": "生成物の「器」(テンプレート、配置、tier 投影) は distribution、記述された「振る舞い契約」(Directive スキーマ、continue_token 規約) は orchestration。runner のバグがどちらの文脈の欠陥かが曖昧になり、ビルド時/ランタイム分離の原則が試される。",
+   "proposal": "directive protocol (next/report verbs、Directive、continue_token、ask) を orchestration の Published Language として独立に文書化し、stage runner は「その契約に conform する distribution の生成テンプレート」と定義する。ユビキタス言語表では stage runner を distribution に、directive protocol を orchestration に正準配置して二重分類を解消する。protocol のバージョンは AIDLC_VERSION と連動させ、drift guard が契約逸脱を検出できる構造を保つ。"
+  }
+ ],
+ "context_relationships": [
+  {
+   "from": "workflow-definition",
+   "to": "orchestration",
+   "pattern": "Published Language",
+   "rationale": "コンパイル済み stage-graph.json / scope-grid.json が両者間の唯一の契約であり、orchestration は stage file 原文ではなく成果物のみを読む。スキーマは upstream aidlc 互換方針により amadeus 側で自由に変えられない凍結言語であり、まさに Published Language として機能する。"
+  },
+  {
+   "from": "workflow-definition",
+   "to": "verification",
+   "pattern": "Published Language",
+   "rationale": "reviewer / review_class / sensors_applicable の宣言はコンパイル済みグラフを介して verification に届く。ただし review_class の列挙意味論は verification が正準所有し、workflow-definition は外部キーとして参照するのみ、という双方向の言語分担を明記する必要がある。"
+  },
+  {
+   "from": "orchestration",
+   "to": "workspace",
+   "pattern": "Customer/Supplier",
+   "rationale": "engine-owned state transitions の原則により orchestration がライフサイクル状態の唯一の書き手であり、workspace は state ファイル・監査台帳・ロックという供給サービスを提供する。Run floor や冪等リプレイガードなど workspace の機能要件は orchestration の要求から導かれるため、対等な Partnership ではなく顧客主導の Customer/Supplier が適切。"
+  },
+  {
+   "from": "verification",
+   "to": "workspace",
+   "pattern": "Published Language",
+   "rationale": "SENSOR_* / REVIEW_* イベント行は workspace の追記型台帳に opaque に格納される。Fire id ペアリングや incomplete 分類などの畳み込み規則は verification がイベントスキーマの一部として公開し、workspace の runtime-graph コンパイラはそれを宣言的に消費する。監査イベントスキーマ全体が upstream 互換の Published Language を成す。"
+  },
+  {
+   "from": "knowledge",
+   "to": "verification",
+   "pattern": "Customer/Supplier",
+   "rationale": "Learnings Ritual の admission gate を通過した Check 型 learning が SENSOR_PROPOSED として sensor 候補を供給し、verification が manifest の所有と有効化 (sensors_applicable 登載) を引き受ける。採否は knowledge、実行意味論は verification という明確な分業で、供給側 (knowledge) の判断が下流の品質を左右する。"
+  },
+  {
+   "from": "knowledge",
+   "to": "orchestration",
+   "pattern": "Customer/Supplier",
+   "rationale": "rule bundle → rules_in_context の配送で、束の内容と層序 (org→team→project、strict-additive) は knowledge が所有し、配送プロトコル (load-steering、continue_token、HMAC 検証) は orchestration が所有する。orchestration は知識内容に関与しない運搬者であり、内容の要求仕様は knowledge が決める。"
+  },
+  {
+   "from": "distribution",
+   "to": "workflow-definition",
+   "pattern": "Conformist",
+   "rationale": "buildTree は compileStageGraph をそのまま呼び、出力をバイト単位で dist ツリーに固定する。drift guard (--check) が「dist = source の純関数」を強制するため、distribution は翻訳層を挟まず workflow-definition のモデルにそのまま追従する Conformist である。"
+  },
+  {
+   "from": "plugin",
+   "to": "workflow-definition",
+   "pattern": "Customer/Supplier",
+   "rationale": "compose hook の contribution マージ後、workflow-definition のコンパイラが再コンパイルを供給し、compile 失敗は plugin トランザクション全体のロールバック + retry marker を駆動する。plugin は compile サービスの顧客であり、engine-assigned stage numbering や selection closure invariant といった供給側の不変条件に要求を合わせる。"
+  },
+  {
+   "from": "plugin",
+   "to": "distribution",
+   "pattern": "Conformist",
+   "rationale": "dist/plugins のプラグイン投影、{{HARNESS_DIR}} トークン置換、no-clobber copy というパッケージ規約はすべて distribution が定め、plugin パッケージは無交渉でそれに従う。ビルド時の投影とランタイムの compose が同じ規約を共有することで、build/runtime 分離を跨ぐ一貫性が保たれる。"
+  },
+  {
+   "from": "plugin",
+   "to": "workspace",
+   "pattern": "Shared Kernel (縮小推奨)",
+   "rationale": "現状は共有 compose/graph ロックという物理的な共有カーネルで結合している。Rust 再実装では workspace が提供するロックサービスの顧客に格下げし (Customer/Supplier 化)、Shared Kernel を排除するのが望ましい。ロックの意味論 (reap、再入、exit ハンドラ解放) は workspace 側に単独所有させる。"
+  },
+  {
+   "from": "orchestration",
+   "to": "verification",
+   "pattern": "Shared Kernel → Customer/Supplier に縮小",
+   "rationale": "freshReviewReceipts / review freeze の鮮度述語がエンジン (advance ガード) とフック (freeze 執行) で同一でなければならず、暗黙の Shared Kernel が存在する。verification 所有の単一実装を orchestration が依存として呼ぶ形に再編し、フロアイベント列挙はイベントスキーマの Published Language に載せることで共有範囲を最小化する。"
+  },
+  {
+   "from": "verification",
+   "to": "orchestration",
+   "pattern": "Customer/Supplier",
+   "rationale": "review verdict (READY/NOT-READY) と受領証 (REVIEW_COMPLETED) は orchestration のゲート前提条件・完了ガードとして消費される。advisory 原則 (NOT-READY でも人間ゲートに到達しブロックしない) により、orchestration は verification を進行のブロッカーではなく証跡の供給者として扱う点が関係の性格を決める。"
+  },
+  {
+   "from": "distribution",
+   "to": "knowledge",
+   "pattern": "Conformist",
+   "rationale": "memory-seed と build-time knowledge absorption は、knowledge が定める文書スキーマ (memory 層構造、rule 形式) にそのまま従って成果物を生成する。distribution は知識の意味論に独自解釈を加えず、シード内容の妥当性検証は knowledge のスキーマ側で行う。"
+  },
+  {
+   "from": "knowledge",
+   "to": "workspace",
+   "pattern": "Customer/Supplier",
+   "rationale": "memory diary、team knowledge、DocumentKB は workspace の space/intent スコープ付きストレージと監査 (RULE_LEARNED 等の記録) の上に載る。knowledge が顧客としてストレージ要件 (self-heal による存在保証、(space,intent) ピン) を出し、workspace は内容に関与しない汎用ホスティングを供給する。"
+  },
+  {
+   "from": "distribution",
+   "to": "workspace",
+   "pattern": "Anticorruption Layer",
+   "rationale": "aidlc-workspace-sync の reconcile トランザクション (preflight → staging → 可逆リネーム → quarantine) と install receipt は、インストーラ都合のファイル操作からライブな workspace 状態を守る腐敗防止層として働く。Cursor installer の managed-file lifecycle (collision で書き込み前 abort) も同じ層の一部で、distribution のモデルが workspace へ直接漏れない構造になっている。"
+  },
+  {
+   "from": "orchestration",
+   "to": "distribution",
+   "pattern": "Published Language",
+   "rationale": "directive protocol (next/report、Directive スキーマ、continue_token) は orchestration が公開する契約文書であり、distribution は runner / orchestrator skill 生成時にそれを焼き込む。ランタイムに distribution は存在しない (upgrade はツリー再コピー + フレッシュセッションのみ) ため、両者を繋ぐのは実行時連携ではなく公開された契約だけ、という build/runtime 分離が成立する。"
+  }
+ ],
+ "state_machines": [
+  {
+   "name": "packaging pipeline (per-harness build)",
+   "description": "ハーネスごとに 6 つの順序付き状態を通過するビルドプロセス: COPY(core) → COPY(harness) → COMPILE(stage graph + scope grid) → GENERATE(per-stage runners) → EMIT(manifest 宣言時のみの条件分岐) → REFRESH(オーケストレータスキルの生成テーブル)。COMPILE の出力が REFRESH の入力になるという順序依存があり、EMIT は manifest の宣言有無で分岐する (§4.2)。Quint では順序保証と条件付きステップのモデル化候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+  },
+  {
+   "name": "drift guard verdict (--check)",
+   "description": "build-to-temp → diff → verdict の検証機械。各ツリーを一時ディレクトリへビルドし、コミット済み dist/ とバイト単位で比較し、ファイルごとに MISSING / DIFFERS / ORPHAN の 3 つの問題クラスへ分類する。問題が 1 つでもあれば FAILED (exit 1、最大 40 行出力)、ゼロなら in-sync (成功メッセージ) の 2 終端状態 (§4.5)。付随する不変条件として --check 時の AIDLC_TIER_CAP 無視 (§4.7) がある。dist がコミットされ続けるという前提の下での「生成物 = ソースの純関数」検証としてモデル化価値が高い。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+  },
+  {
+   "name": "version-changelog sync lifecycle",
+   "description": "バージョンバンプの状態機械: (ユーザー可視の変更) → 同一コミットで AIDLC_VERSION バンプ + CHANGELOG 見出し追加 + README バッジ更新 → t68 と ci-changelog-guard による同期検証 (見出し一意性・エントリ削除禁止・4 面一致)。並行バンプ衝突時は後着 PR がリベース + 再バンプ + 見出し改名で回復する遷移を持つ (§6.2)。パッチ蓄積 → マイナーカットでの統合というリリースサイクルの上位遷移もある (§6.3)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+  },
+  {
+   "name": "distribution upgrade lifecycle",
+   "description": "ユーザー側配布物の状態遷移: installed(旧) → dist/ ツリー再コピー (copied だが未反映) → フレッシュセッション開始 → 反映済み。コピーだけではスキル・エージェント・ルールは有効化されず、セッション開始時ロードで初めて遷移が完了する (§6.4、README.md:455)。インストーラ不在のため CHANGELOG の Upgrade 節が遷移の唯一の駆動指示となる。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/00-overview.md"
+  },
+  {
+   "name": "Phase Progress",
+   "description": "状態ファイルの Phase Progress 行が持つフェーズ単位の状態機械。状態は Pending / Active / Skipped / Verified の 4 値 (§2.3)。フェーズ境界越え (完了ステージと次ステージの phase 比較で検出) の瞬間に、完了フェーズが Verified へ、突入フェーズが Active へ同時に反転し、PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED の 3 イベントがこの順で発行される (§2.2)。PHASE_VERIFIED は無条件で、検証の実体はコンダクタ実行プロトコル。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+  },
+  {
+   "name": "Stage checkbox",
+   "description": "状態ファイルのステージ単位チェックボックス状態機械。[ ] 未着手 → [-] 進行中 → [?] 承認待ち (gate open) → [x] 完了が基本経路で、ゲートでユーザが拒否すると [?] → [R] 改訂中、--stage/--phase ジャンプで [S] スキップに遷移する (§2.3)。この語彙は composer の recompose ガードが読む: flip できるのは pending ([ ]) のみで、[x]/[-]/[S] は凍結される (§9.2, §9.7)。Quint モデル化の第一候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+  },
+  {
+   "name": "Skeleton stance resolution",
+   "description": "walking-skeleton ゲートのスタンス解決機械。未分類 → エンジンがアンカーステージ (スコープで最初の Construction EXECUTE ステージ) に gate: \"unresolved\" を発行 → コンダクタが report --skeleton-stance で on / off / scope-dependent を状態フィールド \"Skeleton Stance\" に記録 → scope-dependent はスコープ既定 (skeleton: frontmatter) へフォールバックして再帰 → 次の next で boolean 解決 (§6.4)。resolveSkeletonGate はどのスタンスでも true を返し、決定論は「分類済みであること」にある。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+  },
+  {
+   "name": "Construction Autonomy Mode",
+   "description": "Construction のバッチゲート自律化の状態機械。未設定 (gated 扱い) → Bolt 1 後の ladder prompt で選択 → \"autonomous\" (per-batch ゲート無効) または gated のまま (§6.4)。fail-closed: \"autonomous\" の完全一致以外 (空・\"gated\"・未知値) はすべて not-granted。autonomous の間は recompose が拒否される (§9.7) ため、計画再形成と自律実行が同時に走らないことの証明対象になる。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+  },
+  {
+   "name": "effectivePlanAction (per-stage plan action)",
+   "description": "ステージ単位の計画所属の状態機械。基底値はスコープグリッドの EXECUTE / SKIP で、ライブ状態ファイルのステージ別サフィックスが読み取り時に上書きする (§9.7)。遷移 (flip) は recompose verb のみが行え、8 つのガード (pending のみ・カーソル前方のみ・アンカー不動・strict 差分検証など) に守られる。凍結規則 ([x]/[-]/[S] は不変) とアンカー不動性を合わせ、Stage checkbox 機械との合成で Quint モデル化する価値が高い。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/01-workflow-model.md"
+  },
+  {
+   "name": "Stage checkbox lifecycle",
+   "description": "ステージごとのチェックボックス状態機械: pending / in-progress / awaiting-approval / revising / completed / skipped。遷移は report がディスパッチする aidlc-state.ts サブコマンドでのみコミットされる — gate-start (in-progress→awaiting-approval)、reject --feedback (in-progress|awaiting-approval→revising)、revise (revising→awaiting-approval)、approve (awaiting-approval→completed、自己委譲で advance/complete-workflow)、skip (in-progress|revising→skipped)。jump execute は forward で介在 in-flight を skipped、backward/redo で pending に巻き戻し、ターゲットを in-progress にする (§7.3, §8)。Quint モデル化の最有力候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Conductor–engine directive loop",
+   "description": "エンジンループ全体のプロトコル状態機械 (§13): next → (load-steering → continue)* → run-stage → [質問/要約確認/成果物/レビュアー/learnings] → report awaiting-approval (gate-start) → 承認ゲート → report approved (approve→advance|complete-workflow) → next の反復。Request Changes 時は rejected → Keep/Modify/Redo → revised → ゲート再提示のループ。終端状態は done / parked / error で、report 側ディスパッチはチェックボックス状態 × ゲート有無 × 終局性の決定表 (§7.3 フローチャート)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Rule-delivery continuation",
+   "description": "load-steering チャンク配送のカーソル状態機械 (§10): part 1..N を continue_token で前進し、payload.i === chunks.length で terminal の run-stage に到達。ステージ/bundle/directive ダイジェスト不一致、存在しないパート、MAC 不一致、state ハッシュ不一致、route ハッシュ不一致、graph からのステージ消失のいずれでも fail-closed で「fresh next で part 1 から」に戻る。カーソル前進はトランザクショナルで、競合時は非コミットのまま再試行。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Gate resolution (skeleton round-trip)",
+   "description": "computeGate の 3 値状態: false (initialization) / \"unresolved\" (skeleton-gate ステージ & stance 未記録) / true (それ以外) (§6)。unresolved は conductor の stance 分類 → report --skeleton-stance <on|off|scope-dependent> → set-skeleton-stance 記録 → 再 next で決定済みゲートへ、という往復でのみ解消される。現行実装では全 stance が true に解決される。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Workflow park/resume",
+   "description": "ワークフローレベルの中断状態機械 (§11): Running → park (WORKFLOW_PARKED、Parked/Parked At Stage 書き込み) → parked directive で終端。再入は --resume が unpark (WORKFLOW_UNPARKED) を名指しし、次の next で resume ask (resume / redo / jump / start fresh の 4 択) が提示され、各ルートへ分岐する。park 分岐は Parked At Stage === Current Stage の間のみ有効 (stale-by-progress) で、明示的再入フラグで自己無効化。autonomous では park 自体が拒否される。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Swarm batch progression",
+   "description": "autonomous Construction の Bolt バッチ状態機械 (§5.2): 未収束ユニット群 → invoke-swarm 発行 (1 next = 1 バッチ前進) → ユニットごとの SWARM_UNIT_CONVERGED 集積 → 全ユニット収束 → swarm_settled: true の settle run-stage (レビュアー剥離、ゲート再入のみ、本体再実行禁止)。進捗キーは監査行でありディスクアーティファクトではない。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Per-unit iteration cursor",
+   "description": "for_each: unit-of-work ステージの反復カーソル (§5.2): 未カバーユニットを順に gate=false の run-stage で emit (conductor は report せず next 再実行) → 未カバーが尽きたら最後のユニットへ実ゲート付きで再 emit (ゲートが発火する唯一の directive)。カバレッジ判定はディスク上の per-unit アーティファクト + UNIT_COMPLETED レシート。skeleton-gate 未解決時は反復自体が遅延される。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/02-orchestration-engine.md"
+  },
+  {
+   "name": "Stage checkbox lifecycle (CheckboxState)",
+   "description": "各ステージ行の 6 状態: pending `[ ]` → in-progress `[-]` → awaiting-approval `[?]` → (revising `[R]` ⇄ awaiting-approval) → completed `[x]`、または skipped `[S]` (§5.4)。遷移の駆動は engine-owned な advance/gate-start/approve/reject/revise/skip 動詞 (§5.7) で、advance は現在ステージ一致・冪等リプレイガード・レビュアー受領証・artifact 検証のガードスタックを通過した場合のみ [x] に進める。マーカー (run-state) とサフィクス EXECUTE/SKIP (プラン) は同一行の互いに素なフィールドで独立に遷移する。Quint モデル化の最有力候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Workflow lifecycle",
+   "description": "WORKFLOW_STARTED → (WORKFLOW_PARKED ⇄ WORKFLOW_UNPARKED)* → WORKFLOW_COMPLETED (§6.5 の必須イベント族)。park は Runtime State に Parked/Parked At Stage フィールドを挿入し unpark が除去する (§5.3)。park は自律 Construction 下と Status=Completed のとき拒否される (§5.7)。intent レジストリの status は birth で in-flight、完了で終端 status に遷移する (§4.2)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Unit lifecycle",
+   "description": "unit start → (pause ⇄ resume)* → complete。単一アクティブユニット不変条件を強制し、自律スワームがステージを所有するときは拒否、ユニットは権威 DAG に存在する必要がある (§5.7)。complete は受領証コミット前に全必須 artifact のディスク存在を検証する (claim-1 inversion)。state の Active Unit / Unit State / Unit Pause Reason / Unit Next Action の 4 フィールドはキャッシュで、監査 (UNIT_STARTED/PAUSED/RESUMED/COMPLETED) が真実の源 (§5.3)。境界識別は Run floor トークンで、cross-shard 等時刻は AMBIGUOUS フロアへ劣化する (§6.4)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Audit lock lifecycle",
+   "description": "free → (mkdir 成功) held+stamped → released (rm -rf)、競合時は EEXIST → 所有者判定 → 死亡 (ESRCH) または閾値超過 (10 分) なら rename-CAS で reap → 再取得、生存かつ未満なら sleep+retry を予算内で反復 (§6.8)。未スタンプディレクトリは 5 秒猶予で保護。プロセス内は識別子ごとの深度カウンタで再入し、exit ハンドラが process.exit 経由の脱出でも解放する。並行性検証 (steal の CAS と restore の残余レース含む) の Quint モデル化価値が高い。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Audit shard fork/merge (worktree mirror)",
+   "description": "main shard → audit-fork (boundary+sourceHash 記録、AUDIT_FORKED emit、worktree shard を whole-file 確立) → worktree で追記のみ → audit-merge (delta 検証: ブロック境界・Event/Timestamp 各 1・既知イベント・非 merge-protected、main の prefix-hash 一致確認) → main へ delta 追記 + AUDIT_MERGED (§6.9)。再 fork は provably current のときのみ、3 種の拒否 (未マージ作業・fork 行不一致・prefix 相違) と改竄/切り詰め検出の拒否状態を持つ。冪等・破損検出の性質検証候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Phase progress",
+   "description": "state ファイルの Phase Progress 行が Pending → Active → Verified、または Skipped の 4 値を取る (§5.3)。advance がフェーズ境界で行をフリップし、PHASE_STARTED / PHASE_COMPLETED / PHASE_VERIFIED のトリオを emit する (§5.7)。セクションは display-only で、行不在は遷移を失敗させない (setPhaseProgress は意図的 no-op)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Sensor firing (result states)",
+   "description": "SENSOR_FIRED → SENSOR_PASSED | SENSOR_FAILED | SENSOR_BUDGET_OVERRIDE のディスパッチャ 3 終端に、runtime-graph 側の孤児状態 \"incomplete\" (終端行未観測) を加えた 4 状態 (§6.5, §7.3)。並列ファンアウトした発火の開始/終端ペアリングは行位置でなく 8-hex の Fire id で行う (§6.4)。詳細意味論は 06-sensors 所有のため、モデル化はペアリング規則に限定するのが妥当。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/03-state-audit-runtime.md"
+  },
+  {
+   "name": "Stage lifecycle (ステージ進行状態機械)",
+   "description": "状態は not-started [ ] / in-progress [-] / awaiting-approval [?] / revising [R] / completed [x] / skipped [S]。TaskUpdate の activeForm 内 [slug] を PostToolUse フックがパースして [-] に同期し、本文実行後 (reviewer 宣言時は terminal REVIEW_COMPLETED 後) に学びの儀式を独立人間ターンで実行、report --result awaiting-approval で [?] へ。approved で [x] + 自動前進、rejected で [R] (Revision Count 増加)、produces 変更を伴う revision は reviewer 再実行後 revised で [?] に復帰。CONDITIONAL の不適用は report --result skipped で [S] (STAGE_SKIPPED、進捗カウント除外、completed への書き換え禁止)。§11 の mermaid stateDiagram が正本で、Quint モデル化の最有力候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "Review receipt lifecycle (レビューレシート状態機械)",
+   "description": "REVIEW_REQUESTED → dispatch → 完了判定: `## Review` 節が厳密 1 つ + 正準判定行 1 つで READY / NOT-READY、それ以外の 3 形は INCOMPLETE。INCOMPLETE は --retry-pending を厳密 1 回 (反復非消費) → なお不完全なら NOT-READY の terminal レシートを強制記録。terminal レシート後は produces[] への書き込みが freeze され (REVIEW_FREEZE_BLOCKED)、書き込みによる無効化 → stale-receipt 回復レビュー厳密 1 回 → 再無効化 → recovery-spent (人間の GATE_REJECTED のみが試行リセット)。スキャンは STAGE_STARTED / GATE_REJECTED / 最新 produces 書き込みで floored され、Stage + Reviewer 両一致必須 (§5.3-5.5)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "Swarm batch loop (スワーム・バッチ状態機械)",
+   "description": "invoke-swarm → §12b 全ユニットのプラン + Plan Approval (本ワークスペース、fork 前必須) → prepare (ユニットごと worktree) → fan-out → check ループ (非ゼロは再試行 or エスカレーション判断) → reviewer 宣言時は worktree 内 terminal レシート → finalize。finalize exit 0 は report せず next 再実行 (残バッチ → 次の invoke-swarm、全収束 → swarm_settled: true の gate-only run-stage で儀式 + ゲートのみ)。exit 2 は halt-and-ask シームへ。merge_failures は finalize 再実行のみで prepare 再実行禁止 (§7 の mermaid flowchart が正本)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "Unit lifecycle (ユニット・ライフサイクル状態機械)",
+   "description": "settle 方式にモード遷移がある: レシートゼロの artifact-only モードから、最初の unit start / complete でレシートモードへ片方向 sticky 遷移し「成果物ファイルだけでは settle しない」。個別ユニットは unit start (同一ステージに open ユニットがあると拒否) → open → unit pause (reason + next-action 必須) → paused (最優先ルート + ループ hard-stop、unit resume まで他作業禁止) → open → unit complete (全必須成果物の実在通常ファイル検証)。per-Unit ゲートは未 settle 中 gate: false、実ゲートは最終ユニット settle 後に厳密 1 回 (§6.4)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "Build-and-Test loop-back (ビルド・テスト後退ループ状態機械)",
+   "description": "Build and Test の失敗診断 → Loop-Back Log に `### Loop-back N` 追記 (エントリ数そのものが上限 3/intent の境界) → エンジン印字の aidlc-jump.ts execute で後方 STAGE_JUMPED → 再入は 2 分岐: artifact-only ワークフローは gate: true 高速経路 + 再入 override、receipt-mode ワークフローは per-unit directive で unit start/complete を再鋳造。どちらも適用ユニットごとの新レビュー必須 (STAGE_JUMPED が全先行レシートを無効化)。上限到達で halt-and-ask (impact-estimated 変種 / Retry with fix を欠く no-fix 変種)。クラッシュ検出: 最新エントリに planned fix があり対応する STAGE_JUMPED が無ければジャンプを再実行 (§6.3, §10.1)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "Wave entry review state (ウェーブ・エントリのレビュー状態語彙)",
+   "description": "per-unit バッチウェーブの各エントリが持つ閉じたレビュー状態集合: outstanding → retry-required / repair-required / recovery-required → escalation-required (回復消費済み — レビュー再要求もユニット完了も禁止、人間へ halt)、および settled の READY / terminal の NOT-READY / not-required。ブロッキング質問は entry.required_produces からパスを留保することでエントリを open に保つ。閉語彙のため Quint の enum 型モデル化に好適 (§6.4 :261-265)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "Skeleton stance resolution (スケルトン姿勢解決の小状態機械)",
+   "description": "エンジンが gate: \"unresolved\" (GATE_UNRESOLVED) を発行 → コンダクタが `## Walking Skeleton` 節を org → team → project の順に解決 (最specific非空が勝ち、practices が bolt-plan マーカーに優先し PRACTICES_OVERRIDE 先行発行) → on / off / scope-dependent に分類 → report --skeleton-stance → 次の next が boolean gate 付きで同一ステージを再発行。エンジンが計算できない唯一のゲート値を LLM に委ねて戻す往復プロトコルの代表例 (§6.2)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/04-stage-protocol.md"
+  },
+  {
+   "name": "reviewer iteration loop",
+   "description": "ステージ完了前のレビュー反復の状態機械。dispatch (REVIEW_REQUESTED 記録) → 判定読み取り (READY / NOT-READY を含む ## Review セクションの検査) → NOT-READY なら reviewer_max_iterations (宣言 2、advisory 解決時は 1 に固定) まで再レビュー → 終端レシート (REVIEW_COMPLETED + verdict) 記録。判定なしで終わった試行は incomplete attempt となり --retry-pending でちょうど 1 回再試行 (反復を消費しない)、2 回目も不完全なら終端 NOT-READY。終端レシート後は review freeze 状態 (produces[] 書き込み凍結) に遷移し、人間のゲート承認で解除される。NOT-READY でもワークフローはブロックされず人間ゲートに到達する。Quint モデル化の最有力候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+  },
+  {
+   "name": "stage completion precondition (receipts and evidence)",
+   "description": "ステージが完了可能になるまでの証跡蓄積の状態機械。実行中 → (subagent/mob なら) 全サポートの contribution file が **Collaborator:** マーカーつきで存在 (pipeline は PIPELINE_LINK_COMPLETED レシート) → (reviewer 宣言ステージなら) fresh REVIEW_COMPLETED が監査台帳に存在 (per-unit なら全適用ユニット分) → 完了パス (approve / advance / finalize / complete-workflow) が受理。どちらかの証跡が欠ける間、ゲート進入と完了は拒否される。エスケープハッチは AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 (寄稿証跡のみ)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+  },
+  {
+   "name": "reviewer-scope enforcement window",
+   "description": "per-unit レビューの読み取り境界強制のライフサイクル。非強制 (レコードなし、fail-open) → コンダクタが .aidlc-reviewer-dispatch.json を書いて強制ウィンドウ開始 → フックがツールコールごとに判定 (派遣ユニット許可 / sweep 遮断 / exempt-path 完全一致のみ sibling 許可、遮断時は exit 2 + REVIEWER_SCOPE_BLOCKED 監査行) → 判定読み取り後にコンダクタがレコードを削除、または REVIEWER_DISPATCH_TTL_MS 超過で stale となり非強制へ戻る。すべての異常系 (不正 JSON、未知ツール、非レビュアー身分、例外) は fail-open。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+  },
+  {
+   "name": "composer scope-grid lifecycle (three moments)",
+   "description": "コンポーザによる EXECUTE/SKIP グリッドの提案・確定の状態機械。3 つの起動モーメント (front: ワークフロー未存在 / report: スキャンレポートが captured intent / in-flight: 実行中ワークフロー) から入り、エントロピー 5 成分の推定 → グリッド構成 → 人間の明示承認 → 書き込み (detect --json が印字する 2 パスのみ; in-flight とストック scope 一致時は書き込みスキップ)。in-flight では PENDING かつカーソルより先のステージのみ EXECUTE⇄SKIP を反転でき、walking-skeleton ゲートアンカーは不変。反転の適用は決定的な recompose 動詞経由のみで、コンポーザ自身は状態ファイルを編集しない。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+  },
+  {
+   "name": "per-mode stage dispatch flow",
+   "description": "run-stage ディレクティブ受領後のコンダクタの分岐実行フロー。mode = inline: inline_context_paths の全読了 (ブロッキング前提条件) → リード + 全サポートペルソナを採用して実行、派遣なし。mode = mob: リードペルソナのみ読了 → リードとしてドラフト → 全サポートを並列派遣 (相互盲目、最大 2 ラウンド、objection triage)。mode = subagent/pipeline: インライン文脈なし、全参加者を Task 派遣 (subagent はハブ&スポーク、pipeline は宣言順連鎖で各リンクが上流を参照)。全モード共通で、reviewer 宣言があれば最後に必ず別サブエージェントとしてレビュアーを起動する。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/05-agents.md"
+  },
+  {
+   "name": "Sensor fire transaction",
+   "description": "手動 fire / フック経由の1回の発火のライフサイクル (§3.5)。事前検証 (未検証→検証済、失敗なら FIRED 行なしで exit 1) → ロック下で SENSOR_FIRED 発行 → ロック外で worker spawnSync → 真理表で分類 → FAILED なら詳細ファイルを wx+rename で書く (書込失敗は PASSED+Note へ降格) → ロック下で終端行発行 → exit 0。ロックは2短窓のみで spawn を跨がない点と、orphan-FIRED prevention が不変条件。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+  },
+  {
+   "name": "Verdict classification (truth table)",
+   "description": "spawn 結果から終端イベントへの決定表 (§3.6)。分岐 a (timeout SIGTERM→BUDGET_OVERRIDE) が分岐 0 (spawn error→PASSED) に先行必須という順序制約付き。SENSOR_FAILED に至るのは status 0 + JSON pass:false の1経路のみで、他の異常系 (exit 127 / bad-output / 外部 SIGTERM / exit-<n> / 他シグナル) はすべて Note 付き PASSED に fail-open する。Quint での網羅性・分岐順序検証の好候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+  },
+  {
+   "name": "Fire-terminal pairing lifecycle",
+   "description": "監査ランタイムでの FIRED 行と終端行のペアリング状態 (§4)。fired (未ペア) → paired (Fire id 一致、重複は最新 timestamp が勝つ) または incomplete (閉じたステージ窓内で即時、それ以外は監査 max timestamp 基準の決定的 60 秒カットオフ)。Date.now() を使わず再コンパイルがバイト等価という決定性不変条件を持つ。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+  },
+  {
+   "name": "PostToolUse hook guard chain",
+   "description": "aidlc-run-sensors.ts の 11 段順序付きガードパイプライン (§3.2)。各段は skip (return 0) / 続行 に分岐し、終端は「エントリごとの glob 一致→dispatcher spawn」か「recordHookDrop 記録付き drop (timeout / spawn error / dispatcher exit <n>)」。全経路が exit 0 で終わるという G5 契約と、.aidlc-sensors/ 再帰ガードが安全性不変条件。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+  },
+  {
+   "name": "Sensor proposal and install (§13 learning gate)",
+   "description": "learning 受理からセンサー有効化まで (§7.2c)。Check 型 learning 受理 → 単一監査ロックトランザクション内で manifest scaffold + bindSensorToStage の2書き込み → SENSOR_PROPOSED 発行 → 次のグラフコンパイルで sensors_applicable に載って有効化。再提案は (origin stage, sensor id) で重複排除、再バインドは冪等 no-op、framework 配布下への scaffold は拒否、という遷移ガードを持つ。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+  },
+  {
+   "name": "edge_block classification (parseBoltDag)",
+   "description": "required-sections の unit-of-work-dependency.md 限定検査における units: エッジブロックの分類 (§5.1)。ok / absent (fenced yaml units: ブロックなし) / malformed (パース throw・0エントリ・重複ユニット名・自己依存・未知依存) / cyclic (依存サイクル検出) の4値で、ok 以外は所見1件追加 + 強制 pass:false。traceability の unit 交差検証にも同じ DAG が使われる小型の分類機械。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/06-sensors.md"
+  },
+  {
+   "name": "Session lifecycle event loop",
+   "description": "SessionStart を起点に UserPromptSubmit → PreToolUse → tool 実行 → PostToolUse のツールループが回り、Stop が decision:block でループへ再入するか allow でターンを終える。PreCompact はホストの圧縮時、SessionEnd は終端に 1 回、SubagentStop はループ内で発火する (§4 の mermaid 図)。フック発火順序とイベント所有権 (SESSION_COMPACTED は PreCompact のみ) の整合性が不変条件。Quint でのイベント順序モデル化の第一候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+  },
+  {
+   "name": "Stop-hook block decision and no-progress counter",
+   "description": "carve-out 0〜9 を固定順に評価 (resume wait は next プローブより前) し、どれも許可しなければエンジンをプローブして PENDING なら block。永続カウンタ {signature, count} は同一 progress signature で +1、新署名で 1 にリセット、記録なし + stop_hook_active で 2 種付け、nextCount >= cap (autonomous 8 / interactive 2) で解放、done/parked/ハンドオフ境界で resetGuard が 0 化する (§7.2–7.4)。「レコードは判定前に書く」順序と、cap による罠回避が安全性の核。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+  },
+  {
+   "name": "Review freeze window",
+   "description": "レシートなし → 新鮮な終端レシート (READY または終端 NOT-READY) 保持 → 凍結中 (produces[] 書き込み拒否) の 3 状態。解除遷移は GATE_REJECTED / STAGE_JUMPED / WORKFLOW_STARTED、またはステージの completed/skipped 化。cap 未満の敵対的 NOT-READY は非終端で凍結しない (§5.3)。エンジンの freshReviewReceipts と鮮度判定を共有するため、フックとエンジンの状態観が乖離しないことが不変条件。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+  },
+  {
+   "name": "Active-directive marker (compaction invalidation & resume wait)",
+   "description": "PreCompact 時、マーカーが v2・自セッション所有・project/intent/state ダイジェスト一致のときのみ context_epoch をバンプし kind を \"error\" に書き換え part/parts/continue_token をクリア。外来・不整合な圧縮は coordination-neutral として no-op (§4.3)。別の腕として、kind \"ask\" + resume.status \"waiting\" + sessionless owner + state digest 一致 + 非 autonomous のとき resume wait ラッチとして Stop を許可し、next プローブによる ask 上書きを防ぐため先読みされる (§7.4)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+  },
+  {
+   "name": "Reviewer dispatch record lifecycle",
+   "description": "§12a step 1 でコンダクタが書き、step 3 で削除。存在 + 6h TTL 内 + 同一性一致 (agent_type または scoped_registration) の間だけ read-scope 強制が有効。期限切れは unlink + 無視 (orphaned drop)、malformed は enforcement skip、record 不在時の review-only エージェントの construction/ 接触は 10 分レートの advisory drop (§5.4)。書く者と消す者が同一 (コンダクタ) で、強制者 (フック) は観測のみという分担。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+  },
+  {
+   "name": "Session-intent binding",
+   "description": "セッションは未スタンプ → STARTED 系でスタンプ → resume 時に別の解決可能 UUID なら REBIND OFFER 提示 + 即再スタンプ、と遷移する (§4.1)。intent 誕生時に呼び出し元セッションが既にスタンプ済みなら上書きせず handoff レシート (5 分 TTL) を発行し、Stop フック carve-out 0 が消費する (§8.1, §7.4)。SessionEnd の帰属は未知 intent スタンプや未スタンプ + アクティブ UUID でカーソルフォールバックを拒否するフェイルクローズ (§4.4)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/07-hooks.md"
+  },
+  {
+   "name": "load-steering 配送継続 (steering delivery continuation)",
+   "description": "状態: バンドル解決済み → part i 配送済み (i=1..N) → 最終継続で run-stage 発行。遷移は conductor の continue <token> 呼び出しで進み、HMAC トークンによりステートレスに位置を検証する (§5.2)。エラー遷移は 4 つ (バンドル/ディレクティブハッシュ移動・part 範囲外・トークン不正/欠落・配送中のワークフロー状態変化) で、すべて『fresh next で part 1 から再始動』という単一の回復状態に収束する。読み取り/UTF-8 エラーは配送開始前にステージ未開始のままエラーディレクティブへ遷移する (§5.1)。Quint モデル化に好適 (有限状態 + 明示的な完全性条件)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+  },
+  {
+   "name": "§13 学習リトゥアル (Learnings Ritual pipeline)",
+   "description": "状態: diary 蓄積 → surface (読み取り専用、(space,intent) ピン) → 構造化質問 (keep/skip + 追加ノート) → 入場矛盾チェック (clear / contradicts) → persist → 承認ゲート (§8)。contradicts 分岐ではユーザが revise / skip / escalate の 3 遷移を持ち、オーバーライド遷移は存在しない。バイパス条件 (initialization ステージ、single: true) と延期条件 (未完了のユニット反復) がガードとして入る。tool-as-actor の役割分担 (ツール/オーケストレータ LLM/ユーザ) が遷移の実行主体を分ける。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+  },
+  {
+   "name": "persist 冪等性 dedup (cid dedup outcomes)",
+   "description": "選択ごとに 2 述語 (hasRow: 監査行の存在、hasLine: ファイル内 cid マーカーの存在) を評価する 4 状態機械 (§8.6): 両真→no-op、行あり線なし→行のみ書き込み (クラッシュ回復遷移)、両偽→書き込み + RULE_LEARNED 発行。hasLine あり hasRow なしのケースは仕様に明記されないが、batchRuleHashes によるバッチ内抑止が第 3 のガードとして重なる。クラッシュ回復の正しさを検証する Quint モデル候補として価値が高い。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+  },
+  {
+   "name": "DocumentKB 抽出状態 (extraction states)",
+   "description": "6 状態の凍結列挙 (§10.4): extracted / no_extractable_text / extractor_unavailable / extraction_failed / unsupported_type / invalidated。sync が再試行遷移を駆動し (extractor_unavailable は detectedType による mime 再プローブ、invalidated は再抽出)、invalidated は source_revision ≠ sha256 から導出される派生状態でもある。文書行自体は onboard→indexed→(updated | rebound)→tombstoned (removed_at 非空) のライフサイクルを持ち、rebind が tombstone を解除する逆遷移を提供する (§10.5)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+  },
+  {
+   "name": "practices 承認レシート (practices affirmation receipt)",
+   "description": "状態: 未承認 (Practices Affirmed Timestamp 空/プレースホルダ) → practices-promote 成功で承認済み (PRACTICES_AFFIRMED 発行 + タイムスタンプ書き込み) → GATE_REJECTED / STAGE_REVISING / STAGE_STARTED フロアイベントでレシート無効化 → 再昇格で再承認 (§7.2)。エンジンは report --result approved 時に『有効なタイムスタンプ + フロアイベントより後の PRACTICES_AFFIRMED 行』の合成条件で検証する。失敗経路は PRACTICES_OVERRIDE。doctor の staleness 行は 90 日閾値で fresh/stale/future-dated を助言的に分類する直交軸 (§7.1)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+  },
+  {
+   "name": "practices-promote トランザクション (8-step fail-closed)",
+   "description": "アンサンブル再検証 → ドラフト 2 読み → ターゲット 2 読み → メモリ内構築 (team: replaceSection×5、project: appendUnderHeading×2) → project 書き込み → team 書き込み → ロック内監査 (PRACTICES_AFFIRMED + タイムスタンプ) の直列 8 段で、各段の失敗は fail-closed に PRACTICES_OVERRIDE + 非ゼロ終了へ遷移する (§7.2)。project 先行書き込みにより部分失敗時の不変条件 (team.md 無傷) が保たれる。書き込み順序の安全性を検証するモデル候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/08-memory-rules-learnings.md"
+  },
+  {
+   "name": "Bolt lifecycle",
+   "description": "BOLT_STARTED を起点に BOLT_COMPLETED / BOLT_FAILED(abort は BOLT_FAILED + Reason: aborted の再利用)へ遷移する。--worktree 付き start は検証 → BOLT_STARTED → state-fork → audit-fork → fragment-fork の固定順で、各 fork 失敗は回復用 BOLT_FAILED を出して失敗状態へ落ちる。complete --merge は Merge-Held ゲート通過後に state/audit/fragment の merge 三連を実行し、abort --discard のみ discard 先・監査後の逆順。失敗エンベロープの stage × reason enum(§5.4)が遷移失敗の全分類を持つため Quint モデル化に好適。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "Swarm batch convergence",
+   "description": "prepare(unit ごとに worktree create + bolt start、成功分のみ SWARM_STARTED にスタンプ)→ コンダクタのファンアウト + check ループ(advisory、exit 0 は green かつ untampered のみ)→ finalize が claimed unit を 6 段ガード連鎖(stamp → attempt 一致 → worktree → confinement → tamper → green+receipt+binding)で converged / error に判定し、未 claim は failed(unsatisfiable | budget-exhausted | cap-exhausted)。converged は直列 merge-back 後に SWARM_UNIT_CONVERGED、失敗は SWARM_UNIT_FAILED + SWARM_BATON_RETURNED、締めに SWARM_COMPLETED。マージ失敗した converged unit はどの行も得ず exit 2 でコンダクタへバトンが返る — この「行なし」中間状態が最重要の検証対象。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "Worktree lifecycle",
+   "description": "absent → created(WORKTREE_CREATED、pre-audit ガード: base 存在・ディレクトリ/ブランチ非既存)→ merged(WORKTREE_MERGED)または discarded(WORKTREE_DISCARDED、冪等で already-discarded は無発行)。merge はコンフリクトで worktree を保存して exit 1 の分岐があり、merged 後は binding 種別(source-bound / bypassed / neither)ごとに異なるクリーンアップ経路を辿る。クリーンアップ失敗は [merge-succeeded:<sha>] 前置の孤児状態として残り、doctor が回収する。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "Construction Autonomy Mode",
+   "description": "gated ⇄ autonomous の 2 状態。gated → autonomous の昇格は単一 withAuditLock 内で human presence guard(humanActedSinceGate)を要求し、autonomous → gated の降格は presence 不要で無条件。書き込み動詞は set-autonomy のみで、遷移ごとに AUTONOMY_MODE_SET を発行する。autonomous 状態は code-generation の swarm prepare に CodeGenerationApproval 全 unit 必須という追加ガードを誘発する。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "HOLD-MERGE (Merge-Held flag)",
+   "description": "per-Bolt forked 状態ファイル上の not-held ⇄ held の 2 状態で、set / clear とも冪等。held の間は complete --merge が拒否され、halt-and-ask シーケンスの途中でマージが着地できないことを保証する。forked 状態ファイル欠如は not-held と読むが、欠如ファイルへの setMergeHeld は hard error という非対称がある。監査イベントを持たない純内部状態のため、モデル化すると可視イベントとの独立性を検証できる。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "Code Generation approval",
+   "description": "pending(回答空欄/全アンダースコア)→ approved(Approve Plan 回答 + approval fingerprint 一致)へ遷移し、memory・scope・test strategy・project type の変化で contract_sha256 が不一致になると stale へ、plan/instructions の変更で fingerprint 不一致へ失効する。fingerprint の再発行は Answer を空欄へ戻してからのみ許される anti-forgery 遷移制約を持つ(§8.6–8.7)。7 チェックの固定順・最初の失敗勝ちが状態判定関数そのもの。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "Ledger fold cursor",
+   "description": "transcript ファイルごとのカーソルが FoldMode(holdback / seal-main / flush-all)で駆動される。holdback は各ファイルの最後の message-id group を pending に保持し、seal-main はメイン transcript の group のみ閉じ、flush-all はエンジン境界または Stop で全 group を閉じる。pending group の所有権(stageSlug / sessionKey / workflowKey)は捕捉時点で固定され、ライフサイクルツールが状態を進めた後の fold でも捕捉時の帰属が再利用される(§9.3–9.4)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/09-cli-tools.md"
+  },
+  {
+   "name": "buildTree packaging pipeline",
+   "description": "dist ツリー組み立ての逐次パイプライン: coreDirs コピー → harnessFiles コピー → onboarding 描画 → memory/active-space/memory-seed 出力 → stage graph コンパイル → harness.json → (skipRunnerGen でなければ) runner 生成 → (emit があれば) emit() → 生成スキル領域リフレッシュ → inventory 返却 (§4)。分岐は skipRunnerGen と emit の 2 つのみで、順序制約 (memory は compile 前、領域リフレッシュは emit 後) と「in-tree ツール非ゼロ終了で全体中断」が遷移規則。write/check の 2 モードは outRoot が違うだけで同一遷移をたどる。Quint で順序不変条件 (2c < compile, emit < refresh) をモデル化する価値がある。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+  },
+  {
+   "name": "drift check verdict (--check)",
+   "description": "mkdtemp への一時ビルド → コミット済み dist/<name>/ との全ルート byte diff → 問題ゼロなら in-sync (exit 0)、1 つ以上なら MISSING / DIFFERS / ORPHAN を最大 40 行印字して exit 1 (§6.1)。名指し check ではトップレベル orphan スイープが抑制される (full=false) という遷移バリアントを持つ (§6.2)。AIDLC_TIER_CAP が check モードで無視されるというモード依存入力もある。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+  },
+  {
+   "name": "Cursor installer managed-file lifecycle",
+   "description": "receipt 駆動の per-file 状態機械: 不在 → seeded (ハッシュを receipt に記録) / 既存ファイルは「前回 receipt と一致 (未改変)」→ rewrite、「runtime-owned」→ rewrite、「改変済み」→ collision、「receipt にあるが出荷されなくなった」→ 未改変なら remove・改変済みなら collision (§10.1)。グローバル遷移は preflight (symlink/escape 拒否) → 計画 → collision が 1 つでもあれば書き込み前 abort → apply → プラグインルーティング再構築。aidlc/spaces/ と active-space は seed-only の吸収状態 (決して rewrite されない)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+  },
+  {
+   "name": "workspace-sync reconcile transaction",
+   "description": "ロック取得 → preflight → 生成ファイルの staging → 可逆リネームによる install → 成功で commit、apply エラーで rollback (§10.4)。orphan checkout は削除状態へ直行せず、--force + preflight 通過時のみ quarantine 状態 (.aidlc-workspace-sync-recovery-* に保持) へ遷移する。トランザクション + 隔離という珍しく厳格な除去安全モデルで、Quint モデル化の好候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+  },
+  {
+   "name": "default memory tree self-heal",
+   "description": "デフォルト space のメソッドツリーの 2 状態: absent → (ensureWorkspaceDirs が memory-seed からコピー) → present、present → present (no-op) (§10.3)。existsSync ガードにより厳密冪等で、「default tree never churns」不変条件を担う。エンジンのみコピーしたインストールの回復経路。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+  },
+  {
+   "name": "active-space repointing",
+   "description": "include 面の状態は「default にピン留め (出荷形)」と「space X を指す」の間を repointHarnessIncludes が遷移させる (§10.2)。default の間は呼び出しがバイト同一 no-op という自己ループで、packager の transform (cursor ペルソナのピン留め §5) がこの初期状態の byte 再現性を保証する。orchestration/workspace の fork・resume モデルと合流させる候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/10-distribution-harnesses.md"
+  },
+  {
+   "name": "ComposeRun (compose 実行ライフサイクル)",
+   "description": "フック発火 → ガード連鎖 (AI-DLC プロジェクトでなければ無音終了 / プラグインルート不在・旧エンジン・ロック不取得は drop して終了) → ロック取得 → 書き込みトランザクション開始 → no-clobber コピー + contribution マージ → 再コンパイル判定 (changed ∨ graphMissingPluginStage ∨ retryPending)。compile 失敗で「全ロールバック + retry marker 書き込み」、成功で「commit + SKILL.md 生成領域更新 + ランナー再生成 + retry marker 除去」。どの経路でも最後にロック解放と drops フラッシュに合流し、呼び出し元へは決して throw しない (§5)。Quint モデル化の第一候補: ロック・トランザクション・自己修復 (retry marker / graphMissingPluginStage) の交差を持つ。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+  },
+  {
+   "name": "PluginActivation (プラグインの設置×選択の直交状態)",
+   "description": "プラグインは {未設置, 設置済み} × {有効, 無効} の直交 2 軸を動く。compose が「未設置→設置済み」(ファイルコピー; 無効でも copy は進むが contribution マージは進まない §6.4)、select-plugins が「有効↔無効」を遷移させる。無効化遷移では strip (sidecar 基準で merged contribution を除去) → 選択書き込み → 再生成チェーンが走り、失敗時はスナップショット復元で遷移前状態へ戻る。stranded workflow guard は無効化遷移そのものを拒否しうる。再有効化は次回セッション開始の compose 再マージで contribution が復元される (§4.3, §6.4, §6.5)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+  },
+  {
+   "name": "FragmentSplice (fragment ブロックの冪等スプライス)",
+   "description": "対象ステージ内の (plugin, anchor, order) キーごとに 3 状態遷移: 同ハッシュのマーカーが既在 → no-op (冪等)、異ハッシュで既在 → ハッシュ限定の閉マーカーまでの旧ブロック丸ごと置換 (アップグレード)、不在 → 任意プラグインの同アンカー peer ブロック間の (order, plugin) 順位置へ挿入。閉マーカー欠落は「そのまま放置 + drop」の縮退状態 (§6.3)。strip 側はマーカーマッチのみで除去し、非対マーカーは doctor 領域として残る (§6.5)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+  },
+  {
+   "name": "DropsFile (フック健全性シグナルのライフサイクル)",
+   "description": "プラグインごとの plugin-compose-<KEY>.drops ファイルは 2 状態のライブシグナル: drop を出した実行が「上書き作成」、drop ゼロのクリーン実行が「削除」(自己クリア)。--doctor は [degraded] 行を含む状態を failing、advisory のみを passing と読む。履歴でなく現在の健全性を表す点で、監査ログ (追記型) と対照的な状態機械 (§5.4)。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/11-plugin-system.md"
+  },
+  {
+   "name": "Runner tier pipeline",
+   "description": "ランナー main() の逐次ゲート機械 (§3.3 の mermaid 図)。状態は smoke → unit → (Claude preflight) → integration → e2e(非TUI) → TUI preflight → TUI群 → summary → exit。遷移規則: smoke に 1 ファイルでも FAIL があれば即座に全体を中断する唯一の fail-fast、Claude preflight 失敗は claudeGateOpen=false への遷移 (中断ではなくライブ系のみ SKIP)、TUI preflight 失敗は折り込み TUI 群のスキップ。終端で exit コード = 失敗ファイル数。Quint モデル化の第一候補。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+  },
+  {
+   "name": "claudeGateOpen live gating",
+   "description": "ライブ実行可否を表す 2 状態フラグ (open/closed)。初期 open で、(1) Claude preflight (t19) の失敗、(2) --no-llm / AIDLC_NO_LLM=1 のいずれかで closed に遷移し、以後は復帰しない。closed のとき本体導出された Claude-required set (52 ファイル) が名前指定で SKIP される。9 個の LIVE_MODEL_GATES 環境変数 (--no-llm で一斉に \"0\") との合成でファイルごとの実行/SKIP が決まる。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+  },
+  {
+   "name": "Per-file execution lifecycle",
+   "description": "各テストファイルのライフサイクル: START → (spawn: bun test + JUnit) → .meta 正規化 → PASS | FAIL → DONE、または claudeGateOpen closed 時の SKIP。STATUS 判定は failed>0 ∨ bunRc≠0 で FAIL、outfile 不在 + rc≠0 のクラッシュ時は failed=1 を合成 (空スイートとの XML 同一性の曖昧性を rc チャネルで解消)。集計は STATUS=FAIL のファイル単位で failedFiles を加算し、exit 値に直結する。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+  },
+  {
+   "name": "Coverage unit status and ratchet",
+   "description": "各ユニットの状態分類: covered / UNDER-MECHANISM / DEFERRED-tui / UNCOVERED。判定は guarantee principle (主張の最大 mechanism ランク >= unit の minMechanism ランク)。加えてクラス単位のラチェットが「covered 数はベースラインを下回れない」という単調非減少不変条件を課し、freshness diff が committed registry と再生成結果のバイト同一を要求する。単調性 + 同一性の 2 不変条件を持つ小さな機械として Quint モデル化に好適。",
+   "source": "/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/specs/12-testing-ci.md"
+  }
+ ]
+}
