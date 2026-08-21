@@ -25,7 +25,7 @@ macro_rules! event_types {
             pub const ALL: &'static [EventType] = &[ $( $( EventType::$name, )+ )+ ];
 
             /// 監査行に現れる正準綴り。
-            pub fn as_str(self) -> &'static str {
+            pub const fn as_str(self) -> &'static str {
                 match self { $( $( EventType::$name => $s, )+ )+ }
             }
 
@@ -34,7 +34,7 @@ macro_rules! event_types {
                 match s { $( $( $s => Some(EventType::$name), )+ )+ _ => None }
             }
 
-            pub fn category(self) -> EventCategory {
+            pub const fn category(self) -> EventCategory {
                 match self { $( $( EventType::$name => EventCategory::$cat, )+ )+ }
             }
         }
@@ -134,29 +134,45 @@ event_types! {
 impl EventType {
     /// MANDATORY 8 (レジストリで ✓ 印 — 03 §6.5 M6)。
     pub const MANDATORY: &'static [EventType] = &[
-        EventType::WorkflowStarted, EventType::WorkflowCompleted,
-        EventType::WorkflowParked, EventType::WorkflowUnparked,
-        EventType::PhaseStarted, EventType::PhaseCompleted,
-        EventType::StageStarted, EventType::StageCompleted,
+        EventType::WorkflowStarted,
+        EventType::WorkflowCompleted,
+        EventType::WorkflowParked,
+        EventType::WorkflowUnparked,
+        EventType::PhaseStarted,
+        EventType::PhaseCompleted,
+        EventType::StageStarted,
+        EventType::StageCompleted,
     ];
 
     /// CLI_PROTECTED 18 — 公開 audit CLI からの直接 emit を拒否する authority-bearing
     /// レシート (バイパスは `AIDLC_ALLOW_DIRECT_AUDIT_EVENTS=1`)。出典: 03 §6.6 L815-819。
     pub const CLI_PROTECTED: &'static [EventType] = &[
-        EventType::HumanTurn, EventType::GateApproved, EventType::GateRejected,
-        EventType::QuestionAnswered, EventType::AutonomyModeSet,
-        EventType::ReviewRequested, EventType::ReviewCompleted,
-        EventType::PipelineLinkCompleted, EventType::ArtifactReused,
-        EventType::SwarmStarted, EventType::SwarmUnitConverged,
-        EventType::UnitStarted, EventType::UnitPaused,
-        EventType::UnitResumed, EventType::UnitCompleted,
-        EventType::DocumentIndexed, EventType::DocumentUpdated, EventType::DocumentRemoved,
+        EventType::HumanTurn,
+        EventType::GateApproved,
+        EventType::GateRejected,
+        EventType::QuestionAnswered,
+        EventType::AutonomyModeSet,
+        EventType::ReviewRequested,
+        EventType::ReviewCompleted,
+        EventType::PipelineLinkCompleted,
+        EventType::ArtifactReused,
+        EventType::SwarmStarted,
+        EventType::SwarmUnitConverged,
+        EventType::UnitStarted,
+        EventType::UnitPaused,
+        EventType::UnitResumed,
+        EventType::UnitCompleted,
+        EventType::DocumentIndexed,
+        EventType::DocumentUpdated,
+        EventType::DocumentRemoved,
     ];
 
+    #[must_use]
     pub fn is_mandatory(self) -> bool {
         Self::MANDATORY.contains(&self)
     }
 
+    #[must_use]
     pub fn is_cli_protected(self) -> bool {
         Self::CLI_PROTECTED.contains(&self)
     }
@@ -180,12 +196,28 @@ mod tests {
             *by_cat.entry(cat_name(e.category())).or_default() += 1;
         }
         let expected = [
-            ("WorkflowLifecycle", 4), ("PhaseLifecycle", 4), ("StageLifecycle", 6),
-            ("Session", 5), ("Initialization", 3), ("Navigation", 7), ("Interaction", 8),
-            ("UnitLifecycle", 4), ("Artifact", 3), ("Subagent", 1), ("ReviewerEnforcement", 2),
-            ("PlanApproval", 1), ("Documents", 3), ("Utility", 1), ("ErrorRecovery", 2),
-            ("ConstructionBolt", 4), ("Worktree", 7), ("Practices", 4), ("MergeDispatch", 3),
-            ("Sensor", 5), ("LearningLoop", 3), ("Swarm", 6),
+            ("WorkflowLifecycle", 4),
+            ("PhaseLifecycle", 4),
+            ("StageLifecycle", 6),
+            ("Session", 5),
+            ("Initialization", 3),
+            ("Navigation", 7),
+            ("Interaction", 8),
+            ("UnitLifecycle", 4),
+            ("Artifact", 3),
+            ("Subagent", 1),
+            ("ReviewerEnforcement", 2),
+            ("PlanApproval", 1),
+            ("Documents", 3),
+            ("Utility", 1),
+            ("ErrorRecovery", 2),
+            ("ConstructionBolt", 4),
+            ("Worktree", 7),
+            ("Practices", 4),
+            ("MergeDispatch", 3),
+            ("Sensor", 5),
+            ("LearningLoop", 3),
+            ("Swarm", 6),
         ];
         for (name, n) in expected {
             assert_eq!(by_cat.get(name), Some(&n), "category {name}");

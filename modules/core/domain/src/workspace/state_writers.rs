@@ -6,14 +6,17 @@
 use message_catalog::state as msg;
 
 /// フィールド読取 (`getField`) — 最初に一致した行の値を trim して返す。
+#[must_use]
 pub fn get_field(content: &str, field: &str) -> Option<String> {
     let prefix = format!("- **{field}**:");
-    content
-        .lines()
-        .find_map(|l| l.strip_prefix(&prefix).map(|v| v.trim_matches([' ', '\t']).to_string()))
+    content.lines().find_map(|l| {
+        l.strip_prefix(&prefix)
+            .map(|v| v.trim_matches([' ', '\t']).to_string())
+    })
 }
 
 /// 存在すれば置換、不在なら**無言 no-op** (display 専用フィールド向け)。
+#[must_use]
 pub fn set_field(content: &str, field: &str, value: &str) -> String {
     replace_field(content, field, value).unwrap_or_else(|| content.to_string())
 }
@@ -25,6 +28,9 @@ pub struct FieldNotFound {
 }
 
 /// 状態機械遷移用 — 不在フィールドは Err (検出不能ドリフトの拒否)。
+/// # Errors
+///
+/// 指定 `## Heading` が存在しなければ `HeadingNotFound`。
 pub fn set_field_strict(content: &str, field: &str, value: &str) -> Result<String, FieldNotFound> {
     replace_field(content, field, value).ok_or_else(|| FieldNotFound {
         message: msg::field_not_found(field),
@@ -35,6 +41,9 @@ pub fn set_field_strict(content: &str, field: &str, value: &str) -> Result<Strin
 pub struct HeadingNotFound(pub String);
 
 /// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記。
+/// # Errors
+///
+/// 不在フィールドは `FieldNotFound` (upstream 逐語 — 「無言 no-op は検出不能なドリフト」)。
 pub fn set_or_insert_field(
     content: &str,
     heading: &str,
@@ -64,10 +73,11 @@ pub fn set_or_insert_field(
     }
     let mut out: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
     out.insert(insert_at, format!("- **{field}**: {value}"));
-    Ok(rejoin(out, content))
+    Ok(rejoin(&out, content))
 }
 
 /// bullet 行ごと削除 (不在は no-op)。
+#[must_use]
 pub fn remove_field(content: &str, field: &str) -> String {
     let prefix = format!("- **{field}**:");
     let out: Vec<String> = content
@@ -75,7 +85,7 @@ pub fn remove_field(content: &str, field: &str) -> String {
         .filter(|l| !l.starts_with(&prefix))
         .map(|s| s.to_string())
         .collect();
-    rejoin(out, content)
+    rejoin(&out, content)
 }
 
 fn replace_field(content: &str, field: &str, value: &str) -> Option<String> {
@@ -92,10 +102,10 @@ fn replace_field(content: &str, field: &str, value: &str) -> Option<String> {
             }
         })
         .collect();
-    found.then(|| rejoin(out, content))
+    found.then(|| rejoin(&out, content))
 }
 
-fn rejoin(lines: Vec<String>, original: &str) -> String {
+fn rejoin(lines: &[String], original: &str) -> String {
     let mut s = lines.join("\n");
     if original.ends_with('\n') {
         s.push('\n');
@@ -141,7 +151,13 @@ mod tests {
 
     #[test]
     fn set_or_insert_appends_at_the_end_of_the_named_section() {
-        let out = set_or_insert_field(SAMPLE, "Project Information", "Parked", "2026-08-22T00:00:00Z").unwrap();
+        let out = set_or_insert_field(
+            SAMPLE,
+            "Project Information",
+            "Parked",
+            "2026-08-22T00:00:00Z",
+        )
+        .unwrap();
         let expected = "\
 ## Project Information
 - **Project**: demo

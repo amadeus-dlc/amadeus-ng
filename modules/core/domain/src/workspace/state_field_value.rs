@@ -10,13 +10,16 @@ pub struct StateFieldValue(String);
 pub struct UnsafeLineChar(pub char);
 
 /// 拒否対象の判定 (upstream `hasUnsafeSingleLineCharacter` と同一集合)。
+#[must_use]
 pub fn unsafe_line_char(s: &str) -> Option<char> {
-    s.chars().find(|&c| {
-        (c as u32) <= 0x1f || c as u32 == 0x7f || c == '\u{2028}' || c == '\u{2029}'
-    })
+    s.chars()
+        .find(|&c| (c as u32) <= 0x1f || c as u32 == 0x7f || c == '\u{2028}' || c == '\u{2029}')
 }
 
 impl StateFieldValue {
+    /// # Errors
+    ///
+    /// C0 制御・DEL・U+2028・U+2029 を含む値は `UnsafeLineChar` で拒否する。
     pub fn parse(s: &str) -> Result<StateFieldValue, UnsafeLineChar> {
         match unsafe_line_char(s) {
             Some(c) => Err(UnsafeLineChar(c)),
@@ -24,6 +27,7 @@ impl StateFieldValue {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }

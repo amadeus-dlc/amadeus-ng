@@ -21,12 +21,14 @@ pub enum StateVersionKind {
 }
 
 impl StateVersionClassification {
-    pub fn kind(self) -> StateVersionKind {
+    #[must_use]
+    pub const fn kind(self) -> StateVersionKind {
         self.kind
     }
 }
 
 /// 唯一の分類器 (runtime / doctor の双方がこれを呼ぶ)。
+#[must_use]
 pub fn classify_state_version(state_content: &str) -> StateVersionClassification {
     let kind = classify(state_content);
     StateVersionClassification { kind }
@@ -63,13 +65,22 @@ mod tests {
 
     #[test]
     fn current_version_classifies_ok() {
-        assert_eq!(classify_state_version(&with_version("8")).kind(), StateVersionKind::Ok);
+        assert_eq!(
+            classify_state_version(&with_version("8")).kind(),
+            StateVersionKind::Ok
+        );
     }
 
     #[test]
     fn older_and_newer_versions_classify_past_and_future() {
-        assert_eq!(classify_state_version(&with_version("7")).kind(), StateVersionKind::Past);
-        assert_eq!(classify_state_version(&with_version("9")).kind(), StateVersionKind::Future);
+        assert_eq!(
+            classify_state_version(&with_version("7")).kind(),
+            StateVersionKind::Past
+        );
+        assert_eq!(
+            classify_state_version(&with_version("9")).kind(),
+            StateVersionKind::Future
+        );
     }
 
     #[test]

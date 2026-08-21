@@ -15,6 +15,9 @@ pub enum CloneIdError {
 }
 
 impl CloneId {
+    /// # Errors
+    ///
+    /// 空・33 文字以上・`[a-z0-9]` 以外を拒否する。
     pub fn parse(s: &str) -> Result<CloneId, CloneIdError> {
         if s.is_empty() {
             return Err(CloneIdError::Empty);
@@ -30,6 +33,7 @@ impl CloneId {
         Ok(CloneId(s.to_string()))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }

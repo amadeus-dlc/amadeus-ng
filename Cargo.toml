@@ -19,6 +19,60 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/amadeus-dlc/amadeus-ng"
 
+# 2026-08-22 オーナー規約のリント一式。unwrap/expect のテスト許可は clippy.toml、
+# redundant_clone はプロダクト・テスト両方で禁止。
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+dropping_copy_types = "deny"
+unreachable_pub = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+redundant_clone = "deny"
+missing_errors_doc = "deny"
+missing_panics_doc = "deny"
+missing_safety_doc = "deny"
+redundant_field_names = "deny"
+redundant_pattern = "deny"
+redundant_static_lifetimes = "deny"
+unnecessary_to_owned = "deny"
+unnecessary_struct_initialization = "deny"
+needless_borrow = "deny"
+needless_pass_by_value = "deny"
+manual_ok_or = "deny"
+manual_map = "deny"
+manual_let_else = "deny"
+manual_strip = "deny"
+unused_async = "deny"
+unused_self = "deny"
+unnecessary_wraps = "deny"
+unreachable = "deny"
+empty_enums = "deny"
+no_effect = "deny"
+todo = "deny"
+unimplemented = "deny"
+print_stdout = "deny"
+dbg_macro = "deny"
+missing_const_for_fn = "deny"
+must_use_candidate = "deny"
+trivially_copy_pass_by_ref = "deny"
+clone_on_copy = "deny"
+len_without_is_empty = "deny"
+wrong_self_convention = "deny"
+from_over_into = "deny"
+eq_op = "deny"
+bool_comparison = "deny"
+needless_bool = "deny"
+match_like_matches_macro = "deny"
+manual_assert = "deny"
+naive_bytecount = "deny"
+if_same_then_else = "deny"
+cmp_null = "deny"
+
 [workspace.dependencies]
 core-domain = { path = "modules/core/domain" }
 core-use-case = { path = "modules/core/use-case" }
