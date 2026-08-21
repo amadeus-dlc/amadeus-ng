@@ -4,4 +4,5 @@
 #![forbid(unsafe_code)]
 
 pub mod orchestration;
+pub mod workflow_definition;
 pub mod workspace;

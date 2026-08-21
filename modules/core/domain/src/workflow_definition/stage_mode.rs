@@ -1,0 +1,122 @@
+//! `StageMode` — ステージのトポロジ。5 値の閉集合 (upstream 01 §3.2)。
+//!
+//! `agent-team` は**予約値**で出荷グラフには現れない。読み手は明示的に扱い、既定経路へ
+//! フォールスルーさせてはならない (レポート §5.1-14 — [S] `02:154`, [S] `04:98`)。
+
+/// ステージ実行トポロジ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StageMode {
+    Inline,
+    Subagent,
+    Pipeline,
+    Mob,
+    /// 予約 — 未実装。`is_reserved()` が真を返す唯一の値。
+    AgentTeam,
+}
+
+/// 閉集合外の値。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownStageMode(pub String);
+
+impl StageMode {
+    /// 宣言順の全値。
+    pub const ALL: [StageMode; 5] = [
+        StageMode::Inline,
+        StageMode::Subagent,
+        StageMode::Pipeline,
+        StageMode::Mob,
+        StageMode::AgentTeam,
+    ];
+
+    /// # Errors
+    ///
+    /// 5 値以外は `UnknownStageMode` で拒否する。
+    pub fn parse(s: &str) -> Result<StageMode, UnknownStageMode> {
+        Ok(match s {
+            "inline" => StageMode::Inline,
+            "subagent" => StageMode::Subagent,
+            "pipeline" => StageMode::Pipeline,
+            "mob" => StageMode::Mob,
+            "agent-team" => StageMode::AgentTeam,
+            other => return Err(UnknownStageMode(other.to_string())),
+        })
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            StageMode::Inline => "inline",
+            StageMode::Subagent => "subagent",
+            StageMode::Pipeline => "pipeline",
+            StageMode::Mob => "mob",
+            StageMode::AgentTeam => "agent-team",
+        }
+    }
+
+    /// 予約値か。真なら**ディスパッチしてはならない** — 呼出側は明示的に拒否する
+    /// (upstream 最低要件: `throw "mode agent-team not yet implemented"`)。
+    #[must_use]
+    pub fn is_reserved(self) -> bool {
+        self == StageMode::AgentTeam
+    }
+
+    /// `support_agents` 非空が compile 時不変条件となるモードか (01 §3.2)。
+    /// 読取経路では再検査しない (upstream もロード時は検証しない)。
+    #[must_use]
+    pub const fn requires_support_agents(self) -> bool {
+        matches!(self, StageMode::Pipeline | StageMode::Mob)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn the_five_modes_round_trip_and_unknown_is_rejected() {
+        for m in StageMode::ALL {
+            assert_eq!(StageMode::parse(m.as_str()).unwrap(), m);
+        }
+        assert_eq!(
+            StageMode::parse("agent-team").unwrap(),
+            StageMode::AgentTeam
+        );
+        assert_eq!(
+            StageMode::parse("agent_team"),
+            Err(UnknownStageMode("agent_team".to_string()))
+        );
+        assert!(StageMode::parse("swarm").is_err());
+    }
+
+    #[test]
+    fn agent_team_is_the_only_reserved_mode() {
+        assert!(StageMode::AgentTeam.is_reserved());
+        for m in [
+            StageMode::Inline,
+            StageMode::Subagent,
+            StageMode::Pipeline,
+            StageMode::Mob,
+        ] {
+            assert!(!m.is_reserved());
+        }
+    }
+
+    #[test]
+    fn pipeline_and_mob_are_the_support_agent_modes() {
+        assert!(StageMode::Pipeline.requires_support_agents());
+        assert!(StageMode::Mob.requires_support_agents());
+        assert!(!StageMode::Inline.requires_support_agents());
+        assert!(!StageMode::Subagent.requires_support_agents());
+        assert!(!StageMode::AgentTeam.requires_support_agents());
+    }
+
+    proptest! {
+        /// 閉集合外はすべて拒否 — 未知モードが既定経路 (inline) に落ちない。
+        #[test]
+        fn rejects_anything_outside_the_closed_set(s in "[a-z-]{1,12}") {
+            let known = StageMode::ALL.iter().any(|m| m.as_str() == s);
+            prop_assert_eq!(StageMode::parse(&s).is_ok(), known);
+        }
+    }
+}

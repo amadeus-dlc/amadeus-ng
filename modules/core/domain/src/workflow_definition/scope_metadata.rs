@@ -1,0 +1,265 @@
+//! `ScopeMetadata` — `<harness>/scopes/aidlc-<name>.md` の frontmatter 最小モデル。
+//!
+//! **有効スコープの権威はこのファイルの存在**であってグリッドではない
+//! (`validScopes()` — レポート §4.6)。深さ・キーワードなどはグリッドではなくここに入る
+//! (レポート §3.1)。
+
+/// `skeleton:` の既定値。scope frontmatter では `on` / `off` の 2 値のみ
+/// (orchestration の `SkeletonStance` が持つ `scope-dependent` はここには現れない)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SkeletonDefault {
+    On,
+    Off,
+}
+
+/// 閉集合外の値 (upstream: `has invalid skeleton value "..." . Expected "on" or "off".`)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownSkeletonDefault(pub String);
+
+impl SkeletonDefault {
+    pub const ALL: [SkeletonDefault; 2] = [SkeletonDefault::On, SkeletonDefault::Off];
+
+    /// # Errors
+    ///
+    /// `on` / `off` 以外は `UnknownSkeletonDefault` で拒否する。
+    pub fn parse(s: &str) -> Result<SkeletonDefault, UnknownSkeletonDefault> {
+        Ok(match s {
+            "on" => SkeletonDefault::On,
+            "off" => SkeletonDefault::Off,
+            other => return Err(UnknownSkeletonDefault(other.to_string())),
+        })
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SkeletonDefault::On => "on",
+            SkeletonDefault::Off => "off",
+        }
+    }
+}
+
+/// `review_cap:` の値。`None` は「`none` と**宣言された**」ことを表す値であり、
+/// 「宣言が無い」は `Option<ReviewCapValue>` の `None` 側で表す (2 つを混同しないこと)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ReviewCapValue {
+    Adversarial,
+    Advisory,
+    None,
+}
+
+/// 閉集合外の値。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownReviewCap(pub String);
+
+impl ReviewCapValue {
+    pub const ALL: [ReviewCapValue; 3] = [
+        ReviewCapValue::Adversarial,
+        ReviewCapValue::Advisory,
+        ReviewCapValue::None,
+    ];
+
+    /// # Errors
+    ///
+    /// `adversarial` / `advisory` / `none` 以外は `UnknownReviewCap` で拒否する。
+    pub fn parse(s: &str) -> Result<ReviewCapValue, UnknownReviewCap> {
+        Ok(match s {
+            "adversarial" => ReviewCapValue::Adversarial,
+            "advisory" => ReviewCapValue::Advisory,
+            "none" => ReviewCapValue::None,
+            other => return Err(UnknownReviewCap(other.to_string())),
+        })
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ReviewCapValue::Adversarial => "adversarial",
+            ReviewCapValue::Advisory => "advisory",
+            ReviewCapValue::None => "none",
+        }
+    }
+}
+
+/// スコープ identity ファイルの frontmatter (最小モデル)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeMetadata {
+    name: String,
+    depth: Option<String>,
+    keywords: Vec<String>,
+    skeleton: Option<SkeletonDefault>,
+    review_cap: Option<ReviewCapValue>,
+    freeform_default: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScopeMetadataError {
+    /// `name:` が無い / 空 (upstream: `missing required frontmatter: name`)。
+    MissingName,
+}
+
+impl ScopeMetadata {
+    /// `name` だけを持つ最小のメタデータ。残りは `with_*` で積む。
+    ///
+    /// # Errors
+    ///
+    /// `name` が空 (空白のみを含む) なら `MissingName`。
+    pub fn new(name: &str) -> Result<ScopeMetadata, ScopeMetadataError> {
+        if name.trim().is_empty() {
+            return Err(ScopeMetadataError::MissingName);
+        }
+        Ok(ScopeMetadata {
+            name: name.to_string(),
+            depth: None,
+            keywords: Vec::new(),
+            skeleton: None,
+            review_cap: None,
+            freeform_default: false,
+        })
+    }
+
+    #[must_use]
+    pub fn with_depth(mut self, depth: String) -> ScopeMetadata {
+        self.depth = Some(depth);
+        self
+    }
+
+    #[must_use]
+    pub fn with_keywords(mut self, keywords: Vec<String>) -> ScopeMetadata {
+        self.keywords = keywords;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_skeleton(mut self, skeleton: SkeletonDefault) -> ScopeMetadata {
+        self.skeleton = Some(skeleton);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_review_cap(mut self, review_cap: ReviewCapValue) -> ScopeMetadata {
+        self.review_cap = Some(review_cap);
+        self
+    }
+
+    /// 有効スコープ中で `true` を持てるのは 1 つまで (upstream の frontmatter 検証)。
+    /// 集合レベルの検証は呼出側 (Gateway / compile) の責務で、ここでは値を保持するだけ。
+    #[must_use]
+    pub const fn with_freeform_default(mut self, freeform_default: bool) -> ScopeMetadata {
+        self.freeform_default = freeform_default;
+        self
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// 深さダイヤル。値域は workflow-definition の別語彙のため、ここでは文字列で保持する。
+    #[must_use]
+    pub fn depth(&self) -> Option<&str> {
+        self.depth.as_deref()
+    }
+
+    #[must_use]
+    pub fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+
+    #[must_use]
+    pub const fn skeleton(&self) -> Option<SkeletonDefault> {
+        self.skeleton
+    }
+
+    #[must_use]
+    pub const fn review_cap(&self) -> Option<ReviewCapValue> {
+        self.review_cap
+    }
+
+    #[must_use]
+    pub const fn freeform_default(&self) -> bool {
+        self.freeform_default
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn name_is_the_only_required_field() {
+        let m = ScopeMetadata::new("feature").unwrap();
+        assert_eq!(m.name(), "feature");
+        assert_eq!(m.depth(), None);
+        assert!(m.keywords().is_empty());
+        assert_eq!(m.skeleton(), None);
+        assert_eq!(m.review_cap(), None);
+        assert!(!m.freeform_default());
+    }
+
+    #[test]
+    fn a_missing_name_is_refused() {
+        assert_eq!(ScopeMetadata::new(""), Err(ScopeMetadataError::MissingName));
+        assert_eq!(
+            ScopeMetadata::new("   "),
+            Err(ScopeMetadataError::MissingName)
+        );
+    }
+
+    #[test]
+    fn declared_none_review_cap_differs_from_an_absent_declaration() {
+        let declared = ScopeMetadata::new("poc")
+            .unwrap()
+            .with_review_cap(ReviewCapValue::None);
+        let absent = ScopeMetadata::new("poc").unwrap();
+        assert_eq!(declared.review_cap(), Some(ReviewCapValue::None));
+        assert_eq!(absent.review_cap(), None);
+        assert_ne!(declared, absent);
+    }
+
+    #[test]
+    fn skeleton_and_review_cap_are_closed_sets() {
+        for s in SkeletonDefault::ALL {
+            assert_eq!(SkeletonDefault::parse(s.as_str()).unwrap(), s);
+        }
+        assert_eq!(
+            SkeletonDefault::parse("maybe"),
+            Err(UnknownSkeletonDefault("maybe".to_string()))
+        );
+        for r in ReviewCapValue::ALL {
+            assert_eq!(ReviewCapValue::parse(r.as_str()).unwrap(), r);
+        }
+        assert!(ReviewCapValue::parse("").is_err());
+    }
+
+    proptest! {
+        /// `with_*` は指定したフィールドだけを差し替える。
+        #[test]
+        fn builders_are_independent(
+            name in "[a-z][a-z-]{0,10}",
+            depth in "[a-z]{1,8}",
+            keywords in proptest::collection::vec("[a-z]{1,6}", 0..5),
+            freeform in any::<bool>(),
+        ) {
+            let m = ScopeMetadata::new(&name)
+                .unwrap()
+                .with_depth(depth.clone())
+                .with_keywords(keywords.clone())
+                .with_freeform_default(freeform);
+            prop_assert_eq!(m.name(), name.as_str());
+            prop_assert_eq!(m.depth(), Some(depth.as_str()));
+            prop_assert_eq!(m.keywords(), keywords.as_slice());
+            prop_assert_eq!(m.freeform_default(), freeform);
+            prop_assert_eq!(m.skeleton(), None);
+            prop_assert_eq!(m.review_cap(), None);
+        }
+
+        /// 空白以外の文字を含む name は常に受理される。
+        #[test]
+        fn any_non_blank_name_is_accepted(name in "[!-~]{1,20}") {
+            let m = ScopeMetadata::new(&name).unwrap();
+            prop_assert_eq!(m.name(), name.as_str());
+        }
+    }
+}
