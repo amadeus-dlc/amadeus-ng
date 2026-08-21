@@ -1,0 +1,11 @@
+[package]
+name = "core-use-case"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+core-domain = { workspace = true }
+audit-events = { workspace = true }
+directive-schema = { workspace = true }
