@@ -618,6 +618,138 @@ mod tests {
         assert_eq!(w.recompose_flip(3), Err(CommandError::RefusedUnderAutonomy));
     }
 
+    // ---- PBT: ランダムコマンド列の下で Quint 不変条件の Rust 版が全ステップ成立する ----
+    // (engine_loop.qnt の cursor_in_scope / no_gate_bypass / at_most_one_active /
+    //  parked_position を実装レベルで再検査する。単体テストは基本 PBT — オーナー規約)
+
+    use proptest::prelude::*;
+
+    #[derive(Debug, Clone)]
+    enum Cmd {
+        Next,
+        ReportForward,
+        GateStart,
+        Reject,
+        Revise,
+        ReportSkipped,
+        Stale(usize),
+        Jump(usize),
+        Park,
+        Unpark,
+        RecomposeFlip(usize),
+        SetAutonomy(bool),
+    }
+
+    fn cmd_strategy(n: usize) -> impl Strategy<Value = Cmd> {
+        prop_oneof![
+            Just(Cmd::Next),
+            Just(Cmd::ReportForward),
+            Just(Cmd::GateStart),
+            Just(Cmd::Reject),
+            Just(Cmd::Revise),
+            Just(Cmd::ReportSkipped),
+            (0..n).prop_map(Cmd::Stale),
+            (0..n).prop_map(Cmd::Jump),
+            Just(Cmd::Park),
+            Just(Cmd::Unpark),
+            (0..n).prop_map(Cmd::RecomposeFlip),
+            any::<bool>().prop_map(Cmd::SetAutonomy),
+        ]
+    }
+
+    fn apply(w: &mut WorkflowExecution, cmd: &Cmd) {
+        // ガード違反の Err は「発火しないアクション」— モデルの enabled 条件と同型
+        let _ = match cmd {
+            Cmd::Next => {
+                let _ = w.next();
+                Ok(())
+            }
+            Cmd::ReportForward => w.report_forward().map(|_| ()),
+            Cmd::GateStart => w.gate_start(),
+            Cmd::Reject => w.reject(),
+            Cmd::Revise => w.revise(),
+            Cmd::ReportSkipped => w.report_skipped().map(|_| ()),
+            Cmd::Stale(s) => w.stale_report(*s).map(|_| ()),
+            Cmd::Jump(t) => w.jump(*t).map(|_| ()),
+            Cmd::Park => w.park().map(|_| ()),
+            Cmd::Unpark => w.unpark(),
+            Cmd::RecomposeFlip(s) => w.recompose_flip(*s),
+            Cmd::SetAutonomy(b) => w.set_autonomy(if *b {
+                AutonomyMode::Autonomous
+            } else {
+                AutonomyMode::Gated
+            }),
+        };
+    }
+
+    fn assert_invariants(w: &WorkflowExecution) {
+        // cursor_in_scope: Running 中のカーソルは常に実効 EXECUTE 上
+        if w.status() == Status::Running && !w.parked_active() {
+            assert_eq!(
+                w.effective_plan(w.cursor()),
+                PlanAction::Execute,
+                "cursor_in_scope"
+            );
+        }
+        // no_gate_bypass: gated ステージの completed は必ず承認履歴を持つ
+        for s in 0..w.stage_count() {
+            if w.gated(s) && w.checkbox(s) == CheckboxState::Completed {
+                assert!(w.approved(s), "no_gate_bypass at stage {s}");
+            }
+        }
+        // at_most_one_active
+        let active = (0..w.stage_count())
+            .filter(|&s| {
+                matches!(
+                    w.checkbox(s),
+                    CheckboxState::InProgress
+                        | CheckboxState::AwaitingApproval
+                        | CheckboxState::Revising
+                )
+            })
+            .count();
+        assert!(active <= 1, "at_most_one_active: {active}");
+        // parked_position: park マーカーが活性ならカーソル位置と一致
+        if w.parked_active() {
+            assert_eq!(w.parked_at(), Some(w.cursor()), "parked_position");
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn quint_invariants_hold_under_random_command_sequences(
+            exec_bits in proptest::collection::vec(any::<bool>(), 4),
+            cond_bits in proptest::collection::vec(any::<bool>(), 4),
+            cmds in proptest::collection::vec(cmd_strategy(5), 1..60),
+        ) {
+            let mut plan = vec![Execute];
+            plan.extend(exec_bits.iter().map(|&b| if b { Execute } else { PlanAction::Skip }));
+            let mut conditional = vec![false];
+            conditional.extend(cond_bits.iter().copied());
+            let mut w = WorkflowExecution::start(plan, conditional).unwrap();
+            assert_invariants(&w);
+            for cmd in &cmds {
+                apply(&mut w, cmd);
+                assert_invariants(&w);
+            }
+        }
+
+        /// stale re-report は状態を一切変えない (I5 のフレーム条件 — &self に加えて実測でも)
+        #[test]
+        fn stale_report_never_mutates(
+            cmds in proptest::collection::vec(cmd_strategy(5), 0..40),
+            probe in 0usize..5,
+        ) {
+            let mut w = all_exec(5);
+            for cmd in &cmds {
+                apply(&mut w, cmd);
+            }
+            let before = w.clone();
+            let _ = w.stale_report(probe);
+            assert_eq!(w, before);
+        }
+    }
+
     #[test]
     fn next_is_read_only_and_routes_by_effective_plan() {
         let w = all_exec(2);
