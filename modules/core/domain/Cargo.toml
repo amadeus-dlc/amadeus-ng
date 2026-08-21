@@ -8,3 +8,7 @@ repository.workspace = true
 [dependencies]
 audit-events = { workspace = true }
 directive-schema = { workspace = true }
+message-catalog = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

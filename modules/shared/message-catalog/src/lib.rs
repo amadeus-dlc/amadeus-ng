@@ -1,3 +1,38 @@
 //! 文言カタログ (ADR 0002 / A3) — 逐語文言とコマンド語彙写像表。emit 側と検出側を同居させる。純粋部品。
+//!
+//! 各エントリは upstream 出典 (`file:line` @ 3c3146cf) と採取状態を持つ:
+//! - `captured`: stage-0 環境の実出力で確認済み
+//! - `spec-quoted-only`: as-built 仕様の逐語引用が根拠 (ゴールデン採取待ち — ADR 0002 決定 5b)
 
 #![forbid(unsafe_code)]
+
+/// 採取状態 (ADR 0002 決定 1)。フェーズ A 完了条件は契約経路の全数 `Captured`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoldenStatus {
+    Captured,
+    SpecQuotedOnly,
+}
+
+/// 状態ファイル関連の逐語文言。
+pub mod state {
+    use super::GoldenStatus;
+
+    /// 出典: `aidlc-lib.ts:6564` (upstream 03 §5.3)。
+    pub const FIELD_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+
+    /// `setFieldStrict` の拒否文言 — 「無言 no-op は検出不能なドリフト」の強制。
+    pub fn field_not_found(field: &str) -> String {
+        format!("Field not found in state file: \"{field}\". Cannot update — refusing to silently no-op.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn field_not_found_is_verbatim() {
+        assert_eq!(
+            super::state::field_not_found("Construction Autonomy Mode"),
+            "Field not found in state file: \"Construction Autonomy Mode\". Cannot update — refusing to silently no-op."
+        );
+    }
+}
