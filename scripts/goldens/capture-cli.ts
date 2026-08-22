@@ -74,7 +74,9 @@ function normalize(
     const replacement = rule.replacement ?? rule.placeholder;
     switch (rule.kind) {
       case "regex":
-        out = out.replace(new RegExp(rule.pattern, "g"), replacement);
+        // 置換文字列は literal 扱い。`$&` / `$1` の展開を止めるため `$` を退避する
+        // (Rust 側の比較器は regex::NoExpand を使う — 両者の解釈を一致させる)。
+        out = out.replace(new RegExp(rule.pattern, "g"), replacement.replace(/\$/g, "$$$$"));
         break;
       case "runtime-path":
         for (const root of [...runtime.roots].sort((a, b) => b.length - a.length)) {
