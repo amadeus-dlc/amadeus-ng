@@ -21,29 +21,61 @@ pub fn set_field(content: &str, field: &str, value: &str) -> String {
     replace_field(content, field, value).unwrap_or_else(|| content.to_string())
 }
 
+/// `set_field_strict` の拒否 — 対象フィールド行が state ファイルに存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldNotFound {
     /// upstream 逐語の拒否文言 (文言カタログ経由)。
-    pub message: String,
+    message: String,
+}
+
+impl FieldNotFound {
+    /// 文言カタログが組んだ拒否文言から構成する (文言の正本はカタログ側)。
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> FieldNotFound {
+        FieldNotFound {
+            message: message.into(),
+        }
+    }
+
+    /// upstream 逐語の拒否文言 — フィールド名を含む完成形で、Presenter はこれをそのまま出す。
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// 状態機械遷移用 — 不在フィールドは Err (検出不能ドリフトの拒否)。
 /// # Errors
 ///
-/// 指定 `## Heading` が存在しなければ `HeadingNotFound`。
+/// 指定フィールド行が存在しなければ `FieldNotFound` (upstream 逐語の拒否文言つき)。
 pub fn set_field_strict(content: &str, field: &str, value: &str) -> Result<String, FieldNotFound> {
-    replace_field(content, field, value).ok_or_else(|| FieldNotFound {
-        message: msg::field_not_found(field),
-    })
+    replace_field(content, field, value)
+        .ok_or_else(|| FieldNotFound::new(msg::field_not_found(field)))
 }
 
+/// `set_or_insert_field` の拒否 — 挿入先の `## Heading` セクションが state ファイルに存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HeadingNotFound(pub String);
+pub struct HeadingNotFound(String);
 
-/// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記。
+impl HeadingNotFound {
+    /// 見つからなかった見出し名 (`## ` を含まない裸の名前) から構成する。
+    #[must_use]
+    pub fn new(heading: impl Into<String>) -> HeadingNotFound {
+        HeadingNotFound(heading.into())
+    }
+
+    /// 見つからなかった見出し名を逐語で持ち帰る (文言化は Presenter 側の責務)。
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記
+/// (フィールド不在はエラーではなく挿入)。
 /// # Errors
 ///
-/// 不在フィールドは `FieldNotFound` (upstream 逐語 — 「無言 no-op は検出不能なドリフト」)。
+/// 指定 `## Heading` が存在しなければ `HeadingNotFound` (見出し名を逐語で添える)。
 pub fn set_or_insert_field(
     content: &str,
     heading: &str,
@@ -58,7 +90,7 @@ pub fn set_or_insert_field(
     let start = lines
         .iter()
         .position(|l| l.trim_end() == heading_line)
-        .ok_or_else(|| HeadingNotFound(heading.to_string()))?;
+        .ok_or_else(|| HeadingNotFound::new(heading))?;
     // セクション末尾 = 次の `## ` 見出しの直前 (末尾の空行の前に挿入)
     let mut end = lines.len();
     for (i, l) in lines.iter().enumerate().skip(start + 1) {
@@ -142,7 +174,7 @@ mod tests {
     fn set_field_strict_refuses_missing_fields_with_the_verbatim_message() {
         let err = set_field_strict(SAMPLE, "Construction Autonomy Mode", "gated").unwrap_err();
         assert_eq!(
-            err.message,
+            err.message(),
             "Field not found in state file: \"Construction Autonomy Mode\". Cannot update — refusing to silently no-op."
         );
         let ok = set_field_strict(SAMPLE, "Status", "Completed").unwrap();
@@ -168,7 +200,10 @@ mod tests {
 - **Status**: Running
 ";
         assert_eq!(out, expected);
-        assert!(set_or_insert_field(SAMPLE, "No Such Heading", "F", "v").is_err());
+        // 不在見出しは、その見出し名を逐語で添えて拒否する
+        let err = set_or_insert_field(SAMPLE, "No Such Heading", "F", "v").unwrap_err();
+        assert_eq!(err.as_str(), "No Such Heading");
+        assert_eq!(err, HeadingNotFound::new("No Such Heading"));
     }
 
     #[test]

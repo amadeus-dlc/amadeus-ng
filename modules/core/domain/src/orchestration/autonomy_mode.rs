@@ -6,9 +6,15 @@
 
 use message_catalog::bolt as msg;
 
+/// 状態フィールド `Construction Autonomy Mode` の 2 値。Bolt バッチごとのゲートを出すか
+/// どうかを決める唯一の値。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutonomyMode {
+    /// 無人実行。バッチゲートを提示しない。この昇格だけが human presence を要し (I11)、
+    /// 再開する人間がいないため park / recompose は拒否される。
     Autonomous,
+    /// 有人実行。バッチゲートを提示する。「付与されていない」側の吸収先でもあり、
+    /// 未設定・空・未知値はすべてここへ落ちる (降格に presence は不要)。
     Gated,
 }
 
@@ -22,16 +28,36 @@ impl AutonomyMode {
         }
     }
 
+    /// 無人実行中か。バッチゲートの省略可否と、park / recompose の拒否ガードの判定に使う。
     #[must_use]
     pub fn is_autonomous(self) -> bool {
         self == AutonomyMode::Autonomous
     }
 }
 
+/// CLI `--mode` の 2 値厳密パースの拒否。値ではなく**拒否文言そのもの**を運ぶ
+/// (upstream の逐語を発生可能に保つための境界型 — 状態読取側の fail-closed リーダとは別)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidModeArg {
     /// upstream 逐語の拒否文言 (文言カタログ経由)。
-    pub message: String,
+    message: String,
+}
+
+impl InvalidModeArg {
+    /// 組み立て済みの逐語拒否文言を包む (文言の生成は文言カタログの責務であり、ここでは
+    /// 整形も加工もしない)。
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> InvalidModeArg {
+        InvalidModeArg {
+            message: message.into(),
+        }
+    }
+
+    /// upstream 逐語の拒否文言。
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// CLI `--mode` 引数の厳密パース (Controller 規約: 値オブジェクト初期化がバリデーション)。
@@ -42,9 +68,7 @@ pub fn parse_mode_arg(s: &str) -> Result<AutonomyMode, InvalidModeArg> {
     match s {
         "autonomous" => Ok(AutonomyMode::Autonomous),
         "gated" => Ok(AutonomyMode::Gated),
-        other => Err(InvalidModeArg {
-            message: msg::invalid_mode(other),
-        }),
+        other => Err(InvalidModeArg::new(msg::invalid_mode(other))),
     }
 }
 
@@ -73,7 +97,7 @@ mod tests {
         assert_eq!(parse_mode_arg("gated"), Ok(AutonomyMode::Gated));
         let err = parse_mode_arg("turbo").unwrap_err();
         assert_eq!(
-            err.message,
+            err.message(),
             "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
         );
     }

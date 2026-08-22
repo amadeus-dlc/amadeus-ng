@@ -14,6 +14,7 @@
 //! - release は識別子ごとの深度カウンタで管理し、深度 0 に戻るときのみ rm -rf する。
 
 use core_domain::workspace::lock_identity::LockIdentity;
+use core_domain::workspace::lock_protocol::reap_eligible;
 use core_use_case::workspace::clock::Clock;
 use core_use_case::workspace::process_probe::ProcessProbe;
 use core_use_case::workspace::workspace_lock::{
@@ -34,12 +35,26 @@ pub const DEFAULT_LOCK_STALE_MS: u64 = 600_000;
 /// 未スタンプ dir の既定猶予 (upstream `unstampedGraceMs()`, 03 §6.8)。
 pub const DEFAULT_UNSTAMPED_GRACE_MS: u64 = 5_000;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 struct OwnerStamp {
     pid: i32,
     started_at_ms: u64,
     reap_live_owner_after_stale: bool,
 }
+
+/// 等価 = 保持者の同一性 (`pid` + `startedAtMs`) — rename-CAS の `stampMatches` 相当。
+/// `reapLiveOwnerAfterStale` は保持者が宣言する**ポリシー**であって同一性の一部ではない
+/// (upstream owner.json の任意フィールド `token?` も同様)。ドメイン上の同値関係は
+/// 名前付きメソッドではなく `Eq`/`PartialEq` で表現する (統一方針 — 驚き最小化)。
+///
+/// TODO(golden: stage-0): upstream `stampMatches` の比較対象フィールドはピン留め実測で確定。
+impl PartialEq for OwnerStamp {
+    fn eq(&self, other: &OwnerStamp) -> bool {
+        self.pid == other.pid && self.started_at_ms == other.started_at_ms
+    }
+}
+
+impl Eq for OwnerStamp {}
 
 fn serialize_owner_stamp(stamp: &OwnerStamp) -> String {
     format!(
@@ -154,9 +169,10 @@ impl FsWorkspaceLock {
 
         let reapable = match &stamp_before {
             Some(stamp) => {
+                // reap 適格判定はドメインの単一実装 (lock_protocol::reap_eligible) に委譲する
                 let alive = self.process_probe.is_alive(stamp.pid);
                 let age = self.clock.now_ms().saturating_sub(stamp.started_at_ms);
-                !alive || age > self.stale_ms
+                reap_eligible(alive, age, self.stale_ms)
             }
             None => match fs::metadata(lock_dir).and_then(|m| m.modified()) {
                 Ok(modified) => {
@@ -196,7 +212,7 @@ impl FsWorkspaceLock {
 
         let matches = match (&stamp_before, &stamp_after) {
             (None, None) => true,
-            (Some(a), Some(b)) => a.pid == b.pid && a.started_at_ms == b.started_at_ms,
+            (Some(a), Some(b)) => a == b,
             _ => false,
         };
 
@@ -225,7 +241,7 @@ impl WorkspaceLock for FsWorkspaceLock {
         }
 
         let lock_dir = FsWorkspaceLock::lock_dir_path(&self.base_dir, identity);
-        let mut attempts_left = budget.max_retries;
+        let mut attempts_left = budget.max_retries();
         loop {
             match fs::create_dir(&lock_dir) {
                 Ok(()) => {
@@ -244,7 +260,7 @@ impl WorkspaceLock for FsWorkspaceLock {
                         return Err(AcquireError::Exhausted);
                     }
                     attempts_left -= 1;
-                    std::thread::sleep(budget.retry_interval);
+                    std::thread::sleep(budget.retry_interval());
                 }
                 Err(e) => {
                     return Err(AcquireError::Io {
@@ -283,6 +299,30 @@ mod tests {
 
     fn budget(max_retries: u32, retry_interval_ms: u64) -> AcquireBudget {
         AcquireBudget::new(max_retries, Duration::from_millis(retry_interval_ms))
+    }
+
+    #[test]
+    fn owner_stamp_equality_is_holder_identity_not_policy() {
+        let a = OwnerStamp {
+            pid: 42,
+            started_at_ms: 1_000,
+            reap_live_owner_after_stale: true,
+        };
+        // ポリシーフラグ違いは同一保持者 (同じ acquire イベント由来)
+        let b = OwnerStamp {
+            reap_live_owner_after_stale: false,
+            ..a
+        };
+        assert_eq!(a, b);
+        // pid / startedAtMs 違いは別保持者
+        assert_ne!(a, OwnerStamp { pid: 43, ..a });
+        assert_ne!(
+            a,
+            OwnerStamp {
+                started_at_ms: 2_000,
+                ..a
+            }
+        );
     }
 
     #[test]

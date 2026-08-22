@@ -17,35 +17,58 @@ use crate::workspace::checkbox::CheckboxState;
 /// エンジンが放出する信号の観測射影 (モデルの `DirectiveKind` サブセット)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineSignal {
+    /// 名指しのステージを走らせる。引数は文書順のステージインデックス (slug 解決は
+    /// ユースケース層)。実効プランが EXECUTE のステージにしか出ない (I2)。
     RunStage(usize),
+    /// ループの停止。スコープ内に未実施ステージが残っていない完了に加え、report が
+    /// コミットに成功したエピローグと、何もコミットしない冪等な終端 (stale re-report) も
+    /// この 1 語に畳まれる。
     Done,
+    /// 意図的に park された状態。`Done` とは別で、スコープ内にはまだ未実施ステージが残る。
     Parked,
     /// plan/cursor 不整合 (実効 SKIP のステージに run-stage を出さない — I2 の拒否腕)。
     EngineError,
 }
 
+/// 状態ファイル `Status` 行の 2 値。park マーカーとは**直交**するので、これだけでは
+/// 「今コマンドを受け付けるか」は決まらない (10 §2.1 — 判定は `parked_active` と併せる)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
+    /// 進行中 — スコープ内に未決着のステージが残っている。
     Running,
+    /// スコープ内の最後のステージまで決着済み。以後、状態遷移コマンドは `NotRunning` で
+    /// 拒否される。
     Completed,
 }
 
+/// `start` が初期状態を組み立てられない理由 (集約の生成時不変条件の違反)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartError {
     /// stage 0 (initialization) は常時 EXECUTE (転置の特例)。
     InitializationMustExecute,
     /// initialization は execution: ALWAYS (CONDITIONAL 不可)。
     InitializationMustBeUnconditional,
+    /// `plan` と `conditional` の要素数が食い違う (同一ステージ列に対する 2 つの射影で
+    /// あるべきなので、長さは一致していなければならない)。
     LengthMismatch,
+    /// ステージ 0 件。コンパイル済みグラフは最低でも initialization を含むため空はありえない。
     Empty,
 }
 
+/// 状態遷移コマンドの拒否理由。ガード違反は「発火しないアクション」であって状態は一切
+/// 動かない (モデルの enabled 条件と同型)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandError {
     /// ワークフローが Running でない (Completed または parked が活性)。
     NotRunning,
     /// checkbox 前提の不一致 (gate-lifecycle の厳密前提 — I7)。
-    CheckboxPrecondition { stage: usize, actual: CheckboxState },
+    CheckboxPrecondition {
+        /// 前提を満たさなかったステージの文書順インデックス。
+        stage: usize,
+        /// そのステージの実測 checkbox。受理される前提集合はコマンドごとに異なるため、
+        /// ここは期待値ではなく**観測値**を運ぶ。
+        actual: CheckboxState,
+    },
     /// skipped 受理条件 (CONDITIONAL でも plan SKIP でもない — I13)。
     NotSkippable(usize),
     /// stale re-report の前提不一致。
@@ -106,36 +129,50 @@ impl WorkflowExecution {
 
     // ---- 観測 (read model) ----
 
+    /// コンパイル済みグラフのステージ総数。本集約が扱うインデックス空間は `0..stage_count`
+    /// のみで、スコープ外 (実効 SKIP) のステージもこの数に含まれる。
     #[must_use]
     pub const fn stage_count(&self) -> usize {
         self.plan.len()
     }
 
+    /// `Current Stage` の文書順インデックス (モデルの cursor)。Running かつ非 parked の
+    /// 間は必ず実効 EXECUTE のステージを指す (`cursor_in_scope`)。
     #[must_use]
     pub const fn cursor(&self) -> usize {
         self.cursor
     }
 
+    /// `Status` 行の現在値。park マーカーとは直交するので、`Running` でも parked が活性なら
+    /// コマンドは受け付けない。
     #[must_use]
     pub const fn status(&self) -> Status {
         self.status
     }
 
+    /// 名指しステージの checkbox マーカーの現在値。アクティブ (in-progress /
+    /// awaiting-approval / revising) なステージは全体で高々 1 つ (I6)。
     #[must_use]
     pub fn checkbox(&self, stage: usize) -> CheckboxState {
         self.checkbox[stage]
     }
 
+    /// 名指しステージのゲート承認履歴 (`GATE_APPROVED` 監査行の射影)。gated ステージの
+    /// completed は必ずこれを伴い、backward jump / redo は取り消す (I3)。
     #[must_use]
     pub fn approved(&self, stage: usize) -> bool {
         self.approved[stage]
     }
 
+    /// 現在の `Construction Autonomy Mode`。初期値は gated — 付与は明示のコマンドのみで
+    /// 推論されない。
     #[must_use]
     pub const fn autonomy(&self) -> AutonomyMode {
         self.autonomy
     }
 
+    /// park マーカーが記録している位置 (park した時点のカーソル)。`None` は未 park。
+    /// カーソルが先へ進んでもマーカーは残るため、これ単体は発火条件ではない。
     #[must_use]
     pub const fn parked_at(&self) -> Option<usize> {
         self.parked_at
@@ -167,22 +204,14 @@ impl WorkflowExecution {
         ((after + 1)..self.stage_count()).find(|&s| self.in_scope(s))
     }
 
-    const fn is_in_flight(cb: CheckboxState) -> bool {
-        matches!(
-            cb,
-            CheckboxState::Pending
-                | CheckboxState::InProgress
-                | CheckboxState::AwaitingApproval
-                | CheckboxState::Revising
-        )
-    }
-
     fn running(&self) -> bool {
         self.status == Status::Running && !self.parked_active()
     }
 
     // ---- next (読み取り専用 — I8: &self が型レベルの保証) ----
 
+    /// 現状態から放出すべき信号をちょうど 1 つ決める (`handleNext` ラダーの slice 1 射影)。
+    /// 判定順は parked → completed → in-flight カーソル → 次の in-scope ステージ。
     #[must_use]
     pub fn next(&self) -> EngineSignal {
         if self.parked_active() {
@@ -192,7 +221,7 @@ impl WorkflowExecution {
             return EngineSignal::Done;
         }
         let cb = self.checkbox[self.cursor];
-        if Self::is_in_flight(cb) {
+        if cb.is_in_flight() {
             if self.effective_plan(self.cursor) == PlanAction::Skip {
                 return EngineSignal::EngineError;
             }
@@ -217,6 +246,9 @@ impl WorkflowExecution {
         }
         let s = self.cursor;
         let cb = self.checkbox[s];
+        // I7 ゲート前提 — forward が受理する checkbox 集合は本集約が所有する遷移の前提であって、
+        // CheckboxState の一般分類 (in-flight / finished / active) ではない。
+        // amadeus-lint: allow(checkbox-vocabulary) — 上記により述語化せず前提集合を明示する
         if !matches!(
             cb,
             CheckboxState::InProgress | CheckboxState::AwaitingApproval
@@ -277,6 +309,9 @@ impl WorkflowExecution {
             return Err(CommandError::InvalidTarget(s));
         }
         let cb = self.checkbox[s];
+        // I7 ゲート前提 — reject が受理する checkbox 集合は本集約が所有する遷移の前提であって、
+        // CheckboxState の一般分類 (in-flight / finished / active) ではない。
+        // amadeus-lint: allow(checkbox-vocabulary) — 上記により述語化せず前提集合を明示する
         if !matches!(
             cb,
             CheckboxState::InProgress | CheckboxState::AwaitingApproval
@@ -319,6 +354,9 @@ impl WorkflowExecution {
         }
         let s = self.cursor;
         let cb = self.checkbox[s];
+        // I13 skipped 受理前提 — 本集約が所有する遷移の前提集合であって、
+        // CheckboxState の一般分類 (in-flight / finished / active) ではない。
+        // amadeus-lint: allow(checkbox-vocabulary) — 上記により述語化せず前提集合を明示する
         if !matches!(cb, CheckboxState::InProgress | CheckboxState::Revising) {
             return Err(CommandError::CheckboxPrecondition {
                 stage: s,
@@ -391,9 +429,8 @@ impl WorkflowExecution {
                 let cur = self.cursor;
                 for u in cur..target {
                     let cb = self.checkbox[u];
-                    let skip_current =
-                        u == cur && Self::is_in_flight(cb) && cb != CheckboxState::Pending;
-                    let skip_between = u > cur && Self::is_in_flight(cb);
+                    let skip_current = u == cur && cb.is_active();
+                    let skip_between = u > cur && cb.is_in_flight();
                     if skip_current || skip_between {
                         self.checkbox[u] = CheckboxState::Skipped;
                     }

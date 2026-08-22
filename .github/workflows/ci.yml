@@ -25,12 +25,21 @@ jobs:
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          # tools/lint は workspace 非メンバーの detached クレートなので、
+          # 独自の target ディレクトリを明示的にキャッシュ対象に加える。
+          workspaces: |
+            . -> target
+            tools/lint -> tools/lint/target
 
       - name: cargo fmt --check
         run: cargo fmt --all --check
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets
+
+      - name: cargo lint
+        run: cargo lint
 
       - name: cargo test
         run: cargo test --workspace

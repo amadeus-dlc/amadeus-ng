@@ -15,6 +15,8 @@ pub struct FakeClock {
 }
 
 impl FakeClock {
+    /// 初期時刻 (Unix epoch 起点のミリ秒) を指定して作る。以後この時計は
+    /// `set` / `advance` でしか動かない。
     #[must_use]
     pub const fn new(now_ms: u64) -> FakeClock {
         FakeClock {
@@ -22,10 +24,12 @@ impl FakeClock {
         }
     }
 
+    /// 時刻を絶対値で置く。巻き戻し (現在値より小さい値) も許す。
     pub fn set(&self, now_ms: u64) {
         self.now_ms.store(now_ms, Ordering::SeqCst);
     }
 
+    /// 時刻を `delta_ms` だけ進める。stale 閾値の跨ぎをテストで作るための操作。
     pub fn advance(&self, delta_ms: u64) {
         self.now_ms.fetch_add(delta_ms, Ordering::SeqCst);
     }
@@ -44,6 +48,7 @@ pub struct FakeProcessProbe {
 }
 
 impl FakeProcessProbe {
+    /// dead 指定が 1 つも無い状態で作る (どの pid も alive と報告する)。
     #[must_use]
     pub fn new() -> FakeProcessProbe {
         FakeProcessProbe::default()

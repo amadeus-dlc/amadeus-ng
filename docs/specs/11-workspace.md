@@ -143,7 +143,7 @@ orchestration §10 の裁定（in-process 合成、S1〜S4 維持）は本コン
 
 ## 10. 未決事項
 
-- `ScopedStorage`（B12）の API 詳細は knowledge コンテキスト仕様（12 号）と同時に確定する。
+- `ScopedStorage`（B12）の API 詳細は knowledge コンテキスト仕様（13 号 — 12 号は workflow-definition が使用）と同時に確定する。
 - `SessionStampStore` の rebind offer 文言と Codex/Copilot 差分（session-start フックの詳細）は検証コンテキスト仕様（フック帰属分）で確定する。
 - ロック keying（複数 identity・センチネル 2 成分形）と二相 acquire・未スタンプ猶予のモデル化は `audit_lock.qnt` slice 2 候補。temporal liveness（解放または reap 可能）の定義名付与も同時に行う。
 - runtime-graph のセンサー区画折り込み規則の受け渡し形式（B8 — 宣言的規則の表現）は verification 仕様で確定。

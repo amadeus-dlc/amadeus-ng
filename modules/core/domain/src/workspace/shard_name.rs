@@ -4,6 +4,8 @@
 use super::clone_id::CloneId;
 use std::fmt;
 
+/// 監査シャードのファイル名 `<host>-<cloneId>.md` (Always Valid — `compose` 以外では作れず、
+/// host 正規化を経ていない名前はこの型に存在しない)。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShardName(String);
 
@@ -15,6 +17,7 @@ impl ShardName {
         ShardName(format!("{host}-{}.md", clone_id.as_str()))
     }
 
+    /// ファイル名そのもの (拡張子 `.md` を含む。ディレクトリ成分は持たない)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0

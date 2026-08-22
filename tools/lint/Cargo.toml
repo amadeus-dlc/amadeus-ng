@@ -1,0 +1,30 @@
+# amadeus-lint — docs/memory の設計ルール (Tell-Don't-Ask / field-visibility) を機械強制する独立リンター。
+#
+# メインの workspace には**あえて所属させない** (自前の空 `[workspace]` を持つ detached
+# クレート)。理由: `cargo test --workspace` と coverage ゲートの対象に載せないため。
+# リンター自身の検査力は `cargo test --manifest-path tools/lint/Cargo.toml` で担保する。
+[package]
+name = "amadeus-lint"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "amadeus-ng 専用のカスタムリント (docs/memory の設計ルールの機械強制)"
+
+[[bin]]
+name = "amadeus-lint"
+path = "src/main.rs"
+
+# detached クレートなので workspace lints は継承されない。ルート Cargo.toml の
+# `missing_docs = "deny"` と足並みを揃えるためここでも同じ強度で宣言する。
+[lints.rust]
+missing_docs = "deny"
+
+[dependencies]
+# 構文解析のみ。ディレクトリ走査は std で足りるため walkdir 等は入れない。
+syn = { version = "2", features = ["full", "visit"] }
+# span-locations: `Span::start().line` で rustc 風の行番号を出すために必須。
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
+# detached クレート宣言 (親 workspace に吸われないようにする)
+[workspace]
