@@ -22,6 +22,11 @@ repository = "https://github.com/amadeus-dlc/amadeus-ng"
 # 2026-08-22 オーナー規約のリント一式。unwrap/expect のテスト許可は clippy.toml、
 # redundant_clone はプロダクト・テスト両方で禁止。
 [workspace.lints.rust]
+# NFR4.3: unsafe をワークスペース全体で禁止する。クレート個別の
+# `#![forbid(unsafe_code)]` 頼みだと新しいクレート (例: app スタブ) で漏れるため、
+# workspace lints へ昇格して構造的に塞ぐ。detached の tools/lint は継承しないので
+# tools/lint/Cargo.toml の [lints.rust] に同じ宣言を置く。
+unsafe_code = "forbid"
 missing_docs = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 dropping_copy_types = "deny"
