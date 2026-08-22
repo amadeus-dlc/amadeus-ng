@@ -173,7 +173,7 @@ main() {
     log_step "--dry-run: PUT は実行しません。組み立てた JSON を印字します"
     printf '%s\n' "${payload}"
     if [[ -n "${OUT_DIR}" ]]; then
-      save_json "planned.json" "${payload}"
+      save_json "${payload}" "planned.json"
     fi
     exit 0
   fi
