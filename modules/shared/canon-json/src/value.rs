@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use serde::Serialize;
+
 /// メモリ上の JSON 値。オブジェクトのキー順を保持する (JS の挿入順に対応)。
 ///
 /// `Eq` は導出しない — `Number::Float` が `f64` を持ち、`NaN != NaN` により全同値関係が
@@ -101,6 +103,26 @@ impl FromIterator<(String, JsonValue)> for ObjectMembers {
     }
 }
 
+/// 型付き値を `JsonValue` へ写す — 契約経路の唯一の変換点 (BR1.7)。
+///
+/// struct はフィールドの**宣言順**、動的マップは挿入順で `JsonValue::Object` になる
+/// (`serde_json` の `preserve_order` が前提 — BR1.8)。非有限の `f64` は serde の既定に
+/// 従って `null` になる (直列化時の BR1.3 と同じ結果)。
+///
+/// # Errors
+///
+/// serde の直列化が失敗したとき (文字列にできないキーを持つマップ、`Serialize` 実装が
+/// エラーを返した場合など) に [`ToValueError`] を返す。
+pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<JsonValue, ToValueError> {
+    // BR1.7 / ADR 0001 決定 5: ワークスペース唯一の `serde_json::to_value` 呼出点。
+    // 契約経路の入口をここ 1 か所に閉じ、他クレートからの直接呼び出しは
+    // `clippy.toml` の disallowed-methods が拒否する。
+    #[allow(clippy::disallowed_methods)]
+    let raw = serde_json::to_value(value)
+        .map_err(|error| ToValueError::Serialization(error.to_string()))?;
+    Ok(crate::parse::from_serde(raw))
+}
+
 /// `to_value` が型付き値を `JsonValue` へ写せなかったときの理由。
 ///
 /// 文言はアダプタ層 (message-catalog) が付ける — 本型は材料だけを保持する。
@@ -129,6 +151,10 @@ impl fmt::Display for ToValueError {
         }
     }
 }
+
+/// `?` で他のエラー型へ持ち上げられるようにする。`source()` は返さない —
+/// 原因は serde が返した文言として畳み込んであるため。
+impl std::error::Error for ToValueError {}
 
 #[cfg(test)]
 mod tests {
@@ -400,5 +426,163 @@ pub(crate) mod arbitrary {
             members.insert(key, value);
         }
         JsonValue::Object(members)
+    }
+}
+
+#[cfg(test)]
+mod to_value_tests {
+    use std::collections::BTreeMap;
+
+    use serde::Serialize;
+
+    use super::*;
+    use crate::profile::SerializationProfile;
+    use crate::writer::serialize;
+
+    #[derive(Serialize)]
+    struct Directive {
+        kind: String,
+        stage: String,
+        agent: Option<String>,
+        consumes: Vec<String>,
+        depth: u32,
+    }
+
+    #[derive(Serialize)]
+    struct Nested {
+        outer: String,
+        inner: Inner,
+    }
+
+    #[derive(Serialize)]
+    struct Inner {
+        z: u8,
+        a: u8,
+    }
+
+    fn keys(value: &JsonValue) -> Vec<String> {
+        match value {
+            JsonValue::Object(members) => members.iter().map(|(k, _)| k.to_string()).collect(),
+            other => panic!("object を期待したが {other:?}"),
+        }
+    }
+
+    #[test]
+    fn struct_fields_keep_their_declaration_order() {
+        let directive = Directive {
+            kind: "run-stage".to_string(),
+            stage: "domain-design".to_string(),
+            agent: Some("aidlc-architect-agent".to_string()),
+            consumes: vec!["a".to_string()],
+            depth: 3,
+        };
+
+        let value = to_value(&directive).unwrap();
+
+        assert_eq!(
+            keys(&value),
+            vec!["kind", "stage", "agent", "consumes", "depth"],
+            "アルファベット順ではなく宣言順"
+        );
+    }
+
+    #[test]
+    fn nested_structs_keep_their_own_declaration_order() {
+        let value = to_value(&Nested {
+            outer: "o".to_string(),
+            inner: Inner { z: 1, a: 2 },
+        })
+        .unwrap();
+
+        assert_eq!(keys(&value), vec!["outer", "inner"]);
+        let JsonValue::Object(members) = &value else {
+            panic!("object を期待した");
+        };
+        let inner = members.get("inner").unwrap();
+        assert_eq!(keys(inner), vec!["z", "a"]);
+    }
+
+    #[test]
+    fn none_is_serialized_as_null_by_default() {
+        let value = to_value(&Directive {
+            kind: "done".to_string(),
+            stage: String::new(),
+            agent: None,
+            consumes: Vec::new(),
+            depth: 0,
+        })
+        .unwrap();
+
+        let JsonValue::Object(members) = &value else {
+            panic!("object を期待した");
+        };
+        assert_eq!(
+            members.get("agent"),
+            Some(&JsonValue::Null),
+            "serde の既定では None のフィールドも null として現れる"
+        );
+        assert_eq!(members.get("consumes"), Some(&JsonValue::Array(Vec::new())));
+    }
+
+    #[test]
+    fn numbers_map_onto_the_representation_preserving_variants() {
+        let value = to_value(&(1u64, -1i64, 1.5f64, 1.0f64)).unwrap();
+        let JsonValue::Array(items) = value else {
+            panic!("array を期待した");
+        };
+
+        assert_eq!(items[0], JsonValue::Number(Number::PosInt(1)));
+        assert_eq!(items[1], JsonValue::Number(Number::NegInt(-1)));
+        assert_eq!(items[2], JsonValue::Number(Number::Float(1.5)));
+        assert_eq!(items[3], JsonValue::Number(Number::Float(1.0)));
+    }
+
+    #[test]
+    fn dynamic_maps_keep_their_insertion_order() {
+        let mut map = serde_json::Map::new();
+        map.insert("z".to_string(), serde_json::Value::from(1));
+        map.insert("a".to_string(), serde_json::Value::from(2));
+
+        let value = to_value(&map).unwrap();
+
+        assert_eq!(keys(&value), vec!["z", "a"]);
+    }
+
+    #[test]
+    fn maps_with_non_string_keys_are_rejected() {
+        let mut map: BTreeMap<(u8, u8), u8> = BTreeMap::new();
+        map.insert((1, 2), 3);
+
+        let error = to_value(&map).unwrap_err();
+
+        assert!(!error.detail().is_empty());
+        assert!(
+            error
+                .to_string()
+                .starts_with("型付き値を JsonValue へ変換できない"),
+            "実際: {error}"
+        );
+    }
+
+    #[test]
+    fn to_value_feeds_the_serializer_end_to_end() {
+        let directive = Directive {
+            kind: "run-stage".to_string(),
+            stage: "s".to_string(),
+            agent: None,
+            consumes: vec!["a".to_string(), "b".to_string()],
+            depth: 2,
+        };
+
+        let value = to_value(&directive).unwrap();
+
+        assert_eq!(
+            serialize(&value, SerializationProfile::ContractCompact),
+            r#"{"kind":"run-stage","stage":"s","agent":null,"consumes":["a","b"],"depth":2}"#
+        );
+        assert_eq!(
+            serialize(&value, SerializationProfile::HashCanonical),
+            r#"{"agent":null,"consumes":["a","b"],"depth":2,"kind":"run-stage","stage":"s"}"#
+        );
     }
 }

@@ -117,7 +117,7 @@ fn byte_offset(text: &str, line: usize, column: usize) -> usize {
 }
 
 /// `serde_json::Value` を挿入順を保ったまま [`JsonValue`] へ写す。
-fn from_serde(value: serde_json::Value) -> JsonValue {
+pub(crate) fn from_serde(value: serde_json::Value) -> JsonValue {
     match value {
         serde_json::Value::Null => JsonValue::Null,
         serde_json::Value::Bool(flag) => JsonValue::Bool(flag),
@@ -144,6 +144,10 @@ fn number_from_serde(number: &serde_json::Number) -> Number {
         Number::Float(number.as_f64().unwrap_or(f64::NAN))
     }
 }
+
+/// `?` で他のエラー型へ持ち上げられるようにする。`source()` は返さない —
+/// 原因は `detail` に文字列として畳み込んであり、連鎖させる内部エラーを保持しないため。
+impl std::error::Error for ParseError {}
 
 #[cfg(test)]
 mod tests {

@@ -152,12 +152,12 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 
 ### 5.5 canon-json — API 層（ファサードと to_value）
 
-- [ ] Step 12. Red: `#[derive(Serialize)]` の struct が宣言順の `JsonValue` になること（ネスト・`Option` の `None`
+- [x] Step 12. Red: `#[derive(Serialize)]` の struct が宣言順の `JsonValue` になること（ネスト・`Option` の `None`
       スキップ有無は serde の既定どおり — テストで固定）、`to_value` の失敗経路（非文字列キーのマップ → `ToValueError`）、
       ファサードが設計の列挙どおりの項目だけを公開していること（`lib.rs` を読む軽量テスト or doc test）。
-- [ ] Step 13. Green: `to_value`（`serde_json::to_value` → `JsonValue` 変換、`#[allow(clippy::disallowed_methods)]`
+- [x] Step 13. Green: `to_value`（`serde_json::to_value` → `JsonValue` 変換、`#[allow(clippy::disallowed_methods)]`
       + 理由コメント）、`lib.rs` の `pub use` 列挙。
-- [ ] Step 14. Refactor: クレート rustdoc（`//!`）に 3 プロファイル・2 族・禁止規則・深さ上限を記す。
+- [x] Step 14. Refactor: クレート rustdoc（`//!`）に 3 プロファイル・2 族・禁止規則・深さ上限を記す。
 
 ### 5.6 棚卸しと品質ゲート（委任 1 の締め）
 
