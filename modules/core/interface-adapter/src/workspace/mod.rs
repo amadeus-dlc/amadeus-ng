@@ -3,7 +3,7 @@
 //!
 //! 状態ファイルの読取／書込は、集約 `WorkflowExecution` の Repository
 //! (`WorkflowExecutionRepository` — B-2 で設計) が担う。その内部部品として `state_file_io` を
-//! 先に置いてある (ポートではない — docs/memory/gateway-taxonomy.md)。テスト用の
+//! 先に置いてある (ポートではない — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。テスト用の
 //! `InMemoryWorkflowExecutionRepository` も B-2 で用意する。
 //!
 //! 時計・プロセス生存判定は Gateway ではないのでここには無い。クレート root の
@@ -11,7 +11,7 @@
 //!
 //! 実装ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_interface_adapter::workspace::<型>` で安定する
-//! (docs/memory/module-visibility.md)。
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod fs_workspace_lock;
 mod state_file_io;

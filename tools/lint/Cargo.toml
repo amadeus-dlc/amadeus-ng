@@ -1,4 +1,4 @@
-# amadeus-lint — docs/memory の設計ルール (Tell-Don't-Ask / field-visibility) を機械強制する独立リンター。
+# amadeus-lint — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules の設計ルール (Tell-Don't-Ask / field-visibility) を機械強制する独立リンター。
 #
 # メインの workspace には**あえて所属させない** (自前の空 `[workspace]` を持つ detached
 # クレート)。理由: `cargo test --workspace` と coverage ゲートの対象に載せないため。
@@ -9,7 +9,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false
-description = "amadeus-ng 専用のカスタムリント (docs/memory の設計ルールの機械強制)"
+description = "amadeus-ng 専用のカスタムリント (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules の設計ルールの機械強制)"
 
 [[bin]]
 name = "amadeus-lint"

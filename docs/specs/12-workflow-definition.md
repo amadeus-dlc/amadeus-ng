@@ -36,7 +36,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 - `ScopeDefinition`（identity ファイルの frontmatter とグリッド 1 列の join。**存在の権威は identity ファイル**で、グリッド列は権威ではない — §3.3）は集約に内包される。
 - `ScopeGrid`（グリッドファイル全体）と `StageNode` は値オブジェクト。`StageDefinition`（stage file = frontmatter ＋本文）と `AgentPersona` はスライス 2 の集約。
 
-**`WorkflowDefinition` を集約ルートへ昇格させた理由**（2026-08-22 オーナー裁定）: Repository は「集約名 + Repository」で名付ける規則を採ったため（[`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md)）、3 入力を束ねる読取面のポートに名を与えるには、束ねた結果そのものが集約でなければならない — `StageGraphRepository` は**ファイル名由来の名前**（格納形式は Repository 実装の内部詳細）であり規則違反になる。
+**`WorkflowDefinition` を集約ルートへ昇格させた理由**（2026-08-22 オーナー裁定）: Repository は「集約名 + Repository」で名付ける規則を採ったため（[`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）、3 入力を束ねる読取面のポートに名を与えるには、束ねた結果そのものが集約でなければならない — `StageGraphRepository` は**ファイル名由来の名前**（格納形式は Repository 実装の内部詳細）であり規則違反になる。
 
 ### 2.2 Domain Primitive（E1/E2 の受け皿）
 
@@ -161,7 +161,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 **ポート**: 現行ポートは orchestration 側の **`WorkflowDefinitionRepository`（10 §3）1 本だけ**であり、その実装（`WorkflowDefinitionRepositoryImpl`）が 3 入力の取得（パス解決・env オーバライド・「読めない」と「不正」の区別 — §4 #1/#2）と scope カタログの列挙・読取を**内部詳細として**持つ。
 
-**将来の内部部品案**（ポートではない・スライス 1 では実装しない）: 実装内部をグラフ取得系とカタログ取得系に分割する案があるが、旧仮名 `...Source` は [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md) のポート造語禁止にあたるため、スライス 2 で分割が実際に要ることになった時点で同規則に沿って命名する。
+**将来の内部部品案**（ポートではない・スライス 1 では実装しない）: 実装内部をグラフ取得系とカタログ取得系に分割する案があるが、旧仮名 `...Source` は [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) のポート造語禁止にあたるため、スライス 2 で分割が実際に要ることになった時点で同規則に沿って命名する。
 
 **他コンテキストへの供給面**（Customer/Supplier の supplier 側）:
 
@@ -175,7 +175,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 ## 6. インターフェイスアダプタ層
 
-- **Gateways**: 集約 `WorkflowDefinition` を 3 入力から再構成する Repository 実装 `WorkflowDefinitionRepositoryImpl`（ポート trait は use-case 層、実装は `XxxRepositoryImpl` — [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md)。**格納形式がファイルであることは実装の内部詳細**なので型名に技術接頭辞を付けない）。**パス解決とテストシームはここに閉じる** — `<harnessRoot>/tools/data/{stage-graph,scope-grid}.json`、`<harnessRoot>/scopes/`、および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` のオーバライド（D6 の対象範囲は §11 の未決事項）。JSON コーデックと frontmatter パーサは Gateway の内部部品（01 §7）。キャッシュ戦略（呼び出しごとの明示ロード / `OnceCell` / 注入）は観測不能なので実装の自由（§10）。**I/O 責務はすべてここ**。テストダブル `InMemoryWorkflowDefinitionRepository`（`Impl` 接尾辞は付けない）を最初に用意する — これは 10 §8-3 が挙げる in-memory Gateway 一式の `WorkflowDefinition` 分と同一物である。
+- **Gateways**: 集約 `WorkflowDefinition` を 3 入力から再構成する Repository 実装 `WorkflowDefinitionRepositoryImpl`（ポート trait は use-case 層、実装は `XxxRepositoryImpl` — [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。**格納形式がファイルであることは実装の内部詳細**なので型名に技術接頭辞を付けない）。**パス解決とテストシームはここに閉じる** — `<harnessRoot>/tools/data/{stage-graph,scope-grid}.json`、`<harnessRoot>/scopes/`、および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` のオーバライド（D6 の対象範囲は §11 の未決事項）。JSON コーデックと frontmatter パーサは Gateway の内部部品（01 §7）。キャッシュ戦略（呼び出しごとの明示ロード / `OnceCell` / 注入）は観測不能なので実装の自由（§10）。**I/O 責務はすべてここ**。テストダブル `InMemoryWorkflowDefinitionRepository`（`Impl` 接尾辞は付けない）を最初に用意する — これは 10 §8-3 が挙げる in-memory Gateway 一式の `WorkflowDefinition` 分と同一物である。
 - **Presenters**: 読込失敗の stderr 逐語文言と非ゼロ exit。**stdout を汚さない**（§4 #10）。文言は文言カタログ（A3）から引く。
 - **Controllers**: `--scope` 等の引数を `ScopeName::parse` に通し、成功した型付き値をユースケースへ渡す（01 §7 の規約）。未知スコープの判定は Controller ではなく述語側（`subgraph_for_scope`）の責務であり、Controller は検証ロジックを持たない。
 

@@ -3,11 +3,11 @@
 //! 境界づけられたコンテキスト (`orchestration` / `workspace`) 直下に Gateway
 //! (= Repository 実装と外部システムクライアント) を置く。時計・プロセス生存判定は
 //! Gateway ではなく**横断機構**なので、コンテキストに属さないクレート root の機構モジュール
-//! (`clock` / `process_probe`) に置く (docs/memory/gateway-taxonomy.md)。
+//! (`clock` / `process_probe`) に置く (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 //!
 //! 機構モジュールの mod は private。公開 API は下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_interface_adapter::<型>` で安定する
-//! (docs/memory/module-visibility.md)。
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 #![forbid(unsafe_code)]
 

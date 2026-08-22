@@ -36,7 +36,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 ### 2. Repository 名 = 集約名 + Repository
 
-集約は各コンテキスト仕様の宣言表が持っている（[`01-domain-model.md`](../specs/01-domain-model.md) §3 の集約候補、[`11-workspace.md`](../specs/11-workspace.md) §2.1、[`12-workflow-definition.md`](../specs/12-workflow-definition.md) §2.1）。Repository はそこに載っている集約ルート名をそのまま冠する。
+集約は各コンテキスト仕様の宣言表が持っている（[`01-domain-model.md`](../../../../../../docs/specs/01-domain-model.md) §3 の集約候補、[`11-workspace.md`](../../../../../../docs/specs/11-workspace.md) §2.1、[`12-workflow-definition.md`](../../../../../../docs/specs/12-workflow-definition.md) §2.1）。Repository はそこに載っている集約ルート名をそのまま冠する。
 
 - `WorkflowExecution` → `WorkflowExecutionRepository`
 - `AuditLedger` → `AuditLedgerRepository`
@@ -64,7 +64,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 - **Writer を注入しない**: 読取専用ユースケースのコンストラクタに Repository を渡さない。
 - **load 済み集約を `&` 参照で渡す**: Controller が Repository で集約を load し、ユースケースには `&Aggregate` を渡す。所有権と可変性が Rust の型で読取専用を保証する。
 
-例: [`10-orchestration.md`](../specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が load 済みの `WorkflowExecution` を `&` で渡すことで型強制する。
+例: [`10-orchestration.md`](../../../../../../docs/specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が load 済みの `WorkflowExecution` を `&` で渡すことで型強制する。
 
 ### 5. 配置と命名 — trait は use-case 層、実装は `XxxRepositoryImpl`
 

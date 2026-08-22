@@ -1,5 +1,5 @@
 //! プロセス生存判定 — **横断機構の注入シームであって Gateway ではない**
-//! (docs/memory/gateway-taxonomy.md。`kill(pid,0)` は永続化でも外部システム呼出でもなく
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md。`kill(pid,0)` は永続化でも外部システム呼出でもなく
 //! ランタイム機構であり、clean-architecture では Infrastructure に属する)。
 //!
 //! どのユースケースもこの trait を消費しない。存在理由は `FsWorkspaceLock` の reap 判定

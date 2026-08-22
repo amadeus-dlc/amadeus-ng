@@ -19,7 +19,7 @@ pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
 /// R2: reap 適格判定の境界規約を interface-adapter で再実装している。
 pub(crate) const RULE_REAP_DECISION_LOCALITY: &str = "reap-decision-locality";
 /// R3: struct が内部構造を `pub` フィールドとしてそのまま公開している
-/// (`docs/memory/field-visibility.md`)。
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md`)。
 ///
 /// 検出境界: **無制限の `pub` だけ**を検出する。`pub(crate)` / `pub(super)` /
 /// `pub(in path)` といった制限付き可視性は検出しない — ルール文書が
@@ -41,7 +41,7 @@ const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished
 const REAP_HELP: &str = "reap 適格判定は core_domain::workspace::reap_eligible に\
 委譲する (境界規約 `>` の単一実装)";
 const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アクセサ \
-(as_str / message / フィールド名) と必要なら new() を公開する — docs/memory/field-visibility.md";
+(as_str / message / フィールド名) と必要なら new() を公開する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]
