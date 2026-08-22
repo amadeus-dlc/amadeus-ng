@@ -1,0 +1,17 @@
+{
+  "stage": "nfr-design",
+  "unit": "u10-ci-governance",
+  "upstream_ids": ["NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5", "NFR4.1", "NFR4.2", "NFR4.3", "NFR4.4", "NFR4.5"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "ruleset「main」へ required_status_checks（check / quint / coverage、strict）を冪等スクリプトで追加、否定系 + 正常系の実地確認（security-design §3）" },
+    { "id": "NFR2.2", "status": "OK", "target": "ci.yml に merge_group トリガ、coverage は merge_group 時に絶対ゲートのみ（security-design §2）" },
+    { "id": "NFR2.3", "status": "OK", "target": "check ジョブに tools/lint の fmt / clippy / test の 3 ステップ（security-design §2）" },
+    { "id": "NFR2.4", "status": "OK", "target": "TOLERANCE=0.01 + PBT シード固定（PROPTEST_RNG_SEED 第一候補、code-generation で確定）、2 回計測差 0.00pp（security-design §4）" },
+    { "id": "NFR2.5", "status": "OK", "target": "cargo llvm-cov --ignore-filename-regex で modules/app/aidlc/src/main.rs のみ除外（security-design §4）" },
+    { "id": "NFR4.1", "status": "OK", "target": "audit ジョブ — cargo audit を workspace と tools/lint の 2 ロックファイルに、required 外（security-design §2）" },
+    { "id": "NFR4.2", "status": "OK", "target": "rust-toolchain.toml 1.95.0（rustfmt / clippy / llvm-tools）+ dtolnay/rust-toolchain@master（security-design §2 / §4）" },
+    { "id": "NFR4.3", "status": "OK", "target": "[workspace.lints.rust] unsafe_code = forbid + tools/lint の個別 lints（security-design §4）" },
+    { "id": "NFR4.4", "status": "OK", "target": "ci.yml 直下に permissions: contents: read（security-design §2）" },
+    { "id": "NFR4.5", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh が変更前後の ruleset JSON を記録（security-design §3）" }
+  ]
+}
