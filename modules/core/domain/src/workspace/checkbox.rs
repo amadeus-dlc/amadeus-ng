@@ -7,15 +7,23 @@
 /// 6 状態 (01 §3.3 — E1)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CheckboxState {
+    /// `[ ]` = upstream `pending` — 未着手。
     Pending,
+    /// `[-]` = upstream `in-progress` — 実行中 (ゲートはまだ開いていない)。
     InProgress,
+    /// `[?]` = upstream `awaiting-approval` — 承認ゲート開放済み (`[-]` → `[?]`)。
     AwaitingApproval,
+    /// `[R]` = upstream `revising` — 差戻し後の改訂中。ゲートに再入できる唯一の状態。
     Revising,
+    /// `[x]` = upstream `completed` — 完了。`Completed` フィールド同期の集計対象。
     Completed,
+    /// `[S]` = upstream `skipped` — 経路上の帰結としての読み飛ばし (完了ではない)。
     Skipped,
 }
 
 impl CheckboxState {
+    /// 行に書かれる 1 文字マーカー。`from_marker` の逆写像であり 6 状態と 1:1
+    /// (往復忠実: `from_marker(s.marker()) == Some(s)`)。
     #[must_use]
     pub const fn marker(self) -> char {
         match self {
@@ -28,6 +36,8 @@ impl CheckboxState {
         }
     }
 
+    /// マーカー 1 文字から状態へ。閉集合 `[ xSR?-]` の外は `None` — 呼出側 (`parse_line`) は
+    /// その行を checkbox 行と見なさない。
     #[must_use]
     pub const fn from_marker(c: char) -> Option<CheckboxState> {
         Some(match c {
@@ -66,6 +76,8 @@ impl CheckboxState {
     }
 }
 
+/// パース済みの Stage Progress 行 — マーカー / stage slug / em dash 以降のテキストの 3 分割。
+/// 元の行の空白配置は保持しない (書き戻しは `set_checkbox` が元の行を verbatim に扱う)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckboxEntry {
     state: CheckboxState,
@@ -75,6 +87,8 @@ pub struct CheckboxEntry {
 }
 
 impl CheckboxEntry {
+    /// 3 成分から組む。行文法の検査は行わない (検査済みの値を運ぶ入れ物であり、行の正本は
+    /// `parse_checkboxes`)。
     #[must_use]
     pub fn new(
         state: CheckboxState,
@@ -88,11 +102,13 @@ impl CheckboxEntry {
         }
     }
 
+    /// マーカーが表す run-state (計画側の EXECUTE/SKIP サフィックスとは別フィールド)。
     #[must_use]
     pub const fn state(&self) -> CheckboxState {
         self.state
     }
 
+    /// stage slug — 行の識別子。空白を含まない 1 トークンで、`set_checkbox` の照合キー。
     #[must_use]
     pub fn slug(&self) -> &str {
         &self.slug
@@ -135,6 +151,7 @@ fn parse_line(line: &str) -> Option<CheckboxEntry> {
     Some(CheckboxEntry::new(state, slug, tail))
 }
 
+/// marker writer (`set_checkbox`) の拒否理由。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckboxWriteError {
     /// 対象 slug の行が存在しない。

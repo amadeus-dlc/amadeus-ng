@@ -8,7 +8,9 @@
 /// (orchestration の `SkeletonStance` が持つ `scope-dependent` はここには現れない)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SkeletonDefault {
+    /// スコープ既定で walking skeleton Bolt を先に走らせる (upstream 01 §6.4)。
     On,
+    /// スコープ既定では walking skeleton Bolt を走らせない。
     Off,
 }
 
@@ -17,11 +19,13 @@ pub enum SkeletonDefault {
 pub struct UnknownSkeletonDefault(String);
 
 impl UnknownSkeletonDefault {
+    /// 拒否された生値をそのまま包む。トリムも小文字化もしない。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownSkeletonDefault {
         UnknownSkeletonDefault(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -29,6 +33,7 @@ impl UnknownSkeletonDefault {
 }
 
 impl SkeletonDefault {
+    /// 宣言順の全値 (2 値の網羅走査の正本)。
     pub const ALL: [SkeletonDefault; 2] = [SkeletonDefault::On, SkeletonDefault::Off];
 
     /// # Errors
@@ -42,6 +47,7 @@ impl SkeletonDefault {
         })
     }
 
+    /// frontmatter 上の正準綴り (`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -55,8 +61,11 @@ impl SkeletonDefault {
 /// 「宣言が無い」は `Option<ReviewCapValue>` の `None` 側で表す (2 つを混同しないこと)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ReviewCapValue {
+    /// 上限を課さない。ステージ宣言のレビュー重量がそのまま通る (upstream 01 §6.2)。
     Adversarial,
+    /// adversarial なステージを advisory 1 パスへ格下げする。
     Advisory,
+    /// レビュアーのディスパッチ自体を無効化する。
     None,
 }
 
@@ -65,11 +74,13 @@ pub enum ReviewCapValue {
 pub struct UnknownReviewCap(String);
 
 impl UnknownReviewCap {
+    /// 拒否された生値をそのまま包む。空文字列も既定へ畳まずそのまま保つ。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownReviewCap {
         UnknownReviewCap(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -77,6 +88,7 @@ impl UnknownReviewCap {
 }
 
 impl ReviewCapValue {
+    /// 宣言順の全値 (3 値の網羅走査の正本)。並びは上限の緩い側から厳しい側へ。
     pub const ALL: [ReviewCapValue; 3] = [
         ReviewCapValue::Adversarial,
         ReviewCapValue::Advisory,
@@ -95,6 +107,7 @@ impl ReviewCapValue {
         })
     }
 
+    /// frontmatter 上の正準綴り (`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -116,6 +129,7 @@ pub struct ScopeMetadata {
     freeform_default: bool,
 }
 
+/// `ScopeMetadata` の構成が拒否される理由。frontmatter の必須キー欠落のみ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScopeMetadataError {
     /// `name:` が無い / 空 (upstream: `missing required frontmatter: name`)。
@@ -142,24 +156,31 @@ impl ScopeMetadata {
         })
     }
 
+    /// `depth:` を載せる。成果物の詳細度に効く助言軸であって、どのステージが走るかには
+    /// 影響しない (12 §2.2)。
     #[must_use]
     pub fn with_depth(mut self, depth: String) -> ScopeMetadata {
         self.depth = Some(depth);
         self
     }
 
+    /// `keywords:` を載せる。スコープ推論の材料であり、空のままなら推論では選ばれない
+    /// (名指しでのみ選べる — upstream 01 §5.5)。
     #[must_use]
     pub fn with_keywords(mut self, keywords: Vec<String>) -> ScopeMetadata {
         self.keywords = keywords;
         self
     }
 
+    /// `skeleton:` を載せる。呼ばなければ「宣言なし」のまま (`off` へ畳まない)。
     #[must_use]
     pub const fn with_skeleton(mut self, skeleton: SkeletonDefault) -> ScopeMetadata {
         self.skeleton = Some(skeleton);
         self
     }
 
+    /// `review_cap:` を載せる。`ReviewCapValue::None` を渡すのは「`none` と**宣言された**」
+    /// ことであり、呼ばないこと (= 宣言なし) とは別の値である。
     #[must_use]
     pub const fn with_review_cap(mut self, review_cap: ReviewCapValue) -> ScopeMetadata {
         self.review_cap = Some(review_cap);
@@ -174,6 +195,7 @@ impl ScopeMetadata {
         self
     }
 
+    /// スコープの識別子 (`name:`)。有効スコープ集合を作る軸であり、2 ファイル間の重複は致命。
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -185,21 +207,26 @@ impl ScopeMetadata {
         self.depth.as_deref()
     }
 
+    /// スコープ推論に使う語。空はスコープを無効にはせず、「推論では選ばれない」を意味する。
     #[must_use]
     pub fn keywords(&self) -> &[String] {
         &self.keywords
     }
 
+    /// スコープ既定の walking-skeleton 姿勢。`None` は「宣言が無い」であって `off` ではない。
     #[must_use]
     pub const fn skeleton(&self) -> Option<SkeletonDefault> {
         self.skeleton
     }
 
+    /// ワークフロー全体に効くレビュー重量の上限。外側の `None` は「宣言が無い」、
+    /// `Some(ReviewCapValue::None)` は「`none` と宣言された」。
     #[must_use]
     pub const fn review_cap(&self) -> Option<ReviewCapValue> {
         self.review_cap
     }
 
+    /// 既定スコープ解決のフォールバック先に自ら名乗り出るか (upstream 01 §6.3)。欠損は `false`。
     #[must_use]
     pub const fn freeform_default(&self) -> bool {
         self.freeform_default

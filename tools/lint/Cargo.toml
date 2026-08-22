@@ -15,6 +15,11 @@ description = "amadeus-ng 専用のカスタムリント (docs/memory の設計�
 name = "amadeus-lint"
 path = "src/main.rs"
 
+# detached クレートなので workspace lints は継承されない。ルート Cargo.toml の
+# `missing_docs = "deny"` と足並みを揃えるためここでも同じ強度で宣言する。
+[lints.rust]
+missing_docs = "deny"
+
 [dependencies]
 # 構文解析のみ。ディレクトリ走査は std で足りるため walkdir 等は入れない。
 syn = { version = "2", features = ["full", "visit"] }

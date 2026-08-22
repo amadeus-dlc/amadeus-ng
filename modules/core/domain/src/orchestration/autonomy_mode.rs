@@ -6,9 +6,15 @@
 
 use message_catalog::bolt as msg;
 
+/// 状態フィールド `Construction Autonomy Mode` の 2 値。Bolt バッチごとのゲートを出すか
+/// どうかを決める唯一の値。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutonomyMode {
+    /// 無人実行。バッチゲートを提示しない。この昇格だけが human presence を要し (I11)、
+    /// 再開する人間がいないため park / recompose は拒否される。
     Autonomous,
+    /// 有人実行。バッチゲートを提示する。「付与されていない」側の吸収先でもあり、
+    /// 未設定・空・未知値はすべてここへ落ちる (降格に presence は不要)。
     Gated,
 }
 
@@ -22,12 +28,15 @@ impl AutonomyMode {
         }
     }
 
+    /// 無人実行中か。バッチゲートの省略可否と、park / recompose の拒否ガードの判定に使う。
     #[must_use]
     pub fn is_autonomous(self) -> bool {
         self == AutonomyMode::Autonomous
     }
 }
 
+/// CLI `--mode` の 2 値厳密パースの拒否。値ではなく**拒否文言そのもの**を運ぶ
+/// (upstream の逐語を発生可能に保つための境界型 — 状態読取側の fail-closed リーダとは別)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidModeArg {
     /// upstream 逐語の拒否文言 (文言カタログ経由)。
@@ -35,6 +44,8 @@ pub struct InvalidModeArg {
 }
 
 impl InvalidModeArg {
+    /// 組み立て済みの逐語拒否文言を包む (文言の生成は文言カタログの責務であり、ここでは
+    /// 整形も加工もしない)。
     #[must_use]
     pub fn new(message: impl Into<String>) -> InvalidModeArg {
         InvalidModeArg {

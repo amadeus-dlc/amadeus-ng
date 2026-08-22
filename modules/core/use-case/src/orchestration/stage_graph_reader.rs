@@ -30,20 +30,34 @@ pub enum GraphReadError {
     /// `env_override` はパスが `AIDLC_STAGE_GRAPH` 由来かを表す。真のとき逐語文言の hint 節が
     /// 「unset して既定に戻せ」形へ切り替わる — **この分岐自体が観測可能な契約**。
     NotReadable {
+        /// 読もうとした `stage-graph.json` の解決済みパス。
         path: String,
+        /// 読取が失敗した理由 (OS 由来)。
         cause: String,
+        /// `path` が `AIDLC_STAGE_GRAPH` 由来か。
         env_override: bool,
     },
     /// `stage-graph.json` が不正 JSON (12 §4 #2)。`NotReadable` とは別文言。
-    InvalidJson { path: String, cause: String },
+    InvalidJson {
+        /// パースに失敗した `stage-graph.json` の解決済みパス。
+        path: String,
+        /// パースが失敗した理由 (JSON パーサ由来)。
+        cause: String,
+    },
     /// scope identity ファイルの読取・frontmatter 検証の失敗 (`name` 欠落・`skeleton` の
     /// 不正値など — 12 §3.3)。
-    ScopeFile { message: String },
+    ScopeFile {
+        /// 失敗の詳細。逐語文言そのものではなく、その材料。
+        message: String,
+    },
     /// JSON としては読めたがドメイン型へ写せない (未知 `phase`、文法外 `slug` など)。
     ///
     /// upstream はロード時に検証しないが、serde による構造的パースは「ロード時無検証」からの
     /// 逸脱ではなく補強として扱う (12 §10) — dist の正規データに対しては観測差が生じない。
-    Malformed { message: String },
+    Malformed {
+        /// 写像に失敗した箇所の詳細。逐語文言そのものではなく、その材料。
+        message: String,
+    },
 }
 
 /// Published Language 3 入力の読取ポート。

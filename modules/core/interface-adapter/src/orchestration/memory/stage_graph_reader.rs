@@ -14,6 +14,8 @@ pub struct InMemoryStageGraphReader {
 }
 
 impl InMemoryStageGraphReader {
+    /// 組み立て済みの読取モデルを固定値として据える。`load` はこれを複製して返すだけで、
+    /// 3 入力のパースも失敗注入も行わない (失敗態度の検証は `fs_stage_graph_reader` 側)。
     #[must_use]
     pub const fn new(definition: WorkflowDefinition) -> InMemoryStageGraphReader {
         InMemoryStageGraphReader { definition }

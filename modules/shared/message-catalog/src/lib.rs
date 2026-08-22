@@ -9,7 +9,9 @@
 /// 採取状態 (ADR 0002 決定 1)。フェーズ A 完了条件は契約経路の全数 `Captured`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoldenStatus {
+    /// stage-0 環境の実出力で確認済み。
     Captured,
+    /// as-built 仕様の逐語引用が根拠 (ゴールデン採取待ち)。
     SpecQuotedOnly,
 }
 

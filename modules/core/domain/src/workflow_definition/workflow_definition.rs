@@ -2,7 +2,7 @@
 //! `scopes/*.md`) の**読取モデル**。「何を実行しうるか」の静的定義を 1 つの集約にまとめ、
 //! orchestration が依存する 5 述語を純関数として提供する (01 §3.1 / 10 §3)。
 //!
-//! # 観測可能契約 (レポート §5.1 — 逸脱台帳行き)
+//! # 観測可能契約 (レポート §6.1 — 逸脱台帳行き)
 //!
 //! - **未知スコープの非対称**: `subgraph_for_scope` だけが `Err(UnknownScope)`。
 //!   `next_in_scope_stage` / `first_in_scope_stage_of_phase` / `stages_in_scope` は
@@ -39,6 +39,8 @@ pub struct UnknownScope {
 }
 
 impl UnknownScope {
+    /// 拒否されたスコープ名と、拒否時点の有効スコープ一覧 (辞書順) を束ねる。
+    /// どちらも生値のまま保持する。
     #[must_use]
     pub fn new(scope: impl Into<String>, valid_scopes: Vec<String>) -> UnknownScope {
         UnknownScope {
@@ -86,21 +88,25 @@ impl WorkflowDefinition {
         }
     }
 
+    /// `stage-graph.json` 由来のステージグラフ (文書順を保持したまま)。
     #[must_use]
     pub const fn graph(&self) -> &StageGraph {
         &self.graph
     }
 
+    /// `scope-grid.json` 由来の静的 EXECUTE / SKIP グリッド。recompose サフィックスは含まない。
     #[must_use]
     pub const fn grid(&self) -> &ScopeGrid {
         &self.grid
     }
 
+    /// スコープ `.md` 由来のメタデータ (スコープ名の辞書順)。有効スコープの権威。
     #[must_use]
     pub const fn scopes(&self) -> &BTreeMap<String, ScopeMetadata> {
         &self.scopes
     }
 
+    /// スコープ `.md` のメタデータ。`.md` が無ければ `None` (= 無効スコープ)。
     #[must_use]
     pub fn scope_metadata(&self, scope: &str) -> Option<&ScopeMetadata> {
         self.scopes.get(scope)
@@ -112,6 +118,7 @@ impl WorkflowDefinition {
         self.scopes.keys().map(String::as_str).collect()
     }
 
+    /// `valid_scopes()` に含まれるか。権威は `.md` の存在であってグリッド列の有無ではない。
     #[must_use]
     pub fn is_valid_scope(&self, scope: &str) -> bool {
         self.scopes.contains_key(scope)
