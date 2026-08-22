@@ -8107,3 +8107,12 @@ contract-summary.md C7 の layout を tests/golden/upstream-3c3146cf/{hash-canon
 **Walking skeleton**: false
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T12:35:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: afe3d34f58bc4c4a4
+**Message**: stage-1 セルフホスト切替（Issue #7）の Construction 中で、いま U1 canon-json の実装（Bolt B1、Step 1〜16）を開発エージェントが進めています。次は完了通知が来たら差分をレビューし、委任 2（CLI／フックゴールデン採取）へ進みます。
+
+---

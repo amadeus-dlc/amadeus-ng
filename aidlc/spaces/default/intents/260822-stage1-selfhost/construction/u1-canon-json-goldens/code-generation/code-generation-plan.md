@@ -103,13 +103,13 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 
 ### 5.1 骨格（開発エージェント — 委任 1）
 
-- [ ] Step 1. プロジェクト構造と設定: `Cargo.toml` の `[workspace.dependencies]` に serde / serde_json(preserve_order) /
+- [x] Step 1. プロジェクト構造と設定: `Cargo.toml` の `[workspace.dependencies]` に serde / serde_json(preserve_order) /
       sha2 / proptest を追加し、`core-domain`（dev-dep）・`core-interface-adapter` を `.workspace = true` に揃える。
       `modules/shared/canon-json/Cargo.toml` に `serde` / `serde_json` / `sha2`（runtime）、`proptest`（dev）を追加。
       `clippy.toml` に `disallowed-methods`（BR1.7）。`lib.rs` に private モジュール 6 本の空殻と `pub use` 列挙の枠。
       `cargo build -p canon-json` と `cargo clippy --workspace --all-targets -- -D warnings` が緑（I5 / I6 の棚卸しを
       ここで実施）。
-- [ ] Step 2. テストランナー確認: `cargo test -p canon-json`（brownfield — 実測済み: 0 tests, exit 0）。
+- [x] Step 2. テストランナー確認: `cargo test -p canon-json`（brownfield — 実測済み: 0 tests, exit 0）。
       統合テストの置き場 `modules/shared/canon-json/tests/` と、ゴールデンを `env!("CARGO_MANIFEST_DIR")/../../../
       tests/golden/upstream-3c3146cf/` で読む経路を決め、`unit-test-instructions.md` のコマンドで走ることを確認。
 

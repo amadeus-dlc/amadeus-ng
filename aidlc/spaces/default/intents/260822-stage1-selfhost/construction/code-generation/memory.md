@@ -9,7 +9,12 @@
 
 ## Deviations
 
+- 2026-08-22T12:40:00Z — 委任ブリーフはルール束・計画・テスト手順を逐語で連結した記録内ファイル `developer-brief-1.md`（86KB）にまとめ、委任プロンプトでは先頭 2 行のマーカーと「全文 Read」指示 + 要点再掲にとどめた; ステージ定義の「ルール束を逐語で貼る」をファイル経由で満たす（トークン節約、Fable 5 委任方針）
+- 2026-08-22T12:40:00Z — Bolt B1 は worktree を使わず `main-sync` から `bolt/b1-u1-canon-json-goldens` を切った（Q1 = A、PR 直列・aidlc 記録を先頭コミットに同乗）; `aidlc-bolt.ts start --name B1 --batch 1`（worktree なし）で BOLT_STARTED を記録
+
 ## Tradeoffs
+
+- 2026-08-22T12:40:00Z — 委任を 2 回（Step 1〜16 / Step 17〜19）に分け直列化; 1 回にまとめると文脈が長くゴールデン採取の品質が落ちるため。同一承認・同一指紋の下で行う
 
 ## Open questions
 

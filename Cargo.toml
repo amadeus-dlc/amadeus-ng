@@ -75,6 +75,7 @@ if_same_then_else = "deny"
 cmp_null = "deny"
 
 [workspace.dependencies]
+# 内部クレート (層 = クレート)
 core-domain = { path = "modules/core/domain" }
 core-use-case = { path = "modules/core/use-case" }
 core-interface-adapter = { path = "modules/core/interface-adapter" }
@@ -83,3 +84,11 @@ message-catalog = { path = "modules/shared/message-catalog" }
 audit-events = { path = "modules/shared/audit-events" }
 directive-schema = { path = "modules/shared/directive-schema" }
 infra-io = { path = "modules/infra-io" }
+
+# 外部クレート。serde_json の preserve_order は ADR 0001 決定 3 / BR1.8 により
+# ワークスペース全体で常時有効にする (Cargo のフィーチャ統合はビルド全体に効くため、
+# クレート単独ビルドでも同じ順序になるよう workspace 依存で一元化する)。
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+proptest = "1"
