@@ -48,11 +48,8 @@ impl FakeProcessProbe {
         FakeProcessProbe::default()
     }
 
-    /// 以後この pid を dead として報告する。
-    ///
-    /// # Panics
-    ///
-    /// 内部 `Mutex` が poison していた場合 (テスト用途につき想定外異常のみ)。
+    /// 以後この pid を dead として報告する (poison した `Mutex` は `into_inner` で回復
+    /// するため panic しない)。
     pub fn mark_dead(&self, pid: i32) {
         let mut guard = self.dead_pids.lock().unwrap_or_else(|e| e.into_inner());
         guard.insert(pid);

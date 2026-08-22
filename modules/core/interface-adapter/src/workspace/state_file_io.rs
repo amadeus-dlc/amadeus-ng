@@ -14,6 +14,10 @@
 //! ユニットテストである。upstream 逐語の契約 (not-found 文言・W_OK バリア・mkdir -p・
 //! アトミック書込) を先に固定しておくためのモジュールなので、B-2 が配線するまで
 //! `dead_code` を許可する。
+//!
+//! **利用制約 (B-2)**: 書込は `WorkflowExecutionRepositoryImpl::save` の audit ロック区間内
+//! からのみ呼ぶこと。W_OK 検査→rename の間の TOCTOU 窓は upstream (`accessSync` → write)
+//! と同一の観測挙動であり、直列化はパス単位ロックではなく audit ロック (S2/W1) が担う。
 #![allow(dead_code)]
 
 use std::fs;
@@ -110,8 +114,13 @@ mod tests {
     #[test]
     fn read_reports_the_verbatim_not_found_message() {
         let dir = tempdir().unwrap();
-        let err = read(&dir.path().join("aidlc-state.md")).unwrap_err();
-        assert!(err.message().starts_with("State file not found: "));
+        let path = dir.path().join("aidlc-state.md");
+        let err = read(&path).unwrap_err();
+        // 逐語契約なので完全一致で pin する (接頭辞比較では末尾・パス部の変化を見逃す)
+        assert_eq!(
+            err.message(),
+            format!("State file not found: {}", path.display())
+        );
     }
 
     #[test]

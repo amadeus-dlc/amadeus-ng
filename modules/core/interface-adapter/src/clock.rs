@@ -59,8 +59,13 @@ impl FakeClock {
     }
 
     /// 時刻を `delta_ms` だけ進める。stale 閾値の跨ぎをテストで作るための操作。
+    /// `u64::MAX` 到達後は飽和し、巻き戻らない (ラップアラウンドで時刻が逆行しないため)。
     pub fn advance(&self, delta_ms: u64) {
-        self.now_ms.fetch_add(delta_ms, Ordering::SeqCst);
+        let _ = self
+            .now_ms
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |now| {
+                Some(now.saturating_add(delta_ms))
+            });
     }
 }
 
@@ -75,11 +80,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn now_ms_is_monotonically_non_decreasing_across_two_reads() {
-        let clock = SystemClock::new();
-        let a = clock.now_ms();
-        let b = clock.now_ms();
-        assert!(b >= a);
+    fn system_clock_reports_a_wall_clock_epoch() {
+        // 単調性は SystemTime が保証しない (時刻調整で後退しうる) ため主張しない。
+        // 2020-01-01 以降の epoch ms であることだけを検査する。
+        assert!(SystemClock::new().now_ms() > 1_577_836_800_000);
+    }
+
+    #[test]
+    fn fake_clock_advance_saturates_instead_of_wrapping() {
+        let clock = FakeClock::new(u64::MAX - 10);
+        clock.advance(100);
+        assert_eq!(clock.now_ms(), u64::MAX, "飽和して巻き戻らない");
     }
 
     #[test]

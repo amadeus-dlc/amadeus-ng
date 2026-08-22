@@ -159,14 +159,9 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 **ユースケース**（スライス 1 の範囲、すべて読み取り専用）: `LoadStageGraph`、`LoadScopeCatalog`（グリッド列と identity の join）、`ResolveScopePlan`（`stagesInScope` 相当 — 全ステージの `{slug, phase, action}`）。compile・validate-grid・recompose のためのグラフ CLI 面はスライス 2。
 
-**ポート**（trait。Gateway が実装）:
+**ポート**: 現行ポートは orchestration 側の **`WorkflowDefinitionRepository`（10 §3）1 本だけ**であり、その実装（`WorkflowDefinitionRepositoryImpl`）が 3 入力の取得（パス解決・env オーバライド・「読めない」と「不正」の区別 — §4 #1/#2）と scope カタログの列挙・読取を**内部詳細として**持つ。
 
-| ポート | 責務 |
-| --- | --- |
-| `CompiledGraphSource` | `stage-graph.json` / `scope-grid.json` のバイト列取得。パス解決と env オーバライドの意味論を内包し、**「読めない」と「不正」を区別して返す**（§4 の #1 と #2 は別文言） |
-| `ScopeCatalogSource` | `<harnessDir>/scopes/*.md` の列挙と読取 |
-
-上 2 つは本コンテキスト内部の分割案であり、**スライス 1 では実装しない**。3 入力を束ねて集約 `WorkflowDefinition` を返すのは orchestration 側のポート `WorkflowDefinitionRepository`（10 §3）1 本で、その実装が両者の責務を内部に持つ。`...Source` はポート造語で [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md) の禁止対象にあたるため、スライス 2 で内部分割が実際に要ることになった時点で同規則に沿って再命名する。
+**将来の内部部品案**（ポートではない・スライス 1 では実装しない）: 実装内部をグラフ取得系とカタログ取得系に分割する案があるが、旧仮名 `...Source` は [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md) のポート造語禁止にあたるため、スライス 2 で分割が実際に要ることになった時点で同規則に沿って命名する。
 
 **他コンテキストへの供給面**（Customer/Supplier の supplier 側）:
 

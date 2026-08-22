@@ -307,18 +307,38 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
             return false;
         }
         match &attr.meta {
-            syn::Meta::List(list) => token_stream_has_ident(&list.tokens, "test"),
+            syn::Meta::List(list) => stream_has_test_outside_not(&list.tokens),
             _ => false,
         }
     })
 }
 
-fn token_stream_has_ident(tokens: &TokenStream, name: &str) -> bool {
-    tokens.clone().into_iter().any(|tree| match tree {
-        TokenTree::Ident(ident) => ident == name,
-        TokenTree::Group(group) => token_stream_has_ident(&group.stream(), name),
-        _ => false,
-    })
+/// トークン列に「`not(...)` の外側の」裸の識別子 `test` が現れるか。
+///
+/// `#[cfg(not(test))]` は**非テストビルド専用のプロダクトコード**なので、`test` の出現だけで
+/// テスト扱いにすると全ルールから誤免除される (PR #11 レビュー指摘)。`not` 直後の Group は
+/// 丸ごと読み飛ばす (`cfg(all(test, not(unix)))` の `test` は正しく拾う)。
+fn stream_has_test_outside_not(tokens: &TokenStream) -> bool {
+    let mut prev_is_not = false;
+    for tree in tokens.clone() {
+        match &tree {
+            TokenTree::Ident(ident) => {
+                if ident == "test" {
+                    return true;
+                }
+                prev_is_not = ident == "not";
+                continue;
+            }
+            TokenTree::Group(group)
+                if !prev_is_not && stream_has_test_outside_not(&group.stream()) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+        prev_is_not = false;
+    }
+    false
 }
 
 /// `syn::Item` は `#[non_exhaustive]` なので、属性を持つ既知の変種だけを列挙する。
@@ -494,6 +514,50 @@ mod tests {
 }
 "#;
         assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn cfg_not_test_modules_are_not_exempt() {
+        // `#[cfg(not(test))]` は非テストビルド専用のプロダクトコード — 免除してはならない
+        let source = r#"
+#[cfg(not(test))]
+mod wire {
+    fn red(cb: CheckboxState) -> bool {
+        matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+    }
+}
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_CHECKBOX_VOCABULARY]
+        );
+    }
+
+    #[test]
+    fn cfg_all_test_modules_stay_exempt_and_not_inside_all_does_not_leak() {
+        let exempt = r#"
+#[cfg(all(test, unix))]
+mod tests {
+    fn red(cb: CheckboxState) -> bool {
+        matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+    }
+}
+"#;
+        assert!(check(DOMAIN_PATH, exempt).is_empty());
+
+        // all(not(test), unix) はテストではない — 免除されない
+        let not_exempt = r#"
+#[cfg(all(not(test), unix))]
+mod wire {
+    fn red(cb: CheckboxState) -> bool {
+        matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+    }
+}
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, not_exempt)),
+            vec![RULE_CHECKBOX_VOCABULARY]
+        );
     }
 
     #[test]
