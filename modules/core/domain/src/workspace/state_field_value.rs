@@ -3,13 +3,17 @@
 
 use std::fmt;
 
+/// 単一行が保証されたフィールド値 (Always Valid — 行を割れる文字はこの型に存在せず、
+/// 第二のフィールド行の偽造が不能)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateFieldValue(String);
 
+/// 拒否理由 — 走査順に**最初に**見つかった不正コードポイント 1 文字。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsafeLineChar(char);
 
 impl UnsafeLineChar {
+    /// 拒否のきっかけになったコードポイントから構成する。
     #[must_use]
     pub const fn new(value: char) -> UnsafeLineChar {
         UnsafeLineChar(value)
@@ -40,6 +44,7 @@ impl StateFieldValue {
         }
     }
 
+    /// 検証済みの値 — そのままフィールド行に書ける (エスケープ不要)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0

@@ -12,6 +12,8 @@ pub struct StateFileReadError {
 }
 
 impl StateFileReadError {
+    /// 逐語文言 (`message_catalog::state::file_not_found` 等) を包んで持ち上げる。
+    /// 文言の組み立ては Gateway 側の責務で、この型はそれを運ぶだけ。
     #[must_use]
     pub fn new(message: impl Into<String>) -> StateFileReadError {
         StateFileReadError {
@@ -19,6 +21,7 @@ impl StateFileReadError {
         }
     }
 
+    /// 保持している逐語文言。upstream 出力と 1 文字も違ってはならない。
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
@@ -29,9 +32,15 @@ impl StateFileReadError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StateFileWriteError {
     /// 対象が存在し W_OK バリアに引っかかった (意図的な書込バリア)。
-    ReadOnlyTarget { message: String },
+    ReadOnlyTarget {
+        /// バリアに引っかかった対象の説明。
+        message: String,
+    },
     /// その他の I/O エラー。
-    Io { message: String },
+    Io {
+        /// 失敗した I/O 操作の説明。
+        message: String,
+    },
 }
 
 /// 状態ファイルの読取／アトミック書込を供給するポート。

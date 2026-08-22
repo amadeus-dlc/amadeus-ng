@@ -7,23 +7,34 @@
 pub enum Verdict {
     /// approved / completed / complete / done の正規化先。
     Forward,
+    /// ゲートを開く報告。in-progress のステージだけが開ける
+    /// (「only an in-progress stage can open a gate」)。
     AwaitingApproval,
+    /// ゲートでの差し戻し。非空のフィードバックを伴い、ステージを revising へ送る。
     Rejected,
+    /// 差し戻し後の再入報告。revising のステージだけが再入できる
+    /// (「only a revising stage can re-enter its gate」)。
     Revised,
     /// resume / resumed の正規化先。
     Resume,
+    /// ルーティングされたライフサイクル結末であって完了ではない
+    /// (「a routed lifecycle outcome, not a completion」)。全 completion ガードより先に
+    /// 判定される (I13)。
     Skipped,
 }
 
+/// 受理 10 語以外の生値 — `parse` の拒否経路 (未知語を既定 verdict へ丸めない)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownVerdict(String);
 
 impl UnknownVerdict {
+    /// 拒否された生値をそのまま包む (トリム・大小文字の正規化はしない)。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownVerdict {
         UnknownVerdict(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0

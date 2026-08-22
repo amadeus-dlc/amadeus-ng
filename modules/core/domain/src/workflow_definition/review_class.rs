@@ -11,7 +11,10 @@
 /// 上位 2 値) に合わせて **`Advisory` を先に宣言**する。`min` / ソートが強度順に一致する。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ReviewClass {
+    /// 通常フローではちょうど 1 パス。verdict によらず lead を再呼び出しせず、所見は
+    /// 承認ゲートで人間がトリアージする (04 §5.1)。
     Advisory,
+    /// 反駁と修復のループ。`reviewer_max_iterations` 回まで、パスの間に lead の修正を挟む。
     Adversarial,
 }
 
@@ -20,11 +23,13 @@ pub enum ReviewClass {
 pub struct UnknownReviewClass(String);
 
 impl UnknownReviewClass {
+    /// 拒否された生値をそのまま包む (トリム・小文字化などの正規化はしない)。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownReviewClass {
         UnknownReviewClass(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -32,6 +37,7 @@ impl UnknownReviewClass {
 }
 
 impl ReviewClass {
+    /// 宣言順の全値 = 正準の強度昇順 (`advisory < adversarial`)。
     pub const ALL: [ReviewClass; 2] = [ReviewClass::Advisory, ReviewClass::Adversarial];
 
     /// # Errors
@@ -45,6 +51,7 @@ impl ReviewClass {
         })
     }
 
+    /// ステージ frontmatter / `stage-graph.json` 上の語 (`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
