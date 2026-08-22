@@ -15,4 +15,6 @@ sha2 = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# 統合テストがゴールデンコーパスを canon-json 自身とは独立に読むため (オラクル汚染の防止)。
+serde_json = { workspace = true }
 

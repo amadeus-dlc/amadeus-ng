@@ -131,22 +131,22 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 
 ### 5.3 canon-json — Data model 層（value / profile / digest の型）
 
-- [ ] Step 5. Red: `JsonValue` / `Number` / `ObjectMembers`（挿入順・同名置換・アクセサ）、`SerializationProfile`
+- [x] Step 5. Red: `JsonValue` / `Number` / `ObjectMembers`（挿入順・同名置換・アクセサ）、`SerializationProfile`
       3 値の属性（indent / trailing_newline / key_order / purpose）、`Digest` / `DigestFamily` の `rendered()`、
       `ParseError` / `ToValueError` の `Display` を対象に失敗テスト（各コンポーネント 5〜8 本）を書き、失敗出力を記録。
-- [ ] Step 6. Green: 最小実装（フィールド private + アクセサ、`PartialEq` 導出、手実装 `Display`）。
-- [ ] Step 7. Refactor: 命名・rustdoc（`missing_docs`）・`must_use` 整理。テスト緑のまま。
+- [x] Step 6. Green: 最小実装（フィールド private + アクセサ、`PartialEq` 導出、手実装 `Display`）。
+- [x] Step 7. Refactor: 命名・rustdoc（`missing_docs`）・`must_use` 整理。テスト緑のまま。
 
 ### 5.4 canon-json — Business logic 層（writer / canonical / digest / parse）
 
-- [ ] Step 8. Red: (a) ゴールデン受入表テスト `tests/golden_hash_canonical.rs` — 全行で hash-canonical 出力と
+- [x] Step 8. Red: (a) ゴールデン受入表テスト `tests/golden_hash_canonical.rs` — 全行で hash-canonical 出力と
       `sha256:` ダイジェスト、compact 出力と生 hex、pretty 出力を比較（失敗 = 行ごとの diff を表示）。
       (b) ユニット: 数値表記クラス（整数・2^53 超・1.0・1e21 / 1e-7 境界・負ゼロ・非有限）、エスケープクラス、
       キー順（integer-like 混在・UTF-16 順）、体裁（pretty の入れ子・空）、parse（不正 JSON の offset、深さ 128 超
       → TooDeep、`parse_bytes` の不正 UTF-8 → Encoding、重複キーは後勝ち・位置維持）。失敗出力を記録。
-- [ ] Step 9. Green: writer（プロファイル分岐・数値ライタ・最小エスケープ・体裁）、canonical（再帰ソート）、
+- [x] Step 9. Green: writer（プロファイル分岐・数値ライタ・最小エスケープ・体裁）、canonical（再帰ソート）、
       digest（sha2）、parse（深さスキャン → `serde_json::from_str` preserve_order → `JsonValue` 変換）。
-- [ ] Step 10. Refactor: 数値ライタの分離、重複排除、rustdoc。ゴールデン全行一致・ユニット緑のまま。
+- [x] Step 10. Refactor: 数値ライタの分離、重複排除、rustdoc。ゴールデン全行一致・ユニット緑のまま。
 - [ ] Step 11. PBT（proptest、`src/` 同居）: 決定性（同入力 → 同出力）、`parse(serialize(v, compact)) == v`
       （NaN を含まない生成器）、`hash_canonical` の冪等性、canonical ソートの冪等性。ケース数は既定（シード固定は U10）。
 

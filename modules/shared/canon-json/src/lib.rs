@@ -36,3 +36,9 @@ mod parse;
 mod profile;
 mod value;
 mod writer;
+
+pub use digest::{Digest, DigestFamily, hash_canonical, hash_compact};
+pub use parse::{MAX_DEPTH, ParseError, parse, parse_bytes};
+pub use profile::{Indent, KeyOrder, SerializationProfile};
+pub use value::{JsonValue, Number, ObjectMembers, ToValueError};
+pub use writer::serialize;
