@@ -87,9 +87,9 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | 成果物 | `produces` / `optional_produces` / `produces_kinds` / `consumes` | `produces` は語彙名であってパスではない（パス解決はエンジン側）。`optional_produces` は directive の `produces` 解決に**含まれる**。`consumes[]` は `{artifact, required, conditional_on?}` のオブジェクト配列 |
 | 依存 | `requires_stage` | 既知 slug のみ・build 時 dedup 済み。エッジ局所順序は F13 |
 | レビュー | `reviewer` / `reviewer_max_iterations` / `review_class` | 3 つ揃って B10（レビュアーレシート述語）の入力。`review_class` は verification 所有型への外部キー（B7） |
-| スコープ・儀式 | `scopes` / `summary_confirmation` | `scopes` は**グリッドの転置元**。`summary_confirmation` は観測値 `"required"` のみ（値域は §11） |
+| スコープ・儀式 | `scopes` / `summary_confirmation` | `scopes` は**グリッドの転置元**。`summary_confirmation` の値域は `"required"` / `"if-present"` の 2 値（配布物の実測は `required` 27 件のみ） |
 | センサー | `sensors` / `sensors_applicable` | `sensors_applicable` は `{id, path, matches?}` の**オブジェクト配列**。compile 時の逐語スナップショットであり、実行時に manifest を再オープンしない |
-| プラグイン | `plugin` / `enabled` | `plugin` は frontmatter からの逐語コピー。`enabled` の欠損は有効とみなす（意味論の残件は §11） |
+| プラグイン | `plugin` / `enabled` | `plugin` は frontmatter からの逐語コピー。**`enabled` はキーが出ていれば必ず `false`**（有効ノードでは emit されない）。欠損は有効とみなす |
 | 散文 | `inputs` / `outputs` | いずれも**文字列**（配列にしない）。記述用途のみで機械可読ではない — 機械可読な出力は `produces` |
 | ルール | `rules_in_context` | `{path, scope}` の**オブジェクト配列**（長さ 3 または 4）。`path` は `default` スペースへのコンパイル時ピン |
 
@@ -143,7 +143,12 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | 9 | `mode: "agent-team"` | **明示的に未実装として拒否**する。既定の実行経路へフォールスルーさせてはならない（upstream の最低要件は `throw "mode agent-team not yet implemented"`） |
 | 10 | 上記いずれの失敗でも | **stdout に何も書かない**。half-emitted directive を出さないという orchestration 側の契約（10 §6 I1）を、読込側から破らない |
 
-**逐語文言の採取状態**: #1・#2・#4 の 4 文言と scope frontmatter の 2 文言は、抽出時点で参考ツリー 2 本（[F] v2.2.0 / [G] fork）でのみ一致確認済みで、**ピン留め `3c3146cf` での逐語確認は未了**（抽出文書 §5.5 の ★ 印）。本節は「文言が存在すること・分岐条件・hint 節の env 分岐」までを規範とし、**バイト列の確定と文言カタログ（ADR 0002）への登録は Issue #7 項目 0 のゴールデン採取後**に行う（§10）。
+**逐語文言の採取状態（2026-08-22 更新）**: #1・#2・#4 の 4 文言と scope frontmatter の 2 文言は、抽出時点では参考ツリー 2 本（[F] v2.2.0 / [G] fork）でのみ一致確認済みだったが、**Issue #7 項目 0 のゴールデン採取でピン留め `3c3146cf` の実バイトと 6/6 一致を確認した**（`research/golden-3c3146cf-lib.md` §8.2・§8.3、`research/golden-3c3146cf-graph-dist.md` §3.1）。したがって本節はバイト列まで規範である。付随して確定した実装事実:
+
+- #1 の hint 分岐は `process.env.AIDLC_STAGE_GRAPH` の **truthy 判定**なので、**空文字列の env では既定 hint に落ちる**。一方パス解決 `stageGraphPath()` は `??`（nullish 合体）なので空文字列の env はパスとして採用される — この非対称は upstream に実在する。
+- #4 で throw する関数は **2 つ**（`subgraphForScope` と `resolvePlanForScope`）。
+- scope `.md` の読取は、ディレクトリの `readdirSync` 失敗は空リストへ劣化するが、**個別 `.md` の読取失敗は素通しで伝播する**（本節の表に無い挙動）。
+- `name:` **重複**の拒否文言だけは現実装が upstream 逐語と一致していない（§11 の残件）。
 
 ## 5. ユースケース層
 
@@ -212,7 +217,7 @@ E4（Quint）は本コンテキストに**付さない** — 対象が状態遷�
 | --- | --- | --- |
 | 1 | 未知フィールド | **許容**（`deny_unknown_fields` 禁止 — F1） |
 | 2 | 欠損 optional | `Option` ないし空 default（配列・マップには `#[serde(default)]`） |
-| 3 | 未知の列挙値 | **全列挙（`phase` / `execution` / `review_class` / `mode`）を厳密 enum とし、未知値は load 時に落とす**（2026-08-22 オーナー裁定）。`mode` は `agent-team` を variant として保持し、使用時拒否は F11 が担う。ドメイン型に `Unknown` variant を持たせないことで Always Valid を維持する。upstream（load は通り使用時に壊れる）との観測差は**手編集グラフの未知値に限られ**、dist の正規データでは生じない — fail-loud 側に倒す。ゴールデン採取（Issue #7 項目 0）で正規データが全数 load できることを確認する |
+| 3 | 未知の列挙値 | **全列挙（`phase` / `execution` / `review_class` / `mode`）を厳密 enum とし、未知値は load 時に落とす**（2026-08-22 オーナー裁定）。`mode` は `agent-team` を variant として保持し、使用時拒否は F11 が担う。ドメイン型に `Unknown` variant を持たせないことで Always Valid を維持する。upstream（load は通り使用時に壊れる）との観測差は**手編集グラフの未知値に限られ**、dist の正規データでは生じない — fail-loud 側に倒す。**2026-08-22 のゴールデン採取で正規データ 33 ノードの全数 load を確認済み**（`tests/golden/upstream-3c3146cf/` ＋ `golden_parity_test.rs`） |
 
 **グリッドのセル単位の異常**（文法外 slug・`EXECUTE`/`SKIP` 以外の値）は**そのセルだけ落とす**。結果は 3 値契約の「未収載」（§4 #7）になり、upstream の「列に slug が無い」と同じ観測へ収束する。1 セルの異常でグリッド全体を転置導出へ倒さない（列全体の破棄は §4 #3 のファイル単位の失敗のみ）。
 
@@ -229,19 +234,21 @@ E4（Quint）は本コンテキストに**付さない** — 対象が状態遷�
 | 例外 throw によるエラー生成 | Rust は `Result` でよい。契約は逐語文言・exit code・stdout を汚さないことだけ |
 | computed field の旧名 `display_order`（upstream 04） | 実フィールドは `number`。旧名に追随しない |
 
-**書き側（compile）の前提**: `FIELD_ORDER` 28 のキー順と `undefined` 落とし、`contract-pretty` の体裁（2 スペース＋末尾改行）は `compile --check` のバイト比較の前提であり、ADR 0001 決定 3 が「28 フィールド順は struct 宣言で符号化」と規定している。**並び順の実バイトはピン留め配布物からの採取待ち**なので、スライス 2 の着手条件に含める（読み専用の本スライスでは不要）。
+**書き側（compile）の前提**: `FIELD_ORDER` 28 のキー順と `undefined` 落とし、`contract-pretty` の体裁（2 スペース＋末尾改行）は `compile --check` のバイト比較の前提であり、ADR 0001 決定 3 が「28 フィールド順は struct 宣言で符号化」と規定している。~~並び順の実バイトはピン留め配布物からの採取待ち~~ → **2026-08-22 に採取完了**（`research/golden-3c3146cf-graph-dist.md` §1・§2）。28 エントリの順・`undefined` 落としの実装（`if (v === undefined) continue;` の 1 行のみで、`null` / `[]` / `""` / `false` は落とさない）・`JSON.stringify(x, null, 2)` ＋末尾改行 1 個の体裁がいずれも確定し、dist 実バイトとのラウンドトリップがバイト完全一致した。スライス 2 の着手条件はこれで満たされている（読み専用の本スライスでは不要）。
 
-**逐語文言の採取状態（重要）**: 本書が §4 で規範化した読込失敗文言のうち、graph 読込 3 形と `Unknown scope` 1 形、および scope frontmatter の 2 形は、抽出文書で **[F]（upstream v2.2.0）/[G]（downstream fork）由来** と格付けされており、ピン留め `3c3146cf` での逐語確認が済んでいない（抽出文書 §5.5 の ★）。`skeleton` の拒否文言だけは [S] に逐語がある。したがって現時点で spec-quoted（一次典拠から引いた逐語）と golden 待ちが混在しており、**文言カタログ（ADR 0002）への登録とゴールデンテストの期待値固定は Issue #7 項目 0 のゴールデン採取後**とする。採取で差異が判明した場合は本書 §4 とカタログを直し、逸脱ではなく抽出の訂正として扱う。
+**逐語文言の採取状態（2026-08-22 更新）**: 本書が §4 で規範化した読込失敗文言のうち、graph 読込 3 形・`Unknown scope` 1 形・scope frontmatter 2 形は、抽出文書では [F]/[G] 由来（★）だったが、**Issue #7 項目 0 のゴールデン採取でピン留め `3c3146cf` に対し 6/6 バイト一致**した。文言カタログ（ADR 0002）側でも `SpecQuotedOnly` として残っていた 4 件（`state::field_not_found` / `state::file_not_found` / `lock::acquire_failed` / `bolt::invalid_mode`）が 4/4 一致で `Captured` へ昇格済みである。**ゴールデンテストの期待値固定も完了**しており、配布実バイトは `tests/golden/upstream-3c3146cf/` に置き、`modules/core/interface-adapter/tests/golden_parity_test.rs` が 33 ノード全数 load・文書順 = 数値順・11 列の EXECUTE 数・reviewer 13（adversarial 5 / advisory 8）・`enabled` キー 0 を検証する。残る不一致は scope `.md` の `name:` 重複拒否文言 1 形のみで、§11 に裁定待ちとして立ててある。
 
 ## 11. 未決事項
 
 - ~~**serde の厳格度**（§10 の表 #3）の確定~~ → **2026-08-22 裁定済み**: 全列挙を load 時厳格とする（§10 表 #3 に記載）。ゴールデン採取後の再確認のみ残る。
 - **文書順保持（F2）の確定**。本書は暫定規範として文書順保持を採ったが、「読込時に数値順へ正規化する」を選ぶ場合は手編集グラフに対する挙動が本家と分岐するため逸脱台帳マターになる。
 - ~~**`scope-grid.json` 欠損時の転置導出フォールバック**（§4 #3）をスライス 1 でも実装するか~~ → **2026-08-22 裁定済み**: upstream 忠実にフォールバックを実装する（*"callers never see a hard ENOENT for a derivable artifact"*）。fatal 化は診断改善として将来 doctor 側で扱う。
-- **`AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` / `AIDLC_SCOPE_MAPPING`** が upstream の環境変数一覧（03 §2.3）に載っていない（テストシーム専用）。D6 の互換対象に含めるか、含めるなら同名で用意するか。
-- **`enabled` の意味論**（プラグイン選択でノードが削除されるのか `enabled: false` が立つのか、有効時にキーが出力されるのか）と **`summary_confirmation` の値域**。いずれもピン留めの実 JSON で確認する。
-- **逐語文言 6 形のピン留め確認**（§10）。Issue #7 項目 0 のゴールデン採取に依存する。
-- **`FIELD_ORDER` 28 の並び順**。compile（スライス 2）の着手条件。
+- **`AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` / `AIDLC_SCOPE_MAPPING`** が upstream の環境変数一覧（03 §2.3）に載っていない（テストシーム専用）。D6 の互換対象に含めるか、含めるなら同名で用意するか。**実在は確定**（`aidlc-graph.ts:383-394` / `:428` / `:380`）だが、含めるかどうかはオーナー裁定。
+- ~~**`enabled` の意味論**（プラグイン選択でノードが削除されるのか `enabled: false` が立つのか、有効時にキーが出力されるのか）~~ → **2026-08-22 ゴールデン採取で確定**（`docs/specs/research/golden-3c3146cf-graph-dist.md` §4）。**ノードは削除されない**（`applyPluginSelection` は配列長を変えず、`canonicalStageGraphJson` が無効ノードも全件 emit する）。**有効時はキーが出力されない**（毎回 `delete` してから無効時のみ `= false` を立てるため `undefined` 落ちする。dist 実測 **0/33**）。型は `enabled?: false` で `true` は表現不可能、判定は一貫して `s.enabled !== false`。→ §3.1 の「欠損は有効とみなす」は正しい。**新たに判明した非対称**: グリッド側は無効ノードを行ごと落とす（`:1958`）ので「graph には出るが grid 行には無い」= 3 値契約の未収載（§4 #7）として観測される。
+- ~~**`summary_confirmation` の値域**~~ → **2026-08-22 ゴールデン採取で確定**（同 §5(d)）。`"required" | "if-present"` の**2 値列挙**（`aidlc-graph.ts:200`、検証は `aidlc-stage-schema.ts:326-333`）。boolean 相当ではない。dist 実測は `required` 27 件・`if-present` 0 件。
+- ~~**逐語文言 6 形のピン留め確認**（§10）~~ → **2026-08-22 ゴールデン採取で 6/6 確定**。graph 読込 3 形は `golden-3c3146cf-lib.md` §8.2（`aidlc-lib.ts:8558-8585`）、scope frontmatter 2 形は同 §8.3（`:8661` / `:8663`）、`Unknown scope` 1 形は `golden-3c3146cf-graph-dist.md` §3.1（`aidlc-graph.ts:997` と `:1052` の **2 箇所**で throw する）。いずれも既存の逐語とバイト一致した。**残件は 1 つ**: 未知スコープに `None` / 空を返す 3 述語側の実装逐語（`aidlc-lib.ts` の追加採取待ち）。`name:` 重複拒否文言は **2026-08-22 裁定: D6 の既定どおり upstream 逐語へ一致させた**（実装修正済み — 逸脱ではない）。
+- ~~**`FIELD_ORDER` 28 の並び順**。compile（スライス 2）の着手条件~~ → **2026-08-22 ゴールデン採取で確定**（`golden-3c3146cf-graph-dist.md` §1、`aidlc-graph.ts:449-478`）。dist 33 ノード全件のキー列がこの順の部分列であること（違反 0・圏外キー 0）も機械検証済みで、ADR 0001 決定 3 の struct 宣言順を確定できる。
+- ~~**§4 #8（`initialization` 全列 EXECUTE）の適用範囲**~~ → **2026-08-22 裁定済み**: 本仕様の §4 #3 フォールバックが写すのは upstream の**実行時フォールバック** `loadScopeGrid → transposeScopeGrid`（`aidlc-graph.ts:415-445 → :1400-1405` — **特例あり**）であり、現実装（`ScopeGrid::derive_from_graph` の特例あり転置）は正しい。特例を持たない `transposeScopeGridForMapping`（`aidlc-lib.ts:8618-8632`）は legacy scope-mapping 経路のもので、本仕様の実装対象外。F12 は「compile 転置と実行時フォールバック転置の両方」に適用され、mapping 経路には適用されない。
 - upstream 04 が computed field を旧名 `display_order` で記述している件（実フィールドは `number`）が意図的な別名か doc drift かの確認。実装への影響は低い。
 - ~~**文書番号の採番**~~ → **2026-08-22 裁定済み**: 本書が 12 号を確定使用し、knowledge コンテキスト仕様は 13 号とする（`11-workspace.md` §10 の予告を修正済み）。
 - スライス 2 の範囲確定: `compileStageGraph`（B6）、stage frontmatter スキーマ、エージェントペルソナ、3 ダイヤル、キーワード推論（アルファベット順 first-match の決定論）、composed scope のマージ（`preserveNames`）。

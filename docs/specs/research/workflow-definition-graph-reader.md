@@ -14,6 +14,22 @@
 
 **[F]/[G] から引いた事実はすべて「ピン留めコミットでの再確認が必要」**として §8 の未確定事項に上げてある。§1〜§6 の規範記述は [S] を正とし、[F]/[G] は補強としてのみ併記する。★ 印の付いた逐語文言は [F]/[G] 由来で、ピン留めでの採取 (Issue #7 項目 0) を待っている。
 
+> **2026-08-22 のゴールデン採取による更新**: Issue #7 項目 0 が完了し、ピン留め `3c3146cf` の
+> `aidlc-graph.ts` / `aidlc-lib.ts` / `aidlc-stage-schema.ts` と配布実バイト
+> `dist/claude/.claude/tools/data/{stage-graph,scope-grid}.json` を直接採取した。結果は
+> [`golden-3c3146cf-graph-dist.md`](golden-3c3146cf-graph-dist.md) と
+> [`golden-3c3146cf-lib.md`](golden-3c3146cf-lib.md) にあり、dist 実バイトは
+> [`tests/golden/upstream-3c3146cf/`](../../../tests/golden/upstream-3c3146cf/) に永続化した。
+>
+> - **§8 の未確定 4 件（`FIELD_ORDER` の並び順 / `enabled` の意味論 / `summary_confirmation` の値域 /
+>   §5.5 の逐語 5 形）はいずれも確定した** — 各項目の打消し線と追記を参照。
+> - **§5.5 以外の ★ も大半が解消している**（`loadGraph` の信頼境界コメント・"Caller must NOT mutate"・
+>   純粋転置とレガシー `.stages` 互換・`AIDLC_SCOPE_GRID` テストシーム・emit 体裁など。
+>   解消状況の一覧は `golden-3c3146cf-graph-dist.md` §6 の表）。ただし**行番号は v2.2.0 → 2.6.40 で
+>   一律にドリフトしている**ので、本書の [F] 行番号をそのまま引かないこと。
+> - 逆に**ピン留めで新たに食い違いが判明した箇所**もある（`initialization` 全列 EXECUTE 特例が
+>   リーダ側の転置には存在しない件など）。§8 の該当項目に記載した。
+
 ---
 
 ## 1. dist ツリー内の配置場所
@@ -200,7 +216,14 @@ Issue #7 項目 3 の記述は 2 ファイルしか挙げていないが、`vali
 | `freeform_default: true` は**有効な**スコープ中 1 つまで | `aidlc-lib.ts:8785-8790` |
 | `description:` は「そのスコープが何のためにあるか」の 1 行で、エンジン自身が読む宣言された intent | [S] `01-workflow-model.md:366-372` (`aidlc-lib.ts:8674`, `:8842`) |
 
-frontmatter 欠落・`name` 欠落の逐語文言は [F]/[G] のみで確認: `Scope file missing frontmatter: ${path}` / `Scope file ${path} missing required frontmatter: name` ★。
+frontmatter 欠落・`name` 欠落の逐語文言: `Scope file missing frontmatter: ${path}` / `Scope file ${path} missing required frontmatter: name`。
+
+> **ピン留めで確定 (2026-08-22)** → `golden-3c3146cf-lib.md` §8.3。本節の §4.2 表が挙げる `aidlc-lib.ts` 行番号群
+> (`:8664`, `:8674`, `:8684`, `:8697`, `:8706`, `:8785`) は**すべてピン留めで一致**したので ★ を外してよい。
+> 上の 2 文言は `:8661` / `:8663` の逐語とバイト一致した。**`loadScopeMetadataAll` の拒否は 7 形**であり
+> (missing frontmatter / missing name / duplicate name / `plugin` の `aidlc-` prefix / invalid `skeleton` /
+> invalid `review_cap` / `freeform_default` 多重指名)、うち `freeform_default` の一意性検査だけは
+> `loadScopeMetadata` 側 (`:8785-8789`) — **プラグイン選択でフィルタした「有効な」集合に対して**走る。
 
 ---
 
@@ -218,7 +241,12 @@ validScopes()          ← loadScopeMapping() のキー集合をソート
 subgraphForScope(s)    ← validScopes で検証 → loadScopeGrid()[s] の EXECUTE 抽出 → loadGraph() を numericStageOrder でソート
 ```
 
-典拠: [F] `aidlc-graph.ts:329-352, 704-713`、[F] `aidlc-lib.ts:2837-2864, 7393-7481` ([G] で同一構造を再確認: `amadeus-lib.ts:7281-7308, 7393, 7475`) ★。[S] 側の裏付けは `02-orchestration-engine.md:58` (エンジンが使うライブラリ read の一覧に `loadGraph` / `nextInScopeStage` / `firstInScopeStageOfPhase` / `validScopes`)、`01-workflow-model.md:919` (*"the runtime resolves stages from the compiled graph only (loadGraph)"*)。
+典拠: [F] `aidlc-graph.ts:329-352, 704-713`、[F] `aidlc-lib.ts:2837-2864, 7393-7481` ([G] で同一構造を再確認: `amadeus-lib.ts:7281-7308, 7393, 7475`)。[S] 側の裏付けは `02-orchestration-engine.md:58` (エンジンが使うライブラリ read の一覧に `loadGraph` / `nextInScopeStage` / `firstInScopeStageOfPhase` / `validScopes`)、`01-workflow-model.md:919` (*"the runtime resolves stages from the compiled graph only (loadGraph)"*)。
+
+> **行番号の訂正 (2026-08-22 ゴールデン採取)**: 上の [F] 行番号は v2.2.0 のもので、ピン留め `3c3146cf` ではドリフトしている。**構造と逐語内容は一致しており、ずれているのは行番号だけ**である。
+>
+> - `aidlc-lib.ts:2837-2864` → **`loadStageGraph` は `:8552`**、`loadStageGraphAll` は `:8558`（`:2837-2864` はピン留めでは active-directive ロックトランザクションであって別物）— `golden-3c3146cf-lib.md` §8.1
+> - `aidlc-graph.ts:704-713`（`loadGraph`）→ **`:797-811`**、`aidlc-graph.ts:329-352`（`loadScopeGrid` のフォールバック）→ **`:415-445`** — `golden-3c3146cf-graph-dist.md` §8
 
 ### 5.2 キャッシュ
 
@@ -255,9 +283,14 @@ subgraphForScope(s)    ← validScopes で検証 → loadScopeGrid()[s] の EXEC
 | ステージファイルがディスクに無いのにグラフにある | `stageGraphDrift().missingFiles` → doctor が**hard fail** |
 | ステージファイルはあるがグラフに無い | `uncompiledStages` → **advisory のみ** (*"the file is silently never executed until `aidlc-graph compile` regenerates the graph. Advisory"*) — [S] `01-workflow-model.md:911-921`, [S] `07-hooks.md:119` |
 
-### 5.5 逐語エラー文言 (★ = ピン留め未確認、§8 参照)
+### 5.5 逐語エラー文言
 
-**グラフ読込** ([F]/[G] 双方で完全一致 — ピン留めでの再確認は必要):
+> **2026-08-22 のゴールデン採取で、本節の ★ 5 件のうち 5 件すべてがピン留め `3c3146cf` で逐語確定した**
+> （グラフ読込 3 形 → `golden-3c3146cf-lib.md` §8.2 / scope frontmatter 2 形 → 同 §8.3 /
+> `Unknown scope` → `golden-3c3146cf-graph-dist.md` §3.1）。個別の確定内容は各ブロック直後の引用に記す。
+> 残る未確定は「未知スコープに対して `null` / `[]` を返す 3 関数側の実装逐語」だけである。
+
+**グラフ読込** ([F]/[G] 双方で完全一致 — ピン留めでもバイト一致を確認済み):
 
 ```text
 Stage graph not readable at ${p}: ${errorMessage(err)}. Reinstall the framework or re-run setup to restore the data file.
@@ -265,7 +298,13 @@ Stage graph not readable at ${p}: ${errorMessage(err)}. AIDLC_STAGE_GRAPH points
 Stage graph at ${p} is not valid JSON: ${errorMessage(err)}
 ```
 
-(env が設定されているときだけ hint 節が後者に切り替わる。[F] `aidlc-lib.ts:2841-2860`) ★
+(env が設定されているときだけ hint 節が後者に切り替わる。)
+
+> **ピン留めで確定 (2026-08-22)** → `golden-3c3146cf-lib.md` §8.2。上の 3 行は `3c3146cf` の
+> **`loadStageGraphAll` (`aidlc-lib.ts:8558-8585`) の逐語とバイト一致**した（[F] の `:2841-2860` は
+> v2.2.0 由来の行番号ドリフト）。hint 分岐の条件は `process.env.AIDLC_STAGE_GRAPH` の **truthy 判定**
+> なので、**空文字列の env では既定 hint に落ちる**。一方 `stageGraphPath()` (`:8509-8510`) は `??`
+> （nullish 合体）なので空文字列の env はパスとしてそのまま採用される — この非対称が upstream に実在する。
 
 **スコープ解決**:
 
@@ -273,7 +312,14 @@ Stage graph at ${p} is not valid JSON: ${errorMessage(err)}
 Unknown scope: "${scope}". Valid scopes: ${[...validScopes()].join(", ")}
 ```
 
-`subgraphForScope` のみ **throw**。`nextInScopeStage` / `firstInScopeStageOfPhase` / `stagesInScope` は同じ未知スコープに対して **`null` / `[]` を返す**。この非対称は観測可能な契約 — [F] `aidlc-graph.ts:1046-1050`, [G] `amadeus-lib.ts:8214, 8296, 8317` ★。
+`subgraphForScope` のみ **throw**。`nextInScopeStage` / `firstInScopeStageOfPhase` / `stagesInScope` は同じ未知スコープに対して **`null` / `[]` を返す**。この非対称は観測可能な契約 — [F] `aidlc-graph.ts:1046-1050`, [G] `amadeus-lib.ts:8214, 8296, 8317`。
+
+> **ピン留めで確定 (throw 側のみ、2026-08-22)** → `golden-3c3146cf-graph-dist.md` §3.1。逐語は
+> `Unknown scope: "${scope}". Valid scopes: ${[...validScopes()].join(", ")}` でバイト一致。
+> **throw する関数は 2 つ**で、`subgraphForScope` (`aidlc-graph.ts:997`) に加え本書未記載の
+> `resolvePlanForScope` (`:1052`、`aidlc-graph resolve` が `.aidlc-plan.json` を書く実体) がある。
+> `null` / `[]` を返す 3 関数は `aidlc-graph.ts` に実装が無く (`:3-5` が `aidlc-lib.ts` への委譲を明記)、
+> こちら側の逐語確認は未了。
 
 **スコープ metadata**:
 
@@ -283,7 +329,7 @@ Scope file ${path} missing required frontmatter: name
 Scope file ${filePath} has invalid skeleton value "${skeleton}". Expected "on" or "off".
 ```
 
-3 行目は [S] `01-workflow-model.md:355-357` に逐語あり。1〜2 行目は [F]/[G] 由来 ★。その他 [S] 明記のスコープ検証は §4.2 の表。
+3 行目は [S] `01-workflow-model.md:355-357` に逐語あり。1〜2 行目も **2026-08-22 のゴールデン採取でピン留め確定** (`aidlc-lib.ts:8661` / `:8663`、skeleton は `:8698-8700` — `golden-3c3146cf-lib.md` §8.3)。その他 [S] 明記のスコープ検証は §4.2 の表。
 
 **グラフを読む上位の失敗態度**:
 
@@ -400,14 +446,15 @@ upstream が「ロード時無検証」であるのに対し、serde はパー�
 
 ## 8. 未確定事項
 
-- `FIELD_ORDER` 28 エントリの**並び順**が [S] に列挙されていない。メンバー集合は [S] から確定できる (12 必須 + 15 任意 − `when` − `required_sections` + `rules_in_context` + `sensors_applicable` + `enabled` = 28 で数が一致) が、順序は未確認。v2.2.0 [F] は 22 エントリ、downstream fork [G] は別メンバーの 28 エントリで、いずれもピン留め `3c3146cf` の順序を証明しない。ADR 0001 決定 3 が「28 フィールド順は struct 宣言で符号化」と規定している以上、compile (書き) を実装する時点で `dist/claude/.claude/tools/data/stage-graph.json` の実バイトから確定させる必要がある。**読み専用のスライス 1 では不要**。
-- `enabled` フィールドの正確な意味論。[S] `11-plugin-system.md:723` の *"applyPluginSelection() then deletes or sets `enabled: false` on each node per the selection"* は「ノードを削除する」とも「`enabled` キーを削除する」とも読める。[S] `11-plugin-system.md:466-468` の compose 側は「slug が present かつ `enabled: false` でないこと」を検査しており両方の存在を示唆。`enabled` が真のとき出力にキーが出るのか出ないのかを、ピン留めの実 JSON で確認する必要がある。
-- `summary_confirmation` の値域。[S] は `summary_confirmation: required` の観測値と「27 ステージが宣言」しか示さない。列挙型なのか (`required` / `optional` / …)、boolean 相当なのかが未確定。
-- §5.5 の逐語エラー文言 3 種 (`Stage graph not readable at …` / `… is not valid JSON: …` / `Unknown scope: "…". Valid scopes: …`) と scope frontmatter の 2 種は [F] v2.2.0 と [G] fork で完全一致していたが、**ピン留め `3c3146cf` での逐語確認が未了**。D6 で「LLM エージェントの分岐条件になっている逐語文言」は互換必須なので、文言カタログ (ADR 0002) に載せる前に確定が必要。
+- ~~`FIELD_ORDER` 28 エントリの**並び順**が [S] に列挙されていない~~ → **`golden-3c3146cf-graph-dist.md` §1 で確定** (2026-08-22)。`aidlc-graph.ts:449-478` の逐語 28 エントリを採取し、dist 33 ノード全件のキー列がこの順の**部分列**であること (違反 0・圏外キー 0) を機械検証した。メンバー算術も `aidlc-stage-schema.ts:161-176` (`REQUIRED_FIELDS` 12 / `OPTIONAL_FIELDS` 15) で裏取り済みで、`enabled` は `OPTIONAL_FIELDS` に無い**compile 注入フィールド**（ステージ YAML では宣言不可能）であることも判明した。ADR 0001 決定 3 の struct 宣言順はこれで確定できる。
+- ~~`enabled` フィールドの正確な意味論~~ → **`golden-3c3146cf-graph-dist.md` §4 で確定** (2026-08-22)。(1) **ノードは削除されない** — `applyPluginSelection` (`aidlc-graph.ts:1573-1578`) は配列長を変えず、`canonicalStageGraphJson` (`:1953`) が無効ノードも含め全件 emit する。[S] `11-plugin-system.md:723` の *"deletes"* は `delete stage.enabled`（キー削除）の意味だった。(2) **有効時はキーが出力されない** — 毎回 `delete` してから無効時のみ `= false` を立てるため、`undefined` 落としで JSON にキーが現れない（dist 実測 **0/33**）。型宣言も `enabled?: false` (`:141`) で `true` は表現不可能。→ amadeus-ng の「`None` = キー不在 = 有効」解釈は正しい。(3) 判定は一貫して `s.enabled !== false`。(4) **グリッド側は無効ノードを行ごと落とす** (`:1958`) ので「graph には出るが grid 行には出ない」非対称がある（読み手からは 3 値契約の未収載として観測される）。
+- ~~`summary_confirmation` の値域~~ → **`golden-3c3146cf-graph-dist.md` §5(d) で確定** (2026-08-22)。`aidlc-graph.ts:200` の `summary_confirmation?: "required" | "if-present"` と `aidlc-stage-schema.ts:326-333` の検証（逐語: `summary_confirmation must be one of required, if-present, got ${describe(...)}`）により**2 値列挙**。boolean 相当ではない。dist 実測は `required` 27 件・`if-present` 0 件で as-built `04-stage-protocol.md:154,634` (M12) と一致。
+- ~~§5.5 の逐語エラー文言 3 種と scope frontmatter の 2 種のピン留め確認~~ → **5 件すべて確定** (2026-08-22)。グラフ読込 3 形は `golden-3c3146cf-lib.md` §8.2 (`aidlc-lib.ts:8558-8585`)、scope frontmatter 2 形は同 §8.3 (`:8661` / `:8663`)、`Unknown scope` は `golden-3c3146cf-graph-dist.md` §3.1 (`aidlc-graph.ts:997` と `:1052` の 2 箇所) でいずれもバイト一致。**残るのは「未知スコープに `null` / `[]` を返す 3 関数側」の実装逐語のみ**で、これは `aidlc-lib.ts` の追加採取待ち。
 - `AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` / `AIDLC_SCOPE_MAPPING` が [S] `03-state-audit-runtime.md` §2.3 の環境変数一覧に載っていない。テストシーム専用なので D6 の互換対象に含めるかどうか (含めるなら Rust 側にも同名で用意するか) がオーナー裁定事項。
-- ~~serde による構造的パースをどこまで厳格にするか (§6.3-3)~~ → **2026-08-22 裁定済み (12 §10 表 #3)**: 全列挙を load 時厳格に統一。観測差は手編集グラフの未知値に限られ fail-loud 側に倒す。ゴールデン採取での正規データ全数 load 確認のみ残る。
-- `scope-grid.json` 欠損時の「グラフから転置して導出」フォールバックを Rust でも実装するか。dist 配布では必ず両方揃うので実質デッドパスだが、`compile` を実装しないスライス 1 では「グリッドが無い」= 設定ミスとして fatal にしたほうが診断が良い可能性がある。逸脱台帳行きかどうかの判断が要る。
+- ~~serde による構造的パースをどこまで厳格にするか (§6.3-3)~~ → **2026-08-22 裁定済み (12 §10 表 #3)**: 全列挙を load 時厳格に統一。観測差は手編集グラフの未知値に限られ fail-loud 側に倒す。**残条件だったゴールデン採取での正規データ全数 load 確認も完了** — `golden-3c3146cf-graph-dist.md` §7.1 が dist 33 ノード全件の静的照合 (違反 0) を示し、`modules/core/interface-adapter/tests/golden_parity_test.rs` が実バイトでの load 成功を回帰テストとして固定した。
+- ~~`scope-grid.json` 欠損時の「グラフから転置して導出」フォールバックを Rust でも実装するか~~ → **2026-08-22 裁定済み (12 §11)**: upstream 忠実にフォールバックする。**ただし転置の特例の所在は要注意** — `golden-3c3146cf-graph-dist.md` は compile 側 `transposeScopeGrid` (`aidlc-graph.ts:1400-1405`) に `s.phase === "initialization" || (s.scopes ?? []).includes(scope)` の特例があることを確定した一方、`golden-3c3146cf-lib.md` §8.2 は**リーダ側のフォールバック転置 `transposeScopeGridForMapping` (`aidlc-lib.ts:8618-8632`) に特例が無い**ことを確定している。§6.1-13 / 12 §4 #8 が「転置全般」を指すのか「compile 限定」なのかの裁定が要る。
 - 項目 3 のスコープに **`<harness>/scopes/aidlc-*.md` の frontmatter パーサ**が含まれるか。`validScopes()` の権威が `.md` 存在である以上、grid だけでは `Unknown scope` 判定も zero-EXECUTE 判定も成立しない。Issue #7 項目 3 の記述は 2 ファイルしか挙げていないため、スコープの明示的な拡張が必要 (本書 §4 は 3 入力前提で書いてある)。
 - `stage-graph.json` の配列順 (文書順) と `numericStageOrder` ソート順が乖離しうるケースの扱い。本家では compile が数値順にソートして emit するので実質一致するが、`nextInScopeStage` は文書順、`subgraphForScope` は再ソートという 2 経路が残っている。amadeus-ng が「読み込み時に必ず数値順に正規化する」ことを選ぶと、手編集グラフに対する挙動が本家と分岐する。仕様として文書順保持を義務づけるか、正規化を許すかの裁定 (`12-workflow-definition.md` §8 F2 は**文書順保持を暫定規範**として採用済み)。
+  → **正規データでは観測差が無いことを確定** (`golden-3c3146cf-graph-dist.md` §6 の F2 行、2026-08-22)。dist の配列順は `0.1`〜`4.7` の 33 件で `numericStageOrder` と完全一致するため、**差が出るのは手編集グラフのみ**。`golden_parity_test.rs` の `the_document_order_is_already_the_numeric_order` がこの一致を固定している。裁定そのもの (F2 を確定規範に昇格させるか) は依然オーナーマター。
 - [S] `04-stage-protocol.md:61,107` が旧名 `display_order` で computed field を記述している (実フィールドは `number`)。[S] `01-workflow-model.md` §10 の相違表にこの行が入っていないため、04 側の記述が意図的な別名なのか単なる upstream 側 doc drift の転写なのかを確認したい (実装は `number` に従えばよいので影響は低い)。
-- 本調査で参照した 2 つの実ツリー ([F] awslabs v2.2.0 / [G] amadeus fork) は **stage-0 の正式なゴールデン採取源ではない**。Issue #7 項目 0 (オーナー担当のゴールデン採取) でピン留め `3c3146cf` の `dist/claude/` が導入され次第、本書の ★ 印および [F]/[G] 由来の記述をすべて再検証する必要がある。
+- 本調査で参照した 2 つの実ツリー ([F] awslabs v2.2.0 / [G] amadeus fork) は **stage-0 の正式なゴールデン採取源ではない**。~~Issue #7 項目 0 (オーナー担当のゴールデン採取) でピン留め `3c3146cf` の `dist/claude/` が導入され次第、本書の ★ 印および [F]/[G] 由来の記述をすべて再検証する必要がある。~~ → **2026-08-22 に採取完了** (`golden-3c3146cf-graph-dist.md` / `golden-3c3146cf-lib.md`)。§0 の追記のとおり主要項目は再検証済みで、**行番号は一律ドリフトしている**ため [F] 由来の `file:line` は golden 側を正とすること。未再検証で残るのは `aidlc-lib.ts` 側の `nextInScopeStage` / `firstInScopeStageOfPhase` / `stagesInScope`（`null` / `[]` 返し）の実装逐語のみ。

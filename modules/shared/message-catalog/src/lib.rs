@@ -1,8 +1,15 @@
 //! 文言カタログ (ADR 0002 / A3) — 逐語文言とコマンド語彙写像表。emit 側と検出側を同居させる。純粋部品。
 //!
 //! 各エントリは upstream 出典 (`file:line` @ 3c3146cf) と採取状態を持つ:
-//! - `captured`: stage-0 環境の実出力で確認済み
+//! - `captured`: ピン留めソース `3c3146cf` の実バイト、ないし stage-0 環境の実出力で確認済み
 //! - `spec-quoted-only`: as-built 仕様の逐語引用が根拠 (ゴールデン採取待ち — ADR 0002 決定 5b)
+//!
+//! **2026-08-22 のゴールデン採取で、残っていた `SpecQuotedOnly` 4 件
+//! (`state::field_not_found` / `state::file_not_found` / `lock::acquire_failed` /
+//! `bolt::invalid_mode`) はピン留めソースに対し 4/4 バイト一致**することを確認した
+//! (em dash U+2014・引用符・末尾ピリオドまで含む)。4 件とも `Captured` へ昇格し、出典行は
+//! 関数の開始行ではなく**文言そのものの行**へピン留め実測で訂正してある
+//! (`docs/specs/research/golden-3c3146cf-lib.md` §11-B)。
 
 #![forbid(unsafe_code)]
 
@@ -19,8 +26,9 @@ pub enum GoldenStatus {
 pub mod state {
     use super::GoldenStatus;
 
-    /// 出典: `aidlc-lib.ts:6564` (upstream 03 §5.3)。
-    pub const FIELD_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+    /// 出典: `aidlc-lib.ts:6572` (upstream 03 §5.3)。ピン留めソース `3c3146cf` で逐語確認済み
+    /// (`:6564` は `setFieldStrict` の関数開始行であって文言の行ではなかった — 実測で訂正)。
+    pub const FIELD_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::Captured;
 
     /// `setFieldStrict` の拒否文言 — 「無言 no-op は検出不能なドリフト」の強制。
     #[must_use]
@@ -30,8 +38,9 @@ pub mod state {
         )
     }
 
-    /// 出典: `aidlc-lib.ts:6453` (upstream 03 §5.6)。
-    pub const FILE_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+    /// 出典: `aidlc-lib.ts:6456` (upstream 03 §5.6)。ピン留めソース `3c3146cf` で逐語確認済み
+    /// (`:6453` は `readStateFile` の関数開始行であって文言の行ではなかった — 実測で訂正)。
+    pub const FILE_NOT_FOUND_STATUS: GoldenStatus = GoldenStatus::Captured;
 
     /// `readStateFile` の不在時文言。
     #[must_use]
@@ -44,8 +53,8 @@ pub mod state {
 pub mod lock {
     use super::GoldenStatus;
 
-    /// 出典: `aidlc-audit.ts:543` (upstream 03 §6.8)。
-    pub const ACQUIRE_FAILED_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+    /// 出典: `aidlc-audit.ts:543` (upstream 03 §6.8)。ピン留めソース `3c3146cf` で逐語確認済み。
+    pub const ACQUIRE_FAILED_STATUS: GoldenStatus = GoldenStatus::Captured;
 
     /// acquire 予算超過の呼出側翻訳文言 (`acquireAuditLock` は `false` を返し、呼出側が
     /// この文言へ翻訳する — 11-workspace §4 の `AcquireError::Exhausted` に対応)。
@@ -113,8 +122,8 @@ pub mod lock {
 pub mod bolt {
     use super::GoldenStatus;
 
-    /// 出典: `aidlc-bolt.ts:808` (upstream 09 §5.6)。
-    pub const INVALID_MODE_STATUS: GoldenStatus = GoldenStatus::SpecQuotedOnly;
+    /// 出典: `aidlc-bolt.ts:808` (upstream 09 §5.6)。ピン留めソース `3c3146cf` で逐語確認済み。
+    pub const INVALID_MODE_STATUS: GoldenStatus = GoldenStatus::Captured;
 
     /// `set-autonomy --mode` の不正値拒否 (CLI 引数境界は 2 値厳密パース — 10 §2.2)。
     #[must_use]
