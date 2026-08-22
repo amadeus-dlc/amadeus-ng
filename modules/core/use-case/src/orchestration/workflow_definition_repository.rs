@@ -80,5 +80,5 @@ pub trait WorkflowDefinitionRepository {
     /// グラフの読取失敗 (`NotReadable`)、不正 JSON (`InvalidJson`)、scope identity の検証失敗
     /// (`ScopeFile`)、ドメイン型への写像失敗 (`Malformed`)。
     /// **グリッドの欠損・不正はエラーにしない** — 転置導出へフォールバックする (12 §4 #3)。
-    fn load(&self) -> Result<WorkflowDefinition, GraphReadError>;
+    fn find(&self) -> Result<WorkflowDefinition, GraphReadError>;
 }

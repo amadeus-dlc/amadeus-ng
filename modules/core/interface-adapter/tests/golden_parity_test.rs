@@ -84,7 +84,7 @@ fn reader() -> (WorkflowDefinitionRepositoryImpl, TempDir) {
 fn load() -> (WorkflowDefinition, TempDir) {
     let (reader, scopes) = reader();
     let definition = reader
-        .load()
+        .find()
         .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     (definition, scopes)
 }

@@ -23,6 +23,13 @@
 - 配線（実物と fake の差し替え）は **composition root** が行う。
 - use-case 層には trait を置かない。置くと「ユースケースが消費しないポート」がポート表に居座り、Gateway 責務の分類が濁る。
 
+### 2b. Repository のメソッド語彙（j5ik2o-ddd-repository-design が正典）
+
+- 使ってよい動詞: **`find_by_id` / `find`（単一集約の named retrieval）/ `save` / `remove`** ＋ **ドメイン概念を表す named retrievals**。`load` / `get` / `fetch` 等は使わない。
+- `find_by_...` の無秩序な増殖は禁止（複雑な検索・画面向け読取は read model 側 — ただし本リポジトリは CQRS 基盤を導入しないので、まずは「ドメイン概念を表す named retrieval」で表現できるかを考える）。
+- インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find` の not-found は契約上 fatal な `Err`、grid 欠損は転置導出 — 12 §4）。
+- **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（`set_field` 等）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
+
 ### 2. Repository 名 = 集約名 + Repository
 
 集約は各コンテキスト仕様の宣言表が持っている（[`01-domain-model.md`](../specs/01-domain-model.md) §3 の集約候補、[`11-workspace.md`](../specs/11-workspace.md) §2.1、[`12-workflow-definition.md`](../specs/12-workflow-definition.md) §2.1）。Repository はそこに載っている集約ルート名をそのまま冠する。

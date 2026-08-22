@@ -414,7 +414,7 @@ impl WorkflowDefinitionRepositoryImpl {
 }
 
 impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
-    fn load(&self) -> Result<WorkflowDefinition, GraphReadError> {
+    fn find(&self) -> Result<WorkflowDefinition, GraphReadError> {
         let graph = self.load_graph()?;
         let grid = self
             .load_grid()

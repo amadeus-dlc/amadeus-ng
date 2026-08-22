@@ -31,7 +31,7 @@ impl InMemoryWorkflowDefinitionRepository {
 }
 
 impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
-    fn load(&self) -> Result<WorkflowDefinition, GraphReadError> {
+    fn find(&self) -> Result<WorkflowDefinition, GraphReadError> {
         Ok(self.definition.clone())
     }
 }
@@ -69,8 +69,8 @@ mod tests {
     #[test]
     fn load_returns_the_seeded_definition_every_time() {
         let reader = InMemoryWorkflowDefinitionRepository::new(definition());
-        let first = reader.load().unwrap();
-        let second = reader.load().unwrap();
+        let first = reader.find().unwrap();
+        let second = reader.find().unwrap();
         assert_eq!(first, second);
         assert_eq!(first.valid_scopes(), ["feature"]);
         assert_eq!(reader.definition(), &first);

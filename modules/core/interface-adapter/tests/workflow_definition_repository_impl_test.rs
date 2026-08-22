@@ -211,8 +211,8 @@ fn slugs(nodes: &[&core_domain::workflow_definition::StageNode]) -> Vec<String> 
         .collect()
 }
 
-fn load(fixture: &Fixture) -> WorkflowDefinition {
-    fixture.reader().load().unwrap()
+fn find_definition(fixture: &Fixture) -> WorkflowDefinition {
+    fixture.reader().find().unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +222,7 @@ fn load(fixture: &Fixture) -> WorkflowDefinition {
 #[test]
 fn a_full_read_maps_every_field_group_onto_the_domain_model() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     assert_eq!(definition.graph().len(), 5);
     let node = definition.graph().get(&slug("code-generation")).unwrap();
@@ -293,7 +293,7 @@ fn a_full_read_maps_every_field_group_onto_the_domain_model() {
 #[test]
 fn a_full_read_wires_up_the_five_predicates() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     // valid_scopes の権威は `.md` の存在。グリッド専用の `ghost` は現れない。
     assert_eq!(definition.valid_scopes(), ["bugfix", "express", "feature"]);
@@ -372,7 +372,7 @@ fn a_full_read_wires_up_the_five_predicates() {
 #[test]
 fn b_a_missing_stage_graph_is_fatal() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     let GraphReadError::NotReadable {
         path, env_override, ..
     } = error
@@ -388,7 +388,7 @@ fn b_the_env_override_flag_follows_the_injected_path() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
     let missing = fixture.data_dir.join("pinned-graph.json");
     let reader = fixture.reader().with_stage_graph_override(missing.clone());
-    let error = reader.load().unwrap_err();
+    let error = reader.find().unwrap_err();
     let GraphReadError::NotReadable {
         path, env_override, ..
     } = error
@@ -406,7 +406,7 @@ fn b_the_env_override_flag_follows_the_injected_path() {
 #[test]
 fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     assert!(
         matches!(error, GraphReadError::InvalidJson { ref path, .. } if *path == fixture.graph_path().display().to_string()),
         "expected InvalidJson, got {error:?}"
@@ -416,7 +416,7 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
 #[test]
 fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
     let fixture = Fixture::new(Some("{\"stages\": []}"), Some(GRID_JSON), &scope_files());
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     assert!(matches!(error, GraphReadError::InvalidJson { .. }));
 }
 
@@ -427,7 +427,7 @@ fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
 #[test]
 fn d_a_missing_scope_grid_falls_back_to_the_transpose_instead_of_failing() {
     let fixture = Fixture::new(Some(GRAPH_JSON), None, &scope_files());
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     // 列はノードが宣言したスコープ名の和集合。`ghost` はグリッド由来なので消える。
     assert_eq!(definition.grid().scope_names(), ["bugfix", "feature"]);
@@ -457,7 +457,7 @@ fn d_a_missing_scope_grid_falls_back_to_the_transpose_instead_of_failing() {
 #[test]
 fn d_an_unreadable_scope_grid_falls_back_the_same_way() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some("{ not json"), &scope_files());
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
     assert_eq!(definition.grid().scope_names(), ["bugfix", "feature"]);
     assert_eq!(
         definition
@@ -474,7 +474,7 @@ fn d_an_unreadable_scope_grid_falls_back_the_same_way() {
 #[test]
 fn e_an_identity_file_without_a_grid_column_is_a_zero_execute_scope_not_an_unknown_one() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     assert!(definition.is_valid_scope("express"));
     assert!(!definition.grid().contains_scope("express"));
@@ -502,7 +502,7 @@ fn e_an_identity_file_without_a_grid_column_is_a_zero_execute_scope_not_an_unkno
 #[test]
 fn f_a_grid_column_without_an_identity_file_is_invisible_to_the_runtime() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     // 列は読めているが、有効スコープではない。
     assert!(definition.grid().contains_scope("ghost"));
@@ -566,7 +566,7 @@ fn g_unknown_fields_are_ignored_so_future_versions_and_plugins_stay_readable() {
             "---\nname: feature\nunknown_key: whatever\n---\n",
         )],
     );
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     let node = definition.graph().get(&slug("acme-scan")).unwrap();
     assert_eq!(node.plugin(), Some("acme"));
@@ -597,7 +597,7 @@ fn the_reader_preserves_document_order_and_keeps_the_two_ordering_paths_distinct
         None,
         &[("feature", "---\nname: feature\n---\n")],
     );
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
 
     // 文書順はディスクの配列順そのまま。
     let document_order: Vec<&str> = definition
@@ -639,7 +639,7 @@ fn an_invalid_skeleton_value_is_rejected_with_the_verbatim_wording() {
         Some(GRID_JSON),
         &[("feature", "---\nname: feature\nskeleton: enabled\n---\n")],
     );
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     let GraphReadError::ScopeFile { message } = error else {
         panic!("expected ScopeFile, got {error:?}");
     };
@@ -660,7 +660,7 @@ fn a_scope_file_without_a_name_is_rejected() {
         Some(GRID_JSON),
         &[("feature", "---\ndepth: standard\n---\n")],
     );
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     let GraphReadError::ScopeFile { message } = error else {
         panic!("expected ScopeFile, got {error:?}");
     };
@@ -680,7 +680,7 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
             ("feature-alias", "---\nname: feature\n---\n"),
         ],
     );
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     // upstream 逐語 (aidlc-lib.ts:8666-8668 @3c3146cf) の形を pin する
     assert!(
         matches!(error, GraphReadError::ScopeFile { ref message }
@@ -698,7 +698,7 @@ fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );
-    let definition = reader.load().unwrap();
+    let definition = reader.find().unwrap();
     assert!(definition.valid_scopes().is_empty());
     // グリッド列は読めているが、権威が無いので全スコープが未知になる。
     assert!(definition.grid().contains_scope("feature"));
@@ -718,7 +718,7 @@ fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
     ]
     "#;
     let fixture = Fixture::new(Some(graph), None, &[]);
-    let error = fixture.reader().load().unwrap_err();
+    let error = fixture.reader().find().unwrap_err();
     assert!(
         matches!(error, GraphReadError::Malformed { ref message } if message.contains("unknown phase")),
         "{error:?}"
@@ -734,7 +734,7 @@ fn the_reserved_agent_team_mode_is_carried_through_instead_of_being_defaulted() 
     ]
     "#;
     let fixture = Fixture::new(Some(graph), None, &[]);
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
     let node = definition.graph().get(&slug("s")).unwrap();
     assert_eq!(node.mode(), StageMode::AgentTeam);
     assert!(node.mode().is_reserved());
@@ -757,7 +757,7 @@ fn grid_cells_that_cannot_be_represented_collapse_to_the_third_value_not_to_skip
         Some(grid),
         &[("feature", "---\nname: feature\n---\n")],
     );
-    let definition = load(&fixture);
+    let definition = find_definition(&fixture);
     assert_eq!(
         definition.grid().action("feature", &slug("intent-capture")),
         Some(PlanAction::Execute)

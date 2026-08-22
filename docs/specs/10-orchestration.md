@@ -74,9 +74,9 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 | ポート | 責務 | 実装（Gateway） |
 | --- | --- | --- |
-| `WorkflowExecutionRepository` | 集約 `WorkflowExecution` の load / save（**B-2 で設計**）。状態ファイル（`aidlc-state.md`）という格納形式と、その読取・アトミック書込・W_OK 書込バリアは**この Repository 実装の内部詳細**であり、ポート面には現れない。**I8（`next` は読み取り専用）はこのポートを `Next` に注入しないことで型強制する** — Controller が Repository で load した集約を `Next` へ `&` 参照で渡し、所有権と可変性で読取専用を保証する（CQRS の読取モデル分離は使わない） | workspace コンテキストの公開サービスへ委譲 |
+| `WorkflowExecutionRepository` | 集約 `WorkflowExecution` の `find_by_id` / `save`（**B-2 で設計** — メソッド語彙は j5ik2o-ddd-repository-design の正典 {findById, save, remove ＋ ドメイン概念の named retrieval} に従う）。状態ファイル（`aidlc-state.md`）という格納形式と、その読取・アトミック書込・W_OK 書込バリアは**この Repository 実装の内部詳細**であり、ポート面には現れない。**I8（`next` は読み取り専用）はこのポートを `Next` に注入しないことで型強制する** — Controller が Repository で取得した集約を `Next` へ `&` 参照で渡し、所有権と可変性で読取専用を保証する（CQRS の読取モデル分離は使わない） | workspace コンテキストの公開サービスへ委譲 |
 | `AuditLedgerRepository` | 集約 `AuditLedger`（[`11-workspace.md`](11-workspace.md) §2.1）の追記と射影読取（**B-1 で設計**）。audit-first の追記（emit 失敗で状態書込を中止）と、`humanActedSinceGate` 等の述語用の射影読取を 1 つの Repository が担う（追記面と読取面にポートを分けない） | 同上 |
-| `WorkflowDefinitionRepository` | 集約 `WorkflowDefinition`（[`12-workflow-definition.md`](12-workflow-definition.md) §2.1）の load。**Published Language のコンパイル成果物なので `save` は持たない**。3 入力の形状・読込失敗態度・述語 5 種の規範は 12（workflow-definition スライス 1）が所有 | canon-json コーデックを内部に持つ `WorkflowDefinitionRepositoryImpl` |
+| `WorkflowDefinitionRepository` | 集約 `WorkflowDefinition`（[`12-workflow-definition.md`](12-workflow-definition.md) §2.1）の `find`（ハーネス設置あたり単一の集約なので id を取らない named retrieval）。**Published Language のコンパイル成果物なので `save` は持たない**。3 入力の形状・読込失敗態度・述語 5 種の規範は 12（workflow-definition スライス 1）が所有 | canon-json コーデックを内部に持つ `WorkflowDefinitionRepositoryImpl` |
 | `WorkspaceLock` | `withAuditLock` 相当（再入・reap は workspace 所有）。集約ではなく**並行性サービス**なので Repository ではない | workspace の供給サービス |
 | マーカー永続化 Gateway（非 Repository。名称は実装時に gateway-taxonomy 準拠で確定） | active-directive marker / turn マーカー / steering MAC キー（`.aidlc-steering-token-key` — I8 の例外 2 つの書込面）のマシンローカル書き込み。原則 advisory — 失敗は throw しない。**例外**: Copilot-commit アームのみ発行失敗が work directive の発行自体を拒否する fail-closed（Copilot ハーネスは D5 の初期スコープ外だが、ポート契約として記録） | Gateway |
 
@@ -105,7 +105,7 @@ E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../fo
 | I5 | stale re-report（カーソル通過済み completed への再報告）は何もコミットせず冪等 done | E4 | `engine_loop::stale_rereport_yields_done`＋`engine_loop::stale_rereport_frame`（フレーム条件 — 「何もコミットしない」を prev 状態スナップショットで検査） |
 | I6 | アクティブ（in-progress / awaiting-approval / revising）なステージは高々 1 つ | E4 | `engine_loop::at_most_one_active`（upstream 未明文化の派生不変条件。**暫定規範**として採用し、A7 追従で反例が出たら降格） |
 | I7 | gate-lifecycle の checkbox 前提は厳密（`awaiting-approval`←`in-progress`、`rejected`←`in-progress\|awaiting-approval`、`revised`←`revising`） | E2+E4 | `engine_loop::gate_lifecycle_preconditions`（prev 状態スナップショット経由でガード除去 mutation を検出） |
-| I8 | `next` は読み取り専用（例外は steering MAC キーと active-directive marker の 2 つのみ、いずれも advisory） | **E1**+E5 | `Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が load 済みの集約を `&` 参照で渡す構成で型強制（§3） |
+| I8 | `next` は読み取り専用（例外は steering MAC キーと active-directive marker の 2 つのみ、いずれも advisory） | **E1**+E5 | `Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が取得済みの集約を `&` 参照で渡す構成で型強制（§3） |
 | I9 | 状態遷移はエンジン所有 11 動詞のみ。外部からの直接呼び出しは PID 束縛マーカーで拒否 | E1+E3 | 内側は集約メソッドの可視性、外側（マルチコール経由）は guard |
 | I10 | `--single` は本流を進められない（advance / approve / complete-workflow に**構造的に到達不能**、synthetic workflow id は本流の完了証跡を満たさない） | **E1** | `SingleStageRun` ユースケースには遷移ポート自体を注入しない |
 | I11 | autonomous への昇格のみ human presence を要する（降格は不要）。**同秒かつ別シャード**の HUMAN_TURN とゲート解決は fail-closed（同一シャードは pos 順で判定） | E2+E3 | `AutonomyMode` パーサ＋`human_acted_since_gate` 述語。E4 は audit_lock モデル（workspace 第一陣）と合流 |
