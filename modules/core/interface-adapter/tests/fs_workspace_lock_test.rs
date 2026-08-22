@@ -6,9 +6,9 @@
 //! upstream `acquireAuditLock` / reap 契約 (03 §6.8, 11-workspace §4・W2)。
 #![allow(clippy::unwrap_used)]
 
-use core_domain::workspace::lock_identity::LockIdentity;
-use core_interface_adapter::workspace::fs_workspace_lock::FsWorkspaceLock;
-use core_use_case::workspace::workspace_lock::{AcquireBudget, AcquireError, WorkspaceLock};
+use core_domain::workspace::LockIdentity;
+use core_interface_adapter::workspace::FsWorkspaceLock;
+use core_use_case::workspace::{AcquireBudget, AcquireError, WorkspaceLock};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;

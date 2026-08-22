@@ -13,12 +13,9 @@
 //!   (復元が EEXIST で失敗すれば第三者が既に新しいロックを握っているので私有 dir を破棄する)。
 //! - release は識別子ごとの深度カウンタで管理し、深度 0 に戻るときのみ rm -rf する。
 
-use core_domain::workspace::lock_identity::LockIdentity;
-use core_domain::workspace::lock_protocol::reap_eligible;
-use core_use_case::workspace::clock::Clock;
-use core_use_case::workspace::process_probe::ProcessProbe;
-use core_use_case::workspace::workspace_lock::{
-    AcquireBudget, AcquireError, LockGuard, WorkspaceLock,
+use core_domain::workspace::{LockIdentity, reap_eligible};
+use core_use_case::workspace::{
+    AcquireBudget, AcquireError, Clock, LockGuard, ProcessProbe, WorkspaceLock,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -293,7 +290,7 @@ impl WorkspaceLock for FsWorkspaceLock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::testing::{FakeClock, FakeProcessProbe};
+    use crate::workspace::{FakeClock, FakeProcessProbe};
     use std::time::Duration;
     use tempfile::tempdir;
 

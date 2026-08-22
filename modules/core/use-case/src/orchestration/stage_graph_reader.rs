@@ -15,11 +15,11 @@
 //!   スコープ / #6 ランタイム不可視) であり、どちらもエラーにしない。
 //! - いずれの失敗でも **stdout に何も書かない** (#10 — half-emitted directive を出さない)。
 //!
-//! 実装は `core-interface-adapter` の Gateway (`orchestration::fs_stage_graph_reader` /
-//! `orchestration::memory::stage_graph_reader`)。パス解決と env オーバライドの意味論、
+//! 実装は `core-interface-adapter` の Gateway (`orchestration::FsStageGraphReader` /
+//! `orchestration::InMemoryStageGraphReader`)。パス解決と env オーバライドの意味論、
 //! および逐語文言の組み立ては Gateway 側に閉じる (12 §6)。ポートは**材料だけ**を運ぶ。
 
-use core_domain::workflow_definition::workflow_definition::WorkflowDefinition;
+use core_domain::workflow_definition::WorkflowDefinition;
 
 /// 3 入力の読取失敗。逐語文言そのものは持たず、**文言を組み立てる材料**を運ぶ
 /// (レンダリングはアダプタ層 — 12 §6)。

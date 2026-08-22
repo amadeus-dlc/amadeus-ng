@@ -38,7 +38,7 @@ const REAP_IDENTS: [&str; 2] = ["stale_ms", "held_ticks"];
 const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished / is_active) を使う。\
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
 `// amadeus-lint: allow(checkbox-vocabulary) — 理由` で理由を明示する";
-const REAP_HELP: &str = "reap 適格判定は core_domain::workspace::lock_protocol::reap_eligible に\
+const REAP_HELP: &str = "reap 適格判定は core_domain::workspace::reap_eligible に\
 委譲する (境界規約 `>` の単一実装)";
 const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アクセサ \
 (as_str / message / フィールド名) と必要なら new() を公開する — docs/memory/field-visibility.md";
