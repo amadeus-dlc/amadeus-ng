@@ -1,9 +1,7 @@
 //! `StateFileStore` の in-memory 実装 (テスト用)。W_OK バリアは `mark_read_only` で明示的に
 //! シミュレートする。
 
-use core_use_case::workspace::state_file_store::{
-    StateFileReadError, StateFileStore, StateFileWriteError,
-};
+use core_use_case::workspace::{StateFileReadError, StateFileStore, StateFileWriteError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 

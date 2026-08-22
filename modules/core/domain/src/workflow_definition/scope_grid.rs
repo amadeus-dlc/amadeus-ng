@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::stage_graph::StageGraph;
 use super::stage_slug::StageSlug;
-use crate::orchestration::plan_action::PlanAction;
+use crate::orchestration::PlanAction;
 
 /// scope 名 → (stage slug → `PlanAction`)。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -105,11 +105,9 @@ impl ScopeGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_definition::execution_kind::ExecutionKind;
-    use crate::workflow_definition::phase::PhaseId;
-    use crate::workflow_definition::stage_mode::StageMode;
-    use crate::workflow_definition::stage_node::{StageNode, StageNodeBuilder};
-    use crate::workflow_definition::stage_number::StageNumber;
+    use crate::workflow_definition::{
+        ExecutionKind, PhaseId, StageMode, StageNode, StageNodeBuilder, StageNumber,
+    };
     use proptest::prelude::*;
 
     fn node(slug: &str, number: &str, phase: PhaseId, scopes: &[&str]) -> StageNode {

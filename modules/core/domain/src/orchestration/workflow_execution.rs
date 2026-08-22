@@ -12,7 +12,7 @@
 use super::autonomy_mode::AutonomyMode;
 use super::jump_direction::JumpDirection;
 use super::plan_action::PlanAction;
-use crate::workspace::checkbox::CheckboxState;
+use crate::workspace::CheckboxState;
 
 /// エンジンが放出する信号の観測射影 (モデルの `DirectiveKind` サブセット)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

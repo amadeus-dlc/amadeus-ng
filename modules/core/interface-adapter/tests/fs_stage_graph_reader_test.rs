@@ -7,16 +7,13 @@
 //! (f) 列あり × `.md` なし = `valid_scopes` に不出現 / (g) 未知フィールド入り JSON が読めること。
 #![allow(clippy::unwrap_used)]
 
-use core_domain::orchestration::plan_action::PlanAction;
-use core_domain::workflow_definition::phase::PhaseId;
-use core_domain::workflow_definition::review_class::ReviewClass;
-use core_domain::workflow_definition::stage_mode::StageMode;
-use core_domain::workflow_definition::stage_node::{BrownfieldGreenfield, RuleScope};
-use core_domain::workflow_definition::stage_slug::StageSlug;
-use core_domain::workflow_definition::workflow_definition::WorkflowDefinition;
-use core_domain::workspace::checkbox::CheckboxState;
-use core_interface_adapter::orchestration::fs_stage_graph_reader::FsStageGraphReader;
-use core_use_case::orchestration::stage_graph_reader::{GraphReadError, StageGraphReader};
+use core_domain::orchestration::PlanAction;
+use core_domain::workflow_definition::{
+    BrownfieldGreenfield, PhaseId, ReviewClass, RuleScope, StageMode, StageSlug, WorkflowDefinition,
+};
+use core_domain::workspace::CheckboxState;
+use core_interface_adapter::orchestration::FsStageGraphReader;
+use core_use_case::orchestration::{GraphReadError, StageGraphReader};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -207,7 +204,7 @@ fn slug(s: &str) -> StageSlug {
     StageSlug::parse(s).unwrap()
 }
 
-fn slugs(nodes: &[&core_domain::workflow_definition::stage_node::StageNode]) -> Vec<String> {
+fn slugs(nodes: &[&core_domain::workflow_definition::StageNode]) -> Vec<String> {
     nodes
         .iter()
         .map(|n| n.slug().as_str().to_string())

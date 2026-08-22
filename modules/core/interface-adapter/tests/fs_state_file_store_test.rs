@@ -2,8 +2,8 @@
 //! (research workspace-state-intent §1.5 — read-only な `aidlc-state.md` は意図的な書込バリア)。
 #![allow(clippy::unwrap_used)]
 
-use core_interface_adapter::workspace::fs_state_file_store::FsStateFileStore;
-use core_use_case::workspace::state_file_store::{StateFileStore, StateFileWriteError};
+use core_interface_adapter::workspace::FsStateFileStore;
+use core_use_case::workspace::{StateFileStore, StateFileWriteError};
 use std::os::unix::fs::PermissionsExt;
 use tempfile::tempdir;
 

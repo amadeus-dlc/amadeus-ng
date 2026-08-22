@@ -9,7 +9,7 @@
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used)]
 
-use core_domain::workspace::lock_protocol::LockProtocol;
+use core_domain::workspace::LockProtocol;
 use serde_json::Value;
 
 /// `audit_lock.qnt` の `THRESHOLD` (モデル定数そのもの)。

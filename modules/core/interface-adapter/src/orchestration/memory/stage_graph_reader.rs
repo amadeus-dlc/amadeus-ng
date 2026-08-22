@@ -4,8 +4,8 @@
 //! Gateway (12-workflow-definition §9-3)。読取モデルは構築後 immutable なので、`load` は
 //! 保持している `WorkflowDefinition` の複製をそのまま返す。
 
-use core_domain::workflow_definition::workflow_definition::WorkflowDefinition;
-use core_use_case::orchestration::stage_graph_reader::{GraphReadError, StageGraphReader};
+use core_domain::workflow_definition::WorkflowDefinition;
+use core_use_case::orchestration::{GraphReadError, StageGraphReader};
 
 /// 組み立て済みの `WorkflowDefinition` を保持するだけの `StageGraphReader`。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,15 +37,10 @@ impl StageGraphReader for InMemoryStageGraphReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::workflow_definition::execution_kind::ExecutionKind;
-    use core_domain::workflow_definition::phase::PhaseId;
-    use core_domain::workflow_definition::scope_grid::ScopeGrid;
-    use core_domain::workflow_definition::scope_metadata::ScopeMetadata;
-    use core_domain::workflow_definition::stage_graph::StageGraph;
-    use core_domain::workflow_definition::stage_mode::StageMode;
-    use core_domain::workflow_definition::stage_node::StageNodeBuilder;
-    use core_domain::workflow_definition::stage_number::StageNumber;
-    use core_domain::workflow_definition::stage_slug::StageSlug;
+    use core_domain::workflow_definition::{
+        ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder,
+        StageNumber, StageSlug,
+    };
     use std::collections::BTreeMap;
 
     fn definition() -> WorkflowDefinition {

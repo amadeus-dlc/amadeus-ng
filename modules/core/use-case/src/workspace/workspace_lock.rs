@@ -1,13 +1,14 @@
 //! `WorkspaceLock` ポート — 11-workspace §3 `LockService` の最小面。acquire（予算つき）/
-//! 再入 / 解放 / reap を供給する。identity は `core_domain::workspace::lock_identity::LockIdentity`
+//! 再入 / 解放 / reap を供給する。identity は `core_domain::workspace::LockIdentity`
 //! (upstream `auditLockIdentity` — 2/3 成分の keying 規約はドメイン層が既に強制している)。
 //! 実装は `core-interface-adapter` の Gateway (`fs_workspace_lock`)。
 
-use core_domain::workspace::lock_identity::LockIdentity;
+use core_domain::workspace::LockIdentity;
 use std::time::Duration;
 
-/// acquire の retry 予算 (回数 × 間隔)。reap による即時再試行は予算を消費しない
-/// (upstream `acquireAuditLock(maxRetries, retryMs)` — 03 §6.8)。
+/// acquire の retry 予算 (回数 × 間隔)。reap 成功時は同一周回でインライン mkdir を 1 回
+/// 試み、成功なら sleep なしで即取得、失敗なら通常の sleep + 予算消費へ落ちる — 上限
+/// `max_retries` は常に有効でライブロックしない (upstream `acquireAuditLock` :7147-7169)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AcquireBudget {
     max_retries: u32,

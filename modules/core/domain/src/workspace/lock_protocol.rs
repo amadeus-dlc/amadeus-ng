@@ -52,15 +52,37 @@ pub struct LockProtocol {
     threshold: u32,
 }
 
-/// reap 適格性 (audit_lock.qnt `actReap` のガードそのもの) — 死んだ所有者、または保持経過が
-/// しきい値を**厳密に**超えた保持者だけが奪取可能。W2 (生きた閾値以内の保持者からは決して
-/// 奪わない) の単一実装であり、モデル (`LockProtocol::reap`) と実 Gateway
-/// (`FsWorkspaceLock::try_reap`) の両方がこの関数を呼ぶ — 境界規約 (`>`) を 2 箇所に
-/// 重複させないための Tell-Don't-Ask 装置。時間の単位は呼出側で揃える (モデルは tick、
-/// 実 Gateway は ms)。
+/// reap 適格性 — upstream `reapStaleLock` のスタンプ済み枝の判定そのもの。W2 (生きた閾値
+/// 以内の保持者からは決して奪わない) の単一実装であり、モデル (`LockProtocol::reap`) と実
+/// Gateway (`FsWorkspaceLock::try_reap`) の両方がこの関数を呼ぶ — 境界規約 (`>`) と
+/// ポリシーフラグの読み方を 2 箇所に重複させないための Tell-Don't-Ask 装置。時間の単位は
+/// 呼出側で揃える (モデルは tick、実 Gateway は ms)。
+///
+/// upstream `aidlc-lib.ts` `reapStaleLock` (`:7036-7040` @ `3c3146cf`) の逐語:
+///
+/// ```text
+/// 7036    } else if (ownerAlive(owner)) {
+/// 7037      if (!owner.reapLiveOwnerAfterStale) return false;
+/// 7038      // Live owner: only reclaim if its stamp is over-age (a wedged-but-running
+/// 7039      // holder). A fresh, live holder is never robbed.
+/// 7040      if (lockAcquireEpochMs() - owner.startedAtMs <= lockStaleMs()) return false;
+/// ```
+///
+/// すなわち 3 枝:
+/// - **所有者が死亡**: `else if (ownerAlive(owner))` に入らないためガードが一切無く、
+///   フラグも経過時間も見ずに**無条件で適格**。
+/// - **所有者が生存 ∧ `reapLiveOwnerAfterStale == false`**: `:7037` で即 `false` —
+///   経過時間によらず**不適格** (長時間ジョブが宣言する「私を奪うな」ポリシー)。
+/// - **所有者が生存 ∧ フラグ true**: 経過が閾値を**厳密に**超えたときのみ適格 (`:7040` は
+///   `<=` で早期 return するので `>` のみが通る)。
 #[must_use]
-pub const fn reap_eligible(owner_alive: bool, held_elapsed: u64, stale_threshold: u64) -> bool {
-    !owner_alive || held_elapsed > stale_threshold
+pub const fn reap_eligible(
+    owner_alive: bool,
+    reap_live_owner_after_stale: bool,
+    held_elapsed: u64,
+    stale_threshold: u64,
+) -> bool {
+    !owner_alive || (reap_live_owner_after_stale && held_elapsed > stale_threshold)
 }
 
 impl LockProtocol {
@@ -300,6 +322,13 @@ impl LockProtocol {
 
     /// reap (rename CAS の抽象): 死んだ所有者 or 閾値**厳密超過**のみ。生きている閾値以内の
     /// 保持者からは決して奪わない (`actReap`)。
+    ///
+    /// **モデルの簡約**: `audit_lock.qnt` は保持者のポリシーフラグ
+    /// (`reapLiveOwnerAfterStale`) を状態に持たない — 全保持者が既定値 `true` を宣言した
+    /// 世界だけを検査する簡約モデルである (upstream `acquireAuditLock` の既定引数も `true`)。
+    /// したがってここは `reap_eligible` に常に `true` を渡す。フラグ `false` の枝
+    /// (生存保持者を経過時間によらず守る) は実 Gateway (`FsWorkspaceLock::try_reap`) 側の
+    /// 責務であり、モデル・ITF 準拠テストの対象外。
     /// # Errors
     ///
     /// プロセス未知・非生存・ロック不在 (`LockNotHeld`)・自ロックへの reap
@@ -316,6 +345,7 @@ impl LockProtocol {
         let owner_alive = self.alive[owner];
         if !reap_eligible(
             owner_alive,
+            true, // モデルはフラグ常時 true の簡約 (audit_lock.qnt は本フラグを持たない)
             u64::from(self.held_ticks),
             u64::from(self.threshold),
         ) {
@@ -404,12 +434,30 @@ mod tests {
     }
 
     #[test]
-    fn reap_eligibility_is_dead_owner_or_strict_threshold_excess() {
-        // 生存 ∧ ちょうど閾値 → 不適格 (厳密超過のみ)
-        assert!(!reap_eligible(true, 3, 3));
-        assert!(reap_eligible(true, 4, 3));
-        // 死んだ所有者は経過によらず即適格
-        assert!(reap_eligible(false, 0, 3));
+    fn reap_eligibility_follows_the_three_upstream_branches() {
+        // (1) 生存 ∧ フラグ true: 厳密超過のみ適格 (upstream :7040 は `<=` で早期 return)
+        assert!(!reap_eligible(true, true, 2, 3));
+        assert!(
+            !reap_eligible(true, true, 3, 3),
+            "ちょうど閾値は超過ではない"
+        );
+        assert!(reap_eligible(true, true, 4, 3));
+
+        // (2) 生存 ∧ フラグ false: 経過によらず不適格 (upstream :7037)
+        assert!(!reap_eligible(true, false, 2, 3));
+        assert!(!reap_eligible(true, false, 3, 3));
+        assert!(
+            !reap_eligible(true, false, 4, 3),
+            "フラグ false は閾値超過でも守られる"
+        );
+        assert!(!reap_eligible(true, false, u64::MAX, 3));
+
+        // (3) 死亡: フラグ・経過を一切見ずに無条件で適格 (upstream の死亡枝にガードは無い)
+        assert!(reap_eligible(false, true, 0, 3));
+        assert!(
+            reap_eligible(false, false, 0, 3),
+            "死んだ保持者はフラグ false でも奪える"
+        );
     }
 
     #[test]

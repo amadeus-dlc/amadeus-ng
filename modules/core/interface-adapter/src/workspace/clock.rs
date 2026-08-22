@@ -1,6 +1,6 @@
 //! `Clock` ポートの実時計実装。
 
-use core_use_case::workspace::clock::Clock;
+use core_use_case::workspace::Clock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// `SystemTime::now()` に基づく実時計。
