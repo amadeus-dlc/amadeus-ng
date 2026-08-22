@@ -1,24 +1,26 @@
-//! `StageGraphReader` の in-memory 実装 (テスト用)。
+//! `WorkflowDefinitionRepository` の in-memory 実装 (テスト用)。
 //!
 //! 3 入力を固定値として与え、ファイル I/O 抜きで述語 5 種のユースケーステストを回すための
-//! Gateway (12-workflow-definition §9-3)。読取モデルは構築後 immutable なので、`load` は
+//! Gateway (12-workflow-definition §9-3)。集約は構築後 immutable なので、`load` は
 //! 保持している `WorkflowDefinition` の複製をそのまま返す。
+//!
+//! テストダブルなので `Impl` 接尾辞は付けない (docs/memory/gateway-taxonomy.md)。
 
 use core_domain::workflow_definition::WorkflowDefinition;
-use core_use_case::orchestration::{GraphReadError, StageGraphReader};
+use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
 
-/// 組み立て済みの `WorkflowDefinition` を保持するだけの `StageGraphReader`。
+/// 組み立て済みの `WorkflowDefinition` を保持するだけの `WorkflowDefinitionRepository`。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InMemoryStageGraphReader {
+pub struct InMemoryWorkflowDefinitionRepository {
     definition: WorkflowDefinition,
 }
 
-impl InMemoryStageGraphReader {
+impl InMemoryWorkflowDefinitionRepository {
     /// 組み立て済みの読取モデルを固定値として据える。`load` はこれを複製して返すだけで、
     /// 3 入力のパースも失敗注入も行わない (失敗態度の検証は `fs_stage_graph_reader` 側)。
     #[must_use]
-    pub const fn new(definition: WorkflowDefinition) -> InMemoryStageGraphReader {
-        InMemoryStageGraphReader { definition }
+    pub const fn new(definition: WorkflowDefinition) -> InMemoryWorkflowDefinitionRepository {
+        InMemoryWorkflowDefinitionRepository { definition }
     }
 
     /// 保持している読取モデルへの参照 (テストの組み立て確認用)。
@@ -28,7 +30,7 @@ impl InMemoryStageGraphReader {
     }
 }
 
-impl StageGraphReader for InMemoryStageGraphReader {
+impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
     fn load(&self) -> Result<WorkflowDefinition, GraphReadError> {
         Ok(self.definition.clone())
     }
@@ -66,7 +68,7 @@ mod tests {
 
     #[test]
     fn load_returns_the_seeded_definition_every_time() {
-        let reader = InMemoryStageGraphReader::new(definition());
+        let reader = InMemoryWorkflowDefinitionRepository::new(definition());
         let first = reader.load().unwrap();
         let second = reader.load().unwrap();
         assert_eq!(first, second);

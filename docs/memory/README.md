@@ -10,3 +10,5 @@
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準（未リント化） |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由 | `cargo lint`（no-public-fields） |
 | [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由 | `unreachable_pub`（私有 mod 化で実効化）+ `cargo lint` ルール化予定 |
+| [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない | レビュー基準（未リント化。候補は同文書） |
+| [use-case-rules.md](use-case-rules.md) | DIP（trait のみ依存）・スタティックバインディング既定・ユースケース間呼出禁止 | Cargo クレート分離 + `cargo lint` ルール化予定 |

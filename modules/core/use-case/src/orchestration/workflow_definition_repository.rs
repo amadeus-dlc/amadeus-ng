@@ -1,8 +1,17 @@
-//! `StageGraphReader` ポート — 10-orchestration §3 のポート表に対応し、規範は
-//! 12-workflow-definition §4 / §5 が所有する。Published Language の 3 入力
+//! `WorkflowDefinitionRepository` ポート — 集約 `WorkflowDefinition` (12-workflow-definition
+//! §2.1) の **load 専用 Repository**。集約は Published Language のコンパイル成果物であり
+//! 本システムからは書き換えないため `save` を持たない (書き側 = compile はスライス 2 の
+//! 別コンテキスト)。10-orchestration §3 のポート表に対応し、規範は 12-workflow-definition
+//! §4 / §5 が所有する。
+//!
+//! Published Language の 3 入力
 //! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
-//! **1 つの Gateway で** `WorkflowDefinition` に束ねて供給する (compile が graph と grid を
-//! lockstep で出すため、片方だけ新しい状態は upstream でも想定外)。
+//! **1 つの Repository で** 集約 `WorkflowDefinition` に束ねて供給する (compile が graph と
+//! grid を lockstep で出すため、片方だけ新しい状態は upstream でも想定外)。
+//!
+//! 名前は「集約名＋Repository」規則に従う (docs/memory/gateway-taxonomy.md)。格納形式
+//! (`stage-graph.json` というファイル名) は Repository **実装**の内部詳細であり、ポート名に
+//! 現れてはならない。
 //!
 //! **失敗態度は 3 入力で意図的に非対称** (12 §4。この非対称そのものが観測可能な契約で、
 //! 「より厳格にする」方向の改変も逸脱になる):
@@ -15,9 +24,11 @@
 //!   スコープ / #6 ランタイム不可視) であり、どちらもエラーにしない。
 //! - いずれの失敗でも **stdout に何も書かない** (#10 — half-emitted directive を出さない)。
 //!
-//! 実装は `core-interface-adapter` の Gateway (`orchestration::FsStageGraphReader` /
-//! `orchestration::InMemoryStageGraphReader`)。パス解決と env オーバライドの意味論、
-//! および逐語文言の組み立ては Gateway 側に閉じる (12 §6)。ポートは**材料だけ**を運ぶ。
+//! 実装は `core-interface-adapter`
+//! (`orchestration::WorkflowDefinitionRepositoryImpl` が実 I/O、
+//! `orchestration::InMemoryWorkflowDefinitionRepository` がテストダブル)。パス解決と env
+//! オーバライドの意味論、および逐語文言の組み立ては実装側に閉じる (12 §6)。ポートは
+//! **材料だけ**を運ぶ。
 
 use core_domain::workflow_definition::WorkflowDefinition;
 
@@ -60,9 +71,9 @@ pub enum GraphReadError {
     },
 }
 
-/// Published Language 3 入力の読取ポート。
-pub trait StageGraphReader {
-    /// 3 入力を読み、`WorkflowDefinition` (読取モデル) を組み立てて返す。
+/// 集約 `WorkflowDefinition` の Repository (load 専用)。
+pub trait WorkflowDefinitionRepository {
+    /// 3 入力を読み、集約 `WorkflowDefinition` を組み立てて返す。
     ///
     /// # Errors
     ///

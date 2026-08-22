@@ -6,10 +6,11 @@
 //! 消費側のパスは `core_use_case::orchestration::<型>` で安定する
 //! (docs/memory/module-visibility.md)。
 
-mod stage_graph_reader;
+mod workflow_definition_repository;
 
-// ポート (trait)
-pub use stage_graph_reader::StageGraphReader;
+// ポート (trait) — Repository は集約名＋Repository で命名する
+// (docs/memory/gateway-taxonomy.md)。
+pub use workflow_definition_repository::WorkflowDefinitionRepository;
 
 // エラー
-pub use stage_graph_reader::GraphReadError;
+pub use workflow_definition_repository::GraphReadError;

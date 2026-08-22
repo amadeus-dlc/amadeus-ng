@@ -28,10 +28,15 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 | 集約 | ルートと内包 | トランザクション境界 |
 | --- | --- | --- |
-| `StageGraph` | コンパイル出力の成果物集約。`Vec<StageNode>`（**文書順を保持**）＋ `StageSlug → index` の索引。構築後は immutable | スライス 1 に変異は無い（読取専用）。「返した配列を呼び出し側が mutate してはならない」という upstream のコメント規約は、Rust では所有権と不変参照で構造的に成立する |
-| `ScopeDefinition` | identity ファイル（frontmatter）とグリッド 1 列の join。**存在の権威は identity ファイル**で、グリッド列は権威ではない（§3.3） | 同上 |
+| `WorkflowDefinition` | **本コンテキストの集約ルート**。3 入力（`stage-graph.json` / `scope-grid.json` / scope カタログ）を束ねた読取モデル集約で、`StageGraph`（コンパイル出力の成果物値。`Vec<StageNode>` の**文書順を保持** ＋ `StageSlug → index` の索引）と `ScopeGrid`、および `ScopeDefinition` 群を**内包する**。構築後は immutable | スライス 1 に変異は無い（読取専用）。3 入力は compile が lockstep で出すため、**束ね直しの単位は常に 3 入力まとめて 1 回**（片方だけ新しい状態は upstream でも想定外）。「返した配列を呼び出し側が mutate してはならない」という upstream のコメント規約は、Rust では所有権と不変参照で構造的に成立する |
 
-`ScopeGrid`（グリッドファイル全体）と `StageNode` は値オブジェクト。`StageDefinition`（stage file = frontmatter ＋本文）と `AgentPersona` はスライス 2 の集約。
+内包物の位置づけ:
+
+- `StageGraph` は集約内の**成果物値**（独立した集約ルートではない — グラフだけを単独で load / save する経路を作らない）。
+- `ScopeDefinition`（identity ファイルの frontmatter とグリッド 1 列の join。**存在の権威は identity ファイル**で、グリッド列は権威ではない — §3.3）は集約に内包される。
+- `ScopeGrid`（グリッドファイル全体）と `StageNode` は値オブジェクト。`StageDefinition`（stage file = frontmatter ＋本文）と `AgentPersona` はスライス 2 の集約。
+
+**`WorkflowDefinition` を集約ルートへ昇格させた理由**（2026-08-22 オーナー裁定）: Repository は「集約名 + Repository」で名付ける規則を採ったため（[`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md)）、3 入力を束ねる読取面のポートに名を与えるには、束ねた結果そのものが集約でなければならない — `StageGraphRepository` は**ファイル名由来の名前**（格納形式は Repository 実装の内部詳細）であり規則違反になる。
 
 ### 2.2 Domain Primitive（E1/E2 の受け皿）
 
@@ -161,11 +166,13 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | `CompiledGraphSource` | `stage-graph.json` / `scope-grid.json` のバイト列取得。パス解決と env オーバライドの意味論を内包し、**「読めない」と「不正」を区別して返す**（§4 の #1 と #2 は別文言） |
 | `ScopeCatalogSource` | `<harnessDir>/scopes/*.md` の列挙と読取 |
 
+上 2 つは本コンテキスト内部の分割案であり、**スライス 1 では実装しない**。3 入力を束ねて集約 `WorkflowDefinition` を返すのは orchestration 側のポート `WorkflowDefinitionRepository`（10 §3）1 本で、その実装が両者の責務を内部に持つ。`...Source` はポート造語で [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md) の禁止対象にあたるため、スライス 2 で内部分割が実際に要ることになった時点で同規則に沿って再命名する。
+
 **他コンテキストへの供給面**（Customer/Supplier の supplier 側）:
 
 | サービス | 顧客 | 契約の要点 |
 | --- | --- | --- |
-| `StageGraphQuery` | orchestration（10 §3 ポート `StageGraphReader` の実体） | §2.3 の述語 5 種。文書順保持と 2 経路の使い分けを含む |
+| `StageGraphQuery` | orchestration（10 §3 ポート `WorkflowDefinitionRepository` が返す集約の述語面） | §2.3 の述語 5 種。文書順保持と 2 経路の使い分けを含む |
 | `ScopeCatalog` | orchestration（scope 解決ラダー） | `valid_scopes` の権威は identity ファイル。未知スコープ拒否の逐語文言もここから供給する |
 | `SkeletonAnchor` | orchestration（B11） | `first_in_scope_stage_of_phase` の純関数。stance 解決そのものは顧客側 |
 | `StageNodeView` | verification（B10 の材料） | ノードの `reviewer` / `review_class` / `reviewer_max_iterations` の 3 フィールド。`review_class` は verification 所有型の外部キー |
@@ -173,7 +180,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 ## 6. インターフェイスアダプタ層
 
-- **Gateways**: 3 入力の読取実装。**パス解決とテストシームはここに閉じる** — `<harnessRoot>/tools/data/{stage-graph,scope-grid}.json`、`<harnessRoot>/scopes/`、および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` のオーバライド（D6 の対象範囲は §11 の未決事項）。JSON コーデックと frontmatter パーサは Gateway の内部部品（01 §7）。キャッシュ戦略（呼び出しごとの明示ロード / `OnceCell` / 注入）は観測不能なので実装の自由（§10）。**I/O 責務はすべてここ**。テスト用の in-memory Gateway を最初に用意する — これは 10 §8-3 が挙げる in-memory Gateway 一式の `StageGraph` と同一物である。
+- **Gateways**: 集約 `WorkflowDefinition` を 3 入力から再構成する Repository 実装 `WorkflowDefinitionRepositoryImpl`（ポート trait は use-case 層、実装は `XxxRepositoryImpl` — [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md)。**格納形式がファイルであることは実装の内部詳細**なので型名に技術接頭辞を付けない）。**パス解決とテストシームはここに閉じる** — `<harnessRoot>/tools/data/{stage-graph,scope-grid}.json`、`<harnessRoot>/scopes/`、および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` / `AIDLC_SCOPES_DIR` のオーバライド（D6 の対象範囲は §11 の未決事項）。JSON コーデックと frontmatter パーサは Gateway の内部部品（01 §7）。キャッシュ戦略（呼び出しごとの明示ロード / `OnceCell` / 注入）は観測不能なので実装の自由（§10）。**I/O 責務はすべてここ**。テストダブル `InMemoryWorkflowDefinitionRepository`（`Impl` 接尾辞は付けない）を最初に用意する — これは 10 §8-3 が挙げる in-memory Gateway 一式の `WorkflowDefinition` 分と同一物である。
 - **Presenters**: 読込失敗の stderr 逐語文言と非ゼロ exit。**stdout を汚さない**（§4 #10）。文言は文言カタログ（A3）から引く。
 - **Controllers**: `--scope` 等の引数を `ScopeName::parse` に通し、成功した型付き値をユースケースへ渡す（01 §7 の規約）。未知スコープの判定は Controller ではなく述語側（`subgraph_for_scope`）の責務であり、Controller は検証ロジックを持たない。
 

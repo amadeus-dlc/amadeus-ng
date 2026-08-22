@@ -1,4 +1,4 @@
-//! 統合テスト: `FsStageGraphReader` が 12-workflow-definition §4 の失敗態度表を全行満たすこと。
+//! 統合テスト: `WorkflowDefinitionRepositoryImpl` が 12-workflow-definition §4 の失敗態度表を全行満たすこと。
 //!
 //! 各テストは tempdir に合成 `stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md` を
 //! 書いて 1 行ずつ検証する:
@@ -12,8 +12,8 @@ use core_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, ReviewClass, RuleScope, StageMode, StageSlug, WorkflowDefinition,
 };
 use core_domain::workspace::CheckboxState;
-use core_interface_adapter::orchestration::FsStageGraphReader;
-use core_use_case::orchestration::{GraphReadError, StageGraphReader};
+use core_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
+use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -179,8 +179,8 @@ impl Fixture {
         }
     }
 
-    fn reader(&self) -> FsStageGraphReader {
-        FsStageGraphReader::new(self.data_dir.clone(), self.scopes_dir.clone())
+    fn reader(&self) -> WorkflowDefinitionRepositoryImpl {
+        WorkflowDefinitionRepositoryImpl::new(self.data_dir.clone(), self.scopes_dir.clone())
     }
 
     fn graph_path(&self) -> PathBuf {
@@ -694,7 +694,7 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
 #[test]
 fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let reader = FsStageGraphReader::new(
+    let reader = WorkflowDefinitionRepositoryImpl::new(
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );

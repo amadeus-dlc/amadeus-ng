@@ -10,7 +10,8 @@
 #![allow(clippy::unwrap_used)]
 
 use core_domain::workspace::LockIdentity;
-use core_interface_adapter::workspace::{FakeClock, FakeProcessProbe, FsWorkspaceLock};
+use core_interface_adapter::workspace::FsWorkspaceLock;
+use core_interface_adapter::{FakeClock, FakeProcessProbe};
 use core_use_case::workspace::{AcquireBudget, AcquireError, WorkspaceLock};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
