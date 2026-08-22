@@ -8116,3 +8116,47 @@ contract-summary.md C7 の layout を tests/golden/upstream-3c3146cf/{hash-canon
 **Message**: stage-1 セルフホスト切替（Issue #7）の Construction 中で、いま U1 canon-json の実装（Bolt B1、Step 1〜16）を開発エージェントが進めています。次は完了通知が来たら差分をレビューし、委任 2（CLI／フックゴールデン採取）へ進みます。
 
 ---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T12:40:10Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1beee27b
+**Sensor ID**: linter
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-hash-canonical.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T12:40:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1beee27b
+**Sensor ID**: linter
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-hash-canonical.ts
+**Duration ms**: 697
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T12:40:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8cfa9008
+**Sensor ID**: type-check
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-hash-canonical.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T12:40:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 8cfa9008
+**Sensor ID**: type-check
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-hash-canonical.ts
+**Duration ms**: 19
+**Note**: script-error: exit-1
+
+---

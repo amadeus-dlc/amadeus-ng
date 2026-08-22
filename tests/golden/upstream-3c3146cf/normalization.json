@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "ゴールデン比較の正規化規則 (BR2.2)。期待値と実測値の双方に同じ規則を適用してからバイト比較する。規則はコーパスの一部であり、比較器 (テスト側) はこのファイルだけを読む。",
+  "rules": [
+    {
+      "placeholder": "<TS>",
+      "kind": "regex",
+      "pattern": "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z",
+      "description": "ISO 8601 UTC のタイムスタンプ",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    },
+    {
+      "placeholder": "<CLONE>",
+      "kind": "regex",
+      "pattern": "[A-Za-z0-9][A-Za-z0-9_.-]*-[0-9a-f]{8}",
+      "description": "監査シャード名 <host>-<clone> の形",
+      "applies_to": ["stdout", "state-diff", "audit"]
+    },
+    {
+      "placeholder": "<ROOT>",
+      "kind": "runtime-path",
+      "pattern": "作業ツリーの絶対パス (比較器が実行時に与える)",
+      "description": "リポジトリ/使い捨てワークスペースの絶対パス",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    },
+    {
+      "placeholder": "<SESSION>",
+      "kind": "regex",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+      "description": "セッション ID (UUID v4 の形)",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    }
+  ],
+  "families": {
+    "hash-canonical": {
+      "applies": [],
+      "note": "hash-canonical 族は純粋関数の出力のみで非決定値を含まないため、正規化は適用しない (適用すると偽の一致を作る)。"
+    },
+    "cli": {
+      "applies": ["<TS>", "<CLONE>", "<ROOT>", "<SESSION>"]
+    },
+    "hooks": {
+      "applies": ["<TS>", "<CLONE>", "<ROOT>", "<SESSION>"]
+    }
+  }
+}

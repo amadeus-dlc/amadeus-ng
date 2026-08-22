@@ -115,7 +115,7 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 
 ### 5.2 ゴールデン採取 — hash-canonical 受入表（FR7.1 / BR2.1 / BR2.3）
 
-- [ ] Step 3. 再採取スクリプト: `scripts/goldens/recapture-hash-canonical.sh`（bash, `set -euo pipefail`）と
+- [x] Step 3. 再採取スクリプト: `scripts/goldens/recapture-hash-canonical.sh`（bash, `set -euo pipefail`）と
       `scripts/goldens/capture-hash-canonical.ts`（bun）。手順: 使い捨てディレクトリに upstream ピン
       `3c3146cfd7cef33020d48e8d48d4e80d0f8c2820` の `dist/claude/.claude/tools/aidlc-testing-posture.ts` を取得 →
       `canonicalize` / `sha256` / `hashObject`（upstream 仕様 09-cli-tools.md §8.4 が指す `:104-123`）をスニペットとして
@@ -125,7 +125,7 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
       （pretty）を採る → `tests/golden/upstream-3c3146cf/hash-canonical/cases.json` と `provenance.json` に書く。
       入力は JSON テキスト（`input`）で表し、JSON で表せない NaN / ±Infinity のクラスだけ `input_js`（JS 式文字列）
       + Rust 側の構築手順（`construct`）を持つ。ケース ID は `hash-canonical/<class>/<case>`。
-- [ ] Step 4. 採取の実行とレビュー: スクリプトを実行してコーパスを生成し、`git diff` で内容を目視（秘密情報・
+- [x] Step 4. 採取の実行とレビュー: スクリプトを実行してコーパスを生成し、`git diff` で内容を目視（秘密情報・
       絶対パス無し）。`README.md` に「採取ゴールデン」節を追記（採取手順・来歴・正規化規則・更新方針 BR2.5・
       既知の非対称: 孤立サロゲート）。
 
