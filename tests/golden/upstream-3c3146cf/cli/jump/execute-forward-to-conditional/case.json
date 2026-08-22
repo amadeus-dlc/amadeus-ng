@@ -1,0 +1,13 @@
+{
+  "id": "cli/jump/execute-forward-to-conditional",
+  "family": "cli",
+  "verb": "jump",
+  "case": "execute-forward-to-conditional",
+  "description": "条件付きステージへ前方ジャンプし、間のステージを [S] で飛ばす",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

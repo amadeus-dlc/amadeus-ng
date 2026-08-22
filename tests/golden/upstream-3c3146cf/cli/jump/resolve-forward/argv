@@ -1,0 +1,9 @@
+[
+  "bun",
+  ".claude/tools/aidlc-jump.ts",
+  "resolve",
+  "--stage",
+  "domain-design",
+  "--project-dir",
+  "<ROOT>"
+]

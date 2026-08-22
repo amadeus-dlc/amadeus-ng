@@ -1,0 +1,1 @@
+{"hook_event_name":"PreToolUse","tool_name":"Bash","agent_type":"aidlc-developer-agent","tool_input":{"command":"bun .claude/tools/aidlc-orchestrate.ts next"}}

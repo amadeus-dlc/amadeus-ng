@@ -1,3 +1,17 @@
 # テストコードでは unwrap / expect を許可 (プロダクトコードでは workspace lint で deny)
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+
+# BR1.7 / ADR 0001 決定 5 — 契約 JSON の直列化は canon-json の 1 経路に固定する。
+# serde_json の直列化関数と、契約経路の入口である to_value の直接呼び出しを拒否する。
+# canon-json 内部の唯一の呼出点だけが `#[allow(clippy::disallowed_methods)]` で理由付き
+# に例外化される (from_str は読取であり禁止対象外 — parse 境界がそれを包む)。
+disallowed-methods = [
+  { path = "serde_json::to_string", reason = "契約 JSON の直列化は canon_json::serialize 経由 (BR1.7 / ADR 0001 決定 5)" },
+  { path = "serde_json::to_string_pretty", reason = "契約 JSON の直列化は canon_json::serialize(ContractPretty) 経由 (BR1.7)" },
+  { path = "serde_json::to_vec", reason = "契約 JSON の直列化は canon_json::serialize 経由 (BR1.7)" },
+  { path = "serde_json::to_vec_pretty", reason = "契約 JSON の直列化は canon_json::serialize(ContractPretty) 経由 (BR1.7)" },
+  { path = "serde_json::to_writer", reason = "契約 JSON の直列化は canon_json::serialize 経由 (BR1.7)" },
+  { path = "serde_json::to_writer_pretty", reason = "契約 JSON の直列化は canon_json::serialize(ContractPretty) 経由 (BR1.7)" },
+  { path = "serde_json::to_value", reason = "型付き契約型から JsonValue への変換は canon_json::to_value 経由 (BR1.7)" },
+]

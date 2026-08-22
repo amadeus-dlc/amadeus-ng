@@ -1,0 +1,18 @@
+{
+  "family": "cli",
+  "upstream_commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+  "missing": [
+    {
+      "id": "set-autonomy/gated",
+      "reason": "set-autonomy の正常系はピン 3c3146cf では非対話でも対話でも到達できない — intent-create が書く状態ファイルのテンプレートに `- **Construction Autonomy Mode**:` 行が無く、set-autonomy は setFieldStrict で行が無いことを検出して終了コード 1 で止まる",
+      "evidence": "aidlc-utility.ts の状態ファイルテンプレートに当該行が無い一方、knowledge/aidlc-shared/state-template.md は当該行を規定している。実測は cli/set-autonomy/state-field-absent",
+      "follow_up": "U7 (CLI ディスパッチャ) でこの upstream の欠落を逸脱台帳と突き合わせ、正常系が必要なら追加採取する"
+    },
+    {
+      "id": "continue/multi-part",
+      "reason": "規則束が 28 KiB 上限を超えたときの分割配送 (parts > 1) を非対話で再現できなかった — 配布シェルの既定メモリでは規則束が 1 パートに収まり part=1/parts=1 にしかならない",
+      "evidence": "next/start の stdout が parts=1。分割には 28 KiB を超える memory/*.md を持つワークスペースが要る",
+      "follow_up": "U6 (next / continue ユースケース) で分割の合成入力を用意して採取する"
+    }
+  ]
+}

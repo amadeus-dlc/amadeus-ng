@@ -9,4 +9,14 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+# ゴールデン比較器 (tests/support) が normalization.json の regex 規則を適用するため。
+regex = { workspace = true }
+# 統合テストがゴールデンコーパスを canon-json 自身とは独立に読むため (オラクル汚染の防止)。
+serde_json = { workspace = true }
 

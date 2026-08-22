@@ -1,0 +1,11 @@
+[
+  "bun",
+  ".claude/tools/aidlc-orchestrate.ts",
+  "report",
+  "--result",
+  "rejected",
+  "--reason",
+  "Sharpen the testing posture.",
+  "--project-dir",
+  "<ROOT>"
+]

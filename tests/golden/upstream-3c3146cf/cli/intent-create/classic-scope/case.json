@@ -1,0 +1,13 @@
+{
+  "id": "cli/intent-create/classic-scope",
+  "family": "cli",
+  "verb": "intent-create",
+  "case": "classic-scope",
+  "description": "classic スコープで最初の intent を作り、状態ファイル・監査シャード・記録ディレクトリを起こす",
+  "stdout_kind": "text",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

@@ -1,0 +1,11 @@
+[
+  "bun",
+  ".claude/tools/aidlc-orchestrate.ts",
+  "report",
+  "--result",
+  "approved",
+  "--user-input",
+  "A",
+  "--project-dir",
+  "<ROOT>"
+]

@@ -1,0 +1,9 @@
+[
+  "bun",
+  ".claude/tools/aidlc-orchestrate.ts",
+  "next",
+  "--stage",
+  "contract-design",
+  "--project-dir",
+  "<ROOT>"
+]

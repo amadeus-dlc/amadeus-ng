@@ -1,0 +1,14 @@
+{
+  "id": "hooks/state-transition-guard/allow-read-only-query",
+  "family": "hooks",
+  "hook": "state-transition-guard",
+  "case": "allow-read-only-query",
+  "upstream_hook_file": ".claude/hooks/aidlc-state-transition-guard.ts",
+  "description": "状態の読み取り専用照会は許可する",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}
