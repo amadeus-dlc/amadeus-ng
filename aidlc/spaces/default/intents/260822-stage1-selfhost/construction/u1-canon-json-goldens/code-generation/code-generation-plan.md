@@ -147,7 +147,7 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 - [x] Step 9. Green: writer（プロファイル分岐・数値ライタ・最小エスケープ・体裁）、canonical（再帰ソート）、
       digest（sha2）、parse（深さスキャン → `serde_json::from_str` preserve_order → `JsonValue` 変換）。
 - [x] Step 10. Refactor: 数値ライタの分離、重複排除、rustdoc。ゴールデン全行一致・ユニット緑のまま。
-- [ ] Step 11. PBT（proptest、`src/` 同居）: 決定性（同入力 → 同出力）、`parse(serialize(v, compact)) == v`
+- [x] Step 11. PBT（proptest、`src/` 同居）: 決定性（同入力 → 同出力）、`parse(serialize(v, compact)) == v`
       （NaN を含まない生成器）、`hash_canonical` の冪等性、canonical ソートの冪等性。ケース数は既定（シード固定は U10）。
 
 ### 5.5 canon-json — API 層（ファサードと to_value）

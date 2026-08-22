@@ -364,3 +364,52 @@ mod parse_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::profile::SerializationProfile;
+    use crate::value::arbitrary;
+    use crate::writer::serialize;
+
+    proptest! {
+        /// 値水準の往復 — 表現が保たれる部分集合では `parse(serialize(v)) == v`。
+        #[test]
+        fn compact_round_trip_preserves_the_value(value in arbitrary::stable_value()) {
+            let text = serialize(&value, SerializationProfile::ContractCompact);
+            let parsed = parse(&text).map_err(|e| TestCaseError::fail(e.to_string()))?;
+
+            prop_assert_eq!(parsed, value);
+        }
+
+        /// テキスト水準の往復 — 表現が変わっても直列化結果は不動点になる。
+        #[test]
+        fn compact_round_trip_reaches_a_text_fixed_point(value in arbitrary::finite_value()) {
+            let once = serialize(&value, SerializationProfile::ContractCompact);
+            let parsed = parse(&once).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let twice = serialize(&parsed, SerializationProfile::ContractCompact);
+
+            prop_assert_eq!(once, twice);
+        }
+
+        /// 正準化の冪等性 — 一度正準化した結果を読み直しても同じバイト列になる。
+        #[test]
+        fn canonical_serialization_is_idempotent(value in arbitrary::finite_value()) {
+            let once = serialize(&value, SerializationProfile::HashCanonical);
+            let parsed = parse(&once).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let twice = serialize(&parsed, SerializationProfile::HashCanonical);
+
+            prop_assert_eq!(once, twice);
+        }
+
+        /// `parse_bytes` は妥当な UTF-8 では `parse` と一致する。
+        #[test]
+        fn parse_bytes_agrees_with_parse_on_valid_utf8(value in arbitrary::finite_value()) {
+            let text = serialize(&value, SerializationProfile::ContractCompact);
+
+            prop_assert_eq!(parse_bytes(text.as_bytes()), parse(&text));
+        }
+    }
+}

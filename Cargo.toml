@@ -89,6 +89,9 @@ infra-io = { path = "modules/infra-io" }
 # ワークスペース全体で常時有効にする (Cargo のフィーチャ統合はビルド全体に効くため、
 # クレート単独ビルドでも同じ順序になるよう workspace 依存で一元化する)。
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+# float_roundtrip: 既定の serde_json は浮動小数を「最善努力精度」で読むため、有効桁の
+# 末尾 1 ULP がずれることがある (PBT で検出)。JS の `JSON.parse` は正しく丸めるので、
+# 有効にしないと同じテキストから別の f64 になり upstream 互換が壊れる (NFR1)。
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 sha2 = "0.10"
 proptest = "1"

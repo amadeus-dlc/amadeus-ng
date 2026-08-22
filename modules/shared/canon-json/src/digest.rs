@@ -213,3 +213,47 @@ mod tests {
         assert_eq!(canonical.rendered().len(), 64 + "sha256:".len());
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::parse::parse;
+    use crate::value::arbitrary;
+
+    proptest! {
+        /// ダイジェストは常に 64 桁の小文字 16 進 (族に関わらず)。
+        #[test]
+        fn hex_is_always_sixty_four_lowercase_hex_digits(value in arbitrary::any_value()) {
+            for digest in [hash_canonical(&value), hash_compact(&value)] {
+                prop_assert_eq!(digest.hex().len(), 64);
+                prop_assert!(
+                    digest.hex().bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                );
+            }
+        }
+
+        /// 冪等性 — 一度正準化した値を読み直しても正準族のダイジェストは変わらない。
+        #[test]
+        fn hash_canonical_survives_a_canonical_round_trip(value in arbitrary::finite_value()) {
+            let text = serialize(&value, SerializationProfile::HashCanonical);
+            let parsed = parse(&text).map_err(|e| TestCaseError::fail(e.to_string()))?;
+
+            prop_assert_eq!(hash_canonical(&parsed), hash_canonical(&value));
+        }
+
+        /// ダイジェストは対応するプロファイルの出力バイト列から決まる。
+        #[test]
+        fn digests_are_the_sha256_of_the_profile_output(value in arbitrary::any_value()) {
+            let canonical = serialize(&value, SerializationProfile::HashCanonical);
+            let compact = serialize(&value, SerializationProfile::ContractCompact);
+
+            let canonical_digest = hash_canonical(&value);
+            let compact_digest = hash_compact(&value);
+
+            prop_assert_eq!(canonical_digest.hex(), sha256_hex(canonical.as_bytes()));
+            prop_assert_eq!(compact_digest.hex(), sha256_hex(compact.as_bytes()));
+        }
+    }
+}

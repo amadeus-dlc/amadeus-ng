@@ -442,3 +442,65 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::value::arbitrary;
+
+    proptest! {
+        /// 決定性 — 同じ値・同じプロファイルなら常に同じバイト列 (NFR1.1)。
+        #[test]
+        fn serialization_is_deterministic(value in arbitrary::any_value()) {
+            for profile in SerializationProfile::ALL {
+                prop_assert_eq!(
+                    serialize(&value, *profile),
+                    serialize(&value.clone(), *profile)
+                );
+            }
+        }
+
+        /// hash-canonical 出力はメンバの挿入順に依存しない (正準化の要件)。
+        #[test]
+        fn hash_canonical_output_is_invariant_under_key_permutation(
+            pairs in arbitrary::unique_pairs(),
+            rotation in 0usize..8,
+        ) {
+            let mut rotated = pairs.clone();
+            let len = rotated.len();
+            if len > 0 {
+                rotated.rotate_left(rotation % len);
+            }
+
+            prop_assert_eq!(
+                serialize(&arbitrary::object_of(pairs), SerializationProfile::HashCanonical),
+                serialize(&arbitrary::object_of(rotated), SerializationProfile::HashCanonical)
+            );
+        }
+
+        /// 非有限数は出力に漏れず、必ず `null` になる (BR1.3)。
+        #[test]
+        fn non_finite_numbers_never_reach_the_output(value in arbitrary::any_value()) {
+            for profile in SerializationProfile::ALL {
+                let text = serialize(&value, *profile);
+                prop_assert!(!text.contains("NaN"));
+                prop_assert!(!text.contains("inf"));
+                prop_assert!(!text.contains("Infinity"));
+            }
+        }
+
+        /// 出力は常に整形式の JSON として読み戻せる (自己整合性)。
+        #[test]
+        fn every_profile_emits_reparsable_json(value in arbitrary::any_value()) {
+            for profile in SerializationProfile::ALL {
+                let text = serialize(&value, *profile);
+                prop_assert!(
+                    crate::parse::parse(text.trim_end_matches('\n')).is_ok(),
+                    "読み戻せない出力: {text:?}"
+                );
+            }
+        }
+    }
+}
