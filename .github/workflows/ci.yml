@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch: {}
 
+# NFR4.4 (least privilege): CI は読取だけで足りる。ジョブ個別の昇格はしない。
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -18,10 +22,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # @master は toolchain 入力が無いときリポジトリの rust-toolchain.toml を読む。
+      # channel と components (rustfmt / clippy / llvm-tools) はそのファイルで一元管理する。
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+        uses: dtolnay/rust-toolchain@master
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -73,11 +77,9 @@ jobs:
           # チェックアウトする必要があるため、shallow clone (既定) では不足する。
           fetch-depth: 0
 
+      # cargo-llvm-cov に必要な llvm-tools も rust-toolchain.toml の components で入る。
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          # cargo-llvm-cov の実行に rustc 同梱の llvm-tools が必要
-          components: llvm-tools
+        uses: dtolnay/rust-toolchain@master
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -94,3 +96,28 @@ jobs:
       - name: Run coverage gate (workflow_dispatch — absolute only)
         if: github.event_name != 'pull_request'
         run: bash scripts/coverage.sh
+
+  # NFR4.1: RustSec advisory DB による依存の脆弱性監査。workspace と detached な
+  # tools/lint の 2 つの Cargo.lock を明示的に網羅する。
+  # required status check には**しない** — advisory DB / ネットワークの一時障害で
+  # 全マージが止まらないようにするため (nfr-design §2)。赤は PR 上で可視になる。
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit (workspace)
+        run: cargo audit
+
+      - name: cargo audit (tools/lint)
+        run: cargo audit --file tools/lint/Cargo.lock
