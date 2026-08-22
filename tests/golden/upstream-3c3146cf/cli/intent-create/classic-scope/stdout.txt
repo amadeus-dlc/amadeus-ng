@@ -1,0 +1,7 @@
+Intent created: <TS>-golden (space: default)
+State initialized: classic scope, 25 stages, Standard depth
+Project type: Greenfield
+Languages: Unknown
+Frameworks: Unknown
+Build System: Unknown
+First post-init stage: practices-discovery (INCEPTION)

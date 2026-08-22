@@ -1,0 +1,673 @@
+{
+  "family": "hash-canonical",
+  "upstream_commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+  "case_count": 32,
+  "cases": [
+    {
+      "id": "hash-canonical/nesting/deep-mixed",
+      "class": "nesting",
+      "description": "オブジェクトと配列の交互ネスト。再帰ソートが全階層に効くことを固定する",
+      "input": "{\"z\":{\"b\":[1,2,{\"c\":[{\"d\":{\"e\":null}}]}],\"a\":true}}",
+      "expected": {
+        "canonical_output": "{\"z\":{\"a\":true,\"b\":[1,2,{\"c\":[{\"d\":{\"e\":null}}]}]}}",
+        "canonical_digest": "sha256:18669fc95b82fc1eff6a3c1a982eb023c9c81c8afe54831f9112a98fae519963",
+        "compact_output": "{\"z\":{\"b\":[1,2,{\"c\":[{\"d\":{\"e\":null}}]}],\"a\":true}}",
+        "compact_digest_prefixed": "sha256:03f4cf46b970c6d479cb16130c143b4ee652d7b1958edc7852c97a3339d644e3",
+        "compact_digest_hex": "03f4cf46b970c6d479cb16130c143b4ee652d7b1958edc7852c97a3339d644e3",
+        "pretty_output": "{\n  \"z\": {\n    \"b\": [\n      1,\n      2,\n      {\n        \"c\": [\n          {\n            \"d\": {\n              \"e\": null\n            }\n          }\n        ]\n      }\n    ],\n    \"a\": true\n  }\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/nesting/array-of-objects",
+      "class": "nesting",
+      "description": "配列要素のオブジェクトも再帰ソートの対象になる (配列自体の順は保存)",
+      "input": "[{\"z\":1,\"a\":2},{\"m\":{\"n\":[true,false]}},[[{\"y\":0,\"x\":1}]]]",
+      "expected": {
+        "canonical_output": "[{\"a\":2,\"z\":1},{\"m\":{\"n\":[true,false]}},[[{\"x\":1,\"y\":0}]]]",
+        "canonical_digest": "sha256:67f02fee9bae01f99b248e0f5f0b787f50d347535c3e0b666f16817f228024c5",
+        "compact_output": "[{\"z\":1,\"a\":2},{\"m\":{\"n\":[true,false]}},[[{\"y\":0,\"x\":1}]]]",
+        "compact_digest_prefixed": "sha256:f66cfeb100e61cd22c3ce6f00322e82f27ea8946dc2eee79f1983ae5c674bc5c",
+        "compact_digest_hex": "f66cfeb100e61cd22c3ce6f00322e82f27ea8946dc2eee79f1983ae5c674bc5c",
+        "pretty_output": "[\n  {\n    \"z\": 1,\n    \"a\": 2\n  },\n  {\n    \"m\": {\n      \"n\": [\n        true,\n        false\n      ]\n    }\n  },\n  [\n    [\n      {\n        \"y\": 0,\n        \"x\": 1\n      }\n    ]\n  ]\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/integer-like/mixed",
+      "class": "integer-like-keys",
+      "description": "integer-like キーは挿入順に関係なく数値昇順で先頭 (ECMAScript の所有プロパティ順序)",
+      "input": "{\"b\":1,\"10\":2,\"2\":3,\"a\":4,\"0\":5}",
+      "expected": {
+        "canonical_output": "{\"0\":5,\"2\":3,\"10\":2,\"a\":4,\"b\":1}",
+        "canonical_digest": "sha256:9c5c7357a8f31f0295b3fae1ec85991dcd6ef9ddffe28084c0bbf52bd115d1cc",
+        "compact_output": "{\"0\":5,\"2\":3,\"10\":2,\"b\":1,\"a\":4}",
+        "compact_digest_prefixed": "sha256:4a8922cad223913e94450ff28dc7bc80b9e5592ab7d7d0926bbf91ecdd23b5be",
+        "compact_digest_hex": "4a8922cad223913e94450ff28dc7bc80b9e5592ab7d7d0926bbf91ecdd23b5be",
+        "pretty_output": "{\n  \"0\": 5,\n  \"2\": 3,\n  \"10\": 2,\n  \"b\": 1,\n  \"a\": 4\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/integer-like/numeric-vs-string-order",
+      "class": "integer-like-keys",
+      "description": "integer-like は数値昇順 (文字列順なら 1 < 10 < 9)。非 integer-like は挿入順",
+      "input": "{\"1\":\"one\",\"10\":\"ten\",\"9\":\"nine\",\"x\":0}",
+      "expected": {
+        "canonical_output": "{\"1\":\"one\",\"9\":\"nine\",\"10\":\"ten\",\"x\":0}",
+        "canonical_digest": "sha256:4642a08c386bea1022d54dc16e49d7068c715ba1dc5429e23996886e47aa57fd",
+        "compact_output": "{\"1\":\"one\",\"9\":\"nine\",\"10\":\"ten\",\"x\":0}",
+        "compact_digest_prefixed": "sha256:4642a08c386bea1022d54dc16e49d7068c715ba1dc5429e23996886e47aa57fd",
+        "compact_digest_hex": "4642a08c386bea1022d54dc16e49d7068c715ba1dc5429e23996886e47aa57fd",
+        "pretty_output": "{\n  \"1\": \"one\",\n  \"9\": \"nine\",\n  \"10\": \"ten\",\n  \"x\": 0\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/integer-like/non-canonical-decimal",
+      "class": "integer-like-keys",
+      "description": "正準十進表記でないキー (01 / +1 / 1.0 / -1) は integer-like ではない",
+      "input": "{\"01\":\"a\",\"1\":\"b\",\"+1\":\"c\",\"1.0\":\"d\",\"-1\":\"e\"}",
+      "expected": {
+        "canonical_output": "{\"1\":\"b\",\"+1\":\"c\",\"-1\":\"e\",\"01\":\"a\",\"1.0\":\"d\"}",
+        "canonical_digest": "sha256:18201275ef2746a269e8724b87dc15c1c30a30586eb33b96db710da199a891bd",
+        "compact_output": "{\"1\":\"b\",\"01\":\"a\",\"+1\":\"c\",\"1.0\":\"d\",\"-1\":\"e\"}",
+        "compact_digest_prefixed": "sha256:b45c81817fd4a03244b3d523f85e9920fd57187d20e3abd511c07c48d3501604",
+        "compact_digest_hex": "b45c81817fd4a03244b3d523f85e9920fd57187d20e3abd511c07c48d3501604",
+        "pretty_output": "{\n  \"1\": \"b\",\n  \"01\": \"a\",\n  \"+1\": \"c\",\n  \"1.0\": \"d\",\n  \"-1\": \"e\"\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/integer-like/boundary",
+      "class": "integer-like-keys",
+      "description": "配列インデックスの上限 2^32-2 は integer-like、2^32-1 は非 integer-like",
+      "input": "{\"4294967295\":\"beyond\",\"4294967294\":\"max\",\"0\":\"zero\"}",
+      "expected": {
+        "canonical_output": "{\"0\":\"zero\",\"4294967294\":\"max\",\"4294967295\":\"beyond\"}",
+        "canonical_digest": "sha256:02c2a7e6108f474215c2a47dcd90290048536f41fec41822b3e4890312657e31",
+        "compact_output": "{\"0\":\"zero\",\"4294967294\":\"max\",\"4294967295\":\"beyond\"}",
+        "compact_digest_prefixed": "sha256:02c2a7e6108f474215c2a47dcd90290048536f41fec41822b3e4890312657e31",
+        "compact_digest_hex": "02c2a7e6108f474215c2a47dcd90290048536f41fec41822b3e4890312657e31",
+        "pretty_output": "{\n  \"0\": \"zero\",\n  \"4294967294\": \"max\",\n  \"4294967295\": \"beyond\"\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/non-finite/root-nan",
+      "class": "non-finite",
+      "description": "トップレベルの NaN は null になる",
+      "input_js": "NaN",
+      "construct": {
+        "t": "f64",
+        "v": "nan"
+      },
+      "expected": {
+        "canonical_output": "null",
+        "canonical_digest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "compact_output": "null",
+        "compact_digest_prefixed": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "compact_digest_hex": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "pretty_output": "null\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/non-finite/object-members",
+      "class": "non-finite",
+      "description": "オブジェクトのメンバの NaN / ±Infinity は null になる",
+      "input_js": "({ a: NaN, b: Infinity, c: -Infinity, d: 1 })",
+      "construct": {
+        "t": "obj",
+        "v": [
+          [
+            "a",
+            {
+              "t": "f64",
+              "v": "nan"
+            }
+          ],
+          [
+            "b",
+            {
+              "t": "f64",
+              "v": "inf"
+            }
+          ],
+          [
+            "c",
+            {
+              "t": "f64",
+              "v": "-inf"
+            }
+          ],
+          [
+            "d",
+            {
+              "t": "u64",
+              "v": "1"
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "canonical_output": "{\"a\":null,\"b\":null,\"c\":null,\"d\":1}",
+        "canonical_digest": "sha256:c2b87d8a07298990daf87afbcbcd7ad5e15f8b2ca503f82085dcca7528b671ab",
+        "compact_output": "{\"a\":null,\"b\":null,\"c\":null,\"d\":1}",
+        "compact_digest_prefixed": "sha256:c2b87d8a07298990daf87afbcbcd7ad5e15f8b2ca503f82085dcca7528b671ab",
+        "compact_digest_hex": "c2b87d8a07298990daf87afbcbcd7ad5e15f8b2ca503f82085dcca7528b671ab",
+        "pretty_output": "{\n  \"a\": null,\n  \"b\": null,\n  \"c\": null,\n  \"d\": 1\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/non-finite/array-elements",
+      "class": "non-finite",
+      "description": "配列要素の NaN / ±Infinity は null になる (要素は詰められない)",
+      "input_js": "[NaN, Infinity, -Infinity, 1]",
+      "construct": {
+        "t": "arr",
+        "v": [
+          {
+            "t": "f64",
+            "v": "nan"
+          },
+          {
+            "t": "f64",
+            "v": "inf"
+          },
+          {
+            "t": "f64",
+            "v": "-inf"
+          },
+          {
+            "t": "u64",
+            "v": "1"
+          }
+        ]
+      },
+      "expected": {
+        "canonical_output": "[null,null,null,1]",
+        "canonical_digest": "sha256:f08cbac69b81e8037583338387f7d06ac15165f47a6dad5871987811e22b2daa",
+        "compact_output": "[null,null,null,1]",
+        "compact_digest_prefixed": "sha256:f08cbac69b81e8037583338387f7d06ac15165f47a6dad5871987811e22b2daa",
+        "compact_digest_hex": "f08cbac69b81e8037583338387f7d06ac15165f47a6dad5871987811e22b2daa",
+        "pretty_output": "[\n  null,\n  null,\n  null,\n  1\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/negative-zero/root",
+      "class": "negative-zero",
+      "description": "-0.0 は '0' と書かれる",
+      "input": "-0.0",
+      "expected": {
+        "canonical_output": "0",
+        "canonical_digest": "sha256:5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        "compact_output": "0",
+        "compact_digest_prefixed": "sha256:5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        "compact_digest_hex": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        "pretty_output": "0\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/negative-zero/in-object",
+      "class": "negative-zero",
+      "description": "-0.0 / 0.0 / -0 の 3 表記がすべて '0' になる",
+      "input": "{\"neg_float\":-0.0,\"pos_float\":0.0,\"neg_int\":-0,\"pos_int\":0}",
+      "expected": {
+        "canonical_output": "{\"neg_float\":0,\"neg_int\":0,\"pos_float\":0,\"pos_int\":0}",
+        "canonical_digest": "sha256:df3253da1cc30ab7a05e7b7c10cd92f629339dac20254a1369ae060188e80346",
+        "compact_output": "{\"neg_float\":0,\"pos_float\":0,\"neg_int\":0,\"pos_int\":0}",
+        "compact_digest_prefixed": "sha256:408743153f6e89339acf37ef2bd19e679e8faf1eb1d9a2b4204da782a0661ae8",
+        "compact_digest_hex": "408743153f6e89339acf37ef2bd19e679e8faf1eb1d9a2b4204da782a0661ae8",
+        "pretty_output": "{\n  \"neg_float\": 0,\n  \"pos_float\": 0,\n  \"neg_int\": 0,\n  \"pos_int\": 0\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/exponent/thresholds",
+      "class": "exponent",
+      "description": "非指数表記の閾値の両側 (1e20 / 1e21、1e-6 / 1e-7)",
+      "input": "[1e20,1e21,1e-6,1e-7]",
+      "expected": {
+        "canonical_output": "[100000000000000000000,1e+21,0.000001,1e-7]",
+        "canonical_digest": "sha256:e951abb5af8c3346487d1febce76e33ca963d9ff71e8f8573de4daec8c06ac03",
+        "compact_output": "[100000000000000000000,1e+21,0.000001,1e-7]",
+        "compact_digest_prefixed": "sha256:e951abb5af8c3346487d1febce76e33ca963d9ff71e8f8573de4daec8c06ac03",
+        "compact_digest_hex": "e951abb5af8c3346487d1febce76e33ca963d9ff71e8f8573de4daec8c06ac03",
+        "pretty_output": "[\n  100000000000000000000,\n  1e+21,\n  0.000001,\n  1e-7\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/exponent/mantissa-and-extremes",
+      "class": "exponent",
+      "description": "多桁仮数と f64 の両端 (最大有限値・最小非正規化数)",
+      "input": "[123e-20,1.5e300,1.7976931348623157e308,5e-324,-2.5e-7]",
+      "expected": {
+        "canonical_output": "[1.23e-18,1.5e+300,1.7976931348623157e+308,5e-324,-2.5e-7]",
+        "canonical_digest": "sha256:6cc90fa98a8b4584e6d045e7dc8a865cd27624f0a4a8df31932c962a965d15d9",
+        "compact_output": "[1.23e-18,1.5e+300,1.7976931348623157e+308,5e-324,-2.5e-7]",
+        "compact_digest_prefixed": "sha256:6cc90fa98a8b4584e6d045e7dc8a865cd27624f0a4a8df31932c962a965d15d9",
+        "compact_digest_hex": "6cc90fa98a8b4584e6d045e7dc8a865cd27624f0a4a8df31932c962a965d15d9",
+        "pretty_output": "[\n  1.23e-18,\n  1.5e+300,\n  1.7976931348623157e+308,\n  5e-324,\n  -2.5e-7\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/exponent/fraction-boundary",
+      "class": "exponent",
+      "description": "0.000001 (非指数) と 0.0000001 (指数) の境界、および 0.1 / 0.5",
+      "input": "[0.000001,0.0000001,0.1,0.5,-0.25]",
+      "expected": {
+        "canonical_output": "[0.000001,1e-7,0.1,0.5,-0.25]",
+        "canonical_digest": "sha256:c105cab174c3ad02b1759cae54178bbf3b50a418e66c5331e33800f02ae727a4",
+        "compact_output": "[0.000001,1e-7,0.1,0.5,-0.25]",
+        "compact_digest_prefixed": "sha256:c105cab174c3ad02b1759cae54178bbf3b50a418e66c5331e33800f02ae727a4",
+        "compact_digest_hex": "c105cab174c3ad02b1759cae54178bbf3b50a418e66c5331e33800f02ae727a4",
+        "pretty_output": "[\n  0.000001,\n  1e-7,\n  0.1,\n  0.5,\n  -0.25\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/large-int/around-2p53",
+      "class": "large-integers",
+      "description": "2^53 の前後。2^53+1 は f64 に丸められて 2^53 と同じ表記になる",
+      "input": "[9007199254740992,9007199254740993,9007199254740994,-9007199254740993]",
+      "expected": {
+        "canonical_output": "[9007199254740992,9007199254740992,9007199254740994,-9007199254740992]",
+        "canonical_digest": "sha256:9ad0c4b97a3ab9857a5b83b0bbc438f68300055fce331348c029ab1143727061",
+        "compact_output": "[9007199254740992,9007199254740992,9007199254740994,-9007199254740992]",
+        "compact_digest_prefixed": "sha256:9ad0c4b97a3ab9857a5b83b0bbc438f68300055fce331348c029ab1143727061",
+        "compact_digest_hex": "9ad0c4b97a3ab9857a5b83b0bbc438f68300055fce331348c029ab1143727061",
+        "pretty_output": "[\n  9007199254740992,\n  9007199254740992,\n  9007199254740994,\n  -9007199254740992\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/large-int/u64-range",
+      "class": "large-integers",
+      "description": "u64 上限付近。f64 丸めの結果が指数なしの桁埋め表記になる",
+      "input": "[18446744073709551615,12345678901234567890]",
+      "expected": {
+        "canonical_output": "[18446744073709552000,12345678901234567000]",
+        "canonical_digest": "sha256:b0771c566e143ed3b42719db6b32d72cdc0858e02b6fdcac1286c3cd81f191b7",
+        "compact_output": "[18446744073709552000,12345678901234567000]",
+        "compact_digest_prefixed": "sha256:b0771c566e143ed3b42719db6b32d72cdc0858e02b6fdcac1286c3cd81f191b7",
+        "compact_digest_hex": "b0771c566e143ed3b42719db6b32d72cdc0858e02b6fdcac1286c3cd81f191b7",
+        "pretty_output": "[\n  18446744073709552000,\n  12345678901234567000\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/large-int/i64-min",
+      "class": "large-integers",
+      "description": "i64 最小値 (= -2^63)。最短往復表記は '-9223372036854776000'",
+      "input": "[-9223372036854775808,9223372036854775807]",
+      "expected": {
+        "canonical_output": "[-9223372036854776000,9223372036854776000]",
+        "canonical_digest": "sha256:69322ba8d8b0ef4fb21348cf437b6898b3d3a026133a6db649e68bc4ce973993",
+        "compact_output": "[-9223372036854776000,9223372036854776000]",
+        "compact_digest_prefixed": "sha256:69322ba8d8b0ef4fb21348cf437b6898b3d3a026133a6db649e68bc4ce973993",
+        "compact_digest_hex": "69322ba8d8b0ef4fb21348cf437b6898b3d3a026133a6db649e68bc4ce973993",
+        "pretty_output": "[\n  -9223372036854776000,\n  9223372036854776000\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/non-ascii/values-and-keys",
+      "class": "non-ascii",
+      "description": "非 ASCII はエスケープせず UTF-8 のまま出力する",
+      "input": "{\"キー\":\"値\",\"emoji\":\"🎉\",\"mixed\":\"aあ漢字\",\"accent\":\"é\"}",
+      "expected": {
+        "canonical_output": "{\"accent\":\"é\",\"emoji\":\"🎉\",\"mixed\":\"aあ漢字\",\"キー\":\"値\"}",
+        "canonical_digest": "sha256:9161212c7af7b54e4cc3e702398971a24bc4ce61852ba44ed9e170b3b3239c17",
+        "compact_output": "{\"キー\":\"値\",\"emoji\":\"🎉\",\"mixed\":\"aあ漢字\",\"accent\":\"é\"}",
+        "compact_digest_prefixed": "sha256:750bb8c49bff51f5e078648c9e294f6632b449634a07a55f0f534bdd23e3f57e",
+        "compact_digest_hex": "750bb8c49bff51f5e078648c9e294f6632b449634a07a55f0f534bdd23e3f57e",
+        "pretty_output": "{\n  \"キー\": \"値\",\n  \"emoji\": \"🎉\",\n  \"mixed\": \"aあ漢字\",\n  \"accent\": \"é\"\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/non-ascii/bmp-key-order",
+      "class": "non-ascii",
+      "description": "BMP 内のキー整列。ASCII 大文字 < ASCII 小文字 < 非 ASCII",
+      "input": "{\"b\":1,\"あ\":2,\"A\":3,\"a\":4}",
+      "expected": {
+        "canonical_output": "{\"A\":3,\"a\":4,\"b\":1,\"あ\":2}",
+        "canonical_digest": "sha256:0aa50466163efcc4c11acd1320a63cd75777dd867267f91a277837215dbd4cb6",
+        "compact_output": "{\"b\":1,\"あ\":2,\"A\":3,\"a\":4}",
+        "compact_digest_prefixed": "sha256:60909821736a550b7702b356687f49d83efd6acc534f765ecb22c39044532ba4",
+        "compact_digest_hex": "60909821736a550b7702b356687f49d83efd6acc534f765ecb22c39044532ba4",
+        "pretty_output": "{\n  \"b\": 1,\n  \"あ\": 2,\n  \"A\": 3,\n  \"a\": 4\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/non-ascii/utf16-vs-codepoint-key-order",
+      "class": "non-ascii",
+      "description": "UTF-16 コード単位順とコードポイント順が割れる唯一の形: 非 BMP (サロゲート D83D) は U+FB00 より前",
+      "input": "{\"\\ufb00\":\"ff-ligature\",\"\\ud83d\\ude00\":\"grinning\"}",
+      "expected": {
+        "canonical_output": "{\"😀\":\"grinning\",\"ﬀ\":\"ff-ligature\"}",
+        "canonical_digest": "sha256:a1a1040455e1526bd8ba69a756c244561b238e1b493eac46698756b411ff9ad6",
+        "compact_output": "{\"ﬀ\":\"ff-ligature\",\"😀\":\"grinning\"}",
+        "compact_digest_prefixed": "sha256:24066ee15021e98ae4458da96a5b021f0243f89b18275e0a5d6b45e5243274c3",
+        "compact_digest_hex": "24066ee15021e98ae4458da96a5b021f0243f89b18275e0a5d6b45e5243274c3",
+        "pretty_output": "{\n  \"ﬀ\": \"ff-ligature\",\n  \"😀\": \"grinning\"\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/escape/control-and-quotes",
+      "class": "escape",
+      "description": "最小エスケープ集合。'/' はエスケープしない、C0 の短縮形と \\u00xx",
+      "input": "{\"quote\":\"a\\\"b\",\"backslash\":\"a\\\\b\",\"slash\":\"a/b\",\"newline\":\"a\\nb\",\"tab\":\"a\\tb\",\"carriage\":\"a\\rb\",\"backspace\":\"a\\bb\",\"formfeed\":\"a\\fb\",\"nul\":\"\\u0000\",\"bell\":\"\\u0007\",\"unit-sep\":\"\\u001f\",\"del\":\"\\u007f\"}",
+      "expected": {
+        "canonical_output": "{\"backslash\":\"a\\\\b\",\"backspace\":\"a\\bb\",\"bell\":\"\\u0007\",\"carriage\":\"a\\rb\",\"del\":\"\",\"formfeed\":\"a\\fb\",\"newline\":\"a\\nb\",\"nul\":\"\\u0000\",\"quote\":\"a\\\"b\",\"slash\":\"a/b\",\"tab\":\"a\\tb\",\"unit-sep\":\"\\u001f\"}",
+        "canonical_digest": "sha256:ff3caa70aa07cb7e4be8a517f46adbb224efae41840fa54740deb1b83d3db33d",
+        "compact_output": "{\"quote\":\"a\\\"b\",\"backslash\":\"a\\\\b\",\"slash\":\"a/b\",\"newline\":\"a\\nb\",\"tab\":\"a\\tb\",\"carriage\":\"a\\rb\",\"backspace\":\"a\\bb\",\"formfeed\":\"a\\fb\",\"nul\":\"\\u0000\",\"bell\":\"\\u0007\",\"unit-sep\":\"\\u001f\",\"del\":\"\"}",
+        "compact_digest_prefixed": "sha256:f7f201865ec2d2b56f85d62d38682900580e403982ffc4e1f994906d8d8bad2c",
+        "compact_digest_hex": "f7f201865ec2d2b56f85d62d38682900580e403982ffc4e1f994906d8d8bad2c",
+        "pretty_output": "{\n  \"quote\": \"a\\\"b\",\n  \"backslash\": \"a\\\\b\",\n  \"slash\": \"a/b\",\n  \"newline\": \"a\\nb\",\n  \"tab\": \"a\\tb\",\n  \"carriage\": \"a\\rb\",\n  \"backspace\": \"a\\bb\",\n  \"formfeed\": \"a\\fb\",\n  \"nul\": \"\\u0000\",\n  \"bell\": \"\\u0007\",\n  \"unit-sep\": \"\\u001f\",\n  \"del\": \"\"\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/escape/line-separators",
+      "class": "escape",
+      "description": "U+2028 / U+2029 が生出力かエスケープかを upstream 実測で固定する",
+      "input": "[\"\\u2028\",\"\\u2029\"]",
+      "expected": {
+        "canonical_output": "[\" \",\" \"]",
+        "canonical_digest": "sha256:c5923f02b349b165aa7b2f1c07a9e9d3ac5ec8faf54603146344b9a573bedf34",
+        "compact_output": "[\" \",\" \"]",
+        "compact_digest_prefixed": "sha256:c5923f02b349b165aa7b2f1c07a9e9d3ac5ec8faf54603146344b9a573bedf34",
+        "compact_digest_hex": "c5923f02b349b165aa7b2f1c07a9e9d3ac5ec8faf54603146344b9a573bedf34",
+        "pretty_output": "[\n  \" \",\n  \" \"\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/empty/containers",
+      "class": "empty",
+      "description": "空の配列・オブジェクトは '[]' / '{}' (pretty でも改行を入れない)",
+      "input": "{\"arr\":[],\"obj\":{},\"nested\":{\"a\":[],\"b\":{}},\"arr_of_empty\":[[],{}]}",
+      "expected": {
+        "canonical_output": "{\"arr\":[],\"arr_of_empty\":[[],{}],\"nested\":{\"a\":[],\"b\":{}},\"obj\":{}}",
+        "canonical_digest": "sha256:185dd7fda9f03cbcf89130b5649d86894471598c487bab8fa7ecd46a7f12c75f",
+        "compact_output": "{\"arr\":[],\"obj\":{},\"nested\":{\"a\":[],\"b\":{}},\"arr_of_empty\":[[],{}]}",
+        "compact_digest_prefixed": "sha256:8e73aba3928fb3231cf7ac19baab1ee59dd0016ecb73261391605d6d8ffc18f7",
+        "compact_digest_hex": "8e73aba3928fb3231cf7ac19baab1ee59dd0016ecb73261391605d6d8ffc18f7",
+        "pretty_output": "{\n  \"arr\": [],\n  \"obj\": {},\n  \"nested\": {\n    \"a\": [],\n    \"b\": {}\n  },\n  \"arr_of_empty\": [\n    [],\n    {}\n  ]\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/empty/root-array",
+      "class": "empty",
+      "description": "ルートが空配列",
+      "input": "[]",
+      "expected": {
+        "canonical_output": "[]",
+        "canonical_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "compact_output": "[]",
+        "compact_digest_prefixed": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "compact_digest_hex": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "pretty_output": "[]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/empty/root-object",
+      "class": "empty",
+      "description": "ルートが空オブジェクト",
+      "input": "{}",
+      "expected": {
+        "canonical_output": "{}",
+        "canonical_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "compact_output": "{}",
+        "compact_digest_prefixed": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "compact_digest_hex": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "pretty_output": "{}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/empty/empty-string-key",
+      "class": "empty",
+      "description": "空文字列キー。整列では最小",
+      "input": "{\"z\":1,\"\":2}",
+      "expected": {
+        "canonical_output": "{\"\":2,\"z\":1}",
+        "canonical_digest": "sha256:c4fc2f1ec8594fd26a87d843510557a208175f0089e00ba5f56272eb0ded331e",
+        "compact_output": "{\"z\":1,\"\":2}",
+        "compact_digest_prefixed": "sha256:69a1887a9b76b832643afb3d144c80e56930a1b46300fd41b2da8743b8464666",
+        "compact_digest_hex": "69a1887a9b76b832643afb3d144c80e56930a1b46300fd41b2da8743b8464666",
+        "pretty_output": "{\n  \"z\": 1,\n  \"\": 2\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/struct-order/directive-like",
+      "class": "struct-field-order",
+      "description": "型付き契約型のフィールド宣言順 (contract-*) と再帰ソート (hash-canonical) の対比",
+      "input": "{\"kind\":\"run-stage\",\"stage\":\"domain-design\",\"agent\":\"aidlc-architect-agent\",\"consumes\":[\"a\",\"b\"],\"continue_token\":null}",
+      "expected": {
+        "canonical_output": "{\"agent\":\"aidlc-architect-agent\",\"consumes\":[\"a\",\"b\"],\"continue_token\":null,\"kind\":\"run-stage\",\"stage\":\"domain-design\"}",
+        "canonical_digest": "sha256:1964f03833a3d4808704ef4dd5ed9e818687f39c3cd52dc65555005f2941ceb3",
+        "compact_output": "{\"kind\":\"run-stage\",\"stage\":\"domain-design\",\"agent\":\"aidlc-architect-agent\",\"consumes\":[\"a\",\"b\"],\"continue_token\":null}",
+        "compact_digest_prefixed": "sha256:32cfbd8ad393aa7ddc6d4ce8c0074f4129ac4accb253344281e48b34af1b9d40",
+        "compact_digest_hex": "32cfbd8ad393aa7ddc6d4ce8c0074f4129ac4accb253344281e48b34af1b9d40",
+        "pretty_output": "{\n  \"kind\": \"run-stage\",\n  \"stage\": \"domain-design\",\n  \"agent\": \"aidlc-architect-agent\",\n  \"consumes\": [\n    \"a\",\n    \"b\"\n  ],\n  \"continue_token\": null\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/float-integral/one-point-zero",
+      "class": "float-integral",
+      "description": "1.0 は '1'。整数値の f64 は小数点を落とす",
+      "input": "[1.0,2.0,-3.0,1e2,100.0,0.0]",
+      "expected": {
+        "canonical_output": "[1,2,-3,100,100,0]",
+        "canonical_digest": "sha256:b0aced04c5fee87d7ccaf097cd97aea86dc55544bec4f71d142bb8bb9f6e2bb3",
+        "compact_output": "[1,2,-3,100,100,0]",
+        "compact_digest_prefixed": "sha256:b0aced04c5fee87d7ccaf097cd97aea86dc55544bec4f71d142bb8bb9f6e2bb3",
+        "compact_digest_hex": "b0aced04c5fee87d7ccaf097cd97aea86dc55544bec4f71d142bb8bb9f6e2bb3",
+        "pretty_output": "[\n  1,\n  2,\n  -3,\n  100,\n  100,\n  0\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/scalar/roots",
+      "class": "scalar",
+      "description": "ルートがスカラの 4 形 (null / bool / string / integer)",
+      "input": "[null,true,false,\"hello\",42,-42]",
+      "expected": {
+        "canonical_output": "[null,true,false,\"hello\",42,-42]",
+        "canonical_digest": "sha256:1d5211918f463f8ab52fb2468075e3056e6c6eb1620b6e30544cd8fa1280d5ce",
+        "compact_output": "[null,true,false,\"hello\",42,-42]",
+        "compact_digest_prefixed": "sha256:1d5211918f463f8ab52fb2468075e3056e6c6eb1620b6e30544cd8fa1280d5ce",
+        "compact_digest_hex": "1d5211918f463f8ab52fb2468075e3056e6c6eb1620b6e30544cd8fa1280d5ce",
+        "pretty_output": "[\n  null,\n  true,\n  false,\n  \"hello\",\n  42,\n  -42\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/contract-floats/observed-values",
+      "class": "contract-observed",
+      "description": "`.claude/tools/data/*.json` に実在する浮動小数 22 種 (重複除去・昇順)。棚卸し I4 で発見した実データ",
+      "input": "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1.0,1.25,2.0,3.0,3.75,5.0,6.0,6.25,10.0,12.5,15.0,20.0,25.0,50.0]",
+      "expected": {
+        "canonical_output": "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1,1.25,2,3,3.75,5,6,6.25,10,12.5,15,20,25,50]",
+        "canonical_digest": "sha256:6a15ccfe85339c2ae5aae1df83ef6e105e3721c5e37e11743d221e762804d468",
+        "compact_output": "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1,1.25,2,3,3.75,5,6,6.25,10,12.5,15,20,25,50]",
+        "compact_digest_prefixed": "sha256:6a15ccfe85339c2ae5aae1df83ef6e105e3721c5e37e11743d221e762804d468",
+        "compact_digest_hex": "6a15ccfe85339c2ae5aae1df83ef6e105e3721c5e37e11743d221e762804d468",
+        "pretty_output": "[\n  0.1,\n  0.15,\n  0.2,\n  0.25,\n  0.3,\n  0.4,\n  0.5,\n  0.7,\n  1,\n  1.25,\n  2,\n  3,\n  3.75,\n  5,\n  6,\n  6.25,\n  10,\n  12.5,\n  15,\n  20,\n  25,\n  50\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/contract-integer-like/ev-thresholds",
+      "class": "contract-observed",
+      "description": "`ars-priors.json` の `evThresholds` と同じ形 (integer-like キー 1〜5)。挿入順を崩して先頭寄せを確認する。棚卸し I2 で発見した実データ",
+      "input": "{\"5\":0.5,\"1\":0,\"3\":0.3,\"4\":0.4,\"2\":0.2}",
+      "expected": {
+        "canonical_output": "{\"1\":0,\"2\":0.2,\"3\":0.3,\"4\":0.4,\"5\":0.5}",
+        "canonical_digest": "sha256:5fd4acbc0946dabfb40eb0ecee1e5aa9c1ea8b02ccb28cd322e3805c9cfd55d9",
+        "compact_output": "{\"1\":0,\"2\":0.2,\"3\":0.3,\"4\":0.4,\"5\":0.5}",
+        "compact_digest_prefixed": "sha256:5fd4acbc0946dabfb40eb0ecee1e5aa9c1ea8b02ccb28cd322e3805c9cfd55d9",
+        "compact_digest_hex": "5fd4acbc0946dabfb40eb0ecee1e5aa9c1ea8b02ccb28cd322e3805c9cfd55d9",
+        "pretty_output": "{\n  \"1\": 0,\n  \"2\": 0.2,\n  \"3\": 0.3,\n  \"4\": 0.4,\n  \"5\": 0.5\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/duplicate-keys/last-wins",
+      "class": "duplicate-keys",
+      "description": "同名キーは後勝ちで値を置換し、位置は最初の出現位置を維持する",
+      "input": "{\"a\":1,\"b\":2,\"a\":3}",
+      "expected": {
+        "canonical_output": "{\"a\":3,\"b\":2}",
+        "canonical_digest": "sha256:493df656a590967c84d643bdd55ee956fb53262c51b154115083c9bcc4c992e3",
+        "compact_output": "{\"a\":3,\"b\":2}",
+        "compact_digest_prefixed": "sha256:493df656a590967c84d643bdd55ee956fb53262c51b154115083c9bcc4c992e3",
+        "compact_digest_hex": "493df656a590967c84d643bdd55ee956fb53262c51b154115083c9bcc4c992e3",
+        "pretty_output": "{\n  \"a\": 3,\n  \"b\": 2\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "hooks/write-audit-log/artifact-updated-by-overwrite",
+  "family": "hooks",
+  "hook": "write-audit-log",
+  "case": "artifact-updated-by-overwrite",
+  "upstream_hook_file": ".claude/hooks/aidlc-write-audit-log.ts",
+  "description": "Write でも mtime が birthtime から離れていれば上書きとみなし ARTIFACT_UPDATED を残す (採取では mtime を 60 秒戻して上書きを模す)",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

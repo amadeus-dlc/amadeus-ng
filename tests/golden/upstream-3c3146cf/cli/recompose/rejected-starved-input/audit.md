@@ -1,0 +1,9 @@
+
+## Error Logged
+**Timestamp**: <TS>
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-utility
+**Command**: aidlc-utility recompose --skip observability-setup --project-dir <ROOT>
+**Error**: Recompose rejected by the strict validator:\n  - Stage "performance-validation" requires artifact "dashboards" whose producer(s) [observability-setup] are not on the "recomposed classic" path. Strict (recompose) mode rejects a starved required input.\n  - Stage "feedback-optimization" requires artifact "dashboards" whose producer(s) [observability-setup] are not on the "recomposed classic" path. Strict (recompose) mode rejects a starved required input.\n  - Stage "feedback-optimization" requires artifact "alarms" whose producer(s) [observability-setup] are not on the "recomposed classic" path. Strict (recompose) mode rejects a starved required input.\n  - Stage "feedback-optimization" requires artifact "slo-config" whose producer(s) [observability-setup] are not on the "recomposed classic" path. Strict (recompose) mode rejects a starved required input.
+
+---

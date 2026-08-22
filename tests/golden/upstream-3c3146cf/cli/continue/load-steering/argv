@@ -1,0 +1,8 @@
+[
+  "bun",
+  ".claude/tools/aidlc-orchestrate.ts",
+  "continue",
+  "<SESSION>",
+  "--project-dir",
+  "<ROOT>"
+]

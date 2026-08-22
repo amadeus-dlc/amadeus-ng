@@ -1,0 +1,164 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-canon-json-goldens",
+  "upstream_ids": [
+    "FR7.1",
+    "FR7.2",
+    "FR7.3",
+    "BR1.1",
+    "BR1.2",
+    "BR1.3",
+    "BR1.4",
+    "BR1.5",
+    "BR1.6",
+    "BR1.7",
+    "BR1.8",
+    "BR2.1",
+    "BR2.2",
+    "BR2.3",
+    "BR2.4",
+    "BR2.5",
+    "NFR1.1",
+    "NFR1.2",
+    "NFR1.3",
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR4.1",
+    "NFR4.2",
+    "NFR4.3",
+    "NFR4.4"
+  ],
+  "coverage": [
+    {
+      "id": "FR7.1",
+      "status": "OK",
+      "target": "scripts/goldens/recapture-hash-canonical.sh"
+    },
+    {
+      "id": "FR7.2",
+      "status": "OK",
+      "target": "scripts/goldens/recapture-cli.sh"
+    },
+    {
+      "id": "FR7.3",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/lib.rs"
+    },
+    {
+      "id": "BR1.1",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/canonical.rs"
+    },
+    {
+      "id": "BR1.2",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/canonical.rs"
+    },
+    {
+      "id": "BR1.3",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/writer.rs"
+    },
+    {
+      "id": "BR1.4",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/writer.rs"
+    },
+    {
+      "id": "BR1.5",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/writer.rs"
+    },
+    {
+      "id": "BR1.6",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/digest.rs"
+    },
+    {
+      "id": "BR1.7",
+      "status": "OK",
+      "target": "clippy.toml"
+    },
+    {
+      "id": "BR1.8",
+      "status": "OK",
+      "target": "Cargo.toml"
+    },
+    {
+      "id": "BR2.1",
+      "status": "OK",
+      "target": "tests/golden/upstream-3c3146cf/hash-canonical/provenance.json"
+    },
+    {
+      "id": "BR2.2",
+      "status": "OK",
+      "target": "modules/shared/canon-json/tests/support/mod.rs"
+    },
+    {
+      "id": "BR2.3",
+      "status": "OK",
+      "target": "modules/shared/canon-json/tests/golden_hash_canonical.rs"
+    },
+    {
+      "id": "BR2.4",
+      "status": "OK",
+      "target": "tests/golden/upstream-3c3146cf/cli/provenance.json"
+    },
+    {
+      "id": "BR2.5",
+      "status": "OK",
+      "target": "tests/golden/upstream-3c3146cf/README.md"
+    },
+    {
+      "id": "NFR1.1",
+      "status": "OK",
+      "target": "modules/shared/canon-json/tests/golden_hash_canonical.rs"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/digest.rs"
+    },
+    {
+      "id": "NFR1.3",
+      "status": "OK",
+      "target": "modules/shared/canon-json/tests/golden_corpus_read.rs"
+    },
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "modules/shared/canon-json/tests/golden_hash_canonical.rs"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/lib.rs"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/writer.rs"
+    },
+    {
+      "id": "NFR4.1",
+      "status": "OK",
+      "target": "modules/shared/canon-json/Cargo.toml"
+    },
+    {
+      "id": "NFR4.2",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/lib.rs"
+    },
+    {
+      "id": "NFR4.3",
+      "status": "OK",
+      "target": "modules/shared/canon-json/src/parse.rs"
+    },
+    {
+      "id": "NFR4.4",
+      "status": "OK",
+      "target": "tests/golden/upstream-3c3146cf/hooks/provenance.json"
+    }
+  ]
+}

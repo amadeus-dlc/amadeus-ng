@@ -1,0 +1,11 @@
+[
+  "bun",
+  ".claude/tools/aidlc-state.ts",
+  "practices-promote",
+  "--team-practices",
+  "aidlc/spaces/default/intents/<TS>-golden/inception/practices-discovery/team-practices.md",
+  "--discovered-rules",
+  "aidlc/spaces/default/intents/<TS>-golden/inception/practices-discovery/discovered-rules.md",
+  "--project-dir",
+  "<ROOT>"
+]

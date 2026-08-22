@@ -1,0 +1,11 @@
+[
+  "bun",
+  ".claude/tools/aidlc-jump.ts",
+  "execute",
+  "--target",
+  "domain-design",
+  "--direction",
+  "forward",
+  "--project-dir",
+  "<ROOT>"
+]

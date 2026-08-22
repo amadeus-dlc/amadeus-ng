@@ -1,0 +1,17 @@
+{
+  "stage": "nfr-design",
+  "unit": "u1-canon-json-goldens",
+  "upstream_ids": ["NFR1.1", "NFR1.2", "NFR1.3", "NFR2.1", "NFR2.2", "NFR2.3", "NFR4.1", "NFR4.2", "NFR4.3", "NFR4.4"],
+  "coverage": [
+    { "id": "NFR1.1", "status": "OK", "target": "純粋な直列化関数 + 3 プロファイル + ゴールデン先行（security-design §3、logical-components writer/profile）" },
+    { "id": "NFR1.2", "status": "OK", "target": "Digest { family } による族の型固定 + 用途→族表（security-design §3、logical-components digest）" },
+    { "id": "NFR1.3", "status": "OK", "target": "正規化 4 種のみ・規則はコーパス固定（security-design §3、logical-components ゴールデン比較器）" },
+    { "id": "NFR2.1", "status": "OK", "target": "ゴールデン先行 TDD（logical-components §4 テスト配置）" },
+    { "id": "NFR2.2", "status": "OK", "target": "カバレッジ 90% 床 — ユニット + PBT + ゴールデンの 3 層配置（logical-components §4）" },
+    { "id": "NFR2.3", "status": "OK", "target": "proptest による決定性・往復・冪等性（logical-components §4）" },
+    { "id": "NFR4.1", "status": "OK", "target": "依存 3 つ（sha2 / serde / serde_json）・cargo audit・Cargo.lock 固定（security-design §4）" },
+    { "id": "NFR4.2", "status": "OK", "target": "unsafe_code forbid（security-design §4）" },
+    { "id": "NFR4.3", "status": "OK", "target": "parse 境界 1 か所・ParseError 変種（Syntax/TooDeep/Encoding）・深さ上限 128 + 実測棚卸し（security-design §2）" },
+    { "id": "NFR4.4", "status": "OK", "target": "使い捨てワークスペース採取・正規化・レビュー・ログなし（security-design §5）" }
+  ]
+}

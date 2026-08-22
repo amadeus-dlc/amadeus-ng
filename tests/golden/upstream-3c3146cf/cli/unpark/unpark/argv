@@ -1,0 +1,7 @@
+[
+  "bun",
+  ".claude/tools/aidlc-state.ts",
+  "unpark",
+  "--project-dir",
+  "<ROOT>"
+]

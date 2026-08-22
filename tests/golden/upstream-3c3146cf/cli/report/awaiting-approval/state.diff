@@ -1,0 +1,11 @@
+--- aidlc-state.md (before)
++++ aidlc-state.md (after)
+@@ -60,7 +60,7 @@
+ 
+ ### INCEPTION PHASE
+ - [ ] reverse-engineering — SKIP
+-- [-] practices-discovery — EXECUTE
++- [?] practices-discovery — EXECUTE
+ - [ ] requirements-analysis — EXECUTE
+ - [ ] user-stories — EXECUTE
+ - [ ] refined-mockups — EXECUTE

@@ -1,0 +1,9 @@
+[
+  "bun",
+  ".claude/tools/aidlc-utility.ts",
+  "recompose",
+  "--skip",
+  "incident-response",
+  "--project-dir",
+  "<ROOT>"
+]

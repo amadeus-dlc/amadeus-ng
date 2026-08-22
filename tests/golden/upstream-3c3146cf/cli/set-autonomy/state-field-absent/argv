@@ -1,0 +1,9 @@
+[
+  "bun",
+  ".claude/tools/aidlc-bolt.ts",
+  "set-autonomy",
+  "--mode",
+  "gated",
+  "--project-dir",
+  "<ROOT>"
+]

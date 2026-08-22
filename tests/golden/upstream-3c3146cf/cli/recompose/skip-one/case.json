@@ -1,0 +1,13 @@
+{
+  "id": "cli/recompose/skip-one",
+  "family": "cli",
+  "verb": "recompose",
+  "case": "skip-one",
+  "description": "実行中の計画から保留ステージを 1 本外す",
+  "stdout_kind": "text",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}
