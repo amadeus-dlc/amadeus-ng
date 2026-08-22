@@ -28,7 +28,7 @@ EXPECTED_CHANNEL="1.95.0"
 EXPECTED_COMPONENTS="rustfmt clippy llvm-tools"
 EXPECTED_PROFILE="minimal"
 EXPECTED_TOLERANCE="0.01"
-EXPECTED_IGNORE_REGEX="--ignore-filename-regex '^modules/app/aidlc/src/main\.rs\$'"
+EXPECTED_IGNORE_REGEX='^modules/app/aidlc/src/main\.rs$' # cargo llvm-cov に渡す除外正規表現
 EXPECTED_SEED="20260823"
 EXPECTED_CONTEXTS="check coverage quint" # 比較は集合 (ソート済み) で行う
 GOVERNANCE_REPO="${GOVERNANCE_REPO:-amadeus-dlc/amadeus-ng}"
@@ -258,12 +258,16 @@ check_coverage_script() {
     fail "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} でない (シード固定後は 0.01 が要求値)"
   fi
 
-  # パターンが -- で始まるためオプション扱いされないよう -e で渡す
-  if grep -F -q -e "${EXPECTED_IGNORE_REGEX}" "${COVERAGE_FILE}"; then
-    pass "coverage-ignore-regex" "composition root だけを除外する ${EXPECTED_IGNORE_REGEX} がある (NFR2.5)"
-  else
-    fail "coverage-ignore-regex" "${EXPECTED_IGNORE_REGEX} が無い (composition root の除外が未設定)"
-  fi
+  # 除外は「--ignore-filename-regex を cargo llvm-cov に渡している」ことと
+  # 「その正規表現が期待どおり composition root 1 ファイルに限定されている」ことの
+  # 2 つの事実で確認する (インライン記述でも定数経由でも成立するようにする)。
+  # パターンが -- で始まるためオプション扱いされないよう -e で渡す。
+  local ig_ok=0
+  grep -q -e '--ignore-filename-regex' "${COVERAGE_FILE}" || ig_ok=1
+  grep -F -q -e "${EXPECTED_IGNORE_REGEX}" "${COVERAGE_FILE}" || ig_ok=1
+  expect "${ig_ok}" "coverage-ignore-regex" \
+    "cargo llvm-cov に --ignore-filename-regex '${EXPECTED_IGNORE_REGEX}' を渡し composition root だけを除外している (NFR2.5)" \
+    "--ignore-filename-regex '${EXPECTED_IGNORE_REGEX}' の指定が無い (composition root の除外が未設定)"
 
   if grep -Eq "^PROPTEST_RNG_SEED=\"?${EXPECTED_SEED}\"?$" "${COVERAGE_FILE}" \
     && grep -Eq '^export PROPTEST_RNG_SEED$|^export PROPTEST_RNG_SEED=' "${COVERAGE_FILE}"; then

@@ -19,7 +19,15 @@
 #   - `cargo llvm-cov --workspace` の既定に従い、workspace 全クレートのプロダクトコードを
 #     対象とする。テストコード自体は cargo-llvm-cov の既定で計測対象に含まれない。
 #   - `formal/` (Quint モデル) と `docs/` は Rust クレートではないため、workspace の
-#     コンパイル対象に含まれず、自然に計測対象外となる。追加の除外設定は不要。
+#     コンパイル対象に含まれず、自然に計測対象外となる。
+#   - 明示的な除外は composition root (`modules/app/aidlc/src/main.rs`) の 1 ファイルだけ
+#     (NFR2.5)。配線コードはテストで駆動する対象ではないため床の計算から外す。それ以外は
+#     90% 床を維持する。除外はファイル単位で、クレート単位 (`--exclude`) にはしない。
+#
+# 計測の決定化 (NFR2.4):
+#   - PBT (proptest) のランダム経路が実行毎に変わると同一コードでも line coverage が
+#     揺れる。`PROPTEST_RNG_SEED` を固定して head / base を同条件で計測する。CI 側
+#     (.github/workflows/ci.yml) も同じ値を渡すのでローカルと CI の値が一致する。
 #
 # bash 3.2 (macOS 標準) 互換のため、連想配列・mapfile・readarray は使用しない。
 #
@@ -27,11 +35,18 @@ set -euo pipefail
 
 # --- しきい値 (ここで一元管理) ----------------------------------------------
 ABSOLUTE_THRESHOLD=90.0
-# 相対ゲートの許容誤差。PBT (proptest) のランダムケースが通る分岐が実行毎に変わるため、
-# 同一コードでも line coverage は ±0.4pp 程度揺れる (2026-08-22 実測: 94.87〜95.29%)。
-# 誤差をノイズ実測に合わせて較正しつつ、実際の減衰 (新規未テストコードは通常これより
-# 大きく下げる) は検出する。PBT のシード固定で計測を決定化できたら 0.01 に引き締める。
-TOLERANCE=0.5
+# 相対ゲートの許容誤差。PBT のシードを固定して計測を決定化したので (下の
+# PROPTEST_RNG_SEED)、同一コードの再計測は差 0.00pp になる。従来の 0.5 は
+# シード非固定時の揺れ (2026-08-22 実測: 94.87〜95.29%、±0.4pp) に合わせた
+# 較正値であり、決定化後は浮動小数の丸め分だけを見込んだ 0.01 で足りる (NFR2.4)。
+TOLERANCE=0.01
+# PBT (proptest) の RNG シード。proptest 1.11 はこの環境変数を RngSeed::Fixed(u64)
+# として読む。値を変えると計測されるランダム経路が変わるため、変更は PR でのみ行う。
+PROPTEST_RNG_SEED="20260823"
+export PROPTEST_RNG_SEED
+# カバレッジ計測から外す唯一のファイル (composition root、NFR2.5)。cargo-llvm-cov には
+# リポジトリルートからの相対パスで照合される正規表現を渡す。
+IGNORE_FILENAME_REGEX='^modules/app/aidlc/src/main\.rs$'
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,6 +67,8 @@ usage() {
 しきい値 (スクリプト冒頭の変数で管理):
   絶対ゲート: ABSOLUTE_THRESHOLD=${ABSOLUTE_THRESHOLD} (%) 以上で pass。
   相対ゲート: head が base を下回ったら fail (同値・上回りは pass)。許容誤差 TOLERANCE=${TOLERANCE}。
+  計測除外: ${IGNORE_FILENAME_REGEX} (composition root のみ)。
+  PBT シード: PROPTEST_RNG_SEED=${PROPTEST_RNG_SEED} (固定 — 再計測で差 0.00pp)。
 
 例:
   scripts/coverage.sh
@@ -92,7 +109,8 @@ measure_line_coverage() {
   (
     cd "${dir}"
     cargo llvm-cov clean --workspace >/dev/null 2>&1 || true
-    cargo llvm-cov --workspace --json --summary-only --output-path "${json_path}" 1>&2
+    cargo llvm-cov --workspace --ignore-filename-regex "${IGNORE_FILENAME_REGEX}" \
+      --json --summary-only --output-path "${json_path}" 1>&2
   )
 
   local percent

@@ -18,6 +18,10 @@ jobs:
   check:
     name: check
     runs-on: ubuntu-latest
+    # NFR2.4: PBT (proptest) の RNG シードを固定して実行経路を決定化する。
+    # scripts/coverage.sh の PROPTEST_RNG_SEED と同じ値にすること。
+    env:
+      PROPTEST_RNG_SEED: "20260823"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,6 +85,10 @@ jobs:
   coverage:
     name: coverage
     runs-on: ubuntu-latest
+    # scripts/coverage.sh も同じ値を export するが、ワークフロー側でも明示して
+    # ローカルと CI でシードが一致していることを読み取れるようにする (NFR2.4)。
+    env:
+      PROPTEST_RNG_SEED: "20260823"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
