@@ -11,17 +11,28 @@ macro_rules! event_types {
     ($( $cat:ident { $( $name:ident = $s:literal ),+ $(,)? } )+) => {
         /// 22 カテゴリ (audit-format.md と厳密一致)。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum EventCategory { $( $cat, )+ }
+        pub enum EventCategory { $(
+            /// upstream レジストリの分類見出しに対応するカテゴリ。所属イベントは
+            /// `EventType::ALL` を `category()` で絞り込んで得る。
+            $cat,
+        )+ }
 
         impl EventCategory {
+            /// 22 カテゴリの全値。並びは upstream レジストリの掲載順 (完全転記なので
+            /// 宣言順 = 掲載順)。
             pub const ALL: &'static [EventCategory] = &[ $( EventCategory::$cat, )+ ];
         }
 
         /// 86 イベントの閉集合。新イベントの発明は禁止 (E1)。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum EventType { $( $( $name, )+ )+ }
+        pub enum EventType { $( $(
+            /// 監査行の event 名 1 語。ワイヤ綴りは `as_str`、所属カテゴリは `category`。
+            $name,
+        )+ )+ }
 
         impl EventType {
+            /// 86 イベントの全値。並びは upstream レジストリの掲載順 (カテゴリ順 ×
+            /// カテゴリ内掲載順)。
             pub const ALL: &'static [EventType] = &[ $( $( EventType::$name, )+ )+ ];
 
             /// 監査行に現れる正準綴り。
@@ -34,6 +45,7 @@ macro_rules! event_types {
                 match s { $( $( $s => Some(EventType::$name), )+ )+ _ => None }
             }
 
+            /// レジストリ上でこのイベントが載っている分類。全域関数 (未分類は存在しない)。
             pub const fn category(self) -> EventCategory {
                 match self { $( $( EventType::$name => EventCategory::$cat, )+ )+ }
             }
@@ -167,11 +179,14 @@ impl EventType {
         EventType::DocumentRemoved,
     ];
 
+    /// レジストリで `✓` が付いた MANDATORY 8 に属するか (発行が任意ではないイベント)。
     #[must_use]
     pub fn is_mandatory(self) -> bool {
         Self::MANDATORY.contains(&self)
     }
 
+    /// CLI_PROTECTED 18 に属するか。真なら公開 audit CLI からの直接 emit は拒否され、
+    /// 発行権限は所有ツール／フックに限られる。
     #[must_use]
     pub fn is_cli_protected(self) -> bool {
         Self::CLI_PROTECTED.contains(&self)

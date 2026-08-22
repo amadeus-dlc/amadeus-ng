@@ -460,11 +460,11 @@ fn to_stage_node(wire: WireStageNode, path: &Path) -> Result<StageNode, GraphRea
                 )
             })?),
         };
-        consumes.push(ConsumeDecl {
-            artifact: decl.artifact,
-            required: decl.required,
+        consumes.push(ConsumeDecl::new(
+            decl.artifact,
+            decl.required,
             conditional_on,
-        });
+        ));
     }
 
     let mut requires_stage = Vec::with_capacity(wire.requires_stage.len());
@@ -488,10 +488,7 @@ fn to_stage_node(wire: WireStageNode, path: &Path) -> Result<StageNode, GraphRea
                 &format!("stage {:?} has unknown rule scope ({e:?})", wire.slug),
             )
         })?;
-        rules_in_context.push(RuleInContext {
-            path: rule.path,
-            scope,
-        });
+        rules_in_context.push(RuleInContext::new(rule.path, scope));
     }
 
     let review_class = match wire.review_class {
@@ -507,11 +504,7 @@ fn to_stage_node(wire: WireStageNode, path: &Path) -> Result<StageNode, GraphRea
     let sensors_applicable = wire
         .sensors_applicable
         .into_iter()
-        .map(|s| SensorRef {
-            id: s.id,
-            path: s.path,
-            matches: s.matches,
-        })
+        .map(|s| SensorRef::new(s.id, s.path, s.matches))
         .collect();
 
     let mut builder = StageNodeBuilder::new(slug, number, wire.name, phase, execution, mode)

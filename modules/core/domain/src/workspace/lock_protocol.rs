@@ -52,6 +52,17 @@ pub struct LockProtocol {
     threshold: u32,
 }
 
+/// reap 適格性 (audit_lock.qnt `actReap` のガードそのもの) — 死んだ所有者、または保持経過が
+/// しきい値を**厳密に**超えた保持者だけが奪取可能。W2 (生きた閾値以内の保持者からは決して
+/// 奪わない) の単一実装であり、モデル (`LockProtocol::reap`) と実 Gateway
+/// (`FsWorkspaceLock::try_reap`) の両方がこの関数を呼ぶ — 境界規約 (`>`) を 2 箇所に
+/// 重複させないための Tell-Don't-Ask 装置。時間の単位は呼出側で揃える (モデルは tick、
+/// 実 Gateway は ms)。
+#[must_use]
+pub const fn reap_eligible(owner_alive: bool, held_elapsed: u64, stale_threshold: u64) -> bool {
+    !owner_alive || held_elapsed > stale_threshold
+}
+
 impl LockProtocol {
     /// `process_count` 個のプロセス (全員生存) と閾値でロックを初期化する
     /// (`audit_lock.qnt` の `init` — `dirOwner=-1`, `depth=0`, その他すべて 0/false)。
@@ -78,46 +89,62 @@ impl LockProtocol {
 
     // ---- 観測 (read model) ----
 
+    /// モデルのプロセス数 N。コマンドが受け付けるインデックスの定義域は `0..process_count`
+    /// (外は `UnknownProcess`)。
     #[must_use]
     pub const fn process_count(&self) -> usize {
         self.alive.len()
     }
 
+    /// プロセス `p` の生存 (`kill(pid,0)` の ESRCH 判定の抽象)。`p` は `0..process_count` の範囲で
+    /// あること。
     #[must_use]
     pub fn alive(&self, p: usize) -> bool {
         self.alive[p]
     }
 
+    /// mkdir-EEXIST ロックディレクトリの保持者。`None` = 不在 (モデルの `dirOwner = -1`)。
+    /// 保持者の生存は含意しない — crash 後も stale なまま残る (W5)。
     #[must_use]
     pub const fn dir_owner(&self) -> Option<usize> {
         self.dir_owner
     }
 
+    /// `withAuditLock` の identity ごとの再入深度カウンタ。`dir_owner` が `None` ⇔ 0、
+    /// `Some` ⇒ 1 以上 (`depth_consistent`)。
     #[must_use]
     pub const fn depth(&self) -> u32 {
         self.depth
     }
 
+    /// 現保持者の保持経過。単位は tick (owner.json スタンプ経過時間の抽象。実 Gateway では ms)。
+    /// `threshold` との比較にのみ意味がある値で、取得・reap で 0 に戻る。
     #[must_use]
     pub const fn held_ticks(&self) -> u32 {
         self.held_ticks
     }
 
+    /// 監査シャードの行数。追記のみのため単調非減少 (減る遷移はモデルに存在しない)。
     #[must_use]
     pub const fn audit_len(&self) -> u64 {
         self.audit_len
     }
 
+    /// 状態ファイルの版。audit-first により、監査 emit 済みトランザクション内でのみ進む (W1)。
     #[must_use]
     pub const fn state_ver(&self) -> u64 {
         self.state_ver
     }
 
+    /// 「監査 emit 済み・state 未書込」の中間状態 (R6 の窓) が開いているか。真のときのみ
+    /// `transition_write` が通る。
     #[must_use]
     pub const fn pending(&self) -> bool {
         self.pending
     }
 
+    /// stale 判定のしきい値。単位は `held_ticks` と同じ tick で、**厳密超過** (`>`) のみが
+    /// 生きた保持者からの reap を許す (W2)。
     #[must_use]
     pub const fn threshold(&self) -> u32 {
         self.threshold
@@ -287,7 +314,11 @@ impl LockProtocol {
             return Err(LockError::CannotReapOwnLock);
         }
         let owner_alive = self.alive[owner];
-        if owner_alive && self.held_ticks <= self.threshold {
+        if !reap_eligible(
+            owner_alive,
+            u64::from(self.held_ticks),
+            u64::from(self.threshold),
+        ) {
             return Err(LockError::ReapNotEligible);
         }
         self.dir_owner = Some(p);
@@ -370,6 +401,15 @@ mod tests {
         // 死んだ所有者からは held_ticks によらず即 reap 可能
         lock.reap(1).unwrap();
         assert_eq!(lock.dir_owner(), Some(1));
+    }
+
+    #[test]
+    fn reap_eligibility_is_dead_owner_or_strict_threshold_excess() {
+        // 生存 ∧ ちょうど閾値 → 不適格 (厳密超過のみ)
+        assert!(!reap_eligible(true, 3, 3));
+        assert!(reap_eligible(true, 4, 3));
+        // 死んだ所有者は経過によらず即適格
+        assert!(reap_eligible(false, 0, 3));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! `StageNode` — コンパイル済み `stage-graph.json` の 1 要素 (`FIELD_ORDER` 28 フィールド) の
 //! 型付き表現 (レポート §2.2)。
 //!
-//! 形の観測可能契約 (レポート §5.1-3/4/5):
+//! 形の観測可能契約 (レポート §6.1-3/4/5):
 //! - `rules_in_context` は**オブジェクト配列** `{path, scope}`、`sensors_applicable` も
 //!   **オブジェクト配列** `{id, path, matches?}`。**文字列配列に潰さない**
 //!   (directive 側の `string[]` は射影であって格納形ではない — `sensor_ids()` /
@@ -26,17 +26,36 @@ use super::stage_slug::StageSlug;
 /// `rules_in_context[].scope` の閉集合 (upstream 08 §110-119)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RuleScope {
+    /// `memory/org.md` 由来。全ステージへ無条件に載る (upstream 08 §3.2)。
     Org,
+    /// `memory/team.md` 由来。同じく無条件。
     Team,
+    /// `memory/project.md` 由来。同じく無条件。
     Project,
+    /// `memory/phases/<phase>.md` 由来。ステージの `phase` と一致するときだけ載る。
     Phase,
 }
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownRuleScope(pub String);
+pub struct UnknownRuleScope(String);
+
+impl UnknownRuleScope {
+    /// 拒否された生値をそのまま包む。トリムも小文字化もしない。
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownRuleScope {
+        UnknownRuleScope(value.into())
+    }
+
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl RuleScope {
+    /// 宣言順の全値 (4 値の網羅走査の正本)。並びは広い層から狭い層への 4 層チェーン。
     pub const ALL: [RuleScope; 4] = [
         RuleScope::Org,
         RuleScope::Team,
@@ -53,10 +72,11 @@ impl RuleScope {
             "team" => RuleScope::Team,
             "project" => RuleScope::Project,
             "phase" => RuleScope::Phase,
-            other => return Err(UnknownRuleScope(other.to_string())),
+            other => return Err(UnknownRuleScope::new(other)),
         })
     }
 
+    /// `stage-graph.json` 上の正準綴り (`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -71,11 +91,36 @@ impl RuleScope {
 /// compile 時に確定した rules-in-context の 1 エントリ。
 ///
 /// `path` は `default` スペースに**コンパイル時ピン**されており、実行時に再解決しては
-/// ならない (レポート §5.1-18)。active space への rebase は別経路の責務。
+/// ならない (レポート §6.1-18)。active space への rebase は別経路の責務。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleInContext {
-    pub path: String,
-    pub scope: RuleScope,
+    path: String,
+    scope: RuleScope,
+}
+
+impl RuleInContext {
+    /// compile が解決した 1 行を組む。`path` はピン済みの値をそのまま渡す (ここで解決しない)。
+    #[must_use]
+    pub fn new(path: impl Into<String>, scope: RuleScope) -> RuleInContext {
+        RuleInContext {
+            path: path.into(),
+            scope,
+        }
+    }
+
+    /// ルールファイルのパス。`default` スペースへのコンパイル時ピンであり、
+    /// active space での配送パスへの上書きは transport 側の責務。
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// このルールがどの層のものか。strict-additive なので層で落とされることはなく、
+    /// 解決済みの行はすべて適用される。
+    #[must_use]
+    pub const fn scope(&self) -> RuleScope {
+        self.scope
+    }
 }
 
 /// compile 時に manifest から逐語スナップショットしたセンサー適用宣言。
@@ -83,24 +128,75 @@ pub struct RuleInContext {
 /// フック側は fire 時に manifest を再オープンしない (レポート §2.2 #28)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SensorRef {
-    pub id: String,
-    pub path: String,
+    id: String,
+    path: String,
     /// capability glob の逐語コピー (欠損しうる)。
-    pub matches: Option<String>,
+    matches: Option<String>,
+}
+
+impl SensorRef {
+    /// compile 時のスナップショットを組む。`matches` が manifest に無ければ `None`。
+    #[must_use]
+    pub fn new(
+        id: impl Into<String>,
+        path: impl Into<String>,
+        matches: Option<String>,
+    ) -> SensorRef {
+        SensorRef {
+            id: id.into(),
+            path: path.into(),
+            matches,
+        }
+    }
+
+    /// センサー id。directive 射影 (`StageNode::sensor_ids`) が残すのはこの欄だけ。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// センサー定義ファイルのパス。格納形にのみ存在し、directive 射影では落ちる。
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// capability glob の逐語コピー (欠損しうる)。
+    #[must_use]
+    pub fn matches(&self) -> Option<&str> {
+        self.matches.as_deref()
+    }
 }
 
 /// `consumes[].conditional_on` の閉集合。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BrownfieldGreenfield {
+    /// 既存コードベースの上で進むプロジェクト。
     Brownfield,
+    /// 新規に起こすプロジェクト。
     Greenfield,
 }
 
 /// 閉集合外の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownBrownfieldGreenfield(pub String);
+pub struct UnknownBrownfieldGreenfield(String);
+
+impl UnknownBrownfieldGreenfield {
+    /// 拒否された生値をそのまま包む。トリムも小文字化もしない。
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> UnknownBrownfieldGreenfield {
+        UnknownBrownfieldGreenfield(value.into())
+    }
+
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl BrownfieldGreenfield {
+    /// 宣言順の全値 (2 値の網羅走査の正本)。`always` に相当する第 3 の値は存在しない。
     pub const ALL: [BrownfieldGreenfield; 2] = [
         BrownfieldGreenfield::Brownfield,
         BrownfieldGreenfield::Greenfield,
@@ -113,10 +209,11 @@ impl BrownfieldGreenfield {
         Ok(match s {
             "brownfield" => BrownfieldGreenfield::Brownfield,
             "greenfield" => BrownfieldGreenfield::Greenfield,
-            other => return Err(UnknownBrownfieldGreenfield(other.to_string())),
+            other => return Err(UnknownBrownfieldGreenfield::new(other)),
         })
     }
 
+    /// `stage-graph.json` 上の正準綴り (`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -129,9 +226,44 @@ impl BrownfieldGreenfield {
 /// 入力成果物の宣言。`required: false` は欠損しても無言で落ちる (レポート §2.2 #15)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsumeDecl {
-    pub artifact: String,
-    pub required: bool,
-    pub conditional_on: Option<BrownfieldGreenfield>,
+    artifact: String,
+    required: bool,
+    conditional_on: Option<BrownfieldGreenfield>,
+}
+
+impl ConsumeDecl {
+    /// 入力宣言 1 件を組む。`conditional_on` が `None` なら常に適用される宣言。
+    #[must_use]
+    pub fn new(
+        artifact: impl Into<String>,
+        required: bool,
+        conditional_on: Option<BrownfieldGreenfield>,
+    ) -> ConsumeDecl {
+        ConsumeDecl {
+            artifact: artifact.into(),
+            required,
+            conditional_on,
+        }
+    }
+
+    /// 成果物の語彙名 (パスではない)。
+    #[must_use]
+    pub fn artifact(&self) -> &str {
+        &self.artifact
+    }
+
+    /// `false` は欠損しても無言で落ちる。
+    #[must_use]
+    pub const fn required(&self) -> bool {
+        self.required
+    }
+
+    /// この入力を要求するプロジェクト種別。`None` は種別を問わないという意味であって、
+    /// 「不明」ではない。
+    #[must_use]
+    pub const fn conditional_on(&self) -> Option<BrownfieldGreenfield> {
+        self.conditional_on
+    }
 }
 
 /// コンパイル済みグラフの 1 ノード。フィールドは `FIELD_ORDER` の 28 エントリに 1:1 対応する。
@@ -170,21 +302,25 @@ pub struct StageNode {
 impl StageNode {
     // ---- identity ----
 
+    /// グラフ内で一意な識別子。ステージファイル名の stem と一致する。
     #[must_use]
     pub const fn slug(&self) -> &StageSlug {
         &self.slug
     }
 
+    /// エンジンが割り当てた `"<phaseIndex>.<seq>"`。著者は書けず、比較は数値順のみで行う。
     #[must_use]
     pub const fn number(&self) -> &StageNumber {
         &self.number
     }
 
+    /// 表示名。著者の `name:` が無ければ slug の title case が入る。
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// 所属フェーズ。`rules_in_context` の phase 層が載る条件でもある。
     #[must_use]
     pub const fn phase(&self) -> PhaseId {
         self.phase
@@ -192,6 +328,7 @@ impl StageNode {
 
     // ---- 適用可否 ----
 
+    /// ステージ著者側の適用可否。プラン所属 (EXECUTE / SKIP) ともゲート軸とも直交する。
     #[must_use]
     pub const fn execution(&self) -> ExecutionKind {
         self.execution
@@ -205,16 +342,19 @@ impl StageNode {
 
     // ---- ルーティング ----
 
+    /// 主エージェントの slug。予約疑似エージェント `orchestrator` を取りうる。
     #[must_use]
     pub fn lead_agent(&self) -> &str {
         &self.lead_agent
     }
 
+    /// 補助エージェントの slug 列。`mode ∈ {pipeline, mob}` では非空 (compile 時に検証済み)。
     #[must_use]
     pub fn support_agents(&self) -> &[String] {
         &self.support_agents
     }
 
+    /// 実行トポロジ。`agent-team` は予約値であり、既定経路へフォールスルーさせてはならない。
     #[must_use]
     pub const fn mode(&self) -> StageMode {
         self.mode
@@ -252,6 +392,7 @@ impl StageNode {
         &self.produces_kinds
     }
 
+    /// 入力成果物の宣言列。欠損時の態度は各エントリの `required` が決める。
     #[must_use]
     pub fn consumes(&self) -> &[ConsumeDecl] {
         &self.consumes
@@ -285,6 +426,7 @@ impl StageNode {
 
     // ---- レビュー ----
 
+    /// レビュアーエージェントの slug。`None` はレビュアー宣言が無いステージ。
     #[must_use]
     pub fn reviewer(&self) -> Option<&str> {
         self.reviewer.as_deref()
@@ -296,6 +438,8 @@ impl StageNode {
         self.reviewer_max_iterations
     }
 
+    /// レビューの重量宣言。`reviewer` 宣言が前提。値域の正準所有は verification 側にあり、
+    /// ここは外部キーとして値をそのまま運ぶ (12 §1 B7)。
     #[must_use]
     pub const fn review_class(&self) -> Option<ReviewClass> {
         self.review_class
@@ -315,7 +459,7 @@ impl StageNode {
         self.plugin.as_deref()
     }
 
-    /// `enabled` の生値。**`None` は「キー不在」= 有効**を意味する (レポート §5.3-5)。
+    /// `enabled` の生値。**`None` は「キー不在」= 有効**を意味する (レポート §6.3-5)。
     #[must_use]
     pub const fn enabled(&self) -> Option<bool> {
         self.enabled
@@ -341,11 +485,13 @@ impl StageNode {
 
     // ---- compile 専用フィールド (著者は書けない) ----
 
+    /// compile 時に解決済みのルール行。長さは 3 (org+team+project) か 4 (+ 該当 phase)。
     #[must_use]
     pub fn rules_in_context(&self) -> &[RuleInContext] {
         &self.rules_in_context
     }
 
+    /// compile 時に確定したセンサー適用宣言。fire 時に manifest を再オープンしない。
     #[must_use]
     pub fn sensors_applicable(&self) -> &[SensorRef] {
         &self.sensors_applicable
@@ -356,10 +502,7 @@ impl StageNode {
     /// directive 上の `sensors_applicable` は **id の `string[]`** に潰れる。
     #[must_use]
     pub fn sensor_ids(&self) -> Vec<&str> {
-        self.sensors_applicable
-            .iter()
-            .map(|s| s.id.as_str())
-            .collect()
+        self.sensors_applicable.iter().map(SensorRef::id).collect()
     }
 
     /// directive 上の `rules_in_context` は**パスの `string[]`** に潰れる (順序は宣言順)。
@@ -368,7 +511,7 @@ impl StageNode {
     pub fn rule_paths(&self) -> Vec<&str> {
         self.rules_in_context
             .iter()
-            .map(|r| r.path.as_str())
+            .map(RuleInContext::path)
             .collect()
     }
 }
@@ -383,6 +526,8 @@ pub struct StageNodeBuilder {
 }
 
 impl StageNodeBuilder {
+    /// 全ノードに必ず存在する型付きコア 6 値でビルダを起こす。残り 22 フィールドは
+    /// 既定値 (空コレクション / 空文字列 / `None` / `false`) から始まる。
     #[must_use]
     pub const fn new(
         slug: StageSlug,
@@ -426,48 +571,56 @@ impl StageNodeBuilder {
         }
     }
 
+    /// 自由記述の適用ルールを載せる。未指定は空文字列。
     #[must_use]
     pub fn condition(mut self, condition: String) -> StageNodeBuilder {
         self.node.condition = condition;
         self
     }
 
+    /// 主エージェント slug を載せる。未指定は空文字列。
     #[must_use]
     pub fn lead_agent(mut self, lead_agent: String) -> StageNodeBuilder {
         self.node.lead_agent = lead_agent;
         self
     }
 
+    /// 補助エージェント slug 列を載せる。未指定は空。
     #[must_use]
     pub fn support_agents(mut self, support_agents: Vec<String>) -> StageNodeBuilder {
         self.node.support_agents = support_agents;
         self
     }
 
+    /// 反復軸を載せる (観測値は `"unit-of-work"` のみ)。呼ばなければ `None` = 反復しない。
     #[must_use]
     pub fn for_each(mut self, for_each: String) -> StageNodeBuilder {
         self.node.for_each = Some(for_each);
         self
     }
 
+    /// ワークスペース実体への書込要求を載せる。未指定は `false`。
     #[must_use]
     pub const fn workspace_requires(mut self, workspace_requires: bool) -> StageNodeBuilder {
         self.node.workspace_requires = workspace_requires;
         self
     }
 
+    /// 成果物の語彙名列を載せる。未指定は空。
     #[must_use]
     pub fn produces(mut self, produces: Vec<String>) -> StageNodeBuilder {
         self.node.produces = produces;
         self
     }
 
+    /// 条件付き成果物の語彙名列を載せる。未指定は空。
     #[must_use]
     pub fn optional_produces(mut self, optional_produces: Vec<String>) -> StageNodeBuilder {
         self.node.optional_produces = optional_produces;
         self
     }
 
+    /// 成果物 → 適用 unit kind の写像を載せる。未指定は空 = 全成果物が全 kind に適用される。
     #[must_use]
     pub fn produces_kinds(
         mut self,
@@ -477,54 +630,63 @@ impl StageNodeBuilder {
         self
     }
 
+    /// 入力成果物の宣言列を載せる。未指定は空。
     #[must_use]
     pub fn consumes(mut self, consumes: Vec<ConsumeDecl>) -> StageNodeBuilder {
         self.node.consumes = consumes;
         self
     }
 
+    /// 依存ステージ slug 列を載せる。未指定は空。dedup とエッジ順序の検査は compile 側。
     #[must_use]
     pub fn requires_stage(mut self, requires_stage: Vec<StageSlug>) -> StageNodeBuilder {
         self.node.requires_stage = requires_stage;
         self
     }
 
+    /// 著者が pull import したセンサー id 列を載せる。未指定は空。
     #[must_use]
     pub fn sensors(mut self, sensors: Vec<String>) -> StageNodeBuilder {
         self.node.sensors = sensors;
         self
     }
 
+    /// このステージを EXECUTE にするスコープ名を載せる。未指定は空。
     #[must_use]
     pub fn scopes(mut self, scopes: Vec<String>) -> StageNodeBuilder {
         self.node.scopes = scopes;
         self
     }
 
+    /// レビュアー slug を載せる。呼ばなければ `None` = レビュアー無し。
     #[must_use]
     pub fn reviewer(mut self, reviewer: String) -> StageNodeBuilder {
         self.node.reviewer = Some(reviewer);
         self
     }
 
+    /// レビュー反復の上限を載せる。`reviewer` と対で宣言されるのが前提。
     #[must_use]
     pub const fn reviewer_max_iterations(mut self, iterations: u32) -> StageNodeBuilder {
         self.node.reviewer_max_iterations = Some(iterations);
         self
     }
 
+    /// レビューの重量宣言を載せる。`reviewer` と対で宣言されるのが前提。
     #[must_use]
     pub const fn review_class(mut self, review_class: ReviewClass) -> StageNodeBuilder {
         self.node.review_class = Some(review_class);
         self
     }
 
+    /// `summary_confirmation` を載せる。観測値は `"required"` のみ。
     #[must_use]
     pub fn summary_confirmation(mut self, summary_confirmation: String) -> StageNodeBuilder {
         self.node.summary_confirmation = Some(summary_confirmation);
         self
     }
 
+    /// 所有プラグイン名を載せる。frontmatter からの逐語コピーであり、ここで加工しない。
     #[must_use]
     pub fn plugin(mut self, plugin: String) -> StageNodeBuilder {
         self.node.plugin = Some(plugin);
@@ -538,30 +700,35 @@ impl StageNodeBuilder {
         self
     }
 
+    /// 散文の `inputs` を載せる。未指定は空文字列。配列に分解しない。
     #[must_use]
     pub fn inputs(mut self, inputs: String) -> StageNodeBuilder {
         self.node.inputs = inputs;
         self
     }
 
+    /// 散文の `outputs` を載せる。未指定は空文字列。機械可読な出力は `produces` 側。
     #[must_use]
     pub fn outputs(mut self, outputs: String) -> StageNodeBuilder {
         self.node.outputs = outputs;
         self
     }
 
+    /// compile が解決したルール行を載せる。著者が書ける値ではない。
     #[must_use]
     pub fn rules_in_context(mut self, rules_in_context: Vec<RuleInContext>) -> StageNodeBuilder {
         self.node.rules_in_context = rules_in_context;
         self
     }
 
+    /// compile が確定したセンサー適用宣言を載せる。著者が書ける値ではない。
     #[must_use]
     pub fn sensors_applicable(mut self, sensors_applicable: Vec<SensorRef>) -> StageNodeBuilder {
         self.node.sensors_applicable = sensors_applicable;
         self
     }
 
+    /// 積み上げを終える。相互フィールド不変条件はここで再検査しない (compile 側の責務)。
     #[must_use]
     pub fn build(self) -> StageNode {
         self.node
@@ -610,26 +777,23 @@ mod tests {
     fn rules_and_sensors_keep_their_object_shape_and_project_to_strings_on_demand() {
         let n = node("s", "1.1")
             .rules_in_context(vec![
-                RuleInContext {
-                    path: "aidlc/spaces/default/memory/org.md".to_string(),
-                    scope: RuleScope::Org,
-                },
-                RuleInContext {
-                    path: "aidlc/spaces/default/memory/ideation.md".to_string(),
-                    scope: RuleScope::Phase,
-                },
+                RuleInContext::new("aidlc/spaces/default/memory/org.md", RuleScope::Org),
+                RuleInContext::new("aidlc/spaces/default/memory/ideation.md", RuleScope::Phase),
             ])
-            .sensors_applicable(vec![SensorRef {
-                id: "no-todo".to_string(),
-                path: ".claude/sensors/no-todo.md".to_string(),
-                matches: Some("**/*.rs".to_string()),
-            }])
+            .sensors_applicable(vec![SensorRef::new(
+                "no-todo",
+                ".claude/sensors/no-todo.md",
+                Some("**/*.rs".to_string()),
+            )])
             .build();
         // 格納形はオブジェクト配列 (scope / path / matches が生きている)
-        assert_eq!(n.rules_in_context()[1].scope, RuleScope::Phase);
+        assert_eq!(n.rules_in_context()[1].scope(), RuleScope::Phase);
+        assert_eq!(n.sensors_applicable()[0].matches(), Some("**/*.rs"));
+        // センサーの id と path は別物 — 射影 (`sensor_ids`) が潰すのは id 側だけ
+        assert_eq!(n.sensors_applicable()[0].id(), "no-todo");
         assert_eq!(
-            n.sensors_applicable()[0].matches.as_deref(),
-            Some("**/*.rs")
+            n.sensors_applicable()[0].path(),
+            ".claude/sensors/no-todo.md"
         );
         // directive 射影は文字列配列
         assert_eq!(n.sensor_ids(), vec!["no-todo"]);
@@ -657,32 +821,37 @@ mod tests {
         for r in RuleScope::ALL {
             assert_eq!(RuleScope::parse(r.as_str()).unwrap(), r);
         }
-        assert!(RuleScope::parse("space").is_err());
+        // 閉集合外は生値を逐語で持ち帰る (`space` は別語彙であって rule scope ではない)
+        let unknown_scope = RuleScope::parse("space").unwrap_err();
+        assert_eq!(unknown_scope.as_str(), "space");
+        assert_eq!(unknown_scope, UnknownRuleScope::new("space"));
         for b in BrownfieldGreenfield::ALL {
             assert_eq!(BrownfieldGreenfield::parse(b.as_str()).unwrap(), b);
         }
-        assert!(BrownfieldGreenfield::parse("bluefield").is_err());
+        let unknown_field = BrownfieldGreenfield::parse("bluefield").unwrap_err();
+        assert_eq!(unknown_field.as_str(), "bluefield");
+        assert_eq!(unknown_field, UnknownBrownfieldGreenfield::new("bluefield"));
     }
 
     #[test]
     fn consumes_keeps_required_and_conditional_on_separate() {
         let n = node("s", "1.1")
             .consumes(vec![
-                ConsumeDecl {
-                    artifact: "requirements".to_string(),
-                    required: true,
-                    conditional_on: None,
-                },
-                ConsumeDecl {
-                    artifact: "codebase-analysis".to_string(),
-                    required: false,
-                    conditional_on: Some(BrownfieldGreenfield::Brownfield),
-                },
+                ConsumeDecl::new("requirements", true, None),
+                ConsumeDecl::new(
+                    "codebase-analysis",
+                    false,
+                    Some(BrownfieldGreenfield::Brownfield),
+                ),
             ])
             .build();
-        assert!(n.consumes()[0].required);
+        assert_eq!(n.consumes()[0].artifact(), "requirements");
+        assert!(n.consumes()[0].required());
+        assert_eq!(n.consumes()[0].conditional_on(), None);
+        assert_eq!(n.consumes()[1].artifact(), "codebase-analysis");
+        assert!(!n.consumes()[1].required());
         assert_eq!(
-            n.consumes()[1].conditional_on,
+            n.consumes()[1].conditional_on(),
             Some(BrownfieldGreenfield::Brownfield)
         );
     }
@@ -722,17 +891,15 @@ mod tests {
             let n = node("s", "1.1")
                 .sensors_applicable(
                     ids.iter()
-                        .map(|id| SensorRef {
-                            id: id.clone(),
-                            path: format!(".claude/sensors/{id}.md"),
-                            matches: None,
+                        .map(|id| {
+                            SensorRef::new(id.clone(), format!(".claude/sensors/{id}.md"), None)
                         })
                         .collect(),
                 )
                 .rules_in_context(
                     paths
                         .iter()
-                        .map(|p| RuleInContext { path: p.clone(), scope: RuleScope::Project })
+                        .map(|p| RuleInContext::new(p.clone(), RuleScope::Project))
                         .collect(),
                 )
                 .build();
