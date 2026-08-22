@@ -16,8 +16,10 @@ name = "amadeus-lint"
 path = "src/main.rs"
 
 # detached クレートなので workspace lints は継承されない。ルート Cargo.toml の
-# `missing_docs = "deny"` と足並みを揃えるためここでも同じ強度で宣言する。
+# `unsafe_code = "forbid"` (NFR4.3) と `missing_docs = "deny"` を、ここでも
+# 同じ強度で宣言して足並みを揃える。
 [lints.rust]
+unsafe_code = "forbid"
 missing_docs = "deny"
 
 [dependencies]

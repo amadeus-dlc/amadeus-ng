@@ -4,7 +4,16 @@ on:
   pull_request:
     branches:
       - main
+  # NFR2.2: merge queue は merge_group イベントで required checks を要求する。
+  # このトリガが無いと queue に入った PR のチェックが走らずマージが進まない。
+  # merge_group の ref は gh-readonly-queue/... なので concurrency.group は
+  # github.ref のままで PR 側と衝突しない。
+  merge_group: {}
   workflow_dispatch: {}
+
+# NFR4.4 (least privilege): CI は読取だけで足りる。ジョブ個別の昇格はしない。
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -14,14 +23,26 @@ jobs:
   check:
     name: check
     runs-on: ubuntu-latest
+    # NFR2.4: PBT (proptest) の RNG シードを固定して実行経路を決定化する。
+    # scripts/coverage.sh の PROPTEST_RNG_SEED と同じ値にすること。
+    env:
+      PROPTEST_RNG_SEED: "20260823"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # rust-toolchain.toml が正本: channel と components (rustfmt / clippy / llvm-tools) を
+      # ファイルから読み取ってアクションへ渡す。@master は toolchain 入力が必須でファイルを
+      # 自動では読まない (PR #25 の初回 CI で実測) ため、ci.yml に値を書き写さず導出する。
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/governance/toolchain-inputs.sh >> "$GITHUB_OUTPUT"
+
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
-          components: rustfmt, clippy
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: ${{ steps.toolchain.outputs.components }}
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -44,6 +65,18 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # NFR2.3 (設計監査 C27): tools/lint は workspace 非メンバーの detached クレート
+      # なので --workspace に載らない。同じ品質ゲート (fmt / clippy / 自己テスト) を
+      # manifest-path 指定で明示的にかける。
+      - name: cargo fmt --check (tools/lint)
+        run: cargo fmt --manifest-path tools/lint/Cargo.toml --all --check
+
+      - name: cargo clippy (tools/lint)
+        run: cargo clippy --manifest-path tools/lint/Cargo.toml --all-targets -- -D warnings
+
+      - name: cargo test (tools/lint)
+        run: cargo test --manifest-path tools/lint/Cargo.toml
+
   quint:
     name: quint
     runs-on: ubuntu-latest
@@ -65,6 +98,10 @@ jobs:
   coverage:
     name: coverage
     runs-on: ubuntu-latest
+    # scripts/coverage.sh も同じ値を export するが、ワークフロー側でも明示して
+    # ローカルと CI でシードが一致していることを読み取れるようにする (NFR2.4)。
+    env:
+      PROPTEST_RNG_SEED: "20260823"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,11 +110,16 @@ jobs:
           # チェックアウトする必要があるため、shallow clone (既定) では不足する。
           fetch-depth: 0
 
+      # cargo-llvm-cov に必要な llvm-tools も rust-toolchain.toml の components で入る。
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/governance/toolchain-inputs.sh >> "$GITHUB_OUTPUT"
+
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
-          # cargo-llvm-cov の実行に rustc 同梱の llvm-tools が必要
-          components: llvm-tools
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: ${{ steps.toolchain.outputs.components }}
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -91,6 +133,40 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash scripts/coverage.sh --base "origin/${{ github.base_ref }}"
 
-      - name: Run coverage gate (workflow_dispatch — absolute only)
+      # merge_group / workflow_dispatch は比較対象の base ref を持たないため絶対
+      # ゲートのみ。相対ゲートは同じ変更が pull_request 側で通過済み (NFR2.2)。
+      - name: Run coverage gate (merge_group, workflow_dispatch — absolute only)
         if: github.event_name != 'pull_request'
         run: bash scripts/coverage.sh
+
+  # NFR4.1: RustSec advisory DB による依存の脆弱性監査。workspace と detached な
+  # tools/lint の 2 つの Cargo.lock を明示的に網羅する。
+  # required status check には**しない** — advisory DB / ネットワークの一時障害で
+  # 全マージが止まらないようにするため (nfr-design §2)。赤は PR 上で可視になる。
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/governance/toolchain-inputs.sh >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: ${{ steps.toolchain.outputs.components }}
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit (workspace)
+        run: cargo audit
+
+      - name: cargo audit (tools/lint)
+        run: cargo audit --file tools/lint/Cargo.lock

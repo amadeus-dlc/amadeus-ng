@@ -22,17 +22,22 @@
 
 ## 2. Bolt 順序
 
+> **改訂 2026-08-23（U1 code-generation 完了時、オーナー裁定）**: ワークフローエンジンは Unit を依存バッチ順（u1 → u10 → u2 → u9 → …）で歩くため、
+> 旧 B6 = U10 を **B2** に前倒しし、旧 B2〜B5 を B3〜B6 へ繰り下げた。依存列と後続 Bolt 番号は連動して振り直した。根拠:
+> U10 は他 Unit に依存せず、CI の機械強制を早く入れるほど以降の Bolt が守られる。`team-allocation.md` /
+> `risk-and-sequencing-rationale.md` / `external-dependency-map.md` の B 番号は旧番号のまま（U 名で読み替える）。
+
 | Bolt | Unit | kind | 規模 | 依存（満たされる Bolt） | ねらい（順序の理由） |
 |---|---|---|---|---|---|
 | B1 | U1 `u1-canon-json-goldens` | library | M | なし | 互換の正解データ（ゴールデン）を最初に確保し、以降の全 Bolt の TDD のオラクルにする（心配 B） |
-| B2 | U2 `u2-domain-es-core` | library | L | なし | 最大の設計リスク（ES 化・FSM・PlanAction 完全移動）を最も早く潰す（心配 A）。Quint `engine_loop` 維持 |
-| B3 | U9 `u9-canon-docs` | spec | S | なし | U3 着手前に正本（`store` 注記・旧称除去）を直す。短い |
-| B4 | U3 `u3-event-store-repository` | library | L | B2 | ストア + ロック退役 + `audit_lock.qnt` 改訂（心配 A）。B2 の直後で設計の連続性を保つ |
-| B5 | U4 `u4-read-model-updater` | library | M | B2, B4 | 投影の upstream 互換を B1 のゴールデンで早期に実証（心配 B） |
-| B6 | U10 `u10-ci-governance` | packaging | M | なし | CLI（main.rs）着手前に toolchain 固定・forbid 昇格・audit・カバレッジ除外・branch protection を入れ、後続 PR の突然赤を防ぐ |
-| B7 | U5 `u5-report-use-case` | library | M | B2, B4, B5 | 最初のユースケース（書く側）。再水和 → decide → store → 投影の定型を確立 |
-| B8 | U6 `u6-next-continue-use-case` | library | L | B1, B2, B4 | 21 分岐ラダー + continue_token。I8（読取専用）の型強制 |
-| B9 | U7 `u7-cli-dispatcher-hooks` | service | L | B1, B5, B7, B8 | バイナリとして初めて動く。フック 4 本の実機動作（心配 C）をここで確認 |
+| B2 | U10 `u10-ci-governance` | packaging | M | なし | 【2026-08-23 改訂】toolchain 固定・forbid 昇格・audit・カバレッジ除外・branch protection を B1 直後に入れ、以降の全 Bolt の PR を機械強制下に置く（エンジンの依存バッチ順 u1 → u10 → u2 → u9 をオーナーが受け入れ、旧 B6 を前倒し） |
+| B3 | U2 `u2-domain-es-core` | library | L | なし | 最大の設計リスク（ES 化・FSM・PlanAction 完全移動）を早く潰す（心配 A）。Quint `engine_loop` 維持 |
+| B4 | U9 `u9-canon-docs` | spec | S | なし | U3 着手前に正本（`store` 注記・旧称除去）を直す。短い |
+| B5 | U3 `u3-event-store-repository` | library | L | B3 | ストア + ロック退役 + `audit_lock.qnt` 改訂（心配 A）。B3 の直後で設計の連続性を保つ |
+| B6 | U4 `u4-read-model-updater` | library | M | B3, B5 | 投影の upstream 互換を B1 のゴールデンで早期に実証（心配 B） |
+| B7 | U5 `u5-report-use-case` | library | M | B3, B5, B6 | 最初のユースケース（書く側）。再水和 → decide → store → 投影の定型を確立 |
+| B8 | U6 `u6-next-continue-use-case` | library | L | B1, B3, B5 | 21 分岐ラダー + continue_token。I8（読取専用）の型強制 |
+| B9 | U7 `u7-cli-dispatcher-hooks` | service | L | B1, B6, B7, B8 | バイナリとして初めて動く。フック 4 本の実機動作（心配 C）をここで確認 |
 | B10 | U8 `u8-doctor-dogfood` | service | M | B9 | doctor + 実地スモーク（DoD）。全体疎通の実証（心配 D）— walking skeleton の代わり |
 
 依存 DAG（`unit-of-work-dependency.md`）のすべての辺を満たす（各 Bolt の依存 Unit はそれより前の Bolt）。
