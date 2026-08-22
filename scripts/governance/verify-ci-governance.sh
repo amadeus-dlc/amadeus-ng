@@ -107,24 +107,23 @@ yaml_top_block() {
   ' "$1"
 }
 
-# ファイルが読めなければ FAIL を積んで 1 を返す (呼び元は return する)。
+# ファイルが読めなければ、そのファイル担当の全項目を FAIL で埋めて 1 を返す
+# (呼び元は return する)。「ファイルが無い」を黙って PASS にしないための共通処理。
 require_file() {
-  local path="$1" id="$2"
+  local path="$1"; shift
   if [[ -f "${path}" ]]; then
     return 0
   fi
-  fail "${id}" "${path} が存在しない"
+  local id
+  for id in "$@"; do
+    fail "${id}" "${path} が存在しない"
+  done
   return 1
 }
 
 # --- 検査: rust-toolchain.toml (NFR4.2) ---------------------------------------
 check_toolchain_file() {
-  if [[ ! -f "${TOOLCHAIN_FILE}" ]]; then
-    fail "toolchain-channel" "${TOOLCHAIN_FILE} が存在しない (channel = \"${EXPECTED_CHANNEL}\" が必要)"
-    fail "toolchain-components" "${TOOLCHAIN_FILE} が存在しない (components: ${EXPECTED_COMPONENTS} が必要)"
-    fail "toolchain-profile" "${TOOLCHAIN_FILE} が存在しない (profile = \"${EXPECTED_PROFILE}\" が必要)"
-    return
-  fi
+  require_file "${TOOLCHAIN_FILE}" toolchain-channel toolchain-components toolchain-profile || return 0
 
   local section
   section="$(toml_section "${TOOLCHAIN_FILE}" "toolchain")"
@@ -154,7 +153,7 @@ check_toolchain_file() {
 
 # --- 検査: workspace lints / tools-lint lints (NFR4.3) ------------------------
 check_workspace_lints() {
-  if require_file "${ROOT_MANIFEST}" "workspace-unsafe-forbid"; then
+  if require_file "${ROOT_MANIFEST}" workspace-unsafe-forbid; then
     if toml_section "${ROOT_MANIFEST}" "workspace.lints.rust" \
       | grep -Eq '^[[:space:]]*unsafe_code[[:space:]]*=[[:space:]]*"forbid"[[:space:]]*$'; then
       pass "workspace-unsafe-forbid" "${ROOT_MANIFEST} の [workspace.lints.rust] に unsafe_code = \"forbid\""
@@ -163,7 +162,7 @@ check_workspace_lints() {
     fi
   fi
 
-  if require_file "${LINT_MANIFEST}" "tools-lint-unsafe-forbid"; then
+  if require_file "${LINT_MANIFEST}" tools-lint-unsafe-forbid; then
     if toml_section "${LINT_MANIFEST}" "lints.rust" \
       | grep -Eq '^[[:space:]]*unsafe_code[[:space:]]*=[[:space:]]*"forbid"[[:space:]]*$'; then
       pass "tools-lint-unsafe-forbid" "${LINT_MANIFEST} の [lints.rust] に unsafe_code = \"forbid\""
@@ -175,12 +174,9 @@ check_workspace_lints() {
 
 # --- 検査: CI ワークフロー ----------------------------------------------------
 check_ci_workflow() {
-  local ids="ci-merge-group-trigger ci-permissions-contents-read ci-toolchain-file-driven ci-tools-lint-steps ci-audit-job ci-proptest-seed-env ci-coverage-base-condition"
-  if [[ ! -f "${CI_FILE}" ]]; then
-    local id
-    for id in ${ids}; do fail "${id}" "${CI_FILE} が存在しない"; done
-    return
-  fi
+  require_file "${CI_FILE}" \
+    ci-merge-group-trigger ci-permissions-contents-read ci-toolchain-file-driven \
+    ci-tools-lint-steps ci-audit-job ci-proptest-seed-env ci-coverage-base-condition || return 0
 
   # NFR2.2: merge queue のチェックを走らせるための merge_group トリガ
   if yaml_top_block "${CI_FILE}" "on" | grep -Eq '^[[:space:]]*merge_group:'; then
@@ -245,12 +241,8 @@ check_ci_workflow() {
 
 # --- 検査: カバレッジゲート (NFR2.4 / NFR2.5) ---------------------------------
 check_coverage_script() {
-  local ids="coverage-tolerance coverage-ignore-regex coverage-proptest-seed"
-  if [[ ! -f "${COVERAGE_FILE}" ]]; then
-    local id
-    for id in ${ids}; do fail "${id}" "${COVERAGE_FILE} が存在しない"; done
-    return
-  fi
+  require_file "${COVERAGE_FILE}" \
+    coverage-tolerance coverage-ignore-regex coverage-proptest-seed || return 0
 
   if grep -Eq "^TOLERANCE=${EXPECTED_TOLERANCE}$" "${COVERAGE_FILE}"; then
     pass "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} に引き締められている (NFR2.4)"
