@@ -23,6 +23,10 @@
 - 配線（実物と fake の差し替え）は **composition root** が行う。
 - use-case 層には trait を置かない。置くと「ユースケースが消費しないポート」がポート表に居座り、Gateway 責務の分類が濁る。
 
+### 1b. 非 Repository ポートの模範例 — `WorkspaceLock`
+
+Repository（集約 I/O）に当てはまらない外界協調は、**アウトプット契約をそのまま trait に表現**する。模範例はロックの並行性サービス `WorkspaceLock`（2026-08-22 オーナー承認）: `acquire(&LockIdentity, AcquireBudget) -> Result<LockGuard, AcquireError>` / `release(LockGuard)` — 予算・再入・二重解放不能（非 Clone の `LockGuard`）という**契約の意味論が型に載っている**。集約ではないものを Repository に無理に寄せない。
+
 ### 2b. Repository のメソッド語彙（j5ik2o-ddd-repository-design が正典）
 
 - 使ってよい動詞: **`find_by_id` / `find`（単一集約の named retrieval）/ `save` / `remove`** ＋ **ドメイン概念を表す named retrievals**。`load` / `get` / `fetch` 等は使わない。
