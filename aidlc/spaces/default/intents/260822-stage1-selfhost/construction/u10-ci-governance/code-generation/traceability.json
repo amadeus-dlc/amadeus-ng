@@ -1,0 +1,26 @@
+{
+  "stage": "code-generation",
+  "unit": "u10-ci-governance",
+  "upstream_ids": [
+    "FR9.1", "FR9.2", "FR9.3", "FR9.4", "FR9.5",
+    "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5",
+    "NFR4.1", "NFR4.2", "NFR4.3", "NFR4.4", "NFR4.5"
+  ],
+  "coverage": [
+    { "id": "FR9.1", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh" },
+    { "id": "FR9.2", "status": "OK", "target": "rust-toolchain.toml" },
+    { "id": "FR9.3", "status": "OK", "target": ".github/workflows/ci.yml" },
+    { "id": "FR9.4", "status": "Deferred", "target": "scripts/coverage.sh（PROPTEST_RNG_SEED 固定と TOLERANCE=0.01 は実装済み。残ジッタ 0.0175pp（fs_workspace_lock の並行テスト由来）のため差 0.00pp は未達 — TOLERANCE の裁定をゲートで行う）" },
+    { "id": "FR9.5", "status": "OK", "target": "scripts/coverage.sh" },
+    { "id": "NFR2.1", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh" },
+    { "id": "NFR2.2", "status": "OK", "target": ".github/workflows/ci.yml" },
+    { "id": "NFR2.3", "status": "OK", "target": ".github/workflows/ci.yml" },
+    { "id": "NFR2.4", "status": "Deferred", "target": "scripts/coverage.sh（決定化は PBT 側で成立、非 PBT の並行テスト由来の 1 行ジッタが残る — 裁定待ち）" },
+    { "id": "NFR2.5", "status": "OK", "target": "scripts/coverage.sh" },
+    { "id": "NFR4.1", "status": "OK", "target": ".github/workflows/ci.yml" },
+    { "id": "NFR4.2", "status": "OK", "target": "rust-toolchain.toml" },
+    { "id": "NFR4.3", "status": "OK", "target": "Cargo.toml" },
+    { "id": "NFR4.4", "status": "OK", "target": ".github/workflows/ci.yml" },
+    { "id": "NFR4.5", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh" }
+  ]
+}

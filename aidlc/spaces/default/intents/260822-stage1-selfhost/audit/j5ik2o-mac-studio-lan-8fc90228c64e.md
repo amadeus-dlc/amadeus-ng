@@ -9415,3 +9415,254 @@ contract-summary.md C7 の cli / hooks ケースレイアウトに exit / stderr
 **Walking skeleton**: false
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T23:02:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af24d6ea82d6f61ac
+**Message**: 続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-22T23:04:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T23:04:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af798d7bce245e594
+**Message**: 続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T23:07:47Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8a0bba573d3d9951
+**Message**: Goal: stage-1 self-host of amadeus-ng via AI-DLC, Bolt by Bolt. Bolt B1 (canon-json) merged; U10 CI governance is being implemented by the developer agent now. Next: review its result, apply the rules
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T23:25:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-u10
+**Agent ID**: adev-u10-84aa1ac608189117
+**Message**: Step 1〜9 を完了しました。以下がレポート本文です（同内容を `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/developer-report-3.m
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-22T23:28:15Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Context**: construction > u10-ci-governance > code-generation > code-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:28:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: 69bc127e
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:28:15Z
+**Event**: SENSOR_PASSED
+**Fire id**: 69bc127e
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Duration ms**: 20
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-22T23:28:28Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/traceability.json
+**Context**: construction > u10-ci-governance > code-generation > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:28:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: b3ea1d2e
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:28:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: b3ea1d2e
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/traceability.json
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:28:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 821cfb4b
+**Sensor ID**: traceability
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-22T23:28:29Z
+**Event**: SENSOR_FAILED
+**Fire id**: 821cfb4b
+**Sensor ID**: traceability
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/code-generation/traceability-821cfb4b.md
+**Findings count**: 38
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-22T23:28:43Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:cf950a3586c693819e6e8fef1cc68d0b4468f3aff86f75963dba760d3715510d
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T23:32:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4263eaa4f1891604
+**Message**: Goal: stage-1 self-host of amadeus-ng via AI-DLC; Bolt B1 (canon-json) merged, Bolt B2 (U10 CI governance) implemented and under review. Next: take the review verdict, then present the Bolt B2 gate wi
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-22T23:33:25Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Context**: construction > u10-ci-governance > code-generation > code-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:33:25Z
+**Event**: SENSOR_FIRED
+**Fire id**: 07761a0c
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:33:25Z
+**Event**: SENSOR_PASSED
+**Fire id**: 07761a0c
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Duration ms**: 20
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T23:33:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: rev-u10-codegen
+**Agent ID**: arev-u10-codegen-727d7a231931e43b
+**Message**: U10（u10-ci-governance）の code-generation 成果物の advisory レビューを完了し、`code-summary.md` の末尾に `## Review` セクションを追記しました。\n\n**判定: READY**\n\n## 実施した検証\n- `git diff origin/main..HEAD --stat -- . ':!aidlc'` — 変更 7 ファ
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-22T23:34:03Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:7101dd0a3d2204408cffa55d874b7c7fb99a20134bee18473870b6436712f6f6
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-22T23:34:04Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:7101dd0a3d2204408cffa55d874b7c7fb99a20134bee18473870b6436712f6f6
+**Source Fingerprint**: 10d273ad035e72d4c24e30e46aa6b650f3bcbb13
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-22T23:34:37Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u10-ci-governance
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-22T23:34:37Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: Bolt B2（U10 CI ガバナンス）の Bolt ゲート: 承認して PR を開くか / NFR2.4 未達に伴う TOLERANCE の裁定 / ruleset 適用（required checks の PUT）の実行者
+**Options**: Gate: Approve, Request Changes / TOLERANCE: A 暫定 0.05（U3 ロック退役後に 0.01 へ）, B 0.02, C 0.01 のまま + fs_workspace_lock の決定的テスト追加（境界外・別コミット）, D 0.01 のまま再実行運用 / ruleset: A PR の CI 緑後にコンダクタが実行, B オーナーが手で実行
+**Rationale**: code-generation レビュー READY（Major 1: NFR2.4 差 0.00pp 未達、残ジッタ 0.0175pp > 0.01。Minor 3）。ruleset 適用の安全な順序は PR 作成 → CI 緑 → 適用 → queue 投入
+**Unit**: u10-ci-governance
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-22T23:36:06Z
+**Event**: HUMAN_TURN
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-22T23:36:25Z
+**Event**: QUESTION_ANSWERED
+**Stage**: code-generation
+**Details**: Bolt B2 承認 → PR を開く。TOLERANCE は暫定 0.05（U3 ロック退役後に 0.01 へ）。ruleset 適用は PR の CI 緑後にコンダクタが実行（前後 JSON を記録、--with-ruleset で検証）→ queue 投入
+**Unit**: u10-ci-governance
+
+---
+
+## Bolt Completed
+**Timestamp**: 2026-08-22T23:36:25Z
+**Event**: BOLT_COMPLETED
+**Bolt names**: B2
+**Batch number**: 1
+
+---
