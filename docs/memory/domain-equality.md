@@ -1,7 +1,7 @@
 # ドメイン同値関係は Eq/PartialEq で表現する
 
 **裁定日**: 2026-08-22（オーナー）
-**適用例**: PR #12 `OwnerStamp`（等価 = 保持者同一性 `pid` + `startedAtMs`。ポリシーフラグは同一性に含まない）
+**適用例**: `OwnerStamp`（等価 = upstream `stampMatches` の同一性。当初 PR #12 では `pid` + `startedAtMs` の 2 フィールドと推定したが、ピン留めソース採取で **`reapLiveOwnerAfterStale` も同一性の一部**と確定し 3 フィールド比較に修正済み — 同値関係の**中身**はドメイン/upstream の事実に従い、Eq で表現するという方針だけが不変）
 **機械強制**: なし（レビュー基準）
 
 ## ルール

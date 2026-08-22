@@ -2,13 +2,18 @@
 //! (b) 並行 2 スレッドの acquire で相互排他 (同時保持なし)
 //! (c) 死んだ owner.json (存在しない PID) を書いた lock dir が reap される
 //! (d) 生きた PID・新しい stamp は奪えない
+//! (e) `reapLiveOwnerAfterStale: false` を宣言した生きた保持者は閾値超過でも奪えない
+//!     (フラグ true なら奪える / 死亡なら奪える — upstream `:7036-7040` の 3 枝)
+//! (f) owner.json は mode `0o600` + upstream 逐語のバイト形で書かれる
 //!
 //! upstream `acquireAuditLock` / reap 契約 (03 §6.8, 11-workspace §4・W2)。
 #![allow(clippy::unwrap_used)]
 
 use core_domain::workspace::LockIdentity;
-use core_interface_adapter::workspace::FsWorkspaceLock;
+use core_interface_adapter::workspace::{FakeClock, FakeProcessProbe, FsWorkspaceLock};
 use core_use_case::workspace::{AcquireBudget, AcquireError, WorkspaceLock};
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
@@ -17,6 +22,17 @@ use tempfile::tempdir;
 
 const fn budget(max_retries: u32, retry_interval_ms: u64) -> AcquireBudget {
     AcquireBudget::new(max_retries, Duration::from_millis(retry_interval_ms))
+}
+
+/// upstream `writeOwnerStamp` と同じバイト形の owner.json を手で書く (テストの下ごしらえ)。
+fn write_stamp(lock_dir: &Path, pid: u32, started_at_ms: u64, reap_live_owner_after_stale: bool) {
+    std::fs::write(
+        lock_dir.join("owner.json"),
+        format!(
+            "{{\"pid\":{pid},\"startedAtMs\":{started_at_ms},\"reapLiveOwnerAfterStale\":{reap_live_owner_after_stale}}}"
+        ),
+    )
+    .unwrap();
 }
 
 /// (b) 4 スレッド × 各 15 回の acquire/release を、同一 identity・同一 base_dir に対して
@@ -74,9 +90,28 @@ fn a_dead_owner_lock_dir_is_reaped() {
     let dead_pid = child.id();
     child.wait().unwrap();
 
-    let owner_json =
-        format!("{{\"pid\":{dead_pid},\"startedAtMs\":0,\"reapLiveOwnerAfterStale\":true}}");
-    std::fs::write(lock_dir.join("owner.json"), owner_json).unwrap();
+    write_stamp(&lock_dir, dead_pid, 0, true);
+
+    let mut lock = FsWorkspaceLock::new(dir.path().to_path_buf());
+    let guard = lock.acquire(&identity, budget(20, 5)).unwrap();
+    lock.release(guard);
+    assert!(!lock_dir.exists());
+}
+
+/// (c') 死んだ保持者は `reapLiveOwnerAfterStale: false` を宣言していても奪える —
+/// upstream `reapStaleLock` の死亡枝 (`else if (ownerAlive(owner))` に入らない) には
+/// フラグのガードも年齢のガードも無い。
+#[test]
+fn a_dead_owner_is_reaped_even_when_it_declared_reap_live_owner_after_stale_false() {
+    let dir = tempdir().unwrap();
+    let identity = LockIdentity::for_workspace(dir.path().to_str().unwrap());
+    let lock_dir = FsWorkspaceLock::lock_dir_path(dir.path(), &identity);
+    std::fs::create_dir(&lock_dir).unwrap();
+
+    let mut child = std::process::Command::new("true").spawn().unwrap();
+    let dead_pid = child.id();
+    child.wait().unwrap();
+    write_stamp(&lock_dir, dead_pid, 0, false);
 
     let mut lock = FsWorkspaceLock::new(dir.path().to_path_buf());
     let guard = lock.acquire(&identity, budget(20, 5)).unwrap();
@@ -93,15 +128,14 @@ fn a_live_pid_with_a_fresh_stamp_is_never_reaped() {
     let lock_dir = FsWorkspaceLock::lock_dir_path(dir.path(), &identity);
     std::fs::create_dir(&lock_dir).unwrap();
 
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    let owner_json = format!(
-        "{{\"pid\":{},\"startedAtMs\":{now_ms},\"reapLiveOwnerAfterStale\":true}}",
-        std::process::id()
-    );
-    std::fs::write(lock_dir.join("owner.json"), owner_json).unwrap();
+    let now_ms = u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    write_stamp(&lock_dir, std::process::id(), now_ms, true);
 
     let mut lock = FsWorkspaceLock::new(dir.path().to_path_buf());
     let result = lock.acquire(&identity, budget(3, 5));
@@ -109,4 +143,77 @@ fn a_live_pid_with_a_fresh_stamp_is_never_reaped() {
     assert!(lock_dir.exists(), "生きた保持者のロック dir が残っていない");
 
     std::fs::remove_dir_all(&lock_dir).unwrap();
+}
+
+/// (e) `reapLiveOwnerAfterStale: false` を宣言した**生きた**保持者は、stale 閾値を大きく
+/// 超えていても奪えない (upstream `:7037` `if (!owner.reapLiveOwnerAfterStale) return false;`)。
+/// 同じ条件でフラグが `true` なら奪える — 差分がフラグだけであることを対で示す。
+#[test]
+fn a_live_owner_declaring_reap_live_owner_after_stale_false_is_never_reaped() {
+    let dir = tempdir().unwrap();
+    let identity = LockIdentity::for_workspace(dir.path().to_str().unwrap());
+    let lock_dir = FsWorkspaceLock::lock_dir_path(dir.path(), &identity);
+    std::fs::create_dir(&lock_dir).unwrap();
+
+    // FakeProcessProbe は既定で全 pid を alive と報告する = 「生きた保持者」。
+    // 時刻は閾値 (1_000ms) を遥かに超える 100_000ms に置く。
+    let contender = |base: &Path| {
+        FsWorkspaceLock::with_clock_and_probe(
+            base.to_path_buf(),
+            Arc::new(FakeClock::new(100_000)),
+            Arc::new(FakeProcessProbe::new()),
+        )
+        .with_thresholds(1_000, 5_000)
+    };
+
+    write_stamp(&lock_dir, std::process::id(), 0, false);
+    let mut blocked = contender(dir.path());
+    assert_eq!(
+        blocked.acquire(&identity, budget(2, 1)).unwrap_err(),
+        AcquireError::Exhausted,
+        "フラグ false の生存保持者は閾値超過でも守られる"
+    );
+    assert!(lock_dir.exists(), "守られた dir は消えていない");
+
+    // 同一条件でフラグだけ true にすると奪える (対照)
+    write_stamp(&lock_dir, std::process::id(), 0, true);
+    let mut allowed = contender(dir.path());
+    let guard = allowed
+        .acquire(&identity, budget(2, 1))
+        .expect("フラグ true の生存保持者は閾値超過なら奪える");
+    allowed.release(guard);
+    assert!(!lock_dir.exists());
+}
+
+/// (f) owner.json は upstream `writeFileSync(..., { mode: 0o600 })` と同じパーミッションで、
+/// `JSON.stringify` と同じバイト形 (キー順 `pid` → `startedAtMs` → `reapLiveOwnerAfterStale`、
+/// インデント無し、末尾改行無し) で書かれる。
+#[test]
+fn the_owner_stamp_is_written_with_mode_0600_in_the_upstream_byte_form() {
+    let dir = tempdir().unwrap();
+    let identity = LockIdentity::for_workspace(dir.path().to_str().unwrap());
+    let mut lock = FsWorkspaceLock::new(dir.path().to_path_buf());
+    let guard = lock.acquire(&identity, budget(5, 1)).unwrap();
+
+    let stamp_path = FsWorkspaceLock::lock_dir_path(dir.path(), &identity).join("owner.json");
+    let mode = std::fs::metadata(&stamp_path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "upstream は mode 0o600 で owner.json を書く");
+
+    let body = std::fs::read_to_string(&stamp_path).unwrap();
+    assert_eq!(
+        body,
+        format!(
+            "{{\"pid\":{},\"startedAtMs\":{},\"reapLiveOwnerAfterStale\":true}}",
+            std::process::id(),
+            body.split("\"startedAtMs\":")
+                .nth(1)
+                .unwrap()
+                .split(',')
+                .next()
+                .unwrap()
+        ),
+        "キー順・インデント無し・末尾改行無しまで upstream 逐語"
+    );
+
+    lock.release(guard);
 }
