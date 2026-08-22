@@ -31,10 +31,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # @master は toolchain 入力が無いときリポジトリの rust-toolchain.toml を読む。
-      # channel と components (rustfmt / clippy / llvm-tools) はそのファイルで一元管理する。
+      # rust-toolchain.toml が正本: channel と components (rustfmt / clippy / llvm-tools) を
+      # ファイルから読み取ってアクションへ渡す。@master は toolchain 入力が必須でファイルを
+      # 自動では読まない (PR #25 の初回 CI で実測) ため、ci.yml に値を書き写さず導出する。
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/governance/toolchain-inputs.sh >> "$GITHUB_OUTPUT"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: ${{ steps.toolchain.outputs.components }}
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -103,8 +111,15 @@ jobs:
           fetch-depth: 0
 
       # cargo-llvm-cov に必要な llvm-tools も rust-toolchain.toml の components で入る。
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/governance/toolchain-inputs.sh >> "$GITHUB_OUTPUT"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: ${{ steps.toolchain.outputs.components }}
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -135,8 +150,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: bash scripts/governance/toolchain-inputs.sh >> "$GITHUB_OUTPUT"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: ${{ steps.toolchain.outputs.components }}
 
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2

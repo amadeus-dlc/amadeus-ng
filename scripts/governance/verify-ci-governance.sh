@@ -194,14 +194,27 @@ check_ci_workflow() {
     fail "ci-permissions-contents-read" "workflow 直下に permissions: contents: read が無い (既定権限のまま)"
   fi
 
-  # NFR4.2: toolchain は rust-toolchain.toml 駆動 (@master、components 入力は撤去)
+  # NFR4.2: toolchain は rust-toolchain.toml 駆動 — @master へ渡す toolchain / components 入力は
+  # scripts/governance/toolchain-inputs.sh がファイルから導出した step 出力だけを使い、
+  # ci.yml にバージョンやコンポーネントのリテラルを書かない (正本は 1 つ)。
   local tc_ok=0
   grep -q 'dtolnay/rust-toolchain@master' "${CI_FILE}" || tc_ok=1
   grep -q 'dtolnay/rust-toolchain@stable' "${CI_FILE}" && tc_ok=1
-  grep -Eq '^[[:space:]]*components:' "${CI_FILE}" && tc_ok=1
+  grep -q 'scripts/governance/toolchain-inputs.sh' "${CI_FILE}" || tc_ok=1
+  grep -Eq '^[[:space:]]*toolchain:[[:space:]]*\$\{\{ steps\.toolchain\.outputs\.channel \}\}' "${CI_FILE}" || tc_ok=1
+  grep -Eq '^[[:space:]]*components:[[:space:]]*\$\{\{ steps\.toolchain\.outputs\.components \}\}' "${CI_FILE}" || tc_ok=1
+  grep -Eq '^[[:space:]]*toolchain:[[:space:]]*"?[0-9]' "${CI_FILE}" && tc_ok=1
+  grep -Eq '^[[:space:]]*components:[[:space:]]*[a-z]' "${CI_FILE}" && tc_ok=1
+  if [[ -f "scripts/governance/toolchain-inputs.sh" ]]; then
+    local derived
+    derived="$(bash scripts/governance/toolchain-inputs.sh "${TOOLCHAIN_FILE}" 2>/dev/null || true)"
+    printf '%s\n' "${derived}" | grep -q "^channel=${EXPECTED_CHANNEL}$" || tc_ok=1
+  else
+    tc_ok=1
+  fi
   expect "${tc_ok}" "ci-toolchain-file-driven" \
-    "toolchain が dtolnay/rust-toolchain@master + rust-toolchain.toml 駆動 (NFR4.2)" \
-    "toolchain が rust-toolchain.toml 駆動になっていない (@master が無い / @stable が残っている / components: 入力が残っている)"
+    "toolchain が dtolnay/rust-toolchain@master + rust-toolchain.toml 駆動 (toolchain / components はファイルから導出、NFR4.2)" \
+    "toolchain が rust-toolchain.toml 駆動になっていない (@master が無い / @stable が残っている / toolchain-inputs.sh 経由でない / リテラルの toolchain: や components: が残っている)"
 
   # NFR2.3: tools/lint (detached クレート) の fmt / clippy / 自己テスト
   local tl_ok=0
