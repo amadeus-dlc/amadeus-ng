@@ -2,10 +2,10 @@
 //!
 //! オンディスク形は `{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` で、中間の
 //! `"stages"` キーはレガシー `mapping[scope].stages` 互換のために省略できない
-//! (レポート §5.1-2)。ただしそれは**ワイヤ構造**の話であり、ドメイン側は
+//! (レポート §6.1-2)。ただしそれは**ワイヤ構造**の話であり、ドメイン側は
 //! 「scope 名 → (slug → `PlanAction`)」の 2 段写像だけを持つ。
 //!
-//! **3 値契約** (レポート §5.1-12): グリッド列に slug が無い場合は `None` を返す。
+//! **3 値契約** (レポート §6.1-12): グリッド列に slug が無い場合は `None` を返す。
 //! `SKIP` に畳まないこと — 「このグリッドがコンパイルしていないステージ」と
 //! 「SKIP と宣言されたステージ」は別物で、畳み込みは呼出側の責務。
 
@@ -22,12 +22,14 @@ pub struct ScopeGrid {
 }
 
 impl ScopeGrid {
+    /// 読み取った列写像をそのまま保持する。コンポーザが書いた列も**逐語**で受け、
+    /// 転置で上書きしたり欠損セルを補完したりしない (再コンパイルは読取側の責務ではない)。
     #[must_use]
     pub const fn new(columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>>) -> ScopeGrid {
         ScopeGrid { columns }
     }
 
-    /// `scope-grid.json` が読めないときの導出フォールバック (レポート §5.1-9)。
+    /// `scope-grid.json` が読めないときの導出フォールバック (レポート §6.1-9)。
     ///
     /// 転置の述語は `phase == initialization || node.scopes.contains(scope)` —
     /// **initialization の 3 ステージは frontmatter に関係なく全列で EXECUTE** になる
@@ -61,16 +63,20 @@ impl ScopeGrid {
         self.columns.keys().map(String::as_str).collect()
     }
 
+    /// グリッドが列を持つスコープか。**有効スコープの判定ではない** —
+    /// 権威はスコープ `.md` の存在 (`WorkflowDefinition::is_valid_scope`)。
     #[must_use]
     pub fn contains_scope(&self, scope: &str) -> bool {
         self.columns.contains_key(scope)
     }
 
+    /// スコープ 1 列 (slug → `PlanAction`)。列そのものが無ければ `None` — 空列とは区別する。
     #[must_use]
     pub fn column(&self, scope: &str) -> Option<&BTreeMap<StageSlug, PlanAction>> {
         self.columns.get(scope)
     }
 
+    /// 全列。スコープ名の辞書順、列内は slug の辞書順。
     #[must_use]
     pub const fn columns(&self) -> &BTreeMap<String, BTreeMap<StageSlug, PlanAction>> {
         &self.columns
@@ -186,7 +192,7 @@ mod tests {
 
     #[test]
     fn an_explicit_grid_is_taken_verbatim() {
-        // コンポーザが書いた列は逐語で読む (レポート §5.1-20) — 転置で上書きしない
+        // コンポーザが書いた列は逐語で読む (レポート §6.1-20) — 転置で上書きしない
         let mut column = BTreeMap::new();
         column.insert(slug("bootstrap"), PlanAction::Skip);
         let mut columns = BTreeMap::new();

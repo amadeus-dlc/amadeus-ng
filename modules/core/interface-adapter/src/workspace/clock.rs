@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct SystemClock;
 
 impl SystemClock {
+    /// 単位型を作る (状態を持たないので設定項目は無い)。
     #[must_use]
     pub const fn new() -> SystemClock {
         SystemClock

@@ -2,7 +2,7 @@
 //! 順序は phase → seq の 2 段整数比較 (`numericStageOrder`。`"1.10" > "1.9"`)。
 //!
 //! 生表現を逐語で保持する (**数値正規化禁止** — `"3.10"` を `3.1` にしてはならない。
-//! レポート §5.1-5 の観測可能契約)。
+//! レポート §6.1-5 の観測可能契約)。
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -15,11 +15,14 @@ pub struct StageNumber {
     seq: u32,
 }
 
+/// `StageNumber::parse` が拒否する形の違反。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StageNumberError {
+    /// 入力が空文字列。
     Empty,
     /// `.` がちょうど 1 個でない。
     MalformedSeparator {
+        /// 入力に含まれる `.` の個数 (期待値は 1)。
         dot_count: usize,
     },
     /// `.` の左側 (`<phaseIndex>`) が空。
@@ -62,11 +65,13 @@ impl StageNumber {
         &self.raw
     }
 
+    /// `.` の左側の整数値。`PhaseId::index()` と同じ番号体系 (前置ゼロは落ちる)。
     #[must_use]
     pub const fn phase_index(&self) -> u32 {
         self.phase_index
     }
 
+    /// `.` の右側の整数値 — フェーズ内の連番 (前置ゼロは落ちる)。
     #[must_use]
     pub const fn seq(&self) -> u32 {
         self.seq

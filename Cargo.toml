@@ -22,6 +22,7 @@ repository = "https://github.com/amadeus-dlc/amadeus-ng"
 # 2026-08-22 オーナー規約のリント一式。unwrap/expect のテスト許可は clippy.toml、
 # redundant_clone はプロダクト・テスト両方で禁止。
 [workspace.lints.rust]
+missing_docs = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 dropping_copy_types = "deny"
 unreachable_pub = "deny"

@@ -1,10 +1,10 @@
 //! `StageGraph` — コンパイル済み `stage-graph.json` (ルートは**配列**) の読取モデル。
 //!
-//! **文書順を保持する** (レポート §5.1-6)。`next_in_scope_stage` は文書順で走査し、
+//! **文書順を保持する** (レポート §6.1-6)。`next_in_scope_stage` は文書順で走査し、
 //! `subgraph_for_scope` だけが数値順にソートする — この 2 経路の使い分けを潰さないため、
 //! ロード時に数値順へ正規化してはならない。
 //!
-//! slug → 文書順インデックスの索引は**実装の自由** (レポート §5.2)。upstream の線形
+//! slug → 文書順インデックスの索引は**実装の自由** (レポート §6.2)。upstream の線形
 //! スキャンを模倣する必要はない。
 
 use std::collections::BTreeMap;
@@ -19,12 +19,16 @@ pub struct StageGraph {
     index: BTreeMap<StageSlug, usize>,
 }
 
+/// `StageGraph::new` が拒否する構成違反。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StageGraphError {
     /// slug がグラフ内で重複している。
     DuplicateSlug {
+        /// 重複した slug の生値。
         slug: String,
+        /// 最初の出現の文書順インデックス。
         first_index: usize,
+        /// 重複として拒否された出現の文書順インデックス。
         duplicate_index: usize,
     },
 }
@@ -56,11 +60,13 @@ impl StageGraph {
         &self.nodes
     }
 
+    /// グラフが持つステージ数。
     #[must_use]
     pub const fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    /// ノードを 1 つも持たないか。空グラフは正当 (`new` は空列を拒否しない)。
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.nodes.is_empty()
@@ -72,11 +78,13 @@ impl StageGraph {
         self.index.get(slug).copied()
     }
 
+    /// slug に対応するノード。slug は一意なので候補は高々 1 件。グラフに無ければ `None`。
     #[must_use]
     pub fn get(&self, slug: &StageSlug) -> Option<&StageNode> {
         self.index_of(slug).and_then(|i| self.nodes.get(i))
     }
 
+    /// 文書順インデックスのノード (`nodes()` と同じ並び)。範囲外は `None`。
     #[must_use]
     pub fn at(&self, index: usize) -> Option<&StageNode> {
         self.nodes.get(index)

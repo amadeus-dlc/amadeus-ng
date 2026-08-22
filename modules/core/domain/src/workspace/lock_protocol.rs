@@ -89,46 +89,62 @@ impl LockProtocol {
 
     // ---- 観測 (read model) ----
 
+    /// モデルのプロセス数 N。コマンドが受け付けるインデックスの定義域は `0..process_count`
+    /// (外は `UnknownProcess`)。
     #[must_use]
     pub const fn process_count(&self) -> usize {
         self.alive.len()
     }
 
+    /// プロセス `p` の生存 (`kill(pid,0)` の ESRCH 判定の抽象)。`p` は `0..process_count` の範囲で
+    /// あること。
     #[must_use]
     pub fn alive(&self, p: usize) -> bool {
         self.alive[p]
     }
 
+    /// mkdir-EEXIST ロックディレクトリの保持者。`None` = 不在 (モデルの `dirOwner = -1`)。
+    /// 保持者の生存は含意しない — crash 後も stale なまま残る (W5)。
     #[must_use]
     pub const fn dir_owner(&self) -> Option<usize> {
         self.dir_owner
     }
 
+    /// `withAuditLock` の identity ごとの再入深度カウンタ。`dir_owner` が `None` ⇔ 0、
+    /// `Some` ⇒ 1 以上 (`depth_consistent`)。
     #[must_use]
     pub const fn depth(&self) -> u32 {
         self.depth
     }
 
+    /// 現保持者の保持経過。単位は tick (owner.json スタンプ経過時間の抽象。実 Gateway では ms)。
+    /// `threshold` との比較にのみ意味がある値で、取得・reap で 0 に戻る。
     #[must_use]
     pub const fn held_ticks(&self) -> u32 {
         self.held_ticks
     }
 
+    /// 監査シャードの行数。追記のみのため単調非減少 (減る遷移はモデルに存在しない)。
     #[must_use]
     pub const fn audit_len(&self) -> u64 {
         self.audit_len
     }
 
+    /// 状態ファイルの版。audit-first により、監査 emit 済みトランザクション内でのみ進む (W1)。
     #[must_use]
     pub const fn state_ver(&self) -> u64 {
         self.state_ver
     }
 
+    /// 「監査 emit 済み・state 未書込」の中間状態 (R6 の窓) が開いているか。真のときのみ
+    /// `transition_write` が通る。
     #[must_use]
     pub const fn pending(&self) -> bool {
         self.pending
     }
 
+    /// stale 判定のしきい値。単位は `held_ticks` と同じ tick で、**厳密超過** (`>`) のみが
+    /// 生きた保持者からの reap を許す (W2)。
     #[must_use]
     pub const fn threshold(&self) -> u32 {
         self.threshold
