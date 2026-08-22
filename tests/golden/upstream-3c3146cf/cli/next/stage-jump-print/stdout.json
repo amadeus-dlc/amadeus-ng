@@ -1,0 +1,1 @@
+{"kind":"print","message":"Run `bun .claude/tools/aidlc-jump.ts execute --target contract-design --direction forward --scope classic` to perform the jump, then re-run `next` to continue from the jump target."}

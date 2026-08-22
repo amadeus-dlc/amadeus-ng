@@ -1,0 +1,13 @@
+[
+  "bun",
+  ".claude/tools/aidlc-utility.ts",
+  "intent-create",
+  "--scope",
+  "classic",
+  "--label",
+  "golden",
+  "--arguments",
+  "Build a small ordering service",
+  "--project-dir",
+  "<ROOT>"
+]

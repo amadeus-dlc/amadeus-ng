@@ -1,0 +1,11 @@
+--- aidlc-state.md (before)
++++ aidlc-state.md (after)
+@@ -32,8 +32,6 @@
+ ## Runtime State
+ - **Revision Count**: 1
+ 
+-- **Parked**: <TS>
+-- **Parked At Stage**: domain-design
+ ## Phase Progress
+ <!-- Status values: Pending, Active, Verified, Skipped -->
+ 

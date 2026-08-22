@@ -1,0 +1,13 @@
+{
+  "id": "cli/continue/invalid-token",
+  "family": "cli",
+  "verb": "continue",
+  "case": "invalid-token",
+  "description": "壊れた継続トークンは error directive で拒否される (終了コードは 0 のまま)",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

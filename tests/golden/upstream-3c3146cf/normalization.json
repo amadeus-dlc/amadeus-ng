@@ -1,7 +1,22 @@
 {
   "version": 1,
   "description": "ゴールデン比較の正規化規則 (BR2.2)。期待値と実測値の双方に同じ規則を適用してからバイト比較する。規則はコーパスの一部であり、比較器 (テスト側) はこのファイルだけを読む。",
+  "rule_application": "規則は rules 配列の順に適用する。順序は意味を持つ — 環境固有の実行時値 (runtime-path / runtime-clone) を先に literal 置換で潰し、次に形の決まったパターン (regex) を当て、取りこぼしを拾う広めの regex を最後に置く。placeholder は <TS> / <CLONE> / <ROOT> / <SESSION> の 4 種に固定し (NFR1.3)、1 つの placeholder に複数の規則があってよい。replacement を持つ規則はマッチ全体をその文字列で置き換える (前後の文脈ごとマッチさせる規則のため)。持たない規則は placeholder そのもので置き換える。",
   "rules": [
+    {
+      "placeholder": "<ROOT>",
+      "kind": "runtime-path",
+      "pattern": "作業ツリーの絶対パス (比較器が実行時に与える)",
+      "description": "リポジトリ/使い捨てワークスペースの絶対パス。realpath 解決前後の両方を与える (macOS の /var → /private/var など)",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    },
+    {
+      "placeholder": "<CLONE>",
+      "kind": "runtime-clone",
+      "pattern": "監査シャードの basename と採取ホスト名 (比較器が実行時に与える)",
+      "description": "<host>-<clone> 形のシャード名そのもの。形から拾う下の regex では取り切れない実際の値を literal 置換で先に潰す (NFR4.4 のホスト名漏れ防止)",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    },
     {
       "placeholder": "<TS>",
       "kind": "regex",
@@ -10,17 +25,19 @@
       "applies_to": ["stdout", "state-diff", "audit", "stderr"]
     },
     {
-      "placeholder": "<CLONE>",
+      "placeholder": "<TS>",
       "kind": "regex",
-      "pattern": "[A-Za-z0-9][A-Za-z0-9_.-]*-[0-9a-f]{8}",
-      "description": "監査シャード名 <host>-<clone> の形",
-      "applies_to": ["stdout", "state-diff", "audit"]
+      "pattern": "intents/\\d{6}-",
+      "replacement": "intents/<TS>-",
+      "description": "intent 記録ディレクトリ名の先頭に付く YYMMDD (UTC) の日付スタンプ。採取日で変わるため潰す",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
     },
     {
-      "placeholder": "<ROOT>",
-      "kind": "runtime-path",
-      "pattern": "作業ツリーの絶対パス (比較器が実行時に与える)",
-      "description": "リポジトリ/使い捨てワークスペースの絶対パス",
+      "placeholder": "<TS>",
+      "kind": "regex",
+      "pattern": "\\d{6}-golden",
+      "replacement": "<TS>-golden",
+      "description": "パス以外の文脈 (`Intent created: 260822-golden` などの逐語文言) に裸で現れる記録ディレクトリ名の日付スタンプ。`golden` は cli / hooks 族のフィクスチャが `intent-create --label` に渡すラベルで、provenance.json の fixture_intent_label が正本",
       "applies_to": ["stdout", "state-diff", "audit", "stderr"]
     },
     {
@@ -29,6 +46,20 @@
       "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
       "description": "セッション ID (UUID v4 の形)",
       "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    },
+    {
+      "placeholder": "<SESSION>",
+      "kind": "regex",
+      "pattern": "[A-Za-z0-9_-]{200,}",
+      "description": "load-steering の継続トークン (base64url の不透明トークン)。記録ごとにランダムな鍵で MAC を張るため同じ入力でも毎回変わる。空白を含まない 200 文字以上の base64url 連続はゴールデン中このトークンしかない",
+      "applies_to": ["stdout", "state-diff", "audit", "stderr"]
+    },
+    {
+      "placeholder": "<CLONE>",
+      "kind": "regex",
+      "pattern": "[A-Za-z0-9][A-Za-z0-9_.-]*-[0-9a-f]{8}",
+      "description": "監査シャード名 <host>-<clone> の形",
+      "applies_to": ["stdout", "state-diff", "audit"]
     }
   ],
   "families": {

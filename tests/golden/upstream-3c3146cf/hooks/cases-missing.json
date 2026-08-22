@@ -1,0 +1,12 @@
+{
+  "family": "hooks",
+  "upstream_commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+  "missing": [
+    {
+      "id": "stop-forwarding-loop/transcript-carve-out",
+      "reason": "会話ターンの切り出し (transcript を読んで会話だけのターンを差し止めない判定) は本物のトランスクリプト JSONL を要するため非対話で再現できなかった",
+      "evidence": "採取では transcript_path に /dev/null を渡している",
+      "follow_up": "U7 (フックのサブコマンド) でトランスクリプトの合成入力を用意して採取する"
+    }
+  ]
+}

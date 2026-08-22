@@ -1,0 +1,13 @@
+[
+  "bun",
+  ".claude/tools/aidlc-orchestrate.ts",
+  "report",
+  "--result",
+  "skipped",
+  "--stage",
+  "user-stories",
+  "--reason",
+  "No UI surface in this workflow.",
+  "--project-dir",
+  "<ROOT>"
+]

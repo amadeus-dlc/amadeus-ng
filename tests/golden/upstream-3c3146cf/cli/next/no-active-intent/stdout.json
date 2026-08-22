@@ -1,0 +1,1 @@
+{"kind":"print","message":"Run `bun .claude/tools/aidlc-utility.ts intent-create --scope classic` to start the workflow (26 of 33 stages, 23 approval gates, 5 stages repeat per unit of work in Construction), then re-run `next` to continue.","narration":"Setting up a classic workflow for this: 26 of 33 stages, 23 approval gates, 5 stages repeat per unit of work in Construction."}

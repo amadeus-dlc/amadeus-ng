@@ -1,0 +1,13 @@
+{
+  "id": "cli/set-autonomy/state-field-absent",
+  "family": "cli",
+  "verb": "set-autonomy",
+  "case": "state-field-absent",
+  "description": "ピン 3c3146cf の intent-create が起こす状態ファイルには Construction Autonomy Mode 行が無いため、set-autonomy は終了コード 1 で拒否される",
+  "stdout_kind": "text",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

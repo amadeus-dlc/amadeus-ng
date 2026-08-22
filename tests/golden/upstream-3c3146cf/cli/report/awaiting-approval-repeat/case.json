@@ -1,0 +1,13 @@
+{
+  "id": "cli/report/awaiting-approval-repeat",
+  "family": "cli",
+  "verb": "report",
+  "case": "awaiting-approval-repeat",
+  "description": "すでに承認待ちのステージに再度 awaiting-approval を報告しても二重に開かない (冪等)",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-22T13:43:00Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

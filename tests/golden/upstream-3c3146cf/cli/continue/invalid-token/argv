@@ -1,0 +1,8 @@
+[
+  "bun",
+  ".claude/tools/aidlc-orchestrate.ts",
+  "continue",
+  "not-a-continuation-token",
+  "--project-dir",
+  "<ROOT>"
+]

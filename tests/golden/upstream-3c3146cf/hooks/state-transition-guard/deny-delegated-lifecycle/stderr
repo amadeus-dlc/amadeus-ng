@@ -1,0 +1,1 @@
+[aidlc] Delegated agent "aidlc-developer-agent" cannot run aidlc-orchestrate.ts next: workflow lifecycle and routing are conductor-owned. Return the artifact, contribution, or review verdict to the invoking orchestrator without parking, resuming, reporting, routing, or presenting a gate.
