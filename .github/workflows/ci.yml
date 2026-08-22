@@ -48,6 +48,18 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # NFR2.3 (設計監査 C27): tools/lint は workspace 非メンバーの detached クレート
+      # なので --workspace に載らない。同じ品質ゲート (fmt / clippy / 自己テスト) を
+      # manifest-path 指定で明示的にかける。
+      - name: cargo fmt --check (tools/lint)
+        run: cargo fmt --manifest-path tools/lint/Cargo.toml --all --check
+
+      - name: cargo clippy (tools/lint)
+        run: cargo clippy --manifest-path tools/lint/Cargo.toml --all-targets -- -D warnings
+
+      - name: cargo test (tools/lint)
+        run: cargo test --manifest-path tools/lint/Cargo.toml
+
   quint:
     name: quint
     runs-on: ubuntu-latest
