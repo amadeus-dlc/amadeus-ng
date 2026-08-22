@@ -1,4 +1,4 @@
-//! ゴールデンパリティ: `FsStageGraphReader` が **upstream の配布実バイト**を本家と同じに読むこと。
+//! ゴールデンパリティ: `WorkflowDefinitionRepositoryImpl` が **upstream の配布実バイト**を本家と同じに読むこと。
 //!
 //! 入力は `tests/golden/upstream-3c3146cf/{stage-graph.json,scope-grid.json}` — ピン留めコミット
 //! `3c3146cf` (v2.6.40) の `dist/claude/.claude/tools/data/` からバイト無変更で持ってきたもの。
@@ -25,8 +25,8 @@
 
 use core_domain::orchestration::PlanAction;
 use core_domain::workflow_definition::{ReviewClass, WorkflowDefinition};
-use core_interface_adapter::orchestration::FsStageGraphReader;
-use core_use_case::orchestration::StageGraphReader;
+use core_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
+use core_use_case::orchestration::WorkflowDefinitionRepository;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -74,9 +74,9 @@ fn golden_dir() -> PathBuf {
 /// フィクスチャの `data_dir` と空の `scopes_dir` を与えたリーダ。
 ///
 /// `TempDir` は返り値で保持する — drop すると scopes ディレクトリが消えてしまうため。
-fn reader() -> (FsStageGraphReader, TempDir) {
+fn reader() -> (WorkflowDefinitionRepositoryImpl, TempDir) {
     let scopes = TempDir::new().unwrap();
-    let reader = FsStageGraphReader::new(golden_dir(), scopes.path().to_path_buf());
+    let reader = WorkflowDefinitionRepositoryImpl::new(golden_dir(), scopes.path().to_path_buf());
     (reader, scopes)
 }
 
@@ -84,7 +84,7 @@ fn reader() -> (FsStageGraphReader, TempDir) {
 fn load() -> (WorkflowDefinition, TempDir) {
     let (reader, scopes) = reader();
     let definition = reader
-        .load()
+        .find()
         .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     (definition, scopes)
 }

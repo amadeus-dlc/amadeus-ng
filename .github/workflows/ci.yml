@@ -30,13 +30,13 @@ jobs:
           # 独自の target ディレクトリを明示的にキャッシュ対象に加える。
           workspaces: |
             . -> target
-            tools/lint -> tools/lint/target
+            tools/lint -> target
 
       - name: cargo fmt --check
         run: cargo fmt --all --check
 
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo lint
         run: cargo lint

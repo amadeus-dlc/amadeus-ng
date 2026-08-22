@@ -72,7 +72,7 @@ flowchart TB
 
 **責務**: 「何を実行しうるか」の静的定義。5 Phase / 33 Stage / 11 Scope、Depth・TestStrategy・Tier の 3 ダイヤル、エージェントペルソナ 14 体、そして唯一の YAML→JSON 変換である `compileStageGraph`。コンパイラは**純粋ドメインサービス**であり（裁定 B6）、ビルド時（distribution）とランタイム（plugin の再コンパイル）の両方から呼ばれるが、失敗時の補償は各呼び出し元の責務。
 
-**集約候補**: `StageDefinition`（stage file = frontmatter + 本文）、`ScopeDefinition`（identity + グリッド列）、`AgentPersona`、成果物としての `StageGraph`（コンパイル出力、以後 immutable）。
+**集約**: `WorkflowDefinition`（コンパイル済み 3 入力 — `StageGraph`・`ScopeGrid`・scope カタログ — を束ねる読取モデルの集約ルート。2026-08-22 昇格 — 12 §2.1。`StageGraph` は内包の成果物値、`ScopeDefinition`（identity + グリッド列）も内包）。スライス 2 の集約候補: `StageDefinition`（stage file = frontmatter + 本文）、`AgentPersona`。
 
 **Domain Primitive 候補**: `PhaseId`（5 値・全順序）、`StageSlug`、`StageNumber`（エンジン付与・再番号なし）、`DepthLevel`、`TestStrategyLevel`、`AgentTier`（judgment > balanced > templated、下方単調）、`StageMode`（5 値、agent-team は予約）、`ExecutionKind`（ALWAYS / CONDITIONAL）、`ArtifactName`（122 語彙・kebab-case）、`ScopeName`、`PlanAction`（EXECUTE / SKIP）。
 

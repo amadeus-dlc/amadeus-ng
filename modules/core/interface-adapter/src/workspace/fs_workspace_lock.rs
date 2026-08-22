@@ -21,9 +21,7 @@
 //! - release は識別子ごとの深度カウンタで管理し、深度 0 に戻るときのみ rm -rf する。
 
 use core_domain::workspace::{LockIdentity, reap_eligible};
-use core_use_case::workspace::{
-    AcquireBudget, AcquireError, Clock, LockGuard, ProcessProbe, WorkspaceLock,
-};
+use core_use_case::workspace::{AcquireBudget, AcquireError, LockGuard, WorkspaceLock};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -33,8 +31,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::clock::SystemClock;
-use super::process_probe::OsProcessProbe;
+use crate::clock::{Clock, SystemClock};
+use crate::process_probe::{OsProcessProbe, ProcessProbe};
 
 /// stale reap の既定閾値 (upstream `DEFAULT_LOCK_STALE_MS`, 03 §6.8)。
 pub const DEFAULT_LOCK_STALE_MS: u64 = 600_000;
@@ -373,7 +371,8 @@ impl WorkspaceLock for FsWorkspaceLock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::{FakeClock, FakeProcessProbe};
+    use crate::clock::FakeClock;
+    use crate::process_probe::FakeProcessProbe;
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Mutex;
     use std::time::Duration;

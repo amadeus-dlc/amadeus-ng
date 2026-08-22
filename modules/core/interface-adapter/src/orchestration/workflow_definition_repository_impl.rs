@@ -1,8 +1,12 @@
-//! `StageGraphReader` の実 Gateway — Published Language 3 入力 (`stage-graph.json` /
-//! `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) をディスクから読み、
-//! `WorkflowDefinition` へ写す (12-workflow-definition §6)。
+//! `WorkflowDefinitionRepository` の実装 (Gateway) — Published Language 3 入力
+//! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
+//! ディスクから読み、集約 `WorkflowDefinition` へ写す (12-workflow-definition §6)。
 //!
-//! **この Gateway が所有するもの** (12 §6):
+//! ポート trait は use-case 層が所有し、その実装は `XxxRepositoryImpl` としてアダプタ層に
+//! 置く (docs/memory/gateway-taxonomy.md)。**格納形式がファイルであることはこの実装の内部
+//! 詳細**であり、ポート名にも facade にも現れない。
+//!
+//! **この実装が所有するもの** (12 §6):
 //! - パス解決とテストシーム (`<data_dir>/{stage-graph,scope-grid}.json` / `<scopes_dir>`、
 //!   および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` 相当のオーバライド)。
 //!   **env の読取そのものは合成ルートの責務**で、ここは注入されたパスだけを見る
@@ -29,7 +33,7 @@ use core_domain::workflow_definition::{
     RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault, StageGraph,
     StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
 };
-use core_use_case::orchestration::{GraphReadError, StageGraphReader};
+use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -271,26 +275,26 @@ struct WireScopeColumn {
 // Gateway
 // ---------------------------------------------------------------------------
 
-/// 実ファイルシステム上の `StageGraphReader` 実装。
+/// ファイルシステムを裏に持つ `WorkflowDefinitionRepository` の実装。
 ///
 /// 呼出のたびに 3 入力を読み直す。キャッシュ戦略 (`OnceCell` / 注入 / 呼出ごとのロード) は
 /// **観測不能なので実装の自由** (12 §10) — upstream のモジュールレベル可変シングルトンと
 /// `_reset*ForTests()` は模倣しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FsStageGraphReader {
+pub struct WorkflowDefinitionRepositoryImpl {
     data_dir: PathBuf,
     scopes_dir: PathBuf,
     stage_graph_override: Option<PathBuf>,
     scope_grid_override: Option<PathBuf>,
 }
 
-impl FsStageGraphReader {
+impl WorkflowDefinitionRepositoryImpl {
     /// `data_dir` は `stage-graph.json` / `scope-grid.json` の置き場
     /// (`<harnessRoot>/tools/data/`)、`scopes_dir` は identity ファイルの置き場
     /// (`<harnessRoot>/scopes/`)。
     #[must_use]
-    pub const fn new(data_dir: PathBuf, scopes_dir: PathBuf) -> FsStageGraphReader {
-        FsStageGraphReader {
+    pub const fn new(data_dir: PathBuf, scopes_dir: PathBuf) -> WorkflowDefinitionRepositoryImpl {
+        WorkflowDefinitionRepositoryImpl {
             data_dir,
             scopes_dir,
             stage_graph_override: None,
@@ -301,7 +305,7 @@ impl FsStageGraphReader {
     /// `AIDLC_STAGE_GRAPH` 相当のオーバライド。設定すると読取失敗時の逐語文言の hint 節が
     /// 「unset して既定に戻せ」形へ切り替わる (12 §4 #1)。
     #[must_use]
-    pub fn with_stage_graph_override(mut self, path: PathBuf) -> FsStageGraphReader {
+    pub fn with_stage_graph_override(mut self, path: PathBuf) -> WorkflowDefinitionRepositoryImpl {
         self.stage_graph_override = Some(path);
         self
     }
@@ -309,7 +313,7 @@ impl FsStageGraphReader {
     /// `AIDLC_SCOPE_GRID` 相当のオーバライド。グリッドの欠損は fatal ではないため、
     /// こちらに hint 節の分岐は無い。
     #[must_use]
-    pub fn with_scope_grid_override(mut self, path: PathBuf) -> FsStageGraphReader {
+    pub fn with_scope_grid_override(mut self, path: PathBuf) -> WorkflowDefinitionRepositoryImpl {
         self.scope_grid_override = Some(path);
         self
     }
@@ -409,8 +413,8 @@ impl FsStageGraphReader {
     }
 }
 
-impl StageGraphReader for FsStageGraphReader {
-    fn load(&self) -> Result<WorkflowDefinition, GraphReadError> {
+impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
+    fn find(&self) -> Result<WorkflowDefinition, GraphReadError> {
         let graph = self.load_graph()?;
         let grid = self
             .load_grid()
@@ -881,7 +885,8 @@ mod tests {
 
     #[test]
     fn path_resolution_prefers_the_overrides() {
-        let reader = FsStageGraphReader::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
+        let reader =
+            WorkflowDefinitionRepositoryImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
         assert_eq!(
             reader.stage_graph_path(),
             PathBuf::from("/data/stage-graph.json")
