@@ -21,6 +21,7 @@ pub fn set_field(content: &str, field: &str, value: &str) -> String {
     replace_field(content, field, value).unwrap_or_else(|| content.to_string())
 }
 
+/// `set_field_strict` の拒否 — 対象フィールド行が state ファイルに存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldNotFound {
     /// upstream 逐語の拒否文言 (文言カタログ経由)。
@@ -28,6 +29,7 @@ pub struct FieldNotFound {
 }
 
 impl FieldNotFound {
+    /// 文言カタログが組んだ拒否文言から構成する (文言の正本はカタログ側)。
     #[must_use]
     pub fn new(message: impl Into<String>) -> FieldNotFound {
         FieldNotFound {
@@ -35,6 +37,7 @@ impl FieldNotFound {
         }
     }
 
+    /// upstream 逐語の拒否文言 — フィールド名を含む完成形で、Presenter はこれをそのまま出す。
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
@@ -50,25 +53,29 @@ pub fn set_field_strict(content: &str, field: &str, value: &str) -> Result<Strin
         .ok_or_else(|| FieldNotFound::new(msg::field_not_found(field)))
 }
 
+/// `set_or_insert_field` の拒否 — 挿入先の `## Heading` セクションが state ファイルに存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadingNotFound(String);
 
 impl HeadingNotFound {
+    /// 見つからなかった見出し名 (`## ` を含まない裸の名前) から構成する。
     #[must_use]
     pub fn new(heading: impl Into<String>) -> HeadingNotFound {
         HeadingNotFound(heading.into())
     }
 
+    /// 見つからなかった見出し名を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-/// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記。
+/// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記
+/// (フィールド不在はエラーではなく挿入)。
 /// # Errors
 ///
-/// 不在フィールドは `FieldNotFound` (upstream 逐語 — 「無言 no-op は検出不能なドリフト」)。
+/// 指定 `## Heading` が存在しなければ `HeadingNotFound` (見出し名を逐語で添える)。
 pub fn set_or_insert_field(
     content: &str,
     heading: &str,

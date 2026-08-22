@@ -6,7 +6,10 @@
 /// ステージ著者が宣言する適用可否。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExecutionKind {
+    /// 常に適用される。`condition` を理由に実行を辞退できない。
     Always,
+    /// `condition` が成立しなければ実行を辞退しうる — `skipped` の自己申告が受理される
+    /// 唯一の宣言 (プランが既に SKIP と言っている場合を除く)。
     Conditional,
 }
 
@@ -15,11 +18,13 @@ pub enum ExecutionKind {
 pub struct UnknownExecutionKind(String);
 
 impl UnknownExecutionKind {
+    /// 拒否された生値をそのまま包む (大文字化などの正規化はしない)。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownExecutionKind {
         UnknownExecutionKind(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -27,6 +32,7 @@ impl UnknownExecutionKind {
 }
 
 impl ExecutionKind {
+    /// 宣言順の全値。
     pub const ALL: [ExecutionKind; 2] = [ExecutionKind::Always, ExecutionKind::Conditional];
 
     /// # Errors
@@ -40,6 +46,7 @@ impl ExecutionKind {
         })
     }
 
+    /// ステージ frontmatter / `stage-graph.json` 上の語 (**大文字**。`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

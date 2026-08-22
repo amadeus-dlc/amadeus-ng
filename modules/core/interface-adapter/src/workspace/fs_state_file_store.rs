@@ -15,6 +15,7 @@ use std::path::Path;
 pub struct FsStateFileStore;
 
 impl FsStateFileStore {
+    /// 単位型を作る (状態を持たないので設定項目は無い — パスは呼出ごとに受け取る)。
     #[must_use]
     pub const fn new() -> FsStateFileStore {
         FsStateFileStore

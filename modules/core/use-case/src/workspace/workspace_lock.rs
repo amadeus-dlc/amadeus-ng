@@ -15,6 +15,8 @@ pub struct AcquireBudget {
 }
 
 impl AcquireBudget {
+    /// 予算を組み立てる。既定値は持たない — 呼出側 (ユースケース) が upstream の
+    /// `maxRetries` / `retryMs` に対応する値を明示的に与える。
     #[must_use]
     pub const fn new(max_retries: u32, retry_interval: Duration) -> AcquireBudget {
         AcquireBudget {
@@ -48,15 +50,20 @@ pub struct LockGuard {
 }
 
 impl LockGuard {
+    /// `WorkspaceLock` 実装が `acquire` 成功時に発行する構築口。ポートの利用側が
+    /// 呼ぶことは想定していない (保持していないロックのトークンを作れてしまうため)。
     pub const fn new(identity: LockIdentity) -> LockGuard {
         LockGuard { identity }
     }
 
+    /// このトークンが保持しているロックの identity (どの台帳を排他しているか)。
     #[must_use]
     pub const fn identity(&self) -> &LockIdentity {
         &self.identity
     }
 
+    /// トークンを消費して identity を取り出す。`release` を経ずに解体するため、
+    /// 実装が解放処理の内部で使うためのもの。
     #[must_use]
     pub fn into_identity(self) -> LockIdentity {
         self.identity
@@ -70,7 +77,10 @@ pub enum AcquireError {
     /// (upstream `Failed to acquire audit lock after retries`)。
     Exhausted,
     /// mkdir 等の I/O エラー (EEXIST 以外)。
-    Io { message: String },
+    Io {
+        /// 失敗した操作の説明。
+        message: String,
+    },
 }
 
 /// ワークスペースロック (mkdir-EEXIST ミューテックス) を供給するポート。

@@ -4,10 +4,16 @@
 /// ワークフローの 5 フェーズ。宣言順 = `index()` 順 = 派生 `Ord` 順。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PhaseId {
+    /// ブートストラップ専用 — record ツリーのスキャフォールド、ワークスペースの分類、
+    /// state ファイルの書き出し。フェーズルールファイルを持たない唯一のフェーズ。
     Initialization,
+    /// ソリューション化に先立つ問題フレーミング (成果物は問題／機会の水準に留める)。
     Ideation,
+    /// 既存システムの理解・仕様化・コンポーネントモデル設計・Unit of Work 分解・配送計画。
     Inception,
+    /// Unit ごとの設計とコード生成、およびそれに続く一度きりのステージ。
     Construction,
+    /// 出荷・観測・対応と、NFR に照らした検証。
     Operation,
 }
 
@@ -16,11 +22,13 @@ pub enum PhaseId {
 pub struct UnknownPhase(String);
 
 impl UnknownPhase {
+    /// 拒否された生値をそのまま包む (トリム・小文字化などの正規化はしない)。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownPhase {
         UnknownPhase(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -51,6 +59,7 @@ impl PhaseId {
         })
     }
 
+    /// ステージ frontmatter / `stage-graph.json` 上の語 (`parse` の逆写像)。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -74,6 +83,7 @@ impl PhaseId {
         }
     }
 
+    /// `index()` の逆写像。`0..=4` 以外は `None` (既定フェーズへ丸めない)。
     #[must_use]
     pub const fn from_index(index: u32) -> Option<PhaseId> {
         Some(match index {

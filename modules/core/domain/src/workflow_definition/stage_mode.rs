@@ -1,14 +1,18 @@
 //! `StageMode` — ステージのトポロジ。5 値の閉集合 (upstream 01 §3.2)。
 //!
 //! `agent-team` は**予約値**で出荷グラフには現れない。読み手は明示的に扱い、既定経路へ
-//! フォールスルーさせてはならない (レポート §5.1-14 — [S] `02:154`, [S] `04:98`)。
+//! フォールスルーさせてはならない (レポート §6.1-14 — [S] `02:154`, [S] `04:98`)。
 
 /// ステージ実行トポロジ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StageMode {
+    /// conductor が全ての声を担う。ディスパッチも貢献ファイルも無い (04 §2.3)。
     Inline,
+    /// ハブアンドスポーク — lead が起草し、相互に見えない support が各々貢献し、lead が統合する。
     Subagent,
+    /// 連鎖 — 各リンクは上流の全作業を見たうえで成果物を直接進める。
     Pipeline,
+    /// 相互に発言しあうメッシュ — 記録された異論を伴う。
     Mob,
     /// 予約 — 未実装。`is_reserved()` が真を返す唯一の値。
     AgentTeam,
@@ -19,11 +23,13 @@ pub enum StageMode {
 pub struct UnknownStageMode(String);
 
 impl UnknownStageMode {
+    /// 拒否された生値をそのまま包む (トリム・区切り文字の補正などの正規化はしない)。
     #[must_use]
     pub fn new(value: impl Into<String>) -> UnknownStageMode {
         UnknownStageMode(value.into())
     }
 
+    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -54,6 +60,8 @@ impl StageMode {
         })
     }
 
+    /// ステージ frontmatter / `stage-graph.json` 上の語 (`parse` の逆写像)。
+    /// `AgentTeam` は `agent-team` — `_` 区切りは閉集合外である。
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
