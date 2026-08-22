@@ -16,9 +16,9 @@
     ],
     "spec_reference": "docs/upstream/specs/09-cli-tools.md §8.4"
   },
-  "captured_at": "2026-08-22T12:40:55Z",
+  "captured_at": "2026-08-22T13:07:22Z",
   "command": "bash scripts/goldens/recapture-hash-canonical.sh",
   "bun_version": "1.3.13",
-  "case_count": 30,
+  "case_count": 32,
   "missing_cases": []
 }

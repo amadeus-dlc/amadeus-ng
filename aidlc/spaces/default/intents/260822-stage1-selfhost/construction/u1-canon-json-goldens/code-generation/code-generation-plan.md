@@ -78,13 +78,13 @@ to_value<T: Serialize>(&T) -> Result<JsonValue, ToValueError>   // 型付き str
 
 ## 4. 棚卸し（code-generation で確定し code-summary に記録する事項）
 
-- [ ] I1. 契約 JSON の実測最大ネスト深さ（`tests/golden/upstream-3c3146cf/*.json`、`.claude/tools/data/*.json`、
+- [x] I1. 契約 JSON の実測最大ネスト深さ（`tests/golden/upstream-3c3146cf/*.json`、`.claude/tools/data/*.json`、
       `.claude/tools/data/scopes/`、ゴールデン入力）が 128 を十分下回ること（想定 10 段未満）。
-- [ ] I2. 契約 JSON に integer-like キーが現れないこと（現れる場合は箇所と写像を記録）。
-- [ ] I3. 契約 JSON のキーが ASCII のみであること（UTF-16 順 = バイト順の前提）。
-- [ ] I4. 契約 JSON に浮動小数フィールドが現れないこと（現れる場合は一覧）。
-- [ ] I5. ワークスペース内の `serde_json::to_*` / `to_value` 直接呼出の棚卸し（lint 導入の影響範囲）。
-- [ ] I6. `preserve_order` 有効化で既存テスト（ITF 準拠 2 本の `serde_json::Value` 利用）が緑のままであること。
+- [x] I2. 契約 JSON に integer-like キーが現れないこと（現れる場合は箇所と写像を記録）。
+- [x] I3. 契約 JSON のキーが ASCII のみであること（UTF-16 順 = バイト順の前提）。
+- [x] I4. 契約 JSON に浮動小数フィールドが現れないこと（現れる場合は一覧）。
+- [x] I5. ワークスペース内の `serde_json::to_*` / `to_value` 直接呼出の棚卸し（lint 導入の影響範囲）。
+- [x] I6. `preserve_order` 有効化で既存テスト（ITF 準拠 2 本の `serde_json::Value` 利用）が緑のままであること。
 - [ ] I7. `components.md` の CanonJson `external_dependencies: []` を実依存（sha2 / serde / serde_json）へ更新
       （記録側、コンダクタが実施 — nfr-design レビュー Minor 1）。
 
@@ -161,9 +161,9 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 
 ### 5.6 棚卸しと品質ゲート（委任 1 の締め）
 
-- [ ] Step 15. 棚卸し I1〜I6 を実施し結果を `code-summary.md` 用に報告（小さな検査テスト or bun/シェルのワンライナー。
+- [x] Step 15. 棚卸し I1〜I6 を実施し結果を `code-summary.md` 用に報告（小さな検査テスト or bun/シェルのワンライナー。
       数値はすべて実測）。
-- [ ] Step 16. 品質ゲート: `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` →
+- [x] Step 16. 品質ゲート: `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` →
       `cargo lint` → `cargo test --workspace` → `cargo llvm-cov -p canon-json --summary-only`（導入済みなら。
       canon-json は 100% 近傍を目標、床 90%）。コミットは意味単位（`feat(canon-json): …` / `test(goldens): …`）。
 

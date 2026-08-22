@@ -89,10 +89,10 @@ MIT-0 は帰属表示を要求しないが、トレーサビリティと礼儀�
 | 取得ファイル sha256 | `99528925754da70e42106a35b52e5769001539042d07d0eecb5e0aa256196cb9` |
 | 抽出スニペット | 104〜123 行（`canonicalize` / `sha256` / `hashObject`）、上流仕様 `docs/upstream/specs/09-cli-tools.md` §8.4 |
 | 抽出スニペット sha256 | `c8894a433d620538e1701f178b8542528603f012b98680b6b79233f70704418f` |
-| 採取日時 | 2026-08-22T12:40:55Z |
+| 採取日時 | 2026-08-22T13:07:22Z |
 | 採取コマンド | `bash scripts/goldens/recapture-hash-canonical.sh` |
 | bun | 1.3.13 |
-| ケース数 | 30（欠落 0） |
+| ケース数 | 32（欠落 0） |
 
 各ケースが持つ 5 つの観測（`expected`）:
 
@@ -138,6 +138,13 @@ ADR 0001 の「未確定事項」に挙がっていた (a)〜(e) は、本採取
 | (d) 負ゼロ | `-0` / `-0.0` はいずれも `0` | `negative-zero/*` |
 | (e) 最小エスケープ集合 | `"` `\` と U+0000〜U+001F のみ。C0 のうち `\b \f \n \r \t` は短縮形、他は `\u00xx`（**小文字 hex** 4 桁）。`/`・U+007F(DEL)・非 ASCII・**U+2028 / U+2029** はエスケープせず生出力 | `escape/control-and-quotes`, `escape/line-separators` |
 | (体裁) | pretty は 2 スペースインデント + `"key": value` + メンバごと改行 + ファイル末尾改行。空の配列/オブジェクトは pretty でも `[]` / `{}` と 1 行 | `empty/containers` |
+
+さらに、実装時の棚卸し（I2 / I4）で `.claude/tools/data/*.json` に **integer-like キー**
+（`ars-priors.json` の `evThresholds` の `"1"`〜`"5"`）と **浮動小数フィールド**（22 種）が
+実在することが判明したため、その実データを入力クラス `contract-observed` として受入表に
+追加してある。「契約 JSON に integer-like キー・浮動小数は現れない」という当初の想定は
+実測により否定されており、BR1.2 の先頭寄せと BR1.3 の数値ライタはどちらも机上ではなく
+実データに効く規則である。
 
 ### 既知の非対称（孤立サロゲート）
 

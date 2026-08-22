@@ -1,7 +1,7 @@
 {
   "family": "hash-canonical",
   "upstream_commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-  "case_count": 30,
+  "case_count": 32,
   "cases": [
     {
       "id": "hash-canonical/nesting/deep-mixed",
@@ -18,7 +18,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -37,7 +37,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -56,7 +56,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -75,7 +75,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -94,7 +94,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -113,7 +113,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -136,7 +136,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -188,7 +188,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -228,7 +228,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -247,7 +247,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -266,7 +266,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -285,7 +285,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -304,7 +304,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -323,7 +323,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -342,7 +342,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -361,7 +361,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -380,7 +380,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -399,7 +399,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -418,7 +418,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -437,7 +437,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -456,7 +456,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -475,7 +475,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -494,7 +494,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -513,7 +513,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -532,7 +532,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -551,7 +551,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -570,7 +570,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -589,7 +589,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -608,7 +608,45 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/contract-floats/observed-values",
+      "class": "contract-observed",
+      "description": "`.claude/tools/data/*.json` に実在する浮動小数 22 種 (重複除去・昇順)。棚卸し I4 で発見した実データ",
+      "input": "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1.0,1.25,2.0,3.0,3.75,5.0,6.0,6.25,10.0,12.5,15.0,20.0,25.0,50.0]",
+      "expected": {
+        "canonical_output": "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1,1.25,2,3,3.75,5,6,6.25,10,12.5,15,20,25,50]",
+        "canonical_digest": "sha256:6a15ccfe85339c2ae5aae1df83ef6e105e3721c5e37e11743d221e762804d468",
+        "compact_output": "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1,1.25,2,3,3.75,5,6,6.25,10,12.5,15,20,25,50]",
+        "compact_digest_prefixed": "sha256:6a15ccfe85339c2ae5aae1df83ef6e105e3721c5e37e11743d221e762804d468",
+        "compact_digest_hex": "6a15ccfe85339c2ae5aae1df83ef6e105e3721c5e37e11743d221e762804d468",
+        "pretty_output": "[\n  0.1,\n  0.15,\n  0.2,\n  0.25,\n  0.3,\n  0.4,\n  0.5,\n  0.7,\n  1,\n  1.25,\n  2,\n  3,\n  3.75,\n  5,\n  6,\n  6.25,\n  10,\n  12.5,\n  15,\n  20,\n  25,\n  50\n]\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
+        "command": "bash scripts/goldens/recapture-hash-canonical.sh"
+      }
+    },
+    {
+      "id": "hash-canonical/contract-integer-like/ev-thresholds",
+      "class": "contract-observed",
+      "description": "`ars-priors.json` の `evThresholds` と同じ形 (integer-like キー 1〜5)。挿入順を崩して先頭寄せを確認する。棚卸し I2 で発見した実データ",
+      "input": "{\"5\":0.5,\"1\":0,\"3\":0.3,\"4\":0.4,\"2\":0.2}",
+      "expected": {
+        "canonical_output": "{\"1\":0,\"2\":0.2,\"3\":0.3,\"4\":0.4,\"5\":0.5}",
+        "canonical_digest": "sha256:5fd4acbc0946dabfb40eb0ecee1e5aa9c1ea8b02ccb28cd322e3805c9cfd55d9",
+        "compact_output": "{\"1\":0,\"2\":0.2,\"3\":0.3,\"4\":0.4,\"5\":0.5}",
+        "compact_digest_prefixed": "sha256:5fd4acbc0946dabfb40eb0ecee1e5aa9c1ea8b02ccb28cd322e3805c9cfd55d9",
+        "compact_digest_hex": "5fd4acbc0946dabfb40eb0ecee1e5aa9c1ea8b02ccb28cd322e3805c9cfd55d9",
+        "pretty_output": "{\n  \"1\": 0,\n  \"2\": 0.2,\n  \"3\": 0.3,\n  \"4\": 0.4,\n  \"5\": 0.5\n}\n"
+      },
+      "provenance": {
+        "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     },
@@ -627,7 +665,7 @@
       },
       "provenance": {
         "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-        "captured_at": "2026-08-22T12:40:55Z",
+        "captured_at": "2026-08-22T13:07:22Z",
         "command": "bash scripts/goldens/recapture-hash-canonical.sh"
       }
     }

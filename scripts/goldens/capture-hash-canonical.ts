@@ -270,6 +270,23 @@ const CASES: CaseSpec[] = [
     input: '[null,true,false,"hello",42,-42]',
   },
 
+  // ---- 実在の契約 JSON から採った値 (棚卸し I2 / I4 の裏取り) --------------
+  {
+    id: "hash-canonical/contract-floats/observed-values",
+    class: "contract-observed",
+    description:
+      "`.claude/tools/data/*.json` に実在する浮動小数 22 種 (重複除去・昇順)。棚卸し I4 で発見した実データ",
+    input:
+      "[0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.7,1.0,1.25,2.0,3.0,3.75,5.0,6.0,6.25,10.0,12.5,15.0,20.0,25.0,50.0]",
+  },
+  {
+    id: "hash-canonical/contract-integer-like/ev-thresholds",
+    class: "contract-observed",
+    description:
+      "`ars-priors.json` の `evThresholds` と同じ形 (integer-like キー 1〜5)。挿入順を崩して先頭寄せを確認する。棚卸し I2 で発見した実データ",
+    input: '{"5":0.5,"1":0,"3":0.3,"4":0.4,"2":0.2}',
+  },
+
   // ---- 重複キー ------------------------------------------------------------
   {
     id: "hash-canonical/duplicate-keys/last-wins",
