@@ -4,7 +4,7 @@
 //! Gateway (12-workflow-definition §9-3)。集約は構築後 immutable なので、`load` は
 //! 保持している `WorkflowDefinition` の複製をそのまま返す。
 //!
-//! テストダブルなので `Impl` 接尾辞は付けない (docs/memory/gateway-taxonomy.md)。
+//! テストダブルなので `Impl` 接尾辞は付けない (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 
 use core_domain::workflow_definition::WorkflowDefinition;
 use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};

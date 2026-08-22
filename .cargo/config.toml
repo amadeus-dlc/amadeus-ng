@@ -1,4 +1,4 @@
-# `cargo lint` — docs/memory の設計ルールを機械強制する独立リンター (tools/lint)。
+# `cargo lint` — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules の設計ルールを機械強制する独立リンター (tools/lint)。
 # workspace 非メンバーの detached クレートなので、明示的に manifest-path を渡す。
 [alias]
 lint = "run --quiet --manifest-path tools/lint/Cargo.toml --"

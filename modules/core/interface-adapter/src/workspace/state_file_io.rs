@@ -1,5 +1,5 @@
 //! `WorkflowExecutionRepository` (B-2) 実装の内部部品 — ポートではない
-//! (docs/memory/gateway-taxonomy.md)。
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 //!
 //! 状態ファイル (`aidlc-state.md`) の読取と、read-only ターゲットへの W_OK 書込バリア付き
 //! アトミック書込 (upstream `readStateFile` / `writeStateFile`, 03 §5.6, 11-workspace §4)。

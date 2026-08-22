@@ -62,7 +62,7 @@ struct OwnerStamp {
 /// 別スタンプ (= 隙間で別の acquire が起きた) と読む。`token` は `acquireActiveDirectiveLock`
 /// (`:7118`) だけが渡す任意フィールドで、audit ロック経路では常に不在 (両辺 `undefined` で
 /// 一致) のため本型はフィールド自体を持たない。ドメイン上の同値関係は名前付きメソッドでは
-/// なく `Eq`/`PartialEq` で表現する (docs/memory/domain-equality.md)。
+/// なく `Eq`/`PartialEq` で表現する (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
 impl PartialEq for OwnerStamp {
     fn eq(&self, other: &OwnerStamp) -> bool {
         self.pid == other.pid

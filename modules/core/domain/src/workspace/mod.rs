@@ -3,7 +3,7 @@
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_domain::workspace::<型>` で安定する
-//! (docs/memory/module-visibility.md)。
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod bolt_refs;
 mod checkbox;

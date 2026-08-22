@@ -1,5 +1,5 @@
 //! 時計 — **横断機構の注入シームであって Gateway ではない** (clean-architecture: 時計は
-//! Infrastructure が所有する機構。docs/memory/gateway-taxonomy.md)。
+//! Infrastructure が所有する機構。aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 //!
 //! どのユースケースもこの trait を消費しない。存在理由は `FsWorkspaceLock` の stale 判定と
 //! owner stamp 押印を、実時間の経過に頼らず決定的に検証できるようにすることだけである

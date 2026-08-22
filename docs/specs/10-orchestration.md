@@ -70,7 +70,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 `Report` は 13 段ガードの実行主体である。ただし段 2 の `--single` は **Controller が `Report` より前に `SingleStageRun` へ分岐**させ、`Report` には到達させない — これが I10 の E1（遷移ポート非注入）が成立する条件で、turn-shape marker と state-version guard は `SingleStageRun` 側でも実施する。段 11（completion-evidence: pipeline link レシート / per-unit カバレッジ / paused-unit 拒否 / ensemble contribution 証跡）と段 12（practices promotion レシート）、および approve 側の前提スタック（verifyStageArtifacts / summary confirmation / pipeline link / Practices Affirmed Timestamp / 冪等 replay guard / next-slug 非 SKIP — upstream 03 §5.7）は、レビュアー述語（B10）と同様に verification / workspace への依存として観測する。per-unit カバレッジと paused-unit 拒否の詳細は §7.3〜7.4。
 
-**ポート**: 名称は [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md) の規則に従う（Repository は**集約名 + Repository**。`Store` / `Reader` / `Writer` のポート造語と、`StateFileRepository` のような**格納媒体名の Repository** は禁止 — 格納形式は Repository 実装の内部詳細）。CQRS は採用しない。
+**ポート**: 名称は [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) の規則に従う（Repository は**集約名 + Repository**。`Store` / `Reader` / `Writer` のポート造語と、`StateFileRepository` のような**格納媒体名の Repository** は禁止 — 格納形式は Repository 実装の内部詳細）。CQRS は採用しない。
 
 | ポート | 責務 | 実装（Gateway） |
 | --- | --- | --- |
@@ -172,7 +172,7 @@ NO EMERGENT BEHAVIOR RULE への公認例外。失敗した build-and-test 実�
 
 1. **ドメイン例をユビキタス言語のテストとして書く**（例: 「gated ステージは awaiting-approval を経ずに completed にならない」「stale な再報告は状態を変えない」）。テスト名は 01 の正準用語を使う。
 2. **Domain Primitive と `WorkflowExecution` 集約を TDD で実装**（§2 の表の E1/E2 を先に）。プロパティテスト（proptest）は `Verdict` 正規化・`EffectivePlan` 合成・`ProgressSignature` に適用。
-3. **in-memory Gateway 一式**（`InMemoryWorkflowExecutionRepository` / `InMemoryAuditLedgerRepository` / `InMemoryWorkflowDefinitionRepository` / Lock）でユースケーステストを回す。永続化・プロセスはまだ登場しない（Repository は in-memory から始める — [`docs/memory/gateway-taxonomy.md`](../memory/gateway-taxonomy.md)）。
+3. **in-memory Gateway 一式**（`InMemoryWorkflowExecutionRepository` / `InMemoryAuditLedgerRepository` / `InMemoryWorkflowDefinitionRepository` / Lock）でユースケーステストを回す。永続化・プロセスはまだ登場しない（Repository は in-memory から始める — [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）。
 4. **ITF 準拠テストを接続**: `engine_loop.qnt` のトレース（`lastAction` 駆動）を domain 層のステップ関数に再生（ADR 0003 決定 5）。
 5. **実 Gateway は最後**: workspace コンテキストの公開サービスに委譲し、ゴールデン互換層（upstream 実出力・実ワークスペース）で検証。
 

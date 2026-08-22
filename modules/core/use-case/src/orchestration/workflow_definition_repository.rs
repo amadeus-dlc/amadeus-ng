@@ -9,7 +9,7 @@
 //! **1 つの Repository で** 集約 `WorkflowDefinition` に束ねて供給する (compile が graph と
 //! grid を lockstep で出すため、片方だけ新しい状態は upstream でも想定外)。
 //!
-//! 名前は「集約名＋Repository」規則に従う (docs/memory/gateway-taxonomy.md)。格納形式
+//! 名前は「集約名＋Repository」規則に従う (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。格納形式
 //! (`stage-graph.json` というファイル名) は Repository **実装**の内部詳細であり、ポート名に
 //! 現れてはならない。
 //!

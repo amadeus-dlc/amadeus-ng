@@ -3,7 +3,7 @@
 //! ディスクから読み、集約 `WorkflowDefinition` へ写す (12-workflow-definition §6)。
 //!
 //! ポート trait は use-case 層が所有し、その実装は `XxxRepositoryImpl` としてアダプタ層に
-//! 置く (docs/memory/gateway-taxonomy.md)。**格納形式がファイルであることはこの実装の内部
+//! 置く (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。**格納形式がファイルであることはこの実装の内部
 //! 詳細**であり、ポート名にも facade にも現れない。
 //!
 //! **この実装が所有するもの** (12 §6):

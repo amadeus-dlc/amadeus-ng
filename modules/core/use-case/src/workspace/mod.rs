@@ -3,7 +3,7 @@
 //! (I/O 責務は持たない — 01 §7)。
 //!
 //! 本コンテキストのポートは並行性サービス `WorkspaceLock` だけである
-//! (docs/memory/gateway-taxonomy.md):
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md):
 //!
 //! - 状態ファイルの読取／書込は集約 `WorkflowExecution` の Repository
 //!   (`WorkflowExecutionRepository` — B-2 で設計) が担う。格納形式 (`aidlc-state.md`) は
@@ -14,7 +14,7 @@
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_use_case::workspace::<型>` で安定する
-//! (docs/memory/module-visibility.md)。
+//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod workspace_lock;
 
