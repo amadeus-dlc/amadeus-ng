@@ -44,7 +44,8 @@ GitHub ruleset「${RULESET_NAME}」に required status checks (${REQUIRED_CONTEX
 
 オプション:
   --dry-run          PUT を実行せず、組み立てた JSON を印字するだけにする
-  --out-dir <dir>    変更前後の ruleset JSON を <dir>/before.json, <dir>/after.json に保存する
+  --out-dir <dir>    変更前後の ruleset JSON を <dir>/before.json, <dir>/after.json に保存する。
+                     --dry-run のときは after.json の代わりに組み立てた PUT ペイロードを <dir>/planned.json に保存する
   --help, -h         このヘルプを表示
 
 環境変数:
@@ -171,6 +172,9 @@ main() {
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     log_step "--dry-run: PUT は実行しません。組み立てた JSON を印字します"
     printf '%s\n' "${payload}"
+    if [[ -n "${OUT_DIR}" ]]; then
+      save_json "planned.json" "${payload}"
+    fi
     exit 0
   fi
 

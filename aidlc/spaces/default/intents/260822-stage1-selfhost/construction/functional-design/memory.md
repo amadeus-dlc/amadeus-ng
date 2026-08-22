@@ -17,4 +17,5 @@
 ## Open questions
 <!-- example: 2026-05-29T10:14:32Z — confirm the retention window with compliance before the next stage hardens the schema -->
 - 2026-08-22T11:47:37Z — [u1-canon-json-goldens] レビュー Minor 2（W2 に用途→ダイジェスト族の対応表: バンドル digest / directiveHash / route hash = compact-raw、approval fingerprint / contract_sha256 = canonical-prefixed）と Minor 3（integer_value の i64/u64 判別: 非負は u64 優先、それ以外 i64）は終端受領後のため未反映。functional-design のステージゲートで Request Changes か、code-generation の計画で吸収するかをオーナーが判断
-- 2026-08-23T00:20:00Z — [Interpretations] U10（packaging）は functional-design の成果物が適用外で、エンジンは「成果物なしで充足」と判定するが summary-confirmation の受領証は要求する（questions file 無しで error）; ゼロ質問 + 前提 P1/P2 の質問票を作り checkpoint を記録した。エンジンの per-unit 歩行は依存バッチ順（u1 → u10 → u2 → u9）で bolt-plan と異なる — オーナー裁定で U10 を B2 に前倒し（bolt-plan.md 改訂）
+- 2026-08-22T17:10:00Z — [Interpretations] U10（packaging）は functional-design の成果物が適用外で、エンジンは「成果物なしで充足」と判定するが summary-confirmation の受領証は要求する（questions file 無しで error）; ゼロ質問 + 前提 P1/P2 の質問票を作り checkpoint を記録した。エンジンの per-unit 歩行は依存バッチ順（u1 → u10 → u2 → u9）で bolt-plan と異なる — オーナー裁定で U10 を B2 に前倒し（bolt-plan.md 改訂）
+- 2026-08-22T23:50:00Z — [Interpretations] U2: ADR-002 ④「next_decision は集約のクエリ（21 分岐ラダー）」を字義どおり全分岐と読むと、集約が存在しない birth 前の分岐やフラグだけの分岐が集約クエリにならない — 分担（状態依存のみ集約 / 全部純関数 / 最小）を Q1 として人間裁定へ。StageIndex（B-2 繰延）と非ゲート完了イベント名も Q2 / Q3 に

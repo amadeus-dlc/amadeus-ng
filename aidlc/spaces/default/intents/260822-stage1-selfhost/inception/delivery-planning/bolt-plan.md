@@ -22,7 +22,7 @@
 
 ## 2. Bolt 順序
 
-> **改訂 2026-08-23（U1 code-generation 完了時、オーナー裁定）**: ワークフローエンジンは Unit を依存バッチ順（u1 → u10 → u2 → u9 → …）で歩くため、
+> **改訂 2026-08-22 UTC（U1 code-generation 完了時、オーナー裁定）**: ワークフローエンジンは Unit を依存バッチ順（u1 → u10 → u2 → u9 → …）で歩くため、
 > 旧 B6 = U10 を **B2** に前倒しし、旧 B2〜B5 を B3〜B6 へ繰り下げた。依存列と後続 Bolt 番号は連動して振り直した。根拠:
 > U10 は他 Unit に依存せず、CI の機械強制を早く入れるほど以降の Bolt が守られる。`team-allocation.md` /
 > `risk-and-sequencing-rationale.md` / `external-dependency-map.md` の B 番号は旧番号のまま（U 名で読み替える）。
@@ -58,8 +58,14 @@
 - **仮説（出荷して分かること）**: upstream の正準 JSON 仕様を Rust で再現できる（hash-canonical 全行一致）。
   ゴールデンの採取手順が再現可能で、以降の互換テストの正解として使える。
 - **デモ**: `cargo test -p canon-json`（受入表 green）とゴールデン一覧。
+### B2 — U10 CI・ガバナンス整備（`u10-ci-governance`）
 
-### B2 — U2 ドメイン ES コア（`u2-domain-es-core`）
+- **含む Unit**: U10。**walking skeleton**: いいえ。
+- **Done の追加条件**: FR9.1〜9.5（branch protection・サプライチェーン 4 件・tools/lint CI・PBT シード固定 +
+  相対ゲート 0.01（実装時の実測で暫定 0.05 — Bolt B2 ゲートのオーナー裁定 2026-08-22 UTC、U3 のロック退役後に 0.01）・カバレッジ除外）、NFR2 / NFR4 の受入。
+- **仮説**: 以降の PR（特に B9 の main.rs 配線）で CI が突然赤にならず、branch protection が機械強制される。
+- **デモ**: `gh api` で required checks を確認、`cargo audit` clean、CI green。
+### B3 — U2 ドメイン ES コア（`u2-domain-es-core`）
 
 - **含む Unit**: U2。**walking skeleton**: いいえ。
 - **Done の追加条件**: FR8.3（PlanAction 完全移動、再輸出なし）、FR8.4（畳み込みの集約メソッド化）、
@@ -69,17 +75,15 @@
   ES 化できる。PlanAction 完全移動が 1 PR に収まる。
 - **デモ**: ITF 準拠テスト + 集約ユニットテストの green、`orchestration` に PlanAction 定義が無いことの grep。
 - **規模リスク**: L。着手時に見積もり、1 日を超えそうなら中断してオーナーと分割を相談（`risk-and-sequencing-rationale.md` §4）。
-
-### B3 — U9 正本・仕様の canon 追従（`u9-canon-docs`）
+### B4 — U9 正本・仕様の canon 追従（`u9-canon-docs`）
 
 - **含む Unit**: U9。**walking skeleton**: いいえ。
 - **Done の追加条件**: FR8.1（`use-case-rules.md` load → find、`gateway-taxonomy.md` §4 散文、§2b の `store`
   注記、§2 実例リストの旧称除去）、FR8.2（11/01/10/12 号の canon 追従）、FR9.6（エラーハンドリング規則の
   文面をオーナー確認のうえ 1 ファイル追加）。
-- **仮説**: 正本と仕様が B4 以降の実装レビューの基準として矛盾なく使える。
+- **仮説**: 正本と仕様が B5 以降の実装レビューの基準として矛盾なく使える。
 - **デモ**: diff レビュー。
-
-### B4 — U3 SQLite EventStore と WorkflowExecutionRepository（`u3-event-store-repository`）
+### B5 — U3 SQLite EventStore と WorkflowExecutionRepository（`u3-event-store-repository`）
 
 - **含む Unit**: U3。**walking skeleton**: いいえ。
 - **Done の追加条件**: FR1.2（改訂版 `audit_lock.qnt` ITF 準拠）、FR1.3（store → find_by_id ラウンドトリップ、
@@ -88,31 +92,20 @@
 - **仮説**: SQLite Tx + 楽観 version で並行制御が 1 機構に集約でき、クラッシュ後にジャーナルから集約を
   再構成できる（NFR3 の書く側）。
 - **デモ**: ラウンドトリップ・競合・クラッシュ再構成テスト green、Quint ゲート green。
-- **規模リスク**: L（B2 と同じ扱い）。
-
-### B5 — U4 ReadModelUpdater（`u4-read-model-updater`）
+- **規模リスク**: L（B3 と同じ扱い）。
+### B6 — U4 ReadModelUpdater（`u4-read-model-updater`）
 
 - **含む Unit**: U4。**walking skeleton**: いいえ。
 - **Done の追加条件**: FR1.1（投影出力が 0a 逐語契約に一致、位置付き横断読取）、NFR3（ジャーナル → 集約 → 投影
   の再生成・冪等）、逸脱台帳に「互換ファイルはリードモデル」を登録。
 - **仮説**: ドメインイベントから upstream 互換の監査行・状態ファイルをバイト一致で描ける（B1 のゴールデンで判定）。
 - **デモ**: 投影テスト（イベント列 → 監査シャード・状態ファイル）のゴールデン突合 green。
-
-### B6 — U10 CI・ガバナンス整備（`u10-ci-governance`）
-
-- **含む Unit**: U10。**walking skeleton**: いいえ。
-- **Done の追加条件**: FR9.1〜9.5（branch protection・サプライチェーン 4 件・tools/lint CI・PBT シード固定 +
-  相対ゲート 0.01・カバレッジ除外）、NFR2 / NFR4 の受入。
-- **仮説**: 以降の PR（特に B9 の main.rs 配線）で CI が突然赤にならず、branch protection が機械強制される。
-- **デモ**: `gh api` で required checks を確認、`cargo audit` clean、CI green。
-
 ### B7 — U5 report ユースケース（`u5-report-use-case`）
 
 - **含む Unit**: U5。**walking skeleton**: いいえ。
 - **Done の追加条件**: FR2.1（0a 契約マップ一致 + `engine_loop` ITF 準拠）、FR2.2。
 - **仮説**: 再水和 → decide → store → 投影の定型が InMemory でテストでき、ゲート往復の契約が成立する。
 - **デモ**: `ReportUseCase<InMemoryWorkflowExecutionRepository>` のテスト green。
-
 ### B8 — U6 next / continue ユースケース（`u6-next-continue-use-case`）
 
 - **含む Unit**: U6。**walking skeleton**: いいえ。
@@ -121,7 +114,6 @@
 - **仮説**: `next` を Repository 非注入 + 参照渡しで読取専用に型強制できる。continue_token が B1 の正準化で
   安定する。
 - **デモ**: 21 分岐のテーブルテスト green、continue_token のゴールデン一致。
-
 ### B9 — U7 CLI ディスパッチャ・文言配線・フック 4 本（`u7-cli-dispatcher-hooks`）
 
 - **含む Unit**: U7。**walking skeleton**: いいえ（ただしここで初めてバイナリ全体が動く）。
@@ -130,7 +122,6 @@
 - **仮説**: ROUTES の写像で upstream と同じ出力が得られ、フック 4 本が Claude Code のフック機構で
   upstream 同様に発火・ブロックする（心配 C）。
 - **デモ**: 本リポジトリの `.claude/settings.json` をバイナリ呼出に切り替えた状態で `aidlc next` 等を手動実行。
-
 ### B10 — U8 doctor とドッグフード（`u8-doctor-dogfood`）
 
 - **含む Unit**: U8。**walking skeleton**: いいえ（代替としての全体疎通実証）。

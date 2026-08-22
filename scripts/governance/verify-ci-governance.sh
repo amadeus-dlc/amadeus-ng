@@ -164,6 +164,28 @@ check_workspace_lints() {
     fi
   fi
 
+  # workspace member は [lints] workspace = true を書かないと [workspace.lints] を継承しない。
+  # 新しいクレートが宣言を省くと unsafe_code = "forbid" が黙って外れるため、
+  # ルート manifest の members を列挙して各 manifest の継承宣言を検査する (PR #25 レビュー指摘)。
+  if require_file "${ROOT_MANIFEST}" workspace-members-lints-inherit; then
+    local members missing_members=""
+    members="$(sed -nE '/^members[[:space:]]*=[[:space:]]*\[/,/\]/p' "${ROOT_MANIFEST}" | sed -nE 's/^[[:space:]]*"([^"]+)".*/\1/p')"
+    local m
+    while IFS= read -r m; do
+      [[ -n "${m}" ]] || continue
+      if ! toml_section "${m}/Cargo.toml" "lints" | grep -Eq '^[[:space:]]*workspace[[:space:]]*=[[:space:]]*true[[:space:]]*$'; then
+        missing_members="${missing_members} ${m}"
+      fi
+    done <<<"${members}"
+    if [[ -z "${members}" ]]; then
+      fail "workspace-members-lints-inherit" "${ROOT_MANIFEST} の [workspace] members を読めない"
+    elif [[ -z "${missing_members}" ]]; then
+      pass "workspace-members-lints-inherit" "workspace member $(printf '%s\n' "${members}" | grep -c .) 件すべてが [lints] workspace = true で継承している (NFR4.3)"
+    else
+      fail "workspace-members-lints-inherit" "[lints] workspace = true が無い member:${missing_members} (unsafe_code = \"forbid\" が継承されない)"
+    fi
+  fi
+
   if require_file "${LINT_MANIFEST}" tools-lint-unsafe-forbid; then
     if toml_section "${LINT_MANIFEST}" "lints.rust" \
       | grep -Eq '^[[:space:]]*unsafe_code[[:space:]]*=[[:space:]]*"forbid"[[:space:]]*$'; then
