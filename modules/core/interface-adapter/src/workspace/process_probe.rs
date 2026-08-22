@@ -7,6 +7,7 @@ use core_use_case::workspace::process_probe::ProcessProbe;
 pub struct OsProcessProbe;
 
 impl OsProcessProbe {
+    /// 単位型を作る (状態を持たないので設定項目は無い)。
     #[must_use]
     pub const fn new() -> OsProcessProbe {
         OsProcessProbe

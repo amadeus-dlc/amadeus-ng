@@ -4,6 +4,8 @@
 
 /// 現在時刻の抽象 (ミリ秒, Unix epoch 起点)。テストで fake を注入するための唯一の時刻源。
 pub trait Clock {
+    /// Unix epoch 起点の経過ミリ秒。stale 判定 (年齢 = この値 − owner stamp) と
+    /// owner stamp の押印はどちらもこの単位で行う。
     #[must_use]
     fn now_ms(&self) -> u64;
 }

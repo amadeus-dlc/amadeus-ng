@@ -7,8 +7,12 @@
 
 use super::space_name::SpaceName;
 
+/// workspace センチネルロックの第 2 成分。space 名の位置に置かれる語であり、これにより
+/// 全 space の `intents.json` 変更が単一バケットに集約される。
 pub const WORKSPACE_LOCK_SENTINEL: &str = "__workspace__";
 
+/// NUL 区切りのロック識別バイト列。ロック dir 名 (md5 先頭 8 文字) の唯一の材料であり、
+/// 2 つの構成関数以外からは作れない (W13 の E1 装置)。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LockIdentity(String);
 
@@ -35,6 +39,8 @@ impl LockIdentity {
         ))
     }
 
+    /// md5 に食わせる識別バイト列そのもの。この並びが 1 バイトでも変われば別バケットになり、
+    /// stage-0/1 併用期の相互排他が壊れる。
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()

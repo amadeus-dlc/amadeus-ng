@@ -5,11 +5,16 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+/// 空リストの唯一の放出形。`parse` は `""` もこのリテラルも空として受理するが、`emit` は常に
+/// こちらを書く (round-trip 決定性の要)。
 pub const EMPTY_LIST_LITERAL: &str = "[empty list]";
 
+/// `Bolt Refs` フィールドの値 — 進行中 Bolt の slug 集合 (fork で追加、merge で除去)。
+/// 重複を持たず、放出順は入力順によらず整列。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BoltRefs(BTreeSet<String>);
 
+/// `BoltRefs` の拒否理由 (重複・不在を無言 no-op にしないための閉集合)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoltRefsError {
     /// ブラケットで始まらない・閉じない等の不正形。
@@ -75,16 +80,19 @@ impl BoltRefs {
         Ok(())
     }
 
+    /// slug の在否 — `append_slug` / `remove_slug` が拒否するかの事前判定。
     #[must_use]
     pub fn contains(&self, slug: &str) -> bool {
         self.0.contains(slug)
     }
 
+    /// 保持している slug の個数 (重複がないので集合の濃度そのもの)。
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// 空か — 空は `emit` で `[empty list]` になる (空文字列は書かない)。
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
