@@ -681,8 +681,12 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
         ],
     );
     let error = fixture.reader().load().unwrap_err();
+    // upstream 逐語 (aidlc-lib.ts:8666-8668 @3c3146cf) の形を pin する
     assert!(
-        matches!(error, GraphReadError::ScopeFile { ref message } if message.contains("Duplicate scope name")),
+        matches!(error, GraphReadError::ScopeFile { ref message }
+            if message.starts_with("Duplicate scope name \"feature\" in ")
+                && message.contains(": already declared in ")
+                && message.ends_with(". Rename one of them.")),
         "{error:?}"
     );
 }

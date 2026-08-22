@@ -17,7 +17,8 @@
 //! 3. 未知の列挙値は**全列挙 (`phase` / `execution` / `review_class` / `mode`) を load 時に
 //!    厳密 enum で落とす** (12 §10 表 #3 — 2026-08-22 裁定)。ドメイン型に `Unknown` variant を
 //!    持たせず Always Valid を維持する。upstream との観測差は手編集グラフの未知値に限られ、
-//!    dist の正規データでは生じない (ゴールデン採取で全数 load を確認する)。
+//!    dist の正規データでは生じない — ピン留め `3c3146cf` の配布実バイト 33 ノードが全数
+//!    load できることは `tests/golden_parity_test.rs` が固定した。
 //!
 //! **失敗態度** (12 §4): グラフは fatal、グリッドは転置導出フォールバック、identity と
 //! グリッド列の不一致は双方向とも正当。
@@ -55,8 +56,10 @@ const FRONTMATTER_FENCE: &str = "---";
 /// `env_override` が真のときだけ hint 節が「`AIDLC_STAGE_GRAPH` を unset して既定に戻せ」形へ
 /// 切り替わる — この分岐自体が観測可能な契約。
 ///
-/// TODO(golden: stage-0): 逐語文言はピン留め実出力で確定 (現状は抽出文書 [F] 由来。確定後は
-/// 文言カタログ (ADR 0002) へ移すかどうかを含めて再検討する)。
+/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8565-8570` @3c3146cf、`loadStageGraphAll`
+/// `:8558-8585` の内側 — `docs/specs/research/golden-3c3146cf-lib.md` §8.2)。hint 分岐の条件は
+/// `process.env.AIDLC_STAGE_GRAPH` の **truthy 判定**なので、空文字列の env では既定 hint に落ちる。
+/// 文言カタログ (ADR 0002) へ移すかどうかは未判断で、現状は Gateway 内に置いたままにしてある。
 #[must_use]
 pub fn stage_graph_not_readable_message(path: &str, cause: &str, env_override: bool) -> String {
     if env_override {
@@ -72,7 +75,8 @@ pub fn stage_graph_not_readable_message(path: &str, cause: &str, env_override: b
 
 /// `stage-graph.json` が不正 JSON のときの逐語文言 (12 §4 #2 — `NotReadable` とは別文言)。
 ///
-/// TODO(golden: stage-0): 逐語文言はピン留め実出力で確定。
+/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8579-8581` @3c3146cf —
+/// `docs/specs/research/golden-3c3146cf-lib.md` §8.2)。
 #[must_use]
 pub fn stage_graph_invalid_json_message(path: &str, cause: &str) -> String {
     format!("Stage graph at {path} is not valid JSON: {cause}")
@@ -98,14 +102,17 @@ pub fn read_error_message(error: &GraphReadError) -> String {
 
 /// scope identity ファイルに frontmatter が無い。
 ///
-/// TODO(golden: stage-0): 逐語文言はピン留め実出力で確定 ([F] 由来)。
+/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8661` @3c3146cf —
+/// `docs/specs/research/golden-3c3146cf-lib.md` §8.3)。
 fn scope_missing_frontmatter_message(path: &Path) -> String {
     format!("Scope file missing frontmatter: {}", path.display())
 }
 
 /// scope identity ファイルに `name:` が無い。
 ///
-/// TODO(golden: stage-0): 逐語文言はピン留め実出力で確定 ([F] 由来)。
+/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8663` @3c3146cf —
+/// `docs/specs/research/golden-3c3146cf-lib.md` §8.3)。upstream は `scalarField` が不在時に
+/// 空文字列を返す実装なので `if (!name)` の 1 判定で「キー不在」と「空値」を同じ文言へ倒す。
 fn scope_missing_name_message(path: &Path) -> String {
     format!(
         "Scope file {} missing required frontmatter: name",
@@ -113,7 +120,9 @@ fn scope_missing_name_message(path: &Path) -> String {
     )
 }
 
-/// `skeleton:` の不正値。**[S] 逐語** (upstream 01 §355-357 に逐語あり)。
+/// `skeleton:` の不正値。**[S] 逐語** (upstream 01 §355-357 に逐語あり) に加え、
+/// ピン留めソース採取でも逐語確認済み (`aidlc-lib.ts:8698-8700` @3c3146cf —
+/// `docs/specs/research/golden-3c3146cf-lib.md` §8.3)。
 ///
 /// 文言カタログには置かず Gateway 内で組み立てる (カタログ移設の要否はレビュー時に判断)。
 fn scope_invalid_skeleton_message(path: &Path, value: &str) -> String {
@@ -123,10 +132,9 @@ fn scope_invalid_skeleton_message(path: &Path, value: &str) -> String {
     )
 }
 
-/// `review_cap:` の不正値。値域 (`adversarial` / `advisory` / `none`) は [S] 明記だが、
-/// 拒否文言そのものは未採取。
-///
-/// TODO(golden: stage-0): 逐語文言はピン留め実出力で確定。
+/// `review_cap:` の不正値。値域 (`adversarial` / `advisory` / `none`) は [S] 明記で、
+/// 拒否文言もピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8712-8714` @3c3146cf —
+/// `docs/specs/research/golden-3c3146cf-lib.md` §8.3)。
 fn scope_invalid_review_cap_message(path: &Path, value: &str) -> String {
     format!(
         "Scope file {} has invalid review_cap value \"{value}\". Expected \"adversarial\", \"advisory\", or \"none\".",
@@ -136,12 +144,21 @@ fn scope_invalid_review_cap_message(path: &Path, value: &str) -> String {
 
 /// 2 つの identity ファイルが同じ `name:` を宣言している (12 §3.3 — 致命)。
 ///
-/// TODO(golden: stage-0): 逐語文言はピン留め実出力で確定。
+/// ピン留めソース採取で upstream 逐語を確定した (`aidlc-lib.ts:8666-8668` @3c3146cf —
+/// `docs/specs/research/golden-3c3146cf-lib.md` §8.3):
+///
+/// ```text
+/// Duplicate scope name "${name}" in ${filePath}: already declared in ${previousFile}. Rename one of them.
+/// ```
+///
+/// 文言は上記 upstream 逐語に一致させる (D6 の既定 — 2026-08-22 裁定。当初実装の
+/// `"<name>": <a> and <b>` 形は採取前の推定だったため廃止)。`filePath` = いま読んでいる
+/// 重複側、`previousFile` = 先に宣言していた側。
 fn scope_duplicate_name_message(name: &str, first: &Path, duplicate: &Path) -> String {
     format!(
-        "Duplicate scope name \"{name}\": {} and {}",
-        first.display(),
-        duplicate.display()
+        "Duplicate scope name \"{name}\" in {}: already declared in {}. Rename one of them.",
+        duplicate.display(),
+        first.display()
     )
 }
 
