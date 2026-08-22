@@ -8160,3 +8160,282 @@ contract-summary.md C7 の layout を tests/golden/upstream-3c3146cf/{hash-canon
 **Note**: script-error: exit-1
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T13:11:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-u1-part1
+**Agent ID**: adev-u1-part1-8863640def8c9431
+**Message**: Steps 1–16 are complete, all gates green. Final report:\n\n## 1. 実行した Step と結果\n\n| Step | 内容 | 結果 |\n|---|---|---|\n| 1 | ワークスペース依存・`clippy.toml`・クレート骨格 | 完了 |\n| 2 | テストランナー確認（`running 0 tests` / exit 0） |
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T13:14:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-u1-part1
+**Agent ID**: adev-u1-part1-8863640def8c9431
+**Message**: 最終報告を team-lead へ送信しました（msg_id: `b389dd0f`）。以下は同内容です。\n\n## 1. 実行した Step と結果\n\nStep 1〜16 すべて完了。Step 0 と Step 17〜19、棚卸し I7 は担当外なので未着手。\n\n| Step | 内容 | 結果 |\n|---|---|---|\n| 1 | ワークスペース依存・`clippy.toml`・クレート骨
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-08-22T13:15:30Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Agent
+**Target**: aidlc-developer-agent
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+
+---
+
+## C7 受入表スキーマの実体化と CanonJson 外部依存の更新（U1 code-generation）
+**Timestamp**: 2026-08-22T13:17:15Z
+contract-summary.md C7: hash-canonical 受入表のフィールド名を実採取の cases.json（expected.canonical_output / canonical_digest / compact_output / compact_digest_prefixed / compact_digest_hex / pretty_output、input_js + construct）に合わせて確定。components.md CanonJson external_dependencies を [serde, serde_json(preserve_order, float_roundtrip), sha2] に更新（nfr-design レビュー Minor 1 の引き取り）。
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-22T13:19:36Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state unit start --stage code-generation --unit u1-canon-json-goldens
+**Error**: Refusing to start unit "u1-canon-json-goldens" for "code-generation": the engine currently routes a error directive. Run the exact directive.stage/directive.unit pair returned by aidlc-orchestrate.ts next.
+
+---
+
+## Unit Started
+**Timestamp**: 2026-08-22T13:20:55Z
+**Event**: UNIT_STARTED
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T13:25:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4bce1bb579f53c4b
+**Message**: U1（canon-json とゴールデン）の実装を Bolt B1 として進行中で、canon-json 本体は完了・全ゲート緑、いまは委任 2（CLI / フックゴールデン採取）の完了待ちです。次は委任 2 の差分レビューと成果物確定、レビューアを経て Bolt ゲートへ進みます。
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T13:37:44Z
+**Event**: SENSOR_FIRED
+**Fire id**: 370e836d
+**Sensor ID**: linter
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T13:37:45Z
+**Event**: SENSOR_PASSED
+**Fire id**: 370e836d
+**Sensor ID**: linter
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 701
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T13:37:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: b6ff130f
+**Sensor ID**: type-check
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T13:37:45Z
+**Event**: SENSOR_PASSED
+**Fire id**: b6ff130f
+**Sensor ID**: type-check
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 21
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T13:48:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5621feca
+**Sensor ID**: linter
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T13:48:06Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5621feca
+**Sensor ID**: linter
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 684
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T13:48:06Z
+**Event**: SENSOR_FIRED
+**Fire id**: eea51480
+**Sensor ID**: type-check
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T13:48:06Z
+**Event**: SENSOR_PASSED
+**Fire id**: eea51480
+**Sensor ID**: type-check
+**Stage slug**: code-generation
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 20
+**Note**: script-error: exit-1
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T13:54:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-u1-part2
+**Agent ID**: adev-u1-part2-88691a4fefdfc2b3
+**Message**: Step 17〜19 を完了しました。以下、ブリーフ §8 の 10 見出しで報告します。\n\n---\n\n## 1. 実行した Step と結果\n\n| Step | 内容 | 結果 |\n|---|---|---|\n| Step 17 | 再採取スクリプト + CLI / フック実行出力の採取（FR7.2 / BR2.4） | **完了** — cli 22 ケース、hooks 14 ケース、欠落 3
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T13:56:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-u1-part2
+**Agent ID**: adev-u1-part2-88691a4fefdfc2b3
+**Message**: お疲れさまです。委任 2（Step 17〜19）の最終報告です。\n\n---\n\n## 1. 実行した Step と結果\n\n| Step | 内容 | 結果 |\n|---|---|---|\n| Step 17 | 再採取スクリプト + CLI / フック実行出力の採取（FR7.2 / BR2.1 / BR2.4） | **完了** — cli 22 ケース、hooks 14 ケース、欠落 3 件を記録
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T13:57:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-u1-part2
+**Agent ID**: adev-u1-part2-88691a4fefdfc2b3
+**Message**: 最終報告を team-lead へ送信しました（msg_id: `53c0af1b`）。\n\n送った内容の要点:\n\n1. **TDD 証跡** — Red: `cargo test -p canon-json --test golden_corpus_read` → `test result: FAILED. 1 passed; 8 failed;`（失敗 8 本の名前も列挙）。Green: 同コマ
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-22T13:57:57Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:0caa4084aa124b8dbaea836de479f3e0e9fcffd7832e7f68fc1d6f8adc22ce96
+
+---
+
+## C7 cli / hooks レイアウトの実体化（U1 code-generation 委任 2）
+**Timestamp**: 2026-08-22T13:59:03Z
+contract-summary.md C7 の cli / hooks ケースレイアウトに exit / stderr / case.json（hooks は stdout も）を追加し、stdout.json | stdout.txt の使い分け、cases-missing.json / provenance.json を明記（実採取に合わせた追加のみ、削除なし — BR2.4 の原則）。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T14:02:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a97a4fd9fdbde39dc
+**Message**: stage-1 セルフホスト切替の Construction で、U1（canon-json とゴールデン）の実装は完了しレビュー待ちです。レビューが戻り次第、判定を記録して Bolt B1 のゲート（承認 / 差し戻し）を提示します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-22T14:06:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: rev-u1-codegen
+**Agent ID**: arev-u1-codegen-33701a35d19641ab
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** READY（Major 1 / Minor 5、Critical 0 — advisory、iteration 1）\n\n更新したファイル: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-22T14:06:55Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:9a9bb122fd849212d0679634600fc00f95861cdad48e2560e256001db7717b15
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-22T14:06:55Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:9a9bb122fd849212d0679634600fc00f95861cdad48e2560e256001db7717b15
+**Source Fingerprint**: e00aeafe74405604affc8e98e96558f22239af35
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-22T14:07:39Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-22T14:07:58Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: Bolt B1（U1 canon-json とゴールデン）の Bolt ゲート: 承認して PR を開くか / レビュー所見 #1（NFR2.1 の TDD 証跡の扱い）の裁定 / std::error::Error 手実装の house style
+**Options**: Gate: Approve（PR を開く）, Request Changes / NFR2.1: A 散文証跡を正式とし合格基準を改める, B 後続 Bolt は Red を独立コミットに / Error trait: A 認める, B 認めない
+**Rationale**: code-generation レビュー READY（Major 1 / Minor 5、#6 は実測で却下）。Construction Autonomy Mode 未設定のため Bolt ごとに人間ゲート。PR は Bolt 単位・直列（team.md）
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-22T17:02:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-22T17:02:36Z
+**Event**: QUESTION_ANSWERED
+**Stage**: code-generation
+**Details**: Bolt B1 承認 → PR を開く。NFR2.1 の TDD 証跡は code-summary への散文記録（失敗コマンド + test result: FAILED 要約行）を正式とし文面を合わせる。std::error::Error の手実装を公開エラー型の house style として認める（coding-rules エラー規則ドラフトへ一文追加）。公開面 17 項目・float_roundtrip・regex dev-dep・README 2 セル訂正も承認扱い
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Bolt Completed
+**Timestamp**: 2026-08-22T17:02:36Z
+**Event**: BOLT_COMPLETED
+**Bolt names**: B1
+**Batch number**: 1
+
+---

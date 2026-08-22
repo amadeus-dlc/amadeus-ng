@@ -254,9 +254,9 @@ CREATE TABLE checkpoint (
 contract: golden-fixtures
 owner: U1
 layout:
-  tests/golden/upstream-3c3146cf/hash-canonical/*.json   # { input, expected_output, expected_sha256 } の受入表（ADR 0001 受入条件 2: 出力文字列とハッシュの両方を固定。2026-08-22 U1 機能設計レビューで 2 フィールド省略表記を訂正）。contract-compact / contract-pretty の期待値（expected_compact_output / expected_compact_sha256 / expected_pretty_output）と、JSON テキストで表せない入力（非有限数）向けの input_js は追加の任意フィールド
-  tests/golden/upstream-3c3146cf/cli/<verb>/<case>/{stdin,argv,stdout.json,state.diff,audit.md}  # FR7.2 実行出力
-  tests/golden/upstream-3c3146cf/hooks/<hook>/<case>/{stdin.json,exit,stderr}
+  tests/golden/upstream-3c3146cf/hash-canonical/cases.json   # 受入表 { family, upstream_commit, case_count, cases: [{ id, class, description, input | input_js + construct, expected: { canonical_output, canonical_digest, compact_output, compact_digest_prefixed, compact_digest_hex, pretty_output } }] }（ADR 0001 受入条件 2: 出力文字列とハッシュの両方を固定。2026-08-22 U1 機能設計レビューで 2 フィールド省略表記を訂正、同日 U1 code-generation の実採取でフィールド名を実体に合わせて確定 — 旧表記 expected_output / expected_sha256 は canonical_output / canonical_digest に対応）。来歴は同ディレクトリの provenance.json
+  tests/golden/upstream-3c3146cf/cli/<verb>/<case>/{argv,stdin,stdout.json|stdout.txt,stderr,exit,state.diff,audit.md,case.json}  # FR7.2 実行出力（2026-08-22 U1 code-generation の実採取で exit / stderr / case.json を追加 — C1 の終了コード契約とフック拒否理由の逐語性のため。stdout は JSON として読めた場合 stdout.json、それ以外 stdout.txt）。欠落ケースは cli/cases-missing.json に理由付き、来歴は cli/provenance.json
+  tests/golden/upstream-3c3146cf/hooks/<hook>/<case>/{stdin.json,stdout,stderr,exit,audit.md,case.json}   # 同上（hooks/cases-missing.json / hooks/provenance.json）
   # 2026-08-22 U1 code-generation Q2 = A（オーナー裁定）: 既存の upstream 配布実バイト置き場 `tests/golden/upstream-3c3146cf/`（README がピン単位ディレクトリ・バイト不変を規定）に統合し、`tests/goldens/` は新設しない。既存の stage-graph.json / scope-grid.json は同ディレクトリ直下のまま不変
 provenance: upstream 3c3146cf を bun で実行して採取。再採取スクリプトを同梱（A3）
 consumers: U6（continue_token / directive）, U7（CLI・フック・文言）, U4（監査行・状態ファイル差分の突合）

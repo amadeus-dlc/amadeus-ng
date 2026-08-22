@@ -266,7 +266,7 @@ components:
     dependents:
       - component: PersistenceGateways
         interaction: "トークン/ドリフト判定のハッシュ"
-    external_dependencies: []
+    external_dependencies: [serde, serde_json(preserve_order, float_roundtrip), sha2]   # 2026-08-22 U1 code-generation で実体化（内部コンポーネント依存 depends_on は引き続きゼロ）
     entities: []
 
   - name: PublishedLanguage
