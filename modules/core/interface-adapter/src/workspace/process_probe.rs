@@ -1,6 +1,6 @@
 //! `ProcessProbe` ポートの実プロセス判定実装 — infra-io `process_probe::process_alive` に委譲する。
 
-use core_use_case::workspace::process_probe::ProcessProbe;
+use core_use_case::workspace::ProcessProbe;
 
 /// OS のプロセステーブルに対する実判定。
 #[derive(Debug, Clone, Copy, Default)]

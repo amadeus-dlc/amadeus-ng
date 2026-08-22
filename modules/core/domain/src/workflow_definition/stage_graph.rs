@@ -119,11 +119,9 @@ impl StageGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_definition::execution_kind::ExecutionKind;
-    use crate::workflow_definition::phase::PhaseId;
-    use crate::workflow_definition::stage_mode::StageMode;
-    use crate::workflow_definition::stage_node::StageNodeBuilder;
-    use crate::workflow_definition::stage_number::StageNumber;
+    use crate::workflow_definition::{
+        ExecutionKind, PhaseId, StageMode, StageNodeBuilder, StageNumber,
+    };
     use proptest::prelude::*;
 
     fn node(slug: &str, number: &str, phase: PhaseId, scopes: &[&str]) -> StageNode {

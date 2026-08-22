@@ -10,17 +10,52 @@
 //! - `scope-grid.json` は `{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` の純粋な転置。
 //! - 有効スコープの権威は `.md` の存在であり、グリッドではない。
 //! - 未知スコープの扱いは述語ごとに**非対称** (`WorkflowDefinition` の doc を参照)。
+//!
+//! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
+//! 消費側のパスは `core_domain::workflow_definition::<型>` で安定する
+//! (docs/memory/module-visibility.md)。
 
-pub mod execution_kind;
-pub mod phase;
-pub mod review_class;
-pub mod scope_grid;
-pub mod scope_metadata;
-pub mod stage_graph;
-pub mod stage_mode;
-pub mod stage_node;
-pub mod stage_number;
-pub mod stage_slug;
+mod execution_kind;
+mod phase;
+mod review_class;
+mod scope_grid;
+mod scope_metadata;
+mod stage_graph;
+mod stage_mode;
+mod stage_node;
+mod stage_number;
+mod stage_slug;
 // 集約名とモジュール名が一致する意図的な構成 (集約の正本ファイル)。
 #[allow(clippy::module_inception)]
-pub mod workflow_definition;
+mod workflow_definition;
+
+// Domain Primitive
+pub use execution_kind::ExecutionKind;
+pub use phase::PhaseId;
+pub use review_class::ReviewClass;
+pub use scope_metadata::{ReviewCapValue, ScopeMetadata, SkeletonDefault};
+pub use stage_mode::StageMode;
+pub use stage_node::{BrownfieldGreenfield, ConsumeDecl, RuleInContext, RuleScope, SensorRef};
+pub use stage_number::StageNumber;
+pub use stage_slug::StageSlug;
+
+// 読取モデル (Published Language 1 本目)
+pub use scope_grid::ScopeGrid;
+pub use stage_graph::StageGraph;
+pub use stage_node::StageNode;
+pub use workflow_definition::WorkflowDefinition;
+
+// ビルダー
+pub use stage_node::StageNodeBuilder;
+
+// エラー
+pub use execution_kind::UnknownExecutionKind;
+pub use phase::UnknownPhase;
+pub use review_class::UnknownReviewClass;
+pub use scope_metadata::{ScopeMetadataError, UnknownReviewCap, UnknownSkeletonDefault};
+pub use stage_graph::StageGraphError;
+pub use stage_mode::UnknownStageMode;
+pub use stage_node::{UnknownBrownfieldGreenfield, UnknownRuleScope};
+pub use stage_number::StageNumberError;
+pub use stage_slug::StageSlugError;
+pub use workflow_definition::UnknownScope;

@@ -2,9 +2,7 @@
 //! アトミック書込 (upstream `readStateFile` / `writeStateFile`, 03 §5.6, 11-workspace §4)。
 //! 不在なら親ディレクトリを mkdir -p する。
 
-use core_use_case::workspace::state_file_store::{
-    StateFileReadError, StateFileStore, StateFileWriteError,
-};
+use core_use_case::workspace::{StateFileReadError, StateFileStore, StateFileWriteError};
 use std::fs;
 use std::io;
 use std::path::Path;

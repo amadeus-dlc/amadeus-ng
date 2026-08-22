@@ -24,8 +24,8 @@ use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
 use super::stage_slug::StageSlug;
-use crate::orchestration::plan_action::PlanAction;
-use crate::workspace::checkbox::CheckboxState;
+use crate::orchestration::PlanAction;
+use crate::workspace::CheckboxState;
 
 /// `validScopes()` に無いスコープ名。
 ///
@@ -237,10 +237,7 @@ impl WorkflowDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_definition::execution_kind::ExecutionKind;
-    use crate::workflow_definition::stage_mode::StageMode;
-    use crate::workflow_definition::stage_node::StageNodeBuilder;
-    use crate::workflow_definition::stage_number::StageNumber;
+    use crate::workflow_definition::{ExecutionKind, StageMode, StageNodeBuilder, StageNumber};
     use proptest::prelude::*;
 
     /// grid 列がある 2 スコープ + `.md` だけがある 1 スコープ + `.md` が無い 1 スコープ。

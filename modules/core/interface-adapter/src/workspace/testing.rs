@@ -2,8 +2,7 @@
 //! (dead owner / stale age) を実プロセスの生成や実時間の経過に頼らず決定的に検証するための
 //! 注入点 (11-workspace §4「clock と process-probe は trait で注入可能に」)。
 
-use core_use_case::workspace::clock::Clock;
-use core_use_case::workspace::process_probe::ProcessProbe;
+use core_use_case::workspace::{Clock, ProcessProbe};
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -1,13 +1,55 @@
 //! workspace コンテキスト (11-workspace.md) — 永続化機構の Domain Primitive と純関数サービス。
 //! upstream 契約の逐語根拠は docs/specs/research/workspace-*.md。
+//!
+//! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
+//! 消費側のパスは `core_domain::workspace::<型>` で安定する
+//! (docs/memory/module-visibility.md)。
 
-pub mod bolt_refs;
-pub mod checkbox;
-pub mod clone_id;
-pub mod lock_identity;
-pub mod lock_protocol;
-pub mod shard_name;
-pub mod space_name;
-pub mod state_field_value;
-pub mod state_version;
-pub mod state_writers;
+mod bolt_refs;
+mod checkbox;
+mod clone_id;
+mod lock_identity;
+mod lock_protocol;
+mod shard_name;
+mod space_name;
+mod state_field_value;
+mod state_version;
+mod state_writers;
+
+// Domain Primitive
+pub use bolt_refs::BoltRefs;
+pub use checkbox::{CheckboxEntry, CheckboxState};
+pub use clone_id::CloneId;
+pub use lock_identity::LockIdentity;
+pub use shard_name::ShardName;
+pub use space_name::SpaceName;
+pub use state_field_value::StateFieldValue;
+pub use state_version::{StateVersionClassification, StateVersionKind};
+
+// ロック手順のモデル (audit ロックの遷移系)
+pub use lock_protocol::LockProtocol;
+
+// 純関数ドメインサービス
+pub use checkbox::{count_completed, parse_checkboxes, set_checkbox};
+pub use state_field_value::unsafe_line_char;
+pub use state_version::classify_state_version;
+pub use state_writers::{
+    get_field, remove_field, set_field, set_field_strict, set_or_insert_field,
+};
+
+// 述語 (境界規約の単一実装)
+pub use lock_protocol::reap_eligible;
+
+// エラー
+pub use bolt_refs::BoltRefsError;
+pub use checkbox::CheckboxWriteError;
+pub use clone_id::CloneIdError;
+pub use lock_protocol::LockError;
+pub use space_name::SpaceNameError;
+pub use state_field_value::UnsafeLineChar;
+pub use state_writers::{FieldNotFound, HeadingNotFound};
+
+// 逐語定数
+pub use bolt_refs::EMPTY_LIST_LITERAL;
+pub use lock_identity::WORKSPACE_LOCK_SENTINEL;
+pub use state_version::CURRENT_STATE_VERSION;
