@@ -27,7 +27,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 EXPECTED_CHANNEL="1.95.0"
 EXPECTED_COMPONENTS="rustfmt clippy llvm-tools"
 EXPECTED_PROFILE="minimal"
-EXPECTED_TOLERANCE="0.01"
+EXPECTED_TOLERANCE="0.05"
 # cargo llvm-cov に渡す除外正規表現。llvm-cov は絶対パスを記録するため先頭アンカーは
 # 行頭またはパス区切り ((^|/)) にする (scripts/coverage.sh のコメント参照)。
 EXPECTED_IGNORE_REGEX='(^|/)modules/app/aidlc/src/main\.rs$'
@@ -249,7 +249,7 @@ check_coverage_script() {
   if grep -Eq "^TOLERANCE=${EXPECTED_TOLERANCE}$" "${COVERAGE_FILE}"; then
     pass "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} に引き締められている (NFR2.4)"
   else
-    fail "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} でない (シード固定後は 0.01 が要求値)"
+    fail "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} でない (暫定 0.05 — Bolt B2 ゲート裁定。U3 ロック退役後に 0.01)"
   fi
 
   # 除外は「--ignore-filename-regex を cargo llvm-cov に渡している」ことと
