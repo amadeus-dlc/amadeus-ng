@@ -1,9 +1,8 @@
-# Team-Level Rules
+# team-practices.md — チームの働き方（確定稿）
 
-> This team's affirmed practices and corrections. Loaded after `org.md` as
-> strict-additive guidance; contradictions with broader policy are rejected.
-> Populated by the practices-discovery affirmation gate. Edit at the gate,
-> not directly.
+> Practices Discovery（Inception 2.2）の確定稿。独立レビュー3件（品質・開発者・
+> DevSecOps）とオーナーインタビュー（`practices-discovery-questions.md`、全8問
+> 回答済み・Looks correct 確認済み）を統合済み。証拠は `evidence.md` を参照。
 
 ## Way of Working
 
@@ -182,14 +181,6 @@ Q3、選択肢 A）: 単体テスト優位・統合テストは境界ごと・E2
 - **スコープ注記**: `clippy.toml` はテストコードのみ `unwrap`/`expect` を
   許可し、プロダクトコードでは workspace lint で deny のまま（差別化済み）。
 
-## Forbidden
-
-<!-- Team-specific forbidden patterns -->
-
-## Mandated
-
-<!-- Team-specific mandates -->
-
 ## Corrections
 
-<!-- Self-learning loop appends here. -->
+（このステージでは未記入。）

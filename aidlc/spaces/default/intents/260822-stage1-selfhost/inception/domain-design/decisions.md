@@ -1,0 +1,149 @@
+# decisions — Domain Design の ADR ログ（ES 設計・全面改訂版。ADR-005 は 2026-08-22 再入で完全移動へ改訂）
+
+> Domain Design（Inception 2.6）成果物・改訂版。各 ADR は `domain-design-questions.md`（Q1〜Q9 確定）に
+> 遡及する。出典: `../requirements-analysis/requirements.md`、RE 成果物（`architecture.md` /
+> `component-inventory.md`）、`../practices-discovery/team-practices.md`、設計監査
+> `../../../knowledge/aidlc-shared/design-audit-2026-08-22.md`（R1/R2 DECIDED — R2 の文言は
+> ADR-002 が上書き改訂する。下記参照）。
+
+## ADR-001: イベントソーシングを採用する（event-store-adapter-rs 前提）
+
+- **Context** — 集約の遷移が監査台帳と状態ファイルの2面に永続化される upstream 構造（B9:
+  真実源は監査、状態はキャッシュ）をどのパラダイムで実装するかが未裁定だった。検討過程で
+  「監査先行 WAL + 同期プロジェクション」「集約がイベント列を返しステート永続化する」等の
+  折衷案が出たが、オーナー裁定は「ステートソーシングなら集約でイベントを扱わない。イベントを
+  扱うならイベントソーシング。中途半端な設計は保守を難しくする」。B9 を素直に読めば
+  「イベント列が真実源で状態は導出可能」= ES の定義そのものである。
+- **Decision** — **イベントソーシングを採用する**。機構は j5ik2o/event-store-adapter-rs の型と
+  API（`persist_event` / `persist_event_and_snapshot`（同一 Tx + 楽観 version）/
+  `get_latest_snapshot_by_id` + `get_events_by_id_since_seq_nr` + `replay`）に従う。
+  スナップショットは毎コミット更新（通常運転の replay は 0 件）。
+- **Consequences** — (+) 真実源が一意（ジャーナル）になり B9 が構造で成立。(+) パラダイムの
+  混在が消え、リプレイ・監査・復旧が同一機構に載る。(−) 既存のロック/状態ファイル機構の
+  大規模改修（ADR-007）。(±) upstream 互換ファイルはリードモデルとして維持（ADR-003）。
+- **Alternatives Rejected** — *ステートソーシング + 集約がイベント列を返す折衷*: 1コマンド
+  1イベントの規律（ADR-002）に反しリプレイ不能、パラダイム混在。*監査先行 WAL + 同期
+  プロジェクション（非 ES を自称）*: 実体は ES + スナップショットの誤ラベルで、機構を
+  自前発明することになる。*通知型 publisher*: イベントが真実源でなくなり B9 と矛盾。
+
+## ADR-002: 集約 = FSM・1コマンド1イベント・decide/apply 分離（統一ルール）
+
+- **Context** — next_decision（21分岐ラダー）の置き場（O1）とイベント発行の形が未裁定だった。
+  オーナー明言（2026-08-22、統一ルール・横展開）:「集約は FSM。状態としてのデータと状態遷移の
+  ための振る舞いは同じ型に閉じ込める」「コマンド実行1回につき必ず1個のイベント。これを守らないと
+  リプレイができない」。
+- **Decision** — ① コマンドは **decide**: `approve_gate(&mut self, ...) → Result<GateApproved,
+  ApproveError>` のように**単一ドメインイベント**を返す（1コマンド1イベント・絶対）。
+  ② **apply_event(&mut self, &Event)** が状態を進め、リプレイと通常実行を同一経路にする。
+  ③ 遷移は `&mut self`（typestate 不採用）。④ `next_decision` は `WorkflowExecution` の
+  クエリメソッド（`&self, &WorkflowDefinition, ...`）。⑤ 有効プラン畳み込み（R2）の移設先も
+  `WorkflowExecution` のメソッド — **設計監査 R2 の「orchestration 側ドメインサービスへ」という
+  文言はこの裁定が上書きする**（監査時点より強い Tell-Don't-Ask 形。design-audit の R2 は
+  移設先の記述のみ本 ADR に置き換わり、移設自体の裁定は不変）。⑥ ユースケースは進行管理・
+  フロー制御のみ（ビジネスロジック禁止）。
+- **Consequences** — (+) リプレイ規律が成立（1イベント = 1 apply）。(+) FSM の状態・遷移・判断が
+  単一型で Quint モデルと 1:1。(+) upstream 監査行の複合発行問題はドメインから消える
+  （ADR-003 の投影が解く）。(−) ドメインイベント語彙の新設（コマンドと1:1 の 11 変種程度）。
+- **Alternatives Rejected** — *Vec<DomainEvent> 返し*: 1コマンド1イベント違反、リプレイ時の
+  apply 対応が崩れる。*独立ドメインサービス / ユースケース層への判断配置*: 状態の所有者の外で
+  判断する Ask 型。*typestate*: 動的アクション列のリプレイ・再構成と相性が悪く過剰。
+
+## ADR-003: SQLite ストア + upstream 互換ファイルはリードモデル + RMU
+
+- **Context** — イベントの物理格納先が未裁定だった。upstream の監査台帳は markdown
+  （`---` 区切りブロック、クローン別シャード、git 交換）で、86語彙・見出し・フィールド順が
+  観測可能契約（D6）。一方 ES のストアには追記・順序・条件付き書込・差分読取が要る。
+- **Decision** — **Repository → EventStoreImpl(sqlite client) → SQLite ← Read Model Updater**。
+  ジャーナル・スナップショット・チェックポイントは SQLite（ローカル、git 管理外）。
+  `aidlc-state.md`・監査シャード等の upstream 互換ファイルは**すべてリードモデル（投影）**とし、
+  **RMU = チェックポイント付きのプロセス内差分関数**（AWS Lambda 型・常駐なし）がコマンド末尾
+  （Tx コミット後・プロセス終了前）に同期キャッチアップで生成する。1ドメインイベント →
+  監査行 N 行（フェーズ境界トリオ等）の描画は RMU の投影規則。クラッシュ時は次回呼出が
+  チェックポイントから冪等修復（真実源はジャーナル = B9 維持）。
+- **Consequences** — (+) ドメインイベント語彙と upstream 監査行語彙が分離し、両方が単純になる。
+  (+) 投影は決定的・冪等で再生成可能。(−) SQLite という新しいオンディスク成果物
+  （逸脱台帳へ登録 — ADR-007 と併せて）。(−) ハーネスがコマンド間にファイルを読むため、
+  投影のプロセス内同期実行が必須（設計で担保）。
+- **Alternatives Rejected** — *markdown シャードをイベントストアに流用*: ドメインイベントと
+  監査行の語彙が癒着し、ストア形式が互換契約の人質になる。*常駐 RMU（本来のポーリング型）*:
+  ワンショット CLI に常駐物を持ち込む。upstream にも無い。*読取時の遅延投影*: ハーネスが
+  コマンド間に読むファイルが古くなり互換違反。
+
+## ADR-004: WorkflowExecution が集約ルート、状態ファイルはリードモデル
+
+- **Context** — `aidlc-state.md` の所有主張が仕様間で3通りに割れていた（O3）。ES 採用で
+  スナップショットの置き場も再定義が必要になった。
+- **Decision** — 集約ルートは **WorkflowExecution**（identity = intent、version / seq_nr を保持）。
+  スナップショットは SQLite のスナップショットテーブル（ライブラリ管理）。`aidlc-state.md` は
+  **リードモデル**であり、集約でも媒体スナップショットでもない。`state_file_io` は RMU の
+  投影ライタ部品に転生。01号 §3 の集約候補表から `StateFile` を落とす（FR8.2 と同時）。
+- **Consequences** — (+) 所有が一意、B-2 の `WorkflowExecutionRepository` は ES 形
+  （store / find_by_id）で設計入力が確定。(−) 01号・11号の表改訂（FR8.2）。
+- **Alternatives Rejected** — *StateFile 独立集約*: 媒体を集約に昇格させる不変条件が無い。
+  *状態ファイル = スナップショット*: ストア外のスナップショットは楽観 version と同一 Tx に
+  できず、ライブラリの機構から外れる。
+
+## ADR-005: PlanAction の所有を workflow_definition へ一本化（R1 の設計反映 — 完全移動、2026-08-22 改訂）
+
+- **Context** — `workflow_definition` が `orchestration::PlanAction` を import する
+  コンテキスト間逆依存が残存（設計監査 C13）。01号/12号は workflow-definition 所有を宣言済み。
+  初版 ADR-005 は「`orchestration` は re-export で後方互換を保つ」としたが、**2026-08-22 オーナー裁定
+  （`coding-rules/module-visibility.md` 追補）: 利便性のための再エクスポートはどこでも禁止** — 別コンテキスト
+  によるエイリアス再輸出は型の所有元を消費側パスから読めなくし、構造が読めなくなる。
+- **Decision** — `PlanAction` を `workflow_definition` の所有とし、**完全移動**で行う: `orchestration` 側の
+  定義を削除し、呼出側（orchestration コンテキスト内・ユースケース層・ゲートウェイ層・テスト）の参照パスを
+  `core_domain::workflow_definition::PlanAction` へ **FR8.3 の同一 Bolt で一斉修正**する。`orchestration` による
+  再輸出（`pub use workflow_definition::PlanAction`）は置かない。
+- **Consequences** — (+) 依存方向と所有が仕様と一致し、消費側パスから所有元が読める。(+) 二重経路が生じない。
+  (−) FR8.3 の Bolt が呼出側一斉修正を含み PR がやや大きくなる（直列 PR 運用では 1 PR に収める）。
+- **Alternatives Rejected** — *現状維持*: 仕様との矛盾が恒久化。*`orchestration` からの re-export で後方互換
+  （初版 ADR-005 の裁定）*: 2026-08-22 の再エクスポート禁止裁定に抵触 — 所有元が読めなくなる。段階移行は
+  呼出側修正を同一 Bolt に含めることで不要。
+
+## ADR-006: async は初期化から（tokio）。ドメインは純粋・同期のまま
+
+- **Context** — event-store-adapter-rs の API は async。amadeus-ng は async ランタイム無しの
+  ワンショット CLI だった。将来ウェブサーバの実装可能性もある（オーナー明言）。
+- **Decision** — **tokio（current_thread）を導入し async main から初期化**する。コントローラ・
+  ユースケースは async fn、**ドメイン（集約）は純粋・同期のまま**（`.await` は集約に現れない）。
+  event-store-adapter-rs crate への直接依存は現状見送り（aws-sdk-dynamodb + tonic + Bigtable
+  クライアントが feature ゲート無しのハード依存のため）、**trait 群を本家と同形でローカル定義**し、
+  本家が feature 化 / SQLite 実装を得たら乗り換え可能な形を保つ（上流貢献も選択肢）。
+- **Consequences** — (+) ライブラリの機構をそのまま採れる。(+) 将来のウェブサーバに拡張可能。
+  (−) tokio 依存の追加（current_thread で最小化）。(−) 本家 crate との同形性維持は手動。
+  (±) 永続化メソッド名 `store` は coding-rules gateway-taxonomy §2b の許容動詞
+  （find_by_id / find / save / remove）に無い **ES 拡張語彙**として本 ADR が明示的に採用する
+  （event-store-adapter-rs の API 同形性を優先。§2b はステートソーシング Repository の規則であり、
+  ES Repository の動詞は本家ライブラリの語彙に従う — 正本側への注記追加は FR8.1 の canon 修正に
+  同梱する。旧称 AuditLedgerRepository の正本残存も同修正で除去）。
+- **Alternatives Rejected** — *同期ポートの自作*: 将来要件（ウェブサーバ）と本家との API 同形性の
+  価値を捨てることになる。*本家 crate 直接依存*: AWS SDK + gRPC + Bigtable の全ツリーが
+  ローカル CLI に入り、ビルド・監査面が不釣り合い。*先に本家へ feature 化を貢献*: stage-1 の
+  最短経路から外れる（後続で実施可能）。
+
+## ADR-007: ロック機構の退役 — SQLite Tx + 楽観 version へ置換
+
+- **Context** — mkdir ロック（md5 dir・所有者スタンプ・reap）は「テキストファイル群への
+  read-modify-write にトランザクションが無い」upstream 前提の産物。ES + SQLite でその前提が
+  消える（オーナー指摘）。
+- **Decision** — ストア書込は **SQLite Tx + 楽観 version**（条件付き書込）で保護し、mkdir
+  ロック機構は**退役**する（ロック dir は生成しない）。リードモデル書込は冪等生成 + 単一ファイル
+  原子性（tmp+rename）で足り、チェックポイントは Tx 内更新。`FsWorkspaceLock`・`WorkspaceLock`
+  ポート・`LockProtocol`・`reap_eligible`・`OwnerStamp` は退役。`audit_lock.qnt` は
+  「ジャーナル/スナップショット/version/チェックポイント協定」（version 競合拒否・
+  チェックポイント単調性・投影冪等性）の検証モデルへ**改訂**（意味論は Quint で検証し続ける）。
+  逸脱台帳に「並行制御の置換（ロック dir 非生成）・SQLite ファイルの追加・互換ファイルは
+  リードモデルとして維持」を登録する。
+- **Consequences** — (+) 並行制御が1機構に集約、reap 等の複雑性が消える。(+) 既存 Quint 資産は
+  改訂して存続。(−) #18 で upstream 準拠させた FsWorkspaceLock 実装の退役（正しい設計への
+  回収と位置づける）。(−) requirements FR1.1/FR1.2 の合格基準文言の改訂が必要（後方ジャンプで
+  実施予定）。
+- **Alternatives Rejected** — *mkdir ロック併存*: 二重の並行制御は「中途半端な設計」そのもの。
+  *SQLite を使いつつファイルが真実源*: 真実源が2つに割れ ADR-001 と矛盾。
+
+## ADR ステータス注記
+
+初版の ADR-001〜006（WAL + 同期プロジェクション時代）は本改訂版が**全面的に置き換える**。
+初版の裁定のうち存続するもの: 集約=FSM 統一ルール（ADR-002 に吸収・強化）、
+WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanAction 一本化（ADR-005 — 2026-08-22 の再エクスポート禁止裁定により re-export 併用から完全移動へ改訂）、
+フック4本のサブコマンド化（Q3 — CliDispatcher の behaviour に記録、独立 ADR は不要と判断）。

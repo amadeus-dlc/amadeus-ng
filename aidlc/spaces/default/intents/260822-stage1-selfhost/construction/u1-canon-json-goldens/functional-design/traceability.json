@@ -1,0 +1,16 @@
+{
+  "stage": "functional-design",
+  "unit": "u1-canon-json-goldens",
+  "upstream_ids": ["FR7", "FR7.1", "FR7.2", "FR7.3"],
+  "coverage": [
+    { "id": "FR7", "status": "OK", "target": "BR1.1, BR1.6, BR2.3" },
+    { "id": "FR7.1", "status": "OK", "target": "BR2.1, BR2.3" },
+    { "id": "FR7.2", "status": "OK", "target": "BR2.1, BR2.2, BR2.4" },
+    { "id": "FR7.3", "status": "OK", "target": "BR1.1, BR1.2, BR1.3, BR1.4, BR1.5, BR1.6, BR2.3" }
+  ],
+  "reverse": [
+    { "id": "BR1.7", "status": "N/A", "target": "ADR 0001 決定 5 の実装規約（serde_json 直接呼び出し禁止）— 要求 ID を持たない横断規則" },
+    { "id": "BR1.8", "status": "N/A", "target": "ADR 0001 決定 3 の実装規約（preserve_order 常時有効）— 要求 ID を持たない横断規則" },
+    { "id": "BR2.5", "status": "N/A", "target": "contract-summary C7 の運用規則（ゴールデン更新はピン更新 intent のみ）— NFR1 の維持手段" }
+  ]
+}
