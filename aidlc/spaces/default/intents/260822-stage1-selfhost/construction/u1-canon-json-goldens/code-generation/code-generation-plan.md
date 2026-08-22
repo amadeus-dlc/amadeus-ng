@@ -78,13 +78,13 @@ to_value<T: Serialize>(&T) -> Result<JsonValue, ToValueError>   // 型付き str
 
 ## 4. 棚卸し（code-generation で確定し code-summary に記録する事項）
 
-- [x] I1. 契約 JSON の実測最大ネスト深さ（`tests/golden/upstream-3c3146cf/*.json`、`.claude/tools/data/*.json`、
+- [ ] I1. 契約 JSON の実測最大ネスト深さ（`tests/golden/upstream-3c3146cf/*.json`、`.claude/tools/data/*.json`、
       `.claude/tools/data/scopes/`、ゴールデン入力）が 128 を十分下回ること（想定 10 段未満）。
-- [x] I2. 契約 JSON に integer-like キーが現れないこと（現れる場合は箇所と写像を記録）。
-- [x] I3. 契約 JSON のキーが ASCII のみであること（UTF-16 順 = バイト順の前提）。
-- [x] I4. 契約 JSON に浮動小数フィールドが現れないこと（現れる場合は一覧）。
-- [x] I5. ワークスペース内の `serde_json::to_*` / `to_value` 直接呼出の棚卸し（lint 導入の影響範囲）。
-- [x] I6. `preserve_order` 有効化で既存テスト（ITF 準拠 2 本の `serde_json::Value` 利用）が緑のままであること。
+- [ ] I2. 契約 JSON に integer-like キーが現れないこと（現れる場合は箇所と写像を記録）。
+- [ ] I3. 契約 JSON のキーが ASCII のみであること（UTF-16 順 = バイト順の前提）。
+- [ ] I4. 契約 JSON に浮動小数フィールドが現れないこと（現れる場合は一覧）。
+- [ ] I5. ワークスペース内の `serde_json::to_*` / `to_value` 直接呼出の棚卸し（lint 導入の影響範囲）。
+- [ ] I6. `preserve_order` 有効化で既存テスト（ITF 準拠 2 本の `serde_json::Value` 利用）が緑のままであること。
 - [ ] I7. `components.md` の CanonJson `external_dependencies: []` を実依存（sha2 / serde / serde_json）へ更新
       （記録側、コンダクタが実施 — nfr-design レビュー Minor 1）。
 
@@ -103,19 +103,19 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 
 ### 5.1 骨格（開発エージェント — 委任 1）
 
-- [x] Step 1. プロジェクト構造と設定: `Cargo.toml` の `[workspace.dependencies]` に serde / serde_json(preserve_order) /
+- [ ] Step 1. プロジェクト構造と設定: `Cargo.toml` の `[workspace.dependencies]` に serde / serde_json(preserve_order) /
       sha2 / proptest を追加し、`core-domain`（dev-dep）・`core-interface-adapter` を `.workspace = true` に揃える。
       `modules/shared/canon-json/Cargo.toml` に `serde` / `serde_json` / `sha2`（runtime）、`proptest`（dev）を追加。
       `clippy.toml` に `disallowed-methods`（BR1.7）。`lib.rs` に private モジュール 6 本の空殻と `pub use` 列挙の枠。
       `cargo build -p canon-json` と `cargo clippy --workspace --all-targets -- -D warnings` が緑（I5 / I6 の棚卸しを
       ここで実施）。
-- [x] Step 2. テストランナー確認: `cargo test -p canon-json`（brownfield — 実測済み: 0 tests, exit 0）。
+- [ ] Step 2. テストランナー確認: `cargo test -p canon-json`（brownfield — 実測済み: 0 tests, exit 0）。
       統合テストの置き場 `modules/shared/canon-json/tests/` と、ゴールデンを `env!("CARGO_MANIFEST_DIR")/../../../
       tests/golden/upstream-3c3146cf/` で読む経路を決め、`unit-test-instructions.md` のコマンドで走ることを確認。
 
 ### 5.2 ゴールデン採取 — hash-canonical 受入表（FR7.1 / BR2.1 / BR2.3）
 
-- [x] Step 3. 再採取スクリプト: `scripts/goldens/recapture-hash-canonical.sh`（bash, `set -euo pipefail`）と
+- [ ] Step 3. 再採取スクリプト: `scripts/goldens/recapture-hash-canonical.sh`（bash, `set -euo pipefail`）と
       `scripts/goldens/capture-hash-canonical.ts`（bun）。手順: 使い捨てディレクトリに upstream ピン
       `3c3146cfd7cef33020d48e8d48d4e80d0f8c2820` の `dist/claude/.claude/tools/aidlc-testing-posture.ts` を取得 →
       `canonicalize` / `sha256` / `hashObject`（upstream 仕様 09-cli-tools.md §8.4 が指す `:104-123`）をスニペットとして
@@ -125,45 +125,45 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
       （pretty）を採る → `tests/golden/upstream-3c3146cf/hash-canonical/cases.json` と `provenance.json` に書く。
       入力は JSON テキスト（`input`）で表し、JSON で表せない NaN / ±Infinity のクラスだけ `input_js`（JS 式文字列）
       + Rust 側の構築手順（`construct`）を持つ。ケース ID は `hash-canonical/<class>/<case>`。
-- [x] Step 4. 採取の実行とレビュー: スクリプトを実行してコーパスを生成し、`git diff` で内容を目視（秘密情報・
+- [ ] Step 4. 採取の実行とレビュー: スクリプトを実行してコーパスを生成し、`git diff` で内容を目視（秘密情報・
       絶対パス無し）。`README.md` に「採取ゴールデン」節を追記（採取手順・来歴・正規化規則・更新方針 BR2.5・
       既知の非対称: 孤立サロゲート）。
 
 ### 5.3 canon-json — Data model 層（value / profile / digest の型）
 
-- [x] Step 5. Red: `JsonValue` / `Number` / `ObjectMembers`（挿入順・同名置換・アクセサ）、`SerializationProfile`
+- [ ] Step 5. Red: `JsonValue` / `Number` / `ObjectMembers`（挿入順・同名置換・アクセサ）、`SerializationProfile`
       3 値の属性（indent / trailing_newline / key_order / purpose）、`Digest` / `DigestFamily` の `rendered()`、
       `ParseError` / `ToValueError` の `Display` を対象に失敗テスト（各コンポーネント 5〜8 本）を書き、失敗出力を記録。
-- [x] Step 6. Green: 最小実装（フィールド private + アクセサ、`PartialEq` 導出、手実装 `Display`）。
-- [x] Step 7. Refactor: 命名・rustdoc（`missing_docs`）・`must_use` 整理。テスト緑のまま。
+- [ ] Step 6. Green: 最小実装（フィールド private + アクセサ、`PartialEq` 導出、手実装 `Display`）。
+- [ ] Step 7. Refactor: 命名・rustdoc（`missing_docs`）・`must_use` 整理。テスト緑のまま。
 
 ### 5.4 canon-json — Business logic 層（writer / canonical / digest / parse）
 
-- [x] Step 8. Red: (a) ゴールデン受入表テスト `tests/golden_hash_canonical.rs` — 全行で hash-canonical 出力と
+- [ ] Step 8. Red: (a) ゴールデン受入表テスト `tests/golden_hash_canonical.rs` — 全行で hash-canonical 出力と
       `sha256:` ダイジェスト、compact 出力と生 hex、pretty 出力を比較（失敗 = 行ごとの diff を表示）。
       (b) ユニット: 数値表記クラス（整数・2^53 超・1.0・1e21 / 1e-7 境界・負ゼロ・非有限）、エスケープクラス、
       キー順（integer-like 混在・UTF-16 順）、体裁（pretty の入れ子・空）、parse（不正 JSON の offset、深さ 128 超
       → TooDeep、`parse_bytes` の不正 UTF-8 → Encoding、重複キーは後勝ち・位置維持）。失敗出力を記録。
-- [x] Step 9. Green: writer（プロファイル分岐・数値ライタ・最小エスケープ・体裁）、canonical（再帰ソート）、
+- [ ] Step 9. Green: writer（プロファイル分岐・数値ライタ・最小エスケープ・体裁）、canonical（再帰ソート）、
       digest（sha2）、parse（深さスキャン → `serde_json::from_str` preserve_order → `JsonValue` 変換）。
-- [x] Step 10. Refactor: 数値ライタの分離、重複排除、rustdoc。ゴールデン全行一致・ユニット緑のまま。
-- [x] Step 11. PBT（proptest、`src/` 同居）: 決定性（同入力 → 同出力）、`parse(serialize(v, compact)) == v`
+- [ ] Step 10. Refactor: 数値ライタの分離、重複排除、rustdoc。ゴールデン全行一致・ユニット緑のまま。
+- [ ] Step 11. PBT（proptest、`src/` 同居）: 決定性（同入力 → 同出力）、`parse(serialize(v, compact)) == v`
       （NaN を含まない生成器）、`hash_canonical` の冪等性、canonical ソートの冪等性。ケース数は既定（シード固定は U10）。
 
 ### 5.5 canon-json — API 層（ファサードと to_value）
 
-- [x] Step 12. Red: `#[derive(Serialize)]` の struct が宣言順の `JsonValue` になること（ネスト・`Option` の `None`
+- [ ] Step 12. Red: `#[derive(Serialize)]` の struct が宣言順の `JsonValue` になること（ネスト・`Option` の `None`
       スキップ有無は serde の既定どおり — テストで固定）、`to_value` の失敗経路（非文字列キーのマップ → `ToValueError`）、
       ファサードが設計の列挙どおりの項目だけを公開していること（`lib.rs` を読む軽量テスト or doc test）。
-- [x] Step 13. Green: `to_value`（`serde_json::to_value` → `JsonValue` 変換、`#[allow(clippy::disallowed_methods)]`
+- [ ] Step 13. Green: `to_value`（`serde_json::to_value` → `JsonValue` 変換、`#[allow(clippy::disallowed_methods)]`
       + 理由コメント）、`lib.rs` の `pub use` 列挙。
-- [x] Step 14. Refactor: クレート rustdoc（`//!`）に 3 プロファイル・2 族・禁止規則・深さ上限を記す。
+- [ ] Step 14. Refactor: クレート rustdoc（`//!`）に 3 プロファイル・2 族・禁止規則・深さ上限を記す。
 
 ### 5.6 棚卸しと品質ゲート（委任 1 の締め）
 
-- [x] Step 15. 棚卸し I1〜I6 を実施し結果を `code-summary.md` 用に報告（小さな検査テスト or bun/シェルのワンライナー。
+- [ ] Step 15. 棚卸し I1〜I6 を実施し結果を `code-summary.md` 用に報告（小さな検査テスト or bun/シェルのワンライナー。
       数値はすべて実測）。
-- [x] Step 16. 品質ゲート: `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` →
+- [ ] Step 16. 品質ゲート: `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` →
       `cargo lint` → `cargo test --workspace` → `cargo llvm-cov -p canon-json --summary-only`（導入済みなら。
       canon-json は 100% 近傍を目標、床 90%）。コミットは意味単位（`feat(canon-json): …` / `test(goldens): …`）。
 
