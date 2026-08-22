@@ -9666,3 +9666,12 @@ contract-summary.md C7 の cli / hooks ケースレイアウトに exit / stderr
 **Batch number**: 1
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-08-22T23:37:57Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
