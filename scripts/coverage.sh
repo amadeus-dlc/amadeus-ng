@@ -44,9 +44,16 @@ TOLERANCE=0.01
 # として読む。値を変えると計測されるランダム経路が変わるため、変更は PR でのみ行う。
 PROPTEST_RNG_SEED="20260823"
 export PROPTEST_RNG_SEED
-# カバレッジ計測から外す唯一のファイル (composition root、NFR2.5)。cargo-llvm-cov には
-# リポジトリルートからの相対パスで照合される正規表現を渡す。
-IGNORE_FILENAME_REGEX='^modules/app/aidlc/src/main\.rs$'
+# カバレッジ計測から外す唯一のファイル (composition root、NFR2.5)。
+#
+# llvm-cov はカバレッジデータに**絶対パス**を記録するため (実測: 2026-08-23、
+# `/Users/.../docs/modules/app/aidlc/src/main.rs`)、リポジトリルート相対を意図した
+# `^modules/...` 単独のアンカーではどのパスにも一致せず除外が効かない。相対パス基準の
+# 意図 (= リポジトリルート直下の modules/... というパス断片に限定し、別クレートの
+# 同名ファイルを巻き込まない) を保ったまま実効化するため、行頭またはパス区切りを
+# 先頭アンカーに使う。相対ゲートの base 側は一時 worktree の別の絶対パスで計測される
+# ので、この形でないと head と base で除外条件がずれる。
+IGNORE_FILENAME_REGEX='(^|/)modules/app/aidlc/src/main\.rs$'
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

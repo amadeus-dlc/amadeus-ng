@@ -28,7 +28,9 @@ EXPECTED_CHANNEL="1.95.0"
 EXPECTED_COMPONENTS="rustfmt clippy llvm-tools"
 EXPECTED_PROFILE="minimal"
 EXPECTED_TOLERANCE="0.01"
-EXPECTED_IGNORE_REGEX='^modules/app/aidlc/src/main\.rs$' # cargo llvm-cov に渡す除外正規表現
+# cargo llvm-cov に渡す除外正規表現。llvm-cov は絶対パスを記録するため先頭アンカーは
+# 行頭またはパス区切り ((^|/)) にする (scripts/coverage.sh のコメント参照)。
+EXPECTED_IGNORE_REGEX='(^|/)modules/app/aidlc/src/main\.rs$'
 EXPECTED_SEED="20260823"
 EXPECTED_CONTEXTS="check coverage quint" # 比較は集合 (ソート済み) で行う
 GOVERNANCE_REPO="${GOVERNANCE_REPO:-amadeus-dlc/amadeus-ng}"
