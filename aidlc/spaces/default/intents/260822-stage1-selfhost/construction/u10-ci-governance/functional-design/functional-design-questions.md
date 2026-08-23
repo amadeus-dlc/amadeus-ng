@@ -14,15 +14,15 @@
 
 - P1. U10 の設計対象は `.github/workflows/ci.yml`・`Cargo.toml`（`[workspace.lints.rust] unsafe_code = "forbid"`）・
   `rust-toolchain.toml`・`scripts/coverage.sh`（composition root 除外、PBT シード固定）・`tools/lint` の CI 組込み・
-  branch protection（`gh api`）であり、ドメインモデルや API を持たない。（訂正 2026-08-22 UTC: 当初ここに挙げていた
-  「coding-rules のエラーハンドリング規則」は FR9.6 = U9 の責務で U10 の対象外 — PR #25 レビュー指摘の引き取り）
+  branch protection（`gh api`）・coding-rules のエラーハンドリング規則（`std::error::Error` 手実装を含む — Bolt B1 ゲートの裁定）
+  であり、ドメインモデルや API を持たない。
 - P2. 機能要件の追跡は FR 側に対象がなく、NFR2（品質ゲート）/ NFR4（サプライチェーン）を nfr-requirements 以降で扱う。
 
 ## Consolidated Summary Confirmation
 
 - U10 に機能設計の質問はなし（packaging kind — エンティティ・規則・ワークフローを持たない）
 - 設計対象（P1）: CI ワークフロー・workspace lint・ツールチェーン固定・カバレッジ設定・`tools/lint` の CI 組込み・
-  branch protection（エラー規則は U9 — 訂正）
+  branch protection・coding-rules のエラー規則
 - 追跡（P2）: FR 対象なし、NFR2 / NFR4 は nfr-requirements 以降で扱う
 
 Does this all look correct before I generate the artifact?

@@ -16,6 +16,8 @@
 //! **失敗態度は 3 入力で意図的に非対称** (12 §4。この非対称そのものが観測可能な契約で、
 //! 「より厳格にする」方向の改変も逸脱になる):
 //!
+//! - `harness.json` が読めない / 不正 JSON / `name` 欠落 = **fatal** (`Err`)。定義 id の
+//!   供給元であり、失われると集約に識別子を与えられない (ADR-008)。
 //! - `stage-graph.json` が読めない / 不正 JSON = **fatal** (`Err`)。`AIDLC_STAGE_GRAPH` の
 //!   オーバライドが効いているときだけ逐語文言の hint 節が切り替わる (#1・#2)。
 //! - `scope-grid.json` が読めない / 不正 = **fatal にしない**。グラフの `scopes[]` からの
@@ -30,7 +32,7 @@
 //! オーバライドの意味論、および逐語文言の組み立ては実装側に閉じる (12 §6)。ポートは
 //! **材料だけ**を運ぶ。
 
-use core_domain::workflow_definition::WorkflowDefinition;
+use core_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
 
 /// 3 入力の読取失敗。逐語文言そのものは持たず、**文言を組み立てる材料**を運ぶ
 /// (レンダリングはアダプタ層 — 12 §6)。
@@ -69,16 +71,41 @@ pub enum GraphReadError {
         /// 写像に失敗した箇所の詳細。逐語文言そのものではなく、その材料。
         message: String,
     },
+    /// 要求された定義 id が、この Repository が提供できる定義 id と違う (BR2.6 / ADR-008)。
+    ///
+    /// 1 つのハーネスには定義が 1 つしか無いため、これは「取り違え」であって「探したが無い」
+    /// ではない。契約上 fatal。
+    NotFound {
+        /// **この Repository が提供できる** 定義 id (`harness.json` の `name` 由来)。
+        expected: WorkflowDefinitionId,
+        /// **要求された** 定義 id。
+        actual: WorkflowDefinitionId,
+    },
+    /// ハーネス identity ファイル (`harness.json`) を読めない・不正 JSON・`name` が無い
+    /// ないし id として不正 (ADR-008)。
+    ///
+    /// 定義 id の供給元が失われている状態であり、グラフと同じく **fatal**。
+    HarnessIdentity {
+        /// 読もうとした `harness.json` の解決済みパス。
+        path: String,
+        /// 失敗の理由 (OS / JSON パーサ / id の形式検証のいずれか由来)。
+        cause: String,
+    },
 }
 
 /// 集約 `WorkflowDefinition` の Repository (load 専用)。
 pub trait WorkflowDefinitionRepository {
-    /// 3 入力を読み、集約 `WorkflowDefinition` を組み立てて返す。
+    /// 定義 id で引き、3 入力を読んで集約 `WorkflowDefinition` を組み立てて返す。
+    ///
+    /// 1 つのハーネスが提供できる定義は 1 つだけなので、この Repository は「id で探す」
+    /// のではなく「**要求された id が自分の id か**」を検査する (BR2.6 / ADR-008)。
+    /// 一致すれば 3 入力を読み、`id` と内容版 `DefinitionRevision` を載せた集約を返す。
     ///
     /// # Errors
     ///
+    /// ハーネス identity の読取・検証失敗 (`HarnessIdentity`)、要求 id の不一致 (`NotFound`)、
     /// グラフの読取失敗 (`NotReadable`)、不正 JSON (`InvalidJson`)、scope identity の検証失敗
     /// (`ScopeFile`)、ドメイン型への写像失敗 (`Malformed`)。
     /// **グリッドの欠損・不正はエラーにしない** — 転置導出へフォールバックする (12 §4 #3)。
-    fn find(&self) -> Result<WorkflowDefinition, GraphReadError>;
+    fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError>;
 }

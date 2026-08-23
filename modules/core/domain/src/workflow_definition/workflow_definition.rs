@@ -1,31 +1,46 @@
 //! `WorkflowDefinition` — Published Language (`stage-graph.json` / `scope-grid.json` /
-//! `scopes/*.md`) の**読取モデル**。「何を実行しうるか」の静的定義を 1 つの集約にまとめ、
-//! orchestration が依存する 5 述語を純関数として提供する (01 §3.1 / 10 §3)。
+//! `scopes/*.md`) の**読取モデル**を内包するエンティティ。「何を実行しうるか」の静的定義を
+//! 1 つの集約にまとめ、orchestration が依存する 6 述語を純関数として提供する
+//! (01 §3.1 / 10 §3)。
+//!
+//! 識別子 `WorkflowDefinitionId` と内容版 `DefinitionRevision` を持つ (ADR-008)。id は
+//! 内容が変わっても不変の系譜 ID、revision は 3 入力の内容ダイジェストであり、どちらも
+//! Repository 実装が付与する (ドメインは計算しない)。
 //!
 //! # 観測可能契約 (レポート §6.1 — 逸脱台帳行き)
 //!
 //! - **未知スコープの非対称**: `subgraph_for_scope` だけが `Err(UnknownScope)`。
-//!   `next_in_scope_stage` / `first_in_scope_stage_of_phase` / `stages_in_scope` は
-//!   同じ未知スコープに対して `None` / 空を返す。
+//!   `first_in_scope_stage_of_phase` / `stages_in_scope` は同じ未知スコープに対して
+//!   `None` / 空を返す。
 //! - **`.md` あり × グリッド列なし** = zero-EXECUTE な**正当**スコープ (エラーにしない)。
 //! - **グリッド列あり × `.md` なし** = ランタイムから不可視 (有効スコープの権威は `.md`)。
 //! - **グリッドに slug が無い** = `None`。`SKIP` に畳まない (3 値契約)。
-//! - **文書順の保持**: `next_in_scope_stage` は文書順で前進走査し、`subgraph_for_scope`
+//! - **文書順の保持**: `stages_in_scope` は文書順で全ステージを返し、`subgraph_for_scope`
 //!   だけが数値順にソートする。2 経路の使い分けを潰さない。
 //!
 //! `enabled: false` のノードは**除外しない**。意味論が未確定 (レポート §7) のため、
 //! 読取モデルは `StageNode::is_enabled()` を露出するだけで判断は呼出側に委ねる。
+//!
+//! # 集約への畳み込み (FR8.4)
+//!
+//! かつてここにあった `effective_plan_action` / `next_in_scope_stage` は
+//! **`WorkflowExecution` 側へ移設**した。recompose オーバレイと checkbox は実行の状態で
+//! あって定義の状態ではなく、定義側に置くと「呼出側が状態を持ち回って定義に問い直す」
+//! Ask 形になるためである (tell-dont-ask.md)。定義側に残るのは静的グリッドの照会
+//! (`grid().action(scope, slug)`) と文書順の全ステージ列 (`stages_in_scope`) だけで、
+//! 実効プランの合成は集約が行う。
 
 use std::collections::BTreeMap;
 
+use super::definition_revision::DefinitionRevision;
 use super::phase::PhaseId;
+use super::plan_action::PlanAction;
 use super::scope_grid::ScopeGrid;
 use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
 use super::stage_slug::StageSlug;
-use crate::orchestration::PlanAction;
-use crate::workspace::CheckboxState;
+use super::workflow_definition_id::WorkflowDefinitionId;
 
 /// `validScopes()` に無いスコープ名。
 ///
@@ -62,30 +77,56 @@ impl UnknownScope {
     }
 }
 
-/// ワークフロー定義の読取モデル (以後 immutable)。
+/// ワークフロー定義のエンティティ (構築後 immutable)。
+///
+/// 等価は**内容と識別子の両方**で決まる (derive)。読取モデルは 3 入力から毎回組み立て直す
+/// 値であり、「同じ系譜の同じ内容」を 1 つの等価関係で表すのが自然だからである。id だけの
+/// 同一性比較が要るのは `WorkflowExecution` 側の定義照合で、そちらは `id()` 同士を突き合わせる
+/// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDefinition {
+    id: WorkflowDefinitionId,
+    revision: DefinitionRevision,
     graph: StageGraph,
     grid: ScopeGrid,
     scopes: BTreeMap<String, ScopeMetadata>,
 }
 
 impl WorkflowDefinition {
-    /// 3 入力をそのまま束ねる。
+    /// 識別子・内容版と 3 入力をそのまま束ねる。
+    ///
+    /// `id` / `revision` は **Repository 実装が付与する** (ADR-008)。ドメインは revision を
+    /// 計算しない — 正準 JSON とダイジェストはアダプタ層の責務である。
     ///
     /// グリッド列と `.md` の**不一致は検証しない** — 双方向の不一致がどちらも正当な
     /// 観測可能契約だからである (zero-EXECUTE スコープ / ランタイム不可視スコープ)。
     #[must_use]
     pub const fn new(
+        id: WorkflowDefinitionId,
+        revision: DefinitionRevision,
         graph: StageGraph,
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
     ) -> WorkflowDefinition {
         WorkflowDefinition {
+            id,
+            revision,
             graph,
             grid,
             scopes,
         }
+    }
+
+    /// この定義の系譜 ID。内容が変わっても不変 (ADR-008)。
+    #[must_use]
+    pub const fn id(&self) -> &WorkflowDefinitionId {
+        &self.id
+    }
+
+    /// この定義の内容版。3 入力が 1 バイトでも変われば変わる (ADR-008)。
+    #[must_use]
+    pub const fn revision(&self) -> &DefinitionRevision {
+        &self.revision
     }
 
     /// `stage-graph.json` 由来のステージグラフ (文書順を保持したまま)。
@@ -124,24 +165,6 @@ impl WorkflowDefinition {
         self.scopes.contains_key(scope)
     }
 
-    /// `effectivePlanAction` — **state ファイルの per-stage サフィックス (recompose 由来) が
-    /// 静的グリッドに勝つ**。両方に無ければ `None` (`SKIP` に畳まない — 3 値契約)。
-    ///
-    /// スコープの有効性は問わない (upstream もグリッド列だけを見る)。未知スコープでは
-    /// グリッド側が常に `None` になるため、結果はサフィックスのみで決まる。
-    #[must_use]
-    pub fn effective_plan_action(
-        &self,
-        suffixes: &BTreeMap<StageSlug, PlanAction>,
-        scope: &str,
-        slug: &StageSlug,
-    ) -> Option<PlanAction> {
-        suffixes
-            .get(slug)
-            .copied()
-            .or_else(|| self.grid.action(scope, slug))
-    }
-
     /// `subgraphForScope` — 静的グリッドの EXECUTE セルを抽出し、**数値順**で返す。
     ///
     /// ランタイムでは topo ソートしない (compile のエッジ局所不変条件により数値順が
@@ -168,35 +191,6 @@ impl WorkflowDefinition {
             .into_iter()
             .filter(|node| self.grid.action(scope, node.slug()) == Some(PlanAction::Execute))
             .collect())
-    }
-
-    /// `nextInScopeStage` — **文書順**に `after` の次から前進走査し、checkbox が
-    /// completed / skipped のノードを読み飛ばして、実効プランが EXECUTE の最初のノードを返す。
-    ///
-    /// 未知スコープは `None` (`subgraph_for_scope` との非対称)。`after` が文書順に存在
-    /// しない場合は先頭から走査する (upstream の `findIndex` → `-1` の帰結)。
-    /// checkbox に載っていない slug は未着手として扱う。
-    #[must_use]
-    pub fn next_in_scope_stage(
-        &self,
-        after: &StageSlug,
-        scope: &str,
-        checkboxes: &BTreeMap<StageSlug, CheckboxState>,
-        suffixes: &BTreeMap<StageSlug, PlanAction>,
-    ) -> Option<&StageNode> {
-        if !self.is_valid_scope(scope) {
-            return None;
-        }
-        let start = self.graph.index_of(after).map_or(0, |i| i + 1);
-        self.graph.nodes()[start..].iter().find(|node| {
-            if checkboxes
-                .get(node.slug())
-                .is_some_and(|cb| cb.is_finished())
-            {
-                return false;
-            }
-            self.effective_plan_action(suffixes, scope, node.slug()) == Some(PlanAction::Execute)
-        })
     }
 
     /// `firstInScopeStageOfPhase` — `subgraph_for_scope` の**数値順**の並びで最初に
@@ -268,6 +262,14 @@ mod tests {
             .collect()
     }
 
+    fn id(value: &str) -> WorkflowDefinitionId {
+        WorkflowDefinitionId::parse(value).unwrap()
+    }
+
+    fn revision(fill: char) -> DefinitionRevision {
+        DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64))).unwrap()
+    }
+
     /// 文書順 = 数値順の小さな出荷グラフ相当。
     fn sample() -> WorkflowDefinition {
         let graph = StageGraph::new(vec![
@@ -290,7 +292,100 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::derive_from_graph(&graph);
-        WorkflowDefinition::new(graph, grid, registry(&REGISTERED))
+        WorkflowDefinition::new(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        )
+    }
+
+    // ---- エンティティの識別子と内容版 (ADR-008) ----
+
+    #[test]
+    fn the_definition_carries_the_identity_and_the_revision_the_repository_assigned() {
+        let wd = sample();
+        assert_eq!(wd.id(), &id("claude"));
+        assert_eq!(wd.revision(), &revision('0'));
+        assert_eq!(wd.id().as_str(), "claude");
+        assert!(wd.revision().as_str().starts_with("sha256:"));
+    }
+
+    #[test]
+    fn two_definitions_with_the_same_content_but_different_lineage_are_not_equal() {
+        let one = sample();
+        let graph = one.graph().clone();
+        let grid = one.grid().clone();
+        let other = WorkflowDefinition::new(
+            id("kiro"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        );
+        assert_ne!(one, other);
+        assert_ne!(one.id(), other.id());
+        // 内容版は同じ — 系譜だけが違う。
+        assert_eq!(one.revision(), other.revision());
+    }
+
+    #[test]
+    fn the_revision_changes_without_the_identity_changing() {
+        let one = sample();
+        let other = WorkflowDefinition::new(
+            one.id().clone(),
+            revision('1'),
+            one.graph().clone(),
+            one.grid().clone(),
+            registry(&REGISTERED),
+        );
+        // ピン更新 = 内容版だけが進む。系譜 ID は不変 (ADR-008)。
+        assert_eq!(one.id(), other.id());
+        assert_ne!(one.revision(), other.revision());
+        assert_ne!(one, other);
+    }
+
+    #[test]
+    fn the_six_predicates_survive_the_entity_change() {
+        // FR8.4 で 2 述語を集約へ移したあとに定義側へ残る照会一式。
+        let wd = sample();
+        assert!(wd.is_valid_scope("alpha"));
+        assert_eq!(wd.valid_scopes(), ["alpha", "beta", "delta"]);
+        assert!(wd.scope_metadata("alpha").is_some());
+        assert!(wd.subgraph_for_scope("alpha").is_ok());
+        assert_eq!(wd.stages_in_scope("alpha").len(), 6);
+        assert!(
+            wd.first_in_scope_stage_of_phase(PhaseId::Ideation, "alpha")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn stages_in_scope_reports_the_phase_of_every_stage_alongside_the_action() {
+        // Started の StageEntry 列 (集約側) はこの 3 つ組から作られるため、PhaseId が
+        // 文書順で正しく載っていることが FR8.4 移設後の前提になる。
+        let wd = sample();
+        let rows = wd.stages_in_scope("alpha");
+        let phases: Vec<PhaseId> = rows.iter().map(|(_, phase, _)| *phase).collect();
+        assert_eq!(
+            phases,
+            [
+                PhaseId::Initialization,
+                PhaseId::Ideation,
+                PhaseId::Ideation,
+                PhaseId::Inception,
+                PhaseId::Construction,
+                PhaseId::Operation,
+            ]
+        );
+        // 索引 0 だけが initialization — 集約の gated(s) 判定の材料。
+        assert_eq!(rows[0].1, PhaseId::Initialization);
+        assert!(
+            rows[1..]
+                .iter()
+                .all(|(_, p, _)| *p != PhaseId::Initialization)
+        );
     }
 
     // ---- ユビキタス言語の例示 ----
@@ -326,15 +421,6 @@ mod tests {
         assert_eq!(err.scope(), "gamma");
         assert_eq!(err.valid_scopes(), ["alpha", "beta", "delta"]);
         assert_eq!(
-            wd.next_in_scope_stage(
-                &slug("bootstrap"),
-                "gamma",
-                &BTreeMap::new(),
-                &BTreeMap::new()
-            ),
-            None
-        );
-        assert_eq!(
             wd.first_in_scope_stage_of_phase(PhaseId::Operation, "gamma"),
             None
         );
@@ -355,59 +441,22 @@ mod tests {
     }
 
     #[test]
-    fn next_in_scope_stage_walks_document_order_and_skips_finished_checkboxes() {
+    fn the_static_grid_query_is_three_valued() {
+        // FR8.4 で `effective_plan_action` を集約へ移設したあと、定義側に残るのは
+        // 静的グリッドの照会だけ。3 値契約 (EXECUTE / SKIP / 未コンパイル) はここが持つ。
         let wd = sample();
-        let mut checkboxes = BTreeMap::new();
-        checkboxes.insert(slug("bootstrap"), CheckboxState::Completed);
-        checkboxes.insert(slug("intent-capture"), CheckboxState::Skipped);
-        let next = wd
-            .next_in_scope_stage(&slug("bootstrap"), "alpha", &checkboxes, &BTreeMap::new())
-            .unwrap();
-        assert_eq!(next.slug().as_str(), "requirements");
-    }
-
-    #[test]
-    fn recompose_suffixes_beat_the_static_grid_in_next_in_scope_stage() {
-        let wd = sample();
-        let mut suffixes = BTreeMap::new();
-        // grid では beta 列で SKIP の requirements を EXECUTE へ反転
-        suffixes.insert(slug("requirements"), PlanAction::Execute);
         assert_eq!(
-            wd.grid().action("beta", &slug("requirements")),
-            Some(PlanAction::Skip)
-        );
-        assert_eq!(
-            wd.effective_plan_action(&suffixes, "beta", &slug("requirements")),
-            Some(PlanAction::Execute)
-        );
-        let next = wd
-            .next_in_scope_stage(&slug("intent-capture"), "beta", &BTreeMap::new(), &suffixes)
-            .unwrap();
-        assert_eq!(next.slug().as_str(), "requirements");
-    }
-
-    #[test]
-    fn effective_plan_action_is_three_valued() {
-        let wd = sample();
-        let suffixes = BTreeMap::new();
-        assert_eq!(
-            wd.effective_plan_action(&suffixes, "alpha", &slug("threat-model")),
+            wd.grid().action("alpha", &slug("threat-model")),
             Some(PlanAction::Execute)
         );
         assert_eq!(
-            wd.effective_plan_action(&suffixes, "beta", &slug("threat-model")),
+            wd.grid().action("beta", &slug("threat-model")),
             Some(PlanAction::Skip)
         );
         // グリッド列にない slug は None (SKIP に畳まない)
-        assert_eq!(
-            wd.effective_plan_action(&suffixes, "alpha", &slug("no-such-stage")),
-            None
-        );
+        assert_eq!(wd.grid().action("alpha", &slug("no-such-stage")), None);
         // 列そのものが無い有効スコープも None
-        assert_eq!(
-            wd.effective_plan_action(&suffixes, "delta", &slug("bootstrap")),
-            None
-        );
+        assert_eq!(wd.grid().action("delta", &slug("bootstrap")), None);
     }
 
     #[test]
@@ -434,7 +483,13 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::derive_from_graph(&graph);
-        let wd = WorkflowDefinition::new(graph, grid, registry(&["alpha"]));
+        let wd = WorkflowDefinition::new(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&["alpha"]),
+        );
 
         let numeric: Vec<&str> = wd
             .subgraph_for_scope("alpha")
@@ -444,13 +499,7 @@ mod tests {
             .collect();
         assert_eq!(numeric, vec!["boot", "early", "late"]);
 
-        // next は文書順 — "late" (文書順 0) の次は "boot"
-        let next = wd
-            .next_in_scope_stage(&slug("late"), "alpha", &BTreeMap::new(), &BTreeMap::new())
-            .unwrap();
-        assert_eq!(next.slug().as_str(), "boot");
-
-        // stages_in_scope も文書順
+        // stages_in_scope は文書順
         let listed: Vec<&str> = wd
             .stages_in_scope("alpha")
             .iter()
@@ -491,41 +540,13 @@ mod tests {
             .collect();
         let graph = StageGraph::new(nodes).unwrap();
         let grid = ScopeGrid::derive_from_graph(&graph);
-        WorkflowDefinition::new(graph, grid, registry(&REGISTERED))
-    }
-
-    fn checkbox_map(wd: &WorkflowDefinition, markers: &[u8]) -> BTreeMap<StageSlug, CheckboxState> {
-        wd.graph()
-            .nodes()
-            .iter()
-            .zip(markers.iter())
-            .map(|(n, m)| {
-                let state = match m % 4 {
-                    0 => CheckboxState::Pending,
-                    1 => CheckboxState::InProgress,
-                    2 => CheckboxState::Completed,
-                    _ => CheckboxState::Skipped,
-                };
-                (n.slug().clone(), state)
-            })
-            .collect()
-    }
-
-    fn suffix_map(wd: &WorkflowDefinition, bits: &[u8]) -> BTreeMap<StageSlug, PlanAction> {
-        wd.graph()
-            .nodes()
-            .iter()
-            .zip(bits.iter())
-            .filter(|(_, b)| **b % 3 != 0)
-            .map(|(n, b)| {
-                let action = if b % 3 == 1 {
-                    PlanAction::Execute
-                } else {
-                    PlanAction::Skip
-                };
-                (n.slug().clone(), action)
-            })
-            .collect()
+        WorkflowDefinition::new(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        )
     }
 
     proptest! {
@@ -557,52 +578,6 @@ mod tests {
             }
         }
 
-        /// `next_in_scope_stage` は文書順で `after` より後の、checkbox 未完了かつ
-        /// 実効 EXECUTE な**最初の**ノードを返す (最小性まで含めて特徴づける)。
-        #[test]
-        fn next_in_scope_stage_is_the_first_qualifying_node_in_document_order(
-            specs in arb_specs(),
-            markers in proptest::collection::vec(any::<u8>(), 10),
-            bits in proptest::collection::vec(any::<u8>(), 10),
-            after_index in 0usize..10,
-            scope_index in 0usize..REGISTERED.len(),
-        ) {
-            let wd = build(&specs);
-            let checkboxes = checkbox_map(&wd, &markers);
-            let suffixes = suffix_map(&wd, &bits);
-            let scope = REGISTERED[scope_index];
-            let after_index = after_index % wd.graph().len();
-            let after = wd.graph().at(after_index).unwrap().slug().clone();
-
-            let qualifies = |i: usize| {
-                let n = wd.graph().at(i).unwrap();
-                let finished = matches!(
-                    checkboxes.get(n.slug()),
-                    Some(CheckboxState::Completed | CheckboxState::Skipped)
-                );
-                !finished
-                    && wd.effective_plan_action(&suffixes, scope, n.slug())
-                        == Some(PlanAction::Execute)
-            };
-
-            let result = wd.next_in_scope_stage(&after, scope, &checkboxes, &suffixes);
-            match result {
-                Some(found) => {
-                    let found_index = wd.graph().index_of(found.slug()).unwrap();
-                    prop_assert!(found_index > after_index, "文書順で after より後");
-                    prop_assert!(qualifies(found_index));
-                    for i in (after_index + 1)..found_index {
-                        prop_assert!(!qualifies(i), "最小性: {i} が先に該当してはならない");
-                    }
-                }
-                None => {
-                    for i in (after_index + 1)..wd.graph().len() {
-                        prop_assert!(!qualifies(i), "該当なしのはずが {i} が該当");
-                    }
-                }
-            }
-        }
-
         /// 未知スコープの非対称契約: `subgraph_for_scope` だけが `Err`。
         #[test]
         fn unknown_scope_is_error_only_for_subgraph(
@@ -614,39 +589,10 @@ mod tests {
             let err = wd.subgraph_for_scope(&name).unwrap_err();
             prop_assert_eq!(err.scope(), name.as_str());
             prop_assert_eq!(err.valid_scopes(), ["alpha", "beta", "delta"]);
-            let after = wd.graph().at(0).unwrap().slug().clone();
-            prop_assert!(
-                wd.next_in_scope_stage(&after, &name, &BTreeMap::new(), &BTreeMap::new())
-                    .is_none()
-            );
             for phase in PhaseId::ALL {
                 prop_assert!(wd.first_in_scope_stage_of_phase(phase, &name).is_none());
             }
             prop_assert!(wd.stages_in_scope(&name).is_empty());
-        }
-
-        /// `effective_plan_action`: サフィックスがグリッドに勝ち、両方に無ければ `None`。
-        #[test]
-        fn suffixes_beat_the_grid_and_absence_is_none(
-            specs in arb_specs(),
-            bits in proptest::collection::vec(any::<u8>(), 10),
-            scope_index in 0usize..REGISTERED.len(),
-        ) {
-            let wd = build(&specs);
-            let suffixes = suffix_map(&wd, &bits);
-            let scope = REGISTERED[scope_index];
-            for n in wd.graph().nodes() {
-                let effective = wd.effective_plan_action(&suffixes, scope, n.slug());
-                match suffixes.get(n.slug()) {
-                    Some(&overridden) => prop_assert_eq!(effective, Some(overridden)),
-                    None => prop_assert_eq!(effective, wd.grid().action(scope, n.slug())),
-                }
-            }
-            // グラフに無い slug は、サフィックスにもグリッドにも無いので必ず None
-            prop_assert_eq!(
-                wd.effective_plan_action(&suffixes, scope, &slug("not-in-graph")),
-                None
-            );
         }
 
         /// `stages_in_scope` は全ステージを文書順で返し、`action` は静的グリッドの 3 値。

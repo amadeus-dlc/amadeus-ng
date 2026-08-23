@@ -1,0 +1,23 @@
+{
+  "stage": "nfr-design",
+  "unit": "u2-domain-es-core",
+  "upstream_ids": ["NFR1.1", "NFR1.2", "NFR1.3", "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR3.1", "NFR3.2", "NFR3.3", "NFR3.4", "NFR4.1", "NFR4.2", "NFR4.3", "NFR4.4", "NFR4.5"],
+  "coverage": [
+    { "id": "NFR1.1", "status": "OK", "target": "ITF 準拠を decide → apply 経路で再生、合成計画 + 射影表（security-design §6、logical-components ITF 準拠テスト）" },
+    { "id": "NFR1.2", "status": "OK", "target": "gated = phase ≠ initialization、実グラフ索引 0〜2 のユニットテスト（security-design §6、logical-components §4）" },
+    { "id": "NFR1.3", "status": "OK", "target": "12 変種 enum + 網羅 match、C5 の形（security-design §6、logical-components workflow_execution_event）" },
+    { "id": "NFR2.1", "status": "OK", "target": "TDD — レイヤーごとの red-green-refactor、受入手順（logical-components §4）" },
+    { "id": "NFR2.2", "status": "OK", "target": "PBT 5 性質・シード固定・生成器（security-design §6、logical-components §4）" },
+    { "id": "NFR2.3", "status": "OK", "target": "カバレッジ 90% 床 + core-domain 基準値の記録（logical-components §4 受入手順）" },
+    { "id": "NFR2.4", "status": "OK", "target": "機械強制（clippy 48 / cargo lint / fmt）+ BR4.1 grep 判定（logical-components §2 / §4）" },
+    { "id": "NFR3.1", "status": "OK", "target": "純関数的 decide / apply、時計・乱数・環境なし（security-design §4 / §6）" },
+    { "id": "NFR3.2", "status": "OK", "target": "検査点 3 か所 + Err 変種、panic なし（security-design §2）" },
+    { "id": "NFR3.3", "status": "OK", "target": "snapshot に全状態、from_snapshot 検証（security-design §2 / §3、logical-components workflow_execution_snapshot）" },
+    { "id": "NFR3.4", "status": "OK", "target": "start は記録のみ、next_decision が id 検査、revision は観測（security-design §3）" },
+    { "id": "NFR4.1", "status": "OK", "target": "依存追加なし、serde / canon-json はアダプタ層（security-design §5、logical-components §2）" },
+    { "id": "NFR4.2", "status": "OK", "target": "unsafe_code forbid（security-design §5）" },
+    { "id": "NFR4.3", "status": "OK", "target": "StageIndex の型保証・Err 境界・# Panics 0 件（security-design §2、logical-components stage_index）" },
+    { "id": "NFR4.4", "status": "OK", "target": "人間入力の素通し・Display は材料のみ（security-design §4）" },
+    { "id": "NFR4.5", "status": "OK", "target": "デシリアライズ面なし、parse-don't-validate は U3 境界（security-design §5）" }
+  ]
+}

@@ -141,6 +141,37 @@
 - **Alternatives Rejected** — *mkdir ロック併存*: 二重の並行制御は「中途半端な設計」そのもの。
   *SQLite を使いつつファイルが真実源*: 真実源が2つに割れ ADR-001 と矛盾。
 
+## ADR-008: WorkflowDefinition はエンティティ — 不変の ID と内容版 revision、WorkflowExecution からは ID で間接参照（2026-08-23 追加）
+
+- **Context** — 12 号 §2.1 は `WorkflowDefinition` を集約ルートへ昇格させたが識別子を定義しておらず、
+  実コード `WorkflowDefinition { graph, grid, scopes }` にも `stage-graph.json`（素の 33 要素配列）にも
+  ID / version が無い。U2 機能設計は `WorkflowExecution` が定義を「参照渡しで使う」とだけ書き、
+  どの定義で始まったかを残していなかった。オーナー指摘（2026-08-23）: 集約はエンティティであり
+  ID が無いのはまずい。集約間の依存は ID による間接参照。**内容アドレスを ID にすると内容が変わった
+  ときに追跡不能になり、「内容が変わっても追跡できる」というエンティティの責務に反する**。
+- **Decision** — (1) `WorkflowDefinition` に `id: WorkflowDefinitionId`（内容が変わっても不変の系譜 ID。
+  Repository 実装が harness.json の `name` — このハーネスにインストールされた定義 — から付与）と
+  `revision: DefinitionRevision`（3 入力の正準 JSON の `sha256:`、U1 canon-json hash-canonical で
+  Repository 実装が計算。**値属性であって識別子ではない**）を追加する。(2) C4 を
+  `find_by_id(&WorkflowDefinitionId)` に改訂し、引数なし `find()` は**廃止**（後方互換の併存なし）。
+  (3) `WorkflowExecution` は `definition_id` / `definition_revision` を `Started` に記録して保持する。
+  `start` は引数の `&WorkflowDefinition` の id / revision を無条件に記録するだけ（比較対象となる既存状態が
+  無い静的コンストラクタ — 検査しない）。Started 適用後に `&WorkflowDefinition` を受け取るクエリ／コマンド
+  （現時点では `next_decision`）は id が一致しなければ `Err(CommandError::DefinitionMismatch)`。revision の差は
+  Err にしない（計画は `Started` で自己完結、upstream も dist 更新をまたいでワークフローを続ける）。
+  （2026-08-23 U2 nfr-design レビュー所見 2 により `start` の検査を削除 — rules.md BR2.6 と同期）(4) 12 号 §2.1 / 01 号の集約表へ識別子を追記（U9 の
+  canon 追従 FR8.2 に同梱）。
+- **Consequences** — (+) 集約間参照が ID に統一され、エンティティ / 値オブジェクトの区別が型に出る。
+  (+) 来歴（どの定義・どの内容版で始まったか）がイベントに残り、ピン更新時の drift を観測できる。
+  (−) Bolt B3 の範囲が core-domain を越え、use-case の trait（C4）・interface-adapter の
+  `WorkflowDefinitionRepositoryImpl`（id / revision の付与、canon-json 依存）・既存テスト（golden parity /
+  repository impl test / ITF 準拠）の同時修正が要る。(−) ITF 準拠テストは合成 `WorkflowDefinitionId`
+  を使う。
+- **Alternatives Rejected** — *内容アドレス ID（ダイジェストを ID にする）*: 値の同一性であり、内容が
+  変われば別物になって追跡できない — エンティティの責務違反（オーナー却下）。*upstream ピンを ID に
+  する*: ピンはデータに含まれず（`stage-graph.json` に version 無し）、テストシームのローカル差し替えを
+  区別できない。*ID なしのまま `find()` を維持*: エンティティに ID が無い現状の温存。
+
 ## ADR ステータス注記
 
 初版の ADR-001〜006（WAL + 同期プロジェクション時代）は本改訂版が**全面的に置き換える**。

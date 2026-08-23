@@ -1,0 +1,73 @@
+{
+  "stage": "functional-design",
+  "unit": "u2-domain-es-core",
+  "upstream_ids": [
+    "FR8.3",
+    "FR8.4",
+    "FR2.1",
+    "FR3.1",
+    "FR3.3",
+    "FR1.3",
+    "NFR1",
+    "NFR3"
+  ],
+  "coverage": [
+    {
+      "id": "FR8.3",
+      "status": "OK",
+      "target": "BR4.1"
+    },
+    {
+      "id": "FR8.4",
+      "status": "OK",
+      "target": "BR4.2"
+    },
+    {
+      "id": "FR2.1",
+      "status": "OK",
+      "target": "BR1.0, BR1.1, BR1.3, BR1.4, BR1.5, BR1.9"
+    },
+    {
+      "id": "FR3.1",
+      "status": "OK",
+      "target": "BR3.1, BR3.3"
+    },
+    {
+      "id": "FR3.3",
+      "status": "OK",
+      "target": "BR3.1, BR3.2"
+    },
+    {
+      "id": "FR1.3",
+      "status": "OK",
+      "target": "BR2.1, BR2.3, BR2.6, BR5.2, BR5.3"
+    },
+    {
+      "id": "NFR1",
+      "status": "OK",
+      "target": "BR1.0, BR1.2, BR1.6, BR1.7, BR1.8, BR2.3, BR2.5"
+    },
+    {
+      "id": "NFR3",
+      "status": "OK",
+      "target": "BR2.1, BR2.2, BR2.3, BR2.6"
+    }
+  ],
+  "reverse": [
+    {
+      "id": "BR2.4",
+      "status": "N/A",
+      "target": "イベント語彙の方針（C5 との整合）— 要求 ID を持たない横断規則"
+    },
+    {
+      "id": "BR5.1",
+      "status": "N/A",
+      "target": "StageIndex の型規則（Q2 = A、設計監査 C17 / C18 の恒久解）"
+    },
+    {
+      "id": "BR5.4",
+      "status": "N/A",
+      "target": "コーディング規則の適用（正本は coding-rules）"
+    }
+  ]
+}

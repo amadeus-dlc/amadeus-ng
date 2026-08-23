@@ -16,7 +16,7 @@
 | C1 | U7 `u7-cli-dispatcher-hooks`（CLI バイナリ `aidlc`） | External: Claude Code ハーネス（スキル・フック登録・statusline） | プロセス起動（argv/stdin → stdout の directive JSON・逐語文言 + 終了コード）と、動詞が書く upstream 互換ファイル（状態ファイル・監査シャード） | U7（正本 = upstream 仕様 D6 + U1 ゴールデン。破壊的変更は逸脱台帳 + ADR） |
 | C2 | U7（フック 4 本のサブコマンド） | External: Claude Code フック機構（PreToolUse / PostToolUse / Stop / UserPromptSubmit） | stdin JSON → 終了コード（0 許可 / 2 拒否）+ stderr 理由 + 副作用（監査行） | U7（正本 = upstream フック契約 + U1 ゴールデン） |
 | C3 | U3 `u3-event-store-repository`（実装） | U5 `u5-report-use-case` / U6 `u6-next-continue-use-case` / U7（composition root） | Rust trait（同一プロセス、静的束縛）: `WorkflowExecutionRepository`、EventStore 同形 trait | U5/U6（使う側 = ユースケース層）。U3 は準拠 |
-| C4 | U3（既存 `WorkflowDefinitionRepositoryImpl`） | U6（`next` が定義集約を参照） | Rust trait `WorkflowDefinitionRepository`（既存・変更なし） | U6（使う側） |
+| C4 | U3（既存 `WorkflowDefinitionRepositoryImpl`） | U6（`next` が定義集約を参照） | Rust trait `WorkflowDefinitionRepository`（2026-08-23 改訂: `find()` → `find_by_id(&WorkflowDefinitionId)`、ADR-008） | U6（使う側） |
 | C5 | U2 `u2-domain-es-core`（イベント語彙） / U4 `u4-read-model-updater`（投影規則） | U4（投影）/ U3（ジャーナルへ保存）/ U7（コマンド末尾で投影起動） | 同一プロセスの型（`WorkflowExecutionEvent`）+ 投影規則表（イベント → 監査行・状態ファイル差分） | 語彙 = U2、投影規則 = U4 |
 | C6 | U3（SQLite ストア） | U4（チェックポイント以降の差分読取・チェックポイント更新） | shared-schema: SQLite DDL（journal / snapshot / checkpoint） | U3 |
 | C7 | U1 `u1-canon-json-goldens`（正解データ） | U6 / U7 のテスト（CLI 出力・状態ファイル差分・監査行・hash-canonical 受入表の突合） | 共有フィクスチャ（リポジトリ内の固定ファイル） | U1（更新は upstream ピン更新の別 intent） |
@@ -139,14 +139,23 @@ Repository 実装（ユースケースはトランザクションを持たない
 ④ `InMemoryWorkflowExecutionRepository` は同じ trait を満たし、テストは `XxxUseCase<InMemory…>` で組む。
 ⑤ `dyn` は使わない（静的束縛、use-case-rules §2）。
 
-### C4 — ポート trait: `WorkflowDefinitionRepository`（既存・変更なし）
+### C4 — ポート trait: `WorkflowDefinitionRepository`（2026-08-23 改訂 — ADR-008）
+
+`WorkflowDefinition` はエンティティ（集約ルート、12 号 §2.1）なので識別子 `WorkflowDefinitionId`（内容が変わっても不変の系譜 ID — Repository 実装が
+harness.json の `name` から付与）と内容版 `DefinitionRevision`（3 入力の正準 JSON の `sha256:` — 値属性、識別子ではない）を持つ。既存の引数なし `find()` は
+**廃止**（後方互換の併存なし — オーナー裁定 2026-08-23）。`WorkflowExecution` は定義を `definition_id` で間接参照する（C5 `Started`）。
 
 ```rust
 pub trait WorkflowDefinitionRepository {
-    /// 3 入力（stage-graph / scope-grid / scopes）を読み `WorkflowDefinition` を返す。not-found は契約上 fatal な Err。
-    fn find(&self) -> Result<WorkflowDefinition, GraphReadError>;
+    /// 3 入力（stage-graph / scope-grid / scopes）を読み、id / revision を付与した `WorkflowDefinition` を返す。
+    /// # Errors
+    /// `NotFound`（要求 id がこのハーネスの定義 id と異なる — 契約上 fatal）、読取・解析失敗は `GraphReadError` の既存変種。
+    fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError>;
 }
 ```
+
+呼出側は `WorkflowDefinitionId` を (a) 稼働中のワークフローでは `WorkflowExecution::definition_id()` から、(b) birth（intent-create）では composition root が
+harness.json から組み立てた値から渡す。`next_decision` は引数の定義の id が `definition_id` と一致しなければ `Err(DefinitionMismatch)`（U2 BR2.6）。
 
 ### C5 — ドメインイベント語彙と投影規則（内部）
 
@@ -161,7 +170,7 @@ envelope: { intent_id, seq_nr, occurred_at, schema_version, payload }
 events:
   - name: Started
     command: start (intent-create)
-    payload: { scope, request, stages_in_scope, depth, test_strategy }
+    payload: { definition_id, definition_revision, scope, request, stages, depth, test_strategy }   # 2026-08-23: definition_id / definition_revision を追加（ADR-008、U2 BR2.6）。stages_in_scope（list<StageSlug>）→ stages（list<StageEntry> = slug + phase + plan_action + conditional、文書順の全ステージ）に改名・型変更 — U2 実装（Bolt B3）の `Started::stages()` と一致させた。in-scope の集合は各 StageEntry の plan_action = EXECUTE から導く
     projects_to:
       audit: [WORKFLOW_STARTED, PHASE_STARTED(initialization), STAGE_STARTED×3 + STAGE_COMPLETED×3（init 3 stage）, PHASE_SKIPPED（scope 外 phase）]
       state: 全フィールド初期化（Project Information / Scope Configuration / Stage Progress / Current Status）
