@@ -18930,3 +18930,21 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T22:03:41Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a21ff49f594950904
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T22:05:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b5-delegation-9
+**Agent ID**: ab5-delegation-9-a33745c5f969cc83
+**Message**: 委任 9 完了。`src/**` は 1 行も変更していません（`EventStoreImpl::path()` が既存だったため追加不要）。\n\n- **Red 実測**: 分岐検出テスト 3 本を両実装に流し、in-memory 3 本緑・SQLite 3 本赤を確認。既存 12 本はどれも落ちず、分岐が死角にあったことを裏づけました。所見にない **`reopen()` にも同型の分岐**があ
+
+---

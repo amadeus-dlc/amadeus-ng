@@ -16,7 +16,10 @@ use core_use_case::orchestration::{
     WorkflowExecutionRepository,
 };
 
-use super::{AT, StoreFixture, absent_intent_id, advanced, genesis, intent_id};
+use super::{
+    AT, StoreFixture, absent_intent_id, advanced, genesis, intent_id, store_genesis,
+    store_stage_completed,
+};
 
 /// 契約テストが使う投影名。
 fn projection() -> ProjectionName {
@@ -55,6 +58,83 @@ async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExe
         .expect("自律モードの設定");
     repository.store(&event, &aggregate).await.expect("store");
     advanced(aggregate, &event)
+}
+
+/// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
+///
+/// 2 度目の `open()` が 1 度目の書込を見てしまうと、契約テストは「前のテストが書いた行」に
+/// 依存しはじめる。空であることに加えて**独立して書ける**ことまで見るのは、単に空なだけの
+/// 使い捨てインスタンスと区別するためである。
+pub(crate) async fn open_twice_yields_independent_empty_stores<F: StoreFixture>(fixture: &F) {
+    let mut first = fixture.open();
+    store_genesis(&mut first).await;
+
+    let mut second = fixture.open();
+    let err = second
+        .find_by_id(&intent_id())
+        .await
+        .expect_err("2 度目の open は空のストアを指す");
+    assert_eq!(
+        err,
+        RepositoryError::NotFound {
+            intent_id: intent_id()
+        }
+    );
+
+    store_genesis(&mut second).await;
+    let found = second.find_by_id(&intent_id()).await.expect("読み直せる");
+    assert_eq!(found.version(), 1, "2 つ目のストアは独立して書ける");
+
+    let found = first.find_by_id(&intent_id()).await.expect("読み直せる");
+    assert_eq!(found.version(), 1, "1 つ目は 2 つ目の書込に影響されない");
+}
+
+/// `reader()` は**開いた時点までに書き終えた行**を見せる (BR2.7 の共通保証)。
+///
+/// 開いた**後**の書込が見えるかどうかは契約の外である ([`StoreFixture`] の逸脱節)。
+/// 2 度別々の時点で開いて確かめるのは、この保証が「開いた瞬間」に紐づくことを固定するため
+/// (1 度だけなら「たまたま全部見えた」と区別がつかない)。
+pub(crate) async fn reader_reflects_the_writes_completed_before_it_was_opened<F: StoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    let aggregate = store_genesis(&mut repository).await;
+
+    let early = fixture.reader(&repository);
+    let rows = early
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("差分読取");
+    assert_eq!(rows.len(), 1, "genesis まで書き終えた時点で開いた Reader");
+
+    store_stage_completed(&mut repository, aggregate).await;
+
+    let late = fixture.reader(&repository);
+    let rows = late
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("差分読取");
+    assert_eq!(rows.len(), 2, "2 件目を書き終えた後で開いた Reader");
+}
+
+/// `reopen()` は**開き直した時点までに書き終えた行**を見せる (BR2.7 の共通保証)。
+///
+/// `reader()` と同じく、開き直した**後**の書込が見えるかどうかは契約の外である。
+pub(crate) async fn reopen_reflects_the_writes_completed_before_it_was_reopened<F: StoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    let aggregate = store_genesis(&mut repository).await;
+
+    let early = fixture.reopen(&repository);
+    let found = early.find_by_id(&intent_id()).await.expect("読み直せる");
+    assert_eq!(found.version(), 1, "genesis まで書き終えた時点の開き直し");
+
+    store_stage_completed(&mut repository, aggregate).await;
+
+    let late = fixture.reopen(&repository);
+    let found = late.find_by_id(&intent_id()).await.expect("読み直せる");
+    assert_eq!(found.version(), 2, "2 件目を書き終えた後の開き直し");
 }
 
 /// 書いた集約は、同じストアを開き直した別インスタンスから同じ状態で読み直せる (BR1.2)。

@@ -25,29 +25,51 @@ pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 /// ストアに存在しない集約識別子。
 pub(crate) const ABSENT_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
 
-/// 同じストアを何度でも開き直せる試験装置。
+/// 契約テストが実装ごとの差を吸収するための試験装置。
 ///
-/// 「新しいインスタンスで読み直す」= 別プロセスからの再オープン相当を、実装によらず
-/// 同じ形で書けるようにするための唯一の抽象である。
+/// 「新しいインスタンスで読み直す」= 別プロセスからの再オープン相当を、実装によらず同じ形で
+/// 書けるようにするための唯一の抽象である。
 ///
-/// 開き直しの引数に**書き終えた Repository** を取るのは、ストアが共有ハンドルではなく
-/// 単一所有になったからである (coding-rules/interior-mutability.md)。SQLite 実装は同じ
-/// ファイルへ新しい接続を開いて引数を無視し、in-memory 実装は Repository が持つ 3 表を
-/// 引き継いだ別インスタンスを作る。どちらも「それまでに書き終えた行が見える別インスタンス」
-/// という同じ観測になる。
+/// 開き直し・Reader が引数に**書き終えた Repository** を取るのは、ストアが共有ハンドルでは
+/// なく単一所有になったからである (coding-rules/interior-mutability.md)。どこのストアを
+/// 指すかは引数の Repository が決め、試験装置は「唯一のストア」を抱え込まない。
+///
+/// # この trait が課す約束 (BR2.7 — 両実装に同じ約束を課す)
+///
+/// - [`open`](StoreFixture::open) は**空のストア**を指す新しい Repository を返す。同じ
+///   試験装置から 2 度呼べば、互いに独立した 2 つの空のストアになる。
+/// - [`reopen`](StoreFixture::reopen) / [`reader`](StoreFixture::reader) は、その呼出しの
+///   **時点までに `repository` が書き終えた行**が見える別インスタンスを返す。
+///
+/// # 契約の外 — 開いた後の書込 (適用範囲の明示)
+///
+/// `reopen` / `reader` で得たインスタンスが、それ**以降**に `repository` が書いた行を観測
+/// するかどうかは**実装依存**であり、BR2.7 の適用範囲外である。内部可変性を禁じている以上
+/// (coding-rules/interior-mutability.md)、in-memory 実装は 3 表の写しを渡すしかなく、
+/// SQLite 実装の「同じファイルへの生きた接続」と揃えるには共有可変状態が要るためである。
+///
+/// したがって契約テストは必ず**「書き終えてから開く」順序**で書くこと。逆順 (先に開いて後から
+/// 書く) を契約テストに書くと、片方の実装だけ通るテストになる。
+///
+/// 実装ごとの実際の挙動は、契約の外であっても
+/// `workflow_execution_repository_contract.rs` の実装固有テスト 4 本
+/// (`in_memory_*` / `sqlite_*` の `..._writes_made_after_...`) が固定している。挙動が変われば
+/// 必ずそのどれかが落ちる。
 pub(crate) trait StoreFixture {
     /// 試験対象の Repository 実装。
     type Repository: WorkflowExecutionRepository;
     /// 同じストアを読む `JournalReader` 実装。
     type Reader: JournalReader;
 
-    /// 空のストアを指す**新しい** Repository を開く。
+    /// **空のストア**を指す新しい Repository を開く (呼ぶたびに独立した空のストア)。
     fn open(&self) -> Self::Repository;
 
-    /// `repository` が書き終えたストアを、別のインスタンスから開き直す。
+    /// `repository` が**この呼出しの時点までに**書き終えたストアを、別のインスタンスから
+    /// 開き直す。
     fn reopen(&self, repository: &Self::Repository) -> Self::Repository;
 
-    /// `repository` が書き終えたストアを読む `JournalReader` を開く。
+    /// `repository` が**この呼出しの時点までに**書き終えたストアを読む `JournalReader` を
+    /// 開く。
     fn reader(&self, repository: &Self::Repository) -> Self::Reader;
 }
 
@@ -105,6 +127,28 @@ pub(crate) fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
         AT,
     )
     .expect("合成計画は start の前提を満たす")
+}
+
+/// genesis (`Started`) を 1 件書き、版を載せ替えた集約を返す。
+pub(crate) async fn store_genesis<R: WorkflowExecutionRepository>(
+    repository: &mut R,
+) -> WorkflowExecution {
+    let (aggregate, event) = genesis();
+    repository
+        .store(&event, &aggregate)
+        .await
+        .expect("genesis の store は通る");
+    advanced(aggregate, &event)
+}
+
+/// 続きの 1 件 (`StageCompleted`) を書き、版を載せ替えた集約を返す。
+pub(crate) async fn store_stage_completed<R: WorkflowExecutionRepository>(
+    repository: &mut R,
+    mut aggregate: WorkflowExecution,
+) -> WorkflowExecution {
+    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    repository.store(&event, &aggregate).await.expect("store");
+    advanced(aggregate, &event)
 }
 
 /// 書込後に呼出側が行う版の載せ替え (BR1.3 — `store` は引数の集約を変更しない)。
