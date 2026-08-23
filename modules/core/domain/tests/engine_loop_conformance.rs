@@ -233,7 +233,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
     let (mut agg, started) = WorkflowExecution::start_with_entries(
-        IntentId::parse("itf-engine-loop").unwrap(),
+        IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
         &StartRequest::new("itf", "conformance"),

@@ -57,7 +57,7 @@ pub mod lock {
     pub const ACQUIRE_FAILED_STATUS: GoldenStatus = GoldenStatus::Captured;
 
     /// acquire 予算超過の呼出側翻訳文言 (`acquireAuditLock` は `false` を返し、呼出側が
-    /// この文言へ翻訳する — 11-workspace §4 の `AcquireError::Exhausted` に対応)。
+    /// この文言へ翻訳する — 11-workspace §4 の `退役済みの `AcquireError::Exhausted`（ADR-007 / Bolt B5）相当の経路` に対応)。
     ///
     /// upstream ではこの文言が `aidlc-audit.ts` の 4 箇所 (`:543`, `:782`, `:897`, `:1150`)
     /// に現れ、うち `:897` / `:1150` は throw ではなく `jsonError(...)` — **例外経路と JSON

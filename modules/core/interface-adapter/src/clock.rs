@@ -1,17 +1,16 @@
 //! 時計 — **横断機構の注入シームであって Gateway ではない** (clean-architecture: 時計は
 //! Infrastructure が所有する機構。aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 //!
-//! どのユースケースもこの trait を消費しない。存在理由は `FsWorkspaceLock` の stale 判定と
-//! owner stamp 押印を、実時間の経過に頼らず決定的に検証できるようにすることだけである
-//! (11-workspace §4「clock と process-probe は trait で注入可能に」)。したがってアプリ境界の
-//! ポートとして use-case 層には置かず、実装と同じアダプタ層に閉じ込める。
+//! どのユースケースもこの trait を消費しない。存在理由は、時刻に依存する Gateway の挙動
+//! (イベント記録時刻の押印など) を、実時間の経過に頼らず決定的に検証できるようにすること
+//! だけである。したがってアプリ境界のポートとして use-case 層には置かず、実装と同じ
+//! アダプタ層に閉じ込める。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 現在時刻の抽象 (ミリ秒, Unix epoch 起点)。テストで fake を注入するための唯一の時刻源。
 pub trait Clock {
-    /// Unix epoch 起点の経過ミリ秒。stale 判定 (年齢 = この値 − owner stamp) と
-    /// owner stamp の押印はどちらもこの単位で行う。
+    /// Unix epoch 起点の経過ミリ秒。記録時刻の押印と経過時間の算出はこの単位で行う。
     #[must_use]
     fn now_ms(&self) -> u64;
 }
@@ -58,7 +57,7 @@ impl FakeClock {
         self.now_ms.store(now_ms, Ordering::SeqCst);
     }
 
-    /// 時刻を `delta_ms` だけ進める。stale 閾値の跨ぎをテストで作るための操作。
+    /// 時刻を `delta_ms` だけ進める。時刻に依存する分岐をテストで作るための操作。
     /// `u64::MAX` 到達後は飽和し、巻き戻らない (ラップアラウンドで時刻が逆行しないため)。
     pub fn advance(&self, delta_ms: u64) {
         let _ = self

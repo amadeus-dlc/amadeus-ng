@@ -2,8 +2,8 @@
 
 **裁定日**: 2026-08-22（オーナー）
 **出典**: オーナー自作スキル [j5ik2o-tell-dont-ask](https://github.com/j5ik2o/ai-tools/tree/main/plugins/software-design/skills/j5ik2o-tell-dont-ask) / [j5ik2o-breach-encapsulation-naming](https://github.com/j5ik2o/ai-tools/tree/main/plugins/software-design/skills/j5ik2o-breach-encapsulation-naming)
-**適用例**: PR #12（reap 適格判定のドメイン抽出・CheckboxState 分類述語）
-**機械強制**: `cargo lint`（`checkbox-vocabulary` / `reap-decision-locality`。ルール追加時は検出力を証明する赤例テスト必須）
+**適用例**: PR #12（reap 適格判定のドメイン抽出（退役済み — ADR-007 / Bolt B5。以後は履歴としての例）・CheckboxState 分類述語）
+**機械強制**: `cargo lint`（`checkbox-vocabulary`。ルール追加時は検出力を証明する赤例テスト必須）
 
 ## 適用領域（2026-08-22 オーナー明確化）
 
@@ -13,7 +13,8 @@
 
 - **違反** = 他オブジェクトから getter で状態を抜き出し、**その所有者が持つべき（または既に持つ）判断**を呼出側で実装すること。典型形: `if b.x() == .. && b.y() > .. { /* A が B の代わりに決める */ }`。
 - 判断は状態の所有者へ移す。値の分類語彙（例: `CheckboxState` の in-flight / finished / active）はその型が述語として公開し、呼出側は変種集合を再列挙しない。
-- ドメインに判断の単一実装があるとき（例: `lock_protocol::reap_eligible`）、Gateway は生データから同じ判断を再実装せず委譲する。境界規約（`>` か `>=` か等）を 2 箇所に重複させない。
+- ドメインに判断の単一実装があるとき（例: `CheckboxState` の分類述語 in-flight / finished / active）、呼出側は生データから同じ判断を再実装せず委譲する。境界規約（`>` か `>=` か等）や変種集合を 2 箇所に重複させない。
+  - 履歴上の実例だった `lock_protocol::reap_eligible`（Gateway が `stale_ms` 比較を再実装しないよう境界規約を単一実装に閉じ込めた例）は退役済み — ADR-007 / Bolt B5。以後は履歴としての例であり、規範は上の `checkbox-vocabulary` の例で成立する。
 
 ## 違反に数えない（明示的例外）
 

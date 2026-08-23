@@ -3,4 +3,3 @@
 #![forbid(unsafe_code)]
 
 pub mod orchestration;
-pub mod workspace;

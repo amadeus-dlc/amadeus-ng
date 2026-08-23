@@ -6,7 +6,7 @@
 
 | ルール | 一言 | 機械強制 |
 | --- | --- | --- |
-| [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ | `cargo lint`（checkbox-vocabulary / reap-decision-locality） |
+| [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ | `cargo lint`（checkbox-vocabulary） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準（未リント化） |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由 | `cargo lint`（no-public-fields） |
 | [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化）+ `cargo lint` ルール化予定 |

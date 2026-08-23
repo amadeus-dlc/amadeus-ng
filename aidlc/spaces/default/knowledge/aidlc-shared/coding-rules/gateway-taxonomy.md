@@ -19,7 +19,7 @@
 
 判定は「**どのユースケースがこのポートを消費するか**」で行う。答えられないなら、それはアプリ境界のポートではなく、実装の内部注入シームである。
 
-- 実装は**アダプタ層の機構モジュール**に置く（本リポジトリでは `core_interface_adapter::{clock, process_probe}` — コンテキスト（`orchestration` / `workspace`）の外、クレート root）。
+- 実装は**アダプタ層の機構モジュール**に置く（本リポジトリでは `core_interface_adapter::{clock}` — コンテキスト（`orchestration` / `workspace`）の外、クレート root）。
 - 配線（実物と fake の差し替え）は **composition root** が行う。
 - use-case 層には trait を置かない。置くと「ユースケースが消費しないポート」がポート表に居座り、Gateway 責務の分類が濁る。
 

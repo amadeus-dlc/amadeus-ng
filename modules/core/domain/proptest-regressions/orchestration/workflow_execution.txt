@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a37a3f074285aa8adbfd3b2645412c0e5123b6ba97e8fef1e77aabed0da70ecc # shrinks to stages = [StageEntry { slug: StageSlug("stage-0"), phase: Initialization, plan_action: Execute, conditional: false }, StageEntry { slug: StageSlug("stage-1"), phase: Inception, plan_action: Skip, conditional: false }], cmds = [Complete]
+cc 0343e40b3122c3a41d155d332f6d0ec99437861d790886a7f27405000b4e8a64 # shrinks to stages = [StageEntry { slug: StageSlug("stage-0"), phase: Initialization, plan_action: Execute, conditional: false }, StageEntry { slug: StageSlug("stage-1"), phase: Inception, plan_action: Skip, conditional: false }], cmds = [Complete]
+cc fe15d94544a1909bdc875babc58a8da79765262a212585a0629c0502f21432a9 # shrinks to stages = [StageEntry { slug: StageSlug("stage-0"), phase: Initialization, plan_action: Execute, conditional: false }, StageEntry { slug: StageSlug("stage-1"), phase: Inception, plan_action: Skip, conditional: false }], cmds = [Complete]
+cc bb66babee229987374a7f6cd6f3c5c1975c49151240ce2b27890fcd15ea2f07c # shrinks to stages = [StageEntry { slug: StageSlug("stage-0"), phase: Initialization, plan_action: Execute, conditional: false }, StageEntry { slug: StageSlug("stage-1"), phase: Inception, plan_action: Skip, conditional: false }], cmds = [Complete]

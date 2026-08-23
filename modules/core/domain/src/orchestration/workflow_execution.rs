@@ -14,7 +14,7 @@
 //!   `gated(s) = s != 0` は initialization 1 ステージの合成計画に対する抽象で、ITF 準拠テストは
 //!   その合成計画で駆動する (BR2.5)。
 //! - **時計を持たない** (NFR3.1): `occurred_at` は呼出側 (ユースケース) が Clock から渡す。
-//! - **serde に依存しない** (BR5.2): 永続化境界は `snapshot()` / `from_snapshot()` の値オブジェクト。
+//! - **serde に依存しない** (BR5.2): 永続化境界は `state()` / `from_state()` の値オブジェクト。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
 //!
@@ -30,18 +30,18 @@ use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
-use super::snapshot_error::SnapshotError;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::start_error::StartError;
 use super::start_request::StartRequest;
+use super::state_error::StateError;
 use super::status::Status;
 use super::workflow_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
     StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
     WorkflowExecutionEventPayload,
 };
-use super::workflow_execution_snapshot::WorkflowExecutionSnapshot;
+use super::workflow_execution_state::WorkflowExecutionState;
 use crate::workflow_definition::{
     DefinitionRevision, ExecutionKind, PhaseId, PlanAction, StageSlug, UnknownScope,
     WorkflowDefinition, WorkflowDefinitionId,
@@ -70,8 +70,8 @@ pub struct WorkflowExecution {
     definition_id: WorkflowDefinitionId,
     definition_revision: DefinitionRevision,
     /// 文書順の解決済み計画。`stages` / `plan` / `conditional` の 3 属性をこの 1 列が担う
-    /// (`plan` = `plan_action()`、`conditional` = `is_conditional()`) — スナップショットは
-    /// C6 の列構成に合わせて 3 列へ展開し、`from_snapshot` が整合を検査する。
+    /// (`plan` = `plan_action()`、`conditional` = `is_conditional()`) — 状態の写し (memento) は
+    /// C6 の列構成に合わせて 3 列へ展開し、`from_state` が整合を検査する。
     stages: Vec<StageEntry>,
     overlay: Vec<PlanAction>,
     checkbox: Vec<CheckboxState>,
@@ -924,12 +924,12 @@ impl WorkflowExecution {
         Ok(())
     }
 
-    // ---- W3: スナップショット (BR5.2 / BR5.3) ----
+    // ---- W3: 状態の写し (memento) (BR5.2 / BR5.3) ----
 
     /// 全状態を値オブジェクトへ写す。`plan` / `conditional` は解決済み計画からの展開 (C6 の列構成)。
     #[must_use]
-    pub fn snapshot(&self) -> WorkflowExecutionSnapshot {
-        WorkflowExecutionSnapshot {
+    pub fn state(&self) -> WorkflowExecutionState {
+        WorkflowExecutionState {
             intent_id: self.intent_id.clone(),
             definition_id: self.definition_id.clone(),
             definition_revision: self.definition_revision.clone(),
@@ -949,58 +949,56 @@ impl WorkflowExecution {
         }
     }
 
-    /// スナップショットから集約を復元する (不変条件を検査する唯一の再水和経路)。
+    /// 状態の写し (memento) から集約を復元する (不変条件を検査する唯一の再水和経路)。
     ///
     /// # Errors
     ///
     /// 長さ不一致・`plan` / `conditional` と解決済み計画の食い違い・範囲外カーソル・
     /// `cursor_in_scope` / `at_most_one_active` / `no_gate_bypass` / `parked_position` の違反・
     /// `seq_nr` = 0 を `InvariantViolation` で拒否する。
-    pub fn from_snapshot(
-        snapshot: WorkflowExecutionSnapshot,
-    ) -> Result<WorkflowExecution, SnapshotError> {
-        let count = snapshot.stages.len();
-        if snapshot.plan.len() != count {
-            return Err(SnapshotError::InvariantViolation(
+    pub fn from_state(state: WorkflowExecutionState) -> Result<WorkflowExecution, StateError> {
+        let count = state.stages.len();
+        if state.plan.len() != count {
+            return Err(StateError::InvariantViolation(
                 "length mismatch: plan".to_string(),
             ));
         }
-        if snapshot.conditional.len() != count {
-            return Err(SnapshotError::InvariantViolation(
+        if state.conditional.len() != count {
+            return Err(StateError::InvariantViolation(
                 "length mismatch: conditional".to_string(),
             ));
         }
-        for (index, entry) in snapshot.stages.iter().enumerate() {
-            if snapshot.plan.get(index).copied() != Some(entry.plan_action()) {
-                return Err(SnapshotError::InvariantViolation(format!(
+        for (index, entry) in state.stages.iter().enumerate() {
+            if state.plan.get(index).copied() != Some(entry.plan_action()) {
+                return Err(StateError::InvariantViolation(format!(
                     "plan disagrees with stages at {index}"
                 )));
             }
-            if snapshot.conditional.get(index).copied() != Some(entry.is_conditional()) {
-                return Err(SnapshotError::InvariantViolation(format!(
+            if state.conditional.get(index).copied() != Some(entry.is_conditional()) {
+                return Err(StateError::InvariantViolation(format!(
                     "conditional disagrees with stages at {index}"
                 )));
             }
         }
         let execution = WorkflowExecution {
-            intent_id: snapshot.intent_id,
-            definition_id: snapshot.definition_id,
-            definition_revision: snapshot.definition_revision,
-            stages: snapshot.stages,
-            overlay: snapshot.overlay,
-            checkbox: snapshot.checkbox,
-            cursor: StageIndex::new(snapshot.cursor),
-            status: snapshot.status,
-            parked_at: snapshot.parked_at.map(StageIndex::new),
-            autonomy: snapshot.autonomy,
-            approved: snapshot.approved,
-            revision_count: snapshot.revision_count,
-            seq_nr: snapshot.seq_nr,
-            version: snapshot.version,
+            intent_id: state.intent_id,
+            definition_id: state.definition_id,
+            definition_revision: state.definition_revision,
+            stages: state.stages,
+            overlay: state.overlay,
+            checkbox: state.checkbox,
+            cursor: StageIndex::new(state.cursor),
+            status: state.status,
+            parked_at: state.parked_at.map(StageIndex::new),
+            autonomy: state.autonomy,
+            approved: state.approved,
+            revision_count: state.revision_count,
+            seq_nr: state.seq_nr,
+            version: state.version,
         };
         execution
             .check_invariants()
-            .map_err(SnapshotError::InvariantViolation)?;
+            .map_err(StateError::InvariantViolation)?;
         Ok(execution)
     }
 
@@ -1134,9 +1132,9 @@ mod tests {
     use super::*;
     use crate::orchestration::{
         ApplyError, AutonomyMode, CommandError, EngineSignal, IntentId, JumpDirection,
-        NextDecision, NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageEntry,
-        StageIndex, StartError, StartRequest, Started, Status, WorkflowExecutionEvent,
-        WorkflowExecutionEventPayload, WorkflowExecutionSnapshotBuilder,
+        NextDecision, NextRequest, PhaseBoundary, StageCompleted, StageEntry, StageIndex,
+        StartError, StartRequest, Started, StateError, Status, WorkflowExecutionEvent,
+        WorkflowExecutionEventPayload, WorkflowExecutionStateBuilder,
     };
     use crate::workflow_definition::{
         DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata,
@@ -1156,7 +1154,7 @@ mod tests {
     }
 
     fn intent() -> IntentId {
-        IntentId::parse("260822-stage1-selfhost").unwrap()
+        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
     fn def_id(value: &str) -> WorkflowDefinitionId {
@@ -1857,32 +1855,32 @@ mod tests {
         assert_eq!(approved.phase_boundary(), Some(boundary));
     }
 
-    // ---- W3: snapshot / from_snapshot (BR5.2 / BR5.3) ----
+    // ---- W3: state / from_state (BR5.2 / BR5.3) ----
 
     #[test]
-    fn the_snapshot_carries_every_attribute_and_round_trips() {
+    fn the_state_carries_every_attribute_and_round_trips() {
         let mut w = all_exec(4);
         w.complete_stage(AT).unwrap();
         w.open_gate(Vec::new(), AT).unwrap();
         w.reject_gate(None, AT).unwrap();
-        let snapshot = w.snapshot();
-        assert_eq!(snapshot.intent_id(), w.intent_id());
-        assert_eq!(snapshot.definition_id(), w.definition_id());
-        assert_eq!(snapshot.definition_revision(), w.definition_revision());
-        assert_eq!(snapshot.stages(), w.stages());
-        assert_eq!(snapshot.plan(), [Execute, Execute, Execute, Execute]);
-        assert_eq!(snapshot.overlay(), [Execute, Execute, Execute, Execute]);
-        assert_eq!(snapshot.conditional(), [false, false, false, false]);
-        assert_eq!(snapshot.checkbox()[0], Completed);
-        assert_eq!(snapshot.cursor(), w.cursor());
-        assert_eq!(snapshot.status(), Status::Running);
-        assert_eq!(snapshot.parked_at(), None);
-        assert_eq!(snapshot.autonomy(), AutonomyMode::Gated);
-        assert_eq!(snapshot.approved(), [false, false, false, false]);
-        assert_eq!(snapshot.revision_count(), [0, 1, 0, 0]);
-        assert_eq!(snapshot.seq_nr(), w.seq_nr());
-        assert_eq!(snapshot.version(), 0);
-        assert_eq!(WorkflowExecution::from_snapshot(snapshot).unwrap(), w);
+        let state = w.state();
+        assert_eq!(state.intent_id(), w.intent_id());
+        assert_eq!(state.definition_id(), w.definition_id());
+        assert_eq!(state.definition_revision(), w.definition_revision());
+        assert_eq!(state.stages(), w.stages());
+        assert_eq!(state.plan(), [Execute, Execute, Execute, Execute]);
+        assert_eq!(state.overlay(), [Execute, Execute, Execute, Execute]);
+        assert_eq!(state.conditional(), [false, false, false, false]);
+        assert_eq!(state.checkbox()[0], Completed);
+        assert_eq!(state.cursor(), w.cursor());
+        assert_eq!(state.status(), Status::Running);
+        assert_eq!(state.parked_at(), None);
+        assert_eq!(state.autonomy(), AutonomyMode::Gated);
+        assert_eq!(state.approved(), [false, false, false, false]);
+        assert_eq!(state.revision_count(), [0, 1, 0, 0]);
+        assert_eq!(state.seq_nr(), w.seq_nr());
+        assert_eq!(state.version(), 0);
+        assert_eq!(WorkflowExecution::from_state(state).unwrap(), w);
     }
 
     #[test]
@@ -1891,15 +1889,15 @@ mod tests {
         let stored = w.clone().with_version(7);
         assert_eq!(stored.version(), 7);
         assert_eq!(stored.seq_nr(), w.seq_nr());
-        assert_eq!(stored.snapshot().version(), 7);
+        assert_eq!(stored.state().version(), 7);
     }
 
     #[test]
-    fn from_snapshot_rejects_a_broken_invariant() {
+    fn from_state_rejects_a_broken_invariant() {
         let w = all_exec(3);
-        let base = w.snapshot();
+        let base = w.state();
 
-        let empty = WorkflowExecutionSnapshotBuilder::new(
+        let empty = WorkflowExecutionStateBuilder::new(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1907,12 +1905,12 @@ mod tests {
         )
         .build();
         assert!(matches!(
-            WorkflowExecution::from_snapshot(empty),
-            Err(SnapshotError::InvariantViolation(_))
+            WorkflowExecution::from_state(empty),
+            Err(StateError::InvariantViolation(_))
         ));
 
         for broken in [
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1920,7 +1918,7 @@ mod tests {
             )
             .checkbox(vec![InProgress])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1928,7 +1926,7 @@ mod tests {
             )
             .cursor(9)
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1936,7 +1934,7 @@ mod tests {
             )
             .overlay(vec![Skip, Execute, Execute])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1944,7 +1942,7 @@ mod tests {
             )
             .checkbox(vec![InProgress, InProgress, Pending])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1952,7 +1950,7 @@ mod tests {
             )
             .checkbox(vec![InProgress, Completed, Pending])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1960,7 +1958,7 @@ mod tests {
             )
             .parked_at(Some(2))
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1968,7 +1966,7 @@ mod tests {
             )
             .parked_at(Some(9))
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1976,7 +1974,7 @@ mod tests {
             )
             .approved(vec![false])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1984,7 +1982,7 @@ mod tests {
             )
             .revision_count(vec![0, 0])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1992,7 +1990,7 @@ mod tests {
             )
             .seq_nr(0)
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2000,7 +1998,7 @@ mod tests {
             )
             .plan(vec![Skip, Execute, Execute])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2011,14 +2009,14 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    WorkflowExecution::from_snapshot(broken),
-                    Err(SnapshotError::InvariantViolation(_))
+                    WorkflowExecution::from_state(broken),
+                    Err(StateError::InvariantViolation(_))
                 ),
-                "a broken snapshot must be refused"
+                "a broken state must be refused"
             );
         }
 
-        assert!(WorkflowExecution::from_snapshot(base).is_ok());
+        assert!(WorkflowExecution::from_state(base).is_ok());
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2125,7 +2123,7 @@ mod tests {
             (Pending, false),
             (AwaitingApproval, false),
         ] {
-            let snapshot = WorkflowExecutionSnapshotBuilder::new(
+            let state = WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2137,7 +2135,7 @@ mod tests {
             .parked_at(Some(1))
             .seq_nr(4)
             .build();
-            let w = WorkflowExecution::from_snapshot(snapshot).unwrap();
+            let w = WorkflowExecution::from_state(state).unwrap();
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
                 NextDecision::RecoverSkipInconsistency {
@@ -2420,7 +2418,7 @@ mod tests {
 
     proptest! {
         /// (a) decide 後の状態 == 旧状態 + apply_event、(d) Quint 不変条件、(e) Err 無副作用、
-        /// (f) from_snapshot(snapshot()) == self を全ステップで固定する。
+        /// (f) from_state(state()) == self を全ステップで固定する。
         #[test]
         fn every_command_equals_the_old_state_plus_its_event(
             stages in synthetic_stages(),
@@ -2437,12 +2435,12 @@ mod tests {
                     prop_assert_eq!(&replayed, &w);
                 }
                 assert_quint_invariants(&w);
-                let restored = WorkflowExecution::from_snapshot(w.snapshot()).unwrap();
+                let restored = WorkflowExecution::from_state(w.state()).unwrap();
                 prop_assert_eq!(&restored, &w);
             }
         }
 
-        /// (b) リプレイの決定性 — スナップショット + 以降のイベント列 == 通常実行 (BR2.3)。
+        /// (b) リプレイの決定性 — 状態の写し (memento) + 以降のイベント列 == 通常実行 (BR2.3)。
         /// (c) seq_nr は 1 イベントにつき 1 だけ増え、順序違反は SequenceGap で拒否される (BR2.1)。
         #[test]
         fn replaying_the_event_stream_reproduces_the_executed_aggregate(
@@ -2451,7 +2449,7 @@ mod tests {
         ) {
             let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
-            let genesis = w.snapshot();
+            let genesis = w.state();
             let mut events = Vec::new();
             let mut expected_seq = w.seq_nr();
             for cmd in &cmds {
@@ -2464,7 +2462,7 @@ mod tests {
                 }
             }
 
-            let mut replayed = WorkflowExecution::from_snapshot(genesis).unwrap();
+            let mut replayed = WorkflowExecution::from_state(genesis).unwrap();
             for event in &events {
                 replayed.apply_event(event).unwrap();
             }

@@ -2,47 +2,98 @@
 
 use std::fmt;
 
-/// intent の記録ディレクトリ名にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
+/// 正準形の文字数 (`8-4-4-4-12` + ハイフン 4)。
+const CANONICAL_LEN: usize = 36;
+/// `-` が来る 0 始まり位置。
+const HYPHEN_POSITIONS: [usize; 4] = [8, 13, 18, 23];
+/// version nibble の 0 始まり位置 (16 進 13 桁目)。
+const VERSION_POSITION: usize = 14;
+/// variant nibble の 0 始まり位置 (16 進 17 桁目)。
+const VARIANT_POSITION: usize = 19;
+/// UUIDv7 の version nibble。
+const VERSION_NIBBLE: char = '7';
+
+/// `intents.json` の uuid にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
-/// 形は **kebab 表記** (`[a-z0-9]` の 1 文字以上からなる区間を `-` で連結) に限る。
-/// `Ord` は生文字列の辞書順。
+/// 形は **UUIDv7 の正準表記**に限る —
+/// `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
+/// (小文字 36 字、version nibble は `7`、variant nibble は RFC の `10xx` = `8` / `9` / `a` / `b`)。
+/// 大文字・短縮形・他 version・記録ディレクトリ名の kebab 表記は受理しない (BR4.1)。
+///
+/// `Ord` は生文字列の辞書順。UUIDv7 の先頭 48 bit は Unix ミリ秒なので、この順序は
+/// ミリ秒粒度の作成順になる (upstream 同等の性質。型としては形式だけを保証し、
+/// 時刻の妥当性は検証しない — entities.md IntentId)。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntentId(String);
 
-/// `IntentId::parse` が拒否する形。
+/// `IntentId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentIdError {
     /// 前後の空白を除くと空になる。
     Empty,
-    /// `-` で区切った区間が空 (先頭・末尾の `-`、`--` の連続)。位置は 0 始まりの区間番号。
-    EmptySegment {
-        /// 空だった区間の 0 始まり位置。
+    /// 正準形の 36 字でない。
+    Length {
+        /// 実際の文字数 (前後の空白を除いたもの)。
+        actual: usize,
+    },
+    /// ハイフン位置か 16 進小文字の並びが正準形に合わない。位置は 0 始まりの文字位置。
+    Format {
+        /// 最初に形式へ合わなかった文字の 0 始まり位置。
         position: usize,
     },
-    /// `[a-z0-9-]` 以外の文字を含む。
-    InvalidChar(char),
+    /// version nibble が `7` でない (UUIDv7 以外)。
+    Version {
+        /// 実際に置かれていた nibble。
+        found: char,
+    },
+    /// variant nibble が RFC の `10xx` (`8` / `9` / `a` / `b`) でない。
+    Variant {
+        /// 実際に置かれていた nibble。
+        found: char,
+    },
+}
+
+/// 16 進の小文字桁 (`[0-9a-f]`)。大文字は受理しない。
+const fn is_lower_hex(c: char) -> bool {
+    c.is_ascii_digit() || matches!(c, 'a'..='f')
+}
+
+/// RFC の variant nibble (`10xx`)。
+const fn is_variant_nibble(c: char) -> bool {
+    matches!(c, '8' | '9' | 'a' | 'b')
 }
 
 impl IntentId {
-    /// 前後の空白を落としてから検証する。
+    /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
     ///
     /// # Errors
     ///
-    /// 空・空区間・`[a-z0-9-]` 以外の文字を拒否する。
+    /// 空・36 字でない長さ・ハイフン位置や 16 進小文字の並びの違反・version nibble が `7`
+    /// 以外・variant nibble が `8` / `9` / `a` / `b` 以外を、それぞれ拒否する。
     pub fn parse(s: &str) -> Result<IntentId, IntentIdError> {
         let trimmed = s.trim();
         if trimmed.is_empty() {
             return Err(IntentIdError::Empty);
         }
-        if let Some(c) = trimmed
-            .chars()
-            .find(|c| !(c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-'))
-        {
-            return Err(IntentIdError::InvalidChar(c));
+        let actual = trimmed.chars().count();
+        if actual != CANONICAL_LEN {
+            return Err(IntentIdError::Length { actual });
         }
-        for (position, segment) in trimmed.split('-').enumerate() {
-            if segment.is_empty() {
-                return Err(IntentIdError::EmptySegment { position });
+        for (position, c) in trimmed.chars().enumerate() {
+            if HYPHEN_POSITIONS.contains(&position) {
+                if c != '-' {
+                    return Err(IntentIdError::Format { position });
+                }
+                continue;
+            }
+            if !is_lower_hex(c) {
+                return Err(IntentIdError::Format { position });
+            }
+            if position == VERSION_POSITION && c != VERSION_NIBBLE {
+                return Err(IntentIdError::Version { found: c });
+            }
+            if position == VARIANT_POSITION && !is_variant_nibble(c) {
+                return Err(IntentIdError::Variant { found: c });
             }
         }
         Ok(IntentId(trimmed.to_string()))
@@ -65,10 +116,21 @@ impl fmt::Display for IntentIdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IntentIdError::Empty => f.write_str("empty"),
-            IntentIdError::EmptySegment { position } => {
-                write!(f, "empty segment at position {position}")
+            IntentIdError::Length { actual } => {
+                write!(f, "length {actual} (expected {CANONICAL_LEN})")
             }
-            IntentIdError::InvalidChar(c) => write!(f, "invalid character '{c}'"),
+            IntentIdError::Format { position } => {
+                write!(f, "invalid character at position {position}")
+            }
+            IntentIdError::Version { found } => {
+                write!(f, "version nibble '{found}' (expected '{VERSION_NIBBLE}')")
+            }
+            IntentIdError::Variant { found } => {
+                write!(
+                    f,
+                    "variant nibble '{found}' (expected one of '8' '9' 'a' 'b')"
+                )
+            }
         }
     }
 }
@@ -80,13 +142,17 @@ mod tests {
     use super::*;
     use std::collections::{BTreeSet, HashSet};
 
+    /// `intents.json` の実データ (11 号 §2.2 / entities.md IntentId)。
+    const SAMPLE: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
     #[test]
-    fn parse_accepts_the_record_directory_name() {
+    fn parse_accepts_a_lowercase_uuidv7() {
         for raw in [
-            "260822-stage1-selfhost",
-            "stage1-selfhost-a1b2c3d4",
-            "u2",
-            "0f",
+            SAMPLE,
+            // variant nibble は 8 / 9 / a / b のいずれでもよい (10xx)。
+            "018f3b2c-4d5e-7f60-8abc-def012345678",
+            "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+            "0190aaaa-bbbb-7ccc-bddd-eeeeffff0000",
         ] {
             let id = IntentId::parse(raw).unwrap();
             assert_eq!(id.as_str(), raw);
@@ -96,9 +162,9 @@ mod tests {
 
     #[test]
     fn surrounding_whitespace_is_trimmed_before_validation() {
-        let id = IntentId::parse("  260822-stage1-selfhost\n").unwrap();
-        assert_eq!(id.as_str(), "260822-stage1-selfhost");
-        assert_eq!(id, IntentId::parse("260822-stage1-selfhost").unwrap());
+        let id = IntentId::parse("  01a02785-1bd8-76eb-aeea-5aa303ebd5b6\n").unwrap();
+        assert_eq!(id.as_str(), SAMPLE);
+        assert_eq!(id, IntentId::parse(SAMPLE).unwrap());
     }
 
     #[test]
@@ -108,52 +174,117 @@ mod tests {
     }
 
     #[test]
-    fn a_segment_may_not_be_empty() {
+    fn a_value_that_is_not_thirty_six_characters_is_rejected() {
         assert_eq!(
-            IntentId::parse("a--b"),
-            Err(IntentIdError::EmptySegment { position: 1 })
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b"),
+            Err(IntentIdError::Length { actual: 35 })
         );
         assert_eq!(
-            IntentId::parse("-abc"),
-            Err(IntentIdError::EmptySegment { position: 0 })
-        );
-        assert_eq!(
-            IntentId::parse("abc-"),
-            Err(IntentIdError::EmptySegment { position: 1 })
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6f"),
+            Err(IntentIdError::Length { actual: 37 })
         );
     }
 
     #[test]
-    fn only_lowercase_alphanumerics_and_the_separator_are_allowed() {
+    fn the_kebab_record_directory_name_is_no_longer_accepted() {
+        // BR4.1: 旧形式 (記録ディレクトリ名) の受理は廃止した。長さで落ちる。
         assert_eq!(
-            IntentId::parse("Stage1"),
-            Err(IntentIdError::InvalidChar('S'))
+            IntentId::parse("260822-stage1-selfhost"),
+            Err(IntentIdError::Length { actual: 22 })
         );
         assert_eq!(
-            IntentId::parse("stage_1"),
-            Err(IntentIdError::InvalidChar('_'))
+            IntentId::parse("u2"),
+            Err(IntentIdError::Length { actual: 2 })
+        );
+    }
+
+    #[test]
+    fn uppercase_hex_is_rejected() {
+        assert_eq!(
+            IntentId::parse("01A02785-1bd8-76eb-aeea-5aa303ebd5b6"),
+            Err(IntentIdError::Format { position: 2 })
         );
         assert_eq!(
-            IntentId::parse("stage 1"),
-            Err(IntentIdError::InvalidChar(' '))
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303EBD5b6"),
+            Err(IntentIdError::Format { position: 30 })
+        );
+    }
+
+    #[test]
+    fn hyphens_must_sit_at_the_canonical_positions() {
+        // 8 文字目 (0 始まり位置 8) に `-` が無い。
+        assert_eq!(
+            IntentId::parse("01a027851-bd8-76eb-aeea-5aa303ebd5b6"),
+            Err(IntentIdError::Format { position: 8 })
+        );
+        // 16 進が来るべき位置に `-` がある。
+        assert_eq!(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303-bd5b6"),
+            Err(IntentIdError::Format { position: 30 })
+        );
+    }
+
+    #[test]
+    fn non_hex_characters_are_rejected() {
+        assert_eq!(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303gbd5b6"),
+            Err(IntentIdError::Format { position: 30 })
+        );
+    }
+
+    #[test]
+    fn the_version_nibble_must_be_seven() {
+        // UUIDv4 (13 番目の 16 進桁が 4)。
+        assert_eq!(
+            IntentId::parse("01a02785-1bd8-46eb-aeea-5aa303ebd5b6"),
+            Err(IntentIdError::Version { found: '4' })
+        );
+        assert_eq!(
+            IntentId::parse("01a02785-1bd8-16eb-aeea-5aa303ebd5b6"),
+            Err(IntentIdError::Version { found: '1' })
+        );
+    }
+
+    #[test]
+    fn the_variant_nibble_must_encode_the_rfc_variant() {
+        // 17 番目の 16 進桁は 8 / 9 / a / b (2 進 10xx) のみ。
+        assert_eq!(
+            IntentId::parse("01a02785-1bd8-76eb-ceea-5aa303ebd5b6"),
+            Err(IntentIdError::Variant { found: 'c' })
+        );
+        assert_eq!(
+            IntentId::parse("01a02785-1bd8-76eb-7eea-5aa303ebd5b6"),
+            Err(IntentIdError::Variant { found: '7' })
         );
     }
 
     #[test]
     fn ordering_is_the_lexicographic_order_of_the_raw_string() {
-        let mut sorted: Vec<IntentId> = ["b-2", "a-1", "c-3"]
-            .iter()
-            .map(|s| IntentId::parse(s).unwrap())
-            .collect();
+        // UUIDv7 の先頭 48 bit は Unix ミリ秒なので、文字列順が作成順になる。
+        let mut sorted: Vec<IntentId> = [
+            "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+            "018f3b2c-4d5e-7f60-8abc-def012345678",
+            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6",
+        ]
+        .iter()
+        .map(|s| IntentId::parse(s).unwrap())
+        .collect();
         sorted.sort();
         let raw: Vec<&str> = sorted.iter().map(IntentId::as_str).collect();
-        assert_eq!(raw, ["a-1", "b-2", "c-3"]);
+        assert_eq!(
+            raw,
+            [
+                "018f3b2c-4d5e-7f60-8abc-def012345678",
+                "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+                "01a02785-1bd8-76eb-aeea-5aa303ebd5b6",
+            ]
+        );
     }
 
     #[test]
     fn the_id_works_as_a_map_and_set_key() {
-        let a = IntentId::parse("u2-aggregate").unwrap();
-        let b = IntentId::parse(" u2-aggregate ").unwrap();
+        let a = IntentId::parse(SAMPLE).unwrap();
+        let b = IntentId::parse("  01a02785-1bd8-76eb-aeea-5aa303ebd5b6 ").unwrap();
         let mut hashed = HashSet::new();
         hashed.insert(a.clone());
         assert!(hashed.contains(&b));
@@ -165,12 +296,20 @@ mod tests {
     fn the_rejection_carries_material_not_wording() {
         assert_eq!(IntentIdError::Empty.to_string(), "empty");
         assert_eq!(
-            IntentIdError::EmptySegment { position: 2 }.to_string(),
-            "empty segment at position 2"
+            IntentIdError::Length { actual: 35 }.to_string(),
+            "length 35 (expected 36)"
         );
         assert_eq!(
-            IntentIdError::InvalidChar('_').to_string(),
-            "invalid character '_'"
+            IntentIdError::Format { position: 8 }.to_string(),
+            "invalid character at position 8"
+        );
+        assert_eq!(
+            IntentIdError::Version { found: '4' }.to_string(),
+            "version nibble '4' (expected '7')"
+        );
+        assert_eq!(
+            IntentIdError::Variant { found: 'c' }.to_string(),
+            "variant nibble 'c' (expected one of '8' '9' 'a' 'b')"
         );
     }
 }

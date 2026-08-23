@@ -1,4 +1,4 @@
-//! `WorkflowExecutionRepository` (B-2) 実装の内部部品 — ポートではない
+//! `WorkflowExecutionRepository` 実装の内部部品 — ポートではない
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 //!
 //! 状態ファイル (`aidlc-state.md`) の読取と、read-only ターゲットへの W_OK 書込バリア付き
@@ -6,18 +6,17 @@
 //! 対象が不在なら親ディレクトリを mkdir -p する。
 //!
 //! 「状態ファイルという格納形式」の知識はここに閉じ込める。集約 `WorkflowExecution` の
-//! 永続化面は B-2 の `WorkflowExecutionRepository` が担い、その実装が本モジュールを内部で
+//! 永続化面は `WorkflowExecutionRepository` が担い、その実装が本モジュールを内部で
 //! 呼ぶ。trait は持たない — 差し替え点はポート側 (Repository) にあり、ここに二重の抽象を
 //! 置かない。
 //!
-//! 現時点でプロダクトコードからの消費者は存在せず (B-2 未着手)、唯一の呼出は下の
-//! ユニットテストである。upstream 逐語の契約 (not-found 文言・W_OK バリア・mkdir -p・
-//! アトミック書込) を先に固定しておくためのモジュールなので、B-2 が配線するまで
-//! `dead_code` を許可する。
+//! 現時点でプロダクトコードからの消費者は存在せず、唯一の呼出は下のユニットテストである。
+//! upstream 逐語の契約 (not-found 文言・W_OK バリア・mkdir -p・アトミック書込) を先に
+//! 固定しておくためのモジュールなので、Repository 実装が配線するまで `dead_code` を許可する。
 //!
-//! **利用制約 (B-2)**: 書込は `WorkflowExecutionRepositoryImpl::save` の audit ロック区間内
-//! からのみ呼ぶこと。W_OK 検査→rename の間の TOCTOU 窓は upstream (`accessSync` → write)
-//! と同一の観測挙動であり、直列化はパス単位ロックではなく audit ロック (S2/W1) が担う。
+//! **利用制約**: W_OK 検査→rename の間の TOCTOU 窓は upstream (`accessSync` → write) と
+//! 同一の観測挙動である。書込の直列化は mkdir ロックではなく SQLite の書込トランザクションと
+//! 楽観バージョンが担う (ADR-007 でロック機構は退役した)。
 #![allow(dead_code)]
 
 use std::fs;

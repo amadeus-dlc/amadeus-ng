@@ -1,11 +1,11 @@
-//! `WorkflowExecutionSnapshot` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
+//! `WorkflowExecutionState` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
 //!
-//! 集約 → [`WorkflowExecution::snapshot`]、集約 ← [`WorkflowExecution::from_snapshot`] の 1 往復で
-//! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_snapshot` の 1 か所に集約する
+//! 集約 → [`WorkflowExecution::state`]、集約 ← [`WorkflowExecution::from_state`] の 1 往復で
+//! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_state` の 1 か所に集約する
 //! (security-design §2)。serde には依存しない (JSON 化は U3 のワイヤ構造体)。
 //!
-//! [`WorkflowExecution::snapshot`]: super::workflow_execution::WorkflowExecution::snapshot
-//! [`WorkflowExecution::from_snapshot`]: super::workflow_execution::WorkflowExecution::from_snapshot
+//! [`WorkflowExecution::state`]: super::workflow_execution::WorkflowExecution::state
+//! [`WorkflowExecution::from_state`]: super::workflow_execution::WorkflowExecution::from_state
 
 use super::autonomy_mode::AutonomyMode;
 use super::intent_id::IntentId;
@@ -20,7 +20,7 @@ use crate::workspace::CheckboxState;
 /// フィールドは `pub(crate)` — 同一クレート内の実装詳細共有 (集約との再水和) にだけ開き、
 /// クレート外へは 16 本のアクセサでのみ公開する (field-visibility.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowExecutionSnapshot {
+pub struct WorkflowExecutionState {
     pub(crate) intent_id: IntentId,
     pub(crate) definition_id: WorkflowDefinitionId,
     pub(crate) definition_revision: DefinitionRevision,
@@ -39,7 +39,7 @@ pub struct WorkflowExecutionSnapshot {
     pub(crate) version: u64,
 }
 
-impl WorkflowExecutionSnapshot {
+impl WorkflowExecutionState {
     /// 集約識別子。
     #[must_use]
     pub const fn intent_id(&self) -> &IntentId {
@@ -137,7 +137,7 @@ impl WorkflowExecutionSnapshot {
     }
 }
 
-/// [`WorkflowExecutionSnapshot`] のビルダー。
+/// [`WorkflowExecutionState`] のビルダー。
 ///
 /// 16 属性を 1 つの関数引数列で受け取るのは可読でもリント可能でもないため、`StageNodeBuilder`
 /// と同じ house style で組み立てる。既定値は解決済み計画から導ける birth 時の状態
@@ -145,11 +145,11 @@ impl WorkflowExecutionSnapshot {
 /// in-progress、`approved` は全 false、`revision_count` は全 0、`cursor` = 0、`status` = running、
 /// `parked_at` = なし、`autonomy` = gated、`seq_nr` = 1、`version` = 0)。
 #[derive(Debug, Clone)]
-pub struct WorkflowExecutionSnapshotBuilder {
-    snapshot: WorkflowExecutionSnapshot,
+pub struct WorkflowExecutionStateBuilder {
+    state: WorkflowExecutionState,
 }
 
-impl WorkflowExecutionSnapshotBuilder {
+impl WorkflowExecutionStateBuilder {
     /// 識別子 3 種と解決済み計画から、birth 時の既定値でビルダーを起こす。
     #[must_use]
     pub fn new(
@@ -157,7 +157,7 @@ impl WorkflowExecutionSnapshotBuilder {
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         stages: Vec<StageEntry>,
-    ) -> WorkflowExecutionSnapshotBuilder {
+    ) -> WorkflowExecutionStateBuilder {
         let plan: Vec<PlanAction> = stages.iter().map(StageEntry::plan_action).collect();
         let conditional: Vec<bool> = stages.iter().map(StageEntry::is_conditional).collect();
         let mut checkbox = vec![CheckboxState::Pending; stages.len()];
@@ -166,8 +166,8 @@ impl WorkflowExecutionSnapshotBuilder {
         }
         let approved = vec![false; stages.len()];
         let revision_count = vec![0; stages.len()];
-        WorkflowExecutionSnapshotBuilder {
-            snapshot: WorkflowExecutionSnapshot {
+        WorkflowExecutionStateBuilder {
+            state: WorkflowExecutionState {
                 intent_id,
                 definition_id,
                 definition_revision,
@@ -190,92 +190,92 @@ impl WorkflowExecutionSnapshotBuilder {
 
     /// 静的グリッド由来の計画を置き換える。
     #[must_use]
-    pub fn plan(mut self, plan: Vec<PlanAction>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.plan = plan;
+    pub fn plan(mut self, plan: Vec<PlanAction>) -> WorkflowExecutionStateBuilder {
+        self.state.plan = plan;
         self
     }
 
     /// 実効プランの源を置き換える。
     #[must_use]
-    pub fn overlay(mut self, overlay: Vec<PlanAction>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.overlay = overlay;
+    pub fn overlay(mut self, overlay: Vec<PlanAction>) -> WorkflowExecutionStateBuilder {
+        self.state.overlay = overlay;
         self
     }
 
     /// 適用可否の列を置き換える。
     #[must_use]
-    pub fn conditional(mut self, conditional: Vec<bool>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.conditional = conditional;
+    pub fn conditional(mut self, conditional: Vec<bool>) -> WorkflowExecutionStateBuilder {
+        self.state.conditional = conditional;
         self
     }
 
     /// checkbox 列を置き換える。
     #[must_use]
-    pub fn checkbox(mut self, checkbox: Vec<CheckboxState>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.checkbox = checkbox;
+    pub fn checkbox(mut self, checkbox: Vec<CheckboxState>) -> WorkflowExecutionStateBuilder {
+        self.state.checkbox = checkbox;
         self
     }
 
     /// カーソル位置を置き換える。
     #[must_use]
-    pub const fn cursor(mut self, cursor: usize) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.cursor = cursor;
+    pub const fn cursor(mut self, cursor: usize) -> WorkflowExecutionStateBuilder {
+        self.state.cursor = cursor;
         self
     }
 
     /// ワークフロー全体の状態を置き換える。
     #[must_use]
-    pub const fn status(mut self, status: Status) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.status = status;
+    pub const fn status(mut self, status: Status) -> WorkflowExecutionStateBuilder {
+        self.state.status = status;
         self
     }
 
     /// park マーカーの位置を置き換える。
     #[must_use]
-    pub const fn parked_at(mut self, parked_at: Option<usize>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.parked_at = parked_at;
+    pub const fn parked_at(mut self, parked_at: Option<usize>) -> WorkflowExecutionStateBuilder {
+        self.state.parked_at = parked_at;
         self
     }
 
     /// 自律モードを置き換える。
     #[must_use]
-    pub const fn autonomy(mut self, autonomy: AutonomyMode) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.autonomy = autonomy;
+    pub const fn autonomy(mut self, autonomy: AutonomyMode) -> WorkflowExecutionStateBuilder {
+        self.state.autonomy = autonomy;
         self
     }
 
     /// ゲート承認履歴を置き換える。
     #[must_use]
-    pub fn approved(mut self, approved: Vec<bool>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.approved = approved;
+    pub fn approved(mut self, approved: Vec<bool>) -> WorkflowExecutionStateBuilder {
+        self.state.approved = approved;
         self
     }
 
     /// 差し戻し回数の列を置き換える。
     #[must_use]
-    pub fn revision_count(mut self, revision_count: Vec<u32>) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.revision_count = revision_count;
+    pub fn revision_count(mut self, revision_count: Vec<u32>) -> WorkflowExecutionStateBuilder {
+        self.state.revision_count = revision_count;
         self
     }
 
     /// 順序番号を置き換える。
     #[must_use]
-    pub const fn seq_nr(mut self, seq_nr: u64) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.seq_nr = seq_nr;
+    pub const fn seq_nr(mut self, seq_nr: u64) -> WorkflowExecutionStateBuilder {
+        self.state.seq_nr = seq_nr;
         self
     }
 
     /// 楽観 version を置き換える。
     #[must_use]
-    pub const fn version(mut self, version: u64) -> WorkflowExecutionSnapshotBuilder {
-        self.snapshot.version = version;
+    pub const fn version(mut self, version: u64) -> WorkflowExecutionStateBuilder {
+        self.state.version = version;
         self
     }
 
-    /// スナップショットを取り出す (検証はしない)。
+    /// 状態の写し (memento) を取り出す (検証はしない)。
     #[must_use]
-    pub fn build(self) -> WorkflowExecutionSnapshot {
-        self.snapshot
+    pub fn build(self) -> WorkflowExecutionState {
+        self.state
     }
 }
 
@@ -305,9 +305,9 @@ mod tests {
         ]
     }
 
-    fn builder() -> WorkflowExecutionSnapshotBuilder {
-        WorkflowExecutionSnapshotBuilder::new(
-            IntentId::parse("260822-stage1-selfhost").unwrap(),
+    fn builder() -> WorkflowExecutionStateBuilder {
+        WorkflowExecutionStateBuilder::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
             entries(),
@@ -316,42 +316,42 @@ mod tests {
 
     #[test]
     fn the_builder_defaults_derive_the_birth_state_from_the_stage_entries() {
-        let snapshot = builder().build();
-        assert_eq!(snapshot.stages(), entries().as_slice());
-        assert_eq!(snapshot.plan(), [PlanAction::Execute, PlanAction::Execute]);
+        let state = builder().build();
+        assert_eq!(state.stages(), entries().as_slice());
+        assert_eq!(state.plan(), [PlanAction::Execute, PlanAction::Execute]);
+        assert_eq!(state.overlay(), [PlanAction::Execute, PlanAction::Execute]);
+        assert_eq!(state.conditional(), [false, false]);
         assert_eq!(
-            snapshot.overlay(),
-            [PlanAction::Execute, PlanAction::Execute]
-        );
-        assert_eq!(snapshot.conditional(), [false, false]);
-        assert_eq!(
-            snapshot.checkbox(),
+            state.checkbox(),
             [CheckboxState::InProgress, CheckboxState::Pending]
         );
-        assert_eq!(snapshot.approved(), [false, false]);
-        assert_eq!(snapshot.revision_count(), [0, 0]);
-        assert_eq!(snapshot.cursor(), StageIndex::new(0));
-        assert_eq!(snapshot.status(), Status::Running);
-        assert_eq!(snapshot.parked_at(), None);
-        assert_eq!(snapshot.autonomy(), AutonomyMode::Gated);
-        assert_eq!(snapshot.seq_nr(), 1);
-        assert_eq!(snapshot.version(), 0);
+        assert_eq!(state.approved(), [false, false]);
+        assert_eq!(state.revision_count(), [0, 0]);
+        assert_eq!(state.cursor(), StageIndex::new(0));
+        assert_eq!(state.status(), Status::Running);
+        assert_eq!(state.parked_at(), None);
+        assert_eq!(state.autonomy(), AutonomyMode::Gated);
+        assert_eq!(state.seq_nr(), 1);
+        assert_eq!(state.version(), 0);
     }
 
     #[test]
     fn the_identity_attributes_are_carried_verbatim() {
-        let snapshot = builder().build();
-        assert_eq!(snapshot.intent_id().as_str(), "260822-stage1-selfhost");
-        assert_eq!(snapshot.definition_id().as_str(), "claude");
+        let state = builder().build();
         assert_eq!(
-            snapshot.definition_revision().as_str(),
+            state.intent_id().as_str(),
+            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
+        );
+        assert_eq!(state.definition_id().as_str(), "claude");
+        assert_eq!(
+            state.definition_revision().as_str(),
             format!("sha256:{}", "0".repeat(64))
         );
     }
 
     #[test]
     fn every_mutable_attribute_can_be_overridden() {
-        let snapshot = builder()
+        let state = builder()
             .overlay(vec![PlanAction::Execute, PlanAction::Skip])
             .checkbox(vec![CheckboxState::Completed, CheckboxState::Pending])
             .cursor(1)
@@ -363,49 +363,49 @@ mod tests {
             .seq_nr(9)
             .version(4)
             .build();
-        assert_eq!(snapshot.overlay(), [PlanAction::Execute, PlanAction::Skip]);
+        assert_eq!(state.overlay(), [PlanAction::Execute, PlanAction::Skip]);
         assert_eq!(
-            snapshot.checkbox(),
+            state.checkbox(),
             [CheckboxState::Completed, CheckboxState::Pending]
         );
-        assert_eq!(snapshot.cursor(), StageIndex::new(1));
-        assert_eq!(snapshot.status(), Status::Completed);
-        assert_eq!(snapshot.parked_at(), Some(StageIndex::new(1)));
-        assert_eq!(snapshot.autonomy(), AutonomyMode::Autonomous);
-        assert_eq!(snapshot.approved(), [false, true]);
-        assert_eq!(snapshot.revision_count(), [0, 3]);
-        assert_eq!(snapshot.seq_nr(), 9);
-        assert_eq!(snapshot.version(), 4);
+        assert_eq!(state.cursor(), StageIndex::new(1));
+        assert_eq!(state.status(), Status::Completed);
+        assert_eq!(state.parked_at(), Some(StageIndex::new(1)));
+        assert_eq!(state.autonomy(), AutonomyMode::Autonomous);
+        assert_eq!(state.approved(), [false, true]);
+        assert_eq!(state.revision_count(), [0, 3]);
+        assert_eq!(state.seq_nr(), 9);
+        assert_eq!(state.version(), 4);
     }
 
     #[test]
     fn the_static_plan_and_conditional_lists_can_be_supplied_independently() {
-        // C6 の行としては独立した列。集約側 `from_snapshot` が stages との整合を検査する。
-        let snapshot = builder()
+        // C6 の行としては独立した列。集約側 `from_state` が stages との整合を検査する。
+        let state = builder()
             .plan(vec![PlanAction::Skip, PlanAction::Execute])
             .conditional(vec![true, false])
             .build();
-        assert_eq!(snapshot.plan(), [PlanAction::Skip, PlanAction::Execute]);
-        assert_eq!(snapshot.conditional(), [true, false]);
+        assert_eq!(state.plan(), [PlanAction::Skip, PlanAction::Execute]);
+        assert_eq!(state.conditional(), [true, false]);
     }
 
     #[test]
-    fn snapshots_compare_by_value() {
+    fn states_compare_by_value() {
         assert_eq!(builder().build(), builder().build());
         assert_ne!(builder().build(), builder().seq_nr(2).build());
     }
 
     #[test]
     fn an_empty_stage_list_still_builds_and_is_rejected_later_by_the_aggregate() {
-        // ビルダーは形を検証しない (検査点は `from_snapshot` の 1 か所 — security-design §2)。
-        let snapshot = WorkflowExecutionSnapshotBuilder::new(
-            IntentId::parse("u2").unwrap(),
+        // ビルダーは形を検証しない (検査点は `from_state` の 1 か所 — security-design §2)。
+        let state = WorkflowExecutionStateBuilder::new(
+            IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
             Vec::new(),
         )
         .build();
-        assert!(snapshot.stages().is_empty());
-        assert!(snapshot.checkbox().is_empty());
+        assert!(state.stages().is_empty());
+        assert!(state.checkbox().is_empty());
     }
 }

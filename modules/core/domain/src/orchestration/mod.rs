@@ -6,7 +6,7 @@
 //! `WorkflowExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
-//! 永続化境界は `snapshot()` / `from_snapshot()` の値オブジェクトで、集約は serde を知らない。
+//! 永続化境界は `state()` / `from_state()` の値オブジェクトで、集約は serde を知らない。
 //!
 //! | コマンド | イベント |
 //! |---|---|
@@ -61,16 +61,16 @@ mod jump_direction;
 mod next_decision;
 mod phase_boundary;
 mod skeleton_stance;
-mod snapshot_error;
 mod stage_entry;
 mod stage_index;
 mod start_error;
 mod start_request;
+mod state_error;
 mod status;
 mod verdict;
 mod workflow_execution;
 mod workflow_execution_event;
-mod workflow_execution_snapshot;
+mod workflow_execution_state;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
@@ -89,7 +89,7 @@ pub use workflow_execution::WorkflowExecution;
 // 集約の観測結果
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
-pub use workflow_execution_snapshot::WorkflowExecutionSnapshot;
+pub use workflow_execution_state::WorkflowExecutionState;
 
 // ドメインイベント (C5 の語彙 — 12 変種)
 pub use workflow_execution_event::{
@@ -99,7 +99,7 @@ pub use workflow_execution_event::{
 };
 
 // ビルダー
-pub use workflow_execution_snapshot::WorkflowExecutionSnapshotBuilder;
+pub use workflow_execution_state::WorkflowExecutionStateBuilder;
 
 // 純関数ドメインサービス
 pub use autonomy_mode::parse_mode_arg;
@@ -110,8 +110,8 @@ pub use autonomy_mode::InvalidModeArg;
 pub use command_error::CommandError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
-pub use snapshot_error::SnapshotError;
 pub use start_error::StartError;
+pub use state_error::StateError;
 pub use verdict::UnknownVerdict;
 
 // 逐語定数

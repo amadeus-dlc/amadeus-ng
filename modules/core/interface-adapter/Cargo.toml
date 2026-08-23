@@ -16,7 +16,6 @@ directive-schema = { workspace = true }
 canon-json = { workspace = true }
 message-catalog = { workspace = true }
 infra-io = { workspace = true }
-md5 = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
