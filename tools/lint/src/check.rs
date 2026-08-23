@@ -79,16 +79,39 @@ fn is_test_path(path: &str) -> bool {
     path.contains("/tests/") || path.starts_with("tests/")
 }
 
-/// 所見の開始行の直前行が `// amadeus-lint: allow(<rule-id>)` で始まれば抑制する。
+/// 所見の開始行の直前行が `// amadeus-lint: allow(<rule-id>) <理由>` で始まれば抑制する。
+///
+/// 抑制には**理由の記述が必須**である。rule-id の閉じ括弧の後ろに実質的な文字が無い裸の
+/// `allow` は抑制しない — 逃げ道は残すが、黙って使えないようにするための設計である
+/// (coding-rules/factory-naming.md「機械化の候補」)。誤検出のあるルールでも、例外に理由を
+/// 書かせれば `allow` の量産が根拠の蓄積に変わる。区切り記号 (`—` / `-` / `:` など) は
+/// 問わず、何か書いてあることだけを見る — 理由の**質**は機械には測れないのでレビューの仕事。
+///
 /// rule-id が一致しない allow は抑制しない (別ルールの許可で塗り潰さないため)。
 fn is_suppressed(lines: &[&str], finding: &Finding) -> bool {
     if finding.line < 2 {
         return false;
     }
     let marker = format!("// amadeus-lint: allow({})", finding.rule);
-    lines
-        .get(finding.line - 2)
-        .is_some_and(|prev| prev.trim().starts_with(&marker))
+    lines.get(finding.line - 2).is_some_and(|prev| {
+        let trimmed = prev.trim();
+        let Some(rest) = trimmed.strip_prefix(&marker) else {
+            return false;
+        };
+        has_reason(rest)
+    })
+}
+
+/// `allow(<rule-id>)` の後ろに理由が書かれているか。
+///
+/// 区切り記号と空白だけを剥がし、残りに文字が 1 つでもあれば理由とみなす。
+fn has_reason(rest: &str) -> bool {
+    rest.trim_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '—' | '–' | '-' | ':' | '：' | '=' | '/' | '#')
+    })
+    .chars()
+    .next()
+    .is_some()
 }
 
 struct Visitor {
@@ -522,6 +545,50 @@ fn report(cb: CheckboxState) -> bool {
 }
 "#;
         assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn a_bare_allow_without_a_reason_does_not_suppress() {
+        let source = r#"
+fn report(cb: CheckboxState) -> bool {
+    // amadeus-lint: allow(checkbox-vocabulary)
+    matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+}
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_CHECKBOX_VOCABULARY],
+            "理由の無い裸の allow は抑制しない"
+        );
+    }
+
+    #[test]
+    fn an_allow_whose_reason_is_only_punctuation_does_not_suppress() {
+        let source = r#"
+fn report(cb: CheckboxState) -> bool {
+    // amadeus-lint: allow(checkbox-vocabulary) —
+    matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+}
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_CHECKBOX_VOCABULARY],
+            "区切り記号だけでは理由とみなさない"
+        );
+    }
+
+    #[test]
+    fn an_allow_with_a_reason_and_no_separator_suppresses() {
+        let source = r#"
+fn report(cb: CheckboxState) -> bool {
+    // amadeus-lint: allow(checkbox-vocabulary) 集約が語彙を所有するため
+    matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+}
+"#;
+        assert!(
+            check(DOMAIN_PATH, source).is_empty(),
+            "区切り記号は問わない — 何か書いてあれば理由とみなす"
+        );
     }
 
     #[test]

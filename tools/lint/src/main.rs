@@ -15,7 +15,8 @@
 //! 抑制は所見の直前行のコメントで行う:
 //!
 //! ```text
-//! // amadeus-lint: allow(checkbox-vocabulary) — 抑制の理由をここに書く
+//! // amadeus-lint: allow(checkbox-vocabulary) — 抑制の理由をここに書く (**必須**: 理由が
+//! // 無い裸の allow は抑制として認めない。区切り記号は問わないが、何か書いてあること)
 //! ```
 
 #![forbid(unsafe_code)]

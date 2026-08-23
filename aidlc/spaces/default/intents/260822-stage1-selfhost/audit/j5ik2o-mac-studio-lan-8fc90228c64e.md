@@ -19023,3 +19023,75 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-23T23:01:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T23:03:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a668a895cf6076828
+**Message**: 監査の結果が出たら全部直して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T23:03:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T23:04:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a014ee9ab266c31d0
+**Message**: 監査の結果を見せて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T23:05:36Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T23:07:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a206be9df815ecd71
+**Message**: 監査の結果を見せて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T23:11:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: naming-audit
+**Agent ID**: anaming-audit-4ffac8932af8daf2
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**VERDICT: NOT-READY**（命名監査として。ファイルは一切変更していません — 全件 read のみ）\n\n対象は `modules/` 配下のプロダクトコード 323 + 167（`pub const fn` / `pub async fn` を含む再走査）件の公開関数・メソッド、お
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T23:15:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6aa29d2f83cab807
+**Message**: Bolt B5（U3 イベントストア）の PR #29 は CI 全緑・マージ可能で、いまファクトリ命名の監査結果を待っています。監査が返ったら違反と正当な例外を仕分けし、直す範囲を決めてマージへ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T23:16:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: naming-audit
+**Agent ID**: anaming-audit-4ffac8932af8daf2
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**VERDICT: NOT-READY**（ファクトリ命名監査として。ファイルは一切変更していません）\n\n更新後の `factory-naming.md`（裁定日 2026-08-24、「本表は『他に言うことが無いとき』の既定」「正確なドメイン語が勝つ」「やってはいけない機械化」節）を読み直したうえ
+
+---
