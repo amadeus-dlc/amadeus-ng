@@ -16569,3 +16569,253 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-08-23T09:25:19Z
+**Event**: UNIT_STARTED
+**Stage**: code-generation
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T09:26:03Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+**Context**: construction > u3-event-store-repository > code-generation > code-generation-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:26:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: 09e2e89c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:26:04Z
+**Event**: SENSOR_PASSED
+**Fire id**: 09e2e89c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:26:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: 06b8a8bf
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:26:04Z
+**Event**: SENSOR_PASSED
+**Fire id**: 06b8a8bf
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+**Duration ms**: 17
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T09:26:07Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: U3 code-generation Q1: clippy indexing_slicing / panic の workspace lint 昇格
+**Options**: A,B,X
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T09:30:32Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T09:30:39Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+**Context**: construction > u3-event-store-repository > code-generation > code-generation-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:30:39Z
+**Event**: SENSOR_FIRED
+**Fire id**: d2094363
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:30:39Z
+**Event**: SENSOR_PASSED
+**Fire id**: d2094363
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+**Duration ms**: 16
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:30:39Z
+**Event**: SENSOR_FIRED
+**Fire id**: f7c1d536
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:30:39Z
+**Event**: SENSOR_PASSED
+**Fire id**: f7c1d536
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-questions.md
+**Duration ms**: 17
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-23T09:30:44Z
+**Event**: QUESTION_ANSWERED
+**Stage**: code-generation
+**Details**: Q1 = A（indexing_slicing / panic を workspace lint deny に昇格、既存コードも B5 で是正）
+**Unit**: u3-event-store-repository
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T09:33:29Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-plan.md
+**Context**: construction > u3-event-store-repository > code-generation > code-generation-plan.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:33:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: f10f2442
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-plan.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:33:29Z
+**Event**: SENSOR_PASSED
+**Fire id**: f10f2442
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-plan.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:33:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2ff0948b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-plan.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T09:33:29Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2ff0948b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-generation-plan.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-2ff0948b.md
+**Findings count**: 2
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T09:33:43Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/unit-test-instructions.md
+**Context**: construction > u3-event-store-repository > code-generation > unit-test-instructions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:33:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: 89b20016
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/unit-test-instructions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:33:43Z
+**Event**: SENSOR_PASSED
+**Fire id**: 89b20016
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/unit-test-instructions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:33:44Z
+**Event**: SENSOR_FIRED
+**Fire id**: ceb813d1
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/unit-test-instructions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T09:33:44Z
+**Event**: SENSOR_FAILED
+**Fire id**: ceb813d1
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/unit-test-instructions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-ceb813d1.md
+**Findings count**: 5
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T09:33:55Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: U3 / Bolt B5 の code-generation 計画承認（Plan Approval、Q1 = A、P1〜P4）
+**Options**: Approve Plan,Request Changes
+**Unit**: u3-event-store-repository
+
+---
