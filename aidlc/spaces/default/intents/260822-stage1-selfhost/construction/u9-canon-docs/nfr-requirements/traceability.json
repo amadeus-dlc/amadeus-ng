@@ -1,0 +1,12 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u9-canon-docs",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2, NFR1.3" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5" },
+    { "id": "NFR3", "status": "N/A", "target": "U9 は文書のみ — 永続化・投影を持たない（監査完全性は U3 / U4 の要求）" },
+    { "id": "NFR4", "status": "N/A", "target": "U9 は依存・コードを変更しない（サプライチェーン面に影響なし）" },
+    { "id": "NFR5", "status": "N/A", "target": "性能は非目標（requirements.md NFR5）— 文書のみ" }
+  ]
+}

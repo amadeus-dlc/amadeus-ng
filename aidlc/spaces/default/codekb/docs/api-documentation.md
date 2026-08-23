@@ -29,8 +29,8 @@
 
 ### core_use_case（ポート trait 2 本）
 
-- `WorkflowDefinitionRepository::find` — 読取専用（`save` なし）。not-found は契約上 fatal な `Err`。
-- `WorkspaceLock::{acquire, release}` — `acquire(&LockIdentity, AcquireBudget) -> Result<LockGuard, AcquireError>`。`LockGuard` は非 Clone（二重解放不能を型で表現）。
+- `WorkflowDefinitionRepository::find_by_id(&WorkflowDefinitionId)` — 読取専用（`save` なし）。失敗は `NotFound { expected, actual }` / `HarnessIdentity { path, cause }` ほか `GraphReadError`（Bolt B3 で `find()` を廃止 — C4 改訂 / ADR-008）。
+- `WorkspaceLock::{acquire, release}` — `acquire(&LockIdentity, AcquireBudget) -> Result<LockGuard, AcquireError>`。`LockGuard` は非 Clone（二重解放不能を型で表現）。**ADR-007 で退役決定**（コード上は Bolt B5（U3）で削除予定 — 現行コードのスナップショットとして記載）。
 
 ### core_interface_adapter
 

@@ -13,7 +13,7 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 
 境界の要点（01 の裁定の引き受け）:
 
-- **B1**: scope grid は workflow-definition の不変の成果物として**読むだけ**。recompose の flip はこのコンテキストのコマンドであり、`effectivePlanAction`（grid ＋オーバレイの合成読み）はここが所有する read model。永続化は workspace に委ねる。
+- **B1**: scope grid は workflow-definition の不変の成果物として**読むだけ**。recompose の flip はこのコンテキストのコマンドであり、`effectivePlanAction`（grid ＋オーバレイの合成読み）はここが所有する read model — 合成の所有者は集約 `WorkflowExecution` の `effective_plan` である（ADR-002 / 設計監査 R2、Bolt B3 実装）。永続化は Repository 実装に委ねる（ADR-003）。
 - **B5**: 監査台帳の mechanics は workspace 所有。swarm のマージ失敗 converged unit の復旧（「監査行なし」中間状態から）は本コンテキストの**サーガ**。
 - **B9**: `HUMAN_TURN` の記録は workspace の事実、`humanActedSinceGate`（同秒 fail-closed を含む導出述語）と昇格可否の政策は本コンテキスト。
 - **B10**: レビューレシートの鮮度・凍結述語は **verification 所有のクレートを依存として呼ぶ**。二重実装しない。
@@ -27,11 +27,18 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 
 ### 2.1 集約: `WorkflowExecution`
 
-1 つの Intent の実行状態を束ねる集約ルート。カーソル（`Current Stage`）、ステージごとの `CheckboxState`、`Status`（Running / Completed）と**直交する park マーカー**（upstream の `Parked` / `Parked At Stage` フィールド ≒ `Option<(Timestamp, StageSlug)>`。「マーカーが残ったままカーソルが先へ進んだ」stale-by-progress 状態が正規に存在し、parked 分岐の発火は「マーカー有 ∧ Parked At Stage == Current Stage ∧ 再入フラグ無」の**導出述語**で判定する — 3 値 enum に畳むと D6 の状態ファイル互換と Branch 2.5/2.6 の再現が壊れる。Quint モデルの 3 値 status はこの直交対の簡約でモデルヘッダに注記済み）、recompose オーバレイ、`AutonomyMode`、`SkeletonStance`、`MergeHeld` を内包する。
+1 つの Intent の実行状態を束ねる集約ルートであり、**イベントソーシング形の FSM** である（ADR-001 / ADR-002。以下の規範は Bolt B3 実装 `modules/core/domain/src/orchestration/` と一致する）。identity は `IntentId`。
 
-- **トランザクション境界**: 集約 1 更新 = `withAuditLock` 1 区間 = 監査 emit → 状態書き込みの 1 クリティカルセクション（audit-first）。upstream の設計がそのまま「1 トランザクション 1 集約」の DDD 規範に一致している。
-- **コマンド**: 集約コマンドの全集合は、エンジン所有 11 動詞（`set` / `checkbox` / `advance` / `finalize` / `complete-workflow` / `gate-start` / `approve` / `reject` / `revise` / `skip` / `park` — Rust 名は `set_field` / `set_checkbox` 等へ機械的に写す。外部からの直接呼び出し拒否面は §9 S3）に、**`unpark` / `recompose_flip` / `set_autonomy` を加えたもの**（B1 により flip は本コンテキストのコマンド。upstream では unpark は直接呼出可の state 動詞、set-autonomy は bolt 動詞だが、集約のコマンド面としてはここに属する）。集約の外からチェックボックスやカーソルを直接書く経路は**型として存在させない**（upstream の state-transition guard の内側版）。
-- **発行イベント**: `STAGE_*` / `GATE_*` / `WORKFLOW_*` ファミリに加え、advance のフェーズ境界トリオ（`PHASE_COMPLETED` / `PHASE_VERIFIED` / `PHASE_STARTED` の固定順）、`RECOMPOSED`、`AUTONOMY_MODE_SET`（監査イベントスキーマ = Published Language クレートの型で発行）。
+- **decide → 1 イベント → apply**: コマンド（decide）はガードをすべて通してから**ちょうど 1 つ**のドメインイベントを構築し、`apply_event` で自身に適用して返す。状態を動かすのは `apply_event` だけなので、通常実行とリプレイは同一経路になる。ガード不成立の `Err` では `self` に触れない（ADR-002 ①②③）。
+- **状態（16 属性）**: `intent_id` / `definition_id` / `definition_revision`（`Started` に記録した定義の系譜 ID と内容版 — ADR-008）/ `stages`（`Vec<StageEntry>` = slug + phase + plan_action + conditional の**文書順**の解決済み計画）/ `plan` / `conditional`（`stages` からの展開列。メメントは C6 の列構成に合わせて別列で持ち、復元時に整合を検査する）/ `overlay`（recompose オーバレイ = 実効プランの源）/ `checkbox` / `cursor` / `status` / `parked_at` / `autonomy` / `approved` / `revision_count` / `seq_nr` / `version`（楽観 version）。
+- **`Status` と直交する park マーカー**: `parked_at: Option<StageIndex>`（upstream の `Parked` / `Parked At Stage` フィールドに対応）。「マーカーが残ったままカーソルが先へ進んだ」stale-by-progress 状態が正規に存在し、parked 分岐の発火は `parked_active()`（マーカー有 ∧ 位置一致）の**導出述語**で判定する — 3 値 enum に畳むと D6 の状態ファイル互換と Branch 2.5/2.6 の再現が壊れる。Quint モデルの 3 値 status はこの直交対の簡約でモデルヘッダに注記済み。
+- **コマンド（12）**: `start` / `complete_stage` / `open_gate` / `approve_gate` / `reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` / `set_autonomy`。集約の外からチェックボックスやカーソルを直接書く経路は**型として存在させない**。これは集約のコマンド面であり、upstream のエンジン所有 CLI 動詞 11 個（`set` / `checkbox` / `advance` / `finalize` / `complete-workflow` / `gate-start` / `approve` / `reject` / `revise` / `skip` / `park`）とその外部呼び出し拒否面（§9 S3・§6 I9）とは別の層の話である。
+- **ドメインイベント（12）**: `Started` / `StageCompleted` / `GateOpened` / `GateApproved` / `GateRejected` / `StageRevised` / `StageSkipped` / `Jumped` / `Parked` / `Unparked` / `Recomposed` / `AutonomyModeSet`。封筒は `{ intent_id, seq_nr, schema_version, occurred_at, payload }`（C5）。`Started` は**自己完結**で、`definition_id` / `definition_revision` / `scope` / `request` / `depth?` / `test_strategy?` / `stages`（`StageEntry` 列）を載せるためリプレイに `WorkflowDefinition` を要さない（ADR-008 / C5、Bolt B3 実装）。upstream の監査行（`STAGE_*` / `GATE_*` / `WORKFLOW_*` / フェーズ境界トリオ / `RECOMPOSED` / `AUTONOMY_MODE_SET`）は、このドメインイベントから ReadModelUpdater（U4）が描く**投影**であって集約の発行物ではない（ADR-003、投影規則は C5）。
+- **メメント**: `state()` / `from_state()` が全状態を値オブジェクト `WorkflowExecutionState`（現行コード名 `WorkflowExecutionSnapshot` — Bolt B5 で改名）へ写し、復元時に不変条件を検査する唯一の経路になる。集約は serde を知らない（ADR-001 / ADR-004）。
+- **ゲート判定はフェーズで決まる**: `gated(stage) = stages[stage].phase != initialization`。**索引 0 の特別扱いはしない** — 出荷グラフの initialization は 3 ステージあり、そのいずれも承認ゲートを持たない。Quint slice-1 の `gated(s) = s != 0` は「initialization 1 ステージだけの合成計画」に対する抽象であり、ITF 準拠テストはその合成計画で駆動する（Bolt B3 実装 `StageEntry::is_gated()`）。
+- **有効プランの畳み込み**: `effective_plan(stage)`（recompose オーバレイが静的グリッドに勝つ合成読み）は**集約の所有**である。workflow-definition が供給するのはグリッド側の 3 値照会だけ（B1 / ADR-002 ⑤ / 設計監査 R2、Bolt B3 実装）。
+- **`next_decision` は `Result`**: `next_decision(&self, &WorkflowDefinition, &NextRequest) -> Result<NextDecision, CommandError>`。引数の定義の `id` が `definition_id` と一致しなければ `Err(CommandError::DefinitionMismatch { expected, actual })` で拒否する。**`revision` の差は `Ok`**（計画は `Started` で自己完結しており、upstream も dist 更新をまたいでワークフローを続ける — ADR-008）。
+- **トランザクション境界**: 集約 1 更新 = SQLite の 1 トランザクション（ジャーナル追記 + スナップショット更新を同一 Tx、楽観 `version` で直列化 — ADR-001 / ADR-003 / ADR-007）。「1 トランザクション 1 集約」の DDD 規範に一致する。upstream の `withAuditLock` 区間（audit-first）は、この Tx とその後の投影に置き換わる（逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 - **主要不変条件**: §6 の表。
 
 `Bolt` 集約と `SwarmBatch` サーガは §7（slice 2）で規定する。
@@ -43,9 +50,9 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 | `DirectiveKind` | 10 種の閉集合（`load-steering` / `run-stage` / `dispatch-subagent`※ / `invoke-swarm` / `present-gate`※ / `ask` / `print` / `error` / `done` / `parked`。※は placeholder — 投機実装禁止） | E1 |
 | `Directive` | kind による判別共用体。`validateDirective` 相当の検証（未知キー拒否・型/必須・cross-field・`gate` は boolean か `"unresolved"` のみ）を**コンストラクタで**行う | E1+E2 |
 | `Verdict` | 受理 10 語。`approved`/`completed`/`complete`/`done` は同義語として正規化、`resume`/`resumed` 同義 | E2 |
-| `CheckboxState` | 6 値（`[ ]`/`[-]`/`[?]`/`[R]`/`[x]`/`[S]`） | E1 |
-| `PlanAction` | EXECUTE / SKIP | E1 |
-| `EffectivePlan` | overlay が grid に勝つ合成読み（B1 の read model） | E1（合成関数） |
+| `CheckboxState` | 6 値（`[ ]`/`[-]`/`[?]`/`[R]`/`[x]`/`[S]`）。**所有元: workspace**（[`11-workspace.md`](11-workspace.md) §2.2）— 本コンテキストは参照のみ（設計監査 C12） | E1（workspace 所有） |
+| `PlanAction` | EXECUTE / SKIP。**所有元: workflow-definition**（[`12-workflow-definition.md`](12-workflow-definition.md) §2.2）— 本コンテキストは参照のみで再輸出もしない（ADR-005、Bolt B3 実装） | E1（workflow-definition 所有） |
+| `EffectivePlan` | overlay が grid に勝つ合成読み（B1 の read model）。合成は集約 `WorkflowExecution` の `effective_plan` が所有する（§2.1、設計監査 R2） | E1（集約のクエリ） |
 | `AutonomyMode` | **2 境界型に分離**: 状態読取側は `"autonomous"` 厳密一致のみ autonomous、それ以外（未設定・空・未知値）はすべて gated（fail-closed リーダ — 初期化は失敗しない）。CLI `--mode` 引数側（`AutonomyModeArg`）は autonomous / gated の 2 値**厳密パース**で、不正値は逐語拒否 `Invalid --mode: <m>. Must be 'autonomous' or 'gated'.`（Controller 規約の初期化失敗経路。1 型に畳むと本家の拒否文言が発生不能になる） | E2（両面） |
 | `SkeletonStance` | on / off / scope-dependent | E2 |
 | `JumpDirection` | forward / backward / redo（インデックス比較から導出） | E1 |
@@ -53,14 +60,16 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 | `ProgressSignature` | `stage::stateSha256(Last Updated 行除外)::directiveFingerprint` | E1（構成関数） |
 | `DirectiveMaxBytes` | 28 KiB（28,672 bytes）。超過 Directive は**構築不能**ではなく emit 拒否（half-emitted を出さない） | E3（Presenter） |
 
-### 2.3 ドメインサービス（純関数）
+### 2.3 集約のクエリとドメインサービス（純関数）
 
-| サービス | 入力 → 出力 | 対応する upstream |
-| --- | --- | --- |
-| `next_decision` | 観測状態＋コンパイル済みグラフ → `Directive` ちょうど 1 つ。**書き込みなし** | `handleNext` 21 分岐ラダー |
-| `report_dispatch` | (verdict, checkbox, gated, final, moved-on, explicit-stage) → 遷移コマンド列 or 拒否。**対応範囲は段 10 の gate-lifecycle アームと §7.3 forward ディスパッチ表に限る**。段 1〜9・11〜13 は `Report` ユースケースが所有（§3） | verdict → サブコマンド選択は**エンジンが**行い、呼び出し側は選ばない |
-| `human_acted_since_gate` | 監査行の射影 → bool。fail-closed になるのは**同秒かつ別シャード**のときのみ。同一シャードはシャード内 pos 順で決定的に判定 | B9 の導出述語 |
-| `jump_resolve` | (target, cursor) → `JumpDirection` ＋帰属検証 | `aidlc-jump resolve`（純読取）と `execute`（コミット）の分離 |
+| 関数 | 所在 | 入力 → 出力 | 対応する upstream |
+| --- | --- | --- | --- |
+| `next_decision` | 集約 `WorkflowExecution` のクエリ（`&self`） | 観測状態＋コンパイル済みグラフ → `Directive` ちょうど 1 つ。**書き込みなし** | `handleNext` 21 分岐ラダー |
+| `report_dispatch` | ドメインサービス（純関数） | (verdict, checkbox, gated, final, moved-on, explicit-stage) → 遷移コマンド列 or 拒否。**対応範囲は段 10 の gate-lifecycle アームと §7.3 forward ディスパッチ表に限る**。段 1〜9・11〜13 は `Report` ユースケースが所有（§3） | verdict → サブコマンド選択は**エンジンが**行い、呼び出し側は選ばない |
+| `human_acted_since_gate` | ドメインサービス（純関数） | 監査行の射影 → bool。fail-closed になるのは**同秒かつ別シャード**のときのみ。同一シャードはシャード内 pos 順で決定的に判定 | B9 の導出述語 |
+| `jump_resolve` | 集約 `WorkflowExecution` のクエリ（`&self`） | (target, cursor) → `JumpDirection` ＋帰属検証 | `aidlc-jump resolve`（純読取）と `execute`（コミット）の分離 |
+
+**位置づけの注記（2026-08-23）**: `next_decision` と `jump_resolve` は**集約 `WorkflowExecution` のクエリメソッド**（`&self`、書込なし）であり、独立したドメインサービスではない — 状態の所有者の外で判断する Ask 型を避けるため（ADR-002 ④、Bolt B3 実装）。本表の「所在」列がその分類であり、入出力の規範は列を問わず本表が持つ。`human_acted_since_gate` は集約に置けない横断の判断なので純関数のドメインサービスのままとする（01 §7.1 原則 2）。
 
 ## 3. ユースケース層
 
@@ -72,13 +81,16 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 **ポート**: 名称は [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) の規則に従う（Repository は**集約名 + Repository**。`Store` / `Reader` / `Writer` のポート造語と、`StateFileRepository` のような**格納媒体名の Repository** は禁止 — 格納形式は Repository 実装の内部詳細）。CQRS は採用しない。
 
+ポート表の実装欄は **1 trait 1 Impl**（`XxxRepositoryImpl` ＋テストダブル `InMemoryXxxRepository`）を各行に明記する（gateway-taxonomy §5。「同上」は使わない — 設計監査 C11）。
+
 | ポート | 責務 | 実装（Gateway） |
 | --- | --- | --- |
-| `WorkflowExecutionRepository` | 集約 `WorkflowExecution` の `find_by_id` / `save`（**B-2 で設計** — メソッド語彙は j5ik2o-ddd-repository-design の正典 {findById, save, remove ＋ ドメイン概念の named retrieval} に従う）。状態ファイル（`aidlc-state.md`）という格納形式と、その読取・アトミック書込・W_OK 書込バリアは**この Repository 実装の内部詳細**であり、ポート面には現れない。**I8（`next` は読み取り専用）はこのポートを `Next` に注入しないことで型強制する** — Controller が Repository で取得した集約を `Next` へ `&` 参照で渡し、所有権と可変性で読取専用を保証する（CQRS の読取モデル分離は使わない） | `WorkflowExecutionRepositoryImpl`（B-2）が crate 内部品 `state_file_io`・`AuditLedgerRepository`・`WorkspaceLock` を**合成**する — 削除済みの公開ファイルポート（旧 `StateFileStore` 相当）は再導入しない |
-| `AuditLedgerRepository` | 集約 `AuditLedger`（[`11-workspace.md`](11-workspace.md) §2.1）の追記と射影読取（**B-1 で設計**）。audit-first の追記（emit 失敗で状態書込を中止）と、`humanActedSinceGate` 等の述語用の射影読取を 1 つの Repository が担う（追記面と読取面にポートを分けない） | 同上 |
-| `WorkflowDefinitionRepository` | 集約 `WorkflowDefinition`（[`12-workflow-definition.md`](12-workflow-definition.md) §2.1）の `find`（ハーネス設置あたり単一の集約なので id を取らない named retrieval）。**Published Language のコンパイル成果物なので `save` は持たない**。3 入力の形状・読込失敗態度・述語 5 種の規範は 12（workflow-definition スライス 1）が所有 | canon-json コーデックを内部に持つ `WorkflowDefinitionRepositoryImpl` |
-| `WorkspaceLock` | `withAuditLock` 相当（再入・reap は workspace 所有）。集約ではなく**並行性サービス**なので Repository ではない | workspace の供給サービス |
+| `WorkflowExecutionRepository` | 集約 `WorkflowExecution` の ES 形 Repository（C3 / ADR-006）。`store(event, aggregate)` が「1 コマンドが返した単一イベント」と「適用後の集約」を**同一 Tx**で永続化し（楽観 `version` 不一致は `Conflict`）、`find_by_id(&IntentId)` が最新スナップショット ＋ 以降のイベント replay で集約を完全に再構成する。SQLite という格納形式と Tx 所有は**この Repository 実装の内部詳細**であり、ポート面には現れない。**I8（`next` は読み取り専用）はこのポートを `Next` に注入しないことで型強制する** — Controller が Repository で取得した集約を `Next` へ `&` 参照で渡し、所有権と可変性で読取専用を保証する（CQRS の読取モデル分離は使わない） | `WorkflowExecutionRepositoryImpl`（SQLite EventStore — `journal` / `snapshot` / `checkpoint` の 3 テーブル（C6）を内包）。状態ファイル `aidlc-state.md` と監査シャードは**リードモデル**であり、ReadModelUpdater（U4）が投影する（ADR-003 / ADR-004）。テストダブルは `InMemoryWorkflowExecutionRepository` |
+| `WorkflowDefinitionRepository` | 集約 `WorkflowDefinition`（[`12-workflow-definition.md`](12-workflow-definition.md) §2.1）の `find_by_id(&WorkflowDefinitionId)`（C4 改訂 2026-08-23 — 引数を取らない旧動詞 `find` は廃止、後方互換の併存なし）。1 つのハーネスが提供できる定義は 1 つなので、実装は「要求された id が自分の id か」を検査する。失敗は `NotFound { expected, actual }`（id 取り違え — fatal）と `HarnessIdentity { path, cause }`（`harness.json` の読取・`name` 検証の失敗 — fatal）ほか `GraphReadError` の既存変種。**Published Language のコンパイル成果物なので `save` は持たない**。3 入力の形状・読込失敗態度・述語面の規範は 12（workflow-definition スライス 1）が所有 | canon-json コーデックを内部に持つ `WorkflowDefinitionRepositoryImpl`（`id` / `revision` の付与も実装の責務 — ADR-008）。テストダブルは `InMemoryWorkflowDefinitionRepository` |
+| 外部システムクライアント（Git） | worktree の作成 / マージ / 破棄など、別プロセスとの RPC。集約の永続化ではないので Repository ではない（gateway-taxonomy §1）。契約と実装の所在は [`11-workspace.md`](11-workspace.md) §3 が所有する | workspace の供給面（例 `GitWorktreeClient`） |
 | マーカー永続化 Gateway（非 Repository。名称は実装時に gateway-taxonomy 準拠で確定） | active-directive marker / turn マーカー / steering MAC キー（`.aidlc-steering-token-key` — I8 の例外 2 つの書込面）のマシンローカル書き込み。原則 advisory — 失敗は throw しない。**例外**: Copilot-commit アームのみ発行失敗が work directive の発行自体を拒否する fail-closed（Copilot ハーネスは D5 の初期スコープ外だが、ポート契約として記録） | Gateway |
+
+**表から落とした 2 行**（ADR-001 / ADR-003 / ADR-007）: 監査台帳は `WorkflowExecution` のイベントログであって別の集約ではなく、監査シャードの追記は ReadModelUpdater の投影なので専用の Repository を持たない。ロックのポートは並行制御が SQLite Tx ＋ 楽観 version に置き換わったことで退役した（逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 
 **verification への依存**（ポートではない）: レシート鮮度・凍結述語（`verifyReviewerPrecondition` 相当）は verification 所有クレートの公開 API を直接呼ぶ（B10）。フロアイベントの列挙はイベントスキーマ側の宣言を読む。
 
@@ -94,7 +106,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 ## 6. 不変条件表（強制手段つき）
 
-E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../formal/orchestration/engine_loop.qnt)（slice 1 v2）、I16〜I17 が [`formal/orchestration/stop_hook.qnt`](../../formal/orchestration/stop_hook.qnt)（v1）、I14 が [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3）に実在する — 第一陣 3 モジュールすべて green・mutation 検査力確認済み。
+E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../formal/orchestration/engine_loop.qnt)（slice 1 v2）、I16〜I17 が [`formal/orchestration/stop_hook.qnt`](../../formal/orchestration/stop_hook.qnt)（v1）、I14 が [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3）に実在する — 第一陣 3 モジュールすべて green・mutation 検査力確認済み。**注記（2026-08-23）**: I14 の E4 定義名は upstream の mkdir ロック時代の規範である。ADR-007 でロックは退役したため、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」モデルへ改訂したうえで Bolt B5 が定義名を差し替える（改訂して存続 — 本 Unit では変更しない。§10 S2 参照）。
 
 | # | 不変条件 | 強制 | E4 定義名 / 備考 |
 | --- | --- | --- | --- |
@@ -171,8 +183,8 @@ NO EMERGENT BEHAVIOR RULE への公認例外。失敗した build-and-test 実�
 ## 8. 実装順序（D10 × domain-model-first）
 
 1. **ドメイン例をユビキタス言語のテストとして書く**（例: 「gated ステージは awaiting-approval を経ずに completed にならない」「stale な再報告は状態を変えない」）。テスト名は 01 の正準用語を使う。
-2. **Domain Primitive と `WorkflowExecution` 集約を TDD で実装**（§2 の表の E1/E2 を先に）。プロパティテスト（proptest）は `Verdict` 正規化・`EffectivePlan` 合成・`ProgressSignature` に適用。
-3. **in-memory Gateway 一式**（`InMemoryWorkflowExecutionRepository` / `InMemoryAuditLedgerRepository` / `InMemoryWorkflowDefinitionRepository` / Lock）でユースケーステストを回す。永続化・プロセスはまだ登場しない（Repository は in-memory から始める — [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）。
+2. **Domain Primitive と `WorkflowExecution` 集約を TDD で実装**（§2 の表の E1/E2 を先に）。集約は decide → イベント → `apply_event` の ES 形で書く（§2.1）。プロパティテスト（proptest）は `Verdict` 正規化・`effective_plan` 合成・`ProgressSignature`・「コマンド適用後の状態 = 旧状態 + そのイベント」・「イベント列の再生が実行済み集約を再現する」に適用（Bolt B3 実装）。
+3. **in-memory Gateway 一式**（`InMemoryWorkflowExecutionRepository` / `InMemoryWorkflowDefinitionRepository`）でユースケーステストを回す。永続化・プロセスはまだ登場しない（Repository は in-memory から始める — [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）。§3 のポートは 2 本だけなので in-memory も 2 本である（ADR-003 / ADR-007 で監査台帳のポートとロックのポートが無くなった）。
 4. **ITF 準拠テストを接続**: `engine_loop.qnt` のトレース（`lastAction` 駆動）を domain 層のステップ関数に再生（ADR 0003 決定 5）。
 5. **実 Gateway は最後**: workspace コンテキストの公開サービスに委譲し、ゴールデン互換層（upstream 実出力・実ワークスペース）で検証。
 
@@ -203,7 +215,7 @@ upstream の engine は変異を sibling CLI への subprocess spawn で合成�
 | # | 仕様（観測可能な契約） | Rust 実装での守り方 |
 | --- | --- | --- |
 | S1 | 遷移の意味論は単一で、どの経路から起きても同じ状態ファイルのバイト列・同じ監査行列を生む（エンジンは遷移ロジックを別実装しない） | `WorkflowExecution` 集約メソッドが唯一の遷移実装。CLI ラッパもエンジンのユースケースも同じ集約を呼ぶ |
-| S2 | 各遷移は原子的（withAuditLock 区間で audit-first。クラッシュしても state と監査が食い違わない） | 集約トランザクションがロックと audit-first を所有。panic/exit 経路は A4 の規約と `audit_lock.qnt` が受け皿 |
+| S2 | 各遷移は原子的（クラッシュしても state と監査が食い違わない — upstream では withAuditLock 区間の audit-first が担っていた） | Repository 実装の SQLite 1 Tx（ジャーナル追記 + 楽観 version）と投影のチェックポイントが受け皿。mkdir ロックは退役（ADR-001 / ADR-003 / ADR-007、`audit_lock.qnt` は協定モデルへ改訂 — Bolt B5） |
 | S3 | 非エンジンからの 11 動詞直接呼び出しは拒否＋逐語拒否文言。`AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS=1` バイパスと `AIDLC_STATE_TRANSITION_OWNER` マーカーの受理意味論も維持（D6 の env 互換） | 11 動詞の CLI エントリにガード意味論を丸ごと実装（マーカー受理・bypass env・拒否文言込み）。in-process のエンジン経路は CLI エントリを通らないので正当に素通り |
 | S4 | 拒否・エラー文言は verbatim。`Transition rejected by aidlc-state.ts <sub> for "<slug>": <stderr>` の書式ごと維持 | 文言カタログ（A3）＋ Presenter が同一書式で描画 |
 

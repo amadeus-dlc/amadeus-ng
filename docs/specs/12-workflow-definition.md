@@ -16,7 +16,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 境界の要点（01 の裁定の引き受け）:
 
 - **Published Language の第 1 号**（01 §2）: コンパイル済み `stage-graph.json` / `scope-grid.json` は workflow-definition が orchestration / verification へ公開する契約であり、D6 により upstream 互換で凍結される。**配布物そのものが契約**であって、本コンテキストの内部表現ではない。
-- **B1**: scope grid は本コンテキストの**不変の成果物**であり、orchestration は読むだけである。裏返して言えば、`effectivePlanAction` の合成（recompose オーバレイが静的グリッドに勝つ read model）は orchestration の所有物であり、本コンテキストが供給するのは**グリッド側の半分**（「このスコープ列でこの slug は EXECUTE / SKIP / 未収載のどれか」の 3 値照会）だけである（§2.3）。
+- **B1**: scope grid は本コンテキストの**不変の成果物**であり、orchestration は読むだけである。裏返して言えば、`effectivePlanAction` の合成（recompose オーバレイが静的グリッドに勝つ read model）は orchestration の所有物 — 具体的には集約 `WorkflowExecution` の `effective_plan` — であり、本コンテキストが供給するのは**グリッド側の半分**（「このスコープ列でこの slug は EXECUTE / SKIP / 未収載のどれか」の 3 値照会）だけである（§2.3、設計監査 R2）。
 - **B6**: `compileStageGraph` は本コンテキストの純粋ドメインサービス。distribution と plugin は共に customer で、失敗時の補償は各呼び出し元の責務。スライス 1 は compile を実装しないため、**書き側の契約**（`FIELD_ORDER` 28 のキー順、`contract-pretty` のバイト体裁）は §10 に前提として記録するに留める。
 - **B7**: `review_class` の列挙と契約的意味は verification が正準所有する。グラフノード上の `review_class` は**外部キー参照**であり、本コンテキストは値をそのまま運ぶ。
 - **B11**: walking skeleton の stance 解決は orchestration のプロセス。**アンカー計算**（スコープで最初の Construction EXECUTE ステージ）は本コンテキストの純関数 `firstInScopeStageOfPhase` であり、orchestration の recompose ガードがこれを呼ぶ。
@@ -28,7 +28,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 | 集約 | ルートと内包 | トランザクション境界 |
 | --- | --- | --- |
-| `WorkflowDefinition` | **本コンテキストの集約ルート**。3 入力（`stage-graph.json` / `scope-grid.json` / scope カタログ）を束ねた読取モデル集約で、`StageGraph`（コンパイル出力の成果物値。`Vec<StageNode>` の**文書順を保持** ＋ `StageSlug → index` の索引）と `ScopeGrid`、および `ScopeDefinition` 群を**内包する**。構築後は immutable | スライス 1 に変異は無い（読取専用）。3 入力は compile が lockstep で出すため、**束ね直しの単位は常に 3 入力まとめて 1 回**（片方だけ新しい状態は upstream でも想定外）。「返した配列を呼び出し側が mutate してはならない」という upstream のコメント規約は、Rust では所有権と不変参照で構造的に成立する |
+| `WorkflowDefinition` | **本コンテキストの集約ルート**。識別子 `WorkflowDefinitionId`（`<harnessRoot>/tools/data/harness.json` の `name`。**内容が変わっても不変の系譜 ID**）と内容版 `DefinitionRevision`（`{ stage_graph, scope_grid, scopes }` の正準 JSON の `sha256:`。識別子ではなく**値属性**）を持つ。どちらも Repository 実装が付与し、ドメインは計算しない（ADR-008、Bolt B3 実装 `workflow_definition_id.rs` / `definition_revision.rs`）。3 入力（`stage-graph.json` / `scope-grid.json` / scope カタログ）を束ねた読取モデル集約で、`StageGraph`（コンパイル出力の成果物値。`Vec<StageNode>` の**文書順を保持** ＋ `StageSlug → index` の索引）と `ScopeGrid`、および `ScopeDefinition` 群を**内包する**。構築後は immutable | スライス 1 に変異は無い（読取専用）。3 入力は compile が lockstep で出すため、**束ね直しの単位は常に 3 入力まとめて 1 回**（片方だけ新しい状態は upstream でも想定外）。「返した配列を呼び出し側が mutate してはならない」という upstream のコメント規約は、Rust では所有権と不変参照で構造的に成立する |
 
 内包物の位置づけ:
 
@@ -36,7 +36,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 - `ScopeDefinition`（identity ファイルの frontmatter とグリッド 1 列の join。**存在の権威は identity ファイル**で、グリッド列は権威ではない — §3.3）は集約に内包される。
 - `ScopeGrid`（グリッドファイル全体）と `StageNode` は値オブジェクト。`StageDefinition`（stage file = frontmatter ＋本文）と `AgentPersona` はスライス 2 の集約。
 
-**`WorkflowDefinition` を集約ルートへ昇格させた理由**（2026-08-22 オーナー裁定）: Repository は「集約名 + Repository」で名付ける規則を採ったため（[`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）、3 入力を束ねる読取面のポートに名を与えるには、束ねた結果そのものが集約でなければならない — `StageGraphRepository` は**ファイル名由来の名前**（格納形式は Repository 実装の内部詳細）であり規則違反になる。
+**`WorkflowDefinition` を集約ルートへ昇格させた理由**（2026-08-22 オーナー裁定）: 第一の理由は**一貫性の単位**である — 3 入力は compile が lockstep で出すため、片方だけ新しい状態は upstream でも想定外であり、束ね直しの単位は常に「3 入力まとめて 1 回」になる。集約とは不変条件を守る一貫性の境界なので、この束が集約である（設計監査 C10）。第二の理由として命名規則がある: Repository は「集約名 + Repository」で名付けるため（[`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）、3 入力を束ねる読取面のポートに名を与えるには束ねた結果そのものが集約でなければならない — `StageGraphRepository` は**ファイル名由来の名前**（格納形式は Repository 実装の内部詳細）であり規則違反になる。
 
 ### 2.2 Domain Primitive（E1/E2 の受け皿）
 
@@ -47,7 +47,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | `PhaseId` | 5 値閉集合＋全順序（`initialization=0` … `operation=4`） | E1 |
 | `ExecutionKind` | `ALWAYS` / `CONDITIONAL`。**プラン所属（EXECUTE/SKIP）ともゲート軸とも直交**することを型コメントではなく本仕様で明記する | E1 |
 | `StageMode` | 5 値閉集合。`agent-team` は**予約 variant として明示的に保持**し、既定経路へフォールスルーさせない（§4 の拒否点） | E1 |
-| `PlanAction` | `EXECUTE` / `SKIP`。**グリッド未収載は第 3 の値ではなく `Option` の `None`** で表す（§4 の 3 値） | E1 |
+| `PlanAction` | `EXECUTE` / `SKIP`。**グリッド未収載は第 3 の値ではなく `Option` の `None`** で表す（§4 の 3 値）。**所有は本コンテキスト**であり、orchestration（10 §2.2）と 01 §3.1 は参照するだけで再定義も再輸出もしない（ADR-005、Bolt B3 実装） | E1 |
 | `ScopeName` | スコープ名。生のまま `join()` に到達してはならないパスセグメント | E2 |
 | `ArtifactName` | 成果物**語彙名**（パスではない）。kebab-case | E2 |
 | `UnitKind` | `produces_kinds` の値要素（`service` / `ui` / `packaging` / `library` 等）。**マップに無い成果物は全 kind に適用**という既定は写像関数側の規範 | E1 |
@@ -58,19 +58,21 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | `DepthLevel` / `TestStrategyLevel` | scope identity frontmatter の設計ダイヤル。**エンジンの決定には影響しない**（助言軸であることを仕様として明記） | E2（パース）＋E5（非影響性） |
 | `SkeletonDefault` | scope frontmatter の `skeleton`（スコープ既定の walking-skeleton 姿勢 — stance で上書きされる「既定」なので Switch ではなく Default と命名）。`"on"` / `"off"` の 2 値厳密パース（逐語拒否文言あり — §4） | E2 |
 
-### 2.3 ドメインサービス（純関数）
+### 2.3 集約の述語面（純関数）
 
-グラフとグリッドを読む述語は 5 つで、これがスライス 1 の最小面である。
+グラフとグリッドを読む面は、集約 `WorkflowDefinition` の**クエリメソッド 6 つ ＋ グリッド照会 1 つ**であり、これがスライス 1 の最小面である。独立したドメインサービスとしては置かない — 状態の所有者の外で判断する Ask 型を避けるため（01 §7.1 原則 2、設計監査 C9、Bolt B3 実装）。
 
-| サービス | 入力 → 出力 | 意味論の規範 | 対応する upstream |
+| 述語 | 入力 → 出力 | 意味論の規範 | 対応する upstream |
 | --- | --- | --- | --- |
-| `subgraph_for_scope` | (grid, graph, `ScopeName`) → `Result<Vec<&StageNode>, UnknownScope>` | 未知スコープは**拒否**（逐語文言つき）。グリッド列の EXECUTE 集合でグラフを filter し、**`numericStageOrder` でソートして**返す。**ランタイムで topo ソートはしない** — compile のエッジ局所不変条件（F13）により数値順が有効な topo 順であることが保証されている | `subgraphForScope` |
-| `next_in_scope_stage` | (graph, after: `StageSlug`, scope, 状態の checkbox 射影) → `Option<&StageNode>` | **グラフ配列の文書順**に `after` の次から前進走査。checkbox が completed / skipped のノードは読み飛ばし、有効プランが EXECUTE の最初のノードを返す。無ければ `None`。**未知スコープでも `None`**（拒否しない） | `nextInScopeStage` |
-| `first_in_scope_stage_of_phase` | (grid, graph, `PhaseId`, scope) → `Option<&StageNode>` | `subgraph_for_scope` の並びから最初の該当 phase ノード。walking skeleton ゲートアンカーの**導出元**であり、ハードコードしない（B11）。未知スコープは `None` | `firstInScopeStageOfPhase` |
-| `plan_action_in_grid` | (グリッド列, `StageSlug`) → `Option<PlanAction>` | **3 値照会**。列に slug が無ければ `None`（「このグリッドがコンパイルしていないステージ」）で、`SKIP` に畳まない。orchestration の `effectivePlanAction` は「オーバレイ → 本述語」の順で解決する合成読みであり、**畳み込みの責務は呼び出し側**（B1） | `effectivePlanAction` のグリッド参照部分 |
-| `valid_scopes` | (scope カタログ) → 整列済み `ScopeName` 集合 | **identity ファイルの存在が権威**であり、グリッド列は権威ではない。逐語: *"Scope validity is the .md-presence authority (validScopes), not the grid"* | `validScopes` |
+| `is_valid_scope` | (`&str`) → `bool` | `valid_scopes()` に含まれるか。権威は identity ファイルの存在であってグリッド列の有無ではない | `validScopes` の判定面 |
+| `valid_scopes` | () → 整列済み `ScopeName` 集合 | **identity ファイルの存在が権威**であり、グリッド列は権威ではない。逐語: *"Scope validity is the .md-presence authority (validScopes), not the grid"* | `validScopes` |
+| `scope_metadata` | (`&str`) → `Option<&ScopeMetadata>` | scope identity ファイルの frontmatter（`depth` / `testStrategy` / `skeleton` / `review_cap` 等）。`.md` が無ければ `None`（= 無効スコープ） | scope frontmatter の読取面 |
+| `subgraph_for_scope` | (`ScopeName`) → `Result<Vec<&StageNode>, UnknownScope>` | 未知スコープは**拒否**（逐語文言つき）。グリッド列の EXECUTE 集合でグラフを filter し、**`numericStageOrder` でソートして**返す。**ランタイムで topo ソートはしない** — compile のエッジ局所不変条件（F13）により数値順が有効な topo 順であることが保証されている | `subgraphForScope` |
+| `stages_in_scope` | (`ScopeName`) → `Vec<(&StageSlug, PhaseId, Option<PlanAction>)>` | **全ステージ**について `(slug, phase, action)` を**文書順**で返す。`action` は静的グリッドの 3 値（recompose サフィックスは合成しない）。未知スコープは空（`subgraph_for_scope` との非対称） | `stagesInScope` |
+| `first_in_scope_stage_of_phase` | (`PhaseId`, `ScopeName`) → `Option<&StageNode>` | `subgraph_for_scope` の並びから最初の該当 phase ノード。walking skeleton ゲートアンカーの**導出元**であり、ハードコードしない（B11）。未知スコープは `None` | `firstInScopeStageOfPhase` |
+| `grid().action()` | (`ScopeName`, `StageSlug`) → `Option<PlanAction>` | **3 値照会**。列に slug が無ければ `None`（「このグリッドがコンパイルしていないステージ」）で、`SKIP` に畳まない。orchestration の `effectivePlanAction` は「オーバレイ → 本照会」の順で解決する合成読みであり、**畳み込みの責務は呼び出し側 = 集約 `WorkflowExecution`**（`effective_plan`）である（B1 / 設計監査 R2、Bolt B3 実装） | `effectivePlanAction` のグリッド参照部分 |
 
-**2 経路の順序使い分け（本仕様の中核）**: `subgraph_for_scope` は `numericStageOrder` で**再ソート**し、`next_in_scope_stage` は**文書順**を走査する。upstream ではコンパイラが数値順にソートして emit するため配布データでは両者が一致するが、**2 つの経路そのものは残っている**。したがって読込時に配列を数値順へ正規化してはならない（F2）。文書順インデックスに依存する派生値（`stageIndex` 等）も同じ理由で文書順に従う。
+**2 経路の順序使い分け（本仕様の中核）**: `subgraph_for_scope` は `numericStageOrder` で**再ソート**し、`stages_in_scope` は**文書順**のまま返す。文書順の前進走査そのものは本コンテキストの担い手ではなく、集約 `WorkflowExecution` が `Started` で確定させた `stages`（`StageEntry` 列 = 文書順の解決済み計画）の上で行う（設計監査 R2、Bolt B3 で定義側から削除済み）。upstream ではコンパイラが数値順にソートして emit するため配布データでは両者が一致するが、**2 つの経路そのものは残っている**。したがって読込時に配列を数値順へ正規化してはならない（F2）。文書順インデックスに依存する派生値（`stageIndex` 等）も同じ理由で文書順に従う。
 
 補助の純関数として `numeric_stage_order`（`StageNumber` の全順序）と `stage_graph_drift`（slug 集合の差分 — `missingFiles` は graph→disk で hard fail、`uncompiledStages` は disk→graph で advisory）を置く。後者はセッション開始フックの材料であり、スライス 1 の最小面ではないが、グラフ側の入力はここが供給する。
 
@@ -140,11 +142,11 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | 1 | `stage-graph.json` が読めない | **fatal**。非ゼロ exit ＋ stderr に逐語文言。`AIDLC_STAGE_GRAPH` が設定されているときだけ hint 節が「unset して既定に戻せ」形に切り替わる |
 | 2 | `stage-graph.json` が不正 JSON | **fatal**。`Stage graph at <p> is not valid JSON: <err>` 形の逐語文言 |
 | 3 | `scope-grid.json` が読めない／不正 | **fatal にしない**。グラフの `scopes[]` から**その場で転置して導出**する（*"callers never see a hard ENOENT for a derivable artifact"*）。ここを厳格化すると新規 fixture ツリーが壊れる |
-| 4 | 未知スコープ | **非対称**: `subgraph_for_scope` のみ `Unknown scope: "<s>". Valid scopes: <csv>` で拒否。`next_in_scope_stage` / `first_in_scope_stage_of_phase` / `stages_in_scope` は `None` / 空を返す |
-| 5 | identity ファイルあり × グリッド列なし | **zero-EXECUTE な正当スコープ**。unknown ではなくエラーでもない（`subgraph_for_scope` は空を返す） |
+| 4 | 未知スコープ | **非対称**: `subgraph_for_scope` のみ `Unknown scope: "<s>". Valid scopes: <csv>` で拒否。`first_in_scope_stage_of_phase` は `None`、`stages_in_scope` は空、`scope_metadata` は `None` を返す（設計監査 R2 / C8） |
+| 5 | identity ファイルあり × グリッド列なし | **zero-EXECUTE な正当スコープ**。unknown ではなくエラーでもない（`subgraph_for_scope` は空を返す）。`initialization` の 3 ステージは #8 の転置特例で常に EXECUTE なので、zero-EXECUTE は initialization 以外のステージについての記述 |
 | 6 | グリッド列あり × identity ファイルなし | **ランタイムから不可視**。列ごと落ちるだけでエラーにしない（join の軸が metadata 側だから） |
-| 7 | グリッド列に slug が無い | **3 値の `None`**。`SKIP` に畳まない。畳み込みは呼び出し側（orchestration の `effectivePlanAction`）の責務 |
-| 8 | `initialization` の 3 ステージ | 全スコープ列で EXECUTE（転置の特例。グリッド側の値がどうであれ、転置規則としてこの結論になる） |
+| 7 | グリッド列に slug が無い | **3 値の `None`**。`SKIP` に畳まない。畳み込みは呼び出し側 = 集約 `WorkflowExecution` の `effective_plan`（orchestration の `effectivePlanAction`）の責務（設計監査 R2） |
+| 8 | `initialization` の 3 ステージ | 全スコープ列で EXECUTE（転置の特例。グリッド側の値がどうであれ、転置規則としてこの結論になる）。**適用点はグリッド側の転置**（`ScopeGrid` — `grid().action()` の供給元。Bolt B3 実装 `scope_grid.rs` の転置述語 `phase == initialization ∨ node.scopes.contains(scope)`、テスト `transposition_puts_initialization_in_every_column`）であり、`stages_in_scope` / `effective_plan` はその結果を読むだけ。二重防御として `WorkflowExecution::start` は initialization が EXECUTE でなければ `InitializationMustExecute` で拒否する（10 §2.1） |
 | 9 | `mode: "agent-team"` | **明示的に未実装として拒否**する。既定の実行経路へフォールスルーさせてはならない（upstream の最低要件は `throw "mode agent-team not yet implemented"`） |
 | 10 | 上記いずれの失敗でも | **stdout に何も書かない**。half-emitted directive を出さないという orchestration 側の契約（10 §6 I1）を、読込側から破らない |
 
@@ -159,19 +161,18 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 **ユースケース**（スライス 1 の範囲、すべて読み取り専用）: `LoadStageGraph`、`LoadScopeCatalog`（グリッド列と identity の join）、`ResolveScopePlan`（`stagesInScope` 相当 — 全ステージの `{slug, phase, action}`）。compile・validate-grid・recompose のためのグラフ CLI 面はスライス 2。
 
-**ポート**: 現行ポートは orchestration 側の **`WorkflowDefinitionRepository`（10 §3）1 本だけ**であり、その実装（`WorkflowDefinitionRepositoryImpl`）が 3 入力の取得（パス解決・env オーバライド・「読めない」と「不正」の区別 — §4 #1/#2）と scope カタログの列挙・読取を**内部詳細として**持つ。
+**ポート**: 現行ポートは orchestration 側の **`WorkflowDefinitionRepository`（10 §3）1 本だけ**である。動詞は `find_by_id(&WorkflowDefinitionId)` であり、引数を取らない旧動詞 `find` は**廃止**した（後方互換の併存なし — C4 改訂 2026-08-23 / ADR-008）。1 つのハーネスが提供できる定義は 1 つなので、実装は「探す」のではなく「**要求された id が自分の id か**」を検査し、一致すれば 3 入力を読んで `id` と `revision` を載せた集約を返す。失敗態度は `NotFound { expected, actual }`（id 取り違え — 契約上 fatal）と `HarnessIdentity { path, cause }`（`harness.json` の読取・不正 JSON・`name` 欠落／不正 — 定義 id の供給元が失われる fatal）を §4 の既存の非対称に加える。その実装（`WorkflowDefinitionRepositoryImpl`）が 3 入力の取得（パス解決・env オーバライド・「読めない」と「不正」の区別 — §4 #1/#2）、scope カタログの列挙・読取、および `id` / `revision` の付与を**内部詳細として**持つ。
 
 **将来の内部部品案**（ポートではない・スライス 1 では実装しない）: 実装内部をグラフ取得系とカタログ取得系に分割する案があるが、旧仮名 `...Source` は [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) のポート造語禁止にあたるため、スライス 2 で分割が実際に要ることになった時点で同規則に沿って命名する。
 
-**他コンテキストへの供給面**（Customer/Supplier の supplier 側）:
+**他コンテキストへの供給面**（Customer/Supplier の supplier 側）: 供給の実体は **`WorkflowDefinitionRepository` が返す集約 `WorkflowDefinition` の述語面**（§2.3 のクエリメソッド 6 つ ＋ `grid().action()`）と、集約が内包する `StageNode` の読取である。顧客ごとに別名のサービス型を立てない — 個別名を置くと 1 つの集約の一部の操作にポートを 1 つずつ立てることになり、集約単位の境界を名前の上で解体してしまう（設計監査 C9、gateway-taxonomy §3）。
 
-| サービス | 顧客 | 契約の要点 |
+| 顧客 | 使う面 | 契約の要点 |
 | --- | --- | --- |
-| `StageGraphQuery` | orchestration（10 §3 ポート `WorkflowDefinitionRepository` が返す集約の述語面） | §2.3 の述語 5 種。文書順保持と 2 経路の使い分けを含む |
-| `ScopeCatalog` | orchestration（scope 解決ラダー） | `valid_scopes` の権威は identity ファイル。未知スコープ拒否の逐語文言もここから供給する |
-| `SkeletonAnchor` | orchestration（B11） | `first_in_scope_stage_of_phase` の純関数。stance 解決そのものは顧客側 |
-| `StageNodeView` | verification（B10 の材料） | ノードの `reviewer` / `review_class` / `reviewer_max_iterations` の 3 フィールド。`review_class` は verification 所有型の外部キー |
-| `SensorBindingView` | verification（B8） | `sensors` / `sensors_applicable`。compile 時スナップショットであることを含めて供給する |
+| orchestration（scope 解決ラダー・10 §3） | `is_valid_scope` / `valid_scopes` / `scope_metadata` / `subgraph_for_scope` / `stages_in_scope` / `grid().action()` | `valid_scopes` の権威は identity ファイル。未知スコープ拒否の逐語文言もここから供給する。文書順保持と 2 経路の使い分け（§2.3）を含む |
+| orchestration（walking skeleton — B11） | `first_in_scope_stage_of_phase` | ゲートアンカーの導出元。stance 解決そのものは顧客側 |
+| verification（B10 の材料） | 集約が内包する `StageNode` の `reviewer` / `review_class` / `reviewer_max_iterations` | `review_class` は verification 所有型への外部キー（B7） |
+| verification（B8） | 同じく `StageNode` の `sensors` / `sensors_applicable` | compile 時スナップショットであることを含めて供給する（実行時に manifest を再オープンしない） |
 
 ## 6. インターフェイスアダプタ層
 
@@ -190,13 +191,13 @@ E4（Quint）は本コンテキストに**付さない** — 対象が状態遷�
 | # | 不変条件 | 強制 | 備考 |
 | --- | --- | --- | --- |
 | F1 | `stage-graph.json` のルートは配列で、要素は 28 フィールド集合。**未知フィールドは無視して受理**（`deny_unknown_fields` 禁止） | E2 | 将来版・プラグインの追加フィールドで読めなくならないこと |
-| F2 | 配列の**文書順を保持**し、`subgraph_for_scope`（数値順ソート）と `next_in_scope_stage`（文書順走査）の 2 経路を潰さない。読込時に数値順へ正規化しない | **E1**（`Vec` ＋別 API） | **暫定規範**（§11 で裁定待ち）。正規化を選ぶと手編集グラフに対する挙動が本家と分岐する |
+| F2 | 配列の**文書順を保持**し、`subgraph_for_scope`（数値順ソート）と `stages_in_scope`（文書順）の 2 経路を潰さない。読込時に数値順へ正規化しない（文書順の前進走査は集約 `WorkflowExecution` の `stages` 上で行う — §2.3、設計監査 R2） | **E1**（`Vec` ＋別 API） | **暫定規範**（§11 で裁定待ち）。正規化を選ぶと手編集グラフに対する挙動が本家と分岐する |
 | F3 | `number` は文字列 `"P.I"` のまま保持し、順序比較は `numeric_stage_order` のみ | E1+E2 | proptest: 全順序性と `"1.10" > "1.9"` |
 | F4 | `rules_in_context` / `sensors_applicable` はオブジェクト配列。文字列配列へ潰さない（directive 上の射影形とは別型） | **E1** | 潰すと `run-stage` が本家と非互換になる |
 | F5 | `inputs` / `outputs` は文字列で記述用途のみ。機械可読な出力は `produces` | E1 | |
 | F6 | `scope-grid.json` は 2 段構造で中間 `"stages"` キーを省略しない | E1+E2 | レガシー `mapping[scope].stages` 互換 |
 | F7 | スコープ存在の権威は identity ファイル。グリッド列は権威ではない | **E1**（join の軸を型で固定）+E3 | 帰結が §4 の #5・#6 の非対称 |
-| F8 | グリッド未収載の slug は 3 値（`Option<PlanAction>` の `None`）。`SKIP` に畳まない | **E1** | 畳み込みは呼び出し側（B1） |
+| F8 | グリッド未収載の slug は 3 値（`Option<PlanAction>` の `None`）。`SKIP` に畳まない | **E1** | 畳み込みは呼び出し側 = 集約 `WorkflowExecution` の `effective_plan`（B1 / 設計監査 R2） |
 | F9 | 未知スコープの非対称: `subgraph_for_scope` のみ逐語拒否、他 3 述語は `None` / 空 | E2+E3 | 戻り型が `Result` と `Option` に分かれること自体が装置 |
 | F10 | `stage-graph.json` の欠損／不正 JSON は fatal（非ゼロ exit ＋ stderr 逐語、stdout は汚さない）。`scope-grid.json` の欠損は転置導出フォールバック | E2+E3 | 逐語はゴールデン採取後に文言カタログで固定（§10） |
 | F11 | `mode: "agent-team"` は明示的に未実装として拒否し、既定経路へフォールスルーさせない | **E1**+E3 | enum に variant を持たせ、`match` の網羅性で漏れをビルドエラーにする |
@@ -206,10 +207,10 @@ E4（Quint）は本コンテキストに**付さない** — 対象が状態遷�
 
 ## 9. 実装順序（D10 × domain-model-first）
 
-1. **ドメイン例をユビキタス言語のテストとして書く**: 「identity ファイルがありグリッド列が無いスコープは unknown ではない」「グリッドに無い slug は SKIP ではない」「`subgraph_for_scope` は拒否し `next_in_scope_stage` は `None` を返す」「`initialization` はどのスコープでも EXECUTE」。テスト名は 01 の正準用語を使う。
-2. **Domain Primitive → `StageGraph` 集約を TDD で実装**。proptest は `StageNumber` の全順序性、`StageSlug` の parse 往復、転置の冪等性、`plan_action_in_grid` の 3 値性、F13（生成したグラフでエッジ局所順序が破れないこと）に適用する。
-3. **in-memory Gateway** で 3 入力を固定バイト列として与え、述語 5 種のユースケーステストを回す。ここまでファイル I/O は登場しない。
-4. **実 Gateway とゴールデン**: ピン留め `dist/claude/` の実 JSON（Issue #7 項目 0 の採取物）を読ませ、33 ノード・11 スコープ列・EXECUTE 数のパリティと、`stages_in_scope` の `.aidlc-plan.json` バイト同値を検証する。逐語文言の期待値固定も同時に行う。
+1. **ドメイン例をユビキタス言語のテストとして書く**: 「identity ファイルがありグリッド列が無いスコープは unknown ではない」「グリッドに無い slug は SKIP ではない」「`subgraph_for_scope` は拒否し `stages_in_scope` は空を返す」「`initialization` はどのスコープでも EXECUTE」。テスト名は 01 の正準用語を使う。
+2. **Domain Primitive → 集約 `WorkflowDefinition` を TDD で実装**（`StageGraph` は内包の成果物値であって集約ルートではない — §2.1）。proptest は `StageNumber` の全順序性、`StageSlug` の parse 往復、転置の冪等性、`grid().action()` の 3 値性、F13（生成したグラフでエッジ局所順序が破れないこと）に適用する。
+3. **in-memory Gateway** で 3 入力を固定バイト列として与え、述語面（§2.3 のクエリメソッド 6 つ ＋ `grid().action()`）のユースケーステストを回す。ここまでファイル I/O は登場しない。
+4. **実 Gateway とゴールデン**: ピン留め `dist/claude/` の実 JSON（Issue #7 項目 0 の採取物）を読ませ、33 ノード・11 スコープ列・EXECUTE 数のパリティと、`stages_in_scope` の `.aidlc-plan.json` バイト同値を検証する。Repository 実装が付与する `WorkflowDefinitionId` / `DefinitionRevision`（ADR-008）の付与規則もここで固定する。逐語文言の期待値固定も同時に行う。
 
 ## 10. 実装ノート — 仕様と実装の分離（00-policy §2 の判定原則）
 

@@ -1,0 +1,47 @@
+{
+  "stage": "code-generation",
+  "unit": "u9-canon-docs",
+  "upstream_ids": [
+    "FR8.1", "FR8.2", "FR9.6",
+    "BR1.1", "BR1.2", "BR1.3", "BR1.4",
+    "BR2.1", "BR2.2", "BR2.3", "BR2.4", "BR2.5",
+    "BR3.1", "BR3.2", "BR3.3", "BR3.4", "BR3.5", "BR3.6",
+    "BR4.1", "BR4.2", "BR5.1", "BR5.2",
+    "NFR1.1", "NFR1.2", "NFR1.3", "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5"
+  ],
+  "coverage": [
+    { "id": "FR8.1", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md" },
+    { "id": "FR8.2", "status": "OK", "target": "docs/specs/10-orchestration.md" },
+    { "id": "FR9.6", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/error-handling.md" },
+    { "id": "BR1.1", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/use-case-rules.md" },
+    { "id": "BR1.2", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md" },
+    { "id": "BR1.3", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md" },
+    { "id": "BR1.4", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md" },
+    { "id": "BR2.1", "status": "OK", "target": "docs/specs/11-workspace.md" },
+    { "id": "BR2.2", "status": "OK", "target": "docs/specs/01-domain-model.md" },
+    { "id": "BR2.3", "status": "OK", "target": "docs/specs/10-orchestration.md" },
+    { "id": "BR2.4", "status": "OK", "target": "docs/specs/12-workflow-definition.md" },
+    { "id": "BR2.5", "status": "OK", "target": "docs/specs/12-workflow-definition.md" },
+    { "id": "BR3.1", "status": "OK", "target": "docs/specs/12-workflow-definition.md" },
+    { "id": "BR3.2", "status": "OK", "target": "docs/specs/11-workspace.md" },
+    { "id": "BR3.3", "status": "OK", "target": "docs/specs/10-orchestration.md" },
+    { "id": "BR3.4", "status": "OK", "target": "docs/specs/deviations.md" },
+    { "id": "BR3.5", "status": "OK", "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/components.md" },
+    { "id": "BR3.6", "status": "OK", "target": "docs/specs/01-domain-model.md" },
+    { "id": "BR4.1", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/error-handling.md" },
+    { "id": "BR4.2", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/README.md" },
+    { "id": "BR5.1", "status": "OK", "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md" },
+    { "id": "BR5.2", "status": "OK", "target": "docs/specs/10-orchestration.md" },
+    { "id": "NFR1.1", "status": "OK", "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md" },
+    { "id": "NFR1.2", "status": "OK", "target": "docs/specs/deviations.md" },
+    { "id": "NFR1.3", "status": "OK", "target": "docs/specs/01-domain-model.md" },
+    { "id": "NFR2.1", "status": "OK", "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md" },
+    { "id": "NFR2.2", "status": "OK", "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md" },
+    { "id": "NFR2.3", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/README.md" },
+    { "id": "NFR2.4", "status": "OK", "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md" },
+    { "id": "NFR2.5", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/error-handling.md" }
+  ],
+  "reverse": [
+    { "id": "BR1.5", "status": "OK", "target": "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md" }
+  ]
+}

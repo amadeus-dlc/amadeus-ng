@@ -23,24 +23,29 @@
 - 配線（実物と fake の差し替え）は **composition root** が行う。
 - use-case 層には trait を置かない。置くと「ユースケースが消費しないポート」がポート表に居座り、Gateway 責務の分類が濁る。
 
-### 1b. 非 Repository ポートの模範例 — `WorkspaceLock`
+### 1b. 非 Repository ポートの一般形
 
-Repository（集約 I/O）に当てはまらない外界協調は、**アウトプット契約をそのまま trait に表現**する。模範例はロックの並行性サービス `WorkspaceLock`（2026-08-22 オーナー承認）: `acquire(&LockIdentity, AcquireBudget) -> Result<LockGuard, AcquireError>` / `release(LockGuard)` — 予算・再入・二重解放不能（非 Clone の `LockGuard`）という**契約の意味論が型に載っている**。集約ではないものを Repository に無理に寄せない。
+Repository（集約 I/O）に当てはまらない外界協調は、**アウトプット契約をそのまま trait に表現**する。そのとき、**契約の意味論（予算・再入・二重解放不能など）を散文ではなく型に載せる** — 上限や締切は専用の引数型で、使い切りの資源は非 `Clone` のガード型で、といった具合に、契約を破る呼び方がそもそも書けない形にする。集約ではないものを Repository に無理に寄せない。
+
+旧模範例の `WorkspaceLock`（2026-08-22 承認）は ADR-007 で退役した（並行制御は SQLite Tx + 楽観 version）。型に意味論を載せるという設計指針だけを引き継ぐ（ADR-007 / 2026-08-23）。
 
 ### 2b. Repository のメソッド語彙（j5ik2o-ddd-repository-design が正典）
 
 - 使ってよい動詞: **`find_by_id` / `find`（単一集約の named retrieval）/ `save` / `remove`** ＋ **ドメイン概念を表す named retrievals**。`load` / `get` / `fetch` 等は使わない。
 - `find_by_...` の無秩序な増殖は禁止（複雑な検索・画面向け読取は read model 側 — ただし本リポジトリは CQRS 基盤を導入しないので、まずは「ドメイン概念を表す named retrieval」で表現できるかを考える）。
-- インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find` の not-found は契約上 fatal な `Err`、grid 欠損は転置導出 — 12 §4）。
+- インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find_by_id` の not-found は契約上 fatal な `Err`（`NotFound { expected, actual }`、identity ファイルの読取失敗は `HarnessIdentity { path, cause }`）、grid 欠損は転置導出 — 12 §4。引数なしの `find()` は廃止済み — C4 改訂 2026-08-23 / ADR-008）。
 - **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（`set_field` 等）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
+
+**ES Repository の拡張語彙**: イベントソーシングの Repository（`WorkflowExecutionRepository`）は `store(event, aggregate)` / `find_by_id` を動詞とする。上の許容動詞一覧は**ステートソーシング Repository の規則**であり、ES Repository の動詞は本家ライブラリ（event-store-adapter-rs）の語彙に従う — `store` はその拡張語彙として明示的に許可する（ADR-006）。
 
 ### 2. Repository 名 = 集約名 + Repository
 
 集約は各コンテキスト仕様の宣言表が持っている（[`01-domain-model.md`](../../../../../../docs/specs/01-domain-model.md) §3 の集約候補、[`11-workspace.md`](../../../../../../docs/specs/11-workspace.md) §2.1、[`12-workflow-definition.md`](../../../../../../docs/specs/12-workflow-definition.md) §2.1）。Repository はそこに載っている集約ルート名をそのまま冠する。
 
 - `WorkflowExecution` → `WorkflowExecutionRepository`
-- `AuditLedger` → `AuditLedgerRepository`
 - `WorkflowDefinition` → `WorkflowDefinitionRepository`
+
+`AuditLedger` はイベントログ（`WorkflowExecution` のイベント列）であって集約ではないため、Repository を持たない — 監査シャードは ReadModelUpdater の投影である（ADR-001 / 003）。
 
 **ストレージ媒体名の Repository は禁止。**
 
@@ -57,14 +62,14 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 ### 4. CQRS は採用しない（まず素の DDD）
 
-読み書きのモデルを分けない。単一の Repository が集約の load / save を持つ。
+読み書きのモデルを分けない。単一の Repository が集約の find / save を持つ（動詞は §2b の許容語彙に合わせた — 設計監査 C2 / 2026-08-23）。
 
 「このユースケースには書かせたくない」という**型による保証**は、CQRS ではなく次の 2 手段で実現する。
 
 - **Writer を注入しない**: 読取専用ユースケースのコンストラクタに Repository を渡さない。
-- **load 済み集約を `&` 参照で渡す**: Controller が Repository で集約を load し、ユースケースには `&Aggregate` を渡す。所有権と可変性が Rust の型で読取専用を保証する。
+- **`find_by_id` 済み集約を `&` 参照で渡す**: Controller が Repository で集約を `find_by_id` し、ユースケースには `&Aggregate` を渡す。所有権と可変性が Rust の型で読取専用を保証する。
 
-例: [`10-orchestration.md`](../../../../../../docs/specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が load 済みの `WorkflowExecution` を `&` で渡すことで型強制する。
+例: [`10-orchestration.md`](../../../../../../docs/specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が `find_by_id` 済みの `WorkflowExecution` を `&` で渡すことで型強制する（設計監査 C2 / 2026-08-23）。
 
 ### 5. 配置と命名 — trait は use-case 層、実装は `XxxRepositoryImpl`
 
@@ -76,7 +81,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 - **1 trait 1 Impl**。`Fs` / `Sys` / `Postgres` のような技術接頭辞は使わない — 格納形式は実装の内部詳細であり、型名に出せば「どの技術を使うか」がレビュー対象の公開 API になってしまう。
 - `Impl` 接尾辞は**本物の Gateway 実装の印**。テストダブルには付けず、`InMemory` 接頭辞で区別する。
-- 集約が使う trait はユースケース層に置くが、**集約自身は Repository を呼ばない**（典拠: `j5ik2o-ddd-repository-placement` — *"Aggregate code: no repository dependencies."* / *"Application/use-case layer: depends on repository interfaces and orchestrates loading/saving."*）。load / save の指揮はユースケースが執る。
+- 集約が使う trait はユースケース層に置くが、**集約自身は Repository を呼ばない**（典拠: `j5ik2o-ddd-repository-placement` — *"Aggregate code: no repository dependencies."* / *"Application/use-case layer: depends on repository interfaces and orchestrates loading/saving."*）。find / save の指揮はユースケースが執る（動詞は §2b の許容語彙に合わせた — 設計監査 C2 / 2026-08-23）。
 
 ### 6. Repository は in-memory から始める
 

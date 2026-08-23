@@ -25,12 +25,13 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 | 集約 | ルートと内包 | トランザクション境界 |
 | --- | --- | --- |
-| `Intent` | record ディレクトリ＋`StateFile`＋レジストリ行への参照。birth は `createIntent` の単一チョークポイント（uuid mint → dirName 解決 → mkdir → **ヘッダのみの stub state**。stub がないと mint〜full 書込の間にカーソルが解決せず書込が space root に漏れる） | 状態変更 = `withAuditLock` 1 区間（audit-first） |
-| `Space` | 4 サブツリー（memory / knowledge / codekb / intents）＋レジストリ＋カーソル。default space は「ディスクに何もなくても常に有効」の特例。新規 space は default の `org.md` のみ継承（team/project は 1 行スタブ — 「新チームは自分のプラクティスを自分で獲得する」） | `intents.json` の全変更は **workspace センチネルロック**（§2.2 `LockIdentity`）下 |
-| `AuditLedger` | clone ごとの shard 群。**追記専用**（唯一の例外は audit-fork による worktree ミラー shard の tmp+rename 確立）。行は opaque | 追記 = `appendAuditEntries`（全エントリ事前検証 → 1 ロック 1 write。並行 emitter はブロック間に割り込めない） |
-| `Worktree` | `.aidlc/worktrees/bolt-<slug>` ＋ブランチ `bolt-<slug>`（**導出であり引数渡しではない**）。absent → created → merged / discarded。record ミラー（同一相対レイアウト）と main clone-id のスレッディング。`--repo` 指定時は**ターゲットリポジトリの checkout に再アンカー**（multi-repo — §2.4） | 変異 3 動詞（create / merge / discard）は**すべて audit-first**。emit と効果の逆順が認められるのは aidlc-bolt の `abort --discard`（orchestration 側の動詞、slice 2）のみで、本表の対象外 |
+| `Intent` | record ディレクトリ＋レジストリ行（`intents.json` の uuid / slug / dirName と生死）。birth は `createIntent` の単一チョークポイント（uuid mint → dirName 解決 → mkdir → **ヘッダのみの stub state**。stub がないと mint〜full 書込の間にカーソルが解決せず書込が space root に漏れる）。`StateFile` は**内包しない** — リードモデルである（下記、ADR-004） | `intents.json` の全変更は 1 トランザクション（直列化の機構は §10 の未決事項） |
+| `Space` | 4 サブツリー（memory / knowledge / codekb / intents）＋レジストリ＋カーソル。default space は「ディスクに何もなくても常に有効」の特例。新規 space は default の `org.md` のみ継承（team/project は 1 行スタブ — 「新チームは自分のプラクティスを自分で獲得する」） | 同上（`intents.json` の全変更は単一バケットに集約する — §2.2 `LockIdentity` の keying 規範は維持） |
+| `Worktree` | `.aidlc/worktrees/bolt-<slug>` ＋ブランチ `bolt-<slug>`（**導出であり引数渡しではない**）。absent → created → merged / discarded。record ミラー（同一相対レイアウト）と main clone-id のスレッディング。`--repo` 指定時は**ターゲットリポジトリの checkout に再アンカー**（multi-repo — §2.4） | 変異 3 動詞（create / merge / discard）は**すべて監査を伴う**。emit と効果の逆順が認められるのは aidlc-bolt の `abort --discard`（orchestration 側の動詞、slice 2）のみで、本表の対象外 |
 
-`WorkspaceLock` は集約ではなく本コンテキストが所有・公開する**並行性サービス**（§3）。
+**リードモデル**（集約ではない — ADR-003 / ADR-004）: `StateFile`（`aidlc-state.md`）と `AuditShard`（clone ごとの監査シャード群）。真実源は SQLite ジャーナル（C6）であり、両者は ReadModelUpdater（U4）が投影として**バイト互換**で再生成する。監査台帳は集約 `WorkflowExecution` のイベントログであって独立した集約ではない（ADR-001 / ADR-003）。シャードが**追記専用**であること・行が opaque であること・他クローンのシャードが読み取り専用の外部入力であることは、投影の規範として維持する（唯一の例外は audit-fork による worktree ミラー shard の tmp+rename 確立）。
+
+**退役**: `WorkspaceLock`（旧: 集約ではなく本コンテキストが所有・公開する並行性サービス）。ES 化により read-modify-write のトランザクションが SQLite に入ったため、mkdir ロック機構は退役し、ロック dir は生成しない。並行制御は SQLite Tx ＋ 楽観 version が担う（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 
 ### 2.2 Domain Primitive（E1/E2 の受け皿）
 
@@ -38,26 +39,29 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 | --- | --- | --- |
 | `SpaceName` | `/^[a-z][a-z0-9-]*$/` — 「生のまま `join()` に到達してはならないパスセグメント」 | E2 |
 | `IntentId` | UUIDv7（48-bit Unix-ms プレフィクス＋暗号学的 random tail）。文字列ソートの順序保証は**ミリ秒粒度**（同一ミリ秒内は非保証 — upstream 同等。単調カウンタは導入しない） | E2 |
-| `IntentDirName` | `<YYMMDD>-<slug(label,24)>`。衝突は `-2`… `-1000` まで、以後 loud throw。予約ラベル 8 語（help / list / switch / create / archive / rename / show / birth）拒否 | E2 |
+| `IntentDirName` | `<YYMMDD>-<slug(label,24)>` の kebab 表記。衝突は `-2`… `-1000` まで、以後 loud throw。予約ラベル 8 語（help / list / switch / create / archive / rename / show / birth）拒否。**`IntentId`（UUIDv7）とは別の値**で、リードモデルの投影先パス解決に使う（01 §3.3、オーナー裁定 2026-08-23） | E2 |
 | `CloneId` | `/^[a-z0-9]{1,32}$/`。欠如時 12 hex mint → **再読で並行初回鋳造が単一トークンに収束**。machine-local（gitignore）が本質 | E2＋E5（運用） |
 | `ShardName` | `<host(小文字化・[a-z0-9-]圧縮・48 字上限・空なら"host")>-<cloneId>.md` | E1（構成関数） |
 | `StateVersion` | 現行 `"8"`。分類器は `ok / unparseable / past / future` の 4 値で、**runtime と doctor が同一関数を使う**（不一致が構造的に不可能） | E1＋E2 |
 | `StateFieldValue` | 単一行必須 — C0 制御・DEL・U+2028/U+2029 をコードポイント走査で拒否 | E2 |
 | `BoltRefs` | 単一行リスト値。空は常に `[empty list]`、非空はソート済みブラケットリスト（round-trip 決定的）。append/remove は重複・不在で **throw**（no-op しない） | E2 |
+| `CheckboxState` | 6 値（`[ ]` / `[-]` / `[?]` / `[R]` / `[x]` / `[S]`）。**本コンテキストの所有**であり orchestration（10 §2.2）は参照のみ（設計監査 C12） | E1 |
 | `CheckboxLine` | マーカー（6 値）＋ em dash ＋ EXECUTE/SKIP サフィックス。**marker writer と suffix writer は同一行の互いに素なフィールドを編集する別 API**（recompose と jump が合成できる根拠） | E1（2 writer 分離） |
 | `EventType` | 86 語 22 カテゴリの閉集合＋MANDATORY 8。型は監査イベントスキーマ PL クレート（01 §3.3 の注のとおり） | E1 |
 | `AuthorityClass` | CLI_RESERVED(8) / CLI_PROTECTED(18) / MERGE_PROTECTED(26＋`DOCUMENT_*` prefix) の 3 deny-list。**スキーマ側宣言**（B5） | E1＋E3（拒否点） |
 | `AuditFieldKey` | `/^[A-Za-z][A-Za-z0-9 ._()/-]*$/`。`Event` は呼出側供給禁止（第二の `**Event**:` 行偽造の防止）、`Timestamp` は受理するが値は捨てる | E2 |
-| `LockIdentity` | `<realpath(projectDir)>\x00<space>\x00<intent>`。intent 省略時は **`<realpath(projectDir)>\x00__workspace__` の 2 成分形（space 成分ごと落ちる）** — 全 space の `intents.json` 変更が単一バケットに集約される。ロック dir 名は `md5(identity).slice(0,8)` から導出されるため、このバイト列は stage-0/1 併用期の相互排他互換（§9）に直結する。**`activeIntent()` を keying に決して使わない**（並行 birth が別バケットに割れて二重 birth する） | E1（構成関数）。E4 は keying をモデル化する slice 2 で付与 |
+| `LockIdentity`（退役予定 — ADR-007） | `<realpath(projectDir)>\x00<space>\x00<intent>`。intent 省略時は **`<realpath(projectDir)>\x00__workspace__` の 2 成分形（space 成分ごと落ちる）** — 全 space の `intents.json` 変更が単一バケットに集約される。ロック dir 名は `md5(identity).slice(0,8)` から導出されるため、このバイト列は stage-0/1 併用期の相互排他互換（§9）に直結する。**`activeIntent()` を keying に決して使わない**（並行 birth が別バケットに割れて二重 birth する）。**ロック dir の生成そのものは退役**（ADR-007）— 残るのは「`intents.json` の変更を単一バケットへ集約する」keying の規範だけで、md5 dir 名を含む物理形式の互換維持は §9 の stage-0/1 併用期の論点として §10 に移す | E1（構成関数）。E4 は keying をモデル化する slice 2 で付与 |
 
 ### 2.3 ドメインサービス（純関数）
 
+本節の純関数のうち、**状態ファイル・監査ブロックの描画**にあたるもの（`render_audit_block` / `state_writers`）は、ES 化により**投影の責務**へ移る — 描くのは ReadModelUpdater（U4）であって、ドメイン層ではない（ADR-003 / ADR-004。コードの移動は U4 の Bolt で実施する）。ドメインに残るのは値オブジェクトの Always Valid 検証（`StateFieldValue` の単一行検査、`EventType` の閉集合、行終端エスケープによる行偽造不能性）と、集約に置けない横断の判断である（01 §7.1 原則 2）。`find_all_events`（他クローンのシャード横断読取）と `classify_state_version` は本コンテキストに残る。
+
 | サービス | 内容 |
 | --- | --- |
-| `render_audit_block` | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
+| `render_audit_block`（→ 投影 API — ReadModelUpdater、U4） | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
 | `find_all_events` | shard 横断の順序: timestamp（秒精度 ISO）ソート＋バッファ位置 tiebreak。**通常読取は決して fail-closed しない**（authority 比較の同秒 fail-closed は orchestration の述語側 — B9）。出力は順序付き専用型（外部から構築・再ソート不能 — W15 の E1 装置） |
 | `classify_state_version` | 4 分類の単一実装（W7） |
-| `state_writers` | `set_field`（無言 no-op）/ `set_field_strict`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `set_or_insert_field` / `remove_field` の 4 種。純粋な string→string |
+| `state_writers`（→ 投影 API — ReadModelUpdater、U4） | `set_field`（無言 no-op）/ `set_field_strict`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `set_or_insert_field` / `remove_field` の 4 種。純粋な string→string |
 
 ### 2.4 multi-repo・カーソル・committed vs ignored
 
@@ -68,35 +72,46 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 ## 3. ユースケース層
 
-**ユースケース**（= CLI 動詞・提供サービス）: audit 5 動詞（append / append-batch / append-raw / audit-fork / audit-merge）、worktree 6 動詞（create / merge / discard / list / verify / info）、intent / space 管理動詞、runtime-graph compile（**器のみ** — センサー区画の折り込み規則は verification 提供、B8）、および state の**非遷移**動詞。**遷移系動詞（エンジン所有 11 ＋ unpark ＋ unit 系）のユースケースと S3 ガード（PID マーカー・bypass env・逐語拒否）は orchestration のアダプタ所有**（01 §3.2「遷移動詞 11 個の唯一の所有者は `WorkflowExecution`」、10 §9 S1「CLI ラッパもエンジンも同じ集約を呼ぶ」）。マルチコール composition root は該当動詞をガード通過後に orchestration ユースケースへディスパッチし、workspace は `StateFileService` 等の supplier に徹する — これで 01 §2 の依存方向（orchestration → workspace の C/S）が保たれる。
+**ユースケース**（= CLI 動詞・提供サービス）: audit 5 動詞（append / append-batch / append-raw / audit-fork / audit-merge）、worktree 6 動詞（create / merge / discard / list / verify / info）、intent / space 管理動詞、runtime-graph compile（**器のみ** — センサー区画の折り込み規則は verification 提供、B8）、および state の**非遷移**動詞。**遷移系動詞（エンジン所有 11 ＋ unpark ＋ unit 系）のユースケースと S3 ガード（PID マーカー・bypass env・逐語拒否）は orchestration のアダプタ所有**（01 §3.2「遷移動詞 11 個の唯一の所有者は `WorkflowExecution`」、10 §9 S1「CLI ラッパもエンジンも同じ集約を呼ぶ」）。マルチコール composition root は該当動詞をガード通過後に orchestration ユースケースへディスパッチし、workspace はリードモデル（状態ファイル・監査シャード）の読取と §3 の供給サービスに徹する — これで 01 §2 の依存方向（orchestration → workspace の C/S）が保たれる（ADR-003 / ADR-004）。
 
-**他コンテキストへの供給面**（Customer/Supplier の supplier 側）:
+**ポート**（[`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) の語彙。Gateway 責務は Repository と外部システムクライアントの 2 種類だけで、判定は「**どのユースケースがこのポートを消費するか**」で行う — 設計監査 R3 / C3 / C4 / C11）:
+
+| ポート | 消費するユースケース | 契約 | 実装の所在 |
+| --- | --- | --- | --- |
+| `WorkflowExecutionRepository` | orchestration の `Report` / `Continue` / `Park` / `Jump*` / `Recompose` / `SetAutonomy`（10 §3） | 集約 `WorkflowExecution` の ES 形 Repository。`store(event, aggregate)`（単一イベント＋適用後集約を同一 Tx、楽観 `version`）/ `find_by_id(&IntentId)`（スナップショット＋差分 replay で完全再構成）— C3 / ADR-006 | `WorkflowExecutionRepositoryImpl`（SQLite EventStore — C6 のスキーマを内包）。テストダブルは `InMemoryWorkflowExecutionRepository`（gateway-taxonomy §5） |
+| 外部システムクライアント（Git。例 `GitWorktreeClient`） | orchestration（Bolt / swarm — slice 2）、worktree 6 動詞 | worktree add / merge 3 戦略 / branch 削除 / conflict 検出 `/^CONFLICT \(/m`。別プロセスとの RPC であって集約の永続化ではない（gateway-taxonomy §1） | アダプタ層の Gateway（spawn 基盤 A4 経由、30s タイムアウト、SIGTERM でタイムアウトと失敗を区別） |
+
+**ポートではないもの**（同規則の帰結。ポート表に載せると Gateway 責務の分類が濁る）:
+
+- `FileStore`（アトミック書込 tmp+rename、追記専用 open、シンボリックリンク連鎖検査、封じ込め検査）は **Repository 実装と投影ライタの内部部品**であって、ユースケースが消費するポートではない。「読むだけの Gateway だから Reader」式のポート造語（`Store` / `Reader` / `Writer` / `Source` / `Provider`）と、`StateFileRepository` のような媒体名の Repository は禁止（gateway-taxonomy §2・§3）。
+- `Clock` / `ProcessProbe` / `Tmpdir` は**アダプタ層の機構**であり、実装は機構モジュールに置き、差し替えは composition root が配線する（gateway-taxonomy §1、設計監査 C4）。
+- 監査台帳の追記サービス（旧称）は**退役**した。監査シャードは ReadModelUpdater（U4）の投影であり、専用のポートを持たない（ADR-003）。同様に、ロックのサービスも退役し、並行制御は SQLite Tx ＋ 楽観 version が担う（ADR-007）。
+
+**他コンテキストへの供給面**（Customer/Supplier の supplier 側。ポートではなく本コンテキストが公開する API）:
 
 | サービス | 顧客 | 契約の要点 |
 | --- | --- | --- |
-| `StateFileService` | orchestration | 読取／audit-first 遷移書込。read-only ファイルは意図的な書込バリア（rename は read-only ターゲットを貫通するため **W_OK 事前チェックがバリアの実装**） |
-| `AuditLedgerService` | orchestration / verification / knowledge / フック | audit-first 追記、shard 列挙、位置付き読取（B9 の述語材料） |
-| `LockService` | orchestration / plugin | acquire（予算つき）/ 再入 / 解放 / reap。plugin は lib 二重ロード＋PID env 共有ではなく**このサービスの顧客**（B5） |
-| `WorktreeService` | orchestration（Bolt/swarm） | 三層 fork/merge の workspace 側（state-fork/merge、audit-fork/merge、fragment-fork/merge）と Worktree ライフサイクル |
+| `WorktreeService` | orchestration（Bolt/swarm） | 三層 fork/merge の workspace 側（state-fork/merge、audit-fork/merge、fragment-fork/merge）と Worktree ライフサイクル。Git 操作は上記の外部システムクライアント経由 |
 | `OpaqueFlagStore` | orchestration | HOLD-MERGE 等の政策値の保存。set/clear 冪等、欠落 forked state への set は hard error（非対称は保存 API の仕様 — B13） |
 | `ScopedStorage` | knowledge | space / intent スコープのストレージと存在保証（self-heal・「default tree never churns」）。内容不干渉（B12） |
 | `SessionStampStore` | フック（session-start / session-end / rebuild） | セッション → intent スタンプ（`aidlc/.aidlc-sessions/<session_id>`、gitignore、per-user）と handoff receipt（TTL 5 分 — `SESSION_INTENT_HANDOFF_TTL_MS`）の保存・照合材料。スタンプ済みセッションへの intent birth は上書きせず receipt を書く（Stop フック carve-out 0 が消費）。SESSION_ENDED の fail-closed 帰属（未知 intent へのスタンプ・未スタンプセッションの shared-cursor fallback 拒否）の判定材料もここが供給する |
 
-**ポート**（trait。Gateway が実装）: `FileStore`（アトミック書込 tmp+rename、追記専用 open、シンボリックリンク連鎖検査、封じ込め検査）、`GitPort`（worktree add / merge 3 戦略 / branch 削除 / conflict 検出 `/^CONFLICT \(/m`）、`ProcessProbe`（`kill(pid,0)` の ESRCH 判定 — reap 用）、`Tmpdir`（ロック dir の置き場）、`Clock`。
+状態ファイルと監査シャードの**読取**（`aidlc-state.md` の描画結果、shard 列挙、位置付き読取 — B9 の述語材料）は、リードモデルの読取として本コンテキストが供給する。**書込**は投影（U4）の責務であり、供給面には現れない（ADR-003 / ADR-004）。
 
 ## 4. インターフェイスアダプタ層
 
 - **Controllers**: 各 CLI 動詞の引数を Domain Primitive の `parse` で検証（`--slug` は `SLUG_RE`、`--space` は `SpaceName` 等）し、型付き値をユースケースへ渡す（01 §7 の規約）。**遷移系動詞の Controller と S3 ガードは orchestration 所有**（§3）で、本コンテキストの Controller は非遷移動詞と供給サービスの CLI 面のみを持つ。
 - **Presenters**: worktree conflict JSON（worktree 保存＋`conflict_files` — ADR 0001 contract-compact）、`[merge-succeeded:<sha>]` プレフィクス付き post-merge エラー（doctor が「merge 全失敗」と「着地済み・クリーンアップ孤児」を区別する contract）。逐語は文言カタログ。bolt の失敗エンベロープ（reason 17 値）は orchestration slice 2 の CLI 面、workspace-sync の exit code は distribution の ACL に属し、ここでは規定しない。
-- **Gateways**: `FileStore` 実装（`O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW|O_NONBLOCK` open、fstat regular-file 検査、書込前後の記述子同一性再検証 — 書込中 rename は行方不明の行ではなく**囲んでいる audit-first トランザクションの失敗**になる。**nlink の意図的非対称**: 通常 append 経路は `nlink != 1` を拒否**しない** — rsync `--link-dest` / `cp -al` スナップショットへの拒否が「以後の全 gate/hook 追記をフレームワーク全体で文鎮化した」実績による。厳格な多重リンク拒否は fork/merge 経路のみ。Rust 再実装で防御を「強化」すると同じ障害を再現する）、`GitPort` 実装（spawn 基盤 A4 経由、30s タイムアウト、SIGTERM でタイムアウトと失敗を区別）、ロック dir 実装（mkdir-EEXIST、owner.json スタンプ、rename CAS reap）。**I/O 責務はすべてここ**。テスト用 in-memory 実装を最初に用意する。
+- **配置の規範**（§3 の帰結）: `Clock` / `ProcessProbe` は**アダプタ層の機構モジュール**（コンテキストの外、クレート root）に置き、実物と fake の差し替えは composition root が配線する。`FileStore`（アトミック書込・追記専用 open・封じ込め検査）と正準 JSON（A2）・ハッシュは **Repository 実装と投影ライタの内部部品**として実装側に閉じる。いずれも use-case 層に trait を置かない（[`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) §1、設計監査 C4）。
+- **Gateways**: `FileStore` 実装（`O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW|O_NONBLOCK` open、fstat regular-file 検査、書込前後の記述子同一性再検証 — 書込中 rename は行方不明の行ではなく**囲んでいる audit-first トランザクションの失敗**になる。**nlink の意図的非対称**: 通常 append 経路は `nlink != 1` を拒否**しない** — rsync `--link-dest` / `cp -al` スナップショットへの拒否が「以後の全 gate/hook 追記をフレームワーク全体で文鎮化した」実績による。厳格な多重リンク拒否は fork/merge 経路のみ。Rust 再実装で防御を「強化」すると同じ障害を再現する）、外部システムクライアント（Git）実装（spawn 基盤 A4 経由、30s タイムアウト、SIGTERM でタイムアウトと失敗を区別）。ロック dir 実装（mkdir-EEXIST、owner.json スタンプ、rename CAS reap）は**退役**し、並行制御は `WorkflowExecutionRepositoryImpl` の SQLite Tx ＋ 楽観 version に移る（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。**I/O 責務はすべてここ**。テスト用 in-memory 実装を最初に用意する。
 
 ## 5. インフラストラクチャ層の利用
 
-正準 JSON（A2 — `intents.json` は 2-space、`runtime-graph.json` は決定性契約「同一監査ログ → バイト同値」）、文言カタログ（A3）、ハッシュ（SHA-256 prefix-hash、MD5 ロック dir 名）は純粋部品。アトミック書込・spawn 基盤（A4）を呼ぶのは Gateway のみ。`tracing` 計装（A10）は application/adapter 層で、監査 append 成功後の派生イベント発行のチョークポイントは `AuditLedgerService` に置く。**POSIX 前提**（O_NOFOLLOW・`kill(pid,0)`・mkdir ロック・rename 意味論）は方針書 R3 のとおり初期フェーズの明示的制約で、Windows はフェーズ D で防御の等価物定義とセット。
+正準 JSON（A2 — `intents.json` は 2-space、`runtime-graph.json` は決定性契約「同一監査ログ → バイト同値」）、文言カタログ（A3）、ハッシュ（SHA-256 prefix-hash）は純粋部品。MD5 のロック dir 名はロック機構の退役に伴い不要になる（ADR-007。stage-0/1 併用期の互換維持は §9・§10 の論点）。アトミック書込・spawn 基盤（A4）を呼ぶのは Gateway のみ。`tracing` 計装（A10）は application/adapter 層で、派生イベント発行のチョークポイントは**ジャーナル追記の Tx コミット成功後**（`WorkflowExecutionRepositoryImpl` の `store`）に置く（ADR-003）。**POSIX 前提**（O_NOFOLLOW・`kill(pid,0)`・mkdir ロック・rename 意味論）は方針書 R3 のとおり初期フェーズの明示的制約で、Windows はフェーズ D で防御の等価物定義とセット。
 
 ## 6. 不変条件表（強制手段つき）
 
-E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3 — **10 不変条件 green・mutation 10/10・到達性 witness 7 本モジュール内定義**）に実在する。
+E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3 — **10 不変条件 green・mutation 10/10・到達性 witness 7 本モジュール内定義**）に実在する。**注記（2026-08-23）**: W1〜W5 の文言と E4 定義名は upstream の mkdir ロック時代の規範（旧）である。ADR-007 でロック機構は退役したため（§2.1）、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」モデルへ改訂したうえで Bolt B5 が W1〜W5 と定義名を差し替える（改訂して存続 — 本 Unit では変更しない）。
 
 | # | 不変条件 | 強制 | E4 定義名 / 備考 |
 | --- | --- | --- | --- |
@@ -121,8 +136,8 @@ E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](../.
 
 1. **ドメイン例のテスト**: 「emit が throw したら state は変わらない」「reap は死んだ所有者か閾値超過のみ」「BoltRefs の append は重複で throw」「stub のない record は activeIntent に解決されない」等を正準用語で書く。
 2. **Domain Primitive → 集約の TDD**: §2.2 の E1/E2 を先に。proptest は `BoltRefs` round-trip・`render_audit_block` エスケープ（任意入力で行偽造不能）・`ShardName` 構成・checkbox parse に適用。
-3. **in-memory Gateway**（FileStore / GitPort / ProcessProbe / Tmpdir）でユースケーステスト。ロックの並行テストは loom 等の検討を含め実装時に確定。
-4. **ITF 準拠**: `audit_lock.qnt` のトレース（`lastAction`/`lastActor` 駆動）をロックサービスの純粋遷移関数に再生。
+3. **in-memory 実装**（`InMemoryWorkflowExecutionRepository` と外部システムクライアント（Git）の fake、機構の `Clock` / `ProcessProbe` の fake）でユースケーステスト。`FileStore` は Repository 実装の内部部品なので、そのフェイクも実装側に閉じる（§3）。並行制御のテスト（楽観 version の競合と再試行）は loom 等の検討を含め実装時に確定。
+4. **ITF 準拠**: `audit_lock.qnt`（ADR-007 により「ジャーナル / スナップショット / version / チェックポイント協定」のモデルへ改訂 — Bolt B5）のトレース（`lastAction`/`lastActor` 駆動）を Repository 実装の純粋遷移関数に再生。
 5. **実 Gateway は最後**: ゴールデン互換層で upstream 実ワークスペース（TS 版が書いた実物）を読ませ、state バイト列・監査行・shard 名・レジストリ JSON の一致を検証（stage-1 切替の前提そのもの）。
 
 ## 8. Quint ゲート実験 — 第一陣 3 号の記録
@@ -139,13 +154,15 @@ E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](../.
 orchestration §10 の裁定（in-process 合成、S1〜S4 維持）は本コンテキストの提供面にそのまま適用される。追加の分類:
 
 - **仕様**: エンジン所有 11 動詞の外部拒否面（S3 — マーカー受理・bypass env・逐語文言）、25 動詞の CLI 語彙、shard 名・ブロック文法・イベント語彙・authority 拒否、ロックの奪取条件と予算の**意味論**、fork/merge の検証と拒否文言、worktree のパス/ブランチ導出とイベント。
-- **実装**: ロック dir の物理配置（tmpdir + md5 名）や owner.json の形式は「他プロセス（旧 upstream ツールや外部監視）が観測しない限り」内部機構だが、**stage-0/1 併用期には upstream プロセスと同一ワークスペースを触る可能性がある**ため、初期フェーズはロックの物理形式も互換維持する（保守的側に倒す）。compose の lib import ＋ PID env 共有は実装であり、LockService の C/S 化で置換（B5。`AIDLC_WORKSPACE_LOCK_OWNER_PID` の env 名と受理意味論は D6 対象として維持）。
+- **実装**: ~~ロック dir の物理配置（tmpdir + md5 名）や owner.json の形式は…初期フェーズはロックの物理形式も互換維持する~~ → **ADR-007 でロック機構そのものを退役させ、ロック dir を生成しないことにしたため、この互換維持の前提は失効した**（逸脱台帳 [`deviations.md`](deviations.md) に「ロック dir の非生成」として登録済み）。stage-0/1 併用期に upstream プロセスと同一ワークスペースを触る場合の相互排他をどう担保するかは**未確定**であり、§10 の未決事項として立てる。`AIDLC_WORKSPACE_LOCK_OWNER_PID` の env 名と受理意味論は D6 の対象として維持する。
 
 ## 10. 未決事項
 
 - `ScopedStorage`（B12）の API 詳細は knowledge コンテキスト仕様（13 号 — 12 号は workflow-definition が使用）と同時に確定する。
 - `SessionStampStore` の rebind offer 文言と Codex/Copilot 差分（session-start フックの詳細）は検証コンテキスト仕様（フック帰属分）で確定する。
-- ロック keying（複数 identity・センチネル 2 成分形）と二相 acquire・未スタンプ猶予のモデル化は `audit_lock.qnt` slice 2 候補。temporal liveness（解放または reap 可能）の定義名付与も同時に行う。
+- **stage-0/1 併用期の相互排他**（2026-08-23 追加）: ADR-007 でロック dir を生成しなくなったため、upstream プロセス（mkdir ロックを取る）と同一ワークスペースを並行して触る場合の相互排他は担保されない。併用を許すか、許すならどの機構で担保するかはオーナー裁定待ち（§9 の旧前提は失効）。
+- **`intents.json` の直列化機構の確定**（2026-08-23 追加）: 集約の遷移は SQLite Tx ＋ 楽観 version に移ったが（ADR-007）、`intents.json`（レジストリ）は SQLite ジャーナルの外にある。W13（birth の単一チョークポイント）と §2.2 `LockIdentity` の keying 規範をどの機構で満たすかは **U3 の設計で確定する**。本書は規範（単一バケットへの集約・`activeIntent()` を keying に使わない）だけを保持し、機構は未確定とする。
+- ~~ロック keying（複数 identity・センチネル 2 成分形）と二相 acquire・未スタンプ猶予のモデル化~~ → mkdir ロックの退役（ADR-007）により `audit_lock.qnt` は「ジャーナル / スナップショット / version / チェックポイント協定」の検証モデルへ改訂する。temporal liveness の定義名付与も改訂後のモデルで行う。
 - runtime-graph のセンサー区画折り込み規則の受け渡し形式（B8 — 宣言的規則の表現）は verification 仕様で確定。
 - M12 修正の実装形（birth で行を書く vs `set_or_insert_field` 化）は実装時に選び、ゴールデンの分岐点を 1 か所に固定する。
 - Windows の防御等価物（O_NOFOLLOW / kill(0) / mkdir ロック / rename）はフェーズ D（R3）。
