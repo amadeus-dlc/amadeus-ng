@@ -11,3 +11,10 @@
    PhaseId の組で、文字列 1 本に畳むには区切り記号の発明が要る）。
 4. BR2.3 / functional-spec §3.1: スナップショット payload の `version` も新 version（= event.seq_nr）で保存する（`with_version(new_version).state()` を符号化）— 列と
    payload の一致、J3 の単純化（委任 2 設計質問 4 の裁定）。
+5. entities.md `SqliteEventStore` / functional-spec §2: 公開面に `open_with_busy_timeout(path, clock, timeout)` を追加（`open` は 5000ms に委譲 — Busy 超過の観測テスト用、委任 3 設計質問 1）。
+6. BR2.3 / functional-spec §3.1 手順 4: `UPDATE snapshot` の SET に `schema_version` を含める（将来のワイヤ版上げでの静かな破損経路を塞ぐ — 委任 3 設計質問 2）。
+   競合時の `actual` は Tx 内で読んでよい（rollback 前後で同値）。
+7. **型名**: `SqliteEventStore` → `EventStoreImpl`（gateway-taxonomy §5「技術接頭辞は使わない — 格納形式は実装の内部詳細」、ADR-003 の「Repository → EventStoreImpl(sqlite client)」
+   の語）。entities / functional-spec / logical-components / 10 号 §3 / 11 号 §3 / components.md の表記を同期（委任 3 設計質問 3 — コンダクタ裁定、B5 統合で改名）。
+8. `within_write_transaction` の閉包引数が `rusqlite::Transaction` を公開面に出す点は U7 の設計で再確認（委任 3 設計質問 4）。`persist_event(event, version)` は version を
+   楽観前提として検査（両実装同義 — 委任 2 §C-5 / 委任 3 設計質問 5）を BR2.3 に追記。
