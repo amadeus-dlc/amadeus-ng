@@ -1,0 +1,15 @@
+{
+  "stage": "nfr-design",
+  "unit": "u9-canon-docs",
+  "upstream_ids": ["NFR1.1", "NFR1.2", "NFR1.3", "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5"],
+  "coverage": [
+    { "id": "NFR1.1", "status": "OK", "target": "逐語契約の保護・research/ 不変（security-design §2、受入 2）" },
+    { "id": "NFR1.2", "status": "OK", "target": "deviations.md の逸脱登録行（security-design §4、受入 5）" },
+    { "id": "NFR1.3", "status": "OK", "target": "出典注記の形式（security-design §2）" },
+    { "id": "NFR2.1", "status": "OK", "target": "コード変更ゼロの diff 受入（security-design §3 受入 1 — modules tools scripts .github Cargo.*）" },
+    { "id": "NFR2.2", "status": "OK", "target": "sentinel grep と除外規定・12 号 5 箇所（security-design §3 受入 2）" },
+    { "id": "NFR2.3", "status": "OK", "target": "README の行数 = ルール数、一言・機械強制・裁定日の一致（security-design §3 受入 3）" },
+    { "id": "NFR2.4", "status": "OK", "target": "表の列数・見出し重複の整形とレビューボット全件対応（security-design §2 / §3 受入 4・6）" },
+    { "id": "NFR2.5", "status": "OK", "target": "日本語正本・固定トークンは英語（security-design §2）" }
+  ]
+}
