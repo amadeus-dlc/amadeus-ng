@@ -65,6 +65,7 @@ mod snapshot_error;
 mod stage_entry;
 mod stage_index;
 mod start_error;
+mod start_request;
 mod status;
 mod verdict;
 mod workflow_execution;
@@ -79,6 +80,7 @@ pub use phase_boundary::PhaseBoundary;
 pub use skeleton_stance::SkeletonStance;
 pub use stage_entry::StageEntry;
 pub use stage_index::StageIndex;
+pub use start_request::StartRequest;
 pub use verdict::Verdict;
 
 // 集約 (エンジンループの状態機械)

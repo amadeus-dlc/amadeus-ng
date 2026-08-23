@@ -9,6 +9,7 @@ use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
+use super::start_request::StartRequest;
 use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
 
 /// イベント封筒 (C5 envelope)。
@@ -108,30 +109,37 @@ pub enum WorkflowExecutionEventPayload {
 }
 
 /// `Started` のペイロード — リプレイが `WorkflowDefinition` を要さない自己完結データ (BR2.2)。
+///
+/// `scope` / `request` / `depth` / `test_strategy` は呼出側が解決して渡した [`StartRequest`] を
+/// C5 の平坦なレコードとして展開したもの。`depth` / `test_strategy` は集約状態にはならず
+/// (16 属性は不変)、U4 が `Scope Configuration` を描くためだけにイベントへ載る。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
     definition_id: WorkflowDefinitionId,
     definition_revision: DefinitionRevision,
     scope: String,
     request: String,
+    depth: Option<String>,
+    test_strategy: Option<String>,
     stages: Vec<StageEntry>,
 }
 
 impl Started {
-    /// 参照した定義の ID / 内容版と、スコープ・要求・解決済み計画を束ねる。
+    /// 参照した定義の ID / 内容版と、呼出側の要求・解決済み計画を束ねる。
     #[must_use]
     pub fn new(
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
-        scope: impl Into<String>,
-        request: String,
+        request: &StartRequest,
         stages: Vec<StageEntry>,
     ) -> Started {
         Started {
             definition_id,
             definition_revision,
-            scope: scope.into(),
-            request,
+            scope: request.scope().to_string(),
+            request: request.request().to_string(),
+            depth: request.depth().map(str::to_string),
+            test_strategy: request.test_strategy().map(str::to_string),
             stages,
         }
     }
@@ -158,6 +166,18 @@ impl Started {
     #[must_use]
     pub fn request(&self) -> &str {
         &self.request
+    }
+
+    /// 呼出側が解決した depth (`None` = 指定なし)。集約は素通しするだけ。
+    #[must_use]
+    pub fn depth(&self) -> Option<&str> {
+        self.depth.as_deref()
+    }
+
+    /// 呼出側が解決した test strategy (`None` = 指定なし)。集約は素通しするだけ。
+    #[must_use]
+    pub fn test_strategy(&self) -> Option<&str> {
+        self.test_strategy.as_deref()
     }
 
     /// 文書順の全ステージ (解決済み計画)。
@@ -521,7 +541,9 @@ impl AutonomyModeSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestration::{AutonomyMode, IntentId, JumpDirection, PhaseBoundary, StageEntry};
+    use crate::orchestration::{
+        AutonomyMode, IntentId, JumpDirection, PhaseBoundary, StageEntry, StartRequest,
+    };
     use crate::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
@@ -560,14 +582,15 @@ mod tests {
         let started = Started::new(
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            "classic",
-            "build it".to_string(),
+            &StartRequest::new("classic", "build it").with_depth("standard"),
             entries.clone(),
         );
         assert_eq!(started.definition_id().as_str(), "claude");
         assert_eq!(started.definition_revision().as_str().len(), 71);
         assert_eq!(started.scope(), "classic");
         assert_eq!(started.request(), "build it");
+        assert_eq!(started.depth(), Some("standard"));
+        assert_eq!(started.test_strategy(), None);
         assert_eq!(started.stages(), entries.as_slice());
     }
 

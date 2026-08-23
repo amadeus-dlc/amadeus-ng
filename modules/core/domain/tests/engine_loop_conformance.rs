@@ -16,8 +16,8 @@
 use std::collections::BTreeMap;
 
 use core_domain::orchestration::{
-    AutonomyMode, EngineSignal, IntentId, NextRequest, StageEntry, StageIndex, Status,
-    WorkflowExecution,
+    AutonomyMode, EngineSignal, IntentId, NextRequest, StageEntry, StageIndex, StartRequest,
+    Status, WorkflowExecution,
 };
 use core_domain::workflow_definition::{
     DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph, StageSlug, WorkflowDefinition,
@@ -236,8 +236,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         IntentId::parse("itf-engine-loop").unwrap(),
         synthetic_id(),
         synthetic_revision(),
-        "itf",
-        "conformance".to_string(),
+        &StartRequest::new("itf", "conformance"),
         synthetic_stages(m0),
         AT,
     )

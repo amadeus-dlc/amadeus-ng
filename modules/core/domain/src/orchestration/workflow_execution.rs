@@ -34,6 +34,7 @@ use super::snapshot_error::SnapshotError;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::start_error::StartError;
+use super::start_request::StartRequest;
 use super::status::Status;
 use super::workflow_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
@@ -87,10 +88,12 @@ pub struct WorkflowExecution {
 impl WorkflowExecution {
     // ---- W1: 生成 (BR2.2 / BR2.6) ----
 
-    /// 定義とスコープから解決済み計画を組み立てて実行を開始する。
+    /// 定義と呼出側の要求から解決済み計画を組み立てて実行を開始する。
     ///
     /// `def.id()` / `def.revision()` は**無条件に `Started` へ記録する** — 比較対象となる既存状態が
     /// 無い静的コンストラクタなので検査はしない (BR2.6)。以後の定義照合は `next_decision` が行う。
+    /// [`StartRequest`] の `depth` / `test_strategy` は集約状態にはならず、`Started` へ素通しで
+    /// 載るだけである (U4 の `Scope Configuration` 投影材料 — C5)。
     ///
     /// # Errors
     ///
@@ -100,10 +103,10 @@ impl WorkflowExecution {
     pub fn start(
         intent_id: IntentId,
         definition: &WorkflowDefinition,
-        scope: &str,
-        request: String,
+        request: &StartRequest,
         occurred_at: &str,
     ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
+        let scope = request.scope();
         if !definition.is_valid_scope(scope) {
             let valid = definition
                 .valid_scopes()
@@ -135,7 +138,6 @@ impl WorkflowExecution {
             intent_id,
             definition.id().clone(),
             definition.revision().clone(),
-            scope,
             request,
             stages,
             occurred_at,
@@ -144,7 +146,8 @@ impl WorkflowExecution {
 
     /// 解決済み計画を直接与えて実行を開始する ([`WorkflowExecution::start`] の委譲先)。
     ///
-    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。
+    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。スコープ名の
+    /// 妥当性はここでは検査しない (定義を持たないため) — 検査は [`WorkflowExecution::start`] の責務。
     ///
     /// # Errors
     ///
@@ -154,8 +157,7 @@ impl WorkflowExecution {
         intent_id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
-        scope: &str,
-        request: String,
+        request: &StartRequest,
         stages: Vec<StageEntry>,
         occurred_at: &str,
     ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
@@ -191,7 +193,6 @@ impl WorkflowExecution {
             WorkflowExecutionEventPayload::Started(Started::new(
                 definition_id.clone(),
                 definition_revision.clone(),
-                scope,
                 request,
                 stages.clone(),
             )),
@@ -1134,7 +1135,7 @@ mod tests {
     use crate::orchestration::{
         ApplyError, AutonomyMode, CommandError, EngineSignal, IntentId, JumpDirection,
         NextDecision, NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageEntry,
-        StageIndex, StartError, Started, Status, WorkflowExecutionEvent,
+        StageIndex, StartError, StartRequest, Started, Status, WorkflowExecutionEvent,
         WorkflowExecutionEventPayload, WorkflowExecutionSnapshotBuilder,
     };
     use crate::workflow_definition::{
@@ -1183,13 +1184,16 @@ mod tests {
             .collect()
     }
 
+    fn start_request() -> StartRequest {
+        StartRequest::new("classic", "build it")
+    }
+
     fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> WorkflowExecution {
         WorkflowExecution::start_with_entries(
             intent(),
             def_id("claude"),
             revision('0'),
-            "classic",
-            "build it".to_string(),
+            &start_request(),
             entries(init, actions, conditional),
             AT,
         )
@@ -1278,8 +1282,7 @@ mod tests {
     fn start_records_the_definition_identity_and_the_resolved_plan() {
         let definition = shipped_definition(full_grid());
         let (w, event) =
-            WorkflowExecution::start(intent(), &definition, "classic", "build it".to_string(), AT)
-                .unwrap();
+            WorkflowExecution::start(intent(), &definition, &start_request(), AT).unwrap();
 
         assert_eq!(event.seq_nr(), 1);
         assert_eq!(event.schema_version(), 1);
@@ -1313,11 +1316,37 @@ mod tests {
     }
 
     #[test]
+    fn start_carries_the_depth_and_test_strategy_the_caller_resolved() {
+        // C5 の Started payload は depth / test_strategy を持つ (U4 が Scope Configuration を
+        // 描く材料)。集約はこの 2 値に意味論を持たず、素通しでイベントに載せるだけである。
+        let definition = shipped_definition(full_grid());
+        let request = StartRequest::new("classic", "build it")
+            .with_depth("standard")
+            .with_test_strategy("comprehensive");
+        let (_, event) = WorkflowExecution::start(intent(), &definition, &request, AT).unwrap();
+        let WorkflowExecutionEventPayload::Started(started) = event.payload() else {
+            panic!("start must emit Started");
+        };
+        assert_eq!(started.scope(), "classic");
+        assert_eq!(started.request(), "build it");
+        assert_eq!(started.depth(), Some("standard"));
+        assert_eq!(started.test_strategy(), Some("comprehensive"));
+
+        // 省略時は None のまま載る (フラグ未指定 = 既定の解決は呼出側の責務)。
+        let bare = StartRequest::new("classic", "build it");
+        let (_, plain) = WorkflowExecution::start(intent(), &definition, &bare, AT).unwrap();
+        let WorkflowExecutionEventPayload::Started(started) = plain.payload() else {
+            panic!("start must emit Started");
+        };
+        assert_eq!(started.depth(), None);
+        assert_eq!(started.test_strategy(), None);
+    }
+
+    #[test]
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
-        let err =
-            WorkflowExecution::start(intent(), &definition, "nope", "build it".to_string(), AT)
-                .unwrap_err();
+        let unknown = StartRequest::new("nope", "build it");
+        let err = WorkflowExecution::start(intent(), &definition, &unknown, AT).unwrap_err();
         let StartError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
@@ -1333,14 +1362,9 @@ mod tests {
                 .into_iter()
                 .collect();
         let grid = ScopeGrid::new([("classic".to_string(), column)].into_iter().collect());
-        let (w, _) = WorkflowExecution::start(
-            intent(),
-            &shipped_definition(grid),
-            "classic",
-            "build it".to_string(),
-            AT,
-        )
-        .unwrap();
+        let (w, _) =
+            WorkflowExecution::start(intent(), &shipped_definition(grid), &start_request(), AT)
+                .unwrap();
         assert_eq!(w.effective_plan(at(&w, 1)), Some(Skip));
         assert_eq!(w.effective_plan(at(&w, 2)), Some(Skip));
     }
@@ -1351,8 +1375,7 @@ mod tests {
             intent(),
             def_id("claude"),
             revision('0'),
-            "classic",
-            "build it".to_string(),
+            &start_request(),
             Vec::new(),
             AT,
         )
@@ -1366,8 +1389,7 @@ mod tests {
             intent(),
             def_id("claude"),
             revision('0'),
-            "classic",
-            "build it".to_string(),
+            &start_request(),
             entries(2, &[Execute, Skip, Execute], &[false, false, false]),
             AT,
         )
@@ -1381,8 +1403,7 @@ mod tests {
             intent(),
             def_id("claude"),
             revision('0'),
-            "classic",
-            "build it".to_string(),
+            &start_request(),
             entries(1, &[Execute, Execute], &[true, false]),
             AT,
         )
@@ -1396,8 +1417,7 @@ mod tests {
             intent(),
             def_id("claude"),
             revision('0'),
-            "classic",
-            "build it".to_string(),
+            &start_request(),
             entries(0, &[Skip, Execute], &[false, false]),
             AT,
         )
@@ -1805,8 +1825,7 @@ mod tests {
             WorkflowExecutionEventPayload::Started(Started::new(
                 def_id("claude"),
                 revision('0'),
-                "classic",
-                "again".to_string(),
+                &StartRequest::new("classic", "again"),
                 entries(1, &[Execute], &[false]),
             )),
         );
@@ -2308,8 +2327,7 @@ mod tests {
             intent(),
             def_id("claude"),
             revision('0'),
-            "classic",
-            "build it".to_string(),
+            &start_request(),
             stages,
             AT,
         )
