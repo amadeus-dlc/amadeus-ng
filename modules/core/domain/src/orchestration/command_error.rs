@@ -1,0 +1,130 @@
+//! `CommandError` — 状態遷移コマンドの拒否理由 (functional-spec §5)。
+
+use std::fmt;
+
+use super::stage_index::StageIndex;
+use crate::workflow_definition::WorkflowDefinitionId;
+use crate::workspace::CheckboxState;
+
+/// ガード違反は「発火しないアクション」であって状態は一切動かない (モデルの enabled 条件と同型)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandError {
+    /// コマンドを受理できない — Completed、または park が活性 (BR1.0)。
+    NotRunning,
+    /// checkbox 前提の不一致 (BR1.3 / BR1.4 / BR1.5)。
+    CheckboxPrecondition {
+        /// 前提を満たさなかったステージ。
+        stage: StageIndex,
+        /// そのステージの実測 checkbox。受理される前提集合はコマンドごとに異なるため、
+        /// ここは期待値ではなく**観測値**を運ぶ。
+        actual: CheckboxState,
+    },
+    /// skipped 受理条件の不成立 (CONDITIONAL でも実効 SKIP でもない — BR1.5)。
+    NotSkippable(StageIndex),
+    /// stale re-report の前提不一致 (BR1.9)。
+    NotStale(StageIndex),
+    /// jump / recompose / ゲート系コマンドの対象不正 (BR1.3 / BR1.6 / BR1.8)。
+    InvalidTarget(StageIndex),
+    /// autonomous 下で拒否されるコマンド (park / recompose — BR1.7 / BR1.8)。
+    RefusedUnderAutonomy,
+    /// 別の定義で駆動しようとした (BR2.6)。
+    DefinitionMismatch {
+        /// この集約が `Started` に記録した定義 ID。
+        expected: WorkflowDefinitionId,
+        /// 引数で渡された定義の ID。
+        actual: WorkflowDefinitionId,
+    },
+}
+
+impl fmt::Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CommandError::NotRunning => f.write_str("not running"),
+            CommandError::CheckboxPrecondition { stage, actual } => write!(
+                f,
+                "stage {stage} checkbox precondition: actual [{}]",
+                actual.marker()
+            ),
+            CommandError::NotSkippable(stage) => write!(f, "stage {stage} is not skippable"),
+            CommandError::NotStale(stage) => write!(f, "stage {stage} is not a stale re-report"),
+            CommandError::InvalidTarget(stage) => write!(f, "invalid target stage {stage}"),
+            CommandError::RefusedUnderAutonomy => f.write_str("refused under autonomous mode"),
+            CommandError::DefinitionMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "definition mismatch: expected {expected}, actual {actual}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::orchestration::StageIndex;
+    use crate::workflow_definition::WorkflowDefinitionId;
+    use crate::workspace::CheckboxState;
+
+    #[test]
+    fn the_guard_rejections_carry_material_not_wording() {
+        assert_eq!(CommandError::NotRunning.to_string(), "not running");
+        assert_eq!(
+            CommandError::RefusedUnderAutonomy.to_string(),
+            "refused under autonomous mode"
+        );
+        assert_eq!(
+            CommandError::NotSkippable(StageIndex::new(2)).to_string(),
+            "stage 2 is not skippable"
+        );
+        assert_eq!(
+            CommandError::NotStale(StageIndex::new(3)).to_string(),
+            "stage 3 is not a stale re-report"
+        );
+        assert_eq!(
+            CommandError::InvalidTarget(StageIndex::new(0)).to_string(),
+            "invalid target stage 0"
+        );
+    }
+
+    #[test]
+    fn the_checkbox_precondition_carries_the_observed_state() {
+        let err = CommandError::CheckboxPrecondition {
+            stage: StageIndex::new(1),
+            actual: CheckboxState::Pending,
+        };
+        assert_eq!(err.to_string(), "stage 1 checkbox precondition: actual [ ]");
+    }
+
+    #[test]
+    fn the_definition_mismatch_carries_both_identifiers() {
+        let err = CommandError::DefinitionMismatch {
+            expected: WorkflowDefinitionId::parse("claude").unwrap(),
+            actual: WorkflowDefinitionId::parse("kiro").unwrap(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "definition mismatch: expected claude, actual kiro"
+        );
+    }
+
+    #[test]
+    fn the_error_is_a_std_error() {
+        let err: Box<dyn std::error::Error> = Box::new(CommandError::NotRunning);
+        assert_eq!(err.to_string(), "not running");
+    }
+
+    #[test]
+    fn rejections_compare_by_value() {
+        assert_eq!(
+            CommandError::NotSkippable(StageIndex::new(1)),
+            CommandError::NotSkippable(StageIndex::new(1))
+        );
+        assert_ne!(
+            CommandError::NotSkippable(StageIndex::new(1)),
+            CommandError::NotSkippable(StageIndex::new(2))
+        );
+    }
+}
