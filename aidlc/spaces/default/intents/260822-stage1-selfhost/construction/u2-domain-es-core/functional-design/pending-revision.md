@@ -19,3 +19,6 @@
    `aggregate_id` を SQLite に書く最初の Unit）で行う。entities.md の IntentId 行を「UUIDv7（`intents.json` の uuid）」に、`IntentDirName` を新設。
 9. （オーナー質問・了承 2026-08-23「その改名案よさそう」）`WorkflowExecutionSnapshot` の名前が C6 の永続化テーブル `snapshot` と同じで紛らわしい — B5（U3）で `WorkflowExecutionState`（memento）へ
    改名する（オーナー了承済み）（責務は変えない: serde なし、`snapshot()` / `from_snapshot()` = 状態の写しと不変条件つき復元）。entities / spec の用語も同期。
+   - 追記（B4 統合時、2026-08-23）: 改名の目的は「ドメイン API から `snapshot` の語を除き、ES のスナップショット（C6 `snapshot` テーブル）との
+     混同を避ける」ことなので、メソッドも `state()` / `from_state()` へ改名する（10 号 §2.1 の規範と一致）。B5 の計画で確定し、ゲートで
+     オーナー確認（開発エージェントの設計質問 1）。
