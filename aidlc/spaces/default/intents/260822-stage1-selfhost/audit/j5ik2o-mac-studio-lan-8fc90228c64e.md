@@ -12646,3 +12646,105 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Unit**: u2-domain-es-core
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T03:56:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a874dda46b87927e9
+**Message**: CI が緑になったらマージして次へ進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T03:56:53Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2a00dfdae1e4d1e7
+**Message**: CI緑になったらマージして次へ進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T03:57:35Z
+**Event**: HUMAN_TURN
+
+---
+
+## Unit Started
+**Timestamp**: 2026-08-23T03:58:39Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T04:00:20Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Context**: construction > u9-canon-docs > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:00:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: 61243dd9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:00:20Z
+**Event**: SENSOR_PASSED
+**Fire id**: 61243dd9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:00:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: d3a04e23
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:00:20Z
+**Event**: SENSOR_PASSED
+**Fire id**: d3a04e23
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T04:00:26Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U9 FD Q1 FR9.6 規則文面 / Q2 IntentId の正本 / Q3 B 束の範囲
+**Options**: Q1: A|B|C|X; Q2: A|B|X; Q3: A|B|C|X
+**Unit**: u9-canon-docs
+
+---
+
+## Bolt Completed
+**Timestamp**: 2026-08-23T04:00:37Z
+**Event**: BOLT_COMPLETED
+**Bolt names**: B3
+**Batch number**: 1
+
+---

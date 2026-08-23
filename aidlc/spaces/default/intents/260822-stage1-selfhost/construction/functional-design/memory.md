@@ -27,3 +27,4 @@
 - 人間が確認したバイト（0f3a151）へ復元。訂正内容（FR9.6 は U9 の責務 / 日付 UTC 表記）は `u10-ci-governance/code-generation/superseding-decisions.md`（#6 ほか）と本日誌が正本。
 - 学習候補: 人間確認済みの questions ファイルは訂正対象にせず、訂正は superseding-decisions / 日誌へ書く。
 - 2026-08-23T01:21:00Z — [Deviations] [u2-domain-es-core] 回復レビュー（終端）後にオーナー裁定（WorkflowDefinition の ID / 集約間 ID 参照、ADR-008）で entities / rules（BR2.6 追加）/ functional-spec / traceability を再改訂した。レビュー受領は再び無効になるが回復は消費済み — 機能設計ステージゲートで Request Changes の修正経路により再レビューする（オーナー了承のうえ「痛みが伴っても本質の姿」を優先）。残っていた「stage 0」表記（StageIndex / NextDecision.gate / no_gate_bypass）も phase 判定へ統一
+- 2026-08-23T06:20:00Z — [Interpretations] [u9-canon-docs] spec kind の FD: エンティティ = 改訂対象の正本文書、規則 = 改訂内容と合格条件。オーナー裁定が要る 3 点を質問に: Q1 FR9.6 規則文面（R4 とB1 裁定で改訂したドラフト）、Q2 IntentId の正本（01 号 UUIDv7 vs B3 実装の dirName — 設計の不一致を発見）、Q3 B 束に ADR-001〜008 / B3 確定事項の追従を含めるか
