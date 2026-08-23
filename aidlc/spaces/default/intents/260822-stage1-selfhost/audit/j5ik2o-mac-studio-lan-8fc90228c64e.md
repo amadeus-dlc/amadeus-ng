@@ -15482,3 +15482,122 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Findings count**: 36
 
 ---
+
+## Review Requested
+**Timestamp**: 2026-08-23T08:40:00Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:e32e2e815cc16ebdab0bd7a13f32b157952b589c2be237a7121ed53804525270
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T08:40:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af89b9cab6a28480f
+**Message**: 引き続きお願いします
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T08:48:31Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Context**: construction > u3-event-store-repository > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:48:31Z
+**Event**: SENSOR_FIRED
+**Fire id**: ad860dd9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:48:31Z
+**Event**: SENSOR_PASSED
+**Fire id**: ad860dd9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:48:31Z
+**Event**: SENSOR_FIRED
+**Fire id**: e31c9780
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:48:31Z
+**Event**: SENSOR_PASSED
+**Fire id**: e31c9780
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Duration ms**: 19
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T08:48:33Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T08:48:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u3-fd-r1
+**Agent ID**: areview-u3-fd-r1-f0ef21278cc23d2c
+**Message**: ## レビュー完了報告\n\n**Verdict:** NOT-READY（advisory, iteration 1, unit: u3-event-store-repository）\n\n対象: `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T08:50:27Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:2d740293361eca96da6c4c5b2b4e156f86ea2b670dd464cf79a2ffd72634e729
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T08:50:27Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:2d740293361eca96da6c4c5b2b4e156f86ea2b670dd464cf79a2ffd72634e729
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T08:50:27Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --unit u3-event-store-repository --iteration 2
+**Error**: Refusing REVIEW_REQUESTED for "functional-design": review request 2 exceeds this stage's review budget (1). This review runs as a single advisory pass - do not re-invoke the reviewer; quote its findings at the approval gate for the human to triage.
+
+---

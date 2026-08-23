@@ -13,7 +13,7 @@
 rules:
   # --- BR1: ポート契約（ユースケース層、C3） ---
   - id: BR1.1
-    statement: "C3 の trait 3 本（WorkflowExecutionRepository / EventStore<AID, A, E> / JournalReader）とエラー型を core-use-case::orchestration に置く。メソッドは async fn（AFIT、Rust 2024）、dyn は使わない、Send / Sync 境界は要求しない"
+    statement: "C3 の trait 3 本（WorkflowExecutionRepository / EventStore<AID, A, E> / JournalReader）とエラー型を core-use-case::orchestration に置く。メソッドは async fn（AFIT、Rust 2024）、dyn は使わない、Send / Sync 境界は要求しない。数値パラメータ（seq_nr / version）は C3 の usize ではなく実ドメイン型に合わせた u64（C3 改訂提案として所有者 U5 / U6 へ申し送り — 無言の変更にしない）。Repository 実装は EventStore を `RefCell` で内包して `&self` → `&mut self` を橋渡しする（借用は await をまたがない）"
     category: policy
     applies_to: [WorkflowExecutionRepository, EventStore, JournalReader]
     trigger: "ポート定義"
@@ -21,7 +21,7 @@ rules:
     violation: "dyn・Box<dyn Error>・外部エラークレートが現れればレビューで差し戻し"
     source: "C3, ADR-006, use-case-rules §2, error-handling.md"
   - id: BR1.2
-    statement: "find_by_id は集約を完全に再構成して返す: 最新スナップショット → from_state → seq_nr より後のイベントを昇順 apply_event → version をスナップショットの version + 適用数に。集約が無ければ NotFound、ジャーナル行があるのにスナップショットが無い／復号不能／from_state が Err なら Corrupt（部分データは返さない）"
+    statement: "find_by_id は集約を完全に再構成して返す: 最新スナップショット → from_state → with_version(snapshot.version) → seq_nr より後のイベントを昇順 apply_event → replay 後に Repository が明示的に with_version(最後に適用した seq_nr) を載せる（apply_event は version を変えない — B3 実装契約。version = 永続化済みイベント数 = 最後の seq_nr）。集約が無ければ NotFound、ジャーナル行があるのにスナップショットが無い／復号不能／from_state が Err なら Corrupt（部分データは返さない）"
     category: validation
     applies_to: [WorkflowExecutionRepository]
     trigger: "再水和"
@@ -29,11 +29,11 @@ rules:
     violation: "テスト（ラウンドトリップ・欠落・破損）で検出"
     source: "FR1.3, C3 ①, ADR-001, P2"
   - id: BR1.3
-    statement: "store は『1 コマンドが返した単一イベント』と『適用後の集約』を同一 Tx で永続化する。期待 version = aggregate.version() − 1（= event.seq_nr − 1）。スナップショットの現在 version が期待と一致しなければ Conflict { expected, actual }、ジャーナルの UNIQUE(aggregate_id, seq_nr) 違反も Conflict。Conflict 以外は再試行しない（再試行はユースケースが再水和して 1 回）"
+    statement: "store は『1 コマンドが返した単一イベント』と『適用後の集約』を同一 Tx で永続化する。期待 version = aggregate.version()（find_by_id が載せた、永続化済みの最後の seq_nr。genesis は 0）。これは event.seq_nr() − 1 と一致しなければならず、不一致は呼出側の不整合として Corrupt(SequenceGap)（u64 の減算は seq_nr ≥ 1 を先に検査してから行う）。書込後の snapshot.version = event.seq_nr()。スナップショットの現在 version が期待と一致しなければ Conflict { expected, actual }、ジャーナルの UNIQUE(aggregate_id, seq_nr) 違反も Conflict。Conflict 以外は再試行しない（再試行はユースケースが再水和して 1 回）。store は引数の集約を変更しない（&）ため、呼出側が続けて store するには再水和が要る（1 コマンド 1 プロセスの CLI では起きない）"
     category: validation
     applies_to: [WorkflowExecutionRepository, EventStore]
     trigger: "store"
-    logic: "event.intent_id == aggregate.intent_id かつ event.seq_nr == aggregate.seq_nr を前提検査（不一致は Corrupt(SequenceGap) — 呼出側バグ）。Tx 内: journal INSERT; expected == 0 なら snapshot INSERT（既存行があれば Conflict）、それ以外は snapshot UPDATE … WHERE version = expected（影響 0 行なら actual を読んで Conflict）"
+    logic: "前提検査: event.intent_id == aggregate.intent_id、event.seq_nr == aggregate.seq_nr、event.seq_nr ≥ 1、aggregate.version() == event.seq_nr − 1（不一致は Corrupt(SequenceGap) — 呼出側バグ）。expected = aggregate.version()。Tx 内: journal INSERT; expected == 0 なら snapshot INSERT（既存行があれば Conflict）、それ以外は snapshot UPDATE … SET version = event.seq_nr … WHERE version = expected（影響 0 行なら actual を読んで Conflict）"
     violation: "競合テスト（2 つの再水和 → 片方 store → もう片方 store が Conflict）で検出"
     source: "FR1.2, C3, C6 制約 (1)(2), ADR-007, P3"
   - id: BR1.4
@@ -71,7 +71,7 @@ rules:
     violation: "C6 との乖離はレビューで差し戻し（contract-summary を改訂するなら契約改訂として記録）"
     source: "C6"
   - id: BR2.3
-    statement: "書込はすべて BEGIN IMMEDIATE で始める Tx（書込ロック先取り）。persist_event_and_snapshot の Tx 内順序: (1) journal INSERT（UNIQUE 違反 → rollback + Conflict）、(2) snapshot INSERT（expected == 0）または UPDATE … WHERE aggregate_id = ? AND version = ?（影響 0 行 → 現在 version を SELECT して rollback + Conflict）、(3) COMMIT。persist_event は (1) のみ（本 Unit の Repository は使わないが契約として実装・テスト）"
+    statement: "書込はすべて BEGIN IMMEDIATE で始める Tx（書込ロック先取り）。persist_event_and_snapshot(event, aggregate) の Tx 内順序: expected = aggregate.version()、new_version = event.seq_nr()（= expected + 1 を検査）。(1) journal INSERT（UNIQUE 違反 → rollback + Conflict）、(2) expected == 0 なら snapshot INSERT(version = new_version)（既存行があれば rollback + Conflict）、それ以外は UPDATE … SET version = new_version, seq_nr = new_version, payload, updated_at WHERE aggregate_id = ? AND version = expected（影響 0 行 → 現在 version を SELECT して rollback + Conflict）、(3) COMMIT。persist_event(event, version) は (1) のみ（本 Unit の Repository は使わないが契約として実装・テスト）"
     category: validation
     applies_to: [SqliteEventStore]
     trigger: "store"
