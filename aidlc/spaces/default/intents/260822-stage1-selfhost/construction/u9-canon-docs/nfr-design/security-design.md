@@ -68,3 +68,27 @@ code-generation の計画に次のチェックリストを置き、Bolt B4 の P
 | NFR2.3 | README の無矛盾（§3 受入 3） |
 | NFR2.4 | 表・見出しの整形（§2 / §3 受入 4）、レビューボット全件（受入 6） |
 | NFR2.5 | 日本語正本・固定トークン（§2） |
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-08-23T05:25:55Z
+**Iteration:** 1（advisory, unit: u9-canon-docs）
+
+### Findings
+
+| # | Severity | Location | Finding | Recommendation |
+|---|---|---|---|---|
+| 1 | Minor | security-design.md §3 受入 2 vs `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md` | `StageGraphReader` の除外根拠が実ファイルと一致しない。§3 受入 2 は「`StageGraphReader` は禁止名テーブルの意図的な記録として対象外」と書くが、gateway-taxonomy.md の§2「Repository 名 = 集約名 + Repository」の禁止名テーブル（47〜51行目）に載っているのは `StateFileRepository` / `StageGraphRepository`（末尾 Repository）であって `StageGraphReader`（末尾 Reader）ではない。`StageGraphReader` が実際に登場するのは別セクション「## 適用の帰結（2026-08-22 の再設計）」内の「旧 → 新」移行表（89〜93行目、`旧` 列に明記）であり、これは security-design.md §2「履歴の残し方」が定義する履歴注記（「旧」明記の比較表）の方の基準で除外されるべきもの。除外という結論自体（sentinel grep 7 語からも `StageGraphReader` は既に外れている）は実質的に妥当だが、根拠として名指す表が違う。加えて、この一文には `pending-revision.md` への出典が無く、直前の nfr-requirements レビュー（`../nfr-requirements/security-requirements.md` 末尾 `## Review` Minor #2）が同じ NFR2.2 の `StageGraphReader` 記述に対して指摘した「出典を `../functional-design/pending-revision.md` 所見 3 と明示せよ」という是正が、`next_in_scope_stage` の一文（`（FD pending-revision 項目 1）`）には反映された一方、`StageGraphReader` の一文には反映されないまま残っている。 | 「`StageGraphReader` は履歴注記（gateway-taxonomy.md『適用の帰結』節の旧→新移行表、旧列）として対象外（`../functional-design/pending-revision.md` 所見 3）」のように、表の場所と出典ファイルを明示する一文に差し替える。 |
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| `bun .claude/tools/aidlc-sensor-traceability.ts --stage nfr-design --output-path .../nfr-design/traceability.json` | `{"pass":true,"gaps":[],"orphans":[],"missing_from_table":[],"missing_from_upstream_ids":[],"invalid_entries":[],"invalid_targets":[],"findings_count":0}` | `traceability.json` の8 ID（NFR1.1〜NFR2.5）は `security-requirements.md` の upstream ID集合と過不足なく一致し、target欄の節番号もsecurity-design.md本文の実在節（§2/§3/§4）に解決する。機械検証 green。 |
+| `bun .claude/tools/aidlc-sensor-required-sections.ts --stage nfr-design --output-path .../nfr-design/security-design.md` | `{"pass":true,"h2_count":6,...}` | H2見出し6本、閾値（≥2）を満たす。 |
+
+### Summary
+
+U9（spec Unit、Bolt B4）のNFR設計は、上流3点（nfr-requirements、functional-design の rules.md / pending-revision.md、実ファイルの docs/specs/deviations.md・docs/specs/12-workflow-definition.md・coding-rules/*.md）と広く突き合わせたが、いずれも実測と一致した — (a) §3受入1のdiffスコープはsecurity-requirements.md NFR2.1と一致し、rules.md BR5.1(d)より広い理由も「NFR要求レビュー所見1」の引用で明示済み、(b) §3受入2の `next_in_scope_stage` 5出現（§2.3×2/§4/§8/§9）は12号workflow-definition.mdの実測grep（5件、該当節も完全一致）と一致、(c) §2「範囲の規律」の「coding-rules 4 + 仕様 5 + components.md 1」はentities.mdのinstances一覧と一致、(d) §4のdeviations行はdeviations.md実ファイルの列形式・次番号（現行1〜3の次は4）・予約節（重複なし）と整合し、rules.md BR3.4の文言とも一致。traceability.json・required-sectionsは共にgreen。唯一の懸念はMinor#1（`StageGraphReader`除外の出典表が実ファイルと不一致、かつpending-revision.mdへの出典欠落）で、PRの合否判定には影響しない文書精度の指摘。Critical 0件・Major 0件のためadvisory目安（Critical 0かつMajor≤2）を満たし、READYと判定する。
