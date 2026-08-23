@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: ja
+early_access: false
+enable_free_tier: true
+
+tone_instructions: |
+  簡潔かつ具体的にレビューすること。
+  このプロジェクトは AI-DLC ワークフローの Rust 再実装であり、クリーンアーキテクチャ
+  （層 = クレート、依存は Cargo.toml の不在により物理的に内向き強制）と DDD / イベント
+  ソーシングを採る。層をまたぐ依存の漏れ（use-case や domain が永続化技術を知る、
+  アダプタの型が公開面に露出する）は最優先で指摘すること。
+  集約は FSM として設計する — 状態・状態遷移（&mut self コマンド、ガード付き Err 拒否）・
+  判断（クエリメソッド）を同じ集約型に閉じ込め、ユースケースは進行管理のみでビジネス
+  ロジックを持たない。導出ロジックを独立ドメインサービスやユースケースに置く設計は指摘する。
+  コーディング規則の正本は aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ にあり、
+  1 ルール 1 ファイルで運用している。Repository の造語禁止・技術接頭辞禁止、フィールドと
+  モジュールのデフォルト private、ドメイン同値関係は Eq/PartialEq で表現、エラーは
+  モジュールごとの手実装 enum + fmt::Display 手実装（thiserror / anyhow は不使用）。
+  プロダクトコードでの unwrap / expect は禁止（テストのみ clippy.toml で許容）。
+  テストは red-green-refactor（TDD）で書き、テストピラミッドを意識した配分にする。
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  review_status: true
+  commit_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  poem: false
+  abort_on_close: true
+
+  path_filters:
+    # ハーネスのシェルは framework の配布物であり、本プロジェクトの source ではない。
+    - "!.claude/**"
+    - "!target/**"
+    # ワークフロー記録は append-only の工程・監査成果物であって編集可能な source では
+    # ない（intent のステージ記録と監査シャード）。これらへの修正提案はカテゴリ誤り。
+    # memory/ と knowledge/ はレビュー対象に残す — 手書きの方針・規則だからである。
+    - "!aidlc/spaces/*/intents/**"
+    # ITF フィクスチャは Quint モデルから採取した生成スナップショット（1 行 JSON、
+    # #meta 正規化済み）。欠陥はモデルか採取手順で直すものであり、フィクスチャを
+    # 手で編集して直すことはない。鮮度は再採取とのバイト一致で担保する。
+    - "!tests/conformance/fixtures/**"
+
+  auto_review:
+    enabled: true
+    drafts: true
+    base_branches:
+      - main
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  labeling_instructions: []
+
+  tools:
+    # clippy は CI（check ジョブ）が workspace lints 47 ルール deny + -D warnings で
+    # 既に強制しているため、ここでは無効にして重複指摘を避ける。
+    clippy:
+      enabled: false
+    gitleaks:
+      enabled: true
+    # scripts/*.sh と .github/workflows/*.yml は CI がまだ lint していない。
+    shellcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    ast-grep:
+      essential_rules: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - "aidlc/spaces/default/memory/**/*.md"
+      - "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/*.md"
+      - "docs/specs/00-policy.md"
+      - "docs/adr/*.md"
+
+chat:
+  auto_reply: true
