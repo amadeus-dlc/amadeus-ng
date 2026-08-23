@@ -4753,9 +4753,19 @@ export interface FreshReviewReceipts {
   sourceStale: boolean;
   /** Recovery ordinal/budget state associated with the newest source binding. */
   sourceStaleProgress: StaleReviewProgress | null;
-  /** A workspace-global source-staleness recovery request has been emitted in
-   *  this attempt. Source binding is global even when receipts are per-unit. */
+  /** A source-staleness recovery request has been emitted in this attempt for
+   *  the unit that owns the newest source binding (or for the stage itself when
+   *  the stage is not per-unit). The source FINGERPRINT is workspace-global, but
+   *  the recovery BUDGET is scoped to the unit that spends it: on a per-unit
+   *  stage every unit carries its own receipt and its own staleness, so a global
+   *  budget would let the first unit to recover lock out every other unit for the
+   *  rest of the attempt. `aidlc-log.ts` already scopes the refusal by
+   *  `sameSourceRecoveryScope` (newestSourceUnit vs the requesting unit); this
+   *  field is scoped the same way so the two agree. */
   sourceRecoverySpent: boolean;
+  /** Per-unit source-staleness recovery budget. Keyed by unit name; the empty
+   *  string is the stage-level (unit-less) entry. */
+  sourceRecoverySpentByUnit: Map<string, boolean>;
   /** Units whose terminal receipt was invalidated in the current attempt. */
   unitStale: Set<string>;
   /** Next request ordinal and recovery availability for a stale stage receipt. */
@@ -4971,6 +4981,7 @@ export function freshReviewReceipts(
     sourceStale: false,
     sourceStaleProgress: null,
     sourceRecoverySpent: false,
+    sourceRecoverySpentByUnit: new Map(),
     unitStale: new Set(),
     stageStaleProgress: null,
     unitStaleProgress: new Map(),
@@ -5051,7 +5062,7 @@ export function freshReviewReceipts(
   let newestSourceFingerprint: string | null = null;
   let newestSourceUnit: string | null = null;
   let newestSourceProgress: StaleReviewProgress | null = null;
-  let sourceRecoverySpent = false;
+  const sourceRecoverySpentByUnit = new Map<string, boolean>();
   let stageStale = false;
   let stageStaleProgress: StaleReviewProgress | null = null;
   let stageIteration: number | null = null;
@@ -5130,7 +5141,7 @@ export function freshReviewReceipts(
       const recovery =
         previous?.recovery === true ||
         auditBlockField(e.block, "Recovery") === "stale-receipt";
-      if (recovery) sourceRecoverySpent = true;
+      if (recovery) sourceRecoverySpentByUnit.set(unit ?? "", true);
       pendingRequests.set(requestKey, {
         unit,
         iteration,
@@ -5261,6 +5272,12 @@ export function freshReviewReceipts(
       currentSourceFingerprint === null ||
       currentSourceFingerprint !== newestSourceFingerprint);
 
+  // The recovery budget belongs to the unit that owns the newest source
+  // binding, mirroring `sameSourceRecoveryScope` in aidlc-log.ts. A recovery
+  // spent by a SIBLING unit must not bar this one.
+  const sourceRecoverySpentForNewestSourceUnit =
+    sourceRecoverySpentByUnit.get(newestSourceUnit ?? "") === true;
+
   return {
     stageVerdict,
     stageStale,
@@ -5273,10 +5290,11 @@ export function freshReviewReceipts(
         ? null
         : {
             ...newestSourceProgress,
-            recoverySpent: sourceRecoverySpent,
+            recoverySpent: sourceRecoverySpentForNewestSourceUnit,
           }
       : null,
-    sourceRecoverySpent,
+    sourceRecoverySpent: sourceRecoverySpentForNewestSourceUnit,
+    sourceRecoverySpentByUnit,
     unitStale,
     stageStaleProgress,
     unitStaleProgress,

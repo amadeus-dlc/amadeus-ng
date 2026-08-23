@@ -2091,6 +2091,15 @@ function reviewRecoverySpentInCurrentAttempt(
       );
   if (reviewClass === "none") return false;
   const receipts = freshReviewReceipts(pd, content, stage, { reviewClass });
+  // Human-presence guard: ANY spent recovery in this attempt counts, including a
+  // sibling unit's. `receipts.sourceRecoverySpent` is scoped to the unit owning
+  // the newest source binding (that scoping is what keeps one unit's recovery
+  // from barring another's REQUEST), so read the per-unit map directly here -
+  // this guard is about whether autonomy may reset accounting at all, not about
+  // which unit may ask for a review.
+  for (const spent of receipts.sourceRecoverySpentByUnit.values()) {
+    if (spent) return true;
+  }
   if (receipts.sourceRecoverySpent) return true;
   if (receipts.sourceStaleProgress?.recoverySpent === true) return true;
   if (receipts.stageStaleProgress?.recoverySpent === true) return true;
