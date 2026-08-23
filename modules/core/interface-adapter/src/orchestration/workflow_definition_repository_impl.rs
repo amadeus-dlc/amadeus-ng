@@ -1092,4 +1092,40 @@ mod tests {
         assert_eq!(unquote("''"), "");
         assert_eq!(unquote("a"), "a");
     }
+
+    #[test]
+    fn the_two_identity_failures_have_their_own_diagnostic_wordings() {
+        // ADR-008 で足した 2 変種。upstream には定義 id の概念が無いので逐語の縛りは
+        // 無いが、`read_error_message` が 1 行の診断へ畳むところまでが契約である。
+        let rendered = read_error_message(&GraphReadError::NotFound {
+            expected: WorkflowDefinitionId::parse("claude").unwrap(),
+            actual: WorkflowDefinitionId::parse("codex").unwrap(),
+        });
+        assert_eq!(
+            rendered,
+            "Workflow definition codex not found: this harness provides claude"
+        );
+
+        let rendered = read_error_message(&GraphReadError::HarnessIdentity {
+            path: "/d/harness.json".to_string(),
+            cause: "missing name".to_string(),
+        });
+        assert_eq!(
+            rendered,
+            "Harness identity not readable at /d/harness.json: missing name"
+        );
+    }
+
+    #[test]
+    fn blank_comment_and_keyless_lines_are_skipped_instead_of_breaking_the_parse() {
+        // frontmatter の最小 YAML サブセットは、空行・`#` コメント・`:` を持たない行を
+        // 黙って読み飛ばす (寛容パースの契約 — 汎用 YAML パーサへ置換しない理由の 1 つ)。
+        let metadata = parse_scope_metadata(
+            scope_path(),
+            "---\n\nname: feature\n# コメント行\n  \nbare-line-without-a-colon\ndepth: standard\n---\n",
+        )
+        .unwrap();
+        assert_eq!(metadata.name(), "feature");
+        assert_eq!(metadata.depth(), Some("standard"));
+    }
 }

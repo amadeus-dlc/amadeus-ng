@@ -566,4 +566,138 @@ mod tests {
             [1, 2]
         );
     }
+
+    #[tokio::test]
+    async fn a_snapshot_row_that_breaks_an_aggregate_invariant_is_corrupt() {
+        // 復号 (検査点 1 / 2) は通るが集約不変条件 (検査点 3) が破れている行。
+        // `seq_nr = 0` は「イベントを 1 件も適用していない集約の写し」で、
+        // 書込経路からは決して生まれない (BR1.2)。
+        let store = seeded().await;
+        {
+            let mut tables = store.tables.borrow_mut();
+            let row = tables.snapshot.get_mut(&intent()).expect("genesis の写し");
+            assert!(row.payload.contains(r#""seq_nr":1"#), "{}", row.payload);
+            row.payload = row.payload.replace(r#""seq_nr":1"#, r#""seq_nr":0"#);
+        }
+        let err = store
+            .get_latest_snapshot_by_id(&intent())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            EventStoreError::Corrupt {
+                aggregate_id: INTENT.to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::InvariantViolation,
+            },
+            "材料は行の seq_nr であって payload の値ではない"
+        );
+    }
+
+    #[tokio::test]
+    async fn appending_the_same_sequence_twice_conflicts_even_when_the_version_still_matches() {
+        // `persist_event` はスナップショットを動かさないので、2 回目も楽観 version は
+        // 一致する。競合を検出するのは journal の UNIQUE(aggregate_id, seq_nr) だけである。
+        let mut store = seeded().await;
+        let mut aggregate = store
+            .get_latest_snapshot_by_id(&intent())
+            .await
+            .unwrap()
+            .unwrap();
+        let next = aggregate.complete_stage(AT).unwrap();
+        store.persist_event(&next, 1).await.unwrap();
+
+        let err = store.persist_event(&next, 1).await.unwrap_err();
+        assert_eq!(
+            err,
+            EventStoreError::Conflict {
+                expected: 1,
+                actual: 1
+            }
+        );
+        let events = store
+            .get_events_by_id_since_seq_nr(&intent(), 0)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2, "拒否された追記は行を増やさない");
+    }
+
+    #[tokio::test]
+    async fn a_genesis_write_against_an_existing_snapshot_conflicts() {
+        // 期待 version 0 (= genesis) なのにスナップショット行が既にある。SQLite 実装で
+        // `INSERT INTO snapshot` が主キー違反になるのと同じ観測にする。
+        let mut store = seeded().await;
+        let (aggregate, _) = genesis();
+        let mut advanced = aggregate.clone();
+        let second = advanced.complete_stage(AT).unwrap();
+        assert_eq!(second.seq_nr(), 2, "journal の UNIQUE には掛からない通番");
+
+        let err = store
+            .persist_event_and_snapshot(&second, &aggregate)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            EventStoreError::Conflict {
+                expected: 0,
+                actual: 1
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_write_from_a_stale_version_conflicts_with_the_stored_one() {
+        // 期待 version が 0 以外で、スナップショット列の version と食い違う場合。
+        // SQLite 実装の `UPDATE ... WHERE version = expected` が 0 行になる場合に当たる。
+        let mut store = seeded().await;
+        let (aggregate, _) = genesis();
+        let stale = aggregate.with_version(5);
+        let bogus =
+            WorkflowExecutionEvent::new(intent(), 6, AT, WorkflowExecutionEventPayload::Unparked);
+
+        let err = store
+            .persist_event_and_snapshot(&bogus, &stale)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            EventStoreError::Conflict {
+                expected: 5,
+                actual: 1
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_version_beyond_the_json_exact_limit_is_refused_before_anything_is_written() {
+        // 書込後の姿の `version` は列と同じ新 version なので、JSON が正確に保てない大きさは
+        // スナップショットの符号化で弾かれる (黙って丸めた行を書かない — NFR3.1)。
+        const JSON_EXACT_INTEGER_LIMIT: u64 = 9_007_199_254_740_992;
+        let mut store = seeded().await;
+        let (aggregate, _) = genesis();
+        let bogus = WorkflowExecutionEvent::new(
+            intent(),
+            JSON_EXACT_INTEGER_LIMIT + 1,
+            AT,
+            WorkflowExecutionEventPayload::Unparked,
+        );
+
+        let err = store
+            .persist_event_and_snapshot(&bogus, &aggregate)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            EventStoreError::Corrupt {
+                aggregate_id: INTENT.to_string(),
+                seq_nr: None,
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+        let events = store
+            .get_events_by_id_since_seq_nr(&intent(), 0)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1, "genesis の 1 件だけが残る");
+    }
 }

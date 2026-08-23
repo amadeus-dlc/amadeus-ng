@@ -170,4 +170,27 @@ mod tests {
             "format at 3"
         );
     }
+
+    #[test]
+    fn every_rejection_renders_its_material_and_nothing_else() {
+        // `Display` は材料だけを描く (利用者向け文言はアダプタ層の message-catalog —
+        // coding-rules/error-handling.md)。3 変種すべての綴りを固定する。
+        assert_eq!(ProjectionNameError::Empty.to_string(), "empty");
+        assert_eq!(
+            ProjectionNameError::Length { actual: 65 }.to_string(),
+            "length 65 (max 64)"
+        );
+        assert_eq!(
+            ProjectionNameError::Format { position: 0 }.to_string(),
+            "format at 0"
+        );
+        // parse から返る値でも同じ綴りになること (材料が素通しであること)。
+        assert_eq!(ProjectionName::parse("").unwrap_err().to_string(), "empty");
+        assert_eq!(
+            ProjectionName::parse(&"a".repeat(65))
+                .unwrap_err()
+                .to_string(),
+            "length 65 (max 64)"
+        );
+    }
 }

@@ -11,13 +11,19 @@
 
 mod support;
 
-use core_domain::orchestration::{WorkflowExecution, WorkflowExecutionEvent};
+use core_domain::orchestration::{
+    StageCompleted, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
+};
+use core_domain::workflow_definition::StageSlug;
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{
     EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
-use core_use_case::orchestration::{CorruptCause, RepositoryError, WorkflowExecutionRepository};
+use core_use_case::orchestration::{
+    CorruptCause, EventStore, GlobalSeqNr, JournalReader, RepositoryError,
+    WorkflowExecutionRepository,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -50,6 +56,12 @@ impl Fixture {
 
     fn raw(&self) -> Connection {
         Connection::open(self.path.as_path()).expect("生の接続")
+    }
+
+    /// Repository を経由せずに同じストアへ書くためのハンドル
+    /// (ジャーナルだけの追記でスナップショットとずらす唯一の口)。
+    fn store(&self) -> EventStoreImpl<FakeClock> {
+        EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
     }
 }
 
@@ -357,5 +369,66 @@ async fn an_event_of_another_aggregate_is_refused() {
             }
         ),
         "実際: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
+    // 復号はできるが、解決済み計画に無いステージを名指すイベント。`apply_event` の
+    // `UnknownStage` は `Corrupt(InvariantViolation)` へ写す (SequenceGap とは別の原因)。
+    // in-memory 実装の同名テストと 1:1 で対応する (BR2.7)。
+    let fixture = Fixture::new();
+    let repository = fixture.repository();
+    let (aggregate, event) = genesis();
+    repository.store(&event, &aggregate).await.expect("genesis");
+
+    let mut store = fixture.store();
+    let bogus = WorkflowExecutionEvent::new(
+        intent_id(),
+        2,
+        AT,
+        WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
+            StageSlug::parse("no-such-stage").expect("文法内の slug"),
+            None,
+        )),
+    );
+    store
+        .persist_event(&bogus, 1)
+        .await
+        .expect("ジャーナルだけに追記");
+
+    let err = repository
+        .find_by_id(&intent_id())
+        .await
+        .expect_err("計画に無いステージ");
+    assert_eq!(
+        err,
+        RepositoryError::Corrupt {
+            aggregate_id: intent_id(),
+            seq_nr: Some(2),
+            cause: CorruptCause::InvariantViolation,
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 内包するストアへのハンドル (BR1.4)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_repository_hands_out_a_reader_over_the_same_store() {
+    let fixture = Fixture::new();
+    let repository = fixture.repository();
+    seed(&repository).await;
+
+    let reader = repository.event_store();
+    let rows = reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("ジャーナルを読める");
+    assert_eq!(
+        rows.iter().map(|(g, _)| g.value()).collect::<Vec<_>>(),
+        [1, 2, 3],
+        "同じストアの 3 件が global 通番順で見える"
     );
 }

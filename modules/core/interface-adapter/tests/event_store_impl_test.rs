@@ -15,12 +15,14 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
-use core_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
+use core_domain::orchestration::{
+    IntentId, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
+};
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{EventStoreImpl, StorePath};
 use core_use_case::orchestration::{
-    EventStore, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName,
+    CorruptCause, EventStore, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -793,5 +795,214 @@ fn the_store_path_is_derived_from_the_space() {
     assert_eq!(
         path.as_path(),
         Path::new("/tmp/aidlc/spaces/team-a/intents/.aidlc-store.sqlite")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 競合と失敗の残り (BR2.3 — 行を直接いじってしか作れない経路を含む)
+// ---------------------------------------------------------------------------
+
+/// JSON (JS の `Number`) が整数を正確に保てる上限。
+const JSON_EXACT_INTEGER_LIMIT: u64 = 9_007_199_254_740_992;
+
+#[tokio::test]
+async fn an_append_only_write_starts_from_version_zero_and_refuses_the_same_sequence_twice() {
+    // スナップショット行がまだ無い集約の現在 version は 0 (genesis の期待値)。
+    // 2 度目は版が一致したままでも `UNIQUE (aggregate_id, seq_nr)` で落ちる。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    let (_, event) = genesis();
+
+    store.persist_event(&event, 0).await.expect("版 0 で通る");
+    let err = store
+        .persist_event(&event, 0)
+        .await
+        .expect_err("同じ通番は 2 度書けない");
+    assert_eq!(
+        err,
+        EventStoreError::Conflict {
+            expected: 0,
+            actual: 0
+        }
+    );
+
+    let conn = fixture.raw();
+    let journal_rows: i64 = conn
+        .query_row("SELECT count(*) FROM journal", [], |row| row.get(0))
+        .expect("件数");
+    let snapshot_rows: i64 = conn
+        .query_row("SELECT count(*) FROM snapshot", [], |row| row.get(0))
+        .expect("件数");
+    assert_eq!(journal_rows, 1, "拒否された追記は行を増やさない");
+    assert_eq!(snapshot_rows, 0, "append-only の書込は写しを作らない");
+}
+
+#[tokio::test]
+async fn a_journal_insert_that_fails_for_another_reason_is_reported_as_io() {
+    // 競合以外の SQL 失敗は `Conflict` に化けさせず `Io` として運ぶ (NFR3.5)。
+    let fixture = Fixture::new();
+    let (mut store, _) = seeded(&fixture).await;
+    fixture
+        .raw()
+        .execute("DROP TABLE journal", [])
+        .expect("ジャーナル表を落とす");
+
+    let bogus =
+        WorkflowExecutionEvent::new(intent_id(), 2, AT, WorkflowExecutionEventPayload::Unparked);
+    let err = store
+        .persist_event(&bogus, 1)
+        .await
+        .expect_err("表そのものが無い");
+    assert_eq!(
+        err,
+        EventStoreError::Io {
+            kind: ErrorKind::Other,
+            path: Some(fixture.path.as_path().to_path_buf()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_genesis_write_against_an_existing_snapshot_conflicts() {
+    // 期待 version 0 (= genesis) なのにスナップショット行が既にある場合。ジャーナルの
+    // UNIQUE には掛からない通番を選ぶことで、主キー違反を起こすのは snapshot の INSERT だけになる。
+    let fixture = Fixture::new();
+    let (mut store, _) = seeded(&fixture).await;
+    let (aggregate, _) = genesis();
+    let mut walked = aggregate.clone();
+    let second = walked.complete_stage(AT).expect("索引 0 は非ゲート");
+    assert_eq!(second.seq_nr(), 2);
+
+    let err = store
+        .persist_event_and_snapshot(&second, &aggregate)
+        .await
+        .expect_err("genesis を 2 度は書けない");
+    assert_eq!(
+        err,
+        EventStoreError::Conflict {
+            expected: 0,
+            actual: 1
+        }
+    );
+
+    let journal_rows: i64 = fixture
+        .raw()
+        .query_row("SELECT count(*) FROM journal", [], |row| row.get(0))
+        .expect("件数");
+    assert_eq!(journal_rows, 1, "rollback してジャーナル行は増えない");
+}
+
+#[tokio::test]
+async fn a_snapshot_insert_that_fails_for_another_reason_is_reported_as_io() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    fixture
+        .raw()
+        .execute("DROP TABLE snapshot", [])
+        .expect("スナップショット表を落とす");
+
+    let (aggregate, event) = genesis();
+    let err = store
+        .persist_event_and_snapshot(&event, &aggregate)
+        .await
+        .expect_err("表そのものが無い");
+    assert_eq!(
+        err,
+        EventStoreError::Io {
+            kind: ErrorKind::Other,
+            path: Some(fixture.path.as_path().to_path_buf()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn an_update_that_matches_no_snapshot_row_conflicts() {
+    // 期待 version が 0 以外で、列の version と食い違う場合。`UPDATE ... WHERE version = ?`
+    // の影響行数 0 が検出点で、実際の版は読み直して材料にする。
+    let fixture = Fixture::new();
+    let (mut store, aggregate) = seeded(&fixture).await;
+    let stale = aggregate.with_version(5);
+    let bogus =
+        WorkflowExecutionEvent::new(intent_id(), 6, AT, WorkflowExecutionEventPayload::Unparked);
+
+    let err = store
+        .persist_event_and_snapshot(&bogus, &stale)
+        .await
+        .expect_err("版 5 のスナップショット行は無い");
+    assert_eq!(
+        err,
+        EventStoreError::Conflict {
+            expected: 5,
+            actual: 1
+        }
+    );
+
+    let journal_rows: i64 = fixture
+        .raw()
+        .query_row("SELECT count(*) FROM journal", [], |row| row.get(0))
+        .expect("件数");
+    assert_eq!(journal_rows, 1, "rollback してジャーナル行は増えない");
+}
+
+#[tokio::test]
+async fn a_version_beyond_the_json_exact_limit_is_refused_instead_of_being_rounded() {
+    // 書込後の姿の `version` は列と同じ新 version なので、JSON が正確に保てない大きさは
+    // スナップショットの符号化で弾かれる (丸めた行を書かない — NFR3.1)。
+    let fixture = Fixture::new();
+    let (mut store, aggregate) = seeded(&fixture).await;
+    let bogus = WorkflowExecutionEvent::new(
+        intent_id(),
+        JSON_EXACT_INTEGER_LIMIT + 1,
+        AT,
+        WorkflowExecutionEventPayload::Unparked,
+    );
+
+    let err = store
+        .persist_event_and_snapshot(&bogus, &aggregate)
+        .await
+        .expect_err("2^53 超は行として表現できない");
+    assert_eq!(
+        err,
+        EventStoreError::Corrupt {
+            aggregate_id: intent_id().as_str().to_string(),
+            seq_nr: None,
+            cause: CorruptCause::InvariantViolation,
+        }
+    );
+
+    let journal_rows: i64 = fixture
+        .raw()
+        .query_row("SELECT count(*) FROM journal", [], |row| row.get(0))
+        .expect("件数");
+    assert_eq!(journal_rows, 1, "Tx を開く前に弾くので行は増えない");
+}
+
+#[tokio::test]
+async fn a_snapshot_row_that_breaks_an_aggregate_invariant_is_corrupt() {
+    // 復号 (検査点 1 / 2) は通るが集約不変条件 (検査点 3) が破れている行。`seq_nr = 0` は
+    // 「イベントを 1 件も適用していない集約の写し」で、書込経路からは決して生まれない。
+    let fixture = Fixture::new();
+    let (store, _) = seeded(&fixture).await;
+    let changed = fixture
+        .raw()
+        .execute(
+            "UPDATE snapshot SET payload = replace(payload, '\"seq_nr\":1', '\"seq_nr\":0')",
+            [],
+        )
+        .expect("payload を改竄する");
+    assert_eq!(changed, 1);
+
+    let err = store
+        .get_latest_snapshot_by_id(&intent_id())
+        .await
+        .expect_err("不変条件が破れている");
+    assert_eq!(
+        err,
+        EventStoreError::Corrupt {
+            aggregate_id: intent_id().as_str().to_string(),
+            seq_nr: Some(1),
+            cause: CorruptCause::InvariantViolation,
+        },
+        "材料は列の seq_nr であって payload の値ではない"
     );
 }

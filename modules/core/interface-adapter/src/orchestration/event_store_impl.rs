@@ -905,6 +905,40 @@ mod tests {
     }
 
     #[test]
+    fn an_interrupted_operation_keeps_its_own_io_kind() {
+        // 中断は「壊れた」でも「いま他の書き手がいる」でもない第 3 の分類なので、
+        // 呼出側が再実行の可否を判断できるように `Other` へ畳まずに残す (NFR3.5)。
+        let error = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: ErrorCode::OperationInterrupted,
+                extended_code: 9,
+            },
+            None,
+        );
+        assert_eq!(io_kind(&error), ErrorKind::Interrupted);
+        assert_eq!(
+            map_sqlite_error(&error, Path::new("/w/store.sqlite")),
+            EventStoreError::Io {
+                kind: ErrorKind::Interrupted,
+                path: Some(std::path::PathBuf::from("/w/store.sqlite")),
+            }
+        );
+    }
+
+    #[test]
+    fn the_debug_rendering_shows_the_location_and_hides_the_connection() {
+        // 接続と時計は診断の材料にならないので描かない (`finish_non_exhaustive`)。
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let store = open_store(&dir);
+        let rendered = format!("{store:?}");
+        assert!(rendered.starts_with("EventStoreImpl {"), "{rendered}");
+        assert!(rendered.contains("path:"), "{rendered}");
+        assert!(rendered.contains(".."), "{rendered}");
+        assert!(!rendered.contains("connection"), "{rendered}");
+        assert!(!rendered.contains("clock"), "{rendered}");
+    }
+
+    #[test]
     fn a_constraint_violation_is_the_conflict_detection_point() {
         let violation = rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error {

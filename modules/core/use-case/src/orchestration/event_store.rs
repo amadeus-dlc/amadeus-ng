@@ -196,6 +196,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_append_only_write_lands_in_the_journal_without_creating_a_snapshot() {
+        // `persist_event` はスナップショットを更新しない (ポートの契約)。読み直したときに
+        // 「ジャーナル行はあるがスナップショットが無い」状態が観測できることを固定する。
+        let mut store = FakeStore::default();
+        store
+            .persist_event(&(1, 1, "a".to_string()), 0)
+            .await
+            .unwrap();
+        assert_eq!(store.get_latest_snapshot_by_id(&1).await.unwrap(), None);
+        assert_eq!(
+            store.get_events_by_id_since_seq_nr(&1, 0).await.unwrap(),
+            [(1, 1, "a".to_string())]
+        );
+    }
+
+    #[tokio::test]
     async fn the_port_returns_the_shared_corrupt_material() {
         // `CorruptCause` は EventStore / Repository の両面が共有する材料である。
         let err = EventStoreError::Corrupt {

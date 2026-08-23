@@ -657,6 +657,16 @@ mod tests {
     }
 
     #[test]
+    fn a_payload_tag_outside_the_closed_set_is_rejected_even_when_the_column_is_inside_it() {
+        // 閉集合の検査は列と payload の**両方**に掛かる。列だけを見て通すと、行の
+        // どちらか一方が改竄された場合に検出できなくなる (NFR4.4)。
+        // 「列も payload も閉集合内だが食い違う」場合とは原因が違う
+        // (`UndecodablePayload` ではなく `UnknownEventType`)。
+        let err = decode("Parked", r#"{"type":"Exploded","stage":"intent-capture"}"#).unwrap_err();
+        assert_eq!(cause(&err), CorruptCause::UnknownEventType);
+    }
+
+    #[test]
     fn the_corrupt_material_carries_the_aggregate_and_the_sequence() {
         let err = decode("Parked", "{not json").unwrap_err();
         assert_eq!(

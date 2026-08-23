@@ -359,3 +359,140 @@ impl StageEntryWire {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// テスト用の JSON リテラルを読取口に渡せる形へ読む。
+    fn value(text: &str) -> JsonValue {
+        parse_json(text).unwrap()
+    }
+
+    #[test]
+    fn the_reader_opens_only_on_an_object() {
+        // 配列やスカラの payload は「オブジェクトである」という前提の外なので、
+        // 添字アクセスへ進む前にここで落とす。
+        assert_eq!(
+            WireObject::new(&value("[1]")).err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        assert_eq!(
+            WireObject::new(&value("1")).err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        let object = value(r#"{"a":1}"#);
+        assert!(WireObject::new(&object).is_ok());
+    }
+
+    #[test]
+    fn a_nullable_string_accepts_null_but_refuses_another_type() {
+        let json = value(r#"{"a":"x","b":null,"c":1}"#);
+        let object = WireObject::new(&json).unwrap();
+        assert_eq!(object.optional_string("a").unwrap(), Some("x"));
+        assert_eq!(object.optional_string("b").unwrap(), None);
+        assert_eq!(
+            object.optional_string("c").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+    }
+
+    #[test]
+    fn a_nullable_number_accepts_null_but_refuses_another_type() {
+        let json = value(r#"{"a":1,"b":null,"c":"1"}"#);
+        let object = WireObject::new(&json).unwrap();
+        assert_eq!(object.optional_u64("a").unwrap(), Some(1));
+        assert_eq!(object.optional_u64("b").unwrap(), None);
+        assert_eq!(
+            object.optional_u64("c").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        // `optional_usize` は同じ読取を通すので、型不一致も同じ原因になる。
+        assert_eq!(
+            object.optional_usize("c").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        assert_eq!(object.optional_usize("b").unwrap(), None);
+    }
+
+    #[test]
+    fn a_required_array_refuses_a_scalar() {
+        let json = value(r#"{"a":[],"b":1}"#);
+        let object = WireObject::new(&json).unwrap();
+        assert!(object.array("a").unwrap().is_empty());
+        assert_eq!(
+            object.array("b").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+    }
+
+    #[test]
+    fn every_typed_array_reader_refuses_an_element_of_the_wrong_type() {
+        // 配列そのものが読めても、要素の型が違えば行としては復号できない
+        // (parse-don't-validate — 要素まで検査してからドメイン値を組む)。
+        let json = value(
+            r#"{"texts":["a",1],"slugs":["a",1],"bools":[true,1],"u32s":[1,"x"],"big":[4294967296]}"#,
+        );
+        let object = WireObject::new(&json).unwrap();
+        assert_eq!(
+            object.texts("texts").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        assert_eq!(
+            object.slugs("slugs").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        assert_eq!(
+            object.bools("bools").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        assert_eq!(
+            object.u32s("u32s").err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+        assert_eq!(
+            object.u32s("big").err(),
+            Some(CorruptCause::UndecodablePayload),
+            "u32 の値域外も同じ拒否"
+        );
+    }
+
+    #[test]
+    fn a_checkbox_marker_must_be_exactly_one_character() {
+        assert_eq!(parse_checkbox("x").unwrap(), CheckboxState::Completed);
+        assert_eq!(parse_checkbox(""), Err(CorruptCause::UndecodablePayload));
+        assert_eq!(parse_checkbox("xx"), Err(CorruptCause::UndecodablePayload));
+    }
+
+    #[test]
+    fn a_jump_direction_outside_the_three_words_is_rejected() {
+        assert_eq!(parse_direction("redo").unwrap(), JumpDirection::Redo);
+        assert_eq!(
+            parse_direction("sideways"),
+            Err(CorruptCause::UndecodablePayload)
+        );
+        // 綴りは upstream 固定トークンなので、大文字化も閉集合の外である。
+        assert_eq!(
+            parse_direction("Forward"),
+            Err(CorruptCause::UndecodablePayload)
+        );
+    }
+
+    #[test]
+    fn a_stage_entry_needs_a_boolean_conditional() {
+        let ok = value(
+            r#"{"slug":"intent-capture","phase":"ideation","plan_action":"EXECUTE","conditional":true}"#,
+        );
+        let entry = StageEntryWire::to_entry(&ok).unwrap();
+        assert_eq!(entry.slug().as_str(), "intent-capture");
+        assert!(entry.is_conditional());
+
+        let broken = value(
+            r#"{"slug":"intent-capture","phase":"ideation","plan_action":"EXECUTE","conditional":1}"#,
+        );
+        assert_eq!(
+            StageEntryWire::to_entry(&broken).err(),
+            Some(CorruptCause::UndecodablePayload)
+        );
+    }
+}

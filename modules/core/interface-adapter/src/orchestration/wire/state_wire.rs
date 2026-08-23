@@ -411,6 +411,58 @@ mod tests {
         assert_eq!(cause(&err), CorruptCause::InvariantViolation);
     }
 
+    #[test]
+    fn a_cursor_beyond_the_json_exact_limit_is_refused_instead_of_being_rounded() {
+        // 索引の列 (`cursor` / `parked_at`) も seq_nr / version と同じ値域の防波堤を通す。
+        // 丸めて書くと再水和したカーソルが別のステージを指すため、書く前に拒否する。
+        let huge = usize::try_from(JSON_EXACT_INTEGER_LIMIT + 1).unwrap();
+        let original = WorkflowExecutionStateBuilder::new(
+            IntentId::parse(AGG).unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            entries(),
+        )
+        .cursor(huge)
+        .build();
+        let err = StateWire::encode(AGG, &original).unwrap_err();
+        assert_eq!(cause(&err), CorruptCause::InvariantViolation);
+    }
+
+    #[test]
+    fn a_park_marker_beyond_the_json_exact_limit_is_refused_as_well() {
+        let huge = usize::try_from(JSON_EXACT_INTEGER_LIMIT + 1).unwrap();
+        let original = WorkflowExecutionStateBuilder::new(
+            IntentId::parse(AGG).unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            entries(),
+        )
+        .cursor(0)
+        .parked_at(Some(huge))
+        .build();
+        let err = StateWire::encode(AGG, &original).unwrap_err();
+        assert_eq!(cause(&err), CorruptCause::InvariantViolation);
+    }
+
+    #[test]
+    fn the_three_token_arrays_refuse_an_element_that_is_not_a_string() {
+        // `plan` / `overlay` / `checkbox` は固定トークンの列なので、要素が文字列でない行は
+        // 復号せずに落とす (16 属性のうち閉集合を持つ 3 列の検査点)。
+        for (from, to) in [
+            (r#""plan":["EXECUTE","SKIP"]"#, r#""plan":[1,2]"#),
+            (r#""overlay":["EXECUTE","SKIP"]"#, r#""overlay":[1,2]"#),
+            (r#""checkbox":["x","R"]"#, r#""checkbox":[1,2]"#),
+        ] {
+            let json = encode(&state());
+            assert!(json.contains(from), "前提が変わっている: {json}");
+            assert_eq!(
+                cause(&decode(&json.replace(from, to)).unwrap_err()),
+                CorruptCause::UndecodablePayload,
+                "{from} を数値へ差し替えた行"
+            );
+        }
+    }
+
     // ---- PBT (BR2.5 / NFR2.2)。シードは `PROPTEST_RNG_SEED` で固定する ----
 
     fn plan_strategy() -> impl Strategy<Value = PlanAction> {
