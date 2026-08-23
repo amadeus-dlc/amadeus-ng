@@ -11,3 +11,5 @@
    依存を外す（退役の旨を 1 行注記）。
 3. BR5.1 の grep 範囲を `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/*.md` + `docs/specs/*.md`（`docs/specs/research/` を除く）と明記。
    `StageGraphReader` は gateway-taxonomy §2 の禁止名テーブル（意図的な記録）を除外し、他に除去対象が無ければ sentinel から外す。
+4. （nfr-requirements レビュー所見 1）BR5.1 (d) のコード変更ゼロの diff スコープを `modules tools scripts .github Cargo.toml Cargo.lock`（`origin/main..HEAD`）に
+   広げ、NFR2.1 / tech-stack-decisions と同期する（依存操作の見落とし防止 — 安全側へ統一）。

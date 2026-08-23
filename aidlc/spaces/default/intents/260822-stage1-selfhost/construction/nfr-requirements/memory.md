@@ -35,3 +35,4 @@
 - 2026-08-23T01:40:00Z — [Deviations] [u2-domain-es-core] bash/python で書いた produces をエンジンが「要約確認後のネイティブ書込記録なし」として完了拒否 — Write/Edit で再保存して通した。学習候補: produces 配下の成果物はハーネスのネイティブ書込（Write/Edit）で書く（フックが ARTIFACT_* を記録する経路でないと完了受理されない）
 - 2026-08-23T08:20:00Z — [Interpretations] [u9-canon-docs] spec kind: 適用 NFR は NFR1（逐語契約不変）と NFR2（コード変更ゼロ・CI 緑・自己整合 grep・README 無矛盾）だけ。質問なし、前提 P1〜P3 を人間確認へ
 - 2026-08-23T08:30:00Z — [Open questions] オーナー質問「ドメインモデルの snapshot は ES の snapshot か」— 回答: ES のスナップショットそのもの（C3 / C6）。ドメインにあるのは memento 型 `WorkflowExecutionSnapshot` と `snapshot()` / `from_snapshot()`（serde なし・I/O なし、復元の唯一の入口）。名前が永続化テーブルと同じで紛らわしい点は、U3 の Bolt B5 で `WorkflowExecutionState`（memento）へ改名する候補として申し送り（責務は変えない）
+- 2026-08-23T08:50:00Z — [Open questions] [u9-canon-docs] レビュー iteration 1 READY（Major 1: diff スコープが rules BR5.1(d) / 質問票 P2 / NFR2.1 で 3 段階に食い違う → 安全側（Cargo.* まで）に統一し FD pending-revision 4 と nfr pending-revision に記録 / Minor 1: NFR2.2 の出典明示）。B4 の計画は安全側のスコープを採用

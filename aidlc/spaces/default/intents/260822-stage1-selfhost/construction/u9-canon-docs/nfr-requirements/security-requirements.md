@@ -48,3 +48,30 @@
 ## 5. 適用外
 
 - NFR3（監査完全性）・NFR4（サプライチェーン）・NFR5（性能）: 文書だけの Unit で固有の要求を持たない（依存・コードの変更なし）。
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-08-23T05:18:10Z
+**Iteration:** 1（advisory, unit: u9-canon-docs）
+
+### Findings
+
+| # | Severity | Location | Finding | Recommendation |
+|---|---|---|---|---|
+| 1 | Major | security-requirements.md NFR2.1 / tech-stack-decisions.md §1「差分の受入」 vs `../functional-design/rules.md` BR5.1(d) vs `nfr-requirements-questions.md` P2 | 「コード変更ゼロ」の diff スコープが本 Unit の成果物間で 3 段階に食い違う。(a) rules.md の BR5.1(d)（本表が出典として名指す規則そのもの）は `git diff --stat -- modules tools` のみ、(b) 質問票 P2（Looks correct 済みの前提）は `modules tools scripts .github`、(c) 本表 NFR2.1 と tech-stack-decisions.md §1 は `modules tools scripts .github Cargo.toml Cargo.lock`（かつ `origin/main..HEAD` 基点を追加）。NFR2.1 は出典欄で「BR5.1 (d)」を明示的に引用しているが、実際には BR5.1(d) より広いスコープへ無断で拡張しており、拡張の理由も rules.md 側への反映もない。BR5.1 は `category: validation`（PR 受入チェックそのもの）と明記された規則であり、この不一致は「PR がどの合格基準で判定されるか」という実行時に効く受入ゲートの定義に直接影響する。文書だけの Bolt が誤って `Cargo.toml` を触った場合、rules.md BR5.1(d) の文言だけを見た開発者・レビュアーは合格と判断しうるが、NFR2.1 の基準では不合格になる ― 逆に本 NFR2.1 の方が安全側だが、正本間の食い違いとして残る。 | (a) rules.md BR5.1(d) を次回 functional-design 改訂機会（pending-revision.md 適用時）に `modules tools scripts .github Cargo.toml Cargo.lock` へ広げて同期するか、(b) NFR2.1 の出典欄に「BR5.1(d) を Cargo.* 追加で強化（理由: 依存操作の見落とし防止）」と一行の根拠注記を足し、rules.md との差分を意図的なものとして明示する。いずれかで正本間の不一致を解消・追跡可能にする。 |
+| 2 | Minor | security-requirements.md NFR2.2 vs `../functional-design/rules.md` BR5.1(c) vs `../functional-design/pending-revision.md`（回復レビュー所見 3） | NFR2.2 の sentinel 一覧は `StageGraphReader` を除外し「gateway-taxonomy §2 の禁止名テーブル（意図的な記録）」を理由に挙げているが、これは rules.md BR5.1(c) の**現行の逐語**（`StageGraphReader` を含む 8 sentinel を「履歴注記を除き 0 件」と定義）とは一致せず、`pending-revision.md`（回復レビュー iteration 2 の Major 所見 3、まだ rules.md 本文へは未適用）の裁定に従っている。出典欄は「FD 回復レビュー所見 3」とだけ書いており、`pending-revision.md` というファイル名を明示していないため、rules.md BR5.1 だけを読む開発者には根拠が追えない。実質的な判断（pending-revision の方を正とする）自体は合理的で、`nfr-requirements-questions.md` の確認前提とも矛盾しない。 | NFR2.2 の出典欄を「BR5.1(c)、`../functional-design/pending-revision.md` 所見 3（rules.md 本文は未適用）」のように明示し、rules.md 本体を読む次の実装者が迷わないようにする。 |
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| `aidlc-sensor-traceability.ts --stage nfr-requirements` | `{"pass":true,"gaps":[],"orphans":[],"missing_from_table":[],"missing_from_upstream_ids":[],"invalid_entries":[],"invalid_targets":[],"findings_count":0}` | traceability.json は Inception の NFR1〜NFR5 を過不足なく列挙し、OK/N/A の対象 ID も整合。機械検証 green。 |
+| `aidlc-sensor-required-sections.ts` (security-requirements.md) | `{"pass":true,"h2_count":5,...}` | H2 見出し 5 本、閾値（≥2）を満たす。 |
+| `aidlc-sensor-required-sections.ts` (tech-stack-decisions.md) | `{"pass":true,"h2_count":3,...}` | H2 見出し 3 本、閾値を満たす。 |
+| `aidlc-sensor-upstream-coverage.ts` (security-requirements.md) | `{"pass":true,"reason":"no upstream",...}` | この呼び出し形では consumes 解決ができず判定をスキップしている（`--stage` のみでは per-unit の consumes を解決しない模様）。プロセス上の制約であり本成果物の欠陥ではない。 |
+
+### Summary
+
+U9（spec Unit、Bolt B4）の NFR 要求は、上流の functional-design（rules.md の BR1.x〜BR5.x）・requirements.md の NFR1/NFR2/制約C4・contract-summary.md（U9 は契約面を持たないという主張は C1〜C7 の実地確認と一致）と概ね正しく遡れ、NFR3/NFR4/NFR5 の適用外判定も unit-of-work.md 上の他 Unit（U3/U4/U10）への委譲として妥当。traceability.json と required-sections はいずれも機械検証 green。唯一の実質的な懸念は「コード変更ゼロ」の diff スコープが rules.md・質問票・本成果物の 3 か所で無断に食い違っている点（Major #1）で、PR の実際の合否判定に影響しうるため人間の裁定を推奨する。StageGraphReader の扱い（Minor #2）は判断自体は妥当だが出典の明示が不足している。Critical 0 件・Major 1 件・Minor 1 件のため advisory 目安（Critical 0 かつ Major ≤2）を満たし、READY と判定する。

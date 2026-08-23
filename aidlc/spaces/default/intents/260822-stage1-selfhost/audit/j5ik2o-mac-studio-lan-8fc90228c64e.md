@@ -13799,3 +13799,137 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Findings count**: 59
 
 ---
+
+## Review Requested
+**Timestamp**: 2026-08-23T05:13:47Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:2863579e0256835c424999455b9e3f116f9be706b6d81e28038f67e3b581526e
+
+---
+
+## Design decision — WorkflowExecutionSnapshot の改名（オーナー了承 2026-08-23）
+**Timestamp**: 2026-08-23T05:14:19Z
+オーナー質問「ドメインモデルの snapshot は ES の snapshot か」への回答（ES のスナップショットそのもの。ドメイン側は serde なしの memento 型 + snapshot()/from_snapshot()、保存はアダプタ層）に対し、オーナーは永続化テーブル snapshot と紛らわしい点の改名案（WorkflowExecutionState / memento、責務不変）を了承。Bolt B5（U3）で改名し、U2 機能設計 entities / functional-spec の用語を同期する（U2 FD pending-revision #9）。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T05:14:29Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2e20b0b38dffbead
+**Message**: 引き続きお願いします
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T05:14:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8024562caa5d3b9b
+**Message**: 引き続きお願いします
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T05:18:47Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Context**: construction > u9-canon-docs > nfr-requirements > security-requirements.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:18:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: 364da209
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:18:47Z
+**Event**: SENSOR_PASSED
+**Fire id**: 364da209
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:18:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: 553f1814
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:18:47Z
+**Event**: SENSOR_PASSED
+**Fire id**: 553f1814
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Duration ms**: 18
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T05:18:50Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T05:19:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u9-nfr-req-r1
+**Agent ID**: areview-u9-nfr-req-r1-346d879eee8af77a
+**Message**: ## レビュー完了報告\n\n**Verdict: READY**（advisory, iteration 1, unit: u9-canon-docs）\n\n対象は `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T05:19:16Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:3434b4a3a91c66e4a5cfcff85d9b45a60720b9060088e7c242c2b1c5249e4771
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T05:19:17Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:3434b4a3a91c66e4a5cfcff85d9b45a60720b9060088e7c242c2b1c5249e4771
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T05:19:17Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
