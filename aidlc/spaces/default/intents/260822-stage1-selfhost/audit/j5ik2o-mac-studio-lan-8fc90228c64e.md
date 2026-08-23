@@ -12146,3 +12146,102 @@ contract-summary.md C7 の cli / hooks ケースレイアウトに exit / stderr
 **Findings count**: 37
 
 ---
+
+## Review Requested
+**Timestamp**: 2026-08-23T03:00:36Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:d900ccafc8d56d79a70a2ed10d58628ddb610a9a0a81e78ce33d9ca06f91f208
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T03:01:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a65781fab72f3e521
+**Message**: Bolt B3 のレビュー結果は出た？
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T03:07:07Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-summary.md
+**Context**: construction > u2-domain-es-core > code-generation > code-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T03:07:07Z
+**Event**: SENSOR_FIRED
+**Fire id**: 95bbcce6
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T03:07:07Z
+**Event**: SENSOR_PASSED
+**Fire id**: 95bbcce6
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-summary.md
+**Duration ms**: 17
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T03:07:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T03:07:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u2-codegen-r1
+**Agent ID**: areview-u2-codegen-r1-ee502e7a1fada345
+**Message**: ## レビュー完了報告\n\n**Reviewer:** aidlc-architecture-reviewer-agent — **Verdict: READY**（Critical 0、Major 1、advisory iteration 1）\n\nU2（`u2-domain-es-core`、Bolt B3）の code-generation を、fmt/clippy/lint/test の独立実
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T03:07:49Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:2d479ba50d8892e9f32edcee81388a87207e70ef3e37e87c7da85413f30e6668
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T03:07:49Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:2d479ba50d8892e9f32edcee81388a87207e70ef3e37e87c7da85413f30e6668
+**Source Fingerprint**: b7d2f21d487ca3daf9b58fb8b20bc009fede1874
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T03:07:49Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---

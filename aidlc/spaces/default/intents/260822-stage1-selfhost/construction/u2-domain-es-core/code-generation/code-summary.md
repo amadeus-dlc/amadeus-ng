@@ -126,3 +126,39 @@ Rust の静的型付けでは未定義型へのテストはコンパイルエラ
 | `f4910dc` | test(itf): replay engine_loop traces through the event-sourced aggregate |
 | `1d035f5` | test(core-domain): cover the defensive branches of next_decision and from_snapshot |
 | `fa6bf64` | feat(core-domain): carry depth / test_strategy on Started via StartRequest (C5) |
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-08-23T03:06:19Z
+**Iteration:** 1（advisory, unit: u2-domain-es-core）
+
+### Findings
+
+| # | Severity | Location | Finding | Recommendation |
+|---|---|---|---|---|
+| 1 | Major | `functional-design/functional-spec.md`（末尾 `## Review`）、`functional-design/entities.md`（`WorkflowExecution.stages` の型、`IntentId` の制約文）、`functional-design/pending-revision.md` | U2 の上流成果物 `functional-design` は**最後に記録された検証結果が NOT-READY**（iteration 2、2026-08-23T00:18:27Z、Critical 所見14: 「非ゲート = stage 0」という Quint の抽象を実グラフに持ち込んだ内部矛盾 — 実グラフでは索引 0/1/2 の 3 つとも initialization フェーズで、集約が phase を保持しないため判定不能）。この Critical は `rules.md` BR1.3（`gated(stage) = phase(stage) ≠ initialization`）と `entities.md` の `StageEntry.phase` 属性には反映済みだが、`pending-revision.md` 自身が「回復レビュー枠は消費済み — functional-design ステージゲートで Request Changes を選んだ直後に適用してレビュアーを再実行する」と明記するとおり、**その適用と再レビューはまだ行われていない**。証拠として `entities.md` の `WorkflowExecution.stages` は今も `type: list<StageSlug>`（`list<StageEntry>` への修正が pending-revision.md 項目1 として未適用）、`IntentId` の制約文も実データと矛盾する `-<id8>` 必須のまま（同項目2）。Bolt B3（本 code-generation）はこの NOT-READY な設計を出典として計画・実装され、開発エージェントが実装中に同じ矛盾を独立に発見し（code-summary D1、developer-report-2 §4 D1「entities.md の `list<StageSlug>` のままでは phase が再水和で失われ実装不能」）、`StageEntry` に `phase` を持たせる形で自力解決した。**コード自体はこの是正を正しく実装している**（`modules/core/domain/src/orchestration/stage_entry.rs` の `is_gated()` は phase 判定のみで「索引 0 の特別扱いはしない」と明記、`workflow_execution.rs` の `every_initialization_stage_is_non_gated_and_the_rest_are_gated` テストが索引 0〜2 非ゲート / 3 ゲート / `jump(1) == InvalidTarget` を実測で固定 — レビュアーが実行して確認済み）ため、コード品質そのものへの影響はない。しかし手続き上は、設計ゲートが NOT-READY のまま次工程が進み、本来は設計者が確定すべき是正（entities.md の型修正・IntentId 制約の書き直し）を開発エージェントが実装判断として肩代わりした形になっている。 | (1) `pending-revision.md` の 7 項目（特に項目1: `stages` の型、項目2: `IntentId` の制約文）を `entities.md` / `functional-spec.md` へ即時適用し、functional-design のレビュアーを再実行して verdict を確定させる（コードは既に正しいので、通る見込みは高い）。(2) 併せて `functional-spec.md` の埋め込み `## Review` セクション自体を更新し、「NOT-READY のまま stale」な状態を解消する。(3) 今後の学習として、code-generation の計画承認は上流設計ゲートの最新 verdict が READY であることを前提条件として明示的に確認する運用に倣うことを検討する。 |
+
+### Validation Tool Results
+
+| ツール | 結果 | 解釈 |
+|---|---|---|
+| `cargo fmt --all --check` | exit 0 | 緑 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0（warning 0 件） | 緑。`unwrap_used` / `expect_used` deny を含む workspace lints 47 本が全通過 — プロダクトコードに `unwrap`/`expect` が無いことの機械的裏付け |
+| `cargo lint`（`tools/lint` カスタムルール） | exit 0 | 緑。gateway-taxonomy / field-visibility 等の既存機械強制ルールを通過 |
+| `PROPTEST_RNG_SEED=20260823 cargo test --workspace` | exit 0、**471 passed, 0 failed** | 緑。内訳を個別クレートごとに再実行し合計 471（core-domain lib 244 他）で code-summary の申告と一致することを確認 |
+| `grep -rnE 'enum PlanAction\|pub use .*PlanAction' modules/core/domain/src/orchestration` | 0 件 | BR4.1 / FR8.3 合格。`PlanAction` は `workflow_definition` に完全移動 |
+| `bun .claude/tools/aidlc-sensor-traceability.ts --output-path .../traceability.json --stage code-generation` | `"pass": false`、`invalid_targets: []`、`gaps: []`、`orphans: []`、`invalid_entries: []`、`missing_from_upstream_ids` に FR1 系 36 件 | ブリーフの想定どおり — `upstream_ids` が本 Unit 用の狭い集合（FR8.3/FR8.4/FR1.3/FR2.1/FR3.1/FR3.3 と BR/NFR 群）のみを列挙するため、要求書全体の FR ユニバースと突き合わせるセンサーはノイズを検出する。実害となる `invalid_targets`（存在しないファイル参照）・`gaps`（未被覆）・`orphans` はいずれもゼロで、42 件の coverage エントリの target はすべて実在パス（1 件を除き `modules/`・`scripts/`・`Cargo.toml` 配下、BR3.2 のみ意図的な N/A + 説明文） |
+| golden bytes（`tests/golden/upstream-3c3146cf/harness.json` vs `.claude/tools/data/harness.json`） | sha256 完全一致（`85bfdec8…`） | I3 の申告どおり |
+| `StageEntry::is_gated()` / `WorkflowExecution::gated()` の実装確認 | phase 判定のみ、索引 0 特別扱いなし | 所見1 の是正が実装済みであることの直接確認 |
+| `next_decision` の優先順（0 DefinitionMismatch → 1 park → … → 7 next-in-scope/Done） | `rules.md` BR3.1 / `functional-spec.md` W4 と一致 | 実コードで逐語確認 |
+| `jump` の forward/backward/redo 差分ロジック | BR1.6 の 2 条件（介在ステージ in-flight・現ステージ active）と一致 | 実コードで逐語確認 |
+| `StageIndex` の構築制御 | `pub(crate) const fn new` — 公開経路は `stage_index(usize) -> Option<Self>`（範囲検査）と `from_snapshot` のみ | BR5.1 / NFR4.3 合格 |
+| ADR-008 との突合 | `decisions.md` ADR-008 の Decision (1)〜(4) が BR2.6・実装（`start` は無条件記録、`next_decision` のみ id 検査）と一致 | 合格 |
+
+### Summary
+
+コード自体の品質は高い。品質ゲート4本（fmt/clippy/lint/test）と合格 grep はレビュアーの独立実行で全て緑を確認し、traceability センサーも実害ゼロ（`invalid_targets`/`gaps`/`orphans` すべて空）。TDD の Red 記録（developer-report-1/2）は実測のコンパイルエラー・失敗テスト名を伴い具体的で、PBT の実効性もカバレッジ駆動で裏取りされている（`next_decision` の防御腕2本が未到達と判明し到達経路を特定してテスト追加、という誠実な報告）。BR2.6/ADR-008（集約間 ID 参照、`DefinitionMismatch`）、BR1.6（jump の差分集合）、BR5.1（`StageIndex` の型保証）はいずれも規則どおりの実装をコードで確認した。
+
+一方、唯一かつ重要な Major 所見は、上流の functional-design が最後の記録上 **NOT-READY**（Critical 所見14 未解消のまま）であるにもかかわらず code-generation が進んだ点である。実装側は同じ矛盾を独立に発見し正しく解消しているためコードの正しさへの実害は無いが、本来は設計ゲートで確定すべき是正を実装判断（D1 等）が肩代わりした形跡であり、`entities.md` は今も矛盾した記述のまま放置されている。この 1 件のみで Major ≤ 2 の閾値には収まるため advisory verdict は READY とするが、承認ゲートでは `entities.md` の是正適用と functional-design レビュアーの再実行（verdict 確定）を人間が優先度高く扱うことを推奨する。
