@@ -104,7 +104,7 @@ flowchart TB
 
 > 脚注（実装との差）: U2 実装（Bolt B3）の `IntentId::parse` は kebab の記録ディレクトリ名を受理しており、本書の規範（UUIDv7）と一致していない。Bolt B5（U3 — `aggregate_id` を SQLite に書く最初の Unit）で UUIDv7 の検証へ是正し、記録ディレクトリ名は `IntentDirName` として書き分ける（オーナー裁定 2026-08-23）。
 
-**代表不変条件**: 「監査 emit が state 書き込みに先行し、emit 失敗時は state を書かない」（E3+E4 — audit-first はロックモデルの中心不変条件）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）、「生きている閾値未満のロック保持者からは決して奪わない」（E4 — クラッシュをアクションに含めて検査。方針書 R6）。
+**代表不変条件**: 「監査 emit が state 書き込みに先行し、emit 失敗時は state を書かない」（E3+E4 — audit-first は**旧 mkdir ロックモデル**の中心不変条件。ADR-007 でロックは退役したため、本段落のロック系不変条件と E4 名は `audit_lock.qnt` の協定モデル改訂後に Bolt B5 で差し替える — 改訂して存続、本 Unit では変更しない）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）、「生きている閾値未満のロック保持者からは決して奪わない」（E4 — クラッシュをアクションに含めて検査。方針書 R6）。
 
 **状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は `audit_lock.qnt` の「ジャーナル / スナップショット / version / チェックポイント協定」への改訂で存続する — ADR-007）。
 

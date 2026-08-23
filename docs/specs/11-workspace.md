@@ -111,7 +111,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 ## 6. 不変条件表（強制手段つき）
 
-E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3 — **10 不変条件 green・mutation 10/10・到達性 witness 7 本モジュール内定義**）に実在する。
+E4 の定義名は W1〜W5 について [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3 — **10 不変条件 green・mutation 10/10・到達性 witness 7 本モジュール内定義**）に実在する。**注記（2026-08-23）**: W1〜W5 の文言と E4 定義名は upstream の mkdir ロック時代の規範（旧）である。ADR-007 でロック機構は退役したため（§2.1）、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」モデルへ改訂したうえで Bolt B5 が W1〜W5 と定義名を差し替える（改訂して存続 — 本 Unit では変更しない）。
 
 | # | 不変条件 | 強制 | E4 定義名 / 備考 |
 | --- | --- | --- | --- |
