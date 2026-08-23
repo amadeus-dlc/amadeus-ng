@@ -13474,3 +13474,328 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:09:01Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u9-canon-docs > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:09:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: e0a829fc
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:09:01Z
+**Event**: SENSOR_PASSED
+**Fire id**: e0a829fc
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:09:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: 09735f5d
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:09:01Z
+**Event**: SENSOR_PASSED
+**Fire id**: 09735f5d
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 17
+
+---
+
+## Unit Started
+**Timestamp**: 2026-08-23T05:09:05Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T05:09:05Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: U9 nfr-requirements 前提 P1〜P3 の要約確認（質問なし）
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T05:11:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T05:12:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T05:12:32Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u9-canon-docs > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:12:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 03cb585a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:12:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: 03cb585a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:12:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 55275807
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:12:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: 55275807
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 18
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-23T05:12:41Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: 2afcdecfc16e6b7cf28531f9a6ee928e209ef5ecd5f35b088305b8e4deadd6f0
+**Unit**: u9-canon-docs
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:13:20Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Context**: construction > u9-canon-docs > nfr-requirements > security-requirements.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: 86d7222e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:13:20Z
+**Event**: SENSOR_PASSED
+**Fire id**: 86d7222e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8c17528e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:13:20Z
+**Event**: SENSOR_FAILED
+**Fire id**: 8c17528e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-8c17528e.md
+**Findings count**: 2
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:13:37Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u9-canon-docs > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2cfafa40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:13:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: 2cfafa40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: ee5df26e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:13:37Z
+**Event**: SENSOR_FAILED
+**Fire id**: ee5df26e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-ee5df26e.md
+**Findings count**: 3
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+**Context**: construction > u9-canon-docs > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: 28eda451
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: SENSOR_PASSED
+**Fire id**: 28eda451
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: 28221293
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: SENSOR_FAILED
+**Fire id**: 28221293
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-28221293.md
+**Findings count**: 4
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8ed3920f
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:13:41Z
+**Event**: SENSOR_FAILED
+**Fire id**: 8ed3920f
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-8ed3920f.md
+**Findings count**: 59
+
+---

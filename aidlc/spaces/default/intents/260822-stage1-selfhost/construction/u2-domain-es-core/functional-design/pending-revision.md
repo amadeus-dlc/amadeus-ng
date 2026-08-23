@@ -17,3 +17,5 @@
 8. （オーナー裁定 2026-08-23、U9 FD Q2 = A）`IntentId` の正本は **UUIDv7**（`intents.json` の `uuid`、01 号 §3）。項目 2 の「一般 kebab」は
    記録ディレクトリ名用の別の値（`IntentDirName`）として書き分ける。U2 の `IntentId::parse` を UUIDv7 形式に改める是正は Bolt B5（U3 —
    `aggregate_id` を SQLite に書く最初の Unit）で行う。entities.md の IntentId 行を「UUIDv7（`intents.json` の uuid）」に、`IntentDirName` を新設。
+9. （オーナー質問 2026-08-23）`WorkflowExecutionSnapshot` の名前が C6 の永続化テーブル `snapshot` と同じで紛らわしい — B5（U3）で `WorkflowExecutionState`（memento）への
+   改名を検討（責務は変えない: serde なし、`snapshot()` / `from_snapshot()` = 状態の写しと不変条件つき復元）。entities / spec の用語も同期。
