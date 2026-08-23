@@ -121,7 +121,7 @@ entities:
     layer: interface-adapter
     description: "ストアファイルの場所（Q1 = A）"
     attributes:
-      - { name: value, type: PathBuf, required: true, constraints: "`<aidlc root>/spaces/<SpaceName>/intents/.aidlc-store.sqlite`（`for_space(aidlc_root, &SpaceName)` で導出。既存 .gitignore `aidlc/spaces/*/intents/.aidlc-*` で git 管理外）" }
+      - { name: value, type: PathBuf, required: true, constraints: "`<aidlc root>/spaces/<SpaceName>/intents/.aidlc-store.sqlite`（`of(aidlc_root, &SpaceName)` で導出。既存 .gitignore `aidlc/spaces/*/intents/.aidlc-*` で git 管理外）" }
   - name: JournalRow
     kind: table-row
     layer: interface-adapter

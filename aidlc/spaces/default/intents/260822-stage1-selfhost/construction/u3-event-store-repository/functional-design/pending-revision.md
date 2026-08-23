@@ -22,3 +22,7 @@
    `Rc<RefCell<_>>` / 手書き `Clone` を除去（オーナー裁定 2026-08-23、正本 `coding-rules/interior-mutability.md` / `command-query-separation.md` を新設）。委任 8 で実装
    是正済み・本文同期済み。共有契約 C3（`inception/contract-design/contract-summary.md`）の `store(&self, …)` と数値パラメータ `usize` は、オーナー裁定（2026-08-23）
    により `&mut self` / `u64` へ改訂済み。C3 の所有者は U5/U6 だが、U3 の実装が正であることを本改訂で確定した。code-generation レビュー Major 所見 1 はこれで解消。
+10. **ファクトリ命名**: `StorePath::for_space` → `StorePath::of`（複数の値を集約 = `of`）、
+    `InMemoryWorkflowExecutionRepository::{new(), with_store(store)}` → `new(store)` + `Default`
+    （コンストラクタ相当は `new` に統一。SQLite 実装 `WorkflowExecutionRepositoryImpl::new(store)` と同形）。
+    正本 `coding-rules/factory-naming.md`（オーナー裁定 2026-08-24）。本文同期済み。

@@ -197,22 +197,36 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
      `SharedRwLock<T>` を 1 度だけ起こし、`*Shared` ラッパーへ内部可変性を閉じること
      （`coding-rules/interior-mutability.md`）。`Rc<RefCell<T>>` / `Arc<Mutex<T>>` の手書きは禁止。
      **投機的に作らない** — 必要が実際に生じた時点で、U4 / U7 の設計者が判断する。
-2. **fixture 鮮度ゲートが未実装**（ADR 0003 決定 4）。今回は手作業で「再採取 → 正規化 → バイト一致」を確認したが、機械強制が無い。
+2. **既存コードのファクトリ命名が未同期**（U3 スコープ外、別 Bolt へ）。オーナー裁定 2026-08-24 で
+   `coding-rules/factory-naming.md` を新設した（コンストラクタ相当は `fn new(..) -> Self` に統一、
+   それ以外は用途で選ぶ）。**U3 が導入した面は本 Bolt で是正済み**（`StorePath::for_space` → `of`、
+   `InMemoryWorkflowExecutionRepository::{new(), with_store()}` → `new(store)` + `Default`）だが、
+   U3 が書いていない既存コードに次の当てはめが残る — 改名は公開 API を変えるので、無関係な
+   スコープ膨張を避けて別 Bolt に回した:
+   - `ShardName::compose(host, clone_id)` → `of`（複数の値を集約）
+   - `JumpDirection::derive(cursor, target)` → `of`
+   - `ScopeGrid::derive_from_graph(&StageGraph)` → `from_graph`（他の型からの変換）
+   - `AutonomyMode::read_state(Option<&str>)` → `from_state_field` など（同上）
+   - `NextRequest::plain()` → `new()` または `impl Default`
+   - `SpaceName::default_space()` → `impl Default`
+   （`PhaseId::from_index` / `CheckboxState::from_marker` / `WorkflowExecution::from_state` /
+   `RepositoryError::from_event_store` / `EventStoreImpl::open` / `WorkflowExecution::start` は既に適合）
+3. **fixture 鮮度ゲートが未実装**（ADR 0003 決定 4）。今回は手作業で「再採取 → 正規化 → バイト一致」を確認したが、機械強制が無い。
    `engine_loop` / `journal_protocol` 双方に効く横断の穴として後続 Bolt へ。
-3. ~~**C3 の `usize` → `u64`**（`GlobalSeqNr` 周辺の桁幅）— 契約側の確定待ち。~~ → **解消済み**（2026-08-24 のオーナー裁定で `contract-summary.md` §C3 を `u64` へ改訂。code-generation レビュー iteration 1 の Major 所見 1 もこれで閉じた）。
-4. **`within_write_transaction` が `rusqlite::Transaction` を公開面に露出させる**。設計どおりの署名だが、利用者（U7 の登録簿処理）が
+4. ~~**C3 の `usize` → `u64`**（`GlobalSeqNr` 周辺の桁幅）— 契約側の確定待ち。~~ → **解消済み**（2026-08-24 のオーナー裁定で `contract-summary.md` §C3 を `u64` へ改訂。code-generation レビュー iteration 1 の Major 所見 1 もこれで閉じた）。
+5. **`within_write_transaction` が `rusqlite::Transaction` を公開面に露出させる**。設計どおりの署名だが、利用者（U7 の登録簿処理）が
    `rusqlite` を直接名指しすることになる。**U7 の設計時に再確認**。
-5. **U4 の `reset_checkpoint`** — 投影のリセット口はまだポートに無い。U4（read model updater）で扱う。
-6. **U5 の `Conflict` 再試行**方針（楽観 version 衝突時のリトライ回数・バックオフ）は U5 で決める。
-7. **相対ゲートの許容誤差 0.01pp は base 側の実測ゆらぎより狭い可能性がある**。同じ `origin/main` を同じシードで 3 回計測して
+6. **U4 の `reset_checkpoint`** — 投影のリセット口はまだポートに無い。U4（read model updater）で扱う。
+7. **U5 の `Conflict` 再試行**方針（楽観 version 衝突時のリトライ回数・バックオフ）は U5 で決める。
+8. **相対ゲートの許容誤差 0.01pp は base 側の実測ゆらぎより狭い可能性がある**。同じ `origin/main` を同じシードで 3 回計測して
    最大差 0.012pp（97.39995 / 97.38797 / 97.38797）。PBT のシードは固定済みなので、残るゆらぎ源は `busy_timeout` 超過や FS 待ちのような
    タイミング依存テストと推測される。今回は +1.03pt なので影響しないが、head と base が拮抗した Bolt では偽陽性の赤を出しうる。
    ゆらぎ源の特定を後続 intent へ申し送る。
-8. **`cargo llvm-cov` は `src/**` のインライン `#[cfg(test)] mod tests` も計測対象に含む**。テストヘルパに未実行の分岐（`panic!` する else 腕）を
+9. **`cargo llvm-cov` は `src/**` のインライン `#[cfg(test)] mod tests` も計測対象に含む**。テストヘルパに未実行の分岐（`panic!` する else 腕）を
    作るとカバレッジを下げる副作用がある。`scripts/coverage.sh` の除外方針（composition root のみ）を見直すなら論点になる。
-9. **`scope_file_paths` は名前だけを見てディレクトリも候補に入れる**。`aidlc-x.md` という名のディレクトリがあると `read_to_string` が失敗し
+10. **`scope_file_paths` は名前だけを見てディレクトリも候補に入れる**。`aidlc-x.md` という名のディレクトリがあると `read_to_string` が失敗し
    `GraphReadError::ScopeFile` で致命になる（今回テストで固定）。upstream 側の態度は未確認（`load_scopes` の `TODO(spec: 12 §11)` と同性質）。
-10. **`workflow_definition_repository_impl.rs:749`（非 UTF-8 ファイル名）は未カバーのまま**。CI（ubuntu）でだけ走る
+11. **`workflow_definition_repository_impl.rs:749`（非 UTF-8 ファイル名）は未カバーのまま**。CI（ubuntu）でだけ走る
    `#[cfg(target_os = "linux")]` テストを足す案はあるが、「ローカルで実行されないテスト」を増やす是非はオーナー裁定が要る。
 
 ## 8. 依存（版・`cargo audit`）

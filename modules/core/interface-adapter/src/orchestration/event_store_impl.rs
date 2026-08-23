@@ -765,7 +765,7 @@ mod tests {
 
     /// 一時ディレクトリ配下にストアを開く (親 dir は先に作る)。
     fn open_store(dir: &tempfile::TempDir) -> EventStoreImpl<FakeClock> {
-        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default_space());
+        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default_space());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         EventStoreImpl::open(path, FakeClock::new(0)).expect("開ける")
     }
@@ -784,7 +784,7 @@ mod tests {
     #[test]
     fn the_busy_timeout_can_be_narrowed_for_observation() {
         let dir = tempfile::tempdir().expect("一時 dir");
-        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default_space());
+        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default_space());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         let store = EventStoreImpl::open_with_busy_timeout(
             path,
@@ -852,7 +852,7 @@ mod tests {
     #[test]
     fn the_clock_supplies_the_stamp() {
         let dir = tempfile::tempdir().expect("一時 dir");
-        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default_space());
+        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default_space());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         let store = EventStoreImpl::open(path, FakeClock::new(1_787_443_200_000)).expect("開ける");
         assert_eq!(store.now(), "2026-08-23T00:00:00Z");

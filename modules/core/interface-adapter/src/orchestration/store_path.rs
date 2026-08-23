@@ -28,7 +28,7 @@ impl StorePath {
     /// `space` は検証済みのパスセグメント (`SpaceName`) なので、`join` に渡してよい唯一の形
     /// である。`aidlc_root` は合成ルートが決める `aidlc/` ディレクトリ。
     #[must_use]
-    pub fn for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath {
+    pub fn of(aidlc_root: &Path, space: &SpaceName) -> StorePath {
         StorePath {
             value: aidlc_root
                 .join(SPACES_SEGMENT)
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn the_path_is_the_store_file_under_the_intents_directory_of_the_space() {
-        let path = StorePath::for_space(Path::new("/w/aidlc"), &space("default"));
+        let path = StorePath::of(Path::new("/w/aidlc"), &space("default"));
         assert_eq!(
             path.as_path(),
             Path::new("/w/aidlc/spaces/default/intents/.aidlc-store.sqlite")
@@ -64,14 +64,14 @@ mod tests {
 
     #[test]
     fn a_different_space_gets_a_different_store() {
-        let one = StorePath::for_space(Path::new("/w/aidlc"), &space("default"));
-        let other = StorePath::for_space(Path::new("/w/aidlc"), &space("team-a"));
+        let one = StorePath::of(Path::new("/w/aidlc"), &space("default"));
+        let other = StorePath::of(Path::new("/w/aidlc"), &space("team-a"));
         assert_ne!(one, other);
     }
 
     #[test]
     fn a_relative_root_stays_relative() {
-        let path = StorePath::for_space(Path::new("aidlc"), &space("default"));
+        let path = StorePath::of(Path::new("aidlc"), &space("default"));
         assert_eq!(
             path.as_path(),
             Path::new("aidlc/spaces/default/intents/.aidlc-store.sqlite")
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn the_file_name_is_hidden_so_the_existing_gitignore_rule_catches_it() {
-        let path = StorePath::for_space(Path::new("/w/aidlc"), &space("default"));
+        let path = StorePath::of(Path::new("/w/aidlc"), &space("default"));
         let name = path
             .as_path()
             .file_name()

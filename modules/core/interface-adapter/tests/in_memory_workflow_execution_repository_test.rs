@@ -63,7 +63,7 @@ async fn journal_ahead_of_the_snapshot(store: &mut InMemoryEventStore) -> Workfl
 
 #[tokio::test]
 async fn a_store_without_any_row_reports_not_found() {
-    let repository = InMemoryWorkflowExecutionRepository::new();
+    let repository = InMemoryWorkflowExecutionRepository::default();
     let err = repository
         .find_by_id(&absent_intent_id())
         .await
@@ -83,7 +83,7 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
     let mut store = InMemoryEventStore::new();
     let (_, event) = genesis();
     store.persist_event(&event, 0).await.expect("追記");
-    let repository = InMemoryWorkflowExecutionRepository::with_store(store);
+    let repository = InMemoryWorkflowExecutionRepository::new(store);
 
     let err = repository
         .find_by_id(&intent_id())
@@ -103,7 +103,7 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
 async fn the_version_after_a_replay_is_the_sequence_of_the_last_applied_event() {
     let (mut store, _) = seeded().await;
     let expected = journal_ahead_of_the_snapshot(&mut store).await;
-    let repository = InMemoryWorkflowExecutionRepository::with_store(store);
+    let repository = InMemoryWorkflowExecutionRepository::new(store);
 
     let found = repository.find_by_id(&intent_id()).await.expect("読める");
     assert_eq!(found.version(), 3, "replay 後に最後の seq_nr を載せる");
@@ -121,7 +121,7 @@ async fn a_gap_in_the_replayed_journal_is_corrupt() {
         .expect("索引 1 はゲート付き");
     // seq_nr 2 を飛ばして 3 だけを足す。
     store.persist_event(&third, 1).await.expect("追記");
-    let repository = InMemoryWorkflowExecutionRepository::with_store(store);
+    let repository = InMemoryWorkflowExecutionRepository::new(store);
 
     let err = repository
         .find_by_id(&intent_id())
@@ -152,7 +152,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
         )),
     );
     store.persist_event(&bogus, 1).await.expect("追記");
-    let repository = InMemoryWorkflowExecutionRepository::with_store(store);
+    let repository = InMemoryWorkflowExecutionRepository::new(store);
 
     let err = repository
         .find_by_id(&intent_id())
@@ -175,7 +175,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
 #[tokio::test]
 async fn the_repository_hands_out_a_reader_over_the_same_store() {
     let (store, _) = seeded().await;
-    let mut repository = InMemoryWorkflowExecutionRepository::with_store(store);
+    let mut repository = InMemoryWorkflowExecutionRepository::new(store);
 
     let rows = repository
         .event_store()

@@ -37,14 +37,14 @@ impl StoreFixture for InMemoryFixture {
     type Reader = InMemoryEventStore;
 
     fn open(&self) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new()
+        InMemoryWorkflowExecutionRepository::default()
     }
 
     fn reopen(
         &self,
         repository: &InMemoryWorkflowExecutionRepository,
     ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::with_store(repository.event_store().clone())
+        InMemoryWorkflowExecutionRepository::new(repository.event_store().clone())
     }
 
     fn reader(&self, repository: &InMemoryWorkflowExecutionRepository) -> InMemoryEventStore {
@@ -126,7 +126,7 @@ impl SqliteFixture {
             .tempdir_in(self.root.path())
             .expect("open ごとの一時ディレクトリ")
             .keep();
-        SqliteFixture::open_at(StorePath::for_space(
+        SqliteFixture::open_at(StorePath::of(
             &workspace.join("aidlc"),
             &SpaceName::default_space(),
         ))

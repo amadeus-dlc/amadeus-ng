@@ -33,15 +33,14 @@ const fn apply_cause(error: &ApplyError) -> CorruptCause {
 }
 
 impl InMemoryWorkflowExecutionRepository {
-    /// 空のストアを内包する Repository を作る。
+    /// 受け取ったストアを内包する Repository を作る。
+    ///
+    /// 空のストアから始めたい場合は `Default` を使う (`InMemoryWorkflowExecutionRepository::default()`)。
+    /// 既存のストアを渡す形は「別プロセスからの再オープン相当」を表す。
+    /// SQLite 実装 `WorkflowExecutionRepositoryImpl::new(store)` と同じ形にしてある
+    /// (coding-rules/factory-naming.md — コンストラクタ相当は `new` に統一)。
     #[must_use]
-    pub fn new() -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::default()
-    }
-
-    /// 既存のストアを受け取って Repository を作る (別プロセスからの再オープン相当)。
-    #[must_use]
-    pub const fn with_store(store: InMemoryEventStore) -> InMemoryWorkflowExecutionRepository {
+    pub const fn new(store: InMemoryEventStore) -> InMemoryWorkflowExecutionRepository {
         InMemoryWorkflowExecutionRepository { store }
     }
 

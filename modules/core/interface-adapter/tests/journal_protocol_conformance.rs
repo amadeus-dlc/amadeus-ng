@@ -319,7 +319,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
     // coding-rules/interior-mutability.md)。投影のキャッチアップも射影の突合も、
     // この 1 つのストアを `event_store` / `event_store_mut` 経由で読み書きする。
     // crash (プロセス再起動) のたびに 3 表を引き継いで開き直すので可変にしておく。
-    let mut repository = InMemoryWorkflowExecutionRepository::new();
+    let mut repository = InMemoryWorkflowExecutionRepository::default();
     let mut projection = FakeProjection::default();
     let mut writers: Vec<Writer> = (0..WRITERS).map(|_| Writer::genesis()).collect();
 
@@ -420,7 +420,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             "crash" => {
                 // 3 表を引き継いだ別インスタンスで開き直す (= 書き終えた行は落ちない)。
                 let carried = repository.event_store().clone();
-                repository = InMemoryWorkflowExecutionRepository::with_store(carried);
+                repository = InMemoryWorkflowExecutionRepository::new(carried);
                 if m.journal_len > 0 {
                     let rebuilt = repository
                         .find_by_id(&intent_id())
