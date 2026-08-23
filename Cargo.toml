@@ -104,6 +104,10 @@ proptest = "1"
 # `Send` を要求しない設計 (C3 / Q3 = A) をそのまま検証できるようにする。
 # dev-dependency 限定で、プロダクトコードの依存には入らない (NFR4.1)。
 tokio = { version = "1", features = ["rt", "macros"] }
+# SQLite ストア (C6 の 3 表) の実装。`bundled` は SQLite 本体をソースから同梱ビルドし、
+# 実行環境の libsqlite3 の版差を消す (upstream 互換の観測面に版差を持ち込まないため)。
+# 版は Cargo.lock で正確に固定される。
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 # テスト支援 (ゴールデン比較器) の正規化規則を `normalization.json` から読んで適用するため。
 # dev-dependency 限定であり、canon-json のランタイム依存 (NFR4.1: sha2 / serde / serde_json)
 # には入らない。

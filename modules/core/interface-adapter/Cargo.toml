@@ -16,6 +16,8 @@ directive-schema = { workspace = true }
 canon-json = { workspace = true }
 message-catalog = { workspace = true }
 infra-io = { workspace = true }
+# C6 の 3 表を持つ SQLite ストア (BR2.1 / BR2.2)。同梱ビルドで版差を消す。
+rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

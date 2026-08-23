@@ -10,11 +10,20 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod memory;
+mod schema;
+mod sqlite_event_store;
+mod store_path;
 mod wire;
 mod workflow_definition_repository_impl;
+mod workflow_execution_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
+pub use workflow_execution_repository_impl::WorkflowExecutionRepositoryImpl;
+
+// 集約の永続化を担う SQLite ストア (C6 の 3 表) とその場所
+pub use sqlite_event_store::SqliteEventStore;
+pub use store_path::StorePath;
 
 // テスト用 in-memory 実装
 pub use memory::{

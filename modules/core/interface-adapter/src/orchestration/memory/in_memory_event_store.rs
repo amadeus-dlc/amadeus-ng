@@ -188,7 +188,12 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
         let new_version = event.seq_nr();
         let event_payload =
             EventPayloadWire::encode(aggregate_id.as_str(), new_version, event.payload())?;
-        let state_payload = StateWire::encode(aggregate_id.as_str(), &aggregate.state())?;
+        // 書込後の姿を写すので、payload の version も列と同じ新 version に揃える
+        // (SQLite 実装と同形 — 行の中身が実装ごとに違うと契約テストの意味が薄れる)。
+        let state_payload = StateWire::encode(
+            aggregate_id.as_str(),
+            &aggregate.clone().with_version(new_version).state(),
+        )?;
 
         let mut tables = self.tables.borrow_mut();
         let actual = tables.current_version(aggregate_id);
@@ -383,9 +388,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_snapshot_row_carries_the_new_version_even_though_the_payload_predates_it() {
-        // 列の version が正 — 集約は遷移で version を動かさないので、payload の version は
-        // 書込前の値のままである (BR1.2 が `with_version(snapshot.version)` で載せ替える)。
+    async fn the_snapshot_row_and_its_payload_both_carry_the_new_version() {
+        // 集約は遷移で version を動かさないので、書込側が `with_version(新 version)` を
+        // 載せてから写す。列と payload が食い違わないので、`find_by_id` の
+        // `with_version(列の version)` は載せ替えではなく確認になる (BR1.2)。
         let store = seeded().await;
         let found = store
             .get_latest_snapshot_by_id(&intent())
@@ -394,6 +400,17 @@ mod tests {
             .unwrap();
         assert_eq!(found.version(), 1);
         assert_eq!(found.seq_nr(), 1);
+        assert!(
+            store
+                .tables
+                .borrow()
+                .snapshot
+                .get(&intent())
+                .unwrap()
+                .payload
+                .contains("\"version\":1"),
+            "payload の version も新 version"
+        );
     }
 
     #[tokio::test]
