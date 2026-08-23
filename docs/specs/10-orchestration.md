@@ -85,7 +85,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 | ポート | 責務 | 実装（Gateway） |
 | --- | --- | --- |
-| `WorkflowExecutionRepository` | 集約 `WorkflowExecution` の ES 形 Repository（C3 / ADR-006）。`store(event, aggregate)` が「1 コマンドが返した単一イベント」と「適用後の集約」を**同一 Tx**で永続化し（楽観 `version` 不一致は `Conflict`）、`find_by_id(&IntentId)` が最新スナップショット ＋ 以降のイベント replay で集約を完全に再構成する。SQLite という格納形式と Tx 所有は**この Repository 実装の内部詳細**であり、ポート面には現れない。**I8（`next` は読み取り専用）はこのポートを `Next` に注入しないことで型強制する** — Controller が Repository で取得した集約を `Next` へ `&` 参照で渡し、所有権と可変性で読取専用を保証する（CQRS の読取モデル分離は使わない） | `WorkflowExecutionRepositoryImpl`（SQLite EventStore — `journal` / `snapshot` / `checkpoint` の 3 テーブル（C6）を内包）。状態ファイル `aidlc-state.md` と監査シャードは**リードモデル**であり、ReadModelUpdater（U4）が投影する（ADR-003 / ADR-004）。テストダブルは `InMemoryWorkflowExecutionRepository` |
+| `WorkflowExecutionRepository` | 集約 `WorkflowExecution` の ES 形 Repository（C3 / ADR-006）。`store(event, aggregate)` が「1 コマンドが返した単一イベント」と「適用後の集約」を**同一 Tx**で永続化し（楽観 `version` 不一致は `Conflict`）、`find_by_id(&IntentId)` が最新スナップショット ＋ 以降のイベント replay で集約を完全に再構成する。SQLite という格納形式と Tx 所有は**この Repository 実装の内部詳細**であり、ポート面には現れない。**I8（`next` は読み取り専用）はこのポートを `Next` に注入しないことで型強制する** — Controller が Repository で取得した集約を `Next` へ `&` 参照で渡し、所有権と可変性で読取専用を保証する（CQRS の読取モデル分離は使わない） | `WorkflowExecutionRepositoryImpl`（`SqliteEventStore` を内包 — `journal` / `snapshot` / `checkpoint` の 3 テーブル（C6）、ストアファイルは `aidlc/spaces/<space>/intents/.aidlc-store.sqlite`（U3 FD Q1 = A））。登録簿 `intents.json` の read-modify-write の直列化は `SqliteEventStore::within_write_transaction`（U3 FD Q2 = A）。状態ファイル `aidlc-state.md` と監査シャードは**リードモデル**であり、ReadModelUpdater（U4）が投影する（ADR-003 / ADR-004）。テストダブルは `InMemoryWorkflowExecutionRepository`（Bolt B5 実装） |
 | `WorkflowDefinitionRepository` | 集約 `WorkflowDefinition`（[`12-workflow-definition.md`](12-workflow-definition.md) §2.1）の `find_by_id(&WorkflowDefinitionId)`（C4 改訂 2026-08-23 — 引数を取らない旧動詞 `find` は廃止、後方互換の併存なし）。1 つのハーネスが提供できる定義は 1 つなので、実装は「要求された id が自分の id か」を検査する。失敗は `NotFound { expected, actual }`（id 取り違え — fatal）と `HarnessIdentity { path, cause }`（`harness.json` の読取・`name` 検証の失敗 — fatal）ほか `GraphReadError` の既存変種。**Published Language のコンパイル成果物なので `save` は持たない**。3 入力の形状・読込失敗態度・述語面の規範は 12（workflow-definition スライス 1）が所有 | canon-json コーデックを内部に持つ `WorkflowDefinitionRepositoryImpl`（`id` / `revision` の付与も実装の責務 — ADR-008）。テストダブルは `InMemoryWorkflowDefinitionRepository` |
 | 外部システムクライアント（Git） | worktree の作成 / マージ / 破棄など、別プロセスとの RPC。集約の永続化ではないので Repository ではない（gateway-taxonomy §1）。契約と実装の所在は [`11-workspace.md`](11-workspace.md) §3 が所有する | workspace の供給面（例 `GitWorktreeClient`） |
 | マーカー永続化 Gateway（非 Repository。名称は実装時に gateway-taxonomy 準拠で確定） | active-directive marker / turn マーカー / steering MAC キー（`.aidlc-steering-token-key` — I8 の例外 2 つの書込面）のマシンローカル書き込み。原則 advisory — 失敗は throw しない。**例外**: Copilot-commit アームのみ発行失敗が work directive の発行自体を拒否する fail-closed（Copilot ハーネスは D5 の初期スコープ外だが、ポート契約として記録） | Gateway |
@@ -106,7 +106,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 ## 6. 不変条件表（強制手段つき）
 
-E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../formal/orchestration/engine_loop.qnt)（slice 1 v2）、I16〜I17 が [`formal/orchestration/stop_hook.qnt`](../../formal/orchestration/stop_hook.qnt)（v1）、I14 が [`formal/workspace/audit_lock.qnt`](../../formal/workspace/audit_lock.qnt)（v3）に実在する — 第一陣 3 モジュールすべて green・mutation 検査力確認済み。**注記（2026-08-23）**: I14 の E4 定義名は upstream の mkdir ロック時代の規範である。ADR-007 でロックは退役したため、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」モデルへ改訂したうえで Bolt B5 が定義名を差し替える（改訂して存続 — 本 Unit では変更しない。§10 S2 参照）。
+E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../formal/orchestration/engine_loop.qnt)（slice 1 v2）、I16〜I17 が [`formal/orchestration/stop_hook.qnt`](../../formal/orchestration/stop_hook.qnt)（v1）、I14 が [`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt)（ジャーナル / スナップショット / version / チェックポイント協定モデル、不変条件 8 / witness 4 — ADR-007 により `formal/workspace/audit_lock.qnt` を退役して置換、Bolt B5）に実在する — いずれも green・mutation 検査力確認済み。
 
 | # | 不変条件 | 強制 | E4 定義名 / 備考 |
 | --- | --- | --- | --- |
@@ -120,10 +120,10 @@ E4 の定義名は I2〜I7 が [`formal/orchestration/engine_loop.qnt`](../../fo
 | I8 | `next` は読み取り専用（例外は steering MAC キーと active-directive marker の 2 つのみ、いずれも advisory） | **E1**+E5 | `Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が取得済みの集約を `&` 参照で渡す構成で型強制（§3） |
 | I9 | 状態遷移はエンジン所有 11 動詞のみ。外部からの直接呼び出しは PID 束縛マーカーで拒否 | E1+E3 | 内側は集約メソッドの可視性、外側（マルチコール経由）は guard |
 | I10 | `--single` は本流を進められない（advance / approve / complete-workflow に**構造的に到達不能**、synthetic workflow id は本流の完了証跡を満たさない） | **E1** | `SingleStageRun` ユースケースには遷移ポート自体を注入しない |
-| I11 | autonomous への昇格のみ human presence を要する（降格は不要）。**同秒かつ別シャード**の HUMAN_TURN とゲート解決は fail-closed（同一シャードは pos 順で判定） | E2+E3 | `AutonomyMode` パーサ＋`human_acted_since_gate` 述語。E4 は audit_lock モデル（workspace 第一陣）と合流 |
+| I11 | autonomous への昇格のみ human presence を要する（降格は不要）。**同秒かつ別シャード**の HUMAN_TURN とゲート解決は fail-closed（同一シャードは pos 順で判定） | E2+E3 | `AutonomyMode` パーサ＋`human_acted_since_gate` 述語。E4 化は旧 `audit_lock`（workspace 第一陣）に合流させる想定だったが、同モデルは ADR-007 で `journal_protocol.qnt`（ジャーナル/スナップショット協定、HUMAN_TURN の同秒判定は対象外）へ改訂されたため未定 — 再検討課題（Bolt B5 設計質問） |
 | I12 | `continue_token` の MAC 不一致・ダイジェスト移動・型表違反はすべて fail-closed（fresh `next` からやり直し） | E2+E3 | fail-closed の逐語は handleContinue 4 形＋transportRunStage 2 形の計 6 形（文言カタログ） |
 | I13 | `skipped` は routed lifecycle outcome（明示 `--stage`・CONDITIONAL または plan SKIP・非空 `--reason`・Current Stage 厳密一致・checkbox 前提） | E2+E3 | — |
-| I14 | 監査 emit が状態書込に先行し、emit 失敗時は状態を書かない（audit-first） | E3+E4 | workspace 所有（11 §6 W1）。`audit_lock::audit_first` |
+| I14 | 各遷移は原子的 — ジャーナル追記とスナップショット更新を同一 Tx、楽観 version で直列化し、投影はチェックポイントから冪等に再開する | E3+E4 | `journal_protocol::{conflict_rejected, snapshot_tracks_journal, version_equals_journal, no_lost_update}`（ADR-007 / Bolt B5） |
 | I15 | HARD STOP RULE（ゲート提示後ターン即終了）。Construction / Operation ゲートは Approve / Request Changes の**厳密 2 択**（Ideation / Inception は skip 済みステージ再追加の第 3 選択肢可）。同一ステージ 3 回目の Request Changes 以降のゲートに Accept as-is が追加され、2 回目時点で予告義務 | E5+E3 | プロトコル文書＋Stop フック（forwarding loop）で補強 |
 | I16 | Stop フックの forwarding は cap で必ず解放される（block は cap 未満のときのみ・cap はモード依存 8/2・記録は判定前に書く・done/parked 許可で streak ゼロ化・署名変化でカウントリセット・seed-2 は記録なし＆active 連鎖時のみ） | E3+E4 | `stop_hook::blocked_below_cap` / `cap_is_mode_dependent` / `record_before_decision` / `reset_on_terminal` / `signature_resets_count` / `seed2_on_active_chain`（v1 — green・mutation 7/7・witness 6 本＋決定的シナリオ `r_cap_release_*`） |
 | I17 | carve-out（固定順の許可経路）は forwarding に勝つ。autonomous 下の parked は carve-out にならない（許可は他の carve か cap 解放のみ） | E3+E4 | `stop_hook::carve_beats_forwarding` / `parked_autonomous_guard` |
@@ -215,7 +215,7 @@ upstream の engine は変異を sibling CLI への subprocess spawn で合成�
 | # | 仕様（観測可能な契約） | Rust 実装での守り方 |
 | --- | --- | --- |
 | S1 | 遷移の意味論は単一で、どの経路から起きても同じ状態ファイルのバイト列・同じ監査行列を生む（エンジンは遷移ロジックを別実装しない） | `WorkflowExecution` 集約メソッドが唯一の遷移実装。CLI ラッパもエンジンのユースケースも同じ集約を呼ぶ |
-| S2 | 各遷移は原子的（クラッシュしても state と監査が食い違わない — upstream では withAuditLock 区間の audit-first が担っていた） | Repository 実装の SQLite 1 Tx（ジャーナル追記 + 楽観 version）と投影のチェックポイントが受け皿。mkdir ロックは退役（ADR-001 / ADR-003 / ADR-007、`audit_lock.qnt` は協定モデルへ改訂 — Bolt B5） |
+| S2 | 各遷移は原子的（クラッシュしても state と監査が食い違わない — upstream では withAuditLock 区間の audit-first が担っていた） | Repository 実装の SQLite 1 Tx（ジャーナル追記 + 楽観 version）と投影のチェックポイントが受け皿。mkdir ロックは退役し、`audit_lock.qnt` は協定モデル `formal/orchestration/journal_protocol.qnt` へ置換（ADR-001 / ADR-003 / ADR-007、Bolt B5） |
 | S3 | 非エンジンからの 11 動詞直接呼び出しは拒否＋逐語拒否文言。`AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS=1` バイパスと `AIDLC_STATE_TRANSITION_OWNER` マーカーの受理意味論も維持（D6 の env 互換） | 11 動詞の CLI エントリにガード意味論を丸ごと実装（マーカー受理・bypass env・拒否文言込み）。in-process のエンジン経路は CLI エントリを通らないので正当に素通り |
 | S4 | 拒否・エラー文言は verbatim。`Transition rejected by aidlc-state.ts <sub> for "<slug>": <stderr>` の書式ごと維持 | 文言カタログ（A3）＋ Presenter が同一書式で描画 |
 

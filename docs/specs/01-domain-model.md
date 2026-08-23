@@ -104,9 +104,9 @@ flowchart TB
 
 > 脚注（実装との差）: U2 実装（Bolt B3）の `IntentId::parse` は kebab の記録ディレクトリ名を受理しており、本書の規範（UUIDv7）と一致していない。Bolt B5（U3 — `aggregate_id` を SQLite に書く最初の Unit）で UUIDv7 の検証へ是正し、記録ディレクトリ名は `IntentDirName` として書き分ける（オーナー裁定 2026-08-23）。
 
-**代表不変条件**: 「監査 emit が state 書き込みに先行し、emit 失敗時は state を書かない」（E3+E4 — audit-first は**旧 mkdir ロックモデル**の中心不変条件。ADR-007 でロックは退役したため、本段落のロック系不変条件と E4 名は `audit_lock.qnt` の協定モデル改訂後に Bolt B5 で差し替える — 改訂して存続、本 Unit では変更しない）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）、「生きている閾値未満のロック保持者からは決して奪わない」（E4 — クラッシュをアクションに含めて検査。方針書 R6）。
+**代表不変条件**: 「ジャーナルが真実源であり、スナップショット / チェックポイントの更新はジャーナル追記と同一 Tx 内に限られる」（E3+E4 — `journal_protocol.qnt` の協定モデル。ADR-007 でロックは退役し、旧 mkdir ロックモデルの audit-first 不変条件はこの協定へ置き換わった — Bolt B5）、「書込は楽観 version で直列化され、競合は状態を変えずに拒否される」（E3+E4 — `journal_protocol::conflict_rejected` / `no_lost_update`）、「チェックポイントは単調に増加し、投影は同一チェックポイントからの再実行で冪等」（E3+E4 — `journal_protocol::checkpoint_monotone` / `projection_idempotent`）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）。
 
-**状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は `audit_lock.qnt` の「ジャーナル / スナップショット / version / チェックポイント協定」への改訂で存続する — ADR-007）。
+**状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は協定モデル [`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt)（ジャーナル / スナップショット / version / チェックポイント協定。ADR-007 により `audit_lock.qnt` を退役して置換、Bolt B5）で存続する）。
 
 ### 3.4 knowledge（知識）— 10 語
 
@@ -215,7 +215,7 @@ upstream の語彙には放置できない多義が 16 件ある。ドメイン�
 - Conductor–engine directive loop（next 21 分岐 × report 13 段ガード × Verdict）
 - Stage checkbox lifecycle + effectivePlanAction（PlanAction × StageOutcome × recompose オーバレイの合成。合成の所有者は集約 `WorkflowExecution` の `effective_plan` — ADR-002 / 設計監査 R2）
 - ApprovalGate 解決（skeleton 往復・human-presence・QUESTION_ANSWERED 先行順序）
-- ~~Audit lock lifecycle + audit-first invariant~~ → ジャーナル / スナップショット / version / チェックポイント協定（version 競合拒否・チェックポイント単調性・投影冪等性）。mkdir ロックの退役に伴う `audit_lock.qnt` の改訂で、R6 の受け皿は「Tx 中断からの冪等修復」へ移る（ADR-007）。R7 はガード論理面のみで、ダイジェスト計算互換の本体はゴールデン互換層が受け持つ
+- ~~Audit lock lifecycle + audit-first invariant~~ → journal_protocol（[`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt) — ジャーナル / スナップショット / version / チェックポイント協定。version 競合拒否・チェックポイント単調性・投影冪等性。ADR-007 の mkdir ロック退役に伴い `audit_lock.qnt` を退役して置換、Bolt B5 で実装・ITF 準拠）。R6 の受け皿は「Tx 中断からの冪等修復」。R7 はガード論理面のみで、ダイジェスト計算互換の本体はゴールデン互換層が受け持つ
 - Workflow / park / jump / per-unit 反復カーソル
 - Stop-hook forwarding loop（no-progress cap・carve-out 順序）
 
