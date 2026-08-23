@@ -15015,3 +15015,21 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Error Logged
+**Timestamp**: 2026-08-23T06:44:10Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state unit start --stage functional-design --unit u3-event-store-repository
+**Error**: Refusing to start unit "u3-event-store-repository" for "functional-design": the engine currently routes "code-generation"/"u9-canon-docs". Run the exact directive.stage/directive.unit pair returned by aidlc-orchestrate.ts next.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T06:44:21Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state unit start --stage functional-design --unit u3-event-store-repository
+**Error**: Refusing to start unit "u3-event-store-repository" for "functional-design": the engine currently routes "code-generation"/"u9-canon-docs". Run the exact directive.stage/directive.unit pair returned by aidlc-orchestrate.ts next.
+
+---
