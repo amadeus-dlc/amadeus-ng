@@ -85,21 +85,21 @@ components:
         attributes: [phase, execution, agents, mode, produces, consumes, sensors, scopes]
 
   - name: WorkspaceModel
-    summary: "ワークスペース語彙と純関数（workspace コンテキスト — ロック退役後の縮小版）"
+    summary: "workspace 語彙 — 値オブジェクト群（Always Valid newtype）"
     behaviour: >
-      状態ファイル・チェックボックスの純関数群（get/set/remove/checkbox — ReadModelUpdater の
-      投影描画材料）と Always Valid newtype（SpaceName / ShardName / CloneId /
-      StateFieldValue 等）。Q9 裁定により LockProtocol・reap_eligible・OwnerStamp は退役
+      SpaceName / CloneId / ShardName / StateFieldValue / CheckboxState / StateVersion /
+      IntentId（UUIDv7）/ IntentDirName の値オブジェクト。状態ファイル・チェックボックスの
+      描画関数は ReadModelUpdater（U4、Bolt B6）の責務へ移す — 本 Unit ではコードを動かさない
+      （オーナー裁定 2026-08-23）。Q9 裁定により LockProtocol・reap_eligible・OwnerStamp は退役
       （並行制御は SQLite Tx + 楽観 version へ — ADR-007）。
     responsibilities:
-      - "状態ファイル&チェックボックス純関数（投影描画の材料）"
-      - "ワークスペース語彙の Always Valid newtype"
+      - "ワークスペース語彙の値オブジェクト（Always Valid newtype）の提供"
     depends_on: []
     dependents:
       - component: OrchestrationEngine
         interaction: "CheckboxState 等の語彙利用"
       - component: ReadModelUpdater
-        interaction: "状態ファイル描画への純関数利用"
+        interaction: "値オブジェクトの利用"
     external_dependencies: []
     entities: []
 
@@ -192,6 +192,7 @@ components:
       読み取り専用の外部入力として読み側でのみ合流（stage-1 は単一クローン運用）。
     responsibilities:
       - "ドメインイベント → upstream 互換ファイルの投影（状態ファイル・監査シャード）"
+      - "状態ファイル・チェックボックスの描画（旧 WorkspaceModel の純関数 — U4 で移管。オーナー裁定 2026-08-23）"
       - "チェックポイント管理と冪等キャッチアップ"
     depends_on:
       - component: PersistenceGateways
@@ -201,7 +202,7 @@ components:
         interaction: "ドメインイベントの型と内容の読取"
         style: sync
       - component: WorkspaceModel
-        interaction: "状態ファイル描画の純関数利用"
+        interaction: "値オブジェクトの利用"
         style: sync
       - component: PublishedLanguage
         interaction: "監査行語彙（86語）・逐語文言による行描画"
@@ -375,7 +376,7 @@ graph TD
 |---|---|---|---|---|
 | OrchestrationEngine | FSM 集約 + ドメインイベント（1コマンド1イベント） | WD, WS, PL | UC, GW, RMU | WorkflowExecution |
 | WorkflowDefinitionModel | 読取専用の定義集約 | PL | OE, UC, GW | WorkflowDefinition, StageNode |
-| WorkspaceModel | 語彙と純関数（ロック退役後） | — | OE, RMU | — |
+| WorkspaceModel | 語彙（値オブジェクト群。描画関数は U4 へ移管） | — | OE, RMU | — |
 | EngineUseCases | フロー制御（async）+ ポート trait | OE, WD, PL | GW, CLI | — |
 | PersistenceGateways | SQLite EventStore + Repository 実装 | UC, OE, WD, CJ, PL, IO | CLI, HC, RMU | — |
 | ReadModelUpdater | 投影（チェックポイント付き差分関数） | GW, OE, WS, PL, IO | CLI | ProjectionCheckpoint |

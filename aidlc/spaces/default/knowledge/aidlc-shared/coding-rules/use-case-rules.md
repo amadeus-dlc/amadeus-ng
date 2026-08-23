@@ -35,4 +35,4 @@ impl<R: WorkflowDefinitionRepository> NextUseCase<R> {
 
 ## 4. 読取専用の型保証（I8 型）は参照渡しで
 
-書込を型で禁じたいユースケース（例: `Next`）には Repository を**そもそも注入しない**。Controller が `repository.load()` した集約を `&` 参照で渡す — CQRS を導入せずに（[gateway-taxonomy.md](gateway-taxonomy.md) — CQRS 不採用）、Rust の参照とポート非注入だけで書込不能が成立する。
+書込を型で禁じたいユースケース（例: `Next`）には Repository を**そもそも注入しない**。Controller が `repository.find_by_id()` した集約を `&` 参照で渡す — CQRS を導入せずに（[gateway-taxonomy.md](gateway-taxonomy.md) — CQRS 不採用）、Rust の参照とポート非注入だけで書込不能が成立する（動詞は gateway-taxonomy §2b の許容語彙に合わせた。`find()` は廃止 — C4 改訂 2026-08-23）。

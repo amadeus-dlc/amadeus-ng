@@ -72,21 +72,23 @@ flowchart TB
 
 **責務**: 「何を実行しうるか」の静的定義。5 Phase / 33 Stage / 11 Scope、Depth・TestStrategy・Tier の 3 ダイヤル、エージェントペルソナ 14 体、そして唯一の YAML→JSON 変換である `compileStageGraph`。コンパイラは**純粋ドメインサービス**であり（裁定 B6）、ビルド時（distribution）とランタイム（plugin の再コンパイル）の両方から呼ばれるが、失敗時の補償は各呼び出し元の責務。
 
-**集約**: `WorkflowDefinition`（コンパイル済み 3 入力 — `StageGraph`・`ScopeGrid`・scope カタログ — を束ねる読取モデルの集約ルート。2026-08-22 昇格 — 12 §2.1。`StageGraph` は内包の成果物値、`ScopeDefinition`（identity + グリッド列）も内包）。スライス 2 の集約候補: `StageDefinition`（stage file = frontmatter + 本文）、`AgentPersona`。
+**集約**: `WorkflowDefinition`（コンパイル済み 3 入力 — `StageGraph`・`ScopeGrid`・scope カタログ — を束ねる読取モデルの集約ルート。2026-08-22 昇格 — 12 §2.1。`StageGraph` は内包の成果物値、`ScopeDefinition`（identity + グリッド列）も内包）。**集約はエンティティなので識別子を持つ**: `WorkflowDefinitionId`（`<harnessRoot>/tools/data/harness.json` の `name` — 内容が変わっても不変の系譜 ID）と `DefinitionRevision`（3 入力の正準 JSON の `sha256:` — 識別子ではなく**値属性**）。どちらも Repository 実装が付与し、ドメインは計算しない（ADR-008 / Bolt B3 実装）。スライス 2 の集約候補: `StageDefinition`（stage file = frontmatter + 本文）、`AgentPersona`。
 
-**Domain Primitive 候補**: `PhaseId`（5 値・全順序）、`StageSlug`、`StageNumber`（エンジン付与・再番号なし）、`DepthLevel`、`TestStrategyLevel`、`AgentTier`（judgment > balanced > templated、下方単調）、`StageMode`（5 値、agent-team は予約）、`ExecutionKind`（ALWAYS / CONDITIONAL）、`ArtifactName`（122 語彙・kebab-case）、`ScopeName`、`PlanAction`（EXECUTE / SKIP）。
+**Domain Primitive 候補**: `PhaseId`（5 値・全順序）、`StageSlug`、`StageNumber`（エンジン付与・再番号なし）、`DepthLevel`、`TestStrategyLevel`、`AgentTier`（judgment > balanced > templated、下方単調）、`StageMode`（5 値、agent-team は予約）、`ExecutionKind`（ALWAYS / CONDITIONAL）、`ArtifactName`（122 語彙・kebab-case）、`ScopeName`、`PlanAction`（EXECUTE / SKIP。**所有は本コンテキスト**であり orchestration は利用のみ・再輸出しない — ADR-005 / Bolt B3 実装）、`WorkflowDefinitionId`（集約の系譜 ID — ADR-008）、`DefinitionRevision`（内容版の値属性 — ADR-008）。
 
 **代表不変条件**: 「全 requires_stage エッジで依存側が必ず小さい番号」（E1 候補: コンパイル出力型の構築で保証。網羅検査は proptest — 状態遷移ではないため Quint 対象外。ADR 0003）、「キーワード推論はアルファベット順 first-match で決定論的」（E2）、「Depth はエンジンの決定に影響しない」（E5 — 設計上の助言軸であることを型コメントでなく仕様に明記）。
 
-**状態機械**: effectivePlanAction、composer の 3 モーメント、Skeleton stance 解決（アンカー計算の純関数部分）。
+**状態機械**: effectivePlanAction（合成読みの**所有者は集約 `WorkflowExecution`** — `effective_plan` = recompose オーバレイ ∨ 静的グリッド。本コンテキストが供給するのはグリッド側の 3 値照会 `grid().action()` だけ。ADR-002 / 設計監査 R2、Bolt B3 実装）、composer の 3 モーメント、Skeleton stance 解決（アンカー計算の純関数部分）。
 
 ### 3.2 orchestration（オーケストレーション）— 26 語
 
 **責務**: 「次に何が起こるか」。engine（`next` の 21 分岐ラダー / `report` の 13 段ガード）、`Directive`（10 種の判別共用体、28KiB 上限）、Gate の 3 層構造（静的決定 / コンダクタの儀式 / 承認強制）、jump・park・recompose、Construction 実行機構（Bolt / swarm / per-unit 反復 / loop-back）、Stop フックの forwarding loop。**7 コンテキスト中、状態機械が最も密**であり、Quint モデル化の最優先領域（A9）。
 
-**集約候補**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）、`Bolt`、`SwarmBatch`（収束はサーガとしてモデル化 — 監査行なしの中間状態からの復旧を含む。裁定 B5）。`Directive` は値オブジェクト（Rust では enum そのもの）。
+**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は 16 属性、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（現行コード名 `WorkflowExecutionSnapshot` — Bolt B5 で改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004、Bolt B3 実装）。
 
-**Domain Primitive 候補**: `DirectiveKind`、`Verdict`（受理 10 語、同義語正規化）、`ContinueToken`（HMAC 署名付き）、`ProgressSignature`、`AutonomyMode`（状態読取は "autonomous" 厳密一致・それ以外は gated の fail-closed。CLI 引数境界は 2 値厳密パース＋逐語拒否の別型 — 10 §2.2）、`SkeletonStance`（on / off / scope-dependent）、`MergeHeld`（HOLD-MERGE）。
+**集約候補**（スライス 2）: `Bolt`、`SwarmBatch`（収束はサーガとしてモデル化 — 監査行なしの中間状態からの復旧を含む。裁定 B5）。`Directive` は値オブジェクト（Rust では enum そのもの）。
+
+**Domain Primitive 候補**: `DirectiveKind`、`Verdict`（受理 10 語、同義語正規化）、`ContinueToken`（HMAC 署名付き）、`ProgressSignature`、`AutonomyMode`（状態読取は "autonomous" 厳密一致・それ以外は gated の fail-closed。CLI 引数境界は 2 値厳密パース＋逐語拒否の別型 — 10 §2.2）、`SkeletonStance`（on / off / scope-dependent）、`MergeHeld`（HOLD-MERGE）。`PlanAction` の定義は workflow-definition（§3.1）、`CheckboxState` の定義は workspace（§3.3）の所有であり、本コンテキストは**参照するだけ**で再定義しない（ADR-005 / 設計監査 R1・C12）。
 
 **代表不変条件**: 「1 回の呼び出しで JSON 行をちょうど 1 つ emit」（E2+E3）、「有効プランが SKIP のステージに run-stage を emit しない」（E4）、「autonomous への昇格のみ human presence を要する」（E3+E4）、「HARD STOP RULE — ゲート提示後ターン即終了」（E5、Stop フックで部分補強）。
 
@@ -96,13 +98,15 @@ flowchart TB
 
 **責務**: 永続化の機構。Space / Intent、状態ファイル `aidlc-state.md`（State Version 8、audit-first 不変条件）、監査台帳（clone ごとの shard、追記専用、86 イベントの閉集合）、mkdir ロック（再入深度カウンタ・reap 規則）、三層 fork/merge（state / audit / fragment）、Worktree、committed vs ignored の規律。**イベント行の意味論には関与しない** — merge-protected 判定もスキーマ駆動（裁定 B5）。「状態ファイルはキャッシュ、真実源は監査」という upstream の原則を、コンテキスト境界の規約に昇格させる（裁定 B9）。
 
-**集約候補**: `Intent`（集約ルート。birth は単一チョークポイント）、`Space`、`StateFile`、`AuditShard`、`WorkspaceLock`、`Worktree`。
+**集約**: `Intent`（集約ルート。`intents.json` への登録 — uuid / slug / dirName と生死。birth は単一チョークポイント）、`Space`、`Worktree`（構築）。**リードモデル**（集約ではない）: `StateFile`（`aidlc-state.md`）と `AuditShard` — 真実源は SQLite ジャーナルであり、両者は ReadModelUpdater（U4）の投影として**バイト互換**で再生成される（ADR-003 / ADR-004）。**退役**: `WorkspaceLock` — 並行制御は SQLite Tx + 楽観 version に置換され、ロック dir は生成しない（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 
-**Domain Primitive 候補**: `SpaceName`（`/^[a-z][a-z0-9-]*$/` — E2）、`IntentId`（UUIDv7。文字列ソートは**ミリ秒粒度**で作成順 — 48-bit Unix-ms プレフィクスによる。同一ミリ秒内は random tail のため非保証（upstream 同等の挙動を D6 で維持し、順序契約はこの粒度に留める））、`CloneId`（12 hex、machine-local が本質）、`CheckboxState`（6 状態 — E1）、`StateVersion`（ok / unparseable / past / future の分類器つき）、`EventType`（86 語の閉集合 — E1。型は監査イベントスキーマの Published Language クレートに置き、各イベントファミリの意味論は所有コンテキストが定義する。workspace が所有するのは閉集合の強制と台帳機構）、`AuthorityClass`（CLI_RESERVED / CLI_PROTECTED / MERGE_PROTECTED）。
+**Domain Primitive 候補**: `SpaceName`（`/^[a-z][a-z0-9-]*$/` — E2）、`IntentId`（UUIDv7。文字列ソートは**ミリ秒粒度**で作成順 — 48-bit Unix-ms プレフィクスによる。同一ミリ秒内は random tail のため非保証（upstream 同等の挙動を D6 で維持し、順序契約はこの粒度に留める））、`IntentDirName`（記録ディレクトリ名。kebab 表記で、実データは `<YYMMDD>-<slug>`。`IntentId` とは別の値で、投影のパス解決に使う — 11 §2.2、オーナー裁定 2026-08-23）、`CloneId`（12 hex、machine-local が本質）、`CheckboxState`（6 状態 — E1。**本コンテキストの所有**であり orchestration は参照のみ — 設計監査 C12）、`StateVersion`（ok / unparseable / past / future の分類器つき）、`EventType`（86 語の閉集合 — E1。型は監査イベントスキーマの Published Language クレートに置き、各イベントファミリの意味論は所有コンテキストが定義する。workspace が所有するのは閉集合の強制と台帳機構）、`AuthorityClass`（CLI_RESERVED / CLI_PROTECTED / MERGE_PROTECTED）。ここに挙げた `SpaceName` / `IntentDirName` / `CloneId` / `ShardName` / `StateFieldValue` / `CheckboxState` / `StateVersion` は集約ではなく**値オブジェクト**である（ADR-003 / ADR-004）。
+
+> 脚注（実装との差）: U2 実装（Bolt B3）の `IntentId::parse` は kebab の記録ディレクトリ名を受理しており、本書の規範（UUIDv7）と一致していない。Bolt B5（U3 — `aggregate_id` を SQLite に書く最初の Unit）で UUIDv7 の検証へ是正し、記録ディレクトリ名は `IntentDirName` として書き分ける（オーナー裁定 2026-08-23）。
 
 **代表不変条件**: 「監査 emit が state 書き込みに先行し、emit 失敗時は state を書かない」（E3+E4 — audit-first はロックモデルの中心不変条件）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）、「生きている閾値未満のロック保持者からは決して奪わない」（E4 — クラッシュをアクションに含めて検査。方針書 R6）。
 
-**状態機械**: Audit lock lifecycle、shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。
+**状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は `audit_lock.qnt` の「ジャーナル / スナップショット / version / チェックポイント協定」への改訂で存続する — ADR-007）。
 
 ### 3.4 knowledge（知識）— 10 語
 
@@ -162,7 +166,7 @@ flowchart TB
 
 | # | 裁定 |
 | --- | --- |
-| B1 | scope grid は workflow-definition の**不変の成果物**。recompose の EXECUTE/SKIP flip は orchestration の集約へのコマンドであり、`effectivePlanAction`（grid + オーバレイの合成読み）は orchestration 所有の read model。workspace は永続化のみ担う。 |
+| B1 | scope grid は workflow-definition の**不変の成果物**。recompose の EXECUTE/SKIP flip は orchestration の集約へのコマンドであり、`effectivePlanAction`（grid + オーバレイの合成読み）は orchestration 所有の read model — 合成の所有者は集約 `WorkflowExecution` の `effective_plan` である（ADR-002 / 設計監査 R2、Bolt B3 実装）。workspace は永続化のみ担う。 |
 | B2 | learnings の採否ゲートは knowledge の政策。`SENSOR_PROPOSED` / `RULE_LEARNED` はコンテキスト間ドメインイベントとし、センサーマニフェストの妥当性は verification、stage frontmatter への bind は workflow-definition の公開コマンド経由に分解する。upstream の「単一ロックで 3 コンテキストの成果物を書く」構造は、(stage, sensor id) の冪等性を利用した順序付けに置き換えてよい。 |
 | B3 | semantic tier は workflow-definition の Domain Primitive。`TIER_PROJECTIONS` は distribution 内の ACL。パック時入力（cap 含む）は `BuildInput` に明示列挙し、check モードでの cap 無視は BuildInput の正規化規則として distribution が所有する。 |
 | B4 | plugin コンテキストの所有物は contribution のライフサイクルに限定。compile / runner 生成は supplier 呼び出し、stranded workflow guard は orchestration への読み取り専用クエリ。 |
@@ -209,9 +213,9 @@ upstream の語彙には放置できない多義が 16 件ある。ドメイン�
 **第一陣（フェーズ A、実装前にモデル化）** — エンジンとワークスペースの核:
 
 - Conductor–engine directive loop（next 21 分岐 × report 13 段ガード × Verdict）
-- Stage checkbox lifecycle + effectivePlanAction（PlanAction × StageOutcome × recompose オーバレイの合成）
+- Stage checkbox lifecycle + effectivePlanAction（PlanAction × StageOutcome × recompose オーバレイの合成。合成の所有者は集約 `WorkflowExecution` の `effective_plan` — ADR-002 / 設計監査 R2）
 - ApprovalGate 解決（skeleton 往復・human-presence・QUESTION_ANSWERED 先行順序）
-- Audit lock lifecycle + audit-first invariant（クラッシュ・reap・再入を含む並行モデル — R6 の受け皿。R7 はガード論理面のみで、ダイジェスト計算互換の本体はゴールデン互換層が受け持つ）
+- ~~Audit lock lifecycle + audit-first invariant~~ → ジャーナル / スナップショット / version / チェックポイント協定（version 競合拒否・チェックポイント単調性・投影冪等性）。mkdir ロックの退役に伴う `audit_lock.qnt` の改訂で、R6 の受け皿は「Tx 中断からの冪等修復」へ移る（ADR-007）。R7 はガード論理面のみで、ダイジェスト計算互換の本体はゴールデン互換層が受け持つ
 - Workflow / park / jump / per-unit 反復カーソル
 - Stop-hook forwarding loop（no-progress cap・carve-out 順序）
 
@@ -246,6 +250,18 @@ crate 構成の確定は実装開始時（A8 以降）に行うが、本書の�
 4. **共有述語は所有者のクレートに 1 実装**（B10）。orchestration が verification の述語クレートに依存する方向で固定し、二重実装を構造的に不可能にする。
 5. **E1/E2 の徹底が外側を薄くする**。Domain Primitive がパースを終えた値だけを内側に通すので、ユースケース層以深に検証コードが現れないことをレビュー基準にする。
 6. **実装はドメインモデルから（D10）**。ドメインモデルに駆動されるシステムにするには、ドメインモデル自体を最初に実装するしかない。各コンテキストの Domain Primitive と集約を、ユースケースを想定したシナリオを添えて TDD で先行実装し、proptest と ITF 準拠テスト（ADR 0003）がその最初の消費者になる。ユースケース・アダプタ・インフラはドメイン層の型が安定してから外側へ重ねる。
+
+### 7.1 ドメインモデルの原則（2026-08-23 オーナー確認）
+
+層の写像（上記 1〜6）に加え、ドメイン層の**中身**について次の 6 原則を規範とする。コード側の正本は
+[`coding-rules/`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/README.md) の各ルールファイルであり、本節はそれをドメインモデルの言葉で述べたものである。
+
+1. **主役は集約（エンティティ）と値オブジェクト**。ドメインモデルの記述は、まずどちらかに振り分ける。どちらでもない「純関数の寄せ集め」を型として残さない。
+2. **純粋関数としてのドメインサービスは消極的に使う**。集約に置けない横断の判断だけをドメインサービスにする。集約の状態を引数で受け取って判断する形（Ask 型）になったら、それは集約のクエリメソッドである（[`coding-rules/tell-dont-ask.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/tell-dont-ask.md)）。
+3. **ドメインモデル・ドメインサービスは永続化責務を持たない**。集約は Repository を呼ばず、`.await` も持たない。純粋・同期のまま保つ（ADR-006）。
+4. **永続化の指揮はユースケース層**。Repository の trait はユースケース層に置き、実装はインターフェイスアダプタ層に置く。トランザクションを所有するのは Repository 実装で、それを呼ぶのはユースケースである（[`coding-rules/use-case-rules.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/use-case-rules.md) / [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)）。
+5. **集約間の依存は ID による間接参照**。他の集約を実体で内包しない。`WorkflowExecution` が `WorkflowDefinition` を `definition_id` で参照するのがこの形である（ADR-008）。ドメインの同値関係は `Eq` / `PartialEq` で表現し、名前付き比較メソッドを作らない（[`coding-rules/domain-equality.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)）。
+6. **集約は FSM として設計する**。状態としてのデータ・状態遷移（`&mut self` のコマンド。ガード不成立は `Err` で拒否し `self` に触れない）・判断（クエリメソッド）を同じ集約型に閉じ込める。ユースケースは進行管理とフロー制御だけを行い、ビジネスロジックを持たない（ADR-002、オーナー統一ルール 2026-08-22）。
 
 ## 8. 次のステップ
 
