@@ -1,16 +1,33 @@
 //! ITF 準拠テスト (ADR 0003 決定 5) — `formal/orchestration/engine_loop.qnt` のトレースを
-//! `WorkflowExecution` に再生し、全ステップで状態射影とディレクティブ観測を突き合わせる。
+//! イベントソーシング形の `WorkflowExecution` に **decide → apply** 経路で再生し、全ステップで
+//! 状態射影とディレクティブ観測を突き合わせる (BR2.5)。
 //! フィクスチャは `tests/conformance/fixtures/engine_loop/` にコミット済み (#meta 正規化済み)。
 //! トレースの各遷移は `lastAction` で駆動する (lastAction 規約)。
+//!
+//! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
+//! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
+//! `WorkflowExecution::start_with_entries` に直接与えて集約を作る。実グラフの initialization が
+//! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used)]
 
-use core_domain::orchestration::{AutonomyMode, EngineSignal, Status, WorkflowExecution};
-use core_domain::workflow_definition::PlanAction;
+use std::collections::BTreeMap;
+
+use core_domain::orchestration::{
+    AutonomyMode, EngineSignal, IntentId, NextRequest, StageEntry, StageIndex, Status,
+    WorkflowExecution,
+};
+use core_domain::workflow_definition::{
+    DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph, StageSlug, WorkflowDefinition,
+    WorkflowDefinitionId,
+};
 use core_domain::workspace::CheckboxState;
 use serde_json::Value;
+
+/// ITF 再生は時計を持たない — 封筒の `occurred_at` は固定値でよい (集約は値を素通しする)。
+const AT: &str = "2026-08-23T00:00:00Z";
 
 fn bigint(v: &Value) -> i64 {
     v["#bigint"].as_str().unwrap().parse().unwrap()
@@ -88,25 +105,80 @@ fn parse_state(v: &Value) -> ModelState {
     }
 }
 
+fn slug(index: usize) -> StageSlug {
+    StageSlug::parse(&format!("stage-{index}")).unwrap()
+}
+
+fn synthetic_id() -> WorkflowDefinitionId {
+    WorkflowDefinitionId::parse("itf").unwrap()
+}
+
+fn synthetic_revision() -> DefinitionRevision {
+    DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap()
+}
+
+/// `next_decision` の第 2 引数用。集約は id の一致だけを見る (BR2.6 / BR3.1)。
+fn synthetic_definition() -> WorkflowDefinition {
+    WorkflowDefinition::new(
+        synthetic_id(),
+        synthetic_revision(),
+        StageGraph::new(Vec::new()).unwrap(),
+        ScopeGrid::new(BTreeMap::new()),
+        BTreeMap::new(),
+    )
+}
+
+/// モデルの初期 plan / conditional から合成計画を作る (索引 0 = initialization)。
+fn synthetic_stages(m: &ModelState) -> Vec<StageEntry> {
+    m.plan
+        .iter()
+        .zip(m.conditional.iter())
+        .enumerate()
+        .map(|(index, (action, conditional))| {
+            let phase = if index == 0 {
+                PhaseId::Initialization
+            } else {
+                PhaseId::Inception
+            };
+            StageEntry::new(slug(index), phase, *action, *conditional)
+        })
+        .collect()
+}
+
+fn index(agg: &WorkflowExecution, value: usize) -> StageIndex {
+    agg.stage_index(value).unwrap()
+}
+
 fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
     let n = agg.stage_count();
     assert_eq!(n, m.plan.len(), "step {step}: stage count");
     for s in 0..n {
-        assert_eq!(agg.checkbox(s), m.checkbox[s], "step {step}: checkbox[{s}]");
+        let stage = index(agg, s);
         assert_eq!(
-            agg.effective_plan(s),
-            m.overlay[s],
+            agg.checkbox(stage),
+            Some(m.checkbox[s]),
+            "step {step}: checkbox[{s}]"
+        );
+        assert_eq!(
+            agg.effective_plan(stage),
+            Some(m.overlay[s]),
             "step {step}: overlay[{s}]"
         );
-        assert_eq!(agg.approved(s), m.approved[s], "step {step}: approved[{s}]");
+        assert_eq!(
+            agg.approved(stage),
+            Some(m.approved[s]),
+            "step {step}: approved[{s}]"
+        );
     }
-    assert_eq!(agg.cursor(), m.cursor, "step {step}: cursor");
+    assert_eq!(agg.cursor().value(), m.cursor, "step {step}: cursor");
     assert_eq!(
         agg.autonomy().is_autonomous(),
         m.autonomous,
         "step {step}: autonomy"
     );
-    let parked = agg.parked_at().map_or(-1, |p| i64::try_from(p).unwrap());
+    let parked = agg
+        .parked_at()
+        .map_or(-1, |p| i64::try_from(p.value()).unwrap());
     assert_eq!(parked, m.parked_at, "step {step}: parkedAt");
     match m.status.as_str() {
         "Running" => {
@@ -126,13 +198,26 @@ fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
 fn assert_signal(sig: EngineSignal, m: &ModelState, step: usize) {
     match (sig, m.directive_tag.as_str()) {
         (EngineSignal::RunStage(s), "DRunStage") => {
-            assert_eq!(Some(s), m.directive_stage, "step {step}: run-stage target");
+            assert_eq!(
+                Some(s.value()),
+                m.directive_stage,
+                "step {step}: run-stage target"
+            );
         }
         (EngineSignal::Done, "DDone")
         | (EngineSignal::Parked, "DParked")
         | (EngineSignal::EngineError, "DError") => {}
         (got, want) => panic!("step {step}: signal {got:?} vs model {want}"),
     }
+}
+
+/// 遷移コマンドの後にモデルが載せるディレクティブ (report のエピローグ / park の停止) を照合する。
+fn assert_directive(m: &ModelState, want: &str, step: usize) {
+    assert_eq!(
+        m.directive_tag, want,
+        "step {step}: directive after {}",
+        m.last_action
+    );
 }
 
 fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>) {
@@ -146,7 +231,18 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         .collect();
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
-    let mut agg = WorkflowExecution::start(m0.plan.clone(), m0.conditional.clone()).unwrap();
+    let definition = synthetic_definition();
+    let (mut agg, started) = WorkflowExecution::start_with_entries(
+        IntentId::parse("itf-engine-loop").unwrap(),
+        synthetic_id(),
+        synthetic_revision(),
+        "itf",
+        "conformance".to_string(),
+        synthetic_stages(m0),
+        AT,
+    )
+    .unwrap();
+    assert_eq!(started.seq_nr(), 1);
     assert_projection(&agg, m0, 0);
 
     for (i, m) in states.iter().enumerate().skip(1) {
@@ -155,8 +251,10 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         match m.last_action.as_str() {
             // 観測アクション (状態不変)
             "next" | "next_parked" | "done_stutter" => {
-                let sig = agg.next();
-                assert_signal(sig, m, i);
+                let decision = agg
+                    .next_decision(&definition, &NextRequest::plain())
+                    .unwrap();
+                assert_signal(EngineSignal::from(&decision), m, i);
             }
             "report_stale" => {
                 // モデルは nondet に stale 対象を選ぶ — 前状態から有効な対象を 1 つ選んで
@@ -164,45 +262,63 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 let s = (0..prev.cursor)
                     .find(|&s| prev.checkbox[s] == CheckboxState::Completed)
                     .unwrap();
-                let sig = agg.stale_report(s).unwrap();
-                assert_signal(sig, m, i);
+                let decision = agg.stale_report(index(&agg, s)).unwrap();
+                assert_signal(EngineSignal::from(&decision), m, i);
             }
-            // 遷移コマンド
+            // 遷移コマンド (decide → 1 イベント → apply)
             "report_forward" => {
-                let sig = agg.report_forward().unwrap();
-                assert_signal(sig, m, i);
+                // 非ゲート (initialization) は complete_stage、ゲートは approve_gate (BR1.3)。
+                let cursor = agg.cursor();
+                if agg.gated(cursor) == Some(true) {
+                    agg.approve_gate(None, None, AT).unwrap();
+                } else {
+                    agg.complete_stage(AT).unwrap();
+                }
+                assert_directive(m, "DDone", i);
             }
-            "report_awaiting_approval" => agg.gate_start().unwrap(),
-            "report_rejected" => agg.reject().unwrap(),
-            "report_revised" => agg.revise().unwrap(),
+            "report_awaiting_approval" => {
+                agg.open_gate(Vec::new(), AT).unwrap();
+            }
+            "report_rejected" => {
+                agg.reject_gate(None, AT).unwrap();
+            }
+            "report_revised" => {
+                agg.revise_stage(AT).unwrap();
+            }
             "report_skipped" => {
-                let sig = agg.report_skipped().unwrap();
-                assert_signal(sig, m, i);
+                agg.skip_stage("conformance".to_string(), AT).unwrap();
+                assert_directive(m, "DDone", i);
             }
             "jump_forward" | "jump_backward" => {
-                agg.jump(m.cursor).unwrap();
+                let target = index(&agg, m.cursor);
+                agg.jump(target, AT).unwrap();
             }
             "jump_redo" => {
-                agg.jump(prev.cursor).unwrap();
+                let target = index(&agg, prev.cursor);
+                agg.jump(target, AT).unwrap();
             }
             "park" => {
-                let sig = agg.park().unwrap();
-                assert_signal(sig, m, i);
+                agg.park(AT).unwrap();
+                assert_directive(m, "DParked", i);
             }
-            "unpark" => agg.unpark().unwrap(),
+            "unpark" => {
+                agg.unpark(AT).unwrap();
+            }
             "recompose" => {
+                // モデルの actRecompose は 1 ステージ反転 — 要素数 1 の recompose に対応 (BR2.5)。
                 let s = (0..prev.overlay.len())
                     .find(|&s| prev.overlay[s] != m.overlay[s])
                     .unwrap();
-                agg.recompose_flip(s).unwrap();
+                agg.recompose(&[index(&agg, s)], AT).unwrap();
             }
             "set_autonomy" => {
+                // モデルはトグル — 反転後の値を setter に渡す (BR2.5)。
                 let mode = if m.autonomous {
                     AutonomyMode::Autonomous
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.set_autonomy(mode).unwrap();
+                agg.set_autonomy(mode, AT).unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }
