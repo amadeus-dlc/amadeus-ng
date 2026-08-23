@@ -14953,3 +14953,65 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T06:22:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac3e029774b0a00cc
+**Message**: マージできたら続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T06:28:19Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T06:28:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a27a33fb3f0483dec
+**Message**: マージできたら次に進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T06:29:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T06:30:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa16df890bfba7564
+**Message**: マージされたら引き続きお願いします
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T06:43:31Z
+**Event**: HUMAN_TURN
+
+---
+
+## Bolt Completed
+**Timestamp**: 2026-08-23T06:43:47Z
+**Event**: BOLT_COMPLETED
+**Bolt names**: B4
+**Batch number**: 1
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T06:43:47Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
