@@ -11,6 +11,11 @@
 //! cli / hooks 族について本 Unit (U1) が固定するのは「読めて正規化できる」ところまでで、
 //! 実装出力との突合せは U6 (next / continue) と U7 (CLI・フック) が同じ比較器で行う。
 
+// テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+// allow)。panic! は想定外ケースの即時失敗という検証用途で使っており、テスト失敗の
+// シグナルとして妥当なため同様に許容する。
+#![allow(clippy::indexing_slicing, clippy::panic)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

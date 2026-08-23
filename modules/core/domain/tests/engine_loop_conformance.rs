@@ -11,7 +11,10 @@
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
-#![allow(clippy::unwrap_used)]
+// indexing_slicing も同じ理由 (固定長フィクスチャの添字参照) で file 単位の allow が要る。
+// panic! は想定外ケースの即時失敗という検証用途で使っており、テスト失敗のシグナルとして
+// 妥当なため同様に許容する。
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use std::collections::BTreeMap;
 

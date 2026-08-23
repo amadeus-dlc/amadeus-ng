@@ -452,6 +452,11 @@ fn decode_phase_boundary(object: &WireObject<'_>) -> Result<Option<PhaseBoundary
 
 #[cfg(test)]
 mod tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+    // allow)。panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗の
+    // シグナルとして妥当なため同様に許容する。
+    #![allow(clippy::indexing_slicing, clippy::panic)]
+
     use super::*;
     use core_domain::orchestration::{
         AutonomyMode, AutonomyModeSet, GateApproved, GateOpened, GateRejected, JumpDirection,

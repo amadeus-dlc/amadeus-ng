@@ -100,7 +100,15 @@ pub fn set_or_insert_field(
         }
     }
     let mut insert_at = end;
-    while insert_at > start + 1 && lines[insert_at - 1].trim().is_empty() {
+    while insert_at > start + 1 {
+        // ループ不変条件 (`insert_at <= end <= lines.len()`) により範囲外にはならない —
+        // break 分岐には到達しない。
+        let Some(prev) = lines.get(insert_at - 1) else {
+            break;
+        };
+        if !prev.trim().is_empty() {
+            break;
+        }
         insert_at -= 1;
     }
     let mut out: Vec<String> = lines.iter().map(|s| s.to_string()).collect();

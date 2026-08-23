@@ -185,6 +185,10 @@ impl StateWire {
 
 #[cfg(test)]
 mod tests {
+    // panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗の
+    // シグナルとして妥当なため許容する。
+    #![allow(clippy::panic)]
+
     use super::*;
     use core_domain::orchestration::{
         AutonomyMode, IntentId, StageEntry, Status, WorkflowExecutionState,

@@ -210,6 +210,10 @@ pub fn count_completed(content: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+    // allow)。
+    #![allow(clippy::indexing_slicing)]
+
     use super::*;
 
     const SAMPLE: &str = "\

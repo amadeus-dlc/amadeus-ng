@@ -205,6 +205,11 @@ mod tests {
 
 #[cfg(test)]
 mod parse_tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+    // allow)。panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗の
+    // シグナルとして妥当なため同様に許容する。
+    #![allow(clippy::indexing_slicing, clippy::panic)]
+
     use super::*;
     use crate::value::ObjectMembers;
 

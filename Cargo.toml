@@ -38,6 +38,10 @@ broken_intra_doc_links = "deny"
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+# 2026-08-22 オーナー裁定（code-generation Q1 = A）: 添字アクセスと panic! も
+# unwrap/expect と同じ「境界チェックなしで panic しうる操作」に属するため deny へ昇格。
+indexing_slicing = "deny"
+panic = "deny"
 redundant_clone = "deny"
 missing_errors_doc = "deny"
 missing_panics_doc = "deny"

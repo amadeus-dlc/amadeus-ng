@@ -45,7 +45,15 @@ pub fn open_append_only(path: &Path) -> io::Result<File> {
 pub fn append_all(file: &mut File, bytes: &[u8]) -> io::Result<()> {
     let mut written = 0usize;
     while written < bytes.len() {
-        match file.write(&bytes[written..]) {
+        // ループ不変条件 (`written < bytes.len()`) により範囲外にはならない — else 分岐には
+        // 到達しない。
+        let Some(remaining) = bytes.get(written..) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "append_all: written index out of bounds",
+            ));
+        };
+        match file.write(remaining) {
             Ok(0) => {
                 return Err(io::Error::new(
                     io::ErrorKind::WriteZero,

@@ -21,7 +21,13 @@
 
 // テストコードでは unwrap / expect / panic を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// indexing_slicing も同じ理由 (固定長フィクスチャの添字参照) で file 単位の allow が要る。
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

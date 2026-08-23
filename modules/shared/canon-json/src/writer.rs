@@ -69,11 +69,15 @@ fn write_object(
 
     out.push('{');
     for (i, index) in order.into_iter().enumerate() {
+        // `order` の要素は必ず `entries` の有効な添字 (canonical::member_order が同じ
+        // `members` から作る) — else 分岐には到達しない。
+        let Some(&(key, value)) = entries.get(index) else {
+            continue;
+        };
         if i > 0 {
             out.push(',');
         }
         write_break(out, profile, depth + 1);
-        let (key, value) = entries[index];
         write_string(out, key);
         out.push(':');
         if profile.indent() != Indent::None {
@@ -179,7 +183,14 @@ fn write_string(out: &mut String, text: &str) {
                 out.push_str("\\u");
                 let code = control as u32;
                 for shift in [12, 8, 4, 0] {
-                    out.push(HEX_DIGITS[((code >> shift) & 0xf) as usize] as char);
+                    // ニブル (0..16) の変換なので添字は必ず範囲内 — `unwrap_or` の既定分岐には
+                    // 到達しない。
+                    out.push(
+                        HEX_DIGITS
+                            .get(((code >> shift) & 0xf) as usize)
+                            .copied()
+                            .unwrap_or(b'0') as char,
+                    );
                 }
             }
             other => out.push(other),

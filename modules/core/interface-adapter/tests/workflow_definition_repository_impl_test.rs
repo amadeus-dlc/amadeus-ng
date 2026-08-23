@@ -5,7 +5,9 @@
 //! (a) 正常読取と述語の疎通 / (b) graph 欠損 = Err / (c) 不正 JSON = Err /
 //! (d) grid 欠損 = 転置導出 (initialization 特例込み) / (e) `.md` あり × 列なし = zero-EXECUTE /
 //! (f) 列あり × `.md` なし = `valid_scopes` に不出現 / (g) 未知フィールド入り JSON が読めること。
-#![allow(clippy::unwrap_used)]
+// indexing_slicing (固定長フィクスチャの添字参照) と panic (想定外ケースの即時失敗という
+// 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use core_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,

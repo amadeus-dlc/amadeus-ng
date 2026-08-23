@@ -31,11 +31,18 @@ pub(crate) fn member_order(members: &ObjectMembers, order: KeyOrder) -> Vec<usiz
     let mut order_indices: Vec<usize> = indexed.into_iter().map(|(i, _)| i).collect();
 
     // 2. 残りのキー。hash-canonical だけ UTF-16 コード単位順に整列し、他は挿入順のまま。
-    let mut rest: Vec<usize> = (0..keys.len())
-        .filter(|i| array_index(keys[*i]).is_none())
+    let mut rest: Vec<usize> = keys
+        .iter()
+        .enumerate()
+        .filter(|(_, key)| array_index(key).is_none())
+        .map(|(i, _)| i)
         .collect();
     if order == KeyOrder::RecursiveSorted {
-        rest.sort_by(|a, b| utf16_cmp(keys[*a], keys[*b]));
+        // `rest` の要素は必ず `keys` の有効な添字 (enumerate 由来) — `_` 分岐には到達しない。
+        rest.sort_by(|a, b| match (keys.get(*a), keys.get(*b)) {
+            (Some(left), Some(right)) => utf16_cmp(left, right),
+            _ => Ordering::Equal,
+        });
     }
     order_indices.append(&mut rest);
     order_indices
@@ -73,6 +80,9 @@ fn utf16_cmp(left: &str, right: &str) -> Ordering {
 
 #[cfg(test)]
 mod tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で allow)。
+    #![allow(clippy::indexing_slicing)]
+
     use super::*;
     use crate::value::JsonValue;
 
