@@ -1092,7 +1092,7 @@ impl WorkflowExecution {
         if target.value() >= self.stage_count() {
             return Err(CommandError::InvalidTarget(target));
         }
-        let direction = JumpDirection::derive(self.cursor.value(), target.value());
+        let direction = JumpDirection::of(self.cursor.value(), target.value());
         match direction {
             // INIT_JUMP_ERROR: initialization フェーズのステージへは跳べない。scope 外も不可。
             JumpDirection::Forward | JumpDirection::Backward => {
@@ -2031,7 +2031,7 @@ mod tests {
         let w = all_exec(3);
         let other = bare_definition("kiro");
         assert_eq!(
-            w.next_decision(&other, &NextRequest::plain()),
+            w.next_decision(&other, &NextRequest::default()),
             Err(CommandError::DefinitionMismatch {
                 expected: def_id("claude"),
                 actual: def_id("kiro"),
@@ -2049,7 +2049,7 @@ mod tests {
             ScopeGrid::new(BTreeMap::new()),
             BTreeMap::new(),
         );
-        assert!(w.next_decision(&drifted, &NextRequest::plain()).is_ok());
+        assert!(w.next_decision(&drifted, &NextRequest::default()).is_ok());
     }
 
     #[test]
@@ -2059,7 +2059,7 @@ mod tests {
 
         // (6) cursor が in-flight
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 0),
                 gate: false
@@ -2068,7 +2068,7 @@ mod tests {
         // (1) park 中
         w.park(AT).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::Parked { stage: at(&w, 0) })
         );
         assert_eq!(
@@ -2097,7 +2097,7 @@ mod tests {
         // (7) 次の in-scope / gate = true
         w.complete_stage(AT).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 1),
                 gate: true
@@ -2108,7 +2108,7 @@ mod tests {
         w.approve_gate(None, None, AT).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::Done)
         );
     }
@@ -2237,7 +2237,9 @@ mod tests {
     fn the_signal_projection_of_a_decision_matches_the_model_vocabulary() {
         let definition = bare_definition("claude");
         let w = all_exec(3);
-        let decision = w.next_decision(&definition, &NextRequest::plain()).unwrap();
+        let decision = w
+            .next_decision(&definition, &NextRequest::default())
+            .unwrap();
         assert_eq!(
             EngineSignal::from(&decision),
             EngineSignal::RunStage(at(&w, 0))
@@ -2371,7 +2373,7 @@ mod tests {
                 AT,
             ),
             Cmd::Next => {
-                let _ = w.next_decision(definition, &NextRequest::plain());
+                let _ = w.next_decision(definition, &NextRequest::default());
                 assert_eq!(*w, before, "next_decision は書き込まない");
                 return None;
             }
@@ -2526,7 +2528,7 @@ mod tests {
             let mut w = start_synthetic(stages);
             for cmd in &cmds {
                 drive(&mut w, &definition, cmd);
-                let Ok(decision) = w.next_decision(&definition, &NextRequest::plain()) else {
+                let Ok(decision) = w.next_decision(&definition, &NextRequest::default()) else {
                     continue;
                 };
                 let cursor = w.cursor().value();

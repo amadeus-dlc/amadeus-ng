@@ -18,13 +18,14 @@ pub enum SpaceNameError {
     InvalidChar(char),
 }
 
-impl SpaceName {
-    /// default space (ディスクに何もなくても常に有効 — upstream 特例)。
-    #[must_use]
-    pub fn default_space() -> SpaceName {
+/// default space (ディスクに何もなくても常に有効 — upstream 特例)。
+impl Default for SpaceName {
+    fn default() -> SpaceName {
         SpaceName("default".to_string())
     }
+}
 
+impl SpaceName {
     /// # Errors
     ///
     /// 空・先頭非 `[a-z]`・`[a-z0-9-]` 以外の文字を拒否する。
@@ -61,7 +62,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_kebab_case_names_and_the_default_space() {
+    fn accepts_kebab_case_names_and_the_default_impl() {
         assert!(SpaceName::parse("default").is_ok());
         assert!(SpaceName::parse("team-a2").is_ok());
         assert!(SpaceName::parse("x").is_ok());

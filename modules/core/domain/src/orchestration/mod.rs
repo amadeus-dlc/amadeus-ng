@@ -101,9 +101,6 @@ pub use workflow_execution_event::{
 // ビルダー
 pub use workflow_execution_state::WorkflowExecutionStateBuilder;
 
-// 純関数ドメインサービス
-pub use autonomy_mode::parse_mode_arg;
-
 // エラー
 pub use apply_error::ApplyError;
 pub use autonomy_mode::InvalidModeArg;

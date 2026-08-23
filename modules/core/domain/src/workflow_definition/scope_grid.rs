@@ -36,7 +36,7 @@ impl ScopeGrid {
     /// (レポート §3.2 の特例)。列に現れるスコープ名はノードが宣言したものの和集合で、
     /// 全ステージが明示的に EXECUTE か SKIP を持つ (`validateGrid` の要求と同形)。
     #[must_use]
-    pub fn derive_from_graph(graph: &StageGraph) -> ScopeGrid {
+    pub fn from_graph(graph: &StageGraph) -> ScopeGrid {
         let names: BTreeSet<&str> = graph.declared_scopes().into_iter().collect();
         let mut columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>> = BTreeMap::new();
         for name in names {
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn transposition_puts_initialization_in_every_column() {
-        let grid = ScopeGrid::derive_from_graph(&sample_graph());
+        let grid = ScopeGrid::from_graph(&sample_graph());
         assert_eq!(grid.scope_names(), vec!["feature", "mvp"]);
         for scope in ["feature", "mvp"] {
             assert_eq!(
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn missing_column_and_missing_slug_are_both_none_not_skip() {
-        let grid = ScopeGrid::derive_from_graph(&sample_graph());
+        let grid = ScopeGrid::from_graph(&sample_graph());
         assert_eq!(grid.action("no-such-scope", &slug("bootstrap")), None);
         assert_eq!(grid.action("feature", &slug("no-such-stage")), None);
         assert!(!grid.contains_scope("no-such-scope"));
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn execute_slugs_lists_only_the_execute_cells() {
-        let grid = ScopeGrid::derive_from_graph(&sample_graph());
+        let grid = ScopeGrid::from_graph(&sample_graph());
         let slugs: Vec<&str> = grid
             .execute_slugs("mvp")
             .into_iter()
@@ -225,7 +225,7 @@ mod tests {
                 })
                 .collect();
             let graph = StageGraph::new(nodes).unwrap();
-            let grid = ScopeGrid::derive_from_graph(&graph);
+            let grid = ScopeGrid::from_graph(&graph);
 
             // 列は「いずれかのノードが宣言したスコープ」の和集合と一致する
             prop_assert_eq!(grid.scope_names(), graph.declared_scopes());
@@ -262,7 +262,7 @@ mod tests {
                 })
                 .collect();
             let graph = StageGraph::new(nodes).unwrap();
-            let grid = ScopeGrid::derive_from_graph(&graph);
+            let grid = ScopeGrid::from_graph(&graph);
             for scope in grid.scope_names() {
                 let listed = grid.execute_slugs(scope);
                 for s in &listed {

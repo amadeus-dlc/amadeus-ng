@@ -254,7 +254,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             // 観測アクション (状態不変)
             "next" | "next_parked" | "done_stutter" => {
                 let decision = agg
-                    .next_decision(&definition, &NextRequest::plain())
+                    .next_decision(&definition, &NextRequest::default())
                     .unwrap();
                 assert_signal(EngineSignal::from(&decision), m, i);
             }

@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn an_unknown_autonomy_token_is_rejected_instead_of_falling_back_to_gated() {
-        // ドメインの `AutonomyMode::read_state` は状態ファイル読取用の fail-closed リーダで、
+        // ドメインの `AutonomyMode::from_state_field` は状態フィールドからの fail-closed な変換で、
         // 未知値を gated に畳む。破損検出の境界ではその寛容さを持ち込まない (NFR3.2)。
         let json = encode(&state()).replace(r#""autonomy":"autonomous""#, r#""autonomy":"turbo""#);
         assert_eq!(

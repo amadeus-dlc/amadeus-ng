@@ -295,7 +295,7 @@ mod tests {
             node("ops-runbook", "4.1", PhaseId::Operation, &["gamma"]),
         ])
         .unwrap();
-        let grid = ScopeGrid::derive_from_graph(&graph);
+        let grid = ScopeGrid::from_graph(&graph);
         WorkflowDefinition::new(
             id("claude"),
             revision('0'),
@@ -486,7 +486,7 @@ mod tests {
             node("early", "1.9", PhaseId::Ideation, &["alpha"]),
         ])
         .unwrap();
-        let grid = ScopeGrid::derive_from_graph(&graph);
+        let grid = ScopeGrid::from_graph(&graph);
         let wd = WorkflowDefinition::new(
             id("claude"),
             revision('0'),
@@ -543,7 +543,7 @@ mod tests {
             })
             .collect();
         let graph = StageGraph::new(nodes).unwrap();
-        let grid = ScopeGrid::derive_from_graph(&graph);
+        let grid = ScopeGrid::from_graph(&graph);
         WorkflowDefinition::new(
             id("claude"),
             revision('0'),

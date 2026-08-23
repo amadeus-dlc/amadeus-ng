@@ -197,20 +197,28 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
      `SharedRwLock<T>` を 1 度だけ起こし、`*Shared` ラッパーへ内部可変性を閉じること
      （`coding-rules/interior-mutability.md`）。`Rc<RefCell<T>>` / `Arc<Mutex<T>>` の手書きは禁止。
      **投機的に作らない** — 必要が実際に生じた時点で、U4 / U7 の設計者が判断する。
-2. **既存コードのファクトリ命名が未同期**（U3 スコープ外、別 Bolt へ）。オーナー裁定 2026-08-24 で
-   `coding-rules/factory-naming.md` を新設した（コンストラクタ相当は `fn new(..) -> Self` に統一、
-   それ以外は用途で選ぶ）。**U3 が導入した面は本 Bolt で是正済み**（`StorePath::for_space` → `of`、
-   `InMemoryWorkflowExecutionRepository::{new(), with_store()}` → `new(store)` + `Default`）だが、
-   U3 が書いていない既存コードに次の当てはめが残る — 改名は公開 API を変えるので、無関係な
-   スコープ膨張を避けて別 Bolt に回した:
-   - `ShardName::compose(host, clone_id)` → `of`（複数の値を集約）
+2. **ファクトリ命名の全面適用**（本 Bolt で完了）。オーナー裁定 2026-08-24 で
+   `coding-rules/factory-naming.md` を新設し（コンストラクタ相当は `fn new(..) -> Self` に統一、
+   それ以外は用途で選ぶ）、**リポジトリ全体の違反を是正した**。当初は「U3 スコープ外は別 Bolt」と
+   したが、規則が main に入るまさにそのコミットで規則自身が名指しする違反を残すのは筋が通らない
+   ため撤回した（オーナー指摘 — `AutonomyMode::read_state` は変換なのに I/O を思わせる名前だった）。
+   - `StorePath::for_space(root, space)` → `of`（複数の値を集約）
+   - `InMemoryWorkflowExecutionRepository::{new(), with_store(s)}` → `new(s)` + `Default`
+     （SQLite 実装 `WorkflowExecutionRepositoryImpl::new(store)` と同形。BR2.7 の対称性も揃う）
+   - `ShardName::compose(host, clone_id)` → `of`
    - `JumpDirection::derive(cursor, target)` → `of`
    - `ScopeGrid::derive_from_graph(&StageGraph)` → `from_graph`（他の型からの変換）
-   - `AutonomyMode::read_state(Option<&str>)` → `from_state_field` など（同上）
-   - `NextRequest::plain()` → `new()` または `impl Default`
+   - `AutonomyMode::read_state(Option<&str>)` → `from_state_field`（I/O をしないことを名前で示す）
+   - `parse_mode_arg(&str)`（自由関数）→ `AutonomyMode::parse`（他の `parse` と同形）
+   - `NextRequest::plain()` → `impl Default`
    - `SpaceName::default_space()` → `impl Default`
-   （`PhaseId::from_index` / `CheckboxState::from_marker` / `WorkflowExecution::from_state` /
-   `RepositoryError::from_event_store` / `EventStoreImpl::open` / `WorkflowExecution::start` は既に適合）
+
+   既に適合していたもの: `PhaseId::from_index` / `CheckboxState::from_marker` /
+   `WorkflowExecution::from_state` / `RepositoryError::from_event_store` / `EventStoreImpl::open` /
+   `WorkflowExecution::start`（ドメイン語を優先）。
+   **未同期として残るのは `aidlc/spaces/default/codekb/` の 2 文書**（`api-documentation.md` /
+   `architecture.md`）— これは RE が観測コミットに紐づけて生成するスナップショットであり、
+   手編集ではなく RE の diff-refresh で更新するものなので触っていない。
 3. **fixture 鮮度ゲートが未実装**（ADR 0003 決定 4）。今回は手作業で「再採取 → 正規化 → バイト一致」を確認したが、機械強制が無い。
    `engine_loop` / `journal_protocol` 双方に効く横断の穴として後続 Bolt へ。
 4. ~~**C3 の `usize` → `u64`**（`GlobalSeqNr` 周辺の桁幅）— 契約側の確定待ち。~~ → **解消済み**（2026-08-24 のオーナー裁定で `contract-summary.md` §C3 を `u64` へ改訂。code-generation レビュー iteration 1 の Major 所見 1 もこれで閉じた）。

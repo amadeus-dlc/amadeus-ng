@@ -529,7 +529,7 @@ impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
             // グリッド欠損は fatal にしない (12 §4 #3)。revision も導出グリッドから作る —
             // 「読めた 3 入力の内容版」であって「ディスクにあったバイトの版」ではない。
             None => {
-                let derived = ScopeGrid::derive_from_graph(&graph);
+                let derived = ScopeGrid::from_graph(&graph);
                 let raw = serialize_grid(&derived);
                 (derived, raw)
             }

@@ -17,7 +17,7 @@ pub enum JumpDirection {
 impl JumpDirection {
     /// 方向は宣言ではなく導出 (E1 — 矛盾した方向指定は表現不能)。
     #[must_use]
-    pub fn derive(cursor: usize, target: usize) -> JumpDirection {
+    pub fn of(cursor: usize, target: usize) -> JumpDirection {
         use std::cmp::Ordering::*;
         match target.cmp(&cursor) {
             Greater => JumpDirection::Forward,
@@ -33,8 +33,8 @@ mod tests {
 
     #[test]
     fn direction_is_derived_from_index_comparison() {
-        assert_eq!(JumpDirection::derive(2, 4), JumpDirection::Forward);
-        assert_eq!(JumpDirection::derive(4, 2), JumpDirection::Backward);
-        assert_eq!(JumpDirection::derive(3, 3), JumpDirection::Redo);
+        assert_eq!(JumpDirection::of(2, 4), JumpDirection::Forward);
+        assert_eq!(JumpDirection::of(4, 2), JumpDirection::Backward);
+        assert_eq!(JumpDirection::of(3, 3), JumpDirection::Redo);
     }
 }

@@ -266,7 +266,7 @@ pub(super) fn parse_checkbox(token: &str) -> Result<CheckboxState, CorruptCause>
 
 /// 自律モード (upstream 綴り)。
 ///
-/// ドメインの `AutonomyMode::read_state` は**状態ファイル読取用の fail-closed リーダ**で、
+/// ドメインの `AutonomyMode::from_state_field` は**状態フィールドからの fail-closed な変換**で、
 /// 未知値を gated へ畳む。破損検出の境界にその寛容さを持ち込むと改竄が検出できなくなるため
 /// (NFR3.2 / NFR4.4)、ここは 2 語の閉集合として厳密に写す。
 pub(super) const fn autonomy_token(mode: AutonomyMode) -> &'static str {

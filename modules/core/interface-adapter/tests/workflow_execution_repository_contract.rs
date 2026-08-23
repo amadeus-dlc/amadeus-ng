@@ -128,7 +128,7 @@ impl SqliteFixture {
             .keep();
         SqliteFixture::open_at(StorePath::of(
             &workspace.join("aidlc"),
-            &SpaceName::default_space(),
+            &SpaceName::default(),
         ))
     }
 

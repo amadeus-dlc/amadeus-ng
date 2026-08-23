@@ -19,9 +19,12 @@ pub enum AutonomyMode {
 }
 
 impl AutonomyMode {
-    /// 状態ファイル読取の fail-closed リーダ — 「Autonomy is NEVER inferred」の読み側。
+    /// 状態フィールドの値から作る fail-closed な変換 — 「Autonomy is NEVER inferred」の読み側。
+    ///
+    /// I/O はしない（読み終わった値を写像するだけ）。`from_<源の名前>` は
+    /// coding-rules/factory-naming.md の変換の綴りである。
     #[must_use]
-    pub fn read_state(field_value: Option<&str>) -> AutonomyMode {
+    pub fn from_state_field(field_value: Option<&str>) -> AutonomyMode {
         match field_value {
             Some("autonomous") => AutonomyMode::Autonomous,
             _ => AutonomyMode::Gated,
@@ -32,6 +35,22 @@ impl AutonomyMode {
     #[must_use]
     pub fn is_autonomous(self) -> bool {
         self == AutonomyMode::Autonomous
+    }
+
+    /// CLI `--mode` 引数の厳密パース (Controller 規約: 値オブジェクト初期化がバリデーション)。
+    ///
+    /// 状態読取側の [`AutonomyMode::from_state_field`] とは別の境界である — あちらは
+    /// fail-closed で落とし、こちらは upstream 逐語の拒否文言を発生可能に保つ。
+    ///
+    /// # Errors
+    ///
+    /// 2 値 (`autonomous` / `gated`) 以外は upstream 逐語 (`Invalid --mode: …`) で拒否する。
+    pub fn parse(s: &str) -> Result<AutonomyMode, InvalidModeArg> {
+        match s {
+            "autonomous" => Ok(AutonomyMode::Autonomous),
+            "gated" => Ok(AutonomyMode::Gated),
+            other => Err(InvalidModeArg::new(msg::invalid_mode(other))),
+        }
     }
 }
 
@@ -60,18 +79,6 @@ impl InvalidModeArg {
     }
 }
 
-/// CLI `--mode` 引数の厳密パース (Controller 規約: 値オブジェクト初期化がバリデーション)。
-/// # Errors
-///
-/// 2 値 (`autonomous` / `gated`) 以外は upstream 逐語 (`Invalid --mode: …`) で拒否する。
-pub fn parse_mode_arg(s: &str) -> Result<AutonomyMode, InvalidModeArg> {
-    match s {
-        "autonomous" => Ok(AutonomyMode::Autonomous),
-        "gated" => Ok(AutonomyMode::Gated),
-        other => Err(InvalidModeArg::new(msg::invalid_mode(other))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,23 +86,32 @@ mod tests {
     #[test]
     fn state_reader_is_fail_closed_and_never_fails() {
         assert_eq!(
-            AutonomyMode::read_state(Some("autonomous")),
+            AutonomyMode::from_state_field(Some("autonomous")),
             AutonomyMode::Autonomous
         );
         assert_eq!(
-            AutonomyMode::read_state(Some("Autonomous")),
+            AutonomyMode::from_state_field(Some("Autonomous")),
             AutonomyMode::Gated
         );
-        assert_eq!(AutonomyMode::read_state(Some("")), AutonomyMode::Gated);
-        assert_eq!(AutonomyMode::read_state(Some("turbo")), AutonomyMode::Gated);
-        assert_eq!(AutonomyMode::read_state(None), AutonomyMode::Gated);
+        assert_eq!(
+            AutonomyMode::from_state_field(Some("")),
+            AutonomyMode::Gated
+        );
+        assert_eq!(
+            AutonomyMode::from_state_field(Some("turbo")),
+            AutonomyMode::Gated
+        );
+        assert_eq!(AutonomyMode::from_state_field(None), AutonomyMode::Gated);
     }
 
     #[test]
     fn cli_arg_parse_is_strict_with_the_verbatim_rejection() {
-        assert_eq!(parse_mode_arg("autonomous"), Ok(AutonomyMode::Autonomous));
-        assert_eq!(parse_mode_arg("gated"), Ok(AutonomyMode::Gated));
-        let err = parse_mode_arg("turbo").unwrap_err();
+        assert_eq!(
+            AutonomyMode::parse("autonomous"),
+            Ok(AutonomyMode::Autonomous)
+        );
+        assert_eq!(AutonomyMode::parse("gated"), Ok(AutonomyMode::Gated));
+        let err = AutonomyMode::parse("turbo").unwrap_err();
         assert_eq!(
             err.message(),
             "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
