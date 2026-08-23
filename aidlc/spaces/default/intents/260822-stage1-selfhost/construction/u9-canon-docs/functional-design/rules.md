@@ -22,7 +22,7 @@ rules:
     trigger: "B4 の文書改訂"
     logic: "IF 正本の例示が §2b の許容動詞（find_by_id / find / save / remove / store）に無い語を使う THEN 許容動詞へ置換"
     violation: "レビューで差し戻し（grep `repository.load()` = 0 件が合格）"
-    source: "FR8.1, 設計監査 C1"
+    source: "FR8.1, 設計監査 C1（逐語は `find()` だが、汎用例示の語彙として C4 改訂後の推奨動詞 `find_by_id()` を採る — §2b は find / find_by_id の両方を許容するためオーナー確認は不要。レビュー所見 3）"
   - id: BR1.2
     statement: "`coding-rules/gateway-taxonomy.md` §4 の散文「単一の Repository が集約の load / save を持つ」を「find / save」に直す（§5 末尾の「load / save の指揮」も同様）"
     category: policy
@@ -66,12 +66,12 @@ rules:
     violation: "ADR と矛盾する集約候補が残ればレビューで差し戻し"
     source: "FR8.2, 設計監査 C6 / C12, ADR-001〜008"
   - id: BR2.3
-    statement: "10 号 §3 ポート表の実装欄『同上』を廃し、1 trait 1 Impl（`XxxRepositoryImpl` + `InMemoryXxxRepository`）を各行に明記する。`WorkflowDefinitionRepository` の動詞は `find_by_id`（C4）"
+    statement: "10 号 §3 ポート表の実装欄『同上』を廃し、1 trait 1 Impl（`XxxRepositoryImpl` + `InMemoryXxxRepository`）を各行に明記する。`WorkflowDefinitionRepository` の動詞は `find_by_id`（C4）。同表の `AuditLedgerRepository` 行と `WorkspaceLock` 行は**削除**する（ADR-001 / 003: AuditLedger は WorkflowExecution のイベントログで別 Repository を持たない — 監査シャードの追記は ReadModelUpdater の投影、C3 の trait は WorkflowExecutionRepository 1 本のみ。ADR-007: WorkspaceLock は退役、並行制御は SQLite Tx + 楽観 version）。`WorkflowExecutionRepository` 行の実装欄の『`state_file_io`・`AuditLedgerRepository`・`WorkspaceLock` を合成』は『SQLite EventStore（journal / snapshot / checkpoint — C6）を内包、状態ファイル・監査シャードはリードモデル（U4）』に書き換える"
     category: policy
     applies_to: [SpecDocument(10-orchestration.md)]
     trigger: "B4 の文書改訂"
-    logic: "表の各行に実装名を書く（gateway-taxonomy §5 の命名）"
-    violation: "『同上』が残ればレビューで差し戻し"
+    logic: "表の各行に実装名を書く（gateway-taxonomy §5 の命名）。退役 2 行を削除し、残る行は WorkflowDefinitionRepository / WorkflowExecutionRepository / 外部システムクライアント（Git）"
+    violation: "『同上』、AuditLedgerRepository 行、WorkspaceLock 行のいずれかが残ればレビューで差し戻し（BR5.1 の grep と同期）"
     source: "FR8.2, 設計監査 C11, C4 改訂"
   - id: BR2.4
     statement: "10 号 §2.2 / 12 号 §2.2 / 01 号 §3 で `PlanAction` の所有を workflow_definition に一意化し（orchestration は利用のみ、再輸出なし — ADR-005 改訂、Bolt B3 実装済み）、`CheckboxState` の所有を workspace（値オブジェクト）に一意化する。10 号 §2.2 の表は『所有元: workflow_definition』の参照行にする"
@@ -114,7 +114,7 @@ rules:
     trigger: "B4 の文書改訂"
     logic: "U2 機能設計（entities / rules / functional-spec）と code-summary を出典に、仕様は『構造の規範』として写す（逐語の upstream 契約は不変）"
     violation: "旧 API（report_forward 等）や stage 0 特別扱いが規範に残ればレビューで差し戻し"
-    source: "Bolt B3 実装, U2 機能設計 BR1.3 / BR2.2 / BR2.5 / BR4.2, ADR-002"
+    source: "Bolt B3 実装（code-summary / `StageEntry::is_gated()` で独立に確認済み）, U2 機能設計 BR1.3 / BR2.2 / BR2.5 / BR4.2（2026-08-23 時点で U2 機能設計の最終受領は NOT-READY・pending-revision 未適用 — 引用先 ID は U2 の再レビュー完了後に再確認する。レビュー所見 4）, ADR-002"
   - id: BR3.4
     statement: "`docs/specs/deviations.md` の表に 1 行追加: 分類『設計変更』、upstream『テキストファイル群 + mkdir ロック』、amadeus-ng『SQLite ジャーナル（真実源）+ 楽観 version、ロック dir は生成しない、`aidlc-state.md` / 監査シャードはリードモデルとして維持（バイト互換）』、理由『ADR-001 / 003 / 004 / 007（NFR1 の逸脱登録）』、記録『2026-08-23 / ADR-003, ADR-007』。予約行の整理も行う"
     category: policy

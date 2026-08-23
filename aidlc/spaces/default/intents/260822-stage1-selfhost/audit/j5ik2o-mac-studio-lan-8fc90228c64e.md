@@ -13235,3 +13235,242 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Findings count**: 35
 
 ---
+
+## Review Requested
+**Timestamp**: 2026-08-23T04:50:03Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:f2b3f8dc9774aa93c7715bcf42c1f6333b539771df12c3cd399cd30b203a1cfc
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T04:50:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a3a0ef07377d6f5d0
+**Message**: 引き続きお願いします
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T04:58:45Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Context**: construction > u9-canon-docs > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:58:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: fc7a7f40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:58:45Z
+**Event**: SENSOR_PASSED
+**Fire id**: fc7a7f40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:58:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: c7a66878
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:58:45Z
+**Event**: SENSOR_PASSED
+**Fire id**: c7a66878
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Duration ms**: 17
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T04:58:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T04:59:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u9-fd-r1
+**Agent ID**: areview-u9-fd-r1-3109b880978c7ad6
+**Message**: ## レビュー完了\n\nU9（`u9-canon-docs`、spec kind の文書のみの Unit）の functional-design 成果物をレビューし、`aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md` の末尾に `#
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T04:59:38Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:c5e30953bbd1eba5e128625d7b5de3b10a5dba598bfa213ad97a7d6397224835
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T04:59:38Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:c5e30953bbd1eba5e128625d7b5de3b10a5dba598bfa213ad97a7d6397224835
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T04:59:38Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Artifact Fingerprint**: sha256:924c0ee47a771b3385417c8ad8ce69f0b7aae60dedc6f118fa4827a83a8cf468
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T05:00:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: acbcb82b8f7d7f798
+**Message**: 引き続きお願いします
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T05:00:19Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a574ac5a1e13ece36
+**Message**: 引き続きお願いします
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T05:07:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Context**: construction > u9-canon-docs > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:07:55Z
+**Event**: SENSOR_FIRED
+**Fire id**: da0cfa83
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:07:55Z
+**Event**: SENSOR_PASSED
+**Fire id**: da0cfa83
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:07:55Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4d2d4aad
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:07:55Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4d2d4aad
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Duration ms**: 17
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T05:07:57Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T05:08:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u9-fd-r2
+**Agent ID**: areview-u9-fd-r2-90c69b5a44251f4c
+**Message**: ## 完了報告\n\nU9（`u9-canon-docs`）functional-design の advisory 回復レビュー（iteration 2、recovery: stale-receipt）を完了し、結果を team-lead に送信しました。\n\n**Verdict: READY**（Critical 0 / Major 2 / Minor 1）\n\n**作業内容:**\n- 上流成果物（u
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T05:08:33Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:413f7360bfa32e69eb8a2d0c2007ed6ec01f958593d1af70067c05dea477fd68
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T05:08:33Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 2
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:413f7360bfa32e69eb8a2d0c2007ed6ec01f958593d1af70067c05dea477fd68
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T05:08:33Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
