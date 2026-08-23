@@ -69,3 +69,14 @@ Conversation language: 日本語（モデルのコメント・報告はすべて
 
 「モデル概要（var / action / invariant / witness）」「quint run の出力」「mutation 表」「witness 負形式の結果」「fixture 一覧（seed・アクション網羅）」
 「conformance の射影規則と結果」「quint-gate の差分と実行結果」「設計質問」「未了」。最終応答は要約（日本語、10 行以内）。
+
+## 追補（委任 2 完了後 — 2026-08-23）
+
+- `InMemoryEventStore` は**共有ハンドル**（`Clone` は同じ 3 表を指す）で、`EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>` と `JournalReader` を実装する。
+  `InMemoryWorkflowExecutionRepository::new(store)` は `RefCell<InMemoryEventStore>` を内包。契約テスト用の `tests/support/{mod.rs,contract.rs}` に `StoreFixture` と
+  集約の組み立てヘルパがあるので、ITF 再生の集約生成に流用してよい（読取のみ — 変更しない）。
+- 2 writer の「ロード済み集約」: `find_by_id` で 2 つの `WorkflowExecution` を別々に再水和（同じ `IntentId`）し、`store_ok(w)` は writer w の集約にコマンド → `store` が
+  `Ok`、`store_conflict(w)` は `Err(RepositoryError::Conflict)`。`load(w)` はその writer の集約を再水和し直す。コマンドは `complete_stage` / `open_gate` / `approve_gate`
+  の順で 1 ステップ 1 イベント（ゲート付きステージでは `complete_stage` が `InvalidTarget` になる — 契約テスト `round_trip` の組み方を参照）。
+- スナップショット payload / 列の `version` は新 version（= event.seq_nr）に揃う規則（委任 3 と同時に InMemory も揃う予定 — 再生の射影は「snapVersion = 最後の
+  seq_nr = journalLen（単一集約）」で突合する）。

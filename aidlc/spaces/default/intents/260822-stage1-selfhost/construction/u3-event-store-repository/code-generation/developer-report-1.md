@@ -267,4 +267,29 @@ BR3.1 の grep（§A）も改名後に再実行して 0 件を再確認した。
   どおり、ここでは audit_lock の除去だけを行い増やしていない）。
 - `scripts/coverage.sh` の**相対ゲート**（`--base <ref>`）は未実行。絶対ゲート（97.17% ≥ 90%）
   のみローカルで確認した。相対ゲートは base の採取が要るためコンダクタ / CI 側に委ねる。
-- `git add` / `git commit` は行っていない（コンダクタが「退役」「是正」の 2 コミットに区切る）。
+- `git add` / `git commit` は開発エージェント側では行っていない。改名は `git mv` で行ったため
+  一度インデックスに載ったが、退役コミットに巻き込まれないよう `git reset HEAD <4 パス>` で
+  unstage した。その後コンダクタが本作業を **1 コミット** `69f7f4e`「b5: ロック系の退役 + U2 是正
+  （委任 1）」として取り込み済みであることを確認した（改名 2 件は `{snapshot_error.rs =>
+  state_error.rs}` / `{workflow_execution_snapshot.rs => workflow_execution_state.rs}` として
+  rename 検出されている）。コンダクタは併せて、上の「所有外」項目のうち
+  `use-case-rules.md` / `module-visibility.md` / `domain-equality.md` / `message-catalog` も
+  同コミットで是正している。
+
+- **コンダクタの追随修正にバッククォートの入れ子がある（所有外・要修正）。** `69f7f4e` で入った
+  退役注記のうち 2 か所が、コード span の中に日本語の説明ごと入れてしまっている:
+  - `modules/shared/message-catalog/src/lib.rs:59` — ``` `退役済みの `AcquireError::Exhausted`
+    （ADR-007 / Bolt B5）相当の経路` ``` は入れ子バッククォートで rustdoc の描画が崩れる
+    （`cargo doc --no-deps -p message-catalog` は警告を出さないため機械検出されない）。
+    「11-workspace §4 の `AcquireError::Exhausted`（退役済み — ADR-007 / Bolt B5）相当の経路」の
+    ようにコード span を識別子だけに閉じるのが正しい。
+  - `coding-rules/domain-equality.md:4` — `` `OwnerStamp（退役済み — ADR-007 / Bolt B5、履歴の例）` ``
+    も同様に、識別子と説明文が 1 つのコード span に同居している。
+  どちらも所有ファイル外のため本委任では触っていない。
+
+- **要判断: `modules/core/domain/proptest-regressions/orchestration/workflow_execution.txt`
+  （4 seed）が `69f7f4e` に混入している。** これは本作業の Red 段階（`IntentId` を UUIDv7 に
+  変えた直後、既存 PBT が旧 kebab リテラルで `unwrap` に落ちていた**意図的な赤**）で proptest が
+  自動生成した副産物であり、実在するバグの記録ではない。現在は 4 seed とも緑（`cargo test
+  --workspace` 448 全緑で確認済み）。proptest の推奨はコミットだが、由来が過渡的な赤なので
+  **削除してよい**と考える。残す/消すの判断はコンダクタに委ねる。

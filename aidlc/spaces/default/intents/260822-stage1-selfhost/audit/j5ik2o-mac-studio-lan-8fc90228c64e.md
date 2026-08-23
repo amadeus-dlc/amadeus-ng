@@ -17230,3 +17230,55 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-08-23T09:57:51Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Agent
+**Target**: aidlc-developer-agent
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T09:58:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a91daec8ccf016dd1
+**Message**: 引き続きお願いします
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T10:00:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-b5-delegation-1
+**Agent ID**: adev-b5-delegation-1-e04e9e6c9d0000d5
+**Message**: 委任 1 の作業 A・B とも完了し、報告を保存しました。\n\n**§A 退役**: 17 ファイル削除（use-case `workspace/`、adapter `fs_workspace_lock` / `process_probe`、domain `lock_protocol` / `lock_identity`、infra-io `process_probe`、テスト 2 本、`audit
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T10:00:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a7d512403b3d0ee2d
+**Message**: 引き続きお願いします
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T10:35:11Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T10:35:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: dev-b5-delegation-2
+**Agent ID**: adev-b5-delegation-2-861d9e539f01083a
+**Message**: 委任 2 完了。報告は `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/developer-report-2.md` に全文を書きました。\n
+
+---

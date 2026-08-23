@@ -75,3 +75,20 @@ Conversation language: 日本語（コメント・rustdoc・報告はすべて�
 
 「Red の失敗出力」「実装概要（ファイル・公開面・Tx 手順）」「依存（版・cargo audit）」「判断」「検査結果（cargo test -p core-interface-adapter、clippy、fmt、audit）」
 「設計質問」「未了」。最終応答は要約（日本語、10 行以内）。
+
+## 追補（委任 2 完了後のコンダクタ裁定 — 2026-08-23）
+
+- **内部可変性（委任 2 設計質問 1）**: `clippy::await_holding_refcell_ref` と両立させるため、`SqliteEventStore` は **共有ハンドル**にする — 内部に
+  `Rc<RefCell<rusqlite::Connection>>`（+ `Rc<dyn?>` は使わない: `clock` は `C: Clock + Clone` か `Rc<C>`）を持ち `Clone` は同じ接続を指す。`EventStore` /
+  `JournalReader` の `&mut self` メソッド内の借用は同期区間で閉じる。`WorkflowExecutionRepositoryImpl { store: RefCell<SqliteEventStore> }` は InMemory と同じく
+  `let mut store = self.store.borrow().clone();` でハンドルを複製してから `await` する（借用は await をまたがない）。`within_write_transaction(&mut self, f)` は同期。
+  `Rc` のため `Send` ではない（設計どおり不要）。
+- **スナップショット payload の `version`（委任 2 設計質問 4）**: payload も列も **新 version（= event.seq_nr）** に揃える — `persist_event_and_snapshot` は
+  `aggregate.clone().with_version(new_version).state()` を符号化して保存する（列 `version` / `seq_nr` = new_version）。`find_by_id` の `with_version(列の version)` は
+  そのまま。**InMemory（`memory/in_memory_event_store.rs`）も同じ規則に揃えてよい**（委任 2 は完了済みで重ならない。変えたらインラインテストも更新し報告に記す）。
+- 委任 2 の成果を使う: `tests/support/{mod.rs,contract.rs}` の `StoreFixture`（`open()` = 同じストアを指す新しい Repository、`reader()`）に SQLite 用 fixture を実装し、
+  `tests/workflow_execution_repository_contract.rs` の `macro_rules!` に SQLite の 12 本を追加。`RepositoryError::from_event_store(error, &IntentId)` を写像に使う。
+  ワイヤは `wire::{EventPayloadWire, StateWire}`（`pub(crate)`、`encode` / `decode` / `SCHEMA_VERSION`）。InMemory が行をワイヤ形式で保持しているので、
+  SQLite 実装の行の形（event_type = 変種名、payload = 正準 JSON）は InMemory と同形にする。
+- 破損テスト 4 本（MissingSnapshot / UndecodablePayload / SchemaVersion / UnknownEventType）は SQLite 実装固有テストで、直接 SQL で行を壊して再現する。
+- `phase_boundary` のワイヤは入れ子オブジェクト `{from_phase, to_phase}`（委任 2 の具体化。functional-spec の表は後で改訂）。
