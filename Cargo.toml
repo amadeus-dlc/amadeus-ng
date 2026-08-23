@@ -100,6 +100,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 sha2 = "0.10"
 proptest = "1"
+# 非同期ポート (AFIT) のテスト実行時。`rt` の current_thread ランタイムだけを使い、
+# `Send` を要求しない設計 (C3 / Q3 = A) をそのまま検証できるようにする。
+# dev-dependency 限定で、プロダクトコードの依存には入らない (NFR4.1)。
+tokio = { version = "1", features = ["rt", "macros"] }
 # テスト支援 (ゴールデン比較器) の正規化規則を `normalization.json` から読んで適用するため。
 # dev-dependency 限定であり、canon-json のランタイム依存 (NFR4.1: sha2 / serde / serde_json)
 # には入らない。

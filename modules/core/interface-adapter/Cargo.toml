@@ -21,3 +21,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+# 非同期ポート (AFIT) の契約テストを回す current_thread ランタイム (C3 / Q3 = A)。
+tokio = { workspace = true }
+# ワイヤ形式のラウンドトリップ PBT (BR2.5 / NFR2.2)。シードは PROPTEST_RNG_SEED で固定する。
+proptest = { workspace = true }

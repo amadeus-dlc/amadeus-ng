@@ -10,13 +10,16 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod memory;
+mod wire;
 mod workflow_definition_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 
 // テスト用 in-memory 実装
-pub use memory::InMemoryWorkflowDefinitionRepository;
+pub use memory::{
+    InMemoryEventStore, InMemoryWorkflowDefinitionRepository, InMemoryWorkflowExecutionRepository,
+};
 
 // 逐語文言の組み立て (12 §6 — レンダリングはアダプタ層に閉じる)
 pub use workflow_definition_repository_impl::{
