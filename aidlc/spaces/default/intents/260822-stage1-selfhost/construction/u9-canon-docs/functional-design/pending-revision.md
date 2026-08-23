@@ -13,3 +13,4 @@
    `StageGraphReader` は gateway-taxonomy §2 の禁止名テーブル（意図的な記録）を除外し、他に除去対象が無ければ sentinel から外す。
 4. （nfr-requirements レビュー所見 1）BR5.1 (d) のコード変更ゼロの diff スコープを `modules tools scripts .github Cargo.toml Cargo.lock`（`origin/main..HEAD`）に
    広げ、NFR2.1 / tech-stack-decisions と同期する（依存操作の見落とし防止 — 安全側へ統一）。
+5. （PR #28 CodeRabbit）entities.md の `CodingRule(gateway-taxonomy.md)` インスタンスの `revisions_in_b4` に BR1.5 を追加し（§1b 再構成）、rules.md 本文に BR1.5 を新設（項目 2）して 1:1 対応を回復する。
