@@ -58,10 +58,10 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 | サービス | 内容 |
 | --- | --- |
-| `render_audit_block` | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
+| `render_audit_block`（→ 投影 API — ReadModelUpdater、U4） | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
 | `find_all_events` | shard 横断の順序: timestamp（秒精度 ISO）ソート＋バッファ位置 tiebreak。**通常読取は決して fail-closed しない**（authority 比較の同秒 fail-closed は orchestration の述語側 — B9）。出力は順序付き専用型（外部から構築・再ソート不能 — W15 の E1 装置） |
 | `classify_state_version` | 4 分類の単一実装（W7） |
-| `state_writers` | `set_field`（無言 no-op）/ `set_field_strict`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `set_or_insert_field` / `remove_field` の 4 種。純粋な string→string |
+| `state_writers`（→ 投影 API — ReadModelUpdater、U4） | `set_field`（無言 no-op）/ `set_field_strict`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `set_or_insert_field` / `remove_field` の 4 種。純粋な string→string |
 
 ### 2.4 multi-repo・カーソル・committed vs ignored
 

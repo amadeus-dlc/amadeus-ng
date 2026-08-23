@@ -192,7 +192,7 @@ components:
       読み取り専用の外部入力として読み側でのみ合流（stage-1 は単一クローン運用）。
     responsibilities:
       - "ドメインイベント → upstream 互換ファイルの投影（状態ファイル・監査シャード）"
-      - "状態ファイル・チェックボックスの描画（旧 WorkspaceModel の純関数 — U4 で移管。オーナー裁定 2026-08-23）"
+      - "状態ファイル・チェックボックス・監査ブロック（`render_audit_block` / `state_writers` 相当）の描画 — 投影 API（旧 WorkspaceModel / workspace ドメインサービスの純関数 — U4 で移管。オーナー裁定 2026-08-23）"
       - "チェックポイント管理と冪等キャッチアップ"
     depends_on:
       - component: PersistenceGateways

@@ -22,6 +22,8 @@ impl<R: WorkflowDefinitionRepository> NextUseCase<R> {
 }
 ```
 
+例の `WorkflowDefinitionRepository` は `save` を持たない読取専用ポートなので、§4 の I8（`Next` に書込側の `WorkflowExecutionRepository` を注入しない）と両立する — 注入禁止の対象は書込側の Repository であり、読取専用の定義 Repository ではない（10 §3）。
+
 - **既定はジェネリクス（単相化）**。理由: ①`dyn` の object safety 制約で**契約の設計が歪む**のを防ぐ（`-> impl Iterator`・関連型・ジェネリックメソッドが使える）②ワンショット CLI で実装は実質 2 つ（Impl + InMemory）— 単相化コストは無視できる ③テストが `XxxUseCase<InMemoryXxxRepository>` の素の値で組める ④配線ミスがコンパイル時に落ちる（E1 文化）。
 - **`dyn` を使ってよいのは**: 機構シーム（Gateway 実装内部の `Arc<dyn Clock>` 等 — 複数インスタンスで fake を共有する用途）と、将来ディスパッチャが多数のユースケースを一様保持する必要が実際に生じた**その境界だけ**。ユースケース自身の設計には持ち込まない。
 

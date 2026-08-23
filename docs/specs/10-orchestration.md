@@ -60,16 +60,16 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 | `ProgressSignature` | `stage::stateSha256(Last Updated 行除外)::directiveFingerprint` | E1（構成関数） |
 | `DirectiveMaxBytes` | 28 KiB（28,672 bytes）。超過 Directive は**構築不能**ではなく emit 拒否（half-emitted を出さない） | E3（Presenter） |
 
-### 2.3 ドメインサービス（純関数）
+### 2.3 集約のクエリとドメインサービス（純関数）
 
-| サービス | 入力 → 出力 | 対応する upstream |
-| --- | --- | --- |
-| `next_decision` | 観測状態＋コンパイル済みグラフ → `Directive` ちょうど 1 つ。**書き込みなし** | `handleNext` 21 分岐ラダー |
-| `report_dispatch` | (verdict, checkbox, gated, final, moved-on, explicit-stage) → 遷移コマンド列 or 拒否。**対応範囲は段 10 の gate-lifecycle アームと §7.3 forward ディスパッチ表に限る**。段 1〜9・11〜13 は `Report` ユースケースが所有（§3） | verdict → サブコマンド選択は**エンジンが**行い、呼び出し側は選ばない |
-| `human_acted_since_gate` | 監査行の射影 → bool。fail-closed になるのは**同秒かつ別シャード**のときのみ。同一シャードはシャード内 pos 順で決定的に判定 | B9 の導出述語 |
-| `jump_resolve` | (target, cursor) → `JumpDirection` ＋帰属検証 | `aidlc-jump resolve`（純読取）と `execute`（コミット）の分離 |
+| 関数 | 所在 | 入力 → 出力 | 対応する upstream |
+| --- | --- | --- | --- |
+| `next_decision` | 集約 `WorkflowExecution` のクエリ（`&self`） | 観測状態＋コンパイル済みグラフ → `Directive` ちょうど 1 つ。**書き込みなし** | `handleNext` 21 分岐ラダー |
+| `report_dispatch` | ドメインサービス（純関数） | (verdict, checkbox, gated, final, moved-on, explicit-stage) → 遷移コマンド列 or 拒否。**対応範囲は段 10 の gate-lifecycle アームと §7.3 forward ディスパッチ表に限る**。段 1〜9・11〜13 は `Report` ユースケースが所有（§3） | verdict → サブコマンド選択は**エンジンが**行い、呼び出し側は選ばない |
+| `human_acted_since_gate` | ドメインサービス（純関数） | 監査行の射影 → bool。fail-closed になるのは**同秒かつ別シャード**のときのみ。同一シャードはシャード内 pos 順で決定的に判定 | B9 の導出述語 |
+| `jump_resolve` | 集約 `WorkflowExecution` のクエリ（`&self`） | (target, cursor) → `JumpDirection` ＋帰属検証 | `aidlc-jump resolve`（純読取）と `execute`（コミット）の分離 |
 
-**位置づけの注記（2026-08-23）**: `next_decision` と `jump_resolve` は**集約 `WorkflowExecution` のクエリメソッド**（`&self`、書込なし）であり、独立したドメインサービスではない — 状態の所有者の外で判断する Ask 型を避けるため（ADR-002 ④、Bolt B3 実装）。本表は入出力の規範として残す。`human_acted_since_gate` は集約に置けない横断の判断なので純関数のドメインサービスのままとする（01 §7.1 原則 2）。
+**位置づけの注記（2026-08-23）**: `next_decision` と `jump_resolve` は**集約 `WorkflowExecution` のクエリメソッド**（`&self`、書込なし）であり、独立したドメインサービスではない — 状態の所有者の外で判断する Ask 型を避けるため（ADR-002 ④、Bolt B3 実装）。本表の「所在」列がその分類であり、入出力の規範は列を問わず本表が持つ。`human_acted_since_gate` は集約に置けない横断の判断なので純関数のドメインサービスのままとする（01 §7.1 原則 2）。
 
 ## 3. ユースケース層
 

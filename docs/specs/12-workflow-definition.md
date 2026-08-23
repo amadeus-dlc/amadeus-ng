@@ -143,10 +143,10 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 | 2 | `stage-graph.json` が不正 JSON | **fatal**。`Stage graph at <p> is not valid JSON: <err>` 形の逐語文言 |
 | 3 | `scope-grid.json` が読めない／不正 | **fatal にしない**。グラフの `scopes[]` から**その場で転置して導出**する（*"callers never see a hard ENOENT for a derivable artifact"*）。ここを厳格化すると新規 fixture ツリーが壊れる |
 | 4 | 未知スコープ | **非対称**: `subgraph_for_scope` のみ `Unknown scope: "<s>". Valid scopes: <csv>` で拒否。`first_in_scope_stage_of_phase` は `None`、`stages_in_scope` は空、`scope_metadata` は `None` を返す（設計監査 R2 / C8） |
-| 5 | identity ファイルあり × グリッド列なし | **zero-EXECUTE な正当スコープ**。unknown ではなくエラーでもない（`subgraph_for_scope` は空を返す） |
+| 5 | identity ファイルあり × グリッド列なし | **zero-EXECUTE な正当スコープ**。unknown ではなくエラーでもない（`subgraph_for_scope` は空を返す）。`initialization` の 3 ステージは #8 の転置特例で常に EXECUTE なので、zero-EXECUTE は initialization 以外のステージについての記述 |
 | 6 | グリッド列あり × identity ファイルなし | **ランタイムから不可視**。列ごと落ちるだけでエラーにしない（join の軸が metadata 側だから） |
 | 7 | グリッド列に slug が無い | **3 値の `None`**。`SKIP` に畳まない。畳み込みは呼び出し側 = 集約 `WorkflowExecution` の `effective_plan`（orchestration の `effectivePlanAction`）の責務（設計監査 R2） |
-| 8 | `initialization` の 3 ステージ | 全スコープ列で EXECUTE（転置の特例。グリッド側の値がどうであれ、転置規則としてこの結論になる） |
+| 8 | `initialization` の 3 ステージ | 全スコープ列で EXECUTE（転置の特例。グリッド側の値がどうであれ、転置規則としてこの結論になる）。**適用点はグリッド側の転置**（`ScopeGrid` — `grid().action()` の供給元。Bolt B3 実装 `scope_grid.rs` の転置述語 `phase == initialization ∨ node.scopes.contains(scope)`、テスト `transposition_puts_initialization_in_every_column`）であり、`stages_in_scope` / `effective_plan` はその結果を読むだけ。二重防御として `WorkflowExecution::start` は initialization が EXECUTE でなければ `InitializationMustExecute` で拒否する（10 §2.1） |
 | 9 | `mode: "agent-team"` | **明示的に未実装として拒否**する。既定の実行経路へフォールスルーさせてはならない（upstream の最低要件は `throw "mode agent-team not yet implemented"`） |
 | 10 | 上記いずれの失敗でも | **stdout に何も書かない**。half-emitted directive を出さないという orchestration 側の契約（10 §6 I1）を、読込側から破らない |
 
