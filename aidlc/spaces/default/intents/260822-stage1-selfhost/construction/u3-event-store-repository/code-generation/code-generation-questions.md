@@ -42,4 +42,4 @@
 - Approve Plan — 計画どおり実装に進む
 - Request Changes — 計画を修正する
 
-[Answer]: 
+[Answer]: Approve Plan

@@ -58,3 +58,4 @@
 - 2026-08-23T12:30:00Z — [u9-canon-docs] PR #28 マージ（merge queue）。CodeRabbit 16 スレッド全件返信+修正+resolve（凍結ファイル分は pending-revision へ）。review-thread gate は push 直後の評価で赤 → 該当ジョブ再実行で緑（学習候補: スレッド解決後に gate ジョブを再実行する手順）。Bolt B4 完了、Unit 完了
 - 2026-08-23T16:10:00Z — [Interpretations] [u3-event-store-repository] B5 計画: 委任 5 本（退役+是正 → ポート/InMemory/ワイヤ/契約テスト → {SQLite 実装 ∥ Quint/ITF} ∥ 仕様同期）。計画承認前にオーナー裁定 1 点（indexing_slicing / panic の lint 昇格 — NFR 要求レビュー所見 2）
 - 2026-08-23T16:40:00Z — [u3-event-store-repository] Q1 = A（lint 昇格）。実測: indexing_slicing 118 + slicing 2、panic 0（退役で −18）。計画 Step 0〜15、委任 6 本（1→2→{3∥4∥5}→6）。Testing Contract 埋め込み、指紋算出、Plan Approval を提示
+- 2026-08-23T17:00:00Z — [u3-event-store-repository] Plan Approval: Approve Plan（指紋 sha256:38d7646c…）。Bolt B5 開始。基線: cargo test 数は上記実測、lint 警告 120。委任 1（退役 + U2 是正、Opus）をディスパッチ
