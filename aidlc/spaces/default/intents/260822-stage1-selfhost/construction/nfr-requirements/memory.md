@@ -39,3 +39,4 @@
 - 2026-08-23T14:40:00Z — [Interpretations] [u3-event-store-repository] NFR 要求: 依存 2 追加（rusqlite bundled / tokio rt+macros）+ md5 除去、SQLite 既定の synchronous/journal_mode + busy_timeout、脅威モデルはローカル単一ユーザ（改竄は Corrupt 検出）、品質ゲートは契約テスト両実装 + PBT + ITF journal_protocol + クラッシュ再構成 + 90% 床、性能は非目標。質問なし、P1〜P6 を確認へ
 - 2026-08-23T15:10:00Z — [Open questions] [u3-event-store-repository] レビュー iteration 1 READY（Major 1: coverage.sh TOLERANCE 0.05→0.01 の引き締めを NFR2.3 の受入に明示 — pending-revision に登録、B5 計画に取り込む）
 - 2026-08-23T15:20:00Z — [u3-event-store-repository] 学習候補: 成果物の native Write は `aidlc-log.ts answer --checkpoint summary-confirmation` を記録した**後**に行う（先に書くと「確認後の native write なし」で完了拒否、かつレビュー受領後は freeze で再保存不可 — ARTIFACT_UPDATED を append-raw で再保存記録して復旧）
+- 2026-08-23T15:45:00Z — [u3-event-store-repository] レビュー所見の補遺（要約受信）: Major 2 = NFR4.3 の indexing_slicing / panic は lint 未設定（人力レビュー）— lint 昇格はオーナー裁定として B5 計画で確認 / Minor 1 = cargo audit は advisory ジョブ。pending-revision 2・3 に登録
