@@ -170,7 +170,7 @@ envelope: { intent_id, seq_nr, occurred_at, schema_version, payload }
 events:
   - name: Started
     command: start (intent-create)
-    payload: { definition_id, definition_revision, scope, request, stages_in_scope, depth, test_strategy }   # 2026-08-23: definition_id / definition_revision を追加（ADR-008、U2 BR2.6）。U2 機能設計は stages_in_scope → stages（StageEntry 列）も提案（entities.md c5_revision_proposal）
+    payload: { definition_id, definition_revision, scope, request, stages, depth, test_strategy }   # 2026-08-23: definition_id / definition_revision を追加（ADR-008、U2 BR2.6）。stages_in_scope（list<StageSlug>）→ stages（list<StageEntry> = slug + phase + plan_action + conditional、文書順の全ステージ）に改名・型変更 — U2 実装（Bolt B3）の `Started::stages()` と一致させた。in-scope の集合は各 StageEntry の plan_action = EXECUTE から導く
     projects_to:
       audit: [WORKFLOW_STARTED, PHASE_STARTED(initialization), STAGE_STARTED×3 + STAGE_COMPLETED×3（init 3 stage）, PHASE_SKIPPED（scope 外 phase）]
       state: 全フィールド初期化（Project Information / Scope Configuration / Stage Progress / Current Status）

@@ -158,7 +158,7 @@ rules:
     category: calculation
     applies_to: [WorkflowExecution, NextRequest, NextDecision]
     trigger: "next_decision(&self, &WorkflowDefinition, &NextRequest)"
-    logic: "上記の順に最初に成立した分岐を返す。EngineSignal（Quint の 4 値）は RunStage → DRunStage、Done → DDone、Parked → DParked、InconsistentSkip / RecoverSkipInconsistency → DError で導出"
+    logic: "上記の順に最初に成立した分岐を返す。EngineSignal（Quint の 4 値）は RunStage → DRunStage、Done → DDone、Parked → DParked、InconsistentSkip / RecoverSkipInconsistency → DError、UnparkThenResume / ResumeMenu / NewWorkRouting → DDone（Quint の語彙に対応語が無い『ステージを走らせない・park でもエラーでもない停止』— ITF は踏まない。Bolt B3 実装判断 D4）で導出 — 8 値すべてに定義する"
     violation: "該当なし（ITF 準拠テストと分岐テーブルテストで検出）"
     source: "Q1 = A, orchestration-next-ladder 分岐 2.5 / 2.6 / 6 / 9c / 10, engine_loop.qnt no_run_stage_for_skip"
   - id: BR3.2

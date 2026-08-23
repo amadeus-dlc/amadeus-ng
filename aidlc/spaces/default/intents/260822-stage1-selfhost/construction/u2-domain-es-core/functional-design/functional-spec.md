@@ -76,6 +76,10 @@ stage_index(&self, usize) -> Option<StageIndex>  stages() / cursor() / checkbox(
    （version / seq_nr 引継ぎ）。違反は `SnapshotError`。
 2. seq_nr 以降のイベントを順に `apply_event`。seq_nr の飛びは `ApplyError::SequenceGap`（BR2.1）。
 - 利用箇所: U3 の `find_by_id`（最新スナップショット + 差分 replay）。
+- 再構成の契約は**「最新スナップショット + 後続イベント」のみ**。`apply_event(Started)` は genesis 専用で、既存集約への適用は
+  `ApplyError::InvariantViolation` で拒否する（Bolt B3 実装判断 D6）。journal の先頭イベント（`Started`、seq_nr = 1）だけから集約を
+  再構成する経路は U2 の契約に含めない — 必要なら U3 の設計で `from_started` 相当の入口を仕様化する（`StartRequest` + `Started::new` で
+  代用する案は採らない）。
 
 ### W4 — next_decision（BR3.1 の優先順）
 

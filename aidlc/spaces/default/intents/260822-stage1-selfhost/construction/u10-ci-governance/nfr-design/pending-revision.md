@@ -31,3 +31,5 @@
    NFR4.4 = 直下 read + review-thread ジョブのみ個別権限 + 外部 WF SHA 固定、NFR2.6（新規）= review-thread-resolution + ci-success。
 9. `traceability.json`: upstream_ids に NFR2.6 を追加、NFR2.1 / NFR2.2 / NFR2.4 / NFR2.5 / NFR4.2 / NFR4.4 / NFR4.5 の target を上記と同期、
    NFR2.6 の coverage 行を追加。
+10. （PR #27 CodeRabbit）`security-design.md` 末尾 `## Review` の「実装照合」表の行で列数が見出し（3 列）と一致しない箇所（`(^|/)` の regex 内パイプ）を
+    `\|` でエスケープする（markdownlint MD056）。

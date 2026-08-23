@@ -16,9 +16,9 @@
 ```yaml
 entities:
   - name: IntentId
-    description: "集約 WorkflowExecution の識別子（intent の記録ディレクトリ名 `<slug>-<id8>`）。Always Valid な Domain Primitive"
+    description: "集約 WorkflowExecution の識別子（intent の記録ディレクトリ名 — intents.json の dirName、実データ例 `260822-stage1-selfhost`）。Always Valid な Domain Primitive"
     attributes:
-      - { name: value, type: string, required: true, unique: true, constraints: "`<kebab-slug>-<id8>`（id8 = 16 進 8 桁）。構築時に形を検証" }
+      - { name: value, type: string, required: true, unique: true, constraints: "kebab 表記（`[a-z0-9]+` を `-` で連結、前後空白は trim）。`<kebab-slug>-<id8>` も `<YYMMDD>-<slug>` もこの形の部分集合（Bolt B3 実装判断 D3 — `-<id8>` 必須は実データと不一致のため撤回）。構築時に形を検証" }
     constraints:
       - "空・不正形は構築できない（parse-don't-validate）"
 
@@ -62,7 +62,7 @@ entities:
       - { name: intent_id, type: IntentId, required: true, unique: true }
       - { name: definition_id, type: WorkflowDefinitionId, required: true, constraints: "集約間の間接参照（ID のみ保持、WorkflowDefinition のオブジェクトは保持しない）。Started で確定し以後不変（start は記録のみ）。next_decision に渡される &WorkflowDefinition の id と一致しなければ Err(CommandError::DefinitionMismatch) — BR2.6" }
       - { name: definition_revision, type: DefinitionRevision, required: true, constraints: "start 時点の定義の内容版（来歴）。以後不変。定義側の revision が進んでも計画は Started で自己完結しているため Err にはしない（drift は観測のみ — BR2.6）" }
-      - { name: stages, type: list<StageSlug>, required: true, constraints: "索引 → slug。Started で確定し以後不変。長さ = stage_count ≥ 1" }
+      - { name: stages, type: list<StageEntry>, required: true, constraints: "索引 → StageEntry（slug / phase / plan_action / conditional）。Started で確定し以後不変。長さ = stage_count ≥ 1。phase を保持するので再水和後も gated = phase ≠ initialization を再計算できる（Bolt B3 実装判断 D1 — 旧 list<StageSlug> では phase が失われ実装不能）。plan / conditional は独立列のまま持ち、from_snapshot が StageEntry との整合を検査する" }
       - { name: plan, type: list<PlanAction>, required: true, constraints: "静的グリッド由来。Started で確定し以後不変（Quint: plan）" }
       - { name: overlay, type: list<PlanAction>, required: true, constraints: "実効プランの源（Quint: overlay）。Started 時は plan の写し、Recomposed で対象要素が反転" }
       - { name: conditional, type: list<boolean>, required: true, constraints: "Started で確定し以後不変" }
@@ -119,7 +119,7 @@ entities:
   - name: WorkflowExecutionSnapshot
     description: "集約の全状態の値オブジェクト（C6 snapshot 行の論理形）。集約 → `snapshot()`、集約 ← `from_snapshot(...)`。serde なし"
     attributes:
-      - { name: state, type: record, required: true, constraints: "WorkflowExecution の全属性（intent_id 〜 version）をそのまま持つ" }
+      - { name: state, type: record, required: true, constraints: "WorkflowExecution の全属性（intent_id / definition_id / definition_revision / stages（StageEntry 列）/ plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy / approved / revision_count / seq_nr / version の 16 属性）をそのまま持つ。構築は公開ビルダー WorkflowExecutionSnapshotBuilder（引数 16 個を避ける house style）" }
     constraints:
       - "from_snapshot は集約不変条件を検証し、違反は Err（Corrupt 相当の材料）"
 

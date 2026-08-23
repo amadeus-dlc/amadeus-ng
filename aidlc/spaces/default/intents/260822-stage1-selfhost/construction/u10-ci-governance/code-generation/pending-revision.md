@@ -14,9 +14,12 @@
    （`ci-success` 1 コンテキストで PR では 4 条件 / queue では 3 条件）、外部 WF を SHA 固定にした理由、`audit` は required 外のまま。
 3. `code-summary.md` §3（テスト / 受入）に `verify-ci-governance.sh` 20/20 PASS（`--with-ruleset` 含む）と、review gate の実地確認
    （未解決スレッドのある PR が `CI Success` 赤 → resolve 後に緑）を追記。§5（計画からの逸脱）に #9〜#11 を追記。
-4. `traceability.json`: 全 `target` をファイルパス単体にする（全角括弧の注記を除去 — 注記は code-summary 側へ）。FR9.1 / NFR2.1 / NFR4.5 の
-   target を `.github/workflows/ci.yml`（+ 必要なら `scripts/governance/ruleset-required-checks.sh` を別行に分けられないため主ファイル 1 本に）、
-   NFR4.4 の target を `.github/workflows/ci.yml`、FR9.x は既存どおり。センサー `aidlc-sensor-traceability.ts --stage code-generation` で
-   `invalid_targets` = 0 を確認。
+4. `traceability.json`: 全 `target` をファイルパス単体にする（全角括弧の注記を除去 — 注記は code-summary 側へ。センサーは target 1 件 = 実在
+   ファイル 1 本しか受理しない）。割当: FR9.1 → `scripts/governance/ruleset-required-checks.sh`（required checks 4 コンテキストの適用）、
+   NFR2.1 → `.github/workflows/ci.yml`（`ci-success` 集約 = `CI Success` コンテキスト）、NFR2.6（新設）→ `.github/workflows/review-thread-resolution.yml`
+   （review-thread gate の再評価 WF。ゲート本体の `review-thread-resolution` ジョブは ci.yml 側だが、両ファイルを traceability に載せるため NFR2.6 の
+   target にこちらを割り当てる）、NFR4.4 → `.github/workflows/ci.yml`（ジョブ個別 permissions）、NFR4.5 → `scripts/governance/ruleset-required-checks.sh`
+   … ではなく `aidlc/.../code-generation/ruleset/2026-08-23-ci-success/after.json`（前後 JSON の記録）、FR9.x は既存どおり。センサー
+   `aidlc-sensor-traceability.ts --stage code-generation` で `invalid_targets` = 0 を確認。
 5. `code-summary.md` §1 Step 1 / Step 10 の検査数値（「15 項目」「16/16 PASS」）を実測（`verify-ci-governance.sh` 19/19、`--with-ruleset` で 20/20）に
    更新する（レビュアー最終報告の追加指摘）。

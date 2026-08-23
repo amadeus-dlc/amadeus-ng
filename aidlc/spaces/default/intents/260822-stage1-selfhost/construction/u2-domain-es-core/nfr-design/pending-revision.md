@@ -14,3 +14,7 @@
    （stage < cursor ∧ Completed）— `Err(CommandError::{NotRunning, NotStale})`」を追加。§1 の「3 か所 + next_decision」に「+ stale_report の
    ガード」を注記。
 4. `traceability.json` は変更なし（target の節番号は不変）。
+5. （PR #27 CodeRabbit 再掲）`logical-components.md` §2 に C4 `NotFound { expected, actual }` / `HarnessIdentity { path, cause }` の契約行を追加し、Impl と
+   InMemory の双方で同じ契約を検証する旨を明記（項目 1 と同じ — 実装済みの内容を設計へ写す）。
+6. （PR #27 CodeRabbit 再掲）`security-design.md` §2 の `decide` 行から `NotStale` を除き `stale_report` の検査行を追加（項目 3 と同じ）。
+   `nfr-design-questions.md` は人間確認済みバイト（エンジンが凍結）のため変更せず、P1 の「3 か所 + next_decision」の注記はここで補う。
