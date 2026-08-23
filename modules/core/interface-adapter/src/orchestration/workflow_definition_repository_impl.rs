@@ -27,13 +27,15 @@
 //! **失敗態度** (12 §4): グラフは fatal、グリッドは転置導出フォールバック、identity と
 //! グリッド列の不一致は双方向とも正当。
 
+use canon_json::{hash_canonical, to_value};
 use core_domain::workflow_definition::{
-    BrownfieldGreenfield, ConsumeDecl, ExecutionKind, PhaseId, PlanAction, ReviewCapValue,
-    ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault,
-    StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+    BrownfieldGreenfield, ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
+    ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef,
+    SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
+    WorkflowDefinition, WorkflowDefinitionId,
 };
 use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
@@ -43,6 +45,8 @@ use std::path::{Path, PathBuf};
 const STAGE_GRAPH_FILE: &str = "stage-graph.json";
 /// グリッド成果物のファイル名 (同上)。
 const SCOPE_GRID_FILE: &str = "scope-grid.json";
+/// ハーネス identity ファイルの名前 (同上)。定義 id の供給元 (ADR-008)。
+const HARNESS_FILE: &str = "harness.json";
 /// scope identity ファイルの接頭辞 (`aidlc-<name>.md`)。
 const SCOPE_FILE_PREFIX: &str = "aidlc-";
 /// scope identity ファイルの拡張子。
@@ -100,7 +104,30 @@ pub fn read_error_message(error: &GraphReadError) -> String {
         GraphReadError::ScopeFile { message } | GraphReadError::Malformed { message } => {
             message.clone()
         }
+        GraphReadError::NotFound { expected, actual } => {
+            definition_not_found_message(expected, actual)
+        }
+        GraphReadError::HarnessIdentity { path, cause } => harness_identity_message(path, cause),
     }
+}
+
+/// 要求された定義 id がこのハーネスの定義 id と違う (ADR-008)。
+///
+/// upstream には定義 id の概念自体が無いため、対応する逐語文言は存在しない
+/// (診断文言なので互換対象外 — `malformed` と同じ扱い)。
+#[must_use]
+fn definition_not_found_message(
+    expected: &WorkflowDefinitionId,
+    actual: &WorkflowDefinitionId,
+) -> String {
+    format!("Workflow definition {actual} not found: this harness provides {expected}")
+}
+
+/// ハーネス identity (`harness.json`) を読めない・`name` が無い (ADR-008)。upstream に
+/// 対応する逐語文言は無い (診断文言)。
+#[must_use]
+fn harness_identity_message(path: &str, cause: &str) -> String {
+    format!("Harness identity not readable at {path}: {cause}")
 }
 
 /// scope identity ファイルに frontmatter が無い。
@@ -270,6 +297,44 @@ struct WireScopeColumn {
     stages: BTreeMap<String, String>,
 }
 
+/// `harness.json` の読取に必要な部分。`harnessDir` / `rulesSubdir` は本 Repository の関心外
+/// なので写さない (未知フィールドの許容は F1 と同じ方針)。
+#[derive(Debug, Deserialize)]
+struct WireHarness {
+    #[serde(default)]
+    name: String,
+}
+
+/// `DefinitionRevision` のハッシュ入力 (ADR-008)。**3 入力そのもの**を宣言順に束ねた
+/// アダプタ層のワイヤ構造体で、ドメインには現れない。
+///
+/// フィールド順は canon-json の `to_value` が宣言順で写し、`hash_canonical` が再帰キーソートを
+/// かけるため結果には効かない。順序を宣言順で固定してあるのは読み手のためである。
+#[derive(Debug, Serialize)]
+struct RevisionInput {
+    /// `stage-graph.json` をそのまま読んだ値 (ドメイン型へ写す前)。
+    stage_graph: serde_json::Value,
+    /// `scope-grid.json` をそのまま読んだ値。欠損・不正時は転置導出グリッドを
+    /// `{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` 形へ直列化した値。
+    scope_grid: serde_json::Value,
+    /// scope identity の frontmatter を `name` 昇順に並べた配列。
+    scopes: Vec<RevisionScope>,
+}
+
+/// `RevisionInput` の scope 要素 — frontmatter のうち読取モデルが保持する値。
+///
+/// 本 Repository が写さないキー (`description` など) はハッシュ入力にも入らない。revision は
+/// 「この Repository が読んだ 3 入力」の内容版であって、ファイルの生バイトの版ではない。
+#[derive(Debug, Serialize)]
+struct RevisionScope {
+    name: String,
+    depth: Option<String>,
+    keywords: Vec<String>,
+    skeleton: Option<String>,
+    review_cap: Option<String>,
+    freeform_default: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Gateway
 // ---------------------------------------------------------------------------
@@ -333,31 +398,65 @@ impl WorkflowDefinitionRepositoryImpl {
             .unwrap_or_else(|| self.data_dir.join(SCOPE_GRID_FILE))
     }
 
+    /// 解決済みの `harness.json` パス。env オーバライドは無い (upstream に対応する env が
+    /// 無く、identity はハーネスの配置そのものだからである)。
+    #[must_use]
+    pub fn harness_path(&self) -> PathBuf {
+        self.data_dir.join(HARNESS_FILE)
+    }
+
+    /// `harness.json` の `name` を定義 id として読む (ADR-008)。**fatal な入力**。
+    ///
+    /// 欠落・不正 JSON・`name` 欠落・id として不正、のいずれも `HarnessIdentity` に畳む。
+    /// upstream には定義 id の概念が無いので、この 4 分岐に対応する逐語文言も無い。
+    fn load_harness_identity(&self) -> Result<WorkflowDefinitionId, GraphReadError> {
+        let path = self.harness_path();
+        let identity = |cause: String| GraphReadError::HarnessIdentity {
+            path: path.display().to_string(),
+            cause,
+        };
+        let content = fs::read_to_string(&path).map_err(|e| identity(e.to_string()))?;
+        let wire: WireHarness =
+            serde_json::from_str(&content).map_err(|e| identity(e.to_string()))?;
+        WorkflowDefinitionId::parse(&wire.name).map_err(|e| identity(e.to_string()))
+    }
+
     /// グラフを読む。**唯一 fatal な入力** (12 §4 #1・#2)。
-    fn load_graph(&self) -> Result<StageGraph, GraphReadError> {
+    ///
+    /// ドメイン型の `StageGraph` と、**読んだままの生値**を返す。後者は `DefinitionRevision`
+    /// のハッシュ入力で、ドメイン型へ写す過程で落ちる情報 (未知フィールド・キー順) まで
+    /// 内容版に含めるために要る。
+    fn load_graph(&self) -> Result<(StageGraph, serde_json::Value), GraphReadError> {
         let path = self.stage_graph_path();
         let content = fs::read_to_string(&path).map_err(|e| GraphReadError::NotReadable {
             path: path.display().to_string(),
             cause: e.to_string(),
             env_override: self.stage_graph_override.is_some(),
         })?;
+        let invalid_json = |e: &serde_json::Error| GraphReadError::InvalidJson {
+            path: path.display().to_string(),
+            cause: e.to_string(),
+        };
+        let raw: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
         let wire: Vec<WireStageNode> =
-            serde_json::from_str(&content).map_err(|e| GraphReadError::InvalidJson {
-                path: path.display().to_string(),
-                cause: e.to_string(),
-            })?;
+            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
         let mut nodes = Vec::with_capacity(wire.len());
         for node in wire {
             nodes.push(to_stage_node(node, &path)?);
         }
         // 文書順のまま渡す (F2 — 読込時に数値順へ正規化しない)。
-        StageGraph::new(nodes).map_err(|e| malformed(&path, &format!("{e:?}")))
+        let graph = StageGraph::new(nodes).map_err(|e| malformed(&path, &format!("{e:?}")))?;
+        Ok((graph, raw))
     }
 
     /// グリッドを読む。**読めない / 不正なら `None`** を返し、呼出側が転置導出へ倒す
     /// (12 §4 #3 — *"callers never see a hard ENOENT for a derivable artifact"*)。
-    fn load_grid(&self) -> Option<ScopeGrid> {
+    ///
+    /// ドメイン型の `ScopeGrid` と読んだままの生値を返す (生値は revision のハッシュ入力)。
+    fn load_grid(&self) -> Option<(ScopeGrid, serde_json::Value)> {
         let content = fs::read_to_string(self.scope_grid_path()).ok()?;
+        let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
         let wire: BTreeMap<String, WireScopeColumn> = serde_json::from_str(&content).ok()?;
         let mut columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>> = BTreeMap::new();
         for (scope, column) in wire {
@@ -375,7 +474,7 @@ impl WorkflowDefinitionRepositoryImpl {
             }
             columns.insert(scope, cells);
         }
-        Some(ScopeGrid::new(columns))
+        Some((ScopeGrid::new(columns), raw))
     }
 
     /// identity ファイルを列挙して frontmatter を読む。**有効スコープの権威**はここ (F7)。
@@ -413,14 +512,94 @@ impl WorkflowDefinitionRepositoryImpl {
 }
 
 impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
-    fn find(&self) -> Result<WorkflowDefinition, GraphReadError> {
-        let graph = self.load_graph()?;
-        let grid = self
-            .load_grid()
-            .unwrap_or_else(|| ScopeGrid::derive_from_graph(&graph));
+    fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError> {
+        // 識別子の検査が先。1 ハーネス 1 定義なので、要求 id が違えば 3 入力を読む意味がない
+        // (BR2.6 — expected = 提供できる id、actual = 要求された id)。
+        let harness_id = self.load_harness_identity()?;
+        if &harness_id != id {
+            return Err(GraphReadError::NotFound {
+                expected: harness_id,
+                actual: id.clone(),
+            });
+        }
+
+        let (graph, raw_graph) = self.load_graph()?;
+        let (grid, raw_grid) = match self.load_grid() {
+            Some(read) => read,
+            // グリッド欠損は fatal にしない (12 §4 #3)。revision も導出グリッドから作る —
+            // 「読めた 3 入力の内容版」であって「ディスクにあったバイトの版」ではない。
+            None => {
+                let derived = ScopeGrid::derive_from_graph(&graph);
+                let raw = serialize_grid(&derived);
+                (derived, raw)
+            }
+        };
         let scopes = self.load_scopes()?;
-        Ok(WorkflowDefinition::new(graph, grid, scopes))
+        let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
+
+        Ok(WorkflowDefinition::new(
+            harness_id, revision, graph, grid, scopes,
+        ))
     }
+}
+
+/// 転置導出グリッドを `scope-grid.json` と同じ 2 段構造へ直列化する
+/// (`{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` — F6 の中間キー込み)。
+///
+/// グリッドが読めなかったときの revision 入力。ファイルから読めたときの値と同じ形にして
+/// おくことで、「導出グリッドと同じ内容の grid ファイルが置かれた」場合に同じ revision に
+/// なる — 内容版が入力の**内容**だけで決まるという性質が保たれる。
+fn serialize_grid(grid: &ScopeGrid) -> serde_json::Value {
+    let mut columns = serde_json::Map::new();
+    for scope in grid.scope_names() {
+        let mut stages = serde_json::Map::new();
+        if let Some(column) = grid.column(scope) {
+            for (slug, action) in column {
+                stages.insert(
+                    slug.as_str().to_string(),
+                    serde_json::Value::String(action.as_str().to_string()),
+                );
+            }
+        }
+        let mut wrapper = serde_json::Map::new();
+        wrapper.insert("stages".to_string(), serde_json::Value::Object(stages));
+        columns.insert(scope.to_string(), serde_json::Value::Object(wrapper));
+    }
+    serde_json::Value::Object(columns)
+}
+
+/// 3 入力の正準 JSON ダイジェストを `DefinitionRevision` にする (ADR-008)。
+///
+/// `hash_canonical` は再帰キーソート + `sha256:` 接頭辞 (正準族) なので、入力の**内容**だけで
+/// 決まりキーの並び順には依存しない。scope は `BTreeMap` から取るため常に `name` 昇順。
+fn compute_revision(
+    raw_graph: &serde_json::Value,
+    raw_grid: &serde_json::Value,
+    scopes: &BTreeMap<String, ScopeMetadata>,
+) -> Result<DefinitionRevision, GraphReadError> {
+    let input = RevisionInput {
+        stage_graph: raw_graph.clone(),
+        scope_grid: raw_grid.clone(),
+        scopes: scopes
+            .values()
+            .map(|metadata| RevisionScope {
+                name: metadata.name().to_string(),
+                depth: metadata.depth().map(str::to_string),
+                keywords: metadata.keywords().to_vec(),
+                skeleton: metadata.skeleton().map(|s| s.as_str().to_string()),
+                review_cap: metadata.review_cap().map(|c| c.as_str().to_string()),
+                freeform_default: metadata.freeform_default(),
+            })
+            .collect(),
+    };
+    let value = to_value(&input).map_err(|e| GraphReadError::Malformed {
+        message: format!("definition revision input: {e}"),
+    })?;
+    DefinitionRevision::parse(&hash_canonical(&value).rendered()).map_err(|e| {
+        GraphReadError::Malformed {
+            message: format!("definition revision: {e}"),
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------

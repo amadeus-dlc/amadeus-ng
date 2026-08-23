@@ -23,7 +23,9 @@
 // ヘルパは `#[test]` の外にあるため clippy.toml の `allow-*-in-tests` が効かない。
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use core_domain::workflow_definition::{PlanAction, ReviewClass, WorkflowDefinition};
+use core_domain::workflow_definition::{
+    PlanAction, ReviewClass, WorkflowDefinition, WorkflowDefinitionId,
+};
 use core_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
 use core_use_case::orchestration::WorkflowDefinitionRepository;
 use std::path::PathBuf;
@@ -79,11 +81,11 @@ fn reader() -> (WorkflowDefinitionRepositoryImpl, TempDir) {
     (reader, scopes)
 }
 
-/// 3 入力を読んだ `WorkflowDefinition`。
+/// 3 入力を読んだ `WorkflowDefinition`。定義 id は配布 `harness.json` の `name` = `claude`。
 fn load() -> (WorkflowDefinition, TempDir) {
     let (reader, scopes) = reader();
     let definition = reader
-        .find()
+        .find_by_id(&WorkflowDefinitionId::parse("claude").unwrap())
         .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     (definition, scopes)
 }
@@ -259,4 +261,40 @@ fn the_shipped_graph_carries_no_enabled_key_at_all() {
         assert_eq!(node.enabled(), None, "stage {:?}", node.slug().as_str());
         assert!(node.is_enabled());
     }
+}
+
+// ---------------------------------------------------------------------------
+// (f) 配布 `harness.json` の identity で実グラフが引ける (ADR-008 / C4)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_shipped_harness_identity_is_the_key_to_the_shipped_graph() {
+    let (definition, _scopes) = load();
+    // 採取レポート: 配布 `harness.json` の `name` は `claude`。
+    assert_eq!(definition.id().as_str(), "claude");
+    assert!(definition.revision().as_str().starts_with("sha256:"));
+    assert_eq!(definition.graph().nodes().len(), EXPECTED_NODE_COUNT);
+}
+
+#[test]
+fn another_harness_name_cannot_open_the_shipped_graph() {
+    let (reader, _scopes) = reader();
+    let error = reader
+        .find_by_id(&WorkflowDefinitionId::parse("kiro").unwrap())
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            core_use_case::orchestration::GraphReadError::NotFound { .. }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn the_shipped_revision_is_reproducible_from_the_pinned_bytes() {
+    let (first, _a) = load();
+    let (second, _b) = load();
+    // 実バイトが変わらないかぎり内容版も変わらない (来歴の再現性)。
+    assert_eq!(first.revision(), second.revision());
 }

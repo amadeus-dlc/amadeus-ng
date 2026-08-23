@@ -32,6 +32,7 @@
 
 use std::collections::BTreeMap;
 
+use super::definition_revision::DefinitionRevision;
 use super::phase::PhaseId;
 use super::plan_action::PlanAction;
 use super::scope_grid::ScopeGrid;
@@ -39,6 +40,7 @@ use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
 use super::stage_slug::StageSlug;
+use super::workflow_definition_id::WorkflowDefinitionId;
 
 /// `validScopes()` に無いスコープ名。
 ///
@@ -75,30 +77,56 @@ impl UnknownScope {
     }
 }
 
-/// ワークフロー定義の読取モデル (以後 immutable)。
+/// ワークフロー定義のエンティティ (構築後 immutable)。
+///
+/// 等価は**内容と識別子の両方**で決まる (derive)。読取モデルは 3 入力から毎回組み立て直す
+/// 値であり、「同じ系譜の同じ内容」を 1 つの等価関係で表すのが自然だからである。id だけの
+/// 同一性比較が要るのは `WorkflowExecution` 側の定義照合で、そちらは `id()` 同士を突き合わせる
+/// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDefinition {
+    id: WorkflowDefinitionId,
+    revision: DefinitionRevision,
     graph: StageGraph,
     grid: ScopeGrid,
     scopes: BTreeMap<String, ScopeMetadata>,
 }
 
 impl WorkflowDefinition {
-    /// 3 入力をそのまま束ねる。
+    /// 識別子・内容版と 3 入力をそのまま束ねる。
+    ///
+    /// `id` / `revision` は **Repository 実装が付与する** (ADR-008)。ドメインは revision を
+    /// 計算しない — 正準 JSON とダイジェストはアダプタ層の責務である。
     ///
     /// グリッド列と `.md` の**不一致は検証しない** — 双方向の不一致がどちらも正当な
     /// 観測可能契約だからである (zero-EXECUTE スコープ / ランタイム不可視スコープ)。
     #[must_use]
     pub const fn new(
+        id: WorkflowDefinitionId,
+        revision: DefinitionRevision,
         graph: StageGraph,
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
     ) -> WorkflowDefinition {
         WorkflowDefinition {
+            id,
+            revision,
             graph,
             grid,
             scopes,
         }
+    }
+
+    /// この定義の系譜 ID。内容が変わっても不変 (ADR-008)。
+    #[must_use]
+    pub const fn id(&self) -> &WorkflowDefinitionId {
+        &self.id
+    }
+
+    /// この定義の内容版。3 入力が 1 バイトでも変われば変わる (ADR-008)。
+    #[must_use]
+    pub const fn revision(&self) -> &DefinitionRevision {
+        &self.revision
     }
 
     /// `stage-graph.json` 由来のステージグラフ (文書順を保持したまま)。
@@ -234,6 +262,14 @@ mod tests {
             .collect()
     }
 
+    fn id(value: &str) -> WorkflowDefinitionId {
+        WorkflowDefinitionId::parse(value).unwrap()
+    }
+
+    fn revision(fill: char) -> DefinitionRevision {
+        DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64))).unwrap()
+    }
+
     /// 文書順 = 数値順の小さな出荷グラフ相当。
     fn sample() -> WorkflowDefinition {
         let graph = StageGraph::new(vec![
@@ -256,7 +292,73 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::derive_from_graph(&graph);
-        WorkflowDefinition::new(graph, grid, registry(&REGISTERED))
+        WorkflowDefinition::new(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        )
+    }
+
+    // ---- エンティティの識別子と内容版 (ADR-008) ----
+
+    #[test]
+    fn the_definition_carries_the_identity_and_the_revision_the_repository_assigned() {
+        let wd = sample();
+        assert_eq!(wd.id(), &id("claude"));
+        assert_eq!(wd.revision(), &revision('0'));
+        assert_eq!(wd.id().as_str(), "claude");
+        assert!(wd.revision().as_str().starts_with("sha256:"));
+    }
+
+    #[test]
+    fn two_definitions_with_the_same_content_but_different_lineage_are_not_equal() {
+        let one = sample();
+        let graph = one.graph().clone();
+        let grid = one.grid().clone();
+        let other = WorkflowDefinition::new(
+            id("kiro"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        );
+        assert_ne!(one, other);
+        assert_ne!(one.id(), other.id());
+        // 内容版は同じ — 系譜だけが違う。
+        assert_eq!(one.revision(), other.revision());
+    }
+
+    #[test]
+    fn the_revision_changes_without_the_identity_changing() {
+        let one = sample();
+        let other = WorkflowDefinition::new(
+            one.id().clone(),
+            revision('1'),
+            one.graph().clone(),
+            one.grid().clone(),
+            registry(&REGISTERED),
+        );
+        // ピン更新 = 内容版だけが進む。系譜 ID は不変 (ADR-008)。
+        assert_eq!(one.id(), other.id());
+        assert_ne!(one.revision(), other.revision());
+        assert_ne!(one, other);
+    }
+
+    #[test]
+    fn the_six_predicates_survive_the_entity_change() {
+        // FR8.4 で 2 述語を集約へ移したあとに定義側へ残る照会一式。
+        let wd = sample();
+        assert!(wd.is_valid_scope("alpha"));
+        assert_eq!(wd.valid_scopes(), ["alpha", "beta", "delta"]);
+        assert!(wd.scope_metadata("alpha").is_some());
+        assert!(wd.subgraph_for_scope("alpha").is_ok());
+        assert_eq!(wd.stages_in_scope("alpha").len(), 6);
+        assert!(
+            wd.first_in_scope_stage_of_phase(PhaseId::Ideation, "alpha")
+                .is_some()
+        );
     }
 
     // ---- ユビキタス言語の例示 ----
@@ -354,7 +456,13 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::derive_from_graph(&graph);
-        let wd = WorkflowDefinition::new(graph, grid, registry(&["alpha"]));
+        let wd = WorkflowDefinition::new(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&["alpha"]),
+        );
 
         let numeric: Vec<&str> = wd
             .subgraph_for_scope("alpha")
@@ -405,7 +513,13 @@ mod tests {
             .collect();
         let graph = StageGraph::new(nodes).unwrap();
         let grid = ScopeGrid::derive_from_graph(&graph);
-        WorkflowDefinition::new(graph, grid, registry(&REGISTERED))
+        WorkflowDefinition::new(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        )
     }
 
     proptest! {

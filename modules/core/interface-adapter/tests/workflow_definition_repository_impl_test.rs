@@ -9,7 +9,7 @@
 
 use core_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
-    WorkflowDefinition,
+    WorkflowDefinition, WorkflowDefinitionId,
 };
 use core_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
 use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
@@ -153,9 +153,20 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// graph / grid / identity 3 ファイル群を書いた tempdir。`grid` が `None` なら
-    /// `scope-grid.json` を置かない (§4 #3 の材料)。
+    /// graph / grid / identity 3 ファイル群と `harness.json` を書いた tempdir。
+    /// `grid` が `None` なら `scope-grid.json` を置かない (§4 #3 の材料)。
+    /// `harness.json` は既定の `{"name":"claude"}` を置く。
     fn new(graph: Option<&str>, grid: Option<&str>, scopes: &[(&str, &str)]) -> Fixture {
+        Fixture::with_harness(graph, grid, scopes, Some(DEFAULT_HARNESS_JSON))
+    }
+
+    /// `harness.json` の内容まで指定する版 (`None` ならファイルを置かない)。
+    fn with_harness(
+        graph: Option<&str>,
+        grid: Option<&str>,
+        scopes: &[(&str, &str)],
+        harness: Option<&str>,
+    ) -> Fixture {
         let dir = tempfile::tempdir().unwrap();
         let data_dir = dir.path().join("tools/data");
         let scopes_dir = dir.path().join("scopes");
@@ -166,6 +177,9 @@ impl Fixture {
         }
         if let Some(grid) = grid {
             std::fs::write(data_dir.join("scope-grid.json"), grid).unwrap();
+        }
+        if let Some(harness) = harness {
+            std::fs::write(data_dir.join("harness.json"), harness).unwrap();
         }
         for (name, content) in scopes {
             std::fs::write(scopes_dir.join(format!("aidlc-{name}.md")), content).unwrap();
@@ -184,7 +198,25 @@ impl Fixture {
     fn graph_path(&self) -> PathBuf {
         self.data_dir.join("stage-graph.json")
     }
+
+    fn harness_path(&self) -> PathBuf {
+        self.data_dir.join("harness.json")
+    }
+
+    /// `scope-grid.json` を書き換える (revision の変化を見るため)。
+    fn rewrite_grid(&self, grid: &str) {
+        std::fs::write(self.data_dir.join("scope-grid.json"), grid).unwrap();
+    }
 }
+
+/// 出荷ハーネスの `harness.json` と同じ形 (upstream 実バイトは
+/// `tests/golden/upstream-3c3146cf/harness.json`)。
+const DEFAULT_HARNESS_JSON: &str = r#"{
+  "name": "claude",
+  "harnessDir": ".claude",
+  "rulesSubdir": "rules"
+}
+"#;
 
 /// `.md` は 3 つ: `feature` / `bugfix` はグリッド列を持ち、`express` は持たない (§4 #5 の材料)。
 fn scope_files() -> Vec<(&'static str, &'static str)> {
@@ -209,8 +241,15 @@ fn slugs(nodes: &[&core_domain::workflow_definition::StageNode]) -> Vec<String> 
         .collect()
 }
 
+fn definition_id(value: &str) -> WorkflowDefinitionId {
+    WorkflowDefinitionId::parse(value).unwrap()
+}
+
 fn find_definition(fixture: &Fixture) -> WorkflowDefinition {
-    fixture.reader().find().unwrap()
+    fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -366,7 +405,10 @@ fn a_full_read_wires_up_the_five_predicates() {
 #[test]
 fn b_a_missing_stage_graph_is_fatal() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     let GraphReadError::NotReadable {
         path, env_override, ..
     } = error
@@ -382,7 +424,7 @@ fn b_the_env_override_flag_follows_the_injected_path() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
     let missing = fixture.data_dir.join("pinned-graph.json");
     let reader = fixture.reader().with_stage_graph_override(missing.clone());
-    let error = reader.find().unwrap_err();
+    let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
     let GraphReadError::NotReadable {
         path, env_override, ..
     } = error
@@ -400,7 +442,10 @@ fn b_the_env_override_flag_follows_the_injected_path() {
 #[test]
 fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     assert!(
         matches!(error, GraphReadError::InvalidJson { ref path, .. } if *path == fixture.graph_path().display().to_string()),
         "expected InvalidJson, got {error:?}"
@@ -410,7 +455,10 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
 #[test]
 fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
     let fixture = Fixture::new(Some("{\"stages\": []}"), Some(GRID_JSON), &scope_files());
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     assert!(matches!(error, GraphReadError::InvalidJson { .. }));
 }
 
@@ -614,7 +662,10 @@ fn an_invalid_skeleton_value_is_rejected_with_the_verbatim_wording() {
         Some(GRID_JSON),
         &[("feature", "---\nname: feature\nskeleton: enabled\n---\n")],
     );
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     let GraphReadError::ScopeFile { message } = error else {
         panic!("expected ScopeFile, got {error:?}");
     };
@@ -635,7 +686,10 @@ fn a_scope_file_without_a_name_is_rejected() {
         Some(GRID_JSON),
         &[("feature", "---\ndepth: standard\n---\n")],
     );
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     let GraphReadError::ScopeFile { message } = error else {
         panic!("expected ScopeFile, got {error:?}");
     };
@@ -655,7 +709,10 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
             ("feature-alias", "---\nname: feature\n---\n"),
         ],
     );
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     // upstream 逐語 (aidlc-lib.ts:8666-8668 @3c3146cf) の形を pin する
     assert!(
         matches!(error, GraphReadError::ScopeFile { ref message }
@@ -673,7 +730,7 @@ fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );
-    let definition = reader.find().unwrap();
+    let definition = reader.find_by_id(&definition_id("claude")).unwrap();
     assert!(definition.valid_scopes().is_empty());
     // グリッド列は読めているが、権威が無いので全スコープが未知になる。
     assert!(definition.grid().contains_scope("feature"));
@@ -693,7 +750,10 @@ fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
     ]
     "#;
     let fixture = Fixture::new(Some(graph), None, &[]);
-    let error = fixture.reader().find().unwrap_err();
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
     assert!(
         matches!(error, GraphReadError::Malformed { ref message } if message.contains("unknown phase")),
         "{error:?}"
@@ -747,4 +807,138 @@ fn grid_cells_that_cannot_be_represented_collapse_to_the_third_value_not_to_skip
         slugs(&definition.subgraph_for_scope("feature").unwrap()),
         ["intent-capture"]
     );
+}
+
+// ---------------------------------------------------------------------------
+// 追加: 定義の識別子と内容版 (ADR-008 / C4 — find_by_id)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn find_by_id_returns_the_definition_stamped_with_the_harness_identity() {
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let definition = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap();
+
+    // id は harness.json の `name`。
+    assert_eq!(definition.id(), &definition_id("claude"));
+    // revision は 3 入力の正準ダイジェスト。
+    assert_eq!(definition.revision().as_str().len(), "sha256:".len() + 64);
+    assert!(definition.revision().as_str().starts_with("sha256:"));
+}
+
+#[test]
+fn a_request_for_a_definition_this_harness_does_not_provide_is_not_found() {
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("kiro"))
+        .unwrap_err();
+    assert_eq!(
+        error,
+        GraphReadError::NotFound {
+            // expected = この Repository が提供できる id、actual = 要求された id。
+            expected: definition_id("claude"),
+            actual: definition_id("kiro"),
+        }
+    );
+}
+
+#[test]
+fn the_identity_is_checked_before_the_three_inputs_are_read() {
+    // グラフが無くても、id 不一致は NotFound で落ちる (3 入力の読取に進まない)。
+    let fixture = Fixture::new(None, None, &[]);
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("kiro"))
+        .unwrap_err();
+    assert!(
+        matches!(error, GraphReadError::NotFound { .. }),
+        "識別子の検査はグラフ読取より前: {error:?}"
+    );
+}
+
+#[test]
+fn a_missing_harness_identity_file_is_fatal() {
+    let fixture = Fixture::with_harness(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files(), None);
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
+    let GraphReadError::HarnessIdentity { path, cause } = error else {
+        panic!("HarnessIdentity を期待した");
+    };
+    assert_eq!(path, fixture.harness_path().display().to_string());
+    assert!(!cause.is_empty(), "OS 由来の理由を材料として運ぶ");
+}
+
+#[test]
+fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_fatal() {
+    for harness in ["{", r#"{"harnessDir": ".claude"}"#, r#"{"name": ""}"#] {
+        let fixture = Fixture::with_harness(
+            Some(GRAPH_JSON),
+            Some(GRID_JSON),
+            &scope_files(),
+            Some(harness),
+        );
+        let error = fixture
+            .reader()
+            .find_by_id(&definition_id("claude"))
+            .unwrap_err();
+        assert!(
+            matches!(error, GraphReadError::HarnessIdentity { .. }),
+            "harness.json {harness:?} は HarnessIdentity で落ちるはず: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn the_revision_is_stable_for_the_same_inputs_and_changes_with_them() {
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let first = find_definition(&fixture);
+    let second = find_definition(&fixture);
+    // 同一入力を 2 回読んでも同じ内容版。
+    assert_eq!(first.revision(), second.revision());
+
+    // グリッドを 1 文字変えれば変わる (EXECUTE → SKIP)。
+    fixture.rewrite_grid(&GRID_JSON.replacen(
+        "\"intent-capture\": \"EXECUTE\"",
+        "\"intent-capture\": \"SKIP\"",
+        1,
+    ));
+    let after = find_definition(&fixture);
+    assert_ne!(first.revision(), after.revision());
+    // 系譜 ID は変わらない (ADR-008)。
+    assert_eq!(first.id(), after.id());
+}
+
+#[test]
+fn the_revision_covers_the_scope_identity_files_as_well_as_the_two_json_inputs() {
+    let base = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let mut altered_scopes = scope_files();
+    // `feature` の depth だけを変える — グラフもグリッドも同一。
+    altered_scopes[0] = (
+        "feature",
+        "---\nname: feature\ndepth: deep\nkeywords: [api, endpoint]\nskeleton: on\nreview_cap: adversarial\n---\n\n# Feature scope\n",
+    );
+    let altered = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &altered_scopes);
+
+    assert_ne!(
+        find_definition(&base).revision(),
+        find_definition(&altered).revision(),
+        "scope identity は revision の入力の 1 つ"
+    );
+}
+
+#[test]
+fn a_missing_grid_still_yields_a_revision_derived_from_the_transposed_grid() {
+    // グリッド欠損は fatal にしない (§4 #3) — revision は導出グリッドから作る。
+    let without = Fixture::new(Some(GRAPH_JSON), None, &scope_files());
+    let definition = find_definition(&without);
+    assert!(definition.revision().as_str().starts_with("sha256:"));
+
+    // 導出グリッドと配布グリッドは中身が違うので revision も違う。
+    let with = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    assert_ne!(definition.revision(), find_definition(&with).revision());
 }
