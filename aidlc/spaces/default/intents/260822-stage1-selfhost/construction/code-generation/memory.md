@@ -59,3 +59,4 @@
 - 2026-08-23T16:10:00Z — [Interpretations] [u3-event-store-repository] B5 計画: 委任 5 本（退役+是正 → ポート/InMemory/ワイヤ/契約テスト → {SQLite 実装 ∥ Quint/ITF} ∥ 仕様同期）。計画承認前にオーナー裁定 1 点（indexing_slicing / panic の lint 昇格 — NFR 要求レビュー所見 2）
 - 2026-08-23T16:40:00Z — [u3-event-store-repository] Q1 = A（lint 昇格）。実測: indexing_slicing 118 + slicing 2、panic 0（退役で −18）。計画 Step 0〜15、委任 6 本（1→2→{3∥4∥5}→6）。Testing Contract 埋め込み、指紋算出、Plan Approval を提示
 - 2026-08-23T17:00:00Z — [u3-event-store-repository] Plan Approval: Approve Plan（指紋 sha256:38d7646c…）。Bolt B5 開始。基線: cargo test 数は上記実測、lint 警告 120。委任 1（退役 + U2 是正、Opus）をディスパッチ
+- 2026-08-23T17:50:00Z — [u3-event-store-repository] 委任 1 完了（退役 37 テスト減 → 是正 +14、448 全緑、grep 0、quint 緑、coverage 97.17%）。裁定: 設計質問 1 連続ハイフン拒否を採用（FD pending 2）、2 IntentDirName 非 trim を受容、3 Cargo.lock は副作用、4 message-catalog の doc と coding-rules 3 件の履歴注記はコンダクタが修正。2 コミット分割は mod.rs の依存で中間がビルド不能のため 1 コミットに（code-summary に記載）。委任 2 をディスパッチ
