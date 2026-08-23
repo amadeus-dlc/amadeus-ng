@@ -15601,3 +15601,12 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Error**: Refusing REVIEW_REQUESTED for "functional-design": review request 2 exceeds this stage's review budget (1). This review runs as a single advisory pass - do not re-invoke the reviewer; quote its findings at the approval gate for the human to triage.
 
 ---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T08:51:05Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
