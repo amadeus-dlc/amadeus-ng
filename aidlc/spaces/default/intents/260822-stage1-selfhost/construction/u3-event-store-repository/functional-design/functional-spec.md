@@ -28,28 +28,33 @@
   `get_events_by_id_since_seq_nr` を使う。
 - `JournalReader::{events_after(GlobalSeqNr), checkpoint(&ProjectionName), advance_checkpoint(&ProjectionName, GlobalSeqNr)}`。
 - `SqliteEventStore::open(path: StorePath, clock: C) -> Result<Self, EventStoreError>` / `within_write_transaction<T>(&mut self, f) -> Result<T, EventStoreError>`。
+- `WorkflowExecutionRepositoryImpl { store: RefCell<SqliteEventStore> }` — `&self` の trait メソッドから `&mut` の EventStore を呼ぶ内部可変性（tokio current_thread・
+  Send 不要なので RefCell。借用は各メソッド内で閉じ、await をまたがない）。`InMemoryWorkflowExecutionRepository { store: RefCell<InMemoryEventStore> }` も同形。
+- 数値パラメータは u64（C3 の usize を実ドメイン型に合わせて具体化 — C3 の改訂提案を所有者 U5 / U6 へ申し送り）。
 - `StorePath::for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath` / `as_path()`。
 
 ## 3. フロー
 
 ### 3.1 store（BR1.3 / BR2.3）
 
-1. 前提検査: `event.intent_id() == aggregate.intent_id()` かつ `event.seq_nr() == aggregate.seq_nr()`（違えば `Corrupt(SequenceGap)` — 呼出側のバグ）。
-   `expected = aggregate.version() - 1`（version は適用済みイベント数と一致 — U2 実装）。
+1. 前提検査: `event.intent_id() == aggregate.intent_id()`、`event.seq_nr() == aggregate.seq_nr()`、`event.seq_nr() >= 1`、`aggregate.version() == event.seq_nr() - 1`
+   （違えば `Corrupt(SequenceGap)` — 呼出側のバグ）。`expected = aggregate.version()`（find_by_id が `with_version` で載せた「永続化済みの最後の seq_nr」。
+   `apply_event` は version を変えない — B3 実装契約）、`new_version = event.seq_nr()`。genesis は expected 0 / new_version 1。
 2. `BEGIN IMMEDIATE`。
 3. `INSERT INTO journal(aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at)`。UNIQUE 違反 → rollback、`Conflict { expected, actual: 現在 version }`。
-4. `expected == 0` → `INSERT INTO snapshot(aggregate_id, version, seq_nr, schema_version, payload, updated_at)`（既存行があれば rollback + Conflict）。
-   それ以外 → `UPDATE snapshot SET version = ?, seq_nr = ?, payload = ?, updated_at = ? WHERE aggregate_id = ? AND version = ?expected`。影響 0 行 → `SELECT version` で actual を
-   読み rollback + `Conflict { expected, actual }`。
+4. `expected == 0` → `INSERT INTO snapshot(aggregate_id, version = new_version, seq_nr = new_version, schema_version, payload, updated_at)`（既存行があれば rollback + Conflict）。
+   それ以外 → `UPDATE snapshot SET version = new_version, seq_nr = new_version, payload = ?, updated_at = ? WHERE aggregate_id = ? AND version = expected`。影響 0 行 →
+   `SELECT version` で actual を読み rollback + `Conflict { expected, actual }`。
 5. `COMMIT`。Io 失敗は `Io { kind, path }`。
 
 ### 3.2 find_by_id（BR1.2）
 
 1. `SELECT version, seq_nr, schema_version, payload FROM snapshot WHERE aggregate_id = ?`。無ければ journal を数え、0 なら `NotFound { intent_id }`、1 以上なら
    `Corrupt(MissingSnapshot)`。
-2. StateWire を復号（schema_version 検査）→ `WorkflowExecution::from_state(state)`（Err → `Corrupt(InvariantViolation)`）→ `with_version(version)`。
-3. `SELECT … FROM journal WHERE aggregate_id = ? AND seq_nr > ? ORDER BY seq_nr` を復号して順に `apply_event`（Err → `Corrupt(SequenceGap | InvariantViolation)`）。
-   適用 1 件ごとに version + 1。通常運転では 0 件（スナップショットは毎 store 更新）。
+2. StateWire を復号（schema_version 検査）→ `WorkflowExecution::from_state(state)`（Err → `Corrupt(InvariantViolation)`）→ `with_version(snapshot.version)`。
+3. `SELECT … FROM journal WHERE aggregate_id = ? AND seq_nr > snapshot.seq_nr ORDER BY seq_nr` を復号して順に `apply_event`（Err → `Corrupt(SequenceGap | InvariantViolation)`）。
+   replay ループ終了後、Repository が明示的に `with_version(最後に適用した seq_nr)` を載せる（`apply_event` は version を変えない）。通常運転では 0 件
+   （スナップショットは毎 store 更新）。
 4. 集約を返す。
 
 ### 3.3 投影の差分読取（BR1.4、利用は U4）
