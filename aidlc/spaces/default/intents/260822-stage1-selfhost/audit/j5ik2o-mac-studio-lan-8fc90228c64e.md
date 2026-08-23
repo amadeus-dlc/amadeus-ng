@@ -14830,3 +14830,102 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Findings count**: 40
 
 ---
+
+## Review Requested
+**Timestamp**: 2026-08-23T06:04:22Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:36ce84227110767a44c46ac9679d28bee47bc9f57b5054802171eee04445ca10
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T06:05:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a064b7c508d5b629f
+**Message**: 引き続きお願いします
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T06:05:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0d41e14c8f6a8e61
+**Message**: Already processed（委任 2 の報告は統合済み）。レビューと PR #28 の CodeRabbit / CI を待っています。
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T06:10:42Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md
+**Context**: construction > u9-canon-docs > code-generation > code-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T06:10:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6d98d055
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T06:10:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 6d98d055
+**Sensor ID**: required-sections
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-summary.md
+**Duration ms**: 17
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T06:10:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T06:11:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u9-code-gen-r1
+**Agent ID**: areview-u9-code-gen-r1-084c4f90fa5ce48a
+**Message**: ## レビュー完了\n\n**Reviewer:** aidlc-architecture-reviewer-agent\n**Verdict: READY**（advisory, iteration 1, Critical 0 / Major 1）\n\nU9-canon-docs（Bolt B4）の code-generation 成果物をレビューし、`aidlc/spaces/default/inte
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T06:11:28Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:fb16ce541f01297eb80b403b1d969c05aadcd97367ea022e7ce065b1b06d1576
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T06:11:28Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:fb16ce541f01297eb80b403b1d969c05aadcd97367ea022e7ce065b1b06d1576
+**Source Fingerprint**: a993dc59bdd1a1b0d205daae67f886b92315fce7
+
+---

@@ -78,3 +78,34 @@ Red 基線（承認直後、`origin/main` 同等）: sentinel ヒット = gatewa
 ## 8. コミット（ブランチ `bolt/b4-u9-canon-docs`、`origin/main` 1c5cb28 起点）
 
 - 記録コミット: 456caf3（計画・承認）。文書コミット: 本ファイル作成後に 1 コミット（squash 時のコミット名 = Bolt slug）。
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-08-23T06:09:36Z
+**Iteration:** 1（advisory, unit: u9-canon-docs）
+
+### Findings
+
+| # | Severity | Location | Finding | Recommendation |
+|---|---|---|---|---|
+| 1 | Major | `docs/specs/10-orchestration.md` §6（I14 行、未変更）/ `docs/specs/11-workspace.md` §6（W1〜W5 行、未変更）/ `docs/specs/01-domain-model.md` §3.3「代表不変条件」段落（未変更） | code-summary §4 の判断 3 は「本 Unit では『改訂して存続』の注記のみ」を 10 号 §6 I14・11 号 §6 W1〜W5・01 号 §3.3 代表不変条件に適用したと主張するが、`git diff origin/main..HEAD` で確認すると 3 箇所とも **1 バイトも変更されていない**（`grep -rn "改訂して存続"` は decisions.md の ADR-007 本文と、この主張をしている code-summary 自身にしかヒットしない — 実際の仕様 3 号には現れない）。結果として 01 号 §3.3 は同一小節内で自己矛盾している: 直前の「集約」段落・直後の「状態機械」段落は「`WorkspaceLock` は退役」「Audit lock lifecycle は退役」と ADR-007 を正しく反映しているのに、その間の「代表不変条件」段落だけは「監査 emit が state 書き込みに先行し…（E3+E4 — **audit-first はロックモデルの中心不変条件**）」「生きている閾値未満のロック保持者からは決して奪わない」と、退役済みの mkdir ロック機構をあたかも現行の規範であるかのように書いたままである。10 号 §6 I14・11 号 §6 W1〜W5 も同様に `audit_lock::audit_first` 等の E4 定義名を無注記で規範として残す。BR5.1(c) の「退役済み機構が規範として残らない」という自己整合の原則（sentinel 8 語はその原則を運用する一例に過ぎず、この段落はどの sentinel 語にも該当しないため grep 検査をすり抜けている）に反する。 | (a) code-summary §4 判断 3 の文言を「本 Unit では変更していない（B5 で差し替え）」に訂正し、実態と一致させる。(b) 最低限、3 箇所に 1 行の退役注記（例:「本表は upstream mkdir ロック時代の規範。ADR-007 によりロックは退役、E4 定義名は `audit_lock.qnt` 協定モデル改訂後に B5 で差し替える」）を追加し、同一節内の自己矛盾を解消する（BR5.2「旧記述は『旧』明記」に合わせる）。(c) BR5.1(c) の sentinel リストに「退役済み機構の無注記残存」を検出できる一般チェック（例: 各仕様ファイルで ADR-007 由来の退役語 `withAuditLock` / `audit-first はロックモデルの中心` 等）を今後の Unit で加えることを検討する。 |
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| `bun .claude/tools/aidlc-sensor-traceability.ts --stage code-generation --output-path .../traceability.json` | `pass:false` だが `gaps:[]` `orphans:[]` `missing_from_table:[]` `invalid_entries:[]` `invalid_targets:[]`。`missing_from_upstream_ids` にリポジトリ全体の FR（U9 が担当しない FR1〜FR7・FR8.3/8.4・FR9.1〜9.5・NFR1〜5）が並ぶのみ | 学習済み構造的既知事象どおり（U9 は FR8.1/FR8.2/FR9.6 のみ担当）。実質的な破損参照・カバレッジ欠落なし — 合格として扱う |
+| `bun .claude/tools/aidlc-sensor-required-sections.ts --stage code-generation --output-path .../code-summary.md` | `pass:true`、H2 8 個、`findings_count:0` | §1〜§8 すべて存在、逸脱なし |
+| `git diff --stat origin/main..HEAD -- modules tools scripts .github Cargo.toml Cargo.lock docs/specs/research` | 空 | 受入 1 / 1b（コード変更ゼロ・research 不可侵）を実測で確認。code-summary の記載と一致 |
+| sentinel 7 語 grep（`coding-rules/*.md` + `docs/specs/*.md`） | `effective_plan_action` / `next_in_scope_stage` / `AuditLedgerRepository` / `AuditLedgerService` / `report_forward` / `gate_start` = 0 件。`StateFileStore` = `gateway-taxonomy.md` の 2 件のみ（4 行目「適用例」、96 行目旧→新表の旧列 — いずれも履歴注記） | code-summary §3 の記載と一致 |
+| `StageGraphReader` のサンプルから除外（pending-revision 由来）の妥当性 | `aidlc/.../u9-canon-docs/nfr-design/pending-revision.md` 項目 1 で明示的に承認済みの是正 | sentinel から外す判断は正しくトレース可能 |
+| README 行数 vs ルールファイル数 | 表 7 行 = `coding-rules/*.md`（README 除く）7 ファイル | 一致 |
+| `modules/core/use-case/src/orchestration/workflow_definition_repository.rs` / `modules/core/domain/src/workflow_definition/*.rs` 実装突合 | `find_by_id(&WorkflowDefinitionId)`・`WorkflowDefinitionId`・`DefinitionRevision` が実装済み（ADR-008 は Bolt B3 で実装済み） | 12 号・10 号の `find_by_id` 改訂は実装と一致（架空の先取りではない） |
+| `modules/core/domain/src/orchestration/workflow_execution.rs` / `workflow_execution_snapshot.rs` 実装突合 | 実装は現在も `snapshot()` / `from_snapshot()` / `WorkflowExecutionSnapshot` | 10 号 §2.1 の `state()` / `from_state()` / `WorkflowExecutionState` はコード先取りの規範だが、括弧書きで「現行コード名は `WorkflowExecutionSnapshot`」と明記され、U2 pending-revision 項目 9 に B4 統合時の追記としてトレース可能・オーナー確認待ちと明記済み — 開示は適切 |
+| 10 号 §10 S2 行 / 11 号 §7-4 ITF 項（code-summary §4 判断 2・7 が「改訂した」と主張する箇所） | diff で実際に改訂されていることを確認 | 判断 2・7 は主張どおり実施済み。判断 3 のみ主張と実態が食い違う（所見 1） |
+
+### Summary
+
+コード変更ゼロ・research 不可侵・sentinel 7 語・README 整合・ADR-001〜008 と Bolt B3 実装（`find_by_id` / `WorkflowDefinitionId` / `DefinitionRevision`）との突合はすべて実測で裏付けが取れ、委任 1・2 の作業自体は出典注記も含めて質が高い。唯一の Major 所見は、code-summary §4 の判断 3 が「mkdir ロック前提の代表不変条件（10 号 I14・11 号 W1〜W5・01 号 §3.3）に注記を入れた」と主張しているのに、実際の diff ではこの 3 箇所が一切変更されておらず、01 号 §3.3 内で「退役済み」と「ロックモデルの中心不変条件」が同一小節に同居する自己矛盾が残っている点である。BR5.1(c) の自己整合原則の趣旨（sentinel 8 語という具体例より広い「退役済み機構を規範として残さない」という原則）に反し、かつ成果物の自己申告と実態が食い違っている。advisory 判定の閾値（Critical 0 / Major ≤ 2）内であり構造的な健全性は保たれているため READY とするが、承認前にこの 1 件の Major を人間に重みづけしていただきたい（最小限の是正は 3 箇所への 1 行注記で足りる）。
