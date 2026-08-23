@@ -18681,3 +18681,33 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Error Logged
+**Timestamp**: 2026-08-23T13:50:37Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage code-generation --reviewer aidlc-architecture-reviewer-agent --unit u3-event-store-repository --iteration 2
+**Error**: Refusing REVIEW_REQUESTED for "code-generation": the one stale-receipt recovery review pass was already spent, and its receipt was invalidated again by another later write to a declared produces[] artifact. Stop editing produces[] artifacts after a review receipt. Present this refusal to the human at the approval gate. Only a human Request Changes decision (GATE_REJECTED) resets the review attempt; do not record that rejection on the human's behalf.
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T14:01:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T14:03:15Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state --help
+**Error**: Unknown subcommand: --help. Valid: get, set, set-skeleton-stance, set-construction-iteration, checkbox, count, advance, finalize, complete-workflow, gate-start, approve, reject, revise, skip, resume, acknowledge-compaction, reuse-artifact, lookup, practices-event, practices-promote, fork, merge, park, unpark
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T14:06:52Z
+**Event**: HUMAN_TURN
+
+---
