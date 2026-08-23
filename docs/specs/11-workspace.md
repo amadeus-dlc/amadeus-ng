@@ -9,7 +9,7 @@
 
 ## 1. 責務と境界
 
-workspace は**永続化の機構**を所有する。Space / Intent、状態ファイル `aidlc-state.md`、監査台帳（clone ごとの shard）、ワークスペースロック、三層 fork/merge、Worktree、committed vs ignored の規律がここに属する。
+workspace は**永続化の機構**を所有する。Space / Intent、状態ファイル `aidlc-state.md`、監査台帳（clone ごとの shard）、~~ワークスペースロック~~（ADR-007 / Bolt B5 で退役）、三層 fork/merge、Worktree、committed vs ignored の規律がここに属する。
 
 境界の要点（01 の裁定の引き受け）:
 

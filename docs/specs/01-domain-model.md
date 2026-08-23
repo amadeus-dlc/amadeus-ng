@@ -84,7 +84,7 @@ flowchart TB
 
 **責務**: 「次に何が起こるか」。engine（`next` の 21 分岐ラダー / `report` の 13 段ガード）、`Directive`（10 種の判別共用体、28KiB 上限）、Gate の 3 層構造（静的決定 / コンダクタの儀式 / 承認強制）、jump・park・recompose、Construction 実行機構（Bolt / swarm / per-unit 反復 / loop-back）、Stop フックの forwarding loop。**7 コンテキスト中、状態機械が最も密**であり、Quint モデル化の最優先領域（A9）。
 
-**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は 16 属性、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（現行コード名 `WorkflowExecutionSnapshot` — Bolt B5 で改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004、Bolt B3 実装）。
+**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は 16 属性、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004、Bolt B3 実装）。
 
 **集約候補**（スライス 2）: `Bolt`、`SwarmBatch`（収束はサーガとしてモデル化 — 監査行なしの中間状態からの復旧を含む。裁定 B5）。`Directive` は値オブジェクト（Rust では enum そのもの）。
 
@@ -96,7 +96,7 @@ flowchart TB
 
 ### 3.3 workspace（ワークスペース）— 19 語
 
-**責務**: 永続化の機構。Space / Intent、状態ファイル `aidlc-state.md`（State Version 8、audit-first 不変条件）、監査台帳（clone ごとの shard、追記専用、86 イベントの閉集合）、mkdir ロック（再入深度カウンタ・reap 規則）、三層 fork/merge（state / audit / fragment）、Worktree、committed vs ignored の規律。**イベント行の意味論には関与しない** — merge-protected 判定もスキーマ駆動（裁定 B5）。「状態ファイルはキャッシュ、真実源は監査」という upstream の原則を、コンテキスト境界の規約に昇格させる（裁定 B9）。
+**責務**: 永続化の機構。Space / Intent、状態ファイル `aidlc-state.md`（State Version 8、audit-first 不変条件）、監査台帳（clone ごとの shard、追記専用、86 イベントの閉集合）、~~mkdir ロック（再入深度カウンタ・reap 規則）~~（ADR-007 / Bolt B5 で退役 — 並行制御は SQLite Tx + 楽観 version）、三層 fork/merge（state / audit / fragment）、Worktree、committed vs ignored の規律。**イベント行の意味論には関与しない** — merge-protected 判定もスキーマ駆動（裁定 B5）。「状態ファイルはキャッシュ、真実源は監査」という upstream の原則を、コンテキスト境界の規約に昇格させる（裁定 B9）。
 
 **集約**: `Intent`（集約ルート。`intents.json` への登録 — uuid / slug / dirName と生死。birth は単一チョークポイント）、`Space`、`Worktree`（構築）。**リードモデル**（集約ではない）: `StateFile`（`aidlc-state.md`）と `AuditShard` — 真実源は SQLite ジャーナルであり、両者は ReadModelUpdater（U4）の投影として**バイト互換**で再生成される（ADR-003 / ADR-004）。**退役**: `WorkspaceLock` — 並行制御は SQLite Tx + 楽観 version に置換され、ロック dir は生成しない（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 
