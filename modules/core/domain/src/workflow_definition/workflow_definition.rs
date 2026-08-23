@@ -361,6 +361,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn stages_in_scope_reports_the_phase_of_every_stage_alongside_the_action() {
+        // Started の StageEntry 列 (集約側) はこの 3 つ組から作られるため、PhaseId が
+        // 文書順で正しく載っていることが FR8.4 移設後の前提になる。
+        let wd = sample();
+        let rows = wd.stages_in_scope("alpha");
+        let phases: Vec<PhaseId> = rows.iter().map(|(_, phase, _)| *phase).collect();
+        assert_eq!(
+            phases,
+            [
+                PhaseId::Initialization,
+                PhaseId::Ideation,
+                PhaseId::Ideation,
+                PhaseId::Inception,
+                PhaseId::Construction,
+                PhaseId::Operation,
+            ]
+        );
+        // 索引 0 だけが initialization — 集約の gated(s) 判定の材料。
+        assert_eq!(rows[0].1, PhaseId::Initialization);
+        assert!(
+            rows[1..]
+                .iter()
+                .all(|(_, p, _)| *p != PhaseId::Initialization)
+        );
+    }
+
     // ---- ユビキタス言語の例示 ----
 
     #[test]
