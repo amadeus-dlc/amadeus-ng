@@ -29,6 +29,13 @@ Published Language（`12-workflow-definition.md` §3）を本家と同一に読�
 | --- | --- | ---: | --- |
 | `stage-graph.json` | `dist/claude/.claude/tools/data/stage-graph.json` | 81,850 | md5 `3ee59d7a177bd55d2e8392fb9028561d`<br>sha256 `c7afda6e0c57a7a248cb6322878d3ed3c58b14d7b483269e03add20d436bab8c` |
 | `scope-grid.json` | `dist/claude/.claude/tools/data/scope-grid.json` | 13,509 | sha1 `60fb4547307a925456bafbcfabf2ffd408552f1d`<br>sha256 `326deb8be9e027f832adf21f37e89c3fa86e531840233852d7be5d9bc5ff67aa` |
+| `harness.json` | `dist/claude/.claude/tools/data/harness.json` | 76 | md5 `4108544495aeb5260fad0fcba21b664d`<br>sha256 `85bfdec8f1449f17f164599dbccdb79ffda9af76cdc18588e60dde75e589ace9` |
+
+`harness.json` は 2026-08-23 に上と同じ方法（`curl -fsSL .../3c3146cfd7cef33020d48e8d48d4e80d0f8c2820/dist/claude/.claude/tools/data/harness.json`、
+HTTP 200）で追加取得した。内容は `{ "name": "claude", "harnessDir": ".claude", "rulesSubdir": "rules" }` で、
+本リポジトリの `.claude/tools/data/harness.json` と実バイトが一致する（同 sha256）。定義の系譜 ID
+`WorkflowDefinitionId` の供給元（ADR-008）であり、ゴールデンパリティテストが
+`find_by_id(WorkflowDefinitionId::parse("claude"))` で実グラフを引く鍵になる。既存 2 行のバイトは不変。
 
 `stage-graph.json` の md5 は as-built 仕様 `docs/upstream/specs/00-overview.md:445`（測定 M18）の実測値と一致する。
 `scope-grid.json` については as-built 仕様 `docs/upstream/specs/01-workflow-model.md:1133` が `60fb4547…` を挙げるが、
