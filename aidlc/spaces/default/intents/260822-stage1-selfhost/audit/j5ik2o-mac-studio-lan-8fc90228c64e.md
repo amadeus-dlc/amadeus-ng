@@ -9675,3 +9675,2239 @@ contract-summary.md C7 の cli / hooks ケースレイアウトに exit / stderr
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Decision Recorded
+**Timestamp**: 2026-08-22T23:46:59Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U2 functional-design Q1 next_decision の集約が持つ範囲 / Q2 StageIndex 導入 / Q3 非ゲート完了イベント名（前提 P1〜P6 は要約確認で）
+**Options**: Q1: A 状態依存分岐のみ集約（推奨）, B 全 21 分岐を純関数で集約側, C 最小判断のみ / Q2: A 導入（推奨）, B 見送り / Q3: A StageCompleted 追加（推奨）, B GateApproved に gated フラグ, C Started が stage 0 完了
+**Rationale**: ADR-002 ④ の読み（ラダーの分担）、設計監査 B-2 繰延（StageIndex）、C5 の 11 変種にゲート無し完了が無い
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-22T23:48:02Z
+**Event**: HUMAN_TURN
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-22T23:48:22Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: next_decision は状態依存の分岐のみ集約に（状態非依存はユースケース前段の要求分類）; StageIndex を導入; 非ゲート完了イベント StageCompleted を第 12 変種として追加
+**Unit**: u2-domain-es-core
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-22T23:48:22Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U2 functional-design 要約確認: Q1〜Q3 の回答と前提 P1〜P6
+**Options**: Looks correct, Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-22T23:48:42Z
+**Event**: HUMAN_TURN
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-22T23:48:52Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md
+**Questions SHA-256**: 598e8edb78e22bfbc8b2cb5e78277e347e779f427456f4e4a9d955e81da9ef09
+**Unit**: u2-domain-es-core
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-22T23:50:16Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:50:16Z
+**Event**: SENSOR_FIRED
+**Fire id**: 35b49d12
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:50:16Z
+**Event**: SENSOR_PASSED
+**Fire id**: 35b49d12
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:50:16Z
+**Event**: SENSOR_FIRED
+**Fire id**: d24e24c7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-22T23:50:16Z
+**Event**: SENSOR_FAILED
+**Fire id**: d24e24c7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-d24e24c7.md
+**Findings count**: 1
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-22T23:57:25Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Context**: construction > u2-domain-es-core > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:57:25Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9dd105ba
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:57:25Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9dd105ba
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:57:25Z
+**Event**: SENSOR_FIRED
+**Fire id**: e7d6edb9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:57:25Z
+**Event**: SENSOR_PASSED
+**Fire id**: e7d6edb9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-22T23:58:29Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Context**: construction > u2-domain-es-core > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:58:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 81cf68f8
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:58:30Z
+**Event**: SENSOR_PASSED
+**Fire id**: 81cf68f8
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:58:30Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9c17fd26
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:58:30Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9c17fd26
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Duration ms**: 20
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+**Context**: construction > u2-domain-es-core > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: d3ea5472
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: d3ea5472
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0705995d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0705995d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 90d8d933
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-22T23:58:42Z
+**Event**: SENSOR_FAILED
+**Fire id**: 90d8d933
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-90d8d933.md
+**Findings count**: 32
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-22T23:59:06Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:ef1289d7db9ba2aa257d433b266002eb8ce43472d565583b5c06781c11a7e7a3
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-22T23:59:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:00:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a42cd8256baf2720d
+**Message**: #26 もマージしていいよ
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:08:19Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:8cb0323e5226d97125d09f082dcc93bf289317fb59022b8645587f8a0fc79dda
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T00:08:19Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:8cb0323e5226d97125d09f082dcc93bf289317fb59022b8645587f8a0fc79dda
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:08:29Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: rev-u2-fd
+**Agent ID**: arev-u2-fd-11791ed36e104bdb
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** NOT-READY（advisory, iteration 1, unit: u2-domain-es-core）\n\n## 更新したファイル\n\n- `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/defa
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:11:33Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Artifact Fingerprint**: sha256:d0363f9804eb837ad556dc8e2b96c7b33fc332a31dde41211d9194072ea20a00
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:14:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a650660e31452e233
+**Message**: #26 をマージしてよいよ
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:14:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af56556aa4ffa2671
+**Message**: （U2 の初回レビューアの完了通知 — 処理済みです。回復レビュー（iteration 2）と PR #26 の CI を待っています。）
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:15:29Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:16:07Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a7246461e535a5cb7
+**Message**: #26 マージしてよいよ
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:17:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:17:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:17:56Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a878982a9e3ffaac5
+**Message**: U2の回復レビューが戻ったら続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:19:47Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:19:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:20:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a475ee8e39c8a3ec2
+**Message**: 続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:21:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: rev-u2-fd-2
+**Agent ID**: arev-u2-fd-2-46cd92e0049e082c
+**Message**: レビュー完了です。`functional-spec.md` 末尾の iteration 1 の `## Review` を削除し、iteration 2 のセクション 1 つに置き換えました。他ファイルは編集していません。\n\n## Verdict: NOT-READY（advisory — Critical 1 / Major 3 / Minor 3）\n\n**更新ファイル**: `/Users/j
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:21:47Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:a0086518121557d3418f83acc3830b634449939d74d7d71d17a32eece6bc7885
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T00:21:47Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 2
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:a0086518121557d3418f83acc3830b634449939d74d7d71d17a32eece6bc7885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:24:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-23T00:24:46Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:26:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2024f6a8921669f4
+**Message**: <analysis>\nThe conversation is a continuation of an AI-DLC workflow (intent 260822-stage1-selfhost, Issue #7, Rust reimplementation amadeus-ng). I am the conductor. Chronology after the prior summary:
+
+---
+
+## Design decision — U2 functional-design 所見 14（非ゲートの定義）
+**Timestamp**: 2026-08-23T00:27:04Z
+回復レビュー（iteration 2、NOT-READY）の所見 14〜20 を成果物へ反映した。所見 14（Quint の「非ゲート = stage 0」抽象 vs 実グラフの initialization 3 ステージ）はオーナーへ選択肢 A/B で提示し、**A** で裁定: gated(stage) = (phase ≠ initialization)、StageEntry に phase を保持、start は索引 0 を InProgress にし birth ユースケースが complete_stage を initialization ステージ数ぶん（実グラフ 3）呼ぶ（1 コマンド 1 イベント、Quint と 1:1）。C5 の Started 投影は「Started + StageCompleted ×3」へ改訂提案（U4 と合意、監査行の見た目は不変）。所見 15: open_gate(artifacts) / approve_gate(user_input?, phase_boundary?) を呼出側供給の投影材料として明示。所見 16: revision_count は集約フィールド（list<integer>、reject_gate で +1）。所見 17: c5_revision_proposal に Started.stages の変更を明記。所見 18: backward は InProgress（cursor 自身）も Pending へ。所見 19: conditional は graph().nodes()[i].execution() から。所見 20: StartError の Empty / InitializationMustExecute の到達条件を明記。回復レビュー受領は終端（プロトコル: 回復後の再レビュー要求なし）— 本反映はステージゲートで判断材料として提示する。
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T00:27:04Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T00:27:04Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --help
+**Error**: --help expects a value, got end of arguments.
+
+---
+
+## Unit Started
+**Timestamp**: 2026-08-23T00:30:44Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:32:17Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Artifact Fingerprint**: sha256:6c9007faee31a2af36f263b63532b4297de6e385c3afe68465160f01faea7d79
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T00:32:17Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: U2 nfr-requirements 前提 P1〜P6 の要約確認（質問なし）
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:38:53Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u10-nfr-req-r2
+**Agent ID**: areview-u10-nfr-req-r2-755085fddcd0d85f
+**Message**: `## Review` セクションを `security-requirements.md` の末尾に追記した(1つのみ)。他の成果物・ファイルは編集していない。\n\n**Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** READY（advisory, recovery iteration 2, unit: u10-ci-gover
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:49:16Z
+**Event**: HUMAN_TURN
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-23T00:49:45Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: a1e04b430c1ed53bc8a097b6cfa657c2a9cf7cad935162996763d68bef2251bb
+**Unit**: u2-domain-es-core
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T00:53:11Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage nfr-requirements --reviewer aidlc-architecture-reviewer-agent --unit u10-ci-governance --iteration 2 --verdict READY
+**Error**: Refusing REVIEW_COMPLETED for "nfr-requirements": declared artifacts changed after REVIEW_REQUESTED iteration 2. Re-dispatch that exact iteration with --retry-pending so the reviewer inspects the current bytes.
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:53:11Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:c81800307372e1085ad69247d372d5cda3450bb4b7106cf20509f0242598ad67
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:53:25Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:515eade8aa6d89fe8c99e5c666136edba2a71e82d32bce2952d5173ae50b438d
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T00:53:25Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:515eade8aa6d89fe8c99e5c666136edba2a71e82d32bce2952d5173ae50b438d
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:54:38Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:54:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:54:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8b23397fafe4ddea
+**Message**: 続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:55:36Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aee6270fae05ded92
+**Message**: A
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:57:35Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:58:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aecebfae930f3cdd7
+**Message**: 1でいきましょう
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T00:58:38Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > security-requirements.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T00:58:38Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7d69f2e7
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T00:58:38Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7d69f2e7
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T00:58:38Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7b4dcdd5
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T00:58:38Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7b4dcdd5
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Duration ms**: 17
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:58:43Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:58:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u2-nfr-req-r1
+**Agent ID**: areview-u2-nfr-req-r1-36a38ea5ad09ea95
+**Message**: レビューを完了し、`security-requirements.md` に `## Review` セクションを追記しました。\n\n**Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict: NOT-READY**（advisory, iteration 1, unit: u2-domain-es-core）\n\nMajor所見が3件、Min
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T00:59:21Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:67ce53476632ee8aac423d685a15cb815a72fbc42583662a25b1344ef34539f3
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T00:59:21Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:67ce53476632ee8aac423d685a15cb815a72fbc42583662a25b1344ef34539f3
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T00:59:36Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T00:59:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0e543b1b195c00fd
+**Message**: A
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T01:02:19Z
+**Event**: HUMAN_TURN
+
+---
+
+## Design decision — WorkflowDefinition の識別子と集約間 ID 参照（オーナー裁定 2026-08-23）
+**Timestamp**: 2026-08-23T01:08:43Z
+オーナー指摘: 集約はエンティティであり ID が無いのはまずい。集約間の依存は ID による間接参照。内容アドレス ID は内容が変わると追跡不能になりエンティティの責務違反（却下）。裁定: WorkflowDefinition に不変の WorkflowDefinitionId（harness.json の name から Repository が付与）と内容版 DefinitionRevision（3 入力の正準 JSON sha256、値属性）を追加、C4 を find_by_id に改訂（find() 廃止・後方互換なし）、WorkflowExecution は Started.definition_id / definition_revision で間接参照し next_decision は id 不一致を Err(DefinitionMismatch)。反映: ADR-008（decisions.md）、contract-summary C4 / C5、U2 functional-design（entities / rules BR2.6 / functional-spec / traceability）、U2 nfr-requirements（NFR3.4 ほか、レビュー所見 1〜5 も同時に是正）。U2 functional-design は回復レビュー済みのため再レビューはステージゲートの Request Changes 経路で行う。
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:08:59Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Artifact Fingerprint**: sha256:35fb204ffdfd6e0cad3e43fc240b850ef6f1b9fa1cfae8a36f5d1690ddb9d543
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T01:10:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a351256de09e7caf0
+**Message**: nameのままでよい。続けて
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:15:08Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > security-requirements.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:15:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: 75cf31f0
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:15:08Z
+**Event**: SENSOR_PASSED
+**Fire id**: 75cf31f0
+**Sensor ID**: required-sections
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:15:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2dc4b810
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:15:08Z
+**Event**: SENSOR_PASSED
+**Fire id**: 2dc4b810
+**Sensor ID**: upstream-coverage
+**Stage slug**: nfr-requirements
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Duration ms**: 19
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T01:15:11Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T01:15:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u2-nfr-req-r2
+**Agent ID**: areview-u2-nfr-req-r2-20a4837787e1963a
+**Message**: U2（u2-domain-es-core）の nfr-requirements 回復レビュー（iteration 2, advisory）を完了し、team-lead に結果を報告しました。\n\n**判定: READY**（Critical 0、Major 1件のみ — advisory基準の「Major ≤2」を満たす）\n\n**主な確認内容:**\n- iteration 1 の Major所見4件
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:16:06Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:8ad58dbaee9b9c7c35f7d88c4e94ecdfea7095f17d9ae0d24989c1cfea132697
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T01:16:06Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 2
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:8ad58dbaee9b9c7c35f7d88c4e94ecdfea7095f17d9ae0d24989c1cfea132697
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T01:16:06Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-requirements
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:16:06Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Artifact Fingerprint**: sha256:3b9b110eb40639b336cdae50cb46c6614458b89ec12c84f5707ad602b18a92f2
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+**Context**: construction > u2-domain-es-core > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: b58196c0
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: SENSOR_PASSED
+**Fire id**: b58196c0
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2565f024
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2565f024
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-2565f024.md
+**Findings count**: 4
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 73eed0a7
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:17:29Z
+**Event**: SENSOR_FAILED
+**Fire id**: 73eed0a7
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-73eed0a7.md
+**Findings count**: 67
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:17:38Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:38Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4ad6e358
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:17:38Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4ad6e358
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:38Z
+**Event**: SENSOR_FIRED
+**Fire id**: 824de9a9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:17:38Z
+**Event**: SENSOR_FAILED
+**Fire id**: 824de9a9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-824de9a9.md
+**Findings count**: 2
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:17:42Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9247635e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:17:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9247635e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: c2339d4d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:17:42Z
+**Event**: SENSOR_FAILED
+**Fire id**: c2339d4d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-c2339d4d.md
+**Findings count**: 2
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:17:44Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:44Z
+**Event**: SENSOR_FIRED
+**Fire id**: 90f5c473
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:17:44Z
+**Event**: SENSOR_PASSED
+**Fire id**: 90f5c473
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:44Z
+**Event**: SENSOR_FIRED
+**Fire id**: 393bb2eb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:17:44Z
+**Event**: SENSOR_FAILED
+**Fire id**: 393bb2eb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-393bb2eb.md
+**Findings count**: 2
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:17:48Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > security-requirements.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: a00c9329
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:17:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: a00c9329
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:17:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: ebe907a6
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:17:48Z
+**Event**: SENSOR_FAILED
+**Fire id**: ebe907a6
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-ebe907a6.md
+**Findings count**: 3
+
+---
+
+## Unit Started
+**Timestamp**: 2026-08-23T01:18:18Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-design
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:18:55Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Context**: construction > u2-domain-es-core > nfr-design > nfr-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:18:55Z
+**Event**: SENSOR_FIRED
+**Fire id**: ee281828
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:18:55Z
+**Event**: SENSOR_PASSED
+**Fire id**: ee281828
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:18:55Z
+**Event**: SENSOR_FIRED
+**Fire id**: e37495f3
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:18:55Z
+**Event**: SENSOR_PASSED
+**Fire id**: e37495f3
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T01:19:01Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: U2 nfr-design 前提 P1〜P4 の要約確認（質問なし）
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T01:19:46Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:19:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Context**: construction > u2-domain-es-core > nfr-design > nfr-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:19:55Z
+**Event**: SENSOR_FIRED
+**Fire id**: c671968e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:19:55Z
+**Event**: SENSOR_PASSED
+**Fire id**: c671968e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:19:55Z
+**Event**: SENSOR_FIRED
+**Fire id**: cd38e415
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:19:55Z
+**Event**: SENSOR_PASSED
+**Fire id**: cd38e415
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-23T01:19:58Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Questions SHA-256**: f1834c313d730955f3afd2b8f516e8d0295a7cee0262be8abb46d2574f420651
+**Unit**: u2-domain-es-core
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:20:32Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Context**: construction > u10-ci-governance > nfr-design > security-design.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:20:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 551c3ccc
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:20:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: 551c3ccc
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:20:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2c6e2557
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:20:32Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2c6e2557
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-2c6e2557.md
+**Findings count**: 3
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T01:20:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u10-nfr-design-r2
+**Agent ID**: areview-u10-nfr-design-r2-780e6e7cd41ce326
+**Message**: ## レビュー完了\n\nU10 (u10-ci-governance) の nfr-design 回復レビュー（advisory, iteration 2）を完了し、team-lead に結果を報告しました。\n\n**判定: NOT-READY**（Major 3件、Minor 1件）\n\n主な発見: iteration 1→2 で意図された既知の更新（TOLERANCE 0.05、正規表現修正、too
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:21:11Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Context**: construction > u2-domain-es-core > nfr-design > security-design.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:21:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: dea909d3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:21:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: dea909d3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:21:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8531ac82
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:21:11Z
+**Event**: SENSOR_FAILED
+**Fire id**: 8531ac82
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-8531ac82.md
+**Findings count**: 3
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:21:54Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+**Context**: construction > u2-domain-es-core > nfr-design > logical-components.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:21:54Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3d287ee3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:21:54Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3d287ee3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:21:54Z
+**Event**: SENSOR_FIRED
+**Fire id**: 47598d56
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:21:54Z
+**Event**: SENSOR_FAILED
+**Fire id**: 47598d56
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-47598d56.md
+**Findings count**: 3
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+**Context**: construction > u2-domain-es-core > nfr-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2c700154
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: 2c700154
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 23df3641
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: SENSOR_FAILED
+**Fire id**: 23df3641
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-23df3641.md
+**Findings count**: 5
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: e172ac2a
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:22:05Z
+**Event**: SENSOR_FAILED
+**Fire id**: e172ac2a
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-e172ac2a.md
+**Findings count**: 77
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:22:38Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:b18c4ae15cf4aab57f9747ed0fefb043c804d56401fc5b357ee6341079dd6d10
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T01:22:38Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:b18c4ae15cf4aab57f9747ed0fefb043c804d56401fc5b357ee6341079dd6d10
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:22:38Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:9be4ce81e7935a4d7e66a319fc20f1f28eb0b3f21211ca185044246b19c66b90
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:18Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:27Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:29Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:39Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:43Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:45Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:47Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:49Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:24:53Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:25:02Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:25:05Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:25:09Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:25:11Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/security-design.md
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T01:25:20Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Write
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-design/traceability.json
+**Stage**: nfr-design
+**Unit**: u10-ci-governance
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:28:27Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Context**: construction > u2-domain-es-core > nfr-design > security-design.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:28:27Z
+**Event**: SENSOR_FIRED
+**Fire id**: 23e10e62
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:28:27Z
+**Event**: SENSOR_PASSED
+**Fire id**: 23e10e62
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:28:27Z
+**Event**: SENSOR_FIRED
+**Fire id**: ac0d39e7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:28:27Z
+**Event**: SENSOR_FAILED
+**Fire id**: ac0d39e7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-ac0d39e7.md
+**Findings count**: 3
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T01:28:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u2-nfr-design-r1
+**Agent ID**: areview-u2-nfr-design-r1-22e255ded59b30cf
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\nU2（u2-domain-es-core）の nfr-design 成果物（security-design.md / logical-components.md / traceability.json）をレビューし、`security-design.md` 末尾に `## Review` セクションを
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:29:23Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:85f9f83e35fb88550084b7d62517662ce1b809499311eef08b5799e82f45a20a
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T01:29:23Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: READY
+**Artifact Fingerprint**: sha256:85f9f83e35fb88550084b7d62517662ce1b809499311eef08b5799e82f45a20a
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-23T01:29:23Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-design
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:29:23Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Artifact Fingerprint**: sha256:b405f538c43e4dc8fbc63e7c414436b5233e9e16a2a2ca270a040880ded35989
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:29:29Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+**Context**: inception > domain-design > decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:29:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1334e879
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:29:29Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1334e879
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:29:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: fe44cbc9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:29:29Z
+**Event**: SENSOR_FAILED
+**Fire id**: fe44cbc9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-fe44cbc9.md
+**Findings count**: 4
+
+---
+
+## Unit Started
+**Timestamp**: 2026-08-23T01:30:39Z
+**Event**: UNIT_STARTED
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:33:53Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Context**: construction > u10-ci-governance > code-generation > code-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:33:53Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5fbe47ec
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:33:53Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5fbe47ec
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:33:53Z
+**Event**: SENSOR_FIRED
+**Fire id**: deb2c7bb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:33:53Z
+**Event**: SENSOR_FAILED
+**Fire id**: deb2c7bb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/code-summary.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-deb2c7bb.md
+**Findings count**: 4
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T01:34:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: review-u10-codegen-r2
+**Agent ID**: areview-u10-codegen-r2-a03161f9f06d08d4
+**Message**: ## 完了報告\n\nU10 CI ガバナンス（code-generation、iteration 2 回復レビュー）を完了し、判定を team-lead に報告しました。\n\n**判定: NOT-READY**（Critical 1 件・Major 2 件）\n\n- **Critical**: `code-summary.md` が review-thread ゲート（superseding #9、`.
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:35:35Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-plan.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:35:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0affefd9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:35:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0affefd9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:35:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9977939e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:35:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9977939e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Duration ms**: 21
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:36:05Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md
+**Context**: construction > u2-domain-es-core > code-generation > unit-test-instructions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:36:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: a61c8cca
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:36:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: a61c8cca
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:36:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 81d6822f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T01:36:05Z
+**Event**: SENSOR_FAILED
+**Fire id**: 81d6822f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-81d6822f.md
+**Findings count**: 5
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T01:36:45Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:36:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: 99fc3228
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:36:46Z
+**Event**: SENSOR_PASSED
+**Fire id**: 99fc3228
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:36:46Z
+**Event**: SENSOR_FIRED
+**Fire id**: b8fff25f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:36:46Z
+**Event**: SENSOR_PASSED
+**Fire id**: b8fff25f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Duration ms**: 18
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T01:36:51Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: U2 Plan Approval（code-generation-plan.md + Testing Contract + unit-test-instructions.md、前提 P1〜P3）
+**Options**: Approve Plan,Request Changes
+**Unit**: u2-domain-es-core
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T01:37:00Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:3af2fc7a09cc87432e5c12eb841f8e466f0c0221f76bfac18d398e9c2cac6a8b
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T01:37:01Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u10-ci-governance
+**Iteration**: 2
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:3af2fc7a09cc87432e5c12eb841f8e466f0c0221f76bfac18d398e9c2cac6a8b
+**Source Fingerprint**: 6bcb384ad715f985df7e4760b0bc4e26fac840f5
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T01:37:50Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T01:38:09Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:38:09Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9ce15c34
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:38:09Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9ce15c34
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T01:38:09Z
+**Event**: SENSOR_FIRED
+**Fire id**: e45588d5
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T01:38:09Z
+**Event**: SENSOR_PASSED
+**Fire id**: e45588d5
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Duration ms**: 17
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-23T01:38:14Z
+**Event**: QUESTION_ANSWERED
+**Stage**: code-generation
+**Details**: Approve Plan
+**Unit**: u2-domain-es-core
+
+---
+
+## Bolt Started
+**Timestamp**: 2026-08-23T01:38:14Z
+**Event**: BOLT_STARTED
+**Bolt names**: B3
+**Batch number**: 1
+**Walking skeleton**: false
+
+---

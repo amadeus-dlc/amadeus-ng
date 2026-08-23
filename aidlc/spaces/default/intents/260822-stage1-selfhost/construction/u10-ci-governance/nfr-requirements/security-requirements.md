@@ -71,35 +71,31 @@
 
 **Verdict:** READY
 **Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-08-22T17:20:29Z
-**Iteration:** 1（advisory, unit: u10-ci-governance）
+**Date:** 2026-08-23T00:36:45Z
+**Iteration:** 2(advisory, recovery, unit: u10-ci-governance)
 
 ### Findings
 
 | # | Severity | Location | Finding | Recommendation |
 |---|---|---|---|---|
-| 1 | Minor | security-requirements.md §5 適用外 / §3 STRIDE（Denial of Service 行） | practices-discovery の devsecops 寄稿（`inception/practices-discovery/contributions/aidlc-devsecops-agent.md:28`）は、SHA ピン留めと Dependabot（`github-actions` + `cargo` エコシステム）をセットの任意事項として扱っている。STRIDE の DoS 行は SHA ピン留めの見送りを明示するが、Dependabot には本文中どこにも言及がない — 見送りなのか未検討なのか成果物だけでは判別できない。 | §5 か STRIDE の DoS 行に一文追加し、「Dependabot は SHA ピン留めとセットで本 intent では見送り、後続 intent で検討」と明記する（SHA ピン留めと対称にする）。 |
-| 2 | Minor | security-requirements.md §2 表、NFR4.2 合格基準 | 合格基準が「ローカルと CI の `rustc --version` が同一」（実測可能）と「toolchain 更新は PR でのみ」（運用規範、機械検証不可）を1セルに混在させている。 | 機械検証可能な基準と運用ルールを分けて書く。運用ルールは §1 の信頼境界か注記に移すと、後続 build-and-test / ci-pipeline での受入試験がしやすい。 |
-| 3 | Minor | security-requirements.md §2 表、NFR2.1・NFR2.2 合格基準 | NFR2.1 の合格基準は「赤のまま merge queue に入れた PR がマージされない」という否定側のみを検証する。tech-stack-decisions.md §1 が採用する `strict_required_status_checks_policy: true` は merge queue の ALLGREEN グルーピングと重ねると、ブランチ最新性要求がキュー投入をブロックする相互作用が知られており、正常系（緑の PR が最後まで squash-merge される）の実地確認が要求文に無い。NFR2.2 は「3 ジョブ成功が Actions 履歴で確認できる」までで、マージ完了までは確認しない。 | NFR2.1 か NFR2.2 に正常系の受入行を追加する: 「green な PR が 1 回、merge queue を通って squash-merge まで完走する（実地 1 回）」。Bolt B2 の実装時に併せて確認する。 |
+| 1 | Major | `security-requirements.md` NFR2.4(§2) | NFR2.4 の合格基準はいまも「同一コードの 2 回計測で line coverage の差が 0.00pp」「`TOLERANCE=0.01` で相対ゲートが誤検知しない」と書かれているが、実装済みの `scripts/coverage.sh:45` は `TOLERANCE=0.05` であり、同じ Unit の `tech-stack-decisions.md` §1・§3 と `superseding-decisions.md` #1 は「PBT シード固定後も `fs_workspace_lock.rs:237` の並行テスト由来で ±1 行(0.0175pp)の揺れが残るため差 0.00pp は未達、U3 のロック退役後に 0.01 へ引き締める」と明記している。同一 Unit 内の 3 文書が食い違ったまま — この主成果物だけが暫定値(0.05)と未達の事実を反映していない。 | NFR2.4 の合格基準を「`TOLERANCE=0.05`(暫定)。2 回計測の差は PBT 由来の揺れは 0.00pp まで決定化済みだが、FS ロック並行テスト由来の残差(実測 0.0175pp)により全体では非 0。U3 のロック退役(ADR-007)後に 0.01 へ引き締める」へ書き換える。 |
+| 2 | Major | `security-requirements.md` §1 / NFR2.1 / NFR4.4 / §3 STRIDE、`tech-stack-decisions.md` 全体 | `superseding-decisions.md` #9(2026-08-23T00:40Z、オーナー指示、"追記" — 同 #10 が明記するとおり凍結文書への反映対象は #1〜#8 のみで #9 は含まれない)以降、`.github/workflows/ci.yml` には `review-thread-resolution` ジョブ(j5ik2o/ci の外部再利用ワークフロー、SHA 固定呼び出し)と `ci-success` 集約ジョブが追加され、ruleset「main」の `required_status_checks` は **4 コンテキスト**(`check`/`quint`/`coverage`/`CI Success`)に拡張済み — `ruleset/2026-08-23-ci-success/after.json`(updated_at 2026-08-23T09:15:41+09:00)で確認。ところが本成果物の NFR2.1 は「3 コンテキスト」のまま、NFR4.4 は「`permissions: contents: read` を明示(ジョブ個別の昇格なし)」「3 ジョブ + audit が read 権限で成功」と書いている一方、実装の `review-thread-resolution` ジョブは `permissions: contents: read, checks: write, issues: read, pull-requests: read, statuses: write` という**ジョブ個別の権限昇格**を明示的に持つ(`.github/workflows/ci.yml` の該当ジョブ定義、`review-thread-resolution.yml` も同様)。NFR4.4 の「ジョブ個別の昇格なし」という最小権限の主張は現行実装と矛盾している。§1(信頼境界)・§3(STRIDE の Elevation of Privilege 行)・`tech-stack-decisions.md`(選定表)のいずれにも、この外部 SHA 固定ワークフロー呼び出しと書込権限を持つ新しいガバナンス層への言及が一切ない。 | (a) NFR2.1 を「4 コンテキスト(check/quint/coverage/CI Success)」に訂正。(b) NFR4.4 の「ジョブ個別の昇格なし」を「`review-thread-resolution` ジョブのみ `checks: write` / `statuses: write` / `issues: read` / `pull-requests: read` を個別付与(未解決レビュースレッドの検出に必要な最小権限)」に訂正。(c) §1 信頼境界と §3 STRIDE(Elevation of Privilege)に、外部再利用ワークフロー(SHA 固定 `j5ik2o/ci/.../review-thread-resolution.yml@9cf0e9a8...`)という新しい信頼境界・攻撃面を追記。(d) `tech-stack-decisions.md` §1 に選定行(review-thread-resolution ゲート採用・SHA 固定・不採用案)を追加。 |
+| 3 | Minor | `security-requirements.md` NFR4.2(§2、合格基準列) | 合格基準が「ローカルと CI の `rustc --version` が同一。toolchain 更新は PR でのみ」のまま — 機械検証可能な基準(rustc バージョン一致)と運用規範(PR 経由での更新)が同じセルに混在している(iteration 1 の Minor 2 の再掲)。`nfr-design/security-design.md:133` はこの指摘を「要求文書側の記述粒度の指摘であり、nfr-requirements の管轄」として明示的に本ステージへ差し戻している — 本成果物側での対応がまだ空白のまま。 | 合格基準を機械検証可能な行(`rustc --version` 一致)と運用規範の行(toolchain 更新は PR 経由)に分けて記載する、または運用規範を「出典」列や別注記に移す。 |
+| 4 | Minor | `security-requirements.md` NFR2.1(§2、合格基準列) | NFR2.1 の合格基準は「赤のまま merge queue に入れた PR がマージされない」という否定的経路のみを検証対象にしており、肯定的経路(全緑の PR が merge queue を完走してマージされる)への言及がない。`superseding-decisions.md` #3 は PR #25 が `merge_group` CI 緑で完走し squash-merge されたことを「NFR2.1 の正常系受入を満たす」と記録しているが、この事実は本成果物の合格基準列には反映されていない(iteration 1 の Minor 3 の再掲。`nfr-design/security-design.md` 側では正常系受入を明記済みだが、本成果物側は据え置き)。 | 合格基準に正常系(「全緑の PR が merge queue を経て squash-merge される」)を追記する。実績として PR #25(2026-08-22T23:44:17Z UTC 換算)を出典に添えられる。 |
+| 5 | Minor | `security-requirements.md` §5 適用外 / §3 脅威の検討 | Dependabot(`github-actions` / `cargo`)を本 intent で見送った裁定(`practices-discovery/evidence.md`、`nfr-design/nfr-design-questions.md`)への言及が本成果物に無い。SHA ピン留め見送りは §3 Denial of Service 行と `tech-stack-decisions.md` §2 に明記されているが、Dependabot は非対称に欠落している(iteration 1 の Minor 1 の再掲)。`nfr-design/security-design.md` §7 では両者を対称に記載済みで実質的には解消しているが、本成果物自体は単体で読んだときにこの非対称さが残る。 | §3 または §5 に一行、「Dependabot(github-actions/cargo)の導入は SHA ピン留めと同様に本 intent では見送り、後続 intent で扱う」を追記する。 |
 
 ### Validation Tool Results
 
-| チェック | コマンド | 結果 | 解釈 |
-|---|---|---|---|
-| traceability センサー | `bun .claude/tools/aidlc-sensor-traceability.ts --stage nfr-requirements --output-path .../traceability.json` | `{"pass":true,"gaps":[],"orphans":[],"missing_from_table":[],"missing_from_upstream_ids":[],"invalid_entries":[],"invalid_targets":[],"findings_count":0}` | upstream_ids（NFR1〜5）と coverage 行が過不足なく一致。`reverse` フィールド省略はセンサー側で許容（`obj.reverse ?? []`）— 欠落ではない |
-| required-sections センサー（security-requirements.md） | `bun .claude/tools/aidlc-sensor-required-sections.ts --stage nfr-requirements --output-path .../security-requirements.md` | `{"pass":true,"h2_count":5,...}` | 5 H2、フレームワーク既定の ≥2 を満たす |
-| required-sections センサー（tech-stack-decisions.md） | 同上（対象ファイル差し替え） | `{"pass":true,"h2_count":3,...}` | 3 H2、既定を満たす |
-| `gh api repos/amadeus-dlc/amadeus-ng/rulesets/21190453`（読取） | — | `merge_queue`（SQUASH/ALLGREEN）は active、`required_status_checks` ルールは無し、`bypass_actors` は空 | §1「実地の現状」の記述と完全一致（P1 前提の裏取り） |
-| `.github/workflows/ci.yml` 実物突合 | `cat .github/workflows/ci.yml` | `merge_group` トリガ無し、`permissions` 未指定、toolchain は `dtolnay/rust-toolchain@stable`（floating）、`tools/lint` の CI ステップ無し | §1・NFR2.2・NFR2.3・NFR4.2・NFR4.4 の「現状」記述と一致 |
-| `Cargo.toml` / `tools/lint/Cargo.toml` 実物突合 | `cat Cargo.toml`, `cat tools/lint/Cargo.toml` | `[workspace.lints.rust]` に `unsafe_code` 無し、`tools/lint` の `[lints.rust]` も `missing_docs` のみ | NFR4.3・tech-stack-decisions.md の「現状はクレート個別 attribute」記述と一致 |
-| `rust-toolchain.toml` 存在確認 | `test -f rust-toolchain.toml` | 不在 | NFR4.2 の前提（新規作成が必要）と一致 |
-| `modules/app/aidlc/src/main.rs` 実物確認 + 全クレート `forbid(unsafe_code)` grep | `grep -rn "forbid(unsafe_code)" modules/ tools/` | `main.rs` 以外の全 9 クレート（`tools/lint` 含む）に `#![forbid(unsafe_code)]` あり、`main.rs` のみ無し | §1「`main.rs` に漏れ」の主張が正確（過大でも過小でもない） |
-| `Cargo.lock` / `tools/lint/Cargo.lock` パッケージ数 | `grep -c "^name = "` | ルート 74、`tools/lint` 5 | nfr-requirements-questions.md P4 の「74 パッケージ」「5 パッケージ」実測値と一致 |
-| Dependabot 言及の横断検索 | `grep -rn "Dependabot" inception/practices-discovery/` | `contributions/aidlc-devsecops-agent.md:28` のみ（evidence.md の確定アクション・インタビュー Q4〜Q8 には無し） | Finding #1 の根拠。SHA ピン留めとは非対称な扱い |
-| PBT `ProptestConfig` 実装状況 | `grep -rn "ProptestConfig" modules/` | ヒット無し | tech-stack-decisions.md §3「未決」の記載どおり未着手（虚偽記載なし、正直な未決扱い） |
+| Tool | Result | Interpretation |
+|---|---|---|
+| `aidlc-sensor-traceability.ts --stage nfr-requirements` | `{"pass":true,"gaps":[],"orphans":[],"findings_count":0}` | traceability.json は upstream_ids(NFR1〜5)と coverage 配列が一致し、N/A の正当化も含め機械的な破綻なし。 |
+| `aidlc-sensor-required-sections.ts`(security-requirements.md) | `{"pass":true,"h2_count":5}` | 必須 H2 見出し(範囲/要求/脅威/データ分類/適用外)は揃っている。 |
+| `aidlc-sensor-required-sections.ts`(tech-stack-decisions.md) | `{"pass":true,"h2_count":3}` | 必須 H2 見出し(選定/依存差分/未決)は揃っている。 |
+| `grep TOLERANCE scripts/coverage.sh` | `TOLERANCE=0.05` | Finding #1 の裏付け — 成果物の記載(0.01/0.00pp)と実装が不一致。 |
+| `cat .github/workflows/ci.yml` | `review-thread-resolution` / `ci-success` ジョブと `permissions: checks: write, statuses: write, ...` を確認 | Finding #2 の裏付け — 成果物が記述しない新しいガバナンス層と権限昇格が実在する。 |
+| `cat ruleset/2026-08-23-ci-success/after.json` | `required_status_checks` に 4 コンテキスト(check/quint/coverage/CI Success) | Finding #2 の裏付け — ruleset の実地状態は「3 コンテキスト」という記載と食い違う。 |
+| `grep C1/C2 contract-summary.md` | C1・C2 は U7 の外部契約、U10 には契約面が無いという記載と整合 | §1 冒頭の契約面に関する記述は正しく、破綻なし。 |
 
 ### Summary
 
-U10（packaging）の NFR 要求は、上流（FR9.1〜9.6・NFR2・NFR4・unit-of-work.md・practices-discovery 確定アクション）との対応が全数一致し、`gh api` の ruleset・`ci.yml`・`Cargo.toml`・`tools/lint/`・`main.rs` の実地確認ともすべて整合していた（虚偽・誇張・古い実測値は見つからなかった）。FR9.6（エラーハンドリング規則）が U9 の責務としてU10のスコープから正しく除外されている点、`dtolnay/rust-toolchain@master` への切替や `cargo audit --file` の使い分けなど技術選定も妥当。3 件の Minor 所見（Dependabot の扱いの非対称な記載、NFR4.2 合格基準の運用規範との混在、merge queue 正常系の受入未記載）はいずれも成果物の質を高める改善提案であり、実装を妨げるものではない。Critical / Major 所見は無く、developer が本書だけで Bolt B2 を実装できる水準にある。
-
-**更新ファイル:** `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-requirements/security-requirements.md`（`## Review` セクションを末尾に追加）。他のファイルは編集していない。
+構造面(必須見出し・traceability 上流ID網羅)は健全で、iteration 1 で確認された FR9.1〜9.5/NFR2/NFR4 の要求分解自体に破綻はない。一方でこの回復レビューが本来の目的とした「実装後の実態との整合」については、2 件の Major な乖離を検出した — (1) NFR2.4 の合格基準がいまも達成済みでない `TOLERANCE=0.01`/差 0.00pp を掲げたままで、同じ Unit の tech-stack-decisions.md や superseding-decisions.md 自身がすでに「暫定 0.05」と認めている自己矛盾、(2) オーナー指示による最新の追加(review-thread-resolution ゲート・CI Success 集約・required checks の 4 コンテキスト化・ジョブ個別の権限昇格)が superseding-decisions.md #9 として記録済み・実装済み・GitHub 側にも反映済みであるにもかかわらず、本成果物の NFR2.1・NFR4.4・§1・§3 のいずれにも一切反映されていない(#9 は明示的に「#1〜#8 のみ反映」の対象外)。後者は特に NFR4.4 の「ジョブ個別の昇格なし」という最小権限の主張が現行実装と正面から矛盾しており、セキュリティ要求文書としての信頼性に関わる。Critical(実装・ランタイムを壊す欠陥)は無く、Major は 2 件、Minor は 3 件(いずれも iteration 1 由来の再掲・部分未解消)であり、advisory の目安(Critical 0 かつ Major ≤ 2)は満たすため Verdict は READY とするが、Major 2 件はいずれも「セキュリティ要求文書が現行の実地状態を誤って記述している」という同種の実害を持つため、承認ゲートでは本文修正(#1・#2)を先に済ませることを強く推奨する。
