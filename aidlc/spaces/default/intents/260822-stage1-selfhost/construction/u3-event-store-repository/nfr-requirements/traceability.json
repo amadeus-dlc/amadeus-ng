@@ -1,0 +1,12 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u3-event-store-repository",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5" },
+    { "id": "NFR3", "status": "OK", "target": "NFR3.1, NFR3.2, NFR3.3, NFR3.4, NFR3.5" },
+    { "id": "NFR4", "status": "OK", "target": "NFR4.1, NFR4.2, NFR4.3, NFR4.4, NFR4.5, NFR4.6" },
+    { "id": "NFR5", "status": "N/A", "target": "性能は非目標（requirements.md NFR5）— security-requirements §5 に明示" }
+  ]
+}

@@ -15610,3 +15610,322 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-08-23T08:51:18Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T08:51:58Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:51:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 57a8d43e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:51:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: 57a8d43e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:51:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 37497537
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:51:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: 37497537
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 17
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T08:52:02Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: U3 nfr-requirements 前提 P1〜P6 の要約確認（質問なし）
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T09:01:58Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T09:02:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:02:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 526854c1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:02:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: 526854c1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:02:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 708ef452
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:02:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: 708ef452
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Duration ms**: 17
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T09:03:09Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > security-requirements.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:09Z
+**Event**: SENSOR_FIRED
+**Fire id**: 223415c1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:03:09Z
+**Event**: SENSOR_PASSED
+**Fire id**: 223415c1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:09Z
+**Event**: SENSOR_FIRED
+**Fire id**: 28adbc1d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T09:03:09Z
+**Event**: SENSOR_FAILED
+**Fire id**: 28adbc1d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-28adbc1d.md
+**Findings count**: 3
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T09:03:28Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7bf7d43a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:03:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7bf7d43a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: edea5069
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T09:03:28Z
+**Event**: SENSOR_FAILED
+**Fire id**: edea5069
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-edea5069.md
+**Findings count**: 4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Context**: construction > u3-event-store-repository > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: SENSOR_FIRED
+**Fire id**: 37f97a70
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: SENSOR_PASSED
+**Fire id**: 37f97a70
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8b71d20e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: SENSOR_FAILED
+**Fire id**: 8b71d20e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-8b71d20e.md
+**Findings count**: 4
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: SENSOR_FIRED
+**Fire id**: 01096149
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T09:03:31Z
+**Event**: SENSOR_FAILED
+**Fire id**: 01096149
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-01096149.md
+**Findings count**: 65
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-23T09:03:40Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: 9f8b1507dc6a13e55d4e66046f77d6f48d0810a8a53bbfb57a07d63651eb0f18
+**Unit**: u3-event-store-repository
+
+---
