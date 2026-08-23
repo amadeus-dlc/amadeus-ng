@@ -34,7 +34,7 @@ practices-discovery のドラフト（`evidence.md` 確定アクション 5）�
 - C. 今回は見送る（FR9.6 を後続 intent へ）
 - X. Other (please specify)
 
-[Answer]: 
+[Answer]: A
 
 ### Q2. `IntentId` の正本 — 01 号（UUIDv7）と Bolt B3 実装（記録ディレクトリ名）の不一致
 
@@ -49,7 +49,7 @@ kebab）を受理している（U2 機能設計 entities.md の記述を実デ�
 - B. 記録ディレクトリ名を集約 ID にする（01 号 §3 の `IntentId` 定義を改訂 — B4 の FR8.2 に含める）
 - X. Other (please specify)
 
-[Answer]: 
+[Answer]: A
 
 ### Q3. B 束（FR8.2）の範囲 — 設計監査後に確定した裁定を canon 追従へ含めるか
 
@@ -70,7 +70,7 @@ ADR / 契約で確定した次の事項も同じ B4 で仕様へ追従させる�
 - C. FR8.2 の元の列挙だけにする（追加分は後続 intent）
 - X. Other (please specify)
 
-[Answer]: 
+[Answer]: A
 
 ## 前提（確認事項）
 
@@ -80,3 +80,25 @@ ADR / 契約で確定した次の事項も同じ B4 で仕様へ追従させる�
 - P2. コード変更なし（仕様・正本の文書のみ）。合格はレビュー確認 + `coding-rules/README.md` との無矛盾 + 各仕様の自己整合。
 - P3. 成果物は entities.md（改訂対象文書の一覧 = エンティティ）/ rules.md（改訂内容と合格条件 = BR）/ traceability.json（FR8.1 / FR8.2 / FR9.6 →
   BR）。functional-spec.md は spec kind のため作らない（produces_kinds）。
+
+## Consolidated Summary Confirmation
+
+- Q1 = A: FR9.6 のエラーハンドリング様式規則は改訂ドラフトのまま `coding-rules/error-handling.md` として追加（材料のみ・文言はアダプタ層・Display / Error 手実装・
+  thiserror / anyhow 不使用・`# Errors` 必須・`# Panics` なし、機械強制の現状と候補を明記）。README の一覧に追加
+- Q2 = A: `IntentId` = UUIDv7（`intents.json` の `uuid`、01 号維持）。記録ディレクトリ名は別の値（`IntentDirName`）。U2 の `IntentId::parse` の是正と
+  `dirName` 用の型の分離は Bolt B5（U3）で行い、U2 機能設計 entities と 01 号の記述を同期（本 Bolt では 01 号に `IntentDirName` の行を追加）
+- Q3 = A: B 束は元の列挙 + ADR-008（12 号 / 01 号の識別子・内容版、10 号 `find_by_id`）+ ES 化の帰結（01 号集約表・11 号ポート表）+ B3 確定事項
+  （gated = phase ≠ initialization、Started の自己完結、effective_plan の集約所有）+ deviations.md 登録 — すべて B4 に含める（規模 S → M 相当、文書のみ）
+- 前提 P1〜P3: A 束 4 点、コード変更なし、成果物は entities / rules / traceability（functional-spec は作らない）
+- 追加 1（オーナー質問「WorkspaceModel は集約か」への回答から）: 01 号 §3.3 の workspace 集約候補を ES 化後の姿に改訂（`Intent` / `Space` / `Worktree` が集約、
+  `StateFile`・`AuditShard` はリードモデル、`WorkspaceLock` は退役）。`components.md` の `WorkspaceModel` を「workspace 語彙（値オブジェクト）」に縮退させ、
+  状態ファイル描画の関数群は ReadModelUpdater（U4）へ移す方針を明記（コード移動は U4 の Bolt）
+- 追加 2（オーナー確認の原則）: 01 号の設計原則に「ドメインモデルは集約（エンティティ）と値オブジェクトが主役。純粋関数としてのドメインサービスは消極的に使う。
+  ドメインモデル・ドメインサービスは永続化責務を持たない（永続化を呼ばない）。永続化の指揮はユースケース層（trait はユースケース層、実装はアダプタ層）」を明記
+
+Does this all look correct before I generate the artifact?
+
+- Looks correct
+- Request changes
+
+[Answer]: Looks correct

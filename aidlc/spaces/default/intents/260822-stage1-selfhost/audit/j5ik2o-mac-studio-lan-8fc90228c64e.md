@@ -12748,3 +12748,490 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Batch number**: 1
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-23T04:28:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T04:28:37Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Context**: construction > u9-canon-docs > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: f84662ab
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: f84662ab
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: be10b05a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: be10b05a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T04:28:40Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Context**: construction > u9-canon-docs > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:40Z
+**Event**: SENSOR_FIRED
+**Fire id**: 72a19d33
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:40Z
+**Event**: SENSOR_PASSED
+**Fire id**: 72a19d33
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:40Z
+**Event**: SENSOR_FIRED
+**Fire id**: 080200cd
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:40Z
+**Event**: SENSOR_PASSED
+**Fire id**: 080200cd
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 16
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T04:28:43Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Context**: construction > u9-canon-docs > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5715c5db
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:43Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5715c5db
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1f9310e3
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:43Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1f9310e3
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T04:28:54Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Context**: construction > u9-canon-docs > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:54Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7129f745
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:54Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7129f745
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:28:54Z
+**Event**: SENSOR_FIRED
+**Fire id**: db52ee7e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:28:54Z
+**Event**: SENSOR_PASSED
+**Fire id**: db52ee7e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 16
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-23T04:29:03Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: Q1=A（FR9.6 改訂ドラフトのまま採用）, Q2=A（IntentId = UUIDv7、dirName は別型、是正は B5）, Q3=A（B 束に ADR-008 / ES 化の帰結 / B3 確定事項 / deviations 登録をすべて含める）
+**Unit**: u9-canon-docs
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T04:29:03Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U9 FD 要約確認（Q1〜Q3 = A、P1〜P3）
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T04:40:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T04:44:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T04:46:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T04:47:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Context**: construction > u9-canon-docs > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:47:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 55709106
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:47:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: 55709106
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:47:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1decf8a0
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:47:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1decf8a0
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-23T04:47:15Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Questions SHA-256**: 4feab7f76ad28e96c0097144fd39343a90c9c91de67c8b122fe9c4aa57c14af9
+**Unit**: u9-canon-docs
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T04:47:57Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Context**: construction > u9-canon-docs > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:47:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4ab7b2bb
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:47:57Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4ab7b2bb
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:47:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3816000d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:47:57Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3816000d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Duration ms**: 18
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T04:49:41Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/rules.md
+**Context**: construction > u9-canon-docs > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:49:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5cce27dc
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:49:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5cce27dc
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/rules.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:49:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 217f7432
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:49:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 217f7432
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/rules.md
+**Duration ms**: 19
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+**Context**: construction > u9-canon-docs > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: a4f17f05
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: SENSOR_PASSED
+**Fire id**: a4f17f05
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: b9105e41
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: SENSOR_PASSED
+**Fire id**: b9105e41
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: 555da7e8
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T04:49:47Z
+**Event**: SENSOR_FAILED
+**Fire id**: 555da7e8
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-555da7e8.md
+**Findings count**: 35
+
+---

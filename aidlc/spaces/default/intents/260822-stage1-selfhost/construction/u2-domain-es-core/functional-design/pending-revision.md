@@ -14,3 +14,6 @@
 5. `rules.md` BR3.1 / `functional-spec.md` W4: `EngineSignal` の導出で UnparkThenResume / ResumeMenu / NewWorkRouting は Done に畳む（Quint 語彙外）。
 6. `entities.md` / `rules.md` BR5.2: 公開面に `WorkflowExecutionEventPayload` / `WorkflowExecutionSnapshotBuilder` / `IntentIdError` / `StartRequest` を追加。
 7. 所見 20 / BR2.2: 「索引 0 は EXECUTE」を独立ガード（cursor_in_scope の初期条件）として明記。
+8. （オーナー裁定 2026-08-23、U9 FD Q2 = A）`IntentId` の正本は **UUIDv7**（`intents.json` の `uuid`、01 号 §3）。項目 2 の「一般 kebab」は
+   記録ディレクトリ名用の別の値（`IntentDirName`）として書き分ける。U2 の `IntentId::parse` を UUIDv7 形式に改める是正は Bolt B5（U3 —
+   `aggregate_id` を SQLite に書く最初の Unit）で行う。entities.md の IntentId 行を「UUIDv7（`intents.json` の uuid）」に、`IntentDirName` を新設。
