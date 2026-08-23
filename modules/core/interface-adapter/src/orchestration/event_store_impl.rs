@@ -1,4 +1,4 @@
-//! `SqliteEventStore` — `EventStore` と `JournalReader` の SQLite 実装 (BR2.1〜BR2.4 / BR2.6)。
+//! `EventStoreImpl` — `EventStore` と `JournalReader` の SQLite 実装 (BR2.1〜BR2.4 / BR2.6)。
 //!
 //! # なぜ共有ハンドルなのか
 //!
@@ -200,17 +200,17 @@ const fn civil_from_days(days: u64) -> (u64, u64, u64) {
 /// C6 の 3 表を持つ SQLite ストアへの**共有ハンドル**。
 ///
 /// `clone` は同じ接続を指す別のハンドルを返す (別プロセスからの再オープンではなく、
-/// 同一プロセス内での共有)。別の接続がほしい場合は [`SqliteEventStore::open`] を呼ぶ。
-pub struct SqliteEventStore<C> {
+/// 同一プロセス内での共有)。別の接続がほしい場合は [`EventStoreImpl::open`] を呼ぶ。
+pub struct EventStoreImpl<C> {
     path: StorePath,
     connection: Rc<RefCell<Connection>>,
     clock: Rc<C>,
 }
 
-impl<C> Clone for SqliteEventStore<C> {
+impl<C> Clone for EventStoreImpl<C> {
     /// 同じ接続と同じ時計を指すハンドルを返す (`C: Clone` は要らない)。
-    fn clone(&self) -> SqliteEventStore<C> {
-        SqliteEventStore {
+    fn clone(&self) -> EventStoreImpl<C> {
+        EventStoreImpl {
             path: self.path.clone(),
             connection: Rc::clone(&self.connection),
             clock: Rc::clone(&self.clock),
@@ -218,16 +218,16 @@ impl<C> Clone for SqliteEventStore<C> {
     }
 }
 
-impl<C> fmt::Debug for SqliteEventStore<C> {
+impl<C> fmt::Debug for EventStoreImpl<C> {
     /// 場所だけを描く (接続と時計は診断の材料にならない)。
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SqliteEventStore")
+        f.debug_struct("EventStoreImpl")
             .field("path", &self.path)
             .finish_non_exhaustive()
     }
 }
 
-impl<C: Clock> SqliteEventStore<C> {
+impl<C: Clock> EventStoreImpl<C> {
     /// ストアを開く (無ければ作る)。`busy_timeout` は既定の 5000ms (BR2.1)。
     ///
     /// 親ディレクトリ (`intents/`) は upstream の既存ディレクトリなので**作らない** —
@@ -237,23 +237,23 @@ impl<C: Clock> SqliteEventStore<C> {
     /// # Errors
     ///
     /// 親ディレクトリ欠落・権限・ディスク (`Io`)、対応範囲外の版 (`Schema`) を返す。
-    pub fn open(path: StorePath, clock: C) -> Result<SqliteEventStore<C>, EventStoreError> {
-        SqliteEventStore::open_with_busy_timeout(path, clock, DEFAULT_BUSY_TIMEOUT)
+    pub fn open(path: StorePath, clock: C) -> Result<EventStoreImpl<C>, EventStoreError> {
+        EventStoreImpl::open_with_busy_timeout(path, clock, DEFAULT_BUSY_TIMEOUT)
     }
 
     /// 書込ロックを待つ上限を指定してストアを開く。
     ///
     /// 既定 (5000ms) を変えるのは、待ち時間そのものを観測したい試験と、合成ルートが
-    /// 運用envelope を調整する場合だけである。意味論は [`SqliteEventStore::open`] と同じ。
+    /// 運用envelope を調整する場合だけである。意味論は [`EventStoreImpl::open`] と同じ。
     ///
     /// # Errors
     ///
-    /// [`SqliteEventStore::open`] と同じ。
+    /// [`EventStoreImpl::open`] と同じ。
     pub fn open_with_busy_timeout(
         path: StorePath,
         clock: C,
         busy_timeout: Duration,
-    ) -> Result<SqliteEventStore<C>, EventStoreError> {
+    ) -> Result<EventStoreImpl<C>, EventStoreError> {
         if path
             .as_path()
             .parent()
@@ -270,7 +270,7 @@ impl<C: Clock> SqliteEventStore<C> {
             .busy_timeout(busy_timeout)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         ensure_schema(&connection, path.as_path())?;
-        Ok(SqliteEventStore {
+        Ok(EventStoreImpl {
             path,
             connection: Rc::new(RefCell::new(connection)),
             clock: Rc::new(clock),
@@ -460,7 +460,7 @@ struct SnapshotRow {
 }
 
 impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
-    for SqliteEventStore<C>
+    for EventStoreImpl<C>
 {
     async fn persist_event(
         &mut self,
@@ -655,7 +655,7 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
     }
 }
 
-impl<C: Clock> JournalReader for SqliteEventStore<C> {
+impl<C: Clock> JournalReader for EventStoreImpl<C> {
     async fn events_after(
         &self,
         after: GlobalSeqNr,
@@ -775,10 +775,10 @@ mod tests {
     use core_domain::workspace::SpaceName;
 
     /// 一時ディレクトリ配下にストアを開く (親 dir は先に作る)。
-    fn open_store(dir: &tempfile::TempDir) -> SqliteEventStore<FakeClock> {
+    fn open_store(dir: &tempfile::TempDir) -> EventStoreImpl<FakeClock> {
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default_space());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
-        SqliteEventStore::open(path, FakeClock::new(0)).expect("開ける")
+        EventStoreImpl::open(path, FakeClock::new(0)).expect("開ける")
     }
 
     #[test]
@@ -798,7 +798,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("一時 dir");
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default_space());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
-        let store = SqliteEventStore::open_with_busy_timeout(
+        let store = EventStoreImpl::open_with_busy_timeout(
             path,
             FakeClock::new(0),
             Duration::from_millis(20),
@@ -859,8 +859,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("一時 dir");
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default_space());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
-        let store =
-            SqliteEventStore::open(path, FakeClock::new(1_787_443_200_000)).expect("開ける");
+        let store = EventStoreImpl::open(path, FakeClock::new(1_787_443_200_000)).expect("開ける");
         assert_eq!(store.now(), "2026-08-23T00:00:00Z");
     }
 

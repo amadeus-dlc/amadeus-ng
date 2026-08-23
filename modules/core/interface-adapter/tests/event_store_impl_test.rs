@@ -1,4 +1,4 @@
-//! `SqliteEventStore` の実装固有の契約 (BR2.1 / BR2.2 / BR2.3 / BR2.4 / BR1.4)。
+//! `EventStoreImpl` の実装固有の契約 (BR2.1 / BR2.2 / BR2.3 / BR2.4 / BR1.4)。
 //!
 //! ポートの面から見える約束は `workflow_execution_repository_contract.rs` が in-memory と
 //! 共有して検査する。本ファイルが持つのは**SQLite 実装にしか無い観測**である:
@@ -18,7 +18,7 @@ use std::time::Duration;
 use core_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
-use core_interface_adapter::orchestration::{SqliteEventStore, StorePath};
+use core_interface_adapter::orchestration::{EventStoreImpl, StorePath};
 use core_use_case::orchestration::{
     EventStore, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName,
 };
@@ -55,12 +55,12 @@ impl Fixture {
         Fixture { _dir: dir, path }
     }
 
-    fn store(&self) -> SqliteEventStore<FakeClock> {
-        SqliteEventStore::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
+    fn store(&self) -> EventStoreImpl<FakeClock> {
+        EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
     }
 
-    fn store_with_busy_timeout(&self, busy_timeout: Duration) -> SqliteEventStore<FakeClock> {
-        SqliteEventStore::open_with_busy_timeout(
+    fn store_with_busy_timeout(&self, busy_timeout: Duration) -> EventStoreImpl<FakeClock> {
+        EventStoreImpl::open_with_busy_timeout(
             self.path.clone(),
             FakeClock::new(NOW_MS),
             busy_timeout,
@@ -103,7 +103,7 @@ fn create_sql(conn: &Connection, table: &str) -> String {
 }
 
 /// genesis を書いたストアと、書込後に版を載せ替えた集約を返す。
-async fn seeded(fixture: &Fixture) -> (SqliteEventStore<FakeClock>, WorkflowExecution) {
+async fn seeded(fixture: &Fixture) -> (EventStoreImpl<FakeClock>, WorkflowExecution) {
     let mut store = fixture.store();
     let (aggregate, event) = genesis();
     store
@@ -162,7 +162,7 @@ async fn a_store_written_by_a_newer_schema_is_refused() {
         conn.pragma_update(None, "user_version", 2_i64)
             .expect("将来版を騙る");
     }
-    let err = SqliteEventStore::open(fixture.path, FakeClock::new(NOW_MS))
+    let err = EventStoreImpl::open(fixture.path, FakeClock::new(NOW_MS))
         .expect_err("対応外の版は開かない");
     assert_eq!(
         err,
@@ -176,7 +176,7 @@ async fn a_store_written_by_a_newer_schema_is_refused() {
 #[tokio::test]
 async fn a_missing_parent_directory_is_reported_as_io_not_found() {
     let fixture = Fixture::without_parent();
-    let err = SqliteEventStore::open(fixture.path.clone(), FakeClock::new(NOW_MS))
+    let err = EventStoreImpl::open(fixture.path.clone(), FakeClock::new(NOW_MS))
         .expect_err("親 dir を作らない (BR2.1)");
     assert!(
         matches!(
@@ -262,7 +262,7 @@ async fn the_connection_waits_five_seconds_for_a_busy_store() {
     let fixture = Fixture::new();
     let _store = fixture.store();
     // `busy_timeout` は接続ごとの設定なので、実装が開いた接続からしか観測できない。
-    // 値そのものの検査は `sqlite_event_store.rs` のインラインテストが持つ。
+    // 値そのものの検査は `event_store_impl.rs` のインラインテストが持つ。
     // ここでは「別の値を指定して開ける口がある」ことだけを固定する (短い timeout の観測用)。
     let _short = fixture.store_with_busy_timeout(Duration::from_millis(20));
 }

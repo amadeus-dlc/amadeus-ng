@@ -50,7 +50,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 | `EventType` | 86 語 22 カテゴリの閉集合＋MANDATORY 8。型は監査イベントスキーマ PL クレート（01 §3.3 の注のとおり） | E1 |
 | `AuthorityClass` | CLI_RESERVED(8) / CLI_PROTECTED(18) / MERGE_PROTECTED(26＋`DOCUMENT_*` prefix) の 3 deny-list。**スキーマ側宣言**（B5） | E1＋E3（拒否点） |
 | `AuditFieldKey` | `/^[A-Za-z][A-Za-z0-9 ._()/-]*$/`。`Event` は呼出側供給禁止（第二の `**Event**:` 行偽造の防止）、`Timestamp` は受理するが値は捨てる | E2 |
-| `LockIdentity`（退役 — ADR-007 / Bolt B5） | 登録簿（`intents.json`）の read-modify-write の直列化は `SqliteEventStore::within_write_transaction`（同一 DB の `BEGIN IMMEDIATE`）に置換された。旧 keying 規範（全 space の登録簿変更を単一バケットへ集約し、`activeIntent()` は keying に使わない）は「単一 DB = 単一バケット」でそのまま満たされる（U3 FD Q2 = A） | 退役 |
+| `LockIdentity`（退役 — ADR-007 / Bolt B5） | 登録簿（`intents.json`）の read-modify-write の直列化は `EventStoreImpl::within_write_transaction`（同一 DB の `BEGIN IMMEDIATE`）に置換された。旧 keying 規範（全 space の登録簿変更を単一バケットへ集約し、`activeIntent()` は keying に使わない）は「単一 DB = 単一バケット」でそのまま満たされる（U3 FD Q2 = A） | 退役 |
 
 ### 2.3 ドメインサービス（純関数）
 
@@ -78,7 +78,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 | ポート | 消費するユースケース | 契約 | 実装の所在 |
 | --- | --- | --- | --- |
-| `WorkflowExecutionRepository` | orchestration の `Report` / `Continue` / `Park` / `Jump*` / `Recompose` / `SetAutonomy`（10 §3） | 集約 `WorkflowExecution` の ES 形 Repository。`store(event, aggregate)`（単一イベント＋適用後集約を同一 Tx、楽観 `version`）/ `find_by_id(&IntentId)`（スナップショット＋差分 replay で完全再構成）— C3 / ADR-006 | `WorkflowExecutionRepositoryImpl`（`SqliteEventStore` を内包 — C6 のスキーマ、ストアファイルは `aidlc/spaces/<space>/intents/.aidlc-store.sqlite`（U3 FD Q1 = A））。登録簿の直列化は `SqliteEventStore::within_write_transaction`（U3 FD Q2 = A）。テストダブルは `InMemoryWorkflowExecutionRepository`（gateway-taxonomy §5、Bolt B5 実装） |
+| `WorkflowExecutionRepository` | orchestration の `Report` / `Continue` / `Park` / `Jump*` / `Recompose` / `SetAutonomy`（10 §3） | 集約 `WorkflowExecution` の ES 形 Repository。`store(event, aggregate)`（単一イベント＋適用後集約を同一 Tx、楽観 `version`）/ `find_by_id(&IntentId)`（スナップショット＋差分 replay で完全再構成）— C3 / ADR-006 | `WorkflowExecutionRepositoryImpl`（`EventStoreImpl` を内包 — C6 のスキーマ、ストアファイルは `aidlc/spaces/<space>/intents/.aidlc-store.sqlite`（U3 FD Q1 = A））。登録簿の直列化は `EventStoreImpl::within_write_transaction`（U3 FD Q2 = A）。テストダブルは `InMemoryWorkflowExecutionRepository`（gateway-taxonomy §5、Bolt B5 実装） |
 | 外部システムクライアント（Git。例 `GitWorktreeClient`） | orchestration（Bolt / swarm — slice 2）、worktree 6 動詞 | worktree add / merge 3 戦略 / branch 削除 / conflict 検出 `/^CONFLICT \(/m`。別プロセスとの RPC であって集約の永続化ではない（gateway-taxonomy §1） | アダプタ層の Gateway（spawn 基盤 A4 経由、30s タイムアウト、SIGTERM でタイムアウトと失敗を区別） |
 
 **ポートではないもの**（同規則の帰結。ポート表に載せると Gateway 責務の分類が濁る）:
@@ -128,7 +128,7 @@ E4 の定義名は J1〜J6（旧 W1〜W5 に相当する区間 — mkdir ロッ�
 | W10 | authority 3 deny-list（RESERVED はパース前拒否、PROTECTED は append で拒否＋bypass env、MERGE_PROTECTED は delta で拒否）。宣言はイベントスキーマ側（B5） | E1+E3 | 拒否文言は文言カタログ（逐語 3 形） |
 | W11 | audit-merge は delta のみ追記し、ブロック境界・既知イベント・非 merge-protected・worktree スナップショットのバイト/inode 一致・**main 先頭 boundary バイトの prefix-hash 一致**を全て検証（mid-Bolt tampering / truncation を逐語で区別） | E2+E3 | R7 の受け皿。authoritative fork 行は main から回収（書込可能な worktree コピーを信用しない） |
 | W12 | main shard を書き換えるコードパスは存在しない（追記専用）。唯一の例外は audit-fork の worktree ミラー確立（tmp+rename）で、以後は再び追記のみ | **E1** 候補+E3 | 装置: main shard と worktree ミラーを**パスの型で分離**し（`MainShard` / `WorktreeMirrorShard`）、置換 API は `WorktreeMirrorShard`（audit-fork ユースケース専用型）にのみ定義する — main shard 型には追記しか存在しない |
-| W13 | birth は単一チョークポイント。`intents.json` の全変更は `SqliteEventStore::within_write_transaction`（単一 DB = 単一バケット）下で、keying に `activeIntent()` を使わない（並行 first-run の二重 birth 防止） | E1+E3 | `SqliteEventStore::within_write_transaction`（旧: `LockIdentity` の構成関数が唯一の入口 — ADR-007 / Bolt B5 で置換） |
+| W13 | birth は単一チョークポイント。`intents.json` の全変更は `EventStoreImpl::within_write_transaction`（単一 DB = 単一バケット）下で、keying に `activeIntent()` を使わない（並行 first-run の二重 birth 防止） | E1+E3 | `EventStoreImpl::within_write_transaction`（旧: `LockIdentity` の構成関数が唯一の入口 — ADR-007 / Bolt B5 で置換） |
 | W14 | 状態機械遷移は strict writer（不在フィールドは throw — 無言 no-op は検出不能ドリフト）。M12 は修正方針確定済み（逸脱台帳 #2。実装形は §10 のとおり実装時に確定） | E2+E3 | `set_field_strict` |
 | W15 | shard 横断の順序は timestamp ソート＋バッファ位置 tiebreak で、通常読取は決して fail-closed しない（同秒 fail-closed は orchestration の authority 述語のみ — B9） | **E1** | 装置: `find_all_events` の出力を順序付き専用型（外部から構築・再ソート不能）にし、順序付きイベント列はこの型経由でしか得られない |
 | W16 | runtime-graph は純観測者（state を変異しない・質問しない）で、同一監査ログから**バイト同値**を再現する | E3＋A2 | 決定性は正準 JSON（A2）が前提。折り込み規則は verification 提供（B8） |
@@ -163,7 +163,7 @@ orchestration §10 の裁定（in-process 合成、S1〜S4 維持）は本コン
 - `ScopedStorage`（B12）の API 詳細は knowledge コンテキスト仕様（13 号 — 12 号は workflow-definition が使用）と同時に確定する。
 - `SessionStampStore` の rebind offer 文言と Codex/Copilot 差分（session-start フックの詳細）は検証コンテキスト仕様（フック帰属分）で確定する。
 - **stage-0/1 併用期の相互排他 — 確定（2026-08-23、Bolt B5）**: 担保しない。stage-1 は単一クローン運用とする（U3 FD P7 / Q1 = A）。upstream プロセス（mkdir ロックを取る）との併用時の相互排他は本 intent のスコープ外とし、後続 intent の課題とする（§9 の旧前提は失効のまま）。
-- **`intents.json` の直列化機構 — 確定（2026-08-23、Bolt B5）**: `SqliteEventStore::within_write_transaction`（同一 DB の `BEGIN IMMEDIATE`）に一本化した（U3 FD Q2 = A）。W13（birth の単一チョークポイント）と旧 `LockIdentity` の keying 規範（単一バケットへの集約・`activeIntent()` を keying に使わない）は、この機構でそのまま満たされる（§2.2、§6 W13）。
+- **`intents.json` の直列化機構 — 確定（2026-08-23、Bolt B5）**: `EventStoreImpl::within_write_transaction`（同一 DB の `BEGIN IMMEDIATE`）に一本化した（U3 FD Q2 = A）。W13（birth の単一チョークポイント）と旧 `LockIdentity` の keying 規範（単一バケットへの集約・`activeIntent()` を keying に使わない）は、この機構でそのまま満たされる（§2.2、§6 W13）。
 - ~~ロック keying（複数 identity・センチネル 2 成分形）と二相 acquire・未スタンプ猶予のモデル化~~ → 確定（2026-08-23、Bolt B5）: mkdir ロックの退役（ADR-007）により `audit_lock.qnt` は退役し、協定モデル [`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt)（不変条件 8 / witness 4）へ置換した（U3 FD Q4 = A）。
 - runtime-graph のセンサー区画折り込み規則の受け渡し形式（B8 — 宣言的規則の表現）は verification 仕様で確定。
 - M12 修正の実装形（birth で行を書く vs `set_or_insert_field` 化）は実装時に選び、ゴールデンの分岐点を 1 か所に固定する。

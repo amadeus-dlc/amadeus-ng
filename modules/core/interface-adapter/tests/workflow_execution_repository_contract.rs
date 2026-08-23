@@ -73,7 +73,7 @@ contract_tests!(
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{
-    SqliteEventStore, StorePath, WorkflowExecutionRepositoryImpl,
+    EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use tempfile::TempDir;
 
@@ -100,20 +100,20 @@ impl SqliteFixture {
         SqliteFixture { _dir: dir, path }
     }
 
-    fn store(&self) -> SqliteEventStore<FakeClock> {
-        SqliteEventStore::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
+    fn store(&self) -> EventStoreImpl<FakeClock> {
+        EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
     }
 }
 
 impl StoreFixture for SqliteFixture {
     type Repository = WorkflowExecutionRepositoryImpl<FakeClock>;
-    type Reader = SqliteEventStore<FakeClock>;
+    type Reader = EventStoreImpl<FakeClock>;
 
     fn open(&self) -> WorkflowExecutionRepositoryImpl<FakeClock> {
         WorkflowExecutionRepositoryImpl::new(self.store())
     }
 
-    fn reader(&self) -> SqliteEventStore<FakeClock> {
+    fn reader(&self) -> EventStoreImpl<FakeClock> {
         self.store()
     }
 }

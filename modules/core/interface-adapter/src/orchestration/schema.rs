@@ -12,7 +12,7 @@ use rusqlite::Connection;
 
 use core_use_case::orchestration::EventStoreError;
 
-use super::sqlite_event_store::map_sqlite_error;
+use super::event_store_impl::map_sqlite_error;
 
 /// 本実装が読み書きできるストアの版 (`PRAGMA user_version`)。
 pub(crate) const SUPPORTED_USER_VERSION: u32 = 1;

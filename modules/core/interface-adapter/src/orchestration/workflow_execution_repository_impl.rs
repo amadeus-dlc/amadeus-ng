@@ -1,6 +1,6 @@
 //! `WorkflowExecutionRepository` の実 Gateway (1 trait 1 Impl — gateway-taxonomy §5)。
 //!
-//! 集約 `WorkflowExecution` の再構成と永続化を、[`SqliteEventStore`] を内包して行う。
+//! 集約 `WorkflowExecution` の再構成と永続化を、[`EventStoreImpl`] を内包して行う。
 //! **格納形式が SQLite であることはこの実装の内部詳細**であり、ポート名にも facade にも
 //! 現れない (`Sqlite...` のような技術接頭辞を型名に出さないのはそのためである)。
 //!
@@ -21,7 +21,7 @@ use core_use_case::orchestration::{
 
 use crate::Clock;
 
-use super::sqlite_event_store::SqliteEventStore;
+use super::event_store_impl::EventStoreImpl;
 
 /// SQLite ストアを内包する `WorkflowExecutionRepository` の実装。
 ///
@@ -34,7 +34,7 @@ use super::sqlite_event_store::SqliteEventStore;
 /// 複製に対して行う — 複製は同じ接続を指すので、書込は同じ 3 表へ届く。
 #[derive(Debug)]
 pub struct WorkflowExecutionRepositoryImpl<C> {
-    store: RefCell<SqliteEventStore<C>>,
+    store: RefCell<EventStoreImpl<C>>,
 }
 
 /// `apply_event` の失敗を `Corrupt` の原因へ写す。
@@ -50,7 +50,7 @@ const fn apply_cause(error: &ApplyError) -> CorruptCause {
 impl<C: Clock> WorkflowExecutionRepositoryImpl<C> {
     /// 開いたストアを内包する Repository を作る。
     #[must_use]
-    pub const fn new(store: SqliteEventStore<C>) -> WorkflowExecutionRepositoryImpl<C> {
+    pub const fn new(store: EventStoreImpl<C>) -> WorkflowExecutionRepositoryImpl<C> {
         WorkflowExecutionRepositoryImpl {
             store: RefCell::new(store),
         }
@@ -58,7 +58,7 @@ impl<C: Clock> WorkflowExecutionRepositoryImpl<C> {
 
     /// 内包しているストアへのハンドル (`JournalReader` として使うため)。
     #[must_use]
-    pub fn event_store(&self) -> SqliteEventStore<C> {
+    pub fn event_store(&self) -> EventStoreImpl<C> {
         self.store.borrow().clone()
     }
 

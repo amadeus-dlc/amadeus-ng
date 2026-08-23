@@ -15,7 +15,7 @@ use core_domain::orchestration::{WorkflowExecution, WorkflowExecutionEvent};
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{
-    SqliteEventStore, StorePath, WorkflowExecutionRepositoryImpl,
+    EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use core_use_case::orchestration::{CorruptCause, RepositoryError, WorkflowExecutionRepository};
 use rusqlite::Connection;
@@ -43,7 +43,7 @@ impl Fixture {
 
     fn repository(&self) -> WorkflowExecutionRepositoryImpl<FakeClock> {
         WorkflowExecutionRepositoryImpl::new(
-            SqliteEventStore::open(self.path.clone(), FakeClock::new(NOW_MS))
+            EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS))
                 .expect("ストアは開ける"),
         )
     }
