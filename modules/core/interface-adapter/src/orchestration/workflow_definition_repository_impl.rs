@@ -27,11 +27,10 @@
 //! **失敗態度** (12 §4): グラフは fatal、グリッドは転置導出フォールバック、identity と
 //! グリッド列の不一致は双方向とも正当。
 
-use core_domain::orchestration::PlanAction;
 use core_domain::workflow_definition::{
-    BrownfieldGreenfield, ConsumeDecl, ExecutionKind, PhaseId, ReviewCapValue, ReviewClass,
-    RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault, StageGraph,
-    StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+    BrownfieldGreenfield, ConsumeDecl, ExecutionKind, PhaseId, PlanAction, ReviewCapValue,
+    ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault,
+    StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
 };
 use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
 use serde::Deserialize;

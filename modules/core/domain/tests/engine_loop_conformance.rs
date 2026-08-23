@@ -7,9 +7,8 @@
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used)]
 
-use core_domain::orchestration::{
-    AutonomyMode, EngineSignal, PlanAction, Status, WorkflowExecution,
-};
+use core_domain::orchestration::{AutonomyMode, EngineSignal, Status, WorkflowExecution};
+use core_domain::workflow_definition::PlanAction;
 use core_domain::workspace::CheckboxState;
 use serde_json::Value;
 

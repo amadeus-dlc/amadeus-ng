@@ -17,6 +17,7 @@
 
 mod execution_kind;
 mod phase;
+mod plan_action;
 mod review_class;
 mod scope_grid;
 mod scope_metadata;
@@ -32,6 +33,7 @@ mod workflow_definition;
 // Domain Primitive
 pub use execution_kind::ExecutionKind;
 pub use phase::PhaseId;
+pub use plan_action::PlanAction;
 pub use review_class::ReviewClass;
 pub use scope_metadata::{ReviewCapValue, ScopeMetadata, SkeletonDefault};
 pub use stage_mode::StageMode;

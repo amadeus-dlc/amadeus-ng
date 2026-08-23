@@ -7,7 +7,6 @@
 
 mod autonomy_mode;
 mod jump_direction;
-mod plan_action;
 mod skeleton_stance;
 mod verdict;
 mod workflow_execution;
@@ -15,7 +14,6 @@ mod workflow_execution;
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
 pub use jump_direction::JumpDirection;
-pub use plan_action::PlanAction;
 pub use skeleton_stance::SkeletonStance;
 pub use verdict::Verdict;
 

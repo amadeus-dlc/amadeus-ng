@@ -11,9 +11,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::plan_action::PlanAction;
 use super::stage_graph::StageGraph;
 use super::stage_slug::StageSlug;
-use crate::orchestration::PlanAction;
 
 /// scope 名 → (stage slug → `PlanAction`)。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

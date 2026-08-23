@@ -7,14 +7,12 @@
 //! (f) 列あり × `.md` なし = `valid_scopes` に不出現 / (g) 未知フィールド入り JSON が読めること。
 #![allow(clippy::unwrap_used)]
 
-use core_domain::orchestration::PlanAction;
 use core_domain::workflow_definition::{
-    BrownfieldGreenfield, PhaseId, ReviewClass, RuleScope, StageMode, StageSlug, WorkflowDefinition,
+    BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
+    WorkflowDefinition,
 };
-use core_domain::workspace::CheckboxState;
 use core_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
 use core_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -326,41 +324,37 @@ fn a_full_read_wires_up_the_five_predicates() {
         None
     );
 
-    // next_in_scope_stage は文書順で前進走査し、completed / skipped を読み飛ばす。
-    let checkboxes = BTreeMap::new();
-    let suffixes = BTreeMap::new();
-    assert_eq!(
-        definition
-            .next_in_scope_stage(&slug("intent-capture"), "feature", &checkboxes, &suffixes)
-            .map(|n| n.slug().as_str()),
-        Some("requirements-analysis")
-    );
-    let mut checkboxes = BTreeMap::new();
-    checkboxes.insert(slug("requirements-analysis"), CheckboxState::Completed);
-    assert_eq!(
-        definition
-            .next_in_scope_stage(&slug("intent-capture"), "feature", &checkboxes, &suffixes)
-            .map(|n| n.slug().as_str()),
-        Some("code-generation")
-    );
-
     // stages_in_scope は全ステージ分の 3 値を文書順で返す。
+    let rows = definition.stages_in_scope("feature");
+    assert_eq!(rows.len(), 5);
+    let listed: Vec<&str> = rows.iter().map(|(s, _, _)| s.as_str()).collect();
+    assert_eq!(
+        listed,
+        [
+            "bootstrap",
+            "workspace-init",
+            "intent-capture",
+            "requirements-analysis",
+            "code-generation"
+        ]
+    );
     let rows = definition.stages_in_scope("bugfix");
     assert_eq!(rows.len(), 5);
     assert_eq!(rows[0].1, PhaseId::Initialization);
     assert_eq!(rows[0].2, Some(PlanAction::Execute));
     assert_eq!(rows[4].2, Some(PlanAction::Skip));
 
-    // effective_plan_action: recompose サフィックスが静的グリッドに勝つ。
-    let mut suffixes = BTreeMap::new();
-    suffixes.insert(slug("code-generation"), PlanAction::Skip);
+    // 静的グリッドの照会は 3 値。実効プランの合成 (recompose オーバレイとの重ね合わせ) は
+    // FR8.4 で `WorkflowExecution` へ移設したのでここには無い。
     assert_eq!(
-        definition.effective_plan_action(&suffixes, "feature", &slug("code-generation")),
-        Some(PlanAction::Skip)
+        definition
+            .grid()
+            .action("feature", &slug("code-generation")),
+        Some(PlanAction::Execute)
     );
     // グリッド列に載っていない slug は 3 値の None (SKIP に畳まない)。
     assert_eq!(
-        definition.effective_plan_action(&BTreeMap::new(), "ghost", &slug("code-generation")),
+        definition.grid().action("ghost", &slug("code-generation")),
         None
     );
 }
@@ -481,12 +475,7 @@ fn e_an_identity_file_without_a_grid_column_is_a_zero_execute_scope_not_an_unkno
     // 拒否ではなく空。
     assert!(definition.subgraph_for_scope("express").unwrap().is_empty());
     assert_eq!(
-        definition.next_in_scope_stage(
-            &slug("bootstrap"),
-            "express",
-            &BTreeMap::new(),
-            &BTreeMap::new()
-        ),
+        definition.first_in_scope_stage_of_phase(PhaseId::Ideation, "express"),
         None
     );
     // 全ステージ分の行は返るが、action はすべて 3 値の None。
@@ -515,15 +504,6 @@ fn f_a_grid_column_without_an_identity_file_is_invisible_to_the_runtime() {
     assert_eq!(error.valid_scopes(), ["bugfix", "express", "feature"]);
     assert_eq!(
         definition.first_in_scope_stage_of_phase(PhaseId::Ideation, "ghost"),
-        None
-    );
-    assert_eq!(
-        definition.next_in_scope_stage(
-            &slug("bootstrap"),
-            "ghost",
-            &BTreeMap::new(),
-            &BTreeMap::new()
-        ),
         None
     );
     assert!(definition.stages_in_scope("ghost").is_empty());
@@ -614,18 +594,13 @@ fn the_reader_preserves_document_order_and_keeps_the_two_ordering_paths_distinct
         ["earlier", "later"]
     );
 
-    // next_in_scope_stage は文書順走査なので "later" の次は "earlier"。
-    assert_eq!(
-        definition
-            .next_in_scope_stage(
-                &slug("later"),
-                "feature",
-                &BTreeMap::new(),
-                &BTreeMap::new()
-            )
-            .map(|n| n.slug().as_str()),
-        Some("earlier")
-    );
+    // stages_in_scope は文書順走査なので配列順そのまま。
+    let listed: Vec<&str> = definition
+        .stages_in_scope("feature")
+        .iter()
+        .map(|(s, _, _)| s.as_str())
+        .collect();
+    assert_eq!(listed, ["later", "earlier"]);
 }
 
 // ---------------------------------------------------------------------------

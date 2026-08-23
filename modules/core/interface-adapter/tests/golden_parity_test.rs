@@ -23,8 +23,7 @@
 // ヘルパは `#[test]` の外にあるため clippy.toml の `allow-*-in-tests` が効かない。
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use core_domain::orchestration::PlanAction;
-use core_domain::workflow_definition::{ReviewClass, WorkflowDefinition};
+use core_domain::workflow_definition::{PlanAction, ReviewClass, WorkflowDefinition};
 use core_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
 use core_use_case::orchestration::WorkflowDefinitionRepository;
 use std::path::PathBuf;

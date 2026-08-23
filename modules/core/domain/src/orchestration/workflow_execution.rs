@@ -11,7 +11,7 @@
 
 use super::autonomy_mode::AutonomyMode;
 use super::jump_direction::JumpDirection;
-use super::plan_action::PlanAction;
+use crate::workflow_definition::PlanAction;
 use crate::workspace::CheckboxState;
 
 /// エンジンが放出する信号の観測射影 (モデルの `DirectiveKind` サブセット)。
