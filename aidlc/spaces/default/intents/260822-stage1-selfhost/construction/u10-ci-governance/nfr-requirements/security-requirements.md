@@ -7,7 +7,7 @@
 > `../../../inception/practices-discovery/evidence.md`（確定アクション 1〜4、実測）、`aidlc/spaces/default/codekb/docs/
 > technology-stack.md`（GitHub Actions 1 本 3 ジョブ、cargo-llvm-cov、Quint 0.32.0、rust-toolchain.toml 不在）、
 > `aidlc/spaces/default/memory/team.md`（Testing Posture / Code Style の確定事項）、確認事項 `nfr-requirements-questions.md`
-> （前提 P1〜P8、Looks correct）、実地確認（2026-08-23: `gh api` の ruleset、`ci.yml`、`scripts/coverage.sh`、`tools/lint/`）。
+> （前提 P1〜P8、Looks correct）、実地確認（2026-08-22 UTC: `gh api` の ruleset、`ci.yml`、`scripts/coverage.sh`、`tools/lint/`）。
 >
 > packaging Unit のため「セキュリティ要求」= サプライチェーン・最小権限・機械強制の要求であり、NFR2（品質ゲート維持）の
 > 機械強制要求も同じ文書に置く（品質ゲートの機械強制はガバナンスの一部）。各要求は Inception の NFR ID を継承し
@@ -20,7 +20,7 @@
   赤になるクレートがあれば U7 で直す — 前提 P8）。
 - 信頼境界: (a) GitHub Actions の実行環境（`GITHUB_TOKEN` の権限）、(b) 外部ネットワーク（crates.io、RustSec advisory DB、
   GitHub Actions のアクション取得、Node / quint）、(c) GitHub の ruleset（オーナー権限でのみ変更可）。
-- 実地の現状（2026-08-23）: `main` に **ruleset「main」（active）** — `deletion` / `non_fast_forward` / `merge_queue`（SQUASH、
+- 実地の現状（2026-08-22 UTC）: `main` に **ruleset「main」（active）** — `deletion` / `non_fast_forward` / `merge_queue`（SQUASH、
   ALLGREEN、同時 1 件）。required status checks は**無い**。CI は `pull_request` と `workflow_dispatch` でのみ起動。
   `permissions` 未指定（既定権限）。toolchain は `dtolnay/rust-toolchain@stable`（floating）。`cargo audit` 無し。
   `unsafe_code` forbid はクレート個別 attribute（`modules/app/aidlc/src/main.rs` に漏れ）。`tools/lint` は detached クレートで

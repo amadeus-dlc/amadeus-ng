@@ -18,7 +18,7 @@
 
 ## 前提（確認事項）
 
-- P1. **branch protection の実態**（実地 `gh api`、2026-08-23）: `main` には classic branch protection は無い（404）が、
+- P1. **branch protection の実態**（実地 `gh api`、2026-08-22 UTC）: `main` には classic branch protection は無い（404）が、
   **ruleset「main」（active）** が既に存在し、`deletion` / `non_fast_forward` / `merge_queue`（SQUASH、ALLGREEN、
   同時 1 件）を含む。**required status checks の規則は無い**。FR9.1 は classic protection を新設するのではなく、
   **この ruleset に `required_status_checks`（check / quint / coverage、strict）を追加する**形で満たす。

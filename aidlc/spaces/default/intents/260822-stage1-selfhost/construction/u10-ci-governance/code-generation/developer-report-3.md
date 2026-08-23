@@ -44,7 +44,7 @@ Step 9 の実行中に **承認済み設計のカバレッジ除外リテラル�
 
 ### Red（Step 2、変更前ツリー、exit 1）
 
-```
+```text
 === CI ガバナンス検査 (/Users/j5ik2o/orca/workspaces/amadeus-ng/docs) ===
 [FAIL] toolchain-channel — rust-toolchain.toml が存在しない (channel = "1.95.0" が必要)
 [FAIL] toolchain-components — rust-toolchain.toml が存在しない (components: rustfmt clippy llvm-tools が必要)
@@ -84,7 +84,7 @@ proptest-seed → ci.yml / coverage.sh の 2、toolchain の CI 側 `ci-toolchai
 
 Green（最終、exit 0）:
 
-```
+```text
 === CI ガバナンス検査 (/Users/j5ik2o/orca/workspaces/amadeus-ng/docs) ===
 [PASS] toolchain-channel — rust-toolchain.toml の channel が "1.95.0" に固定されている
 [PASS] toolchain-components — rust-toolchain.toml の components に rustfmt clippy llvm-tools が揃っている
@@ -107,7 +107,7 @@ exit=0
 
 `--with-ruleset` 付き（ruleset は未変更のため 1 項目だけ FAIL、exit 1 — 想定どおり）:
 
-```
+```text
 [FAIL] ruleset-required-checks — ruleset「main」(id=21190453) の required checks が期待と違う
        (実際: [なし] strict=false / 期待: [check coverage quint] strict=true)
 --- 合計: PASS 15 / FAIL 1 ---
@@ -123,7 +123,7 @@ Refactor と除外検査の書き換えのあと、**最終版の検査スクリ
 
 ### `tools/lint` 自己テスト
 
-```
+```text
 test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
@@ -189,7 +189,7 @@ test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 標準エラーの進行ログ:
 
-```
+```text
 ==> ruleset「main」を amadeus-dlc/amadeus-ng から解決中
 ==> <dir>/before.json に保存しました
 現在の required checks: [なし] strict=false
@@ -283,7 +283,7 @@ push / ブランチ切替。`shellcheck` はローカル未導入のため未実
 
 ## 8. コミット一覧
 
-```
+```text
 ba75234 fix(coverage): anchor the exclusion regex so it actually matches
 43e1dd9 refactor(governance): unify the missing-file handling in the verifier
 7af3194 chore(governance): add an idempotent script for ruleset required status checks

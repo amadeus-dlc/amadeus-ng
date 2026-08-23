@@ -23,8 +23,9 @@
   required checks を要求するため必須（NFR2.2）。`concurrency.group` は `ci-${{ github.workflow }}-${{ github.ref }}` のまま
   （`merge_group` の ref は `gh-readonly-queue/...` で PR の ref と衝突しない）。
 - **権限**: workflow 直下に `permissions: contents: read`（NFR4.4）。ジョブ個別の昇格なし。
-- **toolchain**: `dtolnay/rust-toolchain@master`（`toolchain:` 入力なし）→ リポジトリの `rust-toolchain.toml`（`channel = "1.95.0"`、
-  `components = ["rustfmt", "clippy", "llvm-tools"]`、`profile = "minimal"`）を読む（NFR4.2）。`components:` の個別指定は撤去。
+- **toolchain**: `dtolnay/rust-toolchain@master` に `rust-toolchain.toml`（`channel = "1.95.0"`、`components = ["rustfmt", "clippy", "llvm-tools"]`、
+  `profile = "minimal"`）から**導出した** `toolchain` / `components` 入力を渡す（NFR4.2。**実装時の実測**: `@master` は `toolchain:` 入力必須で
+  ファイルを自動では読まないため、`scripts/governance/toolchain-inputs.sh` が導出する — 正本は 1 つ）。ci.yml にバージョン・コンポーネントのリテラルは書かない。
 - **ジョブ**（required checks のコンテキスト名は既存の 3 つを維持）:
 
 | ジョブ | ステップ | required | 備考 |
@@ -52,8 +53,9 @@ permissions:
 - 手順スクリプト `scripts/governance/ruleset-required-checks.sh`（bash + `gh api`、オーナー権限で実行）:
   1. `GET /repos/{owner}/{repo}/rulesets/{id}` → `before.json` として記録ディレクトリ（`<record>/construction/u10-ci-governance/
      code-generation/ruleset/`）に保存。
-  2. `rules[]` に `required_status_checks` が無ければ追加した JSON を組み立て `PUT /repos/{owner}/{repo}/rulesets/{id}`。
-     あれば何もしない（冪等）。
+  2. `rules[]` の `required_status_checks` が期待（3 コンテキスト + strict）と**一致していれば何もしない**（冪等判定は規則タイプの有無ではなく
+     コンテキスト集合 + strict フラグの一致 — レビュー Minor 2 の引き取り）。無い / ずれていれば追加・補正した JSON を組み立て
+     `PUT /repos/{owner}/{repo}/rulesets/{id}`（既存 3 規則と `bypass_actors` を載せ直す — PUT は `rules[]` を全置換）。
   3. `GET` し直して `after.json` を保存し、3 コンテキストの存在を `jq` で検証して終了コードに反映。
 - 受入（正常系 — NFR 要求レビュー Minor 3 の引き取り）: required checks 追加後、緑の PR 1 本（本 Bolt の PR 自身で可）が
   merge queue を通って squash-merge まで完走すること。否定系: 赤のまま queue に入れた PR がマージされないこと（実地 1 回）。
@@ -70,9 +72,11 @@ permissions:
 - `rust-toolchain.toml`（新規）: `[toolchain] channel = "1.95.0"`、`components = ["rustfmt", "clippy", "llvm-tools"]`、`profile = "minimal"`。
 - `Cargo.toml`: `[workspace.lints.rust]` に `unsafe_code = "forbid"` を追加。クレート個別の `#![forbid(unsafe_code)]` は残してよい
   （重複は無害）。`tools/lint/Cargo.toml` の `[lints.rust]` に `unsafe_code = "forbid"`。
-- `scripts/coverage.sh`: `measure_line_coverage` の `cargo llvm-cov --workspace ...` に `--ignore-filename-regex 'modules/app/aidlc/src/main\.rs$'`
-  を追加（ファイル 1 本に限定、NFR2.5）。`TOLERANCE=0.01`（NFR2.4）。コメントの較正根拠を更新。
-- PBT シード固定（NFR2.4）: proptest の決定化手段は code-generation で確認して選ぶ — 候補は (a) 環境変数 `PROPTEST_RNG_SEED`
+- `scripts/coverage.sh`: `measure_line_coverage` の `cargo llvm-cov --workspace ...` に `--ignore-filename-regex '(^|/)modules/app/aidlc/src/main\.rs$'`
+  を追加（ファイル 1 本に限定、NFR2.5。**実装時の実測**: llvm-cov はカバレッジデータに絶対パスを記録するため tech-stack-decisions §1 の
+  `^modules/...` 単独アンカーは不活性 — `(^|/)` で実効化、2026-08-22 UTC）。`TOLERANCE` は承認値 0.01 → 実装時の残ジッタ 0.0175pp により
+  **暫定 0.05**（Bolt B2 ゲート裁定、U3 ロック退役後に 0.01）。コメントの較正根拠を更新。
+- PBT シード固定（NFR2.4）: **(a) 環境変数 `PROPTEST_RNG_SEED` を採用**（proptest 1.11 の `RngSeed::Fixed`、テストコード変更なし — code-generation で確定）。検討した候補は (a) 環境変数 `PROPTEST_RNG_SEED`
   （`scripts/coverage.sh` と CI で固定値を与える。proptest 1.11 で対応していれば最小変更）、(b) テスト側ヘルパで
   `TestRunner::new_with_rng(config, TestRng::from_seed(RngAlgorithm::ChaCha, &SEED))` を用いる（テストコードの変更が要る —
   境界「プロダクトコードは触らない」には抵触しないが core-domain のテストを触る）。(a) を第一候補とする。

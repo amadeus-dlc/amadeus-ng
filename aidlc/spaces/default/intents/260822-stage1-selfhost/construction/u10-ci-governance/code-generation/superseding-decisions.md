@@ -18,3 +18,10 @@
 
 凍結文書の本文自体の修正は、ステージゲート（Construction の per-unit ブロック末尾）の前に 1 回の回復レビューで
 まとめて行う（レビュー受領証を無効化しないため）。
+
+## 追記（2026-08-23T00:40Z、オーナー指示）
+
+| # | 内容 | 根拠 |
+|---|---|---|
+| 9 | **レビュースレッドのゲート**: `ci.yml` に `review-thread-resolution` ジョブ（j5ik2o/ci の再利用ワークフロー `review-thread-resolution.yml`、SHA 固定 `9cf0e9a8…`、`pull_request` のみ）と `ci-success` 集約ジョブ（check / quint / coverage + `pull_request` では review gate 必須、`merge_group` では skipped 許容）を追加。`.github/workflows/review-thread-resolution.yml` がレビューイベント・15 分ごとに状態を再評価。ruleset の required checks を **check / quint / coverage / CI Success** の 4 つに拡張（`ruleset-required-checks.sh` の `REQUIRED_CONTEXTS`、`verify-ci-governance.sh` の期待値も同期）。未解決のレビューコメント（ボット含む）を残した PR は merge queue に入れない | オーナー指示（amadeus-dlc/amadeus の ci.yml に倣う）。PR #25 のコメントが見過ごされかけた教訓 |
+| 10 | 本文修正: 凍結文書（code-summary / traceability / 計画・手順のバナー / security-design / tech-stack / 質問票 3 本）に #1〜#8 の内容を反映（PR #26）。各成果物の回復レビュー（nfr-requirements / nfr-design / code-generation の U10 分）はステージゲート前に実施 | オーナー指示「PR コメントを無視しない」 |
