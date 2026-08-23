@@ -15033,3 +15033,452 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Error**: Refusing to start unit "u3-event-store-repository" for "functional-design": the engine currently routes "code-generation"/"u9-canon-docs". Run the exact directive.stage/directive.unit pair returned by aidlc-orchestrate.ts next.
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-08-23T06:44:47Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T06:48:04Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T06:48:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: dc45508a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T06:48:04Z
+**Event**: SENSOR_PASSED
+**Fire id**: dc45508a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T06:48:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4504be50
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T06:48:04Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4504be50
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T06:48:10Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U3 機能設計 Q1 SQLite ストアの置き場所
+**Options**: A,B,C,X
+**Unit**: u3-event-store-repository
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T06:48:10Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U3 機能設計 Q2 intents.json の直列化機構
+**Options**: A,B,C,X
+**Unit**: u3-event-store-repository
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T06:48:10Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U3 機能設計 Q3 SQLite ドライバと async の形
+**Options**: A,B,C,X
+**Unit**: u3-event-store-repository
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T06:48:10Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U3 機能設計 Q4 Quint モデルの改名/改訂
+**Options**: A,B,C,X
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T08:31:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-23T08:32:04Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: Q1 SQLite ストアの置き場所 = A（推奨案を採用）
+**Unit**: u3-event-store-repository
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T08:32:04Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --unit u3-event-store-repository --answer A --details Q2 intents.json の直列化機構 = A（推奨案を採用）
+**Error**: Refusing to record this answer: a real human has not acted at this checkpoint this turn. Type your answer in the session (which records a human turn) before logging it.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T08:32:04Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --unit u3-event-store-repository --answer A --details Q3 SQLite ドライバと async の形 = A（推奨案を採用）
+**Error**: Refusing to record this answer: a real human has not acted at this checkpoint this turn. Type your answer in the session (which records a human turn) before logging it.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T08:32:04Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --unit u3-event-store-repository --answer A --details Q4 Quint モデルの改名/改訂 = A（推奨案を採用）
+**Error**: Refusing to record this answer: a real human has not acted at this checkpoint this turn. Type your answer in the session (which records a human turn) before logging it.
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T08:32:04Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U3 機能設計の要約確認（Q1〜Q4 = A、P1〜P7）
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T08:33:30Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T08:34:24Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-design-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:34:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0890f409
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:34:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0890f409
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:34:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: cbe8cf73
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:34:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: cbe8cf73
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Duration ms**: 18
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-08-23T08:34:30Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Questions SHA-256**: a3d89b7c98d41848326cbda0f3082f3e94d338e90674a9cd4dece81023832765
+**Unit**: u3-event-store-repository
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T08:36:44Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Context**: construction > u3-event-store-repository > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:36:44Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9cb90a4e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:36:44Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9cb90a4e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:36:44Z
+**Event**: SENSOR_FIRED
+**Fire id**: 288dc206
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:36:44Z
+**Event**: SENSOR_PASSED
+**Fire id**: 288dc206
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Duration ms**: 18
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T08:38:41Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:38:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: c0101595
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:38:41Z
+**Event**: SENSOR_PASSED
+**Fire id**: c0101595
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:38:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: 649d52b1
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:38:41Z
+**Event**: SENSOR_PASSED
+**Fire id**: 649d52b1
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 18
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T08:39:41Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:39:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: c7ef0b92
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:39:41Z
+**Event**: SENSOR_PASSED
+**Fire id**: c7ef0b92
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:39:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: f0984f17
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:39:41Z
+**Event**: SENSOR_PASSED
+**Fire id**: f0984f17
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 19
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Context**: construction > u3-event-store-repository > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: 73db7805
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: 73db7805
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4f6b48b1
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4f6b48b1
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: a1e3e3ef
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T08:39:48Z
+**Event**: SENSOR_FAILED
+**Fire id**: a1e3e3ef
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-a1e3e3ef.md
+**Findings count**: 36
+
+---
