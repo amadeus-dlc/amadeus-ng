@@ -1947,6 +1947,30 @@ mod tests {
                 revision('0'),
                 w.stages().to_vec(),
             )
+            .parked_at(Some(9))
+            .build(),
+            WorkflowExecutionSnapshotBuilder::new(
+                intent(),
+                def_id("claude"),
+                revision('0'),
+                w.stages().to_vec(),
+            )
+            .approved(vec![false])
+            .build(),
+            WorkflowExecutionSnapshotBuilder::new(
+                intent(),
+                def_id("claude"),
+                revision('0'),
+                w.stages().to_vec(),
+            )
+            .revision_count(vec![0, 0])
+            .build(),
+            WorkflowExecutionSnapshotBuilder::new(
+                intent(),
+                def_id("claude"),
+                revision('0'),
+                w.stages().to_vec(),
+            )
             .seq_nr(0)
             .build(),
             WorkflowExecutionSnapshotBuilder::new(
@@ -2069,41 +2093,51 @@ mod tests {
 
     #[test]
     fn next_decision_reports_the_two_skip_inconsistencies() {
+        // 実効 SKIP のカーソルは `cursor_in_scope` が禁じるので、集約のコマンド経由では作れない。
+        // 唯一到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) の状態を
+        // 再水和し、再入フラグで park 分岐を外して問い合わせる」経路である (BR3.1 (5) の防御腕)。
         let definition = bare_definition("claude");
-        // カーソルが実効 SKIP かつ in-progress → 復旧可能
-        let mut w = start_with(1, &[Execute, Execute, Execute], &[false, false, false]);
-        w.complete_stage(AT).unwrap();
-        let snapshot = w.snapshot();
-        let inconsistent = WorkflowExecutionSnapshotBuilder::new(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            w.stages().to_vec(),
-        )
-        .overlay(vec![Execute, Skip, Execute])
-        .checkbox(vec![Completed, InProgress, Pending])
-        .cursor(1)
-        .seq_nr(snapshot.seq_nr())
-        .build();
-        // cursor_in_scope を破るので from_snapshot は受け付けない — 集約経由で作る。
-        assert!(WorkflowExecution::from_snapshot(inconsistent).is_err());
+        let stages = all_exec(3).stages().to_vec();
+        let reentry = NextRequest::new(false, true, false);
 
-        // recompose でカーソルより後ろを SKIP にしてから backward jump で戻る経路で作る。
-        let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
-        w.recompose(&[at(&w, 2)], AT).unwrap();
-        w.approve_gate(None, None, AT).unwrap();
-        assert_eq!(w.cursor(), at(&w, 3));
-        let target = at(&w, 1);
-        w.jump(target, AT).unwrap();
-        assert_eq!(w.effective_plan(at(&w, 2)), Some(Skip));
-        assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
-            Ok(NextDecision::RunStage {
-                stage: target,
-                gate: true
-            })
-        );
+        for (marker, expected_recoverable) in [
+            (InProgress, true),
+            (Revising, true),
+            (Pending, false),
+            (AwaitingApproval, false),
+        ] {
+            let snapshot = WorkflowExecutionSnapshotBuilder::new(
+                intent(),
+                def_id("claude"),
+                revision('0'),
+                stages.clone(),
+            )
+            .overlay(vec![Execute, Skip, Execute])
+            .checkbox(vec![Completed, marker, Pending])
+            .cursor(1)
+            .parked_at(Some(1))
+            .seq_nr(4)
+            .build();
+            let w = WorkflowExecution::from_snapshot(snapshot).unwrap();
+            let stage = at(&w, 1);
+            let expected = if expected_recoverable {
+                NextDecision::RecoverSkipInconsistency {
+                    stage,
+                    checkbox: marker,
+                }
+            } else {
+                NextDecision::InconsistentSkip {
+                    stage,
+                    checkbox: marker,
+                }
+            };
+            assert_eq!(w.next_decision(&definition, &reentry), Ok(expected));
+            // どちらの不整合も Quint の DError に写る (BR3.1)。
+            assert_eq!(
+                EngineSignal::from(&w.next_decision(&definition, &reentry).unwrap()),
+                EngineSignal::EngineError
+            );
+        }
     }
 
     #[test]
