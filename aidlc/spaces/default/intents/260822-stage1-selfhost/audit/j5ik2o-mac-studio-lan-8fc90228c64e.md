@@ -18786,3 +18786,147 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Artifact Fingerprint**: sha256:1633ed47e8a39f182aed5f832c6c6404786e6ca7863eec9d01366c5a7337cd79
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T21:30:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a776109df3138a5bd
+**Message**: レビューが READY ならマージまで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T21:32:17Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T21:33:06Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abc081626208f390c
+**Message**: レビューの結果は？
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T21:40:11Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u3-recovery-reviewer
+**Agent ID**: au3-recovery-reviewer-0465b25ef69307ee
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**判定: NOT-READY**（advisory — ゲートは塞ぎません。Critical 0 / Major 3 / Minor 4）\n\n`## Review` は `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/defau
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T21:40:50Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage code-generation --reviewer aidlc-architecture-reviewer-agent --unit u3-event-store-repository --iteration 2 --verdict NOT-READY
+**Error**: Refusing REVIEW_COMPLETED for "code-generation": declared artifacts changed after REVIEW_REQUESTED iteration 2. Re-dispatch that exact iteration with --retry-pending so the reviewer inspects the current bytes.
+
+---
+
+## Review Requested
+**Timestamp**: 2026-08-23T21:40:54Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 2
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:71ddb2abf51a40f7470d1ec4a21ae2210fa23fb0c9d90f1320556ec808afbda5
+
+---
+
+## Review Completed
+**Timestamp**: 2026-08-23T21:40:55Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 2
+**Verdict**: NOT-READY
+**Artifact Fingerprint**: sha256:71ddb2abf51a40f7470d1ec4a21ae2210fa23fb0c9d90f1320556ec808afbda5
+**Source Fingerprint**: b34f106856fd2cfc55a39c38c46942550d816967
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T21:41:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aefd2c9fd119e0c21
+**Message**: ③と②を直して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T21:49:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-08-23T21:51:24Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Agent
+**Target**: aidlc-developer-agent
+**Stage**: code-generation
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T21:53:21Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T21:54:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-08-23T21:55:41Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Agent
+**Target**: aidlc-developer-agent
+**Stage**: code-generation
+**Unit**: u3-event-store-repository
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T21:58:29Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6193b8ece23e246b
+**Message**: 残り半分も是正して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T22:01:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-23T22:02:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a643d7fa8af433931
+**Message**: 続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T22:03:07Z
+**Event**: HUMAN_TURN
+
+---

@@ -37,7 +37,12 @@
 
 `code-generation-plan.md`（埋め込みの Testing Contract を含む）と `unit-test-instructions.md` を確認し、実装に進んでよいか。
 
-[Approval Fingerprint]: sha256:38d7646c677187c934b1b7a231fa2163baa33ec469b75b15772073bfd116df37
+**再承認（2026-08-24）** — 初回承認（指紋 `sha256:38d7646c…`）以降、オーナー裁定「内部可変性は既定で禁止、`&self` への偽装は禁止」に従い
+計画本文の 5 箇所を実態へ同期した（`RefCell<SqliteEventStore>` → `EventStoreImpl<C>` の直接所有、
+`RefCell<InMemoryEventStore>` → 直接所有、旧名 `SqliteEventStore` → `EventStoreImpl`）。
+実装ステップ・トレーサビリティ・Testing Contract は不変。指紋が動いたため再承認を求める。
+
+[Approval Fingerprint]: sha256:04a8a9e1bfa842839caf26a1c97b0ddfcbbbc939695a772041ef2316bcf39a07
 
 - Approve Plan — 計画どおり実装に進む
 - Request Changes — 計画を修正する

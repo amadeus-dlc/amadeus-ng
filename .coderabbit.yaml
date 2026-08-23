@@ -35,10 +35,16 @@ reviews:
     # ハーネスのシェルは framework の配布物であり、本プロジェクトの source ではない。
     - "!.claude/**"
     - "!target/**"
-    # ワークフロー記録は append-only の工程・監査成果物であって編集可能な source では
-    # ない（intent のステージ記録と監査シャード）。これらへの修正提案はカテゴリ誤り。
-    # memory/ と knowledge/ はレビュー対象に残す — 手書きの方針・規則だからである。
-    - "!aidlc/spaces/*/intents/**"
+    # 監査シャードとワークフロー状態は engine が append/更新する生成物であり、
+    # 手で直すものではない（修正提案はカテゴリ誤りになる）。
+    # 一方 intent 配下の設計散文（functional-design / nfr-design / contract-design /
+    # code-generation の各 md）は**手で書き、手で直す source** である — 実際 B5 では
+    # 設計文書を 16 箇所編集した。ここを一括除外すると「設計散文が契約から乖離する」
+    # 類の欠陥がちょうど自動レビューの視界外へ落ちるため、除外は生成物だけに絞る。
+    # memory/ と knowledge/ も手書きの方針・規則なのでレビュー対象に残す。
+    - "!aidlc/spaces/*/intents/*/audit/**"
+    - "!aidlc/spaces/*/intents/*/aidlc-state.md"
+    - "!aidlc/spaces/*/intents/*/runtime-graph.json"
     # ITF フィクスチャは Quint モデルから採取した生成スナップショット（1 行 JSON、
     # #meta 正規化済み）。欠陥はモデルか採取手順で直すものであり、フィクスチャを
     # 手で編集して直すことはない。鮮度は再採取とのバイト一致で担保する。

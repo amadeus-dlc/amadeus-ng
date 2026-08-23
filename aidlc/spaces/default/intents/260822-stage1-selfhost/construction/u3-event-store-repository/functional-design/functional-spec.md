@@ -23,8 +23,9 @@
 
 ## 2. ポートの形（C3 の具体化 — 差分のみ）
 
-- `WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution)}`。`store` は `&mut self`（C3 は
-  `&self` のまま未改訂 — `pending-revision.md` #9、U5 / U6 着手前にオーナー裁定が要る）。
+- `WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution)}`。`store` は `&mut self`（C3 も
+  2026-08-24 のオーナー裁定で `&self` → `&mut self` へ**改訂済み** — `contract-summary.md` §C3、`pending-revision.md` #9。
+  内部可変性の禁止に伴う変更で、正本は `coding-rules/interior-mutability.md` / `command-query-separation.md`）。
 - `EventStore<AID, A, E>` の 4 メソッド — C3 どおり（`version: u64`、`seq_nr: u64`）。Repository 実装は `persist_event_and_snapshot` / `get_latest_snapshot_by_id` /
   `get_events_by_id_since_seq_nr` を使う。
 - `JournalReader::{events_after(GlobalSeqNr), checkpoint(&ProjectionName), advance_checkpoint(&ProjectionName, GlobalSeqNr)}`。
