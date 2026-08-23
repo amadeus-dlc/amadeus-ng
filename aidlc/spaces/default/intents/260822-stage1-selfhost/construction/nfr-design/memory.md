@@ -24,6 +24,6 @@
   BR1.7 の「契約経路の `to_value`」への言及が抜けている — レビュー凍結後のため本文は触らず、
   code-generation 計画に禁止範囲（直列化関数 + 契約経路の to_value）を明記して引き取る（繰り延べ）。
 - 凍結（review-freeze）後に成果物は変更していない。
-- 2026-08-23T01:15:00Z — [Interpretations] U10（packaging）の nfr-design: produces は security-design + traceability の 2 つ（logical-components は produces 外）— 論理コンポーネント（CI ジョブ・スクリプト・ruleset の境界と障害ドメイン）は security-design 内の節に置く。`audit` ジョブを required checks に含めない判断（外部 advisory DB の一時障害で全マージが止まるのを避ける）を前提 P1 として人間確認へ
-- 2026-08-23T01:30:00Z — [Interpretations] proptest 1.11.0 のソース（config.rs:40 `PROPTEST_RNG_SEED`、`RngSeed::Fixed(u64)`）で環境変数によるシード固定が実在することを確認 — NFR2.4 の決定化は `scripts/coverage.sh` と CI で `PROPTEST_RNG_SEED` を固定値に設定するだけで足り、テストコードの変更は不要（security-design §4 の第一候補 (a) が成立）
-- 2026-08-23T01:45:00Z — [Open questions] U10 nfr-design レビュー READY（Minor 2）: (1) カバレッジ除外 regex の表記が tech-stack-decisions（`^` アンカー + 相対パス基準）と設計で逐語不一致 → code-generation 計画で正本を 1 つに確定（`modules/app/aidlc/src/main\.rs$`、cargo llvm-cov の相対パス基準） (2) ruleset 冪等スクリプトは規則タイプの有無だけでなく required コンテキスト集合の一致で収束判定する → 計画に反映
+- 2026-08-22T17:25:00Z — [Interpretations] U10（packaging）の nfr-design: produces は security-design + traceability の 2 つ（logical-components は produces 外）— 論理コンポーネント（CI ジョブ・スクリプト・ruleset の境界と障害ドメイン）は security-design 内の節に置く。`audit` ジョブを required checks に含めない判断（外部 advisory DB の一時障害で全マージが止まるのを避ける）を前提 P1 として人間確認へ
+- 2026-08-22T17:28:00Z — [Interpretations] proptest 1.11.0 のソース（config.rs:40 `PROPTEST_RNG_SEED`、`RngSeed::Fixed(u64)`）で環境変数によるシード固定が実在することを確認 — NFR2.4 の決定化は `scripts/coverage.sh` と CI で `PROPTEST_RNG_SEED` を固定値に設定するだけで足り、テストコードの変更は不要（security-design §4 の第一候補 (a) が成立）
+- 2026-08-22T17:31:00Z — [Open questions] U10 nfr-design レビュー READY（Minor 2）: (1) カバレッジ除外 regex の表記が tech-stack-decisions（`^` アンカー + 相対パス基準）と設計で逐語不一致 → code-generation 計画で正本を 1 つに確定（`modules/app/aidlc/src/main\.rs$`、cargo llvm-cov の相対パス基準） (2) ruleset 冪等スクリプトは規則タイプの有無だけでなく required コンテキスト集合の一致で収束判定する → 計画に反映

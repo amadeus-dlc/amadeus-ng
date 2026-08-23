@@ -28,7 +28,9 @@ RULESET_NAME="${RULESET_NAME:-main}"
 # required にするチェックのコンテキスト名 (= ci.yml のジョブ名)。
 # audit は含めない — advisory DB / ネットワークの一時障害で全マージが止まらないよう
 # required 外に置く裁定 (nfr-design §2)。
-REQUIRED_CONTEXTS="check quint coverage"
+# カンマ区切り (コンテキスト名に空白を含むため)。「CI Success」は review-thread ゲートを含む集約ジョブ
+# (オーナー指示 2026-08-22 UTC — レビュースレッド未解決の PR をマージさせない)。
+REQUIRED_CONTEXTS="check,quint,coverage,CI Success"
 STRICT_POLICY="true"
 # -----------------------------------------------------------------------------
 
@@ -44,7 +46,8 @@ GitHub ruleset「${RULESET_NAME}」に required status checks (${REQUIRED_CONTEX
 
 オプション:
   --dry-run          PUT を実行せず、組み立てた JSON を印字するだけにする
-  --out-dir <dir>    変更前後の ruleset JSON を <dir>/before.json, <dir>/after.json に保存する
+  --out-dir <dir>    変更前後の ruleset JSON を <dir>/before.json, <dir>/after.json に保存する。
+                     --dry-run のときは after.json の代わりに組み立てた PUT ペイロードを <dir>/planned.json に保存する
   --help, -h         このヘルプを表示
 
 環境変数:
@@ -71,27 +74,29 @@ require_cmd() {
 
 # REQUIRED_CONTEXTS を JSON 配列 [{"context":"check"}, ...] に変換する。
 contexts_json() {
-  local ctx json="[]"
-  for ctx in ${REQUIRED_CONTEXTS}; do
+  local ctx json="[]" ctxs
+  IFS=',' read -r -a ctxs <<<"${REQUIRED_CONTEXTS}"
+  for ctx in "${ctxs[@]}"; do
     json="$(printf '%s' "${json}" | jq --arg c "${ctx}" '. + [{context: $c}]')"
   done
   printf '%s' "${json}"
 }
 
-# 期待するコンテキスト集合 (ソート済み・空白区切り)。冪等判定の左辺。
+# 期待するコンテキスト集合 (ソート済み・| 区切り — 名前に空白を含むため)。冪等判定の左辺。
 expected_context_set() {
-  local ctx json="[]"
-  for ctx in ${REQUIRED_CONTEXTS}; do
+  local ctx json="[]" ctxs
+  IFS=',' read -r -a ctxs <<<"${REQUIRED_CONTEXTS}"
+  for ctx in "${ctxs[@]}"; do
     json="$(printf '%s' "${json}" | jq --arg c "${ctx}" '. + [$c]')"
   done
-  printf '%s' "${json}" | jq -r 'sort | join(" ")'
+  printf '%s' "${json}" | jq -r 'sort | join("|")'
 }
 
-# ruleset JSON から現在のコンテキスト集合 (ソート済み・空白区切り) を取り出す。
+# ruleset JSON から現在のコンテキスト集合 (ソート済み・| 区切り) を取り出す。
 actual_context_set() {
   printf '%s' "$1" | jq -r '
     [.rules[] | select(.type == "required_status_checks")
-              | .parameters.required_status_checks[]?.context] | sort | join(" ")'
+              | .parameters.required_status_checks[]?.context] | sort | join("|")'
 }
 
 # ruleset JSON から strict フラグを取り出す (規則が無ければ false)。
@@ -171,6 +176,9 @@ main() {
   if [[ "${DRY_RUN}" -eq 1 ]]; then
     log_step "--dry-run: PUT は実行しません。組み立てた JSON を印字します"
     printf '%s\n' "${payload}"
+    if [[ -n "${OUT_DIR}" ]]; then
+      save_json "${payload}" "planned.json"
+    fi
     exit 0
   fi
 

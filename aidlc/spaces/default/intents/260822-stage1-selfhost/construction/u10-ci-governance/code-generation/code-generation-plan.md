@@ -1,5 +1,8 @@
 # code-generation-plan — U10 CI ガバナンス（`u10-ci-governance`）
 
+> **上書き記録あり（2026-08-22 UTC）**: 承認後に確定した裁定・実態（`TOLERANCE` 暫定 0.05、除外 regex `(^|/)…`、ruleset 適用済み、toolchain 入力の導出）は
+> `superseding-decisions.md` が本計画の当該箇所を上書きする。本文は承認時の内容を保つ。
+
 > Code Generation（Construction 3.5）の計画（Unit: U10、kind: packaging、Bolt: B2、規模 M）。出典:
 > `../nfr-requirements/security-requirements.md`（NFR2.1〜2.5 / NFR4.1〜4.5）、`../nfr-requirements/tech-stack-decisions.md`、
 > `../nfr-design/security-design.md`（CI 4 ジョブ・ruleset 手順・ワークスペース設定・障害ドメイン、レビュー Minor 2 件）、

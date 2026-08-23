@@ -170,3 +170,56 @@ jobs:
 
       - name: cargo audit (tools/lint)
         run: cargo audit --file tools/lint/Cargo.lock
+
+  # レビュースレッドのゲート（オーナー指示 2026-08-22 UTC — amadeus-dlc/amadeus の ci.yml に倣う）:
+  # 未解決のレビュースレッド（CodeRabbit 等のボットコメントを含む）が残る PR は
+  # 「CI Success」を通さない。ボットの「使用量上限で未実行」報告のような定型文は除外。
+  # PR でのみ評価し、merge_group ではスキップ（CI Success 側で skipped を許容）。
+  review-thread-resolution:
+    name: CI Review Thread Gate
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      checks: write
+      issues: read
+      pull-requests: read
+      statuses: write
+    uses: j5ik2o/ci/.github/workflows/review-thread-resolution.yml@9cf0e9a8cd74c72de704763025003ed3b7608c65
+    with:
+      wait_for_other_checks: "false"
+      base_branch: main
+      required_context: Check unresolved comments
+      extra_ignored_auto_report_author_patterns: "cursor\tBugbot couldn't run - usage limit reached"
+      ci_ref: 9cf0e9a8cd74c72de704763025003ed3b7608c65
+
+  # 集約ジョブ。ruleset の required checks は check / quint / coverage に加えて「CI Success」を要求する。
+  # pull_request では review-thread-resolution の成功も要求し、merge_group / workflow_dispatch では
+  # skipped を許容する（merge queue が詰まらない）。audit は advisory（required 外）のままここでは要求しない。
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs:
+      - check
+      - quint
+      - coverage
+      - review-thread-resolution
+    if: ${{ always() }}
+    steps:
+      - name: All required checks passed
+        run: |
+          require_result() {
+            local name="$1" actual="$2"
+            if [[ "${actual}" != "success" ]]; then
+              echo "${name} was ${actual}; expected success"
+              exit 1
+            fi
+          }
+          require_result "check" "${{ needs.check.result }}"
+          require_result "quint" "${{ needs.quint.result }}"
+          require_result "coverage" "${{ needs.coverage.result }}"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            require_result "review-thread-resolution" "${{ needs['review-thread-resolution'].result }}"
+          elif [[ "${{ needs['review-thread-resolution'].result }}" != "skipped" ]]; then
+            echo "review-thread-resolution was ${{ needs['review-thread-resolution'].result }}; expected skipped"
+            exit 1
+          fi

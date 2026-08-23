@@ -32,7 +32,7 @@ EXPECTED_TOLERANCE="0.05"
 # 行頭またはパス区切り ((^|/)) にする (scripts/coverage.sh のコメント参照)。
 EXPECTED_IGNORE_REGEX='(^|/)modules/app/aidlc/src/main\.rs$'
 EXPECTED_SEED="20260823"
-EXPECTED_CONTEXTS="check coverage quint" # 比較は集合 (ソート済み) で行う
+EXPECTED_CONTEXTS="CI Success|check|coverage|quint" # 比較は集合 (ソート済み・| 区切り) で行う。CI Success = review-thread ゲートを含む集約ジョブ
 GOVERNANCE_REPO="${GOVERNANCE_REPO:-amadeus-dlc/amadeus-ng}"
 RULESET_NAME="${RULESET_NAME:-main}"
 # -----------------------------------------------------------------------------
@@ -164,6 +164,28 @@ check_workspace_lints() {
     fi
   fi
 
+  # workspace member は [lints] workspace = true を書かないと [workspace.lints] を継承しない。
+  # 新しいクレートが宣言を省くと unsafe_code = "forbid" が黙って外れるため、
+  # ルート manifest の members を列挙して各 manifest の継承宣言を検査する (PR #25 レビュー指摘)。
+  if require_file "${ROOT_MANIFEST}" workspace-members-lints-inherit; then
+    local members missing_members=""
+    members="$(sed -nE '/^members[[:space:]]*=[[:space:]]*\[/,/\]/p' "${ROOT_MANIFEST}" | sed -nE 's/^[[:space:]]*"([^"]+)".*/\1/p')"
+    local m
+    while IFS= read -r m; do
+      [[ -n "${m}" ]] || continue
+      if ! toml_section "${m}/Cargo.toml" "lints" | grep -Eq '^[[:space:]]*workspace[[:space:]]*=[[:space:]]*true[[:space:]]*$'; then
+        missing_members="${missing_members} ${m}"
+      fi
+    done <<<"${members}"
+    if [[ -z "${members}" ]]; then
+      fail "workspace-members-lints-inherit" "${ROOT_MANIFEST} の [workspace] members を読めない"
+    elif [[ -z "${missing_members}" ]]; then
+      pass "workspace-members-lints-inherit" "workspace member $(printf '%s\n' "${members}" | grep -c .) 件すべてが [lints] workspace = true で継承している (NFR4.3)"
+    else
+      fail "workspace-members-lints-inherit" "[lints] workspace = true が無い member:${missing_members} (unsafe_code = \"forbid\" が継承されない)"
+    fi
+  fi
+
   if require_file "${LINT_MANIFEST}" tools-lint-unsafe-forbid; then
     if toml_section "${LINT_MANIFEST}" "lints.rust" \
       | grep -Eq '^[[:space:]]*unsafe_code[[:space:]]*=[[:space:]]*"forbid"[[:space:]]*$'; then
@@ -178,7 +200,8 @@ check_workspace_lints() {
 check_ci_workflow() {
   require_file "${CI_FILE}" \
     ci-merge-group-trigger ci-permissions-contents-read ci-toolchain-file-driven \
-    ci-tools-lint-steps ci-audit-job ci-proptest-seed-env ci-coverage-base-condition || return 0
+    ci-tools-lint-steps ci-audit-job ci-proptest-seed-env ci-coverage-base-condition \
+    ci-review-thread-gate ci-success-aggregate ci-review-thread-refresh-workflow || return 0
 
   # NFR2.2: merge queue のチェックを走らせるための merge_group トリガ
   if yaml_top_block "${CI_FILE}" "on" | grep -Eq '^[[:space:]]*merge_group:'; then
@@ -215,6 +238,36 @@ check_ci_workflow() {
   expect "${tc_ok}" "ci-toolchain-file-driven" \
     "toolchain が dtolnay/rust-toolchain@master + rust-toolchain.toml 駆動 (toolchain / components はファイルから導出、NFR4.2)" \
     "toolchain が rust-toolchain.toml 駆動になっていない (@master が無い / @stable が残っている / toolchain-inputs.sh 経由でない / リテラルの toolchain: や components: が残っている)"
+
+  # レビュースレッドのゲート (オーナー指示 2026-08-22 UTC): 未解決のレビューコメントを残した PR を
+  # マージさせない。ci.yml の review-thread-resolution ジョブ (pull_request のみ、j5ik2o/ci の再利用
+  # ワークフローを SHA 固定で呼ぶ) と、check / quint / coverage + ゲートを束ねる CI Success 集約ジョブ。
+  local rt_ok=0
+  grep -Eq '^[[:space:]]*review-thread-resolution:' "${CI_FILE}" || rt_ok=1
+  grep -Eq "uses: j5ik2o/ci/.github/workflows/review-thread-resolution.yml@[0-9a-f]{40}" "${CI_FILE}" || rt_ok=1
+  grep -Eq "required_context: Check unresolved comments" "${CI_FILE}" || rt_ok=1
+  expect "${rt_ok}" "ci-review-thread-gate" \
+    "review-thread-resolution ジョブが j5ik2o/ci の再利用ワークフロー (SHA 固定) を pull_request で呼んでいる" \
+    "review-thread-resolution ジョブが無い / 再利用ワークフローが SHA 固定でない / required_context が違う"
+
+  local cs_ok=0
+  grep -Eq '^[[:space:]]*ci-success:' "${CI_FILE}" || cs_ok=1
+  grep -Eq '^[[:space:]]*name: CI Success' "${CI_FILE}" || cs_ok=1
+  for dep in check quint coverage review-thread-resolution; do
+    grep -Eq "^[[:space:]]*- ${dep}\$" "${CI_FILE}" || cs_ok=1
+  done
+  grep -q 'require_result "review-thread-resolution"' "${CI_FILE}" || cs_ok=1
+  expect "${cs_ok}" "ci-success-aggregate" \
+    "CI Success 集約ジョブが check / quint / coverage と review-thread-resolution (pull_request のみ必須) を束ねている" \
+    "CI Success 集約ジョブが無い / needs か require_result が揃っていない"
+
+  if [[ -f ".github/workflows/review-thread-resolution.yml" ]] \
+    && grep -Eq "uses: j5ik2o/ci/.github/workflows/review-thread-resolution.yml@[0-9a-f]{40}" ".github/workflows/review-thread-resolution.yml" \
+    && grep -Eq '^[[:space:]]*pull_request_review_comment:' ".github/workflows/review-thread-resolution.yml"; then
+    pass "ci-review-thread-refresh-workflow" "review-thread-resolution.yml がレビューイベントと定期実行で状態を再評価する"
+  else
+    fail "ci-review-thread-refresh-workflow" ".github/workflows/review-thread-resolution.yml が無い / 再利用ワークフローが SHA 固定でない / レビューイベントのトリガが無い"
+  fi
 
   # NFR2.3: tools/lint (detached クレート) の fmt / clippy / 自己テスト
   local tl_ok=0
@@ -313,7 +366,7 @@ check_ruleset() {
   fi
 
   actual="$(printf '%s' "${detail}" \
-    | jq -r '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | sort | join(" ")')"
+    | jq -r '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | sort | join("|")')"
   strict="$(printf '%s' "${detail}" \
     | jq -r '[.rules[] | select(.type == "required_status_checks") | .parameters.strict_required_status_checks_policy] | .[0] // false')"
 

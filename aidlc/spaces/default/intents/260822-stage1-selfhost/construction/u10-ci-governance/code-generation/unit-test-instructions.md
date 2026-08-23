@@ -1,5 +1,8 @@
 # unit-test-instructions — U10 CI ガバナンス（`u10-ci-governance`）
 
+> **上書き記録あり（2026-08-22 UTC）**: `TOLERANCE` は暫定 0.05（受入「差 0.00pp」は未達、残ジッタ 0.0175pp）、`bash -n` はファイルごとに個別実行 —
+> `superseding-decisions.md` #1 / #7 が本手順の §2 / §3 を上書きする。
+
 > Code Generation（Construction 3.5）の単体テスト手順（Unit: U10、kind: packaging）。出典: `code-generation-plan.md`
 > （Testing Contract: methodology tdd / strategy standard / scope classic、§3 テスト戦略）、`aidlc/spaces/default/memory/team.md`
 > Testing Posture、`../nfr-requirements/security-requirements.md`（NFR2.1〜2.5 / NFR4.1〜4.5 の合格基準）、

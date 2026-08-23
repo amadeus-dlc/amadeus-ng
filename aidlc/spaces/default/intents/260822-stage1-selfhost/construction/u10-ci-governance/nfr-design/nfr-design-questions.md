@@ -20,11 +20,11 @@
   （`audit` は required に含めない — advisory DB の一時障害で全マージが止まるのを避ける。含めるかは運用 1 週間後に再判断）。
 - P2. **ruleset 変更の手順**: `scripts/governance/ruleset-required-checks.sh`（bash + `gh api`）— 変更前の ruleset JSON を
   取得して記録 → `rules[]` に `required_status_checks`（`check` / `quint` / `coverage`、`strict_required_status_checks_policy:
-  true`）を**追加**（既存の deletion / non_fast_forward / merge_queue は維持）→ 変更後 JSON を取得して記録。冪等（既に
-  存在すれば何もしない）。実行はオーナー権限。正常系の受入 = 緑の PR 1 本が merge queue を通って squash-merge まで完走
+  true`）を**追加**（既存の deletion / non_fast_forward / merge_queue は維持）→ 変更後 JSON を取得して記録。冪等（期待の
+  コンテキスト集合 + strict と一致していれば何もしない — 規則タイプの有無ではなく中身で判定）。実行はオーナー権限。正常系の受入 = 緑の PR 1 本が merge queue を通って squash-merge まで完走
   （レビュー Minor 3 の引き取り）。
-- P3. **カバレッジの決定化と除外**: `scripts/coverage.sh` に `--ignore-filename-regex` で `modules/app/aidlc/src/main.rs`
-  のみ除外、`TOLERANCE=0.01`。PBT シード固定は proptest の API（`PROPTEST_RNG_SEED` 環境変数 または `TestRunner` ヘルパ）を
+- P3. **カバレッジの決定化と除外**: `scripts/coverage.sh` に `--ignore-filename-regex '(^|/)modules/app/aidlc/src/main\.rs$'`（llvm-cov は
+  絶対パスを記録するため `^` 単独は不活性 — 実装時に訂正）で `main.rs` のみ除外、`TOLERANCE=0.01`（実装時の残ジッタにより暫定 0.05 へ — ゲート裁定）。PBT シード固定は proptest の API（`PROPTEST_RNG_SEED` 環境変数 または `TestRunner` ヘルパ）を
   code-generation で確認して決め、受入は「2 回計測で差 0.00pp」。
 - P4. **障害ドメイン**: CI 設定の誤りは当該 PR の赤に閉じる（他へ波及しない）。ruleset の誤設定は**全マージを止める**
   （ブラストラディウス最大）— 手順スクリプトの前後 JSON と正常系 PR での確認で抑える。`audit` の外部依存障害は
