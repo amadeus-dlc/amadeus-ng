@@ -18,3 +18,5 @@
    target を `.github/workflows/ci.yml`（+ 必要なら `scripts/governance/ruleset-required-checks.sh` を別行に分けられないため主ファイル 1 本に）、
    NFR4.4 の target を `.github/workflows/ci.yml`、FR9.x は既存どおり。センサー `aidlc-sensor-traceability.ts --stage code-generation` で
    `invalid_targets` = 0 を確認。
+5. `code-summary.md` §1 Step 1 / Step 10 の検査数値（「15 項目」「16/16 PASS」）を実測（`verify-ci-governance.sh` 19/19、`--with-ruleset` で 20/20）に
+   更新する（レビュアー最終報告の追加指摘）。
