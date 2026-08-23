@@ -14336,3 +14336,364 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-08-23T05:26:58Z
+**Event**: UNIT_STARTED
+**Stage**: code-generation
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:30:35Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-plan.md
+**Context**: construction > u9-canon-docs > code-generation > code-generation-plan.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:30:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: cfd1f9a3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-plan.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:30:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: cfd1f9a3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-plan.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:30:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: a3295300
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-plan.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:30:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: a3295300
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-plan.md
+**Duration ms**: 19
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:30:56Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/unit-test-instructions.md
+**Context**: construction > u9-canon-docs > code-generation > unit-test-instructions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:30:56Z
+**Event**: SENSOR_FIRED
+**Fire id**: fd0e85e1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/unit-test-instructions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:30:56Z
+**Event**: SENSOR_PASSED
+**Fire id**: fd0e85e1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/unit-test-instructions.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:30:56Z
+**Event**: SENSOR_FIRED
+**Fire id**: d1493c37
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/unit-test-instructions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:30:56Z
+**Event**: SENSOR_FAILED
+**Fire id**: d1493c37
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/unit-test-instructions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-d1493c37.md
+**Findings count**: 4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:31:34Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Context**: construction > u9-canon-docs > code-generation > code-generation-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:31:34Z
+**Event**: SENSOR_FIRED
+**Fire id**: 527d02c4
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:31:34Z
+**Event**: SENSOR_PASSED
+**Fire id**: 527d02c4
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:31:34Z
+**Event**: SENSOR_FIRED
+**Fire id**: c3f8cef6
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:31:34Z
+**Event**: SENSOR_PASSED
+**Fire id**: c3f8cef6
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Duration ms**: 17
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T05:31:40Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log decision --stage code-generation --unit u9-canon-docs --decision U9 / Bolt B4 の code-generation 計画承認（Plan Approval、質問なし、P1〜P3） --options Approve Plan,Request Changes --checkpoint plan-approval --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Error**: Unknown --checkpoint "plan-approval". Accepted: summary-confirmation
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-08-23T05:31:43Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: U9 / Bolt B4 の code-generation 計画承認（Plan Approval、質問なし、P1〜P3）
+**Options**: Approve Plan,Request Changes
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-23T05:36:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-23T05:37:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Context**: construction > u9-canon-docs > code-generation > code-generation-questions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:37:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: cefc6b81
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:37:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: cefc6b81
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:37:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: 97ee1060
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:37:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: 97ee1060
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/code-generation-questions.md
+**Duration ms**: 20
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:38:00Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-1.md
+**Context**: construction > u9-canon-docs > code-generation > developer-brief-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:38:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8530c6ae
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:38:01Z
+**Event**: SENSOR_PASSED
+**Fire id**: 8530c6ae
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-1.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:38:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: b681fed4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:38:01Z
+**Event**: SENSOR_FAILED
+**Fire id**: b681fed4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-b681fed4.md
+**Findings count**: 4
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-23T05:39:13Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-2.md
+**Context**: construction > u9-canon-docs > code-generation > developer-brief-2.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:39:13Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6c1b4993
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-2.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-23T05:39:13Z
+**Event**: SENSOR_PASSED
+**Fire id**: 6c1b4993
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-2.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-23T05:39:13Z
+**Event**: SENSOR_FIRED
+**Fire id**: ffea70ec
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-2.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-23T05:39:13Z
+**Event**: SENSOR_FAILED
+**Fire id**: ffea70ec
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/developer-brief-2.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-ffea70ec.md
+**Findings count**: 3
+
+---
+
+## Question Answered
+**Timestamp**: 2026-08-23T05:39:21Z
+**Event**: QUESTION_ANSWERED
+**Stage**: code-generation
+**Details**: Approve Plan — 計画どおり文書改訂に進む
+**Unit**: u9-canon-docs
+
+---
+
+## Bolt Started
+**Timestamp**: 2026-08-23T05:39:21Z
+**Event**: BOLT_STARTED
+**Bolt names**: B4
+**Batch number**: 1
+**Walking skeleton**: false
+
+---
