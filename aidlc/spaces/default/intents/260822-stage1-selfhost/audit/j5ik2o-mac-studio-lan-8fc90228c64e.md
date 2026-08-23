@@ -16057,3 +16057,50 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
 
 ---
+
+## Error Logged
+**Timestamp**: 2026-08-23T09:09:59Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state unit start --stage nfr-design --unit u3-event-store-repository
+**Error**: Refusing to start unit "u3-event-store-repository" for "nfr-design": the engine currently routes a error directive. Run the exact directive.stage/directive.unit pair returned by aidlc-orchestrate.ts next.
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T09:10:25Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Write
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+**Stage**: nfr-requirements
+**Unit**: u3-event-store-repository
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-08-23T09:10:28Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Write
+**Target**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Stage**: nfr-requirements
+**Unit**: u3-event-store-repository
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T09:10:42Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage nfr-requirements --reviewer aidlc-architecture-reviewer-agent --unit u3-event-store-repository --iteration 1 --retry-pending
+**Error**: Refusing review retry for "nfr-requirements": no unmatched REVIEW_REQUESTED iteration 1 exists in the current audit attempt.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-08-23T09:11:34Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state unit start --stage nfr-design --unit u3-event-store-repository
+**Error**: Refusing to start unit "u3-event-store-repository" for "nfr-design": the engine currently routes a error directive. Run the exact directive.stage/directive.unit pair returned by aidlc-orchestrate.ts next.
+
+---
