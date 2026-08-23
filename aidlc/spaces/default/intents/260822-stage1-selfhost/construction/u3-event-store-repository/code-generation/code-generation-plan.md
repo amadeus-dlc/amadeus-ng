@@ -23,14 +23,14 @@
 
 ## 2. 公開 API（設計の写し — 実装の契約）
 
-- `core_use_case::orchestration`: `trait WorkflowExecutionRepository { async fn find_by_id(&self, &IntentId) -> Result<WorkflowExecution, RepositoryError>; async fn store(&self, &WorkflowExecutionEvent, &WorkflowExecution) -> Result<(), RepositoryError>; }`、
+- `core_use_case::orchestration`: `trait WorkflowExecutionRepository { async fn find_by_id(&self, &IntentId) -> Result<WorkflowExecution, RepositoryError>; async fn store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution) -> Result<(), RepositoryError>; }`（2026-08-23 改訂: `&self` → `&mut self`。オーナー裁定、正本 `coding-rules/command-query-separation.md`）、
   `trait EventStore<AID, A, E> { async fn persist_event(&mut self, &E, version: u64); async fn persist_event_and_snapshot(&mut self, &E, &A); async fn get_latest_snapshot_by_id(&self, &AID) -> Result<Option<A>, _>; async fn get_events_by_id_since_seq_nr(&self, &AID, seq_nr: u64) -> Result<Vec<E>, _>; }`（戻りは `EventStoreError`）、
   `trait JournalReader { async fn events_after(&self, GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, _>; async fn checkpoint(&self, &ProjectionName) -> Result<GlobalSeqNr, _>; async fn advance_checkpoint(&mut self, &ProjectionName, GlobalSeqNr) -> Result<(), _>; }`、
   `RepositoryError { NotFound { intent_id }, Conflict { expected, actual }, Io { kind, path }, Corrupt { aggregate_id, seq_nr, cause } }`、
   `EventStoreError { Conflict, Io, Corrupt { aggregate_id: String, .. }, Schema { found, supported }, CheckpointRegression { projection, current, requested } }`、
   `CorruptCause { MissingSnapshot, UndecodablePayload, UnknownEventType, SchemaVersion, InvariantViolation, SequenceGap }`、`GlobalSeqNr(u64)`（`ZERO`）、`ProjectionName`（kebab ≤ 64）。
-- `core_interface_adapter::orchestration`: `SqliteEventStore::open(StorePath, C: Clock) -> Result<Self, EventStoreError>`、`within_write_transaction(&mut self, f)`、
-  `StorePath::for_space(&Path, &SpaceName)`、`WorkflowExecutionRepositoryImpl { store: RefCell<SqliteEventStore> }`、`memory::{InMemoryEventStore, InMemoryWorkflowExecutionRepository}`。
+- `core_interface_adapter::orchestration`: `EventStoreImpl::open(StorePath, C: Clock) -> Result<Self, EventStoreError>`、`within_write_transaction(&mut self, f)`、
+  `StorePath::for_space(&Path, &SpaceName)`、`WorkflowExecutionRepositoryImpl { store: EventStoreImpl<C> }`（直接所有）、`memory::{InMemoryEventStore, InMemoryWorkflowExecutionRepository}`。
 - `core_domain`: `orchestration::{IntentId（UUIDv7）, WorkflowExecutionState, WorkflowExecutionStateBuilder, StateError}`、`WorkflowExecution::{state, from_state}`、`workspace::IntentDirName`。
 - 意味論は FD functional-spec §3（store / find_by_id / 差分読取 / 登録簿直列化 / open）、ワイヤは §4、モデルは §5。
 
@@ -42,7 +42,7 @@
 | BR4.1 / BR4.2 / BR4.3 | IntentId UUIDv7（Red: parse テスト）、IntentDirName 新設（Red）、Snapshot → State 改名（refactor、旧名 0 件） | 2 |
 | BR1.1〜BR1.5 | ポート / エラー / 値をユースケース層に（Red: 値型 parse・エラー Display） | 3 |
 | BR2.5 / BR2.7 | ワイヤ（PBT ラウンドトリップ）、InMemory 2 本、契約テスト（ジェネリック）を先に赤で | 4〜5 |
-| BR2.1〜BR2.4 / BR2.6 / BR2.8 | SQLite ストア（DDL 逐語、BEGIN IMMEDIATE、楽観 version、within_write_transaction、Clock）、Repository 実装（RefCell）、StorePath、依存追加 | 6〜8 |
+| BR2.1〜BR2.4 / BR2.6 / BR2.8 | SQLite ストア（DDL 逐語、BEGIN IMMEDIATE、楽観 version、within_write_transaction、Clock）、Repository 実装（`EventStoreImpl` を直接所有）、StorePath、依存追加 | 6〜8 |
 | BR3.3 / BR3.4 / BR3.5 | journal_protocol.qnt（8 不変条件 + 4 witness、mutation 表）、ITF fixture ≥ 6、conformance（InMemory + フェイク投影）、quint-gate 更新 | 9〜11 |
 | BR5.1 | 仕様・正本の同期（10 / 11 / 01 号、deviations # 4、coding-rules） | 12 |
 | NFR 要求 pending 1 / 2 | coverage TOLERANCE 0.01、lint 昇格 + 是正 | 1（TOLERANCE）/ 13（lint） |
@@ -97,15 +97,15 @@ Testing Contract の層: 「Data model」= 値型・エラー型・IntentId / In
       find_by_id → `state()` 同値）、NotFound、Conflict（2 再水和の競合）、Corrupt（MissingSnapshot / UndecodablePayload / SchemaVersion — 実装が行を直接いじれる
       フックを支援として持つ）、events_after の順序と欠落なし、checkpoint 未登録 = ZERO、advance の単調性 / CheckpointRegression、genesis（expected 0）の store）。
       `InMemoryEventStore`（BTreeMap journal / snapshot / checkpoint、同じ Conflict 規則、within_write_transaction 相当はクロージャ実行のみ）と
-      `InMemoryWorkflowExecutionRepository { store: RefCell<InMemoryEventStore> }` で緑に。`developer-report-2.md`。
+      `InMemoryWorkflowExecutionRepository { store: InMemoryEventStore }`（直接所有） で緑に。`developer-report-2.md`。
 
 ### 5.3 委任 3 — SQLite ストア + Repository 実装（Opus、所有: `modules/core/interface-adapter/src/orchestration/{sqlite_event_store.rs,schema.rs,store_path.rs,workflow_execution_repository_impl.rs}`、`modules/core/interface-adapter/tests/{sqlite_event_store_test.rs,workflow_execution_repository_impl_test.rs,crash_reconstruction_test.rs}`、`Cargo.toml`（workspace deps: rusqlite / tokio）、`modules/core/interface-adapter/Cargo.toml`、`Cargo.lock`。`mod.rs` の `pub use` 追記は委任 2 完了後に本委任が行う）
 
 - [ ] Step 6. Repository — Red: 既存契約テスト群を SQLite 実装で実行（`tempfile` の一時 dir に `intents/.aidlc-store.sqlite`）、追加テスト: open / 初期化（user_version
       0 → 1、1 → OK、2 → Schema、親 dir 欠落 → Io NotFound）、`PRAGMA table_info` で C6 の列・型・制約突合、BEGIN IMMEDIATE の 2 接続直列化（busy_timeout 内 / 超過
       → Io WouldBlock）、`within_write_transaction` の rollback（f が Err）、クラッシュ再構成（store 後に接続 drop → 新接続 find_by_id 同値）、rusqlite Error → 写像。
-- [ ] Step 7. Repository — Green: `schema.rs`（C6 DDL 定数）、`SqliteEventStore`（open / pragmas / Tx 手順 BR2.3 / JournalReader / within_write_transaction / Clock）、
-      `StorePath`、`WorkflowExecutionRepositoryImpl`（RefCell、BR1.2 / BR1.3 の手順 — `expected = aggregate.version()` = `event.seq_nr() − 1` の前提検査、replay 後に
+- [ ] Step 7. Repository — Green: `schema.rs`（C6 DDL 定数）、`EventStoreImpl`（open / pragmas / Tx 手順 BR2.3 / JournalReader / within_write_transaction / Clock）、
+      `StorePath`、`WorkflowExecutionRepositoryImpl`（`EventStoreImpl` を直接所有、BR1.2 / BR1.3 の手順 — `expected = aggregate.version()` = `event.seq_nr() − 1` の前提検査、replay 後に
       `with_version(last)`）。依存: workspace `rusqlite = { version = "<latest 0.3x>", features = ["bundled"] }`、`tokio = { version = "1", features = ["rt", "macros"] }`。
 - [ ] Step 8. Repository — Refactor: エラー写像の一本化、rustdoc（`# Errors`）、索引アクセスなし（`get` / イテレータ）、`cargo audit` 実行（結果を報告）、
       `cargo clippy -D warnings` 緑。`developer-report-3.md`。
@@ -124,7 +124,7 @@ Testing Contract の層: 「Data model」= 値型・エラー型・IntentId / In
 - [ ] Step 12. BR5.1: 10 号 §6 I14 と 11 号 §6 W1〜W5 → journal_protocol の J1〜J6（conflict_rejected / snapshot_tracks_journal / checkpoint_monotone / projection_idempotent /
       truth_is_journal / no_lost_update）と E4 定義名、11 号 §2.2 `LockIdentity` 行 → 退役、§3 / §4 の `ProcessProbe` → 退役、§8 の Quint 記録に journal_protocol への
       改訂経緯、§10 未決 2 件を Q1 / Q2 の裁定で確定（stage-0/1 併用期の相互排他は「担保しない — 単一クローン運用」と明記、`intents.json` は
-      `within_write_transaction`）、10 号 §3 / 11 号 §3 の実装欄に `SqliteEventStore`、01 号 §3.3 代表不変条件 + §6 第一陣を協定モデルへ、`deviations.md` # 4 のパス
+      `within_write_transaction`）、10 号 §3 / 11 号 §3 の実装欄に `EventStoreImpl`、01 号 §3.3 代表不変条件 + §6 第一陣を協定モデルへ、`deviations.md` # 4 のパス
       `aidlc/spaces/<space>/intents/.aidlc-store.sqlite` 確定（「相当」除去）。出典注記つき、逐語契約には触れない。`developer-report-5.md`。
 
 ### 5.6 委任 6 — lint 昇格 + 既存是正（Sonnet、所有: `Cargo.toml`（`[workspace.lints.clippy]` のみ）、`modules/**`（委任 1〜3 完了後、索引の是正に限る）、`clippy.toml`（必要なら））

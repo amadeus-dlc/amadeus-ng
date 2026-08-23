@@ -12,8 +12,6 @@
 //! だけで、そうしておくことで契約テスト (`tests/support/contract.rs`) が両方に同じ約束を
 //! 課せる (BR2.7)。
 
-use std::cell::RefCell;
-
 use core_domain::orchestration::{ApplyError, IntentId, WorkflowExecution, WorkflowExecutionEvent};
 use core_use_case::orchestration::{
     CorruptCause, EventStore, RepositoryError, WorkflowExecutionRepository,
@@ -23,18 +21,16 @@ use crate::Clock;
 
 use super::event_store_impl::EventStoreImpl;
 
-/// SQLite ストアを内包する `WorkflowExecutionRepository` の実装。
+/// SQLite ストアを**単一所有**する `WorkflowExecutionRepository` の実装。
 ///
-/// `WorkflowExecutionRepository` のメソッドは `&self` (C3) だが、`EventStore` の書込は
-/// `&mut self` なので `RefCell` で橋渡しする (tokio current_thread・`Send` 不要なので
-/// `Mutex` ではなく `RefCell` — Q3 = A)。
-///
-/// 借用は **await をまたがない** (`clippy::await_holding_refcell_ref` が機械強制する)。
-/// ストアは共有ハンドルなので、借用はハンドルを複製する一瞬だけで済み、以降の `await` は
-/// 複製に対して行う — 複製は同じ接続を指すので、書込は同じ 3 表へ届く。
+/// 内部可変性は持たない — 再構成 (Query) は `&self`、永続化 (Command) は `&mut self` で、
+/// ストアの `EventStore` 実装のレシーバとそのまま揃う
+/// (`coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md`)。
+/// 書込中の排他は借用チェッカが保証するので、`RefCell` の実行時借用検査も
+/// `clippy::await_holding_refcell_ref` の心配も要らない。
 #[derive(Debug)]
 pub struct WorkflowExecutionRepositoryImpl<C> {
-    store: RefCell<EventStoreImpl<C>>,
+    store: EventStoreImpl<C>,
 }
 
 /// `apply_event` の失敗を `Corrupt` の原因へ写す。
@@ -51,15 +47,24 @@ impl<C: Clock> WorkflowExecutionRepositoryImpl<C> {
     /// 開いたストアを内包する Repository を作る。
     #[must_use]
     pub const fn new(store: EventStoreImpl<C>) -> WorkflowExecutionRepositoryImpl<C> {
-        WorkflowExecutionRepositoryImpl {
-            store: RefCell::new(store),
-        }
+        WorkflowExecutionRepositoryImpl { store }
     }
 
-    /// 内包しているストアへのハンドル (`JournalReader` として使うため)。
+    /// 内包しているストアへの参照 (`JournalReader` の読取に使う Query)。
+    ///
+    /// 所有権も別ハンドルも配らない — 配ると同じ接続を指す 2 つ目の口ができ、
+    /// `&mut self` の排他性が嘘になる (`coding-rules/interior-mutability.md`)。
     #[must_use]
-    pub fn event_store(&self) -> EventStoreImpl<C> {
-        self.store.borrow().clone()
+    pub const fn event_store(&self) -> &EventStoreImpl<C> {
+        &self.store
+    }
+
+    /// 内包しているストアへの可変参照 (`advance_checkpoint` など書込に使う Command 側の口)。
+    ///
+    /// Query (`event_store`) と分けてあるのは CQS のためである
+    /// (`coding-rules/command-query-separation.md`)。
+    pub const fn event_store_mut(&mut self) -> &mut EventStoreImpl<C> {
+        &mut self.store
     }
 
     /// 呼出側の不整合 (BR1.3 の前提検査)。破ったら `Corrupt(SequenceGap)`。
@@ -91,8 +96,7 @@ impl<C: Clock> WorkflowExecutionRepositoryImpl<C> {
 
 impl<C: Clock> WorkflowExecutionRepository for WorkflowExecutionRepositoryImpl<C> {
     async fn find_by_id(&self, id: &IntentId) -> Result<WorkflowExecution, RepositoryError> {
-        // 借用はハンドルの複製までで閉じる (await をまたがない)。
-        let store = self.store.borrow().clone();
+        let store = &self.store;
         let snapshot = store
             .get_latest_snapshot_by_id(id)
             .await
@@ -134,14 +138,12 @@ impl<C: Clock> WorkflowExecutionRepository for WorkflowExecutionRepositoryImpl<C
     }
 
     async fn store(
-        &self,
+        &mut self,
         event: &WorkflowExecutionEvent,
         aggregate: &WorkflowExecution,
     ) -> Result<(), RepositoryError> {
         WorkflowExecutionRepositoryImpl::<C>::check_preconditions(event, aggregate)?;
-        // 借用はハンドルの複製までで閉じる (await をまたがない)。書込は同じ 3 表へ届く。
-        let mut store = self.store.borrow().clone();
-        store
+        self.store
             .persist_event_and_snapshot(event, aggregate)
             .await
             .map_err(|error| RepositoryError::from_event_store(error, event.intent_id()))

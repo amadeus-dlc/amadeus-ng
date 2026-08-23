@@ -9,10 +9,8 @@
 //! テストダブルなので `Impl` 接尾辞は付けない
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::Bound;
-use std::rc::Rc;
 
 use core_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
 use core_use_case::orchestration::{
@@ -41,7 +39,7 @@ struct SnapshotRow {
 }
 
 /// 3 表と global 通番の採番器。
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 struct Tables {
     journal: BTreeMap<(IntentId, u64), JournalRow>,
     snapshot: BTreeMap<IntentId, SnapshotRow>,
@@ -62,14 +60,16 @@ impl Tables {
     }
 }
 
-/// `EventStore` + `JournalReader` の in-memory 実装への**共有ハンドル**。
+/// `EventStore` + `JournalReader` の in-memory 実装。3 表を**単一所有**する。
 ///
-/// `clone` は同じストア (3 表) を指す別のハンドルを返す。「同じストアを別のインスタンスから
-/// 開き直す」= 別プロセスからの再オープンに相当する形を、契約テストが実装によらず書ける
-/// ようにするためで、SQLite 実装で同じファイルを開き直すことに対応する。
+/// SQLite 実装と同じく内部可変性を持たない — 読取は `&self`、書込は `&mut self` である
+/// (`coding-rules/interior-mutability.md`)。`clone` は 3 表を丸ごと写した**独立した別の
+/// ストア**であり、同じ可変状態を指す別ハンドルではない。「同じストアを別のインスタンスから
+/// 開き直す」(= 別プロセスからの再オープン、SQLite 実装で同じファイルを開き直すこと) は、
+/// 書き終えた 3 表を引き継いだ写しで表す。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryEventStore {
-    tables: Rc<RefCell<Tables>>,
+    tables: Tables,
 }
 
 /// 行の材料を添えて `Corrupt` を組む。
@@ -128,7 +128,6 @@ impl InMemoryEventStore {
     /// ジャーナル行を 1 件も持たない集約か (`NotFound` と `MissingSnapshot` の区別 — BR1.2)。
     pub(crate) fn journal_is_empty(&self, aggregate_id: &IntentId) -> bool {
         self.tables
-            .borrow()
             .journal
             .range((Bound::Included((aggregate_id.clone(), 0)), Bound::Unbounded))
             .take_while(|((id, _), _)| id == aggregate_id)
@@ -146,7 +145,7 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
         let aggregate_id = event.intent_id();
         let payload =
             EventPayloadWire::encode(aggregate_id.as_str(), event.seq_nr(), event.payload())?;
-        let mut tables = self.tables.borrow_mut();
+        let tables = &mut self.tables;
 
         // スナップショットは更新しないが、追記の前提としての楽観 version は検査する
         // (event-store-adapter-rs の `persist_event(event, version)` と同じ意味論)。
@@ -195,7 +194,7 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
             &aggregate.clone().with_version(new_version).state(),
         )?;
 
-        let mut tables = self.tables.borrow_mut();
+        let tables = &mut self.tables;
         let actual = tables.current_version(aggregate_id);
 
         // (1) journal の UNIQUE(aggregate_id, seq_nr)。
@@ -240,10 +239,9 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
         &self,
         aid: &IntentId,
     ) -> Result<Option<WorkflowExecution>, EventStoreError> {
-        let row = self.tables.borrow().snapshot.get(aid).cloned();
-        match row {
+        match self.tables.snapshot.get(aid) {
             None => Ok(None),
-            Some(row) => InMemoryEventStore::decode_snapshot(aid, &row).map(Some),
+            Some(row) => InMemoryEventStore::decode_snapshot(aid, row).map(Some),
         }
     }
 
@@ -252,16 +250,11 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
         aid: &IntentId,
         seq_nr: u64,
     ) -> Result<Vec<WorkflowExecutionEvent>, EventStoreError> {
-        let rows: Vec<(u64, JournalRow)> = self
-            .tables
-            .borrow()
+        self.tables
             .journal
             .range((Bound::Excluded((aid.clone(), seq_nr)), Bound::Unbounded))
             .take_while(|((id, _), _)| id == aid)
-            .map(|((_, nr), row)| (*nr, row.clone()))
-            .collect();
-        rows.iter()
-            .map(|(nr, row)| InMemoryEventStore::decode_event(aid, *nr, row))
+            .map(|((_, nr), row)| InMemoryEventStore::decode_event(aid, *nr, row))
             .collect()
     }
 }
@@ -271,13 +264,12 @@ impl JournalReader for InMemoryEventStore {
         &self,
         after: GlobalSeqNr,
     ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError> {
-        let mut rows: Vec<(IntentId, u64, JournalRow)> = self
+        let mut rows: Vec<(&IntentId, u64, &JournalRow)> = self
             .tables
-            .borrow()
             .journal
             .iter()
             .filter(|(_, row)| row.global_seq_nr > after)
-            .map(|((id, nr), row)| (id.clone(), *nr, row.clone()))
+            .map(|((id, nr), row)| (id, *nr, row))
             .collect();
         rows.sort_by_key(|(_, _, row)| row.global_seq_nr);
         rows.iter()
@@ -294,7 +286,6 @@ impl JournalReader for InMemoryEventStore {
     ) -> Result<GlobalSeqNr, EventStoreError> {
         Ok(self
             .tables
-            .borrow()
             .checkpoint
             .get(projection)
             .copied()
@@ -306,7 +297,7 @@ impl JournalReader for InMemoryEventStore {
         projection: &ProjectionName,
         to: GlobalSeqNr,
     ) -> Result<(), EventStoreError> {
-        let mut tables = self.tables.borrow_mut();
+        let tables = &mut self.tables;
         let current = tables
             .checkpoint
             .get(projection)
@@ -375,15 +366,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_cloned_handle_sees_the_same_store() {
-        let store = seeded().await;
-        let handle = store.clone();
+    async fn a_clone_carries_the_rows_but_not_the_mutable_state() {
+        // `clone` は 3 表を引き継いだ**独立した**ストアである。同じ可変状態を指す別
+        // ハンドルを配ると `&mut self` の排他性が嘘になる (interior-mutability.md)。
+        let mut store = seeded().await;
+        let copy = store.clone();
         assert!(
-            handle
-                .get_latest_snapshot_by_id(&intent())
+            copy.get_latest_snapshot_by_id(&intent())
                 .await
                 .unwrap()
-                .is_some()
+                .is_some(),
+            "写した時点の行は引き継ぐ"
+        );
+
+        let mut aggregate = store
+            .get_latest_snapshot_by_id(&intent())
+            .await
+            .unwrap()
+            .unwrap();
+        let next = aggregate.complete_stage(AT).unwrap();
+        store.persist_event(&next, 1).await.unwrap();
+
+        assert_eq!(
+            store
+                .get_events_by_id_since_seq_nr(&intent(), 0)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            copy.get_events_by_id_since_seq_nr(&intent(), 0)
+                .await
+                .unwrap()
+                .len(),
+            1,
+            "写した後の追記は写しに及ばない"
         );
     }
 
@@ -403,7 +421,6 @@ mod tests {
         assert!(
             store
                 .tables
-                .borrow()
                 .snapshot
                 .get(&intent())
                 .unwrap()
@@ -466,12 +483,9 @@ mod tests {
     #[tokio::test]
     async fn a_snapshot_row_whose_payload_cannot_be_decoded_is_corrupt() {
         // 行を直接壊せるのは実装の内部だけ (公開の破壊フックは置かない)。
-        let store = seeded().await;
-        {
-            let mut tables = store.tables.borrow_mut();
-            if let Some(row) = tables.snapshot.get_mut(&intent()) {
-                row.payload = "{not json".to_string();
-            }
+        let mut store = seeded().await;
+        if let Some(row) = store.tables.snapshot.get_mut(&intent()) {
+            row.payload = "{not json".to_string();
         }
         let err = store
             .get_latest_snapshot_by_id(&intent())
@@ -488,12 +502,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_snapshot_row_written_with_another_schema_version_is_corrupt() {
-        let store = seeded().await;
-        {
-            let mut tables = store.tables.borrow_mut();
-            if let Some(row) = tables.snapshot.get_mut(&intent()) {
-                row.schema_version = 2;
-            }
+        let mut store = seeded().await;
+        if let Some(row) = store.tables.snapshot.get_mut(&intent()) {
+            row.schema_version = 2;
         }
         let err = store
             .get_latest_snapshot_by_id(&intent())
@@ -510,12 +521,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
-        let store = seeded().await;
-        {
-            let mut tables = store.tables.borrow_mut();
-            if let Some(row) = tables.journal.get_mut(&(intent(), 1)) {
-                row.event_type = "Exploded".to_string();
-            }
+        let mut store = seeded().await;
+        if let Some(row) = store.tables.journal.get_mut(&(intent(), 1)) {
+            row.event_type = "Exploded".to_string();
         }
         let err = store
             .get_events_by_id_since_seq_nr(&intent(), 0)
@@ -572,10 +580,13 @@ mod tests {
         // 復号 (検査点 1 / 2) は通るが集約不変条件 (検査点 3) が破れている行。
         // `seq_nr = 0` は「イベントを 1 件も適用していない集約の写し」で、
         // 書込経路からは決して生まれない (BR1.2)。
-        let store = seeded().await;
+        let mut store = seeded().await;
         {
-            let mut tables = store.tables.borrow_mut();
-            let row = tables.snapshot.get_mut(&intent()).expect("genesis の写し");
+            let row = store
+                .tables
+                .snapshot
+                .get_mut(&intent())
+                .expect("genesis の写し");
             assert!(row.payload.contains(r#""seq_nr":1"#), "{}", row.payload);
             row.payload = row.payload.replace(r#""seq_nr":1"#, r#""seq_nr":0"#);
         }

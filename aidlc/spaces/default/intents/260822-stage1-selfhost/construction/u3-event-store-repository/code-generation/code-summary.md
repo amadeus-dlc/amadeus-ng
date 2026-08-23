@@ -88,7 +88,7 @@ Rust では新規型がコンパイルエラーになり `test result: FAILED` �
 | 4 | **スナップショット payload の `version` は新 version に揃える**。委任 2 の設計質問 4 | 新 version に統一（InMemory / SQLite 双方、FD pending 4） |
 | 5 | **`persist_event` に version 検査を入れた**。BR2.3 の逐語は「(1) のみ」 | 両実装が同じ意味論であることを記録に残す（FD pending 8） |
 | 6 | **`phase_boundary` の入れ子**（委任 2 の設計質問 2） | FD pending 3 |
-| 7 | **`EventStoreImpl` を `Rc<RefCell<Connection>>` の共有ハンドル**にし、`borrow().clone()` 後に await（InMemory と同型） | 採用。`await` を跨いで `RefCell` の借用を持たない |
+| 7 | ~~**`EventStoreImpl` を `Rc<RefCell<Connection>>` の共有ハンドル**にする**~~ → **撤回**。`EventStoreImpl` は `Connection` を**直接所有**し、内部可変性も手書き `Clone` も持たない。書込は `&mut self`、読取は `&self` | **2026-08-23 撤回・差替（オーナー裁定）**。当初の採用理由は「`await` を跨いで `RefCell` の借用を持たない」ことだったが、`&mut self` で設計すればその問題は最初から生じない。`&self` の裏に可変性を隠すのは「`&self` への偽装」であり禁止 — 正本 `coding-rules/interior-mutability.md` / `command-query-separation.md`。委任 8 で是正（`developer-report-8.md`）|
 | 8 | **`from_event_store` の写像**（Repository が EventStore の観測を `RepositoryError` へ写す規則） | 採用 |
 | 9 | **委任 1 は 2 コミット分割を諦めて 1 コミット**（`mod.rs` の依存で中間状態がビルド不能） | 受容 |
 | 10 | **`ErrorCode` → `ErrorKind` の写像**を明示（`DatabaseBusy`/`DatabaseLocked` → `WouldBlock`、`CannotOpen`/`NotFound` → `NotFound`、`PermissionDenied`/`ReadOnly`/`AuthorizationForStatementDenied` → `PermissionDenied`、`DatabaseCorrupt`/`NotADatabase` → `InvalidData`、`OperationInterrupted` → `Interrupted`、他 → `Other`） | 採用（`DiskFull` に対応する安定 `ErrorKind` が無いため `Other`） |
@@ -261,6 +261,7 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
 | clean architecture 層依存（`core-use-case`/`core-domain` の `Cargo.toml`） | `rusqlite` は `core-interface-adapter` にのみ存在。use-case/domain には無し | ユースケースが SQLite を知らない、という設計どおりの層境界を確認 |
 | 製品コードの `unwrap`/`expect`/`panic!` 不在（`event_store_impl.rs` を代表確認） | すべての `.expect(...)` は `mod tests`（772 行目以降）の内側のみ | ALWAYS ルール（プロダクトコードで unwrap/expect 禁止）順守を確認 |
 | `EventStoreImpl` の内部可変性（`Rc<RefCell<Connection>>` 共有ハンドル、手動 `Clone`） | `event_store_impl.rs:204-219` で確認。`borrow().clone()` 後に await する形で借用が await をまたがない | code-summary 決定7 の記述どおり |
+| （2026-08-23 追記: 上記行はレビュー時点の実態であり、その後の**オーナー裁定で決定 7 ごと撤回**された。`EventStoreImpl` は `Connection` を直接所有し、`Rc<RefCell<_>>` も手書き `Clone` も存在しない。本レビューの判定・所見本文は改変していない — この行は監査証跡として残す） | — | §4 決定 7 と §10 を参照 |
 | エラーコード写像（`ErrorCode` → `std::io::ErrorKind`） | `event_store_impl.rs:102-116` が code-summary 決定10 の表と完全一致 | 一致 |
 
 ### Summary

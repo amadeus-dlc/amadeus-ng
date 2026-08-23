@@ -52,7 +52,9 @@ impl Fixture {
 }
 
 /// 5 コマンドぶん書き進め、最後の集約 (版を載せ替え済み) を返す。
-async fn write_five(repository: &WorkflowExecutionRepositoryImpl<FakeClock>) -> WorkflowExecution {
+async fn write_five(
+    repository: &mut WorkflowExecutionRepositoryImpl<FakeClock>,
+) -> WorkflowExecution {
     let (mut aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("genesis");
     aggregate = advanced(aggregate, &event);
@@ -85,8 +87,8 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
     let fixture = Fixture::new();
 
     let expected = {
-        let repository = fixture.repository();
-        let expected = write_five(&repository).await;
+        let mut repository = fixture.repository();
+        let expected = write_five(&mut repository).await;
         // ここで「プロセスが落ちる」— Repository も接続も drop される。
         expected
     };
@@ -102,8 +104,8 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
 async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
     let fixture = Fixture::new();
     {
-        let repository = fixture.repository();
-        write_five(&repository).await;
+        let mut repository = fixture.repository();
+        write_five(&mut repository).await;
     }
 
     let reader = fixture.store();
@@ -127,8 +129,8 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
 async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
     let fixture = Fixture::new();
     {
-        let repository = fixture.repository();
-        write_five(&repository).await;
+        let mut repository = fixture.repository();
+        write_five(&mut repository).await;
     }
 
     // COMMIT を通らない Tx を開いたまま接続を捨てる (= Tx 途中のクラッシュ)。
@@ -156,8 +158,8 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
 async fn the_store_survives_being_opened_and_closed_repeatedly() {
     let fixture = Fixture::new();
     {
-        let repository = fixture.repository();
-        write_five(&repository).await;
+        let mut repository = fixture.repository();
+        write_five(&mut repository).await;
     }
 
     for _ in 0..3 {
@@ -183,11 +185,11 @@ async fn the_store_survives_being_opened_and_closed_repeatedly() {
 async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     let fixture = Fixture::new();
     {
-        let repository = fixture.repository();
-        write_five(&repository).await;
+        let mut repository = fixture.repository();
+        write_five(&mut repository).await;
     }
 
-    let repository = fixture.repository();
+    let mut repository = fixture.repository();
     let mut aggregate = repository.find_by_id(&intent_id()).await.expect("再水和");
     let event = aggregate
         .approve_gate(Some("ok".to_string()), None, AT)

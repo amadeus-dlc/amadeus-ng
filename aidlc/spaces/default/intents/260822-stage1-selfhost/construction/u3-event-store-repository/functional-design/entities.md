@@ -20,7 +20,7 @@ entities:
     description: "集約 WorkflowExecution の ES 形 Repository（C3）。store = 1 イベント + 適用後集約を同一 Tx で永続化、find_by_id = 最新スナップショット + 以降の replay で完全再構成。save は持たない（ES 拡張語彙 store — ADR-006）"
     attributes:
       - { name: find_by_id, type: "async fn(&self, &IntentId) -> Result<WorkflowExecution, RepositoryError>", required: true }
-      - { name: store, type: "async fn(&self, &WorkflowExecutionEvent, &WorkflowExecution) -> Result<(), RepositoryError>", required: true }
+      - { name: store, type: "async fn(&mut self, &WorkflowExecutionEvent, &WorkflowExecution) -> Result<(), RepositoryError>", required: true }
     constraints:
       - "dyn 禁止（静的束縛、use-case-rules §2）。Send / Sync を要求しない（tokio current_thread、Q3 = A）"
       - "ユースケースは Tx を持たない（Tx 所有は実装 — C3 ②）"
@@ -105,7 +105,7 @@ entities:
       - "Builder は `WorkflowExecutionStateBuilder`、エラーは `StateError`（旧 SnapshotError）。旧名の再エクスポート・型エイリアスは残さない"
 
   # --- アダプタ層（core-interface-adapter::orchestration）— ストア・ワイヤ・実装 ---
-  - name: SqliteEventStore
+  - name: EventStoreImpl
     kind: gateway-impl
     layer: interface-adapter
     description: "EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> と JournalReader の SQLite 実装（rusqlite bundled、同期 API を async fn 内で呼ぶ — Q3 = A）。C6 の 3 テーブルを所有"
@@ -169,9 +169,9 @@ entities:
   - name: WorkflowExecutionRepositoryImpl
     kind: gateway-impl
     layer: interface-adapter
-    description: "WorkflowExecutionRepository の実 Gateway（1 trait 1 Impl）。SqliteEventStore を内包し、store / find_by_id を C3 の約束どおりに実装"
+    description: "WorkflowExecutionRepository の実 Gateway（1 trait 1 Impl）。EventStoreImpl を内包し、store / find_by_id を実装"
     attributes:
-      - { name: store, type: "std::cell::RefCell<SqliteEventStore>", required: true, constraints: "内部可変性: Repository の trait メソッドは `&self`（C3）、EventStore の書込は `&mut self` のため RefCell で橋渡しする。tokio current_thread・Send 不要（Q3 = A）なので Mutex ではなく RefCell。借用は await をまたがない（内部は同期呼出で、借用は各メソッド内で閉じる）— contract-design レビュー所見 3 / 本レビュー所見 3 への回答" }
+      - { name: store, type: "EventStoreImpl<C>", required: true, constraints: "EventStoreImpl<C> を直接所有する。可変操作は `&mut self`（内部可変性は使わない — coding-rules/interior-mutability.md）。`event_store(&self) -> &EventStoreImpl<C>` / `event_store_mut(&mut self) -> &mut EventStoreImpl<C>` に分けて公開する（オーナー裁定 2026-08-23、委任 8 で是正）" }
   - name: InMemoryEventStore
     kind: test-double
     layer: interface-adapter (memory/)
@@ -179,7 +179,7 @@ entities:
   - name: InMemoryWorkflowExecutionRepository
     kind: test-double
     layer: interface-adapter (memory/)
-    description: "WorkflowExecutionRepository の in-memory 実装（`RefCell<InMemoryEventStore>` を内包 — Impl と同じ内部可変性）。ユースケース（U5 / U6）のテストはこれで組む（C3 ④）"
+    description: "WorkflowExecutionRepository の in-memory 実装（InMemoryEventStore を直接所有 — Impl と同じ形。内部可変性は使わない、coding-rules/interior-mutability.md）。ユースケース（U5 / U6）のテストはこれで組む（C3 ④）"
 
   # --- 検証モデル（formal/orchestration/journal_protocol.qnt）---
   - name: JournalProtocolModel
@@ -206,14 +206,14 @@ entities:
       - { name: lint, type: list, constraints: "`tools/lint` の `reap-decision-locality` ルールとその赤例テスト（`reap_eligible` が消えるため対象を失う）" }
 
 relationships:
-  - { from: WorkflowExecutionRepositoryImpl, to: SqliteEventStore, cardinality: "one-to-one", description: "内包（合成）。Tx は SqliteEventStore が所有" }
-  - { from: SqliteEventStore, to: "JournalRow / SnapshotRow / CheckpointRow", cardinality: "one-to-many", description: "C6 の 3 テーブルを所有" }
-  - { from: SqliteEventStore, to: "EventPayloadWire / StateWire", cardinality: "one-to-many", description: "payload 列の符号化・復号（canon-json）" }
+  - { from: WorkflowExecutionRepositoryImpl, to: EventStoreImpl, cardinality: "one-to-one", description: "内包（合成）。Tx は EventStoreImpl が所有" }
+  - { from: EventStoreImpl, to: "JournalRow / SnapshotRow / CheckpointRow", cardinality: "one-to-many", description: "C6 の 3 テーブルを所有" }
+  - { from: EventStoreImpl, to: "EventPayloadWire / StateWire", cardinality: "one-to-many", description: "payload 列の符号化・復号（canon-json）" }
   - { from: WorkflowExecutionRepositoryImpl, to: "WorkflowExecution (U2)", cardinality: "many-to-one", description: "from_state + apply_event による再構成、state() による写し" }
   - { from: "InMemoryWorkflowExecutionRepository", to: "InMemoryEventStore", cardinality: "one-to-one", description: "同じ契約テストを SQLite 実装と共有" }
   - { from: JournalProtocolModel, to: "InMemoryEventStore + fake projector", cardinality: "one-to-one", description: "ITF 準拠テストの再生先（adapter tests）" }
   - { from: "U4 ReadModelUpdater", to: JournalReader, cardinality: "many-to-one", description: "差分読取とチェックポイント（本 Unit は実装のみ、利用は U4）" }
-  - { from: "U7 intent create", to: "SqliteEventStore.within_write_transaction", cardinality: "many-to-one", description: "intents.json の直列化（Q2 = A）。本 Unit は原語を提供" }
+  - { from: "U7 intent create", to: "EventStoreImpl.within_write_transaction", cardinality: "many-to-one", description: "intents.json の直列化（Q2 = A）。本 Unit は原語を提供" }
 ```
 
 ## 2. 要約
@@ -238,6 +238,8 @@ relationships:
 | 1 | Critical | `rules.md` BR1.2 / BR1.3 / BR2.3、`functional-spec.md` §3.1 手順1・§3.2 手順3 | 楽観 version の算出式が、既に実装済みの U2 `WorkflowExecution` API の実挙動と矛盾する。実コード（`modules/core/domain/src/orchestration/workflow_execution.rs`）を確認した: `version()` の doc コメント（287-290 行）は「楽観 version（集約の遷移では変わらない — Repository が `with_version` で載せる）」と明記し、`apply_event`（744-759 行）は `self.seq_nr` のみを更新して `self.version` には一切触れない（テスト `with_version_replaces_only_the_optimistic_version`、1889-1894 行がこの契約を固定）。genesis では `start_with_entries`（214 行）が `version: 0` を無条件にセットする一方、返す `WorkflowExecutionEvent` は `seq_nr: 1`（191 行）。BR1.3 は「期待 version = `aggregate.version() − 1`（= `event.seq_nr − 1`）」と両式を同値主張するが、genesis では `aggregate.version() − 1 = 0u64 − 1` で **u64 アンダーフロー**（デバッグビルドは panic、リリースビルドは `u64::MAX` へ wrap）となり、`event.seq_nr − 1 = 0` と一致しない。非 genesis でも、`find_by_id` がロードした `version`（Repository が `with_version` で載せた値 `V`）は `apply_event` を挟んでも不変のため、store 時点の `aggregate.version()` は常に「現在 DB に永続化済みの version」そのもの（`V`）であり、そこから `− 1` した `V−1` を `expected` として `UPDATE … WHERE version = :expected` に渡すと、実際の行は `version = V` なので必ず影響行 0 になり、実際には競合が無いにもかかわらず**毎回** `Conflict { expected: V-1, actual: V }` を返す。つまり本 Unit の中核機構（FR1.2 の主たる合格基準である store の楽観ロック）は、記述どおりに実装すると genesis で panic/暴走し、以降の通常書込みも恒常的に偽陽性の競合エラーになる。 | `expected` の算出を `event.seq_nr() − 1`（`aggregate.version()` を経由しない）に一本化するか、`aggregate.version()` を使うなら `− 1` を外して `expected = aggregate.version()` とし、書込み成功後に `with_version(expected + 1)`（または `event.seq_nr()`）で更新後の集約に載せ替える手順を明記する。あわせて BR1.2 / `functional-spec.md` §3.2 の「適用 1 件ごとに version + 1」の記述も、`apply_event` 自体は version を変更しないという実コード契約を踏まえ「replay ループ終了後に Repository が明示的に `with_version` を呼ぶ」と書き改める。 |
 | 2 | Major | `entities.md`（EventStore の `persist_event` / `get_events_by_id_since_seq_nr`）と `contract-summary.md` C3 の対応 | 承認済み契約 C3（`inception/contract-design/contract-summary.md` 97-135 行）の `EventStore<AID, A, E>` trait は `persist_event(&mut self, event: &E, version: usize)` / `get_events_by_id_since_seq_nr(&self, aid: &AID, seq_nr: usize)` のように数値パラメータを **`usize`** で定義しているが、本設計の `entities.md`（32 行・35 行）は同じメソッドを **`u64`** で定義している。`rules.md` BR1.1 は「trait の形は C3 のコードを正とし、型名だけ本設計…に具体化」と明言しており、原子型そのものの変更は想定されていない。C3 の所有者は使う側のユースケース層（U5/U6、`contract-summary.md` §3）であり、U3 は「準拠」する側 — U3 が無断で型を変えると、U5/U6 が C3 どおり `usize` で実装した場合に trait 実装がコンパイルエラー（型不一致）になるリスクがある（実ドメイン型 `seq_nr`/`version` が `u64` である事実 — `workflow_execution.rs:84-85` — に照らせば `u64` への変更自体は妥当と思われるが、無言の変更である点が問題）。 | `entities.md` に「C3 の `usize` を実装済みドメイン型（`u64`）に合わせて具体化した」という一文を明記するか、C3 側を `u64` に合わせて改訂する（改訂は所有者 U5/U6 側で）。いずれかを選び、無言の型変更を残さない。 |
 | 3 | Major | `entities.md`（`WorkflowExecutionRepositoryImpl.store: SqliteEventStore`）、`functional-spec.md` §2 | `WorkflowExecutionRepository::store` は C3 で `&self`（`entities.md` 23 行も同じ）だが、内部で使う `EventStore::persist_event_and_snapshot` は `&mut self`（`entities.md` 33 行、C3 も同じ）。`WorkflowExecutionRepositoryImpl` が保持する `store` フィールドの型は `entities.md` 174 行で単なる `SqliteEventStore`（値型・ラッパーなし）としか書かれておらず、`&self` メソッドの中から `&mut self` メソッドを呼ぶために必要な内部可変性の機構（`Mutex` / `RefCell` / `Cell` 等）がどこにも記載されていない（`entities.md` / `rules.md` / `functional-spec.md` 全文を検索しても `Mutex` / `RefCell` / `Cell` / interior は 0 件）。この点は上流の contract-design レビュー（`contract-summary.md` の `## Review` Finding #3、Minor）が「functional-design（U3）で `WorkflowExecutionRepositoryImpl` 内の `EventStore` 保持方法（`tokio::sync::Mutex` 等）を明記する」と名指しで本ステージへ申し送っていたが、本設計では未対応のまま残っている。`within_write_transaction`（`&mut self` — `functional-spec.md` §2）を含め、同種の問題が複数メソッドに連鎖する。 | `SqliteEventStore` の内部可変性戦略（例: 内部で `tokio::sync::Mutex<rusqlite::Connection>` を持たせて trait メソッド自体を `&self` で実装する、あるいは `WorkflowExecutionRepositoryImpl` が `store: tokio::sync::Mutex<SqliteEventStore>` を保持する）を `entities.md` に明記する。 |
+
+> （2026-08-23 追記: 所見 3 は前提ごと失効した。`WorkflowExecutionRepository::store` を `&mut self` に是正したことで、`&self` から `&mut self` を呼ぶための内部可変性の機構そのものが不要になった（オーナー裁定 2026-08-23、正本 `coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md` を新設。委任 8 で実装是正・本文同期済み）。）
 
 ### Validation Tool Results
 

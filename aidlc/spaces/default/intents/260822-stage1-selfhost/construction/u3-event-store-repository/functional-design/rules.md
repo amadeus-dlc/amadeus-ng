@@ -13,7 +13,7 @@
 rules:
   # --- BR1: ポート契約（ユースケース層、C3） ---
   - id: BR1.1
-    statement: "C3 の trait 3 本（WorkflowExecutionRepository / EventStore<AID, A, E> / JournalReader）とエラー型を core-use-case::orchestration に置く。メソッドは async fn（AFIT、Rust 2024）、dyn は使わない、Send / Sync 境界は要求しない。数値パラメータ（seq_nr / version）は C3 の usize ではなく実ドメイン型に合わせた u64（C3 改訂提案として所有者 U5 / U6 へ申し送り — 無言の変更にしない）。Repository 実装は EventStore を `RefCell` で内包して `&self` → `&mut self` を橋渡しする（借用は await をまたがない）"
+    statement: "C3 の trait 3 本（WorkflowExecutionRepository / EventStore<AID, A, E> / JournalReader）とエラー型を core-use-case::orchestration に置く。メソッドは async fn（AFIT、Rust 2024）、dyn は使わない、Send / Sync 境界は要求しない。数値パラメータ（seq_nr / version）は C3 の usize ではなく実ドメイン型に合わせた u64（C3 改訂提案として所有者 U5 / U6 へ申し送り — 無言の変更にしない）。Repository 実装は EventStore を直接所有し、`store` は `&mut self` で素直に実装する（内部可変性は使わない — coding-rules/interior-mutability.md、オーナー裁定 2026-08-23、委任 8 で是正）"
     category: policy
     applies_to: [WorkflowExecutionRepository, EventStore, JournalReader]
     trigger: "ポート定義"
@@ -57,7 +57,7 @@ rules:
   - id: BR2.1
     statement: "ストアファイルは StorePath::for_space(aidlc_root, &SpaceName) = `<aidlc root>/spaces/<space>/intents/.aidlc-store.sqlite`（Q1 = A）。open は create-if-missing、PRAGMA user_version を検査（0 → スキーマ作成して 1 に、1 → そのまま、それ以外 → Schema { found, supported: 1 }）、busy_timeout 5000ms、journal_mode は既定（WAL は使わない — 付随ファイルを増やさない）"
     category: policy
-    applies_to: [SqliteEventStore, StorePath]
+    applies_to: [EventStoreImpl, StorePath]
     trigger: "ストアの open"
     logic: "親ディレクトリが無ければ Io(NotFound)（intents/ は upstream の既存ディレクトリ — 作らない）"
     violation: "テスト（空 DB の初期化・user_version 不一致・親 dir 欠落）で検出"
@@ -65,7 +65,7 @@ rules:
   - id: BR2.2
     statement: "スキーマは C6 の DDL を逐語で使う（journal / snapshot / checkpoint、UNIQUE(aggregate_id, seq_nr)）。追加するのは journal(aggregate_id, seq_nr) の暗黙 UNIQUE 索引以外に無し。列は増やさない（revision_count は snapshot.payload 内 — P4）"
     category: policy
-    applies_to: [SqliteEventStore]
+    applies_to: [EventStoreImpl]
     trigger: "初期化"
     logic: "DDL を定数として埋め込み、テストで C6 のテーブル・列名・型・制約と突合（PRAGMA table_info）"
     violation: "C6 との乖離はレビューで差し戻し（contract-summary を改訂するなら契約改訂として記録）"
@@ -73,15 +73,15 @@ rules:
   - id: BR2.3
     statement: "書込はすべて BEGIN IMMEDIATE で始める Tx（書込ロック先取り）。persist_event_and_snapshot(event, aggregate) の Tx 内順序: expected = aggregate.version()、new_version = event.seq_nr()（= expected + 1 を検査）。(1) journal INSERT（UNIQUE 違反 → rollback + Conflict）、(2) expected == 0 なら snapshot INSERT(version = new_version)（既存行があれば rollback + Conflict）、それ以外は UPDATE … SET version = new_version, seq_nr = new_version, payload, updated_at WHERE aggregate_id = ? AND version = expected（影響 0 行 → 現在 version を SELECT して rollback + Conflict）、(3) COMMIT。persist_event(event, version) は (1) のみ（本 Unit の Repository は使わないが契約として実装・テスト）"
     category: validation
-    applies_to: [SqliteEventStore]
+    applies_to: [EventStoreImpl]
     trigger: "store"
     logic: "rusqlite の Transaction（drop で rollback）を使い、成功経路だけ commit"
     violation: "同時 2 接続テスト（busy_timeout 内に直列化）と Conflict テストで検出"
     source: "FR1.2, C6 制約 (1), ADR-007, Q3 = A"
   - id: BR2.4
-    statement: "within_write_transaction(f: FnOnce(&Transaction) -> Result<T, EventStoreError>) を SqliteEventStore が公開する。BEGIN IMMEDIATE … f … COMMIT。intents.json（登録簿）の read-modify-write を行う処理（U7 の birth / archive）はこの中で実行し、これを登録簿の唯一の直列化機構とする（Q2 = A）。他の相互排他機構（mkdir / flock）は導入しない"
+    statement: "within_write_transaction(f: FnOnce(&Transaction) -> Result<T, EventStoreError>) を EventStoreImpl が公開する。BEGIN IMMEDIATE … f … COMMIT。intents.json（登録簿）の read-modify-write を行う処理（U7 の birth / archive）はこの中で実行し、これを登録簿の唯一の直列化機構とする（Q2 = A）。他の相互排他機構（mkdir / flock）は導入しない"
     category: policy
-    applies_to: [SqliteEventStore]
+    applies_to: [EventStoreImpl]
     trigger: "登録簿の変更"
     logic: "stage-1 は単一クローン。同一ホストの並行 CLI は busy_timeout 内に直列化、超過は Io(WouldBlock 相当 — rusqlite の Busy を ErrorKind::WouldBlock に写す)"
     violation: "別機構が現れればレビューで差し戻し"
@@ -97,7 +97,7 @@ rules:
   - id: BR2.6
     statement: "時刻: occurred_at は呼出側（ユースケース）が渡した文字列を素通し。updated_at は Clock 機構（core_interface_adapter::clock、Fake 付き）から取る。Repository / EventStore は Clock を注入されるが、Clock は Gateway ではない"
     category: policy
-    applies_to: [SqliteEventStore]
+    applies_to: [EventStoreImpl]
     trigger: "書込"
     logic: "gateway-taxonomy §1"
     violation: "レビュー"
@@ -105,7 +105,7 @@ rules:
   - id: BR2.7
     statement: "InMemoryEventStore / InMemoryWorkflowExecutionRepository を先に書き、SQLite 実装と同じ契約テスト群（ラウンドトリップ・Conflict・NotFound・Corrupt・チェックポイント単調性・events_after 順序）をジェネリック関数で共有して両方に対して実行する"
     category: validation
-    applies_to: [InMemoryEventStore, InMemoryWorkflowExecutionRepository, SqliteEventStore]
+    applies_to: [InMemoryEventStore, InMemoryWorkflowExecutionRepository, EventStoreImpl]
     trigger: "TDD"
     logic: "契約テストは `fn contract_<case><R: WorkflowExecutionRepository>(repo: R)` の形で 1 度書く"
     violation: "片方だけ通るテストが残れば差し戻し"
@@ -131,7 +131,7 @@ rules:
   - id: BR3.2
     statement: "ロック dir（`.aidlc-lock/` 等）を生成するコードを残さない。並行制御は BR2.3 / BR2.4 の SQLite Tx + 楽観 version だけ"
     category: policy
-    applies_to: [SqliteEventStore]
+    applies_to: [EventStoreImpl]
     trigger: "Bolt B5"
     logic: "deviations # 4 (b)"
     violation: "grep `.aidlc-lock` = 0 件（research/ を除く）"
@@ -189,7 +189,7 @@ rules:
 
   # --- BR5: 仕様同期と合格条件 ---
   - id: BR5.1
-    statement: "仕様同期（文書）: 10 号 §6 I14 と 11 号 §6 W1〜W5 を journal_protocol の不変条件（J1 conflict_rejected / J2 snapshot_tracks_journal / J3 checkpoint_monotone / J4 projection_idempotent / J5 truth_is_journal / J6 no_lost_update）へ差し替え、E4 定義名を新モデルに。01 号 §3.3 の代表不変条件と §6 第一陣の項目、11 号 §2.2 LockIdentity 行（退役）・§3 / §4 の ProcessProbe（退役）・§8 Quint 記録（audit_lock → journal_protocol の経緯）・§10 未決 2 件（Q1 / Q2 で確定）、`deviations.md` # 4 のパス `aidlc/spaces/<space>/intents/.aidlc-store.sqlite` 確定、coding-rules tell-dont-ask.md の reap 例と README の lint ルール列（reap-decision-locality を除去）、gateway-taxonomy §1 の機構モジュール例（process_probe 除去）、10 号 §3 / 11 号 §3 の Repository 実装欄（SqliteEventStore / within_write_transaction）。いずれも出典注記つき"
+    statement: "仕様同期（文書）: 10 号 §6 I14 と 11 号 §6 W1〜W5 を journal_protocol の不変条件（J1 conflict_rejected / J2 snapshot_tracks_journal / J3 checkpoint_monotone / J4 projection_idempotent / J5 truth_is_journal / J6 no_lost_update）へ差し替え、E4 定義名を新モデルに。01 号 §3.3 の代表不変条件と §6 第一陣の項目、11 号 §2.2 LockIdentity 行（退役）・§3 / §4 の ProcessProbe（退役）・§8 Quint 記録（audit_lock → journal_protocol の経緯）・§10 未決 2 件（Q1 / Q2 で確定）、`deviations.md` # 4 のパス `aidlc/spaces/<space>/intents/.aidlc-store.sqlite` 確定、coding-rules tell-dont-ask.md の reap 例と README の lint ルール列（reap-decision-locality を除去）、gateway-taxonomy §1 の機構モジュール例（process_probe 除去）、10 号 §3 / 11 号 §3 の Repository 実装欄（EventStoreImpl / within_write_transaction）。いずれも出典注記つき"
     category: policy
     applies_to: [SpecDocument, CodingRule]
     trigger: "Bolt B5"
@@ -199,7 +199,7 @@ rules:
   - id: BR5.2
     statement: "合格 = (a) cargo test --workspace 全緑（契約テスト両実装・PBT ラウンドトリップ・Conflict・クラッシュ再構成（store 後にプロセスを落としたと見なし新接続で find_by_id → 同一状態）・ITF journal_protocol）、(b) coverage 90% 床維持、(c) quint-gate 緑（journal_protocol の invariants + witness、mutation 記録）、(d) cargo audit 緑（rusqlite / tokio 追加後）、(e) BR3.1 / BR3.2 / BR4.3 の grep 0 件、(f) cargo lint 自己テスト緑（ルール削除後）、(g) CI 4 ジョブ + CI Success 緑、(h) 逸脱台帳 # 4 のパス確定"
     category: validation
-    applies_to: [SqliteEventStore, WorkflowExecutionRepositoryImpl, JournalProtocolModel]
+    applies_to: [EventStoreImpl, WorkflowExecutionRepositoryImpl, JournalProtocolModel]
     trigger: "Bolt B5 の PR"
     logic: "unit-of-work U3 合格 + NFR2 / NFR4"
     violation: "PR を戻す"

@@ -12,7 +12,12 @@ use super::repository_error::RepositoryError;
 ///
 /// トランザクションの所有は**実装側**であり、ユースケースは Tx を持たない (C3 ②)。
 /// `Conflict` 以外は再試行しない — 再試行の政策はユースケースの責務である (C3 ③)。
-/// メソッドは `&self` の `async fn` で、書込のための内部可変性 (`RefCell`) は実装が持つ。
+///
+/// レシーバは CQS に従う (`coding-rules/command-query-separation.md`) — 再構成 (Query) は
+/// `&self`、永続化 (Command) は `&mut self` である。可変操作を `&self` に見せて内部可変性
+/// (`RefCell` 等) で隠すのは「`&self` への偽装」であり禁止されている
+/// (`coding-rules/interior-mutability.md`)。したがって実装は 1 つのストアを単一所有し、
+/// 書込中の排他は借用チェッカが保証する。
 ///
 /// 実装は `core-interface-adapter`
 /// (`orchestration::WorkflowExecutionRepositoryImpl` が実 I/O、
@@ -45,7 +50,7 @@ pub trait WorkflowExecutionRepository {
     /// 楽観 version の不一致 (`Conflict`)、ストア I/O (`Io`)、呼出側の不整合・符号化の失敗
     /// (`Corrupt`) を返す。
     async fn store(
-        &self,
+        &mut self,
         event: &WorkflowExecutionEvent,
         aggregate: &WorkflowExecution,
     ) -> Result<(), RepositoryError>;
@@ -61,8 +66,6 @@ mod tests {
     use core_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
-    use std::cell::RefCell;
-
     const RAW_ID: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
     fn intent() -> IntentId {
@@ -86,17 +89,17 @@ mod tests {
         .unwrap()
     }
 
-    /// trait の形 (`&self` の async fn・`dyn` なし) を固定するための最小実装。
-    /// 内部可変性は設計どおり `RefCell` で橋渡しする。
+    /// trait の形 (Query は `&self`、Command は `&mut self` の async fn・`dyn` なし) を
+    /// 固定するための最小実装。内部可変性は使わない — 可変操作は `&mut self` で素直に
+    /// 書く (coding-rules/interior-mutability.md)。
     #[derive(Debug, Default)]
     struct FakeRepository {
-        stored: RefCell<Option<WorkflowExecution>>,
+        stored: Option<WorkflowExecution>,
     }
 
     impl WorkflowExecutionRepository for FakeRepository {
         async fn find_by_id(&self, id: &IntentId) -> Result<WorkflowExecution, RepositoryError> {
             self.stored
-                .borrow()
                 .clone()
                 .ok_or_else(|| RepositoryError::NotFound {
                     intent_id: id.clone(),
@@ -104,11 +107,11 @@ mod tests {
         }
 
         async fn store(
-            &self,
+            &mut self,
             event: &WorkflowExecutionEvent,
             aggregate: &WorkflowExecution,
         ) -> Result<(), RepositoryError> {
-            *self.stored.borrow_mut() = Some(aggregate.clone().with_version(event.seq_nr()));
+            self.stored = Some(aggregate.clone().with_version(event.seq_nr()));
             Ok(())
         }
     }
@@ -135,7 +138,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_stored_aggregate_is_rehydrated_by_its_identifier() {
-        let repository = FakeRepository::default();
+        let mut repository = FakeRepository::default();
         let (aggregate, event) = genesis();
         repository.store(&event, &aggregate).await.unwrap();
         let found = rehydrate(&repository, &intent()).await.unwrap();
@@ -144,7 +147,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_store_leaves_the_optimistic_version_at_the_last_persisted_sequence() {
-        let repository = FakeRepository::default();
+        let mut repository = FakeRepository::default();
         let (aggregate, event) = genesis();
         assert_eq!(aggregate.version(), 0);
         repository.store(&event, &aggregate).await.unwrap();
@@ -154,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_port_takes_the_aggregate_by_reference_so_the_caller_keeps_it() {
-        let repository = FakeRepository::default();
+        let mut repository = FakeRepository::default();
         let (aggregate, event) = genesis();
         repository.store(&event, &aggregate).await.unwrap();
         // 引数は `&` — store は呼出側の集約を変更しない (BR1.3)。

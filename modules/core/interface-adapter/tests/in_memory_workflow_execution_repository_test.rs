@@ -175,10 +175,10 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
 #[tokio::test]
 async fn the_repository_hands_out_a_reader_over_the_same_store() {
     let (store, _) = seeded().await;
-    let repository = InMemoryWorkflowExecutionRepository::with_store(store);
-    let reader = repository.event_store();
+    let mut repository = InMemoryWorkflowExecutionRepository::with_store(store);
 
-    let rows = reader
+    let rows = repository
+        .event_store()
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("読める");
@@ -188,11 +188,13 @@ async fn the_repository_hands_out_a_reader_over_the_same_store() {
         "genesis の 1 件が見える"
     );
 
-    // Repository 越しに書いたものが同じハンドルから見えること (共有ハンドルの意味)。
+    // Repository 越しに書いたものが同じストアから見えること — 内包しているストアは
+    // 1 つだけで、読取の口 (`event_store`) はその参照を返す (別ハンドルは配らない)。
     let mut aggregate = repository.find_by_id(&intent_id()).await.expect("読める");
     let next = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
     repository.store(&next, &aggregate).await.expect("2 件目");
-    let rows = reader
+    let rows = repository
+        .event_store()
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("読める");

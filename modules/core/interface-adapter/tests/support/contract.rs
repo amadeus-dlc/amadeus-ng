@@ -26,7 +26,7 @@ fn projection() -> ProjectionName {
 /// genesis から 5 イベントぶん書き進め、最後の集約 (版を載せ替え済み) を返す。
 ///
 /// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
-async fn seed<R: WorkflowExecutionRepository>(repository: &R) -> WorkflowExecution {
+async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExecution {
     let (mut aggregate, event) = genesis();
     repository
         .store(&event, &aggregate)
@@ -59,10 +59,10 @@ async fn seed<R: WorkflowExecutionRepository>(repository: &R) -> WorkflowExecuti
 
 /// 書いた集約は、同じストアを開き直した別インスタンスから同じ状態で読み直せる (BR1.2)。
 pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    let expected = seed(&repository).await;
+    let mut repository = fixture.open();
+    let expected = seed(&mut repository).await;
 
-    let reopened = fixture.open();
+    let reopened = fixture.reopen(&repository);
     let found = reopened
         .find_by_id(&intent_id())
         .await
@@ -75,8 +75,8 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
 
 /// 書いていない集約は `NotFound` (部分データを返さない — C3 ①)。
 pub(crate) async fn not_found<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    seed(&repository).await;
+    let mut repository = fixture.open();
+    seed(&mut repository).await;
 
     let err = repository
         .find_by_id(&absent_intent_id())
@@ -92,7 +92,7 @@ pub(crate) async fn not_found<F: StoreFixture>(fixture: &F) {
 
 /// genesis の書込は版 0 を前提にする (スナップショット行の INSERT 経路 — BR2.3)。
 pub(crate) async fn genesis_expects_version_zero<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
+    let mut repository = fixture.open();
     let (aggregate, event) = genesis();
     assert_eq!(aggregate.version(), 0);
     assert_eq!(event.seq_nr(), 1);
@@ -107,7 +107,7 @@ pub(crate) async fn genesis_expects_version_zero<F: StoreFixture>(fixture: &F) {
 
 /// 同じ genesis を 2 度書くと衝突する (UNIQUE(aggregate_id, seq_nr) — BR1.3)。
 pub(crate) async fn genesis_twice_conflicts<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
+    let mut repository = fixture.open();
     let (aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("1 度目");
 
@@ -126,8 +126,8 @@ pub(crate) async fn genesis_twice_conflicts<F: StoreFixture>(fixture: &F) {
 
 /// 2 つの再水和が同じ版から書くと、後の 1 つが `Conflict` になる (楽観 version — BR1.3)。
 pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    seed(&repository).await;
+    let mut repository = fixture.open();
+    seed(&mut repository).await;
 
     let mut first = repository.find_by_id(&intent_id()).await.expect("再水和 1");
     let mut second = repository.find_by_id(&intent_id()).await.expect("再水和 2");
@@ -166,7 +166,7 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
 
 /// 呼出側の不整合 (`seq_nr` の飛び) は `Corrupt(SequenceGap)` で拒否する (BR1.3)。
 pub(crate) async fn sequence_gap_is_refused<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
+    let mut repository = fixture.open();
     let (aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("genesis");
 
@@ -189,7 +189,7 @@ pub(crate) async fn sequence_gap_is_refused<F: StoreFixture>(fixture: &F) {
 
 /// イベントと集約の識別子が食い違う書込も `Corrupt(SequenceGap)` (BR1.3 の前提検査)。
 pub(crate) async fn mismatched_identity_is_refused<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
+    let mut repository = fixture.open();
     let (aggregate, event) = genesis();
     let foreign = WorkflowExecutionEvent::new(
         absent_intent_id(),
@@ -212,10 +212,10 @@ pub(crate) async fn mismatched_identity_is_refused<F: StoreFixture>(fixture: &F)
 
 /// `events_after(ZERO)` は全イベントを global 昇順で返す (BR1.4)。
 pub(crate) async fn journal_reads_every_event_in_global_order<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    seed(&repository).await;
+    let mut repository = fixture.open();
+    seed(&mut repository).await;
 
-    let reader = fixture.reader();
+    let reader = fixture.reader(&repository);
     let rows = reader
         .events_after(GlobalSeqNr::ZERO)
         .await
@@ -231,10 +231,10 @@ pub(crate) async fn journal_reads_every_event_in_global_order<F: StoreFixture>(f
 
 /// `events_after(n)` は差分だけを返す (BR1.4)。
 pub(crate) async fn journal_reads_only_the_difference<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    seed(&repository).await;
+    let mut repository = fixture.open();
+    seed(&mut repository).await;
 
-    let reader = fixture.reader();
+    let reader = fixture.reader(&repository);
     let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     let third = all.get(2).expect("3 件目").0;
     let rest = reader.events_after(third).await.expect("差分");
@@ -244,7 +244,7 @@ pub(crate) async fn journal_reads_only_the_difference<F: StoreFixture>(fixture: 
 
 /// 未登録の投影のチェックポイントは `ZERO` (BR1.4)。
 pub(crate) async fn unregistered_checkpoint_is_zero<F: StoreFixture>(fixture: &F) {
-    let reader = fixture.reader();
+    let reader = fixture.reader(&fixture.open());
     assert_eq!(
         reader.checkpoint(&projection()).await.expect("読取"),
         GlobalSeqNr::ZERO
@@ -253,10 +253,10 @@ pub(crate) async fn unregistered_checkpoint_is_zero<F: StoreFixture>(fixture: &F
 
 /// チェックポイントは進められ、同値の再適用は no-op (投影の冪等性の土台 — BR1.4)。
 pub(crate) async fn checkpoint_advances_and_repeats_are_noops<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    seed(&repository).await;
+    let mut repository = fixture.open();
+    seed(&mut repository).await;
 
-    let mut reader = fixture.reader();
+    let mut reader = fixture.reader(&repository);
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     let last = rows.last().expect("5 件ある").0;
 
@@ -279,10 +279,10 @@ pub(crate) async fn checkpoint_advances_and_repeats_are_noops<F: StoreFixture>(f
 
 /// チェックポイントの後退は拒否する (単調 — BR1.4)。
 pub(crate) async fn checkpoint_regression_is_refused<F: StoreFixture>(fixture: &F) {
-    let repository = fixture.open();
-    seed(&repository).await;
+    let mut repository = fixture.open();
+    seed(&mut repository).await;
 
-    let mut reader = fixture.reader();
+    let mut reader = fixture.reader(&repository);
     reader
         .advance_checkpoint(&projection(), GlobalSeqNr::new(3))
         .await

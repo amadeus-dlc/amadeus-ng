@@ -66,7 +66,7 @@ impl Fixture {
 }
 
 /// genesis + 2 コマンドを書き、最後の集約 (版を載せ替え済み) を返す。
-async fn seed(repository: &WorkflowExecutionRepositoryImpl<FakeClock>) -> WorkflowExecution {
+async fn seed(repository: &mut WorkflowExecutionRepositoryImpl<FakeClock>) -> WorkflowExecution {
     let (mut aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("genesis");
     aggregate = advanced(aggregate, &event);
@@ -120,8 +120,8 @@ async fn a_store_without_any_row_reports_not_found() {
 #[tokio::test]
 async fn the_version_after_a_read_without_replay_is_the_last_persisted_sequence() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    let expected = seed(&repository).await;
+    let mut repository = fixture.repository();
+    let expected = seed(&mut repository).await;
 
     let found = repository.find_by_id(&intent_id()).await.expect("読める");
     assert_eq!(found.version(), 3, "永続化済みの最後の seq_nr");
@@ -132,13 +132,13 @@ async fn the_version_after_a_read_without_replay_is_the_last_persisted_sequence(
 #[tokio::test]
 async fn the_version_after_a_replay_is_the_sequence_of_the_last_applied_event() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    let expected = seed(&repository).await;
+    let mut repository = fixture.repository();
+    let expected = seed(&mut repository).await;
 
     // genesis 直後の payload を用意して巻き戻すと、seq_nr 2〜3 が replay 経路を通る。
     let genesis_payload = {
         let other = Fixture::new();
-        let other_repository = other.repository();
+        let mut other_repository = other.repository();
         let (aggregate, event) = genesis();
         other_repository
             .store(&event, &aggregate)
@@ -161,8 +161,8 @@ async fn the_version_after_a_replay_is_the_sequence_of_the_last_applied_event() 
 #[tokio::test]
 async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    seed(&repository).await;
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
     fixture
         .raw()
         .execute("DELETE FROM snapshot", [])
@@ -185,8 +185,8 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
 #[tokio::test]
 async fn a_tampered_snapshot_payload_is_corrupt() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    seed(&repository).await;
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
     fixture
         .raw()
         .execute("UPDATE snapshot SET payload = '{\"intent_id\": 1}'", [])
@@ -211,8 +211,8 @@ async fn a_tampered_snapshot_payload_is_corrupt() {
 #[tokio::test]
 async fn a_snapshot_written_by_another_wire_version_is_corrupt() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    seed(&repository).await;
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
     fixture
         .raw()
         .execute("UPDATE snapshot SET schema_version = 2", [])
@@ -237,12 +237,12 @@ async fn a_snapshot_written_by_another_wire_version_is_corrupt() {
 #[tokio::test]
 async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    seed(&repository).await;
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
 
     let genesis_payload = {
         let other = Fixture::new();
-        let other_repository = other.repository();
+        let mut other_repository = other.repository();
         let (aggregate, event) = genesis();
         other_repository
             .store(&event, &aggregate)
@@ -277,12 +277,12 @@ async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
 #[tokio::test]
 async fn a_gap_in_the_replayed_journal_is_corrupt() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    seed(&repository).await;
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
 
     let genesis_payload = {
         let other = Fixture::new();
-        let other_repository = other.repository();
+        let mut other_repository = other.repository();
         let (aggregate, event) = genesis();
         other_repository
             .store(&event, &aggregate)
@@ -318,7 +318,7 @@ async fn a_gap_in_the_replayed_journal_is_corrupt() {
 #[tokio::test]
 async fn a_stale_aggregate_is_refused_before_the_transaction_opens() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
+    let mut repository = fixture.repository();
     let (aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("genesis");
 
@@ -348,7 +348,7 @@ async fn a_stale_aggregate_is_refused_before_the_transaction_opens() {
 #[tokio::test]
 async fn an_event_of_another_aggregate_is_refused() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
+    let mut repository = fixture.repository();
     let (aggregate, event) = genesis();
     let foreign = WorkflowExecutionEvent::new(
         absent_intent_id(),
@@ -378,7 +378,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
     // `UnknownStage` は `Corrupt(InvariantViolation)` へ写す (SequenceGap とは別の原因)。
     // in-memory 実装の同名テストと 1:1 で対応する (BR2.7)。
     let fixture = Fixture::new();
-    let repository = fixture.repository();
+    let mut repository = fixture.repository();
     let (aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("genesis");
 
@@ -418,11 +418,11 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
 #[tokio::test]
 async fn the_repository_hands_out_a_reader_over_the_same_store() {
     let fixture = Fixture::new();
-    let repository = fixture.repository();
-    seed(&repository).await;
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
 
-    let reader = repository.event_store();
-    let rows = reader
+    let rows = repository
+        .event_store()
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("ジャーナルを読める");

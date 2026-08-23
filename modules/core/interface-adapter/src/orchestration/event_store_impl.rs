@@ -1,16 +1,21 @@
 //! `EventStoreImpl` — `EventStore` と `JournalReader` の SQLite 実装 (BR2.1〜BR2.4 / BR2.6)。
 //!
-//! # なぜ共有ハンドルなのか
+//! # 接続は単一所有である
 //!
-//! `EventStore` の書込メソッドは `&mut self`、`WorkflowExecutionRepository` のメソッドは
-//! `&self` である (C3)。この段差を Repository 側の `RefCell` で埋めると、`async fn` の
-//! 本体で「借用を持ったまま `await`」になり `clippy::await_holding_refcell_ref` に触れる。
-//! そこで**接続そのもの**を `Rc<RefCell<Connection>>` に置き、`clone` が同じ接続を指す
-//! 共有ハンドルにした。Repository は借用をハンドルの複製で閉じてから `await` できる
-//! (`in_memory_event_store.rs` と同じ形 — 契約テストが実装によらず書ける理由でもある)。
+//! 接続は本型が**直接所有**し、内部可変性 (`RefCell`) も共有ハンドル (`Rc`) も持たない。
+//! 読取 (`get_latest_snapshot_by_id` / `get_events_by_id_since_seq_nr` / `events_after` /
+//! `checkpoint`) は `&self`、書込 (`persist_event` / `persist_event_and_snapshot` /
+//! `advance_checkpoint` / `within_write_transaction`) は `&mut self` で、rusqlite の
+//! `Connection::prepare` (`&self`) と `Connection::transaction` (`&mut self`) にそのまま
+//! 対応する。可変操作を `&self` に見せて内部可変性で隠すのは「`&self` への偽装」であり
+//! 禁止されている (`coding-rules/interior-mutability.md`)。
 //!
-//! `Rc` なので `Send` ではない。tokio の current_thread ランタイムで回す設計 (C3 / Q3 = A)
-//! であり、`Send` は要求しない。
+//! `Clone` は実装しない — `clone` が同じ接続を指す別ハンドルを配ると `&mut self` の
+//! 排他性が嘘になるからである。同じストアを指す別インスタンスがほしい場合は
+//! [`EventStoreImpl::open`] で開き直す (それが「別プロセスからの再オープン」の実体でもある)。
+//!
+//! `Connection` は `Send` ではない。tokio の current_thread ランタイムで回す設計
+//! (C3 / Q3 = A) であり、`Send` は要求しない。
 //!
 //! # トランザクション
 //!
@@ -19,11 +24,9 @@
 //! 即座に諦める) ため、書込ロックは最初に取る。`rusqlite::Transaction` は drop で rollback
 //! するので、途中の `Err` で抜けた経路は半端な状態を残さない (NFR3.3)。
 
-use std::cell::RefCell;
 use std::fmt;
 use std::io::ErrorKind;
 use std::path::Path;
-use std::rc::Rc;
 use std::time::Duration;
 
 use rusqlite::{
@@ -197,25 +200,15 @@ const fn civil_from_days(days: u64) -> (u64, u64, u64) {
 // ストア
 // ---------------------------------------------------------------------------
 
-/// C6 の 3 表を持つ SQLite ストアへの**共有ハンドル**。
+/// C6 の 3 表を持つ SQLite ストア。接続と時計を**単一所有**する。
 ///
-/// `clone` は同じ接続を指す別のハンドルを返す (別プロセスからの再オープンではなく、
-/// 同一プロセス内での共有)。別の接続がほしい場合は [`EventStoreImpl::open`] を呼ぶ。
+/// `Clone` は持たない — 同じ可変状態 (接続) を指す別ハンドルを配らないためである
+/// (`coding-rules/interior-mutability.md`)。同じストアを指す別インスタンスは
+/// [`EventStoreImpl::open`] で開き直して得る。
 pub struct EventStoreImpl<C> {
     path: StorePath,
-    connection: Rc<RefCell<Connection>>,
-    clock: Rc<C>,
-}
-
-impl<C> Clone for EventStoreImpl<C> {
-    /// 同じ接続と同じ時計を指すハンドルを返す (`C: Clone` は要らない)。
-    fn clone(&self) -> EventStoreImpl<C> {
-        EventStoreImpl {
-            path: self.path.clone(),
-            connection: Rc::clone(&self.connection),
-            clock: Rc::clone(&self.clock),
-        }
-    }
+    connection: Connection,
+    clock: C,
 }
 
 impl<C> fmt::Debug for EventStoreImpl<C> {
@@ -272,8 +265,8 @@ impl<C: Clock> EventStoreImpl<C> {
         ensure_schema(&connection, path.as_path())?;
         Ok(EventStoreImpl {
             path,
-            connection: Rc::new(RefCell::new(connection)),
-            clock: Rc::new(clock),
+            connection,
+            clock,
         })
     }
 
@@ -300,8 +293,8 @@ impl<C: Clock> EventStoreImpl<C> {
         F: FnOnce(&Transaction<'_>) -> Result<T, EventStoreError>,
     {
         let path = self.path.clone();
-        let mut connection = self.connection.borrow_mut();
-        let transaction = connection
+        let transaction = self
+            .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         let value = f(&transaction)?;
@@ -320,8 +313,8 @@ impl<C: Clock> EventStoreImpl<C> {
         &self,
         aggregate_id: &IntentId,
     ) -> Result<bool, EventStoreError> {
-        let connection = self.connection.borrow();
-        let count: i64 = connection
+        let count: i64 = self
+            .connection
             .query_row(COUNT_JOURNAL_ROWS, params![aggregate_id.as_str()], |row| {
                 row.get(0)
             })
@@ -472,8 +465,8 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
             EventPayloadWire::encode(aggregate_id.as_str(), event.seq_nr(), event.payload())?;
         let path = self.path.clone();
 
-        let mut connection = self.connection.borrow_mut();
-        let transaction = connection
+        let transaction = self
+            .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
 
@@ -520,8 +513,8 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
         let new_version_column = to_i64(new_version, identifier, Some(new_version))?;
         let expected_column = to_i64(expected, identifier, Some(new_version))?;
 
-        let mut connection = self.connection.borrow_mut();
-        let transaction = connection
+        let transaction = self
+            .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
 
@@ -584,20 +577,18 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
         &self,
         aid: &IntentId,
     ) -> Result<Option<WorkflowExecution>, EventStoreError> {
-        let row = {
-            let connection = self.connection.borrow();
-            connection
-                .query_row(SELECT_SNAPSHOT, params![aid.as_str()], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, String>(3)?,
-                    ))
-                })
-                .optional()
-                .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?
-        };
+        let row = self
+            .connection
+            .query_row(SELECT_SNAPSHOT, params![aid.as_str()], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .optional()
+            .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
         let Some((version, seq_nr, schema_version, payload)) = row else {
             return Ok(None);
         };
@@ -617,8 +608,8 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
     ) -> Result<Vec<WorkflowExecutionEvent>, EventStoreError> {
         let since = to_i64(seq_nr, aid.as_str(), Some(seq_nr))?;
         let rows = {
-            let connection = self.connection.borrow();
-            let mut statement = connection
+            let mut statement = self
+                .connection
                 .prepare(SELECT_EVENTS_SINCE)
                 .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
             let mapped = statement
@@ -662,8 +653,8 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
     ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError> {
         let from = to_i64(after.value(), NO_AGGREGATE, None)?;
         let rows = {
-            let connection = self.connection.borrow();
-            let mut statement = connection
+            let mut statement = self
+                .connection
                 .prepare(SELECT_EVENTS_AFTER)
                 .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
             let mapped = statement
@@ -710,15 +701,13 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
         &self,
         projection: &ProjectionName,
     ) -> Result<GlobalSeqNr, EventStoreError> {
-        let raw: Option<i64> = {
-            let connection = self.connection.borrow();
-            connection
-                .query_row(SELECT_CHECKPOINT, params![projection.as_str()], |row| {
-                    row.get(0)
-                })
-                .optional()
-                .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?
-        };
+        let raw: Option<i64> = self
+            .connection
+            .query_row(SELECT_CHECKPOINT, params![projection.as_str()], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
         match raw {
             None => Ok(GlobalSeqNr::ZERO),
             Some(value) => Ok(GlobalSeqNr::new(to_u64(value, NO_AGGREGATE, None)?)),
@@ -734,8 +723,8 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
         let updated_at = self.now();
         let path = self.path.clone();
 
-        let mut connection = self.connection.borrow_mut();
-        let transaction = connection
+        let transaction = self
+            .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
 
@@ -787,7 +776,6 @@ mod tests {
         let store = open_store(&dir);
         let timeout: i64 = store
             .connection
-            .borrow()
             .pragma_query_value(None, "busy_timeout", |row| row.get(0))
             .expect("busy_timeout");
         assert_eq!(timeout, 5000, "BR2.1 の 5000ms");
@@ -806,7 +794,6 @@ mod tests {
         .expect("開ける");
         let timeout: i64 = store
             .connection
-            .borrow()
             .pragma_query_value(None, "busy_timeout", |row| row.get(0))
             .expect("busy_timeout");
         assert_eq!(timeout, 20);
@@ -819,19 +806,27 @@ mod tests {
         let store = open_store(&dir);
         let mode: String = store
             .connection
-            .borrow()
             .pragma_query_value(None, "journal_mode", |row| row.get(0))
             .expect("journal_mode");
         assert_eq!(mode.to_lowercase(), "delete");
     }
 
     #[test]
-    fn a_cloned_handle_points_at_the_same_connection() {
+    fn the_same_path_can_be_opened_again_without_recreating_the_schema() {
+        // `Clone` は持たない (同じ接続を指す別ハンドルを配らない — interior-mutability.md)。
+        // 「同じストアを指す別インスタンス」は開き直しで得る形に一本化した。
         let dir = tempfile::tempdir().expect("一時 dir");
-        let store = open_store(&dir);
-        let handle = store.clone();
-        assert!(Rc::ptr_eq(&store.connection, &handle.connection));
-        assert_eq!(store.path(), handle.path());
+        let first = open_store(&dir);
+        let second = EventStoreImpl::open(first.path().clone(), FakeClock::new(0))
+            .expect("同じ場所を開き直せる");
+        assert_eq!(first.path(), second.path(), "同じ場所を指す");
+        for store in [&first, &second] {
+            let stamped: i64 = store
+                .connection
+                .pragma_query_value(None, "user_version", |row| row.get(0))
+                .expect("user_version");
+            assert_eq!(stamped, 1, "刻印は 1 のまま (作り直さない)");
+        }
     }
 
     #[test]

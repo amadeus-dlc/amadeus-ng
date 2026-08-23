@@ -29,17 +29,26 @@ pub(crate) const ABSENT_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
 ///
 /// 「新しいインスタンスで読み直す」= 別プロセスからの再オープン相当を、実装によらず
 /// 同じ形で書けるようにするための唯一の抽象である。
+///
+/// 開き直しの引数に**書き終えた Repository** を取るのは、ストアが共有ハンドルではなく
+/// 単一所有になったからである (coding-rules/interior-mutability.md)。SQLite 実装は同じ
+/// ファイルへ新しい接続を開いて引数を無視し、in-memory 実装は Repository が持つ 3 表を
+/// 引き継いだ別インスタンスを作る。どちらも「それまでに書き終えた行が見える別インスタンス」
+/// という同じ観測になる。
 pub(crate) trait StoreFixture {
     /// 試験対象の Repository 実装。
     type Repository: WorkflowExecutionRepository;
     /// 同じストアを読む `JournalReader` 実装。
     type Reader: JournalReader;
 
-    /// 同じストアを指す**新しい** Repository を開く。
+    /// 空のストアを指す**新しい** Repository を開く。
     fn open(&self) -> Self::Repository;
 
-    /// 同じストアを指す `JournalReader` を開く。
-    fn reader(&self) -> Self::Reader;
+    /// `repository` が書き終えたストアを、別のインスタンスから開き直す。
+    fn reopen(&self, repository: &Self::Repository) -> Self::Repository;
+
+    /// `repository` が書き終えたストアを読む `JournalReader` を開く。
+    fn reader(&self, repository: &Self::Repository) -> Self::Reader;
 }
 
 /// 契約テストの集約識別子。

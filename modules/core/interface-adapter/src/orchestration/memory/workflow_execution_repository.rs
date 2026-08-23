@@ -5,8 +5,6 @@
 //! (C3 ④)。テストダブルなので `Impl` 接尾辞は付けない
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 
-use std::cell::RefCell;
-
 use core_domain::orchestration::{ApplyError, IntentId, WorkflowExecution, WorkflowExecutionEvent};
 use core_use_case::orchestration::{
     CorruptCause, EventStore, RepositoryError, WorkflowExecutionRepository,
@@ -14,18 +12,14 @@ use core_use_case::orchestration::{
 
 use super::in_memory_event_store::InMemoryEventStore;
 
-/// in-memory ストアを内包する `WorkflowExecutionRepository`。
+/// in-memory ストアを**単一所有**する `WorkflowExecutionRepository`。
 ///
-/// `WorkflowExecutionRepository` のメソッドは `&self` (C3) だが、`EventStore` の書込は
-/// `&mut self` なので `RefCell` で橋渡しする — 実 Gateway と同じ内部可変性である
-/// (tokio current_thread・`Send` 不要なので `Mutex` ではなく `RefCell` — Q3 = A)。
-///
-/// 借用は **await をまたがない** (設計 functional-spec §2 の約束であり、
-/// `clippy::await_holding_refcell_ref` が機械強制する)。in-memory ストアは共有ハンドルなので、
-/// 借用はハンドルを複製する一瞬だけで済み、以降の `await` は複製に対して行う。
+/// 実 Gateway (`WorkflowExecutionRepositoryImpl`) と同じ形である — 内部可変性を持たず、
+/// 再構成 (Query) は `&self`、永続化 (Command) は `&mut self`
+/// (`coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md`)。
 #[derive(Debug, Default)]
 pub struct InMemoryWorkflowExecutionRepository {
-    store: RefCell<InMemoryEventStore>,
+    store: InMemoryEventStore,
 }
 
 /// `apply_event` の失敗を `Corrupt` の原因へ写す。
@@ -45,18 +39,27 @@ impl InMemoryWorkflowExecutionRepository {
         InMemoryWorkflowExecutionRepository::default()
     }
 
-    /// 既存のストアを共有する Repository を作る (別プロセスからの再オープン相当)。
+    /// 既存のストアを受け取って Repository を作る (別プロセスからの再オープン相当)。
     #[must_use]
     pub const fn with_store(store: InMemoryEventStore) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository {
-            store: RefCell::new(store),
-        }
+        InMemoryWorkflowExecutionRepository { store }
     }
 
-    /// 内包しているストアへのハンドル (`JournalReader` として使うため)。
+    /// 内包しているストアへの参照 (`JournalReader` の読取に使う Query)。
+    ///
+    /// 所有権も別ハンドルも配らない — 実 Gateway と同じ形である
+    /// (`coding-rules/interior-mutability.md`)。
     #[must_use]
-    pub fn event_store(&self) -> InMemoryEventStore {
-        self.store.borrow().clone()
+    pub const fn event_store(&self) -> &InMemoryEventStore {
+        &self.store
+    }
+
+    /// 内包しているストアへの可変参照 (`advance_checkpoint` など書込に使う Command 側の口)。
+    ///
+    /// Query (`event_store`) と分けてあるのは CQS のためである
+    /// (`coding-rules/command-query-separation.md`)。
+    pub const fn event_store_mut(&mut self) -> &mut InMemoryEventStore {
+        &mut self.store
     }
 
     /// 呼出側の不整合 (BR1.3 の前提検査)。破ったら `Corrupt(SequenceGap)`。
@@ -85,8 +88,7 @@ impl InMemoryWorkflowExecutionRepository {
 
 impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
     async fn find_by_id(&self, id: &IntentId) -> Result<WorkflowExecution, RepositoryError> {
-        // 借用はハンドルの複製までで閉じる (await をまたがない)。
-        let store = self.store.borrow().clone();
+        let store = &self.store;
         let snapshot = store
             .get_latest_snapshot_by_id(id)
             .await
@@ -125,14 +127,12 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
     }
 
     async fn store(
-        &self,
+        &mut self,
         event: &WorkflowExecutionEvent,
         aggregate: &WorkflowExecution,
     ) -> Result<(), RepositoryError> {
         InMemoryWorkflowExecutionRepository::check_preconditions(event, aggregate)?;
-        // 借用はハンドルの複製までで閉じる (await をまたがない)。書込は同じ 3 表へ届く。
-        let mut store = self.store.borrow().clone();
-        store
+        self.store
             .persist_event_and_snapshot(event, aggregate)
             .await
             .map_err(|error| RepositoryError::from_event_store(error, event.intent_id()))

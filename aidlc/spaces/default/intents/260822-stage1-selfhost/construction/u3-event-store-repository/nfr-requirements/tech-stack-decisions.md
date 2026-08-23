@@ -9,7 +9,7 @@
 |---|---|---|
 | SQLite ドライバ | `rusqlite`（`features = ["bundled"]`、1 系の最新固定版を B5 着手時に `cargo add` で確定） | 成熟・同期 API・最小依存（`libsqlite3-sys` のみ）。同梱ビルドでホストの SQLite 版差を排除（Q3 = A） |
 | async ランタイム | `tokio`（`rt`, `macros`、current_thread。composition root の `#[tokio::main(flavor = "current_thread")]` は U7） | ADR-006。本 Unit では trait の `async fn` と `#[tokio::test]` に使う |
-| 同期呼出の形 | Repository / EventStore の `async fn` 内で rusqlite を同期呼出（`spawn_blocking` なし、`Send` 不要） | ワンショット CLI、ms 単位のブロッキング（Q3 = A）。内部可変性は `RefCell`（FD BR1.1） |
+| 同期呼出の形 | Repository / EventStore の `async fn` 内で rusqlite を同期呼出（`spawn_blocking` なし、`Send` 不要） | ワンショット CLI、ms 単位のブロッキング（Q3 = A）。内部可変性は使わない（FD BR1.1、オーナー裁定 2026-08-23） |
 | 正準 JSON | 既存 `canon-json`（U1） | payload のバイト決定性（FD BR2.5） |
 | ワイヤ | `serde` / `serde_json`（既存、adapter のみ） | ドメインは serde 非依存（ADR-004） |
 | 形式検証 | Quint 0.32.0（既存）— 新モデル `formal/orchestration/journal_protocol.qnt`、ITF fixture を `tests/conformance/fixtures/journal_protocol/` | Q4 = A、ADR 0003 |

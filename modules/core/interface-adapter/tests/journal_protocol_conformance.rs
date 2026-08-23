@@ -315,16 +315,16 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
     let first = states.first().expect("トレースは 1 状態以上");
     assert_eq!(first.last_action, "init");
 
-    let store = InMemoryEventStore::new();
-    let mut reader = store.clone();
-    // crash (プロセス再起動) のたびに開き直すので可変にしておく。ストアは共有ハンドルなので
-    // 開き直しても 3 表はそのまま残る (= Tx で書き終えた行は落ちない)。
-    let mut repository = InMemoryWorkflowExecutionRepository::with_store(store.clone());
+    // ストアは Repository の単一所有 (共有ハンドルは配らない —
+    // coding-rules/interior-mutability.md)。投影のキャッチアップも射影の突合も、
+    // この 1 つのストアを `event_store` / `event_store_mut` 経由で読み書きする。
+    // crash (プロセス再起動) のたびに 3 表を引き継いで開き直すので可変にしておく。
+    let mut repository = InMemoryWorkflowExecutionRepository::new();
     let mut projection = FakeProjection::default();
     let mut writers: Vec<Writer> = (0..WRITERS).map(|_| Writer::genesis()).collect();
 
     assert_projection(
-        &store,
+        repository.event_store(),
         &projection,
         &writers,
         first,
@@ -399,15 +399,17 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
 
             // 投影のキャッチアップ — チェックポイント以降を読んで描き、位置を進める。
             "catchup" => {
+                let reader = repository.event_store_mut();
                 let from = reader
                     .checkpoint(&projection_name())
                     .await
                     .expect("チェックポイントは読める");
                 let rows = reader.events_after(from).await.expect("差分は読める");
-                if let Some((global, _)) = rows.last() {
+                let last = rows.last().map(|(global, _)| *global);
+                if let Some(global) = last {
                     projection.read_model_seq = global.value();
                     reader
-                        .advance_checkpoint(&projection_name(), *global)
+                        .advance_checkpoint(&projection_name(), global)
                         .await
                         .expect("前進は受理される");
                 }
@@ -416,7 +418,9 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
 
             // Tx 済み・投影未反映のままプロセスが落ちる。開き直しても永続状態は同じ。
             "crash" => {
-                repository = InMemoryWorkflowExecutionRepository::with_store(store.clone());
+                // 3 表を引き継いだ別インスタンスで開き直す (= 書き終えた行は落ちない)。
+                let carried = repository.event_store().clone();
+                repository = InMemoryWorkflowExecutionRepository::with_store(carried);
                 if m.journal_len > 0 {
                     let rebuilt = repository
                         .find_by_id(&intent_id())
@@ -431,7 +435,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             action => panic!("{label}: 未知のアクション {action}"),
         }
 
-        assert_projection(&store, &projection, &writers, m, &label).await;
+        assert_projection(repository.event_store(), &projection, &writers, m, &label).await;
     }
 }
 

@@ -10,10 +10,10 @@
 | `orchestration::ports`（`WorkflowExecutionRepository` / `EventStore` / `JournalReader`） | use-case `core-use-case` | ポート trait（C3、u64） | `core-domain` |
 | `orchestration::errors`（`RepositoryError` / `EventStoreError` / `CorruptCause`） | use-case | 材料のみのエラー | — |
 | `orchestration::{GlobalSeqNr, ProjectionName}` | use-case | 値オブジェクト | — |
-| `orchestration::sqlite_event_store`（+ `schema`） | adapter `core-interface-adapter` | C6 の 3 テーブル、Tx、`within_write_transaction`、open / 初期化 | `rusqlite`、`canon-json`、`clock` |
+| `orchestration::event_store_impl`（+ `schema`） | adapter `core-interface-adapter` | C6 の 3 テーブル、Tx、`within_write_transaction`、open / 初期化 | `rusqlite`、`canon-json`、`clock` |
 | `orchestration::wire`（`event_wire` / `state_wire`） | adapter | 符号化・復号（3 段検査の 1・2 段） | `serde` / `serde_json`、`core-domain` |
 | `orchestration::store_path` | adapter | `StorePath::for_space` | `core-domain::workspace::SpaceName` |
-| `orchestration::workflow_execution_repository_impl` | adapter | `find_by_id` / `store`（`RefCell<SqliteEventStore>`） | 上記 |
+| `orchestration::workflow_execution_repository_impl` | adapter | `find_by_id(&self)` / `store(&mut self)`（`EventStoreImpl` を直接所有） | 上記 |
 | `orchestration::memory::{in_memory_event_store, workflow_execution_repository}` | adapter（`memory/`） | テストダブル（同じ契約） | — |
 | `clock`（既存） | adapter 機構モジュール | `updated_at` の供給、Fake | — |
 | `core-domain::orchestration::{IntentId(UUIDv7), WorkflowExecutionState, StateError}` | domain | 是正・改名 | — |
@@ -27,7 +27,7 @@
 
 - ドメインは serde / rusqlite / tokio を知らない（`core-domain` の依存は不変）。ワイヤ構造体は adapter に閉じ、`pub(crate)`。
 - ユースケース層はポートと値だけ（実装依存なし — `core-use-case` の `Cargo.toml` に `core-interface-adapter` は無い: E0432 で機械強制）。
-- Repository 実装は `RefCell` で内部可変性を閉じ、借用は各メソッド内で完結（await をまたがない）。
+- Repository 実装は `EventStoreImpl` を**直接所有**する。可変操作は `&mut self`、読取は `&self` であり、内部可変性は持たない（正本 `coding-rules/interior-mutability.md` / `command-query-separation.md`、オーナー裁定 2026-08-23）。
 - Clock は機構（Gateway ではない）。ProcessProbe は退役。
 
 ## 3. 障害ドメインとブラストラディウス

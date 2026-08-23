@@ -14,16 +14,16 @@ use core_interface_adapter::orchestration::{
 };
 use support::{StoreFixture, contract};
 
-/// 1 つの in-memory ストアを共有し、そこへ何度でも Repository / Reader を開く試験装置。
-struct InMemoryFixture {
-    store: InMemoryEventStore,
-}
+/// in-memory 実装の試験装置。
+///
+/// ストアは Repository の単一所有なので、開き直しと Reader は「書き終えた Repository が
+/// 持つ 3 表を引き継いだ別インスタンス」で表す (`clone` は共有ハンドルではなく独立した
+/// 写しである — coding-rules/interior-mutability.md)。
+struct InMemoryFixture;
 
 impl InMemoryFixture {
-    fn new() -> InMemoryFixture {
-        InMemoryFixture {
-            store: InMemoryEventStore::new(),
-        }
+    const fn new() -> InMemoryFixture {
+        InMemoryFixture
     }
 }
 
@@ -32,11 +32,18 @@ impl StoreFixture for InMemoryFixture {
     type Reader = InMemoryEventStore;
 
     fn open(&self) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::with_store(self.store.clone())
+        InMemoryWorkflowExecutionRepository::new()
     }
 
-    fn reader(&self) -> InMemoryEventStore {
-        self.store.clone()
+    fn reopen(
+        &self,
+        repository: &InMemoryWorkflowExecutionRepository,
+    ) -> InMemoryWorkflowExecutionRepository {
+        InMemoryWorkflowExecutionRepository::with_store(repository.event_store().clone())
+    }
+
+    fn reader(&self, repository: &InMemoryWorkflowExecutionRepository) -> InMemoryEventStore {
+        repository.event_store().clone()
     }
 }
 
@@ -113,7 +120,18 @@ impl StoreFixture for SqliteFixture {
         WorkflowExecutionRepositoryImpl::new(self.store())
     }
 
-    fn reader(&self) -> EventStoreImpl<FakeClock> {
+    fn reopen(
+        &self,
+        _repository: &WorkflowExecutionRepositoryImpl<FakeClock>,
+    ) -> WorkflowExecutionRepositoryImpl<FakeClock> {
+        // 同じファイルへの新しい接続 — 書き終えた行はファイルに残っている。
+        WorkflowExecutionRepositoryImpl::new(self.store())
+    }
+
+    fn reader(
+        &self,
+        _repository: &WorkflowExecutionRepositoryImpl<FakeClock>,
+    ) -> EventStoreImpl<FakeClock> {
         self.store()
     }
 }

@@ -11,7 +11,7 @@
 | `core-use-case` | `workspace/`（mod ごと削除） | 退役（BR3.1） |
 | `core-domain::orchestration` | `intent_id.rs`（UUIDv7）、`workflow_execution_state.rs`（旧 snapshot）、`state_error.rs`（旧 snapshot_error）、`workflow_execution.rs`（state / from_state） | BR4.1 / BR4.3 |
 | `core-domain::workspace` | `intent_dir_name.rs`（新設）。`lock_protocol.rs` / `lock_identity.rs` 削除 | BR4.2 / BR3.1 |
-| `core-interface-adapter::orchestration` | `sqlite_event_store.rs`（+ `schema.rs` DDL 定数、`wire/event_wire.rs`、`wire/state_wire.rs`）、`store_path.rs`、`workflow_execution_repository_impl.rs`、`memory/in_memory_event_store.rs`、`memory/workflow_execution_repository.rs` | BR2.x |
+| `core-interface-adapter::orchestration` | `event_store_impl.rs`（+ `schema.rs` DDL 定数、`wire/event_wire.rs`、`wire/state_wire.rs`）、`store_path.rs`、`workflow_execution_repository_impl.rs`、`memory/in_memory_event_store.rs`、`memory/workflow_execution_repository.rs` | BR2.x |
 | `core-interface-adapter` | `clock.rs`（既存、Fake 付き）。`process_probe.rs` / `workspace/fs_workspace_lock.rs` 削除、`workspace/state_file_io.rs` は維持（U4） | BR2.6 / BR3.1 |
 | `infra-io` | `process_probe.rs` 削除 | BR3.1 |
 | `formal/orchestration` | `journal_protocol.qnt`（新）。`formal/workspace/audit_lock.qnt` 削除 | BR3.3 |
@@ -23,13 +23,15 @@
 
 ## 2. ポートの形（C3 の具体化 — 差分のみ）
 
-- `WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&self, &WorkflowExecutionEvent, &WorkflowExecution)}` — C3 どおり。
+- `WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution)}`。`store` は `&mut self`（C3 は
+  `&self` のまま未改訂 — `pending-revision.md` #9、U5 / U6 着手前にオーナー裁定が要る）。
 - `EventStore<AID, A, E>` の 4 メソッド — C3 どおり（`version: u64`、`seq_nr: u64`）。Repository 実装は `persist_event_and_snapshot` / `get_latest_snapshot_by_id` /
   `get_events_by_id_since_seq_nr` を使う。
 - `JournalReader::{events_after(GlobalSeqNr), checkpoint(&ProjectionName), advance_checkpoint(&ProjectionName, GlobalSeqNr)}`。
-- `SqliteEventStore::open(path: StorePath, clock: C) -> Result<Self, EventStoreError>` / `within_write_transaction<T>(&mut self, f) -> Result<T, EventStoreError>`。
-- `WorkflowExecutionRepositoryImpl { store: RefCell<SqliteEventStore> }` — `&self` の trait メソッドから `&mut` の EventStore を呼ぶ内部可変性（tokio current_thread・
-  Send 不要なので RefCell。借用は各メソッド内で閉じ、await をまたがない）。`InMemoryWorkflowExecutionRepository { store: RefCell<InMemoryEventStore> }` も同形。
+- `EventStoreImpl::open(path: StorePath, clock: C) -> Result<Self, EventStoreError>` / `within_write_transaction<T>(&mut self, f) -> Result<T, EventStoreError>`。
+- `WorkflowExecutionRepositoryImpl { store: EventStoreImpl<C> }` — `EventStoreImpl<C>` を直接所有する（内部可変性は使わない、coding-rules/interior-mutability.md）。
+  可変操作は `&mut self`。`event_store(&self) -> &EventStoreImpl<C>` / `event_store_mut(&mut self) -> &mut EventStoreImpl<C>` に分けて公開する。
+  `InMemoryWorkflowExecutionRepository { store: InMemoryEventStore }` も同形。
 - 数値パラメータは u64（C3 の usize を実ドメイン型に合わせて具体化 — C3 の改訂提案を所有者 U5 / U6 へ申し送り）。
 - `StorePath::for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath` / `as_path()`。
 

@@ -18,3 +18,7 @@
    の語）。entities / functional-spec / logical-components / 10 号 §3 / 11 号 §3 / components.md の表記を同期（委任 3 設計質問 3 — コンダクタ裁定、B5 統合で改名）。
 8. `within_write_transaction` の閉包引数が `rusqlite::Transaction` を公開面に出す点は U7 の設計で再確認（委任 3 設計質問 4）。`persist_event(event, version)` は version を
    楽観前提として検査（両実装同義 — 委任 2 §C-5 / 委任 3 設計質問 5）を BR2.3 に追記。
+9. **内部可変性の撤回**: `WorkflowExecutionRepository::store` を `&mut self` に、`WorkflowExecutionRepositoryImpl` / `EventStoreImpl` / InMemory 両型から `RefCell` /
+   `Rc<RefCell<_>>` / 手書き `Clone` を除去（オーナー裁定 2026-08-23、正本 `coding-rules/interior-mutability.md` / `command-query-separation.md` を新設）。委任 8 で実装
+   是正済み・本文同期済み。共有契約 C3（`inception/contract-design/contract-summary.md`）の `store(&self, …)` と数値パラメータ `usize` は、オーナー裁定（2026-08-23）
+   により `&mut self` / `u64` へ改訂済み。C3 の所有者は U5/U6 だが、U3 の実装が正であることを本改訂で確定した。code-generation レビュー Major 所見 1 はこれで解消。
