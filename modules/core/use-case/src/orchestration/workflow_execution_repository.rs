@@ -73,7 +73,7 @@ mod tests {
     }
 
     fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

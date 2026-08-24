@@ -1,13 +1,13 @@
 //! state writer 4 種 — 純粋な string→string (upstream `aidlc-lib.ts:6487-6620`, 03 §5.3)。
-//! `set_field` は不在で無言 no-op、`set_field_strict` は不在で Err (「無言 no-op は検出不能な
-//! ドリフト」)、`set_or_insert_field` は指定 `## Heading` 末尾に bullet を追記、`remove_field`
+//! `with_field_if_present` は不在で無言 no-op、`with_field` は不在で Err (「無言 no-op は検出不能な
+//! ドリフト」)、`with_field_or_insert` は指定 `## Heading` 末尾に bullet を追記、`without_field`
 //! は bullet 行ごと削除 (不在は no-op)。フィールド行文法は `- **<Field>**:[ \t]*(.*)`。
 
 use message_catalog::state as msg;
 
 /// フィールド読取 (`getField`) — 最初に一致した行の値を trim して返す。
 #[must_use]
-pub fn get_field(content: &str, field: &str) -> Option<String> {
+pub fn find_field(content: &str, field: &str) -> Option<String> {
     let prefix = format!("- **{field}**:");
     content.lines().find_map(|l| {
         l.strip_prefix(&prefix)
@@ -17,11 +17,11 @@ pub fn get_field(content: &str, field: &str) -> Option<String> {
 
 /// 存在すれば置換、不在なら**無言 no-op** (display 専用フィールド向け)。
 #[must_use]
-pub fn set_field(content: &str, field: &str, value: &str) -> String {
+pub fn with_field_if_present(content: &str, field: &str, value: &str) -> String {
     replace_field(content, field, value).unwrap_or_else(|| content.to_string())
 }
 
-/// `set_field_strict` の拒否 — 対象フィールド行が state ファイルに存在しない。
+/// `with_field` の拒否 — 対象フィールド行が state ファイルに存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldNotFound {
     /// upstream 逐語の拒否文言 (文言カタログ経由)。
@@ -48,12 +48,12 @@ impl FieldNotFound {
 /// # Errors
 ///
 /// 指定フィールド行が存在しなければ `FieldNotFound` (upstream 逐語の拒否文言つき)。
-pub fn set_field_strict(content: &str, field: &str, value: &str) -> Result<String, FieldNotFound> {
+pub fn with_field(content: &str, field: &str, value: &str) -> Result<String, FieldNotFound> {
     replace_field(content, field, value)
-        .ok_or_else(|| FieldNotFound::new(msg::field_not_found(field)))
+        .ok_or_else(|| FieldNotFound::new(msg::field_not_found_message(field)))
 }
 
-/// `set_or_insert_field` の拒否 — 挿入先の `## Heading` セクションが state ファイルに存在しない。
+/// `with_field_or_insert` の拒否 — 挿入先の `## Heading` セクションが state ファイルに存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadingNotFound(String);
 
@@ -76,7 +76,7 @@ impl HeadingNotFound {
 /// # Errors
 ///
 /// 指定 `## Heading` が存在しなければ `HeadingNotFound` (見出し名を逐語で添える)。
-pub fn set_or_insert_field(
+pub fn with_field_or_insert(
     content: &str,
     heading: &str,
     field: &str,
@@ -118,7 +118,7 @@ pub fn set_or_insert_field(
 
 /// bullet 行ごと削除 (不在は no-op)。
 #[must_use]
-pub fn remove_field(content: &str, field: &str) -> String {
+pub fn without_field(content: &str, field: &str) -> String {
     let prefix = format!("- **{field}**:");
     let out: Vec<String> = content
         .lines()
@@ -167,31 +167,31 @@ mod tests {
 ";
 
     #[test]
-    fn get_field_returns_the_trimmed_value() {
-        assert_eq!(get_field(SAMPLE, "Scope").as_deref(), Some("feature"));
-        assert_eq!(get_field(SAMPLE, "Missing"), None);
+    fn find_field_returns_the_trimmed_value() {
+        assert_eq!(find_field(SAMPLE, "Scope").as_deref(), Some("feature"));
+        assert_eq!(find_field(SAMPLE, "Missing"), None);
     }
 
     #[test]
-    fn set_field_silently_no_ops_on_missing_fields() {
-        let out = set_field(SAMPLE, "Missing", "x");
+    fn with_field_if_present_silently_no_ops_on_missing_fields() {
+        let out = with_field_if_present(SAMPLE, "Missing", "x");
         assert_eq!(out, SAMPLE);
     }
 
     #[test]
-    fn set_field_strict_refuses_missing_fields_with_the_verbatim_message() {
-        let err = set_field_strict(SAMPLE, "Construction Autonomy Mode", "gated").unwrap_err();
+    fn with_field_refuses_missing_fields_with_the_verbatim_message() {
+        let err = with_field(SAMPLE, "Construction Autonomy Mode", "gated").unwrap_err();
         assert_eq!(
             err.message(),
             "Field not found in state file: \"Construction Autonomy Mode\". Cannot update — refusing to silently no-op."
         );
-        let ok = set_field_strict(SAMPLE, "Status", "Completed").unwrap();
+        let ok = with_field(SAMPLE, "Status", "Completed").unwrap();
         assert!(ok.contains("- **Status**: Completed"));
     }
 
     #[test]
-    fn set_or_insert_appends_at_the_end_of_the_named_section() {
-        let out = set_or_insert_field(
+    fn with_field_or_insert_appends_at_the_end_of_the_named_section() {
+        let out = with_field_or_insert(
             SAMPLE,
             "Project Information",
             "Parked",
@@ -209,15 +209,15 @@ mod tests {
 ";
         assert_eq!(out, expected);
         // 不在見出しは、その見出し名を逐語で添えて拒否する
-        let err = set_or_insert_field(SAMPLE, "No Such Heading", "F", "v").unwrap_err();
+        let err = with_field_or_insert(SAMPLE, "No Such Heading", "F", "v").unwrap_err();
         assert_eq!(err.as_str(), "No Such Heading");
         assert_eq!(err, HeadingNotFound::new("No Such Heading"));
     }
 
     #[test]
-    fn remove_field_deletes_the_bullet_line_and_no_ops_when_missing() {
-        let out = remove_field(SAMPLE, "Scope");
+    fn without_field_deletes_the_bullet_line_and_no_ops_when_missing() {
+        let out = without_field(SAMPLE, "Scope");
         assert!(!out.contains("Scope"));
-        assert_eq!(remove_field(SAMPLE, "Missing"), SAMPLE);
+        assert_eq!(without_field(SAMPLE, "Missing"), SAMPLE);
     }
 }

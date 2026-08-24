@@ -73,7 +73,11 @@ pub struct InMemoryEventStore {
 }
 
 /// 行の材料を添えて `Corrupt` を組む。
-fn corrupt(aggregate_id: &IntentId, seq_nr: Option<u64>, cause: CorruptCause) -> EventStoreError {
+fn corrupt_error(
+    aggregate_id: &IntentId,
+    seq_nr: Option<u64>,
+    cause: CorruptCause,
+) -> EventStoreError {
     EventStoreError::Corrupt {
         aggregate_id: aggregate_id.as_str().to_string(),
         seq_nr,
@@ -116,7 +120,7 @@ impl InMemoryEventStore {
     ) -> Result<WorkflowExecution, EventStoreError> {
         let state = StateWire::decode(aggregate_id.as_str(), row.schema_version, &row.payload)?;
         let aggregate = WorkflowExecution::from_state(state).map_err(|_| {
-            corrupt(
+            corrupt_error(
                 aggregate_id,
                 Some(row.seq_nr),
                 CorruptCause::InvariantViolation,
@@ -331,7 +335,7 @@ mod tests {
     }
 
     fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

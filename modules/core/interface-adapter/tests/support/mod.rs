@@ -117,7 +117,7 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 /// genesis の集約と `Started` イベント (`seq_nr` = 1、`version` = 0)。
 #[must_use]
 pub(crate) fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_with_entries(
+    WorkflowExecution::start_from_plan_unchecked(
         intent_id(),
         WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))

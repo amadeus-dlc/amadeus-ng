@@ -10,7 +10,7 @@
 //!
 //! | コマンド | イベント |
 //! |---|---|
-//! | `start` / `start_with_entries` | `Started` (解決済み計画を自己完結で持つ) |
+//! | `start` / `start_from_plan_unchecked` | `Started` (解決済み計画を自己完結で持つ) |
 //! | `complete_stage` | `StageCompleted` |
 //! | `open_gate` | `GateOpened` |
 //! | `approve_gate` | `GateApproved` |
@@ -20,7 +20,7 @@
 //! | `jump` | `Jumped` |
 //! | `park` / `unpark` | `Parked` / `Unparked` |
 //! | `recompose` | `Recomposed` |
-//! | `set_autonomy` | `AutonomyModeSet` |
+//! | `switch_autonomy` | `AutonomyModeSet` |
 //!
 //! `next_decision` / `jump_resolve` / `stale_report` はクエリ (書込なし)。`EngineSignal` は
 //! `NextDecision` から導出する 4 値である。
@@ -40,7 +40,7 @@
 //! | `status = WorkflowCompleted` | `status = Completed` |
 //! | `parkedAt = -1` | `parked_at = None` |
 //! | `autonomous` | `autonomy = Autonomous` |
-//! | `actSetAutonomy` (トグル) | `set_autonomy(反転値)` |
+//! | `actSetAutonomy` (トグル) | `switch_autonomy(反転値)` |
 //! | `actRecompose` (1 ステージ) | `recompose(&[stage])` (要素数 1) |
 //! | `lastDirective` | `EngineSignal::from(&NextDecision)` |
 //! | stage 0 (非ゲート) | initialization 1 ステージだけを持つ合成計画の索引 0 |

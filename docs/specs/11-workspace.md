@@ -61,7 +61,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 | `render_audit_block`（→ 投影 API — ReadModelUpdater、U4） | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
 | `find_all_events` | shard 横断の順序: timestamp（秒精度 ISO）ソート＋バッファ位置 tiebreak。**通常読取は決して fail-closed しない**（authority 比較の同秒 fail-closed は orchestration の述語側 — B9）。出力は順序付き専用型（外部から構築・再ソート不能 — W15 の E1 装置） |
 | `classify_state_version` | 4 分類の単一実装（W7） |
-| `state_writers`（→ 投影 API — ReadModelUpdater、U4） | `set_field`（無言 no-op）/ `set_field_strict`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `set_or_insert_field` / `remove_field` の 4 種。純粋な string→string |
+| `state_writers`（→ 投影 API — ReadModelUpdater、U4） | `with_field_if_present`（無言 no-op）/ `with_field`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `with_field_or_insert` / `without_field` の 4 種。純粋な string→string |
 
 ### 2.4 multi-repo・カーソル・committed vs ignored
 
@@ -129,7 +129,7 @@ E4 の定義名は J1〜J6（旧 W1〜W5 に相当する区間 — mkdir ロッ�
 | W11 | audit-merge は delta のみ追記し、ブロック境界・既知イベント・非 merge-protected・worktree スナップショットのバイト/inode 一致・**main 先頭 boundary バイトの prefix-hash 一致**を全て検証（mid-Bolt tampering / truncation を逐語で区別） | E2+E3 | R7 の受け皿。authoritative fork 行は main から回収（書込可能な worktree コピーを信用しない） |
 | W12 | main shard を書き換えるコードパスは存在しない（追記専用）。唯一の例外は audit-fork の worktree ミラー確立（tmp+rename）で、以後は再び追記のみ | **E1** 候補+E3 | 装置: main shard と worktree ミラーを**パスの型で分離**し（`MainShard` / `WorktreeMirrorShard`）、置換 API は `WorktreeMirrorShard`（audit-fork ユースケース専用型）にのみ定義する — main shard 型には追記しか存在しない |
 | W13 | birth は単一チョークポイント。`intents.json` の全変更は `EventStoreImpl::within_write_transaction`（単一 DB = 単一バケット）下で、keying に `activeIntent()` を使わない（並行 first-run の二重 birth 防止） | E1+E3 | `EventStoreImpl::within_write_transaction`（旧: `LockIdentity` の構成関数が唯一の入口 — ADR-007 / Bolt B5 で置換） |
-| W14 | 状態機械遷移は strict writer（不在フィールドは throw — 無言 no-op は検出不能ドリフト）。M12 は修正方針確定済み（逸脱台帳 #2。実装形は §10 のとおり実装時に確定） | E2+E3 | `set_field_strict` |
+| W14 | 状態機械遷移は strict writer（不在フィールドは throw — 無言 no-op は検出不能ドリフト）。M12 は修正方針確定済み（逸脱台帳 #2。実装形は §10 のとおり実装時に確定） | E2+E3 | `with_field` |
 | W15 | shard 横断の順序は timestamp ソート＋バッファ位置 tiebreak で、通常読取は決して fail-closed しない（同秒 fail-closed は orchestration の authority 述語のみ — B9） | **E1** | 装置: `find_all_events` の出力を順序付き専用型（外部から構築・再ソート不能）にし、順序付きイベント列はこの型経由でしか得られない |
 | W16 | runtime-graph は純観測者（state を変異しない・質問しない）で、同一監査ログから**バイト同値**を再現する | E3＋A2 | 決定性は正準 JSON（A2）が前提。折り込み規則は verification 提供（B8） |
 
@@ -166,5 +166,5 @@ orchestration §10 の裁定（in-process 合成、S1〜S4 維持）は本コン
 - **`intents.json` の直列化機構 — 確定（2026-08-23、Bolt B5）**: `EventStoreImpl::within_write_transaction`（同一 DB の `BEGIN IMMEDIATE`）に一本化した（U3 FD Q2 = A）。W13（birth の単一チョークポイント）と旧 `LockIdentity` の keying 規範（単一バケットへの集約・`activeIntent()` を keying に使わない）は、この機構でそのまま満たされる（§2.2、§6 W13）。
 - ~~ロック keying（複数 identity・センチネル 2 成分形）と二相 acquire・未スタンプ猶予のモデル化~~ → 確定（2026-08-23、Bolt B5）: mkdir ロックの退役（ADR-007）により `audit_lock.qnt` は退役し、協定モデル [`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt)（不変条件 8 / witness 4）へ置換した（U3 FD Q4 = A）。
 - runtime-graph のセンサー区画折り込み規則の受け渡し形式（B8 — 宣言的規則の表現）は verification 仕様で確定。
-- M12 修正の実装形（birth で行を書く vs `set_or_insert_field` 化）は実装時に選び、ゴールデンの分岐点を 1 か所に固定する。
+- M12 修正の実装形（birth で行を書く vs `with_field_or_insert` 化）は実装時に選び、ゴールデンの分岐点を 1 か所に固定する。
 - Windows の防御等価物（O_NOFOLLOW / kill(0) / mkdir ロック / rename）はフェーズ D（R3）。

@@ -91,7 +91,7 @@ pub fn stage_graph_invalid_json_message(path: &str, cause: &str) -> String {
 
 /// 読取失敗を stderr へ出す 1 行に整形する (stdout は汚さない — 12 §4 #10)。
 #[must_use]
-pub fn read_error_message(error: &GraphReadError) -> String {
+pub fn graph_read_error_message(error: &GraphReadError) -> String {
     match error {
         GraphReadError::NotReadable {
             path,
@@ -909,21 +909,21 @@ mod tests {
     }
 
     #[test]
-    fn read_error_message_renders_every_variant() {
-        let rendered = read_error_message(&GraphReadError::ScopeFile {
+    fn graph_read_error_message_renders_every_variant() {
+        let rendered = graph_read_error_message(&GraphReadError::ScopeFile {
             message: "boom".to_string(),
         });
         assert_eq!(rendered, "boom");
-        let rendered = read_error_message(&GraphReadError::Malformed {
+        let rendered = graph_read_error_message(&GraphReadError::Malformed {
             message: "bang".to_string(),
         });
         assert_eq!(rendered, "bang");
-        let rendered = read_error_message(&GraphReadError::InvalidJson {
+        let rendered = graph_read_error_message(&GraphReadError::InvalidJson {
             path: "/p".to_string(),
             cause: "c".to_string(),
         });
         assert_eq!(rendered, "Stage graph at /p is not valid JSON: c");
-        let rendered = read_error_message(&GraphReadError::NotReadable {
+        let rendered = graph_read_error_message(&GraphReadError::NotReadable {
             path: "/p".to_string(),
             cause: "c".to_string(),
             env_override: false,
@@ -1096,8 +1096,8 @@ mod tests {
     #[test]
     fn the_two_identity_failures_have_their_own_diagnostic_wordings() {
         // ADR-008 で足した 2 変種。upstream には定義 id の概念が無いので逐語の縛りは
-        // 無いが、`read_error_message` が 1 行の診断へ畳むところまでが契約である。
-        let rendered = read_error_message(&GraphReadError::NotFound {
+        // 無いが、`graph_read_error_message` が 1 行の診断へ畳むところまでが契約である。
+        let rendered = graph_read_error_message(&GraphReadError::NotFound {
             expected: WorkflowDefinitionId::parse("claude").unwrap(),
             actual: WorkflowDefinitionId::parse("codex").unwrap(),
         });
@@ -1106,7 +1106,7 @@ mod tests {
             "Workflow definition codex not found: this harness provides claude"
         );
 
-        let rendered = read_error_message(&GraphReadError::HarnessIdentity {
+        let rendered = graph_read_error_message(&GraphReadError::HarnessIdentity {
             path: "/d/harness.json".to_string(),
             cause: "missing name".to_string(),
         });

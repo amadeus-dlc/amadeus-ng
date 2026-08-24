@@ -49,7 +49,7 @@ impl AutonomyMode {
         match s {
             "autonomous" => Ok(AutonomyMode::Autonomous),
             "gated" => Ok(AutonomyMode::Gated),
-            other => Err(InvalidModeArg::new(msg::invalid_mode(other))),
+            other => Err(InvalidModeArg::new(msg::invalid_mode_message(other))),
         }
     }
 }

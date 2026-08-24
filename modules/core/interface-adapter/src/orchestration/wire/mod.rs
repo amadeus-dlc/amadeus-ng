@@ -37,7 +37,7 @@ pub(super) const SCHEMA_VERSION: u32 = 1;
 const MAX_EXACT_INTEGER: u64 = 9_007_199_254_740_992;
 
 /// 行の材料を添えて `Corrupt` を組む。
-pub(super) fn corrupt(
+pub(super) fn corrupt_error(
     aggregate_id: &str,
     seq_nr: Option<u64>,
     cause: CorruptCause,
@@ -343,21 +343,25 @@ impl StageEntryWire {
             conditional: entry.is_conditional(),
         }
     }
+}
 
-    /// ワイヤの形からドメイン値へ (parse-don't-validate)。
-    pub(super) fn to_entry(value: &JsonValue) -> Result<StageEntry, CorruptCause> {
-        let object = WireObject::new(value)?;
-        object.only(&STAGE_ENTRY_KEYS)?;
-        Ok(StageEntry::new(
-            parse_slug(object.string("slug")?)?,
-            parse_phase(object.string("phase")?)?,
-            parse_plan(object.string("plan_action")?)?,
-            match object.value("conditional")? {
-                JsonValue::Bool(value) => *value,
-                _ => return Err(CorruptCause::UndecodablePayload),
-            },
-        ))
-    }
+/// ワイヤの形からドメイン値へ (parse-don't-validate)。
+///
+/// 作るのは `StageEntry` (ドメイン値) であって `StageEntryWire` ではないので、`StageEntryWire`
+/// の関連関数ではなく、同じ mod の `parse_slug` / `parse_phase` と同じ自由関数として置く
+/// (命名監査 F2)。
+pub(super) fn parse_entry(value: &JsonValue) -> Result<StageEntry, CorruptCause> {
+    let object = WireObject::new(value)?;
+    object.only(&STAGE_ENTRY_KEYS)?;
+    Ok(StageEntry::new(
+        parse_slug(object.string("slug")?)?,
+        parse_phase(object.string("phase")?)?,
+        parse_plan(object.string("plan_action")?)?,
+        match object.value("conditional")? {
+            JsonValue::Bool(value) => *value,
+            _ => return Err(CorruptCause::UndecodablePayload),
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -483,7 +487,7 @@ mod tests {
         let ok = value(
             r#"{"slug":"intent-capture","phase":"ideation","plan_action":"EXECUTE","conditional":true}"#,
         );
-        let entry = StageEntryWire::to_entry(&ok).unwrap();
+        let entry = parse_entry(&ok).unwrap();
         assert_eq!(entry.slug().as_str(), "intent-capture");
         assert!(entry.is_conditional());
 
@@ -491,7 +495,7 @@ mod tests {
             r#"{"slug":"intent-capture","phase":"ideation","plan_action":"EXECUTE","conditional":1}"#,
         );
         assert_eq!(
-            StageEntryWire::to_entry(&broken).err(),
+            parse_entry(&broken).err(),
             Some(CorruptCause::UndecodablePayload)
         );
     }

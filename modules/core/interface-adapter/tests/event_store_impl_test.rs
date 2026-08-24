@@ -43,7 +43,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Fixture {
         let dir = tempfile::tempdir().expect("一時ディレクトリ");
-        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default());
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         // `intents/` は upstream の既存ディレクトリ — ストアは作らない (BR2.1)。
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir を持つ"))
             .expect("intents/ を先に作る");
@@ -53,7 +53,7 @@ impl Fixture {
     /// 親 dir を作らない試験装置 (`Io(NotFound)` の観測用)。
     fn without_parent() -> Fixture {
         let dir = tempfile::tempdir().expect("一時ディレクトリ");
-        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default());
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         Fixture { _dir: dir, path }
     }
 
@@ -788,7 +788,7 @@ async fn an_unknown_aggregate_has_no_snapshot() {
 /// `StorePath` は space 配下の固定位置を導く (BR2.1)。
 #[test]
 fn the_store_path_is_derived_from_the_space() {
-    let path = StorePath::of(
+    let path = StorePath::for_space(
         Path::new("/tmp/aidlc"),
         &SpaceName::parse("team-a").expect("kebab"),
     );

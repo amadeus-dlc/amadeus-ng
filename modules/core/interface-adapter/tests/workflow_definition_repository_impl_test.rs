@@ -946,7 +946,7 @@ fn a_missing_grid_still_yields_a_revision_derived_from_the_transposed_grid() {
 }
 
 #[test]
-fn every_closed_set_field_is_reported_as_malformed_with_the_key_that_caused_it() {
+fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it() {
     // 未知の列挙値は load 時に落とす (12 §10 表 #3) — ドメイン型に `Unknown` variant を
     // 持たせず Always Valid を保つため。診断文言はキーごとに違い、どのフィールドが原因かが
     // 1 行で分かる。`slug` / `phase` は既存テストが押さえているので残り 7 キーを埋める。

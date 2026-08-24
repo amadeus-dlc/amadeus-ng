@@ -30,7 +30,7 @@
   `EventStoreError { Conflict, Io, Corrupt { aggregate_id: String, .. }, Schema { found, supported }, CheckpointRegression { projection, current, requested } }`、
   `CorruptCause { MissingSnapshot, UndecodablePayload, UnknownEventType, SchemaVersion, InvariantViolation, SequenceGap }`、`GlobalSeqNr(u64)`（`ZERO`）、`ProjectionName`（kebab ≤ 64）。
 - `core_interface_adapter::orchestration`: `EventStoreImpl::open(StorePath, C: Clock) -> Result<Self, EventStoreError>`、`within_write_transaction(&mut self, f)`、
-  `StorePath::of(&Path, &SpaceName)`、`WorkflowExecutionRepositoryImpl { store: EventStoreImpl<C> }`（直接所有）、`memory::{InMemoryEventStore, InMemoryWorkflowExecutionRepository}`。
+  `StorePath::for_space(&Path, &SpaceName)`、`WorkflowExecutionRepositoryImpl { store: EventStoreImpl<C> }`（直接所有）、`memory::{InMemoryEventStore, InMemoryWorkflowExecutionRepository}`。
 - `core_domain`: `orchestration::{IntentId（UUIDv7）, WorkflowExecutionState, WorkflowExecutionStateBuilder, StateError}`、`WorkflowExecution::{state, from_state}`、`workspace::IntentDirName`。
 - 意味論は FD functional-spec §3（store / find_by_id / 差分読取 / 登録簿直列化 / open）、ワイヤは §4、モデルは §5。
 

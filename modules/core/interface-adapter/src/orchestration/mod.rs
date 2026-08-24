@@ -32,5 +32,5 @@ pub use memory::{
 
 // 逐語文言の組み立て (12 §6 — レンダリングはアダプタ層に閉じる)
 pub use workflow_definition_repository_impl::{
-    read_error_message, stage_graph_invalid_json_message, stage_graph_not_readable_message,
+    graph_read_error_message, stage_graph_invalid_json_message, stage_graph_not_readable_message,
 };

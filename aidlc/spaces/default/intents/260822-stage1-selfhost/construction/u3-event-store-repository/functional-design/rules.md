@@ -55,7 +55,7 @@ rules:
 
   # --- BR2: SQLite ストアと実装（アダプタ層） ---
   - id: BR2.1
-    statement: "ストアファイルは StorePath::of(aidlc_root, &SpaceName) = `<aidlc root>/spaces/<space>/intents/.aidlc-store.sqlite`（Q1 = A）。open は create-if-missing、PRAGMA user_version を検査（0 → スキーマ作成して 1 に、1 → そのまま、それ以外 → Schema { found, supported: 1 }）、busy_timeout 5000ms、journal_mode は既定（WAL は使わない — 付随ファイルを増やさない）"
+    statement: "ストアファイルは StorePath::for_space(aidlc_root, &SpaceName) = `<aidlc root>/spaces/<space>/intents/.aidlc-store.sqlite`（Q1 = A）。open は create-if-missing、PRAGMA user_version を検査（0 → スキーマ作成して 1 に、1 → そのまま、それ以外 → Schema { found, supported: 1 }）、busy_timeout 5000ms、journal_mode は既定（WAL は使わない — 付随ファイルを増やさない）"
     category: policy
     applies_to: [EventStoreImpl, StorePath]
     trigger: "ストアの open"

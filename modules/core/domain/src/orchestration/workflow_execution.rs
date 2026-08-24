@@ -134,7 +134,7 @@ impl WorkflowExecution {
                 )
             })
             .collect();
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent_id,
             definition.id().clone(),
             definition.revision().clone(),
@@ -146,14 +146,19 @@ impl WorkflowExecution {
 
     /// 解決済み計画を直接与えて実行を開始する ([`WorkflowExecution::start`] の委譲先)。
     ///
-    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。スコープ名の
-    /// 妥当性はここでは検査しない (定義を持たないため) — 検査は [`WorkflowExecution::start`] の責務。
+    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。
+    ///
+    /// **`start` と違い [`StartError::UnknownScope`] を返せない** — 照合すべき
+    /// [`WorkflowDefinition`] を受け取らないため、スコープ名が定義にあるかどうかを検査する材料が
+    /// そもそも無い。名前の `_unchecked` はこの検査の欠落を指す。定義を持っている呼出側は
+    /// [`WorkflowExecution::start`] を使うこと。
     ///
     /// # Errors
     ///
     /// ステージ 0 件、initialization ステージの SKIP / CONDITIONAL、先頭ステージのスコープ外を
     /// 拒否する (先頭はカーソルの初期位置なので実効 EXECUTE でなければ `cursor_in_scope` を破る)。
-    pub fn start_with_entries(
+    /// スコープ名の妥当性 (`UnknownScope`) は上記のとおり検査しない。
+    pub fn start_from_plan_unchecked(
         intent_id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
@@ -372,15 +377,24 @@ impl WorkflowExecution {
             .ok_or_else(|| ApplyError::UnknownStage(slug.clone()))
     }
 
-    fn set_checkbox(&mut self, stage: StageIndex, value: CheckboxState) {
+    /// ステージに状態の印を付ける (状態ファイルのチェックボックスがこの印の表現)。
+    fn mark_stage(&mut self, stage: StageIndex, value: CheckboxState) {
         if let Some(slot) = self.checkbox.get_mut(stage.value()) {
             *slot = value;
         }
     }
 
-    fn set_approved(&mut self, stage: StageIndex, value: bool) {
+    /// ステージの承認を記録する (`GateApproved` の適用)。
+    fn record_approval(&mut self, stage: StageIndex) {
         if let Some(slot) = self.approved.get_mut(stage.value()) {
-            *slot = value;
+            *slot = true;
+        }
+    }
+
+    /// ステージの承認履歴を無効化する (BR1.6 — jump が承認を巻き戻す)。
+    fn invalidate_approval(&mut self, stage: StageIndex) {
+        if let Some(slot) = self.approved.get_mut(stage.value()) {
+            *slot = false;
         }
     }
 
@@ -712,14 +726,20 @@ impl WorkflowExecution {
         )
     }
 
-    /// 自律モードの設定 — `AutonomyModeSet` (BR1.8)。
+    /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
     ///
-    /// human-presence ガードはユースケース層 (監査台帳の射影が要る) — ここは状態変更のみ。
+    /// 方向は 2 つあり、仕様はそれぞれを**昇格**(gated → autonomous) と**降格**(その逆) と呼ぶ。
+    /// 本メソッドは両方向を受ける。**昇格だけが human presence を要する** (I11) が、その
+    /// ガードはユースケース層にある (監査台帳の射影が要る) — ここは状態変更のみ。
+    ///
+    /// 発する監査イベント文字列 `AUTONOMY_MODE_SET` と CLI 動詞 `set-autonomy` は upstream の
+    /// Published Language なので逐語で維持するが、**本メソッド名は外に出ない**のでドメインの語
+    /// を使う (coding-rules/ubiquitous-language.md)。
     ///
     /// # Errors
     ///
     /// 非受理なら `NotRunning`。
-    pub fn set_autonomy(
+    pub fn switch_autonomy(
         &mut self,
         mode: AutonomyMode,
         occurred_at: &str,
@@ -769,33 +789,33 @@ impl WorkflowExecution {
             }
             WorkflowExecutionEventPayload::StageCompleted(completed) => {
                 let stage = self.resolve(completed.stage())?;
-                self.set_checkbox(stage, CheckboxState::Completed);
+                self.mark_stage(stage, CheckboxState::Completed);
                 self.advance(completed.next_stage())?;
             }
             WorkflowExecutionEventPayload::GateOpened(opened) => {
                 let stage = self.resolve(opened.stage())?;
-                self.set_checkbox(stage, CheckboxState::AwaitingApproval);
+                self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             WorkflowExecutionEventPayload::GateApproved(approved) => {
                 let stage = self.resolve(approved.stage())?;
-                self.set_approved(stage, true);
-                self.set_checkbox(stage, CheckboxState::Completed);
+                self.record_approval(stage);
+                self.mark_stage(stage, CheckboxState::Completed);
                 self.advance(approved.next_stage())?;
             }
             WorkflowExecutionEventPayload::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
-                self.set_checkbox(stage, CheckboxState::Revising);
+                self.mark_stage(stage, CheckboxState::Revising);
                 if let Some(slot) = self.revision_count.get_mut(stage.value()) {
                     *slot = rejected.revision_count();
                 }
             }
             WorkflowExecutionEventPayload::StageRevised(revised) => {
                 let stage = self.resolve(revised.stage())?;
-                self.set_checkbox(stage, CheckboxState::AwaitingApproval);
+                self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             WorkflowExecutionEventPayload::StageSkipped(skipped) => {
                 let stage = self.resolve(skipped.stage())?;
-                self.set_checkbox(stage, CheckboxState::Skipped);
+                self.mark_stage(stage, CheckboxState::Skipped);
                 self.advance(skipped.next_stage())?;
             }
             WorkflowExecutionEventPayload::Jumped(jumped) => {
@@ -834,23 +854,23 @@ impl WorkflowExecution {
         let target = self.resolve(jumped.target())?;
         for slug in jumped.stages_reset() {
             let stage = self.resolve(slug)?;
-            self.set_checkbox(stage, CheckboxState::Pending);
+            self.mark_stage(stage, CheckboxState::Pending);
         }
         for slug in jumped.stages_skipped() {
             let stage = self.resolve(slug)?;
-            self.set_checkbox(stage, CheckboxState::Skipped);
+            self.mark_stage(stage, CheckboxState::Skipped);
         }
         match jumped.direction() {
             // backward は target 以降の承認履歴を、redo は出発点の承認履歴を無効化する (BR1.6)。
             JumpDirection::Backward => {
                 for value in target.value()..self.stage_count() {
-                    self.set_approved(StageIndex::new(value), false);
+                    self.invalidate_approval(StageIndex::new(value));
                 }
             }
-            JumpDirection::Redo => self.set_approved(source, false),
+            JumpDirection::Redo => self.invalidate_approval(source),
             JumpDirection::Forward => {}
         }
-        self.set_checkbox(target, CheckboxState::InProgress);
+        self.mark_stage(target, CheckboxState::InProgress);
         self.cursor = target;
         Ok(())
     }
@@ -860,7 +880,7 @@ impl WorkflowExecution {
         match next_stage {
             Some(slug) => {
                 let stage = self.resolve(slug)?;
-                self.set_checkbox(stage, CheckboxState::InProgress);
+                self.mark_stage(stage, CheckboxState::InProgress);
                 self.cursor = stage;
             }
             None => self.status = Status::Completed,
@@ -1192,7 +1212,7 @@ mod tests {
     }
 
     fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> WorkflowExecution {
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1374,7 +1394,7 @@ mod tests {
 
     #[test]
     fn an_empty_stage_list_is_refused() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1388,7 +1408,7 @@ mod tests {
 
     #[test]
     fn an_initialization_stage_that_folds_to_skip_is_refused() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1402,7 +1422,7 @@ mod tests {
 
     #[test]
     fn a_conditional_initialization_stage_is_refused() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1416,7 +1436,7 @@ mod tests {
 
     #[test]
     fn a_first_stage_outside_scope_is_refused_because_the_cursor_must_be_in_scope() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1627,7 +1647,7 @@ mod tests {
         w.unpark(AT).unwrap();
         assert_eq!(w.cursor(), at(&w, 1));
         assert_eq!(w.parked_at(), None);
-        w.set_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
         assert_eq!(w.park(AT), Err(CommandError::RefusedUnderAutonomy));
     }
 
@@ -1653,7 +1673,7 @@ mod tests {
         assert_eq!(w.park(AT), Err(CommandError::NotRunning));
         assert_eq!(w.recompose(&[target], AT), Err(CommandError::NotRunning));
         assert_eq!(
-            w.set_autonomy(AutonomyMode::Autonomous, AT),
+            w.switch_autonomy(AutonomyMode::Autonomous, AT),
             Err(CommandError::NotRunning)
         );
         assert_eq!(w.stale_report(at(&w, 0)), Err(CommandError::NotRunning));
@@ -1687,7 +1707,7 @@ mod tests {
         assert_eq!(w.effective_plan(at(&w, 3)), Some(Skip));
         // plan (静的グリッド) は不変 — オーバレイだけが動く。
         assert_eq!(w.stages()[2].plan_action(), Execute);
-        w.set_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
         assert_eq!(
             w.recompose(&[at(&w, 2)], AT),
             Err(CommandError::RefusedUnderAutonomy)
@@ -1714,7 +1734,7 @@ mod tests {
     #[test]
     fn set_autonomy_replaces_the_mode() {
         let mut w = all_exec(3);
-        let event = w.set_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        let event = w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
         let WorkflowExecutionEventPayload::AutonomyModeSet(set) = event.payload() else {
             panic!("expected AutonomyModeSet");
         };
@@ -2328,7 +2348,7 @@ mod tests {
     }
 
     fn start_synthetic(stages: Vec<StageEntry>) -> WorkflowExecution {
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -2364,7 +2384,7 @@ mod tests {
                 Some(stage) => w.recompose(&[stage], AT),
                 None => Err(CommandError::NotRunning),
             },
-            Cmd::SetAutonomy(autonomous) => w.set_autonomy(
+            Cmd::SetAutonomy(autonomous) => w.switch_autonomy(
                 if *autonomous {
                     AutonomyMode::Autonomous
                 } else {

@@ -26,16 +26,16 @@ pub use state_field_value::StateFieldValue;
 pub use state_version::{StateVersionClassification, StateVersionKind};
 
 // 純関数ドメインサービス
-pub use checkbox::{count_completed, parse_checkboxes, set_checkbox};
+pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker};
 pub use state_field_value::unsafe_line_char;
 pub use state_version::classify_state_version;
 pub use state_writers::{
-    get_field, remove_field, set_field, set_field_strict, set_or_insert_field,
+    find_field, with_field, with_field_if_present, with_field_or_insert, without_field,
 };
 
 // エラー
 pub use bolt_refs::BoltRefsError;
-pub use checkbox::CheckboxWriteError;
+pub use checkbox::CheckboxUpdateError;
 pub use clone_id::CloneIdError;
 pub use intent_dir_name::IntentDirNameError;
 pub use space_name::SpaceNameError;

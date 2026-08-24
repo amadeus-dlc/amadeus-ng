@@ -36,7 +36,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Fixture {
         let dir = tempfile::tempdir().expect("一時ディレクトリ");
-        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default());
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir を持つ"))
             .expect("intents/ を先に作る");
         Fixture { _dir: dir, path }
@@ -76,7 +76,7 @@ async fn write_five(
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .set_autonomy(AutonomyMode::Autonomous, AT)
+        .switch_autonomy(AutonomyMode::Autonomous, AT)
         .expect("自律モードの設定");
     repository.store(&event, &aggregate).await.expect("5 件目");
     advanced(aggregate, &event)

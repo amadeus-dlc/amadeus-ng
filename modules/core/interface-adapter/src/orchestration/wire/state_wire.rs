@@ -6,9 +6,10 @@ use core_use_case::orchestration::{CorruptCause, EventStoreError};
 use serde::Serialize;
 
 use super::{
-    SCHEMA_VERSION, StageEntryWire, WireObject, autonomy_token, checkbox_token, corrupt,
+    SCHEMA_VERSION, StageEntryWire, WireObject, autonomy_token, checkbox_token, corrupt_error,
     exact_integer, parse_autonomy, parse_checkbox, parse_definition_id, parse_definition_revision,
-    parse_intent_id, parse_json, parse_plan, parse_status, status_token, to_canonical_json,
+    parse_entry, parse_intent_id, parse_json, parse_plan, parse_status, status_token,
+    to_canonical_json,
 };
 
 /// `WorkflowExecutionState` (16 属性) のワイヤ表現 (functional-spec §4.2)。
@@ -69,7 +70,7 @@ impl StateWire {
         aggregate_id: &str,
         state: &WorkflowExecutionState,
     ) -> Result<String, EventStoreError> {
-        StateWire::encode_inner(state).map_err(|cause| corrupt(aggregate_id, None, cause))
+        StateWire::encode_inner(state).map_err(|cause| corrupt_error(aggregate_id, None, cause))
     }
 
     /// スナップショット行の材料から状態を復元する (検査点 1 / 2 — security-design §2)。
@@ -86,7 +87,7 @@ impl StateWire {
         payload: &str,
     ) -> Result<WorkflowExecutionState, EventStoreError> {
         StateWire::decode_inner(schema_version, payload)
-            .map_err(|cause| corrupt(aggregate_id, None, cause))
+            .map_err(|cause| corrupt_error(aggregate_id, None, cause))
     }
 
     /// 符号化の本体 (材料の付与は呼出側)。
@@ -147,7 +148,7 @@ impl StateWire {
         let stages = object
             .array("stages")?
             .iter()
-            .map(StageEntryWire::to_entry)
+            .map(parse_entry)
             .collect::<Result<Vec<_>, _>>()?;
         let plan = object.list("plan", |item| match item {
             canon_json::JsonValue::String(text) => parse_plan(text),

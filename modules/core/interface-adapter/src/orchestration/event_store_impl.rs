@@ -134,7 +134,7 @@ fn is_constraint_violation(error: &rusqlite::Error) -> bool {
 const NO_AGGREGATE: &str = "-";
 
 /// 行の材料を添えて `Corrupt` を組む。
-fn corrupt(aggregate_id: &str, seq_nr: Option<u64>, cause: CorruptCause) -> EventStoreError {
+fn corrupt_error(aggregate_id: &str, seq_nr: Option<u64>, cause: CorruptCause) -> EventStoreError {
     EventStoreError::Corrupt {
         aggregate_id: aggregate_id.to_string(),
         seq_nr,
@@ -147,13 +147,13 @@ fn corrupt(aggregate_id: &str, seq_nr: Option<u64>, cause: CorruptCause) -> Even
 /// 収まらない値は行として表現できない — 静かに丸めず `Corrupt` で止める (NFR4.3)。
 fn to_i64(value: u64, aggregate_id: &str, seq_nr: Option<u64>) -> Result<i64, EventStoreError> {
     i64::try_from(value)
-        .map_err(|_| corrupt(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
+        .map_err(|_| corrupt_error(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
 }
 
 /// SQLite の `INTEGER` (i64) をドメインの `u64` へ写す (負値は行の破損)。
 fn to_u64(value: i64, aggregate_id: &str, seq_nr: Option<u64>) -> Result<u64, EventStoreError> {
     u64::try_from(value)
-        .map_err(|_| corrupt(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
+        .map_err(|_| corrupt_error(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
 }
 
 /// 行の `schema_version` をワイヤの版へ写す。範囲外は「対応外の版」として復号側が弾く。
@@ -385,7 +385,7 @@ fn insert_journal_row(
 /// ジャーナル行 (封筒は列) をイベントへ復号する — functional-spec §4.1。
 fn decode_event(row: &JournalRow) -> Result<WorkflowExecutionEvent, EventStoreError> {
     let intent_id = IntentId::parse(&row.aggregate_id).map_err(|_| {
-        corrupt(
+        corrupt_error(
             &row.aggregate_id,
             Some(row.seq_nr),
             CorruptCause::UndecodablePayload,
@@ -413,7 +413,7 @@ fn decode_snapshot(
 ) -> Result<WorkflowExecution, EventStoreError> {
     let state = StateWire::decode(aggregate_id.as_str(), row.schema_version, &row.payload)?;
     let aggregate = WorkflowExecution::from_state(state).map_err(|_| {
-        corrupt(
+        corrupt_error(
             aggregate_id.as_str(),
             Some(row.seq_nr),
             CorruptCause::InvariantViolation,
@@ -765,7 +765,7 @@ mod tests {
 
     /// 一時ディレクトリ配下にストアを開く (親 dir は先に作る)。
     fn open_store(dir: &tempfile::TempDir) -> EventStoreImpl<FakeClock> {
-        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default());
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         EventStoreImpl::open(path, FakeClock::new(0)).expect("開ける")
     }
@@ -784,7 +784,7 @@ mod tests {
     #[test]
     fn the_busy_timeout_can_be_narrowed_for_observation() {
         let dir = tempfile::tempdir().expect("一時 dir");
-        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default());
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         let store = EventStoreImpl::open_with_busy_timeout(
             path,
@@ -852,7 +852,7 @@ mod tests {
     #[test]
     fn the_clock_supplies_the_stamp() {
         let dir = tempfile::tempdir().expect("一時 dir");
-        let path = StorePath::of(&dir.path().join("aidlc"), &SpaceName::default());
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         let store = EventStoreImpl::open(path, FakeClock::new(1_787_443_200_000)).expect("開ける");
         assert_eq!(store.now(), "2026-08-23T00:00:00Z");

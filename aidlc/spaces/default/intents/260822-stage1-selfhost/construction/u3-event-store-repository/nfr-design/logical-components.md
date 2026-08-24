@@ -12,7 +12,7 @@
 | `orchestration::{GlobalSeqNr, ProjectionName}` | use-case | 値オブジェクト | — |
 | `orchestration::event_store_impl`（+ `schema`） | adapter `core-interface-adapter` | C6 の 3 テーブル、Tx、`within_write_transaction`、open / 初期化 | `rusqlite`、`canon-json`、`clock` |
 | `orchestration::wire`（`event_wire` / `state_wire`） | adapter | 符号化・復号（3 段検査の 1・2 段） | `serde` / `serde_json`、`core-domain` |
-| `orchestration::store_path` | adapter | `StorePath::of` | `core-domain::workspace::SpaceName` |
+| `orchestration::store_path` | adapter | `StorePath::for_space` | `core-domain::workspace::SpaceName` |
 | `orchestration::workflow_execution_repository_impl` | adapter | `find_by_id(&self)` / `store(&mut self)`（`EventStoreImpl` を直接所有） | 上記 |
 | `orchestration::memory::{in_memory_event_store, workflow_execution_repository}` | adapter（`memory/`） | テストダブル（同じ契約） | — |
 | `clock`（既存） | adapter 機構モジュール | `updated_at` の供給、Fake | — |
@@ -53,4 +53,4 @@
 
 ## 5. Infrastructure Design への橋渡し
 
-- 本 Unit は CLI ライブラリ層。インフラ設計（配布・CI）は U10 で扱い済み。composition root（U7）が `StorePath::of` と Clock を配線する。
+- 本 Unit は CLI ライブラリ層。インフラ設計（配布・CI）は U10 で扱い済み。composition root（U7）が `StorePath::for_space` と Clock を配線する。

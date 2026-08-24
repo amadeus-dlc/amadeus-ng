@@ -158,7 +158,7 @@ fn stages() -> Vec<StageEntry> {
 
 /// genesis の集約 (`version` = 0) と `Started` イベント (`seq_nr` = 1)。
 fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_with_entries(
+    WorkflowExecution::start_from_plan_unchecked(
         intent_id(),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("定義 revision"),

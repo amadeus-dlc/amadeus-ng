@@ -10,9 +10,9 @@ use core_use_case::orchestration::{CorruptCause, EventStoreError};
 use serde::Serialize;
 
 use super::{
-    SCHEMA_VERSION, StageEntryWire, WireObject, corrupt, direction_token, parse_definition_id,
-    parse_definition_revision, parse_direction, parse_json, parse_phase, parse_slug,
-    to_canonical_json,
+    SCHEMA_VERSION, StageEntryWire, WireObject, corrupt_error, direction_token,
+    parse_definition_id, parse_definition_revision, parse_direction, parse_entry, parse_json,
+    parse_phase, parse_slug, to_canonical_json,
 };
 
 /// フェーズ境界のワイヤ表現。
@@ -163,7 +163,7 @@ impl EventPayloadWire {
         payload: &WorkflowExecutionEventPayload,
     ) -> Result<String, EventStoreError> {
         to_canonical_json(&EventPayloadWire::from_payload(payload))
-            .map_err(|cause| corrupt(aggregate_id, Some(seq_nr), cause))
+            .map_err(|cause| corrupt_error(aggregate_id, Some(seq_nr), cause))
     }
 
     /// ジャーナル行の材料からペイロードを復元する (検査点 1 / 2 — security-design §2)。
@@ -184,7 +184,7 @@ impl EventPayloadWire {
         payload: &str,
     ) -> Result<WorkflowExecutionEventPayload, EventStoreError> {
         EventPayloadWire::decode_inner(schema_version, event_type, payload)
-            .map_err(|cause| corrupt(aggregate_id, Some(seq_nr), cause))
+            .map_err(|cause| corrupt_error(aggregate_id, Some(seq_nr), cause))
     }
 
     /// ドメインのペイロードをワイヤの形へ写す。
@@ -312,7 +312,7 @@ impl EventPayloadWire {
                 let stages = object
                     .array("stages")?
                     .iter()
-                    .map(StageEntryWire::to_entry)
+                    .map(parse_entry)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(WorkflowExecutionEventPayload::Started(Started::new(
                     parse_definition_id(object.string("definition_id")?)?,

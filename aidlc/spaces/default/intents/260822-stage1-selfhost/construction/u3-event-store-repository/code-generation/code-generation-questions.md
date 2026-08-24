@@ -37,10 +37,11 @@
 
 `code-generation-plan.md`（埋め込みの Testing Contract を含む）と `unit-test-instructions.md` を確認し、実装に進んでよいか。
 
-**再承認（2026-08-24）** — 初回承認（指紋 `sha256:38d7646c…`）以降、オーナー裁定「内部可変性は既定で禁止、`&self` への偽装は禁止」に従い
-計画本文の 5 箇所を実態へ同期した（`RefCell<SqliteEventStore>` → `EventStoreImpl<C>` の直接所有、
-`RefCell<InMemoryEventStore>` → 直接所有、旧名 `SqliteEventStore` → `EventStoreImpl`）。
-実装ステップ・トレーサビリティ・Testing Contract は不変。指紋が動いたため再承認を求める。
+**再承認 2 回目（2026-08-24）** — 命名監査（`naming-audit-report.md`）の F8 により、計画本文の
+`StorePath::of(&Path, &SpaceName)` を `StorePath::for_space(&Path, &SpaceName)` へ戻した。
+`of` は「与えた値を包む」に読めるが実体は固定レイアウトの導出であり、`for_space` のほうが
+「space のためのパス」と言えている（正本 `factory-naming.md` 原則 1 — 正確な語が表の動詞に勝つ）。
+変更は本 1 箇所のみ。実装ステップ・トレーサビリティ・Testing Contract は不変。
 
 [Approval Fingerprint]: sha256:04a8a9e1bfa842839caf26a1c97b0ddfcbbbc939695a772041ef2316bcf39a07
 

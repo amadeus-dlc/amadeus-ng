@@ -6,7 +6,7 @@
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
 //! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
-//! `WorkflowExecution::start_with_entries` に直接与えて集約を作る。実グラフの initialization が
+//! `WorkflowExecution::start_from_plan_unchecked` に直接与えて集約を作る。実グラフの initialization が
 //! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
@@ -235,7 +235,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let (mut agg, started) = WorkflowExecution::start_with_entries(
+    let (mut agg, started) = WorkflowExecution::start_from_plan_unchecked(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
@@ -314,13 +314,13 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 agg.recompose(&[index(&agg, s)], AT).unwrap();
             }
             "set_autonomy" => {
-                // モデルはトグル — 反転後の値を setter に渡す (BR2.5)。
+                // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
                 let mode = if m.autonomous {
                     AutonomyMode::Autonomous
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.set_autonomy(mode, AT).unwrap();
+                agg.switch_autonomy(mode, AT).unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }

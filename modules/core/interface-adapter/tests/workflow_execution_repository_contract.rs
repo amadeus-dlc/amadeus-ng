@@ -126,7 +126,7 @@ impl SqliteFixture {
             .tempdir_in(self.root.path())
             .expect("open ごとの一時ディレクトリ")
             .keep();
-        SqliteFixture::open_at(StorePath::of(
+        SqliteFixture::open_at(StorePath::for_space(
             &workspace.join("aidlc"),
             &SpaceName::default(),
         ))

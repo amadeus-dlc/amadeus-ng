@@ -54,7 +54,7 @@ async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExe
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .set_autonomy(AutonomyMode::Autonomous, AT)
+        .switch_autonomy(AutonomyMode::Autonomous, AT)
         .expect("自律モードの設定");
     repository.store(&event, &aggregate).await.expect("store");
     advanced(aggregate, &event)

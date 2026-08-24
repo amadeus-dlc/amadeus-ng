@@ -25,7 +25,7 @@ use std::path::Path;
 
 /// 状態ファイル読取の失敗 (upstream `readStateFile` — 不在時 `State file not found: <path>`)。
 ///
-/// 逐語文言 (`message_catalog::state::file_not_found` 等) を包んで運ぶだけの型。
+/// 逐語文言 (`message_catalog::state::file_not_found_message` 等) を包んで運ぶだけの型。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StateFileReadError {
     message: String,
@@ -66,7 +66,7 @@ pub(crate) enum StateFileWriteError {
 pub(crate) fn read(path: &Path) -> Result<String, StateFileReadError> {
     fs::read_to_string(path).map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
-            StateFileReadError::new(message_catalog::state::file_not_found(
+            StateFileReadError::new(message_catalog::state::file_not_found_message(
                 &path.display().to_string(),
             ))
         } else {

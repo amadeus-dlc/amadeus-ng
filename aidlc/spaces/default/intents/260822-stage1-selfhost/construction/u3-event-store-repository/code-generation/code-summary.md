@@ -219,22 +219,60 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
    **未同期として残るのは `aidlc/spaces/default/codekb/` の 2 文書**（`api-documentation.md` /
    `architecture.md`）— これは RE が観測コミットに紐づけて生成するスナップショットであり、
    手編集ではなく RE の diff-refresh で更新するものなので触っていない。
-3. **fixture 鮮度ゲートが未実装**（ADR 0003 決定 4）。今回は手作業で「再採取 → 正規化 → バイト一致」を確認したが、機械強制が無い。
+3. **命名監査の是正（本 Bolt で完了）** — `naming-audit-report.md` の 10 件（High 2 / Medium 5 /
+   Low 3）を全件是正した。根は 1 つで、upstream（TypeScript）の可変オブジェクト前提の関数名が
+   Rust の「新しい値を作って返す」自由関数に貼られたまま残っていたこと。
+   `set_field` → `with_field_if_present`（危険な no-op に長い名前）/ `set_field_strict` → `with_field`
+   （安全な側が短い名前に反転）/ `set_or_insert_field` → `with_field_or_insert` /
+   `remove_field` → `without_field` / `get_field` → `find_field`（C-GETTER）/
+   `checkbox::set_checkbox` → `with_checkbox_marker`（エラー型も `CheckboxUpdateError`）/
+   `StageEntryWire::to_entry` → `parse_entry` / `read_error_message` → `graph_read_error_message` /
+   `corrupt` → `corrupt_error`（**3 箇所。監査は 2 箇所と記載していた取り漏らし**）/
+   `start_with_entries` → `start_from_plan_unchecked`（**検査を落とす入口**であることを名前に出す）/
+   `StorePath::of` → `for_space`（**F8 — コンダクタの過剰適用を撤回**）/ `open_exclusive_new` →
+   `create_new_file` / `message_catalog` の 6 本に `_message`（**監査の 5 本 + 取り漏らし 1 本**）。
+   **据え置いた 25 件**（`hash_canonical` / `serialize` / `WorkflowExecution::start` / `encode`/`decode`
+   ほか）は監査 §3 が反例カタログとして記録している — 表の動詞へ矯正すると情報が減るため。
+   `WorkflowExecution::set_checkbox` は `&mut self` の真正のコマンドなので改名していない。
+4. **`WorkflowExecutionState` の構築 API が setter 形**（別 Bolt、オーナー裁定 2026-08-24「次でよい」）。
+   `WorkflowExecutionState::new(..)` は **`Self` ではなく `WorkflowExecutionStateBuilder` を返し**
+   （`factory-naming.md`「コンストラクタ相当は `fn new(..) -> Self`」に違反）、その Builder には
+   フィールド名そのままの setter が 12 本ある（`plan` / `overlay` / `conditional` / `checkbox` /
+   `cursor` / `status` / `parked_at` / `autonomy` / `approved` / `revision_count` / `seq_nr` /
+   `version`）。`set_` という綴りではないだけで実体は setter であり、ドメインの語でもない。
+   オーナー原則「**完全コンストラクタがあれば `set_xxx` は不要**。self を破壊して状態を変えたいなら
+   ユビキタス言語の `&mut self` メソッドを持つ」に照らして違反。
+   **規模**: 非テスト 44 箇所・鎖呼出 59 箇所。**単なる改名では済まない** — 完全コンストラクタ化は
+   引数 12 個超の関数を生むので、値オブジェクトへの束ね直しとセットで設計する必要がある。加えて
+   `WorkflowExecutionState` は集約のスナップショット払い出し形なので、ワイヤ形式・ITF フィクスチャ
+   との対応も見る必要がある。U2 の構築 API なので U2 の後続 Bolt で扱う。
+5. **`state_writers` というモジュール名**が中身とずれた（申し送り）。関数がすべて `with_*` /
+   `find_field` になった結果、「書き手」を名乗るモジュールの中身が純粋な `&str -> String` に
+   なっている。`docs/specs/11-workspace.md:64` が表の行名に使っているため、仕様同期とセットで
+   別 Bolt に。加えて**そもそも純粋な文字列変換が `core/domain` に置かれている配置の妥当性**も
+   未検証（`shared/` の汎用部品ではないか — 命名ではなく層の問題）。
+6. **CQRS の依存境界を ADR-009 / `coding-rules/cqrs-boundaries.md` で確定**（オーナー裁定
+   2026-08-24、U4 準備）。コマンド側とクエリ側は相互に依存せず、**RMU が要るのはドメイン
+   イベントだけ**（受信する側であり、ジャーナルを読みに行く側ではない）。境界はクレート分離で
+   物理強制する。**U4 の責務改訂が要る** — `unit-of-work.md` の U4 からジャーナル読取と
+   チェックポイント前進を外して合成ルート（U7）へ移し、U4 は純粋な投影に絞って独立クレートに
+   する（`embedded` から変更）。U3 の成果物は無傷。
+7. **fixture 鮮度ゲートが未実装**（ADR 0003 決定 4）。今回は手作業で「再採取 → 正規化 → バイト一致」を確認したが、機械強制が無い。
    `engine_loop` / `journal_protocol` 双方に効く横断の穴として後続 Bolt へ。
-4. ~~**C3 の `usize` → `u64`**（`GlobalSeqNr` 周辺の桁幅）— 契約側の確定待ち。~~ → **解消済み**（2026-08-24 のオーナー裁定で `contract-summary.md` §C3 を `u64` へ改訂。code-generation レビュー iteration 1 の Major 所見 1 もこれで閉じた）。
-5. **`within_write_transaction` が `rusqlite::Transaction` を公開面に露出させる**。設計どおりの署名だが、利用者（U7 の登録簿処理）が
+8. ~~**C3 の `usize` → `u64`**（`GlobalSeqNr` 周辺の桁幅）— 契約側の確定待ち。~~ → **解消済み**（2026-08-24 のオーナー裁定で `contract-summary.md` §C3 を `u64` へ改訂。code-generation レビュー iteration 1 の Major 所見 1 もこれで閉じた）。
+9. **`within_write_transaction` が `rusqlite::Transaction` を公開面に露出させる**。設計どおりの署名だが、利用者（U7 の登録簿処理）が
    `rusqlite` を直接名指しすることになる。**U7 の設計時に再確認**。
-6. **U4 の `reset_checkpoint`** — 投影のリセット口はまだポートに無い。U4（read model updater）で扱う。
-7. **U5 の `Conflict` 再試行**方針（楽観 version 衝突時のリトライ回数・バックオフ）は U5 で決める。
-8. **相対ゲートの許容誤差 0.01pp は base 側の実測ゆらぎより狭い可能性がある**。同じ `origin/main` を同じシードで 3 回計測して
+10. **U4 の `reset_checkpoint`** — 投影のリセット口はまだポートに無い。U4（read model updater）で扱う。
+11. **U5 の `Conflict` 再試行**方針（楽観 version 衝突時のリトライ回数・バックオフ）は U5 で決める。
+12. **相対ゲートの許容誤差 0.01pp は base 側の実測ゆらぎより狭い可能性がある**。同じ `origin/main` を同じシードで 3 回計測して
    最大差 0.012pp（97.39995 / 97.38797 / 97.38797）。PBT のシードは固定済みなので、残るゆらぎ源は `busy_timeout` 超過や FS 待ちのような
    タイミング依存テストと推測される。今回は +1.03pt なので影響しないが、head と base が拮抗した Bolt では偽陽性の赤を出しうる。
    ゆらぎ源の特定を後続 intent へ申し送る。
-9. **`cargo llvm-cov` は `src/**` のインライン `#[cfg(test)] mod tests` も計測対象に含む**。テストヘルパに未実行の分岐（`panic!` する else 腕）を
+13. **`cargo llvm-cov` は `src/**` のインライン `#[cfg(test)] mod tests` も計測対象に含む**。テストヘルパに未実行の分岐（`panic!` する else 腕）を
    作るとカバレッジを下げる副作用がある。`scripts/coverage.sh` の除外方針（composition root のみ）を見直すなら論点になる。
-10. **`scope_file_paths` は名前だけを見てディレクトリも候補に入れる**。`aidlc-x.md` という名のディレクトリがあると `read_to_string` が失敗し
+14. **`scope_file_paths` は名前だけを見てディレクトリも候補に入れる**。`aidlc-x.md` という名のディレクトリがあると `read_to_string` が失敗し
    `GraphReadError::ScopeFile` で致命になる（今回テストで固定）。upstream 側の態度は未確認（`load_scopes` の `TODO(spec: 12 §11)` と同性質）。
-11. **`workflow_definition_repository_impl.rs:749`（非 UTF-8 ファイル名）は未カバーのまま**。CI（ubuntu）でだけ走る
+15. **`workflow_definition_repository_impl.rs:749`（非 UTF-8 ファイル名）は未カバーのまま**。CI（ubuntu）でだけ走る
    `#[cfg(target_os = "linux")]` テストを足す案はあるが、「ローカルで実行されないテスト」を増やす是非はオーナー裁定が要る。
 
 ## 8. 依存（版・`cargo audit`）

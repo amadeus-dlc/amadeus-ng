@@ -34,7 +34,7 @@
   可変操作は `&mut self`。`event_store(&self) -> &EventStoreImpl<C>` / `event_store_mut(&mut self) -> &mut EventStoreImpl<C>` に分けて公開する。
   `InMemoryWorkflowExecutionRepository { store: InMemoryEventStore }` も同形。
 - 数値パラメータは u64（C3 の usize を実ドメイン型に合わせて具体化 — C3 の改訂提案を所有者 U5 / U6 へ申し送り）。
-- `StorePath::of(aidlc_root: &Path, space: &SpaceName) -> StorePath` / `as_path()`。
+- `StorePath::for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath` / `as_path()`。
 
 ## 3. フロー
 
