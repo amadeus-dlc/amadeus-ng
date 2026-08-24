@@ -32,7 +32,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 ### 2b. Repository のメソッド語彙（j5ik2o-ddd-repository-design が正典）
 
 - 使ってよい動詞: **`find_by_id` / `find`（単一集約の named retrieval）/ `save` / `remove`** ＋ **ドメイン概念を表す named retrievals**。`load` / `get` / `fetch` 等は使わない。
-- `find_by_...` の無秩序な増殖は禁止（複雑な検索・画面向け読取は read model 側 — ただし本リポジトリは CQRS 基盤を導入しないので、まずは「ドメイン概念を表す named retrieval」で表現できるかを考える）。
+- `find_by_...` の無秩序な増殖は禁止。複雑な検索・画面向け読取は**読取モデル側**で行う（ADR-003 / ADR-004 — `aidlc-state.md` と監査シャードが読取モデルで、`ReadModelUpdater` が投影する）。Repository に生やす前に、まず「ドメイン概念を表す named retrieval」で表現できるか、そもそも読取モデルの仕事ではないかを考える。
 - インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find_by_id` の not-found は契約上 fatal な `Err`（`NotFound { expected, actual }`、identity ファイルの読取失敗は `HarnessIdentity { path, cause }`）、grid 欠損は転置導出 — 12 §4。引数なしの `find()` は廃止済み — C4 改訂 2026-08-23 / ADR-008）。
 - **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（`set_field` 等）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
 
@@ -60,11 +60,21 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 `XxxStore` / `XxxReader` / `XxxWriter` は DDD の語彙ではない。「読むだけの Gateway だから Reader」という命名は、**Repository の一部の操作にポートを 1 つずつ立てる**ことになり、集約単位のトランザクション境界を name の上で解体する。読取専用の集約（本システムから書き換えない `WorkflowDefinition` のような Published Language 成果物）は、`save` を持たない Repository として表現すればよい。
 
-### 4. CQRS は採用しない（まず素の DDD）
+### 4. 読取専用ユースケースは型で保証する
 
-読み書きのモデルを分けない。単一の Repository が集約の find / save を持つ（動詞は §2b の許容語彙に合わせた — 設計監査 C2 / 2026-08-23）。
+> **改訂 2026-08-24（オーナー裁定）**: 本節は当初「CQRS は採用しない（まず素の DDD）」だった。
+> その後 ADR-001 でイベントソーシングを、**ADR-003「SQLite ストア + upstream 互換ファイルは
+> リードモデル + RMU」/ ADR-004「状態ファイルはリードモデル」で読取モデルの分離を採用**したため、
+> 前提が失効した。書込モデル（集約 `WorkflowExecution` + `EventStore` のジャーナル/スナップショット）と
+> 読取モデル（`aidlc-state.md` と監査シャード。`ReadModelUpdater` がチェックポイント以降の
+> イベントを投影して更新）は**実際に分かれている**。節の本体（読取専用を型で保証する 2 手段）は
+> CQRS の採否とは独立に有効なので、前提の記述だけを差し替えて残す。
 
-「このユースケースには書かせたくない」という**型による保証**は、CQRS ではなく次の 2 手段で実現する。
+集約の書込口は Repository に一本化する（動詞は §2b の許容語彙 — 設計監査 C2 / 2026-08-23）。
+読取モデルは Repository ではなく投影（RMU）が更新するので、**Repository に読取モデル向けの
+検索メソッドを生やさない**（§2b の「`find_by_...` の無秩序な増殖は禁止」と同じ帰結）。
+
+「このユースケースには書かせたくない」という**型による保証**は、次の 2 手段で実現する。
 
 - **Writer を注入しない**: 読取専用ユースケースのコンストラクタに Repository を渡さない。
 - **`find_by_id` 済み集約を `&` 参照で渡す**: Controller が Repository で集約を `find_by_id` し、ユースケースには `&Aggregate` を渡す。所有権と可変性が Rust の型で読取専用を保証する。

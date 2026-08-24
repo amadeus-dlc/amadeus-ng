@@ -2,7 +2,9 @@
 
 **裁定日**: 2026-08-24（オーナー）
 **出典**: オーナー提示の命名表（Java 由来）を Rust へ翻訳したもの
-**適用例**: U3（Bolt B5）— `EventStoreImpl::open` / `StorePath::for_space` / `WorkflowExecution::start` ほか
+**適用例**: U3（Bolt B5）— `EventStoreImpl::open` / `StorePath::for_space` / `WorkflowExecution::start` ほか。
+命名監査の結果と、表の動詞へ矯正**しない**と決めた 25 件の反例カタログは
+`<record>/construction/u3-event-store-repository/code-generation/naming-audit-report.md`。
 **機械強制**: `cargo lint` ルール化候補（下記「機械化の候補」）。現状はレビュー基準
 
 ## 原則
@@ -36,6 +38,12 @@
 | --- | --- | --- | --- |
 | `new` | **コンストラクタ相当**（受け取った値をそのまま組み立てる） | `fn new(..) -> Self` / `-> Result<Self, E>` | `StageEntry::new(..)` |
 | `of` | 複数の値を集約してインスタンスを生成（値オブジェクト） | `fn of(..) -> Self` | `ShardName::of(host, clone_id)` |
+
+> **`of` の落とし穴**: 「与えた値を包む」ものにだけ使う。固定レイアウトの**導出**に `of` を
+> 使うと、何を根拠に導出したかが名前から消える。実例 — `StorePath::of(root, space)` は一度
+> 採用したが `StorePath::for_space(root, space)` へ戻した。後者は「space のためのパス」と
+> 言えているが、前者は「root と space から何か作る」としか言っていない（命名監査 F8）。
+> 表に当てはめること自体を目的にしない — 原則 1（正確な語が勝つ）が常に優先する。
 | `from` | 他の型からの変換 | **`impl From<T>` / `impl TryFrom<T>` を第一選択**。inherent にするなら `from_<源の名前>` | `PhaseId::from_index(u32)`、`CheckboxState::from_marker(char)` |
 | `parse` | 文字列を解析して生成 | `fn parse(s: &str) -> Result<Self, E>`（可能なら `impl FromStr` も） | `IntentId::parse(&str)` |
 | `create` | 新しいエンティティ／ドメインオブジェクトを作る | ドメイン語があればそちらを優先、無ければ `create` | 集約の genesis は `WorkflowExecution::start(..)` |
