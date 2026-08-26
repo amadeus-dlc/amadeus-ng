@@ -20110,3 +20110,30 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T16:03:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a183f7e5df23c32ae
+**Message**: 進捗確認
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T16:07:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab5da7b3a4fea23d5
+**Message**: event-store-adapter-rs v2.0.0への乗り換え(Bolt B6)は実装完了、テスト593本全緑です。いま設計文書21件の同期をエージェントが実行中で、完了したら受入検査を再実行してPRを出します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T16:27:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b6-doc-sync
+**Agent ID**: ab6-doc-sync-32de092244e2140b
+**Message**: 書きました。`/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/doc-sync-report.md`\n\n- **14 ファイル同期**（605 追加 / 223 削除）。developer-r
+
+---

@@ -14,7 +14,10 @@
 U2 は `core-domain` の `WorkflowExecution` を **イベントソーシング形の FSM** にする: コマンドは decide（`&mut self`、単一
 イベントを返し自身に適用）、`apply_event` がリプレイと通常実行を同一経路にし、`version` / `seq_nr` を保持する。判断
 （`next_decision` / `jump_resolve` / `stale_report`）はクエリ。あわせて `PlanAction` を `workflow_definition` へ完全移動し
-（FR8.3）、有効プランの畳み込みを集約へ一本化する（FR8.4）。I/O なし・純粋・同期・serde なし。Repository・ストア・投影は
+（FR8.3）、有効プランの畳み込みを集約へ一本化する（FR8.4）。I/O なし・純粋・同期・~~serde なし~~ → **serde あり（memento 経由）**
+（2026-08-27 改訂 / ADR-010・Bolt B6: 本家 event-store-adapter-rs の trait が serde 境界を要求する。
+ただし集約の直列化は `state()`、復号は `from_state()` へ委ねるので検査点は 1 か所のまま。あわせて
+`chrono::DateTime<Utc>` が入った — **NFR4.1 依存最小化の再検討対象**）。Repository・ストア・投影は
 U3 / U4。
 
 ## 2. インターフェイス（設計レベル）
@@ -31,7 +34,8 @@ accepts_commands(&self) -> bool   // BR1.0: running ∧ !park 中。偽なら un
 apply_event(&mut self, &WorkflowExecutionEvent) -> Result<(), ApplyError>     // リプレイ経路
 next_decision(&self, &WorkflowDefinition, &NextRequest) -> Result<NextDecision, CommandError>  // 書込なし。def.id() ≠ definition_id は Err(DefinitionMismatch)
 stale_report(&self, stage) -> Result<NextDecision, CommandError>                  // 書込なし（Done を返す）
-snapshot(&self) -> WorkflowExecutionSnapshot   from_snapshot(s) -> Result<Self, SnapshotError>   with_version(v)
+state(&self) -> WorkflowExecutionState   from_state(s) -> Result<Self, StateError>   // 2026-08-27: with_version(v) は削除（ADR-010）
+// 本家 Aggregate の実装として id() / seq_nr() / version() / set_version(v) / last_updated_at() を持つ（借り物の契約なので綴りも型もそのまま — usize）
 stage_index(&self, usize) -> Option<StageIndex>  stages() / cursor() / checkbox(StageIndex) / effective_plan(StageIndex) …
 ```
 
@@ -64,10 +68,13 @@ stage_index(&self, usize) -> Option<StageIndex>  stages() / cursor() / checkbox(
 ### W2 — コマンド実行（decide → event → apply）
 
 1. ガード（`accepts_commands` — BR1.0、checkbox の前提、対象の妥当性 — BR1.x）を検査。不成立なら `Err(CommandError)`、状態不変。
-2. イベントを構築（封筒は intent_id / seq_nr + 1 / schema_version 1。`occurred_at`、`GateOpened.artifacts`、`GateApproved.phase_boundary`
+2. イベントを構築（封筒は `id` = intent_id + (seq_nr + 1)（2026-08-27 / ADR-010: `WorkflowExecutionEventId` に
+   まとまった。値は同じ 2 つ組）/ schema_version 1。`occurred_at`、`GateOpened.artifacts`、`GateApproved.phase_boundary`
    は呼出側が渡す投影材料。`GateRejected.revision_count` は集約の revision_count[stage] を +1 した値）。
 3. `apply_event(&event)` で状態を進め seq_nr を +1。イベントを返す（BR1.1）。
-4. ユースケース（U5 / U6）は `Repository.store(&event, &aggregate)` を呼び（C3）、成功後に `with_version(v + 1)`。
+4. ユースケース（U5 / U6）は `Repository.store(&event, &aggregate)` を呼ぶ（C3）。~~成功後に `with_version(v + 1)`~~
+   → **失効（2026-08-27 / ADR-010・Bolt B6）**: `with_version` は削除された。**新しい version を知るのはストアだけ**
+   なので、続けて書くには再水和が要る（BR5.3。1 コマンド 1 プロセスの CLI では起きない）。
 - 事後条件: `self == old.apply_event(event)`（BR2.3）。
 
 ### W3 — 再水和（from_snapshot + replay）
@@ -179,7 +186,7 @@ erDiagram
 BR1.0 コマンド受理述語（park 中は unpark 以外拒否）/ BR1.1 1 コマンド 1 イベント / BR1.2 用語（active / in-flight）・cursor in-scope・active 1 / BR1.3 ゲート完了は承認 / BR1.4 ゲート生存期間 / BR1.5 skip /
 BR1.6 jump / BR1.7 park・unpark / BR1.8 recompose・set_autonomy / BR1.9 stale_report はクエリ / BR2.1 封筒と seq_nr /
 BR2.2 Started 自己完結（全ステージ文書順、None→SKIP）/ BR2.3 リプレイ決定性 / BR2.4 12 変種（C5 の形）/ BR2.5 Quint 射影表 / BR2.6 集約間は ID 参照（definition_id、DefinitionMismatch）/ BR3.1 next_decision 優先順 / BR3.2 状態非依存分岐は U6 /
-BR3.3 jump_resolve / BR4.1 PlanAction 完全移動 / BR4.2 畳み込み移設 / BR5.1 StageIndex / BR5.2 serde なし・snapshot /
+BR3.3 jump_resolve / BR4.1 PlanAction 完全移動 / BR4.2 畳み込み移設 / BR5.1 StageIndex / BR5.2 ~~serde なし~~ → serde は memento 経由（2026-08-27 / ADR-010）・snapshot /
 BR5.3 version・seq_nr / BR5.4 コーディング規則。
 
 ## 8. トレーサビリティ

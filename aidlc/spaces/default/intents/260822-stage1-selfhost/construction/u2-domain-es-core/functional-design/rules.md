@@ -102,7 +102,7 @@ rules:
 
   # --- BR2: イベントとリプレイ ---
   - id: BR2.1
-    statement: "イベント封筒は intent_id / seq_nr / schema_version = 1 / occurred_at を持ち、seq_nr は集約内で 1 から単調増加（Started = 1）。apply_event は seq_nr が現在値 + 1 でなければ Err（順序違反）"
+    statement: "【2026-08-27 改訂 / ADR-010・Bolt B6】イベント封筒は id（= `WorkflowExecutionEventId` = intent_id + seq_nr の Domain Primitive、B6 で新設）/ schema_version = 1 / occurred_at（`chrono::DateTime<Utc>` — 本家 `Event` trait の要求）を持ち、seq_nr は集約内で 1 から単調増加（Started = 1）。**値は従来と同じ 2 つ組**で、型がまとまっただけである。apply_event は seq_nr が現在値 + 1 でなければ Err（順序違反）。イベント ID の採番は決定的（集約 ID + seq_nr）"
     category: constraint
     applies_to: [WorkflowExecutionEvent, WorkflowExecution]
     trigger: "apply_event"
@@ -206,13 +206,13 @@ rules:
     violation: "clippy missing_panics_doc / レビュー"
     source: "Q2 = A, 設計監査 C17 / C18"
   - id: BR5.2
-    statement: "集約は serde に依存しない。snapshot() が WorkflowExecutionSnapshot（全状態の値オブジェクト、アクセサ公開）を返し、from_snapshot(snapshot) は不変条件を検証して集約を復元する。イベント・スナップショットの JSON 化は U3 のワイヤ構造体が行う"
+    statement: "【2026-08-27 改訂 / ADR-010・Bolt B6】~~集約は serde に依存しない~~ → **失効**: 本家 `Aggregate` / `Event` trait が `Serialize` / `Deserialize` を境界に要求するため、集約・ドメインイベント・集約識別子は serde を持つ（Conformist、腐敗防止層なし）。**ただし serde は状態の写し（memento）を経由する** — 集約に `#[serde(into = \"WorkflowExecutionState\", try_from = \"WorkflowExecutionState\")]` を置き、直列化は `state()`、復号は `from_state()` へ委ねる。したがって**復号側の検査点は 1 か所のまま**で、不変条件は serde 経路でも破れない（オーナー裁定 2026-08-27）。~~イベント・スナップショットの JSON 化は U3 のワイヤ構造体が行う~~ → **失効**: ワイヤ構造体は削除され、ストアの payload は本家が書く（**それは契約 JSON ではない**）。upstream 観測面のワイヤ形式がアダプタ層のままである点は不変なので、BR5.2 の趣旨（観測互換をドメインの都合で動かさない）は保たれている"
     category: policy
-    applies_to: [WorkflowExecution, WorkflowExecutionSnapshot, WorkflowExecutionEvent]
+    applies_to: [WorkflowExecution, WorkflowExecutionState, WorkflowExecutionEvent, WorkflowExecutionEventId]
     trigger: "永続化との境界"
-    logic: "from_snapshot の不変条件違反は Err(SnapshotInvalid{reason})"
-    violation: "domain クレートに serde 依存が入れば設計違反"
-    source: "P5, components.md PersistenceGateways, ADR-006"
+    logic: "from_state の不変条件違反は Err(StateError::InvariantViolation{..})。serde の復号は try_from 経由でこの検査点を必ず通る"
+    violation: "~~domain クレートに serde 依存が入れば設計違反~~ → **失効**。現在の違反は『集約の Deserialize が `from_state` を経由せず derive されている』こと"
+    source: "P5, components.md PersistenceGateways, ~~ADR-006~~ → ADR-010"
   - id: BR5.3
     statement: "version はストアが採番する楽観ロック用の不透明な値で、ドメインは解釈も比較もしない（seq_nr と混ぜない — オーナー裁定 2026-08-27）。seq_nr は apply_event ごとに +1 するドメインの通番。復元はストアが返した値をそのまま保持する"
     category: constraint
@@ -244,7 +244,7 @@ rules:
 | BR1.7 | constraint | park / unpark（gated のみ、位置復元） | Quint |
 | BR1.8 | constraint | recompose（後ろの Pending のみ反転）/ set_autonomy | Quint / C5 |
 | BR1.9 | constraint | stale_report はクエリ | Quint / P2 |
-| BR2.1 | constraint | 封筒と seq_nr の単調性 | C5 / C6 |
+| BR2.1 | constraint | 封筒（`id` = intent_id + seq_nr、2026-08-27 / ADR-010）と seq_nr の単調性 | C5 / C6 |
 | BR2.2 | constraint | Started は自己完結（解決済み計画） | P1 |
 | BR2.3 | validation | リプレイの決定性（PBT / ITF） | ADR-001/002 |
 | BR2.4 | policy | 12 変種、監査行は投影（U4） | C5 / ADR-003 |
@@ -255,6 +255,6 @@ rules:
 | BR4.1 | policy | PlanAction 完全移動・再輸出なし | FR8.3 |
 | BR4.2 | policy | 畳み込みは集約へ、定義はグリッド照会のみ | FR8.4 |
 | BR5.1 | constraint | StageIndex で範囲を型保証 | Q2 |
-| BR5.2 | policy | serde なし、snapshot / from_snapshot | P5 |
+| BR5.2 | policy | ~~serde なし~~ → **serde は memento 経由**（2026-08-27 / ADR-010）、`state()` / `from_state()` | P5 |
 | BR5.3 | constraint | version / seq_nr の責務 | ADR-004 / C3 |
 | BR5.4 | policy | private + アクセサ、PartialEq、手実装エラー | coding-rules |

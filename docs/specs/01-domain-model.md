@@ -84,7 +84,7 @@ flowchart TB
 
 **責務**: 「次に何が起こるか」。engine（`next` の 21 分岐ラダー / `report` の 13 段ガード）、`Directive`（10 種の判別共用体、28KiB 上限）、Gate の 3 層構造（静的決定 / コンダクタの儀式 / 承認強制）、jump・park・recompose、Construction 実行機構（Bolt / swarm / per-unit 反復 / loop-back）、Stop フックの forwarding loop。**7 コンテキスト中、状態機械が最も密**であり、Quint モデル化の最優先領域（A9）。
 
-**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は 16 属性、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004、Bolt B3 実装）。
+**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は **17 属性**（~~16 属性~~ → 2026-08-27 改訂 / ADR-010・Bolt B6 で `last_updated_at` を追加）、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004 / ADR-010、Bolt B3・B6 実装）。
 
 **集約候補**（スライス 2）: `Bolt`、`SwarmBatch`（収束はサーガとしてモデル化 — 監査行なしの中間状態からの復旧を含む。裁定 B5）。`Directive` は値オブジェクト（Rust では enum そのもの）。
 
@@ -104,7 +104,7 @@ flowchart TB
 
 > 脚注（実装との差）: U2 実装（Bolt B3）の `IntentId::parse` は kebab の記録ディレクトリ名を受理しており、本書の規範（UUIDv7）と一致していない。Bolt B5（U3 — `aggregate_id` を SQLite に書く最初の Unit）で UUIDv7 の検証へ是正し、記録ディレクトリ名は `IntentDirName` として書き分ける（オーナー裁定 2026-08-23）。
 
-**代表不変条件**: 「ジャーナルが真実源であり、スナップショット / チェックポイントの更新はジャーナル追記と同一 Tx 内に限られる」（E3+E4 — `journal_protocol.qnt` の協定モデル。ADR-007 でロックは退役し、旧 mkdir ロックモデルの audit-first 不変条件はこの協定へ置き換わった — Bolt B5）、「書込は楽観 version で直列化され、競合は状態を変えずに拒否される」（E3+E4 — `journal_protocol::conflict_rejected` / `no_lost_update`）、「チェックポイントは単調に増加し、投影は同一チェックポイントからの再実行で冪等」（E3+E4 — `journal_protocol::checkpoint_monotone` / `projection_idempotent`）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）。
+**代表不変条件**: 「ジャーナルが真実源であり、**スナップショットの更新**はジャーナル追記と同一 Tx 内に限られる」（E3+E4 — `journal_protocol.qnt` の協定モデル。ADR-007 でロックは退役し、旧 mkdir ロックモデルの audit-first 不変条件はこの協定へ置き換わった — Bolt B5。2026-08-27 訂正 / ADR-010: 旧文の「スナップショット / **チェックポイント**の更新は…同一 Tx 内」のうち**チェックポイント側は失効**。投影のチェックポイントは追記の Tx とは別で、`catchup`（読取 → 描画 → 前進）という独立した遷移である — 協定モデルも当初からそう書いており、実装では我々の `amadeus_projection_checkpoint` 表を別接続で更新する。守るべき性質は同一 Tx ではなく単調性と上限である）、「書込は楽観 version で直列化され、競合は状態を変えずに拒否される」（E3+E4 — `journal_protocol::conflict_rejected` / `no_lost_update`）、「チェックポイントは単調に増加し、投影は同一チェックポイントからの再実行で冪等」（E3+E4 — `journal_protocol::checkpoint_monotone` / `projection_idempotent`）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）。
 
 **状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は協定モデル [`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt)（ジャーナル / スナップショット / version / チェックポイント協定。ADR-007 により `audit_lock.qnt` を退役して置換、Bolt B5）で存続する）。
 

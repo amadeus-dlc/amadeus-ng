@@ -15,10 +15,10 @@
 |---|---|---|---|---|
 | C1 | U7 `u7-cli-dispatcher-hooks`（CLI バイナリ `aidlc`） | External: Claude Code ハーネス（スキル・フック登録・statusline） | プロセス起動（argv/stdin → stdout の directive JSON・逐語文言 + 終了コード）と、動詞が書く upstream 互換ファイル（状態ファイル・監査シャード） | U7（正本 = upstream 仕様 D6 + U1 ゴールデン。破壊的変更は逸脱台帳 + ADR） |
 | C2 | U7（フック 4 本のサブコマンド） | External: Claude Code フック機構（PreToolUse / PostToolUse / Stop / UserPromptSubmit） | stdin JSON → 終了コード（0 許可 / 2 拒否）+ stderr 理由 + 副作用（監査行） | U7（正本 = upstream フック契約 + U1 ゴールデン） |
-| C3 | U3 `u3-event-store-repository`（実装） | U5 `u5-report-use-case` / U6 `u6-next-continue-use-case` / U7（composition root） | Rust trait（同一プロセス、静的束縛）: `WorkflowExecutionRepository`、EventStore 同形 trait | U5/U6（使う側 = ユースケース層）。U3 は準拠 |
+| C3 | U3 `u3-event-store-repository`（実装） | U5 `u5-report-use-case` / U6 `u6-next-continue-use-case` / U7（composition root） | Rust trait（同一プロセス、静的束縛）: `WorkflowExecutionRepository` / `JournalReader`（~~EventStore 同形 trait~~ → 失効。2026-08-27 / ADR-010 — 本家 `event_store_adapter_rs::types::EventStore` が正本になったため、我々は定義しない） | U5/U6（使う側 = ユースケース層）。U3 は準拠 |
 | C4 | U3（既存 `WorkflowDefinitionRepositoryImpl`） | U6（`next` が定義集約を参照） | Rust trait `WorkflowDefinitionRepository`（2026-08-23 改訂: `find()` → `find_by_id(&WorkflowDefinitionId)`、ADR-008） | U6（使う側） |
 | C5 | U2 `u2-domain-es-core`（イベント語彙） / U4 `u4-read-model-updater`（投影規則） | U4（投影）/ U3（ジャーナルへ保存）/ U7（コマンド末尾で投影起動） | 同一プロセスの型（`WorkflowExecutionEvent`）+ 投影規則表（イベント → 監査行・状態ファイル差分） | 語彙 = U2、投影規則 = U4 |
-| C6 | U3（SQLite ストア） | U4（チェックポイント以降の差分読取・チェックポイント更新） | shared-schema: SQLite DDL（journal / snapshot / checkpoint） | U3 |
+| C6 | U3（SQLite ストア） | U4（チェックポイント以降の差分読取・チェックポイント更新） | shared-schema: SQLite DDL（~~journal / snapshot / checkpoint の 3 表~~ → 失効。2026-08-27 / ADR-010 — 本家の `journal` / `snapshot` ＋ 我々の `amadeus_projection_checkpoint`） | U3（我々の表のみ。本家 2 表の正本は upstream） |
 | C7 | U1 `u1-canon-json-goldens`（正解データ） | U6 / U7 のテスト（CLI 出力・状態ファイル差分・監査行・hash-canonical 受入表の突合） | 共有フィクスチャ（リポジトリ内の固定ファイル） | U1（更新は upstream ピン更新の別 intent） |
 
 外部契約は C1・C2 のみ（Q1 = A）。SQLite ファイル（C6）と内部ポート（C3〜C5）は外部契約ではない。
@@ -94,10 +94,20 @@ hooks:
 compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互換。正本 = upstream フック実装の観測契約 + U1 ゴールデン
 ```
 
-### C3 — ポート trait: `WorkflowExecutionRepository` と EventStore（内部、Rust trait が正本）
+### C3 — ポート trait: `WorkflowExecutionRepository` と `JournalReader`（内部、Rust trait が正本）
 
-ユースケース層（`core-use-case`）が所有する trait。実装 `…Impl` と `InMemory…` は `core-interface-adapter`（U3）。
-動詞 `store` は ES 拡張語彙（ADR-006。正本注記は U9 FR8.1）。
+> **2026-08-27 改訂（ADR-010 / Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）**:
+> 本節が定義していた**ローカル `EventStore` 同形 trait は失効**した。イベントストアの契約は
+> 本家 `event_store_adapter_rs::types::EventStore` が正本であり、我々はそれを**定義せず実装する側**に回る
+> （Conformist、腐敗防止層なし）。数値パラメータも本家に従い `usize`（2026-08-23 の `u64` 具体化は撤回）。
+> あわせて `InMemoryWorkflowExecutionRepository`（テストダブル）も失効し、
+> `WorkflowExecutionRepositoryImpl::in_memory()`（本家の memory バックエンドを内包）に置き換わった。
+> 出典: [`decisions.md` ADR-010](../domain-design/decisions.md)、
+> [`developer-report-1.md` §6](../../construction/esa-v2-migration/developer-report-1.md)・
+> [`developer-report-2.md` §8](../../construction/esa-v2-migration/developer-report-2.md)。
+
+ユースケース層（`core-use-case`）が所有する trait は `WorkflowExecutionRepository` と `JournalReader` の 2 本。
+実装 `…Impl` は `core-interface-adapter`（U3）。動詞 `store` は ES 拡張語彙（ADR-006。正本注記は U9 FR8.1）。
 
 ```rust
 // core-use-case（U5/U6 が所有、U3 が準拠）
@@ -109,7 +119,11 @@ pub trait WorkflowExecutionRepository {
     async fn find_by_id(&self, id: &IntentId) -> Result<WorkflowExecution, RepositoryError>;
 
     /// 1 コマンドが返した単一イベントと、適用後の集約（スナップショット）を同一 Tx で永続化する。
-    /// 楽観 version: 集約の version が保存時点のジャーナル末尾と一致しなければ `Conflict`。
+    /// 楽観 version: 期待値は `aggregate.version()`（**ストアが前回載せた不透明トークン**）。
+    /// 一致しなければ `Conflict` で、ストアの状態は変わらない。
+    /// （2026-08-27 改訂 / ADR-010: 旧「集約の version が保存時点のジャーナル末尾と一致しなければ」は
+    ///  **失効**。version は seq_nr から導かない — 採番はストアの責務であり我々は解釈しない（BR5.3）。
+    ///  引数は `&` なので呼出側の集約は動かず、続けて書くには再水和が要る）
     /// # Errors
     /// `Conflict { expected, actual }`（再水和して 1 回だけ再試行 — Q6）、`Io`、`Corrupt`。
     // （2026-08-23 改訂: `&self` → `&mut self` に具体化。オーナー裁定。U3（Bolt B5）の実装で内部可変性を
@@ -120,31 +134,42 @@ pub trait WorkflowExecutionRepository {
         -> Result<(), RepositoryError>;
 }
 
-// event-store-adapter-rs と同形（ローカル定義、ADR-006）。U3 の Repository 実装が内部で使う。
-// （2026-08-23 改訂: 数値パラメータを usize → u64 に具体化。オーナー裁定。U3（Bolt B5）の実装が実ドメイン型
-// （seq_nr / version = u64）に合わせて具体化し、マージ済み — modules/core/use-case/src/orchestration/
-// event_store.rs:33,60 実測。code-generation レビュー Major 所見1 の解消）
-pub trait EventStore<AID, A, E> {
-    async fn persist_event(&mut self, event: &E, version: u64) -> Result<(), EventStoreError>;
-    async fn persist_event_and_snapshot(&mut self, event: &E, aggregate: &A) -> Result<(), EventStoreError>;
-    async fn get_latest_snapshot_by_id(&self, aid: &AID) -> Result<Option<A>, EventStoreError>;
-    async fn get_events_by_id_since_seq_nr(&self, aid: &AID, seq_nr: u64) -> Result<Vec<E>, EventStoreError>;
-}
+// ---- 失効（2026-08-27 / ADR-010）: ローカル `EventStore` 同形 trait ----
+// 旧: pub trait EventStore<AID, A, E> { persist_event / persist_event_and_snapshot /
+//     get_latest_snapshot_by_id / get_events_by_id_since_seq_nr }（ローカル定義、ADR-006。
+//     2026-08-23 に数値を usize → u64 へ「具体化」した）
+// → 口ごと削除した。正本は本家 `event_store_adapter_rs::types::EventStore`（関連型 AID/AG/EV、
+//   数値は usize、エラーは EventStoreWriteError / EventStoreReadError の 2 種）であり、
+//   我々は定義しない。`WorkflowExecutionRepositoryImpl<S>` が本家 trait を型引数の境界に取り、
+//   S = EventStoreForSqlite | EventStoreForMemory を選ぶ（借り物の契約は 1 文字も変えない —
+//   coding-rules/upstream-contracts.md）。
 
-// 読取側（U4 が使う差分読取 — C6 の上に立つ。U3 所有の trait、同じクレートに置く）
+// 読取側（U4 が使う差分読取 — C6 の上に立つ。U3 所有の trait、`core-use-case` に置く）
+// 本家のイベントストアは集約単位の読み書きだけを担うので、全集約横断の順序読取と投影の
+// チェックポイントは我々が持ち続ける（ADR-010 決定 4）。
+// （2026-08-27 改訂: エラー型を EventStoreError → JournalReadError に改名・3 変種化。
+//  「同一 Tx で更新」は失効 — 本家は接続も Tx も露出しないため、チェックポイントの前進は
+//  我々の別接続の単独書込である。単調性は advance_checkpoint 自身が保証する）
 pub trait JournalReader {
-    /// グローバル seq_nr が `after` より大きいイベントを順に返す（チェックポイント以降の差分）。
-    async fn events_after(&self, after: GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError>;
-    /// 投影のチェックポイントを読む/進める（単調、同一 Tx で更新）。
-    async fn checkpoint(&self, projection: &ProjectionName) -> Result<GlobalSeqNr, EventStoreError>;
-    async fn advance_checkpoint(&mut self, projection: &ProjectionName, to: GlobalSeqNr) -> Result<(), EventStoreError>;
+    /// グローバル通番が `after` より大きいイベントを昇順に返す（チェックポイント以降の差分）。
+    async fn events_after(&self, after: GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError>;
+    /// 投影のチェックポイントを読む/進める（単調。現在値未満は CheckpointRegression）。
+    async fn checkpoint(&self, projection: &ProjectionName) -> Result<GlobalSeqNr, JournalReadError>;
+    async fn advance_checkpoint(&mut self, projection: &ProjectionName, to: GlobalSeqNr) -> Result<(), JournalReadError>;
 }
 ```
 
 契約上の約束: ① `find_by_id` は集約を完全に再構成して返す（部分データを返さない）。② `store` の Tx 所有は
-Repository 実装（ユースケースはトランザクションを持たない）。③ `Conflict` 以外のエラーはリトライしない。
-④ `InMemoryWorkflowExecutionRepository` は同じ trait を満たし、テストは `XxxUseCase<InMemory…>` で組む。
+Repository 実装（ユースケースはトランザクションを持たない。2026-08-27 補足: Tx を実際に張るのは
+**本家のイベントストア**であり、我々のコードは接続も Tx も持たない）。③ `Conflict` 以外のエラーはリトライしない。
+④ ~~`InMemoryWorkflowExecutionRepository` は同じ trait を満たし、テストは `XxxUseCase<InMemory…>` で組む~~
+→ **失効**（2026-08-27 / ADR-010）。テストダブル型は無く、`WorkflowExecutionRepositoryImpl::in_memory()` が
+**本家の memory バックエンド**を内包する（実装コードは SQLite と同一で、バックエンドだけが違う）。
+テストは `XxxUseCase<WorkflowExecutionRepositoryImpl<EventStoreForMemory<…>>>` で組む。
 ⑤ `dyn` は使わない（静的束縛、use-case-rules §2）。
+⑥ **楽観 version はストアが採番する不透明トークン**であり、ドメインも Repository も解釈・比較しない
+（2026-08-27 追加 / ADR-010 追記 (1)・BR5.3）。genesis（`Event::is_created()` が真）だけは
+Gateway が**ストアへ渡す写しにのみ**初期値 1 を載せる — 呼出側の集約は動かない。
 
 ### C4 — ポート trait: `WorkflowDefinitionRepository`（2026-08-23 改訂 — ADR-008）
 
@@ -170,10 +195,23 @@ harness.json から組み立てた値から渡す。`next_decision` は引数の
 投影（U4 所有）は 1 イベント → upstream 監査行 N 行 + 状態ファイル差分。監査行の見出し・フィールド順は
 EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 
+> **2026-08-27 改訂（ADR-010 / Bolt B6）— 語彙は不変、封筒の**形**とワイヤ表現が変わった**:
+> ① 封筒の `intent_id` / `seq_nr` は `WorkflowExecutionEventId`（両者の組の Domain Primitive、新設）に
+> まとまった。② ~~ジャーナル行は封筒を列（`event_type` / `schema_version` / `occurred_at`）に持ち、
+> payload は正準 JSON。未知の `type` は `Corrupt(UnknownEventType)`、対応外の版は `Corrupt(SchemaVersion)`~~
+> → **失効**。本家のジャーナルは `payload` 1 列に**封筒ごと serde で**書く（本家の既定シリアライザ
+> `serde_json::to_vec`）。未知の変種も対応外の版も serde の復号失敗に畳まれ、
+> `Corrupt(UndecodablePayload)` になる（`CorruptCause::UnknownEventType` / `SchemaVersion` は削除）。
+> `schema_version` フィールド自体はイベント型に残るが、**復号時に値を検査する経路は無い**。
+> ③ ストアの payload は**契約 JSON（BR1.7 / canon-json）ではない** — 本家が書くのであって我々は
+> 呼んでいない。契約 JSON の射程は upstream 観測面（監査行・状態ファイル・directive）に限られる。
+> **投影規則（`projects_to`）と監査行の逐語性は 1 文字も変わっていない。**
+
 ```yaml
 asyncapi-like: workflow-execution-events
 schema_version: 1                      # 予約。追加フィールドは消費側が無視（additive-safe）
-envelope: { intent_id, seq_nr, occurred_at, schema_version, payload }
+# 2026-08-27 改訂: intent_id + seq_nr → id（WorkflowExecutionEventId）。値は同じ 2 つ組である
+envelope: { id: { intent_id, seq_nr }, occurred_at, schema_version, payload }
 events:
   - name: Started
     command: start (intent-create)
@@ -234,34 +272,58 @@ rules:
 
 ### C6 — SQLite スキーマ（内部、shared-schema）
 
+> **2026-08-27 全面改訂（ADR-010 / Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）**:
+> ~~我々が定義した 3 表（`journal` / `snapshot` / `checkpoint`）~~ → **失効**。`journal` と `snapshot` は
+> **本家 v2.0.0 のスキーマ**に置き換わり、**正本は upstream**（我々は所有しない）。我々の表は
+> `amadeus_projection_checkpoint` の 1 つだけである。
+> ~~版の検査は `PRAGMA user_version`（0 なら DDL を実行して 1 を刻み、知らない版は `Schema` で拒否）~~
+> → **失効**（本家は `user_version` を使わない。`EventStoreError::Schema` 変種も削除）。代替は
+> **バージョンの完全固定（`event-store-adapter-rs = "=2.0.0"`）＋ スキーマガードテスト**で、
+> `journal` の DDL と一意索引の SQL 文字列を実測と突き合わせ、本家スキーマが変わったら明示的に落ちる
+> （`modules/core/interface-adapter/src/orchestration/journal_reader_impl.rs` の
+> `the_upstream_journal_schema_is_the_pinned_one` / `the_journal_table_keeps_a_rowid_so_the_cursor_is_well_defined`）。
+> ~~スナップショット payload の値域検査（JSON の正確整数域 2^53 を超える値を拒否）~~ → **失効**
+> （検査を担っていたワイヤ構造体ごと削除。ストアファイルは upstream 非観測なので互換上の実害は無い）。
+
 ```sql
--- U3 所有。U4 は journal を読み checkpoint を更新する（JournalReader 経由）。
+-- 本家 event-store-adapter-rs v2.0.0 が接続確立時に冪等に作る 2 表（正本は upstream。我々は
+-- 所有せず、DDL も発行しない）。ピン `=2.0.0` とスキーマガードテストで固定する。
 CREATE TABLE journal (
-  global_seq_nr   INTEGER PRIMARY KEY AUTOINCREMENT, -- 全集約横断の単調増加（投影のチェックポイント単位）
-  aggregate_id    TEXT    NOT NULL,                  -- intent_id
+  pkey            TEXT    NOT NULL,                  -- 本家の書込アドレス
+  skey            TEXT    NOT NULL,
+  aid             TEXT    NOT NULL,                  -- 集約 ID（intent_id）
   seq_nr          INTEGER NOT NULL,                  -- 集約内の単調増加（1 コマンド 1 イベント）
-  schema_version  INTEGER NOT NULL DEFAULT 1,
-  event_type      TEXT    NOT NULL,                  -- WorkflowExecutionEvent の変種名
-  payload         TEXT    NOT NULL,                  -- 正準 JSON（U1 canon-json）
-  occurred_at     TEXT    NOT NULL,                  -- ISO 8601 UTC
-  UNIQUE (aggregate_id, seq_nr)
+  payload         BLOB    NOT NULL,                  -- 封筒ごと serde（本家の serde_json。契約 JSON ではない）
+  occurred_at     INTEGER NOT NULL,
+  PRIMARY KEY (pkey, skey)
 );
+CREATE UNIQUE INDEX journal_aid_seq_nr_idx ON journal (aid, seq_nr);
 CREATE TABLE snapshot (
-  aggregate_id    TEXT    PRIMARY KEY,
-  version         INTEGER NOT NULL,                  -- 楽観 version（store 時に条件付き更新）
+  pkey            TEXT    NOT NULL,
+  skey            TEXT    NOT NULL,
+  aid             TEXT    NOT NULL,
   seq_nr          INTEGER NOT NULL,                  -- このスナップショットが含む最後の seq_nr
-  schema_version  INTEGER NOT NULL DEFAULT 1,
-  payload         TEXT    NOT NULL,                  -- 集約の正準 JSON
-  updated_at      TEXT    NOT NULL
+  version         INTEGER NOT NULL,                  -- 楽観 version（本家が採番する不透明トークン — BR5.3）
+  payload         BLOB    NOT NULL,                  -- 集約の状態の写し（17 属性）を serde
+  last_updated_at INTEGER NOT NULL,
+  PRIMARY KEY (pkey, skey)
 );
-CREATE TABLE checkpoint (
+CREATE INDEX snapshot_aid_seq_nr_idx ON snapshot (aid, seq_nr);
+
+-- 我々の表（U3 所有）。本家の表と名前が衝突しないよう接頭辞を付ける。U4 が読み書きする。
+CREATE TABLE amadeus_projection_checkpoint (
   projection      TEXT    PRIMARY KEY,               -- 例: state-file, audit-shard
-  last_global_seq INTEGER NOT NULL,                  -- 単調増加。巻き戻しは再生成時のみ（行削除 → 0）
-  updated_at      TEXT    NOT NULL
+  last_global_seq INTEGER NOT NULL                   -- 単調増加。巻き戻しは再生成時のみ（行削除 → 0）
 );
--- 制約: (1) store = journal INSERT + snapshot UPDATE ... WHERE version = :expected を同一 Tx で行い、
---       影響行 0 なら Conflict。(2) seq_nr は集約ごとに +1 のみ。(3) checkpoint.last_global_seq は
---       advance 時に単調増加でなければ Err。(4) ファイルは git 管理外（逸脱台帳へ登録）。
+-- 2026-08-27: updated_at 列は落とした（誰も読まない列で、押印には時計が要るため。
+--             Repository も Clock を持たなくなった — NFR3.1 の再掲は下記制約 (5) を参照）
+-- 制約: (1) store（イベント追記 + スナップショット更新 + 楽観 version の CAS）は**本家が**同一 Tx で行う。
+--       我々は接続も Tx も持たない（本家は露出しない）。競合はストアが拒否し、状態は変わらない。
+--       (2) seq_nr は集約ごとに +1 のみ。(3) amadeus_projection_checkpoint.last_global_seq は
+--       advance 時に単調でなければ Err（CheckpointRegression）。(4) ファイルは git 管理外（逸脱台帳へ登録）。
+--       (5) 全集約横断のカーソルは本家 journal の **rowid**（追記専用＝コミット順の単調カーソル）。
+--       AUTOINCREMENT の専用列は持たない。U4 は同じ DB ファイルへの**別接続**で読む（JournalReader 経由）。
+--       (6) 押印時刻はイベントの occurred_at から来る（ストアは時計を持たない — 本家の作法）。
 ```
 
 ### C7 — ゴールデン（共有フィクスチャ）
@@ -282,15 +344,21 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
 ## 3. 契約の所有ルール（Q5 / Q7）
 
 - **所有者**: C1/C2 = U7（正本 = upstream 仕様 + U1 ゴールデン）。C3/C4 = 使う側のユースケース層（U5/U6）、
-  実装側 U3 は準拠。C5 = 語彙 U2 / 投影規則 U4。C6 = U3。C7 = U1。
+  実装側 U3 は準拠（2026-08-27 補足: C3 のうち**イベントストア trait の所有者は本家**であり、我々は
+  実装する側に回る — ADR-010 Conformist）。C5 = 語彙 U2 / 投影規則 U4。
+  C6 = ~~U3~~ → **本家 2 表（`journal` / `snapshot`）の正本は upstream、我々の
+  `amadeus_projection_checkpoint` のみ U3 所有**（2026-08-27 改訂 / ADR-010）。C7 = U1。
 - **破壊的変更の合意**: 所有 Unit の Bolt（PR）で ADR を添えて合意する。外部面（C1/C2）の変更は加えて
   `docs/specs/deviations.md` に登録（D6）。
 - **追加的変更の安全**: イベント・スナップショット・directive に追加されたフィールドは消費側が無視する
   （`schema_version` は予約のみ、stage-1 では 1 固定）。trait へのメソッド追加は既定実装を与えるか全実装
   （Impl + InMemory）を同じ PR で更新する。
-- **検証**: C1/C2/C7 はゴールデン一致、C3/C4 はコンパイル（層 = クレート、E0432）+ InMemory テスト、
-  C5 は投影テスト（イベント → 行のバイト一致）、C6 は DDL マイグレーションテスト + ITF 準拠
-  （改訂版 `audit_lock.qnt`）。
+- **検証**: C1/C2/C7 はゴールデン一致、C3/C4 はコンパイル（層 = クレート、E0432）+ 契約テスト
+  （2026-08-27 改訂: ~~InMemory テスト~~ → `WorkflowExecutionRepositoryImpl::in_memory()` と SQLite の
+  **両バックエンドに同じ契約テストを課す**。手順が 1 行も違わないので同じ約束が課せる — BR2.7）、
+  C5 は投影テスト（イベント → 行のバイト一致）、C6 は ~~DDL マイグレーションテスト~~ →
+  **スキーマガードテスト**（本家 DDL の実測突合。2026-08-27 改訂 / ADR-010）+ ITF 準拠
+  （~~改訂版 `audit_lock.qnt`~~ → `journal_protocol.qnt`。ADR-007 で `audit_lock.qnt` は退役）。
 
 ## 4. 未解決の契約項目
 
@@ -299,7 +367,9 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
 | C1 | SQLite ストアファイルの配置（`<record>/.aidlc-store.sqlite` か `aidlc/.aidlc-store/` か）と `.gitignore` への追記先 | U3（ストア初期化）、U9（逸脱台帳の文言） |
 | C1 | 楽観 version 競合が 2 回続いた場合の逐語文言（新設。upstream に同状況なし）の文面 | U7（message-catalog 配線） |
 | C2 | フック 4 本それぞれの stdin JSON の厳密なスキーマ（upstream の Claude Code フック入力の写し）— ゴールデン採取で確定 | U1（採取）、U7（実装） |
-| C3 | `EventStore` trait のジェネリクス境界（`AID: Clone + Eq`, `E: Serialize` 等）と `EventStoreError` の変種 — event-store-adapter-rs の同形性をどこまで取るか | U3 |
+| ~~C3~~ | ~~`EventStore` trait のジェネリクス境界（`AID: Clone + Eq`, `E: Serialize` 等）と `EventStoreError` の変種 — event-store-adapter-rs の同形性をどこまで取るか~~ → **解決（2026-08-27 / ADR-010）**: 同形性を取るのではなく**本家 crate に直接依存して実装する**（Conformist）。境界もエラー型も本家のものをそのまま受け入れる | — |
+| C3 / C6 | `within_write_transaction`（登録簿 `intents.json` の read-modify-write を Tx で守る口）は**削除済み** — 本家は接続も Tx も露出しないため実現できない。ADR-010 は「登録簿を SQLite へ移す」を筋と書いているが、**U7 で裁定**する（本 Bolt では未決） | U7 |
+| C6 | `busy_timeout` を本家のイベントストア接続に設定できない（我々の `JournalReader` 側の接続には 5000ms を設定済み）。別プロセスの並行書込は待たずに `SQLITE_BUSY` になる。単一プロセス前提の現状は受容し、**U7 の並行モデルと併せて再裁定**する（本 Bolt では未決） | U7 |
 | C5 | `Started` の投影（init 3 stage の STAGE_STARTED/COMPLETED をどこまで 1 イベントに含めるか）と `GateApproved` の phase 境界（PHASE_VERIFIED の要否）の厳密な行順 | U4（投影規則）、U1（ゴールデン） |
 | C5 | `Jumped` イベントのペイロード（reset/skip 集合をイベントに含めるか、適用時に再計算するか） | U2 |
 | C6 | `projection` の名前集合（state-file / audit-shard の 2 つで足りるか、シャード別にするか） | U4 |
@@ -322,6 +392,8 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
 | 5 | Minor | C2 所有ルール（§3） | 本ステージの上流 `unit-of-work.md` の既存 `## Review`（units-generation 段の advisory レビュー、Major 所見#1）は、フック4本・doctor のユースケース層コードの帰属が `components.md` の `EngineUseCases`（クレート分離による DIP 強制点）と U7 の「ロジックを持たない」自己宣言との間で未確定だと指摘済みである。本契約summary は C2 の Owner を無条件に「U7」としているが、もし functional-design でフックのユースケースロジックが別 Unit（新設または U5/U6）に切り出された場合、C2 の Owner 列は改訂が必要になる。現時点では contract-design のスコープ外の carry-over だが、承認前に人間が意識すべき依存関係である。 | functional-design 着手前に units-generation の Major 所見#1（フック/doctor のユースケース帰属）を解消し、その結果に応じて C2 の Owner を確定させる。 |
 
 > （2026-08-23 追記: 所見 3 は前提ごと失効した。U3（Bolt B5）の実装でオーナー裁定により `WorkflowExecutionRepository::store` を `&mut self` へ改訂した（上記 §C3 参照）ため、`&self` の中から `&mut self` を呼ぶための内部可変性の機構そのものが不要になった — 正本 `coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md`。あわせて `EventStore` の数値パラメータも `usize` → `u64` へ改訂済み（U3 実装 `modules/core/use-case/src/orchestration/event_store.rs:33,60` 実測）。）
+>
+> （2026-08-27 追記: 直前の「`usize` → `u64` へ改訂」は**失効した**。ADR-010（Bolt B6）で本家 crate へ乗り換え、ローカル `EventStore` trait を口ごと削除したため、数値は本家の `usize` に戻った — 借り物の契約を我々のドメイン型に合わせて書き換えていたこと自体が `coding-rules/upstream-contracts.md` 違反だった。参照ファイル `event_store.rs` も削除済み。`store` の `&mut self` は不変。）
 
 ### Validation Tool Results
 

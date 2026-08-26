@@ -30,3 +30,47 @@
     `InMemoryWorkflowExecutionRepository::{new(), with_store(store)}` → `new(store)` + `Default`
     （コンストラクタ相当は `new` に統一。SQLite 実装 `WorkflowExecutionRepositoryImpl::new(store)` と同形）。
     正本 `coding-rules/factory-naming.md`（オーナー裁定 2026-08-24）。本文同期済み。
+
+---
+
+## 追記 2026-08-27 — Bolt B6（ADR-010 / event-store-adapter-rs v2.0.0 へ乗り換え）による失効
+
+上記 1〜10 は B5 時点の申し送りであり、**B6 で自前ストアを全削除したため次の項目は前提ごと失効した**
+（履歴として残す）:
+
+- **項目 4**（スナップショット payload の `version` を新 version = `event.seq_nr` で保存 /
+  `with_version(new_version).state()`）→ **失効**。`with_version` は削除され、version は
+  **ストアが採番する不透明トークン**になった（BR5.3 / ADR-010 追記 (1)）。`version = seq_nr` という
+  等式そのものが否定されている。
+- **項目 5**（`open_with_busy_timeout(path, clock, timeout)` の公開）→ **`EventStoreImpl` 側は失効**。
+  本家の接続には `busy_timeout` を設定できない。同名のコンストラクタは
+  `JournalReaderImpl::open_with_busy_timeout` として**我々の別接続にのみ**残っている。
+  本家接続の待ち時間は**未決であり U7 で裁定**する。
+- **項目 6**（`UPDATE snapshot` の SET に `schema_version` を含める）→ **失効**。SQL も
+  `schema_version` 列も本家スキーマには無い。なお「競合時の `actual` は読んでよい」という判断は
+  形を変えて生きている — 本家は整形済み文字列しか返さないので、競合時のみ
+  `get_latest_snapshot_by_id` を 1 回読み直して `actual` を作る（ADR-010 追記 (2)）。
+- **項目 7**（`SqliteEventStore` → `EventStoreImpl` の改名）→ **対象ごと消滅**。`EventStoreImpl` は
+  ファイルごと削除した。技術接頭辞を型名に出さないという規則（gateway-taxonomy §5）自体は
+  `WorkflowExecutionRepositoryImpl<S>` に受け継がれている（格納形式は型引数 `S` の選択であって型名には出ない）。
+- **項目 8**（`within_write_transaction` の閉包引数が `rusqlite::Transaction` を公開面に出す点を
+  U7 で再確認 / `persist_event(event, version)` の version 検査）→ **口ごと削除**。U7 へ持ち越すのは
+  「公開面の是非」ではなく**登録簿の直列化機構そのもの**になった（ADR-010 は「登録簿を SQLite の
+  テーブルへ移し RMU の投影対象にする」を筋と書いている。**未決**）。
+- **項目 9** の後半（C3 の数値パラメータ `usize` → `u64` へ改訂）→ **撤回**。本家の `usize` に戻した
+  （借り物の契約を我々のドメイン型に合わせて書き換えていたこと自体が
+  `coding-rules/upstream-contracts.md` 違反だった）。`store(&mut self, …)` への改訂は**不変**。
+- **項目 10** の後半（`InMemoryWorkflowExecutionRepository::new(store)` + `Default`）→ **対象ごと消滅**。
+  テストダブル型は削除され、`WorkflowExecutionRepositoryImpl::in_memory()` が本家 memory
+  バックエンドを内包する。`StorePath::for_space` は**不変**。
+
+**引き続き有効**: 項目 1（`## Review` の扱い）、項目 2（`IntentDirName` の正規表現）、
+項目 3（`GateApproved.phase_boundary` のワイヤ形 — ドメイン型の serde 表現として今も有効）。
+
+### B6 で新たに生じた申し送り（正本への追記候補）
+
+1. **BR1.7 の射程**: 「契約 JSON（canon-json）」はストアの payload を含まない — 本家が
+   `serde_json::to_vec` で書くため。射程を `coding-rules` 正本に一行足したい。
+2. **`thiserror` が推移依存に入った**（本家経由）。我々が直接使わない方針は不変だが、
+   「推移依存として存在する」ことを正本に注記したい。
+3. **`IntentId::value()` と `as_str()` の並立**（委任 1 §7 D、B6 でも未処理）。
