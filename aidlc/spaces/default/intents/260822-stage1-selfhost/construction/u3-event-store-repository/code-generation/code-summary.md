@@ -249,7 +249,12 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
    - 単なる改名では済まない — 完全コンストラクタ化は引数 16 個超を生むので、値オブジェクトへの
      束ね直しとセットで設計が要る。`WorkflowExecutionState` は集約のスナップショット払い出し形
      なので、ワイヤ形式・ITF フィクスチャとの対応も見る。U2 の型なので U2 の後続 Bolt。
-5. **`state_writers` というモジュール名**が中身とずれた（申し送り）。関数がすべて `with_*` /
+5. **`state_writers` は「`mod` をカプセル化の単位と見た結果」** — 命名でも配置でもなく設計の問題
+   （オーナー明言 2026-08-24、`abstract-data-type.md` §「カプセル化の単位は `struct` であって
+   `mod` ではない」）。`&str -> String` の自由関数が並ぶモジュールで、型が振る舞いを持っていない。
+   次 Bolt では**その手続きが本当はどの型の振る舞いなのか**から問い直す（モジュール名を
+   `state_fields` に変える、`shared/` へ移す、といった対処は原因に届かない）。
+   `docs/specs/11-workspace.md:64` が表の行名に使っているので仕様同期とセット。旧: 関数がすべて `with_*` /
    `find_field` になった結果、「書き手」を名乗るモジュールの中身が純粋な `&str -> String` に
    なっている。`docs/specs/11-workspace.md:64` が表の行名に使っているため、仕様同期とセットで
    別 Bolt に。加えて**そもそも純粋な文字列変換が `core/domain` に置かれている配置の妥当性**も
