@@ -234,8 +234,14 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
    **据え置いた 25 件**（`hash_canonical` / `serialize` / `WorkflowExecution::start` / `encode`/`decode`
    ほか）は監査 §3 が反例カタログとして記録している — 表の動詞へ矯正すると情報が減るため。
    `WorkflowExecution::set_checkbox` は `&mut self` の真正のコマンドなので改名していない。
-4. **`WorkflowExecutionState` の構築 API と `pub(crate)` フィールド**（別 Bolt、オーナー裁定
-   2026-08-24「次でよい」）。同じ型の同じ設計問題（どう構築し、どう読むか）なのでまとめて扱う。
+4. **`WorkflowExecutionState` に基本コンストラクタを 1 本立てる**（別 Bolt、オーナー裁定
+   2026-08-24「次でよい」）。当初 3 つの別課題として記録していたが、**単一の作業**である
+   （`factory-naming.md` §「基本コンストラクタと補助コンストラクタ」）:
+   **構造体リテラルが 2 箇所に現れている**（Builder の中と、集約の `state()` の中）=
+   基本コンストラクタが無い。`pub(crate)` フィールドがそれを可能にしている。
+   基本コンストラクタを 1 本立てれば、リテラルが 1 箇所に集約され、フィールドを private に
+   でき、Builder の setter も不要になる（`build()` が基本を呼ぶ形にするか、そもそも
+   値オブジェクトへ束ね直して引数を減らす）。
    - **構築**: `WorkflowExecutionState::new(..)` は `Self` ではなく `WorkflowExecutionStateBuilder`
      を返し（`factory-naming.md` 違反）、Builder にフィールド名そのままの setter が 12 本ある。
      オーナー原則「完全コンストラクタがあれば `set_xxx` は不要」に照らして違反。
