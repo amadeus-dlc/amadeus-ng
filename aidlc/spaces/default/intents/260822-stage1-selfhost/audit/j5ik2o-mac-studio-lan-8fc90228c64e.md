@@ -19676,3 +19676,176 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:15:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab6e732165332446f
+**Message**: park して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:16:33Z
+**Event**: HUMAN_TURN
+
+---
+
+## Workflow Unparked
+**Timestamp**: 2026-08-26T13:16:38Z
+**Event**: WORKFLOW_UNPARKED
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:17:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:20:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aeb45bbf66f23254d
+**Message**: B5（U3 イベントストア）の PR #29 は CI 全緑・マージ可能で、あなたのマージ判断待ちです。マージすれば次は event-store-adapter-rs v2.0.0 への乗り換え Bolt に入ります。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:45:05Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:47:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa2af728328bfb168
+**Message**: マージ終わったら次のBoltを始めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:48:37Z
+**Event**: HUMAN_TURN
+
+---
+
+## Bolt Completed
+**Timestamp**: 2026-08-26T13:49:02Z
+**Event**: BOLT_COMPLETED
+**Bolt names**: B5
+**Batch number**: 1
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-08-26T13:49:12Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:51:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a90f7a3f9c2be2834
+**Message**: A
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:51:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:52:19Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a79d03776661e9ddf
+**Message**: Aで進めて。ピン留めとスキーマ検知テストも入れて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:52:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:53:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af4c4074209da68fc
+**Message**: 本家をクローンして実装し、PRを出して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:55:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T13:56:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a07357d228d2724ce
+**Message**: 本家をクローンして実装し、PR を出して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:57:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T13:59:47Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:01:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae55b3e9f6ea451e0
+**Message**: 下書き書いて。2も着手して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:15:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:18:16Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:19:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:20:35Z
+**Event**: HUMAN_TURN
+
+---

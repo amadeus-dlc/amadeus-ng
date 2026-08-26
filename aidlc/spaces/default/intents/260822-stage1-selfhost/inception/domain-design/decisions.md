@@ -269,9 +269,34 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   4. **本家に無いものは我々が持ち続ける** — 本家のドメインは「集約の永続化」であり、
      次は利用側の関心である:
      - **投影チェックポイント**（`JournalReader::checkpoint` / `advance_checkpoint`）
-     - **全集約横断の順序読取**（`events_after(GlobalSeqNr)`）— 本家は集約単位
-     - `within_write_transaction`（U7 の登録簿 read-modify-write）— **本家が接続を露出するか
-       未確認。乗り換え Bolt の Open question**
+     - **全集約横断の順序読取**（`events_after(GlobalSeqNr)`）— 本家は集約単位。
+       **2026-08-26 オーナー裁定（ライブラリ所有者として）**: この責務は**ライブラリのサポート外**。
+       AWS 版・GCP 版でも Streams / CDC はライブラリが提供するのではなく利用側が組む。
+       本家への機能要望は検討のうえ**取り下げ**た。**SQLite を使う範疇で amadeus-ng が独自に実装する**:
+       本家の `journal` 表（追記専用・書込直列化ゆえ rowid = コミット順の単調カーソル）を
+       同一 DB ファイルへの別接続で読み、チェックポイントは自前の表
+       （本家の表と衝突しない名前）に持つ。本家スキーマへの結合はバージョンの完全固定
+       （`=2.0.0`）と、スキーマが変わったら明示的に落ちるガードテストで守る。
+     - `within_write_transaction`（U7 の登録簿 read-modify-write）— **調査済み（2026-08-26）。
+       本家は接続もトランザクションも露出しない**（`EventStoreForSqlite` は `Connection` を
+       内部保持し、`from_connection` は private。`transaction()` は `persist_*` の内部でのみ
+       使われる）。したがって**本家経由では BR2.4 を実現できない**。これは乗り換え Bolt が
+       裁定すべき設計判断であり、選択肢は次の 3 つ:
+
+       BR2.4 の意図は「`intents.json`（登録簿）の read-modify-write を SQLite の Tx で守る」
+       である。ADR-007 でロック機構を退役させたため、**ファイルの排他が SQLite の Tx に
+       依存している**構造になっている。
+
+       | 案 | 中身 | 評価 |
+       | --- | --- | --- |
+       | (a) 別接続 | 登録簿用に**同じ DB ファイルへ 2 本目の接続**を開き、そちらで Tx を張る | SQLite のロックが直列化するので排他は成立する。本家の接続とは別 Tx になるので「イベント永続化と登録簿更新の原子性」は失われる — **その原子性が本当に要るのかを先に確かめる** |
+       | (b) 登録簿を SQLite へ移す | `intents.json` をやめてジャーナルと同じ DB のテーブルにする | 原子性が自然に成立するが、`intents.json` は upstream 互換ファイル（リードモデル）なので D6 に触れる。RMU の投影対象にするのが筋 |
+       | (c) 本家へ貢献 | 接続または Tx を露出する API を upstream へ提案する | ADR-006 が「上流貢献も選択肢」と既に書いている。stage-1 の最短経路からは外れる |
+
+       **(b) が筋に見える** — `intents.json` はリードモデルであり（ADR-003/004）、リードモデルを
+       コマンド側が Tx で守るという構造自体が CQRS の境界に反している
+       （[`cqrs-boundaries.md`](../../../knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md)）。
+       ただし U7 の設計に踏み込むので、乗り換え Bolt で単独裁定せず U7 と併せて判断する。
 
 - **Consequences** — (+) 自前実装 **約 2,400 行**（`event_store_impl.rs` 971 / `schema.rs` 179 /
   `event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230）が消え、本家の保守に乗る。
