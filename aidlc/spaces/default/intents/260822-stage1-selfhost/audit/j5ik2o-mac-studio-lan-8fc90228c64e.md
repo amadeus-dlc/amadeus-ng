@@ -19454,3 +19454,27 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T11:19:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa5c076bd1499c525
+**Message**: CIの結果教えて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T11:31:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6fbf05a7f4066d28
+**Message**: B5（U3 イベントストア）は PR #29 が CI 全緑・マージ可能で、あなたのレビュー待ちです。park 済みなので、レビュー後に `/aidlc --resume` でマージ可否を確認して U4 へ進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T11:40:53Z
+**Event**: HUMAN_TURN
+
+---

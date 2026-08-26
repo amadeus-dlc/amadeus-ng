@@ -23,7 +23,9 @@
 - **`parse(&str) -> Result<Self, E>` が唯一の入口** — 不正な値を持つ `StageSlug` は表現不能
 - **エラー enum が理由を具体的に運ぶ** — `Empty` / `InvalidLeading(char)` / `InvalidChar(char)`。
   「不正」ではなく**何がどう不正か**を型で返す
-- **`as_str(&self) -> &str`** — C-CONV どおりの接頭辞で、行き先の型が名前に入っている
+- **`as_str(&self) -> &str`** — 「中身を出す」ではなく「`&str` として見る」と言っている。
+  `value()` と名乗ると呼び手は `StageSlug` を「String が入った箱」として扱いはじめる
+  （[tell-dont-ask.md](tell-dont-ask.md) の「内部型を意識させない」）
 - **`Display` 実装** — 表示は `Display`、生の値は `as_str`、と役割が分かれている
 
 同型の例: `IntentId::parse`（UUIDv7）、`StageNumber::parse`、`DefinitionRevision::parse`、
