@@ -25,7 +25,7 @@ impl GlobalSeqNr {
 
     /// 生の通番。
     #[must_use]
-    pub const fn value(self) -> u64 {
+    pub const fn to_u64(self) -> u64 {
         self.0
     }
 }
@@ -48,14 +48,14 @@ mod tests {
 
     #[test]
     fn zero_is_the_value_that_means_nothing_has_been_read_yet() {
-        assert_eq!(GlobalSeqNr::ZERO.value(), 0);
+        assert_eq!(GlobalSeqNr::ZERO.to_u64(), 0);
         assert_eq!(GlobalSeqNr::ZERO, GlobalSeqNr::new(0));
     }
 
     #[test]
     fn a_counter_value_round_trips_through_the_newtype() {
-        assert_eq!(GlobalSeqNr::new(7).value(), 7);
-        assert_eq!(GlobalSeqNr::from(7_u64).value(), 7);
+        assert_eq!(GlobalSeqNr::new(7).to_u64(), 7);
+        assert_eq!(GlobalSeqNr::from(7_u64).to_u64(), 7);
     }
 
     #[test]
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn the_counter_saturates_at_the_u64_ceiling_instead_of_wrapping() {
-        assert_eq!(GlobalSeqNr::new(u64::MAX).value(), u64::MAX);
+        assert_eq!(GlobalSeqNr::new(u64::MAX).to_u64(), u64::MAX);
         assert!(GlobalSeqNr::new(u64::MAX) > GlobalSeqNr::new(u64::MAX - 1));
     }
 }

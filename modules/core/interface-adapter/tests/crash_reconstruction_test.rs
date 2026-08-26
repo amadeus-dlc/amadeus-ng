@@ -113,7 +113,7 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
     assert_eq!(rows.len(), 5, "COMMIT 済みの 5 件が残る");
     assert_eq!(
         rows.iter()
-            .map(|(global, _)| global.value())
+            .map(|(global, _)| global.to_u64())
             .collect::<Vec<_>>(),
         [1, 2, 3, 4, 5]
     );

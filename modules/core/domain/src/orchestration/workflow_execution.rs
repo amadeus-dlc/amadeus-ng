@@ -298,31 +298,31 @@ impl WorkflowExecution {
     /// 名指しステージの checkbox マーカー。範囲外は `None`。
     #[must_use]
     pub fn checkbox(&self, stage: StageIndex) -> Option<CheckboxState> {
-        self.checkbox.get(stage.value()).copied()
+        self.checkbox.get(stage.to_usize()).copied()
     }
 
     /// 名指しステージのゲート承認履歴。範囲外は `None`。
     #[must_use]
     pub fn approved(&self, stage: StageIndex) -> Option<bool> {
-        self.approved.get(stage.value()).copied()
+        self.approved.get(stage.to_usize()).copied()
     }
 
     /// 名指しステージの差し戻し回数。範囲外は `None`。
     #[must_use]
     pub fn revision_count(&self, stage: StageIndex) -> Option<u32> {
-        self.revision_count.get(stage.value()).copied()
+        self.revision_count.get(stage.to_usize()).copied()
     }
 
     /// 実効プラン — オーバレイ (recompose) が静的グリッドに勝つ (BR4.2)。範囲外は `None`。
     #[must_use]
     pub fn effective_plan(&self, stage: StageIndex) -> Option<PlanAction> {
-        self.overlay.get(stage.value()).copied()
+        self.overlay.get(stage.to_usize()).copied()
     }
 
     /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外は `None`。
     #[must_use]
     pub fn gated(&self, stage: StageIndex) -> Option<bool> {
-        self.stages.get(stage.value()).map(StageEntry::is_gated)
+        self.stages.get(stage.to_usize()).map(StageEntry::is_gated)
     }
 
     /// parked 分岐の発火は導出述語 (マーカー有 ∧ 位置一致 — BR1.7)。
@@ -340,7 +340,7 @@ impl WorkflowExecution {
     // ---- 内部の索引ヘルパ (すべて `StageIndex` 経由 — 生の添字を使わない) ----
 
     fn entry(&self, stage: StageIndex) -> Option<&StageEntry> {
-        self.stages.get(stage.value())
+        self.stages.get(stage.to_usize())
     }
 
     fn is_gated(&self, stage: StageIndex) -> bool {
@@ -352,7 +352,7 @@ impl WorkflowExecution {
     }
 
     fn next_in_scope(&self, after: StageIndex) -> Option<StageIndex> {
-        ((after.value() + 1)..self.stage_count())
+        ((after.to_usize() + 1)..self.stage_count())
             .map(StageIndex::new)
             .find(|&stage| self.in_scope(stage))
     }
@@ -379,21 +379,21 @@ impl WorkflowExecution {
 
     /// ステージに状態の印を付ける (状態ファイルのチェックボックスがこの印の表現)。
     fn mark_stage(&mut self, stage: StageIndex, value: CheckboxState) {
-        if let Some(slot) = self.checkbox.get_mut(stage.value()) {
+        if let Some(slot) = self.checkbox.get_mut(stage.to_usize()) {
             *slot = value;
         }
     }
 
     /// ステージの承認を記録する (`GateApproved` の適用)。
     fn record_approval(&mut self, stage: StageIndex) {
-        if let Some(slot) = self.approved.get_mut(stage.value()) {
+        if let Some(slot) = self.approved.get_mut(stage.to_usize()) {
             *slot = true;
         }
     }
 
     /// ステージの承認履歴を無効化する (BR1.6 — jump が承認を巻き戻す)。
     fn invalidate_approval(&mut self, stage: StageIndex) {
-        if let Some(slot) = self.approved.get_mut(stage.value()) {
+        if let Some(slot) = self.approved.get_mut(stage.to_usize()) {
             *slot = false;
         }
     }
@@ -611,20 +611,20 @@ impl WorkflowExecution {
         let mut stages_skipped = Vec::new();
         match direction {
             JumpDirection::Forward => {
-                for value in source.value()..target.value() {
+                for value in source.to_usize()..target.to_usize() {
                     let stage = StageIndex::new(value);
                     let Some(marker) = self.checkbox(stage) else {
                         continue;
                     };
-                    let skip_current = value == source.value() && marker.is_active();
-                    let skip_between = value > source.value() && marker.is_in_flight();
+                    let skip_current = value == source.to_usize() && marker.is_active();
+                    let skip_between = value > source.to_usize() && marker.is_in_flight();
                     if skip_current || skip_between {
                         stages_skipped.push(self.slug_of(stage)?);
                     }
                 }
             }
             JumpDirection::Backward => {
-                for value in (target.value() + 1)..self.stage_count() {
+                for value in (target.to_usize() + 1)..self.stage_count() {
                     let stage = StageIndex::new(value);
                     if self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
                     {
@@ -686,13 +686,13 @@ impl WorkflowExecution {
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
-        let targets: BTreeSet<usize> = flips.iter().map(|stage| stage.value()).collect();
+        let targets: BTreeSet<usize> = flips.iter().map(|stage| stage.to_usize()).collect();
         if targets.is_empty() {
             return Err(CommandError::InvalidTarget(cursor));
         }
         for &value in &targets {
             let stage = StageIndex::new(value);
-            if value <= cursor.value() || value >= self.stage_count() {
+            if value <= cursor.to_usize() || value >= self.stage_count() {
                 return Err(CommandError::InvalidTarget(stage));
             }
             self.require_checkbox(stage, &[CheckboxState::Pending])?;
@@ -805,7 +805,7 @@ impl WorkflowExecution {
             WorkflowExecutionEventPayload::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
                 self.mark_stage(stage, CheckboxState::Revising);
-                if let Some(slot) = self.revision_count.get_mut(stage.value()) {
+                if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = rejected.revision_count();
                 }
             }
@@ -831,13 +831,13 @@ impl WorkflowExecution {
             WorkflowExecutionEventPayload::Recomposed(recomposed) => {
                 for slug in recomposed.skipped() {
                     let stage = self.resolve(slug)?;
-                    if let Some(slot) = self.overlay.get_mut(stage.value()) {
+                    if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Skip;
                     }
                 }
                 for slug in recomposed.added() {
                     let stage = self.resolve(slug)?;
-                    if let Some(slot) = self.overlay.get_mut(stage.value()) {
+                    if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Execute;
                     }
                 }
@@ -863,7 +863,7 @@ impl WorkflowExecution {
         match jumped.direction() {
             // backward は target 以降の承認履歴を、redo は出発点の承認履歴を無効化する (BR1.6)。
             JumpDirection::Backward => {
-                for value in target.value()..self.stage_count() {
+                for value in target.to_usize()..self.stage_count() {
                     self.invalidate_approval(StageIndex::new(value));
                 }
             }
@@ -908,11 +908,11 @@ impl WorkflowExecution {
         if self.seq_nr == 0 {
             return Err("seq_nr is zero".to_string());
         }
-        if self.cursor.value() >= count {
+        if self.cursor.to_usize() >= count {
             return Err("cursor out of range".to_string());
         }
         if let Some(parked) = self.parked_at {
-            if parked.value() >= count {
+            if parked.to_usize() >= count {
                 return Err("parked_at out of range".to_string());
             }
             if parked != self.cursor {
@@ -958,9 +958,9 @@ impl WorkflowExecution {
             stages: self.stages.clone(),
             overlay: self.overlay.clone(),
             checkbox: self.checkbox.clone(),
-            cursor: self.cursor.value(),
+            cursor: self.cursor.to_usize(),
             status: self.status,
-            parked_at: self.parked_at.map(StageIndex::value),
+            parked_at: self.parked_at.map(StageIndex::to_usize),
             autonomy: self.autonomy,
             approved: self.approved.clone(),
             revision_count: self.revision_count.clone(),
@@ -1109,10 +1109,10 @@ impl WorkflowExecution {
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
-        if target.value() >= self.stage_count() {
+        if target.to_usize() >= self.stage_count() {
             return Err(CommandError::InvalidTarget(target));
         }
-        let direction = JumpDirection::of(self.cursor.value(), target.value());
+        let direction = JumpDirection::of(self.cursor.to_usize(), target.to_usize());
         match direction {
             // INIT_JUMP_ERROR: initialization フェーズのステージへは跳べない。scope 外も不可。
             JumpDirection::Forward | JumpDirection::Backward => {
@@ -1138,7 +1138,7 @@ impl WorkflowExecution {
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
-        if stage.value() >= self.cursor.value()
+        if stage.to_usize() >= self.cursor.to_usize()
             || self.checkbox(stage) != Some(CheckboxState::Completed)
         {
             return Err(CommandError::NotStale(stage));
@@ -2236,7 +2236,7 @@ mod tests {
     #[test]
     fn stage_index_is_only_constructed_within_range() {
         let w = all_exec(3);
-        assert_eq!(w.stage_index(2).map(StageIndex::value), Some(2));
+        assert_eq!(w.stage_index(2).map(StageIndex::to_usize), Some(2));
         assert_eq!(w.stage_index(3), None);
         assert_eq!(w.stage_index(usize::MAX), None);
     }
@@ -2551,14 +2551,14 @@ mod tests {
                 let Ok(decision) = w.next_decision(&definition, &NextRequest::default()) else {
                     continue;
                 };
-                let cursor = w.cursor().value();
+                let cursor = w.cursor().to_usize();
                 let cursor_in_flight = w
                     .checkbox(w.cursor())
                     .is_some_and(CheckboxState::is_in_flight);
                 match decision {
-                    NextDecision::RunStage { stage, gate } if stage.value() != cursor => {
-                        prop_assert!(stage.value() > cursor);
-                        for value in (cursor + 1)..stage.value() {
+                    NextDecision::RunStage { stage, gate } if stage.to_usize() != cursor => {
+                        prop_assert!(stage.to_usize() > cursor);
+                        for value in (cursor + 1)..stage.to_usize() {
                             let earlier = w.stage_index(value).unwrap();
                             prop_assert_ne!(w.effective_plan(earlier), Some(Execute));
                         }

@@ -266,7 +266,7 @@ async fn assert_projection(
     // 単一集約なので global 通番と seq_nr は 1 から同じ連番になる (失敗した書込は採番しない)。
     for (offset, (global, event)) in rows.iter().enumerate() {
         let expected = u64::try_from(offset).expect("行番号") + 1;
-        assert_eq!(global.value(), expected, "{label}: global 通番");
+        assert_eq!(global.to_u64(), expected, "{label}: global 通番");
         assert_eq!(event.seq_nr(), expected, "{label}: seq_nr");
     }
 
@@ -284,7 +284,7 @@ async fn assert_projection(
         .checkpoint(&projection_name())
         .await
         .expect("チェックポイントは読める");
-    assert_eq!(checkpoint.value(), m.checkpoint, "{label}: checkpoint");
+    assert_eq!(checkpoint.to_u64(), m.checkpoint, "{label}: checkpoint");
     assert_eq!(
         projection.read_model_seq, m.read_model_seq,
         "{label}: readModelSeq"
@@ -407,7 +407,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 let rows = reader.events_after(from).await.expect("差分は読める");
                 let last = rows.last().map(|(global, _)| *global);
                 if let Some(global) = last {
-                    projection.read_model_seq = global.value();
+                    projection.read_model_seq = global.to_u64();
                     reader
                         .advance_checkpoint(&projection_name(), global)
                         .await

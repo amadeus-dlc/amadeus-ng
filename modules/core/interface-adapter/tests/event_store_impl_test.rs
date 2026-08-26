@@ -506,7 +506,7 @@ async fn the_journal_read_spans_every_aggregate_in_global_order() {
     assert_eq!(rows.len(), 2);
     assert_eq!(
         rows.iter()
-            .map(|(global, _)| global.value())
+            .map(|(global, _)| global.to_u64())
             .collect::<Vec<_>>(),
         [1, 2],
         "global 通番の昇順"

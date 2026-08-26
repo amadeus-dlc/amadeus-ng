@@ -173,7 +173,7 @@ fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
             "step {step}: approved[{s}]"
         );
     }
-    assert_eq!(agg.cursor().value(), m.cursor, "step {step}: cursor");
+    assert_eq!(agg.cursor().to_usize(), m.cursor, "step {step}: cursor");
     assert_eq!(
         agg.autonomy().is_autonomous(),
         m.autonomous,
@@ -181,7 +181,7 @@ fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
     );
     let parked = agg
         .parked_at()
-        .map_or(-1, |p| i64::try_from(p.value()).unwrap());
+        .map_or(-1, |p| i64::try_from(p.to_usize()).unwrap());
     assert_eq!(parked, m.parked_at, "step {step}: parkedAt");
     match m.status.as_str() {
         "Running" => {
@@ -202,7 +202,7 @@ fn assert_signal(sig: EngineSignal, m: &ModelState, step: usize) {
     match (sig, m.directive_tag.as_str()) {
         (EngineSignal::RunStage(s), "DRunStage") => {
             assert_eq!(
-                Some(s.value()),
+                Some(s.to_usize()),
                 m.directive_stage,
                 "step {step}: run-stage target"
             );

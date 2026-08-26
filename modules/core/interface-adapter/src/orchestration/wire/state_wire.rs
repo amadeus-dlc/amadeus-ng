@@ -93,12 +93,13 @@ impl StateWire {
     /// 符号化の本体 (材料の付与は呼出側)。
     fn encode_inner(state: &WorkflowExecutionState) -> Result<String, CorruptCause> {
         let cursor = exact_integer(
-            u64::try_from(state.cursor().value()).map_err(|_| CorruptCause::InvariantViolation)?,
+            u64::try_from(state.cursor().to_usize())
+                .map_err(|_| CorruptCause::InvariantViolation)?,
         )?;
         let parked_at = match state.parked_at() {
             None => None,
             Some(index) => Some(exact_integer(
-                u64::try_from(index.value()).map_err(|_| CorruptCause::InvariantViolation)?,
+                u64::try_from(index.to_usize()).map_err(|_| CorruptCause::InvariantViolation)?,
             )?),
         };
         let wire = StateWire {

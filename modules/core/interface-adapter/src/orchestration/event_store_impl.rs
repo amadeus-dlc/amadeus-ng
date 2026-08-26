@@ -651,7 +651,7 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
         &self,
         after: GlobalSeqNr,
     ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError> {
-        let from = to_i64(after.value(), NO_AGGREGATE, None)?;
+        let from = to_i64(after.to_u64(), NO_AGGREGATE, None)?;
         let rows = {
             let mut statement = self
                 .connection
@@ -719,7 +719,7 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
         projection: &ProjectionName,
         to: GlobalSeqNr,
     ) -> Result<(), EventStoreError> {
-        let target = to_i64(to.value(), NO_AGGREGATE, None)?;
+        let target = to_i64(to.to_u64(), NO_AGGREGATE, None)?;
         let updated_at = self.now();
         let path = self.path.clone();
 

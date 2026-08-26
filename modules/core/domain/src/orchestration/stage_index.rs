@@ -22,7 +22,7 @@ impl StageIndex {
 
     /// 文書順の位置 (0 始まり)。
     #[must_use]
-    pub const fn value(self) -> usize {
+    pub const fn to_usize(self) -> usize {
         self.0
     }
 }
@@ -40,15 +40,15 @@ mod tests {
 
     #[test]
     fn the_index_carries_its_position() {
-        assert_eq!(StageIndex::new(0).value(), 0);
-        assert_eq!(StageIndex::new(7).value(), 7);
+        assert_eq!(StageIndex::new(0).to_usize(), 0);
+        assert_eq!(StageIndex::new(7).to_usize(), 7);
     }
 
     #[test]
     fn ordering_follows_the_position() {
         let mut sorted = [StageIndex::new(3), StageIndex::new(1), StageIndex::new(2)];
         sorted.sort();
-        let raw: Vec<usize> = sorted.iter().map(|s| s.value()).collect();
+        let raw: Vec<usize> = sorted.iter().map(|s| s.to_usize()).collect();
         assert_eq!(raw, [1, 2, 3]);
     }
 

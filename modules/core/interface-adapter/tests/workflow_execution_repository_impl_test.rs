@@ -427,7 +427,7 @@ async fn the_repository_hands_out_a_reader_over_the_same_store() {
         .await
         .expect("ジャーナルを読める");
     assert_eq!(
-        rows.iter().map(|(g, _)| g.value()).collect::<Vec<_>>(),
+        rows.iter().map(|(g, _)| g.to_u64()).collect::<Vec<_>>(),
         [1, 2, 3],
         "同じストアの 3 件が global 通番順で見える"
     );

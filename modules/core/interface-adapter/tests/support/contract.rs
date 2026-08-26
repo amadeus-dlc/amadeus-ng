@@ -301,7 +301,7 @@ pub(crate) async fn journal_reads_every_event_in_global_order<F: StoreFixture>(f
         .await
         .expect("差分読取");
     assert_eq!(rows.len(), 5);
-    let globals: Vec<u64> = rows.iter().map(|(global, _)| global.value()).collect();
+    let globals: Vec<u64> = rows.iter().map(|(global, _)| global.to_u64()).collect();
     let mut sorted = globals.clone();
     sorted.sort_unstable();
     assert_eq!(globals, sorted, "global 通番の昇順");

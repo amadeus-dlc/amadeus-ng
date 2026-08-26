@@ -19414,3 +19414,43 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Workflow Parked
+**Timestamp**: 2026-08-24T08:54:46Z
+**Event**: WORKFLOW_PARKED
+**Stage**: functional-design
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-24T08:55:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2bcc401a07f123d4
+**Message**: マージしていいよ
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T11:07:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T11:08:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T11:09:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T11:11:34Z
+**Event**: HUMAN_TURN
+
+---

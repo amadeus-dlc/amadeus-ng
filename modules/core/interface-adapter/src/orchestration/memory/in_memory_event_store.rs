@@ -574,7 +574,7 @@ mod tests {
             .unwrap();
         let rows = store.events_after(GlobalSeqNr::ZERO).await.unwrap();
         assert_eq!(
-            rows.iter().map(|(g, _)| g.value()).collect::<Vec<_>>(),
+            rows.iter().map(|(g, _)| g.to_u64()).collect::<Vec<_>>(),
             [1, 2]
         );
     }

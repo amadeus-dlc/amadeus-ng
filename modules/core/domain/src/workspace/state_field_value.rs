@@ -21,7 +21,7 @@ impl UnsafeLineChar {
 
     /// 拒否のきっかけになったコードポイント。
     #[must_use]
-    pub const fn value(&self) -> char {
+    pub const fn to_char(&self) -> char {
         self.0
     }
 }
@@ -74,13 +74,16 @@ mod tests {
     #[test]
     fn the_rejection_names_the_first_offending_code_point() {
         // 走査順に**最初に**見つかった 1 文字が拒否理由として返る
-        assert_eq!(StateFieldValue::parse("a\tb\nc").unwrap_err().value(), '\t');
+        assert_eq!(
+            StateFieldValue::parse("a\tb\nc").unwrap_err().to_char(),
+            '\t'
+        );
         assert_eq!(
             StateFieldValue::parse("a\u{2028}b").unwrap_err(),
             UnsafeLineChar::new('\u{2028}')
         );
         assert_eq!(
-            StateFieldValue::parse("a\u{7f}").unwrap_err().value(),
+            StateFieldValue::parse("a\u{7f}").unwrap_err().to_char(),
             '\u{7f}'
         );
     }
