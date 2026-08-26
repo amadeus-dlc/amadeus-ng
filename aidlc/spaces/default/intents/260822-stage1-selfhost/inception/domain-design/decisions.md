@@ -308,6 +308,13 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   (±) Quint モデル `journal_protocol` の検証対象が「自前実装の契約」から「本家の契約 +
   我々の投影」へ移る — モデルの再確認が要る。
 
+- **追記 2026-08-27（実装後の裁定 3 件）** — (1) **genesis の初期 version は Gateway が写しに
+  1 を載せる**（オーナー承認。「version はストア側が決める」の自然な帰結 — Gateway はストア側の
+  部品であり、ドメインは version を解釈しない。集約を version=1 で作る案はストアの採番規則を
+  ドメインへ戻すため却下、集約 0 のまま渡す案は Quint の `version_equals_journal` を破るため
+  却下）。(2) `Conflict` の `actual` は競合時のみ `get_latest_snapshot_by_id` の読み直しで得る
+  （本家の公開 API にだけ結合。構造化エラーの上流提案は候補として記録）。(3) `busy_timeout` は
+  本家接続に設定不可 — 単一プロセス前提の現状は受容し、U7 の並行モデルと併せて再裁定。
 - **Alternatives Rejected** — *腐敗防止層*: ドメインを serde / chrono / `usize` から守れるが、
   アダプタ型と変換で数百行を足すことになる。オーナー裁定「腐敗防止層はなしで。ちゃんと書き換えろ」。
   *自前実装を維持*: ADR-006 が保とうとした乗り換え可能性という目的を捨てることになり、
