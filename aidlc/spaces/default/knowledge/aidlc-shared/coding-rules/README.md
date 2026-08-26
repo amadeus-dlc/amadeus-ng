@@ -5,6 +5,11 @@
 各ルールには裁定日・適用例（PR）・機械強制の有無（`cargo lint` ルール / clippy / 型）を記す。**設計の前提はまずスキル正典から** — 設計・命名・配置を自分で考える前に、インストール済みの j5ik2o-* 設計スキル（software-design プラグイン約 29 本。`j5ik2o-ddd-repository-design` / `-repository-placement` / `-custom-linter-creator` 等）を列挙し、該当スキルの SKILL.md と references/ を**先に**読む。前提はスキルに書いてある（実例: Reader 造語と `load` メソッドはどちらもスキル未読のまま設計して差し戻された）。**オーナーの指摘（裁定）は可能な限り機械的な強制へ落とし込む** — 優先順は 型（E1）→ 既存 lint（clippy / rustc）→ `cargo lint` カスタムルール。カスタムルールは検出力を証明する赤例テストが必須（Quint ゲートと同じ DoD）。仕様（upstream 互換の観測可能契約）は `docs/specs/` が正本であり、ここに置くのは**書き方のルール**である。
 
 
+**土台は [abstract-data-type.md](abstract-data-type.md)** — AVDM / DP は抽象データ型であり、
+操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。
+field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiquitous-language は
+いずれもここから導かれる帰結である。
+
 **良い例は [good-examples.md](good-examples.md) に索引がある** — 規則の文面に対して
 「この形」と指せる実在ファイルの一覧。スニペットを書き写さずファイルを指すので、コードが
 変われば例も追随する。リンク切れは所見として扱う（カタログを直す前に「なぜ動いたか」を確認）。
