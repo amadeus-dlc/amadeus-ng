@@ -19514,3 +19514,18 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T11:54:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aedf3f96180ff0644
+**Message**: B5（U3 イベントストア）は PR #29 が CI 全緑・マージ可能で park 済み、Orca でのレビュー待ちです。次はレビュー後にマージ可否をご判断いただき、U4 へ進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T12:03:48Z
+**Event**: HUMAN_TURN
+
+---

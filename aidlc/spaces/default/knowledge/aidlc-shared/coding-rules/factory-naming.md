@@ -48,11 +48,37 @@ Scala が言語で強制している性質を Rust に持ち込む — 補助コ
 現れ、基本コンストラクタが無い。`pub(crate)` フィールドがそれを可能にしていた
 （[abstract-data-type.md](abstract-data-type.md) / [field-visibility.md](field-visibility.md)）。
 
+### ビルダーの鎖メソッドは setter ではない — ファクトリメソッドである
+
+**ビルダーは否定されない。setter を排除してもビルダーは作れる**（オーナー明言 2026-08-24）。
+両者は形が違う。
+
+```rust
+fn set_name(&mut self, v: T)            // setter — その場で書き換え、戻り値なし
+fn with_name(mut self, v: T) -> Self    // ファクトリメソッド — 消費して新しい値を作る
+```
+
+`mut self` を取って `Self` を返すものは**新しい値を生む**のでファクトリである。本ルールが
+排除するのは前者であって後者ではない。
+
+**命名は `with_<フィールド>`** にする。裸のフィールド名（`plan(..)` / `condition(..)`）は
+**取得に読める** — `state.plan(x)` は「plan を返す」に見えてしまう。`with_plan(x)` なら
+「plan を伴った新しい値」と読める。
+
 ### ビルダーは基本コンストラクタを置き換えない
 
 引数が多いなどでビルダーを置くなら、**`build()` が基本コンストラクタを呼ぶ**。ビルダーが
 構造体リテラルを直接書いたら、それは 2 本目の構築経路であり本ルール違反である。
 そもそも引数が多すぎるなら、**値オブジェクトへ束ね直す**のが先である。
+
+本リポジトリの実測（2026-08-24）— 3 つとも `mut self -> Self` のファクトリメソッドで
+setter は 1 つも無い。違いは命名だけ:
+
+| 型 | 命名 | 判定 |
+| --- | --- | --- |
+| `ScopeMetadata::with_depth` ほか 5 本 | `with_` あり | **正しい** |
+| `WorkflowExecutionStateBuilder::plan` ほか 12 本 | 裸のフィールド名 | `with_*` へ |
+| `StageNodeBuilder::condition` ほか 21 本 | 裸のフィールド名 | `with_*` へ |
 
 ## 原則
 

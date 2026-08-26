@@ -240,8 +240,13 @@ witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` 
    **構造体リテラルが 2 箇所に現れている**（Builder の中と、集約の `state()` の中）=
    基本コンストラクタが無い。`pub(crate)` フィールドがそれを可能にしている。
    基本コンストラクタを 1 本立てれば、リテラルが 1 箇所に集約され、フィールドを private に
-   でき、Builder の setter も不要になる（`build()` が基本を呼ぶ形にするか、そもそも
-   値オブジェクトへ束ね直して引数を減らす）。
+   できる。**ビルダー自体は残してよい** — 鎖メソッドは `mut self -> Self` のファクトリ
+   メソッドであって setter ではない（オーナー訂正 2026-08-24。当初「Builder の setter 12 本を
+   廃止」と書いていたのは私の誤り）。ビルダーに要る是正は 2 点だけ: `build()` が基本
+   コンストラクタを呼ぶ形にすること（いまはビルダーがリテラルを直接書いている）と、
+   裸のフィールド名の鎖メソッドを `with_*` へ改名すること（`plan(x)` は「plan を返す」に
+   読める）。`StageNodeBuilder` の 21 本も同じ改名対象。そもそも引数が多すぎるなら
+   値オブジェクトへ束ね直すのが先。
    - **構築**: `WorkflowExecutionState::new(..)` は `Self` ではなく `WorkflowExecutionStateBuilder`
      を返し（`factory-naming.md` 違反）、Builder にフィールド名そのままの setter が 12 本ある。
      オーナー原則「完全コンストラクタがあれば `set_xxx` は不要」に照らして違反。
