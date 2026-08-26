@@ -214,11 +214,11 @@ rules:
     violation: "domain クレートに serde 依存が入れば設計違反"
     source: "P5, components.md PersistenceGateways, ADR-006"
   - id: BR5.3
-    statement: "version は楽観 version で、集約の遷移では変えず Repository の store 成功後に with_version(version + 1) で受け取る。seq_nr は apply_event ごとに +1。from_snapshot はスナップショットの version / seq_nr をそのまま引き継ぐ"
+    statement: "version はストアが採番する楽観ロック用の不透明な値で、ドメインは解釈も比較もしない（seq_nr と混ぜない — オーナー裁定 2026-08-27）。seq_nr は apply_event ごとに +1 するドメインの通番。復元はストアが返した値をそのまま保持する"
     category: constraint
     applies_to: [WorkflowExecution]
     trigger: "store / replay"
-    logic: "C3 store の Conflict 判定は Repository が version で行う（集約は値を保持するだけ）"
+    logic: "Conflict 判定はストア（event-store-adapter-rs）の責務。ドメイン・Repository は version を前提条件に使わない（旧 statement の with_version(version + 1) と『version = 最後の seq_nr』は自前ストア時代の採番規則がドメイン契約へ漏れたもので、ADR-010 の Conformist 化で撤回。with_version は B6 委任 1 で削除済み）"
     violation: "該当なし"
     source: "ADR-004, C3, C6 snapshot.version"
   - id: BR5.4
