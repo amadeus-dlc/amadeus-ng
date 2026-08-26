@@ -16,9 +16,10 @@
 //! - **時計を持たない** (NFR3.1): `occurred_at` は呼出側 (ユースケース) が Clock から渡す。
 //! - **本家 `Aggregate` を直接実装する** (ADR-010 Conformist): `id` / `seq_nr` / `version` /
 //!   `set_version` / `last_updated_at` は本家が所有する契約であり、綴りも型もそのまま受け入れる。
-//!   serde 境界も本家の要求で、`Serialize` / `Deserialize` は**表現の写し**である — コマンドを
-//!   迂回して状態を作る口ではない (フィールドは private のまま)。永続化境界としての
-//!   `state()` / `from_state()` (状態の写し) はそのまま残る (BR5.2)。
+//!   serde 境界も本家の要求だが、**復号は状態の写し (memento) を経由する** — `into` /
+//!   `try_from` で [`WorkflowExecutionState`] に委ね、`from_state()` の検査点を必ず通す
+//!   (オーナー裁定 2026-08-27 (A))。したがって「不変条件を満たす集約しか存在しない」という
+//!   保証は serde 経路でも破れない (security-design §2 の検査点 3)。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
 //!
@@ -72,7 +73,11 @@ const GATE_ADVANCE_PRECONDITION: [CheckboxState; 2] =
 const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, CheckboxState::Revising];
 
 /// エンジンループの状態機械 (集約ルート)。
+///
+/// serde は状態の写し ([`WorkflowExecutionState`]) を経由する — 直列化は [`WorkflowExecution::state`]、
+/// 復号は [`WorkflowExecution::from_state`] であり、復号側の検査点が 1 か所に保たれる。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "WorkflowExecutionState", try_from = "WorkflowExecutionState")]
 pub struct WorkflowExecution {
     intent_id: IntentId,
     definition_id: WorkflowDefinitionId,
@@ -1143,6 +1148,22 @@ impl WorkflowExecution {
     }
 }
 
+/// 直列化の入口 (serde の `into`)。中身は [`WorkflowExecution::state`] そのものである。
+impl From<WorkflowExecution> for WorkflowExecutionState {
+    fn from(execution: WorkflowExecution) -> WorkflowExecutionState {
+        execution.state()
+    }
+}
+
+/// 復号の入口 (serde の `try_from`)。[`WorkflowExecution::from_state`] の検査点を通る。
+impl TryFrom<WorkflowExecutionState> for WorkflowExecution {
+    type Error = StateError;
+
+    fn try_from(state: WorkflowExecutionState) -> Result<WorkflowExecution, StateError> {
+        WorkflowExecution::from_state(state)
+    }
+}
+
 /// 本家 event-store-adapter-rs の集約契約 (ADR-010 Conformist — 契約は 1 文字も変えない)。
 ///
 /// `set_version` は我々の [factory-naming] が退けている setter の形だが、**外部 trait の
@@ -1990,6 +2011,27 @@ mod tests {
         assert_eq!(decoded, w);
         assert_eq!(decoded.version(), 7);
         assert_eq!(decoded.last_updated_at(), w.last_updated_at());
+    }
+
+    #[test]
+    fn a_tampered_serialised_aggregate_is_refused() {
+        // serde は memento (`WorkflowExecutionState`) 経由なので、復号は `from_state` の
+        // 検査点をそのまま通る (オーナー裁定 2026-08-27 (A))。行を手で書き換えた JSON —
+        // ここでは範囲外カーソル — が黙って通らないことを固定する。
+        let w = all_exec(3);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&w).unwrap();
+        assert!(json.contains(r#""cursor":0"#), "{json}");
+        let tampered = json.replace(r#""cursor":0"#, r#""cursor":99"#);
+        let error = serde_json::from_str::<WorkflowExecution>(&tampered)
+            .expect_err("不変条件を破る写しは復号できない");
+        assert!(
+            error.to_string().contains("invariant violation"),
+            "実際: {error}"
+        );
     }
 
     #[test]

@@ -6,14 +6,14 @@ use std::path::PathBuf;
 
 use core_domain::orchestration::IntentId;
 
-use super::event_store_error::{CorruptCause, EventStoreError};
+use super::corrupt_cause::CorruptCause;
 
 /// `WorkflowExecutionRepository` の失敗 (材料のみ — 逐語文言はアダプタ層)。
 ///
-/// `EventStoreError` との違いは 2 点ある: (1) 集約識別子がドメイン型 (`IntentId`) であること、
-/// (2) `Schema` / `CheckpointRegression` を持たないこと。どちらも Repository の面では
-/// 「集約 1 つの再構成・永続化」しか語らないためで、下位の失敗は
-/// [`RepositoryError::from_event_store`] が畳んで写す。
+/// 本ポートの面が語るのは「集約 1 つの再構成・永続化」だけである。下位のイベントストア
+/// (本家 event-store-adapter-rs) の失敗を本型へ写すのは Gateway 実装の責務であり、
+/// ユースケース層は本家のエラー型を知らない (ADR-010 — 依存が入るのはドメインと
+/// アダプタだけ)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RepositoryError {
     /// この識別子の集約がストアに無い (契約上は呼出側の前提違反 — C3)。
@@ -44,48 +44,6 @@ pub enum RepositoryError {
         /// 原因の分類。
         cause: CorruptCause,
     },
-}
-
-impl RepositoryError {
-    /// 下位ポート (`EventStore` / `JournalReader`) の失敗を Repository 面へ写す (BR1.5)。
-    ///
-    /// `intent_id` は**呼出文脈の集約識別子**。`EventStoreError` は集約識別子を生文字列でしか
-    /// 持たないため、写すときにドメイン型へ格上げする必要がある: 行の識別子が
-    /// `IntentId` として妥当ならそれを、妥当でない (= 行そのものが壊れている) なら呼出文脈の
-    /// 識別子を使う。
-    ///
-    /// `Schema` は「このストアを読めない」= 復号できない状態なので `Corrupt(SchemaVersion)` に、
-    /// `CheckpointRegression` は投影 (U4) の面の失敗であり Repository の 2 メソッドからは
-    /// 到達しないため `Corrupt(InvariantViolation)` に畳む (投影名の材料は Repository の
-    /// `Corrupt` に置き場が無いので落ちる — entities.md の 4 変種を増やさないため)。
-    #[must_use]
-    pub fn from_event_store(error: EventStoreError, intent_id: &IntentId) -> RepositoryError {
-        match error {
-            EventStoreError::Conflict { expected, actual } => {
-                RepositoryError::Conflict { expected, actual }
-            }
-            EventStoreError::Io { kind, path } => RepositoryError::Io { kind, path },
-            EventStoreError::Corrupt {
-                aggregate_id,
-                seq_nr,
-                cause,
-            } => RepositoryError::Corrupt {
-                aggregate_id: IntentId::parse(&aggregate_id).unwrap_or_else(|_| intent_id.clone()),
-                seq_nr,
-                cause,
-            },
-            EventStoreError::Schema { .. } => RepositoryError::Corrupt {
-                aggregate_id: intent_id.clone(),
-                seq_nr: None,
-                cause: CorruptCause::SchemaVersion,
-            },
-            EventStoreError::CheckpointRegression { .. } => RepositoryError::Corrupt {
-                aggregate_id: intent_id.clone(),
-                seq_nr: None,
-                cause: CorruptCause::InvariantViolation,
-            },
-        }
-    }
 }
 
 impl fmt::Display for RepositoryError {
@@ -119,7 +77,7 @@ impl std::error::Error for RepositoryError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestration::{CorruptCause, EventStoreError, GlobalSeqNr, ProjectionName};
+    use crate::orchestration::CorruptCause;
     use core_domain::orchestration::IntentId;
     use std::io::ErrorKind;
     use std::path::PathBuf;
@@ -170,108 +128,24 @@ mod tests {
     }
 
     #[test]
-    fn the_conflict_and_io_variants_map_across_unchanged() {
+    fn the_missing_material_is_rendered_as_a_dash() {
+        // 場所も `seq_nr` も分からない失敗はありうる (材料の欠落を空白で誤魔化さない)。
         assert_eq!(
-            RepositoryError::from_event_store(
-                EventStoreError::Conflict {
-                    expected: 1,
-                    actual: 2
-                },
-                &intent()
-            ),
-            RepositoryError::Conflict {
-                expected: 1,
-                actual: 2
-            }
-        );
-        assert_eq!(
-            RepositoryError::from_event_store(
-                EventStoreError::Io {
-                    kind: ErrorKind::WouldBlock,
-                    path: None
-                },
-                &intent()
-            ),
             RepositoryError::Io {
                 kind: ErrorKind::WouldBlock,
-                path: None
+                path: None,
             }
+            .to_string(),
+            "io: WouldBlock at -"
         );
-    }
-
-    #[test]
-    fn the_corrupt_variant_keeps_its_cause_and_promotes_the_carried_aggregate_id() {
         assert_eq!(
-            RepositoryError::from_event_store(
-                EventStoreError::Corrupt {
-                    aggregate_id: RAW_ID.to_string(),
-                    seq_nr: Some(4),
-                    cause: CorruptCause::UnknownEventType,
-                },
-                &intent()
-            ),
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: Some(4),
-                cause: CorruptCause::UnknownEventType,
-            }
-        );
-    }
-
-    #[test]
-    fn an_unparsable_carried_aggregate_id_falls_back_to_the_call_context() {
-        assert_eq!(
-            RepositoryError::from_event_store(
-                EventStoreError::Corrupt {
-                    aggregate_id: "not-a-uuid".to_string(),
-                    seq_nr: None,
-                    cause: CorruptCause::UndecodablePayload,
-                },
-                &intent()
-            ),
             RepositoryError::Corrupt {
                 aggregate_id: intent(),
                 seq_nr: None,
-                cause: CorruptCause::UndecodablePayload,
+                cause: CorruptCause::MissingSnapshot,
             }
-        );
-    }
-
-    #[test]
-    fn the_schema_failure_becomes_a_corrupt_schema_version() {
-        assert_eq!(
-            RepositoryError::from_event_store(
-                EventStoreError::Schema {
-                    found: 2,
-                    supported: 1
-                },
-                &intent()
-            ),
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: None,
-                cause: CorruptCause::SchemaVersion,
-            }
-        );
-    }
-
-    #[test]
-    fn the_checkpoint_regression_is_not_reachable_from_the_repository_face_and_folds_into_corrupt()
-    {
-        assert_eq!(
-            RepositoryError::from_event_store(
-                EventStoreError::CheckpointRegression {
-                    projection: ProjectionName::parse("state-file").unwrap(),
-                    current: GlobalSeqNr::new(3),
-                    requested: GlobalSeqNr::new(1),
-                },
-                &intent()
-            ),
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: None,
-                cause: CorruptCause::InvariantViolation,
-            }
+            .to_string(),
+            format!("corrupt: aggregate {RAW_ID}, seq_nr -, cause missing snapshot")
         );
     }
 

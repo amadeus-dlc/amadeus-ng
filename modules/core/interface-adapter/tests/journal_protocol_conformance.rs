@@ -1,9 +1,13 @@
 //! ITF 準拠テスト (ADR 0003 決定 5 / FD BR3.5) — `formal/orchestration/journal_protocol.qnt` の
-//! トレースを `InMemoryEventStore` + `InMemoryWorkflowExecutionRepository` + フェイク投影に
-//! 再生し、全ステップでモデルの状態射影を突き合わせる。
+//! トレースを `WorkflowExecutionRepositoryImpl` + `JournalReaderImpl` + フェイク投影に再生し、
+//! 全ステップでモデルの状態射影を突き合わせる。
 //!
 //! フィクスチャは `tests/conformance/fixtures/journal_protocol/` にコミット済み
 //! (`#meta` 正規化済み)。各遷移は `lastAction` × `lastActor` で駆動する (lastAction 規約)。
+//!
+//! 集約の永続化そのものは本家 event-store-adapter-rs が担い、横断読取とチェックポイントは
+//! 我々の `JournalReaderImpl` が持つ (ADR-010)。**モデルは 1 文字も変えていない** — 本家に
+//! 載せ替えても同じトレースがそのまま再生できることが、この乗り換えの意味論的な検収である。
 //!
 //! モデルの抽象は「集約 1・writer 2・投影 1」である。writer 2 つは同じ `IntentId` を別々に
 //! 再水和した 2 本の「ロード済み集約」で表し、衝突は楽観 version の不一致だけで起きる
@@ -12,12 +16,12 @@
 //! 検査する。
 //!
 //! 射影規則 (モデル変数 → 実装の観測):
-//!   journalLen    = `JournalReader::events_after(ZERO)` の行数
-//!   snapVersion   = `EventStore::get_latest_snapshot_by_id` が載せた `version()` (行が無ければ 0)
+//!   journalLen    = `JournalReader::events_after(ZERO)` の行数 (本家 `journal` の rowid 順)
+//!   snapVersion   = 本家 `get_latest_snapshot_by_id` が載せた `version()` (行が無ければ 0)
 //!   snapSeq       = 同じ集約の `seq_nr()` (行が無ければ 0)
-//!   checkpoint    = `JournalReader::checkpoint(ProjectionName)` の値
+//!   checkpoint    = `JournalReader::checkpoint(ProjectionName)` の値 (我々の表)
 //!   readModelSeq  = フェイク投影が描き終えた最後の global 通番
-//!   loadedVersion = 各 writer が握っている集約の `version()`
+//!   loadedVersion = 各 writer が握っている集約の `version()` (未永続の genesis は 0)
 
 // テストコードでは unwrap / expect / panic を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -39,16 +43,17 @@ use core_domain::orchestration::{
 use core_domain::workflow_definition::{
     DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
 };
-use core_domain::workspace::CheckboxState;
+use core_domain::workspace::{CheckboxState, SpaceName};
 use core_interface_adapter::orchestration::{
-    InMemoryEventStore, InMemoryWorkflowExecutionRepository,
+    JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use core_use_case::orchestration::{
-    EventStore, GlobalSeqNr, JournalReader, ProjectionName, RepositoryError,
-    WorkflowExecutionRepository,
+    GlobalSeqNr, JournalReader, ProjectionName, RepositoryError, WorkflowExecutionRepository,
 };
-use event_store_adapter_rs::types::{Aggregate, Event};
+use event_store_adapter_rs::EventStoreForSqlite;
+use event_store_adapter_rs::types::{Aggregate, Event, EventStore};
 use serde_json::Value;
+use tempfile::TempDir;
 
 /// ITF 再生は時計を持たない — 封筒の `occurred_at` は固定値でよい (集約は値を素通しする)。
 const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -73,6 +78,12 @@ const WRITERS: usize = 2;
 /// ゲート付き 23 ステージ × 2 イベント = 48 件を受け付けるので、再生の途中で「もう打てる
 /// コマンドが無い (= ワークフロー完了)」状態には入らない。
 const STAGES: usize = 24;
+
+/// 本家の SQLite イベントストア (射影の観測に使う読取ハンドル)。
+type UpstreamStore = EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+
+/// Repository の具体型 (SQLite バックエンド)。
+type Repository = WorkflowExecutionRepositoryImpl<UpstreamStore>;
 
 // ---- ITF の読み取り ----
 
@@ -146,6 +157,37 @@ fn projection_name() -> ProjectionName {
     ProjectionName::parse("state-file").expect("投影名は kebab")
 }
 
+/// 1 回の再生が使う 1 つのストアファイル。
+struct Store {
+    _dir: TempDir,
+    path: StorePath,
+}
+
+impl Store {
+    fn new() -> Store {
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
+        std::fs::create_dir_all(path.as_path().parent().expect("親 dir を持つ"))
+            .expect("intents/ を先に作る");
+        Store { _dir: dir, path }
+    }
+
+    /// 「プロセスを起動する」— 同じファイルへ新しい接続を開く。
+    fn repository(&self) -> Repository {
+        WorkflowExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
+    }
+
+    /// 投影が使う横断読取 (同じファイルへの別接続)。
+    fn reader(&self) -> JournalReaderImpl {
+        JournalReaderImpl::open(&self.path).expect("Reader は開ける")
+    }
+
+    /// スナップショット列を直接観測するための読取ハンドル (射影の突合せ用)。
+    fn snapshot_view(&self) -> UpstreamStore {
+        UpstreamStore::new(self.path.as_path()).expect("本家ストアは開ける")
+    }
+}
+
 /// 索引 0 = initialization (非ゲート)、以降 = inception (ゲート付き) の合成計画。
 fn stages() -> Vec<StageEntry> {
     (0..STAGES)
@@ -165,7 +207,7 @@ fn stages() -> Vec<StageEntry> {
         .collect()
 }
 
-/// genesis の集約 (`version` = 0) と `Started` イベント (`seq_nr` = 1)。
+/// genesis の集約 (`version` = 0 = 未永続) と `Started` イベント (`seq_nr` = 1)。
 fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
     WorkflowExecution::start_from_plan_unchecked(
         intent_id(),
@@ -223,6 +265,10 @@ impl Writer {
         }
     }
 
+    /// モデルの `loadedVersion` — この writer が書込に提示する版。
+    ///
+    /// 未永続の genesis を握っている writer は 0 である (ストアには行がまだ無く、本家の
+    /// 作成経路は version の CAS をしない)。モデルの初期値と同じ意味になる。
     fn loaded_version(&self) -> usize {
         self.aggregate.version()
     }
@@ -241,11 +287,9 @@ impl Writer {
         (event, aggregate)
     }
 
-    /// 書込が通ったので版を載せ替える (BR1.3 — `store` は引数の集約を変更しない)。
-    fn commit(&mut self, event: &WorkflowExecutionEvent, aggregate: WorkflowExecution) {
-        let mut aggregate = aggregate;
-        aggregate.set_version(event.seq_nr());
-        self.aggregate = aggregate;
+    /// 書込が通ったので、**ストアが採番した版**を握り直す (BR5.3 — 版を知るのはストアだけ)。
+    fn commit(&mut self, stored: WorkflowExecution) {
+        self.aggregate = stored;
         self.pending = None;
     }
 }
@@ -259,13 +303,14 @@ struct FakeProjection {
 // ---- 射影の突合 ----
 
 async fn assert_projection(
-    store: &InMemoryEventStore,
+    store: &Store,
     projection: &FakeProjection,
     writers: &[Writer],
     m: &ModelState,
     label: &str,
 ) {
-    let rows = store
+    let reader = store.reader();
+    let rows = reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("ジャーナルは読める");
@@ -286,6 +331,7 @@ async fn assert_projection(
     }
 
     let snapshot = store
+        .snapshot_view()
         .get_latest_snapshot_by_id(&intent_id())
         .await
         .expect("スナップショットは読める");
@@ -295,7 +341,7 @@ async fn assert_projection(
     assert_eq!(version, m.snap_version, "{label}: snapVersion");
     assert_eq!(seq_nr, m.snap_seq, "{label}: snapSeq");
 
-    let checkpoint = store
+    let checkpoint = reader
         .checkpoint(&projection_name())
         .await
         .expect("チェックポイントは読める");
@@ -330,16 +376,16 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
     let first = states.first().expect("トレースは 1 状態以上");
     assert_eq!(first.last_action, "init");
 
-    // ストアは Repository の単一所有 (共有ハンドルは配らない —
-    // coding-rules/interior-mutability.md)。投影のキャッチアップも射影の突合も、
-    // この 1 つのストアを `event_store` / `event_store_mut` 経由で読み書きする。
-    // crash (プロセス再起動) のたびに 3 表を引き継いで開き直すので可変にしておく。
-    let mut repository = InMemoryWorkflowExecutionRepository::default();
+    // ストアは 1 つのファイル。Repository と Reader はそれぞれ自前の接続で開く
+    // (本家は接続を露出しないので、横断読取は別接続で行う — ADR-010 決定 4)。
+    // crash (プロセス再起動) のたびに開き直す。
+    let store = Store::new();
+    let mut repository = store.repository();
     let mut projection = FakeProjection::default();
     let mut writers: Vec<Writer> = (0..WRITERS).map(|_| Writer::genesis()).collect();
 
     assert_projection(
-        repository.event_store(),
+        &store,
         &projection,
         &writers,
         first,
@@ -387,10 +433,12 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                     m.journal_len,
                     "{label}: 追記された行の seq_nr"
                 );
-                writers
-                    .get_mut(writer)
-                    .expect("writer 添字")
-                    .commit(&event, aggregate);
+                // 新しい版を採番したのはストアなので、握り直して初めて分かる (BR5.3)。
+                let stored = repository
+                    .find_by_id(&intent_id())
+                    .await
+                    .unwrap_or_else(|error| panic!("{label}: 書いた集約は読み直せる {error:?}"));
+                writers.get_mut(writer).expect("writer 添字").commit(stored);
             }
 
             // stale な writer の書込は拒否され、ストアの状態は 1 ビットも変わらない。
@@ -414,7 +462,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
 
             // 投影のキャッチアップ — チェックポイント以降を読んで描き、位置を進める。
             "catchup" => {
-                let reader = repository.event_store_mut();
+                let mut reader = store.reader();
                 let from = reader
                     .checkpoint(&projection_name())
                     .await
@@ -433,9 +481,8 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
 
             // Tx 済み・投影未反映のままプロセスが落ちる。開き直しても永続状態は同じ。
             "crash" => {
-                // 3 表を引き継いだ別インスタンスで開き直す (= 書き終えた行は落ちない)。
-                let carried = repository.event_store().clone();
-                repository = InMemoryWorkflowExecutionRepository::new(carried);
+                // 同じファイルへ新しい接続を開き直す (= 書き終えた行は落ちない)。
+                repository = store.repository();
                 if m.journal_len > 0 {
                     let rebuilt = repository
                         .find_by_id(&intent_id())
@@ -450,7 +497,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             action => panic!("{label}: 未知のアクション {action}"),
         }
 
-        assert_projection(repository.event_store(), &projection, &writers, m, &label).await;
+        assert_projection(&store, &projection, &writers, m, &label).await;
     }
 }
 

@@ -20010,3 +20010,97 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T15:07:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af7c130bf45d630c7
+**Message**: 進捗報告
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T15:11:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1363f2570a24d3c1
+**Message**: event-store-adapter-rs v2.0.0 への乗り換え（Bolt B6）を進行中です。委任2（本家ストアへの差し替えと自前実装約2,400行の削除）が実行中で、完了したら私が検証して結果を報告します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T15:23:13Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T15:26:39Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a036dabeb28268249
+**Message**: event-store-adapter-rs v2.0.0への乗り換え（Bolt B6）を進行中です。委任2（本家ストアへの差し替えと自前実装約2,400行の削除）が実行中で、完了通知が来たら私が独立検証して結果を報告します。
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-26T15:57:35Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Context**: construction > esa-v2-migration > developer-report-2.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T15:57:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: 456b4dce
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T15:57:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: 456b4dce
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T15:57:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: bdf30863
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T15:57:35Z
+**Event**: SENSOR_FAILED
+**Fire id**: bdf30863
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-bdf30863.md
+**Findings count**: 5
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T15:58:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b6-delegation-2
+**Agent ID**: ab6-delegation-2-b737b3ea6dd3c493
+**Message**: 委任 2 完了。全検査緑、未コミットです。報告は `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md`（内容はこれが正）。\n\n1. 永続化を本家 `E
+
+---

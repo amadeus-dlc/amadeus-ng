@@ -16,18 +16,18 @@ directive-schema = { workspace = true }
 canon-json = { workspace = true }
 message-catalog = { workspace = true }
 infra-io = { workspace = true }
-# C6 の 3 表を持つ SQLite ストア (BR2.1 / BR2.2)。同梱ビルドで版差を消す。
+# 本家のジャーナルを横断で読む自前の別接続 (`JournalReaderImpl` — ADR-010 決定 4)。
+# 本家の `sqlite` feature も同じ rusqlite 0.40 を `bundled` で使うので、同梱の SQLite 本体は
+# 1 つに統合される (実行環境の libsqlite3 の版差は入らない)。
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # 時計とイベントの発生時刻が `DateTime<Utc>` になった (ADR-010 決定 3)。
 chrono = { workspace = true }
-# ドメイン型を本家 trait 越しに触る (`Aggregate::set_version` / `Event::seq_nr` ほか)。
-event-store-adapter-rs = { workspace = true }
+# 集約の永続化そのもの (ADR-010)。`sqlite` feature で `EventStoreForSqlite` を有効にする。
+event-store-adapter-rs = { workspace = true, features = ["sqlite"] }
 
 [dev-dependencies]
 tempfile = "3"
 # 非同期ポート (AFIT) の契約テストを回す current_thread ランタイム (C3 / Q3 = A)。
 tokio = { workspace = true }
-# ワイヤ形式のラウンドトリップ PBT (BR2.5 / NFR2.2)。シードは PROPTEST_RNG_SEED で固定する。
-proptest = { workspace = true }

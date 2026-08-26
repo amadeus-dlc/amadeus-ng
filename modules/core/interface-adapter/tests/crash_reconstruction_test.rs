@@ -1,8 +1,9 @@
 //! クラッシュ再構成 (BR5.2 (a)) — 書込のあとプロセスが落ちたと見なし、新しい接続で
 //! 同じ集約が同じ状態に戻ることを固定する。
 //!
-//! 「落ちた」は接続 (と Repository) を drop することで表す。SQLite の `COMMIT` を通った
-//! 書込だけが残り、途中で捨てられた Tx は残らない — その 2 つを同じファイルに対して観測する。
+//! 「落ちた」は Repository (と本家ストアが握る接続) を drop することで表す。SQLite の
+//! `COMMIT` を通った書込だけが残り、途中で捨てられた Tx は残らない — その 2 つを同じ
+//! ファイルに対して観測する。
 
 // テストコードでは unwrap / expect を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -10,29 +11,28 @@
 
 mod support;
 
-use chrono::{DateTime, Utc};
-use core_domain::orchestration::{AutonomyMode, WorkflowExecution};
-use core_domain::workspace::SpaceName;
-use core_interface_adapter::FakeClock;
-use core_interface_adapter::orchestration::{
-    EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
+use core_domain::orchestration::{
+    AutonomyMode, IntentId, WorkflowExecution, WorkflowExecutionEvent,
 };
+use core_domain::workspace::SpaceName;
+use core_interface_adapter::orchestration::{
+    JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
+};
+use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::types::{Aggregate, Event};
 
 use core_use_case::orchestration::{
-    EventStoreError, GlobalSeqNr, JournalReader, WorkflowExecutionRepository,
+    GlobalSeqNr, JournalReadError, JournalReader, WorkflowExecutionRepository,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{advanced, at, genesis, intent_id};
+use support::{at, intent_id, store_and_reload, store_genesis};
 
-/// ストアの押印時刻 (`updated_at` 列)。イベントの `occurred_at` と同じ固定時刻にする。
-fn now() -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
-        .expect("固定の ISO 8601 UTC")
-        .with_timezone(&Utc)
-}
+/// Repository の具体型 (SQLite バックエンド)。
+type Repository = WorkflowExecutionRepositoryImpl<
+    EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>,
+>;
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -49,44 +49,36 @@ impl Fixture {
         Fixture { _dir: dir, path }
     }
 
-    fn repository(&self) -> WorkflowExecutionRepositoryImpl<FakeClock> {
-        WorkflowExecutionRepositoryImpl::new(self.store())
+    fn repository(&self) -> Repository {
+        WorkflowExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
-    fn store(&self) -> EventStoreImpl<FakeClock> {
-        EventStoreImpl::open(self.path.clone(), FakeClock::new(now())).expect("ストアは開ける")
+    fn reader(&self) -> JournalReaderImpl {
+        JournalReaderImpl::open(&self.path).expect("Reader は開ける")
     }
 }
 
-/// 5 コマンドぶん書き進め、最後の集約 (版を載せ替え済み) を返す。
-async fn write_five(
-    repository: &mut WorkflowExecutionRepositoryImpl<FakeClock>,
-) -> WorkflowExecution {
-    let (mut aggregate, event) = genesis();
-    repository.store(&event, &aggregate).await.expect("genesis");
-    aggregate = advanced(aggregate, &event);
+/// 5 コマンドぶん書き進め、最後の集約 (握り直し済み) を返す。
+async fn write_five(repository: &mut Repository) -> WorkflowExecution {
+    let mut aggregate = store_genesis(repository).await;
 
     let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
-    repository.store(&event, &aggregate).await.expect("2 件目");
-    aggregate = advanced(aggregate, &event);
+    aggregate = store_and_reload(repository, &event, &aggregate).await;
 
     let event = aggregate
         .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
-    repository.store(&event, &aggregate).await.expect("3 件目");
-    aggregate = advanced(aggregate, &event);
+    aggregate = store_and_reload(repository, &event, &aggregate).await;
 
     let event = aggregate
         .approve_gate(Some("ok".to_string()), None, at())
         .expect("承認");
-    repository.store(&event, &aggregate).await.expect("4 件目");
-    aggregate = advanced(aggregate, &event);
+    aggregate = store_and_reload(repository, &event, &aggregate).await;
 
     let event = aggregate
         .switch_autonomy(AutonomyMode::Autonomous, at())
         .expect("自律モードの設定");
-    repository.store(&event, &aggregate).await.expect("5 件目");
-    advanced(aggregate, &event)
+    store_and_reload(repository, &event, &aggregate).await
 }
 
 #[tokio::test]
@@ -115,7 +107,7 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
         write_five(&mut repository).await;
     }
 
-    let reader = fixture.store();
+    let reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     assert_eq!(rows.len(), 5, "COMMIT 済みの 5 件が残る");
     assert_eq!(
@@ -141,18 +133,19 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
     }
 
     // COMMIT を通らない Tx を開いたまま接続を捨てる (= Tx 途中のクラッシュ)。
+    // 列は本家 `journal` のもの (スキーマガードテストがピン留めしている)。
     {
         let holder = Connection::open(fixture.path.as_path()).expect("生の接続");
         holder
             .execute_batch(
                 "BEGIN IMMEDIATE;
-                 INSERT INTO journal(aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at)
-                 VALUES ('01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, 1, 'Unparked', '{\"type\":\"Unparked\"}', '2026-08-23T00:00:00Z');",
+                 INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+                 VALUES ('p', 's-6', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, X'7B7D', 0);",
             )
             .expect("書きかけ");
     }
 
-    let reader = fixture.store();
+    let reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     assert_eq!(rows.len(), 5, "書きかけの 6 件目は残らない");
 
@@ -175,16 +168,19 @@ async fn the_store_survives_being_opened_and_closed_repeatedly() {
         assert_eq!(found.version(), 5);
     }
 
-    // 開き直しでスキーマを作り直したりしないこと (`user_version` は 1 のまま)。
+    // 開き直しで表を作り直したりしないこと (本家の DDL は `IF NOT EXISTS`)。
     let conn = Connection::open(fixture.path.as_path()).expect("生の接続");
-    let user_version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .expect("user_version");
-    assert_eq!(user_version, 1);
     let journal_rows: i64 = conn
         .query_row("SELECT count(*) FROM journal", [], |row| row.get(0))
         .expect("件数");
     assert_eq!(journal_rows, 5);
+    let snapshot_rows: i64 = conn
+        .query_row("SELECT count(*) FROM snapshot", [], |row| row.get(0))
+        .expect("件数");
+    assert_eq!(
+        snapshot_rows, 1,
+        "現行スロットの 1 行だけ (履歴は保持しない)"
+    );
 }
 
 /// クラッシュ後に開いた別インスタンスからの書込は、続きの `seq_nr` から進む。
@@ -205,7 +201,7 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     assert_eq!(event.seq_nr(), 6);
     repository.store(&event, &aggregate).await.expect("6 件目");
 
-    let reader = fixture.store();
-    let rows: Result<Vec<_>, EventStoreError> = reader.events_after(GlobalSeqNr::new(5)).await;
+    let reader = fixture.reader();
+    let rows: Result<Vec<_>, JournalReadError> = reader.events_after(GlobalSeqNr::new(5)).await;
     assert_eq!(rows.expect("差分").len(), 1);
 }

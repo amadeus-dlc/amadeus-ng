@@ -1,65 +1,50 @@
-//! `WorkflowExecutionRepository` / `JournalReader` の契約 (BR1.2 / BR1.3 / BR1.4)。
+//! `WorkflowExecutionRepository` の契約 (BR1.2 / BR1.3)。
 //!
-//! ここに書いた関数群が「実装が満たすべき約束」の**唯一の記述**である。in-memory と
-//! SQLite は同じ関数を通す (BR2.7 — 片方だけ通るテストを残さない)。
+//! ここに書いた関数群が「実装が満たすべき約束」の**唯一の記述**である。本家の memory
+//! バックエンドと SQLite バックエンドは同じ関数を通す (BR2.7 — 片方だけ通るテストを残さない)。
 //!
-//! 破損 (`MissingSnapshot` / `UndecodablePayload` / `SchemaVersion`) は、行を直接壊す
-//! 手段が実装ごとに違い、ポートの面からは作れない。契約テストからは外し、実装固有の
-//! テスト (in-memory は `in_memory_event_store.rs` のインラインテスト、SQLite は
-//! 直接 SQL) に置く。
+//! 破損 (`MissingSnapshot` / `UndecodablePayload`) は、行を直接壊す手段がバックエンドごとに
+//! 違い、ポートの面からは作れない。契約テストからは外し、実装固有のテスト
+//! (`workflow_execution_repository_impl_test.rs` の生 SQL) に置く。
+//!
+//! 全集約横断の読取とチェックポイント (`JournalReader`) は SQLite にしか無いので、
+//! `journal_reader_impl_test.rs` が単独で持つ。
 
 use core_domain::orchestration::{
     AutonomyMode, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
 };
 use event_store_adapter_rs::types::{Aggregate, Event};
 
-use core_use_case::orchestration::{
-    CorruptCause, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName, RepositoryError,
-    WorkflowExecutionRepository,
-};
+use core_use_case::orchestration::{CorruptCause, RepositoryError, WorkflowExecutionRepository};
 
 use super::{
-    StoreFixture, absent_intent_id, advanced, at, genesis, intent_id, store_genesis,
+    StoreFixture, absent_intent_id, at, genesis, intent_id, store_and_reload, store_genesis,
     store_stage_completed,
 };
 
-/// 契約テストが使う投影名。
-fn projection() -> ProjectionName {
-    ProjectionName::parse("state-file").expect("契約テストの投影名は kebab")
-}
-
-/// genesis から 5 イベントぶん書き進め、最後の集約 (版を載せ替え済み) を返す。
+/// genesis から 5 イベントぶん書き進め、最後の集約 (握り直し済み) を返す。
 ///
 /// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
-async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExecution {
-    let (mut aggregate, event) = genesis();
-    repository
-        .store(&event, &aggregate)
-        .await
-        .expect("genesis の store は通る");
-    aggregate = advanced(aggregate, &event);
+pub(crate) async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExecution {
+    let mut aggregate = store_genesis(repository).await;
 
     let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
-    repository.store(&event, &aggregate).await.expect("store");
-    aggregate = advanced(aggregate, &event);
+    aggregate = store_and_reload(repository, &event, &aggregate).await;
 
     let event = aggregate
         .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
-    repository.store(&event, &aggregate).await.expect("store");
-    aggregate = advanced(aggregate, &event);
+    aggregate = store_and_reload(repository, &event, &aggregate).await;
 
     let event = aggregate
         .approve_gate(Some("ok".to_string()), None, at())
         .expect("承認");
-    repository.store(&event, &aggregate).await.expect("store");
-    aggregate = advanced(aggregate, &event);
+    aggregate = store_and_reload(repository, &event, &aggregate).await;
 
     let event = aggregate
         .switch_autonomy(AutonomyMode::Autonomous, at())
         .expect("自律モードの設定");
-    repository.store(&event, &aggregate).await.expect("store");
-    advanced(aggregate, &event)
+    store_and_reload(repository, &event, &aggregate).await
 }
 
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
@@ -83,45 +68,14 @@ pub(crate) async fn open_twice_yields_independent_empty_stores<F: StoreFixture>(
         }
     );
 
-    store_genesis(&mut second).await;
-    let found = second.find_by_id(&intent_id()).await.expect("読み直せる");
+    let found = store_genesis(&mut second).await;
     assert_eq!(found.version(), 1, "2 つ目のストアは独立して書ける");
 
     let found = first.find_by_id(&intent_id()).await.expect("読み直せる");
     assert_eq!(found.version(), 1, "1 つ目は 2 つ目の書込に影響されない");
 }
 
-/// `reader()` は**開いた時点までに書き終えた行**を見せる (BR2.7 の共通保証)。
-///
-/// 開いた**後**の書込が見えるかどうかは契約の外である ([`StoreFixture`] の逸脱節)。
-/// 2 度別々の時点で開いて確かめるのは、この保証が「開いた瞬間」に紐づくことを固定するため
-/// (1 度だけなら「たまたま全部見えた」と区別がつかない)。
-pub(crate) async fn reader_reflects_the_writes_completed_before_it_was_opened<F: StoreFixture>(
-    fixture: &F,
-) {
-    let mut repository = fixture.open();
-    let aggregate = store_genesis(&mut repository).await;
-
-    let early = fixture.reader(&repository);
-    let rows = early
-        .events_after(GlobalSeqNr::ZERO)
-        .await
-        .expect("差分読取");
-    assert_eq!(rows.len(), 1, "genesis まで書き終えた時点で開いた Reader");
-
-    store_stage_completed(&mut repository, aggregate).await;
-
-    let late = fixture.reader(&repository);
-    let rows = late
-        .events_after(GlobalSeqNr::ZERO)
-        .await
-        .expect("差分読取");
-    assert_eq!(rows.len(), 2, "2 件目を書き終えた後で開いた Reader");
-}
-
 /// `reopen()` は**開き直した時点までに書き終えた行**を見せる (BR2.7 の共通保証)。
-///
-/// `reader()` と同じく、開き直した**後**の書込が見えるかどうかは契約の外である。
 pub(crate) async fn reopen_reflects_the_writes_completed_before_it_was_reopened<F: StoreFixture>(
     fixture: &F,
 ) {
@@ -151,7 +105,7 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
         .expect("書いた集約は読み直せる");
 
     assert_eq!(found.state(), expected.state(), "17 属性が一致する");
-    assert_eq!(found.version(), 5, "版は永続化済みの最後の seq_nr");
+    assert_eq!(found.version(), 5, "5 回の書込ぶんストアが採番した版");
     assert_eq!(found.seq_nr(), 5, "順序番号は適用済みイベント数");
 }
 
@@ -172,22 +126,24 @@ pub(crate) async fn not_found<F: StoreFixture>(fixture: &F) {
     );
 }
 
-/// genesis の書込は版 0 を前提にする (スナップショット行の INSERT 経路 — BR2.3)。
-pub(crate) async fn genesis_expects_version_zero<F: StoreFixture>(fixture: &F) {
+/// genesis は未永続の集約 (`version` = 0) から書き、ストアが最初の版を採番する (BR5.3)。
+pub(crate) async fn the_store_assigns_the_first_version_on_genesis<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     let (aggregate, event) = genesis();
-    assert_eq!(aggregate.version(), 0);
+    assert_eq!(aggregate.version(), 0, "未永続の集約は 0");
     assert_eq!(event.seq_nr(), 1);
     repository.store(&event, &aggregate).await.expect("genesis");
+    assert_eq!(aggregate.version(), 0, "呼出側の集約は動かない (BR1.3)");
 
     let found = repository
         .find_by_id(&intent_id())
         .await
         .expect("読み直せる");
-    assert_eq!(found.version(), 1);
+    assert_eq!(found.version(), 1, "採番したのはストア");
+    assert_eq!(found.seq_nr(), 1, "seq_nr はドメインの通番");
 }
 
-/// 同じ genesis を 2 度書くと衝突する (UNIQUE(aggregate_id, seq_nr) — BR1.3)。
+/// 同じ genesis を 2 度書くと衝突する (スナップショット行の一意性 — BR1.3)。
 pub(crate) async fn genesis_twice_conflicts<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     let (aggregate, event) = genesis();
@@ -246,19 +202,48 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
     assert_eq!(found.version(), 6);
 }
 
-/// 呼出側の不整合 (`seq_nr` の飛び) は `Corrupt(SequenceGap)` で拒否する (BR1.3)。
-pub(crate) async fn sequence_gap_is_refused<F: StoreFixture>(fixture: &F) {
+/// 古い版のまま書こうとした続きは `Conflict` である (楽観 version はストアの関心 — BR5.3)。
+///
+/// かつては Repository が `version == seq_nr - 1` を前提検査していたので `Corrupt(SequenceGap)`
+/// になっていた。version を `seq_nr` から導く検査は撤回した (オーナー裁定 2026-08-27 (B))
+/// ため、この不整合を見つけるのはストアの CAS である。
+pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     let (aggregate, event) = genesis();
     repository.store(&event, &aggregate).await.expect("genesis");
 
-    // 版を載せ替えないまま次のイベントを書こうとする (呼出側のバグ)。
+    // 握り直さないまま次のイベントを書こうとする (呼出側のバグ)。
     let mut stale = aggregate;
     let next = stale.complete_stage(at()).expect("索引 0 は非ゲート");
     let err = repository
         .store(&next, &stale)
         .await
-        .expect_err("版 0 のまま seq_nr 2 は書けない");
+        .expect_err("版 0 のままでは書けない");
+    assert_eq!(
+        err,
+        RepositoryError::Conflict {
+            expected: 0,
+            actual: 1
+        }
+    );
+}
+
+/// イベントの `seq_nr` が適用後の集約と食い違う書込は `Corrupt(SequenceGap)` (BR1.3 の前提検査)。
+pub(crate) async fn a_sequence_that_disagrees_with_the_aggregate_is_refused<F: StoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    let (aggregate, _) = genesis();
+    let skewed = WorkflowExecutionEvent::new(
+        intent_id(),
+        aggregate.seq_nr() + 1,
+        at(),
+        WorkflowExecutionEventPayload::Unparked,
+    );
+    let err = repository
+        .store(&skewed, &aggregate)
+        .await
+        .expect_err("1 コマンド 1 イベントの通番が合わない");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
@@ -290,100 +275,4 @@ pub(crate) async fn mismatched_identity_is_refused<F: StoreFixture>(fixture: &F)
             ..
         }
     ));
-}
-
-/// `events_after(ZERO)` は全イベントを global 昇順で返す (BR1.4)。
-pub(crate) async fn journal_reads_every_event_in_global_order<F: StoreFixture>(fixture: &F) {
-    let mut repository = fixture.open();
-    seed(&mut repository).await;
-
-    let reader = fixture.reader(&repository);
-    let rows = reader
-        .events_after(GlobalSeqNr::ZERO)
-        .await
-        .expect("差分読取");
-    assert_eq!(rows.len(), 5);
-    let globals: Vec<u64> = rows.iter().map(|(global, _)| global.to_u64()).collect();
-    let mut sorted = globals.clone();
-    sorted.sort_unstable();
-    assert_eq!(globals, sorted, "global 通番の昇順");
-    let seqs: Vec<usize> = rows.iter().map(|(_, event)| event.seq_nr()).collect();
-    assert_eq!(seqs, [1, 2, 3, 4, 5], "欠落なく順に読める");
-}
-
-/// `events_after(n)` は差分だけを返す (BR1.4)。
-pub(crate) async fn journal_reads_only_the_difference<F: StoreFixture>(fixture: &F) {
-    let mut repository = fixture.open();
-    seed(&mut repository).await;
-
-    let reader = fixture.reader(&repository);
-    let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = all.get(2).expect("3 件目").0;
-    let rest = reader.events_after(third).await.expect("差分");
-    assert_eq!(rest.len(), 2);
-    assert!(rest.iter().all(|(global, _)| *global > third));
-}
-
-/// 未登録の投影のチェックポイントは `ZERO` (BR1.4)。
-pub(crate) async fn unregistered_checkpoint_is_zero<F: StoreFixture>(fixture: &F) {
-    let reader = fixture.reader(&fixture.open());
-    assert_eq!(
-        reader.checkpoint(&projection()).await.expect("読取"),
-        GlobalSeqNr::ZERO
-    );
-}
-
-/// チェックポイントは進められ、同値の再適用は no-op (投影の冪等性の土台 — BR1.4)。
-pub(crate) async fn checkpoint_advances_and_repeats_are_noops<F: StoreFixture>(fixture: &F) {
-    let mut repository = fixture.open();
-    seed(&mut repository).await;
-
-    let mut reader = fixture.reader(&repository);
-    let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let last = rows.last().expect("5 件ある").0;
-
-    reader
-        .advance_checkpoint(&projection(), last)
-        .await
-        .expect("前進");
-    assert_eq!(reader.checkpoint(&projection()).await.expect("読取"), last);
-
-    reader
-        .advance_checkpoint(&projection(), last)
-        .await
-        .expect("同値は no-op");
-    assert_eq!(reader.checkpoint(&projection()).await.expect("読取"), last);
-    assert!(
-        reader.events_after(last).await.expect("差分").is_empty(),
-        "追いついた投影に差分は無い"
-    );
-}
-
-/// チェックポイントの後退は拒否する (単調 — BR1.4)。
-pub(crate) async fn checkpoint_regression_is_refused<F: StoreFixture>(fixture: &F) {
-    let mut repository = fixture.open();
-    seed(&mut repository).await;
-
-    let mut reader = fixture.reader(&repository);
-    reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(3))
-        .await
-        .expect("前進");
-    let err = reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
-        .await
-        .expect_err("後退は拒否");
-    assert_eq!(
-        err,
-        EventStoreError::CheckpointRegression {
-            projection: projection(),
-            current: GlobalSeqNr::new(3),
-            requested: GlobalSeqNr::new(2),
-        }
-    );
-    assert_eq!(
-        reader.checkpoint(&projection()).await.expect("読取"),
-        GlobalSeqNr::new(3),
-        "拒否しても現在値は動かない"
-    );
 }

@@ -2,13 +2,18 @@
 //!
 //! 集約 → [`WorkflowExecution::state`]、集約 ← [`WorkflowExecution::from_state`] の 1 往復で
 //! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_state` の 1 か所に集約する
-//! (security-design §2)。この値オブジェクト自体は serde を持たない (JSON 化は U3 のワイヤ
-//! 構造体)。集約側の serde は本家 `Aggregate` の境界要求であり、別の経路である (ADR-010)。
+//! (security-design §2)。
+//!
+//! 本家 `Aggregate` が要求する集約の serde は**この写しを経由する** (オーナー裁定
+//! 2026-08-27 (A)): `WorkflowExecution` は `#[serde(into / try_from)]` でこの型へ委ね、
+//! 復号は必ず `from_state` の検査点を通る。したがって直列化形式の正本はこの 17 属性であり、
+//! 復号が集約不変条件を迂回する経路は存在しない。
 //!
 //! [`WorkflowExecution::state`]: super::workflow_execution::WorkflowExecution::state
 //! [`WorkflowExecution::from_state`]: super::workflow_execution::WorkflowExecution::from_state
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode::AutonomyMode;
 use super::intent_id::IntentId;
@@ -22,7 +27,10 @@ use crate::workspace::CheckboxState;
 ///
 /// フィールドは `pub(crate)` — 同一クレート内の実装詳細共有 (集約との再水和) にだけ開き、
 /// クレート外へは 17 本のアクセサでのみ公開する (field-visibility.md)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// serde は集約の直列化形式そのものである (集約が `into` / `try_from` でここへ委ねる)。
+/// 属性の綴りと並びを変えると、既に書かれた行を読めなくなる。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowExecutionState {
     pub(crate) intent_id: IntentId,
     pub(crate) definition_id: WorkflowDefinitionId,

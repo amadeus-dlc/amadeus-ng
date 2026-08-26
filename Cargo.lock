@@ -166,7 +166,6 @@ dependencies = [
  "event-store-adapter-rs",
  "infra-io",
  "message-catalog",
- "proptest",
  "rusqlite",
  "serde",
  "serde_json",
@@ -243,6 +242,7 @@ checksum = "3c1b1551e2993dcae8040fbdbe86b0584a8c00991bc36a63df137d5ef038a324"
 dependencies = [
  "async-trait",
  "chrono",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror",
