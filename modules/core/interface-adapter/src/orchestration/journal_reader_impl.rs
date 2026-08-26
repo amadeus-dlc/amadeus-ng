@@ -780,6 +780,32 @@ mod tests {
     }
 
     #[test]
+    fn opening_a_database_without_the_journal_table_is_not_found() {
+        // #511 で「無いファイル」は open 段階で落ちるようになったため、この分岐
+        // (ファイルは在るが本家の journal 表が無い) を踏む経路を独立に固定する。
+        let dir = tempfile::tempdir().unwrap();
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
+        std::fs::create_dir_all(path.as_path().parent().unwrap()).unwrap();
+        // journal 表を持たない有効な SQLite ファイルを作る。
+        let bootstrap = Connection::open(path.as_path()).unwrap();
+        bootstrap
+            .execute("CREATE TABLE unrelated (x INTEGER)", [])
+            .unwrap();
+        drop(bootstrap);
+        let error = JournalReaderImpl::open(&path).expect_err("journal 表が無い");
+        assert!(
+            matches!(
+                error,
+                JournalReadError::Io {
+                    kind: ErrorKind::NotFound,
+                    ..
+                }
+            ),
+            "表の不在は NotFound: {error:?}"
+        );
+    }
+
+    #[test]
     fn opening_a_missing_store_does_not_create_the_file() {
         // 読取側の接続はストアファイルを作らない (B6 CodeRabbit #511)。
         let dir = tempfile::tempdir().unwrap();
@@ -797,6 +823,40 @@ mod tests {
             "NotFound で失敗する: {error:?}"
         );
         assert!(!path.as_path().exists(), "空の SQLite ファイルを作らない");
+    }
+
+    #[test]
+    fn a_row_with_a_negative_sequence_number_is_corrupt() {
+        // journal.seq_nr は本家スキーマ上 INTEGER — 負値は書込経路からは生まれないが、
+        // 破損検出の境界なので usize への写しの失敗も Corrupt に畳む (#500 の照合の一部)。
+        // payload は**有効なイベント**にする — 復号失敗ではなく try_from の分岐を踏むため。
+        let event = WorkflowExecutionEvent::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            NonZeroUsize::MIN,
+            chrono::DateTime::parse_from_rfc3339("2026-08-27T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
+        );
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
+        )]
+        let payload = serde_json::to_vec(&event).unwrap();
+        let row = JournalRow {
+            rowid: 1,
+            seq_nr: -1,
+            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+            payload,
+        };
+        assert_eq!(
+            decode_event(&row).expect_err("負の通番"),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: None,
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
     }
 
     #[test]

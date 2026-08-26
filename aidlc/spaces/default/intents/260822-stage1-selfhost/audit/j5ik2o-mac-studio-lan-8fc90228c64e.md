@@ -21341,3 +21341,48 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: team-lead に完了報告を送りました。\n\n**結果**: fixed 13件 / skipped 1件\n\n報告書: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fix
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T17:11:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab2babf51e485f34d
+**Message**: マージして
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T17:12:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T17:14:06Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: adf162ab144a49b55
+**Message**: 緑になったらマージまで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T17:14:31Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T17:16:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9ffc898c184f7ba4
+**Message**: 緑になったらマージまで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T17:16:50Z
+**Event**: HUMAN_TURN
+
+---
