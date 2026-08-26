@@ -44,6 +44,30 @@ park 後もオーナーからの設計指摘が続き、以下を追加で反映
 - **`field-visibility.md` の裁定** — `pub` も `pub(crate)` も禁止、**例外を認めない**。
   検出境界の拡張と既存違反の是正は同じ Bolt で同時に着地させる（順序の制約）
 
+## 2026-08-26 追記 — **次の Bolt は event-store-adapter-rs v2.0.0 への乗り換え**（最優先）
+
+**ADR-010**（`inception/domain-design/decisions.md`）。ADR-006 の「crate 直接依存は見送り」を撤回する。
+
+**なぜいま** — 本家 v2.0.0（**2026-08-24 公開**、B5 の作業期間と重なる）で、ADR-006 が挙げた
+乗り換え条件 2 つが**両方とも満たされた**: (1) `default = []` で全バックエンドが feature ゲート
+（見送り理由だった AWS SDK + tonic + Bigtable のハード依存が消滅）(2) `sqlite` feature で
+SQLite 実装を提供（**我々が委任 3 で自前実装したのと同じ rusqlite**）。
+
+**方針は Conformist**（オーナー裁定「腐敗防止層はなしで。ちゃんと書き換えろ」）。ドメイン型が
+本家の trait を直接実装する。受け入れるもの: ドメインへの **serde** と **chrono** の導入、
+`seq_nr`/`version` の **`usize`** 化（`u64` への「具体化」は撤回 — 借り物の契約を自分の
+ドメインに合わせて曲げていた。`coding-rules/upstream-contracts.md`）。
+
+**消えるコード 約 2,400 行**: `event_store_impl.rs` 971 / `schema.rs` 179 /
+`event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230。
+
+**我々が持ち続けるもの**（本家に無い = 本家のドメインではない）: 投影チェックポイント、
+全集約横断の順序読取（`events_after`）、`within_write_transaction`。
+
+**Open question**: 本家が接続を露出するか未確認（U7 の登録簿 read-modify-write が要る）。
+Quint モデル `journal_protocol` の検証対象が移るので再確認も要る。NFR4.1（依存最小化）は
+chrono 導入で再検討。
+
 ## 再開後にやること
 
 1. **オーナーにマージの可否を確認**（squash-merge、コミット名 = Bolt slug `b5-u3-event-store-repository`）。

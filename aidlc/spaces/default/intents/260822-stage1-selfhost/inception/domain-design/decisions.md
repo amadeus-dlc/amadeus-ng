@@ -235,3 +235,57 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   *読取側契約を中立クレート `core/event-stream` へ切り出す*（本 ADR の初稿）: RMU がコマンド側に
   依存してよいので**不要**。中立クレートは「両側が相手を知らずに同じ契約を共有する」ための
   仕掛けであり、**橋が両側を知ってよい構図では役目が無い**（オーナー訂正 2026-08-24）。
+
+## ADR-010: event-store-adapter-rs v2.0.0 へ乗り換える — ADR-006 の見送りを撤回（2026-08-26 追加）
+
+- **Context** — ADR-006 は crate への直接依存を見送り、trait 群を**本家と同形でローカル定義**して
+  「本家が **feature 化 / SQLite 実装**を得たら乗り換え可能な形を保つ」と決めた。
+  **2026-08-24 公開の v2.0.0 で、その 2 条件が両方とも満たされた**（実測）:
+  - `gate backends behind cargo features with empty default` — `lib/Cargo.toml` は
+    `default = []`、`dynamodb` / `bigtable` / `sqlite` / `sqlite-system` が feature。
+    ADR-006 が見送り理由に挙げた「aws-sdk-dynamodb + tonic + Bigtable の feature ゲート無し
+    ハード依存」は**消滅した**
+  - `add SQLite-backed event store behind sqlite feature` — `sqlite = ["dep:rusqlite",
+    "rusqlite/bundled"]`。**我々が委任 3 で自前実装したのと同じ rusqlite**
+  - `replace SDK-leaked error type with neutral OptimisticLockError(String)` — エラー型も中立化
+
+  あわせて、**ローカル定義の写しが本家からずれていた**ことも判明した（4 点: 関連型 vs 型
+  パラメータ / `usize` vs `u64` / エラー型 1 種 vs 2 種 / `Clone` 境界の有無）。特に
+  `usize` → `u64` は、**我々のドメイン型に合わせて借り物の契約を書き換えた**もので、
+  [`coding-rules/upstream-contracts.md`](../../../knowledge/aidlc-shared/coding-rules/upstream-contracts.md)
+  違反である（契約の所有者は本家であり、我々ではない）。
+
+- **Decision**（オーナー明言 2026-08-26「乗り換えてほしい。v2.0.0に」「腐敗防止層はなしで。
+  ちゃんと書き換えろ」）—
+
+  1. **`event-store-adapter-rs` v2.0.0 に `sqlite` feature で依存する**。ADR-006 の見送りを撤回。
+  2. **Conformist を採る。腐敗防止層は置かない。** 我々のドメイン型が本家の trait を**直接実装**
+     する。アダプタ型を挟んで変換する案はオーナー裁定で却下（儀式が増えるだけ）。
+  3. したがって次を受け入れる:
+     - ドメイン型に **serde の `Serialize` / `Deserialize`** を入れる
+     - **`chrono::DateTime<Utc>`** を採る（`occurred_at` / `last_updated_at`）。
+       **NFR4.1（依存最小化）の再検討が要る** — 自前 ISO 8601 整形の存在意義が変わる
+     - `seq_nr` / `version` を **`usize`** にする（本家の契約に従う。`u64` への「具体化」は撤回）
+  4. **本家に無いものは我々が持ち続ける** — 本家のドメインは「集約の永続化」であり、
+     次は利用側の関心である:
+     - **投影チェックポイント**（`JournalReader::checkpoint` / `advance_checkpoint`）
+     - **全集約横断の順序読取**（`events_after(GlobalSeqNr)`）— 本家は集約単位
+     - `within_write_transaction`（U7 の登録簿 read-modify-write）— **本家が接続を露出するか
+       未確認。乗り換え Bolt の Open question**
+
+- **Consequences** — (+) 自前実装 **約 2,400 行**（`event_store_impl.rs` 971 / `schema.rs` 179 /
+  `event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230）が消え、本家の保守に乗る。
+  (+) 本家への合流・貢献が現実的になる。(+) 借り物の契約を曲げている状態が解消する。
+  (−) ドメイン層に serde と chrono が入る（NFR4.1 の再検討）。(−) 集約・イベント・IntentId が
+  本家 trait を実装するための改修（`Event::id` / `is_created` / `Aggregate::id` /
+  `last_updated_at` / `AggregateId::type_name` の新設、`seq_nr`/`version` の `usize` 化）。
+  (−) B5 でマージするコードの一部を次 Bolt で削除することになる（オーナー裁定で許容）。
+  (±) Quint モデル `journal_protocol` の検証対象が「自前実装の契約」から「本家の契約 +
+  我々の投影」へ移る — モデルの再確認が要る。
+
+- **Alternatives Rejected** — *腐敗防止層*: ドメインを serde / chrono / `usize` から守れるが、
+  アダプタ型と変換で数百行を足すことになる。オーナー裁定「腐敗防止層はなしで。ちゃんと書き換えろ」。
+  *自前実装を維持*: ADR-006 が保とうとした乗り換え可能性という目的を捨てることになり、
+  かつ本家と同じものを二重に保守する。*B5 のマージ前に作り直す*: B5 は既に 159 ファイルで
+  人間レビューが困難な大きさに達しており、乗り換えを足すと追えなくなる。**独立した Bolt** として
+  「本家に置き換えた」という一筋で読める差分にする（オーナー裁定 2026-08-26「次の Bolt でいい」）。
