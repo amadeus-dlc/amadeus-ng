@@ -70,6 +70,7 @@ mod tests {
         IntentId, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
     };
     use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
 
     fn intent() -> IntentId {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
@@ -78,7 +79,7 @@ mod tests {
     fn event(seq_nr: usize) -> WorkflowExecutionEvent {
         WorkflowExecutionEvent::new(
             intent(),
-            seq_nr,
+            NonZeroUsize::new(seq_nr).unwrap(),
             DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),

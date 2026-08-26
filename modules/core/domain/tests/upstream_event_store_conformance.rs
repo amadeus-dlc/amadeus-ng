@@ -27,6 +27,7 @@ use core_domain::workflow_definition::{
 use core_domain::workspace::CheckboxState;
 use event_store_adapter_rs::EventStoreForMemory;
 use event_store_adapter_rs::types::{Aggregate, Event, EventStore};
+use std::num::NonZeroUsize;
 
 /// 本家 memory バックエンドを我々の 3 つのドメイン型で具体化したストア。
 type Store = EventStoreForMemory<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
@@ -212,8 +213,8 @@ async fn the_journal_keeps_every_event_in_order_with_a_stable_identifier() {
     assert_eq!(
         events.iter().map(Event::id).collect::<Vec<_>>(),
         [
-            &WorkflowExecutionEventId::new(id.clone(), 1),
-            &WorkflowExecutionEventId::new(id.clone(), 2),
+            &WorkflowExecutionEventId::new(id.clone(), NonZeroUsize::new(1).unwrap()),
+            &WorkflowExecutionEventId::new(id.clone(), NonZeroUsize::new(2).unwrap()),
         ]
     );
     assert!(events.iter().all(|event| event.aggregate_id() == &id));

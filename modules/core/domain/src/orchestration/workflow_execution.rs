@@ -27,6 +27,7 @@
 //! (`tests/engine_loop_conformance.rs`) がモデルトレースを再生して射影を突き合わせる。
 
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
 
 use chrono::{DateTime, Utc};
 use event_store_adapter_rs::types::{Aggregate, Event};
@@ -209,7 +210,7 @@ impl WorkflowExecution {
         }
         let event = WorkflowExecutionEvent::new(
             intent_id.clone(),
-            1,
+            NonZeroUsize::MIN,
             occurred_at,
             WorkflowExecutionEventPayload::Started(Started::new(
                 definition_id.clone(),
@@ -444,7 +445,8 @@ impl WorkflowExecution {
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let event = WorkflowExecutionEvent::new(
             self.intent_id.clone(),
-            self.seq_nr + 1,
+            // seq_nr + 1 >= 1 を型で運ぶ (飽和加算なので panic も wrap もしない)。
+            NonZeroUsize::MIN.saturating_add(self.seq_nr),
             occurred_at,
             payload,
         );
@@ -1865,7 +1867,7 @@ mod tests {
         let mut w = all_exec(3);
         let event = WorkflowExecutionEvent::new(
             intent(),
-            9,
+            NonZeroUsize::new(9).unwrap(),
             occurred(),
             WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
                 slug(0),
@@ -1888,7 +1890,7 @@ mod tests {
         let unknown = StageSlug::parse("no-such-stage").unwrap();
         let event = WorkflowExecutionEvent::new(
             intent(),
-            2,
+            NonZeroUsize::new(2).unwrap(),
             occurred(),
             WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
                 unknown.clone(),
@@ -1908,7 +1910,7 @@ mod tests {
         // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
         let event = WorkflowExecutionEvent::new(
             intent(),
-            2,
+            NonZeroUsize::new(2).unwrap(),
             occurred(),
             WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
                 slug(1),
@@ -1927,7 +1929,7 @@ mod tests {
         let mut w = all_exec(3);
         let event = WorkflowExecutionEvent::new(
             intent(),
-            2,
+            NonZeroUsize::new(2).unwrap(),
             occurred(),
             WorkflowExecutionEventPayload::Started(Started::new(
                 def_id("claude"),

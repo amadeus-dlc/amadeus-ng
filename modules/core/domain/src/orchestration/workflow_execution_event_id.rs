@@ -1,6 +1,7 @@
 //! `WorkflowExecutionEventId` — ドメインイベントの識別子 (本家 `Event::ID`)。
 
 use std::fmt;
+use std::num::NonZeroUsize;
 
 use serde::{Deserialize, Serialize};
 
@@ -23,13 +24,18 @@ const SEPARATOR: char = '#';
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct WorkflowExecutionEventId {
     intent_id: IntentId,
-    seq_nr: usize,
+    // NonZeroUsize なので「seq_nr = 0 の識別子」は表現不能 (AVDM)。serde の復号も
+    // 型が 0 を拒否する — 検証コンストラクタを別立てしなくても両経路が塞がる。
+    seq_nr: NonZeroUsize,
 }
 
 impl WorkflowExecutionEventId {
     /// 集約識別子と集約内の順序番号から組み立てる (イベント生成時に封筒が採番する)。
+    ///
+    /// 順序番号は 1 始まり (BR2.1) なので `NonZeroUsize` で受ける — 0 の識別子は型レベルで
+    /// 構成できない。
     #[must_use]
-    pub const fn new(intent_id: IntentId, seq_nr: usize) -> WorkflowExecutionEventId {
+    pub const fn new(intent_id: IntentId, seq_nr: NonZeroUsize) -> WorkflowExecutionEventId {
         WorkflowExecutionEventId { intent_id, seq_nr }
     }
 
@@ -42,7 +48,7 @@ impl WorkflowExecutionEventId {
     /// 集約内で 1 から単調増加する順序番号 (適用後の集約 `seq_nr` と一致 — BR2.1)。
     #[must_use]
     pub const fn seq_nr(&self) -> usize {
-        self.seq_nr
+        self.seq_nr.get()
     }
 }
 
@@ -64,7 +70,7 @@ mod tests {
 
     #[test]
     fn the_identifier_is_the_aggregate_and_the_sequence_number() {
-        let id = WorkflowExecutionEventId::new(intent(), 7);
+        let id = WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(7).unwrap());
         assert_eq!(id.intent_id(), &intent());
         assert_eq!(id.seq_nr(), 7);
         assert_eq!(id.to_string(), format!("{SAMPLE}#7"));
@@ -73,18 +79,18 @@ mod tests {
     #[test]
     fn two_events_of_the_same_aggregate_differ_by_their_sequence_number() {
         assert_ne!(
-            WorkflowExecutionEventId::new(intent(), 1),
-            WorkflowExecutionEventId::new(intent(), 2)
+            WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(1).unwrap()),
+            WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(2).unwrap())
         );
         assert_eq!(
-            WorkflowExecutionEventId::new(intent(), 1),
-            WorkflowExecutionEventId::new(intent(), 1)
+            WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(1).unwrap()),
+            WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(1).unwrap())
         );
     }
 
     #[test]
     fn the_identifier_round_trips_through_serde() {
-        let id = WorkflowExecutionEventId::new(intent(), 3);
+        let id = WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(3).unwrap());
         // 本家 trait の serde 境界の往復確認であり、契約 JSON (BR1.7) の直列化経路では
         // ないため、canon-json を経ない素の serde_json を使う。
         #[allow(

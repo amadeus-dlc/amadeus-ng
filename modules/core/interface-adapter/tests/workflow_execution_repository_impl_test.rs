@@ -23,6 +23,7 @@ use core_domain::workspace::SpaceName;
 use core_interface_adapter::orchestration::{StorePath, WorkflowExecutionRepositoryImpl};
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::types::{Aggregate, EventStore};
+use std::num::NonZeroUsize;
 
 use core_use_case::orchestration::{CorruptCause, RepositoryError, WorkflowExecutionRepository};
 use rusqlite::Connection;
@@ -302,7 +303,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
     let mut store = fixture.store();
     let bogus = WorkflowExecutionEvent::new(
         intent_id(),
-        2,
+        NonZeroUsize::new(2).unwrap(),
         at(),
         WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").expect("文法内の slug"),

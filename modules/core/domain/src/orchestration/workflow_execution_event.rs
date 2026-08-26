@@ -12,6 +12,7 @@
 use chrono::{DateTime, Utc};
 use event_store_adapter_rs::types::Event;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroUsize;
 
 use super::autonomy_mode::AutonomyMode;
 use super::intent_id::IntentId;
@@ -44,7 +45,7 @@ impl WorkflowExecutionEvent {
     #[must_use]
     pub const fn new(
         intent_id: IntentId,
-        seq_nr: usize,
+        seq_nr: NonZeroUsize,
         occurred_at: DateTime<Utc>,
         payload: WorkflowExecutionEventPayload,
     ) -> WorkflowExecutionEvent {
@@ -584,7 +585,12 @@ mod tests {
     }
 
     fn envelope(payload: WorkflowExecutionEventPayload) -> WorkflowExecutionEvent {
-        WorkflowExecutionEvent::new(intent(), 3, at("2026-08-23T00:00:00Z"), payload)
+        WorkflowExecutionEvent::new(
+            intent(),
+            NonZeroUsize::new(3).unwrap(),
+            at("2026-08-23T00:00:00Z"),
+            payload,
+        )
     }
 
     #[test]
@@ -691,7 +697,10 @@ mod tests {
     fn the_event_identifier_is_the_aggregate_and_the_sequence_number() {
         // 採番は決定的 — 集約は時計も乱数も持たない (NFR3.1 / ADR-002)。
         let event = envelope(WorkflowExecutionEventPayload::Unparked);
-        assert_eq!(event.id(), &WorkflowExecutionEventId::new(intent(), 3));
+        assert_eq!(
+            event.id(),
+            &WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(3).unwrap())
+        );
         assert_eq!(
             event.id().to_string(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6#3"

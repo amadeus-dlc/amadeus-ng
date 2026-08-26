@@ -146,10 +146,9 @@ where
         event: &WorkflowExecutionEvent,
         aggregate: &WorkflowExecution,
     ) -> Result<(), RepositoryError> {
-        if event.aggregate_id() != aggregate.id()
-            || event.seq_nr() != aggregate.seq_nr()
-            || event.seq_nr() < FIRST_SEQ_NR
-        {
+        // seq_nr = 0 の封筒は `WorkflowExecutionEventId` の `NonZeroUsize` により
+        // 表現不能になった (B6 CodeRabbit #493) — 旧 `seq_nr() < FIRST_SEQ_NR` 分岐は削除。
+        if event.aggregate_id() != aggregate.id() || event.seq_nr() != aggregate.seq_nr() {
             return Err(RepositoryError::Corrupt {
                 aggregate_id: event.aggregate_id().clone(),
                 seq_nr: Some(event.seq_nr()),
@@ -302,10 +301,12 @@ where
 mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
+    use core_domain::orchestration::WorkflowExecutionEventId;
     use core_domain::orchestration::{StageEntry, StartRequest, WorkflowExecutionEventPayload};
     use core_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
+    use std::num::NonZeroUsize;
 
     const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
     const OTHER_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
@@ -366,7 +367,7 @@ mod tests {
         let (aggregate, event) = genesis();
         let foreign = WorkflowExecutionEvent::new(
             other_intent(),
-            event.seq_nr(),
+            NonZeroUsize::new(event.seq_nr()).unwrap(),
             at(),
             WorkflowExecutionEventPayload::Unparked,
         );
@@ -383,19 +384,19 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_below_the_first_one_fails_the_precondition() {
-        // `seq_nr` = 0 の封筒は「まだ 1 件も適用していない集約の写し」を名乗る — 書込経路
-        // からは決して生まれない (BR1.1)。
-        let (aggregate, _) = genesis();
-        let zero =
-            WorkflowExecutionEvent::new(intent(), 0, at(), WorkflowExecutionEventPayload::Unparked);
-        assert_eq!(
-            WorkflowExecutionRepositoryImpl::<MemoryStore>::check_preconditions(&zero, &aggregate),
-            Err(RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: Some(0),
-                cause: CorruptCause::SequenceGap,
-            })
+    fn a_zero_sequence_envelope_is_unrepresentable() {
+        // 旧テストは seq_nr = 0 の封筒を作って前提検査の拒否を確かめていたが、
+        // `NonZeroUsize` 化 (B6 CodeRabbit #493) で 0 の封筒は**構成不能**になった。
+        // 実行時検査は型に置き換わったので、ここでは復号経路が 0 を拒否することを固定する。
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
+        )]
+        let result: Result<WorkflowExecutionEventId, _> =
+            serde_json::from_str(&format!(r#"{{"intent_id":"{}","seq_nr":0}}"#, intent()));
+        assert!(
+            result.is_err(),
+            "seq_nr = 0 は型 (NonZeroUsize) が復号でも拒否する"
         );
     }
 

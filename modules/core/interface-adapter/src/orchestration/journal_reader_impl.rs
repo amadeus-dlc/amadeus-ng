@@ -34,12 +34,13 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
 use core_domain::orchestration::WorkflowExecutionEvent;
 use core_use_case::orchestration::{
     CorruptCause, GlobalSeqNr, JournalReadError, JournalReader, ProjectionName,
 };
+use event_store_adapter_rs::types::Event as _;
 
 use super::store_failure::io_kind;
 use super::store_path::StorePath;
@@ -59,7 +60,7 @@ const CREATE_CHECKPOINT_TABLE: &str = "CREATE TABLE IF NOT EXISTS amadeus_projec
 
 /// 全集約横断の差分読取 (`rowid` 昇順)。
 const SELECT_EVENTS_AFTER: &str =
-    "SELECT rowid, aid, payload FROM journal WHERE rowid > ?1 ORDER BY rowid";
+    "SELECT rowid, aid, seq_nr, payload FROM journal WHERE rowid > ?1 ORDER BY rowid";
 
 /// 投影のチェックポイント。
 const SELECT_CHECKPOINT: &str =
@@ -115,6 +116,7 @@ fn to_u64(value: i64, aggregate_id: &str) -> Result<u64, JournalReadError> {
 struct JournalRow {
     rowid: i64,
     aggregate_id: String,
+    seq_nr: i64,
     payload: Vec<u8>,
 }
 
@@ -154,8 +156,16 @@ impl JournalReaderImpl {
         path: &StorePath,
         busy_timeout: Duration,
     ) -> Result<JournalReaderImpl, JournalReadError> {
-        let connection = Connection::open(path.as_path())
-            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+        // 読取側の接続はストアファイルを**作らない** (SQLITE_OPEN_CREATE を外す)。
+        // 存在しないパスは空 DB を作って NotFound を返すのではなく、open 自体が失敗する
+        // (B6 CodeRabbit #511)。書込は checkpoint 表があるので READ_WRITE は残す。
+        let connection = Connection::open_with_flags(
+            path.as_path(),
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_URI
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         connection
             .busy_timeout(busy_timeout)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
@@ -216,13 +226,27 @@ fn table_exists(
     Ok(found.is_some())
 }
 
-/// ジャーナル行のペイロードをイベントへ復号する。
+/// ジャーナル行のペイロードをイベントへ復号し、**行の識別子と照合する**。
 ///
 /// 形式は**本家のシリアライザと同じ** — 既定の `JsonEventSerializer` は
 /// `serde_json::to_vec(event)` で書くので、読み側も素の serde で戻す。
+///
+/// 復号が通っても、payload が名乗る集約識別子・通番が journal 列と食い違う行は
+/// `Corrupt(InvariantViolation)` — 別集約・別通番のイベントを投影に流さない
+/// (B6 CodeRabbit #500)。
 fn decode_event(row: &JournalRow) -> Result<WorkflowExecutionEvent, JournalReadError> {
-    serde_json::from_slice::<WorkflowExecutionEvent>(&row.payload)
-        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))
+    let event = serde_json::from_slice::<WorkflowExecutionEvent>(&row.payload)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?;
+    let row_seq = usize::try_from(row.seq_nr)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
+    if event.aggregate_id().as_str() != row.aggregate_id || event.seq_nr() != row_seq {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
+    Ok(event)
 }
 
 impl JournalReader for JournalReaderImpl {
@@ -241,7 +265,8 @@ impl JournalReader for JournalReaderImpl {
                     Ok(JournalRow {
                         rowid: row.get::<_, i64>(0)?,
                         aggregate_id: row.get::<_, String>(1)?,
-                        payload: row.get::<_, Vec<u8>>(2)?,
+                        seq_nr: row.get::<_, i64>(2)?,
+                        payload: row.get::<_, Vec<u8>>(3)?,
                     })
                 })
                 .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
@@ -311,6 +336,7 @@ mod tests {
     const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
     use core_domain::workspace::SpaceName;
     use event_store_adapter_rs::EventStoreForSqlite;
+    use std::num::NonZeroUsize;
 
     /// 本家の SQLite ストア (この型の結合先)。
     type UpstreamStore = EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
@@ -692,9 +718,83 @@ mod tests {
     }
 
     #[test]
+    fn a_row_whose_payload_names_another_aggregate_is_corrupt() {
+        // 復号は通るが、payload の名乗る集約が journal 列の aid と食い違う行 —
+        // 別集約のイベントを投影へ流さない (B6 CodeRabbit #500)。
+        let event = WorkflowExecutionEvent::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            NonZeroUsize::MIN,
+            chrono::DateTime::parse_from_rfc3339("2026-08-27T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
+        );
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
+        )]
+        let payload = serde_json::to_vec(&event).unwrap();
+        let row = JournalRow {
+            rowid: 1,
+            seq_nr: 1,
+            aggregate_id: "018f3b2c-4d5e-7f60-8abc-def012345678".to_string(),
+            payload,
+        };
+        assert_eq!(
+            decode_event(&row).expect_err("照合で落ちる"),
+            JournalReadError::Corrupt {
+                aggregate_id: "018f3b2c-4d5e-7f60-8abc-def012345678".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+        // 通番の食い違いも同じ照合で落ちる。
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
+        )]
+        let payload2 = serde_json::to_vec(&event).unwrap();
+        let skewed = JournalRow {
+            rowid: 2,
+            seq_nr: 9,
+            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+            payload: payload2,
+        };
+        assert_eq!(
+            decode_event(&skewed).expect_err("通番不一致"),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(9),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    #[test]
+    fn opening_a_missing_store_does_not_create_the_file() {
+        // 読取側の接続はストアファイルを作らない (B6 CodeRabbit #511)。
+        let dir = tempfile::tempdir().unwrap();
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
+        std::fs::create_dir_all(path.as_path().parent().unwrap()).unwrap();
+        let error = JournalReaderImpl::open(&path).expect_err("無いストアは開けない");
+        assert!(
+            matches!(
+                error,
+                JournalReadError::Io {
+                    kind: ErrorKind::NotFound,
+                    ..
+                }
+            ),
+            "NotFound で失敗する: {error:?}"
+        );
+        assert!(!path.as_path().exists(), "空の SQLite ファイルを作らない");
+    }
+
+    #[test]
     fn a_payload_that_is_not_an_event_is_corrupt() {
         let row = JournalRow {
             rowid: 1,
+            seq_nr: 1,
             aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
             payload: b"{not json".to_vec(),
         };

@@ -14,6 +14,7 @@ use core_domain::orchestration::{
     AutonomyMode, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
 };
 use event_store_adapter_rs::types::{Aggregate, Event};
+use std::num::NonZeroUsize;
 
 use core_use_case::orchestration::{CorruptCause, RepositoryError, WorkflowExecutionRepository};
 
@@ -236,7 +237,7 @@ pub(crate) async fn a_sequence_that_disagrees_with_the_aggregate_is_refused<F: S
     let (aggregate, _) = genesis();
     let skewed = WorkflowExecutionEvent::new(
         intent_id(),
-        aggregate.seq_nr() + 1,
+        NonZeroUsize::MIN.saturating_add(aggregate.seq_nr()),
         at(),
         WorkflowExecutionEventPayload::Unparked,
     );
@@ -260,7 +261,7 @@ pub(crate) async fn mismatched_identity_is_refused<F: StoreFixture>(fixture: &F)
     let (aggregate, event) = genesis();
     let foreign = WorkflowExecutionEvent::new(
         absent_intent_id(),
-        event.seq_nr(),
+        NonZeroUsize::new(event.seq_nr()).unwrap(),
         at(),
         WorkflowExecutionEventPayload::Unparked,
     );
