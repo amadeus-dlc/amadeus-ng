@@ -10,6 +10,10 @@
 
 インターフェイスアダプタ層の Gateway が担うのは次の 2 種類に限る。
 
+> **追加 2026-08-24**: ADR-001（ES 採用）以降、第三の責務 **永続化基盤ポート**が存在する
+> （下記 §1c）。「2 種類に限る」は**ドメインの Gateway について**の話であり、ES 基盤は
+> その下請けである。
+
 | 責務 | 中身 | 対応するポート |
 | --- | --- | --- |
 | **Repository** | 集約の永続化・再構成 | `XxxRepository`（`Xxx` = 集約名） |
@@ -56,9 +60,34 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 媒体名を冠すると、格納形式の変更（ファイル → SQLite → リモート）がポート名の変更に波及し、ユースケース層が永続化の都合を知ってしまう。
 
+### 1c. 第三の責務 — 永続化基盤ポート（2026-08-24 追加）
+
+ADR-001 でイベントソーシングを採用した結果、Repository でも外部システムクライアントでもない
+ポートが実在する。**Repository の下請けとして、ジャーナル・スナップショット・投影チェック
+ポイントを扱う基盤**である。
+
+| 責務 | 中身 | 対応するポート | 実在 |
+| --- | --- | --- | --- |
+| **永続化基盤ポート** | ES のジャーナル追記・スナップショット・投影チェックポイント | `EventStore` / `JournalReader` | `use-case/src/orchestration/{event_store,journal_reader}.rs` |
+
+**語彙は本家ライブラリ（event-store-adapter-rs）に従う。** §2b の Repository 動詞規則
+（`load` / `get` / `fetch` を使わない）は **Repository 限定**であり、このポートには及ばない
+— 実在の `get_latest_snapshot_by_id` / `get_events_by_id_since_seq_nr` は本家の語彙であって
+違反ではない（[ubiquitous-language.md](ubiquitous-language.md) の Published Language）。
+
+集約の永続化を担うのは `WorkflowExecutionRepository` であり、`EventStore` はその下請けである。
+**ユースケースが `EventStore` を直接注入されることはない**（するなら Repository の意味が消える）。
+
 ### 3. ポート造語（Store / Reader / Writer / Source / Provider）は禁止
 
 `XxxStore` / `XxxReader` / `XxxWriter` は DDD の語彙ではない。「読むだけの Gateway だから Reader」という命名は、**Repository の一部の操作にポートを 1 つずつ立てる**ことになり、集約単位のトランザクション境界を name の上で解体する。読取専用の集約（本システムから書き換えない `WorkflowDefinition` のような Published Language 成果物）は、`save` を持たない Repository として表現すればよい。
+
+**明示的な例外（2026-08-24）**: **§1c の永続化基盤ポート `EventStore` / `JournalReader` は本禁止の対象外**である。
+理由は 2 つ。(a) これらは Repository ではないので「Repository の操作を分割した」という本禁止の
+根拠が当てはまらない。(b) 名前が本家 event-store-adapter-rs の Published Language であり、
+ドメイン語へ言い換えると対応が読めなくなる（[ubiquitous-language.md](ubiquitous-language.md)）。
+**例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
+機械化する場合も、この 2 本を除外リストに持つ実装にすること。
 
 ### 4. 読取専用ユースケースは型で保証する
 

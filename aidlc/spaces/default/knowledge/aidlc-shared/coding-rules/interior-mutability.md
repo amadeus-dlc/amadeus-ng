@@ -134,7 +134,7 @@ pub struct XyzShared {
 優先順は 型（E1）→ 既存 lint → `cargo lint` カスタムルール（README の方針）。
 
 1. `pub fn` / trait メソッドの本体で、レシーバが `&self` かつ `RefCell::borrow_mut` /
-   `Cell::set` / `Cell::replace` を呼ぶものを検出する（例外を許すため `#[allow]` + 理由コメントを要求）。
+   `Cell::set` / `Cell::replace` を呼ぶものを検出する（例外は `// amadeus-lint: allow(<rule>) <理由>` — 抑制構文はリポジトリ共通のこれ 1 つ）。
 2. 構造体フィールドに `Rc<RefCell<_>>` / `Arc<Mutex<_>>` / `Arc<RwLock<_>>` が直接現れるものを検出し、
    `*Shared` 型の定義内であることを条件に許可する。
 3. どちらも赤例テストを添える（README の DoD）。

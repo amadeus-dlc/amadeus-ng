@@ -5,6 +5,26 @@
 各ルールには裁定日・適用例（PR）・機械強制の有無（`cargo lint` ルール / clippy / 型）を記す。**設計の前提はまずスキル正典から** — 設計・命名・配置を自分で考える前に、インストール済みの j5ik2o-* 設計スキル（software-design プラグイン約 29 本。`j5ik2o-ddd-repository-design` / `-repository-placement` / `-custom-linter-creator` 等）を列挙し、該当スキルの SKILL.md と references/ を**先に**読む。前提はスキルに書いてある（実例: Reader 造語と `load` メソッドはどちらもスキル未読のまま設計して差し戻された）。**オーナーの指摘（裁定）は可能な限り機械的な強制へ落とし込む** — 優先順は 型（E1）→ 既存 lint（clippy / rustc）→ `cargo lint` カスタムルール。カスタムルールは検出力を証明する赤例テストが必須（Quint ゲートと同じ DoD）。仕様（upstream 互換の観測可能契約）は `docs/specs/` が正本であり、ここに置くのは**書き方のルール**である。
 
 
+## 規則が衝突したら（優先順）
+
+規則が 13 本になり、全文を頭に入れて衝突を裁定する前提は成立しない。**読み替えて進まず、
+その場で正本を直す**（`project.md` Corrections「上流成果物の矛盾は読み替えず裁定を求める」）。
+どちらが正かは次の順で決める。
+
+1. **観測互換**（`docs/specs/` の upstream 契約）— これだけは設計規則より上。
+   Published Language の逐語は常に勝つ。
+2. **「例外を認めない」と明記した規則** — 現在は [field-visibility.md](field-visibility.md) のみ
+   （ただし「例外なし」は**射程の中で**の話。射程外＝対象外は各規則の §射程 / §対象外 を見る）。
+3. **土台の「目的」** — [abstract-data-type.md](abstract-data-type.md) の目的（**呼び手が表現を
+   知らずに済むこと**）。派生規則の文面がこの目的を裏切るなら、派生規則の文面が誤りである。
+   **文面ではなく目的が勝つ** — 土台の文面を優先すると派生規則の運用が止まる場面があるため。
+4. **各規則の本文** — 裁定日ヘッダで比較し、新しいほうが勝つ。
+5. **表・語彙の既定**（[factory-naming.md](factory-naming.md) の対応表など）— 最も弱い。
+   より正確なドメイン語があればそちらが勝つ、と規則自身が既に書いている。
+
+**衝突の実例と是正は [CONSISTENCY-AUDIT-2026-08-24.md](CONSISTENCY-AUDIT-2026-08-24.md)。**
+2026-08-24 の監査で Critical 3・Major 8・Minor 6 が出た。Critical 3 は是正済み。
+
 **土台は [abstract-data-type.md](abstract-data-type.md)** — AVDM / DP は抽象データ型であり、
 操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。
 field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiquitous-language は
@@ -16,6 +36,8 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 
 | ルール | 一言 | 機械強制 |
 | --- | --- | --- |
+| [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod` | 部分的（`cargo lint` の no-public-fields ほか） |
+| [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
 | [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ。**アクセサを `value()`/`inner()`/`raw()` と名乗って内部型を意識させない**（2026-08-24 追記） | `cargo lint`（checkbox-vocabulary） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |
