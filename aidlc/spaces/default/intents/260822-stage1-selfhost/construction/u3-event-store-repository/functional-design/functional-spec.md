@@ -87,15 +87,17 @@
 > Tx も持たない。競合は本家が `OptimisticLockError` で返し、我々が `Conflict { expected, actual }` へ
 > 写す（`actual` は競合時のみ `get_latest_snapshot_by_id` の読み直しで得る）。
 
-1. 前提検査: `event.intent_id() == aggregate.intent_id()`、`event.seq_nr() == aggregate.seq_nr()`、`event.seq_nr() >= 1`、`aggregate.version() == event.seq_nr() - 1`
+**（以下 1〜5 は失効した自前 SQL 手順の履歴記録 — 上記バナー参照。現行手順はバナー内の①②③）**
+
+1. ~~前提検査: `event.intent_id() == aggregate.intent_id()`、`event.seq_nr() == aggregate.seq_nr()`、`event.seq_nr() >= 1`、`aggregate.version() == event.seq_nr() - 1`
    （違えば `Corrupt(SequenceGap)` — 呼出側のバグ）。`expected = aggregate.version()`（find_by_id が `with_version` で載せた「永続化済みの最後の seq_nr」。
-   `apply_event` は version を変えない — B3 実装契約）、`new_version = event.seq_nr()`。genesis は expected 0 / new_version 1。
-2. `BEGIN IMMEDIATE`。
-3. `INSERT INTO journal(aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at)`。UNIQUE 違反 → rollback、`Conflict { expected, actual: 現在 version }`。
-4. `expected == 0` → `INSERT INTO snapshot(aggregate_id, version = new_version, seq_nr = new_version, schema_version, payload, updated_at)`（既存行があれば rollback + Conflict）。
+   `apply_event` は version を変えない — B3 実装契約）、`new_version = event.seq_nr()`。genesis は expected 0 / new_version 1。~~
+2. ~~`BEGIN IMMEDIATE`。~~
+3. ~~`INSERT INTO journal(aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at)`。UNIQUE 違反 → rollback、`Conflict { expected, actual: 現在 version }`。~~
+4. ~~`expected == 0` → `INSERT INTO snapshot(aggregate_id, version = new_version, seq_nr = new_version, schema_version, payload, updated_at)`（既存行があれば rollback + Conflict）。
    それ以外 → `UPDATE snapshot SET version = new_version, seq_nr = new_version, payload = ?, updated_at = ? WHERE aggregate_id = ? AND version = expected`。影響 0 行 →
-   `SELECT version` で actual を読み rollback + `Conflict { expected, actual }`。
-5. `COMMIT`。Io 失敗は `Io { kind, path }`。
+   `SELECT version` で actual を読み rollback + `Conflict { expected, actual }`。~~
+5. ~~`COMMIT`。Io 失敗は `Io { kind, path }`。~~
 
 ### 3.2 find_by_id（BR1.2）
 
@@ -110,12 +112,14 @@
 > スナップショット payload の復号も **serde がメメント（`WorkflowExecutionState`）を経由する**ので、
 > `from_state()` の不変条件検査を必ず通る（オーナー裁定 2026-08-27）。ステップ 4（集約を返す）は不変。
 
-1. `SELECT version, seq_nr, schema_version, payload FROM snapshot WHERE aggregate_id = ?`。無ければ journal を数え、0 なら `NotFound { intent_id }`、1 以上なら
-   `Corrupt(MissingSnapshot)`。
-2. StateWire を復号（schema_version 検査）→ `WorkflowExecution::from_state(state)`（Err → `Corrupt(InvariantViolation)`）→ `with_version(snapshot.version)`。
-3. `SELECT … FROM journal WHERE aggregate_id = ? AND seq_nr > snapshot.seq_nr ORDER BY seq_nr` を復号して順に `apply_event`（Err → `Corrupt(SequenceGap | InvariantViolation)`）。
+**（以下 1〜3 は失効した自前 SQL 手順・`with_version` の履歴記録 — 上記バナー参照。ステップ 4 のみ現行）**
+
+1. ~~`SELECT version, seq_nr, schema_version, payload FROM snapshot WHERE aggregate_id = ?`。無ければ journal を数え、0 なら `NotFound { intent_id }`、1 以上なら
+   `Corrupt(MissingSnapshot)`。~~
+2. ~~StateWire を復号（schema_version 検査）→ `WorkflowExecution::from_state(state)`（Err → `Corrupt(InvariantViolation)`）→ `with_version(snapshot.version)`。~~
+3. ~~`SELECT … FROM journal WHERE aggregate_id = ? AND seq_nr > snapshot.seq_nr ORDER BY seq_nr` を復号して順に `apply_event`（Err → `Corrupt(SequenceGap | InvariantViolation)`）。
    replay ループ終了後、Repository が明示的に `with_version(最後に適用した seq_nr)` を載せる（`apply_event` は version を変えない）。通常運転では 0 件
-   （スナップショットは毎 store 更新）。
+   （スナップショットは毎 store 更新）。~~
 4. 集約を返す。
 
 ### 3.3 投影の差分読取（BR1.4、利用は U4）
@@ -176,7 +180,7 @@
 | `Started` | `definition_id: string`, `definition_revision: string`, `scope: string`, `request: string`, `depth: string \| null`, `test_strategy: string \| null`, `stages: [{slug, phase, plan_action, conditional}]` |
 | `StageCompleted` | `stage: string`, `next_stage: string \| null` |
 | `GateOpened` | `stage: string`, `artifacts: [string]` |
-| `GateApproved` | `stage: string`, `user_input: string \| null`, `next_stage: string \| null`, `phase_boundary: string \| null` |
+| `GateApproved` | `stage: string`, `user_input: string \| null`, `next_stage: string \| null`, `phase_boundary: {from_phase: string, to_phase: string} \| null`（2026-08-27 訂正: pending-revision.md 項目 3 の裁定どおりの入れ子形に統一。実装 `PhaseBoundary { from_phase, to_phase }` の既定 serde 表現とも一致 — 新しい設計判断ではなく既存裁定への追従） |
 | `GateRejected` | `stage: string`, `feedback: string \| null`, `revision_count: u32` |
 | `StageRevised` / `StageSkipped` / `Parked` | `stage: string`（StageSkipped は `reason: string`, `next_stage: string \| null` も） |
 | `Jumped` | `direction: string`, `source: string`, `target: string`, `stages_reset: [string]`, `stages_skipped: [string]` |

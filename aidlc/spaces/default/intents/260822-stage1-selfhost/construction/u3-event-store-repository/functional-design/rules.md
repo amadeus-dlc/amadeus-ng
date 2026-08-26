@@ -44,7 +44,7 @@ rules:
     category: validation
     applies_to: [WorkflowExecutionRepository, EventStore]
     trigger: "store"
-    logic: "前提検査: event.intent_id == aggregate.intent_id、event.seq_nr == aggregate.seq_nr、event.seq_nr ≥ 1、aggregate.version() == event.seq_nr − 1（不一致は Corrupt(SequenceGap) — 呼出側バグ）。expected = aggregate.version()。Tx 内: journal INSERT; expected == 0 なら snapshot INSERT（既存行があれば Conflict）、それ以外は snapshot UPDATE … SET version = event.seq_nr … WHERE version = expected（影響 0 行なら actual を読んで Conflict）"
+    logic: "【2026-08-27 訂正 / ADR-010】前提検査は identity 一致（event.intent_id == aggregate.intent_id）・event.seq_nr == aggregate.seq_nr・event.seq_nr ≥ 1 の 3 点のみ（~~aggregate.version() == event.seq_nr − 1 の検査~~ は statement のとおり削除済み — 本行が旧手順のまま残っていたのを是正）。expected = aggregate.version()（ストアが前回載せた不透明トークン、genesis は Gateway が写しに載せる FIRST_STORED_VERSION）。Tx 内の journal INSERT / snapshot INSERT-or-UPDATE / CAS 判定は**すべて本家 persist_event_and_snapshot の内部**で行われ、我々は 1 回呼ぶだけ（影響 0 行時の actual 読み直しも本家がエラーで返した後に get_latest_snapshot_by_id で我々が行う）"
     violation: "競合テスト（2 つの再水和 → 片方 store → もう片方 store が Conflict）で検出"
     source: "FR1.2, C3, C6 制約 (1)(2), ADR-007, P3"
   - id: BR1.4
@@ -78,7 +78,7 @@ rules:
     category: policy
     applies_to: ["【失効】EventStoreImpl", JournalReaderImpl]   # 2026-08-27: 表を作るのは本家と JournalReaderImpl（ADR-010）
     trigger: "初期化"
-    logic: "DDL を定数として埋め込み、テストで C6 のテーブル・列名・型・制約と突合（PRAGMA table_info）"
+    logic: "【2026-08-27 訂正 / ADR-010】statement のとおり我々は DDL を発行しない（本行が旧手順「DDL を定数として埋め込み」のまま残っていたのを是正）。スキーマガードテストが `sqlite_master`（`sql` 列）から本家 `journal` テーブルと一意索引 `journal_aid_seq_nr_idx` の DDL を実測し、ピン留めした期待値と逐語比較する（`PRAGMA table_info` ではない）。`amadeus_projection_checkpoint` は我々が `CREATE TABLE IF NOT EXISTS` で冪等に作る"
     violation: "C6 との乖離はレビューで差し戻し（contract-summary を改訂するなら契約改訂として記録）"
     source: "C6"
   - id: BR2.3
@@ -86,8 +86,8 @@ rules:
     category: validation
     applies_to: ["【失効】EventStoreImpl"]   # 2026-08-27: Tx 手順は本家の内部（ADR-010）
     trigger: "store"
-    logic: "rusqlite の Transaction（drop で rollback）を使い、成功経路だけ commit"
-    violation: "同時 2 接続テスト（busy_timeout 内に直列化）と Conflict テストで検出"
+    logic: "【2026-08-27 訂正 / ADR-010】statement のとおり Tx はすべて本家の内部（我々は rusqlite の Transaction を直接扱わない）。本行が旧手順「rusqlite の Transaction … 成功経路だけ commit」のまま残っていたのを是正。`JournalReaderImpl` の別接続は登録簿ではなく横断読取専用で、Tx は張らない"
+    violation: "Conflict テスト（2 つの再水和 → 片方 store → もう片方 store が Conflict）で検出。~~同時 2 接続テスト（busy_timeout 内に直列化）~~ → 失効: 本家の接続には busy_timeout を設定できず（BR2.1）、並行書込の直列化は保証されない。単一プロセス前提の現状は受容し U7 の並行モデルと併せて再裁定する"
     source: "FR1.2, C6 制約 (1), ADR-007, Q3 = A"
   - id: BR2.4
     status: superseded (2026-08-27 / ADR-010) — 代替は未定、U7 で裁定する
@@ -240,7 +240,7 @@ rules:
 | BR3.2 | policy | ロック dir を生成しない | deviations # 4 |
 | BR3.3 | validation | journal_protocol.qnt のモデル仕様 | Q4 = A / ADR 0003 |
 | BR3.4 | validation | Quint DoD と quint-gate の置換 | ADR 0003 |
-| BR3.5 | validation | ITF 準拠（InMemory + フェイク投影） | FR1.2 / NFR3 |
+| BR3.5 | validation | ITF 準拠（~~InMemory~~ → `WorkflowExecutionRepositoryImpl` + `JournalReaderImpl`、2026-08-27 / ADR-010 + フェイク投影） | FR1.2 / NFR3 |
 | BR4.1 | policy | IntentId = UUIDv7 | U2 pending 8 |
 | BR4.2 | policy | IntentDirName 新設 | 11 号 §2.2 |
 | BR4.3 | policy | Snapshot → State 改名（型・メソッド・ファイル） | U2 pending 9 |

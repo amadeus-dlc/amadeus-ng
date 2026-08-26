@@ -67,6 +67,12 @@
 **引き続き有効**: 項目 1（`## Review` の扱い）、項目 2（`IntentDirName` の正規表現）、
 項目 3（`GateApproved.phase_boundary` のワイヤ形 — ドメイン型の serde 表現として今も有効）。
 
+**2026-08-27 追記**: 項目 3 の裁定（`{from_phase: string, to_phase: string} | null` の入れ子形）が
+`functional-spec.md` §4.1 のワイヤ表に未反映のまま `phase_boundary: string | null` と書かれていた
+食い違いを解消した（同ファイル §4.1 を入れ子形に訂正 — 新しい設計判断ではなく本項目の裁定への追従。
+実装 `PhaseBoundary { from_phase, to_phase }`（`#[derive(Serialize, Deserialize)]` の既定表現）とも
+一致することを確認済み）。
+
 ### B6 で新たに生じた申し送り（正本への追記候補）
 
 1. **BR1.7 の射程**: 「契約 JSON（canon-json）」はストアの payload を含まない — 本家が

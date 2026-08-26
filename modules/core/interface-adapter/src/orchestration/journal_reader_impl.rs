@@ -246,6 +246,15 @@ fn decode_event(row: &JournalRow) -> Result<WorkflowExecutionEvent, JournalReadE
             CorruptCause::InvariantViolation,
         ));
     }
+    // 対応外の schema_version は「解釈できない payload」— 予約フィールドの検査経路を
+    // 復元する (B6 CodeRabbit #466 が発見した実装ギャップ。C5 の宣言どおり拒否する)。
+    if event.schema_version() != WorkflowExecutionEvent::SCHEMA_VERSION {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::UndecodablePayload,
+        ));
+    }
     Ok(event)
 }
 
@@ -788,6 +797,40 @@ mod tests {
             "NotFound で失敗する: {error:?}"
         );
         assert!(!path.as_path().exists(), "空の SQLite ファイルを作らない");
+    }
+
+    #[test]
+    fn a_payload_with_an_unsupported_schema_version_is_corrupt() {
+        // C5 の宣言どおり、対応外の schema_version は復号成功でも拒否する (#466)。
+        let event = WorkflowExecutionEvent::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            NonZeroUsize::MIN,
+            chrono::DateTime::parse_from_rfc3339("2026-08-27T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
+        );
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&event).unwrap();
+        let tampered = json.replace("\"schema_version\":1", "\"schema_version\":99");
+        assert_ne!(json, tampered, "書き換えが効いている");
+        let row = JournalRow {
+            rowid: 1,
+            seq_nr: 1,
+            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+            payload: tampered.into_bytes(),
+        };
+        assert_eq!(
+            decode_event(&row).expect_err("対応外の版"),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::UndecodablePayload,
+            }
+        );
     }
 
     #[test]

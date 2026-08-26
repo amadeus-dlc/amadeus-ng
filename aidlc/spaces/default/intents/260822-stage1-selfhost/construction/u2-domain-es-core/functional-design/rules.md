@@ -218,7 +218,7 @@ rules:
     category: constraint
     applies_to: [WorkflowExecution]
     trigger: "store / replay"
-    logic: "Conflict 判定はストア（event-store-adapter-rs）の責務。ドメイン・Repository は version を前提条件に使わない（旧 statement の with_version(version + 1) と『version = 最後の seq_nr』は自前ストア時代の採番規則がドメイン契約へ漏れたもので、ADR-010 の Conformist 化で撤回。with_version は B6 委任 1 で削除済み）"
+    logic: "Conflict 判定はストア（event-store-adapter-rs）の責務。ドメインは version を解釈も比較もしない。Repository（`WorkflowExecutionRepositoryImpl::store`）は `aggregate.version()` を解釈せずそのまま本家 `persist_event_and_snapshot` へ CAS の期待値として渡す（値の意味を判断するのはストア側）。genesis（`Event::is_created()` が真）だけは Gateway がストアへ渡す写しにのみ初期値 `FIRST_STORED_VERSION = 1` を載せる（呼出側の集約は動かない — 2026-08-27 訂正: 前バージョンの本行は『Repository は version を前提条件に使わない』としていたが、Repository は CAS 期待値として version を使っており誤りだった）。旧 statement の with_version(version + 1) と『version = 最後の seq_nr』は自前ストア時代の採番規則がドメイン契約へ漏れたもので、ADR-010 の Conformist 化で撤回。with_version は B6 委任 1 で削除済み"
     violation: "該当なし"
     source: "ADR-004, C3, C6 snapshot.version"
   - id: BR5.4

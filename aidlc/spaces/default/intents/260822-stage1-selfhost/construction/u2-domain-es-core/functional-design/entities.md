@@ -57,7 +57,7 @@ entities:
       - { name: conditional, type: boolean, required: true, constraints: "同じ文書順の graph().nodes()[i].execution() = CONDITIONAL（stages_in_scope は execution を返さない）。initialization ステージは必ず false" }
 
   - name: WorkflowExecution
-    description: "集約ルート = エンジン FSM（ADR-002）。状態としてのデータ・状態遷移（decide / apply）・判断（next_decision 等のクエリ）を 1 型に閉じ込める。I/O なし・純粋・同期。serde に依存しない（P5）"
+    description: "集約ルート = エンジン FSM（ADR-002）。状態としてのデータ・状態遷移（decide / apply）・判断（next_decision 等のクエリ）を 1 型に閉じ込める。I/O なし・純粋・同期。~~serde に依存しない（P5）~~ → **失効**: 2026-08-27 / ADR-010 で本家 `Aggregate` trait が serde 境界を要求するため `Serialize`/`Deserialize` を derive する（`#[serde(into/try_from)]` で memento を経由、下記 constraints 参照）"
     attributes:
       - { name: intent_id, type: IntentId, required: true, unique: true }
       - { name: definition_id, type: WorkflowDefinitionId, required: true, constraints: "集約間の間接参照（ID のみ保持、WorkflowDefinition のオブジェクトは保持しない）。Started で確定し以後不変（start は記録のみ）。next_decision に渡される &WorkflowDefinition の id と一致しなければ Err(CommandError::DefinitionMismatch) — BR2.6" }
@@ -117,8 +117,8 @@ entities:
     constraints:
       - "イベントは構築後不変。材料はアクセサで公開（~~serde なし — JSON 化は U3 のワイヤ構造体~~ → **失効**: 2026-08-27 / ADR-010 で本家 `Event` trait が serde 境界を要求するため derive する。ストアの payload は本家が書き、**それは契約 JSON ではない**）"
 
-  - name: WorkflowExecutionSnapshot
-    description: "集約の全状態の値オブジェクト（C6 snapshot 行の論理形）。集約 → `snapshot()`、集約 ← `from_snapshot(...)`。~~serde なし~~ → **2026-08-27 改訂**: 型名は Bolt B5 で `WorkflowExecutionState`（`state()` / `from_state()` / `StateError` / `WorkflowExecutionStateBuilder`）へ改名済み。**serde を持つ**が、集約の serde がこの写しを経由する（`#[serde(into/try_from)]`）ので、**復号側の検査点は `from_state()` の 1 か所のまま**（ADR-010 / オーナー裁定 2026-08-27）"
+  - name: WorkflowExecutionState
+    description: "集約の全状態の値オブジェクト（C6 snapshot 行の論理形）。集約 → `snapshot()`、集約 ← `from_snapshot(...)`。~~serde なし~~ → **2026-08-27 改訂**: 型名は Bolt B5 で `WorkflowExecutionSnapshot` から `WorkflowExecutionState`（`state()` / `from_state()` / `StateError` / `WorkflowExecutionStateBuilder`）へ改名済み（**2026-08-27: 正本のエンティティ名もここで追従**）。**serde を持つ**が、集約の serde がこの写しを経由する（`#[serde(into/try_from)]`）ので、**復号側の検査点は `from_state()` の 1 か所のまま**（ADR-010 / オーナー裁定 2026-08-27）"
     attributes:
       - { name: state, type: record, required: true, constraints: "WorkflowExecution の全属性（intent_id / definition_id / definition_revision / stages（StageEntry 列）/ plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy / approved / revision_count / seq_nr / version ~~の 16 属性~~ → **+ last_updated_at の 17 属性**、2026-08-27 / ADR-010）をそのまま持つ。構築は公開ビルダー（引数 17 個を避ける house style）" }
     constraints:
@@ -146,7 +146,7 @@ entities:
 
 relationships:
   - { from: WorkflowExecutionEvent, to: WorkflowExecution, cardinality: "many-to-one", description: "集約 1 つのイベント列。seq_nr 順に apply すると集約が再構成される" }
-  - { from: WorkflowExecutionSnapshot, to: WorkflowExecution, cardinality: "one-to-one", description: "ある seq_nr 時点の全状態" }
+  - { from: WorkflowExecutionState, to: WorkflowExecution, cardinality: "one-to-one", description: "ある seq_nr 時点の全状態" }
   - { from: WorkflowExecution, to: StageIndex, cardinality: "one-to-many", description: "cursor / parked_at / イベントのステージ参照はすべて StageIndex" }
   - { from: WorkflowExecutionEvent, to: StageEntry, cardinality: "one-to-many", description: "kind = Started のペイロードが解決済み計画（slug / plan_action / conditional）の列を持つ" }
 ```
@@ -159,7 +159,7 @@ relationships:
   （`WorkflowExecutionEventId` = intent_id + seq_nr、2026-08-27 / ADR-010 で新設した Domain Primitive）** /
   schema_version / occurred_at）+ 変種ごとのペイロード。`Started` は解決済み計画（StageEntry 列）を自己完結で持つ。
 - **StageIndex** が `usize` を置き換え、範囲不変条件を型で守る（Q2 = A）。**IntentId** が集約識別子。
-- **WorkflowExecutionSnapshot**（B5 で `WorkflowExecutionState` へ改名）と **NextDecision / NextRequest** は値オブジェクト。
+- **WorkflowExecutionState**（旧 `WorkflowExecutionSnapshot`、B5 で改名。2026-08-27: 正本のエンティティ名も追従）と **NextDecision / NextRequest** は値オブジェクト。
   ~~serde はドメインに入れない。~~ → **失効（2026-08-27 / ADR-010・Bolt B6）**: 集約・ドメインイベント・集約識別子は
   serde を持つ（本家 trait の境界要求）。ただし集約の復号は memento を経由するので検査点は 1 か所のまま。
 - **PlanAction** は workflow_definition へ完全移動（再輸出なし）。

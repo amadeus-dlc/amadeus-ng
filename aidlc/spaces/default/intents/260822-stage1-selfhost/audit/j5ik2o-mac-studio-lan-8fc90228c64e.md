@@ -20137,3 +20137,1207 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 書きました。`/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/doc-sync-report.md`\n\n- **14 ファイル同期**（605 追加 / 223 削除）。developer-r
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-26T16:44:01Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:49:15Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3ed8af3c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:15Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3ed8af3c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: aad81519
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:15Z
+**Event**: SENSOR_PASSED
+**Fire id**: aad81519
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 22
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:49:24Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: e21ce352
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: e21ce352
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: a3aa9d5d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: a3aa9d5d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:49:28Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: ac3ad336
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: ac3ad336
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: d36c5965
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: d36c5965
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:49:33Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:33Z
+**Event**: SENSOR_FIRED
+**Fire id**: f6af26f2
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:33Z
+**Event**: SENSOR_PASSED
+**Fire id**: f6af26f2
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:49:33Z
+**Event**: SENSOR_FIRED
+**Fire id**: 50524563
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:49:33Z
+**Event**: SENSOR_PASSED
+**Fire id**: 50524563
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Duration ms**: 20
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:50:00Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Context**: construction > u2-domain-es-core > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:50:00Z
+**Event**: SENSOR_FIRED
+**Fire id**: 31cfc0c8
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:50:00Z
+**Event**: SENSOR_PASSED
+**Fire id**: 31cfc0c8
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:50:00Z
+**Event**: SENSOR_FIRED
+**Fire id**: 53ff20ac
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:50:00Z
+**Event**: SENSOR_PASSED
+**Fire id**: 53ff20ac
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Duration ms**: 20
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:50:04Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Context**: construction > u2-domain-es-core > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:50:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: bcd8480f
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:50:04Z
+**Event**: SENSOR_PASSED
+**Fire id**: bcd8480f
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:50:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: b757f28b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:50:04Z
+**Event**: SENSOR_PASSED
+**Fire id**: b757f28b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:50:43Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Context**: construction > u2-domain-es-core > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:50:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: f2640606
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:50:43Z
+**Event**: SENSOR_PASSED
+**Fire id**: f2640606
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:50:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: c3d2727f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:50:43Z
+**Event**: SENSOR_PASSED
+**Fire id**: c3d2727f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:51:32Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:51:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: ea5be8e2
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:51:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: ea5be8e2
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:51:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1117854f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:51:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1117854f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 23
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:51:42Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:51:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9edd6298
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:51:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9edd6298
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 30
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:51:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 61a5c581
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:51:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 61a5c581
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 39
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:52:20Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-spec.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:52:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: 61268002
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:52:20Z
+**Event**: SENSOR_PASSED
+**Fire id**: 61268002
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:52:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: f875111a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:52:20Z
+**Event**: SENSOR_PASSED
+**Fire id**: f875111a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:52:38Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/pending-revision.md
+**Context**: construction > u3-event-store-repository > functional-design > pending-revision.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:52:38Z
+**Event**: SENSOR_FIRED
+**Fire id**: 91d6995e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/pending-revision.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T16:52:38Z
+**Event**: SENSOR_FAILED
+**Fire id**: 91d6995e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/pending-revision.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/required-sections-91d6995e.md
+**Findings count**: 1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:52:39Z
+**Event**: SENSOR_FIRED
+**Fire id**: ee8cc9d4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/pending-revision.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:52:39Z
+**Event**: SENSOR_PASSED
+**Fire id**: ee8cc9d4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/pending-revision.md
+**Duration ms**: 23
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:53:51Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:53:51Z
+**Event**: SENSOR_FIRED
+**Fire id**: 842c499b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:53:51Z
+**Event**: SENSOR_PASSED
+**Fire id**: 842c499b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:53:51Z
+**Event**: SENSOR_FIRED
+**Fire id**: f14fab1e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:53:51Z
+**Event**: SENSOR_PASSED
+**Fire id**: f14fab1e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:53:58Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:53:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9be455f3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:53:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9be455f3
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:53:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 60dc687e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:53:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: 60dc687e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:54:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:54:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: b0bf613b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:54:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: b0bf613b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:54:05Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3ac34b5b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:54:06Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3ac34b5b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T16:54:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a7c9491ef7caf5713
+**Message**: 進捗確認
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:54:11Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:54:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: e9709f3d
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:54:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: e9709f3d
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:54:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: ac7abfa4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:54:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: ac7abfa4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Duration ms**: 22
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:55:16Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:55:16Z
+**Event**: SENSOR_FIRED
+**Fire id**: 64f52e09
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:55:16Z
+**Event**: SENSOR_PASSED
+**Fire id**: 64f52e09
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:55:16Z
+**Event**: SENSOR_FIRED
+**Fire id**: 33a486e4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T16:55:16Z
+**Event**: SENSOR_FAILED
+**Fire id**: 33a486e4
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-33a486e4.md
+**Findings count**: 3
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:55:20Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:55:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: d11f9d76
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:55:20Z
+**Event**: SENSOR_PASSED
+**Fire id**: d11f9d76
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:55:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: 254231cb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T16:55:20Z
+**Event**: SENSOR_FAILED
+**Fire id**: 254231cb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-254231cb.md
+**Findings count**: 3
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:56:59Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:56:59Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7753e092
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:56:59Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7753e092
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:56:59Z
+**Event**: SENSOR_FIRED
+**Fire id**: e1f630ae
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:56:59Z
+**Event**: SENSOR_PASSED
+**Fire id**: e1f630ae
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 21
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:58:12Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:58:12Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1e005c6f
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:58:12Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1e005c6f
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:58:13Z
+**Event**: SENSOR_FIRED
+**Fire id**: 14eafa1e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:58:13Z
+**Event**: SENSOR_PASSED
+**Fire id**: 14eafa1e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 20
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T16:59:37Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+**Context**: inception > domain-design > decisions.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:59:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: c515a2de
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T16:59:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: c515a2de
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T16:59:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5fa745e0
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T16:59:37Z
+**Event**: SENSOR_FAILED
+**Fire id**: 5fa745e0
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/decisions.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-5fa745e0.md
+**Findings count**: 3
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T17:03:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Context**: construction > esa-v2-migration > developer-report-2.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T17:03:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: b3465a38
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T17:03:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: b3465a38
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T17:03:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: 48c1b971
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T17:03:02Z
+**Event**: SENSOR_FAILED
+**Fire id**: 48c1b971
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-48c1b971.md
+**Findings count**: 5
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-26T17:03:11Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Context**: construction > esa-v2-migration > developer-report-2.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T17:03:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7ce9b336
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T17:03:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7ce9b336
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T17:03:12Z
+**Event**: SENSOR_FIRED
+**Fire id**: f4ae9c59
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T17:03:12Z
+**Event**: SENSOR_FAILED
+**Fire id**: f4ae9c59
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-2.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-f4ae9c59.md
+**Findings count**: 5
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-26T17:04:22Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fixes-report.md
+**Context**: construction > esa-v2-migration > cr-doc-fixes-report.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T17:04:22Z
+**Event**: SENSOR_FIRED
+**Fire id**: c9bf23d9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fixes-report.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T17:04:22Z
+**Event**: SENSOR_PASSED
+**Fire id**: c9bf23d9
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fixes-report.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T17:04:22Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3a1f65fe
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fixes-report.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T17:04:22Z
+**Event**: SENSOR_FAILED
+**Fire id**: 3a1f65fe
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fixes-report.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-3a1f65fe.md
+**Findings count**: 4
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T17:04:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b6-cr-doc-fixes
+**Agent ID**: ab6-cr-doc-fixes-81f13196cd2d8b69
+**Message**: team-lead に完了報告を送りました。\n\n**結果**: fixed 13件 / skipped 1件\n\n報告書: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/cr-doc-fix
+
+---

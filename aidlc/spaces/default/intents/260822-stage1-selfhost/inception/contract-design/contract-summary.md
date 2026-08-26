@@ -200,9 +200,11 @@ EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 > まとまった。② ~~ジャーナル行は封筒を列（`event_type` / `schema_version` / `occurred_at`）に持ち、
 > payload は正準 JSON。未知の `type` は `Corrupt(UnknownEventType)`、対応外の版は `Corrupt(SchemaVersion)`~~
 > → **失効**。本家のジャーナルは `payload` 1 列に**封筒ごと serde で**書く（本家の既定シリアライザ
-> `serde_json::to_vec`）。未知の変種も対応外の版も serde の復号失敗に畳まれ、
-> `Corrupt(UndecodablePayload)` になる（`CorruptCause::UnknownEventType` / `SchemaVersion` は削除）。
-> `schema_version` フィールド自体はイベント型に残るが、**復号時に値を検査する経路は無い**。
+> `serde_json::to_vec`）。未知の変種は serde の復号失敗に畳まれ `Corrupt(UndecodablePayload)` になる
+> （`CorruptCause::UnknownEventType` / `SchemaVersion` は削除）。**2026-08-27 訂正**:
+> 対応外の `schema_version` の検査は**復元済み** — `decode_event`（`journal_reader_impl.rs`）が
+> 復号後に `SCHEMA_VERSION`（1）以外を `Corrupt(UndecodablePayload)` で拒否する（B6 CodeRabbit #466
+> が発見した実装ギャップの即時是正。回帰テストあり）。
 > ③ ストアの payload は**契約 JSON（BR1.7 / canon-json）ではない** — 本家が書くのであって我々は
 > 呼んでいない。契約 JSON の射程は upstream 観測面（監査行・状態ファイル・directive）に限られる。
 > **投影規則（`projects_to`）と監査行の逐語性は 1 文字も変わっていない。**
@@ -352,7 +354,9 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
   `docs/specs/deviations.md` に登録（D6）。
 - **追加的変更の安全**: イベント・スナップショット・directive に追加されたフィールドは消費側が無視する
   （`schema_version` は予約のみ、stage-1 では 1 固定）。trait へのメソッド追加は既定実装を与えるか全実装
-  （Impl + InMemory）を同じ PR で更新する。
+  （~~Impl + InMemory~~ → **2026-08-27 訂正 / ADR-010**: 実装は `WorkflowExecutionRepositoryImpl<S>` 1 つで、
+  `S`（`open()` = SQLite / `in_memory()` = 本家 memory）の両バックエンドを同じ PR で更新する — 別型の
+  InMemory 実装は存在しない）。
 - **検証**: C1/C2/C7 はゴールデン一致、C3/C4 はコンパイル（層 = クレート、E0432）+ 契約テスト
   （2026-08-27 改訂: ~~InMemory テスト~~ → `WorkflowExecutionRepositoryImpl::in_memory()` と SQLite の
   **両バックエンドに同じ契約テストを課す**。手順が 1 行も違わないので同じ約束が課せる — BR2.7）、

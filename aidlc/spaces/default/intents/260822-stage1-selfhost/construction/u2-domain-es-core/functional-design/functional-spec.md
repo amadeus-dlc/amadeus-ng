@@ -77,10 +77,10 @@ stage_index(&self, usize) -> Option<StageIndex>  stages() / cursor() / checkbox(
    なので、続けて書くには再水和が要る（BR5.3。1 コマンド 1 プロセスの CLI では起きない）。
 - 事後条件: `self == old.apply_event(event)`（BR2.3）。
 
-### W3 — 再水和（from_snapshot + replay）
+### W3 — 再水和（from_state + replay）
 
-1. `from_snapshot(S)` が不変条件（長さ一致・cursor in-scope・進行中高々 1・ゲート完了は承認付き）を検証して集約を復元
-   （version / seq_nr 引継ぎ）。違反は `SnapshotError`。
+1. `from_state(S)`（旧 `from_snapshot(S)`。B5 で改名済み — ADR-010、§2 のインターフェイスと同じ）が不変条件（長さ一致・cursor in-scope・進行中高々 1・ゲート完了は承認付き）を検証して集約を復元
+   （version / seq_nr 引継ぎ）。違反は `StateError`（旧 `SnapshotError`）。
 2. seq_nr 以降のイベントを順に `apply_event`。seq_nr の飛びは `ApplyError::SequenceGap`（BR2.1）。
 - 利用箇所: U3 の `find_by_id`（最新スナップショット + 差分 replay）。
 - 再構成の契約は**「最新スナップショット + 後続イベント」のみ**。`apply_event(Started)` は genesis 専用で、既存集約への適用は
@@ -167,7 +167,7 @@ stage_index(&self, usize) -> Option<StageIndex>  stages() / cursor() / checkbox(
 | StartError（UnknownScope / Empty / InitializationMustExecute / InitializationMustBeUnconditional） | W1 | 呼出側へ返す。状態なし。グリッド列が無いステージは SKIP に畳むので Err にはならない（initialization ステージを除く — 畳んだ結果 SKIP なら InitializationMustExecute）。Empty はコンパイル済みグラフが空の場合のみ（防御的、実グラフでは到達しない） |
 | CommandError（NotRunning / CheckboxPrecondition{stage, actual} / NotSkippable / NotStale / InvalidTarget / RefusedUnderAutonomy / DefinitionMismatch{expected, actual}） | W2 / W4 / W5 / W6 | 状態不変で返す。文言はアダプタ層。DefinitionMismatch は別の定義（id 不一致）で駆動しようとしたとき（BR2.6） |
 | ApplyError（SequenceGap{expected, actual} / UnknownStage / InvariantViolation） | W3 | 再水和失敗（U3 は Corrupt に写す） |
-| SnapshotError（InvariantViolation{reason}） | W3 | 同上 |
+| StateError（InvariantViolation{reason}） | W3 | 同上（旧 `SnapshotError`、B5 で `from_state` とあわせて改名済み） |
 
 ## 6. 導出ビュー — ER 図（`entities.md` が正本）
 

@@ -17,7 +17,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 - **B9**: `HUMAN_TURN` の**記録**（事実）はここ。`humanActedSinceGate` 述語（同秒×別シャードの fail-closed を含む）は orchestration の所有で、本コンテキストは shard 列挙と位置付き読取の材料を供給する。「状態ファイルはキャッシュ、真実源は監査」を境界規約として全 API に適用する（unit 4 フィールド・`Parked`/`Parked At Stage` が代表）。
 - **B12**: diary / memory / DocumentKB の**文書スキーマとライフサイクルは knowledge 所有**。本コンテキストは space / intent スコープの汎用ストレージと存在保証（self-heal）を供給し、内容には関与しない。
 - **B13**: worktree / fork / merge の機構と `WORKTREE_*` イベントはここ。HOLD-MERGE は orchestration の政策値で、本コンテキストは **opaque な保留フラグの保存 API**（set / clear の冪等性、欠落ファイルへの非対称エラー）だけを提供する。
-- **ロックサービスの供給**（B5 の Shared Kernel 解体）: upstream では compose がインストール済み lib の関数 import ＋ `AIDLC_WORKSPACE_LOCK_OWNER_PID` 環境変数でロックを物理共有する。amadeus-ng では workspace が**単独所有のロックサービス**を公開し、orchestration / plugin はその顧客になる（依存方向として固定）。
+- **~~ロックサービスの供給~~（退役 — ADR-007 / Bolt B5）**（B5 の Shared Kernel 解体）: upstream では compose がインストール済み lib の関数 import ＋ `AIDLC_WORKSPACE_LOCK_OWNER_PID` 環境変数でロックを物理共有する。~~amadeus-ng では workspace が単独所有のロックサービスを公開し、orchestration / plugin はその顧客になる（依存方向として固定）~~ → **失効**: mkdir ロック機構は ADR-007 で退役し、workspace はロックサービスを公開しない。`WorkflowExecution` 集約の書込は SQLite Tx（本家 event-store-adapter-rs）＋ 楽観 version に置換されたが、**登録簿（`intents.json`）側の直列化機構は ADR-010（Bolt B6）で再び未決に戻った**（§2.1 `LockIdentity` 行・§10 参照。U7 で裁定）。
 
 ## 2. ドメイン層
 
@@ -26,12 +26,12 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 | 集約 | ルートと内包 | トランザクション境界 |
 | --- | --- | --- |
 | `Intent` | record ディレクトリ＋レジストリ行（`intents.json` の uuid / slug / dirName と生死）。birth は `createIntent` の単一チョークポイント（uuid mint → dirName 解決 → mkdir → **ヘッダのみの stub state**。stub がないと mint〜full 書込の間にカーソルが解決せず書込が space root に漏れる）。`StateFile` は**内包しない** — リードモデルである（下記、ADR-004） | `intents.json` の全変更は 1 トランザクション（直列化の機構は §10 の未決事項） |
-| `Space` | 4 サブツリー（memory / knowledge / codekb / intents）＋レジストリ＋カーソル。default space は「ディスクに何もなくても常に有効」の特例。新規 space は default の `org.md` のみ継承（team/project は 1 行スタブ — 「新チームは自分のプラクティスを自分で獲得する」） | 同上（`intents.json` の全変更は単一 DB = 単一バケットに集約する — §2.2、ADR-007 / Bolt B5） |
+| `Space` | 4 サブツリー（memory / knowledge / codekb / intents）＋レジストリ＋カーソル。default space は「ディスクに何もなくても常に有効」の特例。新規 space は default の `org.md` のみ継承（team/project は 1 行スタブ — 「新チームは自分のプラクティスを自分で獲得する」） | 同上（`intents.json` の全変更は単一 DB = 単一バケットへ集約する方針だが、~~直列化の機構は確定（ADR-007 / Bolt B5）~~ → 直列化の機構自体は §2.2・§10 の未決事項、2026-08-27 / ADR-010） |
 | `Worktree` | `.aidlc/worktrees/bolt-<slug>` ＋ブランチ `bolt-<slug>`（**導出であり引数渡しではない**）。absent → created → merged / discarded。record ミラー（同一相対レイアウト）と main clone-id のスレッディング。`--repo` 指定時は**ターゲットリポジトリの checkout に再アンカー**（multi-repo — §2.4） | 変異 3 動詞（create / merge / discard）は**すべて監査を伴う**。emit と効果の逆順が認められるのは aidlc-bolt の `abort --discard`（orchestration 側の動詞、slice 2）のみで、本表の対象外 |
 
 **リードモデル**（集約ではない — ADR-003 / ADR-004）: `StateFile`（`aidlc-state.md`）と `AuditShard`（clone ごとの監査シャード群）。真実源は SQLite ジャーナル（C6）であり、両者は ReadModelUpdater（U4）が投影として**バイト互換**で再生成する。監査台帳は集約 `WorkflowExecution` のイベントログであって独立した集約ではない（ADR-001 / ADR-003）。シャードが**追記専用**であること・行が opaque であること・他クローンのシャードが読み取り専用の外部入力であることは、投影の規範として維持する（唯一の例外は audit-fork による worktree ミラー shard の tmp+rename 確立）。
 
-**退役**: `WorkspaceLock`（旧: 集約ではなく本コンテキストが所有・公開する並行性サービス）。ES 化により read-modify-write のトランザクションが SQLite に入ったため、mkdir ロック機構は退役し、ロック dir は生成しない。並行制御は SQLite Tx ＋ 楽観 version が担う（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。
+**退役**: `WorkspaceLock`（旧: 集約ではなく本コンテキストが所有・公開する並行性サービス）。ES 化により read-modify-write のトランザクションが SQLite に入ったため、mkdir ロック機構は退役し、ロック dir は生成しない。`WorkflowExecution` 集約の書込は SQLite Tx（本家 event-store-adapter-rs）＋ 楽観 version が並行制御を担う（ADR-007）。~~並行制御は SQLite Tx ＋ 楽観 version が担う~~ → **2026-08-27 訂正 / ADR-010**: これは `WorkflowExecution` 集約の書込に限った話であり、登録簿（`intents.json`）の read-modify-write の直列化機構は、代替として想定していた `within_write_transaction` が削除されたため**再び未決**である（§2.1 `LockIdentity` 行・§10 参照。U7 で裁定）。逸脱台帳 [`deviations.md`](deviations.md) 参照。
 
 ### 2.2 Domain Primitive（E1/E2 の受け皿）
 
@@ -78,7 +78,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 | ポート | 消費するユースケース | 契約 | 実装の所在 |
 | --- | --- | --- | --- |
-| `WorkflowExecutionRepository` | orchestration の `Report` / `Continue` / `Park` / `Jump*` / `Recompose` / `SetAutonomy`（10 §3） | 集約 `WorkflowExecution` の ES 形 Repository。`store(event, aggregate)`（単一イベント＋適用後集約を同一 Tx、楽観 `version` = **ストアが採番する不透明トークン**）/ `find_by_id(&IntentId)`（スナップショット＋差分 replay で完全再構成）— C3 / ~~ADR-006~~ → **ADR-010** | `WorkflowExecutionRepositoryImpl<S>`（**本家 event-store-adapter-rs v2.0.0 のイベントストアを内包** — C6 のスキーマ、ストアファイルは `aidlc/spaces/<space>/intents/.aidlc-store.sqlite`（U3 FD Q1 = A））。`S` はバックエンドで `open()` = SQLite / `in_memory()` = memory。~~`EventStoreImpl` を内包 / 登録簿の直列化は `EventStoreImpl::within_write_transaction`（U3 FD Q2 = A）/ テストダブルは `InMemoryWorkflowExecutionRepository`~~ → **失効**（2026-08-27 / ADR-010・Bolt B6。登録簿の扱いは U7 で裁定） |
+| `WorkflowExecutionRepository` | orchestration の `Report` / `Continue` / `Park` / `Jump*` / `Recompose` / `SetAutonomy`（10 §3） | 集約 `WorkflowExecution` の ES 形 Repository。`store(event, aggregate)`（単一イベント＋適用後集約を同一 Tx、楽観 `version` = **ストアが採番する不透明トークン** — ドメインは解釈も比較もしない。**2026-08-27 補足**: 現行の event-store-adapter-rs バックエンドと genesis に 1 を載せる採番規約の組み合わせでは `version` は結果としてジャーナル長と一致する（J3 `journal_protocol::version_equals_journal`）が、これは**現行 adapter の観測された性質であってドメイン契約ではない** — ドメイン・Repository はこの一致を前提条件として使わない）/ `find_by_id(&IntentId)`（スナップショット＋差分 replay で完全再構成）— C3 / ~~ADR-006~~ → **ADR-010** | `WorkflowExecutionRepositoryImpl<S>`（**本家 event-store-adapter-rs v2.0.0 のイベントストアを内包** — C6 のスキーマ、ストアファイルは `aidlc/spaces/<space>/intents/.aidlc-store.sqlite`（U3 FD Q1 = A））。`S` はバックエンドで `open()` = SQLite / `in_memory()` = memory。~~`EventStoreImpl` を内包 / 登録簿の直列化は `EventStoreImpl::within_write_transaction`（U3 FD Q2 = A）/ テストダブルは `InMemoryWorkflowExecutionRepository`~~ → **失効**（2026-08-27 / ADR-010・Bolt B6。登録簿の扱いは U7 で裁定） |
 | 外部システムクライアント（Git。例 `GitWorktreeClient`） | orchestration（Bolt / swarm — slice 2）、worktree 6 動詞 | worktree add / merge 3 戦略 / branch 削除 / conflict 検出 `/^CONFLICT \(/m`。別プロセスとの RPC であって集約の永続化ではない（gateway-taxonomy §1） | アダプタ層の Gateway（spawn 基盤 A4 経由、30s タイムアウト、SIGTERM でタイムアウトと失敗を区別） |
 
 **ポートではないもの**（同規則の帰結。ポート表に載せると Gateway 責務の分類が濁る）:
@@ -117,7 +117,7 @@ E4 の定義名は J1〜J6（旧 W1〜W5 に相当する区間 — mkdir ロッ�
 | --- | --- | --- | --- |
 | J1 | 楽観 `version` 不一致の書込（`store_conflict`）はジャーナル・スナップショットのいずれも変えない（競合拒否） | E3+E4 | `journal_protocol::conflict_rejected` |
 | J2 | スナップショットの `seq_nr` は常にジャーナル末尾と一致する | E3+E4 | `journal_protocol::snapshot_tracks_journal` |
-| J3 | スナップショットの `version` は常に永続化済みイベント数と一致する | E3+E4 | `journal_protocol::version_equals_journal` |
+| J3 | スナップショットの `version` は常に永続化済みイベント数と一致する（**2026-08-27 補足 / ADR-010**: これは現行 event-store-adapter-rs バックエンド＋genesis=1 の採番規約が両立させている**adapter 固有の観測された性質**であり、`version` を不透明トークンとするドメイン契約そのものが要求するわけではない。§3 ポート表参照） | E3+E4 | `journal_protocol::version_equals_journal` |
 | J4 | チェックポイントは単調に増加し（後退しない）、ジャーナル末尾を超えない | E3+E4 | `journal_protocol::checkpoint_monotone` ＋ `journal_protocol::checkpoint_bounded` |
 | J5 | 投影（readModelSeq）はジャーナルを超えて進まず、直前と同じチェックポイントからの再実行では値が変わらない（冪等） | E3+E4 | `journal_protocol::projection_idempotent` ＋ `journal_protocol::truth_is_journal` |
 | J6 | 書込成功（`store_ok`）が起きるのは、書込主体が読み取った `version` が直前のスナップショット `version` と一致するときのみ（lost update 防止） | E3+E4 | `journal_protocol::no_lost_update` |

@@ -277,6 +277,16 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
        同一 DB ファイルへの別接続で読み、チェックポイントは自前の表
        （本家の表と衝突しない名前）に持つ。本家スキーマへの結合はバージョンの完全固定
        （`=2.0.0`）と、スキーマが変わったら明示的に落ちるガードテストで守る。
+
+       **2026-08-27 追記（supersede の明記）**: 上記の実装は ADR-003「Repository →
+       `EventStoreImpl(sqlite client)` → SQLite」、ADR-007「チェックポイントは Tx 内更新」、
+       ADR-009「`EventStoreImpl` が `EventStore`（コマンド）と `JournalReader`（読取）の両契約を
+       実装し、C6 の 3 表定義が 1 箇所に残る」の各記述を supersede する。`EventStoreImpl` は
+       削除され、コマンド側は `WorkflowExecutionRepositoryImpl<S>`（本家 `EventStore` を実装）、
+       読取側は別接続を持つ `JournalReaderImpl` という別々の型になった。チェックポイントの更新は
+       書込 Tx の外（`JournalReaderImpl` の別接続・別 Tx）で行われる。SQLite スキーマは `journal` /
+       `snapshot` の 2 表が upstream 正本であり、我々が定義するのは `amadeus_projection_checkpoint`
+       1 表のみである。
      - `within_write_transaction`（U7 の登録簿 read-modify-write）— **調査済み（2026-08-26）。
        本家は接続もトランザクションも露出しない**（`EventStoreForSqlite` は `Connection` を
        内部保持し、`from_connection` は private。`transaction()` は `persist_*` の内部でのみ
