@@ -33,11 +33,29 @@
 `factory-naming.md` / `ubiquitous-language.md` / `cqrs-boundaries.md` の **6 本**。
 README の一覧も更新済み。ADR-009（CQRS の依存境界）も `decisions.md` に追加。
 
+## 2026-08-24 追記 — park 後にオーナー指摘で追加した是正
+
+park 後もオーナーからの設計指摘が続き、以下を追加で反映した（いずれも挙動不変・検査全緑）。
+
+- **newtype アクセサを C-CONV へ** — `StageIndex::value()` → `to_usize()`、
+  `GlobalSeqNr::value()` → `to_u64()`、`UnsafeLineChar::value()` → `to_char()`（呼出 56 箇所）。
+  `as_str()` は既に 14 箇所で正しく、逸脱は `value()` の 3 箇所だけだった
+- **良い例カタログ** `coding-rules/good-examples.md` を新設（実在ファイルを指す索引）
+- **`field-visibility.md` の裁定** — `pub` も `pub(crate)` も禁止、**例外を認めない**。
+  検出境界の拡張と既存違反の是正は同じ Bolt で同時に着地させる（順序の制約）
+
 ## 再開後にやること
 
 1. **オーナーにマージの可否を確認**（squash-merge、コミット名 = Bolt slug `b5-u3-event-store-repository`）。
    マージで確定するもの・残るものは `code-summary.md` §7 の申し送り 15 件を参照
-2. マージ後 → **U4（`u4-read-model-updater`、Bolt B6）** へ。ただし着手前に次の 2 つを処理する:
+2. **U2 の後続 Bolt で `WorkflowExecutionState` の構築・可視性を再設計する**（オーナー裁定
+   「次でよい」）。3 つが 1 つの作業として結合している:
+   - `new(..)` が `Self` ではなく Builder を返す（`factory-naming.md` 違反）。Builder に
+     フィールド名の setter 12 本（非テスト 44 箇所・鎖呼出 59 箇所）
+   - フィールド 16 本が `pub(crate)`。アクセサ 17 本があるのに直接アクセス 52 箇所
+   - `cargo lint` の `no-public-fields` を `pub(crate)` まで拡張（抑制コメント不可）
+   完全コンストラクタ化は引数 16 個超を生むので、値オブジェクトへの束ね直しとセットで設計する。
+3. マージ後 → **U4（`u4-read-model-updater`、Bolt B6）** へ。ただし着手前に次の 2 つを処理する:
    - `unit-of-work.md` の U4 責務から**ジャーナル読取とチェックポイント前進を外し**、合成ルート（U7）へ移す
    - U4 を `embedded` から**独立クレート**へ変更（ADR-009 / `cqrs-boundaries.md`）
    - RMU の形は `fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel)`。
