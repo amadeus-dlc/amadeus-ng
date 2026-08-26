@@ -178,3 +178,114 @@
 初版の裁定のうち存続するもの: 集約=FSM 統一ルール（ADR-002 に吸収・強化）、
 WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanAction 一本化（ADR-005 — 2026-08-22 の再エクスポート禁止裁定により re-export 併用から完全移動へ改訂）、
 フック4本のサブコマンド化（Q3 — CliDispatcher の behaviour に記録、独立 ADR は不要と判断）。
+
+## ADR-009: CQRS の依存境界をクレートで物理強制する — RMU は独立クレート（2026-08-24 追加）
+
+- **Context** — ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004
+  （状態ファイルはリードモデル）で読み書きのモデルは既に分かれている。しかし**依存の向きが
+  どこにも強制されていない**。実測（2026-08-24）: 読取側の契約 `JournalReader` /
+  `ProjectionName` / `GlobalSeqNr` が**コマンド側の `core/use-case` クレートに同居**しており、
+  さらに U4（RMU）は unit-of-work で `embedded` 指定のため `core/interface-adapter` の中、
+  `EventStoreImpl` と同居する計画だった。この形では RMU を別クレートにしても `Cargo.toml` に
+  `core-use-case` が並び、team.md が謳う「依存は Cargo.toml の不在により物理的に内向き強制」が
+  **CQRS 境界だけ空振りする**。
+- **Decision**（オーナー明言 2026-08-24）— CQRS の依存規則を**クレート境界で物理強制**する。
+  - **コマンド側はクエリ側に依存しない。クエリ側もコマンド側に依存しない**（相互に独立）。
+  - **RMU が要るのはドメインイベントだけ**（オーナー訂正 2026-08-24）。RMU はイベントを
+    **受信して**リードモデルを作成・更新する。それ以外は要らない — **ジャーナルを読みに行くのも、
+    チェックポイントを進めるのも RMU の仕事ではない**。RMU は両者の間に立つ第三の要素として
+    両側に依存してよい立場にはあるが、実際に必要なのは**イベント型とリードモデルの書込先だけ**
+    である。依存は RMU → 両側の一方向で、両側から RMU への依存は無い。
+
+    ```
+    コマンド側  ←── RMU ──→  クエリ側
+        ↑                       ↑
+        └──── 依存しない ───────┘
+    ```
+  - **コマンド側は最新状態を常に集約から判断する**。リードモデルから現在状態を読むことは
+    禁止であり、そもそもリードモデルは常に遅延しているので**物理的にできない**。
+  - これを効かせるため **RMU を独立クレートに切り出す**（U4 は `embedded` → 独立クレート）。
+  - **読取側の契約を中立クレートへ切り出す必要は無い**（初稿の `core/event-stream` 案は撤回）。
+    RMU が `JournalReader` / `ProjectionName` / `GlobalSeqNr` を**使わない**からである。
+    これらは `core/use-case` に置いたまま、**合成ルートが**それを使ってイベントを読み、
+    RMU へ渡す。RMU の入口はドメインイベント 1 本。
+  - **U4 の責務範囲を改訂する**。`unit-of-work.md` の U4 は「チェックポイント以降のイベントを
+    ジャーナルから読み、…投影し、**チェックポイントを進める**冪等な差分関数」と書いているが、
+    ジャーナル読取とチェックポイント前進は**呼び出す側（合成ルート / U7）へ移す**。U4 は
+    「イベント列 → リードモデル」の純粋な投影に絞る。これにより RMU はコマンド側のポートを
+    一切知らずに単体テストできる。
+  - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
+    `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
+    （C6 の 3 表）が 1 箇所に残るので重複しない。
+  - **判定は `Cargo.toml` を見るだけでよい**。コマンド側クレートの依存にクエリ側が現れたら違反、
+    クエリ側クレートの依存にコマンド側が現れたら違反、RMU はどちらが現れてもよい。
+- **Consequences** — (+) 依存規則が型検査ではなくビルドで落ちる（`Cargo.toml` の不在）。
+  (+) ADR-005（内部可変性の禁止、2026-08-24）により `EventStoreImpl` は `&mut self` で排他所有に
+  なったため、**コマンド側と読取側が 1 接続を共有できない** — 自然に別接続になり、CQRS が求める
+  「読取側は独立に走る」形へ借用チェッカが寄せる。(+) 判定が `Cargo.toml` の目視で済む
+  （依存グラフを追う必要がない）。(−) クレートが 1 つ増える（RMU）。**読取側契約の移動は
+  不要になった**ので U3 の成果物への参照更新は生じない。
+  (−) unit-of-work.md の U4 分類（`embedded` → 独立クレート）に改訂が要る。
+- **Alternatives Rejected** — *モジュール分割だけ*（同一クレート内で `mod` を分ける）: `pub(crate)`
+  で相互参照できてしまい、物理強制にならない。本プロジェクトが依存強制に採っている唯一の
+  機構（クレート分離）を CQRS 境界にだけ適用しない理由がない。
+  *アダプタも分割*（`EventStoreImpl` / `JournalReaderImpl` を別クレート）: 境界はより厳密に
+  なるが、C6 の 3 表のスキーマ定義をどちらが持つかの判断が増える。複雑さに見合わないと判断
+  （オーナー裁定）。
+  *読取側契約を中立クレート `core/event-stream` へ切り出す*（本 ADR の初稿）: RMU がコマンド側に
+  依存してよいので**不要**。中立クレートは「両側が相手を知らずに同じ契約を共有する」ための
+  仕掛けであり、**橋が両側を知ってよい構図では役目が無い**（オーナー訂正 2026-08-24）。
+
+## ADR-010: event-store-adapter-rs v2.0.0 へ乗り換える — ADR-006 の見送りを撤回（2026-08-26 追加）
+
+- **Context** — ADR-006 は crate への直接依存を見送り、trait 群を**本家と同形でローカル定義**して
+  「本家が **feature 化 / SQLite 実装**を得たら乗り換え可能な形を保つ」と決めた。
+  **2026-08-24 公開の v2.0.0 で、その 2 条件が両方とも満たされた**（実測）:
+  - `gate backends behind cargo features with empty default` — `lib/Cargo.toml` は
+    `default = []`、`dynamodb` / `bigtable` / `sqlite` / `sqlite-system` が feature。
+    ADR-006 が見送り理由に挙げた「aws-sdk-dynamodb + tonic + Bigtable の feature ゲート無し
+    ハード依存」は**消滅した**
+  - `add SQLite-backed event store behind sqlite feature` — `sqlite = ["dep:rusqlite",
+    "rusqlite/bundled"]`。**我々が委任 3 で自前実装したのと同じ rusqlite**
+  - `replace SDK-leaked error type with neutral OptimisticLockError(String)` — エラー型も中立化
+
+  あわせて、**ローカル定義の写しが本家からずれていた**ことも判明した（4 点: 関連型 vs 型
+  パラメータ / `usize` vs `u64` / エラー型 1 種 vs 2 種 / `Clone` 境界の有無）。特に
+  `usize` → `u64` は、**我々のドメイン型に合わせて借り物の契約を書き換えた**もので、
+  [`coding-rules/upstream-contracts.md`](../../../knowledge/aidlc-shared/coding-rules/upstream-contracts.md)
+  違反である（契約の所有者は本家であり、我々ではない）。
+
+- **Decision**（オーナー明言 2026-08-26「乗り換えてほしい。v2.0.0に」「腐敗防止層はなしで。
+  ちゃんと書き換えろ」）—
+
+  1. **`event-store-adapter-rs` v2.0.0 に `sqlite` feature で依存する**。ADR-006 の見送りを撤回。
+  2. **Conformist を採る。腐敗防止層は置かない。** 我々のドメイン型が本家の trait を**直接実装**
+     する。アダプタ型を挟んで変換する案はオーナー裁定で却下（儀式が増えるだけ）。
+  3. したがって次を受け入れる:
+     - ドメイン型に **serde の `Serialize` / `Deserialize`** を入れる
+     - **`chrono::DateTime<Utc>`** を採る（`occurred_at` / `last_updated_at`）。
+       **NFR4.1（依存最小化）の再検討が要る** — 自前 ISO 8601 整形の存在意義が変わる
+     - `seq_nr` / `version` を **`usize`** にする（本家の契約に従う。`u64` への「具体化」は撤回）
+  4. **本家に無いものは我々が持ち続ける** — 本家のドメインは「集約の永続化」であり、
+     次は利用側の関心である:
+     - **投影チェックポイント**（`JournalReader::checkpoint` / `advance_checkpoint`）
+     - **全集約横断の順序読取**（`events_after(GlobalSeqNr)`）— 本家は集約単位
+     - `within_write_transaction`（U7 の登録簿 read-modify-write）— **本家が接続を露出するか
+       未確認。乗り換え Bolt の Open question**
+
+- **Consequences** — (+) 自前実装 **約 2,400 行**（`event_store_impl.rs` 971 / `schema.rs` 179 /
+  `event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230）が消え、本家の保守に乗る。
+  (+) 本家への合流・貢献が現実的になる。(+) 借り物の契約を曲げている状態が解消する。
+  (−) ドメイン層に serde と chrono が入る（NFR4.1 の再検討）。(−) 集約・イベント・IntentId が
+  本家 trait を実装するための改修（`Event::id` / `is_created` / `Aggregate::id` /
+  `last_updated_at` / `AggregateId::type_name` の新設、`seq_nr`/`version` の `usize` 化）。
+  (−) B5 でマージするコードの一部を次 Bolt で削除することになる（オーナー裁定で許容）。
+  (±) Quint モデル `journal_protocol` の検証対象が「自前実装の契約」から「本家の契約 +
+  我々の投影」へ移る — モデルの再確認が要る。
+
+- **Alternatives Rejected** — *腐敗防止層*: ドメインを serde / chrono / `usize` から守れるが、
+  アダプタ型と変換で数百行を足すことになる。オーナー裁定「腐敗防止層はなしで。ちゃんと書き換えろ」。
+  *自前実装を維持*: ADR-006 が保とうとした乗り換え可能性という目的を捨てることになり、
+  かつ本家と同じものを二重に保守する。*B5 のマージ前に作り直す*: B5 は既に 159 ファイルで
+  人間レビューが困難な大きさに達しており、乗り換えを足すと追えなくなる。**独立した Bolt** として
+  「本家に置き換えた」という一筋で読める差分にする（オーナー裁定 2026-08-26「次の Bolt でいい」）。

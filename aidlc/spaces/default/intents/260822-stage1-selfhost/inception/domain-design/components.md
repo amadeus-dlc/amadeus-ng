@@ -136,7 +136,7 @@ components:
   - name: PersistenceGateways
     summary: "Gateway 実装層 — SQLite EventStore + Repository 実装 + 機構"
     behaviour: >
-      SqliteEventStore（event-store-adapter-rs と同形の async trait をローカル定義し実装。
+      EventStoreImpl（event-store-adapter-rs と同形の async trait をローカル定義し実装。
       journal / snapshot / checkpoint テーブル。persist_event_and_snapshot は同一 Tx +
       楽観 version 条件付き書込）・WorkflowExecutionRepositoryImpl（store = イベント+
       スナップショット永続化、find_by_id = 最新スナップショット + seq_nr 以降のイベントを
@@ -416,7 +416,7 @@ graph TD
 | HarnessClaude | ハーネス固有差異の隔離 |
 
 分解は既存クレート構造を踏襲しつつ、ES 採用で新たに必要になる2ブロック
-（SqliteEventStore を含む Gateway 拡張・ReadModelUpdater）を同じ境界原則で追加した。
+（EventStoreImpl を含む Gateway 拡張・ReadModelUpdater）を同じ境界原則で追加した。
 境界を動かした裁定は Q1〜Q9 として個別に取り、`decisions.md` に ADR として記録した。
 
 ## Review

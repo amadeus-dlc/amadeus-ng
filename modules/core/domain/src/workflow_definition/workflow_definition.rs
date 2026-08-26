@@ -230,6 +230,10 @@ impl WorkflowDefinition {
 
 #[cfg(test)]
 mod tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+    // allow)。
+    #![allow(clippy::indexing_slicing)]
+
     use super::*;
     use crate::workflow_definition::{ExecutionKind, StageMode, StageNodeBuilder, StageNumber};
     use proptest::prelude::*;
@@ -291,7 +295,7 @@ mod tests {
             node("ops-runbook", "4.1", PhaseId::Operation, &["gamma"]),
         ])
         .unwrap();
-        let grid = ScopeGrid::derive_from_graph(&graph);
+        let grid = ScopeGrid::from_graph(&graph);
         WorkflowDefinition::new(
             id("claude"),
             revision('0'),
@@ -482,7 +486,7 @@ mod tests {
             node("early", "1.9", PhaseId::Ideation, &["alpha"]),
         ])
         .unwrap();
-        let grid = ScopeGrid::derive_from_graph(&graph);
+        let grid = ScopeGrid::from_graph(&graph);
         let wd = WorkflowDefinition::new(
             id("claude"),
             revision('0'),
@@ -539,7 +543,7 @@ mod tests {
             })
             .collect();
         let graph = StageGraph::new(nodes).unwrap();
-        let grid = ScopeGrid::derive_from_graph(&graph);
+        let grid = ScopeGrid::from_graph(&graph);
         WorkflowDefinition::new(
             id("claude"),
             revision('0'),

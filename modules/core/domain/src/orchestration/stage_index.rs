@@ -6,7 +6,7 @@ use std::fmt;
 ///
 /// **構築できるのは集約だけ** (`WorkflowExecution::stage_index(usize) -> Option<StageIndex>`)
 /// で、その集約の `stage_count` 未満であることが構築時に保証される。生の `usize` を集約 API・
-/// イベント・`NextDecision`・スナップショットに露出させないための E1 型であり、範囲外は
+/// イベント・`NextDecision`・状態の写し (memento) に露出させないための E1 型であり、範囲外は
 /// `None` で表して panic しない (BR5.1)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StageIndex(usize);
@@ -15,14 +15,14 @@ impl StageIndex {
     /// 集約 (と同一クレート内の再水和経路) だけが使う構築子。
     ///
     /// 範囲の保証は呼出側の責務であり、公開経路は `WorkflowExecution::stage_index` と
-    /// `WorkflowExecution::from_snapshot` の検証を必ず通る。
+    /// `WorkflowExecution::from_state` の検証を必ず通る。
     pub(crate) const fn new(value: usize) -> StageIndex {
         StageIndex(value)
     }
 
     /// 文書順の位置 (0 始まり)。
     #[must_use]
-    pub const fn value(self) -> usize {
+    pub const fn to_usize(self) -> usize {
         self.0
     }
 }
@@ -40,15 +40,15 @@ mod tests {
 
     #[test]
     fn the_index_carries_its_position() {
-        assert_eq!(StageIndex::new(0).value(), 0);
-        assert_eq!(StageIndex::new(7).value(), 7);
+        assert_eq!(StageIndex::new(0).to_usize(), 0);
+        assert_eq!(StageIndex::new(7).to_usize(), 7);
     }
 
     #[test]
     fn ordering_follows_the_position() {
         let mut sorted = [StageIndex::new(3), StageIndex::new(1), StageIndex::new(2)];
         sorted.sort();
-        let raw: Vec<usize> = sorted.iter().map(|s| s.value()).collect();
+        let raw: Vec<usize> = sorted.iter().map(|s| s.to_usize()).collect();
         assert_eq!(raw, [1, 2, 3]);
     }
 

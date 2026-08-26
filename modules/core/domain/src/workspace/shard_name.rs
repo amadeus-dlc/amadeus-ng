@@ -12,7 +12,7 @@ pub struct ShardName(String);
 impl ShardName {
     /// ホスト名正規化を含む唯一の構成関数 (E1 — 構成関数以外でこの型は作れない)。
     #[must_use]
-    pub fn compose(raw_host: &str, clone_id: &CloneId) -> ShardName {
+    pub fn of(raw_host: &str, clone_id: &CloneId) -> ShardName {
         let host = normalize_host(raw_host);
         ShardName(format!("{host}-{}.md", clone_id.as_str()))
     }
@@ -72,25 +72,25 @@ mod tests {
     #[test]
     fn lowercases_and_squashes_disallowed_runs_into_single_dashes() {
         assert_eq!(
-            ShardName::compose("My Mac.local", &cid()).as_str(),
+            ShardName::of("My Mac.local", &cid()).as_str(),
             "my-mac-local-abc123.md"
         );
         assert_eq!(
-            ShardName::compose("dev__box!!01", &cid()).as_str(),
+            ShardName::of("dev__box!!01", &cid()).as_str(),
             "dev-box-01-abc123.md"
         );
     }
 
     #[test]
     fn empty_or_fully_disallowed_hosts_fall_back_to_host() {
-        assert_eq!(ShardName::compose("", &cid()).as_str(), "host-abc123.md");
-        assert_eq!(ShardName::compose("!!!", &cid()).as_str(), "host-abc123.md");
+        assert_eq!(ShardName::of("", &cid()).as_str(), "host-abc123.md");
+        assert_eq!(ShardName::of("!!!", &cid()).as_str(), "host-abc123.md");
     }
 
     #[test]
     fn caps_the_host_part_at_48_chars() {
         let long = "h".repeat(60);
-        let name = ShardName::compose(&long, &cid());
+        let name = ShardName::of(&long, &cid());
         assert_eq!(name.as_str(), format!("{}-abc123.md", "h".repeat(48)));
     }
 }

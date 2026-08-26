@@ -9,7 +9,7 @@
 - **`mod` はデフォルト private**。`pub mod` の連鎖はファイル構成（型ごとのファイル分割）をそのまま公開 API に漏らし、内部整理が破壊的変更になる — モジュール性喪失の温床。
 - **`pub mod` を許すのは名前空間として意味を持つ階層だけ**:
   - 境界づけられたコンテキスト（`core_domain::{workspace, orchestration, workflow_definition}` 等） — ユビキタス言語の所属を示す情報であり隠さない
-  - 共有クレートの語彙名前空間（`message_catalog::{state, lock, bolt}`、`infra_io::{atomic, append_only, fs_meta, process_probe}`）
+  - 共有クレートの語彙名前空間（`message_catalog::{state, lock, bolt}`、`infra_io::{atomic, append_only, fs_meta}`）
 - コンテキストの**内側**の型ファイル mod は private にし、mod.rs（ファサード）で **`pub use` を意図的に列挙**する。mod.rs は「キュレーションされた公開 API 宣言」になる。
 
 ```rust

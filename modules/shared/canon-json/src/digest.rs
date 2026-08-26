@@ -82,8 +82,19 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     let mut hex = String::with_capacity(64);
     for byte in hasher.finalize() {
-        hex.push(HEX_DIGITS[usize::from(byte >> 4)] as char);
-        hex.push(HEX_DIGITS[usize::from(byte & 0x0f)] as char);
+        // ニブル (0..16) の変換なので添字は必ず範囲内 — `unwrap_or` の既定分岐には到達しない。
+        hex.push(
+            HEX_DIGITS
+                .get(usize::from(byte >> 4))
+                .copied()
+                .unwrap_or(b'0') as char,
+        );
+        hex.push(
+            HEX_DIGITS
+                .get(usize::from(byte & 0x0f))
+                .copied()
+                .unwrap_or(b'0') as char,
+        );
     }
     hex
 }

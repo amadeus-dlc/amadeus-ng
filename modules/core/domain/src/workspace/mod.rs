@@ -8,8 +8,7 @@
 mod bolt_refs;
 mod checkbox;
 mod clone_id;
-mod lock_identity;
-mod lock_protocol;
+mod intent_dir_name;
 mod shard_name;
 mod space_name;
 mod state_field_value;
@@ -20,36 +19,29 @@ mod state_writers;
 pub use bolt_refs::BoltRefs;
 pub use checkbox::{CheckboxEntry, CheckboxState};
 pub use clone_id::CloneId;
-pub use lock_identity::LockIdentity;
+pub use intent_dir_name::IntentDirName;
 pub use shard_name::ShardName;
 pub use space_name::SpaceName;
 pub use state_field_value::StateFieldValue;
 pub use state_version::{StateVersionClassification, StateVersionKind};
 
-// ロック手順のモデル (audit ロックの遷移系)
-pub use lock_protocol::LockProtocol;
-
 // 純関数ドメインサービス
-pub use checkbox::{count_completed, parse_checkboxes, set_checkbox};
+pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker};
 pub use state_field_value::unsafe_line_char;
 pub use state_version::classify_state_version;
 pub use state_writers::{
-    get_field, remove_field, set_field, set_field_strict, set_or_insert_field,
+    find_field, with_field, with_field_if_present, with_field_or_insert, without_field,
 };
-
-// 述語 (境界規約の単一実装)
-pub use lock_protocol::reap_eligible;
 
 // エラー
 pub use bolt_refs::BoltRefsError;
-pub use checkbox::CheckboxWriteError;
+pub use checkbox::CheckboxUpdateError;
 pub use clone_id::CloneIdError;
-pub use lock_protocol::LockError;
+pub use intent_dir_name::IntentDirNameError;
 pub use space_name::SpaceNameError;
 pub use state_field_value::UnsafeLineChar;
 pub use state_writers::{FieldNotFound, HeadingNotFound};
 
 // 逐語定数
 pub use bolt_refs::EMPTY_LIST_LITERAL;
-pub use lock_identity::WORKSPACE_LOCK_SENTINEL;
 pub use state_version::CURRENT_STATE_VERSION;

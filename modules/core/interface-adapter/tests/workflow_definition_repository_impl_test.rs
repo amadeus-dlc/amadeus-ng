@@ -5,7 +5,9 @@
 //! (a) 正常読取と述語の疎通 / (b) graph 欠損 = Err / (c) 不正 JSON = Err /
 //! (d) grid 欠損 = 転置導出 (initialization 特例込み) / (e) `.md` あり × 列なし = zero-EXECUTE /
 //! (f) 列あり × `.md` なし = `valid_scopes` に不出現 / (g) 未知フィールド入り JSON が読めること。
-#![allow(clippy::unwrap_used)]
+// indexing_slicing (固定長フィクスチャの添字参照) と panic (想定外ケースの即時失敗という
+// 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use core_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
@@ -941,4 +943,111 @@ fn a_missing_grid_still_yields_a_revision_derived_from_the_transposed_grid() {
     // 導出グリッドと配布グリッドは中身が違うので revision も違う。
     let with = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
     assert_ne!(definition.revision(), find_definition(&with).revision());
+}
+
+#[test]
+fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it() {
+    // 未知の列挙値は load 時に落とす (12 §10 表 #3) — ドメイン型に `Unknown` variant を
+    // 持たせず Always Valid を保つため。診断文言はキーごとに違い、どのフィールドが原因かが
+    // 1 行で分かる。`slug` / `phase` は既存テストが押さえているので残り 7 キーを埋める。
+    let cases: [(&str, &str); 7] = [
+        (
+            r#"[{ "slug": "s", "number": "one", "name": "S", "phase": "ideation",
+                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
+                  "inputs": "i", "outputs": "o", "scopes": [] }]"#,
+            "has invalid number",
+        ),
+        (
+            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
+                  "execution": "SOMETIMES", "condition": "c", "lead_agent": "a", "mode": "inline",
+                  "inputs": "i", "outputs": "o", "scopes": [] }]"#,
+            "has unknown execution",
+        ),
+        (
+            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
+                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "telepathy",
+                  "inputs": "i", "outputs": "o", "scopes": [] }]"#,
+            "has unknown mode",
+        ),
+        (
+            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
+                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
+                  "inputs": "i", "outputs": "o", "scopes": [],
+                  "consumes": [{ "artifact": "x", "required": true, "conditional_on": "bluefield" }] }]"#,
+            "has unknown conditional_on",
+        ),
+        (
+            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
+                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
+                  "inputs": "i", "outputs": "o", "scopes": [],
+                  "requires_stage": ["Not A Slug"] }]"#,
+            "requires invalid slug",
+        ),
+        (
+            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
+                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
+                  "inputs": "i", "outputs": "o", "scopes": [],
+                  "rules_in_context": [{ "path": "memory/org.md", "scope": "galaxy" }] }]"#,
+            "has unknown rule scope",
+        ),
+        (
+            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
+                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
+                  "inputs": "i", "outputs": "o", "scopes": [],
+                  "review_class": "casual" }]"#,
+            "has unknown review_class",
+        ),
+    ];
+
+    for (graph, fragment) in cases {
+        let fixture = Fixture::new(Some(graph), None, &[]);
+        let error = fixture
+            .reader()
+            .find_by_id(&definition_id("claude"))
+            .unwrap_err();
+        assert!(
+            matches!(error, GraphReadError::Malformed { ref message }
+                if message.contains(fragment) && message.contains("stage-graph.json")),
+            "{fragment} を期待したが {error:?}"
+        );
+    }
+}
+
+#[test]
+fn a_scopes_path_that_is_not_a_directory_is_reported_instead_of_being_treated_as_empty() {
+    // ディレクトリ**欠落**だけが空カタログ扱い (12 §4)。存在するのに読めない場合は、
+    // 黙って 0 スコープにすると「有効スコープが 1 つも無い」と区別できなくなるので報告する。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
+    let not_a_dir = fixture.data_dir.join("scopes-as-a-file");
+    std::fs::write(&not_a_dir, "これはディレクトリではない\n").unwrap();
+
+    let reader = WorkflowDefinitionRepositoryImpl::new(
+        fixture.data_dir.clone(),
+        fixture.data_dir.join("scopes-as-a-file"),
+    );
+    let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
+    assert!(
+        matches!(error, GraphReadError::ScopeFile { ref message }
+            if message.starts_with(&format!("{}: ", not_a_dir.display()))),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
+    // 列挙は名前だけを見るので、`aidlc-*.md` という名のディレクトリも候補に入る。
+    // 読めない候補は 1 件でも致命 — 有効スコープの権威が欠けたまま進まない (F7)。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
+    let masquerading = fixture.scopes_dir.join("aidlc-not-a-file.md");
+    std::fs::create_dir_all(&masquerading).unwrap();
+
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
+    assert!(
+        matches!(error, GraphReadError::ScopeFile { ref message }
+            if message.starts_with(&format!("{}: ", masquerading.display()))),
+        "{error:?}"
+    );
 }

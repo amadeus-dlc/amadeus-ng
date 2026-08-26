@@ -553,7 +553,7 @@ mod tests {
     }
 
     fn intent() -> IntentId {
-        IntentId::parse("260822-stage1-selfhost").unwrap()
+        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
     fn envelope(payload: WorkflowExecutionEventPayload) -> WorkflowExecutionEvent {

@@ -77,7 +77,7 @@ impl CheckboxState {
 }
 
 /// パース済みの Stage Progress 行 — マーカー / stage slug / em dash 以降のテキストの 3 分割。
-/// 元の行の空白配置は保持しない (書き戻しは `set_checkbox` が元の行を verbatim に扱う)。
+/// 元の行の空白配置は保持しない (書き戻しは `with_checkbox_marker` が元の行を verbatim に扱う)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckboxEntry {
     state: CheckboxState,
@@ -108,7 +108,7 @@ impl CheckboxEntry {
         self.state
     }
 
-    /// stage slug — 行の識別子。空白を含まない 1 トークンで、`set_checkbox` の照合キー。
+    /// stage slug — 行の識別子。空白を含まない 1 トークンで、`with_checkbox_marker` の照合キー。
     #[must_use]
     pub fn slug(&self) -> &str {
         &self.slug
@@ -151,9 +151,9 @@ fn parse_line(line: &str) -> Option<CheckboxEntry> {
     Some(CheckboxEntry::new(state, slug, tail))
 }
 
-/// marker writer (`set_checkbox`) の拒否理由。
+/// marker writer (`with_checkbox_marker`) の拒否理由。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CheckboxWriteError {
+pub enum CheckboxUpdateError {
     /// 対象 slug の行が存在しない。
     MissingStage(String),
 }
@@ -162,11 +162,11 @@ pub enum CheckboxWriteError {
 /// # Errors
 ///
 /// 対象 slug の行が存在しなければ `MissingStage`。
-pub fn set_checkbox(
+pub fn with_checkbox_marker(
     content: &str,
     slug: &str,
     state: CheckboxState,
-) -> Result<String, CheckboxWriteError> {
+) -> Result<String, CheckboxUpdateError> {
     let mut found = false;
     let mut out: Vec<String> = Vec::new();
     for line in content.lines() {
@@ -190,7 +190,7 @@ pub fn set_checkbox(
         }
     }
     if !found {
-        return Err(CheckboxWriteError::MissingStage(slug.to_string()));
+        return Err(CheckboxUpdateError::MissingStage(slug.to_string()));
     }
     let mut result = out.join("\n");
     if content.ends_with('\n') {
@@ -210,6 +210,10 @@ pub fn count_completed(content: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+    // allow)。
+    #![allow(clippy::indexing_slicing)]
+
     use super::*;
 
     const SAMPLE: &str = "\
@@ -240,9 +244,10 @@ not a checkbox line
     }
 
     #[test]
-    fn set_checkbox_edits_only_the_marker_and_preserves_the_rest_verbatim() {
+    fn with_checkbox_marker_edits_only_the_marker_and_preserves_the_rest_verbatim() {
         let updated =
-            set_checkbox(SAMPLE, "requirements-analysis", CheckboxState::Completed).unwrap();
+            with_checkbox_marker(SAMPLE, "requirements-analysis", CheckboxState::Completed)
+                .unwrap();
         assert!(updated.contains("- [x] requirements-analysis — Requirements Analysis — EXECUTE"));
         // 他の行は不変
         assert!(updated.contains("- [ ] domain-modeling — Domain Modeling — SKIP"));
@@ -250,10 +255,10 @@ not a checkbox line
     }
 
     #[test]
-    fn set_checkbox_refuses_missing_stages() {
+    fn with_checkbox_marker_refuses_missing_stages() {
         assert_eq!(
-            set_checkbox(SAMPLE, "no-such-stage", CheckboxState::Completed),
-            Err(CheckboxWriteError::MissingStage("no-such-stage".into()))
+            with_checkbox_marker(SAMPLE, "no-such-stage", CheckboxState::Completed),
+            Err(CheckboxUpdateError::MissingStage("no-such-stage".into()))
         );
     }
 

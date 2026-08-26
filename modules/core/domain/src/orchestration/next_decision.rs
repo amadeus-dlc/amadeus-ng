@@ -15,6 +15,13 @@ pub struct NextRequest {
     free_text: bool,
 }
 
+/// 何も観測していない素の要求 (通常のループ 1 周)。
+impl Default for NextRequest {
+    fn default() -> NextRequest {
+        NextRequest::new(false, false, false)
+    }
+}
+
 impl NextRequest {
     /// 3 観測を束ねる。
     ///
@@ -27,12 +34,6 @@ impl NextRequest {
             reentry,
             free_text,
         }
-    }
-
-    /// 何も観測していない素の要求 (通常のループ 1 周)。
-    #[must_use]
-    pub const fn plain() -> NextRequest {
-        NextRequest::new(false, false, false)
     }
 
     /// `--resume` 指定があったか。
@@ -142,7 +143,7 @@ mod tests {
 
     #[test]
     fn a_plain_request_observes_nothing() {
-        let req = NextRequest::plain();
+        let req = NextRequest::default();
         assert!(!req.is_resume());
         assert!(!req.is_reentry());
         assert!(!req.is_free_text());

@@ -6,6 +6,10 @@
 //!
 //! 本 mod 自体が private。公開は親 (`orchestration`) のファサードが再輸出する。
 
+mod in_memory_event_store;
 mod workflow_definition_repository;
+mod workflow_execution_repository;
 
+pub use in_memory_event_store::InMemoryEventStore;
 pub use workflow_definition_repository::InMemoryWorkflowDefinitionRepository;
+pub use workflow_execution_repository::InMemoryWorkflowExecutionRepository;

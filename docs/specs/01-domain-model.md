@@ -84,7 +84,7 @@ flowchart TB
 
 **責務**: 「次に何が起こるか」。engine（`next` の 21 分岐ラダー / `report` の 13 段ガード）、`Directive`（10 種の判別共用体、28KiB 上限）、Gate の 3 層構造（静的決定 / コンダクタの儀式 / 承認強制）、jump・park・recompose、Construction 実行機構（Bolt / swarm / per-unit 反復 / loop-back）、Stop フックの forwarding loop。**7 コンテキスト中、状態機械が最も密**であり、Quint モデル化の最優先領域（A9）。
 
-**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は 16 属性、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（現行コード名 `WorkflowExecutionSnapshot` — Bolt B5 で改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004、Bolt B3 実装）。
+**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は 16 属性、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004、Bolt B3 実装）。
 
 **集約候補**（スライス 2）: `Bolt`、`SwarmBatch`（収束はサーガとしてモデル化 — 監査行なしの中間状態からの復旧を含む。裁定 B5）。`Directive` は値オブジェクト（Rust では enum そのもの）。
 
@@ -96,7 +96,7 @@ flowchart TB
 
 ### 3.3 workspace（ワークスペース）— 19 語
 
-**責務**: 永続化の機構。Space / Intent、状態ファイル `aidlc-state.md`（State Version 8、audit-first 不変条件）、監査台帳（clone ごとの shard、追記専用、86 イベントの閉集合）、mkdir ロック（再入深度カウンタ・reap 規則）、三層 fork/merge（state / audit / fragment）、Worktree、committed vs ignored の規律。**イベント行の意味論には関与しない** — merge-protected 判定もスキーマ駆動（裁定 B5）。「状態ファイルはキャッシュ、真実源は監査」という upstream の原則を、コンテキスト境界の規約に昇格させる（裁定 B9）。
+**責務**: 永続化の機構。Space / Intent、状態ファイル `aidlc-state.md`（State Version 8、audit-first 不変条件）、監査台帳（clone ごとの shard、追記専用、86 イベントの閉集合）、~~mkdir ロック（再入深度カウンタ・reap 規則）~~（ADR-007 / Bolt B5 で退役 — 並行制御は SQLite Tx + 楽観 version）、三層 fork/merge（state / audit / fragment）、Worktree、committed vs ignored の規律。**イベント行の意味論には関与しない** — merge-protected 判定もスキーマ駆動（裁定 B5）。「状態ファイルはキャッシュ、真実源は監査」という upstream の原則を、コンテキスト境界の規約に昇格させる（裁定 B9）。
 
 **集約**: `Intent`（集約ルート。`intents.json` への登録 — uuid / slug / dirName と生死。birth は単一チョークポイント）、`Space`、`Worktree`（構築）。**リードモデル**（集約ではない）: `StateFile`（`aidlc-state.md`）と `AuditShard` — 真実源は SQLite ジャーナルであり、両者は ReadModelUpdater（U4）の投影として**バイト互換**で再生成される（ADR-003 / ADR-004）。**退役**: `WorkspaceLock` — 並行制御は SQLite Tx + 楽観 version に置換され、ロック dir は生成しない（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 
@@ -104,9 +104,9 @@ flowchart TB
 
 > 脚注（実装との差）: U2 実装（Bolt B3）の `IntentId::parse` は kebab の記録ディレクトリ名を受理しており、本書の規範（UUIDv7）と一致していない。Bolt B5（U3 — `aggregate_id` を SQLite に書く最初の Unit）で UUIDv7 の検証へ是正し、記録ディレクトリ名は `IntentDirName` として書き分ける（オーナー裁定 2026-08-23）。
 
-**代表不変条件**: 「監査 emit が state 書き込みに先行し、emit 失敗時は state を書かない」（E3+E4 — audit-first は**旧 mkdir ロックモデル**の中心不変条件。ADR-007 でロックは退役したため、本段落のロック系不変条件と E4 名は `audit_lock.qnt` の協定モデル改訂後に Bolt B5 で差し替える — 改訂して存続、本 Unit では変更しない）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）、「生きている閾値未満のロック保持者からは決して奪わない」（E4 — クラッシュをアクションに含めて検査。方針書 R6）。
+**代表不変条件**: 「ジャーナルが真実源であり、スナップショット / チェックポイントの更新はジャーナル追記と同一 Tx 内に限られる」（E3+E4 — `journal_protocol.qnt` の協定モデル。ADR-007 でロックは退役し、旧 mkdir ロックモデルの audit-first 不変条件はこの協定へ置き換わった — Bolt B5）、「書込は楽観 version で直列化され、競合は状態を変えずに拒否される」（E3+E4 — `journal_protocol::conflict_rejected` / `no_lost_update`）、「チェックポイントは単調に増加し、投影は同一チェックポイントからの再実行で冪等」（E3+E4 — `journal_protocol::checkpoint_monotone` / `projection_idempotent`）、「追記パスは封じ込め検査・シンボリックリンク拒否・O_NOFOLLOW を通る」（E3。POSIX 前提 — 方針書 R3）、「フィールド値は単一行必須」（E2）。
 
-**状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は `audit_lock.qnt` の「ジャーナル / スナップショット / version / チェックポイント協定」への改訂で存続する — ADR-007）。
+**状態機械**: shard fork/merge（prefix-hash 照合）、Workflow / Unit / Phase lifecycle、CheckboxState、Worktree lifecycle、Session-intent binding。Audit lock lifecycle は**退役**（ロック機構そのものを置き換えたため。意味論の検証は協定モデル [`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt)（ジャーナル / スナップショット / version / チェックポイント協定。ADR-007 により `audit_lock.qnt` を退役して置換、Bolt B5）で存続する）。
 
 ### 3.4 knowledge（知識）— 10 語
 
@@ -215,7 +215,7 @@ upstream の語彙には放置できない多義が 16 件ある。ドメイン�
 - Conductor–engine directive loop（next 21 分岐 × report 13 段ガード × Verdict）
 - Stage checkbox lifecycle + effectivePlanAction（PlanAction × StageOutcome × recompose オーバレイの合成。合成の所有者は集約 `WorkflowExecution` の `effective_plan` — ADR-002 / 設計監査 R2）
 - ApprovalGate 解決（skeleton 往復・human-presence・QUESTION_ANSWERED 先行順序）
-- ~~Audit lock lifecycle + audit-first invariant~~ → ジャーナル / スナップショット / version / チェックポイント協定（version 競合拒否・チェックポイント単調性・投影冪等性）。mkdir ロックの退役に伴う `audit_lock.qnt` の改訂で、R6 の受け皿は「Tx 中断からの冪等修復」へ移る（ADR-007）。R7 はガード論理面のみで、ダイジェスト計算互換の本体はゴールデン互換層が受け持つ
+- ~~Audit lock lifecycle + audit-first invariant~~ → journal_protocol（[`formal/orchestration/journal_protocol.qnt`](../../formal/orchestration/journal_protocol.qnt) — ジャーナル / スナップショット / version / チェックポイント協定。version 競合拒否・チェックポイント単調性・投影冪等性。ADR-007 の mkdir ロック退役に伴い `audit_lock.qnt` を退役して置換、Bolt B5 で実装・ITF 準拠）。R6 の受け皿は「Tx 中断からの冪等修復」。R7 はガード論理面のみで、ダイジェスト計算互換の本体はゴールデン互換層が受け持つ
 - Workflow / park / jump / per-unit 反復カーソル
 - Stop-hook forwarding loop（no-progress cap・carve-out 順序）
 

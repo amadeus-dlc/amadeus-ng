@@ -60,12 +60,12 @@ fn tmp_path_in(parent: &Path, target: &Path) -> io::Result<PathBuf> {
     Ok(parent.join(format!("{file_name}.tmp-{}-{nanos}", std::process::id())))
 }
 
-/// `O_EXCL` 新規作成 (排他 open) — 既に存在すれば `AlreadyExists` で拒否する。
+/// `O_EXCL` 新規作成 — 既に存在すれば `AlreadyExists` で拒否する (std の `create_new` と同義)。
 ///
 /// # Errors
 ///
 /// 既存パスへの作成 (`ErrorKind::AlreadyExists`) やその他の I/O エラーを伝播する。
-pub fn open_exclusive_new(path: &Path) -> io::Result<File> {
+pub fn create_new_file(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
 }
 
@@ -124,11 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn open_exclusive_new_refuses_an_existing_path() {
+    fn create_new_file_refuses_an_existing_path() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("exclusive.txt");
-        open_exclusive_new(&path).unwrap();
-        let err = open_exclusive_new(&path).unwrap_err();
+        create_new_file(&path).unwrap();
+        let err = create_new_file(&path).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
     }
 }

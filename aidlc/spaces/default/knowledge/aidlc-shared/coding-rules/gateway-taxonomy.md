@@ -10,6 +10,10 @@
 
 インターフェイスアダプタ層の Gateway が担うのは次の 2 種類に限る。
 
+> **追加 2026-08-24**: ADR-001（ES 採用）以降、第三の責務 **永続化基盤ポート**が存在する
+> （下記 §1c）。「2 種類に限る」は**ドメインの Gateway について**の話であり、ES 基盤は
+> その下請けである。
+
 | 責務 | 中身 | 対応するポート |
 | --- | --- | --- |
 | **Repository** | 集約の永続化・再構成 | `XxxRepository`（`Xxx` = 集約名） |
@@ -19,7 +23,7 @@
 
 判定は「**どのユースケースがこのポートを消費するか**」で行う。答えられないなら、それはアプリ境界のポートではなく、実装の内部注入シームである。
 
-- 実装は**アダプタ層の機構モジュール**に置く（本リポジトリでは `core_interface_adapter::{clock, process_probe}` — コンテキスト（`orchestration` / `workspace`）の外、クレート root）。
+- 実装は**アダプタ層の機構モジュール**に置く（本リポジトリでは `core_interface_adapter::{clock}` — コンテキスト（`orchestration` / `workspace`）の外、クレート root）。
 - 配線（実物と fake の差し替え）は **composition root** が行う。
 - use-case 層には trait を置かない。置くと「ユースケースが消費しないポート」がポート表に居座り、Gateway 責務の分類が濁る。
 
@@ -32,9 +36,9 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 ### 2b. Repository のメソッド語彙（j5ik2o-ddd-repository-design が正典）
 
 - 使ってよい動詞: **`find_by_id` / `find`（単一集約の named retrieval）/ `save` / `remove`** ＋ **ドメイン概念を表す named retrievals**。`load` / `get` / `fetch` 等は使わない。
-- `find_by_...` の無秩序な増殖は禁止（複雑な検索・画面向け読取は read model 側 — ただし本リポジトリは CQRS 基盤を導入しないので、まずは「ドメイン概念を表す named retrieval」で表現できるかを考える）。
+- `find_by_...` の無秩序な増殖は禁止。複雑な検索・画面向け読取は**読取モデル側**で行う（ADR-003 / ADR-004 — `aidlc-state.md` と監査シャードが読取モデルで、`ReadModelUpdater` が投影する）。Repository に生やす前に、まず「ドメイン概念を表す named retrieval」で表現できるか、そもそも読取モデルの仕事ではないかを考える。
 - インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find_by_id` の not-found は契約上 fatal な `Err`（`NotFound { expected, actual }`、identity ファイルの読取失敗は `HarnessIdentity { path, cause }`）、grid 欠損は転置導出 — 12 §4。引数なしの `find()` は廃止済み — C4 改訂 2026-08-23 / ADR-008）。
-- **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（`set_field` 等）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
+- **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（フィールド単位で状態ファイルを書き換える純関数）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
 
 **ES Repository の拡張語彙**: イベントソーシングの Repository（`WorkflowExecutionRepository`）は `store(event, aggregate)` / `find_by_id` を動詞とする。上の許容動詞一覧は**ステートソーシング Repository の規則**であり、ES Repository の動詞は本家ライブラリ（event-store-adapter-rs）の語彙に従う — `store` はその拡張語彙として明示的に許可する（ADR-006）。
 
@@ -56,15 +60,50 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 媒体名を冠すると、格納形式の変更（ファイル → SQLite → リモート）がポート名の変更に波及し、ユースケース層が永続化の都合を知ってしまう。
 
+### 1c. 第三の責務 — 永続化基盤ポート（2026-08-24 追加）
+
+ADR-001 でイベントソーシングを採用した結果、Repository でも外部システムクライアントでもない
+ポートが実在する。**Repository の下請けとして、ジャーナル・スナップショット・投影チェック
+ポイントを扱う基盤**である。
+
+| 責務 | 中身 | 対応するポート | 実在 |
+| --- | --- | --- | --- |
+| **永続化基盤ポート** | ES のジャーナル追記・スナップショット・投影チェックポイント | `EventStore` / `JournalReader` | `use-case/src/orchestration/{event_store,journal_reader}.rs` |
+
+**語彙は本家ライブラリ（event-store-adapter-rs）に従う。** §2b の Repository 動詞規則
+（`load` / `get` / `fetch` を使わない）は **Repository 限定**であり、このポートには及ばない
+— 実在の `get_latest_snapshot_by_id` / `get_events_by_id_since_seq_nr` は本家の語彙であって
+違反ではない（[ubiquitous-language.md](ubiquitous-language.md) の Published Language）。
+
+集約の永続化を担うのは `WorkflowExecutionRepository` であり、`EventStore` はその下請けである。
+**ユースケースが `EventStore` を直接注入されることはない**（するなら Repository の意味が消える）。
+
 ### 3. ポート造語（Store / Reader / Writer / Source / Provider）は禁止
 
 `XxxStore` / `XxxReader` / `XxxWriter` は DDD の語彙ではない。「読むだけの Gateway だから Reader」という命名は、**Repository の一部の操作にポートを 1 つずつ立てる**ことになり、集約単位のトランザクション境界を name の上で解体する。読取専用の集約（本システムから書き換えない `WorkflowDefinition` のような Published Language 成果物）は、`save` を持たない Repository として表現すればよい。
 
-### 4. CQRS は採用しない（まず素の DDD）
+**明示的な例外（2026-08-24）**: **§1c の永続化基盤ポート `EventStore` / `JournalReader` は本禁止の対象外**である。
+理由は 2 つ。(a) これらは Repository ではないので「Repository の操作を分割した」という本禁止の
+根拠が当てはまらない。(b) 名前が本家 event-store-adapter-rs の Published Language であり、
+ドメイン語へ言い換えると対応が読めなくなる（[ubiquitous-language.md](ubiquitous-language.md)）。
+**例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
+機械化する場合も、この 2 本を除外リストに持つ実装にすること。
 
-読み書きのモデルを分けない。単一の Repository が集約の find / save を持つ（動詞は §2b の許容語彙に合わせた — 設計監査 C2 / 2026-08-23）。
+### 4. 読取専用ユースケースは型で保証する
 
-「このユースケースには書かせたくない」という**型による保証**は、CQRS ではなく次の 2 手段で実現する。
+> **改訂 2026-08-24（オーナー裁定）**: 本節は当初「CQRS は採用しない（まず素の DDD）」だった。
+> その後 ADR-001 でイベントソーシングを、**ADR-003「SQLite ストア + upstream 互換ファイルは
+> リードモデル + RMU」/ ADR-004「状態ファイルはリードモデル」で読取モデルの分離を採用**したため、
+> 前提が失効した。書込モデル（集約 `WorkflowExecution` + `EventStore` のジャーナル/スナップショット）と
+> 読取モデル（`aidlc-state.md` と監査シャード。`ReadModelUpdater` がチェックポイント以降の
+> イベントを投影して更新）は**実際に分かれている**。節の本体（読取専用を型で保証する 2 手段）は
+> CQRS の採否とは独立に有効なので、前提の記述だけを差し替えて残す。
+
+集約の書込口は Repository に一本化する（動詞は §2b の許容語彙 — 設計監査 C2 / 2026-08-23）。
+読取モデルは Repository ではなく投影（RMU）が更新するので、**Repository に読取モデル向けの
+検索メソッドを生やさない**（§2b の「`find_by_...` の無秩序な増殖は禁止」と同じ帰結）。
+
+「このユースケースには書かせたくない」という**型による保証**は、次の 2 手段で実現する。
 
 - **Writer を注入しない**: 読取専用ユースケースのコンストラクタに Repository を渡さない。
 - **`find_by_id` 済み集約を `&` 参照で渡す**: Controller が Repository で集約を `find_by_id` し、ユースケースには `&Aggregate` を渡す。所有権と可変性が Rust の型で読取専用を保証する。

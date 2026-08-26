@@ -6,12 +6,15 @@
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
 //! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
-//! `WorkflowExecution::start_with_entries` に直接与えて集約を作る。実グラフの initialization が
+//! `WorkflowExecution::start_from_plan_unchecked` に直接与えて集約を作る。実グラフの initialization が
 //! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
-#![allow(clippy::unwrap_used)]
+// indexing_slicing も同じ理由 (固定長フィクスチャの添字参照) で file 単位の allow が要る。
+// panic! は想定外ケースの即時失敗という検証用途で使っており、テスト失敗のシグナルとして
+// 妥当なため同様に許容する。
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use std::collections::BTreeMap;
 
@@ -170,7 +173,7 @@ fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
             "step {step}: approved[{s}]"
         );
     }
-    assert_eq!(agg.cursor().value(), m.cursor, "step {step}: cursor");
+    assert_eq!(agg.cursor().to_usize(), m.cursor, "step {step}: cursor");
     assert_eq!(
         agg.autonomy().is_autonomous(),
         m.autonomous,
@@ -178,7 +181,7 @@ fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
     );
     let parked = agg
         .parked_at()
-        .map_or(-1, |p| i64::try_from(p.value()).unwrap());
+        .map_or(-1, |p| i64::try_from(p.to_usize()).unwrap());
     assert_eq!(parked, m.parked_at, "step {step}: parkedAt");
     match m.status.as_str() {
         "Running" => {
@@ -199,7 +202,7 @@ fn assert_signal(sig: EngineSignal, m: &ModelState, step: usize) {
     match (sig, m.directive_tag.as_str()) {
         (EngineSignal::RunStage(s), "DRunStage") => {
             assert_eq!(
-                Some(s.value()),
+                Some(s.to_usize()),
                 m.directive_stage,
                 "step {step}: run-stage target"
             );
@@ -232,8 +235,8 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let (mut agg, started) = WorkflowExecution::start_with_entries(
-        IntentId::parse("itf-engine-loop").unwrap(),
+    let (mut agg, started) = WorkflowExecution::start_from_plan_unchecked(
+        IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
         &StartRequest::new("itf", "conformance"),
@@ -251,7 +254,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             // 観測アクション (状態不変)
             "next" | "next_parked" | "done_stutter" => {
                 let decision = agg
-                    .next_decision(&definition, &NextRequest::plain())
+                    .next_decision(&definition, &NextRequest::default())
                     .unwrap();
                 assert_signal(EngineSignal::from(&decision), m, i);
             }
@@ -311,13 +314,13 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 agg.recompose(&[index(&agg, s)], AT).unwrap();
             }
             "set_autonomy" => {
-                // モデルはトグル — 反転後の値を setter に渡す (BR2.5)。
+                // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
                 let mode = if m.autonomous {
                     AutonomyMode::Autonomous
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.set_autonomy(mode, AT).unwrap();
+                agg.switch_autonomy(mode, AT).unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }

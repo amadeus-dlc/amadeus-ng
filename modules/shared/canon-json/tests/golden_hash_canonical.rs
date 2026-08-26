@@ -8,6 +8,11 @@
 //! コーパスの読取には `serde_json` を直接使う。canon-json 自身の `parse` で読むと、
 //! パーサの欠陥がオラクルを汚染して不一致を隠すため。
 
+// テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+// allow)。panic! は想定外ケースの即時失敗という検証用途で使っており、テスト失敗の
+// シグナルとして妥当なため同様に許容する。
+#![allow(clippy::indexing_slicing, clippy::panic)]
+
 use canon_json::{
     JsonValue, Number, ObjectMembers, SerializationProfile, hash_canonical, hash_compact, parse,
     serialize,

@@ -14,7 +14,7 @@
 //!   `gated(s) = s != 0` は initialization 1 ステージの合成計画に対する抽象で、ITF 準拠テストは
 //!   その合成計画で駆動する (BR2.5)。
 //! - **時計を持たない** (NFR3.1): `occurred_at` は呼出側 (ユースケース) が Clock から渡す。
-//! - **serde に依存しない** (BR5.2): 永続化境界は `snapshot()` / `from_snapshot()` の値オブジェクト。
+//! - **serde に依存しない** (BR5.2): 永続化境界は `state()` / `from_state()` の値オブジェクト。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
 //!
@@ -30,18 +30,18 @@ use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
-use super::snapshot_error::SnapshotError;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::start_error::StartError;
 use super::start_request::StartRequest;
+use super::state_error::StateError;
 use super::status::Status;
 use super::workflow_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
     StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
     WorkflowExecutionEventPayload,
 };
-use super::workflow_execution_snapshot::WorkflowExecutionSnapshot;
+use super::workflow_execution_state::WorkflowExecutionState;
 use crate::workflow_definition::{
     DefinitionRevision, ExecutionKind, PhaseId, PlanAction, StageSlug, UnknownScope,
     WorkflowDefinition, WorkflowDefinitionId,
@@ -70,8 +70,8 @@ pub struct WorkflowExecution {
     definition_id: WorkflowDefinitionId,
     definition_revision: DefinitionRevision,
     /// 文書順の解決済み計画。`stages` / `plan` / `conditional` の 3 属性をこの 1 列が担う
-    /// (`plan` = `plan_action()`、`conditional` = `is_conditional()`) — スナップショットは
-    /// C6 の列構成に合わせて 3 列へ展開し、`from_snapshot` が整合を検査する。
+    /// (`plan` = `plan_action()`、`conditional` = `is_conditional()`) — 状態の写し (memento) は
+    /// C6 の列構成に合わせて 3 列へ展開し、`from_state` が整合を検査する。
     stages: Vec<StageEntry>,
     overlay: Vec<PlanAction>,
     checkbox: Vec<CheckboxState>,
@@ -134,7 +134,7 @@ impl WorkflowExecution {
                 )
             })
             .collect();
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent_id,
             definition.id().clone(),
             definition.revision().clone(),
@@ -146,14 +146,19 @@ impl WorkflowExecution {
 
     /// 解決済み計画を直接与えて実行を開始する ([`WorkflowExecution::start`] の委譲先)。
     ///
-    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。スコープ名の
-    /// 妥当性はここでは検査しない (定義を持たないため) — 検査は [`WorkflowExecution::start`] の責務。
+    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。
+    ///
+    /// **`start` と違い [`StartError::UnknownScope`] を返せない** — 照合すべき
+    /// [`WorkflowDefinition`] を受け取らないため、スコープ名が定義にあるかどうかを検査する材料が
+    /// そもそも無い。名前の `_unchecked` はこの検査の欠落を指す。定義を持っている呼出側は
+    /// [`WorkflowExecution::start`] を使うこと。
     ///
     /// # Errors
     ///
     /// ステージ 0 件、initialization ステージの SKIP / CONDITIONAL、先頭ステージのスコープ外を
     /// 拒否する (先頭はカーソルの初期位置なので実効 EXECUTE でなければ `cursor_in_scope` を破る)。
-    pub fn start_with_entries(
+    /// スコープ名の妥当性 (`UnknownScope`) は上記のとおり検査しない。
+    pub fn start_from_plan_unchecked(
         intent_id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
@@ -293,31 +298,31 @@ impl WorkflowExecution {
     /// 名指しステージの checkbox マーカー。範囲外は `None`。
     #[must_use]
     pub fn checkbox(&self, stage: StageIndex) -> Option<CheckboxState> {
-        self.checkbox.get(stage.value()).copied()
+        self.checkbox.get(stage.to_usize()).copied()
     }
 
     /// 名指しステージのゲート承認履歴。範囲外は `None`。
     #[must_use]
     pub fn approved(&self, stage: StageIndex) -> Option<bool> {
-        self.approved.get(stage.value()).copied()
+        self.approved.get(stage.to_usize()).copied()
     }
 
     /// 名指しステージの差し戻し回数。範囲外は `None`。
     #[must_use]
     pub fn revision_count(&self, stage: StageIndex) -> Option<u32> {
-        self.revision_count.get(stage.value()).copied()
+        self.revision_count.get(stage.to_usize()).copied()
     }
 
     /// 実効プラン — オーバレイ (recompose) が静的グリッドに勝つ (BR4.2)。範囲外は `None`。
     #[must_use]
     pub fn effective_plan(&self, stage: StageIndex) -> Option<PlanAction> {
-        self.overlay.get(stage.value()).copied()
+        self.overlay.get(stage.to_usize()).copied()
     }
 
     /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外は `None`。
     #[must_use]
     pub fn gated(&self, stage: StageIndex) -> Option<bool> {
-        self.stages.get(stage.value()).map(StageEntry::is_gated)
+        self.stages.get(stage.to_usize()).map(StageEntry::is_gated)
     }
 
     /// parked 分岐の発火は導出述語 (マーカー有 ∧ 位置一致 — BR1.7)。
@@ -335,7 +340,7 @@ impl WorkflowExecution {
     // ---- 内部の索引ヘルパ (すべて `StageIndex` 経由 — 生の添字を使わない) ----
 
     fn entry(&self, stage: StageIndex) -> Option<&StageEntry> {
-        self.stages.get(stage.value())
+        self.stages.get(stage.to_usize())
     }
 
     fn is_gated(&self, stage: StageIndex) -> bool {
@@ -347,7 +352,7 @@ impl WorkflowExecution {
     }
 
     fn next_in_scope(&self, after: StageIndex) -> Option<StageIndex> {
-        ((after.value() + 1)..self.stage_count())
+        ((after.to_usize() + 1)..self.stage_count())
             .map(StageIndex::new)
             .find(|&stage| self.in_scope(stage))
     }
@@ -372,15 +377,24 @@ impl WorkflowExecution {
             .ok_or_else(|| ApplyError::UnknownStage(slug.clone()))
     }
 
-    fn set_checkbox(&mut self, stage: StageIndex, value: CheckboxState) {
-        if let Some(slot) = self.checkbox.get_mut(stage.value()) {
+    /// ステージに状態の印を付ける (状態ファイルのチェックボックスがこの印の表現)。
+    fn mark_stage(&mut self, stage: StageIndex, value: CheckboxState) {
+        if let Some(slot) = self.checkbox.get_mut(stage.to_usize()) {
             *slot = value;
         }
     }
 
-    fn set_approved(&mut self, stage: StageIndex, value: bool) {
-        if let Some(slot) = self.approved.get_mut(stage.value()) {
-            *slot = value;
+    /// ステージの承認を記録する (`GateApproved` の適用)。
+    fn record_approval(&mut self, stage: StageIndex) {
+        if let Some(slot) = self.approved.get_mut(stage.to_usize()) {
+            *slot = true;
+        }
+    }
+
+    /// ステージの承認履歴を無効化する (BR1.6 — jump が承認を巻き戻す)。
+    fn invalidate_approval(&mut self, stage: StageIndex) {
+        if let Some(slot) = self.approved.get_mut(stage.to_usize()) {
+            *slot = false;
         }
     }
 
@@ -597,20 +611,20 @@ impl WorkflowExecution {
         let mut stages_skipped = Vec::new();
         match direction {
             JumpDirection::Forward => {
-                for value in source.value()..target.value() {
+                for value in source.to_usize()..target.to_usize() {
                     let stage = StageIndex::new(value);
                     let Some(marker) = self.checkbox(stage) else {
                         continue;
                     };
-                    let skip_current = value == source.value() && marker.is_active();
-                    let skip_between = value > source.value() && marker.is_in_flight();
+                    let skip_current = value == source.to_usize() && marker.is_active();
+                    let skip_between = value > source.to_usize() && marker.is_in_flight();
                     if skip_current || skip_between {
                         stages_skipped.push(self.slug_of(stage)?);
                     }
                 }
             }
             JumpDirection::Backward => {
-                for value in (target.value() + 1)..self.stage_count() {
+                for value in (target.to_usize() + 1)..self.stage_count() {
                     let stage = StageIndex::new(value);
                     if self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
                     {
@@ -672,13 +686,13 @@ impl WorkflowExecution {
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
-        let targets: BTreeSet<usize> = flips.iter().map(|stage| stage.value()).collect();
+        let targets: BTreeSet<usize> = flips.iter().map(|stage| stage.to_usize()).collect();
         if targets.is_empty() {
             return Err(CommandError::InvalidTarget(cursor));
         }
         for &value in &targets {
             let stage = StageIndex::new(value);
-            if value <= cursor.value() || value >= self.stage_count() {
+            if value <= cursor.to_usize() || value >= self.stage_count() {
                 return Err(CommandError::InvalidTarget(stage));
             }
             self.require_checkbox(stage, &[CheckboxState::Pending])?;
@@ -712,14 +726,20 @@ impl WorkflowExecution {
         )
     }
 
-    /// 自律モードの設定 — `AutonomyModeSet` (BR1.8)。
+    /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
     ///
-    /// human-presence ガードはユースケース層 (監査台帳の射影が要る) — ここは状態変更のみ。
+    /// 方向は 2 つあり、仕様はそれぞれを**昇格**(gated → autonomous) と**降格**(その逆) と呼ぶ。
+    /// 本メソッドは両方向を受ける。**昇格だけが human presence を要する** (I11) が、その
+    /// ガードはユースケース層にある (監査台帳の射影が要る) — ここは状態変更のみ。
+    ///
+    /// 発する監査イベント文字列 `AUTONOMY_MODE_SET` と CLI 動詞 `set-autonomy` は upstream の
+    /// Published Language なので逐語で維持するが、**本メソッド名は外に出ない**のでドメインの語
+    /// を使う (coding-rules/ubiquitous-language.md)。
     ///
     /// # Errors
     ///
     /// 非受理なら `NotRunning`。
-    pub fn set_autonomy(
+    pub fn switch_autonomy(
         &mut self,
         mode: AutonomyMode,
         occurred_at: &str,
@@ -769,33 +789,33 @@ impl WorkflowExecution {
             }
             WorkflowExecutionEventPayload::StageCompleted(completed) => {
                 let stage = self.resolve(completed.stage())?;
-                self.set_checkbox(stage, CheckboxState::Completed);
+                self.mark_stage(stage, CheckboxState::Completed);
                 self.advance(completed.next_stage())?;
             }
             WorkflowExecutionEventPayload::GateOpened(opened) => {
                 let stage = self.resolve(opened.stage())?;
-                self.set_checkbox(stage, CheckboxState::AwaitingApproval);
+                self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             WorkflowExecutionEventPayload::GateApproved(approved) => {
                 let stage = self.resolve(approved.stage())?;
-                self.set_approved(stage, true);
-                self.set_checkbox(stage, CheckboxState::Completed);
+                self.record_approval(stage);
+                self.mark_stage(stage, CheckboxState::Completed);
                 self.advance(approved.next_stage())?;
             }
             WorkflowExecutionEventPayload::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
-                self.set_checkbox(stage, CheckboxState::Revising);
-                if let Some(slot) = self.revision_count.get_mut(stage.value()) {
+                self.mark_stage(stage, CheckboxState::Revising);
+                if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = rejected.revision_count();
                 }
             }
             WorkflowExecutionEventPayload::StageRevised(revised) => {
                 let stage = self.resolve(revised.stage())?;
-                self.set_checkbox(stage, CheckboxState::AwaitingApproval);
+                self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             WorkflowExecutionEventPayload::StageSkipped(skipped) => {
                 let stage = self.resolve(skipped.stage())?;
-                self.set_checkbox(stage, CheckboxState::Skipped);
+                self.mark_stage(stage, CheckboxState::Skipped);
                 self.advance(skipped.next_stage())?;
             }
             WorkflowExecutionEventPayload::Jumped(jumped) => {
@@ -811,13 +831,13 @@ impl WorkflowExecution {
             WorkflowExecutionEventPayload::Recomposed(recomposed) => {
                 for slug in recomposed.skipped() {
                     let stage = self.resolve(slug)?;
-                    if let Some(slot) = self.overlay.get_mut(stage.value()) {
+                    if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Skip;
                     }
                 }
                 for slug in recomposed.added() {
                     let stage = self.resolve(slug)?;
-                    if let Some(slot) = self.overlay.get_mut(stage.value()) {
+                    if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Execute;
                     }
                 }
@@ -834,23 +854,23 @@ impl WorkflowExecution {
         let target = self.resolve(jumped.target())?;
         for slug in jumped.stages_reset() {
             let stage = self.resolve(slug)?;
-            self.set_checkbox(stage, CheckboxState::Pending);
+            self.mark_stage(stage, CheckboxState::Pending);
         }
         for slug in jumped.stages_skipped() {
             let stage = self.resolve(slug)?;
-            self.set_checkbox(stage, CheckboxState::Skipped);
+            self.mark_stage(stage, CheckboxState::Skipped);
         }
         match jumped.direction() {
             // backward は target 以降の承認履歴を、redo は出発点の承認履歴を無効化する (BR1.6)。
             JumpDirection::Backward => {
-                for value in target.value()..self.stage_count() {
-                    self.set_approved(StageIndex::new(value), false);
+                for value in target.to_usize()..self.stage_count() {
+                    self.invalidate_approval(StageIndex::new(value));
                 }
             }
-            JumpDirection::Redo => self.set_approved(source, false),
+            JumpDirection::Redo => self.invalidate_approval(source),
             JumpDirection::Forward => {}
         }
-        self.set_checkbox(target, CheckboxState::InProgress);
+        self.mark_stage(target, CheckboxState::InProgress);
         self.cursor = target;
         Ok(())
     }
@@ -860,7 +880,7 @@ impl WorkflowExecution {
         match next_stage {
             Some(slug) => {
                 let stage = self.resolve(slug)?;
-                self.set_checkbox(stage, CheckboxState::InProgress);
+                self.mark_stage(stage, CheckboxState::InProgress);
                 self.cursor = stage;
             }
             None => self.status = Status::Completed,
@@ -888,11 +908,11 @@ impl WorkflowExecution {
         if self.seq_nr == 0 {
             return Err("seq_nr is zero".to_string());
         }
-        if self.cursor.value() >= count {
+        if self.cursor.to_usize() >= count {
             return Err("cursor out of range".to_string());
         }
         if let Some(parked) = self.parked_at {
-            if parked.value() >= count {
+            if parked.to_usize() >= count {
                 return Err("parked_at out of range".to_string());
             }
             if parked != self.cursor {
@@ -924,12 +944,12 @@ impl WorkflowExecution {
         Ok(())
     }
 
-    // ---- W3: スナップショット (BR5.2 / BR5.3) ----
+    // ---- W3: 状態の写し (memento) (BR5.2 / BR5.3) ----
 
     /// 全状態を値オブジェクトへ写す。`plan` / `conditional` は解決済み計画からの展開 (C6 の列構成)。
     #[must_use]
-    pub fn snapshot(&self) -> WorkflowExecutionSnapshot {
-        WorkflowExecutionSnapshot {
+    pub fn state(&self) -> WorkflowExecutionState {
+        WorkflowExecutionState {
             intent_id: self.intent_id.clone(),
             definition_id: self.definition_id.clone(),
             definition_revision: self.definition_revision.clone(),
@@ -938,9 +958,9 @@ impl WorkflowExecution {
             stages: self.stages.clone(),
             overlay: self.overlay.clone(),
             checkbox: self.checkbox.clone(),
-            cursor: self.cursor.value(),
+            cursor: self.cursor.to_usize(),
             status: self.status,
-            parked_at: self.parked_at.map(StageIndex::value),
+            parked_at: self.parked_at.map(StageIndex::to_usize),
             autonomy: self.autonomy,
             approved: self.approved.clone(),
             revision_count: self.revision_count.clone(),
@@ -949,58 +969,56 @@ impl WorkflowExecution {
         }
     }
 
-    /// スナップショットから集約を復元する (不変条件を検査する唯一の再水和経路)。
+    /// 状態の写し (memento) から集約を復元する (不変条件を検査する唯一の再水和経路)。
     ///
     /// # Errors
     ///
     /// 長さ不一致・`plan` / `conditional` と解決済み計画の食い違い・範囲外カーソル・
     /// `cursor_in_scope` / `at_most_one_active` / `no_gate_bypass` / `parked_position` の違反・
     /// `seq_nr` = 0 を `InvariantViolation` で拒否する。
-    pub fn from_snapshot(
-        snapshot: WorkflowExecutionSnapshot,
-    ) -> Result<WorkflowExecution, SnapshotError> {
-        let count = snapshot.stages.len();
-        if snapshot.plan.len() != count {
-            return Err(SnapshotError::InvariantViolation(
+    pub fn from_state(state: WorkflowExecutionState) -> Result<WorkflowExecution, StateError> {
+        let count = state.stages.len();
+        if state.plan.len() != count {
+            return Err(StateError::InvariantViolation(
                 "length mismatch: plan".to_string(),
             ));
         }
-        if snapshot.conditional.len() != count {
-            return Err(SnapshotError::InvariantViolation(
+        if state.conditional.len() != count {
+            return Err(StateError::InvariantViolation(
                 "length mismatch: conditional".to_string(),
             ));
         }
-        for (index, entry) in snapshot.stages.iter().enumerate() {
-            if snapshot.plan.get(index).copied() != Some(entry.plan_action()) {
-                return Err(SnapshotError::InvariantViolation(format!(
+        for (index, entry) in state.stages.iter().enumerate() {
+            if state.plan.get(index).copied() != Some(entry.plan_action()) {
+                return Err(StateError::InvariantViolation(format!(
                     "plan disagrees with stages at {index}"
                 )));
             }
-            if snapshot.conditional.get(index).copied() != Some(entry.is_conditional()) {
-                return Err(SnapshotError::InvariantViolation(format!(
+            if state.conditional.get(index).copied() != Some(entry.is_conditional()) {
+                return Err(StateError::InvariantViolation(format!(
                     "conditional disagrees with stages at {index}"
                 )));
             }
         }
         let execution = WorkflowExecution {
-            intent_id: snapshot.intent_id,
-            definition_id: snapshot.definition_id,
-            definition_revision: snapshot.definition_revision,
-            stages: snapshot.stages,
-            overlay: snapshot.overlay,
-            checkbox: snapshot.checkbox,
-            cursor: StageIndex::new(snapshot.cursor),
-            status: snapshot.status,
-            parked_at: snapshot.parked_at.map(StageIndex::new),
-            autonomy: snapshot.autonomy,
-            approved: snapshot.approved,
-            revision_count: snapshot.revision_count,
-            seq_nr: snapshot.seq_nr,
-            version: snapshot.version,
+            intent_id: state.intent_id,
+            definition_id: state.definition_id,
+            definition_revision: state.definition_revision,
+            stages: state.stages,
+            overlay: state.overlay,
+            checkbox: state.checkbox,
+            cursor: StageIndex::new(state.cursor),
+            status: state.status,
+            parked_at: state.parked_at.map(StageIndex::new),
+            autonomy: state.autonomy,
+            approved: state.approved,
+            revision_count: state.revision_count,
+            seq_nr: state.seq_nr,
+            version: state.version,
         };
         execution
             .check_invariants()
-            .map_err(SnapshotError::InvariantViolation)?;
+            .map_err(StateError::InvariantViolation)?;
         Ok(execution)
     }
 
@@ -1091,10 +1109,10 @@ impl WorkflowExecution {
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
-        if target.value() >= self.stage_count() {
+        if target.to_usize() >= self.stage_count() {
             return Err(CommandError::InvalidTarget(target));
         }
-        let direction = JumpDirection::derive(self.cursor.value(), target.value());
+        let direction = JumpDirection::of(self.cursor.to_usize(), target.to_usize());
         match direction {
             // INIT_JUMP_ERROR: initialization フェーズのステージへは跳べない。scope 外も不可。
             JumpDirection::Forward | JumpDirection::Backward => {
@@ -1120,7 +1138,7 @@ impl WorkflowExecution {
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
-        if stage.value() >= self.cursor.value()
+        if stage.to_usize() >= self.cursor.to_usize()
             || self.checkbox(stage) != Some(CheckboxState::Completed)
         {
             return Err(CommandError::NotStale(stage));
@@ -1131,12 +1149,17 @@ impl WorkflowExecution {
 
 #[cfg(test)]
 mod tests {
+    // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
+    // allow)。panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗の
+    // シグナルとして妥当なため同様に許容する。
+    #![allow(clippy::indexing_slicing, clippy::panic)]
+
     use super::*;
     use crate::orchestration::{
         ApplyError, AutonomyMode, CommandError, EngineSignal, IntentId, JumpDirection,
-        NextDecision, NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageEntry,
-        StageIndex, StartError, StartRequest, Started, Status, WorkflowExecutionEvent,
-        WorkflowExecutionEventPayload, WorkflowExecutionSnapshotBuilder,
+        NextDecision, NextRequest, PhaseBoundary, StageCompleted, StageEntry, StageIndex,
+        StartError, StartRequest, Started, StateError, Status, WorkflowExecutionEvent,
+        WorkflowExecutionEventPayload, WorkflowExecutionStateBuilder,
     };
     use crate::workflow_definition::{
         DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata,
@@ -1156,7 +1179,7 @@ mod tests {
     }
 
     fn intent() -> IntentId {
-        IntentId::parse("260822-stage1-selfhost").unwrap()
+        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
     fn def_id(value: &str) -> WorkflowDefinitionId {
@@ -1189,7 +1212,7 @@ mod tests {
     }
 
     fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> WorkflowExecution {
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1371,7 +1394,7 @@ mod tests {
 
     #[test]
     fn an_empty_stage_list_is_refused() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1385,7 +1408,7 @@ mod tests {
 
     #[test]
     fn an_initialization_stage_that_folds_to_skip_is_refused() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1399,7 +1422,7 @@ mod tests {
 
     #[test]
     fn a_conditional_initialization_stage_is_refused() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1413,7 +1436,7 @@ mod tests {
 
     #[test]
     fn a_first_stage_outside_scope_is_refused_because_the_cursor_must_be_in_scope() {
-        let err = WorkflowExecution::start_with_entries(
+        let err = WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1624,7 +1647,7 @@ mod tests {
         w.unpark(AT).unwrap();
         assert_eq!(w.cursor(), at(&w, 1));
         assert_eq!(w.parked_at(), None);
-        w.set_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
         assert_eq!(w.park(AT), Err(CommandError::RefusedUnderAutonomy));
     }
 
@@ -1650,7 +1673,7 @@ mod tests {
         assert_eq!(w.park(AT), Err(CommandError::NotRunning));
         assert_eq!(w.recompose(&[target], AT), Err(CommandError::NotRunning));
         assert_eq!(
-            w.set_autonomy(AutonomyMode::Autonomous, AT),
+            w.switch_autonomy(AutonomyMode::Autonomous, AT),
             Err(CommandError::NotRunning)
         );
         assert_eq!(w.stale_report(at(&w, 0)), Err(CommandError::NotRunning));
@@ -1684,7 +1707,7 @@ mod tests {
         assert_eq!(w.effective_plan(at(&w, 3)), Some(Skip));
         // plan (静的グリッド) は不変 — オーバレイだけが動く。
         assert_eq!(w.stages()[2].plan_action(), Execute);
-        w.set_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
         assert_eq!(
             w.recompose(&[at(&w, 2)], AT),
             Err(CommandError::RefusedUnderAutonomy)
@@ -1711,7 +1734,7 @@ mod tests {
     #[test]
     fn set_autonomy_replaces_the_mode() {
         let mut w = all_exec(3);
-        let event = w.set_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        let event = w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
         let WorkflowExecutionEventPayload::AutonomyModeSet(set) = event.payload() else {
             panic!("expected AutonomyModeSet");
         };
@@ -1857,32 +1880,32 @@ mod tests {
         assert_eq!(approved.phase_boundary(), Some(boundary));
     }
 
-    // ---- W3: snapshot / from_snapshot (BR5.2 / BR5.3) ----
+    // ---- W3: state / from_state (BR5.2 / BR5.3) ----
 
     #[test]
-    fn the_snapshot_carries_every_attribute_and_round_trips() {
+    fn the_state_carries_every_attribute_and_round_trips() {
         let mut w = all_exec(4);
         w.complete_stage(AT).unwrap();
         w.open_gate(Vec::new(), AT).unwrap();
         w.reject_gate(None, AT).unwrap();
-        let snapshot = w.snapshot();
-        assert_eq!(snapshot.intent_id(), w.intent_id());
-        assert_eq!(snapshot.definition_id(), w.definition_id());
-        assert_eq!(snapshot.definition_revision(), w.definition_revision());
-        assert_eq!(snapshot.stages(), w.stages());
-        assert_eq!(snapshot.plan(), [Execute, Execute, Execute, Execute]);
-        assert_eq!(snapshot.overlay(), [Execute, Execute, Execute, Execute]);
-        assert_eq!(snapshot.conditional(), [false, false, false, false]);
-        assert_eq!(snapshot.checkbox()[0], Completed);
-        assert_eq!(snapshot.cursor(), w.cursor());
-        assert_eq!(snapshot.status(), Status::Running);
-        assert_eq!(snapshot.parked_at(), None);
-        assert_eq!(snapshot.autonomy(), AutonomyMode::Gated);
-        assert_eq!(snapshot.approved(), [false, false, false, false]);
-        assert_eq!(snapshot.revision_count(), [0, 1, 0, 0]);
-        assert_eq!(snapshot.seq_nr(), w.seq_nr());
-        assert_eq!(snapshot.version(), 0);
-        assert_eq!(WorkflowExecution::from_snapshot(snapshot).unwrap(), w);
+        let state = w.state();
+        assert_eq!(state.intent_id(), w.intent_id());
+        assert_eq!(state.definition_id(), w.definition_id());
+        assert_eq!(state.definition_revision(), w.definition_revision());
+        assert_eq!(state.stages(), w.stages());
+        assert_eq!(state.plan(), [Execute, Execute, Execute, Execute]);
+        assert_eq!(state.overlay(), [Execute, Execute, Execute, Execute]);
+        assert_eq!(state.conditional(), [false, false, false, false]);
+        assert_eq!(state.checkbox()[0], Completed);
+        assert_eq!(state.cursor(), w.cursor());
+        assert_eq!(state.status(), Status::Running);
+        assert_eq!(state.parked_at(), None);
+        assert_eq!(state.autonomy(), AutonomyMode::Gated);
+        assert_eq!(state.approved(), [false, false, false, false]);
+        assert_eq!(state.revision_count(), [0, 1, 0, 0]);
+        assert_eq!(state.seq_nr(), w.seq_nr());
+        assert_eq!(state.version(), 0);
+        assert_eq!(WorkflowExecution::from_state(state).unwrap(), w);
     }
 
     #[test]
@@ -1891,15 +1914,15 @@ mod tests {
         let stored = w.clone().with_version(7);
         assert_eq!(stored.version(), 7);
         assert_eq!(stored.seq_nr(), w.seq_nr());
-        assert_eq!(stored.snapshot().version(), 7);
+        assert_eq!(stored.state().version(), 7);
     }
 
     #[test]
-    fn from_snapshot_rejects_a_broken_invariant() {
+    fn from_state_rejects_a_broken_invariant() {
         let w = all_exec(3);
-        let base = w.snapshot();
+        let base = w.state();
 
-        let empty = WorkflowExecutionSnapshotBuilder::new(
+        let empty = WorkflowExecutionStateBuilder::new(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -1907,12 +1930,12 @@ mod tests {
         )
         .build();
         assert!(matches!(
-            WorkflowExecution::from_snapshot(empty),
-            Err(SnapshotError::InvariantViolation(_))
+            WorkflowExecution::from_state(empty),
+            Err(StateError::InvariantViolation(_))
         ));
 
         for broken in [
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1920,7 +1943,7 @@ mod tests {
             )
             .checkbox(vec![InProgress])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1928,7 +1951,7 @@ mod tests {
             )
             .cursor(9)
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1936,7 +1959,7 @@ mod tests {
             )
             .overlay(vec![Skip, Execute, Execute])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1944,7 +1967,7 @@ mod tests {
             )
             .checkbox(vec![InProgress, InProgress, Pending])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1952,7 +1975,7 @@ mod tests {
             )
             .checkbox(vec![InProgress, Completed, Pending])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1960,7 +1983,7 @@ mod tests {
             )
             .parked_at(Some(2))
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1968,7 +1991,7 @@ mod tests {
             )
             .parked_at(Some(9))
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1976,7 +1999,7 @@ mod tests {
             )
             .approved(vec![false])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1984,7 +2007,7 @@ mod tests {
             )
             .revision_count(vec![0, 0])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -1992,7 +2015,7 @@ mod tests {
             )
             .seq_nr(0)
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2000,7 +2023,7 @@ mod tests {
             )
             .plan(vec![Skip, Execute, Execute])
             .build(),
-            WorkflowExecutionSnapshotBuilder::new(
+            WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2011,14 +2034,14 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    WorkflowExecution::from_snapshot(broken),
-                    Err(SnapshotError::InvariantViolation(_))
+                    WorkflowExecution::from_state(broken),
+                    Err(StateError::InvariantViolation(_))
                 ),
-                "a broken snapshot must be refused"
+                "a broken state must be refused"
             );
         }
 
-        assert!(WorkflowExecution::from_snapshot(base).is_ok());
+        assert!(WorkflowExecution::from_state(base).is_ok());
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2028,7 +2051,7 @@ mod tests {
         let w = all_exec(3);
         let other = bare_definition("kiro");
         assert_eq!(
-            w.next_decision(&other, &NextRequest::plain()),
+            w.next_decision(&other, &NextRequest::default()),
             Err(CommandError::DefinitionMismatch {
                 expected: def_id("claude"),
                 actual: def_id("kiro"),
@@ -2046,7 +2069,7 @@ mod tests {
             ScopeGrid::new(BTreeMap::new()),
             BTreeMap::new(),
         );
-        assert!(w.next_decision(&drifted, &NextRequest::plain()).is_ok());
+        assert!(w.next_decision(&drifted, &NextRequest::default()).is_ok());
     }
 
     #[test]
@@ -2056,7 +2079,7 @@ mod tests {
 
         // (6) cursor が in-flight
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 0),
                 gate: false
@@ -2065,7 +2088,7 @@ mod tests {
         // (1) park 中
         w.park(AT).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::Parked { stage: at(&w, 0) })
         );
         assert_eq!(
@@ -2094,7 +2117,7 @@ mod tests {
         // (7) 次の in-scope / gate = true
         w.complete_stage(AT).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 1),
                 gate: true
@@ -2105,7 +2128,7 @@ mod tests {
         w.approve_gate(None, None, AT).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::plain()),
+            w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::Done)
         );
     }
@@ -2125,7 +2148,7 @@ mod tests {
             (Pending, false),
             (AwaitingApproval, false),
         ] {
-            let snapshot = WorkflowExecutionSnapshotBuilder::new(
+            let state = WorkflowExecutionStateBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2137,7 +2160,7 @@ mod tests {
             .parked_at(Some(1))
             .seq_nr(4)
             .build();
-            let w = WorkflowExecution::from_snapshot(snapshot).unwrap();
+            let w = WorkflowExecution::from_state(state).unwrap();
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
                 NextDecision::RecoverSkipInconsistency {
@@ -2213,7 +2236,7 @@ mod tests {
     #[test]
     fn stage_index_is_only_constructed_within_range() {
         let w = all_exec(3);
-        assert_eq!(w.stage_index(2).map(StageIndex::value), Some(2));
+        assert_eq!(w.stage_index(2).map(StageIndex::to_usize), Some(2));
         assert_eq!(w.stage_index(3), None);
         assert_eq!(w.stage_index(usize::MAX), None);
     }
@@ -2234,7 +2257,9 @@ mod tests {
     fn the_signal_projection_of_a_decision_matches_the_model_vocabulary() {
         let definition = bare_definition("claude");
         let w = all_exec(3);
-        let decision = w.next_decision(&definition, &NextRequest::plain()).unwrap();
+        let decision = w
+            .next_decision(&definition, &NextRequest::default())
+            .unwrap();
         assert_eq!(
             EngineSignal::from(&decision),
             EngineSignal::RunStage(at(&w, 0))
@@ -2323,7 +2348,7 @@ mod tests {
     }
 
     fn start_synthetic(stages: Vec<StageEntry>) -> WorkflowExecution {
-        WorkflowExecution::start_with_entries(
+        WorkflowExecution::start_from_plan_unchecked(
             intent(),
             def_id("claude"),
             revision('0'),
@@ -2359,7 +2384,7 @@ mod tests {
                 Some(stage) => w.recompose(&[stage], AT),
                 None => Err(CommandError::NotRunning),
             },
-            Cmd::SetAutonomy(autonomous) => w.set_autonomy(
+            Cmd::SetAutonomy(autonomous) => w.switch_autonomy(
                 if *autonomous {
                     AutonomyMode::Autonomous
                 } else {
@@ -2368,7 +2393,7 @@ mod tests {
                 AT,
             ),
             Cmd::Next => {
-                let _ = w.next_decision(definition, &NextRequest::plain());
+                let _ = w.next_decision(definition, &NextRequest::default());
                 assert_eq!(*w, before, "next_decision は書き込まない");
                 return None;
             }
@@ -2420,7 +2445,7 @@ mod tests {
 
     proptest! {
         /// (a) decide 後の状態 == 旧状態 + apply_event、(d) Quint 不変条件、(e) Err 無副作用、
-        /// (f) from_snapshot(snapshot()) == self を全ステップで固定する。
+        /// (f) from_state(state()) == self を全ステップで固定する。
         #[test]
         fn every_command_equals_the_old_state_plus_its_event(
             stages in synthetic_stages(),
@@ -2437,12 +2462,12 @@ mod tests {
                     prop_assert_eq!(&replayed, &w);
                 }
                 assert_quint_invariants(&w);
-                let restored = WorkflowExecution::from_snapshot(w.snapshot()).unwrap();
+                let restored = WorkflowExecution::from_state(w.state()).unwrap();
                 prop_assert_eq!(&restored, &w);
             }
         }
 
-        /// (b) リプレイの決定性 — スナップショット + 以降のイベント列 == 通常実行 (BR2.3)。
+        /// (b) リプレイの決定性 — 状態の写し (memento) + 以降のイベント列 == 通常実行 (BR2.3)。
         /// (c) seq_nr は 1 イベントにつき 1 だけ増え、順序違反は SequenceGap で拒否される (BR2.1)。
         #[test]
         fn replaying_the_event_stream_reproduces_the_executed_aggregate(
@@ -2451,7 +2476,7 @@ mod tests {
         ) {
             let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
-            let genesis = w.snapshot();
+            let genesis = w.state();
             let mut events = Vec::new();
             let mut expected_seq = w.seq_nr();
             for cmd in &cmds {
@@ -2464,7 +2489,7 @@ mod tests {
                 }
             }
 
-            let mut replayed = WorkflowExecution::from_snapshot(genesis).unwrap();
+            let mut replayed = WorkflowExecution::from_state(genesis).unwrap();
             for event in &events {
                 replayed.apply_event(event).unwrap();
             }
@@ -2523,17 +2548,17 @@ mod tests {
             let mut w = start_synthetic(stages);
             for cmd in &cmds {
                 drive(&mut w, &definition, cmd);
-                let Ok(decision) = w.next_decision(&definition, &NextRequest::plain()) else {
+                let Ok(decision) = w.next_decision(&definition, &NextRequest::default()) else {
                     continue;
                 };
-                let cursor = w.cursor().value();
+                let cursor = w.cursor().to_usize();
                 let cursor_in_flight = w
                     .checkbox(w.cursor())
                     .is_some_and(CheckboxState::is_in_flight);
                 match decision {
-                    NextDecision::RunStage { stage, gate } if stage.value() != cursor => {
-                        prop_assert!(stage.value() > cursor);
-                        for value in (cursor + 1)..stage.value() {
+                    NextDecision::RunStage { stage, gate } if stage.to_usize() != cursor => {
+                        prop_assert!(stage.to_usize() > cursor);
+                        for value in (cursor + 1)..stage.to_usize() {
                             let earlier = w.stage_index(value).unwrap();
                             prop_assert_ne!(w.effective_plan(earlier), Some(Execute));
                         }

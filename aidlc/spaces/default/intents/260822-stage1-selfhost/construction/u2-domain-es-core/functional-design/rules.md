@@ -72,7 +72,7 @@ rules:
     category: constraint
     applies_to: [WorkflowExecution]
     trigger: "jump(target)"
-    logic: "direction = JumpDirection::derive(cursor, target)。上記の差分を Jumped{direction, source, target, stages_reset, stages_skipped}（C5 の形、ステージは slug）に載せる（単一イベント）。承認の消去は apply 側が direction / target から決定的に導出（backward: target 以降、redo: source）"
+    logic: "direction = JumpDirection::of(cursor, target)。上記の差分を Jumped{direction, source, target, stages_reset, stages_skipped}（C5 の形、ステージは slug）に載せる（単一イベント）。承認の消去は apply 側が direction / target から決定的に導出（backward: target 以降、redo: source）"
     violation: "InvalidTarget(target) / NotRunning"
     source: "engine_loop.qnt actJumpForward / actJumpBackward / actJumpRedo, C5 Jumped"
   - id: BR1.7

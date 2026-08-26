@@ -4,7 +4,7 @@
 //! 単体テストで固定できる。検出例の無いルールは追加しない (このリポジトリの Quint ゲートと
 //! 同じ DoD)。
 //!
-//! 検出の哲学 (R1 / R2): getter の存在そのものは咎めない。**他オブジェクトから状態を抜き出して
+//! 検出の哲学 (R1): getter の存在そのものは咎めない。**他オブジェクトから状態を抜き出して
 //! 所有者の判断を呼出側で代行する**濫用パターンだけを検出する。R3 はこの前段 — アクセサを
 //! 経由せず内部構造をそのまま公開する `pub` フィールドを禁じる。
 
@@ -16,8 +16,6 @@ use syn::visit::Visit;
 
 /// R1: 分類語彙 (`CheckboxState` の変種集合) を所有者の外で再実装している。
 pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
-/// R2: reap 適格判定の境界規約を interface-adapter で再実装している。
-pub(crate) const RULE_REAP_DECISION_LOCALITY: &str = "reap-decision-locality";
 /// R3: struct が内部構造を `pub` フィールドとしてそのまま公開している
 /// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md`)。
 ///
@@ -30,16 +28,10 @@ pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
 const CHECKBOX_OWNER: &str = "modules/core/domain/src/workspace/checkbox.rs";
-/// R2 の適用範囲。
-const INTERFACE_ADAPTER_ROOT: &str = "modules/core/interface-adapter/";
-/// R2 が監視する「所有者の内部状態」を表す識別子。
-const REAP_IDENTS: [&str; 2] = ["stale_ms", "held_ticks"];
 
 const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished / is_active) を使う。\
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
 `// amadeus-lint: allow(checkbox-vocabulary) — 理由` で理由を明示する";
-const REAP_HELP: &str = "reap 適格判定は core_domain::workspace::reap_eligible に\
-委譲する (境界規約 `>` の単一実装)";
 const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アクセサ \
 (as_str / message / フィールド名) と必要なら new() を公開する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md";
 
@@ -68,7 +60,6 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     let file = syn::parse_file(source)?;
     let mut visitor = Visitor {
         checkbox_rule: !path.ends_with(CHECKBOX_OWNER),
-        reap_rule: path.contains(INTERFACE_ADAPTER_ROOT),
         findings: Vec::new(),
     };
     visitor.visit_file(&file);
@@ -88,21 +79,43 @@ fn is_test_path(path: &str) -> bool {
     path.contains("/tests/") || path.starts_with("tests/")
 }
 
-/// 所見の開始行の直前行が `// amadeus-lint: allow(<rule-id>)` で始まれば抑制する。
+/// 所見の開始行の直前行が `// amadeus-lint: allow(<rule-id>) <理由>` で始まれば抑制する。
+///
+/// 抑制には**理由の記述が必須**である。rule-id の閉じ括弧の後ろに実質的な文字が無い裸の
+/// `allow` は抑制しない — 逃げ道は残すが、黙って使えないようにするための設計である
+/// (coding-rules/factory-naming.md「機械化の候補」)。誤検出のあるルールでも、例外に理由を
+/// 書かせれば `allow` の量産が根拠の蓄積に変わる。区切り記号 (`—` / `-` / `:` など) は
+/// 問わず、何か書いてあることだけを見る — 理由の**質**は機械には測れないのでレビューの仕事。
+///
 /// rule-id が一致しない allow は抑制しない (別ルールの許可で塗り潰さないため)。
 fn is_suppressed(lines: &[&str], finding: &Finding) -> bool {
     if finding.line < 2 {
         return false;
     }
     let marker = format!("// amadeus-lint: allow({})", finding.rule);
-    lines
-        .get(finding.line - 2)
-        .is_some_and(|prev| prev.trim().starts_with(&marker))
+    lines.get(finding.line - 2).is_some_and(|prev| {
+        let trimmed = prev.trim();
+        let Some(rest) = trimmed.strip_prefix(&marker) else {
+            return false;
+        };
+        has_reason(rest)
+    })
+}
+
+/// `allow(<rule-id>)` の後ろに理由が書かれているか。
+///
+/// 区切り記号と空白だけを剥がし、残りに文字が 1 つでもあれば理由とみなす。
+fn has_reason(rest: &str) -> bool {
+    rest.trim_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '—' | '–' | '-' | ':' | '：' | '=' | '/' | '#')
+    })
+    .chars()
+    .next()
+    .is_some()
 }
 
 struct Visitor {
     checkbox_rule: bool,
-    reap_rule: bool,
     findings: Vec<Finding>,
 }
 
@@ -128,17 +141,6 @@ impl Visitor {
                 "struct の pub フィールド `{name}` — 内部構造の直接公開 (field-visibility 違反)"
             ),
             help: NO_PUBLIC_FIELDS_HELP,
-        });
-    }
-
-    fn push_reap(&mut self, line: usize) {
-        self.findings.push(Finding {
-            rule: RULE_REAP_DECISION_LOCALITY,
-            line,
-            message: "ロック所有者の内部状態 (stale_ms / held_ticks) を取り出して \
-reap 適格判定を adapter 側で再実装している (Tell, Don't Ask 違反)"
-                .to_string(),
-            help: REAP_HELP,
         });
     }
 }
@@ -206,18 +208,6 @@ impl<'ast> Visit<'ast> for Visitor {
         }
         syn::visit::visit_item_struct(self, node);
     }
-
-    /// R2: 比較二項式のオペランドが `stale_ms` / `held_ticks` に触れている。
-    fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
-        if self.reap_rule
-            && is_ordering_op(&node.op)
-            && (mentions_reap_state(&node.left) || mentions_reap_state(&node.right))
-        {
-            let line = node.span().start().line;
-            self.push_reap(line);
-        }
-        syn::visit::visit_expr_binary(self, node);
-    }
 }
 
 /// パターン中の `CheckboxState::<Variant>` を集める補助 visitor。
@@ -232,37 +222,6 @@ impl<'ast> Visit<'ast> for PatternVariants {
         }
         syn::visit::visit_path(self, node);
     }
-}
-
-/// 特定の識別子が式中に現れるかを調べる補助 visitor (`self.stale_ms` の
-/// `Member::Named` も `visit_member` 経由で到達する)。
-struct IdentSearch<'a> {
-    wanted: &'a [&'a str],
-    hit: bool,
-}
-
-impl<'ast> Visit<'ast> for IdentSearch<'_> {
-    fn visit_ident(&mut self, node: &'ast Ident) {
-        if self.wanted.iter().any(|name| node == *name) {
-            self.hit = true;
-        }
-    }
-}
-
-fn mentions_reap_state(expr: &syn::Expr) -> bool {
-    let mut search = IdentSearch {
-        wanted: &REAP_IDENTS,
-        hit: false,
-    };
-    search.visit_expr(expr);
-    search.hit
-}
-
-const fn is_ordering_op(op: &syn::BinOp) -> bool {
-    matches!(
-        op,
-        syn::BinOp::Lt(_) | syn::BinOp::Le(_) | syn::BinOp::Gt(_) | syn::BinOp::Ge(_)
-    )
 }
 
 fn path_ends_with_ident(path: &syn::Path, name: &str) -> bool {
@@ -379,9 +338,10 @@ mod tests {
 
     const DOMAIN_PATH: &str = "modules/core/domain/src/orchestration/workflow_execution.rs";
     const OWNER_PATH: &str = CHECKBOX_OWNER;
-    const ADAPTER_PATH: &str = "modules/core/interface-adapter/src/workspace/fs_workspace_lock.rs";
+    const ADAPTER_PATH: &str =
+        "modules/core/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs";
     const ADAPTER_TEST_PATH: &str =
-        "modules/core/interface-adapter/tests/fs_workspace_lock_test.rs";
+        "modules/core/interface-adapter/tests/workflow_definition_repository_impl_test.rs";
 
     fn check(path: &str, source: &str) -> Vec<Finding> {
         check_source(path, source).expect("テストのソースは構文解析できること")
@@ -588,6 +548,50 @@ fn report(cb: CheckboxState) -> bool {
     }
 
     #[test]
+    fn a_bare_allow_without_a_reason_does_not_suppress() {
+        let source = r#"
+fn report(cb: CheckboxState) -> bool {
+    // amadeus-lint: allow(checkbox-vocabulary)
+    matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+}
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_CHECKBOX_VOCABULARY],
+            "理由の無い裸の allow は抑制しない"
+        );
+    }
+
+    #[test]
+    fn an_allow_whose_reason_is_only_punctuation_does_not_suppress() {
+        let source = r#"
+fn report(cb: CheckboxState) -> bool {
+    // amadeus-lint: allow(checkbox-vocabulary) —
+    matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+}
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_CHECKBOX_VOCABULARY],
+            "区切り記号だけでは理由とみなさない"
+        );
+    }
+
+    #[test]
+    fn an_allow_with_a_reason_and_no_separator_suppresses() {
+        let source = r#"
+fn report(cb: CheckboxState) -> bool {
+    // amadeus-lint: allow(checkbox-vocabulary) 集約が語彙を所有するため
+    matches!(cb, CheckboxState::InProgress | CheckboxState::AwaitingApproval)
+}
+"#;
+        assert!(
+            check(DOMAIN_PATH, source).is_empty(),
+            "区切り記号は問わない — 何か書いてあれば理由とみなす"
+        );
+    }
+
+    #[test]
     fn allow_comment_for_another_rule_does_not_suppress() {
         let source = r#"
 fn report(cb: CheckboxState) -> bool {
@@ -642,95 +646,6 @@ impl CheckboxState {
         );
     }
 
-    // ---- R2 赤例 (修正前に実在した形) ------------------------------------
-
-    #[test]
-    fn r2_detects_stale_ms_comparison_in_interface_adapter() {
-        let source = r#"
-impl FsWorkspaceLock {
-    fn reapable(&self, alive: bool, age: u64) -> bool {
-        let reapable = !alive || age > self.stale_ms;
-        reapable
-    }
-}
-"#;
-        let findings = check(ADAPTER_PATH, source);
-        assert_eq!(rules(&findings), vec![RULE_REAP_DECISION_LOCALITY]);
-        assert_eq!(findings[0].line, 4);
-    }
-
-    #[test]
-    fn r2_detects_held_ticks_comparison_in_interface_adapter() {
-        let source = r#"
-fn stale(held_ticks: u64, threshold: u64) -> bool {
-    threshold < held_ticks
-}
-"#;
-        assert_eq!(
-            rules(&check(ADAPTER_PATH, source)),
-            vec![RULE_REAP_DECISION_LOCALITY]
-        );
-    }
-
-    // ---- R2 緑例 ---------------------------------------------------------
-
-    #[test]
-    fn r2_allows_delegating_to_the_domain_predicate() {
-        // 関数引数は比較ではない — 判定はドメインに残っている。
-        let source = r#"
-impl FsWorkspaceLock {
-    fn reapable(&self, alive: bool, age: u64) -> bool {
-        reap_eligible(alive, age, self.stale_ms)
-    }
-}
-"#;
-        assert!(check(ADAPTER_PATH, source).is_empty());
-    }
-
-    #[test]
-    fn r2_does_not_apply_to_domain_paths() {
-        let source = r#"
-pub const fn reap_eligible(owner_alive: bool, held_elapsed: u64, stale_ms: u64) -> bool {
-    !owner_alive || held_elapsed > stale_ms
-}
-"#;
-        assert!(
-            check("modules/core/domain/src/workspace/lock_protocol.rs", source).is_empty(),
-            "境界規約の単一実装はドメイン側に置かれる"
-        );
-    }
-
-    #[test]
-    fn r2_ignores_cfg_test_modules_and_integration_tests() {
-        let source = r#"
-#[cfg(test)]
-mod tests {
-    fn red(age: u64, stale_ms: u64) -> bool {
-        age > stale_ms
-    }
-}
-"#;
-        assert!(check(ADAPTER_PATH, source).is_empty());
-
-        let bare = r#"
-fn red(age: u64, stale_ms: u64) -> bool {
-    age > stale_ms
-}
-"#;
-        assert!(check(ADAPTER_TEST_PATH, bare).is_empty());
-    }
-
-    #[test]
-    fn r2_is_suppressed_by_a_matching_allow_comment() {
-        let source = r#"
-fn red(age: u64, stale_ms: u64) -> bool {
-    // amadeus-lint: allow(reap-decision-locality) — 理由
-    age > stale_ms
-}
-"#;
-        assert!(check(ADAPTER_PATH, source).is_empty());
-    }
-
     // ---- R3 赤例 (フィールド可視性スイープ前に実在した形) ------------------
 
     #[test]
@@ -772,7 +687,8 @@ pub struct UnknownScope {
 
     #[test]
     fn r3_applies_outside_domain_paths_too() {
-        // R2 と違い適用範囲はリポジトリ全体 (modules/ 配下の非テストコード)。
+        // R1 と違い語彙の所有者による免除が無く、適用範囲はリポジトリ全体
+        // (modules/ 配下の非テストコード)。
         let source = r#"
 pub struct Snapshot(pub Vec<u8>);
 "#;

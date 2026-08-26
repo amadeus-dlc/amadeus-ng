@@ -12,3 +12,6 @@ workspace = true
 core-domain = { workspace = true }
 audit-events = { workspace = true }
 directive-schema = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

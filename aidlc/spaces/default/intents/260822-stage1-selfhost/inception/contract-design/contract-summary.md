@@ -112,16 +112,23 @@ pub trait WorkflowExecutionRepository {
     /// 楽観 version: 集約の version が保存時点のジャーナル末尾と一致しなければ `Conflict`。
     /// # Errors
     /// `Conflict { expected, actual }`（再水和して 1 回だけ再試行 — Q6）、`Io`、`Corrupt`。
-    async fn store(&self, event: &WorkflowExecutionEvent, aggregate: &WorkflowExecution)
+    // （2026-08-23 改訂: `&self` → `&mut self` に具体化。オーナー裁定。U3（Bolt B5）の実装で内部可変性を
+    // 使わない設計を採ったため、`&self` の trait メソッドから `&mut self` の EventStore を呼ぶための
+    // 内部可変性の機構（下記 Finding #3）が不要になった — coding-rules/interior-mutability.md /
+    // command-query-separation.md。所有 Unit は U5/U6 のままだが、U3 の実装が正）
+    async fn store(&mut self, event: &WorkflowExecutionEvent, aggregate: &WorkflowExecution)
         -> Result<(), RepositoryError>;
 }
 
 // event-store-adapter-rs と同形（ローカル定義、ADR-006）。U3 の Repository 実装が内部で使う。
+// （2026-08-23 改訂: 数値パラメータを usize → u64 に具体化。オーナー裁定。U3（Bolt B5）の実装が実ドメイン型
+// （seq_nr / version = u64）に合わせて具体化し、マージ済み — modules/core/use-case/src/orchestration/
+// event_store.rs:33,60 実測。code-generation レビュー Major 所見1 の解消）
 pub trait EventStore<AID, A, E> {
-    async fn persist_event(&mut self, event: &E, version: usize) -> Result<(), EventStoreError>;
+    async fn persist_event(&mut self, event: &E, version: u64) -> Result<(), EventStoreError>;
     async fn persist_event_and_snapshot(&mut self, event: &E, aggregate: &A) -> Result<(), EventStoreError>;
     async fn get_latest_snapshot_by_id(&self, aid: &AID) -> Result<Option<A>, EventStoreError>;
-    async fn get_events_by_id_since_seq_nr(&self, aid: &AID, seq_nr: usize) -> Result<Vec<E>, EventStoreError>;
+    async fn get_events_by_id_since_seq_nr(&self, aid: &AID, seq_nr: u64) -> Result<Vec<E>, EventStoreError>;
 }
 
 // 読取側（U4 が使う差分読取 — C6 の上に立つ。U3 所有の trait、同じクレートに置く）
@@ -313,6 +320,8 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
 | 3 | Minor | C3（`EventStore` trait） | `EventStore` の書込系メソッド（`persist_event` / `persist_event_and_snapshot`）は `&mut self` だが、C3 の `WorkflowExecutionRepository::store` は `&self` である。`WorkflowExecutionRepositoryImpl`（U3）が内部で `EventStore` を保持して `store` を呼ぶ構図だとすると、`&self` の中から `&mut self` メソッドを呼ぶには内部可変性（`Mutex`/`RefCell` 等）が要る。契約上は問題ないが、functional-design が実装方針（非同期タスク間で SQLite コネクションをどう共有するか）を明示しないと、複数の実装者が別の内部可変性戦略を選びうる。 | functional-design（U3）で `WorkflowExecutionRepositoryImpl` 内の `EventStore` 保持方法（`tokio::sync::Mutex` 等）を明記する。 |
 | 4 | Minor | C6（`checkpoint` テーブル・`JournalReader::checkpoint`） | `checkpoint(projection)` の戻り値型は `Result<GlobalSeqNr, EventStoreError>`（`Option` ではない）だが、`checkpoint` テーブルに当該 `projection` の行がまだ無い場合（初回実行）にどの値を返すかが DDL コメントにも trait doc コメントにも無い。 | 「行が無ければ 0 を返す（未投影の意味）」と C6 の制約コメントか `JournalReader::checkpoint` の doc コメントに明記する。 |
 | 5 | Minor | C2 所有ルール（§3） | 本ステージの上流 `unit-of-work.md` の既存 `## Review`（units-generation 段の advisory レビュー、Major 所見#1）は、フック4本・doctor のユースケース層コードの帰属が `components.md` の `EngineUseCases`（クレート分離による DIP 強制点）と U7 の「ロジックを持たない」自己宣言との間で未確定だと指摘済みである。本契約summary は C2 の Owner を無条件に「U7」としているが、もし functional-design でフックのユースケースロジックが別 Unit（新設または U5/U6）に切り出された場合、C2 の Owner 列は改訂が必要になる。現時点では contract-design のスコープ外の carry-over だが、承認前に人間が意識すべき依存関係である。 | functional-design 着手前に units-generation の Major 所見#1（フック/doctor のユースケース帰属）を解消し、その結果に応じて C2 の Owner を確定させる。 |
+
+> （2026-08-23 追記: 所見 3 は前提ごと失効した。U3（Bolt B5）の実装でオーナー裁定により `WorkflowExecutionRepository::store` を `&mut self` へ改訂した（上記 §C3 参照）ため、`&self` の中から `&mut self` を呼ぶための内部可変性の機構そのものが不要になった — 正本 `coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md`。あわせて `EventStore` の数値パラメータも `usize` → `u64` へ改訂済み（U3 実装 `modules/core/use-case/src/orchestration/event_store.rs:33,60` 実測）。）
 
 ### Validation Tool Results
 

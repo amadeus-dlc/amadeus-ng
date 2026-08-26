@@ -4,7 +4,7 @@
 # quint CLI 0.32.0 前提。
 #
 # 実行するチェック (1 つでも失敗したら exit 1。全ステップを最後まで実行してから判定する):
-#   1. 全モデルの typecheck (engine_loop / stop_hook / audit_lock)
+#   1. 全モデルの typecheck (engine_loop / stop_hook / journal_protocol)
 #   2. 不変条件 run (シード固定 + --max-samples 明示。ADR 0003 決定 4 のとおり、
 #      シード固定でも --max-samples を明示しなければ 1 トレースに縮退するため必須)
 #   3. 到達性 witness (負形式: ADR 0003 決定 7 の規約どおり `--invariant "not(<w>)"` を実行し、
@@ -23,7 +23,7 @@ cd "${REPO_ROOT}"
 
 ENGINE_LOOP="formal/orchestration/engine_loop.qnt"
 STOP_HOOK="formal/orchestration/stop_hook.qnt"
-AUDIT_LOCK="formal/workspace/audit_lock.qnt"
+JOURNAL_PROTOCOL="formal/orchestration/journal_protocol.qnt"
 
 OVERALL=0
 STEP_NAMES=()
@@ -54,7 +54,7 @@ require_cmd() {
 require_cmd quint
 
 # --- 1. typecheck ------------------------------------------------------------
-for model in "${ENGINE_LOOP}" "${STOP_HOOK}" "${AUDIT_LOCK}"; do
+for model in "${ENGINE_LOOP}" "${STOP_HOOK}" "${JOURNAL_PROTOCOL}"; do
   log_step "typecheck: ${model}"
   if quint typecheck "${model}"; then
     record "typecheck ${model}" "PASS"
@@ -74,16 +74,6 @@ else
   record "invariants run: engine_loop" "FAIL"
 fi
 
-log_step "invariants run: audit_lock"
-if quint run "${AUDIT_LOCK}" --seed 0xabc --max-samples 3000 --max-steps 50 \
-  --invariants audit_first pending_only_with_lock no_reap_of_live_fresh \
-    lock_no_steal writes_require_ownership release_requires_ownership \
-    reaper_alive crash_leaves_lock depth_consistent reentrant_release_keeps_lock; then
-  record "invariants run: audit_lock" "PASS"
-else
-  record "invariants run: audit_lock" "FAIL"
-fi
-
 log_step "invariants run: stop_hook"
 if quint run "${STOP_HOOK}" --seed 0xabc --max-samples 3000 --max-steps 60 \
   --invariants blocked_below_cap cap_is_mode_dependent record_before_decision \
@@ -92,6 +82,16 @@ if quint run "${STOP_HOOK}" --seed 0xabc --max-samples 3000 --max-steps 60 \
   record "invariants run: stop_hook" "PASS"
 else
   record "invariants run: stop_hook" "FAIL"
+fi
+
+log_step "invariants run: journal_protocol"
+if quint run "${JOURNAL_PROTOCOL}" --seed 0x5e1 --max-samples 3000 --max-steps 50 \
+  --invariants conflict_rejected snapshot_tracks_journal version_equals_journal \
+    checkpoint_monotone checkpoint_bounded projection_idempotent truth_is_journal \
+    no_lost_update; then
+  record "invariants run: journal_protocol" "PASS"
+else
+  record "invariants run: journal_protocol" "FAIL"
 fi
 
 # --- 3. 到達性 witness (負形式: violation = 経路実在 = pass という反転判定) -----------
@@ -108,13 +108,12 @@ run_witness() {
   fi
 }
 
-for w in w_threshold_reap w_dead_owner_reap w_deep_release w_emit_fail \
-  w_full_unwind w_crash_mid_txn w_recovery_after_mid_txn_crash; do
-  run_witness "${AUDIT_LOCK}" "0x9" 4000 50 "${w}"
-done
-
 for w in w_block w_cap_release_interactive w_parked_auto_block w_seed2 w_sig_reset; do
   run_witness "${STOP_HOOK}" "0x9" 3000 60 "${w}"
+done
+
+for w in w_conflict w_crash_then_catchup w_interleaved_writers w_idempotent_catchup; do
+  run_witness "${JOURNAL_PROTOCOL}" "0x5e1" 5000 50 "${w}"
 done
 
 # --- 4. 決定的シナリオ ---------------------------------------------------------
