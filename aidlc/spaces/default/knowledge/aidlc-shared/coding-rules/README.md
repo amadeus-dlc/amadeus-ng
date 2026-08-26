@@ -17,15 +17,57 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | ルール | 一言 | 機械強制 |
 | --- | --- | --- |
 | [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ。**アクセサを `value()`/`inner()`/`raw()` と名乗って内部型を意識させない**（2026-08-24 追記） | `cargo lint`（checkbox-vocabulary） |
-| [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準（未リント化） |
-| [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。`pub(crate)` への拡張は次 Bolt） |
-| [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化）+ `cargo lint` ルール化予定 |
-| [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない。ES Repository は `store` / `find_by_id`（ADR-006） | レビュー基準（未リント化。候補は同文書） |
-| [use-case-rules.md](use-case-rules.md) | DIP（trait のみ依存）・スタティックバインディング既定・ユースケース間呼出禁止 | Cargo クレート分離 + `cargo lint` ルール化予定 |
-| [error-handling.md](error-handling.md) | 失敗はモジュールごとの手実装エラー enum — `Display` は材料のみ、利用者向け文言はアダプタ層（message-catalog）、thiserror / anyhow 不使用 | `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（workspace lints）+ `cargo lint` ルール候補（thiserror / anyhow 禁止） |
-| [interior-mutability.md](interior-mutability.md) | 内部可変性は既定で禁止 — 可変操作はまず `&mut self`。`&self` の裏に `RefCell`/`Cell`/ロックを置く「`&self` への偽装」は禁止。`&self` + 内部可変性には**強い理由**が要る（立証責任は採る側。現在認められている例外はロックを取り合うメソッドのみ、条件付き）。並行してロックを取りたい場合は `SharedLock`/`SharedRwLock` を持つ `*Shared` ラッパーへ閉じる（手書きの `Rc<RefCell<_>>`/`Arc<Mutex<_>>` は禁止） | レビュー基準（`cargo lint` ルール化予定 — 候補は同文書） |
-| [command-query-separation.md](command-query-separation.md) | Query は `&self` + 戻り値、Command は `&mut self` + 戻り値なし or `Result<(), E>`。分離不能ならオーナー許可のうえ理由をコメントに書く | レビュー基準（`cargo lint` ルール化予定） |
-| [no-backward-compatibility.md](no-backward-compatibility.md) | 後方互換のコードを残さない — `#[deprecated]`・旧名エイリアス・`pub use .. as`・互換口の並立を禁止。改名や署名変更は呼出側ごと一斉に直す（未配布のため互換の対価が無い。upstream 互換は別問題） | レビュー基準（`#[deprecated]` 検出を `cargo lint` ルール化候補） |
-| [factory-naming.md](factory-naming.md) | **基本コンストラクタ 1 本に構築経路を集約**し、補助コンストラクタは必ずそれへ委譲する（Scala の primary/auxiliary を Rust へ。検査可能な性質 = 構造体リテラルが型ごとに 1 箇所）。setter は使わない。コンストラクタ相当は `fn new(..) -> Self` に統一。それ以外は用途で選ぶ（`of` 集約 / `from`(`From`・`from_<源>`) 変換 / `parse` 文字列 / `open` リソース / `generate` 算出 / `create` エンティティ、ドメイン語があれば優先）。`valueOf`・`getInstance`・`newInstance` は Rust 慣用と衝突するので不採用 | レビュー基準（`cargo lint` ルール化候補） |
+| [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
+| [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |
+| [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化） |
+| [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない。ES Repository は `store` / `find_by_id`（ADR-006） | レビュー基準 |
+| [use-case-rules.md](use-case-rules.md) | DIP（trait のみ依存）・スタティックバインディング既定・ユースケース間呼出禁止 | Cargo クレート分離 |
+| [error-handling.md](error-handling.md) | 失敗はモジュールごとの手実装エラー enum — `Display` は材料のみ、利用者向け文言はアダプタ層（message-catalog）、thiserror / anyhow 不使用 | `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（workspace lints） |
+| [interior-mutability.md](interior-mutability.md) | 内部可変性は既定で禁止 — 可変操作はまず `&mut self`。`&self` の裏に `RefCell`/`Cell`/ロックを置く「`&self` への偽装」は禁止。`&self` + 内部可変性には**強い理由**が要る（立証責任は採る側。現在認められている例外はロックを取り合うメソッドのみ、条件付き）。並行してロックを取りたい場合は `SharedLock`/`SharedRwLock` を持つ `*Shared` ラッパーへ閉じる（手書きの `Rc<RefCell<_>>`/`Arc<Mutex<_>>` は禁止） | レビュー基準 |
+| [command-query-separation.md](command-query-separation.md) | Query は `&self` + 戻り値、Command は `&mut self` + 戻り値なし or `Result<(), E>`。分離不能ならオーナー許可のうえ理由をコメントに書く | レビュー基準 |
+| [no-backward-compatibility.md](no-backward-compatibility.md) | 後方互換のコードを残さない — `#[deprecated]`・旧名エイリアス・`pub use .. as`・互換口の並立を禁止。改名や署名変更は呼出側ごと一斉に直す（未配布のため互換の対価が無い。upstream 互換は別問題） | レビュー基準（機械化ロードマップ 4） |
+| [factory-naming.md](factory-naming.md) | **基本コンストラクタ 1 本に構築経路を集約**し、補助コンストラクタは必ずそれへ委譲する（Scala の primary/auxiliary を Rust へ。検査可能な性質 = 構造体リテラルが型ごとに 1 箇所）。setter は使わない。コンストラクタ相当は `fn new(..) -> Self` に統一。それ以外は用途で選ぶ（`of` 集約 / `from`(`From`・`from_<源>`) 変換 / `parse` 文字列 / `open` リソース / `generate` 算出 / `create` エンティティ、ドメイン語があれば優先）。`valueOf`・`getInstance`・`newInstance` は Rust 慣用と衝突するので不採用 | レビュー基準（機械化ロードマップ 1・3） |
 | [ubiquitous-language.md](ubiquitous-language.md) | ドメインモデル（`core/domain` の集約・エンティティ・値オブジェクト・ドメインイベント）の型名・フィールド名・メソッド名はユビキタス言語にする。例外は認めるが**doc コメントに理由の記述が必須** | レビュー基準 |
 | [cqrs-boundaries.md](cqrs-boundaries.md) | コマンド側とクエリ側は相互に依存しない。**RMU だけが両側に依存できる**（橋）。**コマンド側の最新状態は常に集約から**（リードモデルは常に遅延しているので物理的に読めない）。境界は**クレート分離**で物理強制する（mod 分割では効かない） | クレート分離（`Cargo.toml` の不在）— 違反はビルドで落ちる |
+
+---
+
+## 機械化ロードマップ（2026-08-24 制定）
+
+**実測**: `cargo lint`（`tools/lint/src/check.rs`）に実装済みのルールは **2 本**
+（`checkbox-vocabulary` / `no-public-fields`）。一方、各規則に散らばる「ルール化予定 / 候補」は
+**8 本**ある。**予定が実装の 4 倍あるのは規則の信頼を下げる** — 「そのうち機械が見てくれる」と
+読まれ、レビューでの適用が緩む。
+
+そこで、**順序と着手条件をここ 1 箇所で管理する**。個々の規則に「予定」と書き足すのをやめる
+（規則側は「レビュー基準」か「`cargo lint`（ルール名）」のどちらかだけを書く）。
+
+### 着手の条件（3 つとも満たすもののみ実装する）
+
+1. **反例が構造的に存在しない**か、**例外に理由を書かせれば足りる**
+   （[factory-naming.md](factory-naming.md) §「機械化の候補」の判断）
+2. **赤例テストが書ける**（検出力を証明できる。README 冒頭の DoD）
+3. **既存違反の是正と同じ Bolt で着地できる**（検出だけ先行させると CI が赤のまま残る）
+
+### 優先順（次の Bolt から順に）
+
+| 順 | ルール | 根拠となる規則 | 着手条件の充足 |
+| --- | --- | --- | --- |
+| 1 | **構造体リテラルは型ごとに 1 箇所** | [factory-naming.md](factory-naming.md)（基本コンストラクタ） | 反例ほぼ無し。是正対象は `WorkflowExecutionState` の 1 型 |
+| 2 | **`pub(crate)` / `pub(super)` フィールド**（`no-public-fields` の境界拡張） | [field-visibility.md](field-visibility.md) | 例外を認めない裁定済み。是正対象は 1 と同じ型 — **同じ Bolt で 1 と一緒に** |
+| 3 | **inherent な `fn from(`** | [factory-naming.md](factory-naming.md) | 反例無し。現状の違反 0 件なので単独で着地できる |
+| 4 | **`#[deprecated]` の検出** | [no-backward-compatibility.md](no-backward-compatibility.md) | 反例無し。現状の違反 0 件 |
+
+### 実装しないと決めたもの
+
+| ルール | 理由 |
+| --- | --- |
+| 「戻り値が `Self` の関連関数は名前が許可リストのいずれか」 | 誤検出が多すぎる。正確なドメイン語（`hash_canonical` / `serialize`）を軒並み潰す（[factory-naming.md](factory-naming.md) §「やってはいけない機械化」） |
+| `of` / `from_*` / ドメイン語のどれを選ぶべきかの判定 | 意味の判断であり機械に渡せない。レビュー基準のまま |
+
+### 未定（着手条件を満たすか未検証）
+
+`interior-mutability` / `command-query-separation` / `module-visibility` / `use-case-rules` /
+`gateway-taxonomy` / `error-handling`（thiserror・anyhow 禁止）の各候補。
+**上の 4 本を実装してから、改めて条件 1〜3 に照らして判断する。** それまで「予定」とは書かない。
+

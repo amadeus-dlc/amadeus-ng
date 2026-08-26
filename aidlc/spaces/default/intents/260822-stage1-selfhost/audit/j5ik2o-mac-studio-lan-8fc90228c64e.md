@@ -19535,3 +19535,33 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T12:06:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af3fa2798f3e9b30f
+**Message**: 良い例カタログに to_builder の例も足しておいて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T12:08:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T12:09:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8de49dbfe5509f73
+**Message**: 規則の棚卸しを次の Bolt の頭でやろう
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T12:11:33Z
+**Event**: HUMAN_TURN
+
+---
