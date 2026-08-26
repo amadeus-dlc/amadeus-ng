@@ -31,6 +31,22 @@
 同型の例: `IntentId::parse`（UUIDv7）、`StageNumber::parse`、`DefinitionRevision::parse`、
 `ProjectionName::parse`、`SpaceName::parse`。
 
+## 不変な値を 1 つだけ変える — `with_*` / `to_builder()`
+
+**[`domain/src/workflow_definition/scope_metadata.rs`](../../../../../../modules/core/domain/src/workflow_definition/scope_metadata.rs)**（値型に直接 `with_*`）
+
+```rust
+pub fn with_depth(mut self, depth: String) -> ScopeMetadata
+pub const fn with_skeleton(mut self, skeleton: SkeletonDefault) -> ScopeMetadata
+```
+
+`mut self` を取って `Self` を返すのでこれは **setter ではなくファクトリメソッド**である
+（[factory-naming.md](factory-naming.md)）。`with_` が付いているので「depth を伴った新しい値」
+と読める。裸のフィールド名（`depth(x)`）だと「depth を返す」に読めてしまう。
+
+フィールドが多い型は `person.to_builder().with_first_name("kato").build()` の形で往復する。
+`build()` が基本コンストラクタを呼ぶので、構築経路は 1 本のまま保たれる。
+
 ## 集約 — FSM として設計する
 
 **[`domain/src/orchestration/workflow_execution.rs`](../../../../../../modules/core/domain/src/orchestration/workflow_execution.rs)**
