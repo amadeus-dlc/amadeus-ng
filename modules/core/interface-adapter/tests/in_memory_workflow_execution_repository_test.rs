@@ -19,12 +19,14 @@ use core_domain::workflow_definition::StageSlug;
 use core_interface_adapter::orchestration::{
     InMemoryEventStore, InMemoryWorkflowExecutionRepository,
 };
+use event_store_adapter_rs::types::Aggregate;
+
 use core_use_case::orchestration::{
     CorruptCause, EventStore, GlobalSeqNr, JournalReader, RepositoryError,
     WorkflowExecutionRepository,
 };
 
-use support::{AT, absent_intent_id, advanced, genesis, intent_id};
+use support::{absent_intent_id, advanced, at, genesis, intent_id};
 
 /// genesis を書いたストアと、書込後に版を載せ替えた集約を返す。
 async fn seeded() -> (InMemoryEventStore, WorkflowExecution) {
@@ -42,13 +44,13 @@ async fn seeded() -> (InMemoryEventStore, WorkflowExecution) {
 /// 返すのは「その 2 件を適用し終えた集約」で、`find_by_id` の期待値になる。
 async fn journal_ahead_of_the_snapshot(store: &mut InMemoryEventStore) -> WorkflowExecution {
     let (mut aggregate, _) = genesis();
-    let second = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let second = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     store
         .persist_event(&second, 1)
         .await
         .expect("ジャーナルだけに追記");
     let third = aggregate
-        .open_gate(vec!["intent.md".to_string()], AT)
+        .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
     store
         .persist_event(&third, 1)
@@ -108,16 +110,16 @@ async fn the_version_after_a_replay_is_the_sequence_of_the_last_applied_event() 
     let found = repository.find_by_id(&intent_id()).await.expect("読める");
     assert_eq!(found.version(), 3, "replay 後に最後の seq_nr を載せる");
     assert_eq!(found.seq_nr(), 3);
-    assert_eq!(found.state(), expected.state(), "16 属性が一致する");
+    assert_eq!(found.state(), expected.state(), "17 属性が一致する");
 }
 
 #[tokio::test]
 async fn a_gap_in_the_replayed_journal_is_corrupt() {
     let (mut store, _) = seeded().await;
     let (mut aggregate, _) = genesis();
-    let _skipped = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let _skipped = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     let third = aggregate
-        .open_gate(vec!["intent.md".to_string()], AT)
+        .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
     // seq_nr 2 を飛ばして 3 だけを足す。
     store.persist_event(&third, 1).await.expect("追記");
@@ -145,7 +147,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
     let bogus = WorkflowExecutionEvent::new(
         intent_id(),
         2,
-        AT,
+        at(),
         WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").unwrap(),
             None,
@@ -191,7 +193,7 @@ async fn the_repository_hands_out_a_reader_over_the_same_store() {
     // Repository 越しに書いたものが同じストアから見えること — 内包しているストアは
     // 1 つだけで、読取の口 (`event_store`) はその参照を返す (別ハンドルは配らない)。
     let mut aggregate = repository.find_by_id(&intent_id()).await.expect("読める");
-    let next = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let next = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     repository.store(&next, &aggregate).await.expect("2 件目");
     let rows = repository
         .event_store()

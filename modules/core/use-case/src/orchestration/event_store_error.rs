@@ -18,9 +18,9 @@ pub enum EventStoreError {
     /// 楽観 version の不一致、またはジャーナルの `UNIQUE(aggregate_id, seq_nr)` 違反 (BR1.3)。
     Conflict {
         /// 書込側が前提とした version (= 永続化済みの最後の `seq_nr`)。
-        expected: u64,
+        expected: usize,
         /// ストアに実在した version。
-        actual: u64,
+        actual: usize,
     },
     /// ストア I/O の失敗。`ErrorKind` を保持する (監査 C24)。busy_timeout 超過は
     /// `ErrorKind::WouldBlock` に写す (NFR3.5)。
@@ -38,7 +38,7 @@ pub enum EventStoreError {
         /// 行が名乗っていた集約識別子 (生文字列)。
         aggregate_id: String,
         /// 該当行の `seq_nr` (行が特定できない場合は `None`)。
-        seq_nr: Option<u64>,
+        seq_nr: Option<usize>,
         /// 原因の分類。
         cause: CorruptCause,
     },
@@ -77,13 +77,13 @@ pub enum CorruptCause {
     SequenceGap,
 }
 
-/// `Option<PathBuf>` / `Option<u64>` を材料として描く (欠落は `-`)。
+/// `Option<PathBuf>` / `Option<usize>` を材料として描く (欠落は `-`)。
 fn render_path(path: Option<&PathBuf>) -> String {
     path.map_or_else(|| "-".to_string(), |p| p.display().to_string())
 }
 
 /// 欠落しうる `seq_nr` を材料として描く。
-fn render_seq_nr(seq_nr: Option<u64>) -> String {
+fn render_seq_nr(seq_nr: Option<usize>) -> String {
     seq_nr.map_or_else(|| "-".to_string(), |n| n.to_string())
 }
 

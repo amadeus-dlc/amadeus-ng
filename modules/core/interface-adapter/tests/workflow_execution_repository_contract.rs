@@ -85,15 +85,20 @@ contract_tests!(
 // SQLite 実装 — 同じ契約関数を通す (BR2.7: 片方だけ通るテストを残さない)
 // ---------------------------------------------------------------------------
 
+use chrono::{DateTime, Utc};
 use core_domain::workspace::SpaceName;
+use event_store_adapter_rs::types::Aggregate;
+
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{
     EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use tempfile::TempDir;
 
-/// 契約テストの `updated_at` を決める固定時刻 (2026-08-23T00:00:00Z の epoch ms)。
-const NOW_MS: u64 = 1_787_443_200_000;
+/// 契約テストの `updated_at` を決める固定時刻 (イベントの `occurred_at` と同じ)。
+fn now() -> DateTime<Utc> {
+    support::at()
+}
 
 /// 呼ぶたびに**別の SQLite ファイル**へストアを開く試験装置。
 ///
@@ -137,7 +142,7 @@ impl SqliteFixture {
         // `intents/` は upstream の既存ディレクトリ — ストアは作らない (BR2.1)。
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir を持つ"))
             .expect("intents/ を先に作る");
-        EventStoreImpl::open(path, FakeClock::new(NOW_MS)).expect("ストアは開ける")
+        EventStoreImpl::open(path, FakeClock::new(now())).expect("ストアは開ける")
     }
 
     /// 引数の Repository が書いているファイルを開き直す。

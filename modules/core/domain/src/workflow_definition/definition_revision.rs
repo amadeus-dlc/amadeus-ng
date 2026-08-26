@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// 正準ダイジェストの接頭辞 (canon-json の正準族 `Digest::rendered()` と同じ表記)。
 const PREFIX: &str = "sha256:";
 /// sha256 の 16 進表記の桁数。
@@ -15,7 +17,8 @@ const HEX_LEN: usize = 64;
 ///
 /// 値の計算はアダプタ層 (Repository 実装 + canon-json) が行う。ドメインは形の検証と
 /// 保持だけを担う (core-domain は canon-json に依存しない — NFR4.1)。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String")]
 pub struct DefinitionRevision(String);
 
 /// `DefinitionRevision::parse` が拒否する形。
@@ -64,6 +67,14 @@ impl DefinitionRevision {
     #[must_use]
     pub fn hex(&self) -> &str {
         &self.0[PREFIX.len()..]
+    }
+}
+
+impl TryFrom<String> for DefinitionRevision {
+    type Error = DefinitionRevisionError;
+
+    fn try_from(value: String) -> Result<DefinitionRevision, DefinitionRevisionError> {
+        DefinitionRevision::parse(&value)
     }
 }
 

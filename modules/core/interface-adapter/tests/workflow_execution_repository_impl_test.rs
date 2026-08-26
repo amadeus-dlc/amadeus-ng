@@ -11,6 +11,7 @@
 
 mod support;
 
+use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
     StageCompleted, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
 };
@@ -20,6 +21,8 @@ use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{
     EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
+use event_store_adapter_rs::types::{Aggregate, Event};
+
 use core_use_case::orchestration::{
     CorruptCause, EventStore, GlobalSeqNr, JournalReader, RepositoryError,
     WorkflowExecutionRepository,
@@ -27,10 +30,14 @@ use core_use_case::orchestration::{
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{AT, absent_intent_id, advanced, genesis, intent_id};
+use support::{absent_intent_id, advanced, at, genesis, intent_id};
 
-/// 固定時刻 (2026-08-23T00:00:00Z の epoch ms)。
-const NOW_MS: u64 = 1_787_443_200_000;
+/// ストアの押印時刻 (`updated_at` 列)。イベントの `occurred_at` と同じ固定時刻にする。
+fn now() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+        .expect("固定の ISO 8601 UTC")
+        .with_timezone(&Utc)
+}
 
 /// 一時ディレクトリ配下の SQLite ストアと、それを開く Repository。
 struct Fixture {
@@ -49,8 +56,7 @@ impl Fixture {
 
     fn repository(&self) -> WorkflowExecutionRepositoryImpl<FakeClock> {
         WorkflowExecutionRepositoryImpl::new(
-            EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS))
-                .expect("ストアは開ける"),
+            EventStoreImpl::open(self.path.clone(), FakeClock::new(now())).expect("ストアは開ける"),
         )
     }
 
@@ -61,7 +67,7 @@ impl Fixture {
     /// Repository を経由せずに同じストアへ書くためのハンドル
     /// (ジャーナルだけの追記でスナップショットとずらす唯一の口)。
     fn store(&self) -> EventStoreImpl<FakeClock> {
-        EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
+        EventStoreImpl::open(self.path.clone(), FakeClock::new(now())).expect("ストアは開ける")
     }
 }
 
@@ -71,12 +77,12 @@ async fn seed(repository: &mut WorkflowExecutionRepositoryImpl<FakeClock>) -> Wo
     repository.store(&event, &aggregate).await.expect("genesis");
     aggregate = advanced(aggregate, &event);
 
-    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     repository.store(&event, &aggregate).await.expect("2 件目");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .open_gate(vec!["intent.md".to_string()], AT)
+        .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
     repository.store(&event, &aggregate).await.expect("3 件目");
     advanced(aggregate, &event)
@@ -151,7 +157,7 @@ async fn the_version_after_a_replay_is_the_sequence_of_the_last_applied_event() 
     let found = repository.find_by_id(&intent_id()).await.expect("読める");
     assert_eq!(found.version(), 3, "replay 後に最後の seq_nr を載せる");
     assert_eq!(found.seq_nr(), 3);
-    assert_eq!(found.state(), expected.state(), "16 属性が一致する");
+    assert_eq!(found.state(), expected.state(), "17 属性が一致する");
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +330,7 @@ async fn a_stale_aggregate_is_refused_before_the_transaction_opens() {
 
     // 版を載せ替えないまま次のイベントを書こうとする (呼出側のバグ)。
     let mut stale = aggregate;
-    let next = stale.complete_stage(AT).expect("索引 0 は非ゲート");
+    let next = stale.complete_stage(at()).expect("索引 0 は非ゲート");
     let err = repository
         .store(&next, &stale)
         .await
@@ -353,7 +359,7 @@ async fn an_event_of_another_aggregate_is_refused() {
     let foreign = WorkflowExecutionEvent::new(
         absent_intent_id(),
         event.seq_nr(),
-        AT,
+        at(),
         core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
     );
     let err = repository
@@ -386,7 +392,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
     let bogus = WorkflowExecutionEvent::new(
         intent_id(),
         2,
-        AT,
+        at(),
         WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
             None,

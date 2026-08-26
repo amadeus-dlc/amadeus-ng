@@ -38,6 +38,9 @@ use core_use_case::orchestration::{
     CorruptCause, EventStore, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName,
 };
 
+use chrono::{DateTime, SecondsFormat, Utc};
+use event_store_adapter_rs::types::{Aggregate, Event};
+
 use crate::Clock;
 
 use super::schema::ensure_schema;
@@ -134,7 +137,11 @@ fn is_constraint_violation(error: &rusqlite::Error) -> bool {
 const NO_AGGREGATE: &str = "-";
 
 /// 行の材料を添えて `Corrupt` を組む。
-fn corrupt_error(aggregate_id: &str, seq_nr: Option<u64>, cause: CorruptCause) -> EventStoreError {
+fn corrupt_error(
+    aggregate_id: &str,
+    seq_nr: Option<usize>,
+    cause: CorruptCause,
+) -> EventStoreError {
     EventStoreError::Corrupt {
         aggregate_id: aggregate_id.to_string(),
         seq_nr,
@@ -142,17 +149,34 @@ fn corrupt_error(aggregate_id: &str, seq_nr: Option<u64>, cause: CorruptCause) -
     }
 }
 
-/// ドメインの `u64` を SQLite の `INTEGER` (i64) へ写す。
+/// ドメインの符号なし整数を SQLite の `INTEGER` (i64) へ写す。
 ///
 /// 収まらない値は行として表現できない — 静かに丸めず `Corrupt` で止める (NFR4.3)。
-fn to_i64(value: u64, aggregate_id: &str, seq_nr: Option<u64>) -> Result<i64, EventStoreError> {
-    i64::try_from(value)
+/// 集約内の `seq_nr` / `version` は `usize`、ジャーナルの global 通番は `u64` なので、
+/// 両方を受ける (境界での変換であって、契約の書き換えではない)。
+fn to_i64<T: TryInto<i64>>(
+    value: T,
+    aggregate_id: &str,
+    seq_nr: Option<usize>,
+) -> Result<i64, EventStoreError> {
+    value
+        .try_into()
         .map_err(|_| corrupt_error(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
 }
 
-/// SQLite の `INTEGER` (i64) をドメインの `u64` へ写す (負値は行の破損)。
-fn to_u64(value: i64, aggregate_id: &str, seq_nr: Option<u64>) -> Result<u64, EventStoreError> {
+/// SQLite の `INTEGER` (i64) をジャーナルの global 通番 (`u64`) へ写す (負値は行の破損)。
+fn to_u64(value: i64, aggregate_id: &str, seq_nr: Option<usize>) -> Result<u64, EventStoreError> {
     u64::try_from(value)
+        .map_err(|_| corrupt_error(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
+}
+
+/// SQLite の `INTEGER` (i64) を集約内の `seq_nr` / `version` (`usize`) へ写す。
+fn to_usize(
+    value: i64,
+    aggregate_id: &str,
+    seq_nr: Option<usize>,
+) -> Result<usize, EventStoreError> {
+    usize::try_from(value)
         .map_err(|_| corrupt_error(aggregate_id, seq_nr, CorruptCause::InvariantViolation))
 }
 
@@ -165,35 +189,21 @@ fn wire_version(value: i64) -> u32 {
 // 時刻
 // ---------------------------------------------------------------------------
 
-/// epoch ミリ秒を ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) に描く。
+/// `DateTime<Utc>` を upstream 互換の ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) に描く。
 ///
-/// 外部の日付クレートを足さないための小さな純関数である (NFR4.1 — 依存最小化)。
-/// 暦の計算は Howard Hinnant の `civil_from_days` (proleptic Gregorian) をそのまま使う。
-fn format_iso8601_utc(epoch_ms: u64) -> String {
-    let seconds = epoch_ms / 1000;
-    let (hour, minute, second) = ((seconds / 3600) % 24, (seconds / 60) % 60, seconds % 60);
-    let (year, month, day) = civil_from_days(seconds / 86_400);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+/// この綴りは observable な Published Language (`updated_at` 列・ジャーナルの
+/// `occurred_at` 列) なので**逐語で維持する** — 秒精度・`Z` サフィックス。
+/// 整形の実装は chrono に委ねる (ADR-010 で chrono が依存に入ったため、自前の暦計算を
+/// 二重に持つ理由が消えた)。
+fn format_iso8601_utc(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-/// epoch からの日数を (年, 月, 日) に開く (1970-01-01 を 0 とする)。
-const fn civil_from_days(days: u64) -> (u64, u64, u64) {
-    // 3 月始まりの暦へ移して、400 年周期 (146097 日) の中の位置で解く。
-    let shifted = days + 719_468;
-    let era = shifted / 146_097;
-    let day_of_era = shifted - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted_month = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
-    let month = if shifted_month < 10 {
-        shifted_month + 3
-    } else {
-        shifted_month - 9
-    };
-    (if month <= 2 { year + 1 } else { year }, month, day)
+/// upstream 互換の ISO 8601 UTC 文字列を `DateTime<Utc>` へ戻す (行の復号)。
+fn parse_iso8601_utc(text: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|at| at.with_timezone(&Utc))
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +318,7 @@ impl<C: Clock> EventStoreImpl<C> {
     ///
     /// # Errors
     ///
-    /// ストア I/O (`Io`)、行数が `u64` に収まらない (`Corrupt`) を返す。
+    /// ストア I/O (`Io`) を返す。
     pub(crate) fn journal_is_empty(
         &self,
         aggregate_id: &IntentId,
@@ -324,7 +334,7 @@ impl<C: Clock> EventStoreImpl<C> {
 
     /// 現在の押印時刻 (`updated_at` 列の値 — BR2.6)。
     fn now(&self) -> String {
-        format_iso8601_utc(self.clock.now_ms())
+        format_iso8601_utc(self.clock.now())
     }
 }
 
@@ -337,7 +347,7 @@ fn current_version(
     transaction: &Transaction<'_>,
     aggregate_id: &str,
     path: &Path,
-) -> Result<u64, EventStoreError> {
+) -> Result<usize, EventStoreError> {
     let raw: Option<i64> = transaction
         .query_row(SELECT_SNAPSHOT_VERSION, params![aggregate_id], |row| {
             row.get(0)
@@ -346,7 +356,7 @@ fn current_version(
         .map_err(|error| map_sqlite_error(&error, path))?;
     match raw {
         None => Ok(0),
-        Some(value) => to_u64(value, aggregate_id, None),
+        Some(value) => to_usize(value, aggregate_id, None),
     }
 }
 
@@ -362,7 +372,7 @@ fn insert_journal_row(
     payload: &str,
     path: &Path,
 ) -> Result<JournalInsert, EventStoreError> {
-    let aggregate_id = event.intent_id().as_str();
+    let aggregate_id = event.aggregate_id().as_str();
     let seq_nr = to_i64(event.seq_nr(), aggregate_id, Some(event.seq_nr()))?;
     let outcome = transaction.execute(
         INSERT_JOURNAL,
@@ -372,7 +382,7 @@ fn insert_journal_row(
             i64::from(EventPayloadWire::SCHEMA_VERSION),
             EventPayloadWire::event_type(event.payload()),
             payload,
-            event.occurred_at(),
+            format_iso8601_utc(*event.occurred_at()),
         ],
     );
     match outcome {
@@ -398,10 +408,17 @@ fn decode_event(row: &JournalRow) -> Result<WorkflowExecutionEvent, EventStoreEr
         &row.event_type,
         &row.payload,
     )?;
+    let occurred_at = parse_iso8601_utc(&row.occurred_at).ok_or_else(|| {
+        corrupt_error(
+            &row.aggregate_id,
+            Some(row.seq_nr),
+            CorruptCause::UndecodablePayload,
+        )
+    })?;
     Ok(WorkflowExecutionEvent::new(
         intent_id,
         row.seq_nr,
-        row.occurred_at.clone(),
+        occurred_at,
         payload,
     ))
 }
@@ -419,14 +436,16 @@ fn decode_snapshot(
             CorruptCause::InvariantViolation,
         )
     })?;
-    Ok(aggregate.with_version(row.version))
+    let mut aggregate = aggregate;
+    aggregate.set_version(row.version);
+    Ok(aggregate)
 }
 
 /// C6 `journal` の 1 行 (読み出した生の材料)。
 #[derive(Debug)]
 struct JournalRow {
     aggregate_id: String,
-    seq_nr: u64,
+    seq_nr: usize,
     schema_version: u32,
     event_type: String,
     payload: String,
@@ -446,8 +465,8 @@ enum JournalInsert {
 /// C6 `snapshot` の 1 行 (読み出した生の材料)。
 #[derive(Debug)]
 struct SnapshotRow {
-    version: u64,
-    seq_nr: u64,
+    version: usize,
+    seq_nr: usize,
     schema_version: u32,
     payload: String,
 }
@@ -458,9 +477,9 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
     async fn persist_event(
         &mut self,
         event: &WorkflowExecutionEvent,
-        version: u64,
+        version: usize,
     ) -> Result<(), EventStoreError> {
-        let aggregate_id = event.intent_id();
+        let aggregate_id = event.aggregate_id();
         let payload =
             EventPayloadWire::encode(aggregate_id.as_str(), event.seq_nr(), event.payload())?;
         let path = self.path.clone();
@@ -497,16 +516,17 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
         event: &WorkflowExecutionEvent,
         aggregate: &WorkflowExecution,
     ) -> Result<(), EventStoreError> {
-        let aggregate_id = event.intent_id();
+        let aggregate_id = event.aggregate_id();
         let expected = aggregate.version();
         let new_version = event.seq_nr();
         let event_payload =
             EventPayloadWire::encode(aggregate_id.as_str(), new_version, event.payload())?;
         // 書込後の姿を写すので、payload の version も列と同じ新 version に揃える。
-        let state_payload = StateWire::encode(
-            aggregate_id.as_str(),
-            &aggregate.clone().with_version(new_version).state(),
-        )?;
+        let state_payload = {
+            let mut stored = aggregate.clone();
+            stored.set_version(new_version);
+            StateWire::encode(aggregate_id.as_str(), &stored.state())?
+        };
         let updated_at = self.now();
         let path = self.path.clone();
         let identifier = aggregate_id.as_str();
@@ -593,8 +613,8 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
             return Ok(None);
         };
         let row = SnapshotRow {
-            version: to_u64(version, aid.as_str(), None)?,
-            seq_nr: to_u64(seq_nr, aid.as_str(), None)?,
+            version: to_usize(version, aid.as_str(), None)?,
+            seq_nr: to_usize(seq_nr, aid.as_str(), None)?,
             schema_version: wire_version(schema_version),
             payload,
         };
@@ -604,7 +624,7 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
     async fn get_events_by_id_since_seq_nr(
         &self,
         aid: &IntentId,
-        seq_nr: u64,
+        seq_nr: usize,
     ) -> Result<Vec<WorkflowExecutionEvent>, EventStoreError> {
         let since = to_i64(seq_nr, aid.as_str(), Some(seq_nr))?;
         let rows = {
@@ -634,7 +654,7 @@ impl<C: Clock> EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent>
         for (row_seq_nr, schema_version, event_type, payload, occurred_at) in rows {
             let row = JournalRow {
                 aggregate_id: aid.as_str().to_string(),
-                seq_nr: to_u64(row_seq_nr, aid.as_str(), None)?,
+                seq_nr: to_usize(row_seq_nr, aid.as_str(), None)?,
                 schema_version: wire_version(schema_version),
                 event_type,
                 payload,
@@ -681,7 +701,7 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
         for (global, aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at) in rows
         {
             let row = JournalRow {
-                seq_nr: to_u64(seq_nr, &aggregate_id, None)?,
+                seq_nr: to_usize(seq_nr, &aggregate_id, None)?,
                 aggregate_id,
                 schema_version: wire_version(schema_version),
                 event_type,
@@ -761,13 +781,19 @@ impl<C: Clock> JournalReader for EventStoreImpl<C> {
 mod tests {
     use super::*;
     use crate::FakeClock;
+    use chrono::TimeDelta;
     use core_domain::workspace::SpaceName;
+
+    /// epoch 秒から固定時刻を作る (時計はテストが完全に決める)。
+    fn epoch(seconds: i64) -> DateTime<Utc> {
+        DateTime::UNIX_EPOCH + TimeDelta::seconds(seconds)
+    }
 
     /// 一時ディレクトリ配下にストアを開く (親 dir は先に作る)。
     fn open_store(dir: &tempfile::TempDir) -> EventStoreImpl<FakeClock> {
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
-        EventStoreImpl::open(path, FakeClock::new(0)).expect("開ける")
+        EventStoreImpl::open(path, FakeClock::new(DateTime::UNIX_EPOCH)).expect("開ける")
     }
 
     #[test]
@@ -788,7 +814,7 @@ mod tests {
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
         let store = EventStoreImpl::open_with_busy_timeout(
             path,
-            FakeClock::new(0),
+            FakeClock::new(DateTime::UNIX_EPOCH),
             Duration::from_millis(20),
         )
         .expect("開ける");
@@ -817,8 +843,9 @@ mod tests {
         // 「同じストアを指す別インスタンス」は開き直しで得る形に一本化した。
         let dir = tempfile::tempdir().expect("一時 dir");
         let first = open_store(&dir);
-        let second = EventStoreImpl::open(first.path().clone(), FakeClock::new(0))
-            .expect("同じ場所を開き直せる");
+        let second =
+            EventStoreImpl::open(first.path().clone(), FakeClock::new(DateTime::UNIX_EPOCH))
+                .expect("同じ場所を開き直せる");
         assert_eq!(first.path(), second.path(), "同じ場所を指す");
         for store in [&first, &second] {
             let stamped: i64 = store
@@ -830,23 +857,44 @@ mod tests {
     }
 
     #[test]
-    fn the_epoch_is_rendered_as_iso_8601_utc() {
-        assert_eq!(format_iso8601_utc(0), "1970-01-01T00:00:00Z");
+    fn the_stamp_is_rendered_as_iso_8601_utc() {
+        // 観測互換の逐語形 (秒精度・`Z` サフィックス) を固定する。
         assert_eq!(
-            format_iso8601_utc(1_787_443_200_000),
+            format_iso8601_utc(DateTime::UNIX_EPOCH),
+            "1970-01-01T00:00:00Z"
+        );
+        assert_eq!(
+            format_iso8601_utc(epoch(1_787_443_200)),
             "2026-08-23T00:00:00Z"
         );
-        // 閏日 (2024-02-29) と年境界を跨ぐ点を固定する。
+        // 閏日 (2024-02-29) と年境界を跨ぐ点。
         assert_eq!(
-            format_iso8601_utc(1_709_164_800_000),
+            format_iso8601_utc(epoch(1_709_164_800)),
             "2024-02-29T00:00:00Z"
         );
         assert_eq!(
-            format_iso8601_utc(1_735_689_599_000),
+            format_iso8601_utc(epoch(1_735_689_599)),
             "2024-12-31T23:59:59Z"
         );
-        // ミリ秒は切り捨て (秒精度の逐語形)。
-        assert_eq!(format_iso8601_utc(999), "1970-01-01T00:00:00Z");
+        // 秒未満は切り捨て (秒精度の逐語形)。
+        assert_eq!(
+            format_iso8601_utc(DateTime::UNIX_EPOCH + TimeDelta::milliseconds(999)),
+            "1970-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn the_stamp_round_trips_through_the_parser() {
+        // ジャーナル行の `occurred_at` はこの綴りで書かれ、この関数で読み戻される。
+        for at in [
+            DateTime::UNIX_EPOCH,
+            epoch(1_787_443_200),
+            epoch(1_735_689_599),
+        ] {
+            assert_eq!(parse_iso8601_utc(&format_iso8601_utc(at)), Some(at));
+        }
+        assert_eq!(parse_iso8601_utc("2026-08-23"), None);
+        assert_eq!(parse_iso8601_utc(""), None);
     }
 
     #[test]
@@ -854,7 +902,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("一時 dir");
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().expect("親 dir")).expect("intents/ を作る");
-        let store = EventStoreImpl::open(path, FakeClock::new(1_787_443_200_000)).expect("開ける");
+        let store =
+            EventStoreImpl::open(path, FakeClock::new(epoch(1_787_443_200))).expect("開ける");
         assert_eq!(store.now(), "2026-08-23T00:00:00Z");
     }
 

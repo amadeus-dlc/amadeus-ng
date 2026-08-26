@@ -18,6 +18,7 @@
 
 use std::collections::BTreeMap;
 
+use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
     AutonomyMode, EngineSignal, IntentId, NextRequest, StageEntry, StageIndex, StartRequest,
     Status, WorkflowExecution,
@@ -27,10 +28,18 @@ use core_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_domain::workspace::CheckboxState;
+use event_store_adapter_rs::types::Event;
 use serde_json::Value;
 
 /// ITF 再生は時計を持たない — 封筒の `occurred_at` は固定値でよい (集約は値を素通しする)。
-const AT: &str = "2026-08-23T00:00:00Z";
+const AT_TEXT: &str = "2026-08-23T00:00:00Z";
+
+/// 固定の発生時刻。
+fn at() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(AT_TEXT)
+        .unwrap()
+        .with_timezone(&Utc)
+}
 
 fn bigint(v: &Value) -> i64 {
     v["#bigint"].as_str().unwrap().parse().unwrap()
@@ -241,7 +250,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         synthetic_revision(),
         &StartRequest::new("itf", "conformance"),
         synthetic_stages(m0),
-        AT,
+        at(),
     )
     .unwrap();
     assert_eq!(started.seq_nr(), 1);
@@ -272,46 +281,46 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 // 非ゲート (initialization) は complete_stage、ゲートは approve_gate (BR1.3)。
                 let cursor = agg.cursor();
                 if agg.gated(cursor) == Some(true) {
-                    agg.approve_gate(None, None, AT).unwrap();
+                    agg.approve_gate(None, None, at()).unwrap();
                 } else {
-                    agg.complete_stage(AT).unwrap();
+                    agg.complete_stage(at()).unwrap();
                 }
                 assert_directive(m, "DDone", i);
             }
             "report_awaiting_approval" => {
-                agg.open_gate(Vec::new(), AT).unwrap();
+                agg.open_gate(Vec::new(), at()).unwrap();
             }
             "report_rejected" => {
-                agg.reject_gate(None, AT).unwrap();
+                agg.reject_gate(None, at()).unwrap();
             }
             "report_revised" => {
-                agg.revise_stage(AT).unwrap();
+                agg.revise_stage(at()).unwrap();
             }
             "report_skipped" => {
-                agg.skip_stage("conformance".to_string(), AT).unwrap();
+                agg.skip_stage("conformance".to_string(), at()).unwrap();
                 assert_directive(m, "DDone", i);
             }
             "jump_forward" | "jump_backward" => {
                 let target = index(&agg, m.cursor);
-                agg.jump(target, AT).unwrap();
+                agg.jump(target, at()).unwrap();
             }
             "jump_redo" => {
                 let target = index(&agg, prev.cursor);
-                agg.jump(target, AT).unwrap();
+                agg.jump(target, at()).unwrap();
             }
             "park" => {
-                agg.park(AT).unwrap();
+                agg.park(at()).unwrap();
                 assert_directive(m, "DParked", i);
             }
             "unpark" => {
-                agg.unpark(AT).unwrap();
+                agg.unpark(at()).unwrap();
             }
             "recompose" => {
                 // モデルの actRecompose は 1 ステージ反転 — 要素数 1 の recompose に対応 (BR2.5)。
                 let s = (0..prev.overlay.len())
                     .find(|&s| prev.overlay[s] != m.overlay[s])
                     .unwrap();
-                agg.recompose(&[index(&agg, s)], AT).unwrap();
+                agg.recompose(&[index(&agg, s)], at()).unwrap();
             }
             "set_autonomy" => {
                 // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
@@ -320,7 +329,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.switch_autonomy(mode, AT).unwrap();
+                agg.switch_autonomy(mode, at()).unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }

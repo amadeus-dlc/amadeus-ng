@@ -3,10 +3,13 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// パース済みの stage slug (Always Valid — 不正値はこの型に存在しない)。
 ///
 /// `Ord` は生文字列の辞書順。数値順の語彙は `StageNumber` が持つ (両者を混同しないこと)。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String")]
 pub struct StageSlug(String);
 
 /// `StageSlug::parse` が拒否する文法違反。
@@ -46,16 +49,49 @@ impl StageSlug {
     }
 }
 
+impl TryFrom<String> for StageSlug {
+    type Error = StageSlugError;
+
+    fn try_from(value: String) -> Result<StageSlug, StageSlugError> {
+        StageSlug::parse(&value)
+    }
+}
+
 impl fmt::Display for StageSlug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
 
+impl fmt::Display for StageSlugError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StageSlugError::Empty => f.write_str("empty"),
+            StageSlugError::InvalidLeading(c) => write!(f, "leading character '{c}'"),
+            StageSlugError::InvalidChar(c) => write!(f, "invalid character '{c}'"),
+        }
+    }
+}
+
+impl std::error::Error for StageSlugError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn the_rejection_carries_material_not_wording() {
+        assert_eq!(StageSlugError::Empty.to_string(), "empty");
+        assert_eq!(
+            StageSlugError::InvalidLeading('1').to_string(),
+            "leading character '1'"
+        );
+        assert_eq!(
+            StageSlugError::InvalidChar('_').to_string(),
+            "invalid character '_'"
+        );
+    }
 
     #[test]
     fn accepts_the_shipping_vocabulary() {

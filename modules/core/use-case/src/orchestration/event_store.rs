@@ -11,8 +11,9 @@ use super::event_store_error::EventStoreError;
 ///
 /// メソッドは `async fn` (AFIT — Rust 2024)。`dyn` は使わず (use-case-rules §2)、
 /// `Send` / `Sync` 境界も要求しない (tokio current_thread 前提 — C3 / Q3 = A)。
-/// 数値パラメータは C3 の `usize` を実装済みドメイン型に合わせて **u64** に具体化した
-/// (C3 の改訂提案として所有者 U5 / U6 へ申し送り — BR1.1)。
+/// 数値パラメータは本家と同じ **`usize`** である — かつてドメイン型に合わせて `u64` へ
+/// 「具体化」していたが、それは借り物の契約の書き換えであり
+/// (`coding-rules/upstream-contracts.md`)、ADR-010 で撤回した。
 ///
 /// [`WorkflowExecutionRepository`]: super::workflow_execution_repository::WorkflowExecutionRepository
 #[allow(
@@ -31,7 +32,7 @@ pub trait EventStore<AID, A, E> {
     ///
     /// 楽観 version の不一致・`seq_nr` の重複 (`Conflict`)、ストア I/O (`Io`)、
     /// 符号化の失敗 (`Corrupt`) を返す。
-    async fn persist_event(&mut self, event: &E, version: u64) -> Result<(), EventStoreError>;
+    async fn persist_event(&mut self, event: &E, version: usize) -> Result<(), EventStoreError>;
 
     /// イベント 1 件と適用後の集約を**同一トランザクション**で永続化する (BR1.3 / BR2.3)。
     ///
@@ -62,7 +63,7 @@ pub trait EventStore<AID, A, E> {
     async fn get_events_by_id_since_seq_nr(
         &self,
         aid: &AID,
-        seq_nr: u64,
+        seq_nr: usize,
     ) -> Result<Vec<E>, EventStoreError>;
 }
 
@@ -76,15 +77,15 @@ mod tests {
     /// ためだけの最小実装。実挙動の契約はアダプタ層の契約テストが持つ。
     #[derive(Debug, Default)]
     struct FakeStore {
-        journal: BTreeMap<(u64, u64), String>,
+        journal: BTreeMap<(u64, usize), String>,
         snapshot: BTreeMap<u64, String>,
     }
 
-    impl EventStore<u64, String, (u64, u64, String)> for FakeStore {
+    impl EventStore<u64, String, (u64, usize, String)> for FakeStore {
         async fn persist_event(
             &mut self,
-            event: &(u64, u64, String),
-            version: u64,
+            event: &(u64, usize, String),
+            version: usize,
         ) -> Result<(), EventStoreError> {
             let (aid, seq_nr, body) = event;
             if self.snapshot.contains_key(aid) && version == 0 {
@@ -99,7 +100,7 @@ mod tests {
 
         async fn persist_event_and_snapshot(
             &mut self,
-            event: &(u64, u64, String),
+            event: &(u64, usize, String),
             aggregate: &String,
         ) -> Result<(), EventStoreError> {
             let (aid, seq_nr, body) = event;
@@ -118,8 +119,8 @@ mod tests {
         async fn get_events_by_id_since_seq_nr(
             &self,
             aid: &u64,
-            seq_nr: u64,
-        ) -> Result<Vec<(u64, u64, String)>, EventStoreError> {
+            seq_nr: usize,
+        ) -> Result<Vec<(u64, usize, String)>, EventStoreError> {
             Ok(self
                 .journal
                 .iter()
@@ -130,9 +131,9 @@ mod tests {
     }
 
     /// ジェネリック関数からポート越しに使えること (静的束縛 — `dyn` を要さない)。
-    async fn append<S: EventStore<u64, String, (u64, u64, String)>>(
+    async fn append<S: EventStore<u64, String, (u64, usize, String)>>(
         store: &mut S,
-        event: (u64, u64, String),
+        event: (u64, usize, String),
         aggregate: String,
     ) -> Result<(), EventStoreError> {
         store.persist_event_and_snapshot(&event, &aggregate).await

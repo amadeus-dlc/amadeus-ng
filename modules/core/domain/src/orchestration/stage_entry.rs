@@ -1,12 +1,14 @@
 //! `StageEntry` — `Started` に載る解決済みの 1 ステージ分の計画 (entities.md StageEntry)。
 
+use serde::{Deserialize, Serialize};
+
 use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
 /// 定義から解決済みの 1 ステージ分の計画。
 ///
 /// `Started` がこの列を持つことでリプレイは `WorkflowDefinition` を要さない (BR2.2)。
 /// ゲート判定はこの型が所有する — 索引ではなく `phase` から決まる (BR1.3、Tell-Don't-Ask)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StageEntry {
     slug: StageSlug,
     phase: PhaseId,

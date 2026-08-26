@@ -10,22 +10,29 @@
 
 mod support;
 
+use chrono::{DateTime, Utc};
 use core_domain::orchestration::{AutonomyMode, WorkflowExecution};
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{
     EventStoreImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
+use event_store_adapter_rs::types::{Aggregate, Event};
+
 use core_use_case::orchestration::{
     EventStoreError, GlobalSeqNr, JournalReader, WorkflowExecutionRepository,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{AT, advanced, genesis, intent_id};
+use support::{advanced, at, genesis, intent_id};
 
-/// 固定時刻 (2026-08-23T00:00:00Z の epoch ms)。
-const NOW_MS: u64 = 1_787_443_200_000;
+/// ストアの押印時刻 (`updated_at` 列)。イベントの `occurred_at` と同じ固定時刻にする。
+fn now() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+        .expect("固定の ISO 8601 UTC")
+        .with_timezone(&Utc)
+}
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -47,7 +54,7 @@ impl Fixture {
     }
 
     fn store(&self) -> EventStoreImpl<FakeClock> {
-        EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
+        EventStoreImpl::open(self.path.clone(), FakeClock::new(now())).expect("ストアは開ける")
     }
 }
 
@@ -59,24 +66,24 @@ async fn write_five(
     repository.store(&event, &aggregate).await.expect("genesis");
     aggregate = advanced(aggregate, &event);
 
-    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     repository.store(&event, &aggregate).await.expect("2 件目");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .open_gate(vec!["intent.md".to_string()], AT)
+        .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
     repository.store(&event, &aggregate).await.expect("3 件目");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .approve_gate(Some("ok".to_string()), None, AT)
+        .approve_gate(Some("ok".to_string()), None, at())
         .expect("承認");
     repository.store(&event, &aggregate).await.expect("4 件目");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .switch_autonomy(AutonomyMode::Autonomous, AT)
+        .switch_autonomy(AutonomyMode::Autonomous, at())
         .expect("自律モードの設定");
     repository.store(&event, &aggregate).await.expect("5 件目");
     advanced(aggregate, &event)
@@ -95,7 +102,7 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
 
     let reopened = fixture.repository();
     let found = reopened.find_by_id(&intent_id()).await.expect("読み直せる");
-    assert_eq!(found.state(), expected.state(), "16 属性が一致する");
+    assert_eq!(found.state(), expected.state(), "17 属性が一致する");
     assert_eq!(found.version(), 5);
     assert_eq!(found.seq_nr(), 5);
 }
@@ -192,8 +199,8 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     let mut repository = fixture.repository();
     let mut aggregate = repository.find_by_id(&intent_id()).await.expect("再水和");
     let event = aggregate
-        .approve_gate(Some("ok".to_string()), None, AT)
-        .or_else(|_| aggregate.complete_stage(AT))
+        .approve_gate(Some("ok".to_string()), None, at())
+        .or_else(|_| aggregate.complete_stage(at()))
         .expect("次のコマンド");
     assert_eq!(event.seq_nr(), 6);
     repository.store(&event, &aggregate).await.expect("6 件目");

@@ -24,9 +24,9 @@ pub enum RepositoryError {
     /// 楽観 version の不一致 (BR1.3)。ユースケースは再水和して 1 回だけ再試行する。
     Conflict {
         /// 書込側が前提とした version。
-        expected: u64,
+        expected: usize,
         /// ストアに実在した version。
-        actual: u64,
+        actual: usize,
     },
     /// ストア I/O の失敗 (`ErrorKind` を保持 — 監査 C24)。
     Io {
@@ -40,7 +40,7 @@ pub enum RepositoryError {
         /// 対象の集約識別子。
         aggregate_id: IntentId,
         /// 該当行の `seq_nr` (行が特定できない場合は `None`)。
-        seq_nr: Option<u64>,
+        seq_nr: Option<usize>,
         /// 原因の分類。
         cause: CorruptCause,
     },

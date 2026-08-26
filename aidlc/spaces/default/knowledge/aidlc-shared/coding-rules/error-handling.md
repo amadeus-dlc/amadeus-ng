@@ -22,3 +22,12 @@
 
 - **アダプタ層の message-catalog**: 利用者向けの逐語文言そのものを保持するのはこの層の責務であり、本ルールの「文言を持ち込まない」対象外。
 - **テストコードの `unwrap` / `expect`**: `clippy.toml`（`allow-unwrap-in-tests` / `allow-expect-in-tests`）で許容する。
+
+## 射程の明確化 2026-08-26 — 本ルールは「我々が書くエラー型」に限る
+
+`thiserror` / `anyhow` 不使用は**我々が定義するエラー型**の規則である。外部依存
+（event-store-adapter-rs v2.0.0 が `thiserror` を使う）の**推移依存として入ることは
+違反ではない**（Conformist — ADR-010。相手のエラー設計は相手のドメイン）。
+`cargo audit` の対象には含まれ続ける。我々のコードが `thiserror` を**直接** use したら
+従来どおり違反。
+

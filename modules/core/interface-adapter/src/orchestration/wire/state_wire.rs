@@ -1,5 +1,6 @@
-//! `StateWire` — `WorkflowExecutionState` (16 属性) の JSON 表現 (functional-spec §4.2)。
+//! `StateWire` — `WorkflowExecutionState` (17 属性) の JSON 表現 (functional-spec §4.2)。
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use core_domain::orchestration::{WorkflowExecutionState, WorkflowExecutionStateBuilder};
 use core_domain::workspace::CheckboxState;
 use core_use_case::orchestration::{CorruptCause, EventStoreError};
@@ -12,7 +13,7 @@ use super::{
     to_canonical_json,
 };
 
-/// `WorkflowExecutionState` (16 属性) のワイヤ表現 (functional-spec §4.2)。
+/// `WorkflowExecutionState` (17 属性) のワイヤ表現 (functional-spec §4.2)。
 ///
 /// フィールドの宣言順がそのまま正準 JSON のキー順になる (canon-json の
 /// `ContractCompact` は挿入順を保つ)。`revision_count` は列を増やさずここに含む (P4)。
@@ -34,10 +35,11 @@ pub(crate) struct StateWire {
     revision_count: Vec<u32>,
     seq_nr: u64,
     version: u64,
+    last_updated_at: String,
 }
 
-/// 16 属性のキー (閉集合 — 未知フィールドはここに無い名前すべて)。
-const STATE_KEYS: [&str; 16] = [
+/// 17 属性のキー (閉集合 — 未知フィールドはここに無い名前すべて)。
+const STATE_KEYS: [&str; 17] = [
     "intent_id",
     "definition_id",
     "definition_revision",
@@ -54,7 +56,20 @@ const STATE_KEYS: [&str; 16] = [
     "revision_count",
     "seq_nr",
     "version",
+    "last_updated_at",
 ];
+
+/// 集約内の `seq_nr` / `version` (`usize`) を JSON の整数 (`u64`) へ写す。
+fn to_u64(value: usize) -> Result<u64, CorruptCause> {
+    u64::try_from(value).map_err(|_| CorruptCause::InvariantViolation)
+}
+
+/// `last_updated_at` 列の upstream 互換 ISO 8601 UTC 文字列を `DateTime<Utc>` へ戻す。
+fn parse_last_updated_at(text: &str) -> Result<DateTime<Utc>, CorruptCause> {
+    DateTime::parse_from_rfc3339(text)
+        .map(|at| at.with_timezone(&Utc))
+        .map_err(|_| CorruptCause::UndecodablePayload)
+}
 
 impl StateWire {
     /// ワイヤの版 (状態ワイヤも C5 と同じ 1)。
@@ -129,8 +144,11 @@ impl StateWire {
             autonomy: autonomy_token(state.autonomy()),
             approved: state.approved().to_vec(),
             revision_count: state.revision_count().to_vec(),
-            seq_nr: exact_integer(state.seq_nr())?,
-            version: exact_integer(state.version())?,
+            seq_nr: exact_integer(to_u64(state.seq_nr())?)?,
+            version: exact_integer(to_u64(state.version())?)?,
+            last_updated_at: state
+                .last_updated_at()
+                .to_rfc3339_opts(SecondsFormat::Secs, true),
         };
         to_canonical_json(&wire)
     }
@@ -179,8 +197,9 @@ impl StateWire {
         .autonomy(parse_autonomy(object.string("autonomy")?)?)
         .approved(object.bools("approved")?)
         .revision_count(object.u32s("revision_count")?)
-        .seq_nr(object.u64("seq_nr")?)
-        .version(object.u64("version")?)
+        .seq_nr(object.usize("seq_nr")?)
+        .version(object.usize("version")?)
+        .last_updated_at(parse_last_updated_at(object.string("last_updated_at")?)?)
         .build())
     }
 }
@@ -242,6 +261,11 @@ mod tests {
         .revision_count(vec![0, 3])
         .seq_nr(9)
         .version(8)
+        .last_updated_at(
+            DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        )
         .build()
     }
 
@@ -261,14 +285,14 @@ mod tests {
     }
 
     #[test]
-    fn the_sixteen_attributes_round_trip() {
+    fn the_seventeen_attributes_round_trip() {
         let original = state();
         let decoded = decode(&encode(&original)).unwrap();
         assert_eq!(decoded, original);
     }
 
     #[test]
-    fn the_encoded_object_lists_the_sixteen_attributes_in_the_declared_order() {
+    fn the_encoded_object_lists_the_seventeen_attributes_in_the_declared_order() {
         let json = encode(&state());
         let value = canon_json::parse(&json).unwrap();
         let canon_json::JsonValue::Object(members) = &value else {
@@ -282,6 +306,11 @@ mod tests {
     fn the_fixed_tokens_keep_their_upstream_spelling() {
         let json = encode(&state());
         assert!(json.contains(r#""plan":["EXECUTE","SKIP"]"#), "{json}");
+        // `last_updated_at` は upstream 互換の秒精度 ISO 8601 UTC (逐語形)。
+        assert!(
+            json.contains(r#""last_updated_at":"2026-08-23T00:00:00Z""#),
+            "{json}"
+        );
         assert!(json.contains(r#""phase":"initialization""#), "{json}");
         assert!(json.contains(r#""checkbox":["x","R"]"#), "{json}");
         assert!(json.contains(r#""autonomy":"autonomous""#), "{json}");
@@ -290,7 +319,10 @@ mod tests {
 
     #[test]
     fn an_unknown_field_is_rejected() {
-        let json = encode(&state()).replace(r#""version":8}"#, r#""version":8,"extra":1}"#);
+        let json = encode(&state()).replace(
+            r#""last_updated_at":"2026-08-23T00:00:00Z"}"#,
+            r#""last_updated_at":"2026-08-23T00:00:00Z","extra":1}"#,
+        );
         assert_eq!(
             cause(&decode(&json).unwrap_err()),
             CorruptCause::UndecodablePayload
@@ -381,7 +413,7 @@ mod tests {
     }
 
     /// JSON (JS の `Number`) が整数を正確に保てる上限 — ワイヤの整数の値域。
-    const JSON_EXACT_INTEGER_LIMIT: u64 = 9_007_199_254_740_992;
+    const JSON_EXACT_INTEGER_LIMIT: usize = 9_007_199_254_740_992;
 
     #[test]
     fn an_integer_at_the_json_exact_limit_still_round_trips() {
@@ -417,7 +449,7 @@ mod tests {
     fn a_cursor_beyond_the_json_exact_limit_is_refused_instead_of_being_rounded() {
         // 索引の列 (`cursor` / `parked_at`) も seq_nr / version と同じ値域の防波堤を通す。
         // 丸めて書くと再水和したカーソルが別のステージを指すため、書く前に拒否する。
-        let huge = usize::try_from(JSON_EXACT_INTEGER_LIMIT + 1).unwrap();
+        let huge = JSON_EXACT_INTEGER_LIMIT + 1;
         let original = WorkflowExecutionStateBuilder::new(
             IntentId::parse(AGG).unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
@@ -432,7 +464,7 @@ mod tests {
 
     #[test]
     fn a_park_marker_beyond_the_json_exact_limit_is_refused_as_well() {
-        let huge = usize::try_from(JSON_EXACT_INTEGER_LIMIT + 1).unwrap();
+        let huge = JSON_EXACT_INTEGER_LIMIT + 1;
         let original = WorkflowExecutionStateBuilder::new(
             IntentId::parse(AGG).unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
@@ -449,7 +481,7 @@ mod tests {
     #[test]
     fn the_three_token_arrays_refuse_an_element_that_is_not_a_string() {
         // `plan` / `overlay` / `checkbox` は固定トークンの列なので、要素が文字列でない行は
-        // 復号せずに落とす (16 属性のうち閉集合を持つ 3 列の検査点)。
+        // 復号せずに落とす (17 属性のうち閉集合を持つ 3 列の検査点)。
         for (from, to) in [
             (r#""plan":["EXECUTE","SKIP"]"#, r#""plan":[1,2]"#),
             (r#""overlay":["EXECUTE","SKIP"]"#, r#""overlay":[1,2]"#),
@@ -518,8 +550,10 @@ mod tests {
                         proptest::option::of(0usize..count),
                         prop_oneof![Just(Status::Running), Just(Status::Completed)],
                         prop_oneof![Just(AutonomyMode::Autonomous), Just(AutonomyMode::Gated)],
-                        0u64..=JSON_EXACT_INTEGER_LIMIT,
-                        0u64..=JSON_EXACT_INTEGER_LIMIT,
+                        0usize..=JSON_EXACT_INTEGER_LIMIT,
+                        0usize..=JSON_EXACT_INTEGER_LIMIT,
+                        // `last_updated_at` は秒精度の逐語形で書くので、生成も秒粒度にする。
+                        0i64..=4_102_444_800,
                     ),
                 )
             })
@@ -533,7 +567,7 @@ mod tests {
                     checkbox,
                     approved,
                     revision_count,
-                    (cursor, parked_at, status, autonomy, seq_nr, version),
+                    (cursor, parked_at, status, autonomy, seq_nr, version, last_updated_at),
                 )| {
                     WorkflowExecutionStateBuilder::new(
                         IntentId::parse(&intent).unwrap(),
@@ -551,6 +585,9 @@ mod tests {
                     .autonomy(autonomy)
                     .seq_nr(seq_nr)
                     .version(version)
+                    .last_updated_at(
+                        DateTime::UNIX_EPOCH + chrono::TimeDelta::seconds(last_updated_at),
+                    )
                     .build()
                 },
             )

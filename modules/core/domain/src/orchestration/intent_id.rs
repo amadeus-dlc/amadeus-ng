@@ -2,6 +2,9 @@
 
 use std::fmt;
 
+use event_store_adapter_rs::types::AggregateId;
+use serde::{Deserialize, Serialize};
+
 /// 正準形の文字数 (`8-4-4-4-12` + ハイフン 4)。
 const CANONICAL_LEN: usize = 36;
 /// `-` が来る 0 始まり位置。
@@ -12,6 +15,8 @@ const VERSION_POSITION: usize = 14;
 const VARIANT_POSITION: usize = 19;
 /// UUIDv7 の version nibble。
 const VERSION_NIBBLE: char = '7';
+/// 本家 `AggregateId::type_name` が返す集約種別名 (この識別子が指す集約ルートの型名)。
+const AGGREGATE_TYPE_NAME: &str = "WorkflowExecution";
 
 /// `intents.json` の uuid にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -23,7 +28,12 @@ const VERSION_NIBBLE: char = '7';
 /// `Ord` は生文字列の辞書順。UUIDv7 の先頭 48 bit は Unix ミリ秒なので、この順序は
 /// ミリ秒粒度の作成順になる (upstream 同等の性質。型としては形式だけを保証し、
 /// 時刻の妥当性は検証しない — entities.md IntentId)。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// serde は表現の写しである。`Serialize` は newtype として生文字列へ落ち、`Deserialize` は
+/// [`IntentId::parse`] と同じ検査を通す (`try_from`) — 復号が Always Valid を破る抜け道に
+/// ならないようにするためである。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String")]
 pub struct IntentId(String);
 
 /// `IntentId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
@@ -103,6 +113,32 @@ impl IntentId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl TryFrom<String> for IntentId {
+    type Error = IntentIdError;
+
+    fn try_from(value: String) -> Result<IntentId, IntentIdError> {
+        IntentId::parse(&value)
+    }
+}
+
+/// 本家 event-store-adapter-rs の集約識別子契約 (ADR-010 Conformist — 契約は 1 文字も変えない)。
+///
+/// `value()` は我々の [tell-dont-ask] が禁じる綴りだが、**外部 trait の実装は Published
+/// Language への準拠**であり、名前の所有者は本家である。したがって
+/// [ubiquitous-language] §例外の作法に従い、ここに理由を書いたうえでそのまま実装する。
+///
+/// [tell-dont-ask]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/tell-dont-ask.md
+/// [ubiquitous-language]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ubiquitous-language.md
+impl AggregateId for IntentId {
+    fn type_name(&self) -> String {
+        AGGREGATE_TYPE_NAME.to_string()
+    }
+
+    fn value(&self) -> String {
+        self.0.clone()
     }
 }
 
@@ -290,6 +326,29 @@ mod tests {
         assert!(hashed.contains(&b));
         let ordered: BTreeSet<IntentId> = [a, b].into_iter().collect();
         assert_eq!(ordered.len(), 1);
+    }
+
+    #[test]
+    fn the_aggregate_id_contract_reports_the_type_name_and_the_raw_value() {
+        let id = IntentId::parse(SAMPLE).unwrap();
+        assert_eq!(id.type_name(), "WorkflowExecution");
+        assert_eq!(id.value(), SAMPLE);
+    }
+
+    #[test]
+    fn the_identifier_round_trips_through_serde_and_an_invalid_form_is_refused() {
+        let id = IntentId::parse(SAMPLE).unwrap();
+        // 本家 trait の serde 境界の往復確認であり、契約 JSON (BR1.7) の直列化経路では
+        // ないため、canon-json を経ない素の serde_json を使う。
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, format!("\"{SAMPLE}\""));
+        assert_eq!(serde_json::from_str::<IntentId>(&json).unwrap(), id);
+        // Always Valid — 復号は `parse` と同じ検査を通る (不正値はこの型に存在しない)。
+        assert!(serde_json::from_str::<IntentId>("\"not-a-uuid\"").is_err());
     }
 
     #[test]

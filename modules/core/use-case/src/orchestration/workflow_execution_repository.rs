@@ -60,13 +60,22 @@ pub trait WorkflowExecutionRepository {
 mod tests {
     use super::*;
     use crate::orchestration::RepositoryError;
+    use chrono::{DateTime, Utc};
     use core_domain::orchestration::{
         IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
     };
     use core_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
+    use event_store_adapter_rs::types::{Aggregate, Event};
+
     const RAW_ID: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+    fn at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
 
     fn intent() -> IntentId {
         IntentId::parse(RAW_ID).unwrap()
@@ -84,7 +93,7 @@ mod tests {
                 PlanAction::Execute,
                 false,
             )],
-            "2026-08-23T00:00:00Z",
+            at(),
         )
         .unwrap()
     }
@@ -111,7 +120,9 @@ mod tests {
             event: &WorkflowExecutionEvent,
             aggregate: &WorkflowExecution,
         ) -> Result<(), RepositoryError> {
-            self.stored = Some(aggregate.clone().with_version(event.seq_nr()));
+            let mut stored = aggregate.clone();
+            stored.set_version(event.seq_nr());
+            self.stored = Some(stored);
             Ok(())
         }
     }
@@ -142,7 +153,7 @@ mod tests {
         let (aggregate, event) = genesis();
         repository.store(&event, &aggregate).await.unwrap();
         let found = rehydrate(&repository, &intent()).await.unwrap();
-        assert_eq!(found.intent_id(), &intent());
+        assert_eq!(found.id(), &intent());
     }
 
     #[tokio::test]

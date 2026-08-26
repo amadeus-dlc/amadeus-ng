@@ -11,13 +11,15 @@
 use core_domain::orchestration::{
     AutonomyMode, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
 };
+use event_store_adapter_rs::types::{Aggregate, Event};
+
 use core_use_case::orchestration::{
     CorruptCause, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName, RepositoryError,
     WorkflowExecutionRepository,
 };
 
 use super::{
-    AT, StoreFixture, absent_intent_id, advanced, genesis, intent_id, store_genesis,
+    StoreFixture, absent_intent_id, advanced, at, genesis, intent_id, store_genesis,
     store_stage_completed,
 };
 
@@ -37,24 +39,24 @@ async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExe
         .expect("genesis の store は通る");
     aggregate = advanced(aggregate, &event);
 
-    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     repository.store(&event, &aggregate).await.expect("store");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .open_gate(vec!["intent.md".to_string()], AT)
+        .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
     repository.store(&event, &aggregate).await.expect("store");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .approve_gate(Some("ok".to_string()), None, AT)
+        .approve_gate(Some("ok".to_string()), None, at())
         .expect("承認");
     repository.store(&event, &aggregate).await.expect("store");
     aggregate = advanced(aggregate, &event);
 
     let event = aggregate
-        .switch_autonomy(AutonomyMode::Autonomous, AT)
+        .switch_autonomy(AutonomyMode::Autonomous, at())
         .expect("自律モードの設定");
     repository.store(&event, &aggregate).await.expect("store");
     advanced(aggregate, &event)
@@ -148,7 +150,7 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
         .await
         .expect("書いた集約は読み直せる");
 
-    assert_eq!(found.state(), expected.state(), "16 属性が一致する");
+    assert_eq!(found.state(), expected.state(), "17 属性が一致する");
     assert_eq!(found.version(), 5, "版は永続化済みの最後の seq_nr");
     assert_eq!(found.seq_nr(), 5, "順序番号は適用済みイベント数");
 }
@@ -214,7 +216,7 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
     assert_eq!(first.version(), second.version());
 
     let event = first
-        .open_gate(vec!["scope.md".to_string()], AT)
+        .open_gate(vec!["scope.md".to_string()], at())
         .expect("索引 2 はゲート付きで in-progress");
     repository
         .store(&event, &first)
@@ -222,7 +224,7 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
         .expect("先に書いた方は通る");
 
     let event = second
-        .open_gate(vec!["scope.md".to_string()], AT)
+        .open_gate(vec!["scope.md".to_string()], at())
         .expect("同じコマンド");
     let err = repository
         .store(&event, &second)
@@ -252,7 +254,7 @@ pub(crate) async fn sequence_gap_is_refused<F: StoreFixture>(fixture: &F) {
 
     // 版を載せ替えないまま次のイベントを書こうとする (呼出側のバグ)。
     let mut stale = aggregate;
-    let next = stale.complete_stage(AT).expect("索引 0 は非ゲート");
+    let next = stale.complete_stage(at()).expect("索引 0 は非ゲート");
     let err = repository
         .store(&next, &stale)
         .await
@@ -274,7 +276,7 @@ pub(crate) async fn mismatched_identity_is_refused<F: StoreFixture>(fixture: &F)
     let foreign = WorkflowExecutionEvent::new(
         absent_intent_id(),
         event.seq_nr(),
-        AT,
+        at(),
         WorkflowExecutionEventPayload::Unparked,
     );
     let err = repository
@@ -305,7 +307,7 @@ pub(crate) async fn journal_reads_every_event_in_global_order<F: StoreFixture>(f
     let mut sorted = globals.clone();
     sorted.sort_unstable();
     assert_eq!(globals, sorted, "global 通番の昇順");
-    let seqs: Vec<u64> = rows.iter().map(|(_, event)| event.seq_nr()).collect();
+    let seqs: Vec<usize> = rows.iter().map(|(_, event)| event.seq_nr()).collect();
     assert_eq!(seqs, [1, 2, 3, 4, 5], "欠落なく順に読める");
 }
 

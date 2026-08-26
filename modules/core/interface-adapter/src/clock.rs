@@ -5,17 +5,23 @@
 //! (イベント記録時刻の押印など) を、実時間の経過に頼らず決定的に検証できるようにすること
 //! だけである。したがってアプリ境界のポートとして use-case 層には置かず、実装と同じ
 //! アダプタ層に閉じ込める。
+//!
+//! 単位は `chrono::DateTime<Utc>` — ドメインイベントの `occurred_at` と集約の
+//! `last_updated_at` が本家 event-store-adapter-rs の契約でこの型だからである (ADR-010)。
+//! 自前の epoch ミリ秒と ISO 8601 整形はここで役目を終えた (NFR4.1 の再検討)。
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::Cell;
 
-/// 現在時刻の抽象 (ミリ秒, Unix epoch 起点)。テストで fake を注入するための唯一の時刻源。
+use chrono::{DateTime, TimeDelta, Utc};
+
+/// 現在時刻の抽象。テストで fake を注入するための唯一の時刻源。
 pub trait Clock {
-    /// Unix epoch 起点の経過ミリ秒。記録時刻の押印と経過時間の算出はこの単位で行う。
+    /// 現在の UTC 時刻。記録時刻の押印と経過時間の算出はこの値で行う。
     #[must_use]
-    fn now_ms(&self) -> u64;
+    fn now(&self) -> DateTime<Utc>;
 }
 
-/// `SystemTime::now()` に基づく実時計。
+/// `Utc::now()` に基づく実時計。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemClock;
 
@@ -28,49 +34,48 @@ impl SystemClock {
 }
 
 impl Clock for SystemClock {
-    fn now_ms(&self) -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-            .unwrap_or(0)
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
     }
 }
 
-/// 制御可能な偽時計。`Arc` で共有し、テストから `advance`/`set` で時刻を進める。
+/// 制御可能な偽時計。テストから `advance` / `set` で時刻を進める。
+///
+/// `Cell` を `&self` の裏に置くのは [interior-mutability] の既定 (内部可変性は禁止) に
+/// 対する例外である。理由は [`Clock::now`] が `&self` であり、注入した時計を握ったまま
+/// 進める操作をテストから呼べる必要があること、そしてこの型が**テスト専用の実装に
+/// 閉じている**ことである。ロックではなく `Cell` を選ぶのは、施錠の失敗という
+/// panic 経路を作らないためである (NFR4.3)。
+///
+/// [interior-mutability]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/interior-mutability.md
 #[derive(Debug)]
 pub struct FakeClock {
-    now_ms: AtomicU64,
+    now: Cell<DateTime<Utc>>,
 }
 
 impl FakeClock {
-    /// 初期時刻 (Unix epoch 起点のミリ秒) を指定して作る。以後この時計は
-    /// `set` / `advance` でしか動かない。
+    /// 初期時刻を指定して作る。以後この時計は `set` / `advance` でしか動かない。
     #[must_use]
-    pub const fn new(now_ms: u64) -> FakeClock {
+    pub const fn new(now: DateTime<Utc>) -> FakeClock {
         FakeClock {
-            now_ms: AtomicU64::new(now_ms),
+            now: Cell::new(now),
         }
     }
 
-    /// 時刻を絶対値で置く。巻き戻し (現在値より小さい値) も許す。
-    pub fn set(&self, now_ms: u64) {
-        self.now_ms.store(now_ms, Ordering::SeqCst);
+    /// 時刻を絶対値で置く。巻き戻し (現在値より前の時刻) も許す。
+    pub fn set(&self, now: DateTime<Utc>) {
+        self.now.set(now);
     }
 
-    /// 時刻を `delta_ms` だけ進める。時刻に依存する分岐をテストで作るための操作。
-    /// `u64::MAX` 到達後は飽和し、巻き戻らない (ラップアラウンドで時刻が逆行しないため)。
-    pub fn advance(&self, delta_ms: u64) {
-        let _ = self
-            .now_ms
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |now| {
-                Some(now.saturating_add(delta_ms))
-            });
+    /// 時刻を `delta` だけ進める。時刻に依存する分岐をテストで作るための操作。
+    pub fn advance(&self, delta: TimeDelta) {
+        self.now.set(self.now.get() + delta);
     }
 }
 
 impl Clock for FakeClock {
-    fn now_ms(&self) -> u64 {
-        self.now_ms.load(Ordering::SeqCst)
+    fn now(&self) -> DateTime<Utc> {
+        self.now.get()
     }
 }
 
@@ -78,27 +83,32 @@ impl Clock for FakeClock {
 mod tests {
     use super::*;
 
-    #[test]
-    fn system_clock_reports_a_wall_clock_epoch() {
-        // 単調性は SystemTime が保証しない (時刻調整で後退しうる) ため主張しない。
-        // 2020-01-01 以降の epoch ms であることだけを検査する。
-        assert!(SystemClock::new().now_ms() > 1_577_836_800_000);
+    fn epoch(seconds: i64) -> DateTime<Utc> {
+        DateTime::UNIX_EPOCH + TimeDelta::seconds(seconds)
     }
 
     #[test]
-    fn fake_clock_advance_saturates_instead_of_wrapping() {
-        let clock = FakeClock::new(u64::MAX - 10);
-        clock.advance(100);
-        assert_eq!(clock.now_ms(), u64::MAX, "飽和して巻き戻らない");
+    fn system_clock_reports_a_wall_clock_time() {
+        // 単調性は壁時計が保証しない (時刻調整で後退しうる) ため主張しない。
+        // 2020-01-01 以降であることだけを検査する。
+        assert!(SystemClock::new().now() > epoch(1_577_836_800));
     }
 
     #[test]
     fn fake_clock_advances_and_sets() {
-        let clock = FakeClock::new(100);
-        assert_eq!(clock.now_ms(), 100);
-        clock.advance(50);
-        assert_eq!(clock.now_ms(), 150);
-        clock.set(0);
-        assert_eq!(clock.now_ms(), 0);
+        let clock = FakeClock::new(epoch(100));
+        assert_eq!(clock.now(), epoch(100));
+        clock.advance(TimeDelta::seconds(50));
+        assert_eq!(clock.now(), epoch(150));
+        clock.set(DateTime::UNIX_EPOCH);
+        assert_eq!(clock.now(), DateTime::UNIX_EPOCH);
+    }
+
+    #[test]
+    fn fake_clock_accepts_a_backward_step() {
+        // 巻き戻しは許す — 時刻に依存する分岐をテストで作るための操作だからである。
+        let clock = FakeClock::new(epoch(100));
+        clock.advance(TimeDelta::seconds(-40));
+        assert_eq!(clock.now(), epoch(60));
     }
 }

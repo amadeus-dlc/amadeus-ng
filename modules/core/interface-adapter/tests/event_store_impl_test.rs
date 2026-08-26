@@ -15,24 +15,30 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
     IntentId, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
 };
 use core_domain::workspace::SpaceName;
 use core_interface_adapter::FakeClock;
 use core_interface_adapter::orchestration::{EventStoreImpl, StorePath};
+use event_store_adapter_rs::types::{Aggregate, Event};
+
 use core_use_case::orchestration::{
     CorruptCause, EventStore, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{AT, advanced, genesis, intent_id};
+use support::{AT_TEXT, advanced, at, genesis, intent_id};
 
-/// 固定時刻 (2026-08-23T00:00:00Z の epoch ms) — `updated_at` の期待値を決める。
-const NOW_MS: u64 = 1_787_443_200_000;
-/// `NOW_MS` を ISO 8601 UTC で描いた形。
-const NOW_ISO: &str = "2026-08-23T00:00:00Z";
+/// ストアの押印時刻 (`updated_at` 列)。イベントの `occurred_at` と同じ固定時刻にする。
+fn now() -> DateTime<Utc> {
+    at()
+}
+
+/// `updated_at` 列に現れる逐語形。
+const NOW_ISO: &str = AT_TEXT;
 
 /// 一時ディレクトリ配下に `spaces/<space>/intents/` を作り、そこへストアを開く試験装置。
 struct Fixture {
@@ -58,13 +64,13 @@ impl Fixture {
     }
 
     fn store(&self) -> EventStoreImpl<FakeClock> {
-        EventStoreImpl::open(self.path.clone(), FakeClock::new(NOW_MS)).expect("ストアは開ける")
+        EventStoreImpl::open(self.path.clone(), FakeClock::new(now())).expect("ストアは開ける")
     }
 
     fn store_with_busy_timeout(&self, busy_timeout: Duration) -> EventStoreImpl<FakeClock> {
         EventStoreImpl::open_with_busy_timeout(
             self.path.clone(),
-            FakeClock::new(NOW_MS),
+            FakeClock::new(now()),
             busy_timeout,
         )
         .expect("ストアは開ける")
@@ -164,7 +170,7 @@ async fn a_store_written_by_a_newer_schema_is_refused() {
         conn.pragma_update(None, "user_version", 2_i64)
             .expect("将来版を騙る");
     }
-    let err = EventStoreImpl::open(fixture.path, FakeClock::new(NOW_MS))
+    let err = EventStoreImpl::open(fixture.path, FakeClock::new(now()))
         .expect_err("対応外の版は開かない");
     assert_eq!(
         err,
@@ -178,7 +184,7 @@ async fn a_store_written_by_a_newer_schema_is_refused() {
 #[tokio::test]
 async fn a_missing_parent_directory_is_reported_as_io_not_found() {
     let fixture = Fixture::without_parent();
-    let err = EventStoreImpl::open(fixture.path.clone(), FakeClock::new(NOW_MS))
+    let err = EventStoreImpl::open(fixture.path.clone(), FakeClock::new(now()))
         .expect_err("親 dir を作らない (BR2.1)");
     assert!(
         matches!(
@@ -304,7 +310,10 @@ async fn the_genesis_write_inserts_one_journal_row_and_one_snapshot_row() {
     assert_eq!(seq_nr, 1);
     assert_eq!(schema_version, 1);
     assert_eq!(event_type, "Started");
-    assert_eq!(occurred_at, AT, "呼出側が渡した時刻を素通しする (BR2.6)");
+    assert_eq!(
+        occurred_at, AT_TEXT,
+        "呼出側が渡した時刻を逐語形で素通しする (BR2.6)"
+    );
 
     let (version, snapshot_seq, updated_at): (i64, i64, String) = conn
         .query_row(
@@ -337,7 +346,7 @@ async fn a_second_write_updates_the_snapshot_in_place_and_appends_to_the_journal
     let fixture = Fixture::new();
     let (mut store, mut aggregate) = seeded(&fixture).await;
 
-    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     store
         .persist_event_and_snapshot(&event, &aggregate)
         .await
@@ -394,13 +403,13 @@ async fn a_stale_version_conflicts_and_rolls_the_transaction_back() {
     // 同じ版から 2 つの書込を作る (2 再水和の競合)。
     let mut first = aggregate.clone();
     let mut second = aggregate;
-    let event = first.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = first.complete_stage(at()).expect("索引 0 は非ゲート");
     store
         .persist_event_and_snapshot(&event, &first)
         .await
         .expect("先に書いた方は通る");
 
-    let event = second.complete_stage(AT).expect("同じコマンド");
+    let event = second.complete_stage(at()).expect("同じコマンド");
     let err = store
         .persist_event_and_snapshot(&event, &second)
         .await
@@ -424,7 +433,7 @@ async fn a_stale_version_conflicts_and_rolls_the_transaction_back() {
 async fn the_append_only_write_checks_the_optimistic_version_without_touching_the_snapshot() {
     let fixture = Fixture::new();
     let (mut store, mut aggregate) = seeded(&fixture).await;
-    let next = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let next = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
 
     let err = store
         .persist_event(&next, 0)
@@ -459,7 +468,7 @@ async fn the_append_only_write_checks_the_optimistic_version_without_touching_th
 async fn the_event_read_returns_the_tail_of_one_aggregate_in_order() {
     let fixture = Fixture::new();
     let (mut store, mut aggregate) = seeded(&fixture).await;
-    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     store
         .persist_event_and_snapshot(&event, &aggregate)
         .await
@@ -467,7 +476,7 @@ async fn the_event_read_returns_the_tail_of_one_aggregate_in_order() {
     let aggregate = advanced(aggregate, &event);
     let mut aggregate = aggregate;
     let event = aggregate
-        .open_gate(vec!["intent.md".to_string()], AT)
+        .open_gate(vec!["intent.md".to_string()], at())
         .expect("索引 1 はゲート付き");
     store
         .persist_event_and_snapshot(&event, &aggregate)
@@ -498,7 +507,7 @@ async fn the_journal_read_spans_every_aggregate_in_global_order() {
         .execute(
             "INSERT INTO journal(aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at)
              VALUES (?1, 1, 1, 'Unparked', '{\"type\":\"Unparked\"}', ?2)",
-            rusqlite::params!["018f3b2c-4d5e-7f60-8abc-def012345678", AT],
+            rusqlite::params!["018f3b2c-4d5e-7f60-8abc-def012345678", AT_TEXT],
         )
         .expect("別集約の行");
 
@@ -513,7 +522,7 @@ async fn the_journal_read_spans_every_aggregate_in_global_order() {
     );
     assert_eq!(
         rows.iter()
-            .map(|(_, event)| event.intent_id().as_str().to_string())
+            .map(|(_, event)| event.aggregate_id().as_str().to_string())
             .collect::<Vec<_>>(),
         [
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6",
@@ -803,7 +812,7 @@ fn the_store_path_is_derived_from_the_space() {
 // ---------------------------------------------------------------------------
 
 /// JSON (JS の `Number`) が整数を正確に保てる上限。
-const JSON_EXACT_INTEGER_LIMIT: u64 = 9_007_199_254_740_992;
+const JSON_EXACT_INTEGER_LIMIT: usize = 9_007_199_254_740_992;
 
 #[tokio::test]
 async fn an_append_only_write_starts_from_version_zero_and_refuses_the_same_sequence_twice() {
@@ -847,8 +856,12 @@ async fn a_journal_insert_that_fails_for_another_reason_is_reported_as_io() {
         .execute("DROP TABLE journal", [])
         .expect("ジャーナル表を落とす");
 
-    let bogus =
-        WorkflowExecutionEvent::new(intent_id(), 2, AT, WorkflowExecutionEventPayload::Unparked);
+    let bogus = WorkflowExecutionEvent::new(
+        intent_id(),
+        2,
+        at(),
+        WorkflowExecutionEventPayload::Unparked,
+    );
     let err = store
         .persist_event(&bogus, 1)
         .await
@@ -870,7 +883,7 @@ async fn a_genesis_write_against_an_existing_snapshot_conflicts() {
     let (mut store, _) = seeded(&fixture).await;
     let (aggregate, _) = genesis();
     let mut walked = aggregate.clone();
-    let second = walked.complete_stage(AT).expect("索引 0 は非ゲート");
+    let second = walked.complete_stage(at()).expect("索引 0 は非ゲート");
     assert_eq!(second.seq_nr(), 2);
 
     let err = store
@@ -921,9 +934,14 @@ async fn an_update_that_matches_no_snapshot_row_conflicts() {
     // の影響行数 0 が検出点で、実際の版は読み直して材料にする。
     let fixture = Fixture::new();
     let (mut store, aggregate) = seeded(&fixture).await;
-    let stale = aggregate.with_version(5);
-    let bogus =
-        WorkflowExecutionEvent::new(intent_id(), 6, AT, WorkflowExecutionEventPayload::Unparked);
+    let mut stale = aggregate;
+    stale.set_version(5);
+    let bogus = WorkflowExecutionEvent::new(
+        intent_id(),
+        6,
+        at(),
+        WorkflowExecutionEventPayload::Unparked,
+    );
 
     let err = store
         .persist_event_and_snapshot(&bogus, &stale)
@@ -953,7 +971,7 @@ async fn a_version_beyond_the_json_exact_limit_is_refused_instead_of_being_round
     let bogus = WorkflowExecutionEvent::new(
         intent_id(),
         JSON_EXACT_INTEGER_LIMIT + 1,
-        AT,
+        at(),
         WorkflowExecutionEventPayload::Unparked,
     );
 

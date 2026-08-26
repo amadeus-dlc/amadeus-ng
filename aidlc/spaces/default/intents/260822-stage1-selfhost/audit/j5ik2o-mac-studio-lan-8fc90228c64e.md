@@ -19849,3 +19849,143 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:26:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4da6aa5ef70b73cd
+**Message**: event-store-adapter-rs v2.0.0への乗り換え（Bolt B6）を進行中です。委任1（ドメインを本家traitに直接適合させる作業）が実行中で、完了したら報告を検証し、委任2（ストア差し替えと自前実装約2,400行の削除）に進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:43:04Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:43:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4125d35811ae9a35
+**Message**: 続けて。完了したら検証して報告
+
+---
+
+## Session Start
+**Timestamp**: 2026-08-26T14:45:57Z
+**Event**: SESSION_STARTED
+**Source**: startup
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:47:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa018a6f77a113c92
+**Message**: event-store-adapter-rs v2.0.0への乗り換え（Bolt B6）を進行中です。委任1（ドメインのConformist化）が実行中で、trait実装3本は完了、usize/chrono化の波及対応中。完了通知が来たら私が検証して報告します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:48:17Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T14:50:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:50:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aedb5a5cc0950ebf6
+**Message**: 進捗報告
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:52:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa955378e193a1992
+**Message**: stage-1セルフホスト化のintent記録を図解しました。Bolt B1〜B5は完了、B6（U4 ReadModelUpdater）の直前でADR-010のevent-store-adapter-rs v2.0.0乗り換えが割り込み中です。次は乗り換えを完了させ、functional-designの指令を再開してください。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:53:42Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9c922706cfd10e0b
+**Message**: event-store-adapter-rs v2.0.0への乗り換え（Bolt B6）を進行中です。委任1（ドメインを本家traitに適合させる作業）が終盤で、全体コンパイルはエラー0。次は完了報告が届き次第、私が検証して結果をお伝えします。
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-26T14:53:58Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-1.md
+**Context**: construction > esa-v2-migration > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T14:53:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 90410126
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-26T14:53:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: 90410126
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-1.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-26T14:53:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4b552437
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-26T14:53:58Z
+**Event**: SENSOR_FAILED
+**Fire id**: 4b552437
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v2-migration/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-4b552437.md
+**Findings count**: 5
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T14:54:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b6-delegation-1
+**Agent ID**: ab6-delegation-1-07c80ae234b88a2e
+**Message**: 委任 1 完了。全検査緑、未コミットです。\n\n1. **ドメインが本家 v2.0.0 の trait を直接実装**（Conformist、腐敗防止層なし）— `IntentId: AggregateId` / `WorkflowExecutionEvent: Event` / `WorkflowExecution: Aggregate`。\n2. **本家 trait は `gh api` で v
+
+---

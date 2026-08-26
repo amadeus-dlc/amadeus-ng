@@ -8,6 +8,7 @@
 
 pub(crate) mod contract;
 
+use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
     IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
 };
@@ -15,9 +16,17 @@ use core_domain::workflow_definition::{
     DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
 };
 use core_use_case::orchestration::{JournalReader, WorkflowExecutionRepository};
+use event_store_adapter_rs::types::{Aggregate, Event};
 
-/// イベント封筒の `occurred_at` (集約は値を素通しするので固定値でよい)。
-pub(crate) const AT: &str = "2026-08-23T00:00:00Z";
+/// イベント封筒の `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
+pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
+
+/// イベント封筒の `occurred_at`。
+pub(crate) fn at() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(AT_TEXT)
+        .expect("固定の ISO 8601 UTC")
+        .with_timezone(&Utc)
+}
 
 /// 契約テストが使う集約識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
@@ -124,7 +133,7 @@ pub(crate) fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
             .expect("契約テストの定義 revision"),
         &StartRequest::new("classic", "contract").with_depth("standard"),
         stages(),
-        AT,
+        at(),
     )
     .expect("合成計画は start の前提を満たす")
 }
@@ -146,16 +155,18 @@ pub(crate) async fn store_stage_completed<R: WorkflowExecutionRepository>(
     repository: &mut R,
     mut aggregate: WorkflowExecution,
 ) -> WorkflowExecution {
-    let event = aggregate.complete_stage(AT).expect("索引 0 は非ゲート");
+    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     repository.store(&event, &aggregate).await.expect("store");
     advanced(aggregate, &event)
 }
 
 /// 書込後に呼出側が行う版の載せ替え (BR1.3 — `store` は引数の集約を変更しない)。
 #[must_use]
-pub(crate) const fn advanced(
+pub(crate) fn advanced(
     aggregate: WorkflowExecution,
     event: &WorkflowExecutionEvent,
 ) -> WorkflowExecution {
-    aggregate.with_version(event.seq_nr())
+    let mut aggregate = aggregate;
+    aggregate.set_version(event.seq_nr());
+    aggregate
 }

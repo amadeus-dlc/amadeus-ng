@@ -62,6 +62,7 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{EventStoreError, GlobalSeqNr, ProjectionName};
+    use chrono::{DateTime, Utc};
     use core_domain::orchestration::{
         IntentId, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
     };
@@ -71,11 +72,13 @@ mod tests {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
-    fn event(seq_nr: u64) -> WorkflowExecutionEvent {
+    fn event(seq_nr: usize) -> WorkflowExecutionEvent {
         WorkflowExecutionEvent::new(
             intent(),
             seq_nr,
-            "2026-08-23T00:00:00Z",
+            DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
             WorkflowExecutionEventPayload::Unparked,
         )
     }

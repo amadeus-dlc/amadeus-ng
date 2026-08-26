@@ -159,7 +159,7 @@ impl EventPayloadWire {
     /// 正準 JSON へ写せない場合に `Corrupt(UndecodablePayload)` を返す。
     pub(crate) fn encode(
         aggregate_id: &str,
-        seq_nr: u64,
+        seq_nr: usize,
         payload: &WorkflowExecutionEventPayload,
     ) -> Result<String, EventStoreError> {
         to_canonical_json(&EventPayloadWire::from_payload(payload))
@@ -178,7 +178,7 @@ impl EventPayloadWire {
     /// (`Corrupt(UndecodablePayload)`) を返す。
     pub(crate) fn decode(
         aggregate_id: &str,
-        seq_nr: u64,
+        seq_nr: usize,
         schema_version: u32,
         event_type: &str,
         payload: &str,

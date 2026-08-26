@@ -1,6 +1,7 @@
 //! ワイヤ形式 — 行のテキスト列とドメイン型のあいだの写像 (BR2.5、functional-spec §4)。
 //!
-//! 符号化はここに閉じる (ドメインは serde を知らない — ADR-004)。復号は
+//! 観測互換のワイヤ形式への符号化はここに閉じる (ドメイン型自身の serde は本家ストアの
+//! 境界要求であって、C5 / C6 の行の形とは別物である — ADR-004 / ADR-010)。復号は
 //! parse-don't-validate: JSON をワイヤの形に読んだうえで、値は必ずドメインの `parse` を
 //! 通してから組み立てる (security-design §2 の検査点 1 / 2)。どの段で失敗しても
 //! `EventStoreError::Corrupt` になり、panic はしない (NFR4.3)。
@@ -39,7 +40,7 @@ const MAX_EXACT_INTEGER: u64 = 9_007_199_254_740_992;
 /// 行の材料を添えて `Corrupt` を組む。
 pub(super) fn corrupt_error(
     aggregate_id: &str,
-    seq_nr: Option<u64>,
+    seq_nr: Option<usize>,
     cause: CorruptCause,
 ) -> EventStoreError {
     EventStoreError::Corrupt {

@@ -9,6 +9,7 @@ use core_domain::orchestration::{ApplyError, IntentId, WorkflowExecution, Workfl
 use core_use_case::orchestration::{
     CorruptCause, EventStore, RepositoryError, WorkflowExecutionRepository,
 };
+use event_store_adapter_rs::types::{Aggregate, Event};
 
 use super::in_memory_event_store::InMemoryEventStore;
 
@@ -67,17 +68,17 @@ impl InMemoryWorkflowExecutionRepository {
         aggregate: &WorkflowExecution,
     ) -> Result<(), RepositoryError> {
         let sequence_gap = RepositoryError::Corrupt {
-            aggregate_id: event.intent_id().clone(),
+            aggregate_id: event.aggregate_id().clone(),
             seq_nr: Some(event.seq_nr()),
             cause: CorruptCause::SequenceGap,
         };
-        if event.intent_id() != aggregate.intent_id()
+        if event.aggregate_id() != aggregate.id()
             || event.seq_nr() != aggregate.seq_nr()
             || event.seq_nr() < 1
         {
             return Err(sequence_gap);
         }
-        // `seq_nr >= 1` を先に確かめてから引く (u64 のアンダーフロー防止 — NFR4.3)。
+        // `seq_nr >= 1` を先に確かめてから引く (usize のアンダーフロー防止 — NFR4.3)。
         if aggregate.version() != event.seq_nr() - 1 {
             return Err(sequence_gap);
         }
@@ -122,7 +123,8 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
             version = event.seq_nr();
         }
         // replay の後に Repository が明示的に版を載せる (`apply_event` は版を動かさない)。
-        Ok(aggregate.with_version(version))
+        aggregate.set_version(version);
+        Ok(aggregate)
     }
 
     async fn store(
@@ -134,6 +136,6 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
         self.store
             .persist_event_and_snapshot(event, aggregate)
             .await
-            .map_err(|error| RepositoryError::from_event_store(error, event.intent_id()))
+            .map_err(|error| RepositoryError::from_event_store(error, event.aggregate_id()))
     }
 }

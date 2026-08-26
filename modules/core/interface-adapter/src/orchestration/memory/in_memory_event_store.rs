@@ -12,10 +12,12 @@
 use std::collections::BTreeMap;
 use std::ops::Bound;
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use core_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
 use core_use_case::orchestration::{
     CorruptCause, EventStore, EventStoreError, GlobalSeqNr, JournalReader, ProjectionName,
 };
+use event_store_adapter_rs::types::{Aggregate, Event};
 
 use super::super::wire::{EventPayloadWire, StateWire};
 
@@ -32,8 +34,8 @@ struct JournalRow {
 /// C6 `snapshot` の 1 行 (集約 1 行)。
 #[derive(Debug, Clone)]
 struct SnapshotRow {
-    version: u64,
-    seq_nr: u64,
+    version: usize,
+    seq_nr: usize,
     schema_version: u32,
     payload: String,
 }
@@ -41,7 +43,7 @@ struct SnapshotRow {
 /// 3 表と global 通番の採番器。
 #[derive(Debug, Clone, Default)]
 struct Tables {
-    journal: BTreeMap<(IntentId, u64), JournalRow>,
+    journal: BTreeMap<(IntentId, usize), JournalRow>,
     snapshot: BTreeMap<IntentId, SnapshotRow>,
     checkpoint: BTreeMap<ProjectionName, GlobalSeqNr>,
     last_global_seq_nr: u64,
@@ -49,7 +51,7 @@ struct Tables {
 
 impl Tables {
     /// スナップショット行の現在 version (行が無ければ 0 — genesis の期待値)。
-    fn current_version(&self, aggregate_id: &IntentId) -> u64 {
+    fn current_version(&self, aggregate_id: &IntentId) -> usize {
         self.snapshot.get(aggregate_id).map_or(0, |row| row.version)
     }
 
@@ -75,7 +77,7 @@ pub struct InMemoryEventStore {
 /// 行の材料を添えて `Corrupt` を組む。
 fn corrupt_error(
     aggregate_id: &IntentId,
-    seq_nr: Option<u64>,
+    seq_nr: Option<usize>,
     cause: CorruptCause,
 ) -> EventStoreError {
     EventStoreError::Corrupt {
@@ -95,7 +97,7 @@ impl InMemoryEventStore {
     /// ジャーナル行をイベントへ復号する (封筒は列から組む — functional-spec §4.1)。
     fn decode_event(
         aggregate_id: &IntentId,
-        seq_nr: u64,
+        seq_nr: usize,
         row: &JournalRow,
     ) -> Result<WorkflowExecutionEvent, EventStoreError> {
         let payload = EventPayloadWire::decode(
@@ -105,10 +107,15 @@ impl InMemoryEventStore {
             &row.event_type,
             &row.payload,
         )?;
+        let occurred_at = DateTime::parse_from_rfc3339(&row.occurred_at)
+            .map(|at| at.with_timezone(&Utc))
+            .map_err(|_| {
+                corrupt_error(aggregate_id, Some(seq_nr), CorruptCause::UndecodablePayload)
+            })?;
         Ok(WorkflowExecutionEvent::new(
             aggregate_id.clone(),
             seq_nr,
-            row.occurred_at.clone(),
+            occurred_at,
             payload,
         ))
     }
@@ -126,7 +133,9 @@ impl InMemoryEventStore {
                 CorruptCause::InvariantViolation,
             )
         })?;
-        Ok(aggregate.with_version(row.version))
+        let mut aggregate = aggregate;
+        aggregate.set_version(row.version);
+        Ok(aggregate)
     }
 
     /// ジャーナル行を 1 件も持たない集約か (`NotFound` と `MissingSnapshot` の区別 — BR1.2)。
@@ -144,9 +153,9 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
     async fn persist_event(
         &mut self,
         event: &WorkflowExecutionEvent,
-        version: u64,
+        version: usize,
     ) -> Result<(), EventStoreError> {
-        let aggregate_id = event.intent_id();
+        let aggregate_id = event.aggregate_id();
         let payload =
             EventPayloadWire::encode(aggregate_id.as_str(), event.seq_nr(), event.payload())?;
         let tables = &mut self.tables;
@@ -175,7 +184,9 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
                 schema_version: EventPayloadWire::SCHEMA_VERSION,
                 event_type: EventPayloadWire::event_type(event.payload()).to_string(),
                 payload,
-                occurred_at: event.occurred_at().to_string(),
+                occurred_at: event
+                    .occurred_at()
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
             },
         );
         Ok(())
@@ -186,17 +197,18 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
         event: &WorkflowExecutionEvent,
         aggregate: &WorkflowExecution,
     ) -> Result<(), EventStoreError> {
-        let aggregate_id = event.intent_id();
+        let aggregate_id = event.aggregate_id();
         let expected = aggregate.version();
         let new_version = event.seq_nr();
         let event_payload =
             EventPayloadWire::encode(aggregate_id.as_str(), new_version, event.payload())?;
         // 書込後の姿を写すので、payload の version も列と同じ新 version に揃える
         // (SQLite 実装と同形 — 行の中身が実装ごとに違うと契約テストの意味が薄れる)。
-        let state_payload = StateWire::encode(
-            aggregate_id.as_str(),
-            &aggregate.clone().with_version(new_version).state(),
-        )?;
+        let state_payload = {
+            let mut stored = aggregate.clone();
+            stored.set_version(new_version);
+            StateWire::encode(aggregate_id.as_str(), &stored.state())?
+        };
 
         let tables = &mut self.tables;
         let actual = tables.current_version(aggregate_id);
@@ -224,7 +236,9 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
                 schema_version: EventPayloadWire::SCHEMA_VERSION,
                 event_type: EventPayloadWire::event_type(event.payload()).to_string(),
                 payload: event_payload,
-                occurred_at: event.occurred_at().to_string(),
+                occurred_at: event
+                    .occurred_at()
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
             },
         );
         tables.snapshot.insert(
@@ -252,7 +266,7 @@ impl EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> for InMemor
     async fn get_events_by_id_since_seq_nr(
         &self,
         aid: &IntentId,
-        seq_nr: u64,
+        seq_nr: usize,
     ) -> Result<Vec<WorkflowExecutionEvent>, EventStoreError> {
         self.tables
             .journal
@@ -268,7 +282,7 @@ impl JournalReader for InMemoryEventStore {
         &self,
         after: GlobalSeqNr,
     ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError> {
-        let mut rows: Vec<(&IntentId, u64, &JournalRow)> = self
+        let mut rows: Vec<(&IntentId, usize, &JournalRow)> = self
             .tables
             .journal
             .iter()
@@ -327,7 +341,14 @@ mod tests {
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
 
-    const AT: &str = "2026-08-23T00:00:00Z";
+    const AT_TEXT: &str = "2026-08-23T00:00:00Z";
+
+    /// 固定の発生時刻 (時計はテストが完全に決める)。
+    fn at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(AT_TEXT)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
     const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
     fn intent() -> IntentId {
@@ -354,7 +375,7 @@ mod tests {
                     false,
                 ),
             ],
-            AT,
+            at(),
         )
         .unwrap()
     }
@@ -388,7 +409,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let next = aggregate.complete_stage(AT).unwrap();
+        let next = aggregate.complete_stage(at()).unwrap();
         store.persist_event(&next, 1).await.unwrap();
 
         assert_eq!(
@@ -411,9 +432,9 @@ mod tests {
 
     #[tokio::test]
     async fn the_snapshot_row_and_its_payload_both_carry_the_new_version() {
-        // 集約は遷移で version を動かさないので、書込側が `with_version(新 version)` を
+        // 集約は遷移で version を動かさないので、書込側が `set_version(新 version)` を
         // 載せてから写す。列と payload が食い違わないので、`find_by_id` の
-        // `with_version(列の version)` は載せ替えではなく確認になる (BR1.2)。
+        // `set_version(列の version)` は載せ替えではなく確認になる (BR1.2)。
         let store = seeded().await;
         let found = store
             .get_latest_snapshot_by_id(&intent())
@@ -442,7 +463,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let next = aggregate.complete_stage(AT).unwrap();
+        let next = aggregate.complete_stage(at()).unwrap();
 
         let err = store.persist_event(&next, 0).await.unwrap_err();
         assert_eq!(
@@ -550,9 +571,9 @@ mod tests {
             .await
             .unwrap();
         let event = events.first().unwrap();
-        assert_eq!(event.intent_id(), &intent());
+        assert_eq!(event.aggregate_id(), &intent());
         assert_eq!(event.seq_nr(), 1);
-        assert_eq!(event.occurred_at(), AT);
+        assert_eq!(event.occurred_at(), &at());
         assert!(matches!(
             event.payload(),
             WorkflowExecutionEventPayload::Started(_)
@@ -567,7 +588,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let next = aggregate.complete_stage(AT).unwrap();
+        let next = aggregate.complete_stage(at()).unwrap();
         store
             .persist_event_and_snapshot(&next, &aggregate)
             .await
@@ -619,7 +640,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let next = aggregate.complete_stage(AT).unwrap();
+        let next = aggregate.complete_stage(at()).unwrap();
         store.persist_event(&next, 1).await.unwrap();
 
         let err = store.persist_event(&next, 1).await.unwrap_err();
@@ -644,7 +665,7 @@ mod tests {
         let mut store = seeded().await;
         let (aggregate, _) = genesis();
         let mut advanced = aggregate.clone();
-        let second = advanced.complete_stage(AT).unwrap();
+        let second = advanced.complete_stage(at()).unwrap();
         assert_eq!(second.seq_nr(), 2, "journal の UNIQUE には掛からない通番");
 
         let err = store
@@ -665,10 +686,10 @@ mod tests {
         // 期待 version が 0 以外で、スナップショット列の version と食い違う場合。
         // SQLite 実装の `UPDATE ... WHERE version = expected` が 0 行になる場合に当たる。
         let mut store = seeded().await;
-        let (aggregate, _) = genesis();
-        let stale = aggregate.with_version(5);
+        let (mut stale, _) = genesis();
+        stale.set_version(5);
         let bogus =
-            WorkflowExecutionEvent::new(intent(), 6, AT, WorkflowExecutionEventPayload::Unparked);
+            WorkflowExecutionEvent::new(intent(), 6, at(), WorkflowExecutionEventPayload::Unparked);
 
         let err = store
             .persist_event_and_snapshot(&bogus, &stale)
@@ -687,13 +708,13 @@ mod tests {
     async fn a_version_beyond_the_json_exact_limit_is_refused_before_anything_is_written() {
         // 書込後の姿の `version` は列と同じ新 version なので、JSON が正確に保てない大きさは
         // スナップショットの符号化で弾かれる (黙って丸めた行を書かない — NFR3.1)。
-        const JSON_EXACT_INTEGER_LIMIT: u64 = 9_007_199_254_740_992;
+        const JSON_EXACT_INTEGER_LIMIT: usize = 9_007_199_254_740_992;
         let mut store = seeded().await;
         let (aggregate, _) = genesis();
         let bogus = WorkflowExecutionEvent::new(
             intent(),
             JSON_EXACT_INTEGER_LIMIT + 1,
-            AT,
+            at(),
             WorkflowExecutionEventPayload::Unparked,
         );
 

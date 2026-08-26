@@ -10,9 +10,9 @@ pub enum ApplyError {
     /// 封筒の `seq_nr` が現在値 + 1 でない (BR2.1)。
     SequenceGap {
         /// 集約が期待した `seq_nr` (現在値 + 1)。
-        expected: u64,
+        expected: usize,
         /// イベント封筒が持っていた `seq_nr`。
-        actual: u64,
+        actual: usize,
     },
     /// ペイロードのステージ slug が `stages` に無い。
     UnknownStage(StageSlug),
