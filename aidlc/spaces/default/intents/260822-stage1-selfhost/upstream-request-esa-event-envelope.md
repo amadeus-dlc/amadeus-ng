@@ -54,7 +54,7 @@ final case class PersistentImpl(
 
 要点: **`payload: Any` — ドメインイベントはライブラリの trait を 1 つも実装しない**。
 直列化は manifest 経由でシリアライザ基盤の仕事。`is_created` 相当は存在しない
-（журnal は sequenceNr 範囲でリカバリするため不要）。
+（journal は sequenceNr 範囲でリカバリするため不要）。
 
 ## 提案の骨子（たたき台 — 設計は本家に委ねる）
 

@@ -21386,3 +21386,69 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T17:17:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4c14dfd38fcaf08e
+**Message**: CI緑になったらマージして
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-26T17:28:31Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-26T17:28:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae2641ccdd24aeb87
+**Message**: マージして
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-27T00:26:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-27T00:29:19Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-27T00:31:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-27T00:32:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad1fc2398895e2154
+**Message**: 要望書にまとめて。本家のintent記述として使える形で
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-27T00:35:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2d0f6895f1030cb0
+**Message**: B6（event-store-adapter-rs v2.0.0 乗り換え）の PR #30 が CI 全緑でマージ可能になり、あなたの可否判断待ちです。直前は pekko の PersistentRepr 構造を確認し、EventEnvelope 要望の妥当性を裏づけました。次はマージ指示をください。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-27T01:43:18Z
+**Event**: HUMAN_TURN
+
+---
