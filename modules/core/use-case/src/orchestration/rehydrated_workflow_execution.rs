@@ -42,6 +42,12 @@ impl RehydratedWorkflowExecution {
     }
 
     /// 次の書込に提示する楽観 version (ストアが採番した不透明トークン)。
+    ///
+    /// `usize` で運ぶが数ではない — 解釈も比較も算術もせず、そのまま
+    /// [`WorkflowExecutionRepository::store`] へ渡す。`seq_nr` と混同してはならず、集約へ
+    /// 入れてもならない。
+    ///
+    /// [`WorkflowExecutionRepository::store`]: super::workflow_execution_repository::WorkflowExecutionRepository::store
     #[must_use]
     pub const fn version(&self) -> usize {
         self.version

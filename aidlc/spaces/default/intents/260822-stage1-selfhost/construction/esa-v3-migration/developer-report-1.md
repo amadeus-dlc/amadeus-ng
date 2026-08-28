@@ -302,13 +302,22 @@ base (origin/main) line coverage: 98.39753160147308%
 委任者へ 2 通報告し、裁定 4 が改訂された（選択肢 A + 更新も `persist_event_and_snapshot`）。
 **改訂版どおりに実装しており、独自解釈は残っていない。**
 
-### (b) `expected_version` の newtype 化は見送り（委任者確定）
+### (b) `expected_version` の newtype 化は見送り（委任者確定・条件充足）
 
-改訂ブリーフが「newtype（`StoreVersion` 等）を推奨」と書いたが、同日追記で「usize のまま
-（不透明トークンの旨を doc 明記。newtype 化は U5/U6 実装時の境界強化候補として報告書に記録）」
-と確定した。**U5/U6 の申し送り**として記録する: `seq_nr` と `expected_version` はどちらも
-`usize` で、引数順を取り違えても型では止まらない。ユースケース本体を書くときに
-`StoreVersion` newtype（`RepositoryError::Conflict` の材料も含む）を検討すること。
+委任者は先行メッセージで `StoreVersion` newtype を推奨したが、同日の追加裁定で「usize のまま
+で受け入れる」と確定した。付帯条件は 2 つで、いずれも満たしている:
+
+- **(a) ポートの doc に不透明トークンの旨を明記** — `workflow_execution_repository.rs:27-46`
+  の trait doc に「ストアが採番したトークンである（解釈・比較・算術をしない）」「`seq_nr` と
+  混同するな」「集約へ入れるな」の 3 点を節として立てた。`store` の引数 doc（`:76-79`）と
+  `RehydratedWorkflowExecution::version`（`rehydrated_workflow_execution.rs:44-52`）からも
+  同じ 3 点を繰り返している。型で止められない以上、値が通る 3 箇所すべてに警告を置いた
+- **(b) 報告書に U5/U6 の境界強化候補として記録** — 本項がその記録である
+
+**U5/U6 への申し送り**: `seq_nr` と `expected_version` はどちらも `usize` で、**引数順を
+取り違えてもコンパイルエラーにならない**。ユースケース本体を書くときに `StoreVersion`
+newtype 化（`RepositoryError::Conflict` の材料と `UNPERSISTED_VERSION` 関連定数を含む）を
+検討し、「seq_nr と version を混ぜない」を doc ではなく型で機械強制へ落とすこと。
 
 ### (c) `Corrupt` の原因分類 — aid parse 失敗を `InvariantViolation` にした
 
@@ -334,21 +343,40 @@ base (origin/main) line coverage: 98.39753160147308%
 v3 が seq_nr 列を実値で持つようになったため `payload` と `seq_nr` を一緒に戻すよう更新した
 （`workflow_execution_repository_impl_test.rs` の `rewind_snapshot_to_genesis`）。
 
-### (e) 構成不能になったテスト 2 本を差し替えた
+### (e) 契約テストの削除 2 本・書き換え 1 本（委任者承認済み）
 
-`check_preconditions`（イベントと集約が同じ集約を指すか / 通番が一致するか）は、イベントが
-その 2 つを持たなくなったことで**検査対象が構成不能**になった（B6 で `seq_nr = 0` に対して
-行ったのと同じ、実行時検査 → 型強制の置換）。契約テスト
-`a_sequence_that_disagrees_with_the_aggregate_is_refused` /
-`mismatched_identity_is_refused` は削除し、代わりに:
+**削除 2 本の理由**: `check_preconditions`（イベントと集約が同じ集約を指すか / 通番が一致
+するか）は、イベントが識別子と通番を持たなくなったことで**検査対象が構成不能**になった。
+封筒を組むのは Repository で、材料は引数の集約からしか採らないため、「別集約のイベントを
+渡す」「通番を食い違わせる」がそもそも書けない。B6 で `seq_nr = 0` に対して行ったのと同じ
+実行時検査 → 型強制の置換である。したがって
+`a_sequence_that_disagrees_with_the_aggregate_is_refused` と `mismatched_identity_is_refused`
+は**テストできる対象が消えた**ので削除した（検出力を落としたわけではない）。
+
+**書き換え 1 本の理由**: `a_write_from_a_stale_version_conflicts` は、旧実装では「genesis 直後の
+集約を握り直さずに書くと、集約が持つ古い version（0）で CAS が落ちる」を見ていた。version が
+集約から外れた今、握り直さずに書き続けること自体は**正しい動作**であり（誰も並行に書いて
+いなければ通るべき）、旧文言のままでは意味を失う。委任者承認のうえ「**並行書込の後に握り
+直さずに書くと `Conflict`**」という趣旨へ書き換えた（`support/contract.rs:218-247`）:
+genesis を書いて版 1 を握る → 別の書き手が 1 件進めて版が 2 になる → 握ったままの版 1 で
+書こうとして `Conflict { expected: 1, actual: 2 }`。
+
+**両バックエンドでの成立証明**（委任者の付帯条件）: 本テストは `contract_tests!` マクロ経由で
+`a_write_from_a_stale_version_conflicts::memory` と `::sqlite` の 2 テストとして実行され、
+**両方緑**である。私が §4-(a) で指摘した「memory には `(aid, seq_nr)` 一意制約が無い」という
+穴がまさにここで再発しうるため、version CAS だけで検出が成立することを memory 側でも
+釘留めしている（初稿の「store 内で読み直す」形なら memory 側が黙って通り、このテストが
+落ちる）。同じ理由で `concurrent_rehydration_conflicts` も両バックエンドで緑である。
+
+**追加 4 本**:
 
 - `the_envelope_takes_every_transport_material_from_the_applied_aggregate`（封筒の材料が
   すべて集約由来であることを固定）
 - `a_second_aggregate_gets_its_own_envelope_identity`
-- `a_write_from_the_rehydrated_version_succeeds`（`Conflict` の裏面）
+- `a_write_from_the_rehydrated_version_succeeds`（`Conflict` の裏面 — 握り直せば続きが書ける）
 - `a_genesis_with_a_non_zero_version_is_a_contract_violation`
 
-を置いた。契約テストの本数は 10 → 10（memory / sqlite 各 10 = 20 テスト）で変わらない。
+契約テストの本数は 10 → 10（memory / sqlite 各 10 = 20 テスト）で変わらない。
 
 ### (f) 仕様書との語彙ドリフト（未解消 — 委任者判断が要る）
 

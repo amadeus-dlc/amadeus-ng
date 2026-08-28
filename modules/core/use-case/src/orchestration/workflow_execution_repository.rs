@@ -31,6 +31,18 @@ use super::repository_error::RepositoryError;
 /// [`RehydratedWorkflowExecution`] に載せて返し、呼出側がそれを
 /// [`store`](WorkflowExecutionRepository::store) へ提示する。**読んだ時点の版で書く**こと
 /// そのものが楽観ロックであり、実装が書込直前に版を読み直すと成立しなくなる。
+///
+/// この版は `usize` で運ぶが、**数ではなく不透明なトークンである**。守るべきことは 3 つ:
+///
+/// - **ストアが採番したトークンである。** 解釈・比較・算術をしない。読んだ値をそのまま返すだけ
+///   である (BR5.3)
+/// - **`seq_nr` と混同するな。** 集約の順序番号はドメインが採番する別物であり、値がたまたま
+///   一致することがあっても意味は違う (オーナー裁定「seq_nr と version を混ぜない」)
+/// - **集約へ入れるな。** 版を集約に載せた瞬間、ストアの採番規則がドメインへ戻る。version が
+///   通ってよいのはこのポートの戻り値と引数だけである
+///
+/// どちらも `usize` なので**型では取り違えを止められない**。newtype (`StoreVersion`) 化は
+/// U5/U6 でユースケース本体を書くときの境界強化候補として記録してある (委任者裁定 2026-08-29)。
 #[allow(
     async_fn_in_trait,
     reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\
@@ -60,6 +72,11 @@ pub trait WorkflowExecutionRepository {
     /// `expected_version` は再構成時に受け取った版で、新規作成 (`Started`) では
     /// [`WorkflowExecutionRepository::UNPERSISTED_VERSION`] である。一致しなければ `Conflict`
     /// で、ストアの状態は変わらない (BR1.3)。引数は `&` なので呼出側の集約は変更されない。
+    ///
+    /// この引数は**ストア採番の不透明トークン**である — `seq_nr` と混同してはならず、集約へ
+    /// 入れてもならない (trait doc の「楽観 version はポートを往復する」を参照)。渡すのは
+    /// [`RehydratedWorkflowExecution::version`] が返した値そのものであり、`aggregate.seq_nr()`
+    /// から導いてはならない。
     ///
     /// # Errors
     ///
