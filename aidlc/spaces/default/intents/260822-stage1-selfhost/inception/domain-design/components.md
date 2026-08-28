@@ -47,7 +47,9 @@ components:
     entities:
       - name: WorkflowExecution
         identifier: intent_id
-        attributes: [status, stage_cursor, checkboxes, overlay, approved, autonomy_mode, parked_at, revision_count, version, seq_nr]
+        # version は失効（2026-08-29 / ADR-010・Bolt B7）— 楽観 version は集約の外へ
+        # （RehydratedWorkflowExecution が持ち回る。ストア採番の不透明トークン）
+        attributes: [status, stage_cursor, checkboxes, overlay, approved, autonomy_mode, parked_at, revision_count, seq_nr]
         references:
           - entity: WorkflowDefinition
             owned_by: WorkflowDefinitionModel
@@ -390,7 +392,7 @@ graph TD
 
 | Entity | Owning Component | Identifier | Attributes | References |
 |---|---|---|---|---|
-| WorkflowExecution | OrchestrationEngine | intent_id | status, stage_cursor, checkboxes, overlay, approved, autonomy_mode, parked_at, revision_count, version, seq_nr | WorkflowDefinition（参照渡し） |
+| WorkflowExecution | OrchestrationEngine | intent_id | status, stage_cursor, checkboxes, overlay, approved, autonomy_mode, parked_at, revision_count, ~~version~~（失効 2026-08-29 / B7 — 集約の外へ）, seq_nr | WorkflowDefinition（参照渡し） |
 | WorkflowDefinition | WorkflowDefinitionModel | source_digest | graph, grid, scopes | — |
 | StageNode | WorkflowDefinitionModel | slug | phase, execution, agents, mode, produces, consumes, sensors, scopes | — |
 | ProjectionCheckpoint | ReadModelUpdater | projection_name | last_seq_nr, updated_at | — |
