@@ -102,13 +102,15 @@ serde = { version = "1", features = ["derive"] }
 # 末尾 1 ULP がずれることがある (PBT で検出)。JS の `JSON.parse` は正しく丸めるので、
 # 有効にしないと同じテキストから別の f64 になり upstream 互換が壊れる (NFR1)。
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
-# event-store-adapter-rs v2.0.0 (ADR-010)。ドメイン型が本家の `Aggregate` / `Event` /
-# `AggregateId` を**直接実装**する Conformist を採るため、domain クレートが依存する。
+# event-store-adapter-rs v3.0.0 (ADR-010 / B7)。v3 は `Event` / `Aggregate` trait を廃し、
+# メタデータを `EventEnvelope` / `SnapshotEnvelope` が運ぶ。したがってドメイン型が直接実装する
+# 本家 trait は `AggregateId` (`IntentId`) だけになり、ドメインイベントと集約状態は素の serde 型
+# (payload) になる。Conformist は維持 — 封筒を組むのはアダプタ層 (Repository) である。
 # 版は `=` で**完全固定**する — 本家のスキーマ・契約に結合しており、上げるときは
 # 意図的な作業 (契約の再実測とガードテストの確認) を伴う (ADR-010 決定 4)。
 # feature は既定 (空) のまま — memory バックエンドは常時コンパイルされ、SQLite feature は
-# ストアを差し替える委任 2 で足す。
-event-store-adapter-rs = "=2.0.0"
+# アダプタ層が有効にする。
+event-store-adapter-rs = "=3.0.0"
 # 本家の `Event::occurred_at` / `Aggregate::last_updated_at` が `DateTime<Utc>` を返すため
 # (ADR-010 決定 3)。`serde` feature は本家も有効にしており、我々のドメイン型の derive でも要る。
 # 自前の ISO 8601 整形 (`format_iso8601_utc`) はこれに置き換わる (NFR4.1 の再検討 — ADR-010)。

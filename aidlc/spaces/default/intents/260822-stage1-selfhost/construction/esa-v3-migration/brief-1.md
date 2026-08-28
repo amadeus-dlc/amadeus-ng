@@ -59,6 +59,14 @@ Conversation language: 日本語
    > seq_nr との取り違えを型で塞ぐ。既存契約テスト `a_write_from_a_stale_version_conflicts`
    > は「並行書込後に握り直さないと競合する」趣旨へ書き換え、sqlite / memory 両方で
    > 検出が成立することを証明する。
+   >
+   > **同日追記（実装担当の Quint 実測に基づく確定）**: 更新も
+   > `persist_event_and_snapshot(envelope, aggregate, expected_version)` を使う —
+   > v3 の `persist_event` は snapshot の seq_nr を進めないため、モデル不変条件
+   > `snapshot_tracks_journal`（snapSeq == journalLen、スナップショット毎書込の設計契約）
+   > を破る。genesis / 更新の分岐は `event.seq_nr == 1` で導出（`is_created` の消滅に
+   > 整合、本家 v3 と同型）。expected_version は usize のまま（不透明トークンの旨を
+   > doc 明記。newtype 化は U5/U6 実装時の境界強化候補として報告書に記録）。
 5. **manifest 定数** `workflow-execution-event/1` — 旧 `schema_version` の後継。
    Repository が書き、`JournalReaderImpl` は不一致・欠落を `Corrupt(UndecodablePayload)`
    で拒否（旧 #466 検査の後継。payload 内メタ照合 #500 は二重化ごと消滅）。

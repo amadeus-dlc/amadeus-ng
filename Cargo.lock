@@ -236,9 +236,9 @@ dependencies = [
 
 [[package]]
 name = "event-store-adapter-rs"
-version = "2.0.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c1b1551e2993dcae8040fbdbe86b0584a8c00991bc36a63df137d5ef038a324"
+checksum = "941499236f5fa0773a94c00474d82c801e26719df4f8e2c4836b848d8759366c"
 dependencies = [
  "async-trait",
  "chrono",
