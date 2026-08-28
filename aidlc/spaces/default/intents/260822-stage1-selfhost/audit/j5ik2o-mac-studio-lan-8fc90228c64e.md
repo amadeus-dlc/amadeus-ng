@@ -21524,3 +21524,39 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T03:24:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af85827b72aac51e7
+**Message**: 1
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T03:25:37Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T03:29:16Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4b9deb08723d00b8
+**Message**: amadeus-ng の stage-1 セルフホスト化を進行中。B6（event-store-adapter v2 乗換）の PR #30 が CI 全緑でマージ待ち、RMU が JournalReader を呼ぶ裁定も記録済み。次はマージ可否の返答待ちで、承認後 U4（RMU）に着手します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T13:41:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T13:44:08Z
+**Event**: HUMAN_TURN
+
+---

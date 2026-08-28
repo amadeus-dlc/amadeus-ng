@@ -437,12 +437,16 @@ impl WorkflowExecution {
     /// `apply_event` は封筒違反・未知 slug・不変条件違反を検査するが、ここへ来るイベントは封筒を
     /// 自分で採番し slug を自分の `stages` から取り、遷移も不変条件を保つので、そのいずれにも
     /// 該当しない。到達不能な `Err` は状態を変えないまま `InvalidTarget(cursor)` として返す —
-    /// panic しないことを優先する (NFR4.3)。
+    /// panic しないことを優先する (NFR4.3)。通番枯渇だけは入口で明示に拒否する
+    /// (`SequenceExhausted` — 飽和加算で seq_nr が停滞したまま成功を装わない)。
     fn commit(
         &mut self,
         payload: WorkflowExecutionEventPayload,
         occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
+        if self.seq_nr == usize::MAX {
+            return Err(CommandError::SequenceExhausted);
+        }
         let event = WorkflowExecutionEvent::new(
             self.intent_id.clone(),
             // seq_nr + 1 >= 1 を型で運ぶ (飽和加算なので panic も wrap もしない)。
@@ -767,9 +771,12 @@ impl WorkflowExecution {
     /// # Errors
     ///
     /// 封筒の `seq_nr` が現在値 + 1 でない (`SequenceGap`)、ペイロードのステージ slug が `stages` に
-    /// 無い (`UnknownStage`)、適用後に集約不変条件が破れる (`InvariantViolation`) を拒否する。
+    /// 無い (`UnknownStage`)、適用後に集約不変条件が破れる (`InvariantViolation`)、現在値が
+    /// `usize::MAX` で後続を数えられない (`SequenceExhausted`) を拒否する。
     pub fn apply_event(&mut self, event: &WorkflowExecutionEvent) -> Result<(), ApplyError> {
-        let expected = self.seq_nr + 1;
+        let Some(expected) = self.seq_nr.checked_add(1) else {
+            return Err(ApplyError::SequenceExhausted);
+        };
         if event.seq_nr() != expected {
             return Err(ApplyError::SequenceGap {
                 expected,
@@ -1882,6 +1889,37 @@ mod tests {
             })
         );
         assert_eq!(w.seq_nr(), 1);
+    }
+
+    #[test]
+    fn apply_event_refuses_at_sequence_exhaustion() {
+        // memento 経由で通番を末端に据える (実運用では到達しない規模の境界)。
+        let mut state = all_exec(3).state();
+        state.seq_nr = usize::MAX;
+        let mut w = WorkflowExecution::from_state(state).unwrap();
+        let event = WorkflowExecutionEvent::new(
+            intent(),
+            NonZeroUsize::new(1).unwrap(),
+            occurred(),
+            WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
+                slug(0),
+                Some(slug(1)),
+            )),
+        );
+        assert_eq!(w.apply_event(&event), Err(ApplyError::SequenceExhausted));
+        assert_eq!(w.seq_nr(), usize::MAX, "状態は変わらない");
+    }
+
+    #[test]
+    fn a_command_at_sequence_exhaustion_is_refused() {
+        let mut state = all_exec(3).state();
+        state.seq_nr = usize::MAX;
+        let mut w = WorkflowExecution::from_state(state).unwrap();
+        assert_eq!(
+            w.complete_stage(occurred()),
+            Err(CommandError::SequenceExhausted)
+        );
+        assert_eq!(w.seq_nr(), usize::MAX, "状態は変わらない");
     }
 
     #[test]

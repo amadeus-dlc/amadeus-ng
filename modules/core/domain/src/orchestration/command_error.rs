@@ -27,6 +27,9 @@ pub enum CommandError {
     InvalidTarget(StageIndex),
     /// autonomous 下で拒否されるコマンド (park / recompose — BR1.7 / BR1.8)。
     RefusedUnderAutonomy,
+    /// 通番が `usize::MAX` に達しており、新しいイベントを採番できない (通番枯渇)。
+    /// 実運用では到達しない規模だが、境界を暗黙の飽和にしない (NFR4.3)。
+    SequenceExhausted,
     /// 別の定義で駆動しようとした (BR2.6)。
     DefinitionMismatch {
         /// この集約が `Started` に記録した定義 ID。
@@ -49,6 +52,9 @@ impl fmt::Display for CommandError {
             CommandError::NotStale(stage) => write!(f, "stage {stage} is not a stale re-report"),
             CommandError::InvalidTarget(stage) => write!(f, "invalid target stage {stage}"),
             CommandError::RefusedUnderAutonomy => f.write_str("refused under autonomous mode"),
+            CommandError::SequenceExhausted => {
+                f.write_str("sequence exhausted: seq_nr is at usize::MAX")
+            }
             CommandError::DefinitionMismatch { expected, actual } => {
                 write!(
                     f,
@@ -86,6 +92,10 @@ mod tests {
         assert_eq!(
             CommandError::InvalidTarget(StageIndex::new(0)).to_string(),
             "invalid target stage 0"
+        );
+        assert_eq!(
+            CommandError::SequenceExhausted.to_string(),
+            "sequence exhausted: seq_nr is at usize::MAX"
         );
     }
 

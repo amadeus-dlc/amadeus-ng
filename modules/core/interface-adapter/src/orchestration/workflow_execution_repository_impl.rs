@@ -67,6 +67,8 @@ pub struct WorkflowExecutionRepositoryImpl<S> {
 const fn apply_cause(error: &ApplyError) -> CorruptCause {
     match error {
         ApplyError::SequenceGap { .. } => CorruptCause::SequenceGap,
+        // 通番枯渇 — 現在位置の続きとして適用できない点で SequenceGap と同類に写す。
+        ApplyError::SequenceExhausted => CorruptCause::SequenceGap,
         ApplyError::UnknownStage(_) | ApplyError::InvariantViolation(_) => {
             CorruptCause::InvariantViolation
         }

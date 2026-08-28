@@ -99,6 +99,48 @@ async fn the_journal_reads_only_the_difference() {
 }
 
 #[tokio::test]
+async fn a_vacuum_rebuild_does_not_move_the_cursor() {
+    // journal は削除ゼロの純追記 (DELETE は本家 v2.0.0 でも snapshot 表にしか無い) なので、
+    // rowid は隙間の無い連番 1..N であり、VACUUM の再構築でも値が保たれる。ここはその前提を
+    // 実挙動で釘留めする回帰テスト — 破れたら rowid カーソルの設計ごと見直すこと。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    contract::seed(&mut repository).await;
+    drop(repository);
+
+    let mut reader = fixture.reader();
+    let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let third = before.get(2).expect("3 件目").0;
+    reader
+        .advance_checkpoint(&projection(), third)
+        .await
+        .expect("チェックポイント前進");
+    drop(reader); // VACUUM は排他を要するため他接続を全部閉じてから実行する
+
+    fixture
+        .raw()
+        .execute_batch("VACUUM")
+        .expect("VACUUM は通る");
+
+    let reader = fixture.reader();
+    let after = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let keys = |rows: &[(GlobalSeqNr, _)]| -> Vec<u64> {
+        rows.iter()
+            .map(|(global, _)| global.to_u64())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(keys(&after), keys(&before), "rowid は VACUUM 前と同一");
+    let saved = reader.checkpoint(&projection()).await.expect("保存済み");
+    assert_eq!(saved, third, "チェックポイントも生きている");
+    let resumed = reader.events_after(saved).await.expect("差分");
+    assert_eq!(
+        keys(&resumed),
+        keys(&before)[3..].to_vec(),
+        "続行が欠落も重複もしない"
+    );
+}
+
+#[tokio::test]
 async fn the_journal_interleaves_two_aggregates_in_commit_order() {
     // 本家のイベントストアは集約単位でしか読めない。横断のカーソルが「コミット順」で
     // あることこそ、この実装を自前で持つ理由である (ADR-010 決定 4)。

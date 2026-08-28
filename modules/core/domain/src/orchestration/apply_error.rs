@@ -14,6 +14,9 @@ pub enum ApplyError {
         /// イベント封筒が持っていた `seq_nr`。
         actual: usize,
     },
+    /// 通番が `usize::MAX` に達しており、後続の `seq_nr` を数えられない (通番枯渇)。
+    /// 実運用では到達しない規模だが、境界を暗黙の wrap / panic にしない (NFR4.3)。
+    SequenceExhausted,
     /// ペイロードのステージ slug が `stages` に無い。
     UnknownStage(StageSlug),
     /// 適用後に集約不変条件が破れた (材料は不変条件名)。
@@ -25,6 +28,9 @@ impl fmt::Display for ApplyError {
         match self {
             ApplyError::SequenceGap { expected, actual } => {
                 write!(f, "sequence gap: expected {expected}, actual {actual}")
+            }
+            ApplyError::SequenceExhausted => {
+                f.write_str("sequence exhausted: seq_nr is at usize::MAX")
             }
             ApplyError::UnknownStage(slug) => write!(f, "unknown stage: {slug}"),
             ApplyError::InvariantViolation(reason) => {
@@ -48,6 +54,14 @@ mod tests {
             actual: 7,
         };
         assert_eq!(err.to_string(), "sequence gap: expected 4, actual 7");
+    }
+
+    #[test]
+    fn the_sequence_exhaustion_names_itself() {
+        assert_eq!(
+            ApplyError::SequenceExhausted.to_string(),
+            "sequence exhausted: seq_nr is at usize::MAX"
+        );
     }
 
     #[test]

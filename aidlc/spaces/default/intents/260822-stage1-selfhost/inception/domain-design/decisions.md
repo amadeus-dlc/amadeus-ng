@@ -298,6 +298,16 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
        （本家の表と衝突しない名前）に持つ。本家スキーマへの結合はバージョンの完全固定
        （`=2.0.0`）と、スキーマが変わったら明示的に落ちるガードテストで守る。
 
+       **2026-08-28 追記（rowid と VACUUM — PR #30 レビュー指摘への裁定）**: `journal` に
+       `INTEGER PRIMARY KEY` は無いため、SQLite の仕様上 VACUUM は rowid を振り直し得る。
+       ただし振り直しが値を変えるのは行削除で隙間ができた場合だけであり、`journal` は
+       削除ゼロの純追記（DELETE 文は本家 v2.0.0 / v3.0.0 とも snapshot 表にしか無い —
+       実測）なので rowid は隙間の無い連番 1..N のまま、再構築後も同値に保たれる。この
+       前提は回帰テスト `a_vacuum_rebuild_does_not_move_the_cursor` で実挙動に釘留めした。
+       多層防御（チェックポイント表に (aid, seq_nr) アンカーを併記し、読取時に journal と
+       照合して不一致を明示エラーにする）は、v3 乗り換え Bolt（B7）で読取実装を書き直す
+       際に併せて導入する。
+
        **2026-08-27 追記（supersede の明記）**: 上記の実装は ADR-003「Repository →
        `EventStoreImpl(sqlite client)` → SQLite」、ADR-007「チェックポイントは Tx 内更新」、
        ADR-009「`EventStoreImpl` が `EventStore`（コマンド）と `JournalReader`（読取）の両契約を
