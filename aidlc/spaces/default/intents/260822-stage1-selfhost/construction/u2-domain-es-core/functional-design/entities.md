@@ -57,7 +57,7 @@ entities:
       - { name: conditional, type: boolean, required: true, constraints: "同じ文書順の graph().nodes()[i].execution() = CONDITIONAL（stages_in_scope は execution を返さない）。initialization ステージは必ず false" }
 
   - name: WorkflowExecution
-    description: "集約ルート = エンジン FSM（ADR-002）。状態としてのデータ・状態遷移（decide / apply）・判断（next_decision 等のクエリ）を 1 型に閉じ込める。I/O なし・純粋・同期。serde に依存しない（P5）"
+    description: "集約ルート = エンジン FSM（ADR-002）。状態としてのデータ・状態遷移（decide / apply）・判断（next_decision 等のクエリ）を 1 型に閉じ込める。I/O なし・純粋・同期。~~serde に依存しない（P5）~~ → **失効**: 2026-08-27 / ADR-010 で本家 `Aggregate` trait が serde 境界を要求するため `Serialize`/`Deserialize` を derive する（`#[serde(into/try_from)]` で memento を経由、下記 constraints 参照）"
     attributes:
       - { name: intent_id, type: IntentId, required: true, unique: true }
       - { name: definition_id, type: WorkflowDefinitionId, required: true, constraints: "集約間の間接参照（ID のみ保持、WorkflowDefinition のオブジェクトは保持しない）。Started で確定し以後不変（start は記録のみ）。next_decision に渡される &WorkflowDefinition の id と一致しなければ Err(CommandError::DefinitionMismatch) — BR2.6" }
@@ -74,7 +74,8 @@ entities:
       - { name: approved, type: list<boolean>, required: true, constraints: "ゲート承認履歴。非ゲート（initialization）ステージは常に false" }
       - { name: revision_count, type: list<integer>, required: true, min: 0, constraints: "ステージごとの差し戻し回数。reject_gate で +1（GateRejected.revision_count の供給元 — レビュー所見 16 (a)）。upstream 状態ファイルの Revision Count の材料" }
       - { name: seq_nr, type: integer, required: true, min: 0, constraints: "集約内で単調増加。適用したイベント数と一致（Started = 1）。apply_event ごとに +1" }
-      - { name: version, type: integer, required: true, min: 0, constraints: "楽観 version。Repository の store 成功後に +1（集約は `with_version` で受け取る）。集約内の遷移では変えない" }
+      - { name: version, type: usize, required: true, min: 0, constraints: "【2026-08-27 改訂 / ADR-010・Bolt B6】楽観 version = **ストアが採番する不透明なトークン**。ドメインは解釈も比較もせず、`seq_nr` から導かない（BR5.3）。~~Repository の store 成功後に +1（集約は `with_version` で受け取る）~~ → **失効**: `with_version` は削除され、載せ替えの口は本家 `Aggregate::set_version` 1 本だけ（借り物の契約なので綴りも可変性も本家が所有する）。新しい version を知るのはストアだけなので、続けて書くには再水和が要る。集約内の遷移では変えない" }
+      - { name: last_updated_at, type: "chrono::DateTime<Utc>", required: true, constraints: "【2026-08-27 新設 / ADR-010】最後に適用したイベントの `occurred_at`（本家 `Aggregate::last_updated_at` の要求）。集約は時計を持たないので、値は常に適用したイベントから来る" }
     constraints:
       - "stages / plan / overlay / conditional / checkbox / approved の長さはすべて stage_count に等しい"
       - "status = running のとき cursor の実効プランは EXECUTE（Quint: cursor_in_scope）"
@@ -87,10 +88,10 @@ entities:
   - name: WorkflowExecutionEvent
     description: "ドメインイベント（コマンドと 1:1、12 変種 — C5 の 11 + StageCompleted（Q3 = A））。封筒 + ペイロード"
     attributes:
-      - { name: intent_id, type: IntentId, required: true }
-      - { name: seq_nr, type: integer, required: true, min: 1, constraints: "適用後の集約 seq_nr と一致" }
-      - { name: schema_version, type: integer, required: true, defaults: 1, constraints: "C5 の予約。追加フィールドは消費側が無視" }
-      - { name: occurred_at, type: timestamp, required: true, constraints: "ISO 8601 UTC。ユースケースが Clock から渡す（集約はクロックを持たない）" }
+      - { name: id, type: WorkflowExecutionEventId, required: true, constraints: "【2026-08-27 改訂 / ADR-010・Bolt B6】~~intent_id / seq_nr の 2 属性~~ → **Domain Primitive `WorkflowExecutionEventId`（intent_id + seq_nr）に統合**（本家 `Event::id()` の要求）。値は同じ 2 つ組で、採番は決定的（集約 ID + seq_nr）。`seq_nr` は適用後の集約 seq_nr と一致（min: 1）、型は `usize`（本家に従う）" }
+      - { name: schema_version, type: integer, required: true, defaults: 1, constraints: "C5 の予約。追加フィールドは消費側が無視。**2026-08-27 補足**: 復号時に値を検査する経路は無くなった（対応外の版も復号失敗に畳まれる — `CorruptCause::SchemaVersion` は削除）" }
+      - { name: occurred_at, type: "chrono::DateTime<Utc>", required: true, constraints: "【2026-08-27 改訂 / ADR-010】~~ISO 8601 UTC（文字列）~~ → **`chrono::DateTime<Utc>`**（本家 `Event::occurred_at()` の要求。自前 ISO 8601 整形は撤去 — **NFR4.1 依存最小化の再検討対象**）。ユースケースが Clock から渡す（集約はクロックを持たない）" }
+      - { name: is_created, type: "fn() -> bool", required: true, constraints: "【2026-08-27 新設 / ADR-010】genesis 判定（`Started` のみ真）。本家 `Event::is_created()` の要求で、ストアが create 経路と更新経路を分けるために使う" }
       - { name: kind, type: enum, required: true, allowed_values: [Started, StageCompleted, GateOpened, GateApproved, GateRejected, StageRevised, StageSkipped, Jumped, Parked, Unparked, Recomposed, AutonomyModeSet] }
       - { name: payload, type: record, required: true, constraints: "kind ごとに固定（下の payloads）" }
     payloads:                          # C5 の形を正本とする。ステージ参照は StageSlug（自己記述 — 投影側が索引表を要しない）。StageIndex は集約 API の内部表現
@@ -114,14 +115,14 @@ entities:
       - "型の明示: C5 の `stage` / `next_stage` / `stages_*` は StageSlug"
       - "投影規則の改訂提案（U4 と合意）: Started は WORKFLOW_STARTED / PHASE_STARTED(initialization) / STAGE_STARTED(先頭) を描き、initialization 各ステージの STAGE_COMPLETED（+ 次の STAGE_STARTED、フェーズ境界の PHASE_COMPLETED / PHASE_STARTED）は StageCompleted ごとに描く — 1 コマンド 1 イベントの帰結（所見 14 の裁定案 A）"
     constraints:
-      - "イベントは構築後不変。材料はアクセサで公開（serde なし — JSON 化は U3 のワイヤ構造体）"
+      - "イベントは構築後不変。材料はアクセサで公開（~~serde なし — JSON 化は U3 のワイヤ構造体~~ → **失効**: 2026-08-27 / ADR-010 で本家 `Event` trait が serde 境界を要求するため derive する。ストアの payload は本家が書き、**それは契約 JSON ではない**）"
 
-  - name: WorkflowExecutionSnapshot
-    description: "集約の全状態の値オブジェクト（C6 snapshot 行の論理形）。集約 → `snapshot()`、集約 ← `from_snapshot(...)`。serde なし"
+  - name: WorkflowExecutionState
+    description: "集約の全状態の値オブジェクト（C6 snapshot 行の論理形）。集約 → `snapshot()`、集約 ← `from_snapshot(...)`。~~serde なし~~ → **2026-08-27 改訂**: 型名は Bolt B5 で `WorkflowExecutionSnapshot` から `WorkflowExecutionState`（`state()` / `from_state()` / `StateError` / `WorkflowExecutionStateBuilder`）へ改名済み（**2026-08-27: 正本のエンティティ名もここで追従**）。**serde を持つ**が、集約の serde がこの写しを経由する（`#[serde(into/try_from)]`）ので、**復号側の検査点は `from_state()` の 1 か所のまま**（ADR-010 / オーナー裁定 2026-08-27）"
     attributes:
-      - { name: state, type: record, required: true, constraints: "WorkflowExecution の全属性（intent_id / definition_id / definition_revision / stages（StageEntry 列）/ plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy / approved / revision_count / seq_nr / version の 16 属性）をそのまま持つ。構築は公開ビルダー WorkflowExecutionSnapshotBuilder（引数 16 個を避ける house style）" }
+      - { name: state, type: record, required: true, constraints: "WorkflowExecution の全属性（intent_id / definition_id / definition_revision / stages（StageEntry 列）/ plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy / approved / revision_count / seq_nr / version ~~の 16 属性~~ → **+ last_updated_at の 17 属性**、2026-08-27 / ADR-010）をそのまま持つ。構築は公開ビルダー（引数 17 個を避ける house style）" }
     constraints:
-      - "from_snapshot は集約不変条件を検証し、違反は Err（Corrupt 相当の材料）"
+      - "from_state は集約不変条件を検証し、違反は Err（Corrupt 相当の材料）。**serde の復号経路もここを通る**"
 
   - name: NextRequest
     description: "next_decision への入力のうちワークフロー状態の判断に要る観測（状態非依存のフラグ処理はユースケース前段 — Q1 = A）"
@@ -145,7 +146,7 @@ entities:
 
 relationships:
   - { from: WorkflowExecutionEvent, to: WorkflowExecution, cardinality: "many-to-one", description: "集約 1 つのイベント列。seq_nr 順に apply すると集約が再構成される" }
-  - { from: WorkflowExecutionSnapshot, to: WorkflowExecution, cardinality: "one-to-one", description: "ある seq_nr 時点の全状態" }
+  - { from: WorkflowExecutionState, to: WorkflowExecution, cardinality: "one-to-one", description: "ある seq_nr 時点の全状態" }
   - { from: WorkflowExecution, to: StageIndex, cardinality: "one-to-many", description: "cursor / parked_at / イベントのステージ参照はすべて StageIndex" }
   - { from: WorkflowExecutionEvent, to: StageEntry, cardinality: "one-to-many", description: "kind = Started のペイロードが解決済み計画（slug / plan_action / conditional）の列を持つ" }
 ```
@@ -154,8 +155,11 @@ relationships:
 
 - **WorkflowExecution** は現行 FSM の 9 フィールドに `intent_id` / `stages` / `seq_nr` / `version` を足した集約ルート。状態・遷移・
   判断を 1 型に閉じ、decide は単一イベントを返し apply がリプレイと通常実行を同一経路にする。
-- **WorkflowExecutionEvent** は 12 変種（C5 の 11 + `StageCompleted`）。封筒（intent_id / seq_nr / schema_version / occurred_at）
-  + 変種ごとのペイロード。`Started` は解決済み計画（StageEntry 列）を自己完結で持つ。
+- **WorkflowExecutionEvent** は 12 変種（C5 の 11 + `StageCompleted`）。封筒（~~intent_id / seq_nr~~ → **`id`
+  （`WorkflowExecutionEventId` = intent_id + seq_nr、2026-08-27 / ADR-010 で新設した Domain Primitive）** /
+  schema_version / occurred_at）+ 変種ごとのペイロード。`Started` は解決済み計画（StageEntry 列）を自己完結で持つ。
 - **StageIndex** が `usize` を置き換え、範囲不変条件を型で守る（Q2 = A）。**IntentId** が集約識別子。
-- **WorkflowExecutionSnapshot** と **NextDecision / NextRequest** は値オブジェクト。serde はドメインに入れない。
+- **WorkflowExecutionState**（旧 `WorkflowExecutionSnapshot`、B5 で改名。2026-08-27: 正本のエンティティ名も追従）と **NextDecision / NextRequest** は値オブジェクト。
+  ~~serde はドメインに入れない。~~ → **失効（2026-08-27 / ADR-010・Bolt B6）**: 集約・ドメインイベント・集約識別子は
+  serde を持つ（本家 trait の境界要求）。ただし集約の復号は memento を経由するので検査点は 1 か所のまま。
 - **PlanAction** は workflow_definition へ完全移動（再輸出なし）。

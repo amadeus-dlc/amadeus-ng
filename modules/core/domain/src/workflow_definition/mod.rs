@@ -3,7 +3,10 @@
 //! 本モジュールは Published Language 1 本目 (コンパイル済み `stage-graph.json` /
 //! `scope-grid.json`、および有効スコープの権威である `scopes/aidlc-<name>.md`) の
 //! **読取モデル**を担う。ワイヤ形式のデコード (JSON / frontmatter パース) は Gateway 層の
-//! 責務で、ドメイン層は serde に依存しない。
+//! 責務であり、本モジュールの型はその形を知らない。型が持つ serde は、`orchestration` の
+//! ドメインイベントに載って本家ストアの境界を渡るためのものである (ADR-010)。
+//! `StageSlug` / `WorkflowDefinitionId` / `DefinitionRevision` の復号は `parse` と同じ検査を
+//! 通すので、Always Valid はそこでも破れない。
 //!
 //! 契約の逐語根拠は Issue #7 項目 3 の抽出レポート。要点:
 //! - `stage-graph.json` のルートは**配列**で、ノードは `FIELD_ORDER` 28 フィールド。

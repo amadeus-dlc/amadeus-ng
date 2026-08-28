@@ -9,6 +9,20 @@
 > 下の fenced `yaml` が正本。ドメイン層の集約・イベントは U2 のもの（`WorkflowExecution` / `WorkflowExecutionEvent`）を使い、本 Unit が新設するのは
 > **ポート（ユースケース層）・ストアとワイヤ（アダプタ層）・値オブジェクト 2 型の是正（ドメイン層）・検証モデル**である。
 
+> ## ⚠ 部分失効（2026-08-27 / ADR-010・Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）
+>
+> **自前ストアを前提にしたエントリは失効した**（YAML 内に個別の失効注記を入れてある）:
+> `EventStore`（ローカル定義ポート）、`EventStoreError`、`EventStoreImpl`、`JournalRow` / `SnapshotRow` /
+> `CheckpointRow`、`EventPayloadWire` / `StateWire`、`InMemoryEventStore`、
+> `InMemoryWorkflowExecutionRepository`。**削除の実測は 8 ファイル・5,480 行**。
+>
+> **不変**: `WorkflowExecutionRepository` / `JournalReader` のポート面、`RepositoryError`、
+> `GlobalSeqNr` / `ProjectionName`、`IntentId` / `IntentDirName`、`StorePath`、
+> `JournalProtocolModel`（**モデルは 1 文字も変えずに通った**）、`RetiredLockMachinery`（ADR-007 由来）。
+>
+> **新設**: `JournalReadError`（旧 `EventStoreError` の改称・3 変種）、`JournalReaderImpl`、
+> `amadeus_projection_checkpoint` 表、`WorkflowExecutionEventId`（U2 側の Domain Primitive）。
+
 ## 1. エンティティ（正本）
 
 ```yaml
@@ -24,10 +38,15 @@ entities:
     constraints:
       - "dyn 禁止（静的束縛、use-case-rules §2）。Send / Sync を要求しない（tokio current_thread、Q3 = A）"
       - "ユースケースは Tx を持たない（Tx 所有は実装 — C3 ②）"
+  # 失効（2026-08-27 / ADR-010・Bolt B6）: ローカル定義の EventStore ポートは口ごと削除した。
+  # 正本は本家 `event_store_adapter_rs::types::EventStore`（関連型 AID/AG/EV、数値は usize、
+  # エラーは EventStoreWriteError / EventStoreReadError の 2 種）であり、我々は定義しない。
+  # 下記 u64 化は撤回済み（借り物の契約を書き換えていたこと自体が upstream-contracts.md 違反）。
   - name: EventStore
+    status: superseded (2026-08-27 / ADR-010)
     kind: port-trait
     layer: use-case
-    description: "event-store-adapter-rs 同形のローカル定義（ADR-006）。ジェネリック <AID, A, E>。Repository 実装が内部で使う下位ポート。数値パラメータは C3 の `usize` を実装済みドメイン型（`seq_nr` / `version` = u64 — B3 実装）に合わせて **u64** に具体化した（無言の変更にしない: C3 の改訂提案として contract-summary の所有者（U5 / U6）へ申し送り、ゲートで契約改訂 — レビュー所見 2）"
+    description: "【失効】event-store-adapter-rs 同形のローカル定義（ADR-006）。ジェネリック <AID, A, E>。Repository 実装が内部で使う下位ポート。数値パラメータは C3 の `usize` を実装済みドメイン型（`seq_nr` / `version` = u64 — B3 実装）に合わせて **u64** に具体化した（無言の変更にしない: C3 の改訂提案として contract-summary の所有者（U5 / U6）へ申し送り、ゲートで契約改訂 — レビュー所見 2）"
     attributes:
       - { name: persist_event, type: "async fn(&mut self, &E, version: u64) -> Result<(), EventStoreError>", required: true, constraints: "スナップショットを更新しない追記。本 Unit では store が persist_event_and_snapshot のみを使う（ADR-001: 毎 store でスナップショット更新）" }
       - { name: persist_event_and_snapshot, type: "async fn(&mut self, &E, &A) -> Result<(), EventStoreError>", required: true, constraints: "journal INSERT + snapshot 条件付き UPSERT を同一 Tx" }
@@ -36,46 +55,48 @@ entities:
   - name: JournalReader
     kind: port-trait
     layer: use-case
-    description: "投影（U4）が使う差分読取とチェックポイント（C3）。ストア実装が同時に実装する"
+    description: "投影（U4）が使う差分読取とチェックポイント（C3）。2026-08-27 改訂（ADR-010）: 集約の永続化は本家が担うので、これは**別の口**（別の実装型 JournalReaderImpl）になった。エラー型は EventStoreError → JournalReadError"
     attributes:
-      - { name: events_after, type: "async fn(&self, GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError>", required: true, constraints: "global_seq_nr 昇順、全集約横断" }
-      - { name: checkpoint, type: "async fn(&self, &ProjectionName) -> Result<GlobalSeqNr, EventStoreError>", required: true, constraints: "未登録の投影は GlobalSeqNr::ZERO" }
-      - { name: advance_checkpoint, type: "async fn(&mut self, &ProjectionName, GlobalSeqNr) -> Result<(), EventStoreError>", required: true, constraints: "単調: 現在値未満なら CheckpointRegression" }
+      - { name: events_after, type: "async fn(&self, GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError>", required: true, constraints: "昇順、全集約横断。通番の実体は本家 journal 表の rowid（追記専用ゆえコミット順の単調カーソル）" }
+      - { name: checkpoint, type: "async fn(&self, &ProjectionName) -> Result<GlobalSeqNr, JournalReadError>", required: true, constraints: "未登録の投影は GlobalSeqNr::ZERO" }
+      - { name: advance_checkpoint, type: "async fn(&mut self, &ProjectionName, GlobalSeqNr) -> Result<(), JournalReadError>", required: true, constraints: "単調: 現在値未満なら CheckpointRegression。2026-08-27: ジャーナル追記とは別 Tx（本家は Tx を露出しない）" }
   - name: RepositoryError
     kind: error-enum
     layer: use-case
     description: "Repository ポートの失敗（材料のみ、手実装 Display / Error — coding-rules/error-handling.md）"
     attributes:
       - { name: NotFound, type: "{ intent_id: IntentId }", required: true }
-      - { name: Conflict, type: "{ expected: u64, actual: u64 }", required: true, constraints: "楽観 version 不一致。ユースケースが再水和して 1 回だけ再試行（C3）" }
+      - { name: Conflict, type: "{ expected: usize, actual: usize }", required: true, constraints: "楽観 version 不一致。ユースケースが再水和して 1 回だけ再試行（C3）。2026-08-27（ADR-010）: 数値は本家に合わせ u64 → usize。expected は呼出側の集約の version、actual は競合時に get_latest_snapshot_by_id を 1 回読み直して得る（本家は整形済み文字列しか返さないため、文言は解析しない）" }
       - { name: Io, type: "{ kind: std::io::ErrorKind, path: Option<PathBuf> }", required: true }
-      - { name: Corrupt, type: "{ aggregate_id: IntentId, seq_nr: Option<u64>, cause: CorruptCause }", required: true, constraints: "復号不能・スナップショット欠落・不変条件違反（from_state の Err）" }
-  - name: EventStoreError
+      - { name: Corrupt, type: "{ aggregate_id: IntentId, seq_nr: Option<usize>, cause: CorruptCause }", required: true, constraints: "復号不能・スナップショット欠落・不変条件違反（from_state の Err）。2026-08-27（ADR-010）: 数値は u64 → usize" }
+  # 改称・縮小（2026-08-27 / ADR-010・Bolt B6）: EventStoreError -> JournalReadError。
+  # Conflict は本家が返すので不要になり、Schema は PRAGMA user_version の検査ごと廃止した。
+  - name: JournalReadError
     kind: error-enum
     layer: use-case
-    description: "EventStore / JournalReader の失敗（材料のみ）。Repository 実装が RepositoryError へ写す"
+    description: "JournalReader の失敗（材料のみ）。旧名 EventStoreError（2026-08-27 改称 — 口が集約の永続化から外れたため）"
     attributes:
-      - { name: Conflict, type: "{ expected: u64, actual: u64 }", required: true }
       - { name: Io, type: "{ kind: std::io::ErrorKind, path: Option<PathBuf> }", required: true }
-      - { name: Corrupt, type: "{ aggregate_id: String, seq_nr: Option<u64>, cause: CorruptCause }", required: true }
-      - { name: Schema, type: "{ found: u32, supported: u32 }", required: true, constraints: "PRAGMA user_version が対応範囲外" }
+      - { name: Corrupt, type: "{ aggregate_id: String, seq_nr: Option<usize>, cause: CorruptCause }", required: true }
       - { name: CheckpointRegression, type: "{ projection: ProjectionName, current: GlobalSeqNr, requested: GlobalSeqNr }", required: true }
+      - { name: "【失効】Conflict", type: "{ expected: u64, actual: u64 }", required: false, constraints: "失効（2026-08-27 / ADR-010）— 楽観 version の競合は本家が返し、Repository が RepositoryError::Conflict へ写す" }
+      - { name: "【失効】Schema", type: "{ found: u32, supported: u32 }", required: false, constraints: "失効（2026-08-27 / ADR-010）— 本家は PRAGMA user_version を使わない。版の固定はピン `=2.0.0` + スキーマガードテストが担う" }
   - name: CorruptCause
     kind: value-enum
     layer: use-case
     description: "Corrupt の原因分類（材料）"
     attributes:
-      - { name: variants, type: enum, allowed_values: [MissingSnapshot, UndecodablePayload, UnknownEventType, SchemaVersion, InvariantViolation, SequenceGap], required: true }
+      - { name: variants, type: enum, allowed_values: [MissingSnapshot, UndecodablePayload, InvariantViolation, SequenceGap], required: true, constraints: "2026-08-27（ADR-010）: UnknownEventType と SchemaVersion を削除して 6 → 4 分類。封筒ごと serde で書かれるようになり、未知の変種も対応外の版も『復号できない』に畳まれるため（どちらも UndecodablePayload）" }
   - name: GlobalSeqNr
     kind: value-object
     layer: use-case
-    description: "全集約横断のジャーナル通番（C6 journal.global_seq_nr）。投影チェックポイントの単位"
+    description: "全集約横断のジャーナル通番。投影チェックポイントの単位。2026-08-27 改訂（ADR-010）: 実体は ~~C6 journal.global_seq_nr 列~~ → **本家 journal 表の rowid**（追記専用ゆえコミット順の単調カーソル。専用の AUTOINCREMENT 列は持たない）"
     attributes:
       - { name: value, type: u64, required: true, constraints: "0 = 『まだ何も読んでいない』（ZERO 定数）。ジャーナル行は 1 以上" }
   - name: ProjectionName
     kind: value-object
     layer: use-case
-    description: "投影の名前（C6 checkpoint.projection）"
+    description: "投影の名前（C6 amadeus_projection_checkpoint.projection。2026-08-27 / ADR-010 で表名を改称 — 本家の表と衝突しないため）"
     attributes:
       - { name: value, type: string, required: true, constraints: "kebab `^[a-z][a-z0-9-]*$`、1〜64 字。例: state-file / audit-shard" }
 
@@ -98,17 +119,23 @@ entities:
   - name: WorkflowExecutionState
     kind: value-object (memento)
     layer: domain (orchestration)
-    description: "集約の全状態の写し（旧 WorkflowExecutionSnapshot — B5 で改名、U2 pending-revision 項目 9）。`WorkflowExecution::state()` が作り、`from_state()` が不変条件つきで復元する唯一の経路。serde を知らない"
+    description: "集約の全状態の写し（旧 WorkflowExecutionSnapshot — B5 で改名、U2 pending-revision 項目 9）。`WorkflowExecution::state()` が作り、`from_state()` が不変条件つきで復元する唯一の経路。~~serde を知らない~~ → **失効（2026-08-27 / ADR-010）**: 本家 trait が serde 境界を要求するため serde を持つ。ただし集約の `Serialize` / `Deserialize` は `#[serde(into/try_from)]` で**この写しを経由する**ので、復号側の検査点は `from_state()` の 1 か所のまま"
     attributes:
-      - { name: fields, type: "16 属性", required: true, constraints: "intent_id / definition_id / definition_revision / stages: Vec<StageEntry> / plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy / approved / revision_count / seq_nr / version（B3 実装と同一）" }
+      - { name: fields, type: "17 属性（2026-08-27 / ADR-010 で last_updated_at を追加。旧: 16 属性）", required: true, constraints: "intent_id / definition_id / definition_revision / stages: Vec<StageEntry> / plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy / approved / revision_count / seq_nr / version / last_updated_at（本家 Aggregate::last_updated_at の要求。値は最後に適用したイベントの occurred_at であり、集約は時計を持たない）" }
     constraints:
       - "Builder は `WorkflowExecutionStateBuilder`、エラーは `StateError`（旧 SnapshotError）。旧名の再エクスポート・型エイリアスは残さない"
 
   # --- アダプタ層（core-interface-adapter::orchestration）— ストア・ワイヤ・実装 ---
+  # 全面失効（2026-08-27 / ADR-010・Bolt B6）: EventStoreImpl はファイルごと削除した
+  # （event_store_impl.rs 971 行 + schema.rs 179 行 + テスト 1,008 行）。集約の永続化は本家
+  # EventStoreForSqlite / EventStoreForMemory が担い、横断読取とチェックポイントは新設の
+  # JournalReaderImpl（301 行 + テスト 409 行）が持つ。within_write_transaction は本家が
+  # 接続も Tx も露出しないため実現できず、口ごと消えた（**登録簿の扱いは U7 で裁定**）。
   - name: EventStoreImpl
+    status: superseded (2026-08-27 / ADR-010)
     kind: gateway-impl
     layer: interface-adapter
-    description: "EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> と JournalReader の SQLite 実装（rusqlite bundled、同期 API を async fn 内で呼ぶ — Q3 = A）。C6 の 3 テーブルを所有"
+    description: "【失効】EventStore<IntentId, WorkflowExecution, WorkflowExecutionEvent> と JournalReader の SQLite 実装（rusqlite bundled、同期 API を async fn 内で呼ぶ — Q3 = A）。C6 の 3 テーブルを所有"
     attributes:
       - { name: path, type: StorePath, required: true }
       - { name: connection, type: "rusqlite::Connection", required: true, constraints: "プロセス内 1 接続。open 時に user_version 検査 / 初期化、busy_timeout 5000ms。EventStore / JournalReader の書込メソッドは C3 どおり `&mut self`" }
@@ -122,10 +149,16 @@ entities:
     description: "ストアファイルの場所（Q1 = A）"
     attributes:
       - { name: value, type: PathBuf, required: true, constraints: "`<aidlc root>/spaces/<SpaceName>/intents/.aidlc-store.sqlite`（`of(aidlc_root, &SpaceName)` で導出。既存 .gitignore `aidlc/spaces/*/intents/.aidlc-*` で git 管理外）" }
+  # 失効（2026-08-27 / ADR-010）: 本家の journal 表に置換。列は
+  # (pkey TEXT, skey TEXT, aid TEXT, seq_nr INTEGER, payload BLOB, occurred_at INTEGER)、
+  # PRIMARY KEY (pkey, skey)、UNIQUE INDEX journal_aid_seq_nr_idx (aid, seq_nr)。
+  # global_seq_nr 列は無く、横断カーソルは rowid。schema_version / event_type 列も無い
+  # （封筒ごと payload に serde される）。正本は upstream であり我々は所有しない。
   - name: JournalRow
+    status: superseded (2026-08-27 / ADR-010)
     kind: table-row
     layer: interface-adapter
-    description: "C6 journal の 1 行"
+    description: "【失効】C6 journal の 1 行"
     attributes:
       - { name: global_seq_nr, type: "INTEGER PRIMARY KEY AUTOINCREMENT", required: true }
       - { name: aggregate_id, type: TEXT, required: true, constraints: "IntentId（UUIDv7 文字列）" }
@@ -134,10 +167,15 @@ entities:
       - { name: event_type, type: TEXT, required: true, constraints: "WorkflowExecutionEventPayload の変種名（Started / StageCompleted / … / AutonomyModeSet の 12 語）" }
       - { name: payload, type: TEXT, required: true, constraints: "EventPayloadWire の正準 JSON（canon-json）" }
       - { name: occurred_at, type: TEXT, required: true, constraints: "呼出側が渡した ISO 8601 UTC 文字列を素通し" }
+  # 失効（2026-08-27 / ADR-010）: 本家の snapshot 表に置換。列は
+  # (pkey, skey, aid, seq_nr, version, payload BLOB, last_updated_at INTEGER)、
+  # PRIMARY KEY (pkey, skey)。version は本家が採番する不透明トークンであり、
+  # 「= 永続化済みイベント数 = 最後の seq_nr」という下記の等式は BR5.3 で否定された。
   - name: SnapshotRow
+    status: superseded (2026-08-27 / ADR-010)
     kind: table-row
     layer: interface-adapter
-    description: "C6 snapshot の 1 行（集約 1 行）"
+    description: "【失効】C6 snapshot の 1 行（集約 1 行）"
     attributes:
       - { name: aggregate_id, type: "TEXT PRIMARY KEY", required: true }
       - { name: version, type: INTEGER, required: true, constraints: "楽観 version = 永続化済みイベント数 = 最後の seq_nr（store ごとに +1）。集約側の `version()` は遷移で変わらず Repository が `with_version` で載せる（B3 実装契約）" }
@@ -145,41 +183,69 @@ entities:
       - { name: schema_version, type: INTEGER, required: true, constraints: "状態ワイヤの版 = 1" }
       - { name: payload, type: TEXT, required: true, constraints: "StateWire（16 属性）の正準 JSON。revision_count はここに含む（列追加なし — P4）" }
       - { name: updated_at, type: TEXT, required: true, constraints: "Clock から" }
+  # 改訂（2026-08-27 / ADR-010）: 表名を checkpoint -> amadeus_projection_checkpoint（本家の表と
+  # 同居させても衝突しないため）。updated_at 列は落とした（誰も読まない列で、押印には時計が要る）。
+  # **我々が所有する唯一の表**である。
   - name: CheckpointRow
     kind: table-row
     layer: interface-adapter
-    description: "C6 checkpoint の 1 行（投影 1 行）"
+    description: "C6 amadeus_projection_checkpoint の 1 行（投影 1 行）。我々が所有する唯一の表"
     attributes:
       - { name: projection, type: "TEXT PRIMARY KEY", required: true }
       - { name: last_global_seq, type: INTEGER, required: true, constraints: "単調増加（巻き戻しは行削除のみ — 再生成時）" }
-      - { name: updated_at, type: TEXT, required: true }
+      - { name: "【失効】updated_at", type: TEXT, required: false, constraints: "失効（2026-08-27 / ADR-010）— 列ごと削除。Repository / JournalReader は Clock を持たなくなった" }
+  # 失効（2026-08-27 / ADR-010）: ワイヤ構造体はファイルごと削除した。イベントは封筒ごと
+  # 本家の既定シリアライザ（serde_json::to_vec）で payload 1 列に書かれる。未知の変種は
+  # Corrupt(UnknownEventType) ではなく復号失敗 = Corrupt(UndecodablePayload) に畳まれる。
+  # ストアの payload は契約 JSON（BR1.7 / canon-json）ではない — 我々は書いていない。
   - name: EventPayloadWire
+    status: superseded (2026-08-27 / ADR-010)
     kind: wire-struct (serde)
     layer: interface-adapter
-    description: "WorkflowExecutionEventPayload のワイヤ表現（adapter に閉じる。ドメイン型へは parse-don't-validate）。JSON は `{\"type\": \"<変種名>\", ...材料}`"
+    description: "【失効】WorkflowExecutionEventPayload のワイヤ表現（adapter に閉じる。ドメイン型へは parse-don't-validate）。JSON は `{\"type\": \"<変種名>\", ...材料}`"
     attributes:
       - { name: type, type: string, required: true, constraints: "12 語の閉集合。未知は Corrupt(UnknownEventType)" }
       - { name: fields, type: object, required: true, constraints: "変種ごとの材料（functional-spec §4 の表）。固定トークンは upstream 綴り（CheckboxState のマーク、PlanAction EXECUTE / SKIP、PhaseId）、列挙は snake_case 文字列。未知フィールドは拒否（Corrupt）" }
+  # 失効（2026-08-27 / ADR-010）: ワイヤ構造体はファイルごと削除した。スナップショットは
+  # 集約そのものを本家の serde で書く。**JSON の正確整数域（2^53）を超える値を拒否する検査は
+  # 無くなった**（ワイヤ形式ごと削除。ストアファイルは upstream 非観測なので実害は無いと判断）。
+  # 不変条件検査そのものは残る — 集約の Deserialize が memento を経由するため。
   - name: StateWire
+    status: superseded (2026-08-27 / ADR-010)
     kind: wire-struct (serde)
     layer: interface-adapter
-    description: "WorkflowExecutionState のワイヤ表現（16 属性、正準 JSON）"
+    description: "【失効】WorkflowExecutionState のワイヤ表現（16 属性、正準 JSON）"
     attributes:
-      - { name: fields, type: object, required: true, constraints: "functional-spec §4 の表。復号後 `WorkflowExecution::from_state` の不変条件検査を通す" }
+      - { name: fields, type: object, required: true, constraints: "functional-spec §4 の表。復号後 `WorkflowExecution::from_state` の不変条件検査を通す（この検査点だけは serde 経路でも保たれている）" }
   - name: WorkflowExecutionRepositoryImpl
     kind: gateway-impl
     layer: interface-adapter
-    description: "WorkflowExecutionRepository の実 Gateway（1 trait 1 Impl）。EventStoreImpl を内包し、store / find_by_id を実装"
+    description: "WorkflowExecutionRepository の実 Gateway（1 trait 1 Impl）。2026-08-27 改訂（ADR-010）: ~~EventStoreImpl を内包~~ → **本家のイベントストアを型引数 `S` で内包**し、store / find_by_id を実装する。格納形式は実装の内部詳細（型名に技術接頭辞を出さない — gateway-taxonomy §5）"
     attributes:
-      - { name: store, type: "EventStoreImpl<C>", required: true, constraints: "EventStoreImpl<C> を直接所有する。可変操作は `&mut self`（内部可変性は使わない — coding-rules/interior-mutability.md）。`event_store(&self) -> &EventStoreImpl<C>` / `event_store_mut(&mut self) -> &mut EventStoreImpl<C>` に分けて公開する（オーナー裁定 2026-08-23、委任 8 で是正）" }
+      - { name: store, type: "S: event_store_adapter_rs::types::EventStore<AID = IntentId, AG = WorkflowExecution, EV = WorkflowExecutionEvent>", required: true, constraints: "本家ストアを**単一所有**する。可変操作は `&mut self`（内部可変性は使わない — coding-rules/interior-mutability.md）。`open()` が SQLite、`in_memory()` が本家 memory を選び、**両者で実装コードは同一**（だから同じ契約テストを課せる — BR2.7）。ストアを外へ貸す `event_store()` / `event_store_mut()` は持たない（2026-08-27 失効 — 本家の口を素通しする必要が無くなった）" }
+      - { name: location, type: "Option<StorePath>", required: true, constraints: "失敗の材料に添える場所（揮発のストアには無いので Option）" }
+      - { name: genesis_version, type: "const FIRST_STORED_VERSION: usize = 1", required: true, constraints: "genesis（`Event::is_created()` が真）でのみ、**ストアへ渡す写しにだけ**載せる初期 version（呼出側の集約は動かない）。本家は create 経路で CAS をせず渡された version をそのまま初期値に記録するため — ADR-010 追記 (1)、オーナー承認 2026-08-27" }
+  # 新設（2026-08-27 / ADR-010・Bolt B6）
+  - name: JournalReaderImpl
+    kind: gateway-impl
+    layer: interface-adapter
+    description: "JournalReader の実 Gateway。本家の journal 表を**同じ DB ファイルへの別接続**から読み、チェックポイントは我々の amadeus_projection_checkpoint 表に持つ（ADR-010 決定 4 — 全集約横断の順序読取は本家のサポート外であり、SQLite を使う範疇で我々が実装する）"
+    attributes:
+      - { name: cursor, type: "本家 journal の rowid", required: true, constraints: "journal は追記専用（INSERT だけで DELETE が無い）なので rowid がコミット順の単調カーソルになる。この前提はスキーマガードテストで守る" }
+      - { name: busy_timeout, type: "Duration = 5000ms", required: true, constraints: "**我々の接続にのみ**設定できる。本家の接続には設定できない（接続を露出しないため）— BR2.1 の実質的な後退であり、U7 の並行モデルと併せて再裁定する" }
+      - { name: schema_guard, type: test, required: true, constraints: "本家 journal の DDL 文字列・一意索引・rowid 前提を実測と突き合わせ、本家スキーマが変わったら明示的に落ちる（ピン `=2.0.0` と対になる守り）" }
+  # 失効（2026-08-27 / ADR-010）: テストダブル 2 型はファイルごと削除した。
+  # 本家の memory バックエンドがその役目を担い、実装コードは SQLite と 1 行も違わない。
   - name: InMemoryEventStore
+    status: superseded (2026-08-27 / ADR-010)
     kind: test-double
     layer: interface-adapter (memory/)
-    description: "EventStore + JournalReader の in-memory 実装（BTreeMap）。SQLite と同じ契約テストを通す（gateway-taxonomy §6、先に書く）"
+    description: "【失効】EventStore + JournalReader の in-memory 実装（BTreeMap）。SQLite と同じ契約テストを通す（gateway-taxonomy §6、先に書く）"
   - name: InMemoryWorkflowExecutionRepository
+    status: superseded (2026-08-27 / ADR-010)
     kind: test-double
     layer: interface-adapter (memory/)
-    description: "WorkflowExecutionRepository の in-memory 実装（InMemoryEventStore を直接所有 — Impl と同じ形。内部可変性は使わない、coding-rules/interior-mutability.md）。ユースケース（U5 / U6）のテストはこれで組む（C3 ④）"
+    description: "【失効】WorkflowExecutionRepository の in-memory 実装。代替は `WorkflowExecutionRepositoryImpl::in_memory()`（本家 EventStoreForMemory を内包する**本物の Impl**であってテストダブルではない）。ユースケース（U5 / U6）のテストはこれで組む（C3 ④）"
 
   # --- 検証モデル（formal/orchestration/journal_protocol.qnt）---
   - name: JournalProtocolModel
@@ -206,23 +272,34 @@ entities:
       - { name: lint, type: list, constraints: "`tools/lint` の `reap-decision-locality` ルールとその赤例テスト（`reap_eligible` が消えるため対象を失う）" }
 
 relationships:
-  - { from: WorkflowExecutionRepositoryImpl, to: EventStoreImpl, cardinality: "one-to-one", description: "内包（合成）。Tx は EventStoreImpl が所有" }
-  - { from: EventStoreImpl, to: "JournalRow / SnapshotRow / CheckpointRow", cardinality: "one-to-many", description: "C6 の 3 テーブルを所有" }
-  - { from: EventStoreImpl, to: "EventPayloadWire / StateWire", cardinality: "one-to-many", description: "payload 列の符号化・復号（canon-json）" }
-  - { from: WorkflowExecutionRepositoryImpl, to: "WorkflowExecution (U2)", cardinality: "many-to-one", description: "from_state + apply_event による再構成、state() による写し" }
-  - { from: "InMemoryWorkflowExecutionRepository", to: "InMemoryEventStore", cardinality: "one-to-one", description: "同じ契約テストを SQLite 実装と共有" }
-  - { from: JournalProtocolModel, to: "InMemoryEventStore + fake projector", cardinality: "one-to-one", description: "ITF 準拠テストの再生先（adapter tests）" }
+  # 2026-08-27 全面改訂（ADR-010・Bolt B6）。旧関係は打ち消しで残す。
+  - { from: WorkflowExecutionRepositoryImpl, to: "本家 EventStore（EventStoreForSqlite | EventStoreForMemory）", cardinality: "one-to-one", description: "型引数 S として単一所有（合成）。Tx は**本家が**所有し、我々は接続も Tx も持たない" }
+  - { from: "本家 EventStore", to: "journal / snapshot（本家の 2 表）", cardinality: "one-to-many", description: "正本は upstream。我々は DDL を発行しない" }
+  - { from: JournalReaderImpl, to: "本家 journal（別接続で読取）+ amadeus_projection_checkpoint（我々の表）", cardinality: "one-to-many", description: "全集約横断の順序読取（カーソル = rowid）とチェックポイント" }
+  - { from: WorkflowExecutionRepositoryImpl, to: "WorkflowExecution (U2)", cardinality: "many-to-one", description: "from_state + apply_event による再構成、state() による写し（serde 経路も memento を通る）" }
+  - { from: JournalProtocolModel, to: "WorkflowExecutionRepositoryImpl + JournalReaderImpl + fake projector", cardinality: "one-to-one", description: "ITF 準拠テストの再生先（adapter tests）。**モデルは 1 文字も変えずに通った**" }
   - { from: "U4 ReadModelUpdater", to: JournalReader, cardinality: "many-to-one", description: "差分読取とチェックポイント（本 Unit は実装のみ、利用は U4）" }
-  - { from: "U7 intent create", to: "EventStoreImpl.within_write_transaction", cardinality: "many-to-one", description: "intents.json の直列化（Q2 = A）。本 Unit は原語を提供" }
+  # --- 以下 4 本は失効（2026-08-27 / ADR-010・Bolt B6）---
+  - { from: WorkflowExecutionRepositoryImpl, to: EventStoreImpl, status: "superseded (2026-08-27)", cardinality: "one-to-one", description: "【失効】内包（合成）。Tx は EventStoreImpl が所有" }
+  - { from: EventStoreImpl, to: "EventPayloadWire / StateWire", status: "superseded (2026-08-27)", cardinality: "one-to-many", description: "【失効】payload 列の符号化・復号（canon-json）— ワイヤ構造体ごと削除。payload は本家が serde で書く" }
+  - { from: "InMemoryWorkflowExecutionRepository", to: "InMemoryEventStore", status: "superseded (2026-08-27)", cardinality: "one-to-one", description: "【失効】同じ契約テストを SQLite 実装と共有 — テストダブル 2 型ごと削除" }
+  - { from: "U7 intent create", to: "EventStoreImpl.within_write_transaction", status: "superseded (2026-08-27)", cardinality: "many-to-one", description: "【失効】intents.json の直列化（Q2 = A）— 口ごと削除。**代替は未定であり U7 で裁定する**" }
 ```
 
 ## 2. 要約
 
-- **新設**: ポート 3 本 + エラー 2 型 + 値 2 型（use-case）、SQLite ストア + ワイヤ 2 型 + Repository 実装 + InMemory 2 本 + StorePath（adapter）、
+- **新設**: ~~ポート 3 本 + エラー 2 型 + 値 2 型（use-case）、SQLite ストア + ワイヤ 2 型 + Repository 実装 + InMemory 2 本 + StorePath（adapter）~~、
   `IntentDirName`（domain workspace）、Quint モデル `journal_protocol.qnt`。
+  → **2026-08-27 改訂（ADR-010・Bolt B6）**: ポート **2 本**（`WorkflowExecutionRepository` / `JournalReader`）
+  + エラー 2 型（`RepositoryError` / `JournalReadError`）+ 値 2 型（use-case）、
+  `WorkflowExecutionRepositoryImpl<S>`（本家ストアを内包）+ `JournalReaderImpl` + `StorePath`（adapter）。
+  自前ストア・ワイヤ 2 型・InMemory 2 本は**削除**（8 ファイル・5,480 行）。
 - **是正**: `IntentId` = UUIDv7、`WorkflowExecutionSnapshot` → `WorkflowExecutionState`（`state()` / `from_state()`、`StateError`、`…StateBuilder`）。
 - **退役**: mkdir ロック系（use-case / adapter / domain / infra-io / formal / lint / md5）。
-- 配置規約: ポートはユースケース層、実装は `XxxRepositoryImpl` + `InMemoryXxx`（gateway-taxonomy §5）、機構 `Clock` はクレート root の機構モジュール（§1）。
+- 配置規約: ポートはユースケース層、実装は `XxxRepositoryImpl` ~~+ `InMemoryXxx`~~（gateway-taxonomy §5。
+  2026-08-27 補足 / ADR-010: `WorkflowExecutionRepository` にはテストダブル型を置かず、
+  `in_memory()` コンストラクタで本家の memory バックエンドを選ぶ）、機構 `Clock` はクレート root の
+  機構モジュール（§1。2026-08-27 補足: ストアが押印時刻をイベントから取るようになったため**現在利用者はいない**）。
 
 ## Review
 
@@ -240,6 +317,15 @@ relationships:
 | 3 | Major | `entities.md`（`WorkflowExecutionRepositoryImpl.store: SqliteEventStore`）、`functional-spec.md` §2 | `WorkflowExecutionRepository::store` は C3 で `&self`（`entities.md` 23 行も同じ）だが、内部で使う `EventStore::persist_event_and_snapshot` は `&mut self`（`entities.md` 33 行、C3 も同じ）。`WorkflowExecutionRepositoryImpl` が保持する `store` フィールドの型は `entities.md` 174 行で単なる `SqliteEventStore`（値型・ラッパーなし）としか書かれておらず、`&self` メソッドの中から `&mut self` メソッドを呼ぶために必要な内部可変性の機構（`Mutex` / `RefCell` / `Cell` 等）がどこにも記載されていない（`entities.md` / `rules.md` / `functional-spec.md` 全文を検索しても `Mutex` / `RefCell` / `Cell` / interior は 0 件）。この点は上流の contract-design レビュー（`contract-summary.md` の `## Review` Finding #3、Minor）が「functional-design（U3）で `WorkflowExecutionRepositoryImpl` 内の `EventStore` 保持方法（`tokio::sync::Mutex` 等）を明記する」と名指しで本ステージへ申し送っていたが、本設計では未対応のまま残っている。`within_write_transaction`（`&mut self` — `functional-spec.md` §2）を含め、同種の問題が複数メソッドに連鎖する。 | `SqliteEventStore` の内部可変性戦略（例: 内部で `tokio::sync::Mutex<rusqlite::Connection>` を持たせて trait メソッド自体を `&self` で実装する、あるいは `WorkflowExecutionRepositoryImpl` が `store: tokio::sync::Mutex<SqliteEventStore>` を保持する）を `entities.md` に明記する。 |
 
 > （2026-08-23 追記: 所見 3 は前提ごと失効した。`WorkflowExecutionRepository::store` を `&mut self` に是正したことで、`&self` から `&mut self` を呼ぶための内部可変性の機構そのものが不要になった（オーナー裁定 2026-08-23、正本 `coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md` を新設。委任 8 で実装是正・本文同期済み）。）
+
+> （2026-08-27 追記 — Bolt B6 / ADR-010 による失効: 所見 1・2 は**前提ごと失効した**。所見 1 が指摘した
+> 「楽観 version の算出式」は、`version` が**ストアの採番する不透明トークン**になったことで式そのものが
+> 無くなった（`with_version` は削除、`version == seq_nr − 1` の前提検査も削除 — BR5.3 / ADR-010 追記 (1)）。
+> 所見 2 が指摘した「C3 の `usize` と本設計の `u64` の食い違い」は、**本家の `usize` へ戻す**ことで解消した
+> — 借り物の契約を我々のドメイン型に合わせて書き換えていたこと自体が `coding-rules/upstream-contracts.md`
+> 違反であり、所見 2 の指摘の向きが正しかった。あわせて `Validation Tool Results` の
+> 「`WorkflowExecutionSnapshot` の実フィールド数 = 16 属性」は **17 属性**（`last_updated_at` 追加）に、
+> 「C6 楽観 version 制約の genesis 経路」は「Gateway が写しに初期 version 1 を載せる」に変わっている。）
 
 ### Validation Tool Results
 

@@ -6,9 +6,9 @@
 //! 消費側のパスは `core_use_case::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
-mod event_store;
-mod event_store_error;
+mod corrupt_cause;
 mod global_seq_nr;
+mod journal_read_error;
 mod journal_reader;
 mod projection_name;
 mod repository_error;
@@ -17,8 +17,9 @@ mod workflow_execution_repository;
 
 // ポート (trait) — Repository は集約名＋Repository で命名する
 // (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
-// ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-006)。
-pub use event_store::EventStore;
+// ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-010)。
+// 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
+// `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
 pub use journal_reader::JournalReader;
 pub use workflow_definition_repository::WorkflowDefinitionRepository;
 pub use workflow_execution_repository::WorkflowExecutionRepository;
@@ -28,7 +29,8 @@ pub use global_seq_nr::GlobalSeqNr;
 pub use projection_name::ProjectionName;
 
 // エラー
-pub use event_store_error::{CorruptCause, EventStoreError};
+pub use corrupt_cause::CorruptCause;
+pub use journal_read_error::JournalReadError;
 pub use projection_name::ProjectionNameError;
 pub use repository_error::RepositoryError;
 pub use workflow_definition_repository::GraphReadError;

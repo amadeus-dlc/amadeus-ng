@@ -4,9 +4,17 @@
 > TOLERANCE 0.01）、`../nfr-requirements/tech-stack-decisions.md`、`../functional-design/functional-spec.md`（§3 フロー / §4 ワイヤ / §5 モデル / §6 退役 / §7 テスト）、
 > `../functional-design/rules.md`（BR1.1〜BR5.2）、`../../../inception/contract-design/contract-summary.md`（C3 / C6）、確認事項 `nfr-design-questions.md`（P1〜P5、Looks correct）。
 
+> ## ⚠ 部分失効（2026-08-27 / ADR-010・Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）
+>
+> §2 の検査点 1・2 と「前段 open」、§3 の Tx 手順と `within_write_transaction`、§5 の依存一覧、
+> §7 の正準 JSON と ITF 再生先が失効した（各所に個別注記）。
+> **設計方針 (a)〜(e) は生きている**が、(a) の「3 段の検査点」は **1 段（集約の `from_state()`）に縮んだ**
+> — 復号が本家の serde になったため。**未決 2 件**: 登録簿の直列化（NFR3.5）と `busy_timeout` は
+> どちらも **U7 で裁定**する。
+
 ## 1. 設計方針
 
-(a) ストアは信頼しない入力 — ドメイン型に至るまでに 3 段の検査点を置き、どこで失敗しても `Corrupt { cause }`（panic なし）。(b) 書込は 1 Tx に閉じ、競合は
+(a) ストアは信頼しない入力 — ドメイン型に至るまでに ~~3 段の検査点~~ → **1 段（集約の `from_state()`）**（2026-08-27 / ADR-010: 復号が本家の serde になり段 1・段 2 は消滅した。§2 参照）を置き、どこで失敗しても `Corrupt { cause }`（panic なし）。(b) 書込は 1 Tx に閉じ、競合は
 状態を変えずに `Conflict`。(c) 失敗は材料だけを運ぶエラーで呼出側へ（再試行の政策はユースケース）。(d) 退役は一括・後方互換なし・grep で証明。(e) 協定は Quint で
 検証し、ITF で実装に縫い付ける。
 
@@ -14,20 +22,31 @@
 
 | 段 | 場所 | 検査 | 失敗の写像 |
 |---|---|---|---|
-| 1 | `wire/` の復号（serde → ワイヤ構造体） | 列の `schema_version == 1`、`type` タグが 12 語の閉集合、未知フィールド拒否（`deny_unknown_fields` 相当）、JSON の型一致 | `Corrupt(SchemaVersion)` / `Corrupt(UnknownEventType)` / `Corrupt(UndecodablePayload)` |
-| 2 | ワイヤ → ドメイン値（parse-don't-validate） | `IntentId::parse`（UUIDv7）、`StageSlug` / `PhaseId` / `PlanAction` / `CheckboxState` / `AutonomyMode` / `Status` / `JumpDirection` / `PhaseBoundary` / `WorkflowDefinitionId` / `DefinitionRevision` の各 parse、`StageIndex` の範囲（`cursor` / `parked_at` は state の長さで検査） | `Corrupt(UndecodablePayload)`（どの値かは `cause` に添える材料 — フィールド名） |
-| 3 | ドメイン | `WorkflowExecution::from_state`（長さ整合・cursor 範囲・active 1 つ・gated Completed の承認・parked_at…）、`apply_event`（`SequenceGap` / `UnknownStage` / `InvariantViolation`） | `Corrupt(InvariantViolation)` / `Corrupt(SequenceGap)` |
-| 前段 | open | `PRAGMA user_version`（0 → 初期化、1 → OK、他 → Err）、親 dir の存在 | `Schema { found, supported }` / `Io { kind: NotFound, path }` |
+| ~~1~~ **失効** | ~~`wire/` の復号（serde → ワイヤ構造体）~~ | ~~列の `schema_version == 1`、`type` タグが 12 語の閉集合、未知フィールド拒否、JSON の型一致~~ → **段ごと消滅**（2026-08-27 / ADR-010: ワイヤ構造体を削除し、復号は本家の serde）。**`Corrupt(SchemaVersion)` / `Corrupt(UnknownEventType)` は変種ごと削除** — どちらも復号失敗に畳まれる | `Corrupt(UndecodablePayload)` に一本化 |
+| ~~2~~ **失効** | ~~ワイヤ → ドメイン値（parse-don't-validate）~~ | ~~各 Domain Primitive の parse~~ → **段ごと消滅**。ドメイン型が直接 `Deserialize` を持つため、中間のワイヤ型を経由しない。個々の Domain Primitive が serde で検証を保つかは型ごとの実装に依存する（**申し送り**: 値レベルの検証は段 3 の `from_state` ほど網羅的ではない） | `Corrupt(UndecodablePayload)` |
+| 3（**唯一残る検査点**） | ドメイン | `WorkflowExecution::from_state`（長さ整合・cursor 範囲・active 1 つ・gated Completed の承認・parked_at…）、`apply_event`（`SequenceGap` / `UnknownStage` / `InvariantViolation`）。**2026-08-27 / ADR-010 の要点**: 集約の `Deserialize` は `#[serde(try_from = "WorkflowExecutionState")]` で memento を経由するので、**serde 経路でもこの検査点を必ず通る**（オーナー裁定 2026-08-27 — derive のままだと不変条件を素通りするという委任 1 §7 A の指摘への手当て） | `Corrupt(InvariantViolation)` / `Corrupt(SequenceGap)` |
+| ~~前段~~ **失効** | open | ~~`PRAGMA user_version`（0 → 初期化、1 → OK、他 → Err）~~ → **廃止**（2026-08-27 / ADR-010: 本家は user_version を使わない。代替はピン `=2.0.0` + スキーマガードテスト。`Schema` 変種も削除）、親 dir の存在 | `Io { kind: NotFound, path }` |
 
 `Corrupt` は `aggregate_id`（IntentId）と `seq_nr`（該当行があれば）を材料として持ち、利用者向け文言はアダプタ層（U7 の message-catalog）が描く。
 
 ## 3. 書込の原子性と競合（NFR3.3 / NFR3.5）
 
-- `persist_event_and_snapshot` は `BEGIN IMMEDIATE` → journal INSERT → snapshot INSERT / UPDATE（`WHERE version = expected`）→ COMMIT の単一 Tx。rusqlite の
-  `Transaction` は drop で rollback するため、途中の `Err` / panic 経路でも半端な状態は残らない（COMMIT 前のクラッシュは何も残さない）。
-- 競合の検出点は 2 つ（UNIQUE 違反 / 影響 0 行）で、どちらも rollback 後に `Conflict { expected, actual }`。`actual` は rollback 後に `SELECT version` で読む（無ければ 0）。
-- `within_write_transaction` は同じ `BEGIN IMMEDIATE` で登録簿の read-modify-write を包む。`busy_timeout` 5000ms 超過は rusqlite の `Busy` を `Io { kind: WouldBlock }`
-  に写す（黙って失敗しない — NFR3.5）。
+- ~~`persist_event_and_snapshot` は `BEGIN IMMEDIATE` → journal INSERT → snapshot INSERT / UPDATE（`WHERE version = expected`）→ COMMIT の単一 Tx。rusqlite の
+  `Transaction` は drop で rollback する…~~ → **2026-08-27 改訂（ADR-010）**: この手順は**本家の内部**になった。我々は `persist_event_and_snapshot(event, aggregate)` を
+  1 回呼ぶだけで、接続も Tx も持たない。単一 Tx であること・COMMIT 前のクラッシュが何も残さないこと・
+  競合時にストアの状態が変わらないことは、**ITF 準拠テスト（`journal_protocol.qnt` を無改変で再生）と
+  クラッシュ再構成テスト**が実装に対して確認している。
+- ~~競合の検出点は 2 つ（UNIQUE 違反 / 影響 0 行）で、どちらも rollback 後に `Conflict { expected, actual }`。`actual` は rollback 後に `SELECT version` で読む（無ければ 0）。~~
+  → **2026-08-27 改訂**: 競合は本家が `OptimisticLockError`（整形済み文字列 1 本）で返す。文言の解析は脆いので、
+  **競合が起きたときだけ `get_latest_snapshot_by_id` を 1 回追加で読んで** `actual` を作る（ADR-010 追記 (2)）。
+  読み直しと競合のあいだに第三者が書けば `actual` が 1 つ先の値になりうるが、これは**材料の精度**の問題であり
+  判定の正しさには影響しない。構造化エラーの上流提案は候補として記録。
+- ~~`within_write_transaction` は同じ `BEGIN IMMEDIATE` で登録簿の read-modify-write を包む。`busy_timeout` 5000ms 超過は rusqlite の `Busy` を `Io { kind: WouldBlock }`
+  に写す（黙って失敗しない — NFR3.5）。~~ → **全面失効（2026-08-27 / ADR-010）。NFR3.5 は未決へ差し戻し、U7 で裁定する。**
+  本家は接続も Tx も露出しないため口ごと削除した。あわせて **`busy_timeout` を本家の接続に設定できない** —
+  SQLite 既定の 0ms なので並行書込は待たずに `SQLITE_BUSY`（我々の写像では `Io { kind: WouldBlock }`）になる。
+  「黙って失敗しない」という性質は保たれているが、**5000ms 待つという保証は失われた**。
+  我々が開く `JournalReaderImpl` の接続には 5000ms を設定済み。
 - 再試行の政策はユースケース（U5: `Conflict` のとき再水和して 1 回）。Repository は再試行しない（C3 ③）。
 
 ## 4. 障害ドメインと扱い（P2）
@@ -36,14 +55,20 @@
 |---|---|---|
 | ストア I/O（権限・ディスク・親 dir 欠落） | `Io { kind, path }` | 呼出側へ返す。再試行なし。ストアの自動修復はしない |
 | 競合 | `Conflict` | ユースケースが再水和 + 1 回再試行（U5） |
-| 破損・版不一致 | `Corrupt` / `Schema` | 中断。投影（U4）はジャーナルから冪等に再生成できる。ジャーナル自体の破損は利用者の操作（バックアップからの復元）— 本 Unit は検出まで |
-| Busy 超過 | `Io(WouldBlock)` | 中断し、再実行を促す（文言は U7） |
+| 破損（~~・版不一致~~ → 2026-08-27 / ADR-010 で `Schema` 変種は削除。版の不一致はスキーマガードテストが**ビルド時に**捕まえる） | `Corrupt` | 中断。投影（U4）はジャーナルから冪等に再生成できる。ジャーナル自体の破損は利用者の操作（バックアップからの復元）— 本 Unit は検出まで |
+| Busy（~~超過~~ → 2026-08-27 / ADR-010: **待たずに即時**。U7 で再裁定） | `Io(WouldBlock)` | 中断し、再実行を促す（文言は U7） |
 
 ## 5. サプライチェーンと境界（NFR4.1 / NFR4.2 / NFR4.5 / NFR4.6）
 
-- 依存は `rusqlite`（bundled）と `tokio`（rt / macros）を固定版で workspace 依存に、adapter の `md5` を除去。`cargo audit` が CI で検査。`unsafe_code = forbid` は自クレートに
-  適用（`libsqlite3-sys` の unsafe は依存として受容）。
-- `core-use-case` は外部クレートを足さない（trait の `async fn` は言語機能）。`core-domain` は変更なし（標準ライブラリのみ）。
+- ~~依存は `rusqlite`（bundled）と `tokio`（rt / macros）を固定版で workspace 依存に~~ → **2026-08-27 改訂（ADR-010）**:
+  主依存は **`event-store-adapter-rs = "=2.0.0"`（`sqlite` feature、完全固定 — 本家スキーマに結合しているため）**。
+  `rusqlite` は `JournalReaderImpl` の別接続用に adapter が直接持つ。`tokio`（rt / macros）は不変、adapter の `md5` を除去。
+  `cargo audit` が CI で検査。`unsafe_code = forbid` は自クレートに適用（`libsqlite3-sys` の unsafe は依存として受容）。
+  **申し送り**: 本家経由で `thiserror` が推移依存に入った（我々が直接使わない方針は不変だが、正本への注記が要る）。
+- ~~`core-use-case` は外部クレートを足さない（trait の `async fn` は言語機能）。`core-domain` は変更なし（標準ライブラリのみ）。~~
+  → **失効（2026-08-27 / ADR-010）**: `core-use-case` と `core-domain` の両方が `event-store-adapter-rs` に依存する
+  （本家 trait を実装するため）。あわせて `core-domain` に **`serde` と `chrono`** が入った（Conformist、腐敗防止層なし）。
+  **NFR4.1（依存最小化）の再検討が要る** — 自前 ISO 8601 整形の存在意義が変わった（ADR-010 が明記）。
 - パス・Clock は注入（`std::env` を読まない）。ログ出力なし。ストアは umask 既定で作成、親 dir は作らない。
 
 ## 6. 退役の安全手順（NFR1.2 / FD BR3.1）
@@ -57,10 +82,10 @@
 
 ## 7. 決定性と協定の維持（NFR2.2 / NFR2.5 / NFR3.1 / NFR3.4）
 
-- 正準 JSON（canon-json）でバイト決定的。`updated_at` は再構成に使わない。
+- ~~正準 JSON（canon-json）でバイト決定的~~ → **失効（2026-08-27 / ADR-010）**: ストアの payload は本家が `serde_json::to_vec` で書くので、我々の canon-json 経路を通らない。**「契約 JSON」の射程は upstream 観測面（監査行・状態ファイル・directive）に限られる**（正本への追記候補）。`updated_at` は列ごと削除（再構成に使っていなかった列であり、再構成の決定性には影響しない）。
 - Quint `journal_protocol.qnt`: 不変条件 8 本は状態遷移レベル（prev → current）で書き、named invariant ごとに 1 変異で検出を確認（表を code-summary に）。witness 4 本は
   in-module で負形式 run。ITF fixture は `#meta` 正規化（既存の engine_loop 採取手順）。
-- ITF 準拠テストは `InMemoryEventStore` + フェイク投影に再生（adapter tests）。SQLite 実装は契約テストで InMemory と同値性を保証するため、ITF は InMemory で十分。
+- ITF 準拠テストは ~~`InMemoryEventStore`~~ → **`WorkflowExecutionRepositoryImpl` + `JournalReaderImpl`**（2026-08-27 改訂 / ADR-010）+ フェイク投影に再生（adapter tests）。両バックエンドの同値性は契約テストが保証する。**モデルは 1 文字も変えずに通った** — 本家へ載せ替えても同じトレースが再生できることが、この乗り換えの意味論的な検収である。
 
 ## 8. 失敗の扱い（プロセス）
 
@@ -74,13 +99,13 @@
 | NFR2.1〜2.4 | テスト配置（logical-components §4）、TOLERANCE 0.01（§6-4） |
 | NFR2.5 | Quint DoD（§7） |
 | NFR3.1 | 決定性（§7） |
-| NFR3.2 | 3 段の検査点（§2） |
-| NFR3.3 | 単一 Tx + 楽観 version、rollback（§3） |
+| NFR3.2 | ~~3 段の検査点~~ → **1 段（集約の `from_state()`）**（§2。2026-08-27 / ADR-010。serde 経路でも memento を経由するので検査点は素通りしない） |
+| NFR3.3 | 単一 Tx + 楽観 version、rollback（§3。2026-08-27: Tx を張るのは**本家**。検収は ITF 準拠 + クラッシュ再構成テスト） |
 | NFR3.4 | チェックポイント単調性（FD BR1.4、契約テスト — logical-components §4） |
-| NFR3.5 | within_write_transaction と Busy の扱い（§3） |
-| NFR4.1 / 4.2 | 依存差分と forbid（§5） |
+| NFR3.5 | ~~within_write_transaction と Busy の扱い（§3）~~ → **未決（2026-08-27 / ADR-010）**。口ごと削除され代替が未定 — **U7 で裁定**（登録簿を SQLite のテーブルへ移す案が筋、ADR-010）。`busy_timeout` も本家接続には設定できず U7 で再裁定 |
+| NFR4.1 / 4.2 | 依存差分と forbid（§5）。**NFR4.1 は再検討が要る**（2026-08-27 / ADR-010: ドメインに serde / chrono が入り、自前 ISO 8601 整形を撤去した） |
 | NFR4.3 | 事前検査 + Err、エラー写像（§2 / §3） |
-| NFR4.4 | 3 段の検査点を省略しない（§2） |
+| NFR4.4 | ~~3 段の検査点~~ → **1 段の検査点（集約の `from_state()`）を省略しない**（§2。2026-08-27 / ADR-010: 段 1・段 2 は復号が本家の serde になったことで消滅し、NFR3.2 と同じく 1 段に縮んだ） |
 | NFR4.5 / 4.6 | 注入・ログなし・umask（§5） |
 
 ## Review

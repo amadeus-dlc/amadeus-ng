@@ -3,6 +3,9 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 
 # BR1.7 / ADR 0001 決定 5 — 契約 JSON の直列化は canon-json の 1 経路に固定する。
+# 射程の明確化 (2026-08-27): 「契約 JSON」= 人と upstream が読む互換ファイル面。
+# event-store-adapter-rs がストアの payload を serde_json で書くのは射程外
+# (ストア内部表現は Published Language ではない — ADR-010 / upstream-contracts.md)。
 # serde_json の直列化関数と、契約経路の入口である to_value の直接呼び出しを拒否する。
 # canon-json 内部の唯一の呼出点だけが `#[allow(clippy::disallowed_methods)]` で理由付き
 # に例外化される (from_str は読取であり禁止対象外 — parse 境界がそれを包む)。

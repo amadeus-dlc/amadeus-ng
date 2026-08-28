@@ -37,6 +37,15 @@ DDD の語で言えば、外部ライブラリは**上流の境界づけられ�
 境界での変換は暴露ではなく**変換**である（[abstract-data-type.md](abstract-data-type.md)
 §境界での変換）。変換関数には C-CONV の綴りを使う（`to_u64` / `to_usize`）。
 
+## 外部 trait の実装は、こちらの命名規則の例外である
+
+Conformist で外部 trait を実装すると、**相手の契約が決めたメソッド名**をこちらの型に
+生やすことになる（実例: `AggregateId::value()` — 我々の
+[tell-dont-ask.md](tell-dont-ask.md) は自前アクセサに `value()` を禁じているが、
+外部 trait の実装は **Published Language への準拠**であり例外）。impl の doc コメントに
+一行、外部 trait 準拠である旨を書く。**例外なのは trait が要求するメソッドだけ**で、
+同じ型の自前メソッドには引き続きこちらの規則が全面適用される。
+
 ## 「同形でローカル定義」する場合はさらに厳しい
 
 依存の重さなどの理由で、外部 crate に依存せず**同形の trait をローカル定義する**ことがある

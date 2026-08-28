@@ -1,12 +1,14 @@
 //! `PhaseBoundary` — `GateApproved` に載るフェーズ境界の投影材料 (C5)。
 
+use serde::{Deserialize, Serialize};
+
 use crate::workflow_definition::PhaseId;
 
 /// 承認によって跨いだフェーズ境界。
 ///
 /// **呼出側 (ユースケース) が定義から導出して渡す投影材料**であり、集約は検証せず
 /// イベントに載せるだけである (functional-spec §2)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PhaseBoundary {
     from_phase: PhaseId,
     to_phase: PhaseId,

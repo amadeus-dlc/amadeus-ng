@@ -2,19 +2,21 @@
 
 use core_domain::orchestration::WorkflowExecutionEvent;
 
-use super::event_store_error::EventStoreError;
 use super::global_seq_nr::GlobalSeqNr;
+use super::journal_read_error::JournalReadError;
 use super::projection_name::ProjectionName;
 
 /// 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 ///
-/// ストア実装が [`EventStore`] と同時に実装する。真実源はジャーナルであり、投影は
-/// 「チェックポイント以降を読んで描き、チェックポイントを進める」だけで冪等に追いつける
-/// — その 2 性質 (順序・単調性) を本ポートが保証する (BR1.4 / NFR3.4)。
+/// 集約の永続化そのもの (`WorkflowExecutionRepository`) とは**別の口**である — 本家
+/// event-store-adapter-rs のイベントストアは集約単位の読み書きだけを担い、全集約横断の
+/// 順序読取と投影チェックポイントは利用側の関心だからである (ADR-010 決定 4)。
+///
+/// 真実源はジャーナルであり、投影は「チェックポイント以降を読んで描き、チェックポイントを
+/// 進める」だけで冪等に追いつける — その 2 性質 (順序・単調性) を本ポートが保証する
+/// (BR1.4 / NFR3.4)。
 ///
 /// メソッドは `async fn` (AFIT)。`dyn` は使わず、`Send` / `Sync` 境界も要求しない。
-///
-/// [`EventStore`]: super::event_store::EventStore
 #[allow(
     async_fn_in_trait,
     reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\
@@ -25,19 +27,22 @@ pub trait JournalReader {
     ///
     /// # Errors
     ///
-    /// ストア I/O (`Io`)、復号不能・未知 `type` (`Corrupt`)、版不一致 (`Schema`) を返す。
+    /// ストア I/O (`Io`)、復号不能 (`Corrupt`) を返す。
     async fn events_after(
         &self,
         after: GlobalSeqNr,
-    ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError>;
+    ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError>;
 
     /// 投影のチェックポイントを読む。未登録の投影は [`GlobalSeqNr::ZERO`]。
     ///
     /// # Errors
     ///
-    /// ストア I/O (`Io`)、版不一致 (`Schema`) を返す。
-    async fn checkpoint(&self, projection: &ProjectionName)
-    -> Result<GlobalSeqNr, EventStoreError>;
+    /// ストア I/O (`Io`)、保存済みチェックポイントがジャーナルの現況と食い違う
+    /// (`Corrupt` — `CheckpointAnchorMismatch`) を返す。
+    async fn checkpoint(
+        &self,
+        projection: &ProjectionName,
+    ) -> Result<GlobalSeqNr, JournalReadError>;
 
     /// チェックポイントを `to` へ進める。同値は no-op、現在値未満は拒否 (単調 — BR1.4)。
     ///
@@ -45,13 +50,13 @@ pub trait JournalReader {
     ///
     /// # Errors
     ///
-    /// 現在値未満への要求 (`CheckpointRegression`)、ストア I/O (`Io`)、版不一致 (`Schema`)
-    /// を返す。
+    /// 現在値未満への要求 (`CheckpointRegression`)、ジャーナルに無い位置への要求や保存済み
+    /// アンカーの食い違い (`Corrupt`)、ストア I/O (`Io`) を返す。
     async fn advance_checkpoint(
         &mut self,
         projection: &ProjectionName,
         to: GlobalSeqNr,
-    ) -> Result<(), EventStoreError>;
+    ) -> Result<(), JournalReadError>;
 }
 
 #[cfg(test)]
@@ -61,21 +66,25 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::orchestration::{EventStoreError, GlobalSeqNr, ProjectionName};
+    use crate::orchestration::{GlobalSeqNr, JournalReadError, ProjectionName};
+    use chrono::{DateTime, Utc};
     use core_domain::orchestration::{
         IntentId, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
     };
     use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
 
     fn intent() -> IntentId {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
-    fn event(seq_nr: u64) -> WorkflowExecutionEvent {
+    fn event(seq_nr: usize) -> WorkflowExecutionEvent {
         WorkflowExecutionEvent::new(
             intent(),
-            seq_nr,
-            "2026-08-23T00:00:00Z",
+            NonZeroUsize::new(seq_nr).unwrap(),
+            DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
             WorkflowExecutionEventPayload::Unparked,
         )
     }
@@ -91,7 +100,7 @@ mod tests {
         async fn events_after(
             &self,
             after: GlobalSeqNr,
-        ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, EventStoreError> {
+        ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError> {
             Ok(self
                 .journal
                 .iter()
@@ -103,7 +112,7 @@ mod tests {
         async fn checkpoint(
             &self,
             projection: &ProjectionName,
-        ) -> Result<GlobalSeqNr, EventStoreError> {
+        ) -> Result<GlobalSeqNr, JournalReadError> {
             Ok(self
                 .checkpoints
                 .get(projection)
@@ -115,14 +124,14 @@ mod tests {
             &mut self,
             projection: &ProjectionName,
             to: GlobalSeqNr,
-        ) -> Result<(), EventStoreError> {
+        ) -> Result<(), JournalReadError> {
             let current = self
                 .checkpoints
                 .get(projection)
                 .copied()
                 .unwrap_or(GlobalSeqNr::ZERO);
             if to < current {
-                return Err(EventStoreError::CheckpointRegression {
+                return Err(JournalReadError::CheckpointRegression {
                     projection: projection.clone(),
                     current,
                     requested: to,
@@ -200,7 +209,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             err,
-            EventStoreError::CheckpointRegression {
+            JournalReadError::CheckpointRegression {
                 projection: projection(),
                 current: GlobalSeqNr::new(2),
                 requested: GlobalSeqNr::new(1),

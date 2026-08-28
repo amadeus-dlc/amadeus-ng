@@ -214,6 +214,26 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
     ジャーナル読取とチェックポイント前進は**呼び出す側（合成ルート / U7）へ移す**。U4 は
     「イベント列 → リードモデル」の純粋な投影に絞る。これにより RMU はコマンド側のポートを
     一切知らずに単体テストできる。
+  - **2026-08-28 改訂（オーナー裁定）— 直前の 2 項目（中立クレート不要の理由 / U4 責務の縮小）は失効**。
+    「JournalReader を呼び出すのは RMU ではないのか」というオーナーの指摘を受け、構造化質問で
+    裁定 A に確定した: **RMU コンポーネントが取得ループを持つ** — `JournalReader::events_after`
+    で差分を引き、純粋投影核 `project(events, read_model)` へ渡し、`advance_checkpoint` を
+    自分で進める。「イベントだけ受信する」は**投影核**への制約として残る。SQLite にはストリームが
+    無いので、AWS 版 RMU が Streams から受信するのと同じ役割を**自分で引く**形（プル型）で果たす。
+    帰結:
+    1. `JournalReader` trait と読取側語彙（`ProjectionName` / `GlobalSeqNr` / `JournalReadError`）の
+       所有は `core/use-case` → **RMU クレート（U4）へ移す**。呼ぶ者がポートを所有する —
+       `core/use-case`（U5/U6）はこの trait を一度も呼ばない（所有だけしていた匂いの解消）。
+       コードの移動は U4 Bolt で実施（本項は先行する裁定の記録であり、現時点の実装は移動前）。
+    2. `unit-of-work.md` の U4 原文（「ジャーナルから読み、…投影し、チェックポイントを進める
+       冪等な差分関数」）は**改訂不要のまま正**となる（上の「呼び出す側へ移す」計画を破棄）。
+    3. U7（合成ルート）は RMU の**起動のみ**を持ち、駆動ループを持たない。合成ルートは
+       カバレッジ除外（インタビュー Q5 裁定）であり、ループの実ロジック（バッチ・チェック
+       ポイント単調性・エラー処理）をテストの届かない場所に置かないため。
+    4. `JournalReaderImpl` の置き場所（`core/interface-adapter` に留めて RMU クレートの trait を
+       実装するか、クエリ側アダプタへ移すか）は **U4 機能設計で裁定**する。従来のアダプタ分割
+       却下理由（C6 の 3 表定義の所在）は ADR-010 で失効済み — 我々が定義する表は
+       `amadeus_projection_checkpoint` 1 表のみ。
   - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
     `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
     （C6 の 3 表）が 1 箇所に残るので重複しない。
@@ -269,9 +289,59 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   4. **本家に無いものは我々が持ち続ける** — 本家のドメインは「集約の永続化」であり、
      次は利用側の関心である:
      - **投影チェックポイント**（`JournalReader::checkpoint` / `advance_checkpoint`）
-     - **全集約横断の順序読取**（`events_after(GlobalSeqNr)`）— 本家は集約単位
-     - `within_write_transaction`（U7 の登録簿 read-modify-write）— **本家が接続を露出するか
-       未確認。乗り換え Bolt の Open question**
+     - **全集約横断の順序読取**（`events_after(GlobalSeqNr)`）— 本家は集約単位。
+       **2026-08-26 オーナー裁定（ライブラリ所有者として）**: この責務は**ライブラリのサポート外**。
+       AWS 版・GCP 版でも Streams / CDC はライブラリが提供するのではなく利用側が組む。
+       本家への機能要望は検討のうえ**取り下げ**た。**SQLite を使う範疇で amadeus-ng が独自に実装する**:
+       本家の `journal` 表（追記専用・書込直列化ゆえ rowid = コミット順の単調カーソル）を
+       同一 DB ファイルへの別接続で読み、チェックポイントは自前の表
+       （本家の表と衝突しない名前）に持つ。本家スキーマへの結合はバージョンの完全固定
+       （`=2.0.0`）と、スキーマが変わったら明示的に落ちるガードテストで守る。
+
+       **2026-08-28 追記（rowid と VACUUM — PR #30 レビュー指摘への裁定）**: `journal` に
+       `INTEGER PRIMARY KEY` は無いため、SQLite の仕様上 VACUUM は rowid を振り直し得る。
+       ただし振り直しが値を変えるのは行削除で隙間ができた場合だけであり、`journal` は
+       削除ゼロの純追記（DELETE 文は本家 v2.0.0 / v3.0.0 とも snapshot 表にしか無い —
+       実測）なので rowid は隙間の無い連番 1..N のまま、再構築後も同値に保たれる。この
+       前提は回帰テスト `a_vacuum_rebuild_does_not_move_the_cursor` で実挙動に釘留めした。
+       多層防御（チェックポイント表に (aid, seq_nr) アンカーを併記し、読取時に journal と
+       照合して不一致を明示エラーにする）は、当初 B7（v3 乗り換え）へ送る計画だったが、
+       CodeRabbit の再指摘を受けて**同 Bolt 内で前倒し導入した** —
+       `amadeus_projection_checkpoint` へ anchor_aid / anchor_seq_nr 列を追加し、
+       `advance_checkpoint` が前進先 journal 行の識別子を記録、読取が照合し、不一致は
+       `Corrupt (CheckpointAnchorMismatch)` で明示拒否する。実測補足: 現行 SQLite 3.51 の
+       VACUUM は隙間があっても rowid を保持する（釘留めテストで確認）。仕様が許す
+       振り直しは回帰テストで直接再現し、検出されることを証明済み。
+
+       **2026-08-27 追記（supersede の明記）**: 上記の実装は ADR-003「Repository →
+       `EventStoreImpl(sqlite client)` → SQLite」、ADR-007「チェックポイントは Tx 内更新」、
+       ADR-009「`EventStoreImpl` が `EventStore`（コマンド）と `JournalReader`（読取）の両契約を
+       実装し、C6 の 3 表定義が 1 箇所に残る」の各記述を supersede する。`EventStoreImpl` は
+       削除され、コマンド側は `WorkflowExecutionRepositoryImpl<S>`（本家 `EventStore` を実装）、
+       読取側は別接続を持つ `JournalReaderImpl` という別々の型になった。チェックポイントの更新は
+       書込 Tx の外（`JournalReaderImpl` の別接続・別 Tx）で行われる。SQLite スキーマは `journal` /
+       `snapshot` の 2 表が upstream 正本であり、我々が定義するのは `amadeus_projection_checkpoint`
+       1 表のみである。
+     - `within_write_transaction`（U7 の登録簿 read-modify-write）— **調査済み（2026-08-26）。
+       本家は接続もトランザクションも露出しない**（`EventStoreForSqlite` は `Connection` を
+       内部保持し、`from_connection` は private。`transaction()` は `persist_*` の内部でのみ
+       使われる）。したがって**本家経由では BR2.4 を実現できない**。これは乗り換え Bolt が
+       裁定すべき設計判断であり、選択肢は次の 3 つ:
+
+       BR2.4 の意図は「`intents.json`（登録簿）の read-modify-write を SQLite の Tx で守る」
+       である。ADR-007 でロック機構を退役させたため、**ファイルの排他が SQLite の Tx に
+       依存している**構造になっている。
+
+       | 案 | 中身 | 評価 |
+       | --- | --- | --- |
+       | (a) 別接続 | 登録簿用に**同じ DB ファイルへ 2 本目の接続**を開き、そちらで Tx を張る | SQLite のロックが直列化するので排他は成立する。本家の接続とは別 Tx になるので「イベント永続化と登録簿更新の原子性」は失われる — **その原子性が本当に要るのかを先に確かめる** |
+       | (b) 登録簿を SQLite へ移す | `intents.json` をやめてジャーナルと同じ DB のテーブルにする | 原子性が自然に成立するが、`intents.json` は upstream 互換ファイル（リードモデル）なので D6 に触れる。RMU の投影対象にするのが筋 |
+       | (c) 本家へ貢献 | 接続または Tx を露出する API を upstream へ提案する | ADR-006 が「上流貢献も選択肢」と既に書いている。stage-1 の最短経路からは外れる |
+
+       **(b) が筋に見える** — `intents.json` はリードモデルであり（ADR-003/004）、リードモデルを
+       コマンド側が Tx で守るという構造自体が CQRS の境界に反している
+       （[`cqrs-boundaries.md`](../../../knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md)）。
+       ただし U7 の設計に踏み込むので、乗り換え Bolt で単独裁定せず U7 と併せて判断する。
 
 - **Consequences** — (+) 自前実装 **約 2,400 行**（`event_store_impl.rs` 971 / `schema.rs` 179 /
   `event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230）が消え、本家の保守に乗る。
@@ -283,6 +353,13 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   (±) Quint モデル `journal_protocol` の検証対象が「自前実装の契約」から「本家の契約 +
   我々の投影」へ移る — モデルの再確認が要る。
 
+- **追記 2026-08-27（実装後の裁定 3 件）** — (1) **genesis の初期 version は Gateway が写しに
+  1 を載せる**（オーナー承認。「version はストア側が決める」の自然な帰結 — Gateway はストア側の
+  部品であり、ドメインは version を解釈しない。集約を version=1 で作る案はストアの採番規則を
+  ドメインへ戻すため却下、集約 0 のまま渡す案は Quint の `version_equals_journal` を破るため
+  却下）。(2) `Conflict` の `actual` は競合時のみ `get_latest_snapshot_by_id` の読み直しで得る
+  （本家の公開 API にだけ結合。構造化エラーの上流提案は候補として記録）。(3) `busy_timeout` は
+  本家接続に設定不可 — 単一プロセス前提の現状は受容し、U7 の並行モデルと併せて再裁定。
 - **Alternatives Rejected** — *腐敗防止層*: ドメインを serde / chrono / `usize` から守れるが、
   アダプタ型と変換で数百行を足すことになる。オーナー裁定「腐敗防止層はなしで。ちゃんと書き換えろ」。
   *自前実装を維持*: ADR-006 が保とうとした乗り換え可能性という目的を捨てることになり、

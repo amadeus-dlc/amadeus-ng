@@ -4,12 +4,13 @@
 //! テストダブルには `Impl` 接尾辞を付けない — `Impl` は「本物の Gateway 実装」の印である
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 //!
+//! `WorkflowExecutionRepository` の揮発版はここには無い — 本家 event-store-adapter-rs の
+//! memory バックエンドを内包した `WorkflowExecutionRepositoryImpl::in_memory()` が
+//! 同じ実装コードのまま格納先だけを替えるので、テストダブルを別に書く理由が消えた
+//! (ADR-010)。
+//!
 //! 本 mod 自体が private。公開は親 (`orchestration`) のファサードが再輸出する。
 
-mod in_memory_event_store;
 mod workflow_definition_repository;
-mod workflow_execution_repository;
 
-pub use in_memory_event_store::InMemoryEventStore;
 pub use workflow_definition_repository::InMemoryWorkflowDefinitionRepository;
-pub use workflow_execution_repository::InMemoryWorkflowExecutionRepository;

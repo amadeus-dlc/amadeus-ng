@@ -14,7 +14,12 @@
 //!   `gated(s) = s != 0` は initialization 1 ステージの合成計画に対する抽象で、ITF 準拠テストは
 //!   その合成計画で駆動する (BR2.5)。
 //! - **時計を持たない** (NFR3.1): `occurred_at` は呼出側 (ユースケース) が Clock から渡す。
-//! - **serde に依存しない** (BR5.2): 永続化境界は `state()` / `from_state()` の値オブジェクト。
+//! - **本家 `Aggregate` を直接実装する** (ADR-010 Conformist): `id` / `seq_nr` / `version` /
+//!   `set_version` / `last_updated_at` は本家が所有する契約であり、綴りも型もそのまま受け入れる。
+//!   serde 境界も本家の要求だが、**復号は状態の写し (memento) を経由する** — `into` /
+//!   `try_from` で [`WorkflowExecutionState`] に委ね、`from_state()` の検査点を必ず通す
+//!   (オーナー裁定 2026-08-27 (A))。したがって「不変条件を満たす集約しか存在しない」という
+//!   保証は serde 経路でも破れない (security-design §2 の検査点 3)。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
 //!
@@ -22,6 +27,11 @@
 //! (`tests/engine_loop_conformance.rs`) がモデルトレースを再生して射影を突き合わせる。
 
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
+
+use chrono::{DateTime, Utc};
+use event_store_adapter_rs::types::{Aggregate, Event};
+use serde::{Deserialize, Serialize};
 
 use super::apply_error::ApplyError;
 use super::autonomy_mode::AutonomyMode;
@@ -64,7 +74,11 @@ const GATE_ADVANCE_PRECONDITION: [CheckboxState; 2] =
 const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, CheckboxState::Revising];
 
 /// エンジンループの状態機械 (集約ルート)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// serde は状態の写し ([`WorkflowExecutionState`]) を経由する — 直列化は [`WorkflowExecution::state`]、
+/// 復号は [`WorkflowExecution::from_state`] であり、復号側の検査点が 1 か所に保たれる。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "WorkflowExecutionState", try_from = "WorkflowExecutionState")]
 pub struct WorkflowExecution {
     intent_id: IntentId,
     definition_id: WorkflowDefinitionId,
@@ -81,8 +95,11 @@ pub struct WorkflowExecution {
     autonomy: AutonomyMode,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
-    seq_nr: u64,
-    version: u64,
+    seq_nr: usize,
+    version: usize,
+    /// 最後に適用したイベントの `occurred_at` (本家 `Aggregate::last_updated_at`)。
+    /// 集約は時計を持たないので、この値は常に適用したイベントから来る (NFR3.1)。
+    last_updated_at: DateTime<Utc>,
 }
 
 impl WorkflowExecution {
@@ -104,7 +121,7 @@ impl WorkflowExecution {
         intent_id: IntentId,
         definition: &WorkflowDefinition,
         request: &StartRequest,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
         let scope = request.scope();
         if !definition.is_valid_scope(scope) {
@@ -164,7 +181,7 @@ impl WorkflowExecution {
         definition_revision: DefinitionRevision,
         request: &StartRequest,
         stages: Vec<StageEntry>,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
         match stages.first() {
             None => return Err(StartError::Empty),
@@ -193,7 +210,7 @@ impl WorkflowExecution {
         }
         let event = WorkflowExecutionEvent::new(
             intent_id.clone(),
-            1,
+            NonZeroUsize::MIN,
             occurred_at,
             WorkflowExecutionEventPayload::Started(Started::new(
                 definition_id.clone(),
@@ -217,17 +234,12 @@ impl WorkflowExecution {
             revision_count: vec![0; count],
             seq_nr: 1,
             version: 0,
+            last_updated_at: occurred_at,
         };
         Ok((execution, event))
     }
 
     // ---- 観測 (read model) ----
-
-    /// 集約識別子。
-    #[must_use]
-    pub const fn intent_id(&self) -> &IntentId {
-        &self.intent_id
-    }
 
     /// `Started` に記録した定義の系譜 ID (以後不変 — BR2.6)。
     #[must_use]
@@ -281,18 +293,6 @@ impl WorkflowExecution {
     #[must_use]
     pub const fn autonomy(&self) -> AutonomyMode {
         self.autonomy
-    }
-
-    /// 適用済みイベント数と一致する順序番号 (`Started` = 1)。
-    #[must_use]
-    pub const fn seq_nr(&self) -> u64 {
-        self.seq_nr
-    }
-
-    /// 楽観 version (集約の遷移では変わらない — Repository が `with_version` で載せる)。
-    #[must_use]
-    pub const fn version(&self) -> u64 {
-        self.version
     }
 
     /// 名指しステージの checkbox マーカー。範囲外は `None`。
@@ -437,15 +437,20 @@ impl WorkflowExecution {
     /// `apply_event` は封筒違反・未知 slug・不変条件違反を検査するが、ここへ来るイベントは封筒を
     /// 自分で採番し slug を自分の `stages` から取り、遷移も不変条件を保つので、そのいずれにも
     /// 該当しない。到達不能な `Err` は状態を変えないまま `InvalidTarget(cursor)` として返す —
-    /// panic しないことを優先する (NFR4.3)。
+    /// panic しないことを優先する (NFR4.3)。通番枯渇だけは入口で明示に拒否する
+    /// (`SequenceExhausted` — 飽和加算で seq_nr が停滞したまま成功を装わない)。
     fn commit(
         &mut self,
         payload: WorkflowExecutionEventPayload,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
+        if self.seq_nr == usize::MAX {
+            return Err(CommandError::SequenceExhausted);
+        }
         let event = WorkflowExecutionEvent::new(
             self.intent_id.clone(),
-            self.seq_nr + 1,
+            // seq_nr + 1 >= 1 を型で運ぶ (飽和加算なので panic も wrap もしない)。
+            NonZeroUsize::MIN.saturating_add(self.seq_nr),
             occurred_at,
             payload,
         );
@@ -465,7 +470,7 @@ impl WorkflowExecution {
     /// (`CheckboxPrecondition`) を拒否する。
     pub fn complete_stage(
         &mut self,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         self.require_gated(stage, false)?;
@@ -486,7 +491,7 @@ impl WorkflowExecution {
     pub fn open_gate(
         &mut self,
         artifacts: Vec<String>,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         self.require_gated(stage, true)?;
@@ -509,7 +514,7 @@ impl WorkflowExecution {
         &mut self,
         user_input: Option<String>,
         phase_boundary: Option<PhaseBoundary>,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         self.require_gated(stage, true)?;
@@ -534,7 +539,7 @@ impl WorkflowExecution {
     pub fn reject_gate(
         &mut self,
         feedback: Option<String>,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         self.require_gated(stage, true)?;
@@ -558,7 +563,7 @@ impl WorkflowExecution {
     /// (「only a revising stage can re-enter its gate」)。
     pub fn revise_stage(
         &mut self,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         self.require_checkbox(stage, &[CheckboxState::Revising])?;
@@ -578,7 +583,7 @@ impl WorkflowExecution {
     pub fn skip_stage(
         &mut self,
         reason: String,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         self.require_checkbox(stage, &SKIP_PRECONDITION)?;
@@ -603,7 +608,7 @@ impl WorkflowExecution {
     pub fn jump(
         &mut self,
         target: StageIndex,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let direction = self.jump_resolve(target)?;
         let source = self.cursor;
@@ -649,7 +654,10 @@ impl WorkflowExecution {
     /// # Errors
     ///
     /// 非受理 (`NotRunning`)、autonomous 中 (`RefusedUnderAutonomy`)。
-    pub fn park(&mut self, occurred_at: &str) -> Result<WorkflowExecutionEvent, CommandError> {
+    pub fn park(
+        &mut self,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
@@ -663,7 +671,10 @@ impl WorkflowExecution {
     /// # Errors
     ///
     /// park が活性でなければ `NotRunning`。
-    pub fn unpark(&mut self, occurred_at: &str) -> Result<WorkflowExecutionEvent, CommandError> {
+    pub fn unpark(
+        &mut self,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<WorkflowExecutionEvent, CommandError> {
         if !self.parked_active() {
             return Err(CommandError::NotRunning);
         }
@@ -680,7 +691,7 @@ impl WorkflowExecution {
     pub fn recompose(
         &mut self,
         flips: &[StageIndex],
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let cursor = self.guard_running()?;
         if self.autonomy.is_autonomous() {
@@ -742,7 +753,7 @@ impl WorkflowExecution {
     pub fn switch_autonomy(
         &mut self,
         mode: AutonomyMode,
-        occurred_at: &str,
+        occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         self.guard_running()?;
         self.commit(
@@ -760,9 +771,12 @@ impl WorkflowExecution {
     /// # Errors
     ///
     /// 封筒の `seq_nr` が現在値 + 1 でない (`SequenceGap`)、ペイロードのステージ slug が `stages` に
-    /// 無い (`UnknownStage`)、適用後に集約不変条件が破れる (`InvariantViolation`) を拒否する。
+    /// 無い (`UnknownStage`)、適用後に集約不変条件が破れる (`InvariantViolation`)、現在値が
+    /// `usize::MAX` で後続を数えられない (`SequenceExhausted`) を拒否する。
     pub fn apply_event(&mut self, event: &WorkflowExecutionEvent) -> Result<(), ApplyError> {
-        let expected = self.seq_nr + 1;
+        let Some(expected) = self.seq_nr.checked_add(1) else {
+            return Err(ApplyError::SequenceExhausted);
+        };
         if event.seq_nr() != expected {
             return Err(ApplyError::SequenceGap {
                 expected,
@@ -772,6 +786,7 @@ impl WorkflowExecution {
         let mut next = self.clone();
         next.mutate(event.payload())?;
         next.seq_nr = event.seq_nr();
+        next.last_updated_at = *event.occurred_at();
         next.check_invariants()
             .map_err(ApplyError::InvariantViolation)?;
         *self = next;
@@ -966,6 +981,7 @@ impl WorkflowExecution {
             revision_count: self.revision_count.clone(),
             seq_nr: self.seq_nr,
             version: self.version,
+            last_updated_at: self.last_updated_at,
         }
     }
 
@@ -1015,18 +1031,12 @@ impl WorkflowExecution {
             revision_count: state.revision_count,
             seq_nr: state.seq_nr,
             version: state.version,
+            last_updated_at: state.last_updated_at,
         };
         execution
             .check_invariants()
             .map_err(StateError::InvariantViolation)?;
         Ok(execution)
-    }
-
-    /// 楽観 version を載せ替える (Repository の store 成功後 — BR5.3)。
-    #[must_use]
-    pub const fn with_version(mut self, version: u64) -> WorkflowExecution {
-        self.version = version;
-        self
     }
 
     // ---- W4 / W5: クエリ (書込なし) ----
@@ -1147,6 +1157,57 @@ impl WorkflowExecution {
     }
 }
 
+/// 直列化の入口 (serde の `into`)。中身は [`WorkflowExecution::state`] そのものである。
+impl From<WorkflowExecution> for WorkflowExecutionState {
+    fn from(execution: WorkflowExecution) -> WorkflowExecutionState {
+        execution.state()
+    }
+}
+
+/// 復号の入口 (serde の `try_from`)。[`WorkflowExecution::from_state`] の検査点を通る。
+impl TryFrom<WorkflowExecutionState> for WorkflowExecution {
+    type Error = StateError;
+
+    fn try_from(state: WorkflowExecutionState) -> Result<WorkflowExecution, StateError> {
+        WorkflowExecution::from_state(state)
+    }
+}
+
+/// 本家 event-store-adapter-rs の集約契約 (ADR-010 Conformist — 契約は 1 文字も変えない)。
+///
+/// `set_version` は我々の [factory-naming] が退けている setter の形だが、**外部 trait の
+/// 実装は Published Language への準拠**であり、名前も可変性も所有者は本家である
+/// (楽観 version はストアが決める値であって、集約の遷移では動かない — BR5.3)。
+/// 我々の側から version を載せ替える口はこれ 1 本にする (二重口を作らない)。
+///
+/// [factory-naming]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/factory-naming.md
+impl Aggregate for WorkflowExecution {
+    type ID = IntentId;
+
+    fn id(&self) -> &IntentId {
+        &self.intent_id
+    }
+
+    /// 適用済みイベント数と一致する順序番号 (`Started` = 1)。
+    fn seq_nr(&self) -> usize {
+        self.seq_nr
+    }
+
+    /// 楽観 version (集約の遷移では変わらない — ストアが載せる)。
+    fn version(&self) -> usize {
+        self.version
+    }
+
+    fn set_version(&mut self, version: usize) {
+        self.version = version;
+    }
+
+    /// 最後に適用したイベントの発生時刻。
+    fn last_updated_at(&self) -> &DateTime<Utc> {
+        &self.last_updated_at
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
@@ -1172,7 +1233,14 @@ mod tests {
     use CheckboxState::{AwaitingApproval, Completed, InProgress, Pending, Revising, Skipped};
     use PlanAction::{Execute, Skip};
 
-    const AT: &str = "2026-08-23T00:00:00Z";
+    /// ITF 再生も含め、集約は `occurred_at` を素通しするだけなので固定値でよい。
+    const AT_TEXT: &str = "2026-08-23T00:00:00Z";
+
+    fn occurred() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(AT_TEXT)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
 
     fn slug(i: usize) -> StageSlug {
         StageSlug::parse(&format!("stage-{i}")).unwrap()
@@ -1218,7 +1286,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(init, actions, conditional),
-            AT,
+            occurred(),
         )
         .unwrap()
         .0
@@ -1305,12 +1373,12 @@ mod tests {
     fn start_records_the_definition_identity_and_the_resolved_plan() {
         let definition = shipped_definition(full_grid());
         let (w, event) =
-            WorkflowExecution::start(intent(), &definition, &start_request(), AT).unwrap();
+            WorkflowExecution::start(intent(), &definition, &start_request(), occurred()).unwrap();
 
         assert_eq!(event.seq_nr(), 1);
         assert_eq!(event.schema_version(), 1);
-        assert_eq!(event.occurred_at(), AT);
-        assert_eq!(event.intent_id(), &intent());
+        assert_eq!(event.occurred_at(), &occurred());
+        assert_eq!(event.aggregate_id(), &intent());
         let WorkflowExecutionEventPayload::Started(started) = event.payload() else {
             panic!("start must emit Started");
         };
@@ -1334,7 +1402,7 @@ mod tests {
         assert_eq!(w.parked_at(), None);
         assert_eq!(w.definition_id(), definition.id());
         assert_eq!(w.definition_revision(), definition.revision());
-        assert_eq!(w.intent_id(), &intent());
+        assert_eq!(w.id(), &intent());
         assert_eq!(w.revision_count(at(&w, 0)), Some(0));
     }
 
@@ -1346,7 +1414,8 @@ mod tests {
         let request = StartRequest::new("classic", "build it")
             .with_depth("standard")
             .with_test_strategy("comprehensive");
-        let (_, event) = WorkflowExecution::start(intent(), &definition, &request, AT).unwrap();
+        let (_, event) =
+            WorkflowExecution::start(intent(), &definition, &request, occurred()).unwrap();
         let WorkflowExecutionEventPayload::Started(started) = event.payload() else {
             panic!("start must emit Started");
         };
@@ -1357,7 +1426,8 @@ mod tests {
 
         // 省略時は None のまま載る (フラグ未指定 = 既定の解決は呼出側の責務)。
         let bare = StartRequest::new("classic", "build it");
-        let (_, plain) = WorkflowExecution::start(intent(), &definition, &bare, AT).unwrap();
+        let (_, plain) =
+            WorkflowExecution::start(intent(), &definition, &bare, occurred()).unwrap();
         let WorkflowExecutionEventPayload::Started(started) = plain.payload() else {
             panic!("start must emit Started");
         };
@@ -1369,7 +1439,8 @@ mod tests {
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
         let unknown = StartRequest::new("nope", "build it");
-        let err = WorkflowExecution::start(intent(), &definition, &unknown, AT).unwrap_err();
+        let err =
+            WorkflowExecution::start(intent(), &definition, &unknown, occurred()).unwrap_err();
         let StartError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
@@ -1385,9 +1456,13 @@ mod tests {
                 .into_iter()
                 .collect();
         let grid = ScopeGrid::new([("classic".to_string(), column)].into_iter().collect());
-        let (w, _) =
-            WorkflowExecution::start(intent(), &shipped_definition(grid), &start_request(), AT)
-                .unwrap();
+        let (w, _) = WorkflowExecution::start(
+            intent(),
+            &shipped_definition(grid),
+            &start_request(),
+            occurred(),
+        )
+        .unwrap();
         assert_eq!(w.effective_plan(at(&w, 1)), Some(Skip));
         assert_eq!(w.effective_plan(at(&w, 2)), Some(Skip));
     }
@@ -1400,7 +1475,7 @@ mod tests {
             revision('0'),
             &start_request(),
             Vec::new(),
-            AT,
+            occurred(),
         )
         .unwrap_err();
         assert_eq!(err, StartError::Empty);
@@ -1414,7 +1489,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(2, &[Execute, Skip, Execute], &[false, false, false]),
-            AT,
+            occurred(),
         )
         .unwrap_err();
         assert_eq!(err, StartError::InitializationMustExecute);
@@ -1428,7 +1503,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(1, &[Execute, Execute], &[true, false]),
-            AT,
+            occurred(),
         )
         .unwrap_err();
         assert_eq!(err, StartError::InitializationMustBeUnconditional);
@@ -1442,7 +1517,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(0, &[Skip, Execute], &[false, false]),
-            AT,
+            occurred(),
         )
         .unwrap_err();
         assert_eq!(err, StartError::InitializationMustExecute);
@@ -1453,10 +1528,10 @@ mod tests {
     #[test]
     fn a_gated_stage_cannot_complete_without_passing_through_approval() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         assert_eq!(w.cursor(), at(&w, 1));
-        w.open_gate(Vec::new(), AT).unwrap();
-        w.approve_gate(None, None, AT).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
+        w.approve_gate(None, None, occurred()).unwrap();
         assert_eq!(w.approved(at(&w, 1)), Some(true));
         assert_eq!(w.checkbox(at(&w, 1)), Some(Completed));
     }
@@ -1464,10 +1539,10 @@ mod tests {
     #[test]
     fn complete_stage_is_refused_on_a_gated_stage() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let target = at(&w, 1);
         assert_eq!(
-            w.complete_stage(AT),
+            w.complete_stage(occurred()),
             Err(CommandError::InvalidTarget(target))
         );
     }
@@ -1477,15 +1552,15 @@ mod tests {
         let mut w = all_exec(3);
         let target = at(&w, 0);
         assert_eq!(
-            w.approve_gate(None, None, AT),
+            w.approve_gate(None, None, occurred()),
             Err(CommandError::InvalidTarget(target))
         );
         assert_eq!(
-            w.open_gate(Vec::new(), AT),
+            w.open_gate(Vec::new(), occurred()),
             Err(CommandError::InvalidTarget(target))
         );
         assert_eq!(
-            w.reject_gate(None, AT),
+            w.reject_gate(None, occurred()),
             Err(CommandError::InvalidTarget(target))
         );
     }
@@ -1493,9 +1568,11 @@ mod tests {
     #[test]
     fn approve_gate_accepts_the_open_gate_shortcut() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         // open_gate を省いた in-progress からの承認も受理する (BR1.3)。
-        let event = w.approve_gate(Some("ok".to_string()), None, AT).unwrap();
+        let event = w
+            .approve_gate(Some("ok".to_string()), None, occurred())
+            .unwrap();
         let WorkflowExecutionEventPayload::GateApproved(approved) = event.payload() else {
             panic!("expected GateApproved");
         };
@@ -1508,49 +1585,49 @@ mod tests {
     #[test]
     fn gate_lifecycle_preconditions_are_strict() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         assert!(matches!(
-            w.revise_stage(AT),
+            w.revise_stage(occurred()),
             Err(CommandError::CheckboxPrecondition { .. })
         ));
-        w.open_gate(Vec::new(), AT).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
         assert!(matches!(
-            w.open_gate(Vec::new(), AT),
+            w.open_gate(Vec::new(), occurred()),
             Err(CommandError::CheckboxPrecondition { .. })
         ));
-        w.reject_gate(None, AT).unwrap();
+        w.reject_gate(None, occurred()).unwrap();
         assert_eq!(w.checkbox(at(&w, 1)), Some(Revising));
-        w.revise_stage(AT).unwrap();
+        w.revise_stage(occurred()).unwrap();
         assert_eq!(w.checkbox(at(&w, 1)), Some(AwaitingApproval));
     }
 
     #[test]
     fn reject_gate_increments_the_revision_count_and_carries_it() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
-        let first = w.reject_gate(Some("redo".to_string()), AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        let first = w.reject_gate(Some("redo".to_string()), occurred()).unwrap();
         let WorkflowExecutionEventPayload::GateRejected(rejected) = first.payload() else {
             panic!("expected GateRejected");
         };
         assert_eq!(rejected.revision_count(), 1);
         assert_eq!(rejected.feedback(), Some("redo"));
         assert_eq!(w.revision_count(at(&w, 1)), Some(1));
-        w.revise_stage(AT).unwrap();
-        w.reject_gate(None, AT).unwrap();
+        w.revise_stage(occurred()).unwrap();
+        w.reject_gate(None, occurred()).unwrap();
         assert_eq!(w.revision_count(at(&w, 1)), Some(2));
     }
 
     #[test]
     fn skipped_is_refused_unless_conditional_or_plan_skip() {
         let mut w = start_with(1, &[Execute, Execute, Execute], &[false, false, true]);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let cursor = at(&w, 1);
         assert_eq!(
-            w.skip_stage("no".to_string(), AT),
+            w.skip_stage("no".to_string(), occurred()),
             Err(CommandError::NotSkippable(cursor))
         );
-        w.approve_gate(None, None, AT).unwrap();
-        let event = w.skip_stage("conditional".to_string(), AT).unwrap();
+        w.approve_gate(None, None, occurred()).unwrap();
+        let event = w.skip_stage("conditional".to_string(), occurred()).unwrap();
         let WorkflowExecutionEventPayload::StageSkipped(skipped) = event.payload() else {
             panic!("expected StageSkipped");
         };
@@ -1563,9 +1640,9 @@ mod tests {
     #[test]
     fn forward_jump_skips_intervening_in_flight_stages() {
         let mut w = all_exec(5);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let target = at(&w, 3);
-        let event = w.jump(target, AT).unwrap();
+        let event = w.jump(target, occurred()).unwrap();
         let WorkflowExecutionEventPayload::Jumped(jumped) = event.payload() else {
             panic!("expected Jumped");
         };
@@ -1583,11 +1660,11 @@ mod tests {
     #[test]
     fn backward_jump_resets_downstream_and_invalidates_approvals() {
         let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
-        w.open_gate(Vec::new(), AT).unwrap();
-        w.approve_gate(None, None, AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
+        w.approve_gate(None, None, occurred()).unwrap();
         let target = at(&w, 1);
-        let event = w.jump(target, AT).unwrap();
+        let event = w.jump(target, occurred()).unwrap();
         let WorkflowExecutionEventPayload::Jumped(jumped) = event.payload() else {
             panic!("expected Jumped");
         };
@@ -1601,9 +1678,12 @@ mod tests {
     #[test]
     fn jump_to_an_initialization_stage_is_refused() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let target = at(&w, 0);
-        assert_eq!(w.jump(target, AT), Err(CommandError::InvalidTarget(target)));
+        assert_eq!(
+            w.jump(target, occurred()),
+            Err(CommandError::InvalidTarget(target))
+        );
         assert_eq!(
             w.jump_resolve(target),
             Err(CommandError::InvalidTarget(target))
@@ -1613,12 +1693,12 @@ mod tests {
     #[test]
     fn redo_reopens_the_cursor_and_drops_its_approval() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
-        w.open_gate(Vec::new(), AT).unwrap();
-        w.reject_gate(None, AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
+        w.reject_gate(None, occurred()).unwrap();
         let cursor = w.cursor();
         assert_eq!(w.jump_resolve(cursor), Ok(JumpDirection::Redo));
-        w.jump(cursor, AT).unwrap();
+        w.jump(cursor, occurred()).unwrap();
         assert_eq!(w.checkbox(cursor), Some(InProgress));
         assert_eq!(w.approved(cursor), Some(false));
     }
@@ -1636,67 +1716,77 @@ mod tests {
     #[test]
     fn park_preserves_position_and_autonomous_park_is_refused() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
-        let event = w.park(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        let event = w.park(occurred()).unwrap();
         let WorkflowExecutionEventPayload::Parked(parked) = event.payload() else {
             panic!("expected Parked");
         };
         assert_eq!(parked.stage(), &slug(1));
         assert!(w.parked_active());
         assert!(!w.accepts_commands());
-        w.unpark(AT).unwrap();
+        w.unpark(occurred()).unwrap();
         assert_eq!(w.cursor(), at(&w, 1));
         assert_eq!(w.parked_at(), None);
-        w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
-        assert_eq!(w.park(AT), Err(CommandError::RefusedUnderAutonomy));
+        w.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
+        assert_eq!(w.park(occurred()), Err(CommandError::RefusedUnderAutonomy));
     }
 
     #[test]
     fn every_command_but_unpark_is_refused_while_parked() {
         let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
-        w.park(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        w.park(occurred()).unwrap();
         let target = at(&w, 2);
-        assert_eq!(w.complete_stage(AT), Err(CommandError::NotRunning));
-        assert_eq!(w.open_gate(Vec::new(), AT), Err(CommandError::NotRunning));
+        assert_eq!(w.complete_stage(occurred()), Err(CommandError::NotRunning));
         assert_eq!(
-            w.approve_gate(None, None, AT),
+            w.open_gate(Vec::new(), occurred()),
             Err(CommandError::NotRunning)
         );
-        assert_eq!(w.reject_gate(None, AT), Err(CommandError::NotRunning));
-        assert_eq!(w.revise_stage(AT), Err(CommandError::NotRunning));
         assert_eq!(
-            w.skip_stage("x".to_string(), AT),
+            w.approve_gate(None, None, occurred()),
             Err(CommandError::NotRunning)
         );
-        assert_eq!(w.jump(target, AT), Err(CommandError::NotRunning));
-        assert_eq!(w.park(AT), Err(CommandError::NotRunning));
-        assert_eq!(w.recompose(&[target], AT), Err(CommandError::NotRunning));
         assert_eq!(
-            w.switch_autonomy(AutonomyMode::Autonomous, AT),
+            w.reject_gate(None, occurred()),
+            Err(CommandError::NotRunning)
+        );
+        assert_eq!(w.revise_stage(occurred()), Err(CommandError::NotRunning));
+        assert_eq!(
+            w.skip_stage("x".to_string(), occurred()),
+            Err(CommandError::NotRunning)
+        );
+        assert_eq!(w.jump(target, occurred()), Err(CommandError::NotRunning));
+        assert_eq!(w.park(occurred()), Err(CommandError::NotRunning));
+        assert_eq!(
+            w.recompose(&[target], occurred()),
+            Err(CommandError::NotRunning)
+        );
+        assert_eq!(
+            w.switch_autonomy(AutonomyMode::Autonomous, occurred()),
             Err(CommandError::NotRunning)
         );
         assert_eq!(w.stale_report(at(&w, 0)), Err(CommandError::NotRunning));
-        w.unpark(AT).unwrap();
+        w.unpark(occurred()).unwrap();
         assert!(w.accepts_commands());
     }
 
     #[test]
     fn unpark_is_refused_when_the_marker_is_not_active() {
         let mut w = all_exec(3);
-        assert_eq!(w.unpark(AT), Err(CommandError::NotRunning));
+        assert_eq!(w.unpark(occurred()), Err(CommandError::NotRunning));
     }
 
     #[test]
     fn recompose_flips_only_pending_stages_ahead_of_the_cursor() {
         let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let cursor = w.cursor();
         assert_eq!(
-            w.recompose(&[cursor], AT),
+            w.recompose(&[cursor], occurred()),
             Err(CommandError::InvalidTarget(cursor))
         );
-        let event = w.recompose(&[at(&w, 2), at(&w, 3)], AT).unwrap();
+        let event = w.recompose(&[at(&w, 2), at(&w, 3)], occurred()).unwrap();
         let WorkflowExecutionEventPayload::Recomposed(recomposed) = event.payload() else {
             panic!("expected Recomposed");
         };
@@ -1707,9 +1797,10 @@ mod tests {
         assert_eq!(w.effective_plan(at(&w, 3)), Some(Skip));
         // plan (静的グリッド) は不変 — オーバレイだけが動く。
         assert_eq!(w.stages()[2].plan_action(), Execute);
-        w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        w.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
         assert_eq!(
-            w.recompose(&[at(&w, 2)], AT),
+            w.recompose(&[at(&w, 2)], occurred()),
             Err(CommandError::RefusedUnderAutonomy)
         );
     }
@@ -1717,16 +1808,16 @@ mod tests {
     #[test]
     fn recompose_rejects_the_whole_set_when_one_target_is_invalid() {
         let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let cursor = w.cursor();
         assert_eq!(
-            w.recompose(&[at(&w, 2), cursor], AT),
+            w.recompose(&[at(&w, 2), cursor], occurred()),
             Err(CommandError::InvalidTarget(cursor))
         );
         // 部分適用しない (BR1.8)。
         assert_eq!(w.effective_plan(at(&w, 2)), Some(Execute));
         assert_eq!(
-            w.recompose(&[], AT),
+            w.recompose(&[], occurred()),
             Err(CommandError::InvalidTarget(cursor))
         );
     }
@@ -1734,7 +1825,9 @@ mod tests {
     #[test]
     fn set_autonomy_replaces_the_mode() {
         let mut w = all_exec(3);
-        let event = w.switch_autonomy(AutonomyMode::Autonomous, AT).unwrap();
+        let event = w
+            .switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
         let WorkflowExecutionEventPayload::AutonomyModeSet(set) = event.payload() else {
             panic!("expected AutonomyModeSet");
         };
@@ -1746,7 +1839,7 @@ mod tests {
     fn a_refused_command_leaves_the_state_and_the_sequence_untouched() {
         let mut w = all_exec(3);
         let before = w.clone();
-        assert!(w.revise_stage(AT).is_err());
+        assert!(w.revise_stage(occurred()).is_err());
         assert_eq!(w, before);
         assert_eq!(w.seq_nr(), before.seq_nr());
     }
@@ -1754,11 +1847,11 @@ mod tests {
     #[test]
     fn a_completed_workflow_refuses_every_command() {
         let mut w = all_exec(2);
-        w.complete_stage(AT).unwrap();
-        w.approve_gate(None, None, AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        w.approve_gate(None, None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert!(!w.accepts_commands());
-        assert_eq!(w.complete_stage(AT), Err(CommandError::NotRunning));
+        assert_eq!(w.complete_stage(occurred()), Err(CommandError::NotRunning));
     }
 
     // ---- BR1.9: stale_report ----
@@ -1766,7 +1859,7 @@ mod tests {
     #[test]
     fn stale_rereport_yields_done_and_commits_nothing() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let before = w.clone();
         assert_eq!(w.stale_report(at(&w, 0)), Ok(NextDecision::Done));
         assert_eq!(w, before);
@@ -1781,8 +1874,8 @@ mod tests {
         let mut w = all_exec(3);
         let event = WorkflowExecutionEvent::new(
             intent(),
-            9,
-            AT,
+            NonZeroUsize::new(9).unwrap(),
+            occurred(),
             WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
                 slug(0),
                 Some(slug(1)),
@@ -1799,13 +1892,44 @@ mod tests {
     }
 
     #[test]
+    fn apply_event_refuses_at_sequence_exhaustion() {
+        // memento 経由で通番を末端に据える (実運用では到達しない規模の境界)。
+        let mut state = all_exec(3).state();
+        state.seq_nr = usize::MAX;
+        let mut w = WorkflowExecution::from_state(state).unwrap();
+        let event = WorkflowExecutionEvent::new(
+            intent(),
+            NonZeroUsize::new(1).unwrap(),
+            occurred(),
+            WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
+                slug(0),
+                Some(slug(1)),
+            )),
+        );
+        assert_eq!(w.apply_event(&event), Err(ApplyError::SequenceExhausted));
+        assert_eq!(w.seq_nr(), usize::MAX, "状態は変わらない");
+    }
+
+    #[test]
+    fn a_command_at_sequence_exhaustion_is_refused() {
+        let mut state = all_exec(3).state();
+        state.seq_nr = usize::MAX;
+        let mut w = WorkflowExecution::from_state(state).unwrap();
+        assert_eq!(
+            w.complete_stage(occurred()),
+            Err(CommandError::SequenceExhausted)
+        );
+        assert_eq!(w.seq_nr(), usize::MAX, "状態は変わらない");
+    }
+
+    #[test]
     fn apply_event_refuses_an_unknown_stage() {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
         let event = WorkflowExecutionEvent::new(
             intent(),
-            2,
-            AT,
+            NonZeroUsize::new(2).unwrap(),
+            occurred(),
             WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
                 unknown.clone(),
                 None,
@@ -1824,8 +1948,8 @@ mod tests {
         // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
         let event = WorkflowExecutionEvent::new(
             intent(),
-            2,
-            AT,
+            NonZeroUsize::new(2).unwrap(),
+            occurred(),
             WorkflowExecutionEventPayload::StageCompleted(StageCompleted::new(
                 slug(1),
                 Some(slug(2)),
@@ -1843,8 +1967,8 @@ mod tests {
         let mut w = all_exec(3);
         let event = WorkflowExecutionEvent::new(
             intent(),
-            2,
-            AT,
+            NonZeroUsize::new(2).unwrap(),
+            occurred(),
             WorkflowExecutionEventPayload::Started(Started::new(
                 def_id("claude"),
                 revision('0'),
@@ -1862,7 +1986,7 @@ mod tests {
     fn a_command_equals_the_old_state_plus_its_event() {
         let mut w = all_exec(4);
         let before = w.clone();
-        let event = w.complete_stage(AT).unwrap();
+        let event = w.complete_stage(occurred()).unwrap();
         let mut replayed = before;
         replayed.apply_event(&event).unwrap();
         assert_eq!(replayed, w);
@@ -1871,9 +1995,9 @@ mod tests {
     #[test]
     fn a_gate_approval_carries_the_caller_supplied_phase_boundary() {
         let mut w = all_exec(3);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let boundary = PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception);
-        let event = w.approve_gate(None, Some(boundary), AT).unwrap();
+        let event = w.approve_gate(None, Some(boundary), occurred()).unwrap();
         let WorkflowExecutionEventPayload::GateApproved(approved) = event.payload() else {
             panic!("expected GateApproved");
         };
@@ -1885,11 +2009,11 @@ mod tests {
     #[test]
     fn the_state_carries_every_attribute_and_round_trips() {
         let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
-        w.open_gate(Vec::new(), AT).unwrap();
-        w.reject_gate(None, AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
+        w.reject_gate(None, occurred()).unwrap();
         let state = w.state();
-        assert_eq!(state.intent_id(), w.intent_id());
+        assert_eq!(state.intent_id(), w.id());
         assert_eq!(state.definition_id(), w.definition_id());
         assert_eq!(state.definition_revision(), w.definition_revision());
         assert_eq!(state.stages(), w.stages());
@@ -1909,12 +2033,56 @@ mod tests {
     }
 
     #[test]
-    fn with_version_replaces_only_the_optimistic_version() {
+    fn the_aggregate_round_trips_through_serde() {
+        // 本家 `Aggregate` は `Serialize` / `Deserialize` を境界に持つ (ADR-010 Conformist)。
+        // memory バックエンドは値を複製するだけなので、直列化を経る面はここで固定する
+        // (委任 2 の SQLite バックエンドはこの経路で行を書く)。
+        let mut w = all_exec(3);
+        w.complete_stage(occurred()).unwrap();
+        w.set_version(7);
+        // 本家 trait の serde 境界の往復確認であり、契約 JSON (BR1.7) の直列化経路では
+        // ないため、canon-json を経ない素の serde_json を使う。
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&w).unwrap();
+        let decoded: WorkflowExecution = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, w);
+        assert_eq!(decoded.version(), 7);
+        assert_eq!(decoded.last_updated_at(), w.last_updated_at());
+    }
+
+    #[test]
+    fn a_tampered_serialised_aggregate_is_refused() {
+        // serde は memento (`WorkflowExecutionState`) 経由なので、復号は `from_state` の
+        // 検査点をそのまま通る (オーナー裁定 2026-08-27 (A))。行を手で書き換えた JSON —
+        // ここでは範囲外カーソル — が黙って通らないことを固定する。
         let w = all_exec(3);
-        let stored = w.clone().with_version(7);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&w).unwrap();
+        assert!(json.contains(r#""cursor":0"#), "{json}");
+        let tampered = json.replace(r#""cursor":0"#, r#""cursor":99"#);
+        let error = serde_json::from_str::<WorkflowExecution>(&tampered)
+            .expect_err("不変条件を破る写しは復号できない");
+        assert!(
+            error.to_string().contains("invariant violation"),
+            "実際: {error}"
+        );
+    }
+
+    #[test]
+    fn set_version_replaces_only_the_optimistic_version() {
+        let w = all_exec(3);
+        let mut stored = w.clone();
+        stored.set_version(7);
         assert_eq!(stored.version(), 7);
         assert_eq!(stored.seq_nr(), w.seq_nr());
         assert_eq!(stored.state().version(), 7);
+        assert_eq!(stored.last_updated_at(), w.last_updated_at());
     }
 
     #[test]
@@ -2086,7 +2254,7 @@ mod tests {
             })
         );
         // (1) park 中
-        w.park(AT).unwrap();
+        w.park(occurred()).unwrap();
         assert_eq!(
             w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::Parked { stage: at(&w, 0) })
@@ -2103,7 +2271,7 @@ mod tests {
                 gate: false
             })
         );
-        w.unpark(AT).unwrap();
+        w.unpark(occurred()).unwrap();
         // (2) resume
         assert_eq!(
             w.next_decision(&definition, &NextRequest::new(true, false, false)),
@@ -2115,7 +2283,7 @@ mod tests {
             Ok(NextDecision::NewWorkRouting)
         );
         // (7) 次の in-scope / gate = true
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         assert_eq!(
             w.next_decision(&definition, &NextRequest::default()),
             Ok(NextDecision::RunStage {
@@ -2124,8 +2292,8 @@ mod tests {
             })
         );
         // (4) completed
-        w.approve_gate(None, None, AT).unwrap();
-        w.approve_gate(None, None, AT).unwrap();
+        w.approve_gate(None, None, occurred()).unwrap();
+        w.approve_gate(None, None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(
             w.next_decision(&definition, &NextRequest::default()),
@@ -2185,12 +2353,12 @@ mod tests {
     #[test]
     fn jump_resolve_is_a_read_only_query() {
         let mut w = all_exec(4);
-        w.complete_stage(AT).unwrap();
+        w.complete_stage(occurred()).unwrap();
         let before = w.clone();
         assert_eq!(w.jump_resolve(at(&w, 3)), Ok(JumpDirection::Forward));
         assert_eq!(w, before);
         let out_of_scope = at(&w, 2);
-        w.recompose(&[out_of_scope], AT).unwrap();
+        w.recompose(&[out_of_scope], occurred()).unwrap();
         assert_eq!(
             w.jump_resolve(out_of_scope),
             Err(CommandError::InvalidTarget(out_of_scope))
@@ -2213,22 +2381,22 @@ mod tests {
             let cursor = at(&w, i);
             assert_eq!(w.cursor(), cursor);
             assert_eq!(
-                w.open_gate(Vec::new(), AT),
+                w.open_gate(Vec::new(), occurred()),
                 Err(CommandError::InvalidTarget(cursor))
             );
-            w.complete_stage(AT).unwrap();
+            w.complete_stage(occurred()).unwrap();
             assert_eq!(w.approved(cursor), Some(false));
         }
         // 索引 3 以降はゲート — complete_stage は拒否される。
         let cursor = at(&w, 3);
         assert_eq!(w.cursor(), cursor);
         assert_eq!(
-            w.complete_stage(AT),
+            w.complete_stage(occurred()),
             Err(CommandError::InvalidTarget(cursor))
         );
         let init_target = at(&w, 1);
         assert_eq!(
-            w.jump(init_target, AT),
+            w.jump(init_target, occurred()),
             Err(CommandError::InvalidTarget(init_target))
         );
     }
@@ -2354,7 +2522,7 @@ mod tests {
             revision('0'),
             &start_request(),
             stages,
-            AT,
+            occurred(),
         )
         .unwrap()
         .0
@@ -2368,20 +2536,20 @@ mod tests {
     ) -> Option<WorkflowExecutionEvent> {
         let before = w.clone();
         let outcome = match cmd {
-            Cmd::Complete => w.complete_stage(AT),
-            Cmd::OpenGate => w.open_gate(Vec::new(), AT),
-            Cmd::Approve => w.approve_gate(None, None, AT),
-            Cmd::Reject => w.reject_gate(None, AT),
-            Cmd::Revise => w.revise_stage(AT),
-            Cmd::SkipStage => w.skip_stage("pbt".to_string(), AT),
+            Cmd::Complete => w.complete_stage(occurred()),
+            Cmd::OpenGate => w.open_gate(Vec::new(), occurred()),
+            Cmd::Approve => w.approve_gate(None, None, occurred()),
+            Cmd::Reject => w.reject_gate(None, occurred()),
+            Cmd::Revise => w.revise_stage(occurred()),
+            Cmd::SkipStage => w.skip_stage("pbt".to_string(), occurred()),
             Cmd::Jump(target) => match w.stage_index(*target) {
-                Some(stage) => w.jump(stage, AT),
+                Some(stage) => w.jump(stage, occurred()),
                 None => Err(CommandError::NotRunning),
             },
-            Cmd::Park => w.park(AT),
-            Cmd::Unpark => w.unpark(AT),
+            Cmd::Park => w.park(occurred()),
+            Cmd::Unpark => w.unpark(occurred()),
             Cmd::Recompose(target) => match w.stage_index(*target) {
-                Some(stage) => w.recompose(&[stage], AT),
+                Some(stage) => w.recompose(&[stage], occurred()),
                 None => Err(CommandError::NotRunning),
             },
             Cmd::SetAutonomy(autonomous) => w.switch_autonomy(
@@ -2390,7 +2558,7 @@ mod tests {
                 } else {
                     AutonomyMode::Gated
                 },
-                AT,
+                occurred(),
             ),
             Cmd::Next => {
                 let _ = w.next_decision(definition, &NextRequest::default());

@@ -4,8 +4,10 @@
 //! (recompose と jump が合成できる根拠)。suffix writer の正確な直列化は
 //! TODO(golden: stage-0) — 本スライスは marker 側のみ実装する。
 
+use serde::{Deserialize, Serialize};
+
 /// 6 状態 (01 §3.3 — E1)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CheckboxState {
     /// `[ ]` = upstream `pending` — 未着手。
     Pending,
@@ -210,11 +212,70 @@ pub fn count_completed(content: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
     // allow)。
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
+
+    /// マーカー 1 文字は 6 状態の閉集合と 1:1 に対応する (往復忠実)。
+    ///
+    /// この対応は state ファイルの逐語形そのものであり、ワイヤ形式のラウンドトリップ PBT が
+    /// 副次的に踏んでいた経路でもある (Bolt B6 でワイヤ形式を退役させたので、ここで直接
+    /// 固定し直す)。
+    #[test]
+    fn every_marker_round_trips_through_the_closed_set() {
+        for (state, marker) in [
+            (CheckboxState::Pending, ' '),
+            (CheckboxState::InProgress, '-'),
+            (CheckboxState::AwaitingApproval, '?'),
+            (CheckboxState::Revising, 'R'),
+            (CheckboxState::Completed, 'x'),
+            (CheckboxState::Skipped, 'S'),
+        ] {
+            assert_eq!(state.marker(), marker, "{state:?}");
+            assert_eq!(
+                CheckboxState::from_marker(marker),
+                Some(state),
+                "{marker:?}"
+            );
+        }
+    }
+
+    /// checkbox 行の文法を外れた行は checkbox として読まない (材料が揃わない行を拾わない)。
+    #[test]
+    fn a_line_that_misses_any_part_of_the_grammar_is_not_a_checkbox() {
+        for line in [
+            "- [",                    // マーカーが無い
+            "- [x] slug",             // 全角ダッシュが無い
+            "- [x]slug — tail",       // `] ` の空白が無い
+            "- [x]  — tail",          // slug が空
+            "- [x] two words — tail", // slug に空白が混ざる
+        ] {
+            assert!(
+                parse_checkboxes(line).is_empty(),
+                "checkbox として読んではいけない: {line:?}"
+            );
+        }
+    }
+
+    /// 末尾に改行が無い本文の書き換えは、改行を足さずに返す (逐語維持)。
+    #[test]
+    fn rewriting_a_body_without_a_trailing_newline_keeps_it_that_way() {
+        let content = "## Stage Progress\n- [ ] state-init — Not started";
+        let updated = with_checkbox_marker(content, "state-init", CheckboxState::Completed)
+            .expect("stage はある");
+        assert_eq!(updated, "## Stage Progress\n- [x] state-init — Not started");
+        assert!(!updated.ends_with('\n'));
+    }
+
+    #[test]
+    fn a_marker_outside_the_closed_set_is_not_a_checkbox() {
+        for marker in ['X', 'r', '*', '\u{3000}'] {
+            assert_eq!(CheckboxState::from_marker(marker), None, "{marker:?}");
+        }
+    }
 
     const SAMPLE: &str = "\
 ## Stage Progress
