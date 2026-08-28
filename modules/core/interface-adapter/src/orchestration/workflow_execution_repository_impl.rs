@@ -290,6 +290,17 @@ where
             .await
             .map_err(|error| self.read_error(&error, id))?;
         for envelope in &envelopes {
+            // 再生前に manifest を照合する。本家は manifest を検証せず復号だけして返すため、
+            // ここで拒まないと foreign manifest の行（別の型名・別の読み方の版を名乗る行）が
+            // そのまま状態遷移に流れ込む。読取側 (`JournalReaderImpl::decode_entry`) と同じ
+            // 拒否条件・同じ分類 (`UndecodablePayload`) で対称にする (PR #31 CodeRabbit 指摘)。
+            if envelope.manifest() != EVENT_MANIFEST {
+                return Err(RepositoryError::Corrupt {
+                    aggregate_id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    cause: CorruptCause::UndecodablePayload,
+                });
+            }
             aggregate
                 .apply_event(
                     envelope.seq_nr(),

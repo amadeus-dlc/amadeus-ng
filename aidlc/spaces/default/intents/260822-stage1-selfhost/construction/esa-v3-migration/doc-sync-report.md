@@ -48,8 +48,8 @@ developer-report-1 §4-(f) が名指した 2 点のドリフト（C6 の memento
 
 ブリーフ指定の acceptance grep をそのまま実行した:
 
-```
-$ grep -rn "WorkflowExecutionEventId\|schema_version\|EventStoreImpl" docs/specs/
+```text
+grep -rn "WorkflowExecutionEventId\|schema_version\|EventStoreImpl" docs/specs/
 ```
 
 6 行がヒットするが、すべて失効注記の中の取り消し線表記（`~~...~~`）内であることをスクリプトで

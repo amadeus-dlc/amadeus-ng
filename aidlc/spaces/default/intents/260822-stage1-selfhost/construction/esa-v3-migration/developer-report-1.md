@@ -45,7 +45,7 @@ Repository である。
 
 `45c323c`（B6 マージ）から本コミットまで、`modules/**` の実測:
 
-```
+```text
 24 files changed, 1410 insertions(+), 1136 deletions(-)   → 純増 +274 行
 ```
 
@@ -184,7 +184,7 @@ Repository である。
 
 ### 1. `cargo fmt --all --check`
 
-```
+```text
 $ cargo fmt --all --check
 (exit 0)
 ```
@@ -193,7 +193,7 @@ $ cargo fmt --all --check
 
 ### 2. `cargo clippy --workspace --all-targets -- -D warnings`
 
-```
+```text
 $ cargo clippy --workspace --all-targets -- -D warnings
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
 (exit 0)
@@ -203,7 +203,7 @@ $ cargo clippy --workspace --all-targets -- -D warnings
 
 ### 3. `cargo lint`
 
-```
+```text
 $ cargo lint
 (exit 0)
 ```
@@ -212,13 +212,13 @@ $ cargo lint
 
 ### 4. `cargo test --workspace`
 
-```
+```text
 suites=31 passed=621 failed=0
 ```
 
 主要スイートの末尾:
 
-```
+```text
 test result: ok. 259 passed; 0 failed; ... (core-domain lib)
 test result: ok.   5 passed; 0 failed; ... (upstream_event_store_conformance)
 test result: ok.   1 passed; 0 failed; ... (engine_loop_conformance)
@@ -235,7 +235,7 @@ test result: ok.   1 passed; 0 failed; ... (journal_protocol_conformance)
 
 ### 5. `bash scripts/quint-gate.sh`
 
-```
+```text
 ==> summary
   [PASS] typecheck formal/orchestration/engine_loop.qnt
   [PASS] typecheck formal/orchestration/stop_hook.qnt
@@ -254,7 +254,7 @@ test result: ok.   1 passed; 0 failed; ... (journal_protocol_conformance)
 
 ### 6. `bash scripts/coverage.sh --base origin/main`
 
-```
+```text
 ==> head の line coverage を計測中 (/Users/j5ik2o/orca/workspaces/amadeus-ng/docs)
 head line coverage: 98.42058209993047%
 [PASS] absolute gate: head (98.42058209993047%) >= threshold (90.0%)

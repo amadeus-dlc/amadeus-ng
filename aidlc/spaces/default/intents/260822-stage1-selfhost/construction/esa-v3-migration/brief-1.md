@@ -1,6 +1,8 @@
 # B7 委任ブリーフ 1 — event-store-adapter-rs v3.0.0（EventEnvelope API）への乗り換え
 
 Conversation language: 日本語
+委任先モデル: Opus（複雑・高リスク実装 — CLAUDE.md 委任ポリシー）
+最終責任: Fable 5 メインセッション（全 diff レビュー・検証の独立再実行・受入判定）
 
 ## 背景
 

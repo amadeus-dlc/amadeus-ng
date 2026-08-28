@@ -1,6 +1,8 @@
 # B7 委任ブリーフ 2 — v3 乗り換えの仕様同期（doc-sync）
 
 Conversation language: 日本語
+委任先モデル: Sonnet（境界明確な定型作業 — CLAUDE.md 委任ポリシー）
+最終責任: Fable 5 メインセッション（全 diff レビュー・検収 grep の再実行・受入判定）
 
 ## 目的
 

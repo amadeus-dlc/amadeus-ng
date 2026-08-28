@@ -6,7 +6,7 @@
 > amadeus-ng は B7（`bolt/b7-esa-v3-event-envelope`）で `=3.0.0` へ乗り換え済み。詳細は
 > [`developer-report-1.md`](construction/esa-v3-migration/developer-report-1.md) と
 > [`decisions.md` ADR-010 2026-08-29 追記](inception/domain-design/decisions.md) を参照。
-
+>
 > amadeus-ng（ADR-010 で v2.0.0 へ Conformist 乗り換え済み）からの設計改善要望。
 > 本家の新 intent の初期記述としてそのまま貼れる形にしてある。**最終設計は本家の
 > intent（inception/construction）で決めるべきもの**で、以下の形はあくまで提案。

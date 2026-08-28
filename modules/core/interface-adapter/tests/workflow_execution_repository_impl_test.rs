@@ -428,3 +428,53 @@ async fn the_contract_seed_writes_five_events() {
     assert_eq!(held.aggregate().seq_nr(), 5);
     assert_eq!(held.version(), 5);
 }
+
+#[tokio::test]
+async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
+    // 本家は manifest を検証せず復号して返す。読取側 (JournalReaderImpl) と同じ拒否条件で、
+    // 再生経路 (find_by_id) も foreign manifest を状態遷移に流さない (PR #31 CodeRabbit 指摘)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    let (aggregate, started) = genesis();
+    repository
+        .store(&started, &aggregate, UNPERSISTED)
+        .await
+        .expect("genesis は書ける");
+    let held = repository
+        .find_by_id(&intent_id())
+        .await
+        .expect("握り直せる");
+    advance(&mut repository, &held, |aggregate| {
+        aggregate.complete_stage(at())
+    })
+    .await;
+
+    // 更新は常にスナップショット同時書込なので、通常の store では journal 再生が空になる。
+    // 写しを genesis へ巻き戻して「スナップショットの先に journal 行がある」状態を作り、
+    // その行に別の型判別子を名乗らせる。
+    let conn = fixture.raw();
+    let payload = genesis_payload().await;
+    rewind_snapshot_to_genesis(&conn, &payload);
+    conn.execute(
+        "UPDATE journal SET manifest = 'foreign-type/9' WHERE seq_nr = 2",
+        [],
+    )
+    .expect("2 件目の行に別の型判別子を名乗らせる");
+    drop(conn);
+
+    let error = repository
+        .find_by_id(&intent_id())
+        .await
+        .expect_err("foreign manifest は再生前に拒否される");
+    assert!(
+        matches!(
+            &error,
+            RepositoryError::Corrupt {
+                seq_nr: Some(2),
+                cause: CorruptCause::UndecodablePayload,
+                ..
+            }
+        ),
+        "実際: {error:?}"
+    );
+}

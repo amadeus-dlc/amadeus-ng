@@ -258,6 +258,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
 
     let restored = find_by_id(&store, &id).await.unwrap();
     assert_eq!(restored.aggregate.seq_nr(), 4);
+    assert_eq!(restored.version, 4, "版は書込のたびにストアが 1 つ進める");
     assert_eq!(
         restored.aggregate.cursor(),
         restored.aggregate.stage_index(2).unwrap()
