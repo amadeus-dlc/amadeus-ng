@@ -99,10 +99,101 @@ async fn the_journal_reads_only_the_difference() {
 }
 
 #[tokio::test]
+async fn a_renumbered_journal_is_refused_by_the_anchor() {
+    // rowid の振り直し (仕様が許す再番号付け) が起きると、保存済みチェックポイントの
+    // アンカー (aid, seq_nr) が journal の同 rowid と食い違う。差分読取の欠落・重複という
+    // 静かな破損ではなく、明示エラーで止まることを検証する。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    contract::seed(&mut repository).await;
+    drop(repository);
+
+    let mut reader = fixture.reader();
+    let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let third = before.get(2).expect("3 件目").0;
+    reader
+        .advance_checkpoint(&projection(), third)
+        .await
+        .expect("チェックポイント前進");
+    drop(reader);
+
+    // SQLite の仕様は「INTEGER PRIMARY KEY の無い表の rowid を VACUUM が変えてよい」と
+    // している (現行 3.51 は隙間があっても保持する — 下の VACUUM 釘留めテスト参照)。
+    // ここでは仕様が許す振り直しそのもの (先頭行の削除 + 後続の繰り上げ) を直接再現する。
+    let conn = fixture.raw();
+    conn.execute("DELETE FROM journal WHERE rowid = 1", [])
+        .expect("先頭行を消して隙間を作る");
+    for old_rowid in 2i64..=5 {
+        conn.execute(
+            "UPDATE journal SET rowid = ?1 WHERE rowid = ?2",
+            rusqlite::params![old_rowid - 1, old_rowid],
+        )
+        .expect("rowid を繰り上げる");
+    }
+    drop(conn);
+
+    let reader = fixture.reader();
+    let error = reader
+        .checkpoint(&projection())
+        .await
+        .expect_err("アンカー照合で止まる");
+    assert!(
+        matches!(
+            error,
+            JournalReadError::Corrupt {
+                cause: CorruptCause::CheckpointAnchorMismatch,
+                ..
+            }
+        ),
+        "実際: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_truncated_journal_behind_the_checkpoint_is_refused() {
+    // チェックポイントが指す行そのものが消えている場合もアンカー照合で止まる。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    contract::seed(&mut repository).await;
+    drop(repository);
+
+    let mut reader = fixture.reader();
+    let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let last = all.last().expect("末尾").0;
+    reader
+        .advance_checkpoint(&projection(), last)
+        .await
+        .expect("チェックポイント前進");
+    drop(reader);
+
+    fixture
+        .raw()
+        .execute("DELETE FROM journal WHERE rowid >= 4", [])
+        .expect("末尾を切り落とす");
+
+    let reader = fixture.reader();
+    let error = reader
+        .checkpoint(&projection())
+        .await
+        .expect_err("指し先が無い");
+    assert!(
+        matches!(
+            error,
+            JournalReadError::Corrupt {
+                cause: CorruptCause::CheckpointAnchorMismatch,
+                ..
+            }
+        ),
+        "実際: {error:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_vacuum_rebuild_does_not_move_the_cursor() {
     // journal は削除ゼロの純追記 (DELETE は本家 v2.0.0 でも snapshot 表にしか無い) なので、
     // rowid は隙間の無い連番 1..N であり、VACUUM の再構築でも値が保たれる。ここはその前提を
-    // 実挙動で釘留めする回帰テスト — 破れたら rowid カーソルの設計ごと見直すこと。
+    // 実挙動で釘留めする回帰テスト — 破れたらアンカー照合 (上の 2 テスト) が実行時に
+    // 明示エラーで止める。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     contract::seed(&mut repository).await;

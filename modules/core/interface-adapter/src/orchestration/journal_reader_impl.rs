@@ -23,6 +23,12 @@
 //! 実挙動に釘留めしている。本家に削除経路が増えたらこの前提ごと見直すこと
 //! (スキーマガードと同じ運用)。
 //!
+//! さらに多層防御として、チェックポイント表に**アンカー (aid, seq_nr)** を併記する —
+//! `advance_checkpoint` が前進先の journal 行の識別子を保存し、読取はアンカーを journal の
+//! 同 rowid と照合して、食い違い (振り直し・改変の兆候) を
+//! `Corrupt (CheckpointAnchorMismatch)` で明示的に拒否する。前提が破れても静かな欠落・
+//! 重複にはならない。
+//!
 //! 本家スキーマへの結合は次の 2 つで守る:
 //!
 //! 1. 版の**完全固定** (`event-store-adapter-rs = "=2.0.0"` — ADR-010 決定 4)
@@ -66,7 +72,9 @@ const UPSTREAM_JOURNAL_TABLE: &str = "journal";
 /// チェックポイント表の DDL (冪等)。
 const CREATE_CHECKPOINT_TABLE: &str = "CREATE TABLE IF NOT EXISTS amadeus_projection_checkpoint (
   projection      TEXT    PRIMARY KEY,
-  last_global_seq INTEGER NOT NULL
+  last_global_seq INTEGER NOT NULL,
+  anchor_aid      TEXT,
+  anchor_seq_nr   INTEGER
 )";
 
 /// 全集約横断の差分読取 (`rowid` 昇順)。
@@ -74,14 +82,20 @@ const SELECT_EVENTS_AFTER: &str =
     "SELECT rowid, aid, seq_nr, payload FROM journal WHERE rowid > ?1 ORDER BY rowid";
 
 /// 投影のチェックポイント。
-const SELECT_CHECKPOINT: &str =
-    "SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection = ?1";
+const SELECT_CHECKPOINT: &str = "SELECT last_global_seq, anchor_aid, anchor_seq_nr
+     FROM amadeus_projection_checkpoint WHERE projection = ?1";
+
+/// チェックポイント位置の journal 行の識別子 (アンカーの記録・照合の両方が使う)。
+const SELECT_ANCHOR_ROW: &str = "SELECT aid, seq_nr FROM journal WHERE rowid = ?1";
 
 /// チェックポイントの前進 (未登録なら登録)。
 const UPSERT_CHECKPOINT: &str =
-    "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
-     VALUES (?1, ?2)
-     ON CONFLICT(projection) DO UPDATE SET last_global_seq = excluded.last_global_seq";
+    "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
+     VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(projection) DO UPDATE SET
+       last_global_seq = excluded.last_global_seq,
+       anchor_aid = excluded.anchor_aid,
+       anchor_seq_nr = excluded.anchor_seq_nr";
 
 /// 集約に属さない行 (チェックポイント・カーソル) の識別子欄に置く印。
 const NO_AGGREGATE: &str = "-";
@@ -202,20 +216,70 @@ impl JournalReaderImpl {
     }
 
     /// 現在のチェックポイント (未登録は `ZERO`)。読取・前進の両方が使う。
+    ///
+    /// 正のチェックポイントは保存済みアンカー (aid, seq_nr) を journal の同 rowid と照合して
+    /// から返す — 食い違いは `Corrupt (CheckpointAnchorMismatch)` (PR #30 レビュー裁定)。
     fn read_checkpoint(
         connection: &Connection,
         projection: &ProjectionName,
         path: &Path,
     ) -> Result<GlobalSeqNr, JournalReadError> {
-        let raw: Option<i64> = connection
+        let raw: Option<(i64, Option<String>, Option<i64>)> = connection
             .query_row(SELECT_CHECKPOINT, params![projection.as_str()], |row| {
-                row.get(0)
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .optional()
             .map_err(|error| map_sqlite_error(&error, path))?;
-        match raw {
-            None => Ok(GlobalSeqNr::ZERO),
-            Some(value) => Ok(GlobalSeqNr::new(to_u64(value, NO_AGGREGATE)?)),
+        let Some((value, anchor_aid, anchor_seq_nr)) = raw else {
+            return Ok(GlobalSeqNr::ZERO);
+        };
+        let checkpoint = GlobalSeqNr::new(to_u64(value, NO_AGGREGATE)?);
+        if checkpoint == GlobalSeqNr::ZERO {
+            return Ok(checkpoint);
+        }
+        JournalReaderImpl::verify_anchor(connection, path, checkpoint, anchor_aid, anchor_seq_nr)?;
+        Ok(checkpoint)
+    }
+
+    /// 保存済みアンカーを journal の同 rowid と照合する。
+    ///
+    /// rowid が振り直される・ジャーナルが改変されると、`rowid > チェックポイント` の差分読取は
+    /// 欠落や重複を起こす。照合はそれを静かな破損ではなく明示エラーにする。
+    fn verify_anchor(
+        connection: &Connection,
+        path: &Path,
+        checkpoint: GlobalSeqNr,
+        anchor_aid: Option<String>,
+        anchor_seq_nr: Option<i64>,
+    ) -> Result<(), JournalReadError> {
+        // 正のチェックポイントには advance が必ずアンカーを書く — 欠けは直接改変の兆候。
+        let (Some(expected_aid), Some(expected_seq_nr)) = (anchor_aid, anchor_seq_nr) else {
+            return Err(corrupt_error(
+                NO_AGGREGATE,
+                None,
+                CorruptCause::CheckpointAnchorMismatch,
+            ));
+        };
+        let expected_seq_nr = usize::try_from(expected_seq_nr)
+            .map_err(|_| corrupt_error(&expected_aid, None, CorruptCause::InvariantViolation))?;
+        let target = to_i64(checkpoint.to_u64())?;
+        let actual: Option<(String, i64)> = connection
+            .query_row(SELECT_ANCHOR_ROW, params![target], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .optional()
+            .map_err(|error| map_sqlite_error(&error, path))?;
+        let matches = actual.as_ref().is_some_and(|(aid, seq_nr)| {
+            *aid == expected_aid && usize::try_from(*seq_nr) == Ok(expected_seq_nr)
+        });
+        if matches {
+            Ok(())
+        } else {
+            Err(corrupt_error(
+                &expected_aid,
+                Some(expected_seq_nr),
+                CorruptCause::CheckpointAnchorMismatch,
+            ))
         }
     }
 }
@@ -335,8 +399,37 @@ impl JournalReader for JournalReaderImpl {
                 requested: to,
             });
         }
+        // 前進先の journal 行の識別子をアンカーとして併記する。journal に無い位置へは
+        // 進めない — 進めると以後の照合が必ず失敗する (ZERO はアンカー無し)。
+        let anchor: Option<(String, i64)> = if target == 0 {
+            None
+        } else {
+            let row: Option<(String, i64)> = transaction
+                .query_row(SELECT_ANCHOR_ROW, params![target], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()
+                .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+            match row {
+                Some(found) => Some(found),
+                None => {
+                    return Err(corrupt_error(
+                        NO_AGGREGATE,
+                        None,
+                        CorruptCause::CheckpointAnchorMismatch,
+                    ));
+                }
+            }
+        };
+        let (anchor_aid, anchor_seq_nr) = match &anchor {
+            Some((aid, seq_nr)) => (Some(aid.as_str()), Some(*seq_nr)),
+            None => (None, None),
+        };
         transaction
-            .execute(UPSERT_CHECKPOINT, params![projection.as_str(), target])
+            .execute(
+                UPSERT_CHECKPOINT,
+                params![projection.as_str(), target, anchor_aid, anchor_seq_nr],
+            )
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         transaction
             .commit()
@@ -597,17 +690,115 @@ mod tests {
             .checkpoint(&projection())
             .await
             .expect_err("表が無い");
-        assert!(
-            matches!(error, JournalReadError::Io { .. }),
-            "実際: {error:?}"
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
         );
         let error = reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("表が無い");
-        assert!(
-            matches!(error, JournalReadError::Io { .. }),
-            "実際: {error:?}"
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_positive_checkpoint_without_an_anchor_is_a_mismatch() {
+        // 正のチェックポイントには advance が必ずアンカーを書く。欠けた行は直接改変の兆候。
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
+                 VALUES ('state-file', 3)",
+                [],
+            )
+            .expect("アンカー無しの正値を置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("照合できない");
+        assert_eq!(
+            error,
+            JournalReadError::Corrupt {
+                aggregate_id: "-".to_string(),
+                seq_nr: None,
+                cause: CorruptCause::CheckpointAnchorMismatch,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_negative_anchor_seq_nr_is_corrupt() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
+                 VALUES ('state-file', 3, 'intent-x', -5)",
+                [],
+            )
+            .expect("負のアンカーを置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("負の通番は無い");
+        assert_eq!(
+            error,
+            JournalReadError::Corrupt {
+                aggregate_id: "intent-x".to_string(),
+                seq_nr: None,
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn advancing_to_zero_writes_a_row_without_an_anchor_and_reads_back_zero() {
+        // ZERO は「まだ何も投影していない」の明示登録 — journal に対応行が無いので
+        // アンカーも無し。読み返しは照合をスキップして ZERO を返す。
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+
+        reader
+            .advance_checkpoint(&projection(), GlobalSeqNr::ZERO)
+            .await
+            .expect("ZERO への前進は通る");
+        let saved = reader.checkpoint(&projection()).await.expect("読める");
+        assert_eq!(saved, GlobalSeqNr::ZERO);
+    }
+
+    #[tokio::test]
+    async fn advancing_to_a_position_not_in_the_journal_is_refused() {
+        // journal に無い位置へ進めると以後の照合が必ず失敗するため、前進の時点で止める。
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+
+        let error = reader
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .await
+            .expect_err("空のジャーナルに位置 1 は無い");
+        assert_eq!(
+            error,
+            JournalReadError::Corrupt {
+                aggregate_id: "-".to_string(),
+                seq_nr: None,
+                cause: CorruptCause::CheckpointAnchorMismatch,
+            }
         );
     }
 
@@ -634,6 +825,260 @@ mod tests {
                 aggregate_id: NO_AGGREGATE.to_string(),
                 seq_nr: None,
                 cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_checkpoint_row_whose_anchor_aid_is_not_text_is_reported_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
+                 VALUES ('state-file', 3, X'FF', 3)",
+                [],
+            )
+            .expect("UTF-8 でないアンカーを置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_journal_row_whose_aid_is_not_text_fails_anchor_verification_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let conn = raw(&path);
+        conn.execute(
+            "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+             VALUES ('p', 's', X'FF', 1, X'7B7D', 0)",
+            [],
+        )
+        .expect("UTF-8 でない aid の行を置く");
+        conn.execute(
+            "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
+             VALUES ('state-file', 1, 'intent-x', 1)",
+            [],
+        )
+        .expect("正のチェックポイントを置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("照合先の列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn advancing_over_a_journal_row_whose_aid_is_not_text_is_reported_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+                 VALUES ('p', 's', X'FF', 1, X'7B7D', 0)",
+                [],
+            )
+            .expect("UTF-8 でない aid の行を置く");
+
+        let error = reader
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .await
+            .expect_err("アンカー列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_checkpoint_row_whose_value_is_not_an_integer_is_reported_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
+                 VALUES ('state-file', 'x')",
+                [],
+            )
+            .expect("整数でないチェックポイント値を置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_checkpoint_row_whose_anchor_seq_nr_is_not_an_integer_is_reported_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
+                 VALUES ('state-file', 3, 'intent-x', 'not-a-number')",
+                [],
+            )
+            .expect("整数でないアンカー通番を置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_journal_row_whose_seq_nr_is_not_an_integer_fails_anchor_verification_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let conn = raw(&path);
+        conn.execute(
+            "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+             VALUES ('p', 's', 'intent-x', 'x', X'7B7D', 0)",
+            [],
+        )
+        .expect("整数でない seq_nr の行を置く");
+        conn.execute(
+            "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
+             VALUES ('state-file', 1, 'intent-x', 1)",
+            [],
+        )
+        .expect("正のチェックポイントを置く");
+
+        let error = reader
+            .checkpoint(&projection())
+            .await
+            .expect_err("照合先の列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn advancing_over_a_journal_row_whose_seq_nr_is_not_an_integer_is_reported_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+                 VALUES ('p', 's', 'intent-x', 'x', X'7B7D', 0)",
+                [],
+            )
+            .expect("整数でない seq_nr の行を置く");
+
+        let error = reader
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .await
+            .expect_err("アンカー列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_row_whose_seq_nr_is_not_an_integer_is_reported_as_io() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        raw(&path)
+            .execute(
+                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+                 VALUES ('p', 's', 'intent-x', 'x', X'7B7D', 0)",
+                [],
+            )
+            .expect("整数でない seq_nr の行を置く");
+
+        let error = reader
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .expect_err("列を読めない");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failing_checkpoint_write_is_reported_as_io() {
+        // UPSERT 自体の失敗経路。トリガで書込を落とし、握り潰されないことを確かめる。
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let conn = raw(&path);
+        conn.execute(
+            "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
+             VALUES ('p', 's', 'intent-x', 1, X'7B7D', 0)",
+            [],
+        )
+        .expect("前進先の行を置く");
+        conn.execute_batch(
+            "CREATE TRIGGER checkpoint_write_fails
+             BEFORE INSERT ON amadeus_projection_checkpoint
+             BEGIN SELECT RAISE(ABORT, 'boom'); END",
+        )
+        .expect("書込を落とすトリガを置く");
+        drop(conn);
+
+        let error = reader
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .await
+            .expect_err("書込が落ちる");
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::Other,
+                path: Some(path.as_path().to_path_buf()),
             }
         );
     }
@@ -804,15 +1249,13 @@ mod tests {
             .unwrap();
         drop(bootstrap);
         let error = JournalReaderImpl::open(&path).expect_err("journal 表が無い");
-        assert!(
-            matches!(
-                error,
-                JournalReadError::Io {
-                    kind: ErrorKind::NotFound,
-                    ..
-                }
-            ),
-            "表の不在は NotFound: {error:?}"
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::NotFound,
+                path: Some(path.as_path().to_path_buf()),
+            },
+            "表の不在は NotFound"
         );
     }
 
@@ -823,15 +1266,12 @@ mod tests {
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
         std::fs::create_dir_all(path.as_path().parent().unwrap()).unwrap();
         let error = JournalReaderImpl::open(&path).expect_err("無いストアは開けない");
-        assert!(
-            matches!(
-                error,
-                JournalReadError::Io {
-                    kind: ErrorKind::NotFound,
-                    ..
-                }
-            ),
-            "NotFound で失敗する: {error:?}"
+        assert_eq!(
+            error,
+            JournalReadError::Io {
+                kind: ErrorKind::NotFound,
+                path: Some(path.as_path().to_path_buf()),
+            }
         );
         assert!(!path.as_path().exists(), "空の SQLite ファイルを作らない");
     }

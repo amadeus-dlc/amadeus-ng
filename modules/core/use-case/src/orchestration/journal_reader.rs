@@ -37,7 +37,8 @@ pub trait JournalReader {
     ///
     /// # Errors
     ///
-    /// ストア I/O (`Io`) を返す。
+    /// ストア I/O (`Io`)、保存済みチェックポイントがジャーナルの現況と食い違う
+    /// (`Corrupt` — `CheckpointAnchorMismatch`) を返す。
     async fn checkpoint(
         &self,
         projection: &ProjectionName,
@@ -49,7 +50,8 @@ pub trait JournalReader {
     ///
     /// # Errors
     ///
-    /// 現在値未満への要求 (`CheckpointRegression`)、ストア I/O (`Io`) を返す。
+    /// 現在値未満への要求 (`CheckpointRegression`)、ジャーナルに無い位置への要求や保存済み
+    /// アンカーの食い違い (`Corrupt`)、ストア I/O (`Io`) を返す。
     async fn advance_checkpoint(
         &mut self,
         projection: &ProjectionName,

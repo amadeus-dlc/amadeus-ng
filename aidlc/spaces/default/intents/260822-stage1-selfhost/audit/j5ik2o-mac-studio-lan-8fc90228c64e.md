@@ -21560,3 +21560,18 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T13:59:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa9414e6da2f6d58f
+**Message**: B6（event-store-adapter v2 乗り換え）の PR #30 をマージする段階で、レビュー指摘 4 件を修正・解決済み。CI の再走完了を待っており、緑になり次第 squash マージして B7（v3 乗り換え）を起票します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T14:19:42Z
+**Event**: HUMAN_TURN
+
+---

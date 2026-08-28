@@ -305,8 +305,13 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
        実測）なので rowid は隙間の無い連番 1..N のまま、再構築後も同値に保たれる。この
        前提は回帰テスト `a_vacuum_rebuild_does_not_move_the_cursor` で実挙動に釘留めした。
        多層防御（チェックポイント表に (aid, seq_nr) アンカーを併記し、読取時に journal と
-       照合して不一致を明示エラーにする）は、v3 乗り換え Bolt（B7）で読取実装を書き直す
-       際に併せて導入する。
+       照合して不一致を明示エラーにする）は、当初 B7（v3 乗り換え）へ送る計画だったが、
+       CodeRabbit の再指摘を受けて**同 Bolt 内で前倒し導入した** —
+       `amadeus_projection_checkpoint` へ anchor_aid / anchor_seq_nr 列を追加し、
+       `advance_checkpoint` が前進先 journal 行の識別子を記録、読取が照合し、不一致は
+       `Corrupt (CheckpointAnchorMismatch)` で明示拒否する。実測補足: 現行 SQLite 3.51 の
+       VACUUM は隙間があっても rowid を保持する（釘留めテストで確認）。仕様が許す
+       振り直しは回帰テストで直接再現し、検出されることを証明済み。
 
        **2026-08-27 追記（supersede の明記）**: 上記の実装は ADR-003「Repository →
        `EventStoreImpl(sqlite client)` → SQLite」、ADR-007「チェックポイントは Tx 内更新」、

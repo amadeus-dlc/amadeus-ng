@@ -19,6 +19,11 @@ pub enum CorruptCause {
     InvariantViolation,
     /// 集約内の `seq_nr` が連続していない (呼出側の不整合、またはジャーナルの欠損)。
     SequenceGap,
+    /// 保存済みチェックポイントのアンカー (aid, seq_nr) が journal の同位置と一致しない。
+    ///
+    /// rowid の振り直し・ジャーナルの改変の兆候であり、このまま差分読取を続けると欠落・
+    /// 重複が起きるため、静かな破損ではなく明示エラーで止める材料 (BR1.4)。
+    CheckpointAnchorMismatch,
 }
 
 impl fmt::Display for CorruptCause {
@@ -28,6 +33,7 @@ impl fmt::Display for CorruptCause {
             CorruptCause::UndecodablePayload => "undecodable payload",
             CorruptCause::InvariantViolation => "invariant violation",
             CorruptCause::SequenceGap => "sequence gap",
+            CorruptCause::CheckpointAnchorMismatch => "checkpoint anchor mismatch",
         })
     }
 }
@@ -51,6 +57,10 @@ mod tests {
             "invariant violation"
         );
         assert_eq!(CorruptCause::SequenceGap.to_string(), "sequence gap");
+        assert_eq!(
+            CorruptCause::CheckpointAnchorMismatch.to_string(),
+            "checkpoint anchor mismatch"
+        );
     }
 
     #[test]
