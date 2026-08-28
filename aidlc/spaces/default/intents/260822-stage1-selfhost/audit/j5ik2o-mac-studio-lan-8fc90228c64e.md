@@ -21575,3 +21575,64 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Artifact Created
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+**Context**: construction > esa-v3-migration > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1e149e40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1e149e40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 42e760e9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_FAILED
+**Fire id**: 42e760e9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-42e760e9.md
+**Findings count**: 5
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:24:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-developer
+**Agent ID**: ab7-developer-89f343f37bab8bb1
+**Message**: B7 完了しました。event-store-adapter-rs v3.0.0 への乗り換えを 2 コミットで実装し、受入基準 1〜7 をすべて自分で実行して全 PASS です。push はしていません。\n\n## 変更規模\n\n`45c323c`（B6 マージ）からの実測で **24 ファイル、+1410 / −1136 行（純増 +274 行）**。新規 3 ファイル、削除 1 ファイル（`wor
+
+---
