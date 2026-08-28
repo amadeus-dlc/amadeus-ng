@@ -281,10 +281,12 @@ where
         // リプレイの開始位置は**集約自身の通番**から採る。スナップショット行の `seq_nr` 列は
         // 同じ値のストア側の写しであり、正本はドメインが持つ通番だからである (裁定 3)。
         // 列と写しが食い違えば `apply_event` が `SequenceGap` で止める。
-        // 本家の差分読取は「その `seq_nr` を**含む**」ので、写しの次から読む。
+        // 本家の差分読取は「その `seq_nr` を**含む**」ので、写しの次から読む。飽和加算なのは
+        // 通番が usize::MAX に達した集約の防御 — その場合は MAX を含んで再読取することになり、
+        // `apply_event` が `SequenceExhausted` で止める (黙って wrap / panic しない — NFR4.3)。
         let envelopes = self
             .store
-            .get_events_by_id_since_seq_nr(id, aggregate.seq_nr() + 1)
+            .get_events_by_id_since_seq_nr(id, aggregate.seq_nr().saturating_add(1))
             .await
             .map_err(|error| self.read_error(&error, id))?;
         for envelope in &envelopes {

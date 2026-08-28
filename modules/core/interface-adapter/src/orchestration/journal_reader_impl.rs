@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn the_upstream_journal_schema_is_the_pinned_one() {
         // スキーマガード (ADR-010 決定 4)。ここが落ちたら**本家スキーマが変わった**という
-        // ことなので、`=2.0.0` の固定と `rowid` をカーソルに使う前提を見直すこと。
+        // ことなので、`=3.0.0` の固定と `rowid` をカーソルに使う前提を見直すこと。
         // 直すべきは期待値ではなく、`JournalReaderImpl` の読み方である。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
