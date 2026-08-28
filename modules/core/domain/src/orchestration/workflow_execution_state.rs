@@ -1,13 +1,17 @@
-//! `WorkflowExecutionState` — 集約の全状態 17 属性の値オブジェクト (C6 / BR5.2)。
+//! `WorkflowExecutionState` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
 //!
 //! 集約 → [`WorkflowExecution::state`]、集約 ← [`WorkflowExecution::from_state`] の 1 往復で
 //! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_state` の 1 か所に集約する
 //! (security-design §2)。
 //!
-//! 本家 `Aggregate` が要求する集約の serde は**この写しを経由する** (オーナー裁定
-//! 2026-08-27 (A)): `WorkflowExecution` は `#[serde(into / try_from)]` でこの型へ委ね、
-//! 復号は必ず `from_state` の検査点を通る。したがって直列化形式の正本はこの 17 属性であり、
-//! 復号が集約不変条件を迂回する経路は存在しない。
+//! スナップショットの直列化は**この写しを経由する** (オーナー裁定 2026-08-27 (A)):
+//! `WorkflowExecution` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_state`
+//! の検査点を通る。したがって直列化形式の正本はこの 16 属性であり、復号が集約不変条件を
+//! 迂回する経路は存在しない。
+//!
+//! 楽観 version は**この写しに載らない** (ADR-010 / B7)。本家 v3 で版数の正本が
+//! `SnapshotEnvelope::version()` (スナップショット行の列) になり、payload 列は純粋な
+//! ドメイン内容だけを持つようになったためである — 旧 17 属性目の `version` はここから消えた。
 //!
 //! [`WorkflowExecution::state`]: super::workflow_execution::WorkflowExecution::state
 //! [`WorkflowExecution::from_state`]: super::workflow_execution::WorkflowExecution::from_state
@@ -26,7 +30,7 @@ use crate::workspace::CheckboxState;
 /// ある `seq_nr` 時点の集約の全状態。
 ///
 /// フィールドは `pub(crate)` — 同一クレート内の実装詳細共有 (集約との再水和) にだけ開き、
-/// クレート外へは 17 本のアクセサでのみ公開する (field-visibility.md)。
+/// クレート外へは 16 本のアクセサでのみ公開する (field-visibility.md)。
 ///
 /// serde は集約の直列化形式そのものである (集約が `into` / `try_from` でここへ委ねる)。
 /// 属性の綴りと並びを変えると、既に書かれた行を読めなくなる。
@@ -47,7 +51,6 @@ pub struct WorkflowExecutionState {
     pub(crate) approved: Vec<bool>,
     pub(crate) revision_count: Vec<u32>,
     pub(crate) seq_nr: usize,
-    pub(crate) version: usize,
     pub(crate) last_updated_at: DateTime<Utc>,
 }
 
@@ -142,13 +145,7 @@ impl WorkflowExecutionState {
         self.seq_nr
     }
 
-    /// 楽観 version (Repository の store 成功後に進む)。
-    #[must_use]
-    pub const fn version(&self) -> usize {
-        self.version
-    }
-
-    /// 最後に適用したイベントの発生時刻 (本家 `Aggregate::last_updated_at` の材料)。
+    /// 最後に適用したイベントの発生時刻。
     #[must_use]
     pub const fn last_updated_at(&self) -> DateTime<Utc> {
         self.last_updated_at
@@ -157,13 +154,13 @@ impl WorkflowExecutionState {
 
 /// [`WorkflowExecutionState`] のビルダー。
 ///
-/// 17 属性を 1 つの関数引数列で受け取るのは可読でもリント可能でもないため、`StageNodeBuilder`
+/// 16 属性を 1 つの関数引数列で受け取るのは可読でもリント可能でもないため、`StageNodeBuilder`
 /// と同じ house style で組み立てる。既定値は解決済み計画から導ける birth 時の状態
 /// (`plan` / `conditional` は `stages` の写し、`overlay` は `plan` の写し、`checkbox` は先頭のみ
 /// in-progress、`approved` は全 false、`revision_count` は全 0、`cursor` = 0、`status` = running、
-/// `parked_at` = なし、`autonomy` = gated、`seq_nr` = 1、`version` = 0、
-/// `last_updated_at` = Unix epoch)。`last_updated_at` の既定が epoch なのは、birth 時の
-/// 発生時刻を知っているのは呼出側 (`Started` を作った側) だけだからである。
+/// `parked_at` = なし、`autonomy` = gated、`seq_nr` = 1、`last_updated_at` = Unix epoch)。
+/// `last_updated_at` の既定が epoch なのは、birth 時の発生時刻を知っているのは呼出側
+/// (`Started` を作った側) だけだからである。
 #[derive(Debug, Clone)]
 pub struct WorkflowExecutionStateBuilder {
     state: WorkflowExecutionState,
@@ -203,7 +200,6 @@ impl WorkflowExecutionStateBuilder {
                 approved,
                 revision_count,
                 seq_nr: 1,
-                version: 0,
                 last_updated_at: DateTime::UNIX_EPOCH,
             },
         }
@@ -286,13 +282,6 @@ impl WorkflowExecutionStateBuilder {
         self
     }
 
-    /// 楽観 version を置き換える。
-    #[must_use]
-    pub const fn version(mut self, version: usize) -> WorkflowExecutionStateBuilder {
-        self.state.version = version;
-        self
-    }
-
     /// 最終更新時刻を置き換える。
     #[must_use]
     pub const fn last_updated_at(
@@ -363,7 +352,6 @@ mod tests {
         assert_eq!(state.parked_at(), None);
         assert_eq!(state.autonomy(), AutonomyMode::Gated);
         assert_eq!(state.seq_nr(), 1);
-        assert_eq!(state.version(), 0);
         assert_eq!(state.last_updated_at(), DateTime::UNIX_EPOCH);
     }
 
@@ -393,7 +381,6 @@ mod tests {
             .approved(vec![false, true])
             .revision_count(vec![0, 3])
             .seq_nr(9)
-            .version(4)
             .last_updated_at(DateTime::UNIX_EPOCH + chrono::TimeDelta::seconds(5))
             .build();
         assert_eq!(state.overlay(), [PlanAction::Execute, PlanAction::Skip]);
@@ -408,7 +395,6 @@ mod tests {
         assert_eq!(state.approved(), [false, true]);
         assert_eq!(state.revision_count(), [0, 3]);
         assert_eq!(state.seq_nr(), 9);
-        assert_eq!(state.version(), 4);
         assert_eq!(
             state.last_updated_at(),
             DateTime::UNIX_EPOCH + chrono::TimeDelta::seconds(5)

@@ -123,6 +123,6 @@ contract_tests!(
     genesis_twice_conflicts,
     concurrent_rehydration_conflicts,
     a_write_from_a_stale_version_conflicts,
-    a_sequence_that_disagrees_with_the_aggregate_is_refused,
-    mismatched_identity_is_refused,
+    a_write_from_the_rehydrated_version_succeeds,
+    a_genesis_with_a_non_zero_version_is_a_contract_violation,
 );

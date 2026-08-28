@@ -31,7 +31,7 @@
 //!
 //! 本家スキーマへの結合は次の 2 つで守る:
 //!
-//! 1. 版の**完全固定** (`event-store-adapter-rs = "=2.0.0"` — ADR-010 決定 4)
+//! 1. 版の**完全固定** (`event-store-adapter-rs = "=3.0.0"` — ADR-010 決定 4)
 //! 2. スキーマガードテスト ([`tests::the_upstream_journal_schema_is_the_pinned_one`]) —
 //!    本家の DDL がずれたら「本家スキーマが変わった」と明示的に落ちる
 //!
@@ -51,14 +51,15 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
-use core_domain::orchestration::WorkflowExecutionEvent;
+use core_domain::orchestration::{IntentId, WorkflowExecutionEvent};
 use core_use_case::orchestration::{
-    CorruptCause, GlobalSeqNr, JournalReadError, JournalReader, ProjectionName,
+    CorruptCause, GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, ProjectionName,
 };
-use event_store_adapter_rs::types::Event as _;
 
+use super::event_manifest::EVENT_MANIFEST;
 use super::store_failure::io_kind;
 use super::store_path::StorePath;
 
@@ -78,8 +79,11 @@ const CREATE_CHECKPOINT_TABLE: &str = "CREATE TABLE IF NOT EXISTS amadeus_projec
 )";
 
 /// 全集約横断の差分読取 (`rowid` 昇順)。
-const SELECT_EVENTS_AFTER: &str =
-    "SELECT rowid, aid, seq_nr, payload FROM journal WHERE rowid > ?1 ORDER BY rowid";
+///
+/// v3 で journal は `occurred_at` (epoch ナノ秒) と `manifest` (型判別子) を持つ。封筒の材料は
+/// 列から読む — payload には輸送のメタデータが入らなくなったためである (ADR-010 / B7)。
+const SELECT_EVENTS_AFTER: &str = "SELECT rowid, aid, seq_nr, payload, occurred_at, manifest
+     FROM journal WHERE rowid > ?1 ORDER BY rowid";
 
 /// 投影のチェックポイント。
 const SELECT_CHECKPOINT: &str = "SELECT last_global_seq, anchor_aid, anchor_seq_nr
@@ -143,6 +147,10 @@ struct JournalRow {
     aggregate_id: String,
     seq_nr: i64,
     payload: Vec<u8>,
+    /// 発生時刻 (epoch ナノ秒 — v3 の `occurred_at` 列)。
+    occurred_at: i64,
+    /// 型判別子 (v3 の `manifest` 列。本家の既定は空文字列)。
+    manifest: String,
 }
 
 /// 本家のジャーナルを横断で読み、投影チェックポイントを持つ `JournalReader` の実装。
@@ -301,43 +309,62 @@ fn table_exists(
     Ok(found.is_some())
 }
 
-/// ジャーナル行のペイロードをイベントへ復号し、**行の識別子と照合する**。
+/// ジャーナル 1 行を読取レコードへ写す。
 ///
-/// 形式は**本家のシリアライザと同じ** — 既定の `JsonEventSerializer` は
-/// `serde_json::to_vec(event)` で書くので、読み側も素の serde で戻す。
+/// payload の形式は**本家のシリアライザと同じ** — 既定の `JsonEventSerializer` は
+/// `serde_json::to_vec(payload)` で書くので、読み側も素の serde で戻す。輸送のメタデータは
+/// payload ではなく**列**から来る (ADR-010 / B7)。
 ///
-/// 復号が通っても、payload が名乗る集約識別子・通番が journal 列と食い違う行は
-/// `Corrupt(InvariantViolation)` — 別集約・別通番のイベントを投影に流さない
-/// (B6 CodeRabbit #500)。
-fn decode_event(row: &JournalRow) -> Result<WorkflowExecutionEvent, JournalReadError> {
-    let event = serde_json::from_slice::<WorkflowExecutionEvent>(&row.payload)
-        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?;
+/// 行が名乗る識別子は `IntentId` として妥当とは限らない (破損・直接改変) ので、ここで
+/// 検証して初めてドメイン型になる。写せない行は `Corrupt(InvariantViolation)` —
+/// 列の値をドメインへ運べない、という他の変換 (`to_u64` / 負の `seq_nr`) と同じ扱いである。
+///
+/// `manifest` の不一致・欠落は `Corrupt(UndecodablePayload)` である。この列は payload の型と
+/// 読み方の版を名乗る値なので、名乗りが違えば中身を解釈してはならない (旧 `schema_version`
+/// 検査 (B6 CodeRabbit #466) の後継。payload 内メタとの二重照合 (#500) はメタが payload から
+/// 消えたことで不要になった)。
+fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
     let row_seq = usize::try_from(row.seq_nr)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
-    if event.aggregate_id().as_str() != row.aggregate_id || event.seq_nr() != row_seq {
-        return Err(corrupt_error(
+    let intent_id = IntentId::parse(&row.aggregate_id).map_err(|_| {
+        corrupt_error(
             &row.aggregate_id,
             Some(row_seq),
             CorruptCause::InvariantViolation,
-        ));
-    }
-    // 対応外の schema_version は「解釈できない payload」— 予約フィールドの検査経路を
-    // 復元する (B6 CodeRabbit #466 が発見した実装ギャップ。C5 の宣言どおり拒否する)。
-    if event.schema_version() != WorkflowExecutionEvent::SCHEMA_VERSION {
+        )
+    })?;
+    if row.manifest != EVENT_MANIFEST {
         return Err(corrupt_error(
             &row.aggregate_id,
             Some(row_seq),
             CorruptCause::UndecodablePayload,
         ));
     }
-    Ok(event)
+    let event = serde_json::from_slice::<WorkflowExecutionEvent>(&row.payload)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?;
+    let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
+    Ok(JournalEntry::new(
+        global,
+        intent_id,
+        row_seq,
+        occurred_at_of(row.occurred_at),
+        event,
+    ))
+}
+
+/// `occurred_at` 列 (epoch ナノ秒) をドメイン供給値へ戻す。
+///
+/// 本家 v3 は `timestamp_nanos_opt` で書き `DateTime::from_timestamp_nanos` で戻すので、
+/// 表現可能な範囲 (およそ 1677〜2262 年) では往復が完全である。
+const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp_nanos(nanos)
 }
 
 impl JournalReader for JournalReaderImpl {
     async fn events_after(
         &self,
         after: GlobalSeqNr,
-    ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError> {
+    ) -> Result<Vec<JournalEntry>, JournalReadError> {
         let from = to_i64(after.to_u64())?;
         let rows = {
             let mut statement = self
@@ -351,6 +378,8 @@ impl JournalReader for JournalReaderImpl {
                         aggregate_id: row.get::<_, String>(1)?,
                         seq_nr: row.get::<_, i64>(2)?,
                         payload: row.get::<_, Vec<u8>>(3)?,
+                        occurred_at: row.get::<_, i64>(4)?,
+                        manifest: row.get::<_, String>(5)?,
                     })
                 })
                 .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
@@ -361,13 +390,11 @@ impl JournalReader for JournalReaderImpl {
             collected
         };
 
-        let mut events = Vec::with_capacity(rows.len());
+        let mut entries = Vec::with_capacity(rows.len());
         for row in &rows {
-            let event = decode_event(row)?;
-            let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
-            events.push((global, event));
+            entries.push(decode_entry(row)?);
         }
-        Ok(events)
+        Ok(entries)
     }
 
     async fn checkpoint(
@@ -443,13 +470,12 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use core_domain::orchestration::{IntentId, WorkflowExecution};
+    use core_domain::orchestration::WorkflowExecution;
 
     /// 投影チェックポイントの表 (**我々の表**。本家の `journal` / `snapshot` と衝突しない)。
     const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
     use core_domain::workspace::SpaceName;
     use event_store_adapter_rs::EventStoreForSqlite;
-    use std::num::NonZeroUsize;
 
     /// 本家の SQLite ストア (この型の結合先)。
     type UpstreamStore = EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
@@ -468,10 +494,11 @@ mod tests {
         (store, path)
     }
 
-    /// **本家 v2.0.0 の `journal` スキーマ (ピン留め)。**
+    /// **本家 v3.0.0 の `journal` スキーマ (ピン留め)。**
     ///
     /// `rowid` をカーソルに使ってよい根拠そのものである — 列構成が変わったり、
     /// `WITHOUT ROWID` になったり、削除経路が増えたりしたら前提が崩れる。
+    /// v3 で `manifest TEXT NOT NULL DEFAULT ''` が増え、`occurred_at` はナノ秒になった。
     const PINNED_JOURNAL_DDL: &str = "CREATE TABLE journal (\n  \
         pkey TEXT NOT NULL,\n  \
         skey TEXT NOT NULL,\n  \
@@ -479,6 +506,7 @@ mod tests {
         seq_nr INTEGER NOT NULL,\n  \
         payload BLOB NOT NULL,\n  \
         occurred_at INTEGER NOT NULL,\n  \
+        manifest TEXT NOT NULL DEFAULT '',\n  \
         PRIMARY KEY (pkey, skey)\n)";
 
     /// 同じくピン留めした `journal` の一意索引。
@@ -503,7 +531,7 @@ mod tests {
             .expect("本家の journal 表がある");
         assert_eq!(
             table, PINNED_JOURNAL_DDL,
-            "本家スキーマが変わった。event-store-adapter-rs の =2.0.0 固定を見直せ"
+            "本家スキーマが変わった。event-store-adapter-rs の =3.0.0 固定を見直せ"
         );
 
         let index: String = conn
@@ -515,7 +543,7 @@ mod tests {
             .expect("本家の一意索引がある");
         assert_eq!(
             index, PINNED_JOURNAL_INDEX_DDL,
-            "本家スキーマが変わった。event-store-adapter-rs の =2.0.0 固定を見直せ"
+            "本家スキーマが変わった。event-store-adapter-rs の =3.0.0 固定を見直せ"
         );
     }
 
@@ -1182,54 +1210,58 @@ mod tests {
         assert!(to_u64(-1, "agg").is_err(), "負の rowid は無い");
     }
 
-    #[test]
-    fn a_row_whose_payload_names_another_aggregate_is_corrupt() {
-        // 復号は通るが、payload の名乗る集約が journal 列の aid と食い違う行 —
-        // 別集約のイベントを投影へ流さない (B6 CodeRabbit #500)。
-        let event = WorkflowExecutionEvent::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            NonZeroUsize::MIN,
-            chrono::DateTime::parse_from_rfc3339("2026-08-27T00:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-            core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
-        );
+    /// 本家シリアライザと同じ形式の payload バイト列。
+    fn payload_bytes() -> Vec<u8> {
         #[allow(
             clippy::disallowed_methods,
             reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
         )]
-        let payload = serde_json::to_vec(&event).unwrap();
-        let row = JournalRow {
+        serde_json::to_vec(&WorkflowExecutionEvent::Unparked).unwrap()
+    }
+
+    /// 正常な 1 行 (個々のフィールドを崩して境界を踏むための素体)。
+    fn sound_row() -> JournalRow {
+        JournalRow {
             rowid: 1,
             seq_nr: 1,
-            aggregate_id: "018f3b2c-4d5e-7f60-8abc-def012345678".to_string(),
-            payload,
-        };
-        assert_eq!(
-            decode_event(&row).expect_err("照合で落ちる"),
-            JournalReadError::Corrupt {
-                aggregate_id: "018f3b2c-4d5e-7f60-8abc-def012345678".to_string(),
-                seq_nr: Some(1),
-                cause: CorruptCause::InvariantViolation,
-            }
-        );
-        // 通番の食い違いも同じ照合で落ちる。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
-        )]
-        let payload2 = serde_json::to_vec(&event).unwrap();
-        let skewed = JournalRow {
-            rowid: 2,
-            seq_nr: 9,
             aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-            payload: payload2,
+            payload: payload_bytes(),
+            occurred_at: 1_756_425_600_000_000_000,
+            manifest: EVENT_MANIFEST.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_sound_row_becomes_a_journal_entry_with_every_material() {
+        let entry = decode_entry(&sound_row()).expect("読める行");
+        assert_eq!(entry.global_seq(), GlobalSeqNr::new(1));
+        assert_eq!(
+            entry.intent_id().as_str(),
+            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
+        );
+        assert_eq!(entry.seq_nr(), 1);
+        assert_eq!(entry.event(), &WorkflowExecutionEvent::Unparked);
+        assert_eq!(
+            entry.occurred_at().timestamp_nanos_opt(),
+            Some(1_756_425_600_000_000_000),
+            "発生時刻はナノ秒のまま往復する"
+        );
+    }
+
+    #[test]
+    fn a_row_whose_aggregate_id_is_not_an_intent_id_is_corrupt() {
+        // 列は TEXT なので、行が名乗る識別子が `IntentId` として妥当とは限らない。
+        // 我々の型へ写せない行はここで止める (旧 #500 の payload 内メタ照合の後継 —
+        // payload からメタが消えたので、照合の相手は列そのものになった)。
+        let row = JournalRow {
+            aggregate_id: "not-a-uuid-v7".to_string(),
+            ..sound_row()
         };
         assert_eq!(
-            decode_event(&skewed).expect_err("通番不一致"),
+            decode_entry(&row).expect_err("IntentId にならない"),
             JournalReadError::Corrupt {
-                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-                seq_nr: Some(9),
+                aggregate_id: "not-a-uuid-v7".to_string(),
+                seq_nr: Some(1),
                 cause: CorruptCause::InvariantViolation,
             }
         );
@@ -1279,29 +1311,13 @@ mod tests {
     #[test]
     fn a_row_with_a_negative_sequence_number_is_corrupt() {
         // journal.seq_nr は本家スキーマ上 INTEGER — 負値は書込経路からは生まれないが、
-        // 破損検出の境界なので usize への写しの失敗も Corrupt に畳む (#500 の照合の一部)。
-        // payload は**有効なイベント**にする — 復号失敗ではなく try_from の分岐を踏むため。
-        let event = WorkflowExecutionEvent::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            NonZeroUsize::MIN,
-            chrono::DateTime::parse_from_rfc3339("2026-08-27T00:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-            core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
-        );
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
-        )]
-        let payload = serde_json::to_vec(&event).unwrap();
+        // 破損検出の境界なので usize への写しの失敗も Corrupt に畳む。
         let row = JournalRow {
-            rowid: 1,
             seq_nr: -1,
-            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-            payload,
+            ..sound_row()
         };
         assert_eq!(
-            decode_event(&row).expect_err("負の通番"),
+            decode_entry(&row).expect_err("負の通番"),
             JournalReadError::Corrupt {
                 aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
                 seq_nr: None,
@@ -1311,53 +1327,55 @@ mod tests {
     }
 
     #[test]
-    fn a_payload_with_an_unsupported_schema_version_is_corrupt() {
-        // C5 の宣言どおり、対応外の schema_version は復号成功でも拒否する (#466)。
-        let event = WorkflowExecutionEvent::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            NonZeroUsize::MIN,
-            chrono::DateTime::parse_from_rfc3339("2026-08-27T00:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-            core_domain::orchestration::WorkflowExecutionEventPayload::Unparked,
-        );
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        let tampered = json.replace("\"schema_version\":1", "\"schema_version\":99");
-        assert_ne!(json, tampered, "書き換えが効いている");
+    fn a_row_whose_manifest_is_not_ours_is_corrupt() {
+        // manifest は payload の型と読み方の版を名乗る列。名乗りが違う行の中身は解釈しない
+        // (旧 `schema_version` 検査 (#466) の後継)。
+        for foreign in ["", "workflow-execution-event/2", "some-other-type/1"] {
+            let row = JournalRow {
+                manifest: foreign.to_string(),
+                ..sound_row()
+            };
+            assert_eq!(
+                decode_entry(&row).expect_err("名乗りが違う"),
+                JournalReadError::Corrupt {
+                    aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                    seq_nr: Some(1),
+                    cause: CorruptCause::UndecodablePayload,
+                },
+                "manifest = {foreign:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_payload_that_is_not_an_event_is_corrupt() {
         let row = JournalRow {
-            rowid: 1,
-            seq_nr: 1,
-            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-            payload: tampered.into_bytes(),
+            payload: b"{not json".to_vec(),
+            ..sound_row()
         };
         assert_eq!(
-            decode_event(&row).expect_err("対応外の版"),
+            decode_entry(&row).expect_err("復号できない"),
             JournalReadError::Corrupt {
                 aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-                seq_nr: Some(1),
+                seq_nr: None,
                 cause: CorruptCause::UndecodablePayload,
             }
         );
     }
 
     #[test]
-    fn a_payload_that_is_not_an_event_is_corrupt() {
+    fn a_row_whose_rowid_is_negative_is_corrupt() {
+        // rowid は問い合わせ上 0 以上しか返らないが、u64 への写しの失敗を静かに丸めない。
         let row = JournalRow {
-            rowid: 1,
-            seq_nr: 1,
-            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-            payload: b"{not json".to_vec(),
+            rowid: -1,
+            ..sound_row()
         };
         assert_eq!(
-            decode_event(&row).expect_err("復号できない"),
+            decode_entry(&row).expect_err("負の rowid"),
             JournalReadError::Corrupt {
                 aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
                 seq_nr: None,
-                cause: CorruptCause::UndecodablePayload,
+                cause: CorruptCause::InvariantViolation,
             }
         );
     }

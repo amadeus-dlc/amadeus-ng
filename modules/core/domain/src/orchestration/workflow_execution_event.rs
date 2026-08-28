@@ -1,109 +1,39 @@
-//! `WorkflowExecutionEvent` — 封筒 + 12 変種のペイロード (C5、entities.md)。
+//! `WorkflowExecutionEvent` — 12 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
 //! 公開する。
 //!
-//! 封筒は本家 event-store-adapter-rs の [`Event`] を**直接実装する** (ADR-010 Conformist —
-//! 腐敗防止層は置かない)。`id` / `aggregate_id` / `seq_nr` / `occurred_at` / `is_created` は
-//! 本家が所有する契約であり、綴りも型もそのまま受け入れる。serde 境界も本家の要求で、
-//! `Serialize` / `Deserialize` は表現の写しにすぎない (材料の変更経路にはならない)。
+//! # 輸送のメタデータは載せない (ADR-010 / B7)
+//!
+//! 本家 event-store-adapter-rs v3.0.0 は `Event` trait を廃し、識別子・順序番号・発生時刻・
+//! 型判別子を [`EventEnvelope`] が運ぶようになった。したがってドメインイベントは
+//! **純粋なドメイン内容だけ**を持つ (本家の語で payload)。かつて自前で持っていた封筒
+//! (`id` / `schema_version` / `occurred_at`) と `WorkflowExecutionEventId` は削除し、封筒を
+//! 組むのはアダプタ層 (Repository) の責務にした — 「Payload」は輸送の語であってドメインの語では
+//! ないので、この enum 自身がドメインイベントの正体である (ubiquitous-language.md)。
+//!
+//! `Serialize` / `Deserialize` は本家のシリアライザ境界の要求であり、表現の写しにすぎない
+//! (材料の変更経路にはならない)。
+//!
+//! [`EventEnvelope`]: https://docs.rs/event-store-adapter-rs/3.0.0/event_store_adapter_rs/event_envelope/struct.EventEnvelope.html
 
-use chrono::{DateTime, Utc};
-use event_store_adapter_rs::types::Event;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroUsize;
 
 use super::autonomy_mode::AutonomyMode;
-use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
 use super::start_request::StartRequest;
-use super::workflow_execution_event_id::WorkflowExecutionEventId;
 use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
 
-/// イベント封筒 (C5 envelope)。
-///
-/// 集約識別子と順序番号は [`WorkflowExecutionEventId`] が 1 か所で持つ — 封筒に別立ての
-/// 写しを置くと 2 つの正本ができるためである。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WorkflowExecutionEvent {
-    id: WorkflowExecutionEventId,
-    schema_version: u32,
-    occurred_at: DateTime<Utc>,
-    payload: WorkflowExecutionEventPayload,
-}
-
-impl WorkflowExecutionEvent {
-    /// C5 が全イベントに予約するスキーマ版 (追加フィールドは消費側が無視する additive-safe)。
-    pub const SCHEMA_VERSION: u32 = 1;
-
-    /// 封筒を組む。`occurred_at` は **呼出側が時計から渡す** (集約は時計を持たない — NFR3.1)。
-    /// `schema_version` は常に [`Self::SCHEMA_VERSION`]、`id` は集約識別子と `seq_nr` から
-    /// 決定的に採番する。
-    #[must_use]
-    pub const fn new(
-        intent_id: IntentId,
-        seq_nr: NonZeroUsize,
-        occurred_at: DateTime<Utc>,
-        payload: WorkflowExecutionEventPayload,
-    ) -> WorkflowExecutionEvent {
-        WorkflowExecutionEvent {
-            id: WorkflowExecutionEventId::new(intent_id, seq_nr),
-            schema_version: WorkflowExecutionEvent::SCHEMA_VERSION,
-            occurred_at,
-            payload,
-        }
-    }
-
-    /// C5 の予約フィールド。
-    #[must_use]
-    pub const fn schema_version(&self) -> u32 {
-        self.schema_version
-    }
-
-    /// 変種ごとのペイロード。
-    #[must_use]
-    pub const fn payload(&self) -> &WorkflowExecutionEventPayload {
-        &self.payload
-    }
-}
-
-/// 本家 event-store-adapter-rs のドメインイベント契約 (ADR-010 Conformist)。
-impl Event for WorkflowExecutionEvent {
-    type AggregateID = IntentId;
-    type ID = WorkflowExecutionEventId;
-
-    fn id(&self) -> &WorkflowExecutionEventId {
-        &self.id
-    }
-
-    fn aggregate_id(&self) -> &IntentId {
-        self.id.intent_id()
-    }
-
-    fn seq_nr(&self) -> usize {
-        self.id.seq_nr()
-    }
-
-    fn occurred_at(&self) -> &DateTime<Utc> {
-        &self.occurred_at
-    }
-
-    /// genesis は `Started` だけである (BR2.2 — 既存の集約には適用できない)。
-    fn is_created(&self) -> bool {
-        matches!(self.payload, WorkflowExecutionEventPayload::Started(_))
-    }
-}
-
-/// 12 変種のペイロード (C5 の 11 + `StageCompleted`)。
+/// 12 変種のドメインイベント (C5 の 11 + `StageCompleted`)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
-/// するので専用のペイロード型を持たない単位変種にした。
+/// するので専用の材料型を持たない単位変種にした。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorkflowExecutionEventPayload {
+pub enum WorkflowExecutionEvent {
     /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2)。
     Started(Started),
     /// 非ゲート (initialization フェーズ) ステージの完了。
@@ -564,7 +494,7 @@ impl AutonomyModeSet {
 mod tests {
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, IntentId, JumpDirection, PhaseBoundary, StageEntry, StartRequest,
+        AutonomyMode, JumpDirection, PhaseBoundary, StageEntry, StartRequest,
     };
     use crate::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
@@ -572,36 +502,6 @@ mod tests {
 
     fn slug(s: &str) -> StageSlug {
         StageSlug::parse(s).unwrap()
-    }
-
-    fn intent() -> IntentId {
-        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
-    }
-
-    fn at(text: &str) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(text)
-            .unwrap()
-            .with_timezone(&Utc)
-    }
-
-    fn envelope(payload: WorkflowExecutionEventPayload) -> WorkflowExecutionEvent {
-        WorkflowExecutionEvent::new(
-            intent(),
-            NonZeroUsize::new(3).unwrap(),
-            at("2026-08-23T00:00:00Z"),
-            payload,
-        )
-    }
-
-    #[test]
-    fn the_envelope_carries_the_identity_sequence_schema_and_time() {
-        let event = envelope(WorkflowExecutionEventPayload::Unparked);
-        assert_eq!(event.aggregate_id(), &intent());
-        assert_eq!(event.seq_nr(), 3);
-        assert_eq!(event.schema_version(), 1);
-        assert_eq!(WorkflowExecutionEvent::SCHEMA_VERSION, 1);
-        assert_eq!(event.occurred_at(), &at("2026-08-23T00:00:00Z"));
-        assert_eq!(event.payload(), &WorkflowExecutionEventPayload::Unparked);
     }
 
     #[test]
@@ -694,39 +594,10 @@ mod tests {
     }
 
     #[test]
-    fn the_event_identifier_is_the_aggregate_and_the_sequence_number() {
-        // 採番は決定的 — 集約は時計も乱数も持たない (NFR3.1 / ADR-002)。
-        let event = envelope(WorkflowExecutionEventPayload::Unparked);
-        assert_eq!(
-            event.id(),
-            &WorkflowExecutionEventId::new(intent(), NonZeroUsize::new(3).unwrap())
-        );
-        assert_eq!(
-            event.id().to_string(),
-            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6#3"
-        );
-    }
-
-    #[test]
-    fn only_the_genesis_event_reports_itself_as_a_creation() {
-        let started = envelope(WorkflowExecutionEventPayload::Started(Started::new(
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            &StartRequest::new("mvp", "build"),
-            Vec::new(),
-        )));
-        assert!(started.is_created());
-        assert!(!envelope(WorkflowExecutionEventPayload::Unparked).is_created());
-    }
-
-    #[test]
     fn the_event_round_trips_through_serde() {
-        // 本家 `Event` は `Serialize` / `Deserialize` を境界に持つ (ADR-010 Conformist)。
-        let event = envelope(WorkflowExecutionEventPayload::Parked(Parked::new(slug(
-            "intent-capture",
-        ))));
-        // 本家 trait の serde 境界の往復確認であり、契約 JSON (BR1.7) の直列化経路では
-        // ないため、canon-json を経ない素の serde_json を使う。
+        // 本家のシリアライザ境界 (`Serialize` / `DeserializeOwned`) の往復確認。
+        let event = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        // 契約 JSON (BR1.7) の直列化経路ではないため、canon-json を経ない素の serde_json を使う。
         #[allow(
             clippy::disallowed_methods,
             reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
@@ -739,40 +610,60 @@ mod tests {
     }
 
     #[test]
+    fn the_serialized_event_carries_no_transport_metadata() {
+        // B7: 封筒の 4 点 (aggregate_id / seq_nr / occurred_at / manifest) は本家の列が持つ。
+        // payload 列に混ざっていないことを綴りで固定する (旧 `schema_version` も同様に消えた)。
+        let event = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&event).unwrap();
+        for absent in [
+            "seq_nr",
+            "occurred_at",
+            "schema_version",
+            "aggregate_id",
+            "manifest",
+        ] {
+            assert!(
+                !json.contains(absent),
+                "{absent} が payload に残っている: {json}"
+            );
+        }
+    }
+
+    #[test]
     fn events_compare_by_value() {
-        let a = envelope(WorkflowExecutionEventPayload::Parked(Parked::new(slug(
-            "intent-capture",
-        ))));
-        let b = envelope(WorkflowExecutionEventPayload::Parked(Parked::new(slug(
-            "intent-capture",
-        ))));
+        let a = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let b = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
         assert_eq!(a, b);
-        assert_ne!(a, envelope(WorkflowExecutionEventPayload::Unparked));
+        assert_ne!(a, WorkflowExecutionEvent::Unparked);
     }
 
     #[test]
     fn the_twelve_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
-        fn name(payload: &WorkflowExecutionEventPayload) -> &'static str {
+        fn name(payload: &WorkflowExecutionEvent) -> &'static str {
             match payload {
-                WorkflowExecutionEventPayload::Started(_) => "Started",
-                WorkflowExecutionEventPayload::StageCompleted(_) => "StageCompleted",
-                WorkflowExecutionEventPayload::GateOpened(_) => "GateOpened",
-                WorkflowExecutionEventPayload::GateApproved(_) => "GateApproved",
-                WorkflowExecutionEventPayload::GateRejected(_) => "GateRejected",
-                WorkflowExecutionEventPayload::StageRevised(_) => "StageRevised",
-                WorkflowExecutionEventPayload::StageSkipped(_) => "StageSkipped",
-                WorkflowExecutionEventPayload::Jumped(_) => "Jumped",
-                WorkflowExecutionEventPayload::Parked(_) => "Parked",
-                WorkflowExecutionEventPayload::Unparked => "Unparked",
-                WorkflowExecutionEventPayload::Recomposed(_) => "Recomposed",
-                WorkflowExecutionEventPayload::AutonomyModeSet(_) => "AutonomyModeSet",
+                WorkflowExecutionEvent::Started(_) => "Started",
+                WorkflowExecutionEvent::StageCompleted(_) => "StageCompleted",
+                WorkflowExecutionEvent::GateOpened(_) => "GateOpened",
+                WorkflowExecutionEvent::GateApproved(_) => "GateApproved",
+                WorkflowExecutionEvent::GateRejected(_) => "GateRejected",
+                WorkflowExecutionEvent::StageRevised(_) => "StageRevised",
+                WorkflowExecutionEvent::StageSkipped(_) => "StageSkipped",
+                WorkflowExecutionEvent::Jumped(_) => "Jumped",
+                WorkflowExecutionEvent::Parked(_) => "Parked",
+                WorkflowExecutionEvent::Unparked => "Unparked",
+                WorkflowExecutionEvent::Recomposed(_) => "Recomposed",
+                WorkflowExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        assert_eq!(name(&WorkflowExecutionEventPayload::Unparked), "Unparked");
+        assert_eq!(name(&WorkflowExecutionEvent::Unparked), "Unparked");
         assert_eq!(
-            name(&WorkflowExecutionEventPayload::AutonomyModeSet(
+            name(&WorkflowExecutionEvent::AutonomyModeSet(
                 AutonomyModeSet::new(AutonomyMode::Gated)
             )),
             "AutonomyModeSet"

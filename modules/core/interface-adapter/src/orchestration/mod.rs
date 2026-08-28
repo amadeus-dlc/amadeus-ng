@@ -13,6 +13,7 @@
 //! 消費側のパスは `core_interface_adapter::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod event_manifest;
 mod journal_reader_impl;
 mod memory;
 mod store_failure;

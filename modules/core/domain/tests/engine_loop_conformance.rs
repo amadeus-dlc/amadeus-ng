@@ -28,10 +28,9 @@ use core_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_domain::workspace::CheckboxState;
-use event_store_adapter_rs::types::Event;
 use serde_json::Value;
 
-/// ITF 再生は時計を持たない — 封筒の `occurred_at` は固定値でよい (集約は値を素通しする)。
+/// ITF 再生は時計を持たない — `occurred_at` は固定値でよい (集約は値を素通しする)。
 const AT_TEXT: &str = "2026-08-23T00:00:00Z";
 
 /// 固定の発生時刻。
@@ -244,7 +243,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let (mut agg, started) = WorkflowExecution::start_from_plan_unchecked(
+    let (mut agg, _started) = WorkflowExecution::start_from_plan_unchecked(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
@@ -253,7 +252,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         at(),
     )
     .unwrap();
-    assert_eq!(started.seq_nr(), 1);
+    assert_eq!(agg.seq_nr(), 1, "genesis の通番は 1 (BR2.1)");
     assert_projection(&agg, m0, 0);
 
     for (i, m) in states.iter().enumerate().skip(1) {

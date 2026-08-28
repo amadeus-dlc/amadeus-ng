@@ -19,15 +19,15 @@ use core_interface_adapter::orchestration::{
     JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use event_store_adapter_rs::EventStoreForSqlite;
-use event_store_adapter_rs::types::{Aggregate, Event};
 
 use core_use_case::orchestration::{
-    GlobalSeqNr, JournalReadError, JournalReader, WorkflowExecutionRepository,
+    GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, RehydratedWorkflowExecution,
+    WorkflowExecutionRepository,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{at, intent_id, store_and_reload, store_genesis};
+use support::{advance, at, intent_id, store_genesis};
 
 /// Repository の具体型 (SQLite バックエンド)。
 type Repository = WorkflowExecutionRepositoryImpl<
@@ -58,27 +58,25 @@ impl Fixture {
     }
 }
 
-/// 5 コマンドぶん書き進め、最後の集約 (握り直し済み) を返す。
-async fn write_five(repository: &mut Repository) -> WorkflowExecution {
-    let mut aggregate = store_genesis(repository).await;
-
-    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
-    aggregate = store_and_reload(repository, &event, &aggregate).await;
-
-    let event = aggregate
-        .open_gate(vec!["intent.md".to_string()], at())
-        .expect("索引 1 はゲート付き");
-    aggregate = store_and_reload(repository, &event, &aggregate).await;
-
-    let event = aggregate
-        .approve_gate(Some("ok".to_string()), None, at())
-        .expect("承認");
-    aggregate = store_and_reload(repository, &event, &aggregate).await;
-
-    let event = aggregate
-        .switch_autonomy(AutonomyMode::Autonomous, at())
-        .expect("自律モードの設定");
-    store_and_reload(repository, &event, &aggregate).await
+/// 5 コマンドぶん書き進め、最後の再水和結果を返す。
+async fn write_five(repository: &mut Repository) -> RehydratedWorkflowExecution {
+    let mut held = store_genesis(repository).await;
+    held = advance(repository, &held, |aggregate| {
+        aggregate.complete_stage(at())
+    })
+    .await;
+    held = advance(repository, &held, |aggregate| {
+        aggregate.open_gate(vec!["intent.md".to_string()], at())
+    })
+    .await;
+    held = advance(repository, &held, |aggregate| {
+        aggregate.approve_gate(Some("ok".to_string()), None, at())
+    })
+    .await;
+    advance(repository, &held, |aggregate| {
+        aggregate.switch_autonomy(AutonomyMode::Autonomous, at())
+    })
+    .await
 }
 
 #[tokio::test]
@@ -94,9 +92,13 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
 
     let reopened = fixture.repository();
     let found = reopened.find_by_id(&intent_id()).await.expect("読み直せる");
-    assert_eq!(found.state(), expected.state(), "17 属性が一致する");
+    assert_eq!(
+        found.aggregate().state(),
+        expected.aggregate().state(),
+        "16 属性が一致する"
+    );
     assert_eq!(found.version(), 5);
-    assert_eq!(found.seq_nr(), 5);
+    assert_eq!(found.aggregate().seq_nr(), 5);
 }
 
 #[tokio::test]
@@ -112,14 +114,12 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
     assert_eq!(rows.len(), 5, "COMMIT 済みの 5 件が残る");
     assert_eq!(
         rows.iter()
-            .map(|(global, _)| global.to_u64())
+            .map(|entry| entry.global_seq().to_u64())
             .collect::<Vec<_>>(),
         [1, 2, 3, 4, 5]
     );
     assert_eq!(
-        rows.iter()
-            .map(|(_, event)| event.seq_nr())
-            .collect::<Vec<_>>(),
+        rows.iter().map(JournalEntry::seq_nr).collect::<Vec<_>>(),
         [1, 2, 3, 4, 5]
     );
 }
@@ -139,8 +139,9 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
         holder
             .execute_batch(
                 "BEGIN IMMEDIATE;
-                 INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
-                 VALUES ('p', 's-6', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, X'7B7D', 0);",
+                 INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+                 VALUES ('p', 's-6', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, X'7B7D', 0,
+                         'workflow-execution-event/1');",
             )
             .expect("書きかけ");
     }
@@ -193,13 +194,17 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     }
 
     let mut repository = fixture.repository();
-    let mut aggregate = repository.find_by_id(&intent_id()).await.expect("再水和");
+    let held = repository.find_by_id(&intent_id()).await.expect("再水和");
+    let mut aggregate = held.aggregate().clone();
     let event = aggregate
         .approve_gate(Some("ok".to_string()), None, at())
         .or_else(|_| aggregate.complete_stage(at()))
         .expect("次のコマンド");
-    assert_eq!(event.seq_nr(), 6);
-    repository.store(&event, &aggregate).await.expect("6 件目");
+    assert_eq!(aggregate.seq_nr(), 6);
+    repository
+        .store(&event, &aggregate, held.version())
+        .await
+        .expect("6 件目");
 
     let reader = fixture.reader();
     let rows: Result<Vec<_>, JournalReadError> = reader.events_after(GlobalSeqNr::new(5)).await;

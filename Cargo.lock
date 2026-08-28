@@ -181,7 +181,6 @@ dependencies = [
  "chrono",
  "core-domain",
  "directive-schema",
- "event-store-adapter-rs",
  "tokio",
 ]
 
