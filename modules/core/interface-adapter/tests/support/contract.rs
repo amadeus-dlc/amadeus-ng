@@ -10,42 +10,40 @@
 //! 全集約横断の読取とチェックポイント (`JournalReader`) は SQLite にしか無いので、
 //! `journal_reader_impl_test.rs` が単独で持つ。
 
-use core_domain::orchestration::{
-    AutonomyMode, WorkflowExecution, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
-};
-use event_store_adapter_rs::types::{Aggregate, Event};
-use std::num::NonZeroUsize;
+use core_domain::orchestration::AutonomyMode;
 
-use core_use_case::orchestration::{CorruptCause, RepositoryError, WorkflowExecutionRepository};
+use core_use_case::orchestration::{
+    RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
+};
 
 use super::{
-    StoreFixture, absent_intent_id, at, genesis, intent_id, store_and_reload, store_genesis,
+    StoreFixture, absent_intent_id, advance, at, genesis, intent_id, store_genesis,
     store_stage_completed,
 };
 
-/// genesis から 5 イベントぶん書き進め、最後の集約 (握り直し済み) を返す。
+/// genesis から 5 イベントぶん書き進め、最後の再水和結果を返す。
 ///
 /// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
-pub(crate) async fn seed<R: WorkflowExecutionRepository>(repository: &mut R) -> WorkflowExecution {
-    let mut aggregate = store_genesis(repository).await;
-
-    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
-    aggregate = store_and_reload(repository, &event, &aggregate).await;
-
-    let event = aggregate
-        .open_gate(vec!["intent.md".to_string()], at())
-        .expect("索引 1 はゲート付き");
-    aggregate = store_and_reload(repository, &event, &aggregate).await;
-
-    let event = aggregate
-        .approve_gate(Some("ok".to_string()), None, at())
-        .expect("承認");
-    aggregate = store_and_reload(repository, &event, &aggregate).await;
-
-    let event = aggregate
-        .switch_autonomy(AutonomyMode::Autonomous, at())
-        .expect("自律モードの設定");
-    store_and_reload(repository, &event, &aggregate).await
+pub(crate) async fn seed<R: WorkflowExecutionRepository>(
+    repository: &mut R,
+) -> RehydratedWorkflowExecution {
+    let mut held = store_genesis(repository).await;
+    held = advance(repository, &held, |aggregate| {
+        aggregate.complete_stage(at())
+    })
+    .await;
+    held = advance(repository, &held, |aggregate| {
+        aggregate.open_gate(vec!["intent.md".to_string()], at())
+    })
+    .await;
+    held = advance(repository, &held, |aggregate| {
+        aggregate.approve_gate(Some("ok".to_string()), None, at())
+    })
+    .await;
+    advance(repository, &held, |aggregate| {
+        aggregate.switch_autonomy(AutonomyMode::Autonomous, at())
+    })
+    .await
 }
 
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
@@ -81,13 +79,13 @@ pub(crate) async fn reopen_reflects_the_writes_completed_before_it_was_reopened<
     fixture: &F,
 ) {
     let mut repository = fixture.open();
-    let aggregate = store_genesis(&mut repository).await;
+    let held = store_genesis(&mut repository).await;
 
     let early = fixture.reopen(&repository);
     let found = early.find_by_id(&intent_id()).await.expect("読み直せる");
     assert_eq!(found.version(), 1, "genesis まで書き終えた時点の開き直し");
 
-    store_stage_completed(&mut repository, aggregate).await;
+    store_stage_completed(&mut repository, &held).await;
 
     let late = fixture.reopen(&repository);
     let found = late.find_by_id(&intent_id()).await.expect("読み直せる");
@@ -105,9 +103,17 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
         .await
         .expect("書いた集約は読み直せる");
 
-    assert_eq!(found.state(), expected.state(), "17 属性が一致する");
+    assert_eq!(
+        found.aggregate().state(),
+        expected.aggregate().state(),
+        "16 属性が一致する"
+    );
     assert_eq!(found.version(), 5, "5 回の書込ぶんストアが採番した版");
-    assert_eq!(found.seq_nr(), 5, "順序番号は適用済みイベント数");
+    assert_eq!(
+        found.aggregate().seq_nr(),
+        5,
+        "順序番号は適用済みイベント数"
+    );
 }
 
 /// 書いていない集約は `NotFound` (部分データを返さない — C3 ①)。
@@ -127,31 +133,36 @@ pub(crate) async fn not_found<F: StoreFixture>(fixture: &F) {
     );
 }
 
-/// genesis は未永続の集約 (`version` = 0) から書き、ストアが最初の版を採番する (BR5.3)。
+/// genesis は未永続の版 (`UNPERSISTED_VERSION`) から書き、ストアが最初の版を採番する (BR5.3)。
 pub(crate) async fn the_store_assigns_the_first_version_on_genesis<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     let (aggregate, event) = genesis();
-    assert_eq!(aggregate.version(), 0, "未永続の集約は 0");
-    assert_eq!(event.seq_nr(), 1);
-    repository.store(&event, &aggregate).await.expect("genesis");
-    assert_eq!(aggregate.version(), 0, "呼出側の集約は動かない (BR1.3)");
+    assert_eq!(aggregate.seq_nr(), 1, "genesis の通番は 1");
+    repository
+        .store(&event, &aggregate, F::Repository::UNPERSISTED_VERSION)
+        .await
+        .expect("genesis");
 
     let found = repository
         .find_by_id(&intent_id())
         .await
         .expect("読み直せる");
     assert_eq!(found.version(), 1, "採番したのはストア");
-    assert_eq!(found.seq_nr(), 1, "seq_nr はドメインの通番");
+    assert_eq!(found.aggregate().seq_nr(), 1, "seq_nr はドメインの通番");
 }
 
 /// 同じ genesis を 2 度書くと衝突する (スナップショット行の一意性 — BR1.3)。
 pub(crate) async fn genesis_twice_conflicts<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     let (aggregate, event) = genesis();
-    repository.store(&event, &aggregate).await.expect("1 度目");
+    let unpersisted = F::Repository::UNPERSISTED_VERSION;
+    repository
+        .store(&event, &aggregate, unpersisted)
+        .await
+        .expect("1 度目");
 
     let err = repository
-        .store(&event, &aggregate)
+        .store(&event, &aggregate, unpersisted)
         .await
         .expect_err("2 度目は衝突");
     assert_eq!(
@@ -168,23 +179,25 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
     let mut repository = fixture.open();
     seed(&mut repository).await;
 
-    let mut first = repository.find_by_id(&intent_id()).await.expect("再水和 1");
-    let mut second = repository.find_by_id(&intent_id()).await.expect("再水和 2");
+    let first = repository.find_by_id(&intent_id()).await.expect("再水和 1");
+    let second = repository.find_by_id(&intent_id()).await.expect("再水和 2");
     assert_eq!(first.version(), second.version());
 
-    let event = first
+    let mut aggregate = first.aggregate().clone();
+    let event = aggregate
         .open_gate(vec!["scope.md".to_string()], at())
         .expect("索引 2 はゲート付きで in-progress");
     repository
-        .store(&event, &first)
+        .store(&event, &aggregate, first.version())
         .await
         .expect("先に書いた方は通る");
 
-    let event = second
+    let mut aggregate = second.aggregate().clone();
+    let event = aggregate
         .open_gate(vec!["scope.md".to_string()], at())
         .expect("同じコマンド");
     let err = repository
-        .store(&event, &second)
+        .store(&event, &aggregate, second.version())
         .await
         .expect_err("後から書いた方は衝突");
     assert_eq!(
@@ -203,77 +216,67 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
     assert_eq!(found.version(), 6);
 }
 
-/// 古い版のまま書こうとした続きは `Conflict` である (楽観 version はストアの関心 — BR5.3)。
+/// 古い版を提示した書込は `Conflict` である (楽観 version はストアの関心 — BR5.3)。
 ///
-/// かつては Repository が `version == seq_nr - 1` を前提検査していたので `Corrupt(SequenceGap)`
-/// になっていた。version を `seq_nr` から導く検査は撤回した (オーナー裁定 2026-08-27 (B))
-/// ため、この不整合を見つけるのはストアの CAS である。
+/// version は**集約ではなく再水和結果**が握る (ADR-010 / B7)。握った後に他者が書けば、
+/// 提示する版が古くなってそこで止まる。
 pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
-    let (aggregate, event) = genesis();
-    repository.store(&event, &aggregate).await.expect("genesis");
+    let stale = store_genesis(&mut repository).await;
 
-    // 握り直さないまま次のイベントを書こうとする (呼出側のバグ)。
-    let mut stale = aggregate;
-    let next = stale.complete_stage(at()).expect("索引 0 は非ゲート");
+    // 別の書き手が 1 件進めて版が動く。
+    store_stage_completed(&mut repository, &stale).await;
+
+    // 握ったままの版 (genesis 時点) で次を書こうとする。
+    let mut aggregate = stale.aggregate().clone();
+    let next = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
     let err = repository
-        .store(&next, &stale)
+        .store(&next, &aggregate, stale.version())
         .await
-        .expect_err("版 0 のままでは書けない");
+        .expect_err("古い版では書けない");
     assert_eq!(
         err,
         RepositoryError::Conflict {
-            expected: 0,
-            actual: 1
+            expected: 1,
+            actual: 2
         }
     );
 }
 
-/// イベントの `seq_nr` が適用後の集約と食い違う書込は `Corrupt(SequenceGap)` (BR1.3 の前提検査)。
-pub(crate) async fn a_sequence_that_disagrees_with_the_aggregate_is_refused<F: StoreFixture>(
+/// 版を握り直せば続きが書ける (`Conflict` の裏面 — 再試行の政策はユースケースが持つ)。
+pub(crate) async fn a_write_from_the_rehydrated_version_succeeds<F: StoreFixture>(fixture: &F) {
+    let mut repository = fixture.open();
+    let held = store_genesis(&mut repository).await;
+    let next = store_stage_completed(&mut repository, &held).await;
+    assert_eq!(next.version(), 2);
+    assert_eq!(next.aggregate().seq_nr(), 2);
+}
+
+/// 未永続でない版を genesis に提示すると、本家の書込契約に反するので `Corrupt` になる。
+///
+/// v3 は「`seq_nr == 1` ⇔ `expected_version == 0`」を要求し、崩れた呼出しを
+/// `ContractViolation` で拒否する。ストレージ障害ではなく呼出側の組み立て違反なので、
+/// 競合ではなく破損として写す (BR1.5)。
+pub(crate) async fn a_genesis_with_a_non_zero_version_is_a_contract_violation<F: StoreFixture>(
     fixture: &F,
 ) {
     let mut repository = fixture.open();
-    let (aggregate, _) = genesis();
-    let skewed = WorkflowExecutionEvent::new(
-        intent_id(),
-        NonZeroUsize::MIN.saturating_add(aggregate.seq_nr()),
-        at(),
-        WorkflowExecutionEventPayload::Unparked,
-    );
-    let err = repository
-        .store(&skewed, &aggregate)
-        .await
-        .expect_err("1 コマンド 1 イベントの通番が合わない");
-    assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
-            seq_nr: Some(2),
-            cause: CorruptCause::SequenceGap,
-        }
-    );
-}
-
-/// イベントと集約の識別子が食い違う書込も `Corrupt(SequenceGap)` (BR1.3 の前提検査)。
-pub(crate) async fn mismatched_identity_is_refused<F: StoreFixture>(fixture: &F) {
-    let mut repository = fixture.open();
     let (aggregate, event) = genesis();
-    let foreign = WorkflowExecutionEvent::new(
-        absent_intent_id(),
-        NonZeroUsize::new(event.seq_nr()).unwrap(),
-        at(),
-        WorkflowExecutionEventPayload::Unparked,
-    );
     let err = repository
-        .store(&foreign, &aggregate)
+        .store(&event, &aggregate, 1)
         .await
-        .expect_err("別集約のイベントは書けない");
-    assert!(matches!(
-        err,
-        RepositoryError::Corrupt {
-            cause: CorruptCause::SequenceGap,
-            ..
+        .expect_err("seq_nr = 1 に版 1 は対応しない");
+    assert!(
+        matches!(err, RepositoryError::Corrupt { .. }),
+        "実際: {err:?}"
+    );
+
+    // 拒否された書込は行を残さない。
+    let found = repository.find_by_id(&intent_id()).await;
+    assert_eq!(
+        found.expect_err("書かれていない"),
+        RepositoryError::NotFound {
+            intent_id: intent_id()
         }
-    ));
+    );
 }

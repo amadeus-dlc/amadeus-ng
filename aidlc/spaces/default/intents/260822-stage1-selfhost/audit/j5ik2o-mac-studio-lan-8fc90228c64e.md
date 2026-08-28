@@ -21575,3 +21575,204 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Artifact Created
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+**Context**: construction > esa-v3-migration > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1e149e40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1e149e40
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 42e760e9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-28T22:22:11Z
+**Event**: SENSOR_FAILED
+**Fire id**: 42e760e9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-42e760e9.md
+**Findings count**: 5
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:24:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-developer
+**Agent ID**: ab7-developer-89f343f37bab8bb1
+**Message**: B7 完了しました。event-store-adapter-rs v3.0.0 への乗り換えを 2 コミットで実装し、受入基準 1〜7 をすべて自分で実行して全 PASS です。push はしていません。\n\n## 変更規模\n\n`45c323c`（B6 マージ）からの実測で **24 ファイル、+1410 / −1136 行（純増 +274 行）**。新規 3 ファイル、削除 1 ファイル（`wor
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:32:16Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-developer
+**Agent ID**: ab7-developer-89f343f37bab8bb1
+**Message**: 両裁定の付帯条件をすべて満たし、コミット `27201cd` を追加しました（B7 全体で 3 コミット）。push はしていません。\n\n## 対応した条件\n\n**newtype の件 (a)(b)** — `usize` のまま受け入れていただいた 2 条件を満たしました。型で取り違えを止められない以上、値が通る 3 箇所すべてに警告を置いています。`WorkflowExecutionRepos
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:33:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-developer
+**Agent ID**: ab7-developer-89f343f37bab8bb1
+**Message**: B7 の実装フェーズはクローズされました。指示どおり、この作業ツリーへの書き込みと cargo 実行を停止しています。\n\n## 最終状態\n\n`bolt/b7-esa-v3-event-envelope` に 3 コミット（未 push、レビューはあなたの側で完了済み）:\n\n- `b30a294` — v3 乗り換え本体（24 ファイル、+1410 / −1136）\n- `2827d10` — 委任
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-28T22:45:44Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Context**: construction > esa-v3-migration > doc-sync-report.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:45:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0993de7c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-28T22:45:45Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0993de7c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:45:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5027027a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-28T22:45:45Z
+**Event**: SENSOR_FAILED
+**Fire id**: 5027027a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-5027027a.md
+**Findings count**: 3
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:47:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-doc-sync
+**Agent ID**: ab7-doc-sync-8e64767fe51595e3
+**Message**: The doc-sync is complete and committed locally (not pushed). Here's a summary of the work.\n\n## 結果\n\nB7 のコード変更（`event-store-adapter-rs` v3.0.0 EventEnvelope API への乗り換え）に伴う仕様・記録のドリフトを、8ファイルへの追記と1件の新規報告書で
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Context**: construction > esa-v3-migration > doc-sync-report.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_FIRED
+**Fire id**: ae243c1b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_PASSED
+**Fire id**: ae243c1b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5d0847d7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_FAILED
+**Fire id**: 5d0847d7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-5d0847d7.md
+**Findings count**: 3
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:53:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-doc-sync
+**Agent ID**: ab7-doc-sync-8e64767fe51595e3
+**Message**: 2つ目のコミットが完了しました。監査シャードは意図的に除外し、`git add -A` は使っていません（明示的なファイルパス指定のみ）。push もしていません。\n\n## 追加修正の報告\n\nチームリードから転送された実装担当の引き継ぎ事実を正として再点検した結果、1回目の同期で4件の直し漏れ・不整合が見つかり、修正しました（コミット `95fcc76`）。\n\n1. **`docs/specs/1
+
+---

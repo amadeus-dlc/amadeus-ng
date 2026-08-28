@@ -1,16 +1,19 @@
-//! 本家 event-store-adapter-rs v2.0.0 への適合テスト (ADR-010 Conformist)。
+//! 本家 event-store-adapter-rs v3.0.0 への適合テスト (ADR-010 Conformist / B7)。
 //!
-//! trait 実装がコンパイルを通ることは適合の証明にならない。**本家の memory バックエンドに
-//! 我々の集約を実際に永続化し、スナップショット + リプレイで復元できる**ところまでを固定する。
+//! 型が揃うことは適合の証明にならない。**本家の memory バックエンドに我々のドメイン型を実際に
+//! 永続化し、スナップショット + リプレイで復元できる**ところまでを固定する。
 //!
-//! 本家の意味論のうち、ここで固定するもの:
+//! v3 で `Event` / `Aggregate` trait は消え、ドメイン型はライブラリ trait を一切実装しない
+//! 素の serde 型になった。境界を越えるメタデータは `EventEnvelope` / `SnapshotEnvelope` が運ぶ。
+//! ここで固定する本家の意味論は次の 4 つである:
 //!
-//! - `Event::is_created` が真のイベント (genesis) は `persist_event` では受理されない
-//!   (本家 `GenericEventStore::persist_event` が明示的に拒む)
-//! - `persist_event_and_snapshot` は genesis を create 経路、それ以外を update 経路へ送る
-//! - `get_events_by_id_since_seq_nr` の `seq_nr` は**その番号を含む** (我々のローカル
-//!   `EventStore` ポートの「より後」とは境界が 1 ずれる — 委任 2 の申し送り事項)
-//! - 楽観 version はストアが採番する。呼出側は永続化のたびに読み直す
+//! - `persist_event`（イベントのみ）は `seq_nr == 1` を**受理しない** — 新規作成は
+//!   `persist_event_and_snapshot` である (`ContractViolation`)
+//! - `persist_event_and_snapshot` は `seq_nr == 1` ⇔ `expected_version == 0` の対応を要求し、
+//!   崩れた呼出しを `ContractViolation` で拒否する
+//! - `get_events_by_id_since_seq_nr` の `seq_nr` は**その番号を含む**
+//! - 楽観 version はストアが採番し、`SnapshotEnvelope::version()` が正本である
+//!   (集約 payload には載らない)
 
 // テストコードでは unwrap / expect を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -19,18 +22,25 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use core_domain::orchestration::{
     IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
-    WorkflowExecutionEventId,
 };
 use core_domain::workflow_definition::{
     DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
 };
 use core_domain::workspace::CheckboxState;
 use event_store_adapter_rs::EventStoreForMemory;
-use event_store_adapter_rs::types::{Aggregate, Event, EventStore};
-use std::num::NonZeroUsize;
+use event_store_adapter_rs::event_envelope::EventEnvelope;
+use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};
 
-/// 本家 memory バックエンドを我々の 3 つのドメイン型で具体化したストア。
+/// 本家 memory バックエンドを我々の 3 つの型で具体化したストア。
+///
+/// 型引数は v3 の並びで `AID` (集約 ID) / `A` (集約 payload) / `P` (イベント payload)。
 type Store = EventStoreForMemory<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+
+/// 我々が封筒に載せる型判別子 (Repository が書く値と同じ綴り)。
+const MANIFEST: &str = "workflow-execution-event/1";
+
+/// 新規作成の `expected_version` (本家 v3 の規約 — BR2.6)。
+const CREATE_EXPECTED_VERSION: usize = 0;
 
 const RAW_ID: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
@@ -85,18 +95,48 @@ fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
     .unwrap()
 }
 
-/// 本家の推奨手順そのままの再構成 — 最新スナップショット + その `seq_nr` 以降のイベント。
-async fn find_by_id(store: &Store, id: &IntentId) -> Option<WorkflowExecution> {
+/// commit 済みの集約とイベントから封筒を組む (Repository と同じ手順 — B7 裁定 3)。
+///
+/// 通番も発生時刻も**適用後の集約**が持っている。ドメインは封筒を作らない。
+fn envelope(
+    aggregate: &WorkflowExecution,
+    event: WorkflowExecutionEvent,
+) -> EventEnvelope<IntentId, WorkflowExecutionEvent> {
+    EventEnvelope::new(
+        aggregate.intent_id().clone(),
+        aggregate.seq_nr(),
+        *aggregate.last_updated_at(),
+        event,
+    )
+    .with_manifest(MANIFEST)
+}
+
+/// 再水和の結果 (本家 v3 の移行ガイド §3 と同じ形 — 集約 + ストアが載せた版)。
+struct Replayed {
+    aggregate: WorkflowExecution,
+    version: usize,
+}
+
+/// 本家の推奨手順そのままの再構成 — 最新スナップショット封筒 + その先のイベント封筒。
+async fn find_by_id(store: &Store, id: &IntentId) -> Option<Replayed> {
     let snapshot = store.get_latest_snapshot_by_id(id).await.unwrap()?;
-    let events = store
-        .get_events_by_id_since_seq_nr(id, snapshot.seq_nr() + 1)
+    let version = snapshot.version();
+    let mut aggregate = snapshot.into_aggregate();
+    let envelopes = store
+        .get_events_by_id_since_seq_nr(id, aggregate.seq_nr() + 1)
         .await
         .unwrap();
-    let mut replayed = snapshot;
-    for event in &events {
-        replayed.apply_event(event).unwrap();
+    for envelope in &envelopes {
+        assert_eq!(envelope.manifest(), MANIFEST, "manifest は往復する");
+        aggregate
+            .apply_event(
+                envelope.seq_nr(),
+                *envelope.occurred_at(),
+                envelope.payload(),
+            )
+            .unwrap();
     }
-    Some(replayed)
+    Some(Replayed { aggregate, version })
 }
 
 #[tokio::test]
@@ -106,13 +146,34 @@ async fn an_unknown_aggregate_has_no_snapshot() {
 }
 
 #[tokio::test]
-async fn the_genesis_event_is_refused_by_the_append_only_write() {
-    // `Event::is_created` の配線を実挙動で固定する — 本家は creation を `persist_event`
-    // では受け付けない。
+async fn the_creation_event_is_refused_by_the_event_only_write() {
+    // v3 は `is_created()` を持たず、create / update の分岐を `seq_nr == 1` から導出する。
+    // イベントのみの書込 API は新規作成を受け付けない (BR2.2)。
     let mut store = Store::new();
-    let (_, started) = genesis();
-    assert!(started.is_created());
-    assert!(store.persist_event(&started, 0).await.is_err());
+    let (aggregate, started) = genesis();
+    let error = store
+        .persist_event(envelope(&aggregate, started), CREATE_EXPECTED_VERSION)
+        .await
+        .expect_err("seq_nr == 1 は persist_event では書けない");
+    assert!(
+        matches!(error, EventStoreWriteError::ContractViolation(_)),
+        "実際: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_creation_with_a_non_zero_expected_version_violates_the_contract() {
+    // BR2.6: seq_nr == 1 ⇔ expected_version == 0。対応が崩れる呼出しは契約違反である。
+    let mut store = Store::new();
+    let (aggregate, started) = genesis();
+    let error = store
+        .persist_event_and_snapshot(envelope(&aggregate, started), aggregate.clone(), 1)
+        .await
+        .expect_err("seq_nr == 1 に版 1 は対応しない");
+    assert!(
+        matches!(error, EventStoreWriteError::ContractViolation(_)),
+        "実際: {error:?}"
+    );
 }
 
 #[tokio::test]
@@ -120,105 +181,149 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
     let mut store = Store::new();
     let id = intent_id();
 
-    // 1. genesis — `is_created` が真なので create 経路へ入る。
+    // 1. genesis — `seq_nr == 1` なので create 経路へ入る (expected_version = 0)。
     let (aggregate, started) = genesis();
     store
-        .persist_event_and_snapshot(&started, &aggregate)
+        .persist_event_and_snapshot(
+            envelope(&aggregate, started),
+            aggregate.clone(),
+            CREATE_EXPECTED_VERSION,
+        )
         .await
         .unwrap();
 
     let restored = find_by_id(&store, &id).await.unwrap();
-    assert_eq!(restored, aggregate, "genesis がそのまま戻る");
-    assert_eq!(restored.seq_nr(), 1);
-    assert_eq!(restored.last_updated_at(), &at(0));
+    assert_eq!(restored.aggregate, aggregate, "genesis がそのまま戻る");
+    assert_eq!(restored.aggregate.seq_nr(), 1);
+    assert_eq!(restored.aggregate.last_updated_at(), &at(0));
+    assert_eq!(restored.version, 1, "最初の版はストアが 1 で採番する");
 
     // 2. スナップショット同時更新 — 本家が version を 1 つ進める。
-    let mut aggregate = restored;
+    let mut aggregate = restored.aggregate;
     let completed = aggregate.complete_stage(at(1)).unwrap();
     store
-        .persist_event_and_snapshot(&completed, &aggregate)
+        .persist_event_and_snapshot(
+            envelope(&aggregate, completed),
+            aggregate.clone(),
+            restored.version,
+        )
         .await
         .unwrap();
 
     let restored = find_by_id(&store, &id).await.unwrap();
-    assert_eq!(restored.seq_nr(), 2);
-    assert_eq!(restored.version(), 1, "楽観 version はストアが採番する");
-    assert_eq!(restored.cursor(), restored.stage_index(1).unwrap());
-    assert_eq!(restored.last_updated_at(), &at(1));
+    assert_eq!(restored.aggregate.seq_nr(), 2);
+    assert_eq!(restored.version, 2, "楽観 version はストアが採番する");
+    assert_eq!(
+        restored.aggregate.cursor(),
+        restored.aggregate.stage_index(1).unwrap()
+    );
+    assert_eq!(restored.aggregate.last_updated_at(), &at(1));
 
     // 3. ジャーナルだけへの追記 — スナップショットは進まないので、復元はリプレイを通る。
-    let mut aggregate = restored;
+    let mut aggregate = restored.aggregate;
     let opened = aggregate
         .open_gate(vec!["docs/x.md".to_string()], at(2))
         .unwrap();
     store
-        .persist_event(&opened, aggregate.version())
+        .persist_event(envelope(&aggregate, opened), restored.version)
         .await
         .unwrap();
 
     let restored = find_by_id(&store, &id).await.unwrap();
     assert_eq!(
-        restored.seq_nr(),
+        restored.aggregate.seq_nr(),
         3,
         "スナップショットの先をリプレイで追いつく"
     );
     assert_eq!(
-        restored.checkbox(restored.stage_index(1).unwrap()),
+        restored
+            .aggregate
+            .checkbox(restored.aggregate.stage_index(1).unwrap()),
         Some(CheckboxState::AwaitingApproval)
     );
-    assert_eq!(restored.last_updated_at(), &at(2));
+    assert_eq!(restored.aggregate.last_updated_at(), &at(2));
+    assert_eq!(restored.version, 3, "イベントのみの書込でも版は進む");
 
     // 4. もう 1 度スナップショット同時更新 — 直前のリプレイ結果から続けられる。
-    let mut aggregate = restored;
+    let mut aggregate = restored.aggregate;
     let approved = aggregate.approve_gate(None, None, at(3)).unwrap();
     store
-        .persist_event_and_snapshot(&approved, &aggregate)
+        .persist_event_and_snapshot(
+            envelope(&aggregate, approved),
+            aggregate.clone(),
+            restored.version,
+        )
         .await
         .unwrap();
 
     let restored = find_by_id(&store, &id).await.unwrap();
-    assert_eq!(restored.seq_nr(), 4);
-    assert_eq!(restored.cursor(), restored.stage_index(2).unwrap());
+    assert_eq!(restored.aggregate.seq_nr(), 4);
+    assert_eq!(restored.version, 4, "版は書込のたびにストアが 1 つ進める");
     assert_eq!(
-        restored.checkbox(restored.stage_index(1).unwrap()),
+        restored.aggregate.cursor(),
+        restored.aggregate.stage_index(2).unwrap()
+    );
+    assert_eq!(
+        restored
+            .aggregate
+            .checkbox(restored.aggregate.stage_index(1).unwrap()),
         Some(CheckboxState::Completed)
     );
     assert_eq!(
-        restored.approved(restored.stage_index(1).unwrap()),
+        restored
+            .aggregate
+            .approved(restored.aggregate.stage_index(1).unwrap()),
         Some(true)
     );
-    assert_eq!(restored.last_updated_at(), &at(3));
+    assert_eq!(restored.aggregate.last_updated_at(), &at(3));
 }
 
 #[tokio::test]
-async fn the_journal_keeps_every_event_in_order_with_a_stable_identifier() {
+async fn the_journal_keeps_every_envelope_in_order_with_its_metadata() {
     let mut store = Store::new();
     let id = intent_id();
 
     let (mut aggregate, started) = genesis();
     store
-        .persist_event_and_snapshot(&started, &aggregate)
+        .persist_event_and_snapshot(
+            envelope(&aggregate, started),
+            aggregate.clone(),
+            CREATE_EXPECTED_VERSION,
+        )
         .await
         .unwrap();
     let completed = aggregate.complete_stage(at(1)).unwrap();
     store
-        .persist_event_and_snapshot(&completed, &aggregate)
+        .persist_event_and_snapshot(envelope(&aggregate, completed), aggregate.clone(), 1)
         .await
         .unwrap();
 
     // `seq_nr` 引数はその番号を含む (本家 `fetch_events_since` は `>=`)。
     let events = store.get_events_by_id_since_seq_nr(&id, 1).await.unwrap();
     assert_eq!(events.len(), 2);
-    assert_eq!(events.iter().map(Event::seq_nr).collect::<Vec<_>>(), [1, 2]);
     assert_eq!(
-        events.iter().map(Event::id).collect::<Vec<_>>(),
-        [
-            &WorkflowExecutionEventId::new(id.clone(), NonZeroUsize::new(1).unwrap()),
-            &WorkflowExecutionEventId::new(id.clone(), NonZeroUsize::new(2).unwrap()),
-        ]
+        events.iter().map(EventEnvelope::seq_nr).collect::<Vec<_>>(),
+        [1, 2]
     );
-    assert!(events.iter().all(|event| event.aggregate_id() == &id));
+    assert_eq!(
+        events
+            .iter()
+            .map(EventEnvelope::occurred_at)
+            .collect::<Vec<_>>(),
+        [&at(0), &at(1)],
+        "発生時刻はドメイン供給値のまま往復する"
+    );
+    assert!(
+        events
+            .iter()
+            .all(|envelope| envelope.manifest() == MANIFEST),
+        "manifest は封筒がそのまま運ぶ"
+    );
+    assert!(events.iter().all(|envelope| envelope.aggregate_id() == &id));
 
     let tail = store.get_events_by_id_since_seq_nr(&id, 2).await.unwrap();
-    assert_eq!(tail.iter().map(Event::seq_nr).collect::<Vec<_>>(), [2]);
+    assert_eq!(
+        tail.iter().map(EventEnvelope::seq_nr).collect::<Vec<_>>(),
+        [2]
+    );
 }

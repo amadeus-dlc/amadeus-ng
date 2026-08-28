@@ -1,5 +1,12 @@
 # event-store-adapter-rs への要望 — EventEnvelope の導入（v3 提案）
 
+> **結果（2026-08-29 追記）**: 本家 v3.0.0（2026-08-28 リリース）が本要望の方向で実装・
+> リリースされた（`Event` / `Aggregate` trait を廃し `EventEnvelope<AID, P>` /
+> `SnapshotEnvelope<A>` を導入 — 下記「本家が決めるべき設計論点」の 4 点すべてに回答する形）。
+> amadeus-ng は B7（`bolt/b7-esa-v3-event-envelope`）で `=3.0.0` へ乗り換え済み。詳細は
+> [`developer-report-1.md`](construction/esa-v3-migration/developer-report-1.md) と
+> [`decisions.md` ADR-010 2026-08-29 追記](inception/domain-design/decisions.md) を参照。
+>
 > amadeus-ng（ADR-010 で v2.0.0 へ Conformist 乗り換え済み）からの設計改善要望。
 > 本家の新 intent の初期記述としてそのまま貼れる形にしてある。**最終設計は本家の
 > intent（inception/construction）で決めるべきもの**で、以下の形はあくまで提案。

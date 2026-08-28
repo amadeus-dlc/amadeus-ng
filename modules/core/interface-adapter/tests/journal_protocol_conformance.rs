@@ -17,11 +17,15 @@
 //!
 //! 射影規則 (モデル変数 → 実装の観測):
 //!   journalLen    = `JournalReader::events_after(ZERO)` の行数 (本家 `journal` の rowid 順)
-//!   snapVersion   = 本家 `get_latest_snapshot_by_id` が載せた `version()` (行が無ければ 0)
-//!   snapSeq       = 同じ集約の `seq_nr()` (行が無ければ 0)
+//!   snapVersion   = 本家 `get_latest_snapshot_by_id` が返す封筒の `version()` (行が無ければ 0)
+//!   snapSeq       = 同じ封筒の `seq_nr()` (行が無ければ 0)
 //!   checkpoint    = `JournalReader::checkpoint(ProjectionName)` の値 (我々の表)
 //!   readModelSeq  = フェイク投影が描き終えた最後の global 通番
-//!   loadedVersion = 各 writer が握っている集約の `version()` (未永続の genesis は 0)
+//!   loadedVersion = 各 writer が握っている再水和結果の `version()` (未永続の genesis は 0)
+//!
+//! v3 で楽観 version は集約から外れ、`SnapshotEnvelope` (列) が正本になった (ADR-010 / B7)。
+//! モデルの `loadedVersion` はそのまま**再水和結果が握る版**へ射影される — 読んだ版で書くこと
+//! そのものが `store_ok` / `store_conflict` の分岐条件だからである。
 
 // テストコードでは unwrap / expect / panic を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -48,14 +52,15 @@ use core_interface_adapter::orchestration::{
     JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use core_use_case::orchestration::{
-    GlobalSeqNr, JournalReader, ProjectionName, RepositoryError, WorkflowExecutionRepository,
+    GlobalSeqNr, JournalReader, ProjectionName, RehydratedWorkflowExecution, RepositoryError,
+    WorkflowExecutionRepository,
 };
 use event_store_adapter_rs::EventStoreForSqlite;
-use event_store_adapter_rs::types::{Aggregate, Event, EventStore};
+use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
 use tempfile::TempDir;
 
-/// ITF 再生は時計を持たない — 封筒の `occurred_at` は固定値でよい (集約は値を素通しする)。
+/// ITF 再生は時計を持たない — `occurred_at` は固定値でよい (集約は値を素通しする)。
 const AT_TEXT: &str = "2026-08-23T00:00:00Z";
 
 /// 固定の発生時刻。
@@ -207,7 +212,7 @@ fn stages() -> Vec<StageEntry> {
         .collect()
 }
 
-/// genesis の集約 (`version` = 0 = 未永続) と `Started` イベント (`seq_nr` = 1)。
+/// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
     WorkflowExecution::start_from_plan_unchecked(
         intent_id(),
@@ -241,36 +246,40 @@ fn next_command(aggregate: &mut WorkflowExecution) -> WorkflowExecutionEvent {
     result.expect("合成計画はフィクスチャ長ぶんのコマンドを受け付ける (STAGES の見積り)")
 }
 
-/// 1 人の writer が握っている「ロード済み集約」。
+/// 1 人の writer が握っている「ロード済み集約 + 版」。
 struct Writer {
     aggregate: WorkflowExecution,
+    /// モデルの `loadedVersion` — この writer が書込に提示する版。
+    version: usize,
     /// まだ書けていない genesis の `Started` (書込済みなら `None`)。
     pending: Option<WorkflowExecutionEvent>,
 }
 
 impl Writer {
-    /// まだ何も書かれていないストアを読んだ writer (genesis を握る — `version` = 0)。
+    /// まだ何も書かれていないストアを読んだ writer (genesis を握る — 版は未永続の 0)。
     fn genesis() -> Writer {
         let (aggregate, event) = genesis();
         Writer {
             aggregate,
+            version: <Repository as WorkflowExecutionRepository>::UNPERSISTED_VERSION,
             pending: Some(event),
         }
     }
 
-    const fn loaded(aggregate: WorkflowExecution) -> Writer {
+    fn loaded(rehydrated: RehydratedWorkflowExecution) -> Writer {
         Writer {
-            aggregate,
+            version: rehydrated.version(),
+            aggregate: rehydrated.into_aggregate(),
             pending: None,
         }
     }
 
     /// モデルの `loadedVersion` — この writer が書込に提示する版。
     ///
-    /// 未永続の genesis を握っている writer は 0 である (ストアには行がまだ無く、本家の
-    /// 作成経路は version の CAS をしない)。モデルの初期値と同じ意味になる。
-    fn loaded_version(&self) -> usize {
-        self.aggregate.version()
+    /// 未永続の genesis を握っている writer は 0 である (ストアには行がまだ無く、新規作成の
+    /// 規約が `expected_version == 0` だから)。モデルの初期値と同じ意味になる。
+    const fn loaded_version(&self) -> usize {
+        self.version
     }
 
     /// 次の書込に使う (イベント, 集約) の下書き。
@@ -288,8 +297,9 @@ impl Writer {
     }
 
     /// 書込が通ったので、**ストアが採番した版**を握り直す (BR5.3 — 版を知るのはストアだけ)。
-    fn commit(&mut self, stored: WorkflowExecution) {
-        self.aggregate = stored;
+    fn commit(&mut self, stored: RehydratedWorkflowExecution) {
+        self.version = stored.version();
+        self.aggregate = stored.into_aggregate();
         self.pending = None;
     }
 }
@@ -320,14 +330,14 @@ async fn assert_projection(
         "{label}: journalLen"
     );
     // 単一集約なので global 通番と seq_nr は 1 から同じ連番になる (失敗した書込は採番しない)。
-    for (offset, (global, event)) in rows.iter().enumerate() {
+    for (offset, entry) in rows.iter().enumerate() {
         let expected = offset + 1;
         assert_eq!(
-            global.to_u64(),
+            entry.global_seq().to_u64(),
             u64::try_from(expected).expect("行番号"),
             "{label}: global 通番"
         );
-        assert_eq!(event.seq_nr(), expected, "{label}: seq_nr");
+        assert_eq!(entry.seq_nr(), expected, "{label}: seq_nr");
     }
 
     let snapshot = store
@@ -335,9 +345,8 @@ async fn assert_projection(
         .get_latest_snapshot_by_id(&intent_id())
         .await
         .expect("スナップショットは読める");
-    let (version, seq_nr) = snapshot.map_or((0, 0), |aggregate| {
-        (aggregate.version(), aggregate.seq_nr())
-    });
+    let (version, seq_nr) =
+        snapshot.map_or((0, 0), |envelope| (envelope.version(), envelope.seq_nr()));
     assert_eq!(version, m.snap_version, "{label}: snapVersion");
     assert_eq!(seq_nr, m.snap_seq, "{label}: snapSeq");
 
@@ -402,13 +411,13 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
         match m.last_action.as_str() {
             // 再水和 — writer は現在のスナップショット版を握り直す。
             "load" => match repository.find_by_id(&intent_id()).await {
-                Ok(aggregate) => {
+                Ok(rehydrated) => {
                     assert_eq!(
-                        aggregate.version(),
+                        rehydrated.version(),
                         prev.snap_version,
                         "{label}: 再水和の版"
                     );
-                    *writers.get_mut(writer).expect("writer 添字") = Writer::loaded(aggregate);
+                    *writers.get_mut(writer).expect("writer 添字") = Writer::loaded(rehydrated);
                 }
                 Err(RepositoryError::NotFound { .. }) => {
                     assert_eq!(
@@ -425,11 +434,11 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 let held = writers.get(writer).expect("writer 添字");
                 let (event, aggregate) = held.draft();
                 repository
-                    .store(&event, &aggregate)
+                    .store(&event, &aggregate, held.loaded_version())
                     .await
                     .unwrap_or_else(|error| panic!("{label}: 書込は通るはず {error:?}"));
                 assert_eq!(
-                    u64::try_from(event.seq_nr()).expect("seq_nr"),
+                    u64::try_from(aggregate.seq_nr()).expect("seq_nr"),
                     m.journal_len,
                     "{label}: 追記された行の seq_nr"
                 );
@@ -446,7 +455,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 let held = writers.get(writer).expect("writer 添字");
                 let (event, aggregate) = held.draft();
                 let error = repository
-                    .store(&event, &aggregate)
+                    .store(&event, &aggregate, held.loaded_version())
                     .await
                     .expect_err("stale な writer の書込は拒否される");
                 assert_eq!(
@@ -468,7 +477,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                     .await
                     .expect("チェックポイントは読める");
                 let rows = reader.events_after(from).await.expect("差分は読める");
-                let last = rows.last().map(|(global, _)| *global);
+                let last = rows.last().map(|entry| entry.global_seq());
                 if let Some(global) = last {
                     projection.read_model_seq = global.to_u64();
                     reader

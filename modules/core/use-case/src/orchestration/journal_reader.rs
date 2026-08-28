@@ -1,8 +1,7 @@
 //! `JournalReader` ポート — 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 
-use core_domain::orchestration::WorkflowExecutionEvent;
-
 use super::global_seq_nr::GlobalSeqNr;
+use super::journal_entry::JournalEntry;
 use super::journal_read_error::JournalReadError;
 use super::projection_name::ProjectionName;
 
@@ -11,6 +10,10 @@ use super::projection_name::ProjectionName;
 /// 集約の永続化そのもの (`WorkflowExecutionRepository`) とは**別の口**である — 本家
 /// event-store-adapter-rs のイベントストアは集約単位の読み書きだけを担い、全集約横断の
 /// 順序読取と投影チェックポイントは利用側の関心だからである (ADR-010 決定 4)。
+///
+/// 本 trait は U4 で RMU クレートへ所有が移る (ADR-009 2026-08-28 追記)。RMU はライブラリ型に
+/// 依存できないので、**本家の `EventEnvelope` をここから出さない** — 行の材料は我々が所有する
+/// [`JournalEntry`] に写して返す。
 ///
 /// 真実源はジャーナルであり、投影は「チェックポイント以降を読んで描き、チェックポイントを
 /// 進める」だけで冪等に追いつける — その 2 性質 (順序・単調性) を本ポートが保証する
@@ -25,13 +28,14 @@ use super::projection_name::ProjectionName;
 pub trait JournalReader {
     /// `after` **より大きい** global 通番の行を昇順で返す (全集約横断)。
     ///
+    /// 返すのは [`JournalEntry`] — 投影はどの集約の何番目かを知らないとリードモデルを描け
+    /// ないので、行の材料を落とさずに運ぶ。
+    ///
     /// # Errors
     ///
     /// ストア I/O (`Io`)、復号不能 (`Corrupt`) を返す。
-    async fn events_after(
-        &self,
-        after: GlobalSeqNr,
-    ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError>;
+    async fn events_after(&self, after: GlobalSeqNr)
+    -> Result<Vec<JournalEntry>, JournalReadError>;
 
     /// 投影のチェックポイントを読む。未登録の投影は [`GlobalSeqNr::ZERO`]。
     ///
@@ -66,33 +70,31 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::orchestration::{GlobalSeqNr, JournalReadError, ProjectionName};
+    use crate::orchestration::{GlobalSeqNr, JournalEntry, JournalReadError, ProjectionName};
     use chrono::{DateTime, Utc};
-    use core_domain::orchestration::{
-        IntentId, WorkflowExecutionEvent, WorkflowExecutionEventPayload,
-    };
+    use core_domain::orchestration::{IntentId, WorkflowExecutionEvent};
     use std::collections::BTreeMap;
-    use std::num::NonZeroUsize;
 
     fn intent() -> IntentId {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
-    fn event(seq_nr: usize) -> WorkflowExecutionEvent {
-        WorkflowExecutionEvent::new(
+    fn entry(seq_nr: usize) -> JournalEntry {
+        JournalEntry::new(
+            GlobalSeqNr::new(seq_nr as u64),
             intent(),
-            NonZeroUsize::new(seq_nr).unwrap(),
+            seq_nr,
             DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            WorkflowExecutionEventPayload::Unparked,
+            WorkflowExecutionEvent::Unparked,
         )
     }
 
     /// trait の形を固定するための最小実装 (単調性の規則も持つ — 契約テストは adapter 側)。
     #[derive(Debug, Default)]
     struct FakeReader {
-        journal: Vec<(GlobalSeqNr, WorkflowExecutionEvent)>,
+        journal: Vec<JournalEntry>,
         checkpoints: BTreeMap<ProjectionName, GlobalSeqNr>,
     }
 
@@ -100,11 +102,11 @@ mod tests {
         async fn events_after(
             &self,
             after: GlobalSeqNr,
-        ) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, JournalReadError> {
+        ) -> Result<Vec<JournalEntry>, JournalReadError> {
             Ok(self
                 .journal
                 .iter()
-                .filter(|(global, _)| *global > after)
+                .filter(|entry| entry.global_seq() > after)
                 .cloned()
                 .collect())
         }
@@ -144,10 +146,7 @@ mod tests {
 
     fn reader() -> FakeReader {
         FakeReader {
-            journal: vec![
-                (GlobalSeqNr::new(1), event(1)),
-                (GlobalSeqNr::new(2), event(2)),
-            ],
+            journal: vec![entry(1), entry(2)],
             checkpoints: BTreeMap::new(),
         }
     }
@@ -161,7 +160,9 @@ mod tests {
         let reader = reader();
         let rows = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
         assert_eq!(
-            rows.iter().map(|(g, _)| g.to_u64()).collect::<Vec<_>>(),
+            rows.iter()
+                .map(|entry| entry.global_seq().to_u64())
+                .collect::<Vec<_>>(),
             [1, 2]
         );
     }
@@ -171,7 +172,9 @@ mod tests {
         let reader = reader();
         let rows = reader.events_after(GlobalSeqNr::new(1)).await.unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].0, GlobalSeqNr::new(2));
+        assert_eq!(rows[0].global_seq(), GlobalSeqNr::new(2));
+        assert_eq!(rows[0].intent_id(), &intent(), "集約識別子が境界を越える");
+        assert_eq!(rows[0].seq_nr(), 2);
     }
 
     #[tokio::test]

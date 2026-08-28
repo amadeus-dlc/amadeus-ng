@@ -19,14 +19,13 @@ use core_interface_adapter::orchestration::{
     JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
 };
 use core_use_case::orchestration::{
-    CorruptCause, GlobalSeqNr, JournalReadError, JournalReader, ProjectionName,
+    CorruptCause, GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, ProjectionName,
     WorkflowExecutionRepository,
 };
-use event_store_adapter_rs::types::Event;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{absent_intent_id, at, contract, genesis_for, intent_id, store_and_reload};
+use support::{absent_intent_id, advance, at, contract, intent_id, store_genesis_for};
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -76,12 +75,23 @@ async fn the_journal_reads_every_event_in_global_order() {
         .await
         .expect("差分読取");
     assert_eq!(rows.len(), 5);
-    let globals: Vec<u64> = rows.iter().map(|(global, _)| global.to_u64()).collect();
+    let globals: Vec<u64> = rows
+        .iter()
+        .map(|entry| entry.global_seq().to_u64())
+        .collect();
     let mut sorted = globals.clone();
     sorted.sort_unstable();
     assert_eq!(globals, sorted, "global 通番の昇順");
-    let seqs: Vec<usize> = rows.iter().map(|(_, event)| event.seq_nr()).collect();
+    let seqs: Vec<usize> = rows.iter().map(JournalEntry::seq_nr).collect();
     assert_eq!(seqs, [1, 2, 3, 4, 5], "欠落なく順に読める");
+    assert!(
+        rows.iter().all(|entry| entry.intent_id() == &intent_id()),
+        "集約識別子が境界を越えて残る"
+    );
+    assert!(
+        rows.iter().all(|entry| entry.occurred_at() == &at()),
+        "発生時刻はドメイン供給値のまま往復する"
+    );
 }
 
 #[tokio::test]
@@ -92,10 +102,10 @@ async fn the_journal_reads_only_the_difference() {
 
     let reader = fixture.reader();
     let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = all.get(2).expect("3 件目").0;
+    let third = all.get(2).expect("3 件目").global_seq();
     let rest = reader.events_after(third).await.expect("差分");
     assert_eq!(rest.len(), 2);
-    assert!(rest.iter().all(|(global, _)| *global > third));
+    assert!(rest.iter().all(|entry| entry.global_seq() > third));
 }
 
 #[tokio::test]
@@ -110,7 +120,7 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
 
     let mut reader = fixture.reader();
     let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = before.get(2).expect("3 件目").0;
+    let third = before.get(2).expect("3 件目").global_seq();
     reader
         .advance_checkpoint(&projection(), third)
         .await
@@ -159,7 +169,7 @@ async fn a_truncated_journal_behind_the_checkpoint_is_refused() {
 
     let mut reader = fixture.reader();
     let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let last = all.last().expect("末尾").0;
+    let last = all.last().expect("末尾").global_seq();
     reader
         .advance_checkpoint(&projection(), last)
         .await
@@ -201,7 +211,7 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
 
     let mut reader = fixture.reader();
     let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = before.get(2).expect("3 件目").0;
+    let third = before.get(2).expect("3 件目").global_seq();
     reader
         .advance_checkpoint(&projection(), third)
         .await
@@ -215,9 +225,9 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
 
     let reader = fixture.reader();
     let after = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let keys = |rows: &[(GlobalSeqNr, _)]| -> Vec<u64> {
+    let keys = |rows: &[JournalEntry]| -> Vec<u64> {
         rows.iter()
-            .map(|(global, _)| global.to_u64())
+            .map(|entry| entry.global_seq().to_u64())
             .collect::<Vec<_>>()
     };
     assert_eq!(keys(&after), keys(&before), "rowid は VACUUM 前と同一");
@@ -238,21 +248,21 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
 
-    let (first, first_started) = genesis_for(intent_id());
-    let first = store_and_reload(&mut repository, &first_started, &first).await;
-
-    let (second, second_started) = genesis_for(absent_intent_id());
-    store_and_reload(&mut repository, &second_started, &second).await;
-
-    let mut first = first;
-    let next = first.complete_stage(at()).expect("索引 0 は非ゲート");
-    store_and_reload(&mut repository, &next, &first).await;
+    let first = store_genesis_for(&mut repository, intent_id()).await;
+    store_genesis_for(&mut repository, absent_intent_id()).await;
+    advance(&mut repository, &first, |aggregate| {
+        aggregate.complete_stage(at())
+    })
+    .await;
 
     let reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     assert_eq!(
         rows.iter()
-            .map(|(global, event)| (global.to_u64(), event.aggregate_id().as_str().to_string()))
+            .map(|entry| (
+                entry.global_seq().to_u64(),
+                entry.intent_id().as_str().to_string()
+            ))
             .collect::<Vec<_>>(),
         [
             (1, support::INTENT.to_string()),
@@ -268,10 +278,10 @@ async fn the_reader_observes_writes_made_after_it_was_opened() {
     // Reader は同じファイルへの**生きた接続**である (写しではない)。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
-    let aggregate = support::store_genesis(&mut repository).await;
+    let held = support::store_genesis(&mut repository).await;
 
     let reader = fixture.reader();
-    support::store_stage_completed(&mut repository, aggregate).await;
+    support::store_stage_completed(&mut repository, &held).await;
 
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     assert_eq!(rows.len(), 2);
@@ -326,7 +336,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
 
     let mut reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let last = rows.last().expect("5 件ある").0;
+    let last = rows.last().expect("5 件ある").global_seq();
 
     reader
         .advance_checkpoint(&projection(), last)

@@ -366,3 +366,36 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   かつ本家と同じものを二重に保守する。*B5 のマージ前に作り直す*: B5 は既に 159 ファイルで
   人間レビューが困難な大きさに達しており、乗り換えを足すと追えなくなる。**独立した Bolt** として
   「本家に置き換えた」という一筋で読める差分にする（オーナー裁定 2026-08-26「次の Bolt でいい」）。
+
+- **追記 2026-08-29（Bolt B7 — v3.0.0 乗り換え）** — 本家 v3.0.0（2026-08-28 リリース）は、
+  要望書 [`upstream-request-esa-event-envelope.md`](../../upstream-request-esa-event-envelope.md)
+  の 4 設計質問すべてに回答する形で `Event` / `Aggregate` trait を廃し、
+  `EventEnvelope<AID, P>` / `SnapshotEnvelope<A>` に置き換えた。B7 で `=3.0.0` へ乗り換えた
+  （`=2.0.0` は失効）。
+
+  ドメイン型が実装する本家 trait は `AggregateId` だけになり、輸送のメタデータ（集約識別子・
+  通番・発生時刻・型判別子）は封筒が運ぶ。旧封筒 struct `WorkflowExecutionEvent`（id /
+  schema_version / occurred_at フィールド）と `WorkflowExecutionEventId` 型は削除し、
+  ドメインイベントは輸送メタデータを一切持たない素の serde 型（本家の語で payload）になった。
+  旧 `schema_version` 予約フィールドの後継はジャーナル列の manifest 列（値は
+  `workflow-execution-event/1`）で、Repository が書き、JournalReaderImpl が不一致・欠落を
+  `Corrupt(UndecodablePayload)` で拒否する（版を上げる規約は C5 参照）。
+
+  楽観 `version` は集約と memento（`WorkflowExecutionState`）から削除し、**集約の外**を持ち回る
+  形にした — `find_by_id` は再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番
+  version）を返し、`store` は `expected_version: usize` を引数に取る。
+
+  **経緯（TOCTOU）**: 初稿の「更新は `persist_event(envelope, snapshot.version())`」は、
+  `store` の引数に version が無いため store 内で最新スナップショットを読み直す形にしかならず、
+  TOCTOU で楽観ロックが無効化する（memory バックエンドには `(aid, seq_nr)` 一意制約が無く黙って
+  二重書込になる）ため撤回し、本家移行ガイド §3 の持ち回り形へ確定した。
+
+  **更新も `persist_event_and_snapshot`** を使う — v3 の `persist_event` は snapshot 行の
+  seq_nr を進めないため、Quint モデル不変条件 `snapshot_tracks_journal`（snapSeq ==
+  journalLen）を破る。genesis / 更新の分岐は `event.seq_nr == 1` から導出する（`is_created` の
+  消滅に整合、本家 v3 と同型）。genesis の `set_version(1)` ハックは `FIRST_STORED_VERSION`
+  定数ごと消滅した。`expected_version` は newtype 化を見送り `usize` のまま受け入れる（不透明
+  トークンの旨はポート doc に明記。newtype 化は U5/U6 実装時の境界強化候補として記録済み）。
+
+  出典: [`developer-report-1.md`](../../construction/esa-v3-migration/developer-report-1.md)
+  （§2 裁定 1〜9、§4-(a) TOCTOU 経緯、§4-(b) newtype 見送り）。

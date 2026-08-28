@@ -70,7 +70,6 @@ mod status;
 mod verdict;
 mod workflow_execution;
 mod workflow_execution_event;
-mod workflow_execution_event_id;
 mod workflow_execution_state;
 
 // Domain Primitive
@@ -92,13 +91,13 @@ pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
 pub use workflow_execution_state::WorkflowExecutionState;
 
-// ドメインイベント (C5 の語彙 — 12 変種)
+// ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
+// 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
+// (ADR-010 / B7 — 旧 `WorkflowExecutionEventId` と自前封筒は削除した)。
 pub use workflow_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
     StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
-    WorkflowExecutionEventPayload,
 };
-pub use workflow_execution_event_id::WorkflowExecutionEventId;
 
 // ビルダー
 pub use workflow_execution_state::WorkflowExecutionStateBuilder;

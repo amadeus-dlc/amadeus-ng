@@ -8,9 +8,11 @@
 
 mod corrupt_cause;
 mod global_seq_nr;
+mod journal_entry;
 mod journal_read_error;
 mod journal_reader;
 mod projection_name;
+mod rehydrated_workflow_execution;
 mod repository_error;
 mod workflow_definition_repository;
 mod workflow_execution_repository;
@@ -27,6 +29,10 @@ pub use workflow_execution_repository::WorkflowExecutionRepository;
 // Domain Primitive (永続化の通番と投影の名前)
 pub use global_seq_nr::GlobalSeqNr;
 pub use projection_name::ProjectionName;
+
+// ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
+pub use journal_entry::JournalEntry;
+pub use rehydrated_workflow_execution::RehydratedWorkflowExecution;
 
 // エラー
 pub use corrupt_cause::CorruptCause;

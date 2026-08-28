@@ -59,7 +59,7 @@
 
 - **責務**: `core-domain` の `WorkflowExecution` を ES 形の FSM にする — ドメインイベント語彙
   （`WorkflowExecutionEvent`、コマンドと 1:1 の 11 変種程度）、decide（`&mut self` コマンドが単一イベントを返す）
-  / `apply_event` 分離、`version` / `seq_nr` 保持、`next_decision` クエリメソッド（ADR-002）、有効プラン
+  / `apply_event` 分離、~~`version` /~~ `seq_nr` 保持（`version` は**失効（2026-08-29 / ADR-010・Bolt B7）**: 楽観 version は集約の外へ — `RehydratedWorkflowExecution` が持ち回る）、`next_decision` クエリメソッド（ADR-002）、有効プラン
   畳み込みの集約メソッド化（FR8.4 / R2）、`PlanAction` の `workflow_definition` への**完全移動**（FR8.3 /
   ADR-005 改訂 — 再輸出なし、呼出側パスの一斉修正を同 Unit に含む）。
 - **境界**: `core-domain` クレート内（orchestration / workflow_definition / workspace コンテキスト）。I/O なし・

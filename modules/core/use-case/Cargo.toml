@@ -13,10 +13,8 @@ core-domain = { workspace = true }
 audit-events = { workspace = true }
 directive-schema = { workspace = true }
 
+# 読取レコード (`JournalEntry`) が運ぶ発生時刻 (`DateTime<Utc>` — ADR-010)。
+chrono = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
-# ポートのテストが組む封筒の `occurred_at` (`DateTime<Utc>` — ADR-010)。
-chrono = { workspace = true }
-# ポートのテストがドメイン型を本家 trait 越しに触る (`Aggregate` / `Event`)。プロダクト
-# コードのポート定義自体は本家に依存しない — 依存が入るのはストアを差し替える委任 2。
-event-store-adapter-rs = { workspace = true }

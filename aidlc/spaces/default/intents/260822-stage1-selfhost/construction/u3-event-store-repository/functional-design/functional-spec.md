@@ -22,6 +22,27 @@
 > [developer-report-1 §6](../../esa-v2-migration/developer-report-1.md) /
 > [developer-report-2 §8](../../esa-v2-migration/developer-report-2.md)。
 
+> ## ⚠ 追加失効（2026-08-29 / ADR-010・Bolt B7 — event-store-adapter-rs v3.0.0 EventEnvelope API へ乗り換え）
+>
+> B6 で「失効していないもの」とされたポート面（§2）と ITF 再生先（§5）も、B7 でさらに変わった:
+> - **ポート署名**（§2）: `find_by_id` の戻り値が **再水和レコード `RehydratedWorkflowExecution`**
+>   （集約 + ストア採番 version）に、`store` が `expected_version: usize` を明示引数に取る形に
+>   変わった。楽観 version は集約と memento（`WorkflowExecutionState`）から削除され、集約の
+>   **外**を持ち回る。
+> - **`check_preconditions` の消滅**（§3.1 の①前提検査）: イベントが識別子・通番を持たなくなった
+>   （封筒はドメインで作らず Repository が組む）ため、「別集約のイベントを渡す」「通番を
+>   食い違わせる」がそもそも書けなくなり、検査対象が構成不能になった。実行時検査 → 型強制の
+>   置換（B6 で `seq_nr = 0` に対して行ったのと同型）。契約テスト
+>   `a_sequence_that_disagrees_with_the_aggregate_is_refused` /
+>   `mismatched_identity_is_refused` は削除した（検出力を落としたのではなく対象が消えた）。
+> - **ITF 再生先**（§5）: モデルは今回も 1 文字も変えていないが、`journal_protocol_conformance.rs`
+>   の `Writer` が `version` を持つ形へ追従した（モデルの `loadedVersion` は再水和レコードの版へ
+>   そのまま射影される）。
+>
+> 現在の正は実装（`modules/core/use-case/src/orchestration/`・`modules/core/interface-adapter/src/orchestration/`）と
+> [ADR-010 2026-08-29 追記](../../../inception/domain-design/decisions.md)、
+> [developer-report-1（esa-v3-migration）](../../esa-v3-migration/developer-report-1.md)。
+
 ## 1. 配置（クレート = 層）
 
 | 層 / クレート | モジュール（private mod + ファサード `pub use`） | 内容 |
@@ -36,13 +57,17 @@
 | `formal/orchestration` | `journal_protocol.qnt`（新）。`formal/workspace/audit_lock.qnt` 削除 | BR3.3 |
 | `tests/conformance/fixtures` | `journal_protocol/*.itf.json`（新）。`audit_lock/` 削除 | BR3.5 |
 | `tools/lint` | `reap-decision-locality` ルール削除（checkbox-vocabulary / no-public-fields は維持） | BR3.1 |
-| 依存 | workspace: ~~`rusqlite = { version = "0.3x", features = ["bundled"] }`~~ → **`event-store-adapter-rs = "=2.0.0"`（`sqlite` feature）**（2026-08-27 / ADR-010。`rusqlite` は `JournalReaderImpl` の別接続用に adapter が直接持つ。バージョンは完全固定 — 本家スキーマに結合しているため）、`tokio = { version = "1", features = ["rt", "macros"] }`、`chrono`（本家 trait が `DateTime<Utc>` を要求 — NFR4.1 の再検討対象）、`serde`。adapter から `md5` 除去 | P6 |
+| 依存 | workspace: ~~`rusqlite = { version = "0.3x", features = ["bundled"] }`~~ → ~~`event-store-adapter-rs = "=2.0.0"`（`sqlite` feature）~~ → **`event-store-adapter-rs = "=3.0.0"`（`sqlite` feature、2026-08-29 / Bolt B7）**（2026-08-27 / ADR-010。`rusqlite` は `JournalReaderImpl` の別接続用に adapter が直接持つ。バージョンは完全固定 — 本家スキーマに結合しているため）、`tokio = { version = "1", features = ["rt", "macros"] }`、`chrono`（本家 trait が `DateTime<Utc>` を要求 — NFR4.1 の再検討対象）、`serde`。adapter から `md5` 除去 | P6 |
 
 ファサード（`pub use`）に旧名は残さない（module-visibility.md）。
 
 ## 2. ポートの形（C3 の具体化 — 差分のみ）
 
-- `WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution)}`。`store` は `&mut self`（C3 も
+- ~~`WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution)}`~~ → **失効（2026-08-29 / ADR-010・Bolt B7）**:
+  `find_by_id(&self, &IntentId) -> Result<RehydratedWorkflowExecution, _>`、
+  `store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution, expected_version: usize) -> Result<(), _>`。
+  楽観 version は集約から外れ、再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番
+  version）が持ち回る。`store` は `&mut self`（C3 も
   2026-08-24 のオーナー裁定で `&self` → `&mut self` へ**改訂済み** — `contract-summary.md` §C3、`pending-revision.md` #9。
   内部可変性の禁止に伴う変更で、正本は `coding-rules/interior-mutability.md` / `command-query-separation.md`）。
 - ~~`EventStore<AID, A, E>` の 4 メソッド — C3 どおり（`version: u64`、`seq_nr: u64`）。Repository 実装は `persist_event_and_snapshot` / `get_latest_snapshot_by_id` /
@@ -68,24 +93,40 @@
   合わせて書き換えていたこと自体が `coding-rules/upstream-contracts.md` 違反だった。
 - `StorePath::for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath` / `as_path()`。
 - **（2026-08-27 追加）楽観 version はストアが採番する不透明トークン**（BR5.3 / ADR-010 追記 (1)）。
-  `find_by_id` はストアが載せた値をそのまま保ち、`store` の期待値は `aggregate.version()` である。
+  ~~`find_by_id` はストアが載せた値をそのまま保ち、`store` の期待値は `aggregate.version()` である。
   genesis（`Event::is_created()` が真）だけは Gateway が**ストアへ渡す写しにのみ**初期値 1 を載せる
-  （呼出側の集約は動かない）。`Conflict` の `actual` は競合時に `get_latest_snapshot_by_id` を
-  1 回読み直して得る（本家は整形済み文字列しか返さないため。文言解析はしない）。
+  （呼出側の集約は動かない）。~~ → **失効（2026-08-29 / ADR-010・Bolt B7）**: version は集約から
+  外れた。`find_by_id` は再水和レコード `RehydratedWorkflowExecution` にストアが載せた値をそのまま
+  保つ。`store` の期待値は明示引数 `expected_version: usize`（genesis は `UNPERSISTED_VERSION` = 0）。
+  genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、新規・更新とも `persist_event_and_snapshot`
+  を呼ぶ（v3 の `persist_event` は snapshot の seq_nr を進めず Quint 不変条件
+  `snapshot_tracks_journal` を破るため）。`Conflict` の `actual` は競合時に `get_latest_snapshot_by_id`
+  を1回読み直して得る（本家は整形済み文字列しか返さないため。文言解析はしない）。
 
 ## 3. フロー
 
 ### 3.1 store（BR1.3 / BR2.3）
 
 > **失効（2026-08-27 / ADR-010・Bolt B6）** — 下記 1〜5 は**自前ストアの SQL 手順**であり、本家へ
-> 乗り換えたことで我々の手順ではなくなった。現在の store は
+> 乗り換えたことで我々の手順ではなくなった。~~現在の store は
 > ①前提検査（`event.id().intent_id() == aggregate.id()`、`event.seq_nr() == aggregate.seq_nr()`、
 > `event.seq_nr() >= 1`。**`aggregate.version() == event.seq_nr() - 1` の検査は削除** — version を
 > `seq_nr` から導く前提そのものが BR5.3 で否定された）→ ②genesis なら写しに初期 version 1 を載せる
-> → ③本家 `persist_event_and_snapshot(event, aggregate)` を 1 回呼ぶ、の 3 手である。
+> → ③本家 `persist_event_and_snapshot(event, aggregate)` を 1 回呼ぶ、の 3 手である。~~ →
+> **失効（2026-08-29 / ADR-010・Bolt B7）**: ①の前提検査（`check_preconditions`）は**消滅**した。
+> イベントが識別子・通番を持たなくなった（封筒はドメインで作らず Repository が組む）ため、
+> 「別集約のイベントを渡す」「通番を食い違わせる」がそもそも書けなくなり、検査対象が構成不能に
+> なった（実行時検査 → 型強制の置換）。現在の store は ①genesis なら `expected_version` に
+> `UNPERSISTED_VERSION`（= 0）を渡す → ②Repository が集約から
+> `EventEnvelope::new(intent_id, aggregate.seq_nr(), *aggregate.last_updated_at(),
+> event).with_manifest("workflow-execution-event/1")` を組む → ③本家 `persist_event_and_snapshot(envelope,
+> aggregate.clone(), expected_version)` を 1 回呼ぶ（新規・更新とも同じ経路、分岐は封筒の
+> `seq_nr == 1` から導出）、の 3 手である。
 > イベント追記・スナップショット更新・楽観 version の CAS は**本家が同一 Tx で**行い、我々は接続も
 > Tx も持たない。競合は本家が `OptimisticLockError` で返し、我々が `Conflict { expected, actual }` へ
-> 写す（`actual` は競合時のみ `get_latest_snapshot_by_id` の読み直しで得る）。
+> 写す（`actual` は競合時のみ `get_latest_snapshot_by_id` の読み直しで得る）。`ContractViolation`
+> （我々が封筒と `expected_version` を組み違えたとき）は `Corrupt(UndecodablePayload)` へ写す
+> （2026-08-29 / Bolt B7 追加）。
 
 **（以下 1〜5 は失効した自前 SQL 手順の履歴記録 — 上記バナー参照。現行手順はバナー内の①②③）**
 
@@ -110,7 +151,13 @@
 > **`with_version` は削除された** — 復号はストアが載せた version をそのまま保つのであって、
 > Repository が `seq_nr` から載せ直すことはしない（BR5.3）。
 > スナップショット payload の復号も **serde がメメント（`WorkflowExecutionState`）を経由する**ので、
-> `from_state()` の不変条件検査を必ず通る（オーナー裁定 2026-08-27）。ステップ 4（集約を返す）は不変。
+> `from_state()` の不変条件検査を必ず通る（オーナー裁定 2026-08-27）。~~ステップ 4（集約を返す）は不変。~~
+>
+> **2026-08-29 追記（Bolt B7）**: ステップ 4 も**変わった** — `find_by_id` は集約そのものではなく
+> **再水和レコード `RehydratedWorkflowExecution`**（集約 + ストアが載せた version、private
+> フィールド + アクセサ `aggregate()` / `version()` / `into_aggregate()`）を返す。リプレイの
+> 開始位置は集約自身の `seq_nr`（ストア側の写しと書込経路で必ず一致し、食い違えば `apply_event`
+> が `SequenceGap` で止める）。
 
 **（以下 1〜3 は失効した自前 SQL 手順・`with_version` の履歴記録 — 上記バナー参照。ステップ 4 のみ現行）**
 
@@ -145,7 +192,11 @@
 > 廃止した（`EventStoreError::Schema` 変種も削除）。現在の `open` は
 > `EventStoreForSqlite::new(path)` を呼ぶだけで、表と索引は**本家が冪等に作る**（親ディレクトリは
 > upstream の既存 `intents/` なので我々は作らない — 無ければ `Io { kind: NotFound }`）。
-> 版の固定は `event-store-adapter-rs = "=2.0.0"` の完全固定 ＋ スキーマガードテストが担う。
+> 版の固定は ~~`event-store-adapter-rs = "=2.0.0"`~~ → **`event-store-adapter-rs = "=3.0.0"`**
+> （2026-08-29 / Bolt B7）の完全固定 ＋ スキーマガードテストが担う。`journal` の DDL に
+> `manifest TEXT NOT NULL DEFAULT ''` 列が加わり、我々の `SELECT` は
+> `rowid, aid, seq_nr, payload, occurred_at, manifest` を読む（occurred_at はナノ秒 epoch、
+> `DateTime<Utc>` との往復はアダプタ層）。
 >
 > **`busy_timeout` は未決（U7 で裁定）**: 本家の接続には設定できない（接続を露出しないため）。
 > SQLite 既定の 0ms なので、別プロセスの並行書込は待たずに `SQLITE_BUSY`（我々の写像では
@@ -169,7 +220,11 @@
 >   `WorkflowExecutionEvent::new` を組み立てる経路は無い。
 > - **未知の変種・対応外の版の判別が消えた** — どちらも serde の復号失敗に畳まれ
 >   `Corrupt(UndecodablePayload)` になる（`CorruptCause::UnknownEventType` / `SchemaVersion` は削除）。
->   `schema_version` フィールド自体はイベント型に残るが、復号時に値を検査する経路は無い。
+>   ~~`schema_version` フィールド自体はイベント型に残るが、復号時に値を検査する経路は無い。~~ →
+>   **失効（2026-08-29 / ADR-010・Bolt B7）**: 旧封筒 struct（id / schema_version / occurred_at
+>   フィールドと `SCHEMA_VERSION` 定数・アクセサ）を削除したため、イベント型には残っていない。
+>   後継はジャーナル列 manifest の値 `workflow-execution-event/1`（Repository が書き、
+>   JournalReaderImpl が不一致・欠落を `Corrupt(UndecodablePayload)` で拒否）。
 > - **`StateWire` の値域検査（JSON の正確整数域 2^53 超の拒否）が無くなった**。ワイヤ構造体ごと
 >   削除したためで、ストアファイルは upstream 非観測なので互換上の実害は無いと判断した。
 
@@ -188,13 +243,18 @@
 | `Recomposed` | `skipped: [string]`, `added: [string]`, `stages_in_scope: [string]` |
 | `AutonomyModeSet` | `mode: string`（autonomous / gated） |
 
-~~封筒の `intent_id` / `seq_nr` / `schema_version` / `occurred_at` は列に出す（payload には含めない）。復号時に列の値から `WorkflowExecutionEvent::new` を組み立てる。~~ → **失効**（2026-08-27 / ADR-010。封筒は payload に serde で同梱され、`intent_id` + `seq_nr` は `WorkflowExecutionEventId` にまとまった）
+~~封筒の `intent_id` / `seq_nr` / `schema_version` / `occurred_at` は列に出す（payload には含めない）。復号時に列の値から `WorkflowExecutionEvent::new` を組み立てる。~~ → ~~失効（2026-08-27 / ADR-010。封筒は payload に serde で同梱され、`intent_id` + `seq_nr` は `WorkflowExecutionEventId` にまとまった）~~ →
+**さらに失効（2026-08-29 / ADR-010・Bolt B7）**: ~~`WorkflowExecutionEventId`~~ 型はファイルごと
+削除した（106 行）。ドメインイベントは輸送メタデータを一切持たない素の serde 型（本家の語で
+payload）になり、識別子は本家封筒の `(aggregate_id, seq_nr)` が持つ。回帰テスト
+`the_serialized_event_carries_no_transport_metadata` が、payload JSON に seq_nr / occurred_at /
+~~schema_version~~ / aggregate_id / manifest のいずれも現れないことを固定する。
 
-### 4.2 状態（snapshot.payload、~~16 属性~~ → **17 属性**。2026-08-27 / ADR-010 で `last_updated_at` を追加。数値は `u64` ではなく `usize`）
+### 4.2 状態（snapshot.payload、~~16 属性~~ → ~~17 属性~~ → **16 属性**（2026-08-29 / ADR-010・Bolt B7 — `version` 列を除去）。2026-08-27 / ADR-010 で `last_updated_at` を追加。数値は `u64` ではなく `usize`）
 
 `intent_id`, `definition_id`, `definition_revision`, `stages: [{slug, phase, plan_action, conditional}]`, `plan: [string]`, `overlay: [string]`, `conditional: [bool]`,
 `checkbox: [string]`（6 マーク）, `cursor: u64`, `status: string`（running / completed）, `parked_at: u64 \| null`, `autonomy: string`, `approved: [bool]`,
-`revision_count: [u32]`, `seq_nr: usize`, `version: usize`, `last_updated_at`（2026-08-27 追加）。復号後は `from_state` の不変条件検査が最終防衛線であり、これは **serde 経路でも変わらない** — 集約の `Deserialize` は `#[serde(try_from = "WorkflowExecutionState")]` でメメントを経由するので `from_state()` の検査点を必ず通る（オーナー裁定 2026-08-27）。
+`revision_count: [u32]`, `seq_nr: usize`, ~~`version: usize`~~（2026-08-29 削除 — 楽観 version は集約の外、`RehydratedWorkflowExecution` が持ち回る）, `last_updated_at`（2026-08-27 追加）。復号後は `from_state` の不変条件検査が最終防衛線であり、これは **serde 経路でも変わらない** — 集約の `Deserialize` は `#[serde(try_from = "WorkflowExecutionState")]` でメメントを経由するので `from_state()` の検査点を必ず通る（オーナー裁定 2026-08-27）。
 
 ## 5. 検証モデル `journal_protocol.qnt`（BR3.3 / BR3.4 / BR3.5）
 
@@ -203,7 +263,7 @@
 - 不変条件は状態遷移レベル（prev → current）で書く（`snapshot` アクションで prev を取る — audit_lock v2 と同じ型）。
 - mutation（code-summary に記録）: 各 invariant につき 1 変異 — 例: store_conflict が journalLen を増やす変異 → conflict_rejected 違反、store_ok のガード除去 →
   no_lost_update 違反、catchup が checkpoint を減らす変異 → checkpoint_monotone 違反、catchup が readModelSeq を journalLen+1 にする変異 → truth_is_journal 違反 …。
-- ITF: `quint run … --out-itf` で 6 シード以上採取、`#meta` 正規化済みでコミット。再生先は ~~InMemoryEventStore~~ → **`WorkflowExecutionRepositoryImpl` + `JournalReaderImpl`**（2026-08-27 改訂 / ADR-010）+ フェイク投影（adapter tests）。**モデルは 1 文字も変えずに通った**（乗り換えの意味論的な検収）。
+- ITF: `quint run … --out-itf` で 6 シード以上採取、`#meta` 正規化済みでコミット。再生先は ~~InMemoryEventStore~~ → **`WorkflowExecutionRepositoryImpl` + `JournalReaderImpl`**（2026-08-27 改訂 / ADR-010）+ フェイク投影（adapter tests）。**モデルは 1 文字も変えずに通った**（乗り換えの意味論的な検収）。**2026-08-29 追記（Bolt B7）**: v3.0.0 乗り換えでも再生先の型自体は同じ2つのまま変わらず、モデルも今回も1文字も変えていない。`Writer` が `version` を持つ形へ実装側（`journal_protocol_conformance.rs`）が追従し、モデルの `loadedVersion` は再水和レコード `RehydratedWorkflowExecution` の版へそのまま射影される。
 
 ## 6. 退役チェックリスト（BR3.1 / BR3.2）
 

@@ -10,18 +10,17 @@ pub(crate) mod contract;
 
 use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
-    IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    CommandError, IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
 };
 use core_domain::workflow_definition::{
     DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
 };
-use core_use_case::orchestration::WorkflowExecutionRepository;
-use event_store_adapter_rs::types::Aggregate;
+use core_use_case::orchestration::{RehydratedWorkflowExecution, WorkflowExecutionRepository};
 
-/// イベント封筒の `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
+/// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
 
-/// イベント封筒の `occurred_at`。
+/// イベントの `occurred_at`。
 pub(crate) fn at() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(AT_TEXT)
         .expect("固定の ISO 8601 UTC")
@@ -97,7 +96,7 @@ pub(crate) fn stages() -> Vec<StageEntry> {
     ]
 }
 
-/// genesis の集約と `Started` イベント (`seq_nr` = 1、`version` = 0 = 未永続)。
+/// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 #[must_use]
 pub(crate) fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
     genesis_for(intent_id())
@@ -126,27 +125,55 @@ pub(crate) async fn store_and_reload<R: WorkflowExecutionRepository>(
     repository: &mut R,
     event: &WorkflowExecutionEvent,
     aggregate: &WorkflowExecution,
-) -> WorkflowExecution {
-    repository.store(event, aggregate).await.expect("store");
+    expected_version: usize,
+) -> RehydratedWorkflowExecution {
     repository
-        .find_by_id(aggregate.id())
+        .store(event, aggregate, expected_version)
+        .await
+        .expect("store");
+    repository
+        .find_by_id(aggregate.intent_id())
         .await
         .expect("書いた集約は握り直せる")
 }
 
-/// genesis (`Started`) を 1 件書き、握り直した集約を返す。
+/// genesis (`Started`) を 1 件書き、握り直した結果を返す。
 pub(crate) async fn store_genesis<R: WorkflowExecutionRepository>(
     repository: &mut R,
-) -> WorkflowExecution {
-    let (aggregate, event) = genesis();
-    store_and_reload(repository, &event, &aggregate).await
+) -> RehydratedWorkflowExecution {
+    store_genesis_for(repository, intent_id()).await
 }
 
-/// 続きの 1 件 (`StageCompleted`) を書き、握り直した集約を返す。
+/// 指定した集約識別子の genesis を 1 件書き、握り直した結果を返す。
+pub(crate) async fn store_genesis_for<R: WorkflowExecutionRepository>(
+    repository: &mut R,
+    intent: IntentId,
+) -> RehydratedWorkflowExecution {
+    let (aggregate, event) = genesis_for(intent);
+    store_and_reload(repository, &event, &aggregate, R::UNPERSISTED_VERSION).await
+}
+
+/// 握っている再水和結果へコマンドを 1 つ打ち、書いて握り直す。
+///
+/// 版は**握っているものを提示する** — 書込直前に読み直さないのが楽観ロックの本体である。
+pub(crate) async fn advance<R, F>(
+    repository: &mut R,
+    held: &RehydratedWorkflowExecution,
+    command: F,
+) -> RehydratedWorkflowExecution
+where
+    R: WorkflowExecutionRepository,
+    F: FnOnce(&mut WorkflowExecution) -> Result<WorkflowExecutionEvent, CommandError>,
+{
+    let mut aggregate = held.aggregate().clone();
+    let event = command(&mut aggregate).expect("コマンドは受理される");
+    store_and_reload(repository, &event, &aggregate, held.version()).await
+}
+
+/// 続きの 1 件 (`StageCompleted`) を書き、握り直した結果を返す。
 pub(crate) async fn store_stage_completed<R: WorkflowExecutionRepository>(
     repository: &mut R,
-    mut aggregate: WorkflowExecution,
-) -> WorkflowExecution {
-    let event = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
-    store_and_reload(repository, &event, &aggregate).await
+    held: &RehydratedWorkflowExecution,
+) -> RehydratedWorkflowExecution {
+    advance(repository, held, |aggregate| aggregate.complete_stage(at())).await
 }
