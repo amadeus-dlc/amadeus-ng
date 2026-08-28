@@ -116,6 +116,28 @@ compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互
 > 持ち、U7 は起動のみ。`WorkflowExecutionRepository` の所有は従来どおり `core-use-case`。コードの
 > 移動は U4 Bolt で実施する（下の trait 全文は移動前の現況。正本記録は ADR-009 の同日追記）。
 
+> **2026-08-29 追記（Bolt B7 — event-store-adapter-rs v3.0.0 EventEnvelope API への乗り換え、
+> ADR-010）**: trait の所有・移動計画（上記）は変わらないが、**署名が v3 形へ変わった**。下記の
+> trait 全文は B6 時点（v2.0.0 世代）の記録であり、現行は次のとおり:
+> - `find_by_id(&IntentId) -> Result<WorkflowExecution, RepositoryError>` →
+>   `find_by_id(&IntentId) -> Result<RehydratedWorkflowExecution, RepositoryError>`。楽観 version は
+>   集約から外れ、再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番 version、private
+>   フィールド + アクセサ）が持ち回る。
+> - `store(&mut self, event: &WorkflowExecutionEvent, aggregate: &WorkflowExecution) ->
+>   Result<(), RepositoryError>` → `store(&mut self, event, aggregate, expected_version: usize) ->
+>   Result<(), RepositoryError>`。genesis は `UNPERSISTED_VERSION`（= 0）定数を渡す。新規・更新とも
+>   `persist_event_and_snapshot` で永続化する（v3 の `persist_event` は snapshot の seq_nr を
+>   進めないため — Quint 不変条件 `snapshot_tracks_journal` を破る）。
+> - `events_after(&self, after: GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>,
+>   JournalReadError>` → `events_after(&self, after) -> Result<Vec<JournalEntry>, JournalReadError>`。
+>   `JournalEntry`（global_seq / intent_id / seq_nr / occurred_at / event、private フィールド +
+>   アクセサ）が集約識別子込みの読取 1 行を返す。本家 `EventEnvelope` は引き続きポートから出さない
+>   （ADR-009）。
+> - ドメイン型が実装する本家 trait は `Event` / `Aggregate` の代わりに `AggregateId` のみ（本家が
+>   trait を廃し `EventEnvelope<AID, P>` / `SnapshotEnvelope<A>` に置き換えたため）。
+> 出典: [`developer-report-1.md`](../../construction/esa-v3-migration/developer-report-1.md) §2
+> 裁定 4/6。
+
 ```rust
 // core-use-case（U5/U6 が所有、U3 が準拠）
 pub trait WorkflowExecutionRepository {
@@ -216,6 +238,20 @@ EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 > 呼んでいない。契約 JSON の射程は upstream 観測面（監査行・状態ファイル・directive）に限られる。
 > **投影規則（`projects_to`）と監査行の逐語性は 1 文字も変わっていない。**
 
+> **2026-08-29 追記（Bolt B7 — v3.0.0 乗り換え、ADR-010）**: ドメインイベントは本家
+> `EventEnvelope` / `SnapshotEnvelope` の payload 純化に伴い、輸送のメタデータを一切持たない
+> 素の serde 型（本家の語で payload）になった。~~封筒の `intent_id` / `seq_nr` は
+> `WorkflowExecutionEventId`（新設 Domain Primitive）にまとまった~~ → **失効**:
+> `WorkflowExecutionEventId` はファイルごと削除した（106 行）。識別子は本家封筒の
+> `(aggregate_id, seq_nr)` が持つ。下記 yaml の `schema_version: 1` 予約フィールドと
+> `envelope: { id, occurred_at, schema_version, payload }` は**失効**（per-event の
+> `schema_version` は廃止）。後継はジャーナル列の manifest 定数
+> `EVENT_MANIFEST = "workflow-execution-event/1"`（`core-interface-adapter`）— Repository が書き、
+> JournalReaderImpl が不一致・欠落を `Corrupt(UndecodablePayload)` で拒否する。回帰テスト
+> `the_serialized_event_carries_no_transport_metadata` が、payload JSON に seq_nr / occurred_at /
+> schema_version / aggregate_id / manifest のいずれも現れないことを固定する。投影規則
+> （`projects_to`）と監査行の逐語性は不変。
+
 ```yaml
 asyncapi-like: workflow-execution-events
 schema_version: 1                      # 予約。追加フィールドは消費側が無視（additive-safe）
@@ -293,6 +329,16 @@ rules:
 > `the_upstream_journal_schema_is_the_pinned_one` / `the_journal_table_keeps_a_rowid_so_the_cursor_is_well_defined`）。
 > ~~スナップショット payload の値域検査（JSON の正確整数域 2^53 を超える値を拒否）~~ → **失効**
 > （検査を担っていたワイヤ構造体ごと削除。ストアファイルは upstream 非観測なので互換上の実害は無い）。
+
+> **2026-08-29 追記（Bolt B7 — event-store-adapter-rs v3.0.0 へ乗り換え、ADR-010）**: ピンを
+> ~~`=2.0.0`~~ → **`=3.0.0`** へ更新。`journal` の列に `manifest TEXT NOT NULL DEFAULT ''` が
+> 加わった — 旧 `schema_version`（ペイロード内メタ）の後継で、Repository が
+> `EVENT_MANIFEST = "workflow-execution-event/1"` を書き、JournalReaderImpl が不一致・欠落を
+> `Corrupt(UndecodablePayload)` で拒否する。`occurred_at` 列は引き続き `INTEGER`（epoch
+> **ナノ秒**、`DateTime<Utc>` との往復はアダプタ層が担う）。我々の `SELECT` は
+> `rowid, aid, seq_nr, payload, occurred_at, manifest` を読む。一意索引
+> `journal_aid_seq_nr_idx` と `amadeus_projection_checkpoint` 表・制約 (1)〜(6) は不変。
+> スキーマガードのピンは v3 DDL へ張り替えた。
 
 ```sql
 -- 本家 event-store-adapter-rs v2.0.0 が接続確立時に冪等に作る 2 表（正本は upstream。我々は

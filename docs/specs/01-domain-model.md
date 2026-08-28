@@ -84,7 +84,7 @@ flowchart TB
 
 **責務**: 「次に何が起こるか」。engine（`next` の 21 分岐ラダー / `report` の 13 段ガード）、`Directive`（10 種の判別共用体、28KiB 上限）、Gate の 3 層構造（静的決定 / コンダクタの儀式 / 承認強制）、jump・park・recompose、Construction 実行機構（Bolt / swarm / per-unit 反復 / loop-back）、Stop フックの forwarding loop。**7 コンテキスト中、状態機械が最も密**であり、Quint モデル化の最優先領域（A9）。
 
-**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は **17 属性**（~~16 属性~~ → 2026-08-27 改訂 / ADR-010・Bolt B6 で `last_updated_at` を追加）、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004 / ADR-010、Bolt B3・B6 実装）。
+**集約**: `WorkflowExecution`（intent のライフサイクルとカーソル。状態遷移動詞 11 個の唯一の所有者）。**イベントソーシング形の FSM** — decide（12 コマンド）がガードを通してから単一のドメインイベントを構築し、状態を進めるのは `apply_event` だけなので通常実行とリプレイが同一経路になる。状態は ~~17 属性~~ → **16 属性**（2026-08-29 改訂 / ADR-010・Bolt B7 — `version` 列を除去。楽観ロック版数は集約の外、`RehydratedWorkflowExecution` が持ち回る）（元は 16 属性 → 2026-08-27 改訂 / ADR-010・Bolt B6 で `last_updated_at` を追加 → 17 属性）、ドメインイベントは 12 種、永続化境界のメメントは `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）。規範の詳細は 10 §2.1（ADR-001 / ADR-002 / ADR-004 / ADR-010、Bolt B3・B6 実装）。
 
 **集約候補**（スライス 2）: `Bolt`、`SwarmBatch`（収束はサーガとしてモデル化 — 監査行なしの中間状態からの復旧を含む。裁定 B5）。`Directive` は値オブジェクト（Rust では enum そのもの）。
 
