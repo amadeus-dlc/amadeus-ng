@@ -21452,3 +21452,75 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-27T01:47:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a95aaf7cee87248f3
+**Message**: B6（event-store-adapter-rs v2.0.0 乗り換え）は完了し、PR #30 が CI 全緑でマージ待ちです。本家への EventEnvelope 要望書も作成済み。次はあなたのマージ可否の判断だけです。
+
+---
+
+## Session End
+**Timestamp**: 2026-08-27T02:29:47Z
+**Event**: SESSION_ENDED
+**Reason**: other
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T02:54:25Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T02:55:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-28T02:56:09Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T02:59:42Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac1d6b205b256a87f
+**Message**: <analysis>\nChronological reconstruction:\n\n1. Session opened with `/aidlc --resume` + instruction to read handoff-b5.md. Bolt B5 (U3 `u3-event-store-repository`, SQLite EventStore + Repository) was par
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T03:00:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4ec4c18f23c3186d
+**Message**: 1枚に集約した仕様をまとめて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T03:02:38Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T03:04:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-28T03:19:29Z
+**Event**: HUMAN_TURN
+
+---

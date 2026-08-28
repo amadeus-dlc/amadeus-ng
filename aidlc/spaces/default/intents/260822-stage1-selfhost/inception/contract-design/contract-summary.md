@@ -109,6 +109,13 @@ compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互
 ユースケース層（`core-use-case`）が所有する trait は `WorkflowExecutionRepository` と `JournalReader` の 2 本。
 実装 `…Impl` は `core-interface-adapter`（U3）。動詞 `store` は ES 拡張語彙（ADR-006。正本注記は U9 FR8.1）。
 
+> **2026-08-28 改訂（オーナー裁定 — RMU が `JournalReader` を呼ぶ）**: `JournalReader` と読取側語彙
+> （`ProjectionName` / `GlobalSeqNr` / `JournalReadError`）の**所有は RMU クレート（U4）へ移す**。
+> 呼ぶ者がポートを所有する — `core-use-case`（U5/U6）はこの trait を一度も呼ばない。取得ループ
+> （checkpoint 読取 → `events_after` → 純粋投影核 `project` → `advance_checkpoint`）は RMU 自身が
+> 持ち、U7 は起動のみ。`WorkflowExecutionRepository` の所有は従来どおり `core-use-case`。コードの
+> 移動は U4 Bolt で実施する（下の trait 全文は移動前の現況。正本記録は ADR-009 の同日追記）。
+
 ```rust
 // core-use-case（U5/U6 が所有、U3 が準拠）
 pub trait WorkflowExecutionRepository {
