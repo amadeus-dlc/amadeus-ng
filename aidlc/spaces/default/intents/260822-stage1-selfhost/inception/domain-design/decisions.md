@@ -377,9 +377,9 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   通番・発生時刻・型判別子）は封筒が運ぶ。旧封筒 struct `WorkflowExecutionEvent`（id /
   schema_version / occurred_at フィールド）と `WorkflowExecutionEventId` 型は削除し、
   ドメインイベントは輸送メタデータを一切持たない素の serde 型（本家の語で payload）になった。
-  旧 `schema_version` 予約フィールドの後継はジャーナル列の manifest 定数
-  `EVENT_MANIFEST = "workflow-execution-event/1"`（Repository が書き、JournalReaderImpl が
-  不一致・欠落を `Corrupt(UndecodablePayload)` で拒否）である。
+  旧 `schema_version` 予約フィールドの後継はジャーナル列の manifest 列（値は
+  `workflow-execution-event/1`）で、Repository が書き、JournalReaderImpl が不一致・欠落を
+  `Corrupt(UndecodablePayload)` で拒否する（版を上げる規約は C5 参照）。
 
   楽観 `version` は集約と memento（`WorkflowExecutionState`）から削除し、**集約の外**を持ち回る
   形にした — `find_by_id` は再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番

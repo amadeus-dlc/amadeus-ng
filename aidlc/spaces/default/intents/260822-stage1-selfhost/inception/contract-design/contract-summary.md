@@ -197,8 +197,12 @@ Repository 実装（ユースケースはトランザクションを持たない
 テストは `XxxUseCase<WorkflowExecutionRepositoryImpl<EventStoreForMemory<…>>>` で組む。
 ⑤ `dyn` は使わない（静的束縛、use-case-rules §2）。
 ⑥ **楽観 version はストアが採番する不透明トークン**であり、ドメインも Repository も解釈・比較しない
-（2026-08-27 追加 / ADR-010 追記 (1)・BR5.3）。genesis（`Event::is_created()` が真）だけは
-Gateway が**ストアへ渡す写しにのみ**初期値 1 を載せる — 呼出側の集約は動かない。
+（2026-08-27 追加 / ADR-010 追記 (1)・BR5.3。この性質自体は不変）。~~genesis（`Event::is_created()` が真）だけは
+Gateway が**ストアへ渡す写しにのみ**初期値 1 を載せる — 呼出側の集約は動かない。~~ →
+**失効（2026-08-29 / ADR-010・Bolt B7）**: 本家 `Event` trait ごと `is_created()` は廃止された。
+version は集約から外れ、再水和レコード `RehydratedWorkflowExecution`（集約の外）が持ち回る。
+genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、`store` は明示引数
+`expected_version: usize`（genesis は `UNPERSISTED_VERSION` = 0）を取る。
 
 ### C4 — ポート trait: `WorkflowDefinitionRepository`（2026-08-23 改訂 — ADR-008）
 
@@ -245,12 +249,13 @@ EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 > `WorkflowExecutionEventId` はファイルごと削除した（106 行）。識別子は本家封筒の
 > `(aggregate_id, seq_nr)` が持つ。下記 yaml の `schema_version: 1` 予約フィールドと
 > `envelope: { id, occurred_at, schema_version, payload }` は**失効**（per-event の
-> `schema_version` は廃止）。後継はジャーナル列の manifest 定数
-> `EVENT_MANIFEST = "workflow-execution-event/1"`（`core-interface-adapter`）— Repository が書き、
-> JournalReaderImpl が不一致・欠落を `Corrupt(UndecodablePayload)` で拒否する。回帰テスト
-> `the_serialized_event_carries_no_transport_metadata` が、payload JSON に seq_nr / occurred_at /
-> schema_version / aggregate_id / manifest のいずれも現れないことを固定する。投影規則
-> （`projects_to`）と監査行の逐語性は不変。
+> `schema_version` は廃止）。後継はジャーナル列の manifest 列で、値は
+> `workflow-execution-event/1`（`<型>/<版>` 形式）— Repository が書き、JournalReaderImpl が
+> 不一致・欠落を `Corrupt(UndecodablePayload)` で拒否する。**版を上げる規約**: 版はペイロードの
+> 読み方（デコード手順）が変わるときだけ上げる。イベント変種の追加のような additive-safe な
+> 変更では上げない。回帰テスト `the_serialized_event_carries_no_transport_metadata` が、
+> payload JSON に seq_nr / occurred_at / schema_version / aggregate_id / manifest のいずれも
+> 現れないことを固定する。投影規則（`projects_to`）と監査行の逐語性は不変。
 
 ```yaml
 asyncapi-like: workflow-execution-events
@@ -332,8 +337,8 @@ rules:
 
 > **2026-08-29 追記（Bolt B7 — event-store-adapter-rs v3.0.0 へ乗り換え、ADR-010）**: ピンを
 > ~~`=2.0.0`~~ → **`=3.0.0`** へ更新。`journal` の列に `manifest TEXT NOT NULL DEFAULT ''` が
-> 加わった — 旧 `schema_version`（ペイロード内メタ）の後継で、Repository が
-> `EVENT_MANIFEST = "workflow-execution-event/1"` を書き、JournalReaderImpl が不一致・欠落を
+> 加わった — 旧 `schema_version`（ペイロード内メタ）の後継で、Repository が値
+> `workflow-execution-event/1` を書き、JournalReaderImpl が不一致・欠落を
 > `Corrupt(UndecodablePayload)` で拒否する。`occurred_at` 列は引き続き `INTEGER`（epoch
 > **ナノ秒**、`DateTime<Utc>` との往復はアダプタ層が担う）。我々の `SELECT` は
 > `rowid, aid, seq_nr, payload, occurred_at, manifest` を読む。一意索引
@@ -359,7 +364,7 @@ CREATE TABLE snapshot (
   aid             TEXT    NOT NULL,
   seq_nr          INTEGER NOT NULL,                  -- このスナップショットが含む最後の seq_nr
   version         INTEGER NOT NULL,                  -- 楽観 version（本家が採番する不透明トークン — BR5.3）
-  payload         BLOB    NOT NULL,                  -- 集約の状態の写し（17 属性）を serde
+  payload         BLOB    NOT NULL,                  -- 集約の状態の写し（16 属性 — 2026-08-29 / Bolt B7 で version 列を除去）を serde
   last_updated_at INTEGER NOT NULL,
   PRIMARY KEY (pkey, skey)
 );

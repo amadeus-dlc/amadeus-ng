@@ -87,3 +87,39 @@ docs/specs 全体）も実行し、`10-orchestration.md` / `11-workspace.md` の
    という太字区間の内側に `**v3.0.0**` を挿入すると `**a **b** c**` という不正なネストになるため、
    内側の太字は落として `~~v2.0.0~~ → v3.0.0（日付）` とした（外側の太字がそのまま v3.0.0 にも
    及ぶので視覚的な強調は失われない）。
+
+## 5. 委任者から転送された実装担当の引き継ぎ事実に基づく追加修正（2回目）
+
+委任者経由で実装担当からの引き継ぎ事実（memento の宣言順・manifest 値と版の規約・削除/署名変更の
+確定リスト）が届いたため、これを正として再点検し、以下 4 件を追加修正した。
+`git diff --stat` 実測: 4 ファイル・23 insertions / 18 deletions。
+
+1. **`docs/specs/10-orchestration.md` の状態一覧（§2.1、直下 §3 の一つ上のブロック）に
+   直し漏れがあった**。集約の 17 属性を列挙する行に `version` フィールドがそのまま残っており
+   （1 回目の sweep は `schema_version`/`WorkflowExecutionEventId`/`EventStoreImpl`/`set_version`/
+   `=2.0.0` の語彙パターンで探索したため、単独の `version` 語や「17 属性」という別表現の行を
+   拾えていなかった）、17→16 属性への失効注記と `version` エントリの失効注記を追加した。
+   同じ行にあった「`last_updated_at` は本家 `Aggregate::last_updated_at` の要求」という説明も
+   `Aggregate` trait 自体が B7 で廃止されたため失効注記を重ねた（フィールド自体は不変）。
+2. **`contract-summary.md` C3 の約束⑥「genesis は Gateway が写しに初期値 1 を載せる」が
+   `Event::is_created()` 依存のまま失効していなかった**。本家 `Event` trait ごと `is_created()`
+   が廃止され、genesis 判定は封筒の `seq_nr == 1` から導出する形に変わったため、失効注記を追加した。
+   同じファイルの C6 DDL コメント「集約の状態の写し（17 属性）」も 16 属性へ修正した。
+3. **`EVENT_MANIFEST` という内部定数名を仕様書に書いていた 4 箇所を、値と規約だけの記述へ書き換えた**
+   （`contract-summary.md` C5/C6、`decisions.md` ADR-010 追記、`functional-spec.md` §3.1）。
+   `core-interface-adapter` の実装詳細である定数識別子を仕様側が名指す必要はないため。
+   `docs/specs/10-orchestration.md` と `functional-spec.md` の「manifest 定数」という言い回しも
+   「manifest 列の値」へ統一した。
+4. **manifest の版を上げる規約（1 文）を C5 に追記した** — 版はペイロードの読み方（デコード手順）が
+   変わるときだけ上げ、イベント変種の追加のような additive-safe な変更では上げない。ADR-010 側は
+   「版を上げる規約は C5 参照」の 1 行にとどめ、規約の正本を C5 に一本化した。
+
+**確認して変更不要と判断したもの**: memento の宣言順（`intent_id / definition_id / definition_revision
+/ stages / plan / overlay / conditional / checkbox / cursor / status / parked_at / autonomy /
+approved / revision_count / seq_nr / last_updated_at`）は `functional-spec.md` §4.2 の列挙が
+既にこの順（`version` は同じ位置に取り消し線で残置）と一致していたため変更していない。
+`apply_event(seq_nr, occurred_at, &event)` の署名は所有ファイル内のどこにも誤った形で書かれておらず
+（`decisions.md` / `components.md` にある `apply_event(&mut self, &Event)` は ADR-002 由来の抽象的な
+設計原則の記述であり、`components.md` は所有ファイル外でもある）、追記不要と判断した。
+`JournalEntry` / `RehydratedWorkflowExecution` の新設は 1 回目の同期で既に反映済みで、フィールド名も
+引き継ぎ事実と一致することを確認した。

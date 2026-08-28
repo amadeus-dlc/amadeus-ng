@@ -119,7 +119,7 @@
 > なった（実行時検査 → 型強制の置換）。現在の store は ①genesis なら `expected_version` に
 > `UNPERSISTED_VERSION`（= 0）を渡す → ②Repository が集約から
 > `EventEnvelope::new(intent_id, aggregate.seq_nr(), *aggregate.last_updated_at(),
-> event).with_manifest(EVENT_MANIFEST)` を組む → ③本家 `persist_event_and_snapshot(envelope,
+> event).with_manifest("workflow-execution-event/1")` を組む → ③本家 `persist_event_and_snapshot(envelope,
 > aggregate.clone(), expected_version)` を 1 回呼ぶ（新規・更新とも同じ経路、分岐は封筒の
 > `seq_nr == 1` から導出）、の 3 手である。
 > イベント追記・スナップショット更新・楽観 version の CAS は**本家が同一 Tx で**行い、我々は接続も
@@ -223,7 +223,7 @@
 >   ~~`schema_version` フィールド自体はイベント型に残るが、復号時に値を検査する経路は無い。~~ →
 >   **失効（2026-08-29 / ADR-010・Bolt B7）**: 旧封筒 struct（id / schema_version / occurred_at
 >   フィールドと `SCHEMA_VERSION` 定数・アクセサ）を削除したため、イベント型には残っていない。
->   後継はジャーナル列の manifest 定数 `workflow-execution-event/1`（Repository が書き、
+>   後継はジャーナル列 manifest の値 `workflow-execution-event/1`（Repository が書き、
 >   JournalReaderImpl が不一致・欠落を `Corrupt(UndecodablePayload)` で拒否）。
 > - **`StateWire` の値域検査（JSON の正確整数域 2^53 超の拒否）が無くなった**。ワイヤ構造体ごと
 >   削除したためで、ストアファイルは upstream 非観測なので互換上の実害は無いと判断した。
