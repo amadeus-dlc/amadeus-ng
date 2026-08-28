@@ -45,9 +45,20 @@ Conversation language: 日本語
 4. **version フィールドを集約と memento から削除**: 楽観ロック版数は
    `SnapshotEnvelope::version()` が正本（オーナー裁定「seq_nr と version を混ぜない」の
    完成形 — ストア採番トークンがストア側に閉じた）。genesis の `set_version(1)` ハックは
-   消滅: 新規作成は `persist_event_and_snapshot(envelope, aggregate, 0)`、更新は
-   `persist_event(envelope, snapshot.version())`。`WorkflowExecutionState`（memento）から
-   version 列を除去し、ITF・テストを追従させる。
+   消滅。`WorkflowExecutionState`（memento）から version 列を除去し、ITF・テストを
+   追従させる。
+
+   > **2026-08-29 改訂（委任者裁定 — 実装担当の矛盾指摘 選択肢 A を採用）**: 初稿の
+   > 「更新は `persist_event(envelope, snapshot.version())`」は、store 内で snapshot を
+   > 読み直す形になり TOCTOU で楽観ロックを無効化する（memory バックエンドには
+   > `(aid, seq_nr)` 一意制約が無く黙って二重書込になる）ため撤回。本家移行ガイド §3 の
+   > 持ち回り形に確定する: `find_by_id` は**再水和レコード**（集約 + ストア採番 version、
+   > private フィールド + アクセサ）を返し、`store` は `expected_version` を引数に取る。
+   > version は集約の**外**を通るので「集約と memento から削除」は完全に維持される。
+   > expected_version は newtype（`StoreVersion` 等、genesis は関連定数）を推奨 —
+   > seq_nr との取り違えを型で塞ぐ。既存契約テスト `a_write_from_a_stale_version_conflicts`
+   > は「並行書込後に握り直さないと競合する」趣旨へ書き換え、sqlite / memory 両方で
+   > 検出が成立することを証明する。
 5. **manifest 定数** `workflow-execution-event/1` — 旧 `schema_version` の後継。
    Repository が書き、`JournalReaderImpl` は不一致・欠落を `Corrupt(UndecodablePayload)`
    で拒否（旧 #466 検査の後継。payload 内メタ照合 #500 は二重化ごと消滅）。
