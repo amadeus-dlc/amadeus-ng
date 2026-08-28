@@ -21706,3 +21706,73 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Findings count**: 3
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:47:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-doc-sync
+**Agent ID**: ab7-doc-sync-8e64767fe51595e3
+**Message**: The doc-sync is complete and committed locally (not pushed). Here's a summary of the work.\n\n## 結果\n\nB7 のコード変更（`event-store-adapter-rs` v3.0.0 EventEnvelope API への乗り換え）に伴う仕様・記録のドリフトを、8ファイルへの追記と1件の新規報告書で
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Context**: construction > esa-v3-migration > doc-sync-report.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_FIRED
+**Fire id**: ae243c1b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_PASSED
+**Fire id**: ae243c1b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5d0847d7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-28T22:53:22Z
+**Event**: SENSOR_FAILED
+**Fire id**: 5d0847d7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/esa-v3-migration/doc-sync-report.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-5d0847d7.md
+**Findings count**: 3
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-28T22:53:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b7-doc-sync
+**Agent ID**: ab7-doc-sync-8e64767fe51595e3
+**Message**: 2つ目のコミットが完了しました。監査シャードは意図的に除外し、`git add -A` は使っていません（明示的なファイルパス指定のみ）。push もしていません。\n\n## 追加修正の報告\n\nチームリードから転送された実装担当の引き継ぎ事実を正として再点検した結果、1回目の同期で4件の直し漏れ・不整合が見つかり、修正しました（コミット `95fcc76`）。\n\n1. **`docs/specs/1
+
+---
