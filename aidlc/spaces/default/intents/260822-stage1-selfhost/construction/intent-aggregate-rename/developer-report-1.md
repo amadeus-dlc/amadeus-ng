@@ -1,6 +1,6 @@
 # B12 開発者報告 1 — `Intent` 構造体 + `IntentExecution` 集約への分割
 
-対象ブリーフ: [`brief-1.md`](brief-1.md)（改訂 8 まで反映）
+対象ブリーフ: [`brief-1.md`](brief-1.md)（改訂 10 まで反映）
 ブランチ: `bolt/b12-intent-aggregate-rename`（origin/main 基準、**push なし**）
 検証の `CARGO_TARGET_DIR`: `target-delegate`（`cargo lint` のみ `target-delegate-lint`）
 
@@ -8,11 +8,11 @@
 
 ## 0. 結論（先に）
 
-**受入基準はすべて緑**である（改訂 9 反映後に全ゲートを再実行した実測）。
-`cargo test --workspace` は **832 passed / 0 failed**（origin/main は 774 なので **+58**）。
+**受入基準はすべて緑**である（改訂 10 反映後に全ゲートを再実行した実測）。
+`cargo test --workspace` は **838 passed / 0 failed**（origin/main は 774 なので **+64**）。
 `tests/` の差分は 0 で、投影ゴールデン 19 本は無改変のまま全緑である。
 
-本 Bolt は途中で改訂 2〜9 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
+本 Bolt は途中で改訂 2〜10 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
 ある:
 
 | | 役割 |
@@ -34,6 +34,9 @@
 の新設と対返しファクトリ `Intent::create` を実装した（§5 (k)）。これに伴い §5 (i) の
 「`Intent::new` は変更不要」裁定は**上書きされた**。
 
+改訂 10 で **`CommitVerdictUseCase` をリポジトリ保持形へ戻した**（§5 (m)）—
+`execute` の引数は集約 ID と値オブジェクトだけになり、計画はユースケースが自分で引く。
+
 改訂 9 で **ドメインから永続化知識を全撤去**した（§5 (l)）。`core-command-domain` に serde と
 event-store-adapter-rs が**無い**ことが規則の機械強制であり、行のバイトを決めるのは書く側
 （command interface-adapter）と読む側（RMU）の永続化 DTO になった。**ワイヤ形式のバイトは
@@ -41,7 +44,7 @@ event-store-adapter-rs が**無い**ことが規則の機械強制であり、�
 
 ---
 
-## 1. 到達点（改訂 8 まで反映・実測）
+## 1. 到達点（改訂 10 まで反映・実測）
 
 | 旧 | 新 |
 |---|---|
@@ -150,9 +153,9 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 1 | `cargo fmt --all --check` | **緑**（exit 0） |
 | 2 | `cargo clippy --workspace --all-targets -- -D warnings` | **緑**（exit 0） |
 | 3 | `cargo lint` | **緑**（exit 0） |
-| 4 | `cargo test --workspace`（退行 0） | **緑**。**832 passed / 0 failed**（origin/main 774 → **+58**） |
+| 4 | `cargo test --workspace`（退行 0） | **緑**。**838 passed / 0 failed**（origin/main 774 → **+64**） |
 | 5 | `scripts/quint-gate.sh` | **緑**（exit 0） |
-| 6 | `scripts/coverage.sh --base origin/main` | **緑**。head **98.63114%**。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head >= base (98.52600%) - 0.01` |
+| 6 | `scripts/coverage.sh --base origin/main` | **緑**。head **98.61855%**。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head >= base (98.52600%) - 0.01` |
 | 7 | プロダクトコードに `unwrap` / `expect` 0 件 | **緑**（clippy の `unwrap_used` / `expect_used` deny で機械強制） |
 | 8 | 外形不変 | **緑**（§2） |
 | 9 | `grep -rn "WorkflowExecution" modules/ --include='*.rs'` | **緑**。**0 件** |
@@ -169,6 +172,7 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 20 | ドメインが永続化知識を持たない（改訂 9） | **緑**。`grep -rn "Serialize\|Deserialize\|event_store_adapter" modules/core/command/domain/src` は **0 件**（残るのは docs.rs の URL 1 行のみ）。`Cargo.toml` の `[dependencies]` は `chrono` だけで、serde も event-store-adapter-rs も無い — **違反はビルドで落ちる**（規則の機械強制） |
 | 21 | ワイヤ形式のバイト不変（改訂 9） | **緑**。12 変種 + スナップショットの JSON を**改訂 9 直前に実測した出力そのもの**で逐語固定。書く側と読む側が**同一のリテラル**を独立に持つので、片側の綴りが動けばどちらかが落ちる。横断の証明は `journal_protocol_conformance` / `crash_reconstruction_test` / 投影ゴールデン 19 本 / 移設後の `upstream_event_store_conformance` が担う |
 | 22 | 互換残置ゼロ | **緑**。`#[deprecated]` **0 件**、`pub use ... as` **0 件**、旧名 `Intent::new` / `from_state()` / `WorkflowExecution` / `IntentMaterial` の grep いずれも **0 件**（doc コメントを含む実測） |
+| 23 | `execute` の引数に集約が無い（ID + VO のみ・改訂 10） | **緑**。`execute(&mut self, execution_id: &IntentExecutionId, stage: Option<&StageSlug>, transition: ReportedTransition, occurred_at: DateTime<Utc>)` — 集約 ID 1 つと値オブジェクト 3 つだけで、`&Intent` は消えた（`coding-rules/use-case-rules.md` §2b）。計画はユースケースが保持する `IntentRepository` から内部で引く |
 
 ### テストの増減の内訳（実測）
 
@@ -452,6 +456,46 @@ U7（intent-create の実装）の課題である。
 
 ---
 
+### (m) `CommitVerdictUseCase` をリポジトリ保持形へ戻した（改訂 10）
+
+オーナー裁定「ユースケースはリポジトリの参照を保持し、`execute` 内部で利用する。リポジトリを
+外で使うな」。改訂 5 の 3 / 改訂 6 で維持していた「Controller が `&Intent` を読んで渡す」は
+**I8（読取専用ユースケース `Next` 専用のパターン）の誤適用**であり、撤回された。
+
+| 変更 | 内容 |
+|---|---|
+| `IntentRepository` ポート新設 | 改訂 5 の「U7 で新設」を**前倒し**。当面 `find_by_id(&IntentId) -> Result<Intent, IntentRepositoryError>` のみ。`store` は intent-create を実装する U7 で足す（使われない口を先に開けない） |
+| `IntentRepositoryError` 新設 | 実行側の `RepositoryError` と**別の面の別の型**。**`Conflict` を持たない** — 読取専用ポートに CAS は無く、楽観 version の競合は構成不能だからである（`corrupt_cause.rs` と同じ「実際に起きうる変種だけを各面が持つ」考え方） |
+| `CommitVerdictUseCase<E, I>` | ポート 2 本（`execution_repository` / `intent_repository`）を保持する |
+| `execute` から `&Intent` を除去 | 引数は**集約 ID 1 つ + 値オブジェクト 3 つ**だけになった |
+| 内部フロー | ① 実行を再構成 → ② `aggregate.intent_id()` を読む → ③ `intent_repository.find_by_id` → ④ `&intent` を集約コマンドへ → ⑤ `store`。取り違えのガードは従来どおり集約側で発火する（ここでは構成上一致する） |
+| `Conflict` 再試行 | attempt 全体をやり直すので**計画も引き直す**。`Intent` は不変なので再取得は無害である |
+| 結線 | `interface-adapter` に結線テスト用の `InMemoryIntentRepository` を置いた。**実物の実装は U7** — intent の完全な材料が永続化されているのは今のところ各実行の `Started` だけで、読み先（intent 自身のジャーナル）の設計ごと U7 の課題である |
+
+テストはユースケース内 fake（`InMemoryIntentRepository`）で、取得回数を観測点にした
+（「1 試行につき 1 回・再試行で 2 回」）。計画が引けない場合が `RepositoryError` ではなく
+`IntentRepositoryError` のまま伝播することも固定している。
+
+#### `stage` 引数は残した（確認済み・回答待ち）
+
+ブリーフの確定形は 3 引数（`id` / `transition` / `occurred_at`）と書かれているが、現行の
+`execute` は `&Intent` のほかに **`stage: Option<&StageSlug>`** を取っており、これは
+`ReportedTransition` に**入っていない**（実測: 5 変種が持つのは `artifacts` / `user_input` /
+`feedback` / `reason` だけ）。`stage` は 2 か所で効いている:
+
+1. **BR1.9 の通過済み再報告** — `is_stale_re_report` は「報告がカーソル以外を名指しした」ことを
+   前提にした冪等 no-op である。
+2. **`Conflict` 再試行の対象名指し** — `None` のまま再試行すると対象が「そのときのカーソル」へ
+   再解決され、競合相手が先に承認していた場合に**報告されていない次ステージへ `Forward` を打つ**
+   （現行 doc が明示している既知の穴）。
+
+`StageSlug` は値オブジェクトなので §2b の一般則（「集約 ID や値オブジェクトを渡すのは OK」）に
+そのまま適合する。したがって確定形の 3 引数は「`&Intent` を落とす」ことを示した略記と読み、
+**`stage` は残した**。team-lead へ確認を送ってあり、`stage` も落とす裁定であれば BR1.9 と
+再試行の名指しをどう保つかの設計が別途要るので、そこは独断しない。
+
+---
+
 ## 6. 申し送り
 
 1. **`security-design §2` の「検査点は `from_snapshot` の 1 か所」** — §5 (f)。分割後の実態に
@@ -500,9 +544,12 @@ U7（intent-create の実装）の課題である。
 13. **`docs/specs` と inception 期の成果物**に「ドメイン層に serde が入る」旨の記述が残っている
     可能性がある（`decisions.md` の serde 受容は本セッション側で失効注記済みと承知しているが、
     他の箇所は未確認）。所有ファイル外なので触っていない。
-14. **改訂 10（`CommitVerdictUseCase` はリポジトリを保持し `execute` から `&Intent` を除去、
-    `IntentRepository` ポートの前倒し新設）がブリーフに追記されている。** 本報告時点で**未着手**
-    である。
+14. ~~**改訂 10 は未着手**~~ — **実装済み**（§5 (m)）。残る課題は 2 つ: (a) `IntentRepository`
+    の**実物の実装**（intent 自身のジャーナルの導入ごと U7）、(b) `execute` の `stage` 引数を
+    残した判断の追認（§5 (m) の末尾、team-lead へ確認済み・回答待ち）。
+15. **合成ルート（U7）はポートを 2 本注入する。** `CommitVerdictUseCase::new` の署名が
+    `(execution_repository, intent_repository)` になったので、U7 の結線はこの形になる。
+    アダプタ側にあるのは結線テスト用のインメモリ実装だけである。
 
 ## 7. コミット
 
