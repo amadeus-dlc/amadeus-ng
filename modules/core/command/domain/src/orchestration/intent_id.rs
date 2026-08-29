@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use super::uuid_v7::{CANONICAL_LEN, MalformedUuidV7, VERSION_NIBBLE, parse_canonical};
+use uuid::Uuid;
 
 /// `intents.json` の uuid にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -11,7 +11,8 @@ use super::uuid_v7::{CANONICAL_LEN, MalformedUuidV7, VERSION_NIBBLE, parse_canon
 /// `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
 /// (小文字 36 字、version nibble は `7`、variant nibble は RFC の `10xx` = `8` / `9` / `a` / `b`)。
 /// 大文字・短縮形・他 version・記録ディレクトリ名の kebab 表記は受理しない (BR4.1)。
-/// 検査の正本は [`super::uuid_v7`] で `IntentExecutionId` と共有する。
+/// 解析は uuid クレート、正準綴りの逐語検査 (正規化せず拒否) はこの `parse` が行う
+/// (オーナー裁定 2026-08-30 — UUID 専用の自作モジュールを持たない)。
 ///
 /// `Ord` は生文字列の辞書順。UUIDv7 の先頭 48 bit は Unix ミリ秒なので、この順序は
 /// ミリ秒粒度の作成順になる (upstream 同等の性質。型としては形式だけを保証し、
@@ -22,53 +23,31 @@ pub struct IntentId(String);
 /// `IntentId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentIdError {
-    /// 前後の空白を除くと空になる。
-    Empty,
-    /// 正準形の 36 字でない。
-    Length {
-        /// 実際の文字数 (前後の空白を除いたもの)。
-        actual: usize,
-    },
-    /// ハイフン位置か 16 進小文字の並びが正準形に合わない。位置は 0 始まりの文字位置。
-    Format {
-        /// 最初に形式へ合わなかった文字の 0 始まり位置。
-        position: usize,
-    },
-    /// version nibble が `7` でない (UUIDv7 以外)。
-    Version {
-        /// 実際に置かれていた nibble。
-        found: char,
-    },
-    /// variant nibble が RFC の `10xx` (`8` / `9` / `a` / `b`) でない。
-    Variant {
-        /// 実際に置かれていた nibble。
-        found: char,
-    },
-}
-
-impl From<MalformedUuidV7> for IntentIdError {
-    fn from(reason: MalformedUuidV7) -> IntentIdError {
-        match reason {
-            MalformedUuidV7::Empty => IntentIdError::Empty,
-            MalformedUuidV7::Length { actual } => IntentIdError::Length { actual },
-            MalformedUuidV7::Format { position } => IntentIdError::Format { position },
-            MalformedUuidV7::Version { found } => IntentIdError::Version { found },
-            MalformedUuidV7::Variant { found } => IntentIdError::Variant { found },
-        }
-    }
+    /// UUIDv7 の正準表記 (小文字 `8-4-4-4-12`・version `7`・RFC variant) でない。
+    NotCanonicalUuidV7,
 }
 
 impl IntentId {
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
     ///
+    /// `Uuid::try_parse` は寛容 (大文字・`{braced}`・URN・短縮形も受理) なので、再直列化した
+    /// 正準表記と入力の逐語一致で「正規化せず拒否」(BR4.1) を実現する。
+    ///
     /// # Errors
     ///
-    /// 空・36 字でない長さ・ハイフン位置や 16 進小文字の並びの違反・version nibble が `7`
-    /// 以外・variant nibble が `8` / `9` / `a` / `b` 以外を、それぞれ拒否する。
+    /// UUIDv7 の正準表記でない綴りを拒否する。
     pub fn parse(s: &str) -> Result<IntentId, IntentIdError> {
-        parse_canonical(s)
-            .map(IntentId)
-            .map_err(IntentIdError::from)
+        let trimmed = s.trim();
+        let Ok(uuid) = Uuid::try_parse(trimmed) else {
+            return Err(IntentIdError::NotCanonicalUuidV7);
+        };
+        if uuid.get_version_num() != 7
+            || uuid.get_variant() != uuid::Variant::RFC4122
+            || uuid.as_hyphenated().to_string() != trimmed
+        {
+            return Err(IntentIdError::NotCanonicalUuidV7);
+        }
+        Ok(IntentId(trimmed.to_string()))
     }
 
     /// 生の識別子文字列 (trim 済み)。
@@ -87,21 +66,8 @@ impl fmt::Display for IntentId {
 impl fmt::Display for IntentIdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IntentIdError::Empty => f.write_str("empty"),
-            IntentIdError::Length { actual } => {
-                write!(f, "length {actual} (expected {CANONICAL_LEN})")
-            }
-            IntentIdError::Format { position } => {
-                write!(f, "invalid character at position {position}")
-            }
-            IntentIdError::Version { found } => {
-                write!(f, "version nibble '{found}' (expected '{VERSION_NIBBLE}')")
-            }
-            IntentIdError::Variant { found } => {
-                write!(
-                    f,
-                    "variant nibble '{found}' (expected one of '8' '9' 'a' 'b')"
-                )
+            IntentIdError::NotCanonicalUuidV7 => {
+                f.write_str("not a canonical UUIDv7 (expected lowercase 8-4-4-4-12)")
             }
         }
     }
@@ -141,19 +107,22 @@ mod tests {
 
     #[test]
     fn an_empty_or_blank_value_cannot_be_constructed() {
-        assert_eq!(IntentId::parse(""), Err(IntentIdError::Empty));
-        assert_eq!(IntentId::parse("  \t\n"), Err(IntentIdError::Empty));
+        assert_eq!(IntentId::parse(""), Err(IntentIdError::NotCanonicalUuidV7));
+        assert_eq!(
+            IntentId::parse("  \t\n"),
+            Err(IntentIdError::NotCanonicalUuidV7)
+        );
     }
 
     #[test]
     fn a_value_that_is_not_thirty_six_characters_is_rejected() {
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b"),
-            Err(IntentIdError::Length { actual: 35 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6f"),
-            Err(IntentIdError::Length { actual: 37 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -162,11 +131,11 @@ mod tests {
         // BR4.1: 旧形式 (記録ディレクトリ名) の受理は廃止した。長さで落ちる。
         assert_eq!(
             IntentId::parse("260822-stage1-selfhost"),
-            Err(IntentIdError::Length { actual: 22 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentId::parse("u2"),
-            Err(IntentIdError::Length { actual: 2 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -174,11 +143,11 @@ mod tests {
     fn uppercase_hex_is_rejected() {
         assert_eq!(
             IntentId::parse("01A02785-1bd8-76eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Format { position: 2 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303EBD5b6"),
-            Err(IntentIdError::Format { position: 30 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -187,12 +156,12 @@ mod tests {
         // 8 文字目 (0 始まり位置 8) に `-` が無い。
         assert_eq!(
             IntentId::parse("01a027851-bd8-76eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Format { position: 8 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
         // 16 進が来るべき位置に `-` がある。
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303-bd5b6"),
-            Err(IntentIdError::Format { position: 30 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -200,7 +169,7 @@ mod tests {
     fn non_hex_characters_are_rejected() {
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303gbd5b6"),
-            Err(IntentIdError::Format { position: 30 })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -209,11 +178,11 @@ mod tests {
         // UUIDv4 (13 番目の 16 進桁が 4)。
         assert_eq!(
             IntentId::parse("01a02785-1bd8-46eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Version { found: '4' })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentId::parse("01a02785-1bd8-16eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Version { found: '1' })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -222,11 +191,11 @@ mod tests {
         // 17 番目の 16 進桁は 8 / 9 / a / b (2 進 10xx) のみ。
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-ceea-5aa303ebd5b6"),
-            Err(IntentIdError::Variant { found: 'c' })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentId::parse("01a02785-1bd8-76eb-7eea-5aa303ebd5b6"),
-            Err(IntentIdError::Variant { found: '7' })
+            Err(IntentIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -266,22 +235,9 @@ mod tests {
 
     #[test]
     fn the_rejection_carries_material_not_wording() {
-        assert_eq!(IntentIdError::Empty.to_string(), "empty");
         assert_eq!(
-            IntentIdError::Length { actual: 35 }.to_string(),
-            "length 35 (expected 36)"
-        );
-        assert_eq!(
-            IntentIdError::Format { position: 8 }.to_string(),
-            "invalid character at position 8"
-        );
-        assert_eq!(
-            IntentIdError::Version { found: '4' }.to_string(),
-            "version nibble '4' (expected '7')"
-        );
-        assert_eq!(
-            IntentIdError::Variant { found: 'c' }.to_string(),
-            "variant nibble 'c' (expected one of '8' '9' 'a' 'b')"
+            IntentIdError::NotCanonicalUuidV7.to_string(),
+            "not a canonical UUIDv7 (expected lowercase 8-4-4-4-12)"
         );
     }
 }

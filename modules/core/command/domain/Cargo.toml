@@ -16,6 +16,8 @@ workspace = true
 #
 # chrono は残る — 時刻の**値**は永続化知識ではない (規則の対象外条項)。
 chrono = { workspace = true }
+# uuid は解析のみ (識別子 Domain Primitive の検査点 uuid_v7.rs)。採番はインフラ側の責務。
+uuid = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

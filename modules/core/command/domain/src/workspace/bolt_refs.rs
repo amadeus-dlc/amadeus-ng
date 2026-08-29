@@ -111,6 +111,32 @@ mod tests {
     use proptest::prelude::*;
 
     #[test]
+    fn removal_and_the_observation_faces_agree_with_the_set() {
+        let mut refs = BoltRefs::parse("[b1-first, b2-second]").unwrap();
+        assert!(refs.contains("b1-first"));
+        assert!(!refs.contains("b9-absent"));
+        assert_eq!(refs.len(), 2);
+        assert!(!refs.is_empty());
+        assert_eq!(
+            refs.to_string(),
+            refs.emit(),
+            "Display は emit の綴りそのもの"
+        );
+
+        refs.remove_slug("b1-first").unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(
+            refs.remove_slug("b1-first").unwrap_err(),
+            BoltRefsError::MissingSlug("b1-first".to_string()),
+            "不在 slug は無言 no-op にしない"
+        );
+
+        refs.remove_slug("b2-second").unwrap();
+        assert!(refs.is_empty());
+        assert_eq!(refs.emit(), "[empty list]");
+    }
+
+    #[test]
     fn empty_forms_parse_and_emit_the_literal() {
         assert_eq!(BoltRefs::parse("").unwrap().emit(), "[empty list]");
         assert_eq!(

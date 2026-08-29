@@ -73,7 +73,6 @@ mod stage_entry;
 mod stage_index;
 mod start_request;
 mod status;
-mod uuid_v7;
 mod verdict;
 mod workspace_scan;
 

@@ -115,6 +115,9 @@ event-store-adapter-rs = "=3.0.0"
 # (ADR-010 決定 3)。`serde` feature は本家も有効にしており、我々のドメイン型の derive でも要る。
 # 自前の ISO 8601 整形 (`format_iso8601_utc`) はこれに置き換わる (NFR4.1 の再検討 — ADR-010)。
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+# UUID の解析は自作しない (オーナー裁定 2026-08-30)。既定 feature は落とし、解析のみに使う。
+# 採番 (v7 feature) は U7 でインフラ側 (composition root) にだけ足す。
+uuid = { version = "1.26", default-features = false, features = ["std"] }
 sha2 = "0.10"
 proptest = "1"
 # 非同期ポート (AFIT) のテスト実行時。`rt` の current_thread ランタイムだけを使い、

@@ -65,6 +65,12 @@ fn normalize_host(raw: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_observation_faces_return_the_same_spelling() {
+        let name = ShardName::of("J5ik2o Mac Studio.local", &cid());
+        assert_eq!(name.as_str(), name.to_string());
+    }
+
     fn cid() -> CloneId {
         CloneId::parse("abc123").unwrap()
     }
