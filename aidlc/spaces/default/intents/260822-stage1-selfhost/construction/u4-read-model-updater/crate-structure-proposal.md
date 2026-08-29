@@ -50,7 +50,9 @@ core-domain                    ← 共有（イベント語彙・集約）
 core-infrastructure            ← 言語拡張（旧 infra-io。どの層も知らない）
 core-command-use-case          → core-domain
 core-command-interface-adapter → core-domain, core-command-use-case, event-store-adapter-rs(sqlite)
-core-query-read-model-updater  → core-domain, rusqlite, chrono
+core-query-read-model-updater  → core-domain, core-infrastructure, audit-events,
+                                 message-catalog, rusqlite, serde_json, chrono
+                                 （共有層・外部ライブラリのみ — 側のクレートはゼロ。実装実測）
 app/aidlc (U7)                 → 両側（合成ルートだけが両側を知る — RMU の起動のみ）
 ```
 

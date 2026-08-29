@@ -21860,3 +21860,148 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Source**: user_addition
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-29T00:18:07Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T00:21:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac34fe6e7be4cce01
+**Message**: B8（CQRS 層の側分割 + U4 ReadModelUpdater 実装）を Opus 委任で進行中で、共有部品移動まで完了し全テスト緑です。次は実装完了報告を待ってレビューし、PR #33 を収束ルールでマージします。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T00:37:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T00:53:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-29T01:00:00Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/developer-report-1.md
+**Context**: construction > u4-read-model-updater > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:00:00Z
+**Event**: SENSOR_FIRED
+**Fire id**: acb1918b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:00:00Z
+**Event**: SENSOR_PASSED
+**Fire id**: acb1918b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/developer-report-1.md
+**Duration ms**: 23
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:00:00Z
+**Event**: SENSOR_FIRED
+**Fire id**: e301e22a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T01:00:00Z
+**Event**: SENSOR_FAILED
+**Fire id**: e301e22a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-e301e22a.md
+**Findings count**: 3
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T01:00:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T01:01:25Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T01:01:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: B8 の作業を一区切りまで進めました。全 6 ゲート緑、コミット 6 本を `bolt/b8-u4-read-model-updater` に積んでいます（push なし）。\n\n## クレート対応表\n\n| 旧 | 新 | パッケージ名 | 側 |\n|---|---|---|---|\n| `modules/core/domain` | 同左 | `core-domain` | 共有 |\n| `mod
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T01:03:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T01:03:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: 両方の確認事項を実装と突き合わせました。**infrastructure 層は指示どおり実装済みで追加作業はありません。core-domain は 1 件だけ確認が必要**です。\n\n## infrastructure 層（スコープ追加）— 対応済み\n\n3 点とも既に満たしていました。`modules/core/infrastructure` = `core-infrastructure`（中身は 
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T01:03:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T01:07:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a031dbf13dbeb5cfe
+**Message**: B8（CQRS 側分割 + U4 リードモデル更新）実装中。裁定 A（欠落 3 値をイベントに載せる）で残り 6 イベント型の投影を委任先が仕上げ中。完了報告が来たらレビューして PR #33 をマージします。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T01:42:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T01:42:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: **B8 完了しました。** 固定裁定 1〜8 をすべて実施し、受入基準 1〜8 すべて PASS です。\n\n## 裁定 A の実装\n\n担当エージェント名・ステージ番号・ステージ表題と走査結果 4 項目を `Started` へ焼き込みました。`StageDisplay`（番号・表題・担当、`modules/core/domain/src/orchestration/stage_display.r
+
+---
