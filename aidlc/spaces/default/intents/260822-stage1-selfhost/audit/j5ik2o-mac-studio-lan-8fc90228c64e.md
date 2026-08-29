@@ -23557,3 +23557,357 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-29T04:00:07Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T04:01:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T04:04:02Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T04:11:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T04:23:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:10Z
+**Event**: SENSOR_FIRED
+**Fire id**: 00114bb6
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 00114bb6
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 657
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: 11f1e12d
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:11Z
+**Event**: SENSOR_PASSED
+**Fire id**: 11f1e12d
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 18
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6105c519
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:15Z
+**Event**: SENSOR_PASSED
+**Fire id**: 6105c519
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 604
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:16Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8bcb0749
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:16Z
+**Event**: SENSOR_PASSED
+**Fire id**: 8bcb0749
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 18
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:23Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5d99e5d8
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5d99e5d8
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 591
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0bf05865
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0bf05865
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 18
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:29Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2dd9d160
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:30Z
+**Event**: SENSOR_PASSED
+**Fire id**: 2dd9d160
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 619
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:30Z
+**Event**: SENSOR_FIRED
+**Fire id**: e7c6c196
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:30Z
+**Event**: SENSOR_PASSED
+**Fire id**: e7c6c196
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 20
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: c95267a7
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: c95267a7
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 610
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:25:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: e905196b
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:25:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: e905196b
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 17
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:31:07Z
+**Event**: SENSOR_FIRED
+**Fire id**: b15dea4d
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:31:07Z
+**Event**: SENSOR_PASSED
+**Fire id**: b15dea4d
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 600
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T04:31:07Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3f6bb60c
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T04:31:07Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3f6bb60c
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-cli.ts
+**Duration ms**: 17
+**Note**: script-error: exit-1
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T04:46:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b10-developer
+**Agent ID**: ab10-developer-b1a81047ebb5671b
+**Message**: B10 は完了しました。採取はすべて終わり、投影は 2 点を残して完成しています。**その 2 点はブリーフが想定していなかった理由で詰まっており、裁定を求めて `main` へ連絡済みです。**\n\n## 採取できた点\n\n| ブリーフ項目 | 結果 |\n|---|---|\n| 1. 状態ファイル骨格 | **採取済** — `cli/intent-create/classic-scope/stat
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T04:52:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b10-developer
+**Agent ID**: ab10-developer-b1a81047ebb5671b
+**Message**: 裁定 A を実装し、B10 は完了しました。**受入基準 1〜10 すべて PASS** です。\n\n## 裁定 A の実装\n\n`ScaffoldTemplateUnavailable` → **`ScaffoldMissing`**（`Display` は `scaffold missing`）へ改名しました。撤去せず改名にしたのは指示どおりですが、理由を一つ補足すると、名前が古い理由（テンプレー
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T07:55:18Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T07:59:39Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4602cf7cd7ed20c2
+**Message**: B10（upstream ゴールデン追加採取と投影完成）を進行中です。委任先が最終ラウンド（追加採取3ケースとB8由来の乖離3件の是正）を作業中で、完了報告が来たら私が独立検証してPR #35を出し、収束後にマージします。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T08:09:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b10-developer
+**Agent ID**: ab10-developer-b1a81047ebb5671b
+**Message**: 最終ラウンド完了です。**受入基準 1〜10 すべて PASS**。乖離 3 件は実バイトで決着しましたが、**うち 1 件は私の見立てが誤りで、採取が否定しました。**\n\n## 採取した 3 ケース\n\nすべて exit 0 で採れました（`cases-missing.json` 行きはゼロ）。\n\n**(i) 並び順 — 私が間違っていました。** `recompose/skip-two-appe
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T08:15:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af7616b0f4632aa6b
+**Message**: B10（U1ゴールデン追加採取）の仕上げ中です。委任先の provenance 陳腐化を差し戻し、再測定待ち。再提出が来たら独立検証して PR #35 を作り、収束ルールで AI 裁定マージします。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T08:15:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b10-developer
+**Agent ID**: ab10-developer-b1a81047ebb5671b
+**Message**: 差し戻しを修正し、全 10 基準を**最終コミット状態で**測り直しました。\n\n## 原因\n\n再現性検証の最後に実行した `git checkout -- tests/golden/upstream-3c3146cf` が犯人です。意図は「観測バイトをコミット状態へ復元する」ことでしたが、実際には**再生成された族 `provenance.json` まで巻き戻していました**。その時点のコミット
+
+---
