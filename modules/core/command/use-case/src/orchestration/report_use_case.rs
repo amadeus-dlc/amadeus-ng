@@ -10,6 +10,7 @@ use core_command_domain::workspace::CheckboxState;
 use super::report_error::ReportError;
 use super::report_outcome::ReportOutcome;
 use super::reported_verdict::{ReportedTransition, ReportedVerdict};
+use super::repository_error::RepositoryError;
 use super::workflow_execution_repository::WorkflowExecutionRepository;
 
 /// `report` — コンダクタが報告した結末を 1 つの遷移としてコミットする。
@@ -28,7 +29,9 @@ use super::workflow_execution_repository::WorkflowExecutionRepository;
 /// - **リードモデルの更新**。`aidlc-state.md` と監査シャードを最新化する `ReadModelUpdater` を
 ///   起動するのは合成ルート (U7) である。コマンド側のユースケースはクエリ側を知らない
 ///   (`coding-rules/cqrs-boundaries.md` — 境界はクレート分離で物理強制されている)。
-/// - **再試行の政策**。`Conflict` も含めて再試行しない (ポート doc の C3 ③)。
+/// - **`Conflict` 以外の再試行**。持っている政策は「楽観 version の競合を 1 回だけやり直す」
+///   1 つだけで、それ以外の失敗はすべてそのまま伝播する (下記「`Conflict` は 1 回だけ
+///   再試行する」)。
 /// - **CLI のフラグ解析**。綴りの揺れ (`approved` / `completed` / `complete` / `done`) の受理は
 ///   U7 が [`ReportedVerdict`] を組む時点で畳む。
 ///
@@ -56,6 +59,19 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
     ///
     /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない (NFR3.1)。
     ///
+    /// # `Conflict` は 1 回だけ再試行する
+    ///
+    /// 楽観 version の競合だけがこのユースケースの持つ唯一の再試行政策である
+    /// (contract-design Q6 = A — 「楽観 version 競合は即 `Err`、ユースケースが 1 回だけ再構成して
+    /// 再試行、それでも競合なら CLI がエラー終了」)。ポート doc の C3 ③「`Conflict` 以外は
+    /// 再試行しない」は、`Conflict` **だけ**が再試行の対象であり、その政策の持ち主が
+    /// ユースケースであることを言っている。
+    ///
+    /// 再試行は**再構成からやり直す** — 古い集約に `store` だけ打ち直すのは、読んだ時点の版で
+    /// 書くという楽観ロックの意味そのものを壊す。したがって 2 回目は `find_by_id` から始め、
+    /// 新しい版の集約に改めてコマンドを打つ。2 回目も `Conflict` なら伝播する。再試行後に集約が
+    /// コマンドを拒否した場合 (別クローンが先に承認してゲートが閉じた等) も、そのまま伝播する。
+    ///
     /// # 戻り値がある `&mut self` について
     ///
     /// CQS の既定 (Command は戻り値なし) から外れるが、これは集約コマンドが
@@ -69,7 +85,7 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
     ///
     /// 再構成・永続化の失敗 (`Repository`)、集約による拒否 (`Command`)、計画に無いステージの
     /// 名指し (`UnknownStage`) を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
-    /// 言い換えも再試行もしない。
+    /// 言い換えもしない。再試行するのは上記の `Conflict` 1 回だけである。
     pub async fn execute(
         &mut self,
         intent_id: &IntentId,
@@ -82,6 +98,27 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
             return Ok(ReportOutcome::ResumeRouting);
         };
 
+        // 1 回目。`Conflict` は `store` からしか来ないので、この分岐は「書込が競合した」と同値。
+        match self
+            .attempt(intent_id, stage, transition.clone(), occurred_at)
+            .await
+        {
+            Err(ReportError::Repository(RepositoryError::Conflict { .. })) => {
+                self.attempt(intent_id, stage, transition, occurred_at)
+                    .await
+            }
+            settled => settled,
+        }
+    }
+
+    /// 再構成からコミットまでの 1 回分。競合したときはこれをもう 1 度だけ通す。
+    async fn attempt(
+        &mut self,
+        intent_id: &IntentId,
+        stage: Option<&StageSlug>,
+        transition: ReportedTransition,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<ReportOutcome, ReportError> {
         let rehydrated = self.repository.find_by_id(intent_id).await?;
         // 版は再構成が返した値**そのもの**を握る。`aggregate.seq_nr()` から導いてはならない
         // (ポート doc の 3 か条 — 版は不透明なトークンである)。
@@ -514,25 +551,56 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_write_that_lost_the_race_is_reported_as_a_conflict() {
-        // 再構成が返した版が古い = 読んだ後に別の書き手が書いた。再試行はしない (C3 ③)。
+    async fn a_first_conflict_is_retried_once_from_the_rehydration() {
+        // 1 件の割り込み書込で 1 回目は競合し、2 回目で通る (contract-design Q6 = A)。
         let mut subject = ReportUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_after_a_concurrent_write(
+            InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
                 at_the_first_gate(3),
                 7,
+                1,
+            ),
+        );
+        let outcome = subject
+            .execute(&intent(), None, forward(), at())
+            .await
+            .expect("1 回だけ再試行すれば通る");
+        assert!(matches!(
+            committed_event(&outcome),
+            WorkflowExecutionEvent::GateApproved(_)
+        ));
+        assert_eq!(
+            subject.repository().store_attempts(),
+            2,
+            "再試行は 1 回だけ"
+        );
+        assert_eq!(subject.repository().committed().len(), 1, "書けたのは 1 件");
+        // 2 回目が通ったこと自体が「再構成からやり直した」証拠である — このストアは現在の版を
+        // 提示した書込しか受理しないので、古い集約に `store` だけ打ち直していたら再び競合する。
+        assert_eq!(subject.repository().version(), 9);
+    }
+
+    #[tokio::test]
+    async fn a_second_conflict_is_propagated_without_a_further_retry() {
+        // 2 件の割り込み書込。2 回目も競合したら伝播する — 3 回目は無い。
+        let mut subject = ReportUseCase::new(
+            InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
+                at_the_first_gate(3),
+                7,
+                2,
             ),
         );
         let err = subject
             .execute(&intent(), None, forward(), at())
             .await
-            .expect_err("古い版の提示は競合する");
+            .expect_err("2 回目も競合したら伝播する");
         assert_eq!(
             err,
             ReportError::Repository(RepositoryError::Conflict {
-                expected: 6,
-                actual: 7,
+                expected: 8,
+                actual: 9,
             })
         );
+        assert_eq!(subject.repository().store_attempts(), 2, "3 回目は打たない");
         assert!(subject.repository().committed().is_empty());
     }
 

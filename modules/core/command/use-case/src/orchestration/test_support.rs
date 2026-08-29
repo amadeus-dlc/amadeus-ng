@@ -122,11 +122,20 @@ pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecuti
 /// 楽観 version は本家の実測どおり「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。
 /// レシーバは CQS どおり再構成が `&self`、永続化が `&mut self` である — 内部可変性で
 /// `&self` に見せかけない (`coding-rules/interior-mutability.md`)。
+///
+/// # 応答をスクリプトできる
+///
+/// `Conflict` は「読んでから書くまでの間に別の書き手が入った」ときにしか起きないので、
+/// 単一スレッドのテストからは自然には起こせない。そこで**割り込む書込の回数**を台本として
+/// 持たせる ([`InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes`])。
+/// 台本が残っている間、`store` はストアの版だけを 1 つ進めて `Conflict` を返す。
+/// 割り込んだ相手が書いた**内容**までは模さない — 版の進行だけが再試行の観測に要る材料である。
 #[derive(Debug)]
 pub(crate) struct InMemoryWorkflowExecutionRepository {
     stored: Option<WorkflowExecution>,
     version: usize,
-    stale_reads_by: usize,
+    interrupting_writes: usize,
+    store_attempts: usize,
     committed: Vec<WorkflowExecutionEvent>,
 }
 
@@ -136,12 +145,13 @@ impl InMemoryWorkflowExecutionRepository {
     fn new(
         stored: Option<WorkflowExecution>,
         version: usize,
-        stale_reads_by: usize,
+        interrupting_writes: usize,
     ) -> InMemoryWorkflowExecutionRepository {
         InMemoryWorkflowExecutionRepository {
             stored,
             version,
-            stale_reads_by,
+            interrupting_writes,
+            store_attempts: 0,
             committed: Vec::new(),
         }
     }
@@ -159,20 +169,27 @@ impl InMemoryWorkflowExecutionRepository {
         InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 0)
     }
 
-    /// 再構成が**実際より 1 つ古い版**を返すストア。
+    /// 最初の `writes` 回の `store` に、別の書き手の書込が割り込むストア。
     ///
-    /// 「読んだ直後に別の書き手が 1 件書いた」状況を、本物の並行実行なしで再現する装置である
-    /// — 提示された版が古いので `store` は `Conflict` を返す。
-    pub(crate) fn holding_after_a_concurrent_write(
+    /// 割り込みが起きた回は版だけが 1 つ進み、提示された版は古くなるので `Conflict` になる。
+    /// 台本を使い切ると通常の楽観判定へ戻るので、**再構成からやり直した呼出だけが**
+    /// 新しい版を提示でき、書込に成功する。
+    pub(crate) fn holding_behind_concurrent_writes(
         aggregate: WorkflowExecution,
         version: usize,
+        writes: usize,
     ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 1)
+        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, writes)
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
     pub(crate) fn committed(&self) -> &[WorkflowExecutionEvent] {
         &self.committed
+    }
+
+    /// `store` が呼ばれた回数 (再試行が 1 回だけであることを見るテスト用)。
+    pub(crate) const fn store_attempts(&self) -> usize {
+        self.store_attempts
     }
 
     /// ストアが採番している現在の版。
@@ -188,12 +205,7 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
     ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
         self.stored
             .clone()
-            .map(|aggregate| {
-                RehydratedWorkflowExecution::new(
-                    aggregate,
-                    self.version.saturating_sub(self.stale_reads_by),
-                )
-            })
+            .map(|aggregate| RehydratedWorkflowExecution::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
                 intent_id: id.clone(),
             })
@@ -205,6 +217,16 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
         aggregate: &WorkflowExecution,
         expected_version: usize,
     ) -> Result<(), RepositoryError> {
+        self.store_attempts += 1;
+        if self.interrupting_writes > 0 {
+            // 別の書き手が先に書いた — ストアの版だけが進み、提示された版が古くなる。
+            self.interrupting_writes -= 1;
+            self.version += 1;
+            return Err(RepositoryError::Conflict {
+                expected: expected_version,
+                actual: self.version,
+            });
+        }
         if expected_version != self.version {
             return Err(RepositoryError::Conflict {
                 expected: expected_version,
