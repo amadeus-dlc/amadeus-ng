@@ -63,7 +63,7 @@ impl RehydratedIntentExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::{StageDisplay, WorkspaceScan};
+    use core_command_domain::orchestration::{Created, StageDisplay, WorkspaceScan};
     use core_command_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
     fn display(number: &str) -> StageDisplay {
         StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
@@ -88,7 +88,7 @@ mod tests {
     };
 
     fn intent() -> Intent {
-        Intent::from_material(
+        Intent::from(Created::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
@@ -101,8 +101,7 @@ mod tests {
                 display("0.1"),
             )],
             scan(),
-        )
-        .unwrap()
+        ))
     }
 
     fn aggregate() -> IntentExecution {

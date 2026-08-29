@@ -12,7 +12,7 @@
 )]
 
 use core_command_domain::orchestration::{
-    AutonomyMode, AutonomyModeSet, GateApproved, GateOpened, GateRejected, Intent,
+    AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentExecutionEvent, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary, Recomposed,
     StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
     WorkspaceScan,
@@ -65,7 +65,7 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::from_material(
+    Intent::from(Created::new(
         IntentId::parse(INTENT).expect("UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -78,8 +78,7 @@ fn intent() -> Intent {
             "Unknown",
         )
         .expect("単一行"),
-    )
-    .expect("合成計画は Intent の不変条件を満たす")
+    ))
 }
 
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
@@ -194,16 +193,15 @@ fn a_row_whose_spelling_is_outside_the_closed_set_is_refused() {
 }
 
 #[test]
-fn a_row_that_breaks_an_aggregate_invariant_is_refused_at_the_check_point() {
-    // 形は読めるが Always Valid を破る行は `Intent::from_material` の検査点で止まる。
+#[should_panic(expected = "recorded history violates the plan invariants")]
+fn a_row_that_breaks_an_aggregate_invariant_crashes_reconstruction() {
+    // 形は読めるが Always Valid を破る行 — 再構成は失敗を返さず、壊れた歴史はクラッシュが正
+    // (オーナー裁定 2026-08-30)。
     let (_, started) = every_variant().swap_remove(0);
     // 先頭ステージ (initialization) を SKIP に畳むと Always Valid を破る。
     let tampered = started.replacen(r#""plan_action":"Execute""#, r#""plan_action":"Skip""#, 1);
     let decoded: WireEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
-    assert!(
-        decoded.to_domain().is_err(),
-        "initialization ステージの SKIP は不変条件違反"
-    );
+    let _ = decoded.to_domain();
 }
 
 #[test]

@@ -49,8 +49,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
-    StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
+    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -232,7 +232,7 @@ fn stages() -> Vec<StageEntry> {
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 fn intent() -> Intent {
-    Intent::from_material(
+    Intent::from(Created::new(
         IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("定義 revision"),
@@ -245,8 +245,7 @@ fn intent() -> Intent {
             "Unknown",
         )
         .expect("単一行"),
-    )
-    .expect("合成計画は Intent の不変条件を満たす")
+    ))
 }
 
 fn genesis() -> (IntentExecution, IntentExecutionEvent) {
@@ -550,12 +549,13 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                     .store(&event, &aggregate, held.loaded_version())
                     .await
                     .expect_err("stale な writer の書込は拒否される");
-                assert_eq!(
-                    error,
-                    RepositoryError::Conflict {
-                        expected: prev.loaded_version_of(writer),
-                        actual: prev.snap_version,
-                    },
+                assert!(
+                    matches!(
+                        error,
+                        RepositoryError::Conflict { expected, actual }
+                            if expected == prev.loaded_version_of(writer)
+                                && actual == prev.snap_version
+                    ),
                     "{label}: 衝突の材料"
                 );
                 // writer は触らない — 下書きは複製に対して打ったので握っている版は動かない。

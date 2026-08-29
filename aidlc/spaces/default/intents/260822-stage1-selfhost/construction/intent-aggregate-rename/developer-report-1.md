@@ -1,3 +1,9 @@
+> **⚠️ 2026-08-30 裁定バナー（Bolt B13）**: 本書に書かれた intent の再構成設計
+> （`from_material` / 6 引数 `create` / `Created` の集約埋め込み / `IntentRepositoryError` /
+> `IntentExecutionSnapshot`）は**オーナー裁定で置換済み**。現行の正は
+> `coding-rules/aggregate-commands.md`「再構成の形」・`factory-naming.md`「集約の基本コンストラクタ」・
+> `error-handling.md`「Repository エラーはジェネリック 1 本」。本文は歴史記録として残す。
+
 # B12 開発者報告 1 — `Intent` 構造体 + `IntentExecution` 集約への分割
 
 対象ブリーフ: [`brief-1.md`](brief-1.md)（改訂 10 まで反映）

@@ -3,6 +3,8 @@
 
 ## Interpretations
 <!-- example: 2026-05-29T10:14:32Z — chose REST over GraphQL; the consuming team only needs CRUD, revisit if subscriptions land -->
+- 2026-08-29T18:20:00Z — [B13] オーナー裁定で集約の再構成を ES 本則（event-store-adapter-rs サンプル準拠）へ全面整列: 構築 API は genesis / replay / apply_event のみ、イベントは内容（値）を運ぶ、再構成は失敗を返さない（壊れた歴史はクラッシュ）、memento 双子型禁止、Repository の読取はジャーナル全再生（スナップショット行は版の正本と存在検査のみ）、エラーは RepositoryError<Id> 1 本 + 裁定 6（source 連鎖）。裁定は coding-rules 4 本へ即・正典化し、誤適用の経緯（from_material → restore/rehydrate → memento 型の 3 段）ごと記録した
+- 2026-08-29T18:20:00Z — [B13] 前方に効く設計文書の整合: contract-summary C3 と components.md へ 2026-08-30 追記、B12 brief/developer-report へ裁定バナー、u5 decisions-1 裁定 6 に実装済み注記。specs 01/10/11/12 の全文追従は範囲拡大（ES 再構成の意味論を含む）を明記のうえ引き続き候補
 - 2026-08-22T11:47:37Z — [u1-canon-json-goldens] レビュー Major 1（C7 のゴールデン受入表スキーマが 2 フィールド省略表記）は ADR 0001 が正本で C7 側の省略誤りと判断し、contract-summary.md を in-place 訂正して監査台帳に Change Request を残した（上流矛盾は人間裁定というルールの例外 — オーナー承認済み ADR が一方を明確に裏付ける場合）。ゲートで提示する
 - 2026-08-22T11:36:16Z — [u1-canon-json-goldens] 構築フェーズの質問は本当の空白だけに絞り 2 問（ゴールデンの非決定フィールドの正規化、CLI ゴールデンのシナリオ範囲）にした; 3 プロファイル・キー順・数値表記は ADR 0001 で確定済みなので問い直さない。canon-json の公開 API の形（プロファイル enum + 1 関数群）はアーキテクトの設計判断として functional-spec に書く
 - 2026-08-22T11:36:16Z — [u1-canon-json-goldens] user-stories が Skip のため traceability.json の upstream_ids は AC ではなく U1 の FR（FR7.1/7.2/7.3）と NFR1 にし、target は rules.md の BR ID にする; センサーは AC を期待するため誤検知し得るが、story-map と同じ FR 連鎖で一貫させる

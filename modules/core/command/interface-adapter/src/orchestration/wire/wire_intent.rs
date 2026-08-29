@@ -1,7 +1,7 @@
 //! `Intent` とその部品の永続化 DTO — `Started` / `Created` が運ぶ静的材料のバイト形。
 
 use core_command_domain::orchestration::{
-    Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -83,8 +83,9 @@ impl WireIntent {
     ///
     /// # Errors
     ///
-    /// 閉集合外の綴り・文法外の識別子は `Malformed`、組み上げが Always Valid を破る場合は
-    /// `InvariantViolation` を返す。
+    /// 閉集合外の綴り・文法外の識別子は `Malformed` を返す。組み上げ (誕生記録の変換) が
+    /// Always Valid を破る場合は回復せずクラッシュする — 再構成は失敗を返さない
+    /// (オーナー裁定 2026-08-30)。
     pub(super) fn to_domain(&self) -> Result<Intent, WireDecodeError> {
         let stages = self
             .stages
@@ -101,7 +102,7 @@ impl WireIntent {
         if let Some(strategy) = &self.start_request.test_strategy {
             request = request.with_test_strategy(strategy.clone());
         }
-        Intent::from_material(
+        Ok(Intent::from(Created::new(
             IntentId::parse(&self.id)
                 .map_err(|_| WireDecodeError::malformed("id", self.id.clone()))?,
             WorkflowDefinitionId::parse(&self.definition_id).map_err(|_| {
@@ -113,8 +114,7 @@ impl WireIntent {
             request,
             stages,
             self.scan.to_domain()?,
-        )
-        .map_err(|_| WireDecodeError::InvariantViolation)
+        )))
     }
 }
 

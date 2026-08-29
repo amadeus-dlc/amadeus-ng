@@ -13,8 +13,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
-    StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
+    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -23,7 +23,6 @@ use core_command_domain::workflow_definition::{
 
 use super::intent_execution_repository::IntentExecutionRepository;
 use super::intent_repository::IntentRepository;
-use super::intent_repository_error::IntentRepositoryError;
 use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
 
@@ -99,9 +98,9 @@ pub(crate) fn start_from_plan(
             )
         })
         .collect();
-    // 呼出側は genesis の対の左を `IntentExecution::start` に渡す (改訂 8)。誕生イベントを
-    // `store` する `IntentRepository` は U7 の課題なので、ここでは受け取るだけである。
-    let (intent, _created) = Intent::create(
+    // 合成計画からの組み直しは再構成経路 (from_snapshot) を通す — 検査点は genesis と
+    // 同一である。誕生イベントを `store` する `IntentRepository` は U7 の課題である。
+    let intent = Intent::from(Created::new(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -109,8 +108,7 @@ pub(crate) fn start_from_plan(
         StartRequest::new("classic", "report use case"),
         stages,
         scan(),
-    )
-    .expect("合成計画は Intent の不変条件を満たす");
+    ));
     let (execution, event) = IntentExecution::start(execution_id(), intent.clone(), at());
     (intent, execution, event)
 }
@@ -238,15 +236,13 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError> {
+    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>> {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
             .clone()
             .filter(|aggregate| aggregate.id() == id)
             .map(|aggregate| RehydratedIntentExecution::new(aggregate, self.version))
-            .ok_or_else(|| RepositoryError::NotFound {
-                execution_id: id.clone(),
-            })
+            .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
     }
 
     async fn store(
@@ -254,7 +250,7 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
         expected_version: usize,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<(), RepositoryError<IntentExecutionId>> {
         self.store_attempts += 1;
         if self.interrupting_writes > 0 {
             // 別の書き手が先に書いた — ストアの版が進み、提示された版が古くなる。
@@ -317,13 +313,11 @@ impl InMemoryIntentRepository {
 }
 
 impl IntentRepository for InMemoryIntentRepository {
-    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, IntentRepositoryError> {
+    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         self.lookups.set(self.lookups.get() + 1);
         match &self.held {
             Some(held) if held.id() == id => Ok(held.clone()),
-            _ => Err(IntentRepositoryError::NotFound {
-                intent_id: id.clone(),
-            }),
+            _ => Err(RepositoryError::NotFound { id: id.clone() }),
         }
     }
 }

@@ -62,12 +62,11 @@ pub trait IntentExecutionRepository {
     ///
     /// # Errors
     ///
-    /// 集約が無い (`NotFound`)、ストア I/O (`Io`)、スナップショット欠落・復号不能・
-    /// 不変条件違反・`seq_nr` の不連続 (`Corrupt`) を返す。
+    /// 集約が無い (`NotFound`)、ストア I/O (`Io`)、ストアの記録の破損 (`Corrupt` — 原因は `source` 連鎖) を返す。
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError>;
+    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>>;
 
     /// 1 コマンドが返した単一イベントと適用後の集約を、同一トランザクションで永続化する。
     ///
@@ -91,7 +90,7 @@ pub trait IntentExecutionRepository {
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
         expected_version: usize,
-    ) -> Result<(), RepositoryError>;
+    ) -> Result<(), RepositoryError<IntentExecutionId>>;
 
     /// まだ 1 度も永続化していない集約が提示する版 (新規作成の `expected_version`)。
     ///
@@ -113,7 +112,7 @@ mod tests {
     async fn rehydrate<R: IntentExecutionRepository>(
         repository: &R,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError> {
+    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>> {
         repository.find_by_id(id).await
     }
 
@@ -123,12 +122,10 @@ mod tests {
         let err = rehydrate(&repository, &absent_execution())
             .await
             .unwrap_err();
-        assert_eq!(
+        assert!(matches!(
             err,
-            RepositoryError::NotFound {
-                execution_id: absent_execution()
-            }
-        );
+            RepositoryError::NotFound { id } if id == absent_execution()
+        ));
     }
 
     #[tokio::test]
@@ -188,13 +185,13 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert_eq!(
+        assert!(matches!(
             err,
             RepositoryError::Conflict {
                 expected: 0,
                 actual: 1
             }
-        );
+        ));
     }
 
     #[tokio::test]
@@ -229,12 +226,10 @@ mod tests {
         let err = rehydrate(&repository, &absent_execution())
             .await
             .unwrap_err();
-        assert_eq!(
+        assert!(matches!(
             err,
-            RepositoryError::NotFound {
-                execution_id: absent_execution()
-            }
-        );
+            RepositoryError::NotFound { id } if id == absent_execution()
+        ));
         // 同じストアでも、正しい識別子なら見つかる。
         assert!(rehydrate(&repository, &execution_id()).await.is_ok());
     }

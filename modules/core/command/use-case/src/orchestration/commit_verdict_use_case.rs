@@ -65,7 +65,7 @@ enum AttemptOutcome {
         /// この試行が対象にしたステージ（再試行はこれを名指しする）。
         target: StageSlug,
         /// ストアが返した競合そのもの（2 回目も競合したらこれを伝播する）。
-        conflict: RepositoryError,
+        conflict: RepositoryError<IntentExecutionId>,
     },
 }
 
@@ -370,7 +370,6 @@ mod tests {
 
     use super::super::commit_error::CommitError;
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
-    use super::super::intent_repository_error::IntentRepositoryError;
     use super::super::reported_transition::ReportedTransition;
     use super::super::repository_error::RepositoryError;
     use super::super::test_support::{
@@ -631,7 +630,7 @@ mod tests {
             .execute(Some(&unknown), forward(), at())
             .await
             .expect_err("計画に無いステージは解決できない");
-        assert_eq!(err, CommitError::UnknownStage { stage: unknown });
+        assert!(matches!(err, CommitError::UnknownStage { stage } if stage == unknown));
         assert!(subject.repository().committed().is_empty());
     }
 
@@ -646,7 +645,10 @@ mod tests {
             .1
             .stage_index(2)
             .expect("索引 2 は範囲内");
-        assert_eq!(err, CommitError::Command(CommandError::NotStale(stage)));
+        assert!(matches!(
+            err,
+            CommitError::Command(CommandError::NotStale(inner)) if inner == stage
+        ));
         assert!(subject.repository().committed().is_empty());
     }
 
@@ -697,12 +699,10 @@ mod tests {
             .execute(&execution_id(), None, forward(), at())
             .await
             .expect_err("計画が無ければコミットできない");
-        assert_eq!(
+        assert!(matches!(
             err,
-            CommitError::IntentRepository(IntentRepositoryError::NotFound {
-                intent_id: intent.id().clone(),
-            })
-        );
+            CommitError::IntentRepository(RepositoryError::NotFound { id }) if id == *intent.id()
+        ));
     }
 
     #[tokio::test]
@@ -736,12 +736,10 @@ mod tests {
             .execute(&absent_execution(), None, forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
-        assert_eq!(
+        assert!(matches!(
             err,
-            CommitError::Repository(RepositoryError::NotFound {
-                execution_id: absent_execution(),
-            })
-        );
+            CommitError::Repository(RepositoryError::NotFound { id }) if id == absent_execution()
+        ));
     }
 
     #[tokio::test]
@@ -835,13 +833,13 @@ mod tests {
             .execute(None, forward(), at())
             .await
             .expect_err("2 回目も競合したら伝播する");
-        assert_eq!(
+        assert!(matches!(
             err,
             CommitError::Repository(RepositoryError::Conflict {
                 expected: 8,
                 actual: 9,
             })
-        );
+        ));
         assert_eq!(subject.repository().store_attempts(), 2, "3 回目は打たない");
         assert!(subject.repository().committed().is_empty());
     }
@@ -856,13 +854,13 @@ mod tests {
             .execute(None, ReportedTransition::Revised, at())
             .await
             .expect_err("revising 以外はゲートへ再入できない");
-        assert_eq!(
+        assert!(matches!(
             err,
             CommitError::Command(CommandError::CheckboxPrecondition {
-                stage,
+                stage: inner,
                 actual: CheckboxState::InProgress,
-            })
-        );
+            }) if inner == stage
+        ));
         assert!(
             subject.repository().committed().is_empty(),
             "拒否されたコマンドは 1 バイトも書かない"

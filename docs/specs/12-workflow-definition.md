@@ -6,6 +6,13 @@
 > 実行時状態のみ保持し計画は `&Intent` 引数で受ける）。本文中の `WorkflowExecution` は文脈により
 > どちらかへ読み替える。本文の全文追従は後続 Bolt で行う（正本の裁定記録:
 > `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/brief-1.md`）。
+>
+> **優先順位（2026-08-30 / Bolt B13）**: 本文のうち集約の構築・再構成・エラー設計に触れる記述
+> （`from_material` / memento 型 / スナップショット種の再水和 / リポジトリ別エラー型 /
+> `Created` の集約埋め込み 等）は**歴史記録・非規範**である。現行の正は
+> `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/`（aggregate-commands「再構成の形」・
+> factory-naming・error-handling）が持ち、本文と矛盾する場合は coding-rules が常に優先する。
+> 本文の全文追従は後続 Bolt（範囲: 改名 + ES 再構成の意味論）で行う。
 
 
 > **位置づけ**: コンテキスト別仕様の第 3 号。スライス 1 = **グラフリーダ契約**（コンパイル済み成果物の読取面）に範囲を限定する。`01-domain-model.md` の裁定（B1・B6・B7・B11）と D3/D4/D10、ADR 0001〜0004 に従う。

@@ -5,9 +5,12 @@
 //! ある。
 //!
 //! これは**集約**である (オーナー裁定 2026-08-30 — [`WorkflowDefinition`] と同じ類型で、
-//! 静的で変異が現状無いだけ)。したがって genesis ファクトリ [`Intent::create`] は
-//! **(集約, 誕生イベント) の対**を返し、再構成経路 [`Intent::from_material`] は
-//! **イベントを作らない** (coding-rules/aggregate-commands.md)。誕生イベントを `store` する
+//! 静的で変異が現状無いだけ)。基本コンストラクタは genesis の [`Intent::create`] —
+//! **全情報 (`&WorkflowDefinition`) を受けて (集約, 誕生イベント) の対**を返す — である
+//! (オーナー裁定 2026-08-30)。再構成は**イベント列から**行う — 誕生記録の変換
+//! (`From<Created>`) がスナップショット種を与え、[`Intent::replay`] が差分イベントを
+//! 畳み込む。再構成はファクトリではなく、失敗も返さない — 壊れた歴史はクラッシュが正
+//! である (オーナー裁定 2026-08-30、本家 v3 サンプル同型)。誕生イベントを `store` する
 //! `IntentRepository` は U7 の課題であり、本スコープでは型と形の適合までである。
 //!
 //! 実行時の状態 (カーソル・checkbox・park・承認履歴…) は集約 [`IntentExecution`] が持ち、
@@ -37,7 +40,7 @@ use crate::workflow_definition::{
 /// そこから解決した EXECUTE / SKIP 列を文書順に持つ。定義そのものは持たない。
 ///
 /// **永続化の記述は持たない** (`coding-rules/domain-persistence-neutrality.md`)。行のバイトを
-/// 決めるのはアダプタ層の DTO で、復号はその DTO から [`Intent::from_material`] を通る —
+/// 決めるのはアダプタ層の DTO で、復号は `Created` を組んで `From<Created>` を通る —
 /// 検査を迂回する構築口は存在しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Intent {
@@ -55,7 +58,7 @@ pub struct Intent {
 /// SKIP にも CONDITIONAL にもできない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentError {
-    /// 定義が知らないスコープ名 (材料は定義側の `UnknownScope`)。`resolve` だけが返す。
+    /// 定義が知らないスコープ名 (材料は定義側の `UnknownScope`)。`create` だけが返す。
     UnknownScope(UnknownScope),
     /// 解決済み計画が 0 件 — コンパイル済みグラフが空の場合のみ (防御的)。
     Empty,
@@ -76,101 +79,30 @@ pub enum IntentError {
 }
 
 impl Intent {
-    /// 記録済みの材料から intent を組み直す (再構成・基本コンストラクタ)。
+    /// 新しい intent を作る (基本コンストラクタ = genesis — 対を返す)。
     ///
-    /// **再構成はファクトリではない** — 歴史を読み戻す経路なのでイベントを作らない
-    /// (coding-rules/aggregate-commands.md の再構成条項)。`Started` / `Created` を復号する
-    /// アダプタ層の DTO と、リプレイ用の復元はこちらを呼ぶ。構造体リテラルが現れるのはこの 1 か所だけで、
-    /// genesis の [`Intent::create`] もここへ委譲する
-    /// (coding-rules/factory-naming.md「すべての構築経路が基本コンストラクタを通る」)。
-    ///
-    /// # Errors
-    ///
-    /// ステージ 0 件、initialization ステージの SKIP / CONDITIONAL、先頭ステージの SKIP を
-    /// 拒否する (先頭はカーソルの初期位置なので、実効 EXECUTE でなければ実行が始められない)。
-    /// スコープ名が定義にあるかは**ここでは検査しない** — 計画を解決する側の責務である。
-    pub fn from_material(
-        id: IntentId,
-        definition_id: WorkflowDefinitionId,
-        definition_revision: DefinitionRevision,
-        start_request: StartRequest,
-        stages: Vec<StageEntry>,
-        scan: WorkspaceScan,
-    ) -> Result<Intent, IntentError> {
-        match stages.first() {
-            None => return Err(IntentError::Empty),
-            Some(first) if first.plan_action() != PlanAction::Execute => {
-                return Err(IntentError::InitializationMustExecute);
-            }
-            Some(_) => {}
-        }
-        for entry in &stages {
-            if entry.phase() != PhaseId::Initialization {
-                continue;
-            }
-            if entry.plan_action() != PlanAction::Execute {
-                return Err(IntentError::InitializationMustExecute);
-            }
-            if entry.is_conditional() {
-                return Err(IntentError::InitializationMustBeUnconditional);
-            }
-        }
-        Ok(Intent {
-            id,
-            definition_id,
-            definition_revision,
-            start_request,
-            stages,
-            scan,
-        })
-    }
-
-    /// 新しい intent を作る (genesis ファクトリ — 対を返す)。
-    ///
-    /// 集約のファクトリは **(集約インスタンス, 誕生イベント) の両方**を返すことが必須である
-    /// (coding-rules/aggregate-commands.md)。Repository の永続化は
-    /// `store(&event, &aggregate, ..)` の形でジャーナル 1 行とスナップショットを同一
-    /// トランザクションで受け取るので、どちらが欠けても永続化が組めない。
+    /// **基本コンストラクタは全情報を受ける genesis である** (オーナー裁定 2026-08-30)。定義
+    /// そのもの (`&WorkflowDefinition`) から計画を解決し、(集約, 誕生イベント) の対を返す。
+    /// 対で返すのは、Repository の永続化が `store(&event, &aggregate, ..)` の形でジャーナル
+    /// 1 行とスナップショットを同一トランザクションで受け取るからである — どちらが欠けても
+    /// 永続化が組めない (coding-rules/aggregate-commands.md)。補助コンストラクタを設ける場合は
+    /// 必ずここへ委譲する (coding-rules/factory-naming.md)。再構成 (`From<Created>` /
+    /// [`Intent::replay`]) はファクトリではないので、この委譲規律の対象外である。
     ///
     /// 動詞 `create` は upstream の `intent-create` そのものである
     /// (coding-rules/factory-naming.md — ドメイン語がある場合はそちらを優先する)。
-    /// 検査は [`Intent::from_material`] へ委譲するので、genesis と再構成で完全に同一である。
-    ///
-    /// # Errors
-    ///
-    /// [`Intent::from_material`] が拒む形をそのまま返す。
-    pub fn create(
-        id: IntentId,
-        definition_id: WorkflowDefinitionId,
-        definition_revision: DefinitionRevision,
-        start_request: StartRequest,
-        stages: Vec<StageEntry>,
-        scan: WorkspaceScan,
-    ) -> Result<(Intent, IntentEvent), IntentError> {
-        let intent = Intent::from_material(
-            id,
-            definition_id,
-            definition_revision,
-            start_request,
-            stages,
-            scan,
-        )?;
-        let event = IntentEvent::Created(Created::new(intent.clone()));
-        Ok((intent, event))
-    }
-
-    /// 定義と呼出側の要求から解決済み計画を組み立てて intent を作る (補助コンストラクタ)。
     ///
     /// `definition.id()` / `definition.revision()` は**無条件に控える** — 比較対象となる既存状態が
-    /// 無い静的コンストラクタなので検査はしない (BR2.6)。以後の定義照合は実行側の
-    /// `next_decision` が行う。組み立てた計画は genesis の [`Intent::create`] に渡すので、
-    /// 不変条件の検査点は 1 か所のままであり、**誕生イベントも同じ形で返る**。
+    /// 無い genesis なので検査はしない (BR2.6)。以後の定義照合は実行側の `next_decision` が行う。
+    /// 表示属性は**計画を解決するこの時点で**焼き込む (オーナー裁定 2026-08-29) — 投影は後から
+    /// 定義を引かないので、再構成しても当時と同じバイトになる (NFR3)。
     ///
     /// # Errors
     ///
     /// 未知スコープ (`UnknownScope`)、表示属性が単一行でない (`StageDisplayNotSingleLine`)、
-    /// および [`Intent::from_material`] が拒む形をそのまま返す。
-    pub fn resolve(
+    /// および計画の不変条件違反 (`Empty` / `InitializationMustExecute` /
+    /// `InitializationMustBeUnconditional`) を拒否する。
+    pub fn create(
         id: IntentId,
         definition: &WorkflowDefinition,
         start_request: StartRequest,
@@ -195,8 +127,6 @@ impl Intent {
             let node = nodes.get(index);
             let conditional =
                 node.is_some_and(|node| node.execution() == ExecutionKind::Conditional);
-            // 表示属性は**計画を解決するこの時点で**焼き込む (オーナー裁定 2026-08-29)。
-            // 投影は後から定義を引かないので、再構成しても当時と同じバイトになる (NFR3)。
             let display = match node {
                 Some(node) => {
                     StageDisplay::new(node.number().clone(), node.name(), node.lead_agent())
@@ -216,14 +146,69 @@ impl Intent {
                 display,
             ));
         }
-        Intent::create(
+        Intent::check_plan(&stages)?;
+        let created = Created::new(
             id,
             definition.id().clone(),
             definition.revision().clone(),
             start_request,
             stages,
             scan,
-        )
+        );
+        let intent = Intent::from(created.clone());
+        Ok((intent, IntentEvent::Created(created)))
+    }
+
+    /// スナップショット種に差分イベントを畳み込んで復元する (Event Sourcing の再生経路)。
+    ///
+    /// 本家 v3 の `UserAccount::replay(events, snapshot)` と同型。スナップショット種は
+    /// 誕生記録の変換 (`From<Created>`) で得る。**再構成は失敗を返さない** — 歴史を読む
+    /// だけであり、壊れた歴史は回復せずクラッシュする (オーナー裁定 2026-08-30)。現状
+    /// イベントは `Created` 1 種のみのため差分は常に空だが、後続イベントが増えたときの
+    /// 適用経路はここに閉じる (通常実行とリプレイの同一経路 — BR1.1)。
+    #[must_use]
+    pub fn replay(events: impl IntoIterator<Item = IntentEvent>, snapshot: Intent) -> Intent {
+        events.into_iter().fold(snapshot, |mut intent, event| {
+            intent.apply_event(&event);
+            intent
+        })
+    }
+
+    /// イベントを 1 つ適用する (リプレイの唯一の状態遷移経路)。
+    #[allow(
+        clippy::unused_self,
+        reason = "変異イベントが増えたときの適用経路をここに閉じる (BR1.1) — 現状 genesis の \
+                  1 変種だけなので状態は動かない"
+    )]
+    const fn apply_event(&mut self, event: &IntentEvent) {
+        // 変種の網羅 match — 腕の欠落はビルドで落ちる。genesis イベントは差分適用では
+        // 何も変えない (スナップショット種が誕生を含む — 本家サンプル同型)。
+        match event {
+            IntentEvent::Created(_) => {}
+        }
+    }
+
+    /// 解決済み計画の不変条件 (genesis と再構成で完全に同一の 1 か所)。
+    fn check_plan(stages: &[StageEntry]) -> Result<(), IntentError> {
+        match stages.first() {
+            None => return Err(IntentError::Empty),
+            Some(first) if first.plan_action() != PlanAction::Execute => {
+                return Err(IntentError::InitializationMustExecute);
+            }
+            Some(_) => {}
+        }
+        for entry in stages {
+            if entry.phase() != PhaseId::Initialization {
+                continue;
+            }
+            if entry.plan_action() != PlanAction::Execute {
+                return Err(IntentError::InitializationMustExecute);
+            }
+            if entry.is_conditional() {
+                return Err(IntentError::InitializationMustBeUnconditional);
+            }
+        }
+        Ok(())
     }
 
     /// この intent の識別子 (以後不変。`intents.json` の uuid にあたる)。
@@ -287,6 +272,30 @@ impl Intent {
     }
 }
 
+impl From<Created> for Intent {
+    /// 誕生記録から集約を導出する (リプレイのスナップショット種)。
+    ///
+    /// 構造体リテラルはここだけ — genesis ([`Intent::create`]) もこの変換を通る。記録された
+    /// 歴史は書込時に検査済みである。万一壊れた歴史 (計画不変条件違反) を読んだ場合は
+    /// 回復せずクラッシュする (オーナー裁定 2026-08-30 — 再構成は失敗を返さない。
+    /// 本家 v3 ではこの位置づけの検査自体が無く、serde 復号がそのまま集約になる)。
+    #[allow(
+        clippy::expect_used,
+        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
+    )]
+    fn from(created: Created) -> Intent {
+        Intent::check_plan(&created.stages).expect("recorded history violates the plan invariants");
+        Intent {
+            id: created.id,
+            definition_id: created.definition_id,
+            definition_revision: created.definition_revision,
+            start_request: created.start_request,
+            stages: created.stages,
+            scan: created.scan,
+        }
+    }
+}
+
 impl fmt::Display for IntentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -317,6 +326,7 @@ impl std::error::Error for IntentError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::orchestration::{IntentId, StageDisplay, StageEntry, WorkspaceScan};
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -390,7 +400,14 @@ mod tests {
     }
 
     fn intent() -> Intent {
-        Intent::from_material(id(), def_id(), revision(), request(), stages(), scan()).unwrap()
+        Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            stages(),
+            scan(),
+        ))
     }
 
     /// 1 ステージ (initialization・EXECUTE) だけの最小定義。
@@ -450,15 +467,23 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_plan_is_refused() {
-        assert_eq!(
-            Intent::from_material(id(), def_id(), revision(), request(), Vec::new(), scan()),
-            Err(IntentError::Empty)
-        );
+    #[should_panic(expected = "recorded history violates the plan invariants")]
+    fn an_empty_plan_crashes_reconstruction() {
+        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
+        let _ = Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            Vec::new(),
+            scan(),
+        ));
     }
 
     #[test]
-    fn a_first_stage_that_is_not_execute_is_refused() {
+    #[should_panic(expected = "recorded history violates the plan invariants")]
+    fn a_first_stage_that_is_not_execute_crashes_reconstruction() {
+        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
         // 先頭はカーソルの初期位置なので、実効 EXECUTE でなければ cursor_in_scope を破る。
         let stages = vec![
             entry(
@@ -474,14 +499,20 @@ mod tests {
                 PlanAction::Execute,
             ),
         ];
-        assert_eq!(
-            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()),
-            Err(IntentError::InitializationMustExecute)
-        );
+        let _ = Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            stages,
+            scan(),
+        ));
     }
 
     #[test]
-    fn an_initialization_stage_folded_to_skip_is_refused() {
+    #[should_panic(expected = "recorded history violates the plan invariants")]
+    fn an_initialization_stage_folded_to_skip_crashes_reconstruction() {
+        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
         let stages = vec![
             entry(
                 "state-init",
@@ -496,14 +527,20 @@ mod tests {
                 PlanAction::Skip,
             ),
         ];
-        assert_eq!(
-            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()),
-            Err(IntentError::InitializationMustExecute)
-        );
+        let _ = Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            stages,
+            scan(),
+        ));
     }
 
     #[test]
-    fn a_conditional_initialization_stage_is_refused() {
+    #[should_panic(expected = "recorded history violates the plan invariants")]
+    fn a_conditional_initialization_stage_crashes_reconstruction() {
+        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
         let conditional = StageEntry::new(
             StageSlug::parse("state-detect").unwrap(),
             PhaseId::Initialization,
@@ -520,10 +557,14 @@ mod tests {
             ),
             conditional,
         ];
-        assert_eq!(
-            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()),
-            Err(IntentError::InitializationMustBeUnconditional)
-        );
+        let _ = Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            stages,
+            scan(),
+        ));
     }
 
     #[test]
@@ -544,9 +585,15 @@ mod tests {
             ),
             conditional,
         ];
-        assert!(
-            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()).is_ok()
-        );
+        let intent = Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            stages,
+            scan(),
+        ));
+        assert_eq!(intent.stage_count(), 2);
     }
 
     #[test]
@@ -587,7 +634,7 @@ mod tests {
             scopes,
         );
         assert_eq!(
-            Intent::resolve(id(), &definition, request(), scan()),
+            Intent::create(id(), &definition, request(), scan()),
             Err(IntentError::StageDisplayNotSingleLine {
                 stage: "state-init".to_string(),
                 found: '\n',
@@ -598,34 +645,28 @@ mod tests {
     #[test]
     fn intents_built_from_the_same_parts_compare_equal() {
         assert_eq!(intent(), intent());
-        let other = Intent::from_material(
+        let other = Intent::from(Created::new(
             IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             def_id(),
             revision(),
             request(),
             stages(),
             scan(),
-        )
-        .unwrap();
+        ));
         assert_ne!(intent(), other);
     }
 
     #[test]
     fn creating_an_intent_yields_the_aggregate_and_its_birth_event() {
-        // 集約のファクトリは (インスタンス, 誕生イベント) の対を返す
-        // (coding-rules/aggregate-commands.md)。片方だけでは Repository が永続化を組めない。
-        let (intent, event) =
-            Intent::create(id(), def_id(), revision(), request(), stages(), scan()).unwrap();
-        assert_eq!(event, IntentEvent::Created(Created::new(intent.clone())));
-        assert_eq!(intent.id(), &id());
-    }
-
-    #[test]
-    fn resolving_a_plan_from_the_definition_also_yields_the_pair() {
-        // 補助コンストラクタも genesis なので対を返す (基本コンストラクタへ委譲する)。
-        let (intent, event) = Intent::resolve(id(), &single_stage_definition(), request(), scan())
+        // 基本コンストラクタ = genesis は定義から計画を解決し、(インスタンス, 誕生イベント) の
+        // 対を返す (coding-rules/aggregate-commands.md)。イベントは誕生の材料 (値) を運び、
+        // 変換 `From<Created>` で同じ集約に戻る。
+        let (intent, event) = Intent::create(id(), &single_stage_definition(), request(), scan())
             .expect("解決できる計画");
-        assert_eq!(event, IntentEvent::Created(Created::new(intent.clone())));
+        let IntentEvent::Created(created) = event;
+        assert_eq!(created.id(), intent.id());
+        assert_eq!(created.stages(), intent.stages());
+        assert_eq!(Intent::from(created), intent);
         assert_eq!(intent.stage_count(), 1);
     }
 
@@ -633,24 +674,52 @@ mod tests {
     fn reconstructing_an_intent_produces_no_event() {
         // 再構成は歴史を読み戻す経路である — イベントを作ればリプレイのたびに歴史が増える。
         // 戻り値の型に `IntentEvent` が現れないことがその保証である。
-        let intent: Intent =
-            Intent::from_material(id(), def_id(), revision(), request(), stages(), scan()).unwrap();
+        let intent: Intent = Intent::from(Created::new(
+            id(),
+            def_id(),
+            revision(),
+            request(),
+            stages(),
+            scan(),
+        ));
         assert_eq!(intent.stages(), stages().as_slice());
     }
 
     #[test]
-    fn both_construction_paths_apply_the_same_invariant() {
-        // Always Valid は genesis と再構成で同一 — 再構成にだけ穴があると、壊れた歴史を
-        // 読み戻した瞬間に不変条件が破れる。
-        assert_eq!(
-            Intent::create(id(), def_id(), revision(), request(), Vec::new(), scan()).unwrap_err(),
-            IntentError::Empty
-        );
-        assert_eq!(
-            Intent::from_material(id(), def_id(), revision(), request(), Vec::new(), scan())
-                .unwrap_err(),
-            IntentError::Empty
-        );
+    fn a_birth_record_round_trip_preserves_the_aggregate() {
+        // 集約の読取値 → 誕生記録 → 変換の 1 往復が同値に戻ること — 永続化境界を渡っても
+        // 情報が欠けない保証である (アダプタ復号と同じ経路)。
+        let (intent, _event) = Intent::create(id(), &single_stage_definition(), request(), scan())
+            .expect("解決できる計画");
+        let round_tripped = Intent::from(Created::new(
+            intent.id().clone(),
+            intent.definition_id().clone(),
+            intent.definition_revision().clone(),
+            request(),
+            intent.stages().to_vec(),
+            intent.scan().clone(),
+        ));
+        assert_eq!(round_tripped, intent);
+    }
+
+    #[test]
+    fn replaying_no_events_returns_the_snapshot_state() {
+        // 差分が空ならスナップショット種がそのまま返る — 現状イベントは `Created` 1 種のみ
+        // なので、実運用の差分は常に空である。
+        let (intent, _event) = Intent::create(id(), &single_stage_definition(), request(), scan())
+            .expect("解決できる計画");
+        let replayed = Intent::replay(Vec::new(), intent.clone());
+        assert_eq!(replayed, intent);
+    }
+
+    #[test]
+    fn replaying_the_genesis_event_is_a_no_op() {
+        // genesis イベントは差分適用では何も変えない — スナップショット種が誕生を含む
+        // (本家サンプル同型: apply は変異イベントだけを見る)。
+        let (intent, event) = Intent::create(id(), &single_stage_definition(), request(), scan())
+            .expect("解決できる計画");
+        let replayed = Intent::replay(vec![event], intent.clone());
+        assert_eq!(replayed, intent);
     }
 
     #[test]

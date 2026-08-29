@@ -33,9 +33,10 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    GateApproved, GateOpened, GateRejected, Intent, IntentExecutionEvent, IntentExecutionId,
-    IntentId, JumpDirection, Jumped, Parked, PhaseBoundary, Recomposed, StageCompleted,
-    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    Created, GateApproved, GateOpened, GateRejected, Intent, IntentExecutionEvent,
+    IntentExecutionId, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary, Recomposed,
+    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -130,23 +131,20 @@ fn started() -> Started {
         })
         .collect();
 
-    Started::new(
-        Intent::from_material(
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new(SCOPE, REQUEST),
-            stages,
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .expect("単一行"),
+    Started::new(Intent::from(Created::new(
+        IntentId::parse(INTENT).expect("UUIDv7"),
+        WorkflowDefinitionId::parse("claude").expect("定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+        StartRequest::new(SCOPE, REQUEST),
+        stages,
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
         )
-        .expect("出荷グラフ由来の計画は Intent の不変条件を満たす"),
-    )
+        .expect("単一行"),
+    )))
 }
 
 fn plan() -> ResolvedPlan {

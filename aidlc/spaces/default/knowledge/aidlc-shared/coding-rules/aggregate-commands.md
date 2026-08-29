@@ -21,8 +21,8 @@ CQS 規則の字面との矛盾を閉じる）
 // decide — 判断し、遷移し、起きた事実を 1 イベントで返す（1 コマンド 1 イベント・絶対）
 pub fn approve_gate(&mut self, ..) -> Result<IntentExecutionEvent, CommandError>
 
-// apply — イベントを畳み込む fold。イベントを消費する側なので戻り値は無い
-pub fn apply_event(&mut self, ..) -> Result<(), ApplyError>
+// apply — イベントを畳み込む fold。失敗を返さない（壊れた歴史はクラッシュ — 2026-08-30 裁定）
+pub fn apply_event(&mut self, ..)
 
 // genesis (ファクトリ) — 集約インスタンスと誕生イベントの**両方**を対で返す (必須)
 pub fn start(..) -> (IntentExecution, IntentExecutionEvent)
@@ -35,8 +35,32 @@ pub fn start(..) -> (IntentExecution, IntentExecutionEvent)
 集約だけを返すと誕生をジャーナルに書けず、イベントだけを返すとスナップショットに書く実体が
 無い。どちらが欠けても永続化が組めない。
 
-なお**再構成はファクトリではない** — `from_snapshot`（復号の検査点）と `apply_event`（fold）は
-歴史を読み戻す経路であり、イベントを**作ってはならない**（作ればリプレイのたびに歴史が増える）。
+なお**再構成はファクトリではない** — 歴史を読み戻す経路であり、イベントを**作ってはならない**
+（作ればリプレイのたびに歴史が増える）。
+
+## 再構成の形（オーナー裁定 2026-08-30 — event-store-adapter-rs サンプル準拠）
+
+集約に作ってよい構築 API は **genesis（`new` / `create` / `start` — 対を返す）と
+`replay`・`apply_event` だけ**である。本家 v3 の `user-account-sqlite` サンプルが正典。
+
+- **イベントは内容（値）を運ぶ** — 集約インスタンスを埋め込まない
+  （`UserAccountEvent::Created { name }` の形）。集約を埋め込むと「イベントを復号するには
+  集約が要り、集約はイベントからしか作れない」という循環が生じ、イベントからのリプレイが
+  成立しない。genesis イベントから集約を導出する変換（`From<Created> for Intent`）が
+  リプレイのスナップショット種を与える。
+- **再構成は失敗を返さない** — `replay` / `apply_event` は `Result` を返さない。歴史を読む
+  だけの経路にエラー型は要らず、壊れた歴史（通番の飛び・未知ステージ・不変条件違反）は
+  回復せず**クラッシュが正**である（`expect` / `panic` 容認 — 万一発生したらアプリケーション
+  は落ちてよい、というオーナー裁定。`# Panics` を明記し、allow には理由を書く）。
+- **memento 双子型を作らない** — 集約と構造同一（ID 型の包み紙差だけ等）の「写し」型は複製で
+  しかない。スナップショット行は書込規約の一部として書かれ続けるが、**状態の正本はイベント列**
+  であり、読取は「版の正本（envelope の version）+ 存在検査」にだけ使いジャーナル全再生で
+  状態を導出する。
+- **経緯（誤適用の記録）**: `Intent::from_material`（造語 + genesis と同一署名の双子）→
+  `restore` / `rehydrate`（保存値からの検証付き再構成 = 状態ストア発想の第 3 の構築口）→
+  `IntentSnapshot` / `IntentExecutionSnapshot`（構造同一の memento 双子）は、いずれも
+  2026-08-30 に**この裁定で撤去**された。リプレイの理解を欠いた設計はこの 3 段を辿りがちで
+  ある — 迷ったら本家サンプルの API 面（genesis / replay / apply_event のみ）に戻ること。
 
 - **decide と apply は分離**し、リプレイと通常実行は同一経路（apply）を通る。
 - 戻したイベントは呼出側（ユースケース）が `store(&event, &aggregate, ..)` へ渡す —
@@ -66,8 +90,11 @@ pub fn start(..) -> (IntentExecution, IntentExecutionEvent)
   永続化する材料が消える）
 - **ファクトリが集約だけを返す**（誕生イベントが無く、ジャーナルに最初の 1 行を書けない）、
   または**イベントだけを返す**（スナップショットに書く集約実体が無い）
-- 再構成経路（`from_snapshot` / `apply_event`）がイベントを生成する（リプレイのたびに
-  歴史が増える）
+- 再構成経路（`replay` / `apply_event`）がイベントを生成する（リプレイのたびに歴史が増える）
+- 再構成経路が `Result` を返す（歴史読みにエラー型は無い — 壊れた歴史はクラッシュ、
+  2026-08-30 裁定）
+- genesis / `replay` / `apply_event` 以外の構築口（`from_material` / `restore` / `rehydrate` /
+  `from_snapshot` と memento 双子型）を作る（2026-08-30 裁定）
 - 1 コマンドから複数イベントを返す・`Vec<Event>` を返す（1 コマンド 1 イベント違反）
 - コマンドがイベントを返さず、別のクエリで「さっき何が起きたか」を答えさせる
   （変更と観測の分断 — 別トランザクション間で食い違う）

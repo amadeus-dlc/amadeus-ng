@@ -23,8 +23,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    AutonomyMode, CommandError, Created, Intent, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -165,7 +165,7 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 /// 指定した集約識別子の genesis (集約と `Started` イベント)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from_material(
+    Intent::from(Created::new(
         intent_id(),
         WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -173,8 +173,7 @@ pub(crate) fn intent() -> Intent {
         StartRequest::new("classic", "contract").with_depth("standard"),
         stages(),
         scan(),
-    )
-    .expect("合成計画は Intent の不変条件を満たす")
+    ))
 }
 
 /// 指定した実行識別子の genesis (横断読取のテストが 2 実行を並べるのに使う)。

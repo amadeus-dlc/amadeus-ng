@@ -39,11 +39,11 @@
 use std::io::ErrorKind;
 
 use core_command_domain::orchestration::{
-    ApplyError, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    IntentExecution, IntentExecutionEvent, IntentExecutionId,
 };
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{
-    CorruptCause, IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
+    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
 };
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
@@ -84,25 +84,43 @@ pub struct IntentExecutionRepositoryImpl<S> {
     location: Option<StorePath>,
 }
 
-/// 復号の失敗を `Corrupt` の原因へ写す。
-const fn decode_cause(error: &WireDecodeError) -> CorruptCause {
-    match error {
-        WireDecodeError::Malformed { .. } => CorruptCause::UndecodablePayload,
-        WireDecodeError::InvariantViolation => CorruptCause::InvariantViolation,
+/// `Corrupt` の原因分類 — **この実装の私有物** (裁定 6: エラー分類はポート契約に載せない。
+/// 契約は「壊れていた」としか約束せず、診断表示は `Error::source` の連鎖で残る)。
+#[derive(Debug)]
+enum CorruptDetail {
+    /// ジャーナル行はあるのにスナップショット行が無い (BR1.2)。
+    MissingSnapshot,
+    /// スナップショット行はあるのにジャーナル行が 1 件も無い (genesis は原子書込のはず)。
+    EmptyJournal,
+    /// ジャーナル行が別の型判別子を名乗っている (foreign manifest)。
+    ForeignManifest,
+    /// 行のペイロードをドメイン型へ復号できない。
+    Undecodable(WireDecodeError),
+    /// ストアの復号そのものが失敗した (本家の `DeserializationError`)。
+    StoreDeserialization,
+    /// 呼出側の書込契約違反 (本家の `ContractViolation` / `SerializationError`)。
+    WriteContract,
+}
+
+impl std::fmt::Display for CorruptDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CorruptDetail::MissingSnapshot => f.write_str("missing snapshot"),
+            CorruptDetail::EmptyJournal => f.write_str("empty journal"),
+            CorruptDetail::ForeignManifest => f.write_str("foreign manifest"),
+            CorruptDetail::Undecodable(_) => f.write_str("undecodable payload"),
+            CorruptDetail::StoreDeserialization => f.write_str("store deserialization failed"),
+            CorruptDetail::WriteContract => f.write_str("write contract violation"),
+        }
     }
 }
 
-/// `apply_event` の失敗を `Corrupt` の原因へ写す。
-const fn apply_cause(error: &ApplyError) -> CorruptCause {
-    match error {
-        ApplyError::SequenceGap { .. } => CorruptCause::SequenceGap,
-        // 通番枯渇 — 現在位置の続きとして適用できない点で SequenceGap と同類に写す。
-        ApplyError::SequenceExhausted => CorruptCause::SequenceGap,
-        // 再生に渡した intent が実行のものでない — ジャーナル先頭の `Started` から復元した
-        // intent と後続イベントが食い違っている、すなわち行が壊れている。
-        ApplyError::IntentMismatch
-        | ApplyError::UnknownStage(_)
-        | ApplyError::InvariantViolation(_) => CorruptCause::InvariantViolation,
+impl std::error::Error for CorruptDetail {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CorruptDetail::Undecodable(inner) => Some(inner),
+            _ => None,
+        }
     }
 }
 
@@ -117,7 +135,10 @@ impl IntentExecutionRepositoryImpl<IntentExecutionSqliteStore> {
     /// 親ディレクトリ欠落・権限・ディスク (`Io`) を返す。
     pub fn open(
         path: &StorePath,
-    ) -> Result<IntentExecutionRepositoryImpl<IntentExecutionSqliteStore>, RepositoryError> {
+    ) -> Result<
+        IntentExecutionRepositoryImpl<IntentExecutionSqliteStore>,
+        RepositoryError<IntentExecutionId>,
+    > {
         let store = IntentExecutionSqliteStore::new(path.as_path()).map_err(|error| {
             RepositoryError::Io {
                 kind: match &error {
@@ -193,12 +214,16 @@ where
     }
 
     /// 本家の読取失敗を Repository 面へ写す (BR1.5)。
-    fn read_error(&self, error: &EventStoreReadError, id: &IntentExecutionId) -> RepositoryError {
+    fn read_error(
+        &self,
+        error: &EventStoreReadError,
+        id: &IntentExecutionId,
+    ) -> RepositoryError<IntentExecutionId> {
         match error {
             EventStoreReadError::DeserializationError(_) => RepositoryError::Corrupt {
-                aggregate_id: id.clone(),
+                id: id.clone(),
                 seq_nr: None,
-                cause: CorruptCause::UndecodablePayload,
+                source: Box::new(CorruptDetail::StoreDeserialization),
             },
             EventStoreReadError::IOError(source) => RepositoryError::Io {
                 kind: io_kind_of_source(source.as_ref()),
@@ -226,7 +251,7 @@ where
         error: EventStoreWriteError,
         aggregate: &IntentExecution,
         expected_version: usize,
-    ) -> RepositoryError {
+    ) -> RepositoryError<IntentExecutionId> {
         match error {
             EventStoreWriteError::OptimisticLockError(_) => RepositoryError::Conflict {
                 expected: expected_version,
@@ -234,9 +259,9 @@ where
             },
             EventStoreWriteError::SerializationError(_)
             | EventStoreWriteError::ContractViolation(_) => RepositoryError::Corrupt {
-                aggregate_id: aggregate.id().clone(),
+                id: aggregate.id().clone(),
                 seq_nr: Some(aggregate.seq_nr()),
-                cause: CorruptCause::UndecodablePayload,
+                source: Box::new(CorruptDetail::WriteContract),
             },
             EventStoreWriteError::IOError(source) => RepositoryError::Io {
                 kind: io_kind_of_source(source.as_ref()),
@@ -267,56 +292,6 @@ where
     }
 }
 
-impl<S> IntentExecutionRepositoryImpl<S>
-where
-    S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
-{
-    /// ジャーナル先頭の `Started` から、開始時点の intent を読み直す。
-    ///
-    /// 集約は `intent_id` しか持たない (`coding-rules/aggregate-references.md`) が、再生には
-    /// 計画が要る。イベントは「その時点の事実の自己完結な記録」なので、intent の材料は
-    /// `Started` に載っている — **自ストリームを読むのは自集約の I/O** であり、責務境界の
-    /// 違反ではない (`coding-rules/gateway-taxonomy.md`「Repository の署名は自集約の ID だけを
-    /// 取り、他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が
-    /// 要る場合、それは自ストリームの誕生イベントに記録されているはずであり、Impl がそこから
-    /// 内部復元する」)。したがって復元した `Intent` は**外へ返さない** —
-    /// [`RehydratedIntentExecution`] に載せるのは実行と版だけである。
-    ///
-    /// 1 intent : n 実行では、この実行が従うべき計画は「この実行が開始した時点の intent」で
-    /// あり、その永続記録はこのストリームの `Started` に他ならない。`Intent` は不変
-    /// (recompose は実行側の overlay) なので、この写しが古くなることはない。
-    ///
-    /// 先頭が `Started` でない、または 1 件も無いジャーナルは壊れている (BR1.2)。
-    async fn genesis_intent(&self, id: &IntentExecutionId) -> Result<Intent, RepositoryError> {
-        let journal = self
-            .store
-            .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
-            .await
-            .map_err(|error| self.read_error(&error, id))?;
-        let corrupt = |seq_nr: Option<usize>| RepositoryError::Corrupt {
-            aggregate_id: id.clone(),
-            seq_nr,
-            cause: CorruptCause::UndecodablePayload,
-        };
-        let genesis = journal.first().ok_or_else(|| corrupt(None))?;
-        if genesis.manifest() != EVENT_MANIFEST {
-            return Err(corrupt(Some(genesis.seq_nr())));
-        }
-        let decoded = genesis
-            .payload()
-            .to_domain()
-            .map_err(|error| RepositoryError::Corrupt {
-                aggregate_id: id.clone(),
-                seq_nr: Some(genesis.seq_nr()),
-                cause: decode_cause(&error),
-            })?;
-        match decoded {
-            IntentExecutionEvent::Started(started) => Ok(started.intent().clone()),
-            _ => Err(corrupt(Some(genesis.seq_nr()))),
-        }
-    }
-}
-
 impl<S> IntentExecutionRepository for IntentExecutionRepositoryImpl<S>
 where
     S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
@@ -324,71 +299,54 @@ where
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError> {
+    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>> {
+        // 状態の正本は**イベント列**である (オーナー裁定 2026-08-30) — スナップショット行の
+        // payload はここでは読まない。行は書込規約 (persist_event_and_snapshot) の一部として
+        // 書かれ続け、読取では **存在検査 (BR1.2) と楽観 version の正本 (BR5.3)** にだけ使う。
         let snapshot = self
             .store
             .get_latest_snapshot_by_id(&AggregateKey::of(id))
             .await
             .map_err(|error| self.read_error(&error, id))?;
+        let journal = self
+            .store
+            .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
+            .await
+            .map_err(|error| self.read_error(&error, id))?;
         let Some(snapshot) = snapshot else {
             // ジャーナル行が 1 件も無ければ「まだ無い」、あるなら「壊れている」(BR1.2)。
-            let journal = self
-                .store
-                .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
-                .await
-                .map_err(|error| self.read_error(&error, id))?;
             return Err(if journal.is_empty() {
-                RepositoryError::NotFound {
-                    execution_id: id.clone(),
-                }
+                RepositoryError::NotFound { id: id.clone() }
             } else {
                 RepositoryError::Corrupt {
-                    aggregate_id: id.clone(),
+                    id: id.clone(),
                     seq_nr: None,
-                    cause: CorruptCause::MissingSnapshot,
+                    source: Box::new(CorruptDetail::MissingSnapshot),
                 }
             });
         };
         // 楽観 version はスナップショット行の列が正本 — 封筒から取り出して呼出側へ渡す (BR5.3)。
         let version = snapshot.version();
-        // 復号は DTO で受け、検査点 (`IntentExecution::from_snapshot`) を通してドメインへ戻す。
-        let mut aggregate =
-            snapshot
-                .into_aggregate()
-                .to_domain()
-                .map_err(|error| RepositoryError::Corrupt {
-                    aggregate_id: id.clone(),
-                    seq_nr: None,
-                    cause: decode_cause(&error),
-                })?;
-        // 再生には計画が要る。集約は intent を ID でしか参照しない
-        // (coding-rules/aggregate-references.md) ので、**ジャーナル先頭の `Started` から
-        // その時点の intent を読み直す**。`Started` は genesis 専用なので必ず 1 件目にある。
-        let intent = self.genesis_intent(id).await?;
-        // リプレイの開始位置は**集約自身の通番**から採る。スナップショット行の `seq_nr` 列は
-        // 同じ値のストア側の写しであり、正本はドメインが持つ通番だからである (裁定 3)。
-        // 列と写しが食い違えば `apply_event` が `SequenceGap` で止める。
-        // 本家の差分読取は「その `seq_nr` を**含む**」ので、写しの次から読む。飽和加算なのは
-        // 通番が usize::MAX に達した集約の防御 — その場合は MAX を含んで再読取することになり、
-        // `apply_event` が `SequenceExhausted` で止める (黙って wrap / panic しない — NFR4.3)。
-        let envelopes = self
-            .store
-            .get_events_by_id_since_seq_nr(
-                &AggregateKey::of(id),
-                aggregate.seq_nr().saturating_add(1),
-            )
-            .await
-            .map_err(|error| self.read_error(&error, id))?;
-        for envelope in &envelopes {
-            // 再生前に manifest を照合する。本家は manifest を検証せず復号だけして返すため、
-            // ここで拒まないと foreign manifest の行（別の型名・別の読み方の版を名乗る行）が
-            // そのまま状態遷移に流れ込む。読取側 (`JournalReaderImpl::decode_entry`) と同じ
-            // 拒否条件・同じ分類 (`UndecodablePayload`) で対称にする (PR #31 CodeRabbit 指摘)。
+        if journal.is_empty() {
+            // genesis は journal と snapshot を原子的に書くので、スナップショットだけが
+            // 残ることはない — あれば壊れている。
+            return Err(RepositoryError::Corrupt {
+                id: id.clone(),
+                seq_nr: None,
+                source: Box::new(CorruptDetail::EmptyJournal),
+            });
+        }
+        // 復号は封筒ごとに行い、manifest を照合する。本家は manifest を検証せず復号だけして
+        // 返すため、ここで拒まないと foreign manifest の行（別の型名・別の読み方の版を名乗る
+        // 行）がそのまま状態遷移に流れ込む。読取側 (`JournalReaderImpl::decode_entry`) と同じ
+        // 拒否条件で対称にする (PR #31 CodeRabbit 指摘)。
+        let mut events = Vec::with_capacity(journal.len());
+        for envelope in &journal {
             if envelope.manifest() != EVENT_MANIFEST {
                 return Err(RepositoryError::Corrupt {
-                    aggregate_id: id.clone(),
+                    id: id.clone(),
                     seq_nr: Some(envelope.seq_nr()),
-                    cause: CorruptCause::UndecodablePayload,
+                    source: Box::new(CorruptDetail::ForeignManifest),
                 });
             }
             let event =
@@ -396,18 +354,18 @@ where
                     .payload()
                     .to_domain()
                     .map_err(|error| RepositoryError::Corrupt {
-                        aggregate_id: id.clone(),
+                        id: id.clone(),
                         seq_nr: Some(envelope.seq_nr()),
-                        cause: decode_cause(&error),
+                        source: Box::new(CorruptDetail::Undecodable(error)),
                     })?;
-            aggregate
-                .apply_event(&intent, envelope.seq_nr(), *envelope.occurred_at(), &event)
-                .map_err(|error| RepositoryError::Corrupt {
-                    aggregate_id: id.clone(),
-                    seq_nr: Some(envelope.seq_nr()),
-                    cause: apply_cause(&error),
-                })?;
+            events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
         }
+        // ジャーナル全再生 — 先頭は `Started` (genesis) で、実行の対象 intent はその誕生記録
+        // から得る。壊れた歴史 (先頭が Started でない・通番の飛び・不変条件違反) はドメインが
+        // クラッシュで止める — 再構成は失敗を返さない (オーナー裁定 2026-08-30)。復元した
+        // `Intent` は**外へ返さない** — [`RehydratedIntentExecution`] に載せるのは実行と版だけ
+        // である (`coding-rules/gateway-taxonomy.md`)。
+        let (aggregate, _intent) = IntentExecution::replay(id.clone(), events);
         Ok(RehydratedIntentExecution::new(aggregate, version))
     }
 
@@ -416,7 +374,7 @@ where
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
         expected_version: usize,
-    ) -> Result<(), RepositoryError> {
+    ) -> Result<(), RepositoryError<IntentExecutionId>> {
         // 新規作成と更新の分岐は本家 v3 と同じ導出 — 封筒の `seq_nr == 1` が新規作成である。
         // 新規作成の `expected_version` は規約上 0 で、そうでない組み合わせは本家が
         // `ContractViolation` で拒否する (我々は握り潰さず `Corrupt` に写す)。
@@ -452,7 +410,9 @@ mod tests {
     }
 
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentId, StageCompleted, StageEntry, StartRequest};
+    use core_command_domain::orchestration::{
+        Created, Intent, IntentId, StageCompleted, StageEntry, StartRequest,
+    };
     use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
@@ -479,7 +439,7 @@ mod tests {
     }
 
     fn intent_plan() -> Intent {
-        Intent::from_material(
+        Intent::from(Created::new(
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -492,8 +452,7 @@ mod tests {
                 display("0.1"),
             )],
             scan(),
-        )
-        .expect("合成計画は Intent の不変条件を満たす")
+        ))
     }
 
     fn genesis() -> (IntentExecution, IntentExecutionEvent) {
@@ -513,6 +472,35 @@ mod tests {
             },
             None,
         ))
+    }
+
+    #[test]
+    fn every_corrupt_detail_renders_its_material() {
+        // 分類はポート契約に載らない (裁定 6) — 診断表示 (caused by: ...) がここの文字列である。
+        for (detail, wording) in [
+            (CorruptDetail::MissingSnapshot, "missing snapshot"),
+            (CorruptDetail::EmptyJournal, "empty journal"),
+            (CorruptDetail::ForeignManifest, "foreign manifest"),
+            (
+                CorruptDetail::Undecodable(WireDecodeError::InvariantViolation),
+                "undecodable payload",
+            ),
+            (
+                CorruptDetail::StoreDeserialization,
+                "store deserialization failed",
+            ),
+            (CorruptDetail::WriteContract, "write contract violation"),
+        ] {
+            assert_eq!(detail.to_string(), wording);
+        }
+    }
+
+    #[test]
+    fn the_undecodable_detail_chains_its_wire_error() {
+        let detail = CorruptDetail::Undecodable(WireDecodeError::malformed("id", "x"));
+        let source = std::error::Error::source(&detail).expect("復号失敗は原因を連鎖する");
+        assert_eq!(source.to_string(), "malformed field id: x");
+        assert!(std::error::Error::source(&CorruptDetail::MissingSnapshot).is_none());
     }
 
     #[test]
@@ -551,9 +539,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_journal_whose_first_row_is_not_a_genesis_is_corrupt() {
+    #[should_panic(expected = "replay: journal must begin with Started")]
+    async fn a_journal_whose_first_row_is_not_a_genesis_crashes_reconstruction() {
         // 再生には計画が要り、その出所はジャーナル先頭の `Started` だけである。先頭が別の
-        // 変種を名乗る行は読み方が定まらないので、推測せず `Corrupt` で止める (BR1.2)。
+        // 変種を名乗る行は壊れた歴史であり、再構成は失敗を返さずクラッシュする
+        // (オーナー裁定 2026-08-30)。
         let (aggregate, _) = genesis();
         let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("state-init").expect("slug"),
@@ -564,38 +554,34 @@ mod tests {
             .store(&impostor, &aggregate, UNPERSISTED)
             .await
             .expect("行としては書ける");
-        assert_eq!(
-            repository.find_by_id(&intent()).await.unwrap_err(),
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: Some(1),
-                cause: CorruptCause::UndecodablePayload,
-            }
-        );
+        let _ = repository.find_by_id(&intent()).await;
     }
 
     #[test]
     fn a_read_failure_is_mapped_by_its_kind() {
         let repository = repository();
-        assert_eq!(
-            repository.read_error(
-                &EventStoreReadError::DeserializationError(Box::new(std::io::Error::other("x"))),
-                &intent()
-            ),
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: None,
-                cause: CorruptCause::UndecodablePayload,
-            }
+        let corrupt = repository.read_error(
+            &EventStoreReadError::DeserializationError(Box::new(std::io::Error::other("x"))),
+            &intent(),
         );
+        assert!(matches!(
+            &corrupt,
+            RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == intent()
+        ));
         assert_eq!(
+            std::error::Error::source(&corrupt)
+                .expect("原因が連鎖する")
+                .to_string(),
+            "store deserialization failed"
+        );
+        assert!(matches!(
             repository.read_error(&EventStoreReadError::IOError(boxed_busy()), &intent()),
             RepositoryError::Io {
                 kind: ErrorKind::WouldBlock,
                 path: None,
             }
-        );
-        assert_eq!(
+        ));
+        assert!(matches!(
             repository.read_error(
                 &EventStoreReadError::OtherError("分類できない".to_string()),
                 &intent()
@@ -604,7 +590,7 @@ mod tests {
                 kind: ErrorKind::Other,
                 path: None,
             }
-        );
+        ));
     }
 
     #[tokio::test]
@@ -612,50 +598,56 @@ mod tests {
         let repository = repository();
         let (aggregate, _) = genesis();
 
-        assert_eq!(
-            repository
-                .write_error(
-                    EventStoreWriteError::OptimisticLockError("optimistic lock failed".to_string()),
-                    &aggregate,
-                    0,
-                )
-                .await,
-            RepositoryError::Conflict {
-                expected: 0,
-                actual: 0,
-            },
+        assert!(
+            matches!(
+                repository
+                    .write_error(
+                        EventStoreWriteError::OptimisticLockError(
+                            "optimistic lock failed".to_string()
+                        ),
+                        &aggregate,
+                        0,
+                    )
+                    .await,
+                RepositoryError::Conflict {
+                    expected: 0,
+                    actual: 0,
+                }
+            ),
             "提示した版はそのまま、実在する version は読み直して材料にする (行が無ければ 0)"
         );
+        let corrupt = repository
+            .write_error(
+                EventStoreWriteError::SerializationError(Box::new(std::io::Error::other("x"))),
+                &aggregate,
+                0,
+            )
+            .await;
+        assert!(matches!(
+            &corrupt,
+            RepositoryError::Corrupt { id, seq_nr: Some(1), .. } if *id == intent()
+        ));
         assert_eq!(
-            repository
-                .write_error(
-                    EventStoreWriteError::SerializationError(Box::new(std::io::Error::other("x"))),
-                    &aggregate,
-                    0,
-                )
-                .await,
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: Some(1),
-                cause: CorruptCause::UndecodablePayload,
-            }
+            std::error::Error::source(&corrupt)
+                .expect("原因が連鎖する")
+                .to_string(),
+            "write contract violation"
         );
-        assert_eq!(
-            repository
-                .write_error(
-                    EventStoreWriteError::ContractViolation("BR2.6".to_string()),
-                    &aggregate,
-                    0,
-                )
-                .await,
-            RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: Some(1),
-                cause: CorruptCause::UndecodablePayload,
-            },
+        let contract = repository
+            .write_error(
+                EventStoreWriteError::ContractViolation("BR2.6".to_string()),
+                &aggregate,
+                0,
+            )
+            .await;
+        assert!(
+            matches!(
+                &contract,
+                RepositoryError::Corrupt { id, seq_nr: Some(1), .. } if *id == intent()
+            ),
             "契約違反は我々が封筒を組み違えたときにしか出ない (v3 で増えた腕)"
         );
-        assert_eq!(
+        assert!(matches!(
             repository
                 .write_error(EventStoreWriteError::IOError(boxed_busy()), &aggregate, 0)
                 .await,
@@ -663,8 +655,8 @@ mod tests {
                 kind: ErrorKind::WouldBlock,
                 path: None,
             }
-        );
-        assert_eq!(
+        ));
+        assert!(matches!(
             repository
                 .write_error(
                     EventStoreWriteError::OtherError("分類できない".to_string()),
@@ -676,7 +668,7 @@ mod tests {
                 kind: ErrorKind::Other,
                 path: None,
             }
-        );
+        ));
     }
 
     #[tokio::test]

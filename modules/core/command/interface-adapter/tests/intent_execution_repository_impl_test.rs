@@ -24,7 +24,7 @@ use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
 
 use core_command_use_case::orchestration::{
-    CorruptCause, IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
+    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -121,12 +121,10 @@ async fn a_store_without_any_row_reports_not_found() {
         .find_by_id(&absent_execution_id())
         .await
         .expect_err("書いていない集約");
-    assert_eq!(
+    assert!(matches!(
         err,
-        RepositoryError::NotFound {
-            execution_id: absent_execution_id()
-        }
-    );
+        RepositoryError::NotFound { id } if id == absent_execution_id()
+    ));
 }
 
 #[tokio::test]
@@ -184,13 +182,43 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
         .find_by_id(&execution_id())
         .await
         .expect_err("ジャーナルはあるのに写しが無い");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
     assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: None,
-            cause: CorruptCause::MissingSnapshot,
-        }
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "missing snapshot"
+    );
+}
+
+#[tokio::test]
+async fn a_snapshot_without_any_journal_row_is_corrupt() {
+    // genesis は journal と snapshot を原子的に書くので、スナップショットだけが残る状態は
+    // 壊れている (ジャーナル全再生では再構成の材料が無い)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
+    fixture
+        .raw()
+        .execute("DELETE FROM journal", [])
+        .expect("ジャーナルを空にする");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("再生の材料が無い");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "empty journal"
     );
 }
 
@@ -208,30 +236,26 @@ async fn a_tampered_snapshot_payload_is_corrupt() {
         .find_by_id(&execution_id())
         .await
         .expect_err("復号できない");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
     assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: None,
-            cause: CorruptCause::UndecodablePayload,
-        }
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "store deserialization failed"
     );
 }
 
 #[tokio::test]
-async fn a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder() {
-    // 復号は永続化 DTO で受けてから検査点 `IntentExecution::from_snapshot` を通る (改訂 9)。
-    // JSON としては読めるが不変条件を破る行 — ここでは範囲外カーソル — が、ストア越しでも
-    // 黙って通らないことを固定する。
-    //
-    // 分類は `InvariantViolation` である。改訂 9 以前は serde の `try_from` 失敗が本家の
-    // `DeserializationError` に畳まれるため `UndecodablePayload` にしかならなかったが、
-    // DTO を挟んだことで「読めない」と「読めたが不変条件を破る」が分離できるようになった。
-    // これは `CorruptCause::InvariantViolation` の doc（「`from_snapshot` の `Err`」）が
-    // もともと意図していた分類である。
+async fn a_tampered_snapshot_state_does_not_affect_reconstruction() {
+    // 状態の正本は**イベント列**である (オーナー裁定 2026-08-30) — スナップショット行の
+    // payload は読取に使わないので、形の読める改竄 (ここでは範囲外カーソル) は状態に影響
+    // しない。ジャーナル全再生が正しい状態を返すことを固定する。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
-    seed(&mut repository).await;
+    let expected = seed(&mut repository).await;
     let conn = fixture.raw();
     let before = String::from_utf8(snapshot_payload(&conn)).expect("payload は UTF-8 の JSON");
     assert!(before.contains(r#""cursor":1"#), "{before}");
@@ -240,19 +264,13 @@ async fn a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder
         [],
     )
     .expect("カーソルを範囲外へ");
+    drop(conn);
 
-    let err = repository
+    let found = repository
         .find_by_id(&execution_id())
         .await
-        .expect_err("不変条件を破る写しは復号できない");
-    assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: None,
-            cause: CorruptCause::InvariantViolation,
-        }
-    );
+        .expect("状態はジャーナルから導出される");
+    assert_eq!(found.aggregate(), expected.aggregate());
 }
 
 #[tokio::test]
@@ -275,18 +293,21 @@ async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
         .find_by_id(&execution_id())
         .await
         .expect_err("12 語の閉集合の外");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
     assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: None,
-            cause: CorruptCause::UndecodablePayload,
-        }
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "store deserialization failed"
     );
 }
 
 #[tokio::test]
-async fn a_gap_in_the_replayed_journal_is_corrupt() {
+#[should_panic(expected = "apply_event: sequence gap")]
+async fn a_gap_in_the_replayed_journal_crashes_reconstruction() {
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     seed(&mut repository).await;
@@ -296,24 +317,14 @@ async fn a_gap_in_the_replayed_journal_is_corrupt() {
     conn.execute("DELETE FROM journal WHERE seq_nr = 2", [])
         .expect("途中の行を消す");
 
-    let err = repository
-        .find_by_id(&execution_id())
-        .await
-        .expect_err("seq_nr が飛ぶ");
-    assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: Some(3),
-            cause: CorruptCause::SequenceGap,
-        }
-    );
+    let _ = repository.find_by_id(&execution_id()).await;
 }
 
 #[tokio::test]
-async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
-    // 復号はできるが、解決済み計画に無いステージを名指すイベント。`apply_event` の
-    // `UnknownStage` は `Corrupt(InvariantViolation)` へ写す (SequenceGap とは別の原因)。
+#[should_panic(expected = "apply_event: corrupted history")]
+async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction() {
+    // 復号はできるが、解決済み計画に無いステージを名指すイベント — 壊れた歴史であり、
+    // 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     let (aggregate, event) = genesis();
@@ -339,18 +350,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
         .await
         .expect("ジャーナルだけに追記");
 
-    let err = repository
-        .find_by_id(&execution_id())
-        .await
-        .expect_err("計画に無いステージ");
-    assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: Some(2),
-            cause: CorruptCause::InvariantViolation,
-        }
-    );
+    let _ = repository.find_by_id(&execution_id()).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -370,13 +370,13 @@ async fn opening_under_a_missing_parent_directory_is_a_not_found() {
     // `intents/` を作らずに開く (upstream の既存ディレクトリなので我々は作らない — BR2.1)。
     let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
     let err = IntentExecutionRepositoryImpl::open(&path).expect_err("親 dir が無い");
-    assert_eq!(
+    assert!(matches!(
         err,
         RepositoryError::Io {
             kind: std::io::ErrorKind::NotFound,
-            path: Some(path.as_path().to_path_buf()),
-        }
-    );
+            path: Some(actual),
+        } if actual == path.as_path()
+    ));
 }
 
 /// ストアの表ごと消えた場合、失敗の材料にはファイルの場所が載る (監査 C24)。
@@ -394,13 +394,13 @@ async fn a_broken_store_reports_the_file_it_was_reading() {
         .find_by_id(&execution_id())
         .await
         .expect_err("表が無い");
-    assert_eq!(
+    assert!(matches!(
         err,
         RepositoryError::Io {
             kind: std::io::ErrorKind::Other,
-            path: Some(fixture.path.as_path().to_path_buf()),
-        }
-    );
+            path: Some(actual),
+        } if actual == fixture.path.as_path()
+    ));
 }
 
 /// スナップショットだけを読める状態でジャーナルが読めないと、`NotFound` の判定にも失敗する。
@@ -418,13 +418,13 @@ async fn a_missing_journal_table_fails_the_not_found_check() {
         .find_by_id(&execution_id())
         .await
         .expect_err("ジャーナルを読めない");
-    assert_eq!(
+    assert!(matches!(
         err,
         RepositoryError::Io {
             kind: std::io::ErrorKind::Other,
-            path: Some(fixture.path.as_path().to_path_buf()),
-        }
-    );
+            path: Some(actual),
+        } if actual == fixture.path.as_path()
+    ));
 }
 
 // 契約テストと重ならない補助 (未使用の import を避けるための参照)。
@@ -479,11 +479,16 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
             &error,
             RepositoryError::Corrupt {
                 seq_nr: Some(2),
-                cause: CorruptCause::UndecodablePayload,
                 ..
             }
         ),
         "実際: {error:?}"
+    );
+    assert_eq!(
+        std::error::Error::source(&error)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "foreign manifest"
     );
 }
 
@@ -506,20 +511,24 @@ async fn a_genesis_row_with_a_foreign_manifest_is_refused() {
         .find_by_id(&execution_id())
         .await
         .expect_err("名乗りが違う genesis は拒否される");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: Some(1), .. } if *id == execution_id()
+    ));
     assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: Some(1),
-            cause: CorruptCause::UndecodablePayload,
-        }
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "foreign manifest"
     );
 }
 
 #[tokio::test]
-async fn a_genesis_row_that_breaks_always_valid_is_refused_by_the_decoder() {
-    // JSON としては読めるが、計画が Always Valid を破る genesis 行。DTO では読めて
-    // `Intent::from_material` の検査点で止まるので、分類は `InvariantViolation` である。
+#[should_panic(expected = "recorded history violates the plan invariants")]
+async fn a_genesis_row_that_breaks_always_valid_crashes_reconstruction() {
+    // JSON としては読めるが、計画が Always Valid を破る genesis 行。再構成は失敗を返さない —
+    // 壊れた歴史は回復せずクラッシュする (オーナー裁定 2026-08-30)。バイトが読めない復号
+    // 失敗 (Malformed / Undecodable) は従来どおり `Corrupt` の分類に残る。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     seed(&mut repository).await;
@@ -532,18 +541,7 @@ async fn a_genesis_row_that_breaks_always_valid_is_refused_by_the_decoder() {
     )
     .expect("先頭ステージを SKIP に畳む");
 
-    let err = repository
-        .find_by_id(&execution_id())
-        .await
-        .expect_err("不変条件を破る genesis は復号できない");
-    assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: Some(1),
-            cause: CorruptCause::InvariantViolation,
-        }
-    );
+    let _ = repository.find_by_id(&execution_id()).await;
 }
 
 #[tokio::test]
@@ -566,12 +564,14 @@ async fn a_replayed_row_whose_spelling_is_outside_the_closed_set_is_refused() {
         .find_by_id(&execution_id())
         .await
         .expect_err("閉集合外の綴りは再生前に拒否される");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: Some(2), .. } if *id == execution_id()
+    ));
     assert_eq!(
-        err,
-        RepositoryError::Corrupt {
-            aggregate_id: execution_id(),
-            seq_nr: Some(2),
-            cause: CorruptCause::UndecodablePayload,
-        }
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "undecodable payload"
     );
 }

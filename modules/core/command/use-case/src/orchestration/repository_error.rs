@@ -1,25 +1,34 @@
-//! `RepositoryError` — `IntentExecutionRepository` の失敗 (entities.md)。
+//! `RepositoryError<Id>` — Repository ポート共通の失敗 (材料のみ)。
 
+use std::error::Error;
 use std::fmt;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use core_command_domain::orchestration::IntentExecutionId;
-
-use super::corrupt_cause::CorruptCause;
-
-/// `IntentExecutionRepository` の失敗 (材料のみ — 逐語文言はアダプタ層)。
+/// Repository ポートの失敗 (材料のみ — 逐語文言はアダプタ層)。
 ///
-/// 本ポートの面が語るのは「集約 1 つの再構成・永続化」だけである。下位のイベントストア
-/// (本家 event-store-adapter-rs) の失敗を本型へ写すのは Gateway 実装の責務であり、
-/// ユースケース層は本家のエラー型を知らない (ADR-010 — 依存が入るのはドメインと
-/// アダプタだけ)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RepositoryError {
-    /// この識別子の集約がストアに無い (契約上は呼出側の前提違反 — C3)。
+/// **リポジトリごとに別のエラー型を作らない** (オーナー裁定 2026-08-30) — 変種の形は面に
+/// よらず同じで、違うのは集約 ID の型だけである。ID 型だけが違う複製 (旧
+/// `IntentRepositoryError`) を面ごとに増やす設計は廃止し、型引数 `Id` で面を区別する。
+/// 読取専用のポートでも `Conflict` が型上は構成可能になるが、「構成不能を型で語る」精密さ
+/// より統一が勝るという裁定である。
+///
+/// `Corrupt` の**分類はポート契約に載せない** (裁定 6 / u5-report-use-case/decisions-1.md —
+/// エラーは契約の一部であり、内部実装がバレる情報を含めない)。原因は標準ライブラリの
+/// 原因連鎖 (`Error::source`) でアダプタ私有のエラー型を運び、契約は「壊れていた」としか
+/// 約束しない。診断表示 (caused by: ...) は連鎖から残る。
+///
+/// 下位のイベントストア (本家 event-store-adapter-rs) の失敗を本型へ写すのは Gateway 実装の
+/// 責務であり、ユースケース層は本家のエラー型を知らない (ADR-010)。
+///
+/// `source` が比較不能なため `PartialEq` は実装しない (裁定 6 で受容済み) — テストは
+/// `matches!` と `source` の文字列確認で判定する。
+#[derive(Debug)]
+pub enum RepositoryError<Id> {
+    /// この識別子の集約がストアに無い。
     NotFound {
         /// 探した集約識別子。
-        execution_id: IntentExecutionId,
+        id: Id,
     },
     /// 楽観 version の不一致 (BR1.3)。ユースケースは再水和して 1 回だけ再試行する。
     Conflict {
@@ -35,21 +44,21 @@ pub enum RepositoryError {
         /// 対象パス (分からない場合は `None`)。
         path: Option<PathBuf>,
     },
-    /// 復号不能・スナップショット欠落・不変条件違反 (部分データは返さない — BR1.2)。
+    /// ストアの記録が壊れている (部分データは返さない — BR1.2)。
     Corrupt {
         /// 対象の集約識別子。
-        aggregate_id: IntentExecutionId,
+        id: Id,
         /// 該当行の `seq_nr` (行が特定できない場合は `None`)。
         seq_nr: Option<usize>,
-        /// 原因の分類。
-        cause: CorruptCause,
+        /// アダプタ私有の原因 (契約は型を約束しない — 診断表示だけを運ぶ)。
+        source: Box<dyn Error + Send + Sync>,
     },
 }
 
-impl fmt::Display for RepositoryError {
+impl<Id: fmt::Display> fmt::Display for RepositoryError<Id> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RepositoryError::NotFound { execution_id } => write!(f, "not found: {execution_id}"),
+            RepositoryError::NotFound { id } => write!(f, "not found: {id}"),
             RepositoryError::Conflict { expected, actual } => {
                 write!(f, "conflict: expected {expected}, actual {actual}")
             }
@@ -59,123 +68,101 @@ impl fmt::Display for RepositoryError {
                 path.as_ref()
                     .map_or_else(|| "-".to_string(), |p| p.display().to_string())
             ),
-            RepositoryError::Corrupt {
-                aggregate_id,
-                seq_nr,
-                cause,
-            } => write!(
+            RepositoryError::Corrupt { id, seq_nr, .. } => write!(
                 f,
-                "corrupt: aggregate {aggregate_id}, seq_nr {}, cause {cause}",
+                "corrupt: aggregate {id}, seq_nr {}",
                 seq_nr.map_or_else(|| "-".to_string(), |n| n.to_string())
             ),
         }
     }
 }
 
-impl std::error::Error for RepositoryError {}
+impl<Id: fmt::Display + fmt::Debug> Error for RepositoryError<Id> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            RepositoryError::Corrupt { source, .. } => Some(source.as_ref()),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
+    use core_command_domain::orchestration::{IntentExecutionId, IntentId};
+
     use super::*;
-    use crate::orchestration::CorruptCause;
-    use core_command_domain::orchestration::IntentExecutionId;
-    use std::io::ErrorKind;
-    use std::path::PathBuf;
 
-    const RAW_ID: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
-
-    fn intent() -> IntentExecutionId {
-        IntentExecutionId::parse(RAW_ID).unwrap()
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap()
     }
 
-    #[test]
-    fn the_not_found_carries_the_intent_id() {
-        let err = RepositoryError::NotFound {
-            execution_id: intent(),
-        };
-        assert_eq!(err.to_string(), format!("not found: {RAW_ID}"));
+    fn intent_id() -> IntentId {
+        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
-    #[test]
-    fn the_conflict_carries_both_versions() {
-        let err = RepositoryError::Conflict {
-            expected: 3,
-            actual: 5,
-        };
-        assert_eq!(err.to_string(), "conflict: expected 3, actual 5");
+    #[derive(Debug)]
+    struct FakeCause;
+
+    impl fmt::Display for FakeCause {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("fake cause")
+        }
     }
 
-    #[test]
-    fn the_io_failure_carries_the_kind_and_the_path() {
-        let err = RepositoryError::Io {
-            kind: ErrorKind::PermissionDenied,
-            path: Some(PathBuf::from("/tmp/store")),
-        };
-        assert_eq!(err.to_string(), "io: PermissionDenied at /tmp/store");
-    }
+    impl Error for FakeCause {}
 
     #[test]
-    fn the_corrupt_failure_carries_the_aggregate_the_sequence_and_the_cause() {
-        let err = RepositoryError::Corrupt {
-            aggregate_id: intent(),
-            seq_nr: Some(2),
-            cause: CorruptCause::SequenceGap,
-        };
+    fn every_variant_renders_its_material() {
         assert_eq!(
-            err.to_string(),
-            format!("corrupt: aggregate {RAW_ID}, seq_nr 2, cause sequence gap")
+            RepositoryError::NotFound { id: execution_id() }.to_string(),
+            "not found: 0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"
         );
-    }
-
-    #[test]
-    fn the_missing_material_is_rendered_as_a_dash() {
-        // 場所も `seq_nr` も分からない失敗はありうる (材料の欠落を空白で誤魔化さない)。
         assert_eq!(
-            RepositoryError::Io {
-                kind: ErrorKind::WouldBlock,
-                path: None,
+            RepositoryError::<IntentExecutionId>::Conflict {
+                expected: 3,
+                actual: 5,
             }
             .to_string(),
-            "io: WouldBlock at -"
+            "conflict: expected 3, actual 5"
+        );
+        assert_eq!(
+            RepositoryError::<IntentExecutionId>::Io {
+                kind: ErrorKind::PermissionDenied,
+                path: Some(PathBuf::from("/tmp/store.db")),
+            }
+            .to_string(),
+            "io: PermissionDenied at /tmp/store.db"
         );
         assert_eq!(
             RepositoryError::Corrupt {
-                aggregate_id: intent(),
-                seq_nr: None,
-                cause: CorruptCause::MissingSnapshot,
+                id: execution_id(),
+                seq_nr: Some(4),
+                source: Box::new(FakeCause),
             }
             .to_string(),
-            format!("corrupt: aggregate {RAW_ID}, seq_nr -, cause missing snapshot")
+            "corrupt: aggregate 0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000, seq_nr 4"
         );
     }
 
     #[test]
-    fn the_error_is_a_std_error() {
-        let err: Box<dyn std::error::Error> = Box::new(RepositoryError::Conflict {
-            expected: 0,
-            actual: 1,
-        });
-        assert_eq!(err.to_string(), "conflict: expected 0, actual 1");
-    }
-
-    #[test]
-    fn failures_compare_by_value() {
+    fn the_same_shape_serves_every_aggregate_id() {
+        // ジェネリック 1 本で面を区別する — intent 面にも同じ変種の形がそのまま使える。
         assert_eq!(
-            RepositoryError::NotFound {
-                execution_id: intent()
-            },
-            RepositoryError::NotFound {
-                execution_id: intent()
-            }
+            RepositoryError::NotFound { id: intent_id() }.to_string(),
+            "not found: 01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
-        assert_ne!(
-            RepositoryError::NotFound {
-                execution_id: intent()
-            },
-            RepositoryError::Conflict {
-                expected: 0,
-                actual: 0
-            }
-        );
+    }
+
+    #[test]
+    fn the_corrupt_cause_travels_the_source_chain() {
+        // 分類は契約に載らない (裁定 6) — 原因は `Error::source` の連鎖で診断表示だけを運ぶ。
+        let error = RepositoryError::Corrupt {
+            id: execution_id(),
+            seq_nr: None,
+            source: Box::new(FakeCause),
+        };
+        let source = Error::source(&error).expect("Corrupt は原因を連鎖する");
+        assert_eq!(source.to_string(), "fake cause");
+        assert!(Error::source(&RepositoryError::NotFound { id: execution_id() }).is_none());
     }
 }

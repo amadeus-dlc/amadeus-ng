@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    GateOpened, Intent, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
+    Created, GateOpened, Intent, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
     StageEntry, StageRevised, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
@@ -77,27 +77,24 @@ fn genesis() -> IntentExecutionEvent {
             .expect("単一行"),
         )
     };
-    IntentExecutionEvent::Started(Started::new(
-        Intent::from_material(
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "build it"),
-            vec![stage(
-                "practices-discovery",
-                "2.2",
-                "aidlc-pipeline-deploy-agent",
-            )],
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .expect("単一行"),
+    IntentExecutionEvent::Started(Started::new(Intent::from(Created::new(
+        IntentId::parse(INTENT).expect("UUIDv7"),
+        WorkflowDefinitionId::parse("claude").expect("定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+        StartRequest::new("classic", "build it"),
+        vec![stage(
+            "practices-discovery",
+            "2.2",
+            "aidlc-pipeline-deploy-agent",
+        )],
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
         )
-        .expect("合成計画は Intent の不変条件を満たす"),
-    ))
+        .expect("単一行"),
+    ))))
 }
 
 /// genesis + 投影規則が確定しているイベント 2 件。

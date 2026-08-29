@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId, NextRequest,
-    StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
+    AutonomyMode, Created, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId,
+    NextRequest, StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph,
@@ -265,17 +265,16 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに渡すのは対の左である
-    // (改訂 8 / coding-rules/aggregate-commands.md)。
-    let (intent, _created) = Intent::create(
+    // 合成計画からの組み直しは再構成経路 (from_snapshot) を通す — イベントは不要で、
+    // 検査点は genesis と同一である (coding-rules/aggregate-commands.md)。
+    let intent = Intent::from(Created::new(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
         StartRequest::new("itf", "conformance"),
         synthetic_stages(m0),
         scan(),
-    )
-    .unwrap();
+    ));
     let (mut agg, _started) = IntentExecution::start(
         IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
         intent.clone(),
