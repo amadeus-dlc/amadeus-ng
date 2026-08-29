@@ -359,3 +359,48 @@ stages は Intent ではなく**実行の開始材料**へ移す再設計が要�
   公開はこの改訂で認める**（visibility は必要最小に）。
 - domain-design decisions.md の「serde がドメインに入るトレードオフ受容」は上書き
   （メインセッションが失効注記を入れる）。
+
+---
+
+# 改訂 10（2026-08-30・オーナー裁定）— CommitVerdictUseCase はリポジトリを保持し execute 内部で使う
+
+オーナー裁定: 「ユースケースはリポジトリの参照を保持し、execute 内部で利用する。リポジトリを
+外で使うな」。改訂 5 の 3 / 改訂 6 で維持していた「`execute` が `&Intent` を受け取り Controller が
+読んで渡す」は **I8（読み取り専用ユースケース `Next` 専用のパターン）の誤適用**であり撤回。
+
+## 確定形
+
+```rust
+pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
+    execution_repository: E,
+    intent_repository: I,
+}
+// execute から &Intent 引数を除去
+pub async fn execute(&mut self, id: &IntentExecutionId, transition: ReportedTransition,
+                     occurred_at: DateTime<Utc>) -> Result<(), CommitError>
+```
+
+内部フロー: ① `execution_repository.find_by_id(id)` で実行を再構成 → ② 実行の `intent_id()` を
+読む → ③ `intent_repository.find_by_id(intent_id)` で Intent を取得 → ④ `&intent` を集約
+コマンドへ（取り違えガードは従来どおり集約側で発火 — ここでは構成上一致する）→ ⑤ `store`。
+`Conflict` 再試行は attempt 全体（①〜⑤）をやり直す（Intent は不変なので再取得は無害）。
+
+## IntentRepository ポートの新設（前倒し）
+
+改訂 5 の 5「U7 で新設」を上書きし、**ポート定義を B12 で新設**する（ユースケースが注入を
+要求するため）。
+
+- ユースケース層に `IntentRepository` ポート — 当面 `find_by_id(&IntentId) -> Result<Intent, _>`
+  のみ（`store(&IntentEvent, &Intent, ...)` は intent-create を実装する U7 で追加）。
+- Repository は自分の集約（Intent）だけを I/O（gateway-taxonomy 既裁定）。
+- テストはユースケース内 fake。**実物実装（読み先 = intent 自身のジャーナル）は U7** —
+  現時点で Intent の完全な材料は各実行の `Started` にしか永続化されていないため、実物の
+  読み先の設計（intent ジャーナルの導入）ごと U7 の課題として申し送りを維持。
+  interface-adapter に InMemory 実装（結線テスト用）だけ置くのは可。
+
+## 注記
+
+- I8 パターン（Repository 非注入・Controller が `&` で渡す）は**読み取り専用ユースケース
+  （`Next`）にのみ適用**される — use-case-rules §4 の射程はそのまま。書込ユースケースへの
+  流用を禁じる 1 行を §4 に足す（メインセッションが実施）。
+- 結線テスト（wiring test）もシグネチャ変更に追随。

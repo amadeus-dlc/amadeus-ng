@@ -37,4 +37,6 @@ impl<R: WorkflowDefinitionRepository> NextUseCase<R> {
 
 ## 4. 読取専用の型保証（I8 型）は参照渡しで
 
+> **射程（2026-08-30 明確化・オーナー裁定）**: 本節は**読み取り専用ユースケース**（`Next` 等）専用である。**書込ユースケースはリポジトリを保持し `execute` 内部で使う**のが標準形（§2）であり、Controller に読ませて `&` で渡す形を書込ユースケースへ流用してはならない（`CommitVerdictUseCase` で誤適用され是正された — B12 改訂 10）。
+
 書込を型で禁じたいユースケース（例: `Next`）には Repository を**そもそも注入しない**。Controller が `repository.find_by_id()` した集約を `&` 参照で渡す — リードモデルを経由せずに、Rust の参照とポート非注入だけで書込不能が成立する（動詞は gateway-taxonomy §2b の許容語彙に合わせた。`find()` は廃止 — C4 改訂 2026-08-23）。（**2026-08-24 改訂**: 旧文は「CQRS を導入せずに（gateway-taxonomy.md — CQRS 不採用）」だったが、ADR-001/003/004 で CQRS + ES を採用済みのため前提が失効した。本節が言いたいのは「読取専用を**型で**保証する」ことであり CQRS の採否とは独立である。依存境界は [cqrs-boundaries.md](cqrs-boundaries.md) を参照）
