@@ -432,7 +432,7 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   schema_version / occurred_at フィールド）と `WorkflowExecutionEventId` 型は削除し、
   ドメインイベントは輸送メタデータを一切持たない素の serde 型（本家の語で payload）になった。
   旧 `schema_version` 予約フィールドの後継はジャーナル列の manifest 列（値は
-  `workflow-execution-event/1`）で、Repository が書き、JournalReaderImpl が不一致・欠落を
+  `intent-execution-event/1`（~~workflow-execution-event/1~~ — B12 改名追従 2026-08-30）」で、Repository が書き、JournalReaderImpl が不一致・欠落を
   `Corrupt(UndecodablePayload)` で拒否する（版を上げる規約は C5 参照）。
 
   楽観 `version` は集約と memento（`WorkflowExecutionState`）から削除し、**集約の外**を持ち回る

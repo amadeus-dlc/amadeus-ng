@@ -5,8 +5,7 @@
 ない）」。分類基準はオーナー指示どおり: **ジャーナルのイベント payload / 集約状態に現れる型が
 正当な command 語彙**。
 
-前提の確定裁定: ① `state()` → `snapshot()`（B12 委任済み）。② `Intent::new` はイベントを
-返さなくてよい（`IntentExecution::start` の生成ペアが正 — 変更不要）。
+前提の確定裁定: ① `state()` → `snapshot()`（B12 委任済み）。② ~~`Intent::new` はイベントを返さなくてよい~~ → **上書き（2026-08-30 オーナー裁定）**: `Intent` は集約であり、genesis は `Intent::create(...) -> (Intent, IntentEvent::Created)` の対を返す（B12 改訂 8）。
 リードモデルが欲しければ **`core/query/interface-adapter`** に置く（コントローラ・ゲートウェイ
 を配置可。クエリ側ユースケース層は必要と立証されるまで作らない — GraphQL では不要が多い）。
 

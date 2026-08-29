@@ -290,3 +290,30 @@ stages は Intent ではなく**実行の開始材料**へ移す再設計が要�
    doc は `aggregate-commands.md` を参照。
 5. 外形不変（ゴールデン・投影 19 本）は従来どおり絶対。ジャーナル・永続化の接続は
    **やらない**（イベントを store する先は後続 intent — 型と形だけ規則適合させる）。
+
+---
+
+# 改訂 8（2026-08-30・オーナー裁定）— Intent は集約。IntentEvent と対返しファクトリが必要
+
+先の裁定 ②（`Intent::new` はイベント不要・現行どおり）は**オーナー自身のその後の原則裁定に
+より上書き**された — 「IntentRepository は必ず Intent を I/O する」「集約のファクトリは
+(インスタンス, イベント) の対を返す。無ければリポジトリで永続化できない」。`Intent` は
+**集約**である（静的で変異が現状無いだけ — WorkflowDefinition と同じ類型）。
+
+1. **`IntentEvent` を新設** — genesis 変種 `Created`（材料 = intent の全属性。生成の事実の記録）。
+2. **genesis ファクトリは対を返す**: `Intent::create(...) -> (Intent, IntentEvent)`。
+   動詞 `create` は upstream の intent-create そのもの（factory-naming の `create` 行 —
+   ドメイン語優先）。現 `new` の検査（Always Valid）を引き継ぐ。
+3. **再構成経路を分離**（無イベント）: `Started` の材料から組み直す経路
+   （IntentExecutionRepositoryImpl の再生用復元・serde 復号）は再構成コンストラクタとし、
+   イベントを生成しない。Always Valid 検査は genesis と再構成の両経路で同一。
+4. `IntentExecution::start(id, intent, ...)` が受け取る `intent` は**生成済みの集約インスタンス**
+   （呼出側が `Intent::create` の対の左を渡す）— `Started` が intent を丸ごと運ぶ現行形は
+   維持（BR2.2 自己完結。イベントに載る写しは歴史であり aggregate-references の違反ではない）。
+5. **ジャーナル接続はしない**（WorkflowDefinition と同じ扱い — `IntentCreated` を store する
+   `IntentRepository` は U7 の intent-create 実装時。今回は型と形の規則適合まで）。
+6. テスト: 対を返す形・`Created` の材料・再構成が無イベント。
+
+記録の是正（メインセッション実施）: ubiquitous-language.md 等の「集約ではない不変構造体」
+記述を「集約（静的・作成時に `Created` を吐く・変異は現状なし）」へ訂正。監査記録 ② に
+上書き注記。
