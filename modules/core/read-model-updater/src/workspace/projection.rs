@@ -217,11 +217,31 @@ pub enum ProjectionError {
     ParkSectionMissing,
     /// 状態ファイルを**ゼロから起こす**ことは未実装である。
     ///
-    /// `Started` は本文が既にある状態ファイルへならフィールドを書ける（値はどれも計画から
-    /// 導ける）。だが本文そのもの — 9 セクションの骨格と 31 のフィールド行 — を起こすには
-    /// upstream の `state-template.md` の実バイトが要る。ゴールデンには差分（`state.diff`）
-    /// しか無く、テンプレート本体は未採取である（U1 の追加採取待ち）。骨格を推測して書くと
-    /// 0a 逐語契約を静かに破るので、そのときだけここで止める。
+    /// `Started` は本文が既にある状態ファイルへならフィールドを書ける。だが本文そのもの —
+    /// 9 セクションの骨格と 31 のフィールド行 — を起こすには**ジャーナルに無い材料**が要る。
+    ///
+    /// 骨格の実バイトは採取済みである（`cli/intent-create/classic-scope/state-full.md`。
+    /// upstream 側の正本は `aidlc-utility.ts` の template literal であり、
+    /// `knowledge/aidlc-shared/state-template.md` は LLM 向けの契約文書でツールは読まない）。
+    /// 詰まっているのはバイトではなく材料のほうで、全 102 行を照合した結果、次の 4 行が
+    /// `Started`（definition_id / definition_revision / scope / request / depth /
+    /// test_strategy / stages / scan）から導けない。
+    ///
+    /// - `- **Project Root**:` — ワークツリーの絶対パス。**ジャーナルに存在しない**。投影核が
+    ///   環境を読まないのは NFR3（ジャーナルだけで当時と同じバイトを再構成する）の要請なので、
+    ///   ここは設計上の穴である。
+    /// - `- **Project**:` — 人間の記述そのもの。`request` は `/aidlc ` を前置した後の形しか
+    ///   持たず、前置を剥がす導出は引数が空のとき割れる（upstream は `[Project description]` と
+    ///   `/aidlc <scope>` を別々に書く）。
+    /// - `- **Review Override**:` — 対応するフィールドが無い。常に空と決め打つと `--review`
+    ///   指定時に割れる。
+    /// - `- **Stages to Skip**:` の畳み理由 — upstream の規則は「slug が
+    ///   `reverse-engineering` かつ greenfield かつ**素のグリッドが EXECUTE**」であり、
+    ///   素のグリッド値と調整後の値の区別が要る。`PlanAction` は 2 値、`conditional` は
+    ///   出荷グラフ 33 ノード中 22 ノードで真なので、どちらでも代用できない。
+    ///
+    /// 骨格を推測して書くと 0a 逐語契約を静かに破るので、そのときだけここで止める。
+    /// 解消にはイベント拡張か、骨格生成をコマンド側へ寄せる裁定が要る（B10 で提起済み）。
     ScaffoldTemplateUnavailable,
 }
 
@@ -341,9 +361,10 @@ fn project_one(
 /// いずれも他のイベントで逐語検収済みの writer と導出をそのまま使う。
 ///
 /// **書かないもの**: `- **Stages to Execute**: ` / `- **Stages to Skip**: ` の 2 つ。
-/// ゴールデンの実バイトは `2.1 (reverse-engineering — greenfield)` のように**畳まれた理由**を
-/// 括弧内に持つが、その理由は計画からは導けない（`PlanAction` は EXECUTE / SKIP の 2 値しか
-/// 持たない）。推測で書かず、触らないままにする。
+/// 前者は計画から導ける（スコープ内ステージの番号を文書順に並べるだけ）が、後者の実バイトは
+/// `2.1 (reverse-engineering — greenfield)` のように**畳まれた理由**を括弧内に持ち、その理由は
+/// 導けない（詳細は [`ProjectionError::ScaffoldTemplateUnavailable`]）。行は 2 つで 1 組の
+/// 計画表なので、片方だけ書くと読み手に矛盾した表を見せることになる。両方とも触らない。
 fn started(
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
@@ -853,10 +874,7 @@ fn set_phase_progress_for_jump(
     from: PhaseId,
     to: PhaseId,
 ) -> Result<(), ProjectionError> {
-    let order = |phase: PhaseId| PhaseId::ALL.iter().position(|p| *p == phase);
-    let (Some(from_at), Some(to_at)) = (order(from), order(to)) else {
-        return Ok(());
-    };
+    let (from_at, to_at) = (phase_order(from), phase_order(to));
     if from_at < to_at {
         set_field(read_model, &field::phase_row(from), phase_status::VERIFIED)?;
         for phase in PhaseId::ALL
@@ -882,36 +900,33 @@ fn set_phase_progress_for_jump(
 
 /// ジャンプ後の `- **Last Completed Stage**:`。
 ///
-/// 到達点より**手前**を計画の逆順に辿り、最初に見つかった `[x]` のステージを書く。1 つも
-/// 無ければ upstream の既定値 `state-init` を書く（到達点が先頭ステージのときに起きる —
-/// `cli/jump/execute-backward` がその実測である）。
+/// 到達点より**手前**にある最後の `[x]` のステージを書く。1 つも無ければ upstream の既定値
+/// `state-init` を書く（到達点が先頭ステージのときに起きる — `cli/jump/execute-backward` が
+/// その実測である）。
+///
+/// 前から辿って**最後に当たったもの**を残すのは、後ろから探して最初に当たったものと同じで
+/// ある。`take_while` は逆順に辿れないので、こちらの向きで書いた。到達点そのものは見ない。
 fn last_completion_before(
     read_model: &ReadModel,
     plan: &ResolvedPlan,
     target: &StageSlug,
 ) -> String {
     let checkboxes = Checkboxes::parse(read_model.state());
-    let Some(at) = plan
+    let mut found = NO_EARLIER_COMPLETION;
+    for stage in plan
         .stages()
         .iter()
-        .position(|stage| stage.slug() == target)
-    else {
-        return NO_EARLIER_COMPLETION.to_string();
-    };
-    let is_completed = |slug: &str| {
-        checkboxes
+        .take_while(|stage| stage.slug() != target)
+    {
+        let slug = stage.slug().as_str();
+        if checkboxes
             .iter()
             .any(|entry| entry.slug() == slug && entry.state() == CheckboxState::Completed)
-    };
-    plan.stages()
-        .iter()
-        .take(at)
-        .rev()
-        .find(|stage| is_completed(stage.slug().as_str()))
-        .map_or_else(
-            || NO_EARLIER_COMPLETION.to_string(),
-            |stage| stage.slug().as_str().to_string(),
-        )
+        {
+            found = slug;
+        }
+    }
+    found.to_string()
 }
 
 /// `Recomposed` → `RECOMPOSED`、計画一覧・総数・行末トークンの更新。
@@ -1141,6 +1156,21 @@ fn number_of(plan: &ResolvedPlan, slug: &StageSlug) -> Result<String, Projection
 fn unknown(slug: &StageSlug) -> ProjectionError {
     ProjectionError::UnknownStage {
         stage: slug.as_str().to_string(),
+    }
+}
+
+/// フェーズの文書順の位置。
+///
+/// `PhaseId::ALL` を `position` で引くと「見つからない」枝が生まれるが、閉集合なので実際には
+/// 起きない。網羅 `match` にすればその枝が消え、フェーズを増やしたときは**コンパイルエラー**で
+/// ここを直すよう強制できる（順序が `PhaseId::ALL` と一致することは単体テストが見張る）。
+const fn phase_order(phase: PhaseId) -> usize {
+    match phase {
+        PhaseId::Initialization => 0,
+        PhaseId::Ideation => 1,
+        PhaseId::Inception => 2,
+        PhaseId::Construction => 3,
+        PhaseId::Operation => 4,
     }
 }
 
@@ -1443,6 +1473,15 @@ mod tests {
         let mut read_model = model();
         project(&[entry(event)], &plan(), &mut read_model).expect("投影");
         read_model
+    }
+
+    #[test]
+    fn the_phase_order_agrees_with_the_declared_document_order() {
+        // 網羅 match で書いた順序が `PhaseId::ALL` とずれていないことを見張る
+        // （ずれると `## Phase Progress` の前方 / 後方の判定が逆になる）。
+        for (index, phase) in PhaseId::ALL.into_iter().enumerate() {
+            assert_eq!(phase_order(phase), index, "{}", phase.as_str());
+        }
     }
 
     #[test]
