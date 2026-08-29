@@ -27,7 +27,6 @@
 //! **失敗態度** (12 §4): グラフは fatal、グリッドは転置導出フォールバック、identity と
 //! グリッド列の不一致は双方向とも正当。
 
-use canon_json::{hash_canonical, to_value};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
     ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef,
@@ -35,6 +34,7 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinition, WorkflowDefinitionId,
 };
 use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
+use core_infrastructure::canon_json::{hash_canonical, to_value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;

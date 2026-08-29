@@ -56,6 +56,7 @@
 mod apply_error;
 mod autonomy_mode;
 mod command_error;
+mod directive_schema;
 mod event_manifest;
 mod intent_id;
 mod jump_direction;
@@ -77,6 +78,7 @@ mod workspace_scan;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
+pub use directive_schema::DirectiveKind;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;

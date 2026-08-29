@@ -26,8 +26,8 @@
 
 use chrono::{DateTime, SecondsFormat, Utc};
 
-use audit_events::EventType;
 use core_command_domain::workspace::AuditFields;
+use core_command_domain::workspace::EventType;
 
 /// 空のシャードへ最初に書かれるヘッダ行 (upstream `aidlc-audit.ts:693`、19 バイト)。
 pub const SHARD_HEADER: &str = "# AI-DLC Audit Log\n";

@@ -5,7 +5,7 @@
 //! （ADR-003 / ADR-004）。描くのは ReadModelUpdater であって、ドメイン層ではない。
 //! ドメインに残るのは値オブジェクトの Always Valid 検証（`StateFieldValue` の単一行検査、
 //! `EventType` の閉集合）と、集約に置けない横断の判断（`classify_state_version` /
-//! `find_all_events`）である。
+//! `OrderedAuditEvents::find_in`）である。
 //!
 //! 実装ファイルの mod は private。公開 API は `pub use` が唯一の宣言であり、消費側のパスは
 //! `core_read_model_updater::workspace::<名前>` で安定する
@@ -18,6 +18,7 @@ mod read_model;
 mod resolved_plan;
 mod state_file;
 mod state_writers;
+mod wording;
 
 // 純粋投影核とその作業面（二層構造の下側 — ストレージを知らない）
 pub use projection::{ProjectionError, project};

@@ -6,8 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use message_catalog::bolt as msg;
-
 /// 状態フィールド `Construction Autonomy Mode` の 2 値。Bolt バッチごとのゲートを出すか
 /// どうかを決める唯一の値。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -55,42 +53,44 @@ impl AutonomyMode {
     /// CLI `--mode` 引数の厳密パース (Controller 規約: 値オブジェクト初期化がバリデーション)。
     ///
     /// 状態読取側の [`AutonomyMode::from_state_field`] とは別の境界である — あちらは
-    /// fail-closed で落とし、こちらは upstream 逐語の拒否文言を発生可能に保つ。
+    /// fail-closed で落とし、こちらは拒否の**材料**（与えられた値）を呼出側へ返す。
     ///
     /// # Errors
     ///
-    /// 2 値 (`autonomous` / `gated`) 以外は upstream 逐語 (`Invalid --mode: …`) で拒否する。
+    /// 2 値 (`autonomous` / `gated`) 以外は `InvalidModeArg` で拒否する。利用者向けの逐語文言
+    /// (`Invalid --mode: …`) は境界（アダプタ層）が材料から組む —
+    /// ドメインは文言を運ばない (`coding-rules/error-handling.md`。2026-08-29 是正:
+    /// 文言カタログへの依存は「純粋部品だから」を免罪符にした依存方向違反だった)。
     pub fn parse(s: &str) -> Result<AutonomyMode, InvalidModeArg> {
         match s {
             "autonomous" => Ok(AutonomyMode::Autonomous),
             "gated" => Ok(AutonomyMode::Gated),
-            other => Err(InvalidModeArg::new(msg::invalid_mode_message(other))),
+            other => Err(InvalidModeArg::new(other)),
         }
     }
 }
 
-/// CLI `--mode` の 2 値厳密パースの拒否。値ではなく**拒否文言そのもの**を運ぶ
-/// (upstream の逐語を発生可能に保つための境界型 — 状態読取側の fail-closed リーダとは別)。
+/// CLI `--mode` の 2 値厳密パースの拒否 — **材料のみ**（与えられた不正値）を運ぶ。
+/// 利用者向け文言はアダプタ層が組む (2026-08-29 是正 — 従来は完成文言を運んでいた)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidModeArg {
-    /// upstream 逐語の拒否文言 (文言カタログ経由)。
-    message: String,
+    /// 与えられた不正な `--mode` 値（そのまま）。
+    given: String,
 }
 
 impl InvalidModeArg {
-    /// 組み立て済みの逐語拒否文言を包む (文言の生成は文言カタログの責務であり、ここでは
-    /// 整形も加工もしない)。
+    /// 拒否された値を包む（整形も加工もしない — 文言はここの責務ではない）。
     #[must_use]
-    pub fn new(message: impl Into<String>) -> InvalidModeArg {
+    pub fn new(given: impl Into<String>) -> InvalidModeArg {
         InvalidModeArg {
-            message: message.into(),
+            given: given.into(),
         }
     }
 
-    /// upstream 逐語の拒否文言。
+    /// 与えられた不正な `--mode` 値。
     #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
+    pub fn given(&self) -> &str {
+        &self.given
     }
 }
 
@@ -127,9 +127,6 @@ mod tests {
         );
         assert_eq!(AutonomyMode::parse("gated"), Ok(AutonomyMode::Gated));
         let err = AutonomyMode::parse("turbo").unwrap_err();
-        assert_eq!(
-            err.message(),
-            "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
-        );
+        assert_eq!(err.given(), "turbo");
     }
 }

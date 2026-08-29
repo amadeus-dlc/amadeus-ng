@@ -6,10 +6,6 @@ members = [
   "modules/core/command/interface-adapter",
   "modules/core/read-model-updater",
   "modules/core/infrastructure",
-  "modules/shared/canon-json",
-  "modules/shared/message-catalog",
-  "modules/shared/audit-events",
-  "modules/shared/directive-schema",
   "modules/app/aidlc",
   "modules/harness/claude",
   "modules/harness/infrastructure",
@@ -94,10 +90,6 @@ core-command-domain = { path = "modules/core/command/domain" }
 core-command-use-case = { path = "modules/core/command/use-case" }
 core-command-interface-adapter = { path = "modules/core/command/interface-adapter" }
 core-read-model-updater = { path = "modules/core/read-model-updater" }
-canon-json = { path = "modules/shared/canon-json" }
-message-catalog = { path = "modules/shared/message-catalog" }
-audit-events = { path = "modules/shared/audit-events" }
-directive-schema = { path = "modules/shared/directive-schema" }
 # infrastructure 層は文脈ごとに置く (`coding-rules/infrastructure-layer.md`)。
 core-infrastructure = { path = "modules/core/infrastructure" }
 harness-infrastructure = { path = "modules/harness/infrastructure" }

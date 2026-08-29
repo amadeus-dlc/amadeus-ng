@@ -3,7 +3,7 @@
 //! ドリフト」)、`with_field_or_insert` は指定 `## Heading` 末尾に bullet を追記、`without_field`
 //! は bullet 行ごと削除 (不在は no-op)。フィールド行文法は `- **<Field>**:[ \t]*(.*)`。
 
-use message_catalog::state as msg;
+use super::wording as msg;
 
 /// フィールド読取 (`getField`) — 最初に一致した行の値を trim して返す。
 #[must_use]

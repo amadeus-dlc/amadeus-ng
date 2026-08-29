@@ -9,9 +9,6 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-audit-events = { workspace = true }
-directive-schema = { workspace = true }
-message-catalog = { workspace = true }
 # ADR-010: 集約・ドメインイベント・集約識別子が本家の trait を直接実装する (Conformist、
 # 腐敗防止層なし)。本家の trait 境界が `Serialize` / `Deserialize` / `DateTime<Utc>` を
 # 要求するため、serde と chrono もドメイン層の依存になる。

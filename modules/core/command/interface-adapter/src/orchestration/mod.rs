@@ -15,12 +15,14 @@
 //! 消費側のパスは `core_command_interface_adapter::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod cli_wording;
 mod memory;
 mod store_failure;
 mod workflow_definition_repository_impl;
 mod workflow_execution_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
+pub use cli_wording::invalid_mode_message;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 pub use workflow_execution_repository_impl::WorkflowExecutionRepositoryImpl;
 

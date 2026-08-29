@@ -55,7 +55,7 @@
 
 - **ワイヤ表現・外部形式の DTO**（`interface-adapter/src/orchestration/wire/` など、
   serde の外部表現を写す型）— ドメインの抽象データ型ではなく、外部形式の写しである
-- **`modules/shared/` の汎用ライブラリ**（`canon-json` など）— ドメインを持たない部品
+- **infrastructure の汎用モジュール**（`core_infrastructure::canon_json` など）— ドメインを持たない部品（2026-08-29 の shared 解体で移設）
 - **`enum` の変種フィールド** — 言語仕様上 private にできない
 
 この 3 つの外に例外は無い。

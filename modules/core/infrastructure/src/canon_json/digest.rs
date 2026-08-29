@@ -2,9 +2,9 @@
 
 use sha2::{Digest as _, Sha256};
 
-use crate::profile::SerializationProfile;
-use crate::value::JsonValue;
-use crate::writer::serialize;
+use crate::canon_json::profile::SerializationProfile;
+use crate::canon_json::value::JsonValue;
+use crate::canon_json::writer::serialize;
 
 /// 小文字 16 進の桁。
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -102,7 +102,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::{Number, ObjectMembers};
+    use crate::canon_json::value::{Number, ObjectMembers};
 
     const HEX: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -230,8 +230,8 @@ mod proptests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::parse::parse;
-    use crate::value::arbitrary;
+    use crate::canon_json::parse::parse;
+    use crate::canon_json::value::arbitrary;
 
     proptest! {
         /// ダイジェストは常に 64 桁の小文字 16 進 (族に関わらず)。

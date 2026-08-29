@@ -80,12 +80,12 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 
 | クレート | 側 | `Cargo.toml` に書いてよい相手 |
 | --- | --- | --- |
-| `core-command-domain` | **コマンド** | 共有層のみ。**ドメインはコマンド側の持ち物**（2026-08-29 オーナー裁定） |
+| `core-command-domain` | **コマンド** | 共有層のみ**許可**（言語拡張 `core-infrastructure` は使ってよい — 義務ではない。現時点の実依存は外部ライブラリのみ）。**ドメインはコマンド側の持ち物**（2026-08-29 オーナー裁定） |
 | `core-command-use-case` | **コマンド** | `core-command-domain`。クエリ側と RMU は禁止 |
 | `core-command-interface-adapter` | **コマンド実装** | コマンド側 + 本家ストア。クエリ側と RMU は禁止 |
 | **`core-read-model-updater`（RMU）** | **中間** — どちらの側でもない | **コマンド側のドメインイベントにもクエリ側にも依存できる**（2026-08-24 原裁定）。共有層 + rusqlite も可。`JournalReader` ポートも SQLite 実装も RMU 自身が所有 |
 | クエリ側クレート（将来のリードモデル読取・クエリ API 層） | **クエリ** | 共有層のみ。**ドメイン（`core-command-domain`）は絶対禁止**（2026-08-29 オーナー裁定）。コマンド側・RMU も禁止 |
-| 共有層 | — | `core-infrastructure`（言語拡張 — どの層も知らない）と shared の Published Language スキーマ（`audit-events` / `message-catalog` 等） |
+| 共有層 | — | `core-infrastructure`（言語拡張 — どの層も知らない）のみ（2026-08-29 shared 解体 — 監査・directive 語彙は `core-command-domain` へ、canon-json は infrastructure へ、文言は出す側へ。**ドメインの pub 型がそのまま公開言語**なので独立の語彙クレートは不要） |
 
 読取側の契約（`JournalReader` / `ProjectionName` / `GlobalSeqNr`）を中立クレートへ
 切り出す必要は**ない** — 呼ぶのは RMU だけなので、**RMU クレート自身が所有する**
@@ -100,7 +100,7 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 違反。クエリ側クレートの依存にコマンド側（**ドメイン `core-command-domain` を含む — 絶対禁止**）
 ・RMU が現れたら違反。**RMU はどちらが現れてもよい**（2026-08-24 原裁定 — 中間である RMU だけの
 特権）。判定の「相手」は側のクレートであり、共有層（`core-infrastructure` / shared の
-Published Language スキーマ）と外部ライブラリは対象外。
+のみ）と外部ライブラリは対象外。
 
 ## 禁止パターン
 

@@ -31,19 +31,20 @@ impl UnsafeLineChar {
     }
 }
 
-/// 拒否対象の判定 (upstream `hasUnsafeSingleLineCharacter` と同一集合)。
-#[must_use]
-pub fn unsafe_line_char(s: &str) -> Option<char> {
-    s.chars()
-        .find(|&c| (c as u32) <= 0x1f || c as u32 == 0x7f || c == '\u{2028}' || c == '\u{2029}')
-}
-
 impl StateFieldValue {
+    /// 拒否対象の判定 (upstream `hasUnsafeSingleLineCharacter` と同一集合 — 2026-08-29 是正で
+    /// 自由関数から本型の関連関数へ。単一行安全性の規則は本型が所有する)。
+    #[must_use]
+    pub fn unsafe_line_char(s: &str) -> Option<char> {
+        s.chars()
+            .find(|&c| (c as u32) <= 0x1f || c as u32 == 0x7f || c == '\u{2028}' || c == '\u{2029}')
+    }
+
     /// # Errors
     ///
     /// C0 制御・DEL・U+2028・U+2029 を含む値は `UnsafeLineChar` で拒否する。
     pub fn parse(s: &str) -> Result<StateFieldValue, UnsafeLineChar> {
-        match unsafe_line_char(s) {
+        match StateFieldValue::unsafe_line_char(s) {
             Some(c) => Err(UnsafeLineChar::new(c)),
             None => Ok(StateFieldValue(s.to_string())),
         }
@@ -121,7 +122,7 @@ mod tests {
         #[test]
         fn parsed_values_never_contain_line_breaks(s in "\\PC*") {
             if let Ok(v) = StateFieldValue::parse(&s) {
-                let clean = unsafe_line_char(v.as_str()).is_none()
+                let clean = StateFieldValue::unsafe_line_char(v.as_str()).is_none()
                     && !v.as_str().contains('\n')
                     && !v.as_str().contains('\r');
                 prop_assert!(clean);

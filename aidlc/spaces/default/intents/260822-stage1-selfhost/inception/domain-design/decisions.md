@@ -267,6 +267,17 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
     「RMU からドメイン依存を除去し wire を自前 parse」まで誤導出していた。オーナーの是正
     （「この時点で RMU の話一切してないのに、勝手に RMU の話持ち出すな」）を受けて本文へ
     差し替えた。B8 実装（RMU がドメインイベント型に依存）は手戻り不要で正しい。
+  - **2026-08-29 改訂 3（オーナー裁定 — `modules/shared` の解体）**: **ドメインの pub 型が
+    そのまま公開言語**であり、独立の語彙クレートは不要（オーナー明言）。これに基づき shared の
+    4 クレートを解体した（Bolt B9）: `audit-events`（監査イベント語彙 86 語）と
+    `directive-schema`（`DirectiveKind`）は**ドメイン知識**として `core-command-domain` の
+    モジュールへ、`canon-json` は**言語拡張**として `core_infrastructure::canon_json` へ、
+    `message-catalog` は**出す側に同居**（状態ファイル文言 → RMU の `wording`、CLI 境界文言 →
+    コマンド側アダプタの `cli_wording`。B5 で退役済みの lock 文言は削除）。あわせて
+    domain → message-catalog という依存方向違反（「純粋部品だから全層依存可」を免罪符に
+    domain が完成文言を運んでいた）を是正 — `InvalidModeArg` は材料（与えられた値）だけを
+    運び、文言は境界が組む（error-handling.md どおり）。`modules/shared` ディレクトリは消滅し、
+    共有層は `core-infrastructure` のみになった。
   - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
     `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
     （C6 の 3 表）が 1 箇所に残るので重複しない。

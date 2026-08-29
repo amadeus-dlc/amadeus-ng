@@ -120,7 +120,7 @@ pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<JsonValue, ToValueEr
     #[allow(clippy::disallowed_methods)]
     let raw = serde_json::to_value(value)
         .map_err(|error| ToValueError::Serialization(error.to_string()))?;
-    Ok(crate::parse::from_serde(raw))
+    Ok(crate::canon_json::parse::from_serde(raw))
 }
 
 /// `to_value` が型付き値を `JsonValue` へ写せなかったときの理由。
@@ -441,8 +441,8 @@ mod to_value_tests {
     use serde::Serialize;
 
     use super::*;
-    use crate::profile::SerializationProfile;
-    use crate::writer::serialize;
+    use crate::canon_json::profile::SerializationProfile;
+    use crate::canon_json::writer::serialize;
 
     #[derive(Serialize)]
     struct Directive {

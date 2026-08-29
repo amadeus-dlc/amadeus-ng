@@ -13,7 +13,7 @@
 // シグナルとして妥当なため同様に許容する。
 #![allow(clippy::indexing_slicing, clippy::panic)]
 
-use canon_json::{
+use core_infrastructure::canon_json::{
     JsonValue, Number, ObjectMembers, SerializationProfile, hash_canonical, hash_compact, parse,
     serialize,
 };

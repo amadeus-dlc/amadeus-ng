@@ -24,7 +24,7 @@
 |---|---|---|
 | 1 | `docs/specs/00-policy.md` | A8 行の失効注記を最終形へ更新: `core` 配下は `command/{domain,use-case,interface-adapter}`（コマンド側 3 クレート）・`read-model-updater`（RMU、側接頭辞なしの中間）・`infrastructure` に分かれ、`query/` サブディレクトリは存在しないことを明記 |
 | 2 | `docs/specs/01-domain-model.md` | §7 原則 1 の「ドメインクレート」に、ドメインはコマンド側の持ち物（`core-command-domain`）である旨を追記 |
-| 3 | `docs/specs/11-workspace.md` | §2.3 冒頭・表 3 行（`render_audit_block`/`find_all_events`/`state_writers`）の `core-query-read-model-updater` を `core-read-model-updater`（中間クレート）へ、`core-domain::workspace` を `core-command-domain::workspace` へ更新（分割の内容自体は不変） |
+| 3 | `docs/specs/11-workspace.md` | §2.3 冒頭・表 3 行（`render_audit_block`/`find_all_events`/`state_writers`）の `core-query-read-model-updater` を `core-read-model-updater`（中間クレート）へ、`core-domain::workspace` を `core_command_domain::workspace` へ更新（分割の内容自体は不変） |
 | 4 | `.../inception/contract-design/contract-summary.md` | C3 追記ブロックを in-place 修正（crate改名 + RMU=中間の位置づけ）。C3コード内コメント・C5 yaml コメントの実装パス・C6 追記ブロックのパスを是正後のクレート名へ更新 |
 | 5 | `.../inception/units-generation/unit-of-work.md` | U2（責務・境界）の `core-domain` を `core-command-domain` へ失効注記。U3/U4 の第1パス追記ブロックを in-place 修正（RMU=中間・crate改名）。U4実装ノートのクレート名更新。Review 節（2026-08-22）の `core-domain` 引用に失効注記 |
 | 6 | 報告書: `doc-sync-report-2.md`（新規） | 本報告書 |

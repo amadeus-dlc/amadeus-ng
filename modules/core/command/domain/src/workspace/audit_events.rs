@@ -1,11 +1,13 @@
-//! 監査イベントスキーマ (Published Language) — `EventType` 86 語 22 カテゴリの閉集合・
+//! 監査イベントスキーマ — `EventType` 86 語 22 カテゴリの閉集合・
 //! MANDATORY 8・authority deny-list (B5: workspace は行を opaque に扱い、宣言はスキーマ側)。
 //!
 //! 出典: upstream `aidlc-audit.ts:39-189` (03 §6.5 の完全転記、検算 86/22 済み)。
+//! 2026-08-29 オーナー裁定「audit-events の中身は domain に移せ」により独立クレート
+//! `modules/shared/audit-events` から本モジュールへ移設 — 監査イベント語彙はドメイン知識で
+//! あり、ドメインモデルの中に置く（外部消費者は wire 上の文字列として読む）。
+//!
 //! CLI_RESERVED (8) と MERGE_PROTECTED (26+DOCUMENT_*) は as-built 仕様に全列挙が無く、
 //! upstream ソース読解 (stage-0 ゴールデン採取) 待ち — 誤推測は audit-merge 互換を壊すため未定義。
-
-#![forbid(unsafe_code)]
 
 macro_rules! event_types {
     ($( $cat:ident { $( $name:ident = $s:literal => $h:literal ),+ $(,)? } )+) => {

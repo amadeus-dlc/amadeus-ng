@@ -11,8 +11,8 @@
 
 use std::cmp::Ordering;
 
-use crate::profile::KeyOrder;
-use crate::value::ObjectMembers;
+use crate::canon_json::profile::KeyOrder;
+use crate::canon_json::value::ObjectMembers;
 
 /// 配列インデックスの上限 (ECMAScript: `ToUint32(P) != 2^32-1`)。
 const MAX_ARRAY_INDEX: u64 = (u32::MAX as u64) - 1;
@@ -84,7 +84,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::value::JsonValue;
+    use crate::canon_json::value::JsonValue;
 
     fn members_of(keys: &[&str]) -> ObjectMembers {
         let mut members = ObjectMembers::new();
