@@ -12,7 +12,8 @@
 `cargo test --workspace` は **798 passed / 0 failed**（origin/main は 774 なので **+24**）。
 `tests/` の差分は 0 で、投影ゴールデンは無改変のまま全緑である。
 
-本 Bolt は途中で 3 回の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**である:
+本 Bolt は途中で改訂 2〜6 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
+ある:
 
 | | 役割 |
 |---|---|
@@ -28,7 +29,7 @@
 
 ---
 
-## 1. 到達点（改訂 3 後の対応表・実測）
+## 1. 到達点（改訂 6 で確定した形・実測）
 
 | 旧 | 新 |
 |---|---|
@@ -44,6 +45,8 @@
 | `RehydratedWorkflowExecution` | `RehydratedIntentExecution` |
 | `AGGREGATE_TYPE_NAME = "WorkflowExecution"` | `"IntentExecution"`（`IntentExecutionId` が持つ） |
 | `StartError` | **`IntentError` へ統合して削除**（別名は残さない） |
+| `StateError` | `SnapshotError`（ファイルも `snapshot_error.rs` へ。オーナー裁定 2026-08-29） |
+| `WorkflowExecution::state()` / `from_state()` | `IntentExecution::snapshot()` / `from_snapshot()`（同裁定） |
 | `RepositoryError::NotFound { intent_id }` | `{ execution_id: IntentExecutionId }` |
 | `JournalEntry::intent_id()`（RMU 読取行） | `execution_id()`（ジャーナルの集約キーは実行識別子） |
 
@@ -131,6 +134,7 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 14 | `Started` payload に intent が載るラウンドトリップ | **緑**（`the_started_payload_round_trips_the_intent_through_serde`） |
 | 15 | 集約状態に Intent 由来の静的フィールドが残っていない | **緑**（`the_snapshot_carries_no_static_material_from_the_intent` が写しの JSON を逐語で検査） |
 | 16 | `&Intent` ガード（id 不一致・長さ不一致）のテスト | **緑**（`a_command_refuses_an_intent_that_belongs_to_another_intent` ほか 5 本） |
+| 17 | 全 `&mut self` コマンドがイベントを返す（`coding-rules/aggregate-commands.md`） | **緑**。集約の `pub fn` かつ `&mut self` は **12 本**あり、うち 11 本（`complete_stage` / `open_gate` / `approve_gate` / `reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` / `switch_autonomy`）はすべて `Result<IntentExecutionEvent, CommandError>` を返す。残る 1 本は規則が明示的に除外する fold の `apply_event`（`Result<(), ApplyError>`）。イベントを返さない遷移メソッドは **0 本** |
 
 ### テストの増減の内訳（実測）
 
@@ -161,21 +165,30 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 受入基準 9 とは衝突しない（小文字・ハイフンなので `WorkflowExecution` に部分一致しない）。
 **判断を仰ぎたい**: 値も揃えるなら別 Bolt での実施を推奨する（永続化形式の変更である）。
 
-### (b) 再生に要る `&Intent` の入手経路（選択肢 A を採った）
+### (b) 再生に要る `&Intent` の入手経路（A 案 — オーナー確定）
 
 再構成は「最新スナップショット + 以降のイベント再生」で行うが、写しから計画が消えたため、
-`apply_event` が要求する `&Intent` の出所が無くなった。ブリーフはここを決めていない。
+`apply_event` が要求する `&Intent` の出所が無くなった。ブリーフはここを決めていなかったので、
+検出時点で裁定を求めつつ、**ブリーフ自身の制約から選択肢が 1 つに絞れる**ことを示して A で
+着手した:
 
-**ブリーフ自身の制約から選択肢は 1 つに絞れた**ので、質問を出したうえで A で進めた:
+- ポートに `&Intent` を足す案（B）は、改訂 2 が `find_by_id(&IntentExecutionId)` と署名を
+  確定させているので不可。
+- 写しに `stages` を残す案（C）は、改訂 3 が追加した受入基準に反するので不可。
+- イベントが stage を index で運ぶ案（D）は、`Started` 以外の payload 構造の変更になるので不可。
 
-- ポートに `&Intent` を足す案は、改訂 2 が `find_by_id(&IntentExecutionId)` と署名を確定させて
-  いるので不可。
-- 写しに `stages` を残す案は、改訂 3 が追加した受入基準に反するので不可。
-- イベントが stage を index で運ぶ案は、`Started` 以外の payload 構造の変更になるので不可。
+裁定は改訂 4（A+）→ 改訂 5（B）→ **改訂 6（A 確定）** と動いたが、**実装の巻き戻しは
+発生していない** — 改訂 6 が確定させた形は着手時の A そのものだからである。確定形:
 
-採った形（A）: `IntentExecutionRepositoryImpl` が**ジャーナル先頭の `Started` から**その時点の
-intent を復元して再生に使う。`Started` は genesis 専用なので必ず 1 件目にある。先頭が別変種・
-別 manifest・0 件のジャーナルは `Corrupt` で止める（テスト
+- ポート署名は `find_by_id(&IntentExecutionId)`。
+- 再生材料の `Intent` は `IntentExecutionRepositoryImpl` が**自ストリーム先頭の `Started`**
+  （seq_nr 1・genesis 専用）から内部復元する。自集約のストリームを読むのは Repository の
+  本業であり責務境界の違反ではない（`gateway-taxonomy.md`「署名は自集約の ID だけを取る」）。
+- 復元した `Intent` は**外へ返さない** — `RehydratedIntentExecution` は実行と版だけを持つ。
+- `CommitVerdictUseCase::execute(&IntentExecutionId, intent: &Intent, ...)` — Controller が
+  読んで渡す（改訂 3 の 4 / 改訂 5 の 3）。
+
+先頭が別変種・別 manifest・0 件のジャーナルは `Corrupt` で止める（テスト
 `a_journal_whose_first_row_is_not_a_genesis_is_corrupt`）。読取が 1 回増える代償はある。
 
 ### (c) `StartError` を `IntentError` へ統合して削除した
@@ -206,12 +219,12 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 `resolve` の内側にも一度ガードを置いたが、呼出経路が既に照合済みで**到達しない枝**になったため
 外した（`&self` を使わなくなったので関連関数へ変えた）。
 
-### (f) `from_state` の検査点が弱くなった
+### (f) `from_snapshot` の検査点が弱くなった
 
 写しに計画が載らなくなったので、復号時に検査できるのは**実行時の不変条件だけ**である
 （長さ・通番・カーソル・park・active の数）。計画を要する `no_gate_bypass` は `&Intent` が渡る
 コマンド・適用の側へ移した。`security-design §2`「検査点は 1 か所」の文言は、改訂 3 の分割に
-より「実行時の検査点は `from_state`、計画を要する検査点は `&Intent` を受け取る面」の 2 か所に
+より「実行時の検査点は `from_snapshot`、計画を要する検査点は `&Intent` を受け取る面」の 2 か所に
 なる。**設計文書側の是正が要る**（§6）。
 
 ### (g) `JournalEntry` の識別子は実行識別子へ
@@ -219,30 +232,55 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 ジャーナル行の集約キーは実行識別子になったので、`JournalEntry::intent_id()` は
 `execution_id()` へ改めた。投影核はこの値を使っていないので、外形には影響しない（§2）。
 
+### (h) 写しの語彙を `snapshot` へ揃えた（オーナー裁定）
+
+`state()` は戻り型が `IntentExecutionSnapshot` である以上「表現の露出」に読めるため、ES の
+第一級語彙 `snapshot()` へ改めた。対になる `from_state()` は `from_snapshot()`、失敗型
+`StateError` は `SnapshotError`（ファイルも `snapshot_error.rs`）へ揃えた。後方互換の別名は
+置いていない（`no-backward-compatibility.md`）。
+
+これは §6 で裁定を仰いでいた「`StateError` を `SnapshotError` へ戻すか」への回答でもある —
+`snapshot()` / `from_snapshot()` と揃うのが自然なので、B5 の改名（Snapshot → State）は本 Bolt で
+巻き戻った形になる。`entities.md` の該当記述（「エラーは `StateError`（旧 SnapshotError）」）は
+失効するので §6 に申し送る。
+
+### (i) `Intent::new` がイベントを返さないこと（オーナー裁定・現行どおり）
+
+`aggregate-commands.md` は集約の状態遷移にイベントを要求するが、`Intent` は独立した集約では
+なく、その値は `Started` に焼き込まれる**静的構成**である。`IntentCreated` を先行させると
+`Started` の自己完結性と二重化するので、**現行設計どおり変更不要**と確定した（オーナー裁定
+2026-08-29）。生成ペアを返すのは `IntentExecution::start` の側であり、こちらは規則の genesis 形
+そのものである。
+
 ---
 
 ## 6. 申し送り
 
-1. **`security-design §2` の「検査点は `from_state` の 1 か所」** — §5 (f)。分割後の実態に
+1. **`security-design §2` の「検査点は `from_snapshot` の 1 か所」** — §5 (f)。分割後の実態に
    合わせた是正が要る。`aidlc/**` は所有ファイル外なので触っていない。
 2. **`entities.md` の `WorkflowExecutionState` 節**（U3 functional-design）— 型名・属性数
-   （17 → 12）・Builder 名・エラー名がすべて失効した。同じく所有ファイル外。
-3. **`StateError` を `SnapshotError` へ戻すか** — `SnapshotError` はこの型自身の旧名であり
-   （B5 で改名、`entities.md:126` に「旧名の再エクスポート・型エイリアスは残さない」と記録）、
-   戻すのは過去の裁定の巻き戻しになる。据え置いて裁定を仰ぐ。
-4. **`EVENT_MANIFEST` の値** — §5 (a)。
+   （17 → 12）・Builder 名・エラー名（`StateError` → `SnapshotError` で B5 の改名が巻き戻った）が
+   すべて失効した。同じく所有ファイル外。
+3. **`EVENT_MANIFEST` の値** — §5 (a)。裁定を仰ぐ。
+4. **`IntentRepository` は U7（intent-create 実装時）で新設**（改訂 5 の 5）。B12 ではポート
+   定義も作っていない — テストは `Intent` を直接構築している。
 5. **「この intent の現在の実行」の解決**と**「同一 intent の生きた実行は同時に 1 つ」**の
    不変条件は、改訂 3 のとおり本 Bolt では決めていない（U6 / U7 の設計点）。`intents.json` には
    フィールドを足していない。
 6. **合成ルート（U7）が `Intent` をどこから読むか**も未決。`CommitVerdictUseCase` は
    `&Intent` を受け取るだけで取得手段を持たない。Repository は再生用に `Started` から自前で
    復元するので、両者が同じ intent を指すことは id 照合ガードが担保する。
-7. **`formal/orchestration/journal_protocol.qnt` の対応表コメント**が古い（Rust 名を参照する
+7. **将来「実行ごとに計画を再解決する」要件が出たら再裁定**（改訂 5 の意味論注記）。現在は
+   `Intent` が不変なので「`Started` の写し」と「現在の Intent」は常に一致するが、同一 intent で
+   実行ごとに `stages` が変わる要件が現れたら、`stages` は Intent ではなく**実行の開始材料**へ
+   移す再設計が要る。
+8. **`formal/orchestration/journal_protocol.qnt` の対応表コメント**が古い（Rust 名を参照する
    コメントが 5 行）。モデル本体は Rust 型名を参照しないので Quint ゲートは緑のまま。
-8. **`docs/**` と `coding-rules/**` の旧名**はメインセッションの担当（ブリーフどおり触って
+9. **`docs/**` と `coding-rules/**` の旧名**はメインセッションの担当（ブリーフどおり触って
    いない）。
-9. **メインセッション側の未コミット変更**が作業ツリーに残っている（`brief-1.md`、
-   `coding-rules/` の 7 ファイル）。自分の所有ファイルではないのでコミットしていない。
+10. **メインセッション側の未コミット変更**が作業ツリーに残っている（`brief-1.md`、
+    `coding-rules/`、`docs/`、`components.md`）。自分の所有ファイルではないのでコミットして
+    いない。
 
 ---
 
@@ -261,6 +299,8 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 | `2d71d35` | 実行の識別子 `IntentExecutionId` を新設する |
 | `637916f` | 静的な intent を表す不変構造体 `Intent` を新設する |
 | `3dda7cb` | 集約を `IntentExecution` へ縮小し、計画は `&Intent` で受け取る |
+| `affb01cc` | 分割を開発者報告へ書き直す |
+| `9cb09791` | 写しの語彙を `snapshot` へ揃え、確定した引数順と規則参照を反映する |
 
 前半 5 本は改名フェーズ、後半 4 本が分割フェーズである。改訂 2 が来た時点で**巻き戻しは
 不要だった** — 集約側の改名がそのまま `IntentExecution` への機械改名で流用できたためである。
