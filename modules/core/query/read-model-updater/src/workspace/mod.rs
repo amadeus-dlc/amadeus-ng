@@ -11,8 +11,12 @@
 //! `core_query_read_model_updater::workspace::<名前>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod audit_block;
 mod state_file;
 mod state_writers;
+
+// 監査ブロックの描画（W9 の逐語契約。投影の行もフックの直接行も同じ描き手を通る）
+pub use audit_block::{SHARD_HEADER, render_audit_block};
 
 // 状態ファイルの writer 4 種 + 読取（純粋な string→string — 11-workspace §2.3）
 pub use state_writers::{

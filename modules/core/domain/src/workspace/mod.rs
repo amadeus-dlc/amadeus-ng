@@ -11,6 +11,7 @@
 //! 消費側のパスは `core_domain::workspace::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod audit_field;
 mod bolt_refs;
 mod checkbox;
 mod clone_id;
@@ -22,6 +23,7 @@ mod state_version;
 mod store_path;
 
 // Domain Primitive
+pub use audit_field::{AuditFieldKey, AuditFieldValue, AuditFields};
 pub use bolt_refs::BoltRefs;
 pub use checkbox::{CheckboxEntry, CheckboxState};
 pub use clone_id::CloneId;
@@ -38,6 +40,7 @@ pub use state_field_value::unsafe_line_char;
 pub use state_version::classify_state_version;
 
 // エラー
+pub use audit_field::AuditFieldKeyError;
 pub use bolt_refs::BoltRefsError;
 pub use checkbox::CheckboxUpdateError;
 pub use clone_id::CloneIdError;
