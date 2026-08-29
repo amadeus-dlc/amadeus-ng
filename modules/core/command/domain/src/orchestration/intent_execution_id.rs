@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use super::uuid_v7::{CANONICAL_LEN, MalformedUuidV7, VERSION_NIBBLE, parse_canonical};
+use uuid::Uuid;
 
 /// 1 回の実行の識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -24,51 +24,31 @@ pub struct IntentExecutionId(String);
 /// `IntentExecutionId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentExecutionIdError {
-    /// 前後の空白を除くと空になる。
-    Empty,
-    /// 正準形の 36 字でない。
-    Length {
-        /// 実際の文字数 (前後の空白を除いたもの)。
-        actual: usize,
-    },
-    /// uuid として解析できない、または解析できても正準綴り (小文字 `8-4-4-4-12`) でない
-    /// (大文字・短縮形・`{braced}` など)。
-    NotCanonical,
-    /// version nibble が `7` でない (UUIDv7 以外)。
-    Version {
-        /// 実際に置かれていた nibble。
-        found: char,
-    },
-    /// variant nibble が RFC の `10xx` (`8` / `9` / `a` / `b`) でない。
-    Variant {
-        /// 実際に置かれていた nibble。
-        found: char,
-    },
-}
-
-impl From<MalformedUuidV7> for IntentExecutionIdError {
-    fn from(reason: MalformedUuidV7) -> IntentExecutionIdError {
-        match reason {
-            MalformedUuidV7::Empty => IntentExecutionIdError::Empty,
-            MalformedUuidV7::Length { actual } => IntentExecutionIdError::Length { actual },
-            MalformedUuidV7::NotCanonical => IntentExecutionIdError::NotCanonical,
-            MalformedUuidV7::Version { found } => IntentExecutionIdError::Version { found },
-            MalformedUuidV7::Variant { found } => IntentExecutionIdError::Variant { found },
-        }
-    }
+    /// UUIDv7 の正準表記 (小文字 `8-4-4-4-12`・version `7`・RFC variant) でない。
+    NotCanonicalUuidV7,
 }
 
 impl IntentExecutionId {
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
     ///
+    /// `Uuid::try_parse` は寛容 (大文字・`{braced}`・URN・短縮形も受理) なので、再直列化した
+    /// 正準表記と入力の逐語一致で「正規化せず拒否」(BR4.1) を実現する。
+    ///
     /// # Errors
     ///
-    /// 空・36 字でない長さ・ハイフン位置や 16 進小文字の並びの違反・version nibble が `7`
-    /// 以外・variant nibble が `8` / `9` / `a` / `b` 以外を、それぞれ拒否する。
+    /// UUIDv7 の正準表記でない綴りを拒否する。
     pub fn parse(s: &str) -> Result<IntentExecutionId, IntentExecutionIdError> {
-        parse_canonical(s)
-            .map(IntentExecutionId)
-            .map_err(IntentExecutionIdError::from)
+        let trimmed = s.trim();
+        let Ok(uuid) = Uuid::try_parse(trimmed) else {
+            return Err(IntentExecutionIdError::NotCanonicalUuidV7);
+        };
+        if uuid.get_version_num() != 7
+            || uuid.get_variant() != uuid::Variant::RFC4122
+            || uuid.as_hyphenated().to_string() != trimmed
+        {
+            return Err(IntentExecutionIdError::NotCanonicalUuidV7);
+        }
+        Ok(IntentExecutionId(trimmed.to_string()))
     }
 
     /// 生の識別子文字列 (trim 済み)。
@@ -87,21 +67,8 @@ impl fmt::Display for IntentExecutionId {
 impl fmt::Display for IntentExecutionIdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IntentExecutionIdError::Empty => f.write_str("empty"),
-            IntentExecutionIdError::Length { actual } => {
-                write!(f, "length {actual} (expected {CANONICAL_LEN})")
-            }
-            IntentExecutionIdError::NotCanonical => {
-                f.write_str("not canonical (expected lowercase 8-4-4-4-12)")
-            }
-            IntentExecutionIdError::Version { found } => {
-                write!(f, "version nibble '{found}' (expected '{VERSION_NIBBLE}')")
-            }
-            IntentExecutionIdError::Variant { found } => {
-                write!(
-                    f,
-                    "variant nibble '{found}' (expected one of '8' '9' 'a' 'b')"
-                )
+            IntentExecutionIdError::NotCanonicalUuidV7 => {
+                f.write_str("not a canonical UUIDv7 (expected lowercase 8-4-4-4-12)")
             }
         }
     }
@@ -144,11 +111,11 @@ mod tests {
     fn an_empty_or_blank_value_cannot_be_constructed() {
         assert_eq!(
             IntentExecutionId::parse(""),
-            Err(IntentExecutionIdError::Empty)
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentExecutionId::parse("  \t\n"),
-            Err(IntentExecutionIdError::Empty)
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -156,11 +123,11 @@ mod tests {
     fn a_value_that_is_not_thirty_six_characters_is_rejected() {
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff000"),
-            Err(IntentExecutionIdError::Length { actual: 35 })
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff00000"),
-            Err(IntentExecutionIdError::Length { actual: 37 })
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -168,7 +135,7 @@ mod tests {
     fn uppercase_hex_is_rejected() {
         assert_eq!(
             IntentExecutionId::parse("0190AAAA-bbbb-7ccc-9ddd-eeeeffff0000"),
-            Err(IntentExecutionIdError::NotCanonical)
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -177,12 +144,12 @@ mod tests {
         // 0 始まり位置 8 に `-` が無い。
         assert_eq!(
             IntentExecutionId::parse("0190aaaab-bbb-7ccc-9ddd-eeeeffff0000"),
-            Err(IntentExecutionIdError::NotCanonical)
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
         // 16 進が来るべき位置に `-` がある。
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeff-f0000"),
-            Err(IntentExecutionIdError::NotCanonical)
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -190,7 +157,7 @@ mod tests {
     fn non_hex_characters_are_rejected() {
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeegfff0000"),
-            Err(IntentExecutionIdError::NotCanonical)
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -198,7 +165,7 @@ mod tests {
     fn the_version_nibble_must_be_seven() {
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-4ccc-9ddd-eeeeffff0000"),
-            Err(IntentExecutionIdError::Version { found: '4' })
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -206,7 +173,7 @@ mod tests {
     fn the_variant_nibble_must_encode_the_rfc_variant() {
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-cddd-eeeeffff0000"),
-            Err(IntentExecutionIdError::Variant { found: 'c' })
+            Err(IntentExecutionIdError::NotCanonicalUuidV7)
         );
     }
 
@@ -245,22 +212,9 @@ mod tests {
 
     #[test]
     fn the_rejection_carries_material_not_wording() {
-        assert_eq!(IntentExecutionIdError::Empty.to_string(), "empty");
         assert_eq!(
-            IntentExecutionIdError::Length { actual: 35 }.to_string(),
-            "length 35 (expected 36)"
-        );
-        assert_eq!(
-            IntentExecutionIdError::NotCanonical.to_string(),
-            "not canonical (expected lowercase 8-4-4-4-12)"
-        );
-        assert_eq!(
-            IntentExecutionIdError::Version { found: '4' }.to_string(),
-            "version nibble '4' (expected '7')"
-        );
-        assert_eq!(
-            IntentExecutionIdError::Variant { found: 'c' }.to_string(),
-            "variant nibble 'c' (expected one of '8' '9' 'a' 'b')"
+            IntentExecutionIdError::NotCanonicalUuidV7.to_string(),
+            "not a canonical UUIDv7 (expected lowercase 8-4-4-4-12)"
         );
     }
 
