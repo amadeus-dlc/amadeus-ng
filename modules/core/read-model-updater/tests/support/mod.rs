@@ -10,26 +10,68 @@
 //!
 //! 集約とドメインイベントは `core-command-domain` の型である。ドメインはコマンド側の持ち物だが、
 //! 中間である RMU はそれに依存してよい。
+//!
+//! # 行のバイトはこの側の DTO で組む (改訂 9)
+//!
+//! ドメインは永続化知識から中立になったので、封筒に載せる payload とストア鍵は
+//! **RMU 自身の** `orchestration::wire` が持つ型である
+//! (`coding-rules/domain-persistence-neutrality.md` / `cqrs-boundaries.md`)。書く側の DTO を
+//! 借りていないので、このテストは「読む側の綴りで書いた行を読む」ことしか示さない —
+//! 書く側との一致は横断適合テスト (`journal_protocol_conformance`) が固定する。
 
 #![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, EVENT_MANIFEST, Intent, IntentExecution, IntentExecutionEvent,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    AutonomyMode, CommandError, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::StorePath;
+use core_read_model_updater::orchestration::WireEvent;
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
-use event_store_adapter_rs::types::EventStore;
+use event_store_adapter_rs::types::{AggregateId, EventStore};
+
+/// ジャーナル行 `manifest` 列に書く型判別子 (読む側の定数と同じ綴り)。
+pub(crate) const MANIFEST: &str = "intent-execution-event/1";
+
+/// 本家 `AggregateId` を満たすストア鍵 (テストが行を書くためだけに要る)。
+///
+/// RMU の本番経路は `rusqlite` で `journal` 表を直接読むので、この鍵は使わない。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StoreKey(String);
+
+impl StoreKey {
+    pub(crate) fn of(id: &IntentExecutionId) -> StoreKey {
+        StoreKey(id.as_str().to_string())
+    }
+}
+
+impl std::fmt::Display for StoreKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AggregateId for StoreKey {
+    fn type_name(&self) -> String {
+        "IntentExecution".to_string()
+    }
+
+    fn value(&self) -> String {
+        self.0.clone()
+    }
+}
 
 /// 本家の SQLite イベントストア (ジャーナル行の書き手)。
-pub(crate) type UpstreamStore =
-    EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+///
+/// 集約 payload は `serde_json::Value` である — RMU はスナップショット行を読まないので、
+/// この側にスナップショットの DTO は無い (`orchestration::wire` の doc を参照)。
+pub(crate) type UpstreamStore = EventStoreForSqlite<StoreKey, serde_json::Value, WireEvent>;
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -174,17 +216,18 @@ impl JournalWriter {
         self.persist(store, &event).await;
     }
 
-    /// 適用後の集約から本家の封筒を組んで書く (型判別子は共有語彙の `EVENT_MANIFEST`)。
+    /// 適用後の集約から本家の封筒を組んで書く (payload は読む側の DTO)。
     async fn persist(&mut self, store: &mut UpstreamStore, event: &IntentExecutionEvent) {
         let envelope = EventEnvelope::new(
-            self.aggregate.id().clone(),
+            StoreKey::of(self.aggregate.id()),
             self.aggregate.seq_nr(),
             *self.aggregate.last_updated_at(),
-            event.clone(),
+            WireEvent::of(event),
         )
-        .with_manifest(EVENT_MANIFEST);
+        .with_manifest(MANIFEST);
+        // スナップショット行の中身は RMU の関心外である (読むのは journal 表だけ)。
         store
-            .persist_event_and_snapshot(envelope, self.aggregate.clone(), self.version)
+            .persist_event_and_snapshot(envelope, serde_json::Value::Null, self.version)
             .await
             .expect("本家ストアは書ける");
         self.version += 1;

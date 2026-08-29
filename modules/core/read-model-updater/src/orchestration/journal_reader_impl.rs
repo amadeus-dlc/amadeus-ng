@@ -61,7 +61,9 @@ use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
-use core_command_domain::orchestration::{EVENT_MANIFEST, IntentExecutionEvent, IntentExecutionId};
+use core_command_domain::orchestration::IntentExecutionId;
+
+use super::wire::{WireDecodeError, WireEvent};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -324,6 +326,21 @@ fn table_exists(
 /// 読み方の版を名乗る値なので、名乗りが違えば中身を解釈してはならない (旧 `schema_version`
 /// 検査 (B6 CodeRabbit #466) の後継。payload 内メタとの二重照合 (#500) はメタが payload から
 /// 消えたことで不要になった)。
+/// ジャーナル行 `manifest` 列に期待する型判別子 — **読む側の正本**。
+///
+/// 書く側 (command interface-adapter) は自前の同値の定数を持つ。共有しないのは
+/// `coding-rules/cqrs-boundaries.md` の側ごと専用化に従うためで、両者が一致していることは
+/// 横断適合テスト (`journal_protocol_conformance` / ゴールデンパリティ) が固定する。
+const EVENT_MANIFEST: &str = "intent-execution-event/1";
+
+/// 復号の失敗を `Corrupt` の原因へ写す。
+const fn decode_cause(error: &WireDecodeError) -> CorruptCause {
+    match error {
+        WireDecodeError::Malformed { .. } => CorruptCause::UndecodablePayload,
+        WireDecodeError::InvariantViolation => CorruptCause::InvariantViolation,
+    }
+}
+
 fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
     let row_seq = usize::try_from(row.seq_nr)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
@@ -341,8 +358,12 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
             CorruptCause::UndecodablePayload,
         ));
     }
-    let event = serde_json::from_slice::<IntentExecutionEvent>(&row.payload)
-        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?;
+    // 行のバイトは**この側の DTO** で受けてからドメインイベントへ写す
+    // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。
+    let event = serde_json::from_slice::<WireEvent>(&row.payload)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
+        .to_domain()
+        .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
     let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
     Ok(JournalEntry::new(
         global,
@@ -471,16 +492,40 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use core_command_domain::orchestration::IntentExecution;
+    use core_command_domain::orchestration::IntentExecutionEvent;
 
     /// 投影チェックポイントの表 (**我々の表**。本家の `journal` / `snapshot` と衝突しない)。
     const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
     use core_command_domain::workspace::SpaceName;
     use event_store_adapter_rs::EventStoreForSqlite;
+    use event_store_adapter_rs::types::AggregateId;
 
-    /// 本家の SQLite ストア (この型の結合先)。
-    type UpstreamStore =
-        EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+    /// 本家 `AggregateId` を満たすテスト用のストア鍵。
+    ///
+    /// RMU の本番経路は `rusqlite` で `journal` 表を直接読むので本家ストアには触れない。
+    /// ここで本家ストアを使うのは**表を実物の DDL で作らせるため**だけなので、鍵も payload も
+    /// 型境界を満たせば足りる。
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct StoreKey(String);
+
+    impl std::fmt::Display for StoreKey {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(&self.0)
+        }
+    }
+
+    impl AggregateId for StoreKey {
+        fn type_name(&self) -> String {
+            "IntentExecution".to_string()
+        }
+
+        fn value(&self) -> String {
+            self.0.clone()
+        }
+    }
+
+    /// 本家の SQLite ストア (表を作らせるためだけに開く — 行は `rusqlite` で直接入れる)。
+    type UpstreamStore = EventStoreForSqlite<StoreKey, serde_json::Value, serde_json::Value>;
 
     /// 一時ディレクトリ配下のストアの場所。
     fn store_path(dir: &tempfile::TempDir) -> StorePath {
@@ -1218,7 +1263,7 @@ mod tests {
             clippy::disallowed_methods,
             reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
         )]
-        serde_json::to_vec(&IntentExecutionEvent::Unparked).unwrap()
+        serde_json::to_vec(&WireEvent::Unparked).unwrap()
     }
 
     /// 正常な 1 行 (個々のフィールドを崩して境界を踏むための素体)。

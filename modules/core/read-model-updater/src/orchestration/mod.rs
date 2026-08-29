@@ -18,6 +18,7 @@ mod journal_reader_impl;
 mod projection_name;
 mod store_failure;
 mod updater;
+mod wire;
 
 // ポート (trait) と実 I/O 実装
 pub use journal_reader::JournalReader;
@@ -34,6 +35,13 @@ pub use projection_name::ProjectionName;
 pub use journal_entry::JournalEntry;
 
 // エラー
+// 読む側の永続化 DTO (側ごと専用化 — coding-rules/cqrs-boundaries.md)。
+pub use wire::{
+    WireAutonomyModeSet, WireDecodeError, WireEvent, WireGateApproved, WireGateOpened,
+    WireGateRejected, WireJumped, WireParked, WireRecomposed, WireStageCompleted, WireStageRevised,
+    WireStageSkipped, WireStarted,
+};
+
 pub use corrupt_cause::CorruptCause;
 pub use journal_read_error::JournalReadError;
 pub use projection_name::ProjectionNameError;

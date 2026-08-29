@@ -21,7 +21,10 @@ core-infrastructure = { workspace = true }
 # ジャーナルを読むことが RMU の仕事そのものであり、SQLite 依存は RMU の本質的な結合である
 # (2026-08-29 オーナー裁定)。
 rusqlite = { workspace = true }
-# 本家の既定シリアライザ (`serde_json::to_vec`) が書いた payload を素の serde で戻す。
+# 読む側の永続化 DTO (`orchestration::wire`) の直列化記述。ドメインは永続化知識から中立なので
+# (`coding-rules/domain-persistence-neutrality.md`)、行のバイトをどう読むかはこの側が持つ。
+serde = { workspace = true }
+# 本家の既定シリアライザ (`serde_json::to_vec`) が書いた payload を DTO へ戻す。
 serde_json = { workspace = true }
 # 読取レコード (`JournalEntry`) が運ぶ発生時刻 (`DateTime<Utc>` — ADR-010)。
 chrono = { workspace = true }
