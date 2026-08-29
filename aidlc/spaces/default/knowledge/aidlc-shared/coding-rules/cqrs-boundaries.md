@@ -1,7 +1,8 @@
 # CQRS の依存境界 — クエリ側とコマンド側は相互に独立
 
-**裁定日**: 2026-08-24（オーナー）/ **改訂**: 2026-08-28（オーナー裁定 — RMU が
-`JournalReader` を呼ぶ二層構造へ。ADR-009 の同日追記が記録）
+**裁定日**: 2026-08-24（オーナー）/ **改訂**: 2026-08-28（RMU が `JournalReader` を呼ぶ
+二層構造へ）、2026-08-29（オーナー裁定 — **use-case / interface-adapter も側で分割**。
+「アダプタ層は両側の契約を実装してよい」の対象外条項は失効。ADR-009 の各同日追記が記録）
 **関連**: ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004（状態ファイルは
 リードモデル）/ **ADR-009（本規則の記録）**、[gateway-taxonomy.md](gateway-taxonomy.md) §4
 **機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる
@@ -73,14 +74,17 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 | `core/domain` | 共有 | — |
 | `core/use-case` | **コマンド** | `core/domain`。**クエリ側と RMU は禁止** |
 | クエリ側クレート | **クエリ** | `core/domain`。**コマンド側と RMU は禁止** |
-| **RMU クレート** | **橋** | `core/domain`（**ドメインイベント**）+ クエリ側。**`JournalReader` ポートは RMU 自身が所有**（呼ぶ者が港を持つ — 2026-08-28 裁定）。コマンド側のポート（本家 `EventStore` / `WorkflowExecutionRepository`）は禁止 |
-| `core/interface-adapter` | 実装 | `WorkflowExecutionRepositoryImpl` が本家 `EventStore` の上に立ち、`JournalReaderImpl` が RMU 所有の `JournalReader` を実装（B6 で `EventStoreImpl` は削除済み） |
+| `core-command-use-case` | **コマンド** | `core-domain`。クエリ側は禁止 |
+| `core-command-interface-adapter` | **コマンド実装** | `core-domain` + `core-command-use-case` + 本家ストア。クエリ側は禁止 |
+| **`core-query-read-model-updater`（RMU）** | **クエリ側の全実体** | `core-domain`（**ドメインイベント**）+ rusqlite。**`JournalReader` ポートも SQLite 実装（`JournalReaderImpl`）も RMU 自身が所有**（2026-08-28 / 2026-08-29 裁定 — ジャーナルを読むことが RMU の仕事そのもの）。コマンド側クレートは禁止 |
 
 読取側の契約（`JournalReader` / `ProjectionName` / `GlobalSeqNr`）を中立クレートへ
 切り出す必要は**ない** — 呼ぶのは RMU だけなので、**RMU クレート自身が所有する**
-（2026-08-28 裁定。従来の「`core/use-case` に置き、合成ルートが読んで渡す」は失効 —
-`core/use-case` は一度も呼ばない trait を所有していた）。実装は `JournalReaderImpl`
-（置き場所の最終裁定は U4 機能設計）。
+（2026-08-28 裁定）。**SQLite 実装（`JournalReaderImpl`）も RMU クレートに置く**
+（2026-08-29 オーナー裁定 — ジャーナルを読むことが RMU の仕事そのものであり、
+ストレージ依存は RMU の本質的結合）。共有部品は側の独立を DRY に優先して扱う:
+エラー分類（旧 `CorruptCause`）と I/O 写像は**側ごとに専用化**し、`StorePath` と
+イベントの直列化型判別子（manifest 定数）は共有語彙として `core-domain` に置く。
 
 **判定は `Cargo.toml` を見るだけでよい。** コマンド側クレートの依存にクエリ側が現れたら違反。
 クエリ側クレートの依存にコマンド側が現れたら違反。RMU はどちらが現れてもよい。
@@ -103,6 +107,8 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 
 ## 対象外
 
-- **アダプタ層**は両側の契約を実装してよい（ADR-009 / ADR-010）。相互依存の禁止は
-  ポートを**使う側**の規則であり、ポートを**実装する**最外層には掛からない。
+- ~~アダプタ層は両側の契約を実装してよい~~ — **失効（2026-08-29 オーナー裁定）**:
+  use-case も interface-adapter も**側で分割する**（`core-command-*` / RMU）。1 つの
+  クレートがコマンド側とクエリ側の実装を同居させてはならない。両側を知ってよいのは
+  合成ルート（U7）だけである。
 - **合成ルート**（`main.rs` / U7）は両側を知る。それが合成ルートの仕事である。

@@ -13,16 +13,18 @@ JournalReaderImpl は RMU クレート」**（初稿の論点 A は両選択肢�
 監査シャード）を書く」側であり、読取 API のユースケース層はまだ存在しないため、
 クエリ側 = RMU クレート 1 つで完結する。
 
+**命名（2026-08-29 オーナー裁定）**: `core-{command,query}-` 接頭辞で統一する。
+
 ```text
-modules/command/use-case/          パッケージ名: command-use-case（旧 core-use-case の残部）
+modules/core/command/use-case/          パッケージ名: core-command-use-case（旧 core-use-case の残部）
   workflow_execution_repository.rs / workflow_definition_repository.rs /
   rehydrated_workflow_execution.rs / repository_error.rs / corrupt_cause.rs（コマンド側専用に）
 
-modules/command/interface-adapter/ パッケージ名: command-interface-adapter（旧 core-interface-adapter の残部）
+modules/core/command/interface-adapter/ パッケージ名: core-command-interface-adapter（旧 core-interface-adapter の残部）
   workflow_execution_repository_impl.rs / workflow_definition_repository_impl.rs /
   memory/ / store_failure.rs（コマンド側写像）
 
-modules/read-model-updater/        パッケージ名: read-model-updater（クエリ側の全実体）
+modules/core/query/read-model-updater/  パッケージ名: core-query-read-model-updater（クエリ側の全実体）
   journal_reader.rs / journal_entry.rs / journal_read_error.rs /
   global_seq_nr.rs / projection_name.rs      ← 旧 core-use-case から移動（読取語彙）
   journal_reader_impl.rs                      ← 旧 core-interface-adapter から移動（オーナー裁定 —
@@ -33,17 +35,16 @@ modules/read-model-updater/        パッケージ名: read-model-updater（ク�
   state_file.rs / audit_shard.rs              投影ライタ（state_file_io.rs の転生 + 監査 86 語彙）
 ```
 
-- ディレクトリ名・パッケージ名の command- / read-model-updater 対応は論点 D（下記）。
 - `core-domain` は共有のまま（両側が依存してよい唯一の層）。
 
 ## 2. 依存グラフ（cqrs-boundaries 判定表・改訂）
 
 ```text
-core-domain               ← 共有（イベント語彙・集約）
-command-use-case          → core-domain
-command-interface-adapter → core-domain, command-use-case, event-store-adapter-rs(sqlite)
-read-model-updater        → core-domain, rusqlite, chrono
-app/aidlc (U7)            → 両側（合成ルートだけが両側を知る — RMU の起動のみ）
+core-domain                    ← 共有（イベント語彙・集約）
+core-command-use-case          → core-domain
+core-command-interface-adapter → core-domain, core-command-use-case, event-store-adapter-rs(sqlite)
+core-query-read-model-updater  → core-domain, rusqlite, chrono
+app/aidlc (U7)                 → 両側（合成ルートだけが両側を知る — RMU の起動のみ）
 ```
 
 - **コマンド側とクエリ側は互いの Cargo.toml に現れない**（相互独立が物理強制）。
