@@ -62,10 +62,20 @@ impl WorkspaceScan {
     /// 面である。同じ値でも書く先で綴りが違うので、写像を型の側に置いて取り違えを防ぐ。
     #[must_use]
     pub const fn project_type(&self) -> &'static str {
-        match self.project_type {
+        match self.project_kind() {
             BrownfieldGreenfield::Brownfield => "Brownfield",
             BrownfieldGreenfield::Greenfield => "Greenfield",
         }
+    }
+
+    /// 判定したプロジェクト種別の**値そのもの**（綴りではない）。
+    ///
+    /// 綴りは面ごとに違う（状態ファイルは `Brownfield` / `Greenfield`、`stage-graph.json` は
+    /// 小文字、ジャーナルも小文字）。値を返す口をここに 1 つ置き、面ごとの写像はそれぞれの
+    /// 面が持つ — そうしないと、ある面の綴りを変えたときに別の面のバイトが壊れる。
+    #[must_use]
+    pub const fn project_kind(&self) -> BrownfieldGreenfield {
+        self.project_type
     }
 
     /// 検出した言語（未検出は `Unknown`）。

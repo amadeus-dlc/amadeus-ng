@@ -14,13 +14,12 @@
 
 mod support;
 
-use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentExecutionId, StageCompleted,
-};
+use core_command_domain::orchestration::{IntentExecutionEvent, StageCompleted};
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
-use event_store_adapter_rs::EventStoreForSqlite;
+use core_command_interface_adapter::orchestration::{
+    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore, WireEvent,
+};
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
 
@@ -39,7 +38,7 @@ const MANIFEST: &str = "intent-execution-event/1";
 const UNPERSISTED: usize = <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION;
 
 /// 本家の SQLite イベントストア (Repository が内包しているものと同じ型)。
-type UpstreamStore = EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+type UpstreamStore = IntentExecutionSqliteStore;
 
 /// Repository の具体型 (SQLite バックエンド)。
 type Repository = IntentExecutionRepositoryImpl<UpstreamStore>;
@@ -221,9 +220,15 @@ async fn a_tampered_snapshot_payload_is_corrupt() {
 
 #[tokio::test]
 async fn a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder() {
-    // オーナー裁定 2026-08-27 (A) の**通し確認**: 集約の serde は memento 経由なので、
-    // 復号は `from_snapshot` の検査点を通る。JSON としては読めるが不変条件を破る行 —
-    // ここでは範囲外カーソル — が、ストア越しでも黙って通らないことを固定する。
+    // 復号は永続化 DTO で受けてから検査点 `IntentExecution::from_snapshot` を通る (改訂 9)。
+    // JSON としては読めるが不変条件を破る行 — ここでは範囲外カーソル — が、ストア越しでも
+    // 黙って通らないことを固定する。
+    //
+    // 分類は `InvariantViolation` である。改訂 9 以前は serde の `try_from` 失敗が本家の
+    // `DeserializationError` に畳まれるため `UndecodablePayload` にしかならなかったが、
+    // DTO を挟んだことで「読めない」と「読めたが不変条件を破る」が分離できるようになった。
+    // これは `CorruptCause::InvariantViolation` の doc（「`from_snapshot` の `Err`」）が
+    // もともと意図していた分類である。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     seed(&mut repository).await;
@@ -245,7 +250,7 @@ async fn a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder
         RepositoryError::Corrupt {
             aggregate_id: execution_id(),
             seq_nr: None,
-            cause: CorruptCause::UndecodablePayload,
+            cause: CorruptCause::InvariantViolation,
         }
     );
 }
@@ -318,14 +323,15 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
         .expect("genesis");
 
     let mut store = fixture.store();
+    // 生の行を作るので、封筒に載せるのはアダプタの永続化 DTO である。
     let bogus = EventEnvelope::new(
-        execution_id(),
+        AggregateKey::of(&execution_id()),
         2,
         at(),
-        IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        WireEvent::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
             None,
-        )),
+        ))),
     )
     .with_manifest(MANIFEST);
     store

@@ -39,7 +39,7 @@
 use std::io::ErrorKind;
 
 use core_command_domain::orchestration::{
-    ApplyError, EVENT_MANIFEST, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    ApplyError, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
 };
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{
@@ -50,16 +50,27 @@ use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreW
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 
 use super::store_failure::io_kind_of_source;
+use super::wire::{AggregateKey, WireDecodeError, WireEvent, WireSnapshot};
+
+/// ジャーナル行 `manifest` 列に書く型判別子 — **書く側の正本**。
+///
+/// 読む側 (RMU) は自前の定数を持ち、一致は横断適合テストが固定する
+/// (`coding-rules/cqrs-boundaries.md` — 共有部品は側の独立を DRY に優先する)。
+/// 綴りは `<型>/<版>` で、版を上げるのは payload の読み方が変わるときだけである。
+const EVENT_MANIFEST: &str = "intent-execution-event/1";
 
 /// 集約の最初の `seq_nr` (`Started` は必ず 1 — BR1.1)。本家 v3 はこの値で新規作成と更新を
 /// 分岐する (`is_created()` は廃止された)。
 const FIRST_SEQ_NR: usize = 1;
 
 /// SQLite ファイルを格納先にするイベントストア (本家)。
-type SqliteStore = EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+///
+/// 型引数はいずれも**この層の永続化 DTO** である — ドメイン型はストアに触れない
+/// (`coding-rules/domain-persistence-neutrality.md`)。
+pub type IntentExecutionSqliteStore = EventStoreForSqlite<AggregateKey, WireSnapshot, WireEvent>;
 
 /// 揮発の格納先にするイベントストア (本家)。
-type MemoryStore = EventStoreForMemory<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+pub type IntentExecutionMemoryStore = EventStoreForMemory<AggregateKey, WireSnapshot, WireEvent>;
 
 /// 本家のイベントストアを**単一所有**する `IntentExecutionRepository` の実装。
 ///
@@ -71,6 +82,14 @@ pub struct IntentExecutionRepositoryImpl<S> {
     store: S,
     /// 失敗の材料に添える場所 (揮発のストアには無いので `Option`)。
     location: Option<StorePath>,
+}
+
+/// 復号の失敗を `Corrupt` の原因へ写す。
+const fn decode_cause(error: &WireDecodeError) -> CorruptCause {
+    match error {
+        WireDecodeError::Malformed { .. } => CorruptCause::UndecodablePayload,
+        WireDecodeError::InvariantViolation => CorruptCause::InvariantViolation,
+    }
 }
 
 /// `apply_event` の失敗を `Corrupt` の原因へ写す。
@@ -87,7 +106,7 @@ const fn apply_cause(error: &ApplyError) -> CorruptCause {
     }
 }
 
-impl IntentExecutionRepositoryImpl<SqliteStore> {
+impl IntentExecutionRepositoryImpl<IntentExecutionSqliteStore> {
     /// SQLite ファイルのストアを開く (無ければ作る)。
     ///
     /// 親ディレクトリ (`intents/`) は upstream の既存ディレクトリなので**作らない** —
@@ -98,13 +117,15 @@ impl IntentExecutionRepositoryImpl<SqliteStore> {
     /// 親ディレクトリ欠落・権限・ディスク (`Io`) を返す。
     pub fn open(
         path: &StorePath,
-    ) -> Result<IntentExecutionRepositoryImpl<SqliteStore>, RepositoryError> {
-        let store = SqliteStore::new(path.as_path()).map_err(|error| RepositoryError::Io {
-            kind: match &error {
-                EventStoreWriteError::IOError(source) => io_kind_of_source(source.as_ref()),
-                _ => ErrorKind::Other,
-            },
-            path: Some(path.as_path().to_path_buf()),
+    ) -> Result<IntentExecutionRepositoryImpl<IntentExecutionSqliteStore>, RepositoryError> {
+        let store = IntentExecutionSqliteStore::new(path.as_path()).map_err(|error| {
+            RepositoryError::Io {
+                kind: match &error {
+                    EventStoreWriteError::IOError(source) => io_kind_of_source(source.as_ref()),
+                    _ => ErrorKind::Other,
+                },
+                path: Some(path.as_path().to_path_buf()),
+            }
         })?;
         Ok(IntentExecutionRepositoryImpl {
             store,
@@ -119,15 +140,15 @@ impl IntentExecutionRepositoryImpl<SqliteStore> {
     }
 }
 
-impl IntentExecutionRepositoryImpl<MemoryStore> {
+impl IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
     /// 揮発のストアを持つ Repository を作る (テストとユースケース試験の足場)。
     ///
     /// テストダブルではなく**本家の memory バックエンド**であり、手順は SQLite と 1 行も
     /// 違わない。だからこそ契約テストが両方に同じ約束を課せる (BR2.7)。
     #[must_use]
-    pub fn in_memory() -> IntentExecutionRepositoryImpl<MemoryStore> {
+    pub fn in_memory() -> IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
         IntentExecutionRepositoryImpl {
-            store: MemoryStore::new(),
+            store: IntentExecutionMemoryStore::new(),
             location: None,
         }
     }
@@ -149,7 +170,7 @@ impl<S: Clone> IntentExecutionRepositoryImpl<S> {
 
 impl<S> IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentExecutionId, A = IntentExecution, P = IntentExecutionEvent>,
+    S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
 {
     /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
     ///
@@ -159,14 +180,14 @@ where
     /// イベントがその 2 つを持たなくなったことで**構成不能**になった (型による強制 — B6 で
     /// `seq_nr = 0` に対して行ったのと同じ形)。
     fn envelope(
-        event: IntentExecutionEvent,
+        event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
-    ) -> EventEnvelope<IntentExecutionId, IntentExecutionEvent> {
+    ) -> EventEnvelope<AggregateKey, WireEvent> {
         EventEnvelope::new(
-            aggregate.id().clone(),
+            AggregateKey::of(aggregate.id()),
             aggregate.seq_nr(),
             *aggregate.last_updated_at(),
-            event,
+            WireEvent::of(event),
         )
         .with_manifest(EVENT_MANIFEST)
     }
@@ -238,7 +259,7 @@ where
     /// ストアに実在する楽観 version (行が無い・読めないときは 0)。競合の材料にだけ使う。
     async fn stored_version(&self, id: &IntentExecutionId) -> usize {
         self.store
-            .get_latest_snapshot_by_id(id)
+            .get_latest_snapshot_by_id(&AggregateKey::of(id))
             .await
             .ok()
             .flatten()
@@ -248,7 +269,7 @@ where
 
 impl<S> IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentExecutionId, A = IntentExecution, P = IntentExecutionEvent>,
+    S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
 {
     /// ジャーナル先頭の `Started` から、開始時点の intent を読み直す。
     ///
@@ -269,7 +290,7 @@ where
     async fn genesis_intent(&self, id: &IntentExecutionId) -> Result<Intent, RepositoryError> {
         let journal = self
             .store
-            .get_events_by_id_since_seq_nr(id, FIRST_SEQ_NR)
+            .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
             .await
             .map_err(|error| self.read_error(&error, id))?;
         let corrupt = |seq_nr: Option<usize>| RepositoryError::Corrupt {
@@ -281,7 +302,15 @@ where
         if genesis.manifest() != EVENT_MANIFEST {
             return Err(corrupt(Some(genesis.seq_nr())));
         }
-        match genesis.payload() {
+        let decoded = genesis
+            .payload()
+            .to_domain()
+            .map_err(|error| RepositoryError::Corrupt {
+                aggregate_id: id.clone(),
+                seq_nr: Some(genesis.seq_nr()),
+                cause: decode_cause(&error),
+            })?;
+        match decoded {
             IntentExecutionEvent::Started(started) => Ok(started.intent().clone()),
             _ => Err(corrupt(Some(genesis.seq_nr()))),
         }
@@ -290,7 +319,7 @@ where
 
 impl<S> IntentExecutionRepository for IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentExecutionId, A = IntentExecution, P = IntentExecutionEvent>,
+    S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
 {
     async fn find_by_id(
         &self,
@@ -298,14 +327,14 @@ where
     ) -> Result<RehydratedIntentExecution, RepositoryError> {
         let snapshot = self
             .store
-            .get_latest_snapshot_by_id(id)
+            .get_latest_snapshot_by_id(&AggregateKey::of(id))
             .await
             .map_err(|error| self.read_error(&error, id))?;
         let Some(snapshot) = snapshot else {
             // ジャーナル行が 1 件も無ければ「まだ無い」、あるなら「壊れている」(BR1.2)。
             let journal = self
                 .store
-                .get_events_by_id_since_seq_nr(id, FIRST_SEQ_NR)
+                .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
                 .await
                 .map_err(|error| self.read_error(&error, id))?;
             return Err(if journal.is_empty() {
@@ -322,7 +351,16 @@ where
         };
         // 楽観 version はスナップショット行の列が正本 — 封筒から取り出して呼出側へ渡す (BR5.3)。
         let version = snapshot.version();
-        let mut aggregate = snapshot.into_aggregate();
+        // 復号は DTO で受け、検査点 (`IntentExecution::from_snapshot`) を通してドメインへ戻す。
+        let mut aggregate =
+            snapshot
+                .into_aggregate()
+                .to_domain()
+                .map_err(|error| RepositoryError::Corrupt {
+                    aggregate_id: id.clone(),
+                    seq_nr: None,
+                    cause: decode_cause(&error),
+                })?;
         // 再生には計画が要る。集約は intent を ID でしか参照しない
         // (coding-rules/aggregate-references.md) ので、**ジャーナル先頭の `Started` から
         // その時点の intent を読み直す**。`Started` は genesis 専用なので必ず 1 件目にある。
@@ -335,7 +373,10 @@ where
         // `apply_event` が `SequenceExhausted` で止める (黙って wrap / panic しない — NFR4.3)。
         let envelopes = self
             .store
-            .get_events_by_id_since_seq_nr(id, aggregate.seq_nr().saturating_add(1))
+            .get_events_by_id_since_seq_nr(
+                &AggregateKey::of(id),
+                aggregate.seq_nr().saturating_add(1),
+            )
             .await
             .map_err(|error| self.read_error(&error, id))?;
         for envelope in &envelopes {
@@ -350,13 +391,17 @@ where
                     cause: CorruptCause::UndecodablePayload,
                 });
             }
+            let event =
+                envelope
+                    .payload()
+                    .to_domain()
+                    .map_err(|error| RepositoryError::Corrupt {
+                        aggregate_id: id.clone(),
+                        seq_nr: Some(envelope.seq_nr()),
+                        cause: decode_cause(&error),
+                    })?;
             aggregate
-                .apply_event(
-                    &intent,
-                    envelope.seq_nr(),
-                    *envelope.occurred_at(),
-                    envelope.payload(),
-                )
+                .apply_event(&intent, envelope.seq_nr(), *envelope.occurred_at(), &event)
                 .map_err(|error| RepositoryError::Corrupt {
                     aggregate_id: id.clone(),
                     seq_nr: Some(envelope.seq_nr()),
@@ -375,10 +420,10 @@ where
         // 新規作成と更新の分岐は本家 v3 と同じ導出 — 封筒の `seq_nr == 1` が新規作成である。
         // 新規作成の `expected_version` は規約上 0 で、そうでない組み合わせは本家が
         // `ContractViolation` で拒否する (我々は握り潰さず `Corrupt` に写す)。
-        let envelope = IntentExecutionRepositoryImpl::<S>::envelope(event.clone(), aggregate);
+        let envelope = IntentExecutionRepositoryImpl::<S>::envelope(event, aggregate);
         let outcome = self
             .store
-            .persist_event_and_snapshot(envelope, aggregate.clone(), expected_version)
+            .persist_event_and_snapshot(envelope, WireSnapshot::of(aggregate), expected_version)
             .await;
         match outcome {
             Ok(()) => Ok(()),
@@ -417,7 +462,7 @@ mod tests {
 
     /// 未永続の集約が提示する版 (新規作成の `expected_version`)。
     const UNPERSISTED: usize =
-        <IntentExecutionRepositoryImpl<MemoryStore> as IntentExecutionRepository>::UNPERSISTED_VERSION;
+        <IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> as IntentExecutionRepository>::UNPERSISTED_VERSION;
 
     fn at() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
@@ -455,7 +500,7 @@ mod tests {
         IntentExecution::start(intent(), intent_plan(), at())
     }
 
-    fn repository() -> IntentExecutionRepositoryImpl<MemoryStore> {
+    fn repository() -> IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
         IntentExecutionRepositoryImpl::in_memory()
     }
 
@@ -481,13 +526,15 @@ mod tests {
         // 持っており、イベントは持たない — 「別集約のイベントを混ぜる」「通番を食い違わせる」
         // という旧前提検査の対象は**構成不能**になった (型による強制)。
         let (aggregate, event) = genesis();
-        let envelope =
-            IntentExecutionRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
-        assert_eq!(envelope.aggregate_id(), &intent());
+        let envelope = IntentExecutionRepositoryImpl::<IntentExecutionMemoryStore>::envelope(
+            &event, &aggregate,
+        );
+        assert_eq!(envelope.aggregate_id(), &AggregateKey::of(&intent()));
         assert_eq!(envelope.seq_nr(), aggregate.seq_nr());
         assert_eq!(envelope.occurred_at(), aggregate.last_updated_at());
         assert_eq!(envelope.manifest(), EVENT_MANIFEST);
-        assert_eq!(envelope.payload(), &event);
+        // 封筒に載るのは DTO である。ドメインへ戻して同値であることを確かめる。
+        assert_eq!(envelope.payload().to_domain().expect("復号できる"), event);
     }
 
     #[tokio::test]
@@ -495,9 +542,11 @@ mod tests {
         // 封筒の識別子は引数ではなく集約から来るので、別集約は別の行になる。
         let (aggregate, event) = genesis();
         let other = IntentExecution::start(other_intent(), intent_plan(), at()).0;
-        let first =
-            IntentExecutionRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
-        let second = IntentExecutionRepositoryImpl::<MemoryStore>::envelope(event, &other);
+        let first = IntentExecutionRepositoryImpl::<IntentExecutionMemoryStore>::envelope(
+            &event, &aggregate,
+        );
+        let second =
+            IntentExecutionRepositoryImpl::<IntentExecutionMemoryStore>::envelope(&event, &other);
         assert_ne!(first.aggregate_id(), second.aggregate_id());
     }
 

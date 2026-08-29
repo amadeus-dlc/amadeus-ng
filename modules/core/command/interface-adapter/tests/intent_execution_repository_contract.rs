@@ -10,24 +10,18 @@
 
 mod support;
 
-use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentExecutionId,
-};
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
-use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
+use core_command_interface_adapter::orchestration::{
+    IntentExecutionMemoryStore, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
+};
 use support::{StoreFixture, contract};
 use tempfile::TempDir;
 
 /// 揮発のストアを内包した Repository。
-type MemoryRepository = IntentExecutionRepositoryImpl<
-    EventStoreForMemory<IntentExecutionId, IntentExecution, IntentExecutionEvent>,
->;
+type MemoryRepository = IntentExecutionRepositoryImpl<IntentExecutionMemoryStore>;
 
 /// SQLite ファイルのストアを内包した Repository。
-type SqliteRepository = IntentExecutionRepositoryImpl<
-    EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>,
->;
+type SqliteRepository = IntentExecutionRepositoryImpl<IntentExecutionSqliteStore>;
 
 /// 本家 memory バックエンドの試験装置。
 ///

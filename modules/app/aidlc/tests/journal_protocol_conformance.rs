@@ -57,7 +57,9 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
+use core_command_interface_adapter::orchestration::{
+    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
+};
 use core_command_use_case::orchestration::{
     IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
 };
@@ -65,7 +67,6 @@ use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
 };
-use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -95,7 +96,7 @@ const WRITERS: usize = 2;
 const STAGES: usize = 24;
 
 /// 本家の SQLite イベントストア (射影の観測に使う読取ハンドル)。
-type UpstreamStore = EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+type UpstreamStore = IntentExecutionSqliteStore;
 
 /// Repository の具体型 (SQLite バックエンド)。
 type Repository = IntentExecutionRepositoryImpl<UpstreamStore>;
@@ -433,7 +434,7 @@ async fn assert_projection(
 
     let snapshot = store
         .snapshot_view()
-        .get_latest_snapshot_by_id(&execution_id())
+        .get_latest_snapshot_by_id(&AggregateKey::of(&execution_id()))
         .await
         .expect("スナップショットは読める");
     let (version, seq_nr) =

@@ -18,25 +18,22 @@
 
 mod support;
 
-use core_command_domain::orchestration::{
-    AutonomyMode, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-};
+use core_command_domain::orchestration::AutonomyMode;
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
+use core_command_interface_adapter::orchestration::{
+    IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
+};
 use core_command_use_case::orchestration::{IntentExecutionRepository, RehydratedIntentExecution};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
 };
-use event_store_adapter_rs::EventStoreForSqlite;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
 use support::{advance, at, execution_id, intent, store_genesis};
 
 /// Repository の具体型 (SQLite バックエンド)。
-type Repository = IntentExecutionRepositoryImpl<
-    EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>,
->;
+type Repository = IntentExecutionRepositoryImpl<IntentExecutionSqliteStore>;
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
