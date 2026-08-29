@@ -175,3 +175,62 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         Ok(last)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::{AuditShardWriteError, StateFileReadError};
+
+    #[test]
+    fn every_catch_up_failure_renders_its_material() {
+        let read: CatchUpError = JournalReadError::Io {
+            kind: std::io::ErrorKind::WouldBlock,
+            path: None,
+        }
+        .into();
+        assert_eq!(read.to_string(), "read: io: WouldBlock at -");
+
+        let projection: CatchUpError = ProjectionError::ScopeUnknown.into();
+        assert_eq!(projection.to_string(), "projection: scope unknown");
+
+        let state_read =
+            CatchUpError::StateFileRead(StateFileReadError::new("State file not found: /x"));
+        assert_eq!(
+            state_read.to_string(),
+            "state file read: State file not found: /x"
+        );
+
+        let state_write = CatchUpError::StateFileWrite(StateFileWriteError::ReadOnlyTarget {
+            message: "state file is read-only: /x".to_string(),
+        });
+        assert!(
+            state_write.to_string().starts_with("state file write: "),
+            "実際: {state_write}"
+        );
+
+        let shard_write = CatchUpError::AuditShardWrite(AuditShardWriteError::Io {
+            kind: std::io::ErrorKind::PermissionDenied,
+        });
+        assert_eq!(
+            shard_write.to_string(),
+            "audit shard write: io: PermissionDenied"
+        );
+
+        let boxed: Box<dyn std::error::Error> = Box::new(projection);
+        assert_eq!(boxed.to_string(), "projection: scope unknown");
+    }
+
+    #[test]
+    fn the_targets_keep_both_paths_together() {
+        let targets = ProjectionTargets::new("/w/aidlc-state.md", "/w/audit/host-abcd1234.md");
+        assert_eq!(targets.state_file(), Path::new("/w/aidlc-state.md"));
+        assert_eq!(
+            targets.audit_shard(),
+            Path::new("/w/audit/host-abcd1234.md")
+        );
+        assert_eq!(
+            targets,
+            ProjectionTargets::new("/w/aidlc-state.md", "/w/audit/host-abcd1234.md")
+        );
+    }
+}

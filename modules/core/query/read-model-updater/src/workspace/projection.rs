@@ -527,6 +527,51 @@ mod tests {
         )
     }
 
+    /// 未裁定分岐の材料に使う `Started`（集約を通さず直接組む — ここで見たいのは投影の
+    /// 分岐であって、集約のガードではない）。
+    fn started_event(stages: Vec<core_domain::orchestration::StageEntry>) -> Started {
+        use core_domain::orchestration::StartRequest;
+        use core_domain::workflow_definition::{DefinitionRevision, WorkflowDefinitionId};
+        Started::new(
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            &StartRequest::new("classic", "unit"),
+            stages,
+        )
+    }
+
+    #[test]
+    fn a_started_event_without_stages_names_no_stage_in_the_refusal() {
+        // `stages()` が空なら材料が無いので `-` を置く（材料の欠落で失敗そのものを潰さない）。
+        assert_eq!(
+            started_blocked(&started_event(Vec::new())),
+            ProjectionError::DefinitionLookupRequired {
+                stage: "-".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn every_projection_refusal_renders_its_material() {
+        assert_eq!(ProjectionError::ScopeUnknown.to_string(), "scope unknown");
+        assert_eq!(
+            ProjectionError::DefinitionLookupRequired {
+                stage: "domain-design".to_string()
+            }
+            .to_string(),
+            "definition lookup required: stage domain-design"
+        );
+        // 綴りを取り違えたキーは投影の材料として拒否される（本体の定数は全て文法内なので、
+        // この経路は写像そのものを直接固定しておく）。
+        let malformed = AuditFieldKey::parse("1x").expect_err("文法外");
+        assert_eq!(
+            ProjectionError::from(malformed).to_string(),
+            "audit field key: malformed audit field key: 1x"
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(ProjectionError::ScopeUnknown);
+        assert_eq!(boxed.to_string(), "scope unknown");
+    }
+
     #[test]
     fn the_recomposed_row_lists_the_stages_and_falls_back_to_the_none_literal() {
         let recomposed = Recomposed::new(
@@ -699,6 +744,21 @@ mod tests {
         // 描けない（contract-summary §4 が U4 へ持ち越した未裁定項目）。誤ったバイトを
         // 書くくらいなら止まる、という選択をここで固定しておく。
         let blocked = [
+            WorkflowExecutionEvent::Started(started_event(vec![
+                core_domain::orchestration::StageEntry::new(
+                    slug("state-init"),
+                    core_domain::workflow_definition::PhaseId::Initialization,
+                    core_domain::workflow_definition::PlanAction::Execute,
+                    false,
+                ),
+            ])),
+            WorkflowExecutionEvent::Jumped(Jumped::new(
+                core_domain::orchestration::JumpDirection::Forward,
+                slug("a"),
+                slug("b"),
+                Vec::new(),
+                Vec::new(),
+            )),
             WorkflowExecutionEvent::StageCompleted(StageCompleted::new(slug("a"), Some(slug("b")))),
             WorkflowExecutionEvent::GateApproved(GateApproved::new(
                 slug("a"),

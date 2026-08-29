@@ -178,6 +178,36 @@ mod tests {
     }
 
     #[test]
+    fn a_shard_whose_metadata_cannot_be_read_fails_rather_than_guessing() {
+        // 「ヘッダが要るか」はサイズで決める。サイズが読めないなら決められないので、
+        // 勝手に「新規だからヘッダを書く」と推測せずに止める。
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().expect("一時 dir");
+        let parent = dir.path().join("audit");
+        fs::create_dir(&parent).expect("親を作る");
+        let path = parent.join("host-abcd1234.md");
+        fs::write(&path, b"x").expect("シャードを置く");
+
+        let mut perms = fs::metadata(&parent).expect("親の情報").permissions();
+        perms.set_mode(0o000);
+        fs::set_permissions(&parent, perms).expect("親を閉じる");
+
+        let error = append(&path, BLOCK);
+
+        // 後始末（TempDir の drop が親を消せるようにする）。
+        let mut perms = fs::metadata(&parent).expect("親の情報").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&parent, perms).expect("親を開け直す");
+
+        assert_eq!(
+            error,
+            Err(AuditShardWriteError::Io {
+                kind: io::ErrorKind::PermissionDenied
+            })
+        );
+    }
+
+    #[test]
     fn a_failure_to_open_carries_its_kind() {
         let dir = tempdir().expect("一時 dir");
         // 親の位置に regular file がいるので mkdir -p が ENOTDIR で失敗する。
