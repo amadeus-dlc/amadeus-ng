@@ -8,12 +8,17 @@
 
 ## 0. 結論（先に）
 
-**受入基準 1〜11 はすべて緑**である。固定裁定 1〜5、2026-08-29 に訂正された `Conflict`
-再試行の裁定、所有ファイル規律の例外承認（`None,` 削除 5 箇所）、結線テスト 1 本の追加も
-すべて反映した。
+**受入基準 1〜11 はすべて緑**である。固定裁定 1〜6、2026-08-29 に訂正された `Conflict`
+再試行の裁定、所有ファイル規律の例外承認（`None,` 削除 5 箇所）、結線テスト 1 本の追加、
+そして**裁定 7（改名・CQS 適合形への再設計・`Resumed` の入力型からの削除）**をすべて
+反映した。
 
-ワークスペース全体で **773 テスト全緑**（baseline 744 から +29、退行 0）。
-カバレッジは head 98.53%（絶対 90% 床・相対ゲートとも PASS）。
+ワークスペース全体で **772 テスト全緑**（baseline 744 から +28、退行 0）。
+カバレッジは head 98.53229%（絶対 90% 床・相対ゲートとも PASS）。
+
+裁定 7 により、当初 §7 (e) で「レビューで裁定されたい」としていた CQS 逸脱は
+**設計の変更で解消**した（例外は不要になった）。同じく §7 (d) の
+`clippy::large_enum_variant` の allow も、`ReportOutcome` の削除とともに消えた。
 
 字義と実装がずれている点が 1 つだけある — 受入基準 9 の「依存が `core-command-domain`
 1 本のまま」に対し、外部クレート `chrono` を `[dev-dependencies]` から `[dependencies]` へ
@@ -24,34 +29,37 @@ dev-dependencies を含め満たしている。
 
 ## 1. 実装した経路と、対応する集約コマンド
 
-`ReportUseCase::execute` の経路表。左端はユースケースの入力型
-`ReportedVerdict` / `ReportedTransition` の変種、右端は打った集約コマンドである。
+`CommitVerdictUseCase::execute` の経路表（**裁定 7 反映後**）。左端はユースケースの入力型
+`ReportedTransition` の変種、右端は打った集約コマンドである。**成功時の戻り値は常に
+`Ok(())`** で、経路の区別は外へ出さない。
 
-| 入力（正規化済み） | 対応する `Verdict` | 打つ集約コマンド | コミット | 備考 |
-|---|---|---|---|---|
-| `Transition(AwaitingApproval { artifacts })` | `AwaitingApproval` | `open_gate(artifacts, at)` | する | |
-| 同上・ただし現在の印が `[?]` | `AwaitingApproval` | **打たない** | **しない** | `GateAlreadyOpen` を返す（golden `awaiting-approval-repeat` は監査行・状態差分とも空） |
-| `Transition(Forward { user_input })`・カーソルがゲート付き | `Forward` | `approve_gate(user_input, at)` | する | どちらを打つかは集約の `gated(cursor)` クエリで決める |
-| `Transition(Forward { user_input })`・カーソルが非ゲート | `Forward` | `complete_stage(at)` | する | 同上（initialization フェーズ） |
-| `Transition(Rejected { feedback })` | `Rejected` | `reject_gate(feedback, at)` | する | 改訂回数の +1 は集約が行う（BR1.4） |
-| `Transition(Revised)` | `Revised` | `revise_stage(at)` | する | |
-| `Transition(Skipped { reason })` | `Skipped` | `skip_stage(reason, at)` | する | CONDITIONAL / 実効 SKIP の判定は集約（BR1.5） |
-| `Resumed` | `Resume` | **打たない**（再構成もしない） | **しない** | `ResumeRouting` を返す |
-| `stage` 引数がカーソル手前のステージを名指し | 経路によらず先に判定 | `stale_report(index)`（クエリ） | **しない** | `AlreadyDone` を返す（BR1.9） |
+| 入力（正規化済み） | 対応する `Verdict` | 打つ集約コマンド | コミット | 戻り値 | 備考 |
+|---|---|---|---|---|---|
+| `AwaitingApproval { artifacts }` | `AwaitingApproval` | `open_gate(artifacts, at)` | する | `Ok(())` | |
+| 同上・ただし現在の印が `[?]` | `AwaitingApproval` | **打たない** | **しない** | `Ok(())` | golden `awaiting-approval-repeat` は監査行・状態差分とも空 |
+| `Forward { user_input }`・カーソルがゲート付き | `Forward` | `approve_gate(user_input, at)` | する | `Ok(())` | どちらを打つかは集約の `gated(cursor)` クエリで決める |
+| `Forward { user_input }`・カーソルが非ゲート | `Forward` | `complete_stage(at)` | する | `Ok(())` | 同上（initialization フェーズ） |
+| `Rejected { feedback }` | `Rejected` | `reject_gate(feedback, at)` | する | `Ok(())` | 改訂回数の +1 は集約が行う（BR1.4） |
+| `Revised` | `Revised` | `revise_stage(at)` | する | `Ok(())` | |
+| `Skipped { reason }` | `Skipped` | `skip_stage(reason, at)` | する | `Ok(())` | CONDITIONAL / 実効 SKIP の判定は集約（BR1.5） |
+| `stage` 引数がカーソル手前のステージを名指し | 経路によらず先に判定 | `stale_report(index)`（クエリ。戻り値は捨てる） | **しない** | `Ok(())` | BR1.9 |
 
 補足:
 
-- **`Resumed` だけが型の外側にいる。** 入力型を
-  `ReportedVerdict { Transition(ReportedTransition), Resumed }` の 2 段にしたのは、
-  「再開は集約に届かない」を型の事実にするためである。1 段の 6 変種にすると
-  ユースケース側の `match` に到達不能な腕が残り、`clippy::unreachable`（workspace で deny）
-  を避けるための死んだ分岐がカバレッジに穴を開ける。
+- **`resume` / `resumed` は入力型に無い**（裁定 7）。再開は遷移をコミットせず、コマンド名を
+  提示するだけのルーティングなので、その分岐は Controller（U7）が**ユースケースへ届く手前で**
+  行う（`use-case-rules.md` §3「resume 4 択はルーティング（コマンド名の提示）のみ」
+  「Controller が手前で分岐する」）。upstream も `handleReport` が `RESUME_RESULTS` を早期に
+  `handleResumeReport` へ振り分けており、同じ構造である。**FR2.1 の「resumed」はこの U7 側
+  ルーティングで満たされる。** 本 Bolt の当初形は入力型に `Resumed` を持たせており、規則に
+  反していた。
 - **入力に生の文字列は無い。** `approved` / `completed` / `complete` / `done` の同義畳み込みは
-  既存のドメイン型 `Verdict::parse` が持っており、そこから `ReportedVerdict` を組むのは U7 の
-  仕事である。対応が 1:1 であることは
-  `every_reported_verdict_projects_onto_one_domain_verdict` が固定した。
-- **出力に文言は無い。** `ReportOutcome` は材料（イベント・ステージ・`NextDecision`）だけを
-  運ぶ。「Committed approve for "…" (scope: …)」の逐語は U7 の Presenter が組む。
+  既存のドメイン型 `Verdict::parse` が持っており、そこから `ReportedTransition` を組むのは
+  U7 の仕事である。対応が 1:1 であることは
+  `every_reported_transition_projects_onto_one_domain_verdict` が固定した
+  （`Verdict` 6 分類のうち、ここへ来るのは `Resume` を除く 5 つ）。
+- **成功時の戻り値が無い。** 「何をコミットしたか」は合成ルート（U7）が catch_up 後の
+  リードモデルから導く（§7 (e)）。
 - **集約とポートの `Err` はそのまま伝播する。** 握り潰し・言い換えはしない。持っている
   再試行の政策は `Conflict` 1 回だけである（§2）。
 - **楽観 version は `find_by_id` が返した値そのもの**を `store` に渡す。`aggregate.seq_nr()`
@@ -79,7 +87,7 @@ slug から `StageIndex` への解決は、集約の公開読取モデル（`sta
 
 ```rust
 match self.attempt(intent_id, stage, transition.clone(), occurred_at).await {
-    Err(ReportError::Repository(RepositoryError::Conflict { .. })) => {
+    Err(CommitError::Repository(RepositoryError::Conflict { .. })) => {
         self.attempt(intent_id, stage, transition, occurred_at).await
     }
     settled => settled,
@@ -167,7 +175,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 
 ---
 
-## 4. 裁定 1・3・4・5 の遵守
+## 4. 裁定 1・3・4・5・6・7 の遵守
 
 | 裁定 | 遵守の証拠 |
 |---|---|
@@ -176,11 +184,12 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | 3. `StoreVersion` newtype 化は却下 | `StoreVersion` の grep は `modules/` `tools/` `docs/` で 0 件。ポート doc の「U5/U6 の境界強化候補として記録してある」を削除し、却下理由（本家 v3.0.0 が `expected_version: usize` で定めた語彙であり、包み直しは Conformist 方針への違反。`coding-rules/upstream-contracts.md`）を書いた |
 | 4. 「再水和」を使わない | 本 Bolt で新規に書いた散文・doc コメントはすべて「再構成」。既存 48 ファイルと型名 `RehydratedWorkflowExecution` の一括置換は行っていない（対象外） |
 | 5. FR2.2 は対象外 | レシート述語・verification 面には一切触れていない |
-| 追加通知: 新規コードで `CorruptCause` への結合を増やさない（裁定 6 は B11 着地後の追随 PR） | 実測: 新規 6 ファイルの `CorruptCause` / `Corrupt` 参照は **0 件**。本 Bolt の `modules/` 差分の**追加行**で `Corrupt` に触れた行も **0 件**。`repository_error.rs` は origin/main と**バイト同一**（差分 0）なので、裁定 6 の追随 PR は本 Bolt の diff と衝突しない |
+| 6. 新規コードで `CorruptCause` への結合を増やさない（本体の是正は B11 着地後の追随 PR） | 実測: 新規 6 ファイルの `CorruptCause` / `Corrupt` 参照は **0 件**。本 Bolt の `modules/` 差分の**追加行**で `Corrupt` に触れた行も **0 件**。`repository_error.rs` は origin/main と**バイト同一**（差分 0）なので、裁定 6 の追随 PR は本 Bolt の diff と衝突しない |
+| 7. 改名・CQS 適合形・`Resumed` 削除 | ①`CommitVerdictUseCase` / `CommitError` へ改名し、ファイル名・`mod.rs` の `pub use`・結線テスト・doc の言及もすべて追随（`modules/` `tools/` の旧名 grep は 0 件）。②`execute(...) -> Result<(), CommitError>` へ変更し `report_outcome.rs` を削除。何もコミットしない成功 2 経路も `Ok(())`。③`ReportedVerdict` ラッパーを削除し入力は `ReportedTransition`（5 経路）を直接受ける。resume の分岐が U7 の責務であることは型の doc に明記。④集約（domain）は触っていない — `approve_gate` がイベントを返す形もそのまま |
 
 ---
 
-## 5. 追加・変更したテスト（新規 29 本）
+## 5. 追加・変更したテスト（新規 28 本）
 
 ### domain（`workflow_execution.rs` — 追加 4・削除 1、313 → 316）
 
@@ -194,21 +203,24 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 
 補助フィクスチャとして `start_from_phased_plan` / `phased` / `approval_boundary` を追加した。
 
-### use-case（追加 25 本、18 → 43）
+### use-case（追加 24 本、18 → 42）
 
-`report_use_case.rs`（20 本）:
+裁定 7 でテストは**戻り値アサートから効果の観測へ**書き換えた。`execute` は成功しても値を
+返さないので、コミット内容はテストダブルに残った痕跡（`committed()` / `store_attempts()` /
+`version()`）で固定する。no-op 経路は「`Ok(())` かつ `store_attempts() == 0`」である。
+
+`commit_verdict_use_case.rs`（19 本）:
 
 | テスト | 分類 |
 |---|---|
 | `an_awaiting_approval_report_opens_the_gate` | 正常系（経路） |
-| `a_repeated_awaiting_approval_report_commits_nothing` | no-op（golden `awaiting-approval-repeat`） |
+| `a_repeated_awaiting_approval_report_commits_nothing` | no-op（golden `awaiting-approval-repeat`）。`store_attempts() == 0` で「書込を試みない」まで固定 |
 | `a_forward_report_on_a_gated_stage_approves_the_gate` | 正常系（経路） |
 | `a_forward_report_on_an_ungated_stage_completes_the_stage` | 正常系（`gated` クエリでの分岐） |
 | `a_rejected_report_carries_the_feedback` | 正常系（経路） |
 | `a_revised_report_re_enters_the_gate` | 正常系（経路） |
 | `a_skipped_report_carries_the_reason` | 正常系（経路） |
-| `a_resume_report_routes_without_touching_the_aggregate` | no-op。**空のストアでも成功する**ことが「再構成すらしていない」証拠 |
-| `a_re_report_of_a_stage_the_cursor_has_passed_commits_nothing` | 冪等（BR1.9） |
+| `a_re_report_of_a_stage_the_cursor_has_passed_commits_nothing` | 冪等（BR1.9）。同じく `store_attempts() == 0` |
 | `naming_the_cursor_explicitly_still_takes_the_normal_route` | 境界条件（`--stage` がカーソル自身） |
 | `a_report_that_names_a_stage_outside_the_plan_is_refused` | 異常系（`UnknownStage`） |
 | `a_report_that_names_a_stage_the_cursor_has_not_reached_is_refused_by_the_aggregate` | 異常系（`CommandError::NotStale` の伝播） |
@@ -219,20 +231,21 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | `a_command_the_aggregate_refuses_is_propagated_verbatim` | 異常系（`CheckboxPrecondition` の逐語伝播 + 1 バイトも書かない） |
 | `the_phase_boundary_comes_from_the_aggregate_not_from_the_use_case` | 層の境界（裁定 2 の横断確認） |
 | `approving_the_last_stage_reports_no_next_stage` | 境界条件（`next_stage` / `phase_boundary` とも `None`） |
-| `every_reported_verdict_projects_onto_one_domain_verdict` | 入力型とドメイン `Verdict` の 1:1 |
+| `every_reported_transition_projects_onto_one_domain_verdict` | 入力型 5 変種とドメイン `Verdict` の 1:1（`Resume` は来ない） |
 
-`report_error.rs`（5 本）: `a_repository_failure_is_carried_verbatim` /
+`commit_error.rs`（5 本）: `a_repository_failure_is_carried_verbatim` /
 `a_refused_command_is_carried_verbatim` / `an_unknown_stage_names_the_slug_it_could_not_resolve` /
 `the_failure_is_a_std_error` / `failures_compare_by_value`。
 
 ### interface-adapter（新規ファイル 1・テスト 1 本）
 
-`tests/report_use_case_wiring_test.rs` —
+`tests/commit_verdict_use_case_wiring_test.rs` —
 `the_use_case_commits_a_transition_through_the_real_repository`。契約 C3 ④ を満たす結線テスト。
-実物の `WorkflowExecutionRepositoryImpl::in_memory()` を `ReportUseCase` に注入して 1 遷移を
-コミットし、**同じストアを指す別の口（`reopened()`）から再構成**して行が本当に載ったことを
-確かめる（`seq_nr == 2` / `version == 2` / カーソルが次のステージへ進んでいる）。
-網羅は use-case 側の fake テストが持つ。
+実物の `WorkflowExecutionRepositoryImpl::in_memory()` を `CommitVerdictUseCase` に注入して
+1 遷移をコミットし、**同じストアを指す別の口（`reopened()`）から再構成**して行が本当に載った
+ことを確かめる（`seq_nr == 2` / `version == 2` / カーソルが `intent-capture` へ進み着手済み）。
+検証が戻り値ではなく読み直しなのは仕様である — 合成ルートも catch_up 後のリードモデルを
+読んで Presenter の材料を得る。網羅は use-case 側の fake テストが持つ。
 
 ### TDD の進め方（実測）
 
@@ -242,10 +255,13 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 2. `approve_gate` の引数廃止と `crossed_phase_boundary` を実装して **green**（316 本）。
 3. use-case: `report_use_case.rs` に**テストモジュールだけ**を書き、`mod.rs` へ配線して
    **red**（`E0583: file not found for module report_error / report_outcome / reported_verdict`、
-   `E0432: unresolved import ReportUseCase`）を確認。
+   `E0432: unresolved import ReportUseCase`）を確認（型名は裁定 7 で改名される前のもの）。
 4. 4 型を実装して **green**。
 5. `Conflict` 再試行の訂正裁定を受けて、再試行の 2 本を先に書き足してから `attempt` の
    括り出しとテストダブルの台本化を実装。
+6. 裁定 7（改名 + CQS 適合形 + `Resumed` 削除）は**既存テストの書き換え**なので red-green の
+   サイクルは踏んでいない。戻り値アサートを効果の観測へ移し、resume のテストを削除し、
+   全ゲートを回し直して緑を確認した。
 
 ### テストダブルの統合と台本化
 
@@ -268,9 +284,9 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | 1 | `cargo fmt --all --check` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo fmt --all --check` | **緑**（exit 0）。`tools/lint` は本 Bolt で 1 行も触っていない |
 | 2 | `cargo clippy --workspace --all-targets -- -D warnings` | 同上 | **緑**（exit 0） |
 | 3 | `cargo lint` | `CARGO_TARGET_DIR=$PWD/target-delegate-lint cargo lint` | **緑**（exit 0、所見 0 件） |
-| 4 | `cargo test --workspace` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo test --workspace` | **緑**。**773 passed / 0 failed**（baseline 744 から +29、退行 0） |
+| 4 | `cargo test --workspace` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo test --workspace` | **緑**。**772 passed / 0 failed**（baseline 744 から +28、退行 0） |
 | 5 | `scripts/quint-gate.sh` | `CARGO_TARGET_DIR=$PWD/target-delegate bash scripts/quint-gate.sh` | **緑**（exit 0、`[PASS] quint gate: all steps green`） |
-| 6 | `scripts/coverage.sh` | `… bash scripts/coverage.sh` および `… --base origin/main` | **緑**。head 98.52996%。絶対ゲート `[PASS] … >= 90.0%`、相対ゲート `[PASS] head (98.52996%) >= base (98.51646%) - tolerance (0.01)` |
+| 6 | `scripts/coverage.sh` | `… bash scripts/coverage.sh --base origin/main` | **緑**。head 98.53229%。絶対ゲート `[PASS] … >= 90.0%`、相対ゲート `[PASS] head (98.53229%) >= base (98.51646%) - tolerance (0.01)` |
 | 7 | プロダクトコードに `unwrap` / `expect` 0 件 | clippy（`unwrap_used` / `expect_used` deny）+ 各ファイルの `#[cfg(test)]` 前を対象にした grep | **緑**。新規・変更ファイルすべて非テスト部 0 件 |
 | 8 | 外形不変の証明 | `GateApproved` payload 形の diff 実測 + フィクスチャ計画の実測 + `projection_golden_test.rs` の実行 | **緑**。payload 形不変（diff は doc のみ）、`projection_golden_test.rs` は**無改変で 19 本全緑**、`tests/golden/**` の差分 0。§3 |
 | 9 | use-case の依存が `core-command-domain` 1 本 | `cat Cargo.toml` + grep | **要注意**。RMU / interface-adapter は dev-dependencies を含め 0 件で**基準の主旨は満たす**が、外部クレート `chrono` を `[dev-dependencies]` から `[dependencies]` へ移した。下記 (a) |
@@ -282,7 +298,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 `cargo test --workspace` → **744 passed / 0 failed**。ブリーフの「既存 234 テスト」は古い数値で
 あり、退行の基準は 744 である（主な内訳: domain lib 313 / RMU lib 126 /
 core-infrastructure lib 103 / interface-adapter lib 35 / projection_golden_test 19 /
-use-case lib 18）。+29 の内訳は domain +3・use-case +25・interface-adapter 結線テスト +1。
+use-case lib 18）。+28 の内訳は domain +3・use-case +24・interface-adapter 結線テスト +1。
 
 ---
 
@@ -310,21 +326,43 @@ use-case lib 18）。+29 の内訳は domain +3・use-case +25・interface-adapt
 初版ブリーフの「再試行しない」に従って一度是正したが、訂正裁定（doc は正しい・変更しない）を
 受けて **origin/main の内容へ完全に戻した**。本 Bolt の diff にこのファイルは含まれない。
 
-### (d) `ReportOutcome` に `clippy::large_enum_variant` の allow を付けた
+### (d) `ReportOutcome` の `clippy::large_enum_variant` allow — **裁定 7 で消滅**
 
-`Committed` がドメインイベントを丸ごと運ぶため 248 バイト対 40 バイトになる。`Box` 化すると
-呼出側にデリファレンスと 1 回のヒープ確保を強いるだけで、ワンショット CLI が 1 起動につき
-1 個だけ作る値には見合わない。理由付き `#[allow(..., reason = "…")]`（ポートの
-`async_fn_in_trait` と同じ house style）で通した。
+`ReportOutcome` は `Committed` にドメインイベントを丸ごと載せていたため 248 バイト対
+40 バイトになり、理由付き `#[allow(clippy::large_enum_variant, reason = "…")]` を置いていた。
+裁定 7 で型そのものを削除したので、**この例外も無くなった**。本 Bolt が最終的に持ち込んだ
+lint の allow は、`commit_verdict_use_case.rs` のテストモジュールの `clippy::panic` と、
+結線テストの file-level `unwrap_used` / `expect_used` / `panic`（既存 integration test と
+同じ house style）だけである。
 
-### (e) CQS の逸脱 — `execute(&mut self) -> Result<ReportOutcome, _>`
+### (e) CQS の逸脱 — **裁定 7 で設計変更により解消**
 
-`coding-rules/command-query-separation.md` の既定（Command は戻り値なし）から外れる。
-判定フロー 3 は「分離不能ならオーナー許可のうえ理由をコメントに書く」と定める。分離すると
-2 つ目の呼出が別トランザクションになり、コミットの有無と結果が食い違いうるため分離不能と
-判断し、doc に理由を書いた。**根拠は既存の house 先例**である — 集約コマンド自身が
-`&mut self -> Result<WorkflowExecutionEvent, CommandError>` であり、ES の「1 コマンド 1
-イベント」契約がそう要求している。**オーナー許可は取っていないので、レビューで裁定されたい。**
+当初は `execute(&mut self) -> Result<ReportOutcome, _>` とし、「分離すると 2 つ目の呼出が別
+トランザクションになる」を理由に `command-query-separation.md` 判定フロー 3 の例外（オーナー
+許可が要る）として提示していた。**この提示は 2 度とも誤りで、オーナーに却下された。**
+
+却下の理由が正しい:
+
+- この CLI では `ReadModelUpdater` の catch_up が**同一プロセス内で同期実行される**ので、
+  コミット直後の U7 はリードモデルから「何が起きたか」を読める。両側を知ってよいのは合成
+  ルートなので境界違反にもならない。私の「リードモデルからは読めない」という前提が誤りだった。
+- 「別トランザクションで食い違う」という擁護も成立しない。Q6 が既に「同一クローンの同時実行は
+  稀」と裁定済みで、かつ戻り値にしても同じ競合は起きる。
+- 集約コマンドが `&mut self -> Result<WorkflowExecutionEvent, _>` である事実は**先例にならない**。
+  あれは `store()` へ渡す書込パイプラインの配管であって、Presenter に読ませる読取チャネル
+  ではない。私はこの 2 つを「同じ家風」と混同していた。
+
+現在の形は `execute(...) -> Result<(), CommitError>` で、規則が許す Command そのものである。
+例外は不要になった。
+
+### (g) 改名 — `ReportUseCase` → `CommitVerdictUseCase`（裁定 7）
+
+`report` は upstream CLI の動詞（コンダクタが結末を報告する = 遷移コミット）であって帳票では
+ないが、**プロジェクトを最も知る読者にすら「レポートを作る／読むユースケース」と誤読された**。
+オーナー裁定により、更新の意図を先頭に置く名前へ改めた。エラーも `ReportError` →
+`CommitError`。CLI 動詞と型の対応は U7 の ROUTES 表が持つので、型名が upstream の綴りに
+縛られる必要はない、という整理である。`coding-rules/use-case-rules.md` の適用例の更新は
+メインセッションが行った（私は coding-rules 禁止のまま）。
 
 ### (f) 止めて相談した点 — 裁定 2 と所有ファイル規律の衝突
 
@@ -357,13 +395,18 @@ dry-run 相当で確認し、当てた後に `git diff` で目視確認する」
    `PHASE_COMPLETED`（`To phase: (end)`）を出すが、`StageSkipped` payload には
    `phase_boundary` が無く、RMU の `stage_skipped` も境界行を描かない。U5 の責務外だが、
    FR1.1（監査シャードの逐語互換）に関わる既知の穴として記録する。
-3. **`ReportOutcome::AlreadyDone` が運ぶ `NextDecision` は常に `Done`** である
-   （`stale_report` の戻り値がそれしか無い）。U7 が分岐に使う予定が無ければ、将来もっと
-   狭い型に絞れる。
-4. **`report --single` / `--skeleton-stance`** は U5 の入力型に含めていない（ブリーフの
-   非スコープ）。U7 が `ReportUseCase` に到達する前に分岐させる必要がある — upstream も
-   `handleReport` の Branch -1 / Branch 0 で手前分岐している。
-5. **`ReportUseCase` が `Conflict` を再試行するのは 1 回だけ**で、その回数はコードに直書き
+3. **U7 の Presenter は catch_up 後のリードモデルから「何が起きたか」を導く必要がある**
+   （裁定 7 の帰結）。`CommitVerdictUseCase` は成功時に何も返さないので、upstream の
+   `Committed approve for "…" (scope: …)` / `Recorded rejected for "…"` /
+   `Stage "…" is already awaiting approval.` のような文言の出し分けは、監査シャード末尾と
+   状態ファイルの差分から復元することになる。**とくに「何もコミットしなかった 2 経路」
+   （ゲート既開・BR1.9 通過済み）はリードモデルに差分が出ない**ので、差分ゼロを「no-op で
+   あった」と読む設計が要る。これは U7（FR4）の課題として申し送る。
+4. **`report --single` / `--skeleton-stance` / `resume`** は U5 の入力型に含めていない
+   （前 2 つはブリーフの非スコープ、`resume` は裁定 7）。いずれも U7 が
+   `CommitVerdictUseCase` に到達する前に分岐させる必要がある — upstream も `handleReport` の
+   Branch -1 / Branch 0 / `RESUME_RESULTS` の早期分岐で手前分岐している。
+5. **`CommitVerdictUseCase` が `Conflict` を再試行するのは 1 回だけ**で、その回数はコードに直書き
    （`match` の 1 段）である。将来 U6 も同じ政策を持つなら、方針の重複を避ける置き場所を
    考える必要がある。
 6. **`target-delegate/` と `target-delegate-lint/`** が未追跡のまま残っている（`.gitignore` は
@@ -375,15 +418,19 @@ dry-run 相当で確認し、当てた後に `git diff` で目視確認する」
 
 新規（`modules/core/command/use-case/src/orchestration/`）:
 
-- `report_use_case.rs`（テスト込み）
-- `reported_verdict.rs`
-- `report_outcome.rs`
-- `report_error.rs`
+- `commit_verdict_use_case.rs`（テスト込み）
+- `reported_transition.rs`
+- `commit_error.rs`
 - `test_support.rs`（`#[cfg(test)]`）
 
 新規（`modules/core/command/interface-adapter/tests/`）:
 
-- `report_use_case_wiring_test.rs`（契約 C3 ④ の結線テスト 1 本)
+- `commit_verdict_use_case_wiring_test.rs`（契約 C3 ④ の結線テスト 1 本）
+
+裁定 7 で消えたもの（一度作って削除した）:
+
+- `report_outcome.rs`（`ReportOutcome`）— `execute` が値を返さなくなったので不要
+- `ReportedVerdict` ラッパー（`Resumed` を持っていた 2 段目）— `ReportedTransition` へ一本化
 
 変更:
 
