@@ -32,12 +32,12 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, Recomposed,
     StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
     WorkflowExecutionEvent, WorkspaceScan,
 };
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };

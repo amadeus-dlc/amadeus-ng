@@ -27,7 +27,7 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 
 use audit_events::EventType;
-use core_domain::workspace::AuditFields;
+use core_command_domain::workspace::AuditFields;
 
 /// 空のシャードへ最初に書かれるヘッダ行 (upstream `aidlc-audit.ts:693`、19 バイト)。
 pub const SHARD_HEADER: &str = "# AI-DLC Audit Log\n";
@@ -79,7 +79,7 @@ fn iso8601_seconds(at: &DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::workspace::AuditFieldKey;
+    use core_command_domain::workspace::AuditFieldKey;
 
     fn at(text: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(text)

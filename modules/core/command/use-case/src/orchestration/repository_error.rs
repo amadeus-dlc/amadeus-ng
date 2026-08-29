@@ -4,7 +4,7 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use core_domain::orchestration::IntentId;
+use core_command_domain::orchestration::IntentId;
 
 use super::corrupt_cause::CorruptCause;
 
@@ -78,7 +78,7 @@ impl std::error::Error for RepositoryError {}
 mod tests {
     use super::*;
     use crate::orchestration::CorruptCause;
-    use core_domain::orchestration::IntentId;
+    use core_command_domain::orchestration::IntentId;
     use std::io::ErrorKind;
     use std::path::PathBuf;
 

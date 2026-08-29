@@ -77,7 +77,7 @@ pub fn append(path: &Path, blocks: &str) -> Result<(), AuditShardWriteError> {
 /// 台帳を 1 つの欠落でまるごと読めなくしないためである（upstream 逐語:
 /// *"growth during the read is explicitly not a failure"*）。ディレクトリ自体が無ければ空を返す。
 ///
-/// [`find_all_events`]: core_domain::workspace::find_all_events
+/// [`find_all_events`]: core_command_domain::workspace::find_all_events
 #[must_use]
 pub fn read_all(dir: &Path) -> String {
     let Ok(entries) = fs::read_dir(dir) else {

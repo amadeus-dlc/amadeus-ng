@@ -38,13 +38,13 @@
 
 use std::io::ErrorKind;
 
+use core_command_domain::orchestration::{
+    ApplyError, EVENT_MANIFEST, IntentId, WorkflowExecution, WorkflowExecutionEvent,
+};
+use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{
     CorruptCause, RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
 };
-use core_domain::orchestration::{
-    ApplyError, EVENT_MANIFEST, IntentId, WorkflowExecution, WorkflowExecutionEvent,
-};
-use core_domain::workspace::StorePath;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
@@ -341,8 +341,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::orchestration::{StageDisplay, WorkspaceScan};
-    use core_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
+    use core_command_domain::orchestration::{StageDisplay, WorkspaceScan};
+    use core_command_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
     fn display(number: &str) -> StageDisplay {
         StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
     }
@@ -358,8 +358,8 @@ mod tests {
     }
 
     use chrono::{DateTime, Utc};
-    use core_domain::orchestration::{StageEntry, StartRequest};
-    use core_domain::workflow_definition::{
+    use core_command_domain::orchestration::{StageEntry, StartRequest};
+    use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
 

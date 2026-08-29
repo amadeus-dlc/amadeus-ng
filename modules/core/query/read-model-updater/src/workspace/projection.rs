@@ -20,12 +20,12 @@
 //! になり、再構成が当時と一致しない）。二度描かない保証はチェックポイントが与えるので、投影核
 //! 自身は「渡された列を順に写す」だけでよい。
 
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     AutonomyMode, GateApproved, GateOpened, GateRejected, JumpDirection, Jumped, Parked,
     PhaseBoundary, Recomposed, StageCompleted, StageRevised, StageSkipped, WorkflowExecutionEvent,
 };
-use core_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
-use core_domain::workspace::{
+use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
+use core_command_domain::workspace::{
     AuditFieldKey, AuditFieldKeyError, AuditFields, CheckboxState, CheckboxUpdateError,
     count_completed, with_checkbox_marker, with_checkbox_suffix,
 };
@@ -1103,10 +1103,10 @@ mod park_marker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::orchestration::{
+    use core_command_domain::orchestration::{
         AutonomyModeSet, IntentId, StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
     };
-    use core_domain::workflow_definition::{
+    use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
     };
 

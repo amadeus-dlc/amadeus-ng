@@ -16,9 +16,9 @@ name = "aidlc"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "core-command-domain",
  "core-command-interface-adapter",
  "core-command-use-case",
- "core-domain",
  "core-infrastructure",
  "core-query-read-model-updater",
  "event-store-adapter-rs",
@@ -142,14 +142,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "core-command-domain"
+version = "0.1.0"
+dependencies = [
+ "audit-events",
+ "chrono",
+ "directive-schema",
+ "event-store-adapter-rs",
+ "message-catalog",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "core-command-interface-adapter"
 version = "0.1.0"
 dependencies = [
  "audit-events",
  "canon-json",
  "chrono",
+ "core-command-domain",
  "core-command-use-case",
- "core-domain",
  "core-infrastructure",
  "directive-schema",
  "event-store-adapter-rs",
@@ -166,22 +181,7 @@ name = "core-command-use-case"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "core-domain",
- "tokio",
-]
-
-[[package]]
-name = "core-domain"
-version = "0.1.0"
-dependencies = [
- "audit-events",
- "chrono",
- "directive-schema",
- "event-store-adapter-rs",
- "message-catalog",
- "proptest",
- "serde",
- "serde_json",
+ "core-command-domain",
  "tokio",
 ]
 
@@ -206,7 +206,7 @@ version = "0.1.0"
 dependencies = [
  "audit-events",
  "chrono",
- "core-domain",
+ "core-command-domain",
  "core-infrastructure",
  "event-store-adapter-rs",
  "message-catalog",

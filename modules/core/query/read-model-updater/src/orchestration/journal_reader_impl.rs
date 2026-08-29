@@ -61,8 +61,8 @@ use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
-use core_domain::orchestration::{EVENT_MANIFEST, IntentId, WorkflowExecutionEvent};
-use core_domain::workspace::StorePath;
+use core_command_domain::orchestration::{EVENT_MANIFEST, IntentId, WorkflowExecutionEvent};
+use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
 /// 書込なので待ち時間が要る。
@@ -471,11 +471,11 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use core_domain::orchestration::WorkflowExecution;
+    use core_command_domain::orchestration::WorkflowExecution;
 
     /// 投影チェックポイントの表 (**我々の表**。本家の `journal` / `snapshot` と衝突しない)。
     const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
-    use core_domain::workspace::SpaceName;
+    use core_command_domain::workspace::SpaceName;
     use event_store_adapter_rs::EventStoreForSqlite;
 
     /// 本家の SQLite ストア (この型の結合先)。

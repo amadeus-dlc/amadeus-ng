@@ -12,7 +12,7 @@ workspace = true
 # 共有層 (両側が依存してよい唯一の層) — ドメインイベント・集約識別子・ストアの場所。
 # コマンド側クレート (`core-command-*`) はここに現れてはならない
 # (`coding-rules/cqrs-boundaries.md`)。
-core-domain = { workspace = true }
+core-command-domain = { workspace = true }
 # 監査行の見出し 86 語 (Published Language — C5 の逐語表)。
 audit-events = { workspace = true }
 message-catalog = { workspace = true }

@@ -15,7 +15,7 @@
 //! - 未知スコープの扱いは述語ごとに**非対称** (`WorkflowDefinition` の doc を参照)。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
-//! 消費側のパスは `core_domain::workflow_definition::<型>` で安定する
+//! 消費側のパスは `core_command_domain::workflow_definition::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod definition_revision;

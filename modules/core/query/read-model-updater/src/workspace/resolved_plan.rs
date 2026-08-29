@@ -13,8 +13,10 @@
 //! イベントを太らせる案（遷移イベントごとに表示属性を持たせる）を採らなかったのは、同じ事実が
 //! ジャーナルに何度も転写され、`Started` の計画と食い違いうるからである。正本は 1 つでよい。
 
-use core_domain::orchestration::{StageDisplay, Started, WorkflowExecutionEvent, WorkspaceScan};
-use core_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
+use core_command_domain::orchestration::{
+    StageDisplay, Started, WorkflowExecutionEvent, WorkspaceScan,
+};
+use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
 /// 投影が参照する解決済み計画（文書順の全ステージ + 走査結果）。
 ///
@@ -198,8 +200,8 @@ impl ResolvedPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::orchestration::{StageEntry, StartRequest};
-    use core_domain::workflow_definition::{
+    use core_command_domain::orchestration::{StageEntry, StartRequest};
+    use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
     };
 

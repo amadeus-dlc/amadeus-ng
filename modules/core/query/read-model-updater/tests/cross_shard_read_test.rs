@@ -12,7 +12,9 @@
 
 use audit_events::EventType;
 use chrono::{DateTime, Utc};
-use core_domain::workspace::{AuditEventRecord, AuditFieldKey, AuditFields, find_all_events};
+use core_command_domain::workspace::{
+    AuditEventRecord, AuditFieldKey, AuditFields, find_all_events,
+};
 use core_query_read_model_updater::workspace::{
     append_audit_shard, read_all_audit_shards, render_audit_block,
 };

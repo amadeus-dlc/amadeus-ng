@@ -11,20 +11,20 @@
 //! 読む側のテストは「本家が書いた行を我々が読めるか」だけを見ることになり、コマンド側の
 //! 実装が変わっても揺れない。
 //!
-//! 集約とドメインイベントは共有層 (`core-domain`) の型であり、両側が使ってよい。
+//! 集約とドメインイベントは共有層 (`core-command-domain`) の型であり、両側が使ってよい。
 
 #![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     AutonomyMode, CommandError, EVENT_MANIFEST, IntentId, StageDisplay, StageEntry, StartRequest,
     WorkflowExecution, WorkflowExecutionEvent, WorkspaceScan,
 };
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_domain::workspace::StorePath;
+use core_command_domain::workspace::StorePath;
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;

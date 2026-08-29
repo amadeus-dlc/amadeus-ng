@@ -1,6 +1,6 @@
 //! `RehydratedWorkflowExecution` — 再構成した集約と、ストアが載せた楽観 version。
 
-use core_domain::orchestration::WorkflowExecution;
+use core_command_domain::orchestration::WorkflowExecution;
 
 /// [`WorkflowExecutionRepository::find_by_id`] が返す再水和の結果。
 ///
@@ -63,8 +63,8 @@ impl RehydratedWorkflowExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::orchestration::{StageDisplay, WorkspaceScan};
-    use core_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
+    use core_command_domain::orchestration::{StageDisplay, WorkspaceScan};
+    use core_command_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
     fn display(number: &str) -> StageDisplay {
         StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
     }
@@ -80,8 +80,8 @@ mod tests {
     }
 
     use chrono::{DateTime, Utc};
-    use core_domain::orchestration::{IntentId, StageEntry, StartRequest};
-    use core_domain::workflow_definition::{
+    use core_command_domain::orchestration::{IntentId, StageEntry, StartRequest};
+    use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
 

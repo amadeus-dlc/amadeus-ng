@@ -17,14 +17,14 @@
 
 mod support;
 
+use core_command_domain::orchestration::{
+    AutonomyMode, IntentId, WorkflowExecution, WorkflowExecutionEvent,
+};
+use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryImpl;
 use core_command_use_case::orchestration::{
     RehydratedWorkflowExecution, WorkflowExecutionRepository,
 };
-use core_domain::orchestration::{
-    AutonomyMode, IntentId, WorkflowExecution, WorkflowExecutionEvent,
-};
-use core_domain::workspace::{SpaceName, StorePath};
 use core_query_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
 };

@@ -10,7 +10,7 @@
 //! 全集約横断の読取とチェックポイント (`JournalReader`) は SQLite にしか無いので、
 //! `journal_reader_impl_test.rs` が単独で持つ。
 
-use core_domain::orchestration::AutonomyMode;
+use core_command_domain::orchestration::AutonomyMode;
 
 use core_command_use_case::orchestration::{
     RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,

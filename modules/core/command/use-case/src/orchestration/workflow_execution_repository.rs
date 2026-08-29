@@ -1,6 +1,6 @@
 //! `WorkflowExecutionRepository` ポート — 集約 `WorkflowExecution` の ES 形 Repository (C3 / ADR-010)。
 
-use core_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
+use core_command_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
 
 use super::rehydrated_workflow_execution::RehydratedWorkflowExecution;
 use super::repository_error::RepositoryError;
@@ -98,8 +98,8 @@ pub trait WorkflowExecutionRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::orchestration::{StageDisplay, WorkspaceScan};
-    use core_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
+    use core_command_domain::orchestration::{StageDisplay, WorkspaceScan};
+    use core_command_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
     fn display(number: &str) -> StageDisplay {
         StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
     }
@@ -116,10 +116,10 @@ mod tests {
 
     use crate::orchestration::RepositoryError;
     use chrono::{DateTime, Utc};
-    use core_domain::orchestration::{
+    use core_command_domain::orchestration::{
         IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
     };
-    use core_domain::workflow_definition::{
+    use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
 

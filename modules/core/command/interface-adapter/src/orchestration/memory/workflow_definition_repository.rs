@@ -7,8 +7,8 @@
 //!
 //! テストダブルなので `Impl` 接尾辞は付けない (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 
+use core_command_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
 use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
-use core_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
 
 /// 組み立て済みの `WorkflowDefinition` を保持するだけの `WorkflowDefinitionRepository`。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,7 +52,7 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::*;
-    use core_domain::workflow_definition::{
+    use core_command_domain::workflow_definition::{
         DefinitionRevision, ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph,
         StageMode, StageNodeBuilder, StageNumber, StageSlug,
     };

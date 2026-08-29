@@ -16,7 +16,7 @@ const HEX_LEN: usize = 64;
 /// 定義の系譜 (`WorkflowDefinitionId`) は変わらない。来歴と drift 検出の材料。
 ///
 /// 値の計算はアダプタ層 (Repository 実装 + canon-json) が行う。ドメインは形の検証と
-/// 保持だけを担う (core-domain は canon-json に依存しない — NFR4.1)。
+/// 保持だけを担う (core-command-domain は canon-json に依存しない — NFR4.1)。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub struct DefinitionRevision(String);

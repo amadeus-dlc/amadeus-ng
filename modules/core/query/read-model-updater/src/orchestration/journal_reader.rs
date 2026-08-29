@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use crate::orchestration::{GlobalSeqNr, JournalEntry, JournalReadError, ProjectionName};
     use chrono::{DateTime, Utc};
-    use core_domain::orchestration::{IntentId, WorkflowExecutionEvent};
+    use core_command_domain::orchestration::{IntentId, WorkflowExecutionEvent};
     use std::collections::BTreeMap;
 
     fn intent() -> IntentId {

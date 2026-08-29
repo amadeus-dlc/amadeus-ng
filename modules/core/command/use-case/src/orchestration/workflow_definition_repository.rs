@@ -32,7 +32,7 @@
 //! オーバライドの意味論、および逐語文言の組み立ては実装側に閉じる (12 §6)。ポートは
 //! **材料だけ**を運ぶ。
 
-use core_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
+use core_command_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
 
 /// 3 入力の読取失敗。逐語文言そのものは持たず、**文言を組み立てる材料**を運ぶ
 /// (レンダリングはアダプタ層 — 12 §6)。

@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use audit_events::EventType;
 use chrono::{DateTime, Utc};
-use core_domain::workspace::{AuditFieldKey, AuditFields};
+use core_command_domain::workspace::{AuditFieldKey, AuditFields};
 use core_query_read_model_updater::workspace::{SHARD_HEADER, render_audit_block};
 
 /// ゴールデンが正規化で潰した実行時値の置き換え先。

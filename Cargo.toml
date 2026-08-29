@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-  "modules/core/domain",
+  "modules/core/command/domain",
   "modules/core/command/use-case",
   "modules/core/command/interface-adapter",
   "modules/core/query/read-model-updater",
@@ -87,7 +87,7 @@ cmp_null = "deny"
 
 [workspace.dependencies]
 # 内部クレート (層 = クレート)
-core-domain = { path = "modules/core/domain" }
+core-command-domain = { path = "modules/core/command/domain" }
 # CQRS の側分割 (2026-08-29 オーナー裁定 / ADR-009)。コマンド側とクエリ側は互いの
 # `Cargo.toml` に現れてはならない — 境界はクレート分離で物理強制する
 # (`coding-rules/cqrs-boundaries.md`)。

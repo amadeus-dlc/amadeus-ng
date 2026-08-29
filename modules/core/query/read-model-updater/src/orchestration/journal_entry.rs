@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
-use core_domain::orchestration::{IntentId, WorkflowExecutionEvent};
+use core_command_domain::orchestration::{IntentId, WorkflowExecutionEvent};
 
 use super::global_seq_nr::GlobalSeqNr;
 
@@ -86,8 +86,8 @@ impl JournalEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_domain::orchestration::{Parked, WorkflowExecutionEvent};
-    use core_domain::workflow_definition::StageSlug;
+    use core_command_domain::orchestration::{Parked, WorkflowExecutionEvent};
+    use core_command_domain::workflow_definition::StageSlug;
 
     fn intent() -> IntentId {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()

@@ -13,11 +13,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     GateOpened, IntentId, StageDisplay, StageEntry, StageRevised, StartRequest, Started,
     WorkflowExecutionEvent, WorkspaceScan,
 };
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };

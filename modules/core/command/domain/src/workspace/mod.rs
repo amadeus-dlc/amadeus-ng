@@ -8,7 +8,7 @@
 //! 集約に置けない横断の判断 (`classify_state_version`) である。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
-//! 消費側のパスは `core_domain::workspace::<型>` で安定する
+//! 消費側のパスは `core_command_domain::workspace::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod audit_field;

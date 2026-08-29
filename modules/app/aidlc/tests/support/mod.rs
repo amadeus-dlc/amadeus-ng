@@ -8,16 +8,16 @@
 #![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
-use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, WorkflowExecutionRepository,
-};
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     CommandError, IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution,
     WorkflowExecutionEvent, WorkspaceScan,
 };
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
+};
+use core_command_use_case::orchestration::{
+    RehydratedWorkflowExecution, WorkflowExecutionRepository,
 };
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。

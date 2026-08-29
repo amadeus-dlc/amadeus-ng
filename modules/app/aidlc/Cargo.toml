@@ -11,7 +11,7 @@ workspace = true
 # 合成ルート (U7) だけが**両側**を知る。それが合成ルートの仕事である
 # (`coding-rules/cqrs-boundaries.md` §対象外)。
 [dependencies]
-core-domain = { workspace = true }
+core-command-domain = { workspace = true }
 core-command-use-case = { workspace = true }
 core-command-interface-adapter = { workspace = true }
 core-query-read-model-updater = { workspace = true }

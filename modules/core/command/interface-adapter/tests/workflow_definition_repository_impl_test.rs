@@ -9,12 +9,12 @@
 // 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
-use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
-use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
+use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
+use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -236,7 +236,7 @@ fn slug(s: &str) -> StageSlug {
     StageSlug::parse(s).unwrap()
 }
 
-fn slugs(nodes: &[&core_domain::workflow_definition::StageNode]) -> Vec<String> {
+fn slugs(nodes: &[&core_command_domain::workflow_definition::StageNode]) -> Vec<String> {
     nodes
         .iter()
         .map(|n| n.slug().as_str().to_string())

@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 core-command-use-case = { workspace = true }
-core-domain = { workspace = true }
+core-command-domain = { workspace = true }
 audit-events = { workspace = true }
 directive-schema = { workspace = true }
 canon-json = { workspace = true }

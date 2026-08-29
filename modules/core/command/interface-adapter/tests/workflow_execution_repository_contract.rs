@@ -10,9 +10,9 @@
 
 mod support;
 
+use core_command_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
+use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryImpl;
-use core_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
-use core_domain::workspace::{SpaceName, StorePath};
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 use support::{StoreFixture, contract};
 use tempfile::TempDir;

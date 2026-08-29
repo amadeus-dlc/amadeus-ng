@@ -27,7 +27,7 @@ pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
 pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
-const CHECKBOX_OWNER: &str = "modules/core/domain/src/workspace/checkbox.rs";
+const CHECKBOX_OWNER: &str = "modules/core/command/domain/src/workspace/checkbox.rs";
 
 const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished / is_active) を使う。\
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
@@ -336,7 +336,7 @@ fn impl_item_attrs(item: &syn::ImplItem) -> &[syn::Attribute] {
 mod tests {
     use super::*;
 
-    const DOMAIN_PATH: &str = "modules/core/domain/src/orchestration/workflow_execution.rs";
+    const DOMAIN_PATH: &str = "modules/core/command/domain/src/orchestration/workflow_execution.rs";
     const OWNER_PATH: &str = CHECKBOX_OWNER;
     const ADAPTER_PATH: &str =
         "modules/core/command/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs";
@@ -529,7 +529,7 @@ fn red(cb: CheckboxState) -> bool {
 "#;
         assert!(
             check(
-                "modules/core/domain/tests/engine_loop_conformance.rs",
+                "modules/core/command/domain/tests/engine_loop_conformance.rs",
                 source
             )
             .is_empty()

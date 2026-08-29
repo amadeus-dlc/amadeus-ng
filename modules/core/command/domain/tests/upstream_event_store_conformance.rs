@@ -20,15 +20,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chrono::{DateTime, TimeDelta, Utc};
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
     WorkspaceScan,
 };
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_domain::workspace::CheckboxState;
+use core_command_domain::workspace::CheckboxState;
 use event_store_adapter_rs::EventStoreForMemory;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};

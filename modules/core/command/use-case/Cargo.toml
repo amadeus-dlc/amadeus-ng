@@ -9,7 +9,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-core-domain = { workspace = true }
+core-command-domain = { workspace = true }
 
 [dev-dependencies]
 # 再水和結果の発生時刻 (`DateTime<Utc>` — ADR-010) を組むテスト用。

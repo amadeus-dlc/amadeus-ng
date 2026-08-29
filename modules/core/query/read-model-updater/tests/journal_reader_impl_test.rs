@@ -16,7 +16,7 @@
 
 mod support;
 
-use core_domain::workspace::{SpaceName, StorePath};
+use core_command_domain::workspace::{SpaceName, StorePath};
 use core_query_read_model_updater::orchestration::{
     CorruptCause, GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
     ProjectionName,

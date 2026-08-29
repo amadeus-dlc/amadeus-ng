@@ -19,15 +19,15 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
-use core_domain::orchestration::{
+use core_command_domain::orchestration::{
     AutonomyMode, EngineSignal, IntentId, NextRequest, StageDisplay, StageEntry, StageIndex,
     StartRequest, Status, WorkflowExecution, WorkspaceScan,
 };
-use core_domain::workflow_definition::{
+use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph,
     StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_domain::workspace::CheckboxState;
+use core_command_domain::workspace::CheckboxState;
 use serde_json::Value;
 
 /// ITF 再生は時計を持たない — `occurred_at` は固定値でよい (集約は値を素通しする)。
@@ -362,7 +362,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
 #[test]
 fn workflow_execution_conforms_to_every_committed_engine_loop_trace() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../tests/conformance/fixtures/engine_loop");
+        .join("../../../../tests/conformance/fixtures/engine_loop");
     let mut count = 0;
     let mut seen = std::collections::BTreeSet::new();
     for entry in std::fs::read_dir(&dir).unwrap() {
