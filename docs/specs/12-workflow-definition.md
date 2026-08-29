@@ -1,5 +1,13 @@
 # workflow-definition コンテキスト仕様
 
+> **改名裁定（2026-08-29 / Bolt B12）**: 集約 `WorkflowExecution` は **`Intent` 構造体 +
+> `IntentExecution` 集約**へ分割された（`Intent` = 静的な intent: 識別子・依頼・scope・解決済み
+> 計画・定義ピン / `IntentExecution` = 1 回の実行: `IntentExecutionId` で識別、1 intent : n 実行、
+> 実行時状態のみ保持し計画は `&Intent` 引数で受ける）。本文中の `WorkflowExecution` は文脈により
+> どちらかへ読み替える。本文の全文追従は後続 Bolt で行う（正本の裁定記録:
+> `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/brief-1.md`）。
+
+
 > **位置づけ**: コンテキスト別仕様の第 3 号。スライス 1 = **グラフリーダ契約**（コンパイル済み成果物の読取面）に範囲を限定する。`01-domain-model.md` の裁定（B1・B6・B7・B11）と D3/D4/D10、ADR 0001〜0004 に従う。
 > **契約コーパス**: upstream `01-workflow-model.md`（主）、`02-orchestration-engine.md` §4-5・`04-stage-protocol.md` §2・`06-sensors.md` §3・`08-memory-rules-learnings.md` §2・`11-plugin-system.md` §7（従）。精密抽出は [`research/workflow-definition-graph-reader.md`](research/workflow-definition-graph-reader.md)（3 入力の形状・読込失敗態度・述語・**証拠格付け [S]/[F]/[G]**）に収録済み。本書は**構造の規範**を担い、逐語の完全列挙は抽出文書と upstream を正とする。
 > **状態**: ドラフト（フェーズ A。スライス 1 = グラフリーダ契約のみ。`compileStageGraph`（B6）・エージェントペルソナ・3 ダイヤル（Depth / TestStrategy / Tier）・キーワード推論はスライス 2 以降）
@@ -28,7 +36,7 @@ workflow-definition は「**何を実行しうるか**」の静的定義を所�
 
 | 集約 | ルートと内包 | トランザクション境界 |
 | --- | --- | --- |
-| `WorkflowDefinition` | **本コンテキストの集約ルート**。識別子 `WorkflowDefinitionId`（`<harnessRoot>/tools/data/harness.json` の `name`。**内容が変わっても不変の系譜 ID**）と内容版 `DefinitionRevision`（`{ stage_graph, scope_grid, scopes }` の正準 JSON の `sha256:`。識別子ではなく**値属性**）を持つ。どちらも Repository 実装が付与し、ドメインは計算しない（ADR-008、Bolt B3 実装 `workflow_definition_id.rs` / `definition_revision.rs`）。3 入力（`stage-graph.json` / `scope-grid.json` / scope カタログ）を束ねた読取モデル集約で、`StageGraph`（コンパイル出力の成果物値。`Vec<StageNode>` の**文書順を保持** ＋ `StageSlug → index` の索引）と `ScopeGrid`、および `ScopeDefinition` 群を**内包する**。構築後は immutable | スライス 1 に変異は無い（読取専用）。3 入力は compile が lockstep で出すため、**束ね直しの単位は常に 3 入力まとめて 1 回**（片方だけ新しい状態は upstream でも想定外）。「返した配列を呼び出し側が mutate してはならない」という upstream のコメント規約は、Rust では所有権と不変参照で構造的に成立する |
+| `WorkflowDefinition` | **本コンテキストの集約ルート**。識別子 `WorkflowDefinitionId`（`<harnessRoot>/tools/data/harness.json` の `name`。**内容が変わっても不変の系譜 ID**）と内容版 `DefinitionRevision`（`{ stage_graph, scope_grid, scopes }` の正準 JSON の `sha256:`。識別子ではなく**値属性**）を持つ。どちらも Repository 実装が付与し、ドメインは計算しない（ADR-008、Bolt B3 実装 `workflow_definition_id.rs` / `definition_revision.rs`）。3 入力（`stage-graph.json` / `scope-grid.json` / scope カタログ）を束ねた**集約**で（~~読取モデル集約~~ — 呼称廃止 2026-08-29 オーナー裁定: 集約に統一。CQRS のリードモデルと紛らわしい造語だった。位置づけ: `WorkflowDefinition` は集約であり、変異が本システムのスコープに入った時点で状態遷移はイベントを吐く（coding-rules/aggregate-commands.md）。**実ファイル stage-graph.json / scope-grid.json / scope カタログがこの集約のリードモデル**である — 変異は実在する（2026-08-29 実測 — コンポーザ承認時の scope 登記追記 = `scopes/aidlc-<name>.md` + `scope-grid.json` エントリ、および再コンパイル）。ただし現スコープでは変異の実行主体がエンジンバイナリの外（LLM エージェントのファイル追記・upstream コンパイラ）にあるため、本システム側のコマンドは未実装 — スコープ合成等をコマンド側に取り込む時点で `ScopeComposed` 等のイベント設計が必須になる。実ファイルは現状この集約の唯一の永続表現も兼ねるので、Repository がそこから再構成するのは自集約の I/O である）、`StageGraph`（コンパイル出力の成果物値。`Vec<StageNode>` の**文書順を保持** ＋ `StageSlug → index` の索引）と `ScopeGrid`、および `ScopeDefinition` 群を**内包する**。構築後は immutable | スライス 1 に変異は無い（読取専用）。3 入力は compile が lockstep で出すため、**束ね直しの単位は常に 3 入力まとめて 1 回**（片方だけ新しい状態は upstream でも想定外）。「返した配列を呼び出し側が mutate してはならない」という upstream のコメント規約は、Rust では所有権と不変参照で構造的に成立する |
 
 内包物の位置づけ:
 

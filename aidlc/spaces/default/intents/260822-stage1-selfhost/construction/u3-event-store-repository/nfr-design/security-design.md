@@ -8,7 +8,7 @@
 >
 > §2 の検査点 1・2 と「前段 open」、§3 の Tx 手順と `within_write_transaction`、§5 の依存一覧、
 > §7 の正準 JSON と ITF 再生先が失効した（各所に個別注記）。
-> **設計方針 (a)〜(e) は生きている**が、(a) の「3 段の検査点」は **1 段（集約の `from_state()`）に縮んだ**
+> **設計方針 (a)〜(e) は生きている**が、(a) の「3 段の検査点」は **1 段（集約の `from_state()`）に縮んだ**（**2026-08-29 / Bolt B12 追記**: 分割により検査点は 2 か所になった — 実行時不変条件は `IntentExecution::from_snapshot`、計画を要する検査（no_gate_bypass 等）は `&Intent` を受け取るコマンド・適用の面。`from_state()` の名は `from_snapshot()` へ改名）
 > — 復号が本家の serde になったため。**未決 2 件**: 登録簿の直列化（NFR3.5）と `busy_timeout` は
 > どちらも **U7 で裁定**する。
 

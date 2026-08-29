@@ -1,5 +1,13 @@
 # orchestration コンテキスト仕様
 
+> **改名裁定（2026-08-29 / Bolt B12）**: 集約 `WorkflowExecution` は **`Intent` 構造体 +
+> `IntentExecution` 集約**へ分割された（`Intent` = 静的な intent: 識別子・依頼・scope・解決済み
+> 計画・定義ピン / `IntentExecution` = 1 回の実行: `IntentExecutionId` で識別、1 intent : n 実行、
+> 実行時状態のみ保持し計画は `&Intent` 引数で受ける）。本文中の `WorkflowExecution` は文脈により
+> どちらかへ読み替える。本文の全文追従は後続 Bolt で行う（正本の裁定記録:
+> `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/brief-1.md`）。
+
+
 > **位置づけ**: コンテキスト別仕様の第 1 号。`01-domain-model.md` の裁定（B1・B5・B9・B10・B11・B13・B14）と D3/D4/D10、ADR 0001〜0004 に従う。
 > **契約コーパス**: upstream `02-orchestration-engine.md`（主）、`04-stage-protocol.md`・`07-hooks.md` §7・`09-cli-tools.md` §5-6（従）。精密抽出は [`research/orchestration-next-ladder.md`](research/orchestration-next-ladder.md)（`next` 21 分岐・scope 解決・load-steering・per-unit）、[`research/orchestration-report-guards.md`](research/orchestration-report-guards.md)（`report` 13 段ガード・verdict・CheckboxState 遷移）、[`research/orchestration-directives-verbs.md`](research/orchestration-directives-verbs.md)（Directive カタログ・jump/park/single/recompose/autonomy/Stop フック）に収録済み。本書は**構造の規範**を担い、逐語の完全列挙は抽出文書と upstream を正とする。
 > **状態**: ドラフト（フェーズ A。slice 1 = 決定論コア、slice 2 = Construction 実行機構 §7 — 2026-08-22 追補済み。精密抽出は [`research/orchestration-bolt-verbs.md`](research/orchestration-bolt-verbs.md)・[`research/orchestration-swarm-protocol.md`](research/orchestration-swarm-protocol.md)・[`research/orchestration-unit-wave-loopback.md`](research/orchestration-unit-wave-loopback.md)）

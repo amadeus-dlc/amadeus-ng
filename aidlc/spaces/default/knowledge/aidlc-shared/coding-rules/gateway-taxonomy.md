@@ -40,22 +40,23 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 - インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find_by_id` の not-found は契約上 fatal な `Err`（`NotFound { expected, actual }`、identity ファイルの読取失敗は `HarnessIdentity { path, cause }`）、grid 欠損は転置導出 — 12 §4。引数なしの `find()` は廃止済み — C4 改訂 2026-08-23 / ADR-008）。
 - **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（フィールド単位で状態ファイルを書き換える純関数）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
 
-**ES Repository の拡張語彙**: イベントソーシングの Repository（`WorkflowExecutionRepository`）は `store(event, aggregate)` / `find_by_id` を動詞とする。上の許容動詞一覧は**ステートソーシング Repository の規則**であり、ES Repository の動詞は本家ライブラリ（event-store-adapter-rs）の語彙に従う — `store` はその拡張語彙として明示的に許可する（ADR-006）。
+**ES Repository の拡張語彙**: イベントソーシングの Repository（`IntentExecutionRepository` — ~~`WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29 に追随）は `store(event, aggregate)` / `find_by_id` を動詞とする。上の許容動詞一覧は**ステートソーシング Repository の規則**であり、ES Repository の動詞は本家ライブラリ（event-store-adapter-rs）の語彙に従う — `store` はその拡張語彙として明示的に許可する（ADR-006）。
 
 ### 2. Repository 名 = 集約名 + Repository
 
 集約は各コンテキスト仕様の宣言表が持っている（[`01-domain-model.md`](../../../../../../docs/specs/01-domain-model.md) §3 の集約候補、[`11-workspace.md`](../../../../../../docs/specs/11-workspace.md) §2.1、[`12-workflow-definition.md`](../../../../../../docs/specs/12-workflow-definition.md) §2.1）。Repository はそこに載っている集約ルート名をそのまま冠する。
 
-- `WorkflowExecution` → `WorkflowExecutionRepository`
+- `IntentExecution` → `IntentExecutionRepository`（~~`WorkflowExecution` → `WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29）
+- `Intent` → `IntentRepository`（U7 の intent-create 実装時に新設予定。**Repository は自分の集約・エンティティだけを I/O する** — `IntentRepository` は `Intent` のみ、`IntentExecutionRepository` は `IntentExecution` のみ。他方を復元して返すのも違反。**署名は自集約の ID だけを取る** — 他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が要る場合、それは自ストリームの誕生イベントに記録されているはずであり、Impl がそこから内部復元する（`find_by_id(&IntentExecutionId)` が `Started` から再生用 `Intent` を組む実例 — オーナー確定 2026-08-29）（オーナー確認 2026-08-29）。再生・判断に他方のデータが要るときは `&` 参照のパラメータ渡し — [aggregate-references.md](aggregate-references.md)）
 - `WorkflowDefinition` → `WorkflowDefinitionRepository`
 
-`AuditLedger` はイベントログ（`WorkflowExecution` のイベント列）であって集約ではないため、Repository を持たない — 監査シャードは ReadModelUpdater の投影である（ADR-001 / 003）。
+`AuditLedger` はイベントログ（`IntentExecution` のイベント列）であって集約ではないため、Repository を持たない — 監査シャードは ReadModelUpdater の投影である（ADR-001 / 003）。
 
 **ストレージ媒体名の Repository は禁止。**
 
 | 禁止名 | 理由 |
 | --- | --- |
-| `StateFileRepository` | `StateFile`（`aidlc-state.md`）は**永続化媒体**であって集約ではない。集約は `WorkflowExecution` であり、「状態がファイルに入っている」は Repository **実装**の内部詳細 |
+| `StateFileRepository` | `StateFile`（`aidlc-state.md`）は**永続化媒体**であって集約ではない。集約は `IntentExecution`（旧 `WorkflowExecution`）であり、「状態がファイルに入っている」は Repository **実装**の内部詳細 |
 | `StageGraphRepository` | `stage-graph.json` という**ファイル名由来**の名前。集約は 3 入力を束ねた `WorkflowDefinition` で、`StageGraph` はその内包物 |
 
 媒体名を冠すると、格納形式の変更（ファイル → SQLite → リモート）がポート名の変更に波及し、ユースケース層が永続化の都合を知ってしまう。
@@ -75,7 +76,7 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 — 実在の `get_latest_snapshot_by_id` / `get_events_by_id_since_seq_nr` は本家の語彙であって
 違反ではない（[ubiquitous-language.md](ubiquitous-language.md) の Published Language）。
 
-集約の永続化を担うのは `WorkflowExecutionRepository` であり、`EventStore` はその下請けである。
+集約の永続化を担うのは `IntentExecutionRepository` であり、`EventStore` はその下請けである。
 **ユースケースが `EventStore` を直接注入されることはない**（するなら Repository の意味が消える）。
 
 ### 3. ポート造語（Store / Reader / Writer / Source / Provider）は禁止
@@ -108,7 +109,7 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 - **Writer を注入しない**: 読取専用ユースケースのコンストラクタに Repository を渡さない。
 - **`find_by_id` 済み集約を `&` 参照で渡す**: Controller が Repository で集約を `find_by_id` し、ユースケースには `&Aggregate` を渡す。所有権と可変性が Rust の型で読取専用を保証する。
 
-例: [`10-orchestration.md`](../../../../../../docs/specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `WorkflowExecutionRepository` を注入せず、Controller が `find_by_id` 済みの `WorkflowExecution` を `&` で渡すことで型強制する（設計監査 C2 / 2026-08-23）。
+例: [`10-orchestration.md`](../../../../../../docs/specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `IntentExecutionRepository` を注入せず、Controller が `find_by_id` 済みの `IntentExecution` を `&` で渡すことで型強制する（設計監査 C2 / 2026-08-23）。
 
 ### 5. 配置と命名 — trait は use-case 層、実装は `XxxRepositoryImpl`
 

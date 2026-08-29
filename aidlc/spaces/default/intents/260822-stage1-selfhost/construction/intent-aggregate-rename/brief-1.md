@@ -89,3 +89,204 @@ stage-graph + scope-grid + scopes — である点に注意（オーナー指摘
 同一性を持つ。現システムは 1 intent = 1 実行・静的情報は `Started` イベントが運ぶため、
 分割は代金だけで配当が無い。**`Intent` への統一は現要件では正しい形**であり、上記要件が
 現れた時点が `Intent`（静的）/ `WorkflowExecution`（実行ごと）へ分け直すトリガーである。
+
+---
+
+# 改訂 2（2026-08-29・オーナー裁定）— 到達点の変更: Intent 構造体 + IntentExecution 集約
+
+**本改訂は冒頭の「改名の一族」表を上書きする。** 補記に記した「将来の再分割トリガー」は
+将来ではなく**現在の意味論**と裁定された — **「Intent を元に IntentExecution は何回も起きる」
+（1 intent : n 実行）**。upstream の挙動とも符合する（resume メニューの start fresh・
+`--single` の合成 ID 実行は同一 intent の別実行に相当）。
+
+## 到達点
+
+| 型 | 役割 |
+|---|---|
+| **`Intent`**（新設・構造体） | 静的な intent — `id: IntentId`・`request`（依頼文）・`scope`・解決済み `stages`・`definition_id`/`revision`・`scan`。**Always Valid の不変構造体**（コンストラクタで検査、以後変異なし）。集約ではない |
+| **`IntentExecution`**（集約 — 旧 `WorkflowExecution` の実体） | 実行時文脈 — cursor・checkbox・overlay・approved・autonomy_mode・parked_at・revision_count・seq_nr、**+ 所有する `intent: Intent`** |
+| **`IntentExecutionId`**（新設） | 実行自身の識別子。`IntentId` と同じ UUIDv7 正準形・Always Valid。Entity + Id 法則どおり |
+| `IntentExecutionEvent`（旧 WorkflowExecutionEvent） | 変種名は不変。**`Started` の payload は `intent`（Intent 構造体を丸ごと運ぶ）+ 従来の実行属性で Intent に畳まれないもの** |
+| `IntentExecutionSnapshot` / `IntentExecutionSnapshotBuilder` | 訂正済み方針（スナップショット・私有）のまま名前だけ追随 |
+| `IntentExecutionRepository` / `Impl` / `InMemoryIntentExecutionRepository` | `find_by_id(&IntentExecutionId)` へ |
+| `RehydratedIntentExecution` | 同上追随 |
+| `type_name` | `"IntentExecution"` |
+
+- **集約は 1 つのまま**（`Intent` は実行が所有する値であり、整合性境界は増えない）。
+- genesis: **`IntentExecution::start(id: IntentExecutionId, intent: Intent, occurred_at) →
+  (IntentExecution, Started)`**（オーナーの理想形 `IntentExecution::new(id, intent)` を家風の
+  genesis 動詞 `start` に写した形。id は呼出側がミント — upstream がツール層で uuid を
+  ミントするのと同じ）。旧 `start` の 7 引数は `Intent` に畳まれる。
+- 計画の構造クエリ（slug → 位置・フェーズ参照など、状態に依らないもの）は `Intent` へ、
+  状態依存の判断（ゲート可否・実効プラン = `intent.stages ⊕ overlay`・next_in_scope）は
+  `IntentExecution` に残す。
+- `IntentId` は不変（`Intent` 構造体の識別子として Entity + Id 法則を満たす）。
+- ユースケース `CommitVerdictUseCase::execute` の識別子引数は `&IntentExecutionId` へ。
+
+## 本改訂で決めない（申し送り — U6/U7 の設計点）
+
+- **「この intent の現在の実行」の解決**（intent → 最新 execution の対応）。読み方の候補は
+  リードモデル投影 or 台帳拡張だが、`intents.json` の行形式は upstream 互換面なので独断で
+  フィールドを足さない。
+- **「同一 intent の生きた実行は同時に 1 つ」の不変条件**。集約単体では張れない
+  （集約横断）。置き場所は U7 以降で裁定。
+
+## 受入基準の差し替え
+
+- 基準 9 の grep 対象: `WorkflowExecution` が `WorkflowDefinition` 文脈を除き 0 件（変わらず）。
+- 追加: `Intent` 構造体が変異メソッドを持たないこと（`&mut self` grep 0 件）、
+  `IntentExecutionId` に IntentId と同等の形式検査テストがあること、
+  genesis の新形（`start(id, intent, at)`）のテスト、`Started` payload に intent が載る
+  ラウンドトリップテスト。
+- 外形不変（ゴールデン・監査語彙・投影 19 本）は従来どおり**絶対**。
+
+---
+
+# 改訂 3（2026-08-29・オーナー裁定）— 集約は Intent を埋め込まず ID で参照する
+
+改訂 2 の `IntentExecution` が `intent: Intent` を所有する形は**誤り**（集約設計の基本規則:
+他の集約・エンティティは ID で参照し、オブジェクトを埋め込まない）。正しい形:
+
+```rust
+IntentExecution { id: IntentExecutionId, intent_id: IntentId, cursor, checkbox, overlay, ... }
+```
+
+## 帰結（改訂 2 を次のとおり修正）
+
+1. **集約の保持状態**: `id` / `intent_id` / cursor / 実行時ベクトル（checkbox・overlay・
+   approved・revision counts）/ autonomy_mode / parked_at / seq_nr **のみ**。
+   `stages`・`scope`・`request`・`scan`・`definition_id`/`revision` は**保持しない**（Intent 側）。
+   base の plan_action・conditional も保持しない — 実効プランは
+   `intent.stages[i].plan_action ⊕ overlay[i]` で導出する。
+2. **計画が要るコマンド・クエリは `&Intent` を引数で受ける**（家風 —
+   `next_decision(&self, &WorkflowDefinition, ...)` と同じパラメータ渡し）。受け取り時に
+   `intent.id() == self.intent_id` と `intent.stages.len() == self.checkbox.len()` をガードし、
+   不一致は Err で拒否（取り違え防御）。
+3. **`Started` イベントは intent の材料を丸ごと運んだまま**（改訂 2 のとおり）。理由:
+   投影核の入力はイベントだけ（cqrs-boundaries 規則 3）で、状態ファイル描画に scope・stages・
+   依頼文が必要。イベントは「開始時点の intent の事実記録」、集約が適用時に**保持する**のは
+   `intent_id` と実行時状態だけ、という分離。genesis の `start(id, intent, at)` は intent から
+   ベクトル長を採り、`intent_id` を控え、`Started { intent }` を返す。
+4. **`CommitVerdictUseCase::execute` は `&Intent` も受け取る**（Controller が読んで渡す —
+   I8 と同じ参照渡し。ユースケースは Intent の取得手段を持たない）。実 CLI で Intent を
+   どこから読むか（台帳 or ジャーナルの Started）は U7 の設計点として申し送り。
+5. スナップショット（`IntentExecutionSnapshot`）も同じ縮小に追随。
+
+受入基準に追加: 集約状態に Intent 由来の静的フィールドが**残っていない**こと（snapshot の
+フィールド一覧で確認）、`&Intent` ガード（id 不一致・長さ不一致の拒否）のテスト。
+
+---
+
+# 改訂 4（2026-08-29・メインセッション裁定）— 再生時の `&Intent` は A+ 方式
+
+委任先が検出したギャップ（スナップショットから `stages` が消えると、`apply_event` の
+slug → 位置解決に使うステージ列を再生経路が入手できない）への裁定。**A+ を採る**。
+
+1. **Repository が再生用の `Intent` をジャーナル先頭の `Started`（seq_nr 1・genesis 専用）
+   から復元する。** スナップショットの有無に関わらず先頭 1 件を読む（ローカル SQLite の
+   追加読取 1 回は許容）。`find_by_id(&IntentExecutionId)` の署名は不変。
+2. `apply_event` は `&Intent` を引数で受ける（規則 `aggregate-references.md` の
+   パラメータ渡しを再生経路にも適用）。
+3. **復元した `Intent` は `RehydratedIntentExecution` に載せて返す。** ユースケースは
+   再構成の戻り値から `&Intent` を得て集約コマンドへ渡す。
+4. **改訂 3 の 4（「execute は `&Intent` も受け取る — Controller が読んで渡す」）は
+   本改訂で差し替える**: `CommitVerdictUseCase::execute` は `&Intent` を**受け取らない**。
+   出所はストリーム 1 つに畳まれ、U7 の申し送り「Intent をどこから読むか」は
+   「新規実行の作成時・CLI 表示用」に狭まる。
+5. 集約コマンド側の `intent.id() == self.intent_id` ガード（規則の取り違え防御）は維持する。
+
+**根拠**: 1 intent : n 実行では、各実行が従うべき計画は「その実行が開始した時点の intent」で
+あり、その永続記録は当該実行のストリームの `Started` に他ならない。Intent は不変
+（recompose は実行側の overlay）なので Started の写しが古くなることはない。
+D 案（イベントを index 運びへ変更）は、slug がイベントを自己記述の歴史にしている現状の
+利点（監査投影も slug を使う）を壊すため不採用。C 案は改訂 3 の受入基準に抵触し不採用。
+B 案は出所が二重になり不採用。
+
+**追認**: `Intent` に `depth` / `test_strategy` を含める（現 `Started` payload の材料一式は
+すべて Intent の静的構成である）。
+
+---
+
+# 改訂 5（2026-08-29・オーナー原則確認による A+ の撤回）— Repository は集約単位
+
+オーナー確認: **Repository は自分の集約だけを I/O する** — `IntentRepository` は `Intent` のみ、
+`IntentExecutionRepository` は `IntentExecution` のみ。この原則に照らし、改訂 4（A+）の
+「`IntentExecutionRepository` が復元した `Intent` を `RehydratedIntentExecution` に載せて返す」は
+**実行のリポジトリに Intent を扱わせる違反**であり撤回する。
+
+## 訂正後の形（委任先の B 案の形）
+
+1. `IntentExecutionRepository::find_by_id(&IntentExecutionId, intent: &Intent)` — 再生材料として
+   `&Intent` を**パラメータで受ける**（I/O ではない）。再生中に `intent.id()` と自ストリームの
+   intent_id（Started / スナップショット由来）を照合し、不一致は `Corrupt` 系で拒否。
+2. `RehydratedIntentExecution` は Intent を**載せない**（実行 + 版のみ）。
+3. `CommitVerdictUseCase::execute(&IntentExecutionId, intent: &Intent, transition, at)` —
+   改訂 3 の 4 を復活（Controller が読んで渡す I8 型。ユースケースは取得手段を持たない）。
+4. `Started` が intent 材料を運ぶのは従来どおり（歴史 + 投影核の入力）。リポジトリが**内部で**
+   自ストリームの Started を復号するのは自集約の I/O であり違反ではない — 違反は Intent を
+   **外へ返す**こと。
+5. **`IntentRepository` は U7（intent-create 実装時）で新設** — `Intent` の I/O はそこだけ。
+   B12 ではポート定義も不要（テストは `Intent` を直接構築）。申し送りに追加。
+
+## 意味論の注記（記録）
+
+現在の裁定では `Intent`（解決済み stages を含む）は**不変**なので、「E の Started の写し」と
+「IntentRepository が返す現在の Intent」は常に一致し、どちらを使っても同じである。将来
+「実行ごとに計画を再解決する」（同一 intent でも実行により stages が異なる）要件が現れたら、
+stages は Intent ではなく**実行の開始材料**へ移す再設計が要る — そのときの再裁定事項として
+記録する。
+
+---
+
+# 改訂 6（2026-08-29・オーナー確定）— find_by_id は自集約の ID だけを取る（A 案確定）
+
+オーナー確定: **`IntentExecutionRepository::find_by_id(&IntentExecutionId)` — 必要なのはその
+集約の id だけ**。改訂 5 の 1（ポートが `&Intent` を受ける）は上書き。委任先が導出した
+**A 案が正**:
+
+- ポート署名は `find_by_id(&IntentExecutionId)` のまま。
+- 再生材料の `Intent` は **Impl が自ストリーム先頭の `Started`（seq_nr 1）から内部復元**する。
+  自集約のストリームを読むのはリポジトリの本業であり、責務境界の違反ではない。
+- 復元した Intent を**外へ返さない**（改訂 5 の 2 は維持 — `RehydratedIntentExecution` は
+  実行 + 版のみ）。
+- `CommitVerdictUseCase::execute(&IntentExecutionId, intent: &Intent, ...)` は維持
+  （改訂 5 の 3 — Controller が読んで渡す）。
+
+**原則の一般形**（gateway-taxonomy.md に登録）: Repository の署名は自集約の ID だけを取り、
+他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が要る場合、
+それは自ストリームの誕生イベントに記録されているはずであり、そこから内部復元する。
+
+## 委任先の判断 3 点への追認
+
+1. `Intent` が `StartRequest` を丸ごと保持 — **追認**（4 値に不変条件なし、serde 導出で
+   検査迂回の余地なし）。
+2. `depth` / `test_strategy` を含める — 追認済み（改訂 4）。
+3. `StartError` → `IntentError` 統合 — **追認**。計画の解決が `Intent` 構築側へ移ることで
+   `IntentExecution::start` は Always Valid な `Intent` を受けて失敗しなくなり（`Result` が
+   消える = E1 の勝ち）、`StartError` の持ち主が消える。`no-backward-compatibility` どおり
+   別名を残さず削除。
+
+---
+
+# 改訂 7（2026-08-29・オーナー裁定）— WorkflowDefinition を集約規則へ適合させる
+
+`WorkflowDefinition` は集約（オーナー裁定）だが、現状はイベント語彙が無く、ファクトリ
+`new` が素の Self だけを返す — `aggregate-commands.md`（ファクトリは (集約, イベント) の対が
+必須。無ければリポジトリで永続化できない）に非適合。**B12 で修正する**。
+
+1. **`WorkflowDefinitionEvent` を新設**（workflow_definition モジュール）。genesis 変種
+   `Defined { id: WorkflowDefinitionId, revision: DefinitionRevision }` — 定義が確立された
+   事実の記録。内容フル（stage graph 等）はイベントに焼かない（実ファイル = この集約の
+   リードモデルが内容そのもの。将来の `ScopeComposed` 等の差分イベントが変更内容を運ぶ）。
+2. **genesis ファクトリは対を返す**: `WorkflowDefinition::define(...) ->
+   (WorkflowDefinition, WorkflowDefinitionEvent)`（動詞は factory-naming のドメイン語優先で
+   調整可。現 `new` の引数を引き継ぐ）。
+3. **Repository の読取経路は再構成であり genesis ではない**: 現 `new` の役割（3 入力の
+   束ね直し）は `from_artifacts(...)` 等の再構成コンストラクタとし、**イベントを生成しない**
+   （規則の再構成条項）。`WorkflowDefinitionRepositoryImpl` はこちらを呼ぶ。genesis の
+   `define` は将来の変異取込（後続 intent — audit-1.md 承認済み方針）が呼ぶ入口として
+   テストで形を固定しておく。
+4. テスト: genesis が対を返す形・`Defined` の材料・再構成がイベントを生成しないこと。
+   doc は `aggregate-commands.md` を参照。
+5. 外形不変（ゴールデン・投影 19 本）は従来どおり絶対。ジャーナル・永続化の接続は
+   **やらない**（イベントを store する先は後続 intent — 型と形だけ規則適合させる）。

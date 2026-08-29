@@ -56,13 +56,13 @@ components:
             relationship: "実行は定義（グラフ/グリッド）を参照して進む — 参照渡し、所有しない"
 
   - name: WorkflowDefinitionModel
-    summary: "読取専用集約 WorkflowDefinition（workflow_definition コンテキスト）"
+    summary: "集約 WorkflowDefinition（workflow_definition コンテキスト。~~読取専用集約~~ — 呼称廃止 2026-08-29 オーナー裁定: 集約に統一）"
     behaviour: >
       PL 3 入力（stage-graph / scope-grid / scopes）を束ねた Always Valid 集約。
       グリッド照会（plan_action_in_grid）等の述語面のみ提供し、オーバレイとの畳み込みは
       持たない（R2 — OrchestrationEngine 側の集約メソッドへ）。R1 裁定により PlanAction は
       このコンテキストが所有（orchestration は再輸出せず、完全移動で参照 — ADR-005 改訂）。ES 対象外（本システムから
-      書き換えない読取専用集約のため、従来どおり find のみの Repository で扱う）。
+      書き換えない（変異の実行主体はエンジン外 — コンポーザの scope 登記追記・再コンパイル）ためコマンド未実装であり、従来どおり find のみの Repository で扱う。~~読取専用集約~~ の呼称は廃止（2026-08-29 オーナー裁定）— WorkflowDefinition は集約であり、変異が要件化したら状態遷移はイベントを吐く。実ファイル 3 入力はこの集約のリードモデル）。
     responsibilities:
       - "StageGraph / ScopeGrid / StageNode / PlanAction（R1 後）の所有"
       - "スコープ解決・グラフ述語（subgraph_for_scope / next_in_scope_stage 等）"
