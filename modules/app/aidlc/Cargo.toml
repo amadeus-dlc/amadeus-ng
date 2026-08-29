@@ -8,8 +8,9 @@ repository.workspace = true
 [lints]
 workspace = true
 
-# 合成ルート (U7) だけが**両側**を知る。それが合成ルートの仕事である
-# (`coding-rules/cqrs-boundaries.md` §対象外)。
+# 合成ルート (U7) は**すべて**を知る — コマンド側 3 クレート・中間の RMU・共有層を配線する
+# のが合成ルートの仕事である (`coding-rules/cqrs-boundaries.md` §対象外)。他のどのクレートも
+# この組み合わせを `Cargo.toml` に書いてはならない。
 [dependencies]
 core-command-domain = { workspace = true }
 core-command-use-case = { workspace = true }

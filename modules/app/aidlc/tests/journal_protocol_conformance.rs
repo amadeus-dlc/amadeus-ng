@@ -4,9 +4,10 @@
 //!
 //! # なぜ合成ルート (`modules/app/aidlc`) に置くのか
 //!
-//! このテストは**コマンド側（Repository）とクエリ側（JournalReader / RMU）の両方**を駆動する。
-//! 2026-08-29 の側分割により、両側を `Cargo.toml` に書いてよいのは合成ルートだけになった
-//! (`coding-rules/cqrs-boundaries.md` §対象外)。したがって置き場は合成ルートである。
+//! このテストは**コマンド側（Repository）と RMU（JournalReader / 投影）の両方**を駆動する。
+//! コマンド側のクレートは `Cargo.toml` に RMU を書けない（違反）ので、置けるのは RMU 自身か
+//! 合成ルートに限られる (`coding-rules/cqrs-boundaries.md`)。合成ルートを選ぶのは、両者が
+//! **実際に結線される場所**で駆動するほうが ITF 準拠の観測として忠実だからである。
 //!
 //! フィクスチャは `tests/conformance/fixtures/journal_protocol/` にコミット済み
 //! (`#meta` 正規化済み)。各遷移は `lastAction` × `lastActor` で駆動する (lastAction 規約)。

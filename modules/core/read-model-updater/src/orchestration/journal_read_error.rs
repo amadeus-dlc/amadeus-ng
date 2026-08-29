@@ -2,8 +2,10 @@
 //!
 //! 集約の永続化 (書込・再構成) の失敗はコマンド側の `RepositoryError` が持つ。本型が語るのは
 //! 「ジャーナルの横断読取」と「投影チェックポイント」の面だけである — 楽観 version の競合が
-//! 変種に無いのはそのためで、競合は書込の面 (コマンド側) の話である。両側は互いを知らないので
-//! (`coding-rules/cqrs-boundaries.md`)、相手の型へのリンクは張らない。
+//! 変種に無いのはそのためで、競合は書込の面 (コマンド側) の話である。RMU の依存はコマンド側の
+//! うち `core-command-domain` だけで `core-command-use-case` を含まないので、相手の型への
+//! rustdoc リンクはそもそも張れない (`coding-rules/cqrs-boundaries.md` — 中間である RMU が
+//! 依存してよいのは投影核の入口に要るものだけ、という自制でもある)。
 //!
 //! [`JournalReader`]: super::journal_reader::JournalReader
 

@@ -3,9 +3,10 @@
 //!
 //! # なぜ合成ルート (`modules/app/aidlc`) に置くのか
 //!
-//! コマンド側（Repository）とクエリ側（JournalReader）の両方を駆動するテストだからである。
-//! 2026-08-29 の側分割により、両側を `Cargo.toml` に書いてよいのは合成ルートだけになった
-//! (`coding-rules/cqrs-boundaries.md` §対象外)。
+//! コマンド側（Repository）と RMU（JournalReader）の両方を駆動するテストだからである。
+//! コマンド側のクレートは `Cargo.toml` に RMU を書けない（違反）ので、置けるのは RMU 自身か
+//! 合成ルートに限られる (`coding-rules/cqrs-boundaries.md`)。両者が**実際に結線される場所**で
+//! 駆動するため合成ルートを選んだ。
 //!
 //! 「落ちた」は Repository (と本家ストアが握る接続) を drop することで表す。SQLite の
 //! `COMMIT` を通った書込だけが残り、途中で捨てられた Tx は残らない — その 2 つを同じ

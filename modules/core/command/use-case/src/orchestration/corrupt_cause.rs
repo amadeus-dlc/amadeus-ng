@@ -4,14 +4,14 @@ use std::fmt;
 
 /// `Corrupt` の原因分類 (材料) — 集約の永続化と再水和の面で起きうるもの。
 ///
-/// クエリ側 (`core_read_model_updater::orchestration::CorruptCause`) と**同じ名前の別の
-/// 型**である。両側は互いを知らないので (`coding-rules/cqrs-boundaries.md`)、分類を 1 つの
-/// enum で共有すると、どちらか一方がもう一方を `Cargo.toml` に書くことになる。DRY より側の
-/// 独立を採り、**実際に起きうる変種だけ**を各側が持つ (無用な変種は「この面ではありえない」
-/// という情報を消してしまう)。
+/// RMU (`core_read_model_updater::orchestration::CorruptCause`) と**同じ名前の別の型**で
+/// ある。分類を 1 つの enum で共有すると、コマンド側が RMU を `Cargo.toml` に書くことになり
+/// **こちら側では違反である** (`coding-rules/cqrs-boundaries.md` — コマンド側の依存に RMU が
+/// 現れたら違反)。加えて、共有しないほうが正確でもある: **実際に起きうる変種だけを各面が
+/// 持つ** (無用な変種は「この面ではありえない」という情報を消してしまう)。
 ///
 /// コマンド側に無いのは投影チェックポイントのアンカー不一致
-/// (`CheckpointAnchorMismatch`) である — チェックポイントはクエリ側だけが持つ表であり、
+/// (`CheckpointAnchorMismatch`) である — チェックポイントは RMU だけが持つ表であり、
 /// Repository は触れないので構成不能である。
 ///
 /// [`RepositoryError`] が運ぶ材料である。
