@@ -223,7 +223,7 @@ definition_id / definition_revision / scope / request / depth / test_strategy / 
 | 5 | quint-gate | **PASS** | 不変条件 run 3 種・witness 12 本すべて緑 |
 | 6 | coverage 相対 | **PASS** | 絶対 **98.4805%** >= 90%、相対 98.4805% >= `origin/main` 98.4801% − 0.01。**一度 FAIL させてから直した** — §5-7 を参照 |
 | 7 | unwrap 0 | **PASS** | プロダクトコードに `unwrap()` / `expect()` なし（clippy が機械強制） |
-| 8 | 新採取に provenance が揃い、再実行で `captured_at` 以外の差分が出ない | **PASS** | 再採取を 2 回連続実行し、**288 ファイル**が `captured_at` 以外バイト一致 |
+| 8 | 新採取に provenance が揃い、再実行で `captured_at` 以外の差分が出ない | **PASS** | 最終構成（25 ケース）で再採取を連続実行し、**296 ファイル**すべてが `captured_at` 以外バイト一致。新 3 ケースはいずれも `case.json`（`commit` / `captured_at` / `command`）と族単位の `provenance.json` を持つ |
 | 9 | `ScaffoldTemplateUnavailable` の grep 0 件（採取成功時）／`cases-missing.json` に理由（不能時） | **条件付き** | §4 の裁定待ちのため型は残存。**採取は成功しているが実装が材料不足で止まっている**という、基準が想定していなかった第 3 の状態である。`cases-missing.json` には `set-autonomy` の理由を記録済み |
 | 10 | 投影ゴールデン検収が B8 の 10 ケース + 新ケースで全両面一致 | **PASS** | **13 ケース**（10 + 新 3）すべて `audit.md` + `state.diff` の両面バイト一致。監査ブロック検収は 42 → **62 本** |
 
