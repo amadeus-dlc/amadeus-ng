@@ -338,8 +338,7 @@ mod tests {
 
     const DOMAIN_PATH: &str = "modules/core/command/domain/src/orchestration/workflow_execution.rs";
     const OWNER_PATH: &str = CHECKBOX_OWNER;
-    const ADAPTER_PATH: &str =
-        "modules/core/command/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs";
+    const ADAPTER_PATH: &str = "modules/core/command/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs";
     const ADAPTER_TEST_PATH: &str =
         "modules/core/command/interface-adapter/tests/workflow_definition_repository_impl_test.rs";
 
