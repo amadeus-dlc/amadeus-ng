@@ -12,11 +12,25 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod audit_block;
+mod audit_shard;
+mod projection;
+mod read_model;
 mod state_file;
 mod state_writers;
 
+// 純粋投影核とその作業面（二層構造の下側 — ストレージを知らない）
+pub use projection::{ProjectionError, project};
+pub use read_model::ReadModel;
+
 // 監査ブロックの描画（W9 の逐語契約。投影の行もフックの直接行も同じ描き手を通る）
 pub use audit_block::{SHARD_HEADER, render_audit_block};
+
+// 投影ライタ（リードモデルをディスクへ落とす 2 面。状態ファイルは置換、シャードは追記）
+pub use audit_shard::{AuditShardWriteError, append as append_audit_shard};
+pub use state_file::{
+    StateFileReadError, StateFileWriteError, read as read_state_file,
+    write_atomic as write_state_file,
+};
 
 // 状態ファイルの writer 4 種 + 読取（純粋な string→string — 11-workspace §2.3）
 pub use state_writers::{

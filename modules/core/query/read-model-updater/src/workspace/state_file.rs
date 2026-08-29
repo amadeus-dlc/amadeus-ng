@@ -9,15 +9,10 @@
 //! モジュールを見ない (`coding-rules/cqrs-boundaries.md` 規則 4)。trait は持たない —
 //! 差し替え点は取得ループ側にあり、ここに二重の抽象を置かない。
 //!
-//! 現時点でプロダクトコードからの消費者は存在せず、唯一の呼出は下のユニットテストである。
-//! upstream 逐語の契約 (not-found 文言・W_OK バリア・mkdir -p・アトミック書込) を先に
-//! 固定しておくためのモジュールなので、投影核が配線するまで `dead_code` を許可する。
 //!
 //! **利用制約**: W_OK 検査→rename の間の TOCTOU 窓は upstream (`accessSync` → write) と
 //! 同一の観測挙動である。書込の直列化は mkdir ロックではなく SQLite の書込トランザクションと
 //! 楽観バージョンが担う (ADR-007 でロック機構は退役した)。
-#![allow(dead_code)]
-
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -26,27 +21,29 @@ use std::path::Path;
 ///
 /// 逐語文言 (`message_catalog::state::file_not_found_message` 等) を包んで運ぶだけの型。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StateFileReadError {
+pub struct StateFileReadError {
     message: String,
 }
 
 impl StateFileReadError {
     /// 逐語文言を包んで持ち上げる。
-    pub(crate) fn new(message: impl Into<String>) -> StateFileReadError {
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> StateFileReadError {
         StateFileReadError {
             message: message.into(),
         }
     }
 
     /// 保持している逐語文言。upstream 出力と 1 文字も違ってはならない。
-    pub(crate) fn message(&self) -> &str {
+    #[must_use]
+    pub fn message(&self) -> &str {
         &self.message
     }
 }
 
 /// 状態ファイル書込の失敗。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StateFileWriteError {
+pub enum StateFileWriteError {
     /// 対象が存在し W_OK バリアに引っかかった (意図的な書込バリア —
     /// research workspace-state-intent §1.5。rename は read-only ターゲットを貫通するため
     /// W_OK 事前チェックがバリアの実装)。
@@ -62,7 +59,11 @@ pub(crate) enum StateFileWriteError {
 }
 
 /// 状態ファイルを読み取る。不在は逐語の not-found 文言、それ以外は OS の I/O 文言。
-pub(crate) fn read(path: &Path) -> Result<String, StateFileReadError> {
+///
+/// # Errors
+///
+/// 読めなければ逐語文言を包んだ `StateFileReadError`。
+pub fn read(path: &Path) -> Result<String, StateFileReadError> {
     fs::read_to_string(path).map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
             StateFileReadError::new(message_catalog::state::file_not_found_message(
@@ -76,7 +77,11 @@ pub(crate) fn read(path: &Path) -> Result<String, StateFileReadError> {
 
 /// tmp+rename でアトミックに書き込む。対象が存在すれば書込前に W_OK バリアを検査し、
 /// 不在なら親ディレクトリを mkdir -p する。
-pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), StateFileWriteError> {
+///
+/// # Errors
+///
+/// read-only ターゲット (`ReadOnlyTarget`)、その他の I/O 失敗 (`Io`)。
+pub fn write_atomic(path: &Path, content: &str) -> Result<(), StateFileWriteError> {
     if path.exists() {
         match core_infrastructure::fs_meta::is_writable(path) {
             Ok(true) => {}

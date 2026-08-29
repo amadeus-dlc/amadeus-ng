@@ -17,10 +17,14 @@ mod journal_reader;
 mod journal_reader_impl;
 mod projection_name;
 mod store_failure;
+mod updater;
 
 // ポート (trait) と実 I/O 実装
 pub use journal_reader::JournalReader;
 pub use journal_reader_impl::JournalReaderImpl;
+
+// 取得ループ (RMU コンポーネント本体 — 二層構造の上側)
+pub use updater::{ProjectionTargets, ReadModelUpdater};
 
 // Domain Primitive (永続化の通番と投影の名前)
 pub use global_seq_nr::GlobalSeqNr;
@@ -33,3 +37,4 @@ pub use journal_entry::JournalEntry;
 pub use corrupt_cause::CorruptCause;
 pub use journal_read_error::JournalReadError;
 pub use projection_name::ProjectionNameError;
+pub use updater::CatchUpError;

@@ -33,6 +33,19 @@ impl AutonomyMode {
         }
     }
 
+    /// 状態ファイルの `- **Construction Autonomy Mode**:` に書く綴り。
+    ///
+    /// [`AutonomyMode::from_state_field`] の逆写像である（往復忠実:
+    /// `from_state_field(Some(m.as_state_field())) == m`）。読む綴りと書く綴りが割れると、
+    /// 一度書いた値を自分で読み戻せなくなる。
+    #[must_use]
+    pub const fn as_state_field(self) -> &'static str {
+        match self {
+            AutonomyMode::Autonomous => "autonomous",
+            AutonomyMode::Gated => "gated",
+        }
+    }
+
     /// 無人実行中か。バッチゲートの省略可否と、park / recompose の拒否ガードの判定に使う。
     #[must_use]
     pub fn is_autonomous(self) -> bool {
