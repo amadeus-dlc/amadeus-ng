@@ -27,6 +27,9 @@
 固定フィクスチャに旧名や `"intent_id"` のバイトが埋まっている箇所は**発見されなかった**（§3）。
 したがって「止めて報告」の条件には該当しなかった。
 
+判断待ちだった `EVENT_MANIFEST` の値も、2026-08-30 の裁定を受けて
+`"intent-execution-event/1"` へ揃えた（§5 (a)）。これで本 Bolt に旧語彙の化石は残っていない。
+
 ---
 
 ## 1. 到達点（改訂 7 まで反映・実測）
@@ -96,7 +99,7 @@ IntentExecution::start(id: IntentExecutionId, intent: Intent, occurred_at) -> (I
 | `tests/golden/**` | `git status --short -- tests/` が **0 件**（読むだけ・1 バイトも変えていない） |
 | 投影ゴールデン | `projection_golden_test.rs` の 19 本が**無改変で全緑**（フィクスチャの `Started` 組み立てだけ新形に追随） |
 | 監査語彙 | `WORKFLOW_*` に触れていない（RMU の投影核は無改変） |
-| `EVENT_MANIFEST` | `"workflow-execution-event/1"` を据え置き（§5 (a)） |
+| `EVENT_MANIFEST` | `"intent-execution-event/1"` へ改めた（§5 (a)）。ゴールデンにこの文字列は **0 件**（`grep -rc "workflow-execution-event" tests/` が全ファイル 0）で、外形契約ではない |
 
 RMU 側を実測したところ、投影核（`projection.rs`）は `JournalEntry` の集約識別子を**使っていない**
 （使用は journal reader とテストだけ）。ジャーナルの集約キーが実行識別子に変わっても、
@@ -138,6 +141,7 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 16 | `&Intent` ガード（id 不一致・長さ不一致）のテスト | **緑**（`a_command_refuses_an_intent_that_belongs_to_another_intent` ほか 5 本） |
 | 17 | 全 `&mut self` コマンドがイベントを返す（`coding-rules/aggregate-commands.md`） | **緑**。集約の `pub fn` かつ `&mut self` は **12 本**あり、うち 11 本（`complete_stage` / `open_gate` / `approve_gate` / `reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` / `switch_autonomy`）はすべて `Result<IntentExecutionEvent, CommandError>` を返す。残る 1 本は規則が明示的に除外する fold の `apply_event`（`Result<(), ApplyError>`）。イベントを返さない遷移メソッドは **0 本** |
 | 18 | genesis が (集約, 誕生イベント) の対を返す / 再構成経路がイベントを生成しない | **緑**。`IntentExecution::start` は `(IntentExecution, IntentExecutionEvent)`、`WorkflowDefinition::define` は `(WorkflowDefinition, WorkflowDefinitionEvent)`。再構成の `IntentExecution::from_snapshot` / `apply_event` / `WorkflowDefinition::from_artifacts` はいずれもイベント型を戻り値に持たない（型で保証） |
+| 19 | `EVENT_MANIFEST` の綴りが集約名に揃っている（2026-08-30 裁定） | **緑**。値は `"intent-execution-event/1"`。旧綴りのコード出現は **0 件**（`grep -rn "workflow-execution-event" modules/ tools/ --include='*.rs'` は doc 注記の 1 行のみ — 改名の経緯を記録した意図的な残置）。ゴールデン側は改名前から **0 件** |
 
 ### テストの増減の内訳（実測）
 
@@ -155,18 +159,43 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 
 ## 5. 判断が要った点
 
-### (a) `EVENT_MANIFEST` の値は据え置いた
+### (a) `EVENT_MANIFEST` の値も `intent-execution-event/1` へ揃えた（裁定済み）
 
-`EVENT_MANIFEST = "workflow-execution-event/1"` は改名すれば `intent-execution-event/1` 相当に
-なる綴りである。据え置いた理由は 2 つ:
+当初は据え置いて判断を仰いだ。据え置きの根拠は「doc 自身が『変えると既存行が読めなくなる』と
+逐語固定を宣言している」ことだったが、**この根拠は本リポジトリの実態に当たらない**という裁定を
+受けた（2026-08-30）。裁定の根拠:
 
-1. **改名一族の表に無い。** 表は文字列値の改名を 1 つだけ（`AGGREGATE_TYPE_NAME`）明示している。
-2. **doc 自身が逐語固定を宣言している。** 定数のテストに「綴りは行に書かれて残る値である —
-   変えると既存行が読めなくなるので逐語で固定する」と書かれており、値の変更は既存ジャーナル行を
-   `Corrupt` にする破壊的変更である。
+1. **ゴールデンにこの文字列は焼かれていない。** `grep -rc "workflow-execution-event" tests/` は
+   全ファイル 0 件（実測）。外形契約ではない。
+2. **配布済みデータが存在しない。** ジャーナルはクローンごとの使い捨てランタイム（gitignore 済み）
+   であり、「既存行が読めなくなる」対価がそもそも発生しない。
+   `coding-rules/no-backward-compatibility.md`（未配布のため互換の対価が無い）がそのまま適用される。
+3. **改名 Bolt に旧語彙の化石を 1 つ残すほうが、将来の混乱コストが高い。**
 
-受入基準 9 とは衝突しない（小文字・ハイフンなので `WorkflowExecution` に部分一致しない）。
-**判断を仰ぎたい**: 値も揃えるなら別 Bolt での実施を推奨する（永続化形式の変更である）。
+TDD で進めた。まず逐語固定テストの期待値だけを新綴りへ書き換えて red を確認し
+（`assertion left == right failed / left: "workflow-execution-event/1" / right:
+"intent-execution-event/1"`）、そのうえで定数値を変えて green にした。
+
+直した箇所は**定数 1 + 参照 5**（旧綴りのコード出現は改名前 6 件・改名後 0 件、実測）:
+
+| # | ファイル | 直した内容 |
+|---|---|---|
+| 1 | `core/command/domain/src/orchestration/event_manifest.rs:24` | 定数値そのもの |
+| 2 | `core/command/domain/src/orchestration/event_manifest.rs:33` | 逐語固定テストの期待値 |
+| 3 | `core/command/interface-adapter/tests/intent_execution_repository_impl_test.rs:36` | `const MANIFEST`（アダプタが書く綴りの写し） |
+| 4 | `core/command/domain/tests/upstream_event_store_conformance.rs:42` | `const MANIFEST`（本家封筒に載せる綴りの写し） |
+| 5 | `core/read-model-updater/src/orchestration/journal_reader_impl.rs:1335` | 異種 manifest 拒否テストの「版だけ違う」ケース（`…-event/2`） |
+| 6 | `app/aidlc/tests/crash_reconstruction_test.rs:147` | 生 SQL の `INSERT INTO journal(… manifest) VALUES (…)` |
+
+doc の注記も裁定どおり言い直した（`event_manifest.rs:19-23`）——
+「変えると既存行が読めなくなる」→「綴りは集約名に合わせて `workflow-execution-event/1` から
+改めた。**未配布期の改名は `no-backward-compatibility.md` による**（ジャーナルは使い捨て
+ランタイムで配布済みの行が無く、旧綴りを温存する対価が発生しない）。**配布後は同じ改名が
+破壊的変更になる**ので、そのときは版を上げるか移行を用意すること」。テスト側のコメントも
+「逐語で固定して、意図しない揺れを落とす」へ改めた（固定の目的は残し、失効した理由づけを外した）。
+
+受入基準 9（`WorkflowExecution` の grep 0 件）とは元より無関係である（小文字・ハイフン綴りなので
+部分一致しない）。改名後も基準 9 は 0 件のまま。
 
 ### (b) 再生に要る `&Intent` の入手経路（A 案 — オーナー確定）
 
@@ -284,7 +313,10 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 2. **`entities.md` の `WorkflowExecutionState` 節**（U3 functional-design）— 型名・属性数
    （17 → 12）・Builder 名・エラー名（`StateError` → `SnapshotError` で B5 の改名が巻き戻った）が
    すべて失効した。同じく所有ファイル外。
-3. **`EVENT_MANIFEST` の値** — §5 (a)。裁定を仰ぐ。
+3. ~~**`EVENT_MANIFEST` の値**~~ — **解決済み**（2026-08-30 裁定、§5 (a)）。値は
+   `intent-execution-event/1` へ改めた。なお `docs/specs/10-orchestration.md:44` と
+   inception 期の成果物（`domain-design/decisions.md:435`、`contract-design/contract-summary.md`
+   の 271 / 291 / 374 行）に旧綴りが残っている。いずれも所有ファイル外なので触っていない。
 4. **`IntentRepository` は U7（intent-create 実装時）で新設**（改訂 5 の 5）。B12 ではポート
    定義も作っていない — テストは `Intent` を直接構築している。
 5. **「この intent の現在の実行」の解決**と**「同一 intent の生きた実行は同時に 1 つ」**の
@@ -311,25 +343,30 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 
 ## 7. コミット
 
-意味単位で 6 本（いずれも `b12: ` 接頭辞、`git add` は明示パス、**push なし**）。
+`origin/main..HEAD` は **17 本**（うち委任側の実装・報告が 16 本、`ecf268f3` は本セッション側の
+成果物）。本報告の反映コミット（末尾）を含む。いずれも `b12: ` 接頭辞、`git add` は明示パス、**push なし**。
 
 | コミット | 内容 |
 |---|---|
-| `e27cfd8` | 集約 `WorkflowExecution` を `Intent` へ改名する（一族・ファイル名・`type_name`） |
-| `40c90b9` | 集約のフィールド `intent_id` とアクセサを `id` / `id()` へ改める |
-| `75ad323` | 委任ブリーフと開発者報告を記録する |
-| `033f898` | 写しのビルダーを `IntentSnapshotBuilder` へ改め、クレート内私有に絞る |
-| `156b511` | 再訂正の反映を開発者報告へ記録する |
-| `72a7de0` | 集約一族を `IntentExecution` へ改名する（改訂 2 の受け皿） |
-| `2d71d35` | 実行の識別子 `IntentExecutionId` を新設する |
-| `637916f` | 静的な intent を表す不変構造体 `Intent` を新設する |
-| `3dda7cb` | 集約を `IntentExecution` へ縮小し、計画は `&Intent` で受け取る |
+| `e27cfd86` | 集約 `WorkflowExecution` を `Intent` へ改名する（一族・ファイル名・`type_name`） |
+| `40c90b94` | 集約のフィールド `intent_id` とアクセサを `id` / `id()` へ改める |
+| `75ad3239` | 委任ブリーフと開発者報告を記録する |
+| `033f8988` | 写しのビルダーを `IntentSnapshotBuilder` へ改め、クレート内私有に絞る |
+| `156b5111` | 再訂正の反映を開発者報告へ記録する |
+| `72a7de06` | 集約一族を `IntentExecution` へ改名する（改訂 2 の受け皿） |
+| `2d71d357` | 実行の識別子 `IntentExecutionId` を新設する |
+| `637916f3` | 静的な intent を表す不変構造体 `Intent` を新設する |
+| `3dda7cbd` | 集約を `IntentExecution` へ縮小し、計画は `&Intent` で受け取る |
 | `affb01cc` | 分割を開発者報告へ書き直す |
 | `9cb09791` | 写しの語彙を `snapshot` へ揃え、確定した引数順と規則参照を反映する |
 | `81edabee` | 改訂 6 確定・snapshot 語彙・規則参照を開発者報告へ反映する |
 | `df749101` | `WorkflowDefinition` を集約規則（ファクトリは対を返す）へ適合させる |
+| `c6f50825` | 改訂 7 を開発者報告へ反映する |
+| （本セッション）`ecf268f3` | 集約規則 3 本の正典化・呼称の統一・設計記録と仕様の失効注記 |
+| `fd2ee4d9` | ジャーナルの型判別子を `intent-execution-event/1` へ揃える（§5 (a) 裁定） |
 
-前半 5 本は改名フェーズ、後半 4 本が分割フェーズである。改訂 2 が来た時点で**巻き戻しは
-不要だった** — 集約側の改名がそのまま `IntentExecution` への機械改名で流用できたためである。
-`3dda7cb` だけは 1 コミットが大きいが、集約の縮小・ポート・アダプタ・RMU・app が
+改名フェーズ（`e27cfd86`〜`156b5111`）→ 分割フェーズ（`72a7de06`〜`affb01cc`）→ 語彙・規則適合
+フェーズ（`9cb09791` 以降）の 3 段である。改訂 2 が来た時点で**巻き戻しは不要だった** —
+集約側の改名がそのまま `IntentExecution` への機械改名で流用できたためである。
+`3dda7cbd` だけは 1 コミットが大きいが、集約の縮小・ポート・アダプタ・RMU・app が
 同時に動かないとビルドが通らないため分割できなかった。
