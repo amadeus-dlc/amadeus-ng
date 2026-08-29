@@ -29,7 +29,6 @@ pub use audit_events::{EventCategory, EventType};
 pub use audit_field::{AuditFieldKey, AuditFieldValue, AuditFields};
 pub use audit_ordering::{AuditEventRecord, OrderedAuditEvents};
 pub use bolt_refs::BoltRefs;
-pub use checkbox::{CheckboxEntry, CheckboxState};
 pub use clone_id::CloneId;
 pub use intent_dir_name::IntentDirName;
 pub use shard_name::ShardName;
@@ -39,14 +38,11 @@ pub use state_version::{StateVersionClassification, StateVersionKind};
 pub use store_path::StorePath;
 
 // 純関数ドメインサービス
-pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker, with_checkbox_suffix};
-pub use state_field_value::unsafe_line_char;
-pub use state_version::classify_state_version;
+pub use checkbox::{CheckboxEntry, CheckboxState, CheckboxUpdateError, Checkboxes};
 
 // エラー
 pub use audit_field::AuditFieldKeyError;
 pub use bolt_refs::BoltRefsError;
-pub use checkbox::CheckboxUpdateError;
 pub use clone_id::CloneIdError;
 pub use intent_dir_name::IntentDirNameError;
 pub use space_name::SpaceNameError;

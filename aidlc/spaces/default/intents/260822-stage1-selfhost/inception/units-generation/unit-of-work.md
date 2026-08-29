@@ -47,7 +47,7 @@
 
 ### U1 — `u1-canon-json-goldens`（library, M）
 
-- **責務**: `canon-json` ~~クレート~~（**2026-08-29 / Bolt B9**: 独立クレートは解体し `core-infrastructure::canon_json` モジュールへ移設 — 直列化の力学は言語拡張。Unit の成果・ゴールデンは有効なまま）（upstream 互換の正準 JSON 直列化 + sha256 — `components.md` の
+- **責務**: `canon-json` ~~クレート~~（**2026-08-29 / Bolt B9**: 独立クレートは解体し `core_infrastructure::canon_json` モジュールへ移設 — 直列化の力学は言語拡張。Unit の成果・ゴールデンは有効なまま）（upstream 互換の正準 JSON 直列化 + sha256 — `components.md` の
   CanonJson）と、0b の正解データ採取（upstream ツールを bun で実行し、hash-canonical 受入表と CLI
   実行出力ゴールデン = stdout JSON・状態ファイル差分・監査行 をコミット）。
 - **境界**: 入力は upstream ピン `3c3146cf` の実行結果のみ。他 Unit のコードに依存しない（依存ゼロの

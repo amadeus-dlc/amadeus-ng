@@ -26,8 +26,7 @@ use core_command_domain::orchestration::{
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
-    AuditFieldKey, AuditFieldKeyError, AuditFields, CheckboxState, CheckboxUpdateError,
-    count_completed, with_checkbox_marker, with_checkbox_suffix,
+    AuditFieldKey, AuditFieldKeyError, AuditFields, CheckboxState, CheckboxUpdateError, Checkboxes,
 };
 
 use chrono::{DateTime, Utc};
@@ -314,7 +313,9 @@ fn started(
     {
         set_checkbox(read_model, stage.slug().as_str(), CheckboxState::Completed)?;
     }
-    let completed = count_completed(read_model.state()).to_string();
+    let completed = Checkboxes::parse(read_model.state())
+        .count_completed()
+        .to_string();
     set_field(read_model, field::COMPLETED, &completed)?;
     if let Some(last) = plan
         .stages()
@@ -900,7 +901,9 @@ fn enter_stage_without_row(
 /// ステージを完了させる — チェックボックス `[x]`、完了数の同期、最終完了ステージ。
 fn complete_stage(read_model: &mut ReadModel, slug: &StageSlug) -> Result<(), ProjectionError> {
     set_checkbox(read_model, slug.as_str(), CheckboxState::Completed)?;
-    let completed = count_completed(read_model.state()).to_string();
+    let completed = Checkboxes::parse(read_model.state())
+        .count_completed()
+        .to_string();
     set_field(read_model, field::COMPLETED, &completed)?;
     set_field(read_model, field::LAST_COMPLETED_STAGE, slug.as_str())
 }
@@ -952,7 +955,7 @@ fn set_checkbox(
     slug: &str,
     state: CheckboxState,
 ) -> Result<(), ProjectionError> {
-    let next = with_checkbox_marker(read_model.state(), slug, state)?;
+    let next = Checkboxes::with_marker(read_model.state(), slug, state)?;
     read_model.replace_state(next);
     Ok(())
 }
@@ -963,7 +966,7 @@ fn set_suffix(
     slug: &str,
     action: PlanAction,
 ) -> Result<(), ProjectionError> {
-    let next = with_checkbox_suffix(read_model.state(), slug, action)?;
+    let next = Checkboxes::with_suffix(read_model.state(), slug, action)?;
     read_model.replace_state(next);
     Ok(())
 }

@@ -87,6 +87,6 @@
 
 - `modules/core/interface-adapter/` 以下のワイヤ表現・行マッピング（技術的境界であり
   ドメインモデルではない）。ただし**ドメインの語を写す部分は語を保つ**こと。
-- infrastructure の汎用モジュールと境界の文言モジュール（`core-infrastructure::canon_json` / 各出し手の `wording` — 2026-08-29 の shared 解体で移設）。これらは
+- infrastructure の汎用モジュールと境界の文言モジュール（`core_infrastructure::canon_json` / 各出し手の `wording` — 2026-08-29 の shared 解体で移設）。これらは
   ドメインを持たない汎用部品である。
 - `modules/infra-io/` の I/O プリミティブ。

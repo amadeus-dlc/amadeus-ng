@@ -80,7 +80,7 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 
 | クレート | 側 | `Cargo.toml` に書いてよい相手 |
 | --- | --- | --- |
-| `core-command-domain` | **コマンド** | 共有層のみ。**ドメインはコマンド側の持ち物**（2026-08-29 オーナー裁定） |
+| `core-command-domain` | **コマンド** | 共有層のみ**許可**（言語拡張 `core-infrastructure` は使ってよい — 義務ではない。現時点の実依存は外部ライブラリのみ）。**ドメインはコマンド側の持ち物**（2026-08-29 オーナー裁定） |
 | `core-command-use-case` | **コマンド** | `core-command-domain`。クエリ側と RMU は禁止 |
 | `core-command-interface-adapter` | **コマンド実装** | コマンド側 + 本家ストア。クエリ側と RMU は禁止 |
 | **`core-read-model-updater`（RMU）** | **中間** — どちらの側でもない | **コマンド側のドメインイベントにもクエリ側にも依存できる**（2026-08-24 原裁定）。共有層 + rusqlite も可。`JournalReader` ポートも SQLite 実装も RMU 自身が所有 |

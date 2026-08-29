@@ -271,7 +271,7 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
     そのまま公開言語**であり、独立の語彙クレートは不要（オーナー明言）。これに基づき shared の
     4 クレートを解体した（Bolt B9）: `audit-events`（監査イベント語彙 86 語）と
     `directive-schema`（`DirectiveKind`）は**ドメイン知識**として `core-command-domain` の
-    モジュールへ、`canon-json` は**言語拡張**として `core-infrastructure::canon_json` へ、
+    モジュールへ、`canon-json` は**言語拡張**として `core_infrastructure::canon_json` へ、
     `message-catalog` は**出す側に同居**（状態ファイル文言 → RMU の `wording`、CLI 境界文言 →
     コマンド側アダプタの `cli_wording`。B5 で退役済みの lock 文言は削除）。あわせて
     domain → message-catalog という依存方向違反（「純粋部品だから全層依存可」を免罪符に

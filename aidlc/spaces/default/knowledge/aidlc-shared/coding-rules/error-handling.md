@@ -9,7 +9,7 @@
 - ドメイン層・ユースケース層の失敗はモジュールごとの**手実装エラー enum** で表現する。
 - `thiserror` / `anyhow` 等のエラーハンドリング外部クレートには依存しない。
 - 各エラー enum は `std::fmt::Display` と `std::error::Error` を手実装する。
-- `Display` は**材料**（ID・索引・状態・原因）だけを描く開発者向けの診断表示であり、利用者向けの逐語文言（upstream 互換面）はアダプタ層（message-catalog）が組み立てる — ドメイン層に文言を持ち込まない。
+- `Display` は**材料**（ID・索引・状態・原因）だけを描く開発者向けの診断表示であり、利用者向けの逐語文言（upstream 互換面）は**出す側の `wording` モジュール**（アダプタ層・RMU の投影ライタ — 2026-08-29 の message-catalog 解体後の形）が組み立てる — ドメイン層に文言を持ち込まない。
 - 変種フィールドは材料のみ（`stage`, `actual`, `expected`, `path`, `cause` など）で、`String` の文言を運ぶ変種を作らない。
 - fallible な公開関数には `# Errors` セクションを付ける（`missing_errors_doc` deny）。
 - `# Panics` を要する公開関数は作らない（範囲は型で保証 — `StageIndex` 等）。

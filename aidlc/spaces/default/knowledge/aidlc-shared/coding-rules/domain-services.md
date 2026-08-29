@@ -19,6 +19,12 @@ project.md Corrections「集約は FSM — 導出ロジックを独立ドメイ�
 説明できたときだけである（複数集約にまたがり、どちらの不変条件でもない操作など）。
 その説明は doc コメントに書く — 書けないなら型へ戻す。
 
+**なぜか（オーナーの言語化 2026-08-29）**: グローバル関数の弱点は「目当ての対象を決めてから
+タスクを決める」ことができない点にある — `find_all_events` だとまずタスクを決めるしかないが、
+`OrderedAuditEvents::find_in` なら**先に対象を決め、`::` で全タスクを発見できる**
+（OOUI 的プログラミング。補完も rustdoc も型単位で束なる）。ドメインサービスと呼びたい操作で
+あっても、**所定の構造体型の関連メソッドにできるだけ収める**。
+
 ## 実例（是正）
 
 `find_all_events(buffer) -> OrderedAuditEvents` は自由関数のドメインサービスとして
@@ -27,6 +33,14 @@ project.md Corrections「集約は FSM — 導出ロジックを独立ドメイ�
 `OrderedAuditEvents::find_in(buffer)` へ是正（2026-08-29。同型の先例:
 `ResolvedPlan::find_in`）。仕様が「ドメインサービス（純関数）」と呼んでいても、それは
 責務の所在（domain に残る）を言うだけで、自由関数という形を強制しない。
+
+## 実例（是正の続き — 2026-08-29 同日）
+
+- `parse_checkboxes` / `count_completed` / `with_checkbox_marker` / `with_checkbox_suffix`
+  → **一級コレクション `Checkboxes`** の関連メソッドへ全収容（`parse` / `count_completed` /
+  `with_marker` / `with_suffix`。対象を決めれば全タスクが `::` で見える）
+- `classify_state_version` → `StateVersionClassification::classify`
+- `unsafe_line_char` → `StateFieldValue::unsafe_line_char`（単一行安全性の規則は本型が所有）
 
 ## 禁止パターン
 
