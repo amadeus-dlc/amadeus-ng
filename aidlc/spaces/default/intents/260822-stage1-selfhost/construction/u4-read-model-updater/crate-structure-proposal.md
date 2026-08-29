@@ -36,11 +36,18 @@ modules/core/query/read-model-updater/  パッケージ名: core-query-read-mode
 ```
 
 - `core-domain` は共有のまま（両側が依存してよい唯一の層）。
+- **infrastructure 層（2026-08-29 オーナー裁定追加）**: `modules/core/infrastructure` =
+  `core-infrastructure`（旧 `infra-io` の改名 — `atomic` / `append_only` / `fs_meta`。言語拡張系
+  のみを置き、RPC クライアント・DB アクセスは置かない —
+  `coding-rules/infrastructure-layer.md`）。`modules/harness/infrastructure` =
+  `harness-infrastructure` は harness 文脈の言語拡張の受け皿として憲章 doc 付きで新設
+  （実体は U7 以降）。依存方向: infrastructure はどの層も知らない・どの層からも使ってよい。
 
 ## 2. 依存グラフ（cqrs-boundaries 判定表・改訂）
 
 ```text
 core-domain                    ← 共有（イベント語彙・集約）
+core-infrastructure            ← 言語拡張（旧 infra-io。どの層も知らない）
 core-command-use-case          → core-domain
 core-command-interface-adapter → core-domain, core-command-use-case, event-store-adapter-rs(sqlite)
 core-query-read-model-updater  → core-domain, rusqlite, chrono

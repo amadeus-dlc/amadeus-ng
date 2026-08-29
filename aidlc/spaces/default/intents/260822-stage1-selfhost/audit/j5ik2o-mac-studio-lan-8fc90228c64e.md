@@ -21836,3 +21836,27 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-29T00:12:26Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T00:14:06Z
+**Event**: HUMAN_TURN
+
+---
+
+## Rule Learned
+**Timestamp**: 2026-08-29T00:15:58Z
+**Event**: RULE_LEARNED
+**Stage**: functional-design
+**Candidate-ID**: user-2
+**Content-Hash**: 0f8d343588340d826f0d8582060c96d7dc74692021f7fc337efaa1b5e40ef1aa
+**Destination**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/memory/project.md
+**Heading**: ## Corrections
+**Source**: user_addition
+
+---
