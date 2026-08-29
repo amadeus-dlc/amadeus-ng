@@ -1,12 +1,12 @@
 //! ITF 準拠テスト (ADR 0003 決定 5) — `formal/orchestration/engine_loop.qnt` のトレースを
-//! イベントソーシング形の `Intent` に **decide → apply** 経路で再生し、全ステップで
+//! イベントソーシング形の `IntentExecution` に **decide → apply** 経路で再生し、全ステップで
 //! 状態射影とディレクティブ観測を突き合わせる (BR2.5)。
 //! フィクスチャは `tests/conformance/fixtures/engine_loop/` にコミット済み (#meta 正規化済み)。
 //! トレースの各遷移は `lastAction` で駆動する (lastAction 規約)。
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
 //! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
-//! `Intent::start_from_plan_unchecked` に直接与えて集約を作る。実グラフの initialization が
+//! `IntentExecution::start_from_plan_unchecked` に直接与えて集約を作る。実グラフの initialization が
 //! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, EngineSignal, Intent, IntentId, NextRequest, StageDisplay, StageEntry,
+    AutonomyMode, EngineSignal, IntentExecution, IntentId, NextRequest, StageDisplay, StageEntry,
     StageIndex, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
@@ -178,11 +178,11 @@ fn scan() -> WorkspaceScan {
     .unwrap()
 }
 
-fn index(agg: &Intent, value: usize) -> StageIndex {
+fn index(agg: &IntentExecution, value: usize) -> StageIndex {
     agg.stage_index(value).unwrap()
 }
 
-fn assert_projection(agg: &Intent, m: &ModelState, step: usize) {
+fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
     let n = agg.stage_count();
     assert_eq!(n, m.plan.len(), "step {step}: stage count");
     for s in 0..n {
@@ -265,7 +265,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let (mut agg, _started) = Intent::start_from_plan_unchecked(
+    let (mut agg, _started) = IntentExecution::start_from_plan_unchecked(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),

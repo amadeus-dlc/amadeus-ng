@@ -1,4 +1,4 @@
-//! `IntentRepository` の契約 (BR1.2 / BR1.3)。
+//! `IntentExecutionRepository` の契約 (BR1.2 / BR1.3)。
 //!
 //! ここに書いた関数群が「実装が満たすべき約束」の**唯一の記述**である。本家の memory
 //! バックエンドと SQLite バックエンドは同じ関数を通す (BR2.7 — 片方だけ通るテストを残さない)。
@@ -12,7 +12,9 @@
 
 use core_command_domain::orchestration::AutonomyMode;
 
-use core_command_use_case::orchestration::{IntentRepository, RehydratedIntent, RepositoryError};
+use core_command_use_case::orchestration::{
+    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
+};
 
 use super::{
     StoreFixture, absent_intent_id, advance, at, genesis, intent_id, store_genesis,
@@ -22,7 +24,9 @@ use super::{
 /// genesis から 5 イベントぶん書き進め、最後の再水和結果を返す。
 ///
 /// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
-pub(crate) async fn seed<R: IntentRepository>(repository: &mut R) -> RehydratedIntent {
+pub(crate) async fn seed<R: IntentExecutionRepository>(
+    repository: &mut R,
+) -> RehydratedIntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(at())

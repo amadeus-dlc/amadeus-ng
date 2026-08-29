@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
-use core_command_domain::orchestration::{IntentEvent, IntentId};
+use core_command_domain::orchestration::{IntentExecutionEvent, IntentId};
 
 use super::global_seq_nr::GlobalSeqNr;
 
@@ -30,7 +30,7 @@ pub struct JournalEntry {
     intent_id: IntentId,
     seq_nr: usize,
     occurred_at: DateTime<Utc>,
-    event: IntentEvent,
+    event: IntentExecutionEvent,
 }
 
 impl JournalEntry {
@@ -41,7 +41,7 @@ impl JournalEntry {
         intent_id: IntentId,
         seq_nr: usize,
         occurred_at: DateTime<Utc>,
-        event: IntentEvent,
+        event: IntentExecutionEvent,
     ) -> JournalEntry {
         JournalEntry {
             global_seq,
@@ -78,7 +78,7 @@ impl JournalEntry {
 
     /// ドメインイベント本体。
     #[must_use]
-    pub const fn event(&self) -> &IntentEvent {
+    pub const fn event(&self) -> &IntentExecutionEvent {
         &self.event
     }
 }
@@ -86,7 +86,7 @@ impl JournalEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::{IntentEvent, Parked};
+    use core_command_domain::orchestration::{IntentExecutionEvent, Parked};
     use core_command_domain::workflow_definition::StageSlug;
 
     fn intent() -> IntentId {
@@ -105,7 +105,7 @@ mod tests {
             intent(),
             seq_nr,
             at(),
-            IntentEvent::Unparked,
+            IntentExecutionEvent::Unparked,
         )
     }
 
@@ -116,12 +116,13 @@ mod tests {
         assert_eq!(row.intent_id(), &intent());
         assert_eq!(row.seq_nr(), 3);
         assert_eq!(row.occurred_at(), &at());
-        assert_eq!(row.event(), &IntentEvent::Unparked);
+        assert_eq!(row.event(), &IntentExecutionEvent::Unparked);
     }
 
     #[test]
     fn the_entry_keeps_the_event_it_was_given() {
-        let parked = IntentEvent::Parked(Parked::new(StageSlug::parse("intent-capture").unwrap()));
+        let parked =
+            IntentExecutionEvent::Parked(Parked::new(StageSlug::parse("intent-capture").unwrap()));
         let row = JournalEntry::new(GlobalSeqNr::new(1), intent(), 1, at(), parked.clone());
         assert_eq!(row.event(), &parked);
     }

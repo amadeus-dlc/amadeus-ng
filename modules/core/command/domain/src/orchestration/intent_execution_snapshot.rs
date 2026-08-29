@@ -1,11 +1,11 @@
-//! `IntentSnapshot` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
+//! `IntentExecutionSnapshot` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
 //!
-//! 集約 → [`Intent::state`]、集約 ← [`Intent::from_state`] の 1 往復で
+//! 集約 → [`IntentExecution::state`]、集約 ← [`IntentExecution::from_state`] の 1 往復で
 //! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_state` の 1 か所に集約する
 //! (security-design §2)。
 //!
 //! スナップショットの直列化は**この写しを経由する** (オーナー裁定 2026-08-27 (A)):
-//! `Intent` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_state`
+//! `IntentExecution` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_state`
 //! の検査点を通る。したがって直列化形式の正本はこの 16 属性であり、復号が集約不変条件を
 //! 迂回する経路は存在しない。
 //!
@@ -13,8 +13,8 @@
 //! `SnapshotEnvelope::version()` (スナップショット行の列) になり、payload 列は純粋な
 //! ドメイン内容だけを持つようになったためである — 旧 17 属性目の `version` はここから消えた。
 //!
-//! [`Intent::state`]: super::intent::Intent::state
-//! [`Intent::from_state`]: super::intent::Intent::from_state
+//! [`IntentExecution::state`]: super::intent_execution::IntentExecution::state
+//! [`IntentExecution::from_state`]: super::intent_execution::IntentExecution::from_state
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -28,14 +28,14 @@ use crate::workspace::CheckboxState;
 
 /// ある `seq_nr` 時点の集約の全状態 — **クレート内私有の memento**。
 ///
-/// 状態を担うのは集約 [`Intent`] であり、この型は「State」ではなくその直列化形（memento）で
+/// 状態を担うのは集約 [`IntentExecution`] であり、この型は「State」ではなくその直列化形（memento）で
 /// ある（オーナー裁定 2026-08-29）。クレート外へは出さない — 出口は集約の `Serialize` /
-/// `Deserialize` だけで、`Intent` が `into` / `try_from` でここへ委ねる。属性の綴りと並びを
+/// `Deserialize` だけで、`IntentExecution` が `into` / `try_from` でここへ委ねる。属性の綴りと並びを
 /// 変えると、既に書かれた行を読めなくなる。
 ///
-/// [`Intent`]: super::intent::Intent
+/// [`IntentExecution`]: super::intent_execution::IntentExecution
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct IntentSnapshot {
+pub(crate) struct IntentExecutionSnapshot {
     pub(crate) id: IntentId,
     pub(crate) definition_id: WorkflowDefinitionId,
     pub(crate) definition_revision: DefinitionRevision,
@@ -54,7 +54,7 @@ pub(crate) struct IntentSnapshot {
     pub(crate) last_updated_at: DateTime<Utc>,
 }
 
-/// [`IntentSnapshot`] のビルダー。
+/// [`IntentExecutionSnapshot`] のビルダー。
 ///
 /// 16 属性を 1 つの関数引数列で受け取るのは可読でもリント可能でもないため、`StageNodeBuilder`
 /// と同じ house style で組み立てる。既定値は解決済み計画から導ける birth 時の状態
@@ -65,16 +65,16 @@ pub(crate) struct IntentSnapshot {
 /// (`Started` を作った側) だけだからである。
 ///
 /// 可視性は写しと同じくクレート内私有であり、さらに `#[cfg(test)]` で絞ってある — 本番経路の
-/// birth は `Intent::start` が集約を直に起こすので、任意の状態から写しを組む必要があるのは
+/// birth は `IntentExecution::start` が集約を直に起こすので、任意の状態から写しを組む必要があるのは
 /// テストだけだからである (house style: `canon_json::value::arbitrary` と同じ絞り方)。
 #[cfg(test)]
 #[derive(Debug, Clone)]
-pub(crate) struct IntentSnapshotBuilder {
-    state: IntentSnapshot,
+pub(crate) struct IntentExecutionSnapshotBuilder {
+    state: IntentExecutionSnapshot,
 }
 
 #[cfg(test)]
-impl IntentSnapshotBuilder {
+impl IntentExecutionSnapshotBuilder {
     /// 識別子 3 種と解決済み計画から、birth 時の既定値でビルダーを起こす。
     #[must_use]
     pub(crate) fn new(
@@ -82,7 +82,7 @@ impl IntentSnapshotBuilder {
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         stages: Vec<StageEntry>,
-    ) -> IntentSnapshotBuilder {
+    ) -> IntentExecutionSnapshotBuilder {
         let plan: Vec<PlanAction> = stages.iter().map(StageEntry::plan_action).collect();
         let conditional: Vec<bool> = stages.iter().map(StageEntry::is_conditional).collect();
         let mut checkbox = vec![CheckboxState::Pending; stages.len()];
@@ -91,8 +91,8 @@ impl IntentSnapshotBuilder {
         }
         let approved = vec![false; stages.len()];
         let revision_count = vec![0; stages.len()];
-        IntentSnapshotBuilder {
-            state: IntentSnapshot {
+        IntentExecutionSnapshotBuilder {
+            state: IntentExecutionSnapshot {
                 id,
                 definition_id,
                 definition_revision,
@@ -115,77 +115,89 @@ impl IntentSnapshotBuilder {
 
     /// 静的グリッド由来の計画を置き換える。
     #[must_use]
-    pub(crate) fn plan(mut self, plan: Vec<PlanAction>) -> IntentSnapshotBuilder {
+    pub(crate) fn plan(mut self, plan: Vec<PlanAction>) -> IntentExecutionSnapshotBuilder {
         self.state.plan = plan;
         self
     }
 
     /// 実効プランの源を置き換える。
     #[must_use]
-    pub(crate) fn overlay(mut self, overlay: Vec<PlanAction>) -> IntentSnapshotBuilder {
+    pub(crate) fn overlay(mut self, overlay: Vec<PlanAction>) -> IntentExecutionSnapshotBuilder {
         self.state.overlay = overlay;
         self
     }
 
     /// 適用可否の列を置き換える。
     #[must_use]
-    pub(crate) fn conditional(mut self, conditional: Vec<bool>) -> IntentSnapshotBuilder {
+    pub(crate) fn conditional(mut self, conditional: Vec<bool>) -> IntentExecutionSnapshotBuilder {
         self.state.conditional = conditional;
         self
     }
 
     /// checkbox 列を置き換える。
     #[must_use]
-    pub(crate) fn checkbox(mut self, checkbox: Vec<CheckboxState>) -> IntentSnapshotBuilder {
+    pub(crate) fn checkbox(
+        mut self,
+        checkbox: Vec<CheckboxState>,
+    ) -> IntentExecutionSnapshotBuilder {
         self.state.checkbox = checkbox;
         self
     }
 
     /// カーソル位置を置き換える。
     #[must_use]
-    pub(crate) const fn cursor(mut self, cursor: usize) -> IntentSnapshotBuilder {
+    pub(crate) const fn cursor(mut self, cursor: usize) -> IntentExecutionSnapshotBuilder {
         self.state.cursor = cursor;
         self
     }
 
     /// ワークフロー全体の状態を置き換える。
     #[must_use]
-    pub(crate) const fn status(mut self, status: Status) -> IntentSnapshotBuilder {
+    pub(crate) const fn status(mut self, status: Status) -> IntentExecutionSnapshotBuilder {
         self.state.status = status;
         self
     }
 
     /// park マーカーの位置を置き換える。
     #[must_use]
-    pub(crate) const fn parked_at(mut self, parked_at: Option<usize>) -> IntentSnapshotBuilder {
+    pub(crate) const fn parked_at(
+        mut self,
+        parked_at: Option<usize>,
+    ) -> IntentExecutionSnapshotBuilder {
         self.state.parked_at = parked_at;
         self
     }
 
     /// 自律モードを置き換える。
     #[must_use]
-    pub(crate) const fn autonomy(mut self, autonomy: AutonomyMode) -> IntentSnapshotBuilder {
+    pub(crate) const fn autonomy(
+        mut self,
+        autonomy: AutonomyMode,
+    ) -> IntentExecutionSnapshotBuilder {
         self.state.autonomy = autonomy;
         self
     }
 
     /// ゲート承認履歴を置き換える。
     #[must_use]
-    pub(crate) fn approved(mut self, approved: Vec<bool>) -> IntentSnapshotBuilder {
+    pub(crate) fn approved(mut self, approved: Vec<bool>) -> IntentExecutionSnapshotBuilder {
         self.state.approved = approved;
         self
     }
 
     /// 差し戻し回数の列を置き換える。
     #[must_use]
-    pub(crate) fn revision_count(mut self, revision_count: Vec<u32>) -> IntentSnapshotBuilder {
+    pub(crate) fn revision_count(
+        mut self,
+        revision_count: Vec<u32>,
+    ) -> IntentExecutionSnapshotBuilder {
         self.state.revision_count = revision_count;
         self
     }
 
     /// 順序番号を置き換える。
     #[must_use]
-    pub(crate) const fn seq_nr(mut self, seq_nr: usize) -> IntentSnapshotBuilder {
+    pub(crate) const fn seq_nr(mut self, seq_nr: usize) -> IntentExecutionSnapshotBuilder {
         self.state.seq_nr = seq_nr;
         self
     }
@@ -195,17 +207,17 @@ impl IntentSnapshotBuilder {
     pub(crate) const fn last_updated_at(
         mut self,
         last_updated_at: DateTime<Utc>,
-    ) -> IntentSnapshotBuilder {
+    ) -> IntentExecutionSnapshotBuilder {
         self.state.last_updated_at = last_updated_at;
         self
     }
 
     /// 状態の写し (memento) を取り出す (検証はしない)。
     ///
-    /// 検査点は `Intent::from_state` の 1 か所に集約したままにする (security-design §2) —
-    /// 呼出側はこの写しを `Intent::from_state` / `TryFrom` に渡して集約を得る。
+    /// 検査点は `IntentExecution::from_state` の 1 か所に集約したままにする (security-design §2) —
+    /// 呼出側はこの写しを `IntentExecution::from_state` / `TryFrom` に渡して集約を得る。
     #[must_use]
-    pub(crate) fn build(self) -> IntentSnapshot {
+    pub(crate) fn build(self) -> IntentExecutionSnapshot {
         self.state
     }
 }
@@ -214,7 +226,8 @@ impl IntentSnapshotBuilder {
 mod tests {
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, Intent, IntentId, StageDisplay, StageEntry, StageIndex, StateError, Status,
+        AutonomyMode, IntentExecution, IntentId, StageDisplay, StageEntry, StageIndex, StateError,
+        Status,
     };
     use crate::workflow_definition::StageNumber;
     use crate::workflow_definition::{
@@ -246,8 +259,8 @@ mod tests {
         ]
     }
 
-    fn builder() -> IntentSnapshotBuilder {
-        IntentSnapshotBuilder::new(
+    fn builder() -> IntentExecutionSnapshotBuilder {
+        IntentExecutionSnapshotBuilder::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
@@ -255,15 +268,15 @@ mod tests {
         )
     }
 
-    /// 組んだ写しを検査点 (`Intent::from_state`) に通して集約を得る。
+    /// 組んだ写しを検査点 (`IntentExecution::from_state`) に通して集約を得る。
     ///
     /// 観測は集約の面で行う — memento はクレート内私有であり、テストも属性を直に読まない。
-    fn built(builder: IntentSnapshotBuilder) -> Result<Intent, StateError> {
-        Intent::from_state(builder.build())
+    fn built(builder: IntentExecutionSnapshotBuilder) -> Result<IntentExecution, StateError> {
+        IntentExecution::from_state(builder.build())
     }
 
     /// 索引から `StageIndex` を作る (集約だけが範囲を知っている)。
-    fn at(intent: &Intent, index: usize) -> StageIndex {
+    fn at(intent: &IntentExecution, index: usize) -> StageIndex {
         intent.stage_index(index).unwrap()
     }
 
@@ -359,7 +372,7 @@ mod tests {
     #[test]
     fn a_static_plan_or_conditional_list_that_disagrees_with_the_stages_is_refused() {
         // C6 の行としては独立した列だが、集約は解決済み計画との整合を検査する
-        // (検査点は `Intent::from_state` の 1 か所 — security-design §2)。
+        // (検査点は `IntentExecution::from_state` の 1 か所 — security-design §2)。
         let plan = built(builder().plan(vec![PlanAction::Skip, PlanAction::Execute])).unwrap_err();
         assert_eq!(
             plan,
@@ -383,8 +396,8 @@ mod tests {
 
     #[test]
     fn an_empty_stage_list_is_refused_by_the_aggregate() {
-        // ビルダー自身は形を検証しない — 検査点は `Intent::from_state` の 1 か所である。
-        let err = built(IntentSnapshotBuilder::new(
+        // ビルダー自身は形を検証しない — 検査点は `IntentExecution::from_state` の 1 か所である。
+        let err = built(IntentExecutionSnapshotBuilder::new(
             IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

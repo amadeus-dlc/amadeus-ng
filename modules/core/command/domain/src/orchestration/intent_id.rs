@@ -1,4 +1,4 @@
-//! `IntentId` — 集約 `Intent` の識別子 (`intents.json` の uuid・記録ディレクトリの id8。
+//! `IntentId` — 集約 `IntentExecution` の識別子 (`intents.json` の uuid・記録ディレクトリの id8。
 //! entities.md IntentId)。
 
 use std::fmt;
@@ -17,7 +17,7 @@ const VARIANT_POSITION: usize = 19;
 /// UUIDv7 の version nibble。
 const VERSION_NIBBLE: char = '7';
 /// 本家 `AggregateId::type_name` が返す集約種別名 (この識別子が指す集約ルートの型名)。
-const AGGREGATE_TYPE_NAME: &str = "Intent";
+const AGGREGATE_TYPE_NAME: &str = "IntentExecution";
 
 /// `intents.json` の uuid にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn the_aggregate_id_contract_reports_the_type_name_and_the_raw_value() {
         let id = IntentId::parse(SAMPLE).unwrap();
-        assert_eq!(id.type_name(), "Intent");
+        assert_eq!(id.type_name(), "IntentExecution");
         assert_eq!(id.value(), SAMPLE);
     }
 

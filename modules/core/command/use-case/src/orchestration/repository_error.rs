@@ -1,4 +1,4 @@
-//! `RepositoryError` — `IntentRepository` の失敗 (entities.md)。
+//! `RepositoryError` — `IntentExecutionRepository` の失敗 (entities.md)。
 
 use std::fmt;
 use std::io::ErrorKind;
@@ -8,7 +8,7 @@ use core_command_domain::orchestration::IntentId;
 
 use super::corrupt_cause::CorruptCause;
 
-/// `IntentRepository` の失敗 (材料のみ — 逐語文言はアダプタ層)。
+/// `IntentExecutionRepository` の失敗 (材料のみ — 逐語文言はアダプタ層)。
 ///
 /// 本ポートの面が語るのは「集約 1 つの再構成・永続化」だけである。下位のイベントストア
 /// (本家 event-store-adapter-rs) の失敗を本型へ写すのは Gateway 実装の責務であり、

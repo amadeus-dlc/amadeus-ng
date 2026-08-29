@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// ワークフロー全体の 2 値。
 ///
 /// park マーカー (`parked_at`) とは**直交**するので、これだけでは「今コマンドを受け付けるか」
-/// は決まらない (判定は `Intent::accepts_commands` — BR1.0)。
+/// は決まらない (判定は `IntentExecution::accepts_commands` — BR1.0)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Status {
     /// 進行中 — スコープ内に未決着のステージが残っている。

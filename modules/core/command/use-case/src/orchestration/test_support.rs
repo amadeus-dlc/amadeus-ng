@@ -8,20 +8,21 @@
 //! ユースケースのテストが使うポート実装は**本クレート内の `#[cfg(test)]` に置く**。
 //!
 //! ここに置くのは 1 つだけである — ポートのテストも `CommitVerdictUseCase` のテストも同じ
-//! [`InMemoryIntentRepository`] を通す (`coding-rules/no-backward-compatibility.md`
+//! [`InMemoryIntentExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Intent, IntentEvent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    IntentExecution, IntentExecutionEvent, IntentId, StageDisplay, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 
-use super::intent_repository::IntentRepository;
-use super::rehydrated_intent::RehydratedIntent;
+use super::intent_execution_repository::IntentExecutionRepository;
+use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
 
 /// フィクスチャの集約識別子 (UUIDv7)。
@@ -72,7 +73,9 @@ pub(crate) fn scan() -> WorkspaceScan {
 }
 
 /// フェーズと実効プラン・CONDITIONAL を名指しした合成計画で開始する。
-pub(crate) fn start_from_plan(plan: &[(PhaseId, PlanAction, bool)]) -> (Intent, IntentEvent) {
+pub(crate) fn start_from_plan(
+    plan: &[(PhaseId, PlanAction, bool)],
+) -> (IntentExecution, IntentExecutionEvent) {
     let stages = plan
         .iter()
         .enumerate()
@@ -86,7 +89,7 @@ pub(crate) fn start_from_plan(plan: &[(PhaseId, PlanAction, bool)]) -> (Intent, 
             )
         })
         .collect();
-    Intent::start_from_plan_unchecked(
+    IntentExecution::start_from_plan_unchecked(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -100,7 +103,7 @@ pub(crate) fn start_from_plan(plan: &[(PhaseId, PlanAction, bool)]) -> (Intent, 
 }
 
 /// 索引 0 = initialization (非ゲート)、索引 1 以降 = inception (ゲート付き) の合成計画。
-pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentEvent) {
+pub(crate) fn genesis(stage_count: usize) -> (IntentExecution, IntentExecutionEvent) {
     let plan: Vec<(PhaseId, PlanAction, bool)> = (0..stage_count)
         .map(|index| {
             let phase = if index == 0 {
@@ -114,7 +117,7 @@ pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentEvent) {
     start_from_plan(&plan)
 }
 
-/// [`IntentRepository`] のインメモリ実装。
+/// [`IntentExecutionRepository`] のインメモリ実装。
 ///
 /// 楽観 version は本家の実測どおり「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。
 /// レシーバは CQS どおり再構成が `&self`、永続化が `&mut self` である — 内部可変性で
@@ -128,32 +131,32 @@ pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentEvent) {
 ///
 /// 割り込みには 2 種類ある:
 ///
-/// - [`holding_behind_concurrent_writes`](InMemoryIntentRepository::holding_behind_concurrent_writes)
+/// - [`holding_behind_concurrent_writes`](InMemoryIntentExecutionRepository::holding_behind_concurrent_writes)
 ///   — **版だけ**が進む。相手が書いた内容は模さない（`set-autonomy` のようにカーソルを
 ///   動かさない競合に相当する）。
-/// - [`holding_behind_a_competing_commit`](InMemoryIntentRepository::holding_behind_a_competing_commit)
+/// - [`holding_behind_a_competing_commit`](InMemoryIntentExecutionRepository::holding_behind_a_competing_commit)
 ///   — 版に加えて**保持している集約も進む**。相手が先に同じゲートを承認してカーソルが動いた
 ///   状況に相当し、再構成し直した呼出は報告したステージが通過済みになっているのを見る。
 #[derive(Debug)]
-pub(crate) struct InMemoryIntentRepository {
-    stored: Option<Intent>,
+pub(crate) struct InMemoryIntentExecutionRepository {
+    stored: Option<IntentExecution>,
     version: usize,
     interrupting_writes: usize,
-    competing_commit: Option<Intent>,
+    competing_commit: Option<IntentExecution>,
     store_attempts: usize,
-    committed: Vec<IntentEvent>,
+    committed: Vec<IntentExecutionEvent>,
 }
 
-impl InMemoryIntentRepository {
+impl InMemoryIntentExecutionRepository {
     /// 基本コンストラクタ — 構築経路はここ 1 本に集約する
     /// (`coding-rules/factory-naming.md`)。
     fn new(
-        stored: Option<Intent>,
+        stored: Option<IntentExecution>,
         version: usize,
         interrupting_writes: usize,
-        competing_commit: Option<Intent>,
-    ) -> InMemoryIntentRepository {
-        InMemoryIntentRepository {
+        competing_commit: Option<IntentExecution>,
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository {
             stored,
             version,
             interrupting_writes,
@@ -164,13 +167,16 @@ impl InMemoryIntentRepository {
     }
 
     /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
-    pub(crate) fn empty() -> InMemoryIntentRepository {
-        InMemoryIntentRepository::new(None, 0, 0, None)
+    pub(crate) fn empty() -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(None, 0, 0, None)
     }
 
     /// 集約 1 つを版 `version` で保持するストア。
-    pub(crate) fn holding(aggregate: Intent, version: usize) -> InMemoryIntentRepository {
-        InMemoryIntentRepository::new(Some(aggregate), version, 0, None)
+    pub(crate) fn holding(
+        aggregate: IntentExecution,
+        version: usize,
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(Some(aggregate), version, 0, None)
     }
 
     /// 最初の `writes` 回の `store` に、別の書き手の書込が割り込むストア。
@@ -179,11 +185,11 @@ impl InMemoryIntentRepository {
     /// 集約は動かないので、再構成し直してもカーソルは同じ位置にある。台本を使い切ると通常の
     /// 楽観判定へ戻るので、**再構成からやり直した呼出だけが**新しい版を提示でき、書込に成功する。
     pub(crate) fn holding_behind_concurrent_writes(
-        aggregate: Intent,
+        aggregate: IntentExecution,
         version: usize,
         writes: usize,
-    ) -> InMemoryIntentRepository {
-        InMemoryIntentRepository::new(Some(aggregate), version, writes, None)
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(Some(aggregate), version, writes, None)
     }
 
     /// 最初の `store` に、**集約を前進させる**別の書き手の書込が割り込むストア。
@@ -192,15 +198,15 @@ impl InMemoryIntentRepository {
     /// 同じゲートを承認してカーソルが動いた状況である。再構成し直した呼出は、報告した
     /// ステージが既に通過済み（`[x]` かつカーソルより手前）になっているのを見る。
     pub(crate) fn holding_behind_a_competing_commit(
-        aggregate: Intent,
-        advanced: Intent,
+        aggregate: IntentExecution,
+        advanced: IntentExecution,
         version: usize,
-    ) -> InMemoryIntentRepository {
-        InMemoryIntentRepository::new(Some(aggregate), version, 1, Some(advanced))
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(Some(aggregate), version, 1, Some(advanced))
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
-    pub(crate) fn committed(&self) -> &[IntentEvent] {
+    pub(crate) fn committed(&self) -> &[IntentExecutionEvent] {
         &self.committed
     }
 
@@ -215,13 +221,16 @@ impl InMemoryIntentRepository {
     }
 }
 
-impl IntentRepository for InMemoryIntentRepository {
-    async fn find_by_id(&self, id: &IntentId) -> Result<RehydratedIntent, RepositoryError> {
+impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
+    async fn find_by_id(
+        &self,
+        id: &IntentId,
+    ) -> Result<RehydratedIntentExecution, RepositoryError> {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
             .clone()
             .filter(|aggregate| aggregate.id() == id)
-            .map(|aggregate| RehydratedIntent::new(aggregate, self.version))
+            .map(|aggregate| RehydratedIntentExecution::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
                 intent_id: id.clone(),
             })
@@ -229,8 +238,8 @@ impl IntentRepository for InMemoryIntentRepository {
 
     async fn store(
         &mut self,
-        event: &IntentEvent,
-        aggregate: &Intent,
+        event: &IntentExecutionEvent,
+        aggregate: &IntentExecution,
         expected_version: usize,
     ) -> Result<(), RepositoryError> {
         self.store_attempts += 1;

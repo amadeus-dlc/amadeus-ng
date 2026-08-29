@@ -3,13 +3,13 @@
 //! # なぜこれが 1 本だけなのか
 //!
 //! C3 ④（ADR-010 改訂）は「テストダブル型は無く、テストは
-//! `XxxUseCase<IntentRepositoryImpl<…>>` で組む」と定める。一方
+//! `XxxUseCase<IntentExecutionRepositoryImpl<…>>` で組む」と定める。一方
 //! `coding-rules/use-case-rules.md` §1 の機械強制は「`core-command-use-case` の `Cargo.toml` に
 //! `core-command-interface-adapter` が無いこと」であり、ユースケース側のテストから実物の実装は
 //! 触れない（触れば依存が循環する）。
 //!
 //! そこで**結線だけを実物で示す場所をこちら側に置く**。合成ルート（U7）が実際に書く形
-//! — 実物の `IntentRepositoryImpl` を `CommitVerdictUseCase` に注入して 1 遷移を
+//! — 実物の `IntentExecutionRepositoryImpl` を `CommitVerdictUseCase` に注入して 1 遷移を
 //! コミットする — が型として成立し、行が本当にストアへ載ることを固定する。経路の網羅・
 //! 異常系・`Conflict` の再試行は use-case クレート内の fake テストが持つ（`Conflict` を
 //! 意図的に起こすには、どのみち応答をスクリプトできるダブルが要る）。
@@ -28,9 +28,9 @@
 mod support;
 
 use core_command_domain::workspace::CheckboxState;
-use core_command_interface_adapter::orchestration::IntentRepositoryImpl;
+use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
 use core_command_use_case::orchestration::{
-    CommitVerdictUseCase, IntentRepository, ReportedTransition,
+    CommitVerdictUseCase, IntentExecutionRepository, ReportedTransition,
 };
 
 use support::{at, intent_id, store_genesis};
@@ -39,7 +39,7 @@ use support::{at, intent_id, store_genesis};
 async fn the_use_case_commits_a_transition_through_the_real_repository() {
     // 合成ルート（U7）が書くのと同じ結線 — ポートの実装を注入するだけで、ユースケースは
     // 実装の型を知らない（静的束縛。`dyn` は使わない）。
-    let mut repository = IntentRepositoryImpl::in_memory();
+    let mut repository = IntentExecutionRepositoryImpl::in_memory();
     let held = store_genesis(&mut repository).await;
     assert_eq!(
         held.aggregate().checkbox(held.aggregate().cursor()),

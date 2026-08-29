@@ -1,4 +1,4 @@
-//! `IntentRepository` の契約テスト (BR2.7)。
+//! `IntentExecutionRepository` の契約テスト (BR2.7)。
 //!
 //! 契約そのものは `support/contract.rs` のジェネリック関数が持つ。本ファイルは本家
 //! event-store-adapter-rs の 2 バックエンド (memory / SQLite) を**同じ関数群**に流し込む。
@@ -10,18 +10,22 @@
 
 mod support;
 
-use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
+use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent, IntentId};
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentRepositoryImpl;
+use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 use support::{StoreFixture, contract};
 use tempfile::TempDir;
 
 /// 揮発のストアを内包した Repository。
-type MemoryRepository = IntentRepositoryImpl<EventStoreForMemory<IntentId, Intent, IntentEvent>>;
+type MemoryRepository = IntentExecutionRepositoryImpl<
+    EventStoreForMemory<IntentId, IntentExecution, IntentExecutionEvent>,
+>;
 
 /// SQLite ファイルのストアを内包した Repository。
-type SqliteRepository = IntentRepositoryImpl<EventStoreForSqlite<IntentId, Intent, IntentEvent>>;
+type SqliteRepository = IntentExecutionRepositoryImpl<
+    EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>,
+>;
 
 /// 本家 memory バックエンドの試験装置。
 ///
@@ -34,7 +38,7 @@ impl StoreFixture for MemoryFixture {
     type Repository = MemoryRepository;
 
     fn open(&self) -> MemoryRepository {
-        IntentRepositoryImpl::in_memory()
+        IntentExecutionRepositoryImpl::in_memory()
     }
 
     fn reopen(&self, repository: &MemoryRepository) -> MemoryRepository {
@@ -81,12 +85,12 @@ impl StoreFixture for SqliteFixture {
     type Repository = SqliteRepository;
 
     fn open(&self) -> SqliteRepository {
-        IntentRepositoryImpl::open(&self.fresh_path()).expect("ストアは開ける")
+        IntentExecutionRepositoryImpl::open(&self.fresh_path()).expect("ストアは開ける")
     }
 
     fn reopen(&self, repository: &SqliteRepository) -> SqliteRepository {
         let path = repository.path().expect("SQLite なら場所を持つ");
-        IntentRepositoryImpl::open(path).expect("同じファイルを開き直せる")
+        IntentExecutionRepositoryImpl::open(path).expect("同じファイルを開き直せる")
     }
 }
 

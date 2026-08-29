@@ -18,10 +18,12 @@
 
 mod support;
 
-use core_command_domain::orchestration::{AutonomyMode, Intent, IntentEvent, IntentId};
+use core_command_domain::orchestration::{
+    AutonomyMode, IntentExecution, IntentExecutionEvent, IntentId,
+};
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentRepositoryImpl;
-use core_command_use_case::orchestration::{IntentRepository, RehydratedIntent};
+use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
+use core_command_use_case::orchestration::{IntentExecutionRepository, RehydratedIntentExecution};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
 };
@@ -32,7 +34,9 @@ use tempfile::TempDir;
 use support::{advance, at, intent_id, store_genesis};
 
 /// Repository の具体型 (SQLite バックエンド)。
-type Repository = IntentRepositoryImpl<EventStoreForSqlite<IntentId, Intent, IntentEvent>>;
+type Repository = IntentExecutionRepositoryImpl<
+    EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>,
+>;
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -50,7 +54,7 @@ impl Fixture {
     }
 
     fn repository(&self) -> Repository {
-        IntentRepositoryImpl::open(&self.path).expect("ストアは開ける")
+        IntentExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
     fn reader(&self) -> JournalReaderImpl {
@@ -59,7 +63,7 @@ impl Fixture {
 }
 
 /// 5 コマンドぶん書き進め、最後の再水和結果を返す。
-async fn write_five(repository: &mut Repository) -> RehydratedIntent {
+async fn write_five(repository: &mut Repository) -> RehydratedIntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(at())

@@ -1,4 +1,4 @@
-//! `IntentRepositoryImpl` の実装固有の契約 (BR1.2 / BR1.3)。
+//! `IntentExecutionRepositoryImpl` の実装固有の契約 (BR1.2 / BR1.3)。
 //!
 //! ポートの面から見える約束は `intent_repository_contract.rs` が 2 つの
 //! バックエンドで共有して検査する。本ファイルが持つのは**行を直接壊してしか作れない状態**の
@@ -14,16 +14,18 @@
 
 mod support;
 
-use core_command_domain::orchestration::{Intent, IntentEvent, IntentId, StageCompleted};
+use core_command_domain::orchestration::{
+    IntentExecution, IntentExecutionEvent, IntentId, StageCompleted,
+};
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::IntentRepositoryImpl;
+use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
 
 use core_command_use_case::orchestration::{
-    CorruptCause, IntentRepository, RehydratedIntent, RepositoryError,
+    CorruptCause, IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -34,13 +36,13 @@ use support::{absent_intent_id, advance, at, contract, genesis, intent_id};
 const MANIFEST: &str = "workflow-execution-event/1";
 
 /// 未永続の集約が提示する版。
-const UNPERSISTED: usize = <Repository as IntentRepository>::UNPERSISTED_VERSION;
+const UNPERSISTED: usize = <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION;
 
 /// 本家の SQLite イベントストア (Repository が内包しているものと同じ型)。
-type UpstreamStore = EventStoreForSqlite<IntentId, Intent, IntentEvent>;
+type UpstreamStore = EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>;
 
 /// Repository の具体型 (SQLite バックエンド)。
-type Repository = IntentRepositoryImpl<UpstreamStore>;
+type Repository = IntentExecutionRepositoryImpl<UpstreamStore>;
 
 /// 一時ディレクトリ配下の SQLite ストアと、それを開く Repository。
 struct Fixture {
@@ -58,7 +60,7 @@ impl Fixture {
     }
 
     fn repository(&self) -> Repository {
-        IntentRepositoryImpl::open(&self.path).expect("ストアは開ける")
+        IntentExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
     fn raw(&self) -> Connection {
@@ -73,7 +75,7 @@ impl Fixture {
 }
 
 /// genesis + 2 コマンドを書き、最後の再水和結果を返す。
-async fn seed(repository: &mut Repository) -> RehydratedIntent {
+async fn seed(repository: &mut Repository) -> RehydratedIntentExecution {
     let held = support::store_genesis(repository).await;
     let held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(at())
@@ -314,7 +316,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
         intent_id(),
         2,
         at(),
-        IntentEvent::StageCompleted(StageCompleted::new(
+        IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
             None,
         )),
@@ -355,7 +357,7 @@ async fn opening_under_a_missing_parent_directory_is_a_not_found() {
     let dir = tempfile::tempdir().expect("一時ディレクトリ");
     // `intents/` を作らずに開く (upstream の既存ディレクトリなので我々は作らない — BR2.1)。
     let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
-    let err = IntentRepositoryImpl::open(&path).expect_err("親 dir が無い");
+    let err = IntentExecutionRepositoryImpl::open(&path).expect_err("親 dir が無い");
     assert_eq!(
         err,
         RepositoryError::Io {

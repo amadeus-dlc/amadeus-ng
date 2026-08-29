@@ -13,8 +13,8 @@
 mod commit_error;
 mod commit_verdict_use_case;
 mod corrupt_cause;
-mod intent_repository;
-mod rehydrated_intent;
+mod intent_execution_repository;
+mod rehydrated_intent_execution;
 mod reported_transition;
 mod repository_error;
 #[cfg(test)]
@@ -26,11 +26,11 @@ mod workflow_definition_repository;
 // ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-010)。
 // 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
-pub use intent_repository::IntentRepository;
+pub use intent_execution_repository::IntentExecutionRepository;
 pub use workflow_definition_repository::WorkflowDefinitionRepository;
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
-pub use rehydrated_intent::RehydratedIntent;
+pub use rehydrated_intent_execution::RehydratedIntentExecution;
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の

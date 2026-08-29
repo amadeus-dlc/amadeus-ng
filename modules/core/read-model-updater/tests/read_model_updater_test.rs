@@ -14,8 +14,8 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    GateOpened, IntentEvent, IntentId, StageDisplay, StageEntry, StageRevised, StartRequest,
-    Started, WorkspaceScan,
+    GateOpened, IntentExecutionEvent, IntentId, StageDisplay, StageEntry, StageRevised,
+    StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -48,7 +48,7 @@ fn slug(value: &str) -> StageSlug {
     StageSlug::parse(value).expect("テストの slug は文法内")
 }
 
-fn entry(global: u64, event: IntentEvent) -> JournalEntry {
+fn entry(global: u64, event: IntentExecutionEvent) -> JournalEntry {
     JournalEntry::new(
         GlobalSeqNr::new(global),
         IntentId::parse(INTENT).expect("UUIDv7"),
@@ -59,7 +59,7 @@ fn entry(global: u64, event: IntentEvent) -> JournalEntry {
 }
 
 /// 表示属性を運ぶ genesis（取得ループはここから計画を引く）。
-fn genesis() -> IntentEvent {
+fn genesis() -> IntentExecutionEvent {
     let stage = |name: &str, number: &str, agent: &str| {
         StageEntry::new(
             slug(name),
@@ -74,7 +74,7 @@ fn genesis() -> IntentEvent {
             .expect("単一行"),
         )
     };
-    IntentEvent::Started(Started::new(
+    IntentExecutionEvent::Started(Started::new(
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
         &StartRequest::new("classic", "build it"),
@@ -103,11 +103,14 @@ fn journal() -> Vec<JournalEntry> {
         entry(1, genesis()),
         entry(
             2,
-            IntentEvent::GateOpened(GateOpened::new(slug("practices-discovery"), Vec::new())),
+            IntentExecutionEvent::GateOpened(GateOpened::new(
+                slug("practices-discovery"),
+                Vec::new(),
+            )),
         ),
         entry(
             3,
-            IntentEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
+            IntentExecutionEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
         ),
     ]
 }

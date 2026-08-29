@@ -40,7 +40,7 @@ impl StartRequest {
         self
     }
 
-    /// 選択されたスコープ名 (妥当性は `Intent::start` が定義に照らして検査する)。
+    /// 選択されたスコープ名 (妥当性は `IntentExecution::start` が定義に照らして検査する)。
     #[must_use]
     pub fn scope(&self) -> &str {
         &self.scope
