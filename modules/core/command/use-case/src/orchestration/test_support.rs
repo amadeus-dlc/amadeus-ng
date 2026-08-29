@@ -7,7 +7,7 @@
 //! 循環する (`coding-rules/use-case-rules.md` §1)。dev-dependency でも同じなので、
 //! ユースケースのテストが使うポート実装は**本クレート内の `#[cfg(test)]` に置く**。
 //!
-//! ここに置くのは 1 つだけである — ポートのテストも `ReportUseCase` のテストも同じ
+//! ここに置くのは 1 つだけである — ポートのテストも `CommitVerdictUseCase` のテストも同じ
 //! [`InMemoryWorkflowExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
 

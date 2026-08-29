@@ -10,12 +10,11 @@
 //! 消費側のパスは `core_command_use_case::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod commit_error;
+mod commit_verdict_use_case;
 mod corrupt_cause;
 mod rehydrated_workflow_execution;
-mod report_error;
-mod report_outcome;
-mod report_use_case;
-mod reported_verdict;
+mod reported_transition;
 mod repository_error;
 #[cfg(test)]
 mod test_support;
@@ -33,16 +32,15 @@ pub use workflow_execution_repository::WorkflowExecutionRepository;
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
 pub use rehydrated_workflow_execution::RehydratedWorkflowExecution;
 
-// ユースケース (CLI 動詞 = ユースケース)。入力は正規化済みの型で受け、出力は型で返す —
-// 逐語文言は出す側 (合成ルートの Presenter) の持ち物である。
-pub use report_use_case::ReportUseCase;
-pub use reported_verdict::{ReportedTransition, ReportedVerdict};
-
-// ユースケースの結果
-pub use report_outcome::ReportOutcome;
+// ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
+// 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の
+// 持ち物である。型名は upstream の CLI 動詞ではなく更新の意図から取る
+// (オーナー裁定 2026-08-29 — 動詞 report は「レポート」と誤読される)。
+pub use commit_verdict_use_case::CommitVerdictUseCase;
+pub use reported_transition::ReportedTransition;
 
 // エラー
+pub use commit_error::CommitError;
 pub use corrupt_cause::CorruptCause;
-pub use report_error::ReportError;
 pub use repository_error::RepositoryError;
 pub use workflow_definition_repository::GraphReadError;
