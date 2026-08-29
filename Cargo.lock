@@ -142,7 +142,6 @@ name = "core-command-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "directive-schema",
  "event-store-adapter-rs",
  "message-catalog",
  "proptest",
@@ -160,7 +159,6 @@ dependencies = [
  "core-command-domain",
  "core-command-use-case",
  "core-infrastructure",
- "directive-schema",
  "event-store-adapter-rs",
  "message-catalog",
  "rusqlite",
@@ -237,10 +235,6 @@ dependencies = [
  "block-buffer",
  "crypto-common",
 ]
-
-[[package]]
-name = "directive-schema"
-version = "0.1.0"
 
 [[package]]
 name = "equivalent"

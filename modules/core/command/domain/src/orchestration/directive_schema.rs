@@ -1,8 +1,10 @@
-//! directive プロトコル (Published Language、B14) — `DirectiveKind` 10 種の閉集合。
+//! directive プロトコル — `DirectiveKind` 10 種の閉集合。
+//!
+//! 2026-08-29 オーナー裁定により独立クレート `modules/shared/directive-schema` から本モジュールへ
+//! 移設 — directive 語彙はドメイン知識であり、ドメインの pub 型がそのまま公開言語になる。
 //! Directive 本体の判別共用体・28KiB 上限・continue_token ペイロード型は後続スライス。
 //! 出典: upstream `aidlc-directive.ts:419-430` (02 §4.1)。
 
-#![forbid(unsafe_code)]
 
 /// 10 種の閉集合。`PresentGate` と `DispatchSubagent` は upstream の placeholder —
 /// 「Do not implement those two placeholder behaviours speculatively.」(02 §4.1)。
