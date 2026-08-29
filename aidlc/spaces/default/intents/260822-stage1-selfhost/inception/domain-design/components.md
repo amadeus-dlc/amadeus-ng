@@ -5,8 +5,7 @@
 > 版の正本と存在検査のみ。状態の正本はイベント列）。集約の構築 API は genesis / `replay` /
 > `apply_event` のみで、memento 型（`IntentExecutionSnapshot` 等）は撤去。正典:
 > `coding-rules/aggregate-commands.md`「再構成の形」。
-
-
+>
 > Domain Design（Inception 2.6）成果物・改訂版。出典: `../requirements-analysis/requirements.md`（FR/NFR）、
 > RE 成果物 `aidlc/spaces/default/codekb/docs/architecture.md` / `component-inventory.md`（brownfield 現状）、
 > チーム実践 `../practices-discovery/team-practices.md`、設計裁定 `domain-design-questions.md`（Q1〜Q9 確定 —

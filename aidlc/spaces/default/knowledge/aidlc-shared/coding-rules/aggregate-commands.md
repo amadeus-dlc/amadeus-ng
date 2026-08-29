@@ -21,8 +21,8 @@ CQS 規則の字面との矛盾を閉じる）
 // decide — 判断し、遷移し、起きた事実を 1 イベントで返す（1 コマンド 1 イベント・絶対）
 pub fn approve_gate(&mut self, ..) -> Result<IntentExecutionEvent, CommandError>
 
-// apply — イベントを畳み込む fold。イベントを消費する側なので戻り値は無い
-pub fn apply_event(&mut self, ..) -> Result<(), ApplyError>
+// apply — イベントを畳み込む fold。失敗を返さない（壊れた歴史はクラッシュ — 2026-08-30 裁定）
+pub fn apply_event(&mut self, ..)
 
 // genesis (ファクトリ) — 集約インスタンスと誕生イベントの**両方**を対で返す (必須)
 pub fn start(..) -> (IntentExecution, IntentExecutionEvent)

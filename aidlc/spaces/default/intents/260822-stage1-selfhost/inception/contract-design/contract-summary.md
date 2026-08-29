@@ -228,8 +228,9 @@ genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、`store` �
 > version）と存在検査（BR1.2）にだけ**使い、payload は読取に使わない（状態の正本はイベント列）。
 > `IntentExecutionSnapshot` / `from_snapshot` / `snapshot()` は型ごと撤去。
 > ② 再構成は**失敗を返さない** — 壊れた歴史（通番の飛び・未知ステージ・不変条件違反・先頭が
-> `Started` でない）はクラッシュが正。`Corrupt` に残る分類は復号レベル（読めない・foreign
-> manifest・写し欠落）だけで、分類自体もポート契約から退避し `Error::source` 連鎖で運ぶ（裁定 6
+> `Started` でない）はクラッシュが正。`Corrupt` に残る分類は復号・ストア整合レベル（読めない・foreign
+> manifest・写し欠落・写しだけ残った空ジャーナル・書込契約違反 — アダプタ私有 `CorruptDetail`
+> の 6 変種が正）だけで、分類自体もポート契約から退避し `Error::source` 連鎖で運ぶ（裁定 6
 > 実装済み）。③ エラー型は **`RepositoryError<Id>` ジェネリック 1 本**（`IntentRepositoryError`
 > 廃止。`PartialEq` 喪失は受容 — テストは `matches!`）。④ `IntentEvent::Created` は集約埋め込み
 > をやめ**内容（6 値）を運ぶ**。intent の再構成は `Created` 経由の変換 + `Intent::replay`。
