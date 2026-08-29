@@ -14,17 +14,21 @@
 
 use core_command_domain::orchestration::{
     AskDirective, AskKind, Directive, GateField, Intent, IntentExecution, NextDecision,
-    NextRequest, RunStageDirectiveBuilder, StageIndex,
+    NextRequest, RunStageDirective, RunStageDirectiveBuilder, StageIndex,
 };
 use core_command_domain::workflow_definition::{
     PhaseId, PlanAction, StageMode, StageNode, WorkflowDefinition,
 };
 
 use super::command_spelling;
+use super::continue_token_codec::ContinueTokenCodec;
 use super::intent_execution_repository::IntentExecutionRepository;
 use super::intent_repository::IntentRepository;
 use super::next_turn_input::{NextTurnInput, WorkspaceLayout};
+use super::rule_bundle_source::{RuleBundleReadError, RuleBundleSource};
 use super::scope_resolution::{ScopeResolutionError, resolve_scope};
+use super::steering::{SteeringPlan, SteeringPlanError};
+use super::steering_chain;
 use super::workflow_definition_repository::WorkflowDefinitionRepository;
 
 /// 逐語文言 — ラダーが放出する公開契約の文字列 (出典: 契約マップ §1。コマンド参照は写像形)。
@@ -113,6 +117,16 @@ mod wording {
         format!("Workflow complete — no in-scope stage remains after {stage} (scope: {scope}).")
     }
 
+    /// steering 読取失敗 (blocking — run-stage の代わりに error)。
+    pub(super) fn rule_unreadable(path: &str, cause: &str) -> String {
+        format!(
+            "Cannot load required stage rule \"{path}\" ({cause}). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again."
+        )
+    }
+
+    /// 分割不能セクション (blocking)。
+    pub(super) const UNSPLITTABLE_SECTION: &str = "A rule section could not be split below the directive transport limit. Shorten the affected heading section, then run a fresh `next`.";
+
     /// checkbox 状態の upstream 語。
     pub(super) const fn checkbox_word(state: CheckboxState) -> &'static str {
         // amadeus-lint: allow(checkbox-vocabulary) — 判断ではなくワイヤ逐語 (upstream の状態語) への綴り写像
@@ -129,35 +143,45 @@ mod wording {
 
 /// `next` の 21 分岐ラダー (読取専用 — 書込ポートを持たない)。
 #[derive(Debug)]
-pub struct NextUseCase<E, I, D> {
+pub struct NextUseCase<E, I, D, B, C> {
     execution_repository: E,
     intent_repository: I,
     definition_repository: D,
+    bundle_source: B,
+    codec: C,
 }
 
 /// 稼働中ワークフローの読取済みコンテキスト。
 struct LoadedWorkflow {
     intent: Intent,
     execution: IntentExecution,
+    version: usize,
 }
 
-impl<E, I, D> NextUseCase<E, I, D>
+impl<E, I, D, B, C> NextUseCase<E, I, D, B, C>
 where
     E: IntentExecutionRepository,
     I: IntentRepository,
     D: WorkflowDefinitionRepository,
+    B: RuleBundleSource,
+    C: ContinueTokenCodec,
 {
-    /// 読取専用ポート 3 本を注入する (find 系のみ使用 — 書込動詞は呼ばない)。
+    /// 読取専用ポート 5 本を注入する (find / load / mint 系のみ — 書込動詞は呼ばない。
+    /// codec の鍵鋳造はマシンローカルで I8 の例外 1)。
     #[must_use]
     pub const fn new(
         execution_repository: E,
         intent_repository: I,
         definition_repository: D,
-    ) -> NextUseCase<E, I, D> {
+        bundle_source: B,
+        codec: C,
+    ) -> NextUseCase<E, I, D, B, C> {
         NextUseCase {
             execution_repository,
             intent_repository,
             definition_repository,
+            bundle_source,
+            codec,
         }
     }
 
@@ -307,7 +331,7 @@ where
         }
         // ---- 分岐 4b: --single (scope-change / jump より前) ----
         if input.is_single() {
-            return Self::emit_single(input, &definition, &resolved.name);
+            return self.emit_single(input, &definition, &resolved.name);
         }
         // ---- 分岐 5: state あり + 有効で異なる設定 ----
         if let Some(context) = context.as_ref() {
@@ -352,7 +376,7 @@ where
         }
         // ---- 分岐 7: --stage / --phase (jump) ----
         if input.stage().is_some() || input.phase().is_some() {
-            return Self::emit_jump(input, context.as_ref(), &definition, &resolved.name);
+            return self.emit_jump(input, context.as_ref(), &definition, &resolved.name);
         }
         // ---- state なしの群: 7b / 8 / 9a / 9b ----
         if context.is_none() {
@@ -386,7 +410,67 @@ where
                 };
             }
         };
-        emit_happy_path(input, &context_value, &definition, &resolved.name, decision)
+        self.emit_happy_path(input, &context_value, &definition, &resolved.name, decision)
+    }
+
+    /// run-stage を steering 連鎖経由で届ける — ルール束が空なら bare run-stage、あれば
+    /// 第 1 部の `load-steering` + continue_token (02 §10)。
+    fn deliver(
+        &self,
+        definition: &WorkflowDefinition,
+        scope: &str,
+        node: &StageNode,
+        run_stage: &RunStageDirective,
+        state_binding: Option<&str>,
+    ) -> Directive {
+        let files = match self.bundle_source.load(node.phase()) {
+            Ok(files) => files,
+            Err(RuleBundleReadError::Unreadable { path, cause }) => {
+                return Directive::Error {
+                    message: wording::rule_unreadable(&path, &cause),
+                };
+            }
+        };
+        let plan = match SteeringPlan::from_bundle(&files) {
+            Ok(plan) => plan,
+            Err(SteeringPlanError::UnsplittableSection) => {
+                return Directive::Error {
+                    message: wording::UNSPLITTABLE_SECTION.to_string(),
+                };
+            }
+        };
+        if plan.is_empty() {
+            return steering_chain::finalize_run_stage(&plan, run_stage);
+        }
+        let bundle_digest = self.codec.digest(&plan.digest_material());
+        let directive_digest = self
+            .codec
+            .digest(&steering_chain::directive_material(run_stage));
+        let route_hash = self
+            .codec
+            .digest(&steering_chain::route_material(definition, scope, node));
+        steering_chain::emit_part(
+            &self.codec,
+            &plan,
+            0,
+            run_stage,
+            scope,
+            &bundle_digest,
+            &directive_digest,
+            &route_hash,
+            state_binding,
+        )
+    }
+
+    /// state 束縛のダイジェスト (state ありのときだけ)。
+    fn state_binding(&self, context: Option<&LoadedWorkflow>) -> Option<String> {
+        context.map(|context| {
+            self.codec.digest(&steering_chain::state_material(
+                context.intent.id().as_str(),
+                context.execution.seq_nr(),
+                context.version,
+            ))
+        })
     }
 
     /// active-intent カーソルが指す集約群を読む。読取失敗は逐語メッセージで返す (材料は
@@ -405,9 +489,11 @@ where
             .find_by_id(active.intent_id())
             .await
             .map_err(|error| error.to_string())?;
+        let version = rehydrated.version();
         Ok(Some(LoadedWorkflow {
             intent,
             execution: rehydrated.into_aggregate(),
+            version,
         }))
     }
 
@@ -431,6 +517,7 @@ where
 
     /// 分岐 4b — 単一ステージ隔離モード。
     fn emit_single(
+        &self,
         input: &NextTurnInput,
         definition: &WorkflowDefinition,
         scope: &str,
@@ -444,6 +531,9 @@ where
             Some(node) => {
                 let gate = default_gate(node);
                 match build_run_stage(node, definition, scope, input.layout(), gate, true) {
+                    Ok(Directive::RunStage(run_stage)) => {
+                        self.deliver(definition, scope, node, &run_stage, None)
+                    }
                     Ok(directive) => directive,
                     Err(message) => Directive::Error { message },
                 }
@@ -456,6 +546,7 @@ where
 
     /// 分岐 7 — jump。state ありなら純読み取り解決の名指し、無しなら直接グラフ検索。
     fn emit_jump(
+        &self,
         input: &NextTurnInput,
         context: Option<&LoadedWorkflow>,
         definition: &WorkflowDefinition,
@@ -511,6 +602,9 @@ where
         }
         let gate = default_gate(target);
         match build_run_stage(target, definition, scope, input.layout(), gate, false) {
+            Ok(Directive::RunStage(run_stage)) => {
+                self.deliver(definition, scope, target, &run_stage, None)
+            }
             Ok(directive) => directive,
             Err(message) => Directive::Error { message },
         }
@@ -564,54 +658,75 @@ fn emit_birth_group(
 }
 
 /// 分岐 10 — ハッピーパス。判断 (`NextDecision`) を directive に写すだけ。
-fn emit_happy_path(
-    input: &NextTurnInput,
-    context: &LoadedWorkflow,
-    definition: &WorkflowDefinition,
-    scope: &str,
-    decision: NextDecision,
-) -> Directive {
-    match decision {
-        NextDecision::RunStage { stage, gate } => {
-            let slug = stage_entry_slug(context, stage).clone();
-            // ゲート判定はドメイン (BR1.3) が正 — 定義側の既定は使わない。
-            let gate = if gate {
-                GateField::Gated
-            } else {
-                GateField::Ungated
-            };
-            match find_node(definition, slug.as_str()) {
-                Some(node) => {
-                    match build_run_stage(node, definition, scope, input.layout(), gate, false) {
-                        Ok(directive) => directive,
-                        Err(message) => Directive::Error { message },
+impl<E, I, D, B, C> NextUseCase<E, I, D, B, C>
+where
+    E: IntentExecutionRepository,
+    I: IntentRepository,
+    D: WorkflowDefinitionRepository,
+    B: RuleBundleSource,
+    C: ContinueTokenCodec,
+{
+    fn emit_happy_path(
+        &self,
+        input: &NextTurnInput,
+        context: &LoadedWorkflow,
+        definition: &WorkflowDefinition,
+        scope: &str,
+        decision: NextDecision,
+    ) -> Directive {
+        match decision {
+            NextDecision::RunStage { stage, gate } => {
+                let slug = stage_entry_slug(context, stage).clone();
+                // ゲート判定はドメイン (BR1.3) が正 — 定義側の既定は使わない。
+                let gate = if gate {
+                    GateField::Gated
+                } else {
+                    GateField::Ungated
+                };
+                match find_node(definition, slug.as_str()) {
+                    Some(node) => {
+                        match build_run_stage(node, definition, scope, input.layout(), gate, false)
+                        {
+                            Ok(Directive::RunStage(run_stage)) => {
+                                let binding = self.state_binding(Some(context));
+                                self.deliver(
+                                    definition,
+                                    scope,
+                                    node,
+                                    &run_stage,
+                                    binding.as_deref(),
+                                )
+                            }
+                            Ok(directive) => directive,
+                            Err(message) => Directive::Error { message },
+                        }
                     }
+                    None => Directive::Error {
+                        message: format!("Unknown stage \"{}\".", slug.as_str()),
+                    },
                 }
-                None => Directive::Error {
-                    message: format!("Unknown stage \"{}\".", slug.as_str()),
-                },
             }
-        }
-        NextDecision::Done => done_with_reason(context, scope),
-        NextDecision::RecoverSkipInconsistency { stage, .. } => {
-            let slug = stage_entry_slug(context, stage);
-            Directive::Print {
-                message: wording::recover_skip(slug.as_str()),
+            NextDecision::Done => done_with_reason(context, scope),
+            NextDecision::RecoverSkipInconsistency { stage, .. } => {
+                let slug = stage_entry_slug(context, stage);
+                Directive::Print {
+                    message: wording::recover_skip(slug.as_str()),
+                }
             }
-        }
-        NextDecision::InconsistentSkip { stage, checkbox } => {
-            let slug = stage_entry_slug(context, stage);
-            Directive::Error {
-                message: wording::inconsistent_skip(slug.as_str(), checkbox),
+            NextDecision::InconsistentSkip { stage, checkbox } => {
+                let slug = stage_entry_slug(context, stage);
+                Directive::Error {
+                    message: wording::inconsistent_skip(slug.as_str(), checkbox),
+                }
             }
+            // 先行分岐で消費済みの決定 — ここへ来たらラダーのプログラミング誤り (防御的)。
+            NextDecision::Parked { .. }
+            | NextDecision::UnparkThenResume
+            | NextDecision::ResumeMenu
+            | NextDecision::NewWorkRouting => Directive::Error {
+                message: "internal: a routing decision reached the happy path".to_string(),
+            },
         }
-        // 先行分岐で消費済みの決定 — ここへ来たらラダーのプログラミング誤り (防御的)。
-        NextDecision::Parked { .. }
-        | NextDecision::UnparkThenResume
-        | NextDecision::ResumeMenu
-        | NextDecision::NewWorkRouting => Directive::Error {
-            message: "internal: a routing decision reached the happy path".to_string(),
-        },
     }
 }
 
@@ -667,7 +782,7 @@ fn find_node<'a>(definition: &'a WorkflowDefinition, slug: &str) -> Option<&'a S
 }
 
 /// `run-stage` の組み立て (StageNode + 配置 VO)。steering 由来フィールドは B16。
-fn build_run_stage(
+pub(crate) fn build_run_stage(
     node: &StageNode,
     definition: &WorkflowDefinition,
     scope: &str,
@@ -776,9 +891,12 @@ mod tests {
     };
     use std::collections::BTreeMap;
 
+    use super::super::continue_token_codec::{ContinueTokenCodec, InvalidContinueToken};
+    use super::super::continue_use_case::ContinueUseCase;
     use super::super::next_turn_input::{
         ActiveWorkflow, NextTurnInput, NounFamily, NounToken, ReadOnlyVerb, WorkspaceLayout,
     };
+    use super::super::rule_bundle_source::{RuleBundleReadError, RuleBundleSource, RuleFile};
     use super::super::test_support::{
         InMemoryIntentExecutionRepository, InMemoryIntentRepository, at, execution_id, genesis,
         intent as intent_id, slug,
@@ -787,6 +905,76 @@ mod tests {
         GraphReadError, WorkflowDefinitionRepository,
     };
     use super::*;
+    use core_command_domain::orchestration::{ContinueToken, ContinueTokenBuilder, RuleContent};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::rc::Rc;
+
+    /// ルール束なしのダブル (bare run-stage 経路)。
+    #[derive(Debug, Default)]
+    struct NoRules;
+
+    impl RuleBundleSource for NoRules {
+        fn load(&self, _phase: PhaseId) -> Result<Vec<RuleFile>, RuleBundleReadError> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// 固定のルール束を返すダブル。
+    #[derive(Debug, Clone, Default)]
+    struct StaticRules {
+        files: Vec<RuleFile>,
+    }
+
+    impl RuleBundleSource for StaticRules {
+        fn load(&self, _phase: PhaseId) -> Result<Vec<RuleFile>, RuleBundleReadError> {
+            Ok(self.files.clone())
+        }
+    }
+
+    /// 読取に失敗するダブル。
+    #[derive(Debug, Default)]
+    struct BrokenRules;
+
+    impl RuleBundleSource for BrokenRules {
+        fn load(&self, _phase: PhaseId) -> Result<Vec<RuleFile>, RuleBundleReadError> {
+            Err(RuleBundleReadError::Unreadable {
+                path: "aidlc/spaces/default/memory/org.md".to_string(),
+                cause: "permission denied".to_string(),
+            })
+        }
+    }
+
+    /// 封緘の共有ストアを持つ codec ダブル (clone は同じストアを指す)。
+    #[derive(Debug, Clone, Default)]
+    struct FakeCodec {
+        minted: Rc<RefCell<HashMap<String, ContinueToken>>>,
+    }
+
+    impl ContinueTokenCodec for FakeCodec {
+        fn mint(&self, token: &ContinueToken) -> String {
+            let mut minted = self.minted.borrow_mut();
+            let key = format!("token-{}", minted.len() + 1);
+            minted.insert(key.clone(), token.clone());
+            key
+        }
+
+        fn verify(&self, encoded: &str) -> Result<ContinueToken, InvalidContinueToken> {
+            self.minted
+                .borrow()
+                .get(encoded)
+                .cloned()
+                .ok_or(InvalidContinueToken)
+        }
+
+        fn digest(&self, material: &str) -> String {
+            let mut hasher = DefaultHasher::new();
+            material.hash(&mut hasher);
+            format!("{:016x}", hasher.finish())
+        }
+    }
 
     /// 定義フィクスチャを保持する読取専用ダブル。
     #[derive(Debug)]
@@ -899,6 +1087,8 @@ mod tests {
         InMemoryIntentExecutionRepository,
         InMemoryIntentRepository,
         InMemoryWorkflowDefinitionRepository,
+        NoRules,
+        FakeCodec,
     > {
         let (intent, execution, _) = genesis(stage_count);
         NextUseCase::new(
@@ -907,6 +1097,8 @@ mod tests {
             InMemoryWorkflowDefinitionRepository {
                 held: definition(stage_count),
             },
+            NoRules,
+            FakeCodec::default(),
         )
     }
 
@@ -918,6 +1110,8 @@ mod tests {
         InMemoryIntentExecutionRepository,
         InMemoryIntentRepository,
         InMemoryWorkflowDefinitionRepository,
+        NoRules,
+        FakeCodec,
     > {
         let (intent, _, _) = genesis(stage_count);
         NextUseCase::new(
@@ -926,6 +1120,8 @@ mod tests {
             InMemoryWorkflowDefinitionRepository {
                 held: definition(stage_count),
             },
+            NoRules,
+            FakeCodec::default(),
         )
     }
 
@@ -936,6 +1132,8 @@ mod tests {
         InMemoryIntentExecutionRepository,
         InMemoryIntentRepository,
         InMemoryWorkflowDefinitionRepository,
+        NoRules,
+        FakeCodec,
     > {
         NextUseCase::new(
             InMemoryIntentExecutionRepository::empty(),
@@ -943,7 +1141,32 @@ mod tests {
             InMemoryWorkflowDefinitionRepository {
                 held: definition(stage_count),
             },
+            NoRules,
+            FakeCodec::default(),
         )
+    }
+
+    fn expect_load_steering(
+        directive: Directive,
+    ) -> core_command_domain::orchestration::LoadSteeringDirective {
+        match directive {
+            Directive::LoadSteering(part) => part,
+            other => panic!("load-steering を期待したが {:?}", other.kind()),
+        }
+    }
+
+    fn expect_run_stage(directive: Directive) -> RunStageDirective {
+        match directive {
+            Directive::RunStage(run_stage) => run_stage,
+            other => panic!("run-stage を期待したが {:?}", other.kind()),
+        }
+    }
+
+    fn expect_ask(directive: Directive) -> AskDirective {
+        match directive {
+            Directive::Ask(ask) => ask,
+            other => panic!("ask を期待したが {:?}", other.kind()),
+        }
     }
 
     fn error_message(directive: &Directive) -> &str {
@@ -1167,9 +1390,7 @@ mod tests {
         let directive = without_workflow(2)
             .execute(&stateless_input().with_single().with_stage("stage-1"))
             .await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert!(run_stage.is_single());
         assert_eq!(run_stage.stage().as_str(), "stage-1");
     }
@@ -1197,9 +1418,7 @@ mod tests {
         let directive = with_workflow(2)
             .execute(&active_input().with_resume())
             .await;
-        let Directive::Ask(ask) = directive else {
-            panic!("ask を期待した");
-        };
+        let ask = expect_ask(directive);
         assert_eq!(ask.ask_kind(), AskKind::ResumeMenu);
         assert_eq!(
             ask.question(),
@@ -1233,9 +1452,7 @@ mod tests {
         let directive = without_workflow(3)
             .execute(&stateless_input().with_stage("stage-2"))
             .await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert_eq!(run_stage.stage().as_str(), "stage-2");
         assert!(!run_stage.is_single());
     }
@@ -1259,9 +1476,7 @@ mod tests {
                     .with_records_without_cursor(),
             )
             .await;
-        let Directive::Ask(ask) = directive else {
-            panic!("ask を期待した");
-        };
+        let ask = expect_ask(directive);
         assert_eq!(ask.ask_kind(), AskKind::IntentPick);
     }
 
@@ -1270,9 +1485,7 @@ mod tests {
         let directive = without_workflow(2)
             .execute(&stateless_input().with_freeform("fix the login"))
             .await;
-        let Directive::Ask(ask) = directive else {
-            panic!("ask を期待した");
-        };
+        let ask = expect_ask(directive);
         assert_eq!(ask.ask_kind(), AskKind::ScopeConfirm);
         assert!(ask.question().contains("bugfix"));
     }
@@ -1286,9 +1499,7 @@ mod tests {
                     .with_freeform("please fix the login page for our production customers"),
             )
             .await;
-        let Directive::Ask(ask) = directive else {
-            panic!("ask を期待した");
-        };
+        let ask = expect_ask(directive);
         assert_eq!(ask.ask_kind(), AskKind::ComposeOffer);
     }
 
@@ -1316,9 +1527,7 @@ mod tests {
         let directive = with_workflow(2)
             .execute(&active_input().with_freeform("fix the crash"))
             .await;
-        let Directive::Ask(ask) = directive else {
-            panic!("ask を期待した");
-        };
+        let ask = expect_ask(directive);
         assert_eq!(ask.ask_kind(), AskKind::NewWorkRouting);
         assert_eq!(ask.new_work_description(), Some("fix the crash"));
         assert_eq!(ask.proposed_scope(), Some("bugfix"));
@@ -1329,9 +1538,7 @@ mod tests {
     #[tokio::test]
     async fn branch_10_the_happy_path_emits_a_run_stage_for_the_cursor() {
         let directive = with_workflow(2).execute(&active_input()).await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert_eq!(run_stage.stage().as_str(), "stage-0");
         assert_eq!(
             run_stage.gate(),
@@ -1356,9 +1563,7 @@ mod tests {
         let (intent, mut execution, _) = genesis(2);
         execution.complete_stage(&intent, at()).unwrap();
         let directive = with_execution(2, execution).execute(&active_input()).await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert_eq!(run_stage.stage().as_str(), "stage-1");
         assert_eq!(run_stage.gate(), GateField::Gated);
     }
@@ -1384,8 +1589,12 @@ mod tests {
     #[test]
     fn branch_10_a_recoverable_skip_inconsistency_names_the_repair() {
         let (intent, execution, _) = genesis(2);
-        let context = LoadedWorkflow { intent, execution };
-        let directive = emit_happy_path(
+        let context = LoadedWorkflow {
+            intent,
+            execution,
+            version: 1,
+        };
+        let directive = with_workflow(2).emit_happy_path(
             &active_input(),
             &context,
             &definition(2),
@@ -1404,8 +1613,12 @@ mod tests {
     #[test]
     fn branch_10_an_unrecoverable_skip_inconsistency_is_refused_verbatim() {
         let (intent, execution, _) = genesis(2);
-        let context = LoadedWorkflow { intent, execution };
-        let directive = emit_happy_path(
+        let context = LoadedWorkflow {
+            intent,
+            execution,
+            version: 1,
+        };
+        let directive = with_workflow(2).emit_happy_path(
             &active_input(),
             &context,
             &definition(2),
@@ -1424,8 +1637,12 @@ mod tests {
     #[test]
     fn a_routing_decision_that_reaches_the_happy_path_is_a_defensive_error() {
         let (intent, execution, _) = genesis(2);
-        let context = LoadedWorkflow { intent, execution };
-        let directive = emit_happy_path(
+        let context = LoadedWorkflow {
+            intent,
+            execution,
+            version: 1,
+        };
+        let directive = with_workflow(2).emit_happy_path(
             &active_input(),
             &context,
             &definition(2),
@@ -1568,9 +1785,7 @@ mod tests {
         let directive = without_workflow(3)
             .execute(&stateless_input().with_phase("inception"))
             .await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert_eq!(
             run_stage.stage().as_str(),
             "stage-1",
@@ -1619,6 +1834,8 @@ mod tests {
             InMemoryWorkflowDefinitionRepository {
                 held: definition(2),
             },
+            NoRules,
+            FakeCodec::default(),
         );
         let directive = use_case.execute(&active_input()).await;
         assert!(error_message(&directive).starts_with("not found:"));
@@ -1687,11 +1904,11 @@ mod tests {
             InMemoryIntentExecutionRepository::holding(execution, 1),
             InMemoryIntentRepository::holding(intent),
             InMemoryWorkflowDefinitionRepository { held: definition },
+            NoRules,
+            FakeCodec::default(),
         );
         let directive = use_case.execute(&active_input()).await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert_eq!(run_stage.reviewer(), Some("aidlc-product-lead-agent"));
         assert_eq!(
             run_stage.review_class(),
@@ -1816,6 +2033,8 @@ mod tests {
             InMemoryIntentExecutionRepository::holding(execution, 1),
             InMemoryIntentRepository::holding(intent),
             InMemoryWorkflowDefinitionRepository { held },
+            NoRules,
+            FakeCodec::default(),
         );
         let directive = use_case.execute(&active_input()).await;
         assert_eq!(
@@ -1876,6 +2095,8 @@ mod tests {
             InMemoryIntentExecutionRepository::holding(execution, 1),
             InMemoryIntentRepository::holding(intent),
             InMemoryWorkflowDefinitionRepository { held },
+            NoRules,
+            FakeCodec::default(),
         );
         let directive = use_case.execute(&active_input()).await;
         assert!(
@@ -1889,9 +2110,7 @@ mod tests {
         let directive = without_workflow(2)
             .execute(&stateless_input().with_single().with_stage("stage-0"))
             .await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert_eq!(run_stage.gate(), GateField::Ungated);
     }
 
@@ -1964,11 +2183,11 @@ mod tests {
             InMemoryIntentExecutionRepository::holding(execution, 1),
             InMemoryIntentRepository::holding(intent),
             InMemoryWorkflowDefinitionRepository { held },
+            NoRules,
+            FakeCodec::default(),
         );
         let directive = use_case.execute(&active_input()).await;
-        let Directive::RunStage(run_stage) = directive else {
-            panic!("run-stage を期待した");
-        };
+        let run_stage = expect_run_stage(directive);
         assert!(run_stage.inline_context_paths().is_empty());
         assert!(
             run_stage
@@ -2135,8 +2354,554 @@ mod tests {
             InMemoryIntentExecutionRepository::holding(execution, 1),
             InMemoryIntentRepository::holding(intent),
             InMemoryWorkflowDefinitionRepository { held },
+            NoRules,
+            FakeCodec::default(),
         );
         let directive = use_case.execute(&active_input()).await;
         assert_eq!(error_message(&directive), "Unknown stage \"stage-0\".");
+    }
+
+    // ---- B16: steering 連鎖 ----
+
+    /// 2 部に割れるルール束 (12KiB × 2 セクション)。
+    fn two_part_rules() -> StaticRules {
+        let big = "x".repeat(12 * 1024);
+        StaticRules {
+            files: vec![RuleFile::new(
+                "aidlc/spaces/default/memory/org.md".to_string(),
+                format!("# Org\n{big}\n# Team\n{big}\n"),
+            )],
+        }
+    }
+
+    type ChainedNext = NextUseCase<
+        InMemoryIntentExecutionRepository,
+        InMemoryIntentRepository,
+        InMemoryWorkflowDefinitionRepository,
+        StaticRules,
+        FakeCodec,
+    >;
+    type ChainedContinue = ContinueUseCase<
+        InMemoryIntentExecutionRepository,
+        InMemoryIntentRepository,
+        InMemoryWorkflowDefinitionRepository,
+        StaticRules,
+        FakeCodec,
+    >;
+
+    fn chained_use_cases(rules: StaticRules) -> (ChainedNext, ChainedContinue) {
+        let codec = FakeCodec::default();
+        let (intent, execution, _) = genesis(2);
+        let next = NextUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution.clone(), 1),
+            InMemoryIntentRepository::holding(intent.clone()),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            rules.clone(),
+            codec.clone(),
+        );
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            rules,
+            codec,
+        );
+        (next, continuation)
+    }
+
+    #[tokio::test]
+    async fn a_rule_bundle_is_delivered_in_parts_then_the_run_stage_arrives() {
+        let (next, continuation) = chained_use_cases(two_part_rules());
+        // 第 1 部。
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        assert_eq!(part1.part(), 1);
+        assert_eq!(part1.parts(), 2);
+        assert_eq!(part1.stage().as_str(), "stage-0");
+        assert!(!part1.rules_content().is_empty());
+        assert_eq!(
+            part1.rules_content().first().map(RuleContent::path),
+            Some("aidlc/spaces/default/memory/org.md")
+        );
+        // 第 2 部。
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        let part2 = expect_load_steering(directive);
+        assert_eq!(part2.part(), 2);
+        assert_eq!(part2.parts(), 2);
+        // 終端 — run-stage がルール台帳つきで届く。
+        let directive = continuation
+            .execute(part2.continue_token(), &active_input())
+            .await;
+        let run_stage = expect_run_stage(directive);
+        assert_eq!(run_stage.stage().as_str(), "stage-0");
+        assert_eq!(
+            run_stage.rules_in_context(),
+            ["aidlc/spaces/default/memory/org.md"],
+            "配信済みルールのパス台帳"
+        );
+        assert_eq!(run_stage.gate(), GateField::Ungated, "ピンの再適用");
+    }
+
+    #[tokio::test]
+    async fn an_invalid_continuation_token_fails_closed_verbatim() {
+        let (_, continuation) = chained_use_cases(two_part_rules());
+        let directive = continuation.execute("garbage", &active_input()).await;
+        assert_eq!(
+            error_message(&directive),
+            "Invalid steering continuation token: this stage's rules cannot be loaded from where they left off. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_moved_on_state_fails_closed_verbatim() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        // continue 側のストアでは実行が 1 コマンド進んでいる (通番が動いた)。
+        let codec = FakeCodec::default();
+        let _ = codec; // 検証には next と同じ codec が要る — chained の続きで別状態を組む。
+        let (intent, mut execution, _) = genesis(2);
+        execution.complete_stage(&intent, at()).unwrap();
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 2),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            two_part_rules(),
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "The saved position moved on: the workflow state changed while this stage's rules were being loaded. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_changed_bundle_fails_closed_as_stale() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        // continue 側ではルールが書き換わっている。
+        let (intent, execution, _) = genesis(2);
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            StaticRules {
+                files: vec![RuleFile::new(
+                    "aidlc/spaces/default/memory/org.md".to_string(),
+                    "# Org\nrewritten\n".to_string(),
+                )],
+            },
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_vanished_stage_fails_closed_verbatim() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        // グラフが再コンパイルされ stage-0 が消えた。
+        let held = {
+            let nodes = vec![
+                StageNodeBuilder::new(
+                    StageSlug::parse("someone-else").unwrap(),
+                    StageNumber::parse("0.1").unwrap(),
+                    "Other".to_string(),
+                    PhaseId::Initialization,
+                    ExecutionKind::Always,
+                    StageMode::Inline,
+                )
+                .lead_agent("orchestrator".to_string())
+                .scopes(vec!["classic".to_string()])
+                .build(),
+            ];
+            WorkflowDefinition::from_artifacts(
+                WorkflowDefinitionId::parse("claude").unwrap(),
+                core_command_domain::workflow_definition::DefinitionRevision::parse(&format!(
+                    "sha256:{}",
+                    "0".repeat(64)
+                ))
+                .unwrap(),
+                StageGraph::new(nodes).unwrap(),
+                ScopeGrid::new(
+                    [(
+                        "classic".to_string(),
+                        [(
+                            StageSlug::parse("someone-else").unwrap(),
+                            PlanAction::Execute,
+                        )]
+                        .into_iter()
+                        .collect(),
+                    )]
+                    .into_iter()
+                    .collect(),
+                ),
+                [(
+                    "classic".to_string(),
+                    ScopeMetadata::new("classic").unwrap(),
+                )]
+                .into_iter()
+                .collect(),
+            )
+        };
+        let (intent, execution, _) = genesis(2);
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository { held },
+            two_part_rules(),
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "Stage \"stage-0\" no longer exists. Run a fresh `next` after recompiling the stage graph."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_changed_route_fails_closed_verbatim() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        // scope のステージメンバーシップが変わった (3 ステージ目が増えた)。
+        let (intent, execution, _) = genesis(2);
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(3),
+            },
+            two_part_rules(),
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "Which stage runs next has changed: the stage route changed while its rules were being loaded. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_part_beyond_the_plan_fails_closed_verbatim() {
+        let (next, continuation) = chained_use_cases(two_part_rules());
+        // まず正規の連鎖を 1 回起こし、ダイジェスト束縛を写した上で索引だけ超過させる。
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        let codec = next_codec(&next);
+        let token = codec.verify(part1.continue_token()).unwrap();
+        let mut beyond = ContinueTokenBuilder::new(
+            token.stage(),
+            token.scope(),
+            9,
+            token.bundle_digest(),
+            token.directive_digest(),
+            token.route_hash(),
+            token.state_hash(),
+            token.gate(),
+        );
+        if let Some(next_stage) = token.next_stage() {
+            beyond = beyond.with_next_stage(next_stage);
+        }
+        let beyond = beyond.build();
+        let encoded = codec.mint(&beyond);
+        let directive = continuation.execute(&encoded, &active_input()).await;
+        assert_eq!(
+            error_message(&directive),
+            "This request asks for a part of the stage rules that does not exist. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_rule_file_blocks_the_stage_verbatim() {
+        let (intent, execution, _) = genesis(2);
+        let use_case = NextUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            BrokenRules,
+            FakeCodec::default(),
+        );
+        let directive = use_case.execute(&active_input()).await;
+        assert_eq!(
+            error_message(&directive),
+            "Cannot load required stage rule \"aidlc/spaces/default/memory/org.md\" (permission denied). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again."
+        );
+    }
+
+    /// next が抱える codec の複製 (共有ストア) を取り出す。
+    fn next_codec(next: &ChainedNext) -> FakeCodec {
+        next.codec.clone()
+    }
+
+    // ---- B16: continue の残腕と steering_chain ----
+
+    #[tokio::test]
+    async fn a_state_aware_token_without_an_active_workflow_moves_on() {
+        let (next, continuation) = chained_use_cases(two_part_rules());
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        // continue 側の入力に active が無い。
+        let input = NextTurnInput::new()
+            .with_layout(layout())
+            .with_definition_id(WorkflowDefinitionId::parse("claude").unwrap());
+        let directive = continuation.execute(part1.continue_token(), &input).await;
+        assert_eq!(
+            error_message(&directive),
+            "The saved position moved on: the workflow state changed while this stage's rules were being loaded. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stateless_chain_continues_without_a_workflow() {
+        // state なしの --single 連鎖 — トークンは state 束縛なしで、active なしでも継続できる。
+        let codec = FakeCodec::default();
+        let rules = two_part_rules();
+        let next = NextUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            rules.clone(),
+            codec.clone(),
+        );
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            rules,
+            codec,
+        );
+        let input = stateless_input().with_single().with_stage("stage-1");
+        let directive = next.execute(&input).await;
+        let part1 = expect_load_steering(directive);
+        let directive = continuation
+            .execute(part1.continue_token(), &stateless_input())
+            .await;
+        let part2 = expect_load_steering(directive);
+        let directive = continuation
+            .execute(part2.continue_token(), &stateless_input())
+            .await;
+        let run_stage = expect_run_stage(directive);
+        assert!(run_stage.is_single(), "single ピンの再適用");
+        assert_eq!(run_stage.stage().as_str(), "stage-1");
+    }
+
+    #[tokio::test]
+    async fn a_stateless_continue_without_a_definition_id_fails_closed() {
+        let codec = FakeCodec::default();
+        let rules = two_part_rules();
+        let next = NextUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            rules.clone(),
+            codec.clone(),
+        );
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            rules,
+            codec,
+        );
+        let input = stateless_input().with_single().with_stage("stage-1");
+        let part1 = expect_load_steering(next.execute(&input).await);
+        let bare = NextTurnInput::new().with_layout(layout());
+        let directive = continuation.execute(part1.continue_token(), &bare).await;
+        assert_eq!(
+            error_message(&directive),
+            "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_bundle_on_continue_is_stale() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let part1 = expect_load_steering(next.execute(&active_input()).await);
+        let (intent, execution, _) = genesis(2);
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            BrokenRules,
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[test]
+    fn the_pins_survive_the_rebuild() {
+        use super::super::steering_chain::rebuild_with_pins;
+        let run_stage = core_command_domain::orchestration::RunStageDirectiveBuilder::new(
+            slug(1),
+            PhaseId::Inception,
+            "aidlc-product-agent",
+            StageMode::Inline,
+            GateField::Gated,
+            "stage.md",
+            "memory.md",
+        )
+        .with_support_agents(vec!["aidlc-design-agent".to_string()])
+        .with_reviewer(
+            "aidlc-product-lead-agent",
+            core_command_domain::workflow_definition::ReviewClass::Advisory,
+            2,
+        )
+        .with_narration("note")
+        .build();
+        let token = ContinueTokenBuilder::new(
+            "stage-1",
+            "classic",
+            1,
+            "b",
+            "d",
+            "r",
+            "h",
+            GateField::Ungated,
+        )
+        .with_unit("u6", "library")
+        .with_next_stage("Stage 2")
+        .with_single()
+        .build();
+        let rebuilt = rebuild_with_pins(&run_stage, &token);
+        assert_eq!(rebuilt.gate(), GateField::Ungated, "gate ピン");
+        assert_eq!(rebuilt.next_stage(), Some("Stage 2"), "next_stage ピン");
+        assert_eq!(rebuilt.unit(), Some("u6"), "unit ピン");
+        assert!(rebuilt.is_single(), "single ピン");
+        assert_eq!(rebuilt.reviewer(), Some("aidlc-product-lead-agent"));
+        assert_eq!(rebuilt.reviewer_max_iterations(), Some(2));
+        assert_eq!(rebuilt.narration(), Some("note"));
+        assert_eq!(rebuilt.support_agents(), ["aidlc-design-agent"]);
+    }
+
+    #[test]
+    fn a_part_outside_the_plan_is_an_internal_error() {
+        use super::super::steering::SteeringPlan;
+        use super::super::steering_chain::emit_part;
+        let plan = SteeringPlan::from_bundle(&[]).unwrap();
+        let run_stage = core_command_domain::orchestration::RunStageDirectiveBuilder::new(
+            slug(0),
+            PhaseId::Initialization,
+            "orchestrator",
+            StageMode::Inline,
+            GateField::Ungated,
+            "stage.md",
+            "memory.md",
+        )
+        .build();
+        let directive = emit_part(
+            &FakeCodec::default(),
+            &plan,
+            5,
+            &run_stage,
+            "classic",
+            "b",
+            "d",
+            "r",
+            None,
+        );
+        assert!(error_message(&directive).starts_with("internal:"));
+    }
+
+    /// 定義が読めない読取専用ダブル。
+    #[derive(Debug)]
+    struct BrokenDefinitions;
+
+    impl WorkflowDefinitionRepository for BrokenDefinitions {
+        fn find_by_id(
+            &self,
+            _id: &WorkflowDefinitionId,
+        ) -> Result<WorkflowDefinition, GraphReadError> {
+            Err(GraphReadError::ScopeFile {
+                message: "broken".to_string(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_state_aware_token_with_a_vanished_store_moves_on() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let part1 = expect_load_steering(next.execute(&active_input()).await);
+        // continue 側のストアが空 (実行が消えた)。
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            two_part_rules(),
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "The saved position moved on: the workflow state changed while this stage's rules were being loaded. Run a fresh `next` to restart delivery from part 1."
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_definition_on_continue_reports_the_stage_gone() {
+        let (next, _) = chained_use_cases(two_part_rules());
+        let part1 = expect_load_steering(next.execute(&active_input()).await);
+        let (intent, execution, _) = genesis(2);
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::holding(intent),
+            BrokenDefinitions,
+            two_part_rules(),
+            next_codec(&next),
+        );
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            error_message(&directive),
+            "Stage \"stage-0\" no longer exists. Run a fresh `next` after recompiling the stage graph."
+        );
     }
 }

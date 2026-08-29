@@ -5,10 +5,12 @@
 //! 28KiB 上限 (超過は emit 拒否 — half-emitted を出さない) は Presenter (U7) の責務で、
 //! ここには持ち込まない (`coding-rules/domain-persistence-neutrality.md`)。
 //!
-//! placeholder 2 種 (`dispatch-subagent` / `present-gate`)、slice 2 の `invoke-swarm`、
-//! B16 スライスの `load-steering` は variant を**持たない** — 「エンジンは今日これを
-//! 構築しない」を構成不能で表す (投機実装禁止 — 02 §4.1)。[`DirectiveKind`] は 10 種の
-//! 閉集合 (ワイヤ判別子のカタログ) のままで、この共用体は**構築できる部分集合**である。
+//! placeholder 2 種 (`dispatch-subagent` / `present-gate`) と slice 2 の `invoke-swarm` は
+//! variant を**持たない** — 「エンジンは今日これを構築しない」を構成不能で表す
+//! (投機実装禁止 — 02 §4.1)。[`DirectiveKind`] は 10 種の閉集合 (ワイヤ判別子のカタログ) の
+//! ままで、この共用体は**構築できる部分集合**である。
+
+use std::fmt;
 
 use super::directive_schema::DirectiveKind;
 use crate::workflow_definition::StageSlug;
@@ -124,6 +126,8 @@ pub struct RunStageDirective {
     protocol_modules: Vec<String>,
     narration: Option<String>,
     single: bool,
+    unit: Option<String>,
+    rules_in_context: Vec<String>,
 }
 
 /// [`RunStageDirective`] の組み立て器 — 必須 6 点を基本コンストラクタ相当で受け、残りは
@@ -149,6 +153,8 @@ pub struct RunStageDirectiveBuilder {
     protocol_modules: Vec<String>,
     narration: Option<String>,
     single: bool,
+    unit: Option<String>,
+    rules_in_context: Vec<String>,
 }
 
 impl RunStageDirectiveBuilder {
@@ -183,6 +189,8 @@ impl RunStageDirectiveBuilder {
             protocol_modules: Vec::new(),
             narration: None,
             single: false,
+            unit: None,
+            rules_in_context: Vec::new(),
         }
     }
 
@@ -263,6 +271,20 @@ impl RunStageDirectiveBuilder {
         self
     }
 
+    /// per-unit 反復の unit を伴う。
+    #[must_use]
+    pub fn with_unit(mut self, unit: impl Into<String>) -> RunStageDirectiveBuilder {
+        self.unit = Some(unit.into());
+        self
+    }
+
+    /// 配信済みルール束のパス台帳 (`rules_in_context`) を伴う。
+    #[must_use]
+    pub fn with_rules_in_context(mut self, paths: Vec<String>) -> RunStageDirectiveBuilder {
+        self.rules_in_context = paths;
+        self
+    }
+
     /// 組み上げる (構造体リテラルはここだけ)。
     #[must_use]
     pub fn build(self) -> RunStageDirective {
@@ -286,6 +308,8 @@ impl RunStageDirectiveBuilder {
             protocol_modules: self.protocol_modules,
             narration: self.narration,
             single: self.single,
+            unit: self.unit,
+            rules_in_context: self.rules_in_context,
         }
     }
 }
@@ -404,6 +428,149 @@ impl RunStageDirective {
     pub const fn is_single(&self) -> bool {
         self.single
     }
+
+    /// per-unit 反復の unit。
+    #[must_use]
+    pub fn unit(&self) -> Option<&str> {
+        self.unit.as_deref()
+    }
+
+    /// 配信済みルール束のパス台帳。
+    #[must_use]
+    pub fn rules_in_context(&self) -> &[String] {
+        &self.rules_in_context
+    }
+}
+
+/// `load-steering` の `rules_content[]` の 1 要素 — ルールの**テキスト**が必須 steering で、
+/// パスはルーティングメタデータである (02 §10 「No rule is downgraded to a discretionary
+/// path read」)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleContent {
+    path: String,
+    text: String,
+}
+
+impl RuleContent {
+    /// パスとテキストを束ねる。
+    #[must_use]
+    pub const fn new(path: String, text: String) -> RuleContent {
+        RuleContent { path, text }
+    }
+
+    /// ルールファイルのパス (ルーティングメタデータ)。
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// ルールのテキスト (必須 steering)。
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// `load-steering` — ルール束の分割配信 1 部 (02 §4.1)。
+///
+/// クロスフィールド規則 `part <= parts` は**コンストラクタで**強制する
+/// (`aidlc-directive.ts:603-611` — validateDirective 相当を型で行う)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadSteeringDirective {
+    stage: StageSlug,
+    bundle: String,
+    part: u32,
+    parts: u32,
+    rules_content: Vec<RuleContent>,
+    continue_token: String,
+}
+
+/// [`LoadSteeringDirective`] を組めない形。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadSteeringError {
+    /// `part` が `parts` を超えている (クロスフィールド規則違反)。
+    PartBeyondParts {
+        /// 要求されたパート番号。
+        part: u32,
+        /// パート総数。
+        parts: u32,
+    },
+}
+
+impl fmt::Display for LoadSteeringError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoadSteeringError::PartBeyondParts { part, parts } => {
+                write!(f, "part {part} beyond parts {parts}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LoadSteeringError {}
+
+impl LoadSteeringDirective {
+    /// 1 部を組む (基本コンストラクタ — クロスフィールド検証つき)。
+    ///
+    /// # Errors
+    ///
+    /// `part > parts` を拒否する (`part must be less than or equal to parts`)。
+    pub fn new(
+        stage: StageSlug,
+        bundle: impl Into<String>,
+        part: u32,
+        parts: u32,
+        rules_content: Vec<RuleContent>,
+        continue_token: impl Into<String>,
+    ) -> Result<LoadSteeringDirective, LoadSteeringError> {
+        if part > parts {
+            return Err(LoadSteeringError::PartBeyondParts { part, parts });
+        }
+        Ok(LoadSteeringDirective {
+            stage,
+            bundle: bundle.into(),
+            part,
+            parts,
+            rules_content,
+            continue_token: continue_token.into(),
+        })
+    }
+
+    /// 連鎖が属するステージ。
+    #[must_use]
+    pub const fn stage(&self) -> &StageSlug {
+        &self.stage
+    }
+
+    /// ルール束のダイジェスト。
+    #[must_use]
+    pub fn bundle(&self) -> &str {
+        &self.bundle
+    }
+
+    /// この部の番号 (1 始まり)。
+    #[must_use]
+    pub const fn part(&self) -> u32 {
+        self.part
+    }
+
+    /// パート総数。
+    #[must_use]
+    pub const fn parts(&self) -> u32 {
+        self.parts
+    }
+
+    /// この部が運ぶルール内容 (配列順に適用する)。
+    #[must_use]
+    pub fn rules_content(&self) -> &[RuleContent] {
+        &self.rules_content
+    }
+
+    /// 次の `continue` に渡すトークン (encode 済み)。
+    #[must_use]
+    pub fn continue_token(&self) -> &str {
+        &self.continue_token
+    }
 }
 
 /// 放出できる directive の判別共用体。
@@ -414,6 +581,8 @@ impl RunStageDirective {
 )]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Directive {
+    /// ルール束の分割配信 1 部。
+    LoadSteering(LoadSteeringDirective),
     /// ステージ本体の実行。
     RunStage(RunStageDirective),
     /// 構造化質問の提示。
@@ -447,6 +616,7 @@ impl Directive {
     #[must_use]
     pub const fn kind(&self) -> DirectiveKind {
         match self {
+            Directive::LoadSteering(_) => DirectiveKind::LoadSteering,
             Directive::RunStage(_) => DirectiveKind::RunStage,
             Directive::Ask(_) => DirectiveKind::Ask,
             Directive::Print { .. } => DirectiveKind::Print,
@@ -559,5 +729,56 @@ mod tests {
         assert_eq!(ask.ask_kind(), AskKind::NewWorkRouting);
         assert_eq!(ask.proposed_scope(), Some("bugfix"));
         assert_eq!(ask.new_work_description(), Some("fix the login crash"));
+    }
+
+    #[test]
+    fn a_load_steering_part_beyond_parts_is_unconstructible() {
+        let error = LoadSteeringDirective::new(slug(), "sha256:bbbb", 3, 2, Vec::new(), "token-1")
+            .unwrap_err();
+        assert_eq!(
+            error,
+            LoadSteeringError::PartBeyondParts { part: 3, parts: 2 }
+        );
+        assert_eq!(error.to_string(), "part 3 beyond parts 2");
+        let boxed: Box<dyn std::error::Error> = Box::new(error);
+        assert_eq!(boxed.to_string(), "part 3 beyond parts 2");
+    }
+
+    #[test]
+    fn a_load_steering_part_reports_its_faces() {
+        let content = RuleContent::new("memory/org.md".to_string(), "# Org\n".to_string());
+        assert_eq!(content.path(), "memory/org.md");
+        assert_eq!(content.text(), "# Org\n");
+        let part =
+            LoadSteeringDirective::new(slug(), "sha256:bbbb", 1, 2, vec![content], "token-1")
+                .unwrap();
+        assert_eq!(part.stage().as_str(), "requirements-analysis");
+        assert_eq!(part.bundle(), "sha256:bbbb");
+        assert_eq!(part.part(), 1);
+        assert_eq!(part.parts(), 2);
+        assert_eq!(part.rules_content().len(), 1);
+        assert_eq!(part.continue_token(), "token-1");
+        assert_eq!(
+            Directive::LoadSteering(part).kind(),
+            DirectiveKind::LoadSteering
+        );
+    }
+
+    #[test]
+    fn a_run_stage_carries_its_unit_and_rule_ledger() {
+        let directive = RunStageDirectiveBuilder::new(
+            slug(),
+            PhaseId::Construction,
+            "aidlc-developer-agent",
+            StageMode::Inline,
+            GateField::Gated,
+            "stage.md",
+            "memory.md",
+        )
+        .with_unit("u6-next-continue-use-case")
+        .with_rules_in_context(vec!["memory/org.md".to_string()])
+        .build();
+        assert_eq!(directive.unit(), Some("u6-next-continue-use-case"));
+        assert_eq!(directive.rules_in_context(), ["memory/org.md"]);
     }
 }

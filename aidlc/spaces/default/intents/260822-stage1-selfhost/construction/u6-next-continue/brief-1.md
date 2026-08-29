@@ -61,3 +61,20 @@
   救済。**新 Bolt ブランチは fetch 直後の origin/main から切る**を運用規約に追加すること。
 - 次 (B16): load-steering 分割配信・ContinueToken（hmac + base64 承認済み）・continue 動詞・
   run-stage への rules_in_context 搭載・active-directive マーカー Gateway。
+
+## B16 実施記録（2026-08-30）
+
+- 実装: use-case `SteeringPlan`（20KiB 見出し境界分割 + UNSPLITTABLE_SECTION 後退分割）、
+  `ContinueToken`/`ContinueTokenBuilder`（18 キー厳密型表・v=1）、`ContinueUseCase`
+  （verify → 状態束縛比較 → 定義/ノード解決 → route ハッシュ比較 → rebuild_with_pins →
+  bundle/directive ダイジェスト比較 → part 配送、fail-closed 6 形は逐語 wording）、
+  `RuleBundleSource` ポート + fs 実装（org→team→project→phases/<phase>、欠落 skip・
+  読取不能 blocking）。interface-adapter `ContinueTokenCodecImpl`（HMAC-SHA256 封筒
+  {p,m}・base64url NO_PAD・`Mac::verify_slice` timing-safe・鍵不在時 getrandom ミント）。
+  next 側は load-steering 連鎖の起点化と run-stage への rules_in_context 台帳搭載。
+- 新依存: hmac 0.12 / base64 0.22 / getrandom 0.3（オーナー承認済み。暗号は adapter のみ、
+  domain/use-case は封筒に非依存）。
+- ゲート: fmt / clippy(-D warnings) / cargo lint / test 934 全緑、カバレッジ 98.79%
+  （相対ゲート回復のため、網羅 match テストヘルパの実行補完と continue 異常系テストを追加）。
+- 申し送り継続: 完全 ROUTES 表・conductor_persona 焼き込み・active-directive マーカー
+  Gateway は U7。

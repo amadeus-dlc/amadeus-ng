@@ -57,6 +57,7 @@
 mod apply_error;
 mod autonomy_mode;
 mod command_error;
+mod continue_token;
 mod directive;
 mod directive_schema;
 mod intent;
@@ -81,8 +82,10 @@ mod workspace_scan;
 pub use autonomy_mode::AutonomyMode;
 pub use directive_schema::DirectiveKind;
 // directive 判別共用体 (構築できる部分集合 — placeholder / slice 2 / B16 の kind は variant を持たない)
+pub use continue_token::{ContinueToken, ContinueTokenBuilder};
 pub use directive::{
-    AskDirective, AskKind, Directive, GateField, RunStageDirective, RunStageDirectiveBuilder,
+    AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, LoadSteeringError,
+    RuleContent, RunStageDirective, RunStageDirectiveBuilder,
 };
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
