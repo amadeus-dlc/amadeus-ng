@@ -72,12 +72,17 @@
 
 ### U3 — `u3-event-store-repository`（library, L）
 
-- **責務**: `core-interface-adapter` に SQLite EventStore（journal / snapshot / checkpoint テーブル、
+- **責務**: ~~`core-interface-adapter`~~ に SQLite EventStore（journal / snapshot / checkpoint テーブル、
   `persist_event_and_snapshot` は同一 Tx + 楽観 version 条件付き書込）と `WorkflowExecutionRepositoryImpl`
   （store = イベント + スナップショット永続化、find_by_id = 最新スナップショット + seq_nr 以降 replay）を
   実装する。mkdir ロック機構（`FsWorkspaceLock` / `WorkspaceLock` / `LockProtocol` / `reap_eligible` /
   `OwnerStamp`）を退役し、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」
   の検証モデルへ改訂する（ADR-007）。`InMemoryWorkflowExecutionRepository` を先に書く（gateway-taxonomy §6）。
+  → **失効（2026-08-29 / Bolt B8）**: `core-interface-adapter` はコマンド側とクエリ側に分割された。
+  `WorkflowExecutionRepositoryImpl` は **`core-command-interface-adapter`**（本 Unit の実体）が
+  引き続き所有し、`JournalReaderImpl`（本行が当初含意していた読取側実装）はクエリ側
+  **`core-query-read-model-updater`**（U4）へ移動済み（`crate-structure-proposal.md` §1、
+  `construction/u4-read-model-updater/developer-report-1.md` §1）。
 - **境界**: ポート trait（`WorkflowExecutionRepository`、EventStore 同形 trait）はユースケース層に置く
   （U5/U6 より先に本 Unit が定義する）。ドメイン型（イベント・集約）は U2 のものを使う。投影は持たない。
 - **合格**: FR1.2（改訂版 `audit_lock.qnt` ITF 準拠）、FR1.3（store → find_by_id ラウンドトリップ）、
@@ -91,12 +96,24 @@
   ファイル）と監査シャード `<record>/audit/<host>-<clone>.md`（1 ドメインイベント → upstream 監査行 N 行、
   86 語彙・見出し・フィールド順は逐語互換）へ投影し、チェックポイントを進める冪等な差分関数。単一ファイル
   原子性（tmp+rename）。**監査シャード横断の位置付き読取**（timestamp ソート + バッファ位置 tiebreak —
-  FR1.1。domain-design レビュー Minor の読み側合流をここに置く）。`state_file_io` を投影ライタ部品へ転生。
-- **境界**: 入力は U3 のジャーナル読取 API と U2 のイベント型。書込先は upstream 互換ファイルのみ。
-  常駐しない（コマンド末尾で同期実行 — 起動は U7）。
+  FR1.1。domain-design レビュー Minor の読み側合流をここに置く）。~~`state_file_io` を投影ライタ部品へ転生。~~
+  → **実施済み（2026-08-29 / Bolt B8）**: `state_file_io` は `workspace/state_file.rs` へ転生。
+  `render_audit_block` / `state_writers`（11-workspace §2.3）・`AuditFieldKey` 等の Domain Primitive
+  （11-workspace §2.2）・監査ブロック描画（`audit_block.rs`）・投影規則 12 変種（`projection.rs`）も
+  本 Unit で実装済み。
+- **境界**: ~~入力は U3 のジャーナル読取 API と U2 のイベント型。~~ → **失効（2026-08-29 / Bolt B8）**:
+  `JournalReader` ポートとその実装 `JournalReaderImpl`（旧 U3 所有）は本 Unit へ移動した。入力は
+  U2 のドメインイベント型と、U3（`core-command-interface-adapter`）が書き込む SQLite ジャーナル
+  （同じ DB ファイルへの別接続）。**本 Unit は独立クレート `core-query-read-model-updater` として
+  実装済み**であり、コマンド側の `core-command-use-case` / `core-command-interface-adapter` の
+  `Cargo.toml` に一切現れない（相互独立が物理強制 — `crate-structure-proposal.md` §2）。書込先は
+  upstream 互換ファイルのみ。常駐しない（コマンド末尾で同期実行 — 起動は U7）。
 - **合格**: FR1.1（投影出力が 0a 逐語契約に一致）、NFR3（ジャーナル → 集約 → 投影の再生成、冪等性）。
   FR5.4（write-audit-log）の「監査行を描く」側はここ、フックの発火側は U7。
-- **実装ノート**: 投影規則（イベント → 行）は contract-design で形式化（Q7 = B）。
+- **実装ノート**: 投影規則（イベント → 行）は contract-design で形式化（Q7 = B）。**embedded 表記の
+  補足（2026-08-29 / Bolt B8）**: §2 表の「embedded」はデプロイ形態（`aidlc` バイナリへの静的リンク、
+  独立プロセスなし）を指し、クレート境界の独立性を意味しない。本 Unit は Bolt B8 で独立クレート
+  `core-query-read-model-updater` として実装され、U3 とは相互独立が物理強制されている。
 
 ### U5 — `u5-report-use-case`（library, M）
 

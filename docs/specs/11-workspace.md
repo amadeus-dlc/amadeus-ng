@@ -54,14 +54,14 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 ### 2.3 ドメインサービス（純関数）
 
-本節の純関数のうち、**状態ファイル・監査ブロックの描画**にあたるもの（`render_audit_block` / `state_writers`）は、ES 化により**投影の責務**へ移る — 描くのは ReadModelUpdater（U4）であって、ドメイン層ではない（ADR-003 / ADR-004。コードの移動は U4 の Bolt で実施する）。ドメインに残るのは値オブジェクトの Always Valid 検証（`StateFieldValue` の単一行検査、`EventType` の閉集合、行終端エスケープによる行偽造不能性）と、集約に置けない横断の判断である（01 §7.1 原則 2）。`find_all_events`（他クローンのシャード横断読取）と `classify_state_version` は本コンテキストに残る。
+本節の純関数のうち、**状態ファイル・監査ブロックの描画**にあたるもの（`render_audit_block` / `state_writers`）は、ES 化により**投影の責務**へ移る — 描くのは ReadModelUpdater（U4）であって、ドメイン層ではない（ADR-003 / ADR-004。~~コードの移動は U4 の Bolt で実施する~~ → **実施済み（2026-08-29 / Bolt B8 — `core-query-read-model-updater` の投影 API へ転居）**）。ドメインに残るのは値オブジェクトの Always Valid 検証（`StateFieldValue` の単一行検査、`EventType` の閉集合、行終端エスケープによる行偽造不能性）と、集約に置けない横断の判断である（01 §7.1 原則 2）。~~`find_all_events`（他クローンのシャード横断読取）と `classify_state_version` は本コンテキストに残る。~~ → **分割（2026-08-29 / Bolt B8）**: `find_all_events` は責務が割れた。**ドメインに残るのは順序付けの純関数のみ**（timestamp ソート＋バッファ位置 tiebreak を、渡された行列に適用する。実装は `core-domain::workspace`）。**シャード列挙とファイル読取（I/O）は投影側（`core-query-read-model-updater` の `workspace/audit_shard.rs::read_all`）へ移った** — 11-workspace が「domain に残す」としていた記述と unit-of-work.md U4 の「横断読取は U4 の責務」を、純関数とその I/O 呼び出し元とに分けて両立させた（`construction/u4-read-model-updater/developer-report-1.md` §7-7）。`classify_state_version` は本コンテキストに残る（純関数・I/O 無し）。
 
 | サービス | 内容 |
 | --- | --- |
-| `render_audit_block`（→ 投影 API — ReadModelUpdater、U4） | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
-| `find_all_events` | shard 横断の順序: timestamp（秒精度 ISO）ソート＋バッファ位置 tiebreak。**通常読取は決して fail-closed しない**（authority 比較の同秒 fail-closed は orchestration の述語側 — B9）。出力は順序付き専用型（外部から構築・再ソート不能 — W15 の E1 装置） |
+| `render_audit_block`（~~→ 投影 API — ReadModelUpdater、U4~~ → **実施済み（2026-08-29 / Bolt B8）**: `core-query-read-model-updater`（`workspace/audit_block.rs`）） | `## Heading` / `**Timestamp**` / `**Event**` / フィールド行 / `\n---\n`。値の行終端（`\r\n?` `\n` U+2028 U+2029）を `\n` リテラルへエスケープし、第二のフィールド行・イベント行の偽造を防ぐ |
+| `find_all_events`（**分割 — 2026-08-29 / Bolt B8**。下記参照） | 順序付けの純関数（ドメインに残置。実装 `core-domain::workspace`）は timestamp（秒精度 ISO）ソート＋バッファ位置 tiebreak。**通常読取は決して fail-closed しない**（authority 比較の同秒 fail-closed は orchestration の述語側 — B9）。出力は順序付き専用型（外部から構築・再ソート不能 — W15 の E1 装置）。**シャード列挙とファイル読取（I/O）は投影側（`core-query-read-model-updater` の `workspace/audit_shard.rs::read_all`）へ移った** |
 | `classify_state_version` | 4 分類の単一実装（W7） |
-| `state_writers`（→ 投影 API — ReadModelUpdater、U4） | `with_field_if_present`（無言 no-op）/ `with_field`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `with_field_or_insert` / `without_field` の 4 種。純粋な string→string |
+| `state_writers`（~~→ 投影 API — ReadModelUpdater、U4~~ → **実施済み（2026-08-29 / Bolt B8）**: `core-query-read-model-updater` の投影 API） | `with_field_if_present`（無言 no-op）/ `with_field`（不在で throw — 「無言 no-op は検出不能なドリフト」）/ `with_field_or_insert` / `without_field` の 4 種。純粋な string→string |
 
 ### 2.4 multi-repo・カーソル・committed vs ignored
 
