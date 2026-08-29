@@ -11,6 +11,7 @@
 //! 消費側のパスは `core_command_domain::workspace::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod audit_events;
 mod audit_field;
 mod audit_ordering;
 mod bolt_refs;
@@ -24,6 +25,7 @@ mod state_version;
 mod store_path;
 
 // Domain Primitive
+pub use audit_events::{EventCategory, EventType};
 pub use audit_field::{AuditFieldKey, AuditFieldValue, AuditFields};
 pub use audit_ordering::{AuditEventRecord, OrderedAuditEvents};
 pub use bolt_refs::BoltRefs;

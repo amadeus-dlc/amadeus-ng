@@ -49,10 +49,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "audit-events"
-version = "0.1.0"
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -145,7 +141,6 @@ dependencies = [
 name = "core-command-domain"
 version = "0.1.0"
 dependencies = [
- "audit-events",
  "chrono",
  "directive-schema",
  "event-store-adapter-rs",
@@ -160,7 +155,6 @@ dependencies = [
 name = "core-command-interface-adapter"
 version = "0.1.0"
 dependencies = [
- "audit-events",
  "canon-json",
  "chrono",
  "core-command-domain",
@@ -204,7 +198,6 @@ dependencies = [
 name = "core-read-model-updater"
 version = "0.1.0"
 dependencies = [
- "audit-events",
  "chrono",
  "core-command-domain",
  "core-infrastructure",

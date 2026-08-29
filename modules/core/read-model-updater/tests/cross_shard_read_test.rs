@@ -10,8 +10,8 @@
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use audit_events::EventType;
 use chrono::{DateTime, Utc};
+use core_command_domain::workspace::EventType;
 use core_command_domain::workspace::{
     AuditEventRecord, AuditFieldKey, AuditFields, find_all_events,
 };

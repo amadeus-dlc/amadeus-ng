@@ -30,8 +30,8 @@ use core_command_domain::workspace::{
     count_completed, with_checkbox_marker, with_checkbox_suffix,
 };
 
-use audit_events::EventType;
 use chrono::{DateTime, Utc};
+use core_command_domain::workspace::EventType;
 
 use super::audit_block::render_audit_block;
 use super::read_model::ReadModel;

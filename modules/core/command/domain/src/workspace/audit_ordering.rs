@@ -19,7 +19,7 @@
 
 use core::fmt;
 
-use audit_events::EventType;
+use super::audit_events::EventType;
 
 /// ブロックの区切り（upstream の読み手はここで割る）。
 const BLOCK_SEPARATOR: &str = "\n---\n";

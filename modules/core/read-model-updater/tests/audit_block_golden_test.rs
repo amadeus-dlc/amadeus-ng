@@ -18,8 +18,8 @@
 
 use std::path::{Path, PathBuf};
 
-use audit_events::EventType;
 use chrono::{DateTime, Utc};
+use core_command_domain::workspace::EventType;
 use core_command_domain::workspace::{AuditFieldKey, AuditFields};
 use core_read_model_updater::workspace::{SHARD_HEADER, render_audit_block};
 
