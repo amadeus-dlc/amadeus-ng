@@ -14,7 +14,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::workspace::{
-    AuditShardWriteError, ProjectionError, ReadModel, StateFileReadError, StateFileWriteError,
+    AuditShardWriteError, ProjectionError, ReadModel, ResolvedPlan, StateFileReadError,
+    StateFileWriteError,
 };
 
 use super::global_seq_nr::GlobalSeqNr;
@@ -35,6 +36,11 @@ pub enum CatchUpError {
     StateFileWrite(StateFileWriteError),
     /// 監査シャードへ追記できなかった。
     AuditShardWrite(AuditShardWriteError),
+    /// 描くべき差分はあるのに、解決済み計画（`Started`）がジャーナルに無い。
+    ///
+    /// 表示属性と走査結果を運ぶのは `Started` だけなので、これが無ければ 1 行も描けない。
+    /// ジャーナルが途中から切り落とされた兆候であり、読み替えずに止める。
+    PlanUnavailable,
 }
 
 impl core::fmt::Display for CatchUpError {
@@ -47,6 +53,7 @@ impl core::fmt::Display for CatchUpError {
             }
             CatchUpError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
             CatchUpError::AuditShardWrite(inner) => write!(f, "audit shard write: {inner}"),
+            CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
         }
     }
 }
@@ -107,6 +114,8 @@ pub struct ReadModelUpdater<R> {
     reader: R,
     projection: ProjectionName,
     targets: ProjectionTargets,
+    /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
+    plan: Option<ResolvedPlan>,
 }
 
 impl<R: JournalReader> ReadModelUpdater<R> {
@@ -120,6 +129,7 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             reader,
             projection,
             targets,
+            plan: None,
         }
     }
 
@@ -156,10 +166,11 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             return Ok(checkpoint);
         };
 
+        let plan = self.resolve_plan().await?;
         let state = crate::workspace::read_state_file(self.targets.state_file())
             .map_err(CatchUpError::StateFileRead)?;
         let mut read_model = ReadModel::new(state);
-        crate::workspace::project(&entries, &mut read_model)?;
+        crate::workspace::project(&entries, &plan, &mut read_model)?;
 
         crate::workspace::write_state_file(self.targets.state_file(), read_model.state())
             .map_err(CatchUpError::StateFileWrite)?;
@@ -173,6 +184,24 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             .advance_checkpoint(&self.projection, last)
             .await?;
         Ok(last)
+    }
+
+    /// 解決済み計画を得る（初回だけジャーナルの先頭から `Started` を引く）。
+    ///
+    /// 表示属性と走査結果を運ぶのは `Started` だけであり、差分投影のバッチにそれが入って
+    /// いるとは限らない。取ってくるのは**この層の仕事**である — 投影核は計画を受け取るだけで、
+    /// どこから来たかを知らない（二層構造）。
+    ///
+    /// `Started` はワークフローごとに 1 度しか書かれないので、一度引けば控えを使い回す。
+    async fn resolve_plan(&mut self) -> Result<ResolvedPlan, CatchUpError> {
+        if let Some(plan) = &self.plan {
+            return Ok(plan.clone());
+        }
+        let history = self.reader.events_after(GlobalSeqNr::ZERO).await?;
+        let events: Vec<_> = history.iter().map(|entry| entry.event().clone()).collect();
+        let plan = ResolvedPlan::find_in(&events).ok_or(CatchUpError::PlanUnavailable)?;
+        self.plan = Some(plan.clone());
+        Ok(plan)
     }
 }
 
@@ -190,8 +219,8 @@ mod tests {
         .into();
         assert_eq!(read.to_string(), "read: io: WouldBlock at -");
 
-        let projection: CatchUpError = ProjectionError::ScopeUnknown.into();
-        assert_eq!(projection.to_string(), "projection: scope unknown");
+        let projection: CatchUpError = ProjectionError::ParkSectionMissing.into();
+        assert_eq!(projection.to_string(), "projection: park section missing");
 
         let state_read =
             CatchUpError::StateFileRead(StateFileReadError::new("State file not found: /x"));
@@ -208,6 +237,11 @@ mod tests {
             "実際: {state_write}"
         );
 
+        assert_eq!(
+            CatchUpError::PlanUnavailable.to_string(),
+            "plan unavailable"
+        );
+
         let shard_write = CatchUpError::AuditShardWrite(AuditShardWriteError::Io {
             kind: std::io::ErrorKind::PermissionDenied,
         });
@@ -217,7 +251,7 @@ mod tests {
         );
 
         let boxed: Box<dyn std::error::Error> = Box::new(projection);
-        assert_eq!(boxed.to_string(), "projection: scope unknown");
+        assert_eq!(boxed.to_string(), "projection: park section missing");
     }
 
     #[test]

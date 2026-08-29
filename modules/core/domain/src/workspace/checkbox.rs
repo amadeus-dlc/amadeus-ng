@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::workflow_definition::PlanAction;
+
 /// 6 状態 (01 §3.3 — E1)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CheckboxState {
@@ -158,6 +160,8 @@ fn parse_line(line: &str) -> Option<CheckboxEntry> {
 pub enum CheckboxUpdateError {
     /// 対象 slug の行が存在しない。
     MissingStage(String),
+    /// 対象行の末尾が EXECUTE / SKIP のどちらでもない (書き換え先が無い)。
+    MissingSuffix(String),
 }
 
 /// marker のみを書き換える (rest と suffix には触れない — 互いに素なフィールド編集)。
@@ -199,6 +203,63 @@ pub fn with_checkbox_marker(
         result.push('\n');
     }
     Ok(result)
+}
+
+/// 計画側の EXECUTE/SKIP サフィックスのみを書き換える (marker と rest の前半には触れない)。
+///
+/// marker writer とは**同一行の互いに素なフィールドを編集する別 API** である
+/// (11-workspace §2.2 `CheckboxLine`)。recompose がサフィックスを、jump がマーカーを動かす —
+/// 別 API だからこそ 2 つの編集が合成できる。
+///
+/// 置き換えるのは行末の EXECUTE / SKIP トークン 1 つだけで、その手前の em dash 区切りや表題は
+/// verbatim のまま残る。
+///
+/// # Errors
+///
+/// 対象 slug の行が存在しなければ `MissingStage`。行末が EXECUTE / SKIP のどちらでもなければ
+/// `MissingSuffix` (書き換え先が無いのに無言で no-op しない)。
+pub fn with_checkbox_suffix(
+    content: &str,
+    slug: &str,
+    action: PlanAction,
+) -> Result<String, CheckboxUpdateError> {
+    let mut found = false;
+    let mut out: Vec<String> = Vec::new();
+    for line in content.lines() {
+        match parse_line(line) {
+            Some(entry) if entry.slug() == slug => {
+                found = true;
+                let trimmed = line.trim_end();
+                let Some(head) = PLAN_SUFFIXES
+                    .iter()
+                    .find_map(|suffix| trimmed.strip_suffix(suffix))
+                else {
+                    return Err(CheckboxUpdateError::MissingSuffix(slug.to_string()));
+                };
+                out.push(format!("{head}{}", plan_suffix(action)));
+            }
+            _ => out.push(line.to_string()),
+        }
+    }
+    if !found {
+        return Err(CheckboxUpdateError::MissingStage(slug.to_string()));
+    }
+    let mut result = out.join("\n");
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+    Ok(result)
+}
+
+/// 行末に書かれる計画側トークン 2 種 (upstream 逐語)。
+const PLAN_SUFFIXES: [&str; 2] = ["EXECUTE", "SKIP"];
+
+/// 計画を行末トークンへ写す。
+const fn plan_suffix(action: PlanAction) -> &'static str {
+    match action {
+        PlanAction::Execute => "EXECUTE",
+        PlanAction::Skip => "SKIP",
+    }
 }
 
 /// `Completed` フィールド同期のための集計 (upstream `countCheckboxes`)。
@@ -343,5 +404,51 @@ not a checkbox line
         assert!(Pending.is_in_flight() && !Pending.is_active());
         assert!(Revising.is_active());
         assert!(Completed.is_finished() && Skipped.is_finished());
+    }
+
+    #[test]
+    fn the_suffix_writer_replaces_only_the_plan_token() {
+        // recompose がサフィックスを動かす。マーカーと表題は verbatim のまま残る
+        // (marker writer とは互いに素なフィールド編集)。
+        let before = "- [ ] incident-response — EXECUTE\n- [x] practices-discovery — EXECUTE\n";
+        let after = with_checkbox_suffix(before, "incident-response", PlanAction::Skip).unwrap();
+        assert_eq!(
+            after,
+            "- [ ] incident-response — SKIP\n- [x] practices-discovery — EXECUTE\n"
+        );
+    }
+
+    #[test]
+    fn the_suffix_writer_leaves_a_title_between_the_slug_and_the_token() {
+        let before = "- [-] requirements-analysis — Requirements Analysis — EXECUTE\n";
+        let after =
+            with_checkbox_suffix(before, "requirements-analysis", PlanAction::Skip).unwrap();
+        assert_eq!(
+            after,
+            "- [-] requirements-analysis — Requirements Analysis — SKIP\n"
+        );
+    }
+
+    #[test]
+    fn the_two_writers_compose_on_the_same_line() {
+        // jump がマーカーを、recompose がサフィックスを動かしても互いを潰さない。
+        let before = "- [ ] incident-response — EXECUTE\n";
+        let marked =
+            with_checkbox_marker(before, "incident-response", CheckboxState::Skipped).unwrap();
+        let both = with_checkbox_suffix(&marked, "incident-response", PlanAction::Skip).unwrap();
+        assert_eq!(both, "- [S] incident-response — SKIP\n");
+    }
+
+    #[test]
+    fn the_suffix_writer_refuses_a_missing_stage_and_a_missing_token() {
+        assert_eq!(
+            with_checkbox_suffix("- [ ] other — EXECUTE\n", "absent", PlanAction::Skip),
+            Err(CheckboxUpdateError::MissingStage("absent".to_string()))
+        );
+        // 無言 no-op は検出不能なドリフトなので、書き換え先が無ければ止める。
+        assert_eq!(
+            with_checkbox_suffix("- [ ] here — Something Else\n", "here", PlanAction::Skip),
+            Err(CheckboxUpdateError::MissingSuffix("here".to_string()))
+        );
     }
 }

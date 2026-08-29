@@ -15,12 +15,14 @@ mod audit_block;
 mod audit_shard;
 mod projection;
 mod read_model;
+mod resolved_plan;
 mod state_file;
 mod state_writers;
 
 // 純粋投影核とその作業面（二層構造の下側 — ストレージを知らない）
 pub use projection::{ProjectionError, project};
 pub use read_model::ReadModel;
+pub use resolved_plan::{PlannedStage, ResolvedPlan};
 
 // 監査ブロックの描画（W9 の逐語契約。投影の行もフックの直接行も同じ描き手を通る）
 pub use audit_block::{SHARD_HEADER, render_audit_block};

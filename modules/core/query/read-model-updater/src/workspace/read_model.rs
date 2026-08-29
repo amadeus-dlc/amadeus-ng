@@ -9,11 +9,6 @@
 //! シャードは**追記**される（台帳なので既存の行は読まない — 投影が持つのはこの回に足すバイト
 //! 列だけである）。この非対称がそのまま型に出ている。
 
-use super::state_writers::find_field;
-
-/// 状態ファイルの `- **Scope**:` フィールド名（後続イベントの `**Scope**:` 行の材料）。
-const SCOPE_FIELD: &str = "Scope";
-
 /// 投影の書込先 2 面。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadModel {
@@ -54,15 +49,6 @@ impl ReadModel {
     pub(crate) fn append_audit(&mut self, block: &str) {
         self.appended_audit.push_str(block);
     }
-
-    /// 状態ファイルが記録しているスコープ。
-    ///
-    /// 差分投影では `Started` が同じバッチに入っているとは限らない。スコープはリードモデル
-    /// 自身が覚えている値であり、**投影の記憶はリードモデルにある**（別の場所に状態を持つと
-    /// 冪等性が壊れる）。
-    pub(crate) fn scope(&self) -> Option<String> {
-        find_field(&self.state, SCOPE_FIELD)
-    }
 }
 
 #[cfg(test)]
@@ -97,11 +83,5 @@ mod tests {
         model.replace_state("changed".to_string());
         assert_eq!(model.state(), "changed");
         assert_eq!(model.appended_audit(), "\n## A\n\n---\n");
-    }
-
-    #[test]
-    fn the_scope_is_read_out_of_the_state_file() {
-        assert_eq!(ReadModel::new(SAMPLE).scope().as_deref(), Some("classic"));
-        assert_eq!(ReadModel::new("# empty\n").scope(), None);
     }
 }

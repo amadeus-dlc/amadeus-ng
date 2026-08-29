@@ -13,8 +13,14 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use core_domain::orchestration::{GateOpened, IntentId, StageRevised, WorkflowExecutionEvent};
-use core_domain::workflow_definition::StageSlug;
+use core_domain::orchestration::{
+    GateOpened, IntentId, StageDisplay, StageEntry, StageRevised, StartRequest, Started,
+    WorkflowExecutionEvent, WorkspaceScan,
+};
+use core_domain::workflow_definition::{
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+    WorkflowDefinitionId,
+};
 use core_query_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
@@ -52,18 +58,58 @@ fn entry(global: u64, event: WorkflowExecutionEvent) -> JournalEntry {
     )
 }
 
-/// 投影規則が確定しているイベントだけを並べたジャーナル。
+/// 表示属性を運ぶ genesis（取得ループはここから計画を引く）。
+fn genesis() -> WorkflowExecutionEvent {
+    let stage = |name: &str, number: &str, agent: &str| {
+        StageEntry::new(
+            slug(name),
+            PhaseId::Inception,
+            PlanAction::Execute,
+            false,
+            StageDisplay::new(
+                StageNumber::parse(number).expect("番号"),
+                "Practices Discovery",
+                agent,
+            )
+            .expect("単一行"),
+        )
+    };
+    WorkflowExecutionEvent::Started(Started::new(
+        WorkflowDefinitionId::parse("claude").expect("定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+        &StartRequest::new("classic", "build it"),
+        vec![stage(
+            "practices-discovery",
+            "2.2",
+            "aidlc-pipeline-deploy-agent",
+        )],
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .expect("単一行"),
+    ))
+}
+
+/// genesis + 投影規則が確定しているイベント 2 件。
+///
+/// チェックポイントは genesis の直後（1）から始める — 取得ループが見るのは差分だけであり、
+/// genesis の状態面（新規スキャフォールド）は本 Bolt の射程外だからである。genesis 自身は
+/// **計画の供給元**としてジャーナルに残っている必要がある。
 fn journal() -> Vec<JournalEntry> {
     vec![
+        entry(1, genesis()),
         entry(
-            1,
+            2,
             WorkflowExecutionEvent::GateOpened(GateOpened::new(
                 slug("practices-discovery"),
                 Vec::new(),
             )),
         ),
         entry(
-            2,
+            3,
             WorkflowExecutionEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
         ),
     ]
@@ -151,10 +197,15 @@ impl Fixture {
     }
 
     fn updater(&self, journal: Vec<JournalEntry>) -> ReadModelUpdater<FakeReader> {
+        // genesis を投影せずに済むよう、チェックポイントはその直後から始める。
+        let mut checkpoints = BTreeMap::new();
+        if !journal.is_empty() {
+            checkpoints.insert(projection(), GlobalSeqNr::new(1));
+        }
         ReadModelUpdater::new(
             FakeReader {
                 journal,
-                checkpoints: BTreeMap::new(),
+                checkpoints,
             },
             projection(),
             self.targets(),
@@ -176,7 +227,7 @@ async fn catching_up_writes_both_faces_and_advances_the_checkpoint() {
     let mut updater = fixture.updater(journal());
 
     let reached = updater.catch_up().await.expect("キャッチアップ");
-    assert_eq!(reached, GlobalSeqNr::new(2), "末尾まで進む");
+    assert_eq!(reached, GlobalSeqNr::new(3), "末尾まで進む");
 
     // 状態面: `[-]` → `[?]`（GateOpened）→ `[?]`（StageRevised も同じ位置）
     assert!(
