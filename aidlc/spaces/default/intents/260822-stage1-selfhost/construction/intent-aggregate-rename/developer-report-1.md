@@ -8,11 +8,11 @@
 
 ## 0. 結論（先に）
 
-**受入基準はすべて緑**である（改訂 8 反映後に全ゲートを再実行した実測）。
-`cargo test --workspace` は **812 passed / 0 failed**（origin/main は 774 なので **+38**）。
+**受入基準はすべて緑**である（改訂 9 反映後に全ゲートを再実行した実測）。
+`cargo test --workspace` は **832 passed / 0 failed**（origin/main は 774 なので **+58**）。
 `tests/` の差分は 0 で、投影ゴールデン 19 本は無改変のまま全緑である。
 
-本 Bolt は途中で改訂 2〜8 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
+本 Bolt は途中で改訂 2〜9 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
 ある:
 
 | | 役割 |
@@ -33,6 +33,11 @@
 改訂 8 で **`Intent` も集約**と確定し（「集約ではない不変構造体」は撤回）、`IntentEvent::Created`
 の新設と対返しファクトリ `Intent::create` を実装した（§5 (k)）。これに伴い §5 (i) の
 「`Intent::new` は変更不要」裁定は**上書きされた**。
+
+改訂 9 で **ドメインから永続化知識を全撤去**した（§5 (l)）。`core-command-domain` に serde と
+event-store-adapter-rs が**無い**ことが規則の機械強制であり、行のバイトを決めるのは書く側
+（command interface-adapter）と読む側（RMU）の永続化 DTO になった。**ワイヤ形式のバイトは
+1 文字も変わっていない**（12 変種 + スナップショットを逐語で固定、両側で同一リテラル）。
 
 ---
 
@@ -145,9 +150,9 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 1 | `cargo fmt --all --check` | **緑**（exit 0） |
 | 2 | `cargo clippy --workspace --all-targets -- -D warnings` | **緑**（exit 0） |
 | 3 | `cargo lint` | **緑**（exit 0） |
-| 4 | `cargo test --workspace`（退行 0） | **緑**。**812 passed / 0 failed**（origin/main 774 → **+38**） |
+| 4 | `cargo test --workspace`（退行 0） | **緑**。**832 passed / 0 failed**（origin/main 774 → **+58**） |
 | 5 | `scripts/quint-gate.sh` | **緑**（exit 0） |
-| 6 | `scripts/coverage.sh --base origin/main` | **緑**。head **98.63390%**。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head >= base (98.52600%) - 0.01` |
+| 6 | `scripts/coverage.sh --base origin/main` | **緑**。head **98.63114%**。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head >= base (98.52600%) - 0.01` |
 | 7 | プロダクトコードに `unwrap` / `expect` 0 件 | **緑**（clippy の `unwrap_used` / `expect_used` deny で機械強制） |
 | 8 | 外形不変 | **緑**（§2） |
 | 9 | `grep -rn "WorkflowExecution" modules/ --include='*.rs'` | **緑**。**0 件** |
@@ -161,11 +166,14 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 17 | 全 `&mut self` コマンドがイベントを返す（`coding-rules/aggregate-commands.md`） | **緑**。集約の `pub fn` かつ `&mut self` は **12 本**あり、うち 11 本（`complete_stage` / `open_gate` / `approve_gate` / `reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` / `switch_autonomy`）はすべて `Result<IntentExecutionEvent, CommandError>` を返す。残る 1 本は規則が明示的に除外する fold の `apply_event`（`Result<(), ApplyError>`）。イベントを返さない遷移メソッドは **0 本** |
 | 18 | genesis が (集約, 誕生イベント) の対を返す / 再構成経路がイベントを生成しない | **緑**。`IntentExecution::start` は `(IntentExecution, IntentExecutionEvent)`、`WorkflowDefinition::define` は `(WorkflowDefinition, WorkflowDefinitionEvent)`、`Intent::create` / `Intent::resolve` は `Result<(Intent, IntentEvent), IntentError>`（改訂 8）。再構成の `IntentExecution::from_snapshot` / `apply_event` / `WorkflowDefinition::from_artifacts` / `Intent::from_material` はいずれもイベント型を戻り値に持たない（型で保証） |
 | 19 | `EVENT_MANIFEST` の綴りが集約名に揃っている（2026-08-30 裁定） | **緑**。値は `"intent-execution-event/1"`。旧綴りのコード出現は **0 件**（`grep -rn "workflow-execution-event" modules/ tools/ --include='*.rs'` は doc 注記の 1 行のみ — 改名の経緯を記録した意図的な残置）。ゴールデン側は改名前から **0 件** |
+| 20 | ドメインが永続化知識を持たない（改訂 9） | **緑**。`grep -rn "Serialize\|Deserialize\|event_store_adapter" modules/core/command/domain/src` は **0 件**（残るのは docs.rs の URL 1 行のみ）。`Cargo.toml` の `[dependencies]` は `chrono` だけで、serde も event-store-adapter-rs も無い — **違反はビルドで落ちる**（規則の機械強制） |
+| 21 | ワイヤ形式のバイト不変（改訂 9） | **緑**。12 変種 + スナップショットの JSON を**改訂 9 直前に実測した出力そのもの**で逐語固定。書く側と読む側が**同一のリテラル**を独立に持つので、片側の綴りが動けばどちらかが落ちる。横断の証明は `journal_protocol_conformance` / `crash_reconstruction_test` / 投影ゴールデン 19 本 / 移設後の `upstream_event_store_conformance` が担う |
+| 22 | 互換残置ゼロ | **緑**。`#[deprecated]` **0 件**、`pub use ... as` **0 件**、旧名 `Intent::new` / `from_state()` / `WorkflowExecution` / `IntentMaterial` の grep いずれも **0 件**（doc コメントを含む実測） |
 
 ### テストの増減の内訳（実測）
 
-テスト関数は **755 → 793**（+38。集計は `git grep -c -E "^\s*#\[([a-z_:]+::)?test\]|^\s*#\[tokio::test" <ref> -- modules` の総和で、
-origin/main と HEAD を同じ式で測った）。**14 本が消え、52 本が増えた**。消えた 14 本の行き先:
+テスト関数は **755 → 813**（+58。集計は `git grep -c -E "^\s*#\[([a-z_:]+::)?test\]|^\s*#\[tokio::test" <ref> -- modules` の総和で、
+origin/main と HEAD を同じ式で測った）。分割フェーズで 14 本が消え、以後の各改訂で増えた。消えた 14 本の行き先:
 
 - 3 本（`an_empty_stage_list_is_refused` ほか）→ `Intent::new` の不変条件テストへ移設（intent.rs）
 - 5 本（旧 memento モジュール）→ 新しいスナップショットテスト 4 本へ置換
@@ -367,6 +375,83 @@ U7（intent-create の実装）の課題である。
 
 ---
 
+### (l) ドメインから永続化知識を全撤去した（改訂 9）
+
+オーナー裁定「ドメインに永続化知識を含めるな。集約はどんな永続化知識からも中立」。
+正典は `coding-rules/domain-persistence-neutrality.md`。
+
+#### 撤去した側
+
+| 対象 | 措置 |
+|---|---|
+| `IntentMaterial`（改訂 8 で入れた serde 復号の中間表現） | 削除 |
+| serde の derive / 属性 / import | `core-command-domain` の **28 ファイル**から撤去 |
+| `event_manifest.rs` | 削除（ジャーナル列の値は永続化語彙） |
+| `IntentId` / `IntentExecutionId` の `AggregateId` 実装 | 撤去（aid 列の組み方はストアの語彙）。`TryFrom<String>` も `#[serde(try_from)]` 専用だったので畳んだ |
+| 集約の serde plumbing（`into` / `try_from` の変換 impl） | 撤去。永続化境界は `snapshot()` / `from_snapshot()` の memento だけになった |
+| `Cargo.toml` の `serde` / `event-store-adapter-rs` | 撤去。**この Cargo.toml が規則の機械強制**である |
+
+`chrono` は残した（時刻の**値**は永続化知識ではない — 規則の対象外条項）。dev-dependency の
+`serde_json` も残した（ITF 準拠テストが Quint トレースを `Value` として読む手段で derive は
+使わない。機械強制の射程が `[dependencies]` であることは本セッション側の `2ab271b2` で明確化
+されている）。
+
+#### 行き先
+
+| 層 | 持ち物 |
+|---|---|
+| **command interface-adapter**（書く側） | `orchestration/wire/` — イベント全 12 変種・スナップショット・Intent とその部品の DTO、閉集合の綴りの正本、`AggregateId` を満たすストア鍵 `AggregateKey`、`EVENT_MANIFEST` |
+| **RMU**（読む側） | `orchestration/wire/` — **自前の**復号 DTO と綴りの正本、自前の `EVENT_MANIFEST`。スナップショット DTO とストア鍵は持たない（journal 表しか読まず、本家ストアに触れるのはテストだけ） |
+
+書きは「domain の公開アクセサ → DTO → serde」、読みは「serde → DTO → domain の検査付き
+再構成コンストラクタ」。**Always Valid の担保は落ちていない** — 担保の場所がドメインの serde
+属性からこの層の変換関数へ移っただけで、復号は必ず `Intent::from_material` /
+`IntentExecution::from_snapshot` を通る。
+
+**綴りはドメインの `as_str` / `parse` を流用していない。** 同じ値でも面ごとに綴りが違うためで、
+実例として `PhaseId` はジャーナル上 `"Ideation"`、`stage-graph.json` 上は `"ideation"` である。
+流用すると片方の綴りを変えた瞬間にもう片方のバイトが壊れる。
+
+#### バイト不変の証明
+
+着手前に**現行のワイヤ形式を実測して採取**し、それを恒久テストの期待値リテラルにした
+（12 変種 + スナップショット）。**書く側と読む側が同一のリテラルを独立に持つ**ので、
+どちらかの綴りが動けばどちらかが落ちる — これが「型を共有せずにワイヤ形式の一致を保つ」ための
+単体側の歯止めである。横断側は `journal_protocol_conformance`（アダプタが書き RMU が読む）、
+`crash_reconstruction_test`、投影ゴールデン 19 本、移設後の `upstream_event_store_conformance`
+が担う。実際、RMU を DTO へ切り替えた時点でも RMU の投影テストは**ドメイン serde が書いた行を
+読んで**全緑であり、その逆も緑だった（切替の各段でこの交差を通している）。
+
+#### 判断が要った 3 点
+
+1. **スナップショット型の公開**（ブリーフ補足どおり）。`IntentExecutionSnapshot` を `pub` にし、
+   読取アクセサ 12 本と検査付き構築（`IntentExecutionSnapshotBuilder`）を公開した。フィールドは
+   クレート内に閉じたままである。ビルダーの主コンストラクタは「既定できない 3 点（実行 id・
+   intent id・実効プラン）」を取る形へ改めた — 旧 `new(id, &Intent)` は birth 既定値を intent から
+   導いていたが、**復号する側は Intent を持たない**ためである。`overlay` は構築引数になったので
+   セッターは廃止した（入口を二重に持たない）。
+2. **DTO 型の可視性**。`pub` にした。理由は、自クレートと `app` の適合テストが生の行を作るのに
+   ストアの型引数を名指しする必要があり、`pub` な `IntentExecutionRepositoryImpl<S>` の
+   `where` 節がクレート私有型を指すと `private_interfaces` で `-D warnings` に落ちるためである。
+   見えるのは**アダプタの利用者**だけで、ドメインとユースケースは依存の向き（層 = クレート）に
+   より参照できない。あわせてストアの型別名 `IntentExecutionSqliteStore` /
+   `IntentExecutionMemoryStore` を公開し、テストが三つ組を綴らずに済むようにした。
+3. **`upstream_event_store_conformance.rs` の移設**（判断を仰いだうえで実施）。domain の
+   dev-dependency からも `event-store-adapter-rs` を落とす必要があるため、interface-adapter へ
+   `git mv` して DTO 経由に書き換えた。検証の主語は「ドメイン型が本家契約を満たす」から
+   「**この層の DTO が本家契約を満たし、往復でドメインへ戻る**」へ変わったが、往復の両端で
+   ドメイン値の一致を見るので確認している性質は落ちていない。
+
+#### 副次的な改善（報告事項）
+
+**復号失敗の分類が精密になった。** 改訂 9 以前は serde の `try_from` 失敗が本家の
+`DeserializationError` に畳まれるため `UndecodablePayload` にしかならなかったが、DTO を挟んだ
+ことで「読めない」と「読めたが不変条件を破る」を分離できるようになった。これは
+`CorruptCause::InvariantViolation` の doc（「`from_snapshot` の `Err`」）がもともと意図していた
+分類である。既存テスト 1 本の期待値をこの分類へ更新した（`a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder`）。
+
+---
+
 ## 6. 申し送り
 
 1. **`security-design §2` の「検査点は `from_snapshot` の 1 か所」** — §5 (f)。分割後の実態に
@@ -405,6 +490,19 @@ U7（intent-create の実装）の課題である。
     いない。
 
 ---
+
+### 改訂 9 由来の申し送り
+
+12. **RMU のテストが書くスナップショット行の payload は `null` である。** RMU は journal 表しか
+    読まないのでスナップショットの DTO を持たず、本家ストアの `A` 型引数を `serde_json::Value`
+    で満たしている。RMU の主張には影響しないが、RMU のテストだけを見て「スナップショット行の
+    形」を判断してはいけない — その正本は書く側の `WireSnapshot` である。
+13. **`docs/specs` と inception 期の成果物**に「ドメイン層に serde が入る」旨の記述が残っている
+    可能性がある（`decisions.md` の serde 受容は本セッション側で失効注記済みと承知しているが、
+    他の箇所は未確認）。所有ファイル外なので触っていない。
+14. **改訂 10（`CommitVerdictUseCase` はリポジトリを保持し `execute` から `&Intent` を除去、
+    `IntentRepository` ポートの前倒し新設）がブリーフに追記されている。** 本報告時点で**未着手**
+    である。
 
 ## 7. コミット
 
