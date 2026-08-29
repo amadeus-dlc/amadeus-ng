@@ -1,4 +1,4 @@
-//! `WorkflowExecutionEvent` — 12 変種のドメインイベント (C5、entities.md)。
+//! `IntentExecutionEvent` — 12 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -9,22 +9,21 @@
 //! 本家 event-store-adapter-rs v3.0.0 は `Event` trait を廃し、識別子・順序番号・発生時刻・
 //! 型判別子を [`EventEnvelope`] が運ぶようになった。したがってドメインイベントは
 //! **純粋なドメイン内容だけ**を持つ (本家の語で payload)。かつて自前で持っていた封筒
-//! (`id` / `schema_version` / `occurred_at`) と `WorkflowExecutionEventId` は削除し、封筒を
+//! (`id` / `schema_version` / `occurred_at`) と、その識別子型は削除し、封筒を
 //! 組むのはアダプタ層 (Repository) の責務にした — 「Payload」は輸送の語であってドメインの語では
 //! ないので、この enum 自身がドメインイベントの正体である (ubiquitous-language.md)。
 //!
-//! `Serialize` / `Deserialize` は本家のシリアライザ境界の要求であり、表現の写しにすぎない
-//! (材料の変更経路にはならない)。
+//! **直列化の記述は持たない** (改訂 9 / `coding-rules/domain-persistence-neutrality.md`)。
+//! 行のバイトを決めるのは書く側 (command interface-adapter) と読む側 (RMU) の DTO であり、
+//! この enum が持つのはドメインの語彙だけである。
 //!
 //! [`EventEnvelope`]: https://docs.rs/event-store-adapter-rs/3.0.0/event_store_adapter_rs/event_envelope/struct.EventEnvelope.html
 
-use serde::{Deserialize, Serialize};
-
 use super::autonomy_mode::AutonomyMode;
+use super::intent::Intent;
 use super::jump_direction::JumpDirection;
 use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
-use super::start_request::StartRequest;
 use super::workspace_scan::WorkspaceScan;
 use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
 
@@ -33,8 +32,8 @@ use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefiniti
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
 /// するので専用の材料型を持たない単位変種にした。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorkflowExecutionEvent {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntentExecutionEvent {
     /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2)。
     Started(Started),
     /// 非ゲート (initialization フェーズ) ステージの完了。
@@ -63,83 +62,73 @@ pub enum WorkflowExecutionEvent {
 
 /// `Started` のペイロード — リプレイが `WorkflowDefinition` を要さない自己完結データ (BR2.2)。
 ///
-/// `scope` / `request` / `depth` / `test_strategy` は呼出側が解決して渡した [`StartRequest`] を
-/// C5 の平坦なレコードとして展開したもの。`depth` / `test_strategy` は集約状態にはならず
-/// (17 属性は不変)、U4 が `Scope Configuration` を描くためだけにイベントへ載る。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// 開始時点の [`Intent`] を**丸ごと運ぶ**。`Intent` 自身も集約だが (改訂 8)、これは集約への
+/// 埋め込みではなく**歴史の記録**であり、規則違反ではない
+/// (coding-rules/aggregate-references.md「イベントに材料の複製が載るのは違反ではない」)。
+/// `IntentExecution` が**保持する**のは `intent_id` だけで、そこは ID 参照のままである。投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、
+/// 状態ファイルを描くのに要る scope・依頼文・解決済み計画・走査結果はここに載っている必要が
+/// ある。集約が適用時に**保持する**のは `intent_id` と実行時状態だけである。
+///
+/// 各アクセサは intent への素通しである。`depth` / `test_strategy` は集約状態にならず、
+/// U4 が `Scope Configuration` を描くためだけの投影材料である。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
-    definition_id: WorkflowDefinitionId,
-    definition_revision: DefinitionRevision,
-    scope: String,
-    request: String,
-    depth: Option<String>,
-    test_strategy: Option<String>,
-    stages: Vec<StageEntry>,
-    scan: WorkspaceScan,
+    intent: Intent,
 }
 
 impl Started {
-    /// 参照した定義の ID / 内容版と、呼出側の要求・解決済み計画・走査結果を束ねる。
+    /// 開始時点の intent を束ねる。
     #[must_use]
-    pub fn new(
-        definition_id: WorkflowDefinitionId,
-        definition_revision: DefinitionRevision,
-        request: &StartRequest,
-        stages: Vec<StageEntry>,
-        scan: WorkspaceScan,
-    ) -> Started {
-        Started {
-            definition_id,
-            definition_revision,
-            scope: request.scope().to_string(),
-            request: request.request().to_string(),
-            depth: request.depth().map(str::to_string),
-            test_strategy: request.test_strategy().map(str::to_string),
-            stages,
-            scan,
-        }
+    pub const fn new(intent: Intent) -> Started {
+        Started { intent }
+    }
+
+    /// 開始時点の intent そのもの。
+    #[must_use]
+    pub const fn intent(&self) -> &Intent {
+        &self.intent
     }
 
     /// 参照した定義の系譜 ID (BR2.6)。
     #[must_use]
     pub const fn definition_id(&self) -> &WorkflowDefinitionId {
-        &self.definition_id
+        self.intent.definition_id()
     }
 
     /// 参照した定義の内容版 (来歴 — 差が出ても Err にはしない)。
     #[must_use]
     pub const fn definition_revision(&self) -> &DefinitionRevision {
-        &self.definition_revision
+        self.intent.definition_revision()
     }
 
     /// 選択されたスコープ名。
     #[must_use]
     pub fn scope(&self) -> &str {
-        &self.scope
+        self.intent.scope()
     }
 
     /// 人間の要求 (逐語保持)。
     #[must_use]
     pub fn request(&self) -> &str {
-        &self.request
+        self.intent.request()
     }
 
     /// 呼出側が解決した depth (`None` = 指定なし)。集約は素通しするだけ。
     #[must_use]
     pub fn depth(&self) -> Option<&str> {
-        self.depth.as_deref()
+        self.intent.depth()
     }
 
     /// 呼出側が解決した test strategy (`None` = 指定なし)。集約は素通しするだけ。
     #[must_use]
     pub fn test_strategy(&self) -> Option<&str> {
-        self.test_strategy.as_deref()
+        self.intent.test_strategy()
     }
 
     /// 文書順の全ステージ (解決済み計画)。
     #[must_use]
     pub fn stages(&self) -> &[StageEntry] {
-        &self.stages
+        self.intent.stages()
     }
 
     /// workspace-detection が出した走査結果 (投影が初期化 3 ステージの行を描く材料)。
@@ -148,12 +137,12 @@ impl Started {
     /// である (NFR3 — オーナー裁定 2026-08-29)。
     #[must_use]
     pub const fn scan(&self) -> &WorkspaceScan {
-        &self.scan
+        self.intent.scan()
     }
 }
 
 /// `StageCompleted` のペイロード。`next_stage` が `None` ならワークフロー完了。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageCompleted {
     stage: StageSlug,
     next_stage: Option<StageSlug>,
@@ -180,7 +169,7 @@ impl StageCompleted {
 }
 
 /// `GateOpened` のペイロード。`artifacts` は呼出側が渡す投影材料 (C5)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateOpened {
     stage: StageSlug,
     artifacts: Vec<String>,
@@ -207,7 +196,7 @@ impl GateOpened {
 }
 
 /// `GateApproved` のペイロード。`phase_boundary` は集約が自分の計画から導出する投影材料 (C5)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateApproved {
     stage: StageSlug,
     user_input: Option<String>,
@@ -218,7 +207,7 @@ pub struct GateApproved {
 impl GateApproved {
     /// 承認されたステージと、承認時の人間入力・次ステージ・フェーズ境界。
     ///
-    /// 4 成分はすべて `WorkflowExecution::approve_gate` が組む — `next_stage` と
+    /// 4 成分はすべて `IntentExecution::approve_gate` が組む — `next_stage` と
     /// `phase_boundary` は解決済み計画からの導出であり、外から与えられる材料ではない。
     #[must_use]
     pub const fn new(
@@ -261,7 +250,7 @@ impl GateApproved {
 }
 
 /// `GateRejected` のペイロード。`revision_count` は集約が +1 した後の値 (BR1.4)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateRejected {
     stage: StageSlug,
     feedback: Option<String>,
@@ -303,7 +292,7 @@ impl GateRejected {
 }
 
 /// `StageRevised` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageRevised {
     stage: StageSlug,
 }
@@ -323,7 +312,7 @@ impl StageRevised {
 }
 
 /// `StageSkipped` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageSkipped {
     stage: StageSlug,
     reason: String,
@@ -365,7 +354,7 @@ impl StageSkipped {
 }
 
 /// `Jumped` のペイロード。承認の消去は `direction` と `target` から適用側が導出する (BR1.6)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Jumped {
     direction: JumpDirection,
     source: StageSlug,
@@ -425,7 +414,7 @@ impl Jumped {
 }
 
 /// `Parked` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parked {
     stage: StageSlug,
 }
@@ -445,7 +434,7 @@ impl Parked {
 }
 
 /// `Recomposed` のペイロード。1 コマンドの複数反転をまとめて 1 イベントにする (C5)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recomposed {
     skipped: Vec<StageSlug>,
     added: Vec<StageSlug>,
@@ -487,7 +476,7 @@ impl Recomposed {
 }
 
 /// `AutonomyModeSet` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutonomyModeSet {
     mode: AutonomyMode,
 }
@@ -508,10 +497,14 @@ impl AutonomyModeSet {
 
 #[cfg(test)]
 mod tests {
+    // panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗のシグナル
+    // として妥当なため許容する (集約のテストモジュールと同じ作法)。
+    #![allow(clippy::panic)]
+
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, JumpDirection, PhaseBoundary, StageDisplay, StageEntry, StartRequest,
-        WorkspaceScan,
+        AutonomyMode, IntentId, JumpDirection, PhaseBoundary, StageDisplay, StageEntry,
+        StartRequest, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -546,11 +539,19 @@ mod tests {
             display("0.1"),
         )];
         let started = Started::new(
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            &StartRequest::new("classic", "build it").with_depth("standard"),
-            entries.clone(),
-            scan(),
+            Intent::from_material(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+                WorkflowDefinitionId::parse("claude").unwrap(),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+                StartRequest::new("classic", "build it").with_depth("standard"),
+                entries.clone(),
+                scan(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            started.intent().id().as_str(),
+            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(started.definition_id().as_str(), "claude");
         assert_eq!(started.definition_revision().as_str().len(), 71);
@@ -628,76 +629,36 @@ mod tests {
     }
 
     #[test]
-    fn the_event_round_trips_through_serde() {
-        // 本家のシリアライザ境界 (`Serialize` / `DeserializeOwned`) の往復確認。
-        let event = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        // 契約 JSON (BR1.7) の直列化経路ではないため、canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        assert_eq!(
-            serde_json::from_str::<WorkflowExecutionEvent>(&json).unwrap(),
-            event
-        );
-    }
-
-    #[test]
-    fn the_serialized_event_carries_no_transport_metadata() {
-        // B7: 封筒の 4 点 (aggregate_id / seq_nr / occurred_at / manifest) は本家の列が持つ。
-        // payload 列に混ざっていないことを綴りで固定する (旧 `schema_version` も同様に消えた)。
-        let event = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        for absent in [
-            "seq_nr",
-            "occurred_at",
-            "schema_version",
-            "aggregate_id",
-            "manifest",
-        ] {
-            assert!(
-                !json.contains(absent),
-                "{absent} が payload に残っている: {json}"
-            );
-        }
-    }
-
-    #[test]
     fn events_compare_by_value() {
-        let a = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        let b = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let a = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let b = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
         assert_eq!(a, b);
-        assert_ne!(a, WorkflowExecutionEvent::Unparked);
+        assert_ne!(a, IntentExecutionEvent::Unparked);
     }
 
     #[test]
     fn the_twelve_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
-        fn name(payload: &WorkflowExecutionEvent) -> &'static str {
+        fn name(payload: &IntentExecutionEvent) -> &'static str {
             match payload {
-                WorkflowExecutionEvent::Started(_) => "Started",
-                WorkflowExecutionEvent::StageCompleted(_) => "StageCompleted",
-                WorkflowExecutionEvent::GateOpened(_) => "GateOpened",
-                WorkflowExecutionEvent::GateApproved(_) => "GateApproved",
-                WorkflowExecutionEvent::GateRejected(_) => "GateRejected",
-                WorkflowExecutionEvent::StageRevised(_) => "StageRevised",
-                WorkflowExecutionEvent::StageSkipped(_) => "StageSkipped",
-                WorkflowExecutionEvent::Jumped(_) => "Jumped",
-                WorkflowExecutionEvent::Parked(_) => "Parked",
-                WorkflowExecutionEvent::Unparked => "Unparked",
-                WorkflowExecutionEvent::Recomposed(_) => "Recomposed",
-                WorkflowExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
+                IntentExecutionEvent::Started(_) => "Started",
+                IntentExecutionEvent::StageCompleted(_) => "StageCompleted",
+                IntentExecutionEvent::GateOpened(_) => "GateOpened",
+                IntentExecutionEvent::GateApproved(_) => "GateApproved",
+                IntentExecutionEvent::GateRejected(_) => "GateRejected",
+                IntentExecutionEvent::StageRevised(_) => "StageRevised",
+                IntentExecutionEvent::StageSkipped(_) => "StageSkipped",
+                IntentExecutionEvent::Jumped(_) => "Jumped",
+                IntentExecutionEvent::Parked(_) => "Parked",
+                IntentExecutionEvent::Unparked => "Unparked",
+                IntentExecutionEvent::Recomposed(_) => "Recomposed",
+                IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        assert_eq!(name(&WorkflowExecutionEvent::Unparked), "Unparked");
+        assert_eq!(name(&IntentExecutionEvent::Unparked), "Unparked");
         assert_eq!(
-            name(&WorkflowExecutionEvent::AutonomyModeSet(
+            name(&IntentExecutionEvent::AutonomyModeSet(
                 AutonomyModeSet::new(AutonomyMode::Gated)
             )),
             "AutonomyModeSet"

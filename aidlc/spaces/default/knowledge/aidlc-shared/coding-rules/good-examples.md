@@ -81,6 +81,6 @@ pub const fn with_skeleton(mut self, skeleton: SkeletonDefault) -> ScopeMetadata
 
 **[`<record>/construction/u3-event-store-repository/code-generation/naming-audit-report.md`](../../../intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/naming-audit-report.md)** §3
 
-`hash_canonical` / `serialize` / `WorkflowExecution::start` / `encode`・`decode` /
+`hash_canonical` / `serialize` / `IntentExecution::start`（旧 `WorkflowExecution::start`） / `encode`・`decode` /
 `open_append_only` など、[factory-naming.md](factory-naming.md) の表の動詞になっていないが
 **現在の名前のほうが良い**もの。将来 lint ルールを書く際の反例として使う。

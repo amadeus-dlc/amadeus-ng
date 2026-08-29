@@ -1,0 +1,41 @@
+//! 読む側の永続化 DTO — ジャーナル行 `payload` 列を**この側の言葉で**読み戻す。
+//!
+//! ドメインは永続化知識から中立なので、行のバイトをどう読むかは読む側が自前で持つ
+//! (`coding-rules/domain-persistence-neutrality.md`)。書く側 (command interface-adapter) の
+//! DTO を**共有しない**のは意図的である — `coding-rules/cqrs-boundaries.md` の
+//! 「共有部品は側の独立を DRY に優先する（側ごと専用化）」に従う。RMU の
+//! [`CorruptCause`] がコマンド側と同名の別の型であるのと同じ理由で、ここも同名の別の型である。
+//!
+//! 書き手と読み手のワイヤ形式が一致していることは**横断適合テスト**が固定する
+//! (`journal_protocol_conformance` / ゴールデンパリティ) — 型を共有して静的に揃えるのでは
+//! なく、実際に書かれた行が実際に読めることで揃っていると示す。
+//!
+//! # ストア鍵の型はここに無い
+//!
+//! RMU の本番経路は `rusqlite` で `journal` 表を直接読むので、本家のイベントストアには
+//! 触れない (`event-store-adapter-rs` は dev-dependency のままである)。本家の
+//! `AggregateId` を満たす鍵が要るのは「本家が実際に書いた行」を用意するテストだけなので、
+//! 鍵の型はテスト側に置く。
+//!
+//! # スナップショットは読まない
+//!
+//! RMU の仕事はジャーナルの横断読取と投影であり、スナップショット行には触れない
+//! (`JournalReaderImpl` が読むのは `journal` 表と自前のチェックポイント表だけ)。したがって
+//! この側にスナップショットの DTO は無い。
+//!
+//! [`CorruptCause`]: super::corrupt_cause::CorruptCause
+
+mod wire_error;
+mod wire_event;
+mod wire_intent;
+mod wire_vocabulary;
+
+pub use wire_error::WireDecodeError;
+pub use wire_event::{
+    WireAutonomyModeSet, WireEvent, WireGateApproved, WireGateOpened, WireGateRejected, WireJumped,
+    WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
+    WireStarted,
+};
+
+#[cfg(test)]
+mod tests;

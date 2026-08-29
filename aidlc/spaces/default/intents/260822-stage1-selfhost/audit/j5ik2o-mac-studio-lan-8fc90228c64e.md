@@ -24356,3 +24356,720 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 申し送りの差し替えが完了し、全ゲートが緑です。作業中に**自分のコミットの不具合を 1 件見つけたので、それも直しました**（下記）。\n\n## §8 の申し送り — 確定文言へ差し替え\n\n`decisions-1.md` の「裁定 7 追補」「同訂正」「追補 2」を読んだうえで、項目 3 を次の内容に置き換えました。\n\n- CLI サブコマンドの出力データは **コマンドユースケース → RMU（
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:29:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a45f562265e249033
+**Message**: 収束したらマージまで進めてください
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:38:33Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:41:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a85db993fa9c94b0f
+**Message**: 収束したらマージまで進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:46:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: PR #37 のレビュー指摘 2 件を修正しました。どちらも回帰テストの**検出力を実測で確認**しています。\n\n## 修正 1（Major）— `Conflict` 再試行で対象ステージを固定\n\n1 回目の `attempt` が解決した対象の `StageSlug` を持ち帰り、再試行はそれを名指しで渡す形にしました。そのために `attempt` の戻り値を私有の `AttemptOutco
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:48:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8a005fc7b8c1990e
+**Message**: CLEAN になったらマージ進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:49:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:50:36Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a611e03b214b3c094
+**Message**: マージ完了したら裁定 6 の追随 PR から進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:52:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:53:07Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aee41162c98ad9fbe
+**Message**: 2 の裁定 6 追随 PR を先に片付けてから U6 で進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:56:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad6577bb2b9e48245
+**Message**: amadeus-ng の stage-1 セルフホスト化を進行中。B11（U5 report ユースケース）は PR #37 としてマージ完了済み。次の作業（推奨は U6: next・continue の実装）の選択待ちです。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:20:21Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:23:37Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:27:02Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T13:28:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a56033ef41bcfc6ab
+**Message**: その整理で確定。doc 是正だけやって
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:29:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:31:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:37:29Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:37:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:40:57Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T13:41:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a7717af51d179d35c
+**Message**: 進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:42:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T13:43:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6e12cdd48679d64d
+**Message**: 改名完了したら報告して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:44:35Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-29T13:46:43Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/developer-report-1.md
+**Context**: construction > intent-aggregate-rename > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T13:46:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: acb95161
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T13:46:43Z
+**Event**: SENSOR_PASSED
+**Fire id**: acb95161
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/developer-report-1.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T13:46:43Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2f5d36d9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T13:46:43Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2f5d36d9
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-2f5d36d9.md
+**Findings count**: 5
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T13:47:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: B12 完了しました。受入基準 1〜11 すべて緑です。\n\n## 改名対応表（実測）\n\n作業中にブリーフの 2 行が更新されていたので、**更新後の内容**に従いました（`IntentState` ではなく `IntentSnapshot` + クレート内私有降格、`IntentBuilder::build()` は `Result<Intent, _>`）。\n\n| 旧 | 新 |\n|---|--
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-29T13:47:55Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:48:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T13:50:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa1e8a605f5367242
+**Message**: <analysis>\nLet me work through this conversation chronologically.\n\n**Message 1 (team-lead)**: Delegated B11 / U5 `report` use case implementation in `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs`, br
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:53:13Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:56:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:56:30Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T13:56:38Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:01:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: B12 の再訂正 2 件を反映し、全ゲートを再実行しました。\n\n## 反映内容\n\n`IntentBuilder`（1 回目の訂正で作った中間状態）は巻き戻し、最終形は次のとおりです。\n\n| 項目 | 最終形 |\n|---|---|\n| 型名 | `IntentSnapshotBuilder` |\n| `build()` | **写し（`IntentSnapshot`）を返す元の形**。`Resul
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:02:56Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1acfa64813198e18
+**Message**: B12（集約の分割・改名 PR）進行中です。裁定どおり Intent は不変構造体、IntentExecution が集約で intent_id 参照、規則も正本化済み。委任先の実装完了報告が来たら全ゲートを独立再実行して受入判定します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:08:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a02336eb3b707ac6c
+**Message**: B12（集約を Intent 構造体と IntentExecution 集約に分割する改修）を委任実行中です。再生時の Intent 入手経路も裁定済みで、委任先の実装完了報告を待ち、届き次第ゲートを独立再実行して受入判定します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:14:57Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:15:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:18:21Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:18:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:22:11Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:27:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9a15488f90ecaa60
+**Message**: B12（集約を Intent 構造体 + IntentExecution 集約へ分割する PR）を委任実行中です。設計裁定はすべて確定し規律にも登録済みなので、次は委任先の完了報告を待って全ゲートを独立再実行し受入判定します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:37:08Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:38:06Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:40:31Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:45:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aeff8199b14cb4b45
+**Message**: 推奨案どおりで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:46:42Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:50:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:52:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:54:19Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:54:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a395d4d3882cf21e4
+**Message**: StageDefinition / AgentPersona も同じ扱いでいいか確認して
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:54:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: B12 の方向転換（改訂 2・3）を実装し終えました。全ゲート緑です。\n\n## 到達点\n\n| 型 | 役割 |\n|---|---|\n| `Intent`（新設・不変構造体） | 静的な intent — `id`・定義のピン・依頼・解決済み計画・走査結果。Always Valid、`&mut self` 0 件 |\n| `IntentExecution`（集約） | 1 回の実行 — `id: I
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:54:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0ef79eafa6bcf450
+**Message**: 了解。B12の完了待ちで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:54:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T14:55:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad264aee00be078b8
+**Message**: IntentRepositoryも将来はイベントを吐く集約になる想定？
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:58:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:58:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:58:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T14:59:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:02:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 裁定 6 本すべてを反映し、全ゲートを再実行しました。\n\n## 反映内容\n\n**改訂 6（A 案確定）は私の実装形と一致していたため、巻き戻しは発生していません。** 差分は 3 点でした。\n\n| 指示 | 対応 |\n|---|---|\n| `execute` の引数順を `(&IntentExecutionId, &Intent, ...)` へ | 適用（`attempt` も同順に揃え） |
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:04:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae451a0e7262290be
+**Message**: amadeus-ng の U5/U6 に向けた集約再設計（Intent 分離・IntentExecution 改名・WorkflowDefinition のイベント適合）を B12 として委任実装中です。次は委任先の完了報告を待って全ゲートを独立再実行し、PR #38 相当の受入判定を行います。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:07:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 強化された規則と改訂 7 を実装しました。全ゲート緑です。\n\n## 1. ファクトリ規則（対を返す）の確認\n\n作業変更は不要でした。実測:\n\n| ファクトリ | 戻り値 |\n|---|---|\n| `IntentExecution::start(id, intent, at)` | `(IntentExecution, IntentExecutionEvent)` ✓ |\n| `WorkflowD
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-29T15:10:37Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:13:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: acf1796899ba1363c
+**Message**: <analysis>\nLet me chronologically work through this conversation.\n\n**Context carried in from the prior summary:** I am a delegated developer agent (`b11-u5`) working in the `amadeus-ng` repo at `/User
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:14:46Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:19:09Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: B12 の最終指示を完了し、team-lead へ報告しました。\n\n**やったこと**: `EVENT_MANIFEST` を `workflow-execution-event/1` → `intent-execution-event/1` へ。TDD で red（逐語固定テストの期待値だけ先に書き換え、`left/right` の不一致を実測）→ green（定数値）の順で進め、定数 1 + 
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:19:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a579208ef49dca4de
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:22:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a49e285a776511673
+**Message**: B12（集約の分割・改名 Bolt）を仕上げ中です。委任先が最後の改訂 8（IntentEvent::Created と Intent::create の対返し）を実装中で、完了報告が来たら全ゲートを再検証して PR を出します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:27:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:27:21Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:28:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:29:29Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:30:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:34:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 改訂 8 を完了し、team-lead へ報告しました。\n\n**TDD の red**: 新 API を先にテストへ書き、コンパイルエラー 9 件（`Intent::create` / `Intent::from_material` の不在、`IntentEvent` / `Created` 未解決、`resolve` の戻り型不一致）を実測してから実装しました。\n\n**実装**（ブリーフ 1〜6
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:35:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:42:16Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6b1dc91bee2092fb
+**Message**: B12（集約の分割・改名 PR）の最終仕上げ中です。委任先がドメインから serde など永続化知識を全撤去する改訂 9 を実装しており、完了報告が来たら全ゲートを独立再実行して受入判定し、PR を出します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T15:43:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:44:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae03dc41273b380a7
+**Message**: 進捗確認しろ
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T15:47:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2878635837f5f491
+**Message**: B12（Intent/IntentExecution 分割 + ドメインから永続化知識を全撤去）を委任実装中で、いまアダプタ側の wire DTO を構築する段階です。次は委任先の完了報告を受けて全ゲート独立再検証をします。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:05:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T16:05:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6490714e3dfe9858
+**Message**: 進捗確認
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:07:43Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:09:00Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T16:13:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1409c23d0c8b0920
+**Message**: B12（集約の分割・改名 Bolt）を進行中で、委任先が改訂 9（ドメインから serde 等の永続化知識を全撤去）と改訂 10（ユースケースのリポジトリ保持化）を実装中です。次は完了報告を受けて全ゲート独立再実行の受入判定です。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:20:29Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T16:22:36Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 改訂 9（ドメインの永続化中立化）を完了し、team-lead へ報告しました。あわせて互換指示 3 点も処理済みです。\n\n**まず事実の訂正**: 改訂 8 は前回報告のとおり既に実装済み（`9565cf64`/`36be7e44`）で、team-lead の grep 0 件は私のコミット前のツリーでした。やり直していません。\n\n**改訂 9 の中身**:\n- **撤去** — `Intent
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:23:18Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:23:43Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T16:27:00Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T16:27:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a96600d1d059a6a4f
+**Message**: 進捗確認
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T16:30:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1b292f6627cc537e
+**Message**: B12（集約の分割・永続化中立化）を委任先が最終改訂 10 まで実装中です。完了報告が来たら受入判定して push・PR 作成し、ハンドオフを書いて park します。現在は完了報告待ちです。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T16:33:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 改訂 10 を実装し、報告しました。あわせて状況を整理します。\n\n**まず事実確認**: 改訂 9 とテスト名改名は、前便のとおり既に着地済みでした（`33fbfa03`〜`9b9e43bb` の 6 コミット）。team-lead の実測は改訂 8 のときと同じくコミット前のツリーを見たものです。裁定 (A)(B) はどちらも実装内容と一致しており、(B) の「B12 改訂 9 で検証対象が a
+
+---
+
+## Workflow Parked
+**Timestamp**: 2026-08-29T16:34:42Z
+**Event**: WORKFLOW_PARKED
+**Stage**: functional-design
+
+---

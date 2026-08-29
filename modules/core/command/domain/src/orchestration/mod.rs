@@ -1,16 +1,16 @@
 //! orchestration コンテキスト (10-orchestration.md) — 「次に何が起こるか」の Domain Primitive
-//! と `WorkflowExecution` 集約。upstream 契約の逐語根拠は docs/specs/research/orchestration-*.md。
+//! と `IntentExecution` 集約。upstream 契約の逐語根拠は docs/specs/research/orchestration-*.md。
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
-//! `WorkflowExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
+//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
-//! 永続化境界は `state()` / `from_state()` の値オブジェクトである。
+//! 永続化境界は `snapshot()` / `from_snapshot()` の値オブジェクトである。
 //!
 //! | コマンド | イベント |
 //! |---|---|
-//! | `start` / `start_from_plan_unchecked` | `Started` (解決済み計画を自己完結で持つ) |
+//! | `start` | `Started` (解決済み計画を自己完結で持つ) |
 //! | `complete_stage` | `StageCompleted` |
 //! | `open_gate` | `GateOpened` |
 //! | `approve_gate` | `GateApproved` |
@@ -57,28 +57,31 @@ mod apply_error;
 mod autonomy_mode;
 mod command_error;
 mod directive_schema;
-mod event_manifest;
+mod intent;
+mod intent_event;
+mod intent_execution;
+mod intent_execution_event;
+mod intent_execution_id;
+mod intent_execution_snapshot;
 mod intent_id;
 mod jump_direction;
 mod next_decision;
 mod phase_boundary;
 mod skeleton_stance;
+mod snapshot_error;
 mod stage_display;
 mod stage_entry;
 mod stage_index;
-mod start_error;
 mod start_request;
-mod state_error;
 mod status;
+mod uuid_v7;
 mod verdict;
-mod workflow_execution;
-mod workflow_execution_event;
-mod workflow_execution_state;
 mod workspace_scan;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
 pub use directive_schema::DirectiveKind;
+pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
@@ -90,35 +93,41 @@ pub use start_request::StartRequest;
 pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
 
-// 集約 (エンジンループの状態機械)
-pub use workflow_execution::WorkflowExecution;
+// 集約
+// `Intent` は静的な集約 (変異は現状なし — オーナー裁定 2026-08-30)、`IntentExecution` は
+// エンジンループの状態機械である。
+pub use intent::Intent;
+pub use intent_execution::IntentExecution;
 
 // 集約の観測結果
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
-pub use workflow_execution_state::WorkflowExecutionState;
+// 集約の写し (memento) とその組み立て器。**改訂 9 で公開**へ — 直列化を担うアダプタ層が
+// 正当な消費者になったためである (coding-rules/domain-persistence-neutrality.md)。
+// 公開するのは読取アクセサと検査付き構築だけで、フィールドはクレート内に閉じている。
+pub use intent_execution_snapshot::{IntentExecutionSnapshot, IntentExecutionSnapshotBuilder};
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
-// (ADR-010 / B7 — 旧 `WorkflowExecutionEventId` と自前封筒は削除した)。
-pub use workflow_execution_event::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
-    StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
+// (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
+pub use intent_execution_event::{
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
+    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
-
-// ビルダー
-pub use workflow_execution_state::WorkflowExecutionStateBuilder;
+// intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。ジャーナルへは未接続で、
+// `store` する `IntentRepository` は U7 の課題である。
+pub use intent_event::{Created, IntentEvent};
 
 // エラー
 pub use apply_error::ApplyError;
 pub use autonomy_mode::InvalidModeArg;
 pub use command_error::CommandError;
+pub use intent::IntentError;
+pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
-pub use start_error::StartError;
-pub use state_error::StateError;
+pub use snapshot_error::SnapshotError;
 pub use verdict::UnknownVerdict;
 
 // 逐語定数
-pub use event_manifest::EVENT_MANIFEST;
 pub use verdict::ACCEPTED_RESULTS;

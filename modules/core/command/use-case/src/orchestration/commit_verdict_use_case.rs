@@ -2,15 +2,16 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    IntentId, StageIndex, WorkflowExecution, WorkflowExecutionEvent,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, StageIndex,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::CheckboxState;
 
 use super::commit_error::CommitError;
+use super::intent_execution_repository::IntentExecutionRepository;
+use super::intent_repository::IntentRepository;
 use super::reported_transition::ReportedTransition;
 use super::repository_error::RepositoryError;
-use super::workflow_execution_repository::WorkflowExecutionRepository;
 
 /// コンダクタが報告した結末（[`ReportedTransition`]）を 1 つの遷移としてコミットする。
 ///
@@ -44,8 +45,9 @@ use super::workflow_execution_repository::WorkflowExecutionRepository;
 /// `dyn` は使わない（`coding-rules/use-case-rules.md` §2）。結線（実物 / インメモリの選択）は
 /// 合成ルートだけが行い、ユースケースはポートの trait しか知らない。
 #[derive(Debug)]
-pub struct CommitVerdictUseCase<R: WorkflowExecutionRepository> {
-    repository: R,
+pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
+    execution_repository: E,
+    intent_repository: I,
 }
 
 /// [`CommitVerdictUseCase::attempt`] 1 回分の結末。
@@ -67,11 +69,18 @@ enum AttemptOutcome {
     },
 }
 
-impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
-    /// ポートの実装を注入する。
+impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, I> {
+    /// ポートの実装を 2 つ注入する。
+    ///
+    /// **ユースケースはリポジトリを保持し、`execute` の内部で使う** (改訂 10 のオーナー裁定)。
+    /// 以前は Controller が `&Intent` を読んで渡していたが、あれは I8 — 読取専用ユースケース
+    /// (`Next`) 専用のパターン — の誤適用だった (`coding-rules/use-case-rules.md` §4 の射程)。
     #[must_use]
-    pub const fn new(repository: R) -> CommitVerdictUseCase<R> {
-        CommitVerdictUseCase { repository }
+    pub const fn new(execution_repository: E, intent_repository: I) -> CommitVerdictUseCase<E, I> {
+        CommitVerdictUseCase {
+            execution_repository,
+            intent_repository,
+        }
     }
 
     /// 報告された結末を 1 つの遷移としてコミットする。
@@ -81,6 +90,19 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// （BR1.9）。
     ///
     /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない（NFR3.1）。
+    ///
+    /// # 引数は集約 ID と値オブジェクトだけである
+    ///
+    /// ユースケースの `execute` に**集約を渡さない** — 渡してよいのは集約 ID と値オブジェクト
+    /// だけで、集約は保持するリポジトリから内部で取る
+    /// （`coding-rules/use-case-rules.md` §2b、改訂 10 のオーナー裁定）。したがって
+    /// 引数は `IntentExecutionId`（集約 ID）・`StageSlug`（値オブジェクト）・
+    /// `ReportedTransition`（値オブジェクト）・`DateTime<Utc>`（値）である。
+    ///
+    /// 内部フローは ① 実行を再構成 → ② その `intent_id` を読む → ③ `IntentRepository` で
+    /// 計画を引く → ④ `&Intent` を集約コマンドへ → ⑤ `store`。以前は Controller が
+    /// `&Intent` を読んで渡していたが、あれは I8 — **読取専用**ユースケース専用のパターン —
+    /// の誤適用だった（§4 の射程）。
     ///
     /// # 戻り値を持たない理由（CQS）
     ///
@@ -99,7 +121,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// しない。RMU は同じイベント列からクエリ向きの投影（SQLite テーブル）を別に作ってよく、
     /// チェックポイント表は投影名をキーに持つので既に複数投影を許す形になっている。
     ///
-    /// 集約コマンドが `&mut self -> Result<WorkflowExecutionEvent, _>` である事実は先例に
+    /// 集約コマンドが `&mut self -> Result<IntentExecutionEvent, _>` である事実は先例に
     /// ならない。あれは `store()` へ渡す**書込パイプラインの配管**であって、Presenter に
     /// 読ませる読取チャネルではない。
     ///
@@ -128,29 +150,32 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// （BR1.9）に畳み、カーソルが動いていない競合（`set-autonomy` 等）は名指し == カーソルで
     /// 通常経路に入る。再試行の意味論が「**同じ報告をもう一度**」に固定される。
     ///
+    /// **再試行は attempt 全体をやり直す**ので、計画も引き直す。`Intent` は不変なので再取得は
+    /// 無害である（改訂 10）。
+    ///
     /// 再試行後に集約がコマンドを拒否した場合も、そのまま伝播する。
     ///
     /// # Errors
     ///
-    /// 再構成・永続化の失敗（`Repository`）、集約による拒否（`Command`）、計画に無いステージの
-    /// 名指し（`UnknownStage`）を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
+    /// 実行の再構成・永続化の失敗（`Repository`）、計画の取得の失敗（`IntentRepository`）、
+    /// 集約による拒否（`Command`）、計画に無いステージの名指し（`UnknownStage`）を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
     /// 言い換えもしない。再試行するのは上記の `Conflict` 1 回だけである。
     pub async fn execute(
         &mut self,
-        intent_id: &IntentId,
+        execution_id: &IntentExecutionId,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), CommitError> {
         let AttemptOutcome::Conflicted { target, .. } = self
-            .attempt(intent_id, stage, transition.clone(), occurred_at)
+            .attempt(execution_id, stage, transition.clone(), occurred_at)
             .await?
         else {
             return Ok(());
         };
         // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」を参照）。
         match self
-            .attempt(intent_id, Some(&target), transition, occurred_at)
+            .attempt(execution_id, Some(&target), transition, occurred_at)
             .await?
         {
             AttemptOutcome::Settled => Ok(()),
@@ -168,20 +193,28 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// ある。
     async fn attempt(
         &mut self,
-        intent_id: &IntentId,
+        execution_id: &IntentExecutionId,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<AttemptOutcome, CommitError> {
-        let rehydrated = self.repository.find_by_id(intent_id).await?;
+        let rehydrated = self.execution_repository.find_by_id(execution_id).await?;
         // 版は再構成が返した値**そのもの**を握る。`aggregate.seq_nr()` から導いてはならない
         // （ポート doc の 3 か条 — 版は不透明なトークンである）。
         let expected_version = rehydrated.version();
         let mut aggregate = rehydrated.into_aggregate();
+        // 計画は**保持しているリポジトリから内部で取る**（改訂 10）。実行は intent を ID で
+        // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
+        // 取り違えのガードは従来どおり集約側で発火する — ここでは構成上一致する。
+        let intent = self
+            .intent_repository
+            .find_by_id(aggregate.intent_id())
+            .await?;
+        let intent = &intent;
 
         // 何もコミットしない 2 経路。どちらも成功であり、区別は戻り値に出さない。
         if let Some(named) = stage
-            && Self::is_stale_re_report(&aggregate, named)?
+            && Self::is_stale_re_report(intent, &aggregate, named)?
         {
             return Ok(AttemptOutcome::Settled);
         }
@@ -192,15 +225,15 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
 
         // ここまで来たら対象は必ずカーソルである — `stage` が名指ししていた場合、カーソルより
         // 手前のステージは既に上の no-op で返しているからである。
-        let event = Self::command(&mut aggregate, cursor, transition, occurred_at)?;
+        let event = Self::command(intent, &mut aggregate, cursor, transition, occurred_at)?;
         match self
-            .repository
+            .execution_repository
             .store(&event, &aggregate, expected_version)
             .await
         {
             Ok(()) => Ok(AttemptOutcome::Settled),
             Err(conflict @ RepositoryError::Conflict { .. }) => {
-                match Self::slug_at(&aggregate, cursor) {
+                match Self::slug_at(intent, cursor) {
                     Some(target) => Ok(AttemptOutcome::Conflicted { target, conflict }),
                     // カーソルは不変条件により常に範囲内なので到達しない。万一名指しできない
                     // なら盲目的にやり直さず伝播する — 誤ったステージを打つより安全である。
@@ -212,8 +245,11 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     }
 
     /// 名指しに使うステージ slug（範囲外は `None`）。
-    fn slug_at(aggregate: &WorkflowExecution, stage: StageIndex) -> Option<StageSlug> {
-        aggregate
+    ///
+    /// 計画は intent の持ち物なので、集約ではなく `&Intent` から引く
+    /// （`coding-rules/aggregate-references.md`）。
+    fn slug_at(intent: &Intent, stage: StageIndex) -> Option<StageSlug> {
+        intent
             .stages()
             .get(stage.to_usize())
             .map(|entry| entry.slug().clone())
@@ -231,12 +267,14 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// 計画に無いステージ（`UnknownStage`）、通過済み completed でない対象（集約の
     /// `NotStale` をそのまま伝播）。
     fn is_stale_re_report(
-        aggregate: &WorkflowExecution,
+        intent: &Intent,
+        aggregate: &IntentExecution,
         named: &StageSlug,
     ) -> Result<bool, CommitError> {
-        let target = Self::locate(aggregate, named).ok_or_else(|| CommitError::UnknownStage {
-            stage: named.clone(),
-        })?;
+        let target =
+            Self::locate(intent, aggregate, named).ok_or_else(|| CommitError::UnknownStage {
+                stage: named.clone(),
+            })?;
         if target == aggregate.cursor() {
             return Ok(false);
         }
@@ -248,8 +286,12 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     ///
     /// 集約の読取モデル（`stages` / `stage_index`）だけで完結する**参照**であって判断ではない
     /// — 前提の判定（通過済み completed か）は集約の `stale_report` が持つ。
-    fn locate(aggregate: &WorkflowExecution, named: &StageSlug) -> Option<StageIndex> {
-        let position = aggregate
+    fn locate(
+        intent: &Intent,
+        aggregate: &IntentExecution,
+        named: &StageSlug,
+    ) -> Option<StageIndex> {
+        let position = intent
             .stages()
             .iter()
             .position(|entry| entry.slug() == named)?;
@@ -262,7 +304,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// 打てば `CheckboxPrecondition` で拒否されるが、それは**失敗ではない**ので、報告された語と
     /// 現在の印を突き合わせるフロー制御でここを分ける。
     fn gate_is_already_open(
-        aggregate: &WorkflowExecution,
+        aggregate: &IntentExecution,
         cursor: StageIndex,
         transition: &ReportedTransition,
     ) -> bool {
@@ -276,38 +318,47 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// — ゲート付きなら承認、非ゲート（initialization）なら完了である（BR1.3）。どちらを打つかを
     /// 集約の `gated` クエリに訊いて決めるのはフロー制御であって、業務判断の複製ではない。
     fn command(
-        aggregate: &mut WorkflowExecution,
+        intent: &Intent,
+        aggregate: &mut IntentExecution,
         cursor: StageIndex,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommitError> {
+    ) -> Result<IntentExecutionEvent, CommitError> {
         let event = match transition {
             ReportedTransition::AwaitingApproval { artifacts } => {
-                aggregate.open_gate(artifacts, occurred_at)
+                aggregate.open_gate(intent, artifacts, occurred_at)
             }
             ReportedTransition::Forward { user_input } => {
                 // カーソルは不変条件により常に範囲内なので `None` は起きない。起きたとしても
                 // 非ゲート扱いに畳めば `complete_stage` が `InvalidTarget` で拒否するので、
                 // ここで panic する理由はない（NFR4.3 — 集約の `commit` と同じ作法）。
-                if aggregate.gated(cursor).unwrap_or(false) {
-                    aggregate.approve_gate(user_input, occurred_at)
+                if aggregate.gated(intent, cursor).unwrap_or(false) {
+                    aggregate.approve_gate(intent, user_input, occurred_at)
                 } else {
-                    aggregate.complete_stage(occurred_at)
+                    aggregate.complete_stage(intent, occurred_at)
                 }
             }
             ReportedTransition::Rejected { feedback } => {
-                aggregate.reject_gate(feedback, occurred_at)
+                aggregate.reject_gate(intent, feedback, occurred_at)
             }
-            ReportedTransition::Revised => aggregate.revise_stage(occurred_at),
-            ReportedTransition::Skipped { reason } => aggregate.skip_stage(reason, occurred_at),
+            ReportedTransition::Revised => aggregate.revise_stage(intent, occurred_at),
+            ReportedTransition::Skipped { reason } => {
+                aggregate.skip_stage(intent, reason, occurred_at)
+            }
         };
         Ok(event?)
     }
 
-    /// 注入されたポート実装（テストが**効果**を観測するための継ぎ目）。
+    /// 注入された実行ポートの実装（テストが**効果**を観測するための継ぎ目）。
     #[cfg(test)]
-    pub(crate) const fn repository(&self) -> &R {
-        &self.repository
+    pub(crate) const fn execution_repository(&self) -> &E {
+        &self.execution_repository
+    }
+
+    /// 注入された intent ポートの実装（テストが取得回数を観測するための継ぎ目）。
+    #[cfg(test)]
+    pub(crate) const fn intent_repository(&self) -> &I {
+        &self.intent_repository
     }
 }
 
@@ -319,34 +370,66 @@ mod tests {
 
     use super::super::commit_error::CommitError;
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
+    use super::super::intent_repository_error::IntentRepositoryError;
     use super::super::reported_transition::ReportedTransition;
     use super::super::repository_error::RepositoryError;
     use super::super::test_support::{
-        InMemoryWorkflowExecutionRepository, absent_intent, at, genesis, intent, slug,
-        start_from_plan,
+        InMemoryIntentExecutionRepository, InMemoryIntentRepository, absent_execution, at,
+        execution_id, genesis, slug, start_from_plan,
     };
+    use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        CommandError, PhaseBoundary, Verdict, WorkflowExecution, WorkflowExecutionEvent,
+        CommandError, Intent, IntentExecution, IntentExecutionEvent, PhaseBoundary, Verdict,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
     use core_command_domain::workspace::CheckboxState;
 
-    /// 索引 0（initialization）を完了させ、カーソルを最初のゲート付きステージへ進めた集約。
-    fn at_the_first_gate(stage_count: usize) -> WorkflowExecution {
-        let (mut aggregate, _) = genesis(stage_count);
+    /// 索引 0（initialization）を完了させ、カーソルを最初のゲート付きステージへ進めた実行。
+    fn at_the_first_gate(stage_count: usize) -> (Intent, IntentExecution) {
+        let (intent, mut aggregate, _) = genesis(stage_count);
         aggregate
-            .complete_stage(at())
+            .complete_stage(&intent, at())
             .expect("初期化ステージは非ゲートなので完了できる");
-        aggregate
+        (intent, aggregate)
     }
 
-    fn use_case(
-        aggregate: WorkflowExecution,
-        version: usize,
-    ) -> CommitVerdictUseCase<InMemoryWorkflowExecutionRepository> {
-        CommitVerdictUseCase::new(InMemoryWorkflowExecutionRepository::holding(
-            aggregate, version,
-        ))
+    /// テストの主体 — 2 本のポートを注入したユースケース。
+    ///
+    /// **ユースケースは計画を自分で取る**（改訂 10）ので、テストが `&Intent` を持ち回る必要は
+    /// もう無い。intent は `InMemoryIntentRepository` に預けてある。
+    struct Subject {
+        use_case: CommitVerdictUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository>,
+    }
+
+    impl Subject {
+        async fn execute(
+            &mut self,
+            stage: Option<&StageSlug>,
+            transition: ReportedTransition,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<(), CommitError> {
+            self.use_case
+                .execute(&execution_id(), stage, transition, occurred_at)
+                .await
+        }
+
+        const fn repository(&self) -> &InMemoryIntentExecutionRepository {
+            self.use_case.execution_repository()
+        }
+
+        const fn intents(&self) -> &InMemoryIntentRepository {
+            self.use_case.intent_repository()
+        }
+    }
+
+    fn use_case(pair: (Intent, IntentExecution), version: usize) -> Subject {
+        let (intent, aggregate) = pair;
+        Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding(aggregate, version),
+                InMemoryIntentRepository::holding(intent),
+            ),
+        }
     }
 
     fn forward() -> ReportedTransition {
@@ -359,7 +442,7 @@ mod tests {
     ///
     /// ユースケースは何が起きたかを返さないので、テストは戻り値ではなくストアに残った
     /// 痕跡でコミット内容を固定する。
-    fn only_committed(repository: &InMemoryWorkflowExecutionRepository) -> &WorkflowExecutionEvent {
+    fn only_committed(repository: &InMemoryIntentExecutionRepository) -> &IntentExecutionEvent {
         let committed = repository.committed();
         assert_eq!(committed.len(), 1, "コミットは 1 件のはず");
         committed.first().expect("1 件ある")
@@ -372,7 +455,6 @@ mod tests {
         let mut subject = use_case(at_the_first_gate(3), 1);
         subject
             .execute(
-                &intent(),
                 None,
                 ReportedTransition::AwaitingApproval {
                     artifacts: vec!["intent.md".to_string()],
@@ -381,8 +463,7 @@ mod tests {
             )
             .await
             .expect("in-progress のゲート付きステージは開ける");
-        let WorkflowExecutionEvent::GateOpened(opened) = only_committed(subject.repository())
-        else {
+        let IntentExecutionEvent::GateOpened(opened) = only_committed(subject.repository()) else {
             panic!("GateOpened を期待した");
         };
         assert_eq!(opened.stage(), &slug(1));
@@ -392,14 +473,13 @@ mod tests {
     #[tokio::test]
     async fn a_repeated_awaiting_approval_report_commits_nothing() {
         // upstream の `cli/report/awaiting-approval-repeat` は監査行も状態差分も空である。
-        let mut aggregate = at_the_first_gate(3);
+        let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .open_gate(vec!["intent.md".to_string()], at())
+            .open_gate(&intent, vec!["intent.md".to_string()], at())
             .expect("最初の開放は通る");
-        let mut subject = use_case(aggregate, 2);
+        let mut subject = use_case((intent, aggregate), 2);
         subject
             .execute(
-                &intent(),
                 None,
                 ReportedTransition::AwaitingApproval {
                     artifacts: vec!["intent.md".to_string()],
@@ -417,10 +497,10 @@ mod tests {
     async fn a_forward_report_on_a_gated_stage_approves_the_gate() {
         let mut subject = use_case(at_the_first_gate(3), 1);
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("ゲート付きステージは承認できる");
-        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        let IntentExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
         else {
             panic!("GateApproved を期待した");
         };
@@ -433,14 +513,13 @@ mod tests {
     async fn a_forward_report_on_an_ungated_stage_completes_the_stage() {
         // カーソルは索引 0（initialization = 非ゲート）。どちらのコマンドを打つかは集約の
         // `gated` クエリで決まる。
-        let (aggregate, _) = genesis(3);
-        let mut subject = use_case(aggregate, 1);
+        let (intent, aggregate, _) = genesis(3);
+        let mut subject = use_case((intent, aggregate), 1);
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("非ゲートステージは完了できる");
-        let WorkflowExecutionEvent::StageCompleted(completed) =
-            only_committed(subject.repository())
+        let IntentExecutionEvent::StageCompleted(completed) = only_committed(subject.repository())
         else {
             panic!("StageCompleted を期待した");
         };
@@ -453,7 +532,6 @@ mod tests {
         let mut subject = use_case(at_the_first_gate(3), 1);
         subject
             .execute(
-                &intent(),
                 None,
                 ReportedTransition::Rejected {
                     feedback: Some("Sharpen the testing posture.".to_string()),
@@ -462,7 +540,7 @@ mod tests {
             )
             .await
             .expect("ゲート付きステージは差し戻せる");
-        let WorkflowExecutionEvent::GateRejected(rejected) = only_committed(subject.repository())
+        let IntentExecutionEvent::GateRejected(rejected) = only_committed(subject.repository())
         else {
             panic!("GateRejected を期待した");
         };
@@ -472,16 +550,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_revised_report_re_enters_the_gate() {
-        let mut aggregate = at_the_first_gate(3);
+        let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .reject_gate(Some("直して".to_string()), at())
+            .reject_gate(&intent, Some("直して".to_string()), at())
             .expect("差し戻しは通る");
-        let mut subject = use_case(aggregate, 2);
+        let mut subject = use_case((intent, aggregate), 2);
         subject
-            .execute(&intent(), None, ReportedTransition::Revised, at())
+            .execute(None, ReportedTransition::Revised, at())
             .await
             .expect("revising のステージはゲートへ再入できる");
-        let WorkflowExecutionEvent::StageRevised(revised) = only_committed(subject.repository())
+        let IntentExecutionEvent::StageRevised(revised) = only_committed(subject.repository())
         else {
             panic!("StageRevised を期待した");
         };
@@ -490,16 +568,17 @@ mod tests {
 
     #[tokio::test]
     async fn a_skipped_report_carries_the_reason() {
-        let (mut aggregate, _) = start_from_plan(&[
+        let (intent, mut aggregate, _) = start_from_plan(&[
             (PhaseId::Initialization, PlanAction::Execute, false),
             (PhaseId::Inception, PlanAction::Execute, true),
             (PhaseId::Inception, PlanAction::Execute, false),
         ]);
-        aggregate.complete_stage(at()).expect("初期化は完了できる");
-        let mut subject = use_case(aggregate, 1);
+        aggregate
+            .complete_stage(&intent, at())
+            .expect("初期化は完了できる");
+        let mut subject = use_case((intent, aggregate), 1);
         subject
             .execute(
-                &intent(),
                 None,
                 ReportedTransition::Skipped {
                     reason: "Not applicable".to_string(),
@@ -508,7 +587,7 @@ mod tests {
             )
             .await
             .expect("CONDITIONAL なステージは読み飛ばせる");
-        let WorkflowExecutionEvent::StageSkipped(skipped) = only_committed(subject.repository())
+        let IntentExecutionEvent::StageSkipped(skipped) = only_committed(subject.repository())
         else {
             panic!("StageSkipped を期待した");
         };
@@ -523,7 +602,7 @@ mod tests {
         // BR1.9 — カーソル通過済み completed への再報告は冪等。判断は集約の `stale_report`。
         let mut subject = use_case(at_the_first_gate(3), 2);
         subject
-            .execute(&intent(), Some(&slug(0)), forward(), at())
+            .execute(Some(&slug(0)), forward(), at())
             .await
             .expect("通過済み completed への再報告は冪等な成功");
         assert!(subject.repository().committed().is_empty());
@@ -535,12 +614,12 @@ mod tests {
     async fn naming_the_cursor_explicitly_still_takes_the_normal_route() {
         let mut subject = use_case(at_the_first_gate(3), 1);
         subject
-            .execute(&intent(), Some(&slug(1)), forward(), at())
+            .execute(Some(&slug(1)), forward(), at())
             .await
             .expect("カーソル自身を名指しした報告は通常経路");
         assert!(matches!(
             only_committed(subject.repository()),
-            WorkflowExecutionEvent::GateApproved(_)
+            IntentExecutionEvent::GateApproved(_)
         ));
     }
 
@@ -549,7 +628,7 @@ mod tests {
         let mut subject = use_case(at_the_first_gate(3), 1);
         let unknown = StageSlug::parse("not-in-the-plan").expect("slug は文法内");
         let err = subject
-            .execute(&intent(), Some(&unknown), forward(), at())
+            .execute(Some(&unknown), forward(), at())
             .await
             .expect_err("計画に無いステージは解決できない");
         assert_eq!(err, CommitError::UnknownStage { stage: unknown });
@@ -560,10 +639,11 @@ mod tests {
     async fn a_report_that_names_a_stage_the_cursor_has_not_reached_is_refused_by_the_aggregate() {
         let mut subject = use_case(at_the_first_gate(3), 1);
         let err = subject
-            .execute(&intent(), Some(&slug(2)), forward(), at())
+            .execute(Some(&slug(2)), forward(), at())
             .await
             .expect_err("未着手のステージは通過済み completed ではない");
         let stage = at_the_first_gate(3)
+            .1
             .stage_index(2)
             .expect("索引 2 は範囲内");
         assert_eq!(err, CommitError::Command(CommandError::NotStale(stage)));
@@ -575,11 +655,11 @@ mod tests {
     #[tokio::test]
     async fn the_write_presents_the_version_the_rehydration_returned() {
         // `aggregate.seq_nr()` から導かない — 再構成が返した版そのものを渡す（ポート doc C3）。
-        let aggregate = at_the_first_gate(3);
-        assert_eq!(aggregate.seq_nr(), 2, "通番と版はたまたま一致させない");
-        let mut subject = use_case(aggregate, 7);
+        let pair = at_the_first_gate(3);
+        assert_eq!(pair.1.seq_nr(), 2, "通番と版はたまたま一致させない");
+        let mut subject = use_case(pair, 7);
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("承認は通る");
         assert_eq!(
@@ -592,16 +672,74 @@ mod tests {
     // ---- 異常系 ----
 
     #[tokio::test]
+    async fn the_use_case_fetches_the_intent_itself_from_the_port() {
+        // 改訂 10: `execute` は intent を受け取らない。実行を再構成し、その `intent_id` で
+        // 保持しているリポジトリから引く。
+        let mut subject = use_case(at_the_first_gate(3), 7);
+        assert_eq!(subject.intents().lookups(), 0, "呼ぶ前は 0 回");
+        subject
+            .execute(None, forward(), at())
+            .await
+            .expect("ゲートは承認できる");
+        assert_eq!(subject.intents().lookups(), 1, "1 試行につき 1 回引く");
+    }
+
+    #[tokio::test]
+    async fn a_missing_intent_is_propagated_from_its_own_port() {
+        // 実行は読めたが計画が引けない場合。ユースケースは握り潰さず、その面の失敗のまま
+        // 伝播する（`RepositoryError` ではなく `IntentRepositoryError` である）。
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut use_case = CommitVerdictUseCase::new(
+            InMemoryIntentExecutionRepository::holding(aggregate, 7),
+            InMemoryIntentRepository::empty(),
+        );
+        let err = use_case
+            .execute(&execution_id(), None, forward(), at())
+            .await
+            .expect_err("計画が無ければコミットできない");
+        assert_eq!(
+            err,
+            CommitError::IntentRepository(IntentRepositoryError::NotFound {
+                intent_id: intent.id().clone(),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retry_fetches_the_intent_again() {
+        // 再試行は attempt 全体をやり直すので intent も引き直す。Intent は不変なので
+        // 再取得は無害である（改訂 10）。
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
+                    aggregate, 7, 1,
+                ),
+                InMemoryIntentRepository::holding(intent),
+            ),
+        };
+        subject
+            .execute(None, forward(), at())
+            .await
+            .expect("1 回だけ再試行すれば通る");
+        assert_eq!(subject.intents().lookups(), 2, "2 試行なので 2 回引く");
+    }
+
+    #[tokio::test]
     async fn a_missing_aggregate_is_reported_as_not_found() {
-        let mut subject = CommitVerdictUseCase::new(InMemoryWorkflowExecutionRepository::empty());
+        let (intent, _, _) = genesis(3);
+        let mut subject = CommitVerdictUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::holding(intent),
+        );
         let err = subject
-            .execute(&absent_intent(), None, forward(), at())
+            .execute(&absent_execution(), None, forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
         assert_eq!(
             err,
             CommitError::Repository(RepositoryError::NotFound {
-                intent_id: absent_intent(),
+                execution_id: absent_execution(),
             })
         );
     }
@@ -609,20 +747,22 @@ mod tests {
     #[tokio::test]
     async fn a_first_conflict_is_retried_once_from_the_rehydration() {
         // 1 件の割り込み書込で 1 回目は競合し、2 回目で通る（contract-design Q6 = A）。
-        let mut subject = CommitVerdictUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
-                at_the_first_gate(3),
-                7,
-                1,
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
+                    aggregate, 7, 1,
+                ),
+                InMemoryIntentRepository::holding(intent),
             ),
-        );
+        };
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("1 回だけ再試行すれば通る");
         assert!(matches!(
             only_committed(subject.repository()),
-            WorkflowExecutionEvent::GateApproved(_)
+            IntentExecutionEvent::GateApproved(_)
         ));
         assert_eq!(
             subject.repository().store_attempts(),
@@ -639,10 +779,10 @@ mod tests {
         // 競合相手が先に同じゲートを承認してカーソルが動いたケース。再試行が対象を名指しし
         // 直さないと、報告されていない次ステージ（`[-]` なので BR1.3 で承認が通ってしまう）へ
         // `Forward` を打ってしまう。
-        let held = at_the_first_gate(3);
+        let (intent, held) = at_the_first_gate(3);
         let mut advanced = held.clone();
         advanced
-            .approve_gate(Some("Approve".to_string()), at())
+            .approve_gate(&intent, Some("Approve".to_string()), at())
             .expect("競合相手の承認は通る");
         assert_ne!(
             advanced.cursor(),
@@ -650,13 +790,16 @@ mod tests {
             "相手の承認でカーソルが動いている前提のテストである"
         );
 
-        let mut subject = CommitVerdictUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_behind_a_competing_commit(
-                held, advanced, 7,
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding_behind_a_competing_commit(
+                    held, advanced, 7,
+                ),
+                InMemoryIntentRepository::holding(intent),
             ),
-        );
+        };
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("通過済みになった報告は冪等な成功");
 
@@ -679,15 +822,17 @@ mod tests {
     #[tokio::test]
     async fn a_second_conflict_is_propagated_without_a_further_retry() {
         // 2 件の割り込み書込。2 回目も競合したら伝播する — 3 回目は無い。
-        let mut subject = CommitVerdictUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
-                at_the_first_gate(3),
-                7,
-                2,
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
+                    aggregate, 7, 2,
+                ),
+                InMemoryIntentRepository::holding(intent),
             ),
-        );
+        };
         let err = subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect_err("2 回目も競合したら伝播する");
         assert_eq!(
@@ -704,11 +849,11 @@ mod tests {
     #[tokio::test]
     async fn a_command_the_aggregate_refuses_is_propagated_verbatim() {
         // in-progress のステージは revise できない。ユースケースは言い換えも握り潰しもしない。
-        let aggregate = at_the_first_gate(3);
+        let (intent, aggregate) = at_the_first_gate(3);
         let stage = aggregate.cursor();
-        let mut subject = use_case(aggregate, 1);
+        let mut subject = use_case((intent, aggregate), 1);
         let err = subject
-            .execute(&intent(), None, ReportedTransition::Revised, at())
+            .execute(None, ReportedTransition::Revised, at())
             .await
             .expect_err("revising 以外はゲートへ再入できない");
         assert_eq!(
@@ -729,18 +874,20 @@ mod tests {
     #[tokio::test]
     async fn the_phase_boundary_comes_from_the_aggregate_not_from_the_use_case() {
         // 裁定 2 — ユースケースは境界を導出しないし、渡しもしない。
-        let (mut aggregate, _) = start_from_plan(&[
+        let (intent, mut aggregate, _) = start_from_plan(&[
             (PhaseId::Initialization, PlanAction::Execute, false),
             (PhaseId::Ideation, PlanAction::Execute, false),
             (PhaseId::Inception, PlanAction::Execute, false),
         ]);
-        aggregate.complete_stage(at()).expect("初期化は完了できる");
-        let mut subject = use_case(aggregate, 1);
+        aggregate
+            .complete_stage(&intent, at())
+            .expect("初期化は完了できる");
+        let mut subject = use_case((intent, aggregate), 1);
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("承認は通る");
-        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        let IntentExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
         else {
             panic!("GateApproved を期待した");
         };
@@ -754,10 +901,10 @@ mod tests {
     async fn approving_the_last_stage_reports_no_next_stage() {
         let mut subject = use_case(at_the_first_gate(2), 1);
         subject
-            .execute(&intent(), None, forward(), at())
+            .execute(None, forward(), at())
             .await
             .expect("最終ステージも承認できる");
-        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        let IntentExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
         else {
             panic!("GateApproved を期待した");
         };

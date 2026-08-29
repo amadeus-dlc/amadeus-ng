@@ -5,6 +5,7 @@ use std::fmt;
 use core_command_domain::orchestration::CommandError;
 use core_command_domain::workflow_definition::StageSlug;
 
+use super::intent_repository_error::IntentRepositoryError;
 use super::repository_error::RepositoryError;
 
 /// `CommitVerdictUseCase` の失敗（材料のみ — 逐語文言は出す側が組む）。
@@ -14,8 +15,10 @@ use super::repository_error::RepositoryError;
 /// ステージが解決済み計画に無かったことを言う。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitError {
-    /// 再構成・永続化の失敗（ポートからそのまま伝播）。
+    /// 実行の再構成・永続化の失敗（ポートからそのまま伝播）。
     Repository(RepositoryError),
+    /// intent の取得の失敗（ポートからそのまま伝播）。
+    IntentRepository(IntentRepositoryError),
     /// 集約がコマンドを拒否した（そのまま伝播）。
     Command(CommandError),
     /// 報告が名指ししたステージが解決済み計画に無い。
@@ -29,6 +32,7 @@ impl fmt::Display for CommitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CommitError::Repository(error) => write!(f, "repository: {error}"),
+            CommitError::IntentRepository(error) => write!(f, "intent repository: {error}"),
             CommitError::Command(error) => write!(f, "command: {error}"),
             CommitError::UnknownStage { stage } => write!(f, "unknown stage: {}", stage.as_str()),
         }
@@ -43,6 +47,12 @@ impl From<RepositoryError> for CommitError {
     }
 }
 
+impl From<IntentRepositoryError> for CommitError {
+    fn from(error: IntentRepositoryError) -> CommitError {
+        CommitError::IntentRepository(error)
+    }
+}
+
 impl From<CommandError> for CommitError {
     fn from(error: CommandError) -> CommitError {
         CommitError::Command(error)
@@ -52,7 +62,7 @@ impl From<CommandError> for CommitError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::IntentId;
+    use core_command_domain::orchestration::IntentExecutionId;
 
     fn stage() -> StageSlug {
         StageSlug::parse("practices-discovery").expect("フィクスチャの slug は文法内")
@@ -60,15 +70,16 @@ mod tests {
 
     #[test]
     fn a_repository_failure_is_carried_verbatim() {
-        let intent_id = IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7");
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
         let inner = RepositoryError::NotFound {
-            intent_id: intent_id.clone(),
+            execution_id: execution_id.clone(),
         };
         let error = CommitError::from(inner.clone());
         assert_eq!(error, CommitError::Repository(inner));
         assert_eq!(
             error.to_string(),
-            format!("repository: not found: {intent_id}")
+            format!("repository: not found: {execution_id}")
         );
     }
 

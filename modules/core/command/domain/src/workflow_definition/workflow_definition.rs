@@ -24,7 +24,7 @@
 //! # 集約への畳み込み (FR8.4)
 //!
 //! かつてここにあった `effective_plan_action` / `next_in_scope_stage` は
-//! **`WorkflowExecution` 側へ移設**した。recompose オーバレイと checkbox は実行の状態で
+//! **`IntentExecution` 側へ移設**した。recompose オーバレイと checkbox は実行の状態で
 //! あって定義の状態ではなく、定義側に置くと「呼出側が状態を持ち回って定義に問い直す」
 //! Ask 形になるためである (tell-dont-ask.md)。定義側に残るのは静的グリッドの照会
 //! (`grid().action(scope, slug)`) と文書順の全ステージ列 (`stages_in_scope`) だけで、
@@ -40,6 +40,7 @@ use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
 use super::stage_slug::StageSlug;
+use super::workflow_definition_event::{Defined, WorkflowDefinitionEvent};
 use super::workflow_definition_id::WorkflowDefinitionId;
 
 /// `validScopes()` に無いスコープ名。
@@ -81,7 +82,7 @@ impl UnknownScope {
 ///
 /// 等価は**内容と識別子の両方**で決まる (derive)。読取モデルは 3 入力から毎回組み立て直す
 /// 値であり、「同じ系譜の同じ内容」を 1 つの等価関係で表すのが自然だからである。id だけの
-/// 同一性比較が要るのは `WorkflowExecution` 側の定義照合で、そちらは `id()` 同士を突き合わせる
+/// 同一性比較が要るのは `IntentExecution` 側の定義照合で、そちらは `id()` 同士を突き合わせる
 /// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDefinition {
@@ -93,7 +94,37 @@ pub struct WorkflowDefinition {
 }
 
 impl WorkflowDefinition {
-    /// 識別子・内容版と 3 入力をそのまま束ねる。
+    /// 定義を**確立する** — 集約と誕生イベントの対を返す (genesis ファクトリ)。
+    ///
+    /// 集約のファクトリは (集約インスタンス, 誕生イベント) の**両方**を返すことが必須である
+    /// (coding-rules/aggregate-commands.md)。Repository の永続化は
+    /// `store(&event, &aggregate, ..)` の形でジャーナル追記分と スナップショット分を同一
+    /// トランザクションで受け取るので、どちらが欠けても永続化が組めない。
+    ///
+    /// 現スコープではこのイベントをジャーナルへ**接続していない** — 定義の変異取込は
+    /// 後続 intent の課題であり、ここでは規則が要求する形だけを満たす。実ファイルからの
+    /// 読取は genesis ではなく再構成なので [`WorkflowDefinition::from_artifacts`] を使う。
+    #[must_use]
+    pub fn define(
+        id: WorkflowDefinitionId,
+        revision: DefinitionRevision,
+        graph: StageGraph,
+        grid: ScopeGrid,
+        scopes: BTreeMap<String, ScopeMetadata>,
+    ) -> (WorkflowDefinition, WorkflowDefinitionEvent) {
+        let event = WorkflowDefinitionEvent::Defined(Defined::new(id.clone(), revision.clone()));
+        (
+            WorkflowDefinition::from_artifacts(id, revision, graph, grid, scopes),
+            event,
+        )
+    }
+
+    /// 実ファイル (Published Language) から読み直した 3 入力を束ね直す (再構成)。
+    ///
+    /// **再構成はファクトリではない** — 歴史を読み戻す経路なのでイベントを作らない
+    /// (coding-rules/aggregate-commands.md の再構成条項)。Repository の読取経路はこちらを
+    /// 呼ぶ。構造体リテラルが現れるのはこの 1 か所だけで、`define` もここへ委譲する
+    /// (coding-rules/factory-naming.md「すべての構築経路が基本コンストラクタを通る」)。
     ///
     /// `id` / `revision` は **Repository 実装が付与する** (ADR-008)。ドメインは revision を
     /// 計算しない — 正準 JSON とダイジェストはアダプタ層の責務である。
@@ -101,7 +132,7 @@ impl WorkflowDefinition {
     /// グリッド列と `.md` の**不一致は検証しない** — 双方向の不一致がどちらも正当な
     /// 観測可能契約だからである (zero-EXECUTE スコープ / ランタイム不可視スコープ)。
     #[must_use]
-    pub const fn new(
+    pub const fn from_artifacts(
         id: WorkflowDefinitionId,
         revision: DefinitionRevision,
         graph: StageGraph,
@@ -274,8 +305,8 @@ mod tests {
         DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64))).unwrap()
     }
 
-    /// 文書順 = 数値順の小さな出荷グラフ相当。
-    fn sample() -> WorkflowDefinition {
+    /// 文書順 = 数値順の小さな出荷グラフ相当の 3 入力。
+    fn artifacts() -> (StageGraph, ScopeGrid) {
         let graph = StageGraph::new(vec![
             node("bootstrap", "0.1", PhaseId::Initialization, &[]),
             node(
@@ -296,13 +327,60 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::from_graph(&graph);
-        WorkflowDefinition::new(
+        (graph, grid)
+    }
+
+    /// 文書順 = 数値順の小さな出荷グラフ相当。
+    fn sample() -> WorkflowDefinition {
+        let (graph, grid) = artifacts();
+        WorkflowDefinition::from_artifacts(
             id("claude"),
             revision('0'),
             graph,
             grid,
             registry(&REGISTERED),
         )
+    }
+
+    // ---- ファクトリ (coding-rules/aggregate-commands.md) ----
+
+    #[test]
+    fn the_genesis_factory_returns_the_definition_and_its_birth_event() {
+        // 集約のファクトリは (集約, 誕生イベント) の対を返すことが必須である —
+        // Repository の永続化が `store(&event, &aggregate, ..)` の形でその両方を要求する。
+        let (graph, grid) = artifacts();
+        let (definition, event) = WorkflowDefinition::define(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        );
+        let WorkflowDefinitionEvent::Defined(defined) = &event;
+        assert_eq!(defined.id(), definition.id());
+        assert_eq!(defined.revision(), definition.revision());
+    }
+
+    #[test]
+    fn reconstruction_produces_the_same_definition_without_an_event() {
+        // 再構成はファクトリではない — 歴史を読み戻す経路なので**イベントを作らない**
+        // (作ればリプレイのたびに歴史が増える)。型がそれを保証する: 戻り値は集約だけである。
+        let (graph, grid) = artifacts();
+        let (born, _) = WorkflowDefinition::define(
+            id("claude"),
+            revision('0'),
+            graph.clone(),
+            grid.clone(),
+            registry(&REGISTERED),
+        );
+        let restored = WorkflowDefinition::from_artifacts(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+        );
+        assert_eq!(restored, born, "同じ材料からは同じ定義が組み上がる");
     }
 
     // ---- エンティティの識別子と内容版 (ADR-008) ----
@@ -321,7 +399,7 @@ mod tests {
         let one = sample();
         let graph = one.graph().clone();
         let grid = one.grid().clone();
-        let other = WorkflowDefinition::new(
+        let other = WorkflowDefinition::from_artifacts(
             id("kiro"),
             revision('0'),
             graph,
@@ -337,7 +415,7 @@ mod tests {
     #[test]
     fn the_revision_changes_without_the_identity_changing() {
         let one = sample();
-        let other = WorkflowDefinition::new(
+        let other = WorkflowDefinition::from_artifacts(
             one.id().clone(),
             revision('1'),
             one.graph().clone(),
@@ -487,7 +565,7 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::from_graph(&graph);
-        let wd = WorkflowDefinition::new(
+        let wd = WorkflowDefinition::from_artifacts(
             id("claude"),
             revision('0'),
             graph,
@@ -544,7 +622,7 @@ mod tests {
             .collect();
         let graph = StageGraph::new(nodes).unwrap();
         let grid = ScopeGrid::from_graph(&graph);
-        WorkflowDefinition::new(
+        WorkflowDefinition::from_artifacts(
             id("claude"),
             revision('0'),
             graph,

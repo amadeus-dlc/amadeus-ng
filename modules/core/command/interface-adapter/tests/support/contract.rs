@@ -1,11 +1,11 @@
-//! `WorkflowExecutionRepository` の契約 (BR1.2 / BR1.3)。
+//! `IntentExecutionRepository` の契約 (BR1.2 / BR1.3)。
 //!
 //! ここに書いた関数群が「実装が満たすべき約束」の**唯一の記述**である。本家の memory
 //! バックエンドと SQLite バックエンドは同じ関数を通す (BR2.7 — 片方だけ通るテストを残さない)。
 //!
 //! 破損 (`MissingSnapshot` / `UndecodablePayload`) は、行を直接壊す手段がバックエンドごとに
 //! 違い、ポートの面からは作れない。契約テストからは外し、実装固有のテスト
-//! (`workflow_execution_repository_impl_test.rs` の生 SQL) に置く。
+//! (`intent_repository_impl_test.rs` の生 SQL) に置く。
 //!
 //! 全集約横断の読取とチェックポイント (`JournalReader`) は SQLite にしか無いので、
 //! `journal_reader_impl_test.rs` が単独で持つ。
@@ -13,35 +13,35 @@
 use core_command_domain::orchestration::AutonomyMode;
 
 use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
+    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
 };
 
 use super::{
-    StoreFixture, absent_intent_id, advance, at, genesis, intent_id, store_genesis,
+    StoreFixture, absent_execution_id, advance, at, execution_id, genesis, intent, store_genesis,
     store_stage_completed,
 };
 
 /// genesis から 5 イベントぶん書き進め、最後の再水和結果を返す。
 ///
 /// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
-pub(crate) async fn seed<R: WorkflowExecutionRepository>(
+pub(crate) async fn seed<R: IntentExecutionRepository>(
     repository: &mut R,
-) -> RehydratedWorkflowExecution {
+) -> RehydratedIntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.complete_stage(at())
+        aggregate.complete_stage(&intent(), at())
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.open_gate(vec!["intent.md".to_string()], at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(Some("ok".to_string()), at())
+        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.switch_autonomy(AutonomyMode::Autonomous, at())
+        aggregate.switch_autonomy(&intent(), AutonomyMode::Autonomous, at())
     })
     .await
 }
@@ -57,20 +57,20 @@ pub(crate) async fn open_twice_yields_independent_empty_stores<F: StoreFixture>(
 
     let mut second = fixture.open();
     let err = second
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("2 度目の open は空のストアを指す");
     assert_eq!(
         err,
         RepositoryError::NotFound {
-            intent_id: intent_id()
+            execution_id: execution_id()
         }
     );
 
     let found = store_genesis(&mut second).await;
     assert_eq!(found.version(), 1, "2 つ目のストアは独立して書ける");
 
-    let found = first.find_by_id(&intent_id()).await.expect("読み直せる");
+    let found = first.find_by_id(&execution_id()).await.expect("読み直せる");
     assert_eq!(found.version(), 1, "1 つ目は 2 つ目の書込に影響されない");
 }
 
@@ -82,13 +82,13 @@ pub(crate) async fn reopen_reflects_the_writes_completed_before_it_was_reopened<
     let held = store_genesis(&mut repository).await;
 
     let early = fixture.reopen(&repository);
-    let found = early.find_by_id(&intent_id()).await.expect("読み直せる");
+    let found = early.find_by_id(&execution_id()).await.expect("読み直せる");
     assert_eq!(found.version(), 1, "genesis まで書き終えた時点の開き直し");
 
     store_stage_completed(&mut repository, &held).await;
 
     let late = fixture.reopen(&repository);
-    let found = late.find_by_id(&intent_id()).await.expect("読み直せる");
+    let found = late.find_by_id(&execution_id()).await.expect("読み直せる");
     assert_eq!(found.version(), 2, "2 件目を書き終えた後の開き直し");
 }
 
@@ -99,15 +99,11 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
 
     let reopened = fixture.reopen(&repository);
     let found = reopened
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect("書いた集約は読み直せる");
 
-    assert_eq!(
-        found.aggregate().state(),
-        expected.aggregate().state(),
-        "16 属性が一致する"
-    );
+    assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
     assert_eq!(found.version(), 5, "5 回の書込ぶんストアが採番した版");
     assert_eq!(
         found.aggregate().seq_nr(),
@@ -122,13 +118,13 @@ pub(crate) async fn not_found<F: StoreFixture>(fixture: &F) {
     seed(&mut repository).await;
 
     let err = repository
-        .find_by_id(&absent_intent_id())
+        .find_by_id(&absent_execution_id())
         .await
         .expect_err("未知の集約は NotFound");
     assert_eq!(
         err,
         RepositoryError::NotFound {
-            intent_id: absent_intent_id()
+            execution_id: absent_execution_id()
         }
     );
 }
@@ -144,7 +140,7 @@ pub(crate) async fn the_store_assigns_the_first_version_on_genesis<F: StoreFixtu
         .expect("genesis");
 
     let found = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect("読み直せる");
     assert_eq!(found.version(), 1, "採番したのはストア");
@@ -179,13 +175,19 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
     let mut repository = fixture.open();
     seed(&mut repository).await;
 
-    let first = repository.find_by_id(&intent_id()).await.expect("再水和 1");
-    let second = repository.find_by_id(&intent_id()).await.expect("再水和 2");
+    let first = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("再水和 1");
+    let second = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("再水和 2");
     assert_eq!(first.version(), second.version());
 
     let mut aggregate = first.aggregate().clone();
     let event = aggregate
-        .open_gate(vec!["scope.md".to_string()], at())
+        .open_gate(&intent(), vec!["scope.md".to_string()], at())
         .expect("索引 2 はゲート付きで in-progress");
     repository
         .store(&event, &aggregate, first.version())
@@ -194,7 +196,7 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
 
     let mut aggregate = second.aggregate().clone();
     let event = aggregate
-        .open_gate(vec!["scope.md".to_string()], at())
+        .open_gate(&intent(), vec!["scope.md".to_string()], at())
         .expect("同じコマンド");
     let err = repository
         .store(&event, &aggregate, second.version())
@@ -210,7 +212,7 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
 
     // 衝突しても状態は変わらない (rollback — NFR3.3)。
     let found = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect("読み直せる");
     assert_eq!(found.version(), 6);
@@ -229,7 +231,9 @@ pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixt
 
     // 握ったままの版 (genesis 時点) で次を書こうとする。
     let mut aggregate = stale.aggregate().clone();
-    let next = aggregate.complete_stage(at()).expect("索引 0 は非ゲート");
+    let next = aggregate
+        .complete_stage(&intent(), at())
+        .expect("索引 0 は非ゲート");
     let err = repository
         .store(&next, &aggregate, stale.version())
         .await
@@ -272,11 +276,11 @@ pub(crate) async fn a_genesis_with_a_non_zero_version_is_a_contract_violation<F:
     );
 
     // 拒否された書込は行を残さない。
-    let found = repository.find_by_id(&intent_id()).await;
+    let found = repository.find_by_id(&execution_id()).await;
     assert_eq!(
         found.expect_err("書かれていない"),
         RepositoryError::NotFound {
-            intent_id: intent_id()
+            execution_id: execution_id()
         }
     );
 }

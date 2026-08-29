@@ -2,22 +2,20 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 /// 文書順のステージ位置。
 ///
-/// **構築できるのは集約だけ** (`WorkflowExecution::stage_index(usize) -> Option<StageIndex>`)
+/// **構築できるのは集約だけ** (`IntentExecution::stage_index(usize) -> Option<StageIndex>`)
 /// で、その集約の `stage_count` 未満であることが構築時に保証される。生の `usize` を集約 API・
 /// イベント・`NextDecision`・状態の写し (memento) に露出させないための E1 型であり、範囲外は
 /// `None` で表して panic しない (BR5.1)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StageIndex(usize);
 
 impl StageIndex {
     /// 集約 (と同一クレート内の再水和経路) だけが使う構築子。
     ///
-    /// 範囲の保証は呼出側の責務であり、公開経路は `WorkflowExecution::stage_index` と
-    /// `WorkflowExecution::from_state` の検証を必ず通る。
+    /// 範囲の保証は呼出側の責務であり、公開経路は `IntentExecution::stage_index` と
+    /// `IntentExecution::from_snapshot` の検証を必ず通る。
     pub(crate) const fn new(value: usize) -> StageIndex {
         StageIndex(value)
     }

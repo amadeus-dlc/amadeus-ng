@@ -1,5 +1,13 @@
 # workspace コンテキスト仕様
 
+> **改名裁定（2026-08-29 / Bolt B12）**: 集約 `WorkflowExecution` は **`Intent` 構造体 +
+> `IntentExecution` 集約**へ分割された（`Intent` = 静的な intent: 識別子・依頼・scope・解決済み
+> 計画・定義ピン / `IntentExecution` = 1 回の実行: `IntentExecutionId` で識別、1 intent : n 実行、
+> 実行時状態のみ保持し計画は `&Intent` 引数で受ける）。本文中の `WorkflowExecution` は文脈により
+> どちらかへ読み替える。本文の全文追従は後続 Bolt で行う（正本の裁定記録:
+> `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/brief-1.md`）。
+
+
 > **位置づけ**: コンテキスト別仕様の第 2 号。`01-domain-model.md` の裁定（B5・B9・B12・B13）と D3/D4/D10、ADR 0001〜0004 に従う。
 > **契約コーパス**: upstream `03-state-audit-runtime.md`（主）、`09-cli-tools.md` §5-7・`07-hooks.md` §3-4・`08-memory-rules-learnings.md` §2.4・`11-plugin-system.md` §5（従）。精密抽出は [`research/workspace-state-intent.md`](research/workspace-state-intent.md)（状態ファイル・writer 4 種・Space/Intent）、[`research/workspace-audit-ledger.md`](research/workspace-audit-ledger.md)（shard 文法・86 イベント・authority・順序・ロック）、[`research/workspace-lock-fork-worktree.md`](research/workspace-lock-fork-worktree.md)（reap 詳細・三層 fork/merge・Worktree・compose ロック共有）に収録済み。本書は**構造の規範**を担い、逐語の完全列挙は抽出文書と upstream を正とする。
 > **状態**: ドラフト（フェーズ A。スコープは決定論コアの縦切り — DocumentKB のストレージ供給詳細と Windows 対応は後続）

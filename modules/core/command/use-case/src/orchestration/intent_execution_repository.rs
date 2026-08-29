@@ -1,11 +1,13 @@
-//! `WorkflowExecutionRepository` ポート — 集約 `WorkflowExecution` の ES 形 Repository (C3 / ADR-010)。
+//! `IntentExecutionRepository` ポート — 集約 `IntentExecution` の ES 形 Repository (C3 / ADR-010)。
 
-use core_command_domain::orchestration::{IntentId, WorkflowExecution, WorkflowExecutionEvent};
+use core_command_domain::orchestration::{
+    IntentExecution, IntentExecutionEvent, IntentExecutionId,
+};
 
-use super::rehydrated_workflow_execution::RehydratedWorkflowExecution;
+use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
 
-/// 集約 `WorkflowExecution` の Repository (イベントソーシング形 — ADR-010 / C3)。
+/// 集約 `IntentExecution` の Repository (イベントソーシング形 — ADR-010 / C3)。
 ///
 /// 動詞は本家ライブラリ (event-store-adapter-rs) の語彙に従い `store` / `find_by_id`。
 /// ステートソーシング Repository の `save` は持たない
@@ -20,16 +22,16 @@ use super::repository_error::RepositoryError;
 /// (`coding-rules/interior-mutability.md`)。したがって実装は 1 つのストアを単一所有し、
 /// 書込中の排他は借用チェッカが保証する。
 ///
-/// 実装は `core-interface-adapter` の `orchestration::WorkflowExecutionRepositoryImpl`
+/// 実装は `core-interface-adapter` の `orchestration::IntentExecutionRepositoryImpl`
 /// 1 つで、内包するイベントストア (本家 event-store-adapter-rs のバックエンド) だけが
 /// 違う — SQLite ならファイル、memory なら揮発である。
 ///
 /// # 楽観 version はポートを往復する (ADR-010 / B7)
 ///
 /// 集約は楽観 version を持たない (正本はスナップショット行の列)。代わりに
-/// [`find_by_id`](WorkflowExecutionRepository::find_by_id) が読んだ版を
-/// [`RehydratedWorkflowExecution`] に載せて返し、呼出側がそれを
-/// [`store`](WorkflowExecutionRepository::store) へ提示する。**読んだ時点の版で書く**こと
+/// [`find_by_id`](IntentExecutionRepository::find_by_id) が読んだ版を
+/// [`RehydratedIntentExecution`] に載せて返し、呼出側がそれを
+/// [`store`](IntentExecutionRepository::store) へ提示する。**読んだ時点の版で書く**こと
 /// そのものが楽観ロックであり、実装が書込直前に版を読み直すと成立しなくなる。
 ///
 /// この版は `usize` で運ぶが、**数ではなく不透明なトークンである**。守るべきことは 3 つ:
@@ -51,7 +53,7 @@ use super::repository_error::RepositoryError;
     reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\
               自動 trait 境界を書けないという注意喚起は本 trait では設計どおりである。"
 )]
-pub trait WorkflowExecutionRepository {
+pub trait IntentExecutionRepository {
     /// 集約を**完全に**再構成して返す (部分データを返さない — C3 ①)。
     ///
     /// 最新スナップショットを復元し、その `seq_nr` より後のイベントを昇順に適用して返す
@@ -64,8 +66,8 @@ pub trait WorkflowExecutionRepository {
     /// 不変条件違反・`seq_nr` の不連続 (`Corrupt`) を返す。
     async fn find_by_id(
         &self,
-        id: &IntentId,
-    ) -> Result<RehydratedWorkflowExecution, RepositoryError>;
+        id: &IntentExecutionId,
+    ) -> Result<RehydratedIntentExecution, RepositoryError>;
 
     /// 1 コマンドが返した単一イベントと適用後の集約を、同一トランザクションで永続化する。
     ///
@@ -73,12 +75,12 @@ pub trait WorkflowExecutionRepository {
     /// 通番と発生時刻は適用後の集約が持っているので、引数で二重に受け取らない (BR1.3)。
     ///
     /// `expected_version` は再構成時に受け取った版で、新規作成 (`Started`) では
-    /// [`WorkflowExecutionRepository::UNPERSISTED_VERSION`] である。一致しなければ `Conflict`
+    /// [`IntentExecutionRepository::UNPERSISTED_VERSION`] である。一致しなければ `Conflict`
     /// で、ストアの状態は変わらない (BR1.3)。引数は `&` なので呼出側の集約は変更されない。
     ///
     /// この引数は**ストア採番の不透明トークン**である — `seq_nr` と混同してはならず、集約へ
     /// 入れてもならない (trait doc の「楽観 version はポートを往復する」を参照)。渡すのは
-    /// [`RehydratedWorkflowExecution::version`] が返した値そのものであり、`aggregate.seq_nr()`
+    /// [`RehydratedIntentExecution::version`] が返した値そのものであり、`aggregate.seq_nr()`
     /// から導いてはならない。
     ///
     /// # Errors
@@ -86,8 +88,8 @@ pub trait WorkflowExecutionRepository {
     /// 楽観 version の不一致 (`Conflict`)、ストア I/O (`Io`)、符号化の失敗 (`Corrupt`) を返す。
     async fn store(
         &mut self,
-        event: &WorkflowExecutionEvent,
-        aggregate: &WorkflowExecution,
+        event: &IntentExecutionEvent,
+        aggregate: &IntentExecution,
         expected_version: usize,
     ) -> Result<(), RepositoryError>;
 
@@ -103,59 +105,61 @@ mod tests {
     use super::*;
     use crate::orchestration::RepositoryError;
     use crate::orchestration::test_support::{
-        InMemoryWorkflowExecutionRepository, absent_intent, genesis, intent,
+        InMemoryIntentExecutionRepository, absent_execution, execution_id, genesis,
     };
-    use core_command_domain::orchestration::IntentId;
+    use core_command_domain::orchestration::IntentExecutionId;
 
     /// ジェネリック関数からポート越しに使えること (静的束縛 — ユースケースはこの形で組む)。
-    async fn rehydrate<R: WorkflowExecutionRepository>(
+    async fn rehydrate<R: IntentExecutionRepository>(
         repository: &R,
-        id: &IntentId,
-    ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
+        id: &IntentExecutionId,
+    ) -> Result<RehydratedIntentExecution, RepositoryError> {
         repository.find_by_id(id).await
     }
 
     #[tokio::test]
     async fn an_unknown_aggregate_is_not_found() {
-        let repository = InMemoryWorkflowExecutionRepository::empty();
-        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
+        let repository = InMemoryIntentExecutionRepository::empty();
+        let err = rehydrate(&repository, &absent_execution())
+            .await
+            .unwrap_err();
         assert_eq!(
             err,
             RepositoryError::NotFound {
-                intent_id: absent_intent()
+                execution_id: absent_execution()
             }
         );
     }
 
     #[tokio::test]
     async fn a_stored_aggregate_is_rehydrated_by_its_identifier() {
-        let mut repository = InMemoryWorkflowExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let mut repository = InMemoryIntentExecutionRepository::empty();
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
                 &aggregate,
-                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
             )
             .await
             .unwrap();
-        let found = rehydrate(&repository, &intent()).await.unwrap();
-        assert_eq!(found.aggregate().intent_id(), &intent());
+        let found = rehydrate(&repository, &execution_id()).await.unwrap();
+        assert_eq!(found.aggregate().id(), &execution_id());
     }
 
     #[tokio::test]
     async fn the_version_a_rehydration_carries_is_the_one_the_store_assigned() {
-        let mut repository = InMemoryWorkflowExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let mut repository = InMemoryIntentExecutionRepository::empty();
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
                 &aggregate,
-                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
             )
             .await
             .unwrap();
-        let found = rehydrate(&repository, &intent()).await.unwrap();
+        let found = rehydrate(&repository, &execution_id()).await.unwrap();
         assert_eq!(
             found.version(),
             1,
@@ -166,13 +170,13 @@ mod tests {
     #[tokio::test]
     async fn a_write_that_presents_a_stale_version_conflicts() {
         // 楽観ロックの本体 — 読んだ版で書くから、その間の書込を検出できる。
-        let mut repository = InMemoryWorkflowExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let mut repository = InMemoryIntentExecutionRepository::empty();
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
                 &aggregate,
-                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
             )
             .await
             .unwrap();
@@ -180,7 +184,7 @@ mod tests {
             .store(
                 &event,
                 &aggregate,
-                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
             )
             .await
             .unwrap_err();
@@ -195,13 +199,13 @@ mod tests {
 
     #[tokio::test]
     async fn the_port_takes_the_aggregate_by_reference_so_the_caller_keeps_it() {
-        let mut repository = InMemoryWorkflowExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let mut repository = InMemoryIntentExecutionRepository::empty();
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
                 &aggregate,
-                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
             )
             .await
             .unwrap();
@@ -212,31 +216,33 @@ mod tests {
     #[tokio::test]
     async fn a_stored_aggregate_is_not_returned_for_a_different_identifier() {
         // 識別子検索である以上、別の識別子で引いたら見つからない (C3 ①)。
-        let mut repository = InMemoryWorkflowExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let mut repository = InMemoryIntentExecutionRepository::empty();
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
                 &aggregate,
-                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
             )
             .await
             .unwrap();
-        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
+        let err = rehydrate(&repository, &absent_execution())
+            .await
+            .unwrap_err();
         assert_eq!(
             err,
             RepositoryError::NotFound {
-                intent_id: absent_intent()
+                execution_id: absent_execution()
             }
         );
         // 同じストアでも、正しい識別子なら見つかる。
-        assert!(rehydrate(&repository, &intent()).await.is_ok());
+        assert!(rehydrate(&repository, &execution_id()).await.is_ok());
     }
 
     #[tokio::test]
     async fn the_repository_face_reports_its_failures_as_repository_errors() {
-        let repository = InMemoryWorkflowExecutionRepository::empty();
-        let err = repository.find_by_id(&intent()).await.unwrap_err();
+        let repository = InMemoryIntentExecutionRepository::empty();
+        let err = repository.find_by_id(&execution_id()).await.unwrap_err();
         assert!(matches!(err, RepositoryError::NotFound { .. }));
     }
 }

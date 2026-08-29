@@ -1,4 +1,4 @@
-//! `WorkflowExecution` 集約 — 1 つの Intent の実行状態 (10 §2.1) をイベントソーシング形の
+//! `IntentExecution` 集約 — 1 つの intent の実行状態 (10 §2.1) をイベントソーシング形の
 //! FSM として持つ集約ルート (ADR-001 / ADR-002)。
 //!
 //! **状態としてのデータ**(カーソル・CheckboxState・`Status` と直交する park マーカー・recompose
@@ -17,10 +17,10 @@
 //! - **楽観 version は持たない** (ADR-010 / B7): 本家 event-store-adapter-rs v3.0.0 で
 //!   `Aggregate` trait が廃れ、楽観ロックの版数は `SnapshotEnvelope::version()` (ストアの列) が
 //!   正本になった。集約が持つ順序番号は `seq_nr` **だけ**であり、ストアの採番トークンとは混ざらない。
-//!   serde 境界はスナップショットの直列化に要るが、**復号は状態の写し (memento) を経由する** —
-//!   `into` / `try_from` で [`WorkflowExecutionState`] に委ね、`from_state()` の検査点を必ず通す
-//!   (オーナー裁定 2026-08-27 (A))。したがって「不変条件を満たす集約しか存在しない」という
-//!   保証は serde 経路でも破れない (security-design §2 の検査点 3)。
+//!   **直列化の記述は持たない** (改訂 9 / `coding-rules/domain-persistence-neutrality.md`) —
+//!   行のバイトを決めるのはアダプタ層の DTO で、復号は状態の写し (memento) を経由し
+//!   [`IntentExecution::from_snapshot`] の検査点を必ず通る。したがって「不変条件を満たす集約
+//!   しか存在しない」という保証は永続化経路でも破れない (security-design §2 の検査点 3)。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
 //!
@@ -30,32 +30,26 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 use super::apply_error::ApplyError;
 use super::autonomy_mode::AutonomyMode;
 use super::command_error::CommandError;
+use super::intent::Intent;
+use super::intent_execution_event::{
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
+    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+};
+use super::intent_execution_id::IntentExecutionId;
+use super::intent_execution_snapshot::{IntentExecutionSnapshot, IntentExecutionSnapshotBuilder};
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
-use super::stage_display::StageDisplay;
+use super::snapshot_error::SnapshotError;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
-use super::start_error::StartError;
-use super::start_request::StartRequest;
-use super::state_error::StateError;
 use super::status::Status;
-use super::workflow_execution_event::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
-    StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
-};
-use super::workflow_execution_state::WorkflowExecutionState;
-use super::workspace_scan::WorkspaceScan;
-use crate::workflow_definition::{
-    DefinitionRevision, ExecutionKind, PhaseId, PlanAction, StageSlug, UnknownScope,
-    WorkflowDefinition, WorkflowDefinitionId,
-};
+use crate::workflow_definition::{PlanAction, StageSlug, WorkflowDefinition};
 use crate::workspace::CheckboxState;
 
 /// 前進 (`complete_stage` / `approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
@@ -75,18 +69,17 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 
 /// エンジンループの状態機械 (集約ルート)。
 ///
-/// serde は状態の写し ([`WorkflowExecutionState`]) を経由する — 直列化は [`WorkflowExecution::state`]、
-/// 復号は [`WorkflowExecution::from_state`] であり、復号側の検査点が 1 か所に保たれる。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "WorkflowExecutionState", try_from = "WorkflowExecutionState")]
-pub struct WorkflowExecution {
+/// serde は状態の写し ([`IntentExecutionSnapshot`]) を経由する — 直列化は [`IntentExecution::snapshot`]、
+/// 復号は [`IntentExecution::from_snapshot`] であり、復号側の検査点が 1 か所に保たれる。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntentExecution {
+    id: IntentExecutionId,
+    /// 実行の対象 intent — **ID で参照し、`Intent` を埋め込まない**
+    /// (coding-rules/aggregate-references.md)。1 intent : n 実行なので、埋め込めば同じ静的
+    /// 材料の複製を n 個抱えることになる。計画が要る判断は `&Intent` を引数で受け取り、
+    /// 受け取り時にこの ID と照合する。
     intent_id: IntentId,
-    definition_id: WorkflowDefinitionId,
-    definition_revision: DefinitionRevision,
-    /// 文書順の解決済み計画。`stages` / `plan` / `conditional` の 3 属性をこの 1 列が担う
-    /// (`plan` = `plan_action()`、`conditional` = `is_conditional()`) — 状態の写し (memento) は
-    /// C6 の列構成に合わせて 3 列へ展開し、`from_state` が整合を検査する。
-    stages: Vec<StageEntry>,
+    /// 実効プラン (recompose オーバレイ)。静的な計画 (`Intent::stages`) は保持しない。
     overlay: Vec<PlanAction>,
     checkbox: Vec<CheckboxState>,
     cursor: StageIndex,
@@ -101,139 +94,44 @@ pub struct WorkflowExecution {
     last_updated_at: DateTime<Utc>,
 }
 
-impl WorkflowExecution {
+impl IntentExecution {
     // ---- W1: 生成 (BR2.2 / BR2.6) ----
 
-    /// 定義と呼出側の要求から解決済み計画を組み立てて実行を開始する。
+    /// intent を 1 回実行し始める (genesis)。
     ///
-    /// `def.id()` / `def.revision()` は**無条件に `Started` へ記録する** — 比較対象となる既存状態が
-    /// 無い静的コンストラクタなので検査はしない (BR2.6)。以後の定義照合は `next_decision` が行う。
-    /// [`StartRequest`] の `depth` / `test_strategy` は集約状態にはならず、`Started` へ素通しで
-    /// 載るだけである (U4 の `Scope Configuration` 投影材料 — C5)。
+    /// 受け取る [`Intent`] は Always Valid（空でない計画・initialization は EXECUTE かつ
+    /// 非 CONDITIONAL）なので、ここに失敗経路は無い。計画の解決とスコープ検査は
+    /// [`Intent::resolve`] が済ませている。
     ///
-    /// # Errors
+    /// 実行の識別子は**呼出側がミントする** — upstream がツール層で uuid をミントするのと
+    /// 同じ位置づけであり、集約は時計も乱数も持たない。集約が控えるのは `intent_id` と
+    /// 実行時状態だけで、静的な材料は `Started` が歴史として運ぶ
+    /// (coding-rules/aggregate-references.md「イベントに材料の複製が載るのは違反ではない」)。
     ///
-    /// 未知スコープ (`UnknownScope`)、ステージ 0 件 (`Empty`)、initialization ステージが SKIP に
-    /// 畳まれた / 先頭ステージがスコープ外 (`InitializationMustExecute`)、initialization ステージが
-    /// CONDITIONAL (`InitializationMustBeUnconditional`) を拒否する。
+    /// 戻り値が**対**なのは規則である (coding-rules/aggregate-commands.md) — Repository の
+    /// 永続化は `store(&event, &aggregate, ..)` の形でジャーナル追記分 (誕生イベント) と
+    /// スナップショット分 (適用後の集約) を同一トランザクションで受け取るので、どちらが
+    /// 欠けても永続化が組めない。再構成経路 (`from_snapshot` / `apply_event`) は逆に
+    /// **イベントを作らない** — 作ればリプレイのたびに歴史が増える。
+    #[must_use]
     pub fn start(
-        intent_id: IntentId,
-        definition: &WorkflowDefinition,
-        request: &StartRequest,
-        scan: WorkspaceScan,
+        id: IntentExecutionId,
+        intent: Intent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
-        let scope = request.scope();
-        if !definition.is_valid_scope(scope) {
-            let valid = definition
-                .valid_scopes()
-                .into_iter()
-                .map(str::to_string)
-                .collect();
-            return Err(StartError::UnknownScope(UnknownScope::new(scope, valid)));
-        }
-        let nodes = definition.graph().nodes();
-        let mut stages = Vec::new();
-        for (index, (slug, phase, action)) in
-            definition.stages_in_scope(scope).into_iter().enumerate()
-        {
-            // `stages_in_scope` は execution も表示属性も返さないので、同じ文書順のノード列から
-            // 索引一致で拾う (BR2.2)。グリッド列が無いステージは `None → SKIP` に畳む。
-            let node = nodes.get(index);
-            let conditional =
-                node.is_some_and(|node| node.execution() == ExecutionKind::Conditional);
-            // 表示属性は**計画を解決するこの時点で**イベントへ焼き込む (オーナー裁定 2026-08-29)。
-            // 投影は後から定義を引かないので、再構成しても当時と同じバイトになる (NFR3)。
-            let display = match node {
-                Some(node) => {
-                    StageDisplay::new(node.number().clone(), node.name(), node.lead_agent())
-                        .map_err(|unsafe_char| StartError::StageDisplayNotSingleLine {
-                            stage: slug.as_str().to_string(),
-                            found: unsafe_char.to_char(),
-                        })?
-                }
-                // 索引一致が崩れるのはグラフが壊れている場合だけ (防御的)。
-                None => return Err(StartError::Empty),
-            };
-            stages.push(StageEntry::new(
-                slug.clone(),
-                phase,
-                action.unwrap_or(PlanAction::Skip),
-                conditional,
-                display,
-            ));
-        }
-        WorkflowExecution::start_from_plan_unchecked(
-            intent_id,
-            definition.id().clone(),
-            definition.revision().clone(),
-            request,
-            stages,
-            scan,
-            occurred_at,
-        )
-    }
-
-    /// 解決済み計画を直接与えて実行を開始する ([`WorkflowExecution::start`] の委譲先)。
-    ///
-    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。
-    ///
-    /// **`start` と違い [`StartError::UnknownScope`] を返せない** — 照合すべき
-    /// [`WorkflowDefinition`] を受け取らないため、スコープ名が定義にあるかどうかを検査する材料が
-    /// そもそも無い。名前の `_unchecked` はこの検査の欠落を指す。定義を持っている呼出側は
-    /// [`WorkflowExecution::start`] を使うこと。
-    ///
-    /// # Errors
-    ///
-    /// ステージ 0 件、initialization ステージの SKIP / CONDITIONAL、先頭ステージのスコープ外を
-    /// 拒否する (先頭はカーソルの初期位置なので実効 EXECUTE でなければ `cursor_in_scope` を破る)。
-    /// スコープ名の妥当性 (`UnknownScope`) は上記のとおり検査しない。
-    pub fn start_from_plan_unchecked(
-        intent_id: IntentId,
-        definition_id: WorkflowDefinitionId,
-        definition_revision: DefinitionRevision,
-        request: &StartRequest,
-        stages: Vec<StageEntry>,
-        scan: WorkspaceScan,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
-        match stages.first() {
-            None => return Err(StartError::Empty),
-            Some(first) if first.plan_action() != PlanAction::Execute => {
-                return Err(StartError::InitializationMustExecute);
-            }
-            Some(_) => {}
-        }
-        for entry in &stages {
-            if entry.phase() != PhaseId::Initialization {
-                continue;
-            }
-            if entry.plan_action() != PlanAction::Execute {
-                return Err(StartError::InitializationMustExecute);
-            }
-            if entry.is_conditional() {
-                return Err(StartError::InitializationMustBeUnconditional);
-            }
-        }
-
-        let count = stages.len();
-        let overlay: Vec<PlanAction> = stages.iter().map(StageEntry::plan_action).collect();
+    ) -> (IntentExecution, IntentExecutionEvent) {
+        let count = intent.stage_count();
+        let overlay: Vec<PlanAction> = intent
+            .stages()
+            .iter()
+            .map(StageEntry::plan_action)
+            .collect();
         let mut checkbox = vec![CheckboxState::Pending; count];
         if let Some(first) = checkbox.first_mut() {
             *first = CheckboxState::InProgress;
         }
-        let event = WorkflowExecutionEvent::Started(Started::new(
-            definition_id.clone(),
-            definition_revision.clone(),
-            request,
-            stages.clone(),
-            scan,
-        ));
-        let execution = WorkflowExecution {
-            intent_id,
-            definition_id,
-            definition_revision,
-            stages,
+        let execution = IntentExecution {
+            id,
+            intent_id: intent.id().clone(),
             overlay,
             checkbox,
             cursor: StageIndex::new(0),
@@ -245,15 +143,35 @@ impl WorkflowExecution {
             seq_nr: 1,
             last_updated_at: occurred_at,
         };
-        Ok((execution, event))
+        (
+            execution,
+            IntentExecutionEvent::Started(Started::new(intent)),
+        )
     }
 
     // ---- 観測 (read model) ----
 
-    /// この実行が属する Intent の識別子 (以後不変)。
+    /// この実行の識別子 (以後不変)。
+    #[must_use]
+    pub const fn id(&self) -> &IntentExecutionId {
+        &self.id
+    }
+
+    /// 実行の対象 intent の識別子 (以後不変。`intents.json` の uuid にあたる)。
+    ///
+    /// 集約が持つのはこの ID だけである — [`Intent`] そのものは埋め込まない
+    /// (coding-rules/aggregate-references.md)。
     #[must_use]
     pub const fn intent_id(&self) -> &IntentId {
         &self.intent_id
+    }
+
+    /// 渡された intent がこの実行のものかを確かめる (取り違え防御)。
+    ///
+    /// ID 参照だからこそ書ける照合である。長さも見るのは、同じ intent の別リビジョンで
+    /// 実行時ベクトルと計画の長さが食い違う写しを弾くためである。
+    fn matches(&self, intent: &Intent) -> bool {
+        intent.id() == &self.intent_id && intent.stage_count() == self.overlay.len()
     }
 
     /// 適用済みイベント数と一致する順序番号 (`Started` = 1 — BR2.1)。
@@ -273,28 +191,13 @@ impl WorkflowExecution {
         &self.last_updated_at
     }
 
-    /// `Started` に記録した定義の系譜 ID (以後不変 — BR2.6)。
-    #[must_use]
-    pub const fn definition_id(&self) -> &WorkflowDefinitionId {
-        &self.definition_id
-    }
-
-    /// `Started` 時点の定義の内容版 (来歴。定義側が進んでも Err にはしない — BR2.6)。
-    #[must_use]
-    pub const fn definition_revision(&self) -> &DefinitionRevision {
-        &self.definition_revision
-    }
-
-    /// 文書順の解決済み計画 (`Started` が確定させて以後不変)。
-    #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
-        &self.stages
-    }
-
-    /// コンパイル済みグラフのステージ総数 (スコープ外のステージも含む)。
+    /// 実行が追いかけているステージ総数 (スコープ外のステージも含む)。
+    ///
+    /// 実行時ベクトルの長さがそのまま総数である — 静的な計画は [`Intent`] 側にあり、
+    /// 集約はその長さぶんの実行時状態を持つ。
     #[must_use]
     pub const fn stage_count(&self) -> usize {
-        self.stages.len()
+        self.overlay.len()
     }
 
     /// 生の位置から `StageIndex` を作る唯一の公開経路。範囲外は `None` (BR5.1)。
@@ -351,10 +254,10 @@ impl WorkflowExecution {
         self.overlay.get(stage.to_usize()).copied()
     }
 
-    /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外は `None`。
+    /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外・intent 不一致は `None`。
     #[must_use]
-    pub fn gated(&self, stage: StageIndex) -> Option<bool> {
-        self.stages.get(stage.to_usize()).map(StageEntry::is_gated)
+    pub fn gated(&self, intent: &Intent, stage: StageIndex) -> Option<bool> {
+        self.entry(intent, stage).map(StageEntry::is_gated)
     }
 
     /// parked 分岐の発火は導出述語 (マーカー有 ∧ 位置一致 — BR1.7)。
@@ -371,12 +274,15 @@ impl WorkflowExecution {
 
     // ---- 内部の索引ヘルパ (すべて `StageIndex` 経由 — 生の添字を使わない) ----
 
-    fn entry(&self, stage: StageIndex) -> Option<&StageEntry> {
-        self.stages.get(stage.to_usize())
+    fn entry<'a>(&self, intent: &'a Intent, stage: StageIndex) -> Option<&'a StageEntry> {
+        if !self.matches(intent) {
+            return None;
+        }
+        intent.stages().get(stage.to_usize())
     }
 
-    fn is_gated(&self, stage: StageIndex) -> bool {
-        self.entry(stage).is_some_and(StageEntry::is_gated)
+    fn is_gated(&self, intent: &Intent, stage: StageIndex) -> bool {
+        self.entry(intent, stage).is_some_and(StageEntry::is_gated)
     }
 
     fn in_scope(&self, stage: StageIndex) -> bool {
@@ -389,32 +295,37 @@ impl WorkflowExecution {
             .find(|&stage| self.in_scope(stage))
     }
 
-    fn next_in_scope_slug(&self, after: StageIndex) -> Option<StageSlug> {
+    fn next_in_scope_slug(&self, intent: &Intent, after: StageIndex) -> Option<StageSlug> {
         self.next_in_scope(after)
-            .and_then(|stage| self.entry(stage))
+            .and_then(|stage| self.entry(intent, stage))
             .map(|entry| entry.slug().clone())
     }
 
     /// 名指しステージの完了で跨ぐフェーズ境界 (跨がなければ `None`)。
     ///
-    /// 走査は [`WorkflowExecution::next_in_scope_slug`] と同じ「次の実効 EXECUTE ステージ」で
+    /// 走査は [`IntentExecution::next_in_scope_slug`] と同じ「次の実効 EXECUTE ステージ」で
     /// あり、`plan` と `overlay` を知っている集約だけが正しく答えられる。フェーズが違えば
     /// 境界、同じか次が無い (= 最終) なら `None` — upstream の `crossesPhaseBoundary`
     /// (`aidlc-state.ts` の `completedStage.phase !== nextStage.phase`) と同一の規則である。
-    fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
-        let from = self.entry(stage)?.phase();
-        let to = self.entry(self.next_in_scope(stage)?)?.phase();
+    fn crossed_phase_boundary(&self, intent: &Intent, stage: StageIndex) -> Option<PhaseBoundary> {
+        let from = self.entry(intent, stage)?.phase();
+        let to = self.entry(intent, self.next_in_scope(stage)?)?.phase();
         (from != to).then(|| PhaseBoundary::new(from, to))
     }
 
-    fn slug_of(&self, stage: StageIndex) -> Result<StageSlug, CommandError> {
-        self.entry(stage)
+    fn slug_of(&self, intent: &Intent, stage: StageIndex) -> Result<StageSlug, CommandError> {
+        self.entry(intent, stage)
             .map(|entry| entry.slug().clone())
             .ok_or(CommandError::InvalidTarget(stage))
     }
 
-    fn resolve(&self, slug: &StageSlug) -> Result<StageIndex, ApplyError> {
-        self.stages
+    /// 計画上の位置へ解決する。
+    ///
+    /// 取り違えガードはここには置かない — 呼出経路 (`apply_event` → `mutate` → `advance`) の
+    /// 入口で既に照合済みだからである。二重に置くと到達しない枝が残る。
+    fn resolve(intent: &Intent, slug: &StageSlug) -> Result<StageIndex, ApplyError> {
+        intent
+            .stages()
             .iter()
             .position(|entry| entry.slug() == slug)
             .map(StageIndex::new)
@@ -445,6 +356,17 @@ impl WorkflowExecution {
     // ---- ガード ----
 
     /// BR1.0 — コマンドを受理できる状態か検査し、カーソルを返す。
+    /// 渡された intent がこの実行のものであることを確かめてから、受理述語を見る。
+    ///
+    /// 取り違えガードを**入口 1 か所**に置く — 後段の索引ヘルパは不一致なら `None` を返すが、
+    /// それは `InvalidTarget` に見えてしまい原因を取り違える。
+    fn guard_running_for(&self, intent: &Intent) -> Result<StageIndex, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        self.guard_running()
+    }
+
     fn guard_running(&self) -> Result<StageIndex, CommandError> {
         if self.accepts_commands() {
             Ok(self.cursor)
@@ -468,8 +390,13 @@ impl WorkflowExecution {
         }
     }
 
-    fn require_gated(&self, stage: StageIndex, gated: bool) -> Result<(), CommandError> {
-        if self.is_gated(stage) == gated {
+    fn require_gated(
+        &self,
+        intent: &Intent,
+        stage: StageIndex,
+        gated: bool,
+    ) -> Result<(), CommandError> {
+        if self.is_gated(intent, stage) == gated {
             Ok(())
         } else {
             Err(CommandError::InvalidTarget(stage))
@@ -489,19 +416,30 @@ impl WorkflowExecution {
     /// (`SequenceExhausted` — 飽和加算で seq_nr が停滞したまま成功を装わない)。
     fn commit(
         &mut self,
-        event: WorkflowExecutionEvent,
+        intent: &Intent,
+        event: IntentExecutionEvent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
+    ) -> Result<IntentExecutionEvent, CommandError> {
         let Some(seq_nr) = self.seq_nr.checked_add(1) else {
             return Err(CommandError::SequenceExhausted);
         };
-        match self.apply_event(seq_nr, occurred_at, &event) {
+        match self.apply_event(intent, seq_nr, occurred_at, &event) {
             Ok(()) => Ok(event),
             Err(_) => Err(CommandError::InvalidTarget(self.cursor)),
         }
     }
 
-    // ---- W2: decide (12 コマンド、1 コマンド 1 イベント) ----
+    // ---- W2: decide (11 コマンド、1 コマンド 1 イベント) ----
+    //
+    // 以下のコマンドはすべて `Result<IntentExecutionEvent, CommandError>` を返す —
+    // 「集約の `&mut self` コマンドは必ず単一のドメインイベントを戻り値で返す」という規則
+    // (coding-rules/aggregate-commands.md) の形である。イベントは書込パイプラインの産物
+    // (受領証) であって読取チャネルではないので、CQS の「Command は戻り値なし」は集約には
+    // 適用しない (同規則が command-query-separation.md を精密化する)。拒否は無言の no-op に
+    // せず、ガード付きの `Err` で返す。
+    //
+    // 計画が要るコマンドは `&Intent` を引数で受け取り、入口で取り違えを照合する
+    // (coding-rules/aggregate-references.md)。
 
     /// 非ゲート (initialization フェーズ) ステージの完了 — `StageCompleted`。
     ///
@@ -511,14 +449,19 @@ impl WorkflowExecution {
     /// (`CheckboxPrecondition`) を拒否する。
     pub fn complete_stage(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, false)?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, false)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = StageCompleted::new(self.slug_of(stage)?, self.next_in_scope_slug(stage));
+        let material = StageCompleted::new(
+            self.slug_of(intent, stage)?,
+            self.next_in_scope_slug(intent, stage),
+        );
         self.commit(
-            WorkflowExecutionEvent::StageCompleted(material),
+            intent,
+            IntentExecutionEvent::StageCompleted(material),
             occurred_at,
         )
     }
@@ -531,21 +474,26 @@ impl WorkflowExecution {
     /// 拒否する (「only an in-progress stage can open a gate」)。
     pub fn open_gate(
         &mut self,
+        intent: &Intent,
         artifacts: Vec<String>,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, true)?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, true)?;
         self.require_checkbox(stage, &[CheckboxState::InProgress])?;
-        let material = GateOpened::new(self.slug_of(stage)?, artifacts);
-        self.commit(WorkflowExecutionEvent::GateOpened(material), occurred_at)
+        let material = GateOpened::new(self.slug_of(intent, stage)?, artifacts);
+        self.commit(
+            intent,
+            IntentExecutionEvent::GateOpened(material),
+            occurred_at,
+        )
     }
 
     /// 承認ゲートの通過 — `GateApproved`。フェーズ境界は**集約が自分の計画から導出する**。
     ///
     /// `open_gate` を省いた in-progress からの承認も受理する (BR1.3)。
     ///
-    /// 導出は [`WorkflowExecution::crossed_phase_boundary`] が持つ。呼出側 (ユースケース) は
+    /// 導出は [`IntentExecution::crossed_phase_boundary`] が持つ。呼出側 (ユースケース) は
     /// フロー制御だけを担い、判断は集約に閉じる (オーナー統一ルール「集約は FSM」)。
     ///
     /// # Errors
@@ -553,19 +501,24 @@ impl WorkflowExecution {
     /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反を拒否する。
     pub fn approve_gate(
         &mut self,
+        intent: &Intent,
         user_input: Option<String>,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, true)?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let material = GateApproved::new(
-            self.slug_of(stage)?,
+            self.slug_of(intent, stage)?,
             user_input,
-            self.next_in_scope_slug(stage),
-            self.crossed_phase_boundary(stage),
+            self.next_in_scope_slug(intent, stage),
+            self.crossed_phase_boundary(intent, stage),
         );
-        self.commit(WorkflowExecutionEvent::GateApproved(material), occurred_at)
+        self.commit(
+            intent,
+            IntentExecutionEvent::GateApproved(material),
+            occurred_at,
+        )
     }
 
     /// 承認ゲートでの差し戻し — `GateRejected`。改訂回数を +1 してイベントに載せる (BR1.4)。
@@ -575,18 +528,23 @@ impl WorkflowExecution {
     /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反を拒否する。
     pub fn reject_gate(
         &mut self,
+        intent: &Intent,
         feedback: Option<String>,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, true)?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let next = self
             .revision_count(stage)
             .ok_or(CommandError::InvalidTarget(stage))?
             .saturating_add(1);
-        let material = GateRejected::new(self.slug_of(stage)?, feedback, next);
-        self.commit(WorkflowExecutionEvent::GateRejected(material), occurred_at)
+        let material = GateRejected::new(self.slug_of(intent, stage)?, feedback, next);
+        self.commit(
+            intent,
+            IntentExecutionEvent::GateRejected(material),
+            occurred_at,
+        )
     }
 
     /// 差し戻し後のゲート再入 — `StageRevised`。
@@ -597,12 +555,17 @@ impl WorkflowExecution {
     /// (「only a revising stage can re-enter its gate」)。
     pub fn revise_stage(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &[CheckboxState::Revising])?;
-        let material = StageRevised::new(self.slug_of(stage)?);
-        self.commit(WorkflowExecutionEvent::StageRevised(material), occurred_at)
+        let material = StageRevised::new(self.slug_of(intent, stage)?);
+        self.commit(
+            intent,
+            IntentExecutionEvent::StageRevised(material),
+            occurred_at,
+        )
     }
 
     /// ステージの読み飛ばし — `StageSkipped` (CONDITIONAL または実効 SKIP のみ — BR1.5)。
@@ -613,18 +576,28 @@ impl WorkflowExecution {
     /// 拒否する。
     pub fn skip_stage(
         &mut self,
+        intent: &Intent,
         reason: String,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &SKIP_PRECONDITION)?;
-        let conditional = self.entry(stage).is_some_and(StageEntry::is_conditional);
+        let conditional = self
+            .entry(intent, stage)
+            .is_some_and(StageEntry::is_conditional);
         if !(conditional || self.effective_plan(stage) == Some(PlanAction::Skip)) {
             return Err(CommandError::NotSkippable(stage));
         }
-        let material =
-            StageSkipped::new(self.slug_of(stage)?, reason, self.next_in_scope_slug(stage));
-        self.commit(WorkflowExecutionEvent::StageSkipped(material), occurred_at)
+        let material = StageSkipped::new(
+            self.slug_of(intent, stage)?,
+            reason,
+            self.next_in_scope_slug(intent, stage),
+        );
+        self.commit(
+            intent,
+            IntentExecutionEvent::StageSkipped(material),
+            occurred_at,
+        )
     }
 
     /// カーソルの移動 — `Jumped` (BR1.6)。差分集合をイベントに載せ、承認の消去は適用側が
@@ -632,13 +605,14 @@ impl WorkflowExecution {
     ///
     /// # Errors
     ///
-    /// [`WorkflowExecution::jump_resolve`] と同じ (`NotRunning` / `InvalidTarget`)。
+    /// [`IntentExecution::jump_resolve`] と同じ (`NotRunning` / `InvalidTarget`)。
     pub fn jump(
         &mut self,
+        intent: &Intent,
         target: StageIndex,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let direction = self.jump_resolve(target)?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let direction = self.jump_resolve(intent, target)?;
         let source = self.cursor;
         let mut stages_reset = Vec::new();
         let mut stages_skipped = Vec::new();
@@ -652,7 +626,7 @@ impl WorkflowExecution {
                     let skip_current = value == source.to_usize() && marker.is_active();
                     let skip_between = value > source.to_usize() && marker.is_in_flight();
                     if skip_current || skip_between {
-                        stages_skipped.push(self.slug_of(stage)?);
+                        stages_skipped.push(self.slug_of(intent, stage)?);
                     }
                 }
             }
@@ -661,7 +635,7 @@ impl WorkflowExecution {
                     let stage = StageIndex::new(value);
                     if self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
                     {
-                        stages_reset.push(self.slug_of(stage)?);
+                        stages_reset.push(self.slug_of(intent, stage)?);
                     }
                 }
             }
@@ -669,12 +643,12 @@ impl WorkflowExecution {
         }
         let material = Jumped::new(
             direction,
-            self.slug_of(source)?,
-            self.slug_of(target)?,
+            self.slug_of(intent, source)?,
+            self.slug_of(intent, target)?,
             stages_reset,
             stages_skipped,
         );
-        self.commit(WorkflowExecutionEvent::Jumped(material), occurred_at)
+        self.commit(intent, IntentExecutionEvent::Jumped(material), occurred_at)
     }
 
     /// park マーカーの設置 — `Parked` (autonomous 下は拒否 — BR1.7)。
@@ -684,14 +658,15 @@ impl WorkflowExecution {
     /// 非受理 (`NotRunning`)、autonomous 中 (`RefusedUnderAutonomy`)。
     pub fn park(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let stage = self.guard_running_for(intent)?;
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
-        let material = Parked::new(self.slug_of(stage)?);
-        self.commit(WorkflowExecutionEvent::Parked(material), occurred_at)
+        let material = Parked::new(self.slug_of(intent, stage)?);
+        self.commit(intent, IntentExecutionEvent::Parked(material), occurred_at)
     }
 
     /// park マーカーの除去 — `Unparked`。位置は `parked_at` から復元される (BR1.7)。
@@ -701,12 +676,16 @@ impl WorkflowExecution {
     /// park が活性でなければ `NotRunning`。
     pub fn unpark(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
         if !self.parked_active() {
             return Err(CommandError::NotRunning);
         }
-        self.commit(WorkflowExecutionEvent::Unparked, occurred_at)
+        self.commit(intent, IntentExecutionEvent::Unparked, occurred_at)
     }
 
     /// 実効プランの再形成 — `Recomposed` (BR1.8)。反転対象は 1 件以上で、いずれかが不正なら
@@ -718,10 +697,11 @@ impl WorkflowExecution {
     /// (`InvalidTarget`)、pending 以外 (`CheckboxPrecondition`)。
     pub fn recompose(
         &mut self,
+        intent: &Intent,
         flips: &[StageIndex],
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        let cursor = self.guard_running()?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let cursor = self.guard_running_for(intent)?;
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
@@ -742,7 +722,7 @@ impl WorkflowExecution {
         let mut added = Vec::new();
         for &value in &targets {
             let stage = StageIndex::new(value);
-            let slug = self.slug_of(stage)?;
+            let slug = self.slug_of(intent, stage)?;
             match self.effective_plan(stage) {
                 Some(PlanAction::Execute) => skipped.push(slug),
                 Some(PlanAction::Skip) => added.push(slug),
@@ -756,10 +736,17 @@ impl WorkflowExecution {
             .iter()
             .enumerate()
             .filter(|(_, action)| **action == PlanAction::Execute)
-            .filter_map(|(index, _)| self.stages.get(index).map(|entry| entry.slug().clone()))
+            .filter_map(|(index, _)| {
+                self.entry(intent, StageIndex::new(index))
+                    .map(|entry| entry.slug().clone())
+            })
             .collect();
         let material = Recomposed::new(skipped, added, stages_in_scope);
-        self.commit(WorkflowExecutionEvent::Recomposed(material), occurred_at)
+        self.commit(
+            intent,
+            IntentExecutionEvent::Recomposed(material),
+            occurred_at,
+        )
     }
 
     /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
@@ -777,12 +764,14 @@ impl WorkflowExecution {
     /// 非受理なら `NotRunning`。
     pub fn switch_autonomy(
         &mut self,
+        intent: &Intent,
         mode: AutonomyMode,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommandError> {
-        self.guard_running()?;
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        self.guard_running_for(intent)?;
         self.commit(
-            WorkflowExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(mode)),
+            intent,
+            IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(mode)),
             occurred_at,
         )
     }
@@ -804,10 +793,14 @@ impl WorkflowExecution {
     /// `usize::MAX` で後続を数えられない (`SequenceExhausted`) を拒否する。
     pub fn apply_event(
         &mut self,
+        intent: &Intent,
         seq_nr: usize,
         occurred_at: DateTime<Utc>,
-        event: &WorkflowExecutionEvent,
+        event: &IntentExecutionEvent,
     ) -> Result<(), ApplyError> {
+        if !self.matches(intent) {
+            return Err(ApplyError::IntentMismatch);
+        }
         let Some(expected) = self.seq_nr.checked_add(1) else {
             return Err(ApplyError::SequenceExhausted);
         };
@@ -818,95 +811,95 @@ impl WorkflowExecution {
             });
         }
         let mut next = self.clone();
-        next.mutate(event)?;
+        next.mutate(intent, event)?;
         next.seq_nr = seq_nr;
         next.last_updated_at = occurred_at;
-        next.check_invariants()
+        next.check_invariants(intent)
             .map_err(ApplyError::InvariantViolation)?;
         *self = next;
         Ok(())
     }
 
     /// 12 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
-    fn mutate(&mut self, event: &WorkflowExecutionEvent) -> Result<(), ApplyError> {
+    fn mutate(&mut self, intent: &Intent, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
-            WorkflowExecutionEvent::Started(_) => {
+            IntentExecutionEvent::Started(_) => {
                 // `Started` は genesis 専用 — 既存の集約には適用できない (BR2.2)。
                 return Err(ApplyError::InvariantViolation(
                     "Started applies only at genesis".to_string(),
                 ));
             }
-            WorkflowExecutionEvent::StageCompleted(completed) => {
-                let stage = self.resolve(completed.stage())?;
+            IntentExecutionEvent::StageCompleted(completed) => {
+                let stage = IntentExecution::resolve(intent, completed.stage())?;
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(completed.next_stage())?;
+                self.advance(intent, completed.next_stage())?;
             }
-            WorkflowExecutionEvent::GateOpened(opened) => {
-                let stage = self.resolve(opened.stage())?;
+            IntentExecutionEvent::GateOpened(opened) => {
+                let stage = IntentExecution::resolve(intent, opened.stage())?;
                 self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
-            WorkflowExecutionEvent::GateApproved(approved) => {
-                let stage = self.resolve(approved.stage())?;
+            IntentExecutionEvent::GateApproved(approved) => {
+                let stage = IntentExecution::resolve(intent, approved.stage())?;
                 self.record_approval(stage);
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(approved.next_stage())?;
+                self.advance(intent, approved.next_stage())?;
             }
-            WorkflowExecutionEvent::GateRejected(rejected) => {
-                let stage = self.resolve(rejected.stage())?;
+            IntentExecutionEvent::GateRejected(rejected) => {
+                let stage = IntentExecution::resolve(intent, rejected.stage())?;
                 self.mark_stage(stage, CheckboxState::Revising);
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = rejected.revision_count();
                 }
             }
-            WorkflowExecutionEvent::StageRevised(revised) => {
-                let stage = self.resolve(revised.stage())?;
+            IntentExecutionEvent::StageRevised(revised) => {
+                let stage = IntentExecution::resolve(intent, revised.stage())?;
                 self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
-            WorkflowExecutionEvent::StageSkipped(skipped) => {
-                let stage = self.resolve(skipped.stage())?;
+            IntentExecutionEvent::StageSkipped(skipped) => {
+                let stage = IntentExecution::resolve(intent, skipped.stage())?;
                 self.mark_stage(stage, CheckboxState::Skipped);
-                self.advance(skipped.next_stage())?;
+                self.advance(intent, skipped.next_stage())?;
             }
-            WorkflowExecutionEvent::Jumped(jumped) => {
-                self.apply_jump(jumped)?;
+            IntentExecutionEvent::Jumped(jumped) => {
+                self.apply_jump(intent, jumped)?;
             }
-            WorkflowExecutionEvent::Parked(parked) => {
-                let stage = self.resolve(parked.stage())?;
+            IntentExecutionEvent::Parked(parked) => {
+                let stage = IntentExecution::resolve(intent, parked.stage())?;
                 self.parked_at = Some(stage);
             }
-            WorkflowExecutionEvent::Unparked => {
+            IntentExecutionEvent::Unparked => {
                 self.parked_at = None;
             }
-            WorkflowExecutionEvent::Recomposed(recomposed) => {
+            IntentExecutionEvent::Recomposed(recomposed) => {
                 for slug in recomposed.skipped() {
-                    let stage = self.resolve(slug)?;
+                    let stage = IntentExecution::resolve(intent, slug)?;
                     if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Skip;
                     }
                 }
                 for slug in recomposed.added() {
-                    let stage = self.resolve(slug)?;
+                    let stage = IntentExecution::resolve(intent, slug)?;
                     if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Execute;
                     }
                 }
             }
-            WorkflowExecutionEvent::AutonomyModeSet(set) => {
+            IntentExecutionEvent::AutonomyModeSet(set) => {
                 self.autonomy = set.mode();
             }
         }
         Ok(())
     }
 
-    fn apply_jump(&mut self, jumped: &Jumped) -> Result<(), ApplyError> {
-        let source = self.resolve(jumped.source())?;
-        let target = self.resolve(jumped.target())?;
+    fn apply_jump(&mut self, intent: &Intent, jumped: &Jumped) -> Result<(), ApplyError> {
+        let source = IntentExecution::resolve(intent, jumped.source())?;
+        let target = IntentExecution::resolve(intent, jumped.target())?;
         for slug in jumped.stages_reset() {
-            let stage = self.resolve(slug)?;
+            let stage = IntentExecution::resolve(intent, slug)?;
             self.mark_stage(stage, CheckboxState::Pending);
         }
         for slug in jumped.stages_skipped() {
-            let stage = self.resolve(slug)?;
+            let stage = IntentExecution::resolve(intent, slug)?;
             self.mark_stage(stage, CheckboxState::Skipped);
         }
         match jumped.direction() {
@@ -925,10 +918,14 @@ impl WorkflowExecution {
     }
 
     /// 完了・スキップの後段 — 次の in-scope ステージへ進むか、無ければ完了する (BR1.5)。
-    fn advance(&mut self, next_stage: Option<&StageSlug>) -> Result<(), ApplyError> {
+    fn advance(
+        &mut self,
+        intent: &Intent,
+        next_stage: Option<&StageSlug>,
+    ) -> Result<(), ApplyError> {
         match next_stage {
             Some(slug) => {
-                let stage = self.resolve(slug)?;
+                let stage = IntentExecution::resolve(intent, slug)?;
                 self.mark_stage(stage, CheckboxState::InProgress);
                 self.cursor = stage;
             }
@@ -939,7 +936,11 @@ impl WorkflowExecution {
 
     /// 集約不変条件 (Quint の cursor_in_scope / at_most_one_active / no_gate_bypass /
     /// parked_position と長さ整合)。材料は不変条件名で、文言はアダプタ層の責務。
-    fn check_invariants(&self) -> Result<(), String> {
+    /// intent を要さない実行時の不変条件 — 長さ・通番・カーソル・park・active の数。
+    ///
+    /// 写し (memento) から復元する経路はこれだけを検査できる。計画を要する検査
+    /// (`no_gate_bypass`) は `&Intent` が渡る [`IntentExecution::check_invariants`] が担う。
+    fn check_runtime_invariants(&self) -> Result<(), String> {
         let count = self.stage_count();
         if count == 0 {
             return Err("stage count is zero".to_string());
@@ -971,51 +972,54 @@ impl WorkflowExecution {
         if self.accepts_commands() && !self.in_scope(self.cursor) {
             return Err("cursor_in_scope".to_string());
         }
-        let mut active = 0_usize;
-        for value in 0..count {
-            let stage = StageIndex::new(value);
-            let Some(marker) = self.checkbox(stage) else {
-                continue;
-            };
-            if marker.is_active() {
-                active += 1;
-            }
-            if self.is_gated(stage)
-                && marker == CheckboxState::Completed
-                && self.approved(stage) != Some(true)
-            {
-                return Err(format!("no_gate_bypass at stage {value}"));
-            }
-        }
+        let active = (0..count)
+            .filter_map(|value| self.checkbox(StageIndex::new(value)))
+            .filter(|marker| marker.is_active())
+            .count();
         if active > 1 {
             return Err(format!("at_most_one_active: {active}"));
         }
         Ok(())
     }
 
+    /// 実行時の不変条件に、計画を要する `no_gate_bypass` を足した全検査。
+    fn check_invariants(&self, intent: &Intent) -> Result<(), String> {
+        self.check_runtime_invariants()?;
+        for value in 0..self.stage_count() {
+            let stage = StageIndex::new(value);
+            if self.is_gated(intent, stage)
+                && self.checkbox(stage) == Some(CheckboxState::Completed)
+                && self.approved(stage) != Some(true)
+            {
+                return Err(format!("no_gate_bypass at stage {value}"));
+            }
+        }
+        Ok(())
+    }
+
     // ---- W3: 状態の写し (memento) (BR5.2 / BR5.3) ----
 
-    /// 全状態を値オブジェクトへ写す。`plan` / `conditional` は解決済み計画からの展開 (C6 の列構成)。
+    /// 全状態を値オブジェクトへ写す (永続化境界を渡る唯一の形)。
+    ///
+    /// **公開**である (改訂 9) — 直列化を担うのはアダプタ層で、その DTO がこの写しを読む
+    /// (`coding-rules/domain-persistence-neutrality.md`)。
     #[must_use]
-    pub fn state(&self) -> WorkflowExecutionState {
-        WorkflowExecutionState {
-            intent_id: self.intent_id.clone(),
-            definition_id: self.definition_id.clone(),
-            definition_revision: self.definition_revision.clone(),
-            plan: self.stages.iter().map(StageEntry::plan_action).collect(),
-            conditional: self.stages.iter().map(StageEntry::is_conditional).collect(),
-            stages: self.stages.clone(),
-            overlay: self.overlay.clone(),
-            checkbox: self.checkbox.clone(),
-            cursor: self.cursor.to_usize(),
-            status: self.status,
-            parked_at: self.parked_at.map(StageIndex::to_usize),
-            autonomy: self.autonomy,
-            approved: self.approved.clone(),
-            revision_count: self.revision_count.clone(),
-            seq_nr: self.seq_nr,
-            last_updated_at: self.last_updated_at,
-        }
+    pub fn snapshot(&self) -> IntentExecutionSnapshot {
+        IntentExecutionSnapshotBuilder::new(
+            self.id.clone(),
+            self.intent_id.clone(),
+            self.overlay.clone(),
+        )
+        .checkbox(self.checkbox.clone())
+        .cursor(self.cursor.to_usize())
+        .status(self.status)
+        .parked_at(self.parked_at.map(StageIndex::to_usize))
+        .autonomy(self.autonomy)
+        .approved(self.approved.clone())
+        .revision_count(self.revision_count.clone())
+        .seq_nr(self.seq_nr)
+        .last_updated_at(self.last_updated_at)
+        .build()
     }
 
     /// 状態の写し (memento) から集約を復元する (不変条件を検査する唯一の再水和経路)。
@@ -1025,35 +1029,10 @@ impl WorkflowExecution {
     /// 長さ不一致・`plan` / `conditional` と解決済み計画の食い違い・範囲外カーソル・
     /// `cursor_in_scope` / `at_most_one_active` / `no_gate_bypass` / `parked_position` の違反・
     /// `seq_nr` = 0 を `InvariantViolation` で拒否する。
-    pub fn from_state(state: WorkflowExecutionState) -> Result<WorkflowExecution, StateError> {
-        let count = state.stages.len();
-        if state.plan.len() != count {
-            return Err(StateError::InvariantViolation(
-                "length mismatch: plan".to_string(),
-            ));
-        }
-        if state.conditional.len() != count {
-            return Err(StateError::InvariantViolation(
-                "length mismatch: conditional".to_string(),
-            ));
-        }
-        for (index, entry) in state.stages.iter().enumerate() {
-            if state.plan.get(index).copied() != Some(entry.plan_action()) {
-                return Err(StateError::InvariantViolation(format!(
-                    "plan disagrees with stages at {index}"
-                )));
-            }
-            if state.conditional.get(index).copied() != Some(entry.is_conditional()) {
-                return Err(StateError::InvariantViolation(format!(
-                    "conditional disagrees with stages at {index}"
-                )));
-            }
-        }
-        let execution = WorkflowExecution {
+    pub fn from_snapshot(state: IntentExecutionSnapshot) -> Result<IntentExecution, SnapshotError> {
+        let execution = IntentExecution {
+            id: state.id,
             intent_id: state.intent_id,
-            definition_id: state.definition_id,
-            definition_revision: state.definition_revision,
-            stages: state.stages,
             overlay: state.overlay,
             checkbox: state.checkbox,
             cursor: StageIndex::new(state.cursor),
@@ -1065,9 +1044,11 @@ impl WorkflowExecution {
             seq_nr: state.seq_nr,
             last_updated_at: state.last_updated_at,
         };
+        // 写しには計画が載らないので、ここで検査できるのは実行時の不変条件だけである。
+        // 計画を要する `no_gate_bypass` は、`&Intent` を受け取るコマンド・適用の側で見る。
         execution
-            .check_invariants()
-            .map_err(StateError::InvariantViolation)?;
+            .check_runtime_invariants()
+            .map_err(SnapshotError::InvariantViolation)?;
         Ok(execution)
     }
 
@@ -1083,12 +1064,16 @@ impl WorkflowExecution {
     /// 引数の定義 id が `definition_id` と異なれば `DefinitionMismatch` (revision の差は Ok — BR2.6)。
     pub fn next_decision(
         &self,
+        intent: &Intent,
         definition: &WorkflowDefinition,
         request: &NextRequest,
     ) -> Result<NextDecision, CommandError> {
-        if definition.id() != &self.definition_id {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        if definition.id() != intent.definition_id() {
             return Err(CommandError::DefinitionMismatch {
-                expected: self.definition_id.clone(),
+                expected: intent.definition_id().clone(),
                 actual: definition.id().clone(),
             });
         }
@@ -1129,13 +1114,13 @@ impl WorkflowExecution {
             }
             return Ok(NextDecision::RunStage {
                 stage: cursor,
-                gate: self.is_gated(cursor),
+                gate: self.is_gated(intent, cursor),
             });
         }
         Ok(match self.next_in_scope(cursor) {
             Some(stage) => NextDecision::RunStage {
                 stage,
-                gate: self.is_gated(stage),
+                gate: self.is_gated(intent, stage),
             },
             None => NextDecision::Done,
         })
@@ -1147,7 +1132,14 @@ impl WorkflowExecution {
     ///
     /// 非受理 (`NotRunning`)、範囲外・initialization・スコープ外ターゲット、initialization カーソルの
     /// redo (`InvalidTarget`) を拒否する。
-    pub fn jump_resolve(&self, target: StageIndex) -> Result<JumpDirection, CommandError> {
+    pub fn jump_resolve(
+        &self,
+        intent: &Intent,
+        target: StageIndex,
+    ) -> Result<JumpDirection, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
@@ -1158,12 +1150,12 @@ impl WorkflowExecution {
         match direction {
             // INIT_JUMP_ERROR: initialization フェーズのステージへは跳べない。scope 外も不可。
             JumpDirection::Forward | JumpDirection::Backward => {
-                if !self.is_gated(target) || !self.in_scope(target) {
+                if !self.is_gated(intent, target) || !self.in_scope(target) {
                     return Err(CommandError::InvalidTarget(target));
                 }
             }
             JumpDirection::Redo => {
-                if !self.is_gated(self.cursor) {
+                if !self.is_gated(intent, self.cursor) {
                     return Err(CommandError::InvalidTarget(target));
                 }
             }
@@ -1189,22 +1181,6 @@ impl WorkflowExecution {
     }
 }
 
-/// 直列化の入口 (serde の `into`)。中身は [`WorkflowExecution::state`] そのものである。
-impl From<WorkflowExecution> for WorkflowExecutionState {
-    fn from(execution: WorkflowExecution) -> WorkflowExecutionState {
-        execution.state()
-    }
-}
-
-/// 復号の入口 (serde の `try_from`)。[`WorkflowExecution::from_state`] の検査点を通る。
-impl TryFrom<WorkflowExecutionState> for WorkflowExecution {
-    type Error = StateError;
-
-    fn try_from(state: WorkflowExecutionState) -> Result<WorkflowExecution, StateError> {
-        WorkflowExecution::from_state(state)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
@@ -1214,10 +1190,10 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{
-        ApplyError, AutonomyMode, CommandError, EngineSignal, IntentId, JumpDirection,
-        NextDecision, NextRequest, PhaseBoundary, StageCompleted, StageEntry, StageIndex,
-        StartError, StartRequest, Started, StateError, Status, WorkflowExecutionEvent,
-        WorkflowExecutionStateBuilder,
+        ApplyError, AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError,
+        IntentEvent, IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection,
+        NextDecision, NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageDisplay,
+        StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -1243,8 +1219,172 @@ mod tests {
         StageSlug::parse(&format!("stage-{i}")).unwrap()
     }
 
-    fn intent() -> IntentId {
+    fn intent_id() -> IntentId {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    }
+
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap()
+    }
+
+    /// 実行と、その計画を持つ intent を束ねたテストフィクスチャ。
+    ///
+    /// 本番のコマンド・クエリは `&Intent` を引数で受け取る
+    /// (`coding-rules/aggregate-references.md`) が、テストでは実行と intent が常に対で動くので、
+    /// 束ねて転送する。intent を要さない面は `Deref` でそのまま集約へ抜ける。取り違えガード
+    /// そのものを見るテストは、この転送を通さず生の API を直に呼ぶ。
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct Run {
+        intent: Intent,
+        execution: IntentExecution,
+    }
+
+    impl std::ops::Deref for Run {
+        type Target = IntentExecution;
+
+        fn deref(&self) -> &IntentExecution {
+            &self.execution
+        }
+    }
+
+    impl Run {
+        fn start(intent: Intent) -> Run {
+            let (execution, _) = IntentExecution::start(execution_id(), intent.clone(), occurred());
+            Run { intent, execution }
+        }
+
+        fn genesis(intent: Intent) -> (Run, IntentExecutionEvent) {
+            let (execution, event) =
+                IntentExecution::start(execution_id(), intent.clone(), occurred());
+            (Run { intent, execution }, event)
+        }
+
+        fn stages(&self) -> &[StageEntry] {
+            self.intent.stages()
+        }
+
+        fn definition_id(&self) -> &WorkflowDefinitionId {
+            self.intent.definition_id()
+        }
+
+        fn definition_revision(&self) -> &DefinitionRevision {
+            self.intent.definition_revision()
+        }
+
+        fn gated(&self, stage: StageIndex) -> Option<bool> {
+            self.execution.gated(&self.intent, stage)
+        }
+
+        fn complete_stage(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.complete_stage(&self.intent, occurred_at)
+        }
+
+        fn open_gate(
+            &mut self,
+            artifacts: Vec<String>,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .open_gate(&self.intent, artifacts, occurred_at)
+        }
+
+        fn approve_gate(
+            &mut self,
+            user_input: Option<String>,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .approve_gate(&self.intent, user_input, occurred_at)
+        }
+
+        fn reject_gate(
+            &mut self,
+            feedback: Option<String>,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .reject_gate(&self.intent, feedback, occurred_at)
+        }
+
+        fn revise_stage(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.revise_stage(&self.intent, occurred_at)
+        }
+
+        fn skip_stage(
+            &mut self,
+            reason: String,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.skip_stage(&self.intent, reason, occurred_at)
+        }
+
+        fn jump(
+            &mut self,
+            target: StageIndex,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.jump(&self.intent, target, occurred_at)
+        }
+
+        fn park(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.park(&self.intent, occurred_at)
+        }
+
+        fn unpark(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.unpark(&self.intent, occurred_at)
+        }
+
+        fn recompose(
+            &mut self,
+            flips: &[StageIndex],
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.recompose(&self.intent, flips, occurred_at)
+        }
+
+        fn switch_autonomy(
+            &mut self,
+            mode: AutonomyMode,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .switch_autonomy(&self.intent, mode, occurred_at)
+        }
+
+        fn apply_event(
+            &mut self,
+            seq_nr: usize,
+            occurred_at: DateTime<Utc>,
+            event: &IntentExecutionEvent,
+        ) -> Result<(), ApplyError> {
+            self.execution
+                .apply_event(&self.intent, seq_nr, occurred_at, event)
+        }
+
+        fn next_decision(
+            &self,
+            definition: &WorkflowDefinition,
+            request: NextRequest,
+        ) -> Result<NextDecision, CommandError> {
+            self.execution
+                .next_decision(&self.intent, definition, &request)
+        }
+
+        fn jump_resolve(&self, target: StageIndex) -> Result<JumpDirection, CommandError> {
+            self.execution.jump_resolve(&self.intent, target)
+        }
     }
 
     fn def_id(value: &str) -> WorkflowDefinitionId {
@@ -1298,27 +1438,30 @@ mod tests {
         .unwrap()
     }
 
-    fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> WorkflowExecution {
-        WorkflowExecution::start_from_plan_unchecked(
-            intent(),
+    /// 合成計画から intent を組む (検査は `Intent::from_material` の 1 か所)。
+    fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
+        Intent::from_material(
+            intent_id(),
             def_id("claude"),
             revision('0'),
-            &start_request(),
+            start_request(),
             entries(init, actions, conditional),
             scan(),
-            occurred(),
         )
         .unwrap()
-        .0
     }
 
-    fn all_exec(n: usize) -> WorkflowExecution {
+    fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Run {
+        Run::start(plan(init, actions, conditional))
+    }
+
+    fn all_exec(n: usize) -> Run {
         start_with(1, &vec![Execute; n], &vec![false; n])
     }
 
     /// フェーズと実効プランを名指しした合成計画で開始する (フェーズ境界の導出を見るテスト用)。
-    fn start_from_phased_plan(plan: &[(PhaseId, PlanAction)]) -> WorkflowExecution {
-        let stages = plan
+    fn start_from_phased_plan(phased: &[(PhaseId, PlanAction)]) -> Run {
+        let stages = phased
             .iter()
             .enumerate()
             .map(|(i, (phase, action))| {
@@ -1331,42 +1474,53 @@ mod tests {
                 )
             })
             .collect();
-        WorkflowExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            stages,
-            scan(),
-            occurred(),
+        Run::start(
+            Intent::from_material(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            )
+            .unwrap(),
         )
-        .unwrap()
-        .0
     }
 
     /// 全ステージ EXECUTE の、フェーズだけ名指しした合成計画。
-    fn phased(phases: &[PhaseId]) -> WorkflowExecution {
+    fn phased(phases: &[PhaseId]) -> Run {
         let plan: Vec<(PhaseId, PlanAction)> =
             phases.iter().map(|phase| (*phase, Execute)).collect();
         start_from_phased_plan(&plan)
     }
 
+    /// 定義から計画を解決して実行を開始する (旧 7 引数の genesis に相当)。
+    fn start_from_definition(
+        definition: &WorkflowDefinition,
+        request: StartRequest,
+    ) -> (Run, IntentExecutionEvent) {
+        // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに要るのは対の左である
+        // (改訂 8 / coding-rules/aggregate-commands.md)。
+        let (intent, _created) = Intent::resolve(intent_id(), definition, request, scan()).unwrap();
+        Run::genesis(intent)
+    }
+
     /// カーソルのゲートを承認し、生まれた `GateApproved` が載せた境界を取り出す。
-    fn approval_boundary(w: &mut WorkflowExecution) -> Option<PhaseBoundary> {
+    fn approval_boundary(w: &mut Run) -> Option<PhaseBoundary> {
         let event = w.approve_gate(None, occurred()).unwrap();
-        let WorkflowExecutionEvent::GateApproved(approved) = &event else {
+        let IntentExecutionEvent::GateApproved(approved) = &event else {
             panic!("expected GateApproved");
         };
         approved.phase_boundary()
     }
 
-    fn at(w: &WorkflowExecution, i: usize) -> StageIndex {
+    fn at(w: &IntentExecution, i: usize) -> StageIndex {
         w.stage_index(i).unwrap()
     }
 
     /// `next_decision` の第 2 引数用の最小定義 (id の照合にしか使われない — BR3.1)。
     fn bare_definition(id: &str) -> WorkflowDefinition {
-        WorkflowDefinition::new(
+        WorkflowDefinition::from_artifacts(
             def_id(id),
             revision('0'),
             StageGraph::new(Vec::new()).unwrap(),
@@ -1417,7 +1571,7 @@ mod tests {
         )]
         .into_iter()
         .collect();
-        WorkflowDefinition::new(def_id("claude"), revision('a'), graph, grid, scopes)
+        WorkflowDefinition::from_artifacts(def_id("claude"), revision('a'), graph, grid, scopes)
     }
 
     fn full_grid() -> ScopeGrid {
@@ -1431,21 +1585,52 @@ mod tests {
         ScopeGrid::new([("classic".to_string(), column)].into_iter().collect())
     }
 
+    /// intent の解決済み計画をそのまま実効プランへ写す (birth 時の overlay)。
+    fn birth_overlay(intent: &Intent) -> Vec<PlanAction> {
+        intent
+            .stages()
+            .iter()
+            .map(StageEntry::plan_action)
+            .collect()
+    }
+
     // ---- W1: start (BR2.2 / BR2.6) ----
+
+    #[test]
+    fn an_execution_starts_from_the_left_of_the_intent_create_pair() {
+        // 改訂 8: `Intent` も集約なので genesis は対を返す。実行を起こすのに渡すのは
+        // **対の左** (集約インスタンス) であり、誕生イベントは呼出側が `store` へ回す。
+        let (intent, created) = Intent::resolve(
+            intent_id(),
+            &shipped_definition(full_grid()),
+            start_request(),
+            scan(),
+        )
+        .unwrap();
+        assert_eq!(created, IntentEvent::Created(Created::new(intent.clone())));
+
+        let (execution, started) =
+            IntentExecution::start(execution_id(), intent.clone(), occurred());
+        assert_eq!(execution.intent_id(), intent.id());
+        let IntentExecutionEvent::Started(started) = &started else {
+            panic!("start must emit Started");
+        };
+        // `Started` は intent を丸ごと運ぶ現行形のままである (BR2.2 自己完結)。
+        assert_eq!(started.intent(), &intent);
+    }
 
     #[test]
     fn start_records_the_definition_identity_and_the_resolved_plan() {
         let definition = shipped_definition(full_grid());
-        let (w, event) =
-            WorkflowExecution::start(intent(), &definition, &start_request(), scan(), occurred())
-                .unwrap();
+        let (w, event) = start_from_definition(&definition, start_request());
 
         // 通番・発生時刻・識別子は封筒 (アダプタ層) の材料であり、イベント自身は持たない。
         // genesis 直後の集約がその 3 点を保持している (B7)。
         assert_eq!(w.seq_nr(), 1);
         assert_eq!(w.last_updated_at(), &occurred());
-        assert_eq!(w.intent_id(), &intent());
-        let WorkflowExecutionEvent::Started(started) = &event else {
+        assert_eq!(w.id(), &execution_id());
+        assert_eq!(w.intent_id(), &intent_id());
+        let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
         assert_eq!(started.definition_id(), definition.id());
@@ -1477,9 +1662,8 @@ mod tests {
         let request = StartRequest::new("classic", "build it")
             .with_depth("standard")
             .with_test_strategy("comprehensive");
-        let (_, event) =
-            WorkflowExecution::start(intent(), &definition, &request, scan(), occurred()).unwrap();
-        let WorkflowExecutionEvent::Started(started) = &event else {
+        let (_, event) = start_from_definition(&definition, request);
+        let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
         assert_eq!(started.scope(), "classic");
@@ -1489,9 +1673,8 @@ mod tests {
 
         // 省略時は None のまま載る (フラグ未指定 = 既定の解決は呼出側の責務)。
         let bare = StartRequest::new("classic", "build it");
-        let (_, plain) =
-            WorkflowExecution::start(intent(), &definition, &bare, scan(), occurred()).unwrap();
-        let WorkflowExecutionEvent::Started(started) = &plain else {
+        let (_, plain) = start_from_definition(&definition, bare);
+        let IntentExecutionEvent::Started(started) = &plain else {
             panic!("start must emit Started");
         };
         assert_eq!(started.depth(), None);
@@ -1502,9 +1685,8 @@ mod tests {
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
         let unknown = StartRequest::new("nope", "build it");
-        let err = WorkflowExecution::start(intent(), &definition, &unknown, scan(), occurred())
-            .unwrap_err();
-        let StartError::UnknownScope(scope) = err else {
+        let err = Intent::resolve(intent_id(), &definition, unknown, scan()).unwrap_err();
+        let IntentError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
         assert_eq!(scope.scope(), "nope");
@@ -1519,76 +1701,141 @@ mod tests {
                 .into_iter()
                 .collect();
         let grid = ScopeGrid::new([("classic".to_string(), column)].into_iter().collect());
-        let (w, _) = WorkflowExecution::start(
-            intent(),
-            &shipped_definition(grid),
-            &start_request(),
-            scan(),
-            occurred(),
-        )
-        .unwrap();
+        let (w, _) = start_from_definition(&shipped_definition(grid), start_request());
         assert_eq!(w.effective_plan(at(&w, 1)), Some(Skip));
         assert_eq!(w.effective_plan(at(&w, 2)), Some(Skip));
     }
 
-    #[test]
-    fn an_empty_stage_list_is_refused() {
-        let err = WorkflowExecution::start_from_plan_unchecked(
-            intent(),
+    // 計画そのものの不変条件（空・initialization の SKIP / CONDITIONAL・先頭 SKIP）は
+    // `Intent::from_material` が持つようになったので、その拒否のテストは `intent.rs` にある。
+
+    // ---- 取り違えガード (aggregate-references.md — ID 参照だから照合が書ける) ----
+
+    /// 同じ形の計画を、**別の intent 識別子**で組む。
+    fn foreign_plan(n: usize) -> Intent {
+        Intent::from_material(
+            IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             def_id("claude"),
             revision('0'),
-            &start_request(),
-            Vec::new(),
+            start_request(),
+            entries(1, &vec![Execute; n], &vec![false; n]),
             scan(),
-            occurred(),
         )
-        .unwrap_err();
-        assert_eq!(err, StartError::Empty);
+        .unwrap()
     }
 
     #[test]
-    fn an_initialization_stage_that_folds_to_skip_is_refused() {
-        let err = WorkflowExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            entries(2, &[Execute, Skip, Execute], &[false, false, false]),
-            scan(),
-            occurred(),
-        )
-        .unwrap_err();
-        assert_eq!(err, StartError::InitializationMustExecute);
+    fn a_command_refuses_an_intent_that_belongs_to_another_intent() {
+        let mut w = all_exec(3);
+        assert_eq!(
+            w.execution
+                .complete_stage(&foreign_plan(3), occurred())
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(w.seq_nr(), 1, "拒否では状態が動かない");
     }
 
     #[test]
-    fn a_conditional_initialization_stage_is_refused() {
-        let err = WorkflowExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            entries(1, &[Execute, Execute], &[true, false]),
-            scan(),
-            occurred(),
-        )
-        .unwrap_err();
-        assert_eq!(err, StartError::InitializationMustBeUnconditional);
+    fn a_command_refuses_an_intent_whose_plan_length_disagrees() {
+        // 同じ intent でも、実行時ベクトルと計画の長さが食い違う写しは受け取らない。
+        let mut w = all_exec(3);
+        let shorter = plan(1, &[Execute, Execute], &[false, false]);
+        assert_eq!(shorter.id(), w.intent_id(), "識別子は一致している前提");
+        assert_eq!(
+            w.execution
+                .complete_stage(&shorter, occurred())
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
     }
 
     #[test]
-    fn a_first_stage_outside_scope_is_refused_because_the_cursor_must_be_in_scope() {
-        let err = WorkflowExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            entries(0, &[Skip, Execute], &[false, false]),
-            scan(),
-            occurred(),
-        )
-        .unwrap_err();
-        assert_eq!(err, StartError::InitializationMustExecute);
+    fn every_intent_taking_command_refuses_a_foreign_intent() {
+        let mut w = all_exec(3);
+        let foreign = foreign_plan(3);
+        let at0 = occurred();
+        assert_eq!(
+            w.execution
+                .open_gate(&foreign, Vec::new(), at0)
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.approve_gate(&foreign, None, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.reject_gate(&foreign, None, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.revise_stage(&foreign, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution
+                .skip_stage(&foreign, "x".to_string(), at0)
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.park(&foreign, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.unpark(&foreign, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.recompose(&foreign, &[], at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution
+                .switch_autonomy(&foreign, AutonomyMode::Autonomous, at0)
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        let target = at(&w, 1);
+        assert_eq!(
+            w.execution.jump(&foreign, target, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+    }
+
+    #[test]
+    fn the_queries_that_need_the_plan_refuse_a_foreign_intent() {
+        let w = all_exec(3);
+        let foreign = foreign_plan(3);
+        let definition = bare_definition("claude");
+        assert_eq!(
+            w.execution
+                .next_decision(&foreign, &definition, &NextRequest::default()),
+            Err(CommandError::IntentMismatch)
+        );
+        assert_eq!(
+            w.execution.jump_resolve(&foreign, at(&w, 1)),
+            Err(CommandError::IntentMismatch)
+        );
+        assert_eq!(
+            w.execution.gated(&foreign, at(&w, 1)),
+            None,
+            "ゲート付きかは他人の計画からは答えない"
+        );
+    }
+
+    #[test]
+    fn apply_event_refuses_a_foreign_intent() {
+        let mut w = all_exec(3);
+        let event =
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
+        assert_eq!(
+            w.execution
+                .apply_event(&foreign_plan(3), 2, occurred(), &event),
+            Err(ApplyError::IntentMismatch)
+        );
+        assert_eq!(w.seq_nr(), 1, "拒否では状態が動かない");
     }
 
     // ---- W2: 12 コマンド (BR1.0〜BR1.9) ----
@@ -1639,7 +1886,7 @@ mod tests {
         w.complete_stage(occurred()).unwrap();
         // open_gate を省いた in-progress からの承認も受理する (BR1.3)。
         let event = w.approve_gate(Some("ok".to_string()), occurred()).unwrap();
-        let WorkflowExecutionEvent::GateApproved(approved) = &event else {
+        let IntentExecutionEvent::GateApproved(approved) = &event else {
             panic!("expected GateApproved");
         };
         assert_eq!(approved.user_input(), Some("ok"));
@@ -1672,7 +1919,7 @@ mod tests {
         let mut w = all_exec(3);
         w.complete_stage(occurred()).unwrap();
         let first = w.reject_gate(Some("redo".to_string()), occurred()).unwrap();
-        let WorkflowExecutionEvent::GateRejected(rejected) = &first else {
+        let IntentExecutionEvent::GateRejected(rejected) = &first else {
             panic!("expected GateRejected");
         };
         assert_eq!(rejected.revision_count(), 1);
@@ -1694,7 +1941,7 @@ mod tests {
         );
         w.approve_gate(None, occurred()).unwrap();
         let event = w.skip_stage("conditional".to_string(), occurred()).unwrap();
-        let WorkflowExecutionEvent::StageSkipped(skipped) = &event else {
+        let IntentExecutionEvent::StageSkipped(skipped) = &event else {
             panic!("expected StageSkipped");
         };
         assert_eq!(skipped.reason(), "conditional");
@@ -1709,7 +1956,7 @@ mod tests {
         w.complete_stage(occurred()).unwrap();
         let target = at(&w, 3);
         let event = w.jump(target, occurred()).unwrap();
-        let WorkflowExecutionEvent::Jumped(jumped) = &event else {
+        let IntentExecutionEvent::Jumped(jumped) = &event else {
             panic!("expected Jumped");
         };
         assert_eq!(jumped.direction(), JumpDirection::Forward);
@@ -1731,7 +1978,7 @@ mod tests {
         w.approve_gate(None, occurred()).unwrap();
         let target = at(&w, 1);
         let event = w.jump(target, occurred()).unwrap();
-        let WorkflowExecutionEvent::Jumped(jumped) = &event else {
+        let IntentExecutionEvent::Jumped(jumped) = &event else {
             panic!("expected Jumped");
         };
         assert_eq!(jumped.direction(), JumpDirection::Backward);
@@ -1784,7 +2031,7 @@ mod tests {
         let mut w = all_exec(3);
         w.complete_stage(occurred()).unwrap();
         let event = w.park(occurred()).unwrap();
-        let WorkflowExecutionEvent::Parked(parked) = &event else {
+        let IntentExecutionEvent::Parked(parked) = &event else {
             panic!("expected Parked");
         };
         assert_eq!(parked.stage(), &slug(1));
@@ -1853,7 +2100,7 @@ mod tests {
             Err(CommandError::InvalidTarget(cursor))
         );
         let event = w.recompose(&[at(&w, 2), at(&w, 3)], occurred()).unwrap();
-        let WorkflowExecutionEvent::Recomposed(recomposed) = &event else {
+        let IntentExecutionEvent::Recomposed(recomposed) = &event else {
             panic!("expected Recomposed");
         };
         assert_eq!(recomposed.skipped(), [slug(2), slug(3)]);
@@ -1894,7 +2141,7 @@ mod tests {
         let event = w
             .switch_autonomy(AutonomyMode::Autonomous, occurred())
             .unwrap();
-        let WorkflowExecutionEvent::AutonomyModeSet(set) = &event else {
+        let IntentExecutionEvent::AutonomyModeSet(set) = &event else {
             panic!("expected AutonomyModeSet");
         };
         assert_eq!(set.mode(), AutonomyMode::Autonomous);
@@ -1939,7 +2186,7 @@ mod tests {
     fn apply_event_refuses_a_sequence_gap() {
         let mut w = all_exec(3);
         let event =
-            WorkflowExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
         assert_eq!(
             w.apply_event(9, occurred(), &event),
             Err(ApplyError::SequenceGap {
@@ -1953,11 +2200,15 @@ mod tests {
     #[test]
     fn apply_event_refuses_at_sequence_exhaustion() {
         // memento 経由で通番を末端に据える (実運用では到達しない規模の境界)。
-        let mut state = all_exec(3).state();
+        let base = all_exec(3);
+        let mut state = base.snapshot();
         state.seq_nr = usize::MAX;
-        let mut w = WorkflowExecution::from_state(state).unwrap();
+        let mut w = Run {
+            intent: base.intent,
+            execution: IntentExecution::from_snapshot(state).unwrap(),
+        };
         let event =
-            WorkflowExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
         assert_eq!(
             w.apply_event(1, occurred(), &event),
             Err(ApplyError::SequenceExhausted)
@@ -1967,9 +2218,13 @@ mod tests {
 
     #[test]
     fn a_command_at_sequence_exhaustion_is_refused() {
-        let mut state = all_exec(3).state();
+        let base = all_exec(3);
+        let mut state = base.snapshot();
         state.seq_nr = usize::MAX;
-        let mut w = WorkflowExecution::from_state(state).unwrap();
+        let mut w = Run {
+            intent: base.intent,
+            execution: IntentExecution::from_snapshot(state).unwrap(),
+        };
         assert_eq!(
             w.complete_stage(occurred()),
             Err(CommandError::SequenceExhausted)
@@ -1982,7 +2237,7 @@ mod tests {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
         let event =
-            WorkflowExecutionEvent::StageCompleted(StageCompleted::new(unknown.clone(), None));
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(unknown.clone(), None));
         assert_eq!(
             w.apply_event(2, occurred(), &event),
             Err(ApplyError::UnknownStage(unknown))
@@ -1995,7 +2250,7 @@ mod tests {
         let before = w.clone();
         // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
         let event =
-            WorkflowExecutionEvent::StageCompleted(StageCompleted::new(slug(1), Some(slug(2))));
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(1), Some(slug(2))));
         assert!(matches!(
             w.apply_event(2, occurred(), &event),
             Err(ApplyError::InvariantViolation(_))
@@ -2006,12 +2261,16 @@ mod tests {
     #[test]
     fn apply_event_refuses_a_started_outside_genesis() {
         let mut w = all_exec(3);
-        let event = WorkflowExecutionEvent::Started(Started::new(
-            def_id("claude"),
-            revision('0'),
-            &StartRequest::new("classic", "again"),
-            entries(1, &[Execute], &[false]),
-            scan(),
+        let event = IntentExecutionEvent::Started(Started::new(
+            Intent::from_material(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                StartRequest::new("classic", "again"),
+                entries(1, &[Execute], &[false]),
+                scan(),
+            )
+            .unwrap(),
         ));
         assert!(matches!(
             w.apply_event(2, occurred(), &event),
@@ -2090,196 +2349,67 @@ mod tests {
         w.complete_stage(occurred()).unwrap();
         w.open_gate(Vec::new(), occurred()).unwrap();
         w.reject_gate(None, occurred()).unwrap();
-        let state = w.state();
-        assert_eq!(state.intent_id(), w.intent_id());
-        assert_eq!(state.definition_id(), w.definition_id());
-        assert_eq!(state.definition_revision(), w.definition_revision());
-        assert_eq!(state.stages(), w.stages());
-        assert_eq!(state.plan(), [Execute, Execute, Execute, Execute]);
-        assert_eq!(state.overlay(), [Execute, Execute, Execute, Execute]);
-        assert_eq!(state.conditional(), [false, false, false, false]);
-        assert_eq!(state.checkbox()[0], Completed);
-        assert_eq!(state.cursor(), w.cursor());
-        assert_eq!(state.status(), Status::Running);
-        assert_eq!(state.parked_at(), None);
-        assert_eq!(state.autonomy(), AutonomyMode::Gated);
-        assert_eq!(state.approved(), [false, false, false, false]);
-        assert_eq!(state.revision_count(), [0, 1, 0, 0]);
-        assert_eq!(state.seq_nr(), w.seq_nr());
-        assert_eq!(state.last_updated_at(), *w.last_updated_at());
-        assert_eq!(WorkflowExecution::from_state(state).unwrap(), w);
+        // memento はクレート内私有なので、同一クレートのテストは属性を直接読む
+        // (アクセサは置かない — 外へ出さない型に読取面を二重化しない)。
+        let state = w.snapshot();
+        assert_eq!(state.id, *w.id());
+        assert_eq!(state.intent_id, *w.intent_id());
+        assert_eq!(state.overlay, [Execute, Execute, Execute, Execute]);
+        assert_eq!(state.checkbox[0], Completed);
+        assert_eq!(state.cursor, w.cursor().to_usize());
+        assert_eq!(state.status, Status::Running);
+        assert_eq!(state.parked_at, None);
+        assert_eq!(state.autonomy, AutonomyMode::Gated);
+        assert_eq!(state.approved, [false, false, false, false]);
+        assert_eq!(state.revision_count, [0, 1, 0, 0]);
+        assert_eq!(state.seq_nr, w.seq_nr());
+        assert_eq!(state.last_updated_at, *w.last_updated_at());
+        assert_eq!(IntentExecution::from_snapshot(state).unwrap(), w.execution);
     }
 
     #[test]
-    fn the_aggregate_round_trips_through_serde() {
-        // スナップショットの直列化はこの経路を通る (本家 v3 のシリアライザは
-        // `Serialize` / `DeserializeOwned` だけを要求する)。SQLite バックエンドはこの形で
-        // payload 列を書く。
-        let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
-        // スナップショット payload の往復確認であり、契約 JSON (BR1.7) の直列化経路では
-        // ないため、canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&w).unwrap();
-        let decoded: WorkflowExecution = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded, w);
-        assert_eq!(decoded.seq_nr(), w.seq_nr());
-        assert_eq!(decoded.last_updated_at(), w.last_updated_at());
-        assert!(
-            !json.contains("version"),
-            "楽観 version は payload に載らない (B7): {json}"
-        );
-    }
-
-    #[test]
-    fn a_tampered_serialised_aggregate_is_refused() {
-        // serde は memento (`WorkflowExecutionState`) 経由なので、復号は `from_state` の
-        // 検査点をそのまま通る (オーナー裁定 2026-08-27 (A))。行を手で書き換えた JSON —
-        // ここでは範囲外カーソル — が黙って通らないことを固定する。
+    fn from_snapshot_rejects_a_broken_runtime_invariant() {
+        // 写しには計画が載らない (改訂 3) ので、ここで検査できるのは実行時の不変条件だけで
+        // ある。計画との整合 (`no_gate_bypass`) は `&Intent` が渡る適用・コマンド側が見る。
         let w = all_exec(3);
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&w).unwrap();
-        assert!(json.contains(r#""cursor":0"#), "{json}");
-        let tampered = json.replace(r#""cursor":0"#, r#""cursor":99"#);
-        let error = serde_json::from_str::<WorkflowExecution>(&tampered)
-            .expect_err("不変条件を破る写しは復号できない");
-        assert!(
-            error.to_string().contains("invariant violation"),
-            "実際: {error}"
-        );
-    }
-
-    #[test]
-    fn from_state_rejects_a_broken_invariant() {
-        let w = all_exec(3);
-        let base = w.state();
-
-        let empty = WorkflowExecutionStateBuilder::new(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            Vec::new(),
-        )
-        .build();
-        assert!(matches!(
-            WorkflowExecution::from_state(empty),
-            Err(StateError::InvariantViolation(_))
-        ));
+        let base = w.snapshot();
+        let builder = || {
+            IntentExecutionSnapshotBuilder::new(
+                execution_id(),
+                w.intent.id().clone(),
+                birth_overlay(&w.intent),
+            )
+        };
+        // 実効プランはビルダーの構築引数なので、長さや中身を崩す壊し方はこちらで起こす。
+        let with_overlay = |overlay: Vec<PlanAction>| {
+            IntentExecutionSnapshotBuilder::new(execution_id(), w.intent.id().clone(), overlay)
+        };
 
         for broken in [
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .checkbox(vec![InProgress])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .cursor(9)
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .overlay(vec![Skip, Execute, Execute])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .checkbox(vec![InProgress, InProgress, Pending])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .checkbox(vec![InProgress, Completed, Pending])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .parked_at(Some(2))
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .parked_at(Some(9))
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .approved(vec![false])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .revision_count(vec![0, 0])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .seq_nr(0)
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .plan(vec![Skip, Execute, Execute])
-            .build(),
-            WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .conditional(vec![true, false, false])
-            .build(),
+            // ステージ 0 件 — 実行時ベクトルの長さが総数そのものなので、空にすれば起きる。
+            with_overlay(Vec::new()).build(),
+            builder().checkbox(vec![InProgress]).build(),
+            builder().cursor(9).build(),
+            with_overlay(vec![Skip, Execute, Execute]).build(),
+            builder()
+                .checkbox(vec![InProgress, InProgress, Pending])
+                .build(),
+            builder().parked_at(Some(2)).build(),
+            builder().parked_at(Some(9)).build(),
+            builder().approved(vec![false]).build(),
+            builder().revision_count(vec![0, 0]).build(),
+            builder().seq_nr(0).build(),
         ] {
             assert!(
                 matches!(
-                    WorkflowExecution::from_state(broken),
-                    Err(StateError::InvariantViolation(_))
+                    IntentExecution::from_snapshot(broken),
+                    Err(SnapshotError::InvariantViolation(_))
                 ),
                 "a broken state must be refused"
             );
         }
 
-        assert!(WorkflowExecution::from_state(base).is_ok());
+        assert!(IntentExecution::from_snapshot(base).is_ok());
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2289,7 +2419,7 @@ mod tests {
         let w = all_exec(3);
         let other = bare_definition("kiro");
         assert_eq!(
-            w.next_decision(&other, &NextRequest::default()),
+            w.next_decision(&other, NextRequest::default()),
             Err(CommandError::DefinitionMismatch {
                 expected: def_id("claude"),
                 actual: def_id("kiro"),
@@ -2300,14 +2430,14 @@ mod tests {
     #[test]
     fn a_newer_revision_of_the_same_definition_is_accepted() {
         let w = all_exec(3);
-        let drifted = WorkflowDefinition::new(
+        let drifted = WorkflowDefinition::from_artifacts(
             def_id("claude"),
             revision('f'),
             StageGraph::new(Vec::new()).unwrap(),
             ScopeGrid::new(BTreeMap::new()),
             BTreeMap::new(),
         );
-        assert!(w.next_decision(&drifted, &NextRequest::default()).is_ok());
+        assert!(w.next_decision(&drifted, NextRequest::default()).is_ok());
     }
 
     #[test]
@@ -2317,7 +2447,7 @@ mod tests {
 
         // (6) cursor が in-flight
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 0),
                 gate: false
@@ -2326,16 +2456,16 @@ mod tests {
         // (1) park 中
         w.park(occurred()).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::Parked { stage: at(&w, 0) })
         );
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(true, false, false)),
+            w.next_decision(&definition, NextRequest::new(true, false, false)),
             Ok(NextDecision::UnparkThenResume)
         );
         // 再入フラグは park ガードを外す
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(false, true, false)),
+            w.next_decision(&definition, NextRequest::new(false, true, false)),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 0),
                 gate: false
@@ -2344,18 +2474,18 @@ mod tests {
         w.unpark(occurred()).unwrap();
         // (2) resume
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(true, false, false)),
+            w.next_decision(&definition, NextRequest::new(true, false, false)),
             Ok(NextDecision::ResumeMenu)
         );
         // (3) 自由記述
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(false, false, true)),
+            w.next_decision(&definition, NextRequest::new(false, false, true)),
             Ok(NextDecision::NewWorkRouting)
         );
         // (7) 次の in-scope / gate = true
         w.complete_stage(occurred()).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 1),
                 gate: true
@@ -2366,7 +2496,7 @@ mod tests {
         w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::Done)
         );
     }
@@ -2377,7 +2507,7 @@ mod tests {
         // 唯一到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) の状態を
         // 再水和し、再入フラグで park 分岐を外して問い合わせる」経路である (BR3.1 (5) の防御腕)。
         let definition = bare_definition("claude");
-        let stages = all_exec(3).stages().to_vec();
+        let base = all_exec(3);
         let reentry = NextRequest::new(false, true, false);
 
         for (marker, expected_recoverable) in [
@@ -2386,19 +2516,20 @@ mod tests {
             (Pending, false),
             (AwaitingApproval, false),
         ] {
-            let state = WorkflowExecutionStateBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                stages.clone(),
+            let state = IntentExecutionSnapshotBuilder::new(
+                execution_id(),
+                base.intent.id().clone(),
+                vec![Execute, Skip, Execute],
             )
-            .overlay(vec![Execute, Skip, Execute])
             .checkbox(vec![Completed, marker, Pending])
             .cursor(1)
             .parked_at(Some(1))
             .seq_nr(4)
             .build();
-            let w = WorkflowExecution::from_state(state).unwrap();
+            let w = Run {
+                intent: base.intent.clone(),
+                execution: IntentExecution::from_snapshot(state).unwrap(),
+            };
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
                 NextDecision::RecoverSkipInconsistency {
@@ -2411,10 +2542,10 @@ mod tests {
                     checkbox: marker,
                 }
             };
-            assert_eq!(w.next_decision(&definition, &reentry), Ok(expected));
+            assert_eq!(w.next_decision(&definition, reentry), Ok(expected));
             // どちらの不整合も Quint の DError に写る (BR3.1)。
             assert_eq!(
-                EngineSignal::from(&w.next_decision(&definition, &reentry).unwrap()),
+                EngineSignal::from(&w.next_decision(&definition, reentry).unwrap()),
                 EngineSignal::EngineError
             );
         }
@@ -2496,7 +2627,7 @@ mod tests {
         let definition = bare_definition("claude");
         let w = all_exec(3);
         let decision = w
-            .next_decision(&definition, &NextRequest::default())
+            .next_decision(&definition, NextRequest::default())
             .unwrap();
         assert_eq!(
             EngineSignal::from(&decision),
@@ -2586,26 +2717,26 @@ mod tests {
             })
     }
 
-    fn start_synthetic(stages: Vec<StageEntry>) -> WorkflowExecution {
-        WorkflowExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            stages,
-            scan(),
-            occurred(),
+    fn start_synthetic(stages: Vec<StageEntry>) -> Run {
+        Run::start(
+            Intent::from_material(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            )
+            .unwrap(),
         )
-        .unwrap()
-        .0
     }
 
     /// 1 コマンドを駆動する。`Err` は「発火しないアクション」なので状態は一切動かない (BR1.1 (e))。
     fn drive(
-        w: &mut WorkflowExecution,
+        w: &mut Run,
         definition: &WorkflowDefinition,
         cmd: &Cmd,
-    ) -> Option<WorkflowExecutionEvent> {
+    ) -> Option<IntentExecutionEvent> {
         let before = w.clone();
         let outcome = match cmd {
             Cmd::Complete => w.complete_stage(occurred()),
@@ -2633,7 +2764,7 @@ mod tests {
                 occurred(),
             ),
             Cmd::Next => {
-                let _ = w.next_decision(definition, &NextRequest::default());
+                let _ = w.next_decision(definition, NextRequest::default());
                 assert_eq!(*w, before, "next_decision は書き込まない");
                 return None;
             }
@@ -2654,7 +2785,7 @@ mod tests {
         }
     }
 
-    fn assert_quint_invariants(w: &WorkflowExecution) {
+    fn assert_quint_invariants(w: &Run) {
         let count = w.stage_count();
         // cursor_in_scope: コマンドを受理できる間、カーソルは実効 EXECUTE 上にある。
         if w.accepts_commands() {
@@ -2701,11 +2832,11 @@ mod tests {
                     replayed
                         .apply_event(w.seq_nr(), *w.last_updated_at(), &event)
                         .unwrap();
-                    prop_assert_eq!(&replayed, &w);
+                    prop_assert_eq!(&replayed.execution, &w.execution);
                 }
                 assert_quint_invariants(&w);
-                let restored = WorkflowExecution::from_state(w.state()).unwrap();
-                prop_assert_eq!(&restored, &w);
+                let restored = IntentExecution::from_snapshot(w.snapshot()).unwrap();
+                prop_assert_eq!(&restored, &w.execution);
             }
         }
 
@@ -2718,9 +2849,9 @@ mod tests {
         ) {
             let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
-            let genesis = w.state();
+            let genesis = w.snapshot();
             // 封筒の材料 (通番・発生時刻) は commit を通った集約から採る (B7 — Repository も同じ)。
-            let mut events: Vec<(usize, DateTime<Utc>, WorkflowExecutionEvent)> = Vec::new();
+            let mut events: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = Vec::new();
             let mut expected_seq = w.seq_nr();
             for cmd in &cmds {
                 if let Some(event) = drive(&mut w, &definition, cmd) {
@@ -2730,11 +2861,14 @@ mod tests {
                 }
             }
 
-            let mut replayed = WorkflowExecution::from_state(genesis).unwrap();
+            let mut replayed = Run {
+                intent: w.intent.clone(),
+                execution: IntentExecution::from_snapshot(genesis).unwrap(),
+            };
             for (seq_nr, occurred_at, event) in &events {
                 replayed.apply_event(*seq_nr, *occurred_at, event).unwrap();
             }
-            prop_assert_eq!(&replayed, &w);
+            prop_assert_eq!(&replayed.execution, &w.execution);
 
             // 順序違反は拒否され、状態も動かない。
             if let Some((seq_nr, occurred_at, event)) = events.first() {
@@ -2742,7 +2876,7 @@ mod tests {
                 let gap = fresh.apply_event(*seq_nr, *occurred_at, event);
                 let is_gap = matches!(gap, Err(ApplyError::SequenceGap { .. }));
                 prop_assert!(is_gap, "順序違反は SequenceGap で拒否される");
-                prop_assert_eq!(&fresh, &replayed);
+                prop_assert_eq!(&fresh.execution, &replayed.execution);
             }
         }
 
@@ -2759,7 +2893,7 @@ mod tests {
             let mut expected = grid.clone();
             for cmd in &cmds {
                 if let Some(event) = drive(&mut w, &definition, cmd)
-                    && let WorkflowExecutionEvent::Recomposed(recomposed) = &event
+                    && let IntentExecutionEvent::Recomposed(recomposed) = &event
                 {
                     for slug in recomposed.skipped() {
                         let index = w.stages().iter().position(|e| e.slug() == slug).unwrap();
@@ -2789,7 +2923,7 @@ mod tests {
             let mut w = start_synthetic(stages);
             for cmd in &cmds {
                 drive(&mut w, &definition, cmd);
-                let Ok(decision) = w.next_decision(&definition, &NextRequest::default()) else {
+                let Ok(decision) = w.next_decision(&definition, NextRequest::default()) else {
                     continue;
                 };
                 let cursor = w.cursor().to_usize();

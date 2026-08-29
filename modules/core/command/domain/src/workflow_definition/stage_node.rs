@@ -20,7 +20,6 @@ use super::execution_kind::ExecutionKind;
 use super::phase::PhaseId;
 use super::review_class::ReviewClass;
 use super::stage_mode::StageMode;
-use serde::{Deserialize, Serialize};
 
 use super::stage_number::StageNumber;
 use super::stage_slug::StageSlug;
@@ -171,10 +170,9 @@ impl SensorRef {
 }
 
 /// `consumes[].conditional_on` の閉集合。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 // ワイヤ綴りは `stage-graph.json` の正準綴り (小文字) に合わせる — `parse` / `as_str` と
 // 同じ 1 つの綴りだけがワイヤに出るようにするため。
-#[serde(rename_all = "lowercase")]
 pub enum BrownfieldGreenfield {
     /// 既存コードベースの上で進むプロジェクト。
     Brownfield,

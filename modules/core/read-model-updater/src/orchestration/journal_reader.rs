@@ -7,7 +7,7 @@ use super::projection_name::ProjectionName;
 
 /// 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 ///
-/// 集約の永続化そのもの (`WorkflowExecutionRepository`) とは**別の口**である — 本家
+/// 集約の永続化そのもの (`IntentExecutionRepository`) とは**別の口**である — 本家
 /// event-store-adapter-rs のイベントストアは集約単位の読み書きだけを担い、全集約横断の
 /// 順序読取と投影チェックポイントは利用側の関心だからである (ADR-010 決定 4)。
 ///
@@ -73,11 +73,11 @@ mod tests {
     use super::*;
     use crate::orchestration::{GlobalSeqNr, JournalEntry, JournalReadError, ProjectionName};
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentId, WorkflowExecutionEvent};
+    use core_command_domain::orchestration::{IntentExecutionEvent, IntentExecutionId};
     use std::collections::BTreeMap;
 
-    fn intent() -> IntentId {
-        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    fn intent() -> IntentExecutionId {
+        IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
     fn entry(seq_nr: usize) -> JournalEntry {
@@ -88,7 +88,7 @@ mod tests {
             DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            WorkflowExecutionEvent::Unparked,
+            IntentExecutionEvent::Unparked,
         )
     }
 
@@ -174,7 +174,11 @@ mod tests {
         let rows = reader.events_after(GlobalSeqNr::new(1)).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].global_seq(), GlobalSeqNr::new(2));
-        assert_eq!(rows[0].intent_id(), &intent(), "集約識別子が境界を越える");
+        assert_eq!(
+            rows[0].execution_id(),
+            &intent(),
+            "集約識別子が境界を越える"
+        );
         assert_eq!(rows[0].seq_nr(), 2);
     }
 

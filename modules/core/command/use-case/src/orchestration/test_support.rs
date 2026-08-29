@@ -8,25 +8,30 @@
 //! ユースケースのテストが使うポート実装は**本クレート内の `#[cfg(test)]` に置く**。
 //!
 //! ここに置くのは 1 つだけである — ポートのテストも `CommitVerdictUseCase` のテストも同じ
-//! [`InMemoryWorkflowExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
+//! [`InMemoryIntentExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
-    WorkspaceScan,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 
-use super::rehydrated_workflow_execution::RehydratedWorkflowExecution;
+use super::intent_execution_repository::IntentExecutionRepository;
+use super::intent_repository::IntentRepository;
+use super::intent_repository_error::IntentRepositoryError;
+use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
-use super::workflow_execution_repository::WorkflowExecutionRepository;
 
-/// フィクスチャの集約識別子 (UUIDv7)。
+/// フィクスチャの intent 識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+/// フィクスチャの実行識別子 (UUIDv7)。
+pub(crate) const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
 /// イベントの発生時刻 — 集約は値を素通しするので固定値でよい (NFR3.1)。
 pub(crate) fn at() -> DateTime<Utc> {
@@ -40,10 +45,15 @@ pub(crate) fn intent() -> IntentId {
     IntentId::parse(INTENT).expect("フィクスチャの IntentId は UUIDv7")
 }
 
-/// ストアに居ない集約の識別子 (`NotFound` を見るテスト用)。
-pub(crate) fn absent_intent() -> IntentId {
-    IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678")
-        .expect("フィクスチャの IntentId は UUIDv7")
+/// フィクスチャの実行識別子。
+pub(crate) fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(EXECUTION).expect("フィクスチャの IntentExecutionId は UUIDv7")
+}
+
+/// ストアに居ない実行の識別子 (`NotFound` を見るテスト用)。
+pub(crate) fn absent_execution() -> IntentExecutionId {
+    IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678")
+        .expect("フィクスチャの IntentExecutionId は UUIDv7")
 }
 
 /// 合成計画の slug (文書順の位置がそのまま名前になる)。
@@ -75,7 +85,7 @@ pub(crate) fn scan() -> WorkspaceScan {
 /// フェーズと実効プラン・CONDITIONAL を名指しした合成計画で開始する。
 pub(crate) fn start_from_plan(
     plan: &[(PhaseId, PlanAction, bool)],
-) -> (WorkflowExecution, WorkflowExecutionEvent) {
+) -> (Intent, IntentExecution, IntentExecutionEvent) {
     let stages = plan
         .iter()
         .enumerate()
@@ -89,21 +99,24 @@ pub(crate) fn start_from_plan(
             )
         })
         .collect();
-    WorkflowExecution::start_from_plan_unchecked(
+    // 呼出側は genesis の対の左を `IntentExecution::start` に渡す (改訂 8)。誕生イベントを
+    // `store` する `IntentRepository` は U7 の課題なので、ここでは受け取るだけである。
+    let (intent, _created) = Intent::create(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
             .expect("フィクスチャの定義 revision"),
-        &StartRequest::new("classic", "report use case"),
+        StartRequest::new("classic", "report use case"),
         stages,
         scan(),
-        at(),
     )
-    .expect("合成計画は start の前提を満たす")
+    .expect("合成計画は Intent の不変条件を満たす");
+    let (execution, event) = IntentExecution::start(execution_id(), intent.clone(), at());
+    (intent, execution, event)
 }
 
 /// 索引 0 = initialization (非ゲート)、索引 1 以降 = inception (ゲート付き) の合成計画。
-pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecutionEvent) {
+pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentExecution, IntentExecutionEvent) {
     let plan: Vec<(PhaseId, PlanAction, bool)> = (0..stage_count)
         .map(|index| {
             let phase = if index == 0 {
@@ -117,7 +130,7 @@ pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecuti
     start_from_plan(&plan)
 }
 
-/// [`WorkflowExecutionRepository`] のインメモリ実装。
+/// [`IntentExecutionRepository`] のインメモリ実装。
 ///
 /// 楽観 version は本家の実測どおり「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。
 /// レシーバは CQS どおり再構成が `&self`、永続化が `&mut self` である — 内部可変性で
@@ -131,32 +144,32 @@ pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecuti
 ///
 /// 割り込みには 2 種類ある:
 ///
-/// - [`holding_behind_concurrent_writes`](InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes)
+/// - [`holding_behind_concurrent_writes`](InMemoryIntentExecutionRepository::holding_behind_concurrent_writes)
 ///   — **版だけ**が進む。相手が書いた内容は模さない（`set-autonomy` のようにカーソルを
 ///   動かさない競合に相当する）。
-/// - [`holding_behind_a_competing_commit`](InMemoryWorkflowExecutionRepository::holding_behind_a_competing_commit)
+/// - [`holding_behind_a_competing_commit`](InMemoryIntentExecutionRepository::holding_behind_a_competing_commit)
 ///   — 版に加えて**保持している集約も進む**。相手が先に同じゲートを承認してカーソルが動いた
 ///   状況に相当し、再構成し直した呼出は報告したステージが通過済みになっているのを見る。
 #[derive(Debug)]
-pub(crate) struct InMemoryWorkflowExecutionRepository {
-    stored: Option<WorkflowExecution>,
+pub(crate) struct InMemoryIntentExecutionRepository {
+    stored: Option<IntentExecution>,
     version: usize,
     interrupting_writes: usize,
-    competing_commit: Option<WorkflowExecution>,
+    competing_commit: Option<IntentExecution>,
     store_attempts: usize,
-    committed: Vec<WorkflowExecutionEvent>,
+    committed: Vec<IntentExecutionEvent>,
 }
 
-impl InMemoryWorkflowExecutionRepository {
+impl InMemoryIntentExecutionRepository {
     /// 基本コンストラクタ — 構築経路はここ 1 本に集約する
     /// (`coding-rules/factory-naming.md`)。
     fn new(
-        stored: Option<WorkflowExecution>,
+        stored: Option<IntentExecution>,
         version: usize,
         interrupting_writes: usize,
-        competing_commit: Option<WorkflowExecution>,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository {
+        competing_commit: Option<IntentExecution>,
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository {
             stored,
             version,
             interrupting_writes,
@@ -167,16 +180,16 @@ impl InMemoryWorkflowExecutionRepository {
     }
 
     /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
-    pub(crate) fn empty() -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(None, 0, 0, None)
+    pub(crate) fn empty() -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(None, 0, 0, None)
     }
 
     /// 集約 1 つを版 `version` で保持するストア。
     pub(crate) fn holding(
-        aggregate: WorkflowExecution,
+        aggregate: IntentExecution,
         version: usize,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 0, None)
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(Some(aggregate), version, 0, None)
     }
 
     /// 最初の `writes` 回の `store` に、別の書き手の書込が割り込むストア。
@@ -185,11 +198,11 @@ impl InMemoryWorkflowExecutionRepository {
     /// 集約は動かないので、再構成し直してもカーソルは同じ位置にある。台本を使い切ると通常の
     /// 楽観判定へ戻るので、**再構成からやり直した呼出だけが**新しい版を提示でき、書込に成功する。
     pub(crate) fn holding_behind_concurrent_writes(
-        aggregate: WorkflowExecution,
+        aggregate: IntentExecution,
         version: usize,
         writes: usize,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, writes, None)
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(Some(aggregate), version, writes, None)
     }
 
     /// 最初の `store` に、**集約を前進させる**別の書き手の書込が割り込むストア。
@@ -198,15 +211,15 @@ impl InMemoryWorkflowExecutionRepository {
     /// 同じゲートを承認してカーソルが動いた状況である。再構成し直した呼出は、報告した
     /// ステージが既に通過済み（`[x]` かつカーソルより手前）になっているのを見る。
     pub(crate) fn holding_behind_a_competing_commit(
-        aggregate: WorkflowExecution,
-        advanced: WorkflowExecution,
+        aggregate: IntentExecution,
+        advanced: IntentExecution,
         version: usize,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 1, Some(advanced))
+    ) -> InMemoryIntentExecutionRepository {
+        InMemoryIntentExecutionRepository::new(Some(aggregate), version, 1, Some(advanced))
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
-    pub(crate) fn committed(&self) -> &[WorkflowExecutionEvent] {
+    pub(crate) fn committed(&self) -> &[IntentExecutionEvent] {
         &self.committed
     }
 
@@ -221,25 +234,25 @@ impl InMemoryWorkflowExecutionRepository {
     }
 }
 
-impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
+impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
     async fn find_by_id(
         &self,
-        id: &IntentId,
-    ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
+        id: &IntentExecutionId,
+    ) -> Result<RehydratedIntentExecution, RepositoryError> {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
             .clone()
-            .filter(|aggregate| aggregate.intent_id() == id)
-            .map(|aggregate| RehydratedWorkflowExecution::new(aggregate, self.version))
+            .filter(|aggregate| aggregate.id() == id)
+            .map(|aggregate| RehydratedIntentExecution::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
-                intent_id: id.clone(),
+                execution_id: id.clone(),
             })
     }
 
     async fn store(
         &mut self,
-        event: &WorkflowExecutionEvent,
-        aggregate: &WorkflowExecution,
+        event: &IntentExecutionEvent,
+        aggregate: &IntentExecution,
         expected_version: usize,
     ) -> Result<(), RepositoryError> {
         self.store_attempts += 1;
@@ -266,5 +279,51 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
         self.stored = Some(aggregate.clone());
         self.committed.push(event.clone());
         Ok(())
+    }
+}
+
+/// ユースケースのテストが使う [`IntentRepository`] のダブル。
+///
+/// 実物の実装はまだ無い（読み先の設計ごと U7 の課題 — ポート doc を参照）ので、ここでは
+/// 「保持している intent を返す / 無ければ `NotFound`」だけを模す。intent は不変なので、
+/// 呼ばれるたびに同じ値が返る。
+#[derive(Debug)]
+pub(crate) struct InMemoryIntentRepository {
+    held: Option<Intent>,
+    lookups: std::cell::Cell<usize>,
+}
+
+impl InMemoryIntentRepository {
+    /// 1 つの intent を保持する（この intent の識別子で引けば返る）。
+    pub(crate) const fn holding(intent: Intent) -> InMemoryIntentRepository {
+        InMemoryIntentRepository {
+            held: Some(intent),
+            lookups: std::cell::Cell::new(0),
+        }
+    }
+
+    /// 何も保持しない（どの識別子で引いても `NotFound`）。
+    pub(crate) const fn empty() -> InMemoryIntentRepository {
+        InMemoryIntentRepository {
+            held: None,
+            lookups: std::cell::Cell::new(0),
+        }
+    }
+
+    /// これまでに引かれた回数（再試行が intent を取り直すことの観測点）。
+    pub(crate) fn lookups(&self) -> usize {
+        self.lookups.get()
+    }
+}
+
+impl IntentRepository for InMemoryIntentRepository {
+    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, IntentRepositoryError> {
+        self.lookups.set(self.lookups.get() + 1);
+        match &self.held {
+            Some(held) if held.id() == id => Ok(held.clone()),
+            _ => Err(IntentRepositoryError::NotFound {
+                intent_id: id.clone(),
+            }),
+        }
     }
 }

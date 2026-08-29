@@ -1,5 +1,5 @@
 //! ITF 準拠テスト (ADR 0003 決定 5 / FD BR3.5) — `formal/orchestration/journal_protocol.qnt` の
-//! トレースを `WorkflowExecutionRepositoryImpl` + `JournalReaderImpl` + 実 RMU 投影に再生し、
+//! トレースを `IntentExecutionRepositoryImpl` + `JournalReaderImpl` + 実 RMU 投影に再生し、
 //! 全ステップでモデルの状態射影を突き合わせる。
 //!
 //! # なぜ合成ルート (`modules/app/aidlc`) に置くのか
@@ -16,7 +16,7 @@
 //! 我々の `JournalReaderImpl` が持つ (ADR-010)。**モデルは 1 文字も変えていない** — 本家に
 //! 載せ替えても同じトレースがそのまま再生できることが、この乗り換えの意味論的な検収である。
 //!
-//! モデルの抽象は「集約 1・writer 2・投影 1」である。writer 2 つは同じ `IntentId` を別々に
+//! モデルの抽象は「集約 1・writer 2・投影 1」である。writer 2 つは同じ `IntentExecutionId` を別々に
 //! 再水和した 2 本の「ロード済み集約」で表し、衝突は楽観 version の不一致だけで起きる
 //! (ロックは ADR-007 で退役した — BR3.2)。投影は**実 RMU** (`ReadModelUpdater::catch_up`) で
 //! ある — フェイクではない (固定裁定 7)。モデルが持つ `readModelSeq` は、実 RMU が
@@ -49,23 +49,24 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
-    WorkspaceScan,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryImpl;
+use core_command_interface_adapter::orchestration::{
+    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
+};
 use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
+    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
 };
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
 };
-use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -95,10 +96,10 @@ const WRITERS: usize = 2;
 const STAGES: usize = 24;
 
 /// 本家の SQLite イベントストア (射影の観測に使う読取ハンドル)。
-type UpstreamStore = EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+type UpstreamStore = IntentExecutionSqliteStore;
 
 /// Repository の具体型 (SQLite バックエンド)。
-type Repository = WorkflowExecutionRepositoryImpl<UpstreamStore>;
+type Repository = IntentExecutionRepositoryImpl<UpstreamStore>;
 
 // ---- ITF の読み取り ----
 
@@ -164,8 +165,8 @@ fn parse_state(v: &Value) -> ModelState {
 
 // ---- 再生先の組み立て ----
 
-fn intent_id() -> IntentId {
-    IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7")
+fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(INTENT).expect("再生の IntentExecutionId は UUIDv7")
 }
 
 fn projection_name() -> ProjectionName {
@@ -189,7 +190,7 @@ impl Store {
 
     /// 「プロセスを起動する」— 同じファイルへ新しい接続を開く。
     fn repository(&self) -> Repository {
-        WorkflowExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
+        IntentExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
     /// 投影が使う横断読取 (同じファイルへの別接続)。
@@ -230,12 +231,12 @@ fn stages() -> Vec<StageEntry> {
 }
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
-fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_from_plan_unchecked(
-        intent_id(),
+fn intent() -> Intent {
+    Intent::from_material(
+        IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("定義 revision"),
-        &StartRequest::new("classic", "conformance"),
+        StartRequest::new("classic", "conformance"),
         stages(),
         WorkspaceScan::new(
             BrownfieldGreenfield::Greenfield,
@@ -244,9 +245,12 @@ fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
             "Unknown",
         )
         .expect("単一行"),
-        at(),
     )
-    .expect("合成計画は start の前提を満たす")
+    .expect("合成計画は Intent の不変条件を満たす")
+}
+
+fn genesis() -> (IntentExecution, IntentExecutionEvent) {
+    IntentExecution::start(execution_id(), intent(), at())
 }
 
 /// カーソル位置から打てる唯一のコマンドを打ち、1 イベントを得る (1 ステップ 1 イベント)。
@@ -254,29 +258,31 @@ fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
 /// 非ゲートは `complete_stage`、ゲート付きは `open_gate` → `approve_gate` の順。どのコマンドを
 /// 打つかは集約の状態だけで決まるので、モデル側に「どのコマンドか」の情報は要らない
 /// (モデルは書込の成否だけを持つ抽象である)。
-fn next_command(aggregate: &mut WorkflowExecution) -> WorkflowExecutionEvent {
+fn next_command(aggregate: &mut IntentExecution) -> IntentExecutionEvent {
     let cursor = aggregate.cursor();
-    let gated = aggregate.gated(cursor).expect("カーソルは範囲内");
+    let gated = aggregate
+        .gated(&intent(), cursor)
+        .expect("カーソルは範囲内");
     let checkbox = aggregate.checkbox(cursor).expect("カーソルは範囲内");
     let result = if gated {
         if checkbox == CheckboxState::InProgress {
-            aggregate.open_gate(vec!["artifact.md".to_string()], at())
+            aggregate.open_gate(&intent(), vec!["artifact.md".to_string()], at())
         } else {
-            aggregate.approve_gate(None, at())
+            aggregate.approve_gate(&intent(), None, at())
         }
     } else {
-        aggregate.complete_stage(at())
+        aggregate.complete_stage(&intent(), at())
     };
     result.expect("合成計画はフィクスチャ長ぶんのコマンドを受け付ける (STAGES の見積り)")
 }
 
 /// 1 人の writer が握っている「ロード済み集約 + 版」。
 struct Writer {
-    aggregate: WorkflowExecution,
+    aggregate: IntentExecution,
     /// モデルの `loadedVersion` — この writer が書込に提示する版。
     version: usize,
     /// まだ書けていない genesis の `Started` (書込済みなら `None`)。
-    pending: Option<WorkflowExecutionEvent>,
+    pending: Option<IntentExecutionEvent>,
 }
 
 impl Writer {
@@ -285,12 +291,12 @@ impl Writer {
         let (aggregate, event) = genesis();
         Writer {
             aggregate,
-            version: <Repository as WorkflowExecutionRepository>::UNPERSISTED_VERSION,
+            version: <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION,
             pending: Some(event),
         }
     }
 
-    fn loaded(rehydrated: RehydratedWorkflowExecution) -> Writer {
+    fn loaded(rehydrated: RehydratedIntentExecution) -> Writer {
         Writer {
             version: rehydrated.version(),
             aggregate: rehydrated.into_aggregate(),
@@ -311,7 +317,7 @@ impl Writer {
     /// コマンドは**複製**に対して打つ。書込が `Err` になっても writer が握っている集約は
     /// 1 ビットも動かない — モデルの `store_conflict` が `loadedVersion` を変えないことと
     /// 同じ意味論であり、衝突のたびに再水和し直さずに次の試行ができる。
-    fn draft(&self) -> (WorkflowExecutionEvent, WorkflowExecution) {
+    fn draft(&self) -> (IntentExecutionEvent, IntentExecution) {
         if let Some(event) = self.pending.clone() {
             return (event, self.aggregate.clone());
         }
@@ -321,7 +327,7 @@ impl Writer {
     }
 
     /// 書込が通ったので、**ストアが採番した版**を握り直す (BR5.3 — 版を知るのはストアだけ)。
-    fn commit(&mut self, stored: RehydratedWorkflowExecution) {
+    fn commit(&mut self, stored: RehydratedIntentExecution) {
         self.version = stored.version();
         self.aggregate = stored.into_aggregate();
         self.pending = None;
@@ -428,7 +434,7 @@ async fn assert_projection(
 
     let snapshot = store
         .snapshot_view()
-        .get_latest_snapshot_by_id(&intent_id())
+        .get_latest_snapshot_by_id(&AggregateKey::of(&execution_id()))
         .await
         .expect("スナップショットは読める");
     let (version, seq_nr) =
@@ -496,7 +502,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
 
         match m.last_action.as_str() {
             // 再水和 — writer は現在のスナップショット版を握り直す。
-            "load" => match repository.find_by_id(&intent_id()).await {
+            "load" => match repository.find_by_id(&execution_id()).await {
                 Ok(rehydrated) => {
                     assert_eq!(
                         rehydrated.version(),
@@ -530,7 +536,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 );
                 // 新しい版を採番したのはストアなので、握り直して初めて分かる (BR5.3)。
                 let stored = repository
-                    .find_by_id(&intent_id())
+                    .find_by_id(&execution_id())
                     .await
                     .unwrap_or_else(|error| panic!("{label}: 書いた集約は読み直せる {error:?}"));
                 writers.get_mut(writer).expect("writer 添字").commit(stored);
@@ -566,7 +572,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 repository = store.repository();
                 if m.journal_len > 0 {
                     let rebuilt = repository
-                        .find_by_id(&intent_id())
+                        .find_by_id(&execution_id())
                         .await
                         .expect("落ちても書き終えた集約は読み直せる");
                     assert_eq!(rebuilt.version(), m.snap_version, "{label}: 再構成の版");

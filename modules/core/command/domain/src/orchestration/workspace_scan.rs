@@ -1,7 +1,5 @@
 //! `WorkspaceScan` — workspace-detection が出した走査結果 4 点。
 
-use serde::{Deserialize, Serialize};
-
 use crate::workflow_definition::BrownfieldGreenfield;
 use crate::workspace::{StateFieldValue, UnsafeLineChar};
 
@@ -21,7 +19,7 @@ const UNKNOWN: &str = "Unknown";
 /// `**Details**: Classified Greenfield; languages=…; frameworks=…` — の材料はすべてここにある。
 ///
 /// [`StageDisplay`]: super::stage_display::StageDisplay
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceScan {
     project_type: BrownfieldGreenfield,
     languages: StateFieldValue,
@@ -62,10 +60,20 @@ impl WorkspaceScan {
     /// 面である。同じ値でも書く先で綴りが違うので、写像を型の側に置いて取り違えを防ぐ。
     #[must_use]
     pub const fn project_type(&self) -> &'static str {
-        match self.project_type {
+        match self.project_kind() {
             BrownfieldGreenfield::Brownfield => "Brownfield",
             BrownfieldGreenfield::Greenfield => "Greenfield",
         }
+    }
+
+    /// 判定したプロジェクト種別の**値そのもの**（綴りではない）。
+    ///
+    /// 綴りは面ごとに違う（状態ファイルは `Brownfield` / `Greenfield`、`stage-graph.json` は
+    /// 小文字、ジャーナルも小文字）。値を返す口をここに 1 つ置き、面ごとの写像はそれぞれの
+    /// 面が持つ — そうしないと、ある面の綴りを変えたときに別の面のバイトが壊れる。
+    #[must_use]
+    pub const fn project_kind(&self) -> BrownfieldGreenfield {
+        self.project_type
     }
 
     /// 検出した言語（未検出は `Unknown`）。
@@ -153,17 +161,6 @@ mod tests {
                 "Unknown"
             )
             .expect("単一行")
-        );
-        // ジャーナル payload の往復確認であり、契約 JSON (BR1.7) の直列化経路ではないため、
-        // canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&found).expect("直列化");
-        assert_eq!(
-            serde_json::from_str::<WorkspaceScan>(&json).expect("復号"),
-            found
         );
     }
 }

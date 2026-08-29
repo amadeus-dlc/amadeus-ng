@@ -400,7 +400,7 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
 - **Consequences** — (+) 自前実装 **約 2,400 行**（`event_store_impl.rs` 971 / `schema.rs` 179 /
   `event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230）が消え、本家の保守に乗る。
   (+) 本家への合流・貢献が現実的になる。(+) 借り物の契約を曲げている状態が解消する。
-  (−) ドメイン層に serde と chrono が入る（NFR4.1 の再検討）。(−) 集約・イベント・IntentId が
+  (−) ドメイン層に serde と chrono が入る（NFR4.1 の再検討）。**← serde の受容は失効（2026-08-30 / Bolt B12 改訂 9・オーナー裁定「ドメインに永続化知識を記述するな」）**: serde・ストア trait・ジャーナル語彙は domain から全撤去し、永続化 DTO はアダプタが所有する（正典 `coding-rules/domain-persistence-neutrality.md`）。chrono（時刻の値）のみ残る。(−) 集約・イベント・IntentId が
   本家 trait を実装するための改修（`Event::id` / `is_created` / `Aggregate::id` /
   `last_updated_at` / `AggregateId::type_name` の新設、`seq_nr`/`version` の `usize` 化）。
   (−) B5 でマージするコードの一部を次 Bolt で削除することになる（オーナー裁定で許容）。
@@ -432,7 +432,7 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   schema_version / occurred_at フィールド）と `WorkflowExecutionEventId` 型は削除し、
   ドメインイベントは輸送メタデータを一切持たない素の serde 型（本家の語で payload）になった。
   旧 `schema_version` 予約フィールドの後継はジャーナル列の manifest 列（値は
-  `workflow-execution-event/1`）で、Repository が書き、JournalReaderImpl が不一致・欠落を
+  `intent-execution-event/1`（~~workflow-execution-event/1~~ — B12 改名追従 2026-08-30）」で、Repository が書き、JournalReaderImpl が不一致・欠落を
   `Corrupt(UndecodablePayload)` で拒否する（版を上げる規約は C5 参照）。
 
   楽観 `version` は集約と memento（`WorkflowExecutionState`）から削除し、**集約の外**を持ち回る

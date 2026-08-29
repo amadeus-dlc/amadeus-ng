@@ -131,11 +131,8 @@ name = "core-command-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "event-store-adapter-rs",
  "proptest",
- "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -192,6 +189,7 @@ dependencies = [
  "core-infrastructure",
  "event-store-adapter-rs",
  "rusqlite",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

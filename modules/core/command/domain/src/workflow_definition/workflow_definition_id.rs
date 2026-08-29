@@ -2,8 +2,6 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 /// このハーネスにインストールされたワークフロー定義の**系譜 ID** (Always Valid — 不正値は
 /// この型に存在しない)。
 ///
@@ -12,8 +10,7 @@ use serde::{Deserialize, Serialize};
 /// `name` (出荷ハーネスでは `claude`)。
 ///
 /// `Ord` は生文字列の辞書順。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WorkflowDefinitionId(String);
 
 /// `WorkflowDefinitionId::parse` が拒否する形。

@@ -16,18 +16,33 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod cli_wording;
+mod intent_execution_repository_impl;
 mod memory;
 mod store_failure;
+mod wire;
 mod workflow_definition_repository_impl;
-mod workflow_execution_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
 pub use cli_wording::invalid_mode_message;
+pub use intent_execution_repository_impl::IntentExecutionRepositoryImpl;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
-pub use workflow_execution_repository_impl::WorkflowExecutionRepositoryImpl;
+
+// 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である
+// (coding-rules/domain-persistence-neutrality.md)。ストアを具体化するのに型名が要るので
+// 公開する — 見えるのはこのクレートの外の**アダプタ利用者**だけで、ドメインとユースケースは
+// 依存の向き (層 = クレート) により参照できない。
+pub use wire::{
+    AggregateKey, WireAutonomyModeSet, WireDecodeError, WireEvent, WireGateApproved,
+    WireGateOpened, WireGateRejected, WireJumped, WireParked, WireRecomposed, WireSnapshot,
+    WireStageCompleted, WireStageRevised, WireStageSkipped, WireStarted,
+};
+// ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
+pub use intent_execution_repository_impl::{
+    IntentExecutionMemoryStore, IntentExecutionSqliteStore,
+};
 
 // テスト用 in-memory 実装
-pub use memory::InMemoryWorkflowDefinitionRepository;
+pub use memory::{InMemoryIntentRepository, InMemoryWorkflowDefinitionRepository};
 
 // 逐語文言の組み立て (12 §6 — レンダリングはアダプタ層に閉じる)
 pub use workflow_definition_repository_impl::{

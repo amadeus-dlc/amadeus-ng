@@ -17,7 +17,7 @@ use std::fmt;
 pub enum CorruptCause {
     /// 行のペイロードをドメイン型へ復号できない (JSON の破損・未知の変種・型判別子の不一致)。
     UndecodablePayload,
-    /// 列の値をドメインへ運べない (識別子が `IntentId` でない・通番が範囲外)。
+    /// 列の値をドメインへ運べない (識別子が `IntentExecutionId` でない・通番が範囲外)。
     InvariantViolation,
     /// 保存済みチェックポイントのアンカー (aid, seq_nr) が journal の同位置と一致しない。
     ///

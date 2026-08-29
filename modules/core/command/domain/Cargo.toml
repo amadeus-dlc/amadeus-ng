@@ -9,16 +9,16 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-# ADR-010: 集約・ドメインイベント・集約識別子が本家の trait を直接実装する (Conformist、
-# 腐敗防止層なし)。本家の trait 境界が `Serialize` / `Deserialize` / `DateTime<Utc>` を
-# 要求するため、serde と chrono もドメイン層の依存になる。
-event-store-adapter-rs = { workspace = true }
+# **ここに serde と event-store-adapter-rs は書かない** — ドメインは永続化知識から中立で
+# あり、この Cargo.toml がその機械強制である
+# (`coding-rules/domain-persistence-neutrality.md`)。直列化属性・ストアの trait 実装・
+# ジャーナル語彙はすべてインターフェイスアダプタ層 (書く側) と RMU (読む側) が持つ。
+#
+# chrono は残る — 時刻の**値**は永続化知識ではない (規則の対象外条項)。
 chrono = { workspace = true }
-serde = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# ITF 準拠テストが Quint のトレース JSON を読む手段 (`serde_json::Value` の読取のみで
+# derive は使わない)。外部フィクスチャの読取であって、ドメインの永続化記述ではない。
 serde_json = { workspace = true }
-# 本家 memory バックエンドへの永続化・再構成を実際に走らせる適合テスト用
-# (`tests/upstream_event_store_conformance.rs`)。本家の `EventStore` は async trait である。
-tokio = { workspace = true, features = ["rt", "macros"] }

@@ -7,14 +7,11 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 /// パース済みのステージ番号 (Always Valid)。`as_str()` は入力の生表現を逐語で返す。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 // ワイヤ表現は**生表現の文字列 1 本**である (内部の分解済み 2 値は導出物なので運ばない)。
 // 復号は `parse` を通す — 直列化の口から不正な値が型へ入り込むのを防ぐ
 // (`StageSlug` と同じ house pattern)。
-#[serde(try_from = "String", into = "String")]
 pub struct StageNumber {
     raw: String,
     phase_index: u32,

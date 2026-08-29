@@ -268,7 +268,7 @@ EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 > `(aggregate_id, seq_nr)` が持つ。下記 yaml の `schema_version: 1` 予約フィールドと
 > `envelope: { id, occurred_at, schema_version, payload }` は**失効**（per-event の
 > `schema_version` は廃止）。後継はジャーナル列の manifest 列で、値は
-> `workflow-execution-event/1`（`<型>/<版>` 形式）— Repository が書き、JournalReaderImpl が
+> `intent-execution-event/1`（~~workflow-execution-event/1~~ — B12 改名追従 2026-08-30。`<型>/<版>` 形式）— Repository が書き、JournalReaderImpl が
 > 不一致・欠落を `Corrupt(UndecodablePayload)` で拒否する。**版を上げる規約**: 版はペイロードの
 > 読み方（デコード手順）が変わるときだけ上げる。イベント変種の追加のような additive-safe な
 > 変更では上げない。回帰テスト `the_serialized_event_carries_no_transport_metadata` が、
@@ -288,7 +288,7 @@ EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 > [`developer-report-1.md`](../../construction/u4-read-model-updater/developer-report-1.md) §6。
 
 ```yaml
-asyncapi-like: workflow-execution-events
+asyncapi-like: intent-execution-events   # ~~workflow-execution-events~~ — B12 改名追従 2026-08-30
 schema_version: 1                      # 予約。追加フィールドは消費側が無視（additive-safe）
 # 2026-08-27 改訂: intent_id + seq_nr → id（WorkflowExecutionEventId）。値は同じ 2 つ組である
 envelope: { id: { intent_id, seq_nr }, occurred_at, schema_version, payload }
@@ -371,7 +371,7 @@ rules:
 > **2026-08-29 追記（Bolt B7 — event-store-adapter-rs v3.0.0 へ乗り換え、ADR-010）**: ピンを
 > ~~`=2.0.0`~~ → **`=3.0.0`** へ更新。`journal` の列に `manifest TEXT NOT NULL DEFAULT ''` が
 > 加わった — 旧 `schema_version`（ペイロード内メタ）の後継で、Repository が値
-> `workflow-execution-event/1` を書き、JournalReaderImpl が不一致・欠落を
+> `intent-execution-event/1`（~~workflow-execution-event/1~~ — B12 改名追従 2026-08-30）を書き、JournalReaderImpl が不一致・欠落を
 > `Corrupt(UndecodablePayload)` で拒否する。`occurred_at` 列は引き続き `INTEGER`（epoch
 > **ナノ秒**、`DateTime<Utc>` との往復はアダプタ層が担う）。我々の `SELECT` は
 > `rowid, aid, seq_nr, payload, occurred_at, manifest` を読む。一意索引

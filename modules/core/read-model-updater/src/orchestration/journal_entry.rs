@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
-use core_command_domain::orchestration::{IntentId, WorkflowExecutionEvent};
+use core_command_domain::orchestration::{IntentExecutionEvent, IntentExecutionId};
 
 use super::global_seq_nr::GlobalSeqNr;
 
@@ -27,10 +27,10 @@ use super::global_seq_nr::GlobalSeqNr;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalEntry {
     global_seq: GlobalSeqNr,
-    intent_id: IntentId,
+    execution_id: IntentExecutionId,
     seq_nr: usize,
     occurred_at: DateTime<Utc>,
-    event: WorkflowExecutionEvent,
+    event: IntentExecutionEvent,
 }
 
 impl JournalEntry {
@@ -38,14 +38,14 @@ impl JournalEntry {
     #[must_use]
     pub const fn new(
         global_seq: GlobalSeqNr,
-        intent_id: IntentId,
+        execution_id: IntentExecutionId,
         seq_nr: usize,
         occurred_at: DateTime<Utc>,
-        event: WorkflowExecutionEvent,
+        event: IntentExecutionEvent,
     ) -> JournalEntry {
         JournalEntry {
             global_seq,
-            intent_id,
+            execution_id,
             seq_nr,
             occurred_at,
             event,
@@ -60,8 +60,8 @@ impl JournalEntry {
 
     /// この行が属する集約の識別子。
     #[must_use]
-    pub const fn intent_id(&self) -> &IntentId {
-        &self.intent_id
+    pub const fn execution_id(&self) -> &IntentExecutionId {
+        &self.execution_id
     }
 
     /// 集約内で 1 から単調増加する順序番号。
@@ -78,7 +78,7 @@ impl JournalEntry {
 
     /// ドメインイベント本体。
     #[must_use]
-    pub const fn event(&self) -> &WorkflowExecutionEvent {
+    pub const fn event(&self) -> &IntentExecutionEvent {
         &self.event
     }
 }
@@ -86,11 +86,11 @@ impl JournalEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::{Parked, WorkflowExecutionEvent};
+    use core_command_domain::orchestration::{IntentExecutionEvent, Parked};
     use core_command_domain::workflow_definition::StageSlug;
 
-    fn intent() -> IntentId {
-        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    fn intent() -> IntentExecutionId {
+        IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
     fn at() -> DateTime<Utc> {
@@ -105,7 +105,7 @@ mod tests {
             intent(),
             seq_nr,
             at(),
-            WorkflowExecutionEvent::Unparked,
+            IntentExecutionEvent::Unparked,
         )
     }
 
@@ -113,17 +113,16 @@ mod tests {
     fn the_entry_carries_every_material_the_journal_row_had() {
         let row = entry(7, 3);
         assert_eq!(row.global_seq(), GlobalSeqNr::new(7));
-        assert_eq!(row.intent_id(), &intent());
+        assert_eq!(row.execution_id(), &intent());
         assert_eq!(row.seq_nr(), 3);
         assert_eq!(row.occurred_at(), &at());
-        assert_eq!(row.event(), &WorkflowExecutionEvent::Unparked);
+        assert_eq!(row.event(), &IntentExecutionEvent::Unparked);
     }
 
     #[test]
     fn the_entry_keeps_the_event_it_was_given() {
-        let parked = WorkflowExecutionEvent::Parked(Parked::new(
-            StageSlug::parse("intent-capture").unwrap(),
-        ));
+        let parked =
+            IntentExecutionEvent::Parked(Parked::new(StageSlug::parse("intent-capture").unwrap()));
         let row = JournalEntry::new(GlobalSeqNr::new(1), intent(), 1, at(), parked.clone());
         assert_eq!(row.event(), &parked);
     }

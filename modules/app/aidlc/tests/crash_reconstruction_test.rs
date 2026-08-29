@@ -18,27 +18,22 @@
 
 mod support;
 
-use core_command_domain::orchestration::{
-    AutonomyMode, IntentId, WorkflowExecution, WorkflowExecutionEvent,
-};
+use core_command_domain::orchestration::AutonomyMode;
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryImpl;
-use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, WorkflowExecutionRepository,
+use core_command_interface_adapter::orchestration::{
+    IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
 };
+use core_command_use_case::orchestration::{IntentExecutionRepository, RehydratedIntentExecution};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
 };
-use event_store_adapter_rs::EventStoreForSqlite;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{advance, at, intent_id, store_genesis};
+use support::{advance, at, execution_id, intent, store_genesis};
 
 /// Repository の具体型 (SQLite バックエンド)。
-type Repository = WorkflowExecutionRepositoryImpl<
-    EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>,
->;
+type Repository = IntentExecutionRepositoryImpl<IntentExecutionSqliteStore>;
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -56,7 +51,7 @@ impl Fixture {
     }
 
     fn repository(&self) -> Repository {
-        WorkflowExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
+        IntentExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
     fn reader(&self) -> JournalReaderImpl {
@@ -65,22 +60,22 @@ impl Fixture {
 }
 
 /// 5 コマンドぶん書き進め、最後の再水和結果を返す。
-async fn write_five(repository: &mut Repository) -> RehydratedWorkflowExecution {
+async fn write_five(repository: &mut Repository) -> RehydratedIntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.complete_stage(at())
+        aggregate.complete_stage(&intent(), at())
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.open_gate(vec!["intent.md".to_string()], at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(Some("ok".to_string()), at())
+        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.switch_autonomy(AutonomyMode::Autonomous, at())
+        aggregate.switch_autonomy(&intent(), AutonomyMode::Autonomous, at())
     })
     .await
 }
@@ -97,12 +92,11 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
     };
 
     let reopened = fixture.repository();
-    let found = reopened.find_by_id(&intent_id()).await.expect("読み直せる");
-    assert_eq!(
-        found.aggregate().state(),
-        expected.aggregate().state(),
-        "16 属性が一致する"
-    );
+    let found = reopened
+        .find_by_id(&execution_id())
+        .await
+        .expect("読み直せる");
+    assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
     assert_eq!(found.version(), 5);
     assert_eq!(found.aggregate().seq_nr(), 5);
 }
@@ -147,7 +141,7 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
                 "BEGIN IMMEDIATE;
                  INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
                  VALUES ('p', 's-6', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, X'7B7D', 0,
-                         'workflow-execution-event/1');",
+                         'intent-execution-event/1');",
             )
             .expect("書きかけ");
     }
@@ -157,7 +151,10 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
     assert_eq!(rows.len(), 5, "書きかけの 6 件目は残らない");
 
     let repository = fixture.repository();
-    let found = repository.find_by_id(&intent_id()).await.expect("読める");
+    let found = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("読める");
     assert_eq!(found.version(), 5);
 }
 
@@ -171,7 +168,10 @@ async fn the_store_survives_being_opened_and_closed_repeatedly() {
 
     for _ in 0..3 {
         let repository = fixture.repository();
-        let found = repository.find_by_id(&intent_id()).await.expect("読める");
+        let found = repository
+            .find_by_id(&execution_id())
+            .await
+            .expect("読める");
         assert_eq!(found.version(), 5);
     }
 
@@ -200,11 +200,14 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     }
 
     let mut repository = fixture.repository();
-    let held = repository.find_by_id(&intent_id()).await.expect("再水和");
+    let held = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("再水和");
     let mut aggregate = held.aggregate().clone();
     let event = aggregate
-        .approve_gate(Some("ok".to_string()), at())
-        .or_else(|_| aggregate.complete_stage(at()))
+        .approve_gate(&intent(), Some("ok".to_string()), at())
+        .or_else(|_| aggregate.complete_stage(&intent(), at()))
         .expect("次のコマンド");
     assert_eq!(aggregate.seq_nr(), 6);
     repository

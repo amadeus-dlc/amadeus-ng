@@ -1,5 +1,13 @@
 # amadeus-ng ドメインモデル — ユビキタス言語とコンテキストマップ
 
+> **改名裁定（2026-08-29 / Bolt B12）**: 集約 `WorkflowExecution` は **`Intent` 構造体 +
+> `IntentExecution` 集約**へ分割された（`Intent` = 静的な intent: 識別子・依頼・scope・解決済み
+> 計画・定義ピン / `IntentExecution` = 1 回の実行: `IntentExecutionId` で識別、1 intent : n 実行、
+> 実行時状態のみ保持し計画は `&Intent` 引数で受ける）。本文中の `WorkflowExecution` は文脈により
+> どちらかへ読み替える。本文の全文追従は後続 Bolt で行う（正本の裁定記録:
+> `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/intent-aggregate-rename/brief-1.md`）。
+
+
 > **位置づけ**: 仕様セット第2文書。`00-policy.md` の D2（ドメインモデル起点）・D3（Always Valid Domain Model / Domain Primitive）・D6（aidlc 互換）に基づき、境界づけられたコンテキストとユビキタス言語の正準を定める。以後のコンテキスト別仕様（10 番台）はすべて本書の裁定に従う。
 > **根拠**: upstream 13 仕様（awslabs/aidlc-workflows v2 @ `3c3146cf`, v2.6.40）の全数抽出。337 語 → 正規化 125 語、不変条件付き。状態機械 74 件。全量は [`research/domain-vocabulary.json`](research/domain-vocabulary.json) に収録し、本書は**裁定**（境界・衝突解決・関係・強制手段）を担う。
 > **策定日**: 2026-08-22

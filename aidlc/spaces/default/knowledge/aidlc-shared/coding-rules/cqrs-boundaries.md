@@ -13,7 +13,7 @@
 ## 原則
 
 本プロジェクトは CQRS + イベントソーシングを採用している。書込モデルは集約
-`WorkflowExecution` と `EventStore`（ジャーナル + スナップショット）、読取モデルは
+`IntentExecution`（~~`WorkflowExecution`~~ 分割・改名 2026-08-29 — 静的な intent は不変構造体 `Intent` へ）と `EventStore`（ジャーナル + スナップショット）、読取モデルは
 `aidlc-state.md` と監査シャードで、`ReadModelUpdater`（RMU）が投影して更新する。
 
 依存の規則は 4 つ（オーナー明言 2026-08-24）。
@@ -46,7 +46,7 @@
 
 ```rust
 // 純粋投影核 — イベントだけを受け取る。JournalReader・接続・チェックポイントを知らない
-fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Result<(), E>
+fn project(events: &[IntentExecutionEvent], read_model: &mut ReadModel) -> Result<(), E>
 
 // RMU コンポーネント — 取得ループは RMU 自身が持つ（2026-08-28 裁定）。形の要点のみ:
 //   checkpoint 読取 → events_after で差分取得 → project → advance_checkpoint

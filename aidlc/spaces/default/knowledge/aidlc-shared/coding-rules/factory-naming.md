@@ -138,7 +138,7 @@ setter は 1 つも無い。違いは命名だけ:
 > 表に当てはめること自体を目的にしない — 原則 1（正確な語が勝つ）が常に優先する。
 | `from` | 他の型からの変換 | **`impl From<T>` / `impl TryFrom<T>` を第一選択**。inherent にするなら `from_<源の名前>` | `PhaseId::from_index(u32)`、`CheckboxState::from_marker(char)` |
 | `parse` | 文字列を解析して生成 | `fn parse(s: &str) -> Result<Self, E>`（可能なら `impl FromStr` も） | `IntentId::parse(&str)` |
-| `create` | 新しいエンティティ／ドメインオブジェクトを作る | ドメイン語があればそちらを優先、無ければ `create` | 集約の genesis は `WorkflowExecution::start(..)` |
+| `create` | 新しいエンティティ／ドメインオブジェクトを作る | ドメイン語があればそちらを優先、無ければ `create` | 集約の genesis は `IntentExecution::start(id, intent, at)`（旧 `WorkflowExecution::start` — 分割・改名 2026-08-29） |
 | `generate` | ランダム・計算・アルゴリズムに基づいて値を作る | `fn generate(..) -> Self` | UUIDv7 の採番 |
 | `open` | 外部リソースを開いてハンドルを得る（**表には無いが Rust の標準慣用**） | `fn open(..) -> Result<Self, E>` | `EventStoreImpl::open(path, clock)`（`File::open` と同型） |
 

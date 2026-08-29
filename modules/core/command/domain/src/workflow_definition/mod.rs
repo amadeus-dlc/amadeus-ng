@@ -3,10 +3,10 @@
 //! 本モジュールは Published Language 1 本目 (コンパイル済み `stage-graph.json` /
 //! `scope-grid.json`、および有効スコープの権威である `scopes/aidlc-<name>.md`) の
 //! **読取モデル**を担う。ワイヤ形式のデコード (JSON / frontmatter パース) は Gateway 層の
-//! 責務であり、本モジュールの型はその形を知らない。型が持つ serde は、`orchestration` の
-//! ドメインイベントに載って本家ストアの境界を渡るためのものである (ADR-010)。
-//! `StageSlug` / `WorkflowDefinitionId` / `DefinitionRevision` の復号は `parse` と同じ検査を
-//! 通すので、Always Valid はそこでも破れない。
+//! 責務であり、本モジュールの型はその形を知らない — 直列化の記述も持たない (改訂 9 /
+//! `coding-rules/domain-persistence-neutrality.md`)。`StageSlug` / `WorkflowDefinitionId` /
+//! `DefinitionRevision` を復号するアダプタ層の DTO は `parse` を通すので、Always Valid は
+//! そこでも破れない。
 //!
 //! 契約の逐語根拠は Issue #7 項目 3 の抽出レポート。要点:
 //! - `stage-graph.json` のルートは**配列**で、ノードは `FIELD_ORDER` 28 フィールド。
@@ -30,10 +30,14 @@ mod stage_mode;
 mod stage_node;
 mod stage_number;
 mod stage_slug;
+mod workflow_definition_event;
 mod workflow_definition_id;
 // 集約名とモジュール名が一致する意図的な構成 (集約の正本ファイル)。
 #[allow(clippy::module_inception)]
 mod workflow_definition;
+
+// ドメインイベント (定義集約の genesis — coding-rules/aggregate-commands.md)
+pub use workflow_definition_event::{Defined, WorkflowDefinitionEvent};
 
 // Domain Primitive
 pub use definition_revision::DefinitionRevision;

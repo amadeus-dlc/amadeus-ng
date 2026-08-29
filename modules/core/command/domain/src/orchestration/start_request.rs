@@ -6,6 +6,9 @@
 /// `Test Strategy`) を U4 が描くための材料であり、**集約はこの 4 値に意味論を持たない** —
 /// フラグ上書きと scope metadata の既定のどちらを採るかの解決は呼出側の責務で、ここは素通しの
 /// 投影材料である。`Started` が自己完結する (投影が定義を読み直さない) ためにイベントへ載せる。
+///
+/// serde は表現の写しである。この 4 値に不変条件は無い (`new` は検査をしない) ので、復号が
+/// 検査点を迂回する余地も無い。`Intent` の一部として直列化されるために導出している。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StartRequest {
     scope: String,
@@ -40,7 +43,7 @@ impl StartRequest {
         self
     }
 
-    /// 選択されたスコープ名 (妥当性は `WorkflowExecution::start` が定義に照らして検査する)。
+    /// 選択されたスコープ名 (妥当性は `IntentExecution::start` が定義に照らして検査する)。
     #[must_use]
     pub fn scope(&self) -> &str {
         &self.scope

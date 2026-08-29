@@ -1,8 +1,8 @@
-//! `RehydratedWorkflowExecution` — 再構成した集約と、ストアが載せた楽観 version。
+//! `RehydratedIntentExecution` — 再構成した集約と、ストアが載せた楽観 version。
 
-use core_command_domain::orchestration::WorkflowExecution;
+use core_command_domain::orchestration::IntentExecution;
 
-/// [`WorkflowExecutionRepository::find_by_id`] が返す再水和の結果。
+/// [`IntentExecutionRepository::find_by_id`] が返す再水和の結果。
 ///
 /// 集約そのものと、**次の書込に提示する楽観 version** を対で運ぶ。
 ///
@@ -16,38 +16,38 @@ use core_command_domain::orchestration::WorkflowExecution;
 /// 常に最新値が提示されることになり楽観ロックが成立しない。
 ///
 /// `version` は**不透明なトークン**である。我々は解釈も比較も算術もしない — 読んだ値を
-/// そのまま [`WorkflowExecutionRepository::store`] へ返すだけである (BR5.3)。
+/// そのまま [`IntentExecutionRepository::store`] へ返すだけである (BR5.3)。
 ///
 /// フィールドは private。読取は境界越えのアクセサで公開する (field-visibility.md)。
 ///
-/// [`WorkflowExecutionRepository::find_by_id`]: super::workflow_execution_repository::WorkflowExecutionRepository::find_by_id
-/// [`WorkflowExecutionRepository::store`]: super::workflow_execution_repository::WorkflowExecutionRepository::store
+/// [`IntentExecutionRepository::find_by_id`]: super::intent_execution_repository::IntentExecutionRepository::find_by_id
+/// [`IntentExecutionRepository::store`]: super::intent_execution_repository::IntentExecutionRepository::store
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RehydratedWorkflowExecution {
-    aggregate: WorkflowExecution,
+pub struct RehydratedIntentExecution {
+    aggregate: IntentExecution,
     version: usize,
 }
 
-impl RehydratedWorkflowExecution {
+impl RehydratedIntentExecution {
     /// 再構成した集約と、その時点でストアに載っていた版を束ねる。
     #[must_use]
-    pub const fn new(aggregate: WorkflowExecution, version: usize) -> RehydratedWorkflowExecution {
-        RehydratedWorkflowExecution { aggregate, version }
+    pub const fn new(aggregate: IntentExecution, version: usize) -> RehydratedIntentExecution {
+        RehydratedIntentExecution { aggregate, version }
     }
 
     /// 再構成した集約。
     #[must_use]
-    pub const fn aggregate(&self) -> &WorkflowExecution {
+    pub const fn aggregate(&self) -> &IntentExecution {
         &self.aggregate
     }
 
     /// 次の書込に提示する楽観 version (ストアが採番した不透明トークン)。
     ///
     /// `usize` で運ぶが数ではない — 解釈も比較も算術もせず、そのまま
-    /// [`WorkflowExecutionRepository::store`] へ渡す。`seq_nr` と混同してはならず、集約へ
+    /// [`IntentExecutionRepository::store`] へ渡す。`seq_nr` と混同してはならず、集約へ
     /// 入れてもならない。
     ///
-    /// [`WorkflowExecutionRepository::store`]: super::workflow_execution_repository::WorkflowExecutionRepository::store
+    /// [`IntentExecutionRepository::store`]: super::intent_execution_repository::IntentExecutionRepository::store
     #[must_use]
     pub const fn version(&self) -> usize {
         self.version
@@ -55,7 +55,7 @@ impl RehydratedWorkflowExecution {
 
     /// 集約の所有権を取り出す (コマンドを打つ側は `&mut` が要る)。
     #[must_use]
-    pub fn into_aggregate(self) -> WorkflowExecution {
+    pub fn into_aggregate(self) -> IntentExecution {
         self.aggregate
     }
 }
@@ -80,17 +80,19 @@ mod tests {
     }
 
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentId, StageEntry, StartRequest};
+    use core_command_domain::orchestration::{
+        Intent, IntentExecutionId, IntentId, StageEntry, StartRequest,
+    };
     use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
 
-    fn aggregate() -> WorkflowExecution {
-        WorkflowExecution::start_from_plan_unchecked(
+    fn intent() -> Intent {
+        Intent::from_material(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            &StartRequest::new("classic", "rehydration"),
+            StartRequest::new("classic", "rehydration"),
             vec![StageEntry::new(
                 StageSlug::parse("state-init").unwrap(),
                 PhaseId::Initialization,
@@ -99,35 +101,46 @@ mod tests {
                 display("0.1"),
             )],
             scan(),
-            DateTime::<Utc>::UNIX_EPOCH,
         )
         .unwrap()
+    }
+
+    fn aggregate() -> IntentExecution {
+        IntentExecution::start(
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            intent(),
+            DateTime::<Utc>::UNIX_EPOCH,
+        )
         .0
     }
 
     #[test]
     fn the_result_carries_the_aggregate_and_the_version_the_store_assigned() {
-        let rehydrated = RehydratedWorkflowExecution::new(aggregate(), 4);
+        let rehydrated = RehydratedIntentExecution::new(aggregate(), 4);
         assert_eq!(rehydrated.aggregate(), &aggregate());
         assert_eq!(rehydrated.version(), 4);
     }
 
     #[test]
     fn the_aggregate_can_be_taken_out_to_receive_commands() {
-        let rehydrated = RehydratedWorkflowExecution::new(aggregate(), 4);
+        let rehydrated = RehydratedIntentExecution::new(aggregate(), 4);
         let mut taken = rehydrated.into_aggregate();
-        assert!(taken.complete_stage(DateTime::<Utc>::UNIX_EPOCH).is_ok());
+        assert!(
+            taken
+                .complete_stage(&intent(), DateTime::<Utc>::UNIX_EPOCH)
+                .is_ok()
+        );
     }
 
     #[test]
     fn results_compare_by_value() {
         assert_eq!(
-            RehydratedWorkflowExecution::new(aggregate(), 1),
-            RehydratedWorkflowExecution::new(aggregate(), 1)
+            RehydratedIntentExecution::new(aggregate(), 1),
+            RehydratedIntentExecution::new(aggregate(), 1)
         );
         assert_ne!(
-            RehydratedWorkflowExecution::new(aggregate(), 1),
-            RehydratedWorkflowExecution::new(aggregate(), 2)
+            RehydratedIntentExecution::new(aggregate(), 1),
+            RehydratedIntentExecution::new(aggregate(), 2)
         );
     }
 }

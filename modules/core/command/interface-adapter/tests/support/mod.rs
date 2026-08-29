@@ -1,4 +1,4 @@
-//! 契約テストの試験装置 — `WorkflowExecutionRepository` の実装が**どのバックエンドでも
+//! 契約テストの試験装置 — `IntentExecutionRepository` の実装が**どのバックエンドでも
 //! 同じ約束を満たす**ことを 1 度だけ書いて共有するための足場 (BR2.7)。
 //!
 //! バックエンドごとの差 (本家の memory / SQLite) はこの [`StoreFixture`] に閉じ、契約
@@ -10,16 +10,14 @@ pub(crate) mod contract;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution,
-    WorkflowExecutionEvent, WorkspaceScan,
+    CommandError, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
+    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, WorkflowExecutionRepository,
-};
+use core_command_use_case::orchestration::{IntentExecutionRepository, RehydratedIntentExecution};
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -37,6 +35,9 @@ pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 /// ストアに存在しない集約識別子。
 pub(crate) const ABSENT_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
 
+/// 契約テストの実行識別子 (ストアの集約キー — intent 識別子とは別物)。
+pub(crate) const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
+
 /// 契約テストがバックエンドごとの差を吸収するための試験装置。
 ///
 /// 「同じストアを別のインスタンスから開き直す」を、バックエンドによらず同じ形で書けるように
@@ -50,7 +51,7 @@ pub(crate) const ABSENT_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
 ///   行**が見える別インスタンスを返す。
 pub(crate) trait StoreFixture {
     /// 試験対象の Repository (内包するバックエンドだけが違う)。
-    type Repository: WorkflowExecutionRepository;
+    type Repository: IntentExecutionRepository;
 
     /// **空のストア**を指す新しい Repository を開く (呼ぶたびに独立した空のストア)。
     fn open(&self) -> Self::Repository;
@@ -59,16 +60,22 @@ pub(crate) trait StoreFixture {
     fn reopen(&self, repository: &Self::Repository) -> Self::Repository;
 }
 
-/// 契約テストの集約識別子。
+/// 契約テストの intent 識別子。
 #[must_use]
 pub(crate) fn intent_id() -> IntentId {
     IntentId::parse(INTENT).expect("契約テストの IntentId は UUIDv7")
 }
 
-/// ストアに存在しない集約識別子。
+/// 契約テストの実行識別子 (ストアの集約キー)。
 #[must_use]
-pub(crate) fn absent_intent_id() -> IntentId {
-    IntentId::parse(ABSENT_INTENT).expect("契約テストの IntentId は UUIDv7")
+pub(crate) fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(EXECUTION).expect("契約テストの IntentExecutionId は UUIDv7")
+}
+
+/// ストアに存在しない実行識別子。
+#[must_use]
+pub(crate) fn absent_execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(ABSENT_INTENT).expect("契約テストの IntentExecutionId は UUIDv7")
 }
 
 /// 合成計画の表示属性 (投影の検収は RMU 側の専用テストが持つので固定値でよい)。
@@ -127,59 +134,64 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 #[must_use]
-pub(crate) fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-    genesis_for(intent_id())
+pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
+    genesis_for(execution_id())
+}
+
+/// 契約テストの intent (解決済み合成計画)。
+#[must_use]
+pub(crate) fn intent() -> Intent {
+    Intent::from_material(
+        intent_id(),
+        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+            .expect("契約テストの定義 revision"),
+        StartRequest::new("classic", "contract").with_depth("standard"),
+        stages(),
+        scan(),
+    )
+    .expect("合成計画は Intent の不変条件を満たす")
 }
 
 /// 指定した集約識別子の genesis (横断読取のテストが 2 集約を並べるのに使う)。
 #[must_use]
-pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_from_plan_unchecked(
-        intent,
-        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("契約テストの定義 revision"),
-        &StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
-        at(),
-    )
-    .expect("合成計画は start の前提を満たす")
+pub(crate) fn genesis_for(execution: IntentExecutionId) -> (IntentExecution, IntentExecutionEvent) {
+    IntentExecution::start(execution, intent(), at())
 }
 
 /// 1 件書いてから**握り直す** (書込後の楽観 version を知っているのはストアだけ — BR5.3)。
 ///
 /// `store` は引数の集約を変更しないので、次のコマンドを打つ前に再水和するのが唯一の作法で
 /// ある。`find_by_id` は「書いた集約 + ストアが採番した version」を返す。
-pub(crate) async fn store_and_reload<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_and_reload<R: IntentExecutionRepository>(
     repository: &mut R,
-    event: &WorkflowExecutionEvent,
-    aggregate: &WorkflowExecution,
+    event: &IntentExecutionEvent,
+    aggregate: &IntentExecution,
     expected_version: usize,
-) -> RehydratedWorkflowExecution {
+) -> RehydratedIntentExecution {
     repository
         .store(event, aggregate, expected_version)
         .await
         .expect("store");
     repository
-        .find_by_id(aggregate.intent_id())
+        .find_by_id(aggregate.id())
         .await
         .expect("書いた集約は握り直せる")
 }
 
 /// genesis (`Started`) を 1 件書き、握り直した結果を返す。
-pub(crate) async fn store_genesis<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_genesis<R: IntentExecutionRepository>(
     repository: &mut R,
-) -> RehydratedWorkflowExecution {
-    store_genesis_for(repository, intent_id()).await
+) -> RehydratedIntentExecution {
+    store_genesis_for(repository, execution_id()).await
 }
 
 /// 指定した集約識別子の genesis を 1 件書き、握り直した結果を返す。
-pub(crate) async fn store_genesis_for<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_genesis_for<R: IntentExecutionRepository>(
     repository: &mut R,
-    intent: IntentId,
-) -> RehydratedWorkflowExecution {
-    let (aggregate, event) = genesis_for(intent);
+    execution: IntentExecutionId,
+) -> RehydratedIntentExecution {
+    let (aggregate, event) = genesis_for(execution);
     store_and_reload(repository, &event, &aggregate, R::UNPERSISTED_VERSION).await
 }
 
@@ -188,12 +200,12 @@ pub(crate) async fn store_genesis_for<R: WorkflowExecutionRepository>(
 /// 版は**握っているものを提示する** — 書込直前に読み直さないのが楽観ロックの本体である。
 pub(crate) async fn advance<R, F>(
     repository: &mut R,
-    held: &RehydratedWorkflowExecution,
+    held: &RehydratedIntentExecution,
     command: F,
-) -> RehydratedWorkflowExecution
+) -> RehydratedIntentExecution
 where
-    R: WorkflowExecutionRepository,
-    F: FnOnce(&mut WorkflowExecution) -> Result<WorkflowExecutionEvent, CommandError>,
+    R: IntentExecutionRepository,
+    F: FnOnce(&mut IntentExecution) -> Result<IntentExecutionEvent, CommandError>,
 {
     let mut aggregate = held.aggregate().clone();
     let event = command(&mut aggregate).expect("コマンドは受理される");
@@ -201,9 +213,12 @@ where
 }
 
 /// 続きの 1 件 (`StageCompleted`) を書き、握り直した結果を返す。
-pub(crate) async fn store_stage_completed<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_stage_completed<R: IntentExecutionRepository>(
     repository: &mut R,
-    held: &RehydratedWorkflowExecution,
-) -> RehydratedWorkflowExecution {
-    advance(repository, held, |aggregate| aggregate.complete_stage(at())).await
+    held: &RehydratedIntentExecution,
+) -> RehydratedIntentExecution {
+    advance(repository, held, |aggregate| {
+        aggregate.complete_stage(&intent(), at())
+    })
+    .await
 }

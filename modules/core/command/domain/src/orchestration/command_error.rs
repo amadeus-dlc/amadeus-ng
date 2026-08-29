@@ -9,6 +9,11 @@ use crate::workspace::CheckboxState;
 /// ガード違反は「発火しないアクション」であって状態は一切動かない (モデルの enabled 条件と同型)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandError {
+    /// 判断に渡された `Intent` がこの実行のものでない (識別子不一致、または計画長の不一致)。
+    ///
+    /// 集約は intent を ID で参照するので、この照合が書ける
+    /// (coding-rules/aggregate-references.md)。
+    IntentMismatch,
     /// コマンドを受理できない — Completed、または park が活性 (BR1.0)。
     NotRunning,
     /// checkbox 前提の不一致 (BR1.3 / BR1.4 / BR1.5)。
@@ -42,6 +47,7 @@ pub enum CommandError {
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            CommandError::IntentMismatch => f.write_str("intent mismatch"),
             CommandError::NotRunning => f.write_str("not running"),
             CommandError::CheckboxPrecondition { stage, actual } => write!(
                 f,

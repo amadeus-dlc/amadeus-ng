@@ -3,13 +3,10 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 /// パース済みの stage slug (Always Valid — 不正値はこの型に存在しない)。
 ///
 /// `Ord` は生文字列の辞書順。数値順の語彙は `StageNumber` が持つ (両者を混同しないこと)。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StageSlug(String);
 
 /// `StageSlug::parse` が拒否する文法違反。

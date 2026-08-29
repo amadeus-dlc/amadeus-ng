@@ -1,12 +1,12 @@
 //! ITF 準拠テスト (ADR 0003 決定 5) — `formal/orchestration/engine_loop.qnt` のトレースを
-//! イベントソーシング形の `WorkflowExecution` に **decide → apply** 経路で再生し、全ステップで
+//! イベントソーシング形の `IntentExecution` に **decide → apply** 経路で再生し、全ステップで
 //! 状態射影とディレクティブ観測を突き合わせる (BR2.5)。
 //! フィクスチャは `tests/conformance/fixtures/engine_loop/` にコミット済み (#meta 正規化済み)。
 //! トレースの各遷移は `lastAction` で駆動する (lastAction 規約)。
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
 //! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
-//! `WorkflowExecution::start_from_plan_unchecked` に直接与えて集約を作る。実グラフの initialization が
+//! `Intent::create` へ直接与え、その対の左を `IntentExecution::start` に渡して集約を作る。実グラフの initialization が
 //! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, EngineSignal, IntentId, NextRequest, StageDisplay, StageEntry, StageIndex,
-    StartRequest, Status, WorkflowExecution, WorkspaceScan,
+    AutonomyMode, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId, NextRequest,
+    StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph,
@@ -130,7 +130,7 @@ fn synthetic_revision() -> DefinitionRevision {
 
 /// `next_decision` の第 2 引数用。集約は id の一致だけを見る (BR2.6 / BR3.1)。
 fn synthetic_definition() -> WorkflowDefinition {
-    WorkflowDefinition::new(
+    WorkflowDefinition::from_artifacts(
         synthetic_id(),
         synthetic_revision(),
         StageGraph::new(Vec::new()).unwrap(),
@@ -178,11 +178,11 @@ fn scan() -> WorkspaceScan {
     .unwrap()
 }
 
-fn index(agg: &WorkflowExecution, value: usize) -> StageIndex {
+fn index(agg: &IntentExecution, value: usize) -> StageIndex {
     agg.stage_index(value).unwrap()
 }
 
-fn assert_projection(agg: &WorkflowExecution, m: &ModelState, step: usize) {
+fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
     let n = agg.stage_count();
     assert_eq!(n, m.plan.len(), "step {step}: stage count");
     for s in 0..n {
@@ -265,16 +265,22 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let (mut agg, _started) = WorkflowExecution::start_from_plan_unchecked(
+    // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに渡すのは対の左である
+    // (改訂 8 / coding-rules/aggregate-commands.md)。
+    let (intent, _created) = Intent::create(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
-        &StartRequest::new("itf", "conformance"),
+        StartRequest::new("itf", "conformance"),
         synthetic_stages(m0),
         scan(),
-        at(),
     )
     .unwrap();
+    let (mut agg, _started) = IntentExecution::start(
+        IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
+        intent.clone(),
+        at(),
+    );
     assert_eq!(agg.seq_nr(), 1, "genesis の通番は 1 (BR2.1)");
     assert_projection(&agg, m0, 0);
 
@@ -285,7 +291,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             // 観測アクション (状態不変)
             "next" | "next_parked" | "done_stutter" => {
                 let decision = agg
-                    .next_decision(&definition, &NextRequest::default())
+                    .next_decision(&intent, &definition, &NextRequest::default())
                     .unwrap();
                 assert_signal(EngineSignal::from(&decision), m, i);
             }
@@ -302,47 +308,48 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             "report_forward" => {
                 // 非ゲート (initialization) は complete_stage、ゲートは approve_gate (BR1.3)。
                 let cursor = agg.cursor();
-                if agg.gated(cursor) == Some(true) {
-                    agg.approve_gate(None, at()).unwrap();
+                if agg.gated(&intent, cursor) == Some(true) {
+                    agg.approve_gate(&intent, None, at()).unwrap();
                 } else {
-                    agg.complete_stage(at()).unwrap();
+                    agg.complete_stage(&intent, at()).unwrap();
                 }
                 assert_directive(m, "DDone", i);
             }
             "report_awaiting_approval" => {
-                agg.open_gate(Vec::new(), at()).unwrap();
+                agg.open_gate(&intent, Vec::new(), at()).unwrap();
             }
             "report_rejected" => {
-                agg.reject_gate(None, at()).unwrap();
+                agg.reject_gate(&intent, None, at()).unwrap();
             }
             "report_revised" => {
-                agg.revise_stage(at()).unwrap();
+                agg.revise_stage(&intent, at()).unwrap();
             }
             "report_skipped" => {
-                agg.skip_stage("conformance".to_string(), at()).unwrap();
+                agg.skip_stage(&intent, "conformance".to_string(), at())
+                    .unwrap();
                 assert_directive(m, "DDone", i);
             }
             "jump_forward" | "jump_backward" => {
                 let target = index(&agg, m.cursor);
-                agg.jump(target, at()).unwrap();
+                agg.jump(&intent, target, at()).unwrap();
             }
             "jump_redo" => {
                 let target = index(&agg, prev.cursor);
-                agg.jump(target, at()).unwrap();
+                agg.jump(&intent, target, at()).unwrap();
             }
             "park" => {
-                agg.park(at()).unwrap();
+                agg.park(&intent, at()).unwrap();
                 assert_directive(m, "DParked", i);
             }
             "unpark" => {
-                agg.unpark(at()).unwrap();
+                agg.unpark(&intent, at()).unwrap();
             }
             "recompose" => {
                 // モデルの actRecompose は 1 ステージ反転 — 要素数 1 の recompose に対応 (BR2.5)。
                 let s = (0..prev.overlay.len())
                     .find(|&s| prev.overlay[s] != m.overlay[s])
                     .unwrap();
-                agg.recompose(&[index(&agg, s)], at()).unwrap();
+                agg.recompose(&intent, &[index(&agg, s)], at()).unwrap();
             }
             "set_autonomy" => {
                 // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
@@ -351,7 +358,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.switch_autonomy(mode, at()).unwrap();
+                agg.switch_autonomy(&intent, mode, at()).unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }
@@ -360,7 +367,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
 }
 
 #[test]
-fn workflow_execution_conforms_to_every_committed_engine_loop_trace() {
+fn intent_conforms_to_every_committed_engine_loop_trace() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../../tests/conformance/fixtures/engine_loop");
     let mut count = 0;

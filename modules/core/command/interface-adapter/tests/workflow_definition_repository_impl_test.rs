@@ -386,7 +386,7 @@ fn a_full_read_wires_up_the_five_predicates() {
     assert_eq!(rows[4].2, Some(PlanAction::Skip));
 
     // 静的グリッドの照会は 3 値。実効プランの合成 (recompose オーバレイとの重ね合わせ) は
-    // FR8.4 で `WorkflowExecution` へ移設したのでここには無い。
+    // FR8.4 で `IntentExecution` へ移設したのでここには無い。
     assert_eq!(
         definition
             .grid()
