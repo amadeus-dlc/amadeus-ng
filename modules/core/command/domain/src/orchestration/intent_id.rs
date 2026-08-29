@@ -1,4 +1,5 @@
-//! `IntentId` — 集約 `Intent` の識別子 (entities.md IntentId)。
+//! `IntentId` — 集約 `Intent` の識別子 (`intents.json` の uuid・記録ディレクトリの id8。
+//! entities.md IntentId)。
 
 use std::fmt;
 

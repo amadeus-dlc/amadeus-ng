@@ -220,7 +220,7 @@ impl IntentRepository for InMemoryIntentRepository {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
             .clone()
-            .filter(|aggregate| aggregate.intent_id() == id)
+            .filter(|aggregate| aggregate.id() == id)
             .map(|aggregate| RehydratedIntent::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
                 intent_id: id.clone(),

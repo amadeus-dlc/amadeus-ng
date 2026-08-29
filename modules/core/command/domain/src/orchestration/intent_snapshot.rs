@@ -38,7 +38,7 @@ use crate::workspace::CheckboxState;
 /// [`Intent`]: super::intent::Intent
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct IntentSnapshot {
-    pub(crate) intent_id: IntentId,
+    pub(crate) id: IntentId,
     pub(crate) definition_id: WorkflowDefinitionId,
     pub(crate) definition_revision: DefinitionRevision,
     pub(crate) stages: Vec<StageEntry>,
@@ -74,7 +74,7 @@ impl IntentBuilder {
     /// 識別子 3 種と解決済み計画から、birth 時の既定値でビルダーを起こす。
     #[must_use]
     pub fn new(
-        intent_id: IntentId,
+        id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         stages: Vec<StageEntry>,
@@ -89,7 +89,7 @@ impl IntentBuilder {
         let revision_count = vec![0; stages.len()];
         IntentBuilder {
             state: IntentSnapshot {
-                intent_id,
+                id,
                 definition_id,
                 definition_revision,
                 overlay: plan.clone(),
@@ -293,10 +293,7 @@ mod tests {
     #[test]
     fn the_identity_attributes_are_carried_verbatim() {
         let intent = builder().build().unwrap();
-        assert_eq!(
-            intent.intent_id().as_str(),
-            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
-        );
+        assert_eq!(intent.id().as_str(), "01a02785-1bd8-76eb-aeea-5aa303ebd5b6");
         assert_eq!(intent.definition_id().as_str(), "claude");
         assert_eq!(
             intent.definition_revision().as_str(),

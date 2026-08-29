@@ -80,7 +80,7 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(into = "IntentSnapshot", try_from = "IntentSnapshot")]
 pub struct Intent {
-    intent_id: IntentId,
+    id: IntentId,
     definition_id: WorkflowDefinitionId,
     definition_revision: DefinitionRevision,
     /// 文書順の解決済み計画。`stages` / `plan` / `conditional` の 3 属性をこの 1 列が担う
@@ -117,7 +117,7 @@ impl Intent {
     /// 畳まれた / 先頭ステージがスコープ外 (`InitializationMustExecute`)、initialization ステージが
     /// CONDITIONAL (`InitializationMustBeUnconditional`) を拒否する。
     pub fn start(
-        intent_id: IntentId,
+        id: IntentId,
         definition: &WorkflowDefinition,
         request: &StartRequest,
         scan: WorkspaceScan,
@@ -164,7 +164,7 @@ impl Intent {
             ));
         }
         Intent::start_from_plan_unchecked(
-            intent_id,
+            id,
             definition.id().clone(),
             definition.revision().clone(),
             request,
@@ -189,7 +189,7 @@ impl Intent {
     /// 拒否する (先頭はカーソルの初期位置なので実効 EXECUTE でなければ `cursor_in_scope` を破る)。
     /// スコープ名の妥当性 (`UnknownScope`) は上記のとおり検査しない。
     pub fn start_from_plan_unchecked(
-        intent_id: IntentId,
+        id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         request: &StartRequest,
@@ -230,7 +230,7 @@ impl Intent {
             scan,
         ));
         let execution = Intent {
-            intent_id,
+            id,
             definition_id,
             definition_revision,
             stages,
@@ -250,10 +250,10 @@ impl Intent {
 
     // ---- 観測 (read model) ----
 
-    /// この実行が属する Intent の識別子 (以後不変)。
+    /// この intent の識別子 (以後不変。`intents.json` の uuid にあたる)。
     #[must_use]
-    pub const fn intent_id(&self) -> &IntentId {
-        &self.intent_id
+    pub const fn id(&self) -> &IntentId {
+        &self.id
     }
 
     /// 適用済みイベント数と一致する順序番号 (`Started` = 1 — BR2.1)。
@@ -990,7 +990,7 @@ impl Intent {
     #[must_use]
     pub(crate) fn state(&self) -> IntentSnapshot {
         IntentSnapshot {
-            intent_id: self.intent_id.clone(),
+            id: self.id.clone(),
             definition_id: self.definition_id.clone(),
             definition_revision: self.definition_revision.clone(),
             plan: self.stages.iter().map(StageEntry::plan_action).collect(),
@@ -1041,7 +1041,7 @@ impl Intent {
             }
         }
         let execution = Intent {
-            intent_id: state.intent_id,
+            id: state.id,
             definition_id: state.definition_id,
             definition_revision: state.definition_revision,
             stages: state.stages,
@@ -1433,7 +1433,7 @@ mod tests {
         // genesis 直後の集約がその 3 点を保持している (B7)。
         assert_eq!(w.seq_nr(), 1);
         assert_eq!(w.last_updated_at(), &occurred());
-        assert_eq!(w.intent_id(), &intent());
+        assert_eq!(w.id(), &intent());
         let IntentEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
@@ -2076,7 +2076,7 @@ mod tests {
         // memento はクレート内私有なので、同一クレートのテストは属性を直接読む
         // (アクセサは置かない — 外へ出さない型に読取面を二重化しない)。
         let state = w.state();
-        assert_eq!(state.intent_id, *w.intent_id());
+        assert_eq!(state.id, *w.id());
         assert_eq!(state.definition_id, *w.definition_id());
         assert_eq!(state.definition_revision, *w.definition_revision());
         assert_eq!(state.stages, w.stages());

@@ -160,7 +160,7 @@ pub(crate) async fn store_and_reload<R: IntentRepository>(
         .await
         .expect("store");
     repository
-        .find_by_id(aggregate.intent_id())
+        .find_by_id(aggregate.id())
         .await
         .expect("書いた集約は握り直せる")
 }

@@ -137,7 +137,7 @@ mod tests {
             .await
             .unwrap();
         let found = rehydrate(&repository, &intent()).await.unwrap();
-        assert_eq!(found.aggregate().intent_id(), &intent());
+        assert_eq!(found.aggregate().id(), &intent());
     }
 
     #[tokio::test]

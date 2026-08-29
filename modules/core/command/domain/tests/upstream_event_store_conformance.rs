@@ -121,7 +121,7 @@ fn genesis() -> (Intent, IntentEvent) {
 /// 通番も発生時刻も**適用後の集約**が持っている。ドメインは封筒を作らない。
 fn envelope(aggregate: &Intent, event: IntentEvent) -> EventEnvelope<IntentId, IntentEvent> {
     EventEnvelope::new(
-        aggregate.intent_id().clone(),
+        aggregate.id().clone(),
         aggregate.seq_nr(),
         *aggregate.last_updated_at(),
         event,

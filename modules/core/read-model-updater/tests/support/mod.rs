@@ -162,7 +162,7 @@ impl JournalWriter {
     /// 適用後の集約から本家の封筒を組んで書く (型判別子は共有語彙の `EVENT_MANIFEST`)。
     async fn persist(&mut self, store: &mut UpstreamStore, event: &IntentEvent) {
         let envelope = EventEnvelope::new(
-            self.aggregate.intent_id().clone(),
+            self.aggregate.id().clone(),
             self.aggregate.seq_nr(),
             *self.aggregate.last_updated_at(),
             event.clone(),

@@ -156,7 +156,7 @@ where
     /// `seq_nr = 0` に対して行ったのと同じ形)。
     fn envelope(event: IntentEvent, aggregate: &Intent) -> EventEnvelope<IntentId, IntentEvent> {
         EventEnvelope::new(
-            aggregate.intent_id().clone(),
+            aggregate.id().clone(),
             aggregate.seq_nr(),
             *aggregate.last_updated_at(),
             event,
@@ -202,11 +202,11 @@ where
         match error {
             EventStoreWriteError::OptimisticLockError(_) => RepositoryError::Conflict {
                 expected: expected_version,
-                actual: self.stored_version(aggregate.intent_id()).await,
+                actual: self.stored_version(aggregate.id()).await,
             },
             EventStoreWriteError::SerializationError(_)
             | EventStoreWriteError::ContractViolation(_) => RepositoryError::Corrupt {
-                aggregate_id: aggregate.intent_id().clone(),
+                aggregate_id: aggregate.id().clone(),
                 seq_nr: Some(aggregate.seq_nr()),
                 cause: CorruptCause::UndecodablePayload,
             },
