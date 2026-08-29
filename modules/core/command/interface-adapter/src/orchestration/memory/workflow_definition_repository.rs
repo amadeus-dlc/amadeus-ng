@@ -84,7 +84,7 @@ mod tests {
             "feature".to_string(),
             ScopeMetadata::new("feature").unwrap(),
         );
-        WorkflowDefinition::new(id("claude"), revision(), graph, grid, scopes)
+        WorkflowDefinition::from_artifacts(id("claude"), revision(), graph, grid, scopes)
     }
 
     #[test]

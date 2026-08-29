@@ -109,6 +109,12 @@ impl IntentExecution {
     /// 同じ位置づけであり、集約は時計も乱数も持たない。集約が控えるのは `intent_id` と
     /// 実行時状態だけで、静的な材料は `Started` が歴史として運ぶ
     /// (coding-rules/aggregate-references.md「イベントに材料の複製が載るのは違反ではない」)。
+    ///
+    /// 戻り値が**対**なのは規則である (coding-rules/aggregate-commands.md) — Repository の
+    /// 永続化は `store(&event, &aggregate, ..)` の形でジャーナル追記分 (誕生イベント) と
+    /// スナップショット分 (適用後の集約) を同一トランザクションで受け取るので、どちらが
+    /// 欠けても永続化が組めない。再構成経路 (`from_snapshot` / `apply_event`) は逆に
+    /// **イベントを作らない** — 作ればリプレイのたびに歴史が増える。
     #[must_use]
     pub fn start(
         id: IntentExecutionId,
@@ -1528,7 +1534,7 @@ mod tests {
 
     /// `next_decision` の第 2 引数用の最小定義 (id の照合にしか使われない — BR3.1)。
     fn bare_definition(id: &str) -> WorkflowDefinition {
-        WorkflowDefinition::new(
+        WorkflowDefinition::from_artifacts(
             def_id(id),
             revision('0'),
             StageGraph::new(Vec::new()).unwrap(),
@@ -1579,7 +1585,7 @@ mod tests {
         )]
         .into_iter()
         .collect();
-        WorkflowDefinition::new(def_id("claude"), revision('a'), graph, grid, scopes)
+        WorkflowDefinition::from_artifacts(def_id("claude"), revision('a'), graph, grid, scopes)
     }
 
     fn full_grid() -> ScopeGrid {
@@ -2441,7 +2447,7 @@ mod tests {
     #[test]
     fn a_newer_revision_of_the_same_definition_is_accepted() {
         let w = all_exec(3);
-        let drifted = WorkflowDefinition::new(
+        let drifted = WorkflowDefinition::from_artifacts(
             def_id("claude"),
             revision('f'),
             StageGraph::new(Vec::new()).unwrap(),

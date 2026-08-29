@@ -491,7 +491,7 @@ mod tests {
         )]
         .into_iter()
         .collect();
-        let definition = WorkflowDefinition::new(
+        let definition = WorkflowDefinition::from_artifacts(
             def_id(),
             revision(),
             StageGraph::new(vec![node]).unwrap(),

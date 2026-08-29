@@ -537,7 +537,7 @@ impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
         let scopes = self.load_scopes()?;
         let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
 
-        Ok(WorkflowDefinition::new(
+        Ok(WorkflowDefinition::from_artifacts(
             harness_id, revision, graph, grid, scopes,
         ))
     }

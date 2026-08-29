@@ -130,7 +130,7 @@ fn synthetic_revision() -> DefinitionRevision {
 
 /// `next_decision` の第 2 引数用。集約は id の一致だけを見る (BR2.6 / BR3.1)。
 fn synthetic_definition() -> WorkflowDefinition {
-    WorkflowDefinition::new(
+    WorkflowDefinition::from_artifacts(
         synthetic_id(),
         synthetic_revision(),
         StageGraph::new(Vec::new()).unwrap(),

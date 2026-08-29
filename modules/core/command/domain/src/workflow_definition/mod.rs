@@ -30,10 +30,14 @@ mod stage_mode;
 mod stage_node;
 mod stage_number;
 mod stage_slug;
+mod workflow_definition_event;
 mod workflow_definition_id;
 // 集約名とモジュール名が一致する意図的な構成 (集約の正本ファイル)。
 #[allow(clippy::module_inception)]
 mod workflow_definition;
+
+// ドメインイベント (定義集約の genesis — coding-rules/aggregate-commands.md)
+pub use workflow_definition_event::{Defined, WorkflowDefinitionEvent};
 
 // Domain Primitive
 pub use definition_revision::DefinitionRevision;
