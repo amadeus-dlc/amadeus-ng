@@ -40,12 +40,10 @@ use super::intent_execution_event::{
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
 use super::intent_execution_id::IntentExecutionId;
-use super::intent_execution_snapshot::{IntentExecutionSnapshot, IntentExecutionSnapshotBuilder};
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
-use super::snapshot_error::SnapshotError;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::status::Status;
@@ -101,7 +99,7 @@ impl IntentExecution {
     ///
     /// 受け取る [`Intent`] は Always Valid（空でない計画・initialization は EXECUTE かつ
     /// 非 CONDITIONAL）なので、ここに失敗経路は無い。計画の解決とスコープ検査は
-    /// [`Intent::resolve`] が済ませている。
+    /// [`Intent::create`] が済ませている。
     ///
     /// 実行の識別子は**呼出側がミントする** — upstream がツール層で uuid をミントするのと
     /// 同じ位置づけであり、集約は時計も乱数も持たない。集約が控えるのは `intent_id` と
@@ -119,6 +117,27 @@ impl IntentExecution {
         intent: Intent,
         occurred_at: DateTime<Utc>,
     ) -> (IntentExecution, IntentExecutionEvent) {
+        let execution = IntentExecution::genesis_state(id, &intent, occurred_at);
+        (
+            execution,
+            IntentExecutionEvent::Started(Started::new(intent)),
+        )
+    }
+
+    /// テスト専用: 通番だけ差し替えた複製 (通番枯渇の境界を memento 無しで作るため)。
+    #[cfg(test)]
+    const fn with_seq_nr(mut self, seq_nr: usize) -> IntentExecution {
+        self.seq_nr = seq_nr;
+        self
+    }
+
+    /// genesis 時点の状態を組む (構造体リテラルはここだけ — [`IntentExecution::start`] と
+    /// [`IntentExecution::replay`] の両経路が必ずここを通る)。
+    fn genesis_state(
+        id: IntentExecutionId,
+        intent: &Intent,
+        occurred_at: DateTime<Utc>,
+    ) -> IntentExecution {
         let count = intent.stage_count();
         let overlay: Vec<PlanAction> = intent
             .stages()
@@ -129,7 +148,7 @@ impl IntentExecution {
         if let Some(first) = checkbox.first_mut() {
             *first = CheckboxState::InProgress;
         }
-        let execution = IntentExecution {
+        IntentExecution {
             id,
             intent_id: intent.id().clone(),
             overlay,
@@ -142,11 +161,44 @@ impl IntentExecution {
             revision_count: vec![0; count],
             seq_nr: 1,
             last_updated_at: occurred_at,
+        }
+    }
+
+    /// ジャーナル全体から集約を復元する (Event Sourcing の再生経路)。
+    ///
+    /// 本家 v3 の `replay(events, snapshot)` にあたる — ただしスナップショット行のペイロード
+    /// を状態の正本にしない。**状態はイベント列から導出する**: 先頭は必ず genesis の
+    /// `Started` (通番 1) で、実行の対象 intent はその誕生記録から得る。以後の差分は
+    /// [`IntentExecution::apply_event`] で畳み込む — 通常実行とリプレイの同一経路 (BR1.1)。
+    ///
+    /// # Panics
+    ///
+    /// 空のジャーナル、先頭が `Started` でない・通番 1 でない、および途中の壊れた歴史
+    /// (通番の飛び・未知ステージ・不変条件違反)。再構成は失敗を返さない — 壊れた歴史は
+    /// 回復せずクラッシュする (オーナー裁定 2026-08-30)。
+    #[must_use]
+    #[allow(
+        clippy::panic,
+        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
+    )]
+    pub fn replay(
+        id: IntentExecutionId,
+        events: impl IntoIterator<Item = (usize, DateTime<Utc>, IntentExecutionEvent)>,
+    ) -> (IntentExecution, Intent) {
+        let mut events = events.into_iter();
+        let Some((seq_nr, occurred_at, first)) = events.next() else {
+            panic!("replay: empty journal");
         };
-        (
-            execution,
-            IntentExecutionEvent::Started(Started::new(intent)),
-        )
+        assert_eq!(seq_nr, 1, "replay: genesis must carry seq_nr 1");
+        let IntentExecutionEvent::Started(started) = first else {
+            panic!("replay: journal must begin with Started");
+        };
+        let intent = started.intent().clone();
+        let mut execution = IntentExecution::genesis_state(id, &intent, occurred_at);
+        for (seq_nr, occurred_at, event) in events {
+            execution.apply_event(&intent, seq_nr, occurred_at, &event);
+        }
+        (execution, intent)
     }
 
     // ---- 観測 (read model) ----
@@ -409,11 +461,11 @@ impl IntentExecution {
     /// 輸送のメタデータは封筒が運ぶ)。適用が通れば `self.seq_nr` がそのイベントの通番、
     /// `self.last_updated_at` がその発生時刻になるので、封筒を組む Repository はそこから読む。
     ///
-    /// `apply_event` は通番違反・未知 slug・不変条件違反を検査するが、ここへ来るイベントは通番を
-    /// 自分で採番し slug を自分の `stages` から取り、遷移も不変条件を保つので、そのいずれにも
-    /// 該当しない。到達不能な `Err` は状態を変えないまま `InvalidTarget(cursor)` として返す —
-    /// panic しないことを優先する (NFR4.3)。通番枯渇だけは入口で明示に拒否する
-    /// (`SequenceExhausted` — 飽和加算で seq_nr が停滞したまま成功を装わない)。
+    /// `apply_event` は通番違反・未知 slug・不変条件違反でクラッシュするが、ここへ来る
+    /// イベントは通番を自分で採番し slug を自分の `stages` から取り、遷移も不変条件を保つ
+    /// ので、そのいずれにも該当しない (該当したらプログラミング誤りであり、クラッシュが正 —
+    /// オーナー裁定 2026-08-30)。通番枯渇だけは入口で明示に拒否する (`SequenceExhausted` —
+    /// 飽和加算で seq_nr が停滞したまま成功を装わない)。
     fn commit(
         &mut self,
         intent: &Intent,
@@ -423,10 +475,8 @@ impl IntentExecution {
         let Some(seq_nr) = self.seq_nr.checked_add(1) else {
             return Err(CommandError::SequenceExhausted);
         };
-        match self.apply_event(intent, seq_nr, occurred_at, &event) {
-            Ok(()) => Ok(event),
-            Err(_) => Err(CommandError::InvalidTarget(self.cursor)),
-        }
+        self.apply_event(intent, seq_nr, occurred_at, &event);
+        Ok(event)
     }
 
     // ---- W2: decide (11 コマンド、1 コマンド 1 イベント) ----
@@ -784,40 +834,43 @@ impl IntentExecution {
     /// 採番と連続性の検査は依然としてドメインの責務である — 本家 v3 は「採番・連続性は
     /// 利用側 (ドメイン) の責務」と明文化しており、ライブラリは飛び番を検出しない。
     ///
-    /// 検査は一時コピーに対して行い、成功した場合だけ差し替える — `Err` では状態が変わらない。
+    /// **失敗を返さない** — 再構成は歴史を読むだけであり、通番の飛び・未知 slug・不変条件
+    /// 違反は「壊れた歴史」か「プログラミング誤り」なので回復せずクラッシュする
+    /// (オーナー裁定 2026-08-30、本家 v3 サンプル同型)。検査は一時コピーに対して行い、
+    /// 成功した場合だけ差し替える。
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// `seq_nr` が現在値 + 1 でない (`SequenceGap`)、イベントのステージ slug が `stages` に
-    /// 無い (`UnknownStage`)、適用後に集約不変条件が破れる (`InvariantViolation`)、現在値が
-    /// `usize::MAX` で後続を数えられない (`SequenceExhausted`) を拒否する。
+    /// 別 intent の計画を渡された、通番が現在値 + 1 でない・枯渇した、イベントのステージ
+    /// slug が `stages` に無い、適用後に集約不変条件が破れる場合。
+    #[allow(
+        clippy::panic,
+        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
+    )]
     pub fn apply_event(
         &mut self,
         intent: &Intent,
         seq_nr: usize,
         occurred_at: DateTime<Utc>,
         event: &IntentExecutionEvent,
-    ) -> Result<(), ApplyError> {
-        if !self.matches(intent) {
-            return Err(ApplyError::IntentMismatch);
-        }
-        let Some(expected) = self.seq_nr.checked_add(1) else {
-            return Err(ApplyError::SequenceExhausted);
-        };
-        if seq_nr != expected {
-            return Err(ApplyError::SequenceGap {
-                expected,
-                actual: seq_nr,
-            });
-        }
+    ) {
+        assert!(self.matches(intent), "apply_event: foreign intent");
+        let expected = self
+            .seq_nr
+            .checked_add(1)
+            .unwrap_or_else(|| panic!("apply_event: sequence exhausted at {}", self.seq_nr));
+        assert_eq!(
+            seq_nr, expected,
+            "apply_event: sequence gap (expected {expected}, actual {seq_nr})"
+        );
         let mut next = self.clone();
-        next.mutate(intent, event)?;
+        next.mutate(intent, event)
+            .unwrap_or_else(|error| panic!("apply_event: corrupted history — {error}"));
         next.seq_nr = seq_nr;
         next.last_updated_at = occurred_at;
         next.check_invariants(intent)
-            .map_err(ApplyError::InvariantViolation)?;
+            .unwrap_or_else(|violation| panic!("apply_event: invariant violated — {violation}"));
         *self = next;
-        Ok(())
     }
 
     /// 12 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
@@ -935,56 +988,27 @@ impl IntentExecution {
     }
 
     /// 集約不変条件 (Quint の cursor_in_scope / at_most_one_active / no_gate_bypass /
-    /// parked_position と長さ整合)。材料は不変条件名で、文言はアダプタ層の責務。
-    /// intent を要さない実行時の不変条件 — 長さ・通番・カーソル・park・active の数。
+    /// parked_position)。材料は不変条件名で、文言はアダプタ層の責務。
     ///
-    /// 写し (memento) から復元する経路はこれだけを検査できる。計画を要する検査
-    /// (`no_gate_bypass`) は `&Intent` が渡る [`IntentExecution::check_invariants`] が担う。
-    fn check_runtime_invariants(&self) -> Result<(), String> {
-        let count = self.stage_count();
-        if count == 0 {
-            return Err("stage count is zero".to_string());
-        }
-        for (name, actual) in [
-            ("overlay", self.overlay.len()),
-            ("checkbox", self.checkbox.len()),
-            ("approved", self.approved.len()),
-            ("revision_count", self.revision_count.len()),
-        ] {
-            if actual != count {
-                return Err(format!("length mismatch: {name}"));
-            }
-        }
-        if self.seq_nr == 0 {
-            return Err("seq_nr is zero".to_string());
-        }
-        if self.cursor.to_usize() >= count {
-            return Err("cursor out of range".to_string());
-        }
-        if let Some(parked) = self.parked_at {
-            if parked.to_usize() >= count {
-                return Err("parked_at out of range".to_string());
-            }
-            if parked != self.cursor {
-                return Err("parked_position".to_string());
-            }
+    /// memento 復元経路の撤去 (オーナー裁定 2026-08-30 — 再構成はジャーナル全再生) に伴い、
+    /// 復号ガードだった構造検査 (長さ整合・通番 0・範囲外カーソル) は削除した — genesis が
+    /// 長さを固定し、遷移は `resolve` で索引を束縛するため、構成不能である。
+    fn check_invariants(&self, intent: &Intent) -> Result<(), String> {
+        if let Some(parked) = self.parked_at
+            && parked != self.cursor
+        {
+            return Err("parked_position".to_string());
         }
         if self.accepts_commands() && !self.in_scope(self.cursor) {
             return Err("cursor_in_scope".to_string());
         }
-        let active = (0..count)
+        let active = (0..self.stage_count())
             .filter_map(|value| self.checkbox(StageIndex::new(value)))
             .filter(|marker| marker.is_active())
             .count();
         if active > 1 {
             return Err(format!("at_most_one_active: {active}"));
         }
-        Ok(())
-    }
-
-    /// 実行時の不変条件に、計画を要する `no_gate_bypass` を足した全検査。
-    fn check_invariants(&self, intent: &Intent) -> Result<(), String> {
-        self.check_runtime_invariants()?;
         for value in 0..self.stage_count() {
             let stage = StageIndex::new(value);
             if self.is_gated(intent, stage)
@@ -995,61 +1019,6 @@ impl IntentExecution {
             }
         }
         Ok(())
-    }
-
-    // ---- W3: 状態の写し (memento) (BR5.2 / BR5.3) ----
-
-    /// 全状態を値オブジェクトへ写す (永続化境界を渡る唯一の形)。
-    ///
-    /// **公開**である (改訂 9) — 直列化を担うのはアダプタ層で、その DTO がこの写しを読む
-    /// (`coding-rules/domain-persistence-neutrality.md`)。
-    #[must_use]
-    pub fn snapshot(&self) -> IntentExecutionSnapshot {
-        IntentExecutionSnapshotBuilder::new(
-            self.id.clone(),
-            self.intent_id.clone(),
-            self.overlay.clone(),
-        )
-        .checkbox(self.checkbox.clone())
-        .cursor(self.cursor.to_usize())
-        .status(self.status)
-        .parked_at(self.parked_at.map(StageIndex::to_usize))
-        .autonomy(self.autonomy)
-        .approved(self.approved.clone())
-        .revision_count(self.revision_count.clone())
-        .seq_nr(self.seq_nr)
-        .last_updated_at(self.last_updated_at)
-        .build()
-    }
-
-    /// 状態の写し (memento) から集約を復元する (不変条件を検査する唯一の再水和経路)。
-    ///
-    /// # Errors
-    ///
-    /// 長さ不一致・`plan` / `conditional` と解決済み計画の食い違い・範囲外カーソル・
-    /// `cursor_in_scope` / `at_most_one_active` / `no_gate_bypass` / `parked_position` の違反・
-    /// `seq_nr` = 0 を `InvariantViolation` で拒否する。
-    pub fn from_snapshot(state: IntentExecutionSnapshot) -> Result<IntentExecution, SnapshotError> {
-        let execution = IntentExecution {
-            id: state.id,
-            intent_id: state.intent_id,
-            overlay: state.overlay,
-            checkbox: state.checkbox,
-            cursor: StageIndex::new(state.cursor),
-            status: state.status,
-            parked_at: state.parked_at.map(StageIndex::new),
-            autonomy: state.autonomy,
-            approved: state.approved,
-            revision_count: state.revision_count,
-            seq_nr: state.seq_nr,
-            last_updated_at: state.last_updated_at,
-        };
-        // 写しには計画が載らないので、ここで検査できるのは実行時の不変条件だけである。
-        // 計画を要する `no_gate_bypass` は、`&Intent` を受け取るコマンド・適用の側で見る。
-        execution
-            .check_runtime_invariants()
-            .map_err(SnapshotError::InvariantViolation)?;
-        Ok(execution)
     }
 
     // ---- W4 / W5: クエリ (書込なし) ----
@@ -1190,10 +1159,10 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{
-        ApplyError, AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError,
-        IntentEvent, IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection,
-        NextDecision, NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageDisplay,
-        StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
+        AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError, IntentEvent,
+        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, NextDecision,
+        NextRequest, PhaseBoundary, StageCompleted, StageDisplay, StageEntry, StageIndex,
+        StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -1368,9 +1337,9 @@ mod tests {
             seq_nr: usize,
             occurred_at: DateTime<Utc>,
             event: &IntentExecutionEvent,
-        ) -> Result<(), ApplyError> {
+        ) {
             self.execution
-                .apply_event(&self.intent, seq_nr, occurred_at, event)
+                .apply_event(&self.intent, seq_nr, occurred_at, event);
         }
 
         fn next_decision(
@@ -1438,17 +1407,16 @@ mod tests {
         .unwrap()
     }
 
-    /// 合成計画から intent を組む (検査は `Intent::from_material` の 1 か所)。
+    /// 合成計画から intent を組む (検査は `Intent::rehydrate` の 1 か所)。
     fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
-        Intent::from_material(
+        Intent::from(Created::new(
             intent_id(),
             def_id("claude"),
             revision('0'),
             start_request(),
             entries(init, actions, conditional),
             scan(),
-        )
-        .unwrap()
+        ))
     }
 
     fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Run {
@@ -1474,17 +1442,14 @@ mod tests {
                 )
             })
             .collect();
-        Run::start(
-            Intent::from_material(
-                intent_id(),
-                def_id("claude"),
-                revision('0'),
-                start_request(),
-                stages,
-                scan(),
-            )
-            .unwrap(),
-        )
+        Run::start(Intent::from(Created::new(
+            intent_id(),
+            def_id("claude"),
+            revision('0'),
+            start_request(),
+            stages,
+            scan(),
+        )))
     }
 
     /// 全ステージ EXECUTE の、フェーズだけ名指しした合成計画。
@@ -1501,7 +1466,7 @@ mod tests {
     ) -> (Run, IntentExecutionEvent) {
         // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに要るのは対の左である
         // (改訂 8 / coding-rules/aggregate-commands.md)。
-        let (intent, _created) = Intent::resolve(intent_id(), definition, request, scan()).unwrap();
+        let (intent, _created) = Intent::create(intent_id(), definition, request, scan()).unwrap();
         Run::genesis(intent)
     }
 
@@ -1586,28 +1551,22 @@ mod tests {
     }
 
     /// intent の解決済み計画をそのまま実効プランへ写す (birth 時の overlay)。
-    fn birth_overlay(intent: &Intent) -> Vec<PlanAction> {
-        intent
-            .stages()
-            .iter()
-            .map(StageEntry::plan_action)
-            .collect()
-    }
-
     // ---- W1: start (BR2.2 / BR2.6) ----
 
     #[test]
     fn an_execution_starts_from_the_left_of_the_intent_create_pair() {
         // 改訂 8: `Intent` も集約なので genesis は対を返す。実行を起こすのに渡すのは
         // **対の左** (集約インスタンス) であり、誕生イベントは呼出側が `store` へ回す。
-        let (intent, created) = Intent::resolve(
+        let (intent, created) = Intent::create(
             intent_id(),
             &shipped_definition(full_grid()),
             start_request(),
             scan(),
         )
         .unwrap();
-        assert_eq!(created, IntentEvent::Created(Created::new(intent.clone())));
+        // 誕生イベントは材料 (値) を運ぶ — 変換で対の左と同じ集約に戻る。
+        let IntentEvent::Created(payload) = created;
+        assert_eq!(Intent::from(payload), intent);
 
         let (execution, started) =
             IntentExecution::start(execution_id(), intent.clone(), occurred());
@@ -1685,7 +1644,7 @@ mod tests {
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
         let unknown = StartRequest::new("nope", "build it");
-        let err = Intent::resolve(intent_id(), &definition, unknown, scan()).unwrap_err();
+        let err = Intent::create(intent_id(), &definition, unknown, scan()).unwrap_err();
         let IntentError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
@@ -1707,21 +1666,20 @@ mod tests {
     }
 
     // 計画そのものの不変条件（空・initialization の SKIP / CONDITIONAL・先頭 SKIP）は
-    // `Intent::from_material` が持つようになったので、その拒否のテストは `intent.rs` にある。
+    // `Intent::rehydrate` が持つようになったので、その拒否のテストは `intent.rs` にある。
 
     // ---- 取り違えガード (aggregate-references.md — ID 参照だから照合が書ける) ----
 
     /// 同じ形の計画を、**別の intent 識別子**で組む。
     fn foreign_plan(n: usize) -> Intent {
-        Intent::from_material(
+        Intent::from(Created::new(
             IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             def_id("claude"),
             revision('0'),
             start_request(),
             entries(1, &vec![Execute; n], &vec![false; n]),
             scan(),
-        )
-        .unwrap()
+        ))
     }
 
     #[test]
@@ -1826,16 +1784,15 @@ mod tests {
     }
 
     #[test]
-    fn apply_event_refuses_a_foreign_intent() {
+    #[should_panic(expected = "apply_event: foreign intent")]
+    fn apply_event_crashes_on_a_foreign_intent() {
+        // 別 intent の計画を渡すのはプログラミング誤り — 再構成は失敗を返さずクラッシュする
+        // (オーナー裁定 2026-08-30)。
         let mut w = all_exec(3);
         let event =
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
-        assert_eq!(
-            w.execution
-                .apply_event(&foreign_plan(3), 2, occurred(), &event),
-            Err(ApplyError::IntentMismatch)
-        );
-        assert_eq!(w.seq_nr(), 1, "拒否では状態が動かない");
+        w.execution
+            .apply_event(&foreign_plan(3), 2, occurred(), &event);
     }
 
     // ---- W2: 12 コマンド (BR1.0〜BR1.9) ----
@@ -2183,47 +2140,36 @@ mod tests {
     // ---- W3: apply_event (BR2.1) ----
 
     #[test]
-    fn apply_event_refuses_a_sequence_gap() {
+    #[should_panic(expected = "apply_event: sequence gap (expected 2, actual 9)")]
+    fn apply_event_crashes_on_a_sequence_gap() {
+        // 通番の飛びは壊れた歴史 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)。
         let mut w = all_exec(3);
         let event =
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
-        assert_eq!(
-            w.apply_event(9, occurred(), &event),
-            Err(ApplyError::SequenceGap {
-                expected: 2,
-                actual: 9
-            })
-        );
-        assert_eq!(w.seq_nr(), 1);
+        w.apply_event(9, occurred(), &event);
     }
 
     #[test]
-    fn apply_event_refuses_at_sequence_exhaustion() {
-        // memento 経由で通番を末端に据える (実運用では到達しない規模の境界)。
+    #[should_panic(expected = "apply_event: sequence exhausted")]
+    fn apply_event_crashes_at_sequence_exhaustion() {
+        // 通番を末端に据える (実運用では到達しない規模の境界)。壊れた歴史はクラッシュが正
+        // (オーナー裁定 2026-08-30)。
         let base = all_exec(3);
-        let mut state = base.snapshot();
-        state.seq_nr = usize::MAX;
         let mut w = Run {
             intent: base.intent,
-            execution: IntentExecution::from_snapshot(state).unwrap(),
+            execution: base.execution.with_seq_nr(usize::MAX),
         };
         let event =
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
-        assert_eq!(
-            w.apply_event(1, occurred(), &event),
-            Err(ApplyError::SequenceExhausted)
-        );
-        assert_eq!(w.seq_nr(), usize::MAX, "状態は変わらない");
+        w.apply_event(1, occurred(), &event);
     }
 
     #[test]
     fn a_command_at_sequence_exhaustion_is_refused() {
         let base = all_exec(3);
-        let mut state = base.snapshot();
-        state.seq_nr = usize::MAX;
         let mut w = Run {
             intent: base.intent,
-            execution: IntentExecution::from_snapshot(state).unwrap(),
+            execution: base.execution.with_seq_nr(usize::MAX),
         };
         assert_eq!(
             w.complete_stage(occurred()),
@@ -2233,49 +2179,37 @@ mod tests {
     }
 
     #[test]
-    fn apply_event_refuses_an_unknown_stage() {
+    #[should_panic(expected = "apply_event: corrupted history")]
+    fn apply_event_crashes_on_an_unknown_stage() {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
-        let event =
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(unknown.clone(), None));
-        assert_eq!(
-            w.apply_event(2, occurred(), &event),
-            Err(ApplyError::UnknownStage(unknown))
-        );
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(unknown, None));
+        w.apply_event(2, occurred(), &event);
     }
 
     #[test]
-    fn apply_event_refuses_an_event_that_breaks_an_invariant() {
+    #[should_panic(expected = "apply_event: invariant violated")]
+    fn apply_event_crashes_on_an_event_that_breaks_an_invariant() {
         let mut w = all_exec(3);
-        let before = w.clone();
         // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
         let event =
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(1), Some(slug(2))));
-        assert!(matches!(
-            w.apply_event(2, occurred(), &event),
-            Err(ApplyError::InvariantViolation(_))
-        ));
-        assert_eq!(w, before);
+        w.apply_event(2, occurred(), &event);
     }
 
     #[test]
-    fn apply_event_refuses_a_started_outside_genesis() {
+    #[should_panic(expected = "Started applies only at genesis")]
+    fn apply_event_crashes_on_a_started_outside_genesis() {
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Started(Started::new(
-            Intent::from_material(
-                intent_id(),
-                def_id("claude"),
-                revision('0'),
-                StartRequest::new("classic", "again"),
-                entries(1, &[Execute], &[false]),
-                scan(),
-            )
-            .unwrap(),
-        ));
-        assert!(matches!(
-            w.apply_event(2, occurred(), &event),
-            Err(ApplyError::InvariantViolation(_))
-        ));
+        let event = IntentExecutionEvent::Started(Started::new(Intent::from(Created::new(
+            intent_id(),
+            def_id("claude"),
+            revision('0'),
+            StartRequest::new("classic", "again"),
+            entries(1, &[Execute], &[false]),
+            scan(),
+        ))));
+        w.apply_event(2, occurred(), &event);
     }
 
     #[test]
@@ -2284,9 +2218,7 @@ mod tests {
         let before = w.clone();
         let event = w.complete_stage(occurred()).unwrap();
         let mut replayed = before;
-        replayed
-            .apply_event(w.seq_nr(), *w.last_updated_at(), &event)
-            .unwrap();
+        replayed.apply_event(w.seq_nr(), *w.last_updated_at(), &event);
         assert_eq!(replayed, w);
     }
 
@@ -2341,75 +2273,50 @@ mod tests {
         );
     }
 
-    // ---- W3: state / from_state (BR5.2 / BR5.3) ----
+    // ---- W3: replay (ジャーナル全再生 — BR2.3 / BR1.1) ----
 
     #[test]
-    fn the_state_carries_every_attribute_and_round_trips() {
+    fn a_journal_replay_reproduces_the_command_built_state() {
+        // コマンドで進めた状態と、記録されたイベント列の全再生が一致する — 状態の正本は
+        // イベント列であり、スナップショット行ではない (オーナー裁定 2026-08-30)。
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
-        w.open_gate(Vec::new(), occurred()).unwrap();
-        w.reject_gate(None, occurred()).unwrap();
-        // memento はクレート内私有なので、同一クレートのテストは属性を直接読む
-        // (アクセサは置かない — 外へ出さない型に読取面を二重化しない)。
-        let state = w.snapshot();
-        assert_eq!(state.id, *w.id());
-        assert_eq!(state.intent_id, *w.intent_id());
-        assert_eq!(state.overlay, [Execute, Execute, Execute, Execute]);
-        assert_eq!(state.checkbox[0], Completed);
-        assert_eq!(state.cursor, w.cursor().to_usize());
-        assert_eq!(state.status, Status::Running);
-        assert_eq!(state.parked_at, None);
-        assert_eq!(state.autonomy, AutonomyMode::Gated);
-        assert_eq!(state.approved, [false, false, false, false]);
-        assert_eq!(state.revision_count, [0, 1, 0, 0]);
-        assert_eq!(state.seq_nr, w.seq_nr());
-        assert_eq!(state.last_updated_at, *w.last_updated_at());
-        assert_eq!(IntentExecution::from_snapshot(state).unwrap(), w.execution);
+        let mut journal = vec![(
+            1,
+            occurred(),
+            IntentExecutionEvent::Started(Started::new(w.intent.clone())),
+        )];
+        let event = w.complete_stage(occurred()).unwrap();
+        journal.push((w.seq_nr(), *w.last_updated_at(), event));
+        let event = w.open_gate(Vec::new(), occurred()).unwrap();
+        journal.push((w.seq_nr(), *w.last_updated_at(), event));
+        let event = w.reject_gate(None, occurred()).unwrap();
+        journal.push((w.seq_nr(), *w.last_updated_at(), event));
+
+        let (replayed, intent) = IntentExecution::replay(execution_id(), journal);
+        assert_eq!(replayed, w.execution);
+        assert_eq!(intent, w.intent);
     }
 
     #[test]
-    fn from_snapshot_rejects_a_broken_runtime_invariant() {
-        // 写しには計画が載らない (改訂 3) ので、ここで検査できるのは実行時の不変条件だけで
-        // ある。計画との整合 (`no_gate_bypass`) は `&Intent` が渡る適用・コマンド側が見る。
+    #[should_panic(expected = "replay: empty journal")]
+    fn replaying_an_empty_journal_crashes() {
+        let _ = IntentExecution::replay(execution_id(), Vec::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "replay: journal must begin with Started")]
+    fn replaying_a_journal_that_does_not_begin_with_started_crashes() {
+        let mut w = all_exec(3);
+        let event = w.complete_stage(occurred()).unwrap();
+        let _ = IntentExecution::replay(execution_id(), vec![(1, occurred(), event)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "replay: genesis must carry seq_nr 1")]
+    fn replaying_a_genesis_with_the_wrong_seq_nr_crashes() {
         let w = all_exec(3);
-        let base = w.snapshot();
-        let builder = || {
-            IntentExecutionSnapshotBuilder::new(
-                execution_id(),
-                w.intent.id().clone(),
-                birth_overlay(&w.intent),
-            )
-        };
-        // 実効プランはビルダーの構築引数なので、長さや中身を崩す壊し方はこちらで起こす。
-        let with_overlay = |overlay: Vec<PlanAction>| {
-            IntentExecutionSnapshotBuilder::new(execution_id(), w.intent.id().clone(), overlay)
-        };
-
-        for broken in [
-            // ステージ 0 件 — 実行時ベクトルの長さが総数そのものなので、空にすれば起きる。
-            with_overlay(Vec::new()).build(),
-            builder().checkbox(vec![InProgress]).build(),
-            builder().cursor(9).build(),
-            with_overlay(vec![Skip, Execute, Execute]).build(),
-            builder()
-                .checkbox(vec![InProgress, InProgress, Pending])
-                .build(),
-            builder().parked_at(Some(2)).build(),
-            builder().parked_at(Some(9)).build(),
-            builder().approved(vec![false]).build(),
-            builder().revision_count(vec![0, 0]).build(),
-            builder().seq_nr(0).build(),
-        ] {
-            assert!(
-                matches!(
-                    IntentExecution::from_snapshot(broken),
-                    Err(SnapshotError::InvariantViolation(_))
-                ),
-                "a broken state must be refused"
-            );
-        }
-
-        assert!(IntentExecution::from_snapshot(base).is_ok());
+        let started = IntentExecutionEvent::Started(Started::new(w.intent));
+        let _ = IntentExecution::replay(execution_id(), vec![(2, occurred(), started)]);
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2504,32 +2411,72 @@ mod tests {
     #[test]
     fn next_decision_reports_the_two_skip_inconsistencies() {
         // 実効 SKIP のカーソルは `cursor_in_scope` が禁じるので、集約のコマンド経由では作れない。
-        // 唯一到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) の状態を
-        // 再水和し、再入フラグで park 分岐を外して問い合わせる」経路である (BR3.1 (5) の防御腕)。
+        // 到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) に
+        // recompose のイベントが畳まれた歴史」の全再生である (BR3.1 (5) の防御腕)。
+        // Pending は再生でも作れない (advance / jump が到達先を必ず InProgress にする) ため、
+        // 到達可能な 3 マーカーで両分岐 (回復可能 / 不能) を固定する。
         let definition = bare_definition("claude");
         let base = all_exec(3);
         let reentry = NextRequest::new(false, true, false);
+        let started = IntentExecutionEvent::Started(Started::new(base.intent.clone()));
 
-        for (marker, expected_recoverable) in [
-            (InProgress, true),
-            (Revising, true),
-            (Pending, false),
-            (AwaitingApproval, false),
+        for (marker, mid_events, expected_recoverable) in [
+            (
+                InProgress,
+                vec![IntentExecutionEvent::StageCompleted(StageCompleted::new(
+                    slug(0),
+                    Some(slug(1)),
+                ))],
+                true,
+            ),
+            (
+                Revising,
+                vec![
+                    IntentExecutionEvent::StageCompleted(StageCompleted::new(
+                        slug(0),
+                        Some(slug(1)),
+                    )),
+                    IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
+                    IntentExecutionEvent::GateRejected(GateRejected::new(slug(1), None, 1)),
+                ],
+                true,
+            ),
+            (
+                AwaitingApproval,
+                vec![
+                    IntentExecutionEvent::StageCompleted(StageCompleted::new(
+                        slug(0),
+                        Some(slug(1)),
+                    )),
+                    IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
+                ],
+                false,
+            ),
         ] {
-            let state = IntentExecutionSnapshotBuilder::new(
-                execution_id(),
-                base.intent.id().clone(),
-                vec![Execute, Skip, Execute],
-            )
-            .checkbox(vec![Completed, marker, Pending])
-            .cursor(1)
-            .parked_at(Some(1))
-            .seq_nr(4)
-            .build();
+            let mut journal = vec![(1, occurred(), started.clone())];
+            for event in mid_events {
+                journal.push((journal.len() + 1, occurred(), event));
+            }
+            journal.push((
+                journal.len() + 1,
+                occurred(),
+                IntentExecutionEvent::Parked(Parked::new(slug(1))),
+            ));
+            journal.push((
+                journal.len() + 1,
+                occurred(),
+                IntentExecutionEvent::Recomposed(Recomposed::new(
+                    vec![slug(1)],
+                    Vec::new(),
+                    vec![slug(0), slug(2)],
+                )),
+            ));
+            let (execution, _intent) = IntentExecution::replay(execution_id(), journal);
             let w = Run {
                 intent: base.intent.clone(),
-                execution: IntentExecution::from_snapshot(state).unwrap(),
+                execution,
             };
+            assert_eq!(w.checkbox(at(&w, 1)), Some(marker));
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
                 NextDecision::RecoverSkipInconsistency {
@@ -2718,17 +2665,14 @@ mod tests {
     }
 
     fn start_synthetic(stages: Vec<StageEntry>) -> Run {
-        Run::start(
-            Intent::from_material(
-                intent_id(),
-                def_id("claude"),
-                revision('0'),
-                start_request(),
-                stages,
-                scan(),
-            )
-            .unwrap(),
-        )
+        Run::start(Intent::from(Created::new(
+            intent_id(),
+            def_id("claude"),
+            revision('0'),
+            start_request(),
+            stages,
+            scan(),
+        )))
     }
 
     /// 1 コマンドを駆動する。`Err` は「発火しないアクション」なので状態は一切動かない (BR1.1 (e))。
@@ -2829,19 +2773,16 @@ mod tests {
                 let before = w.clone();
                 if let Some(event) = drive(&mut w, &definition, cmd) {
                     let mut replayed = before;
-                    replayed
-                        .apply_event(w.seq_nr(), *w.last_updated_at(), &event)
-                        .unwrap();
+                    replayed.apply_event(w.seq_nr(), *w.last_updated_at(), &event);
                     prop_assert_eq!(&replayed.execution, &w.execution);
                 }
                 assert_quint_invariants(&w);
-                let restored = IntentExecution::from_snapshot(w.snapshot()).unwrap();
-                prop_assert_eq!(&restored, &w.execution);
             }
         }
 
-        /// (b) リプレイの決定性 — 状態の写し (memento) + 以降のイベント列 == 通常実行 (BR2.3)。
-        /// (c) seq_nr は 1 イベントにつき 1 だけ増え、順序違反は SequenceGap で拒否される (BR2.1)。
+        /// (b) リプレイの決定性 — ジャーナル全再生 (`Started` + 以降のイベント列) == 通常実行
+        /// (BR2.3)。(c) seq_nr は 1 イベントにつき 1 だけ増える (BR2.1 — 順序違反のクラッシュは
+        /// ユニットテスト `apply_event_crashes_on_a_sequence_gap` が固定する)。
         #[test]
         fn replaying_the_event_stream_reproduces_the_executed_aggregate(
             stages in synthetic_stages(),
@@ -2849,35 +2790,24 @@ mod tests {
         ) {
             let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
-            let genesis = w.snapshot();
             // 封筒の材料 (通番・発生時刻) は commit を通った集約から採る (B7 — Repository も同じ)。
-            let mut events: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = Vec::new();
+            let mut journal: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = vec![(
+                1,
+                occurred(),
+                IntentExecutionEvent::Started(Started::new(w.intent.clone())),
+            )];
             let mut expected_seq = w.seq_nr();
             for cmd in &cmds {
                 if let Some(event) = drive(&mut w, &definition, cmd) {
                     expected_seq += 1;
                     prop_assert_eq!(w.seq_nr(), expected_seq);
-                    events.push((w.seq_nr(), *w.last_updated_at(), event));
+                    journal.push((w.seq_nr(), *w.last_updated_at(), event));
                 }
             }
 
-            let mut replayed = Run {
-                intent: w.intent.clone(),
-                execution: IntentExecution::from_snapshot(genesis).unwrap(),
-            };
-            for (seq_nr, occurred_at, event) in &events {
-                replayed.apply_event(*seq_nr, *occurred_at, event).unwrap();
-            }
-            prop_assert_eq!(&replayed.execution, &w.execution);
-
-            // 順序違反は拒否され、状態も動かない。
-            if let Some((seq_nr, occurred_at, event)) = events.first() {
-                let mut fresh = replayed.clone();
-                let gap = fresh.apply_event(*seq_nr, *occurred_at, event);
-                let is_gap = matches!(gap, Err(ApplyError::SequenceGap { .. }));
-                prop_assert!(is_gap, "順序違反は SequenceGap で拒否される");
-                prop_assert_eq!(&fresh.execution, &replayed.execution);
-            }
+            let (replayed, intent) = IntentExecution::replay(execution_id(), journal);
+            prop_assert_eq!(&replayed, &w.execution);
+            prop_assert_eq!(&intent, &w.intent);
         }
 
         /// 定義側から移設した性質 (1): 実効プランはグリッドに recompose のサフィックスを重ねた値で

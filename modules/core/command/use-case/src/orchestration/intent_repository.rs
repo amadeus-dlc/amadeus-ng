@@ -2,7 +2,7 @@
 
 use core_command_domain::orchestration::{Intent, IntentId};
 
-use super::intent_repository_error::IntentRepositoryError;
+use super::repository_error::RepositoryError;
 
 /// 集約 [`Intent`] の Repository。
 ///
@@ -37,7 +37,7 @@ pub trait IntentRepository {
     ///
     /// # Errors
     ///
-    /// intent が無い (`NotFound`)、ストア I/O (`Io`)、復号不能・不変条件違反 (`Corrupt`) を
-    /// 返す。
-    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, IntentRepositoryError>;
+    /// intent が無い (`NotFound`)、ストア I/O (`Io`)、ストアの記録の破損 (`Corrupt` — 原因は
+    /// `source` 連鎖) を返す。
+    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>>;
 }

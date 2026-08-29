@@ -10,8 +10,8 @@ pub(crate) mod contract;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
-    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    CommandError, Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -141,7 +141,7 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 /// 契約テストの intent (解決済み合成計画)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from_material(
+    Intent::from(Created::new(
         intent_id(),
         WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -149,8 +149,7 @@ pub(crate) fn intent() -> Intent {
         StartRequest::new("classic", "contract").with_depth("standard"),
         stages(),
         scan(),
-    )
-    .expect("合成計画は Intent の不変条件を満たす")
+    ))
 }
 
 /// 指定した集約識別子の genesis (横断読取のテストが 2 集約を並べるのに使う)。

@@ -5,7 +5,8 @@ use std::fmt;
 use core_command_domain::orchestration::CommandError;
 use core_command_domain::workflow_definition::StageSlug;
 
-use super::intent_repository_error::IntentRepositoryError;
+use core_command_domain::orchestration::{IntentExecutionId, IntentId};
+
 use super::repository_error::RepositoryError;
 
 /// `CommitVerdictUseCase` の失敗（材料のみ — 逐語文言は出す側が組む）。
@@ -13,12 +14,14 @@ use super::repository_error::RepositoryError;
 /// 下の 2 変種は**そのまま伝播させるための封筒**である。ユースケースは集約やポートの拒否を
 /// 握り潰さないし言い換えもしない。3 つ目だけがユースケース自身の失敗で、報告が名指しした
 /// ステージが解決済み計画に無かったことを言う。
-#[derive(Debug, Clone, PartialEq, Eq)]
+// `Clone` / `PartialEq` は実装しない — `Corrupt` の `source` (原因連鎖) が比較・複製不能で
+// ある (裁定 6 で受容済み)。テストは `matches!` で判定する。
+#[derive(Debug)]
 pub enum CommitError {
     /// 実行の再構成・永続化の失敗（ポートからそのまま伝播）。
-    Repository(RepositoryError),
+    Repository(RepositoryError<IntentExecutionId>),
     /// intent の取得の失敗（ポートからそのまま伝播）。
-    IntentRepository(IntentRepositoryError),
+    IntentRepository(RepositoryError<IntentId>),
     /// 集約がコマンドを拒否した（そのまま伝播）。
     Command(CommandError),
     /// 報告が名指ししたステージが解決済み計画に無い。
@@ -41,14 +44,14 @@ impl fmt::Display for CommitError {
 
 impl std::error::Error for CommitError {}
 
-impl From<RepositoryError> for CommitError {
-    fn from(error: RepositoryError) -> CommitError {
+impl From<RepositoryError<IntentExecutionId>> for CommitError {
+    fn from(error: RepositoryError<IntentExecutionId>) -> CommitError {
         CommitError::Repository(error)
     }
 }
 
-impl From<IntentRepositoryError> for CommitError {
-    fn from(error: IntentRepositoryError) -> CommitError {
+impl From<RepositoryError<IntentId>> for CommitError {
+    fn from(error: RepositoryError<IntentId>) -> CommitError {
         CommitError::IntentRepository(error)
     }
 }
@@ -73,10 +76,13 @@ mod tests {
         let execution_id =
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
         let inner = RepositoryError::NotFound {
-            execution_id: execution_id.clone(),
+            id: execution_id.clone(),
         };
-        let error = CommitError::from(inner.clone());
-        assert_eq!(error, CommitError::Repository(inner));
+        let error = CommitError::from(inner);
+        assert!(matches!(
+            &error,
+            CommitError::Repository(RepositoryError::NotFound { id }) if *id == execution_id
+        ));
         assert_eq!(
             error.to_string(),
             format!("repository: not found: {execution_id}")
@@ -86,7 +92,10 @@ mod tests {
     #[test]
     fn a_refused_command_is_carried_verbatim() {
         let error = CommitError::from(CommandError::NotRunning);
-        assert_eq!(error, CommitError::Command(CommandError::NotRunning));
+        assert!(matches!(
+            error,
+            CommitError::Command(CommandError::NotRunning)
+        ));
         assert!(error.to_string().starts_with("command: "));
     }
 
@@ -104,14 +113,11 @@ mod tests {
     }
 
     #[test]
-    fn failures_compare_by_value() {
-        assert_eq!(
-            CommitError::UnknownStage { stage: stage() },
-            CommitError::UnknownStage { stage: stage() }
-        );
-        assert_ne!(
-            CommitError::UnknownStage { stage: stage() },
-            CommitError::Command(CommandError::NotRunning)
-        );
+    fn failures_pattern_match_by_variant() {
+        // `PartialEq` は持たない (裁定 6 — `Corrupt` の `source` が比較不能)。判定は
+        // `matches!` で行う。
+        let unknown = CommitError::UnknownStage { stage: stage() };
+        assert!(matches!(&unknown, CommitError::UnknownStage { stage } if *stage == self::stage()));
+        assert!(!matches!(&unknown, CommitError::Command(_)));
     }
 }

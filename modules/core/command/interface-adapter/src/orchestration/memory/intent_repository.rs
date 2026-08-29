@@ -1,7 +1,7 @@
 //! `InMemoryIntentRepository` — `IntentRepository` の揮発実装（結線テスト用）。
 
 use core_command_domain::orchestration::{Intent, IntentId};
-use core_command_use_case::orchestration::{IntentRepository, IntentRepositoryError};
+use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 
 /// 保持している intent をそのまま返す揮発の `IntentRepository`。
 ///
@@ -27,13 +27,11 @@ impl InMemoryIntentRepository {
 }
 
 impl IntentRepository for InMemoryIntentRepository {
-    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, IntentRepositoryError> {
+    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         if self.held.id() == id {
             Ok(self.held.clone())
         } else {
-            Err(IntentRepositoryError::NotFound {
-                intent_id: id.clone(),
-            })
+            Err(RepositoryError::NotFound { id: id.clone() })
         }
     }
 }

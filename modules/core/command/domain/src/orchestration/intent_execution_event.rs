@@ -503,7 +503,7 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, IntentId, JumpDirection, PhaseBoundary, StageDisplay, StageEntry,
+        AutonomyMode, Created, IntentId, JumpDirection, PhaseBoundary, StageDisplay, StageEntry,
         StartRequest, WorkspaceScan,
     };
     use crate::workflow_definition::{
@@ -538,17 +538,14 @@ mod tests {
             false,
             display("0.1"),
         )];
-        let started = Started::new(
-            Intent::from_material(
-                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-                WorkflowDefinitionId::parse("claude").unwrap(),
-                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-                StartRequest::new("classic", "build it").with_depth("standard"),
-                entries.clone(),
-                scan(),
-            )
-            .unwrap(),
-        );
+        let started = Started::new(Intent::from(Created::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "build it").with_depth("standard"),
+            entries.clone(),
+            scan(),
+        )));
         assert_eq!(
             started.intent().id().as_str(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"

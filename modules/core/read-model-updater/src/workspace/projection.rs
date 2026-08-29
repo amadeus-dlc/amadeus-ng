@@ -1429,6 +1429,7 @@ mod park_marker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core_command_domain::orchestration::Created;
     use core_command_domain::orchestration::{
         AutonomyModeSet, Intent, IntentExecutionId, IntentId, StageDisplay, StageEntry,
         StartRequest, Started, WorkspaceScan,
@@ -1464,33 +1465,30 @@ mod tests {
 
     /// initialization 1 + inception 2 + operation 1 の合成計画。
     fn started() -> Started {
-        Started::new(
-            Intent::from_material(
-                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
-                WorkflowDefinitionId::parse("claude").expect("定義 id"),
-                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-                StartRequest::new("classic", "build it"),
-                vec![
-                    stage(
-                        "state-init",
-                        "0.1",
-                        PhaseId::Initialization,
-                        PlanAction::Execute,
-                    ),
-                    stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
-                    stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
-                    stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
-                ],
-                WorkspaceScan::new(
-                    BrownfieldGreenfield::Greenfield,
-                    "Unknown",
-                    "Unknown",
-                    "Unknown",
-                )
-                .expect("単一行"),
+        Started::new(Intent::from(Created::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "build it"),
+            vec![
+                stage(
+                    "state-init",
+                    "0.1",
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                ),
+                stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
+                stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
+                stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
+            ],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
             )
-            .expect("合成計画は Intent の不変条件を満たす"),
-        )
+            .expect("単一行"),
+        )))
     }
 
     fn plan() -> ResolvedPlan {

@@ -60,12 +60,10 @@ pub(crate) async fn open_twice_yields_independent_empty_stores<F: StoreFixture>(
         .find_by_id(&execution_id())
         .await
         .expect_err("2 度目の open は空のストアを指す");
-    assert_eq!(
+    assert!(matches!(
         err,
-        RepositoryError::NotFound {
-            execution_id: execution_id()
-        }
-    );
+        RepositoryError::NotFound { id } if id == execution_id()
+    ));
 
     let found = store_genesis(&mut second).await;
     assert_eq!(found.version(), 1, "2 つ目のストアは独立して書ける");
@@ -121,12 +119,10 @@ pub(crate) async fn not_found<F: StoreFixture>(fixture: &F) {
         .find_by_id(&absent_execution_id())
         .await
         .expect_err("未知の集約は NotFound");
-    assert_eq!(
+    assert!(matches!(
         err,
-        RepositoryError::NotFound {
-            execution_id: absent_execution_id()
-        }
-    );
+        RepositoryError::NotFound { id } if id == absent_execution_id()
+    ));
 }
 
 /// genesis は未永続の版 (`UNPERSISTED_VERSION`) から書き、ストアが最初の版を採番する (BR5.3)。
@@ -161,13 +157,13 @@ pub(crate) async fn genesis_twice_conflicts<F: StoreFixture>(fixture: &F) {
         .store(&event, &aggregate, unpersisted)
         .await
         .expect_err("2 度目は衝突");
-    assert_eq!(
+    assert!(matches!(
         err,
         RepositoryError::Conflict {
             expected: 0,
-            actual: 1
+            actual: 1,
         }
-    );
+    ));
 }
 
 /// 2 つの再水和が同じ版から書くと、後の 1 つが `Conflict` になる (楽観 version — BR1.3)。
@@ -202,13 +198,13 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
         .store(&event, &aggregate, second.version())
         .await
         .expect_err("後から書いた方は衝突");
-    assert_eq!(
+    assert!(matches!(
         err,
         RepositoryError::Conflict {
             expected: 5,
-            actual: 6
+            actual: 6,
         }
-    );
+    ));
 
     // 衝突しても状態は変わらない (rollback — NFR3.3)。
     let found = repository
@@ -238,13 +234,13 @@ pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixt
         .store(&next, &aggregate, stale.version())
         .await
         .expect_err("古い版では書けない");
-    assert_eq!(
+    assert!(matches!(
         err,
         RepositoryError::Conflict {
             expected: 1,
-            actual: 2
+            actual: 2,
         }
-    );
+    ));
 }
 
 /// 版を握り直せば続きが書ける (`Conflict` の裏面 — 再試行の政策はユースケースが持つ)。
@@ -277,10 +273,8 @@ pub(crate) async fn a_genesis_with_a_non_zero_version_is_a_contract_violation<F:
 
     // 拒否された書込は行を残さない。
     let found = repository.find_by_id(&execution_id()).await;
-    assert_eq!(
+    assert!(matches!(
         found.expect_err("書かれていない"),
-        RepositoryError::NotFound {
-            execution_id: execution_id()
-        }
-    );
+        RepositoryError::NotFound { id } if id == execution_id()
+    ));
 }

@@ -47,7 +47,10 @@ pub(super) const fn checkbox_spelling(value: CheckboxState) -> &'static str {
 }
 
 /// checkbox 1 要素の復号。
-pub(super) fn checkbox_of(raw: &str) -> Result<CheckboxState, WireDecodeError> {
+// スナップショット行の読取は撤去 (状態の正本はジャーナル — オーナー裁定 2026-08-30) された
+// ため、逆写像はテストの往復検査だけが使う。
+#[cfg(test)]
+fn checkbox_of(raw: &str) -> Result<CheckboxState, WireDecodeError> {
     match raw {
         "Pending" => Ok(CheckboxState::Pending),
         "InProgress" => Ok(CheckboxState::InProgress),
@@ -68,7 +71,8 @@ pub(super) const fn status_spelling(value: Status) -> &'static str {
 }
 
 /// ワークフロー全体の状態の復号。
-pub(super) fn status_of(raw: &str) -> Result<Status, WireDecodeError> {
+#[cfg(test)]
+fn status_of(raw: &str) -> Result<Status, WireDecodeError> {
     match raw {
         "Running" => Ok(Status::Running),
         "Completed" => Ok(Status::Completed),

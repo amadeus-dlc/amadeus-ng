@@ -28,8 +28,8 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use core_command_domain::orchestration::{
-    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
-    StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
+    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -114,15 +114,14 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::from_material(
+    Intent::from(Created::new(
         intent_id(),
         WorkflowDefinitionId::parse("claude").unwrap(),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
         StartRequest::new("mvp", "本家ストアへの適合を確かめる"),
         stages(),
         scan(),
-    )
-    .unwrap()
+    ))
 }
 
 fn execution_id() -> IntentExecutionId {
@@ -160,29 +159,21 @@ struct Replayed {
     version: usize,
 }
 
-/// 本家の推奨手順そのままの再構成 — 最新スナップショット封筒 + その先のイベント封筒。
+/// 再構成 — スナップショット封筒は版の正本、状態はジャーナル全再生で導出する
+/// (オーナー裁定 2026-08-30。本家 v3 でスナップショット payload の復号は serde の役目だが、
+/// 我々のドメインは serde を持たないため、状態の正本をイベント列に置く)。
 async fn find_by_id(store: &Store, id: &IntentExecutionId) -> Option<Replayed> {
     let key = AggregateKey::of(id);
     let snapshot = store.get_latest_snapshot_by_id(&key).await.unwrap()?;
     let version = snapshot.version();
-    // 往復の折り返し点 — DTO で受けて、検査点を通してドメインへ戻す。
-    let mut aggregate = snapshot.into_aggregate().to_domain().unwrap();
-    let envelopes = store
-        .get_events_by_id_since_seq_nr(&key, aggregate.seq_nr() + 1)
-        .await
-        .unwrap();
+    let envelopes = store.get_events_by_id_since_seq_nr(&key, 1).await.unwrap();
+    let mut events = Vec::with_capacity(envelopes.len());
     for envelope in &envelopes {
         assert_eq!(envelope.manifest(), MANIFEST, "manifest は往復する");
         let event = envelope.payload().to_domain().unwrap();
-        aggregate
-            .apply_event(
-                &intent(),
-                envelope.seq_nr(),
-                *envelope.occurred_at(),
-                &event,
-            )
-            .unwrap();
+        events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
     }
+    let (aggregate, _intent) = IntentExecution::replay(id.clone(), events);
     Some(Replayed { aggregate, version })
 }
 

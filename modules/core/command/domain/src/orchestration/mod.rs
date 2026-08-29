@@ -6,7 +6,8 @@
 //! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
-//! 永続化境界は `snapshot()` / `from_snapshot()` の値オブジェクトである。
+//! 再構成は `replay` (ジャーナル全再生 — 先頭は `Started`) であり、memento 型は持たない
+//! (オーナー裁定 2026-08-30 — スナップショット行は状態の正本ではない)。
 //!
 //! | コマンド | イベント |
 //! |---|---|
@@ -62,13 +63,11 @@ mod intent_event;
 mod intent_execution;
 mod intent_execution_event;
 mod intent_execution_id;
-mod intent_execution_snapshot;
 mod intent_id;
 mod jump_direction;
 mod next_decision;
 mod phase_boundary;
 mod skeleton_stance;
-mod snapshot_error;
 mod stage_display;
 mod stage_entry;
 mod stage_index;
@@ -102,10 +101,6 @@ pub use intent_execution::IntentExecution;
 // 集約の観測結果
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
-// 集約の写し (memento) とその組み立て器。**改訂 9 で公開**へ — 直列化を担うアダプタ層が
-// 正当な消費者になったためである (coding-rules/domain-persistence-neutrality.md)。
-// 公開するのは読取アクセサと検査付き構築だけで、フィールドはクレート内に閉じている。
-pub use intent_execution_snapshot::{IntentExecutionSnapshot, IntentExecutionSnapshotBuilder};
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
@@ -119,14 +114,12 @@ pub use intent_execution_event::{
 pub use intent_event::{Created, IntentEvent};
 
 // エラー
-pub use apply_error::ApplyError;
 pub use autonomy_mode::InvalidModeArg;
 pub use command_error::CommandError;
 pub use intent::IntentError;
 pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
-pub use snapshot_error::SnapshotError;
 pub use verdict::UnknownVerdict;
 
 // 逐語定数

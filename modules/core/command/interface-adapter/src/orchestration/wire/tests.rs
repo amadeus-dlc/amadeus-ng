@@ -11,9 +11,9 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, AutonomyModeSet, GateApproved, GateOpened, GateRejected, Intent, IntentExecution,
-    IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, Jumped, Parked,
-    PhaseBoundary, Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised,
+    AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
+    IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, Jumped,
+    Parked, PhaseBoundary, Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised,
     StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
@@ -73,7 +73,7 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::from_material(
+    Intent::from(Created::new(
         IntentId::parse(INTENT).expect("UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -86,8 +86,7 @@ fn intent() -> Intent {
             "Unknown",
         )
         .expect("単一行"),
-    )
-    .expect("合成計画は Intent の不変条件を満たす")
+    ))
 }
 
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
@@ -212,24 +211,12 @@ fn the_snapshot_serialises_to_the_recorded_bytes_and_round_trips() {
 
     let decoded: WireSnapshot =
         serde_json::from_str(GENESIS_SNAPSHOT).expect("記録済みの行は読める");
-    assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), aggregate);
-}
-
-#[test]
-fn a_row_whose_spelling_is_outside_the_closed_set_is_refused() {
-    // 閉集合外の綴りは推測せずに拒む。ドメインへ写す前に止まるので、壊れた値が集約に入らない。
-    let tampered = GENESIS_SNAPSHOT.replace(r#""status":"Running""#, r#""status":"running""#);
-    let decoded: WireSnapshot = serde_json::from_str(&tampered).expect("JSON としては読める");
-    assert!(decoded.to_domain().is_err(), "小文字の status は閉集合の外");
-}
-
-#[test]
-fn a_row_that_breaks_an_aggregate_invariant_is_refused_at_the_check_point() {
-    // 形は読めるが不変条件を破る行は `from_snapshot` の検査点で止まる — 担保の場所が
-    // ドメインの serde 属性からこの層の変換関数へ移っただけで、担保自体は落ちていない。
-    let tampered = GENESIS_SNAPSHOT.replace(r#""cursor":0"#, r#""cursor":99"#);
-    let decoded: WireSnapshot = serde_json::from_str(&tampered).expect("JSON としては読める");
-    assert!(decoded.to_domain().is_err(), "範囲外カーソルは不変条件違反");
+    assert_eq!(
+        decoded,
+        WireSnapshot::of(&aggregate),
+        "行の形は DTO として往復する (状態の再構成はジャーナル全再生 — スナップショット行の\
+         payload は読取に使わない。オーナー裁定 2026-08-30)"
+    );
 }
 
 #[expect(
@@ -380,30 +367,6 @@ fn a_malformed_closed_set_value_in_a_control_variant_is_refused() {
             .expect("その綴りを含む変種がある");
         let tampered = row.replace(from, to);
         let decoded: WireEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
-        assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
-    }
-}
-
-#[test]
-fn a_snapshot_whose_identifier_is_malformed_is_refused() {
-    for (from, to) in [
-        (
-            r#""id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000""#,
-            r#""id":"not-a-uuid""#,
-        ),
-        (
-            r#""intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
-            r#""intent_id":"not-a-uuid""#,
-        ),
-        (r#""overlay":["Execute""#, r#""overlay":["EXECUTE""#),
-        (
-            r#""checkbox":["InProgress""#,
-            r#""checkbox":["in-progress""#,
-        ),
-        (r#""autonomy":"Gated""#, r#""autonomy":"gated""#),
-    ] {
-        let tampered = GENESIS_SNAPSHOT.replacen(from, to, 1);
-        let decoded: WireSnapshot = serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
     }
 }
