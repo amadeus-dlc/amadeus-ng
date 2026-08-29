@@ -201,8 +201,8 @@ fn write_string(out: &mut String, text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use crate::canon_json::value::ObjectMembers;
     use super::*;
+    use crate::canon_json::value::ObjectMembers;
 
     fn compact(value: &JsonValue) -> String {
         serialize(value, SerializationProfile::ContractCompact)
@@ -458,8 +458,8 @@ mod tests {
 mod proptests {
     use proptest::prelude::*;
 
-    use crate::canon_json::value::arbitrary;
     use super::*;
+    use crate::canon_json::value::arbitrary;
 
     proptest! {
         /// 決定性 — 同じ値・同じプロファイルなら常に同じバイト列 (NFR1.1)。

@@ -101,8 +101,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::canon_json::value::{Number, ObjectMembers};
     use super::*;
+    use crate::canon_json::value::{Number, ObjectMembers};
 
     const HEX: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -229,9 +229,9 @@ mod tests {
 mod proptests {
     use proptest::prelude::*;
 
+    use super::*;
     use crate::canon_json::parse::parse;
     use crate::canon_json::value::arbitrary;
-    use super::*;
 
     proptest! {
         /// ダイジェストは常に 64 桁の小文字 16 進 (族に関わらず)。

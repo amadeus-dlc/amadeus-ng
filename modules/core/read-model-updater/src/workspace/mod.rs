@@ -18,6 +18,7 @@ mod read_model;
 mod resolved_plan;
 mod state_file;
 mod state_writers;
+mod wording;
 
 // 純粋投影核とその作業面（二層構造の下側 — ストレージを知らない）
 pub use projection::{ProjectionError, project};

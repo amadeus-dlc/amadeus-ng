@@ -72,7 +72,7 @@ pub struct XyzShared {
 
 導入の作法:
 
-- **共有モジュールに 1 度だけ起こす**（`modules/shared/` 配下）。各 Unit・各所で手書きしない。
+- **共有モジュールに 1 度だけ起こす**（`core-infrastructure` 配下 — 2026-08-29 の shared 解体後の共有層）。各 Unit・各所で手書きしない。
 - 2 つ目の利用者が現れたときに既存の型を使う。同じ役割の型を並立させない。
 - `SharedAccess` 相当の trait を切り、`with_read` / `with_write` だけを公開面に出す。
   内部のロック実装（`std::sync::Mutex` / `RwLock` など）は差し替え可能な内部詳細として隠す。

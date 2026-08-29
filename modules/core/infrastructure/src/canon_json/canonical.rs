@@ -83,8 +83,8 @@ mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で allow)。
     #![allow(clippy::indexing_slicing)]
 
-    use crate::canon_json::value::JsonValue;
     use super::*;
+    use crate::canon_json::value::JsonValue;
 
     fn members_of(keys: &[&str]) -> ObjectMembers {
         let mut members = ObjectMembers::new();

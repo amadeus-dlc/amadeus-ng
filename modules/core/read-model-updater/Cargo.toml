@@ -15,7 +15,6 @@ workspace = true
 # `coding-rules/cqrs-boundaries.md` 判定表)。将来のクエリ側クレート (リードモデル読取・
 # クエリ API 層) にはこの依存を書けない。
 core-command-domain = { workspace = true }
-message-catalog = { workspace = true }
 # 投影ライタのアトミック書込 (tmp+rename) と fs メタデータ。
 core-infrastructure = { workspace = true }
 # 本家のジャーナルを横断で読む自前の別接続 (`JournalReaderImpl` — ADR-010 決定 4)。

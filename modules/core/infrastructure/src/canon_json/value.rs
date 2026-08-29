@@ -440,9 +440,9 @@ mod to_value_tests {
 
     use serde::Serialize;
 
+    use super::*;
     use crate::canon_json::profile::SerializationProfile;
     use crate::canon_json::writer::serialize;
-    use super::*;
 
     #[derive(Serialize)]
     struct Directive {

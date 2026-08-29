@@ -6,7 +6,6 @@ members = [
   "modules/core/command/interface-adapter",
   "modules/core/read-model-updater",
   "modules/core/infrastructure",
-  "modules/shared/message-catalog",
   "modules/app/aidlc",
   "modules/harness/claude",
   "modules/harness/infrastructure",
@@ -91,7 +90,6 @@ core-command-domain = { path = "modules/core/command/domain" }
 core-command-use-case = { path = "modules/core/command/use-case" }
 core-command-interface-adapter = { path = "modules/core/command/interface-adapter" }
 core-read-model-updater = { path = "modules/core/read-model-updater" }
-message-catalog = { path = "modules/shared/message-catalog" }
 # infrastructure 層は文脈ごとに置く (`coding-rules/infrastructure-layer.md`)。
 core-infrastructure = { path = "modules/core/infrastructure" }
 harness-infrastructure = { path = "modules/harness/infrastructure" }

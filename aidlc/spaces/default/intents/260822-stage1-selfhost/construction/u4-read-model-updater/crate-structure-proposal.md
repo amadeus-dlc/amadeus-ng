@@ -56,9 +56,10 @@ core-infrastructure            ← 言語拡張（旧 infra-io。どの層も知
 core-command-domain            ← コマンド側（イベント語彙・集約 — 旧 core-domain の移動）
 core-command-use-case          → core-command-domain
 core-command-interface-adapter → コマンド側 + event-store-adapter-rs(sqlite)
-core-read-model-updater (RMU)  → core-command-domain（ドメインイベント）, core-infrastructure,
-                                 audit-events, message-catalog, rusqlite, serde_json, chrono
-                                 （**中間** — コマンド側とクエリ側の両方に依存できる唯一のクレート）
+core-read-model-updater (RMU)  → core-command-domain（ドメインイベント・監査語彙）,
+                                 core-infrastructure, rusqlite, serde_json, chrono
+                                 （**中間** — コマンド側とクエリ側の両方に依存できる唯一のクレート。
+                                 2026-08-29 shared 解体で audit-events は domain へ、文言は出す側へ）
 クエリ側クレート（将来）        → 共有層のみ（**ドメイン絶対禁止**）
 app/aidlc (U7)                 → 全部（合成ルート）
 ```

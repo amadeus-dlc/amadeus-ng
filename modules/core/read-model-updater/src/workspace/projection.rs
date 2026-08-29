@@ -1007,9 +1007,9 @@ fn append_to_list(
 /// 一覧フィールドの現在値を項目へ割る（空は 0 項目）。
 fn list_of(read_model: &ReadModel, field: &str) -> Result<Vec<String>, ProjectionError> {
     let raw = find_field(read_model.state(), field).ok_or_else(|| {
-        ProjectionError::StateField(FieldNotFound::new(
-            message_catalog::state::field_not_found_message(field),
-        ))
+        ProjectionError::StateField(FieldNotFound::new(super::wording::field_not_found_message(
+            field,
+        )))
     })?;
     Ok(if raw.is_empty() {
         Vec::new()
