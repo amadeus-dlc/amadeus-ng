@@ -8,33 +8,43 @@
 
 ## 0. 結論（先に）
 
-**受入基準 1〜11 はすべて緑**である。`cargo test --workspace` は **774 passed / 0 failed** で、
+**受入基準 1〜11 はすべて緑**である（オーナー再訂正の反映後に全ゲートを再実行した実測）。
+`cargo test --workspace` は **774 passed / 0 failed** で、
 改名前（origin/main = B11 着地時点）の 774 と**同数**。退行ゼロで、テストの増減も無い。
 
 固定フィクスチャに旧名や `"intent_id"` のバイトが埋まっている箇所は**発見されなかった**
 （§3 に実測手順）。したがって「止めて報告」の条件には該当しなかった。
 
-判断が要った点は 3 つある。いずれも §5 に書いた:
+判断が要った点は 5 つある。いずれも §5 に書いた:
 
 - `EVENT_MANIFEST` の値 `"workflow-execution-event/1"` を**据え置いた**（改名一族の表に無く、
   doc 自身が「行に書かれて残る値」として逐語固定を明記している）
 - ブリーフ更新で入った `IntentSnapshot` の**クレート内私有への降格**は、`Intent::state` /
   `from_state` の降格と memento アクセサ 16 本の削除を伴った
 - `JournalEntry::intent_id()`（RMU の読取行）は集約のアクセサではないので**据え置いた**
+- 再訂正で `IntentSnapshotBuilder` をクレート内私有にした結果、利用箇所がテストだけになり
+  dead_code で赤になったため **`#[cfg(test)]` でも絞った**（リポジトリの既存 house style に前例あり）
+- **`StateError` は改名しなかった。`SnapshotError` は「別の型」ではなく、この型自身の旧名**
+  だった（B5 で `SnapshotError` → `StateError` へ改名済み、`entities.md` に「旧名の再エクスポート・
+  型エイリアスは残さない」と記録）。衝突ではないが**過去の裁定を巻き戻す判断**になるので、
+  独断で決めず据え置いて裁定を仰ぐ
 
 ---
 
 ## 1. 改名対応表（実測）
 
-作業中にブリーフが 2 行更新された（`WorkflowExecutionState` の行と `…StateBuilder` の行）。
-**更新後の内容に従っている。**
+作業中にブリーフが 2 回更新された。1 回目は `WorkflowExecutionState` の行と `…StateBuilder` の
+行（`IntentState` / `IntentStateBuilder` を取りやめ、`IntentSnapshot` / `IntentBuilder` +
+`build()` が集約を返す形へ）、2 回目は Builder 名の確定（`IntentSnapshotBuilder`、`build()` は
+写しを返す元の形へ戻す）である。**最終版の内容に従っている**。1 回目の指示で入れた
+`build() -> Result<Intent, StateError>` は巻き戻した。
 
 | 旧 | 新 | 実測 |
 |---|---|---|
 | `WorkflowExecution`（集約） | `Intent` | 置換済み |
 | `WorkflowExecutionEvent` | `IntentEvent` | 置換済み |
 | `WorkflowExecutionState` | `IntentSnapshot` + **クレート内私有へ降格** | 置換 + `pub(crate)` 化、facade から除外 |
-| `WorkflowExecutionStateBuilder` | `IntentBuilder` + `build()` は `Result<Intent, StateError>` | 置換 + 署名変更 |
+| `WorkflowExecutionStateBuilder` | `IntentSnapshotBuilder` + **クレート内私有へ降格** | 置換 + `pub(crate)` 化 + `#[cfg(test)]`、facade から除外。`build()` は**従来どおり写しを返す** |
 | `WorkflowExecutionRepository` | `IntentRepository` | 置換済み |
 | `WorkflowExecutionRepositoryImpl` | `IntentRepositoryImpl` | 置換済み |
 | `InMemoryWorkflowExecutionRepository` | `InMemoryIntentRepository` | 置換済み |
@@ -130,10 +140,10 @@
 | 3 | `cargo lint` | `CARGO_TARGET_DIR=$PWD/target-delegate-lint cargo lint` | **緑**（exit 0） |
 | 4 | `cargo test --workspace`（退行 0） | 同上 | **緑**。**774 passed / 0 failed**。origin/main も 774 なので**増減なし・退行なし** |
 | 5 | `scripts/quint-gate.sh` | 同上 | **緑**（exit 0） |
-| 6 | `scripts/coverage.sh`（相対） | `… --base origin/main` | **緑**。head 98.53074%。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head (98.53074%) >= base (98.52600%) - tolerance (0.01)` |
+| 6 | `scripts/coverage.sh`（相対） | `… --base origin/main` | **緑**。head 98.52387%。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head (98.5238740774213%) >= base (98.52600074822296%) - tolerance (0.01)`。head は base を **0.00213pp 下回る**が許容誤差 0.01 の内側で PASS（再訂正前の計測は head 98.53074% で base 超えだった — `build()` を写し返しへ戻し、ビルダーを `#[cfg(test)]` で絞ったぶん計測対象行が変わっている） |
 | 7 | プロダクトコードに `unwrap` / `expect` 0 件 | clippy（`unwrap_used` / `expect_used` deny）+ 改名 6 ファイルの `#[cfg(test)]` 前を対象にした grep | **緑**（各ファイル 0 件） |
 | 8 | 外形不変 | `git diff --name-only origin/main..HEAD -- tests/` + 投影ゴールデンの実行 | **緑**。差分 0、19 本無改変で全緑（§2） |
-| 9 | `grep -rn "WorkflowExecution" modules/ --include='*.rs'` | 同左 | **緑**。**0 件** |
+| 9 | `grep -rn "WorkflowExecution" modules/ --include='*.rs'` | 同左 | **緑**。**0 件**。訂正後の旧名（`IntentBuilder` / `IntentState` / `IntentStateBuilder`）も **0 件** |
 | 10 | `git log --follow` でファイル履歴が追える | `git log --follow -- <各ファイル>` | **緑**。`intent.rs` 14 件・`intent_snapshot.rs` 7 件・`intent_repository_impl.rs` 6 件の履歴が改名をまたいで追える |
 | 11 | 報告書 | 本ファイル | **完了** |
 
@@ -177,11 +187,14 @@
    置き換えた（`Intent: Eq`）。`interface-adapter/tests/intent_repository_impl_test.rs` ×2、
    `interface-adapter/tests/support/contract.rs`、`app/aidlc/tests/crash_reconstruction_test.rs`。
    memento 越しに覗く必要がそもそも無かった箇所であり、降格の副作用というより是正である。
-4. **`intent_snapshot.rs` のテスト 6 本を集約の面から書き直した。** `build()` が
-   `Result<Intent, _>` を返すようになったので、既定値・上書き・拒否のいずれも `Intent` の
-   公開クエリで観測する。`plan` / `conditional` が stages と食い違う場合と空ステージ列の
-   ケースは、以前は「ビルダーは検証しない」ことの確認だったが、いまは**集約が拒否する**ことの
-   確認になった（`StateError::InvariantViolation` の逐語も固定）。テスト本数は 6 本のまま。
+4. **`intent_snapshot.rs` のテスト 6 本を集約の面から書き直した。** memento のアクセサが
+   無くなったので、既定値・上書き・拒否のいずれも `Intent` の公開クエリで観測する。
+   再訂正で `build()` が写しを返す形に戻ったため、テスト内のヘルパ
+   `built(builder) -> Result<Intent, StateError>`（＝ `Intent::from_state(builder.build())`）を
+   1 本置き、観測面は集約のままにした。`plan` / `conditional` が stages と食い違う場合と
+   空ステージ列のケースは、以前は「ビルダーは検証しない」ことの確認だったが、いまは
+   **集約が拒否する**ことの確認になった（`StateError::InvariantViolation` の逐語も固定）。
+   テスト本数は 6 本のまま。
 
 ### (c) `JournalEntry::intent_id()` は据え置いた
 
@@ -190,6 +203,44 @@ RMU の `JournalEntry` にも `intent_id` フィールドと同名アクセサ�
 いるので対象外とした。結果、`.intent_id()` の呼出は RMU 側の 5 箇所だけが残っている
 （`entry` / `row` / `rows[0]` をレシーバに持つもの）。集約をレシーバに持つ **12 箇所**は
 `.id()` へ移した（ドメイン内 3・ドメイン外 9）。
+
+### (d) `IntentSnapshotBuilder` を `#[cfg(test)]` でも絞った
+
+再訂正の「可視性は写しと同じくクレート内私有」に従って `pub(crate)` へ降格したところ、
+`dead_code`（`-D warnings`）で 2 件の赤が出た — **クレート内にこのビルダーの利用箇所が
+テストしか無い**ためである。本番経路の birth は `Intent::start` が集約を直に起こすので、
+任意の状態から写しを組む必要があるのはテストだけ、という実態が可視性を絞ったことで
+表に出た形になる。
+
+`#[allow(dead_code)]` で黙らせるのではなく、構造体と `impl` に `#[cfg(test)]` を付けて
+**テストビルドだけに存在させた**。同リポジトリに前例がある:
+
+- `modules/core/command/use-case/src/orchestration/mod.rs:21` — `#[cfg(test)] mod test_support;`
+- `modules/core/infrastructure/src/canon_json/value.rs:307` — `#[cfg(test)] pub(crate) mod arbitrary`
+
+ドメインクレートの結合テスト（`domain/tests/` の ITF 準拠 2 本）はビルダーを使っていないので
+（実測 0 件）、`cfg(test)` で絞っても届かなくなる利用者はいない。
+
+### (e) `StateError` は改名しなかった — `SnapshotError` は「別の型」ではなく旧名だった
+
+訂正 4 は「既存の `SnapshotError` という型が**別に存在する**場合は衝突するので止めて報告」
+という条件だった。実測すると:
+
+- `.rs` 全域に `SnapshotError` は **0 件** — 型としては存在しない（＝文字どおりの衝突は無い）
+- しかし `.md` に **31 件**あり、その正体は**この型自身の旧名**だった。
+  `u3-event-store-repository/functional-design/entities.md:126` に
+  「Builder は `WorkflowExecutionStateBuilder`、エラーは `StateError`（**旧 SnapshotError**）。
+  旧名の再エクスポート・型エイリアスは残さない」と記録されている。写しの型名も同じく
+  `WorkflowExecutionSnapshot` → `WorkflowExecutionState`（B5 改名）だった。
+
+つまり B12 の訂正は、B5 で Snapshot → State へ動かした型名を Snapshot 側へ戻す変更であり、
+`StateError` → `SnapshotError` はその対称な巻き戻しに当たる。**衝突ではないが、過去の裁定を
+巻き戻す判断**である。また訂正 2・3 で `state()` / `from_state()` の名前は据え置くと明示された
+ので、`StateError` は `from_state` と綴りが対応したままでもある。
+
+以上から**据え置き、裁定を仰ぐ**ことにした（「上流成果物の間に矛盾を見つけたら読み替えて
+進まず人間へ裁定を求める」に従った）。改名するなら `entities.md` の当該行も同時に改める
+必要があるが、`aidlc/**` の設計文書はブリーフの所有ファイル外なので触っていない。
 
 ---
 
@@ -206,22 +257,32 @@ RMU の `JournalEntry` にも `intent_id` フィールドと同名アクセサ�
    の 1・2（構造体リテラルの一元化と `no-public-fields` の境界拡張）が来たときに、この型を
    どう扱うかを改めて決める必要がある。
 3. **`EVENT_MANIFEST` の値** — §5 (a)。
-4. **`docs/**` と `coding-rules/**` の旧名**はメインセッションの担当（ブリーフどおり触って
+4. **`StateError` を `SnapshotError` へ戻すか** — §5 (e)。戻す場合は
+   `u3-event-store-repository/functional-design/entities.md:126` の記述（旧名を残さないと
+   書いた B5 の裁定）も同時に改める必要がある。
+5. **`docs/**` と `coding-rules/**` の旧名**はメインセッションの担当（ブリーフどおり触って
    いない）。`use-case-rules.md` / `gateway-taxonomy.md` / `good-examples.md` 等が
    `WorkflowExecutionRepository` を適用例として挙げている。
-5. **`target-delegate/` と `target-delegate-lint/`** が未追跡のまま残っている
+6. **`target-delegate/` と `target-delegate-lint/`** が未追跡のまま残っている
    （`.gitignore` は `/target` しか除外していない）。検証用のビルド生成物なので削除してよい。
+7. **メインセッション側の未コミット変更が作業ツリーに残っている** — `brief-1.md`（再訂正の
+   反映）と `coding-rules/` 6 ファイル（`cqrs-boundaries` / `factory-naming` /
+   `gateway-taxonomy` / `good-examples` / `ubiquitous-language` / `use-case-rules`）。
+   自分の所有ファイルではないので**コミットしていない**。取り込みの要否はそちらで判断を。
 
 ---
 
 ## 7. コミット
 
-意味単位で 2 本に分けた（どちらも `b12: ` 接頭辞、`git add` は明示パス、**push なし**）。
+意味単位で 4 本に分けた（いずれも `b12: ` 接頭辞、`git add` は明示パス、**push なし**）。
 
 | コミット | 内容 |
 |---|---|
-| `e27cfd8` | 集約 `WorkflowExecution` を `Intent` へ改名する（一族・ファイル名・`type_name`）。`IntentSnapshot` の降格と `IntentBuilder::build()` の署名変更を含む |
+| `e27cfd8` | 集約 `WorkflowExecution` を `Intent` へ改名する（一族・ファイル名・`type_name`）。`IntentSnapshot` の降格を含む |
 | `40c90b9` | 集約のフィールド `intent_id` とアクセサを `id` / `id()` へ改める |
+| `75ad323` | 委任ブリーフと開発者報告を記録する |
+| `033f898` | 写しのビルダーを `IntentSnapshotBuilder` へ改め、クレート内私有に絞る（再訂正の反映。`build()` の `Result<Intent, _>` 化を巻き戻し） |
 
-分けたのは、1 本目が「型と面の名前」、2 本目が「集約内の属性名」で変更理由が違うためである。
-1 本目の時点でも `cargo test --workspace` は 774 全緑で、どちらのコミットも単体でビルドが通る。
+分けたのは、1 本目が「型と面の名前」、2 本目が「集約内の属性名」、4 本目が「再訂正への追随」で
+変更理由が違うためである。`e27cfd8` / `40c90b9` の時点でも `cargo test --workspace` は 774 全緑で、
+どのコミットも単体でビルドが通る。
