@@ -1,6 +1,6 @@
 # B12 開発者報告 1 — `Intent` 構造体 + `IntentExecution` 集約への分割
 
-対象ブリーフ: [`brief-1.md`](brief-1.md)（改訂 7 まで反映）
+対象ブリーフ: [`brief-1.md`](brief-1.md)（改訂 8 まで反映）
 ブランチ: `bolt/b12-intent-aggregate-rename`（origin/main 基準、**push なし**）
 検証の `CARGO_TARGET_DIR`: `target-delegate`（`cargo lint` のみ `target-delegate-lint`）
 
@@ -8,16 +8,16 @@
 
 ## 0. 結論（先に）
 
-**受入基準はすべて緑**である（改訂 3 反映後に全ゲートを再実行した実測）。
-`cargo test --workspace` は **803 passed / 0 failed**（origin/main は 774 なので **+29**）。
-`tests/` の差分は 0 で、投影ゴールデンは無改変のまま全緑である。
+**受入基準はすべて緑**である（改訂 8 反映後に全ゲートを再実行した実測）。
+`cargo test --workspace` は **812 passed / 0 failed**（origin/main は 774 なので **+38**）。
+`tests/` の差分は 0 で、投影ゴールデン 19 本は無改変のまま全緑である。
 
-本 Bolt は途中で改訂 2〜7 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
+本 Bolt は途中で改訂 2〜8 の裁定を受けて到達点が変わった。最終形は**単純改名ではなく分割**で
 ある:
 
 | | 役割 |
 |---|---|
-| **`Intent`**（新設・不変構造体） | 静的な intent — 識別子・定義のピン・依頼・解決済み計画・走査結果。Always Valid、変異メソッドなし |
+| **`Intent`**（新設・静的な集約） | 静的な intent — 識別子・定義のピン・依頼・解決済み計画・走査結果。Always Valid、変異メソッドなし。**集約なので genesis `create` は `(Intent, IntentEvent)` の対を返す**（改訂 8） |
 | **`IntentExecution`**（集約） | 1 回の実行 — `id: IntentExecutionId` と `intent_id: IntentId`、および実行時状態だけ |
 | **`IntentExecutionId`**（新設） | 実行自身の識別子（1 intent : n 実行なので intent の識別子を借りられない） |
 
@@ -30,16 +30,22 @@
 判断待ちだった `EVENT_MANIFEST` の値も、2026-08-30 の裁定を受けて
 `"intent-execution-event/1"` へ揃えた（§5 (a)）。これで本 Bolt に旧語彙の化石は残っていない。
 
+改訂 8 で **`Intent` も集約**と確定し（「集約ではない不変構造体」は撤回）、`IntentEvent::Created`
+の新設と対返しファクトリ `Intent::create` を実装した（§5 (k)）。これに伴い §5 (i) の
+「`Intent::new` は変更不要」裁定は**上書きされた**。
+
 ---
 
-## 1. 到達点（改訂 7 まで反映・実測）
+## 1. 到達点（改訂 8 まで反映・実測）
 
 | 旧 | 新 |
 |---|---|
 | `WorkflowExecution`（集約） | `IntentExecution`（実行時状態だけに縮小） |
 | `WorkflowDefinition::new` | `from_artifacts`（再構成）+ 新設 `define`（genesis・対を返す。改訂 7） |
 | （無し） | **`WorkflowDefinitionEvent::Defined`**（新設・改訂 7） |
-| （無し） | **`Intent`**（新設・静的側の不変構造体） |
+| （無し） | **`Intent`**（新設・静的側の集約） |
+| `Intent::new` | `from_material`（再構成・serde 復号もここを通る）+ 新設 `create`（genesis・対を返す。改訂 8） |
+| （無し） | **`IntentEvent::Created`**（新設・改訂 8） |
 | （無し） | **`IntentExecutionId`**（新設・実行の識別子。`AggregateId` はこちらが実装） |
 | `WorkflowExecutionEvent` | `IntentExecutionEvent`（変種名は不変） |
 | `WorkflowExecutionState` | `IntentExecutionSnapshot`（クレート内私有、16 属性 → **12 属性**） |
@@ -73,6 +79,17 @@ IntentExecution::start(id: IntentExecutionId, intent: Intent, occurred_at) -> (I
 `Result` が消えた。受け取る `Intent` が Always Valid なので、ここに失敗経路が無いためである。
 計画の解決（スコープ検査・表示属性の単一行検査）は補助コンストラクタ `Intent::resolve` が担う。
 
+改訂 8 以降、その `Intent` 自身も集約なので genesis は対を返す。`start` に渡すのは**対の左**で
+ある:
+
+```rust
+Intent::create(id, definition_id, definition_revision, start_request, stages, scan)
+    -> Result<(Intent, IntentEvent), IntentError>
+Intent::resolve(id, &definition, start_request, scan)
+    -> Result<(Intent, IntentEvent), IntentError>   // 補助。create へ委譲
+Intent::from_material(..) -> Result<Intent, IntentError>  // 再構成。イベントを作らない
+```
+
 ### ファイル改名（すべて `git mv`）
 
 | 旧 | 新 |
@@ -87,7 +104,9 @@ IntentExecution::start(id: IntentExecutionId, intent: Intent, occurred_at) -> (I
 | `interface-adapter/tests/workflow_execution_repository_contract.rs` | `intent_execution_repository_contract.rs` |
 | `interface-adapter/tests/workflow_execution_repository_impl_test.rs` | `intent_execution_repository_impl_test.rs` |
 
-新設ファイル: `domain/src/orchestration/intent.rs` / `intent_execution_id.rs` / `uuid_v7.rs`。
+新設ファイル: `domain/src/orchestration/intent.rs` / `intent_event.rs`（改訂 8） /
+`intent_execution_id.rs` / `uuid_v7.rs`、`domain/src/workflow_definition/workflow_definition_event.rs`
+（改訂 7）。
 削除ファイル: `domain/src/orchestration/start_error.rs`。
 
 ---
@@ -126,32 +145,39 @@ ITF トレース（`formal/**` の出力）・ゴールデン・逐語アサー�
 | 1 | `cargo fmt --all --check` | **緑**（exit 0） |
 | 2 | `cargo clippy --workspace --all-targets -- -D warnings` | **緑**（exit 0） |
 | 3 | `cargo lint` | **緑**（exit 0） |
-| 4 | `cargo test --workspace`（退行 0） | **緑**。**803 passed / 0 failed**（origin/main 774 → **+29**） |
+| 4 | `cargo test --workspace`（退行 0） | **緑**。**812 passed / 0 failed**（origin/main 774 → **+38**） |
 | 5 | `scripts/quint-gate.sh` | **緑**（exit 0） |
-| 6 | `scripts/coverage.sh --base origin/main` | **緑**。head **98.62614%**。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head >= base (98.52600%) - 0.01` |
+| 6 | `scripts/coverage.sh --base origin/main` | **緑**。head **98.63390%**。絶対 `[PASS] >= 90.0%`、相対 `[PASS] head >= base (98.52600%) - 0.01` |
 | 7 | プロダクトコードに `unwrap` / `expect` 0 件 | **緑**（clippy の `unwrap_used` / `expect_used` deny で機械強制） |
 | 8 | 外形不変 | **緑**（§2） |
 | 9 | `grep -rn "WorkflowExecution" modules/ --include='*.rs'` | **緑**。**0 件** |
 | 10 | `git log --follow` でファイル履歴が追える | **緑**（改名はすべて `git mv`） |
-| 11 | `Intent` が変異メソッドを持たない | **緑**。`grep -c "&mut self" intent.rs` = **0** |
+| 11 | `Intent` が変異メソッドを持たない | **緑**。`grep -c "&mut self" intent.rs` = **0**（改訂 8 で集約と確定したが、変異は現状も無い） |
 | 12 | `IntentExecutionId` に `IntentId` と同等の形式検査テスト | **緑**（15 本） |
 | 13 | genesis 新形のテスト | **緑**（`start_records_the_definition_identity_and_the_resolved_plan` ほか） |
 | 14 | `Started` payload に intent が載るラウンドトリップ | **緑**（`the_started_payload_round_trips_the_intent_through_serde`） |
 | 15 | 集約状態に Intent 由来の静的フィールドが残っていない | **緑**（`the_snapshot_carries_no_static_material_from_the_intent` が写しの JSON を逐語で検査） |
 | 16 | `&Intent` ガード（id 不一致・長さ不一致）のテスト | **緑**（`a_command_refuses_an_intent_that_belongs_to_another_intent` ほか 5 本） |
 | 17 | 全 `&mut self` コマンドがイベントを返す（`coding-rules/aggregate-commands.md`） | **緑**。集約の `pub fn` かつ `&mut self` は **12 本**あり、うち 11 本（`complete_stage` / `open_gate` / `approve_gate` / `reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` / `switch_autonomy`）はすべて `Result<IntentExecutionEvent, CommandError>` を返す。残る 1 本は規則が明示的に除外する fold の `apply_event`（`Result<(), ApplyError>`）。イベントを返さない遷移メソッドは **0 本** |
-| 18 | genesis が (集約, 誕生イベント) の対を返す / 再構成経路がイベントを生成しない | **緑**。`IntentExecution::start` は `(IntentExecution, IntentExecutionEvent)`、`WorkflowDefinition::define` は `(WorkflowDefinition, WorkflowDefinitionEvent)`。再構成の `IntentExecution::from_snapshot` / `apply_event` / `WorkflowDefinition::from_artifacts` はいずれもイベント型を戻り値に持たない（型で保証） |
+| 18 | genesis が (集約, 誕生イベント) の対を返す / 再構成経路がイベントを生成しない | **緑**。`IntentExecution::start` は `(IntentExecution, IntentExecutionEvent)`、`WorkflowDefinition::define` は `(WorkflowDefinition, WorkflowDefinitionEvent)`、`Intent::create` / `Intent::resolve` は `Result<(Intent, IntentEvent), IntentError>`（改訂 8）。再構成の `IntentExecution::from_snapshot` / `apply_event` / `WorkflowDefinition::from_artifacts` / `Intent::from_material` はいずれもイベント型を戻り値に持たない（型で保証） |
 | 19 | `EVENT_MANIFEST` の綴りが集約名に揃っている（2026-08-30 裁定） | **緑**。値は `"intent-execution-event/1"`。旧綴りのコード出現は **0 件**（`grep -rn "workflow-execution-event" modules/ tools/ --include='*.rs'` は doc 注記の 1 行のみ — 改名の経緯を記録した意図的な残置）。ゴールデン側は改名前から **0 件** |
 
 ### テストの増減の内訳（実測）
 
-テスト関数は **755 → 779**（+24）。**14 本が消え、38 本が増えた**。消えた 14 本の行き先:
+テスト関数は **755 → 793**（+38。集計は `git grep -c -E "^\s*#\[([a-z_:]+::)?test\]|^\s*#\[tokio::test" <ref> -- modules` の総和で、
+origin/main と HEAD を同じ式で測った）。**14 本が消え、52 本が増えた**。消えた 14 本の行き先:
 
 - 3 本（`an_empty_stage_list_is_refused` ほか）→ `Intent::new` の不変条件テストへ移設（intent.rs）
 - 5 本（旧 memento モジュール）→ 新しいスナップショットテスト 4 本へ置換
 - 4 本（`start_error.rs`）→ `IntentError` のテストへ移設（Display は 5 変種すべてを逐語で固定）
 - 1 本（`from_state_rejects_a_broken_invariant`）→ `..._runtime_invariant` へ改名
 - 1 本（`workflow_execution_conforms_to_every_committed_engine_loop_trace`）→ `intent_conforms_...` へ改名
+
+増えた 52 本の内訳は、分割フェーズの 38 本に加えて、改訂 7（`WorkflowDefinition` の規則適合）
+が 5 本、改訂 8（`Intent` の規則適合）が 9 本である。改訂 8 の 9 本は
+`intent_event.rs` 3 本（材料・serde 往復・値等価）、`intent.rs` 5 本（対を返す genesis・
+`resolve` も対・再構成が無イベント・両経路で同一の不変条件・復号が再構成検査を通る）、
+`intent_execution.rs` 1 本（`start` は `create` の対の左を受け取る）である。
 
 **カバレッジが失われた箇所は無い**（相対ゲートも base を上回っている）。
 
@@ -276,13 +302,17 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 巻き戻った形になる。`entities.md` の該当記述（「エラーは `StateError`（旧 SnapshotError）」）は
 失効するので §6 に申し送る。
 
-### (i) `Intent::new` がイベントを返さないこと（オーナー裁定・現行どおり）
+### (i) ~~`Intent::new` がイベントを返さないこと（変更不要）~~ → **改訂 8 で上書き**
 
-`aggregate-commands.md` は集約の状態遷移にイベントを要求するが、`Intent` は独立した集約では
-なく、その値は `Started` に焼き込まれる**静的構成**である。`IntentCreated` を先行させると
-`Started` の自己完結性と二重化するので、**現行設計どおり変更不要**と確定した（オーナー裁定
-2026-08-29）。生成ペアを返すのは `IntentExecution::start` の側であり、こちらは規則の genesis 形
-そのものである。
+**この裁定は失効した。** 2026-08-29 には「`Intent` は独立した集約ではなく、その値は `Started`
+に焼き込まれる静的構成なので現行設計どおり変更不要」と確定していたが、オーナー自身のその後の
+原則裁定（「`IntentRepository` は必ず `Intent` を I/O する」「集約のファクトリは (インスタンス,
+イベント) の対を返す。無ければリポジトリで永続化できない」）により**上書きされた**。
+
+**`Intent` は集約である**（2026-08-30 改訂 8）— 静的で変異が現状無いだけで、
+`WorkflowDefinition` と同じ類型である。対応は (k) に記す。旧裁定の論拠だった「`Started` との
+二重化」は、`Started` が**実行の**歴史、`Created` が**intent の**歴史という別の集約の別の
+事実なので、二重化には当たらない。
 
 ---
 
@@ -306,6 +336,37 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 
 ---
 
+### (k) `Intent` を集約規則へ適合させた（改訂 8 — (i) の裁定を上書き）
+
+`WorkflowDefinition` と同じ非適合が `Intent` にもあった。TDD で進めた（red は**コンパイル
+エラー 9 件**が `Intent::create` / `Intent::from_material` / `IntentEvent` / `Created` の不在と
+`resolve` の戻り型不一致をそれぞれ名指しした状態、実測）。
+
+| 変更 | 内容 |
+|---|---|
+| `IntentEvent::Created(Created { intent })` 新設 | 材料は**作られた時点の intent 丸ごと** = 全属性。定義側の `Defined` が内容を焼かないのと対照的だが理由は明快で、定義には実ファイルというリードモデルが別にあるのに対し、**intent の属性は intent 自身にしか無い** |
+| genesis `Intent::create(..) -> Result<(Intent, IntentEvent), IntentError>` | 対を返す。動詞 `create` は upstream の `intent-create` そのもの（`factory-naming.md` のドメイン語優先） |
+| 補助 `Intent::resolve(..)` も対を返す形へ | 定義から計画を解決する経路も genesis である。`create` へ委譲するので検査点は 1 か所のまま |
+| 再構成 `Intent::from_material(..) -> Result<Intent, IntentError>`（旧 `new`） | **イベントを作らない**（戻り値の型に `IntentEvent` が現れないことが保証）。構造体リテラルはここ 1 か所だけ |
+| `#[serde(try_from = "IntentMaterial")]` | **復号も再構成経路を通す**。素の derive では Always Valid 検査を素通りし、壊れた歴史を読み戻した瞬間に不変条件が破れていた（改訂 8 の「検査は両経路で同一」）。**直列化側は derive のままなので書き出すバイトは変わらない** |
+| `IntentExecution::start` が受け取る intent | **`create` の対の左**。`Started` が intent を丸ごと運ぶ現行形は維持（BR2.2 自己完結）。イベントに集約の写しが載るのは歴史の記録であり `aggregate-references.md` 違反ではない |
+
+**ジャーナル接続はしていない**（改訂 8 の 5）。`Created` を `store` する `IntentRepository` は
+U7（intent-create の実装）の課題である。
+
+呼出側の移行は、`WorkflowDefinition` の 12 呼出を `from_artifacts` へ寄せたのと同じ整理にした
+——**フィクスチャは既定で再構成コンストラクタ**（`Intent::new` の 29 箇所を機械置換）とし、
+**genesis を演じる 3 箇所だけ `create` の対の左を渡す形**にした: ITF 準拠テスト
+（`engine_loop_conformance.rs` — モデルトレース再生の起点）、ユースケース土台
+（`use-case/src/orchestration/test_support.rs` — 本番の呼出側に最も近い）、および改訂 8 の 4 を
+逐語で固定する新規テスト `an_execution_starts_from_the_left_of_the_intent_create_pair`。
+
+副次として、orchestration ファサードの失効記述 3 件も是正した（`state()` / `from_state()` →
+`snapshot()` / `from_snapshot()`、既に存在しない `start_from_plan_unchecked` のコマンド表行、
+`Intent` を「Domain Primitive」に分類していた `pub use` の見出し）。
+
+---
+
 ## 6. 申し送り
 
 1. **`security-design §2` の「検査点は `from_snapshot` の 1 か所」** — §5 (f)。分割後の実態に
@@ -317,16 +378,20 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
    `intent-execution-event/1` へ改めた。なお `docs/specs/10-orchestration.md:44` と
    inception 期の成果物（`domain-design/decisions.md:435`、`contract-design/contract-summary.md`
    の 271 / 291 / 374 行）に旧綴りが残っている。いずれも所有ファイル外なので触っていない。
-4. **`IntentRepository` は U7（intent-create 実装時）で新設**（改訂 5 の 5）。B12 ではポート
-   定義も作っていない — テストは `Intent` を直接構築している。
+4. **`IntentRepository` は U7（intent-create 実装時）で新設**（改訂 5 の 5・改訂 8 の 5）。
+   B12 ではポート定義も作っていない — テストは `Intent` を直接構築している。改訂 8 で
+   `IntentEvent::Created` と対返しファクトリまでは揃ったので、U7 は
+   `store(&created, &intent, ..)` の形をそのまま組める。
 5. **「この intent の現在の実行」の解決**と**「同一 intent の生きた実行は同時に 1 つ」**の
    不変条件は、改訂 3 のとおり本 Bolt では決めていない（U6 / U7 の設計点）。`intents.json` には
    フィールドを足していない。
 6. **合成ルート（U7）が `Intent` をどこから読むか**も未決。`CommitVerdictUseCase` は
    `&Intent` を受け取るだけで取得手段を持たない。Repository は再生用に `Started` から自前で
    復元するので、両者が同じ intent を指すことは id 照合ガードが担保する。
-7. **`WorkflowDefinitionEvent` の永続化先**は未接続（改訂 7 の 5）。定義の変異取込が要件化した
-   時点で、ジャーナル・Repository の書込経路を設計する。
+7. **`WorkflowDefinitionEvent` / `IntentEvent` の永続化先**は未接続（改訂 7 の 5・改訂 8 の 5）。
+   定義の変異取込と intent-create が要件化した時点で、ジャーナル・Repository の書込経路を
+   設計する。`EVENT_MANIFEST` は実行イベント専用の綴りなので、intent / 定義のジャーナルを
+   起こす際は**別の manifest 値**が要る（型判別子は集約ごとに分ける）。
 8. **将来「実行ごとに計画を再解決する」要件が出たら再裁定**（改訂 5 の意味論注記）。現在は
    `Intent` が不変なので「`Started` の写し」と「現在の Intent」は常に一致するが、同一 intent で
    実行ごとに `stages` が変わる要件が現れたら、`stages` は Intent ではなく**実行の開始材料**へ
@@ -343,30 +408,34 @@ scope / request / depth / test_strategy をバラさず、既存の値オブジ�
 
 ## 7. コミット
 
-`origin/main..HEAD` は **17 本**（うち委任側の実装・報告が 16 本、`ecf268f3` は本セッション側の
-成果物）。本報告の反映コミット（末尾）を含む。いずれも `b12: ` 接頭辞、`git add` は明示パス、**push なし**。
+`origin/main..HEAD` は **20 本**（本報告の反映コミットを含む）。うち委任側が 17 本、
+本セッション側（正本・記録の整備）が `ecf268f3` / `7384aeed` の 2 本である。いずれも
+`b12: ` 接頭辞、`git add` は明示パス、**push なし**。
 
-| コミット | 内容 |
-|---|---|
-| `e27cfd86` | 集約 `WorkflowExecution` を `Intent` へ改名する（一族・ファイル名・`type_name`） |
-| `40c90b94` | 集約のフィールド `intent_id` とアクセサを `id` / `id()` へ改める |
-| `75ad3239` | 委任ブリーフと開発者報告を記録する |
-| `033f8988` | 写しのビルダーを `IntentSnapshotBuilder` へ改め、クレート内私有に絞る |
-| `156b5111` | 再訂正の反映を開発者報告へ記録する |
-| `72a7de06` | 集約一族を `IntentExecution` へ改名する（改訂 2 の受け皿） |
-| `2d71d357` | 実行の識別子 `IntentExecutionId` を新設する |
-| `637916f3` | 静的な intent を表す不変構造体 `Intent` を新設する |
-| `3dda7cbd` | 集約を `IntentExecution` へ縮小し、計画は `&Intent` で受け取る |
-| `affb01cc` | 分割を開発者報告へ書き直す |
-| `9cb09791` | 写しの語彙を `snapshot` へ揃え、確定した引数順と規則参照を反映する |
-| `81edabee` | 改訂 6 確定・snapshot 語彙・規則参照を開発者報告へ反映する |
-| `df749101` | `WorkflowDefinition` を集約規則（ファクトリは対を返す）へ適合させる |
-| `c6f50825` | 改訂 7 を開発者報告へ反映する |
-| （本セッション）`ecf268f3` | 集約規則 3 本の正典化・呼称の統一・設計記録と仕様の失効注記 |
-| `fd2ee4d9` | ジャーナルの型判別子を `intent-execution-event/1` へ揃える（§5 (a) 裁定） |
+| # | コミット | 内容 |
+|---|---|---|
+| 1 | `e27cfd86` | 集約 `WorkflowExecution` を `Intent` へ改名する（一族・ファイル名・`type_name`） |
+| 2 | `40c90b94` | 集約のフィールド `intent_id` とアクセサを `id` / `id()` へ改める |
+| 3 | `75ad3239` | 委任ブリーフと開発者報告を記録する |
+| 4 | `033f8988` | 写しのビルダーを `IntentSnapshotBuilder` へ改め、クレート内私有に絞る |
+| 5 | `156b5111` | 再訂正の反映を開発者報告へ記録する |
+| 6 | `72a7de06` | 集約一族を `IntentExecution` へ改名する（改訂 2 の受け皿） |
+| 7 | `2d71d357` | 実行の識別子 `IntentExecutionId` を新設する |
+| 8 | `637916f3` | 静的な intent を表す `Intent` を新設する |
+| 9 | `3dda7cbd` | 集約を `IntentExecution` へ縮小し、計画は `&Intent` で受け取る |
+| 10 | `affb01cc` | 分割を開発者報告へ書き直す |
+| 11 | `9cb09791` | 写しの語彙を `snapshot` へ揃え、確定した引数順と規則参照を反映する |
+| 12 | `81edabee` | 改訂 6 確定・snapshot 語彙・規則参照を開発者報告へ反映する |
+| 13 | `df749101` | `WorkflowDefinition` を集約規則（ファクトリは対を返す）へ適合させる（改訂 7） |
+| 14 | `c6f50825` | 改訂 7 を開発者報告へ反映する |
+| 15 | `ecf268f3` | （本セッション）集約規則 3 本の正典化・呼称の統一・設計記録と仕様の失効注記 |
+| 16 | `fd2ee4d9` | ジャーナルの型判別子を `intent-execution-event/1` へ揃える（§5 (a) 裁定） |
+| 17 | `76810545` | `EVENT_MANIFEST` 改名の裁定と実測を開発者報告へ反映する |
+| 18 | `7384aeed` | （本セッション）manifest 改名の正本追従（5 箇所）と改訂 8 の裁定記録 |
+| 19 | `9565cf64` | `Intent` を集約規則へ適合させる（`IntentEvent` 新設・`create` は対を返す。改訂 8） |
+| 20 | （本コミット） | 改訂 8 を開発者報告へ反映する（自身の SHA は確定前なので記さない） |
 
-改名フェーズ（`e27cfd86`〜`156b5111`）→ 分割フェーズ（`72a7de06`〜`affb01cc`）→ 語彙・規則適合
-フェーズ（`9cb09791` 以降）の 3 段である。改訂 2 が来た時点で**巻き戻しは不要だった** —
-集約側の改名がそのまま `IntentExecution` への機械改名で流用できたためである。
-`3dda7cbd` だけは 1 コミットが大きいが、集約の縮小・ポート・アダプタ・RMU・app が
-同時に動かないとビルドが通らないため分割できなかった。
+改名フェーズ（1〜5）→ 分割フェーズ（6〜10）→ 語彙・規則適合フェーズ（11〜20）の 3 段である。
+改訂 2 が来た時点で**巻き戻しは不要だった** — 集約側の改名がそのまま `IntentExecution` への
+機械改名で流用できたためである。`3dda7cbd` だけは 1 コミットが大きいが、集約の縮小・ポート・
+アダプタ・RMU・app が同時に動かないとビルドが通らないため分割できなかった。
