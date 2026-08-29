@@ -12,7 +12,13 @@
 
 mod corrupt_cause;
 mod rehydrated_workflow_execution;
+mod report_error;
+mod report_outcome;
+mod report_use_case;
+mod reported_verdict;
 mod repository_error;
+#[cfg(test)]
+mod test_support;
 mod workflow_definition_repository;
 mod workflow_execution_repository;
 
@@ -27,7 +33,16 @@ pub use workflow_execution_repository::WorkflowExecutionRepository;
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
 pub use rehydrated_workflow_execution::RehydratedWorkflowExecution;
 
+// ユースケース (CLI 動詞 = ユースケース)。入力は正規化済みの型で受け、出力は型で返す —
+// 逐語文言は出す側 (合成ルートの Presenter) の持ち物である。
+pub use report_use_case::ReportUseCase;
+pub use reported_verdict::{ReportedTransition, ReportedVerdict};
+
+// ユースケースの結果
+pub use report_outcome::ReportOutcome;
+
 // エラー
 pub use corrupt_cause::CorruptCause;
+pub use report_error::ReportError;
 pub use repository_error::RepositoryError;
 pub use workflow_definition_repository::GraphReadError;
