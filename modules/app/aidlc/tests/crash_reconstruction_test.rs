@@ -76,7 +76,7 @@ async fn write_five(repository: &mut Repository) -> RehydratedWorkflowExecution 
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(Some("ok".to_string()), None, at())
+        aggregate.approve_gate(Some("ok".to_string()), at())
     })
     .await;
     advance(repository, &held, |aggregate| {
@@ -203,7 +203,7 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     let held = repository.find_by_id(&intent_id()).await.expect("再水和");
     let mut aggregate = held.aggregate().clone();
     let event = aggregate
-        .approve_gate(Some("ok".to_string()), None, at())
+        .approve_gate(Some("ok".to_string()), at())
         .or_else(|_| aggregate.complete_stage(at()))
         .expect("次のコマンド");
     assert_eq!(aggregate.seq_nr(), 6);

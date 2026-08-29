@@ -262,7 +262,7 @@ fn next_command(aggregate: &mut WorkflowExecution) -> WorkflowExecutionEvent {
         if checkbox == CheckboxState::InProgress {
             aggregate.open_gate(vec!["artifact.md".to_string()], at())
         } else {
-            aggregate.approve_gate(None, None, at())
+            aggregate.approve_gate(None, at())
         }
     } else {
         aggregate.complete_stage(at())
