@@ -1,4 +1,4 @@
-//! `ReportUseCase` が**実物の Repository 実装**と組めることを示す結線テスト (契約 C3 ④)。
+//! `CommitVerdictUseCase` が**実物の Repository 実装**と組めることを示す結線テスト（契約 C3 ④）。
 //!
 //! # なぜこれが 1 本だけなのか
 //!
@@ -9,10 +9,16 @@
 //! 触れない（触れば依存が循環する）。
 //!
 //! そこで**結線だけを実物で示す場所をこちら側に置く**。合成ルート（U7）が実際に書く形
-//! — 実物の `WorkflowExecutionRepositoryImpl` を `ReportUseCase` に注入して 1 遷移を
+//! — 実物の `WorkflowExecutionRepositoryImpl` を `CommitVerdictUseCase` に注入して 1 遷移を
 //! コミットする — が型として成立し、行が本当にストアへ載ることを固定する。経路の網羅・
 //! 異常系・`Conflict` の再試行は use-case クレート内の fake テストが持つ（`Conflict` を
 //! 意図的に起こすには、どのみち応答をスクリプトできるダブルが要る）。
+//!
+//! # 検証が戻り値ではなく読み直しなのは仕様である
+//!
+//! `execute` は成功しても値を返さない（CQS の Command）。コミットされたことは**ストアを
+//! 読み直して**確かめる。実運用でも同じ向きで、CLI の出力データはコマンドユースケース →
+//! RMU（投影）→ クエリユースケースの経路で得る（裁定 7 追補）。
 
 // テストコードでは unwrap / expect を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -21,11 +27,10 @@
 
 mod support;
 
-use core_command_domain::orchestration::WorkflowExecutionEvent;
 use core_command_domain::workspace::CheckboxState;
 use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryImpl;
 use core_command_use_case::orchestration::{
-    ReportOutcome, ReportUseCase, ReportedTransition, ReportedVerdict, WorkflowExecutionRepository,
+    CommitVerdictUseCase, ReportedTransition, WorkflowExecutionRepository,
 };
 
 use support::{at, intent_id, store_genesis};
@@ -44,30 +49,16 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     // 同じストアを指す別の口。ユースケースが書いた行を外から観測するために先に取っておく。
     let observer = repository.reopened();
 
-    let mut use_case = ReportUseCase::new(repository);
-    let outcome = use_case
+    let mut use_case = CommitVerdictUseCase::new(repository);
+    use_case
         .execute(
             &intent_id(),
             None,
-            ReportedVerdict::Transition(ReportedTransition::Forward { user_input: None }),
+            ReportedTransition::Forward { user_input: None },
             at(),
         )
         .await
         .expect("非ゲートのカーソルは完了できる");
-
-    let ReportOutcome::Committed { event } = outcome else {
-        panic!("コミットを期待した: {outcome:?}");
-    };
-    let WorkflowExecutionEvent::StageCompleted(completed) = &event else {
-        panic!("StageCompleted を期待した: {event:?}");
-    };
-    assert_eq!(completed.stage().as_str(), "state-init");
-    assert_eq!(
-        completed
-            .next_stage()
-            .map(core_command_domain::workflow_definition::StageSlug::as_str),
-        Some("intent-capture")
-    );
 
     // 実物のストアに載ったことを、別の口から再構成して確かめる。
     let after = observer
@@ -79,9 +70,20 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     assert_eq!(
         after
             .aggregate()
+            .stages()
+            .get(after.aggregate().cursor().to_usize())
+            .expect("カーソルは範囲内")
+            .slug()
+            .as_str(),
+        "intent-capture",
+        "カーソルは次のステージへ進んだ"
+    );
+    assert_eq!(
+        after
+            .aggregate()
             .checkbox(after.aggregate().cursor())
             .expect("カーソルは範囲内"),
         CheckboxState::InProgress,
-        "カーソルは次のステージへ進み、そのステージは着手済みになる"
+        "進んだ先のステージは着手済みになる"
     );
 }

@@ -395,13 +395,22 @@ dry-run 相当で確認し、当てた後に `git diff` で目視確認する」
    `PHASE_COMPLETED`（`To phase: (end)`）を出すが、`StageSkipped` payload には
    `phase_boundary` が無く、RMU の `stage_skipped` も境界行を描かない。U5 の責務外だが、
    FR1.1（監査シャードの逐語互換）に関わる既知の穴として記録する。
-3. **U7 の Presenter は catch_up 後のリードモデルから「何が起きたか」を導く必要がある**
-   （裁定 7 の帰結）。`CommitVerdictUseCase` は成功時に何も返さないので、upstream の
-   `Committed approve for "…" (scope: …)` / `Recorded rejected for "…"` /
-   `Stage "…" is already awaiting approval.` のような文言の出し分けは、監査シャード末尾と
-   状態ファイルの差分から復元することになる。**とくに「何もコミットしなかった 2 経路」
-   （ゲート既開・BR1.9 通過済み）はリードモデルに差分が出ない**ので、差分ゼロを「no-op で
-   あった」と読む設計が要る。これは U7（FR4）の課題として申し送る。
+3. **CLI サブコマンドの出力データはクエリユースケース経由で得る**（裁定 7 追補・同訂正）。
+   `CommitVerdictUseCase` は成功時に何も返さないので、経路は
+   **コマンドユースケース → RMU（リードモデル投影）→ クエリユースケース**になる。
+   クエリユースケースは `core/query/*` の新設モジュール群（`cqrs-boundaries.md` が
+   「将来のリードモデル読取・クエリ API 層」として既に予約している枠の実体）であり、
+   **ドメイン（`core-command-domain`）には絶対依存しない** — 返すのはクエリ側が所有する
+   読取用の型で、コマンド側のイベント・集約は現れない。文言は従来どおり出す側
+   （U7 Presenter）が組み、クエリユースケースはデータを返すだけである。
+
+   **クエリ向きのリードモデルは `.md` に限らず、SQLite テーブル投影でよい。** `aidlc-state.md`
+   と監査シャードは「upstream 互換・人間可読・git 交換用」のリードモデル（バイト逐語が契約）で
+   あり、これをクエリユースケースが逆パースする設計にはしない。RMU が同じイベント列から
+   別のテーブルへ投影してよく、**既存設計が既に複数投影を予約している** — チェックポイント表は
+   `projection` をキーに持ち、投影ごとに独立して前進できる（`ProjectionName` 型も既存）。
+   複数投影の駆動（現行 `ReadModelUpdater` は単一投影を駆動する形）と具体的なテーブル設計は
+   **U7（FR4）の課題**である。
 4. **`report --single` / `--skeleton-stance` / `resume`** は U5 の入力型に含めていない
    （前 2 つはブリーフの非スコープ、`resume` は裁定 7）。いずれも U7 が
    `CommitVerdictUseCase` に到達する前に分岐させる必要がある — upstream も `handleReport` の

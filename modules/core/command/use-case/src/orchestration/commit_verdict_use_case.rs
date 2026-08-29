@@ -1,4 +1,4 @@
-//! `ReportUseCase` — `report` 動詞のユースケース (FR2.1)。
+//! `CommitVerdictUseCase` — 報告された結末を 1 つの遷移としてコミットする（FR2.1）。
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
@@ -7,103 +7,119 @@ use core_command_domain::orchestration::{
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::CheckboxState;
 
-use super::report_error::ReportError;
-use super::report_outcome::ReportOutcome;
-use super::reported_verdict::{ReportedTransition, ReportedVerdict};
+use super::commit_error::CommitError;
+use super::reported_transition::ReportedTransition;
 use super::repository_error::RepositoryError;
 use super::workflow_execution_repository::WorkflowExecutionRepository;
 
-/// `report` — コンダクタが報告した結末を 1 つの遷移としてコミットする。
+/// コンダクタが報告した結末（[`ReportedTransition`]）を 1 つの遷移としてコミットする。
 ///
-/// 定型は 4 手である: **`find_by_id` で集約を再構成 → 集約コマンドで判断 → `store` で保存 →
-/// 型付きの結果を返す**。
+/// 定型は 3 手である: **`find_by_id` で集約を再構成 → 集約コマンドで判断 → `store` で保存**。
+/// 以降の U6・U7 もこの形に乗る。
+///
+/// # 名前について
+///
+/// upstream の CLI 動詞は `report` だが、その綴りをそのまま型名にすると「レポート（帳票）を
+/// 作る／読むユースケース」と読める（オーナー裁定 2026-08-29 — 実際に誤読された）。型名は
+/// **更新の意図を先頭に置く**ものへ改めた。CLI 動詞と型の対応は U7 の ROUTES 表が持つので、
+/// 型名が upstream の綴りに縛られる必要はない。
 ///
 /// # ここに無いもの
 ///
-/// - **業務判断**。前提の検査 (受理状態・ゲートの有無・checkbox の前提集合・読み飛ばし可否・
-///   通過済み判定) はすべて集約が持つ。ここにあるのは「どの集約コマンドを打つか」を集約の
-///   クエリに訊いて決めるフロー制御だけである (`coding-rules/tell-dont-ask.md` — 判断は
-///   状態の所有者へ)。
-/// - **文言**。「Committed approve for "..."」のような逐語は出す側 (合成ルート U7 の
-///   Presenter) が [`ReportOutcome`] の材料から組む。
+/// - **業務判断**。前提の検査（受理状態・ゲートの有無・checkbox の前提集合・読み飛ばし可否・
+///   通過済み判定）はすべて集約が持つ。ここにあるのは「どの集約コマンドを打つか」を集約の
+///   クエリに訊いて決めるフロー制御だけである（`coding-rules/tell-dont-ask.md` — 判断は
+///   状態の所有者へ）。
+/// - **何が起きたかの読取チャネル**。[`CommitVerdictUseCase::execute`] は成功しても値を返さない
+///   （下記「戻り値を持たない理由」）。
+/// - **文言**。「Committed approve for "..."」のような逐語は合成ルート（U7）の Presenter が組む。
 /// - **リードモデルの更新**。`aidlc-state.md` と監査シャードを最新化する `ReadModelUpdater` を
-///   起動するのは合成ルート (U7) である。コマンド側のユースケースはクエリ側を知らない
-///   (`coding-rules/cqrs-boundaries.md` — 境界はクレート分離で物理強制されている)。
-/// - **`Conflict` 以外の再試行**。持っている政策は「楽観 version の競合を 1 回だけやり直す」
-///   1 つだけで、それ以外の失敗はすべてそのまま伝播する (下記「`Conflict` は 1 回だけ
-///   再試行する」)。
-/// - **CLI のフラグ解析**。綴りの揺れ (`approved` / `completed` / `complete` / `done`) の受理は
-///   U7 が [`ReportedVerdict`] を組む時点で畳む。
+///   起動するのは合成ルート（U7）である。コマンド側のユースケースはクエリ側を知らない
+///   （`coding-rules/cqrs-boundaries.md` — 境界はクレート分離で物理強制されている）。
+/// - **`resume` のルーティング**。遷移をコミットしないので入力型に無く、Controller（U7）が
+///   手前で分岐する（`coding-rules/use-case-rules.md` §3）。
 ///
 /// # 束縛はスタティック
 ///
-/// `dyn` は使わない (`coding-rules/use-case-rules.md` §2)。結線 (実物 / インメモリの選択) は
+/// `dyn` は使わない（`coding-rules/use-case-rules.md` §2）。結線（実物 / インメモリの選択）は
 /// 合成ルートだけが行い、ユースケースはポートの trait しか知らない。
 #[derive(Debug)]
-pub struct ReportUseCase<R: WorkflowExecutionRepository> {
+pub struct CommitVerdictUseCase<R: WorkflowExecutionRepository> {
     repository: R,
 }
 
-impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
+impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// ポートの実装を注入する。
     #[must_use]
-    pub const fn new(repository: R) -> ReportUseCase<R> {
-        ReportUseCase { repository }
+    pub const fn new(repository: R) -> CommitVerdictUseCase<R> {
+        CommitVerdictUseCase { repository }
     }
 
     /// 報告された結末を 1 つの遷移としてコミットする。
     ///
-    /// `stage` は報告が名指ししたステージ (`None` はカーソル)。カーソル以外を名指しした報告は
+    /// `stage` は報告が名指ししたステージ（`None` はカーソル）。カーソル以外を名指しした報告は
     /// **通過済み completed への再報告**としてのみ受理し、集約の `stale_report` に判断を委ねる
-    /// (BR1.9)。
+    /// （BR1.9）。
     ///
-    /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない (NFR3.1)。
+    /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない（NFR3.1）。
+    ///
+    /// # 戻り値を持たない理由（CQS）
+    ///
+    /// 状態を変えるので Command であり、CQS が定める Command の形（`&mut self` +
+    /// `Result<(), E>`）をそのまま採る（`coding-rules/command-query-separation.md`）。
+    ///
+    /// 「何をコミットしたか」を返さなくても呼出側は困らない。**この CLI では `ReadModelUpdater`
+    /// の catch_up が同一プロセス内で同期実行される**ので、コミット直後にリードモデルは最新に
+    /// なる。CLI サブコマンドの出力データはそこから、**コマンドユースケース → RMU（投影）→
+    /// クエリユースケース**の経路で得る（オーナー裁定 2026-08-29 — 「イベントを基に RMU で
+    /// 作ったリードモデルを読めばよい」）。クエリユースケースはクエリ側が所有し、ドメインには
+    /// 依存しない（`coding-rules/cqrs-boundaries.md`）ので、境界違反にはならない。
+    ///
+    /// その読み先は `aidlc-state.md` や監査シャードとは限らない。あれは「upstream 互換・
+    /// 人間可読・git 交換用」のリードモデルであってバイト逐語が契約であり、逆パースする設計には
+    /// しない。RMU は同じイベント列からクエリ向きの投影（SQLite テーブル）を別に作ってよく、
+    /// チェックポイント表は投影名をキーに持つので既に複数投影を許す形になっている。
+    ///
+    /// 集約コマンドが `&mut self -> Result<WorkflowExecutionEvent, _>` である事実は先例に
+    /// ならない。あれは `store()` へ渡す**書込パイプラインの配管**であって、Presenter に
+    /// 読ませる読取チャネルではない。
+    ///
+    /// **何もコミットしない成功が 2 つある** — 既に開いているゲートへの再報告
+    /// （golden `awaiting-approval-repeat` は監査行も状態差分も空）と、カーソル通過済み
+    /// ステージへの冪等な再報告（BR1.9）である。どちらも `Ok(())` であり、区別は戻り値では
+    /// 外へ出さない。呼出側が区別を要するなら、それもクエリ側から得る。
     ///
     /// # `Conflict` は 1 回だけ再試行する
     ///
     /// 楽観 version の競合だけがこのユースケースの持つ唯一の再試行政策である
-    /// (contract-design Q6 = A — 「楽観 version 競合は即 `Err`、ユースケースが 1 回だけ再構成して
-    /// 再試行、それでも競合なら CLI がエラー終了」)。ポート doc の C3 ③「`Conflict` 以外は
+    /// （contract-design Q6 = A — 「楽観 version 競合は即 `Err`、ユースケースが 1 回だけ再構成
+    /// して再試行、それでも競合なら CLI がエラー終了」）。ポート doc の C3 ③「`Conflict` 以外は
     /// 再試行しない」は、`Conflict` **だけ**が再試行の対象であり、その政策の持ち主が
     /// ユースケースであることを言っている。
     ///
     /// 再試行は**再構成からやり直す** — 古い集約に `store` だけ打ち直すのは、読んだ時点の版で
     /// 書くという楽観ロックの意味そのものを壊す。したがって 2 回目は `find_by_id` から始め、
     /// 新しい版の集約に改めてコマンドを打つ。2 回目も `Conflict` なら伝播する。再試行後に集約が
-    /// コマンドを拒否した場合 (別クローンが先に承認してゲートが閉じた等) も、そのまま伝播する。
-    ///
-    /// # 戻り値がある `&mut self` について
-    ///
-    /// CQS の既定 (Command は戻り値なし) から外れるが、これは集約コマンドが
-    /// `&mut self -> Result<WorkflowExecutionEvent, _>` である理由と同じである — イベント
-    /// ソーシングでは 1 コマンドが 1 イベントを**返す**ことが契約であり、コミットした事実と
-    /// その材料を呼出側へ渡さないと Presenter が何も描けない。分離すると 2 つ目の呼出が
-    /// 別トランザクションになり、コミットの有無と結果が食い違いうる
-    /// (`coding-rules/command-query-separation.md` の判定フロー 3 = No)。
+    /// コマンドを拒否した場合（別クローンが先に承認してゲートが閉じた等）も、そのまま伝播する。
     ///
     /// # Errors
     ///
-    /// 再構成・永続化の失敗 (`Repository`)、集約による拒否 (`Command`)、計画に無いステージの
-    /// 名指し (`UnknownStage`) を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
+    /// 再構成・永続化の失敗（`Repository`）、集約による拒否（`Command`）、計画に無いステージの
+    /// 名指し（`UnknownStage`）を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
     /// 言い換えもしない。再試行するのは上記の `Conflict` 1 回だけである。
     pub async fn execute(
         &mut self,
         intent_id: &IntentId,
         stage: Option<&StageSlug>,
-        reported: ReportedVerdict,
+        transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
-    ) -> Result<ReportOutcome, ReportError> {
-        // 再開は集約に届かない (型がそう言っている — `ReportedVerdict` の doc)。再構成もしない。
-        let ReportedVerdict::Transition(transition) = reported else {
-            return Ok(ReportOutcome::ResumeRouting);
-        };
-
+    ) -> Result<(), CommitError> {
         // 1 回目。`Conflict` は `store` からしか来ないので、この分岐は「書込が競合した」と同値。
         match self
             .attempt(intent_id, stage, transition.clone(), occurred_at)
             .await
         {
-            Err(ReportError::Repository(RepositoryError::Conflict { .. })) => {
+            Err(CommitError::Repository(RepositoryError::Conflict { .. })) => {
                 self.attempt(intent_id, stage, transition, occurred_at)
                     .await
             }
@@ -118,56 +134,60 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
-    ) -> Result<ReportOutcome, ReportError> {
+    ) -> Result<(), CommitError> {
         let rehydrated = self.repository.find_by_id(intent_id).await?;
         // 版は再構成が返した値**そのもの**を握る。`aggregate.seq_nr()` から導いてはならない
-        // (ポート doc の 3 か条 — 版は不透明なトークンである)。
+        // （ポート doc の 3 か条 — 版は不透明なトークンである）。
         let expected_version = rehydrated.version();
         let mut aggregate = rehydrated.into_aggregate();
 
+        // 何もコミットしない 2 経路。どちらも成功であり、区別は戻り値に出さない。
         if let Some(named) = stage
-            && let Some(outcome) = Self::stale_re_report(&aggregate, named)?
+            && Self::is_stale_re_report(&aggregate, named)?
         {
-            return Ok(outcome);
+            return Ok(());
         }
-
         let cursor = aggregate.cursor();
-        if let Some(outcome) = Self::gate_already_open(&aggregate, cursor, &transition) {
-            return Ok(outcome);
+        if Self::gate_is_already_open(&aggregate, cursor, &transition) {
+            return Ok(());
         }
 
         let event = Self::command(&mut aggregate, cursor, transition, occurred_at)?;
         self.repository
             .store(&event, &aggregate, expected_version)
             .await?;
-        Ok(ReportOutcome::Committed { event })
+        Ok(())
     }
 
-    /// 名指しされたステージがカーソルの手前なら、集約に通過済み判定を委ねる (BR1.9)。
+    /// 名指しされたステージがカーソルの手前なら、集約に通過済み判定を委ねる（BR1.9）。
     ///
-    /// カーソル自身を名指しした報告は通常経路なので `None` を返す。判断は集約の
-    /// `stale_report` が持ち、ここがしているのは slug から位置への解決だけである。
-    fn stale_re_report(
+    /// カーソル自身を名指しした報告は通常経路なので偽を返す。判断は集約の `stale_report` が
+    /// 持ち、ここがしているのは slug から位置への解決だけである。集約が返す `NextDecision` は
+    /// **捨てる** — 呼出側へ渡す読取チャネルを作らないためで、必要な判断（受理してよいか）は
+    /// `Err` になるかどうかで既に済んでいる。
+    ///
+    /// # Errors
+    ///
+    /// 計画に無いステージ（`UnknownStage`）、通過済み completed でない対象（集約の
+    /// `NotStale` をそのまま伝播）。
+    fn is_stale_re_report(
         aggregate: &WorkflowExecution,
         named: &StageSlug,
-    ) -> Result<Option<ReportOutcome>, ReportError> {
-        let target = Self::locate(aggregate, named).ok_or_else(|| ReportError::UnknownStage {
+    ) -> Result<bool, CommitError> {
+        let target = Self::locate(aggregate, named).ok_or_else(|| CommitError::UnknownStage {
             stage: named.clone(),
         })?;
         if target == aggregate.cursor() {
-            return Ok(None);
+            return Ok(false);
         }
-        let decision = aggregate.stale_report(target)?;
-        Ok(Some(ReportOutcome::AlreadyDone {
-            stage: named.clone(),
-            decision,
-        }))
+        aggregate.stale_report(target)?;
+        Ok(true)
     }
 
-    /// 解決済み計画の中での位置 (計画に無ければ `None`)。
+    /// 解決済み計画の中での位置（計画に無ければ `None`）。
     ///
-    /// 集約の読取モデル (`stages` / `stage_index`) だけで完結する**参照**であって判断ではない
-    /// — 前提の判定 (通過済み completed か) は集約の `stale_report` が持つ。
+    /// 集約の読取モデル（`stages` / `stage_index`）だけで完結する**参照**であって判断ではない
+    /// — 前提の判定（通過済み completed か）は集約の `stale_report` が持つ。
     fn locate(aggregate: &WorkflowExecution, named: &StageSlug) -> Option<StageIndex> {
         let position = aggregate
             .stages()
@@ -176,40 +196,31 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
         aggregate.stage_index(position)
     }
 
-    /// 既に開いているゲートへの `awaiting-approval` 再報告は、何もコミットせず成功扱いにする。
+    /// 既に開いているゲートへの `awaiting-approval` 再報告か。
     ///
     /// upstream の `cli/report/awaiting-approval-repeat` は監査行も状態差分も空である。集約に
     /// 打てば `CheckboxPrecondition` で拒否されるが、それは**失敗ではない**ので、報告された語と
     /// 現在の印を突き合わせるフロー制御でここを分ける。
-    fn gate_already_open(
+    fn gate_is_already_open(
         aggregate: &WorkflowExecution,
         cursor: StageIndex,
         transition: &ReportedTransition,
-    ) -> Option<ReportOutcome> {
-        if !matches!(transition, ReportedTransition::AwaitingApproval { .. })
-            || aggregate.checkbox(cursor) != Some(CheckboxState::AwaitingApproval)
-        {
-            return None;
-        }
-        aggregate
-            .stages()
-            .get(cursor.to_usize())
-            .map(|entry| ReportOutcome::GateAlreadyOpen {
-                stage: entry.slug().clone(),
-            })
+    ) -> bool {
+        matches!(transition, ReportedTransition::AwaitingApproval { .. })
+            && aggregate.checkbox(cursor) == Some(CheckboxState::AwaitingApproval)
     }
 
     /// 報告された結末に対応する集約コマンドを 1 つ打つ。
     ///
     /// `Forward` がどちらのコマンドになるかは、報告された語ではなく**ステージの性質**で決まる
-    /// — ゲート付きなら承認、非ゲート (initialization) なら完了である (BR1.3)。どちらを打つかを
+    /// — ゲート付きなら承認、非ゲート（initialization）なら完了である（BR1.3）。どちらを打つかを
     /// 集約の `gated` クエリに訊いて決めるのはフロー制御であって、業務判断の複製ではない。
     fn command(
         aggregate: &mut WorkflowExecution,
         cursor: StageIndex,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, ReportError> {
+    ) -> Result<WorkflowExecutionEvent, CommitError> {
         let event = match transition {
             ReportedTransition::AwaitingApproval { artifacts } => {
                 aggregate.open_gate(artifacts, occurred_at)
@@ -217,7 +228,7 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
             ReportedTransition::Forward { user_input } => {
                 // カーソルは不変条件により常に範囲内なので `None` は起きない。起きたとしても
                 // 非ゲート扱いに畳めば `complete_stage` が `InvalidTarget` で拒否するので、
-                // ここで panic する理由はない (NFR4.3 — 集約の `commit` と同じ作法)。
+                // ここで panic する理由はない（NFR4.3 — 集約の `commit` と同じ作法）。
                 if aggregate.gated(cursor).unwrap_or(false) {
                     aggregate.approve_gate(user_input, occurred_at)
                 } else {
@@ -233,7 +244,7 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
         Ok(event?)
     }
 
-    /// 注入されたポート実装 (テストがコミットの有無を観測するための継ぎ目)。
+    /// 注入されたポート実装（テストが**効果**を観測するための継ぎ目）。
     #[cfg(test)]
     pub(crate) const fn repository(&self) -> &R {
         &self.repository
@@ -243,26 +254,24 @@ impl<R: WorkflowExecutionRepository> ReportUseCase<R> {
 #[cfg(test)]
 mod tests {
     // panic! は「想定した変種でなければ即失敗」という検証用途で使っており、テスト失敗の
-    // シグナルとして妥当なので許容する (集約のテストモジュールと同じ作法)。
+    // シグナルとして妥当なので許容する（集約のテストモジュールと同じ作法）。
     #![allow(clippy::panic)]
 
-    use super::super::report_error::ReportError;
-    use super::super::report_outcome::ReportOutcome;
-    use super::super::report_use_case::ReportUseCase;
-    use super::super::reported_verdict::{ReportedTransition, ReportedVerdict};
+    use super::super::commit_error::CommitError;
+    use super::super::commit_verdict_use_case::CommitVerdictUseCase;
+    use super::super::reported_transition::ReportedTransition;
     use super::super::repository_error::RepositoryError;
     use super::super::test_support::{
         InMemoryWorkflowExecutionRepository, absent_intent, at, genesis, intent, slug,
         start_from_plan,
     };
     use core_command_domain::orchestration::{
-        CommandError, NextDecision, PhaseBoundary, Verdict, WorkflowExecution,
-        WorkflowExecutionEvent,
+        CommandError, PhaseBoundary, Verdict, WorkflowExecution, WorkflowExecutionEvent,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
     use core_command_domain::workspace::CheckboxState;
 
-    /// 索引 0 (initialization) を完了させ、カーソルを最初のゲート付きステージへ進めた集約。
+    /// 索引 0（initialization）を完了させ、カーソルを最初のゲート付きステージへ進めた集約。
     fn at_the_first_gate(stage_count: usize) -> WorkflowExecution {
         let (mut aggregate, _) = genesis(stage_count);
         aggregate
@@ -274,47 +283,50 @@ mod tests {
     fn use_case(
         aggregate: WorkflowExecution,
         version: usize,
-    ) -> ReportUseCase<InMemoryWorkflowExecutionRepository> {
-        ReportUseCase::new(InMemoryWorkflowExecutionRepository::holding(
+    ) -> CommitVerdictUseCase<InMemoryWorkflowExecutionRepository> {
+        CommitVerdictUseCase::new(InMemoryWorkflowExecutionRepository::holding(
             aggregate, version,
         ))
     }
 
-    fn forward() -> ReportedVerdict {
-        ReportedVerdict::Transition(ReportedTransition::Forward {
+    fn forward() -> ReportedTransition {
+        ReportedTransition::Forward {
             user_input: Some("Approve".to_string()),
-        })
-    }
-
-    fn committed_event(outcome: &ReportOutcome) -> &WorkflowExecutionEvent {
-        match outcome {
-            ReportOutcome::Committed { event } => event,
-            other => panic!("コミットされていない: {other:?}"),
         }
     }
 
-    // ---- 経路ごとの正常系 ----
+    /// **効果**の観測 — ストアが受理した唯一のイベントを取り出す。
+    ///
+    /// ユースケースは何が起きたかを返さないので、テストは戻り値ではなくストアに残った
+    /// 痕跡でコミット内容を固定する。
+    fn only_committed(repository: &InMemoryWorkflowExecutionRepository) -> &WorkflowExecutionEvent {
+        let committed = repository.committed();
+        assert_eq!(committed.len(), 1, "コミットは 1 件のはず");
+        committed.first().expect("1 件ある")
+    }
+
+    // ---- 経路ごとの正常系（効果で観測する） ----
 
     #[tokio::test]
     async fn an_awaiting_approval_report_opens_the_gate() {
         let mut subject = use_case(at_the_first_gate(3), 1);
-        let outcome = subject
+        subject
             .execute(
                 &intent(),
                 None,
-                ReportedVerdict::Transition(ReportedTransition::AwaitingApproval {
+                ReportedTransition::AwaitingApproval {
                     artifacts: vec!["intent.md".to_string()],
-                }),
+                },
                 at(),
             )
             .await
             .expect("in-progress のゲート付きステージは開ける");
-        let WorkflowExecutionEvent::GateOpened(opened) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::GateOpened(opened) = only_committed(subject.repository())
+        else {
             panic!("GateOpened を期待した");
         };
         assert_eq!(opened.stage(), &slug(1));
         assert_eq!(opened.artifacts(), ["intent.md".to_string()]);
-        assert_eq!(subject.repository().committed().len(), 1);
     }
 
     #[tokio::test]
@@ -325,30 +337,31 @@ mod tests {
             .open_gate(vec!["intent.md".to_string()], at())
             .expect("最初の開放は通る");
         let mut subject = use_case(aggregate, 2);
-        let outcome = subject
+        subject
             .execute(
                 &intent(),
                 None,
-                ReportedVerdict::Transition(ReportedTransition::AwaitingApproval {
+                ReportedTransition::AwaitingApproval {
                     artifacts: vec!["intent.md".to_string()],
-                }),
+                },
                 at(),
             )
             .await
             .expect("既に開いているゲートへの再報告は成功扱い");
-        assert_eq!(outcome, ReportOutcome::GateAlreadyOpen { stage: slug(1) });
         assert!(subject.repository().committed().is_empty());
+        assert_eq!(subject.repository().store_attempts(), 0, "書込を試みない");
         assert_eq!(subject.repository().version(), 2, "版も動かない");
     }
 
     #[tokio::test]
     async fn a_forward_report_on_a_gated_stage_approves_the_gate() {
         let mut subject = use_case(at_the_first_gate(3), 1);
-        let outcome = subject
+        subject
             .execute(&intent(), None, forward(), at())
             .await
             .expect("ゲート付きステージは承認できる");
-        let WorkflowExecutionEvent::GateApproved(approved) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        else {
             panic!("GateApproved を期待した");
         };
         assert_eq!(approved.stage(), &slug(1));
@@ -358,15 +371,17 @@ mod tests {
 
     #[tokio::test]
     async fn a_forward_report_on_an_ungated_stage_completes_the_stage() {
-        // カーソルは索引 0 (initialization = 非ゲート)。どちらのコマンドを打つかは集約の
+        // カーソルは索引 0（initialization = 非ゲート）。どちらのコマンドを打つかは集約の
         // `gated` クエリで決まる。
         let (aggregate, _) = genesis(3);
         let mut subject = use_case(aggregate, 1);
-        let outcome = subject
+        subject
             .execute(&intent(), None, forward(), at())
             .await
             .expect("非ゲートステージは完了できる");
-        let WorkflowExecutionEvent::StageCompleted(completed) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::StageCompleted(completed) =
+            only_committed(subject.repository())
+        else {
             panic!("StageCompleted を期待した");
         };
         assert_eq!(completed.stage(), &slug(0));
@@ -376,18 +391,19 @@ mod tests {
     #[tokio::test]
     async fn a_rejected_report_carries_the_feedback() {
         let mut subject = use_case(at_the_first_gate(3), 1);
-        let outcome = subject
+        subject
             .execute(
                 &intent(),
                 None,
-                ReportedVerdict::Transition(ReportedTransition::Rejected {
+                ReportedTransition::Rejected {
                     feedback: Some("Sharpen the testing posture.".to_string()),
-                }),
+                },
                 at(),
             )
             .await
             .expect("ゲート付きステージは差し戻せる");
-        let WorkflowExecutionEvent::GateRejected(rejected) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::GateRejected(rejected) = only_committed(subject.repository())
+        else {
             panic!("GateRejected を期待した");
         };
         assert_eq!(rejected.feedback(), Some("Sharpen the testing posture."));
@@ -401,16 +417,12 @@ mod tests {
             .reject_gate(Some("直して".to_string()), at())
             .expect("差し戻しは通る");
         let mut subject = use_case(aggregate, 2);
-        let outcome = subject
-            .execute(
-                &intent(),
-                None,
-                ReportedVerdict::Transition(ReportedTransition::Revised),
-                at(),
-            )
+        subject
+            .execute(&intent(), None, ReportedTransition::Revised, at())
             .await
             .expect("revising のステージはゲートへ再入できる");
-        let WorkflowExecutionEvent::StageRevised(revised) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::StageRevised(revised) = only_committed(subject.repository())
+        else {
             panic!("StageRevised を期待した");
         };
         assert_eq!(revised.stage(), &slug(1));
@@ -425,66 +437,49 @@ mod tests {
         ]);
         aggregate.complete_stage(at()).expect("初期化は完了できる");
         let mut subject = use_case(aggregate, 1);
-        let outcome = subject
+        subject
             .execute(
                 &intent(),
                 None,
-                ReportedVerdict::Transition(ReportedTransition::Skipped {
+                ReportedTransition::Skipped {
                     reason: "Not applicable".to_string(),
-                }),
+                },
                 at(),
             )
             .await
             .expect("CONDITIONAL なステージは読み飛ばせる");
-        let WorkflowExecutionEvent::StageSkipped(skipped) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::StageSkipped(skipped) = only_committed(subject.repository())
+        else {
             panic!("StageSkipped を期待した");
         };
         assert_eq!(skipped.reason(), "Not applicable");
         assert_eq!(skipped.next_stage(), Some(&slug(2)));
     }
 
-    #[tokio::test]
-    async fn a_resume_report_routes_without_touching_the_aggregate() {
-        // 集約を持たないストアでも成功する = 再構成すらしていないことの証拠である。
-        let mut subject = ReportUseCase::new(InMemoryWorkflowExecutionRepository::empty());
-        let outcome = subject
-            .execute(&intent(), None, ReportedVerdict::Resumed, at())
-            .await
-            .expect("resume はルーティングのみ");
-        assert_eq!(outcome, ReportOutcome::ResumeRouting);
-        assert!(subject.repository().committed().is_empty());
-    }
-
     // ---- 冪等・no-op ----
 
     #[tokio::test]
     async fn a_re_report_of_a_stage_the_cursor_has_passed_commits_nothing() {
-        // BR1.9 — カーソル通過済み completed への再報告は冪等 done。
+        // BR1.9 — カーソル通過済み completed への再報告は冪等。判断は集約の `stale_report`。
         let mut subject = use_case(at_the_first_gate(3), 2);
-        let outcome = subject
+        subject
             .execute(&intent(), Some(&slug(0)), forward(), at())
             .await
-            .expect("通過済み completed への再報告は冪等");
-        assert_eq!(
-            outcome,
-            ReportOutcome::AlreadyDone {
-                stage: slug(0),
-                decision: NextDecision::Done,
-            }
-        );
+            .expect("通過済み completed への再報告は冪等な成功");
         assert!(subject.repository().committed().is_empty());
+        assert_eq!(subject.repository().store_attempts(), 0, "書込を試みない");
         assert_eq!(subject.repository().version(), 2);
     }
 
     #[tokio::test]
     async fn naming_the_cursor_explicitly_still_takes_the_normal_route() {
         let mut subject = use_case(at_the_first_gate(3), 1);
-        let outcome = subject
+        subject
             .execute(&intent(), Some(&slug(1)), forward(), at())
             .await
             .expect("カーソル自身を名指しした報告は通常経路");
         assert!(matches!(
-            committed_event(&outcome),
+            only_committed(subject.repository()),
             WorkflowExecutionEvent::GateApproved(_)
         ));
     }
@@ -497,7 +492,7 @@ mod tests {
             .execute(&intent(), Some(&unknown), forward(), at())
             .await
             .expect_err("計画に無いステージは解決できない");
-        assert_eq!(err, ReportError::UnknownStage { stage: unknown });
+        assert_eq!(err, CommitError::UnknownStage { stage: unknown });
         assert!(subject.repository().committed().is_empty());
     }
 
@@ -511,14 +506,15 @@ mod tests {
         let stage = at_the_first_gate(3)
             .stage_index(2)
             .expect("索引 2 は範囲内");
-        assert_eq!(err, ReportError::Command(CommandError::NotStale(stage)));
+        assert_eq!(err, CommitError::Command(CommandError::NotStale(stage)));
+        assert!(subject.repository().committed().is_empty());
     }
 
     // ---- 楽観 version の往復 ----
 
     #[tokio::test]
     async fn the_write_presents_the_version_the_rehydration_returned() {
-        // `aggregate.seq_nr()` から導かない — 再構成が返した版そのものを渡す (ポート doc C3)。
+        // `aggregate.seq_nr()` から導かない — 再構成が返した版そのものを渡す（ポート doc C3）。
         let aggregate = at_the_first_gate(3);
         assert_eq!(aggregate.seq_nr(), 2, "通番と版はたまたま一致させない");
         let mut subject = use_case(aggregate, 7);
@@ -537,14 +533,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_aggregate_is_reported_as_not_found() {
-        let mut subject = ReportUseCase::new(InMemoryWorkflowExecutionRepository::empty());
+        let mut subject = CommitVerdictUseCase::new(InMemoryWorkflowExecutionRepository::empty());
         let err = subject
             .execute(&absent_intent(), None, forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
         assert_eq!(
             err,
-            ReportError::Repository(RepositoryError::NotFound {
+            CommitError::Repository(RepositoryError::NotFound {
                 intent_id: absent_intent(),
             })
         );
@@ -552,20 +548,20 @@ mod tests {
 
     #[tokio::test]
     async fn a_first_conflict_is_retried_once_from_the_rehydration() {
-        // 1 件の割り込み書込で 1 回目は競合し、2 回目で通る (contract-design Q6 = A)。
-        let mut subject = ReportUseCase::new(
+        // 1 件の割り込み書込で 1 回目は競合し、2 回目で通る（contract-design Q6 = A）。
+        let mut subject = CommitVerdictUseCase::new(
             InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
                 at_the_first_gate(3),
                 7,
                 1,
             ),
         );
-        let outcome = subject
+        subject
             .execute(&intent(), None, forward(), at())
             .await
             .expect("1 回だけ再試行すれば通る");
         assert!(matches!(
-            committed_event(&outcome),
+            only_committed(subject.repository()),
             WorkflowExecutionEvent::GateApproved(_)
         ));
         assert_eq!(
@@ -573,7 +569,6 @@ mod tests {
             2,
             "再試行は 1 回だけ"
         );
-        assert_eq!(subject.repository().committed().len(), 1, "書けたのは 1 件");
         // 2 回目が通ったこと自体が「再構成からやり直した」証拠である — このストアは現在の版を
         // 提示した書込しか受理しないので、古い集約に `store` だけ打ち直していたら再び競合する。
         assert_eq!(subject.repository().version(), 9);
@@ -582,7 +577,7 @@ mod tests {
     #[tokio::test]
     async fn a_second_conflict_is_propagated_without_a_further_retry() {
         // 2 件の割り込み書込。2 回目も競合したら伝播する — 3 回目は無い。
-        let mut subject = ReportUseCase::new(
+        let mut subject = CommitVerdictUseCase::new(
             InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
                 at_the_first_gate(3),
                 7,
@@ -595,7 +590,7 @@ mod tests {
             .expect_err("2 回目も競合したら伝播する");
         assert_eq!(
             err,
-            ReportError::Repository(RepositoryError::Conflict {
+            CommitError::Repository(RepositoryError::Conflict {
                 expected: 8,
                 actual: 9,
             })
@@ -611,17 +606,12 @@ mod tests {
         let stage = aggregate.cursor();
         let mut subject = use_case(aggregate, 1);
         let err = subject
-            .execute(
-                &intent(),
-                None,
-                ReportedVerdict::Transition(ReportedTransition::Revised),
-                at(),
-            )
+            .execute(&intent(), None, ReportedTransition::Revised, at())
             .await
             .expect_err("revising 以外はゲートへ再入できない");
         assert_eq!(
             err,
-            ReportError::Command(CommandError::CheckboxPrecondition {
+            CommitError::Command(CommandError::CheckboxPrecondition {
                 stage,
                 actual: CheckboxState::InProgress,
             })
@@ -644,11 +634,12 @@ mod tests {
         ]);
         aggregate.complete_stage(at()).expect("初期化は完了できる");
         let mut subject = use_case(aggregate, 1);
-        let outcome = subject
+        subject
             .execute(&intent(), None, forward(), at())
             .await
             .expect("承認は通る");
-        let WorkflowExecutionEvent::GateApproved(approved) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        else {
             panic!("GateApproved を期待した");
         };
         assert_eq!(
@@ -660,11 +651,12 @@ mod tests {
     #[tokio::test]
     async fn approving_the_last_stage_reports_no_next_stage() {
         let mut subject = use_case(at_the_first_gate(2), 1);
-        let outcome = subject
+        subject
             .execute(&intent(), None, forward(), at())
             .await
             .expect("最終ステージも承認できる");
-        let WorkflowExecutionEvent::GateApproved(approved) = committed_event(&outcome) else {
+        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        else {
             panic!("GateApproved を期待した");
         };
         assert_eq!(approved.next_stage(), None);
@@ -674,36 +666,33 @@ mod tests {
     // ---- 入力の正規化 ----
 
     #[test]
-    fn every_reported_verdict_projects_onto_one_domain_verdict() {
+    fn every_reported_transition_projects_onto_one_domain_verdict() {
+        // `Verdict::Resume` はここに現れない — 再開は U7 が手前でルーティングする。
         let cases = [
             (
-                ReportedVerdict::Transition(ReportedTransition::AwaitingApproval {
+                ReportedTransition::AwaitingApproval {
                     artifacts: Vec::new(),
-                }),
+                },
                 Verdict::AwaitingApproval,
             ),
             (
-                ReportedVerdict::Transition(ReportedTransition::Forward { user_input: None }),
+                ReportedTransition::Forward { user_input: None },
                 Verdict::Forward,
             ),
             (
-                ReportedVerdict::Transition(ReportedTransition::Rejected { feedback: None }),
+                ReportedTransition::Rejected { feedback: None },
                 Verdict::Rejected,
             ),
+            (ReportedTransition::Revised, Verdict::Revised),
             (
-                ReportedVerdict::Transition(ReportedTransition::Revised),
-                Verdict::Revised,
-            ),
-            (
-                ReportedVerdict::Transition(ReportedTransition::Skipped {
+                ReportedTransition::Skipped {
                     reason: "x".to_string(),
-                }),
+                },
                 Verdict::Skipped,
             ),
-            (ReportedVerdict::Resumed, Verdict::Resume),
         ];
-        for (reported, verdict) in cases {
-            assert_eq!(reported.verdict(), verdict);
+        for (transition, verdict) in cases {
+            assert_eq!(transition.verdict(), verdict);
         }
     }
 }
