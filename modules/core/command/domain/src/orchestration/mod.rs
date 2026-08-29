@@ -58,6 +58,7 @@ mod autonomy_mode;
 mod command_error;
 mod directive_schema;
 mod event_manifest;
+mod intent;
 mod intent_execution;
 mod intent_execution_event;
 mod intent_execution_id;
@@ -81,6 +82,7 @@ mod workspace_scan;
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
 pub use directive_schema::DirectiveKind;
+pub use intent::Intent;
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
@@ -115,6 +117,7 @@ pub use intent_execution_event::{
 pub use apply_error::ApplyError;
 pub use autonomy_mode::InvalidModeArg;
 pub use command_error::CommandError;
+pub use intent::IntentError;
 pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
