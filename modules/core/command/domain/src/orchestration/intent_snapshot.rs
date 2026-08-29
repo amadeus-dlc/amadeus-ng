@@ -1,11 +1,11 @@
-//! `WorkflowExecutionState` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
+//! `IntentSnapshot` — 集約の全状態 16 属性の値オブジェクト (C6 / BR5.2)。
 //!
-//! 集約 → [`WorkflowExecution::state`]、集約 ← [`WorkflowExecution::from_state`] の 1 往復で
+//! 集約 → [`Intent::state`]、集約 ← [`Intent::from_state`] の 1 往復で
 //! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_state` の 1 か所に集約する
 //! (security-design §2)。
 //!
 //! スナップショットの直列化は**この写しを経由する** (オーナー裁定 2026-08-27 (A)):
-//! `WorkflowExecution` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_state`
+//! `Intent` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_state`
 //! の検査点を通る。したがって直列化形式の正本はこの 16 属性であり、復号が集約不変条件を
 //! 迂回する経路は存在しない。
 //!
@@ -13,29 +13,31 @@
 //! `SnapshotEnvelope::version()` (スナップショット行の列) になり、payload 列は純粋な
 //! ドメイン内容だけを持つようになったためである — 旧 17 属性目の `version` はここから消えた。
 //!
-//! [`WorkflowExecution::state`]: super::workflow_execution::WorkflowExecution::state
-//! [`WorkflowExecution::from_state`]: super::workflow_execution::WorkflowExecution::from_state
+//! [`Intent::state`]: super::intent::Intent::state
+//! [`Intent::from_state`]: super::intent::Intent::from_state
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode::AutonomyMode;
+use super::intent::Intent;
 use super::intent_id::IntentId;
 use super::stage_entry::StageEntry;
-use super::stage_index::StageIndex;
+use super::state_error::StateError;
 use super::status::Status;
 use crate::workflow_definition::{DefinitionRevision, PlanAction, WorkflowDefinitionId};
 use crate::workspace::CheckboxState;
 
-/// ある `seq_nr` 時点の集約の全状態。
+/// ある `seq_nr` 時点の集約の全状態 — **クレート内私有の memento**。
 ///
-/// フィールドは `pub(crate)` — 同一クレート内の実装詳細共有 (集約との再水和) にだけ開き、
-/// クレート外へは 16 本のアクセサでのみ公開する (field-visibility.md)。
+/// 状態を担うのは集約 [`Intent`] であり、この型は「State」ではなくその直列化形（memento）で
+/// ある（オーナー裁定 2026-08-29）。クレート外へは出さない — 出口は集約の `Serialize` /
+/// `Deserialize` だけで、`Intent` が `into` / `try_from` でここへ委ねる。属性の綴りと並びを
+/// 変えると、既に書かれた行を読めなくなる。
 ///
-/// serde は集約の直列化形式そのものである (集約が `into` / `try_from` でここへ委ねる)。
-/// 属性の綴りと並びを変えると、既に書かれた行を読めなくなる。
+/// [`Intent`]: super::intent::Intent
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WorkflowExecutionState {
+pub(crate) struct IntentSnapshot {
     pub(crate) intent_id: IntentId,
     pub(crate) definition_id: WorkflowDefinitionId,
     pub(crate) definition_revision: DefinitionRevision,
@@ -54,105 +56,7 @@ pub struct WorkflowExecutionState {
     pub(crate) last_updated_at: DateTime<Utc>,
 }
 
-impl WorkflowExecutionState {
-    /// 集約識別子。
-    #[must_use]
-    pub const fn intent_id(&self) -> &IntentId {
-        &self.intent_id
-    }
-
-    /// 参照した定義の系譜 ID。
-    #[must_use]
-    pub const fn definition_id(&self) -> &WorkflowDefinitionId {
-        &self.definition_id
-    }
-
-    /// 参照した定義の内容版。
-    #[must_use]
-    pub const fn definition_revision(&self) -> &DefinitionRevision {
-        &self.definition_revision
-    }
-
-    /// 文書順の全ステージ (解決済み計画)。
-    #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
-        &self.stages
-    }
-
-    /// 静的グリッド由来の計画。
-    #[must_use]
-    pub fn plan(&self) -> &[PlanAction] {
-        &self.plan
-    }
-
-    /// 実効プランの源 (recompose オーバレイ)。
-    #[must_use]
-    pub fn overlay(&self) -> &[PlanAction] {
-        &self.overlay
-    }
-
-    /// ステージ著者側の適用可否 (CONDITIONAL か)。
-    #[must_use]
-    pub fn conditional(&self) -> &[bool] {
-        &self.conditional
-    }
-
-    /// ステージごとの checkbox マーカー。
-    #[must_use]
-    pub fn checkbox(&self) -> &[CheckboxState] {
-        &self.checkbox
-    }
-
-    /// カーソル位置。
-    #[must_use]
-    pub const fn cursor(&self) -> StageIndex {
-        StageIndex::new(self.cursor)
-    }
-
-    /// ワークフロー全体の状態。
-    #[must_use]
-    pub const fn status(&self) -> Status {
-        self.status
-    }
-
-    /// park マーカーの位置 (`None` は未 park)。
-    #[must_use]
-    pub fn parked_at(&self) -> Option<StageIndex> {
-        self.parked_at.map(StageIndex::new)
-    }
-
-    /// 自律モード。
-    #[must_use]
-    pub const fn autonomy(&self) -> AutonomyMode {
-        self.autonomy
-    }
-
-    /// ゲート承認履歴。
-    #[must_use]
-    pub fn approved(&self) -> &[bool] {
-        &self.approved
-    }
-
-    /// ステージごとの差し戻し回数。
-    #[must_use]
-    pub fn revision_count(&self) -> &[u32] {
-        &self.revision_count
-    }
-
-    /// 適用済みイベント数と一致する順序番号。
-    #[must_use]
-    pub const fn seq_nr(&self) -> usize {
-        self.seq_nr
-    }
-
-    /// 最後に適用したイベントの発生時刻。
-    #[must_use]
-    pub const fn last_updated_at(&self) -> DateTime<Utc> {
-        self.last_updated_at
-    }
-}
-
-/// [`WorkflowExecutionState`] のビルダー。
+/// [`IntentSnapshot`] のビルダー。
 ///
 /// 16 属性を 1 つの関数引数列で受け取るのは可読でもリント可能でもないため、`StageNodeBuilder`
 /// と同じ house style で組み立てる。既定値は解決済み計画から導ける birth 時の状態
@@ -162,11 +66,11 @@ impl WorkflowExecutionState {
 /// `last_updated_at` の既定が epoch なのは、birth 時の発生時刻を知っているのは呼出側
 /// (`Started` を作った側) だけだからである。
 #[derive(Debug, Clone)]
-pub struct WorkflowExecutionStateBuilder {
-    state: WorkflowExecutionState,
+pub struct IntentBuilder {
+    state: IntentSnapshot,
 }
 
-impl WorkflowExecutionStateBuilder {
+impl IntentBuilder {
     /// 識別子 3 種と解決済み計画から、birth 時の既定値でビルダーを起こす。
     #[must_use]
     pub fn new(
@@ -174,7 +78,7 @@ impl WorkflowExecutionStateBuilder {
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         stages: Vec<StageEntry>,
-    ) -> WorkflowExecutionStateBuilder {
+    ) -> IntentBuilder {
         let plan: Vec<PlanAction> = stages.iter().map(StageEntry::plan_action).collect();
         let conditional: Vec<bool> = stages.iter().map(StageEntry::is_conditional).collect();
         let mut checkbox = vec![CheckboxState::Pending; stages.len()];
@@ -183,8 +87,8 @@ impl WorkflowExecutionStateBuilder {
         }
         let approved = vec![false; stages.len()];
         let revision_count = vec![0; stages.len()];
-        WorkflowExecutionStateBuilder {
-            state: WorkflowExecutionState {
+        IntentBuilder {
+            state: IntentSnapshot {
                 intent_id,
                 definition_id,
                 definition_revision,
@@ -207,95 +111,98 @@ impl WorkflowExecutionStateBuilder {
 
     /// 静的グリッド由来の計画を置き換える。
     #[must_use]
-    pub fn plan(mut self, plan: Vec<PlanAction>) -> WorkflowExecutionStateBuilder {
+    pub fn plan(mut self, plan: Vec<PlanAction>) -> IntentBuilder {
         self.state.plan = plan;
         self
     }
 
     /// 実効プランの源を置き換える。
     #[must_use]
-    pub fn overlay(mut self, overlay: Vec<PlanAction>) -> WorkflowExecutionStateBuilder {
+    pub fn overlay(mut self, overlay: Vec<PlanAction>) -> IntentBuilder {
         self.state.overlay = overlay;
         self
     }
 
     /// 適用可否の列を置き換える。
     #[must_use]
-    pub fn conditional(mut self, conditional: Vec<bool>) -> WorkflowExecutionStateBuilder {
+    pub fn conditional(mut self, conditional: Vec<bool>) -> IntentBuilder {
         self.state.conditional = conditional;
         self
     }
 
     /// checkbox 列を置き換える。
     #[must_use]
-    pub fn checkbox(mut self, checkbox: Vec<CheckboxState>) -> WorkflowExecutionStateBuilder {
+    pub fn checkbox(mut self, checkbox: Vec<CheckboxState>) -> IntentBuilder {
         self.state.checkbox = checkbox;
         self
     }
 
     /// カーソル位置を置き換える。
     #[must_use]
-    pub const fn cursor(mut self, cursor: usize) -> WorkflowExecutionStateBuilder {
+    pub const fn cursor(mut self, cursor: usize) -> IntentBuilder {
         self.state.cursor = cursor;
         self
     }
 
     /// ワークフロー全体の状態を置き換える。
     #[must_use]
-    pub const fn status(mut self, status: Status) -> WorkflowExecutionStateBuilder {
+    pub const fn status(mut self, status: Status) -> IntentBuilder {
         self.state.status = status;
         self
     }
 
     /// park マーカーの位置を置き換える。
     #[must_use]
-    pub const fn parked_at(mut self, parked_at: Option<usize>) -> WorkflowExecutionStateBuilder {
+    pub const fn parked_at(mut self, parked_at: Option<usize>) -> IntentBuilder {
         self.state.parked_at = parked_at;
         self
     }
 
     /// 自律モードを置き換える。
     #[must_use]
-    pub const fn autonomy(mut self, autonomy: AutonomyMode) -> WorkflowExecutionStateBuilder {
+    pub const fn autonomy(mut self, autonomy: AutonomyMode) -> IntentBuilder {
         self.state.autonomy = autonomy;
         self
     }
 
     /// ゲート承認履歴を置き換える。
     #[must_use]
-    pub fn approved(mut self, approved: Vec<bool>) -> WorkflowExecutionStateBuilder {
+    pub fn approved(mut self, approved: Vec<bool>) -> IntentBuilder {
         self.state.approved = approved;
         self
     }
 
     /// 差し戻し回数の列を置き換える。
     #[must_use]
-    pub fn revision_count(mut self, revision_count: Vec<u32>) -> WorkflowExecutionStateBuilder {
+    pub fn revision_count(mut self, revision_count: Vec<u32>) -> IntentBuilder {
         self.state.revision_count = revision_count;
         self
     }
 
     /// 順序番号を置き換える。
     #[must_use]
-    pub const fn seq_nr(mut self, seq_nr: usize) -> WorkflowExecutionStateBuilder {
+    pub const fn seq_nr(mut self, seq_nr: usize) -> IntentBuilder {
         self.state.seq_nr = seq_nr;
         self
     }
 
     /// 最終更新時刻を置き換える。
     #[must_use]
-    pub const fn last_updated_at(
-        mut self,
-        last_updated_at: DateTime<Utc>,
-    ) -> WorkflowExecutionStateBuilder {
+    pub const fn last_updated_at(mut self, last_updated_at: DateTime<Utc>) -> IntentBuilder {
         self.state.last_updated_at = last_updated_at;
         self
     }
 
-    /// 状態の写し (memento) を取り出す (検証はしない)。
-    #[must_use]
-    pub fn build(self) -> WorkflowExecutionState {
-        self.state
+    /// 組み上げた状態から集約を作る。
+    ///
+    /// memento をそのまま返さないのは、呼出側（テストを含む）に直列化形を触らせないためで
+    /// ある — 検査点は `Intent::from_state` の 1 か所に集約したままにする。
+    ///
+    /// # Errors
+    ///
+    /// 組んだ状態が集約の不変条件を破っていれば `StateError`。
+    pub fn build(self) -> Result<Intent, StateError> {
+        Intent::from_state(self.state)
     }
 }
 
@@ -335,8 +242,8 @@ mod tests {
         ]
     }
 
-    fn builder() -> WorkflowExecutionStateBuilder {
-        WorkflowExecutionStateBuilder::new(
+    fn builder() -> IntentBuilder {
+        IntentBuilder::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
@@ -344,44 +251,62 @@ mod tests {
         )
     }
 
+    /// 索引から `StageIndex` を作る (集約だけが範囲を知っている)。
+    fn at(intent: &Intent, index: usize) -> StageIndex {
+        intent.stage_index(index).unwrap()
+    }
+
     #[test]
     fn the_builder_defaults_derive_the_birth_state_from_the_stage_entries() {
-        let state = builder().build();
-        assert_eq!(state.stages(), entries().as_slice());
-        assert_eq!(state.plan(), [PlanAction::Execute, PlanAction::Execute]);
-        assert_eq!(state.overlay(), [PlanAction::Execute, PlanAction::Execute]);
-        assert_eq!(state.conditional(), [false, false]);
+        // 観測は集約の面で行う — memento はクレート内私有であり、テストも触らない。
+        let intent = builder().build().unwrap();
+        assert_eq!(intent.stages(), entries().as_slice());
         assert_eq!(
-            state.checkbox(),
-            [CheckboxState::InProgress, CheckboxState::Pending]
+            intent.effective_plan(at(&intent, 0)),
+            Some(PlanAction::Execute)
         );
-        assert_eq!(state.approved(), [false, false]);
-        assert_eq!(state.revision_count(), [0, 0]);
-        assert_eq!(state.cursor(), StageIndex::new(0));
-        assert_eq!(state.status(), Status::Running);
-        assert_eq!(state.parked_at(), None);
-        assert_eq!(state.autonomy(), AutonomyMode::Gated);
-        assert_eq!(state.seq_nr(), 1);
-        assert_eq!(state.last_updated_at(), DateTime::UNIX_EPOCH);
+        assert_eq!(
+            intent.effective_plan(at(&intent, 1)),
+            Some(PlanAction::Execute)
+        );
+        assert!(intent.stages().iter().all(|entry| !entry.is_conditional()));
+        assert_eq!(
+            intent.checkbox(at(&intent, 0)),
+            Some(CheckboxState::InProgress)
+        );
+        assert_eq!(
+            intent.checkbox(at(&intent, 1)),
+            Some(CheckboxState::Pending)
+        );
+        assert_eq!(intent.approved(at(&intent, 0)), Some(false));
+        assert_eq!(intent.approved(at(&intent, 1)), Some(false));
+        assert_eq!(intent.revision_count(at(&intent, 0)), Some(0));
+        assert_eq!(intent.revision_count(at(&intent, 1)), Some(0));
+        assert_eq!(intent.cursor(), StageIndex::new(0));
+        assert_eq!(intent.status(), Status::Running);
+        assert_eq!(intent.parked_at(), None);
+        assert_eq!(intent.autonomy(), AutonomyMode::Gated);
+        assert_eq!(intent.seq_nr(), 1);
+        assert_eq!(*intent.last_updated_at(), DateTime::UNIX_EPOCH);
     }
 
     #[test]
     fn the_identity_attributes_are_carried_verbatim() {
-        let state = builder().build();
+        let intent = builder().build().unwrap();
         assert_eq!(
-            state.intent_id().as_str(),
+            intent.intent_id().as_str(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
-        assert_eq!(state.definition_id().as_str(), "claude");
+        assert_eq!(intent.definition_id().as_str(), "claude");
         assert_eq!(
-            state.definition_revision().as_str(),
+            intent.definition_revision().as_str(),
             format!("sha256:{}", "0".repeat(64))
         );
     }
 
     #[test]
     fn every_mutable_attribute_can_be_overridden() {
-        let state = builder()
+        let intent = builder()
             .overlay(vec![PlanAction::Execute, PlanAction::Skip])
             .checkbox(vec![CheckboxState::Completed, CheckboxState::Pending])
             .cursor(1)
@@ -392,53 +317,83 @@ mod tests {
             .revision_count(vec![0, 3])
             .seq_nr(9)
             .last_updated_at(DateTime::UNIX_EPOCH + chrono::TimeDelta::seconds(5))
-            .build();
-        assert_eq!(state.overlay(), [PlanAction::Execute, PlanAction::Skip]);
+            .build()
+            .unwrap();
         assert_eq!(
-            state.checkbox(),
-            [CheckboxState::Completed, CheckboxState::Pending]
+            intent.effective_plan(at(&intent, 0)),
+            Some(PlanAction::Execute)
         );
-        assert_eq!(state.cursor(), StageIndex::new(1));
-        assert_eq!(state.status(), Status::Completed);
-        assert_eq!(state.parked_at(), Some(StageIndex::new(1)));
-        assert_eq!(state.autonomy(), AutonomyMode::Autonomous);
-        assert_eq!(state.approved(), [false, true]);
-        assert_eq!(state.revision_count(), [0, 3]);
-        assert_eq!(state.seq_nr(), 9);
         assert_eq!(
-            state.last_updated_at(),
+            intent.effective_plan(at(&intent, 1)),
+            Some(PlanAction::Skip)
+        );
+        assert_eq!(
+            intent.checkbox(at(&intent, 0)),
+            Some(CheckboxState::Completed)
+        );
+        assert_eq!(
+            intent.checkbox(at(&intent, 1)),
+            Some(CheckboxState::Pending)
+        );
+        assert_eq!(intent.cursor(), StageIndex::new(1));
+        assert_eq!(intent.status(), Status::Completed);
+        assert_eq!(intent.parked_at(), Some(StageIndex::new(1)));
+        assert_eq!(intent.autonomy(), AutonomyMode::Autonomous);
+        assert_eq!(intent.approved(at(&intent, 1)), Some(true));
+        assert_eq!(intent.revision_count(at(&intent, 1)), Some(3));
+        assert_eq!(intent.seq_nr(), 9);
+        assert_eq!(
+            *intent.last_updated_at(),
             DateTime::UNIX_EPOCH + chrono::TimeDelta::seconds(5)
         );
     }
 
     #[test]
-    fn the_static_plan_and_conditional_lists_can_be_supplied_independently() {
-        // C6 の行としては独立した列。集約側 `from_state` が stages との整合を検査する。
-        let state = builder()
+    fn a_static_plan_or_conditional_list_that_disagrees_with_the_stages_is_refused() {
+        // C6 の行としては独立した列だが、集約は解決済み計画との整合を検査する
+        // (検査点は `Intent::from_state` の 1 か所 — security-design §2)。
+        let plan = builder()
             .plan(vec![PlanAction::Skip, PlanAction::Execute])
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            plan,
+            StateError::InvariantViolation("plan disagrees with stages at 0".to_string())
+        );
+        let conditional = builder()
             .conditional(vec![true, false])
-            .build();
-        assert_eq!(state.plan(), [PlanAction::Skip, PlanAction::Execute]);
-        assert_eq!(state.conditional(), [true, false]);
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            conditional,
+            StateError::InvariantViolation("conditional disagrees with stages at 0".to_string())
+        );
     }
 
     #[test]
-    fn states_compare_by_value() {
-        assert_eq!(builder().build(), builder().build());
-        assert_ne!(builder().build(), builder().seq_nr(2).build());
+    fn intents_built_from_the_same_attributes_compare_equal() {
+        assert_eq!(builder().build().unwrap(), builder().build().unwrap());
+        assert_ne!(
+            builder().build().unwrap(),
+            builder().seq_nr(2).build().unwrap()
+        );
     }
 
     #[test]
-    fn an_empty_stage_list_still_builds_and_is_rejected_later_by_the_aggregate() {
-        // ビルダーは形を検証しない (検査点は `from_state` の 1 か所 — security-design §2)。
-        let state = WorkflowExecutionStateBuilder::new(
+    fn an_empty_stage_list_is_refused_by_the_aggregate() {
+        // ビルダー自身は形を検証しない — 検査点は `Intent::from_state` の 1 か所であり、
+        // `build()` はそこを通した結果を返す。
+        let err = IntentBuilder::new(
             IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
             Vec::new(),
         )
-        .build();
-        assert!(state.stages().is_empty());
-        assert!(state.checkbox().is_empty());
+        .build()
+        .unwrap_err();
+        assert_eq!(
+            err,
+            StateError::InvariantViolation("stage count is zero".to_string())
+        );
     }
 }

@@ -1,12 +1,12 @@
-//! `WorkflowExecutionRepository` の実 Gateway (1 trait 1 Impl — gateway-taxonomy §5)。
+//! `IntentRepository` の実 Gateway (1 trait 1 Impl — gateway-taxonomy §5)。
 //!
-//! 集約 `WorkflowExecution` の再構成と永続化を、**本家 event-store-adapter-rs の
+//! 集約 `Intent` の再構成と永続化を、**本家 event-store-adapter-rs の
 //! イベントストアを内包して**行う (ADR-010 Conformist — 腐敗防止層なし)。格納形式が
 //! SQLite であることも、揮発の memory であることも、この実装の内部詳細である
 //! (`Sqlite...` のような技術接頭辞を型名に出さないのはそのためである)。
 //!
-//! 型引数 `S` は本家の [`EventStore`] を満たすバックエンドで、[`WorkflowExecutionRepositoryImpl::open`]
-//! が SQLite、[`WorkflowExecutionRepositoryImpl::in_memory`] が memory を選ぶ。
+//! 型引数 `S` は本家の [`EventStore`] を満たすバックエンドで、[`IntentRepositoryImpl::open`]
+//! が SQLite、[`IntentRepositoryImpl::in_memory`] が memory を選ぶ。
 //! 手順はどちらも**同一**であり、そうしておくことで契約テストが両方に同じ約束を課せる (BR2.7)。
 //!
 //! # 封筒を組むのはここである (ADR-010 / B7)
@@ -39,11 +39,11 @@
 use std::io::ErrorKind;
 
 use core_command_domain::orchestration::{
-    ApplyError, EVENT_MANIFEST, IntentId, WorkflowExecution, WorkflowExecutionEvent,
+    ApplyError, EVENT_MANIFEST, Intent, IntentEvent, IntentId,
 };
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{
-    CorruptCause, RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
+    CorruptCause, IntentRepository, RehydratedIntent, RepositoryError,
 };
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
@@ -56,18 +56,18 @@ use super::store_failure::io_kind_of_source;
 const FIRST_SEQ_NR: usize = 1;
 
 /// SQLite ファイルを格納先にするイベントストア (本家)。
-type SqliteStore = EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+type SqliteStore = EventStoreForSqlite<IntentId, Intent, IntentEvent>;
 
 /// 揮発の格納先にするイベントストア (本家)。
-type MemoryStore = EventStoreForMemory<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+type MemoryStore = EventStoreForMemory<IntentId, Intent, IntentEvent>;
 
-/// 本家のイベントストアを**単一所有**する `WorkflowExecutionRepository` の実装。
+/// 本家のイベントストアを**単一所有**する `IntentRepository` の実装。
 ///
 /// 内部可変性は持たない — 再構成 (Query) は `&self`、永続化 (Command) は `&mut self` で、
 /// 本家 `EventStore` のレシーバとそのまま揃う
 /// (`coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md`)。
 #[derive(Debug)]
-pub struct WorkflowExecutionRepositoryImpl<S> {
+pub struct IntentRepositoryImpl<S> {
     store: S,
     /// 失敗の材料に添える場所 (揮発のストアには無いので `Option`)。
     location: Option<StorePath>,
@@ -85,7 +85,7 @@ const fn apply_cause(error: &ApplyError) -> CorruptCause {
     }
 }
 
-impl WorkflowExecutionRepositoryImpl<SqliteStore> {
+impl IntentRepositoryImpl<SqliteStore> {
     /// SQLite ファイルのストアを開く (無ければ作る)。
     ///
     /// 親ディレクトリ (`intents/`) は upstream の既存ディレクトリなので**作らない** —
@@ -94,9 +94,7 @@ impl WorkflowExecutionRepositoryImpl<SqliteStore> {
     /// # Errors
     ///
     /// 親ディレクトリ欠落・権限・ディスク (`Io`) を返す。
-    pub fn open(
-        path: &StorePath,
-    ) -> Result<WorkflowExecutionRepositoryImpl<SqliteStore>, RepositoryError> {
+    pub fn open(path: &StorePath) -> Result<IntentRepositoryImpl<SqliteStore>, RepositoryError> {
         let store = SqliteStore::new(path.as_path()).map_err(|error| RepositoryError::Io {
             kind: match &error {
                 EventStoreWriteError::IOError(source) => io_kind_of_source(source.as_ref()),
@@ -104,7 +102,7 @@ impl WorkflowExecutionRepositoryImpl<SqliteStore> {
             },
             path: Some(path.as_path().to_path_buf()),
         })?;
-        Ok(WorkflowExecutionRepositoryImpl {
+        Ok(IntentRepositoryImpl {
             store,
             location: Some(path.clone()),
         })
@@ -117,37 +115,37 @@ impl WorkflowExecutionRepositoryImpl<SqliteStore> {
     }
 }
 
-impl WorkflowExecutionRepositoryImpl<MemoryStore> {
+impl IntentRepositoryImpl<MemoryStore> {
     /// 揮発のストアを持つ Repository を作る (テストとユースケース試験の足場)。
     ///
     /// テストダブルではなく**本家の memory バックエンド**であり、手順は SQLite と 1 行も
     /// 違わない。だからこそ契約テストが両方に同じ約束を課せる (BR2.7)。
     #[must_use]
-    pub fn in_memory() -> WorkflowExecutionRepositoryImpl<MemoryStore> {
-        WorkflowExecutionRepositoryImpl {
+    pub fn in_memory() -> IntentRepositoryImpl<MemoryStore> {
+        IntentRepositoryImpl {
             store: MemoryStore::new(),
             location: None,
         }
     }
 }
 
-impl<S: Clone> WorkflowExecutionRepositoryImpl<S> {
+impl<S: Clone> IntentRepositoryImpl<S> {
     /// **同じストアを指す**別インスタンスを開き直す (別プロセスからの再オープン相当)。
     ///
     /// 本家のストアはどのバックエンドでも `Clone` が基底状態 (SQLite なら接続、memory なら
     /// 表) を共有する設計なので、写しではなく同じストアを指す別の口が得られる。
     #[must_use]
-    pub fn reopened(&self) -> WorkflowExecutionRepositoryImpl<S> {
-        WorkflowExecutionRepositoryImpl {
+    pub fn reopened(&self) -> IntentRepositoryImpl<S> {
+        IntentRepositoryImpl {
             store: self.store.clone(),
             location: self.location.clone(),
         }
     }
 }
 
-impl<S> WorkflowExecutionRepositoryImpl<S>
+impl<S> IntentRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentId, A = WorkflowExecution, P = WorkflowExecutionEvent>,
+    S: EventStore<AID = IntentId, A = Intent, P = IntentEvent>,
 {
     /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
     ///
@@ -156,10 +154,7 @@ where
     /// 無い**: 旧実装が見ていた「イベントと集約が同じ集約を指すか」「通番が一致するか」は、
     /// イベントがその 2 つを持たなくなったことで**構成不能**になった (型による強制 — B6 で
     /// `seq_nr = 0` に対して行ったのと同じ形)。
-    fn envelope(
-        event: WorkflowExecutionEvent,
-        aggregate: &WorkflowExecution,
-    ) -> EventEnvelope<IntentId, WorkflowExecutionEvent> {
+    fn envelope(event: IntentEvent, aggregate: &Intent) -> EventEnvelope<IntentId, IntentEvent> {
         EventEnvelope::new(
             aggregate.intent_id().clone(),
             aggregate.seq_nr(),
@@ -201,7 +196,7 @@ where
     async fn write_error(
         &self,
         error: EventStoreWriteError,
-        aggregate: &WorkflowExecution,
+        aggregate: &Intent,
         expected_version: usize,
     ) -> RepositoryError {
         match error {
@@ -244,14 +239,11 @@ where
     }
 }
 
-impl<S> WorkflowExecutionRepository for WorkflowExecutionRepositoryImpl<S>
+impl<S> IntentRepository for IntentRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentId, A = WorkflowExecution, P = WorkflowExecutionEvent>,
+    S: EventStore<AID = IntentId, A = Intent, P = IntentEvent>,
 {
-    async fn find_by_id(
-        &self,
-        id: &IntentId,
-    ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
+    async fn find_by_id(&self, id: &IntentId) -> Result<RehydratedIntent, RepositoryError> {
         let snapshot = self
             .store
             .get_latest_snapshot_by_id(id)
@@ -314,19 +306,19 @@ where
                     cause: apply_cause(&error),
                 })?;
         }
-        Ok(RehydratedWorkflowExecution::new(aggregate, version))
+        Ok(RehydratedIntent::new(aggregate, version))
     }
 
     async fn store(
         &mut self,
-        event: &WorkflowExecutionEvent,
-        aggregate: &WorkflowExecution,
+        event: &IntentEvent,
+        aggregate: &Intent,
         expected_version: usize,
     ) -> Result<(), RepositoryError> {
         // 新規作成と更新の分岐は本家 v3 と同じ導出 — 封筒の `seq_nr == 1` が新規作成である。
         // 新規作成の `expected_version` は規約上 0 で、そうでない組み合わせは本家が
         // `ContractViolation` で拒否する (我々は握り潰さず `Corrupt` に写す)。
-        let envelope = WorkflowExecutionRepositoryImpl::<S>::envelope(event.clone(), aggregate);
+        let envelope = IntentRepositoryImpl::<S>::envelope(event.clone(), aggregate);
         let outcome = self
             .store
             .persist_event_and_snapshot(envelope, aggregate.clone(), expected_version)
@@ -368,7 +360,7 @@ mod tests {
 
     /// 未永続の集約が提示する版 (新規作成の `expected_version`)。
     const UNPERSISTED: usize =
-        <WorkflowExecutionRepositoryImpl<MemoryStore> as WorkflowExecutionRepository>::UNPERSISTED_VERSION;
+        <IntentRepositoryImpl<MemoryStore> as IntentRepository>::UNPERSISTED_VERSION;
 
     fn at() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
@@ -384,8 +376,8 @@ mod tests {
         IntentId::parse(OTHER_INTENT).expect("UUIDv7")
     }
 
-    fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-        WorkflowExecution::start_from_plan_unchecked(
+    fn genesis() -> (Intent, IntentEvent) {
+        Intent::start_from_plan_unchecked(
             intent(),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -403,8 +395,8 @@ mod tests {
         .expect("合成計画は start の前提を満たす")
     }
 
-    fn repository() -> WorkflowExecutionRepositoryImpl<MemoryStore> {
-        WorkflowExecutionRepositoryImpl::in_memory()
+    fn repository() -> IntentRepositoryImpl<MemoryStore> {
+        IntentRepositoryImpl::in_memory()
     }
 
     /// 本家が `Box<dyn Error>` に包んで運ぶ SQLite の失敗。
@@ -429,8 +421,7 @@ mod tests {
         // 持っており、イベントは持たない — 「別集約のイベントを混ぜる」「通番を食い違わせる」
         // という旧前提検査の対象は**構成不能**になった (型による強制)。
         let (aggregate, event) = genesis();
-        let envelope =
-            WorkflowExecutionRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
+        let envelope = IntentRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
         assert_eq!(envelope.aggregate_id(), &intent());
         assert_eq!(envelope.seq_nr(), aggregate.seq_nr());
         assert_eq!(envelope.occurred_at(), aggregate.last_updated_at());
@@ -442,7 +433,7 @@ mod tests {
     async fn a_second_aggregate_gets_its_own_envelope_identity() {
         // 封筒の識別子は引数ではなく集約から来るので、別集約は別の行になる。
         let (aggregate, event) = genesis();
-        let other = WorkflowExecution::start_from_plan_unchecked(
+        let other = Intent::start_from_plan_unchecked(
             other_intent(),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -459,9 +450,8 @@ mod tests {
         )
         .expect("合成計画は start の前提を満たす")
         .0;
-        let first =
-            WorkflowExecutionRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
-        let second = WorkflowExecutionRepositoryImpl::<MemoryStore>::envelope(event, &other);
+        let first = IntentRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
+        let second = IntentRepositoryImpl::<MemoryStore>::envelope(event, &other);
         assert_ne!(first.aggregate_id(), second.aggregate_id());
     }
 

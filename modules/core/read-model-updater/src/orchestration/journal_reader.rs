@@ -7,7 +7,7 @@ use super::projection_name::ProjectionName;
 
 /// 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 ///
-/// 集約の永続化そのもの (`WorkflowExecutionRepository`) とは**別の口**である — 本家
+/// 集約の永続化そのもの (`IntentRepository`) とは**別の口**である — 本家
 /// event-store-adapter-rs のイベントストアは集約単位の読み書きだけを担い、全集約横断の
 /// 順序読取と投影チェックポイントは利用側の関心だからである (ADR-010 決定 4)。
 ///
@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use crate::orchestration::{GlobalSeqNr, JournalEntry, JournalReadError, ProjectionName};
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentId, WorkflowExecutionEvent};
+    use core_command_domain::orchestration::{IntentEvent, IntentId};
     use std::collections::BTreeMap;
 
     fn intent() -> IntentId {
@@ -88,7 +88,7 @@ mod tests {
             DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            WorkflowExecutionEvent::Unparked,
+            IntentEvent::Unparked,
         )
     }
 

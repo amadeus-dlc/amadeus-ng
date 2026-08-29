@@ -33,9 +33,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary,
-    Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
-    Started, WorkflowExecutionEvent, WorkspaceScan,
+    GateApproved, GateOpened, GateRejected, IntentEvent, IntentId, JumpDirection, Jumped, Parked,
+    PhaseBoundary, Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised,
+    StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -80,7 +80,7 @@ fn slug(value: &str) -> StageSlug {
     StageSlug::parse(value).expect("テストの slug は文法内")
 }
 
-fn entry(event: WorkflowExecutionEvent) -> JournalEntry {
+fn entry(event: IntentEvent) -> JournalEntry {
     JournalEntry::new(
         GlobalSeqNr::new(1),
         IntentId::parse(INTENT).expect("UUIDv7"),
@@ -189,7 +189,7 @@ fn before_and_after(diff: &str) -> (String, String) {
 }
 
 /// 1 ケースを検収する — 監査行と状態ファイルの**両面**をバイトで突き合わせる。
-fn assert_case(case: &str, event: WorkflowExecutionEvent) {
+fn assert_case(case: &str, event: IntentEvent) {
     assert_case_with_context(case, event, "");
 }
 
@@ -201,7 +201,7 @@ fn assert_case(case: &str, event: WorkflowExecutionEvent) {
 /// あるがハンクに写っていない行**を補うためのもので、値を捏造するのではなく数え合わせの前提を
 /// 揃える。補った行が正しいかどうかは、結果が upstream の `- **Completed**:` と一致するか
 /// どうかで検証される。
-fn assert_case_with_context(case: &str, event: WorkflowExecutionEvent, context: &str) {
+fn assert_case_with_context(case: &str, event: IntentEvent, context: &str) {
     let dir = golden(case);
     let expected_audit = std::fs::read_to_string(dir.join("audit.md")).expect("audit.md");
     let diff = std::fs::read_to_string(dir.join("state.diff")).expect("state.diff");
@@ -230,7 +230,7 @@ fn assert_case_with_context(case: &str, event: WorkflowExecutionEvent, context: 
 ///
 /// 空のシャードへの初回書込だけはゴールデンがヘッダ行 `# AI-DLC Audit Log\n` を先頭に持つ。
 /// ヘッダを置くのはシャードライタの仕事であって投影ではないので、比較の前に剥がす。
-fn assert_audit_only(case: &str, event: WorkflowExecutionEvent, state: &str) {
+fn assert_audit_only(case: &str, event: IntentEvent, state: &str) {
     let raw = std::fs::read_to_string(golden(case).join("audit.md")).expect("audit.md");
     let expected_audit = raw
         .strip_prefix(core_read_model_updater::workspace::SHARD_HEADER)
@@ -258,7 +258,7 @@ fn assert_audit_only(case: &str, event: WorkflowExecutionEvent, state: &str) {
 fn opening_a_gate_writes_the_awaiting_approval_row_and_moves_the_checkbox() {
     assert_case(
         "report/awaiting-approval",
-        WorkflowExecutionEvent::GateOpened(GateOpened::new(slug("practices-discovery"), vec![])),
+        IntentEvent::GateOpened(GateOpened::new(slug("practices-discovery"), vec![])),
     );
 }
 
@@ -266,7 +266,7 @@ fn opening_a_gate_writes_the_awaiting_approval_row_and_moves_the_checkbox() {
 fn rejecting_a_gate_writes_two_rows_and_bumps_the_revision_count() {
     assert_case(
         "report/rejected",
-        WorkflowExecutionEvent::GateRejected(GateRejected::new(
+        IntentEvent::GateRejected(GateRejected::new(
             slug("practices-discovery"),
             Some("Sharpen the testing posture.".to_string()),
             1,
@@ -278,7 +278,7 @@ fn rejecting_a_gate_writes_two_rows_and_bumps_the_revision_count() {
 fn revising_a_stage_re_enters_the_gate_with_the_verbatim_details() {
     assert_case(
         "report/revised",
-        WorkflowExecutionEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
+        IntentEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
     );
 }
 
@@ -289,7 +289,7 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
     // ハンクに写っていないので補う（補い方が正しければ 4 になる — それが検証になる）。
     assert_case_with_context(
         "report/approved",
-        WorkflowExecutionEvent::GateApproved(GateApproved::new(
+        IntentEvent::GateApproved(GateApproved::new(
             slug("practices-discovery"),
             Some("A".to_string()),
             Some(slug("requirements-analysis")),
@@ -313,7 +313,7 @@ fn completing_an_ungated_stage_writes_its_own_details_wording() {
     // あり、投影が次ステージ workspace-detection の担当を書き直した結果と一致するかで検証される。
     assert_case_with_context(
         "report/completed-ungated",
-        WorkflowExecutionEvent::StageCompleted(StageCompleted::new(
+        IntentEvent::StageCompleted(StageCompleted::new(
             slug("workspace-scaffold"),
             Some(slug("workspace-detection")),
         )),
@@ -325,7 +325,7 @@ fn completing_an_ungated_stage_writes_its_own_details_wording() {
 fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
     assert_case(
         "skip/skipped",
-        WorkflowExecutionEvent::StageSkipped(StageSkipped::new(
+        IntentEvent::StageSkipped(StageSkipped::new(
             slug("user-stories"),
             "No UI surface in this workflow.".to_string(),
             Some(slug("refined-mockups")),
@@ -339,7 +339,7 @@ fn jumping_forward_skips_the_source_and_opens_the_target() {
     // だけなので initialization 3 本を補う（補い方が正しければ 4 になる — それが検証になる）。
     assert_case_with_context(
         "jump/execute-forward",
-        WorkflowExecutionEvent::Jumped(Jumped::new(
+        IntentEvent::Jumped(Jumped::new(
             JumpDirection::Forward,
             slug("refined-mockups"),
             slug("domain-design"),
@@ -363,7 +363,7 @@ fn jumping_backward_resets_the_downstream_and_hands_the_phase_row_back() {
     // ため upstream の既定値 `state-init` になる。
     assert_case(
         "jump/execute-backward",
-        WorkflowExecutionEvent::Jumped(Jumped::new(
+        IntentEvent::Jumped(Jumped::new(
             JumpDirection::Backward,
             slug("domain-design"),
             slug("workspace-scaffold"),
@@ -391,7 +391,7 @@ fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
     // **最後に出発点そのもの**が来る。
     assert_case(
         "jump/execute-forward-across-phases",
-        WorkflowExecutionEvent::Jumped(Jumped::new(
+        IntentEvent::Jumped(Jumped::new(
             JumpDirection::Forward,
             slug("workspace-detection"),
             slug("contract-design"),
@@ -418,7 +418,7 @@ fn approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan() {
     // ハンクの外なので補う。
     assert_case_with_context(
         "report/approved-across-phases",
-        WorkflowExecutionEvent::GateApproved(GateApproved::new(
+        IntentEvent::GateApproved(GateApproved::new(
             slug("delivery-planning"),
             Some("A".to_string()),
             Some(slug("functional-design")),
@@ -437,7 +437,7 @@ fn recomposing_keeps_existing_skip_entries_where_they_are() {
     // られない — 既存項目はその位置のまま残り、新規が graph 順で末尾に付く。
     assert_case(
         "recompose/skip-two-appends-in-graph-order",
-        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+        IntentEvent::Recomposed(Recomposed::new(
             vec![slug("deployment-execution"), slug("feedback-optimization")],
             Vec::new(),
             (0..22).map(|_| slug("placeholder")).collect(),
@@ -456,7 +456,7 @@ fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
     // `- **Total Stages**: 23` に落ちる — それが検証になる。
     assert_case_with_context(
         "recompose/add-restores-conditional",
-        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+        IntentEvent::Recomposed(Recomposed::new(
             Vec::new(),
             vec![slug("reverse-engineering")],
             (0..23).map(|_| slug("placeholder")).collect(),
@@ -473,7 +473,7 @@ fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
 fn recomposing_moves_a_stage_between_the_two_plan_lists() {
     assert_case(
         "recompose/skip-one",
-        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+        IntentEvent::Recomposed(Recomposed::new(
             vec![slug("incident-response")],
             Vec::new(),
             (0..24).map(|_| slug("placeholder")).collect(),
@@ -485,13 +485,13 @@ fn recomposing_moves_a_stage_between_the_two_plan_lists() {
 fn parking_writes_the_marker_at_the_end_of_the_runtime_section() {
     assert_case(
         "park/park",
-        WorkflowExecutionEvent::Parked(Parked::new(slug("domain-design"))),
+        IntentEvent::Parked(Parked::new(slug("domain-design"))),
     );
 }
 
 #[test]
 fn unparking_removes_both_marker_lines() {
-    assert_case("unpark/unpark", WorkflowExecutionEvent::Unparked);
+    assert_case("unpark/unpark", IntentEvent::Unparked);
 }
 
 // ---------------------------------------------------------------------------
@@ -506,7 +506,7 @@ fn the_genesis_draws_all_sixteen_initialization_rows() {
     // にあり、U7 が骨格を書くときの正本になる。
     assert_audit_only(
         "intent-create/classic-scope",
-        WorkflowExecutionEvent::Started(started()),
+        IntentEvent::Started(started()),
         "",
     );
 }
@@ -517,7 +517,7 @@ fn the_genesis_draws_all_sixteen_initialization_rows() {
 
 #[test]
 fn projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes() {
-    let event = WorkflowExecutionEvent::GateApproved(GateApproved::new(
+    let event = IntentEvent::GateApproved(GateApproved::new(
         slug("practices-discovery"),
         Some("A".to_string()),
         Some(slug("requirements-analysis")),
@@ -542,9 +542,12 @@ fn projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes()
 fn a_stage_outside_the_plan_is_refused_rather_than_drawn_wrong() {
     let mut model = ReadModel::new("## Stage Progress\n- [-] ghost — EXECUTE\n".to_string());
     let error = project(
-        &[entry(WorkflowExecutionEvent::GateApproved(
-            GateApproved::new(slug("ghost"), None, None, None),
-        ))],
+        &[entry(IntentEvent::GateApproved(GateApproved::new(
+            slug("ghost"),
+            None,
+            None,
+            None,
+        )))],
         &plan(),
         &mut model,
     )

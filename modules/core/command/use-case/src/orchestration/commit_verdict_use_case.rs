@@ -1,16 +1,14 @@
 //! `CommitVerdictUseCase` — 報告された結末を 1 つの遷移としてコミットする（FR2.1）。
 
 use chrono::{DateTime, Utc};
-use core_command_domain::orchestration::{
-    IntentId, StageIndex, WorkflowExecution, WorkflowExecutionEvent,
-};
+use core_command_domain::orchestration::{Intent, IntentEvent, IntentId, StageIndex};
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::CheckboxState;
 
 use super::commit_error::CommitError;
+use super::intent_repository::IntentRepository;
 use super::reported_transition::ReportedTransition;
 use super::repository_error::RepositoryError;
-use super::workflow_execution_repository::WorkflowExecutionRepository;
 
 /// コンダクタが報告した結末（[`ReportedTransition`]）を 1 つの遷移としてコミットする。
 ///
@@ -44,7 +42,7 @@ use super::workflow_execution_repository::WorkflowExecutionRepository;
 /// `dyn` は使わない（`coding-rules/use-case-rules.md` §2）。結線（実物 / インメモリの選択）は
 /// 合成ルートだけが行い、ユースケースはポートの trait しか知らない。
 #[derive(Debug)]
-pub struct CommitVerdictUseCase<R: WorkflowExecutionRepository> {
+pub struct CommitVerdictUseCase<R: IntentRepository> {
     repository: R,
 }
 
@@ -67,7 +65,7 @@ enum AttemptOutcome {
     },
 }
 
-impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
+impl<R: IntentRepository> CommitVerdictUseCase<R> {
     /// ポートの実装を注入する。
     #[must_use]
     pub const fn new(repository: R) -> CommitVerdictUseCase<R> {
@@ -99,7 +97,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// しない。RMU は同じイベント列からクエリ向きの投影（SQLite テーブル）を別に作ってよく、
     /// チェックポイント表は投影名をキーに持つので既に複数投影を許す形になっている。
     ///
-    /// 集約コマンドが `&mut self -> Result<WorkflowExecutionEvent, _>` である事実は先例に
+    /// 集約コマンドが `&mut self -> Result<IntentEvent, _>` である事実は先例に
     /// ならない。あれは `store()` へ渡す**書込パイプラインの配管**であって、Presenter に
     /// 読ませる読取チャネルではない。
     ///
@@ -212,7 +210,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     }
 
     /// 名指しに使うステージ slug（範囲外は `None`）。
-    fn slug_at(aggregate: &WorkflowExecution, stage: StageIndex) -> Option<StageSlug> {
+    fn slug_at(aggregate: &Intent, stage: StageIndex) -> Option<StageSlug> {
         aggregate
             .stages()
             .get(stage.to_usize())
@@ -230,10 +228,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     ///
     /// 計画に無いステージ（`UnknownStage`）、通過済み completed でない対象（集約の
     /// `NotStale` をそのまま伝播）。
-    fn is_stale_re_report(
-        aggregate: &WorkflowExecution,
-        named: &StageSlug,
-    ) -> Result<bool, CommitError> {
+    fn is_stale_re_report(aggregate: &Intent, named: &StageSlug) -> Result<bool, CommitError> {
         let target = Self::locate(aggregate, named).ok_or_else(|| CommitError::UnknownStage {
             stage: named.clone(),
         })?;
@@ -248,7 +243,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     ///
     /// 集約の読取モデル（`stages` / `stage_index`）だけで完結する**参照**であって判断ではない
     /// — 前提の判定（通過済み completed か）は集約の `stale_report` が持つ。
-    fn locate(aggregate: &WorkflowExecution, named: &StageSlug) -> Option<StageIndex> {
+    fn locate(aggregate: &Intent, named: &StageSlug) -> Option<StageIndex> {
         let position = aggregate
             .stages()
             .iter()
@@ -262,7 +257,7 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// 打てば `CheckboxPrecondition` で拒否されるが、それは**失敗ではない**ので、報告された語と
     /// 現在の印を突き合わせるフロー制御でここを分ける。
     fn gate_is_already_open(
-        aggregate: &WorkflowExecution,
+        aggregate: &Intent,
         cursor: StageIndex,
         transition: &ReportedTransition,
     ) -> bool {
@@ -276,11 +271,11 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// — ゲート付きなら承認、非ゲート（initialization）なら完了である（BR1.3）。どちらを打つかを
     /// 集約の `gated` クエリに訊いて決めるのはフロー制御であって、業務判断の複製ではない。
     fn command(
-        aggregate: &mut WorkflowExecution,
+        aggregate: &mut Intent,
         cursor: StageIndex,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
-    ) -> Result<WorkflowExecutionEvent, CommitError> {
+    ) -> Result<IntentEvent, CommitError> {
         let event = match transition {
             ReportedTransition::AwaitingApproval { artifacts } => {
                 aggregate.open_gate(artifacts, occurred_at)
@@ -322,17 +317,16 @@ mod tests {
     use super::super::reported_transition::ReportedTransition;
     use super::super::repository_error::RepositoryError;
     use super::super::test_support::{
-        InMemoryWorkflowExecutionRepository, absent_intent, at, genesis, intent, slug,
-        start_from_plan,
+        InMemoryIntentRepository, absent_intent, at, genesis, intent, slug, start_from_plan,
     };
     use core_command_domain::orchestration::{
-        CommandError, PhaseBoundary, Verdict, WorkflowExecution, WorkflowExecutionEvent,
+        CommandError, Intent, IntentEvent, PhaseBoundary, Verdict,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
     use core_command_domain::workspace::CheckboxState;
 
     /// 索引 0（initialization）を完了させ、カーソルを最初のゲート付きステージへ進めた集約。
-    fn at_the_first_gate(stage_count: usize) -> WorkflowExecution {
+    fn at_the_first_gate(stage_count: usize) -> Intent {
         let (mut aggregate, _) = genesis(stage_count);
         aggregate
             .complete_stage(at())
@@ -341,12 +335,10 @@ mod tests {
     }
 
     fn use_case(
-        aggregate: WorkflowExecution,
+        aggregate: Intent,
         version: usize,
-    ) -> CommitVerdictUseCase<InMemoryWorkflowExecutionRepository> {
-        CommitVerdictUseCase::new(InMemoryWorkflowExecutionRepository::holding(
-            aggregate, version,
-        ))
+    ) -> CommitVerdictUseCase<InMemoryIntentRepository> {
+        CommitVerdictUseCase::new(InMemoryIntentRepository::holding(aggregate, version))
     }
 
     fn forward() -> ReportedTransition {
@@ -359,7 +351,7 @@ mod tests {
     ///
     /// ユースケースは何が起きたかを返さないので、テストは戻り値ではなくストアに残った
     /// 痕跡でコミット内容を固定する。
-    fn only_committed(repository: &InMemoryWorkflowExecutionRepository) -> &WorkflowExecutionEvent {
+    fn only_committed(repository: &InMemoryIntentRepository) -> &IntentEvent {
         let committed = repository.committed();
         assert_eq!(committed.len(), 1, "コミットは 1 件のはず");
         committed.first().expect("1 件ある")
@@ -381,8 +373,7 @@ mod tests {
             )
             .await
             .expect("in-progress のゲート付きステージは開ける");
-        let WorkflowExecutionEvent::GateOpened(opened) = only_committed(subject.repository())
-        else {
+        let IntentEvent::GateOpened(opened) = only_committed(subject.repository()) else {
             panic!("GateOpened を期待した");
         };
         assert_eq!(opened.stage(), &slug(1));
@@ -420,8 +411,7 @@ mod tests {
             .execute(&intent(), None, forward(), at())
             .await
             .expect("ゲート付きステージは承認できる");
-        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
-        else {
+        let IntentEvent::GateApproved(approved) = only_committed(subject.repository()) else {
             panic!("GateApproved を期待した");
         };
         assert_eq!(approved.stage(), &slug(1));
@@ -439,9 +429,7 @@ mod tests {
             .execute(&intent(), None, forward(), at())
             .await
             .expect("非ゲートステージは完了できる");
-        let WorkflowExecutionEvent::StageCompleted(completed) =
-            only_committed(subject.repository())
-        else {
+        let IntentEvent::StageCompleted(completed) = only_committed(subject.repository()) else {
             panic!("StageCompleted を期待した");
         };
         assert_eq!(completed.stage(), &slug(0));
@@ -462,8 +450,7 @@ mod tests {
             )
             .await
             .expect("ゲート付きステージは差し戻せる");
-        let WorkflowExecutionEvent::GateRejected(rejected) = only_committed(subject.repository())
-        else {
+        let IntentEvent::GateRejected(rejected) = only_committed(subject.repository()) else {
             panic!("GateRejected を期待した");
         };
         assert_eq!(rejected.feedback(), Some("Sharpen the testing posture."));
@@ -481,8 +468,7 @@ mod tests {
             .execute(&intent(), None, ReportedTransition::Revised, at())
             .await
             .expect("revising のステージはゲートへ再入できる");
-        let WorkflowExecutionEvent::StageRevised(revised) = only_committed(subject.repository())
-        else {
+        let IntentEvent::StageRevised(revised) = only_committed(subject.repository()) else {
             panic!("StageRevised を期待した");
         };
         assert_eq!(revised.stage(), &slug(1));
@@ -508,8 +494,7 @@ mod tests {
             )
             .await
             .expect("CONDITIONAL なステージは読み飛ばせる");
-        let WorkflowExecutionEvent::StageSkipped(skipped) = only_committed(subject.repository())
-        else {
+        let IntentEvent::StageSkipped(skipped) = only_committed(subject.repository()) else {
             panic!("StageSkipped を期待した");
         };
         assert_eq!(skipped.reason(), "Not applicable");
@@ -540,7 +525,7 @@ mod tests {
             .expect("カーソル自身を名指しした報告は通常経路");
         assert!(matches!(
             only_committed(subject.repository()),
-            WorkflowExecutionEvent::GateApproved(_)
+            IntentEvent::GateApproved(_)
         ));
     }
 
@@ -593,7 +578,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_aggregate_is_reported_as_not_found() {
-        let mut subject = CommitVerdictUseCase::new(InMemoryWorkflowExecutionRepository::empty());
+        let mut subject = CommitVerdictUseCase::new(InMemoryIntentRepository::empty());
         let err = subject
             .execute(&absent_intent(), None, forward(), at())
             .await
@@ -610,11 +595,7 @@ mod tests {
     async fn a_first_conflict_is_retried_once_from_the_rehydration() {
         // 1 件の割り込み書込で 1 回目は競合し、2 回目で通る（contract-design Q6 = A）。
         let mut subject = CommitVerdictUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
-                at_the_first_gate(3),
-                7,
-                1,
-            ),
+            InMemoryIntentRepository::holding_behind_concurrent_writes(at_the_first_gate(3), 7, 1),
         );
         subject
             .execute(&intent(), None, forward(), at())
@@ -622,7 +603,7 @@ mod tests {
             .expect("1 回だけ再試行すれば通る");
         assert!(matches!(
             only_committed(subject.repository()),
-            WorkflowExecutionEvent::GateApproved(_)
+            IntentEvent::GateApproved(_)
         ));
         assert_eq!(
             subject.repository().store_attempts(),
@@ -651,9 +632,7 @@ mod tests {
         );
 
         let mut subject = CommitVerdictUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_behind_a_competing_commit(
-                held, advanced, 7,
-            ),
+            InMemoryIntentRepository::holding_behind_a_competing_commit(held, advanced, 7),
         );
         subject
             .execute(&intent(), None, forward(), at())
@@ -680,11 +659,7 @@ mod tests {
     async fn a_second_conflict_is_propagated_without_a_further_retry() {
         // 2 件の割り込み書込。2 回目も競合したら伝播する — 3 回目は無い。
         let mut subject = CommitVerdictUseCase::new(
-            InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes(
-                at_the_first_gate(3),
-                7,
-                2,
-            ),
+            InMemoryIntentRepository::holding_behind_concurrent_writes(at_the_first_gate(3), 7, 2),
         );
         let err = subject
             .execute(&intent(), None, forward(), at())
@@ -740,8 +715,7 @@ mod tests {
             .execute(&intent(), None, forward(), at())
             .await
             .expect("承認は通る");
-        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
-        else {
+        let IntentEvent::GateApproved(approved) = only_committed(subject.repository()) else {
             panic!("GateApproved を期待した");
         };
         assert_eq!(
@@ -757,8 +731,7 @@ mod tests {
             .execute(&intent(), None, forward(), at())
             .await
             .expect("最終ステージも承認できる");
-        let WorkflowExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
-        else {
+        let IntentEvent::GateApproved(approved) = only_committed(subject.repository()) else {
             panic!("GateApproved を期待した");
         };
         assert_eq!(approved.next_stage(), None);

@@ -21,8 +21,7 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use core_command_domain::orchestration::{
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
-    WorkspaceScan,
+    Intent, IntentEvent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -36,7 +35,7 @@ use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};
 /// 本家 memory バックエンドを我々の 3 つの型で具体化したストア。
 ///
 /// 型引数は v3 の並びで `AID` (集約 ID) / `A` (集約 payload) / `P` (イベント payload)。
-type Store = EventStoreForMemory<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+type Store = EventStoreForMemory<IntentId, Intent, IntentEvent>;
 
 /// 我々が封筒に載せる型判別子 (Repository が書く値と同じ綴り)。
 const MANIFEST: &str = "workflow-execution-event/1";
@@ -104,8 +103,8 @@ fn stages() -> Vec<StageEntry> {
     ]
 }
 
-fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_from_plan_unchecked(
+fn genesis() -> (Intent, IntentEvent) {
+    Intent::start_from_plan_unchecked(
         intent_id(),
         WorkflowDefinitionId::parse("claude").unwrap(),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
@@ -120,10 +119,7 @@ fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
 /// commit 済みの集約とイベントから封筒を組む (Repository と同じ手順 — B7 裁定 3)。
 ///
 /// 通番も発生時刻も**適用後の集約**が持っている。ドメインは封筒を作らない。
-fn envelope(
-    aggregate: &WorkflowExecution,
-    event: WorkflowExecutionEvent,
-) -> EventEnvelope<IntentId, WorkflowExecutionEvent> {
+fn envelope(aggregate: &Intent, event: IntentEvent) -> EventEnvelope<IntentId, IntentEvent> {
     EventEnvelope::new(
         aggregate.intent_id().clone(),
         aggregate.seq_nr(),
@@ -135,7 +131,7 @@ fn envelope(
 
 /// 再水和の結果 (本家 v3 の移行ガイド §3 と同じ形 — 集約 + ストアが載せた版)。
 struct Replayed {
-    aggregate: WorkflowExecution,
+    aggregate: Intent,
     version: usize,
 }
 

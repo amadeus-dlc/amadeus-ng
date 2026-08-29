@@ -1,4 +1,4 @@
-//! `WorkflowExecutionEvent` — 12 変種のドメインイベント (C5、entities.md)。
+//! `IntentEvent` — 12 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -9,7 +9,7 @@
 //! 本家 event-store-adapter-rs v3.0.0 は `Event` trait を廃し、識別子・順序番号・発生時刻・
 //! 型判別子を [`EventEnvelope`] が運ぶようになった。したがってドメインイベントは
 //! **純粋なドメイン内容だけ**を持つ (本家の語で payload)。かつて自前で持っていた封筒
-//! (`id` / `schema_version` / `occurred_at`) と `WorkflowExecutionEventId` は削除し、封筒を
+//! (`id` / `schema_version` / `occurred_at`) と、その識別子型は削除し、封筒を
 //! 組むのはアダプタ層 (Repository) の責務にした — 「Payload」は輸送の語であってドメインの語では
 //! ないので、この enum 自身がドメインイベントの正体である (ubiquitous-language.md)。
 //!
@@ -34,7 +34,7 @@ use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefiniti
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
 /// するので専用の材料型を持たない単位変種にした。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorkflowExecutionEvent {
+pub enum IntentEvent {
     /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2)。
     Started(Started),
     /// 非ゲート (initialization フェーズ) ステージの完了。
@@ -218,7 +218,7 @@ pub struct GateApproved {
 impl GateApproved {
     /// 承認されたステージと、承認時の人間入力・次ステージ・フェーズ境界。
     ///
-    /// 4 成分はすべて `WorkflowExecution::approve_gate` が組む — `next_stage` と
+    /// 4 成分はすべて `Intent::approve_gate` が組む — `next_stage` と
     /// `phase_boundary` は解決済み計画からの導出であり、外から与えられる材料ではない。
     #[must_use]
     pub const fn new(
@@ -630,24 +630,21 @@ mod tests {
     #[test]
     fn the_event_round_trips_through_serde() {
         // 本家のシリアライザ境界 (`Serialize` / `DeserializeOwned`) の往復確認。
-        let event = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let event = IntentEvent::Parked(Parked::new(slug("intent-capture")));
         // 契約 JSON (BR1.7) の直列化経路ではないため、canon-json を経ない素の serde_json を使う。
         #[allow(
             clippy::disallowed_methods,
             reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
         )]
         let json = serde_json::to_string(&event).unwrap();
-        assert_eq!(
-            serde_json::from_str::<WorkflowExecutionEvent>(&json).unwrap(),
-            event
-        );
+        assert_eq!(serde_json::from_str::<IntentEvent>(&json).unwrap(), event);
     }
 
     #[test]
     fn the_serialized_event_carries_no_transport_metadata() {
         // B7: 封筒の 4 点 (aggregate_id / seq_nr / occurred_at / manifest) は本家の列が持つ。
         // payload 列に混ざっていないことを綴りで固定する (旧 `schema_version` も同様に消えた)。
-        let event = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let event = IntentEvent::Parked(Parked::new(slug("intent-capture")));
         #[allow(
             clippy::disallowed_methods,
             reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
@@ -669,37 +666,37 @@ mod tests {
 
     #[test]
     fn events_compare_by_value() {
-        let a = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        let b = WorkflowExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let a = IntentEvent::Parked(Parked::new(slug("intent-capture")));
+        let b = IntentEvent::Parked(Parked::new(slug("intent-capture")));
         assert_eq!(a, b);
-        assert_ne!(a, WorkflowExecutionEvent::Unparked);
+        assert_ne!(a, IntentEvent::Unparked);
     }
 
     #[test]
     fn the_twelve_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
-        fn name(payload: &WorkflowExecutionEvent) -> &'static str {
+        fn name(payload: &IntentEvent) -> &'static str {
             match payload {
-                WorkflowExecutionEvent::Started(_) => "Started",
-                WorkflowExecutionEvent::StageCompleted(_) => "StageCompleted",
-                WorkflowExecutionEvent::GateOpened(_) => "GateOpened",
-                WorkflowExecutionEvent::GateApproved(_) => "GateApproved",
-                WorkflowExecutionEvent::GateRejected(_) => "GateRejected",
-                WorkflowExecutionEvent::StageRevised(_) => "StageRevised",
-                WorkflowExecutionEvent::StageSkipped(_) => "StageSkipped",
-                WorkflowExecutionEvent::Jumped(_) => "Jumped",
-                WorkflowExecutionEvent::Parked(_) => "Parked",
-                WorkflowExecutionEvent::Unparked => "Unparked",
-                WorkflowExecutionEvent::Recomposed(_) => "Recomposed",
-                WorkflowExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
+                IntentEvent::Started(_) => "Started",
+                IntentEvent::StageCompleted(_) => "StageCompleted",
+                IntentEvent::GateOpened(_) => "GateOpened",
+                IntentEvent::GateApproved(_) => "GateApproved",
+                IntentEvent::GateRejected(_) => "GateRejected",
+                IntentEvent::StageRevised(_) => "StageRevised",
+                IntentEvent::StageSkipped(_) => "StageSkipped",
+                IntentEvent::Jumped(_) => "Jumped",
+                IntentEvent::Parked(_) => "Parked",
+                IntentEvent::Unparked => "Unparked",
+                IntentEvent::Recomposed(_) => "Recomposed",
+                IntentEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        assert_eq!(name(&WorkflowExecutionEvent::Unparked), "Unparked");
+        assert_eq!(name(&IntentEvent::Unparked), "Unparked");
         assert_eq!(
-            name(&WorkflowExecutionEvent::AutonomyModeSet(
-                AutonomyModeSet::new(AutonomyMode::Gated)
-            )),
+            name(&IntentEvent::AutonomyModeSet(AutonomyModeSet::new(
+                AutonomyMode::Gated
+            ))),
             "AutonomyModeSet"
         );
     }

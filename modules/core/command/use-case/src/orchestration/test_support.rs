@@ -8,22 +8,21 @@
 //! ユースケースのテストが使うポート実装は**本クレート内の `#[cfg(test)]` に置く**。
 //!
 //! ここに置くのは 1 つだけである — ポートのテストも `CommitVerdictUseCase` のテストも同じ
-//! [`InMemoryWorkflowExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
+//! [`InMemoryIntentRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
-    WorkspaceScan,
+    Intent, IntentEvent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 
-use super::rehydrated_workflow_execution::RehydratedWorkflowExecution;
+use super::intent_repository::IntentRepository;
+use super::rehydrated_intent::RehydratedIntent;
 use super::repository_error::RepositoryError;
-use super::workflow_execution_repository::WorkflowExecutionRepository;
 
 /// フィクスチャの集約識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
@@ -73,9 +72,7 @@ pub(crate) fn scan() -> WorkspaceScan {
 }
 
 /// フェーズと実効プラン・CONDITIONAL を名指しした合成計画で開始する。
-pub(crate) fn start_from_plan(
-    plan: &[(PhaseId, PlanAction, bool)],
-) -> (WorkflowExecution, WorkflowExecutionEvent) {
+pub(crate) fn start_from_plan(plan: &[(PhaseId, PlanAction, bool)]) -> (Intent, IntentEvent) {
     let stages = plan
         .iter()
         .enumerate()
@@ -89,7 +86,7 @@ pub(crate) fn start_from_plan(
             )
         })
         .collect();
-    WorkflowExecution::start_from_plan_unchecked(
+    Intent::start_from_plan_unchecked(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -103,7 +100,7 @@ pub(crate) fn start_from_plan(
 }
 
 /// 索引 0 = initialization (非ゲート)、索引 1 以降 = inception (ゲート付き) の合成計画。
-pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecutionEvent) {
+pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentEvent) {
     let plan: Vec<(PhaseId, PlanAction, bool)> = (0..stage_count)
         .map(|index| {
             let phase = if index == 0 {
@@ -117,7 +114,7 @@ pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecuti
     start_from_plan(&plan)
 }
 
-/// [`WorkflowExecutionRepository`] のインメモリ実装。
+/// [`IntentRepository`] のインメモリ実装。
 ///
 /// 楽観 version は本家の実測どおり「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。
 /// レシーバは CQS どおり再構成が `&self`、永続化が `&mut self` である — 内部可変性で
@@ -131,32 +128,32 @@ pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecuti
 ///
 /// 割り込みには 2 種類ある:
 ///
-/// - [`holding_behind_concurrent_writes`](InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes)
+/// - [`holding_behind_concurrent_writes`](InMemoryIntentRepository::holding_behind_concurrent_writes)
 ///   — **版だけ**が進む。相手が書いた内容は模さない（`set-autonomy` のようにカーソルを
 ///   動かさない競合に相当する）。
-/// - [`holding_behind_a_competing_commit`](InMemoryWorkflowExecutionRepository::holding_behind_a_competing_commit)
+/// - [`holding_behind_a_competing_commit`](InMemoryIntentRepository::holding_behind_a_competing_commit)
 ///   — 版に加えて**保持している集約も進む**。相手が先に同じゲートを承認してカーソルが動いた
 ///   状況に相当し、再構成し直した呼出は報告したステージが通過済みになっているのを見る。
 #[derive(Debug)]
-pub(crate) struct InMemoryWorkflowExecutionRepository {
-    stored: Option<WorkflowExecution>,
+pub(crate) struct InMemoryIntentRepository {
+    stored: Option<Intent>,
     version: usize,
     interrupting_writes: usize,
-    competing_commit: Option<WorkflowExecution>,
+    competing_commit: Option<Intent>,
     store_attempts: usize,
-    committed: Vec<WorkflowExecutionEvent>,
+    committed: Vec<IntentEvent>,
 }
 
-impl InMemoryWorkflowExecutionRepository {
+impl InMemoryIntentRepository {
     /// 基本コンストラクタ — 構築経路はここ 1 本に集約する
     /// (`coding-rules/factory-naming.md`)。
     fn new(
-        stored: Option<WorkflowExecution>,
+        stored: Option<Intent>,
         version: usize,
         interrupting_writes: usize,
-        competing_commit: Option<WorkflowExecution>,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository {
+        competing_commit: Option<Intent>,
+    ) -> InMemoryIntentRepository {
+        InMemoryIntentRepository {
             stored,
             version,
             interrupting_writes,
@@ -167,16 +164,13 @@ impl InMemoryWorkflowExecutionRepository {
     }
 
     /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
-    pub(crate) fn empty() -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(None, 0, 0, None)
+    pub(crate) fn empty() -> InMemoryIntentRepository {
+        InMemoryIntentRepository::new(None, 0, 0, None)
     }
 
     /// 集約 1 つを版 `version` で保持するストア。
-    pub(crate) fn holding(
-        aggregate: WorkflowExecution,
-        version: usize,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 0, None)
+    pub(crate) fn holding(aggregate: Intent, version: usize) -> InMemoryIntentRepository {
+        InMemoryIntentRepository::new(Some(aggregate), version, 0, None)
     }
 
     /// 最初の `writes` 回の `store` に、別の書き手の書込が割り込むストア。
@@ -185,11 +179,11 @@ impl InMemoryWorkflowExecutionRepository {
     /// 集約は動かないので、再構成し直してもカーソルは同じ位置にある。台本を使い切ると通常の
     /// 楽観判定へ戻るので、**再構成からやり直した呼出だけが**新しい版を提示でき、書込に成功する。
     pub(crate) fn holding_behind_concurrent_writes(
-        aggregate: WorkflowExecution,
+        aggregate: Intent,
         version: usize,
         writes: usize,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, writes, None)
+    ) -> InMemoryIntentRepository {
+        InMemoryIntentRepository::new(Some(aggregate), version, writes, None)
     }
 
     /// 最初の `store` に、**集約を前進させる**別の書き手の書込が割り込むストア。
@@ -198,15 +192,15 @@ impl InMemoryWorkflowExecutionRepository {
     /// 同じゲートを承認してカーソルが動いた状況である。再構成し直した呼出は、報告した
     /// ステージが既に通過済み（`[x]` かつカーソルより手前）になっているのを見る。
     pub(crate) fn holding_behind_a_competing_commit(
-        aggregate: WorkflowExecution,
-        advanced: WorkflowExecution,
+        aggregate: Intent,
+        advanced: Intent,
         version: usize,
-    ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 1, Some(advanced))
+    ) -> InMemoryIntentRepository {
+        InMemoryIntentRepository::new(Some(aggregate), version, 1, Some(advanced))
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
-    pub(crate) fn committed(&self) -> &[WorkflowExecutionEvent] {
+    pub(crate) fn committed(&self) -> &[IntentEvent] {
         &self.committed
     }
 
@@ -221,16 +215,13 @@ impl InMemoryWorkflowExecutionRepository {
     }
 }
 
-impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
-    async fn find_by_id(
-        &self,
-        id: &IntentId,
-    ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
+impl IntentRepository for InMemoryIntentRepository {
+    async fn find_by_id(&self, id: &IntentId) -> Result<RehydratedIntent, RepositoryError> {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
             .clone()
             .filter(|aggregate| aggregate.intent_id() == id)
-            .map(|aggregate| RehydratedWorkflowExecution::new(aggregate, self.version))
+            .map(|aggregate| RehydratedIntent::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
                 intent_id: id.clone(),
             })
@@ -238,8 +229,8 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
 
     async fn store(
         &mut self,
-        event: &WorkflowExecutionEvent,
-        aggregate: &WorkflowExecution,
+        event: &IntentEvent,
+        aggregate: &Intent,
         expected_version: usize,
     ) -> Result<(), RepositoryError> {
         self.store_attempts += 1;

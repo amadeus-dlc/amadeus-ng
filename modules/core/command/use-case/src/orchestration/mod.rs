@@ -13,24 +13,24 @@
 mod commit_error;
 mod commit_verdict_use_case;
 mod corrupt_cause;
-mod rehydrated_workflow_execution;
+mod intent_repository;
+mod rehydrated_intent;
 mod reported_transition;
 mod repository_error;
 #[cfg(test)]
 mod test_support;
 mod workflow_definition_repository;
-mod workflow_execution_repository;
 
 // ポート (trait) — Repository は集約名＋Repository で命名する
 // (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 // ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-010)。
 // 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
+pub use intent_repository::IntentRepository;
 pub use workflow_definition_repository::WorkflowDefinitionRepository;
-pub use workflow_execution_repository::WorkflowExecutionRepository;
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
-pub use rehydrated_workflow_execution::RehydratedWorkflowExecution;
+pub use rehydrated_intent::RehydratedIntent;
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の

@@ -8,7 +8,7 @@ use crate::workflow_definition::PhaseId;
 ///
 /// **集約が自分の解決済み計画から導出する投影材料**である (オーナー裁定 2026-08-29 —
 /// 「集約は FSM。判断は集約に閉じ込め、ユースケースはフロー制御のみ」)。導出は
-/// `WorkflowExecution::approve_gate` の内部で行い、本型は両端を束ねるだけで検証しない
+/// `Intent::approve_gate` の内部で行い、本型は両端を束ねるだけで検証しない
 /// (旧文の「呼出側が導出して渡す」は失効)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PhaseBoundary {
@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn a_boundary_may_name_the_same_phase_twice() {
-        // 本型は両端を検証しない (導出は `WorkflowExecution::approve_gate` の責務)。
+        // 本型は両端を検証しない (導出は `Intent::approve_gate` の責務)。
         let b = PhaseBoundary::new(PhaseId::Construction, PhaseId::Construction);
         assert_eq!(b.from_phase(), b.to_phase());
     }

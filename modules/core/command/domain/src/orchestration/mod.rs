@@ -1,9 +1,9 @@
 //! orchestration コンテキスト (10-orchestration.md) — 「次に何が起こるか」の Domain Primitive
-//! と `WorkflowExecution` 集約。upstream 契約の逐語根拠は docs/specs/research/orchestration-*.md。
+//! と `Intent` 集約。upstream 契約の逐語根拠は docs/specs/research/orchestration-*.md。
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
-//! `WorkflowExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
+//! `Intent` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
 //! 永続化境界は `state()` / `from_state()` の値オブジェクトである。
@@ -58,7 +58,10 @@ mod autonomy_mode;
 mod command_error;
 mod directive_schema;
 mod event_manifest;
+mod intent;
+mod intent_event;
 mod intent_id;
+mod intent_snapshot;
 mod jump_direction;
 mod next_decision;
 mod phase_boundary;
@@ -71,9 +74,6 @@ mod start_request;
 mod state_error;
 mod status;
 mod verdict;
-mod workflow_execution;
-mod workflow_execution_event;
-mod workflow_execution_state;
 mod workspace_scan;
 
 // Domain Primitive
@@ -91,23 +91,24 @@ pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
 
 // 集約 (エンジンループの状態機械)
-pub use workflow_execution::WorkflowExecution;
+pub use intent::Intent;
 
 // 集約の観測結果
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
-pub use workflow_execution_state::WorkflowExecutionState;
+// `IntentSnapshot` はここに出さない — 集約の直列化形 (memento) はクレート内私有である
+// (オーナー裁定 2026-08-29。出口は `Intent` の `Serialize` / `Deserialize` だけ)。
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
-// (ADR-010 / B7 — 旧 `WorkflowExecutionEventId` と自前封筒は削除した)。
-pub use workflow_execution_event::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, Jumped, Parked, Recomposed,
-    StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
+// (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
+pub use intent_event::{
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentEvent, Jumped, Parked,
+    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
 
 // ビルダー
-pub use workflow_execution_state::WorkflowExecutionStateBuilder;
+pub use intent_snapshot::IntentBuilder;
 
 // エラー
 pub use apply_error::ApplyError;

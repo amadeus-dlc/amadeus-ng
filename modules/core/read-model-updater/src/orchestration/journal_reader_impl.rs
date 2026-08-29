@@ -61,7 +61,7 @@ use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
-use core_command_domain::orchestration::{EVENT_MANIFEST, IntentId, WorkflowExecutionEvent};
+use core_command_domain::orchestration::{EVENT_MANIFEST, IntentEvent, IntentId};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -341,7 +341,7 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
             CorruptCause::UndecodablePayload,
         ));
     }
-    let event = serde_json::from_slice::<WorkflowExecutionEvent>(&row.payload)
+    let event = serde_json::from_slice::<IntentEvent>(&row.payload)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?;
     let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
     Ok(JournalEntry::new(
@@ -471,7 +471,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use core_command_domain::orchestration::WorkflowExecution;
+    use core_command_domain::orchestration::Intent;
 
     /// 投影チェックポイントの表 (**我々の表**。本家の `journal` / `snapshot` と衝突しない)。
     const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
@@ -479,7 +479,7 @@ mod tests {
     use event_store_adapter_rs::EventStoreForSqlite;
 
     /// 本家の SQLite ストア (この型の結合先)。
-    type UpstreamStore = EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+    type UpstreamStore = EventStoreForSqlite<IntentId, Intent, IntentEvent>;
 
     /// 一時ディレクトリ配下のストアの場所。
     fn store_path(dir: &tempfile::TempDir) -> StorePath {
@@ -1217,7 +1217,7 @@ mod tests {
             clippy::disallowed_methods,
             reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
         )]
-        serde_json::to_vec(&WorkflowExecutionEvent::Unparked).unwrap()
+        serde_json::to_vec(&IntentEvent::Unparked).unwrap()
     }
 
     /// 正常な 1 行 (個々のフィールドを崩して境界を踏むための素体)。
@@ -1241,7 +1241,7 @@ mod tests {
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(entry.seq_nr(), 1);
-        assert_eq!(entry.event(), &WorkflowExecutionEvent::Unparked);
+        assert_eq!(entry.event(), &IntentEvent::Unparked);
         assert_eq!(
             entry.occurred_at().timestamp_nanos_opt(),
             Some(1_756_425_600_000_000_000),

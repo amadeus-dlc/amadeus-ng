@@ -24,7 +24,7 @@
 //! # 集約への畳み込み (FR8.4)
 //!
 //! かつてここにあった `effective_plan_action` / `next_in_scope_stage` は
-//! **`WorkflowExecution` 側へ移設**した。recompose オーバレイと checkbox は実行の状態で
+//! **`Intent` 側へ移設**した。recompose オーバレイと checkbox は実行の状態で
 //! あって定義の状態ではなく、定義側に置くと「呼出側が状態を持ち回って定義に問い直す」
 //! Ask 形になるためである (tell-dont-ask.md)。定義側に残るのは静的グリッドの照会
 //! (`grid().action(scope, slug)`) と文書順の全ステージ列 (`stages_in_scope`) だけで、
@@ -81,7 +81,7 @@ impl UnknownScope {
 ///
 /// 等価は**内容と識別子の両方**で決まる (derive)。読取モデルは 3 入力から毎回組み立て直す
 /// 値であり、「同じ系譜の同じ内容」を 1 つの等価関係で表すのが自然だからである。id だけの
-/// 同一性比較が要るのは `WorkflowExecution` 側の定義照合で、そちらは `id()` 同士を突き合わせる
+/// 同一性比較が要るのは `Intent` 側の定義照合で、そちらは `id()` 同士を突き合わせる
 /// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDefinition {

@@ -9,16 +9,14 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution,
-    WorkflowExecutionEvent, WorkspaceScan,
+    CommandError, Intent, IntentEvent, IntentId, StageDisplay, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, WorkflowExecutionRepository,
-};
+use core_command_use_case::orchestration::{IntentRepository, RehydratedIntent};
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -104,14 +102,14 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 #[must_use]
-pub(crate) fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
+pub(crate) fn genesis() -> (Intent, IntentEvent) {
     genesis_for(intent_id())
 }
 
 /// 指定した集約識別子の genesis (横断読取のテストが 2 集約を並べるのに使う)。
 #[must_use]
-pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_from_plan_unchecked(
+pub(crate) fn genesis_for(intent: IntentId) -> (Intent, IntentEvent) {
+    Intent::start_from_plan_unchecked(
         intent,
         WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -128,12 +126,12 @@ pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecu
 ///
 /// `store` は引数の集約を変更しないので、次のコマンドを打つ前に再水和するのが唯一の作法で
 /// ある。`find_by_id` は「書いた集約 + ストアが採番した version」を返す。
-pub(crate) async fn store_and_reload<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_and_reload<R: IntentRepository>(
     repository: &mut R,
-    event: &WorkflowExecutionEvent,
-    aggregate: &WorkflowExecution,
+    event: &IntentEvent,
+    aggregate: &Intent,
     expected_version: usize,
-) -> RehydratedWorkflowExecution {
+) -> RehydratedIntent {
     repository
         .store(event, aggregate, expected_version)
         .await
@@ -145,17 +143,15 @@ pub(crate) async fn store_and_reload<R: WorkflowExecutionRepository>(
 }
 
 /// genesis (`Started`) を 1 件書き、握り直した結果を返す。
-pub(crate) async fn store_genesis<R: WorkflowExecutionRepository>(
-    repository: &mut R,
-) -> RehydratedWorkflowExecution {
+pub(crate) async fn store_genesis<R: IntentRepository>(repository: &mut R) -> RehydratedIntent {
     store_genesis_for(repository, intent_id()).await
 }
 
 /// 指定した集約識別子の genesis を 1 件書き、握り直した結果を返す。
-pub(crate) async fn store_genesis_for<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_genesis_for<R: IntentRepository>(
     repository: &mut R,
     intent: IntentId,
-) -> RehydratedWorkflowExecution {
+) -> RehydratedIntent {
     let (aggregate, event) = genesis_for(intent);
     store_and_reload(repository, &event, &aggregate, R::UNPERSISTED_VERSION).await
 }
@@ -165,12 +161,12 @@ pub(crate) async fn store_genesis_for<R: WorkflowExecutionRepository>(
 /// 版は**握っているものを提示する** — 書込直前に読み直さないのが楽観ロックの本体である。
 pub(crate) async fn advance<R, F>(
     repository: &mut R,
-    held: &RehydratedWorkflowExecution,
+    held: &RehydratedIntent,
     command: F,
-) -> RehydratedWorkflowExecution
+) -> RehydratedIntent
 where
-    R: WorkflowExecutionRepository,
-    F: FnOnce(&mut WorkflowExecution) -> Result<WorkflowExecutionEvent, CommandError>,
+    R: IntentRepository,
+    F: FnOnce(&mut Intent) -> Result<IntentEvent, CommandError>,
 {
     let mut aggregate = held.aggregate().clone();
     let event = command(&mut aggregate).expect("コマンドは受理される");
@@ -178,9 +174,9 @@ where
 }
 
 /// 続きの 1 件 (`StageCompleted`) を書き、握り直した結果を返す。
-pub(crate) async fn store_stage_completed<R: WorkflowExecutionRepository>(
+pub(crate) async fn store_stage_completed<R: IntentRepository>(
     repository: &mut R,
-    held: &RehydratedWorkflowExecution,
-) -> RehydratedWorkflowExecution {
+    held: &RehydratedIntent,
+) -> RehydratedIntent {
     advance(repository, held, |aggregate| aggregate.complete_stage(at())).await
 }

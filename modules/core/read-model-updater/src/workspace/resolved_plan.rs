@@ -13,9 +13,7 @@
 //! イベントを太らせる案（遷移イベントごとに表示属性を持たせる）を採らなかったのは、同じ事実が
 //! ジャーナルに何度も転写され、`Started` の計画と食い違いうるからである。正本は 1 つでよい。
 
-use core_command_domain::orchestration::{
-    StageDisplay, Started, WorkflowExecutionEvent, WorkspaceScan,
-};
+use core_command_domain::orchestration::{IntentEvent, StageDisplay, Started, WorkspaceScan};
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
 /// 投影が参照する解決済み計画（文書順の全ステージ + 走査結果）。
@@ -96,9 +94,9 @@ impl ResolvedPlan {
     ///
     /// 見つからなければ `None` — 呼出側（取得ループ）が「計画がまだ無い」として扱う。
     #[must_use]
-    pub fn find_in(events: &[WorkflowExecutionEvent]) -> Option<ResolvedPlan> {
+    pub fn find_in(events: &[IntentEvent]) -> Option<ResolvedPlan> {
         events.iter().find_map(|event| match event {
-            WorkflowExecutionEvent::Started(started) => Some(ResolvedPlan::of(started)),
+            IntentEvent::Started(started) => Some(ResolvedPlan::of(started)),
             _ => None,
         })
     }
@@ -335,15 +333,9 @@ mod tests {
 
     #[test]
     fn the_plan_is_found_in_a_journal_batch_that_carries_the_genesis() {
-        let events = vec![
-            WorkflowExecutionEvent::Unparked,
-            WorkflowExecutionEvent::Started(started()),
-        ];
+        let events = vec![IntentEvent::Unparked, IntentEvent::Started(started())];
         assert_eq!(ResolvedPlan::find_in(&events), Some(plan()));
-        assert_eq!(
-            ResolvedPlan::find_in(&[WorkflowExecutionEvent::Unparked]),
-            None
-        );
+        assert_eq!(ResolvedPlan::find_in(&[IntentEvent::Unparked]), None);
         assert_eq!(ResolvedPlan::find_in(&[]), None);
     }
 }

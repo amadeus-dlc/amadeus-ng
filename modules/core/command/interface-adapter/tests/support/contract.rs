@@ -1,20 +1,18 @@
-//! `WorkflowExecutionRepository` の契約 (BR1.2 / BR1.3)。
+//! `IntentRepository` の契約 (BR1.2 / BR1.3)。
 //!
 //! ここに書いた関数群が「実装が満たすべき約束」の**唯一の記述**である。本家の memory
 //! バックエンドと SQLite バックエンドは同じ関数を通す (BR2.7 — 片方だけ通るテストを残さない)。
 //!
 //! 破損 (`MissingSnapshot` / `UndecodablePayload`) は、行を直接壊す手段がバックエンドごとに
 //! 違い、ポートの面からは作れない。契約テストからは外し、実装固有のテスト
-//! (`workflow_execution_repository_impl_test.rs` の生 SQL) に置く。
+//! (`intent_repository_impl_test.rs` の生 SQL) に置く。
 //!
 //! 全集約横断の読取とチェックポイント (`JournalReader`) は SQLite にしか無いので、
 //! `journal_reader_impl_test.rs` が単独で持つ。
 
 use core_command_domain::orchestration::AutonomyMode;
 
-use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
-};
+use core_command_use_case::orchestration::{IntentRepository, RehydratedIntent, RepositoryError};
 
 use super::{
     StoreFixture, absent_intent_id, advance, at, genesis, intent_id, store_genesis,
@@ -24,9 +22,7 @@ use super::{
 /// genesis から 5 イベントぶん書き進め、最後の再水和結果を返す。
 ///
 /// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
-pub(crate) async fn seed<R: WorkflowExecutionRepository>(
-    repository: &mut R,
-) -> RehydratedWorkflowExecution {
+pub(crate) async fn seed<R: IntentRepository>(repository: &mut R) -> RehydratedIntent {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(at())
@@ -103,11 +99,7 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
         .await
         .expect("書いた集約は読み直せる");
 
-    assert_eq!(
-        found.aggregate().state(),
-        expected.aggregate().state(),
-        "16 属性が一致する"
-    );
+    assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
     assert_eq!(found.version(), 5, "5 回の書込ぶんストアが採番した版");
     assert_eq!(
         found.aggregate().seq_nr(),

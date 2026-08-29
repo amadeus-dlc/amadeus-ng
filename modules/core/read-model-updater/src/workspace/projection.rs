@@ -21,8 +21,8 @@
 //! 自身は「渡された列を順に写す」だけでよい。
 
 use core_command_domain::orchestration::{
-    AutonomyMode, GateApproved, GateOpened, GateRejected, JumpDirection, Jumped, Parked,
-    PhaseBoundary, Recomposed, StageCompleted, StageRevised, StageSkipped, WorkflowExecutionEvent,
+    AutonomyMode, GateApproved, GateOpened, GateRejected, IntentEvent, JumpDirection, Jumped,
+    Parked, PhaseBoundary, Recomposed, StageCompleted, StageRevised, StageSkipped,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
@@ -314,37 +314,27 @@ pub fn project(
 }
 
 fn project_one(
-    event: &WorkflowExecutionEvent,
+    event: &IntentEvent,
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
     match event {
-        WorkflowExecutionEvent::Started(_) => started(at, plan, read_model),
-        WorkflowExecutionEvent::StageCompleted(completed) => {
-            stage_completed(completed, at, plan, read_model)
-        }
-        WorkflowExecutionEvent::GateOpened(opened) => gate_opened(opened, at, read_model),
-        WorkflowExecutionEvent::GateApproved(approved) => {
-            gate_approved(approved, at, plan, read_model)
-        }
-        WorkflowExecutionEvent::GateRejected(rejected) => gate_rejected(rejected, at, read_model),
-        WorkflowExecutionEvent::StageRevised(revised) => stage_revised(revised, at, read_model),
-        WorkflowExecutionEvent::StageSkipped(skipped) => {
-            stage_skipped(skipped, at, plan, read_model)
-        }
-        WorkflowExecutionEvent::Jumped(jumped) => jumped_event(jumped, at, plan, read_model),
-        WorkflowExecutionEvent::Parked(parked) => parked_event(parked, at, read_model),
-        WorkflowExecutionEvent::Unparked => {
+        IntentEvent::Started(_) => started(at, plan, read_model),
+        IntentEvent::StageCompleted(completed) => stage_completed(completed, at, plan, read_model),
+        IntentEvent::GateOpened(opened) => gate_opened(opened, at, read_model),
+        IntentEvent::GateApproved(approved) => gate_approved(approved, at, plan, read_model),
+        IntentEvent::GateRejected(rejected) => gate_rejected(rejected, at, read_model),
+        IntentEvent::StageRevised(revised) => stage_revised(revised, at, read_model),
+        IntentEvent::StageSkipped(skipped) => stage_skipped(skipped, at, plan, read_model),
+        IntentEvent::Jumped(jumped) => jumped_event(jumped, at, plan, read_model),
+        IntentEvent::Parked(parked) => parked_event(parked, at, read_model),
+        IntentEvent::Unparked => {
             unparked(at, read_model);
             Ok(())
         }
-        WorkflowExecutionEvent::Recomposed(recomposed) => {
-            recomposed_event(recomposed, at, plan, read_model)
-        }
-        WorkflowExecutionEvent::AutonomyModeSet(mode) => {
-            autonomy_mode_set(mode.mode(), at, read_model)
-        }
+        IntentEvent::Recomposed(recomposed) => recomposed_event(recomposed, at, plan, read_model),
+        IntentEvent::AutonomyModeSet(mode) => autonomy_mode_set(mode.mode(), at, read_model),
     }
 }
 
@@ -1538,7 +1528,7 @@ mod tests {
         ReadModel::new(SKELETON)
     }
 
-    fn entry(event: WorkflowExecutionEvent) -> JournalEntry {
+    fn entry(event: IntentEvent) -> JournalEntry {
         JournalEntry::new(
             crate::orchestration::GlobalSeqNr::new(1),
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
@@ -1548,7 +1538,7 @@ mod tests {
         )
     }
 
-    fn run(event: WorkflowExecutionEvent) -> ReadModel {
+    fn run(event: IntentEvent) -> ReadModel {
         let mut read_model = model();
         project(&[entry(event)], &plan(), &mut read_model).expect("投影");
         read_model
@@ -1565,7 +1555,7 @@ mod tests {
 
     #[test]
     fn the_genesis_lands_on_the_first_gated_stage_when_the_skeleton_exists() {
-        let read_model = run(WorkflowExecutionEvent::Started(started()));
+        let read_model = run(IntentEvent::Started(started()));
         // initialization は完了、最初のゲート付きステージが in-flight。
         assert!(read_model.state().contains("- [x] state-init — EXECUTE"));
         assert!(read_model.state().contains("- [-] first — EXECUTE"));
@@ -1604,7 +1594,7 @@ mod tests {
     fn a_genesis_without_a_skeleton_stops_instead_of_inventing_one() {
         let mut read_model = ReadModel::new("   \n");
         let error = project(
-            &[entry(WorkflowExecutionEvent::Started(started()))],
+            &[entry(IntentEvent::Started(started()))],
             &plan(),
             &mut read_model,
         )
@@ -1621,9 +1611,9 @@ mod tests {
 
     #[test]
     fn switching_the_autonomy_mode_writes_the_row_and_the_field() {
-        let read_model = run(WorkflowExecutionEvent::AutonomyModeSet(
-            AutonomyModeSet::new(AutonomyMode::Autonomous),
-        ));
+        let read_model = run(IntentEvent::AutonomyModeSet(AutonomyModeSet::new(
+            AutonomyMode::Autonomous,
+        )));
         assert!(
             read_model
                 .appended_audit()
@@ -1643,7 +1633,7 @@ mod tests {
 
     #[test]
     fn approving_the_last_stage_completes_the_workflow_instead_of_starting_one() {
-        let read_model = run(WorkflowExecutionEvent::GateApproved(GateApproved::new(
+        let read_model = run(IntentEvent::GateApproved(GateApproved::new(
             slug("second"),
             None,
             None,
@@ -1666,7 +1656,7 @@ mod tests {
 
     #[test]
     fn a_phase_boundary_adds_the_three_boundary_rows_in_order() {
-        let read_model = run(WorkflowExecutionEvent::GateApproved(GateApproved::new(
+        let read_model = run(IntentEvent::GateApproved(GateApproved::new(
             slug("first"),
             Some("A".to_string()),
             Some(slug("second")),
@@ -1707,7 +1697,7 @@ mod tests {
 
     #[test]
     fn completing_a_non_gated_stage_uses_the_completed_wording() {
-        let read_model = run(WorkflowExecutionEvent::StageCompleted(StageCompleted::new(
+        let read_model = run(IntentEvent::StageCompleted(StageCompleted::new(
             slug("state-init"),
             Some(slug("first")),
         )));
@@ -1721,7 +1711,7 @@ mod tests {
 
     #[test]
     fn a_backward_jump_resets_the_downstream_checkboxes() {
-        let read_model = run(WorkflowExecutionEvent::Jumped(Jumped::new(
+        let read_model = run(IntentEvent::Jumped(Jumped::new(
             JumpDirection::Backward,
             slug("second"),
             slug("first"),
@@ -1754,7 +1744,7 @@ mod tests {
 
     #[test]
     fn recomposing_back_into_scope_moves_the_entry_the_other_way() {
-        let read_model = run(WorkflowExecutionEvent::Recomposed(Recomposed::new(
+        let read_model = run(IntentEvent::Recomposed(Recomposed::new(
             Vec::new(),
             vec![slug("late")],
             vec![

@@ -18,14 +18,10 @@
 
 mod support;
 
-use core_command_domain::orchestration::{
-    AutonomyMode, IntentId, WorkflowExecution, WorkflowExecutionEvent,
-};
+use core_command_domain::orchestration::{AutonomyMode, Intent, IntentEvent, IntentId};
 use core_command_domain::workspace::{SpaceName, StorePath};
-use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryImpl;
-use core_command_use_case::orchestration::{
-    RehydratedWorkflowExecution, WorkflowExecutionRepository,
-};
+use core_command_interface_adapter::orchestration::IntentRepositoryImpl;
+use core_command_use_case::orchestration::{IntentRepository, RehydratedIntent};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
 };
@@ -36,9 +32,7 @@ use tempfile::TempDir;
 use support::{advance, at, intent_id, store_genesis};
 
 /// Repository の具体型 (SQLite バックエンド)。
-type Repository = WorkflowExecutionRepositoryImpl<
-    EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>,
->;
+type Repository = IntentRepositoryImpl<EventStoreForSqlite<IntentId, Intent, IntentEvent>>;
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -56,7 +50,7 @@ impl Fixture {
     }
 
     fn repository(&self) -> Repository {
-        WorkflowExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
+        IntentRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
     fn reader(&self) -> JournalReaderImpl {
@@ -65,7 +59,7 @@ impl Fixture {
 }
 
 /// 5 コマンドぶん書き進め、最後の再水和結果を返す。
-async fn write_five(repository: &mut Repository) -> RehydratedWorkflowExecution {
+async fn write_five(repository: &mut Repository) -> RehydratedIntent {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(at())
@@ -98,11 +92,7 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
 
     let reopened = fixture.repository();
     let found = reopened.find_by_id(&intent_id()).await.expect("読み直せる");
-    assert_eq!(
-        found.aggregate().state(),
-        expected.aggregate().state(),
-        "16 属性が一致する"
-    );
+    assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
     assert_eq!(found.version(), 5);
     assert_eq!(found.aggregate().seq_nr(), 5);
 }

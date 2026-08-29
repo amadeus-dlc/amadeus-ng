@@ -15,8 +15,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, EVENT_MANIFEST, IntentId, StageDisplay, StageEntry, StartRequest,
-    WorkflowExecution, WorkflowExecutionEvent, WorkspaceScan,
+    AutonomyMode, CommandError, EVENT_MANIFEST, Intent, IntentEvent, IntentId, StageDisplay,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -28,8 +28,7 @@ use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
 
 /// 本家の SQLite イベントストア (ジャーナル行の書き手)。
-pub(crate) type UpstreamStore =
-    EventStoreForSqlite<IntentId, WorkflowExecution, WorkflowExecutionEvent>;
+pub(crate) type UpstreamStore = EventStoreForSqlite<IntentId, Intent, IntentEvent>;
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -116,8 +115,8 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 
 /// 指定した集約識別子の genesis (集約と `Started` イベント)。
 #[must_use]
-pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecutionEvent) {
-    WorkflowExecution::start_from_plan_unchecked(
+pub(crate) fn genesis_for(intent: IntentId) -> (Intent, IntentEvent) {
+    Intent::start_from_plan_unchecked(
         intent,
         WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -135,7 +134,7 @@ pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecu
 /// 楽観 version は本家の規約どおり「新規作成は 0、以後は 1 件書くごとに 1 つ進む」で追う —
 /// 読み直さずに追えるのは、この試験装置が唯一の書き手だからである。
 pub(crate) struct JournalWriter {
-    aggregate: WorkflowExecution,
+    aggregate: Intent,
     version: usize,
 }
 
@@ -154,14 +153,14 @@ impl JournalWriter {
     /// コマンドを 1 つ打ち、生まれたイベントを書く。
     pub(crate) async fn advance<F>(&mut self, store: &mut UpstreamStore, command: F)
     where
-        F: FnOnce(&mut WorkflowExecution) -> Result<WorkflowExecutionEvent, CommandError>,
+        F: FnOnce(&mut Intent) -> Result<IntentEvent, CommandError>,
     {
         let event = command(&mut self.aggregate).expect("コマンドは受理される");
         self.persist(store, &event).await;
     }
 
     /// 適用後の集約から本家の封筒を組んで書く (型判別子は共有語彙の `EVENT_MANIFEST`)。
-    async fn persist(&mut self, store: &mut UpstreamStore, event: &WorkflowExecutionEvent) {
+    async fn persist(&mut self, store: &mut UpstreamStore, event: &IntentEvent) {
         let envelope = EventEnvelope::new(
             self.aggregate.intent_id().clone(),
             self.aggregate.seq_nr(),
