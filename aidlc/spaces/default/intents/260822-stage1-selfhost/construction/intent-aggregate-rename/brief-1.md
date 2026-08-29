@@ -317,3 +317,45 @@ stages は Intent ではなく**実行の開始材料**へ移す再設計が要�
 記録の是正（メインセッション実施）: ubiquitous-language.md 等の「集約ではない不変構造体」
 記述を「集約（静的・作成時に `Created` を吐く・変異は現状なし）」へ訂正。監査記録 ② に
 上書き注記。
+
+---
+
+# 改訂 9（2026-08-30・オーナー裁定）— ドメインから永続化知識を全撤去
+
+オーナー裁定: 「`IntentMaterial` は削除せよ。ドメインに永続化知識を含めるな。集約はどんな
+永続化知識からも中立。全部撤回せよ」。正典化済み:
+`coding-rules/domain-persistence-neutrality.md`（必読）。
+
+## 撤去対象（実測: serde 使用 28 ファイル + 2 件）
+
+1. **`IntentMaterial` を削除**（改訂 8 実装中の serde 復号中間表現）。
+2. **`core-command-domain` から serde を全撤去** — 全 28 ファイルの derive / `#[serde(...)]`
+   属性・`Cargo.toml` の serde 依存。
+3. **`event_manifest.rs` を domain から撤去**（ジャーナル列の値 = 永続化語彙）。書く側は
+   command interface-adapter、読む側は RMU が**各自**定数を持ち、一致は既存の横断適合テスト
+   （journal_protocol_conformance 等）で固定。
+4. **`event-store-adapter-rs` 依存を domain から撤去** — `IntentId` / `IntentExecutionId` の
+   `AggregateId` trait 実装は、アダプタ側の**ラッパ型**へ移す（境界で変換）。
+
+## 行き先（アダプタが永続化モデルを所有）
+
+- **command interface-adapter** に永続化 DTO モジュールを新設: イベント（全変種 + payload）・
+  スナップショット・Intent とその部品（StageEntry / StageDisplay / WorkspaceScan /
+  StartRequest / 各 enum / 各 Id は文字列で運び `parse` で戻す）。
+  - 書き: domain の公開アクセサ → DTO → serde。
+  - 読み: serde → DTO → domain の**検査付き再構成コンストラクタ**（Always Valid の担保は
+    アダプタの変換関数経由で維持 — 検査を迂回する構築口を作らない）。
+- **RMU は自前の復号 DTO を持つ**（cqrs-boundaries「側ごと専用化」）— domain のイベント型へ
+  変換して投影核に渡す（投影核のシグネチャは不変）。
+- **ワイヤ形式はバイト不変** — DTO のフィールド名・形は現行 serde 出力と 1 対 1。既存の
+  ITF 準拠・crash・adapter・RMU テストが証明。ゴールデン外形不変は従来どおり絶対。
+
+## 補足
+
+- `chrono` は残る（時刻の値は永続化知識ではない — 規則の対象外）。
+- スナップショット型（`IntentExecutionSnapshot`）は serde が消える結果、アダプタが読める
+  **公開の memento API**（読取アクセサ + 検査付き構築）が必要になる。クレート内私有の裁定は
+  「serde の裏口として不可視に使われる」前提だったため、**アダプタという正当な消費者への
+  公開はこの改訂で認める**（visibility は必要最小に）。
+- domain-design decisions.md の「serde がドメインに入るトレードオフ受容」は上書き
+  （メインセッションが失効注記を入れる）。

@@ -400,7 +400,7 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
 - **Consequences** — (+) 自前実装 **約 2,400 行**（`event_store_impl.rs` 971 / `schema.rs` 179 /
   `event_store_impl_test.rs` 1,008 / ローカル `EventStore` trait 230）が消え、本家の保守に乗る。
   (+) 本家への合流・貢献が現実的になる。(+) 借り物の契約を曲げている状態が解消する。
-  (−) ドメイン層に serde と chrono が入る（NFR4.1 の再検討）。(−) 集約・イベント・IntentId が
+  (−) ドメイン層に serde と chrono が入る（NFR4.1 の再検討）。**← serde の受容は失効（2026-08-30 / Bolt B12 改訂 9・オーナー裁定「ドメインに永続化知識を記述するな」）**: serde・ストア trait・ジャーナル語彙は domain から全撤去し、永続化 DTO はアダプタが所有する（正典 `coding-rules/domain-persistence-neutrality.md`）。chrono（時刻の値）のみ残る。(−) 集約・イベント・IntentId が
   本家 trait を実装するための改修（`Event::id` / `is_created` / `Aggregate::id` /
   `last_updated_at` / `AggregateId::type_name` の新設、`seq_nr`/`version` の `usize` 化）。
   (−) B5 でマージするコードの一部を次 Bolt で削除することになる（オーナー裁定で許容）。
