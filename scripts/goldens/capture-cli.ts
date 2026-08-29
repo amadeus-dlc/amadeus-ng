@@ -277,6 +277,14 @@ type CliStep = {
   stdin?: string;
   /** 実行前に整える前提 (成果物の作成など)。 */
   setup?: () => void;
+  /**
+   * `state.diff` に加えて遷移後の `aidlc-state.md` の**全文**を `state-full.md` として残す。
+   *
+   * 差分は「前」があってこそ読める観測であり、状態ファイルを**ゼロから起こす**側 (genesis)
+   * の検収には全文が要る。全ケースに付けると同じ本文が 22 通並ぶだけなので、骨格が生まれる
+   * 遷移にだけ付ける。
+   */
+  captureStateFull?: boolean;
 };
 
 type Missing = { id: string; reason: string; evidence: string; follow_up: string };
@@ -356,6 +364,7 @@ function captureCli(
         "--arguments",
         "Build a small ordering service",
       ],
+      captureStateFull: true,
     },
     {
       id: "next/start",
@@ -523,6 +532,67 @@ function captureCli(
       tool: "aidlc-bolt.ts",
       args: ["set-autonomy", "--mode", "gated"],
     },
+    {
+      id: "jump/execute-backward",
+      description:
+        "後方ジャンプ。対象と下流の [x]/[-]/[?]/[R]/[S] を [ ] へ戻し、対象を [-] にする。フェーズ境界をまたぐので PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED の 3 本が続く",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "workspace-scaffold", "--direction", "backward"],
+    },
+    {
+      id: "report/completed-ungated",
+      description:
+        "非ゲートの initialization ステージを completed で報告すると、ゲートを開かずに advance だけが走る (STAGE_COMPLETED + 次ステージの STAGE_STARTED)",
+      tool: "aidlc-orchestrate.ts",
+      args: ["report", "--result", "completed"],
+    },
+    {
+      id: "jump/execute-forward-across-phases",
+      description:
+        "フェーズ境界をまたぐ前方ジャンプ。既存の前方 2 ケースはどちらも inception 内で完結するため、前方の PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED はこのケースが初出",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "contract-design", "--direction", "forward"],
+    },
+    {
+      // 前提だけ整える (inception 最終ステージへ移り、そのゲートを開く)。
+      id: null,
+      description: "inception 最終ステージ delivery-planning へ移る",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "delivery-planning", "--direction", "forward"],
+    },
+    {
+      id: null,
+      description: "delivery-planning のゲートを開く",
+      tool: "aidlc-orchestrate.ts",
+      args: ["report", "--result", "awaiting-approval"],
+    },
+    {
+      id: "report/approved-across-phases",
+      description:
+        "inception 最終ステージのゲート承認。フェーズ境界をまたぐので GATE_APPROVED / STAGE_COMPLETED のあとに境界 3 本が続く。ジャンプ側と違いこの 3 本は **Details**: を持たず、**Stages completed**: はチェックボックスの数え直しである (計画上の inception 内スコープ件数 8 ではなく 4)",
+      tool: "aidlc-orchestrate.ts",
+      args: ["report", "--result", "approved", "--user-input", "A"],
+    },
+    {
+      id: "recompose/skip-two-appends-in-graph-order",
+      description:
+        "既に skip 済みの 4.5 より前の番号 4.3 を含む 2 本を後から skip する。Stages to Skip は既存項目を**その位置のまま**保ち、新規を graph 順で末尾へ足す (4.5 の後に 4.3, 4.7 が並ぶ)。番号順に並べ替えないことがこのケースの主題である",
+      tool: "aidlc-utility.ts",
+      args: ["recompose", "--skip", "deployment-execution,feedback-optimization"],
+    },
+    {
+      id: null,
+      description: "recompose --add は前方にしか効かないので、カーソルを 2.1 より手前へ戻す",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "workspace-scaffold", "--direction", "backward"],
+    },
+    {
+      id: "recompose/add-restores-conditional",
+      description:
+        "greenfield で畳まれた reverse-engineering を再投入する。Stages to Execute は graph 順に**組み直され** 2.1 が 0.3 と 2.2 の間へ入り、Stages to Skip からは注釈ごと (`2.1 (reverse-engineering — greenfield)`) 消える。注釈付き項目の除去挙動を固定するのがこのケースの主題である",
+      tool: "aidlc-utility.ts",
+      args: ["recompose", "--add", "reverse-engineering"],
+    },
   ];
 
   let captured = 0;
@@ -597,11 +667,15 @@ function captureCli(
       normalize(stderr, norm, family, "stderr", runtime),
     );
 
+    const stateAfter = normalize(after.state, norm, family, "state-diff", runtime);
     const diff = unifiedDiff(
       normalize(before.state, norm, family, "state-diff", runtime),
-      normalize(after.state, norm, family, "state-diff", runtime),
+      stateAfter,
     );
     writeFileSync(join(caseDir, "state.diff"), diff);
+    if (step.captureStateFull) {
+      writeFileSync(join(caseDir, "state-full.md"), stateAfter);
+    }
 
     const auditDelta = after.audit.slice(before.audit.length);
     writeFileSync(
@@ -635,11 +709,11 @@ function captureCli(
   missing.push({
     id: "set-autonomy/gated",
     reason:
-      "set-autonomy の正常系はピン 3c3146cf では非対話でも対話でも到達できない — intent-create が書く状態ファイルのテンプレートに `- **Construction Autonomy Mode**:` 行が無く、set-autonomy は setFieldStrict で行が無いことを検出して終了コード 1 で止まる",
+      "set-autonomy の正常系はピン 3c3146cf では非対話でも対話でも到達できない — 配布シェルのどの動詞・どの遷移も `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込まないため、setFieldStrict が行の不在を検出して終了コード 1 で止まる。行を手で足せば通るが、それは upstream の挙動ではなく採取者の捏造になる",
     evidence:
-      "aidlc-utility.ts の状態ファイルテンプレートに当該行が無い一方、knowledge/aidlc-shared/state-template.md は当該行を規定している。実測は cli/set-autonomy/state-field-absent",
+      "dist/claude/ 全 262 ファイルの走査結果 (2026-08-29 再確認): (1) 状態ファイルを起こす唯一のテンプレート aidlc-utility.ts:4229 に当該行が無い、(2) setField / setFieldStrict は行が無ければ no-op か throw で挿入しない、(3) 行を挿入できる唯一の関数 setOrInsertField の呼出先は Merge-Held / Skeleton Stance / Construction Iteration / Practices Affirmed Timestamp / Parked / Parked At Stage / Active Unit / Unit State / Unit Pause Reason / Unit Next Action の 10 種のみ、(4) aidlc-state.ts set も setField 経由。当該行を規定しているのは LLM 向けの契約文書 knowledge/aidlc-shared/state-template.md だけで、ツールはこれを読まない。実測は cli/set-autonomy/state-field-absent",
     follow_up:
-      "U7 (CLI ディスパッチャ) でこの upstream の欠落を逸脱台帳と突き合わせ、正常系が必要なら追加採取する",
+      "upstream 側の欠落 (テンプレートと契約文書の食い違い) なので逸脱台帳へ記録する。AUTONOMY_MODE_SET の監査行のフィールドキーはピンのソース (aidlc-bolt.ts の emitAudit 呼出) からしか読めず、実行出力としては採れない。ピン更新時に当該行がテンプレートへ入ったら採り直す",
   });
   missing.push({
     id: "continue/multi-part",

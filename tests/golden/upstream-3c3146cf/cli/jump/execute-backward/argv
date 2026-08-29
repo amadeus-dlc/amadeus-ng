@@ -1,0 +1,11 @@
+[
+  "bun",
+  ".claude/tools/aidlc-jump.ts",
+  "execute",
+  "--target",
+  "workspace-scaffold",
+  "--direction",
+  "backward",
+  "--project-dir",
+  "<ROOT>"
+]

@@ -1,0 +1,13 @@
+{
+  "id": "cli/recompose/skip-two-appends-in-graph-order",
+  "family": "cli",
+  "verb": "recompose",
+  "case": "skip-two-appends-in-graph-order",
+  "description": "既に skip 済みの 4.5 より前の番号 4.3 を含む 2 本を後から skip する。Stages to Skip は既存項目を**その位置のまま**保ち、新規を graph 順で末尾へ足す (4.5 の後に 4.3, 4.7 が並ぶ)。番号順に並べ替えないことがこのケースの主題である",
+  "stdout_kind": "text",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-29T08:12:42Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

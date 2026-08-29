@@ -13,7 +13,7 @@
     "state-transition-guard": "aidlc-state-transition-guard.ts",
     "write-audit-log": "aidlc-write-audit-log.ts"
   },
-  "captured_at": "2026-08-22T13:43:00Z",
+  "captured_at": "2026-08-29T08:12:42Z",
   "command": "bash scripts/goldens/recapture-cli.sh",
   "bun_version": "1.3.13",
   "non_interactive_env": {

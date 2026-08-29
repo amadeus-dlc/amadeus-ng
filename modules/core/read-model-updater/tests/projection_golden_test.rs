@@ -33,9 +33,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, Recomposed,
-    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
-    WorkflowExecutionEvent, WorkspaceScan,
+    GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary,
+    Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
+    Started, WorkflowExecutionEvent, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -240,7 +240,7 @@ fn assert_audit_only(case: &str, event: WorkflowExecutionEvent, state: &str) {
     let outcome = project(&[entry(event)], &plan(), &mut model);
     assert!(
         outcome.is_ok()
-            || matches!(outcome, Err(ref error) if error.to_string() == "scaffold template unavailable"),
+            || matches!(outcome, Err(ref error) if error.to_string() == "scaffold missing"),
         "{case}: 想定外の失敗: {outcome:?}"
     );
     assert_eq!(
@@ -305,6 +305,23 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
 }
 
 #[test]
+fn completing_an_ungated_stage_writes_its_own_details_wording() {
+    // 非ゲートの完了は `Stage <表示名> completed`、ゲート経由は `Stage <表示名> approved by
+    // gate` で文言が割れる（`cli/report/completed-ungated` と `cli/report/approved` の実バイト）。
+    // `- **Active Agent**:` はハンクの外（値が変わらないため差分に写らない）なので補う。
+    // 補った値 `orchestrator` は同じ採取列の `cli/jump/execute-backward` の後断片が示す実値で
+    // あり、投影が次ステージ workspace-detection の担当を書き直した結果と一致するかで検証される。
+    assert_case_with_context(
+        "report/completed-ungated",
+        WorkflowExecutionEvent::StageCompleted(StageCompleted::new(
+            slug("workspace-scaffold"),
+            Some(slug("workspace-detection")),
+        )),
+        "- **Active Agent**: orchestrator\n",
+    );
+}
+
+#[test]
 fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
     assert_case(
         "skip/skipped",
@@ -318,7 +335,9 @@ fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
 
 #[test]
 fn jumping_forward_skips_the_source_and_opens_the_target() {
-    assert_case(
+    // `- **Completed**: 4` は数え直しで、ハンクに写っているのは practices-discovery の 1 本
+    // だけなので initialization 3 本を補う（補い方が正しければ 4 になる — それが検証になる）。
+    assert_case_with_context(
         "jump/execute-forward",
         WorkflowExecutionEvent::Jumped(Jumped::new(
             JumpDirection::Forward,
@@ -327,6 +346,126 @@ fn jumping_forward_skips_the_source_and_opens_the_target() {
             Vec::new(),
             vec![slug("refined-mockups")],
         )),
+        concat!(
+            "### INITIALIZATION PHASE\n",
+            "- [x] workspace-scaffold — EXECUTE\n",
+            "- [x] workspace-detection — EXECUTE\n",
+            "- [x] state-init — EXECUTE\n",
+        ),
+    );
+}
+
+#[test]
+fn jumping_backward_resets_the_downstream_and_hands_the_phase_row_back() {
+    // フェーズ境界をまたぐジャンプの 3 行はゲート経由のものと同型ではない — ジャンプ側だけが
+    // `**Details**:` を持ち、`**Stages completed**:` は数え直しである (ここでは全部 [ ] に
+    // 戻したので 0)。`- **Last Completed Stage**:` は到達点が先頭ステージで手前に完了が無い
+    // ため upstream の既定値 `state-init` になる。
+    assert_case(
+        "jump/execute-backward",
+        WorkflowExecutionEvent::Jumped(Jumped::new(
+            JumpDirection::Backward,
+            slug("domain-design"),
+            slug("workspace-scaffold"),
+            vec![
+                slug("workspace-scaffold"),
+                slug("workspace-detection"),
+                slug("state-init"),
+                slug("practices-discovery"),
+                slug("requirements-analysis"),
+                slug("user-stories"),
+                slug("refined-mockups"),
+                slug("domain-design"),
+            ],
+            Vec::new(),
+        )),
+    );
+}
+
+#[test]
+fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
+    // 前方で境界をまたぐと出発フェーズは `Verified`、飛び越えた ideation は `Skipped` の
+    // ままである (スコープ内ステージが 0 本なので触らない)。`**Stages completed**:` は 1 で、
+    // 直前の [S] 化のあとに残った [x] (workspace-scaffold) 1 本を数えた値でしか説明が付かない。
+    // `stages_skipped` の並びは upstream の emit 順 — 間のステージを順に並べたあと、
+    // **最後に出発点そのもの**が来る。
+    assert_case(
+        "jump/execute-forward-across-phases",
+        WorkflowExecutionEvent::Jumped(Jumped::new(
+            JumpDirection::Forward,
+            slug("workspace-detection"),
+            slug("contract-design"),
+            Vec::new(),
+            vec![
+                slug("state-init"),
+                slug("practices-discovery"),
+                slug("requirements-analysis"),
+                slug("user-stories"),
+                slug("refined-mockups"),
+                slug("domain-design"),
+                slug("units-generation"),
+                slug("workspace-detection"),
+            ],
+        )),
+    );
+}
+
+#[test]
+fn approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan() {
+    // ゲート経由の境界 3 本はジャンプ側と違い `**Details**:` を持たない。`**Stages completed**:`
+    // は 2 で、計画上の inception 内スコープ件数 8 とは一致しない — 倒したあとのチェックボックス
+    // を数えた値だけがこれを説明する。数え直しの材料 (既に [x] の workspace-scaffold) は
+    // ハンクの外なので補う。
+    assert_case_with_context(
+        "report/approved-across-phases",
+        WorkflowExecutionEvent::GateApproved(GateApproved::new(
+            slug("delivery-planning"),
+            Some("A".to_string()),
+            Some(slug("functional-design")),
+            Some(PhaseBoundary::new(
+                PhaseId::Inception,
+                PhaseId::Construction,
+            )),
+        )),
+        "- [x] workspace-scaffold — EXECUTE\n",
+    );
+}
+
+#[test]
+fn recomposing_keeps_existing_skip_entries_where_they_are() {
+    // 既に skip 済みの 4.5 より前の番号 4.3 を後から skip しても、Skip 行は番号順に並べ替え
+    // られない — 既存項目はその位置のまま残り、新規が graph 順で末尾に付く。
+    assert_case(
+        "recompose/skip-two-appends-in-graph-order",
+        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+            vec![slug("deployment-execution"), slug("feedback-optimization")],
+            Vec::new(),
+            (0..22).map(|_| slug("placeholder")).collect(),
+        )),
+    );
+}
+
+#[test]
+fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
+    // `2.1 (reverse-engineering — greenfield)` は注釈ごと消え、2.1 は Execute 行の**末尾では
+    // なく** 0.3 と 2.2 の間へ入る (Execute 行は毎回 graph 順に組み直されるため)。注釈から
+    // slug を取り出せないと項目が落ちずに両方の行へ載る。
+    // 実効計画は行末トークンが正本だが、先行する recompose で SKIP へ倒した 3 本の行は
+    // ハンクの外にある。補う 3 行は同じ採取列の `recompose/skip-one` と
+    // `skip-two-appends-in-graph-order` が示した実バイトそのもので、補い方が正しければ
+    // `- **Total Stages**: 23` に落ちる — それが検証になる。
+    assert_case_with_context(
+        "recompose/add-restores-conditional",
+        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+            Vec::new(),
+            vec![slug("reverse-engineering")],
+            (0..23).map(|_| slug("placeholder")).collect(),
+        )),
+        concat!(
+            "- [ ] deployment-execution — SKIP\n",
+            "- [ ] incident-response — SKIP\n",
+            "- [ ] feedback-optimization — SKIP\n",
+        ),
     );
 }
 
@@ -361,8 +500,10 @@ fn unparking_removes_both_marker_lines() {
 
 #[test]
 fn the_genesis_draws_all_sixteen_initialization_rows() {
-    // 状態面はテンプレート未採取のため未実装（`ScaffoldTemplateUnavailable`）。監査行 16 本は
-    // 計画と走査結果だけから導ける。
+    // 状態面は空の本文へ当てるので `ScaffoldMissing` で止まる — 骨格を書くのは合成ルート
+    // であって投影ではない（オーナー裁定 2026-08-29）。監査行 16 本は計画と走査結果だけから
+    // 導けるので、ここで検収するのは監査面である。骨格の実バイトは同ケースの `state-full.md`
+    // にあり、U7 が骨格を書くときの正本になる。
     assert_audit_only(
         "intent-create/classic-scope",
         WorkflowExecutionEvent::Started(started()),

@@ -4,9 +4,9 @@
   "missing": [
     {
       "id": "set-autonomy/gated",
-      "reason": "set-autonomy の正常系はピン 3c3146cf では非対話でも対話でも到達できない — intent-create が書く状態ファイルのテンプレートに `- **Construction Autonomy Mode**:` 行が無く、set-autonomy は setFieldStrict で行が無いことを検出して終了コード 1 で止まる",
-      "evidence": "aidlc-utility.ts の状態ファイルテンプレートに当該行が無い一方、knowledge/aidlc-shared/state-template.md は当該行を規定している。実測は cli/set-autonomy/state-field-absent",
-      "follow_up": "U7 (CLI ディスパッチャ) でこの upstream の欠落を逸脱台帳と突き合わせ、正常系が必要なら追加採取する"
+      "reason": "set-autonomy の正常系はピン 3c3146cf では非対話でも対話でも到達できない — 配布シェルのどの動詞・どの遷移も `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込まないため、setFieldStrict が行の不在を検出して終了コード 1 で止まる。行を手で足せば通るが、それは upstream の挙動ではなく採取者の捏造になる",
+      "evidence": "dist/claude/ 全 262 ファイルの走査結果 (2026-08-29 再確認): (1) 状態ファイルを起こす唯一のテンプレート aidlc-utility.ts:4229 に当該行が無い、(2) setField / setFieldStrict は行が無ければ no-op か throw で挿入しない、(3) 行を挿入できる唯一の関数 setOrInsertField の呼出先は Merge-Held / Skeleton Stance / Construction Iteration / Practices Affirmed Timestamp / Parked / Parked At Stage / Active Unit / Unit State / Unit Pause Reason / Unit Next Action の 10 種のみ、(4) aidlc-state.ts set も setField 経由。当該行を規定しているのは LLM 向けの契約文書 knowledge/aidlc-shared/state-template.md だけで、ツールはこれを読まない。実測は cli/set-autonomy/state-field-absent",
+      "follow_up": "upstream 側の欠落 (テンプレートと契約文書の食い違い) なので逸脱台帳へ記録する。AUTONOMY_MODE_SET の監査行のフィールドキーはピンのソース (aidlc-bolt.ts の emitAudit 呼出) からしか読めず、実行出力としては採れない。ピン更新時に当該行がテンプレートへ入ったら採り直す"
     },
     {
       "id": "continue/multi-part",

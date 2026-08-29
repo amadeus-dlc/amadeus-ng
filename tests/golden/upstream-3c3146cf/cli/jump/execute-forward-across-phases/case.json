@@ -1,0 +1,13 @@
+{
+  "id": "cli/jump/execute-forward-across-phases",
+  "family": "cli",
+  "verb": "jump",
+  "case": "execute-forward-across-phases",
+  "description": "フェーズ境界をまたぐ前方ジャンプ。既存の前方 2 ケースはどちらも inception 内で完結するため、前方の PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED はこのケースが初出",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-29T08:12:42Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

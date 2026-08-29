@@ -278,6 +278,16 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
     domain が完成文言を運んでいた）を是正 — `InvalidModeArg` は材料（与えられた値）だけを
     運び、文言は境界が組む（error-handling.md どおり）。`modules/shared` ディレクトリは消滅し、
     共有層は `core-infrastructure` のみになった。
+  - **2026-08-29 改訂 4（オーナー裁定 A — 骨格生成は投影の責務外、Bolt B10）**: 状態ファイル
+    骨格 102 行の全数照合で、ジャーナルから導けない材料が 4 行あることが確定した（決定打は
+    `- **Project Root**:` = ワークツリー絶対パスという**環境値**）。よって genesis の骨格は
+    projection ではなく **intent-create 時の環境成果物**であり、書くのは環境と両側を知って
+    よい唯一の場所 = **合成ルート（U7）**の仕事とする（骨格の正本は採取済みゴールデン
+    `cli/intent-create/classic-scope/state-full.md` の 102 行）。RMU は**既存本文への差分適用に
+    徹し**、骨格が無い状態は `ProjectionError::ScaffoldMissing` で前提違反として止める。
+    **NFR3 の適用範囲を明文化**: 冪等再構成の対象は差分適用であり、骨格は環境成果物
+    （状態ファイル全損時は upstream 同様 archive & recreate の運用）。`Started` の payload は
+    拡張しない（環境パスをドメインイベントへ載せる案は ADR-008 / NFR3 の趣旨に反し不採）。
   - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
     `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
     （C6 の 3 表）が 1 箇所に残るので重複しない。

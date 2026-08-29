@@ -54,6 +54,11 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 
 ### 2.3 ドメインサービス（純関数）
 
+**骨格生成は投影の責務外**（2026-08-29 / Bolt B10 オーナー裁定 A）: genesis の状態ファイル骨格
+102 行は環境値（Project Root 等）を含みジャーナルから導けないため、書くのは合成ルート（U7）で
+あり、投影（RMU）は既存本文への差分適用に徹する（骨格欠落は `ScaffoldMissing` で前提違反）。
+NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物（全損時は archive & recreate）。
+
 本節の純関数のうち、**状態ファイル・監査ブロックの描画**にあたるもの（`render_audit_block` / `state_writers`）は、ES 化により**投影の責務**へ移る — 描くのは ReadModelUpdater（U4）であって、ドメイン層ではない（ADR-003 / ADR-004。~~コードの移動は U4 の Bolt で実施する~~ → **実施済み（2026-08-29 / Bolt B8 — `core-read-model-updater`（中間クレート。旧称 ~~`core-query-read-model-updater`~~、同日中に是正）の投影 API へ転居）**）。ドメインに残るのは値オブジェクトの Always Valid 検証（`StateFieldValue` の単一行検査、`EventType` の閉集合、行終端エスケープによる行偽造不能性）と、集約に置けない横断の判断である（01 §7.1 原則 2）。~~`find_all_events`（他クローンのシャード横断読取）と `classify_state_version` は本コンテキストに残る。~~ → **分割（2026-08-29 / Bolt B8）**: `find_all_events` は責務が割れた。**ドメインに残るのは順序付けの純関数のみ**（timestamp ソート＋バッファ位置 tiebreak を、渡された行列に適用する。実装は `core_command_domain::workspace` — ドメインはコマンド側の持ち物、`coding-rules/cqrs-boundaries.md`）。**シャード列挙とファイル読取（I/O）は投影側（中間クレート `core-read-model-updater` の `workspace/audit_shard.rs::read_all`）へ移った** — 11-workspace が「domain に残す」としていた記述と unit-of-work.md U4 の「横断読取は U4 の責務」を、純関数とその I/O 呼び出し元とに分けて両立させた（`construction/u4-read-model-updater/developer-report-1.md` §7-7）。`classify_state_version` は本コンテキストに残る（純関数・I/O 無し）。
 
 | サービス | 内容 |

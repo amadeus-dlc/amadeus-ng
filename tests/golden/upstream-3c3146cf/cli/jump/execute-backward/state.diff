@@ -1,0 +1,84 @@
+--- aidlc-state.md (before)
++++ aidlc-state.md (after)
+@@ -6,7 +6,7 @@
+ - **Scope**: classic
+ - **Start Date**: <TS>
+ - **State Version**: 8
+-- **Active Agent**: aidlc-architect-agent
++- **Active Agent**: orchestrator
+ - **Worktree Path**:
+ - **Bolt Refs**:
+ - **Practices Affirmed Timestamp**: <TS>
+@@ -26,8 +26,8 @@
+ 
+ ## Execution Plan Summary
+ - **Total Stages**: 24
+-- **Completed**: 4
+-- **In Progress**: domain-design
++- **Completed**: 0
++- **In Progress**: workspace-scaffold
+ 
+ ## Runtime State
+ - **Revision Count**: 1
+@@ -35,9 +35,9 @@
+ ## Phase Progress
+ <!-- Status values: Pending, Active, Verified, Skipped -->
+ 
+-- **Initialization**: Verified
++- **Initialization**: Active
+ - **Ideation**: Skipped
+-- **Inception**: Active
++- **Inception**: Pending
+ - **Construction**: Pending
+ - **Operation**: Pending
+ 
+@@ -45,9 +45,9 @@
+ <!-- Checkbox states: [ ] not started, [-] in progress, [?] awaiting approval (gate open), [R] revising (user rejected gate), [x] completed, [S] skipped via --stage/--phase jump -->
+ 
+ ### INITIALIZATION PHASE
+-- [x] workspace-scaffold — EXECUTE
+-- [x] workspace-detection — EXECUTE
+-- [x] state-init — EXECUTE
++- [-] workspace-scaffold — EXECUTE
++- [ ] workspace-detection — EXECUTE
++- [ ] state-init — EXECUTE
+ 
+ ### IDEATION PHASE
+ - [ ] intent-capture — SKIP
+@@ -60,11 +60,11 @@
+ 
+ ### INCEPTION PHASE
+ - [ ] reverse-engineering — SKIP
+-- [x] practices-discovery — EXECUTE
+-- [S] requirements-analysis — EXECUTE
+-- [S] user-stories — EXECUTE
+-- [S] refined-mockups — EXECUTE
+-- [-] domain-design — EXECUTE
++- [ ] practices-discovery — EXECUTE
++- [ ] requirements-analysis — EXECUTE
++- [ ] user-stories — EXECUTE
++- [ ] refined-mockups — EXECUTE
++- [ ] domain-design — EXECUTE
+ - [ ] units-generation — EXECUTE
+ - [ ] contract-design — EXECUTE
+ - [ ] delivery-planning — EXECUTE
+@@ -89,14 +89,14 @@
+ - [ ] feedback-optimization — EXECUTE
+ 
+ ## Current Status
+-- **Lifecycle Phase**: INCEPTION
+-- **Current Stage**: domain-design
+-- **Next Stage**: units-generation
++- **Lifecycle Phase**: INITIALIZATION
++- **Current Stage**: workspace-scaffold
++- **Next Stage**: workspace-detection
+ - **Status**: Running
+ - **Last Updated**: <TS>
+ 
+ ## Session Resume Point
+-- **Last Completed Stage**: practices-discovery
+-- **Next Action**: Execute Domain Design
++- **Last Completed Stage**: state-init
++- **Next Action**: Execute Workspace Scaffold
+ - **Pending Artifacts**: none
+ 

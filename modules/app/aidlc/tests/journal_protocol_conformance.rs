@@ -385,6 +385,7 @@ fn synthetic_state_file() -> String {
     out.push_str(
         "\n\
          ## Current Status\n\
+         - **Lifecycle Phase**: INITIALIZATION\n\
          - **Current Stage**: stage-0\n\
          - **Next Stage**: stage-1\n\
          \n\
