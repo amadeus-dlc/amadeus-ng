@@ -1,0 +1,42 @@
+[package]
+name = "core-read-model-updater"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# ドメインイベント・集約識別子・ストアの場所。ドメインは**コマンド側の持ち物**であって共有層
+# ではないが、RMU は**中間** — どちらの側でもなく、コマンド側にもクエリ側にも依存できる唯一の
+# クレート — なので書いてよい (2026-08-24 原裁定 / 2026-08-29 是正、
+# `coding-rules/cqrs-boundaries.md` 判定表)。将来のクエリ側クレート (リードモデル読取・
+# クエリ API 層) にはこの依存を書けない。
+core-command-domain = { workspace = true }
+# 監査行の見出し 86 語 (Published Language — C5 の逐語表)。
+audit-events = { workspace = true }
+message-catalog = { workspace = true }
+# 投影ライタのアトミック書込 (tmp+rename) と fs メタデータ。
+core-infrastructure = { workspace = true }
+# 本家のジャーナルを横断で読む自前の別接続 (`JournalReaderImpl` — ADR-010 決定 4)。
+# ジャーナルを読むことが RMU の仕事そのものであり、SQLite 依存は RMU の本質的な結合である
+# (2026-08-29 オーナー裁定)。
+rusqlite = { workspace = true }
+# 本家の既定シリアライザ (`serde_json::to_vec`) が書いた payload を素の serde で戻す。
+serde_json = { workspace = true }
+# 読取レコード (`JournalEntry`) が運ぶ発生時刻 (`DateTime<Utc>` — ADR-010)。
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+# ゴールデン逐語一致テストが監査行の見出し 86 語を引く。
+audit-events = { workspace = true }
+# 非同期ポート (AFIT) のテストを回す current_thread ランタイム (C3 / Q3 = A)。
+tokio = { workspace = true }
+# ジャーナル行の作り手は本家のイベントストアである。テストが読む行を「本家が実際に書いた
+# 行」で用意するために dev-dependency として引く — 本家スキーマへのピン留めガードは、
+# 実物の DDL を観測しなければ意味を持たない。コマンド側クレートではないので CQRS 境界の
+# 禁止事項には当たらない (`coding-rules/cqrs-boundaries.md` の判定は相手が「側」かどうか)。
+event-store-adapter-rs = { workspace = true, features = ["sqlite"] }

@@ -138,8 +138,25 @@ compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互
 > 出典: [`developer-report-1.md`](../../construction/esa-v3-migration/developer-report-1.md) §2
 > 裁定 4/6。
 
+> **2026-08-29 追記（Bolt B8 — 側分割 crate 改名 + RMU への移動完了。同日 2 回目の是正を in-place 反映）**:
+> `core-use-case` は **`core-command-use-case`** へ改名し、`core-interface-adapter` は
+> **`core-command-interface-adapter`** へ改名した（`core-command-` 接頭辞 — オーナー裁定
+> 2026-08-29）。2026-08-28 裁定で予告した「`JournalReader` と読取側語彙（`ProjectionName` /
+> `GlobalSeqNr` / `JournalReadError`）を RMU クレートへ移す」移動は完了し、`JournalReaderImpl` を
+> 含む読取側の実装一式は **`core-read-model-updater`**（旧称 ~~`core-query-read-model-updater`~~ —
+> 同日中に是正、U4）が単独で所有する。**RMU はコマンド側でもクエリ側でもない「中間」**であり、
+> コマンド側のドメインイベントにもクエリ側（将来のリードモデル読取・クエリ API 層）にも
+> 依存できる（`coding-rules/cqrs-boundaries.md`、ADR-009 2026-08-29 改訂 2）。
+> `WorkflowExecutionRepository` の所有は引き続き `core-command-use-case`、実装
+> `WorkflowExecutionRepositoryImpl` は `core-command-interface-adapter`。コマンド側クレートの
+> `Cargo.toml` に RMU・クエリ側クレートは現れない（相互独立が物理強制 —
+> [`crate-structure-proposal.md`](../../construction/u4-read-model-updater/crate-structure-proposal.md) §2）。
+> 出典: [`developer-report-1.md`](../../construction/u4-read-model-updater/developer-report-1.md) §1・§2
+> 裁定 2、[`developer-report-2.md`](../../construction/u4-read-model-updater/developer-report-2.md) §1
+> （~~`core-query-read-model-updater`~~ → `core-read-model-updater` 改名）。
+
 ```rust
-// core-use-case（U5/U6 が所有、U3 が準拠）
+// core-command-use-case（旧 core-use-case。U5/U6 が所有、U3 が準拠 — 2026-08-29 / Bolt B8 で改名）
 pub trait WorkflowExecutionRepository {
     /// 集約を再水和する。最新スナップショット + seq_nr 以降のイベントを replay。
     /// # Errors
@@ -173,7 +190,8 @@ pub trait WorkflowExecutionRepository {
 //   S = EventStoreForSqlite | EventStoreForMemory を選ぶ（借り物の契約は 1 文字も変えない —
 //   coding-rules/upstream-contracts.md）。
 
-// 読取側（U4 が使う差分読取 — C6 の上に立つ。U3 所有の trait、`core-use-case` に置く）
+// 読取側（U4 が使う差分読取 — C6 の上に立つ。~~U3 所有の trait、`core-use-case` に置く~~ →
+// 実施済み（2026-08-29 / Bolt B8）: `core-read-model-updater`（中間クレート、U4）が単独で所有）
 // 本家のイベントストアは集約単位の読み書きだけを担うので、全集約横断の順序読取と投影の
 // チェックポイントは我々が持ち続ける（ADR-010 決定 4）。
 // （2026-08-27 改訂: エラー型を EventStoreError → JournalReadError に改名・3 変種化。
@@ -257,6 +275,18 @@ EVENT_HEADINGS / FIELD_ORDER（audit-events クレート、86 語）に従う。
 > payload JSON に seq_nr / occurred_at / schema_version / aggregate_id / manifest のいずれも
 > 現れないことを固定する。投影規則（`projects_to`）と監査行の逐語性は不変。
 
+> **2026-08-29 追記（Bolt B8 — `Started` payload 拡張、ADR-008 追記・オーナー裁定 A）**:
+> `StageEntry`（`stages` の要素）に表示属性 `StageDisplay`（ステージ番号・表題・担当エージェント名）を
+> 追加。`Started` 自体に走査結果 `WorkspaceScan`（プロジェクト種別・言語・フレームワーク・
+> ビルドシステム）を追加。理由は監査シャードの逐語互換（FR1.1）— 投影がジャーナルだけで
+> `STAGE_STARTED` の `**Agent**:` 行や状態ファイルのステージ表題・番号を再現するには、定義解決
+> 時点の観測事実をイベントへ焼き込む必要がある。ADR-008 の「定義の詳細を複製しない」への
+> 限定的な例外（表示属性・走査結果に限る。定義全体の複製は引き続き禁止）。差分投影への計画の
+> 供給はイベントを太らせず `ResolvedPlan` を投影核の引数とする（取得ループが初回にジャーナル
+> 先頭から控える）。下記 yaml の `Started` payload 行に追記する。
+> 出典: [`decisions.md`](../domain-design/decisions.md) ADR-008 追記 2026-08-29、
+> [`developer-report-1.md`](../../construction/u4-read-model-updater/developer-report-1.md) §6。
+
 ```yaml
 asyncapi-like: workflow-execution-events
 schema_version: 1                      # 予約。追加フィールドは消費側が無視（additive-safe）
@@ -265,7 +295,7 @@ envelope: { id: { intent_id, seq_nr }, occurred_at, schema_version, payload }
 events:
   - name: Started
     command: start (intent-create)
-    payload: { definition_id, definition_revision, scope, request, stages, depth, test_strategy }   # 2026-08-23: definition_id / definition_revision を追加（ADR-008、U2 BR2.6）。stages_in_scope（list<StageSlug>）→ stages（list<StageEntry> = slug + phase + plan_action + conditional、文書順の全ステージ）に改名・型変更 — U2 実装（Bolt B3）の `Started::stages()` と一致させた。in-scope の集合は各 StageEntry の plan_action = EXECUTE から導く
+    payload: { definition_id, definition_revision, scope, request, stages, depth, test_strategy, scan }   # 2026-08-23: definition_id / definition_revision を追加（ADR-008、U2 BR2.6）。stages_in_scope（list<StageSlug>）→ stages（list<StageEntry> = slug + phase + plan_action + conditional、文書順の全ステージ）に改名・型変更 — U2 実装（Bolt B3）の `Started::stages()` と一致させた。in-scope の集合は各 StageEntry の plan_action = EXECUTE から導く。2026-08-29 / Bolt B8（ADR-008 追記・裁定 A）: 各 StageEntry にフィールド `display`（`StageDisplay` = ステージ番号・表題・担当エージェント名）を追加、`scan`（`WorkspaceScan` — プロジェクト種別・言語・フレームワーク・ビルドシステム）をトップレベルに追加（フィールド名は実装 `modules/core/command/domain/src/orchestration/{stage_entry,workflow_execution_event}.rs` と一致。旧パス `modules/core/domain/` は同日中に `modules/core/command/domain/` へ改名済み — developer-report-2.md §1）
     projects_to:
       audit: [WORKFLOW_STARTED, PHASE_STARTED(initialization), STAGE_STARTED×3 + STAGE_COMPLETED×3（init 3 stage）, PHASE_SKIPPED（scope 外 phase）]
       state: 全フィールド初期化（Project Information / Scope Configuration / Stage Progress / Current Status）
@@ -330,7 +360,10 @@ rules:
 > → **失効**（本家は `user_version` を使わない。`EventStoreError::Schema` 変種も削除）。代替は
 > **バージョンの完全固定（`event-store-adapter-rs = "=2.0.0"`）＋ スキーマガードテスト**で、
 > `journal` の DDL と一意索引の SQL 文字列を実測と突き合わせ、本家スキーマが変わったら明示的に落ちる
-> （`modules/core/interface-adapter/src/orchestration/journal_reader_impl.rs` の
+> （~~`modules/core/interface-adapter/src/orchestration/journal_reader_impl.rs`~~ →
+> **失効（2026-08-29 / Bolt B8）**: `modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs`
+> （中間クレート `core-read-model-updater` へ移動。当日中に ~~`core-query-read-model-updater`~~ から
+> 再改名済み — developer-report-2.md §1）の
 > `the_upstream_journal_schema_is_the_pinned_one` / `the_journal_table_keeps_a_rowid_so_the_cursor_is_well_defined`）。
 > ~~スナップショット payload の値域検査（JSON の正確整数域 2^53 を超える値を拒否）~~ → **失効**
 > （検査を担っていたワイヤ構造体ごと削除。ストアファイルは upstream 非観測なので互換上の実害は無い）。
@@ -432,7 +465,7 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
 | ~~C3~~ | ~~`EventStore` trait のジェネリクス境界（`AID: Clone + Eq`, `E: Serialize` 等）と `EventStoreError` の変種 — event-store-adapter-rs の同形性をどこまで取るか~~ → **解決（2026-08-27 / ADR-010）**: 同形性を取るのではなく**本家 crate に直接依存して実装する**（Conformist）。境界もエラー型も本家のものをそのまま受け入れる | — |
 | C3 / C6 | `within_write_transaction`（登録簿 `intents.json` の read-modify-write を Tx で守る口）は**削除済み** — 本家は接続も Tx も露出しないため実現できない。ADR-010 は「登録簿を SQLite へ移す」を筋と書いているが、**U7 で裁定**する（本 Bolt では未決） | U7 |
 | C6 | `busy_timeout` を本家のイベントストア接続に設定できない（我々の `JournalReader` 側の接続には 5000ms を設定済み）。別プロセスの並行書込は待たずに `SQLITE_BUSY` になる。単一プロセス前提の現状は受容し、**U7 の並行モデルと併せて再裁定**する（本 Bolt では未決） | U7 |
-| C5 | `Started` の投影（init 3 stage の STAGE_STARTED/COMPLETED をどこまで 1 イベントに含めるか）と `GateApproved` の phase 境界（PHASE_VERIFIED の要否）の厳密な行順 | U4（投影規則）、U1（ゴールデン） |
+| C5 | ~~`Started` の投影（init 3 stage の STAGE_STARTED/COMPLETED をどこまで 1 イベントに含めるか）の厳密な行順~~ → **B8 で確定（2026-08-29）**: 16 行、`cli/intent-create/classic-scope` ゴールデンが正本（`tests/projection_golden_test.rs`）。`GateApproved` の phase 境界（PHASE_VERIFIED の要否）の厳密な行順は依然未解決 | U4（投影規則）、U1（ゴールデン） |
 | C5 | `Jumped` イベントのペイロード（reset/skip 集合をイベントに含めるか、適用時に再計算するか） | U2 |
 | C6 | `projection` の名前集合（state-file / audit-shard の 2 つで足りるか、シャード別にするか） | U4 |
 

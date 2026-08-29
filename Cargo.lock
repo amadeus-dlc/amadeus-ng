@@ -15,8 +15,17 @@ dependencies = [
 name = "aidlc"
 version = "0.1.0"
 dependencies = [
- "core-interface-adapter",
- "infra-io",
+ "chrono",
+ "core-command-domain",
+ "core-command-interface-adapter",
+ "core-command-use-case",
+ "core-infrastructure",
+ "core-read-model-updater",
+ "event-store-adapter-rs",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -133,7 +142,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "core-domain"
+name = "core-command-domain"
 version = "0.1.0"
 dependencies = [
  "audit-events",
@@ -148,23 +157,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "core-foundation-sys"
-version = "0.8.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
-
-[[package]]
-name = "core-interface-adapter"
+name = "core-command-interface-adapter"
 version = "0.1.0"
 dependencies = [
  "audit-events",
  "canon-json",
  "chrono",
- "core-domain",
- "core-use-case",
+ "core-command-domain",
+ "core-command-use-case",
+ "core-infrastructure",
  "directive-schema",
  "event-store-adapter-rs",
- "infra-io",
  "message-catalog",
  "rusqlite",
  "serde",
@@ -174,13 +177,42 @@ dependencies = [
 ]
 
 [[package]]
-name = "core-use-case"
+name = "core-command-use-case"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "core-command-domain",
+ "tokio",
+]
+
+[[package]]
+name = "core-foundation-sys"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+
+[[package]]
+name = "core-infrastructure"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nix",
+ "tempfile",
+]
+
+[[package]]
+name = "core-read-model-updater"
 version = "0.1.0"
 dependencies = [
  "audit-events",
  "chrono",
- "core-domain",
- "directive-schema",
+ "core-command-domain",
+ "core-infrastructure",
+ "event-store-adapter-rs",
+ "message-catalog",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -345,8 +377,12 @@ dependencies = [
 name = "harness-claude"
 version = "0.1.0"
 dependencies = [
- "core-interface-adapter",
+ "core-command-interface-adapter",
 ]
+
+[[package]]
+name = "harness-infrastructure"
+version = "0.1.0"
 
 [[package]]
 name = "hashbrown"
@@ -407,15 +443,6 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
-]
-
-[[package]]
-name = "infra-io"
-version = "0.1.0"
-dependencies = [
- "libc",
- "nix",
- "tempfile",
 ]
 
 [[package]]

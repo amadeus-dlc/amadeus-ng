@@ -9,4 +9,4 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-core-interface-adapter = { workspace = true }
+core-command-interface-adapter = { workspace = true }

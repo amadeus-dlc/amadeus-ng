@@ -172,6 +172,17 @@
   する*: ピンはデータに含まれず（`stage-graph.json` に version 無し）、テストシームのローカル差し替えを
   区別できない。*ID なしのまま `find()` を維持*: エンティティに ID が無い現状の温存。
 
+- **追記 2026-08-29（Bolt B8 — 解決済み計画の表示属性は例外、オーナー裁定）**: 「定義の詳細を
+  イベントへ複製しない」に限定的な例外を設ける。監査シャードの逐語互換（FR1.1）に必要な
+  **表示属性 3 値**（ステージ番号・表題・担当エージェント名 — `StageDisplay`）と**走査結果**
+  （`WorkspaceScan`）は、`WorkflowExecution::start` が計画を解決する時点の**観測事実**として
+  `Started` イベントへ焼き込む。理由は NFR3（クラッシュ再構成）: 投影が定義ファイルを引く形だと、
+  定義が後から編集されたとき過去イベントの再生が当時と同じ行を描けない。ジャーナルだけで
+  リードモデルを完全復元できることを優先した。**定義全体（グラフ構造・依存・センサー等）の複製は
+  引き続き禁止** — 例外は解決済み計画の表示属性と走査結果に限る。差分投影への計画の供給は
+  イベントを太らせず `ResolvedPlan` を投影核の引数とする（取得ループが初回にジャーナル先頭から
+  控える — 実装の詳細は `construction/u4-read-model-updater/developer-report-1.md` §6）。
+
 ## ADR ステータス注記
 
 初版の ADR-001〜006（WAL + 同期プロジェクション時代）は本改訂版が**全面的に置き換える**。
@@ -234,6 +245,28 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
        実装するか、クエリ側アダプタへ移すか）は **U4 機能設計で裁定**する。従来のアダプタ分割
        却下理由（C6 の 3 表定義の所在）は ADR-010 で失効済み — 我々が定義する表は
        `amadeus_projection_checkpoint` 1 表のみ。
+  - **2026-08-29 改訂（オーナー裁定 — 層の側分割）**: 上の 4.（`JournalReaderImpl` の
+    置き場所）は確定した — **RMU クレートに置く**（ジャーナルを読むことが RMU の仕事
+    そのもの）。さらに「そもそも interface-adapter / use-case はコマンド側とクエリ側に
+    分割する」の裁定により、本 ADR の「アダプタは 1 クレートのまま」も失効: クレートは
+    `core-domain`（共有）/ `core-command-use-case` / `core-command-interface-adapter` /
+    `core-query-read-model-updater`（クエリ側の全実体 — 読取語彙・SQLite 読取実装・
+    取得ループ・純粋投影核・投影ライタ）となり、命名は `core-{command,query}-` 接頭辞で
+    統一する。両側を知ってよいのは合成ルート（U7）だけ。共有部品の行き先: エラー分類と
+    I/O 写像は側ごとに専用化、`StorePath` と直列化型判別子（manifest 定数）は
+    `core-domain` へ（詳細は `construction/u4-read-model-updater/crate-structure-proposal.md`）。
+    実施は B8。
+  - **2026-08-29 改訂 2（オーナー裁定 — ドメインはコマンド側・RMU は中間）**: (1)
+    `modules/core/domain` は **`modules/core/command/domain`（`core-command-domain`）へ移動** —
+    ドメインは**コマンド側の持ち物**。(2) **クエリ側のクレートはドメインに絶対依存しない**
+    （将来のリードモデル読取・クエリ API 層への恒久制約）。(3) **RMU はコマンド側でも
+    クエリ側でもない「中間」**であり、**コマンド側のドメインイベントにもクエリ側にも依存できる**
+    — 2026-08-24 原裁定の再確認。したがって RMU クレートは `core-query-` 接頭辞を外し
+    **`core-read-model-updater`（`modules/core/read-model-updater`）** とする。
+    ※ この項の初稿は委任者（AI）が「RMU = クエリ側」という自案のラベルを裁定に混入させ、
+    「RMU からドメイン依存を除去し wire を自前 parse」まで誤導出していた。オーナーの是正
+    （「この時点で RMU の話一切してないのに、勝手に RMU の話持ち出すな」）を受けて本文へ
+    差し替えた。B8 実装（RMU がドメインイベント型に依存）は手戻り不要で正しい。
   - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
     `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
     （C6 の 3 表）が 1 箇所に残るので重複しない。

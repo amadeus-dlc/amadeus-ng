@@ -1,0 +1,27 @@
+[package]
+name = "core-command-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+audit-events = { workspace = true }
+directive-schema = { workspace = true }
+message-catalog = { workspace = true }
+# ADR-010: 集約・ドメインイベント・集約識別子が本家の trait を直接実装する (Conformist、
+# 腐敗防止層なし)。本家の trait 境界が `Serialize` / `Deserialize` / `DateTime<Utc>` を
+# 要求するため、serde と chrono もドメイン層の依存になる。
+event-store-adapter-rs = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
+# 本家 memory バックエンドへの永続化・再構成を実際に走らせる適合テスト用
+# (`tests/upstream_event_store_conformance.rs`)。本家の `EventStore` は async trait である。
+tokio = { workspace = true, features = ["rt", "macros"] }

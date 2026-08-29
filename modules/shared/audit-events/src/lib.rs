@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 macro_rules! event_types {
-    ($( $cat:ident { $( $name:ident = $s:literal ),+ $(,)? } )+) => {
+    ($( $cat:ident { $( $name:ident = $s:literal => $h:literal ),+ $(,)? } )+) => {
         /// 22 カテゴリ (audit-format.md と厳密一致)。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum EventCategory { $(
@@ -49,97 +49,111 @@ macro_rules! event_types {
             pub const fn category(self) -> EventCategory {
                 match self { $( $( EventType::$name => EventCategory::$cat, )+ )+ }
             }
+
+            /// 監査ブロックの `## ` 見出しに書く逐語文字列 (upstream `EVENT_HEADINGS`)。
+            ///
+            /// **語形はワイヤ綴りから機械変換できない** — `STAGE_COMPLETED` は
+            /// `Stage Completion` (名詞化) なのに `UNIT_COMPLETED` は `Unit Completed`
+            /// (過去分詞) であり、`RECOMPOSED` にいたっては語幹に無い語が付いて
+            /// `Plan Recomposed` になる。したがって 86 件は 1 件ずつ逐語で持つ。
+            ///
+            /// upstream の `EVENT_HEADINGS[x] || x` というフォールバックはここには無い —
+            /// 閉集合の 86 語すべてに見出しがあり (実測)、`EventType` は閉集合なので、
+            /// フォールバックが要る「非 taxonomy 名」はそもそも構成できない。
+            pub const fn heading(self) -> &'static str {
+                match self { $( $( EventType::$name => $h, )+ )+ }
+            }
         }
     };
 }
 
 event_types! {
     WorkflowLifecycle {
-        WorkflowStarted = "WORKFLOW_STARTED", WorkflowCompleted = "WORKFLOW_COMPLETED",
-        WorkflowParked = "WORKFLOW_PARKED", WorkflowUnparked = "WORKFLOW_UNPARKED",
+        WorkflowStarted = "WORKFLOW_STARTED" => "Workflow Start", WorkflowCompleted = "WORKFLOW_COMPLETED" => "Workflow Completion",
+        WorkflowParked = "WORKFLOW_PARKED" => "Workflow Parked", WorkflowUnparked = "WORKFLOW_UNPARKED" => "Workflow Unparked",
     }
     PhaseLifecycle {
-        PhaseStarted = "PHASE_STARTED", PhaseCompleted = "PHASE_COMPLETED",
-        PhaseVerified = "PHASE_VERIFIED", PhaseSkipped = "PHASE_SKIPPED",
+        PhaseStarted = "PHASE_STARTED" => "Phase Start", PhaseCompleted = "PHASE_COMPLETED" => "Phase Completion",
+        PhaseVerified = "PHASE_VERIFIED" => "Phase Verification", PhaseSkipped = "PHASE_SKIPPED" => "Phase Skip",
     }
     StageLifecycle {
-        StageStarted = "STAGE_STARTED", StageAwaitingApproval = "STAGE_AWAITING_APPROVAL",
-        StageRevising = "STAGE_REVISING", StageCompleted = "STAGE_COMPLETED",
-        StageJumped = "STAGE_JUMPED", StageSkipped = "STAGE_SKIPPED",
+        StageStarted = "STAGE_STARTED" => "Stage Start", StageAwaitingApproval = "STAGE_AWAITING_APPROVAL" => "Stage Awaiting Approval",
+        StageRevising = "STAGE_REVISING" => "Stage Revising", StageCompleted = "STAGE_COMPLETED" => "Stage Completion",
+        StageJumped = "STAGE_JUMPED" => "Stage Jump", StageSkipped = "STAGE_SKIPPED" => "Stage Skip",
     }
     Session {
-        SessionStarted = "SESSION_STARTED", SessionResumed = "SESSION_RESUMED",
-        SessionCompacted = "SESSION_COMPACTED", SessionEnded = "SESSION_ENDED",
-        HumanTurn = "HUMAN_TURN",
+        SessionStarted = "SESSION_STARTED" => "Session Start", SessionResumed = "SESSION_RESUMED" => "Session Resume",
+        SessionCompacted = "SESSION_COMPACTED" => "Session Compacted", SessionEnded = "SESSION_ENDED" => "Session End",
+        HumanTurn = "HUMAN_TURN" => "Human Turn",
     }
     Initialization {
-        WorkspaceScaffolded = "WORKSPACE_SCAFFOLDED", WorkspaceScanned = "WORKSPACE_SCANNED",
-        WorkspaceInitialised = "WORKSPACE_INITIALISED",
+        WorkspaceScaffolded = "WORKSPACE_SCAFFOLDED" => "Workspace Scaffolded", WorkspaceScanned = "WORKSPACE_SCANNED" => "Workspace Scanned",
+        WorkspaceInitialised = "WORKSPACE_INITIALISED" => "Workspace Initialised",
     }
     Navigation {
-        ScopeChanged = "SCOPE_CHANGED", PluginSelectionChanged = "PLUGIN_SELECTION_CHANGED",
-        DepthChanged = "DEPTH_CHANGED", TestStrategyChanged = "TEST_STRATEGY_CHANGED",
-        ReviewClassChanged = "REVIEW_CLASS_CHANGED", ScopeDetected = "SCOPE_DETECTED",
-        Recomposed = "RECOMPOSED",
+        ScopeChanged = "SCOPE_CHANGED" => "Scope Change", PluginSelectionChanged = "PLUGIN_SELECTION_CHANGED" => "Plugin Selection Change",
+        DepthChanged = "DEPTH_CHANGED" => "Depth Change", TestStrategyChanged = "TEST_STRATEGY_CHANGED" => "Test Strategy Change",
+        ReviewClassChanged = "REVIEW_CLASS_CHANGED" => "Review Class Change", ScopeDetected = "SCOPE_DETECTED" => "Scope Detection",
+        Recomposed = "RECOMPOSED" => "Plan Recomposed",
     }
     Interaction {
-        DecisionRecorded = "DECISION_RECORDED", GateApproved = "GATE_APPROVED",
-        GateRejected = "GATE_REJECTED", QuestionAnswered = "QUESTION_ANSWERED",
-        SummaryConfirmationRecorded = "SUMMARY_CONFIRMATION_RECORDED",
-        ReviewRequested = "REVIEW_REQUESTED", ReviewCompleted = "REVIEW_COMPLETED",
-        PipelineLinkCompleted = "PIPELINE_LINK_COMPLETED",
+        DecisionRecorded = "DECISION_RECORDED" => "Decision Recorded", GateApproved = "GATE_APPROVED" => "Gate Approved",
+        GateRejected = "GATE_REJECTED" => "Gate Rejected", QuestionAnswered = "QUESTION_ANSWERED" => "Question Answered",
+        SummaryConfirmationRecorded = "SUMMARY_CONFIRMATION_RECORDED" => "Summary Confirmation Recorded",
+        ReviewRequested = "REVIEW_REQUESTED" => "Review Requested", ReviewCompleted = "REVIEW_COMPLETED" => "Review Completed",
+        PipelineLinkCompleted = "PIPELINE_LINK_COMPLETED" => "Pipeline Link Completed",
     }
     UnitLifecycle {
-        UnitStarted = "UNIT_STARTED", UnitPaused = "UNIT_PAUSED",
-        UnitResumed = "UNIT_RESUMED", UnitCompleted = "UNIT_COMPLETED",
+        UnitStarted = "UNIT_STARTED" => "Unit Started", UnitPaused = "UNIT_PAUSED" => "Unit Paused",
+        UnitResumed = "UNIT_RESUMED" => "Unit Resumed", UnitCompleted = "UNIT_COMPLETED" => "Unit Completed",
     }
     Artifact {
-        ArtifactCreated = "ARTIFACT_CREATED", ArtifactUpdated = "ARTIFACT_UPDATED",
-        ArtifactReused = "ARTIFACT_REUSED",
+        ArtifactCreated = "ARTIFACT_CREATED" => "Artifact Created", ArtifactUpdated = "ARTIFACT_UPDATED" => "Artifact Updated",
+        ArtifactReused = "ARTIFACT_REUSED" => "Artifact Reused",
     }
-    Subagent { SubagentCompleted = "SUBAGENT_COMPLETED" }
+    Subagent { SubagentCompleted = "SUBAGENT_COMPLETED" => "Subagent Completed" }
     ReviewerEnforcement {
-        ReviewerScopeBlocked = "REVIEWER_SCOPE_BLOCKED",
-        ReviewFreezeBlocked = "REVIEW_FREEZE_BLOCKED",
+        ReviewerScopeBlocked = "REVIEWER_SCOPE_BLOCKED" => "Reviewer Scope Blocked",
+        ReviewFreezeBlocked = "REVIEW_FREEZE_BLOCKED" => "Review Freeze Blocked",
     }
-    PlanApproval { PlanApprovalBlocked = "PLAN_APPROVAL_BLOCKED" }
+    PlanApproval { PlanApprovalBlocked = "PLAN_APPROVAL_BLOCKED" => "Plan Approval Blocked" }
     Documents {
-        DocumentIndexed = "DOCUMENT_INDEXED", DocumentUpdated = "DOCUMENT_UPDATED",
-        DocumentRemoved = "DOCUMENT_REMOVED",
+        DocumentIndexed = "DOCUMENT_INDEXED" => "Document Indexed", DocumentUpdated = "DOCUMENT_UPDATED" => "Document Updated",
+        DocumentRemoved = "DOCUMENT_REMOVED" => "Document Removed",
     }
-    Utility { HealthChecked = "HEALTH_CHECKED" }
-    ErrorRecovery { ErrorLogged = "ERROR_LOGGED", RecoveryCompleted = "RECOVERY_COMPLETED" }
+    Utility { HealthChecked = "HEALTH_CHECKED" => "Health Check" }
+    ErrorRecovery { ErrorLogged = "ERROR_LOGGED" => "Error Logged", RecoveryCompleted = "RECOVERY_COMPLETED" => "Recovery Completed" }
     ConstructionBolt {
-        BoltStarted = "BOLT_STARTED", BoltCompleted = "BOLT_COMPLETED",
-        BoltFailed = "BOLT_FAILED", AutonomyModeSet = "AUTONOMY_MODE_SET",
+        BoltStarted = "BOLT_STARTED" => "Bolt Started", BoltCompleted = "BOLT_COMPLETED" => "Bolt Completed",
+        BoltFailed = "BOLT_FAILED" => "Bolt Failed", AutonomyModeSet = "AUTONOMY_MODE_SET" => "Autonomy Mode Set",
     }
     Worktree {
-        WorktreeCreated = "WORKTREE_CREATED", WorktreeMerged = "WORKTREE_MERGED",
-        WorktreeDiscarded = "WORKTREE_DISCARDED", StateForked = "STATE_FORKED",
-        StateMerged = "STATE_MERGED", AuditForked = "AUDIT_FORKED", AuditMerged = "AUDIT_MERGED",
+        WorktreeCreated = "WORKTREE_CREATED" => "Worktree Created", WorktreeMerged = "WORKTREE_MERGED" => "Worktree Merged",
+        WorktreeDiscarded = "WORKTREE_DISCARDED" => "Worktree Discarded", StateForked = "STATE_FORKED" => "State Forked",
+        StateMerged = "STATE_MERGED" => "State Merged", AuditForked = "AUDIT_FORKED" => "Audit Forked", AuditMerged = "AUDIT_MERGED" => "Audit Merged",
     }
     Practices {
-        PracticesDiscovered = "PRACTICES_DISCOVERED", PracticesAffirmed = "PRACTICES_AFFIRMED",
-        PracticesOverride = "PRACTICES_OVERRIDE", PracticesSectionEmpty = "PRACTICES_SECTION_EMPTY",
+        PracticesDiscovered = "PRACTICES_DISCOVERED" => "Practices Discovered", PracticesAffirmed = "PRACTICES_AFFIRMED" => "Practices Affirmed",
+        PracticesOverride = "PRACTICES_OVERRIDE" => "Practices Override", PracticesSectionEmpty = "PRACTICES_SECTION_EMPTY" => "Practices Section Empty",
     }
     MergeDispatch {
-        MergeDispatchInvoked = "MERGE_DISPATCH_INVOKED",
-        MergeDispatchReturned = "MERGE_DISPATCH_RETURNED",
-        MergeDispatchFallback = "MERGE_DISPATCH_FALLBACK",
+        MergeDispatchInvoked = "MERGE_DISPATCH_INVOKED" => "Merge Dispatch Invoked",
+        MergeDispatchReturned = "MERGE_DISPATCH_RETURNED" => "Merge Dispatch Returned",
+        MergeDispatchFallback = "MERGE_DISPATCH_FALLBACK" => "Merge Dispatch Fallback",
     }
     Sensor {
-        SensorFired = "SENSOR_FIRED", SensorPassed = "SENSOR_PASSED",
-        SensorFailed = "SENSOR_FAILED", SensorBudgetOverride = "SENSOR_BUDGET_OVERRIDE",
-        GuardrailLoaded = "GUARDRAIL_LOADED",
+        SensorFired = "SENSOR_FIRED" => "Sensor Fired", SensorPassed = "SENSOR_PASSED" => "Sensor Passed",
+        SensorFailed = "SENSOR_FAILED" => "Sensor Failed", SensorBudgetOverride = "SENSOR_BUDGET_OVERRIDE" => "Sensor Budget Override",
+        GuardrailLoaded = "GUARDRAIL_LOADED" => "Guardrail Loaded",
     }
     LearningLoop {
-        MemoryEmpty = "MEMORY_EMPTY", RuleLearned = "RULE_LEARNED",
-        SensorProposed = "SENSOR_PROPOSED",
+        MemoryEmpty = "MEMORY_EMPTY" => "Memory Empty", RuleLearned = "RULE_LEARNED" => "Rule Learned",
+        SensorProposed = "SENSOR_PROPOSED" => "Sensor Proposed",
     }
     Swarm {
-        SwarmStarted = "SWARM_STARTED", SwarmUnitConverged = "SWARM_UNIT_CONVERGED",
-        SwarmUnitFailed = "SWARM_UNIT_FAILED", SwarmBatonReturned = "SWARM_BATON_RETURNED",
-        SwarmCompleted = "SWARM_COMPLETED", SwarmDegraded = "SWARM_DEGRADED",
+        SwarmStarted = "SWARM_STARTED" => "Swarm Started", SwarmUnitConverged = "SWARM_UNIT_CONVERGED" => "Swarm Unit Converged",
+        SwarmUnitFailed = "SWARM_UNIT_FAILED" => "Swarm Unit Failed", SwarmBatonReturned = "SWARM_BATON_RETURNED" => "Swarm Baton Returned",
+        SwarmCompleted = "SWARM_COMPLETED" => "Swarm Completed", SwarmDegraded = "SWARM_DEGRADED" => "Swarm Degraded",
     }
 }
 
@@ -196,6 +210,7 @@ impl EventType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use std::collections::HashMap;
 
     #[test]
@@ -273,6 +288,56 @@ mod tests {
         }
         assert_eq!(EventType::parse("STAGE_DONE"), None);
         assert_eq!(EventType::parse("Requirements Analysis Complete"), None);
+    }
+
+    #[test]
+    fn every_event_has_a_distinct_heading_that_is_not_its_wire_spelling() {
+        // 逐語表の 3 性質 (upstream 実測)。ここが崩れると `## <heading>` 行から
+        // イベント名への逆写像が壊れ、監査ブロックの読み手が別の行を拾う。
+        let headings: BTreeSet<&str> = EventType::ALL.iter().map(|e| e.heading()).collect();
+        assert_eq!(headings.len(), 86, "見出しは 86 個すべて相異");
+        for event in EventType::ALL {
+            assert!(!event.heading().is_empty(), "{}", event.as_str());
+            assert_ne!(
+                event.heading(),
+                event.as_str(),
+                "見出しがワイヤ綴りと同一のものは upstream に 1 件も無い"
+            );
+        }
+    }
+
+    #[test]
+    fn the_irregular_headings_are_the_ones_a_mechanical_conversion_would_miss() {
+        // ワイヤ綴りからの機械変換で必ず外す箇所 (research golden-3c3146cf-audit §1 の
+        // 「語形の非一様性」)。ここを固定しておかないと、後から「規則的に直した」つもりの
+        // 変更が upstream 互換を静かに壊す。
+        //
+        // `_COMPLETED` は名詞化する組と過去分詞のままの組に割れる。
+        assert_eq!(EventType::StageCompleted.heading(), "Stage Completion");
+        assert_eq!(EventType::PhaseCompleted.heading(), "Phase Completion");
+        assert_eq!(
+            EventType::WorkflowCompleted.heading(),
+            "Workflow Completion"
+        );
+        assert_eq!(EventType::UnitCompleted.heading(), "Unit Completed");
+        assert_eq!(EventType::ReviewCompleted.heading(), "Review Completed");
+        // `_STARTED` も同じく割れる。
+        assert_eq!(EventType::StageStarted.heading(), "Stage Start");
+        assert_eq!(EventType::SessionStarted.heading(), "Session Start");
+        assert_eq!(EventType::UnitStarted.heading(), "Unit Started");
+        assert_eq!(EventType::BoltStarted.heading(), "Bolt Started");
+        // `SESSION_*` は名詞化、`UNIT_RESUMED` は過去分詞。
+        assert_eq!(EventType::SessionResumed.heading(), "Session Resume");
+        assert_eq!(EventType::SessionEnded.heading(), "Session End");
+        assert_eq!(EventType::UnitResumed.heading(), "Unit Resumed");
+        // `_CHANGED` / `_DETECTED` / `_VERIFIED` / `_CHECKED` / `_JUMPED` / `_SKIPPED` は名詞化。
+        assert_eq!(EventType::ScopeChanged.heading(), "Scope Change");
+        assert_eq!(EventType::ScopeDetected.heading(), "Scope Detection");
+        assert_eq!(EventType::PhaseVerified.heading(), "Phase Verification");
+        assert_eq!(EventType::HealthChecked.heading(), "Health Check");
+        assert_eq!(EventType::StageJumped.heading(), "Stage Jump");
+        // 語幹に無い語が付く唯一の例。
+        assert_eq!(EventType::Recomposed.heading(), "Plan Recomposed");
     }
 
     #[test]

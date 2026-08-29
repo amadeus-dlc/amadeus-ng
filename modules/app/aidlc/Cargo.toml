@@ -8,6 +8,20 @@ repository.workspace = true
 [lints]
 workspace = true
 
+# 合成ルート (U7) は**すべて**を知る — コマンド側 3 クレート・中間の RMU・共有層を配線する
+# のが合成ルートの仕事である (`coding-rules/cqrs-boundaries.md` §対象外)。他のどのクレートも
+# この組み合わせを `Cargo.toml` に書いてはならない。
 [dependencies]
-core-interface-adapter = { workspace = true }
-infra-io = { workspace = true }
+core-command-domain = { workspace = true }
+core-command-use-case = { workspace = true }
+core-command-interface-adapter = { workspace = true }
+core-read-model-updater = { workspace = true }
+core-infrastructure = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true }
+event-store-adapter-rs = { workspace = true, features = ["sqlite"] }
+rusqlite = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "core-command-use-case"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+core-command-domain = { workspace = true }
+
+[dev-dependencies]
+# 再水和結果の発生時刻 (`DateTime<Utc>` — ADR-010) を組むテスト用。
+chrono = { workspace = true }
+tokio = { workspace = true }
