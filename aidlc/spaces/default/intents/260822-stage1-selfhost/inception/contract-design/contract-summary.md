@@ -222,6 +222,19 @@ version は集約から外れ、再水和レコード `RehydratedWorkflowExecuti
 genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、`store` は明示引数
 `expected_version: usize`（genesis は `UNPERSISTED_VERSION` = 0）を取る。
 
+> **2026-08-30 追記（Bolt B13 — ES 再構成の全面整列、オーナー裁定）**: 再構成の意味論が変わった。
+> ① `find_by_id` は ~~最新スナップショット + seq_nr 以降のイベントを replay~~ → **ジャーナル全再生**
+> （`IntentExecution::replay` — 先頭は `Started`）。スナップショット行は**版の正本（envelope の
+> version）と存在検査（BR1.2）にだけ**使い、payload は読取に使わない（状態の正本はイベント列）。
+> `IntentExecutionSnapshot` / `from_snapshot` / `snapshot()` は型ごと撤去。
+> ② 再構成は**失敗を返さない** — 壊れた歴史（通番の飛び・未知ステージ・不変条件違反・先頭が
+> `Started` でない）はクラッシュが正。`Corrupt` に残る分類は復号レベル（読めない・foreign
+> manifest・写し欠落）だけで、分類自体もポート契約から退避し `Error::source` 連鎖で運ぶ（裁定 6
+> 実装済み）。③ エラー型は **`RepositoryError<Id>` ジェネリック 1 本**（`IntentRepositoryError`
+> 廃止。`PartialEq` 喪失は受容 — テストは `matches!`）。④ `IntentEvent::Created` は集約埋め込み
+> をやめ**内容（6 値）を運ぶ**。intent の再構成は `Created` 経由の変換 + `Intent::replay`。
+> 正典: `coding-rules/aggregate-commands.md`「再構成の形」。
+
 ### C4 — ポート trait: `WorkflowDefinitionRepository`（2026-08-23 改訂 — ADR-008）
 
 `WorkflowDefinition` はエンティティ（集約ルート、12 号 §2.1）なので識別子 `WorkflowDefinitionId`（内容が変わっても不変の系譜 ID — Repository 実装が

@@ -178,6 +178,23 @@ setter は 1 つも無い。違いは命名だけ:
 - `new_instance` / `create_new` のような `new` の同義語を並立させる
 - 同じ用途に複数の入口を残す（[no-backward-compatibility.md](no-backward-compatibility.md)）
 
+## 集約の基本コンストラクタは「全情報を受ける genesis」（オーナー裁定 2026-08-30）
+
+集約では**基本コンストラクタ = genesis**（対を返す。[aggregate-commands.md](aggregate-commands.md)）
+であり、**情報を削った側を基本と呼ばない**。`Intent` の実例で確定した:
+
+- `Intent::create(id, &WorkflowDefinition, start_request, scan) -> Result<(Intent, IntentEvent), _>`
+  が基本 — 定義そのもの（全情報）から計画を解決し、対を返す。動詞 `create` は upstream の
+  `intent-create`（ドメイン語優先）。
+- 再構成（`replay` / `From<Created>`）はファクトリではないので、補助→基本の委譲規律の対象外。
+  ただし作ってよい構築口は genesis / `replay` / `apply_event` だけである（同裁定）。
+
+**誤適用の経緯**: `Intent::from_material(6 値)` は「受け取った部品を組み立てるコンストラクタ相当」
+なのに `from_` を名乗った違反だった（`Material` という源の型は存在しない — `from_<源>` は実在する
+型・成果物に限る）。さらに genesis と同一引数列の双子（DRY 違反）でもあった。是正の途中で
+`restore` / `rehydrate`（第 3 の構築口）や memento 双子型（`IntentSnapshot`）を経由しかけたが、
+いずれも同裁定で否定された — 詳細は aggregate-commands.md「再構成の形」。
+
 ## 対象外
 
 - **ビルダーの終端** `fn build(self) -> T` は本表の対象外（ビルダーパターンの語）。
