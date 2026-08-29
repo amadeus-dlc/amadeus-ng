@@ -206,7 +206,7 @@ impl GateOpened {
     }
 }
 
-/// `GateApproved` のペイロード。`phase_boundary` は呼出側が導出して渡す投影材料 (C5)。
+/// `GateApproved` のペイロード。`phase_boundary` は集約が自分の計画から導出する投影材料 (C5)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GateApproved {
     stage: StageSlug,
@@ -217,6 +217,9 @@ pub struct GateApproved {
 
 impl GateApproved {
     /// 承認されたステージと、承認時の人間入力・次ステージ・フェーズ境界。
+    ///
+    /// 4 成分はすべて `WorkflowExecution::approve_gate` が組む — `next_stage` と
+    /// `phase_boundary` は解決済み計画からの導出であり、外から与えられる材料ではない。
     #[must_use]
     pub const fn new(
         stage: StageSlug,
@@ -250,7 +253,7 @@ impl GateApproved {
         self.next_stage.as_ref()
     }
 
-    /// 跨いだフェーズ境界 (呼出側供給の投影材料)。
+    /// 跨いだフェーズ境界 (集約が計画から導出した投影材料。同一フェーズ内・最終なら `None`)。
     #[must_use]
     pub const fn phase_boundary(&self) -> Option<PhaseBoundary> {
         self.phase_boundary
