@@ -176,7 +176,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | 3. `StoreVersion` newtype 化は却下 | `StoreVersion` の grep は `modules/` `tools/` `docs/` で 0 件。ポート doc の「U5/U6 の境界強化候補として記録してある」を削除し、却下理由（本家 v3.0.0 が `expected_version: usize` で定めた語彙であり、包み直しは Conformist 方針への違反。`coding-rules/upstream-contracts.md`）を書いた |
 | 4. 「再水和」を使わない | 本 Bolt で新規に書いた散文・doc コメントはすべて「再構成」。既存 48 ファイルと型名 `RehydratedWorkflowExecution` の一括置換は行っていない（対象外） |
 | 5. FR2.2 は対象外 | レシート述語・verification 面には一切触れていない |
-| 追加通知: 新規コードで `CorruptCause` への結合を増やさない（裁定 6 は B11 着地後の追随 PR） | 新規 5 ファイルに `CorruptCause` の参照は 0 件。`repository_error.rs` は origin/main の内容へ戻したので、裁定 6 の作業対象は本 Bolt の diff と衝突しない |
+| 追加通知: 新規コードで `CorruptCause` への結合を増やさない（裁定 6 は B11 着地後の追随 PR） | 実測: 新規 6 ファイルの `CorruptCause` / `Corrupt` 参照は **0 件**。本 Bolt の `modules/` 差分の**追加行**で `Corrupt` に触れた行も **0 件**。`repository_error.rs` は origin/main と**バイト同一**（差分 0）なので、裁定 6 の追随 PR は本 Bolt の diff と衝突しない |
 
 ---
 
@@ -331,8 +331,19 @@ use-case lib 18）。+29 の内訳は domain +3・use-case +25・interface-adapt
 `approve_gate` の引数廃止で所有ツリー外の呼出側がコンパイル不能になることを着手直後に報告し、
 独断で触れずに回答を待った。結果、**`None,` の削除に限り 5 箇所の編集が承認**され、あわせて
 初版ブリーフの `Conflict` 裁定の誤りも判明した（`decisions-1.md` の「訂正」節）。
-実際に触ったのはその 5 箇所の `None,` だけで、他の行は 1 行も動かしていない
-（`git diff` で確認済み: 4 ファイル 5 行、いずれも `None,` の削除のみ）。
+実際に触ったのはその 5 箇所の `None,` だけである。
+
+**当たり範囲の検証手順について 1 点、順序が指示と違う。** 委任者は「一括置換は当てる前に
+dry-run 相当で確認し、当てた後に `git diff` で目視確認する」よう指示したが、私は**当てた後の
+`git diff` 確認しか行っていなかった**。事後に origin/main を一時展開して dry-run 相当を取り直し、
+結果が一致することを確かめた:
+
+- origin/main 全体の `approve_gate(` 呼出は **18 行**（うち `modules/core/command/domain/src/`
+  の 11 行は同一ファイル内のテスト、`domain/tests/` が 2 行、承認 4 ファイルが 5 行）。
+- 承認 4 ファイルに限れば、置換パターンに当たるのは**承認された 5 行ちょうど**である。
+- `git diff origin/main..HEAD --numstat` の実測も 2 + 1 + 1 + 1 = **5 行**で一致する。
+- 承認外ツリー（`modules/app/**`・`modules/core/read-model-updater/**`・`modules/harness/**`）で
+  本 Bolt が触れたファイルは、承認された 3 ファイルだけである（`modules/harness/**` は 0 件）。
 
 ---
 
