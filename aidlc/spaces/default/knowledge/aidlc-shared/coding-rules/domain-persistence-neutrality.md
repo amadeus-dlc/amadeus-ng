@@ -44,6 +44,12 @@ event-store-adapter-rs が現れないこと — 違反はビルドで落ちる�
 ## 対象外
 
 - `chrono`（時刻の値 — 永続化知識ではない）
+- **`[dev-dependencies]` の `serde_json`（`Value` 読取のみ）** — ITF 準拠テストが Quint トレース
+  JSON という**外部フィクスチャを読む手段**であり、ドメイン自身の永続化知識ではない（テストの
+  `unwrap` 許容と同じ類の対象外）。derive を使う dev 依存は不可。機械強制の対象は
+  **`[dependencies]`**（プロダクション面）であり、そこに serde / event-store-adapter-rs が
+  現れたら違反。event-store-adapter-rs は dev にも残さない — 改訂 9 以降、domain 型は
+  `AggregateId` を実装しないため正当なテスト用途が存在しない（2026-08-30 裁定）
 - ドメインイベント・スナップショット**という概念**（decide / apply / snapshot は ES の
   ドメイン語彙。禁止されるのはその**直列化の記述**）
 - テストコードがアダプタの DTO を使って固定するワイヤ形式の検証
