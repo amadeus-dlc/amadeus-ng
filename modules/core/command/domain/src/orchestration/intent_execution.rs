@@ -2273,6 +2273,46 @@ mod tests {
         );
     }
 
+    #[test]
+    #[should_panic(expected = "apply_event: invariant violated — parked_position")]
+    fn applying_a_park_away_from_the_cursor_crashes() {
+        // park の位置はカーソルと同じでなければならない (parked_position)。カーソル 0 のまま
+        // ステージ 1 を park するイベントは壊れた歴史である。
+        let mut w = all_exec(3);
+        let event = IntentExecutionEvent::Parked(Parked::new(slug(1)));
+        w.apply_event(2, occurred(), &event);
+    }
+
+    #[test]
+    #[should_panic(expected = "apply_event: invariant violated — cursor_in_scope")]
+    fn applying_a_recompose_that_skips_the_cursor_crashes() {
+        // park していない実行のカーソルは実効 EXECUTE の上に居なければならない
+        // (cursor_in_scope)。カーソル上のステージを SKIP へ畳む差分は壊れた歴史である。
+        let mut w = all_exec(3);
+        let event = IntentExecutionEvent::Recomposed(Recomposed::new(
+            vec![slug(0)],
+            Vec::new(),
+            vec![slug(1), slug(2)],
+        ));
+        w.apply_event(2, occurred(), &event);
+    }
+
+    #[test]
+    #[should_panic(expected = "apply_event: invariant violated — at_most_one_active")]
+    fn applying_a_jump_that_leaves_two_active_stages_crashes() {
+        // 出発点を reset も skip もしない jump は出発点の InProgress を残したまま到達先も
+        // InProgress にする — active が 2 つになる歴史は壊れている (at_most_one_active)。
+        let mut w = all_exec(3);
+        let event = IntentExecutionEvent::Jumped(Jumped::new(
+            JumpDirection::Forward,
+            slug(0),
+            slug(1),
+            Vec::new(),
+            Vec::new(),
+        ));
+        w.apply_event(2, occurred(), &event);
+    }
+
     // ---- W3: replay (ジャーナル全再生 — BR2.3 / BR1.1) ----
 
     #[test]

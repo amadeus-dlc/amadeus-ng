@@ -195,6 +195,34 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
 }
 
 #[tokio::test]
+async fn a_snapshot_without_any_journal_row_is_corrupt() {
+    // genesis は journal と snapshot を原子的に書くので、スナップショットだけが残る状態は
+    // 壊れている (ジャーナル全再生では再構成の材料が無い)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
+    fixture
+        .raw()
+        .execute("DELETE FROM journal", [])
+        .expect("ジャーナルを空にする");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("再生の材料が無い");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "empty journal"
+    );
+}
+
+#[tokio::test]
 async fn a_tampered_snapshot_payload_is_corrupt() {
     let fixture = Fixture::new();
     let mut repository = fixture.repository();

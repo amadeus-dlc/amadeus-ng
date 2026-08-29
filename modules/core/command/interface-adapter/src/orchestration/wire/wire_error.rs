@@ -39,3 +39,26 @@ impl WireDecodeError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_rejection_renders_its_material() {
+        assert_eq!(
+            WireDecodeError::malformed("id", "not-a-uuid").to_string(),
+            "malformed field id: not-a-uuid"
+        );
+        assert_eq!(
+            WireDecodeError::InvariantViolation.to_string(),
+            "invariant violation"
+        );
+    }
+
+    #[test]
+    fn the_rejection_is_a_std_error() {
+        let error: Box<dyn std::error::Error> = Box::new(WireDecodeError::InvariantViolation);
+        assert_eq!(error.to_string(), "invariant violation");
+    }
+}

@@ -160,8 +160,13 @@ mod tests {
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(created.definition_id().to_string(), "claude");
+        assert_eq!(
+            created.definition_revision().to_string(),
+            format!("sha256:{}", "0".repeat(64))
+        );
         assert_eq!(created.start_request().scope(), "classic");
         assert_eq!(created.stages().len(), 1);
+        assert_eq!(created.scan().project_type(), "Greenfield");
     }
 
     #[test]

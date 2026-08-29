@@ -475,6 +475,35 @@ mod tests {
     }
 
     #[test]
+    fn every_corrupt_detail_renders_its_material() {
+        // 分類はポート契約に載らない (裁定 6) — 診断表示 (caused by: ...) がここの文字列である。
+        for (detail, wording) in [
+            (CorruptDetail::MissingSnapshot, "missing snapshot"),
+            (CorruptDetail::EmptyJournal, "empty journal"),
+            (CorruptDetail::ForeignManifest, "foreign manifest"),
+            (
+                CorruptDetail::Undecodable(WireDecodeError::InvariantViolation),
+                "undecodable payload",
+            ),
+            (
+                CorruptDetail::StoreDeserialization,
+                "store deserialization failed",
+            ),
+            (CorruptDetail::WriteContract, "write contract violation"),
+        ] {
+            assert_eq!(detail.to_string(), wording);
+        }
+    }
+
+    #[test]
+    fn the_undecodable_detail_chains_its_wire_error() {
+        let detail = CorruptDetail::Undecodable(WireDecodeError::malformed("id", "x"));
+        let source = std::error::Error::source(&detail).expect("復号失敗は原因を連鎖する");
+        assert_eq!(source.to_string(), "malformed field id: x");
+        assert!(std::error::Error::source(&CorruptDetail::MissingSnapshot).is_none());
+    }
+
+    #[test]
     fn a_volatile_store_has_no_place_to_name_in_its_failures() {
         assert_eq!(repository().store_path(), None);
     }

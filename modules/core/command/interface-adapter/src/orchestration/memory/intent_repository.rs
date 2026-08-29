@@ -35,3 +35,55 @@ impl IntentRepository for InMemoryIntentRepository {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use core_command_domain::orchestration::{
+        Created, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    };
+    use core_command_domain::workflow_definition::{
+        BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+        WorkflowDefinitionId,
+    };
+
+    use super::*;
+
+    fn held() -> Intent {
+        Intent::from(Created::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "wiring"),
+            vec![StageEntry::new(
+                StageSlug::parse("state-init").unwrap(),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                StageDisplay::new(StageNumber::parse("0.1").unwrap(), "Stage", "orchestrator")
+                    .unwrap(),
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[tokio::test]
+    async fn the_held_intent_is_returned_by_its_identifier() {
+        let repository = InMemoryIntentRepository::holding(held());
+        let found = repository.find_by_id(held().id()).await.expect("保持中");
+        assert_eq!(found, held());
+    }
+
+    #[tokio::test]
+    async fn an_unknown_identifier_is_not_found() {
+        let repository = InMemoryIntentRepository::holding(held());
+        let absent = IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap();
+        let err = repository.find_by_id(&absent).await.unwrap_err();
+        assert!(matches!(err, RepositoryError::NotFound { id } if id == absent));
+    }
+}
