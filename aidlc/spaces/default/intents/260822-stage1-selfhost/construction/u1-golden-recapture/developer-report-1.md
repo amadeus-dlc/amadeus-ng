@@ -8,13 +8,14 @@ Conversation language: 日本語
 
 ## 0. 要約
 
-**採取は完了、投影は 2 点を残して完了**。ブリーフの 4 点のうち 3 点は実バイトを採れた。
-残る 1 点（`AUTONOMY_MODE_SET` 成功経路）は**ピンでは到達不能**であることを全数走査で
-確定し、捏造せず `cases-missing.json` に根拠を残した。
+**B10 は完了**。ブリーフの採取 4 点のうち 3 点は実バイトを採れた。残る 1 点
+（`AUTONOMY_MODE_SET` 成功経路）は**ピンでは到達不能**であることを全数走査で確定し、
+捏造せず `cases-missing.json` に根拠を残した。
 
 その過程で、ブリーフが「採取さえ済めば実装できる」と見込んでいた**骨格生成が、採取とは
 別の理由で詰まっている**ことが分かった。バイトは採れたが、**ジャーナルに無い材料が 4 つ
-ある**（うち 1 つは環境の絶対パス）。ここは読み替えず止め、裁定を求めて連絡済みである（§4）。
+ある**（うち 1 つは環境の絶対パス）。読み替えず止めて裁定を求め、**オーナー裁定 A**
+（骨格生成は投影の責務外 — 書くのは合成ルート、実装は U7）を受けて実装を確定した（§4）。
 
 - コミット 3 本 / 採取ケース 22 → **25**、監査ブロック検収 42 → **62** 本
 - 投影ゴールデン検収 10 → **13 ケース**（`audit.md` + `state.diff` の両面バイト一致）
@@ -138,19 +139,33 @@ upstream の挙動ではなく採取者の捏造なので採らなかった。
 必要はなかった。導出であって推測ではないので、材料が足りているうちはイベントを太らせない
 （`resolved_plan.rs` の「正本は 1 つでよい」と同じ理由）。
 
-### 3-2 実装していない（§4 の裁定待ち）
+### 3-2 裁定 A に従って**書かない**と確定した部分
 
-`ProjectionError::ScaffoldTemplateUnavailable` は**撤去していない**。ブリーフは「撤去し、genesis の
-骨格生成を実バイトで実装」としていたが、詰まっているのはバイトではなく材料だった（§4）。
-`- **Stages to Execute**:` / `- **Stages to Skip**:` の 2 行も触っていない。前者だけなら導けるが、
-2 行で 1 組の計画表なので片方だけ書くと読み手に矛盾した表を見せることになる。
+`ProjectionError::ScaffoldTemplateUnavailable` は**撤去せず改名**した
+（`ProjectionError::ScaffoldMissing`、`Display` は `scaffold missing`）。意味論が
+「テンプレートの実バイトが無い（採取待ち）」から「**骨格が無いのは投影の前提違反**」へ
+変わったためで、名前が古い理由を指したままだと次の読み手が「採取すれば直る」と誤読する。
 
-エラー型の doc は「テンプレートの実バイトが無い」という**もう正しくない理由**から、実際の 4 つの
-材料不足へ書き換えた。撤去の可否そのものは裁定事項なので型は残してある。
+doc に書いたこと:
+
+- 投影の責務は**既存本文への差分適用に徹する**ことであり、骨格を起こすことは含まれない。
+  骨格は intent-create の時点で**合成ルート**が書く（環境と両側を知ってよい唯一の場所。実装は U7）。
+- これは導出の工夫不足ではなく**構造から従う**。`- **Project Root**:` は環境の値でジャーナルに
+  存在せず、投影が書けるようになる道は「環境を読む」か「環境パスをイベントへ載せる」の 2 つしか
+  ない。前者は投影核の定義を壊し、後者は ADR-008 と NFR3 の趣旨に反する。**書けないのではなく、
+  書く場所がここではない**。
+- **NFR3 の適用範囲**: 冪等な再構成が保証するのは**差分適用**である。骨格はその保証の対象では
+  なく環境成果物であり、全損したら再生成ではなく upstream 同様 archive & recreate の運用に載る。
+- 骨格の実バイトは `cli/intent-create/classic-scope/state-full.md`（102 行全文）にあり、U7 が
+  骨格を書くときの正本になる。
+
+`- **Stages to Execute**:` / `- **Stages to Skip**:` の 2 行も触っていない。どちらも骨格の行で
+あり、裁定 A により自動的にスコープ外である。イベント拡張は**していない** — `Started` は現状の
+ままである。
 
 ---
 
-## 4. 止めて報告した点 — 骨格生成に材料が 4 つ足りない
+## 4. 止めて報告した点と裁定 — 骨格生成に材料が 4 つ足りない
 
 ブリーフの「畳み理由が `Started` の材料から導けない場合は止めて報告」に該当する。骨格 102 行を
 全数照合した結果、詰まるのは畳み理由だけではなく、**4 行**だった。`Started` が運ぶのは
@@ -165,16 +180,14 @@ definition_id / definition_revision / scope / request / depth / test_strategy / 
 | `- **Review Override**:` | 対応するフィールドが無い。常に空と決め打つと `--review` 指定時に割れる |
 | `- **Stages to Skip**:` の畳み理由 | upstream の規則は「slug が `reverse-engineering` かつ greenfield かつ**素のグリッドが EXECUTE**」。素のグリッド値と調整後の値の区別が要る。`PlanAction` は 2 値、`conditional` は出荷グラフ 33 ノード中 **22 ノード**で真（1.2 / 1.3 / 1.5 / 1.6 も classic で SKIP）なので、どちらでも代用できない |
 
-提示した選択肢（推奨順、詳細は委任者へ送った連絡）:
+提示した選択肢のうち、**オーナー裁定は A**（骨格生成は投影の責務外。書くのは合成ルート、
+実装は U7）。決め手は `Project Root` が環境値であることで、これは「導出の工夫が足りない」の
+ではなく「骨格生成はそもそも投影ではない」ことの証明である。B（環境パスをイベントへ載せる）は
+ADR-008 / NFR3 の趣旨に反するため不採、C（slug ハードコードで近似 — `infra` + greenfield で
+静かに割れる）と D（部分実装）も不採。実装は §3-2 のとおり確定した。
 
-- **A（推奨）**: 骨格生成は投影の仕事ではないと裁定し、エラー型は残す。`Project Root` が環境値で
-  ある以上ジャーナルだけでは描けないことが構造的に確定している。骨格は intent-create の
-  ユースケース（コマンド側）が書き、RMU は既存本文への差分適用に徹する。4 点すべてが解消する。
-- **B**: `Started` を 4 値拡張する。逐語再現は完全になるが、環境パスをドメインイベントへ載せる
-  ことになり ADR-008 と NFR3 の趣旨に反する疑いがある。
-- **C**: 畳み理由だけ slug ハードコードで近似する。`infra` スコープ + greenfield のときだけ静かに
-  割れる（11 スコープ中 1 つ）。0a 逐語契約に照らして私は採らない。
-- **D**: 部分実装。ゴールデン両面一致が取れないので採らない。
+裁定により (A)(B)(D) の 3 行はすべて骨格行としてスコープ外になり、残る畳み理由も骨格行なので
+同様である。**イベント拡張は不要になった**。
 
 ---
 
@@ -224,26 +237,63 @@ definition_id / definition_revision / scope / request / depth / test_strategy / 
 | 6 | coverage 相対 | **PASS** | 絶対 **98.4805%** >= 90%、相対 98.4805% >= `origin/main` 98.4801% − 0.01。**一度 FAIL させてから直した** — §5-7 を参照 |
 | 7 | unwrap 0 | **PASS** | プロダクトコードに `unwrap()` / `expect()` なし（clippy が機械強制） |
 | 8 | 新採取に provenance が揃い、再実行で `captured_at` 以外の差分が出ない | **PASS** | 最終構成（25 ケース）で再採取を連続実行し、**296 ファイル**すべてが `captured_at` 以外バイト一致。新 3 ケースはいずれも `case.json`（`commit` / `captured_at` / `command`）と族単位の `provenance.json` を持つ |
-| 9 | `ScaffoldTemplateUnavailable` の grep 0 件（採取成功時）／`cases-missing.json` に理由（不能時） | **条件付き** | §4 の裁定待ちのため型は残存。**採取は成功しているが実装が材料不足で止まっている**という、基準が想定していなかった第 3 の状態である。`cases-missing.json` には `set-autonomy` の理由を記録済み |
+| 9 | `ScaffoldTemplateUnavailable` の grep 0 件（採取成功時）／`cases-missing.json` に理由（不能時） | **PASS** | 旧名の grep は `modules/` / `scripts/` / `tests/` で **0 件**（`ScaffoldMissing` へ改名）。撤去ではなく改名なのは**裁定 A がそう定めたため**である（§3-2）。`cases-missing.json` には `set-autonomy` の理由を記録済み |
 | 10 | 投影ゴールデン検収が B8 の 10 ケース + 新ケースで全両面一致 | **PASS** | **13 ケース**（10 + 新 3）すべて `audit.md` + `state.diff` の両面バイト一致。監査ブロック検収は 42 → **62 本** |
 
 ---
 
+## 6-2. 裁定の付帯確認 — 計画 2 行を差分適用側が書き換えていないか
+
+裁定時に「`recompose` / `jump` のゴールデン `state.diff` が
+`- **Stages to Execute**: ` / `- **Stages to Skip**: ` を書き換えていないこと」の明示検証を
+求められた。`state.diff` を持つ **cli 全 25 ケース**を機械的に走査した結果は次のとおりである。
+
+| ケース | 2 行との関わり |
+|---|---|
+| `jump/execute-forward`, `execute-forward-to-conditional`, `execute-backward`, `execute-forward-across-phases` | **触れていない**（ハンクに現れもしない） |
+| 上記以外の 20 ケースのうち 18 件 | **触れていない** |
+| `practices-promote/affirm` | ハンクに**文脈行として写っているだけ**（変更行 0） |
+| `intent-create/classic-scope` | 変更行 2 — ただしこれは骨格が生まれる遷移であり、裁定 A で合成ルートの仕事になった。差分適用ではない |
+| `recompose/skip-one` | **変更行 4**（`4.5 (incident-response)` の移動）— 差分適用側で 2 行を書き換える唯一のケース |
+
+したがって**ジャンプは 4 ケースとも触れていない**。書き換えているのは `recompose` だけである。
+ただし**畳み理由 (D) はここで再浮上しない**。投影は既存の行から項目を出し入れするだけで、
+`— greenfield` を**構築しない** — `2.1 (reverse-engineering — greenfield)` は文字列のまま
+素通りする。したがって畳み理由を作れないという §4 の制約は差分適用側には効かない。
+
+一方、この付帯確認で **B8 由来の潜在的な乖離を 2 つ**見つけた。どちらもゴールデンで踏まれて
+おらず、本 Bolt の変更が原因ではないので直していない（申し送り §7-3）。
+
+1. **並び順**: upstream の recompose は 2 行を**グラフ順に組み直す**が、投影は末尾へ**追記**する。
+   既に skip 済みの項目より前の番号を後から skip すると並びが割れる（`skip-one` は 4.5 が最後尾に
+   来るので両者一致し、検出されない）。
+2. **`reverse-engineering` の再投入**: 投影は `2.1 (reverse-engineering)` を除去キーにするが、
+   行にあるのは `2.1 (reverse-engineering — greenfield)` なので一致しない。`remove_from_list` は
+   一致しなければ**黙って no-op** するため、当該ステージが両方の行に載る。無言 no-op は
+   `StateField` を拒否にしている理由そのものなので、方針としては `remove_from_list` を
+   「不在なら拒否」へ寄せるのが筋である。
+
 ## 7. 申し送り
 
-1. **§4 の裁定が最優先**。骨格生成と `Stages to Skip` はどちらもここで止まっている。裁定が A なら
-   コード変更はほぼ doc とエラー名だけで済む。B なら `Started` の payload 変更なので契約
-   （`contract-summary.md` C5 の `projects_to`）まで波及する。
+1. **U7（合成ルート）が骨格を書く**。正本は `cli/intent-create/classic-scope/state-full.md` の
+   102 行である。`- **Project Root**:` / `- **Project**:` / `- **Review Override**:` /
+   `- **Stages to Skip**:` の畳み理由の 4 行は、合成ルートなら（環境と素のグリッド値の両方を
+   知っているので）すべて書ける。`Started` の payload は変更していないので契約
+   （`contract-summary.md` C5）への波及は無い。
 2. **`GateApproved` の境界 3 本の `**Stages completed**:` が未検収**である。現在の実装は
    `plan.in_scope_count_of(from)` を書くが、ジャンプ側の実測は数え直しだった。ゲート経由で
    フェーズ境界をまたぐケースはゴールデンに無く、genesis の `Stages completed: 3` だけが両者
    一致するので判別が付かない。upstream の `handleAdvance` は数え直し
    （`String(completedCount)`）を書いているので、**実装のほうが怪しい**。追加採取するなら
    inception 最終ステージ（delivery-planning）を承認するケースになる。
-3. **`cli/jump/execute-forward-to-conditional` が投影検収に接続されていない**（B8 から未接続）。
+3. **`recomposed_event` に潜在的な乖離が 2 つある**（§6-2）。並び順（追記 vs グラフ順の組み直し）と、
+   `reverse-engineering` 再投入時の除去キー不一致（無言 no-op で両方の行に載る）である。どちらも
+   ゴールデンで踏まれておらず本 Bolt の変更が原因でもないので直していない。後者は
+   `remove_from_list` を「不在なら拒否」へ寄せれば無言ドリフトが loud failure に変わる。
+4. **`cli/jump/execute-forward-to-conditional` が投影検収に接続されていない**（B8 から未接続）。
    本 Bolt では触っていない。
-4. `docs/` / `formal/` / `coding-rules` には触れていない（所有外）。ゴールデン README
+5. `docs/` / `formal/` / `coding-rules` には触れていない（所有外）。ゴールデン README
    （`tests/golden/upstream-3c3146cf/README.md`）は所有内なので更新済み。
-5. **相対カバレッジは `--base origin/main` で計ること**。ローカルの `main` は PR #21 時点まで
+6. **相対カバレッジは `--base origin/main` で計ること**。ローカルの `main` は PR #21 時点まで
    古く、`--base main` は 96.67% という無関係な値と比べて誤って PASS する（§5-7）。
-6. 検証用の `target-delegate/` が未追跡で残っている（B8 の申し送り 4 と同じ）。
+7. 検証用の `target-delegate/` が未追跡で残っている（B8 の申し送り 4 と同じ）。

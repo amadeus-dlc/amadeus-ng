@@ -215,34 +215,32 @@ pub enum ProjectionError {
     },
     /// 状態ファイルに park マーカーの置き場（`## Runtime State`）が無い。
     ParkSectionMissing,
-    /// 状態ファイルを**ゼロから起こす**ことは未実装である。
+    /// 状態ファイルの**骨格が無い** — 投影の前提違反である。
     ///
-    /// `Started` は本文が既にある状態ファイルへならフィールドを書ける。だが本文そのもの —
-    /// 9 セクションの骨格と 31 のフィールド行 — を起こすには**ジャーナルに無い材料**が要る。
+    /// # 骨格を書くのは投影ではない（オーナー裁定 2026-08-29）
     ///
-    /// 骨格の実バイトは採取済みである（`cli/intent-create/classic-scope/state-full.md`。
-    /// upstream 側の正本は `aidlc-utility.ts` の template literal であり、
-    /// `knowledge/aidlc-shared/state-template.md` は LLM 向けの契約文書でツールは読まない）。
-    /// 詰まっているのはバイトではなく材料のほうで、全 102 行を照合した結果、次の 4 行が
-    /// `Started`（definition_id / definition_revision / scope / request / depth /
-    /// test_strategy / stages / scan）から導けない。
+    /// 投影の責務は**既存本文への差分適用に徹する**ことであり、本文そのもの — 9 セクションの
+    /// 骨格と 31 のフィールド行 — を起こすことは含まれない。骨格は intent-create の時点で
+    /// **合成ルート**が書く（環境と両側を知ってよい唯一の場所。実装は U7）。
     ///
-    /// - `- **Project Root**:` — ワークツリーの絶対パス。**ジャーナルに存在しない**。投影核が
-    ///   環境を読まないのは NFR3（ジャーナルだけで当時と同じバイトを再構成する）の要請なので、
-    ///   ここは設計上の穴である。
-    /// - `- **Project**:` — 人間の記述そのもの。`request` は `/aidlc ` を前置した後の形しか
-    ///   持たず、前置を剥がす導出は引数が空のとき割れる（upstream は `[Project description]` と
-    ///   `/aidlc <scope>` を別々に書く）。
-    /// - `- **Review Override**:` — 対応するフィールドが無い。常に空と決め打つと `--review`
-    ///   指定時に割れる。
-    /// - `- **Stages to Skip**:` の畳み理由 — upstream の規則は「slug が
-    ///   `reverse-engineering` かつ greenfield かつ**素のグリッドが EXECUTE**」であり、
-    ///   素のグリッド値と調整後の値の区別が要る。`PlanAction` は 2 値、`conditional` は
-    ///   出荷グラフ 33 ノード中 22 ノードで真なので、どちらでも代用できない。
+    /// これは「導出の工夫が足りない」のではなく、**構造から従う**裁定である。骨格には
+    /// `- **Project Root**:` があり、これはワークツリーの絶対パス — すなわち**環境の値**で、
+    /// ジャーナルに存在しない。投影がこれを書けるようになる道は「環境を読む」か「環境パスを
+    /// ドメインイベントへ載せる」かの 2 つしかなく、前者は投影核の定義を壊し、後者は ADR-008
+    /// と NFR3 の趣旨に反する。書けないのではなく、**書く場所がここではない**。
     ///
-    /// 骨格を推測して書くと 0a 逐語契約を静かに破るので、そのときだけここで止める。
-    /// 解消にはイベント拡張か、骨格生成をコマンド側へ寄せる裁定が要る（B10 で提起済み）。
-    ScaffoldTemplateUnavailable,
+    /// # NFR3 の適用範囲
+    ///
+    /// 冪等な再構成が保証するのは**差分適用**である — 同じジャーナルを同じ本文へ当てれば
+    /// 常に同じバイトが出る。骨格はその保証の対象ではなく**環境成果物**であり、全損したら
+    /// 再生成ではなく upstream 同様 archive & recreate で復旧する運用に載る。
+    ///
+    /// # 骨格の実バイトはある
+    ///
+    /// `cli/intent-create/classic-scope/state-full.md` が全文（102 行）で、U7 が骨格を書く
+    /// ときの正本になる。upstream 側の正本は `aidlc-utility.ts` の template literal である
+    /// （`knowledge/aidlc-shared/state-template.md` は LLM 向けの契約文書でツールは読まない）。
+    ScaffoldMissing,
 }
 
 impl core::fmt::Display for ProjectionError {
@@ -258,9 +256,7 @@ impl core::fmt::Display for ProjectionError {
             ProjectionError::AuditFieldKey(inner) => write!(f, "audit field key: {inner}"),
             ProjectionError::UnknownStage { stage } => write!(f, "unknown stage: {stage}"),
             ProjectionError::ParkSectionMissing => f.write_str("park section missing"),
-            ProjectionError::ScaffoldTemplateUnavailable => {
-                f.write_str("scaffold template unavailable")
-            }
+            ProjectionError::ScaffoldMissing => f.write_str("scaffold missing"),
         }
     }
 }
@@ -303,7 +299,7 @@ fn key(raw: &str) -> Result<AuditFieldKey, ProjectionError> {
 ///
 /// 状態ファイルに書き換え先が無い（`StateField` / `Checkbox`）、計画に無いステージを
 /// 名指された（`UnknownStage`）、park マーカーの置き場が無い（`ParkSectionMissing`）、
-/// `Started` の状態面を求められた（`ScaffoldTemplateUnavailable`）を返す。
+/// 骨格の無い状態ファイルへ `Started` の状態面を求められた（`ScaffoldMissing`）を返す。
 pub fn project(
     entries: &[JournalEntry],
     plan: &ResolvedPlan,
@@ -356,15 +352,16 @@ fn project_one(
 
 /// `Started` → 監査行 16 本と、状態ファイルの初期化。
 ///
-/// 状態ファイルの**骨格が無ければ**（本文が空）`ScaffoldTemplateUnavailable` で止まる。
+/// 状態ファイルの**骨格が無ければ**（本文が空）`ScaffoldMissing` で止まる — 骨格を書くのは
+/// 合成ルートであって投影ではない（オーナー裁定 2026-08-29、[`ProjectionError::ScaffoldMissing`]）。
 /// 骨格があるなら、初期化 3 ステージの完了・最初のゲート付きステージへの着地・総数を書く —
 /// いずれも他のイベントで逐語検収済みの writer と導出をそのまま使う。
 ///
-/// **書かないもの**: `- **Stages to Execute**: ` / `- **Stages to Skip**: ` の 2 つ。
-/// 前者は計画から導ける（スコープ内ステージの番号を文書順に並べるだけ）が、後者の実バイトは
-/// `2.1 (reverse-engineering — greenfield)` のように**畳まれた理由**を括弧内に持ち、その理由は
-/// 導けない（詳細は [`ProjectionError::ScaffoldTemplateUnavailable`]）。行は 2 つで 1 組の
-/// 計画表なので、片方だけ書くと読み手に矛盾した表を見せることになる。両方とも触らない。
+/// **書かないもの**: `- **Stages to Execute**: ` / `- **Stages to Skip**: ` の 2 つ。どちらも
+/// 骨格の行であり、書くのは合成ルートである。`- **Stages to Skip**:` の実バイトは
+/// `2.1 (reverse-engineering — greenfield)` のように**畳まれた理由**を括弧内に持つが、その理由は
+/// 素のグリッド値と調整後の値の区別を要し、`Started` の材料からは導けない — これも骨格生成が
+/// 投影の仕事ではないことの傍証である。
 fn started(
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
@@ -372,7 +369,7 @@ fn started(
 ) -> Result<(), ProjectionError> {
     append_started_rows(at, plan, read_model)?;
     if read_model.state().trim().is_empty() {
-        return Err(ProjectionError::ScaffoldTemplateUnavailable);
+        return Err(ProjectionError::ScaffoldMissing);
     }
     for stage in plan
         .stages()
@@ -1530,8 +1527,8 @@ mod tests {
             &mut read_model,
         )
         .expect_err("骨格が無い");
-        assert_eq!(error, ProjectionError::ScaffoldTemplateUnavailable);
-        assert_eq!(error.to_string(), "scaffold template unavailable");
+        assert_eq!(error, ProjectionError::ScaffoldMissing);
+        assert_eq!(error.to_string(), "scaffold missing");
         // 監査行だけは描けている（骨格が無くても台帳は書ける）。
         assert!(
             read_model

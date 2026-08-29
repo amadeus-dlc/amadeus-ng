@@ -240,7 +240,7 @@ fn assert_audit_only(case: &str, event: WorkflowExecutionEvent, state: &str) {
     let outcome = project(&[entry(event)], &plan(), &mut model);
     assert!(
         outcome.is_ok()
-            || matches!(outcome, Err(ref error) if error.to_string() == "scaffold template unavailable"),
+            || matches!(outcome, Err(ref error) if error.to_string() == "scaffold missing"),
         "{case}: 想定外の失敗: {outcome:?}"
     );
     assert_eq!(
@@ -441,8 +441,10 @@ fn unparking_removes_both_marker_lines() {
 
 #[test]
 fn the_genesis_draws_all_sixteen_initialization_rows() {
-    // 状態面はテンプレート未採取のため未実装（`ScaffoldTemplateUnavailable`）。監査行 16 本は
-    // 計画と走査結果だけから導ける。
+    // 状態面は空の本文へ当てるので `ScaffoldMissing` で止まる — 骨格を書くのは合成ルート
+    // であって投影ではない（オーナー裁定 2026-08-29）。監査行 16 本は計画と走査結果だけから
+    // 導けるので、ここで検収するのは監査面である。骨格の実バイトは同ケースの `state-full.md`
+    // にあり、U7 が骨格を書くときの正本になる。
     assert_audit_only(
         "intent-create/classic-scope",
         WorkflowExecutionEvent::Started(started()),
