@@ -18,8 +18,8 @@ use core_domain::orchestration::{
     IntentId, StageCompleted, WorkflowExecution, WorkflowExecutionEvent,
 };
 use core_domain::workflow_definition::StageSlug;
-use core_domain::workspace::SpaceName;
-use core_interface_adapter::orchestration::{StorePath, WorkflowExecutionRepositoryImpl};
+use core_domain::workspace::{SpaceName, StorePath};
+use core_interface_adapter::orchestration::{WorkflowExecutionRepositoryImpl};
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;

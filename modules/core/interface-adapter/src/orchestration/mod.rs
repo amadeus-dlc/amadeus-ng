@@ -13,11 +13,9 @@
 //! 消費側のパスは `core_interface_adapter::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
-mod event_manifest;
 mod journal_reader_impl;
 mod memory;
 mod store_failure;
-mod store_path;
 mod workflow_definition_repository_impl;
 mod workflow_execution_repository_impl;
 
@@ -25,9 +23,9 @@ mod workflow_execution_repository_impl;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 pub use workflow_execution_repository_impl::WorkflowExecutionRepositoryImpl;
 
-// 投影が使う横断読取とチェックポイント、およびストアファイルの場所
+// 投影が使う横断読取とチェックポイント (ストアファイルの場所 `StorePath` は共有語彙として
+// `core_domain::workspace` が所有する)
 pub use journal_reader_impl::JournalReaderImpl;
-pub use store_path::StorePath;
 
 // テスト用 in-memory 実装
 pub use memory::InMemoryWorkflowDefinitionRepository;

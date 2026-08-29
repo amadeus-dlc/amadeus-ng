@@ -13,6 +13,7 @@ mod shard_name;
 mod space_name;
 mod state_field_value;
 mod state_version;
+mod store_path;
 mod state_writers;
 
 // Domain Primitive
@@ -24,6 +25,7 @@ pub use shard_name::ShardName;
 pub use space_name::SpaceName;
 pub use state_field_value::StateFieldValue;
 pub use state_version::{StateVersionClassification, StateVersionKind};
+pub use store_path::StorePath;
 
 // 純関数ドメインサービス
 pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker};

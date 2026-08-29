@@ -14,10 +14,8 @@ mod support;
 use core_domain::orchestration::{
     AutonomyMode, IntentId, WorkflowExecution, WorkflowExecutionEvent,
 };
-use core_domain::workspace::SpaceName;
-use core_interface_adapter::orchestration::{
-    JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
-};
+use core_domain::workspace::{SpaceName, StorePath};
+use core_interface_adapter::orchestration::{JournalReaderImpl, WorkflowExecutionRepositoryImpl};
 use event_store_adapter_rs::EventStoreForSqlite;
 
 use core_use_case::orchestration::{

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use core_domain::workspace::SpaceName;
+use super::space_name::SpaceName;
 
 /// `spaces/` 直下の space ディレクトリ群を束ねるセグメント。
 const SPACES_SEGMENT: &str = "spaces";

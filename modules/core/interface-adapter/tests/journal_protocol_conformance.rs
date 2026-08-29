@@ -47,10 +47,8 @@ use core_domain::orchestration::{
 use core_domain::workflow_definition::{
     DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
 };
-use core_domain::workspace::{CheckboxState, SpaceName};
-use core_interface_adapter::orchestration::{
-    JournalReaderImpl, StorePath, WorkflowExecutionRepositoryImpl,
-};
+use core_domain::workspace::{CheckboxState, SpaceName, StorePath};
+use core_interface_adapter::orchestration::{JournalReaderImpl, WorkflowExecutionRepositoryImpl};
 use core_use_case::orchestration::{
     GlobalSeqNr, JournalReader, ProjectionName, RehydratedWorkflowExecution, RepositoryError,
     WorkflowExecutionRepository,

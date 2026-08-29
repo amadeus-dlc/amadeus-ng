@@ -55,6 +55,7 @@
 
 mod apply_error;
 mod autonomy_mode;
+mod event_manifest;
 mod command_error;
 mod intent_id;
 mod jump_direction;
@@ -113,4 +114,5 @@ pub use state_error::StateError;
 pub use verdict::UnknownVerdict;
 
 // 逐語定数
+pub use event_manifest::EVENT_MANIFEST;
 pub use verdict::ACCEPTED_RESULTS;

@@ -38,7 +38,10 @@
 
 use std::io::ErrorKind;
 
-use core_domain::orchestration::{ApplyError, IntentId, WorkflowExecution, WorkflowExecutionEvent};
+use core_domain::orchestration::{
+    ApplyError, EVENT_MANIFEST, IntentId, WorkflowExecution, WorkflowExecutionEvent,
+};
+use core_domain::workspace::StorePath;
 use core_use_case::orchestration::{
     CorruptCause, RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
 };
@@ -46,9 +49,7 @@ use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 
-use super::event_manifest::EVENT_MANIFEST;
 use super::store_failure::io_kind_of_source;
-use super::store_path::StorePath;
 
 /// 集約の最初の `seq_nr` (`Started` は必ず 1 — BR1.1)。本家 v3 はこの値で新規作成と更新を
 /// 分岐する (`is_created()` は廃止された)。

@@ -54,14 +54,13 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
-use core_domain::orchestration::{IntentId, WorkflowExecutionEvent};
+use core_domain::orchestration::{EVENT_MANIFEST, IntentId, WorkflowExecutionEvent};
+use core_domain::workspace::StorePath;
 use core_use_case::orchestration::{
     CorruptCause, GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, ProjectionName,
 };
 
-use super::event_manifest::EVENT_MANIFEST;
 use super::store_failure::io_kind;
-use super::store_path::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
 /// 書込なので待ち時間が要る。
