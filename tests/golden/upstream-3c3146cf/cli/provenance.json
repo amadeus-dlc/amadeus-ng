@@ -7,7 +7,7 @@
   "fetch_method": "git fetch --depth 1 origin 3c3146cfd7cef33020d48e8d48d4e80d0f8c2820 && git checkout FETCH_HEAD",
   "tree_manifest_sha256": "ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f",
   "tree_file_count": 262,
-  "captured_at": "2026-08-29T04:31:16Z",
+  "captured_at": "2026-08-29T08:12:42Z",
   "command": "bash scripts/goldens/recapture-cli.sh",
   "bun_version": "1.3.13",
   "non_interactive_env": {
@@ -18,6 +18,6 @@
     "AIDLC_DISABLE_USAGE_TRACKING": "1"
   },
   "fixture_intent_label": "golden",
-  "case_count": 25,
+  "case_count": 28,
   "missing_case_count": 2
 }
