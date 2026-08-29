@@ -10,11 +10,11 @@
 /// 綴りは `<型>/<版>`。版を上げるのは payload の読み方が変わるときだけで、変種の追加のような
 /// additive-safe な変更では上げない。
 ///
-/// 書くのはコマンド側の `WorkflowExecutionRepositoryImpl`、照合するのはクエリ側の
-/// `JournalReaderImpl` である。両側は互いを知らないので (`coding-rules/cqrs-boundaries.md`)、
-/// 綴りの正本は**両側が依存してよい唯一の層** — イベント enum の隣 — に置く。直列化版の
-/// 型判別子はイベント語彙の Published Language そのものであり、書く側と検める側が同じ正本を
-/// 見る必要がある。
+/// 書くのはコマンド側の `WorkflowExecutionRepositoryImpl`、照合するのは中間である RMU の
+/// `JournalReaderImpl` である。直列化版の型判別子はイベント語彙の Published Language そのもの
+/// なので、書く側と検める側が**同じ正本**を見る必要がある。したがってイベント enum の隣に置く —
+/// RMU は中間としてドメインに依存してよいので、写しを作らずにここを参照できる
+/// (`coding-rules/cqrs-boundaries.md` 判定表)。
 pub const EVENT_MANIFEST: &str = "workflow-execution-event/1";
 
 #[cfg(test)]
