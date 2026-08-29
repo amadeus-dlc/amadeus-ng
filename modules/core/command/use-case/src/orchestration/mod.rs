@@ -10,13 +10,17 @@
 //! 消費側のパスは `core_command_use_case::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod command_spelling;
 mod commit_error;
 mod commit_verdict_use_case;
 mod intent_execution_repository;
 mod intent_repository;
+mod next_turn_input;
+mod next_use_case;
 mod rehydrated_intent_execution;
 mod reported_transition;
 mod repository_error;
+mod scope_resolution;
 #[cfg(test)]
 mod test_support;
 mod workflow_definition_repository;
@@ -38,6 +42,10 @@ pub use rehydrated_intent_execution::RehydratedIntentExecution;
 // 持ち物である。型名は upstream の CLI 動詞ではなく更新の意図から取る
 // (オーナー裁定 2026-08-29 — 動詞 report は「レポート」と誤読される)。
 pub use commit_verdict_use_case::CommitVerdictUseCase;
+pub use next_turn_input::{
+    ActiveWorkflow, NextTurnInput, NounFamily, NounToken, ReadOnlyVerb, WorkspaceLayout,
+};
+pub use next_use_case::NextUseCase;
 pub use reported_transition::ReportedTransition;
 
 // エラー

@@ -3,6 +3,8 @@
 
 ## Interpretations
 <!-- example: 2026-05-29T10:14:32Z — chose REST over GraphQL; the consuming team only needs CRUD, revisit if subscriptions land -->
+- 2026-08-29T20:30:00Z — [B15/U6] next の 21 分岐ラダーをユースケース層に実装（判断はドメイン next_decision、フロー制御のみ — FR3.3 充足）。Directive 判別共用体（構築できる部分集合 — placeholder/slice2/B16 kind は variant を持たない）、scope 解決ラダー純関数、コマンド綴りカタログ（逸脱 #1 の写像点 1 モジュール）、逐語文言は wording 集約。分岐網羅 40+ テスト
+- 2026-08-29T20:30:00Z — [B15/工程事故] B14 を fetch 漏れの stale origin/main（B12 まで）から分岐して作業していたことを B15 着手時に発見 — マージキューが B13 と B14 を統合したため remote main は無事（CI が担保）。残骸は doc 言及 3 件のみで B15 で清掃。教訓: **新 Bolt ブランチは fetch 直後の origin/main から切る**（ハンドオフの運用規約へ追加すべき）
 - 2026-08-29T18:20:00Z — [B13] オーナー裁定で集約の再構成を ES 本則（event-store-adapter-rs サンプル準拠）へ全面整列: 構築 API は genesis / replay / apply_event のみ、イベントは内容（値）を運ぶ、再構成は失敗を返さない（壊れた歴史はクラッシュ）、memento 双子型禁止、Repository の読取はジャーナル全再生（スナップショット行は版の正本と存在検査のみ）、エラーは RepositoryError<Id> 1 本 + 裁定 6（source 連鎖）。裁定は coding-rules 4 本へ即・正典化し、誤適用の経緯（from_material → restore/rehydrate → memento 型の 3 段）ごと記録した
 - 2026-08-29T18:20:00Z — [B13] 前方に効く設計文書の整合: contract-summary C3 と components.md へ 2026-08-30 追記、B12 brief/developer-report へ裁定バナー、u5 decisions-1 裁定 6 に実装済み注記。specs 01/10/11/12 の全文追従は範囲拡大（ES 再構成の意味論を含む）を明記のうえ引き続き候補
 - 2026-08-22T11:47:37Z — [u1-canon-json-goldens] レビュー Major 1（C7 のゴールデン受入表スキーマが 2 フィールド省略表記）は ADR 0001 が正本で C7 側の省略誤りと判断し、contract-summary.md を in-place 訂正して監査台帳に Change Request を残した（上流矛盾は人間裁定というルールの例外 — オーナー承認済み ADR が一方を明確に裏付ける場合）。ゲートで提示する
