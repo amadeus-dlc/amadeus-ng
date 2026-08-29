@@ -1,20 +1,24 @@
 # B11 開発者報告 1 — U5 `report` ユースケース（FR2.1）
 
-対象ブリーフ: [`brief-1.md`](brief-1.md)
-ブランチ: `bolt/b11-u5-report-use-case`（origin/main 基準、**push なし・コミットは意味単位**）
+対象ブリーフ: [`brief-1.md`](brief-1.md) / 裁定の経緯: [`decisions-1.md`](decisions-1.md)
+ブランチ: `bolt/b11-u5-report-use-case`（origin/main 基準、**push なし**）
 検証の `CARGO_TARGET_DIR`: `target-delegate`（`cargo lint` のみ `target-delegate-lint`）
 
 ---
 
 ## 0. 結論（先に）
 
-固定裁定 1〜5 はすべて守った。実装（A）（B）とテスト（C）は完了し、私の所有ツリーだけで
-fmt / clippy / `cargo lint` / 該当クレートのテストはすべて緑である。
+**受入基準 1〜11 はすべて緑**である。固定裁定 1〜5、2026-08-29 に訂正された `Conflict`
+再試行の裁定、所有ファイル規律の例外承認（`None,` 削除 5 箇所）、結線テスト 1 本の追加も
+すべて反映した。
 
-ただし**受入基準 4・5・6・8 は未通過**である。理由は 1 つだけで、裁定 2（`approve_gate` の
-引数廃止）の追随が**ブリーフで禁止されたツリーの 3 ファイル 4 箇所**に必要であり、独断で
-触れないと判断して止めたためである。詳細は §7。必要な差分は 4 トークンの削除だけで、
-パッチも §7 に添えた。
+ワークスペース全体で **773 テスト全緑**（baseline 744 から +29、退行 0）。
+カバレッジは head 98.53%（絶対 90% 床・相対ゲートとも PASS）。
+
+字義と実装がずれている点が 1 つだけある — 受入基準 9 の「依存が `core-command-domain`
+1 本のまま」に対し、外部クレート `chrono` を `[dev-dependencies]` から `[dependencies]` へ
+移した。理由は §6 (a)。基準が括弧で名指しする「RMU / interface-adapter が現れないこと」は
+dev-dependencies を含め満たしている。
 
 ---
 
@@ -48,8 +52,8 @@ fmt / clippy / `cargo lint` / 該当クレートのテストはすべて緑で�
   `every_reported_verdict_projects_onto_one_domain_verdict` が固定した。
 - **出力に文言は無い。** `ReportOutcome` は材料（イベント・ステージ・`NextDecision`）だけを
   運ぶ。「Committed approve for "…" (scope: …)」の逐語は U7 の Presenter が組む。
-- **`Err` はそのまま伝播する。** `ReportError::Repository(..)` / `ReportError::Command(..)` は
-  伝播のための封筒であり、握り潰し・言い換え・再試行はしない（`Conflict` も再試行しない）。
+- **集約とポートの `Err` はそのまま伝播する。** 握り潰し・言い換えはしない。持っている
+  再試行の政策は `Conflict` 1 回だけである（§2）。
 - **楽観 version は `find_by_id` が返した値そのもの**を `store` に渡す。`aggregate.seq_nr()`
   からは導かない。`the_write_presents_the_version_the_rehydration_returned` が、通番 2 の集約に
   版 7 を持たせて「渡ったのは 7 である」ことを固定している。
@@ -62,12 +66,44 @@ fmt / clippy / `cargo lint` / 該当クレートのテストはすべて緑で�
 
 slug から `StageIndex` への解決は、集約の公開読取モデル（`stages()` / `stage_index()`）を
 使ってユースケース側の私有関数 `locate` で行っている。集約には同じ役割の私有関数 `resolve`
-があるが、公開されていない。**ブリーフの「domain の変更は裁定 2 の範囲のみ」に従い、公開
-クエリの追加は行わなかった。** 申し送りは §8 に記載する。
+があるが公開されていない。**ブリーフの「domain の変更は裁定 2 の範囲のみ」に従い、公開
+クエリの追加は行わなかった。** 申し送りは §8 (1)。
 
 ---
 
-## 2. 裁定 2 — フェーズ境界の集約内部導出
+## 2. `Conflict` の再試行（2026-08-29 訂正裁定）
+
+初版ブリーフの「`Conflict` も再試行しない」は C3 ③ の誤読として撤回され、正本は
+`contract-design-questions.md` Q6 = A（「ユースケースが 1 回だけ再構成して再試行、それでも
+競合なら CLI がエラー終了」）と確定した。実装はこれに従う。
+
+```rust
+match self.attempt(intent_id, stage, transition.clone(), occurred_at).await {
+    Err(ReportError::Repository(RepositoryError::Conflict { .. })) => {
+        self.attempt(intent_id, stage, transition, occurred_at).await
+    }
+    settled => settled,
+}
+```
+
+- `attempt` は**再構成からコミットまでの 1 回分**である。したがって再試行は必ず
+  `find_by_id` からやり直し、新しい版の集約に改めてコマンドを打つ。古い集約に `store` だけ
+  打ち直すのは「読んだ時点の版で書く」という楽観ロックの意味そのものを壊す。
+- `Conflict` は `store` からしか来ない（`find_by_id` は返さない）ので、この分岐は
+  「書込が競合した」と同値である。
+- 2 回目も `Conflict` なら伝播する。再試行後に集約がコマンドを拒否した場合も伝播する。
+- `repository_error.rs` の `Conflict` doc は正しいので、**origin/main の内容へ戻した**
+  （初版ブリーフに従って一度書き換えていた）。
+
+**「再構成からやり直したこと」の証拠**: テストダブルは現在の版を提示した書込しか受理しない。
+`a_first_conflict_is_retried_once_from_the_rehydration` は 1 件の割り込み書込を仕込んで
+2 回目が成功することを見ており、もし古い集約に `store` だけ打ち直していれば 2 回目も競合する。
+2 回目が通ったこと自体が再読み込みの証拠である。あわせて `store_attempts() == 2` で
+「再試行は 1 回だけ」も固定した。
+
+---
+
+## 3. 裁定 2 — フェーズ境界の集約内部導出
 
 ### 導出規則（実装）
 
@@ -103,54 +139,50 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | `.claude/tools/aidlc-state.ts` の `nextInScopeStage` 経由 | 次ステージの決定は state ファイルの EXECUTE/SKIP 上書きと既存チェックボックスを尊重した「次の実効 EXECUTE」 | 集約の `next_in_scope`（`effective_plan == Execute`）と同一の走査 |
 | ゴールデン `tests/golden/upstream-3c3146cf/cli/report/approved-across-phases` | `delivery-planning`（inception）承認 → `PHASE_COMPLETED` の `From phase: inception` / `To phase: construction`、続いて `STAGE_STARTED: functional-design` | 規則 1。承認ステージが inception、次の実効 EXECUTE が construction の `functional-design` |
 | ゴールデン `tests/golden/upstream-3c3146cf/cli/report/approved` | `practices-discovery` 承認 → 境界 3 行は**無く**、`STAGE_STARTED: requirements-analysis` が直後に来る | 規則 2。どちらも inception |
-| RMU 側の既存実装 `projection.rs:816`（`crossed_phase_boundary`、`Jumped` 用） | `let from = …phase(); let to = …phase(); Ok((from != to).then(|| PhaseBoundary::new(from, to)))` | 同一の式。投影が `Jumped` に対して計画から導いているのと**同じ導出**を、`GateApproved` では集約が行う |
+| RMU の既存実装 `projection.rs:816`（`crossed_phase_boundary`、`Jumped` 用） | `let from = …phase(); let to = …phase(); Ok((from != to).then(\|\| PhaseBoundary::new(from, to)))` | 同一の式。投影が `Jumped` に対して計画から導いているのと**同じ導出**を、`GateApproved` では集約が行う |
 
-### 外形不変の根拠（受入基準 8 の前半）
+### 外形不変の証明（受入基準 8）
 
 - **`GateApproved` の payload 形は 1 バイトも変えていない。** フィールドは
   `stage` / `user_input` / `next_stage` / `phase_boundary` の 4 つのままで、型も
-  `Option<PhaseBoundary>` のままである。変えたのは**誰がその値を作るか**だけで、
-  `GateApproved::new` の引数も 4 本のままである（`workflow_execution_event.rs` の diff は
-  doc コメント 3 か所のみ、実装行の変更 0）。
-- **既存の呼出は全部 `None` を渡していた。** 実測した 6 箇所（domain 2・RMU 1・
-  interface-adapter 1・app 2）はすべてリテラル `None` である。
-- **各フィクスチャの計画で導出結果も `None` になる。** 実測:
-  - `modules/core/read-model-updater/tests/support/mod.rs` / 同 `interface-adapter` /
-    同 `app`: いずれも `[Initialization, Ideation, Ideation]`。`approve_gate` は索引 1
-    （ideation）で発火し、次の実効 EXECUTE は索引 2（ideation）→ 同一フェーズ → `None`。
+  `Option<PhaseBoundary>` のままである。`GateApproved::new` の引数も 4 本のままで、
+  `workflow_execution_event.rs` の diff は **doc コメント 3 か所のみ・実装行の変更 0**。
+- **既存の呼出 7 箇所はすべてリテラル `None` を渡していた。** 各フィクスチャの計画を実測すると
+  導出結果も `None` になる:
+  - RMU / interface-adapter / app の各 `tests/support/mod.rs`: いずれも
+    `[Initialization, Ideation, Ideation]`。`approve_gate` は索引 1（ideation）で発火し、
+    次の実効 EXECUTE は索引 2（ideation）→ 同一フェーズ → `None`。
   - `modules/app/aidlc/tests/journal_protocol_conformance.rs`: 索引 0 のみ initialization、
     以降すべて inception。中間は inception → inception → `None`、最終は次が無い → `None`。
   - `modules/core/command/domain/tests/*`: 同様に `None`。
-- したがって**ジャーナルに載る payload バイトは変わらない**。投影ゴールデン
-  （`projection_golden_test.rs` 19 本）は `approve_gate` を呼んでおらず、
-  **ファイル自体は無改変**である。
-
-**ただし「19 本が全緑であること」自体は実測できていない** — §7 の追随が入るまで
-`core-read-model-updater` のテストがコンパイルできないためである。ここは推定であって実測
-ではない、と明示しておく。
+  したがってジャーナルに載る payload バイトは変わらない。
+- **`projection_golden_test.rs` は無改変で 19 本全緑**（実測。`git status` でも当該ファイル・
+  `tests/golden/**` とも差分 0）。
+- **ゴールデンパリティ 9 本・監査ブロックゴールデン 1 本・クラッシュ再構成 5 本**も全緑。
 
 ### 置き換えたテスト
 
 `a_gate_approval_carries_the_caller_supplied_phase_boundary`（呼出側が渡した境界がそのまま
-載ることを見ていた）は削除し、導出を見る 4 本に置き換えた。§4 参照。
+載ることを見ていた）は削除し、導出を見る 4 本に置き換えた。§5 参照。
 
 ---
 
-## 3. 裁定 1・3・4・5 の遵守
+## 4. 裁定 1・3・4・5 の遵守
 
 | 裁定 | 遵守の証拠 |
 |---|---|
-| 1. U5 は RMU を呼ばない | `modules/core/command/use-case/Cargo.toml` の `[dependencies]` は `core-command-domain` と `chrono` のみ。`[dev-dependencies]` は `tokio` のみ。`core-read-model-updater` / `core-command-interface-adapter` は grep 0 件。テストダブルは本クレート内の `#[cfg(test)] mod test_support` に置いた |
-| 2. フェーズ境界は集約が導出 | §2 |
+| 1. U5 は RMU を呼ばない | `modules/core/command/use-case/Cargo.toml` の `[dependencies]` は `core-command-domain` と `chrono` のみ、`[dev-dependencies]` は `tokio` のみ。`core-read-model-updater` / `core-command-interface-adapter` は grep 0 件。テストダブルは本クレート内の `#[cfg(test)] mod test_support` に置いた |
+| 2. フェーズ境界は集約が導出 | §3 |
 | 3. `StoreVersion` newtype 化は却下 | `StoreVersion` の grep は `modules/` `tools/` `docs/` で 0 件。ポート doc の「U5/U6 の境界強化候補として記録してある」を削除し、却下理由（本家 v3.0.0 が `expected_version: usize` で定めた語彙であり、包み直しは Conformist 方針への違反。`coding-rules/upstream-contracts.md`）を書いた |
 | 4. 「再水和」を使わない | 本 Bolt で新規に書いた散文・doc コメントはすべて「再構成」。既存 48 ファイルと型名 `RehydratedWorkflowExecution` の一括置換は行っていない（対象外） |
 | 5. FR2.2 は対象外 | レシート述語・verification 面には一切触れていない |
+| 追加通知: 新規コードで `CorruptCause` への結合を増やさない（裁定 6 は B11 着地後の追随 PR） | 新規 5 ファイルに `CorruptCause` の参照は 0 件。`repository_error.rs` は origin/main の内容へ戻したので、裁定 6 の作業対象は本 Bolt の diff と衝突しない |
 
 ---
 
-## 4. 追加・変更したテスト（全 28 本）
+## 5. 追加・変更したテスト（新規 29 本）
 
-### domain（`workflow_execution.rs` — 追加 4・削除 1、合計 313 → 316）
+### domain（`workflow_execution.rs` — 追加 4・削除 1、313 → 316）
 
 | テスト | 何を固定するか |
 |---|---|
@@ -162,9 +194,9 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 
 補助フィクスチャとして `start_from_phased_plan` / `phased` / `approval_boundary` を追加した。
 
-### use-case（追加 24 本、合計 18 → 42）
+### use-case（追加 25 本、18 → 43）
 
-`report_use_case.rs`（19 本）:
+`report_use_case.rs`（20 本）:
 
 | テスト | 分類 |
 |---|---|
@@ -181,8 +213,9 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | `a_report_that_names_a_stage_outside_the_plan_is_refused` | 異常系（`UnknownStage`） |
 | `a_report_that_names_a_stage_the_cursor_has_not_reached_is_refused_by_the_aggregate` | 異常系（`CommandError::NotStale` の伝播） |
 | `the_write_presents_the_version_the_rehydration_returned` | 楽観 version の往復 |
-| `a_missing_aggregate_is_reported_as_not_found` | **異常系（`find_by_id` が `NotFound`）** |
-| `a_write_that_lost_the_race_is_reported_as_a_conflict` | **異常系（`store` が `Conflict`）**。再試行しないことも同時に固定 |
+| `a_missing_aggregate_is_reported_as_not_found` | **異常系（`find_by_id` が `NotFound`）** — ブリーフ必須 1/3 |
+| `a_first_conflict_is_retried_once_from_the_rehydration` | **異常系（1 回目 `Conflict` → 2 回目成功）** — ブリーフ必須 2/3 |
+| `a_second_conflict_is_propagated_without_a_further_retry` | **異常系（2 回とも `Conflict` → 伝播）** — ブリーフ必須 3/3 |
 | `a_command_the_aggregate_refuses_is_propagated_verbatim` | 異常系（`CheckboxPrecondition` の逐語伝播 + 1 バイトも書かない） |
 | `the_phase_boundary_comes_from_the_aggregate_not_from_the_use_case` | 層の境界（裁定 2 の横断確認） |
 | `approving_the_last_stage_reports_no_next_stage` | 境界条件（`next_stage` / `phase_boundary` とも `None`） |
@@ -191,6 +224,15 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 `report_error.rs`（5 本）: `a_repository_failure_is_carried_verbatim` /
 `a_refused_command_is_carried_verbatim` / `an_unknown_stage_names_the_slug_it_could_not_resolve` /
 `the_failure_is_a_std_error` / `failures_compare_by_value`。
+
+### interface-adapter（新規ファイル 1・テスト 1 本）
+
+`tests/report_use_case_wiring_test.rs` —
+`the_use_case_commits_a_transition_through_the_real_repository`。契約 C3 ④ を満たす結線テスト。
+実物の `WorkflowExecutionRepositoryImpl::in_memory()` を `ReportUseCase` に注入して 1 遷移を
+コミットし、**同じストアを指す別の口（`reopened()`）から再構成**して行が本当に載ったことを
+確かめる（`seq_nr == 2` / `version == 2` / カーソルが次のステージへ進んでいる）。
+網羅は use-case 側の fake テストが持つ。
 
 ### TDD の進め方（実測）
 
@@ -201,72 +243,72 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 3. use-case: `report_use_case.rs` に**テストモジュールだけ**を書き、`mod.rs` へ配線して
    **red**（`E0583: file not found for module report_error / report_outcome / reported_verdict`、
    `E0432: unresolved import ReportUseCase`）を確認。
-4. 4 型を実装して **green**（42 本）。
+4. 4 型を実装して **green**。
+5. `Conflict` 再試行の訂正裁定を受けて、再試行の 2 本を先に書き足してから `attempt` の
+   括り出しとテストダブルの台本化を実装。
 
-### テストダブルの統合
+### テストダブルの統合と台本化
 
 ブリーフの選択肢どおり、ポートのテストにあった `FakeRepository` は削除し、
 `test_support::InMemoryWorkflowExecutionRepository` に一本化した
 （`coding-rules/no-backward-compatibility.md` — 同じ役割の口を 2 つ並立させない）。
-`Conflict` の注入は `holding_after_a_concurrent_write` が担う。`find_by_id` が実際より 1 つ古い版を
-返すことで「読んだ直後に別の書き手が 1 件書いた」状況を、本物の並行実行なしに再現する。
+
+`Conflict` は「読んでから書くまでの間に別の書き手が入った」ときにしか起きないので、単一
+スレッドのテストからは自然に起こせない。そこで**割り込む書込の回数**を台本として持たせた
+（`holding_behind_concurrent_writes(aggregate, version, writes)`）。台本が残っている間、
+`store` はストアの版だけを 1 つ進めて `Conflict` を返す。割り込んだ相手が書いた**内容**までは
+模していない — 版の進行だけが再試行の観測に要る材料だからである。
 
 ---
 
-## 5. 受入基準の実行結果
-
-**実行したコマンドと、その実際の結果**である。通っていないものは通っていないと書く。
+## 6. 受入基準の実行結果（すべて実測）
 
 | # | 基準 | コマンド | 結果 |
 |---|---|---|---|
-| 1 | `cargo fmt --all --check`（`tools/lint` も） | `CARGO_TARGET_DIR=$PWD/target-delegate cargo fmt --all --check` | **緑**（`FMT OK`）。`tools/lint` は本 Bolt で 1 行も触っていない |
-| 2 | `cargo clippy --workspace --all-targets -- -D warnings` | `… cargo clippy -p core-command-domain -p core-command-use-case --all-targets -- -D warnings` | **部分的に緑**。所有 2 クレートは緑。workspace 全体は §7 によりコンパイル不能で**未実行** |
+| 1 | `cargo fmt --all --check` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo fmt --all --check` | **緑**（exit 0）。`tools/lint` は本 Bolt で 1 行も触っていない |
+| 2 | `cargo clippy --workspace --all-targets -- -D warnings` | 同上 | **緑**（exit 0） |
 | 3 | `cargo lint` | `CARGO_TARGET_DIR=$PWD/target-delegate-lint cargo lint` | **緑**（exit 0、所見 0 件） |
-| 4 | `cargo test --workspace` | `… cargo test --workspace` | **未通過**。§7 の 4 箇所が `E0061` でコンパイル不能。所有クレート単体は緑（domain lib 316 / use-case lib 42 / domain 統合テスト 6） |
-| 5 | `scripts/quint-gate.sh` | — | **未実行**。formal/ に一切触れていないため退行は原理的に無いが、実測していないので「通った」とは書かない |
-| 6 | `scripts/coverage.sh` | — | **未実行**。基準 4 が通らないと計測できない |
-| 7 | プロダクトコードに `unwrap` / `expect` 0 件 | clippy（`unwrap_used` / `expect_used` deny + `clippy.toml` のテスト許可）+ 各ファイルの `#[cfg(test)]` 前を対象にした grep | **緑**。新規・変更 9 ファイルすべて非テスト部 0 件 |
-| 8 | 外形不変の証明 | `GateApproved` payload 形の diff 実測 + フィクスチャ計画の実測 | **半分のみ実測**。payload 形不変とフィクスチャの導出値が `None` であることは実測済（§2）。`projection_golden_test.rs` 19 本の実行は基準 4 と同じ理由で**未実測** |
-| 9 | use-case の依存が `core-command-domain` 1 本 | `cat modules/core/command/use-case/Cargo.toml` + grep | **要注意（§6 参照）**。RMU / interface-adapter は dev-dependencies を含め 0 件で**基準の主旨は満たす**が、外部クレート `chrono` を `[dev-dependencies]` から `[dependencies]` へ移した。字義の「1 本のまま」は満たしていない |
+| 4 | `cargo test --workspace` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo test --workspace` | **緑**。**773 passed / 0 failed**（baseline 744 から +29、退行 0） |
+| 5 | `scripts/quint-gate.sh` | `CARGO_TARGET_DIR=$PWD/target-delegate bash scripts/quint-gate.sh` | **緑**（exit 0、`[PASS] quint gate: all steps green`） |
+| 6 | `scripts/coverage.sh` | `… bash scripts/coverage.sh` および `… --base origin/main` | **緑**。head 98.52996%。絶対ゲート `[PASS] … >= 90.0%`、相対ゲート `[PASS] head (98.52996%) >= base (98.51646%) - tolerance (0.01)` |
+| 7 | プロダクトコードに `unwrap` / `expect` 0 件 | clippy（`unwrap_used` / `expect_used` deny）+ 各ファイルの `#[cfg(test)]` 前を対象にした grep | **緑**。新規・変更ファイルすべて非テスト部 0 件 |
+| 8 | 外形不変の証明 | `GateApproved` payload 形の diff 実測 + フィクスチャ計画の実測 + `projection_golden_test.rs` の実行 | **緑**。payload 形不変（diff は doc のみ）、`projection_golden_test.rs` は**無改変で 19 本全緑**、`tests/golden/**` の差分 0。§3 |
+| 9 | use-case の依存が `core-command-domain` 1 本 | `cat Cargo.toml` + grep | **要注意**。RMU / interface-adapter は dev-dependencies を含め 0 件で**基準の主旨は満たす**が、外部クレート `chrono` を `[dev-dependencies]` から `[dependencies]` へ移した。下記 (a) |
 | 10 | `StoreVersion` grep 0 件・ポート doc 更新 | `grep -rn StoreVersion modules/ tools/ docs/` | **緑**（0 件）。ポート doc は却下理由付きで更新済 |
 | 11 | 報告書の内容 | 本ファイル | **完了** |
 
-### 参考: baseline（origin/main 相当、本 Bolt 着手前に実測）
+### baseline（origin/main 相当、本 Bolt 着手前に実測）
 
-`CARGO_TARGET_DIR=$PWD/target-delegate cargo test --workspace` → **744 passed / 0 failed**。
-ブリーフの「既存 234 テスト」は古い数値であり、退行の基準は 744 である
-（内訳の主なもの: domain lib 313 / RMU lib 126 / core-infrastructure lib 103 /
-interface-adapter lib 35 / projection_golden_test 19 / use-case lib 18）。
+`cargo test --workspace` → **744 passed / 0 failed**。ブリーフの「既存 234 テスト」は古い数値で
+あり、退行の基準は 744 である（主な内訳: domain lib 313 / RMU lib 126 /
+core-infrastructure lib 103 / interface-adapter lib 35 / projection_golden_test 19 /
+use-case lib 18）。+29 の内訳は domain +3・use-case +25・interface-adapter 結線テスト +1。
 
 ---
 
-## 6. 判断が要った点（すべて明記する）
+## 7. 判断が要った点（すべて明記する）
 
-### (a) `chrono` を `[dependencies]` へ移した — 基準 9 の字義との差
+### (a) `chrono` を `[dependencies]` へ移した — 受入基準 9 の字義との差
 
 ユースケースは `occurred_at: DateTime<Utc>` を集約コマンドへ渡す。集約は時計を持たない
-（NFR3.1）ので、この型を名指しせずにユースケース本体を書くことはできない。`chrono` は
-すでに同クレートの `[dev-dependencies]` にあり、workspace 依存として全層で使われている
-外部クレートである。
+（NFR3.1）ので、この型を名指しせずにユースケース本体は書けない。`chrono` はすでに同クレートの
+`[dev-dependencies]` にあり、workspace 依存として全層で使われている外部クレートである。
 
 `coding-rules/cqrs-boundaries.md` は「判定の『相手』は側のクレートであり、共有層と外部
-ライブラリは対象外」と明記しているので、CQRS 境界の観点では違反ではない。基準 9 が
-括弧で名指ししている「RMU / interface-adapter が現れないこと」も満たしている。
-**ただし「依存が `core-command-domain` 1 本のまま」という字義は満たしていない**ので、
-勝手に「基準 9 は緑」とは書かず、ここに明示する。
+ライブラリは対象外」と明記しているので CQRS 境界の観点では違反ではない。基準 9 が括弧で
+名指ししている「RMU / interface-adapter が現れないこと」も満たしている。
+**ただし「1 本のまま」という字義は満たしていない**ので、勝手に緑とは書かずここに明示する。
 
-### (b) `RepositoryError::Conflict` の doc が裁定と矛盾していた
-
-既存の doc に「ユースケースは再水和して 1 回だけ再試行する」とあり、ブリーフの固定裁定
-「再試行の政策は持たない（`Conflict` も再試行しない）」と正面から矛盾していた。所有ツリー内
-であり、かつ裁定の**適用**であって逸脱ではないと判断し、「ユースケースは再試行しない
-（オーナー裁定 2026-08-29）。旧文は失効」へ是正した。委任者へは事前に報告済み。
-
-### (c) `PhaseBoundary` / `GateApproved` の doc が裁定 2 で失効した
+### (b) `PhaseBoundary` / `GateApproved` の doc が裁定 2 で失効した
 
 `phase_boundary.rs` の「**呼出側（ユースケース）が定義から導出して渡す投影材料**であり、
 集約は検証せずイベントに載せるだけ」と、`workflow_execution_event.rs` の同趣旨 2 か所を
-是正した。裁定 2 の範囲内の変更である。**実装行は 1 行も変えていない**（diff は doc のみ）。
+是正した。裁定 2 の範囲内の変更であり、**実装行は 1 行も変えていない**。
+
+### (c) `repository_error.rs` の `Conflict` doc — 一度書き換えて、戻した
+
+初版ブリーフの「再試行しない」に従って一度是正したが、訂正裁定（doc は正しい・変更しない）を
+受けて **origin/main の内容へ完全に戻した**。本 Bolt の diff にこのファイルは含まれない。
 
 ### (d) `ReportOutcome` に `clippy::large_enum_variant` の allow を付けた
 
@@ -282,41 +324,15 @@ interface-adapter lib 35 / projection_golden_test 19 / use-case lib 18）。
 2 つ目の呼出が別トランザクションになり、コミットの有無と結果が食い違いうるため分離不能と
 判断し、doc に理由を書いた。**根拠は既存の house 先例**である — 集約コマンド自身が
 `&mut self -> Result<WorkflowExecutionEvent, CommandError>` であり、ES の「1 コマンド 1
-イベント」契約がそう要求している。オーナー許可は取っていないので、レビューで裁定されたい。
+イベント」契約がそう要求している。**オーナー許可は取っていないので、レビューで裁定されたい。**
 
 ### (f) 止めて相談した点 — 裁定 2 と所有ファイル規律の衝突
 
-§7。委任者へ 2 度報告し、回答を待った。
-
----
-
-## 7. 未完了 — 裁定 2 の追随（禁止ツリー 3 ファイル 4 箇所）
-
-`approve_gate` の引数を廃止すると、リテラル `None` を渡していた呼出側が全部コンパイル
-できなくなる。`coding-rules/no-backward-compatibility.md` は互換オーバーロードも旧署名の
-薄い委譲も禁じているので、逃げ道は無い。所有ツリー内の 2 箇所
-（`modules/core/command/domain/tests/engine_loop_conformance.rs` /
-`…/upstream_event_store_conformance.rs`）は追随済み。残るのは次である。
-
-| ファイル | 行 | ブリーフ上の扱い |
-|---|---|---|
-| `modules/core/read-model-updater/tests/support/mod.rs` | 194 | **禁止**ツリー |
-| `modules/app/aidlc/tests/journal_protocol_conformance.rs` | 265 | **禁止**ツリー |
-| `modules/app/aidlc/tests/crash_reconstruction_test.rs` | 79, 206 | **禁止**ツリー |
-| `modules/core/command/interface-adapter/tests/support/contract.rs` | 40 | 許可にも禁止にも**記載なし** |
-
-必要な差分は `None,` 1 個の削除だけである。
-
-```sh
-perl -0pi -e 's/approve_gate\(([^,]+), None, at\(\)\)/approve_gate($1, at())/g' \
-  modules/core/read-model-updater/tests/support/mod.rs \
-  modules/app/aidlc/tests/journal_protocol_conformance.rs \
-  modules/app/aidlc/tests/crash_reconstruction_test.rs \
-  modules/core/command/interface-adapter/tests/support/contract.rs
-```
-
-§2 のとおり、この 4 箇所は導出結果も `None` なので**イベントのバイトは変わらない**。
-それでもブリーフが明示的に禁じたツリーなので、独断では触れていない。
+`approve_gate` の引数廃止で所有ツリー外の呼出側がコンパイル不能になることを着手直後に報告し、
+独断で触れずに回答を待った。結果、**`None,` の削除に限り 5 箇所の編集が承認**され、あわせて
+初版ブリーフの `Conflict` 裁定の誤りも判明した（`decisions-1.md` の「訂正」節）。
+実際に触ったのはその 5 箇所の `None,` だけで、他の行は 1 行も動かしていない
+（`git diff` で確認済み: 4 ファイル 5 行、いずれも `None,` の削除のみ）。
 
 ---
 
@@ -336,9 +352,11 @@ perl -0pi -e 's/approve_gate\(([^,]+), None, at\(\)\)/approve_gate($1, at())/g' 
 4. **`report --single` / `--skeleton-stance`** は U5 の入力型に含めていない（ブリーフの
    非スコープ）。U7 が `ReportUseCase` に到達する前に分岐させる必要がある — upstream も
    `handleReport` の Branch -1 / Branch 0 で手前分岐している。
-5. **基準 5・6（quint / coverage）は未実行**。§7 の追随後にメインセッションで回してほしい。
-   coverage については、`ReportUseCase` の分岐はすべてテストで到達している一方、
-   `test_support` は `#[cfg(test)]` なので計測対象外である。
+5. **`ReportUseCase` が `Conflict` を再試行するのは 1 回だけ**で、その回数はコードに直書き
+   （`match` の 1 段）である。将来 U6 も同じ政策を持つなら、方針の重複を避ける置き場所を
+   考える必要がある。
+6. **`target-delegate/` と `target-delegate-lint/`** が未追跡のまま残っている（`.gitignore` は
+   `/target` しか除外していない）。検証用のビルド生成物なので削除して構わない。
 
 ---
 
@@ -346,24 +364,34 @@ perl -0pi -e 's/approve_gate\(([^,]+), None, at\(\)\)/approve_gate($1, at())/g' 
 
 新規（`modules/core/command/use-case/src/orchestration/`）:
 
-- `report_use_case.rs`（641 行 — うちテスト約 430 行）
-- `reported_verdict.rs`（85 行）
-- `report_outcome.rs`（52 行）
-- `report_error.rs`（107 行）
-- `test_support.rs`（219 行、`#[cfg(test)]`）
+- `report_use_case.rs`（テスト込み）
+- `reported_verdict.rs`
+- `report_outcome.rs`
+- `report_error.rs`
+- `test_support.rs`（`#[cfg(test)]`）
+
+新規（`modules/core/command/interface-adapter/tests/`）:
+
+- `report_use_case_wiring_test.rs`（契約 C3 ④ の結線テスト 1 本)
 
 変更:
 
 - `modules/core/command/domain/src/orchestration/workflow_execution.rs`（裁定 2 の実装 + テスト）
 - `modules/core/command/domain/src/orchestration/phase_boundary.rs`（doc のみ）
 - `modules/core/command/domain/src/orchestration/workflow_execution_event.rs`（doc のみ）
-- `modules/core/command/domain/tests/engine_loop_conformance.rs`（呼出追随 1 箇所）
-- `modules/core/command/domain/tests/upstream_event_store_conformance.rs`（呼出追随 1 箇所）
+- `modules/core/command/domain/tests/engine_loop_conformance.rs`（`None,` 削除 1 箇所）
+- `modules/core/command/domain/tests/upstream_event_store_conformance.rs`（`None,` 削除 1 箇所）
 - `modules/core/command/use-case/Cargo.toml`（`chrono` を dependencies へ）
 - `modules/core/command/use-case/src/orchestration/mod.rs`（ファサードの `pub use`）
 - `modules/core/command/use-case/src/orchestration/workflow_execution_repository.rs`
   （裁定 3 の doc 更新 + テストダブル一本化）
-- `modules/core/command/use-case/src/orchestration/repository_error.rs`（`Conflict` の doc 是正）
+
+**例外承認による所有ツリー外の追随**（`None,` 削除のみ・他の行は 1 行も触っていない）:
+
+- `modules/core/read-model-updater/tests/support/mod.rs:194`
+- `modules/core/command/interface-adapter/tests/support/contract.rs:40`
+- `modules/app/aidlc/tests/crash_reconstruction_test.rs:79, 206`
+- `modules/app/aidlc/tests/journal_protocol_conformance.rs:265`
 
 **`tests/golden/**` は 1 バイトも変更していない**（読むだけ）。`docs/` `formal/` `coding-rules/`
 `.claude/` `modules/harness/` にも触れていない。
