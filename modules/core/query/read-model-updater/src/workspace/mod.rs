@@ -26,7 +26,9 @@ pub use read_model::ReadModel;
 pub use audit_block::{SHARD_HEADER, render_audit_block};
 
 // 投影ライタ（リードモデルをディスクへ落とす 2 面。状態ファイルは置換、シャードは追記）
-pub use audit_shard::{AuditShardWriteError, append as append_audit_shard};
+pub use audit_shard::{
+    AuditShardWriteError, append as append_audit_shard, read_all as read_all_audit_shards,
+};
 pub use state_file::{
     StateFileReadError, StateFileWriteError, read as read_state_file,
     write_atomic as write_state_file,

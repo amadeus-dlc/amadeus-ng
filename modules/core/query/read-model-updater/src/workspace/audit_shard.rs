@@ -10,7 +10,7 @@
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::audit_block::SHARD_HEADER;
 
@@ -67,6 +67,35 @@ pub fn append(path: &Path, blocks: &str) -> Result<(), AuditShardWriteError> {
         .map_err(|error| io_error(&error))
 }
 
+/// シャードディレクトリの全 `*.md` を**ファイル名順**に読み、`\n` で連結する。
+///
+/// これが [`find_all_events`] へ渡る連結バッファである。ファイル名順で連結するからこそ、
+/// 同一秒のタイをバッファ位置で破るという規則が「シャード名順 × シャード内追記順」を意味する
+/// （03 §6.3 / §6.4）。
+///
+/// **消えた・読めないシャードは黙って飛ばす**。読取中に台帳が育つのも失敗ではない — 生きている
+/// 台帳を 1 つの欠落でまるごと読めなくしないためである（upstream 逐語:
+/// *"growth during the read is explicitly not a failure"*）。ディレクトリ自体が無ければ空を返す。
+///
+/// [`find_all_events`]: core_domain::workspace::find_all_events
+#[must_use]
+pub fn read_all(dir: &Path) -> String {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return String::new();
+    };
+    let mut shards: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+        .collect();
+    shards.sort();
+    shards
+        .iter()
+        .filter_map(|path| fs::read_to_string(path).ok())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +148,33 @@ mod tests {
         let path = dir.path().join("shard.md");
         append(&path, "").expect("何も書かない");
         assert!(!path.exists(), "書くものが無いのにファイルを生やさない");
+    }
+
+    #[test]
+    fn reading_all_shards_concatenates_them_in_file_name_order() {
+        let dir = tempdir().expect("一時 dir");
+        fs::write(dir.path().join("zeta-00000002.md"), "Z").expect("置く");
+        fs::write(dir.path().join("alpha-00000001.md"), "A").expect("置く");
+        // `.md` 以外は台帳ではない。
+        fs::write(dir.path().join("notes.txt"), "X").expect("置く");
+        assert_eq!(read_all(dir.path()), "A\nZ");
+    }
+
+    #[test]
+    fn a_missing_shard_directory_reads_as_empty() {
+        let dir = tempdir().expect("一時 dir");
+        assert_eq!(read_all(&dir.path().join("no-such-dir")), "");
+    }
+
+    #[test]
+    fn an_unreadable_shard_is_skipped_rather_than_failing_the_whole_read() {
+        // ディレクトリを `.md` の位置に置くと `read_to_string` が失敗する（読めないシャード
+        // の代役）。生きている台帳が 1 つの欠落で読めなくならないことを見る。
+        let dir = tempdir().expect("一時 dir");
+        fs::write(dir.path().join("a-00000001.md"), "A").expect("置く");
+        fs::create_dir(dir.path().join("b-00000002.md")).expect("読めない項目を置く");
+        fs::write(dir.path().join("c-00000003.md"), "C").expect("置く");
+        assert_eq!(read_all(dir.path()), "A\nC");
     }
 
     #[test]

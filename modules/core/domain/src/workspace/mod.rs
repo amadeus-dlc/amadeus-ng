@@ -12,6 +12,7 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod audit_field;
+mod audit_ordering;
 mod bolt_refs;
 mod checkbox;
 mod clone_id;
@@ -24,6 +25,7 @@ mod store_path;
 
 // Domain Primitive
 pub use audit_field::{AuditFieldKey, AuditFieldValue, AuditFields};
+pub use audit_ordering::{AuditEventRecord, OrderedAuditEvents};
 pub use bolt_refs::BoltRefs;
 pub use checkbox::{CheckboxEntry, CheckboxState};
 pub use clone_id::CloneId;
@@ -35,6 +37,7 @@ pub use state_version::{StateVersionClassification, StateVersionKind};
 pub use store_path::StorePath;
 
 // 純関数ドメインサービス
+pub use audit_ordering::find_all_events;
 pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker};
 pub use state_field_value::unsafe_line_char;
 pub use state_version::classify_state_version;
