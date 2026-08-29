@@ -1,0 +1,33 @@
+[package]
+name = "core-command-interface-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+core-command-use-case = { workspace = true }
+core-domain = { workspace = true }
+audit-events = { workspace = true }
+directive-schema = { workspace = true }
+canon-json = { workspace = true }
+message-catalog = { workspace = true }
+core-infrastructure = { workspace = true }
+# 本家が `Box<dyn Error>` に包んで運ぶ SQLite の失敗を開けて分類するため (`store_failure`)。
+# 本家の `sqlite` feature も同じ rusqlite を `bundled` で使うので、同梱の SQLite 本体は
+# 1 つに統合される (実行環境の libsqlite3 の版差は入らない)。
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# 時計とイベントの発生時刻が `DateTime<Utc>` になった (ADR-010 決定 3)。
+chrono = { workspace = true }
+# 集約の永続化そのもの (ADR-010)。`sqlite` feature で `EventStoreForSqlite` を有効にする。
+event-store-adapter-rs = { workspace = true, features = ["sqlite"] }
+
+[dev-dependencies]
+tempfile = "3"
+# 非同期ポート (AFIT) の契約テストを回す current_thread ランタイム (C3 / Q3 = A)。
+tokio = { workspace = true }

@@ -1,6 +1,12 @@
 //! workspace コンテキスト (11-workspace.md) — 永続化機構の Domain Primitive と純関数サービス。
 //! upstream 契約の逐語根拠は docs/specs/research/workspace-*.md。
 //!
+//! **描画はここに無い** (11-workspace §2.3)。状態ファイル・監査ブロックを**描く**純関数
+//! (`state_writers` / `render_audit_block`) は ES 化により投影の責務へ移った — 描くのは
+//! ReadModelUpdater (`core-query-read-model-updater` の `workspace` 投影 API) であって、
+//! ドメイン層ではない (ADR-003 / ADR-004)。ここに残るのは値オブジェクトの Always Valid 検証と、
+//! 集約に置けない横断の判断 (`classify_state_version`) である。
+//!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_domain::workspace::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
@@ -14,7 +20,6 @@ mod space_name;
 mod state_field_value;
 mod state_version;
 mod store_path;
-mod state_writers;
 
 // Domain Primitive
 pub use bolt_refs::BoltRefs;
@@ -31,9 +36,6 @@ pub use store_path::StorePath;
 pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker};
 pub use state_field_value::unsafe_line_char;
 pub use state_version::classify_state_version;
-pub use state_writers::{
-    find_field, with_field, with_field_if_present, with_field_or_insert, without_field,
-};
 
 // エラー
 pub use bolt_refs::BoltRefsError;
@@ -42,7 +44,6 @@ pub use clone_id::CloneIdError;
 pub use intent_dir_name::IntentDirNameError;
 pub use space_name::SpaceNameError;
 pub use state_field_value::UnsafeLineChar;
-pub use state_writers::{FieldNotFound, HeadingNotFound};
 
 // 逐語定数
 pub use bolt_refs::EMPTY_LIST_LITERAL;

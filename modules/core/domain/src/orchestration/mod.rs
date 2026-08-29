@@ -55,8 +55,8 @@
 
 mod apply_error;
 mod autonomy_mode;
-mod event_manifest;
 mod command_error;
+mod event_manifest;
 mod intent_id;
 mod jump_direction;
 mod next_decision;

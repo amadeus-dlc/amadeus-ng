@@ -2,15 +2,17 @@
 resolver = "3"
 members = [
   "modules/core/domain",
-  "modules/core/use-case",
-  "modules/core/interface-adapter",
+  "modules/core/command/use-case",
+  "modules/core/command/interface-adapter",
+  "modules/core/query/read-model-updater",
+  "modules/core/infrastructure",
   "modules/shared/canon-json",
   "modules/shared/message-catalog",
   "modules/shared/audit-events",
   "modules/shared/directive-schema",
-  "modules/infra-io",
   "modules/app/aidlc",
   "modules/harness/claude",
+  "modules/harness/infrastructure",
 ]
 
 [workspace.package]
@@ -86,13 +88,19 @@ cmp_null = "deny"
 [workspace.dependencies]
 # 内部クレート (層 = クレート)
 core-domain = { path = "modules/core/domain" }
-core-use-case = { path = "modules/core/use-case" }
-core-interface-adapter = { path = "modules/core/interface-adapter" }
+# CQRS の側分割 (2026-08-29 オーナー裁定 / ADR-009)。コマンド側とクエリ側は互いの
+# `Cargo.toml` に現れてはならない — 境界はクレート分離で物理強制する
+# (`coding-rules/cqrs-boundaries.md`)。
+core-command-use-case = { path = "modules/core/command/use-case" }
+core-command-interface-adapter = { path = "modules/core/command/interface-adapter" }
+core-query-read-model-updater = { path = "modules/core/query/read-model-updater" }
 canon-json = { path = "modules/shared/canon-json" }
 message-catalog = { path = "modules/shared/message-catalog" }
 audit-events = { path = "modules/shared/audit-events" }
 directive-schema = { path = "modules/shared/directive-schema" }
-infra-io = { path = "modules/infra-io" }
+# infrastructure 層は文脈ごとに置く (`coding-rules/infrastructure-layer.md`)。
+core-infrastructure = { path = "modules/core/infrastructure" }
+harness-infrastructure = { path = "modules/harness/infrastructure" }
 
 # 外部クレート。serde_json の preserve_order は ADR 0001 決定 3 / BR1.8 により
 # ワークスペース全体で常時有効にする (Cargo のフィーチャ統合はビルド全体に効くため、

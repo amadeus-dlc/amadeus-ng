@@ -8,6 +8,19 @@ repository.workspace = true
 [lints]
 workspace = true
 
+# 合成ルート (U7) だけが**両側**を知る。それが合成ルートの仕事である
+# (`coding-rules/cqrs-boundaries.md` §対象外)。
 [dependencies]
-core-interface-adapter = { workspace = true }
-infra-io = { workspace = true }
+core-domain = { workspace = true }
+core-command-use-case = { workspace = true }
+core-command-interface-adapter = { workspace = true }
+core-query-read-model-updater = { workspace = true }
+core-infrastructure = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true }
+event-store-adapter-rs = { workspace = true, features = ["sqlite"] }
+rusqlite = { workspace = true }
