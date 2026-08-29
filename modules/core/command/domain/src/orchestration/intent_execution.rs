@@ -1407,7 +1407,7 @@ mod tests {
         .unwrap()
     }
 
-    /// 合成計画から intent を組む (検査は `Intent::rehydrate` の 1 か所)。
+    /// 合成計画から intent を組む (検査は `From<Created>` の 1 か所)。
     fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
         Intent::from(Created::new(
             intent_id(),
@@ -1666,7 +1666,7 @@ mod tests {
     }
 
     // 計画そのものの不変条件（空・initialization の SKIP / CONDITIONAL・先頭 SKIP）は
-    // `Intent::rehydrate` が持つようになったので、その拒否のテストは `intent.rs` にある。
+    // `From<Created>` が持つようになったので、その拒否のテストは `intent.rs` にある。
 
     // ---- 取り違えガード (aggregate-references.md — ID 参照だから照合が書ける) ----
 
