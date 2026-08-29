@@ -167,7 +167,7 @@ fn every_upstream_audit_block_is_reproduced_byte_for_byte() {
     }
 
     // 検査した中身そのものを固定しておく — ゴールデンが減ったのに緑のまま、を防ぐ。
-    assert_eq!(blocks_checked, 62, "検査したブロック数");
+    assert_eq!(blocks_checked, 70, "検査したブロック数");
     assert_eq!(
         headers_seen, 1,
         "ヘッダ行を持つのは空シャードを作った 1 ケースだけ"

@@ -1,0 +1,9 @@
+[
+  "bun",
+  ".claude/tools/aidlc-utility.ts",
+  "recompose",
+  "--add",
+  "reverse-engineering",
+  "--project-dir",
+  "<ROOT>"
+]

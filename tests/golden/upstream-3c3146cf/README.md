@@ -191,7 +191,7 @@ JS の `JSON.stringify` は ES2019 の well-formed 化により孤立サロゲ�
 | ツリーマニフェスト sha256 | `ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f` |
 | 採取コマンド | `bash scripts/goldens/recapture-cli.sh` |
 | bun | 1.3.13 |
-| ケース数 | cli 25（欠落 2）/ hooks 14（欠落 1） |
+| ケース数 | cli 28（欠落 2）/ hooks 14（欠落 1） |
 
 #### 非対話化に使った環境変数
 
@@ -232,7 +232,7 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 - `audit.md` は監査シャードへの**追記分だけ**（既存行は含まない）。追記が無いケースは空。
 - `state-full.md` は遷移**後**の `aidlc-state.md` の全文（正規化済み）。差分は「前」があって
   はじめて読める観測なので、状態ファイルを**ゼロから起こす**側（genesis）の検収には全文が
-  要る。全ケースに付けると同じ本文が 25 通並ぶだけなので、骨格が生まれる遷移
+  要る。全ケースに付けると同じ本文が 28 通並ぶだけなので、骨格が生まれる遷移
   （`intent-create/classic-scope`）にだけ付けてある。upstream 側の正本は
   `aidlc-utility.ts` の状態ファイル template literal である
   （`knowledge/aidlc-shared/state-template.md` は LLM 向けの契約文書で、ツールは読まない
@@ -258,8 +258,9 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 | `unpark` | `unpark` | `aidlc-state.ts unpark` |
 | `set-autonomy` | `state-field-absent` | `aidlc-bolt.ts set-autonomy` |
 
-`jump/execute-backward`・`jump/execute-forward-across-phases`・`report/completed-ungated`
-は 2026-08-29 に追加採取した
+`jump/execute-backward`・`jump/execute-forward-across-phases`・`report/completed-ungated`・
+`report/approved-across-phases`・`recompose/skip-two-appends-in-graph-order`・
+`recompose/add-restores-conditional` の 6 件は 2026-08-29 に追加採取した
 （上の表の `jump` / `report` 行に含まれる）。既存 22 ケースのバイトは 1 バイトも動いていない
 — 新ケースは列の**末尾に足した**ので、先行ケースの観測は採り直しても同一である。
 
@@ -294,6 +295,10 @@ C2 が名指すフック 4 本と upstream の実装ファイルの対応。`set
 | 後方ジャンプは対象と下流の `[x]/[-]/[?]/[R]/[S]` を `[ ]` へ戻し、対象を `[-]` にする。フェーズ境界をまたぐと `PHASE_COMPLETED`（`**Details**: Phase boundary crossed via <方向> jump`）・`PHASE_VERIFIED`（`**Details**: Traceability verification on jump`）・`PHASE_STARTED` の 3 本が `STAGE_JUMPED` の**前**に並ぶ。この 3 本はゲート経由の境界 3 本と**同型ではない** — ジャンプ側だけが `**Details**:` を持ち、`**Stages completed**:` は計画上のフェーズ内件数ではなく**チェックボックスの数え直し**である（後方 0 / 前方 1） | `cli/jump/execute-backward`, `cli/jump/execute-forward-across-phases` |
 | 前方ジャンプの `STAGE_SKIPPED` は「間のステージを文書順」→「**最後に出発点そのもの**」の順で並ぶ（出発点は間のループの外で後から足されるため） | `cli/jump/execute-forward-across-phases` |
 | ジャンプ後の `- **Last Completed Stage**:` は到達点より手前を逆順に辿った最初の `[x]`。1 つも無ければ upstream の既定値 `state-init` になる | `cli/jump/execute-backward` |
+| フェーズ境界の `**Stages completed**:` は**倒したあとのチェックボックスの数え直し**であり、計画上のフェーズ内スコープ件数ではない（inception → construction で 2、計画上は 8）。ゲート経由の境界 3 本はジャンプ側と違い `**Details**:` を持たない | `cli/report/approved-across-phases` |
+| `- **Stages to Skip**:` は**番号順に並べ替えない**。既存項目はその位置のまま残り、新しく skip した項目が graph 順で末尾に付く（既存の `4.5` の**後ろ**に `4.3`, `4.7` が並ぶ）。項目が持つ注釈（`2.1 (reverse-engineering — greenfield)`）を壊さないための仕様である | `cli/recompose/skip-two-appends-in-graph-order` |
+| `- **Stages to Execute**:` は逆に**毎回 graph 順へ組み直される**。再投入した `2.1` は末尾ではなく `0.3` と `2.2` の間へ入る。同時に `Stages to Skip` からは**注釈ごと**消える | `cli/recompose/add-restores-conditional` |
+| `recompose --add` は**前方にしか効かない** — カーソルと同じか手前のステージは「re-running the past is out of scope」で拒否される。`reverse-engineering` を再投入するにはカーソルを 2.1 より手前へ戻す必要がある | `cli/recompose/add-restores-conditional` の `argv`（直前に後方ジャンプを置いている） |
 | 状態ファイルの `- **Next Action**:` は書き手で綴りが割れる。genesis（`intent-create`）は **slug**（`Execute practices-discovery`）、`advance` は**表示名**（`Execute Workspace Detection`） | `cli/intent-create/classic-scope`, `cli/report/completed-ungated` |
 
 #### 採取できなかったケース（W4）

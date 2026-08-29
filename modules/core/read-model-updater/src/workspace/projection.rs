@@ -161,6 +161,8 @@ const NONE_LITERAL: &str = "none";
 const REENTRY_DETAILS: &str = "Re-entering gate after revision";
 /// フェーズ境界の区切り（U+2192）。
 const BOUNDARY_ARROW: &str = " → ";
+/// Skip 行の項目に付く注釈の区切り（U+2014）。`2.1 (reverse-engineering — greenfield)`。
+const SKIP_ANNOTATION: &str = " — ";
 /// 一覧の区切り。
 const LIST_SEPARATOR: &str = ", ";
 
@@ -475,6 +477,7 @@ fn append_started_rows(
             at,
             plan,
             PhaseBoundary::new(PhaseId::Initialization, to_phase),
+            &plan.in_scope_count_of(PhaseId::Initialization).to_string(),
         )?;
     }
 
@@ -665,11 +668,16 @@ fn gate_approved(
                 &format!("Stage {title} approved by gate"),
             ),
     ));
-    if let Some(boundary) = approved.phase_boundary() {
-        append_phase_boundary(read_model, at, plan, boundary)?;
-    }
-
+    // 境界行の `**Stages completed**:` は**倒したあとの**チェックボックスを数えた値なので、
+    // 先に完了させる（`cli/report/approved-across-phases` は 2 — 計画上の inception 内
+    // スコープ件数 8 とは一致しない）。監査行の順序はここでは動かない — `complete_stage` は
+    // 状態面だけを触り、行を描かないからである。
     complete_stage(read_model, stage)?;
+    if let Some(boundary) = approved.phase_boundary() {
+        let completed = completed_count(read_model);
+        append_phase_boundary(read_model, at, plan, boundary, &completed)?;
+        set_phase_progress_for_advance(read_model, boundary)?;
+    }
     leave_for(read_model, at, plan, approved.next_stage())
 }
 
@@ -767,10 +775,7 @@ fn jumped_event(
     // 完了数はジャンプでも**数え直す**。後方ジャンプは `[x]` を `[ ]` へ戻すので減る
     // （`cli/jump/execute-backward` は 4 → 0）。境界をまたがないジャンプでも upstream は
     // 同じ書き換えを打つ（値が動かないだけ）。
-    let completed = Checkboxes::parse(read_model.state())
-        .count_completed()
-        .to_string();
-    set_field(read_model, field::COMPLETED, &completed)?;
+    set_field(read_model, field::COMPLETED, &completed_count(read_model))?;
 
     if let Some(boundary) = crossed_phase_boundary(plan, jumped.source(), target)? {
         append_jump_phase_boundary(read_model, at, plan, boundary, &lowered)?;
@@ -824,16 +829,13 @@ fn append_jump_phase_boundary(
 ) -> Result<(), ProjectionError> {
     let from = boundary.from_phase();
     let to = boundary.to_phase();
-    let completed = Checkboxes::parse(read_model.state())
-        .count_completed()
-        .to_string();
     read_model.append_audit(&render_audit_block(
         EventType::PhaseCompleted,
         at,
         &AuditFields::new()
             .with(key(key::FROM_PHASE)?, from.as_str())
             .with(key(key::TO_PHASE)?, to.as_str())
-            .with(key(key::STAGES_COMPLETED)?, &completed)
+            .with(key(key::STAGES_COMPLETED)?, &completed_count(read_model))
             .with(
                 key(key::DETAILS)?,
                 &format!("Phase boundary crossed via {direction} jump"),
@@ -945,26 +947,106 @@ fn recomposed_event(
     ));
 
     for slug in recomposed.skipped() {
-        let number = number_of(plan, slug)?;
-        remove_from_list(read_model, field::STAGES_TO_EXECUTE, &number)?;
-        append_to_list(
-            read_model,
-            field::STAGES_TO_SKIP,
-            &format!("{number} ({})", slug.as_str()),
-        )?;
         set_suffix(read_model, slug.as_str(), PlanAction::Skip)?;
     }
     for slug in recomposed.added() {
-        let number = number_of(plan, slug)?;
-        remove_from_list(
-            read_model,
-            field::STAGES_TO_SKIP,
-            &format!("{number} ({})", slug.as_str()),
-        )?;
-        append_to_list(read_model, field::STAGES_TO_EXECUTE, &number)?;
         set_suffix(read_model, slug.as_str(), PlanAction::Execute)?;
     }
-    set_field(read_model, field::TOTAL_STAGES, &in_scope)
+    rebuild_plan_rows(read_model, plan)
+}
+
+/// `- **Stages to Execute**: ` / `- **Stages to Skip**: ` / `- **Total Stages**: ` を
+/// 行末トークンから組み直す。
+///
+/// # 2 行は同じ規則で作られていない（upstream 実バイト）
+///
+/// **Execute 行は毎回 graph 順に組み直す**。`cli/recompose/add-restores-conditional` で
+/// `2.1` が末尾ではなく `0.3` と `2.2` の**間**へ入るのがその実測である。
+///
+/// **Skip 行は既存項目をその位置のまま保つ**。項目は `<番号> (<slug>)` の形だが、genesis が
+/// 書いた `2.1 (reverse-engineering — greenfield)` のように**注釈**を持つものがあり、slug から
+/// 組み直すと注釈が消えてしまうためである。まだ skip のままの項目を逐語で残し、EXECUTE へ
+/// 戻った項目を落とし、新しく skip になった項目を graph 順で末尾へ足す。
+/// `cli/recompose/skip-two-appends-in-graph-order` が「既存の 4.5 の**後ろ**に 4.3, 4.7 が
+/// 並ぶ」ことを、`add-restores-conditional` が「注釈ごと消える」ことを固定している。
+///
+/// # 実効計画をどこから読むか
+///
+/// upstream の `eff` は「recompose のオーバレイ ?? スコープグリッド」である。投影にとっての
+/// オーバレイはチェックボックス行の行末トークンで、`set_suffix` がそれを保っている。行が
+/// 無ければ（差分の断片しか無いテストなど）genesis の計画へ落とす — これは upstream の
+/// `?? scopeDef.stages[slug]` と同じ既定である。
+fn rebuild_plan_rows(
+    read_model: &mut ReadModel,
+    plan: &ResolvedPlan,
+) -> Result<(), ProjectionError> {
+    let checkboxes = Checkboxes::parse(read_model.state());
+    let effective = |stage: &PlannedStage| -> PlanAction {
+        checkboxes
+            .iter()
+            .find(|entry| entry.slug() == stage.slug().as_str())
+            .and_then(|entry| match entry.rest().trim() {
+                "EXECUTE" => Some(PlanAction::Execute),
+                "SKIP" => Some(PlanAction::Skip),
+                _ => None,
+            })
+            .unwrap_or_else(|| stage.plan_action())
+    };
+
+    let mut skips: Vec<String> = Vec::new();
+    let mut preserved: Vec<String> = Vec::new();
+    for token in list_of(read_model, field::STAGES_TO_SKIP)? {
+        let slug = slug_of_skip_token(&token);
+        let still_skipped = plan
+            .stages()
+            .iter()
+            .find(|stage| stage.slug().as_str() == slug)
+            .is_some_and(|stage| effective(stage) == PlanAction::Skip);
+        if still_skipped {
+            preserved.push(slug.to_string());
+            skips.push(token);
+        }
+    }
+
+    let mut executes: Vec<String> = Vec::new();
+    for stage in plan.stages() {
+        let slug = stage.slug().as_str();
+        if effective(stage) == PlanAction::Execute {
+            executes.push(stage.display().number().as_str().to_string());
+        } else if !preserved.iter().any(|kept| kept == slug) {
+            skips.push(format!("{} ({slug})", stage.display().number().as_str()));
+        }
+    }
+
+    let total = executes.len().to_string();
+    set_field(
+        read_model,
+        field::STAGES_TO_EXECUTE,
+        &executes.join(LIST_SEPARATOR),
+    )?;
+    set_field(
+        read_model,
+        field::STAGES_TO_SKIP,
+        &if skips.is_empty() {
+            NONE_LITERAL.to_string()
+        } else {
+            skips.join(LIST_SEPARATOR)
+        },
+    )?;
+    set_field(read_model, field::TOTAL_STAGES, &total)
+}
+
+/// Skip 行の 1 項目から slug を取り出す。
+///
+/// 項目は `<番号> (<slug>)`、注釈付きなら `<番号> (<slug> — <理由>)`。括弧の中を取り、
+/// em dash があればその手前までが slug である（upstream の `slugOfSkipToken` と同じ規則）。
+/// 形に合わない項目は丸ごと slug として扱い、既知の slug に一致しないので保存されない。
+fn slug_of_skip_token(token: &str) -> &str {
+    let inner = token
+        .split_once(" (")
+        .and_then(|(_, rest)| rest.strip_suffix(')'))
+        .unwrap_or(token);
+    inner.split(SKIP_ANNOTATION).next().unwrap_or(inner)
 }
 
 // ---------------------------------------------------------------------------
@@ -1008,11 +1090,17 @@ fn autonomy_mode_set(
 // ---------------------------------------------------------------------------
 
 /// フェーズ境界の 3 行（完了 → 検証 → 次フェーズ開始）。
+///
+/// `**Stages completed**:` は**呼出側が決める**。genesis は計画上の initialization 件数
+/// （まだ 1 つも倒れていない時点で描くため）、ゲート承認は倒したあとのチェックボックスの
+/// 数え直しで、値が一致しない（`cli/report/approved-across-phases` は 2、計画上の inception 内
+/// スコープ件数は 8）。ジャンプの境界 3 行は `**Details**:` を持つので別関数である。
 fn append_phase_boundary(
     read_model: &mut ReadModel,
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     boundary: PhaseBoundary,
+    stages_completed: &str,
 ) -> Result<(), ProjectionError> {
     let from = boundary.from_phase();
     let to = boundary.to_phase();
@@ -1022,10 +1110,7 @@ fn append_phase_boundary(
         &AuditFields::new()
             .with(key(key::FROM_PHASE)?, from.as_str())
             .with(key(key::TO_PHASE)?, to.as_str())
-            .with(
-                key(key::STAGES_COMPLETED)?,
-                &plan.in_scope_count_of(from).to_string(),
-            ),
+            .with(key(key::STAGES_COMPLETED)?, stages_completed),
     ));
     read_model.append_audit(&render_audit_block(
         EventType::PhaseVerified,
@@ -1043,6 +1128,28 @@ fn append_phase_boundary(
             .with(key(key::SCOPE)?, plan.scope()),
     ));
     Ok(())
+}
+
+/// 通過したフェーズを `Verified`、入ったフェーズを `Active` にする
+/// （`cli/report/approved-across-phases`）。
+///
+/// [`append_phase_boundary`] とは分けてある — あちらは genesis の**監査行だけを描く**段からも
+/// 呼ばれ、その時点では状態ファイルの本文がまだ無いことがあるからである。genesis 自身は
+/// 骨格が既にこの 2 行を正しい値で持っているので、書き換える必要がない。
+fn set_phase_progress_for_advance(
+    read_model: &mut ReadModel,
+    boundary: PhaseBoundary,
+) -> Result<(), ProjectionError> {
+    set_field(
+        read_model,
+        &field::phase_row(boundary.from_phase()),
+        phase_status::VERIFIED,
+    )?;
+    set_field(
+        read_model,
+        &field::phase_row(boundary.to_phase()),
+        phase_status::ACTIVE,
+    )
 }
 
 /// `STAGE_STARTED` 行 1 本。
@@ -1129,11 +1236,15 @@ fn enter_stage_without_row(
 /// ステージを完了させる — チェックボックス `[x]`、完了数の同期、最終完了ステージ。
 fn complete_stage(read_model: &mut ReadModel, slug: &StageSlug) -> Result<(), ProjectionError> {
     set_checkbox(read_model, slug.as_str(), CheckboxState::Completed)?;
-    let completed = Checkboxes::parse(read_model.state())
-        .count_completed()
-        .to_string();
-    set_field(read_model, field::COMPLETED, &completed)?;
+    set_field(read_model, field::COMPLETED, &completed_count(read_model))?;
     set_field(read_model, field::LAST_COMPLETED_STAGE, slug.as_str())
+}
+
+/// いま `[x]` のチェックボックスの数（`- **Completed**:` と境界行の材料）。
+fn completed_count(read_model: &ReadModel) -> String {
+    Checkboxes::parse(read_model.state())
+        .count_completed()
+        .to_string()
 }
 
 /// 計画上の表題を引く。
@@ -1219,35 +1330,6 @@ fn set_field(read_model: &mut ReadModel, field: &str, value: &str) -> Result<(),
     let next = with_field(read_model.state(), field, value)?;
     read_model.replace_state(next);
     Ok(())
-}
-
-/// カンマ区切り一覧フィールドから 1 項目を落とす（不在なら何も変えない）。
-fn remove_from_list(
-    read_model: &mut ReadModel,
-    field: &str,
-    item: &str,
-) -> Result<(), ProjectionError> {
-    let current = list_of(read_model, field)?;
-    let kept: Vec<&str> = current
-        .iter()
-        .map(String::as_str)
-        .filter(|entry| *entry != item)
-        .collect();
-    set_field(read_model, field, &kept.join(LIST_SEPARATOR))
-}
-
-/// カンマ区切り一覧フィールドへ 1 項目を末尾に足す（重複は足さない）。
-fn append_to_list(
-    read_model: &mut ReadModel,
-    field: &str,
-    item: &str,
-) -> Result<(), ProjectionError> {
-    let mut current = list_of(read_model, field)?;
-    if current.iter().any(|entry| entry == item) {
-        return Ok(());
-    }
-    current.push(item.to_string());
-    set_field(read_model, field, &current.join(LIST_SEPARATOR))
 }
 
 /// 一覧フィールドの現在値を項目へ割る（空は 0 項目）。
@@ -1417,7 +1499,7 @@ mod tests {
 - **Active Agent**: orchestrator
 
 ## Scope Configuration
-- **Stages to Execute**: 0.1, 2.1
+- **Stages to Execute**: 0.1, 2.1, 2.2
 - **Stages to Skip**: 4.1 (late)
 
 ## Execution Plan Summary
@@ -1614,10 +1696,12 @@ mod tests {
                 .appended_audit()
                 .contains("**Phase boundary**: inception → construction\n")
         );
+        // 数え直しである — 承認で `first` が `[x]` になった時点の 1 本
+        // （計画上の inception 内スコープ件数 2 ではない）。
         assert!(
             read_model
                 .appended_audit()
-                .contains("**Stages completed**: 2\n")
+                .contains("**Stages completed**: 1\n")
         );
     }
 
@@ -1680,14 +1764,16 @@ mod tests {
                 slug("late"),
             ],
         )));
+        // Execute 行は graph 順に組み直される（4.1 は末尾で、ここでは順序が変わらない）。
         assert!(
             read_model
                 .state()
-                .contains("- **Stages to Execute**: 0.1, 2.1, 4.1\n"),
+                .contains("- **Stages to Execute**: 0.1, 2.1, 2.2, 4.1\n"),
             "実際: {}",
             read_model.state()
         );
-        assert!(read_model.state().contains("- **Stages to Skip**: \n"));
+        // 空になった Skip 行は upstream と同じ逐語 `none` を書く。
+        assert!(read_model.state().contains("- **Stages to Skip**: none\n"));
         assert!(read_model.state().contains("- [ ] late — EXECUTE"));
         assert!(read_model.state().contains("- **Total Stages**: 4\n"));
         assert!(
@@ -1698,25 +1784,26 @@ mod tests {
     }
 
     #[test]
-    fn appending_an_entry_that_is_already_listed_changes_nothing() {
-        let mut read_model = model();
-        append_to_list(&mut read_model, field::STAGES_TO_EXECUTE, "0.1").expect("追加");
-        assert!(
-            read_model
-                .state()
-                .contains("- **Stages to Execute**: 0.1, 2.1\n")
+    fn a_missing_list_field_is_refused_with_the_verbatim_wording() {
+        let mut read_model = ReadModel::new("## Empty\n");
+        let error = rebuild_plan_rows(&mut read_model, &plan()).expect_err("一覧フィールドが無い");
+        assert_eq!(
+            error.to_string(),
+            "state field: Field not found in state file: \"Stages to Skip\". \
+             Cannot update — refusing to silently no-op."
         );
     }
 
     #[test]
-    fn a_missing_list_field_is_refused_with_the_verbatim_wording() {
-        let mut read_model = ReadModel::new("## Empty\n");
-        let error = append_to_list(&mut read_model, field::STAGES_TO_EXECUTE, "0.1")
-            .expect_err("一覧フィールドが無い");
+    fn the_skip_token_parser_keeps_the_slug_and_drops_the_annotation() {
+        // 注釈付き項目から slug を取れないと、EXECUTE へ戻した段でその項目が落ちずに残る。
         assert_eq!(
-            error.to_string(),
-            "state field: Field not found in state file: \"Stages to Execute\". \
-             Cannot update — refusing to silently no-op."
+            slug_of_skip_token("4.5 (incident-response)"),
+            "incident-response"
+        );
+        assert_eq!(
+            slug_of_skip_token("2.1 (reverse-engineering — greenfield)"),
+            "reverse-engineering"
         );
     }
 

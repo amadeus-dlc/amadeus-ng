@@ -1,0 +1,13 @@
+{
+  "id": "cli/report/approved-across-phases",
+  "family": "cli",
+  "verb": "report",
+  "case": "approved-across-phases",
+  "description": "inception 最終ステージのゲート承認。フェーズ境界をまたぐので GATE_APPROVED / STAGE_COMPLETED のあとに境界 3 本が続く。ジャンプ側と違いこの 3 本は **Details**: を持たず、**Stages completed**: はチェックボックスの数え直しである (計画上の inception 内スコープ件数 8 ではなく 4)",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-29T08:06:50Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

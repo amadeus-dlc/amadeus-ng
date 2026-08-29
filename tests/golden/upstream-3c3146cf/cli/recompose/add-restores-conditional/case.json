@@ -1,0 +1,13 @@
+{
+  "id": "cli/recompose/add-restores-conditional",
+  "family": "cli",
+  "verb": "recompose",
+  "case": "add-restores-conditional",
+  "description": "greenfield で畳まれた reverse-engineering を再投入する。Stages to Execute は graph 順に**組み直され** 2.1 が 0.3 と 2.2 の間へ入り、Stages to Skip からは注釈ごと (`2.1 (reverse-engineering — greenfield)`) 消える。注釈付き項目の除去挙動を固定するのがこのケースの主題である",
+  "stdout_kind": "text",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-29T08:06:50Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

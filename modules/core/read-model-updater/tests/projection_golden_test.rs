@@ -33,9 +33,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, Recomposed,
-    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
-    WorkflowExecutionEvent, WorkspaceScan,
+    GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary,
+    Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
+    Started, WorkflowExecutionEvent, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -407,6 +407,65 @@ fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
                 slug("workspace-detection"),
             ],
         )),
+    );
+}
+
+#[test]
+fn approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan() {
+    // ゲート経由の境界 3 本はジャンプ側と違い `**Details**:` を持たない。`**Stages completed**:`
+    // は 2 で、計画上の inception 内スコープ件数 8 とは一致しない — 倒したあとのチェックボックス
+    // を数えた値だけがこれを説明する。数え直しの材料 (既に [x] の workspace-scaffold) は
+    // ハンクの外なので補う。
+    assert_case_with_context(
+        "report/approved-across-phases",
+        WorkflowExecutionEvent::GateApproved(GateApproved::new(
+            slug("delivery-planning"),
+            Some("A".to_string()),
+            Some(slug("functional-design")),
+            Some(PhaseBoundary::new(
+                PhaseId::Inception,
+                PhaseId::Construction,
+            )),
+        )),
+        "- [x] workspace-scaffold — EXECUTE\n",
+    );
+}
+
+#[test]
+fn recomposing_keeps_existing_skip_entries_where_they_are() {
+    // 既に skip 済みの 4.5 より前の番号 4.3 を後から skip しても、Skip 行は番号順に並べ替え
+    // られない — 既存項目はその位置のまま残り、新規が graph 順で末尾に付く。
+    assert_case(
+        "recompose/skip-two-appends-in-graph-order",
+        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+            vec![slug("deployment-execution"), slug("feedback-optimization")],
+            Vec::new(),
+            (0..22).map(|_| slug("placeholder")).collect(),
+        )),
+    );
+}
+
+#[test]
+fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
+    // `2.1 (reverse-engineering — greenfield)` は注釈ごと消え、2.1 は Execute 行の**末尾では
+    // なく** 0.3 と 2.2 の間へ入る (Execute 行は毎回 graph 順に組み直されるため)。注釈から
+    // slug を取り出せないと項目が落ちずに両方の行へ載る。
+    // 実効計画は行末トークンが正本だが、先行する recompose で SKIP へ倒した 3 本の行は
+    // ハンクの外にある。補う 3 行は同じ採取列の `recompose/skip-one` と
+    // `skip-two-appends-in-graph-order` が示した実バイトそのもので、補い方が正しければ
+    // `- **Total Stages**: 23` に落ちる — それが検証になる。
+    assert_case_with_context(
+        "recompose/add-restores-conditional",
+        WorkflowExecutionEvent::Recomposed(Recomposed::new(
+            Vec::new(),
+            vec![slug("reverse-engineering")],
+            (0..23).map(|_| slug("placeholder")).collect(),
+        )),
+        concat!(
+            "- [ ] deployment-execution — SKIP\n",
+            "- [ ] incident-response — SKIP\n",
+            "- [ ] feedback-optimization — SKIP\n",
+        ),
     );
 }
 

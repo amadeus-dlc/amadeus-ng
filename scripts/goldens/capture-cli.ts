@@ -553,6 +553,46 @@ function captureCli(
       tool: "aidlc-jump.ts",
       args: ["execute", "--target", "contract-design", "--direction", "forward"],
     },
+    {
+      // 前提だけ整える (inception 最終ステージへ移り、そのゲートを開く)。
+      id: null,
+      description: "inception 最終ステージ delivery-planning へ移る",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "delivery-planning", "--direction", "forward"],
+    },
+    {
+      id: null,
+      description: "delivery-planning のゲートを開く",
+      tool: "aidlc-orchestrate.ts",
+      args: ["report", "--result", "awaiting-approval"],
+    },
+    {
+      id: "report/approved-across-phases",
+      description:
+        "inception 最終ステージのゲート承認。フェーズ境界をまたぐので GATE_APPROVED / STAGE_COMPLETED のあとに境界 3 本が続く。ジャンプ側と違いこの 3 本は **Details**: を持たず、**Stages completed**: はチェックボックスの数え直しである (計画上の inception 内スコープ件数 8 ではなく 4)",
+      tool: "aidlc-orchestrate.ts",
+      args: ["report", "--result", "approved", "--user-input", "A"],
+    },
+    {
+      id: "recompose/skip-two-appends-in-graph-order",
+      description:
+        "既に skip 済みの 4.5 より前の番号 4.3 を含む 2 本を後から skip する。Stages to Skip は既存項目を**その位置のまま**保ち、新規を graph 順で末尾へ足す (4.5 の後に 4.3, 4.7 が並ぶ)。番号順に並べ替えないことがこのケースの主題である",
+      tool: "aidlc-utility.ts",
+      args: ["recompose", "--skip", "deployment-execution,feedback-optimization"],
+    },
+    {
+      id: null,
+      description: "recompose --add は前方にしか効かないので、カーソルを 2.1 より手前へ戻す",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "workspace-scaffold", "--direction", "backward"],
+    },
+    {
+      id: "recompose/add-restores-conditional",
+      description:
+        "greenfield で畳まれた reverse-engineering を再投入する。Stages to Execute は graph 順に**組み直され** 2.1 が 0.3 と 2.2 の間へ入り、Stages to Skip からは注釈ごと (`2.1 (reverse-engineering — greenfield)`) 消える。注釈付き項目の除去挙動を固定するのがこのケースの主題である",
+      tool: "aidlc-utility.ts",
+      args: ["recompose", "--add", "reverse-engineering"],
+    },
   ];
 
   let captured = 0;
