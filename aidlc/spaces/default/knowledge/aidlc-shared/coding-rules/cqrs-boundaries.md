@@ -2,10 +2,10 @@
 
 **裁定日**: 2026-08-24（オーナー）/ **改訂**: 2026-08-28（RMU が `JournalReader` を呼ぶ
 二層構造へ）、2026-08-29（オーナー裁定 — **use-case / interface-adapter も側で分割**。
-「アダプタ層は両側の契約を実装してよい」の対象外条項は失効）、同日第 2 裁定（**ドメインは
-コマンド側の持ち物** = `core-command-domain`。**クエリ側はドメインに絶対依存しない**。
-コードの共有は infrastructure と Published Language スキーマのみ、イベントは wire 契約 =
-データとして共有。ADR-009 の各同日追記が記録）
+「アダプタ層は両側の契約を実装してよい」の対象外条項は失効）、同日（**ドメインはコマンド側の
+持ち物** = `core-command-domain`。**クエリ側のクレートはドメインに絶対依存しない**。
+**RMU は中間** — どちらの側でもなく、コマンド側とクエリ側の両方に依存できる —
+2026-08-24 原裁定の再確認。ADR-009 の各同日追記が記録）
 **関連**: ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004（状態ファイルは
 リードモデル）/ **ADR-009（本規則の記録）**、[gateway-taxonomy.md](gateway-taxonomy.md) §4
 **機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる
@@ -29,18 +29,18 @@
 
 ```
 コマンド側 (core-command-domain / -use-case / -interface-adapter)
-クエリ側   (core-query-read-model-updater = RMU)
-
-  コードの共有 = core-infrastructure（言語拡張）+ Published Language スキーマ（audit-events 等）
-  イベントの共有 = wire 契約（直列化 JSON + manifest）— データであってコードではない
-  両側を知るのは合成ルート (app) だけ
+        ↑
+        │ ドメインイベント        クエリ側（将来のリードモデル読取・クエリ API 層 —
+        │                        **ドメインへの依存は絶対禁止**）
+  RMU (core-read-model-updater)       ↑
+        └──── リードモデルを書く ─────┘
 ```
 
-**RMU はクエリ側の全実体**であり、**ドメイン（`core-command-domain`）はコマンド側の持ち物**
-である（2026-08-29 第 2 裁定 — 「core-domain は共有層」は失効。クエリ側はドメインクレートに
-**絶対依存しない**）。クエリ側はジャーナルの wire 形式を**自前の型で parse** し、両側の乖離は
-合成ルートのコントラクトテスト（コマンド側が直列化 → クエリ側が parse → 同値）で機械検出する。
-結合するのは合成ルート（U7）で、両側を**起動・配線するだけ**で判断を持たない。
+**RMU はコマンド側でもクエリ側でもない — 中間**である（オーナー裁定 2026-08-29。2026-08-24
+原裁定「RMU はコマンドサイドとクエリサイドに依存できる」がそのまま生きる）。RMU はコマンド側の
+**ドメインイベントに依存でき**、クエリ側（リードモデル）にも依存できる。**ドメイン
+（`core-command-domain`）はコマンド側の持ち物**であり、**クエリ側のクレートはドメインに
+絶対依存しない**。両側を知ってよいのは **RMU と合成ルート（U7）だけ**である。
 
 投影核の入口はドメインイベント 1 本に絞る:
 
@@ -80,11 +80,12 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 
 | クレート | 側 | `Cargo.toml` に書いてよい相手 |
 | --- | --- | --- |
-| `core-command-domain` | **コマンド** | 共有層のみ。**ドメインはコマンド側の持ち物**（2026-08-29 第 2 裁定） |
-| `core-command-use-case` | **コマンド** | `core-command-domain`。クエリ側は禁止 |
-| `core-command-interface-adapter` | **コマンド実装** | コマンド側 + 本家ストア。クエリ側は禁止 |
-| **`core-query-read-model-updater`（RMU）** | **クエリ側の全実体** | 共有層 + rusqlite。**ドメインクレートは絶対禁止** — イベントはジャーナルの wire（直列化 JSON + manifest）を自前の型で parse する。`JournalReader` ポートも SQLite 実装も RMU 自身が所有 |
-| 共有層 | — | `core-infrastructure`（言語拡張 — どの層も知らない）と shared の Published Language スキーマ（`audit-events` / `message-catalog` 等）。**ドメインは共有層ではない** |
+| `core-command-domain` | **コマンド** | 共有層のみ。**ドメインはコマンド側の持ち物**（2026-08-29 オーナー裁定） |
+| `core-command-use-case` | **コマンド** | `core-command-domain`。クエリ側と RMU は禁止 |
+| `core-command-interface-adapter` | **コマンド実装** | コマンド側 + 本家ストア。クエリ側と RMU は禁止 |
+| **`core-read-model-updater`（RMU）** | **中間** — どちらの側でもない | **コマンド側のドメインイベントにもクエリ側にも依存できる**（2026-08-24 原裁定）。共有層 + rusqlite も可。`JournalReader` ポートも SQLite 実装も RMU 自身が所有 |
+| クエリ側クレート（将来のリードモデル読取・クエリ API 層） | **クエリ** | 共有層のみ。**ドメイン（`core-command-domain`）は絶対禁止**（2026-08-29 オーナー裁定）。コマンド側・RMU も禁止 |
+| 共有層 | — | `core-infrastructure`（言語拡張 — どの層も知らない）と shared の Published Language スキーマ（`audit-events` / `message-catalog` 等） |
 
 読取側の契約（`JournalReader` / `ProjectionName` / `GlobalSeqNr`）を中立クレートへ
 切り出す必要は**ない** — 呼ぶのは RMU だけなので、**RMU クレート自身が所有する**
@@ -96,19 +97,20 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 — ドメインが共有層でなくなったため「`core-domain` に置いて共有」は失効。`StorePath` は
 コマンド側に残し、RMU はストアの場所を自前の型で合成ルートから受け取る）。
 
-**判定は `Cargo.toml` を見るだけでよい。** コマンド側クレートの依存にクエリ側が現れたら違反。
-クエリ側クレートの依存にコマンド側が現れたら違反（2026-08-29 改訂 — 旧「RMU はどちらが
-現れてもよい」は橋時代の残骸であり失効。RMU はクエリ側なので同じ判定に従う。**ドメイン
-（`core-command-domain`）はコマンド側なので、クエリ側の依存に現れたら違反**）。判定の
-「相手」は側のクレートであり、共有層（`core-infrastructure` / shared の Published Language
-スキーマ）と外部ライブラリは対象外。
+**判定は `Cargo.toml` を見るだけでよい。** コマンド側クレートの依存にクエリ側・RMU が現れたら
+違反。クエリ側クレートの依存にコマンド側（**ドメイン `core-command-domain` を含む — 絶対禁止**）
+・RMU が現れたら違反。**RMU はどちらが現れてもよい**（2026-08-24 原裁定 — 中間である RMU だけの
+特権）。判定の「相手」は側のクレートであり、共有層（`core-infrastructure` / shared の
+Published Language スキーマ）と外部ライブラリは対象外。
 
 ## 禁止パターン
 
 - コマンド側のユースケースがリードモデル（状態ファイル・監査シャード）を読んで判断する
 - **コマンド側クレートの `Cargo.toml` にクエリ側クレートが現れる**
 - **クエリ側クレートの `Cargo.toml` にコマンド側クレートが現れる**
-- コマンド側クレートが RMU（クエリ側）を `Cargo.toml` に書く — 逆も同じ
+- コマンド側・クエリ側が RMU を `Cargo.toml` に書く（依存は RMU → 両側の一方向）
+- **クエリ側クレートがドメイン（`core-command-domain`）を `Cargo.toml` に書く**（絶対禁止 —
+  2026-08-29 オーナー裁定）
 - 同一クレート内の `mod` 分割で CQRS 境界を表現したつもりになる
 - コマンド側が「速いから」リードモデルをキャッシュとして読む（遅延の分だけ静かに壊れる）
 - 「両側を知ってよい」を合成ルート（app）以外へ持ち込む

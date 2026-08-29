@@ -13,12 +13,13 @@ JournalReaderImpl は RMU クレート」**（初稿の論点 A は両選択肢�
 監査シャード）を書く」側であり、読取 API のユースケース層はまだ存在しないため、
 クエリ側 = RMU クレート 1 つで完結する。
 
-**命名（2026-08-29 オーナー裁定）**: `core-{command,query}-` 接頭辞で統一する。
-**同日第 2 裁定**: ドメインは**コマンド側の持ち物** — `modules/core/command/domain` =
-`core-command-domain`。クエリ側はドメインに**絶対依存しない**（wire 契約を自前の型で parse）。
+**命名（2026-08-29 オーナー裁定）**: 側は `core-{command,query}-` 接頭辞。ドメインは
+**コマンド側の持ち物**（`modules/core/command/domain` = `core-command-domain`）。**RMU は
+どちらの側でもない中間**なので側接頭辞を持たない（`core-read-model-updater`）。クエリ側の
+クレート（将来のリードモデル読取・クエリ API 層）は**ドメインに絶対依存しない**。
 
 ```text
-modules/core/command/domain/            パッケージ名: core-command-domain（旧 core-domain の改名）
+modules/core/command/domain/            パッケージ名: core-command-domain（旧 core-domain の移動・改名）
 modules/core/command/use-case/          パッケージ名: core-command-use-case（旧 core-use-case の残部）
   workflow_execution_repository.rs / workflow_definition_repository.rs /
   rehydrated_workflow_execution.rs / repository_error.rs / corrupt_cause.rs（コマンド側専用に）
@@ -27,7 +28,7 @@ modules/core/command/interface-adapter/ パッケージ名: core-command-interfa
   workflow_execution_repository_impl.rs / workflow_definition_repository_impl.rs /
   memory/ / store_failure.rs（コマンド側写像）
 
-modules/core/query/read-model-updater/  パッケージ名: core-query-read-model-updater（クエリ側の全実体）
+modules/core/read-model-updater/        パッケージ名: core-read-model-updater（**中間** — 旧 core-query-read-model-updater の改名。コマンド側のドメインイベントとクエリ側の両方に依存できる）
   journal_reader.rs / journal_entry.rs / journal_read_error.rs /
   global_seq_nr.rs / projection_name.rs      ← 旧 core-use-case から移動（読取語彙）
   journal_reader_impl.rs                      ← 旧 core-interface-adapter から移動（オーナー裁定 —
@@ -38,10 +39,9 @@ modules/core/query/read-model-updater/  パッケージ名: core-query-read-mode
   state_file.rs / audit_shard.rs              投影ライタ（state_file_io.rs の転生 + 監査 86 語彙）
 ```
 
-- ~~`core-domain` は共有のまま~~ — **失効（2026-08-29 第 2 裁定）**: ドメインはコマンド側。
-  共有してよいのは `core-infrastructure` と shared の Published Language スキーマのみ。
-  リードモデル語彙（`AuditFieldKey` / 監査順序付け純関数 / 単一行プリミティブ）は RMU へ、
-  `StorePath` はコマンド側へ、manifest 定数は側ごと + コントラクトテスト。
+- ~~`core-domain` は共有のまま~~ — **失効（2026-08-29 オーナー裁定）**: ドメインはコマンド側の
+  持ち物（`core-command-domain`）。RMU は中間としてこれに依存できるため、B8 実装（RMU が
+  ドメインイベント型・`StorePath`・manifest 定数を使う）は変更不要。
 - **infrastructure 層（2026-08-29 オーナー裁定追加）**: `modules/core/infrastructure` =
   `core-infrastructure`（旧 `infra-io` の改名 — `atomic` / `append_only` / `fs_meta`。言語拡張系
   のみを置き、RPC クライアント・DB アクセスは置かない —
@@ -53,13 +53,14 @@ modules/core/query/read-model-updater/  パッケージ名: core-query-read-mode
 
 ```text
 core-infrastructure            ← 言語拡張（旧 infra-io。どの層も知らない）
-core-command-domain            ← コマンド側（イベント語彙・集約 — 旧 core-domain）
+core-command-domain            ← コマンド側（イベント語彙・集約 — 旧 core-domain の移動）
 core-command-use-case          → core-command-domain
 core-command-interface-adapter → コマンド側 + event-store-adapter-rs(sqlite)
-core-query-read-model-updater  → core-infrastructure, audit-events, message-catalog,
-                                 rusqlite, serde_json, chrono
-                                 （**ドメイン依存ゼロ** — イベントは wire を自前の型で parse）
-app/aidlc (U7)                 → 両側（合成ルートだけが両側を知る — 配線とコントラクトテスト）
+core-read-model-updater (RMU)  → core-command-domain（ドメインイベント）, core-infrastructure,
+                                 audit-events, message-catalog, rusqlite, serde_json, chrono
+                                 （**中間** — コマンド側とクエリ側の両方に依存できる唯一のクレート）
+クエリ側クレート（将来）        → 共有層のみ（**ドメイン絶対禁止**）
+app/aidlc (U7)                 → 全部（合成ルート）
 ```
 
 - **コマンド側とクエリ側は互いの Cargo.toml に現れない**（相互独立が物理強制）。
