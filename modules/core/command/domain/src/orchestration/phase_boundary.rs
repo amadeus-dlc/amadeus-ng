@@ -1,7 +1,5 @@
 //! `PhaseBoundary` — `GateApproved` に載るフェーズ境界の投影材料 (C5)。
 
-use serde::{Deserialize, Serialize};
-
 use crate::workflow_definition::PhaseId;
 
 /// 承認によって跨いだフェーズ境界。
@@ -10,7 +8,7 @@ use crate::workflow_definition::PhaseId;
 /// 「集約は FSM。判断は集約に閉じ込め、ユースケースはフロー制御のみ」)。導出は
 /// `IntentExecution::approve_gate` の内部で行い、本型は両端を束ねるだけで検証しない
 /// (旧文の「呼出側が導出して渡す」は失効)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PhaseBoundary {
     from_phase: PhaseId,
     to_phase: PhaseId,

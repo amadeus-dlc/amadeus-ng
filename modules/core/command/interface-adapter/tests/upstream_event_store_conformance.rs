@@ -1,7 +1,13 @@
 //! 本家 event-store-adapter-rs v3.0.0 への適合テスト (ADR-010 Conformist / B7)。
 //!
-//! 型が揃うことは適合の証明にならない。**本家の memory バックエンドに我々のドメイン型を実際に
-//! 永続化し、スナップショット + リプレイで復元できる**ところまでを固定する。
+//! 型が揃うことは適合の証明にならない。**本家の memory バックエンドにこの層の永続化 DTO を
+//! 実際に永続化し、スナップショット + リプレイでドメインへ復元できる**ところまでを固定する。
+//!
+//! 改訂 9 でこのテストは domain から**この層へ移った**。ドメインは永続化知識から中立になり
+//! (`coding-rules/domain-persistence-neutrality.md`)、本家ストアに載るのは DTO だからである。
+//! したがって検証の主語も「ドメイン型が本家契約を満たす」から「**この層の DTO が本家契約を
+//! 満たし、往復でドメインへ戻る**」へ変わった — 往復の両端でドメイン値が一致することを
+//! 見るので、確認している性質そのものは落ちていない。
 //!
 //! v3 で `Event` / `Aggregate` trait は消え、ドメイン型はライブラリ trait を一切実装しない
 //! 素の serde 型になった。境界を越えるメタデータは `EventEnvelope` / `SnapshotEnvelope` が運ぶ。
@@ -29,14 +35,16 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::CheckboxState;
-use event_store_adapter_rs::EventStoreForMemory;
+use core_command_interface_adapter::orchestration::{
+    AggregateKey, IntentExecutionMemoryStore, WireEvent, WireSnapshot,
+};
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};
 
 /// 本家 memory バックエンドを我々の 3 つの型で具体化したストア。
 ///
 /// 型引数は v3 の並びで `AID` (集約 ID) / `A` (集約 payload) / `P` (イベント payload)。
-type Store = EventStoreForMemory<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
+type Store = IntentExecutionMemoryStore;
 
 /// 我々が封筒に載せる型判別子 (Repository が書く値と同じ綴り)。
 const MANIFEST: &str = "intent-execution-event/1";
@@ -129,15 +137,20 @@ fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 /// 通番も発生時刻も**適用後の集約**が持っている。ドメインは封筒を作らない。
 fn envelope(
     aggregate: &IntentExecution,
-    event: IntentExecutionEvent,
-) -> EventEnvelope<IntentExecutionId, IntentExecutionEvent> {
+    event: &IntentExecutionEvent,
+) -> EventEnvelope<AggregateKey, WireEvent> {
     EventEnvelope::new(
-        aggregate.id().clone(),
+        AggregateKey::of(aggregate.id()),
         aggregate.seq_nr(),
         *aggregate.last_updated_at(),
-        event,
+        WireEvent::of(event),
     )
     .with_manifest(MANIFEST)
+}
+
+/// 集約をストアへ載せる形 (スナップショット行の payload)。
+fn snapshot_of(aggregate: &IntentExecution) -> WireSnapshot {
+    WireSnapshot::of(aggregate)
 }
 
 /// 再水和の結果 (本家 v3 の移行ガイド §3 と同じ形 — 集約 + ストアが載せた版)。
@@ -148,21 +161,24 @@ struct Replayed {
 
 /// 本家の推奨手順そのままの再構成 — 最新スナップショット封筒 + その先のイベント封筒。
 async fn find_by_id(store: &Store, id: &IntentExecutionId) -> Option<Replayed> {
-    let snapshot = store.get_latest_snapshot_by_id(id).await.unwrap()?;
+    let key = AggregateKey::of(id);
+    let snapshot = store.get_latest_snapshot_by_id(&key).await.unwrap()?;
     let version = snapshot.version();
-    let mut aggregate = snapshot.into_aggregate();
+    // 往復の折り返し点 — DTO で受けて、検査点を通してドメインへ戻す。
+    let mut aggregate = snapshot.into_aggregate().to_domain().unwrap();
     let envelopes = store
-        .get_events_by_id_since_seq_nr(id, aggregate.seq_nr() + 1)
+        .get_events_by_id_since_seq_nr(&key, aggregate.seq_nr() + 1)
         .await
         .unwrap();
     for envelope in &envelopes {
         assert_eq!(envelope.manifest(), MANIFEST, "manifest は往復する");
+        let event = envelope.payload().to_domain().unwrap();
         aggregate
             .apply_event(
                 &intent(),
                 envelope.seq_nr(),
                 *envelope.occurred_at(),
-                envelope.payload(),
+                &event,
             )
             .unwrap();
     }
@@ -182,7 +198,7 @@ async fn the_creation_event_is_refused_by_the_event_only_write() {
     let mut store = Store::new();
     let (aggregate, started) = genesis();
     let error = store
-        .persist_event(envelope(&aggregate, started), CREATE_EXPECTED_VERSION)
+        .persist_event(envelope(&aggregate, &started), CREATE_EXPECTED_VERSION)
         .await
         .expect_err("seq_nr == 1 は persist_event では書けない");
     assert!(
@@ -197,7 +213,7 @@ async fn a_creation_with_a_non_zero_expected_version_violates_the_contract() {
     let mut store = Store::new();
     let (aggregate, started) = genesis();
     let error = store
-        .persist_event_and_snapshot(envelope(&aggregate, started), aggregate.clone(), 1)
+        .persist_event_and_snapshot(envelope(&aggregate, &started), snapshot_of(&aggregate), 1)
         .await
         .expect_err("seq_nr == 1 に版 1 は対応しない");
     assert!(
@@ -214,8 +230,8 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
     let (aggregate, started) = genesis();
     store
         .persist_event_and_snapshot(
-            envelope(&aggregate, started),
-            aggregate.clone(),
+            envelope(&aggregate, &started),
+            snapshot_of(&aggregate),
             CREATE_EXPECTED_VERSION,
         )
         .await
@@ -232,8 +248,8 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
     let completed = aggregate.complete_stage(&intent(), at(1)).unwrap();
     store
         .persist_event_and_snapshot(
-            envelope(&aggregate, completed),
-            aggregate.clone(),
+            envelope(&aggregate, &completed),
+            snapshot_of(&aggregate),
             restored.version,
         )
         .await
@@ -254,7 +270,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
         .open_gate(&intent(), vec!["docs/x.md".to_string()], at(2))
         .unwrap();
     store
-        .persist_event(envelope(&aggregate, opened), restored.version)
+        .persist_event(envelope(&aggregate, &opened), restored.version)
         .await
         .unwrap();
 
@@ -278,8 +294,8 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
     let approved = aggregate.approve_gate(&intent(), None, at(3)).unwrap();
     store
         .persist_event_and_snapshot(
-            envelope(&aggregate, approved),
-            aggregate.clone(),
+            envelope(&aggregate, &approved),
+            snapshot_of(&aggregate),
             restored.version,
         )
         .await
@@ -315,20 +331,23 @@ async fn the_journal_keeps_every_envelope_in_order_with_its_metadata() {
     let (mut aggregate, started) = genesis();
     store
         .persist_event_and_snapshot(
-            envelope(&aggregate, started),
-            aggregate.clone(),
+            envelope(&aggregate, &started),
+            snapshot_of(&aggregate),
             CREATE_EXPECTED_VERSION,
         )
         .await
         .unwrap();
     let completed = aggregate.complete_stage(&intent(), at(1)).unwrap();
     store
-        .persist_event_and_snapshot(envelope(&aggregate, completed), aggregate.clone(), 1)
+        .persist_event_and_snapshot(envelope(&aggregate, &completed), snapshot_of(&aggregate), 1)
         .await
         .unwrap();
 
     // `seq_nr` 引数はその番号を含む (本家 `fetch_events_since` は `>=`)。
-    let events = store.get_events_by_id_since_seq_nr(&id, 1).await.unwrap();
+    let events = store
+        .get_events_by_id_since_seq_nr(&AggregateKey::of(&id), 1)
+        .await
+        .unwrap();
     assert_eq!(events.len(), 2);
     assert_eq!(
         events.iter().map(EventEnvelope::seq_nr).collect::<Vec<_>>(),
@@ -348,9 +367,16 @@ async fn the_journal_keeps_every_envelope_in_order_with_its_metadata() {
             .all(|envelope| envelope.manifest() == MANIFEST),
         "manifest は封筒がそのまま運ぶ"
     );
-    assert!(events.iter().all(|envelope| envelope.aggregate_id() == &id));
+    assert!(
+        events
+            .iter()
+            .all(|envelope| envelope.aggregate_id() == &AggregateKey::of(&id))
+    );
 
-    let tail = store.get_events_by_id_since_seq_nr(&id, 2).await.unwrap();
+    let tail = store
+        .get_events_by_id_since_seq_nr(&AggregateKey::of(&id), 2)
+        .await
+        .unwrap();
     assert_eq!(
         tail.iter().map(EventEnvelope::seq_nr).collect::<Vec<_>>(),
         [2]

@@ -1,7 +1,5 @@
 //! `WorkspaceScan` — workspace-detection が出した走査結果 4 点。
 
-use serde::{Deserialize, Serialize};
-
 use crate::workflow_definition::BrownfieldGreenfield;
 use crate::workspace::{StateFieldValue, UnsafeLineChar};
 
@@ -21,7 +19,7 @@ const UNKNOWN: &str = "Unknown";
 /// `**Details**: Classified Greenfield; languages=…; frameworks=…` — の材料はすべてここにある。
 ///
 /// [`StageDisplay`]: super::stage_display::StageDisplay
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceScan {
     project_type: BrownfieldGreenfield,
     languages: StateFieldValue,
@@ -163,17 +161,6 @@ mod tests {
                 "Unknown"
             )
             .expect("単一行")
-        );
-        // ジャーナル payload の往復確認であり、契約 JSON (BR1.7) の直列化経路ではないため、
-        // canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&found).expect("直列化");
-        assert_eq!(
-            serde_json::from_str::<WorkspaceScan>(&json).expect("復号"),
-            found
         );
     }
 }

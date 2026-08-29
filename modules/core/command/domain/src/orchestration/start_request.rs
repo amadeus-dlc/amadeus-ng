@@ -1,7 +1,5 @@
 //! `StartRequest` — `start` に渡す呼出側の要求 (scope / request / depth / test_strategy)。
 
-use serde::{Deserialize, Serialize};
-
 /// 実行開始時に呼出側 (birth ユースケース) が解決して渡す要求 (C5 `Started` の payload 材料)。
 ///
 /// `depth` / `test_strategy` は upstream 状態ファイルの `Scope Configuration` 行 (`Depth` /
@@ -11,7 +9,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// serde は表現の写しである。この 4 値に不変条件は無い (`new` は検査をしない) ので、復号が
 /// 検査点を迂回する余地も無い。`Intent` の一部として直列化されるために導出している。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StartRequest {
     scope: String,
     request: String,

@@ -1,7 +1,5 @@
 //! `StageEntry` — `Started` に載る解決済みの 1 ステージ分の計画 (entities.md StageEntry)。
 
-use serde::{Deserialize, Serialize};
-
 use super::stage_display::StageDisplay;
 use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
@@ -13,7 +11,7 @@ use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 /// **投影も定義を要さない** — 監査行と状態ファイルに現れる表示属性 3 値は [`StageDisplay`] が
 /// 運ぶ (オーナー裁定 2026-08-29)。投影がジャーナルだけで描けることが、クラッシュ再構成で
 /// 当時と同一のバイトを得る条件である (NFR3)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageEntry {
     slug: StageSlug,
     phase: PhaseId,

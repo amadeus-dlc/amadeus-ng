@@ -17,10 +17,10 @@
 //! - **楽観 version は持たない** (ADR-010 / B7): 本家 event-store-adapter-rs v3.0.0 で
 //!   `Aggregate` trait が廃れ、楽観ロックの版数は `SnapshotEnvelope::version()` (ストアの列) が
 //!   正本になった。集約が持つ順序番号は `seq_nr` **だけ**であり、ストアの採番トークンとは混ざらない。
-//!   serde 境界はスナップショットの直列化に要るが、**復号は状態の写し (memento) を経由する** —
-//!   `into` / `try_from` で [`IntentExecutionSnapshot`] に委ね、`from_state()` の検査点を必ず通す
-//!   (オーナー裁定 2026-08-27 (A))。したがって「不変条件を満たす集約しか存在しない」という
-//!   保証は serde 経路でも破れない (security-design §2 の検査点 3)。
+//!   **直列化の記述は持たない** (改訂 9 / `coding-rules/domain-persistence-neutrality.md`) —
+//!   行のバイトを決めるのはアダプタ層の DTO で、復号は状態の写し (memento) を経由し
+//!   [`IntentExecution::from_snapshot`] の検査点を必ず通る。したがって「不変条件を満たす集約
+//!   しか存在しない」という保証は永続化経路でも破れない (security-design §2 の検査点 3)。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
 //!
@@ -30,7 +30,6 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 use super::apply_error::ApplyError;
 use super::autonomy_mode::AutonomyMode;
@@ -72,8 +71,7 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 ///
 /// serde は状態の写し ([`IntentExecutionSnapshot`]) を経由する — 直列化は [`IntentExecution::snapshot`]、
 /// 復号は [`IntentExecution::from_snapshot`] であり、復号側の検査点が 1 か所に保たれる。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "IntentExecutionSnapshot", try_from = "IntentExecutionSnapshot")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentExecution {
     id: IntentExecutionId,
     /// 実行の対象 intent — **ID で参照し、`Intent` を埋め込まない**
@@ -1183,22 +1181,6 @@ impl IntentExecution {
     }
 }
 
-/// 直列化の入口 (serde の `into`)。中身は [`IntentExecution::snapshot`] そのものである。
-impl From<IntentExecution> for IntentExecutionSnapshot {
-    fn from(execution: IntentExecution) -> IntentExecutionSnapshot {
-        execution.snapshot()
-    }
-}
-
-/// 復号の入口 (serde の `try_from`)。[`IntentExecution::from_snapshot`] の検査点を通る。
-impl TryFrom<IntentExecutionSnapshot> for IntentExecution {
-    type Error = SnapshotError;
-
-    fn try_from(state: IntentExecutionSnapshot) -> Result<IntentExecution, SnapshotError> {
-        IntentExecution::from_snapshot(state)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
@@ -1456,7 +1438,7 @@ mod tests {
         .unwrap()
     }
 
-    /// 合成計画から intent を組む (検査は `Intent::new` の 1 か所)。
+    /// 合成計画から intent を組む (検査は `Intent::from_material` の 1 か所)。
     fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
         Intent::from_material(
             intent_id(),
@@ -1725,7 +1707,7 @@ mod tests {
     }
 
     // 計画そのものの不変条件（空・initialization の SKIP / CONDITIONAL・先頭 SKIP）は
-    // `Intent::new` が持つようになったので、その拒否のテストは `intent.rs` にある。
+    // `Intent::from_material` が持つようになったので、その拒否のテストは `intent.rs` にある。
 
     // ---- 取り違えガード (aggregate-references.md — ID 参照だから照合が書ける) ----
 
@@ -2386,52 +2368,7 @@ mod tests {
     }
 
     #[test]
-    fn the_aggregate_round_trips_through_serde() {
-        // スナップショットの直列化はこの経路を通る (本家 v3 のシリアライザは
-        // `Serialize` / `DeserializeOwned` だけを要求する)。SQLite バックエンドはこの形で
-        // payload 列を書く。
-        let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
-        // スナップショット payload の往復確認であり、契約 JSON (BR1.7) の直列化経路では
-        // ないため、canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&w.execution).unwrap();
-        let decoded: IntentExecution = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded, w.execution);
-        assert_eq!(decoded.seq_nr(), w.seq_nr());
-        assert_eq!(decoded.last_updated_at(), w.last_updated_at());
-        assert!(
-            !json.contains("version"),
-            "楽観 version は payload に載らない (B7): {json}"
-        );
-    }
-
-    #[test]
-    fn a_tampered_serialised_aggregate_is_refused() {
-        // serde は memento (`IntentExecutionSnapshot`) 経由なので、復号は `from_snapshot` の
-        // 検査点をそのまま通る (オーナー裁定 2026-08-27 (A))。行を手で書き換えた JSON —
-        // ここでは範囲外カーソル — が黙って通らないことを固定する。
-        let w = all_exec(3);
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&w.execution).unwrap();
-        assert!(json.contains(r#""cursor":0"#), "{json}");
-        let tampered = json.replace(r#""cursor":0"#, r#""cursor":99"#);
-        let error = serde_json::from_str::<IntentExecution>(&tampered)
-            .expect_err("不変条件を破る写しは復号できない");
-        assert!(
-            error.to_string().contains("invariant violation"),
-            "実際: {error}"
-        );
-    }
-
-    #[test]
-    fn from_state_rejects_a_broken_runtime_invariant() {
+    fn from_snapshot_rejects_a_broken_runtime_invariant() {
         // 写しには計画が載らない (改訂 3) ので、ここで検査できるのは実行時の不変条件だけで
         // ある。計画との整合 (`no_gate_bypass`) は `&Intent` が渡る適用・コマンド側が見る。
         let w = all_exec(3);

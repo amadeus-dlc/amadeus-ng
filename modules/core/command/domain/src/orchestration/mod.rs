@@ -57,7 +57,6 @@ mod apply_error;
 mod autonomy_mode;
 mod command_error;
 mod directive_schema;
-mod event_manifest;
 mod intent;
 mod intent_event;
 mod intent_execution;
@@ -131,5 +130,4 @@ pub use snapshot_error::SnapshotError;
 pub use verdict::UnknownVerdict;
 
 // 逐語定数
-pub use event_manifest::EVENT_MANIFEST;
 pub use verdict::ACCEPTED_RESULTS;

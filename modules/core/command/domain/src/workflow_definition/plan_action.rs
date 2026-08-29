@@ -1,11 +1,9 @@
 //! `PlanAction` — EXECUTE / SKIP (01 §3.1)。scope grid の列値であり、recompose オーバレイと
 //! 合成した実効プラン (`effectivePlanAction` — 裁定 B1) の要素。
 
-use serde::{Deserialize, Serialize};
-
 /// grid 1 マスの 2 値。「コンパイル済みの全ステージが EXECUTE か SKIP のどちらかを明示する」
 /// ため、未指定・未知は表現不能 (upstream 01 §5.4)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PlanAction {
     /// このスコープで実施する。実効プランが EXECUTE のステージだけが
     /// `next` のルーティング対象になり、run-stage を受け取れる (I2)。

@@ -13,12 +13,11 @@
 //! 組むのはアダプタ層 (Repository) の責務にした — 「Payload」は輸送の語であってドメインの語では
 //! ないので、この enum 自身がドメインイベントの正体である (ubiquitous-language.md)。
 //!
-//! `Serialize` / `Deserialize` は本家のシリアライザ境界の要求であり、表現の写しにすぎない
-//! (材料の変更経路にはならない)。
+//! **直列化の記述は持たない** (改訂 9 / `coding-rules/domain-persistence-neutrality.md`)。
+//! 行のバイトを決めるのは書く側 (command interface-adapter) と読む側 (RMU) の DTO であり、
+//! この enum が持つのはドメインの語彙だけである。
 //!
 //! [`EventEnvelope`]: https://docs.rs/event-store-adapter-rs/3.0.0/event_store_adapter_rs/event_envelope/struct.EventEnvelope.html
-
-use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode::AutonomyMode;
 use super::intent::Intent;
@@ -33,7 +32,7 @@ use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefiniti
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
 /// するので専用の材料型を持たない単位変種にした。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentExecutionEvent {
     /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2)。
     Started(Started),
@@ -72,7 +71,7 @@ pub enum IntentExecutionEvent {
 ///
 /// 各アクセサは intent への素通しである。`depth` / `test_strategy` は集約状態にならず、
 /// U4 が `Scope Configuration` を描くためだけの投影材料である。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
     intent: Intent,
 }
@@ -143,7 +142,7 @@ impl Started {
 }
 
 /// `StageCompleted` のペイロード。`next_stage` が `None` ならワークフロー完了。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageCompleted {
     stage: StageSlug,
     next_stage: Option<StageSlug>,
@@ -170,7 +169,7 @@ impl StageCompleted {
 }
 
 /// `GateOpened` のペイロード。`artifacts` は呼出側が渡す投影材料 (C5)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateOpened {
     stage: StageSlug,
     artifacts: Vec<String>,
@@ -197,7 +196,7 @@ impl GateOpened {
 }
 
 /// `GateApproved` のペイロード。`phase_boundary` は集約が自分の計画から導出する投影材料 (C5)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateApproved {
     stage: StageSlug,
     user_input: Option<String>,
@@ -251,7 +250,7 @@ impl GateApproved {
 }
 
 /// `GateRejected` のペイロード。`revision_count` は集約が +1 した後の値 (BR1.4)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateRejected {
     stage: StageSlug,
     feedback: Option<String>,
@@ -293,7 +292,7 @@ impl GateRejected {
 }
 
 /// `StageRevised` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageRevised {
     stage: StageSlug,
 }
@@ -313,7 +312,7 @@ impl StageRevised {
 }
 
 /// `StageSkipped` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageSkipped {
     stage: StageSlug,
     reason: String,
@@ -355,7 +354,7 @@ impl StageSkipped {
 }
 
 /// `Jumped` のペイロード。承認の消去は `direction` と `target` から適用側が導出する (BR1.6)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Jumped {
     direction: JumpDirection,
     source: StageSlug,
@@ -415,7 +414,7 @@ impl Jumped {
 }
 
 /// `Parked` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parked {
     stage: StageSlug,
 }
@@ -435,7 +434,7 @@ impl Parked {
 }
 
 /// `Recomposed` のペイロード。1 コマンドの複数反転をまとめて 1 イベントにする (C5)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recomposed {
     skipped: Vec<StageSlug>,
     added: Vec<StageSlug>,
@@ -477,7 +476,7 @@ impl Recomposed {
 }
 
 /// `AutonomyModeSet` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutonomyModeSet {
     mode: AutonomyMode,
 }
@@ -564,40 +563,6 @@ mod tests {
     }
 
     #[test]
-    fn the_started_payload_round_trips_the_intent_through_serde() {
-        // 投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、intent の材料は
-        // イベントの直列化を往復しても 1 つも欠けない。
-        let entries = vec![StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1"),
-        )];
-        let intent = Intent::from_material(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            StartRequest::new("classic", "build it").with_test_strategy("balanced"),
-            entries,
-            scan(),
-        )
-        .unwrap();
-        let event = IntentExecutionEvent::Started(Started::new(intent.clone()));
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        let decoded: IntentExecutionEvent = serde_json::from_str(&json).unwrap();
-        let IntentExecutionEvent::Started(started) = &decoded else {
-            panic!("Started を期待した");
-        };
-        assert_eq!(started.intent(), &intent);
-        assert_eq!(decoded, event);
-    }
-
-    #[test]
     fn the_stage_lifecycle_payloads_carry_their_slugs_and_material() {
         let completed = StageCompleted::new(slug("state-init"), Some(slug("intent-capture")));
         assert_eq!(completed.stage(), &slug("state-init"));
@@ -661,46 +626,6 @@ mod tests {
 
         let mode = AutonomyModeSet::new(AutonomyMode::Autonomous);
         assert_eq!(mode.mode(), AutonomyMode::Autonomous);
-    }
-
-    #[test]
-    fn the_event_round_trips_through_serde() {
-        // 本家のシリアライザ境界 (`Serialize` / `DeserializeOwned`) の往復確認。
-        let event = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        // 契約 JSON (BR1.7) の直列化経路ではないため、canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        assert_eq!(
-            serde_json::from_str::<IntentExecutionEvent>(&json).unwrap(),
-            event
-        );
-    }
-
-    #[test]
-    fn the_serialized_event_carries_no_transport_metadata() {
-        // B7: 封筒の 4 点 (aggregate_id / seq_nr / occurred_at / manifest) は本家の列が持つ。
-        // payload 列に混ざっていないことを綴りで固定する (旧 `schema_version` も同様に消えた)。
-        let event = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        for absent in [
-            "seq_nr",
-            "occurred_at",
-            "schema_version",
-            "aggregate_id",
-            "manifest",
-        ] {
-            assert!(
-                !json.contains(absent),
-                "{absent} が payload に残っている: {json}"
-            );
-        }
     }
 
     #[test]

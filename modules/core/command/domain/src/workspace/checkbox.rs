@@ -4,12 +4,10 @@
 //! (recompose と jump が合成できる根拠)。suffix writer の正確な直列化は
 //! TODO(golden: stage-0) — 本スライスは marker 側のみ実装する。
 
-use serde::{Deserialize, Serialize};
-
 use crate::workflow_definition::PlanAction;
 
 /// 6 状態 (01 §3.3 — E1)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CheckboxState {
     /// `[ ]` = upstream `pending` — 未着手。
     Pending,

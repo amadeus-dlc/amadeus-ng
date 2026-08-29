@@ -4,11 +4,9 @@
 //! CLI 引数側: `AutonomyModeArg` の 2 値厳密パースで、不正値は upstream 逐語で拒否
 //! (1 型に畳むと本家の拒否文言が発生不能になる)。
 
-use serde::{Deserialize, Serialize};
-
 /// 状態フィールド `Construction Autonomy Mode` の 2 値。Bolt バッチごとのゲートを出すか
 /// どうかを決める唯一の値。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutonomyMode {
     /// 無人実行。バッチゲートを提示しない。この昇格だけが human presence を要し (I11)、
     /// 再開する人間がいないため park / recompose は拒否される。

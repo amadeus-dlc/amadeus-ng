@@ -226,3 +226,90 @@ fn a_row_that_breaks_an_aggregate_invariant_is_refused_at_the_check_point() {
     let decoded: WireSnapshot = serde_json::from_str(&tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "範囲外カーソルは不変条件違反");
 }
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_payload_carries_no_transport_metadata() {
+    // B7: 封筒の 4 点 (aggregate_id / seq_nr / occurred_at / manifest) は本家の列が持つ。
+    // payload 列に混ざっていないことを綴りで固定する (旧 `schema_version` も同様に消えた)。
+    // 改訂 9 でドメインから serde が消えたため、この検査の置き場もここへ移った。
+    let event = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+    let json = serde_json::to_string(&WireEvent::of(&event)).expect("DTO は直列化できる");
+    for absent in [
+        "seq_nr",
+        "occurred_at",
+        "schema_version",
+        "aggregate_id",
+        "manifest",
+    ] {
+        assert!(
+            !json.contains(absent),
+            "{absent} が payload に残っている: {json}"
+        );
+    }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_snapshot_payload_carries_no_optimistic_version() {
+    // 版数の正本は本家 `SnapshotEnvelope::version()` (行の列) であり、payload 列は純粋な
+    // ドメイン内容だけを持つ (ADR-010 / B7)。
+    let (aggregate, _) = IntentExecution::start(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        intent(),
+        at(),
+    );
+    let json = serde_json::to_string(&WireSnapshot::of(&aggregate)).expect("DTO は直列化できる");
+    assert!(
+        !json.contains("version"),
+        "楽観 version は payload に載らない: {json}"
+    );
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_snapshot_carries_no_static_material_from_the_intent() {
+    // 改訂 3 の受入基準 — 集約状態に intent 由来の静的フィールドが残っていないこと。
+    // 綴りは行に書かれて残る値なので、属性名を逐語で固定する。改訂 9 でドメインから serde が
+    // 消えたため、この検査の置き場もここへ移った。
+    let (aggregate, _) = IntentExecution::start(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        intent(),
+        at(),
+    );
+    let json = serde_json::to_string(&WireSnapshot::of(&aggregate)).expect("DTO は直列化できる");
+    for absent in [
+        "definition_id",
+        "definition_revision",
+        "stages",
+        "plan",
+        "conditional",
+    ] {
+        assert!(!json.contains(absent), "{absent} は写しに載らない: {json}");
+    }
+    for present in [
+        "id",
+        "intent_id",
+        "overlay",
+        "checkbox",
+        "cursor",
+        "status",
+        "parked_at",
+        "autonomy",
+        "approved",
+        "revision_count",
+        "seq_nr",
+        "last_updated_at",
+    ] {
+        assert!(json.contains(present), "{present} は写しに載る: {json}");
+    }
+}

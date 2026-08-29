@@ -1,7 +1,5 @@
 //! `StageDisplay` — 解決済み計画の**表示属性**（ステージ番号・表題・担当エージェント）。
 
-use serde::{Deserialize, Serialize};
-
 use crate::workflow_definition::StageNumber;
 use crate::workspace::{StateFieldValue, UnsafeLineChar};
 
@@ -30,7 +28,7 @@ use crate::workspace::{StateFieldValue, UnsafeLineChar};
 ///
 /// 表題と担当は**単一行**であることが型で保証される（状態ファイルの bullet 行に書くので、
 /// 改行が混ざると 2 行目以降がフィールドとして読めなくなる）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageDisplay {
     number: StageNumber,
     name: StateFieldValue,
@@ -125,22 +123,5 @@ mod tests {
         let c = display("Domain Design", "aidlc-design-agent").expect("単一行");
         assert_eq!(a, b);
         assert_ne!(a, c);
-    }
-
-    #[test]
-    fn a_display_round_trips_through_serde() {
-        // ジャーナルの payload に載る値なので、往復で崩れないことが前提である。
-        let shown = display("Refined Mockups", "aidlc-design-agent").expect("単一行");
-        // ジャーナル payload の往復確認であり、契約 JSON (BR1.7) の直列化経路ではないため、
-        // canon-json を経ない素の serde_json を使う。
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&shown).expect("直列化");
-        assert_eq!(
-            serde_json::from_str::<StageDisplay>(&json).expect("復号"),
-            shown
-        );
     }
 }

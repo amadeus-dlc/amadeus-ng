@@ -11,8 +11,6 @@
 //! [`Intent`]: super::intent::Intent
 //! [`WorkflowDefinition`]: crate::workflow_definition::WorkflowDefinition
 
-use serde::{Deserialize, Serialize};
-
 use super::intent::Intent;
 
 /// intent 集約に起きた事実。現在は genesis の 1 変種だけである。
@@ -22,7 +20,7 @@ use super::intent::Intent;
 /// 落ちること自体が検出手段である ([`IntentExecutionEvent`] と同じ方針)。
 ///
 /// [`IntentExecutionEvent`]: super::intent_execution_event::IntentExecutionEvent
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentEvent {
     /// intent が作られた。
     Created(Created),
@@ -39,7 +37,7 @@ pub enum IntentEvent {
 ///
 /// [`Defined`]: crate::workflow_definition::Defined
 /// [`Started`]: super::intent_execution_event::Started
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Created {
     intent: Intent,
 }
@@ -102,17 +100,6 @@ mod tests {
         let created = Created::new(intent());
         assert_eq!(created.intent(), &intent());
         assert_eq!(created.intent().stage_count(), 1);
-    }
-
-    #[test]
-    fn the_event_round_trips_through_serde() {
-        let event = IntentEvent::Created(Created::new(intent()));
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).unwrap();
-        assert_eq!(serde_json::from_str::<IntentEvent>(&json).unwrap(), event);
     }
 
     #[test]

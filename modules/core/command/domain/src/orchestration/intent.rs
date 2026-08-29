@@ -19,8 +19,6 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 use super::intent_event::{Created, IntentEvent};
 use super::intent_id::IntentId;
 use super::stage_display::StageDisplay;
@@ -38,11 +36,10 @@ use crate::workflow_definition::{
 /// 全 intent 共通のプロセス定義) を `definition_id` / `definition_revision` でピンし、
 /// そこから解決した EXECUTE / SKIP 列を文書順に持つ。定義そのものは持たない。
 ///
-/// 復号は再構成経路を通る (`#[serde(try_from)]`) — 素の derive では Always Valid の検査を
-/// 素通りし、壊れた歴史を読み戻した瞬間に不変条件が破れる。直列化側は derive のままなので
-/// **書き出すバイトは変わらない**。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "IntentMaterial")]
+/// **永続化の記述は持たない** (`coding-rules/domain-persistence-neutrality.md`)。行のバイトを
+/// 決めるのはアダプタ層の DTO で、復号はその DTO から [`Intent::from_material`] を通る —
+/// 検査を迂回する構築口は存在しない。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Intent {
     id: IntentId,
     definition_id: WorkflowDefinitionId,
@@ -78,42 +75,12 @@ pub enum IntentError {
     },
 }
 
-/// 再構成の材料 — 記録済み intent の全属性 (serde の中間表現)。
-///
-/// フィールド名と綴りは [`Intent`] の直列化形と 1 対 1 である。復号はこの型で受けてから
-/// [`Intent::from_material`] へ渡すので、**検査を迂回する構築口が存在しない**
-/// (coding-rules/factory-naming.md「検証を通らない構築口を並立させない」)。
-#[derive(Deserialize)]
-struct IntentMaterial {
-    id: IntentId,
-    definition_id: WorkflowDefinitionId,
-    definition_revision: DefinitionRevision,
-    start_request: StartRequest,
-    stages: Vec<StageEntry>,
-    scan: WorkspaceScan,
-}
-
-impl TryFrom<IntentMaterial> for Intent {
-    type Error = IntentError;
-
-    fn try_from(material: IntentMaterial) -> Result<Intent, IntentError> {
-        Intent::from_material(
-            material.id,
-            material.definition_id,
-            material.definition_revision,
-            material.start_request,
-            material.stages,
-            material.scan,
-        )
-    }
-}
-
 impl Intent {
     /// 記録済みの材料から intent を組み直す (再構成・基本コンストラクタ)。
     ///
     /// **再構成はファクトリではない** — 歴史を読み戻す経路なのでイベントを作らない
-    /// (coding-rules/aggregate-commands.md の再構成条項)。`Started` / `Created` の復号と
-    /// リプレイ用の復元はこちらを呼ぶ。構造体リテラルが現れるのはこの 1 か所だけで、
+    /// (coding-rules/aggregate-commands.md の再構成条項)。`Started` / `Created` を復号する
+    /// アダプタ層の DTO と、リプレイ用の復元はこちらを呼ぶ。構造体リテラルが現れるのはこの 1 か所だけで、
     /// genesis の [`Intent::create`] もここへ委譲する
     /// (coding-rules/factory-naming.md「すべての構築経路が基本コンストラクタを通る」)。
     ///
@@ -644,19 +611,6 @@ mod tests {
     }
 
     #[test]
-    fn the_intent_round_trips_through_serde() {
-        let intent = intent();
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&intent).unwrap();
-        assert_eq!(serde_json::from_str::<Intent>(&json).unwrap(), intent);
-    }
-
-    // ---- 改訂 8: Intent は集約 — genesis は対を返し、再構成はイベントを作らない ----
-
-    #[test]
     fn creating_an_intent_yields_the_aggregate_and_its_birth_event() {
         // 集約のファクトリは (インスタンス, 誕生イベント) の対を返す
         // (coding-rules/aggregate-commands.md)。片方だけでは Repository が永続化を組めない。
@@ -697,19 +651,6 @@ mod tests {
                 .unwrap_err(),
             IntentError::Empty
         );
-    }
-
-    #[test]
-    fn a_decoded_intent_goes_through_the_reconstruction_check() {
-        // serde 復号も再構成経路である。素の derive では検査を素通りしてしまうので、
-        // 復号は再構成コンストラクタを通す。
-        let json = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"build the thing","depth":null,"test_strategy":null},"stages":[],"scan":{"kind":"greenfield","language":"Unknown","framework":"Unknown","build_system":"Unknown"}}"#;
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
-        )]
-        let decoded = serde_json::from_str::<Intent>(json);
-        assert!(decoded.is_err(), "空の計画は復号でも拒まれる");
     }
 
     #[test]

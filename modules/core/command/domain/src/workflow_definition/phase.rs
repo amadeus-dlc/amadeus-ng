@@ -1,10 +1,8 @@
 //! `PhaseId` — 5 値の閉集合 (upstream 01 §2.1)。`initialization = 0 … operation = 4` の
 //! インデックスは `StageNumber` の `<phaseIndex>` と同じ番号体系。
 
-use serde::{Deserialize, Serialize};
-
 /// ワークフローの 5 フェーズ。宣言順 = `index()` 順 = 派生 `Ord` 順。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PhaseId {
     /// ブートストラップ専用 — record ツリーのスキャフォールド、ワークスペースの分類、
     /// state ファイルの書き出し。フェーズルールファイルを持たない唯一のフェーズ。

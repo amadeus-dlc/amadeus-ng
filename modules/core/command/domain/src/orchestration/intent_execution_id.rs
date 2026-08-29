@@ -7,13 +7,7 @@
 
 use std::fmt;
 
-use event_store_adapter_rs::types::AggregateId;
-use serde::{Deserialize, Serialize};
-
 use super::uuid_v7::{CANONICAL_LEN, MalformedUuidV7, VERSION_NIBBLE, parse_canonical};
-
-/// 本家 `AggregateId::type_name` が返す集約種別名 (この識別子が指す集約ルートの型名)。
-const AGGREGATE_TYPE_NAME: &str = "IntentExecution";
 
 /// 1 回の実行の識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -24,12 +18,7 @@ const AGGREGATE_TYPE_NAME: &str = "IntentExecution";
 ///
 /// `Ord` は生文字列の辞書順。UUIDv7 の先頭 48 bit は Unix ミリ秒なので、この順序は
 /// ミリ秒粒度の作成順になる。型としては形式だけを保証し、時刻の妥当性は検証しない。
-///
-/// serde は表現の写しである。`Serialize` は newtype として生文字列へ落ち、`Deserialize` は
-/// [`IntentExecutionId::parse`] と同じ検査を通す (`try_from`) — 復号が Always Valid を破る
-/// 抜け道にならないようにするためである。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntentExecutionId(String);
 
 /// `IntentExecutionId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
@@ -96,24 +85,6 @@ impl TryFrom<String> for IntentExecutionId {
 
     fn try_from(value: String) -> Result<IntentExecutionId, IntentExecutionIdError> {
         IntentExecutionId::parse(&value)
-    }
-}
-
-/// 本家 event-store-adapter-rs の集約識別子契約 (ADR-010 Conformist — 契約は 1 文字も変えない)。
-///
-/// `value()` は我々の [tell-dont-ask] が禁じる綴りだが、**外部 trait の実装は Published
-/// Language への準拠**であり、名前の所有者は本家である。したがって
-/// [ubiquitous-language] §例外の作法に従い、ここに理由を書いたうえでそのまま実装する。
-///
-/// [tell-dont-ask]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/tell-dont-ask.md
-/// [ubiquitous-language]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ubiquitous-language.md
-impl AggregateId for IntentExecutionId {
-    fn type_name(&self) -> String {
-        AGGREGATE_TYPE_NAME.to_string()
-    }
-
-    fn value(&self) -> String {
-        self.0.clone()
     }
 }
 
@@ -280,29 +251,6 @@ mod tests {
         assert!(hashed.contains(&b));
         let ordered: BTreeSet<IntentExecutionId> = [a, b].into_iter().collect();
         assert_eq!(ordered.len(), 1);
-    }
-
-    #[test]
-    fn the_aggregate_id_contract_reports_the_type_name_and_the_raw_value() {
-        let id = IntentExecutionId::parse(SAMPLE).unwrap();
-        assert_eq!(id.type_name(), "IntentExecution");
-        assert_eq!(id.value(), SAMPLE);
-    }
-
-    #[test]
-    fn the_identifier_round_trips_through_serde_and_an_invalid_form_is_refused() {
-        let id = IntentExecutionId::parse(SAMPLE).unwrap();
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&id).unwrap();
-        assert_eq!(json, format!("\"{SAMPLE}\""));
-        assert_eq!(
-            serde_json::from_str::<IntentExecutionId>(&json).unwrap(),
-            id
-        );
-        assert!(serde_json::from_str::<IntentExecutionId>("\"not-a-uuid\"").is_err());
     }
 
     #[test]

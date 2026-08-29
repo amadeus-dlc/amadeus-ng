@@ -7,8 +7,6 @@
 //! 現スコープでは**ジャーナルへ接続しない** — 型と形だけを規則へ適合させ、イベントを
 //! `store` する先（定義の変異取込）は後続 intent の課題である。
 
-use serde::{Deserialize, Serialize};
-
 use super::definition_revision::DefinitionRevision;
 use super::workflow_definition_id::WorkflowDefinitionId;
 
@@ -16,7 +14,7 @@ use super::workflow_definition_id::WorkflowDefinitionId;
 ///
 /// 変異（スコープの追加・グリッドの改訂など）が要件化したら、差分を運ぶ変種
 /// (`ScopeComposed` 等) がここへ増える。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowDefinitionEvent {
     /// 定義が確立された。
     Defined(Defined),
@@ -28,7 +26,7 @@ pub enum WorkflowDefinitionEvent {
 /// (`stage-graph.json` / `scope-grid.json` / `scopes/*.md`) がこの集約のリードモデルであり、
 /// 内容の正本はそちらである。イベントが運ぶのは「どの系譜のどの内容版が確立されたか」と
 /// いう事実だけで、内容の変更は将来の差分イベントが運ぶ。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Defined {
     id: WorkflowDefinitionId,
     revision: DefinitionRevision,
@@ -72,20 +70,6 @@ mod tests {
         let defined = Defined::new(id(), revision());
         assert_eq!(defined.id(), &id());
         assert_eq!(defined.revision(), &revision());
-    }
-
-    #[test]
-    fn the_event_round_trips_through_serde() {
-        let event = WorkflowDefinitionEvent::Defined(Defined::new(id(), revision()));
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&event).expect("直列化できる");
-        assert_eq!(
-            serde_json::from_str::<WorkflowDefinitionEvent>(&json).expect("復号できる"),
-            event
-        );
     }
 
     #[test]

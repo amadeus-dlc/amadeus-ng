@@ -3,14 +3,11 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 /// 単一行が保証されたフィールド値 (Always Valid — 行を割れる文字はこの型に存在せず、
 /// 第二のフィールド行の偽造が不能)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 // 復号は `parse` を通す — 直列化の口から不正な値が型へ入り込むのを防ぐ
 // (`StageSlug` と同じ house pattern)。
-#[serde(try_from = "String")]
 pub struct StateFieldValue(String);
 
 /// 拒否理由 — 走査順に**最初に**見つかった不正コードポイント 1 文字。

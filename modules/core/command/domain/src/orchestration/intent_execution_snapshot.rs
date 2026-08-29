@@ -24,7 +24,6 @@
 //! [`IntentExecution::from_snapshot`]: super::intent_execution::IntentExecution::from_snapshot
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode::AutonomyMode;
 use super::intent_execution_id::IntentExecutionId;
@@ -43,7 +42,7 @@ use crate::workspace::CheckboxState;
 ///
 /// [`IntentExecution`]: super::intent_execution::IntentExecution
 /// [`IntentExecution::from_snapshot`]: super::intent_execution::IntentExecution::from_snapshot
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentExecutionSnapshot {
     pub(crate) id: IntentExecutionId,
     pub(crate) intent_id: IntentId,
@@ -424,42 +423,5 @@ mod tests {
     fn executions_built_from_the_same_attributes_compare_equal() {
         assert_eq!(built(builder()), built(builder()));
         assert_ne!(built(builder()), built(builder().seq_nr(2)));
-    }
-
-    #[test]
-    fn the_snapshot_carries_no_static_material_from_the_intent() {
-        // 改訂 3 の受入基準 — 集約状態に intent 由来の静的フィールドが残っていないこと。
-        // 綴りは行に書かれて残る値なので、属性名を逐語で固定する。
-        let snapshot = builder().build();
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
-        )]
-        let json = serde_json::to_string(&snapshot).unwrap();
-        for absent in [
-            "definition_id",
-            "definition_revision",
-            "stages",
-            "plan",
-            "conditional",
-        ] {
-            assert!(!json.contains(absent), "{absent} は写しに載らない: {json}");
-        }
-        for present in [
-            "id",
-            "intent_id",
-            "overlay",
-            "checkbox",
-            "cursor",
-            "status",
-            "parked_at",
-            "autonomy",
-            "approved",
-            "revision_count",
-            "seq_nr",
-            "last_updated_at",
-        ] {
-            assert!(json.contains(present), "{present} は写しに載る: {json}");
-        }
     }
 }
