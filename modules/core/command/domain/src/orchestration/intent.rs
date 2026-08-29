@@ -1204,10 +1204,11 @@ mod tests {
     #![allow(clippy::indexing_slicing, clippy::panic)]
 
     use super::*;
+    use crate::orchestration::intent_snapshot::IntentSnapshotBuilder;
     use crate::orchestration::{
-        ApplyError, AutonomyMode, CommandError, EngineSignal, IntentBuilder, IntentEvent, IntentId,
-        JumpDirection, NextDecision, NextRequest, PhaseBoundary, StageCompleted, StageEntry,
-        StageIndex, StartError, StartRequest, Started, StateError, Status,
+        ApplyError, AutonomyMode, CommandError, EngineSignal, IntentEvent, IntentId, JumpDirection,
+        NextDecision, NextRequest, PhaseBoundary, StageCompleted, StageEntry, StageIndex,
+        StartError, StartRequest, Started, StateError, Status,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -2145,13 +2146,16 @@ mod tests {
         let w = all_exec(3);
         let base = w.state();
 
+        let empty =
+            IntentSnapshotBuilder::new(intent(), def_id("claude"), revision('0'), Vec::new())
+                .build();
         assert!(matches!(
-            IntentBuilder::new(intent(), def_id("claude"), revision('0'), Vec::new()).build(),
+            Intent::from_state(empty),
             Err(StateError::InvariantViolation(_))
         ));
 
         for broken in [
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2159,7 +2163,7 @@ mod tests {
             )
             .checkbox(vec![InProgress])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2167,7 +2171,7 @@ mod tests {
             )
             .cursor(9)
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2175,7 +2179,7 @@ mod tests {
             )
             .overlay(vec![Skip, Execute, Execute])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2183,7 +2187,7 @@ mod tests {
             )
             .checkbox(vec![InProgress, InProgress, Pending])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2191,7 +2195,7 @@ mod tests {
             )
             .checkbox(vec![InProgress, Completed, Pending])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2199,7 +2203,7 @@ mod tests {
             )
             .parked_at(Some(2))
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2207,7 +2211,7 @@ mod tests {
             )
             .parked_at(Some(9))
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2215,7 +2219,7 @@ mod tests {
             )
             .approved(vec![false])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2223,7 +2227,7 @@ mod tests {
             )
             .revision_count(vec![0, 0])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2231,7 +2235,7 @@ mod tests {
             )
             .seq_nr(0)
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2239,7 +2243,7 @@ mod tests {
             )
             .plan(vec![Skip, Execute, Execute])
             .build(),
-            IntentBuilder::new(
+            IntentSnapshotBuilder::new(
                 intent(),
                 def_id("claude"),
                 revision('0'),
@@ -2249,7 +2253,10 @@ mod tests {
             .build(),
         ] {
             assert!(
-                matches!(broken, Err(StateError::InvariantViolation(_))),
+                matches!(
+                    Intent::from_state(broken),
+                    Err(StateError::InvariantViolation(_))
+                ),
                 "a broken state must be refused"
             );
         }
@@ -2361,15 +2368,19 @@ mod tests {
             (Pending, false),
             (AwaitingApproval, false),
         ] {
-            let state =
-                IntentBuilder::new(intent(), def_id("claude"), revision('0'), stages.clone())
-                    .overlay(vec![Execute, Skip, Execute])
-                    .checkbox(vec![Completed, marker, Pending])
-                    .cursor(1)
-                    .parked_at(Some(1))
-                    .seq_nr(4)
-                    .build();
-            let w = state.unwrap();
+            let state = IntentSnapshotBuilder::new(
+                intent(),
+                def_id("claude"),
+                revision('0'),
+                stages.clone(),
+            )
+            .overlay(vec![Execute, Skip, Execute])
+            .checkbox(vec![Completed, marker, Pending])
+            .cursor(1)
+            .parked_at(Some(1))
+            .seq_nr(4)
+            .build();
+            let w = Intent::from_state(state).unwrap();
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
                 NextDecision::RecoverSkipInconsistency {

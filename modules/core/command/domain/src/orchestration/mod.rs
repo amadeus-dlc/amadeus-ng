@@ -96,8 +96,9 @@ pub use intent::Intent;
 // 集約の観測結果
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
-// `IntentSnapshot` はここに出さない — 集約の直列化形 (memento) はクレート内私有である
-// (オーナー裁定 2026-08-29。出口は `Intent` の `Serialize` / `Deserialize` だけ)。
+// `IntentSnapshot` と `IntentSnapshotBuilder` はここに出さない — 集約の直列化形 (memento) と
+// その組み立て器はクレート内私有である (オーナー裁定 2026-08-29。出口は `Intent` の
+// `Serialize` / `Deserialize` だけ)。
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
@@ -106,9 +107,6 @@ pub use intent_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentEvent, Jumped, Parked,
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
-
-// ビルダー
-pub use intent_snapshot::IntentBuilder;
 
 // エラー
 pub use apply_error::ApplyError;
