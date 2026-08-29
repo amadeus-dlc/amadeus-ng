@@ -1,0 +1,13 @@
+{
+  "id": "cli/jump/execute-backward",
+  "family": "cli",
+  "verb": "jump",
+  "case": "execute-backward",
+  "description": "後方ジャンプ。対象と下流の [x]/[-]/[?]/[R]/[S] を [ ] へ戻し、対象を [-] にする。フェーズ境界をまたぐので PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED の 3 本が続く",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-29T04:26:36Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

@@ -191,7 +191,7 @@ JS の `JSON.stringify` は ES2019 の well-formed 化により孤立サロゲ�
 | ツリーマニフェスト sha256 | `ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f` |
 | 採取コマンド | `bash scripts/goldens/recapture-cli.sh` |
 | bun | 1.3.13 |
-| ケース数 | cli 22（欠落 2）/ hooks 14（欠落 1） |
+| ケース数 | cli 24（欠落 2）/ hooks 14（欠落 1） |
 
 #### 非対話化に使った環境変数
 
@@ -212,6 +212,7 @@ upstream のツールは人間の在席・合議の寄稿・質問フローの�
 
 ```
 cli/<verb>/<case>/     argv  stdin  exit  stdout.json|stdout.txt  stderr  state.diff  audit.md  case.json
+                       state-full.md                                    骨格が生まれる遷移だけ
 hooks/<hook>/<case>/   stdin.json  exit  stdout  stderr  audit.md  case.json
 cli/provenance.json    hooks/provenance.json        族単位の来歴（BR2.1）
 cli/cases-missing.json hooks/cases-missing.json     採取できなかったケース（W4）
@@ -229,6 +230,13 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 - `state.diff` は `aidlc-state.md` の遷移前後の unified diff（文脈 3 行、行単位 LCS）。
   ハンクヘッダは `@@ -<開始>,<行数> +<開始>,<行数> @@` の 1 始まり。差分が無いケースは空。
 - `audit.md` は監査シャードへの**追記分だけ**（既存行は含まない）。追記が無いケースは空。
+- `state-full.md` は遷移**後**の `aidlc-state.md` の全文（正規化済み）。差分は「前」があって
+  はじめて読める観測なので、状態ファイルを**ゼロから起こす**側（genesis）の検収には全文が
+  要る。全ケースに付けると同じ本文が 24 通並ぶだけなので、骨格が生まれる遷移
+  （`intent-create/classic-scope`）にだけ付けてある。upstream 側の正本は
+  `aidlc-utility.ts` の状態ファイル template literal である
+  （`knowledge/aidlc-shared/state-template.md` は LLM 向けの契約文書で、ツールは読まない
+  — 両者は食い違っており、下の `set-autonomy` の項がその実害である）。
 
 #### CLI ゴールデンの範囲（BR2.4）
 
@@ -249,6 +257,10 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 | `park` | `park` | `aidlc-orchestrate.ts park` |
 | `unpark` | `unpark` | `aidlc-state.ts unpark` |
 | `set-autonomy` | `state-field-absent` | `aidlc-bolt.ts set-autonomy` |
+
+`jump/execute-backward` と `report/completed-ungated` は 2026-08-29 に追加採取した
+（上の表の `jump` / `report` 行に含まれる）。既存 22 ケースのバイトは 1 バイトも動いていない
+— 新ケースは列の**末尾に足した**ので、先行ケースの観測は採り直しても同一である。
 
 #### フックの写像（C2）
 
@@ -277,6 +289,9 @@ C2 が名指すフック 4 本と upstream の実装ファイルの対応。`set
 | `recompose` は下流の必須入力を枯らす flip を strict validator が拒否する | `cli/recompose/rejected-starved-input` |
 | `write-audit-log` フックはツール名で絞らない。`Write` / `Edit` 以外の `tool_name` でも記録ディレクトリ配下なら監査行を残す（絞り込みは `settings.json` の matcher の責務） | `hooks/write-audit-log/trusts-the-settings-matcher` |
 | `write-audit-log` は `Edit` を常に UPDATE、`Write` は mtime と birthtime の差が 10 ms 未満なら CREATE として扱う | `hooks/write-audit-log/artifact-created`, `artifact-updated-by-edit`, `artifact-updated-by-overwrite` |
+| 非ゲートの initialization ステージを `report --result completed` で報告すると、ゲートを開かずに `advance` だけが走る。`STAGE_COMPLETED` の `**Details**:` は `Stage <表示名> completed`（ゲート経由の `Stage <表示名> approved by gate` とは別文言） | `cli/report/completed-ungated` |
+| 後方ジャンプは対象と下流の `[x]/[-]/[?]/[R]/[S]` を `[ ]` へ戻し、対象を `[-]` にする。フェーズ境界をまたぐと `PHASE_COMPLETED`（`**Details**: Phase boundary crossed via backward jump`）・`PHASE_VERIFIED`（`**Details**: Traceability verification on jump`）・`PHASE_STARTED` の 3 本が `STAGE_JUMPED` の**前**に並ぶ | `cli/jump/execute-backward` |
+| 状態ファイルの `- **Next Action**:` は書き手で綴りが割れる。genesis（`intent-create`）は **slug**（`Execute practices-discovery`）、`advance` は**表示名**（`Execute Workspace Detection`） | `cli/intent-create/classic-scope`, `cli/report/completed-ungated` |
 
 #### 採取できなかったケース（W4）
 
@@ -285,9 +300,31 @@ C2 が名指すフック 4 本と upstream の実装ファイルの対応。`set
 
 | ケース | 理由 | 引き取り先 |
 | --- | --- | --- |
-| `cli/set-autonomy/gated` | ピン `3c3146cf` では状態ファイルに当該フィールドが無く、正常系そのものが到達不能 | U7 |
+| `cli/set-autonomy/gated` | ピン `3c3146cf` の配布シェルには `- **Construction Autonomy Mode**:` 行を**書き込む経路が 1 つも無く**、正常系そのものが到達不能（下記） | 逸脱台帳 |
 | `cli/continue/multi-part` | 規則束が 28 KiB 上限を超えないため `parts > 1` の分割配送を再現できない | U6 |
 | `hooks/stop-forwarding-loop/transcript-carve-out` | 会話ターンの切り出し判定に本物のトランスクリプト JSONL が要る | U7 |
+
+##### `set-autonomy` の正常系が到達不能である根拠（2026-08-29 全数走査）
+
+`dist/claude/` の 262 ファイルを走査し、`- **Construction Autonomy Mode**:` **行を状態
+ファイルへ書き込む経路が 1 つも無い**ことを確かめた。行を手で足せば `set-autonomy` は通るが、
+それは upstream の挙動ではなく採取者の捏造なので採らない。
+
+1. 状態ファイルを起こす唯一のテンプレート（`aidlc-utility.ts` の template literal）に当該行が
+   無い。`state-full.md` の全文がその実測である。
+2. `setField` は行が無ければ**黙って no-op**、`setFieldStrict` は **throw** する。どちらも
+   挿入はしない（`set-autonomy` が踏むのは後者で、これが終了コード 1 の出どころ）。
+3. 行を挿入できる唯一の関数 `setOrInsertField` の呼出先は `Merge-Held` / `Skeleton Stance` /
+   `Construction Iteration` / `Practices Affirmed Timestamp` / `Parked` / `Parked At Stage` /
+   `Active Unit` / `Unit State` / `Unit Pause Reason` / `Unit Next Action` の 10 種のみで、
+   autonomy は含まれない。
+4. 汎用の `aidlc-state.ts set <field>=<value>` も `setField` 経由なので挿入しない。
+
+当該行を規定しているのは LLM 向けの契約文書 `knowledge/aidlc-shared/state-template.md`
+だけで、ツールはこれを読まない。**テンプレートと契約文書が食い違っている upstream 側の
+欠落**であり、逸脱台帳の対象である。帰結として `AUTONOMY_MODE_SET` の監査行のフィールドキー
+（`**Mode**:`）はピンの**ソース**（`aidlc-bolt.ts` の `emitAudit` 呼出）からしか読めず、
+実行出力としては採れていない。ピン更新で当該行がテンプレートへ入ったら採り直す。
 
 ### 正規化規則の追加（cli / hooks 族、BR2.2）
 

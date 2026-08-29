@@ -1,0 +1,42 @@
+--- aidlc-state.md (before)
++++ aidlc-state.md (after)
+@@ -26,8 +26,8 @@
+ 
+ ## Execution Plan Summary
+ - **Total Stages**: 24
+-- **Completed**: 0
+-- **In Progress**: workspace-scaffold
++- **Completed**: 1
++- **In Progress**: workspace-detection
+ 
+ ## Runtime State
+ - **Revision Count**: 1
+@@ -45,8 +45,8 @@
+ <!-- Checkbox states: [ ] not started, [-] in progress, [?] awaiting approval (gate open), [R] revising (user rejected gate), [x] completed, [S] skipped via --stage/--phase jump -->
+ 
+ ### INITIALIZATION PHASE
+-- [-] workspace-scaffold — EXECUTE
+-- [ ] workspace-detection — EXECUTE
++- [x] workspace-scaffold — EXECUTE
++- [-] workspace-detection — EXECUTE
+ - [ ] state-init — EXECUTE
+ 
+ ### IDEATION PHASE
+@@ -90,13 +90,13 @@
+ 
+ ## Current Status
+ - **Lifecycle Phase**: INITIALIZATION
+-- **Current Stage**: workspace-scaffold
+-- **Next Stage**: workspace-detection
++- **Current Stage**: workspace-detection
++- **Next Stage**: state-init
+ - **Status**: Running
+ - **Last Updated**: <TS>
+ 
+ ## Session Resume Point
+-- **Last Completed Stage**: state-init
+-- **Next Action**: Execute Workspace Scaffold
++- **Last Completed Stage**: workspace-scaffold
++- **Next Action**: Execute Workspace Detection
+ - **Pending Artifacts**: none
+ 

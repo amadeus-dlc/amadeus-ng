@@ -1,0 +1,13 @@
+{
+  "id": "cli/report/completed-ungated",
+  "family": "cli",
+  "verb": "report",
+  "case": "completed-ungated",
+  "description": "非ゲートの initialization ステージを completed で報告すると、ゲートを開かずに advance だけが走る (STAGE_COMPLETED + 次ステージの STAGE_STARTED)",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+    "captured_at": "2026-08-29T04:26:36Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}
