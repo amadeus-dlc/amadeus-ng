@@ -13,7 +13,7 @@
 そして**裁定 7（改名・CQS 適合形への再設計・`Resumed` の入力型からの削除）**をすべて
 反映した。
 
-ワークスペース全体で **772 テスト全緑**（baseline 744 から +28、退行 0）。
+ワークスペース全体で **774 テスト全緑**（baseline 744 から +30、退行 0）。
 カバレッジは head 98.53229%（絶対 90% 床・相対ゲートとも PASS）。
 
 裁定 7 により、当初 §7 (e) で「レビューで裁定されたい」としていた CQS 逸脱は
@@ -189,7 +189,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 
 ---
 
-## 5. 追加・変更したテスト（新規 28 本）
+## 5. 追加・変更したテスト（新規 30 本）
 
 ### domain（`workflow_execution.rs` — 追加 4・削除 1、313 → 316）
 
@@ -203,13 +203,13 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 
 補助フィクスチャとして `start_from_phased_plan` / `phased` / `approval_boundary` を追加した。
 
-### use-case（追加 24 本、18 → 42）
+### use-case（追加 26 本、18 → 44）
 
 裁定 7 でテストは**戻り値アサートから効果の観測へ**書き換えた。`execute` は成功しても値を
 返さないので、コミット内容はテストダブルに残った痕跡（`committed()` / `store_attempts()` /
 `version()`）で固定する。no-op 経路は「`Ok(())` かつ `store_attempts() == 0`」である。
 
-`commit_verdict_use_case.rs`（19 本）:
+`commit_verdict_use_case.rs`（20 本）:
 
 | テスト | 分類 |
 |---|---|
@@ -228,6 +228,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | `a_missing_aggregate_is_reported_as_not_found` | **異常系（`find_by_id` が `NotFound`）** — ブリーフ必須 1/3 |
 | `a_first_conflict_is_retried_once_from_the_rehydration` | **異常系（1 回目 `Conflict` → 2 回目成功）** — ブリーフ必須 2/3 |
 | `a_second_conflict_is_propagated_without_a_further_retry` | **異常系（2 回とも `Conflict` → 伝播）** — ブリーフ必須 3/3 |
+| `a_retry_after_a_competitor_committed_the_same_gate_commits_nothing` | **PR #37 レビュー修正 1 の回帰**。競合相手が先に同じゲートを承認しカーソルが動いたケースで、再試行が次ステージをコミットせず `Ok(())` で終わることを固定 |
 | `a_command_the_aggregate_refuses_is_propagated_verbatim` | 異常系（`CheckboxPrecondition` の逐語伝播 + 1 バイトも書かない） |
 | `the_phase_boundary_comes_from_the_aggregate_not_from_the_use_case` | 層の境界（裁定 2 の横断確認） |
 | `approving_the_last_stage_reports_no_next_stage` | 境界条件（`next_stage` / `phase_boundary` とも `None`） |
@@ -236,6 +237,10 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 `commit_error.rs`（5 本）: `a_repository_failure_is_carried_verbatim` /
 `a_refused_command_is_carried_verbatim` / `an_unknown_stage_names_the_slug_it_could_not_resolve` /
 `the_failure_is_a_std_error` / `failures_compare_by_value`。
+
+`workflow_execution_repository.rs`（ポート面のテスト、+1 本）:
+`a_stored_aggregate_is_not_returned_for_a_different_identifier` — **PR #37 レビュー修正 2 の回帰**。
+識別子検索である以上、別の識別子で引いたら `NotFound` になることを固定する。
 
 ### interface-adapter（新規ファイル 1・テスト 1 本）
 
@@ -275,6 +280,46 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 `store` はストアの版だけを 1 つ進めて `Conflict` を返す。割り込んだ相手が書いた**内容**までは
 模していない — 版の進行だけが再試行の観測に要る材料だからである。
 
+### PR #37 レビュー由来の修正 2 件（2026-08-29）
+
+CodeRabbit の指摘を実否検証したうえで、有効と判定された 2 件を修正した。
+
+**修正 1（Major）— `Conflict` 再試行で対象ステージを固定する。**
+`execute` が `stage == None` を受けたとき、1 回目は対象をカーソルに解決するが、再試行にも
+`None` がそのまま渡っていた。**競合相手が先にそのゲートを承認していた場合、再構成後の新しい
+カーソル（＝報告されていない次ステージ）へ `Forward` を打ってしまう** — 次ステージは `[-]`
+in-progress なので BR1.3 により承認が通ってしまう、という経路である。
+
+1 回目の attempt が解決した対象の `StageSlug` を持ち帰り、再試行はそれを**名指しで**渡す形に
+変えた。そのために `attempt` の戻り値を私有の `AttemptOutcome`
+（`Settled` / `Conflicted { target, conflict }`）にしている — 楽観 version の競合だけを `Err`
+から切り出したのは、対象を持ち帰るためである。これで:
+
+- 相手が先に承認していた場合 → 名指しがカーソルより手前になるので、既存の
+  `is_stale_re_report` が BR1.9 の通過済み no-op に畳み `Ok(())` で終わる
+- 相手の書込がカーソルを動かしていない場合（`set-autonomy` 等）→ 名指し == カーソルなので
+  通常経路に入る（既存の再試行テストはそのまま通る）
+
+再試行の意味論が「**同じ報告をもう一度**」に固定された。
+
+**修正 2（Minor）— fake の `find_by_id` が識別子を照合していなかった。**
+保持している集約と異なる `id` を渡されても集約を返していた。ポート契約（識別子検索）に
+合わせ、`aggregate.intent_id() == id` のときだけ返し、不一致は `NotFound` にした。
+
+**どちらの回帰テストも検出力を実測で確認した**（新ルールに赤例テストを課す house DoD と
+同じ作法）:
+
+- 修正 1 を戻す（再試行に `stage` をそのまま渡す形へ）と
+  `a_retry_after_a_competitor_committed_the_same_gate_commits_nothing` が
+  `次ステージを勝手にコミットしない` で **FAILED**。修正版では 44 本全緑。
+- 修正 2 の `.filter(...)` を外すと
+  `a_stored_aggregate_is_not_returned_for_a_different_identifier` が **FAILED**。
+
+テストダブルには「集約を前進させる割り込み書込」の台本
+（`holding_behind_a_competing_commit(held, advanced, version)`）を追加した。版を進めるだけの
+既存の `holding_behind_concurrent_writes` と併存し、割り込みの 2 種類（カーソルが動く／
+動かない）を書き分けられる。
+
 ---
 
 ## 6. 受入基準の実行結果（すべて実測）
@@ -284,7 +329,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 | 1 | `cargo fmt --all --check` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo fmt --all --check` | **緑**（exit 0）。`tools/lint` は本 Bolt で 1 行も触っていない |
 | 2 | `cargo clippy --workspace --all-targets -- -D warnings` | 同上 | **緑**（exit 0） |
 | 3 | `cargo lint` | `CARGO_TARGET_DIR=$PWD/target-delegate-lint cargo lint` | **緑**（exit 0、所見 0 件） |
-| 4 | `cargo test --workspace` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo test --workspace` | **緑**。**772 passed / 0 failed**（baseline 744 から +28、退行 0） |
+| 4 | `cargo test --workspace` | `CARGO_TARGET_DIR=$PWD/target-delegate cargo test --workspace` | **緑**。**774 passed / 0 failed**（baseline 744 から +30、退行 0） |
 | 5 | `scripts/quint-gate.sh` | `CARGO_TARGET_DIR=$PWD/target-delegate bash scripts/quint-gate.sh` | **緑**（exit 0、`[PASS] quint gate: all steps green`） |
 | 6 | `scripts/coverage.sh` | `… bash scripts/coverage.sh --base origin/main` | **緑**。head 98.53229%。絶対ゲート `[PASS] … >= 90.0%`、相対ゲート `[PASS] head (98.53229%) >= base (98.51646%) - tolerance (0.01)` |
 | 7 | プロダクトコードに `unwrap` / `expect` 0 件 | clippy（`unwrap_used` / `expect_used` deny）+ 各ファイルの `#[cfg(test)]` 前を対象にした grep | **緑**。新規・変更ファイルすべて非テスト部 0 件 |
@@ -298,7 +343,7 @@ fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
 `cargo test --workspace` → **744 passed / 0 failed**。ブリーフの「既存 234 テスト」は古い数値で
 あり、退行の基準は 744 である（主な内訳: domain lib 313 / RMU lib 126 /
 core-infrastructure lib 103 / interface-adapter lib 35 / projection_golden_test 19 /
-use-case lib 18）。+28 の内訳は domain +3・use-case +24・interface-adapter 結線テスト +1。
+use-case lib 18）。+30 の内訳は domain +3・use-case +26・interface-adapter 結線テスト +1。
 
 ---
 
@@ -418,7 +463,11 @@ dry-run 相当で確認し、当てた後に `git diff` で目視確認する」
 5. **`CommitVerdictUseCase` が `Conflict` を再試行するのは 1 回だけ**で、その回数はコードに直書き
    （`match` の 1 段）である。将来 U6 も同じ政策を持つなら、方針の重複を避ける置き場所を
    考える必要がある。
-6. **`target-delegate/` と `target-delegate-lint/`** が未追跡のまま残っている（`.gitignore` は
+6. **`Conflict` 再試行の対象固定は「同じ報告をもう一度」という意味論に依存している。**
+   PR #37 レビュー修正 1 で、再試行は 1 回目が解決した対象を名指しするようにした。この形は
+   U6 以降のユースケースが同じ再試行政策を持つときにも要る性質なので、政策を共有化する場合は
+   「対象の固定」も一緒に持ち出す必要がある（版だけ引き継いで対象を再解決すると同じ穴が開く）。
+7. **`target-delegate/` と `target-delegate-lint/`** が未追跡のまま残っている（`.gitignore` は
    `/target` しか除外していない）。検証用のビルド生成物なので削除して構わない。
 
 ---
