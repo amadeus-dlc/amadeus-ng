@@ -70,6 +70,14 @@ impl StateVersionClassification {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_non_integer_token_is_unparseable() {
+        assert_eq!(
+            StateVersionClassification::classify(&with_version("v8")).kind(),
+            StateVersionKind::Unparseable
+        );
+    }
+
     fn with_version(v: &str) -> String {
         format!("# AI-DLC State Tracking\n\n## Project Information\n- **State Version**: {v}\n")
     }

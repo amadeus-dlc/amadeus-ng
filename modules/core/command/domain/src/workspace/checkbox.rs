@@ -407,6 +407,22 @@ not a checkbox line
     }
 
     #[test]
+    fn iteration_walks_entries_in_document_order() {
+        let entries = Checkboxes::parse("- [x] a — A EXECUTE\n- [ ] b — B SKIP\n");
+        let slugs: Vec<&str> = entries.iter().map(CheckboxEntry::slug).collect();
+        assert_eq!(slugs, ["a", "b"]);
+        assert_eq!(entries.len(), 2);
+        assert!(!entries.is_empty());
+        assert!(entries.get(9).is_none(), "範囲外は None");
+    }
+
+    #[test]
+    fn a_line_with_an_unknown_marker_is_ignored() {
+        // 閉集合 [ xSR?-] の外 (`z`) は checkbox 行と見なさない (寛容パース)。
+        assert!(Checkboxes::parse("- [z] a — A EXECUTE\n").is_empty());
+    }
+
+    #[test]
     fn with_checkbox_marker_edits_only_the_marker_and_preserves_the_rest_verbatim() {
         let updated =
             Checkboxes::with_marker(SAMPLE, "requirements-analysis", CheckboxState::Completed)
