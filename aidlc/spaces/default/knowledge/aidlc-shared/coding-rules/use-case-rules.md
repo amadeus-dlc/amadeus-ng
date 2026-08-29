@@ -27,6 +27,27 @@ impl<R: WorkflowDefinitionRepository> NextUseCase<R> {
 - **既定はジェネリクス（単相化）**。理由: ①`dyn` の object safety 制約で**契約の設計が歪む**のを防ぐ（`-> impl Iterator`・関連型・ジェネリックメソッドが使える）②ワンショット CLI で実装は実質 2 つ（Impl + InMemory）— 単相化コストは無視できる ③テストが `XxxUseCase<InMemoryXxxRepository>` の素の値で組める ④配線ミスがコンパイル時に落ちる（E1 文化）。
 - **`dyn` を使ってよいのは**: 機構シーム（Gateway 実装内部の `Arc<dyn Clock>` 等 — 複数インスタンスで fake を共有する用途）と、将来ディスパッチャが多数のユースケースを一様保持する必要が実際に生じた**その境界だけ**。ユースケース自身の設計には持ち込まない。
 
+## 2b. execute の引数は集約 ID と値オブジェクトのみ — 集約インスタンスを渡さない
+
+**オーナー裁定 2026-08-30**: ユースケースの `execute` 引数に**集約を渡してはならない**。
+渡してよいのは**集約 ID と値オブジェクト**（コマンドの材料）だけである。集約は
+ユースケースが**保持するリポジトリ**で `execute` 内部から取得する（リポジトリを外で使わない）。
+
+```rust
+// ○ 集約 ID + 値オブジェクト
+execute(&mut self, id: &IntentExecutionId, transition: ReportedTransition, at: DateTime<Utc>)
+
+// ✕ 集約インスタンスの受け渡し（リポジトリ利用がユースケースの外へ漏れる）
+execute(&mut self, id: &IntentExecutionId, intent: &Intent, ...)
+```
+
+- 読み取り専用ユースケースの「書けない」保証は、**find 系動詞しか持たない読取専用ポートの注入**
+  で型保証する（§2 の `NextUseCase<WorkflowDefinitionRepository>` が既にこの形）。
+- 本規則は**ユースケース層の署名**の話である。集約の**メソッド**が他集約を `&` 参照で受ける
+  （`next_decision(&self, &WorkflowDefinition, ..)` 等）のは
+  [aggregate-references.md](aggregate-references.md) が定めるドメイン内のパラメータ渡しで
+  あり、対象外。
+
 ## 3. ユースケースからユースケースを呼ばない
 
 **共有されるべきはドメイン層**。ユースケース間の再利用を許すと、ドメイン概念として彫り出されるべき共有ロジックが応用層に滞留し、**ドメイン層の設計が歪む**（貧血化）。この禁止は境界規律であると同時に、ドメインモデル発見の**強制関数**である（実証例（履歴 — `reap_eligible` は ADR-007 / Bolt B5 で退役、規律の例としてのみ残す）: `reap_eligible` — Gateway の判断複製を禁止した圧力が「reap 適格性」というドメイン述語を彫り出した）。
@@ -37,6 +58,6 @@ impl<R: WorkflowDefinitionRepository> NextUseCase<R> {
 
 ## 4. 読取専用の型保証（I8 型）は参照渡しで
 
-> **射程（2026-08-30 明確化・オーナー裁定）**: 本節は**読み取り専用ユースケース**（`Next` 等）専用である。**書込ユースケースはリポジトリを保持し `execute` 内部で使う**のが標準形（§2）であり、Controller に読ませて `&` で渡す形を書込ユースケースへ流用してはならない（`CommitVerdictUseCase` で誤適用され是正された — B12 改訂 10）。
+> **射程の再裁定（2026-08-30・オーナー）**: 本節の「Controller が集約を `&` で渡す」機構は **§2b により失効** — execute の引数に集約は渡さない（読み取り専用でも）。読み取り専用の型保証は **find 系動詞しか持たない読取専用ポートの注入**へ置き換える（書込不能はポートの動詞集合が型で保証する）。本節の目的（読取専用を型で保証する）は生きており、手段だけが変わった。`CommitVerdictUseCase` への誤適用は B12 改訂 10 で是正済み。U6（Next）実装時は§2b の形で設計する。
 
 書込を型で禁じたいユースケース（例: `Next`）には Repository を**そもそも注入しない**。Controller が `repository.find_by_id()` した集約を `&` 参照で渡す — リードモデルを経由せずに、Rust の参照とポート非注入だけで書込不能が成立する（動詞は gateway-taxonomy §2b の許容語彙に合わせた。`find()` は廃止 — C4 改訂 2026-08-23）。（**2026-08-24 改訂**: 旧文は「CQRS を導入せずに（gateway-taxonomy.md — CQRS 不採用）」だったが、ADR-001/003/004 で CQRS + ES を採用済みのため前提が失効した。本節が言いたいのは「読取専用を**型で**保証する」ことであり CQRS の採否とは独立である。依存境界は [cqrs-boundaries.md](cqrs-boundaries.md) を参照）

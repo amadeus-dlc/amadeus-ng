@@ -404,3 +404,12 @@ pub async fn execute(&mut self, id: &IntentExecutionId, transition: ReportedTran
   （`Next`）にのみ適用**される — use-case-rules §4 の射程はそのまま。書込ユースケースへの
   流用を禁じる 1 行を §4 に足す（メインセッションが実施）。
 - 結線テスト（wiring test）もシグネチャ変更に追随。
+
+## 改訂 10 追補（2026-08-30・オーナー裁定）— execute 引数の一般則
+
+「execute の引数に集約を渡すのをやめろ。集約 ID や値オブジェクトを渡すのは OK」— 改訂 10 を
+一般則へ格上げ（use-case-rules §2b として正典化）。読み取り専用ユースケース（U6 Next）も
+対象であり、I8 の「Controller が集約を `&` で渡す」機構は失効 — 読取専用の型保証は
+**find 系動詞しか持たない読取専用ポートの注入**へ置き換える（§4 の目的は維持、手段の変更）。
+改訂 10 の CommitVerdictUseCase 確定形（id + ReportedTransition + DateTime）はこの一般則に
+最初から適合している。
