@@ -13,10 +13,11 @@ Conversation language: 日本語
 コード変更は改名・移動 2 件の機械的追随のみで、依存構造・型・投影・テストの挙動は不変。
 テスト件数は報告 1 の完了時点と同じ **738 件全緑**（増減なし = 挙動不変の裏取り）。
 
-- コミット 3 本（`de88d43` 改名 1 / `393e28f` 改名 2 / `86d10a6` doc コメント是正）
+- コミット 4 本（`de88d43` 改名 1 / `393e28f` 改名 2 / `86d10a6` doc コメント是正 5 箇所 /
+  `3a61d28` doc コメント最終スイープ 16 箇所）
 - 改名 2 本の実体は「クレート名・パス名の綴り替え」と「相対パス 1 階層ぶんの補正」だけで
   60 files changed, +164 / −160（うち 26 件はリネーム検出）
-- `86d10a6` はコメントのみ 4 ファイル（委任者承認済み。§7.2）
+- `86d10a6` / `3a61d28` はコメントのみ 15 ファイル（いずれも委任者承認済み。§7.2 / §7.2b）
 
 ---
 
@@ -88,7 +89,7 @@ checkbox.rs` を指している。ドメインを移した時点で免除が外�
 | 8 | 旧名 grep 0 件 | **PASS**（`grep -rn "core-query-read-model-updater\|modules/core/domain\b\|\"core-domain\"" modules/ Cargo.toml` = **0**） |
 | 9 | ゴールデン検収緑 | **PASS** — 監査ブロック 42 ブロック（1 テスト）/ 投影 10 ケース両面一致（13 テスト）/ upstream load パリティ（9 テスト） |
 
-すべて **最終コミット `86d10a6` の時点**で再実行した結果である（doc コメント是正の後に測り直した）。
+すべて **最終コミット `3a61d28` の時点**で再実行した結果である（doc コメント是正の後に測り直した）。
 
 **基準 7 の測り方**: 機械的な正本は基準 2 である（`[workspace.lints.clippy]` の
 `unwrap_used = "deny"` / `expect_used = "deny"` に対し `clippy.toml` の
@@ -162,30 +163,41 @@ checkbox.rs` を指している。ドメインを移した時点で免除が外�
 | `read-model-updater/tests/support/mod.rs:1-14` | 本家に行を書かせる理由から「禁止だから」を除去（禁止は解けた）。「試験対象に忠実だから」という**今も生きている理由**だけを残した |
 | `command/domain/.../event_manifest.rs:13-17` | 照合側を「クエリ側」→「中間である RMU」。正本の置き場所の理由を「両側が依存してよい唯一の層」→「RMU が中間として依存できるので写しを作らずに済む」へ |
 
-### 7.2b 同じ誤りが他に 14 箇所（**未修正 — doc-sync 第 2 パス向け**）
+### 7.2b 最終スイープ（**完了** — 委任者承認 `3a61d28`）
 
-承認された 5 箇所を直したあと全面走査したところ、**RMU を「クエリ側」と呼ぶ記述が他に 14 箇所**
-残っていた。委任者の指示が「これを最終コミットとして B8 実装クローズ」であり、かつ doc-sync
-第 2 パスが控えているため、**あえて手を付けていない**（実装クローズ後に私が独断で範囲を広げる
-より、doc-sync 側で拾うほうが筋が通ると判断した）。
+承認 5 箇所を直したあと全面走査し、RMU を「クエリ側」と呼ぶ記述を他に 14 箇所検出した。当初は
+doc-sync 第 2 パスへ申し送ったが、doc-sync の所有ファイルは `docs`/`aidlc` のみで `modules/**`
+を触れないため拾えない旨の指摘を受け、**同一クラスの残件処理として最終スイープを承認**された。
+追加走査で 2 箇所（`journal_read_error.rs` / `app/aidlc/Cargo.toml`）が同種と判明し、**計 16
+箇所**を 1 コミットで是正した。コメントのみ・挙動不変。
 
-| 場所 | 種別 |
+**呼称のみ（規則本文は真のまま）**: `command/use-case/src/lib.rs` /
+`command/interface-adapter/src/lib.rs` / 同 `orchestration/mod.rs` — 「クエリ側」→「中間クレート
+RMU」。あわせてコマンド側が守る規則を「**RMU を `Cargo.toml` に書いたら違反**」と明示した
+（是正後の判定表では、コマンド側の依存に現れて違反になるのはクエリ側だけでなく RMU も含む）。
+
+**合成ルートに置く理由の書き直し**: `app/aidlc/tests/journal_protocol_conformance.rs` /
+`crash_reconstruction_test.rs` — 「両側を `Cargo.toml` に書いてよいのは合成ルートだけ」は失効
+したので、現に成り立つ理由へ差し替えた: コマンド側は RMU を書けない → 置けるのは RMU 自身か
+合成ルート → **実際に結線される場所で駆動するほうが観測として忠実**だから合成ルート。
+
+**根拠が覆っていた 4 箇所（複製という判断自体は維持）**:
+
+| 場所 | 直した理由づけ |
 |---|---|
-| `read-model-updater/src/orchestration/corrupt_cause.rs:1,13` | **理屈が覆っている**（下記） |
-| `read-model-updater/src/orchestration/store_failure.rs:7,9` | **理屈が覆っている**（下記） |
-| `command/use-case/src/lib.rs:4-5` | 呼称のみ（述べている規則「本クレートにクエリ側・RMU の型は無い」は今も真） |
-| `command/use-case/src/orchestration/corrupt_cause.rs:7,14` | 呼称のみ |
-| `command/interface-adapter/src/lib.rs:4-5` / `orchestration/mod.rs:8` / `orchestration/store_failure.rs:3,8` | 呼称のみ |
-| `app/aidlc/tests/journal_protocol_conformance.rs:7` / `crash_reconstruction_test.rs:6` | 呼称のみ（合成ルートに置く判断自体は妥当なまま） |
+| `read-model-updater/.../corrupt_cause.rs`・`store_failure.rs` | 失効した禁止根拠（「両側は互いを知らないので共有すれば相手を `Cargo.toml` に書くことになる」）を落とし、今も生きている設計理由だけを残した — 「実際に起きうる変種だけを各面が持つ（無用な変種は『この面ではありえない』という情報を消す）」＋ 正本の「エラー分類・I/O 写像は側ごとに専用化」 |
+| `command/use-case/.../corrupt_cause.rs`・`command/interface-adapter/.../store_failure.rs` | **コマンド側から見れば禁止根拠は今も真**（コマンド側の依存に RMU が現れたら違反）なので、禁止根拠を捨てずにその形へ書き直した |
 
-**注意が要る 2 件**は呼称ではなく**根拠**が覆っている。RMU 側の `corrupt_cause.rs` と
-`store_failure.rs` は、コマンド側と型を複製している理由を「両側は互いを知らないので、共有すれば
-どちらかが相手を `Cargo.toml` に書くことになる」と説明している。RMU は中間なのでコマンド側を
-書いてよく、**この禁止根拠はもう成り立たない**。ただし**複製という判断自体は維持でよい** —
-同じコメントが挙げているもう 1 つの理由（「実際に起きうる変種だけを各側が持つ。無用な変種は
-『この面ではありえない』という情報を消す」）は今も生きており、是正後の正本も「エラー分類・
-I/O 写像は側ごとに専用化」を残しているためである。書き換えるなら、禁止根拠を落として設計上の
-理由だけを残す形になる。
+**その他 2 箇所**: `read-model-updater/.../journal_read_error.rs` は相手型へ rustdoc リンクを
+張らない理由を「両側は互いを知らない」→「RMU の依存に `core-command-use-case` が無いので
+そもそも張れない」へ。`app/aidlc/Cargo.toml` は「合成ルートだけが**両側**を知る」→「合成ルートは
+**すべて**を知る（コマンド側 3 + 中間の RMU + 共有層を配線する）」へ。
+
+スイープ後の残骸走査は 0 件（「クエリ側」の残存 4 箇所はいずれも是正後の正しい用法 — 将来の
+クエリ側クレートを指すか、「RMU はクエリ側でない」と述べている箇所）。
+
+**再検証（`3a61d28` 時点）**: fmt PASS / clippy `-D warnings` exit 0 / `cargo lint` 所見 0 /
+`cargo doc --workspace --no-deps` 警告 0 / `cargo test --workspace` 738 passed, 0 failed。
 
 ### 7.3 `tools/lint` のパス定数（§2）— **承認済み・対応不要**
 
