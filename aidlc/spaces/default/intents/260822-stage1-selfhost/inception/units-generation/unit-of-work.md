@@ -126,8 +126,10 @@
 
 ### U5 — `u5-report-use-case`（library, M）
 
-- **責務**: `report` ユースケース（approve / reject / revise / skip / awaiting-approval / resumed の遷移
-  コミット）。典型形: ~~find_by_id で再水和 → decide（1 イベント）→ store → 投影キャッチアップ起動。~~
+- **責務**: `report` ユースケース（approve / reject / revise / skip / awaiting-approval の遷移
+  コミット。~~resumed~~ → **失効（2026-08-29 / Bolt B11 裁定 7）**: resume はイベントを
+  コミットしないルーティングであり、U7 の Controller が手前で分岐する —
+  `use-case-rules.md` §3 の既定どおり。U5 の入力型 `ReportedTransition` に resumed は無い）。典型形: ~~find_by_id で再水和 → decide（1 イベント）→ store → 投影キャッチアップ起動。~~
   → **一部失効（2026-08-29 / Bolt B11。オーナー裁定を in-place 反映）**: 正しくは
   「`find_by_id` で**再構成**（= 保存済みイベントを古い順に再生して現在の状態を組み立て直す。
   従来「再水和」と書いていたもの） → decide（1 イベント） → store」までが本 Unit の責務であり、
