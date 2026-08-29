@@ -131,7 +131,7 @@ fn started() -> Started {
         .collect();
 
     Started::new(
-        Intent::new(
+        Intent::from_material(
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),

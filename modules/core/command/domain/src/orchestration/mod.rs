@@ -6,11 +6,11 @@
 //! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
-//! 永続化境界は `state()` / `from_state()` の値オブジェクトである。
+//! 永続化境界は `snapshot()` / `from_snapshot()` の値オブジェクトである。
 //!
 //! | コマンド | イベント |
 //! |---|---|
-//! | `start` / `start_from_plan_unchecked` | `Started` (解決済み計画を自己完結で持つ) |
+//! | `start` | `Started` (解決済み計画を自己完結で持つ) |
 //! | `complete_stage` | `StageCompleted` |
 //! | `open_gate` | `GateOpened` |
 //! | `approve_gate` | `GateApproved` |
@@ -59,6 +59,7 @@ mod command_error;
 mod directive_schema;
 mod event_manifest;
 mod intent;
+mod intent_event;
 mod intent_execution;
 mod intent_execution_event;
 mod intent_execution_id;
@@ -81,7 +82,6 @@ mod workspace_scan;
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
 pub use directive_schema::DirectiveKind;
-pub use intent::Intent;
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
@@ -94,7 +94,10 @@ pub use start_request::StartRequest;
 pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
 
-// 集約 (エンジンループの状態機械)
+// 集約
+// `Intent` は静的な集約 (変異は現状なし — オーナー裁定 2026-08-30)、`IntentExecution` は
+// エンジンループの状態機械である。
+pub use intent::Intent;
 pub use intent_execution::IntentExecution;
 
 // 集約の観測結果
@@ -111,6 +114,9 @@ pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
+// intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。ジャーナルへは未接続で、
+// `store` する `IntentRepository` は U7 の課題である。
+pub use intent_event::{Created, IntentEvent};
 
 // エラー
 pub use apply_error::ApplyError;

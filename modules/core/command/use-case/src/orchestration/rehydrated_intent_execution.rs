@@ -88,7 +88,7 @@ mod tests {
     };
 
     fn intent() -> Intent {
-        Intent::new(
+        Intent::from_material(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

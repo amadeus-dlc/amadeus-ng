@@ -1,20 +1,27 @@
-//! `Intent` — 静的な intent (`id` + 依頼 + 解決済み計画 + 走査結果)。
+//! `Intent` — 静的な intent 集約 (`id` + 依頼 + 解決済み計画 + 走査結果)。
 //!
 //! 「1 つの intent を元に実行 (`IntentExecution`) は何回でも起きる」(1 intent : n 実行 —
 //! オーナー裁定 2026-08-29) という意味論において、**回数によらず変わらない側**がこの型で
-//! ある。集約ではない — 遷移も判断も持たない **Always Valid の不変構造体**であり、作った
-//! あとに状態が変わる経路は存在しない。
+//! ある。
+//!
+//! これは**集約**である (オーナー裁定 2026-08-30 — [`WorkflowDefinition`] と同じ類型で、
+//! 静的で変異が現状無いだけ)。したがって genesis ファクトリ [`Intent::create`] は
+//! **(集約, 誕生イベント) の対**を返し、再構成経路 [`Intent::from_material`] は
+//! **イベントを作らない** (coding-rules/aggregate-commands.md)。誕生イベントを `store` する
+//! `IntentRepository` は U7 の課題であり、本スコープでは型と形の適合までである。
 //!
 //! 実行時の状態 (カーソル・checkbox・park・承認履歴…) は集約 [`IntentExecution`] が持ち、
 //! 集約はこの型を**埋め込まず `IntentId` で参照する** (coding-rules/aggregate-references.md)。
 //! 判断に計画が要るコマンド・クエリは、この型を `&` 参照で引数に受け取る。
 //!
 //! [`IntentExecution`]: super::intent_execution::IntentExecution
+//! [`WorkflowDefinition`]: crate::workflow_definition::WorkflowDefinition
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use super::intent_event::{Created, IntentEvent};
 use super::intent_id::IntentId;
 use super::stage_display::StageDisplay;
 use super::stage_entry::StageEntry;
@@ -30,7 +37,12 @@ use crate::workflow_definition::{
 /// `stages` は**この intent 向けに解決済みの計画**である。定義 (`WorkflowDefinition` =
 /// 全 intent 共通のプロセス定義) を `definition_id` / `definition_revision` でピンし、
 /// そこから解決した EXECUTE / SKIP 列を文書順に持つ。定義そのものは持たない。
+///
+/// 復号は再構成経路を通る (`#[serde(try_from)]`) — 素の derive では Always Valid の検査を
+/// 素通りし、壊れた歴史を読み戻した瞬間に不変条件が破れる。直列化側は derive のままなので
+/// **書き出すバイトは変わらない**。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "IntentMaterial")]
 pub struct Intent {
     id: IntentId,
     definition_id: WorkflowDefinitionId,
@@ -66,15 +78,51 @@ pub enum IntentError {
     },
 }
 
+/// 再構成の材料 — 記録済み intent の全属性 (serde の中間表現)。
+///
+/// フィールド名と綴りは [`Intent`] の直列化形と 1 対 1 である。復号はこの型で受けてから
+/// [`Intent::from_material`] へ渡すので、**検査を迂回する構築口が存在しない**
+/// (coding-rules/factory-naming.md「検証を通らない構築口を並立させない」)。
+#[derive(Deserialize)]
+struct IntentMaterial {
+    id: IntentId,
+    definition_id: WorkflowDefinitionId,
+    definition_revision: DefinitionRevision,
+    start_request: StartRequest,
+    stages: Vec<StageEntry>,
+    scan: WorkspaceScan,
+}
+
+impl TryFrom<IntentMaterial> for Intent {
+    type Error = IntentError;
+
+    fn try_from(material: IntentMaterial) -> Result<Intent, IntentError> {
+        Intent::from_material(
+            material.id,
+            material.definition_id,
+            material.definition_revision,
+            material.start_request,
+            material.stages,
+            material.scan,
+        )
+    }
+}
+
 impl Intent {
-    /// 識別子・定義のピン・依頼・解決済み計画・走査結果から intent を組む (基本コンストラクタ)。
+    /// 記録済みの材料から intent を組み直す (再構成・基本コンストラクタ)。
+    ///
+    /// **再構成はファクトリではない** — 歴史を読み戻す経路なのでイベントを作らない
+    /// (coding-rules/aggregate-commands.md の再構成条項)。`Started` / `Created` の復号と
+    /// リプレイ用の復元はこちらを呼ぶ。構造体リテラルが現れるのはこの 1 か所だけで、
+    /// genesis の [`Intent::create`] もここへ委譲する
+    /// (coding-rules/factory-naming.md「すべての構築経路が基本コンストラクタを通る」)。
     ///
     /// # Errors
     ///
     /// ステージ 0 件、initialization ステージの SKIP / CONDITIONAL、先頭ステージの SKIP を
     /// 拒否する (先頭はカーソルの初期位置なので、実効 EXECUTE でなければ実行が始められない)。
     /// スコープ名が定義にあるかは**ここでは検査しない** — 計画を解決する側の責務である。
-    pub fn new(
+    pub fn from_material(
         id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
@@ -110,23 +158,57 @@ impl Intent {
         })
     }
 
+    /// 新しい intent を作る (genesis ファクトリ — 対を返す)。
+    ///
+    /// 集約のファクトリは **(集約インスタンス, 誕生イベント) の両方**を返すことが必須である
+    /// (coding-rules/aggregate-commands.md)。Repository の永続化は
+    /// `store(&event, &aggregate, ..)` の形でジャーナル 1 行とスナップショットを同一
+    /// トランザクションで受け取るので、どちらが欠けても永続化が組めない。
+    ///
+    /// 動詞 `create` は upstream の `intent-create` そのものである
+    /// (coding-rules/factory-naming.md — ドメイン語がある場合はそちらを優先する)。
+    /// 検査は [`Intent::from_material`] へ委譲するので、genesis と再構成で完全に同一である。
+    ///
+    /// # Errors
+    ///
+    /// [`Intent::from_material`] が拒む形をそのまま返す。
+    pub fn create(
+        id: IntentId,
+        definition_id: WorkflowDefinitionId,
+        definition_revision: DefinitionRevision,
+        start_request: StartRequest,
+        stages: Vec<StageEntry>,
+        scan: WorkspaceScan,
+    ) -> Result<(Intent, IntentEvent), IntentError> {
+        let intent = Intent::from_material(
+            id,
+            definition_id,
+            definition_revision,
+            start_request,
+            stages,
+            scan,
+        )?;
+        let event = IntentEvent::Created(Created::new(intent.clone()));
+        Ok((intent, event))
+    }
+
     /// 定義と呼出側の要求から解決済み計画を組み立てて intent を作る (補助コンストラクタ)。
     ///
     /// `definition.id()` / `definition.revision()` は**無条件に控える** — 比較対象となる既存状態が
     /// 無い静的コンストラクタなので検査はしない (BR2.6)。以後の定義照合は実行側の
-    /// `next_decision` が行う。組み立てた計画は基本コンストラクタ [`Intent::new`] に渡すので、
-    /// 不変条件の検査点は 1 か所のままである。
+    /// `next_decision` が行う。組み立てた計画は genesis の [`Intent::create`] に渡すので、
+    /// 不変条件の検査点は 1 か所のままであり、**誕生イベントも同じ形で返る**。
     ///
     /// # Errors
     ///
     /// 未知スコープ (`UnknownScope`)、表示属性が単一行でない (`StageDisplayNotSingleLine`)、
-    /// および [`Intent::new`] が拒む形をそのまま返す。
+    /// および [`Intent::from_material`] が拒む形をそのまま返す。
     pub fn resolve(
         id: IntentId,
         definition: &WorkflowDefinition,
         start_request: StartRequest,
         scan: WorkspaceScan,
-    ) -> Result<Intent, IntentError> {
+    ) -> Result<(Intent, IntentEvent), IntentError> {
         let scope = start_request.scope();
         if !definition.is_valid_scope(scope) {
             let valid = definition
@@ -167,7 +249,7 @@ impl Intent {
                 display,
             ));
         }
-        Intent::new(
+        Intent::create(
             id,
             definition.id().clone(),
             definition.revision().clone(),
@@ -341,7 +423,44 @@ mod tests {
     }
 
     fn intent() -> Intent {
-        Intent::new(id(), def_id(), revision(), request(), stages(), scan()).unwrap()
+        Intent::from_material(id(), def_id(), revision(), request(), stages(), scan()).unwrap()
+    }
+
+    /// 1 ステージ (initialization・EXECUTE) だけの最小定義。
+    fn single_stage_definition() -> WorkflowDefinition {
+        let node = StageNodeBuilder::new(
+            StageSlug::parse("state-init").unwrap(),
+            StageNumber::parse("0.1").unwrap(),
+            "State Init".to_string(),
+            PhaseId::Initialization,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .scopes(vec!["classic".to_string()])
+        .build();
+        let grid = ScopeGrid::new(
+            [(
+                "classic".to_string(),
+                [(StageSlug::parse("state-init").unwrap(), PlanAction::Execute)]
+                    .into_iter()
+                    .collect(),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let scopes: BTreeMap<String, ScopeMetadata> = [(
+            "classic".to_string(),
+            ScopeMetadata::new("classic").unwrap(),
+        )]
+        .into_iter()
+        .collect();
+        WorkflowDefinition::from_artifacts(
+            def_id(),
+            revision(),
+            StageGraph::new(vec![node]).unwrap(),
+            grid,
+            scopes,
+        )
     }
 
     #[test]
@@ -366,7 +485,7 @@ mod tests {
     #[test]
     fn an_empty_plan_is_refused() {
         assert_eq!(
-            Intent::new(id(), def_id(), revision(), request(), Vec::new(), scan()),
+            Intent::from_material(id(), def_id(), revision(), request(), Vec::new(), scan()),
             Err(IntentError::Empty)
         );
     }
@@ -389,7 +508,7 @@ mod tests {
             ),
         ];
         assert_eq!(
-            Intent::new(id(), def_id(), revision(), request(), stages, scan()),
+            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()),
             Err(IntentError::InitializationMustExecute)
         );
     }
@@ -411,7 +530,7 @@ mod tests {
             ),
         ];
         assert_eq!(
-            Intent::new(id(), def_id(), revision(), request(), stages, scan()),
+            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()),
             Err(IntentError::InitializationMustExecute)
         );
     }
@@ -435,7 +554,7 @@ mod tests {
             conditional,
         ];
         assert_eq!(
-            Intent::new(id(), def_id(), revision(), request(), stages, scan()),
+            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()),
             Err(IntentError::InitializationMustBeUnconditional)
         );
     }
@@ -458,7 +577,9 @@ mod tests {
             ),
             conditional,
         ];
-        assert!(Intent::new(id(), def_id(), revision(), request(), stages, scan()).is_ok());
+        assert!(
+            Intent::from_material(id(), def_id(), revision(), request(), stages, scan()).is_ok()
+        );
     }
 
     #[test]
@@ -510,7 +631,7 @@ mod tests {
     #[test]
     fn intents_built_from_the_same_parts_compare_equal() {
         assert_eq!(intent(), intent());
-        let other = Intent::new(
+        let other = Intent::from_material(
             IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             def_id(),
             revision(),
@@ -531,6 +652,64 @@ mod tests {
         )]
         let json = serde_json::to_string(&intent).unwrap();
         assert_eq!(serde_json::from_str::<Intent>(&json).unwrap(), intent);
+    }
+
+    // ---- 改訂 8: Intent は集約 — genesis は対を返し、再構成はイベントを作らない ----
+
+    #[test]
+    fn creating_an_intent_yields_the_aggregate_and_its_birth_event() {
+        // 集約のファクトリは (インスタンス, 誕生イベント) の対を返す
+        // (coding-rules/aggregate-commands.md)。片方だけでは Repository が永続化を組めない。
+        let (intent, event) =
+            Intent::create(id(), def_id(), revision(), request(), stages(), scan()).unwrap();
+        assert_eq!(event, IntentEvent::Created(Created::new(intent.clone())));
+        assert_eq!(intent.id(), &id());
+    }
+
+    #[test]
+    fn resolving_a_plan_from_the_definition_also_yields_the_pair() {
+        // 補助コンストラクタも genesis なので対を返す (基本コンストラクタへ委譲する)。
+        let (intent, event) = Intent::resolve(id(), &single_stage_definition(), request(), scan())
+            .expect("解決できる計画");
+        assert_eq!(event, IntentEvent::Created(Created::new(intent.clone())));
+        assert_eq!(intent.stage_count(), 1);
+    }
+
+    #[test]
+    fn reconstructing_an_intent_produces_no_event() {
+        // 再構成は歴史を読み戻す経路である — イベントを作ればリプレイのたびに歴史が増える。
+        // 戻り値の型に `IntentEvent` が現れないことがその保証である。
+        let intent: Intent =
+            Intent::from_material(id(), def_id(), revision(), request(), stages(), scan()).unwrap();
+        assert_eq!(intent.stages(), stages().as_slice());
+    }
+
+    #[test]
+    fn both_construction_paths_apply_the_same_invariant() {
+        // Always Valid は genesis と再構成で同一 — 再構成にだけ穴があると、壊れた歴史を
+        // 読み戻した瞬間に不変条件が破れる。
+        assert_eq!(
+            Intent::create(id(), def_id(), revision(), request(), Vec::new(), scan()).unwrap_err(),
+            IntentError::Empty
+        );
+        assert_eq!(
+            Intent::from_material(id(), def_id(), revision(), request(), Vec::new(), scan())
+                .unwrap_err(),
+            IntentError::Empty
+        );
+    }
+
+    #[test]
+    fn a_decoded_intent_goes_through_the_reconstruction_check() {
+        // serde 復号も再構成経路である。素の derive では検査を素通りしてしまうので、
+        // 復号は再構成コンストラクタを通す。
+        let json = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"build the thing","depth":null,"test_strategy":null},"stages":[],"scan":{"kind":"greenfield","language":"Unknown","framework":"Unknown","build_system":"Unknown"}}"#;
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
+        )]
+        let decoded = serde_json::from_str::<Intent>(json);
+        assert!(decoded.is_err(), "空の計画は復号でも拒まれる");
     }
 
     #[test]

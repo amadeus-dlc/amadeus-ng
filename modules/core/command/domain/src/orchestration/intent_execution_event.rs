@@ -63,9 +63,10 @@ pub enum IntentExecutionEvent {
 
 /// `Started` のペイロード — リプレイが `WorkflowDefinition` を要さない自己完結データ (BR2.2)。
 ///
-/// 開始時点の [`Intent`] を**丸ごと運ぶ**。これは集約への埋め込みではなく**歴史の記録**で
-/// あり、規則違反ではない (coding-rules/aggregate-references.md「イベントに材料の複製が
-/// 載るのは違反ではない」)。投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、
+/// 開始時点の [`Intent`] を**丸ごと運ぶ**。`Intent` 自身も集約だが (改訂 8)、これは集約への
+/// 埋め込みではなく**歴史の記録**であり、規則違反ではない
+/// (coding-rules/aggregate-references.md「イベントに材料の複製が載るのは違反ではない」)。
+/// `IntentExecution` が**保持する**のは `intent_id` だけで、そこは ID 参照のままである。投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、
 /// 状態ファイルを描くのに要る scope・依頼文・解決済み計画・走査結果はここに載っている必要が
 /// ある。集約が適用時に**保持する**のは `intent_id` と実行時状態だけである。
 ///
@@ -539,7 +540,7 @@ mod tests {
             display("0.1"),
         )];
         let started = Started::new(
-            Intent::new(
+            Intent::from_material(
                 IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
                 WorkflowDefinitionId::parse("claude").unwrap(),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
@@ -573,7 +574,7 @@ mod tests {
             false,
             display("0.1"),
         )];
-        let intent = Intent::new(
+        let intent = Intent::from_material(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

@@ -231,7 +231,7 @@ fn stages() -> Vec<StageEntry> {
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 fn intent() -> Intent {
-    Intent::new(
+    Intent::from_material(
         IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("定義 revision"),

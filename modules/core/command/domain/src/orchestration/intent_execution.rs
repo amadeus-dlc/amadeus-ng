@@ -1207,10 +1207,10 @@ mod tests {
     use super::*;
     use crate::orchestration::intent_execution_snapshot::IntentExecutionSnapshotBuilder;
     use crate::orchestration::{
-        ApplyError, AutonomyMode, CommandError, EngineSignal, Intent, IntentError,
-        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, NextDecision,
-        NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageDisplay, StageEntry,
-        StageIndex, StartRequest, Started, Status, WorkspaceScan,
+        ApplyError, AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError,
+        IntentEvent, IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection,
+        NextDecision, NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageDisplay,
+        StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -1457,7 +1457,7 @@ mod tests {
 
     /// 合成計画から intent を組む (検査は `Intent::new` の 1 か所)。
     fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
-        Intent::new(
+        Intent::from_material(
             intent_id(),
             def_id("claude"),
             revision('0'),
@@ -1492,7 +1492,7 @@ mod tests {
             })
             .collect();
         Run::start(
-            Intent::new(
+            Intent::from_material(
                 intent_id(),
                 def_id("claude"),
                 revision('0'),
@@ -1516,7 +1516,10 @@ mod tests {
         definition: &WorkflowDefinition,
         request: StartRequest,
     ) -> (Run, IntentExecutionEvent) {
-        Run::genesis(Intent::resolve(intent_id(), definition, request, scan()).unwrap())
+        // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに要るのは対の左である
+        // (改訂 8 / coding-rules/aggregate-commands.md)。
+        let (intent, _created) = Intent::resolve(intent_id(), definition, request, scan()).unwrap();
+        Run::genesis(intent)
     }
 
     /// カーソルのゲートを承認し、生まれた `GateApproved` が載せた境界を取り出す。
@@ -1600,6 +1603,29 @@ mod tests {
     }
 
     // ---- W1: start (BR2.2 / BR2.6) ----
+
+    #[test]
+    fn an_execution_starts_from_the_left_of_the_intent_create_pair() {
+        // 改訂 8: `Intent` も集約なので genesis は対を返す。実行を起こすのに渡すのは
+        // **対の左** (集約インスタンス) であり、誕生イベントは呼出側が `store` へ回す。
+        let (intent, created) = Intent::resolve(
+            intent_id(),
+            &shipped_definition(full_grid()),
+            start_request(),
+            scan(),
+        )
+        .unwrap();
+        assert_eq!(created, IntentEvent::Created(Created::new(intent.clone())));
+
+        let (execution, started) =
+            IntentExecution::start(execution_id(), intent.clone(), occurred());
+        assert_eq!(execution.intent_id(), intent.id());
+        let IntentExecutionEvent::Started(started) = &started else {
+            panic!("start must emit Started");
+        };
+        // `Started` は intent を丸ごと運ぶ現行形のままである (BR2.2 自己完結)。
+        assert_eq!(started.intent(), &intent);
+    }
 
     #[test]
     fn start_records_the_definition_identity_and_the_resolved_plan() {
@@ -1695,7 +1721,7 @@ mod tests {
 
     /// 同じ形の計画を、**別の intent 識別子**で組む。
     fn foreign_plan(n: usize) -> Intent {
-        Intent::new(
+        Intent::from_material(
             IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             def_id("claude"),
             revision('0'),
@@ -2244,7 +2270,7 @@ mod tests {
     fn apply_event_refuses_a_started_outside_genesis() {
         let mut w = all_exec(3);
         let event = IntentExecutionEvent::Started(Started::new(
-            Intent::new(
+            Intent::from_material(
                 intent_id(),
                 def_id("claude"),
                 revision('0'),
@@ -2733,7 +2759,7 @@ mod tests {
 
     fn start_synthetic(stages: Vec<StageEntry>) -> Run {
         Run::start(
-            Intent::new(
+            Intent::from_material(
                 intent_id(),
                 def_id("claude"),
                 revision('0'),

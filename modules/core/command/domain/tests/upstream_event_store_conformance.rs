@@ -105,7 +105,7 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::new(
+    Intent::from_material(
         intent_id(),
         WorkflowDefinitionId::parse("claude").unwrap(),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

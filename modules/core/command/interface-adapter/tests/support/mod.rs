@@ -141,7 +141,7 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 /// 契約テストの intent (解決済み合成計画)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::new(
+    Intent::from_material(
         intent_id(),
         WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))

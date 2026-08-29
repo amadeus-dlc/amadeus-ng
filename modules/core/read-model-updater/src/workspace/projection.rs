@@ -1465,7 +1465,7 @@ mod tests {
     /// initialization 1 + inception 2 + operation 1 の合成計画。
     fn started() -> Started {
         Started::new(
-            Intent::new(
+            Intent::from_material(
                 IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),

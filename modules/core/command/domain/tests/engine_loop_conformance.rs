@@ -6,7 +6,7 @@
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
 //! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
-//! `IntentExecution::start_from_plan_unchecked` に直接与えて集約を作る。実グラフの initialization が
+//! `Intent::create` へ直接与え、その対の左を `IntentExecution::start` に渡して集約を作る。実グラフの initialization が
 //! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
@@ -265,7 +265,9 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let intent = Intent::new(
+    // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに渡すのは対の左である
+    // (改訂 8 / coding-rules/aggregate-commands.md)。
+    let (intent, _created) = Intent::create(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),

@@ -97,7 +97,9 @@ pub(crate) fn start_from_plan(
             )
         })
         .collect();
-    let intent = Intent::new(
+    // 呼出側は genesis の対の左を `IntentExecution::start` に渡す (改訂 8)。誕生イベントを
+    // `store` する `IntentRepository` は U7 の課題なので、ここでは受け取るだけである。
+    let (intent, _created) = Intent::create(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
