@@ -200,7 +200,7 @@ impl ResolvedPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::{StageEntry, StartRequest};
+    use core_command_domain::orchestration::{Intent, IntentId, StageEntry, StartRequest};
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
     };
@@ -226,44 +226,48 @@ mod tests {
 
     fn started() -> Started {
         Started::new(
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            &StartRequest::new("classic", "/aidlc Build a small ordering service"),
-            vec![
-                entry(
-                    "state-init",
-                    "0.3",
-                    PhaseId::Initialization,
-                    PlanAction::Execute,
-                ),
-                entry("intent-capture", "1.1", PhaseId::Ideation, PlanAction::Skip),
-                entry(
-                    "practices-discovery",
-                    "2.2",
-                    PhaseId::Inception,
-                    PlanAction::Execute,
-                ),
-                entry(
-                    "requirements-analysis",
-                    "2.3",
-                    PhaseId::Inception,
-                    PlanAction::Execute,
-                ),
-                entry("user-stories", "2.4", PhaseId::Inception, PlanAction::Skip),
-                entry(
-                    "domain-design",
-                    "2.6",
-                    PhaseId::Inception,
-                    PlanAction::Execute,
-                ),
-            ],
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
+            Intent::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "/aidlc Build a small ordering service"),
+                vec![
+                    entry(
+                        "state-init",
+                        "0.3",
+                        PhaseId::Initialization,
+                        PlanAction::Execute,
+                    ),
+                    entry("intent-capture", "1.1", PhaseId::Ideation, PlanAction::Skip),
+                    entry(
+                        "practices-discovery",
+                        "2.2",
+                        PhaseId::Inception,
+                        PlanAction::Execute,
+                    ),
+                    entry(
+                        "requirements-analysis",
+                        "2.3",
+                        PhaseId::Inception,
+                        PlanAction::Execute,
+                    ),
+                    entry("user-stories", "2.4", PhaseId::Inception, PlanAction::Skip),
+                    entry(
+                        "domain-design",
+                        "2.6",
+                        PhaseId::Inception,
+                        PlanAction::Execute,
+                    ),
+                ],
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
             )
-            .expect("単一行"),
+            .expect("合成計画は Intent の不変条件を満たす"),
         )
     }
 

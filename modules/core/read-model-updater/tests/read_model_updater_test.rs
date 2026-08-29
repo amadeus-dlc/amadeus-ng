@@ -14,8 +14,8 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    GateOpened, IntentExecutionEvent, IntentId, StageDisplay, StageEntry, StageRevised,
-    StartRequest, Started, WorkspaceScan,
+    GateOpened, Intent, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
+    StageEntry, StageRevised, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -38,6 +38,9 @@ const STATE: &str = "\
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
+/// テストの実行識別子 (ジャーナル行の集約キー)。
+const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
+
 fn at() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-08-21T09:14:07Z")
         .expect("固定の ISO 8601")
@@ -51,7 +54,7 @@ fn slug(value: &str) -> StageSlug {
 fn entry(global: u64, event: IntentExecutionEvent) -> JournalEntry {
     JournalEntry::new(
         GlobalSeqNr::new(global),
-        IntentId::parse(INTENT).expect("UUIDv7"),
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         global as usize,
         at(),
         event,
@@ -75,21 +78,25 @@ fn genesis() -> IntentExecutionEvent {
         )
     };
     IntentExecutionEvent::Started(Started::new(
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        &StartRequest::new("classic", "build it"),
-        vec![stage(
-            "practices-discovery",
-            "2.2",
-            "aidlc-pipeline-deploy-agent",
-        )],
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
+        Intent::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "build it"),
+            vec![stage(
+                "practices-discovery",
+                "2.2",
+                "aidlc-pipeline-deploy-agent",
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
         )
-        .expect("単一行"),
+        .expect("合成計画は Intent の不変条件を満たす"),
     ))
 }
 

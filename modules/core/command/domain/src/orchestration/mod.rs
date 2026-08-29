@@ -71,7 +71,6 @@ mod skeleton_stance;
 mod stage_display;
 mod stage_entry;
 mod stage_index;
-mod start_error;
 mod start_request;
 mod state_error;
 mod status;
@@ -121,7 +120,6 @@ pub use intent::IntentError;
 pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
-pub use start_error::StartError;
 pub use state_error::StateError;
 pub use verdict::UnknownVerdict;
 

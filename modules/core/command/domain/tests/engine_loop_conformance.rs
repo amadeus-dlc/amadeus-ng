@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, EngineSignal, IntentExecution, IntentId, NextRequest, StageDisplay, StageEntry,
-    StageIndex, StartRequest, Status, WorkspaceScan,
+    AutonomyMode, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId, NextRequest,
+    StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph,
@@ -265,16 +265,20 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    let (mut agg, _started) = IntentExecution::start_from_plan_unchecked(
+    let intent = Intent::new(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
         synthetic_id(),
         synthetic_revision(),
-        &StartRequest::new("itf", "conformance"),
+        StartRequest::new("itf", "conformance"),
         synthetic_stages(m0),
         scan(),
-        at(),
     )
     .unwrap();
+    let (mut agg, _started) = IntentExecution::start(
+        IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
+        intent.clone(),
+        at(),
+    );
     assert_eq!(agg.seq_nr(), 1, "genesis の通番は 1 (BR2.1)");
     assert_projection(&agg, m0, 0);
 
@@ -285,7 +289,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             // 観測アクション (状態不変)
             "next" | "next_parked" | "done_stutter" => {
                 let decision = agg
-                    .next_decision(&definition, &NextRequest::default())
+                    .next_decision(&intent, &definition, &NextRequest::default())
                     .unwrap();
                 assert_signal(EngineSignal::from(&decision), m, i);
             }
@@ -302,47 +306,48 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             "report_forward" => {
                 // 非ゲート (initialization) は complete_stage、ゲートは approve_gate (BR1.3)。
                 let cursor = agg.cursor();
-                if agg.gated(cursor) == Some(true) {
-                    agg.approve_gate(None, at()).unwrap();
+                if agg.gated(&intent, cursor) == Some(true) {
+                    agg.approve_gate(&intent, None, at()).unwrap();
                 } else {
-                    agg.complete_stage(at()).unwrap();
+                    agg.complete_stage(&intent, at()).unwrap();
                 }
                 assert_directive(m, "DDone", i);
             }
             "report_awaiting_approval" => {
-                agg.open_gate(Vec::new(), at()).unwrap();
+                agg.open_gate(&intent, Vec::new(), at()).unwrap();
             }
             "report_rejected" => {
-                agg.reject_gate(None, at()).unwrap();
+                agg.reject_gate(&intent, None, at()).unwrap();
             }
             "report_revised" => {
-                agg.revise_stage(at()).unwrap();
+                agg.revise_stage(&intent, at()).unwrap();
             }
             "report_skipped" => {
-                agg.skip_stage("conformance".to_string(), at()).unwrap();
+                agg.skip_stage(&intent, "conformance".to_string(), at())
+                    .unwrap();
                 assert_directive(m, "DDone", i);
             }
             "jump_forward" | "jump_backward" => {
                 let target = index(&agg, m.cursor);
-                agg.jump(target, at()).unwrap();
+                agg.jump(&intent, target, at()).unwrap();
             }
             "jump_redo" => {
                 let target = index(&agg, prev.cursor);
-                agg.jump(target, at()).unwrap();
+                agg.jump(&intent, target, at()).unwrap();
             }
             "park" => {
-                agg.park(at()).unwrap();
+                agg.park(&intent, at()).unwrap();
                 assert_directive(m, "DParked", i);
             }
             "unpark" => {
-                agg.unpark(at()).unwrap();
+                agg.unpark(&intent, at()).unwrap();
             }
             "recompose" => {
                 // モデルの actRecompose は 1 ステージ反転 — 要素数 1 の recompose に対応 (BR2.5)。
                 let s = (0..prev.overlay.len())
                     .find(|&s| prev.overlay[s] != m.overlay[s])
                     .unwrap();
-                agg.recompose(&[index(&agg, s)], at()).unwrap();
+                agg.recompose(&intent, &[index(&agg, s)], at()).unwrap();
             }
             "set_autonomy" => {
                 // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
@@ -351,7 +356,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.switch_autonomy(mode, at()).unwrap();
+                agg.switch_autonomy(&intent, mode, at()).unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }

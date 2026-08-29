@@ -73,11 +73,11 @@ mod tests {
     use super::*;
     use crate::orchestration::{GlobalSeqNr, JournalEntry, JournalReadError, ProjectionName};
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentExecutionEvent, IntentId};
+    use core_command_domain::orchestration::{IntentExecutionEvent, IntentExecutionId};
     use std::collections::BTreeMap;
 
-    fn intent() -> IntentId {
-        IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    fn intent() -> IntentExecutionId {
+        IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
     }
 
     fn entry(seq_nr: usize) -> JournalEntry {
@@ -174,7 +174,11 @@ mod tests {
         let rows = reader.events_after(GlobalSeqNr::new(1)).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].global_seq(), GlobalSeqNr::new(2));
-        assert_eq!(rows[0].intent_id(), &intent(), "集約識別子が境界を越える");
+        assert_eq!(
+            rows[0].execution_id(),
+            &intent(),
+            "集約識別子が境界を越える"
+        );
         assert_eq!(rows[0].seq_nr(), 2);
     }
 

@@ -1,6 +1,8 @@
 //! `IntentExecutionRepository` ポート — 集約 `IntentExecution` の ES 形 Repository (C3 / ADR-010)。
 
-use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent, IntentId};
+use core_command_domain::orchestration::{
+    IntentExecution, IntentExecutionEvent, IntentExecutionId,
+};
 
 use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
@@ -62,8 +64,10 @@ pub trait IntentExecutionRepository {
     ///
     /// 集約が無い (`NotFound`)、ストア I/O (`Io`)、スナップショット欠落・復号不能・
     /// 不変条件違反・`seq_nr` の不連続 (`Corrupt`) を返す。
-    async fn find_by_id(&self, id: &IntentId)
-    -> Result<RehydratedIntentExecution, RepositoryError>;
+    async fn find_by_id(
+        &self,
+        id: &IntentExecutionId,
+    ) -> Result<RehydratedIntentExecution, RepositoryError>;
 
     /// 1 コマンドが返した単一イベントと適用後の集約を、同一トランザクションで永続化する。
     ///
@@ -101,14 +105,14 @@ mod tests {
     use super::*;
     use crate::orchestration::RepositoryError;
     use crate::orchestration::test_support::{
-        InMemoryIntentExecutionRepository, absent_intent, genesis, intent,
+        InMemoryIntentExecutionRepository, absent_execution, execution_id, genesis,
     };
-    use core_command_domain::orchestration::IntentId;
+    use core_command_domain::orchestration::IntentExecutionId;
 
     /// ジェネリック関数からポート越しに使えること (静的束縛 — ユースケースはこの形で組む)。
     async fn rehydrate<R: IntentExecutionRepository>(
         repository: &R,
-        id: &IntentId,
+        id: &IntentExecutionId,
     ) -> Result<RehydratedIntentExecution, RepositoryError> {
         repository.find_by_id(id).await
     }
@@ -116,11 +120,13 @@ mod tests {
     #[tokio::test]
     async fn an_unknown_aggregate_is_not_found() {
         let repository = InMemoryIntentExecutionRepository::empty();
-        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
+        let err = rehydrate(&repository, &absent_execution())
+            .await
+            .unwrap_err();
         assert_eq!(
             err,
             RepositoryError::NotFound {
-                intent_id: absent_intent()
+                execution_id: absent_execution()
             }
         );
     }
@@ -128,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn a_stored_aggregate_is_rehydrated_by_its_identifier() {
         let mut repository = InMemoryIntentExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
@@ -137,14 +143,14 @@ mod tests {
             )
             .await
             .unwrap();
-        let found = rehydrate(&repository, &intent()).await.unwrap();
-        assert_eq!(found.aggregate().id(), &intent());
+        let found = rehydrate(&repository, &execution_id()).await.unwrap();
+        assert_eq!(found.aggregate().id(), &execution_id());
     }
 
     #[tokio::test]
     async fn the_version_a_rehydration_carries_is_the_one_the_store_assigned() {
         let mut repository = InMemoryIntentExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
@@ -153,7 +159,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let found = rehydrate(&repository, &intent()).await.unwrap();
+        let found = rehydrate(&repository, &execution_id()).await.unwrap();
         assert_eq!(
             found.version(),
             1,
@@ -165,7 +171,7 @@ mod tests {
     async fn a_write_that_presents_a_stale_version_conflicts() {
         // 楽観ロックの本体 — 読んだ版で書くから、その間の書込を検出できる。
         let mut repository = InMemoryIntentExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
@@ -194,7 +200,7 @@ mod tests {
     #[tokio::test]
     async fn the_port_takes_the_aggregate_by_reference_so_the_caller_keeps_it() {
         let mut repository = InMemoryIntentExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
@@ -211,7 +217,7 @@ mod tests {
     async fn a_stored_aggregate_is_not_returned_for_a_different_identifier() {
         // 識別子検索である以上、別の識別子で引いたら見つからない (C3 ①)。
         let mut repository = InMemoryIntentExecutionRepository::empty();
-        let (aggregate, event) = genesis(1);
+        let (_intent, aggregate, event) = genesis(1);
         repository
             .store(
                 &event,
@@ -220,21 +226,23 @@ mod tests {
             )
             .await
             .unwrap();
-        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
+        let err = rehydrate(&repository, &absent_execution())
+            .await
+            .unwrap_err();
         assert_eq!(
             err,
             RepositoryError::NotFound {
-                intent_id: absent_intent()
+                execution_id: absent_execution()
             }
         );
         // 同じストアでも、正しい識別子なら見つかる。
-        assert!(rehydrate(&repository, &intent()).await.is_ok());
+        assert!(rehydrate(&repository, &execution_id()).await.is_ok());
     }
 
     #[tokio::test]
     async fn the_repository_face_reports_its_failures_as_repository_errors() {
         let repository = InMemoryIntentExecutionRepository::empty();
-        let err = repository.find_by_id(&intent()).await.unwrap_err();
+        let err = repository.find_by_id(&execution_id()).await.unwrap_err();
         assert!(matches!(err, RepositoryError::NotFound { .. }));
     }
 }

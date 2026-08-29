@@ -4,7 +4,7 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use core_command_domain::orchestration::IntentId;
+use core_command_domain::orchestration::IntentExecutionId;
 
 use super::corrupt_cause::CorruptCause;
 
@@ -19,7 +19,7 @@ pub enum RepositoryError {
     /// この識別子の集約がストアに無い (契約上は呼出側の前提違反 — C3)。
     NotFound {
         /// 探した集約識別子。
-        intent_id: IntentId,
+        execution_id: IntentExecutionId,
     },
     /// 楽観 version の不一致 (BR1.3)。ユースケースは再水和して 1 回だけ再試行する。
     Conflict {
@@ -38,7 +38,7 @@ pub enum RepositoryError {
     /// 復号不能・スナップショット欠落・不変条件違反 (部分データは返さない — BR1.2)。
     Corrupt {
         /// 対象の集約識別子。
-        aggregate_id: IntentId,
+        aggregate_id: IntentExecutionId,
         /// 該当行の `seq_nr` (行が特定できない場合は `None`)。
         seq_nr: Option<usize>,
         /// 原因の分類。
@@ -49,7 +49,7 @@ pub enum RepositoryError {
 impl fmt::Display for RepositoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RepositoryError::NotFound { intent_id } => write!(f, "not found: {intent_id}"),
+            RepositoryError::NotFound { execution_id } => write!(f, "not found: {execution_id}"),
             RepositoryError::Conflict { expected, actual } => {
                 write!(f, "conflict: expected {expected}, actual {actual}")
             }
@@ -78,20 +78,20 @@ impl std::error::Error for RepositoryError {}
 mod tests {
     use super::*;
     use crate::orchestration::CorruptCause;
-    use core_command_domain::orchestration::IntentId;
+    use core_command_domain::orchestration::IntentExecutionId;
     use std::io::ErrorKind;
     use std::path::PathBuf;
 
     const RAW_ID: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
-    fn intent() -> IntentId {
-        IntentId::parse(RAW_ID).unwrap()
+    fn intent() -> IntentExecutionId {
+        IntentExecutionId::parse(RAW_ID).unwrap()
     }
 
     #[test]
     fn the_not_found_carries_the_intent_id() {
         let err = RepositoryError::NotFound {
-            intent_id: intent(),
+            execution_id: intent(),
         };
         assert_eq!(err.to_string(), format!("not found: {RAW_ID}"));
     }
@@ -162,15 +162,15 @@ mod tests {
     fn failures_compare_by_value() {
         assert_eq!(
             RepositoryError::NotFound {
-                intent_id: intent()
+                execution_id: intent()
             },
             RepositoryError::NotFound {
-                intent_id: intent()
+                execution_id: intent()
             }
         );
         assert_ne!(
             RepositoryError::NotFound {
-                intent_id: intent()
+                execution_id: intent()
             },
             RepositoryError::Conflict {
                 expected: 0,

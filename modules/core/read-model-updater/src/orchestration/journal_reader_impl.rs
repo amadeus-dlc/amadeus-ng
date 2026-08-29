@@ -61,7 +61,7 @@ use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
-use core_command_domain::orchestration::{EVENT_MANIFEST, IntentExecutionEvent, IntentId};
+use core_command_domain::orchestration::{EVENT_MANIFEST, IntentExecutionEvent, IntentExecutionId};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -316,7 +316,7 @@ fn table_exists(
 /// `serde_json::to_vec(payload)` で書くので、読み側も素の serde で戻す。輸送のメタデータは
 /// payload ではなく**列**から来る (ADR-010 / B7)。
 ///
-/// 行が名乗る識別子は `IntentId` として妥当とは限らない (破損・直接改変) ので、ここで
+/// 行が名乗る識別子は `IntentExecutionId` として妥当とは限らない (破損・直接改変) ので、ここで
 /// 検証して初めてドメイン型になる。写せない行は `Corrupt(InvariantViolation)` —
 /// 列の値をドメインへ運べない、という他の変換 (`to_u64` / 負の `seq_nr`) と同じ扱いである。
 ///
@@ -327,7 +327,7 @@ fn table_exists(
 fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
     let row_seq = usize::try_from(row.seq_nr)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
-    let intent_id = IntentId::parse(&row.aggregate_id).map_err(|_| {
+    let execution_id = IntentExecutionId::parse(&row.aggregate_id).map_err(|_| {
         corrupt_error(
             &row.aggregate_id,
             Some(row_seq),
@@ -346,7 +346,7 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
     let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
     Ok(JournalEntry::new(
         global,
-        intent_id,
+        execution_id,
         row_seq,
         occurred_at_of(row.occurred_at),
         event,
@@ -479,7 +479,8 @@ mod tests {
     use event_store_adapter_rs::EventStoreForSqlite;
 
     /// 本家の SQLite ストア (この型の結合先)。
-    type UpstreamStore = EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>;
+    type UpstreamStore =
+        EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
     /// 一時ディレクトリ配下のストアの場所。
     fn store_path(dir: &tempfile::TempDir) -> StorePath {
@@ -1237,7 +1238,7 @@ mod tests {
         let entry = decode_entry(&sound_row()).expect("読める行");
         assert_eq!(entry.global_seq(), GlobalSeqNr::new(1));
         assert_eq!(
-            entry.intent_id().as_str(),
+            entry.execution_id().as_str(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(entry.seq_nr(), 1);
@@ -1251,7 +1252,7 @@ mod tests {
 
     #[test]
     fn a_row_whose_aggregate_id_is_not_an_intent_id_is_corrupt() {
-        // 列は TEXT なので、行が名乗る識別子が `IntentId` として妥当とは限らない。
+        // 列は TEXT なので、行が名乗る識別子が `IntentExecutionId` として妥当とは限らない。
         // 我々の型へ写せない行はここで止める (旧 #500 の payload 内メタ照合の後継 —
         // payload からメタが消えたので、照合の相手は列そのものになった)。
         let row = JournalRow {
@@ -1259,7 +1260,7 @@ mod tests {
             ..sound_row()
         };
         assert_eq!(
-            decode_entry(&row).expect_err("IntentId にならない"),
+            decode_entry(&row).expect_err("IntentExecutionId にならない"),
             JournalReadError::Corrupt {
                 aggregate_id: "not-a-uuid-v7".to_string(),
                 seq_nr: Some(1),

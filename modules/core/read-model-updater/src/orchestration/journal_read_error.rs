@@ -32,7 +32,7 @@ pub enum JournalReadError {
     /// 行を読めたがドメインへ写せない (復号不能・値が列に収まらない)。
     ///
     /// `aggregate_id` は**行に入っていた生文字列**。ドメイン型ではないのは、破損した行の
-    /// 識別子が `IntentId` として妥当とは限らないためである。
+    /// 識別子が `IntentExecutionId` として妥当とは限らないためである。
     Corrupt {
         /// 行が名乗っていた集約識別子 (生文字列)。
         aggregate_id: String,

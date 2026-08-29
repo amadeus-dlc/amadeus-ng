@@ -15,8 +15,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, EVENT_MANIFEST, IntentExecution, IntentExecutionEvent, IntentId,
-    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    AutonomyMode, CommandError, EVENT_MANIFEST, Intent, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -29,7 +29,7 @@ use event_store_adapter_rs::types::EventStore;
 
 /// 本家の SQLite イベントストア (ジャーナル行の書き手)。
 pub(crate) type UpstreamStore =
-    EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>;
+    EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -48,16 +48,22 @@ pub(crate) fn at() -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-/// テストの集約識別子。
+/// テストの intent 識別子。
 #[must_use]
 pub(crate) fn intent_id() -> IntentId {
     IntentId::parse(INTENT).expect("テストの IntentId は UUIDv7")
 }
 
-/// 相手側の集約識別子。
+/// テストの実行識別子 (ジャーナル行の集約キー)。
 #[must_use]
-pub(crate) fn other_intent_id() -> IntentId {
-    IntentId::parse(OTHER_INTENT).expect("テストの IntentId は UUIDv7")
+pub(crate) fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(INTENT).expect("テストの IntentExecutionId は UUIDv7")
+}
+
+/// 相手側の実行識別子。
+#[must_use]
+pub(crate) fn other_execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(OTHER_INTENT).expect("テストの IntentExecutionId は UUIDv7")
 }
 
 fn slug(value: &str) -> StageSlug {
@@ -116,18 +122,23 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 
 /// 指定した集約識別子の genesis (集約と `Started` イベント)。
 #[must_use]
-pub(crate) fn genesis_for(intent: IntentId) -> (IntentExecution, IntentExecutionEvent) {
-    IntentExecution::start_from_plan_unchecked(
-        intent,
+pub(crate) fn intent() -> Intent {
+    Intent::new(
+        intent_id(),
         WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
             .expect("テストの定義 revision"),
-        &StartRequest::new("classic", "contract").with_depth("standard"),
+        StartRequest::new("classic", "contract").with_depth("standard"),
         stages(),
         scan(),
-        at(),
     )
-    .expect("合成計画は start の前提を満たす")
+    .expect("合成計画は Intent の不変条件を満たす")
+}
+
+/// 指定した実行識別子の genesis (横断読取のテストが 2 実行を並べるのに使う)。
+#[must_use]
+pub(crate) fn genesis_for(execution: IntentExecutionId) -> (IntentExecution, IntentExecutionEvent) {
+    IntentExecution::start(execution, intent(), at())
 }
 
 /// 1 つの集約を本家のストアへ書き進める書き手。
@@ -141,8 +152,11 @@ pub(crate) struct JournalWriter {
 
 impl JournalWriter {
     /// genesis を書いて書き手を得る。
-    pub(crate) async fn start(store: &mut UpstreamStore, intent: IntentId) -> JournalWriter {
-        let (aggregate, event) = genesis_for(intent);
+    pub(crate) async fn start(
+        store: &mut UpstreamStore,
+        execution: IntentExecutionId,
+    ) -> JournalWriter {
+        let (aggregate, event) = genesis_for(execution);
         let mut writer = JournalWriter {
             aggregate,
             version: 0,
@@ -180,23 +194,23 @@ impl JournalWriter {
 /// 5 件のジャーナル行を書く (`Started` / `StageCompleted` / `GateOpened` / `GateApproved` /
 /// `AutonomyModeSet`)。読み方の約束を見るテストが共通で使う土台である。
 pub(crate) async fn seed(store: &mut UpstreamStore) {
-    let mut writer = JournalWriter::start(store, intent_id()).await;
+    let mut writer = JournalWriter::start(store, execution_id()).await;
     writer
-        .advance(store, |aggregate| aggregate.complete_stage(at()))
+        .advance(store, |aggregate| aggregate.complete_stage(&intent(), at()))
         .await;
     writer
         .advance(store, |aggregate| {
-            aggregate.open_gate(vec!["intent.md".to_string()], at())
+            aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
         })
         .await;
     writer
         .advance(store, |aggregate| {
-            aggregate.approve_gate(Some("ok".to_string()), at())
+            aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
         })
         .await;
     writer
         .advance(store, |aggregate| {
-            aggregate.switch_autonomy(AutonomyMode::Autonomous, at())
+            aggregate.switch_autonomy(&intent(), AutonomyMode::Autonomous, at())
         })
         .await;
 }

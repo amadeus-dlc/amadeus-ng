@@ -1430,7 +1430,8 @@ mod park_marker {
 mod tests {
     use super::*;
     use core_command_domain::orchestration::{
-        AutonomyModeSet, IntentId, StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
+        AutonomyModeSet, Intent, IntentExecutionId, IntentId, StageDisplay, StageEntry,
+        StartRequest, Started, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
@@ -1464,27 +1465,31 @@ mod tests {
     /// initialization 1 + inception 2 + operation 1 の合成計画。
     fn started() -> Started {
         Started::new(
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            &StartRequest::new("classic", "build it"),
-            vec![
-                stage(
-                    "state-init",
-                    "0.1",
-                    PhaseId::Initialization,
-                    PlanAction::Execute,
-                ),
-                stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
-                stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
-                stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
-            ],
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
+            Intent::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "build it"),
+                vec![
+                    stage(
+                        "state-init",
+                        "0.1",
+                        PhaseId::Initialization,
+                        PlanAction::Execute,
+                    ),
+                    stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
+                    stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
+                    stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
+                ],
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
             )
-            .expect("単一行"),
+            .expect("合成計画は Intent の不変条件を満たす"),
         )
     }
 
@@ -1539,7 +1544,7 @@ mod tests {
     fn entry(event: IntentExecutionEvent) -> JournalEntry {
         JournalEntry::new(
             crate::orchestration::GlobalSeqNr::new(1),
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7"),
             1,
             at(),
             event,

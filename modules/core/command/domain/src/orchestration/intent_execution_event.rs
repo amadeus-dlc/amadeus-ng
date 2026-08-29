@@ -21,10 +21,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode::AutonomyMode;
+use super::intent::Intent;
 use super::jump_direction::JumpDirection;
 use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
-use super::start_request::StartRequest;
 use super::workspace_scan::WorkspaceScan;
 use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
 
@@ -63,83 +63,72 @@ pub enum IntentExecutionEvent {
 
 /// `Started` のペイロード — リプレイが `WorkflowDefinition` を要さない自己完結データ (BR2.2)。
 ///
-/// `scope` / `request` / `depth` / `test_strategy` は呼出側が解決して渡した [`StartRequest`] を
-/// C5 の平坦なレコードとして展開したもの。`depth` / `test_strategy` は集約状態にはならず
-/// (17 属性は不変)、U4 が `Scope Configuration` を描くためだけにイベントへ載る。
+/// 開始時点の [`Intent`] を**丸ごと運ぶ**。これは集約への埋め込みではなく**歴史の記録**で
+/// あり、規則違反ではない (coding-rules/aggregate-references.md「イベントに材料の複製が
+/// 載るのは違反ではない」)。投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、
+/// 状態ファイルを描くのに要る scope・依頼文・解決済み計画・走査結果はここに載っている必要が
+/// ある。集約が適用時に**保持する**のは `intent_id` と実行時状態だけである。
+///
+/// 各アクセサは intent への素通しである。`depth` / `test_strategy` は集約状態にならず、
+/// U4 が `Scope Configuration` を描くためだけの投影材料である。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Started {
-    definition_id: WorkflowDefinitionId,
-    definition_revision: DefinitionRevision,
-    scope: String,
-    request: String,
-    depth: Option<String>,
-    test_strategy: Option<String>,
-    stages: Vec<StageEntry>,
-    scan: WorkspaceScan,
+    intent: Intent,
 }
 
 impl Started {
-    /// 参照した定義の ID / 内容版と、呼出側の要求・解決済み計画・走査結果を束ねる。
+    /// 開始時点の intent を束ねる。
     #[must_use]
-    pub fn new(
-        definition_id: WorkflowDefinitionId,
-        definition_revision: DefinitionRevision,
-        request: &StartRequest,
-        stages: Vec<StageEntry>,
-        scan: WorkspaceScan,
-    ) -> Started {
-        Started {
-            definition_id,
-            definition_revision,
-            scope: request.scope().to_string(),
-            request: request.request().to_string(),
-            depth: request.depth().map(str::to_string),
-            test_strategy: request.test_strategy().map(str::to_string),
-            stages,
-            scan,
-        }
+    pub const fn new(intent: Intent) -> Started {
+        Started { intent }
+    }
+
+    /// 開始時点の intent そのもの。
+    #[must_use]
+    pub const fn intent(&self) -> &Intent {
+        &self.intent
     }
 
     /// 参照した定義の系譜 ID (BR2.6)。
     #[must_use]
     pub const fn definition_id(&self) -> &WorkflowDefinitionId {
-        &self.definition_id
+        self.intent.definition_id()
     }
 
     /// 参照した定義の内容版 (来歴 — 差が出ても Err にはしない)。
     #[must_use]
     pub const fn definition_revision(&self) -> &DefinitionRevision {
-        &self.definition_revision
+        self.intent.definition_revision()
     }
 
     /// 選択されたスコープ名。
     #[must_use]
     pub fn scope(&self) -> &str {
-        &self.scope
+        self.intent.scope()
     }
 
     /// 人間の要求 (逐語保持)。
     #[must_use]
     pub fn request(&self) -> &str {
-        &self.request
+        self.intent.request()
     }
 
     /// 呼出側が解決した depth (`None` = 指定なし)。集約は素通しするだけ。
     #[must_use]
     pub fn depth(&self) -> Option<&str> {
-        self.depth.as_deref()
+        self.intent.depth()
     }
 
     /// 呼出側が解決した test strategy (`None` = 指定なし)。集約は素通しするだけ。
     #[must_use]
     pub fn test_strategy(&self) -> Option<&str> {
-        self.test_strategy.as_deref()
+        self.intent.test_strategy()
     }
 
     /// 文書順の全ステージ (解決済み計画)。
     #[must_use]
     pub fn stages(&self) -> &[StageEntry] {
-        &self.stages
+        self.intent.stages()
     }
 
     /// workspace-detection が出した走査結果 (投影が初期化 3 ステージの行を描く材料)。
@@ -148,7 +137,7 @@ impl Started {
     /// である (NFR3 — オーナー裁定 2026-08-29)。
     #[must_use]
     pub const fn scan(&self) -> &WorkspaceScan {
-        &self.scan
+        self.intent.scan()
     }
 }
 
@@ -508,10 +497,14 @@ impl AutonomyModeSet {
 
 #[cfg(test)]
 mod tests {
+    // panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗のシグナル
+    // として妥当なため許容する (集約のテストモジュールと同じ作法)。
+    #![allow(clippy::panic)]
+
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, JumpDirection, PhaseBoundary, StageDisplay, StageEntry, StartRequest,
-        WorkspaceScan,
+        AutonomyMode, IntentId, JumpDirection, PhaseBoundary, StageDisplay, StageEntry,
+        StartRequest, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -546,11 +539,19 @@ mod tests {
             display("0.1"),
         )];
         let started = Started::new(
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            &StartRequest::new("classic", "build it").with_depth("standard"),
-            entries.clone(),
-            scan(),
+            Intent::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+                WorkflowDefinitionId::parse("claude").unwrap(),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+                StartRequest::new("classic", "build it").with_depth("standard"),
+                entries.clone(),
+                scan(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            started.intent().id().as_str(),
+            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(started.definition_id().as_str(), "claude");
         assert_eq!(started.definition_revision().as_str().len(), 71);
@@ -559,6 +560,40 @@ mod tests {
         assert_eq!(started.depth(), Some("standard"));
         assert_eq!(started.test_strategy(), None);
         assert_eq!(started.stages(), entries.as_slice());
+    }
+
+    #[test]
+    fn the_started_payload_round_trips_the_intent_through_serde() {
+        // 投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、intent の材料は
+        // イベントの直列化を往復しても 1 つも欠けない。
+        let entries = vec![StageEntry::new(
+            slug("state-init"),
+            PhaseId::Initialization,
+            PlanAction::Execute,
+            false,
+            display("0.1"),
+        )];
+        let intent = Intent::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "build it").with_test_strategy("balanced"),
+            entries,
+            scan(),
+        )
+        .unwrap();
+        let event = IntentExecutionEvent::Started(Started::new(intent.clone()));
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
+        )]
+        let json = serde_json::to_string(&event).unwrap();
+        let decoded: IntentExecutionEvent = serde_json::from_str(&json).unwrap();
+        let IntentExecutionEvent::Started(started) = &decoded else {
+            panic!("Started を期待した");
+        };
+        assert_eq!(started.intent(), &intent);
+        assert_eq!(decoded, event);
     }
 
     #[test]

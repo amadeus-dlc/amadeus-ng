@@ -39,7 +39,7 @@
 use std::io::ErrorKind;
 
 use core_command_domain::orchestration::{
-    ApplyError, EVENT_MANIFEST, IntentExecution, IntentExecutionEvent, IntentId,
+    ApplyError, EVENT_MANIFEST, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
 };
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{
@@ -56,10 +56,10 @@ use super::store_failure::io_kind_of_source;
 const FIRST_SEQ_NR: usize = 1;
 
 /// SQLite ファイルを格納先にするイベントストア (本家)。
-type SqliteStore = EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>;
+type SqliteStore = EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
 /// 揮発の格納先にするイベントストア (本家)。
-type MemoryStore = EventStoreForMemory<IntentId, IntentExecution, IntentExecutionEvent>;
+type MemoryStore = EventStoreForMemory<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
 /// 本家のイベントストアを**単一所有**する `IntentExecutionRepository` の実装。
 ///
@@ -79,9 +79,11 @@ const fn apply_cause(error: &ApplyError) -> CorruptCause {
         ApplyError::SequenceGap { .. } => CorruptCause::SequenceGap,
         // 通番枯渇 — 現在位置の続きとして適用できない点で SequenceGap と同類に写す。
         ApplyError::SequenceExhausted => CorruptCause::SequenceGap,
-        ApplyError::UnknownStage(_) | ApplyError::InvariantViolation(_) => {
-            CorruptCause::InvariantViolation
-        }
+        // 再生に渡した intent が実行のものでない — ジャーナル先頭の `Started` から復元した
+        // intent と後続イベントが食い違っている、すなわち行が壊れている。
+        ApplyError::IntentMismatch
+        | ApplyError::UnknownStage(_)
+        | ApplyError::InvariantViolation(_) => CorruptCause::InvariantViolation,
     }
 }
 
@@ -147,7 +149,7 @@ impl<S: Clone> IntentExecutionRepositoryImpl<S> {
 
 impl<S> IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentId, A = IntentExecution, P = IntentExecutionEvent>,
+    S: EventStore<AID = IntentExecutionId, A = IntentExecution, P = IntentExecutionEvent>,
 {
     /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
     ///
@@ -159,7 +161,7 @@ where
     fn envelope(
         event: IntentExecutionEvent,
         aggregate: &IntentExecution,
-    ) -> EventEnvelope<IntentId, IntentExecutionEvent> {
+    ) -> EventEnvelope<IntentExecutionId, IntentExecutionEvent> {
         EventEnvelope::new(
             aggregate.id().clone(),
             aggregate.seq_nr(),
@@ -170,7 +172,7 @@ where
     }
 
     /// 本家の読取失敗を Repository 面へ写す (BR1.5)。
-    fn read_error(&self, error: &EventStoreReadError, id: &IntentId) -> RepositoryError {
+    fn read_error(&self, error: &EventStoreReadError, id: &IntentExecutionId) -> RepositoryError {
         match error {
             EventStoreReadError::DeserializationError(_) => RepositoryError::Corrupt {
                 aggregate_id: id.clone(),
@@ -234,7 +236,7 @@ where
     }
 
     /// ストアに実在する楽観 version (行が無い・読めないときは 0)。競合の材料にだけ使う。
-    async fn stored_version(&self, id: &IntentId) -> usize {
+    async fn stored_version(&self, id: &IntentExecutionId) -> usize {
         self.store
             .get_latest_snapshot_by_id(id)
             .await
@@ -244,13 +246,47 @@ where
     }
 }
 
+impl<S> IntentExecutionRepositoryImpl<S>
+where
+    S: EventStore<AID = IntentExecutionId, A = IntentExecution, P = IntentExecutionEvent>,
+{
+    /// ジャーナル先頭の `Started` から、開始時点の intent を読み直す。
+    ///
+    /// 集約は `intent_id` しか持たない (`coding-rules/aggregate-references.md`) が、再生には
+    /// 計画が要る。イベントは「その時点の事実の自己完結な記録」なので、intent の材料は
+    /// `Started` に載っている — そこから復元すれば、この Repository は外部から intent を
+    /// 渡されなくても再生できる。
+    ///
+    /// 先頭が `Started` でない、または 1 件も無いジャーナルは壊れている (BR1.2)。
+    async fn genesis_intent(&self, id: &IntentExecutionId) -> Result<Intent, RepositoryError> {
+        let journal = self
+            .store
+            .get_events_by_id_since_seq_nr(id, FIRST_SEQ_NR)
+            .await
+            .map_err(|error| self.read_error(&error, id))?;
+        let corrupt = |seq_nr: Option<usize>| RepositoryError::Corrupt {
+            aggregate_id: id.clone(),
+            seq_nr,
+            cause: CorruptCause::UndecodablePayload,
+        };
+        let genesis = journal.first().ok_or_else(|| corrupt(None))?;
+        if genesis.manifest() != EVENT_MANIFEST {
+            return Err(corrupt(Some(genesis.seq_nr())));
+        }
+        match genesis.payload() {
+            IntentExecutionEvent::Started(started) => Ok(started.intent().clone()),
+            _ => Err(corrupt(Some(genesis.seq_nr()))),
+        }
+    }
+}
+
 impl<S> IntentExecutionRepository for IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = IntentId, A = IntentExecution, P = IntentExecutionEvent>,
+    S: EventStore<AID = IntentExecutionId, A = IntentExecution, P = IntentExecutionEvent>,
 {
     async fn find_by_id(
         &self,
-        id: &IntentId,
+        id: &IntentExecutionId,
     ) -> Result<RehydratedIntentExecution, RepositoryError> {
         let snapshot = self
             .store
@@ -266,7 +302,7 @@ where
                 .map_err(|error| self.read_error(&error, id))?;
             return Err(if journal.is_empty() {
                 RepositoryError::NotFound {
-                    intent_id: id.clone(),
+                    execution_id: id.clone(),
                 }
             } else {
                 RepositoryError::Corrupt {
@@ -279,6 +315,10 @@ where
         // 楽観 version はスナップショット行の列が正本 — 封筒から取り出して呼出側へ渡す (BR5.3)。
         let version = snapshot.version();
         let mut aggregate = snapshot.into_aggregate();
+        // 再生には計画が要る。集約は intent を ID でしか参照しない
+        // (coding-rules/aggregate-references.md) ので、**ジャーナル先頭の `Started` から
+        // その時点の intent を読み直す**。`Started` は genesis 専用なので必ず 1 件目にある。
+        let intent = self.genesis_intent(id).await?;
         // リプレイの開始位置は**集約自身の通番**から採る。スナップショット行の `seq_nr` 列は
         // 同じ値のストア側の写しであり、正本はドメインが持つ通番だからである (裁定 3)。
         // 列と写しが食い違えば `apply_event` が `SequenceGap` で止める。
@@ -304,6 +344,7 @@ where
             }
             aggregate
                 .apply_event(
+                    &intent,
                     envelope.seq_nr(),
                     *envelope.occurred_at(),
                     envelope.payload(),
@@ -358,7 +399,7 @@ mod tests {
     }
 
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{StageEntry, StartRequest};
+    use core_command_domain::orchestration::{IntentId, StageCompleted, StageEntry, StartRequest};
     use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
@@ -376,20 +417,20 @@ mod tests {
             .with_timezone(&Utc)
     }
 
-    fn intent() -> IntentId {
-        IntentId::parse(INTENT).expect("UUIDv7")
+    fn intent() -> IntentExecutionId {
+        IntentExecutionId::parse(INTENT).expect("UUIDv7")
     }
 
-    fn other_intent() -> IntentId {
-        IntentId::parse(OTHER_INTENT).expect("UUIDv7")
+    fn other_intent() -> IntentExecutionId {
+        IntentExecutionId::parse(OTHER_INTENT).expect("UUIDv7")
     }
 
-    fn genesis() -> (IntentExecution, IntentExecutionEvent) {
-        IntentExecution::start_from_plan_unchecked(
-            intent(),
+    fn intent_plan() -> Intent {
+        Intent::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            &StartRequest::new("classic", "unit"),
+            StartRequest::new("classic", "unit"),
             vec![StageEntry::new(
                 StageSlug::parse("state-init").expect("slug"),
                 PhaseId::Initialization,
@@ -398,9 +439,12 @@ mod tests {
                 display("0.1"),
             )],
             scan(),
-            at(),
         )
-        .expect("合成計画は start の前提を満たす")
+        .expect("合成計画は Intent の不変条件を満たす")
+    }
+
+    fn genesis() -> (IntentExecution, IntentExecutionEvent) {
+        IntentExecution::start(intent(), intent_plan(), at())
     }
 
     fn repository() -> IntentExecutionRepositoryImpl<MemoryStore> {
@@ -442,27 +486,35 @@ mod tests {
     async fn a_second_aggregate_gets_its_own_envelope_identity() {
         // 封筒の識別子は引数ではなく集約から来るので、別集約は別の行になる。
         let (aggregate, event) = genesis();
-        let other = IntentExecution::start_from_plan_unchecked(
-            other_intent(),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            &StartRequest::new("classic", "unit"),
-            vec![StageEntry::new(
-                StageSlug::parse("state-init").expect("slug"),
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-                display("0.1"),
-            )],
-            scan(),
-            at(),
-        )
-        .expect("合成計画は start の前提を満たす")
-        .0;
+        let other = IntentExecution::start(other_intent(), intent_plan(), at()).0;
         let first =
             IntentExecutionRepositoryImpl::<MemoryStore>::envelope(event.clone(), &aggregate);
         let second = IntentExecutionRepositoryImpl::<MemoryStore>::envelope(event, &other);
         assert_ne!(first.aggregate_id(), second.aggregate_id());
+    }
+
+    #[tokio::test]
+    async fn a_journal_whose_first_row_is_not_a_genesis_is_corrupt() {
+        // 再生には計画が要り、その出所はジャーナル先頭の `Started` だけである。先頭が別の
+        // 変種を名乗る行は読み方が定まらないので、推測せず `Corrupt` で止める (BR1.2)。
+        let (aggregate, _) = genesis();
+        let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            StageSlug::parse("state-init").expect("slug"),
+            None,
+        ));
+        let mut repository = repository();
+        repository
+            .store(&impostor, &aggregate, UNPERSISTED)
+            .await
+            .expect("行としては書ける");
+        assert_eq!(
+            repository.find_by_id(&intent()).await.unwrap_err(),
+            RepositoryError::Corrupt {
+                aggregate_id: intent(),
+                seq_nr: Some(1),
+                cause: CorruptCause::UndecodablePayload,
+            }
+        );
     }
 
     #[test]

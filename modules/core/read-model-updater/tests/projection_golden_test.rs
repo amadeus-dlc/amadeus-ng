@@ -33,9 +33,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    GateApproved, GateOpened, GateRejected, IntentExecutionEvent, IntentId, JumpDirection, Jumped,
-    Parked, PhaseBoundary, Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised,
-    StageSkipped, StartRequest, Started, WorkspaceScan,
+    GateApproved, GateOpened, GateRejected, Intent, IntentExecutionEvent, IntentExecutionId,
+    IntentId, JumpDirection, Jumped, Parked, PhaseBoundary, Recomposed, StageCompleted,
+    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -52,6 +52,9 @@ const AT: &str = "2026-08-22T13:43:00Z";
 
 /// 行を運ぶ集約識別子（投影は識別子を描かないので値は任意）。
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+/// ゴールデンのフィクスチャが使う実行識別子 (ジャーナル行の集約キー)。
+const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
 /// ゴールデンのフィクスチャが使うスコープ。
 const SCOPE: &str = "classic";
@@ -83,7 +86,7 @@ fn slug(value: &str) -> StageSlug {
 fn entry(event: IntentExecutionEvent) -> JournalEntry {
     JournalEntry::new(
         GlobalSeqNr::new(1),
-        IntentId::parse(INTENT).expect("UUIDv7"),
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         1,
         at(),
         event,
@@ -128,17 +131,21 @@ fn started() -> Started {
         .collect();
 
     Started::new(
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        &StartRequest::new(SCOPE, REQUEST),
-        stages,
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
+        Intent::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new(SCOPE, REQUEST),
+            stages,
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
         )
-        .expect("単一行"),
+        .expect("出荷グラフ由来の計画は Intent の不変条件を満たす"),
     )
 }
 

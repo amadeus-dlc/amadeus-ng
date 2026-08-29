@@ -52,7 +52,7 @@ impl From<CommandError> for CommitError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::IntentId;
+    use core_command_domain::orchestration::IntentExecutionId;
 
     fn stage() -> StageSlug {
         StageSlug::parse("practices-discovery").expect("フィクスチャの slug は文法内")
@@ -60,15 +60,16 @@ mod tests {
 
     #[test]
     fn a_repository_failure_is_carried_verbatim() {
-        let intent_id = IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7");
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
         let inner = RepositoryError::NotFound {
-            intent_id: intent_id.clone(),
+            execution_id: execution_id.clone(),
         };
         let error = CommitError::from(inner.clone());
         assert_eq!(error, CommitError::Repository(inner));
         assert_eq!(
             error.to_string(),
-            format!("repository: not found: {intent_id}")
+            format!("repository: not found: {execution_id}")
         );
     }
 

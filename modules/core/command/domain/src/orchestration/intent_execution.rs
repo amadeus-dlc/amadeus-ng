@@ -35,27 +35,22 @@ use serde::{Deserialize, Serialize};
 use super::apply_error::ApplyError;
 use super::autonomy_mode::AutonomyMode;
 use super::command_error::CommandError;
+use super::intent::Intent;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
+use super::intent_execution_id::IntentExecutionId;
 use super::intent_execution_snapshot::IntentExecutionSnapshot;
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
-use super::stage_display::StageDisplay;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
-use super::start_error::StartError;
-use super::start_request::StartRequest;
 use super::state_error::StateError;
 use super::status::Status;
-use super::workspace_scan::WorkspaceScan;
-use crate::workflow_definition::{
-    DefinitionRevision, ExecutionKind, PhaseId, PlanAction, StageSlug, UnknownScope,
-    WorkflowDefinition, WorkflowDefinitionId,
-};
+use crate::workflow_definition::{PlanAction, StageSlug, WorkflowDefinition};
 use crate::workspace::CheckboxState;
 
 /// 前進 (`complete_stage` / `approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
@@ -80,13 +75,13 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(into = "IntentExecutionSnapshot", try_from = "IntentExecutionSnapshot")]
 pub struct IntentExecution {
-    id: IntentId,
-    definition_id: WorkflowDefinitionId,
-    definition_revision: DefinitionRevision,
-    /// 文書順の解決済み計画。`stages` / `plan` / `conditional` の 3 属性をこの 1 列が担う
-    /// (`plan` = `plan_action()`、`conditional` = `is_conditional()`) — 状態の写し (memento) は
-    /// C6 の列構成に合わせて 3 列へ展開し、`from_state` が整合を検査する。
-    stages: Vec<StageEntry>,
+    id: IntentExecutionId,
+    /// 実行の対象 intent — **ID で参照し、`Intent` を埋め込まない**
+    /// (coding-rules/aggregate-references.md)。1 intent : n 実行なので、埋め込めば同じ静的
+    /// 材料の複製を n 個抱えることになる。計画が要る判断は `&Intent` を引数で受け取り、
+    /// 受け取り時にこの ID と照合する。
+    intent_id: IntentId,
+    /// 実効プラン (recompose オーバレイ)。静的な計画 (`Intent::stages`) は保持しない。
     overlay: Vec<PlanAction>,
     checkbox: Vec<CheckboxState>,
     cursor: StageIndex,
@@ -104,136 +99,35 @@ pub struct IntentExecution {
 impl IntentExecution {
     // ---- W1: 生成 (BR2.2 / BR2.6) ----
 
-    /// 定義と呼出側の要求から解決済み計画を組み立てて実行を開始する。
+    /// intent を 1 回実行し始める (genesis)。
     ///
-    /// `def.id()` / `def.revision()` は**無条件に `Started` へ記録する** — 比較対象となる既存状態が
-    /// 無い静的コンストラクタなので検査はしない (BR2.6)。以後の定義照合は `next_decision` が行う。
-    /// [`StartRequest`] の `depth` / `test_strategy` は集約状態にはならず、`Started` へ素通しで
-    /// 載るだけである (U4 の `Scope Configuration` 投影材料 — C5)。
+    /// 受け取る [`Intent`] は Always Valid（空でない計画・initialization は EXECUTE かつ
+    /// 非 CONDITIONAL）なので、ここに失敗経路は無い。計画の解決とスコープ検査は
+    /// [`Intent::resolve`] が済ませている。
     ///
-    /// # Errors
-    ///
-    /// 未知スコープ (`UnknownScope`)、ステージ 0 件 (`Empty`)、initialization ステージが SKIP に
-    /// 畳まれた / 先頭ステージがスコープ外 (`InitializationMustExecute`)、initialization ステージが
-    /// CONDITIONAL (`InitializationMustBeUnconditional`) を拒否する。
+    /// 実行の識別子は**呼出側がミントする** — upstream がツール層で uuid をミントするのと
+    /// 同じ位置づけであり、集約は時計も乱数も持たない。集約が控えるのは `intent_id` と
+    /// 実行時状態だけで、静的な材料は `Started` が歴史として運ぶ
+    /// (coding-rules/aggregate-references.md「イベントに材料の複製が載るのは違反ではない」)。
+    #[must_use]
     pub fn start(
-        id: IntentId,
-        definition: &WorkflowDefinition,
-        request: &StartRequest,
-        scan: WorkspaceScan,
+        id: IntentExecutionId,
+        intent: Intent,
         occurred_at: DateTime<Utc>,
-    ) -> Result<(IntentExecution, IntentExecutionEvent), StartError> {
-        let scope = request.scope();
-        if !definition.is_valid_scope(scope) {
-            let valid = definition
-                .valid_scopes()
-                .into_iter()
-                .map(str::to_string)
-                .collect();
-            return Err(StartError::UnknownScope(UnknownScope::new(scope, valid)));
-        }
-        let nodes = definition.graph().nodes();
-        let mut stages = Vec::new();
-        for (index, (slug, phase, action)) in
-            definition.stages_in_scope(scope).into_iter().enumerate()
-        {
-            // `stages_in_scope` は execution も表示属性も返さないので、同じ文書順のノード列から
-            // 索引一致で拾う (BR2.2)。グリッド列が無いステージは `None → SKIP` に畳む。
-            let node = nodes.get(index);
-            let conditional =
-                node.is_some_and(|node| node.execution() == ExecutionKind::Conditional);
-            // 表示属性は**計画を解決するこの時点で**イベントへ焼き込む (オーナー裁定 2026-08-29)。
-            // 投影は後から定義を引かないので、再構成しても当時と同じバイトになる (NFR3)。
-            let display = match node {
-                Some(node) => {
-                    StageDisplay::new(node.number().clone(), node.name(), node.lead_agent())
-                        .map_err(|unsafe_char| StartError::StageDisplayNotSingleLine {
-                            stage: slug.as_str().to_string(),
-                            found: unsafe_char.to_char(),
-                        })?
-                }
-                // 索引一致が崩れるのはグラフが壊れている場合だけ (防御的)。
-                None => return Err(StartError::Empty),
-            };
-            stages.push(StageEntry::new(
-                slug.clone(),
-                phase,
-                action.unwrap_or(PlanAction::Skip),
-                conditional,
-                display,
-            ));
-        }
-        IntentExecution::start_from_plan_unchecked(
-            id,
-            definition.id().clone(),
-            definition.revision().clone(),
-            request,
-            stages,
-            scan,
-            occurred_at,
-        )
-    }
-
-    /// 解決済み計画を直接与えて実行を開始する ([`IntentExecution::start`] の委譲先)。
-    ///
-    /// 定義を組み立てずに合成計画で駆動する ITF 準拠テストの入口でもある (BR2.5)。
-    ///
-    /// **`start` と違い [`StartError::UnknownScope`] を返せない** — 照合すべき
-    /// [`WorkflowDefinition`] を受け取らないため、スコープ名が定義にあるかどうかを検査する材料が
-    /// そもそも無い。名前の `_unchecked` はこの検査の欠落を指す。定義を持っている呼出側は
-    /// [`IntentExecution::start`] を使うこと。
-    ///
-    /// # Errors
-    ///
-    /// ステージ 0 件、initialization ステージの SKIP / CONDITIONAL、先頭ステージのスコープ外を
-    /// 拒否する (先頭はカーソルの初期位置なので実効 EXECUTE でなければ `cursor_in_scope` を破る)。
-    /// スコープ名の妥当性 (`UnknownScope`) は上記のとおり検査しない。
-    pub fn start_from_plan_unchecked(
-        id: IntentId,
-        definition_id: WorkflowDefinitionId,
-        definition_revision: DefinitionRevision,
-        request: &StartRequest,
-        stages: Vec<StageEntry>,
-        scan: WorkspaceScan,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<(IntentExecution, IntentExecutionEvent), StartError> {
-        match stages.first() {
-            None => return Err(StartError::Empty),
-            Some(first) if first.plan_action() != PlanAction::Execute => {
-                return Err(StartError::InitializationMustExecute);
-            }
-            Some(_) => {}
-        }
-        for entry in &stages {
-            if entry.phase() != PhaseId::Initialization {
-                continue;
-            }
-            if entry.plan_action() != PlanAction::Execute {
-                return Err(StartError::InitializationMustExecute);
-            }
-            if entry.is_conditional() {
-                return Err(StartError::InitializationMustBeUnconditional);
-            }
-        }
-
-        let count = stages.len();
-        let overlay: Vec<PlanAction> = stages.iter().map(StageEntry::plan_action).collect();
+    ) -> (IntentExecution, IntentExecutionEvent) {
+        let count = intent.stage_count();
+        let overlay: Vec<PlanAction> = intent
+            .stages()
+            .iter()
+            .map(StageEntry::plan_action)
+            .collect();
         let mut checkbox = vec![CheckboxState::Pending; count];
         if let Some(first) = checkbox.first_mut() {
             *first = CheckboxState::InProgress;
         }
-        let event = IntentExecutionEvent::Started(Started::new(
-            definition_id.clone(),
-            definition_revision.clone(),
-            request,
-            stages.clone(),
-            scan,
-        ));
         let execution = IntentExecution {
             id,
-            definition_id,
-            definition_revision,
-            stages,
+            intent_id: intent.id().clone(),
             overlay,
             checkbox,
             cursor: StageIndex::new(0),
@@ -245,15 +139,35 @@ impl IntentExecution {
             seq_nr: 1,
             last_updated_at: occurred_at,
         };
-        Ok((execution, event))
+        (
+            execution,
+            IntentExecutionEvent::Started(Started::new(intent)),
+        )
     }
 
     // ---- 観測 (read model) ----
 
-    /// この intent の識別子 (以後不変。`intents.json` の uuid にあたる)。
+    /// この実行の識別子 (以後不変)。
     #[must_use]
-    pub const fn id(&self) -> &IntentId {
+    pub const fn id(&self) -> &IntentExecutionId {
         &self.id
+    }
+
+    /// 実行の対象 intent の識別子 (以後不変。`intents.json` の uuid にあたる)。
+    ///
+    /// 集約が持つのはこの ID だけである — [`Intent`] そのものは埋め込まない
+    /// (coding-rules/aggregate-references.md)。
+    #[must_use]
+    pub const fn intent_id(&self) -> &IntentId {
+        &self.intent_id
+    }
+
+    /// 渡された intent がこの実行のものかを確かめる (取り違え防御)。
+    ///
+    /// ID 参照だからこそ書ける照合である。長さも見るのは、同じ intent の別リビジョンで
+    /// 実行時ベクトルと計画の長さが食い違う写しを弾くためである。
+    fn matches(&self, intent: &Intent) -> bool {
+        intent.id() == &self.intent_id && intent.stage_count() == self.overlay.len()
     }
 
     /// 適用済みイベント数と一致する順序番号 (`Started` = 1 — BR2.1)。
@@ -273,28 +187,13 @@ impl IntentExecution {
         &self.last_updated_at
     }
 
-    /// `Started` に記録した定義の系譜 ID (以後不変 — BR2.6)。
-    #[must_use]
-    pub const fn definition_id(&self) -> &WorkflowDefinitionId {
-        &self.definition_id
-    }
-
-    /// `Started` 時点の定義の内容版 (来歴。定義側が進んでも Err にはしない — BR2.6)。
-    #[must_use]
-    pub const fn definition_revision(&self) -> &DefinitionRevision {
-        &self.definition_revision
-    }
-
-    /// 文書順の解決済み計画 (`Started` が確定させて以後不変)。
-    #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
-        &self.stages
-    }
-
-    /// コンパイル済みグラフのステージ総数 (スコープ外のステージも含む)。
+    /// 実行が追いかけているステージ総数 (スコープ外のステージも含む)。
+    ///
+    /// 実行時ベクトルの長さがそのまま総数である — 静的な計画は [`Intent`] 側にあり、
+    /// 集約はその長さぶんの実行時状態を持つ。
     #[must_use]
     pub const fn stage_count(&self) -> usize {
-        self.stages.len()
+        self.overlay.len()
     }
 
     /// 生の位置から `StageIndex` を作る唯一の公開経路。範囲外は `None` (BR5.1)。
@@ -351,10 +250,10 @@ impl IntentExecution {
         self.overlay.get(stage.to_usize()).copied()
     }
 
-    /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外は `None`。
+    /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外・intent 不一致は `None`。
     #[must_use]
-    pub fn gated(&self, stage: StageIndex) -> Option<bool> {
-        self.stages.get(stage.to_usize()).map(StageEntry::is_gated)
+    pub fn gated(&self, intent: &Intent, stage: StageIndex) -> Option<bool> {
+        self.entry(intent, stage).map(StageEntry::is_gated)
     }
 
     /// parked 分岐の発火は導出述語 (マーカー有 ∧ 位置一致 — BR1.7)。
@@ -371,12 +270,15 @@ impl IntentExecution {
 
     // ---- 内部の索引ヘルパ (すべて `StageIndex` 経由 — 生の添字を使わない) ----
 
-    fn entry(&self, stage: StageIndex) -> Option<&StageEntry> {
-        self.stages.get(stage.to_usize())
+    fn entry<'a>(&self, intent: &'a Intent, stage: StageIndex) -> Option<&'a StageEntry> {
+        if !self.matches(intent) {
+            return None;
+        }
+        intent.stages().get(stage.to_usize())
     }
 
-    fn is_gated(&self, stage: StageIndex) -> bool {
-        self.entry(stage).is_some_and(StageEntry::is_gated)
+    fn is_gated(&self, intent: &Intent, stage: StageIndex) -> bool {
+        self.entry(intent, stage).is_some_and(StageEntry::is_gated)
     }
 
     fn in_scope(&self, stage: StageIndex) -> bool {
@@ -389,9 +291,9 @@ impl IntentExecution {
             .find(|&stage| self.in_scope(stage))
     }
 
-    fn next_in_scope_slug(&self, after: StageIndex) -> Option<StageSlug> {
+    fn next_in_scope_slug(&self, intent: &Intent, after: StageIndex) -> Option<StageSlug> {
         self.next_in_scope(after)
-            .and_then(|stage| self.entry(stage))
+            .and_then(|stage| self.entry(intent, stage))
             .map(|entry| entry.slug().clone())
     }
 
@@ -401,20 +303,25 @@ impl IntentExecution {
     /// あり、`plan` と `overlay` を知っている集約だけが正しく答えられる。フェーズが違えば
     /// 境界、同じか次が無い (= 最終) なら `None` — upstream の `crossesPhaseBoundary`
     /// (`aidlc-state.ts` の `completedStage.phase !== nextStage.phase`) と同一の規則である。
-    fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
-        let from = self.entry(stage)?.phase();
-        let to = self.entry(self.next_in_scope(stage)?)?.phase();
+    fn crossed_phase_boundary(&self, intent: &Intent, stage: StageIndex) -> Option<PhaseBoundary> {
+        let from = self.entry(intent, stage)?.phase();
+        let to = self.entry(intent, self.next_in_scope(stage)?)?.phase();
         (from != to).then(|| PhaseBoundary::new(from, to))
     }
 
-    fn slug_of(&self, stage: StageIndex) -> Result<StageSlug, CommandError> {
-        self.entry(stage)
+    fn slug_of(&self, intent: &Intent, stage: StageIndex) -> Result<StageSlug, CommandError> {
+        self.entry(intent, stage)
             .map(|entry| entry.slug().clone())
             .ok_or(CommandError::InvalidTarget(stage))
     }
 
-    fn resolve(&self, slug: &StageSlug) -> Result<StageIndex, ApplyError> {
-        self.stages
+    /// 計画上の位置へ解決する。
+    ///
+    /// 取り違えガードはここには置かない — 呼出経路 (`apply_event` → `mutate` → `advance`) の
+    /// 入口で既に照合済みだからである。二重に置くと到達しない枝が残る。
+    fn resolve(intent: &Intent, slug: &StageSlug) -> Result<StageIndex, ApplyError> {
+        intent
+            .stages()
             .iter()
             .position(|entry| entry.slug() == slug)
             .map(StageIndex::new)
@@ -445,6 +352,17 @@ impl IntentExecution {
     // ---- ガード ----
 
     /// BR1.0 — コマンドを受理できる状態か検査し、カーソルを返す。
+    /// 渡された intent がこの実行のものであることを確かめてから、受理述語を見る。
+    ///
+    /// 取り違えガードを**入口 1 か所**に置く — 後段の索引ヘルパは不一致なら `None` を返すが、
+    /// それは `InvalidTarget` に見えてしまい原因を取り違える。
+    fn guard_running_for(&self, intent: &Intent) -> Result<StageIndex, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        self.guard_running()
+    }
+
     fn guard_running(&self) -> Result<StageIndex, CommandError> {
         if self.accepts_commands() {
             Ok(self.cursor)
@@ -468,8 +386,13 @@ impl IntentExecution {
         }
     }
 
-    fn require_gated(&self, stage: StageIndex, gated: bool) -> Result<(), CommandError> {
-        if self.is_gated(stage) == gated {
+    fn require_gated(
+        &self,
+        intent: &Intent,
+        stage: StageIndex,
+        gated: bool,
+    ) -> Result<(), CommandError> {
+        if self.is_gated(intent, stage) == gated {
             Ok(())
         } else {
             Err(CommandError::InvalidTarget(stage))
@@ -489,13 +412,14 @@ impl IntentExecution {
     /// (`SequenceExhausted` — 飽和加算で seq_nr が停滞したまま成功を装わない)。
     fn commit(
         &mut self,
+        intent: &Intent,
         event: IntentExecutionEvent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let Some(seq_nr) = self.seq_nr.checked_add(1) else {
             return Err(CommandError::SequenceExhausted);
         };
-        match self.apply_event(seq_nr, occurred_at, &event) {
+        match self.apply_event(intent, seq_nr, occurred_at, &event) {
             Ok(()) => Ok(event),
             Err(_) => Err(CommandError::InvalidTarget(self.cursor)),
         }
@@ -511,13 +435,21 @@ impl IntentExecution {
     /// (`CheckboxPrecondition`) を拒否する。
     pub fn complete_stage(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, false)?;
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, false)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = StageCompleted::new(self.slug_of(stage)?, self.next_in_scope_slug(stage));
-        self.commit(IntentExecutionEvent::StageCompleted(material), occurred_at)
+        let material = StageCompleted::new(
+            self.slug_of(intent, stage)?,
+            self.next_in_scope_slug(intent, stage),
+        );
+        self.commit(
+            intent,
+            IntentExecutionEvent::StageCompleted(material),
+            occurred_at,
+        )
     }
 
     /// 承認ゲートの開放 — `GateOpened`。`artifacts` は呼出側が渡す投影材料 (C5)。
@@ -528,14 +460,19 @@ impl IntentExecution {
     /// 拒否する (「only an in-progress stage can open a gate」)。
     pub fn open_gate(
         &mut self,
+        intent: &Intent,
         artifacts: Vec<String>,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, true)?;
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, true)?;
         self.require_checkbox(stage, &[CheckboxState::InProgress])?;
-        let material = GateOpened::new(self.slug_of(stage)?, artifacts);
-        self.commit(IntentExecutionEvent::GateOpened(material), occurred_at)
+        let material = GateOpened::new(self.slug_of(intent, stage)?, artifacts);
+        self.commit(
+            intent,
+            IntentExecutionEvent::GateOpened(material),
+            occurred_at,
+        )
     }
 
     /// 承認ゲートの通過 — `GateApproved`。フェーズ境界は**集約が自分の計画から導出する**。
@@ -550,19 +487,24 @@ impl IntentExecution {
     /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反を拒否する。
     pub fn approve_gate(
         &mut self,
+        intent: &Intent,
         user_input: Option<String>,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, true)?;
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let material = GateApproved::new(
-            self.slug_of(stage)?,
+            self.slug_of(intent, stage)?,
             user_input,
-            self.next_in_scope_slug(stage),
-            self.crossed_phase_boundary(stage),
+            self.next_in_scope_slug(intent, stage),
+            self.crossed_phase_boundary(intent, stage),
         );
-        self.commit(IntentExecutionEvent::GateApproved(material), occurred_at)
+        self.commit(
+            intent,
+            IntentExecutionEvent::GateApproved(material),
+            occurred_at,
+        )
     }
 
     /// 承認ゲートでの差し戻し — `GateRejected`。改訂回数を +1 してイベントに載せる (BR1.4)。
@@ -572,18 +514,23 @@ impl IntentExecution {
     /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反を拒否する。
     pub fn reject_gate(
         &mut self,
+        intent: &Intent,
         feedback: Option<String>,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
-        self.require_gated(stage, true)?;
+        let stage = self.guard_running_for(intent)?;
+        self.require_gated(intent, stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let next = self
             .revision_count(stage)
             .ok_or(CommandError::InvalidTarget(stage))?
             .saturating_add(1);
-        let material = GateRejected::new(self.slug_of(stage)?, feedback, next);
-        self.commit(IntentExecutionEvent::GateRejected(material), occurred_at)
+        let material = GateRejected::new(self.slug_of(intent, stage)?, feedback, next);
+        self.commit(
+            intent,
+            IntentExecutionEvent::GateRejected(material),
+            occurred_at,
+        )
     }
 
     /// 差し戻し後のゲート再入 — `StageRevised`。
@@ -594,12 +541,17 @@ impl IntentExecution {
     /// (「only a revising stage can re-enter its gate」)。
     pub fn revise_stage(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
+        let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &[CheckboxState::Revising])?;
-        let material = StageRevised::new(self.slug_of(stage)?);
-        self.commit(IntentExecutionEvent::StageRevised(material), occurred_at)
+        let material = StageRevised::new(self.slug_of(intent, stage)?);
+        self.commit(
+            intent,
+            IntentExecutionEvent::StageRevised(material),
+            occurred_at,
+        )
     }
 
     /// ステージの読み飛ばし — `StageSkipped` (CONDITIONAL または実効 SKIP のみ — BR1.5)。
@@ -610,18 +562,28 @@ impl IntentExecution {
     /// 拒否する。
     pub fn skip_stage(
         &mut self,
+        intent: &Intent,
         reason: String,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
+        let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &SKIP_PRECONDITION)?;
-        let conditional = self.entry(stage).is_some_and(StageEntry::is_conditional);
+        let conditional = self
+            .entry(intent, stage)
+            .is_some_and(StageEntry::is_conditional);
         if !(conditional || self.effective_plan(stage) == Some(PlanAction::Skip)) {
             return Err(CommandError::NotSkippable(stage));
         }
-        let material =
-            StageSkipped::new(self.slug_of(stage)?, reason, self.next_in_scope_slug(stage));
-        self.commit(IntentExecutionEvent::StageSkipped(material), occurred_at)
+        let material = StageSkipped::new(
+            self.slug_of(intent, stage)?,
+            reason,
+            self.next_in_scope_slug(intent, stage),
+        );
+        self.commit(
+            intent,
+            IntentExecutionEvent::StageSkipped(material),
+            occurred_at,
+        )
     }
 
     /// カーソルの移動 — `Jumped` (BR1.6)。差分集合をイベントに載せ、承認の消去は適用側が
@@ -632,10 +594,11 @@ impl IntentExecution {
     /// [`IntentExecution::jump_resolve`] と同じ (`NotRunning` / `InvalidTarget`)。
     pub fn jump(
         &mut self,
+        intent: &Intent,
         target: StageIndex,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let direction = self.jump_resolve(target)?;
+        let direction = self.jump_resolve(intent, target)?;
         let source = self.cursor;
         let mut stages_reset = Vec::new();
         let mut stages_skipped = Vec::new();
@@ -649,7 +612,7 @@ impl IntentExecution {
                     let skip_current = value == source.to_usize() && marker.is_active();
                     let skip_between = value > source.to_usize() && marker.is_in_flight();
                     if skip_current || skip_between {
-                        stages_skipped.push(self.slug_of(stage)?);
+                        stages_skipped.push(self.slug_of(intent, stage)?);
                     }
                 }
             }
@@ -658,7 +621,7 @@ impl IntentExecution {
                     let stage = StageIndex::new(value);
                     if self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
                     {
-                        stages_reset.push(self.slug_of(stage)?);
+                        stages_reset.push(self.slug_of(intent, stage)?);
                     }
                 }
             }
@@ -666,12 +629,12 @@ impl IntentExecution {
         }
         let material = Jumped::new(
             direction,
-            self.slug_of(source)?,
-            self.slug_of(target)?,
+            self.slug_of(intent, source)?,
+            self.slug_of(intent, target)?,
             stages_reset,
             stages_skipped,
         );
-        self.commit(IntentExecutionEvent::Jumped(material), occurred_at)
+        self.commit(intent, IntentExecutionEvent::Jumped(material), occurred_at)
     }
 
     /// park マーカーの設置 — `Parked` (autonomous 下は拒否 — BR1.7)。
@@ -681,14 +644,15 @@ impl IntentExecution {
     /// 非受理 (`NotRunning`)、autonomous 中 (`RefusedUnderAutonomy`)。
     pub fn park(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running()?;
+        let stage = self.guard_running_for(intent)?;
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
-        let material = Parked::new(self.slug_of(stage)?);
-        self.commit(IntentExecutionEvent::Parked(material), occurred_at)
+        let material = Parked::new(self.slug_of(intent, stage)?);
+        self.commit(intent, IntentExecutionEvent::Parked(material), occurred_at)
     }
 
     /// park マーカーの除去 — `Unparked`。位置は `parked_at` から復元される (BR1.7)。
@@ -698,12 +662,16 @@ impl IntentExecution {
     /// park が活性でなければ `NotRunning`。
     pub fn unpark(
         &mut self,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
         if !self.parked_active() {
             return Err(CommandError::NotRunning);
         }
-        self.commit(IntentExecutionEvent::Unparked, occurred_at)
+        self.commit(intent, IntentExecutionEvent::Unparked, occurred_at)
     }
 
     /// 実効プランの再形成 — `Recomposed` (BR1.8)。反転対象は 1 件以上で、いずれかが不正なら
@@ -715,10 +683,11 @@ impl IntentExecution {
     /// (`InvalidTarget`)、pending 以外 (`CheckboxPrecondition`)。
     pub fn recompose(
         &mut self,
+        intent: &Intent,
         flips: &[StageIndex],
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let cursor = self.guard_running()?;
+        let cursor = self.guard_running_for(intent)?;
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
@@ -739,7 +708,7 @@ impl IntentExecution {
         let mut added = Vec::new();
         for &value in &targets {
             let stage = StageIndex::new(value);
-            let slug = self.slug_of(stage)?;
+            let slug = self.slug_of(intent, stage)?;
             match self.effective_plan(stage) {
                 Some(PlanAction::Execute) => skipped.push(slug),
                 Some(PlanAction::Skip) => added.push(slug),
@@ -753,10 +722,17 @@ impl IntentExecution {
             .iter()
             .enumerate()
             .filter(|(_, action)| **action == PlanAction::Execute)
-            .filter_map(|(index, _)| self.stages.get(index).map(|entry| entry.slug().clone()))
+            .filter_map(|(index, _)| {
+                self.entry(intent, StageIndex::new(index))
+                    .map(|entry| entry.slug().clone())
+            })
             .collect();
         let material = Recomposed::new(skipped, added, stages_in_scope);
-        self.commit(IntentExecutionEvent::Recomposed(material), occurred_at)
+        self.commit(
+            intent,
+            IntentExecutionEvent::Recomposed(material),
+            occurred_at,
+        )
     }
 
     /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
@@ -774,11 +750,13 @@ impl IntentExecution {
     /// 非受理なら `NotRunning`。
     pub fn switch_autonomy(
         &mut self,
+        intent: &Intent,
         mode: AutonomyMode,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        self.guard_running()?;
+        self.guard_running_for(intent)?;
         self.commit(
+            intent,
             IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(mode)),
             occurred_at,
         )
@@ -801,10 +779,14 @@ impl IntentExecution {
     /// `usize::MAX` で後続を数えられない (`SequenceExhausted`) を拒否する。
     pub fn apply_event(
         &mut self,
+        intent: &Intent,
         seq_nr: usize,
         occurred_at: DateTime<Utc>,
         event: &IntentExecutionEvent,
     ) -> Result<(), ApplyError> {
+        if !self.matches(intent) {
+            return Err(ApplyError::IntentMismatch);
+        }
         let Some(expected) = self.seq_nr.checked_add(1) else {
             return Err(ApplyError::SequenceExhausted);
         };
@@ -815,17 +797,17 @@ impl IntentExecution {
             });
         }
         let mut next = self.clone();
-        next.mutate(event)?;
+        next.mutate(intent, event)?;
         next.seq_nr = seq_nr;
         next.last_updated_at = occurred_at;
-        next.check_invariants()
+        next.check_invariants(intent)
             .map_err(ApplyError::InvariantViolation)?;
         *self = next;
         Ok(())
     }
 
     /// 12 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
-    fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
+    fn mutate(&mut self, intent: &Intent, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
                 // `Started` は genesis 専用 — 既存の集約には適用できない (BR2.2)。
@@ -834,41 +816,41 @@ impl IntentExecution {
                 ));
             }
             IntentExecutionEvent::StageCompleted(completed) => {
-                let stage = self.resolve(completed.stage())?;
+                let stage = IntentExecution::resolve(intent, completed.stage())?;
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(completed.next_stage())?;
+                self.advance(intent, completed.next_stage())?;
             }
             IntentExecutionEvent::GateOpened(opened) => {
-                let stage = self.resolve(opened.stage())?;
+                let stage = IntentExecution::resolve(intent, opened.stage())?;
                 self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             IntentExecutionEvent::GateApproved(approved) => {
-                let stage = self.resolve(approved.stage())?;
+                let stage = IntentExecution::resolve(intent, approved.stage())?;
                 self.record_approval(stage);
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(approved.next_stage())?;
+                self.advance(intent, approved.next_stage())?;
             }
             IntentExecutionEvent::GateRejected(rejected) => {
-                let stage = self.resolve(rejected.stage())?;
+                let stage = IntentExecution::resolve(intent, rejected.stage())?;
                 self.mark_stage(stage, CheckboxState::Revising);
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = rejected.revision_count();
                 }
             }
             IntentExecutionEvent::StageRevised(revised) => {
-                let stage = self.resolve(revised.stage())?;
+                let stage = IntentExecution::resolve(intent, revised.stage())?;
                 self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             IntentExecutionEvent::StageSkipped(skipped) => {
-                let stage = self.resolve(skipped.stage())?;
+                let stage = IntentExecution::resolve(intent, skipped.stage())?;
                 self.mark_stage(stage, CheckboxState::Skipped);
-                self.advance(skipped.next_stage())?;
+                self.advance(intent, skipped.next_stage())?;
             }
             IntentExecutionEvent::Jumped(jumped) => {
-                self.apply_jump(jumped)?;
+                self.apply_jump(intent, jumped)?;
             }
             IntentExecutionEvent::Parked(parked) => {
-                let stage = self.resolve(parked.stage())?;
+                let stage = IntentExecution::resolve(intent, parked.stage())?;
                 self.parked_at = Some(stage);
             }
             IntentExecutionEvent::Unparked => {
@@ -876,13 +858,13 @@ impl IntentExecution {
             }
             IntentExecutionEvent::Recomposed(recomposed) => {
                 for slug in recomposed.skipped() {
-                    let stage = self.resolve(slug)?;
+                    let stage = IntentExecution::resolve(intent, slug)?;
                     if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Skip;
                     }
                 }
                 for slug in recomposed.added() {
-                    let stage = self.resolve(slug)?;
+                    let stage = IntentExecution::resolve(intent, slug)?;
                     if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Execute;
                     }
@@ -895,15 +877,15 @@ impl IntentExecution {
         Ok(())
     }
 
-    fn apply_jump(&mut self, jumped: &Jumped) -> Result<(), ApplyError> {
-        let source = self.resolve(jumped.source())?;
-        let target = self.resolve(jumped.target())?;
+    fn apply_jump(&mut self, intent: &Intent, jumped: &Jumped) -> Result<(), ApplyError> {
+        let source = IntentExecution::resolve(intent, jumped.source())?;
+        let target = IntentExecution::resolve(intent, jumped.target())?;
         for slug in jumped.stages_reset() {
-            let stage = self.resolve(slug)?;
+            let stage = IntentExecution::resolve(intent, slug)?;
             self.mark_stage(stage, CheckboxState::Pending);
         }
         for slug in jumped.stages_skipped() {
-            let stage = self.resolve(slug)?;
+            let stage = IntentExecution::resolve(intent, slug)?;
             self.mark_stage(stage, CheckboxState::Skipped);
         }
         match jumped.direction() {
@@ -922,10 +904,14 @@ impl IntentExecution {
     }
 
     /// 完了・スキップの後段 — 次の in-scope ステージへ進むか、無ければ完了する (BR1.5)。
-    fn advance(&mut self, next_stage: Option<&StageSlug>) -> Result<(), ApplyError> {
+    fn advance(
+        &mut self,
+        intent: &Intent,
+        next_stage: Option<&StageSlug>,
+    ) -> Result<(), ApplyError> {
         match next_stage {
             Some(slug) => {
-                let stage = self.resolve(slug)?;
+                let stage = IntentExecution::resolve(intent, slug)?;
                 self.mark_stage(stage, CheckboxState::InProgress);
                 self.cursor = stage;
             }
@@ -936,7 +922,11 @@ impl IntentExecution {
 
     /// 集約不変条件 (Quint の cursor_in_scope / at_most_one_active / no_gate_bypass /
     /// parked_position と長さ整合)。材料は不変条件名で、文言はアダプタ層の責務。
-    fn check_invariants(&self) -> Result<(), String> {
+    /// intent を要さない実行時の不変条件 — 長さ・通番・カーソル・park・active の数。
+    ///
+    /// 写し (memento) から復元する経路はこれだけを検査できる。計画を要する検査
+    /// (`no_gate_bypass`) は `&Intent` が渡る [`IntentExecution::check_invariants`] が担う。
+    fn check_runtime_invariants(&self) -> Result<(), String> {
         let count = self.stage_count();
         if count == 0 {
             return Err("stage count is zero".to_string());
@@ -968,24 +958,27 @@ impl IntentExecution {
         if self.accepts_commands() && !self.in_scope(self.cursor) {
             return Err("cursor_in_scope".to_string());
         }
-        let mut active = 0_usize;
-        for value in 0..count {
+        let active = (0..count)
+            .filter_map(|value| self.checkbox(StageIndex::new(value)))
+            .filter(|marker| marker.is_active())
+            .count();
+        if active > 1 {
+            return Err(format!("at_most_one_active: {active}"));
+        }
+        Ok(())
+    }
+
+    /// 実行時の不変条件に、計画を要する `no_gate_bypass` を足した全検査。
+    fn check_invariants(&self, intent: &Intent) -> Result<(), String> {
+        self.check_runtime_invariants()?;
+        for value in 0..self.stage_count() {
             let stage = StageIndex::new(value);
-            let Some(marker) = self.checkbox(stage) else {
-                continue;
-            };
-            if marker.is_active() {
-                active += 1;
-            }
-            if self.is_gated(stage)
-                && marker == CheckboxState::Completed
+            if self.is_gated(intent, stage)
+                && self.checkbox(stage) == Some(CheckboxState::Completed)
                 && self.approved(stage) != Some(true)
             {
                 return Err(format!("no_gate_bypass at stage {value}"));
             }
-        }
-        if active > 1 {
-            return Err(format!("at_most_one_active: {active}"));
         }
         Ok(())
     }
@@ -997,11 +990,7 @@ impl IntentExecution {
     pub(crate) fn state(&self) -> IntentExecutionSnapshot {
         IntentExecutionSnapshot {
             id: self.id.clone(),
-            definition_id: self.definition_id.clone(),
-            definition_revision: self.definition_revision.clone(),
-            plan: self.stages.iter().map(StageEntry::plan_action).collect(),
-            conditional: self.stages.iter().map(StageEntry::is_conditional).collect(),
-            stages: self.stages.clone(),
+            intent_id: self.intent_id.clone(),
             overlay: self.overlay.clone(),
             checkbox: self.checkbox.clone(),
             cursor: self.cursor.to_usize(),
@@ -1025,34 +1014,9 @@ impl IntentExecution {
     pub(crate) fn from_state(
         state: IntentExecutionSnapshot,
     ) -> Result<IntentExecution, StateError> {
-        let count = state.stages.len();
-        if state.plan.len() != count {
-            return Err(StateError::InvariantViolation(
-                "length mismatch: plan".to_string(),
-            ));
-        }
-        if state.conditional.len() != count {
-            return Err(StateError::InvariantViolation(
-                "length mismatch: conditional".to_string(),
-            ));
-        }
-        for (index, entry) in state.stages.iter().enumerate() {
-            if state.plan.get(index).copied() != Some(entry.plan_action()) {
-                return Err(StateError::InvariantViolation(format!(
-                    "plan disagrees with stages at {index}"
-                )));
-            }
-            if state.conditional.get(index).copied() != Some(entry.is_conditional()) {
-                return Err(StateError::InvariantViolation(format!(
-                    "conditional disagrees with stages at {index}"
-                )));
-            }
-        }
         let execution = IntentExecution {
             id: state.id,
-            definition_id: state.definition_id,
-            definition_revision: state.definition_revision,
-            stages: state.stages,
+            intent_id: state.intent_id,
             overlay: state.overlay,
             checkbox: state.checkbox,
             cursor: StageIndex::new(state.cursor),
@@ -1064,8 +1028,10 @@ impl IntentExecution {
             seq_nr: state.seq_nr,
             last_updated_at: state.last_updated_at,
         };
+        // 写しには計画が載らないので、ここで検査できるのは実行時の不変条件だけである。
+        // 計画を要する `no_gate_bypass` は、`&Intent` を受け取るコマンド・適用の側で見る。
         execution
-            .check_invariants()
+            .check_runtime_invariants()
             .map_err(StateError::InvariantViolation)?;
         Ok(execution)
     }
@@ -1082,12 +1048,16 @@ impl IntentExecution {
     /// 引数の定義 id が `definition_id` と異なれば `DefinitionMismatch` (revision の差は Ok — BR2.6)。
     pub fn next_decision(
         &self,
+        intent: &Intent,
         definition: &WorkflowDefinition,
         request: &NextRequest,
     ) -> Result<NextDecision, CommandError> {
-        if definition.id() != &self.definition_id {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        if definition.id() != intent.definition_id() {
             return Err(CommandError::DefinitionMismatch {
-                expected: self.definition_id.clone(),
+                expected: intent.definition_id().clone(),
                 actual: definition.id().clone(),
             });
         }
@@ -1128,13 +1098,13 @@ impl IntentExecution {
             }
             return Ok(NextDecision::RunStage {
                 stage: cursor,
-                gate: self.is_gated(cursor),
+                gate: self.is_gated(intent, cursor),
             });
         }
         Ok(match self.next_in_scope(cursor) {
             Some(stage) => NextDecision::RunStage {
                 stage,
-                gate: self.is_gated(stage),
+                gate: self.is_gated(intent, stage),
             },
             None => NextDecision::Done,
         })
@@ -1146,7 +1116,14 @@ impl IntentExecution {
     ///
     /// 非受理 (`NotRunning`)、範囲外・initialization・スコープ外ターゲット、initialization カーソルの
     /// redo (`InvalidTarget`) を拒否する。
-    pub fn jump_resolve(&self, target: StageIndex) -> Result<JumpDirection, CommandError> {
+    pub fn jump_resolve(
+        &self,
+        intent: &Intent,
+        target: StageIndex,
+    ) -> Result<JumpDirection, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
@@ -1157,12 +1134,12 @@ impl IntentExecution {
         match direction {
             // INIT_JUMP_ERROR: initialization フェーズのステージへは跳べない。scope 外も不可。
             JumpDirection::Forward | JumpDirection::Backward => {
-                if !self.is_gated(target) || !self.in_scope(target) {
+                if !self.is_gated(intent, target) || !self.in_scope(target) {
                     return Err(CommandError::InvalidTarget(target));
                 }
             }
             JumpDirection::Redo => {
-                if !self.is_gated(self.cursor) {
+                if !self.is_gated(intent, self.cursor) {
                     return Err(CommandError::InvalidTarget(target));
                 }
             }
@@ -1214,9 +1191,10 @@ mod tests {
     use super::*;
     use crate::orchestration::intent_execution_snapshot::IntentExecutionSnapshotBuilder;
     use crate::orchestration::{
-        ApplyError, AutonomyMode, CommandError, EngineSignal, IntentExecutionEvent, IntentId,
-        JumpDirection, NextDecision, NextRequest, PhaseBoundary, StageCompleted, StageEntry,
-        StageIndex, StartError, StartRequest, Started, StateError, Status,
+        ApplyError, AutonomyMode, CommandError, EngineSignal, Intent, IntentError,
+        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, NextDecision,
+        NextRequest, PhaseBoundary, StageCompleted, StageDisplay, StageEntry, StageIndex,
+        StartRequest, Started, StateError, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -1242,8 +1220,172 @@ mod tests {
         StageSlug::parse(&format!("stage-{i}")).unwrap()
     }
 
-    fn intent() -> IntentId {
+    fn intent_id() -> IntentId {
         IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    }
+
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap()
+    }
+
+    /// 実行と、その計画を持つ intent を束ねたテストフィクスチャ。
+    ///
+    /// 本番のコマンド・クエリは `&Intent` を引数で受け取る
+    /// (`coding-rules/aggregate-references.md`) が、テストでは実行と intent が常に対で動くので、
+    /// 束ねて転送する。intent を要さない面は `Deref` でそのまま集約へ抜ける。取り違えガード
+    /// そのものを見るテストは、この転送を通さず生の API を直に呼ぶ。
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct Run {
+        intent: Intent,
+        execution: IntentExecution,
+    }
+
+    impl std::ops::Deref for Run {
+        type Target = IntentExecution;
+
+        fn deref(&self) -> &IntentExecution {
+            &self.execution
+        }
+    }
+
+    impl Run {
+        fn start(intent: Intent) -> Run {
+            let (execution, _) = IntentExecution::start(execution_id(), intent.clone(), occurred());
+            Run { intent, execution }
+        }
+
+        fn genesis(intent: Intent) -> (Run, IntentExecutionEvent) {
+            let (execution, event) =
+                IntentExecution::start(execution_id(), intent.clone(), occurred());
+            (Run { intent, execution }, event)
+        }
+
+        fn stages(&self) -> &[StageEntry] {
+            self.intent.stages()
+        }
+
+        fn definition_id(&self) -> &WorkflowDefinitionId {
+            self.intent.definition_id()
+        }
+
+        fn definition_revision(&self) -> &DefinitionRevision {
+            self.intent.definition_revision()
+        }
+
+        fn gated(&self, stage: StageIndex) -> Option<bool> {
+            self.execution.gated(&self.intent, stage)
+        }
+
+        fn complete_stage(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.complete_stage(&self.intent, occurred_at)
+        }
+
+        fn open_gate(
+            &mut self,
+            artifacts: Vec<String>,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .open_gate(&self.intent, artifacts, occurred_at)
+        }
+
+        fn approve_gate(
+            &mut self,
+            user_input: Option<String>,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .approve_gate(&self.intent, user_input, occurred_at)
+        }
+
+        fn reject_gate(
+            &mut self,
+            feedback: Option<String>,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .reject_gate(&self.intent, feedback, occurred_at)
+        }
+
+        fn revise_stage(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.revise_stage(&self.intent, occurred_at)
+        }
+
+        fn skip_stage(
+            &mut self,
+            reason: String,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.skip_stage(&self.intent, reason, occurred_at)
+        }
+
+        fn jump(
+            &mut self,
+            target: StageIndex,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.jump(&self.intent, target, occurred_at)
+        }
+
+        fn park(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.park(&self.intent, occurred_at)
+        }
+
+        fn unpark(
+            &mut self,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.unpark(&self.intent, occurred_at)
+        }
+
+        fn recompose(
+            &mut self,
+            flips: &[StageIndex],
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.recompose(&self.intent, flips, occurred_at)
+        }
+
+        fn switch_autonomy(
+            &mut self,
+            mode: AutonomyMode,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .switch_autonomy(&self.intent, mode, occurred_at)
+        }
+
+        fn apply_event(
+            &mut self,
+            seq_nr: usize,
+            occurred_at: DateTime<Utc>,
+            event: &IntentExecutionEvent,
+        ) -> Result<(), ApplyError> {
+            self.execution
+                .apply_event(&self.intent, seq_nr, occurred_at, event)
+        }
+
+        fn next_decision(
+            &self,
+            definition: &WorkflowDefinition,
+            request: NextRequest,
+        ) -> Result<NextDecision, CommandError> {
+            self.execution
+                .next_decision(&self.intent, definition, &request)
+        }
+
+        fn jump_resolve(&self, target: StageIndex) -> Result<JumpDirection, CommandError> {
+            self.execution.jump_resolve(&self.intent, target)
+        }
     }
 
     fn def_id(value: &str) -> WorkflowDefinitionId {
@@ -1297,27 +1439,30 @@ mod tests {
         .unwrap()
     }
 
-    fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> IntentExecution {
-        IntentExecution::start_from_plan_unchecked(
-            intent(),
+    /// 合成計画から intent を組む (検査は `Intent::new` の 1 か所)。
+    fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
+        Intent::new(
+            intent_id(),
             def_id("claude"),
             revision('0'),
-            &start_request(),
+            start_request(),
             entries(init, actions, conditional),
             scan(),
-            occurred(),
         )
         .unwrap()
-        .0
     }
 
-    fn all_exec(n: usize) -> IntentExecution {
+    fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Run {
+        Run::start(plan(init, actions, conditional))
+    }
+
+    fn all_exec(n: usize) -> Run {
         start_with(1, &vec![Execute; n], &vec![false; n])
     }
 
     /// フェーズと実効プランを名指しした合成計画で開始する (フェーズ境界の導出を見るテスト用)。
-    fn start_from_phased_plan(plan: &[(PhaseId, PlanAction)]) -> IntentExecution {
-        let stages = plan
+    fn start_from_phased_plan(phased: &[(PhaseId, PlanAction)]) -> Run {
+        let stages = phased
             .iter()
             .enumerate()
             .map(|(i, (phase, action))| {
@@ -1330,28 +1475,36 @@ mod tests {
                 )
             })
             .collect();
-        IntentExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            stages,
-            scan(),
-            occurred(),
+        Run::start(
+            Intent::new(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            )
+            .unwrap(),
         )
-        .unwrap()
-        .0
     }
 
     /// 全ステージ EXECUTE の、フェーズだけ名指しした合成計画。
-    fn phased(phases: &[PhaseId]) -> IntentExecution {
+    fn phased(phases: &[PhaseId]) -> Run {
         let plan: Vec<(PhaseId, PlanAction)> =
             phases.iter().map(|phase| (*phase, Execute)).collect();
         start_from_phased_plan(&plan)
     }
 
+    /// 定義から計画を解決して実行を開始する (旧 7 引数の genesis に相当)。
+    fn start_from_definition(
+        definition: &WorkflowDefinition,
+        request: StartRequest,
+    ) -> (Run, IntentExecutionEvent) {
+        Run::genesis(Intent::resolve(intent_id(), definition, request, scan()).unwrap())
+    }
+
     /// カーソルのゲートを承認し、生まれた `GateApproved` が載せた境界を取り出す。
-    fn approval_boundary(w: &mut IntentExecution) -> Option<PhaseBoundary> {
+    fn approval_boundary(w: &mut Run) -> Option<PhaseBoundary> {
         let event = w.approve_gate(None, occurred()).unwrap();
         let IntentExecutionEvent::GateApproved(approved) = &event else {
             panic!("expected GateApproved");
@@ -1435,15 +1588,14 @@ mod tests {
     #[test]
     fn start_records_the_definition_identity_and_the_resolved_plan() {
         let definition = shipped_definition(full_grid());
-        let (w, event) =
-            IntentExecution::start(intent(), &definition, &start_request(), scan(), occurred())
-                .unwrap();
+        let (w, event) = start_from_definition(&definition, start_request());
 
         // 通番・発生時刻・識別子は封筒 (アダプタ層) の材料であり、イベント自身は持たない。
         // genesis 直後の集約がその 3 点を保持している (B7)。
         assert_eq!(w.seq_nr(), 1);
         assert_eq!(w.last_updated_at(), &occurred());
-        assert_eq!(w.id(), &intent());
+        assert_eq!(w.id(), &execution_id());
+        assert_eq!(w.intent_id(), &intent_id());
         let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
@@ -1476,8 +1628,7 @@ mod tests {
         let request = StartRequest::new("classic", "build it")
             .with_depth("standard")
             .with_test_strategy("comprehensive");
-        let (_, event) =
-            IntentExecution::start(intent(), &definition, &request, scan(), occurred()).unwrap();
+        let (_, event) = start_from_definition(&definition, request);
         let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
@@ -1488,8 +1639,7 @@ mod tests {
 
         // 省略時は None のまま載る (フラグ未指定 = 既定の解決は呼出側の責務)。
         let bare = StartRequest::new("classic", "build it");
-        let (_, plain) =
-            IntentExecution::start(intent(), &definition, &bare, scan(), occurred()).unwrap();
+        let (_, plain) = start_from_definition(&definition, bare);
         let IntentExecutionEvent::Started(started) = &plain else {
             panic!("start must emit Started");
         };
@@ -1501,9 +1651,8 @@ mod tests {
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
         let unknown = StartRequest::new("nope", "build it");
-        let err = IntentExecution::start(intent(), &definition, &unknown, scan(), occurred())
-            .unwrap_err();
-        let StartError::UnknownScope(scope) = err else {
+        let err = Intent::resolve(intent_id(), &definition, unknown, scan()).unwrap_err();
+        let IntentError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
         assert_eq!(scope.scope(), "nope");
@@ -1518,76 +1667,141 @@ mod tests {
                 .into_iter()
                 .collect();
         let grid = ScopeGrid::new([("classic".to_string(), column)].into_iter().collect());
-        let (w, _) = IntentExecution::start(
-            intent(),
-            &shipped_definition(grid),
-            &start_request(),
-            scan(),
-            occurred(),
-        )
-        .unwrap();
+        let (w, _) = start_from_definition(&shipped_definition(grid), start_request());
         assert_eq!(w.effective_plan(at(&w, 1)), Some(Skip));
         assert_eq!(w.effective_plan(at(&w, 2)), Some(Skip));
     }
 
-    #[test]
-    fn an_empty_stage_list_is_refused() {
-        let err = IntentExecution::start_from_plan_unchecked(
-            intent(),
+    // 計画そのものの不変条件（空・initialization の SKIP / CONDITIONAL・先頭 SKIP）は
+    // `Intent::new` が持つようになったので、その拒否のテストは `intent.rs` にある。
+
+    // ---- 取り違えガード (aggregate-references.md — ID 参照だから照合が書ける) ----
+
+    /// 同じ形の計画を、**別の intent 識別子**で組む。
+    fn foreign_plan(n: usize) -> Intent {
+        Intent::new(
+            IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
             def_id("claude"),
             revision('0'),
-            &start_request(),
-            Vec::new(),
+            start_request(),
+            entries(1, &vec![Execute; n], &vec![false; n]),
             scan(),
-            occurred(),
         )
-        .unwrap_err();
-        assert_eq!(err, StartError::Empty);
+        .unwrap()
     }
 
     #[test]
-    fn an_initialization_stage_that_folds_to_skip_is_refused() {
-        let err = IntentExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            entries(2, &[Execute, Skip, Execute], &[false, false, false]),
-            scan(),
-            occurred(),
-        )
-        .unwrap_err();
-        assert_eq!(err, StartError::InitializationMustExecute);
+    fn a_command_refuses_an_intent_that_belongs_to_another_intent() {
+        let mut w = all_exec(3);
+        assert_eq!(
+            w.execution
+                .complete_stage(&foreign_plan(3), occurred())
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(w.seq_nr(), 1, "拒否では状態が動かない");
     }
 
     #[test]
-    fn a_conditional_initialization_stage_is_refused() {
-        let err = IntentExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            entries(1, &[Execute, Execute], &[true, false]),
-            scan(),
-            occurred(),
-        )
-        .unwrap_err();
-        assert_eq!(err, StartError::InitializationMustBeUnconditional);
+    fn a_command_refuses_an_intent_whose_plan_length_disagrees() {
+        // 同じ intent でも、実行時ベクトルと計画の長さが食い違う写しは受け取らない。
+        let mut w = all_exec(3);
+        let shorter = plan(1, &[Execute, Execute], &[false, false]);
+        assert_eq!(shorter.id(), w.intent_id(), "識別子は一致している前提");
+        assert_eq!(
+            w.execution
+                .complete_stage(&shorter, occurred())
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
     }
 
     #[test]
-    fn a_first_stage_outside_scope_is_refused_because_the_cursor_must_be_in_scope() {
-        let err = IntentExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            entries(0, &[Skip, Execute], &[false, false]),
-            scan(),
-            occurred(),
-        )
-        .unwrap_err();
-        assert_eq!(err, StartError::InitializationMustExecute);
+    fn every_intent_taking_command_refuses_a_foreign_intent() {
+        let mut w = all_exec(3);
+        let foreign = foreign_plan(3);
+        let at0 = occurred();
+        assert_eq!(
+            w.execution
+                .open_gate(&foreign, Vec::new(), at0)
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.approve_gate(&foreign, None, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.reject_gate(&foreign, None, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.revise_stage(&foreign, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution
+                .skip_stage(&foreign, "x".to_string(), at0)
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.park(&foreign, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.unpark(&foreign, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution.recompose(&foreign, &[], at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            w.execution
+                .switch_autonomy(&foreign, AutonomyMode::Autonomous, at0)
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        let target = at(&w, 1);
+        assert_eq!(
+            w.execution.jump(&foreign, target, at0).unwrap_err(),
+            CommandError::IntentMismatch
+        );
+    }
+
+    #[test]
+    fn the_queries_that_need_the_plan_refuse_a_foreign_intent() {
+        let w = all_exec(3);
+        let foreign = foreign_plan(3);
+        let definition = bare_definition("claude");
+        assert_eq!(
+            w.execution
+                .next_decision(&foreign, &definition, &NextRequest::default()),
+            Err(CommandError::IntentMismatch)
+        );
+        assert_eq!(
+            w.execution.jump_resolve(&foreign, at(&w, 1)),
+            Err(CommandError::IntentMismatch)
+        );
+        assert_eq!(
+            w.execution.gated(&foreign, at(&w, 1)),
+            None,
+            "ゲート付きかは他人の計画からは答えない"
+        );
+    }
+
+    #[test]
+    fn apply_event_refuses_a_foreign_intent() {
+        let mut w = all_exec(3);
+        let event =
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
+        assert_eq!(
+            w.execution
+                .apply_event(&foreign_plan(3), 2, occurred(), &event),
+            Err(ApplyError::IntentMismatch)
+        );
+        assert_eq!(w.seq_nr(), 1, "拒否では状態が動かない");
     }
 
     // ---- W2: 12 コマンド (BR1.0〜BR1.9) ----
@@ -1952,9 +2166,13 @@ mod tests {
     #[test]
     fn apply_event_refuses_at_sequence_exhaustion() {
         // memento 経由で通番を末端に据える (実運用では到達しない規模の境界)。
-        let mut state = all_exec(3).state();
+        let base = all_exec(3);
+        let mut state = base.state();
         state.seq_nr = usize::MAX;
-        let mut w = IntentExecution::from_state(state).unwrap();
+        let mut w = Run {
+            intent: base.intent,
+            execution: IntentExecution::from_state(state).unwrap(),
+        };
         let event =
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
         assert_eq!(
@@ -1966,9 +2184,13 @@ mod tests {
 
     #[test]
     fn a_command_at_sequence_exhaustion_is_refused() {
-        let mut state = all_exec(3).state();
+        let base = all_exec(3);
+        let mut state = base.state();
         state.seq_nr = usize::MAX;
-        let mut w = IntentExecution::from_state(state).unwrap();
+        let mut w = Run {
+            intent: base.intent,
+            execution: IntentExecution::from_state(state).unwrap(),
+        };
         assert_eq!(
             w.complete_stage(occurred()),
             Err(CommandError::SequenceExhausted)
@@ -2006,11 +2228,15 @@ mod tests {
     fn apply_event_refuses_a_started_outside_genesis() {
         let mut w = all_exec(3);
         let event = IntentExecutionEvent::Started(Started::new(
-            def_id("claude"),
-            revision('0'),
-            &StartRequest::new("classic", "again"),
-            entries(1, &[Execute], &[false]),
-            scan(),
+            Intent::new(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                StartRequest::new("classic", "again"),
+                entries(1, &[Execute], &[false]),
+                scan(),
+            )
+            .unwrap(),
         ));
         assert!(matches!(
             w.apply_event(2, occurred(), &event),
@@ -2093,12 +2319,8 @@ mod tests {
         // (アクセサは置かない — 外へ出さない型に読取面を二重化しない)。
         let state = w.state();
         assert_eq!(state.id, *w.id());
-        assert_eq!(state.definition_id, *w.definition_id());
-        assert_eq!(state.definition_revision, *w.definition_revision());
-        assert_eq!(state.stages, w.stages());
-        assert_eq!(state.plan, [Execute, Execute, Execute, Execute]);
+        assert_eq!(state.intent_id, *w.intent_id());
         assert_eq!(state.overlay, [Execute, Execute, Execute, Execute]);
-        assert_eq!(state.conditional, [false, false, false, false]);
         assert_eq!(state.checkbox[0], Completed);
         assert_eq!(state.cursor, w.cursor().to_usize());
         assert_eq!(state.status, Status::Running);
@@ -2108,7 +2330,7 @@ mod tests {
         assert_eq!(state.revision_count, [0, 1, 0, 0]);
         assert_eq!(state.seq_nr, w.seq_nr());
         assert_eq!(state.last_updated_at, *w.last_updated_at());
-        assert_eq!(IntentExecution::from_state(state).unwrap(), w);
+        assert_eq!(IntentExecution::from_state(state).unwrap(), w.execution);
     }
 
     #[test]
@@ -2124,9 +2346,9 @@ mod tests {
             clippy::disallowed_methods,
             reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
         )]
-        let json = serde_json::to_string(&w).unwrap();
+        let json = serde_json::to_string(&w.execution).unwrap();
         let decoded: IntentExecution = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded, w);
+        assert_eq!(decoded, w.execution);
         assert_eq!(decoded.seq_nr(), w.seq_nr());
         assert_eq!(decoded.last_updated_at(), w.last_updated_at());
         assert!(
@@ -2145,7 +2367,7 @@ mod tests {
             clippy::disallowed_methods,
             reason = "契約 JSON ではなく serde 境界そのものの検査 (BR1.7 の射程外)"
         )]
-        let json = serde_json::to_string(&w).unwrap();
+        let json = serde_json::to_string(&w.execution).unwrap();
         assert!(json.contains(r#""cursor":0"#), "{json}");
         let tampered = json.replace(r#""cursor":0"#, r#""cursor":99"#);
         let error = serde_json::from_str::<IntentExecution>(&tampered)
@@ -2157,119 +2379,27 @@ mod tests {
     }
 
     #[test]
-    fn from_state_rejects_a_broken_invariant() {
+    fn from_state_rejects_a_broken_runtime_invariant() {
+        // 写しには計画が載らない (改訂 3) ので、ここで検査できるのは実行時の不変条件だけで
+        // ある。計画との整合 (`no_gate_bypass`) は `&Intent` が渡る適用・コマンド側が見る。
         let w = all_exec(3);
         let base = w.state();
-
-        let empty = IntentExecutionSnapshotBuilder::new(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            Vec::new(),
-        )
-        .build();
-        assert!(matches!(
-            IntentExecution::from_state(empty),
-            Err(StateError::InvariantViolation(_))
-        ));
+        let builder = || IntentExecutionSnapshotBuilder::new(execution_id(), &w.intent);
 
         for broken in [
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .checkbox(vec![InProgress])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .cursor(9)
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .overlay(vec![Skip, Execute, Execute])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .checkbox(vec![InProgress, InProgress, Pending])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .checkbox(vec![InProgress, Completed, Pending])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .parked_at(Some(2))
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .parked_at(Some(9))
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .approved(vec![false])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .revision_count(vec![0, 0])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .seq_nr(0)
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .plan(vec![Skip, Execute, Execute])
-            .build(),
-            IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                w.stages().to_vec(),
-            )
-            .conditional(vec![true, false, false])
-            .build(),
+            // ステージ 0 件 — 実行時ベクトルの長さが総数そのものなので、空にすれば起きる。
+            builder().overlay(Vec::new()).build(),
+            builder().checkbox(vec![InProgress]).build(),
+            builder().cursor(9).build(),
+            builder().overlay(vec![Skip, Execute, Execute]).build(),
+            builder()
+                .checkbox(vec![InProgress, InProgress, Pending])
+                .build(),
+            builder().parked_at(Some(2)).build(),
+            builder().parked_at(Some(9)).build(),
+            builder().approved(vec![false]).build(),
+            builder().revision_count(vec![0, 0]).build(),
+            builder().seq_nr(0).build(),
         ] {
             assert!(
                 matches!(
@@ -2290,7 +2420,7 @@ mod tests {
         let w = all_exec(3);
         let other = bare_definition("kiro");
         assert_eq!(
-            w.next_decision(&other, &NextRequest::default()),
+            w.next_decision(&other, NextRequest::default()),
             Err(CommandError::DefinitionMismatch {
                 expected: def_id("claude"),
                 actual: def_id("kiro"),
@@ -2308,7 +2438,7 @@ mod tests {
             ScopeGrid::new(BTreeMap::new()),
             BTreeMap::new(),
         );
-        assert!(w.next_decision(&drifted, &NextRequest::default()).is_ok());
+        assert!(w.next_decision(&drifted, NextRequest::default()).is_ok());
     }
 
     #[test]
@@ -2318,7 +2448,7 @@ mod tests {
 
         // (6) cursor が in-flight
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 0),
                 gate: false
@@ -2327,16 +2457,16 @@ mod tests {
         // (1) park 中
         w.park(occurred()).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::Parked { stage: at(&w, 0) })
         );
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(true, false, false)),
+            w.next_decision(&definition, NextRequest::new(true, false, false)),
             Ok(NextDecision::UnparkThenResume)
         );
         // 再入フラグは park ガードを外す
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(false, true, false)),
+            w.next_decision(&definition, NextRequest::new(false, true, false)),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 0),
                 gate: false
@@ -2345,18 +2475,18 @@ mod tests {
         w.unpark(occurred()).unwrap();
         // (2) resume
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(true, false, false)),
+            w.next_decision(&definition, NextRequest::new(true, false, false)),
             Ok(NextDecision::ResumeMenu)
         );
         // (3) 自由記述
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::new(false, false, true)),
+            w.next_decision(&definition, NextRequest::new(false, false, true)),
             Ok(NextDecision::NewWorkRouting)
         );
         // (7) 次の in-scope / gate = true
         w.complete_stage(occurred()).unwrap();
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::RunStage {
                 stage: at(&w, 1),
                 gate: true
@@ -2367,7 +2497,7 @@ mod tests {
         w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(
-            w.next_decision(&definition, &NextRequest::default()),
+            w.next_decision(&definition, NextRequest::default()),
             Ok(NextDecision::Done)
         );
     }
@@ -2378,7 +2508,7 @@ mod tests {
         // 唯一到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) の状態を
         // 再水和し、再入フラグで park 分岐を外して問い合わせる」経路である (BR3.1 (5) の防御腕)。
         let definition = bare_definition("claude");
-        let stages = all_exec(3).stages().to_vec();
+        let base = all_exec(3);
         let reentry = NextRequest::new(false, true, false);
 
         for (marker, expected_recoverable) in [
@@ -2387,19 +2517,17 @@ mod tests {
             (Pending, false),
             (AwaitingApproval, false),
         ] {
-            let state = IntentExecutionSnapshotBuilder::new(
-                intent(),
-                def_id("claude"),
-                revision('0'),
-                stages.clone(),
-            )
-            .overlay(vec![Execute, Skip, Execute])
-            .checkbox(vec![Completed, marker, Pending])
-            .cursor(1)
-            .parked_at(Some(1))
-            .seq_nr(4)
-            .build();
-            let w = IntentExecution::from_state(state).unwrap();
+            let state = IntentExecutionSnapshotBuilder::new(execution_id(), &base.intent)
+                .overlay(vec![Execute, Skip, Execute])
+                .checkbox(vec![Completed, marker, Pending])
+                .cursor(1)
+                .parked_at(Some(1))
+                .seq_nr(4)
+                .build();
+            let w = Run {
+                intent: base.intent.clone(),
+                execution: IntentExecution::from_state(state).unwrap(),
+            };
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
                 NextDecision::RecoverSkipInconsistency {
@@ -2412,10 +2540,10 @@ mod tests {
                     checkbox: marker,
                 }
             };
-            assert_eq!(w.next_decision(&definition, &reentry), Ok(expected));
+            assert_eq!(w.next_decision(&definition, reentry), Ok(expected));
             // どちらの不整合も Quint の DError に写る (BR3.1)。
             assert_eq!(
-                EngineSignal::from(&w.next_decision(&definition, &reentry).unwrap()),
+                EngineSignal::from(&w.next_decision(&definition, reentry).unwrap()),
                 EngineSignal::EngineError
             );
         }
@@ -2497,7 +2625,7 @@ mod tests {
         let definition = bare_definition("claude");
         let w = all_exec(3);
         let decision = w
-            .next_decision(&definition, &NextRequest::default())
+            .next_decision(&definition, NextRequest::default())
             .unwrap();
         assert_eq!(
             EngineSignal::from(&decision),
@@ -2587,23 +2715,23 @@ mod tests {
             })
     }
 
-    fn start_synthetic(stages: Vec<StageEntry>) -> IntentExecution {
-        IntentExecution::start_from_plan_unchecked(
-            intent(),
-            def_id("claude"),
-            revision('0'),
-            &start_request(),
-            stages,
-            scan(),
-            occurred(),
+    fn start_synthetic(stages: Vec<StageEntry>) -> Run {
+        Run::start(
+            Intent::new(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            )
+            .unwrap(),
         )
-        .unwrap()
-        .0
     }
 
     /// 1 コマンドを駆動する。`Err` は「発火しないアクション」なので状態は一切動かない (BR1.1 (e))。
     fn drive(
-        w: &mut IntentExecution,
+        w: &mut Run,
         definition: &WorkflowDefinition,
         cmd: &Cmd,
     ) -> Option<IntentExecutionEvent> {
@@ -2634,7 +2762,7 @@ mod tests {
                 occurred(),
             ),
             Cmd::Next => {
-                let _ = w.next_decision(definition, &NextRequest::default());
+                let _ = w.next_decision(definition, NextRequest::default());
                 assert_eq!(*w, before, "next_decision は書き込まない");
                 return None;
             }
@@ -2655,7 +2783,7 @@ mod tests {
         }
     }
 
-    fn assert_quint_invariants(w: &IntentExecution) {
+    fn assert_quint_invariants(w: &Run) {
         let count = w.stage_count();
         // cursor_in_scope: コマンドを受理できる間、カーソルは実効 EXECUTE 上にある。
         if w.accepts_commands() {
@@ -2702,11 +2830,11 @@ mod tests {
                     replayed
                         .apply_event(w.seq_nr(), *w.last_updated_at(), &event)
                         .unwrap();
-                    prop_assert_eq!(&replayed, &w);
+                    prop_assert_eq!(&replayed.execution, &w.execution);
                 }
                 assert_quint_invariants(&w);
                 let restored = IntentExecution::from_state(w.state()).unwrap();
-                prop_assert_eq!(&restored, &w);
+                prop_assert_eq!(&restored, &w.execution);
             }
         }
 
@@ -2731,11 +2859,14 @@ mod tests {
                 }
             }
 
-            let mut replayed = IntentExecution::from_state(genesis).unwrap();
+            let mut replayed = Run {
+                intent: w.intent.clone(),
+                execution: IntentExecution::from_state(genesis).unwrap(),
+            };
             for (seq_nr, occurred_at, event) in &events {
                 replayed.apply_event(*seq_nr, *occurred_at, event).unwrap();
             }
-            prop_assert_eq!(&replayed, &w);
+            prop_assert_eq!(&replayed.execution, &w.execution);
 
             // 順序違反は拒否され、状態も動かない。
             if let Some((seq_nr, occurred_at, event)) = events.first() {
@@ -2743,7 +2874,7 @@ mod tests {
                 let gap = fresh.apply_event(*seq_nr, *occurred_at, event);
                 let is_gap = matches!(gap, Err(ApplyError::SequenceGap { .. }));
                 prop_assert!(is_gap, "順序違反は SequenceGap で拒否される");
-                prop_assert_eq!(&fresh, &replayed);
+                prop_assert_eq!(&fresh.execution, &replayed.execution);
             }
         }
 
@@ -2790,7 +2921,7 @@ mod tests {
             let mut w = start_synthetic(stages);
             for cmd in &cmds {
                 drive(&mut w, &definition, cmd);
-                let Ok(decision) = w.next_decision(&definition, &NextRequest::default()) else {
+                let Ok(decision) = w.next_decision(&definition, NextRequest::default()) else {
                     continue;
                 };
                 let cursor = w.cursor().to_usize();

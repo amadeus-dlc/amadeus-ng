@@ -7,6 +7,11 @@ use crate::workflow_definition::StageSlug;
 /// 再水和・リプレイの失敗材料 (U3 は `Corrupt` に写す)。適用前の状態は保たれる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApplyError {
+    /// 適用に渡された `Intent` がこの実行のものでない (識別子不一致、または計画長の不一致)。
+    ///
+    /// 集約は intent を ID で参照するので、この照合が書ける
+    /// (coding-rules/aggregate-references.md)。
+    IntentMismatch,
     /// 封筒の `seq_nr` が現在値 + 1 でない (BR2.1)。
     SequenceGap {
         /// 集約が期待した `seq_nr` (現在値 + 1)。
@@ -26,6 +31,7 @@ pub enum ApplyError {
 impl fmt::Display for ApplyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ApplyError::IntentMismatch => f.write_str("intent mismatch"),
             ApplyError::SequenceGap { expected, actual } => {
                 write!(f, "sequence gap: expected {expected}, actual {actual}")
             }

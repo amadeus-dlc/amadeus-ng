@@ -15,7 +15,7 @@
 mod support;
 
 use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentId, StageCompleted,
+    IntentExecution, IntentExecutionEvent, IntentExecutionId, StageCompleted,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
@@ -30,7 +30,7 @@ use core_command_use_case::orchestration::{
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{absent_intent_id, advance, at, contract, genesis, intent_id};
+use support::{absent_execution_id, advance, at, contract, execution_id, genesis, intent};
 
 /// 我々が封筒に書く型判別子 (アダプタの `EVENT_MANIFEST` と同じ綴り)。
 const MANIFEST: &str = "workflow-execution-event/1";
@@ -39,7 +39,7 @@ const MANIFEST: &str = "workflow-execution-event/1";
 const UNPERSISTED: usize = <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION;
 
 /// 本家の SQLite イベントストア (Repository が内包しているものと同じ型)。
-type UpstreamStore = EventStoreForSqlite<IntentId, IntentExecution, IntentExecutionEvent>;
+type UpstreamStore = EventStoreForSqlite<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
 /// Repository の具体型 (SQLite バックエンド)。
 type Repository = IntentExecutionRepositoryImpl<UpstreamStore>;
@@ -78,11 +78,11 @@ impl Fixture {
 async fn seed(repository: &mut Repository) -> RehydratedIntentExecution {
     let held = support::store_genesis(repository).await;
     let held = advance(repository, &held, |aggregate| {
-        aggregate.complete_stage(at())
+        aggregate.complete_stage(&intent(), at())
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.open_gate(vec!["intent.md".to_string()], at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await
 }
@@ -119,13 +119,13 @@ async fn a_store_without_any_row_reports_not_found() {
     let fixture = Fixture::new();
     let repository = fixture.repository();
     let err = repository
-        .find_by_id(&absent_intent_id())
+        .find_by_id(&absent_execution_id())
         .await
         .expect_err("書いていない集約");
     assert_eq!(
         err,
         RepositoryError::NotFound {
-            intent_id: absent_intent_id()
+            execution_id: absent_execution_id()
         }
     );
 }
@@ -136,7 +136,10 @@ async fn the_version_after_a_read_without_replay_is_the_one_the_store_assigned()
     let mut repository = fixture.repository();
     let expected = seed(&mut repository).await;
 
-    let found = repository.find_by_id(&intent_id()).await.expect("読める");
+    let found = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("読める");
     assert_eq!(found.version(), 3, "3 回の書込ぶん採番されている");
     assert_eq!(found.aggregate().seq_nr(), 3);
     assert_eq!(found.aggregate(), expected.aggregate());
@@ -151,7 +154,10 @@ async fn a_replay_does_not_move_the_version_the_store_assigned() {
     // 写しだけを genesis 直後へ巻き戻すと、seq_nr 2〜3 が replay 経路を通る。
     rewind_snapshot_to_genesis(&fixture.raw(), &genesis_payload().await);
 
-    let found = repository.find_by_id(&intent_id()).await.expect("読める");
+    let found = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("読める");
     assert_eq!(found.aggregate().seq_nr(), 3, "replay で追いつく");
     assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
     assert_eq!(
@@ -176,13 +182,13 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
         .expect("スナップショットを消す");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("ジャーナルはあるのに写しが無い");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
+            aggregate_id: execution_id(),
             seq_nr: None,
             cause: CorruptCause::MissingSnapshot,
         }
@@ -200,13 +206,13 @@ async fn a_tampered_snapshot_payload_is_corrupt() {
         .expect("payload を改竄する");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("復号できない");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
+            aggregate_id: execution_id(),
             seq_nr: None,
             cause: CorruptCause::UndecodablePayload,
         }
@@ -231,13 +237,13 @@ async fn a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder
     .expect("カーソルを範囲外へ");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("不変条件を破る写しは復号できない");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
+            aggregate_id: execution_id(),
             seq_nr: None,
             cause: CorruptCause::UndecodablePayload,
         }
@@ -261,13 +267,13 @@ async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
     .expect("変種名を壊す");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("12 語の閉集合の外");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
+            aggregate_id: execution_id(),
             seq_nr: None,
             cause: CorruptCause::UndecodablePayload,
         }
@@ -286,13 +292,13 @@ async fn a_gap_in_the_replayed_journal_is_corrupt() {
         .expect("途中の行を消す");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("seq_nr が飛ぶ");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
+            aggregate_id: execution_id(),
             seq_nr: Some(3),
             cause: CorruptCause::SequenceGap,
         }
@@ -313,7 +319,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
 
     let mut store = fixture.store();
     let bogus = EventEnvelope::new(
-        intent_id(),
+        execution_id(),
         2,
         at(),
         IntentExecutionEvent::StageCompleted(StageCompleted::new(
@@ -328,13 +334,13 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_is_corrupt() {
         .expect("ジャーナルだけに追記");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("計画に無いステージ");
     assert_eq!(
         err,
         RepositoryError::Corrupt {
-            aggregate_id: intent_id(),
+            aggregate_id: execution_id(),
             seq_nr: Some(2),
             cause: CorruptCause::InvariantViolation,
         }
@@ -379,7 +385,7 @@ async fn a_broken_store_reports_the_file_it_was_reading() {
         .expect("表ごと落とす");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("表が無い");
     assert_eq!(
@@ -403,7 +409,7 @@ async fn a_missing_journal_table_fails_the_not_found_check() {
         .expect("写しを消してジャーナルを落とす");
 
     let err = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("ジャーナルを読めない");
     assert_eq!(
@@ -437,11 +443,11 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
         .await
         .expect("genesis は書ける");
     let held = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect("握り直せる");
     advance(&mut repository, &held, |aggregate| {
-        aggregate.complete_stage(at())
+        aggregate.complete_stage(&intent(), at())
     })
     .await;
 
@@ -459,7 +465,7 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
     drop(conn);
 
     let error = repository
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect_err("foreign manifest は再生前に拒否される");
     assert!(

@@ -24,7 +24,9 @@ use core_read_model_updater::orchestration::{
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{JournalWriter, UpstreamStore, at, intent_id, open_store, other_intent_id, seed};
+use support::{
+    JournalWriter, UpstreamStore, at, execution_id, intent, open_store, other_execution_id, seed,
+};
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -86,7 +88,8 @@ async fn the_journal_reads_every_event_in_global_order() {
     let seqs: Vec<usize> = rows.iter().map(JournalEntry::seq_nr).collect();
     assert_eq!(seqs, [1, 2, 3, 4, 5], "欠落なく順に読める");
     assert!(
-        rows.iter().all(|entry| entry.intent_id() == &intent_id()),
+        rows.iter()
+            .all(|entry| entry.execution_id() == &execution_id()),
         "集約識別子が境界を越えて残る"
     );
     assert!(
@@ -249,10 +252,12 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
     let fixture = Fixture::new();
     let mut store = fixture.store();
 
-    let mut first = JournalWriter::start(&mut store, intent_id()).await;
-    JournalWriter::start(&mut store, other_intent_id()).await;
+    let mut first = JournalWriter::start(&mut store, execution_id()).await;
+    JournalWriter::start(&mut store, other_execution_id()).await;
     first
-        .advance(&mut store, |aggregate| aggregate.complete_stage(at()))
+        .advance(&mut store, |aggregate| {
+            aggregate.complete_stage(&intent(), at())
+        })
         .await;
 
     let reader = fixture.reader();
@@ -261,7 +266,7 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
         rows.iter()
             .map(|entry| (
                 entry.global_seq().to_u64(),
-                entry.intent_id().as_str().to_string()
+                entry.execution_id().as_str().to_string()
             ))
             .collect::<Vec<_>>(),
         [
@@ -278,11 +283,13 @@ async fn the_reader_observes_writes_made_after_it_was_opened() {
     // Reader は同じファイルへの**生きた接続**である (写しではない)。
     let fixture = Fixture::new();
     let mut store = fixture.store();
-    let mut writer = JournalWriter::start(&mut store, intent_id()).await;
+    let mut writer = JournalWriter::start(&mut store, execution_id()).await;
 
     let reader = fixture.reader();
     writer
-        .advance(&mut store, |aggregate| aggregate.complete_stage(at()))
+        .advance(&mut store, |aggregate| {
+            aggregate.complete_stage(&intent(), at())
+        })
         .await;
 
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
@@ -294,7 +301,7 @@ async fn a_tampered_journal_payload_is_corrupt() {
     // 行を壊せるのは生の SQL だけである (実装に破壊用のフックを開けない — BR2.8)。
     let fixture = Fixture::new();
     let mut store = fixture.store();
-    JournalWriter::start(&mut store, intent_id()).await;
+    JournalWriter::start(&mut store, execution_id()).await;
     fixture
         .raw()
         .execute("UPDATE journal SET payload = X'7B6E6F74206A736F6E'", [])

@@ -21,8 +21,8 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentId, StageDisplay, StageEntry, StartRequest,
-    WorkspaceScan,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -36,7 +36,7 @@ use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};
 /// 本家 memory バックエンドを我々の 3 つの型で具体化したストア。
 ///
 /// 型引数は v3 の並びで `AID` (集約 ID) / `A` (集約 payload) / `P` (イベント payload)。
-type Store = EventStoreForMemory<IntentId, IntentExecution, IntentExecutionEvent>;
+type Store = EventStoreForMemory<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
 /// 我々が封筒に載せる型判別子 (Repository が書く値と同じ綴り)。
 const MANIFEST: &str = "workflow-execution-event/1";
@@ -104,17 +104,24 @@ fn stages() -> Vec<StageEntry> {
     ]
 }
 
-fn genesis() -> (IntentExecution, IntentExecutionEvent) {
-    IntentExecution::start_from_plan_unchecked(
+fn intent() -> Intent {
+    Intent::new(
         intent_id(),
         WorkflowDefinitionId::parse("claude").unwrap(),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-        &StartRequest::new("mvp", "本家ストアへの適合を確かめる"),
+        StartRequest::new("mvp", "本家ストアへの適合を確かめる"),
         stages(),
         scan(),
-        at(0),
     )
     .unwrap()
+}
+
+fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap()
+}
+
+fn genesis() -> (IntentExecution, IntentExecutionEvent) {
+    IntentExecution::start(execution_id(), intent(), at(0))
 }
 
 /// commit 済みの集約とイベントから封筒を組む (Repository と同じ手順 — B7 裁定 3)。
@@ -123,7 +130,7 @@ fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 fn envelope(
     aggregate: &IntentExecution,
     event: IntentExecutionEvent,
-) -> EventEnvelope<IntentId, IntentExecutionEvent> {
+) -> EventEnvelope<IntentExecutionId, IntentExecutionEvent> {
     EventEnvelope::new(
         aggregate.id().clone(),
         aggregate.seq_nr(),
@@ -140,7 +147,7 @@ struct Replayed {
 }
 
 /// 本家の推奨手順そのままの再構成 — 最新スナップショット封筒 + その先のイベント封筒。
-async fn find_by_id(store: &Store, id: &IntentId) -> Option<Replayed> {
+async fn find_by_id(store: &Store, id: &IntentExecutionId) -> Option<Replayed> {
     let snapshot = store.get_latest_snapshot_by_id(id).await.unwrap()?;
     let version = snapshot.version();
     let mut aggregate = snapshot.into_aggregate();
@@ -152,6 +159,7 @@ async fn find_by_id(store: &Store, id: &IntentId) -> Option<Replayed> {
         assert_eq!(envelope.manifest(), MANIFEST, "manifest は往復する");
         aggregate
             .apply_event(
+                &intent(),
                 envelope.seq_nr(),
                 *envelope.occurred_at(),
                 envelope.payload(),
@@ -164,7 +172,7 @@ async fn find_by_id(store: &Store, id: &IntentId) -> Option<Replayed> {
 #[tokio::test]
 async fn an_unknown_aggregate_has_no_snapshot() {
     let store = Store::new();
-    assert!(find_by_id(&store, &intent_id()).await.is_none());
+    assert!(find_by_id(&store, &execution_id()).await.is_none());
 }
 
 #[tokio::test]
@@ -201,7 +209,6 @@ async fn a_creation_with_a_non_zero_expected_version_violates_the_contract() {
 #[tokio::test]
 async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_upstream_store() {
     let mut store = Store::new();
-    let id = intent_id();
 
     // 1. genesis — `seq_nr == 1` なので create 経路へ入る (expected_version = 0)。
     let (aggregate, started) = genesis();
@@ -214,7 +221,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
         .await
         .unwrap();
 
-    let restored = find_by_id(&store, &id).await.unwrap();
+    let restored = find_by_id(&store, &execution_id()).await.unwrap();
     assert_eq!(restored.aggregate, aggregate, "genesis がそのまま戻る");
     assert_eq!(restored.aggregate.seq_nr(), 1);
     assert_eq!(restored.aggregate.last_updated_at(), &at(0));
@@ -222,7 +229,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
 
     // 2. スナップショット同時更新 — 本家が version を 1 つ進める。
     let mut aggregate = restored.aggregate;
-    let completed = aggregate.complete_stage(at(1)).unwrap();
+    let completed = aggregate.complete_stage(&intent(), at(1)).unwrap();
     store
         .persist_event_and_snapshot(
             envelope(&aggregate, completed),
@@ -232,7 +239,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
         .await
         .unwrap();
 
-    let restored = find_by_id(&store, &id).await.unwrap();
+    let restored = find_by_id(&store, &execution_id()).await.unwrap();
     assert_eq!(restored.aggregate.seq_nr(), 2);
     assert_eq!(restored.version, 2, "楽観 version はストアが採番する");
     assert_eq!(
@@ -244,14 +251,14 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
     // 3. ジャーナルだけへの追記 — スナップショットは進まないので、復元はリプレイを通る。
     let mut aggregate = restored.aggregate;
     let opened = aggregate
-        .open_gate(vec!["docs/x.md".to_string()], at(2))
+        .open_gate(&intent(), vec!["docs/x.md".to_string()], at(2))
         .unwrap();
     store
         .persist_event(envelope(&aggregate, opened), restored.version)
         .await
         .unwrap();
 
-    let restored = find_by_id(&store, &id).await.unwrap();
+    let restored = find_by_id(&store, &execution_id()).await.unwrap();
     assert_eq!(
         restored.aggregate.seq_nr(),
         3,
@@ -268,7 +275,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
 
     // 4. もう 1 度スナップショット同時更新 — 直前のリプレイ結果から続けられる。
     let mut aggregate = restored.aggregate;
-    let approved = aggregate.approve_gate(None, at(3)).unwrap();
+    let approved = aggregate.approve_gate(&intent(), None, at(3)).unwrap();
     store
         .persist_event_and_snapshot(
             envelope(&aggregate, approved),
@@ -278,7 +285,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
         .await
         .unwrap();
 
-    let restored = find_by_id(&store, &id).await.unwrap();
+    let restored = find_by_id(&store, &execution_id()).await.unwrap();
     assert_eq!(restored.aggregate.seq_nr(), 4);
     assert_eq!(restored.version, 4, "版は書込のたびにストアが 1 つ進める");
     assert_eq!(
@@ -303,7 +310,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
 #[tokio::test]
 async fn the_journal_keeps_every_envelope_in_order_with_its_metadata() {
     let mut store = Store::new();
-    let id = intent_id();
+    let id = execution_id();
 
     let (mut aggregate, started) = genesis();
     store
@@ -314,7 +321,7 @@ async fn the_journal_keeps_every_envelope_in_order_with_its_metadata() {
         )
         .await
         .unwrap();
-    let completed = aggregate.complete_stage(at(1)).unwrap();
+    let completed = aggregate.complete_stage(&intent(), at(1)).unwrap();
     store
         .persist_event_and_snapshot(envelope(&aggregate, completed), aggregate.clone(), 1)
         .await

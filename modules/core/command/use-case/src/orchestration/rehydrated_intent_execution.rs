@@ -80,17 +80,19 @@ mod tests {
     }
 
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentId, StageEntry, StartRequest};
+    use core_command_domain::orchestration::{
+        Intent, IntentExecutionId, IntentId, StageEntry, StartRequest,
+    };
     use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
 
-    fn aggregate() -> IntentExecution {
-        IntentExecution::start_from_plan_unchecked(
+    fn intent() -> Intent {
+        Intent::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            &StartRequest::new("classic", "rehydration"),
+            StartRequest::new("classic", "rehydration"),
             vec![StageEntry::new(
                 StageSlug::parse("state-init").unwrap(),
                 PhaseId::Initialization,
@@ -99,9 +101,16 @@ mod tests {
                 display("0.1"),
             )],
             scan(),
-            DateTime::<Utc>::UNIX_EPOCH,
         )
         .unwrap()
+    }
+
+    fn aggregate() -> IntentExecution {
+        IntentExecution::start(
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            intent(),
+            DateTime::<Utc>::UNIX_EPOCH,
+        )
         .0
     }
 
@@ -116,7 +125,11 @@ mod tests {
     fn the_aggregate_can_be_taken_out_to_receive_commands() {
         let rehydrated = RehydratedIntentExecution::new(aggregate(), 4);
         let mut taken = rehydrated.into_aggregate();
-        assert!(taken.complete_stage(DateTime::<Utc>::UNIX_EPOCH).is_ok());
+        assert!(
+            taken
+                .complete_stage(&intent(), DateTime::<Utc>::UNIX_EPOCH)
+                .is_ok()
+        );
     }
 
     #[test]

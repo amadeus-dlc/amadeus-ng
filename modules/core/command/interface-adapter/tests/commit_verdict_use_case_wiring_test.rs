@@ -33,7 +33,7 @@ use core_command_use_case::orchestration::{
     CommitVerdictUseCase, IntentExecutionRepository, ReportedTransition,
 };
 
-use support::{at, intent_id, store_genesis};
+use support::{at, execution_id, intent, store_genesis};
 
 #[tokio::test]
 async fn the_use_case_commits_a_transition_through_the_real_repository() {
@@ -52,7 +52,8 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     let mut use_case = CommitVerdictUseCase::new(repository);
     use_case
         .execute(
-            &intent_id(),
+            &intent(),
+            &execution_id(),
             None,
             ReportedTransition::Forward { user_input: None },
             at(),
@@ -62,14 +63,13 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
 
     // 実物のストアに載ったことを、別の口から再構成して確かめる。
     let after = observer
-        .find_by_id(&intent_id())
+        .find_by_id(&execution_id())
         .await
         .expect("書いた集約は握り直せる");
     assert_eq!(after.aggregate().seq_nr(), 2, "genesis に 1 件積んだ");
     assert_eq!(after.version(), 2, "版を採番したのはストアである");
     assert_eq!(
-        after
-            .aggregate()
+        intent()
             .stages()
             .get(after.aggregate().cursor().to_usize())
             .expect("カーソルは範囲内")

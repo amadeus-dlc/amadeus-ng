@@ -13,8 +13,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentId, StageDisplay, StageEntry, StartRequest,
-    WorkspaceScan,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -25,8 +25,11 @@ use super::intent_execution_repository::IntentExecutionRepository;
 use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
 
-/// フィクスチャの集約識別子 (UUIDv7)。
+/// フィクスチャの intent 識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+/// フィクスチャの実行識別子 (UUIDv7)。
+pub(crate) const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
 /// イベントの発生時刻 — 集約は値を素通しするので固定値でよい (NFR3.1)。
 pub(crate) fn at() -> DateTime<Utc> {
@@ -40,10 +43,15 @@ pub(crate) fn intent() -> IntentId {
     IntentId::parse(INTENT).expect("フィクスチャの IntentId は UUIDv7")
 }
 
-/// ストアに居ない集約の識別子 (`NotFound` を見るテスト用)。
-pub(crate) fn absent_intent() -> IntentId {
-    IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678")
-        .expect("フィクスチャの IntentId は UUIDv7")
+/// フィクスチャの実行識別子。
+pub(crate) fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(EXECUTION).expect("フィクスチャの IntentExecutionId は UUIDv7")
+}
+
+/// ストアに居ない実行の識別子 (`NotFound` を見るテスト用)。
+pub(crate) fn absent_execution() -> IntentExecutionId {
+    IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678")
+        .expect("フィクスチャの IntentExecutionId は UUIDv7")
 }
 
 /// 合成計画の slug (文書順の位置がそのまま名前になる)。
@@ -75,7 +83,7 @@ pub(crate) fn scan() -> WorkspaceScan {
 /// フェーズと実効プラン・CONDITIONAL を名指しした合成計画で開始する。
 pub(crate) fn start_from_plan(
     plan: &[(PhaseId, PlanAction, bool)],
-) -> (IntentExecution, IntentExecutionEvent) {
+) -> (Intent, IntentExecution, IntentExecutionEvent) {
     let stages = plan
         .iter()
         .enumerate()
@@ -89,21 +97,22 @@ pub(crate) fn start_from_plan(
             )
         })
         .collect();
-    IntentExecution::start_from_plan_unchecked(
+    let intent = Intent::new(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
             .expect("フィクスチャの定義 revision"),
-        &StartRequest::new("classic", "report use case"),
+        StartRequest::new("classic", "report use case"),
         stages,
         scan(),
-        at(),
     )
-    .expect("合成計画は start の前提を満たす")
+    .expect("合成計画は Intent の不変条件を満たす");
+    let (execution, event) = IntentExecution::start(execution_id(), intent.clone(), at());
+    (intent, execution, event)
 }
 
 /// 索引 0 = initialization (非ゲート)、索引 1 以降 = inception (ゲート付き) の合成計画。
-pub(crate) fn genesis(stage_count: usize) -> (IntentExecution, IntentExecutionEvent) {
+pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentExecution, IntentExecutionEvent) {
     let plan: Vec<(PhaseId, PlanAction, bool)> = (0..stage_count)
         .map(|index| {
             let phase = if index == 0 {
@@ -224,7 +233,7 @@ impl InMemoryIntentExecutionRepository {
 impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
     async fn find_by_id(
         &self,
-        id: &IntentId,
+        id: &IntentExecutionId,
     ) -> Result<RehydratedIntentExecution, RepositoryError> {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
@@ -232,7 +241,7 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
             .filter(|aggregate| aggregate.id() == id)
             .map(|aggregate| RehydratedIntentExecution::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
-                intent_id: id.clone(),
+                execution_id: id.clone(),
             })
     }
 
