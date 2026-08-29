@@ -256,6 +256,20 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
     I/O 写像は側ごとに専用化、`StorePath` と直列化型判別子（manifest 定数）は
     `core-domain` へ（詳細は `construction/u4-read-model-updater/crate-structure-proposal.md`）。
     実施は B8。
+  - **2026-08-29 第 2 改訂（オーナー裁定 — ドメインはコマンド側）**: `modules/core/domain` は
+    **`modules/core/command/domain`（`core-command-domain`）** へ — ドメインは**コマンド側の
+    持ち物**であり、**クエリ側（RMU）はドメインクレートに絶対依存しない**。前追記の
+    「core-domain は共有」と「`StorePath` / manifest 定数は core-domain へ（共有語彙）」は失効。
+    帰結: (1) RMU はジャーナルの **wire 形式（直列化 JSON + manifest タグ）を自前の型で
+    parse** する — 両側が共有するのはコードではなくデータ契約（Published Language）であり、
+    乖離は合成ルートのコントラクトテスト（コマンド側が直列化 → クエリ側が parse → 同値）で
+    機械検出する。(2) リードモデル語彙（`AuditFieldKey` / 監査順序付けの純関数 / 単一行
+    プリミティブ）はクエリ側の出力の整合性部品なので **RMU へ移す**（11-workspace §2.2/§2.3 の
+    「domain に残す」は側分割以前の記述として失効 — 仕様側を改訂）。(3) `StorePath` は
+    コマンド側に残し、RMU はストアの場所を自前の型で合成ルートから受け取る。(4) manifest 定数は
+    側ごとに持ち、コントラクトテストで同値を固定する。(5) 両側がコードで共有してよいのは
+    `core-infrastructure`（言語拡張）と shared の Published Language スキーマ
+    （`audit-events` / `message-catalog` 等）のみ。
   - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
     `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
     （C6 の 3 表）が 1 箇所に残るので重複しない。

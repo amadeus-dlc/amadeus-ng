@@ -2,7 +2,10 @@
 
 **裁定日**: 2026-08-24（オーナー）/ **改訂**: 2026-08-28（RMU が `JournalReader` を呼ぶ
 二層構造へ）、2026-08-29（オーナー裁定 — **use-case / interface-adapter も側で分割**。
-「アダプタ層は両側の契約を実装してよい」の対象外条項は失効。ADR-009 の各同日追記が記録）
+「アダプタ層は両側の契約を実装してよい」の対象外条項は失効）、同日第 2 裁定（**ドメインは
+コマンド側の持ち物** = `core-command-domain`。**クエリ側はドメインに絶対依存しない**。
+コードの共有は infrastructure と Published Language スキーマのみ、イベントは wire 契約 =
+データとして共有。ADR-009 の各同日追記が記録）
 **関連**: ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004（状態ファイルは
 リードモデル）/ **ADR-009（本規則の記録）**、[gateway-taxonomy.md](gateway-taxonomy.md) §4
 **機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる
@@ -25,14 +28,19 @@
 4. **コマンド側は最新状態を常に集約から判断する。**
 
 ```
-コマンド側 (core-command-*)     クエリ側 (core-query-read-model-updater = RMU)
-        \                         /
-         └──→  core-domain  ←──┘        両側を知るのは合成ルート (app) だけ
+コマンド側 (core-command-domain / -use-case / -interface-adapter)
+クエリ側   (core-query-read-model-updater = RMU)
+
+  コードの共有 = core-infrastructure（言語拡張）+ Published Language スキーマ（audit-events 等）
+  イベントの共有 = wire 契約（直列化 JSON + manifest）— データであってコードではない
+  両側を知るのは合成ルート (app) だけ
 ```
 
-**RMU はクエリ側の全実体**である（2026-08-29 改訂 — 従来の「RMU = 両側を知る橋」は失効。
-両側はどちらも `core-domain` だけを共有し、互いを知らない）。結合するのは合成ルート（U7）
-であり、合成ルートは両側を**起動・配線するだけ**で判断を持たない。
+**RMU はクエリ側の全実体**であり、**ドメイン（`core-command-domain`）はコマンド側の持ち物**
+である（2026-08-29 第 2 裁定 — 「core-domain は共有層」は失効。クエリ側はドメインクレートに
+**絶対依存しない**）。クエリ側はジャーナルの wire 形式を**自前の型で parse** し、両側の乖離は
+合成ルートのコントラクトテスト（コマンド側が直列化 → クエリ側が parse → 同値）で機械検出する。
+結合するのは合成ルート（U7）で、両側を**起動・配線するだけ**で判断を持たない。
 
 投影核の入口はドメインイベント 1 本に絞る:
 
@@ -72,25 +80,28 @@ fn project(events: &[WorkflowExecutionEvent], read_model: &mut ReadModel) -> Res
 
 | クレート | 側 | `Cargo.toml` に書いてよい相手 |
 | --- | --- | --- |
-| `core/domain` | 共有 | — |
-| `core/use-case` | **コマンド** | `core/domain`。**クエリ側と RMU は禁止** |
-| `core-command-use-case` | **コマンド** | `core-domain`。クエリ側は禁止 |
-| `core-command-interface-adapter` | **コマンド実装** | `core-domain` + `core-command-use-case` + 本家ストア。クエリ側は禁止 |
-| **`core-query-read-model-updater`（RMU）** | **クエリ側の全実体** | `core-domain`（**ドメインイベント**）+ rusqlite。**`JournalReader` ポートも SQLite 実装（`JournalReaderImpl`）も RMU 自身が所有**（2026-08-28 / 2026-08-29 裁定 — ジャーナルを読むことが RMU の仕事そのもの）。コマンド側クレートは禁止 |
+| `core-command-domain` | **コマンド** | 共有層のみ。**ドメインはコマンド側の持ち物**（2026-08-29 第 2 裁定） |
+| `core-command-use-case` | **コマンド** | `core-command-domain`。クエリ側は禁止 |
+| `core-command-interface-adapter` | **コマンド実装** | コマンド側 + 本家ストア。クエリ側は禁止 |
+| **`core-query-read-model-updater`（RMU）** | **クエリ側の全実体** | 共有層 + rusqlite。**ドメインクレートは絶対禁止** — イベントはジャーナルの wire（直列化 JSON + manifest）を自前の型で parse する。`JournalReader` ポートも SQLite 実装も RMU 自身が所有 |
+| 共有層 | — | `core-infrastructure`（言語拡張 — どの層も知らない）と shared の Published Language スキーマ（`audit-events` / `message-catalog` 等）。**ドメインは共有層ではない** |
 
 読取側の契約（`JournalReader` / `ProjectionName` / `GlobalSeqNr`）を中立クレートへ
 切り出す必要は**ない** — 呼ぶのは RMU だけなので、**RMU クレート自身が所有する**
 （2026-08-28 裁定）。**SQLite 実装（`JournalReaderImpl`）も RMU クレートに置く**
 （2026-08-29 オーナー裁定 — ジャーナルを読むことが RMU の仕事そのものであり、
 ストレージ依存は RMU の本質的結合）。共有部品は側の独立を DRY に優先して扱う:
-エラー分類（旧 `CorruptCause`）と I/O 写像は**側ごとに専用化**し、`StorePath` と
-イベントの直列化型判別子（manifest 定数）は共有語彙として `core-domain` に置く。
+エラー分類（旧 `CorruptCause`）・I/O 写像・**単一行等の字句プリミティブ・manifest 定数も
+側ごとに専用化**し、乖離は合成ルートのコントラクトテストで機械検出する（2026-08-29 第 2 裁定
+— ドメインが共有層でなくなったため「`core-domain` に置いて共有」は失効。`StorePath` は
+コマンド側に残し、RMU はストアの場所を自前の型で合成ルートから受け取る）。
 
 **判定は `Cargo.toml` を見るだけでよい。** コマンド側クレートの依存にクエリ側が現れたら違反。
 クエリ側クレートの依存にコマンド側が現れたら違反（2026-08-29 改訂 — 旧「RMU はどちらが
-現れてもよい」は橋時代の残骸であり失効。RMU はクエリ側なので同じ判定に従う）。判定の
-「相手」は側のクレートであり、共有層（`core-domain` / `core-infrastructure` / shared スキーマ）
-と外部ライブラリは対象外。
+現れてもよい」は橋時代の残骸であり失効。RMU はクエリ側なので同じ判定に従う。**ドメイン
+（`core-command-domain`）はコマンド側なので、クエリ側の依存に現れたら違反**）。判定の
+「相手」は側のクレートであり、共有層（`core-infrastructure` / shared の Published Language
+スキーマ）と外部ライブラリは対象外。
 
 ## 禁止パターン
 
