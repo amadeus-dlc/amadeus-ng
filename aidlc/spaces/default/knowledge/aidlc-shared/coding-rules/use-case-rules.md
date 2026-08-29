@@ -1,7 +1,7 @@
 # ユースケース層の規則 — DIP・スタティックバインディング・ユースケース間呼出禁止
 
 **裁定日**: 2026-08-22（オーナー、統一ルール）
-**適用例**: B-1 以降の全ユースケース実装（`ReportUseCase` / `NextUseCase` / …）
+**適用例**: B-1 以降の全ユースケース実装（`CommitVerdictUseCase` / `NextUseCase` / …。~~`ReportUseCase`~~ → 改名 2026-08-29 オーナー裁定 — report が「レポート（帳票）」と誤読される動詞衝突のため、更新意図を先頭に置く `Commit*` へ。CLI 動詞との対応は U7 の ROUTES 表が持ち、型名は upstream の綴りに縛られない）
 **機械強制**: Cargo のクレート分離（実装依存 = E0432）+ `cargo lint` ルール候補（use-case 層内の `*UseCase` import/呼出検出）
 
 ## 1. DIP — ユースケースは契約（trait）しか知らない

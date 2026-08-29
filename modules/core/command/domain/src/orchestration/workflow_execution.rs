@@ -395,6 +395,18 @@ impl WorkflowExecution {
             .map(|entry| entry.slug().clone())
     }
 
+    /// 名指しステージの完了で跨ぐフェーズ境界 (跨がなければ `None`)。
+    ///
+    /// 走査は [`WorkflowExecution::next_in_scope_slug`] と同じ「次の実効 EXECUTE ステージ」で
+    /// あり、`plan` と `overlay` を知っている集約だけが正しく答えられる。フェーズが違えば
+    /// 境界、同じか次が無い (= 最終) なら `None` — upstream の `crossesPhaseBoundary`
+    /// (`aidlc-state.ts` の `completedStage.phase !== nextStage.phase`) と同一の規則である。
+    fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
+        let from = self.entry(stage)?.phase();
+        let to = self.entry(self.next_in_scope(stage)?)?.phase();
+        (from != to).then(|| PhaseBoundary::new(from, to))
+    }
+
     fn slug_of(&self, stage: StageIndex) -> Result<StageSlug, CommandError> {
         self.entry(stage)
             .map(|entry| entry.slug().clone())
@@ -529,9 +541,12 @@ impl WorkflowExecution {
         self.commit(WorkflowExecutionEvent::GateOpened(material), occurred_at)
     }
 
-    /// 承認ゲートの通過 — `GateApproved`。`phase_boundary` は呼出側が導出して渡す投影材料 (C5)。
+    /// 承認ゲートの通過 — `GateApproved`。フェーズ境界は**集約が自分の計画から導出する**。
     ///
     /// `open_gate` を省いた in-progress からの承認も受理する (BR1.3)。
+    ///
+    /// 導出は [`WorkflowExecution::crossed_phase_boundary`] が持つ。呼出側 (ユースケース) は
+    /// フロー制御だけを担い、判断は集約に閉じる (オーナー統一ルール「集約は FSM」)。
     ///
     /// # Errors
     ///
@@ -539,7 +554,6 @@ impl WorkflowExecution {
     pub fn approve_gate(
         &mut self,
         user_input: Option<String>,
-        phase_boundary: Option<PhaseBoundary>,
         occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowExecutionEvent, CommandError> {
         let stage = self.guard_running()?;
@@ -549,7 +563,7 @@ impl WorkflowExecution {
             self.slug_of(stage)?,
             user_input,
             self.next_in_scope_slug(stage),
-            phase_boundary,
+            self.crossed_phase_boundary(stage),
         );
         self.commit(WorkflowExecutionEvent::GateApproved(material), occurred_at)
     }
@@ -1302,6 +1316,50 @@ mod tests {
         start_with(1, &vec![Execute; n], &vec![false; n])
     }
 
+    /// フェーズと実効プランを名指しした合成計画で開始する (フェーズ境界の導出を見るテスト用)。
+    fn start_from_phased_plan(plan: &[(PhaseId, PlanAction)]) -> WorkflowExecution {
+        let stages = plan
+            .iter()
+            .enumerate()
+            .map(|(i, (phase, action))| {
+                StageEntry::new(
+                    slug(i),
+                    *phase,
+                    *action,
+                    false,
+                    display(&format!("{}.{}", phase.index(), i + 1)),
+                )
+            })
+            .collect();
+        WorkflowExecution::start_from_plan_unchecked(
+            intent(),
+            def_id("claude"),
+            revision('0'),
+            &start_request(),
+            stages,
+            scan(),
+            occurred(),
+        )
+        .unwrap()
+        .0
+    }
+
+    /// 全ステージ EXECUTE の、フェーズだけ名指しした合成計画。
+    fn phased(phases: &[PhaseId]) -> WorkflowExecution {
+        let plan: Vec<(PhaseId, PlanAction)> =
+            phases.iter().map(|phase| (*phase, Execute)).collect();
+        start_from_phased_plan(&plan)
+    }
+
+    /// カーソルのゲートを承認し、生まれた `GateApproved` が載せた境界を取り出す。
+    fn approval_boundary(w: &mut WorkflowExecution) -> Option<PhaseBoundary> {
+        let event = w.approve_gate(None, occurred()).unwrap();
+        let WorkflowExecutionEvent::GateApproved(approved) = &event else {
+            panic!("expected GateApproved");
+        };
+        approved.phase_boundary()
+    }
+
     fn at(w: &WorkflowExecution, i: usize) -> StageIndex {
         w.stage_index(i).unwrap()
     }
@@ -1541,7 +1599,7 @@ mod tests {
         w.complete_stage(occurred()).unwrap();
         assert_eq!(w.cursor(), at(&w, 1));
         w.open_gate(Vec::new(), occurred()).unwrap();
-        w.approve_gate(None, None, occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.approved(at(&w, 1)), Some(true));
         assert_eq!(w.checkbox(at(&w, 1)), Some(Completed));
     }
@@ -1562,7 +1620,7 @@ mod tests {
         let mut w = all_exec(3);
         let target = at(&w, 0);
         assert_eq!(
-            w.approve_gate(None, None, occurred()),
+            w.approve_gate(None, occurred()),
             Err(CommandError::InvalidTarget(target))
         );
         assert_eq!(
@@ -1580,9 +1638,7 @@ mod tests {
         let mut w = all_exec(3);
         w.complete_stage(occurred()).unwrap();
         // open_gate を省いた in-progress からの承認も受理する (BR1.3)。
-        let event = w
-            .approve_gate(Some("ok".to_string()), None, occurred())
-            .unwrap();
+        let event = w.approve_gate(Some("ok".to_string()), occurred()).unwrap();
         let WorkflowExecutionEvent::GateApproved(approved) = &event else {
             panic!("expected GateApproved");
         };
@@ -1636,7 +1692,7 @@ mod tests {
             w.skip_stage("no".to_string(), occurred()),
             Err(CommandError::NotSkippable(cursor))
         );
-        w.approve_gate(None, None, occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
         let event = w.skip_stage("conditional".to_string(), occurred()).unwrap();
         let WorkflowExecutionEvent::StageSkipped(skipped) = &event else {
             panic!("expected StageSkipped");
@@ -1672,7 +1728,7 @@ mod tests {
         let mut w = all_exec(4);
         w.complete_stage(occurred()).unwrap();
         w.open_gate(Vec::new(), occurred()).unwrap();
-        w.approve_gate(None, None, occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
         let target = at(&w, 1);
         let event = w.jump(target, occurred()).unwrap();
         let WorkflowExecutionEvent::Jumped(jumped) = &event else {
@@ -1754,7 +1810,7 @@ mod tests {
             Err(CommandError::NotRunning)
         );
         assert_eq!(
-            w.approve_gate(None, None, occurred()),
+            w.approve_gate(None, occurred()),
             Err(CommandError::NotRunning)
         );
         assert_eq!(
@@ -1858,7 +1914,7 @@ mod tests {
     fn a_completed_workflow_refuses_every_command() {
         let mut w = all_exec(2);
         w.complete_stage(occurred()).unwrap();
-        w.approve_gate(None, None, occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert!(!w.accepts_commands());
         assert_eq!(w.complete_stage(occurred()), Err(CommandError::NotRunning));
@@ -1976,15 +2032,54 @@ mod tests {
     }
 
     #[test]
-    fn a_gate_approval_carries_the_caller_supplied_phase_boundary() {
-        let mut w = all_exec(3);
+    fn a_gate_approval_derives_the_boundary_it_crosses_from_its_own_plan() {
+        // ideation の最終ステージを承認すると、次の実効 EXECUTE は inception なので境界が立つ。
+        let mut w = phased(&[
+            PhaseId::Initialization,
+            PhaseId::Ideation,
+            PhaseId::Inception,
+        ]);
         w.complete_stage(occurred()).unwrap();
-        let boundary = PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception);
-        let event = w.approve_gate(None, Some(boundary), occurred()).unwrap();
-        let WorkflowExecutionEvent::GateApproved(approved) = &event else {
-            panic!("expected GateApproved");
-        };
-        assert_eq!(approved.phase_boundary(), Some(boundary));
+        assert_eq!(
+            approval_boundary(&mut w),
+            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception))
+        );
+    }
+
+    #[test]
+    fn a_gate_approval_inside_one_phase_derives_no_boundary() {
+        // 次の実効 EXECUTE が同じフェーズなら境界は立たない。
+        let mut w = phased(&[
+            PhaseId::Initialization,
+            PhaseId::Ideation,
+            PhaseId::Ideation,
+        ]);
+        w.complete_stage(occurred()).unwrap();
+        assert_eq!(approval_boundary(&mut w), None);
+    }
+
+    #[test]
+    fn approving_the_last_stage_in_scope_derives_no_boundary() {
+        // 次が無い (= 最終) なら境界は立たない。
+        let mut w = phased(&[PhaseId::Initialization, PhaseId::Ideation]);
+        w.complete_stage(occurred()).unwrap();
+        assert_eq!(approval_boundary(&mut w), None);
+    }
+
+    #[test]
+    fn the_boundary_skips_over_stages_that_are_not_in_scope() {
+        // 導出は `next_in_scope_slug` と同じ走査なので、実効 SKIP のステージは跨いで数える。
+        let mut w = start_from_phased_plan(&[
+            (PhaseId::Initialization, Execute),
+            (PhaseId::Ideation, Execute),
+            (PhaseId::Ideation, Skip),
+            (PhaseId::Inception, Execute),
+        ]);
+        w.complete_stage(occurred()).unwrap();
+        assert_eq!(
+            approval_boundary(&mut w),
+            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception))
+        );
     }
 
     // ---- W3: state / from_state (BR5.2 / BR5.3) ----
@@ -2267,8 +2362,8 @@ mod tests {
             })
         );
         // (4) completed
-        w.approve_gate(None, None, occurred()).unwrap();
-        w.approve_gate(None, None, occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(
             w.next_decision(&definition, &NextRequest::default()),
@@ -2515,7 +2610,7 @@ mod tests {
         let outcome = match cmd {
             Cmd::Complete => w.complete_stage(occurred()),
             Cmd::OpenGate => w.open_gate(Vec::new(), occurred()),
-            Cmd::Approve => w.approve_gate(None, None, occurred()),
+            Cmd::Approve => w.approve_gate(None, occurred()),
             Cmd::Reject => w.reject_gate(None, occurred()),
             Cmd::Revise => w.revise_stage(occurred()),
             Cmd::SkipStage => w.skip_stage("pbt".to_string(), occurred()),

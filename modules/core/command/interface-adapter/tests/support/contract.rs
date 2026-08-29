@@ -37,7 +37,7 @@ pub(crate) async fn seed<R: WorkflowExecutionRepository>(
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(Some("ok".to_string()), None, at())
+        aggregate.approve_gate(Some("ok".to_string()), at())
     })
     .await;
     advance(repository, &held, |aggregate| {

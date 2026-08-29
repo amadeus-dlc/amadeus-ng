@@ -268,7 +268,7 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
 
     // 4. もう 1 度スナップショット同時更新 — 直前のリプレイ結果から続けられる。
     let mut aggregate = restored.aggregate;
-    let approved = aggregate.approve_gate(None, None, at(3)).unwrap();
+    let approved = aggregate.approve_gate(None, at(3)).unwrap();
     store
         .persist_event_and_snapshot(
             envelope(&aggregate, approved),

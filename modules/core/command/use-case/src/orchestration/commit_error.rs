@@ -1,0 +1,106 @@
+//! `CommitError` — `CommitVerdictUseCase` の失敗。
+
+use std::fmt;
+
+use core_command_domain::orchestration::CommandError;
+use core_command_domain::workflow_definition::StageSlug;
+
+use super::repository_error::RepositoryError;
+
+/// `CommitVerdictUseCase` の失敗（材料のみ — 逐語文言は出す側が組む）。
+///
+/// 下の 2 変種は**そのまま伝播させるための封筒**である。ユースケースは集約やポートの拒否を
+/// 握り潰さないし言い換えもしない。3 つ目だけがユースケース自身の失敗で、報告が名指しした
+/// ステージが解決済み計画に無かったことを言う。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitError {
+    /// 再構成・永続化の失敗（ポートからそのまま伝播）。
+    Repository(RepositoryError),
+    /// 集約がコマンドを拒否した（そのまま伝播）。
+    Command(CommandError),
+    /// 報告が名指ししたステージが解決済み計画に無い。
+    UnknownStage {
+        /// 名指しされた slug。
+        stage: StageSlug,
+    },
+}
+
+impl fmt::Display for CommitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CommitError::Repository(error) => write!(f, "repository: {error}"),
+            CommitError::Command(error) => write!(f, "command: {error}"),
+            CommitError::UnknownStage { stage } => write!(f, "unknown stage: {}", stage.as_str()),
+        }
+    }
+}
+
+impl std::error::Error for CommitError {}
+
+impl From<RepositoryError> for CommitError {
+    fn from(error: RepositoryError) -> CommitError {
+        CommitError::Repository(error)
+    }
+}
+
+impl From<CommandError> for CommitError {
+    fn from(error: CommandError) -> CommitError {
+        CommitError::Command(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core_command_domain::orchestration::IntentId;
+
+    fn stage() -> StageSlug {
+        StageSlug::parse("practices-discovery").expect("フィクスチャの slug は文法内")
+    }
+
+    #[test]
+    fn a_repository_failure_is_carried_verbatim() {
+        let intent_id = IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7");
+        let inner = RepositoryError::NotFound {
+            intent_id: intent_id.clone(),
+        };
+        let error = CommitError::from(inner.clone());
+        assert_eq!(error, CommitError::Repository(inner));
+        assert_eq!(
+            error.to_string(),
+            format!("repository: not found: {intent_id}")
+        );
+    }
+
+    #[test]
+    fn a_refused_command_is_carried_verbatim() {
+        let error = CommitError::from(CommandError::NotRunning);
+        assert_eq!(error, CommitError::Command(CommandError::NotRunning));
+        assert!(error.to_string().starts_with("command: "));
+    }
+
+    #[test]
+    fn an_unknown_stage_names_the_slug_it_could_not_resolve() {
+        let error = CommitError::UnknownStage { stage: stage() };
+        assert_eq!(error.to_string(), "unknown stage: practices-discovery");
+    }
+
+    #[test]
+    fn the_failure_is_a_std_error() {
+        let error: Box<dyn std::error::Error> =
+            Box::new(CommitError::UnknownStage { stage: stage() });
+        assert_eq!(error.to_string(), "unknown stage: practices-discovery");
+    }
+
+    #[test]
+    fn failures_compare_by_value() {
+        assert_eq!(
+            CommitError::UnknownStage { stage: stage() },
+            CommitError::UnknownStage { stage: stage() }
+        );
+        assert_ne!(
+            CommitError::UnknownStage { stage: stage() },
+            CommitError::Command(CommandError::NotRunning)
+        );
+    }
+}

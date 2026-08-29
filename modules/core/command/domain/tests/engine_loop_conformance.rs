@@ -303,7 +303,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 // 非ゲート (initialization) は complete_stage、ゲートは approve_gate (BR1.3)。
                 let cursor = agg.cursor();
                 if agg.gated(cursor) == Some(true) {
-                    agg.approve_gate(None, None, at()).unwrap();
+                    agg.approve_gate(None, at()).unwrap();
                 } else {
                     agg.complete_stage(at()).unwrap();
                 }

@@ -10,8 +10,10 @@ workspace = true
 
 [dependencies]
 core-command-domain = { workspace = true }
+# 集約コマンドが受け取る発生時刻 (`DateTime<Utc>` — ADR-010 / NFR3.1)。集約は時計を持たない
+# ので、ユースケースが呼出側の時計の読みをそのまま渡す。外部ライブラリなので CQRS の側判定
+# (`coding-rules/cqrs-boundaries.md` — 判定の相手は側のクレート) の対象外である。
+chrono = { workspace = true }
 
 [dev-dependencies]
-# 再水和結果の発生時刻 (`DateTime<Utc>` — ADR-010) を組むテスト用。
-chrono = { workspace = true }
 tokio = { workspace = true }

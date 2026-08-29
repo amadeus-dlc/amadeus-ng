@@ -41,8 +41,11 @@ use super::repository_error::RepositoryError;
 /// - **集約へ入れるな。** 版を集約に載せた瞬間、ストアの採番規則がドメインへ戻る。version が
 ///   通ってよいのはこのポートの戻り値と引数だけである
 ///
-/// どちらも `usize` なので**型では取り違えを止められない**。newtype (`StoreVersion`) 化は
-/// U5/U6 でユースケース本体を書くときの境界強化候補として記録してある (委任者裁定 2026-08-29)。
+/// どちらも `usize` なので**型では取り違えを止められない**。それでも newtype で衣を着せる案は
+/// **却下済み**である (オーナー裁定 2026-08-29) — 楽観 version は本家 event-store-adapter-rs
+/// v3.0.0 が `expected_version: usize` で定めた語彙であり、こちらの都合で包み直すのは
+/// Conformist 方針 (`=3.0.0` ピン・腐敗防止層なし) への違反にあたる
+/// (`coding-rules/upstream-contracts.md` — 借り物の契約を自分のドメインに合わせて曲げない)。
 #[allow(
     async_fn_in_trait,
     reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\
@@ -98,102 +101,11 @@ pub trait WorkflowExecutionRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::{StageDisplay, WorkspaceScan};
-    use core_command_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
-    fn display(number: &str) -> StageDisplay {
-        StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
-    }
-
-    fn scan() -> WorkspaceScan {
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .unwrap()
-    }
-
     use crate::orchestration::RepositoryError;
-    use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{
-        IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    use crate::orchestration::test_support::{
+        InMemoryWorkflowExecutionRepository, absent_intent, genesis, intent,
     };
-    use core_command_domain::workflow_definition::{
-        DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
-    };
-
-    const RAW_ID: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
-
-    fn at() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc)
-    }
-
-    fn intent() -> IntentId {
-        IntentId::parse(RAW_ID).unwrap()
-    }
-
-    fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
-        WorkflowExecution::start_from_plan_unchecked(
-            intent(),
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            &StartRequest::new("classic", "port shape"),
-            vec![StageEntry::new(
-                StageSlug::parse("state-init").unwrap(),
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-                display("0.1"),
-            )],
-            scan(),
-            at(),
-        )
-        .unwrap()
-    }
-
-    /// trait の形 (Query は `&self`、Command は `&mut self` の async fn・`dyn` なし) を
-    /// 固定するための最小実装。内部可変性は使わない — 可変操作は `&mut self` で素直に
-    /// 書く (coding-rules/interior-mutability.md)。
-    #[derive(Debug, Default)]
-    struct FakeRepository {
-        stored: Option<WorkflowExecution>,
-        version: usize,
-    }
-
-    impl WorkflowExecutionRepository for FakeRepository {
-        async fn find_by_id(
-            &self,
-            id: &IntentId,
-        ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
-            self.stored
-                .clone()
-                .map(|aggregate| RehydratedWorkflowExecution::new(aggregate, self.version))
-                .ok_or_else(|| RepositoryError::NotFound {
-                    intent_id: id.clone(),
-                })
-        }
-
-        async fn store(
-            &mut self,
-            _event: &WorkflowExecutionEvent,
-            aggregate: &WorkflowExecution,
-            expected_version: usize,
-        ) -> Result<(), RepositoryError> {
-            if expected_version != self.version {
-                return Err(RepositoryError::Conflict {
-                    expected: expected_version,
-                    actual: self.version,
-                });
-            }
-            // 書込のたびにストアが次の version を採番する (本家の実測どおり expected + 1)。
-            self.version = expected_version + 1;
-            self.stored = Some(aggregate.clone());
-            Ok(())
-        }
-    }
+    use core_command_domain::orchestration::IntentId;
 
     /// ジェネリック関数からポート越しに使えること (静的束縛 — ユースケースはこの形で組む)。
     async fn rehydrate<R: WorkflowExecutionRepository>(
@@ -205,22 +117,26 @@ mod tests {
 
     #[tokio::test]
     async fn an_unknown_aggregate_is_not_found() {
-        let repository = FakeRepository::default();
-        let err = rehydrate(&repository, &intent()).await.unwrap_err();
+        let repository = InMemoryWorkflowExecutionRepository::empty();
+        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
         assert_eq!(
             err,
             RepositoryError::NotFound {
-                intent_id: intent()
+                intent_id: absent_intent()
             }
         );
     }
 
     #[tokio::test]
     async fn a_stored_aggregate_is_rehydrated_by_its_identifier() {
-        let mut repository = FakeRepository::default();
-        let (aggregate, event) = genesis();
+        let mut repository = InMemoryWorkflowExecutionRepository::empty();
+        let (aggregate, event) = genesis(1);
         repository
-            .store(&event, &aggregate, FakeRepository::UNPERSISTED_VERSION)
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
             .await
             .unwrap();
         let found = rehydrate(&repository, &intent()).await.unwrap();
@@ -229,10 +145,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_version_a_rehydration_carries_is_the_one_the_store_assigned() {
-        let mut repository = FakeRepository::default();
-        let (aggregate, event) = genesis();
+        let mut repository = InMemoryWorkflowExecutionRepository::empty();
+        let (aggregate, event) = genesis(1);
         repository
-            .store(&event, &aggregate, FakeRepository::UNPERSISTED_VERSION)
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
             .await
             .unwrap();
         let found = rehydrate(&repository, &intent()).await.unwrap();
@@ -246,14 +166,22 @@ mod tests {
     #[tokio::test]
     async fn a_write_that_presents_a_stale_version_conflicts() {
         // 楽観ロックの本体 — 読んだ版で書くから、その間の書込を検出できる。
-        let mut repository = FakeRepository::default();
-        let (aggregate, event) = genesis();
+        let mut repository = InMemoryWorkflowExecutionRepository::empty();
+        let (aggregate, event) = genesis(1);
         repository
-            .store(&event, &aggregate, FakeRepository::UNPERSISTED_VERSION)
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
             .await
             .unwrap();
         let err = repository
-            .store(&event, &aggregate, FakeRepository::UNPERSISTED_VERSION)
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
             .await
             .unwrap_err();
         assert_eq!(
@@ -267,10 +195,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_port_takes_the_aggregate_by_reference_so_the_caller_keeps_it() {
-        let mut repository = FakeRepository::default();
-        let (aggregate, event) = genesis();
+        let mut repository = InMemoryWorkflowExecutionRepository::empty();
+        let (aggregate, event) = genesis(1);
         repository
-            .store(&event, &aggregate, FakeRepository::UNPERSISTED_VERSION)
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
             .await
             .unwrap();
         // 引数は `&` — store は呼出側の集約を変更しない (BR1.3)。
@@ -278,8 +210,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_stored_aggregate_is_not_returned_for_a_different_identifier() {
+        // 識別子検索である以上、別の識別子で引いたら見つからない (C3 ①)。
+        let mut repository = InMemoryWorkflowExecutionRepository::empty();
+        let (aggregate, event) = genesis(1);
+        repository
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
+            .await
+            .unwrap();
+        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
+        assert_eq!(
+            err,
+            RepositoryError::NotFound {
+                intent_id: absent_intent()
+            }
+        );
+        // 同じストアでも、正しい識別子なら見つかる。
+        assert!(rehydrate(&repository, &intent()).await.is_ok());
+    }
+
+    #[tokio::test]
     async fn the_repository_face_reports_its_failures_as_repository_errors() {
-        let repository = FakeRepository::default();
+        let repository = InMemoryWorkflowExecutionRepository::empty();
         let err = repository.find_by_id(&intent()).await.unwrap_err();
         assert!(matches!(err, RepositoryError::NotFound { .. }));
     }
