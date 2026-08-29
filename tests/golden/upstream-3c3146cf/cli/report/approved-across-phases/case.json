@@ -3,7 +3,7 @@
   "family": "cli",
   "verb": "report",
   "case": "approved-across-phases",
-  "description": "inception 最終ステージのゲート承認。フェーズ境界をまたぐので GATE_APPROVED / STAGE_COMPLETED のあとに境界 3 本が続く。ジャンプ側と違いこの 3 本は **Details**: を持たず、**Stages completed**: はチェックボックスの数え直しである (計画上の inception 内スコープ件数 8 ではなく 4)",
+  "description": "inception 最終ステージのゲート承認。フェーズ境界をまたぐので GATE_APPROVED / STAGE_COMPLETED のあとに境界 3 本が続く。ジャンプ側と違いこの 3 本は **Details**: を持たず、**Stages completed**: はチェックボックスの数え直しである (計画上の inception 内スコープ件数ではなく実測 2 — 本フィクスチャで completed なのは initialization 2 ステージ)",
   "stdout_kind": "json",
   "provenance": {
     "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",

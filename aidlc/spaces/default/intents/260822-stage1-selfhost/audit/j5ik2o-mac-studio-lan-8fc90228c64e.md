@@ -23911,3 +23911,9 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 差し戻しを修正し、全 10 基準を**最終コミット状態で**測り直しました。\n\n## 原因\n\n再現性検証の最後に実行した `git checkout -- tests/golden/upstream-3c3146cf` が犯人です。意図は「観測バイトをコミット状態へ復元する」ことでしたが、実際には**再生成された族 `provenance.json` まで巻き戻していました**。その時点のコミット
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-29T08:29:19Z
+**Event**: HUMAN_TURN
+
+---

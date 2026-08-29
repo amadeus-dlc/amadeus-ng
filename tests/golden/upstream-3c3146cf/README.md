@@ -249,11 +249,11 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 | `next` | `no-active-intent` / `start` / `after-approval` / `stage-jump-print` | `aidlc-orchestrate.ts next` |
 | `intent-create` | `classic-scope` | `aidlc-utility.ts intent-create` |
 | `continue` | `load-steering` / `invalid-token` | `aidlc-orchestrate.ts continue` |
-| `report` | `awaiting-approval` / `awaiting-approval-repeat` / `rejected` / `revised` / `approved` | `aidlc-orchestrate.ts report --result` |
+| `report` | `awaiting-approval` / `awaiting-approval-repeat` / `rejected` / `revised` / `approved` / `completed-ungated` / `approved-across-phases` | `aidlc-orchestrate.ts report --result` |
 | `practices-promote` | `affirm` | `aidlc-state.ts practices-promote` |
 | `skip` | `skipped` | `aidlc-orchestrate.ts report --result skipped` |
-| `jump` | `resolve-forward` / `execute-forward` / `execute-forward-to-conditional` | `aidlc-jump.ts resolve` / `execute` |
-| `recompose` | `skip-one` / `rejected-starved-input` | `aidlc-utility.ts recompose` |
+| `jump` | `resolve-forward` / `execute-forward` / `execute-forward-to-conditional` / `execute-backward` / `execute-forward-across-phases` | `aidlc-jump.ts resolve` / `execute` |
+| `recompose` | `skip-one` / `rejected-starved-input` / `skip-two-appends-in-graph-order` / `add-restores-conditional` | `aidlc-utility.ts recompose` |
 | `park` | `park` | `aidlc-orchestrate.ts park` |
 | `unpark` | `unpark` | `aidlc-state.ts unpark` |
 | `set-autonomy` | `state-field-absent` | `aidlc-bolt.ts set-autonomy` |
@@ -261,7 +261,7 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 `jump/execute-backward`・`jump/execute-forward-across-phases`・`report/completed-ungated`・
 `report/approved-across-phases`・`recompose/skip-two-appends-in-graph-order`・
 `recompose/add-restores-conditional` の 6 件は 2026-08-29 に追加採取した
-（上の表の `jump` / `report` 行に含まれる）。既存 22 ケースのバイトは 1 バイトも動いていない
+（上の表の `report` / `jump` / `recompose` 行に記載済み）。既存 22 ケースのバイトは 1 バイトも動いていない
 — 新ケースは列の**末尾に足した**ので、先行ケースの観測は採り直しても同一である。
 
 #### フックの写像（C2）
