@@ -13,7 +13,7 @@
 use chrono::{DateTime, Utc};
 use core_command_domain::workspace::EventType;
 use core_command_domain::workspace::{
-    AuditEventRecord, AuditFieldKey, AuditFields, find_all_events,
+    AuditEventRecord, AuditFieldKey, AuditFields, OrderedAuditEvents,
 };
 use core_read_model_updater::workspace::{
     append_audit_shard, read_all_audit_shards, render_audit_block,
@@ -57,7 +57,7 @@ impl Ledger {
 
     fn events(&self) -> Vec<(String, &'static str)> {
         let buffer = read_all_audit_shards(&self.audit);
-        find_all_events(&buffer)
+        OrderedAuditEvents::find_in(&buffer)
             .iter()
             .map(|record| (record.timestamp().to_string(), record.event().as_str()))
             .collect()
@@ -134,7 +134,7 @@ fn the_shard_header_does_not_become_an_event() {
 fn an_empty_ledger_directory_reads_as_no_events() {
     let ledger = Ledger::new();
     assert_eq!(read_all_audit_shards(&ledger.audit), "");
-    assert!(find_all_events("").is_empty());
+    assert!(OrderedAuditEvents::find_in("").is_empty());
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn the_latest_is_taken_from_the_ordering_not_from_the_buffer_tail() {
         &block(EventType::HumanTurn, "2026-08-21T09:00:01Z"),
     );
     let buffer = read_all_audit_shards(&ledger.audit);
-    let ordered = find_all_events(&buffer);
+    let ordered = OrderedAuditEvents::find_in(&buffer);
     assert_eq!(
         ordered.latest().map(AuditEventRecord::event),
         Some(EventType::StageCompleted)

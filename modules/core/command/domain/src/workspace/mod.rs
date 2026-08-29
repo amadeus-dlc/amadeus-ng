@@ -39,7 +39,6 @@ pub use state_version::{StateVersionClassification, StateVersionKind};
 pub use store_path::StorePath;
 
 // 純関数ドメインサービス
-pub use audit_ordering::find_all_events;
 pub use checkbox::{count_completed, parse_checkboxes, with_checkbox_marker, with_checkbox_suffix};
 pub use state_field_value::unsafe_line_char;
 pub use state_version::classify_state_version;

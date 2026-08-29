@@ -1,4 +1,4 @@
-//! シャード横断の**位置付き読取** — `find_all_events`（11-workspace §2.3 / FR1.1）。
+//! シャード横断の**位置付き読取** — `OrderedAuditEvents::find_in`（upstream `findAllEvents`、11-workspace §2.3 / FR1.1）。
 //!
 //! 監査台帳にシーケンス番号は無い。行が持つ序数的なものは**秒精度の ISO タイムスタンプ**だけで
 //! あり、それだけでは同一秒の順序が決まらない。upstream は連結バッファ上の**位置**でタイを
@@ -8,7 +8,7 @@
 //! # ここはドメインに残る（描画は投影へ移った）
 //!
 //! 11-workspace §2.3 は、描画（`render_audit_block` / `state_writers`）を投影へ移す一方で
-//! `find_all_events` を本コンテキストに**残す**と定めている。順序付けは「集約に置けない横断の
+//! `findAllEvents`（実装は `OrderedAuditEvents::find_in`）を本コンテキストに**残す**と定めている。順序付けは「集約に置けない横断の
 //! 判断」であって描画ではない。シャードの列挙とファイル読取（I/O）は投影側が担い、ここへは
 //! 連結済みのバッファが渡ってくる。
 //!
@@ -73,7 +73,7 @@ impl fmt::Display for AuditEventRecord {
 
 /// 順序付きのイベント列（W15 の E1 装置）。
 ///
-/// **外から構築できず、並べ替えもできない**。`find_all_events` を通ったものだけがこの型に
+/// **外から構築できず、並べ替えもできない**。[`OrderedAuditEvents::find_in`] を通ったものだけがこの型に
 /// なるので、「順序規則を通っていない列」を順序付きとして扱う経路が存在しない。読み手が
 /// 手元で `sort` を掛け直して規則を上書きすることもできない（`Vec` を返さない理由）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,26 +105,29 @@ impl OrderedAuditEvents {
     pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-}
 
-/// 連結済みの台帳バッファから、順序規則を適用してイベントを読み取る。
-///
-/// 順序は **timestamp 昇順、同値はバッファ位置**（`readAllAuditShards` がファイル名順で
-/// 連結しているので、位置はシャード名順 × シャード内追記順になる）。安定ソートなので、
-/// 同一 timestamp の相対順は読み取り順のまま残る。
-///
-/// タイムスタンプ行かイベント行を欠くブロック、閉集合外のイベント名を名乗るブロックは
-/// **黙って読み飛ばす** — 通常読取は fail-closed しないという規約（03 §6.4）であり、
-/// 生きている台帳を 1 行の破損で読めなくしないためである。
-#[must_use]
-pub fn find_all_events(buffer: &str) -> OrderedAuditEvents {
-    let mut records: Vec<AuditEventRecord> = buffer
-        .split(BLOCK_SEPARATOR)
-        .enumerate()
-        .filter_map(|(position, block)| record_of(block, position))
-        .collect();
-    records.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
-    OrderedAuditEvents(records)
+    /// 連結済みの台帳バッファから、順序規則を適用してイベントを読み取る
+    /// （唯一の構築子 — upstream の `findAllEvents`（03 §6.4）に対応。2026-08-29 是正で
+    /// 独立ドメインサービスから本型の関連関数へ — 型が自分の構築規則を所有する。
+    /// 同型の先例は `ResolvedPlan::find_in`）。
+    ///
+    /// 順序は **timestamp 昇順、同値はバッファ位置**（`readAllAuditShards` がファイル名順で
+    /// 連結しているので、位置はシャード名順 × シャード内追記順になる）。安定ソートなので、
+    /// 同一 timestamp の相対順は読み取り順のまま残る。
+    ///
+    /// タイムスタンプ行かイベント行を欠くブロック、閉集合外のイベント名を名乗るブロックは
+    /// **黙って読み飛ばす** — 通常読取は fail-closed しないという規約（03 §6.4）であり、
+    /// 生きている台帳を 1 行の破損で読めなくしないためである。
+    #[must_use]
+    pub fn find_in(buffer: &str) -> OrderedAuditEvents {
+        let mut records: Vec<AuditEventRecord> = buffer
+            .split(BLOCK_SEPARATOR)
+            .enumerate()
+            .filter_map(|(position, block)| record_of(block, position))
+            .collect();
+        records.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+        OrderedAuditEvents(records)
+    }
 }
 
 /// ブロック 1 つから順序の材料を取り出す（欠落・閉集合外は `None`）。
@@ -173,7 +176,7 @@ mod tests {
             block("2026-08-21T09:00:05Z", "STAGE_COMPLETED"),
             block("2026-08-21T09:00:01Z", "HUMAN_TURN"),
         ]);
-        let ordered = find_all_events(&buffer);
+        let ordered = OrderedAuditEvents::find_in(&buffer);
         assert_eq!(names(&ordered), ["HUMAN_TURN", "STAGE_COMPLETED"]);
         assert_eq!(
             ordered.latest().map(AuditEventRecord::event),
@@ -189,7 +192,7 @@ mod tests {
             block("2026-08-21T09:00:00Z", "GATE_APPROVED"),
             block("2026-08-21T09:00:00Z", "STAGE_COMPLETED"),
         ]);
-        let ordered = find_all_events(&buffer);
+        let ordered = OrderedAuditEvents::find_in(&buffer);
         assert_eq!(
             names(&ordered),
             ["HUMAN_TURN", "GATE_APPROVED", "STAGE_COMPLETED"],
@@ -209,7 +212,7 @@ mod tests {
         // 通常読取は fail-closed しない（authority 比較の同秒 fail-closed は orchestration 側）。
         let first_shard = ledger(&[block("2026-08-21T09:00:00Z", "GATE_APPROVED")]);
         let second_shard = ledger(&[block("2026-08-21T09:00:00Z", "HUMAN_TURN")]);
-        let ordered = find_all_events(&format!("{first_shard}\n{second_shard}"));
+        let ordered = OrderedAuditEvents::find_in(&format!("{first_shard}\n{second_shard}"));
         assert_eq!(names(&ordered), ["GATE_APPROVED", "HUMAN_TURN"]);
     }
 
@@ -220,7 +223,7 @@ mod tests {
             "\n## H\n**Event**: HUMAN_TURN\n".to_string(),               // Timestamp 行が無い
             block("2026-08-21T09:00:01Z", "GATE_APPROVED"),
         ]);
-        let ordered = find_all_events(&buffer);
+        let ordered = OrderedAuditEvents::find_in(&buffer);
         assert_eq!(names(&ordered), ["GATE_APPROVED"]);
         assert_eq!(ordered.len(), 1);
     }
@@ -231,7 +234,7 @@ mod tests {
             block("2026-08-21T09:00:00Z", "NOT_A_REAL_EVENT"),
             block("2026-08-21T09:00:01Z", "HUMAN_TURN"),
         ]);
-        assert_eq!(names(&find_all_events(&buffer)), ["HUMAN_TURN"]);
+        assert_eq!(names(&OrderedAuditEvents::find_in(&buffer)), ["HUMAN_TURN"]);
     }
 
     #[test]
@@ -242,7 +245,7 @@ mod tests {
              **Timestamp**: 1999-01-01T00:00:00Z\n"
                 .to_string(),
         ]);
-        let ordered = find_all_events(&buffer);
+        let ordered = OrderedAuditEvents::find_in(&buffer);
         assert_eq!(
             ordered.latest().map(AuditEventRecord::timestamp),
             Some("2026-08-21T09:00:00Z")
@@ -251,7 +254,7 @@ mod tests {
 
     #[test]
     fn an_empty_ledger_reads_as_empty() {
-        let ordered = find_all_events("");
+        let ordered = OrderedAuditEvents::find_in("");
         assert!(ordered.is_empty());
         assert_eq!(ordered.len(), 0);
         assert_eq!(ordered.latest(), None);
@@ -260,7 +263,7 @@ mod tests {
     #[test]
     fn a_record_renders_its_material() {
         let buffer = ledger(&[block("2026-08-21T09:00:00Z", "HUMAN_TURN")]);
-        let ordered = find_all_events(&buffer);
+        let ordered = OrderedAuditEvents::find_in(&buffer);
         assert_eq!(
             ordered.latest().map(ToString::to_string).as_deref(),
             Some("2026-08-21T09:00:00Z HUMAN_TURN @0")

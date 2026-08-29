@@ -69,7 +69,7 @@ pub fn append(path: &Path, blocks: &str) -> Result<(), AuditShardWriteError> {
 
 /// シャードディレクトリの全 `*.md` を**ファイル名順**に読み、`\n` で連結する。
 ///
-/// これが [`find_all_events`] へ渡る連結バッファである。ファイル名順で連結するからこそ、
+/// これが [`OrderedAuditEvents::find_in`] へ渡る連結バッファである。ファイル名順で連結するからこそ、
 /// 同一秒のタイをバッファ位置で破るという規則が「シャード名順 × シャード内追記順」を意味する
 /// （03 §6.3 / §6.4）。
 ///
@@ -77,7 +77,7 @@ pub fn append(path: &Path, blocks: &str) -> Result<(), AuditShardWriteError> {
 /// 台帳を 1 つの欠落でまるごと読めなくしないためである（upstream 逐語:
 /// *"growth during the read is explicitly not a failure"*）。ディレクトリ自体が無ければ空を返す。
 ///
-/// [`find_all_events`]: core_command_domain::workspace::find_all_events
+/// [`OrderedAuditEvents::find_in`]: core_command_domain::workspace::OrderedAuditEvents::find_in
 #[must_use]
 pub fn read_all(dir: &Path) -> String {
     let Ok(entries) = fs::read_dir(dir) else {
