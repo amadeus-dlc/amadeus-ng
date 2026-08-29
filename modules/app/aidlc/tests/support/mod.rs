@@ -12,10 +12,12 @@ use core_command_use_case::orchestration::{
     RehydratedWorkflowExecution, WorkflowExecutionRepository,
 };
 use core_domain::orchestration::{
-    CommandError, IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    CommandError, IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution,
+    WorkflowExecutionEvent, WorkspaceScan,
 };
 use core_domain::workflow_definition::{
-    DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+    WorkflowDefinitionId,
 };
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
@@ -46,6 +48,28 @@ pub(crate) fn absent_intent_id() -> IntentId {
     IntentId::parse(ABSENT_INTENT).expect("契約テストの IntentId は UUIDv7")
 }
 
+/// 合成計画の表示属性 (投影の検収は RMU 側の専用テストが持つので固定値でよい)。
+fn display(number: &str, name: &str) -> StageDisplay {
+    StageDisplay::new(
+        StageNumber::parse(number).expect("契約テストのステージ番号は文法内"),
+        name,
+        "orchestrator",
+    )
+    .expect("単一行")
+}
+
+/// 合成計画の走査結果。
+#[must_use]
+pub(crate) fn scan() -> WorkspaceScan {
+    WorkspaceScan::new(
+        BrownfieldGreenfield::Greenfield,
+        "Unknown",
+        "Unknown",
+        "Unknown",
+    )
+    .expect("単一行")
+}
+
 fn slug(value: &str) -> StageSlug {
     StageSlug::parse(value).expect("契約テストの slug は文法内")
 }
@@ -59,18 +83,21 @@ pub(crate) fn stages() -> Vec<StageEntry> {
             PhaseId::Initialization,
             PlanAction::Execute,
             false,
+            display("0.1", "State Init"),
         ),
         StageEntry::new(
             slug("intent-capture"),
             PhaseId::Ideation,
             PlanAction::Execute,
             false,
+            display("1.1", "Intent Capture"),
         ),
         StageEntry::new(
             slug("scope-definition"),
             PhaseId::Ideation,
             PlanAction::Execute,
             false,
+            display("1.4", "Scope Definition"),
         ),
     ]
 }
@@ -91,6 +118,7 @@ pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecu
             .expect("契約テストの定義 revision"),
         &StartRequest::new("classic", "contract").with_depth("standard"),
         stages(),
+        scan(),
         at(),
     )
     .expect("合成計画は start の前提を満たす")

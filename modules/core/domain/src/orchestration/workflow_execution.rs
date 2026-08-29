@@ -39,6 +39,7 @@ use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
+use super::stage_display::StageDisplay;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::start_error::StartError;
@@ -50,6 +51,7 @@ use super::workflow_execution_event::{
     StageCompleted, StageRevised, StageSkipped, Started, WorkflowExecutionEvent,
 };
 use super::workflow_execution_state::WorkflowExecutionState;
+use super::workspace_scan::WorkspaceScan;
 use crate::workflow_definition::{
     DefinitionRevision, ExecutionKind, PhaseId, PlanAction, StageSlug, UnknownScope,
     WorkflowDefinition, WorkflowDefinitionId,
@@ -118,6 +120,7 @@ impl WorkflowExecution {
         intent_id: IntentId,
         definition: &WorkflowDefinition,
         request: &StartRequest,
+        scan: WorkspaceScan,
         occurred_at: DateTime<Utc>,
     ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
         let scope = request.scope();
@@ -130,30 +133,43 @@ impl WorkflowExecution {
             return Err(StartError::UnknownScope(UnknownScope::new(scope, valid)));
         }
         let nodes = definition.graph().nodes();
-        let stages = definition
-            .stages_in_scope(scope)
-            .into_iter()
-            .enumerate()
-            .map(|(index, (slug, phase, action))| {
-                // `stages_in_scope` は execution を返さないので、同じ文書順のノード列から索引一致で
-                // CONDITIONAL を拾う (BR2.2)。グリッド列が無いステージは `None → SKIP` に畳む。
-                let conditional = nodes
-                    .get(index)
-                    .is_some_and(|node| node.execution() == ExecutionKind::Conditional);
-                StageEntry::new(
-                    slug.clone(),
-                    phase,
-                    action.unwrap_or(PlanAction::Skip),
-                    conditional,
-                )
-            })
-            .collect();
+        let mut stages = Vec::new();
+        for (index, (slug, phase, action)) in
+            definition.stages_in_scope(scope).into_iter().enumerate()
+        {
+            // `stages_in_scope` は execution も表示属性も返さないので、同じ文書順のノード列から
+            // 索引一致で拾う (BR2.2)。グリッド列が無いステージは `None → SKIP` に畳む。
+            let node = nodes.get(index);
+            let conditional =
+                node.is_some_and(|node| node.execution() == ExecutionKind::Conditional);
+            // 表示属性は**計画を解決するこの時点で**イベントへ焼き込む (オーナー裁定 2026-08-29)。
+            // 投影は後から定義を引かないので、再構成しても当時と同じバイトになる (NFR3)。
+            let display = match node {
+                Some(node) => {
+                    StageDisplay::new(node.number().clone(), node.name(), node.lead_agent())
+                        .map_err(|unsafe_char| StartError::StageDisplayNotSingleLine {
+                            stage: slug.as_str().to_string(),
+                            found: unsafe_char.to_char(),
+                        })?
+                }
+                // 索引一致が崩れるのはグラフが壊れている場合だけ (防御的)。
+                None => return Err(StartError::Empty),
+            };
+            stages.push(StageEntry::new(
+                slug.clone(),
+                phase,
+                action.unwrap_or(PlanAction::Skip),
+                conditional,
+                display,
+            ));
+        }
         WorkflowExecution::start_from_plan_unchecked(
             intent_id,
             definition.id().clone(),
             definition.revision().clone(),
             request,
             stages,
+            scan,
             occurred_at,
         )
     }
@@ -178,6 +194,7 @@ impl WorkflowExecution {
         definition_revision: DefinitionRevision,
         request: &StartRequest,
         stages: Vec<StageEntry>,
+        scan: WorkspaceScan,
         occurred_at: DateTime<Utc>,
     ) -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError> {
         match stages.first() {
@@ -210,6 +227,7 @@ impl WorkflowExecution {
             definition_revision.clone(),
             request,
             stages.clone(),
+            scan,
         ));
         let execution = WorkflowExecution {
             intent_id,
@@ -1188,8 +1206,8 @@ mod tests {
         WorkflowExecutionStateBuilder,
     };
     use crate::workflow_definition::{
-        DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata,
-        StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
+        BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
+        ScopeMetadata, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
         WorkflowDefinition, WorkflowDefinitionId,
     };
     use crate::workspace::CheckboxState;
@@ -1235,13 +1253,35 @@ mod tests {
                 } else {
                     PhaseId::Inception
                 };
-                StageEntry::new(slug(i), phase, *action, *cond)
+                StageEntry::new(
+                    slug(i),
+                    phase,
+                    *action,
+                    *cond,
+                    display(&format!("{}.{}", phase.index(), i + 1)),
+                )
             })
             .collect()
     }
 
     fn start_request() -> StartRequest {
         StartRequest::new("classic", "build it")
+    }
+
+    /// テストの表示属性 (投影は見ないので番号・表題・担当は固定でよい)。
+    fn display(number: &str) -> StageDisplay {
+        StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
+    }
+
+    /// テストの走査結果。
+    fn scan() -> WorkspaceScan {
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .unwrap()
     }
 
     fn start_with(init: usize, actions: &[PlanAction], conditional: &[bool]) -> WorkflowExecution {
@@ -1251,6 +1291,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(init, actions, conditional),
+            scan(),
             occurred(),
         )
         .unwrap()
@@ -1338,7 +1379,8 @@ mod tests {
     fn start_records_the_definition_identity_and_the_resolved_plan() {
         let definition = shipped_definition(full_grid());
         let (w, event) =
-            WorkflowExecution::start(intent(), &definition, &start_request(), occurred()).unwrap();
+            WorkflowExecution::start(intent(), &definition, &start_request(), scan(), occurred())
+                .unwrap();
 
         // 通番・発生時刻・識別子は封筒 (アダプタ層) の材料であり、イベント自身は持たない。
         // genesis 直後の集約がその 3 点を保持している (B7)。
@@ -1378,7 +1420,7 @@ mod tests {
             .with_depth("standard")
             .with_test_strategy("comprehensive");
         let (_, event) =
-            WorkflowExecution::start(intent(), &definition, &request, occurred()).unwrap();
+            WorkflowExecution::start(intent(), &definition, &request, scan(), occurred()).unwrap();
         let WorkflowExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
@@ -1390,7 +1432,7 @@ mod tests {
         // 省略時は None のまま載る (フラグ未指定 = 既定の解決は呼出側の責務)。
         let bare = StartRequest::new("classic", "build it");
         let (_, plain) =
-            WorkflowExecution::start(intent(), &definition, &bare, occurred()).unwrap();
+            WorkflowExecution::start(intent(), &definition, &bare, scan(), occurred()).unwrap();
         let WorkflowExecutionEvent::Started(started) = &plain else {
             panic!("start must emit Started");
         };
@@ -1402,8 +1444,8 @@ mod tests {
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
         let unknown = StartRequest::new("nope", "build it");
-        let err =
-            WorkflowExecution::start(intent(), &definition, &unknown, occurred()).unwrap_err();
+        let err = WorkflowExecution::start(intent(), &definition, &unknown, scan(), occurred())
+            .unwrap_err();
         let StartError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
@@ -1423,6 +1465,7 @@ mod tests {
             intent(),
             &shipped_definition(grid),
             &start_request(),
+            scan(),
             occurred(),
         )
         .unwrap();
@@ -1438,6 +1481,7 @@ mod tests {
             revision('0'),
             &start_request(),
             Vec::new(),
+            scan(),
             occurred(),
         )
         .unwrap_err();
@@ -1452,6 +1496,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(2, &[Execute, Skip, Execute], &[false, false, false]),
+            scan(),
             occurred(),
         )
         .unwrap_err();
@@ -1466,6 +1511,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(1, &[Execute, Execute], &[true, false]),
+            scan(),
             occurred(),
         )
         .unwrap_err();
@@ -1480,6 +1526,7 @@ mod tests {
             revision('0'),
             &start_request(),
             entries(0, &[Skip, Execute], &[false, false]),
+            scan(),
             occurred(),
         )
         .unwrap_err();
@@ -1908,6 +1955,7 @@ mod tests {
             revision('0'),
             &StartRequest::new("classic", "again"),
             entries(1, &[Execute], &[false]),
+            scan(),
         ));
         assert!(matches!(
             w.apply_event(2, occurred(), &event),
@@ -2436,6 +2484,7 @@ mod tests {
                             phase,
                             if execute { Execute } else { Skip },
                             conditional,
+                            display(&format!("{}.{}", phase.index(), index + 1)),
                         )
                     })
                     .collect()
@@ -2449,6 +2498,7 @@ mod tests {
             revision('0'),
             &start_request(),
             stages,
+            scan(),
             occurred(),
         )
         .unwrap()

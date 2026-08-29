@@ -529,6 +529,25 @@ mod tests {
 
     /// 未裁定分岐の材料に使う `Started`（集約を通さず直接組む — ここで見たいのは投影の
     /// 分岐であって、集約のガードではない）。
+    fn display(number: &str, name: &str) -> core_domain::orchestration::StageDisplay {
+        core_domain::orchestration::StageDisplay::new(
+            core_domain::workflow_definition::StageNumber::parse(number).expect("番号"),
+            name,
+            "orchestrator",
+        )
+        .expect("単一行")
+    }
+
+    fn scan() -> core_domain::orchestration::WorkspaceScan {
+        core_domain::orchestration::WorkspaceScan::new(
+            core_domain::workflow_definition::BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .expect("単一行")
+    }
+
     fn started_event(stages: Vec<core_domain::orchestration::StageEntry>) -> Started {
         use core_domain::orchestration::StartRequest;
         use core_domain::workflow_definition::{DefinitionRevision, WorkflowDefinitionId};
@@ -537,6 +556,7 @@ mod tests {
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
             &StartRequest::new("classic", "unit"),
             stages,
+            scan(),
         )
     }
 
@@ -750,6 +770,7 @@ mod tests {
                     core_domain::workflow_definition::PhaseId::Initialization,
                     core_domain::workflow_definition::PlanAction::Execute,
                     false,
+                    display("0.1", "State Init"),
                 ),
             ])),
             WorkflowExecutionEvent::Jumped(Jumped::new(

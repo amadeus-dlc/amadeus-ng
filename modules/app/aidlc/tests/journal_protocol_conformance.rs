@@ -52,10 +52,12 @@ use core_command_use_case::orchestration::{
     RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
 };
 use core_domain::orchestration::{
-    IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    WorkspaceScan,
 };
 use core_domain::workflow_definition::{
-    DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+    WorkflowDefinitionId,
 };
 use core_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_query_read_model_updater::orchestration::{
@@ -213,6 +215,13 @@ fn stages() -> Vec<StageEntry> {
                 phase,
                 PlanAction::Execute,
                 false,
+                StageDisplay::new(
+                    StageNumber::parse(&format!("{}.{}", phase.index(), index + 1))
+                        .expect("合成のステージ番号は文法内"),
+                    "Stage",
+                    "orchestrator",
+                )
+                .expect("単一行"),
             )
         })
         .collect()
@@ -226,6 +235,13 @@ fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("定義 revision"),
         &StartRequest::new("classic", "conformance"),
         stages(),
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .expect("単一行"),
         at(),
     )
     .expect("合成計画は start の前提を満たす")

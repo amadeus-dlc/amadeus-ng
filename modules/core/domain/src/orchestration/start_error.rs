@@ -15,6 +15,16 @@ pub enum StartError {
     InitializationMustExecute,
     /// initialization フェーズのステージが CONDITIONAL。
     InitializationMustBeUnconditional,
+    /// ステージの表示属性 (表題・担当エージェント) が単一行でない。
+    ///
+    /// 表示属性は状態ファイルの bullet 行に書かれる値なので、改行が混ざると 2 行目以降が
+    /// フィールドとして読めなくなる。定義側の値をそのまま信じず、計画を解決する時点で止める。
+    StageDisplayNotSingleLine {
+        /// 問題のあったステージ。
+        stage: String,
+        /// 走査順に最初に見つかった不正コードポイント。
+        found: char,
+    },
 }
 
 impl fmt::Display for StartError {
@@ -33,6 +43,11 @@ impl fmt::Display for StartError {
             StartError::InitializationMustBeUnconditional => {
                 f.write_str("initialization stage is CONDITIONAL")
             }
+            StartError::StageDisplayNotSingleLine { stage, found } => write!(
+                f,
+                "stage display is not single line: stage {stage}, found U+{:04X}",
+                *found as u32
+            ),
         }
     }
 }
@@ -53,6 +68,18 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "unknown scope: nope (valid: classic, express)"
+        );
+    }
+
+    #[test]
+    fn the_stage_display_rejection_carries_the_stage_and_the_codepoint() {
+        let err = StartError::StageDisplayNotSingleLine {
+            stage: "domain-design".to_string(),
+            found: '\n',
+        };
+        assert_eq!(
+            err.to_string(),
+            "stage display is not single line: stage domain-design, found U+000A"
         );
     }
 

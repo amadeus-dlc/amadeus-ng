@@ -21,10 +21,12 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use core_domain::orchestration::{
-    IntentId, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkflowExecution, WorkflowExecutionEvent,
+    WorkspaceScan,
 };
 use core_domain::workflow_definition::{
-    DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+    WorkflowDefinitionId,
 };
 use core_domain::workspace::CheckboxState;
 use event_store_adapter_rs::EventStoreForMemory;
@@ -59,6 +61,22 @@ fn slug(s: &str) -> StageSlug {
     StageSlug::parse(s).unwrap()
 }
 
+/// 合成計画の表示属性。
+fn display(number: &str, name: &str) -> StageDisplay {
+    StageDisplay::new(StageNumber::parse(number).unwrap(), name, "orchestrator").unwrap()
+}
+
+/// 合成計画の走査結果。
+fn scan() -> WorkspaceScan {
+    WorkspaceScan::new(
+        BrownfieldGreenfield::Greenfield,
+        "Unknown",
+        "Unknown",
+        "Unknown",
+    )
+    .unwrap()
+}
+
 /// initialization 1 ステージ + ゲート付き 2 ステージの合成計画 (BR2.5 と同じ流儀)。
 fn stages() -> Vec<StageEntry> {
     vec![
@@ -67,18 +85,21 @@ fn stages() -> Vec<StageEntry> {
             PhaseId::Initialization,
             PlanAction::Execute,
             false,
+            display("0.1", "State Init"),
         ),
         StageEntry::new(
             slug("intent-capture"),
             PhaseId::Ideation,
             PlanAction::Execute,
             false,
+            display("1.1", "Intent Capture"),
         ),
         StageEntry::new(
             slug("requirements-analysis"),
             PhaseId::Inception,
             PlanAction::Execute,
             false,
+            display("2.1", "Requirements Analysis"),
         ),
     ]
 }
@@ -90,6 +111,7 @@ fn genesis() -> (WorkflowExecution, WorkflowExecutionEvent) {
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
         &StartRequest::new("mvp", "本家ストアへの適合を確かめる"),
         stages(),
+        scan(),
         at(0),
     )
     .unwrap()

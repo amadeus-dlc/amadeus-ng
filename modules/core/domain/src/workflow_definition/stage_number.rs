@@ -7,8 +7,14 @@
 use std::cmp::Ordering;
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// パース済みのステージ番号 (Always Valid)。`as_str()` は入力の生表現を逐語で返す。
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// ワイヤ表現は**生表現の文字列 1 本**である (内部の分解済み 2 値は導出物なので運ばない)。
+// 復号は `parse` を通す — 直列化の口から不正な値が型へ入り込むのを防ぐ
+// (`StageSlug` と同じ house pattern)。
+#[serde(try_from = "String", into = "String")]
 pub struct StageNumber {
     raw: String,
     phase_index: u32,
@@ -132,6 +138,40 @@ impl Ord for StageNumber {
 impl PartialOrd for StageNumber {
     fn partial_cmp(&self, other: &StageNumber) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl fmt::Display for StageNumberError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 材料のみ (利用者向け文言はアダプタ層)。
+        match self {
+            StageNumberError::Empty => f.write_str("stage number is empty"),
+            StageNumberError::MalformedSeparator { dot_count } => {
+                write!(f, "stage number has {dot_count} dots (expected 1)")
+            }
+            StageNumberError::EmptyPhaseIndex => f.write_str("stage number has an empty phase"),
+            StageNumberError::EmptySeq => f.write_str("stage number has an empty sequence"),
+            StageNumberError::NonDigit(found) => {
+                write!(f, "stage number has a non-digit: {found:?}")
+            }
+            StageNumberError::Overflow => f.write_str("stage number does not fit in u32"),
+        }
+    }
+}
+
+impl std::error::Error for StageNumberError {}
+
+impl From<StageNumber> for String {
+    fn from(value: StageNumber) -> String {
+        value.raw
+    }
+}
+
+impl TryFrom<String> for StageNumber {
+    type Error = StageNumberError;
+
+    fn try_from(value: String) -> Result<StageNumber, StageNumberError> {
+        StageNumber::parse(&value)
     }
 }
 

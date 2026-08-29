@@ -3,9 +3,14 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// 単一行が保証されたフィールド値 (Always Valid — 行を割れる文字はこの型に存在せず、
 /// 第二のフィールド行の偽造が不能)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// 復号は `parse` を通す — 直列化の口から不正な値が型へ入り込むのを防ぐ
+// (`StageSlug` と同じ house pattern)。
+#[serde(try_from = "String")]
 pub struct StateFieldValue(String);
 
 /// 拒否理由 — 走査順に**最初に**見つかった不正コードポイント 1 文字。
@@ -48,6 +53,23 @@ impl StateFieldValue {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl fmt::Display for UnsafeLineChar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 材料のみ (利用者向け文言はアダプタ層)。不可視の文字なのでコードポイントで示す。
+        write!(f, "unsafe line character: U+{:04X}", self.0 as u32)
+    }
+}
+
+impl std::error::Error for UnsafeLineChar {}
+
+impl TryFrom<String> for StateFieldValue {
+    type Error = UnsafeLineChar;
+
+    fn try_from(value: String) -> Result<StateFieldValue, UnsafeLineChar> {
+        StateFieldValue::parse(&value)
     }
 }
 

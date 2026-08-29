@@ -2,37 +2,46 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::stage_display::StageDisplay;
 use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
 /// 定義から解決済みの 1 ステージ分の計画。
 ///
 /// `Started` がこの列を持つことでリプレイは `WorkflowDefinition` を要さない (BR2.2)。
 /// ゲート判定はこの型が所有する — 索引ではなく `phase` から決まる (BR1.3、Tell-Don't-Ask)。
+///
+/// **投影も定義を要さない** — 監査行と状態ファイルに現れる表示属性 3 値は [`StageDisplay`] が
+/// 運ぶ (オーナー裁定 2026-08-29)。投影がジャーナルだけで描けることが、クラッシュ再構成で
+/// 当時と同一のバイトを得る条件である (NFR3)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StageEntry {
     slug: StageSlug,
     phase: PhaseId,
     plan_action: PlanAction,
     conditional: bool,
+    display: StageDisplay,
 }
 
 impl StageEntry {
-    /// 解決済みの 4 成分を束ねる。
+    /// 解決済みの 5 成分を束ねる。
     ///
     /// `plan_action` はグリッドの 3 値 `Option<PlanAction>` を `None → SKIP` で畳んだ 2 値、
-    /// `conditional` は同じ文書順の `StageNode::execution() == CONDITIONAL` (BR2.2)。
+    /// `conditional` は同じ文書順の `StageNode::execution() == CONDITIONAL` (BR2.2)、
+    /// `display` は投影がリードモデルを描くのに要る表示属性 3 値 ([`StageDisplay`])。
     #[must_use]
     pub const fn new(
         slug: StageSlug,
         phase: PhaseId,
         plan_action: PlanAction,
         conditional: bool,
+        display: StageDisplay,
     ) -> StageEntry {
         StageEntry {
             slug,
             phase,
             plan_action,
             conditional,
+            display,
         }
     }
 
@@ -60,6 +69,12 @@ impl StageEntry {
         self.conditional
     }
 
+    /// 投影がリードモデルを描くのに要る表示属性 (ステージ番号・表題・担当エージェント)。
+    #[must_use]
+    pub const fn display(&self) -> &StageDisplay {
+        &self.display
+    }
+
     /// ゲート付きか — `phase != initialization` (BR1.3)。索引 0 の特別扱いはしない。
     #[must_use]
     pub fn is_gated(&self) -> bool {
@@ -70,7 +85,16 @@ impl StageEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
+    use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
+
+    fn display() -> StageDisplay {
+        StageDisplay::new(
+            StageNumber::parse("0.1").unwrap(),
+            "State Init",
+            "orchestrator",
+        )
+        .unwrap()
+    }
 
     fn entry(phase: PhaseId, action: PlanAction, conditional: bool) -> StageEntry {
         StageEntry::new(
@@ -78,6 +102,7 @@ mod tests {
             phase,
             action,
             conditional,
+            display(),
         )
     }
 
@@ -88,6 +113,9 @@ mod tests {
         assert_eq!(e.phase(), PhaseId::Inception);
         assert_eq!(e.plan_action(), PlanAction::Execute);
         assert!(e.is_conditional());
+        assert_eq!(e.display().number().as_str(), "0.1");
+        assert_eq!(e.display().name(), "State Init");
+        assert_eq!(e.display().lead_agent(), "orchestrator");
     }
 
     #[test]

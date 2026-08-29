@@ -63,6 +63,22 @@ impl RehydratedWorkflowExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core_domain::orchestration::{StageDisplay, WorkspaceScan};
+    use core_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
+    fn display(number: &str) -> StageDisplay {
+        StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
+    }
+
+    fn scan() -> WorkspaceScan {
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .unwrap()
+    }
+
     use chrono::{DateTime, Utc};
     use core_domain::orchestration::{IntentId, StageEntry, StartRequest};
     use core_domain::workflow_definition::{
@@ -80,7 +96,9 @@ mod tests {
                 PhaseId::Initialization,
                 PlanAction::Execute,
                 false,
+                display("0.1"),
             )],
+            scan(),
             DateTime::<Utc>::UNIX_EPOCH,
         )
         .unwrap()

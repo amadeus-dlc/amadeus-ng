@@ -25,6 +25,7 @@ use super::jump_direction::JumpDirection;
 use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
 use super::start_request::StartRequest;
+use super::workspace_scan::WorkspaceScan;
 use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
 
 /// 12 変種のドメインイベント (C5 の 11 + `StageCompleted`)。
@@ -74,16 +75,18 @@ pub struct Started {
     depth: Option<String>,
     test_strategy: Option<String>,
     stages: Vec<StageEntry>,
+    scan: WorkspaceScan,
 }
 
 impl Started {
-    /// 参照した定義の ID / 内容版と、呼出側の要求・解決済み計画を束ねる。
+    /// 参照した定義の ID / 内容版と、呼出側の要求・解決済み計画・走査結果を束ねる。
     #[must_use]
     pub fn new(
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         request: &StartRequest,
         stages: Vec<StageEntry>,
+        scan: WorkspaceScan,
     ) -> Started {
         Started {
             definition_id,
@@ -93,6 +96,7 @@ impl Started {
             depth: request.depth().map(str::to_string),
             test_strategy: request.test_strategy().map(str::to_string),
             stages,
+            scan,
         }
     }
 
@@ -136,6 +140,15 @@ impl Started {
     #[must_use]
     pub fn stages(&self) -> &[StageEntry] {
         &self.stages
+    }
+
+    /// workspace-detection が出した走査結果 (投影が初期化 3 ステージの行を描く材料)。
+    ///
+    /// イベントが運ぶのは、走査をやり直すと**当時と違う結果**になり再構成が一致しないため
+    /// である (NFR3 — オーナー裁定 2026-08-29)。
+    #[must_use]
+    pub const fn scan(&self) -> &WorkspaceScan {
+        &self.scan
     }
 }
 
@@ -494,14 +507,30 @@ impl AutonomyModeSet {
 mod tests {
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, JumpDirection, PhaseBoundary, StageEntry, StartRequest,
+        AutonomyMode, JumpDirection, PhaseBoundary, StageDisplay, StageEntry, StartRequest,
+        WorkspaceScan,
     };
     use crate::workflow_definition::{
-        DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
+        BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+        WorkflowDefinitionId,
     };
 
     fn slug(s: &str) -> StageSlug {
         StageSlug::parse(s).unwrap()
+    }
+
+    fn display(number: &str) -> StageDisplay {
+        StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
+    }
+
+    fn scan() -> WorkspaceScan {
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .unwrap()
     }
 
     #[test]
@@ -511,12 +540,14 @@ mod tests {
             PhaseId::Initialization,
             PlanAction::Execute,
             false,
+            display("0.1"),
         )];
         let started = Started::new(
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
             &StartRequest::new("classic", "build it").with_depth("standard"),
             entries.clone(),
+            scan(),
         );
         assert_eq!(started.definition_id().as_str(), "claude");
         assert_eq!(started.definition_revision().as_str().len(), 71);

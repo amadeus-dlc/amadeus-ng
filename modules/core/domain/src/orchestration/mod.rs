@@ -62,6 +62,7 @@ mod jump_direction;
 mod next_decision;
 mod phase_boundary;
 mod skeleton_stance;
+mod stage_display;
 mod stage_entry;
 mod stage_index;
 mod start_error;
@@ -72,6 +73,7 @@ mod verdict;
 mod workflow_execution;
 mod workflow_execution_event;
 mod workflow_execution_state;
+mod workspace_scan;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
@@ -79,10 +81,12 @@ pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
 pub use skeleton_stance::SkeletonStance;
+pub use stage_display::StageDisplay;
 pub use stage_entry::StageEntry;
 pub use stage_index::StageIndex;
 pub use start_request::StartRequest;
 pub use verdict::Verdict;
+pub use workspace_scan::WorkspaceScan;
 
 // 集約 (エンジンループの状態機械)
 pub use workflow_execution::WorkflowExecution;

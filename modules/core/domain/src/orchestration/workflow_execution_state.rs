@@ -302,11 +302,19 @@ impl WorkflowExecutionStateBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestration::{AutonomyMode, IntentId, StageEntry, StageIndex, Status};
+    use crate::orchestration::{
+        AutonomyMode, IntentId, StageDisplay, StageEntry, StageIndex, Status,
+    };
+    use crate::workflow_definition::StageNumber;
     use crate::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
     };
     use crate::workspace::CheckboxState;
+
+    /// テストの表示属性 (投影は見ないので番号・表題・担当は固定でよい)。
+    fn display(number: &str) -> StageDisplay {
+        StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
+    }
 
     fn entries() -> Vec<StageEntry> {
         vec![
@@ -315,12 +323,14 @@ mod tests {
                 PhaseId::Initialization,
                 PlanAction::Execute,
                 false,
+                display("0.1"),
             ),
             StageEntry::new(
                 StageSlug::parse("intent-capture").unwrap(),
                 PhaseId::Ideation,
                 PlanAction::Execute,
                 false,
+                display("1.1"),
             ),
         ]
     }

@@ -20,12 +20,12 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
-    AutonomyMode, EngineSignal, IntentId, NextRequest, StageEntry, StageIndex, StartRequest,
-    Status, WorkflowExecution,
+    AutonomyMode, EngineSignal, IntentId, NextRequest, StageDisplay, StageEntry, StageIndex,
+    StartRequest, Status, WorkflowExecution, WorkspaceScan,
 };
 use core_domain::workflow_definition::{
-    DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph, StageSlug, WorkflowDefinition,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph,
+    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionId,
 };
 use core_domain::workspace::CheckboxState;
 use serde_json::Value;
@@ -151,9 +151,31 @@ fn synthetic_stages(m: &ModelState) -> Vec<StageEntry> {
             } else {
                 PhaseId::Inception
             };
-            StageEntry::new(slug(index), phase, *action, *conditional)
+            StageEntry::new(
+                slug(index),
+                phase,
+                *action,
+                *conditional,
+                display(&format!("{}.{}", phase.index(), index + 1)),
+            )
         })
         .collect()
+}
+
+/// ITF 再生の表示属性 (モデルは表示を持たないので固定でよい — 投影の検収は別テスト)。
+fn display(number: &str) -> StageDisplay {
+    StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
+}
+
+/// ITF 再生の走査結果 (同上)。
+fn scan() -> WorkspaceScan {
+    WorkspaceScan::new(
+        BrownfieldGreenfield::Greenfield,
+        "Unknown",
+        "Unknown",
+        "Unknown",
+    )
+    .unwrap()
 }
 
 fn index(agg: &WorkflowExecution, value: usize) -> StageIndex {
@@ -249,6 +271,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         synthetic_revision(),
         &StartRequest::new("itf", "conformance"),
         synthetic_stages(m0),
+        scan(),
         at(),
     )
     .unwrap();

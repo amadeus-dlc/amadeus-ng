@@ -17,11 +17,12 @@
 
 use chrono::{DateTime, Utc};
 use core_domain::orchestration::{
-    AutonomyMode, CommandError, EVENT_MANIFEST, IntentId, StageEntry, StartRequest,
-    WorkflowExecution, WorkflowExecutionEvent,
+    AutonomyMode, CommandError, EVENT_MANIFEST, IntentId, StageDisplay, StageEntry, StartRequest,
+    WorkflowExecution, WorkflowExecutionEvent, WorkspaceScan,
 };
 use core_domain::workflow_definition::{
-    DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+    WorkflowDefinitionId,
 };
 use core_domain::workspace::StorePath;
 use event_store_adapter_rs::EventStoreForSqlite;
@@ -65,6 +66,28 @@ fn slug(value: &str) -> StageSlug {
     StageSlug::parse(value).expect("テストの slug は文法内")
 }
 
+/// 合成計画の表示属性 (投影の検収は専用テストが持つので、ここは固定値でよい)。
+fn display(number: &str, name: &str) -> StageDisplay {
+    StageDisplay::new(
+        StageNumber::parse(number).expect("テストのステージ番号は文法内"),
+        name,
+        "orchestrator",
+    )
+    .expect("単一行")
+}
+
+/// 合成計画の走査結果。
+#[must_use]
+pub(crate) fn scan() -> WorkspaceScan {
+    WorkspaceScan::new(
+        BrownfieldGreenfield::Greenfield,
+        "Unknown",
+        "Unknown",
+        "Unknown",
+    )
+    .expect("単一行")
+}
+
 /// 3 ステージの合成計画 (索引 0 = initialization、1〜2 = ideation)。
 #[must_use]
 pub(crate) fn stages() -> Vec<StageEntry> {
@@ -74,18 +97,21 @@ pub(crate) fn stages() -> Vec<StageEntry> {
             PhaseId::Initialization,
             PlanAction::Execute,
             false,
+            display("0.1", "State Init"),
         ),
         StageEntry::new(
             slug("intent-capture"),
             PhaseId::Ideation,
             PlanAction::Execute,
             false,
+            display("1.1", "Intent Capture"),
         ),
         StageEntry::new(
             slug("scope-definition"),
             PhaseId::Ideation,
             PlanAction::Execute,
             false,
+            display("1.4", "Scope Definition"),
         ),
     ]
 }
@@ -100,6 +126,7 @@ pub(crate) fn genesis_for(intent: IntentId) -> (WorkflowExecution, WorkflowExecu
             .expect("テストの定義 revision"),
         &StartRequest::new("classic", "contract").with_depth("standard"),
         stages(),
+        scan(),
         at(),
     )
     .expect("合成計画は start の前提を満たす")
