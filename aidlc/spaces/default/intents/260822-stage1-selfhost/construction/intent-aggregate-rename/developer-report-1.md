@@ -491,8 +491,16 @@ U7（intent-create の実装）の課題である。
 
 `StageSlug` は値オブジェクトなので §2b の一般則（「集約 ID や値オブジェクトを渡すのは OK」）に
 そのまま適合する。したがって確定形の 3 引数は「`&Intent` を落とす」ことを示した略記と読み、
-**`stage` は残した**。team-lead へ確認を送ってあり、`stage` も落とす裁定であれば BR1.9 と
-再試行の名指しをどう保つかの設計が別途要るので、そこは独断しない。
+**`stage` は残した**。
+
+**この読みは追認された**（2026-08-30、team-lead 回答）— 3 引数形は `&Intent` を落とすことだけを
+示した略記であり、`stage` の脱落は記載漏れだった。upstream の `report --stage <slug>` に対応する
+正当な入力でもある。確定形は次のとおりで、実装は一致している:
+
+```rust
+execute(&mut self, id: &IntentExecutionId, stage: Option<&StageSlug>,
+        transition: ReportedTransition, occurred_at: DateTime<Utc>) -> Result<(), CommitError>
+```
 
 ---
 
@@ -544,10 +552,15 @@ U7（intent-create の実装）の課題である。
 13. **`docs/specs` と inception 期の成果物**に「ドメイン層に serde が入る」旨の記述が残っている
     可能性がある（`decisions.md` の serde 受容は本セッション側で失効注記済みと承知しているが、
     他の箇所は未確認）。所有ファイル外なので触っていない。
-14. ~~**改訂 10 は未着手**~~ — **実装済み**（§5 (m)）。残る課題は 2 つ: (a) `IntentRepository`
-    の**実物の実装**（intent 自身のジャーナルの導入ごと U7）、(b) `execute` の `stage` 引数を
-    残した判断の追認（§5 (m) の末尾、team-lead へ確認済み・回答待ち）。
-15. **合成ルート（U7）はポートを 2 本注入する。** `CommitVerdictUseCase::new` の署名が
+14. ~~**改訂 10 は未着手**~~ — **実装済み**（§5 (m)）。`stage` を残した判断も**追認済み**
+    （2026-08-30）。残る課題は `IntentRepository` の**実物の実装**だけで、intent 自身の
+    ジャーナルの導入ごと U7 の課題である。
+15. **概念と機構の線引き**（`domain-persistence-neutrality.md`、2026-08-30 追記）— 本 Bolt は
+    監査語彙（`EventType`・86 語）と `StorePath` に**一切触れていない**（`git diff origin/main`
+    で無改変を実測）。これらは AI-DLC の概念なので domain 残留が正であり、改訂 9 の撤去対象は
+    永続化の**機構**（serde・ストア trait・ジャーナル語彙）だけである。この線引きは
+    `domain/src/lib.rs` の doc にも 1 段落で残した。
+16. **合成ルート（U7）はポートを 2 本注入する。** `CommitVerdictUseCase::new` の署名が
     `(execution_repository, intent_repository)` になったので、U7 の結線はこの形になる。
     アダプタ側にあるのは結線テスト用のインメモリ実装だけである。
 
