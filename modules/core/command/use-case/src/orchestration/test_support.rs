@@ -126,15 +126,23 @@ pub(crate) fn genesis(stage_count: usize) -> (WorkflowExecution, WorkflowExecuti
 /// # 応答をスクリプトできる
 ///
 /// `Conflict` は「読んでから書くまでの間に別の書き手が入った」ときにしか起きないので、
-/// 単一スレッドのテストからは自然には起こせない。そこで**割り込む書込の回数**を台本として
-/// 持たせる ([`InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes`])。
-/// 台本が残っている間、`store` はストアの版だけを 1 つ進めて `Conflict` を返す。
-/// 割り込んだ相手が書いた**内容**までは模さない — 版の進行だけが再試行の観測に要る材料である。
+/// 単一スレッドのテストからは自然には起こせない。そこで**割り込む書込**を台本として持たせる。
+/// 台本が残っている間、`store` はストアの版を 1 つ進めて `Conflict` を返す。
+///
+/// 割り込みには 2 種類ある:
+///
+/// - [`holding_behind_concurrent_writes`](InMemoryWorkflowExecutionRepository::holding_behind_concurrent_writes)
+///   — **版だけ**が進む。相手が書いた内容は模さない（`set-autonomy` のようにカーソルを
+///   動かさない競合に相当する）。
+/// - [`holding_behind_a_competing_commit`](InMemoryWorkflowExecutionRepository::holding_behind_a_competing_commit)
+///   — 版に加えて**保持している集約も進む**。相手が先に同じゲートを承認してカーソルが動いた
+///   状況に相当し、再構成し直した呼出は報告したステージが通過済みになっているのを見る。
 #[derive(Debug)]
 pub(crate) struct InMemoryWorkflowExecutionRepository {
     stored: Option<WorkflowExecution>,
     version: usize,
     interrupting_writes: usize,
+    competing_commit: Option<WorkflowExecution>,
     store_attempts: usize,
     committed: Vec<WorkflowExecutionEvent>,
 }
@@ -146,11 +154,13 @@ impl InMemoryWorkflowExecutionRepository {
         stored: Option<WorkflowExecution>,
         version: usize,
         interrupting_writes: usize,
+        competing_commit: Option<WorkflowExecution>,
     ) -> InMemoryWorkflowExecutionRepository {
         InMemoryWorkflowExecutionRepository {
             stored,
             version,
             interrupting_writes,
+            competing_commit,
             store_attempts: 0,
             committed: Vec::new(),
         }
@@ -158,7 +168,7 @@ impl InMemoryWorkflowExecutionRepository {
 
     /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
     pub(crate) fn empty() -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(None, 0, 0)
+        InMemoryWorkflowExecutionRepository::new(None, 0, 0, None)
     }
 
     /// 集約 1 つを版 `version` で保持するストア。
@@ -166,20 +176,33 @@ impl InMemoryWorkflowExecutionRepository {
         aggregate: WorkflowExecution,
         version: usize,
     ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 0)
+        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 0, None)
     }
 
     /// 最初の `writes` 回の `store` に、別の書き手の書込が割り込むストア。
     ///
     /// 割り込みが起きた回は版だけが 1 つ進み、提示された版は古くなるので `Conflict` になる。
-    /// 台本を使い切ると通常の楽観判定へ戻るので、**再構成からやり直した呼出だけが**
-    /// 新しい版を提示でき、書込に成功する。
+    /// 集約は動かないので、再構成し直してもカーソルは同じ位置にある。台本を使い切ると通常の
+    /// 楽観判定へ戻るので、**再構成からやり直した呼出だけが**新しい版を提示でき、書込に成功する。
     pub(crate) fn holding_behind_concurrent_writes(
         aggregate: WorkflowExecution,
         version: usize,
         writes: usize,
     ) -> InMemoryWorkflowExecutionRepository {
-        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, writes)
+        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, writes, None)
+    }
+
+    /// 最初の `store` に、**集約を前進させる**別の書き手の書込が割り込むストア。
+    ///
+    /// 版が 1 つ進むと同時に、保持している集約が `advanced` へ置き換わる — 競合相手が先に
+    /// 同じゲートを承認してカーソルが動いた状況である。再構成し直した呼出は、報告した
+    /// ステージが既に通過済み（`[x]` かつカーソルより手前）になっているのを見る。
+    pub(crate) fn holding_behind_a_competing_commit(
+        aggregate: WorkflowExecution,
+        advanced: WorkflowExecution,
+        version: usize,
+    ) -> InMemoryWorkflowExecutionRepository {
+        InMemoryWorkflowExecutionRepository::new(Some(aggregate), version, 1, Some(advanced))
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
@@ -203,8 +226,10 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
         &self,
         id: &IntentId,
     ) -> Result<RehydratedWorkflowExecution, RepositoryError> {
+        // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
         self.stored
             .clone()
+            .filter(|aggregate| aggregate.intent_id() == id)
             .map(|aggregate| RehydratedWorkflowExecution::new(aggregate, self.version))
             .ok_or_else(|| RepositoryError::NotFound {
                 intent_id: id.clone(),
@@ -219,9 +244,13 @@ impl WorkflowExecutionRepository for InMemoryWorkflowExecutionRepository {
     ) -> Result<(), RepositoryError> {
         self.store_attempts += 1;
         if self.interrupting_writes > 0 {
-            // 別の書き手が先に書いた — ストアの版だけが進み、提示された版が古くなる。
+            // 別の書き手が先に書いた — ストアの版が進み、提示された版が古くなる。
             self.interrupting_writes -= 1;
             self.version += 1;
+            // カーソルを動かす競合なら、保持している集約も相手の書込後の状態へ差し替える。
+            if let Some(advanced) = self.competing_commit.take() {
+                self.stored = Some(advanced);
+            }
             return Err(RepositoryError::Conflict {
                 expected: expected_version,
                 actual: self.version,

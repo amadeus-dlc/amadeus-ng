@@ -48,6 +48,25 @@ pub struct CommitVerdictUseCase<R: WorkflowExecutionRepository> {
     repository: R,
 }
 
+/// [`CommitVerdictUseCase::attempt`] 1 回分の結末。
+///
+/// 楽観 version の競合だけを `Err` から切り出しているのは、**再試行の対象を名指しする**ため
+/// である。競合したときにその試行が対象にしたステージを持ち帰らないと、2 回目が「そのときの
+/// カーソル」へ再解決してしまい、競合相手が先に承認していた場合に報告されていない次ステージを
+/// コミットしうる。
+#[derive(Debug)]
+enum AttemptOutcome {
+    /// 決着した — コミットしたか、何もコミットしない成功（ゲート既開・BR1.9）だった。
+    Settled,
+    /// 楽観 version が競合した。
+    Conflicted {
+        /// この試行が対象にしたステージ（再試行はこれを名指しする）。
+        target: StageSlug,
+        /// ストアが返した競合そのもの（2 回目も競合したらこれを伝播する）。
+        conflict: RepositoryError,
+    },
+}
+
 impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     /// ポートの実装を注入する。
     #[must_use]
@@ -99,8 +118,17 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
     ///
     /// 再試行は**再構成からやり直す** — 古い集約に `store` だけ打ち直すのは、読んだ時点の版で
     /// 書くという楽観ロックの意味そのものを壊す。したがって 2 回目は `find_by_id` から始め、
-    /// 新しい版の集約に改めてコマンドを打つ。2 回目も `Conflict` なら伝播する。再試行後に集約が
-    /// コマンドを拒否した場合（別クローンが先に承認してゲートが閉じた等）も、そのまま伝播する。
+    /// 新しい版の集約に改めてコマンドを打つ。2 回目も `Conflict` なら伝播する。
+    ///
+    /// **対象ステージは 1 回目が解決したものを名指しで引き継ぐ。** `stage` に `None` を受けた
+    /// まま再試行すると対象が「そのときのカーソル」に再解決されてしまい、競合相手が先に同じ
+    /// ゲートを承認していた場合、**報告されていない次のステージ**へ `Forward` を打つ
+    /// （次ステージは `[-]` なので BR1.3 により承認が通ってしまう）。名指しすれば、その状況は
+    /// [`is_stale_re_report`](CommitVerdictUseCase::is_stale_re_report) が通過済み no-op
+    /// （BR1.9）に畳み、カーソルが動いていない競合（`set-autonomy` 等）は名指し == カーソルで
+    /// 通常経路に入る。再試行の意味論が「**同じ報告をもう一度**」に固定される。
+    ///
+    /// 再試行後に集約がコマンドを拒否した場合も、そのまま伝播する。
     ///
     /// # Errors
     ///
@@ -114,27 +142,37 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), CommitError> {
-        // 1 回目。`Conflict` は `store` からしか来ないので、この分岐は「書込が競合した」と同値。
-        match self
+        let AttemptOutcome::Conflicted { target, .. } = self
             .attempt(intent_id, stage, transition.clone(), occurred_at)
-            .await
+            .await?
+        else {
+            return Ok(());
+        };
+        // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」を参照）。
+        match self
+            .attempt(intent_id, Some(&target), transition, occurred_at)
+            .await?
         {
-            Err(CommitError::Repository(RepositoryError::Conflict { .. })) => {
-                self.attempt(intent_id, stage, transition, occurred_at)
-                    .await
-            }
-            settled => settled,
+            AttemptOutcome::Settled => Ok(()),
+            AttemptOutcome::Conflicted { conflict, .. } => Err(CommitError::Repository(conflict)),
         }
     }
 
     /// 再構成からコミットまでの 1 回分。競合したときはこれをもう 1 度だけ通す。
+    ///
+    /// # Errors
+    ///
+    /// 競合**以外**の失敗（再構成・集約の拒否・計画に無いステージ・符号化の失敗など）。
+    /// 楽観 version の競合だけは `Err` ではなく [`AttemptOutcome::Conflicted`] で返す —
+    /// 呼出側が再試行の対象を名指しできるように、この試行が対象にしたステージを添えるためで
+    /// ある。
     async fn attempt(
         &mut self,
         intent_id: &IntentId,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
-    ) -> Result<(), CommitError> {
+    ) -> Result<AttemptOutcome, CommitError> {
         let rehydrated = self.repository.find_by_id(intent_id).await?;
         // 版は再構成が返した値**そのもの**を握る。`aggregate.seq_nr()` から導いてはならない
         // （ポート doc の 3 か条 — 版は不透明なトークンである）。
@@ -145,18 +183,40 @@ impl<R: WorkflowExecutionRepository> CommitVerdictUseCase<R> {
         if let Some(named) = stage
             && Self::is_stale_re_report(&aggregate, named)?
         {
-            return Ok(());
+            return Ok(AttemptOutcome::Settled);
         }
         let cursor = aggregate.cursor();
         if Self::gate_is_already_open(&aggregate, cursor, &transition) {
-            return Ok(());
+            return Ok(AttemptOutcome::Settled);
         }
 
+        // ここまで来たら対象は必ずカーソルである — `stage` が名指ししていた場合、カーソルより
+        // 手前のステージは既に上の no-op で返しているからである。
         let event = Self::command(&mut aggregate, cursor, transition, occurred_at)?;
-        self.repository
+        match self
+            .repository
             .store(&event, &aggregate, expected_version)
-            .await?;
-        Ok(())
+            .await
+        {
+            Ok(()) => Ok(AttemptOutcome::Settled),
+            Err(conflict @ RepositoryError::Conflict { .. }) => {
+                match Self::slug_at(&aggregate, cursor) {
+                    Some(target) => Ok(AttemptOutcome::Conflicted { target, conflict }),
+                    // カーソルは不変条件により常に範囲内なので到達しない。万一名指しできない
+                    // なら盲目的にやり直さず伝播する — 誤ったステージを打つより安全である。
+                    None => Err(CommitError::Repository(conflict)),
+                }
+            }
+            Err(other) => Err(CommitError::Repository(other)),
+        }
+    }
+
+    /// 名指しに使うステージ slug（範囲外は `None`）。
+    fn slug_at(aggregate: &WorkflowExecution, stage: StageIndex) -> Option<StageSlug> {
+        aggregate
+            .stages()
+            .get(stage.to_usize())
+            .map(|entry| entry.slug().clone())
     }
 
     /// 名指しされたステージがカーソルの手前なら、集約に通過済み判定を委ねる（BR1.9）。
@@ -572,6 +632,48 @@ mod tests {
         // 2 回目が通ったこと自体が「再構成からやり直した」証拠である — このストアは現在の版を
         // 提示した書込しか受理しないので、古い集約に `store` だけ打ち直していたら再び競合する。
         assert_eq!(subject.repository().version(), 9);
+    }
+
+    #[tokio::test]
+    async fn a_retry_after_a_competitor_committed_the_same_gate_commits_nothing() {
+        // 競合相手が先に同じゲートを承認してカーソルが動いたケース。再試行が対象を名指しし
+        // 直さないと、報告されていない次ステージ（`[-]` なので BR1.3 で承認が通ってしまう）へ
+        // `Forward` を打ってしまう。
+        let held = at_the_first_gate(3);
+        let mut advanced = held.clone();
+        advanced
+            .approve_gate(Some("Approve".to_string()), at())
+            .expect("競合相手の承認は通る");
+        assert_ne!(
+            advanced.cursor(),
+            held.cursor(),
+            "相手の承認でカーソルが動いている前提のテストである"
+        );
+
+        let mut subject = CommitVerdictUseCase::new(
+            InMemoryWorkflowExecutionRepository::holding_behind_a_competing_commit(
+                held, advanced, 7,
+            ),
+        );
+        subject
+            .execute(&intent(), None, forward(), at())
+            .await
+            .expect("通過済みになった報告は冪等な成功");
+
+        assert!(
+            subject.repository().committed().is_empty(),
+            "次ステージを勝手にコミットしない"
+        );
+        assert_eq!(
+            subject.repository().store_attempts(),
+            1,
+            "書込は 1 回目の失敗だけ — 再試行は BR1.9 の no-op に畳まれる"
+        );
+        assert_eq!(
+            subject.repository().version(),
+            8,
+            "版は相手の書込ぶんだけ進む"
+        );
     }
 
     #[tokio::test]

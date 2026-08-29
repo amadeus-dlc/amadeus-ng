@@ -210,6 +210,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_stored_aggregate_is_not_returned_for_a_different_identifier() {
+        // 識別子検索である以上、別の識別子で引いたら見つからない (C3 ①)。
+        let mut repository = InMemoryWorkflowExecutionRepository::empty();
+        let (aggregate, event) = genesis(1);
+        repository
+            .store(
+                &event,
+                &aggregate,
+                InMemoryWorkflowExecutionRepository::UNPERSISTED_VERSION,
+            )
+            .await
+            .unwrap();
+        let err = rehydrate(&repository, &absent_intent()).await.unwrap_err();
+        assert_eq!(
+            err,
+            RepositoryError::NotFound {
+                intent_id: absent_intent()
+            }
+        );
+        // 同じストアでも、正しい識別子なら見つかる。
+        assert!(rehydrate(&repository, &intent()).await.is_ok());
+    }
+
+    #[tokio::test]
     async fn the_repository_face_reports_its_failures_as_repository_errors() {
         let repository = InMemoryWorkflowExecutionRepository::empty();
         let err = repository.find_by_id(&intent()).await.unwrap_err();
