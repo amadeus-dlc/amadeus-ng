@@ -23948,3 +23948,411 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Stage**: functional-design
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:35:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session Start
+**Timestamp**: 2026-08-29T10:35:35Z
+**Event**: SESSION_STARTED
+**Source**: startup
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:35:36Z
+**Event**: HUMAN_TURN
+
+---
+
+## Workflow Unparked
+**Timestamp**: 2026-08-29T10:35:56Z
+**Event**: WORKFLOW_UNPARKED
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:37:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:41:43Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:50:38Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:52:42Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:52:42Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:53:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T10:58:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:01:58Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:04:02Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:07:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:12:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:13:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a48eb1e6a3e299a8e
+**Message**: 委任の進捗を確認して
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:17:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac9eca2e9e0d38e1c
+**Message**: 完了報告が来たら教えて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:29:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a37d457f3359c1007
+**Message**: 待つ
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:32:03Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:32:08Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-29T11:32:17Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+**Context**: construction > u5-report-use-case > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T11:32:17Z
+**Event**: SENSOR_FIRED
+**Fire id**: edeff4fd
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T11:32:17Z
+**Event**: SENSOR_PASSED
+**Fire id**: edeff4fd
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T11:32:17Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1ac1450e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T11:32:17Z
+**Event**: SENSOR_FAILED
+**Fire id**: 1ac1450e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-1ac1450e.md
+**Findings count**: 5
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:32:26Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:37:08Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:41:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae7136506361f8c0c
+**Message**: U5（report ユースケース）実装の Bolt B11 を委任実行中で、裁定 6 件（フェーズ境界の集約内導出、Conflict 再試行、CorruptCause 退避など）は確定済みです。次は委任先の完了報告を受けて全ゲートを独立再実行し受入判定します。
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-29T11:43:01Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+**Context**: construction > u5-report-use-case > developer-report-1.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T11:43:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: 78d5c581
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T11:43:01Z
+**Event**: SENSOR_PASSED
+**Fire id**: 78d5c581
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T11:43:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: a576daab
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T11:43:01Z
+**Event**: SENSOR_FAILED
+**Fire id**: a576daab
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u5-report-use-case/developer-report-1.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-a576daab.md
+**Findings count**: 5
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:44:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 実装完了。受入基準 1〜11 をすべて実測で緑にしました。\n\n## 実装した経路と対応する集約コマンド\n\n`ReportUseCase::execute`（`modules/core/command/use-case/src/orchestration/report_use_case.rs`）\n\n| 入力（正規化済み型） | 集約コマンド | コミット |\n|---|---|---|\n| `Tra
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:46:36Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 3 通とも受領済みで、内容はすべて反映・コミット済みです（更新後の `brief-1.md` / `decisions-1.md` から読み取って実装しました）。\n\n## 各裁定の反映状況\n\n**1. 案 A（`None,` 削除 5 箇所）** — 反映済み（`e1957d0`）。ご指摘の報告漏れ 2 箇所（`domain/tests/upstream_event_store_conforman
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:55:38Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a51417a095e83bf74
+**Message**: 許可します
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:55:58Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T11:56:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abd809999ee8638ed
+**Message**: 理解した。CQS例外を許可します
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:56:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T11:57:40Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:00:05Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:00:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:01:32Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:06:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:09:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:13:36Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a00394e74e6e9ecdd
+**Message**: 完了したら再検証して PR まで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:18:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:19:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:20:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:21:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af42489d223823923
+**Message**: ok、その方針でU7まで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T12:22:17Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:22:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 裁定 7 の再作業が完了し、全ゲートが緑です。\n\n## 1. 改名\n\n`ReportUseCase` → **`CommitVerdictUseCase`**、`ReportError` → **`CommitError`**。ファイル名（`commit_verdict_use_case.rs` / `commit_error.rs`）、`mod.rs` の `pub use`、結線テスト（`co
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:24:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a642d690186e364c8
+**Message**: デーモンは不要、一発CLIの範囲でよいです
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T12:26:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b11-u5
+**Agent ID**: ab11-u5-737fb65271beeef7
+**Message**: 申し送りの差し替えが完了し、全ゲートが緑です。作業中に**自分のコミットの不具合を 1 件見つけたので、それも直しました**（下記）。\n\n## §8 の申し送り — 確定文言へ差し替え\n\n`decisions-1.md` の「裁定 7 追補」「同訂正」「追補 2」を読んだうえで、項目 3 を次の内容に置き換えました。\n\n- CLI サブコマンドの出力データは **コマンドユースケース → RMU（
+
+---

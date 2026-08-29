@@ -127,7 +127,14 @@
 ### U5 — `u5-report-use-case`（library, M）
 
 - **責務**: `report` ユースケース（approve / reject / revise / skip / awaiting-approval / resumed の遷移
-  コミット）。典型形: find_by_id で再水和 → decide（1 イベント）→ store → 投影キャッチアップ起動。
+  コミット）。典型形: ~~find_by_id で再水和 → decide（1 イベント）→ store → 投影キャッチアップ起動。~~
+  → **一部失効（2026-08-29 / Bolt B11。オーナー裁定を in-place 反映）**: 正しくは
+  「`find_by_id` で**再構成**（= 保存済みイベントを古い順に再生して現在の状態を組み立て直す。
+  従来「再水和」と書いていたもの） → decide（1 イベント） → store」までが本 Unit の責務であり、
+  **投影キャッチアップの起動は本 Unit の責務ではない**。起動するのは合成ルート（U7）である
+  （`coding-rules/cqrs-boundaries.md`「合成ルート（U7）は RMU を起動するだけ」。コマンド側クレートが
+  RMU を `Cargo.toml` に書くことは禁止パターンであり、クレート分離で機械強制されている）。
+  U7 の責務欄「コマンド末尾の ReadModelUpdater 起動」が正である。
   B10 述語（ゲート受理の最小前提）と verification モジュール最小面。
 - **境界**: ユースケース層。ビジネスロジック禁止（判断は U2 の集約）。trait のみ依存（DIP）、静的束縛。
   ユースケース間呼出禁止。
