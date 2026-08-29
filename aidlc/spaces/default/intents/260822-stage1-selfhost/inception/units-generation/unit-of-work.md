@@ -57,12 +57,15 @@
 
 ### U2 — `u2-domain-es-core`（library, L）
 
-- **責務**: `core-domain` の `WorkflowExecution` を ES 形の FSM にする — ドメインイベント語彙
+- **責務**: ~~`core-domain`~~ → **失効（2026-08-29 / Bolt B8）**: `core-command-domain`
+  （`modules/core/command/domain` — ドメインはコマンド側の持ち物。`coding-rules/cqrs-boundaries.md`）
+  の `WorkflowExecution` を ES 形の FSM にする — ドメインイベント語彙
   （`WorkflowExecutionEvent`、コマンドと 1:1 の 11 変種程度）、decide（`&mut self` コマンドが単一イベントを返す）
   / `apply_event` 分離、~~`version` /~~ `seq_nr` 保持（`version` は**失効（2026-08-29 / ADR-010・Bolt B7）**: 楽観 version は集約の外へ — `RehydratedWorkflowExecution` が持ち回る）、`next_decision` クエリメソッド（ADR-002）、有効プラン
   畳み込みの集約メソッド化（FR8.4 / R2）、`PlanAction` の `workflow_definition` への**完全移動**（FR8.3 /
   ADR-005 改訂 — 再輸出なし、呼出側パスの一斉修正を同 Unit に含む）。
-- **境界**: `core-domain` クレート内（orchestration / workflow_definition / workspace コンテキスト）。I/O なし・
+- **境界**: ~~`core-domain`~~ → **失効（2026-08-29 / Bolt B8）**: `core-command-domain`
+  クレート内（orchestration / workflow_definition / workspace コンテキスト）。I/O なし・
   純粋・同期。Repository・ストア・投影は持たない（U3 / U4）。
 - **合格**: FR8.3（`orchestration` に `PlanAction` の定義・再輸出が無く全参照が `workflow_definition::PlanAction`）、
   FR8.4（畳み込みが `WorkflowExecution` のメソッド、`WorkflowDefinition` にはグリッド照会のみ）、
@@ -78,11 +81,13 @@
   実装する。mkdir ロック機構（`FsWorkspaceLock` / `WorkspaceLock` / `LockProtocol` / `reap_eligible` /
   `OwnerStamp`）を退役し、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」
   の検証モデルへ改訂する（ADR-007）。`InMemoryWorkflowExecutionRepository` を先に書く（gateway-taxonomy §6）。
-  → **失効（2026-08-29 / Bolt B8）**: `core-interface-adapter` はコマンド側とクエリ側に分割された。
-  `WorkflowExecutionRepositoryImpl` は **`core-command-interface-adapter`**（本 Unit の実体）が
-  引き続き所有し、`JournalReaderImpl`（本行が当初含意していた読取側実装）はクエリ側
-  **`core-query-read-model-updater`**（U4）へ移動済み（`crate-structure-proposal.md` §1、
-  `construction/u4-read-model-updater/developer-report-1.md` §1）。
+  → **失効（2026-08-29 / Bolt B8。同日中の是正を in-place 反映）**: `core-interface-adapter` は
+  コマンド側と中間クレート RMU に分割された。`WorkflowExecutionRepositoryImpl` は
+  **`core-command-interface-adapter`**（本 Unit の実体）が引き続き所有し、`JournalReaderImpl`
+  （本行が当初含意していた読取側実装）は**中間クレート**（コマンド側でもクエリ側でもない —
+  `cqrs-boundaries.md`）**`core-read-model-updater`**（U4）へ移動済み（`crate-structure-proposal.md`
+  §1、`construction/u4-read-model-updater/developer-report-1.md` §1、
+  `developer-report-2.md` §1 の再改名）。
 - **境界**: ポート trait（`WorkflowExecutionRepository`、EventStore 同形 trait）はユースケース層に置く
   （U5/U6 より先に本 Unit が定義する）。ドメイン型（イベント・集約）は U2 のものを使う。投影は持たない。
 - **合格**: FR1.2（改訂版 `audit_lock.qnt` ITF 準拠）、FR1.3（store → find_by_id ラウンドトリップ）、
@@ -101,19 +106,23 @@
   `render_audit_block` / `state_writers`（11-workspace §2.3）・`AuditFieldKey` 等の Domain Primitive
   （11-workspace §2.2）・監査ブロック描画（`audit_block.rs`）・投影規則 12 変種（`projection.rs`）も
   本 Unit で実装済み。
-- **境界**: ~~入力は U3 のジャーナル読取 API と U2 のイベント型。~~ → **失効（2026-08-29 / Bolt B8）**:
-  `JournalReader` ポートとその実装 `JournalReaderImpl`（旧 U3 所有）は本 Unit へ移動した。入力は
-  U2 のドメインイベント型と、U3（`core-command-interface-adapter`）が書き込む SQLite ジャーナル
-  （同じ DB ファイルへの別接続）。**本 Unit は独立クレート `core-query-read-model-updater` として
-  実装済み**であり、コマンド側の `core-command-use-case` / `core-command-interface-adapter` の
-  `Cargo.toml` に一切現れない（相互独立が物理強制 — `crate-structure-proposal.md` §2）。書込先は
-  upstream 互換ファイルのみ。常駐しない（コマンド末尾で同期実行 — 起動は U7）。
+- **境界**: ~~入力は U3 のジャーナル読取 API と U2 のイベント型。~~ → **失効（2026-08-29 / Bolt B8。
+  同日中の是正を in-place 反映）**: `JournalReader` ポートとその実装 `JournalReaderImpl`（旧 U3
+  所有）は本 Unit へ移動した。入力は U2 のドメインイベント型（`core-command-domain`）と、U3
+  （`core-command-interface-adapter`）が書き込む SQLite ジャーナル（同じ DB ファイルへの別接続）。
+  **本 Unit は独立クレート `core-read-model-updater` として実装済み**であり、コマンド側でも
+  クエリ側でもない**中間**の位置づけを持つ（`coding-rules/cqrs-boundaries.md`） —
+  コマンド側のドメインイベント（`core-command-domain`）には依存してよいが、コマンド側の
+  `core-command-use-case` / `core-command-interface-adapter` の `Cargo.toml` には本 Unit は
+  一切現れない（相互独立が物理強制 — `crate-structure-proposal.md` §2）。書込先は upstream
+  互換ファイルのみ。常駐しない（コマンド末尾で同期実行 — 起動は U7）。
 - **合格**: FR1.1（投影出力が 0a 逐語契約に一致）、NFR3（ジャーナル → 集約 → 投影の再生成、冪等性）。
   FR5.4（write-audit-log）の「監査行を描く」側はここ、フックの発火側は U7。
 - **実装ノート**: 投影規則（イベント → 行）は contract-design で形式化（Q7 = B）。**embedded 表記の
   補足（2026-08-29 / Bolt B8）**: §2 表の「embedded」はデプロイ形態（`aidlc` バイナリへの静的リンク、
   独立プロセスなし）を指し、クレート境界の独立性を意味しない。本 Unit は Bolt B8 で独立クレート
-  `core-query-read-model-updater` として実装され、U3 とは相互独立が物理強制されている。
+  `core-read-model-updater`（中間 — コマンド側でもクエリ側でもない）として実装され、U3 とは
+  相互独立が物理強制されている。
 
 ### U5 — `u5-report-use-case`（library, M）
 
@@ -209,7 +218,7 @@
 | `aidlc-sensor-required-sections`（`unit-of-work-dependency.md`） | `pass:true`, `edge_block:"ok"`, `h2_count:5` | 機械可読 `yaml` 辺ブロックは整形済み・非循環。手動でも DAG を追跡し循環なしを確認（U1・U2・U9・U10 が根、U8→U7→{U1,U4,U5,U6}→…→U2 まで戻り辺なし） |
 | `aidlc-sensor-traceability`（`traceability.json`） | `pass:false`, `findings_count:81`（全件 GAP + invalid_targets） | ダイスパッチブリーフの事前注記どおり、upstream センサーが `story-map` の行を `USx.y` 形式でしか認識できず、FR 直結行を誤検知しているだけ（stories.md 不在パスに未対応の既知の限界）。手動突合の結果、`requirements.md` の FR/NFR **43 ID**（親 FR1〜FR9・NFR1〜NFR5 + 子 38 件）が `traceability.json` `upstream_ids` と過不足なく一致し、各 `OK`/`N/A` の `target`（U1〜U10）は `unit-of-work-story-map.md` §1/§2 の該当行と一致することを確認した。誤検知として所見に数えない |
 | ID 突合（requirements.md ↔ unit-of-work.md ↔ story-map ↔ traceability.json、手動） | 一致 | 43 ID すべてに Unit 割当があり、未割当の FR/NFR は無い（NFR5 のみ意図的に N/A）。Unit 側も U1〜U10 すべてが最低 1 件の FR/NFR を持つ |
-| コンポーネント突合（components.md 11 個 ↔ unit-of-work.md、手動） | 不一致（8/11） | `OrchestrationEngine`／`WorkflowDefinitionModel`／`WorkspaceModel`（→ U2 の「core-domain クレート」表現で間接網羅）、`PersistenceGateways`（→ U3）、`ReadModelUpdater`（→ U4）、`CliDispatcher`（→ U7）、`CanonJson`（→ U1）は追跡できたが、`PublishedLanguage`／`InfraIo`／`HarnessClaude` の 3 個は Unit 名として一度も出現しない（所見 3） |
+| コンポーネント突合（components.md 11 個 ↔ unit-of-work.md、手動） | 不一致（8/11） | `OrchestrationEngine`／`WorkflowDefinitionModel`／`WorkspaceModel`（→ U2 の「~~core-domain~~ →（2026-08-29 / Bolt B8 改名）core-command-domain クレート」表現で間接網羅）、`PersistenceGateways`（→ U3）、`ReadModelUpdater`（→ U4）、`CliDispatcher`（→ U7）、`CanonJson`（→ U1）は追跡できたが、`PublishedLanguage`／`InfraIo`／`HarnessClaude` の 3 個は Unit 名として一度も出現しない（所見 3） |
 | Q7（A, B, C, D）と §4 統合点表の突合 | 一致 | ポート trait／ドメインイベント語彙と投影規則／SQLite スキーマ／CLI 動詞・directive JSON・フック入出力 の 4 行が Q7 回答と 1:1 対応 |
 
 ### Summary
