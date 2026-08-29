@@ -10,8 +10,15 @@ workspace = true
 
 [dependencies]
 libc = "0.2"
+# canon_json (正準 JSON — ADR 0001) の直列化・ダイジェスト。
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 nix = { version = "0.30", default-features = false, features = ["signal", "fs"] }
 
 [dev-dependencies]
 tempfile = "3"
+proptest = { workspace = true }
+# ゴールデン比較器 (tests/support) が normalization.json の regex 規則を適用するため。
+regex = { workspace = true }
 

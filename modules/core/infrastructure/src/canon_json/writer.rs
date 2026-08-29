@@ -1,8 +1,8 @@
 //! 直列化の本体 — 体裁 (BR1.5)・数値 (BR1.3)・エスケープ (BR1.4)・キー順 (BR1.1 / BR1.2)。
 
-use crate::canonical;
-use crate::profile::{Indent, SerializationProfile};
-use crate::value::{JsonValue, Number, ObjectMembers};
+use crate::canon_json::canonical;
+use crate::canon_json::profile::{Indent, SerializationProfile};
+use crate::canon_json::value::{JsonValue, Number, ObjectMembers};
 
 /// JS の `Number` が整数を正確に保てる上限。これを超える整数は JS 側が f64 に丸めてから
 /// 表記するため、こちらも f64 経路で書かないとバイト一致しない (BR1.3)。
@@ -201,8 +201,8 @@ fn write_string(out: &mut String, text: &str) {
 
 #[cfg(test)]
 mod tests {
+    use crate::canon_json::value::ObjectMembers;
     use super::*;
-    use crate::value::ObjectMembers;
 
     fn compact(value: &JsonValue) -> String {
         serialize(value, SerializationProfile::ContractCompact)
@@ -458,8 +458,8 @@ mod tests {
 mod proptests {
     use proptest::prelude::*;
 
+    use crate::canon_json::value::arbitrary;
     use super::*;
-    use crate::value::arbitrary;
 
     proptest! {
         /// 決定性 — 同じ値・同じプロファイルなら常に同じバイト列 (NFR1.1)。
@@ -508,7 +508,7 @@ mod proptests {
             for profile in SerializationProfile::ALL {
                 let text = serialize(&value, *profile);
                 prop_assert!(
-                    crate::parse::parse(text.trim_end_matches('\n')).is_ok(),
+                    crate::canon_json::parse::parse(text.trim_end_matches('\n')).is_ok(),
                     "読み戻せない出力: {text:?}"
                 );
             }

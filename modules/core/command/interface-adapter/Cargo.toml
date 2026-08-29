@@ -11,7 +11,6 @@ workspace = true
 [dependencies]
 core-command-use-case = { workspace = true }
 core-command-domain = { workspace = true }
-canon-json = { workspace = true }
 message-catalog = { workspace = true }
 core-infrastructure = { workspace = true }
 # 本家が `Box<dyn Error>` に包んで運ぶ SQLite の失敗を開けて分類するため (`store_failure`)。

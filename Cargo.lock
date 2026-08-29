@@ -91,17 +91,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
-name = "canon-json"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "regex",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "cc"
 version = "1.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -154,7 +143,6 @@ dependencies = [
 name = "core-command-interface-adapter"
 version = "0.1.0"
 dependencies = [
- "canon-json",
  "chrono",
  "core-command-domain",
  "core-command-use-case",
@@ -189,6 +177,11 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "nix",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
 ]
 

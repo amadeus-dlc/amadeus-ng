@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::value::{JsonValue, Number};
+use crate::canon_json::value::{JsonValue, Number};
 
 /// ネスト深さの上限 (NFR4.3)。`serde_json` 既定の再帰上限と同じ値。
 ///
@@ -210,8 +210,8 @@ mod parse_tests {
     // シグナルとして妥当なため同様に許容する。
     #![allow(clippy::indexing_slicing, clippy::panic)]
 
+    use crate::canon_json::value::ObjectMembers;
     use super::*;
-    use crate::value::ObjectMembers;
 
     fn object_keys(value: &JsonValue) -> Vec<String> {
         match value {
@@ -378,10 +378,10 @@ mod parse_tests {
 mod proptests {
     use proptest::prelude::*;
 
+    use crate::canon_json::profile::SerializationProfile;
+    use crate::canon_json::value::arbitrary;
+    use crate::canon_json::writer::serialize;
     use super::*;
-    use crate::profile::SerializationProfile;
-    use crate::value::arbitrary;
-    use crate::writer::serialize;
 
     proptest! {
         /// 値水準の往復 — 表現が保たれる部分集合では `parse(serialize(v)) == v`。

@@ -1,5 +1,9 @@
 //! 正準 JSON シリアライザ (ADR 0001 / A2) — 3 プロファイル。純粋部品: 全層から依存可。
 //!
+//! 2026-08-29 オーナー裁定により独立クレート `modules/shared/canon-json` から本モジュールへ移設 —
+//! 直列化の力学は**言語拡張（infrastructure）**であり、ドメインも相手方システムの契約も知らない
+//! （upstream 互換のバイト挙動は「JSON の書き方」の仕様であって、プロトコル結合ではない）。
+//!
 //! upstream (JS の `JSON.stringify` / `hashObject`) と**バイト一致**する JSON の読み書きと
 //! ダイジェスト計算を提供する。契約 JSON の読み書きはすべてこのクレートを経由し、
 //! 呼出側は `serde_json` の直列化関数と `to_value` を直接呼ばない (BR1.7 — `clippy.toml` の
@@ -52,7 +56,7 @@
 //! # 例
 //!
 //! ```
-//! use canon_json::{SerializationProfile, hash_canonical, parse, serialize, to_value};
+//! use core_infrastructure::canon_json::{SerializationProfile, hash_canonical, parse, serialize, to_value};
 //!
 //! // 動的な JSON テキストは parse で読む (挿入順を保つ)。
 //! let value = parse(r#"{"z":1,"a":[1.0,2]}"#)?;
@@ -80,8 +84,6 @@
 //! );
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
-
-#![forbid(unsafe_code)]
 
 // 型ファイルの mod は private。公開 API は下の `pub use` 列挙が唯一の宣言であり、
 // 消費側のパスは `canon_json::<型>` で安定する。利便性のための再エクスポートは置かない
@@ -123,9 +125,9 @@ mod facade_tests {
         "serialize",
     ];
 
-    /// `lib.rs` の `pub use` 行から再輸出名を取り出す。
+    /// `mod.rs` の `pub use` 行から再輸出名を取り出す。
     fn reexported_names() -> Vec<String> {
-        let source = include_str!("lib.rs");
+        let source = include_str!("mod.rs");
         let mut names = Vec::new();
         for line in source.lines() {
             let Some(rest) = line.trim().strip_prefix("pub use ") else {
@@ -157,7 +159,7 @@ mod facade_tests {
 
     #[test]
     fn every_module_declaration_is_private() {
-        let source = include_str!("lib.rs");
+        let source = include_str!("mod.rs");
 
         for line in source.lines() {
             assert!(

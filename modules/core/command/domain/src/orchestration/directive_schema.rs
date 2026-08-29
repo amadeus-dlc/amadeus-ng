@@ -5,7 +5,6 @@
 //! Directive 本体の判別共用体・28KiB 上限・continue_token ペイロード型は後続スライス。
 //! 出典: upstream `aidlc-directive.ts:419-430` (02 §4.1)。
 
-
 /// 10 種の閉集合。`PresentGate` と `DispatchSubagent` は upstream の placeholder —
 /// 「Do not implement those two placeholder behaviours speculatively.」(02 §4.1)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
