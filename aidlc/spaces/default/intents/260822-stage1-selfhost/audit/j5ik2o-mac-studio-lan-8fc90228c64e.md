@@ -22005,3 +22005,1453 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: **B8 完了しました。** 固定裁定 1〜8 をすべて実施し、受入基準 1〜8 すべて PASS です。\n\n## 裁定 A の実装\n\n担当エージェント名・ステージ番号・ステージ表題と走査結果 4 項目を `Started` へ焼き込みました。`StageDisplay`（番号・表題・担当、`modules/core/domain/src/orchestration/stage_display.r
 
 ---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:56:30Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:30Z
+**Event**: SENSOR_FIRED
+**Fire id**: 95fe7331
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:30Z
+**Event**: SENSOR_PASSED
+**Fire id**: 95fe7331
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:30Z
+**Event**: SENSOR_FIRED
+**Fire id**: e222ed0a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:30Z
+**Event**: SENSOR_PASSED
+**Fire id**: e222ed0a
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 20
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:56:37Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: 35fc074e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: 35fc074e
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 21
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4f2ac3a5
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4f2ac3a5
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:56:48Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9c5f4e9c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9c5f4e9c
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:48Z
+**Event**: SENSOR_FIRED
+**Fire id**: afd4916d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:48Z
+**Event**: SENSOR_PASSED
+**Fire id**: afd4916d
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:56:56Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:56Z
+**Event**: SENSOR_FIRED
+**Fire id**: 27a0aae7
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:56Z
+**Event**: SENSOR_PASSED
+**Fire id**: 27a0aae7
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:56:56Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7785495e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:56:56Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7785495e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:57:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: c9612d14
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: c9612d14
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: fbb41c04
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: fbb41c04
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:57:08Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: b2f803f8
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:08Z
+**Event**: SENSOR_PASSED
+**Fire id**: b2f803f8
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: caea50a5
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:08Z
+**Event**: SENSOR_PASSED
+**Fire id**: caea50a5
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:57:19Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:19Z
+**Event**: SENSOR_FIRED
+**Fire id**: a7042468
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:19Z
+**Event**: SENSOR_PASSED
+**Fire id**: a7042468
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:20Z
+**Event**: SENSOR_FIRED
+**Fire id**: c5cbc857
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T01:57:20Z
+**Event**: SENSOR_FAILED
+**Fire id**: c5cbc857
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-c5cbc857.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:57:36Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: f812aa13
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:36Z
+**Event**: SENSOR_PASSED
+**Fire id**: f812aa13
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: 77a8c1f8
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T01:57:36Z
+**Event**: SENSOR_FAILED
+**Fire id**: 77a8c1f8
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-77a8c1f8.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T01:57:58Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: f84ee099
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T01:57:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: f84ee099
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T01:57:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2fdc47d6
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T01:57:58Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2fdc47d6
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-2fdc47d6.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:00:36Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:00:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: a444f1e1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:00:36Z
+**Event**: SENSOR_PASSED
+**Fire id**: a444f1e1
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:00:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5cc4d88e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:00:36Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5cc4d88e
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:01:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a926d9016da1be6e6
+**Message**: B8（CQRS 側分割 + U4 リードモデル更新機構）は実装完了・全ゲート緑で受入済み。いま仕様書の同期を委任中で、完了レビュー後に PR #33 を作成し、CI 緑なら裁定どおりマージします。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:01:50Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-29T02:01:57Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report.md
+**Context**: construction > u4-read-model-updater > doc-sync-report.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:01:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: c41f51ca
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:01:57Z
+**Event**: SENSOR_PASSED
+**Fire id**: c41f51ca
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:01:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: 87d9b668
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:01:57Z
+**Event**: SENSOR_FAILED
+**Fire id**: 87d9b668
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-87d9b668.md
+**Findings count**: 1
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:02:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:02:47Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-doc-sync
+**Agent ID**: ab8-doc-sync-4dee1ee48f6aad45
+**Message**: B8の仕様同期タスクが完了しました。要点は以下の通りです。\n\n**変更**: 7ファイル（docs/specs 4本、contract-summary.md、unit-of-work.md、新規報告書1本）、1コミット（`e16e7f8`、push なし）。\n\n**主な内容**:\n- 旧クレート名 `core-use-case` / `core-interface-adapter` / `infr
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:04:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-doc-sync
+**Agent ID**: ab8-doc-sync-4dee1ee48f6aad45
+**Message**: 作業を中止しました。要点は以下の通りです。\n\n**状況確認**: 私の編集はすべて1コミット（`e16e7f8`）に収まっており、未コミットの変更はありません。作業ツリーに残る唯一の未ステージ差分（監査ファイル）はセッション開始前から存在していたもので、私は触っていません。したがって「未コミット編集の破棄」に該当する作業は不要でした。\n\n**team-leadへの報告内容**: 7ファイル（`do
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-29T02:06:31Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:07:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-doc-sync
+**Agent ID**: ab8-doc-sync-4dee1ee48f6aad45
+**Message**: team-leadからの連絡内容を確認し、了承の返信を送りました。\n\n要点は以下の通りです。\n\n- コミット `e16e7f8` は破棄せず温存する方針を確認しました。クレート改名・`Started`のdisplay/scan追加・転居記述・C5/C6・unit-of-workの大半は手戻り後も有効という判断です。\n- 実装側の手戻り（`core-domain`→`core-command-dom
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:09:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abce6a3e0e1426503
+**Message**: <analysis>\nLet me chronologically work through this long conversation to capture everything essential.\n\n**Initial delegation (team-lead message 1)**: I was delegated as the B8 Bolt implementer for ama
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:10:52Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:10:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:11:23Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:11:23Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:12:30Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T02:15:13Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:19:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: 上流の矛盾を検出したため、実装を止めて team-lead に裁定を要請しました。\n\n**完了させた部分（コミット `de88d43`）** — 固定裁定 1 の改名だけです。これは新旧どちらの正本でも変わらないため、安全に確定できました。`modules/core/domain` → `modules/core/command/domain`、パッケージ `core-domain` → `cor
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:23:11Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a00ad7eaa7f97a876
+**Message**: B8（CQRS 側分割 + U4 リードモデル更新機）の仕上げ中で、domain の command 側移動は完了、残りは RMU クレートの改名 1 件を委任実行中です。完了報告が来たら検証して PR #33 を出しマージします。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:26:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: ブリーフ 4 を完了し、team-lead に報告しました。\n\n**成果** — 機械的な改名・移動 2 件のみ、コミット 3 本（`de88d43` / `393e28f` / `33f191b`）。`modules/core/domain` → `modules/core/command/domain`（`core-command-domain`）、`modules/core/query/re
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:29:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9c687483a543659c
+**Message**: B8（CQRS 側分割と U4 リードモデル更新系）はドメイン移動と RMU 改名まで完了、実装担当のコメント是正コミット待ちです。届き次第、私が全ゲート独立検証し、仕様同期の第 2 パスを経て PR #33 を出してマージします。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:31:25Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: **B8 実装クローズしました。** 承認された doc コメント 5 箇所の是正（`86d10a6`）と報告書の最終更新（`38fc618`）を積み、全ゲートを是正後に測り直して緑です。\n\n是正の中身は、是正裁定で説明が覆った箇所を実態に合わせたものです。いちばん目立っていた `read-model-updater/Cargo.toml` の自己否定コメント（「コマンド側クレートはここに現れては
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:34:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-developer
+**Agent ID**: ab8-developer-923327f5c99a13d9
+**Message**: **最終スイープを完了し、B8 をクローズしました。** コミット `3a61d28`（スイープ）と `327113b`（報告書反映）です。\n\n申し送りした 14 箇所に加え、走査を広げて同種を 2 件見つけたので **計 16 箇所**を 1 コミット・コメントのみで是正しました。追加分は `read-model-updater/.../journal_read_error.rs`（リンクを張ら
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:39:52Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:39:52Z
+**Event**: SENSOR_FIRED
+**Fire id**: f9fda92b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:39:52Z
+**Event**: SENSOR_PASSED
+**Fire id**: f9fda92b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:39:52Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3929b306
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:39:52Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3929b306
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 26
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:39:57Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:39:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: d8b38f88
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:39:57Z
+**Event**: SENSOR_PASSED
+**Fire id**: d8b38f88
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:39:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1a2e5b18
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:39:57Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1a2e5b18
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:40:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: fd06ff33
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: fd06ff33
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4f65557b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4f65557b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:40:07Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5f321894
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:08Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5f321894
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: a6d772f3
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:08Z
+**Event**: SENSOR_PASSED
+**Fire id**: a6d772f3
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:40:24Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: 87d3fe1d
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: 87d3fe1d
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: b0ec971f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:24Z
+**Event**: SENSOR_PASSED
+**Fire id**: b0ec971f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 18
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:40:27Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:27Z
+**Event**: SENSOR_FIRED
+**Fire id**: 382d1193
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: 382d1193
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: 563cdc8b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: 563cdc8b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 20
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:40:32Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Context**: inception > contract-design > contract-summary.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 927888a7
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: 927888a7
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:40:32Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4c916c6f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:40:32Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4c916c6f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/contract-design/contract-summary.md
+**Duration ms**: 19
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:41:03Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:03Z
+**Event**: SENSOR_FIRED
+**Fire id**: a2ec9229
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:41:03Z
+**Event**: SENSOR_PASSED
+**Fire id**: a2ec9229
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:03Z
+**Event**: SENSOR_FIRED
+**Fire id**: cda6b228
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:41:03Z
+**Event**: SENSOR_FAILED
+**Fire id**: cda6b228
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-cda6b228.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:41:07Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:07Z
+**Event**: SENSOR_FIRED
+**Fire id**: 255b88b4
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:41:07Z
+**Event**: SENSOR_PASSED
+**Fire id**: 255b88b4
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 18
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:07Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9e9b7304
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:41:07Z
+**Event**: SENSOR_FAILED
+**Fire id**: 9e9b7304
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-9e9b7304.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:41:15Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6111a24b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:41:15Z
+**Event**: SENSOR_PASSED
+**Fire id**: 6111a24b
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 19
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2dda031b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:41:15Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2dda031b
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-2dda031b.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:41:26Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:26Z
+**Event**: SENSOR_FIRED
+**Fire id**: af611f28
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:41:26Z
+**Event**: SENSOR_PASSED
+**Fire id**: af611f28
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:26Z
+**Event**: SENSOR_FIRED
+**Fire id**: b5ab2216
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:41:26Z
+**Event**: SENSOR_FAILED
+**Fire id**: b5ab2216
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-b5ab2216.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:41:36Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: 7326601a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:41:36Z
+**Event**: SENSOR_PASSED
+**Fire id**: 7326601a
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: 34d6dbcb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:41:36Z
+**Event**: SENSOR_FAILED
+**Fire id**: 34d6dbcb
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-34d6dbcb.md
+**Findings count**: 1
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-08-29T02:41:45Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Context**: inception > units-generation > unit-of-work.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9f227e56
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:41:45Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9f227e56
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:41:46Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6881afef
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:41:46Z
+**Event**: SENSOR_FAILED
+**Fire id**: 6881afef
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/inception/units-generation/unit-of-work.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-6881afef.md
+**Findings count**: 1
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-08-29T02:45:47Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report-2.md
+**Context**: construction > u4-read-model-updater > doc-sync-report-2.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:45:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: e050b858
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report-2.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-08-29T02:45:47Z
+**Event**: SENSOR_PASSED
+**Fire id**: e050b858
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report-2.md
+**Duration ms**: 17
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-08-29T02:45:47Z
+**Event**: SENSOR_FIRED
+**Fire id**: 74da30e7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report-2.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-08-29T02:45:47Z
+**Event**: SENSOR_FAILED
+**Fire id**: 74da30e7
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/doc-sync-report-2.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-74da30e7.md
+**Findings count**: 2
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-29T02:46:25Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b8-doc-sync
+**Agent ID**: ab8-doc-sync-4dee1ee48f6aad45
+**Message**: B8の第2パス仕様同期が完了しました。要点は以下の通りです。\n\n**完了内容**: オーナー是正（ドメインはコマンド側の持ち物 = `core-command-domain`、RMUはコマンド側でもクエリ側でもない「中間」= `core-read-model-updater`）を、第1パス（`e16e7f8`、温存済み）に差分だけ重ねる形で反映しました。1コミット（`79f7e82`）、push 
+
+---
