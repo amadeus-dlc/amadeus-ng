@@ -21,7 +21,7 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_query_read_model_updater::orchestration::{
+use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
 };

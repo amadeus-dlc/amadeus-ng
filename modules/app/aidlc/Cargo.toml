@@ -14,7 +14,7 @@ workspace = true
 core-command-domain = { workspace = true }
 core-command-use-case = { workspace = true }
 core-command-interface-adapter = { workspace = true }
-core-query-read-model-updater = { workspace = true }
+core-read-model-updater = { workspace = true }
 core-infrastructure = { workspace = true }
 
 [dev-dependencies]

@@ -6,7 +6,7 @@
 //! 集約の永続化そのものは本家 event-store-adapter-rs が担う (ADR-010)。ここに残るのは
 //! 「本家に無いもの」— 集約の再構成手順を持つ Repository である。全集約横断の順序読取と
 //! 投影チェックポイント (`JournalReaderImpl`) はクエリ側の仕事であり、2026-08-29 の側分割で
-//! `core-query-read-model-updater` へ移った。
+//! `core-read-model-updater` へ移った。
 //!
 //! `WorkflowDefinitionRepository` の規範 (3 入力の形状・読込失敗態度・述語 5 種) は
 //! 12-workflow-definition が所有する。

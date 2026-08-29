@@ -4,7 +4,7 @@ members = [
   "modules/core/command/domain",
   "modules/core/command/use-case",
   "modules/core/command/interface-adapter",
-  "modules/core/query/read-model-updater",
+  "modules/core/read-model-updater",
   "modules/core/infrastructure",
   "modules/shared/canon-json",
   "modules/shared/message-catalog",
@@ -93,7 +93,7 @@ core-command-domain = { path = "modules/core/command/domain" }
 # (`coding-rules/cqrs-boundaries.md`)。
 core-command-use-case = { path = "modules/core/command/use-case" }
 core-command-interface-adapter = { path = "modules/core/command/interface-adapter" }
-core-query-read-model-updater = { path = "modules/core/query/read-model-updater" }
+core-read-model-updater = { path = "modules/core/read-model-updater" }
 canon-json = { path = "modules/shared/canon-json" }
 message-catalog = { path = "modules/shared/message-catalog" }
 audit-events = { path = "modules/shared/audit-events" }

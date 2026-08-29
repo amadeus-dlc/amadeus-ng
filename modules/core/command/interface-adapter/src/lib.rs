@@ -1,7 +1,7 @@
 //! **コマンド側**のインターフェイスアダプタ層 — Controllers / Presenters / Gateways。
 //! I/O 責務はここ (01 §7)。
 //!
-//! クエリ側の実装（`JournalReaderImpl`・投影ライタ）は `core-query-read-model-updater` が
+//! クエリ側の実装（`JournalReaderImpl`・投影ライタ）は `core-read-model-updater` が
 //! 丸ごと所有する。1 つのクレートがコマンド側とクエリ側の実装を同居させてはならない
 //! (2026-08-29 オーナー裁定 — `coding-rules/cqrs-boundaries.md`)。
 //!

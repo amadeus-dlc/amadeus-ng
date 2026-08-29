@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use audit_events::EventType;
 use chrono::{DateTime, Utc};
 use core_command_domain::workspace::{AuditFieldKey, AuditFields};
-use core_query_read_model_updater::workspace::{SHARD_HEADER, render_audit_block};
+use core_read_model_updater::workspace::{SHARD_HEADER, render_audit_block};
 
 /// ゴールデンが正規化で潰した実行時値の置き換え先。
 const TS_PLACEHOLDER: &str = "<TS>";
@@ -33,7 +33,7 @@ const RENDER_AT: &str = "2026-08-22T13:43:00Z";
 const BLOCK_TERMINATOR: &str = "\n---\n";
 
 fn golden_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-3c3146cf")
 }
 
 /// `**<key>**: <value>` 形のフィールド行を 1 本読む。

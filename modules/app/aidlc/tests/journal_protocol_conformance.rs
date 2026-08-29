@@ -60,7 +60,7 @@ use core_command_interface_adapter::orchestration::WorkflowExecutionRepositoryIm
 use core_command_use_case::orchestration::{
     RehydratedWorkflowExecution, RepositoryError, WorkflowExecutionRepository,
 };
-use core_query_read_model_updater::orchestration::{
+use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
 };

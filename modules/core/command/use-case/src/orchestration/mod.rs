@@ -3,7 +3,7 @@
 //! trait 定義のみ (I/O 責務は持たない — 01 §7)。
 //!
 //! 読取側の語彙 (`JournalReader` / `JournalEntry` / `GlobalSeqNr` / `ProjectionName` /
-//! `JournalReadError`) は 2026-08-29 の側分割で `core-query-read-model-updater` へ移った。
+//! `JournalReadError`) は 2026-08-29 の側分割で `core-read-model-updater` へ移った。
 //! 呼ぶのは RMU だけなので、RMU クレート自身が所有する (ADR-009 2026-08-28 / 2026-08-29 追記)。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、

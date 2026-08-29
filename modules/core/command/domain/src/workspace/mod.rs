@@ -3,7 +3,7 @@
 //!
 //! **描画はここに無い** (11-workspace §2.3)。状態ファイル・監査ブロックを**描く**純関数
 //! (`state_writers` / `render_audit_block`) は ES 化により投影の責務へ移った — 描くのは
-//! ReadModelUpdater (`core-query-read-model-updater` の `workspace` 投影 API) であって、
+//! ReadModelUpdater (`core-read-model-updater` の `workspace` 投影 API) であって、
 //! ドメイン層ではない (ADR-003 / ADR-004)。ここに残るのは値オブジェクトの Always Valid 検証と、
 //! 集約に置けない横断の判断 (`classify_state_version`) である。
 //!

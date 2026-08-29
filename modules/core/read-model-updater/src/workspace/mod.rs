@@ -8,7 +8,7 @@
 //! `find_all_events`）である。
 //!
 //! 実装ファイルの mod は private。公開 API は `pub use` が唯一の宣言であり、消費側のパスは
-//! `core_query_read_model_updater::workspace::<名前>` で安定する
+//! `core_read_model_updater::workspace::<名前>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod audit_block;

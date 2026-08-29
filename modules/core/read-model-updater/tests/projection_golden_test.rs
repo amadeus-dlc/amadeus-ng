@@ -41,8 +41,8 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_query_read_model_updater::orchestration::{GlobalSeqNr, JournalEntry};
-use core_query_read_model_updater::workspace::{ReadModel, ResolvedPlan, project};
+use core_read_model_updater::orchestration::{GlobalSeqNr, JournalEntry};
+use core_read_model_updater::workspace::{ReadModel, ResolvedPlan, project};
 
 /// ゴールデンが正規化で潰した実行時値の置き換え先。
 const TS_PLACEHOLDER: &str = "<TS>";
@@ -63,7 +63,7 @@ const REQUEST: &str = "/aidlc Build a small ordering service";
 const CONDITIONAL_ON_BROWNFIELD: &str = "reverse-engineering";
 
 fn golden_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-3c3146cf")
 }
 
 fn golden(case: &str) -> PathBuf {
@@ -233,7 +233,7 @@ fn assert_case_with_context(case: &str, event: WorkflowExecutionEvent, context: 
 fn assert_audit_only(case: &str, event: WorkflowExecutionEvent, state: &str) {
     let raw = std::fs::read_to_string(golden(case).join("audit.md")).expect("audit.md");
     let expected_audit = raw
-        .strip_prefix(core_query_read_model_updater::workspace::SHARD_HEADER)
+        .strip_prefix(core_read_model_updater::workspace::SHARD_HEADER)
         .unwrap_or(&raw)
         .to_string();
     let mut model = ReadModel::new(state.to_string());

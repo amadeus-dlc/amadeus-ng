@@ -11,7 +11,7 @@ use super::projection_name::ProjectionName;
 /// event-store-adapter-rs のイベントストアは集約単位の読み書きだけを担い、全集約横断の
 /// 順序読取と投影チェックポイントは利用側の関心だからである (ADR-010 決定 4)。
 ///
-/// 本 trait は RMU クレート (`core-query-read-model-updater`) が所有する
+/// 本 trait は RMU クレート (`core-read-model-updater`) が所有する
 /// (ADR-009 2026-08-28 / 2026-08-29 追記 — 呼ぶのは RMU だけなので中立クレートへ切り出さない)。
 /// RMU はライブラリ型を入口に出さないので、**本家の `EventEnvelope` をここから出さない** —
 /// 行の材料は我々が所有する [`JournalEntry`] に写して返す。

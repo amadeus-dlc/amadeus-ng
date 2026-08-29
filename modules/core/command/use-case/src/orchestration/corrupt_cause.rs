@@ -4,7 +4,7 @@ use std::fmt;
 
 /// `Corrupt` の原因分類 (材料) — 集約の永続化と再水和の面で起きうるもの。
 ///
-/// クエリ側 (`core_query_read_model_updater::orchestration::CorruptCause`) と**同じ名前の別の
+/// クエリ側 (`core_read_model_updater::orchestration::CorruptCause`) と**同じ名前の別の
 /// 型**である。両側は互いを知らないので (`coding-rules/cqrs-boundaries.md`)、分類を 1 つの
 /// enum で共有すると、どちらか一方がもう一方を `Cargo.toml` に書くことになる。DRY より側の
 /// 独立を採り、**実際に起きうる変種だけ**を各側が持つ (無用な変種は「この面ではありえない」

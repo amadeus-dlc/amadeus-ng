@@ -6,7 +6,7 @@
 //! （2026-08-28 / 2026-08-29 裁定 — ADR-009）。中立クレートへ切り出す必要は無い。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
-//! 消費側のパスは `core_query_read_model_updater::orchestration::<型>` で安定する
+//! 消費側のパスは `core_read_model_updater::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod corrupt_cause;
