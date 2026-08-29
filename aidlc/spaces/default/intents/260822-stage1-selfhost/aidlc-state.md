@@ -62,6 +62,8 @@ D6 互換の配当により、upstream `dist/claude/` の資産（33 ステー�
 
 - **Construction Iteration**: unit-major
 - **Skeleton Stance**: off
+- **Parked**: 2026-08-29T10:33:50Z
+- **Parked At Stage**: functional-design
 ## Phase Progress
 <!-- Status values: Pending, Active, Verified, Skipped -->
 
@@ -123,7 +125,7 @@ Per unit: [TBD]
 - **Current Stage**: functional-design
 - **Next Stage**: nfr-requirements
 - **Status**: Running
-- **Last Updated**: 2026-08-26T13:49:12Z
+- **Last Updated**: 2026-08-29T10:33:50Z
 
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning
