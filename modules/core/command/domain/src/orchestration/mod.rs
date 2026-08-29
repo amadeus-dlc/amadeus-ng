@@ -103,9 +103,10 @@ pub use intent_execution::IntentExecution;
 // 集約の観測結果
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
-// `IntentExecutionSnapshot` と `IntentExecutionSnapshotBuilder` はここに出さない — 集約の直列化形 (memento) と
-// その組み立て器はクレート内私有である (オーナー裁定 2026-08-29。出口は `IntentExecution` の
-// `Serialize` / `Deserialize` だけ)。
+// 集約の写し (memento) とその組み立て器。**改訂 9 で公開**へ — 直列化を担うアダプタ層が
+// 正当な消費者になったためである (coding-rules/domain-persistence-neutrality.md)。
+// 公開するのは読取アクセサと検査付き構築だけで、フィールドはクレート内に閉じている。
+pub use intent_execution_snapshot::{IntentExecutionSnapshot, IntentExecutionSnapshotBuilder};
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある

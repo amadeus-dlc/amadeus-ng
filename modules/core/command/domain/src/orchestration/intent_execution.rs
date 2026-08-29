@@ -41,7 +41,7 @@ use super::intent_execution_event::{
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
 use super::intent_execution_id::IntentExecutionId;
-use super::intent_execution_snapshot::IntentExecutionSnapshot;
+use super::intent_execution_snapshot::{IntentExecutionSnapshot, IntentExecutionSnapshotBuilder};
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
@@ -1001,23 +1001,27 @@ impl IntentExecution {
 
     // ---- W3: 状態の写し (memento) (BR5.2 / BR5.3) ----
 
-    /// 全状態を値オブジェクトへ写す。`plan` / `conditional` は解決済み計画からの展開 (C6 の列構成)。
+    /// 全状態を値オブジェクトへ写す (永続化境界を渡る唯一の形)。
+    ///
+    /// **公開**である (改訂 9) — 直列化を担うのはアダプタ層で、その DTO がこの写しを読む
+    /// (`coding-rules/domain-persistence-neutrality.md`)。
     #[must_use]
-    pub(crate) fn snapshot(&self) -> IntentExecutionSnapshot {
-        IntentExecutionSnapshot {
-            id: self.id.clone(),
-            intent_id: self.intent_id.clone(),
-            overlay: self.overlay.clone(),
-            checkbox: self.checkbox.clone(),
-            cursor: self.cursor.to_usize(),
-            status: self.status,
-            parked_at: self.parked_at.map(StageIndex::to_usize),
-            autonomy: self.autonomy,
-            approved: self.approved.clone(),
-            revision_count: self.revision_count.clone(),
-            seq_nr: self.seq_nr,
-            last_updated_at: self.last_updated_at,
-        }
+    pub fn snapshot(&self) -> IntentExecutionSnapshot {
+        IntentExecutionSnapshotBuilder::new(
+            self.id.clone(),
+            self.intent_id.clone(),
+            self.overlay.clone(),
+        )
+        .checkbox(self.checkbox.clone())
+        .cursor(self.cursor.to_usize())
+        .status(self.status)
+        .parked_at(self.parked_at.map(StageIndex::to_usize))
+        .autonomy(self.autonomy)
+        .approved(self.approved.clone())
+        .revision_count(self.revision_count.clone())
+        .seq_nr(self.seq_nr)
+        .last_updated_at(self.last_updated_at)
+        .build()
     }
 
     /// 状態の写し (memento) から集約を復元する (不変条件を検査する唯一の再水和経路)。
@@ -1027,9 +1031,7 @@ impl IntentExecution {
     /// 長さ不一致・`plan` / `conditional` と解決済み計画の食い違い・範囲外カーソル・
     /// `cursor_in_scope` / `at_most_one_active` / `no_gate_bypass` / `parked_position` の違反・
     /// `seq_nr` = 0 を `InvariantViolation` で拒否する。
-    pub(crate) fn from_snapshot(
-        state: IntentExecutionSnapshot,
-    ) -> Result<IntentExecution, SnapshotError> {
+    pub fn from_snapshot(state: IntentExecutionSnapshot) -> Result<IntentExecution, SnapshotError> {
         let execution = IntentExecution {
             id: state.id,
             intent_id: state.intent_id,
@@ -1205,7 +1207,6 @@ mod tests {
     #![allow(clippy::indexing_slicing, clippy::panic)]
 
     use super::*;
-    use crate::orchestration::intent_execution_snapshot::IntentExecutionSnapshotBuilder;
     use crate::orchestration::{
         ApplyError, AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError,
         IntentEvent, IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection,
@@ -1600,6 +1601,15 @@ mod tests {
         .into_iter()
         .collect();
         ScopeGrid::new([("classic".to_string(), column)].into_iter().collect())
+    }
+
+    /// intent の解決済み計画をそのまま実効プランへ写す (birth 時の overlay)。
+    fn birth_overlay(intent: &Intent) -> Vec<PlanAction> {
+        intent
+            .stages()
+            .iter()
+            .map(StageEntry::plan_action)
+            .collect()
     }
 
     // ---- W1: start (BR2.2 / BR2.6) ----
@@ -2426,14 +2436,24 @@ mod tests {
         // ある。計画との整合 (`no_gate_bypass`) は `&Intent` が渡る適用・コマンド側が見る。
         let w = all_exec(3);
         let base = w.snapshot();
-        let builder = || IntentExecutionSnapshotBuilder::new(execution_id(), &w.intent);
+        let builder = || {
+            IntentExecutionSnapshotBuilder::new(
+                execution_id(),
+                w.intent.id().clone(),
+                birth_overlay(&w.intent),
+            )
+        };
+        // 実効プランはビルダーの構築引数なので、長さや中身を崩す壊し方はこちらで起こす。
+        let with_overlay = |overlay: Vec<PlanAction>| {
+            IntentExecutionSnapshotBuilder::new(execution_id(), w.intent.id().clone(), overlay)
+        };
 
         for broken in [
             // ステージ 0 件 — 実行時ベクトルの長さが総数そのものなので、空にすれば起きる。
-            builder().overlay(Vec::new()).build(),
+            with_overlay(Vec::new()).build(),
             builder().checkbox(vec![InProgress]).build(),
             builder().cursor(9).build(),
-            builder().overlay(vec![Skip, Execute, Execute]).build(),
+            with_overlay(vec![Skip, Execute, Execute]).build(),
             builder()
                 .checkbox(vec![InProgress, InProgress, Pending])
                 .build(),
@@ -2559,13 +2579,16 @@ mod tests {
             (Pending, false),
             (AwaitingApproval, false),
         ] {
-            let state = IntentExecutionSnapshotBuilder::new(execution_id(), &base.intent)
-                .overlay(vec![Execute, Skip, Execute])
-                .checkbox(vec![Completed, marker, Pending])
-                .cursor(1)
-                .parked_at(Some(1))
-                .seq_nr(4)
-                .build();
+            let state = IntentExecutionSnapshotBuilder::new(
+                execution_id(),
+                base.intent.id().clone(),
+                vec![Execute, Skip, Execute],
+            )
+            .checkbox(vec![Completed, marker, Pending])
+            .cursor(1)
+            .parked_at(Some(1))
+            .seq_nr(4)
+            .build();
             let w = Run {
                 intent: base.intent.clone(),
                 execution: IntentExecution::from_snapshot(state).unwrap(),
