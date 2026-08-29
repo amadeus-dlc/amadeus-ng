@@ -17,10 +17,13 @@ Conversation language: 日本語
 ある**（うち 1 つは環境の絶対パス）。読み替えず止めて裁定を求め、**オーナー裁定 A**
 （骨格生成は投影の責務外 — 書くのは合成ルート、実装は U7）を受けて実装を確定した（§4）。
 
-- コミット 3 本 / 採取ケース 22 → **25**、監査ブロック検収 42 → **62** 本
-- 投影ゴールデン検収 10 → **13 ケース**（`audit.md` + `state.diff` の両面バイト一致）
-- テスト 737 → **741 件**（全緑）、カバレッジ **98.4805%**（`origin/main` の 98.4801% と同水準）
-- 受入基準 **1〜8, 10 は PASS**、**9 は条件付き**（§6）
+さらに最終ラウンドで、付帯確認から見つかった B8 由来の乖離 3 件を**実バイトで確定して
+是正**した（§6-2）。うち 1 件は**私の見立てが誤り**で、採取した実バイトが否定した。
+
+- コミット 6 本 / 採取ケース 22 → **28**、監査ブロック検収 42 → **70** 本
+- 投影ゴールデン検収 10 → **19 ケース**（`audit.md` + `state.diff` の両面バイト一致）
+- テスト 737 → **744 件**（全緑）、カバレッジ **98.5165%**（`origin/main` の 98.4801% から +0.036pt）
+- 受入基準 **1〜10 すべて PASS**（§6）
 
 ---
 
@@ -31,7 +34,7 @@ Conversation language: 日本語
 | 1 | 状態ファイルの骨格 | **採取済み** | `cli/intent-create/classic-scope/state-full.md`（102 行全文） |
 | 2 | 非ゲート `StageCompleted` の単独経路 | **採取済み** | `cli/report/completed-ungated` |
 | 3 | `AUTONOMY_MODE_SET` 成功経路 | **到達不能**（§2） | `cli/cases-missing.json` |
-| 4 | 途中で見つかる他の未採取バイト | **2 件採取** | `cli/jump/execute-backward`, `cli/jump/execute-forward-across-phases` |
+| 4 | 途中で見つかる他の未採取バイト | **5 件採取** | `cli/jump/execute-backward`, `cli/jump/execute-forward-across-phases`, `cli/report/approved-across-phases`, `cli/recompose/skip-two-appends-in-graph-order`, `cli/recompose/add-restores-conditional` |
 
 ### 1-1 骨格 — B8 の前提が 1 つ間違っていた
 
@@ -210,7 +213,15 @@ ADR-008 / NFR3 の趣旨に反するため不採、C（slug ハードコード�
    実物の状態ファイルには元からある行で、合成側が最小骨格として省いていただけである。
 6. **`audit_block_golden_test.rs` の期待ブロック数を 42 → 62 へ上げた**。ゴールデンが減ったのに
    緑のまま、を防ぐ番人なので、増えたぶんを反映しないと番人にならない。
-7. **カバレッジ相対ゲートを一度 FAIL させ、防御的死にコードを削って直した**。最初に
+7. **注釈の区切りに `BOUNDARY_ARROW` を誤用した**。Skip 行の注釈は em dash（` — `）だが、
+   フェーズ境界用の矢印定数（` → `）を使ってしまい、`2.1 (reverse-engineering — greenfield)` から
+   slug を取り出せなかった。単体テストが捕まえたので専用定数へ分けた。**この 1 本を書いて
+   いなければ、ゴールデン検収だけでは通っていた可能性がある**（当該ケースでは結果的に項目が
+   保存されず、たまたま期待どおりになりうる）。
+8. **単体テストの骨格フィクスチャが自己矛盾していた**。`- **Stages to Execute**: 0.1, 2.1` と
+   書きながらチェックボックス行は `second` も `— EXECUTE` としており、追記方式では露見しないが
+   組み直し方式では 2.2 が現れる。フィクスチャ側を実態に合わせて是正した。
+9. **カバレッジ相対ゲートを一度 FAIL させ、防御的死にコードを削って直した**。最初に
    `--base main` で計測して PASS したが、ローカルの `main` が PR #21 時点まで古く、比較先が
    間違っていた。正しい `origin/main`（B9 のマージ後）で計り直すと head 98.4645% < base
    98.4801% − 0.01 で **FAIL** した。原因は私が足した 2 行の到達不能な防御分岐である。
@@ -232,13 +243,13 @@ ADR-008 / NFR3 の趣旨に反するため不採、C（slug ハードコード�
 | 1 | fmt（workspace + `tools/lint`） | **PASS** | `cargo fmt --all --check` 両方とも差分なし |
 | 2 | clippy | **PASS** | `cargo clippy --workspace --all-targets -- -D warnings` 警告 0 |
 | 3 | `cargo lint` | **PASS** | exit 0 |
-| 4 | `cargo test --workspace` | **PASS** | **741 件**全緑（+4 = 投影ゴールデン検収 3 本 + `phase_order` の順序ガード 1 本） |
+| 4 | `cargo test --workspace` | **PASS** | **744 件**全緑（+7 = 投影ゴールデン検収 6 本 + 順序ガード / トークン解析ガード） |
 | 5 | quint-gate | **PASS** | 不変条件 run 3 種・witness 12 本すべて緑 |
-| 6 | coverage 相対 | **PASS** | 絶対 **98.4805%** >= 90%、相対 98.4805% >= `origin/main` 98.4801% − 0.01。**一度 FAIL させてから直した** — §5-7 を参照 |
+| 6 | coverage 相対 | **PASS** | 絶対 **98.5165%** >= 90%、相対 98.5165% >= `origin/main` 98.4801% − 0.01。**一度 FAIL させてから直した** — §5-7 を参照 |
 | 7 | unwrap 0 | **PASS** | プロダクトコードに `unwrap()` / `expect()` なし（clippy が機械強制） |
-| 8 | 新採取に provenance が揃い、再実行で `captured_at` 以外の差分が出ない | **PASS** | 最終構成（25 ケース）で再採取を連続実行し、**296 ファイル**すべてが `captured_at` 以外バイト一致。新 3 ケースはいずれも `case.json`（`commit` / `captured_at` / `command`）と族単位の `provenance.json` を持つ |
+| 8 | 新採取に provenance が揃い、再実行で `captured_at` 以外の差分が出ない | **PASS** | 最終構成（28 ケース）で再採取を連続実行し、**320 ファイル**すべてが `captured_at` 以外バイト一致。新 6 ケースはいずれも `case.json`（`commit` / `captured_at` / `command`）と族単位の `provenance.json` を持つ |
 | 9 | `ScaffoldTemplateUnavailable` の grep 0 件（採取成功時）／`cases-missing.json` に理由（不能時） | **PASS** | 旧名の grep は `modules/` / `scripts/` / `tests/` で **0 件**（`ScaffoldMissing` へ改名）。撤去ではなく改名なのは**裁定 A がそう定めたため**である（§3-2）。`cases-missing.json` には `set-autonomy` の理由を記録済み |
-| 10 | 投影ゴールデン検収が B8 の 10 ケース + 新ケースで全両面一致 | **PASS** | **13 ケース**（10 + 新 3）すべて `audit.md` + `state.diff` の両面バイト一致。監査ブロック検収は 42 → **62 本** |
+| 10 | 投影ゴールデン検収が B8 の 10 ケース + 新ケースで全両面一致 | **PASS** | **19 ケース**（10 + 新 6 + 既存の接続漏れ分）すべて `audit.md` + `state.diff` の両面バイト一致。監査ブロック検収は 42 → **70 本** |
 
 ---
 
@@ -261,17 +272,49 @@ ADR-008 / NFR3 の趣旨に反するため不採、C（slug ハードコード�
 `— greenfield` を**構築しない** — `2.1 (reverse-engineering — greenfield)` は文字列のまま
 素通りする。したがって畳み理由を作れないという §4 の制約は差分適用側には効かない。
 
-一方、この付帯確認で **B8 由来の潜在的な乖離を 2 つ**見つけた。どちらもゴールデンで踏まれて
-おらず、本 Bolt の変更が原因ではないので直していない（申し送り §7-3）。
+一方、この付帯確認で **B8 由来の潜在的な乖離を 2 つ**見つけ、§7-2 の 1 件と合わせて
+**計 3 件を最終ラウンドで実バイト採取して是正した**。以下は採取後の確定内容である。
 
-1. **並び順**: upstream の recompose は 2 行を**グラフ順に組み直す**が、投影は末尾へ**追記**する。
-   既に skip 済みの項目より前の番号を後から skip すると並びが割れる（`skip-one` は 4.5 が最後尾に
-   来るので両者一致し、検出されない）。
-2. **`reverse-engineering` の再投入**: 投影は `2.1 (reverse-engineering)` を除去キーにするが、
-   行にあるのは `2.1 (reverse-engineering — greenfield)` なので一致しない。`remove_from_list` は
-   一致しなければ**黙って no-op** するため、当該ステージが両方の行に載る。無言 no-op は
-   `StateField` を拒否にしている理由そのものなので、方針としては `remove_from_list` を
-   「不在なら拒否」へ寄せるのが筋である。
+### (i) 並び順 — **私の見立てが誤りだった**
+
+当初「upstream はグラフ順に組み直すが投影は末尾へ追記するので割れる」と書いた。
+`cli/recompose/skip-two-appends-in-graph-order` を採取した結果、**upstream も追記していた**。
+
+```
+前: … 2.1 (reverse-engineering — greenfield), 4.5 (incident-response)
+後: … 2.1 (reverse-engineering — greenfield), 4.5 (incident-response), 4.3 (deployment-execution), 4.7 (feedback-optimization)
+```
+
+4.5 の**後ろ**に 4.3 が来る。番号順に並べ替えていない。upstream 自身のコメントが理由を
+書いている — 項目が持つ注釈（`2.1 (reverse-engineering — greenfield)`）を bare-slug の
+組み直しが壊すため、**まだ skip の項目は逐語・その位置のまま**保つのが仕様である。
+B8 の追記は正しかった。
+
+ただし採取は**別の乖離**を露わにした。**`Stages to Execute` は逆に毎回 graph 順へ組み直される**
+（`add-restores-conditional` で再投入した `2.1` が末尾ではなく `0.3` と `2.2` の**間**へ入る）。
+2 行は同じ規則で作られていない。投影は両方とも追記していたので、Execute 側が割れていた。
+
+### (ii) `reverse-engineering` の再投入 — 見立てどおり割れていた
+
+`cli/recompose/add-restores-conditional` の実バイトは、`2.1 (reverse-engineering — greenfield)`
+が**注釈ごと** Skip 行から消えることを示した。投影は `2.1 (reverse-engineering)` を除去キーに
+していたので一致せず、`remove_from_list` の**無言 no-op** で両方の行に載っていた。
+
+是正は「不在なら拒否へ寄せる」ではなく**経路ごと削除**した。上の (i) を踏まえて 2 行を
+upstream と同じ「組み直し」で書くようにしたところ、項目の出し入れをする助数詞が不要になり、
+`remove_from_list` と `append_to_list` がまるごと dead code になったためである。無言ドリフトを
+厳格化するより、**無言ドリフトが起こりうる関数を消す**ほうが強い。
+
+### (iii) `**Stages completed**:` — 見立てどおり実装が誤っていた（§7-2 の件）
+
+`cli/report/approved-across-phases`（inception 最終 = delivery-planning の承認）の実バイトは
+**2**。計画上の inception 内スコープ件数は 8 なので、`plan.in_scope_count_of` では説明が付かず、
+**倒したあとのチェックボックスの数え直し**であることが確定した。genesis だけは計画由来のまま
+である（まだ 1 つも倒れていない時点で描くため）ので、値を呼出側が渡す形へ変えた。
+
+同じケースで、ゲート経由の境界 3 本が**ジャンプ側と違い `**Details**:` を持たない**ことも
+確定した。さらに `## Phase Progress` の `Verified` / `Active` の付け替えがゲート経路で
+**未実装**だったことが判明し、実装した（フェーズをまたぐ承認が初めてこの差分を見せた）。
 
 ## 7. 申し送り
 
@@ -280,16 +323,13 @@ ADR-008 / NFR3 の趣旨に反するため不採、C（slug ハードコード�
    `- **Stages to Skip**:` の畳み理由の 4 行は、合成ルートなら（環境と素のグリッド値の両方を
    知っているので）すべて書ける。`Started` の payload は変更していないので契約
    （`contract-summary.md` C5）への波及は無い。
-2. **`GateApproved` の境界 3 本の `**Stages completed**:` が未検収**である。現在の実装は
-   `plan.in_scope_count_of(from)` を書くが、ジャンプ側の実測は数え直しだった。ゲート経由で
-   フェーズ境界をまたぐケースはゴールデンに無く、genesis の `Stages completed: 3` だけが両者
-   一致するので判別が付かない。upstream の `handleAdvance` は数え直し
-   （`String(completedCount)`）を書いているので、**実装のほうが怪しい**。追加採取するなら
-   inception 最終ステージ（delivery-planning）を承認するケースになる。
-3. **`recomposed_event` に潜在的な乖離が 2 つある**（§6-2）。並び順（追記 vs グラフ順の組み直し）と、
-   `reverse-engineering` 再投入時の除去キー不一致（無言 no-op で両方の行に載る）である。どちらも
-   ゴールデンで踏まれておらず本 Bolt の変更が原因でもないので直していない。後者は
-   `remove_from_list` を「不在なら拒否」へ寄せれば無言ドリフトが loud failure に変わる。
+2. **`GateApproved` の境界 3 本の `**Stages completed**:` は是正済み**（最終ラウンド）。
+   `cli/report/approved-across-phases` を採取して数え直しであることを確定し、実装を直した。
+   同ケースが `## Phase Progress` のゲート経路での未実装も露わにしたので、そちらも実装済み。
+3. **§6-2 の乖離 3 件は是正済み**（最終ラウンド）。残る既知の未確定は次の 1 点だけである —
+   recompose の `- **Completed**:` を upstream は書き換えるが（`completed && eff == EXECUTE` の
+   数え直し）、採取した 2 ケースではどちらも値が動かないため実装の要否を実バイトで判別できない。
+   投影は書いていない。ピン更新か、完了済みステージを skip する新ケースを採れば決着する。
 4. **`cli/jump/execute-forward-to-conditional` が投影検収に接続されていない**（B8 から未接続）。
    本 Bolt では触っていない。
 5. `docs/` / `formal/` / `coding-rules` には触れていない（所有外）。ゴールデン README
