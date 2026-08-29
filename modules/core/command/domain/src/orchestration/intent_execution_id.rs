@@ -31,11 +31,9 @@ pub enum IntentExecutionIdError {
         /// 実際の文字数 (前後の空白を除いたもの)。
         actual: usize,
     },
-    /// ハイフン位置か 16 進小文字の並びが正準形に合わない。位置は 0 始まりの文字位置。
-    Format {
-        /// 最初に形式へ合わなかった文字の 0 始まり位置。
-        position: usize,
-    },
+    /// uuid として解析できない、または解析できても正準綴り (小文字 `8-4-4-4-12`) でない
+    /// (大文字・短縮形・`{braced}` など)。
+    NotCanonical,
     /// version nibble が `7` でない (UUIDv7 以外)。
     Version {
         /// 実際に置かれていた nibble。
@@ -53,7 +51,7 @@ impl From<MalformedUuidV7> for IntentExecutionIdError {
         match reason {
             MalformedUuidV7::Empty => IntentExecutionIdError::Empty,
             MalformedUuidV7::Length { actual } => IntentExecutionIdError::Length { actual },
-            MalformedUuidV7::Format { position } => IntentExecutionIdError::Format { position },
+            MalformedUuidV7::NotCanonical => IntentExecutionIdError::NotCanonical,
             MalformedUuidV7::Version { found } => IntentExecutionIdError::Version { found },
             MalformedUuidV7::Variant { found } => IntentExecutionIdError::Variant { found },
         }
@@ -93,8 +91,8 @@ impl fmt::Display for IntentExecutionIdError {
             IntentExecutionIdError::Length { actual } => {
                 write!(f, "length {actual} (expected {CANONICAL_LEN})")
             }
-            IntentExecutionIdError::Format { position } => {
-                write!(f, "invalid character at position {position}")
+            IntentExecutionIdError::NotCanonical => {
+                f.write_str("not canonical (expected lowercase 8-4-4-4-12)")
             }
             IntentExecutionIdError::Version { found } => {
                 write!(f, "version nibble '{found}' (expected '{VERSION_NIBBLE}')")
@@ -170,7 +168,7 @@ mod tests {
     fn uppercase_hex_is_rejected() {
         assert_eq!(
             IntentExecutionId::parse("0190AAAA-bbbb-7ccc-9ddd-eeeeffff0000"),
-            Err(IntentExecutionIdError::Format { position: 4 })
+            Err(IntentExecutionIdError::NotCanonical)
         );
     }
 
@@ -179,12 +177,12 @@ mod tests {
         // 0 始まり位置 8 に `-` が無い。
         assert_eq!(
             IntentExecutionId::parse("0190aaaab-bbb-7ccc-9ddd-eeeeffff0000"),
-            Err(IntentExecutionIdError::Format { position: 8 })
+            Err(IntentExecutionIdError::NotCanonical)
         );
         // 16 進が来るべき位置に `-` がある。
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeff-f0000"),
-            Err(IntentExecutionIdError::Format { position: 30 })
+            Err(IntentExecutionIdError::NotCanonical)
         );
     }
 
@@ -192,7 +190,7 @@ mod tests {
     fn non_hex_characters_are_rejected() {
         assert_eq!(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeegfff0000"),
-            Err(IntentExecutionIdError::Format { position: 28 })
+            Err(IntentExecutionIdError::NotCanonical)
         );
     }
 
@@ -253,8 +251,8 @@ mod tests {
             "length 35 (expected 36)"
         );
         assert_eq!(
-            IntentExecutionIdError::Format { position: 8 }.to_string(),
-            "invalid character at position 8"
+            IntentExecutionIdError::NotCanonical.to_string(),
+            "not canonical (expected lowercase 8-4-4-4-12)"
         );
         assert_eq!(
             IntentExecutionIdError::Version { found: '4' }.to_string(),
