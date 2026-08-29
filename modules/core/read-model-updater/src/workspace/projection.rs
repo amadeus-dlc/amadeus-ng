@@ -94,9 +94,15 @@ mod key {
     pub(super) const STAGES_ADDED: &str = "Stages added";
     /// `**Stages in Scope**:`。
     pub(super) const STAGES_IN_SCOPE: &str = "Stages in Scope";
-    /// `**Mode**:`。**upstream ゴールデン未採取**（`cli/set-autonomy` は失敗経路しか捉えて
-    /// いない）。状態ファイル側の綴りは失敗文言が逐語で固定しているが、この行のキーは
-    /// U1 の追加採取待ちである。
+    /// `**Mode**:`。**upstream の実行出力としては採れない**（`cli/set-autonomy` は失敗経路
+    /// しか捉えていない）。ピン `3c3146cf` の配布シェルには
+    /// `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込む経路が 1 つも無く、
+    /// `set-autonomy` は行の不在を検出して終了コード 1 で止まるため、成功経路そのものが
+    /// 到達不能である（全数走査の根拠は `tests/golden/upstream-3c3146cf/README.md` と
+    /// `cli/cases-missing.json` の `set-autonomy/gated`）。このキーはピンの**ソース**
+    /// （`aidlc-bolt.ts` の `emitAudit(pd, "AUTONOMY_MODE_SET", { Mode: … })`）から読んだ値で
+    /// あり、実行バイトでの裏取りはピン更新待ちである。状態ファイル側の綴りは
+    /// `cli/set-autonomy/state-field-absent` の失敗文言が逐語で固定している。
     pub(super) const MODE: &str = "Mode";
 }
 
@@ -110,6 +116,8 @@ mod field {
     pub(super) const IN_PROGRESS: &str = "In Progress";
     /// `- **Current Stage**:`。
     pub(super) const CURRENT_STAGE: &str = "Current Stage";
+    /// `- **Lifecycle Phase**:`（値は**大文字**の フェーズ名 — `INCEPTION`）。
+    pub(super) const LIFECYCLE_PHASE: &str = "Lifecycle Phase";
     /// `- **Next Stage**:`。
     pub(super) const NEXT_STAGE: &str = "Next Stage";
     /// `- **Last Completed Stage**:`。
@@ -126,6 +134,25 @@ mod field {
     pub(super) const STAGES_TO_EXECUTE: &str = "Stages to Execute";
     /// `- **Stages to Skip**:`。
     pub(super) const STAGES_TO_SKIP: &str = "Stages to Skip";
+
+    /// `## Phase Progress` の 1 行のラベル（`- **Inception**:`）。
+    ///
+    /// upstream は `phase.charAt(0).toUpperCase() + phase.slice(1)` で作る — フェーズ slug の
+    /// 先頭 1 文字だけを大文字にしたものである。5 つとも ASCII 小文字始まりなので、この
+    /// 単純な変換で `Initialization` / `Ideation` / `Inception` / `Construction` / `Operation`
+    /// になる。
+    pub(super) fn phase_row(phase: super::PhaseId) -> String {
+        let slug = phase.as_str();
+        let mut label = String::with_capacity(slug.len());
+        for (index, ch) in slug.chars().enumerate() {
+            if index == 0 {
+                label.extend(ch.to_uppercase());
+            } else {
+                label.push(ch);
+            }
+        }
+        label
+    }
 }
 
 /// 空のステージ集合を描く逐語（`**Stages added**: none`）。
@@ -136,6 +163,26 @@ const REENTRY_DETAILS: &str = "Re-entering gate after revision";
 const BOUNDARY_ARROW: &str = " → ";
 /// 一覧の区切り。
 const LIST_SEPARATOR: &str = ", ";
+
+/// `## Phase Progress` の行がとる 4 値（`<!-- Status values: … -->` が正本）。
+mod phase_status {
+    /// まだ来ていない。
+    pub(super) const PENDING: &str = "Pending";
+    /// いま走っている。
+    pub(super) const ACTIVE: &str = "Active";
+    /// 通過して検証済み。
+    pub(super) const VERIFIED: &str = "Verified";
+    /// スコープ内ステージが 1 つも無い、または飛び越えた。
+    pub(super) const SKIPPED: &str = "Skipped";
+}
+
+/// ジャンプがフェーズ境界をまたいだときの `PHASE_VERIFIED` の逐語
+/// （`cli/jump/execute-backward` / `execute-forward-across-phases`）。
+const JUMP_BOUNDARY_VERIFICATION: &str = "Traceability verification on jump";
+
+/// 走査して 1 つも完了ステージが見つからなかったときの `- **Last Completed Stage**:`
+/// （upstream がジャンプ経路にだけ置いている既定値）。
+const NO_EARLIER_COMPLETION: &str = "state-init";
 
 /// 初期化 3 ステージが描く固有行の対応（upstream の出荷グラフに固定）。
 const INITIALIZATION_ROWS: [(&str, EventType); 3] = [
@@ -614,10 +661,13 @@ fn gate_approved(
 
 /// `StageCompleted`（非ゲートの完了）→ `STAGE_COMPLETED` + 次ステージの開始。
 ///
-/// **ゴールデン未採取**である。出荷グラフで非ゲートなのは initialization の 3 ステージだけで、
-/// その 3 本は `Started` の投影が描く（`cli/intent-create` が実バイトを固定している）。単独の
-/// `complete_stage` が打たれる経路の実バイトは採取されていないので、行の形は `GateApproved`
-/// の完了部と同型に置いた（U1 の追加採取待ち）。
+/// `**Details**:` の逐語は `Stage <表示名> completed` である（`cli/report/completed-ungated`
+/// が実バイトを固定している）。ゲート経由の完了は `Stage <表示名> approved by gate` で、
+/// **同じ `STAGE_COMPLETED` でも文言が割れる** — 書き手が違うからで、片方に寄せてはならない。
+///
+/// 出荷グラフで非ゲートなのは initialization の 3 ステージだけであり、その 3 本は genesis で
+/// 完了済みになる。この単独経路へ到達するには**後方ジャンプで initialization ステージを
+/// `[-]` へ戻してから** `report --result completed` を打つ（採取手順は同ケースの `argv`）。
 fn stage_completed(
     completed: &StageCompleted,
     at: &DateTime<Utc>,
@@ -655,7 +705,21 @@ fn stage_skipped(
     leave_for(read_model, at, plan, skipped.next_stage())
 }
 
-/// `Jumped` → 読み飛ばした各ステージの `STAGE_SKIPPED` + `STAGE_JUMPED` + 目標の開始。
+/// `Jumped` → 読み飛ばした各ステージの `STAGE_SKIPPED` + (フェーズ境界) + `STAGE_JUMPED`
+/// + 目標の開始。
+///
+/// # フェーズ境界はイベントに載らず、計画から導く
+///
+/// `Jumped` は出発点と到達点の slug しか運ばない。だが計画は両方のフェーズを知っているので、
+/// またいだかどうかは**渡された計画から導ける** — `GateApproved` のように `PhaseBoundary` を
+/// イベントへ足す必要は無い。導出であって推測ではないので、材料が足りているうちはイベントを
+/// 太らせない（`resolved_plan.rs` の「正本は 1 つでよい」と同じ理由）。
+///
+/// 境界 3 行はゲート経由のものと**同型ではない**。ジャンプ側だけが `**Details**:` を持ち
+/// （`Phase boundary crossed via <方向> jump` / `Traceability verification on jump`）、
+/// `**Stages completed**:` は計画上のフェーズ内件数ではなく**チェックボックスの数え直し**で
+/// ある（`cli/jump/execute-backward` は 0、`execute-forward-across-phases` は 1 — どちらも
+/// 直前の書き換え後に数えた値でしか説明が付かない）。
 fn jumped_event(
     jumped: &Jumped,
     at: &DateTime<Utc>,
@@ -682,6 +746,17 @@ fn jumped_event(
     for slug in jumped.stages_reset() {
         set_checkbox(read_model, slug.as_str(), CheckboxState::Pending)?;
     }
+    // 完了数はジャンプでも**数え直す**。後方ジャンプは `[x]` を `[ ]` へ戻すので減る
+    // （`cli/jump/execute-backward` は 4 → 0）。境界をまたがないジャンプでも upstream は
+    // 同じ書き換えを打つ（値が動かないだけ）。
+    let completed = Checkboxes::parse(read_model.state())
+        .count_completed()
+        .to_string();
+    set_field(read_model, field::COMPLETED, &completed)?;
+
+    if let Some(boundary) = crossed_phase_boundary(plan, jumped.source(), target)? {
+        append_jump_phase_boundary(read_model, at, plan, boundary, &lowered)?;
+    }
 
     let number = number_of(plan, target)?;
     read_model.append_audit(&render_audit_block(
@@ -702,7 +777,141 @@ fn jumped_event(
                 ),
             ),
     ));
-    enter_stage(read_model, at, plan, target)
+    enter_stage(read_model, at, plan, target)?;
+    set_field(
+        read_model,
+        field::LAST_COMPLETED_STAGE,
+        &last_completion_before(read_model, plan, target),
+    )
+}
+
+/// 出発点と到達点のフェーズが違えば境界を返す（どちらも計画に居ることが前提）。
+fn crossed_phase_boundary(
+    plan: &ResolvedPlan,
+    source: &StageSlug,
+    target: &StageSlug,
+) -> Result<Option<PhaseBoundary>, ProjectionError> {
+    let from = plan.find(source).ok_or_else(|| unknown(source))?.phase();
+    let to = plan.find(target).ok_or_else(|| unknown(target))?.phase();
+    Ok((from != to).then(|| PhaseBoundary::new(from, to)))
+}
+
+/// ジャンプの境界 3 行と、`## Phase Progress` の行の付け替え。
+fn append_jump_phase_boundary(
+    read_model: &mut ReadModel,
+    at: &DateTime<Utc>,
+    plan: &ResolvedPlan,
+    boundary: PhaseBoundary,
+    direction: &str,
+) -> Result<(), ProjectionError> {
+    let from = boundary.from_phase();
+    let to = boundary.to_phase();
+    let completed = Checkboxes::parse(read_model.state())
+        .count_completed()
+        .to_string();
+    read_model.append_audit(&render_audit_block(
+        EventType::PhaseCompleted,
+        at,
+        &AuditFields::new()
+            .with(key(key::FROM_PHASE)?, from.as_str())
+            .with(key(key::TO_PHASE)?, to.as_str())
+            .with(key(key::STAGES_COMPLETED)?, &completed)
+            .with(
+                key(key::DETAILS)?,
+                &format!("Phase boundary crossed via {direction} jump"),
+            ),
+    ));
+    read_model.append_audit(&render_audit_block(
+        EventType::PhaseVerified,
+        at,
+        &AuditFields::new()
+            .with(
+                key(key::PHASE_BOUNDARY)?,
+                &format!("{}{BOUNDARY_ARROW}{}", from.as_str(), to.as_str()),
+            )
+            .with(key(key::DETAILS)?, JUMP_BOUNDARY_VERIFICATION),
+    ));
+    read_model.append_audit(&render_audit_block(
+        EventType::PhaseStarted,
+        at,
+        &AuditFields::new()
+            .with(key(key::PHASE)?, to.as_str())
+            .with(key(key::SCOPE)?, plan.scope()),
+    ));
+    set_phase_progress_for_jump(read_model, plan, from, to)
+}
+
+/// ジャンプ後の `## Phase Progress`。
+///
+/// 前方は「出発フェーズは通過したので `Verified`、飛び越えたフェーズは `Skipped`」、後方は
+/// 「到達フェーズより後ろでスコープ内ステージを持つものは `Pending` へ戻す」。どちらも最後に
+/// 到達フェーズを `Active` にする。スコープ内ステージが 1 つも無いフェーズには触れない —
+/// genesis が置いた `Skipped` のままでよく、触ると `- **Ideation**: Skipped` が動いてしまう。
+fn set_phase_progress_for_jump(
+    read_model: &mut ReadModel,
+    plan: &ResolvedPlan,
+    from: PhaseId,
+    to: PhaseId,
+) -> Result<(), ProjectionError> {
+    let order = |phase: PhaseId| PhaseId::ALL.iter().position(|p| *p == phase);
+    let (Some(from_at), Some(to_at)) = (order(from), order(to)) else {
+        return Ok(());
+    };
+    if from_at < to_at {
+        set_field(read_model, &field::phase_row(from), phase_status::VERIFIED)?;
+        for phase in PhaseId::ALL
+            .iter()
+            .copied()
+            .skip(from_at.saturating_add(1))
+            .take(to_at.saturating_sub(from_at).saturating_sub(1))
+        {
+            set_field(read_model, &field::phase_row(phase), phase_status::SKIPPED)?;
+        }
+    } else {
+        for phase in PhaseId::ALL
+            .iter()
+            .copied()
+            .skip(to_at.saturating_add(1))
+            .filter(|phase| plan.in_scope_count_of(*phase) > 0)
+        {
+            set_field(read_model, &field::phase_row(phase), phase_status::PENDING)?;
+        }
+    }
+    set_field(read_model, &field::phase_row(to), phase_status::ACTIVE)
+}
+
+/// ジャンプ後の `- **Last Completed Stage**:`。
+///
+/// 到達点より**手前**を計画の逆順に辿り、最初に見つかった `[x]` のステージを書く。1 つも
+/// 無ければ upstream の既定値 `state-init` を書く（到達点が先頭ステージのときに起きる —
+/// `cli/jump/execute-backward` がその実測である）。
+fn last_completion_before(
+    read_model: &ReadModel,
+    plan: &ResolvedPlan,
+    target: &StageSlug,
+) -> String {
+    let checkboxes = Checkboxes::parse(read_model.state());
+    let Some(at) = plan
+        .stages()
+        .iter()
+        .position(|stage| stage.slug() == target)
+    else {
+        return NO_EARLIER_COMPLETION.to_string();
+    };
+    let is_completed = |slug: &str| {
+        checkboxes
+            .iter()
+            .any(|entry| entry.slug() == slug && entry.state() == CheckboxState::Completed)
+    };
+    plan.stages()
+        .iter()
+        .take(at)
+        .rev()
+        .find(|stage| is_completed(stage.slug().as_str()))
+        .map_or_else(
+            || NO_EARLIER_COMPLETION.to_string(),
+            |stage| stage.slug().as_str().to_string(),
+        )
 }
 
 /// `Recomposed` → `RECOMPOSED`、計画一覧・総数・行末トークンの更新。
@@ -882,6 +1091,13 @@ fn enter_stage_without_row(
         read_model,
         field::ACTIVE_AGENT,
         stage.display().lead_agent(),
+    )?;
+    // 値は大文字。同じフェーズへ移るケースでは書き換えても値が変わらないので、フェーズを
+    // またぐジャンプ (`cli/jump/execute-backward` ほか) だけがこの行の差分を見せる。
+    set_field(
+        read_model,
+        field::LIFECYCLE_PHASE,
+        &stage.phase().as_str().to_uppercase(),
     )?;
     set_field(read_model, field::IN_PROGRESS, slug.as_str())?;
     set_field(read_model, field::CURRENT_STAGE, slug.as_str())?;
@@ -1192,7 +1408,15 @@ mod tests {
 - [ ] second — EXECUTE
 - [ ] late — SKIP
 
+## Phase Progress
+- **Initialization**: Active
+- **Ideation**: Pending
+- **Inception**: Pending
+- **Construction**: Pending
+- **Operation**: Pending
+
 ## Current Status
+- **Lifecycle Phase**: INITIALIZATION
 - **Current Stage**: state-init
 - **Next Stage**: first
 

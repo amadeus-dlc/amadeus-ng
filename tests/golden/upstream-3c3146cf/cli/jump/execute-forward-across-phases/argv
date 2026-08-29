@@ -1,0 +1,11 @@
+[
+  "bun",
+  ".claude/tools/aidlc-jump.ts",
+  "execute",
+  "--target",
+  "contract-design",
+  "--direction",
+  "forward",
+  "--project-dir",
+  "<ROOT>"
+]

@@ -191,7 +191,7 @@ JS の `JSON.stringify` は ES2019 の well-formed 化により孤立サロゲ�
 | ツリーマニフェスト sha256 | `ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f` |
 | 採取コマンド | `bash scripts/goldens/recapture-cli.sh` |
 | bun | 1.3.13 |
-| ケース数 | cli 24（欠落 2）/ hooks 14（欠落 1） |
+| ケース数 | cli 25（欠落 2）/ hooks 14（欠落 1） |
 
 #### 非対話化に使った環境変数
 
@@ -232,7 +232,7 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 - `audit.md` は監査シャードへの**追記分だけ**（既存行は含まない）。追記が無いケースは空。
 - `state-full.md` は遷移**後**の `aidlc-state.md` の全文（正規化済み）。差分は「前」があって
   はじめて読める観測なので、状態ファイルを**ゼロから起こす**側（genesis）の検収には全文が
-  要る。全ケースに付けると同じ本文が 24 通並ぶだけなので、骨格が生まれる遷移
+  要る。全ケースに付けると同じ本文が 25 通並ぶだけなので、骨格が生まれる遷移
   （`intent-create/classic-scope`）にだけ付けてある。upstream 側の正本は
   `aidlc-utility.ts` の状態ファイル template literal である
   （`knowledge/aidlc-shared/state-template.md` は LLM 向けの契約文書で、ツールは読まない
@@ -258,7 +258,8 @@ stderr の逐語文言が契約そのものだからである。**削除はし�
 | `unpark` | `unpark` | `aidlc-state.ts unpark` |
 | `set-autonomy` | `state-field-absent` | `aidlc-bolt.ts set-autonomy` |
 
-`jump/execute-backward` と `report/completed-ungated` は 2026-08-29 に追加採取した
+`jump/execute-backward`・`jump/execute-forward-across-phases`・`report/completed-ungated`
+は 2026-08-29 に追加採取した
 （上の表の `jump` / `report` 行に含まれる）。既存 22 ケースのバイトは 1 バイトも動いていない
 — 新ケースは列の**末尾に足した**ので、先行ケースの観測は採り直しても同一である。
 
@@ -290,7 +291,9 @@ C2 が名指すフック 4 本と upstream の実装ファイルの対応。`set
 | `write-audit-log` フックはツール名で絞らない。`Write` / `Edit` 以外の `tool_name` でも記録ディレクトリ配下なら監査行を残す（絞り込みは `settings.json` の matcher の責務） | `hooks/write-audit-log/trusts-the-settings-matcher` |
 | `write-audit-log` は `Edit` を常に UPDATE、`Write` は mtime と birthtime の差が 10 ms 未満なら CREATE として扱う | `hooks/write-audit-log/artifact-created`, `artifact-updated-by-edit`, `artifact-updated-by-overwrite` |
 | 非ゲートの initialization ステージを `report --result completed` で報告すると、ゲートを開かずに `advance` だけが走る。`STAGE_COMPLETED` の `**Details**:` は `Stage <表示名> completed`（ゲート経由の `Stage <表示名> approved by gate` とは別文言） | `cli/report/completed-ungated` |
-| 後方ジャンプは対象と下流の `[x]/[-]/[?]/[R]/[S]` を `[ ]` へ戻し、対象を `[-]` にする。フェーズ境界をまたぐと `PHASE_COMPLETED`（`**Details**: Phase boundary crossed via backward jump`）・`PHASE_VERIFIED`（`**Details**: Traceability verification on jump`）・`PHASE_STARTED` の 3 本が `STAGE_JUMPED` の**前**に並ぶ | `cli/jump/execute-backward` |
+| 後方ジャンプは対象と下流の `[x]/[-]/[?]/[R]/[S]` を `[ ]` へ戻し、対象を `[-]` にする。フェーズ境界をまたぐと `PHASE_COMPLETED`（`**Details**: Phase boundary crossed via <方向> jump`）・`PHASE_VERIFIED`（`**Details**: Traceability verification on jump`）・`PHASE_STARTED` の 3 本が `STAGE_JUMPED` の**前**に並ぶ。この 3 本はゲート経由の境界 3 本と**同型ではない** — ジャンプ側だけが `**Details**:` を持ち、`**Stages completed**:` は計画上のフェーズ内件数ではなく**チェックボックスの数え直し**である（後方 0 / 前方 1） | `cli/jump/execute-backward`, `cli/jump/execute-forward-across-phases` |
+| 前方ジャンプの `STAGE_SKIPPED` は「間のステージを文書順」→「**最後に出発点そのもの**」の順で並ぶ（出発点は間のループの外で後から足されるため） | `cli/jump/execute-forward-across-phases` |
+| ジャンプ後の `- **Last Completed Stage**:` は到達点より手前を逆順に辿った最初の `[x]`。1 つも無ければ upstream の既定値 `state-init` になる | `cli/jump/execute-backward` |
 | 状態ファイルの `- **Next Action**:` は書き手で綴りが割れる。genesis（`intent-create`）は **slug**（`Execute practices-discovery`）、`advance` は**表示名**（`Execute Workspace Detection`） | `cli/intent-create/classic-scope`, `cli/report/completed-ungated` |
 
 #### 採取できなかったケース（W4）

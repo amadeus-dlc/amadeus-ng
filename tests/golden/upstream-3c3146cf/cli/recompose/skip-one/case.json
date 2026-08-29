@@ -7,7 +7,7 @@
   "stdout_kind": "text",
   "provenance": {
     "commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
-    "captured_at": "2026-08-29T04:26:36Z",
+    "captured_at": "2026-08-29T04:31:16Z",
     "command": "bash scripts/goldens/recapture-cli.sh"
   }
 }

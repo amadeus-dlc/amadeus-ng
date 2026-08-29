@@ -546,6 +546,13 @@ function captureCli(
       tool: "aidlc-orchestrate.ts",
       args: ["report", "--result", "completed"],
     },
+    {
+      id: "jump/execute-forward-across-phases",
+      description:
+        "フェーズ境界をまたぐ前方ジャンプ。既存の前方 2 ケースはどちらも inception 内で完結するため、前方の PHASE_COMPLETED / PHASE_VERIFIED / PHASE_STARTED はこのケースが初出",
+      tool: "aidlc-jump.ts",
+      args: ["execute", "--target", "contract-design", "--direction", "forward"],
+    },
   ];
 
   let captured = 0;

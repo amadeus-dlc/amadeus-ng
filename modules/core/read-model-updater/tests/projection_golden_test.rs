@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
     GateApproved, GateOpened, GateRejected, IntentId, JumpDirection, Jumped, Parked, Recomposed,
-    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
+    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
     WorkflowExecutionEvent, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
@@ -305,6 +305,23 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
 }
 
 #[test]
+fn completing_an_ungated_stage_writes_its_own_details_wording() {
+    // 非ゲートの完了は `Stage <表示名> completed`、ゲート経由は `Stage <表示名> approved by
+    // gate` で文言が割れる（`cli/report/completed-ungated` と `cli/report/approved` の実バイト）。
+    // `- **Active Agent**:` はハンクの外（値が変わらないため差分に写らない）なので補う。
+    // 補った値 `orchestrator` は同じ採取列の `cli/jump/execute-backward` の後断片が示す実値で
+    // あり、投影が次ステージ workspace-detection の担当を書き直した結果と一致するかで検証される。
+    assert_case_with_context(
+        "report/completed-ungated",
+        WorkflowExecutionEvent::StageCompleted(StageCompleted::new(
+            slug("workspace-scaffold"),
+            Some(slug("workspace-detection")),
+        )),
+        "- **Active Agent**: orchestrator\n",
+    );
+}
+
+#[test]
 fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
     assert_case(
         "skip/skipped",
@@ -318,7 +335,9 @@ fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
 
 #[test]
 fn jumping_forward_skips_the_source_and_opens_the_target() {
-    assert_case(
+    // `- **Completed**: 4` は数え直しで、ハンクに写っているのは practices-discovery の 1 本
+    // だけなので initialization 3 本を補う（補い方が正しければ 4 になる — それが検証になる）。
+    assert_case_with_context(
         "jump/execute-forward",
         WorkflowExecutionEvent::Jumped(Jumped::new(
             JumpDirection::Forward,
@@ -326,6 +345,67 @@ fn jumping_forward_skips_the_source_and_opens_the_target() {
             slug("domain-design"),
             Vec::new(),
             vec![slug("refined-mockups")],
+        )),
+        concat!(
+            "### INITIALIZATION PHASE\n",
+            "- [x] workspace-scaffold — EXECUTE\n",
+            "- [x] workspace-detection — EXECUTE\n",
+            "- [x] state-init — EXECUTE\n",
+        ),
+    );
+}
+
+#[test]
+fn jumping_backward_resets_the_downstream_and_hands_the_phase_row_back() {
+    // フェーズ境界をまたぐジャンプの 3 行はゲート経由のものと同型ではない — ジャンプ側だけが
+    // `**Details**:` を持ち、`**Stages completed**:` は数え直しである (ここでは全部 [ ] に
+    // 戻したので 0)。`- **Last Completed Stage**:` は到達点が先頭ステージで手前に完了が無い
+    // ため upstream の既定値 `state-init` になる。
+    assert_case(
+        "jump/execute-backward",
+        WorkflowExecutionEvent::Jumped(Jumped::new(
+            JumpDirection::Backward,
+            slug("domain-design"),
+            slug("workspace-scaffold"),
+            vec![
+                slug("workspace-scaffold"),
+                slug("workspace-detection"),
+                slug("state-init"),
+                slug("practices-discovery"),
+                slug("requirements-analysis"),
+                slug("user-stories"),
+                slug("refined-mockups"),
+                slug("domain-design"),
+            ],
+            Vec::new(),
+        )),
+    );
+}
+
+#[test]
+fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
+    // 前方で境界をまたぐと出発フェーズは `Verified`、飛び越えた ideation は `Skipped` の
+    // ままである (スコープ内ステージが 0 本なので触らない)。`**Stages completed**:` は 1 で、
+    // 直前の [S] 化のあとに残った [x] (workspace-scaffold) 1 本を数えた値でしか説明が付かない。
+    // `stages_skipped` の並びは upstream の emit 順 — 間のステージを順に並べたあと、
+    // **最後に出発点そのもの**が来る。
+    assert_case(
+        "jump/execute-forward-across-phases",
+        WorkflowExecutionEvent::Jumped(Jumped::new(
+            JumpDirection::Forward,
+            slug("workspace-detection"),
+            slug("contract-design"),
+            Vec::new(),
+            vec![
+                slug("state-init"),
+                slug("practices-discovery"),
+                slug("requirements-analysis"),
+                slug("user-stories"),
+                slug("refined-mockups"),
+                slug("domain-design"),
+                slug("units-generation"),
+                slug("workspace-detection"),
+            ],
         )),
     );
 }
