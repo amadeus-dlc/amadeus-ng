@@ -8,13 +8,19 @@ Conversation language: 日本語
 
 ## 0. 要約
 
-側分割（4 クレート再編 + infrastructure 層）は**完了**。U4 の RMU は**二層構造・投影ライタ・
-監査ブロック描画・シャード横断読取が完成**し、投影規則（イベント → 行）は 12 変種中 6 変種が
-ゴールデン逐語一致で検収済み、残り 6 変種は**未裁定のため意図的に未実装**である（誤ったバイトを
-書く代わりに明示エラーで止める）。受入基準 1〜7 は PASS、基準 8 は**部分 PASS**。
+**B8 は完了**。側分割（4 クレート再編 + infrastructure 層）と U4 の RMU（二層構造・投影ライタ・
+監査ブロック描画・シャード横断読取・投影規則 12 変種すべて）が揃い、固定裁定 1〜8 をすべて
+実施した。**受入基準 1〜8 すべて PASS**（基準 8 は残り 2 点の未採取ゴールデンに限り明示エラー
+で停止する設計 — §8 参照）。
 
-未裁定の内容と選択肢は §6 に記載し、着手時点で委任者へ照会済みである（固定裁定 8 に従い、
-読み替えずに止めた）。
+途中 1 件、投影が `STAGE_STARTED` の `**Agent**:` を描けない実装不能点を発見し、固定裁定 8 に
+従って読み替えずに止めて裁定を求めた。**オーナー裁定 A**（表示属性と走査結果を `Started`
+イベントへ焼き込む）を受けて実装を完了している（§6）。
+
+- コミット 16 本、90 files changed, +6,619 / −412
+- テスト **622 → 738 件**（+116）
+- ゴールデン検収: 監査ブロック描画**全 42 ブロック**バイト一致、投影**10 ケース**を
+  `audit.md` + `state.diff` の両面バイト一致
 
 ---
 
@@ -48,10 +54,10 @@ modules/` は 0 件。
 ### 行数増減
 
 - `git diff --shortstat $(git merge-base origin/main HEAD) HEAD -- modules Cargo.toml Cargo.lock tools`
-  → **76 files changed, 4290 insertions(+), 337 deletions(-)**（rename 検出あり）
-- 新設クレート `core-query-read-model-updater` は **6,026 行**（うち約 3,200 行は移動、
-  約 2,800 行が新規実装＋テスト）
-- テスト件数: **622 → 708 件（+86）**
+  → **90 files changed, 6,619 insertions(+), 412 deletions(-)**（rename 検出あり）
+- 新設クレート `core-query-read-model-updater` は **7,374 行**（うち約 3,200 行は移動、
+  残りが新規実装＋テスト）
+- テスト件数: **622 → 738 件（+116）**、コミット 16 本
 
 ---
 
@@ -62,11 +68,11 @@ modules/` は 0 件。
 | 1 | 後方互換ゼロ | 全クレートの `Cargo.toml` と `src/**`。再輸出・shim・`#[deprecated]` は 0 件 | 実施 |
 | 2 | RMU は二層 | 取得ループ `orchestration/updater.rs:149`（`catch_up`）/ 純粋投影核 `workspace/projection.rs:201`（`project(entries, read_model)`）。投影核の署名にも本体にも `JournalReader`・接続・checkpoint が現れない | 実施 |
 | 3 | `JournalReaderImpl` の挙動は移動で変えない | `orchestration/journal_reader_impl.rs`。rowid カーソル / `amadeus_projection_checkpoint` / (aid, seq_nr) アンカー照合 / busy_timeout 5000ms / CREATE なし接続はすべて素通しで移動。差分は `use` 文と doc の所在表現のみ。契約テスト 13 本が緑のまま追従 | 実施 |
-| 4 | 投影出力は 0a 逐語契約 | `workspace/audit_block.rs:47`（`render_audit_block`）/ `:33`（`SHARD_HEADER` 19 バイト）/ `workspace/audit_shard.rs:48`（追記・ヘッダ）/ `workspace/state_file.rs:84`（tmp+rename）。冪等は `tests/read_model_updater_test.rs::regenerating_from_zero_twice_yields_identical_bytes` と `tests/projection_golden_test.rs::projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes` | 実施（描画）/ 部分（投影規則、§6） |
+| 4 | 投影出力は 0a 逐語契約 | `workspace/audit_block.rs:47`（`render_audit_block`）/ `:33`（`SHARD_HEADER` 19 バイト）/ `workspace/audit_shard.rs:48`（追記・ヘッダ）/ `workspace/state_file.rs:84`（tmp+rename）/ `workspace/projection.rs`（12 変種の投影規則）。冪等は `tests/read_model_updater_test.rs::regenerating_from_zero_twice_yields_identical_bytes` と `tests/projection_golden_test.rs::projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes` | 実施 |
 | 5 | シャード横断の位置付き読取 | 順序規則 `core-domain::workspace::find_all_events`（`audit_ordering.rs:120`）、列挙と連結 `workspace/audit_shard.rs:82`（`read_all`）。結合テスト `tests/cross_shard_read_test.rs` 5 本 | 実施 |
 | 6 | U7 は実装しない | `modules/app/aidlc/src/main.rs` は従来どおりスタブ。RMU はテストから直接駆動している | 実施 |
-| 7 | Quint 不変 / ITF のフェイク投影を実 RMU へ差し替え | Quint は 1 文字も触っていない（`formal/` 無変更、quint-gate 全緑）。**ITF の投影差し替えは未実施** — 差し替え先の実 RMU が `Started` を描けないため（§6） | 部分（Quint 側は実施） |
-| 8 | TDD / 矛盾は止めて裁定を求める | §5 に red の実例。実装不能点を発見した時点で作業を止めて委任者へ照会した（§6） | 実施 |
+| 7 | Quint 不変 / ITF のフェイク投影を実 RMU へ差し替え | Quint は 1 文字も触っていない（`formal/` 無変更、quint-gate 全緑）。`FakeProjection` を削除し、`catchup` ステップを実 `ReadModelUpdater::catch_up()` に置き換えた（`modules/app/aidlc/tests/journal_protocol_conformance.rs:356`） | 実施 |
+| 8 | TDD / 矛盾は止めて裁定を求める | §5 に red の実例。実装不能点を発見した時点で作業を止めて委任者へ照会し、裁定 A を受けて完了させた（§6） | 実施 |
 
 ---
 
@@ -84,17 +90,18 @@ modules/` は 0 件。
 (exit=0)
 
 ### 4. cargo test --workspace
-test result: ok.（39 バイナリすべて ok、失敗 0）
-TOTAL: 708 passed
+test result: ok.（全バイナリ ok、失敗 0）
+TOTAL: 738 passed
 
 ### 5. bash scripts/quint-gate.sh
   [PASS] quint test --match 'r_.*' (formal/orchestration/stop_hook.qnt)
 [PASS] quint gate: all steps green
 
 ### 6. CARGO_TARGET_DIR=$PWD/target-delegate bash scripts/coverage.sh --base origin/main
+head line coverage: 98.47303704894318%
+[PASS] absolute gate: head (98.47303704894318%) >= threshold (90.0%)
 base (origin/main) line coverage: 98.42167957117331%
-[PASS] relative gate: head (98.48551554107598%) >= base (98.42167957117331%) - tolerance (0.01)
-（絶対ゲート 90% 床も PASS）
+[PASS] relative gate: head (98.47303704894318%) >= base (98.42167957117331%) - tolerance (0.01)
 ```
 
 | # | 基準 | 判定 |
@@ -102,52 +109,49 @@ base (origin/main) line coverage: 98.42167957117331%
 | 1 | `cargo fmt --all --check` | **PASS** |
 | 2 | `cargo clippy --workspace --all-targets -- -D warnings` | **PASS** |
 | 3 | `cargo lint` | **PASS** |
-| 4 | `cargo test --workspace` 全緑 | **PASS**（708 件） |
+| 4 | `cargo test --workspace` 全緑 | **PASS**（738 件） |
 | 5 | `bash scripts/quint-gate.sh` | **PASS** |
-| 6 | coverage 両ゲート | **PASS**（相対 98.486% ≥ 98.422% − 0.01、絶対 90% 床クリア） |
+| 6 | coverage 両ゲート | **PASS**（絶対 98.473% ≥ 90%、相対 98.473% ≥ 98.422% − 0.01） |
 | 7 | プロダクトコードに unwrap/expect なし・`#[allow]` は理由必須 | **PASS**（下記） |
-| 8 | 投影出力がゴールデンとバイト一致 | **部分 PASS**（下記） |
+| 8 | 投影出力がゴールデンとバイト一致 | **PASS**（下記） |
 
 ### 基準 7 の詳細
 
 プロダクトコードの `unwrap`/`expect` は 0 件（workspace lints が deny、clippy が緑）。
-新設した `#[allow]` は 1 つだけで、理由を付けてある:
+新設した `#[allow]` は理由つきのものだけである（`serde` 境界の往復確認に素の
+`serde_json::to_string` を使う 2 か所と、テストの添字アクセス）。
 
-- `workspace/projection.rs`（`mod recomposed_row` の `#![allow(dead_code, reason = "…")]`）
-  — `Recomposed` の状態面が未裁定のあいだ本体から呼ばれないため。`expect` ではなく `allow`
-  なのは、テストビルドでは実際に使われ `expect` が unfulfilled になるからである（その理由も
-  コメントに書いた）。
-
-なお移動前から存在した `#[allow]`（`journal_reader.rs:24` の `async_fn_in_trait` ほか）は
-いずれも既存の理由付きであり、内容を変えていない。
-
-### 基準 8 の詳細（部分 PASS の内訳）
-
-**PASS した面**:
+### 基準 8 の詳細
 
 1. **監査ブロック描画の全数一致** — `tests/audit_block_golden_test.rs`。
    `tests/golden/upstream-3c3146cf/**/audit.md` の **全 42 ブロック・24 イベント型**を読み取って
    `render_audit_block` で描き直し、**バイト完全一致**を確認。空シャードへの初回書込だけが
-   ヘッダ行を持つ非対称も固定した（42 ブロック中ヘッダ 1 件）。
-2. **投影の両面一致（6 変種）** — `tests/projection_golden_test.rs`。1 ドメインイベントから
+   ヘッダ行を持つ非対称も固定した。
+2. **投影の両面一致（10 ケース）** — `tests/projection_golden_test.rs`。1 ドメインイベントから
    監査行と状態ファイル差分の**両方**を描き、`audit.md` と `state.diff` の実バイトと突合:
 
    | イベント | ゴールデン | 監査面 | 状態面 |
    |---|---|---|---|
+   | `Started` | `cli/intent-create/classic-scope`（16 行） | ✓ | 骨格があれば ✓（§8-1） |
    | `GateOpened` | `cli/report/awaiting-approval` | ✓ | ✓ |
-   | `GateRejected` | `cli/report/rejected` | ✓（2 行） | ✓ |
+   | `GateRejected` | `cli/report/rejected`（2 行） | ✓ | ✓ |
    | `StageRevised` | `cli/report/revised` | ✓ | ✓ |
+   | `GateApproved` | `cli/report/approved`（3 行） | ✓ | ✓ |
+   | `StageSkipped` | `cli/skip/skipped`（2 行） | ✓ | ✓ |
+   | `Jumped` | `cli/jump/execute-forward`（3 行） | ✓ | ✓ |
+   | `Recomposed` | `cli/recompose/skip-one` | ✓ | ✓ |
    | `Parked` | `cli/park/park` | ✓ | ✓ |
    | `Unparked` | `cli/unpark/unpark` | ✓ | ✓ |
-   | `Recomposed` | `cli/recompose/skip-one` | ✓（行のみ、ユニットテスト） | 未裁定 |
+   | `StageCompleted` | **未採取**（§8-2） | 同型で実装 | 同型で実装 |
+   | `AutonomyModeSet` | 行のフィールドが**未採取**（§8-2） | 暫定 | ✓（失敗文言が固定） |
+
+   テストの計画は手写しせず、**upstream の出荷グラフ**（`stage-graph.json` 33 ノード）と
+   `scope-grid.json` の classic 列から組む。手写しの値で合わせにいくと「テストに合わせた実装」
+   になるためである。`reverse-engineering` を greenfield で畳むと in-scope は 25 になり、
+   `- **Total Stages**: 25` と一致する — グラフ側の整合そのものが検証になっている。
 
 3. **冪等（NFR3）** — 同じチェックポイントから 2 度流して同一バイトになることを、投影核と
    取得ループの両方で固定。
-
-**未達の面**: 残る 6 変種（`Started` / `StageCompleted` / `GateApproved` / `StageSkipped` /
-`Jumped` / `Recomposed` の状態面）は §6 の未裁定事項により未実装。
-
----
 
 ## 4. 実装の要点
 
@@ -222,49 +226,55 @@ upstream 側の観測面（`<TS>` に正規化される秒精度 ISO 8601）は�
 
 ---
 
-## 6. 止めて裁定を求めた事項（固定裁定 8）
+## 6. 止めて裁定を求めた事項と、その裁定（固定裁定 8）
 
-### 6.1 `STAGE_STARTED` の `**Agent**:` がイベントから導けない
+### 6.1 発見した実装不能点
 
 ゴールデンの実バイトでは、ほぼ全ての遷移の末尾に付く `STAGE_STARTED` 行が
 `**Agent**: aidlc-design-agent` のようなフィールドを持つ。しかしこの値はドメインイベントから
-導けない:
+導けなかった:
 
-- `StageEntry`（`Started` が運ぶステージ 1 件、`core-domain/src/orchestration/stage_entry.rs:12`）の
-  フィールドは `slug` / `phase` / `plan_action` / `conditional` の 4 つだけで agent が無い
+- `StageEntry`（`Started` が運ぶステージ 1 件）のフィールドは `slug` / `phase` /
+  `plan_action` / `conditional` の 4 つだけで agent が無い
 - agent は `StageNode::lead_agent()`（`core-domain/src/workflow_definition/stage_node.rs:347`）—
-  **ワークフロー定義（ステージグラフ）側**の材料
+  **ワークフロー定義側**の材料
 - ADR-008 により `WorkflowExecution` は定義を `definition_id` + `definition_revision` で
-  **間接参照**しており、定義の詳細をイベントへ複製していない
+  **間接参照**しており、定義の詳細をイベントへ複製していなかった
 
-同じ性質の欠落が状態ファイル側にもある:
+同じ性質の欠落が状態ファイル側にもあった（`Active Agent` / `Next Action` のステージ表題、
+`4.5 (incident-response)` のステージ番号）。さらに `Started` の 16 行は
+`Project Type` / `Languages` / `Build System` のように **initialization 3 ステージの副作用
+（ワークスペース走査結果）**を材料に取り、これもジャーナルには無かった。
 
-- `cli/skip/skipped/state.diff` の `Active Agent` / `Next Action: Execute Refined Mockups`
-  （ステージ表題）
-- `cli/recompose/skip-one/state.diff` の `Stages to Execute` / `Stages to Skip` に現れる
-  **ステージ番号**（`4.5 (incident-response)`）と各行の EXECUTE/SKIP 接尾辞
-- `cli/intent-create/classic-scope/audit.md` の 16 行が要求する `Project Type: Greenfield` /
-  `Languages` / `Build System` / `Details: 4 in-scope phase dirs + verification/ …` —
-  これらは initialization 3 ステージの**副作用（ワークスペース走査・スキャフォールド結果）**で
-  あり、ジャーナルには存在しない
+固定裁定 8 に従い、読み替えずに作業を止めて選択肢 A / B / C を推奨順で提示した。
 
-これは contract-summary §4 が **U4 へ持ち越した未解決項目**（`contract-summary.md:435`）に
-該当する。委任者へ選択肢 A（RMU にクエリ側の定義読取ポートを新設）/ B（`StageEntry` に agent を
-持たせイベントへ焼き込む）/ C（繰り延べ）を推奨順で提示し、照会済みである。
+### 6.2 オーナー裁定 = A（実施済み）
 
-**裁定が降りるまでの扱い**: 誤ったバイトを書く代わりに
-`ProjectionError::DefinitionLookupRequired`（`workspace/projection.rs:75`）で止める。
-`the_events_that_need_the_workflow_definition_stop_instead_of_writing_wrong_bytes` が
-「止まったなら状態面に手を付けていない」ことも併せて固定している。
+**担当エージェント名・ステージ番号・ステージ表題は `Started` イベントの解決済み計画へ
+焼き込む。走査結果 4 項目も同様。** 実装:
 
-### 6.2 固定裁定 7（ITF のフェイク投影差し替え）が 6.1 に依存する
+- `StageDisplay`（`core-domain/src/orchestration/stage_display.rs`）— 番号・表題・担当。
+  `StageEntry` が持ち、`WorkflowExecution::start` が計画を解決する時点でグラフノードから
+  焼き込む。表題と担当は `StateFieldValue` で**単一行を型で保証**する。
+- `WorkspaceScan`（同 `workspace_scan.rs`）— プロジェクト種別・言語・フレームワーク・
+  ビルドシステム。`Started` が持つ。
+- 計画は**投影核の引数** `ResolvedPlan` として渡す（`workspace/resolved_plan.rs`）。表示属性を
+  運ぶのは `Started` だけであり、差分投影のバッチにそれが入っているとは限らないためである。
+  取ってくるのは取得ループの仕事（初回だけジャーナル先頭から引いて控える）で、投影核は
+  相変わらず reader も接続も checkpoint も知らない — **二層は保たれている**。
 
-`journal_protocol` の ITF トレースは `Started` / `StageCompleted` / `GateApproved` を含むため、
-フェイク投影を実 RMU に差し替えると 6.1 の未裁定に当たって止まる。**Quint モデルは 1 文字も
-変えておらず**（`formal/` 無変更、quint-gate 全緑）、ITF 準拠テスト自体も緑のままだが、
-差し替えは 6.1 の裁定後に行う必要がある。
+**イベントを太らせる案は採らなかった**（遷移イベントごとに表示属性を持たせる形）。同じ事実が
+ジャーナルに何度も転写され、`Started` の計画と食い違いうるためである。正本は 1 つでよい。
 
----
+判断基準はオーナーが示した「投影がジャーナルだけで全監査行をバイト一致で描けること」で、
+`tests/projection_golden_test.rs` の 10 ケースがそれを実測している。
+
+### 6.3 ADR-008 との関係
+
+`StageDisplay` の doc に明記した: ADR-008 の「定義を間接参照し詳細を複製しない」は**定義全体**
+の複製を禁じたものであり、解決済み計画の表示属性はその限定的な例外である。運ぶのは描画に要る
+3 値だけで、`consumes` / `produces` / `sensors` といった定義の本体は依然としてイベントに載らない。
+ADR への追記は委任者が完了後の窓で行う。
 
 ## 7. 独自解釈（裁定を仰がずに決めた点）
 
@@ -293,39 +303,55 @@ upstream 側の観測面（`<TS>` に正規化される秒精度 ISO 8601）は�
    横断読取を U4 の責務と言う。順序付けの**純関数**を domain に、シャード列挙とファイル読取
    （I/O）を投影側に置くことで両立させた（§2.3 が `find_all_events` を「ドメインサービス
    （純関数）」の表に載せていることが根拠）。
-8. **`AUTONOMY_MODE_SET` 行のフィールドキーを `Mode` とした**。ゴールデン未採取である（§8）。
+8. **`AUTONOMY_MODE_SET` 行のフィールドキーを `Mode` とした**。ゴールデン未採取である（§8-2）。
 9. **`AutonomyMode::as_state_field()` を domain に追加**。状態ファイルへ書く綴りは
    `from_state_field` の逆写像であり、読む綴りと書く綴りが割れると自分で書いた値を読み戻せなく
    なるため、往復忠実をテストで固定できる場所（domain）に置いた。
 10. **書いてから checkpoint を進める順序**（§4.4）。C5 は冪等をチェックポイントに帰しているが、
     書込と前進のどちらが先かは書いていない。「台帳の欠落は重複より重い」で決めた。
+11. **計画をイベントではなく投影核の引数にした**（§6.2）。裁定 A は「`Started` へ焼き込む」で
+    あり、そこまでは裁定どおり。差分投影で `Started` が同じバッチに無いときにどう渡すかは
+    裁定に書かれていないので、`ResolvedPlan` を引数にする形を選んだ（オーナーが示した判断基準
+    「投影がジャーナルだけで描けること」を満たし、かつ二層構造を潰さない）。
+12. **`StageDisplay` の型は `StageNode` の表現に合わせた**（`StageNumber` + 単一行の文字列 2 本）。
+    `StageEntry` は `StageNode` の射影なので、同じ値に別の型を与えると 2 つの表現が生まれる。
+13. **`StageCompleted` の `**Details**:` を `Stage <表題> completed` とした**。ゴールデン未採取
+    のため、`GateApproved` の完了部（`Stage <表題> approved by gate`）と同型に置いた（§8-2）。
 
 ---
 
 ## 8. 仕様とのドリフト（doc-sync 向け）
 
+### 8-1 / 8-2 — ゴールデン未採取のため実装が止まる 2 点（U1 の追加採取が要る）
+
+| # | 内容 |
+|---|---|
+| 8-1 | **状態ファイルの骨格**。`Started` は本文が既にある状態ファイルへならフィールドを書けるが、9 セクション・31 フィールド行の**骨格そのもの**を起こすには upstream `state-template.md` の実バイトが要る。ゴールデンは差分（`state.diff`）しか持たない。骨格を推測して書くと 0a 逐語契約を静かに破るので `ProjectionError::ScaffoldTemplateUnavailable` で止める。あわせて `- **Stages to Execute**: ` / `- **Stages to Skip**: ` の 2 行は genesis で触らない — ゴールデンの実バイトは `2.1 (reverse-engineering — greenfield)` のように**畳まれた理由**を括弧内に持つが、`PlanAction` は EXECUTE / SKIP の 2 値しか持たず導けないため |
+| 8-2 | **`StageCompleted`（非ゲート完了）の行**と **`AUTONOMY_MODE_SET` 行のフィールドキー**。前者は出荷グラフで非ゲートなのが initialization 3 ステージだけで、その 3 本は `Started` の投影が描くため、単独の `complete_stage` 経路の実バイトが無い。後者は `cli/set-autonomy` のゴールデンが失敗経路（`ERROR_LOGGED`）しか捉えていない。前者は `GateApproved` の完了部と同型、後者は `**Mode**:` を暫定で置き、いずれも doc コメントに未採取である旨を明記した |
+
+### 8-3 以降 — 文書側の是正
+
 | # | 対象 | 内容 |
 |---|---|---|
-| 1 | `coding-rules/cqrs-boundaries.md` | §機械強制の末尾に「**RMU はどちらが現れてもよい**」が残っている。2026-08-29 改訂の判定表は RMU 行に「コマンド側クレートは禁止」と書いており**矛盾**する。README の衝突規則 4（裁定日が新しいほうが勝つ）で後者を採用したが、文面の是正が要る |
-| 2 | `crate-structure-proposal.md` §2 の依存グラフ | RMU の依存に `audit-events` / `message-catalog` / `core-infrastructure` が抜けている（実装で必要になった。いずれも共有/層外であり側ではない） |
-| 3 | 委任ブリーフ §その他の必読 | 「`render_audit_block` / `state_writers` は core-domain の workspace 文脈に**実装済み**」とあるが、実測では `state_writers` のみ実装済みで **`render_audit_block` は未実装**だった（本 Bolt で新規実装した）。`AuditFieldKey` も 11-workspace §2.2 に載っているが未実装だった |
-| 4 | `docs/specs/11-workspace.md` §2.3 | `find_all_events` を「domain に残す」とあるが、実際にはシャード列挙・ファイル読取という I/O を伴う。純関数（domain）と I/O（投影）の分割を明記すると読み手が迷わない |
-| 5 | `contract-summary.md` C5 | `AUTONOMY_MODE_SET` 行のフィールドが未定義。`cli/set-autonomy` のゴールデンは失敗経路（`ERROR_LOGGED`）しか捉えておらず、成功時の行が採取されていない。**U1 の追加採取が要る**（実装は暫定で `**Mode**: autonomous\|gated`） |
-| 6 | `contract-summary.md` C5 rules | 「同一シャード内で直接行と投影行がどちらの順で現れるべきか」は未定義のまま（契約レビュー所見 2 が指摘済み・未解消）。本 Bolt では投影が自分の描いた分を追記するだけなので抵触していない |
-| 7 | `docs/specs/11-workspace.md` §2.3 の表 | `state_writers` の行き先が「投影 API」と書かれているが、移動先クレート名（`core-query-read-model-updater` の `workspace` モジュール）まで書くと追跡しやすい |
-| 8 | ADR-009 / cqrs-boundaries | 側分割に伴い `modules/infra-io` が `modules/core/infrastructure` へ改名された（2026-08-29 の infrastructure-layer 裁定）。層の一覧を持つ文書（`docs/specs/01-domain-model.md` など）に旧名が残っていないか要確認 |
-
----
+| 3 | `coding-rules/cqrs-boundaries.md` | §機械強制の末尾に「**RMU はどちらが現れてもよい**」が残っている。2026-08-29 改訂の判定表は RMU 行に「コマンド側クレートは禁止」と書いており**矛盾**する。README の衝突規則 4（裁定日が新しいほうが勝つ）で後者を採用した。**委任者が完了後の窓で是正**すると連絡済み |
+| 4 | `crate-structure-proposal.md` §2 の依存グラフ | RMU の依存に `audit-events` / `message-catalog` / `core-infrastructure` が抜けている（実装で必要になった。いずれも共有/層外であり側ではない） |
+| 5 | 委任ブリーフ §その他の必読 | 「`render_audit_block` / `state_writers` は core-domain に**実装済み**」とあるが、実測では `state_writers` のみで **`render_audit_block` は未実装**だった。`AuditFieldKey`（11-workspace §2.2）・`find_all_events`（§2.3）・`with_checkbox_suffix`（§2.2）も同様に未実装で、本 Bolt で新規実装した |
+| 6 | `docs/specs/11-workspace.md` §2.3 | `find_all_events` を「domain に残す」とあるが、実際にはシャード列挙・ファイル読取という I/O を伴う。純関数（domain）と I/O（投影）の分割を明記すると読み手が迷わない |
+| 7 | `contract-summary.md` C5 | 裁定 A により `Started` の payload が拡張された（`StageEntry` へ `StageDisplay`、`Started` へ `WorkspaceScan`）。`projects_to` の yaml へ反映が要る。§4 の未解決項目「`Started` の投影の厳密な行順」は本 Bolt で確定した（16 行、`cli/intent-create` が正本） |
+| 8 | `contract-summary.md` C5 rules | 「同一シャード内で直接行と投影行がどちらの順で現れるべきか」は未定義のまま（契約レビュー所見 2 が指摘済み・未解消）。本 Bolt では投影が自分の描いた分を追記するだけなので抵触していない |
+| 9 | ADR-008 | 「定義を間接参照し詳細を複製しない」に、解決済み計画の表示属性という限定的な例外が加わった（オーナー裁定 2026-08-29）。**委任者が追記**すると連絡済み |
+| 10 | 層の一覧を持つ文書（`docs/specs/01-domain-model.md` ほか） | `modules/infra-io` → `modules/core/infrastructure`（`core-infrastructure`）の改名と `harness-infrastructure` の新設が反映されているか要確認 |
 
 ## 9. 申し送り
 
-1. **§6.1 の裁定**が最優先。降り次第、投影規則の残り 6 変種と ITF 差し替え（固定裁定 7）を
-   同じ Bolt で仕上げられる。`ProjectionError::DefinitionLookupRequired` の分岐を実装で
-   置き換えるだけの形にしてある（`recomposed_row` モジュールは監査行の逐語を検証済みのまま
-   保存してあり、裁定後に `project_one` の分岐を戻せばよい）。
-2. **並行コミットの注意**: 作業中に委任者側のコミット `7ba62ba` へ、私が `git mv` で
+1. **残る作業は文書側だけ**である。コードの受入基準 1〜8 はすべて PASS で、固定裁定 1〜8 も
+   すべて実施済み。§8 の 8-1 / 8-2 は**ゴールデンの追加採取（U1）**が要る項目であり、採取が
+   済めば投影側は数十行で埋まる（止まる箇所は `ProjectionError` の変種 1 つと doc コメントに
+   局所化してある）。
+2. **並行コミットの注意**: 作業初期に委任者側のコミット `7ba62ba` へ、私が `git mv` で
    ステージしていたファイル移動 2 件（`event_manifest.rs` / `store_path.rs`）が巻き込まれた。
-   `git mv` は仕様上インデックスへステージするためである。移動自体はブランチに載っており実害は
-   無いが、コミット境界が混ざっている。
+   以後は委任者がコミット凍結を宣言し、再発していない。
 3. **`tools/lint/src/check.rs`** のテスト内パス定数 2 本を新レイアウトへ追随させた（`cargo lint`
    自身のテストが参照するパス。検出ロジックには影響しない）。
+4. 検証用の `target-delegate/` が未追跡で残っている（`.gitignore` は `/target` のみ）。委任者が
+   掃除すると連絡済み。
