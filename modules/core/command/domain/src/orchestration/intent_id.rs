@@ -78,14 +78,6 @@ impl IntentId {
     }
 }
 
-impl TryFrom<String> for IntentId {
-    type Error = IntentIdError;
-
-    fn try_from(value: String) -> Result<IntentId, IntentIdError> {
-        IntentId::parse(&value)
-    }
-}
-
 impl fmt::Display for IntentId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)

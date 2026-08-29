@@ -527,6 +527,16 @@ mod tests {
     /// 本家の SQLite ストア (表を作らせるためだけに開く — 行は `rusqlite` で直接入れる)。
     type UpstreamStore = EventStoreForSqlite<StoreKey, serde_json::Value, serde_json::Value>;
 
+    #[test]
+    fn the_store_key_reports_the_aggregate_type_name_and_the_raw_value() {
+        // 本家がパーティション鍵を組む材料である。表を実物の DDL で作らせるために要る。
+        const RAW: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
+        let key = StoreKey(RAW.to_string());
+        assert_eq!(key.type_name(), "IntentExecution");
+        assert_eq!(key.value(), RAW);
+        assert_eq!(key.to_string(), RAW);
+    }
+
     /// 一時ディレクトリ配下のストアの場所。
     fn store_path(dir: &tempfile::TempDir) -> StorePath {
         let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
@@ -1276,6 +1286,36 @@ mod tests {
             occurred_at: 1_756_425_600_000_000_000,
             manifest: EVENT_MANIFEST.to_string(),
         }
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn a_row_that_decodes_but_cannot_be_carried_into_the_domain_is_corrupt() {
+        // JSON としては読めて DTO にもなるが、閉集合外の綴りを名乗る行。ドメインへ写す時点で
+        // 止まるので、壊れた値が投影核に流れ込まない。
+        let tampered = String::from_utf8(
+            serde_json::to_vec(&WireEvent::Parked(
+                serde_json::from_str(r#"{"stage":"intent-capture"}"#).unwrap(),
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+        .replace(r#""intent-capture""#, r#""Not A Slug""#);
+        let row = JournalRow {
+            payload: tampered.into_bytes(),
+            ..sound_row()
+        };
+        assert_eq!(
+            decode_entry(&row).expect_err("閉集合外の綴り"),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::UndecodablePayload,
+            }
+        );
     }
 
     #[test]

@@ -36,3 +36,6 @@ pub use wire_event::{
     WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
     WireStarted,
 };
+
+#[cfg(test)]
+mod tests;

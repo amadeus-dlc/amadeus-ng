@@ -80,14 +80,6 @@ impl IntentExecutionId {
     }
 }
 
-impl TryFrom<String> for IntentExecutionId {
-    type Error = IntentExecutionIdError;
-
-    fn try_from(value: String) -> Result<IntentExecutionId, IntentExecutionIdError> {
-        IntentExecutionId::parse(&value)
-    }
-}
-
 impl fmt::Display for IntentExecutionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)

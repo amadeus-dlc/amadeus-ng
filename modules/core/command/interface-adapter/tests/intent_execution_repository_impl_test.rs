@@ -486,3 +486,92 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
         "実際: {error:?}"
     );
 }
+
+#[tokio::test]
+async fn a_genesis_row_with_a_foreign_manifest_is_refused() {
+    // 名乗りが違う行の中身は解釈しない。genesis 行でも再生行と同じ拒否条件である。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
+    let conn = fixture.raw();
+    let genesis = genesis_payload().await;
+    rewind_snapshot_to_genesis(&conn, &genesis);
+    conn.execute(
+        "UPDATE journal SET manifest = 'foreign-type/9' WHERE seq_nr = 1",
+        [],
+    )
+    .expect("genesis 行の名乗りを差し替える");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("名乗りが違う genesis は拒否される");
+    assert_eq!(
+        err,
+        RepositoryError::Corrupt {
+            aggregate_id: execution_id(),
+            seq_nr: Some(1),
+            cause: CorruptCause::UndecodablePayload,
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_genesis_row_that_breaks_always_valid_is_refused_by_the_decoder() {
+    // JSON としては読めるが、計画が Always Valid を破る genesis 行。DTO では読めて
+    // `Intent::from_material` の検査点で止まるので、分類は `InvariantViolation` である。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
+    let conn = fixture.raw();
+    let genesis = genesis_payload().await;
+    rewind_snapshot_to_genesis(&conn, &genesis);
+    conn.execute(
+        r#"UPDATE journal SET payload = CAST(replace(CAST(payload AS TEXT), '"plan_action":"Execute"', '"plan_action":"Skip"') AS BLOB) WHERE seq_nr = 1"#,
+        [],
+    )
+    .expect("先頭ステージを SKIP に畳む");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("不変条件を破る genesis は復号できない");
+    assert_eq!(
+        err,
+        RepositoryError::Corrupt {
+            aggregate_id: execution_id(),
+            seq_nr: Some(1),
+            cause: CorruptCause::InvariantViolation,
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_replayed_row_whose_spelling_is_outside_the_closed_set_is_refused() {
+    // 再生行の payload が閉集合外の綴りを名乗る場合。DTO からドメインへ写す時点で止まるので、
+    // 壊れた値が状態遷移に流れ込まない。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
+    let conn = fixture.raw();
+    let genesis = genesis_payload().await;
+    rewind_snapshot_to_genesis(&conn, &genesis);
+    conn.execute(
+        r#"UPDATE journal SET payload = CAST(replace(CAST(payload AS TEXT), '"stage":"state-init"', '"stage":"Not A Slug"') AS BLOB) WHERE seq_nr = 2"#,
+        [],
+    )
+    .expect("再生行のステージ参照を壊す");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("閉集合外の綴りは再生前に拒否される");
+    assert_eq!(
+        err,
+        RepositoryError::Corrupt {
+            aggregate_id: execution_id(),
+            seq_nr: Some(2),
+            cause: CorruptCause::UndecodablePayload,
+        }
+    );
+}
