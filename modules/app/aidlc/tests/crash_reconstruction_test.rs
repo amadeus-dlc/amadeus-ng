@@ -144,7 +144,7 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
                 "BEGIN IMMEDIATE;
                  INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
                  VALUES ('p', 's-6', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, X'7B7D', 0,
-                         'workflow-execution-event/1');",
+                         'intent-execution-event/1');",
             )
             .expect("書きかけ");
     }

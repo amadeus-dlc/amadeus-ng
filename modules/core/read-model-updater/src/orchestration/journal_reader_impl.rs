@@ -1332,7 +1332,7 @@ mod tests {
     fn a_row_whose_manifest_is_not_ours_is_corrupt() {
         // manifest は payload の型と読み方の版を名乗る列。名乗りが違う行の中身は解釈しない
         // (旧 `schema_version` 検査 (#466) の後継)。
-        for foreign in ["", "workflow-execution-event/2", "some-other-type/1"] {
+        for foreign in ["", "intent-execution-event/2", "some-other-type/1"] {
             let row = JournalRow {
                 manifest: foreign.to_string(),
                 ..sound_row()

@@ -33,7 +33,7 @@ use tempfile::TempDir;
 use support::{absent_execution_id, advance, at, contract, execution_id, genesis, intent};
 
 /// 我々が封筒に書く型判別子 (アダプタの `EVENT_MANIFEST` と同じ綴り)。
-const MANIFEST: &str = "workflow-execution-event/1";
+const MANIFEST: &str = "intent-execution-event/1";
 
 /// 未永続の集約が提示する版。
 const UNPERSISTED: usize = <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION;

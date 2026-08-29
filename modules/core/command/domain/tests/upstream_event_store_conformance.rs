@@ -39,7 +39,7 @@ use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};
 type Store = EventStoreForMemory<IntentExecutionId, IntentExecution, IntentExecutionEvent>;
 
 /// 我々が封筒に載せる型判別子 (Repository が書く値と同じ綴り)。
-const MANIFEST: &str = "workflow-execution-event/1";
+const MANIFEST: &str = "intent-execution-event/1";
 
 /// 新規作成の `expected_version` (本家 v3 の規約 — BR2.6)。
 const CREATE_EXPECTED_VERSION: usize = 0;
