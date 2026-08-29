@@ -60,6 +60,7 @@ mod directive_schema;
 mod event_manifest;
 mod intent_execution;
 mod intent_execution_event;
+mod intent_execution_id;
 mod intent_execution_snapshot;
 mod intent_id;
 mod jump_direction;
@@ -73,12 +74,14 @@ mod start_error;
 mod start_request;
 mod state_error;
 mod status;
+mod uuid_v7;
 mod verdict;
 mod workspace_scan;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
 pub use directive_schema::DirectiveKind;
+pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
@@ -112,6 +115,7 @@ pub use intent_execution_event::{
 pub use apply_error::ApplyError;
 pub use autonomy_mode::InvalidModeArg;
 pub use command_error::CommandError;
+pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
 pub use start_error::StartError;

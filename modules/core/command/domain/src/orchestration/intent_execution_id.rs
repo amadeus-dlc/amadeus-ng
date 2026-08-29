@@ -1,5 +1,9 @@
-//! `IntentId` — 集約 `IntentExecution` の識別子 (`intents.json` の uuid・記録ディレクトリの id8。
-//! entities.md IntentId)。
+//! `IntentExecutionId` — 集約 `IntentExecution` の識別子。
+//!
+//! 1 つの intent から実行は何回でも起きる (1 intent : n 実行 — オーナー裁定 2026-08-29) ので、
+//! 実行は intent の識別子を自然キーとして借りられない。実行自身の同一性を担うのがこの型で
+//! あり、本家 `AggregateId` を実装するのもこちらである。形は `IntentId` と同じ UUIDv7 正準
+//! 表記だが、**型が違えば取り違えはコンパイルで落ちる** (Entity + Id 法則)。
 
 use std::fmt;
 
@@ -11,28 +15,26 @@ use super::uuid_v7::{CANONICAL_LEN, MalformedUuidV7, VERSION_NIBBLE, parse_canon
 /// 本家 `AggregateId::type_name` が返す集約種別名 (この識別子が指す集約ルートの型名)。
 const AGGREGATE_TYPE_NAME: &str = "IntentExecution";
 
-/// `intents.json` の uuid にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
+/// 1 回の実行の識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
 /// 形は **UUIDv7 の正準表記**に限る —
 /// `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
 /// (小文字 36 字、version nibble は `7`、variant nibble は RFC の `10xx` = `8` / `9` / `a` / `b`)。
-/// 大文字・短縮形・他 version・記録ディレクトリ名の kebab 表記は受理しない (BR4.1)。
-/// 検査の正本は [`super::uuid_v7`] で `IntentExecutionId` と共有する。
+/// 検査の正本は [`super::uuid_v7`] で `IntentId` と共有する (BR4.1)。
 ///
 /// `Ord` は生文字列の辞書順。UUIDv7 の先頭 48 bit は Unix ミリ秒なので、この順序は
-/// ミリ秒粒度の作成順になる (upstream 同等の性質。型としては形式だけを保証し、
-/// 時刻の妥当性は検証しない — entities.md IntentId)。
+/// ミリ秒粒度の作成順になる。型としては形式だけを保証し、時刻の妥当性は検証しない。
 ///
 /// serde は表現の写しである。`Serialize` は newtype として生文字列へ落ち、`Deserialize` は
-/// [`IntentId::parse`] と同じ検査を通す (`try_from`) — 復号が Always Valid を破る抜け道に
-/// ならないようにするためである。
+/// [`IntentExecutionId::parse`] と同じ検査を通す (`try_from`) — 復号が Always Valid を破る
+/// 抜け道にならないようにするためである。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String")]
-pub struct IntentId(String);
+pub struct IntentExecutionId(String);
 
-/// `IntentId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
+/// `IntentExecutionId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IntentIdError {
+pub enum IntentExecutionIdError {
     /// 前後の空白を除くと空になる。
     Empty,
     /// 正準形の 36 字でない。
@@ -57,29 +59,29 @@ pub enum IntentIdError {
     },
 }
 
-impl From<MalformedUuidV7> for IntentIdError {
-    fn from(reason: MalformedUuidV7) -> IntentIdError {
+impl From<MalformedUuidV7> for IntentExecutionIdError {
+    fn from(reason: MalformedUuidV7) -> IntentExecutionIdError {
         match reason {
-            MalformedUuidV7::Empty => IntentIdError::Empty,
-            MalformedUuidV7::Length { actual } => IntentIdError::Length { actual },
-            MalformedUuidV7::Format { position } => IntentIdError::Format { position },
-            MalformedUuidV7::Version { found } => IntentIdError::Version { found },
-            MalformedUuidV7::Variant { found } => IntentIdError::Variant { found },
+            MalformedUuidV7::Empty => IntentExecutionIdError::Empty,
+            MalformedUuidV7::Length { actual } => IntentExecutionIdError::Length { actual },
+            MalformedUuidV7::Format { position } => IntentExecutionIdError::Format { position },
+            MalformedUuidV7::Version { found } => IntentExecutionIdError::Version { found },
+            MalformedUuidV7::Variant { found } => IntentExecutionIdError::Variant { found },
         }
     }
 }
 
-impl IntentId {
+impl IntentExecutionId {
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
     ///
     /// # Errors
     ///
     /// 空・36 字でない長さ・ハイフン位置や 16 進小文字の並びの違反・version nibble が `7`
     /// 以外・variant nibble が `8` / `9` / `a` / `b` 以外を、それぞれ拒否する。
-    pub fn parse(s: &str) -> Result<IntentId, IntentIdError> {
+    pub fn parse(s: &str) -> Result<IntentExecutionId, IntentExecutionIdError> {
         parse_canonical(s)
-            .map(IntentId)
-            .map_err(IntentIdError::from)
+            .map(IntentExecutionId)
+            .map_err(IntentExecutionIdError::from)
     }
 
     /// 生の識別子文字列 (trim 済み)。
@@ -89,11 +91,11 @@ impl IntentId {
     }
 }
 
-impl TryFrom<String> for IntentId {
-    type Error = IntentIdError;
+impl TryFrom<String> for IntentExecutionId {
+    type Error = IntentExecutionIdError;
 
-    fn try_from(value: String) -> Result<IntentId, IntentIdError> {
-        IntentId::parse(&value)
+    fn try_from(value: String) -> Result<IntentExecutionId, IntentExecutionIdError> {
+        IntentExecutionId::parse(&value)
     }
 }
 
@@ -105,7 +107,7 @@ impl TryFrom<String> for IntentId {
 ///
 /// [tell-dont-ask]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/tell-dont-ask.md
 /// [ubiquitous-language]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ubiquitous-language.md
-impl AggregateId for IntentId {
+impl AggregateId for IntentExecutionId {
     fn type_name(&self) -> String {
         AGGREGATE_TYPE_NAME.to_string()
     }
@@ -115,26 +117,26 @@ impl AggregateId for IntentId {
     }
 }
 
-impl fmt::Display for IntentId {
+impl fmt::Display for IntentExecutionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-impl fmt::Display for IntentIdError {
+impl fmt::Display for IntentExecutionIdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IntentIdError::Empty => f.write_str("empty"),
-            IntentIdError::Length { actual } => {
+            IntentExecutionIdError::Empty => f.write_str("empty"),
+            IntentExecutionIdError::Length { actual } => {
                 write!(f, "length {actual} (expected {CANONICAL_LEN})")
             }
-            IntentIdError::Format { position } => {
+            IntentExecutionIdError::Format { position } => {
                 write!(f, "invalid character at position {position}")
             }
-            IntentIdError::Version { found } => {
+            IntentExecutionIdError::Version { found } => {
                 write!(f, "version nibble '{found}' (expected '{VERSION_NIBBLE}')")
             }
-            IntentIdError::Variant { found } => {
+            IntentExecutionIdError::Variant { found } => {
                 write!(
                     f,
                     "variant nibble '{found}' (expected one of '8' '9' 'a' 'b')"
@@ -144,15 +146,16 @@ impl fmt::Display for IntentIdError {
     }
 }
 
-impl std::error::Error for IntentIdError {}
+impl std::error::Error for IntentExecutionIdError {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestration::IntentId;
     use std::collections::{BTreeSet, HashSet};
 
-    /// `intents.json` の実データ (11 号 §2.2 / entities.md IntentId)。
-    const SAMPLE: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+    /// 実行識別子の標本 (形は `IntentId` と同じ UUIDv7 正準表記)。
+    const SAMPLE: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
     #[test]
     fn parse_accepts_a_lowercase_uuidv7() {
@@ -160,10 +163,10 @@ mod tests {
             SAMPLE,
             // variant nibble は 8 / 9 / a / b のいずれでもよい (10xx)。
             "018f3b2c-4d5e-7f60-8abc-def012345678",
-            "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+            "01a02785-1bd8-76eb-aeea-5aa303ebd5b6",
             "0190aaaa-bbbb-7ccc-bddd-eeeeffff0000",
         ] {
-            let id = IntentId::parse(raw).unwrap();
+            let id = IntentExecutionId::parse(raw).unwrap();
             assert_eq!(id.as_str(), raw);
             assert_eq!(id.to_string(), raw);
         }
@@ -171,115 +174,93 @@ mod tests {
 
     #[test]
     fn surrounding_whitespace_is_trimmed_before_validation() {
-        let id = IntentId::parse("  01a02785-1bd8-76eb-aeea-5aa303ebd5b6\n").unwrap();
+        let id = IntentExecutionId::parse("  0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000\n").unwrap();
         assert_eq!(id.as_str(), SAMPLE);
-        assert_eq!(id, IntentId::parse(SAMPLE).unwrap());
+        assert_eq!(id, IntentExecutionId::parse(SAMPLE).unwrap());
     }
 
     #[test]
     fn an_empty_or_blank_value_cannot_be_constructed() {
-        assert_eq!(IntentId::parse(""), Err(IntentIdError::Empty));
-        assert_eq!(IntentId::parse("  \t\n"), Err(IntentIdError::Empty));
+        assert_eq!(
+            IntentExecutionId::parse(""),
+            Err(IntentExecutionIdError::Empty)
+        );
+        assert_eq!(
+            IntentExecutionId::parse("  \t\n"),
+            Err(IntentExecutionIdError::Empty)
+        );
     }
 
     #[test]
     fn a_value_that_is_not_thirty_six_characters_is_rejected() {
         assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b"),
-            Err(IntentIdError::Length { actual: 35 })
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff000"),
+            Err(IntentExecutionIdError::Length { actual: 35 })
         );
         assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6f"),
-            Err(IntentIdError::Length { actual: 37 })
-        );
-    }
-
-    #[test]
-    fn the_kebab_record_directory_name_is_no_longer_accepted() {
-        // BR4.1: 旧形式 (記録ディレクトリ名) の受理は廃止した。長さで落ちる。
-        assert_eq!(
-            IntentId::parse("260822-stage1-selfhost"),
-            Err(IntentIdError::Length { actual: 22 })
-        );
-        assert_eq!(
-            IntentId::parse("u2"),
-            Err(IntentIdError::Length { actual: 2 })
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff00000"),
+            Err(IntentExecutionIdError::Length { actual: 37 })
         );
     }
 
     #[test]
     fn uppercase_hex_is_rejected() {
         assert_eq!(
-            IntentId::parse("01A02785-1bd8-76eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Format { position: 2 })
-        );
-        assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303EBD5b6"),
-            Err(IntentIdError::Format { position: 30 })
+            IntentExecutionId::parse("0190AAAA-bbbb-7ccc-9ddd-eeeeffff0000"),
+            Err(IntentExecutionIdError::Format { position: 4 })
         );
     }
 
     #[test]
     fn hyphens_must_sit_at_the_canonical_positions() {
-        // 8 文字目 (0 始まり位置 8) に `-` が無い。
+        // 0 始まり位置 8 に `-` が無い。
         assert_eq!(
-            IntentId::parse("01a027851-bd8-76eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Format { position: 8 })
+            IntentExecutionId::parse("0190aaaab-bbb-7ccc-9ddd-eeeeffff0000"),
+            Err(IntentExecutionIdError::Format { position: 8 })
         );
         // 16 進が来るべき位置に `-` がある。
         assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303-bd5b6"),
-            Err(IntentIdError::Format { position: 30 })
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeff-f0000"),
+            Err(IntentExecutionIdError::Format { position: 30 })
         );
     }
 
     #[test]
     fn non_hex_characters_are_rejected() {
         assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303gbd5b6"),
-            Err(IntentIdError::Format { position: 30 })
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeegfff0000"),
+            Err(IntentExecutionIdError::Format { position: 28 })
         );
     }
 
     #[test]
     fn the_version_nibble_must_be_seven() {
-        // UUIDv4 (13 番目の 16 進桁が 4)。
         assert_eq!(
-            IntentId::parse("01a02785-1bd8-46eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Version { found: '4' })
-        );
-        assert_eq!(
-            IntentId::parse("01a02785-1bd8-16eb-aeea-5aa303ebd5b6"),
-            Err(IntentIdError::Version { found: '1' })
+            IntentExecutionId::parse("0190aaaa-bbbb-4ccc-9ddd-eeeeffff0000"),
+            Err(IntentExecutionIdError::Version { found: '4' })
         );
     }
 
     #[test]
     fn the_variant_nibble_must_encode_the_rfc_variant() {
-        // 17 番目の 16 進桁は 8 / 9 / a / b (2 進 10xx) のみ。
         assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-ceea-5aa303ebd5b6"),
-            Err(IntentIdError::Variant { found: 'c' })
-        );
-        assert_eq!(
-            IntentId::parse("01a02785-1bd8-76eb-7eea-5aa303ebd5b6"),
-            Err(IntentIdError::Variant { found: '7' })
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-cddd-eeeeffff0000"),
+            Err(IntentExecutionIdError::Variant { found: 'c' })
         );
     }
 
     #[test]
     fn ordering_is_the_lexicographic_order_of_the_raw_string() {
-        // UUIDv7 の先頭 48 bit は Unix ミリ秒なので、文字列順が作成順になる。
-        let mut sorted: Vec<IntentId> = [
+        let mut sorted: Vec<IntentExecutionId> = [
             "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
             "018f3b2c-4d5e-7f60-8abc-def012345678",
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6",
         ]
         .iter()
-        .map(|s| IntentId::parse(s).unwrap())
+        .map(|s| IntentExecutionId::parse(s).unwrap())
         .collect();
         sorted.sort();
-        let raw: Vec<&str> = sorted.iter().map(IntentId::as_str).collect();
+        let raw: Vec<&str> = sorted.iter().map(IntentExecutionId::as_str).collect();
         assert_eq!(
             raw,
             [
@@ -292,56 +273,65 @@ mod tests {
 
     #[test]
     fn the_id_works_as_a_map_and_set_key() {
-        let a = IntentId::parse(SAMPLE).unwrap();
-        let b = IntentId::parse("  01a02785-1bd8-76eb-aeea-5aa303ebd5b6 ").unwrap();
+        let a = IntentExecutionId::parse(SAMPLE).unwrap();
+        let b = IntentExecutionId::parse("  0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000 ").unwrap();
         let mut hashed = HashSet::new();
         hashed.insert(a.clone());
         assert!(hashed.contains(&b));
-        let ordered: BTreeSet<IntentId> = [a, b].into_iter().collect();
+        let ordered: BTreeSet<IntentExecutionId> = [a, b].into_iter().collect();
         assert_eq!(ordered.len(), 1);
     }
 
     #[test]
     fn the_aggregate_id_contract_reports_the_type_name_and_the_raw_value() {
-        let id = IntentId::parse(SAMPLE).unwrap();
+        let id = IntentExecutionId::parse(SAMPLE).unwrap();
         assert_eq!(id.type_name(), "IntentExecution");
         assert_eq!(id.value(), SAMPLE);
     }
 
     #[test]
     fn the_identifier_round_trips_through_serde_and_an_invalid_form_is_refused() {
-        let id = IntentId::parse(SAMPLE).unwrap();
-        // 本家 trait の serde 境界の往復確認であり、契約 JSON (BR1.7) の直列化経路では
-        // ないため、canon-json を経ない素の serde_json を使う。
+        let id = IntentExecutionId::parse(SAMPLE).unwrap();
         #[allow(
             clippy::disallowed_methods,
             reason = "契約 JSON ではなく serde 境界そのものの往復確認 (BR1.7 の射程外)"
         )]
         let json = serde_json::to_string(&id).unwrap();
         assert_eq!(json, format!("\"{SAMPLE}\""));
-        assert_eq!(serde_json::from_str::<IntentId>(&json).unwrap(), id);
-        // Always Valid — 復号は `parse` と同じ検査を通る (不正値はこの型に存在しない)。
-        assert!(serde_json::from_str::<IntentId>("\"not-a-uuid\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<IntentExecutionId>(&json).unwrap(),
+            id
+        );
+        assert!(serde_json::from_str::<IntentExecutionId>("\"not-a-uuid\"").is_err());
     }
 
     #[test]
     fn the_rejection_carries_material_not_wording() {
-        assert_eq!(IntentIdError::Empty.to_string(), "empty");
+        assert_eq!(IntentExecutionIdError::Empty.to_string(), "empty");
         assert_eq!(
-            IntentIdError::Length { actual: 35 }.to_string(),
+            IntentExecutionIdError::Length { actual: 35 }.to_string(),
             "length 35 (expected 36)"
         );
         assert_eq!(
-            IntentIdError::Format { position: 8 }.to_string(),
+            IntentExecutionIdError::Format { position: 8 }.to_string(),
             "invalid character at position 8"
         );
         assert_eq!(
-            IntentIdError::Version { found: '4' }.to_string(),
+            IntentExecutionIdError::Version { found: '4' }.to_string(),
             "version nibble '4' (expected '7')"
         );
         assert_eq!(
-            IntentIdError::Variant { found: 'c' }.to_string(),
+            IntentExecutionIdError::Variant { found: 'c' }.to_string(),
             "variant nibble 'c' (expected one of '8' '9' 'a' 'b')"
         );
+    }
+
+    #[test]
+    fn an_execution_id_is_a_different_type_from_the_intent_id_even_with_the_same_text() {
+        // 1 intent : n 実行になったので、実行の同一性は intent の同一性と別物である。
+        // 同じ綴りでも型が違えば取り違えはコンパイルで落ちる (Entity + Id 法則)。
+        let execution = IntentExecutionId::parse(SAMPLE).unwrap();
+        let intent = IntentId::parse(SAMPLE).unwrap();
+        assert_eq!(execution.as_str(), intent.as_str());
     }
 }
