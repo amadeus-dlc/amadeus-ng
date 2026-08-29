@@ -5,6 +5,7 @@ use std::fmt;
 use core_command_domain::orchestration::CommandError;
 use core_command_domain::workflow_definition::StageSlug;
 
+use super::intent_repository_error::IntentRepositoryError;
 use super::repository_error::RepositoryError;
 
 /// `CommitVerdictUseCase` の失敗（材料のみ — 逐語文言は出す側が組む）。
@@ -14,8 +15,10 @@ use super::repository_error::RepositoryError;
 /// ステージが解決済み計画に無かったことを言う。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitError {
-    /// 再構成・永続化の失敗（ポートからそのまま伝播）。
+    /// 実行の再構成・永続化の失敗（ポートからそのまま伝播）。
     Repository(RepositoryError),
+    /// intent の取得の失敗（ポートからそのまま伝播）。
+    IntentRepository(IntentRepositoryError),
     /// 集約がコマンドを拒否した（そのまま伝播）。
     Command(CommandError),
     /// 報告が名指ししたステージが解決済み計画に無い。
@@ -29,6 +32,7 @@ impl fmt::Display for CommitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CommitError::Repository(error) => write!(f, "repository: {error}"),
+            CommitError::IntentRepository(error) => write!(f, "intent repository: {error}"),
             CommitError::Command(error) => write!(f, "command: {error}"),
             CommitError::UnknownStage { stage } => write!(f, "unknown stage: {}", stage.as_str()),
         }
@@ -40,6 +44,12 @@ impl std::error::Error for CommitError {}
 impl From<RepositoryError> for CommitError {
     fn from(error: RepositoryError) -> CommitError {
         CommitError::Repository(error)
+    }
+}
+
+impl From<IntentRepositoryError> for CommitError {
+    fn from(error: IntentRepositoryError) -> CommitError {
+        CommitError::IntentRepository(error)
     }
 }
 

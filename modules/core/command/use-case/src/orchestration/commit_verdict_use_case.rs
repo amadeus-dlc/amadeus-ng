@@ -9,6 +9,7 @@ use core_command_domain::workspace::CheckboxState;
 
 use super::commit_error::CommitError;
 use super::intent_execution_repository::IntentExecutionRepository;
+use super::intent_repository::IntentRepository;
 use super::reported_transition::ReportedTransition;
 use super::repository_error::RepositoryError;
 
@@ -44,8 +45,9 @@ use super::repository_error::RepositoryError;
 /// `dyn` は使わない（`coding-rules/use-case-rules.md` §2）。結線（実物 / インメモリの選択）は
 /// 合成ルートだけが行い、ユースケースはポートの trait しか知らない。
 #[derive(Debug)]
-pub struct CommitVerdictUseCase<R: IntentExecutionRepository> {
-    repository: R,
+pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
+    execution_repository: E,
+    intent_repository: I,
 }
 
 /// [`CommitVerdictUseCase::attempt`] 1 回分の結末。
@@ -67,11 +69,18 @@ enum AttemptOutcome {
     },
 }
 
-impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
-    /// ポートの実装を注入する。
+impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, I> {
+    /// ポートの実装を 2 つ注入する。
+    ///
+    /// **ユースケースはリポジトリを保持し、`execute` の内部で使う** (改訂 10 のオーナー裁定)。
+    /// 以前は Controller が `&Intent` を読んで渡していたが、あれは I8 — 読取専用ユースケース
+    /// (`Next`) 専用のパターン — の誤適用だった (`coding-rules/use-case-rules.md` §4 の射程)。
     #[must_use]
-    pub const fn new(repository: R) -> CommitVerdictUseCase<R> {
-        CommitVerdictUseCase { repository }
+    pub const fn new(execution_repository: E, intent_repository: I) -> CommitVerdictUseCase<E, I> {
+        CommitVerdictUseCase {
+            execution_repository,
+            intent_repository,
+        }
     }
 
     /// 報告された結末を 1 つの遷移としてコミットする。
@@ -81,6 +90,19 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
     /// （BR1.9）。
     ///
     /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない（NFR3.1）。
+    ///
+    /// # 引数は集約 ID と値オブジェクトだけである
+    ///
+    /// ユースケースの `execute` に**集約を渡さない** — 渡してよいのは集約 ID と値オブジェクト
+    /// だけで、集約は保持するリポジトリから内部で取る
+    /// （`coding-rules/use-case-rules.md` §2b、改訂 10 のオーナー裁定）。したがって
+    /// 引数は `IntentExecutionId`（集約 ID）・`StageSlug`（値オブジェクト）・
+    /// `ReportedTransition`（値オブジェクト）・`DateTime<Utc>`（値）である。
+    ///
+    /// 内部フローは ① 実行を再構成 → ② その `intent_id` を読む → ③ `IntentRepository` で
+    /// 計画を引く → ④ `&Intent` を集約コマンドへ → ⑤ `store`。以前は Controller が
+    /// `&Intent` を読んで渡していたが、あれは I8 — **読取専用**ユースケース専用のパターン —
+    /// の誤適用だった（§4 の射程）。
     ///
     /// # 戻り値を持たない理由（CQS）
     ///
@@ -128,30 +150,32 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
     /// （BR1.9）に畳み、カーソルが動いていない競合（`set-autonomy` 等）は名指し == カーソルで
     /// 通常経路に入る。再試行の意味論が「**同じ報告をもう一度**」に固定される。
     ///
+    /// **再試行は attempt 全体をやり直す**ので、計画も引き直す。`Intent` は不変なので再取得は
+    /// 無害である（改訂 10）。
+    ///
     /// 再試行後に集約がコマンドを拒否した場合も、そのまま伝播する。
     ///
     /// # Errors
     ///
-    /// 再構成・永続化の失敗（`Repository`）、集約による拒否（`Command`）、計画に無いステージの
-    /// 名指し（`UnknownStage`）を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
+    /// 実行の再構成・永続化の失敗（`Repository`）、計画の取得の失敗（`IntentRepository`）、
+    /// 集約による拒否（`Command`）、計画に無いステージの名指し（`UnknownStage`）を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
     /// 言い換えもしない。再試行するのは上記の `Conflict` 1 回だけである。
     pub async fn execute(
         &mut self,
         execution_id: &IntentExecutionId,
-        intent: &Intent,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), CommitError> {
         let AttemptOutcome::Conflicted { target, .. } = self
-            .attempt(execution_id, intent, stage, transition.clone(), occurred_at)
+            .attempt(execution_id, stage, transition.clone(), occurred_at)
             .await?
         else {
             return Ok(());
         };
         // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」を参照）。
         match self
-            .attempt(execution_id, intent, Some(&target), transition, occurred_at)
+            .attempt(execution_id, Some(&target), transition, occurred_at)
             .await?
         {
             AttemptOutcome::Settled => Ok(()),
@@ -170,16 +194,23 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
     async fn attempt(
         &mut self,
         execution_id: &IntentExecutionId,
-        intent: &Intent,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<AttemptOutcome, CommitError> {
-        let rehydrated = self.repository.find_by_id(execution_id).await?;
+        let rehydrated = self.execution_repository.find_by_id(execution_id).await?;
         // 版は再構成が返した値**そのもの**を握る。`aggregate.seq_nr()` から導いてはならない
         // （ポート doc の 3 か条 — 版は不透明なトークンである）。
         let expected_version = rehydrated.version();
         let mut aggregate = rehydrated.into_aggregate();
+        // 計画は**保持しているリポジトリから内部で取る**（改訂 10）。実行は intent を ID で
+        // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
+        // 取り違えのガードは従来どおり集約側で発火する — ここでは構成上一致する。
+        let intent = self
+            .intent_repository
+            .find_by_id(aggregate.intent_id())
+            .await?;
+        let intent = &intent;
 
         // 何もコミットしない 2 経路。どちらも成功であり、区別は戻り値に出さない。
         if let Some(named) = stage
@@ -196,7 +227,7 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
         // 手前のステージは既に上の no-op で返しているからである。
         let event = Self::command(intent, &mut aggregate, cursor, transition, occurred_at)?;
         match self
-            .repository
+            .execution_repository
             .store(&event, &aggregate, expected_version)
             .await
         {
@@ -318,10 +349,16 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
         Ok(event?)
     }
 
-    /// 注入されたポート実装（テストが**効果**を観測するための継ぎ目）。
+    /// 注入された実行ポートの実装（テストが**効果**を観測するための継ぎ目）。
     #[cfg(test)]
-    pub(crate) const fn repository(&self) -> &R {
-        &self.repository
+    pub(crate) const fn execution_repository(&self) -> &E {
+        &self.execution_repository
+    }
+
+    /// 注入された intent ポートの実装（テストが取得回数を観測するための継ぎ目）。
+    #[cfg(test)]
+    pub(crate) const fn intent_repository(&self) -> &I {
+        &self.intent_repository
     }
 }
 
@@ -333,11 +370,12 @@ mod tests {
 
     use super::super::commit_error::CommitError;
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
+    use super::super::intent_repository_error::IntentRepositoryError;
     use super::super::reported_transition::ReportedTransition;
     use super::super::repository_error::RepositoryError;
     use super::super::test_support::{
-        InMemoryIntentExecutionRepository, absent_execution, at, execution_id, genesis, slug,
-        start_from_plan,
+        InMemoryIntentExecutionRepository, InMemoryIntentRepository, absent_execution, at,
+        execution_id, genesis, slug, start_from_plan,
     };
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
@@ -355,13 +393,12 @@ mod tests {
         (intent, aggregate)
     }
 
-    /// テストの主体 — ユースケースと、Controller が渡す `&Intent` を束ねる。
+    /// テストの主体 — 2 本のポートを注入したユースケース。
     ///
-    /// 本番では Controller が intent を読んで渡す（`coding-rules/aggregate-references.md`）。
-    /// テストでは実行と intent が常に対なので、ここで束ねて転送する。
+    /// **ユースケースは計画を自分で取る**（改訂 10）ので、テストが `&Intent` を持ち回る必要は
+    /// もう無い。intent は `InMemoryIntentRepository` に預けてある。
     struct Subject {
-        intent: Intent,
-        use_case: CommitVerdictUseCase<InMemoryIntentExecutionRepository>,
+        use_case: CommitVerdictUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository>,
     }
 
     impl Subject {
@@ -372,28 +409,26 @@ mod tests {
             occurred_at: DateTime<Utc>,
         ) -> Result<(), CommitError> {
             self.use_case
-                .execute(
-                    &execution_id(),
-                    &self.intent,
-                    stage,
-                    transition,
-                    occurred_at,
-                )
+                .execute(&execution_id(), stage, transition, occurred_at)
                 .await
         }
 
         const fn repository(&self) -> &InMemoryIntentExecutionRepository {
-            self.use_case.repository()
+            self.use_case.execution_repository()
+        }
+
+        const fn intents(&self) -> &InMemoryIntentRepository {
+            self.use_case.intent_repository()
         }
     }
 
     fn use_case(pair: (Intent, IntentExecution), version: usize) -> Subject {
         let (intent, aggregate) = pair;
         Subject {
-            intent,
-            use_case: CommitVerdictUseCase::new(InMemoryIntentExecutionRepository::holding(
-                aggregate, version,
-            )),
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding(aggregate, version),
+                InMemoryIntentRepository::holding(intent),
+            ),
         }
     }
 
@@ -637,11 +672,68 @@ mod tests {
     // ---- 異常系 ----
 
     #[tokio::test]
+    async fn the_use_case_fetches_the_intent_itself_from_the_port() {
+        // 改訂 10: `execute` は intent を受け取らない。実行を再構成し、その `intent_id` で
+        // 保持しているリポジトリから引く。
+        let mut subject = use_case(at_the_first_gate(3), 7);
+        assert_eq!(subject.intents().lookups(), 0, "呼ぶ前は 0 回");
+        subject
+            .execute(None, forward(), at())
+            .await
+            .expect("ゲートは承認できる");
+        assert_eq!(subject.intents().lookups(), 1, "1 試行につき 1 回引く");
+    }
+
+    #[tokio::test]
+    async fn a_missing_intent_is_propagated_from_its_own_port() {
+        // 実行は読めたが計画が引けない場合。ユースケースは握り潰さず、その面の失敗のまま
+        // 伝播する（`RepositoryError` ではなく `IntentRepositoryError` である）。
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut use_case = CommitVerdictUseCase::new(
+            InMemoryIntentExecutionRepository::holding(aggregate, 7),
+            InMemoryIntentRepository::empty(),
+        );
+        let err = use_case
+            .execute(&execution_id(), None, forward(), at())
+            .await
+            .expect_err("計画が無ければコミットできない");
+        assert_eq!(
+            err,
+            CommitError::IntentRepository(IntentRepositoryError::NotFound {
+                intent_id: intent.id().clone(),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retry_fetches_the_intent_again() {
+        // 再試行は attempt 全体をやり直すので intent も引き直す。Intent は不変なので
+        // 再取得は無害である（改訂 10）。
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
+                    aggregate, 7, 1,
+                ),
+                InMemoryIntentRepository::holding(intent),
+            ),
+        };
+        subject
+            .execute(None, forward(), at())
+            .await
+            .expect("1 回だけ再試行すれば通る");
+        assert_eq!(subject.intents().lookups(), 2, "2 試行なので 2 回引く");
+    }
+
+    #[tokio::test]
     async fn a_missing_aggregate_is_reported_as_not_found() {
         let (intent, _, _) = genesis(3);
-        let mut subject = CommitVerdictUseCase::new(InMemoryIntentExecutionRepository::empty());
+        let mut subject = CommitVerdictUseCase::new(
+            InMemoryIntentExecutionRepository::empty(),
+            InMemoryIntentRepository::holding(intent),
+        );
         let err = subject
-            .execute(&absent_execution(), &intent, None, forward(), at())
+            .execute(&absent_execution(), None, forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
         assert_eq!(
@@ -657,11 +749,11 @@ mod tests {
         // 1 件の割り込み書込で 1 回目は競合し、2 回目で通る（contract-design Q6 = A）。
         let (intent, aggregate) = at_the_first_gate(3);
         let mut subject = Subject {
-            intent,
             use_case: CommitVerdictUseCase::new(
                 InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
                     aggregate, 7, 1,
                 ),
+                InMemoryIntentRepository::holding(intent),
             ),
         };
         subject
@@ -699,11 +791,11 @@ mod tests {
         );
 
         let mut subject = Subject {
-            intent,
             use_case: CommitVerdictUseCase::new(
                 InMemoryIntentExecutionRepository::holding_behind_a_competing_commit(
                     held, advanced, 7,
                 ),
+                InMemoryIntentRepository::holding(intent),
             ),
         };
         subject
@@ -732,11 +824,11 @@ mod tests {
         // 2 件の割り込み書込。2 回目も競合したら伝播する — 3 回目は無い。
         let (intent, aggregate) = at_the_first_gate(3);
         let mut subject = Subject {
-            intent,
             use_case: CommitVerdictUseCase::new(
                 InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
                     aggregate, 7, 2,
                 ),
+                InMemoryIntentRepository::holding(intent),
             ),
         };
         let err = subject

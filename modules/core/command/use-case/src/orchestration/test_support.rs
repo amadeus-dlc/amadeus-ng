@@ -22,6 +22,8 @@ use core_command_domain::workflow_definition::{
 };
 
 use super::intent_execution_repository::IntentExecutionRepository;
+use super::intent_repository::IntentRepository;
+use super::intent_repository_error::IntentRepositoryError;
 use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
 
@@ -277,5 +279,51 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
         self.stored = Some(aggregate.clone());
         self.committed.push(event.clone());
         Ok(())
+    }
+}
+
+/// ユースケースのテストが使う [`IntentRepository`] のダブル。
+///
+/// 実物の実装はまだ無い（読み先の設計ごと U7 の課題 — ポート doc を参照）ので、ここでは
+/// 「保持している intent を返す / 無ければ `NotFound`」だけを模す。intent は不変なので、
+/// 呼ばれるたびに同じ値が返る。
+#[derive(Debug)]
+pub(crate) struct InMemoryIntentRepository {
+    held: Option<Intent>,
+    lookups: std::cell::Cell<usize>,
+}
+
+impl InMemoryIntentRepository {
+    /// 1 つの intent を保持する（この intent の識別子で引けば返る）。
+    pub(crate) const fn holding(intent: Intent) -> InMemoryIntentRepository {
+        InMemoryIntentRepository {
+            held: Some(intent),
+            lookups: std::cell::Cell::new(0),
+        }
+    }
+
+    /// 何も保持しない（どの識別子で引いても `NotFound`）。
+    pub(crate) const fn empty() -> InMemoryIntentRepository {
+        InMemoryIntentRepository {
+            held: None,
+            lookups: std::cell::Cell::new(0),
+        }
+    }
+
+    /// これまでに引かれた回数（再試行が intent を取り直すことの観測点）。
+    pub(crate) fn lookups(&self) -> usize {
+        self.lookups.get()
+    }
+}
+
+impl IntentRepository for InMemoryIntentRepository {
+    async fn find_by_id(&self, id: &IntentId) -> Result<Intent, IntentRepositoryError> {
+        self.lookups.set(self.lookups.get() + 1);
+        match &self.held {
+            Some(held) if held.id() == id => Ok(held.clone()),
+            _ => Err(IntentRepositoryError::NotFound {
+                intent_id: id.clone(),
+            }),
+        }
     }
 }

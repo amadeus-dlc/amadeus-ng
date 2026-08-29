@@ -42,7 +42,7 @@ pub use intent_execution_repository_impl::{
 };
 
 // テスト用 in-memory 実装
-pub use memory::InMemoryWorkflowDefinitionRepository;
+pub use memory::{InMemoryIntentRepository, InMemoryWorkflowDefinitionRepository};
 
 // 逐語文言の組み立て (12 §6 — レンダリングはアダプタ層に閉じる)
 pub use workflow_definition_repository_impl::{

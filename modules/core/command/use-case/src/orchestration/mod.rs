@@ -14,6 +14,8 @@ mod commit_error;
 mod commit_verdict_use_case;
 mod corrupt_cause;
 mod intent_execution_repository;
+mod intent_repository;
+mod intent_repository_error;
 mod rehydrated_intent_execution;
 mod reported_transition;
 mod repository_error;
@@ -27,6 +29,7 @@ mod workflow_definition_repository;
 // 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
 pub use intent_execution_repository::IntentExecutionRepository;
+pub use intent_repository::IntentRepository;
 pub use workflow_definition_repository::WorkflowDefinitionRepository;
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
@@ -42,5 +45,6 @@ pub use reported_transition::ReportedTransition;
 // エラー
 pub use commit_error::CommitError;
 pub use corrupt_cause::CorruptCause;
+pub use intent_repository_error::IntentRepositoryError;
 pub use repository_error::RepositoryError;
 pub use workflow_definition_repository::GraphReadError;

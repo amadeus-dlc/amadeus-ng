@@ -28,7 +28,9 @@
 mod support;
 
 use core_command_domain::workspace::CheckboxState;
-use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
+use core_command_interface_adapter::orchestration::{
+    InMemoryIntentRepository, IntentExecutionRepositoryImpl,
+};
 use core_command_use_case::orchestration::{
     CommitVerdictUseCase, IntentExecutionRepository, ReportedTransition,
 };
@@ -49,11 +51,14 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     // 同じストアを指す別の口。ユースケースが書いた行を外から観測するために先に取っておく。
     let observer = repository.reopened();
 
-    let mut use_case = CommitVerdictUseCase::new(repository);
+    // ポートは 2 本注入する（改訂 10）。ユースケースは計画を自分で引くので、`execute` に
+    // `&Intent` は渡らない — 引数は集約 ID と値オブジェクトだけである
+    // (`coding-rules/use-case-rules.md` §2b)。
+    let mut use_case =
+        CommitVerdictUseCase::new(repository, InMemoryIntentRepository::holding(intent()));
     use_case
         .execute(
             &execution_id(),
-            &intent(),
             None,
             ReportedTransition::Forward { user_input: None },
             at(),
