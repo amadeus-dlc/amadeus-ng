@@ -137,21 +137,21 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
     /// 言い換えもしない。再試行するのは上記の `Conflict` 1 回だけである。
     pub async fn execute(
         &mut self,
-        intent: &Intent,
         execution_id: &IntentExecutionId,
+        intent: &Intent,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), CommitError> {
         let AttemptOutcome::Conflicted { target, .. } = self
-            .attempt(intent, execution_id, stage, transition.clone(), occurred_at)
+            .attempt(execution_id, intent, stage, transition.clone(), occurred_at)
             .await?
         else {
             return Ok(());
         };
         // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」を参照）。
         match self
-            .attempt(intent, execution_id, Some(&target), transition, occurred_at)
+            .attempt(execution_id, intent, Some(&target), transition, occurred_at)
             .await?
         {
             AttemptOutcome::Settled => Ok(()),
@@ -169,8 +169,8 @@ impl<R: IntentExecutionRepository> CommitVerdictUseCase<R> {
     /// ある。
     async fn attempt(
         &mut self,
-        intent: &Intent,
         execution_id: &IntentExecutionId,
+        intent: &Intent,
         stage: Option<&StageSlug>,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
@@ -373,8 +373,8 @@ mod tests {
         ) -> Result<(), CommitError> {
             self.use_case
                 .execute(
-                    &self.intent,
                     &execution_id(),
+                    &self.intent,
                     stage,
                     transition,
                     occurred_at,
@@ -641,7 +641,7 @@ mod tests {
         let (intent, _, _) = genesis(3);
         let mut subject = CommitVerdictUseCase::new(InMemoryIntentExecutionRepository::empty());
         let err = subject
-            .execute(&intent, &absent_execution(), None, forward(), at())
+            .execute(&absent_execution(), &intent, None, forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
         assert_eq!(

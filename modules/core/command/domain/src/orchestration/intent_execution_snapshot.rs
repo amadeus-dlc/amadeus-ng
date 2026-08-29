@@ -1,11 +1,11 @@
 //! `IntentExecutionSnapshot` — 集約の全状態 12 属性の値オブジェクト (C6 / BR5.2)。
 //!
-//! 集約 → [`IntentExecution::state`]、集約 ← [`IntentExecution::from_state`] の 1 往復で
-//! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_state` の 1 か所に集約する
+//! 集約 → [`IntentExecution::snapshot`]、集約 ← [`IntentExecution::from_snapshot`] の 1 往復で
+//! 永続化境界を渡る。**形の検査はしない** — 検査点は `from_snapshot` の 1 か所に集約する
 //! (security-design §2)。
 //!
 //! スナップショットの直列化は**この写しを経由する** (オーナー裁定 2026-08-27 (A)):
-//! `IntentExecution` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_state`
+//! `IntentExecution` は `#[serde(into / try_from)]` でこの型へ委ね、復号は必ず `from_snapshot`
 //! の検査点を通る。したがって直列化形式の正本はこの 12 属性であり、復号が集約不変条件を
 //! 迂回する経路は存在しない。
 //!
@@ -19,8 +19,8 @@
 //! `SnapshotEnvelope::version()` (スナップショット行の列) になり、payload 列は純粋な
 //! ドメイン内容だけを持つようになったためである。
 //!
-//! [`IntentExecution::state`]: super::intent_execution::IntentExecution::state
-//! [`IntentExecution::from_state`]: super::intent_execution::IntentExecution::from_state
+//! [`IntentExecution::snapshot`]: super::intent_execution::IntentExecution::snapshot
+//! [`IntentExecution::from_snapshot`]: super::intent_execution::IntentExecution::from_snapshot
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -198,8 +198,8 @@ impl IntentExecutionSnapshotBuilder {
 
     /// 状態の写し (memento) を取り出す (検証はしない)。
     ///
-    /// 検査点は `IntentExecution::from_state` の 1 か所に集約したままにする
-    /// (security-design §2) — 呼出側はこの写しを `from_state` / `TryFrom` に渡して集約を得る。
+    /// 検査点は `IntentExecution::from_snapshot` の 1 か所に集約したままにする
+    /// (security-design §2) — 呼出側はこの写しを `from_snapshot` / `TryFrom` に渡して集約を得る。
     #[must_use]
     pub(crate) fn build(self) -> IntentExecutionSnapshot {
         self.state
@@ -268,11 +268,11 @@ mod tests {
         IntentExecutionSnapshotBuilder::new(execution_id(), &intent())
     }
 
-    /// 組んだ写しを検査点 (`IntentExecution::from_state`) に通して集約を得る。
+    /// 組んだ写しを検査点 (`IntentExecution::from_snapshot`) に通して集約を得る。
     ///
     /// 観測は集約の面で行う — memento はクレート内私有であり、テストも属性を直に読まない。
     fn built(builder: IntentExecutionSnapshotBuilder) -> IntentExecution {
-        IntentExecution::from_state(builder.build()).unwrap()
+        IntentExecution::from_snapshot(builder.build()).unwrap()
     }
 
     /// 索引から `StageIndex` を作る (集約だけが範囲を知っている)。

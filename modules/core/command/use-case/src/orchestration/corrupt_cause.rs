@@ -23,7 +23,7 @@ pub enum CorruptCause {
     MissingSnapshot,
     /// 行のペイロードをドメイン型へ復号できない (JSON の破損・未知の変種・不変条件違反)。
     UndecodablePayload,
-    /// 復元・適用の結果が集約不変条件を破る (`from_state` / `apply_event` の `Err`)。
+    /// 復元・適用の結果が集約不変条件を破る (`from_snapshot` / `apply_event` の `Err`)。
     InvariantViolation,
     /// 集約内の `seq_nr` が連続していない (呼出側の不整合、またはジャーナルの欠損)。
     SequenceGap,

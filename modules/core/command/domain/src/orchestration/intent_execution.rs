@@ -46,9 +46,9 @@ use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
+use super::snapshot_error::SnapshotError;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
-use super::state_error::StateError;
 use super::status::Status;
 use crate::workflow_definition::{PlanAction, StageSlug, WorkflowDefinition};
 use crate::workspace::CheckboxState;
@@ -70,8 +70,8 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 
 /// エンジンループの状態機械 (集約ルート)。
 ///
-/// serde は状態の写し ([`IntentExecutionSnapshot`]) を経由する — 直列化は [`IntentExecution::state`]、
-/// 復号は [`IntentExecution::from_state`] であり、復号側の検査点が 1 か所に保たれる。
+/// serde は状態の写し ([`IntentExecutionSnapshot`]) を経由する — 直列化は [`IntentExecution::snapshot`]、
+/// 復号は [`IntentExecution::from_snapshot`] であり、復号側の検査点が 1 か所に保たれる。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(into = "IntentExecutionSnapshot", try_from = "IntentExecutionSnapshot")]
 pub struct IntentExecution {
@@ -425,7 +425,17 @@ impl IntentExecution {
         }
     }
 
-    // ---- W2: decide (12 コマンド、1 コマンド 1 イベント) ----
+    // ---- W2: decide (11 コマンド、1 コマンド 1 イベント) ----
+    //
+    // 以下のコマンドはすべて `Result<IntentExecutionEvent, CommandError>` を返す —
+    // 「集約の `&mut self` コマンドは必ず単一のドメインイベントを戻り値で返す」という規則
+    // (coding-rules/aggregate-commands.md) の形である。イベントは書込パイプラインの産物
+    // (受領証) であって読取チャネルではないので、CQS の「Command は戻り値なし」は集約には
+    // 適用しない (同規則が command-query-separation.md を精密化する)。拒否は無言の no-op に
+    // せず、ガード付きの `Err` で返す。
+    //
+    // 計画が要るコマンドは `&Intent` を引数で受け取り、入口で取り違えを照合する
+    // (coding-rules/aggregate-references.md)。
 
     /// 非ゲート (initialization フェーズ) ステージの完了 — `StageCompleted`。
     ///
@@ -987,7 +997,7 @@ impl IntentExecution {
 
     /// 全状態を値オブジェクトへ写す。`plan` / `conditional` は解決済み計画からの展開 (C6 の列構成)。
     #[must_use]
-    pub(crate) fn state(&self) -> IntentExecutionSnapshot {
+    pub(crate) fn snapshot(&self) -> IntentExecutionSnapshot {
         IntentExecutionSnapshot {
             id: self.id.clone(),
             intent_id: self.intent_id.clone(),
@@ -1011,9 +1021,9 @@ impl IntentExecution {
     /// 長さ不一致・`plan` / `conditional` と解決済み計画の食い違い・範囲外カーソル・
     /// `cursor_in_scope` / `at_most_one_active` / `no_gate_bypass` / `parked_position` の違反・
     /// `seq_nr` = 0 を `InvariantViolation` で拒否する。
-    pub(crate) fn from_state(
+    pub(crate) fn from_snapshot(
         state: IntentExecutionSnapshot,
-    ) -> Result<IntentExecution, StateError> {
+    ) -> Result<IntentExecution, SnapshotError> {
         let execution = IntentExecution {
             id: state.id,
             intent_id: state.intent_id,
@@ -1032,7 +1042,7 @@ impl IntentExecution {
         // 計画を要する `no_gate_bypass` は、`&Intent` を受け取るコマンド・適用の側で見る。
         execution
             .check_runtime_invariants()
-            .map_err(StateError::InvariantViolation)?;
+            .map_err(SnapshotError::InvariantViolation)?;
         Ok(execution)
     }
 
@@ -1165,19 +1175,19 @@ impl IntentExecution {
     }
 }
 
-/// 直列化の入口 (serde の `into`)。中身は [`IntentExecution::state`] そのものである。
+/// 直列化の入口 (serde の `into`)。中身は [`IntentExecution::snapshot`] そのものである。
 impl From<IntentExecution> for IntentExecutionSnapshot {
     fn from(execution: IntentExecution) -> IntentExecutionSnapshot {
-        execution.state()
+        execution.snapshot()
     }
 }
 
-/// 復号の入口 (serde の `try_from`)。[`IntentExecution::from_state`] の検査点を通る。
+/// 復号の入口 (serde の `try_from`)。[`IntentExecution::from_snapshot`] の検査点を通る。
 impl TryFrom<IntentExecutionSnapshot> for IntentExecution {
-    type Error = StateError;
+    type Error = SnapshotError;
 
-    fn try_from(state: IntentExecutionSnapshot) -> Result<IntentExecution, StateError> {
-        IntentExecution::from_state(state)
+    fn try_from(state: IntentExecutionSnapshot) -> Result<IntentExecution, SnapshotError> {
+        IntentExecution::from_snapshot(state)
     }
 }
 
@@ -1193,8 +1203,8 @@ mod tests {
     use crate::orchestration::{
         ApplyError, AutonomyMode, CommandError, EngineSignal, Intent, IntentError,
         IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, NextDecision,
-        NextRequest, PhaseBoundary, StageCompleted, StageDisplay, StageEntry, StageIndex,
-        StartRequest, Started, StateError, Status, WorkspaceScan,
+        NextRequest, PhaseBoundary, SnapshotError, StageCompleted, StageDisplay, StageEntry,
+        StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -2167,11 +2177,11 @@ mod tests {
     fn apply_event_refuses_at_sequence_exhaustion() {
         // memento 経由で通番を末端に据える (実運用では到達しない規模の境界)。
         let base = all_exec(3);
-        let mut state = base.state();
+        let mut state = base.snapshot();
         state.seq_nr = usize::MAX;
         let mut w = Run {
             intent: base.intent,
-            execution: IntentExecution::from_state(state).unwrap(),
+            execution: IntentExecution::from_snapshot(state).unwrap(),
         };
         let event =
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
@@ -2185,11 +2195,11 @@ mod tests {
     #[test]
     fn a_command_at_sequence_exhaustion_is_refused() {
         let base = all_exec(3);
-        let mut state = base.state();
+        let mut state = base.snapshot();
         state.seq_nr = usize::MAX;
         let mut w = Run {
             intent: base.intent,
-            execution: IntentExecution::from_state(state).unwrap(),
+            execution: IntentExecution::from_snapshot(state).unwrap(),
         };
         assert_eq!(
             w.complete_stage(occurred()),
@@ -2317,7 +2327,7 @@ mod tests {
         w.reject_gate(None, occurred()).unwrap();
         // memento はクレート内私有なので、同一クレートのテストは属性を直接読む
         // (アクセサは置かない — 外へ出さない型に読取面を二重化しない)。
-        let state = w.state();
+        let state = w.snapshot();
         assert_eq!(state.id, *w.id());
         assert_eq!(state.intent_id, *w.intent_id());
         assert_eq!(state.overlay, [Execute, Execute, Execute, Execute]);
@@ -2330,7 +2340,7 @@ mod tests {
         assert_eq!(state.revision_count, [0, 1, 0, 0]);
         assert_eq!(state.seq_nr, w.seq_nr());
         assert_eq!(state.last_updated_at, *w.last_updated_at());
-        assert_eq!(IntentExecution::from_state(state).unwrap(), w.execution);
+        assert_eq!(IntentExecution::from_snapshot(state).unwrap(), w.execution);
     }
 
     #[test]
@@ -2359,7 +2369,7 @@ mod tests {
 
     #[test]
     fn a_tampered_serialised_aggregate_is_refused() {
-        // serde は memento (`IntentExecutionSnapshot`) 経由なので、復号は `from_state` の
+        // serde は memento (`IntentExecutionSnapshot`) 経由なので、復号は `from_snapshot` の
         // 検査点をそのまま通る (オーナー裁定 2026-08-27 (A))。行を手で書き換えた JSON —
         // ここでは範囲外カーソル — が黙って通らないことを固定する。
         let w = all_exec(3);
@@ -2383,7 +2393,7 @@ mod tests {
         // 写しには計画が載らない (改訂 3) ので、ここで検査できるのは実行時の不変条件だけで
         // ある。計画との整合 (`no_gate_bypass`) は `&Intent` が渡る適用・コマンド側が見る。
         let w = all_exec(3);
-        let base = w.state();
+        let base = w.snapshot();
         let builder = || IntentExecutionSnapshotBuilder::new(execution_id(), &w.intent);
 
         for broken in [
@@ -2403,14 +2413,14 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    IntentExecution::from_state(broken),
-                    Err(StateError::InvariantViolation(_))
+                    IntentExecution::from_snapshot(broken),
+                    Err(SnapshotError::InvariantViolation(_))
                 ),
                 "a broken state must be refused"
             );
         }
 
-        assert!(IntentExecution::from_state(base).is_ok());
+        assert!(IntentExecution::from_snapshot(base).is_ok());
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2526,7 +2536,7 @@ mod tests {
                 .build();
             let w = Run {
                 intent: base.intent.clone(),
-                execution: IntentExecution::from_state(state).unwrap(),
+                execution: IntentExecution::from_snapshot(state).unwrap(),
             };
             let stage = at(&w, 1);
             let expected = if expected_recoverable {
@@ -2833,7 +2843,7 @@ mod tests {
                     prop_assert_eq!(&replayed.execution, &w.execution);
                 }
                 assert_quint_invariants(&w);
-                let restored = IntentExecution::from_state(w.state()).unwrap();
+                let restored = IntentExecution::from_snapshot(w.snapshot()).unwrap();
                 prop_assert_eq!(&restored, &w.execution);
             }
         }
@@ -2847,7 +2857,7 @@ mod tests {
         ) {
             let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
-            let genesis = w.state();
+            let genesis = w.snapshot();
             // 封筒の材料 (通番・発生時刻) は commit を通った集約から採る (B7 — Repository も同じ)。
             let mut events: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = Vec::new();
             let mut expected_seq = w.seq_nr();
@@ -2861,7 +2871,7 @@ mod tests {
 
             let mut replayed = Run {
                 intent: w.intent.clone(),
-                execution: IntentExecution::from_state(genesis).unwrap(),
+                execution: IntentExecution::from_snapshot(genesis).unwrap(),
             };
             for (seq_nr, occurred_at, event) in &events {
                 replayed.apply_event(*seq_nr, *occurred_at, event).unwrap();

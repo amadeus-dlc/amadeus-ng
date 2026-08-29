@@ -52,8 +52,8 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     let mut use_case = CommitVerdictUseCase::new(repository);
     use_case
         .execute(
-            &intent(),
             &execution_id(),
+            &intent(),
             None,
             ReportedTransition::Forward { user_input: None },
             at(),

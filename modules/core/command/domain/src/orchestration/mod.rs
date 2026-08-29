@@ -68,11 +68,11 @@ mod jump_direction;
 mod next_decision;
 mod phase_boundary;
 mod skeleton_stance;
+mod snapshot_error;
 mod stage_display;
 mod stage_entry;
 mod stage_index;
 mod start_request;
-mod state_error;
 mod status;
 mod uuid_v7;
 mod verdict;
@@ -120,7 +120,7 @@ pub use intent::IntentError;
 pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
-pub use state_error::StateError;
+pub use snapshot_error::SnapshotError;
 pub use verdict::UnknownVerdict;
 
 // 逐語定数

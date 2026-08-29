@@ -254,8 +254,16 @@ where
     ///
     /// 集約は `intent_id` しか持たない (`coding-rules/aggregate-references.md`) が、再生には
     /// 計画が要る。イベントは「その時点の事実の自己完結な記録」なので、intent の材料は
-    /// `Started` に載っている — そこから復元すれば、この Repository は外部から intent を
-    /// 渡されなくても再生できる。
+    /// `Started` に載っている — **自ストリームを読むのは自集約の I/O** であり、責務境界の
+    /// 違反ではない (`coding-rules/gateway-taxonomy.md`「Repository の署名は自集約の ID だけを
+    /// 取り、他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が
+    /// 要る場合、それは自ストリームの誕生イベントに記録されているはずであり、Impl がそこから
+    /// 内部復元する」)。したがって復元した `Intent` は**外へ返さない** —
+    /// [`RehydratedIntentExecution`] に載せるのは実行と版だけである。
+    ///
+    /// 1 intent : n 実行では、この実行が従うべき計画は「この実行が開始した時点の intent」で
+    /// あり、その永続記録はこのストリームの `Started` に他ならない。`Intent` は不変
+    /// (recompose は実行側の overlay) なので、この写しが古くなることはない。
     ///
     /// 先頭が `Started` でない、または 1 件も無いジャーナルは壊れている (BR1.2)。
     async fn genesis_intent(&self, id: &IntentExecutionId) -> Result<Intent, RepositoryError> {

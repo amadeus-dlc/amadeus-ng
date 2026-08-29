@@ -222,7 +222,7 @@ async fn a_tampered_snapshot_payload_is_corrupt() {
 #[tokio::test]
 async fn a_snapshot_that_breaks_an_aggregate_invariant_is_refused_by_the_decoder() {
     // オーナー裁定 2026-08-27 (A) の**通し確認**: 集約の serde は memento 経由なので、
-    // 復号は `from_state` の検査点を通る。JSON としては読めるが不変条件を破る行 —
+    // 復号は `from_snapshot` の検査点を通る。JSON としては読めるが不変条件を破る行 —
     // ここでは範囲外カーソル — が、ストア越しでも黙って通らないことを固定する。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
