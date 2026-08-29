@@ -234,6 +234,17 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
        実装するか、クエリ側アダプタへ移すか）は **U4 機能設計で裁定**する。従来のアダプタ分割
        却下理由（C6 の 3 表定義の所在）は ADR-010 で失効済み — 我々が定義する表は
        `amadeus_projection_checkpoint` 1 表のみ。
+  - **2026-08-29 改訂（オーナー裁定 — 層の側分割）**: 上の 4.（`JournalReaderImpl` の
+    置き場所）は確定した — **RMU クレートに置く**（ジャーナルを読むことが RMU の仕事
+    そのもの）。さらに「そもそも interface-adapter / use-case はコマンド側とクエリ側に
+    分割する」の裁定により、本 ADR の「アダプタは 1 クレートのまま」も失効: クレートは
+    `core-domain`（共有）/ `core-command-use-case` / `core-command-interface-adapter` /
+    `core-query-read-model-updater`（クエリ側の全実体 — 読取語彙・SQLite 読取実装・
+    取得ループ・純粋投影核・投影ライタ）となり、命名は `core-{command,query}-` 接頭辞で
+    統一する。両側を知ってよいのは合成ルート（U7）だけ。共有部品の行き先: エラー分類と
+    I/O 写像は側ごとに専用化、`StorePath` と直列化型判別子（manifest 定数）は
+    `core-domain` へ（詳細は `construction/u4-read-model-updater/crate-structure-proposal.md`）。
+    実施は B8。
   - アダプタは**1 クレートのまま**（`core/interface-adapter`）とし、`EventStoreImpl` が
     `EventStore`（コマンド）と `JournalReader`（読取）の両契約を実装する。SQLite スキーマ定義
     （C6 の 3 表）が 1 箇所に残るので重複しない。
