@@ -17,16 +17,16 @@
 //!
 //! モデルの抽象は「集約 1・writer 2・投影 1」である。writer 2 つは同じ `IntentId` を別々に
 //! 再水和した 2 本の「ロード済み集約」で表し、衝突は楽観 version の不一致だけで起きる
-//! (ロックは ADR-007 で退役した — BR3.2)。投影はモデルと同じく進捗 (`readModelSeq`) しか
-//! 持たないフェイクで、真実源がジャーナルであること・キャッチアップが冪等であることだけを
-//! 検査する。
+//! (ロックは ADR-007 で退役した — BR3.2)。投影は**実 RMU** (`ReadModelUpdater::catch_up`) で
+//! ある — フェイクではない (固定裁定 7)。モデルが持つ `readModelSeq` は、実 RMU が
+//! 「リードモデルを書き終えてから進めた」チェックポイントへ射影される。
 //!
 //! 射影規則 (モデル変数 → 実装の観測):
 //!   journalLen    = `JournalReader::events_after(ZERO)` の行数 (本家 `journal` の rowid 順)
 //!   snapVersion   = 本家 `get_latest_snapshot_by_id` が返す封筒の `version()` (行が無ければ 0)
 //!   snapSeq       = 同じ封筒の `seq_nr()` (行が無ければ 0)
 //!   checkpoint    = `JournalReader::checkpoint(ProjectionName)` の値 (我々の表)
-//!   readModelSeq  = フェイク投影が描き終えた最後の global 通番
+//!   readModelSeq  = 実 RMU の `catch_up` が描き終えて返した最後の global 通番
 //!   loadedVersion = 各 writer が握っている再水和結果の `version()` (未永続の genesis は 0)
 //!
 //! v3 で楽観 version は集約から外れ、`SnapshotEnvelope` (列) が正本になった (ADR-010 / B7)。
@@ -61,7 +61,8 @@ use core_domain::workflow_definition::{
 };
 use core_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_query_read_model_updater::orchestration::{
-    GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName,
+    GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
+    ReadModelUpdater,
 };
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::types::EventStore;
@@ -326,17 +327,78 @@ impl Writer {
     }
 }
 
-/// 投影 (U4) のフェイク — モデルと同じく進捗しか持たない。
-#[derive(Debug, Default)]
-struct FakeProjection {
+/// 投影 (U4) — **実 RMU** を駆動する側。モデルの `readModelSeq` は `catch_up` の到達点。
+///
+/// リードモデルの書込先はこのテストが用意した一時ディレクトリで、状態ファイルには合成計画の
+/// 24 ステージぶんのチェックボックス行と、投影が書き換えるフィールド行が入っている。
+/// バイトの逐語性を見るのは `projection_golden_test.rs` の仕事であり、ここが見るのは
+/// **ループの契約** (真実源がジャーナルであること・キャッチアップが冪等であること) である。
+struct RealProjection {
+    _dir: TempDir,
+    targets: ProjectionTargets,
     read_model_seq: u64,
+}
+
+impl RealProjection {
+    fn new() -> RealProjection {
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let state_file = dir.path().join("aidlc-state.md");
+        std::fs::write(&state_file, synthetic_state_file()).expect("状態ファイルを置く");
+        let audit_shard = dir.path().join("audit/host-abcd1234.md");
+        RealProjection {
+            targets: ProjectionTargets::new(state_file, audit_shard),
+            _dir: dir,
+            read_model_seq: 0,
+        }
+    }
+
+    /// チェックポイント以降を読んで描き、位置を進める (実 RMU の取得ループ)。
+    async fn catch_up(&mut self, store: &Store) {
+        let mut updater =
+            ReadModelUpdater::new(store.reader(), projection_name(), self.targets.clone());
+        let reached = updater.catch_up().await.expect("キャッチアップは通る");
+        self.read_model_seq = reached.to_u64();
+    }
+}
+
+/// 合成計画 24 ステージぶんの状態ファイル (投影が書き換える行だけを持つ最小の骨格)。
+fn synthetic_state_file() -> String {
+    let mut out = String::from(
+        "## Project Information\n\
+         - **Active Agent**: orchestrator\n\
+         \n\
+         ## Execution Plan Summary\n\
+         - **Total Stages**: 24\n\
+         - **Completed**: 0\n\
+         - **In Progress**: stage-0\n\
+         \n\
+         ## Runtime State\n\
+         - **Revision Count**: 0\n\
+         \n\
+         ## Stage Progress\n",
+    );
+    for index in 0..STAGES {
+        let marker = if index == 0 { '-' } else { ' ' };
+        out.push_str(&format!("- [{marker}] stage-{index} — EXECUTE\n"));
+    }
+    out.push_str(
+        "\n\
+         ## Current Status\n\
+         - **Current Stage**: stage-0\n\
+         - **Next Stage**: stage-1\n\
+         \n\
+         ## Session Resume Point\n\
+         - **Last Completed Stage**: \n\
+         - **Next Action**: Execute Stage\n",
+    );
+    out
 }
 
 // ---- 射影の突合 ----
 
 async fn assert_projection(
     store: &Store,
-    projection: &FakeProjection,
+    projection: &RealProjection,
     writers: &[Writer],
     m: &ModelState,
     label: &str,
@@ -412,7 +474,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
     // crash (プロセス再起動) のたびに開き直す。
     let store = Store::new();
     let mut repository = store.repository();
-    let mut projection = FakeProjection::default();
+    let mut projection = RealProjection::new();
     let mut writers: Vec<Writer> = (0..WRITERS).map(|_| Writer::genesis()).collect();
 
     assert_projection(
@@ -491,24 +553,10 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 // writer は触らない — 下書きは複製に対して打ったので握っている版は動かない。
             }
 
-            // 投影のキャッチアップ — チェックポイント以降を読んで描き、位置を進める。
-            "catchup" => {
-                let mut reader = store.reader();
-                let from = reader
-                    .checkpoint(&projection_name())
-                    .await
-                    .expect("チェックポイントは読める");
-                let rows = reader.events_after(from).await.expect("差分は読める");
-                let last = rows.last().map(|entry| entry.global_seq());
-                if let Some(global) = last {
-                    projection.read_model_seq = global.to_u64();
-                    reader
-                        .advance_checkpoint(&projection_name(), global)
-                        .await
-                        .expect("前進は受理される");
-                }
-                // 読むものが無ければ何もしない = 冪等 (projection_idempotent)。
-            }
+            // 投影のキャッチアップ — **実 RMU** がチェックポイント以降を読んで描き、
+            // リードモデルを書いてから位置を進める (固定裁定 7)。読むものが無ければ
+            // 何も書かず現在値を返す = 冪等 (projection_idempotent)。
+            "catchup" => projection.catch_up(&store).await,
 
             // Tx 済み・投影未反映のままプロセスが落ちる。開き直しても永続状態は同じ。
             "crash" => {

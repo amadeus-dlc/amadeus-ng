@@ -128,4 +128,26 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn the_value_and_its_rejection_render_themselves() {
+        assert_eq!(
+            StateFieldValue::parse("one line").unwrap().to_string(),
+            "one line"
+        );
+        // 不可視の文字なのでコードポイントで示す (材料のみ)。
+        let rejected = StateFieldValue::parse("two\nlines").unwrap_err();
+        assert_eq!(rejected.to_string(), "unsafe line character: U+000A");
+        let boxed: Box<dyn std::error::Error> = Box::new(rejected);
+        assert_eq!(boxed.to_string(), "unsafe line character: U+000A");
+    }
+
+    #[test]
+    fn the_decode_goes_through_parse() {
+        assert_eq!(
+            StateFieldValue::try_from("ok".to_string()).unwrap(),
+            StateFieldValue::parse("ok").unwrap()
+        );
+        assert!(StateFieldValue::try_from("bad\u{2028}".to_string()).is_err());
+    }
 }

@@ -284,7 +284,11 @@ mod tests {
         let found = plan.find(&slug("domain-design")).expect("計画上にある");
         assert_eq!(found.display().number().as_str(), "2.6");
         assert_eq!(found.phase(), PhaseId::Inception);
+        assert_eq!(found.plan_action(), PlanAction::Execute);
         assert!(found.is_in_scope());
+        let skipped = plan.find(&slug("user-stories")).expect("計画上にある");
+        assert_eq!(skipped.plan_action(), PlanAction::Skip);
+        assert!(!skipped.is_in_scope());
         assert_eq!(
             plan.display_of(&slug("domain-design"))
                 .map(|d| d.number().as_str()),

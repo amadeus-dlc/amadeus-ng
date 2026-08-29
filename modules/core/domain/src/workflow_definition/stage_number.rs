@@ -279,4 +279,28 @@ mod tests {
             prop_assert_eq!(x.cmp(&y) == Ordering::Equal, x == y);
         }
     }
+
+    #[test]
+    fn every_rejection_renders_its_material() {
+        // 材料のみ (利用者向け文言はアダプタ層)。serde の復号失敗もこの文言で出る。
+        let message = |raw: &str| StageNumber::parse(raw).unwrap_err().to_string();
+        assert_eq!(message(""), "stage number is empty");
+        assert_eq!(message("1"), "stage number has 0 dots (expected 1)");
+        assert_eq!(message("1.2.3"), "stage number has 2 dots (expected 1)");
+        assert_eq!(message(".1"), "stage number has an empty phase");
+        assert_eq!(message("1."), "stage number has an empty sequence");
+        assert_eq!(message("a.1"), "stage number has a non-digit: 'a'");
+        assert_eq!(message("99999999999.1"), "stage number does not fit in u32");
+        let boxed: Box<dyn std::error::Error> = Box::new(StageNumber::parse("").unwrap_err());
+        assert_eq!(boxed.to_string(), "stage number is empty");
+    }
+
+    #[test]
+    fn the_wire_form_is_the_raw_spelling_and_the_decode_goes_through_parse() {
+        // 分解済みの 2 値は導出物なのでワイヤに出さない。復号は `parse` を通る。
+        let number = StageNumber::parse("3.10").unwrap();
+        assert_eq!(String::from(number.clone()), "3.10");
+        assert_eq!(StageNumber::try_from("3.10".to_string()).unwrap(), number);
+        assert!(StageNumber::try_from("nope".to_string()).is_err());
+    }
 }

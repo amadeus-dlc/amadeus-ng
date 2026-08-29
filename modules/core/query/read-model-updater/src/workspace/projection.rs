@@ -169,12 +169,13 @@ pub enum ProjectionError {
     },
     /// 状態ファイルに park マーカーの置き場（`## Runtime State`）が無い。
     ParkSectionMissing,
-    /// `Started` の状態面（新規スキャフォールド）は未実装である。
+    /// 状態ファイルを**ゼロから起こす**ことは未実装である。
     ///
-    /// 監査行 16 本は導けるが、状態ファイルを**ゼロから起こす**には upstream の
-    /// `state-template.md` の実バイトが要る。ゴールデンには差分（`state.diff`）しか無く、
-    /// テンプレート本体は未採取である（U1 の追加採取待ち）。推測して書くと 0a 逐語契約を
-    /// 静かに破るので、ここで止める。
+    /// `Started` は本文が既にある状態ファイルへならフィールドを書ける（値はどれも計画から
+    /// 導ける）。だが本文そのもの — 9 セクションの骨格と 31 のフィールド行 — を起こすには
+    /// upstream の `state-template.md` の実バイトが要る。ゴールデンには差分（`state.diff`）
+    /// しか無く、テンプレート本体は未採取である（U1 の追加採取待ち）。骨格を推測して書くと
+    /// 0a 逐語契約を静かに破るので、そのときだけここで止める。
     ScaffoldTemplateUnavailable,
 }
 
@@ -287,18 +288,54 @@ fn project_one(
 // `Started` — 初期化 3 ステージの 16 行（`cli/intent-create/classic-scope`）
 // ---------------------------------------------------------------------------
 
-/// `Started` → 監査行 16 本を描き、状態面で `ScaffoldTemplateUnavailable` を返す。
+/// `Started` → 監査行 16 本と、状態ファイルの初期化。
 ///
-/// 監査行は**描き切ってから**返す。取得ループは失敗時に何も書かないので、描いた分が漏れる
-/// ことはない — 呼出側がこの失敗を握り潰さないかぎり観測されないが、テストはこの行列を
-/// 直接見て逐語一致を検収できる。
+/// 状態ファイルの**骨格が無ければ**（本文が空）`ScaffoldTemplateUnavailable` で止まる。
+/// 骨格があるなら、初期化 3 ステージの完了・最初のゲート付きステージへの着地・総数を書く —
+/// いずれも他のイベントで逐語検収済みの writer と導出をそのまま使う。
+///
+/// **書かないもの**: `- **Stages to Execute**: ` / `- **Stages to Skip**: ` の 2 つ。
+/// ゴールデンの実バイトは `2.1 (reverse-engineering — greenfield)` のように**畳まれた理由**を
+/// 括弧内に持つが、その理由は計画からは導けない（`PlanAction` は EXECUTE / SKIP の 2 値しか
+/// 持たない）。推測で書かず、触らないままにする。
 fn started(
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
     append_started_rows(at, plan, read_model)?;
-    Err(ProjectionError::ScaffoldTemplateUnavailable)
+    if read_model.state().trim().is_empty() {
+        return Err(ProjectionError::ScaffoldTemplateUnavailable);
+    }
+    for stage in plan
+        .stages()
+        .iter()
+        .filter(|stage| stage.is_in_scope() && stage.phase() == PhaseId::Initialization)
+    {
+        set_checkbox(read_model, stage.slug().as_str(), CheckboxState::Completed)?;
+    }
+    let completed = count_completed(read_model.state()).to_string();
+    set_field(read_model, field::COMPLETED, &completed)?;
+    if let Some(last) = plan
+        .stages()
+        .iter()
+        .rfind(|stage| stage.is_in_scope() && stage.phase() == PhaseId::Initialization)
+    {
+        set_field(
+            read_model,
+            field::LAST_COMPLETED_STAGE,
+            last.slug().as_str(),
+        )?;
+    }
+    set_field(
+        read_model,
+        field::TOTAL_STAGES,
+        &plan.in_scope_count().to_string(),
+    )?;
+    match first_gated_in_scope(plan).map(|stage| stage.slug().clone()) {
+        Some(slug) => enter_stage_without_row(read_model, plan, &slug),
+        None => Ok(()),
+    }
 }
 
 /// `Started` の監査行 16 本（順序は upstream の emit 順）。
@@ -826,7 +863,19 @@ fn enter_stage(
 ) -> Result<(), ProjectionError> {
     let stage = plan.find(slug).ok_or_else(|| unknown(slug))?;
     read_model.append_audit(&stage_started_row(stage, at)?);
+    enter_stage_without_row(read_model, plan, slug)
+}
 
+/// 現在位置まわりの状態フィールドだけを書く（`STAGE_STARTED` 行は描かない）。
+///
+/// `Started` は初期化 3 ステージの行を先に描き終えており、最初のゲート付きステージの
+/// `STAGE_STARTED` もその列の最後に既に入っている。ここで二度描かないための分割である。
+fn enter_stage_without_row(
+    read_model: &mut ReadModel,
+    plan: &ResolvedPlan,
+    slug: &StageSlug,
+) -> Result<(), ProjectionError> {
+    let stage = plan.find(slug).ok_or_else(|| unknown(slug))?;
     set_checkbox(read_model, slug.as_str(), CheckboxState::InProgress)?;
     set_field(
         read_model,
@@ -1048,5 +1097,408 @@ mod park_marker {
             joined.push('\n');
         }
         joined
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core_domain::orchestration::{
+        AutonomyModeSet, IntentId, StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
+    };
+    use core_domain::workflow_definition::{
+        BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
+    };
+
+    fn at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-08-21T09:14:07Z")
+            .expect("固定の ISO 8601")
+            .with_timezone(&Utc)
+    }
+
+    fn slug(value: &str) -> StageSlug {
+        StageSlug::parse(value).expect("テストの slug は文法内")
+    }
+
+    fn stage(name: &str, number: &str, phase: PhaseId, action: PlanAction) -> StageEntry {
+        StageEntry::new(
+            slug(name),
+            phase,
+            action,
+            false,
+            StageDisplay::new(
+                StageNumber::parse(number).expect("番号"),
+                "Some Title",
+                "orchestrator",
+            )
+            .expect("単一行"),
+        )
+    }
+
+    /// initialization 1 + inception 2 + operation 1 の合成計画。
+    fn started() -> Started {
+        Started::new(
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            &StartRequest::new("classic", "build it"),
+            vec![
+                stage(
+                    "state-init",
+                    "0.1",
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                ),
+                stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
+                stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
+                stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
+            ],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        )
+    }
+
+    fn plan() -> ResolvedPlan {
+        ResolvedPlan::of(&started())
+    }
+
+    const SKELETON: &str = "\
+## Project Information
+- **Active Agent**: orchestrator
+
+## Scope Configuration
+- **Stages to Execute**: 0.1, 2.1
+- **Stages to Skip**: 4.1 (late)
+
+## Execution Plan Summary
+- **Total Stages**: 3
+- **Completed**: 0
+- **In Progress**: state-init
+
+## Runtime State
+- **Revision Count**: 0
+- **Construction Autonomy Mode**: gated
+
+## Stage Progress
+- [-] state-init — EXECUTE
+- [ ] first — EXECUTE
+- [ ] second — EXECUTE
+- [ ] late — SKIP
+
+## Current Status
+- **Current Stage**: state-init
+- **Next Stage**: first
+
+## Session Resume Point
+- **Last Completed Stage**: 
+- **Next Action**: Execute Stage
+";
+
+    fn model() -> ReadModel {
+        ReadModel::new(SKELETON)
+    }
+
+    fn entry(event: WorkflowExecutionEvent) -> JournalEntry {
+        JournalEntry::new(
+            crate::orchestration::GlobalSeqNr::new(1),
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+            1,
+            at(),
+            event,
+        )
+    }
+
+    fn run(event: WorkflowExecutionEvent) -> ReadModel {
+        let mut read_model = model();
+        project(&[entry(event)], &plan(), &mut read_model).expect("投影");
+        read_model
+    }
+
+    #[test]
+    fn the_genesis_lands_on_the_first_gated_stage_when_the_skeleton_exists() {
+        let read_model = run(WorkflowExecutionEvent::Started(started()));
+        // initialization は完了、最初のゲート付きステージが in-flight。
+        assert!(read_model.state().contains("- [x] state-init — EXECUTE"));
+        assert!(read_model.state().contains("- [-] first — EXECUTE"));
+        assert!(read_model.state().contains("- **Completed**: 1\n"));
+        assert!(
+            read_model
+                .state()
+                .contains("- **Last Completed Stage**: state-init\n")
+        );
+        // スコープ内は state-init / first / second の 3 つ。
+        assert!(read_model.state().contains("- **Total Stages**: 3\n"));
+        assert!(read_model.state().contains("- **Next Stage**: second\n"));
+        assert!(
+            read_model
+                .state()
+                .contains("- **Next Action**: Execute Some Title\n")
+        );
+        // 計画一覧は触らない（畳まれた理由を導けないため）。
+        assert!(
+            read_model
+                .state()
+                .contains("- **Stages to Skip**: 4.1 (late)\n")
+        );
+        // `STAGE_STARTED` は 1 本だけ（行を二度描かない）。
+        assert_eq!(
+            read_model
+                .appended_audit()
+                .matches("**Event**: STAGE_STARTED")
+                .count(),
+            2,
+            "初期化 1 本 + 最初のゲート付き 1 本"
+        );
+    }
+
+    #[test]
+    fn a_genesis_without_a_skeleton_stops_instead_of_inventing_one() {
+        let mut read_model = ReadModel::new("   \n");
+        let error = project(
+            &[entry(WorkflowExecutionEvent::Started(started()))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("骨格が無い");
+        assert_eq!(error, ProjectionError::ScaffoldTemplateUnavailable);
+        assert_eq!(error.to_string(), "scaffold template unavailable");
+        // 監査行だけは描けている（骨格が無くても台帳は書ける）。
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Event**: WORKFLOW_STARTED")
+        );
+    }
+
+    #[test]
+    fn switching_the_autonomy_mode_writes_the_row_and_the_field() {
+        let read_model = run(WorkflowExecutionEvent::AutonomyModeSet(
+            AutonomyModeSet::new(AutonomyMode::Autonomous),
+        ));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Event**: AUTONOMY_MODE_SET")
+        );
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Mode**: autonomous\n")
+        );
+        assert!(
+            read_model
+                .state()
+                .contains("- **Construction Autonomy Mode**: autonomous\n")
+        );
+    }
+
+    #[test]
+    fn approving_the_last_stage_completes_the_workflow_instead_of_starting_one() {
+        let read_model = run(WorkflowExecutionEvent::GateApproved(GateApproved::new(
+            slug("second"),
+            None,
+            None,
+            None,
+        )));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Event**: WORKFLOW_COMPLETED")
+        );
+        assert!(
+            !read_model
+                .appended_audit()
+                .contains("**Event**: STAGE_STARTED"),
+            "次が無ければステージは始まらない"
+        );
+        // `User Input` が無ければ行も出ない。
+        assert!(!read_model.appended_audit().contains("**User Input**"));
+    }
+
+    #[test]
+    fn a_phase_boundary_adds_the_three_boundary_rows_in_order() {
+        let read_model = run(WorkflowExecutionEvent::GateApproved(GateApproved::new(
+            slug("first"),
+            Some("A".to_string()),
+            Some(slug("second")),
+            Some(PhaseBoundary::new(
+                PhaseId::Inception,
+                PhaseId::Construction,
+            )),
+        )));
+        let events: Vec<&str> = read_model
+            .appended_audit()
+            .lines()
+            .filter_map(|line| line.strip_prefix("**Event**: "))
+            .collect();
+        assert_eq!(
+            events,
+            [
+                "GATE_APPROVED",
+                "STAGE_COMPLETED",
+                "PHASE_COMPLETED",
+                "PHASE_VERIFIED",
+                "PHASE_STARTED",
+                "STAGE_STARTED",
+            ]
+        );
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Phase boundary**: inception → construction\n")
+        );
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Stages completed**: 2\n")
+        );
+    }
+
+    #[test]
+    fn completing_a_non_gated_stage_uses_the_completed_wording() {
+        let read_model = run(WorkflowExecutionEvent::StageCompleted(StageCompleted::new(
+            slug("state-init"),
+            Some(slug("first")),
+        )));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Details**: Stage Some Title completed\n")
+        );
+        assert!(read_model.state().contains("- [x] state-init — EXECUTE"));
+    }
+
+    #[test]
+    fn a_backward_jump_resets_the_downstream_checkboxes() {
+        let read_model = run(WorkflowExecutionEvent::Jumped(Jumped::new(
+            JumpDirection::Backward,
+            slug("second"),
+            slug("first"),
+            vec![slug("second")],
+            Vec::new(),
+        )));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Direction**: BACKWARD\n")
+        );
+        assert!(
+            read_model.appended_audit().contains(
+                "**Details**: BACKWARD jump from second to first (2.1). Scope: classic.\n"
+            )
+        );
+        assert!(
+            read_model.state().contains("- [ ] second — EXECUTE"),
+            "下流は pending へ"
+        );
+        assert!(read_model.state().contains("- [-] first — EXECUTE"));
+    }
+
+    #[test]
+    fn every_jump_direction_has_a_wire_spelling() {
+        assert_eq!(direction_wire(JumpDirection::Forward), "FORWARD");
+        assert_eq!(direction_wire(JumpDirection::Backward), "BACKWARD");
+        assert_eq!(direction_wire(JumpDirection::Redo), "REDO");
+    }
+
+    #[test]
+    fn recomposing_back_into_scope_moves_the_entry_the_other_way() {
+        let read_model = run(WorkflowExecutionEvent::Recomposed(Recomposed::new(
+            Vec::new(),
+            vec![slug("late")],
+            vec![
+                slug("state-init"),
+                slug("first"),
+                slug("second"),
+                slug("late"),
+            ],
+        )));
+        assert!(
+            read_model
+                .state()
+                .contains("- **Stages to Execute**: 0.1, 2.1, 4.1\n"),
+            "実際: {}",
+            read_model.state()
+        );
+        assert!(read_model.state().contains("- **Stages to Skip**: \n"));
+        assert!(read_model.state().contains("- [ ] late — EXECUTE"));
+        assert!(read_model.state().contains("- **Total Stages**: 4\n"));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Stages skipped**: none\n")
+        );
+    }
+
+    #[test]
+    fn appending_an_entry_that_is_already_listed_changes_nothing() {
+        let mut read_model = model();
+        append_to_list(&mut read_model, field::STAGES_TO_EXECUTE, "0.1").expect("追加");
+        assert!(
+            read_model
+                .state()
+                .contains("- **Stages to Execute**: 0.1, 2.1\n")
+        );
+    }
+
+    #[test]
+    fn a_missing_list_field_is_refused_with_the_verbatim_wording() {
+        let mut read_model = ReadModel::new("## Empty\n");
+        let error = append_to_list(&mut read_model, field::STAGES_TO_EXECUTE, "0.1")
+            .expect_err("一覧フィールドが無い");
+        assert_eq!(
+            error.to_string(),
+            "state field: Field not found in state file: \"Stages to Execute\". \
+             Cannot update — refusing to silently no-op."
+        );
+    }
+
+    #[test]
+    fn every_projection_refusal_renders_its_material() {
+        assert_eq!(
+            ProjectionError::UnknownStage {
+                stage: "ghost".to_string()
+            }
+            .to_string(),
+            "unknown stage: ghost"
+        );
+        assert_eq!(
+            ProjectionError::from(CheckboxUpdateError::MissingSuffix("s".to_string())).to_string(),
+            "checkbox: missing suffix s"
+        );
+        assert_eq!(
+            ProjectionError::from(CheckboxUpdateError::MissingStage("s".to_string())).to_string(),
+            "checkbox: missing stage s"
+        );
+        // 綴りを取り違えたキーは投影の材料として拒否される（本体の定数は全て文法内なので、
+        // この写像は直接固定しておく）。
+        let malformed = AuditFieldKey::parse("1x").expect_err("文法外");
+        assert_eq!(
+            ProjectionError::from(malformed).to_string(),
+            "audit field key: malformed audit field key: 1x"
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(ProjectionError::ParkSectionMissing);
+        assert_eq!(boxed.to_string(), "park section missing");
+    }
+
+    #[test]
+    fn a_stage_the_plan_does_not_know_is_refused_everywhere_it_is_named() {
+        let ghost = slug("ghost");
+        assert_eq!(
+            title_of(&plan(), &ghost),
+            Err(ProjectionError::UnknownStage {
+                stage: "ghost".to_string()
+            })
+        );
+        assert_eq!(
+            number_of(&plan(), &ghost),
+            Err(ProjectionError::UnknownStage {
+                stage: "ghost".to_string()
+            })
+        );
     }
 }
