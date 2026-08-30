@@ -265,7 +265,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
     let definition = synthetic_definition();
-    // 合成計画からの組み直しは再構成経路 (from_snapshot) を通す — イベントは不要で、
+    // 合成計画からの組み直しは完全コンストラクタ経由の再構成を通す — イベントは不要で、
     // 検査点は genesis と同一である (coding-rules/aggregate-commands.md)。
     let intent = Intent::from(Created::new(
         IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),

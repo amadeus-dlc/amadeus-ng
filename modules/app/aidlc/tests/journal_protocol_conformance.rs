@@ -58,7 +58,7 @@ use core_command_domain::workflow_definition::{
 };
 use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
+    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore, SnapshotStrategy,
 };
 use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
 use core_read_model_updater::orchestration::{
@@ -188,7 +188,15 @@ impl Store {
 
     /// 「プロセスを起動する」— 同じファイルへ新しい接続を開く。
     fn repository(&self) -> Repository {
-        IntentExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
+        // Quint モデル (journal_protocol.qnt) は「毎書込でスナップショット更新」を前提に
+        // snapSeq を追う。ITF 再生はモデルと同じ構成 — 毎イベントでスナップショットを書く
+        // ストラテジ — で流す (間引き構成の挙動は intent_execution_repository_impl_test 側の
+        // 結合テストが固定する — issue #44)。
+        IntentExecutionRepositoryImpl::open(&self.path)
+            .expect("ストアは開ける")
+            .with_snapshot_strategy(SnapshotStrategy::every(
+                std::num::NonZeroUsize::new(1).expect("1 は非零"),
+            ))
     }
 
     /// 投影が使う横断読取 (同じファイルへの別接続)。

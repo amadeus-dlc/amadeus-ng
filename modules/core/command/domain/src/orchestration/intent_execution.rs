@@ -19,7 +19,7 @@
 //!   正本になった。集約が持つ順序番号は `seq_nr` **だけ**であり、ストアの採番トークンとは混ざらない。
 //!   **直列化の記述は持たない** (改訂 9 / `coding-rules/domain-persistence-neutrality.md`) —
 //!   行のバイトを決めるのはアダプタ層の DTO で、復号は状態の写し (memento) を経由し
-//!   [`IntentExecution::from_snapshot`] の検査点を必ず通る。したがって「不変条件を満たす集約
+//!   [`IntentExecution::new`] の検査点を必ず通る。したがって「不変条件を満たす集約
 //!   しか存在しない」という保証は永続化経路でも破れない (security-design §2 の検査点 3)。
 //! - **panic しない** (NFR4.3): ステージ位置は `StageIndex` で型保証し、範囲外は `Option::None` /
 //!   `Err` で表す。`# Panics` を持つ公開 API は無い。
@@ -35,6 +35,7 @@ use super::apply_error::ApplyError;
 use super::autonomy_mode::AutonomyMode;
 use super::command_error::CommandError;
 use super::intent::Intent;
+use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
@@ -46,6 +47,7 @@ use super::next_decision::{NextDecision, NextRequest};
 use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
+use super::stage_key::StageKey;
 use super::status::Status;
 use crate::workflow_definition::{PlanAction, StageSlug, WorkflowDefinition};
 use crate::workspace::CheckboxState;
@@ -67,8 +69,8 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 
 /// エンジンループの状態機械 (集約ルート)。
 ///
-/// serde は状態の写し ([`IntentExecutionSnapshot`]) を経由する — 直列化は [`IntentExecution::snapshot`]、
-/// 復号は [`IntentExecution::from_snapshot`] であり、復号側の検査点が 1 か所に保たれる。
+/// serde はアダプタ層の永続化 DTO (`WireIntentExecution`) が持ち、復号は完全コンストラクタ
+/// [`IntentExecution::new`] を必ず通る — 検査点が 1 か所に保たれる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentExecution {
     id: IntentExecutionId,
@@ -77,6 +79,11 @@ pub struct IntentExecution {
     /// 材料の複製を n 個抱えることになる。計画が要る判断は `&Intent` を引数で受け取り、
     /// 受け取り時にこの ID と照合する。
     intent_id: IntentId,
+    /// イベント適用の添字帳 (slug + phase)。イベントはステージを slug で名指すので、
+    /// 適用の自己完結 (本家同型の `replay(snapshot, events)`) にこの最小複製が要る
+    /// (オーナー裁定 2026-08-30)。表示属性・計画・条件フラグは複製しない — それらが要る
+    /// 判断は従来どおり `&Intent` を引数で受け取る。
+    stage_keys: Vec<StageKey>,
     /// 実効プラン (recompose オーバレイ)。静的な計画 (`Intent::stages`) は保持しない。
     overlay: Vec<PlanAction>,
     checkbox: Vec<CheckboxState>,
@@ -159,6 +166,11 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> IntentExecution {
         let count = intent.stage_count();
+        let stage_keys: Vec<StageKey> = intent
+            .stages()
+            .iter()
+            .map(|entry| StageKey::new(entry.slug().clone(), entry.phase()))
+            .collect();
         let overlay: Vec<PlanAction> = intent
             .stages()
             .iter()
@@ -171,6 +183,7 @@ impl IntentExecution {
         IntentExecution {
             id,
             intent_id: intent.id().clone(),
+            stage_keys,
             overlay,
             checkbox,
             cursor: StageIndex::new(0),
@@ -197,42 +210,124 @@ impl IntentExecution {
         self
     }
 
-    /// ジャーナル全体から集約を復元する (Event Sourcing の再生経路)。
+    /// 完全コンストラクタ — 全フィールドを検査して組む (Always Valid)。
     ///
-    /// 本家 v3 の `replay(events, snapshot)` にあたる — ただしスナップショット行のペイロード
-    /// を状態の正本にしない。**状態はイベント列から導出する**: 先頭は必ず genesis の
-    /// `Started` (通番 1) で、実行の対象 intent はその誕生記録から得る。以後の差分は
-    /// [`IntentExecution::apply_event`] で畳み込む — 通常実行とリプレイの同一経路 (BR1.1)。
+    /// ストア境界の復元 DTO はこの口を必ず通る — 検査を迂回する構築口は存在しない
+    /// (`coding-rules/domain-persistence-neutrality.md`)。スナップショットとは**ある時点の
+    /// 集約そのもの**であり、専用の型も専用のコンストラクタ名も無い (オーナー裁定
+    /// 2026-08-30「集約そのものがすでに snapshot」)。楽観 version はここでは載らない
+    /// (正本は行の列 — [`IntentExecution::with_version`] で刻む)。
+    ///
+    /// # Errors
+    ///
+    /// 空の計画・ステージ数と食い違う実行時ベクトル・範囲外のカーソル / parked 位置・
+    /// 通番 0・集約不変条件の違反。壊れた行はアダプタが `Corrupt` へ写す (BR1.5)。
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "完全コンストラクタ — 集約と構造同一の memento 写し型を作らない \
+                  (オーナー裁定 2026-08-30) ため、フィールドがそのまま引数になる"
+    )]
+    pub fn new(
+        id: IntentExecutionId,
+        intent_id: IntentId,
+        stage_keys: Vec<StageKey>,
+        overlay: Vec<PlanAction>,
+        checkbox: Vec<CheckboxState>,
+        cursor: usize,
+        status: Status,
+        parked_at: Option<usize>,
+        autonomy: AutonomyMode,
+        approved: Vec<bool>,
+        revision_count: Vec<u32>,
+        seq_nr: usize,
+        last_updated_at: DateTime<Utc>,
+    ) -> Result<IntentExecution, IntentExecutionError> {
+        let count = stage_keys.len();
+        if count == 0 {
+            return Err(IntentExecutionError::new("empty plan"));
+        }
+        for (name, actual) in [
+            ("overlay", overlay.len()),
+            ("checkbox", checkbox.len()),
+            ("approved", approved.len()),
+            ("revision_count", revision_count.len()),
+        ] {
+            if actual != count {
+                return Err(IntentExecutionError::new(format!(
+                    "{name} length {actual} does not match {count} stages"
+                )));
+            }
+        }
+        if cursor >= count {
+            return Err(IntentExecutionError::new(format!(
+                "cursor {cursor} out of bounds for {count} stages"
+            )));
+        }
+        if let Some(parked) = parked_at
+            && parked >= count
+        {
+            return Err(IntentExecutionError::new(format!(
+                "parked_at {parked} out of bounds for {count} stages"
+            )));
+        }
+        if seq_nr == 0 {
+            return Err(IntentExecutionError::new("seq_nr must be at least 1"));
+        }
+        // slug はイベントのステージ参照の解決先 — 重複すると `resolve` が常に前方だけを
+        // 返し、静かに誤った集約になる。検査点はここ 1 か所である (BR1.5)。
+        let mut seen = BTreeSet::new();
+        for key in &stage_keys {
+            if !seen.insert(key.slug().as_str()) {
+                return Err(IntentExecutionError::new(format!(
+                    "duplicate stage slug: {}",
+                    key.slug()
+                )));
+            }
+        }
+        let execution = IntentExecution {
+            id,
+            intent_id,
+            stage_keys,
+            overlay,
+            checkbox,
+            cursor: StageIndex::new(cursor),
+            status,
+            parked_at: parked_at.map(StageIndex::new),
+            autonomy,
+            approved,
+            revision_count,
+            seq_nr,
+            version: IntentExecution::UNPERSISTED_VERSION,
+            last_updated_at,
+        };
+        execution
+            .check_invariants()
+            .map_err(|violation| IntentExecutionError::new(format!("invariant: {violation}")))?;
+        Ok(execution)
+    }
+
+    /// スナップショットと以降の差分イベントから集約を復元する (Event Sourcing の再生経路)。
+    ///
+    /// 本家 v3 の example (`UserAccount::replay(events, snapshot)`) と同型 — スナップショット
+    /// (= ある時点の集約そのもの。特別な型は無い) を基底に、その通番より後のイベントを
+    /// [`IntentExecution::apply_event`] で畳み込む。通常実行とリプレイの同一経路 (BR1.1)。
+    /// 集約は添字帳 ([`StageKey`]) を自分で持つので、再生に外部材料は要らない
+    /// (オーナー裁定 2026-08-30「replay や apply_event が集約側に必要」)。
     ///
     /// # Panics
     ///
-    /// 空のジャーナル、先頭が `Started` でない・通番 1 でない、および途中の壊れた歴史
-    /// (通番の飛び・未知ステージ・不変条件違反)。再構成は失敗を返さない — 壊れた歴史は
-    /// 回復せずクラッシュする (オーナー裁定 2026-08-30)。
+    /// 壊れた歴史 (通番の飛び・未知ステージ・不変条件違反)。再構成は失敗を返さない —
+    /// 壊れた歴史は回復せずクラッシュする (オーナー裁定 2026-08-30)。
     #[must_use]
-    #[allow(
-        clippy::panic,
-        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
-    )]
     pub fn replay(
-        id: IntentExecutionId,
-        version: usize,
+        snapshot: IntentExecution,
         events: impl IntoIterator<Item = (usize, DateTime<Utc>, IntentExecutionEvent)>,
-    ) -> (IntentExecution, Intent) {
-        let mut events = events.into_iter();
-        let Some((seq_nr, occurred_at, first)) = events.next() else {
-            panic!("replay: empty journal");
-        };
-        assert_eq!(seq_nr, 1, "replay: genesis must carry seq_nr 1");
-        let IntentExecutionEvent::Started(started) = first else {
-            panic!("replay: journal must begin with Started");
-        };
-        let intent = started.intent().clone();
-        let mut execution = IntentExecution::genesis_state(id, &intent, occurred_at);
+    ) -> IntentExecution {
+        let mut execution = snapshot;
         for (seq_nr, occurred_at, event) in events {
-            execution.apply_event(&intent, seq_nr, occurred_at, &event);
+            execution.apply_event(seq_nr, occurred_at, &event);
         }
-        (execution.with_version(version), intent)
+        execution
     }
 
     // ---- 観測 (read model) ----
@@ -276,6 +371,12 @@ impl IntentExecution {
     #[must_use]
     pub const fn version(&self) -> usize {
         self.version
+    }
+
+    /// イベント適用の添字帳 (slug + phase — 計画のステージ順)。スナップショット DTO が読む。
+    #[must_use]
+    pub fn stage_keys(&self) -> &[StageKey] {
+        &self.stage_keys
     }
 
     /// 最後に適用したイベントの発生時刻 (集約は時計を持たない — NFR3.1)。
@@ -352,7 +453,10 @@ impl IntentExecution {
     /// ゲート付きか — `phase != initialization` (BR1.3)。範囲外・intent 不一致は `None`。
     #[must_use]
     pub fn gated(&self, intent: &Intent, stage: StageIndex) -> Option<bool> {
-        self.entry(intent, stage).map(StageEntry::is_gated)
+        if !self.matches(intent) {
+            return None;
+        }
+        self.key_at(stage).map(StageKey::is_gated)
     }
 
     /// parked 分岐の発火は導出述語 (マーカー有 ∧ 位置一致 — BR1.7)。
@@ -369,15 +473,12 @@ impl IntentExecution {
 
     // ---- 内部の索引ヘルパ (すべて `StageIndex` 経由 — 生の添字を使わない) ----
 
-    fn entry<'a>(&self, intent: &'a Intent, stage: StageIndex) -> Option<&'a StageEntry> {
-        if !self.matches(intent) {
-            return None;
-        }
-        intent.stages().get(stage.to_usize())
+    fn key_at(&self, stage: StageIndex) -> Option<&StageKey> {
+        self.stage_keys.get(stage.to_usize())
     }
 
-    fn is_gated(&self, intent: &Intent, stage: StageIndex) -> bool {
-        self.entry(intent, stage).is_some_and(StageEntry::is_gated)
+    fn is_gated(&self, stage: StageIndex) -> bool {
+        self.key_at(stage).is_some_and(StageKey::is_gated)
     }
 
     fn in_scope(&self, stage: StageIndex) -> bool {
@@ -390,10 +491,10 @@ impl IntentExecution {
             .find(|&stage| self.in_scope(stage))
     }
 
-    fn next_in_scope_slug(&self, intent: &Intent, after: StageIndex) -> Option<StageSlug> {
+    fn next_in_scope_slug(&self, after: StageIndex) -> Option<StageSlug> {
         self.next_in_scope(after)
-            .and_then(|stage| self.entry(intent, stage))
-            .map(|entry| entry.slug().clone())
+            .and_then(|stage| self.key_at(stage))
+            .map(|key| key.slug().clone())
     }
 
     /// 名指しステージの完了で跨ぐフェーズ境界 (跨がなければ `None`)。
@@ -402,15 +503,15 @@ impl IntentExecution {
     /// あり、`plan` と `overlay` を知っている集約だけが正しく答えられる。フェーズが違えば
     /// 境界、同じか次が無い (= 最終) なら `None` — upstream の `crossesPhaseBoundary`
     /// (`aidlc-state.ts` の `completedStage.phase !== nextStage.phase`) と同一の規則である。
-    fn crossed_phase_boundary(&self, intent: &Intent, stage: StageIndex) -> Option<PhaseBoundary> {
-        let from = self.entry(intent, stage)?.phase();
-        let to = self.entry(intent, self.next_in_scope(stage)?)?.phase();
+    fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
+        let from = self.key_at(stage)?.phase();
+        let to = self.key_at(self.next_in_scope(stage)?)?.phase();
         (from != to).then(|| PhaseBoundary::new(from, to))
     }
 
-    fn slug_of(&self, intent: &Intent, stage: StageIndex) -> Result<StageSlug, CommandError> {
-        self.entry(intent, stage)
-            .map(|entry| entry.slug().clone())
+    fn slug_of(&self, stage: StageIndex) -> Result<StageSlug, CommandError> {
+        self.key_at(stage)
+            .map(|key| key.slug().clone())
             .ok_or(CommandError::InvalidTarget(stage))
     }
 
@@ -418,11 +519,10 @@ impl IntentExecution {
     ///
     /// 取り違えガードはここには置かない — 呼出経路 (`apply_event` → `mutate` → `advance`) の
     /// 入口で既に照合済みだからである。二重に置くと到達しない枝が残る。
-    fn resolve(intent: &Intent, slug: &StageSlug) -> Result<StageIndex, ApplyError> {
-        intent
-            .stages()
+    fn resolve(&self, slug: &StageSlug) -> Result<StageIndex, ApplyError> {
+        self.stage_keys
             .iter()
-            .position(|entry| entry.slug() == slug)
+            .position(|key| key.slug() == slug)
             .map(StageIndex::new)
             .ok_or_else(|| ApplyError::UnknownStage(slug.clone()))
     }
@@ -485,13 +585,8 @@ impl IntentExecution {
         }
     }
 
-    fn require_gated(
-        &self,
-        intent: &Intent,
-        stage: StageIndex,
-        gated: bool,
-    ) -> Result<(), CommandError> {
-        if self.is_gated(intent, stage) == gated {
+    fn require_gated(&self, stage: StageIndex, gated: bool) -> Result<(), CommandError> {
+        if self.is_gated(stage) == gated {
             Ok(())
         } else {
             Err(CommandError::InvalidTarget(stage))
@@ -511,14 +606,13 @@ impl IntentExecution {
     /// 飽和加算で seq_nr が停滞したまま成功を装わない)。
     fn commit(
         &mut self,
-        intent: &Intent,
         event: IntentExecutionEvent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let Some(seq_nr) = self.seq_nr.checked_add(1) else {
             return Err(CommandError::SequenceExhausted);
         };
-        self.apply_event(intent, seq_nr, occurred_at, &event);
+        self.apply_event(seq_nr, occurred_at, &event);
         Ok(event)
     }
 
@@ -546,17 +640,10 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(intent, stage, false)?;
+        self.require_gated(stage, false)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = StageCompleted::new(
-            self.slug_of(intent, stage)?,
-            self.next_in_scope_slug(intent, stage),
-        );
-        self.commit(
-            intent,
-            IntentExecutionEvent::StageCompleted(material),
-            occurred_at,
-        )
+        let material = StageCompleted::new(self.slug_of(stage)?, self.next_in_scope_slug(stage));
+        self.commit(IntentExecutionEvent::StageCompleted(material), occurred_at)
     }
 
     /// 承認ゲートの開放 — `GateOpened`。`artifacts` は呼出側が渡す投影材料 (C5)。
@@ -572,14 +659,10 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(intent, stage, true)?;
+        self.require_gated(stage, true)?;
         self.require_checkbox(stage, &[CheckboxState::InProgress])?;
-        let material = GateOpened::new(self.slug_of(intent, stage)?, artifacts);
-        self.commit(
-            intent,
-            IntentExecutionEvent::GateOpened(material),
-            occurred_at,
-        )
+        let material = GateOpened::new(self.slug_of(stage)?, artifacts);
+        self.commit(IntentExecutionEvent::GateOpened(material), occurred_at)
     }
 
     /// 承認ゲートの通過 — `GateApproved`。フェーズ境界は**集約が自分の計画から導出する**。
@@ -599,19 +682,15 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(intent, stage, true)?;
+        self.require_gated(stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let material = GateApproved::new(
-            self.slug_of(intent, stage)?,
+            self.slug_of(stage)?,
             user_input,
-            self.next_in_scope_slug(intent, stage),
-            self.crossed_phase_boundary(intent, stage),
+            self.next_in_scope_slug(stage),
+            self.crossed_phase_boundary(stage),
         );
-        self.commit(
-            intent,
-            IntentExecutionEvent::GateApproved(material),
-            occurred_at,
-        )
+        self.commit(IntentExecutionEvent::GateApproved(material), occurred_at)
     }
 
     /// 承認ゲートでの差し戻し — `GateRejected`。改訂回数を +1 してイベントに載せる (BR1.4)。
@@ -626,18 +705,14 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(intent, stage, true)?;
+        self.require_gated(stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let next = self
             .revision_count(stage)
             .ok_or(CommandError::InvalidTarget(stage))?
             .saturating_add(1);
-        let material = GateRejected::new(self.slug_of(intent, stage)?, feedback, next);
-        self.commit(
-            intent,
-            IntentExecutionEvent::GateRejected(material),
-            occurred_at,
-        )
+        let material = GateRejected::new(self.slug_of(stage)?, feedback, next);
+        self.commit(IntentExecutionEvent::GateRejected(material), occurred_at)
     }
 
     /// 差し戻し後のゲート再入 — `StageRevised`。
@@ -653,12 +728,8 @@ impl IntentExecution {
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &[CheckboxState::Revising])?;
-        let material = StageRevised::new(self.slug_of(intent, stage)?);
-        self.commit(
-            intent,
-            IntentExecutionEvent::StageRevised(material),
-            occurred_at,
-        )
+        let material = StageRevised::new(self.slug_of(stage)?);
+        self.commit(IntentExecutionEvent::StageRevised(material), occurred_at)
     }
 
     /// ステージの読み飛ばし — `StageSkipped` (CONDITIONAL または実効 SKIP のみ — BR1.5)。
@@ -675,22 +746,18 @@ impl IntentExecution {
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &SKIP_PRECONDITION)?;
-        let conditional = self
-            .entry(intent, stage)
+        // conditional は複製しない静的材料 — コマンド文脈なので intent から直接引く
+        // (guard_running_for が取り違えを照合済み)。
+        let conditional = intent
+            .stages()
+            .get(stage.to_usize())
             .is_some_and(StageEntry::is_conditional);
         if !(conditional || self.effective_plan(stage) == Some(PlanAction::Skip)) {
             return Err(CommandError::NotSkippable(stage));
         }
-        let material = StageSkipped::new(
-            self.slug_of(intent, stage)?,
-            reason,
-            self.next_in_scope_slug(intent, stage),
-        );
-        self.commit(
-            intent,
-            IntentExecutionEvent::StageSkipped(material),
-            occurred_at,
-        )
+        let material =
+            StageSkipped::new(self.slug_of(stage)?, reason, self.next_in_scope_slug(stage));
+        self.commit(IntentExecutionEvent::StageSkipped(material), occurred_at)
     }
 
     /// カーソルの移動 — `Jumped` (BR1.6)。差分集合をイベントに載せ、承認の消去は適用側が
@@ -719,7 +786,7 @@ impl IntentExecution {
                     let skip_current = value == source.to_usize() && marker.is_active();
                     let skip_between = value > source.to_usize() && marker.is_in_flight();
                     if skip_current || skip_between {
-                        stages_skipped.push(self.slug_of(intent, stage)?);
+                        stages_skipped.push(self.slug_of(stage)?);
                     }
                 }
             }
@@ -728,7 +795,7 @@ impl IntentExecution {
                     let stage = StageIndex::new(value);
                     if self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
                     {
-                        stages_reset.push(self.slug_of(intent, stage)?);
+                        stages_reset.push(self.slug_of(stage)?);
                     }
                 }
             }
@@ -736,12 +803,12 @@ impl IntentExecution {
         }
         let material = Jumped::new(
             direction,
-            self.slug_of(intent, source)?,
-            self.slug_of(intent, target)?,
+            self.slug_of(source)?,
+            self.slug_of(target)?,
             stages_reset,
             stages_skipped,
         );
-        self.commit(intent, IntentExecutionEvent::Jumped(material), occurred_at)
+        self.commit(IntentExecutionEvent::Jumped(material), occurred_at)
     }
 
     /// park マーカーの設置 — `Parked` (autonomous 下は拒否 — BR1.7)。
@@ -758,8 +825,8 @@ impl IntentExecution {
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
-        let material = Parked::new(self.slug_of(intent, stage)?);
-        self.commit(intent, IntentExecutionEvent::Parked(material), occurred_at)
+        let material = Parked::new(self.slug_of(stage)?);
+        self.commit(IntentExecutionEvent::Parked(material), occurred_at)
     }
 
     /// park マーカーの除去 — `Unparked`。位置は `parked_at` から復元される (BR1.7)。
@@ -778,7 +845,7 @@ impl IntentExecution {
         if !self.parked_active() {
             return Err(CommandError::NotRunning);
         }
-        self.commit(intent, IntentExecutionEvent::Unparked, occurred_at)
+        self.commit(IntentExecutionEvent::Unparked, occurred_at)
     }
 
     /// 実効プランの再形成 — `Recomposed` (BR1.8)。反転対象は 1 件以上で、いずれかが不正なら
@@ -815,7 +882,7 @@ impl IntentExecution {
         let mut added = Vec::new();
         for &value in &targets {
             let stage = StageIndex::new(value);
-            let slug = self.slug_of(intent, stage)?;
+            let slug = self.slug_of(stage)?;
             match self.effective_plan(stage) {
                 Some(PlanAction::Execute) => skipped.push(slug),
                 Some(PlanAction::Skip) => added.push(slug),
@@ -830,16 +897,12 @@ impl IntentExecution {
             .enumerate()
             .filter(|(_, action)| **action == PlanAction::Execute)
             .filter_map(|(index, _)| {
-                self.entry(intent, StageIndex::new(index))
-                    .map(|entry| entry.slug().clone())
+                self.key_at(StageIndex::new(index))
+                    .map(|key| key.slug().clone())
             })
             .collect();
         let material = Recomposed::new(skipped, added, stages_in_scope);
-        self.commit(
-            intent,
-            IntentExecutionEvent::Recomposed(material),
-            occurred_at,
-        )
+        self.commit(IntentExecutionEvent::Recomposed(material), occurred_at)
     }
 
     /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
@@ -863,7 +926,6 @@ impl IntentExecution {
     ) -> Result<IntentExecutionEvent, CommandError> {
         self.guard_running_for(intent)?;
         self.commit(
-            intent,
             IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(mode)),
             occurred_at,
         )
@@ -892,12 +954,10 @@ impl IntentExecution {
     )]
     pub fn apply_event(
         &mut self,
-        intent: &Intent,
         seq_nr: usize,
         occurred_at: DateTime<Utc>,
         event: &IntentExecutionEvent,
     ) {
-        assert!(self.matches(intent), "apply_event: foreign intent");
         let expected = self
             .seq_nr
             .checked_add(1)
@@ -907,17 +967,17 @@ impl IntentExecution {
             "apply_event: sequence gap (expected {expected}, actual {seq_nr})"
         );
         let mut next = self.clone();
-        next.mutate(intent, event)
+        next.mutate(event)
             .unwrap_or_else(|error| panic!("apply_event: corrupted history — {error}"));
         next.seq_nr = seq_nr;
         next.last_updated_at = occurred_at;
-        next.check_invariants(intent)
+        next.check_invariants()
             .unwrap_or_else(|violation| panic!("apply_event: invariant violated — {violation}"));
         *self = next;
     }
 
     /// 12 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
-    fn mutate(&mut self, intent: &Intent, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
+    fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
                 // `Started` は genesis 専用 — 既存の集約には適用できない (BR2.2)。
@@ -926,41 +986,41 @@ impl IntentExecution {
                 ));
             }
             IntentExecutionEvent::StageCompleted(completed) => {
-                let stage = IntentExecution::resolve(intent, completed.stage())?;
+                let stage = self.resolve(completed.stage())?;
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(intent, completed.next_stage())?;
+                self.advance(completed.next_stage())?;
             }
             IntentExecutionEvent::GateOpened(opened) => {
-                let stage = IntentExecution::resolve(intent, opened.stage())?;
+                let stage = self.resolve(opened.stage())?;
                 self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             IntentExecutionEvent::GateApproved(approved) => {
-                let stage = IntentExecution::resolve(intent, approved.stage())?;
+                let stage = self.resolve(approved.stage())?;
                 self.record_approval(stage);
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(intent, approved.next_stage())?;
+                self.advance(approved.next_stage())?;
             }
             IntentExecutionEvent::GateRejected(rejected) => {
-                let stage = IntentExecution::resolve(intent, rejected.stage())?;
+                let stage = self.resolve(rejected.stage())?;
                 self.mark_stage(stage, CheckboxState::Revising);
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = rejected.revision_count();
                 }
             }
             IntentExecutionEvent::StageRevised(revised) => {
-                let stage = IntentExecution::resolve(intent, revised.stage())?;
+                let stage = self.resolve(revised.stage())?;
                 self.mark_stage(stage, CheckboxState::AwaitingApproval);
             }
             IntentExecutionEvent::StageSkipped(skipped) => {
-                let stage = IntentExecution::resolve(intent, skipped.stage())?;
+                let stage = self.resolve(skipped.stage())?;
                 self.mark_stage(stage, CheckboxState::Skipped);
-                self.advance(intent, skipped.next_stage())?;
+                self.advance(skipped.next_stage())?;
             }
             IntentExecutionEvent::Jumped(jumped) => {
-                self.apply_jump(intent, jumped)?;
+                self.apply_jump(jumped)?;
             }
             IntentExecutionEvent::Parked(parked) => {
-                let stage = IntentExecution::resolve(intent, parked.stage())?;
+                let stage = self.resolve(parked.stage())?;
                 self.parked_at = Some(stage);
             }
             IntentExecutionEvent::Unparked => {
@@ -968,13 +1028,13 @@ impl IntentExecution {
             }
             IntentExecutionEvent::Recomposed(recomposed) => {
                 for slug in recomposed.skipped() {
-                    let stage = IntentExecution::resolve(intent, slug)?;
+                    let stage = self.resolve(slug)?;
                     if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Skip;
                     }
                 }
                 for slug in recomposed.added() {
-                    let stage = IntentExecution::resolve(intent, slug)?;
+                    let stage = self.resolve(slug)?;
                     if let Some(slot) = self.overlay.get_mut(stage.to_usize()) {
                         *slot = PlanAction::Execute;
                     }
@@ -987,15 +1047,15 @@ impl IntentExecution {
         Ok(())
     }
 
-    fn apply_jump(&mut self, intent: &Intent, jumped: &Jumped) -> Result<(), ApplyError> {
-        let source = IntentExecution::resolve(intent, jumped.source())?;
-        let target = IntentExecution::resolve(intent, jumped.target())?;
+    fn apply_jump(&mut self, jumped: &Jumped) -> Result<(), ApplyError> {
+        let source = self.resolve(jumped.source())?;
+        let target = self.resolve(jumped.target())?;
         for slug in jumped.stages_reset() {
-            let stage = IntentExecution::resolve(intent, slug)?;
+            let stage = self.resolve(slug)?;
             self.mark_stage(stage, CheckboxState::Pending);
         }
         for slug in jumped.stages_skipped() {
-            let stage = IntentExecution::resolve(intent, slug)?;
+            let stage = self.resolve(slug)?;
             self.mark_stage(stage, CheckboxState::Skipped);
         }
         match jumped.direction() {
@@ -1014,14 +1074,10 @@ impl IntentExecution {
     }
 
     /// 完了・スキップの後段 — 次の in-scope ステージへ進むか、無ければ完了する (BR1.5)。
-    fn advance(
-        &mut self,
-        intent: &Intent,
-        next_stage: Option<&StageSlug>,
-    ) -> Result<(), ApplyError> {
+    fn advance(&mut self, next_stage: Option<&StageSlug>) -> Result<(), ApplyError> {
         match next_stage {
             Some(slug) => {
-                let stage = IntentExecution::resolve(intent, slug)?;
+                let stage = self.resolve(slug)?;
                 self.mark_stage(stage, CheckboxState::InProgress);
                 self.cursor = stage;
             }
@@ -1036,7 +1092,7 @@ impl IntentExecution {
     /// memento 復元経路の撤去 (オーナー裁定 2026-08-30 — 再構成はジャーナル全再生) に伴い、
     /// 復号ガードだった構造検査 (長さ整合・通番 0・範囲外カーソル) は削除した — genesis が
     /// 長さを固定し、遷移は `resolve` で索引を束縛するため、構成不能である。
-    fn check_invariants(&self, intent: &Intent) -> Result<(), String> {
+    fn check_invariants(&self) -> Result<(), String> {
         if let Some(parked) = self.parked_at
             && parked != self.cursor
         {
@@ -1054,7 +1110,7 @@ impl IntentExecution {
         }
         for value in 0..self.stage_count() {
             let stage = StageIndex::new(value);
-            if self.is_gated(intent, stage)
+            if self.is_gated(stage)
                 && self.checkbox(stage) == Some(CheckboxState::Completed)
                 && self.approved(stage) != Some(true)
             {
@@ -1126,13 +1182,13 @@ impl IntentExecution {
             }
             return Ok(NextDecision::RunStage {
                 stage: cursor,
-                gate: self.is_gated(intent, cursor),
+                gate: self.is_gated(cursor),
             });
         }
         Ok(match self.next_in_scope(cursor) {
             Some(stage) => NextDecision::RunStage {
                 stage,
-                gate: self.is_gated(intent, stage),
+                gate: self.is_gated(stage),
             },
             None => NextDecision::Done,
         })
@@ -1162,12 +1218,12 @@ impl IntentExecution {
         match direction {
             // INIT_JUMP_ERROR: initialization フェーズのステージへは跳べない。scope 外も不可。
             JumpDirection::Forward | JumpDirection::Backward => {
-                if !self.is_gated(intent, target) || !self.in_scope(target) {
+                if !self.is_gated(target) || !self.in_scope(target) {
                     return Err(CommandError::InvalidTarget(target));
                 }
             }
             JumpDirection::Redo => {
-                if !self.is_gated(intent, self.cursor) {
+                if !self.is_gated(self.cursor) {
                     return Err(CommandError::InvalidTarget(target));
                 }
             }
@@ -1381,8 +1437,7 @@ mod tests {
             occurred_at: DateTime<Utc>,
             event: &IntentExecutionEvent,
         ) {
-            self.execution
-                .apply_event(&self.intent, seq_nr, occurred_at, event);
+            self.execution.apply_event(seq_nr, occurred_at, event);
         }
 
         fn next_decision(
@@ -1824,18 +1879,6 @@ mod tests {
             None,
             "ゲート付きかは他人の計画からは答えない"
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "apply_event: foreign intent")]
-    fn apply_event_crashes_on_a_foreign_intent() {
-        // 別 intent の計画を渡すのはプログラミング誤り — 再構成は失敗を返さずクラッシュする
-        // (オーナー裁定 2026-08-30)。
-        let mut w = all_exec(3);
-        let event =
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
-        w.execution
-            .apply_event(&foreign_plan(3), 2, occurred(), &event);
     }
 
     // ---- W2: 12 コマンド (BR1.0〜BR1.9) ----
@@ -2356,86 +2399,211 @@ mod tests {
         w.apply_event(2, occurred(), &event);
     }
 
-    // ---- W3: replay (ジャーナル全再生 — BR2.3 / BR1.1) ----
+    // ---- W3: replay (スナップショット + 差分再生 — BR2.3 / BR1.1、本家同型) ----
 
     #[test]
-    fn a_journal_replay_reproduces_the_command_built_state() {
-        // コマンドで進めた状態と、記録されたイベント列の全再生が一致する — 状態の正本は
-        // イベント列であり、スナップショット行ではない (オーナー裁定 2026-08-30)。
+    fn a_delta_replay_from_a_snapshot_reproduces_the_command_built_state() {
+        // コマンドで進めた状態と「途中のスナップショット + 以降のイベント差分再生」が一致
+        // する — 本家 example (`UserAccount::replay(events, snapshot)`) と同型で、集約は
+        // 添字帳を自分で持つため外部材料なしで再生できる (オーナー裁定 2026-08-30)。
         let mut w = all_exec(4);
-        let mut journal = vec![(
-            1,
-            occurred(),
-            IntentExecutionEvent::Started(Started::new(w.intent.clone())),
-        )];
+        let snapshot = w.execution.clone(); // genesis 時点の写し (= ある時点の集約)
+        let mut delta = Vec::new();
         let event = w.complete_stage(occurred()).unwrap();
-        journal.push((w.seq_nr(), *w.last_updated_at(), event));
+        delta.push((w.seq_nr(), *w.last_updated_at(), event));
         let event = w.open_gate(Vec::new(), occurred()).unwrap();
-        journal.push((w.seq_nr(), *w.last_updated_at(), event));
+        delta.push((w.seq_nr(), *w.last_updated_at(), event));
         let event = w.reject_gate(None, occurred()).unwrap();
-        journal.push((w.seq_nr(), *w.last_updated_at(), event));
+        delta.push((w.seq_nr(), *w.last_updated_at(), event));
 
-        let (replayed, intent) = IntentExecution::replay(
-            execution_id(),
-            IntentExecution::UNPERSISTED_VERSION,
-            journal,
-        );
+        let replayed = IntentExecution::replay(snapshot, delta);
         assert_eq!(replayed, w.execution);
-        assert_eq!(intent, w.intent);
     }
 
     #[test]
-    fn a_replayed_aggregate_carries_the_version_the_store_assigned() {
+    fn a_replay_with_no_delta_returns_the_snapshot_as_is() {
+        // スナップショットが最新なら差分は空 — そのまま返る。
+        let w = all_exec(3);
+        let snapshot = w.execution.clone();
+        assert_eq!(IntentExecution::replay(snapshot, Vec::new()), w.execution);
+    }
+
+    #[test]
+    fn the_full_constructor_round_trips_the_aggregate_state() {
+        // 集約 → 列の材料 → 完全コンストラクタが同じ状態へ戻る (検査付きの唯一の口 — BR1.5)。
+        let mut w = all_exec(3);
+        let _ = w.complete_stage(occurred()).unwrap();
+        let source = &w.execution;
+        let rebuilt = IntentExecution::new(
+            source.id().clone(),
+            source.intent_id().clone(),
+            source.stage_keys().to_vec(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.effective_plan(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.checkbox(stage))
+                .collect(),
+            source.cursor().to_usize(),
+            source.status(),
+            source.parked_at().map(StageIndex::to_usize),
+            source.autonomy(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.approved(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.revision_count(stage))
+                .collect(),
+            source.seq_nr(),
+            *source.last_updated_at(),
+        )
+        .unwrap();
+        assert_eq!(&rebuilt, source);
+    }
+
+    #[test]
+    fn the_full_constructor_rejects_broken_rows() {
+        let w = all_exec(3);
+        let source = &w.execution;
+        let keys = source.stage_keys().to_vec();
+        let overlay: Vec<PlanAction> = vec![PlanAction::Execute; 3];
+        let checkbox = vec![
+            CheckboxState::InProgress,
+            CheckboxState::Pending,
+            CheckboxState::Pending,
+        ];
+        // 空の計画。
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                0,
+                source.status(),
+                None,
+                source.autonomy(),
+                Vec::new(),
+                Vec::new(),
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+        // ステージ数と食い違う実行時ベクトル。
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                keys.clone(),
+                vec![PlanAction::Execute; 2],
+                checkbox.clone(),
+                0,
+                source.status(),
+                None,
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+        // slug の重複 (resolve が前方しか見ないため、静かな取り違えになる — 拒否)。
+        let duplicated = vec![keys[0].clone(), keys[0].clone(), keys[2].clone()];
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                duplicated,
+                overlay.clone(),
+                checkbox.clone(),
+                0,
+                source.status(),
+                None,
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+        // 範囲外の parked 位置。
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                keys.clone(),
+                overlay.clone(),
+                checkbox.clone(),
+                0,
+                source.status(),
+                Some(9),
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+        // 範囲外カーソルと通番 0。
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                keys.clone(),
+                overlay.clone(),
+                checkbox.clone(),
+                9,
+                source.status(),
+                None,
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                keys,
+                overlay,
+                checkbox,
+                0,
+                source.status(),
+                None,
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                0,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn the_version_the_store_assigned_is_stamped_after_reconstruction() {
         // 版はイベント列から導出できない — ストアが読んだ値を再構成の最後に刻む。
         let mut w = all_exec(3);
-        let journal = vec![(
-            1,
-            occurred(),
-            IntentExecutionEvent::Started(Started::new(w.intent.clone())),
-        )];
-        let (fresh, _intent) = IntentExecution::replay(execution_id(), 7, journal);
+        let snapshot = w.execution.clone();
+        let fresh = IntentExecution::replay(snapshot, Vec::new()).with_version(7);
         assert_eq!(fresh.version(), 7);
         // genesis は未永続 — `start` を通った集約はまだ版を持たない。
         assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
         // 版はコマンドで動かない (採番するのはストアである)。
         let _ = w.complete_stage(occurred()).unwrap();
         assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
-        // 刻んだ版は通番と独立である。
-        assert_eq!(fresh.seq_nr(), 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "replay: empty journal")]
-    fn replaying_an_empty_journal_crashes() {
-        let _ = IntentExecution::replay(
-            execution_id(),
-            IntentExecution::UNPERSISTED_VERSION,
-            Vec::new(),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "replay: journal must begin with Started")]
-    fn replaying_a_journal_that_does_not_begin_with_started_crashes() {
-        let mut w = all_exec(3);
-        let event = w.complete_stage(occurred()).unwrap();
-        let _ = IntentExecution::replay(
-            execution_id(),
-            IntentExecution::UNPERSISTED_VERSION,
-            vec![(1, occurred(), event)],
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "replay: genesis must carry seq_nr 1")]
-    fn replaying_a_genesis_with_the_wrong_seq_nr_crashes() {
-        let w = all_exec(3);
-        let started = IntentExecutionEvent::Started(Started::new(w.intent));
-        let _ = IntentExecution::replay(
-            execution_id(),
-            IntentExecution::UNPERSISTED_VERSION,
-            vec![(2, occurred(), started)],
-        );
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2537,8 +2705,6 @@ mod tests {
         let definition = bare_definition("claude");
         let base = all_exec(3);
         let reentry = NextRequest::new(false, true, false);
-        let started = IntentExecutionEvent::Started(Started::new(base.intent.clone()));
-
         for (marker, mid_events, expected_recoverable) in [
             (
                 InProgress,
@@ -2572,17 +2738,18 @@ mod tests {
                 false,
             ),
         ] {
-            let mut journal = vec![(1, occurred(), started.clone())];
+            // genesis のスナップショット (seq 1) を基底に、以降のイベントを差分再生する。
+            let mut delta = Vec::new();
             for event in mid_events {
-                journal.push((journal.len() + 1, occurred(), event));
+                delta.push((delta.len() + 2, occurred(), event));
             }
-            journal.push((
-                journal.len() + 1,
+            delta.push((
+                delta.len() + 2,
                 occurred(),
                 IntentExecutionEvent::Parked(Parked::new(slug(1))),
             ));
-            journal.push((
-                journal.len() + 1,
+            delta.push((
+                delta.len() + 2,
                 occurred(),
                 IntentExecutionEvent::Recomposed(Recomposed::new(
                     vec![slug(1)],
@@ -2590,11 +2757,7 @@ mod tests {
                     vec![slug(0), slug(2)],
                 )),
             ));
-            let (execution, _intent) = IntentExecution::replay(
-                execution_id(),
-                IntentExecution::UNPERSISTED_VERSION,
-                journal,
-            );
+            let execution = IntentExecution::replay(base.execution.clone(), delta);
             let w = Run {
                 intent: base.intent.clone(),
                 execution,
@@ -2903,9 +3066,10 @@ mod tests {
             }
         }
 
-        /// (b) リプレイの決定性 — ジャーナル全再生 (`Started` + 以降のイベント列) == 通常実行
-        /// (BR2.3)。(c) seq_nr は 1 イベントにつき 1 だけ増える (BR2.1 — 順序違反のクラッシュは
-        /// ユニットテスト `apply_event_crashes_on_a_sequence_gap` が固定する)。
+        /// (b) リプレイの決定性 — genesis スナップショット + 以降のイベント差分再生 == 通常
+        /// 実行 (BR2.3、本家同型)。(c) seq_nr は 1 イベントにつき 1 だけ増える (BR2.1 —
+        /// 順序違反のクラッシュはユニットテスト `apply_event_crashes_on_a_sequence_gap` が
+        /// 固定する)。
         #[test]
         fn replaying_the_event_stream_reproduces_the_executed_aggregate(
             stages in synthetic_stages(),
@@ -2913,28 +3077,20 @@ mod tests {
         ) {
             let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
+            let snapshot = w.execution.clone();
             // 封筒の材料 (通番・発生時刻) は commit を通った集約から採る (B7 — Repository も同じ)。
-            let mut journal: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = vec![(
-                1,
-                occurred(),
-                IntentExecutionEvent::Started(Started::new(w.intent.clone())),
-            )];
+            let mut delta: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = Vec::new();
             let mut expected_seq = w.seq_nr();
             for cmd in &cmds {
                 if let Some(event) = drive(&mut w, &definition, cmd) {
                     expected_seq += 1;
                     prop_assert_eq!(w.seq_nr(), expected_seq);
-                    journal.push((w.seq_nr(), *w.last_updated_at(), event));
+                    delta.push((w.seq_nr(), *w.last_updated_at(), event));
                 }
             }
 
-            let (replayed, intent) = IntentExecution::replay(
-                execution_id(),
-                IntentExecution::UNPERSISTED_VERSION,
-                journal,
-            );
+            let replayed = IntentExecution::replay(snapshot, delta);
             prop_assert_eq!(&replayed, &w.execution);
-            prop_assert_eq!(&intent, &w.intent);
         }
 
         /// 定義側から移設した性質 (1): 実効プランはグリッドに recompose のサフィックスを重ねた値で
