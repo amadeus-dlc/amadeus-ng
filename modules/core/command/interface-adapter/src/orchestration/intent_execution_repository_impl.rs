@@ -42,9 +42,7 @@ use core_command_domain::orchestration::{
     IntentExecution, IntentExecutionEvent, IntentExecutionId,
 };
 use core_command_domain::workspace::StorePath;
-use core_command_use_case::orchestration::{
-    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
-};
+use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
@@ -299,7 +297,7 @@ where
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>> {
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
         // 状態の正本は**イベント列**である (オーナー裁定 2026-08-30) — スナップショット行の
         // payload はここでは読まない。行は書込規約 (persist_event_and_snapshot) の一部として
         // 書かれ続け、読取では **存在検査 (BR1.2) と楽観 version の正本 (BR5.3)** にだけ使う。
@@ -325,7 +323,8 @@ where
                 }
             });
         };
-        // 楽観 version はスナップショット行の列が正本 — 封筒から取り出して呼出側へ渡す (BR5.3)。
+        // 楽観 version はスナップショット行の列が正本 — 封筒から取り出し、再構成した集約へ
+        // 刻んで呼出側へ渡す (BR5.3)。
         let version = snapshot.version();
         if journal.is_empty() {
             // genesis は journal と snapshot を原子的に書くので、スナップショットだけが
@@ -363,18 +362,19 @@ where
         // ジャーナル全再生 — 先頭は `Started` (genesis) で、実行の対象 intent はその誕生記録
         // から得る。壊れた歴史 (先頭が Started でない・通番の飛び・不変条件違反) はドメインが
         // クラッシュで止める — 再構成は失敗を返さない (オーナー裁定 2026-08-30)。復元した
-        // `Intent` は**外へ返さない** — [`RehydratedIntentExecution`] に載せるのは実行と版だけ
-        // である (`coding-rules/gateway-taxonomy.md`)。
-        let (aggregate, _intent) = IntentExecution::replay(id.clone(), events);
-        Ok(RehydratedIntentExecution::new(aggregate, version))
+        // `Intent` は**外へ返さない** — Repository が返すのは集約だけである
+        // (`coding-rules/gateway-taxonomy.md`)。
+        let (aggregate, _intent) = IntentExecution::replay(id.clone(), version, events);
+        Ok(aggregate)
     }
 
     async fn store(
         &mut self,
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
-        expected_version: usize,
     ) -> Result<(), RepositoryError<IntentExecutionId>> {
+        // 提示する版は集約が運んできたもの — 生値へ戻すのはこのストア境界だけである。
+        let expected_version = aggregate.version();
         // 新規作成と更新の分岐は本家 v3 と同じ導出 — 封筒の `seq_nr == 1` が新規作成である。
         // 新規作成の `expected_version` は規約上 0 で、そうでない組み合わせは本家が
         // `ContractViolation` で拒否する (我々は握り潰さず `Corrupt` に写す)。
@@ -419,10 +419,6 @@ mod tests {
 
     const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
     const OTHER_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
-
-    /// 未永続の集約が提示する版 (新規作成の `expected_version`)。
-    const UNPERSISTED: usize =
-        <IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> as IntentExecutionRepository>::UNPERSISTED_VERSION;
 
     fn at() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
@@ -551,7 +547,7 @@ mod tests {
         ));
         let mut repository = repository();
         repository
-            .store(&impostor, &aggregate, UNPERSISTED)
+            .store(&impostor, &aggregate)
             .await
             .expect("行としては書ける");
         let _ = repository.find_by_id(&intent()).await;
@@ -675,10 +671,7 @@ mod tests {
     async fn the_conflict_material_is_the_version_that_is_actually_stored() {
         let mut repository = repository();
         let (aggregate, event) = genesis();
-        repository
-            .store(&event, &aggregate, UNPERSISTED)
-            .await
-            .expect("genesis");
+        repository.store(&event, &aggregate).await.expect("genesis");
         assert_eq!(repository.stored_version(&intent()).await, 1);
         assert_eq!(
             repository.stored_version(&other_intent()).await,
@@ -691,10 +684,7 @@ mod tests {
     async fn the_volatile_store_is_shared_by_the_reopened_handle() {
         let mut repository = repository();
         let (aggregate, event) = genesis();
-        repository
-            .store(&event, &aggregate, UNPERSISTED)
-            .await
-            .expect("genesis");
+        repository.store(&event, &aggregate).await.expect("genesis");
 
         let reopened = repository.reopened();
         assert_eq!(

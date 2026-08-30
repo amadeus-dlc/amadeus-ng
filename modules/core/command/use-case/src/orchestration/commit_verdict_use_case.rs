@@ -198,11 +198,10 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<AttemptOutcome, CommitError> {
-        let rehydrated = self.execution_repository.find_by_id(execution_id).await?;
-        // 版は再構成が返した値**そのもの**を握る。`aggregate.seq_nr()` から導いてはならない
-        // （ポート doc の 3 か条 — 版は不透明なトークンである）。
-        let expected_version = rehydrated.version();
-        let mut aggregate = rehydrated.into_aggregate();
+        // 再構成した集約は**ストアが刻んだ版を運んでいる**ので、書込へはそれをそのまま提示
+        // する（ポート doc「楽観 version は集約が運ぶ」— 版は不透明なトークンであり
+        // `aggregate.seq_nr()` から導いてはならない）。
+        let mut aggregate = self.execution_repository.find_by_id(execution_id).await?;
         // 計画は**保持しているリポジトリから内部で取る**（改訂 10）。実行は intent を ID で
         // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
         // 取り違えのガードは従来どおり集約側で発火する — ここでは構成上一致する。
@@ -226,11 +225,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
         // ここまで来たら対象は必ずカーソルである — `stage` が名指ししていた場合、カーソルより
         // 手前のステージは既に上の no-op で返しているからである。
         let event = Self::command(intent, &mut aggregate, cursor, transition, occurred_at)?;
-        match self
-            .execution_repository
-            .store(&event, &aggregate, expected_version)
-            .await
-        {
+        match self.execution_repository.store(&event, &aggregate).await {
             Ok(()) => Ok(AttemptOutcome::Settled),
             Err(conflict @ RepositoryError::Conflict { .. }) => {
                 match Self::slug_at(intent, cursor) {

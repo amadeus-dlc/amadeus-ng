@@ -173,7 +173,7 @@ async fn find_by_id(store: &Store, id: &IntentExecutionId) -> Option<Replayed> {
         let event = envelope.payload().to_domain().unwrap();
         events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
     }
-    let (aggregate, _intent) = IntentExecution::replay(id.clone(), events);
+    let (aggregate, _intent) = IntentExecution::replay(id.clone(), version, events);
     Some(Replayed { aggregate, version })
 }
 
@@ -230,7 +230,11 @@ async fn the_aggregate_survives_a_snapshot_and_replay_round_trip_through_the_ups
         .unwrap();
 
     let restored = find_by_id(&store, &execution_id()).await.unwrap();
-    assert_eq!(restored.aggregate, aggregate, "genesis がそのまま戻る");
+    assert_eq!(
+        restored.aggregate,
+        aggregate.with_version(1),
+        "genesis がそのまま戻る (版だけストアが刻む)"
+    );
     assert_eq!(restored.aggregate.seq_nr(), 1);
     assert_eq!(restored.aggregate.last_updated_at(), &at(0));
     assert_eq!(restored.version, 1, "最初の版はストアが 1 で採番する");

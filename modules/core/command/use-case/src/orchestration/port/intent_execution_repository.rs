@@ -4,7 +4,6 @@ use core_command_domain::orchestration::{
     IntentExecution, IntentExecutionEvent, IntentExecutionId,
 };
 
-use super::rehydrated_intent_execution::RehydratedIntentExecution;
 use super::repository_error::RepositoryError;
 
 /// 集約 `IntentExecution` の Repository (イベントソーシング形 — ADR-010 / C3)。
@@ -26,28 +25,32 @@ use super::repository_error::RepositoryError;
 /// 1 つで、内包するイベントストア (本家 event-store-adapter-rs のバックエンド) だけが
 /// 違う — SQLite ならファイル、memory なら揮発である。
 ///
-/// # 楽観 version はポートを往復する (ADR-010 / B7)
+/// # 楽観 version は集約が運ぶ (ADR-010 / B7、オーナー裁定 2026-08-30)
 ///
-/// 集約は楽観 version を持たない (正本はスナップショット行の列)。代わりに
-/// [`find_by_id`](IntentExecutionRepository::find_by_id) が読んだ版を
-/// [`RehydratedIntentExecution`] に載せて返し、呼出側がそれを
-/// [`store`](IntentExecutionRepository::store) へ提示する。**読んだ時点の版で書く**こと
-/// そのものが楽観ロックであり、実装が書込直前に版を読み直すと成立しなくなる。
+/// 版を採番するのはストアであり正本はスナップショット行の列 (本家 v3 の
+/// `SnapshotEnvelope::version()`) だが、**読んだ版を書込まで引き回すのは集約の仕事**である。
+/// [`find_by_id`](IntentExecutionRepository::find_by_id) が読んだ版を集約へ刻んで返し、
+/// [`store`](IntentExecutionRepository::store) がその集約から版を読む。**読んだ時点の版で
+/// 書く**ことそのものが楽観ロックであり、実装が書込直前に版を読み直すと成立しなくなる。
 ///
-/// この版は `usize` で運ぶが、**数ではなく不透明なトークンである**。守るべきことは 3 つ:
+/// 版と実行を別々の値で運ぶ器 (`RehydratedIntentExecution`) と、それを引き回すための
+/// 三つ組 (`StatePosition`) は**廃止済み**である — 読んだ版も通番も同じ集約が持てば足りる
+/// (オーナー裁定 2026-08-30)。ポート面に裸の版は現れない。
 ///
-/// - **ストアが採番したトークンである。** 解釈・比較・算術をしない。読んだ値をそのまま返すだけ
-///   である (BR5.3)
+/// この版は `usize` で運ぶが、**数ではなく不透明なトークンである**。守るべきことは 2 つ:
+///
+/// - **ストアが採番したトークンである。** 解釈・比較・算術をしない。読んだ値をそのまま返す
+///   だけである (BR5.3)
 /// - **`seq_nr` と混同するな。** 集約の順序番号はドメインが採番する別物であり、値がたまたま
 ///   一致することがあっても意味は違う (オーナー裁定「seq_nr と version を混ぜない」)
-/// - **集約へ入れるな。** 版を集約に載せた瞬間、ストアの採番規則がドメインへ戻る。version が
-///   通ってよいのはこのポートの戻り値と引数だけである
 ///
-/// どちらも `usize` なので**型では取り違えを止められない**。それでも newtype で衣を着せる案は
-/// **却下済み**である (オーナー裁定 2026-08-29) — 楽観 version は本家 event-store-adapter-rs
-/// v3.0.0 が `expected_version: usize` で定めた語彙であり、こちらの都合で包み直すのは
+/// 両方 `usize` なので**型では取り違えを止められない**。それでも newtype で衣を着せる案は
+/// **却下済み**である (オーナー裁定 2026-08-29 / 2026-08-30) — 楽観 version は本家
+/// event-store-adapter-rs v3.0.0 が `usize` で定めた語彙であり、こちらの都合で包み直すのは
 /// Conformist 方針 (`=3.0.0` ピン・腐敗防止層なし) への違反にあたる
 /// (`coding-rules/upstream-contracts.md` — 借り物の契約を自分のドメインに合わせて曲げない)。
+/// 集約が版を持つようになっても同じで、`seq_nr` と隣り合う集約のフィールドも基本データ型の
+/// ままにする。取り違えは型ではなく規律とレビューで防ぐ。
 #[allow(
     async_fn_in_trait,
     reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\
@@ -57,8 +60,9 @@ pub trait IntentExecutionRepository {
     /// 集約を**完全に**再構成して返す (部分データを返さない — C3 ①)。
     ///
     /// 最新スナップショットを復元し、その `seq_nr` より後のイベントを昇順に適用して返す
-    /// (BR1.2)。同時に**ストアが載せていた楽観 version** を返す — 不透明なトークンであり、
-    /// `seq_nr` から導かない (BR5.3)。
+    /// (BR1.2)。返す集約には**ストアが載せていた楽観 version** が刻まれている
+    /// ([`IntentExecution::version`]) — 不透明なトークンであり、`seq_nr` から導かない
+    /// (BR5.3)。
     ///
     /// # Errors
     ///
@@ -66,21 +70,22 @@ pub trait IntentExecutionRepository {
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>>;
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>>;
 
     /// 1 コマンドが返した単一イベントと適用後の集約を、同一トランザクションで永続化する。
     ///
     /// 輸送のメタデータ (集約識別子・通番・発生時刻・型判別子) は**実装が封筒に組む** —
     /// 通番と発生時刻は適用後の集約が持っているので、引数で二重に受け取らない (BR1.3)。
     ///
-    /// `expected_version` は再構成時に受け取った版で、新規作成 (`Started`) では
-    /// [`IntentExecutionRepository::UNPERSISTED_VERSION`] である。一致しなければ `Conflict`
-    /// で、ストアの状態は変わらない (BR1.3)。引数は `&` なので呼出側の集約は変更されない。
+    /// 提示する楽観 version は**集約が持っている** ([`IntentExecution::version`]) —
+    /// 再構成時にストアが刻んだ値であり、新規作成 (`Started`) では
+    /// [`IntentExecution::UNPERSISTED_VERSION`] である。一致しなければ `Conflict` で、
+    /// ストアの状態は変わらない (BR1.3)。引数は `&` なので呼出側の集約は変更されない —
+    /// したがって書込に成功しても集約の版は**書込前のまま**であり、続けて書くなら
+    /// [`find_by_id`](IntentExecutionRepository::find_by_id) からやり直す。
     ///
-    /// この引数は**ストア採番の不透明トークン**である — `seq_nr` と混同してはならず、集約へ
-    /// 入れてもならない (trait doc の「楽観 version はポートを往復する」を参照)。渡すのは
-    /// [`RehydratedIntentExecution::version`] が返した値そのものであり、`aggregate.seq_nr()`
-    /// から導いてはならない。
+    /// 実装は `aggregate.seq_nr()` から版を導いてはならない (trait doc の「楽観 version は
+    /// 集約が運ぶ」を参照)。
     ///
     /// # Errors
     ///
@@ -89,14 +94,7 @@ pub trait IntentExecutionRepository {
         &mut self,
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
-        expected_version: usize,
     ) -> Result<(), RepositoryError<IntentExecutionId>>;
-
-    /// まだ 1 度も永続化していない集約が提示する版 (新規作成の `expected_version`)。
-    ///
-    /// 本家 v3 の規約「新規作成は `seq_nr == 1` かつ `expected_version == 0`」の 0 に名前を
-    /// 与えたものである — 呼出側に裸の `0` を書かせない。
-    const UNPERSISTED_VERSION: usize = 0;
 }
 
 #[cfg(test)]
@@ -112,7 +110,7 @@ mod tests {
     async fn rehydrate<R: IntentExecutionRepository>(
         repository: &R,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>> {
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
         repository.find_by_id(id).await
     }
 
@@ -132,30 +130,16 @@ mod tests {
     async fn a_stored_aggregate_is_rehydrated_by_its_identifier() {
         let mut repository = InMemoryIntentExecutionRepository::empty();
         let (_intent, aggregate, event) = genesis(1);
-        repository
-            .store(
-                &event,
-                &aggregate,
-                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
-            )
-            .await
-            .unwrap();
+        repository.store(&event, &aggregate).await.unwrap();
         let found = rehydrate(&repository, &execution_id()).await.unwrap();
-        assert_eq!(found.aggregate().id(), &execution_id());
+        assert_eq!(found.id(), &execution_id());
     }
 
     #[tokio::test]
     async fn the_version_a_rehydration_carries_is_the_one_the_store_assigned() {
         let mut repository = InMemoryIntentExecutionRepository::empty();
         let (_intent, aggregate, event) = genesis(1);
-        repository
-            .store(
-                &event,
-                &aggregate,
-                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
-            )
-            .await
-            .unwrap();
+        repository.store(&event, &aggregate).await.unwrap();
         let found = rehydrate(&repository, &execution_id()).await.unwrap();
         assert_eq!(
             found.version(),
@@ -166,25 +150,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_write_that_presents_a_stale_version_conflicts() {
-        // 楽観ロックの本体 — 読んだ版で書くから、その間の書込を検出できる。
+        // 楽観ロックの本体 — 読んだ版で書くから、その間の書込を検出できる。書込に成功しても
+        // 手元の集約の版は未永続のままなので、同じ集約でもう一度書けば競合になる。
         let mut repository = InMemoryIntentExecutionRepository::empty();
         let (_intent, aggregate, event) = genesis(1);
-        repository
-            .store(
-                &event,
-                &aggregate,
-                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
-            )
-            .await
-            .unwrap();
-        let err = repository
-            .store(
-                &event,
-                &aggregate,
-                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
-            )
-            .await
-            .unwrap_err();
+        repository.store(&event, &aggregate).await.unwrap();
+        let err = repository.store(&event, &aggregate).await.unwrap_err();
         assert!(matches!(
             err,
             RepositoryError::Conflict {
@@ -198,16 +169,10 @@ mod tests {
     async fn the_port_takes_the_aggregate_by_reference_so_the_caller_keeps_it() {
         let mut repository = InMemoryIntentExecutionRepository::empty();
         let (_intent, aggregate, event) = genesis(1);
-        repository
-            .store(
-                &event,
-                &aggregate,
-                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
-            )
-            .await
-            .unwrap();
+        repository.store(&event, &aggregate).await.unwrap();
         // 引数は `&` — store は呼出側の集約を変更しない (BR1.3)。
         assert_eq!(aggregate.seq_nr(), 1);
+        assert_eq!(aggregate.version(), IntentExecution::UNPERSISTED_VERSION);
     }
 
     #[tokio::test]
@@ -215,14 +180,7 @@ mod tests {
         // 識別子検索である以上、別の識別子で引いたら見つからない (C3 ①)。
         let mut repository = InMemoryIntentExecutionRepository::empty();
         let (_intent, aggregate, event) = genesis(1);
-        repository
-            .store(
-                &event,
-                &aggregate,
-                InMemoryIntentExecutionRepository::UNPERSISTED_VERSION,
-            )
-            .await
-            .unwrap();
+        repository.store(&event, &aggregate).await.unwrap();
         let err = rehydrate(&repository, &absent_execution())
             .await
             .unwrap_err();

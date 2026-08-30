@@ -20,4 +20,5 @@
 pub mod append_only;
 pub mod atomic;
 pub mod canon_json;
+pub mod codec;
 pub mod fs_meta;

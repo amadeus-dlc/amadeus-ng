@@ -60,9 +60,7 @@ use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
 };
-use core_command_use_case::orchestration::{
-    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
-};
+use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
@@ -277,9 +275,8 @@ fn next_command(aggregate: &mut IntentExecution) -> IntentExecutionEvent {
 
 /// 1 人の writer が握っている「ロード済み集約 + 版」。
 struct Writer {
+    /// 握っている集約。モデルの `loadedVersion` はこの集約が運んでいる版そのものである。
     aggregate: IntentExecution,
-    /// モデルの `loadedVersion` — この writer が書込に提示する版。
-    version: usize,
     /// まだ書けていない genesis の `Started` (書込済みなら `None`)。
     pending: Option<IntentExecutionEvent>,
 }
@@ -290,15 +287,13 @@ impl Writer {
         let (aggregate, event) = genesis();
         Writer {
             aggregate,
-            version: <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION,
             pending: Some(event),
         }
     }
 
-    fn loaded(rehydrated: RehydratedIntentExecution) -> Writer {
+    const fn loaded(rehydrated: IntentExecution) -> Writer {
         Writer {
-            version: rehydrated.version(),
-            aggregate: rehydrated.into_aggregate(),
+            aggregate: rehydrated,
             pending: None,
         }
     }
@@ -308,7 +303,7 @@ impl Writer {
     /// 未永続の genesis を握っている writer は 0 である (ストアには行がまだ無く、新規作成の
     /// 規約が `expected_version == 0` だから)。モデルの初期値と同じ意味になる。
     const fn loaded_version(&self) -> usize {
-        self.version
+        self.aggregate.version()
     }
 
     /// 次の書込に使う (イベント, 集約) の下書き。
@@ -326,9 +321,8 @@ impl Writer {
     }
 
     /// 書込が通ったので、**ストアが採番した版**を握り直す (BR5.3 — 版を知るのはストアだけ)。
-    fn commit(&mut self, stored: RehydratedIntentExecution) {
-        self.version = stored.version();
-        self.aggregate = stored.into_aggregate();
+    fn commit(&mut self, stored: IntentExecution) {
+        self.aggregate = stored;
         self.pending = None;
     }
 }
@@ -525,7 +519,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 let held = writers.get(writer).expect("writer 添字");
                 let (event, aggregate) = held.draft();
                 repository
-                    .store(&event, &aggregate, held.loaded_version())
+                    .store(&event, &aggregate)
                     .await
                     .unwrap_or_else(|error| panic!("{label}: 書込は通るはず {error:?}"));
                 assert_eq!(
@@ -546,7 +540,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 let held = writers.get(writer).expect("writer 添字");
                 let (event, aggregate) = held.draft();
                 let error = repository
-                    .store(&event, &aggregate, held.loaded_version())
+                    .store(&event, &aggregate)
                     .await
                     .expect_err("stale な writer の書込は拒否される");
                 assert!(

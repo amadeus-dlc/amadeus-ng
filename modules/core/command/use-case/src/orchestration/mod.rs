@@ -27,9 +27,6 @@ mod test_support;
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
 pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository};
 
-// ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
-pub use port::RehydratedIntentExecution;
-
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の
 // 持ち物である。型名は upstream の CLI 動詞ではなく更新の意図から取る
@@ -42,7 +39,7 @@ pub use next_use_case::NextUseCase;
 // steering 連鎖のポート (実装はアダプタ層) と、そのポート入出力 VO
 pub use port::{
     CommandSpelling, ContinueTokenCodec, InvalidContinueToken, RuleBundleReadError,
-    RuleBundleSource, StatePosition, StoreVersion,
+    RuleBundleSource,
 };
 pub use reported_transition::ReportedTransition;
 

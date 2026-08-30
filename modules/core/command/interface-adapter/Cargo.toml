@@ -22,14 +22,11 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 # 集約の永続化そのもの (ADR-010)。`sqlite` feature で `EventStoreForSqlite` を有効にする。
 event-store-adapter-rs = { workspace = true, features = ["sqlite"] }
-# continue_token の封緘 (HMAC-SHA256 + base64url) と steering MAC 鍵の鋳造 (乱数) —
-# codec 実装だけが使う (domain / use-case はポート越し)。
-hmac = { workspace = true }
-sha2 = { workspace = true }
-base64 = { workspace = true }
-getrandom = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+# ワイヤ形式の改竄テストが封筒を直接組み替えるため (プロダクションでは使わない —
+# 封緘は `core-infrastructure::codec` の純計算に委譲した)。
+base64 = { workspace = true }
 # 非同期ポート (AFIT) の契約テストを回す current_thread ランタイム (C3 / Q3 = A)。
 tokio = { workspace = true }

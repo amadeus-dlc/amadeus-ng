@@ -17,7 +17,7 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_command_use_case::orchestration::{IntentExecutionRepository, RehydratedIntentExecution};
+use core_command_use_case::orchestration::IntentExecutionRepository;
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -161,17 +161,13 @@ pub(crate) fn genesis_for(execution: IntentExecutionId) -> (IntentExecution, Int
 /// 1 件書いてから**握り直す** (書込後の楽観 version を知っているのはストアだけ — BR5.3)。
 ///
 /// `store` は引数の集約を変更しないので、次のコマンドを打つ前に再水和するのが唯一の作法で
-/// ある。`find_by_id` は「書いた集約 + ストアが採番した version」を返す。
+/// ある。`find_by_id` は書いた集約を、ストアが採番した version を刻んだ姿で返す。
 pub(crate) async fn store_and_reload<R: IntentExecutionRepository>(
     repository: &mut R,
     event: &IntentExecutionEvent,
     aggregate: &IntentExecution,
-    expected_version: usize,
-) -> RehydratedIntentExecution {
-    repository
-        .store(event, aggregate, expected_version)
-        .await
-        .expect("store");
+) -> IntentExecution {
+    repository.store(event, aggregate).await.expect("store");
     repository
         .find_by_id(aggregate.id())
         .await
@@ -181,7 +177,7 @@ pub(crate) async fn store_and_reload<R: IntentExecutionRepository>(
 /// genesis (`Started`) を 1 件書き、握り直した結果を返す。
 pub(crate) async fn store_genesis<R: IntentExecutionRepository>(
     repository: &mut R,
-) -> RehydratedIntentExecution {
+) -> IntentExecution {
     store_genesis_for(repository, execution_id()).await
 }
 
@@ -189,33 +185,34 @@ pub(crate) async fn store_genesis<R: IntentExecutionRepository>(
 pub(crate) async fn store_genesis_for<R: IntentExecutionRepository>(
     repository: &mut R,
     execution: IntentExecutionId,
-) -> RehydratedIntentExecution {
+) -> IntentExecution {
     let (aggregate, event) = genesis_for(execution);
-    store_and_reload(repository, &event, &aggregate, R::UNPERSISTED_VERSION).await
+    store_and_reload(repository, &event, &aggregate).await
 }
 
-/// 握っている再水和結果へコマンドを 1 つ打ち、書いて握り直す。
+/// 握っている集約へコマンドを 1 つ打ち、書いて握り直す。
 ///
-/// 版は**握っているものを提示する** — 書込直前に読み直さないのが楽観ロックの本体である。
+/// 版は**握っている集約が運んでいるもの**を提示する — 書込直前に読み直さないのが楽観ロックの
+/// 本体である。
 pub(crate) async fn advance<R, F>(
     repository: &mut R,
-    held: &RehydratedIntentExecution,
+    held: &IntentExecution,
     command: F,
-) -> RehydratedIntentExecution
+) -> IntentExecution
 where
     R: IntentExecutionRepository,
     F: FnOnce(&mut IntentExecution) -> Result<IntentExecutionEvent, CommandError>,
 {
-    let mut aggregate = held.aggregate().clone();
+    let mut aggregate = held.clone();
     let event = command(&mut aggregate).expect("コマンドは受理される");
-    store_and_reload(repository, &event, &aggregate, held.version()).await
+    store_and_reload(repository, &event, &aggregate).await
 }
 
 /// 続きの 1 件 (`StageCompleted`) を書き、握り直した結果を返す。
 pub(crate) async fn store_stage_completed<R: IntentExecutionRepository>(
     repository: &mut R,
-    held: &RehydratedIntentExecution,
-) -> RehydratedIntentExecution {
+    held: &IntentExecution,
+) -> IntentExecution {
     advance(repository, held, |aggregate| {
         aggregate.complete_stage(&intent(), at())
     })

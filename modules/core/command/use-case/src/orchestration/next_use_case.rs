@@ -28,8 +28,6 @@ use super::port::CommandSpelling;
 use super::port::ContinueTokenCodec;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
-use super::port::StatePosition;
-use super::port::StoreVersion;
 use super::port::WorkflowDefinitionRepository;
 use super::port::{RuleBundleReadError, RuleBundleSource};
 
@@ -152,10 +150,11 @@ pub struct NextUseCase<E, I, D, B, C, S> {
 }
 
 /// 稼働中ワークフローの読取済みコンテキスト。
+///
+/// 楽観 version は集約が運んでいるので、ここに別枠で持たない (オーナー裁定 2026-08-30)。
 struct LoadedWorkflow {
     intent: Intent,
     execution: IntentExecution,
-    version: usize,
 }
 
 impl<E, I, D, B, C, S> NextUseCase<E, I, D, B, C, S>
@@ -494,13 +493,7 @@ where
 
     /// state 束縛のダイジェスト (state ありのときだけ)。
     fn state_binding(&self, context: Option<&LoadedWorkflow>) -> Option<StateBinding> {
-        context.map(|context| {
-            self.codec.state_binding(&StatePosition::new(
-                context.intent.id().clone(),
-                context.execution.seq_nr(),
-                StoreVersion::new(context.version),
-            ))
-        })
+        context.map(|context| self.codec.state_binding(&context.execution))
     }
 
     /// active-intent カーソルが指す集約群を読む。読取失敗は逐語メッセージで返す (材料は
@@ -509,7 +502,7 @@ where
         let Some(active) = input.active() else {
             return Ok(None);
         };
-        let rehydrated = self
+        let execution = self
             .execution_repository
             .find_by_id(active.execution_id())
             .await
@@ -519,12 +512,7 @@ where
             .find_by_id(active.intent_id())
             .await
             .map_err(|error| error.to_string())?;
-        let version = rehydrated.version();
-        Ok(Some(LoadedWorkflow {
-            intent,
-            execution: rehydrated.into_aggregate(),
-            version,
-        }))
+        Ok(Some(LoadedWorkflow { intent, execution }))
     }
 
     /// 定義を読む — state ありなら intent がピンした定義 id、無しならハーネスの定義 id。
@@ -1122,12 +1110,12 @@ mod tests {
             )))
         }
 
-        fn state_binding(&self, position: &super::super::port::StatePosition) -> StateBinding {
+        fn state_binding(&self, execution: &IntentExecution) -> StateBinding {
             StateBinding::new(hashed(&format!(
                 "{}\n{}\n{}",
-                position.intent_id().as_str(),
-                position.seq_nr(),
-                position.store_version().as_usize()
+                execution.intent_id().as_str(),
+                execution.seq_nr(),
+                execution.version()
             )))
         }
     }
@@ -1794,11 +1782,7 @@ mod tests {
     #[test]
     fn branch_10_a_recoverable_skip_inconsistency_names_the_repair() {
         let (intent, execution, _) = genesis(2);
-        let context = LoadedWorkflow {
-            intent,
-            execution,
-            version: 1,
-        };
+        let context = LoadedWorkflow { intent, execution };
         let directive = with_workflow(2).emit_happy_path(
             &active_input(),
             &context,
@@ -1818,11 +1802,7 @@ mod tests {
     #[test]
     fn branch_10_an_unrecoverable_skip_inconsistency_is_refused_verbatim() {
         let (intent, execution, _) = genesis(2);
-        let context = LoadedWorkflow {
-            intent,
-            execution,
-            version: 1,
-        };
+        let context = LoadedWorkflow { intent, execution };
         let directive = with_workflow(2).emit_happy_path(
             &active_input(),
             &context,
@@ -1842,11 +1822,7 @@ mod tests {
     #[test]
     fn a_routing_decision_that_reaches_the_happy_path_is_a_defensive_error() {
         let (intent, execution, _) = genesis(2);
-        let context = LoadedWorkflow {
-            intent,
-            execution,
-            version: 1,
-        };
+        let context = LoadedWorkflow { intent, execution };
         let directive = with_workflow(2).emit_happy_path(
             &active_input(),
             &context,
