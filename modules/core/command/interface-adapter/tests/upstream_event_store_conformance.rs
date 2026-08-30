@@ -37,7 +37,7 @@ use core_command_domain::workflow_definition::{
 };
 use core_command_domain::workspace::CheckboxState;
 use core_command_interface_adapter::orchestration::{
-    AggregateKey, IntentExecutionMemoryStore, WireEvent, WireSnapshot,
+    AggregateKey, IntentExecutionMemoryStore, WireEvent, WireIntentExecution,
 };
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreWriteError};
@@ -149,8 +149,8 @@ fn envelope(
 }
 
 /// 集約をストアへ載せる形 (スナップショット行の payload)。
-fn snapshot_of(aggregate: &IntentExecution) -> WireSnapshot {
-    WireSnapshot::of(aggregate)
+fn snapshot_of(aggregate: &IntentExecution) -> WireIntentExecution {
+    WireIntentExecution::of(aggregate)
 }
 
 /// 再水和の結果 (本家 v3 の移行ガイド §3 と同じ形 — 集約 + ストアが載せた版)。
@@ -159,22 +159,28 @@ struct Replayed {
     version: usize,
 }
 
-/// 再構成 — スナップショット封筒は版の正本、状態はジャーナル全再生で導出する
-/// (オーナー裁定 2026-08-30。本家 v3 でスナップショット payload の復号は serde の役目だが、
-/// 我々のドメインは serde を持たないため、状態の正本をイベント列に置く)。
+/// 再構成 — 本家 example (`user_account_repository.rs`) と同型: スナップショット封筒
+/// (版の正本 + ある時点の集約) を基底に、その通番より後のイベントを差分再生する
+/// (オーナー裁定 2026-08-30)。
 async fn find_by_id(store: &Store, id: &IntentExecutionId) -> Option<Replayed> {
     let key = AggregateKey::of(id);
     let snapshot = store.get_latest_snapshot_by_id(&key).await.unwrap()?;
     let version = snapshot.version();
-    let envelopes = store.get_events_by_id_since_seq_nr(&key, 1).await.unwrap();
+    let base = snapshot.aggregate().to_domain().unwrap();
+    let envelopes = store
+        .get_events_by_id_since_seq_nr(&key, base.seq_nr() + 1)
+        .await
+        .unwrap();
     let mut events = Vec::with_capacity(envelopes.len());
     for envelope in &envelopes {
         assert_eq!(envelope.manifest(), MANIFEST, "manifest は往復する");
         let event = envelope.payload().to_domain().unwrap();
         events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
     }
-    let (aggregate, _intent) = IntentExecution::replay(id.clone(), version, events);
-    Some(Replayed { aggregate, version })
+    Some(Replayed {
+        aggregate: IntentExecution::replay(base, events).with_version(version),
+        version,
+    })
 }
 
 #[tokio::test]

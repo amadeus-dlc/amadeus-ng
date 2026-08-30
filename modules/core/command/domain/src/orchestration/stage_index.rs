@@ -15,7 +15,7 @@ impl StageIndex {
     /// 集約 (と同一クレート内の再水和経路) だけが使う構築子。
     ///
     /// 範囲の保証は呼出側の責務であり、公開経路は `IntentExecution::stage_index` と
-    /// `IntentExecution::from_snapshot` の検証を必ず通る。
+    /// `IntentExecution::new` (完全コンストラクタ) の検証を必ず通る。
     pub(crate) const fn new(value: usize) -> StageIndex {
         StageIndex(value)
     }

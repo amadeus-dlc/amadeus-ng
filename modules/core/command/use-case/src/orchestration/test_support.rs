@@ -97,7 +97,7 @@ pub(crate) fn start_from_plan(
             )
         })
         .collect();
-    // 合成計画からの組み直しは再構成経路 (from_snapshot) を通す — 検査点は genesis と
+    // 合成計画からの組み直しは完全コンストラクタ (IntentExecution::new) を通す — 検査点は genesis と
     // 同一である。誕生イベントを `store` する `IntentRepository` は U7 の課題である。
     let intent = Intent::from(Created::new(
         intent(),

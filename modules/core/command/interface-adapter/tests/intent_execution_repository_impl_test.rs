@@ -190,9 +190,10 @@ async fn a_journal_without_a_snapshot_is_corrupt_not_missing() {
 }
 
 #[tokio::test]
-async fn a_snapshot_without_any_journal_row_is_corrupt() {
-    // genesis は journal と snapshot を原子的に書くので、スナップショットだけが残る状態は
-    // 壊れている (ジャーナル全再生では再構成の材料が無い)。
+async fn a_snapshot_alone_is_a_sufficient_rehydration_base() {
+    // 差分再生の基底はスナップショットである — ジャーナル行が 1 件も無くても、基底の時点の
+    // 状態へ再水和できる (issue #44。既定ストラテジでは基底は genesis なので、seed の後段は
+    // 差分行と共に見えなくなるが、それはジャーナルを消した側の損失であって破損分類ではない)。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     seed(&mut repository).await;
@@ -201,20 +202,12 @@ async fn a_snapshot_without_any_journal_row_is_corrupt() {
         .execute("DELETE FROM journal", [])
         .expect("ジャーナルを空にする");
 
-    let err = repository
+    let found = repository
         .find_by_id(&execution_id())
         .await
-        .expect_err("再生の材料が無い");
-    assert!(matches!(
-        &err,
-        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
-    ));
-    assert_eq!(
-        std::error::Error::source(&err)
-            .expect("原因が連鎖する")
-            .to_string(),
-        "empty journal"
-    );
+        .expect("基底 (genesis スナップショット) から再水和できる");
+    assert_eq!(found.seq_nr(), 1, "基底の時点の状態");
+    assert_eq!(found.version(), 3, "版の正本は行の列のまま");
 }
 
 #[tokio::test]
@@ -244,28 +237,32 @@ async fn a_tampered_snapshot_payload_is_corrupt() {
 }
 
 #[tokio::test]
-async fn a_tampered_snapshot_state_does_not_affect_reconstruction() {
-    // 状態の正本は**イベント列**である (オーナー裁定 2026-08-30) — スナップショット行の
-    // payload は読取に使わないので、形の読める改竄 (ここでは範囲外カーソル) は状態に影響
-    // しない。ジャーナル全再生が正しい状態を返すことを固定する。
+async fn a_tampered_snapshot_state_is_corrupt() {
+    // 基底はスナップショット (= ある時点の集約) である — 形の読める改竄 (ここでは範囲外
+    // カーソル) は集約の完全コンストラクタが拒み、`Corrupt` に写る (issue #44 で全再生から
+    // 差分再生へ転換した帰結。BR1.5)。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
-    let expected = seed(&mut repository).await;
+    seed(&mut repository).await;
     let conn = fixture.raw();
+    // 既定ストラテジではスナップショットは genesis のまま (カーソル 0)。
     let before = String::from_utf8(snapshot_payload(&conn)).expect("payload は UTF-8 の JSON");
-    assert!(before.contains(r#""cursor":1"#), "{before}");
+    assert!(before.contains(r#""cursor":0"#), "{before}");
     conn.execute(
-        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"cursor":1', '"cursor":99') AS BLOB)"#,
+        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"cursor":0', '"cursor":99') AS BLOB)"#,
         [],
     )
     .expect("カーソルを範囲外へ");
     drop(conn);
 
-    let found = repository
+    let err = repository
         .find_by_id(&execution_id())
         .await
-        .expect("状態はジャーナルから導出される");
-    assert_eq!(found, expected);
+        .expect_err("壊れた基底は Corrupt");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
 }
 
 #[tokio::test]
@@ -485,11 +482,13 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
 }
 
 #[tokio::test]
-async fn a_genesis_row_with_a_foreign_manifest_is_refused() {
-    // 名乗りが違う行の中身は解釈しない。genesis 行でも再生行と同じ拒否条件である。
+async fn a_foreign_manifest_before_the_snapshot_base_is_not_read() {
+    // 差分再生は基底の通番より後の行しか読まない — genesis 行の名乗りが違っても、基底
+    // (ここでは genesis スナップショット) 以後の差分行が正しければ再水和は成立する
+    // (issue #44。差分行の foreign manifest は従来どおり拒否される — 別テストが固定)。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
-    seed(&mut repository).await;
+    let expected = seed(&mut repository).await;
     let conn = fixture.raw();
     let genesis = genesis_payload().await;
     rewind_snapshot_to_genesis(&conn, &genesis);
@@ -498,29 +497,19 @@ async fn a_genesis_row_with_a_foreign_manifest_is_refused() {
         [],
     )
     .expect("genesis 行の名乗りを差し替える");
+    drop(conn);
 
-    let err = repository
+    let found = repository
         .find_by_id(&execution_id())
         .await
-        .expect_err("名乗りが違う genesis は拒否される");
-    assert!(matches!(
-        &err,
-        RepositoryError::Corrupt { id, seq_nr: Some(1), .. } if *id == execution_id()
-    ));
-    assert_eq!(
-        std::error::Error::source(&err)
-            .expect("原因が連鎖する")
-            .to_string(),
-        "foreign manifest"
-    );
+        .expect("基底以後の差分だけで再水和できる");
+    assert_eq!(found, expected);
 }
 
 #[tokio::test]
-#[should_panic(expected = "recorded history violates the plan invariants")]
-async fn a_genesis_row_that_breaks_always_valid_crashes_reconstruction() {
-    // JSON としては読めるが、計画が Always Valid を破る genesis 行。再構成は失敗を返さない —
-    // 壊れた歴史は回復せずクラッシュする (オーナー裁定 2026-08-30)。バイトが読めない復号
-    // 失敗 (Malformed / Undecodable) は従来どおり `Corrupt` の分類に残る。
+async fn a_snapshot_that_breaks_the_aggregate_invariants_is_corrupt() {
+    // JSON としては読めるが集約不変条件を破るスナップショット (実効 SKIP のカーソル)。基底の
+    // 復元は完全コンストラクタを必ず通るので、`Corrupt` に写る (BR1.5 — issue #44)。
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     seed(&mut repository).await;
@@ -528,12 +517,20 @@ async fn a_genesis_row_that_breaks_always_valid_crashes_reconstruction() {
     let genesis = genesis_payload().await;
     rewind_snapshot_to_genesis(&conn, &genesis);
     conn.execute(
-        r#"UPDATE journal SET payload = CAST(replace(CAST(payload AS TEXT), '"plan_action":"Execute"', '"plan_action":"Skip"') AS BLOB) WHERE seq_nr = 1"#,
+        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"overlay":["Execute"', '"overlay":["Skip"') AS BLOB)"#,
         [],
     )
-    .expect("先頭ステージを SKIP に畳む");
+    .expect("先頭ステージの実効プランを SKIP に畳む");
+    drop(conn);
 
-    let _ = repository.find_by_id(&execution_id()).await;
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("不変条件を破る基底は Corrupt");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == execution_id()
+    ));
 }
 
 #[tokio::test]
@@ -566,4 +563,74 @@ async fn a_replayed_row_whose_spelling_is_outside_the_closed_set_is_refused() {
             .to_string(),
         "undecodable payload"
     );
+}
+
+// ---- issue #44: スナップショットストラテジ (初回必須・N 件ごと・差分再生の一致) ----
+
+/// snapshot 行の seq_nr 列 (基底がどこまで進んでいるか)。
+fn snapshot_seq(conn: &Connection) -> i64 {
+    conn.query_row("SELECT seq_nr FROM snapshot", [], |row| row.get(0))
+        .expect("スナップショット行の seq_nr")
+}
+
+#[tokio::test]
+async fn the_first_store_always_writes_the_snapshot_base() {
+    // 初回は必ず persist_event_and_snapshot — 基底が無いとリプレイできない (本家の作成規約)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    let (aggregate, event) = genesis();
+    repository.store(&event, &aggregate).await.expect("genesis");
+    assert_eq!(snapshot_seq(&fixture.raw()), 1, "基底は genesis 時点");
+}
+
+#[tokio::test]
+async fn the_strategy_refreshes_the_snapshot_every_n_events() {
+    // N=2: 偶数通番の書込でだけ基底が進む。呼出側は store に任せるだけである
+    // (オーナー裁定 2026-08-30、本家 example の形)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository().with_snapshot_strategy(
+        core_command_interface_adapter::orchestration::SnapshotStrategy::every(
+            std::num::NonZeroUsize::new(2).expect("非零"),
+        ),
+    );
+    let held = support::store_genesis(&mut repository).await;
+    assert_eq!(snapshot_seq(&fixture.raw()), 1);
+    let held = advance(&mut repository, &held, |aggregate| {
+        aggregate.complete_stage(&intent(), at())
+    })
+    .await;
+    assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 2 は基底を書き直す");
+    let held = advance(&mut repository, &held, |aggregate| {
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+    })
+    .await;
+    assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 3 はイベントのみ");
+    assert_eq!(held.version(), 3, "イベントのみの書込でも版は進む");
+    let held = advance(&mut repository, &held, |aggregate| {
+        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
+    })
+    .await;
+    assert_eq!(snapshot_seq(&fixture.raw()), 4, "seq 4 は基底を書き直す");
+    assert_eq!(held.seq_nr(), 4);
+}
+
+#[tokio::test]
+async fn a_stale_snapshot_plus_delta_matches_the_freshest_state() {
+    // 基底 (genesis) が古いままでも、差分再生が最新状態を返す — 全再生と同じ答えになる
+    // ことがストラテジ導入の受入条件である (issue #44)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    let expected = seed(&mut repository).await;
+    assert_eq!(
+        snapshot_seq(&fixture.raw()),
+        1,
+        "既定 N=10 では基底は genesis のまま"
+    );
+
+    let found = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect("基底 + 差分で最新へ");
+    assert_eq!(found, expected);
+    assert_eq!(found.seq_nr(), 3);
 }

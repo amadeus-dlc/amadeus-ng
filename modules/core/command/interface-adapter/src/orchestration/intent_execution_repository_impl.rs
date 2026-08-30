@@ -47,8 +47,9 @@ use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 
+use super::snapshot_strategy::SnapshotStrategy;
 use super::store_failure::io_kind_of_source;
-use super::wire::{AggregateKey, WireDecodeError, WireEvent, WireSnapshot};
+use super::wire::{AggregateKey, WireDecodeError, WireEvent, WireIntentExecution};
 
 /// ジャーナル行 `manifest` 列に書く型判別子 — **書く側の正本**。
 ///
@@ -65,10 +66,12 @@ const FIRST_SEQ_NR: usize = 1;
 ///
 /// 型引数はいずれも**この層の永続化 DTO** である — ドメイン型はストアに触れない
 /// (`coding-rules/domain-persistence-neutrality.md`)。
-pub type IntentExecutionSqliteStore = EventStoreForSqlite<AggregateKey, WireSnapshot, WireEvent>;
+pub type IntentExecutionSqliteStore =
+    EventStoreForSqlite<AggregateKey, WireIntentExecution, WireEvent>;
 
 /// 揮発の格納先にするイベントストア (本家)。
-pub type IntentExecutionMemoryStore = EventStoreForMemory<AggregateKey, WireSnapshot, WireEvent>;
+pub type IntentExecutionMemoryStore =
+    EventStoreForMemory<AggregateKey, WireIntentExecution, WireEvent>;
 
 /// 本家のイベントストアを**単一所有**する `IntentExecutionRepository` の実装。
 ///
@@ -80,6 +83,8 @@ pub struct IntentExecutionRepositoryImpl<S> {
     store: S,
     /// 失敗の材料に添える場所 (揮発のストアには無いので `Option`)。
     location: Option<StorePath>,
+    /// いつスナップショットを書き直すか (実装の内部設定 — ポート面に現れない)。
+    strategy: SnapshotStrategy,
 }
 
 /// `Corrupt` の原因分類 — **この実装の私有物** (裁定 6: エラー分類はポート契約に載せない。
@@ -88,8 +93,6 @@ pub struct IntentExecutionRepositoryImpl<S> {
 enum CorruptDetail {
     /// ジャーナル行はあるのにスナップショット行が無い (BR1.2)。
     MissingSnapshot,
-    /// スナップショット行はあるのにジャーナル行が 1 件も無い (genesis は原子書込のはず)。
-    EmptyJournal,
     /// ジャーナル行が別の型判別子を名乗っている (foreign manifest)。
     ForeignManifest,
     /// 行のペイロードをドメイン型へ復号できない。
@@ -104,7 +107,6 @@ impl std::fmt::Display for CorruptDetail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CorruptDetail::MissingSnapshot => f.write_str("missing snapshot"),
-            CorruptDetail::EmptyJournal => f.write_str("empty journal"),
             CorruptDetail::ForeignManifest => f.write_str("foreign manifest"),
             CorruptDetail::Undecodable(_) => f.write_str("undecodable payload"),
             CorruptDetail::StoreDeserialization => f.write_str("store deserialization failed"),
@@ -149,6 +151,7 @@ impl IntentExecutionRepositoryImpl<IntentExecutionSqliteStore> {
         Ok(IntentExecutionRepositoryImpl {
             store,
             location: Some(path.clone()),
+            strategy: SnapshotStrategy::default(),
         })
     }
 
@@ -169,7 +172,20 @@ impl IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
         IntentExecutionRepositoryImpl {
             store: IntentExecutionMemoryStore::new(),
             location: None,
+            strategy: SnapshotStrategy::default(),
         }
+    }
+}
+
+impl<S> IntentExecutionRepositoryImpl<S> {
+    /// スナップショットの書き直し間隔を差し替える (既定は 10 イベントごと — 合成ルートが確定)。
+    #[must_use]
+    pub const fn with_snapshot_strategy(
+        mut self,
+        strategy: SnapshotStrategy,
+    ) -> IntentExecutionRepositoryImpl<S> {
+        self.strategy = strategy;
+        self
     }
 }
 
@@ -183,13 +199,14 @@ impl<S: Clone> IntentExecutionRepositoryImpl<S> {
         IntentExecutionRepositoryImpl {
             store: self.store.clone(),
             location: self.location.clone(),
+            strategy: self.strategy,
         }
     }
 }
 
 impl<S> IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
+    S: EventStore<AID = AggregateKey, A = WireIntentExecution, P = WireEvent>,
 {
     /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
     ///
@@ -292,27 +309,28 @@ where
 
 impl<S> IntentExecutionRepository for IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = AggregateKey, A = WireSnapshot, P = WireEvent>,
+    S: EventStore<AID = AggregateKey, A = WireIntentExecution, P = WireEvent>,
 {
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
     ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
-        // 状態の正本は**イベント列**である (オーナー裁定 2026-08-30) — スナップショット行の
-        // payload はここでは読まない。行は書込規約 (persist_event_and_snapshot) の一部として
-        // 書かれ続け、読取では **存在検査 (BR1.2) と楽観 version の正本 (BR5.3)** にだけ使う。
+        // 本家 example (`user_account_repository.rs`) と同型 — スナップショット行 (ある時点の
+        // 集約) を基底に、その通番より後のイベントだけを差分再生する (オーナー裁定 2026-08-30
+        // 「find_by_id は本家の example どおり」)。楽観 version の正本は行の列 (BR5.3)。
         let snapshot = self
             .store
             .get_latest_snapshot_by_id(&AggregateKey::of(id))
             .await
             .map_err(|error| self.read_error(&error, id))?;
-        let journal = self
-            .store
-            .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
-            .await
-            .map_err(|error| self.read_error(&error, id))?;
         let Some(snapshot) = snapshot else {
-            // ジャーナル行が 1 件も無ければ「まだ無い」、あるなら「壊れている」(BR1.2)。
+            // ジャーナル行が 1 件も無ければ「まだ無い」、あるなら「壊れている」(BR1.2 —
+            // genesis は journal と snapshot を原子的に書くので、片方だけは矛盾である)。
+            let journal = self
+                .store
+                .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
+                .await
+                .map_err(|error| self.read_error(&error, id))?;
             return Err(if journal.is_empty() {
                 RepositoryError::NotFound { id: id.clone() }
             } else {
@@ -323,24 +341,27 @@ where
                 }
             });
         };
-        // 楽観 version はスナップショット行の列が正本 — 封筒から取り出し、再構成した集約へ
-        // 刻んで呼出側へ渡す (BR5.3)。
         let version = snapshot.version();
-        if journal.is_empty() {
-            // genesis は journal と snapshot を原子的に書くので、スナップショットだけが
-            // 残ることはない — あれば壊れている。
-            return Err(RepositoryError::Corrupt {
+        // 基底の復元は検査付き再構成コンストラクタを必ず通る (BR1.5)。
+        let base = snapshot
+            .aggregate()
+            .to_domain()
+            .map_err(|error| RepositoryError::Corrupt {
                 id: id.clone(),
                 seq_nr: None,
-                source: Box::new(CorruptDetail::EmptyJournal),
-            });
-        }
-        // 復号は封筒ごとに行い、manifest を照合する。本家は manifest を検証せず復号だけして
-        // 返すため、ここで拒まないと foreign manifest の行（別の型名・別の読み方の版を名乗る
-        // 行）がそのまま状態遷移に流れ込む。読取側 (`JournalReaderImpl::decode_entry`) と同じ
-        // 拒否条件で対称にする (PR #31 CodeRabbit 指摘)。
-        let mut events = Vec::with_capacity(journal.len());
-        for envelope in &journal {
+                source: Box::new(CorruptDetail::Undecodable(error)),
+            })?;
+        // 差分 — 基底の通番より後のイベントだけを読む。復号は封筒ごとに行い、manifest を
+        // 照合する。本家は manifest を検証せず復号だけして返すため、ここで拒まないと foreign
+        // manifest の行（別の型名・別の読み方の版を名乗る行）がそのまま状態遷移に流れ込む。
+        // 読取側 (`JournalReaderImpl::decode_entry`) と同じ拒否条件で対称にする (PR #31)。
+        let delta = self
+            .store
+            .get_events_by_id_since_seq_nr(&AggregateKey::of(id), base.seq_nr() + 1)
+            .await
+            .map_err(|error| self.read_error(&error, id))?;
+        let mut events = Vec::with_capacity(delta.len());
+        for envelope in &delta {
             if envelope.manifest() != EVENT_MANIFEST {
                 return Err(RepositoryError::Corrupt {
                     id: id.clone(),
@@ -359,13 +380,9 @@ where
                     })?;
             events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
         }
-        // ジャーナル全再生 — 先頭は `Started` (genesis) で、実行の対象 intent はその誕生記録
-        // から得る。壊れた歴史 (先頭が Started でない・通番の飛び・不変条件違反) はドメインが
-        // クラッシュで止める — 再構成は失敗を返さない (オーナー裁定 2026-08-30)。復元した
-        // `Intent` は**外へ返さない** — Repository が返すのは集約だけである
-        // (`coding-rules/gateway-taxonomy.md`)。
-        let (aggregate, _intent) = IntentExecution::replay(id.clone(), version, events);
-        Ok(aggregate)
+        // 差分再生 — 壊れた歴史 (通番の飛び・未知ステージ・不変条件違反) はドメインが
+        // クラッシュで止める (オーナー裁定 2026-08-30)。版はストアが読んだ値を刻む。
+        Ok(IntentExecution::replay(base, events).with_version(version))
     }
 
     async fn store(
@@ -373,16 +390,29 @@ where
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
     ) -> Result<(), RepositoryError<IntentExecutionId>> {
-        // 提示する版は集約が運んできたもの — 生値へ戻すのはこのストア境界だけである。
+        // 提示する版は集約が運んできたものである。
         let expected_version = aggregate.version();
         // 新規作成と更新の分岐は本家 v3 と同じ導出 — 封筒の `seq_nr == 1` が新規作成である。
         // 新規作成の `expected_version` は規約上 0 で、そうでない組み合わせは本家が
         // `ContractViolation` で拒否する (我々は握り潰さず `Corrupt` に写す)。
+        //
+        // スナップショットは**初回は必ず**書く (基底が無いとリプレイできない)。以後は設定
+        // されたストラテジに従って書き直す — どちらの経路でも呼出側は `store` に任せるだけ
+        // である (オーナー裁定 2026-08-30、本家 example の形)。イベントのみの書込でも楽観
+        // version (行の列) は進む。
         let envelope = IntentExecutionRepositoryImpl::<S>::envelope(event, aggregate);
-        let outcome = self
-            .store
-            .persist_event_and_snapshot(envelope, WireSnapshot::of(aggregate), expected_version)
-            .await;
+        let outcome = if aggregate.seq_nr() == 1 || self.strategy.wants_snapshot(aggregate.seq_nr())
+        {
+            self.store
+                .persist_event_and_snapshot(
+                    envelope,
+                    WireIntentExecution::of(aggregate),
+                    expected_version,
+                )
+                .await
+        } else {
+            self.store.persist_event(envelope, expected_version).await
+        };
         match outcome {
             Ok(()) => Ok(()),
             Err(error) => Err(self.write_error(error, aggregate, expected_version).await),
@@ -475,7 +505,6 @@ mod tests {
         // 分類はポート契約に載らない (裁定 6) — 診断表示 (caused by: ...) がここの文字列である。
         for (detail, wording) in [
             (CorruptDetail::MissingSnapshot, "missing snapshot"),
-            (CorruptDetail::EmptyJournal, "empty journal"),
             (CorruptDetail::ForeignManifest, "foreign manifest"),
             (
                 CorruptDetail::Undecodable(WireDecodeError::InvariantViolation),
@@ -535,11 +564,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "replay: journal must begin with Started")]
-    async fn a_journal_whose_first_row_is_not_a_genesis_crashes_reconstruction() {
-        // 再生には計画が要り、その出所はジャーナル先頭の `Started` だけである。先頭が別の
-        // 変種を名乗る行は壊れた歴史であり、再構成は失敗を返さずクラッシュする
-        // (オーナー裁定 2026-08-30)。
+    async fn the_rehydration_base_is_the_snapshot_not_the_journal_head() {
+        // 本家同型の差分再生では基底はスナップショット (= ある時点の集約) であり、その通番
+        // 以前のジャーナル行は読取に影響しない。genesis の行が偽イベントでも、原子的に書かれた
+        // スナップショットが正しければ再水和は genesis の状態を返す (issue #44)。
         let (aggregate, _) = genesis();
         let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("state-init").expect("slug"),
@@ -550,7 +578,12 @@ mod tests {
             .store(&impostor, &aggregate)
             .await
             .expect("行としては書ける");
-        let _ = repository.find_by_id(&intent()).await;
+        let found = repository
+            .find_by_id(&intent())
+            .await
+            .expect("基底はスナップショット");
+        assert_eq!(found.seq_nr(), 1);
+        assert_eq!(found, aggregate.clone().with_version(1));
     }
 
     #[test]

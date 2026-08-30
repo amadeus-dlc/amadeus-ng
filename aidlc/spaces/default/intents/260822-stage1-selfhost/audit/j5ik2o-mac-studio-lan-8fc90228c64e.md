@@ -25505,3 +25505,318 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:01:06Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:01:06Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:01:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:01:46Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:02:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:03:16Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:06:39Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ada0c25cf838e0f60
+**Message**: b17（集約が版を運ぶ・コーデック純化）の PR #43 を収束中です。必須 CI 全緑・未解決スレッド 0 で、残りは CodeRabbit レビューの pending 解消のみ。確定を監視で待ち、解消次第マージ判定します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:08:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:12:07Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:12:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:14:21Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:27:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:28:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a32864a62283d6fe5
+**Message**: 訂正版で1 Boltで進めろ。snapshotはES機構として許容、型付きトークンもOK
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:30:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:32:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a01d4b1fcd878f76f
+**Message**: Reading continue_use_case.rs port calls
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:32:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a71a7d5b018b4666f
+**Message**: Reading directive.rs with_pins and Directive enum
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:32:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: afd3c7091e3d8c3a8
+**Message**: Inspecting ChainedNext test fixtures
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:33:06Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8ff27cb9f66eb726
+**Message**: Inspecting seal/unseal in codec.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:33:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa3d1243a3905965e
+**Message**: Grepping port references across interface-adapter
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:33:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab00368db0adc9df5
+**Message**: Reading emit_part in next_use_case.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:34:09Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab71a28f0c756975a
+**Message**: Grepping port fakes in test_support.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:34:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: ad80fe22f8684fc7c
+**Message**: 調査結果を報告します。\n\n## 1. next_use_case.rs — 廃止対象 4 ポートの呼び出し箇所\n\nファイル: `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/modules/core/command/use-case/src/orchestration/next_use_case.rs`（全 3135 行、うち製品コード ~966 行、
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T02:35:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: a9d96f1ad2d39018a
+**Message**: 調査結果を報告します。\n\n## 1. `ContinueToken` / `ContinueTokenBuilder` / `Bindings`\n\n`/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/modules/core/command/domain/src/orchestration/continue_token.rs`\n\n- `ContinueTo
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:46:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:50:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:54:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:55:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T02:56:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T03:02:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T03:02:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T03:04:00Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T03:04:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad7f3087be861b9a8
+**Message**: つづけて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T03:15:41Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a658de317275a99c9
+**Message**: ポート正常化（Repository 以外の全廃、b18/b19 の 2 Bolt）のプラン承認済みで、b18 のブランチ作成まで完了しています。次はドメインの steering_digest を red テストから書き始めます。続行指示をください。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T04:01:53Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T04:06:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab82be18005153224
+**Message**: ポート正常化（b18/b19）の前段として、Repository の store にスナップショット戦略（初回は必須保存・以後は N イベントごと）を入れる件を確認中です。次は「find_by_id を本家どおり差分再生に変えるか」と「既定 N=10」への回答待ちです。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T04:07:30Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T04:14:19Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a78b539e1477aaf40
+**Message**: 1で
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T04:14:25Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T04:16:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a7d9e29287c386678
+**Message**: 1で
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T05:03:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T05:16:52Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T05:19:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T05:30:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8fc548f11b13b64e
+**Message**: ゲート全緑になったらPRにして
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T05:30:28Z
+**Event**: HUMAN_TURN
+
+---

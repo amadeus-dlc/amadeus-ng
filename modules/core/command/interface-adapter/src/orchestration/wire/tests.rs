@@ -21,7 +21,7 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 
-use super::{WireEvent, WireSnapshot};
+use super::{WireEvent, WireIntentExecution};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
@@ -170,7 +170,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 }
 
 /// スナップショット行の逐語形 (genesis 直後)。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","overlay":["Execute","Execute","Execute"],"checkbox":["InProgress","Pending","Pending"],"cursor":0,"status":"Running","parked_at":null,"autonomy":"Gated","approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["InProgress","Pending","Pending"],"cursor":0,"status":"Running","parked_at":null,"autonomy":"Gated","approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -203,19 +203,19 @@ fn the_snapshot_serialises_to_the_recorded_bytes_and_round_trips() {
         intent(),
         at(),
     );
-    let json = serde_json::to_string(&WireSnapshot::of(&aggregate)).expect("DTO は直列化できる");
+    let json =
+        serde_json::to_string(&WireIntentExecution::of(&aggregate)).expect("DTO は直列化できる");
     assert_eq!(
         json, GENESIS_SNAPSHOT,
         "スナップショットのワイヤ形式が変わった"
     );
 
-    let decoded: WireSnapshot =
+    let decoded: WireIntentExecution =
         serde_json::from_str(GENESIS_SNAPSHOT).expect("記録済みの行は読める");
     assert_eq!(
         decoded,
-        WireSnapshot::of(&aggregate),
-        "行の形は DTO として往復する (状態の再構成はジャーナル全再生 — スナップショット行の\
-         payload は読取に使わない。オーナー裁定 2026-08-30)"
+        WireIntentExecution::of(&aggregate),
+        "行の形は DTO として往復する (差分再生の基底 — 本家 example 同型。オーナー裁定 2026-08-30)"
     );
 }
 
@@ -257,7 +257,8 @@ fn the_snapshot_payload_carries_no_optimistic_version() {
         intent(),
         at(),
     );
-    let json = serde_json::to_string(&WireSnapshot::of(&aggregate)).expect("DTO は直列化できる");
+    let json =
+        serde_json::to_string(&WireIntentExecution::of(&aggregate)).expect("DTO は直列化できる");
     assert!(
         !json.contains("version"),
         "楽観 version は payload に載らない: {json}"
@@ -269,22 +270,28 @@ fn the_snapshot_payload_carries_no_optimistic_version() {
     reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
 )]
 #[test]
-fn the_snapshot_carries_no_static_material_from_the_intent() {
-    // 改訂 3 の受入基準 — 集約状態に intent 由来の静的フィールドが残っていないこと。
-    // 綴りは行に書かれて残る値なので、属性名を逐語で固定する。改訂 9 でドメインから serde が
-    // 消えたため、この検査の置き場もここへ移った。
+fn the_snapshot_carries_only_the_stage_keys_as_static_material() {
+    // 改訂 3 の受入基準の後継 — 集約が自己完結 replay のために持つ添字帳 (slug + phase の
+    // 2 項目だけ) は写しに載る (issue #44 — オーナー裁定 2026-08-30「replay や apply_event が
+    // 集約側に必要」)。それ以外の intent 由来の静的材料 (定義・表示属性・計画・条件フラグ) は
+    // 従来どおり載らない。綴りは行に書かれて残る値なので、属性名を逐語で固定する。
     let (aggregate, _) = IntentExecution::start(
         IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         intent(),
         at(),
     );
-    let json = serde_json::to_string(&WireSnapshot::of(&aggregate)).expect("DTO は直列化できる");
+    let json =
+        serde_json::to_string(&WireIntentExecution::of(&aggregate)).expect("DTO は直列化できる");
+    assert!(
+        json.contains(r#""stages":[{"slug":"state-init","phase":"Initialization"}"#),
+        "添字帳 (slug + phase) は写しに載る: {json}"
+    );
     for absent in [
         "definition_id",
         "definition_revision",
-        "stages",
-        "plan",
+        "plan_action",
         "conditional",
+        "display",
     ] {
         assert!(!json.contains(absent), "{absent} は写しに載らない: {json}");
     }

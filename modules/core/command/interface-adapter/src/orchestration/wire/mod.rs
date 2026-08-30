@@ -11,7 +11,7 @@
 //!
 //! Always Valid の担保は落ちない — 担保の場所がドメインの serde 属性からこの層の変換関数へ
 //! 移るだけで、検査を迂回する構築口は存在しない (復元は必ず `From<Created>` /
-//! `IntentExecution::from_snapshot` を通る)。
+//! `IntentExecution::new` を通る)。
 //!
 //! # 綴りの正本はここにある
 //!
@@ -27,7 +27,7 @@ mod aggregate_key;
 mod wire_error;
 mod wire_event;
 mod wire_intent;
-mod wire_snapshot;
+mod wire_intent_execution;
 mod wire_vocabulary;
 
 pub use aggregate_key::AggregateKey;
@@ -37,7 +37,7 @@ pub use wire_event::{
     WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
     WireStarted,
 };
-pub use wire_snapshot::WireSnapshot;
+pub use wire_intent_execution::WireIntentExecution;
 
 #[cfg(test)]
 mod tests;

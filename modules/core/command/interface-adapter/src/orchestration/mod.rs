@@ -21,6 +21,7 @@ mod continue_token_codec_impl;
 mod intent_execution_repository_impl;
 mod memory;
 mod rule_bundle_source_impl;
+mod snapshot_strategy;
 mod store_failure;
 mod wire;
 mod workflow_definition_repository_impl;
@@ -31,6 +32,7 @@ pub use command_spelling_impl::MulticallCommandSpelling;
 pub use continue_token_codec_impl::ContinueTokenCodecImpl;
 pub use intent_execution_repository_impl::IntentExecutionRepositoryImpl;
 pub use rule_bundle_source_impl::RuleBundleSourceImpl;
+pub use snapshot_strategy::SnapshotStrategy;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 
 // 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である
@@ -39,7 +41,7 @@ pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 // 依存の向き (層 = クレート) により参照できない。
 pub use wire::{
     AggregateKey, WireAutonomyModeSet, WireDecodeError, WireEvent, WireGateApproved,
-    WireGateOpened, WireGateRejected, WireJumped, WireParked, WireRecomposed, WireSnapshot,
+    WireGateOpened, WireGateRejected, WireIntentExecution, WireJumped, WireParked, WireRecomposed,
     WireStageCompleted, WireStageRevised, WireStageSkipped, WireStarted,
 };
 // ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
