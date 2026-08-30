@@ -16,7 +16,7 @@ use super::wire_vocabulary::{
 
 /// 静的な intent の行の形。**フィールド名と並びが契約**である。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct WireIntent {
+pub struct WireIntent {
     id: String,
     definition_id: String,
     definition_revision: String,

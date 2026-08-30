@@ -28,6 +28,7 @@
 mod wire_error;
 mod wire_event;
 mod wire_intent;
+mod wire_intent_event;
 mod wire_vocabulary;
 
 pub use wire_error::WireDecodeError;
@@ -36,6 +37,7 @@ pub use wire_event::{
     WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
     WireStarted,
 };
+pub use wire_intent_event::WireIntentEvent;
 
 #[cfg(test)]
 mod tests;

@@ -1,7 +1,7 @@
 //! `JournalReader` ポート — 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 
 use super::global_seq_nr::GlobalSeqNr;
-use super::journal_entry::JournalEntry;
+use super::journal_batch::JournalBatch;
 use super::journal_read_error::JournalReadError;
 use super::projection_name::ProjectionName;
 
@@ -27,16 +27,19 @@ use super::projection_name::ProjectionName;
               自動 trait 境界を書けないという注意喚起は本 trait では設計どおりである。"
 )]
 pub trait JournalReader {
-    /// `after` **より大きい** global 通番の行を昇順で返す (全集約横断)。
+    /// `after` **より大きい** global 通番の行を昇順で走査して返す (全集約横断)。
     ///
-    /// 返すのは [`JournalEntry`] — 投影はどの集約の何番目かを知らないとリードモデルを描け
-    /// ないので、行の材料を落とさずに運ぶ。
+    /// 返すのは [`JournalBatch`] — 実行のイベント行 ([`JournalEntry`]) と intent の誕生記録、
+    /// そして走査済み最終位置の 3 つ組である。ジャーナルには実行と intent の 2 ストリームが
+    /// 同居しており (issue #50)、チェックポイントは種別によらず走査済み最終位置まで進める
+    /// (issue #56)。
     ///
     /// # Errors
     ///
     /// ストア I/O (`Io`)、復号不能 (`Corrupt`) を返す。
-    async fn events_after(&self, after: GlobalSeqNr)
-    -> Result<Vec<JournalEntry>, JournalReadError>;
+    ///
+    /// [`JournalEntry`]: super::journal_entry::JournalEntry
+    async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError>;
 
     /// 投影のチェックポイントを読む。未登録の投影は [`GlobalSeqNr::ZERO`]。
     ///
@@ -100,16 +103,15 @@ mod tests {
     }
 
     impl JournalReader for FakeReader {
-        async fn events_after(
-            &self,
-            after: GlobalSeqNr,
-        ) -> Result<Vec<JournalEntry>, JournalReadError> {
-            Ok(self
+        async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
+            let rows: Vec<JournalEntry> = self
                 .journal
                 .iter()
                 .filter(|entry| entry.global_seq() > after)
                 .cloned()
-                .collect())
+                .collect();
+            let scanned_to = rows.last().map(JournalEntry::global_seq);
+            Ok(JournalBatch::new(rows, Vec::new(), scanned_to))
         }
 
         async fn checkpoint(
@@ -159,19 +161,23 @@ mod tests {
     #[tokio::test]
     async fn reading_from_zero_returns_the_whole_journal_in_ascending_order() {
         let reader = reader();
-        let rows = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
+        let batch = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
         assert_eq!(
-            rows.iter()
+            batch
+                .executions()
+                .iter()
                 .map(|entry| entry.global_seq().to_u64())
                 .collect::<Vec<_>>(),
             [1, 2]
         );
+        assert_eq!(batch.scanned_to(), Some(GlobalSeqNr::new(2)));
     }
 
     #[tokio::test]
     async fn reading_after_a_position_returns_only_the_difference() {
         let reader = reader();
-        let rows = reader.events_after(GlobalSeqNr::new(1)).await.unwrap();
+        let batch = reader.events_after(GlobalSeqNr::new(1)).await.unwrap();
+        let rows = batch.executions();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].global_seq(), GlobalSeqNr::new(2));
         assert_eq!(

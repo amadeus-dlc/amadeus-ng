@@ -503,7 +503,7 @@ mod tests {
     }
 
     fn genesis() -> (IntentExecution, IntentExecutionEvent) {
-        IntentExecution::start(intent(), intent_plan(), at())
+        IntentExecution::start(intent(), &intent_plan(), at())
     }
 
     fn repository() -> IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
@@ -576,7 +576,7 @@ mod tests {
     async fn a_second_aggregate_gets_its_own_envelope_identity() {
         // 封筒の識別子は引数ではなく集約から来るので、別集約は別の行になる。
         let (aggregate, event) = genesis();
-        let other = IntentExecution::start(other_intent(), intent_plan(), at()).0;
+        let other = IntentExecution::start(other_intent(), &intent_plan(), at()).0;
         let first = IntentExecutionRepositoryImpl::<IntentExecutionMemoryStore>::envelope(
             &event, &aggregate,
         );

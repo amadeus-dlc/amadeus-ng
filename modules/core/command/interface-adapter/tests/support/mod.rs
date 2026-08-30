@@ -156,7 +156,7 @@ pub(crate) fn intent() -> Intent {
 /// 指定した集約識別子の genesis (横断読取のテストが 2 集約を並べるのに使う)。
 #[must_use]
 pub(crate) fn genesis_for(execution: IntentExecutionId) -> (IntentExecution, IntentExecutionEvent) {
-    IntentExecution::start(execution, intent(), at())
+    IntentExecution::start(execution, &intent(), at())
 }
 
 /// 1 件書いてから**握り直す** (書込後の楽観 version を知っているのはストアだけ — BR5.3)。

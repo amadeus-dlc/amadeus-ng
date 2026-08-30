@@ -140,13 +140,13 @@ impl IntentExecution {
     #[must_use]
     pub fn start(
         id: IntentExecutionId,
-        intent: Intent,
+        intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> (IntentExecution, IntentExecutionEvent) {
-        let execution = IntentExecution::genesis_state(id, &intent, occurred_at);
+        let execution = IntentExecution::genesis_state(id, intent, occurred_at);
         (
             execution,
-            IntentExecutionEvent::Started(Started::new(intent)),
+            IntentExecutionEvent::Started(Started::new(intent.id().clone())),
         )
     }
 
@@ -1281,13 +1281,12 @@ mod tests {
 
     impl Run {
         fn start(intent: Intent) -> Run {
-            let (execution, _) = IntentExecution::start(execution_id(), intent.clone(), occurred());
+            let (execution, _) = IntentExecution::start(execution_id(), &intent, occurred());
             Run { intent, execution }
         }
 
         fn genesis(intent: Intent) -> (Run, IntentExecutionEvent) {
-            let (execution, event) =
-                IntentExecution::start(execution_id(), intent.clone(), occurred());
+            let (execution, event) = IntentExecution::start(execution_id(), &intent, occurred());
             (Run { intent, execution }, event)
         }
 
@@ -1591,14 +1590,13 @@ mod tests {
         let IntentEvent::Created(payload) = created;
         assert_eq!(Intent::from(payload), intent);
 
-        let (execution, started) =
-            IntentExecution::start(execution_id(), intent.clone(), occurred());
+        let (execution, started) = IntentExecution::start(execution_id(), &intent, occurred());
         assert_eq!(execution.intent_id(), intent.id());
         let IntentExecutionEvent::Started(started) = &started else {
             panic!("start must emit Started");
         };
-        // `Started` は intent を丸ごと運ぶ現行形のままである (BR2.2 自己完結)。
-        assert_eq!(started.intent(), &intent);
+        // `Started` が運ぶのは事実の主体 (intent の識別子) だけである (issue #56)。
+        assert_eq!(started.intent_id(), intent.id());
     }
 
     #[test]
@@ -1612,17 +1610,12 @@ mod tests {
         assert_eq!(w.last_updated_at(), &occurred());
         assert_eq!(w.id(), &execution_id());
         assert_eq!(w.intent_id(), &intent_id());
+        // イベントは事実の主体だけを運ぶ — 定義の系譜・計画・依頼文は intent 側の記録である
+        // (issue #56)。
         let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
-        assert_eq!(started.definition_id(), definition.id());
-        assert_eq!(started.definition_revision(), definition.revision());
-        assert_eq!(started.scope(), "classic");
-        assert_eq!(started.request(), "build it");
-        assert_eq!(started.stages().len(), 3);
-        assert_eq!(started.stages()[0].phase(), PhaseId::Initialization);
-        assert!(!started.stages()[1].is_conditional());
-        assert!(started.stages()[2].is_conditional());
+        assert_eq!(started.intent_id(), &intent_id());
 
         assert_eq!(w.stage_count(), 3);
         assert_eq!(w.cursor(), at(&w, 0));
@@ -1634,33 +1627,6 @@ mod tests {
         assert_eq!(w.definition_id(), definition.id());
         assert_eq!(w.definition_revision(), definition.revision());
         assert_eq!(w.revision_count(at(&w, 0)), Some(0));
-    }
-
-    #[test]
-    fn start_carries_the_depth_and_test_strategy_the_caller_resolved() {
-        // C5 の Started payload は depth / test_strategy を持つ (U4 が Scope Configuration を
-        // 描く材料)。集約はこの 2 値に意味論を持たず、素通しでイベントに載せるだけである。
-        let definition = shipped_definition(full_grid());
-        let request = StartRequest::new("classic", "build it")
-            .with_depth("standard")
-            .with_test_strategy("comprehensive");
-        let (_, event) = start_from_definition(&definition, request);
-        let IntentExecutionEvent::Started(started) = &event else {
-            panic!("start must emit Started");
-        };
-        assert_eq!(started.scope(), "classic");
-        assert_eq!(started.request(), "build it");
-        assert_eq!(started.depth(), Some("standard"));
-        assert_eq!(started.test_strategy(), Some("comprehensive"));
-
-        // 省略時は None のまま載る (フラグ未指定 = 既定の解決は呼出側の責務)。
-        let bare = StartRequest::new("classic", "build it");
-        let (_, plain) = start_from_definition(&definition, bare);
-        let IntentExecutionEvent::Started(started) = &plain else {
-            panic!("start must emit Started");
-        };
-        assert_eq!(started.depth(), None);
-        assert_eq!(started.test_strategy(), None);
     }
 
     #[test]
@@ -2204,14 +2170,7 @@ mod tests {
     #[should_panic(expected = "Started applies only at genesis")]
     fn apply_event_crashes_on_a_started_outside_genesis() {
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Started(Started::new(Intent::from(Created::new(
-            intent_id(),
-            def_id("claude"),
-            revision('0'),
-            StartRequest::new("classic", "again"),
-            entries(1, &[Execute], &[false]),
-            scan(),
-        ))));
+        let event = IntentExecutionEvent::Started(Started::new(intent_id()));
         w.apply_event(2, occurred(), &event);
     }
 

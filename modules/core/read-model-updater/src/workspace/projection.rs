@@ -8,10 +8,11 @@
 //!
 //! # 計画が引数なのはなぜか
 //!
-//! 表示属性（ステージ番号・表題・担当エージェント）と走査結果は `Started` だけが運ぶ
-//! （オーナー裁定 2026-08-29）。差分投影のバッチに `Started` が入っているとは限らないので、
-//! 計画は [`ResolvedPlan`] として**渡される** — リードモデルと同じ「渡されるデータ」である。
-//! 取ってくるのは取得ループの仕事であり、二層は保たれる。
+//! 表示属性（ステージ番号・表題・担当エージェント）と走査結果の正本は intent 自身の
+//! ジャーナルの `Created`（誕生の材料 — issue #50 / #56）である。差分投影のバッチにその
+//! 記録が入っているとは限らないので、計画は [`ResolvedPlan`] として**渡される** —
+//! リードモデルと同じ「渡されるデータ」である。取ってくるのは取得ループの仕事であり、
+//! 二層は保たれる。
 //!
 //! # 冪等（NFR3）
 //!
@@ -1579,8 +1580,8 @@ mod tests {
     }
 
     /// initialization 1 + inception 2 + operation 1 の合成計画。
-    fn started() -> Started {
-        Started::new(Intent::from(Created::new(
+    fn genesis_intent() -> Intent {
+        Intent::from(Created::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -1603,11 +1604,15 @@ mod tests {
                 "Unknown",
             )
             .expect("単一行"),
-        )))
+        ))
+    }
+
+    fn started() -> Started {
+        Started::new(IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"))
     }
 
     fn plan() -> ResolvedPlan {
-        ResolvedPlan::of(&started())
+        ResolvedPlan::of(&genesis_intent())
     }
 
     const SKELETON: &str = "\

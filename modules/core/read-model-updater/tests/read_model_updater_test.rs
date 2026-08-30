@@ -22,8 +22,8 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_read_model_updater::orchestration::{
-    GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, ProjectionName, ProjectionTargets,
-    ReadModelUpdater,
+    GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader, ProjectionName,
+    ProjectionTargets, ReadModelUpdater,
 };
 use tempfile::TempDir;
 
@@ -61,8 +61,8 @@ fn entry(global: u64, event: IntentExecutionEvent) -> JournalEntry {
     )
 }
 
-/// 表示属性を運ぶ genesis（取得ループはここから計画を引く）。
-fn genesis() -> IntentExecutionEvent {
+/// intent の誕生の材料（取得ループはここから計画を引く — issue #56）。
+fn genesis_intent() -> Intent {
     let stage = |name: &str, number: &str, agent: &str| {
         StageEntry::new(
             slug(name),
@@ -77,7 +77,7 @@ fn genesis() -> IntentExecutionEvent {
             .expect("単一行"),
         )
     };
-    IntentExecutionEvent::Started(Started::new(Intent::from(Created::new(
+    Intent::from(Created::new(
         IntentId::parse(INTENT).expect("UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -94,26 +94,36 @@ fn genesis() -> IntentExecutionEvent {
             "Unknown",
         )
         .expect("単一行"),
-    ))))
+    ))
 }
 
-/// genesis + 投影規則が確定しているイベント 2 件。
+/// 実行開始の事実（intent の識別子だけを運ぶ）。
+fn genesis() -> IntentExecutionEvent {
+    IntentExecutionEvent::Started(Started::new(IntentId::parse(INTENT).expect("UUIDv7")))
+}
+
+/// intent の誕生記録（global 1 — 実行のどの行よりも先に書かれている）。
+fn intents() -> Vec<(u64, Intent)> {
+    vec![(1, genesis_intent())]
+}
+
+/// genesis + 投影規則が確定しているイベント 2 件（global 2〜4。1 は intent の誕生記録）。
 ///
-/// チェックポイントは genesis の直後（1）から始める — 取得ループが見るのは差分だけであり、
-/// genesis の状態面（新規スキャフォールド）は本 Bolt の射程外だからである。genesis 自身は
-/// **計画の供給元**としてジャーナルに残っている必要がある。
+/// チェックポイントは genesis の直後（2）から始める — 取得ループが見るのは差分だけであり、
+/// genesis の状態面（新規スキャフォールド）は本 Bolt の射程外だからである。genesis と
+/// 誕生記録は**計画の供給元**としてジャーナルに残っている必要がある。
 fn journal() -> Vec<JournalEntry> {
     vec![
-        entry(1, genesis()),
+        entry(2, genesis()),
         entry(
-            2,
+            3,
             IntentExecutionEvent::GateOpened(GateOpened::new(
                 slug("practices-discovery"),
                 Vec::new(),
             )),
         ),
         entry(
-            3,
+            4,
             IntentExecutionEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
         ),
     ]
@@ -123,20 +133,35 @@ fn journal() -> Vec<JournalEntry> {
 #[derive(Debug, Default)]
 struct FakeReader {
     journal: Vec<JournalEntry>,
+    intents: Vec<(u64, Intent)>,
     checkpoints: BTreeMap<ProjectionName, GlobalSeqNr>,
 }
 
 impl JournalReader for FakeReader {
-    async fn events_after(
-        &self,
-        after: GlobalSeqNr,
-    ) -> Result<Vec<JournalEntry>, JournalReadError> {
-        Ok(self
+    async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
+        let executions: Vec<JournalEntry> = self
             .journal
             .iter()
             .filter(|entry| entry.global_seq() > after)
             .cloned()
-            .collect())
+            .collect();
+        let intents: Vec<(u64, Intent)> = self
+            .intents
+            .iter()
+            .filter(|(global, _)| GlobalSeqNr::new(*global) > after)
+            .cloned()
+            .collect();
+        let scanned_to = executions
+            .last()
+            .map(JournalEntry::global_seq)
+            .into_iter()
+            .chain(intents.iter().map(|(global, _)| GlobalSeqNr::new(*global)))
+            .max();
+        Ok(JournalBatch::new(
+            executions,
+            intents.into_iter().map(|(_, intent)| intent).collect(),
+            scanned_to,
+        ))
     }
 
     async fn checkpoint(
@@ -200,15 +225,20 @@ impl Fixture {
         ProjectionTargets::new(self.state_file.clone(), self.audit_shard.clone())
     }
 
-    fn updater(&self, journal: Vec<JournalEntry>) -> ReadModelUpdater<FakeReader> {
+    fn updater(
+        &self,
+        journal: Vec<JournalEntry>,
+        intents: Vec<(u64, Intent)>,
+    ) -> ReadModelUpdater<FakeReader> {
         // genesis を投影せずに済むよう、チェックポイントはその直後から始める。
         let mut checkpoints = BTreeMap::new();
         if !journal.is_empty() {
-            checkpoints.insert(projection(), GlobalSeqNr::new(1));
+            checkpoints.insert(projection(), GlobalSeqNr::new(2));
         }
         ReadModelUpdater::new(
             FakeReader {
                 journal,
+                intents,
                 checkpoints,
             },
             projection(),
@@ -228,10 +258,10 @@ impl Fixture {
 #[tokio::test]
 async fn catching_up_writes_both_faces_and_advances_the_checkpoint() {
     let fixture = Fixture::new();
-    let mut updater = fixture.updater(journal());
+    let mut updater = fixture.updater(journal(), intents());
 
     let reached = updater.catch_up().await.expect("キャッチアップ");
-    assert_eq!(reached, GlobalSeqNr::new(3), "末尾まで進む");
+    assert_eq!(reached, GlobalSeqNr::new(4), "末尾まで進む");
 
     // 状態面: `[-]` → `[?]`（GateOpened）→ `[?]`（StageRevised も同じ位置）
     assert!(
@@ -256,7 +286,7 @@ async fn catching_up_writes_both_faces_and_advances_the_checkpoint() {
 #[tokio::test]
 async fn a_second_catch_up_has_nothing_to_do_and_touches_nothing() {
     let fixture = Fixture::new();
-    let mut updater = fixture.updater(journal());
+    let mut updater = fixture.updater(journal(), intents());
 
     let first = updater.catch_up().await.expect("1 回目");
     let state_after_first = fixture.state();
@@ -271,7 +301,7 @@ async fn a_second_catch_up_has_nothing_to_do_and_touches_nothing() {
 #[tokio::test]
 async fn an_empty_journal_writes_nothing_at_all() {
     let fixture = Fixture::new();
-    let mut updater = fixture.updater(Vec::new());
+    let mut updater = fixture.updater(Vec::new(), Vec::new());
 
     let reached = updater.catch_up().await.expect("キャッチアップ");
     assert_eq!(reached, GlobalSeqNr::ZERO);
@@ -287,7 +317,7 @@ async fn regenerating_from_zero_twice_yields_identical_bytes() {
     // NFR3 — 同じチェックポイントから何度流しても同一バイト。
     let run = || async {
         let fixture = Fixture::new();
-        let mut updater = fixture.updater(journal());
+        let mut updater = fixture.updater(journal(), intents());
         updater.catch_up().await.expect("キャッチアップ");
         (fixture.state(), fixture.shard())
     };
@@ -303,7 +333,7 @@ async fn a_projection_failure_leaves_the_checkpoint_where_it_was() {
         "## Stage Progress\n- [ ] other — EXECUTE\n",
     )
     .expect("対象ステージの無い出発点");
-    let mut updater = fixture.updater(journal());
+    let mut updater = fixture.updater(journal(), intents());
 
     let error = updater.catch_up().await.expect_err("投影が失敗する");
     assert!(
@@ -321,7 +351,7 @@ async fn a_projection_failure_leaves_the_checkpoint_where_it_was() {
 async fn a_missing_state_file_is_refused_with_the_verbatim_wording() {
     let fixture = Fixture::new();
     std::fs::remove_file(&fixture.state_file).expect("消す");
-    let mut updater = fixture.updater(journal());
+    let mut updater = fixture.updater(journal(), intents());
 
     let error = updater.catch_up().await.expect_err("読めない");
     assert_eq!(
@@ -336,7 +366,49 @@ async fn a_missing_state_file_is_refused_with_the_verbatim_wording() {
 #[tokio::test]
 async fn the_targets_are_carried_as_one_pair() {
     let fixture = Fixture::new();
-    let updater = fixture.updater(Vec::new());
+    let updater = fixture.updater(Vec::new(), Vec::new());
     assert_eq!(updater.targets().state_file(), fixture.state_file);
     assert_eq!(updater.targets().audit_shard(), fixture.audit_shard);
+}
+
+#[tokio::test]
+async fn an_intent_only_batch_advances_the_checkpoint_without_writing() {
+    // intent の行しか無いバッチは書くものが無い — それでもチェックポイントは走査済み位置
+    // まで進む（intent 行を毎回再走査しない。issue #56 申し送りの解消）。
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(Vec::new(), intents());
+
+    let reached = updater.catch_up().await.expect("キャッチアップ");
+    assert_eq!(reached, GlobalSeqNr::new(1), "intent 行の位置まで進む");
+    assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
+    assert!(
+        !fixture.audit_shard.exists(),
+        "書くものが無いのにシャードを生やさない"
+    );
+}
+
+#[tokio::test]
+async fn a_journal_without_a_started_is_plan_unavailable() {
+    // 実行のイベントはあるのに `Started` が無い — どの intent の計画かすら分からない
+    // (ジャーナルが途中から切り落とされた兆候)。
+    let fixture = Fixture::new();
+    let journal = vec![entry(
+        3,
+        IntentExecutionEvent::GateOpened(GateOpened::new(slug("practices-discovery"), Vec::new())),
+    )];
+    let mut updater = fixture.updater(journal, intents());
+
+    let error = updater.catch_up().await.expect_err("計画の材料が無い");
+    assert_eq!(error.to_string(), "plan unavailable");
+}
+
+#[tokio::test]
+async fn a_started_without_its_created_is_plan_unavailable() {
+    // `Started` は intent の識別子しか運ばない — 指された誕生記録がジャーナルに無ければ
+    // 計画は組めない（ジャーナルが途中から切り落とされた兆候）。
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(journal(), Vec::new());
+
+    let error = updater.catch_up().await.expect_err("計画の材料が無い");
+    assert_eq!(error.to_string(), "plan unavailable");
 }

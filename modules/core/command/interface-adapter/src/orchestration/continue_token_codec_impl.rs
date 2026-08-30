@@ -491,7 +491,7 @@ mod tests {
         ));
         let (execution, _event) = IntentExecution::start(
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
-            intent,
+            &intent,
             DateTime::<Utc>::UNIX_EPOCH,
         );
         execution.with_version(version)

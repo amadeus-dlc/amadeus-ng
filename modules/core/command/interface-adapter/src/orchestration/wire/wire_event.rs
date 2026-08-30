@@ -4,25 +4,19 @@
 //! (`"Unparked"`) である。**変種名・フィールド名・並びが契約**である。
 
 use core_command_domain::orchestration::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, IntentId,
+    Jumped, Parked, Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
 
 use super::wire_error::WireDecodeError;
-use super::wire_intent::WireIntent;
 use super::wire_vocabulary::{autonomy_of, autonomy_spelling};
 
 /// ジャーナル行 `payload` の形。
-#[expect(
-    clippy::large_enum_variant,
-    reason = "イベント痩身 (issue #56) で他変種は事実のみになったが、Started はまだ Intent の \\
-              複製を運ぶ — 撤去は issue #50 が前提の残件"
-)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WireEvent {
-    /// 実行の開始 (解決済み計画を自己完結で持つ)。
+    /// 実行の開始 (事実の主体 = intent の識別子だけ — issue #56)。
     Started(WireStarted),
     /// 非ゲートステージの完了。
     StageCompleted(WireStageCompleted),
@@ -51,7 +45,7 @@ pub enum WireEvent {
 /// `Started` の材料。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireStarted {
-    intent: WireIntent,
+    intent_id: String,
 }
 
 /// `StageCompleted` の材料。
@@ -140,7 +134,7 @@ impl WireEvent {
     pub fn of(event: &IntentExecutionEvent) -> WireEvent {
         match event {
             IntentExecutionEvent::Started(payload) => WireEvent::Started(WireStarted {
-                intent: WireIntent::of(payload.intent()),
+                intent_id: payload.intent_id().as_str().to_string(),
             }),
             IntentExecutionEvent::StageCompleted(payload) => {
                 WireEvent::StageCompleted(WireStageCompleted {
@@ -197,13 +191,13 @@ impl WireEvent {
     ///
     /// # Errors
     ///
-    /// 閉集合外の綴り・文法外のステージ参照は `Malformed`、`Started` が運ぶ intent が
-    /// Always Valid を破る場合は `InvariantViolation` を返す。
+    /// 閉集合外の綴り・文法外のステージ参照・文法外の intent 識別子は `Malformed` を返す。
     pub fn to_domain(&self) -> Result<IntentExecutionEvent, WireDecodeError> {
         Ok(match self {
-            WireEvent::Started(payload) => {
-                IntentExecutionEvent::Started(Started::new(payload.intent.to_domain()?))
-            }
+            WireEvent::Started(payload) => IntentExecutionEvent::Started(Started::new(
+                IntentId::parse(&payload.intent_id)
+                    .map_err(|_| WireDecodeError::malformed("intent_id", &payload.intent_id))?,
+            )),
             WireEvent::StageCompleted(payload) => IntentExecutionEvent::StageCompleted(
                 StageCompleted::new(slug_of(&payload.stage, "stage")?),
             ),

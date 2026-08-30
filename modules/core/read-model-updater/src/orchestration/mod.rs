@@ -11,6 +11,7 @@
 
 mod corrupt_cause;
 mod global_seq_nr;
+mod journal_batch;
 mod journal_entry;
 mod journal_read_error;
 mod journal_reader;
@@ -32,14 +33,15 @@ pub use global_seq_nr::GlobalSeqNr;
 pub use projection_name::ProjectionName;
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
+pub use journal_batch::JournalBatch;
 pub use journal_entry::JournalEntry;
 
 // エラー
 // 読む側の永続化 DTO (側ごと専用化 — coding-rules/cqrs-boundaries.md)。
 pub use wire::{
     WireAutonomyModeSet, WireDecodeError, WireEvent, WireGateApproved, WireGateOpened,
-    WireGateRejected, WireJumped, WireParked, WireRecomposed, WireStageCompleted, WireStageRevised,
-    WireStageSkipped, WireStarted,
+    WireGateRejected, WireIntentEvent, WireJumped, WireParked, WireRecomposed, WireStageCompleted,
+    WireStageRevised, WireStageSkipped, WireStarted,
 };
 
 pub use corrupt_cause::CorruptCause;

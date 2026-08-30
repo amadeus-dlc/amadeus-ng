@@ -20,25 +20,17 @@
 //! [`EventEnvelope`]: https://docs.rs/event-store-adapter-rs/3.0.0/event_store_adapter_rs/event_envelope/struct.EventEnvelope.html
 
 use super::autonomy_mode::AutonomyMode;
-use super::intent::Intent;
-use super::stage_entry::StageEntry;
-use super::workspace_scan::WorkspaceScan;
-use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
+use super::intent_id::IntentId;
+use crate::workflow_definition::StageSlug;
 
 /// 12 変種のドメインイベント (C5 の 11 + `StageCompleted`)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
 /// するので専用の材料型を持たない単位変種にした。
-#[expect(
-    clippy::large_enum_variant,
-    reason = "イベント痩身 (issue #56) で他変種は事実のみになったが、Started はまだ Intent の \
-              複製を運ぶ — 計画の正本供給を Intent 自身のジャーナルへ移す issue #50 が前提の \
-              残件であり、Box で包んでも意味は変わらない"
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentExecutionEvent {
-    /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2。Intent 複製の撤去は #50 待ち)。
+    /// 実行の開始。
     Started(Started),
     /// 非ゲート (initialization フェーズ) ステージの完了。
     StageCompleted(StageCompleted),
@@ -64,84 +56,30 @@ pub enum IntentExecutionEvent {
     AutonomyModeSet(AutonomyModeSet),
 }
 
-/// `Started` のペイロード — リプレイが `WorkflowDefinition` を要さない自己完結データ (BR2.2)。
+/// `Started` のペイロード — 起きた事実 (どの intent の実行が始まったか) だけを運ぶ。
 ///
-/// 開始時点の [`Intent`] を**丸ごと運ぶ**。`Intent` 自身も集約だが (改訂 8)、これは集約への
-/// 埋め込みではなく**歴史の記録**であり、規則違反ではない
-/// (coding-rules/aggregate-references.md「イベントに材料の複製が載るのは違反ではない」)。
-/// `IntentExecution` が**保持する**のは `intent_id` だけで、そこは ID 参照のままである。投影核の入力はイベントだけ (cqrs-boundaries 規則 3) なので、
-/// 状態ファイルを描くのに要る scope・依頼文・解決済み計画・走査結果はここに載っている必要が
-/// ある。集約が適用時に**保持する**のは `intent_id` と実行時状態だけである。
-///
-/// 各アクセサは intent への素通しである。`depth` / `test_strategy` は集約状態にならず、
-/// U4 が `Scope Configuration` を描くためだけの投影材料である。
+/// **イベントはそのイベントを説明するプロパティだけに絞る** (オーナー裁定 2026-08-30)。
+/// かつて丸ごと運んでいた `Intent` の複製 (解決済み計画・表示属性・走査結果・依頼文) は
+/// 撤去した — それらは実行開始という事実の説明ではなく **intent 自身の誕生の記録**であり、
+/// 正本は intent 自身のジャーナルの `Created` にある (issue #50 / #56)。RMU が状態ファイル
+/// の骨格を描く材料もそこから取る。集約参照は ID で行う
+/// (coding-rules/aggregate-references.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
-    intent: Intent,
+    intent_id: IntentId,
 }
 
 impl Started {
-    /// 開始時点の intent を束ねる。
+    /// 開始された intent の識別子を束ねる。
     #[must_use]
-    pub const fn new(intent: Intent) -> Started {
-        Started { intent }
+    pub const fn new(intent_id: IntentId) -> Started {
+        Started { intent_id }
     }
 
-    /// 開始時点の intent そのもの。
+    /// 開始された intent の識別子。
     #[must_use]
-    pub const fn intent(&self) -> &Intent {
-        &self.intent
-    }
-
-    /// 参照した定義の系譜 ID (BR2.6)。
-    #[must_use]
-    pub const fn definition_id(&self) -> &WorkflowDefinitionId {
-        self.intent.definition_id()
-    }
-
-    /// 参照した定義の内容版 (来歴 — 差が出ても Err にはしない)。
-    #[must_use]
-    pub const fn definition_revision(&self) -> &DefinitionRevision {
-        self.intent.definition_revision()
-    }
-
-    /// 選択されたスコープ名。
-    #[must_use]
-    pub fn scope(&self) -> &str {
-        self.intent.scope()
-    }
-
-    /// 人間の要求 (逐語保持)。
-    #[must_use]
-    pub fn request(&self) -> &str {
-        self.intent.request()
-    }
-
-    /// 呼出側が解決した depth (`None` = 指定なし)。集約は素通しするだけ。
-    #[must_use]
-    pub fn depth(&self) -> Option<&str> {
-        self.intent.depth()
-    }
-
-    /// 呼出側が解決した test strategy (`None` = 指定なし)。集約は素通しするだけ。
-    #[must_use]
-    pub fn test_strategy(&self) -> Option<&str> {
-        self.intent.test_strategy()
-    }
-
-    /// 文書順の全ステージ (解決済み計画)。
-    #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
-        self.intent.stages()
-    }
-
-    /// workspace-detection が出した走査結果 (投影が初期化 3 ステージの行を描く材料)。
-    ///
-    /// イベントが運ぶのは、走査をやり直すと**当時と違う結果**になり再構成が一致しないため
-    /// である (NFR3 — オーナー裁定 2026-08-29)。
-    #[must_use]
-    pub const fn scan(&self) -> &WorkspaceScan {
-        self.intent.scan()
+    pub const fn intent_id(&self) -> &IntentId {
+        &self.intent_id
     }
 }
 
@@ -404,60 +342,24 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::*;
-    use crate::orchestration::{
-        AutonomyMode, Created, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
-    };
-    use crate::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
-        WorkflowDefinitionId,
-    };
+    use crate::orchestration::AutonomyMode;
+    use crate::workflow_definition::StageSlug;
 
     fn slug(s: &str) -> StageSlug {
         StageSlug::parse(s).unwrap()
     }
 
-    fn display(number: &str) -> StageDisplay {
-        StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
-    }
-
-    fn scan() -> WorkspaceScan {
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .unwrap()
-    }
-
     #[test]
-    fn the_started_payload_is_self_contained() {
-        let entries = vec![StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1"),
-        )];
-        let started = Started::new(Intent::from(Created::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            StartRequest::new("classic", "build it").with_depth("standard"),
-            entries.clone(),
-            scan(),
-        )));
+    fn the_started_payload_carries_only_the_fact() {
+        // イベントはそのイベントを説明するプロパティだけに絞る (オーナー裁定 2026-08-30) —
+        // 実行開始の説明は「どの intent か」だけであり、計画・表示属性・走査結果は intent
+        // 自身の誕生の記録 (`Created`) が正本である (issue #56)。
+        let started =
+            Started::new(IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap());
         assert_eq!(
-            started.intent().id().as_str(),
+            started.intent_id().as_str(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
-        assert_eq!(started.definition_id().as_str(), "claude");
-        assert_eq!(started.definition_revision().as_str().len(), 71);
-        assert_eq!(started.scope(), "classic");
-        assert_eq!(started.request(), "build it");
-        assert_eq!(started.depth(), Some("standard"));
-        assert_eq!(started.test_strategy(), None);
-        assert_eq!(started.stages(), entries.as_slice());
     }
 
     #[test]
@@ -529,21 +431,8 @@ mod tests {
                 IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        let entries = vec![StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1"),
-        )];
-        let started = Started::new(Intent::from(Created::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            StartRequest::new("classic", "build it"),
-            entries,
-            scan(),
-        )));
+        let started =
+            Started::new(IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap());
         let named = [
             (IntentExecutionEvent::Started(started), "Started"),
             (

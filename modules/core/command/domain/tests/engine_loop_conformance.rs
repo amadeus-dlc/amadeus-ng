@@ -277,7 +277,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     ));
     let (mut agg, _started) = IntentExecution::start(
         IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
-        intent.clone(),
+        &intent,
         at(),
     );
     assert_eq!(agg.seq_nr(), 1, "genesis の通番は 1 (BR2.1)");
