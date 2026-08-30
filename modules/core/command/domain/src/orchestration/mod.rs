@@ -23,8 +23,11 @@
 //! | `recompose` | `Recomposed` |
 //! | `switch_autonomy` | `AutonomyModeSet` |
 //!
-//! `next_decision` / `jump_resolve` / `stale_report` はクエリ (書込なし)。`EngineSignal` は
-//! `NextDecision` から導出する 4 値である。
+//! `jump_resolve` / `stale_report` はクエリ (書込なし) で、いずれも**書込の前段ガード**である
+//! — jump の方向導出と、カーソル通過済み completed への再報告の受理可否。「次に何をすべきか」
+//! の判断 (旧 `next_decision`) はここには無い: `next` / `continue` は読むだけの動詞なので
+//! クエリ側 (`core_query_use_case::execution_view::ExecutionStateView::next_decision`) が
+//! 所有する (`coding-rules/cqrs-boundaries.md` 規則 5〜7、b26 段階 2)。
 //!
 //! # ゲート判定はフェーズで決まる (BR1.3)
 //!
@@ -43,12 +46,13 @@
 //! | `autonomous` | `autonomy = Autonomous` |
 //! | `actSetAutonomy` (トグル) | `switch_autonomy(反転値)` |
 //! | `actRecompose` (1 ステージ) | `recompose(&[stage])` (要素数 1) |
-//! | `lastDirective` | `EngineSignal::from(&NextDecision)` |
 //! | stage 0 (非ゲート) | initialization 1 ステージだけを持つ合成計画の索引 0 |
 //!
 //! モデルの `gated(s) = s != 0` は最後の行の抽象である。ITF 準拠テスト
 //! (`tests/engine_loop_conformance.rs`) はその合成計画で駆動し、実グラフの 3 ステージ側は集約の
-//! ユニットテストが固定する。
+//! ユニットテストが固定する。**モデルの `lastDirective` (観測面) はここでは照合しない** —
+//! directive を出すのはクエリ側なので、その ITF はクエリ側の
+//! `core-query-use-case/tests/engine_loop_ladder_conformance.rs` が担う (b26 段階 2 の分割)。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_domain::orchestration::<型>` で安定する
@@ -57,10 +61,6 @@
 mod apply_error;
 mod autonomy_mode;
 mod command_error;
-mod continue_token;
-mod directive;
-mod directive_schema;
-mod engine_command;
 mod intent;
 mod intent_event;
 mod intent_execution;
@@ -69,55 +69,29 @@ mod intent_execution_event;
 mod intent_execution_id;
 mod intent_id;
 mod jump_direction;
-mod next_decision;
 mod phase_boundary;
-mod scope_resolution;
 mod skeleton_stance;
 mod stage_display;
 mod stage_entry;
 mod stage_index;
 mod stage_key;
-mod stage_name;
 mod start_request;
 mod status;
-mod steering_binding;
-mod steering_digest;
-mod steering_plan;
-mod token_version;
-mod unit_ref;
 mod verdict;
 mod workspace_scan;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
-pub use directive_schema::DirectiveKind;
-// directive 判別共用体 (構築できる部分集合 — placeholder / slice 2 / B16 の kind は variant を持たない)
-pub use continue_token::{ContinueToken, ContinueTokenBuilder};
-pub use directive::{
-    AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, RuleContent,
-    RunStageDirective, RunStageDirectiveBuilder,
-};
-pub use engine_command::{ConfigField, EngineCommand, ReadOnlyVerb};
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
-pub use scope_resolution::{
-    ResolvedScope, ScopeResolutionError, ScopeSource, infer_scope_from_text, resolve_scope,
-};
 pub use skeleton_stance::SkeletonStance;
 pub use stage_display::StageDisplay;
 pub use stage_entry::StageEntry;
 pub use stage_index::StageIndex;
 pub use stage_key::StageKey;
-pub use stage_name::StageName;
 pub use start_request::StartRequest;
-pub use steering_binding::{Bindings, BundleDigest, DirectiveDigest, RouteDigest, StateBinding};
-// steering ダイジェストの導出は所有する型の関連メソッド (steering_digest モジュールの impl —
-// coding-rules/domain-services.md)。輸出する自由関数は無い。
-pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
-pub use token_version::TokenVersion;
-pub use unit_ref::{UnitKind, UnitName, UnitRef};
 pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
 
@@ -128,7 +102,6 @@ pub use intent::Intent;
 pub use intent_execution::IntentExecution;
 
 // 集約の観測結果
-pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use status::Status;
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
@@ -150,8 +123,6 @@ pub use intent_execution_error::IntentExecutionError;
 pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
-pub use stage_name::BlankStageName;
-pub use unit_ref::{UnitNameError, UnknownUnitKind};
 pub use verdict::UnknownVerdict;
 
 // 逐語定数

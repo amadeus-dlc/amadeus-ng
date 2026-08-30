@@ -59,6 +59,8 @@ impl AutonomyMode {
     /// (`Invalid --mode: …`) は境界（アダプタ層）が材料から組む —
     /// ドメインは文言を運ばない (`coding-rules/error-handling.md`。2026-08-29 是正:
     /// 文言カタログへの依存は「純粋部品だから」を免罪符にした依存方向違反だった)。
+    /// **その組み立ては現時点で未実装**である — b26 段階 2 で消費者ゼロのまま置かれていた
+    /// ビルダを撤去したので、`set-autonomy --mode` を配線する U7 の Bolt で書き直す。
     pub fn parse(s: &str) -> Result<AutonomyMode, InvalidModeArg> {
         match s {
             "autonomous" => Ok(AutonomyMode::Autonomous),

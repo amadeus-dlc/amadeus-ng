@@ -3,7 +3,6 @@
 use std::fmt;
 
 use super::stage_index::StageIndex;
-use crate::workflow_definition::WorkflowDefinitionId;
 use crate::workspace::CheckboxState;
 
 /// ガード違反は「発火しないアクション」であって状態は一切動かない (モデルの enabled 条件と同型)。
@@ -35,13 +34,6 @@ pub enum CommandError {
     /// 通番が `usize::MAX` に達しており、新しいイベントを採番できない (通番枯渇)。
     /// 実運用では到達しない規模だが、境界を暗黙の飽和にしない (NFR4.3)。
     SequenceExhausted,
-    /// 別の定義で駆動しようとした (BR2.6)。
-    DefinitionMismatch {
-        /// この集約が `Started` に記録した定義 ID。
-        expected: WorkflowDefinitionId,
-        /// 引数で渡された定義の ID。
-        actual: WorkflowDefinitionId,
-    },
 }
 
 impl fmt::Display for CommandError {
@@ -61,12 +53,6 @@ impl fmt::Display for CommandError {
             CommandError::SequenceExhausted => {
                 f.write_str("sequence exhausted: seq_nr is at usize::MAX")
             }
-            CommandError::DefinitionMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "definition mismatch: expected {expected}, actual {actual}"
-                )
-            }
         }
     }
 }
@@ -77,7 +63,6 @@ impl std::error::Error for CommandError {}
 mod tests {
     use super::*;
     use crate::orchestration::StageIndex;
-    use crate::workflow_definition::WorkflowDefinitionId;
     use crate::workspace::CheckboxState;
 
     #[test]
@@ -112,18 +97,6 @@ mod tests {
             actual: CheckboxState::Pending,
         };
         assert_eq!(err.to_string(), "stage 1 checkbox precondition: actual [ ]");
-    }
-
-    #[test]
-    fn the_definition_mismatch_carries_both_identifiers() {
-        let err = CommandError::DefinitionMismatch {
-            expected: WorkflowDefinitionId::parse("claude").unwrap(),
-            actual: WorkflowDefinitionId::parse("kiro").unwrap(),
-        };
-        assert_eq!(
-            err.to_string(),
-            "definition mismatch: expected claude, actual kiro"
-        );
     }
 
     #[test]

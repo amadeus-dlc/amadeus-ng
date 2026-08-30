@@ -6,8 +6,8 @@ use std::fmt;
 ///
 /// **構築できるのは集約だけ** (`IntentExecution::stage_index(usize) -> Option<StageIndex>`)
 /// で、その集約の `stage_count` 未満であることが構築時に保証される。生の `usize` を集約 API・
-/// イベント・`NextDecision`・状態の写し (memento) に露出させないための E1 型であり、範囲外は
-/// `None` で表して panic しない (BR5.1)。
+/// イベント・ガードの戻り値に露出させないための E1 型であり、範囲外は `None` で表して
+/// panic しない (BR5.1)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StageIndex(usize);
 
