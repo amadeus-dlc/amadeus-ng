@@ -25299,3 +25299,33 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: <analysis>\nThe session is an AI-DLC workflow session (amadeus-ng: Rust reimplementation of AI-DLC Workflows, ES/CQRS architecture) resumed via `/aidlc --resume` pointing at handoff-u6.md. Chronology:\n
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-29T23:32:03Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T23:32:03Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T23:38:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-29T23:39:35Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T00:01:53Z
+**Event**: HUMAN_TURN
+
+---

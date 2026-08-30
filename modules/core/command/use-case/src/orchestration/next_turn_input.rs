@@ -4,34 +4,8 @@
 //! 責務で、本 VO はその**結果**だけを運ぶ。ユースケースは本 VO + 読取専用ポートで 21 分岐
 //! ラダーを畳む (use-case-rules §2b — execute 引数は ID + VO のみ)。
 
-use core_command_domain::orchestration::{IntentExecutionId, IntentId};
+use core_command_domain::orchestration::{IntentExecutionId, IntentId, ReadOnlyVerb};
 use core_command_domain::workflow_definition::WorkflowDefinitionId;
-
-/// 読み取り専用ユーティリティ動詞 (分岐 1)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReadOnlyVerb {
-    /// `--status`。
-    Status,
-    /// `--help`。
-    Help,
-    /// `--doctor`。
-    Doctor,
-    /// `--version`。
-    Version,
-}
-
-impl ReadOnlyVerb {
-    /// ユーティリティのサブコマンド綴り。
-    #[must_use]
-    pub const fn subcommand(self) -> &'static str {
-        match self {
-            ReadOnlyVerb::Status => "status",
-            ReadOnlyVerb::Help => "help",
-            ReadOnlyVerb::Doctor => "doctor",
-            ReadOnlyVerb::Version => "version",
-        }
-    }
-}
 
 /// 名詞トークンの族 (分岐 1b/1c/1d — 先頭トークン意味論のみ)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

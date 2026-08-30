@@ -78,3 +78,49 @@
   （相対ゲート回復のため、網羅 match テストヘルパの実行補完と continue 異常系テストを追加）。
 - 申し送り継続: 完全 ROUTES 表・conductor_persona 焼き込み・active-directive マーカー
   Gateway は U7。
+
+## B16 是正記録（2026-08-30 オーナーレビュー裁定）
+
+3 原則（Domain Primitive 化 / ユースケース層はフロー制御の層 / 貧血補償コード禁止）に
+基づく全面是正。実装済み:
+
+- **是正 1（ContinueToken の型化）**: 全フィールドをドメインプリミティブへ —
+  `StageSlug`/`ScopeSlug`/`PartIndex`(from_raw は 0 拒否・next() のみ公開)/
+  `TokenVersion`(is_supported)/`UnitRef`{UnitName, UnitKind enum(service|spec|ui|
+  packaging|library)}/`StageName`/`Bindings`(4 ダイジェスト束縛 VO — BundleDigest/
+  DirectiveDigest/RouteDigest 別型 newtype + Option<StateBinding> で aware×hash の不正
+  状態を表現不能化)。ワイヤ予約フラグ f/w/z と unit から導出可能な p はフィールド廃止
+  （decode は真値を fail-closed 拒否）。`too_many_arguments` allow 撤去（束縛は
+  Bindings 1 個で受ける）。ExecutionMode enum 化は不採用: single/per-unit/wave の相互
+  排他は slice-2 意味論が未確定で、bool は原則の許容範囲（brief へ理由記録）。
+- **是正 2（不法入居 4 ファイル）**: `scope_resolution` → domain（判断ポリシー、
+  ResolvedScope.name は ScopeSlug）。`steering` の分割・20KiB パック → adapter
+  `rule_bundle_source_impl`（ポートは分割済み `SteeringPlan`(domain VO) を返し、
+  Unsplittable は RuleBundleReadError の変種）。`command_spelling` → ドメイン
+  `EngineCommand`（概念の閉集合、ConfigField enum）+ use-case `CommandSpelling`
+  ポート + adapter `MulticallCommandSpelling`（綴りカタログ、U7 の ROUTES 差し替え
+  点）。ReadOnlyVerb 点検: 変種名は操作の意図由来で維持、綴りメソッド subcommand() は
+  adapter へ移した。
+- **是正 3（steering_chain 解体）**: material 3 関数を廃止 — ダイジェスト対象は名前付き
+  VO（`StageRoute` = WorkflowDefinition::stage_route クエリ、`StatePosition` =
+  intent_id + seq_nr + StoreVersion newtype）で codec ポートの型付き 4 メソッドへ。
+  直列化は adapter の serde 素材構造体（JSON エスケープ — {:?} と `|`/`::` 連結の
+  欠陥を根絶）。`rebuild_with_pins`/`clone_with_rules` の 15 フィールド手動移送 ×2 は
+  ドメイン `RunStageDirective::with_pins`/`with_rules_in_context`（clone ベースの部分
+  更新 — フィールド追加時も黙って欠落しない）へ。emit_part の範囲外部エラーは
+  `SteeringPart`（計画クエリのみが構築、範囲外は表現不能）+ LoadSteeringDirective::new
+  の無謬化（LoadSteeringError 削除）で消滅。センチネル "-" はワイヤ形式の詳細として
+  adapter 内に封じ込め。
+- **StoreVersion の適用範囲**: Repository ポート面（store の expected_version /
+  RehydratedIntentExecution::version）は本家 event-store-adapter-rs v3 の `usize` の
+  まま — newtype 化は Conformist 方針違反として却下済み（オーナー裁定 2026-08-29）。
+  StoreVersion は自前 VO `StatePosition` 内だけで使い、両裁定を両立。
+- **port/ 集約（オーナー提案）**: ポート契約 trait と契約依存型
+  （RehydratedIntentExecution/RepositoryError/GraphReadError/RuleBundleReadError/
+  InvalidContinueToken/StatePosition/StoreVersion）を
+  `use-case/src/orchestration/port/` へ。公開ファサードは据え置き（消費側パス不変）。
+- **Directive::Error{message: String} 点検**: message はエンジン公開契約のペイロード
+  （02 §4.4 逐語 6 形・契約マップ逐語）そのもの＝データであり維持。use case 内の文言
+  組み立てで残るのは契約逐語のみ（emit_part の `internal:` format! は表現不能化で消滅）。
+- ゲート: fmt / clippy(-D warnings, allow 追加なし・too_many_arguments allow 消滅) /
+  cargo lint / 954 テスト全緑 / カバレッジ 98.77%。

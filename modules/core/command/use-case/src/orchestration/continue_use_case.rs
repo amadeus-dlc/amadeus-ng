@@ -4,19 +4,21 @@
 //! **キャッシュを信用しない** (再構築原則 `:5996-6037`): 現在のディスク状態から run-stage と
 //! ルール束を作り直し、トークンのピン (`gate` / `next_stage` / `unit` / `single`) を再適用し、
 //! ダイジェスト束縛 (bundle / directive / route / state) を照合する。ドリフトは**すべて
-//! fail-closed** — fresh `next` からのやり直しだけを指示する (I12)。
+//! fail-closed** — fresh `next` からのやり直しだけを指示する (I12)。ピンの再適用は
+//! [`RunStageDirective::with_pins`] (ドメインの部分更新)、束縛の照合は型付きダイジェスト
+//! ([`Bindings`]) の等値比較で行う。
 
-use core_command_domain::orchestration::{ContinueToken, Directive};
+use core_command_domain::orchestration::{Bindings, ContinueToken, Directive, StateBinding};
 use core_command_domain::workflow_definition::WorkflowDefinition;
 
-use super::continue_token_codec::ContinueTokenCodec;
-use super::intent_execution_repository::IntentExecutionRepository;
-use super::intent_repository::IntentRepository;
 use super::next_turn_input::NextTurnInput;
-use super::rule_bundle_source::{RuleBundleReadError, RuleBundleSource};
-use super::steering::{SteeringPlan, SteeringPlanError};
-use super::steering_chain;
-use super::workflow_definition_repository::WorkflowDefinitionRepository;
+use super::port::ContinueTokenCodec;
+use super::port::IntentExecutionRepository;
+use super::port::IntentRepository;
+use super::port::StatePosition;
+use super::port::StoreVersion;
+use super::port::WorkflowDefinitionRepository;
+use super::port::{RuleBundleReadError, RuleBundleSource};
 
 /// fail-closed の逐語文言 (02 §4.4 の完全列挙)。
 mod wording {
@@ -35,7 +37,7 @@ mod wording {
     /// 存在しない部の要求。
     pub(super) const PART_NOT_EXIST: &str = "This request asks for a part of the stage rules that does not exist. Run a fresh `next` to restart delivery from part 1.";
 
-    /// stage slug がグラフに無い。
+    /// ステージがグラフから消えた。
     pub(super) fn stage_gone(slug: &str) -> String {
         format!(
             "Stage \"{slug}\" no longer exists. Run a fresh `next` after recompiling the stage graph."
@@ -61,7 +63,8 @@ where
     B: RuleBundleSource,
     C: ContinueTokenCodec,
 {
-    /// 読取専用ポート 5 本を注入する ([`super::NextUseCase`] と同じ束)。
+    /// 読取専用ポート 5 本を注入する ([`super::NextUseCase`] と同じ読取束 — 綴りポートは
+    /// 使わないので受けない)。
     #[must_use]
     pub const fn new(
         execution_repository: E,
@@ -87,8 +90,8 @@ where
             };
         };
         // state 束縛 — 現在の state ダイジェストと照合する。
-        let state_binding = match self.state_binding(&token, input).await {
-            Ok(binding) => binding,
+        let state = match self.state_binding(&token, input).await {
+            Ok(state) => state,
             Err(directive) => return *directive,
         };
         let definition = match self.load_definition(&token, input).await {
@@ -99,17 +102,17 @@ where
             .graph()
             .nodes()
             .iter()
-            .find(|node| node.slug().as_str() == token.stage())
+            .find(|node| node.slug() == token.stage())
         else {
             return Directive::Error {
-                message: wording::stage_gone(token.stage()),
+                message: wording::stage_gone(token.stage().as_str()),
             };
         };
         let scope = token.scope();
-        let route_hash =
-            self.codec
-                .digest(&steering_chain::route_material(&definition, scope, node));
-        if route_hash != token.route_hash() {
+        let route = self
+            .codec
+            .route_digest(&definition.stage_route(scope.as_str(), node));
+        if &route != token.bindings().route() {
             return Directive::Error {
                 message: wording::ROUTE_CHANGED.to_string(),
             };
@@ -118,65 +121,53 @@ where
         let rebuilt = match super::next_use_case::build_run_stage(
             node,
             &definition,
-            scope,
+            scope.as_str(),
             input.layout(),
             token.gate(),
             token.is_single(),
         ) {
-            Ok(Directive::RunStage(run_stage)) => {
-                steering_chain::rebuild_with_pins(&run_stage, &token)
-            }
+            Ok(Directive::RunStage(run_stage)) => run_stage.with_pins(&token),
             Ok(_) | Err(_) => {
                 return Directive::Error {
                     message: wording::STALE.to_string(),
                 };
             }
         };
-        let files = match self.bundle_source.load(node.phase()) {
-            Ok(files) => files,
-            Err(RuleBundleReadError::Unreadable { .. }) => {
-                return Directive::Error {
-                    message: wording::STALE.to_string(),
-                };
-            }
-        };
-        let plan = match SteeringPlan::from_bundle(&files) {
+        let plan = match self.bundle_source.load(node.phase()) {
             Ok(plan) => plan,
-            Err(SteeringPlanError::UnsplittableSection) => {
+            Err(
+                RuleBundleReadError::Unreadable { .. } | RuleBundleReadError::Unsplittable { .. },
+            ) => {
                 return Directive::Error {
                     message: wording::STALE.to_string(),
                 };
             }
         };
-        let bundle_digest = self.codec.digest(&plan.digest_material());
-        let directive_digest = self
-            .codec
-            .digest(&steering_chain::directive_material(&rebuilt));
-        if bundle_digest != token.bundle_digest() || directive_digest != token.directive_digest() {
+        let bindings = Bindings::new(
+            self.codec.bundle_digest(&plan),
+            self.codec.directive_digest(&rebuilt),
+            route,
+            state,
+        );
+        if bindings.bundle() != token.bindings().bundle()
+            || bindings.directive() != token.bindings().directive()
+        {
             return Directive::Error {
                 message: wording::STALE.to_string(),
             };
         }
-        let index = token.next_part_index();
-        if index > plan.parts() {
-            return Directive::Error {
+        let delivered = token.next_part_index();
+        if plan.is_delivered_through(delivered) {
+            return Directive::RunStage(rebuilt.with_rules_in_context(plan.delivered_paths()));
+        }
+        match plan.part_after(delivered) {
+            Some(part) => {
+                super::next_use_case::emit_part(&self.codec, &part, &rebuilt, scope, &bindings)
+            }
+            None => Directive::Error {
                 message: wording::PART_NOT_EXIST.to_string(),
-            };
+            },
         }
-        if index == plan.parts() {
-            return steering_chain::finalize_run_stage(&plan, &rebuilt);
-        }
-        steering_chain::emit_part(
-            &self.codec,
-            &plan,
-            index,
-            &rebuilt,
-            scope,
-            &bundle_digest,
-            &directive_digest,
-            &route_hash,
-            state_binding.as_deref(),
-        )
     }
 
     /// state 束縛の照合。state-aware なら現行 state のダイジェストを計算して比較する。
@@ -184,10 +175,10 @@ where
         &self,
         token: &ContinueToken,
         input: &NextTurnInput,
-    ) -> Result<Option<String>, Box<Directive>> {
-        if !token.is_state_aware() {
+    ) -> Result<Option<StateBinding>, Box<Directive>> {
+        let Some(bound) = token.bindings().state() else {
             return Ok(None);
-        }
+        };
         let Some(active) = input.active() else {
             return Err(Box::new(Directive::Error {
                 message: wording::STATE_MOVED_ON.to_string(),
@@ -213,12 +204,12 @@ where
                     message: wording::STATE_MOVED_ON.to_string(),
                 })
             })?;
-        let current = self.codec.digest(&steering_chain::state_material(
-            intent.id().as_str(),
+        let current = self.codec.state_binding(&StatePosition::new(
+            intent.id().clone(),
             execution.seq_nr(),
-            version,
+            StoreVersion::new(version),
         ));
-        if current != token.state_hash() {
+        if &current != bound {
             return Err(Box::new(Directive::Error {
                 message: wording::STATE_MOVED_ON.to_string(),
             }));
@@ -232,7 +223,7 @@ where
         token: &ContinueToken,
         input: &NextTurnInput,
     ) -> Result<WorkflowDefinition, Box<Directive>> {
-        let id = if token.is_state_aware()
+        let id = if token.bindings().state().is_some()
             && let Some(active) = input.active()
             && let Ok(intent) = self.intent_repository.find_by_id(active.intent_id()).await
         {
@@ -246,7 +237,7 @@ where
         };
         self.definition_repository.find_by_id(&id).map_err(|_| {
             Box::new(Directive::Error {
-                message: wording::stage_gone(token.stage()),
+                message: wording::stage_gone(token.stage().as_str()),
             })
         })
     }

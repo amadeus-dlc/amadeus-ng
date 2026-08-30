@@ -4,97 +4,78 @@
 //! 直列化はアダプタ層の codec が持ち、ドメインは**型表**だけを持つ
 //! (`coding-rules/domain-persistence-neutrality.md`)。デコード時に型表へ反するペイロードは
 //! codec が拒否する — この型に不正値は存在しない (Always Valid)。
+//!
+//! フィールドはすべてドメインプリミティブで運ぶ: 同型プリミティブの隣接 (String 4 本の
+//! ダイジェスト等) は取り違えがコンパイルを通る温床なので、束縛は [`Bindings`]、unit は
+//! [`UnitRef`]、部索引は [`PartIndex`] で受ける。ワイヤ予約キー (`f`/`p`/`w`/`z` —
+//! force-persona / per-unit / wave / settled-swarm) のうちエンジンが今日構築しない値は
+//! **フィールドを持たない** (構成不能で表す — 02 §4.1。`p` は unit の有無から導出される)。
 
 use super::directive::GateField;
+use super::stage_name::StageName;
+use super::steering_binding::Bindings;
+use super::steering_plan::PartIndex;
+use super::token_version::TokenVersion;
+use super::unit_ref::UnitRef;
+use crate::workflow_definition::{ScopeSlug, StageSlug};
 
 /// steering 連鎖の継続ペイロード。キーは upstream の 1 文字綴り (`v`/`s`/`c`/…) に対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinueToken {
-    version: u32,
-    stage: String,
-    scope: String,
-    next_part_index: u32,
-    bundle_digest: String,
-    directive_digest: String,
-    route_hash: String,
-    state_aware: bool,
-    unit: Option<String>,
-    unit_kind: Option<String>,
-    force_persona: bool,
+    version: TokenVersion,
+    stage: StageSlug,
+    scope: ScopeSlug,
+    next_part_index: PartIndex,
+    bindings: Bindings,
     gate: GateField,
-    next_stage: Option<String>,
+    next_stage: Option<StageName>,
+    unit: Option<UnitRef>,
     single: bool,
-    per_unit: bool,
-    wave: bool,
-    swarm_settled: bool,
-    state_hash: String,
 }
 
-/// [`ContinueToken`] の組み立て器 — 必須 8 点を受け、残りは `with_*` で伴わせる。
+/// [`ContinueToken`] の組み立て器 — 必須 5 点を受け、残りは `with_*` で伴わせる。
+/// `v` は常に現行版。
 #[derive(Debug, Clone)]
 pub struct ContinueTokenBuilder {
     token: ContinueToken,
 }
 
 impl ContinueTokenBuilder {
-    /// 必須材料 (stage / scope / 次パート索引 / 4 ダイジェスト束縛 / gate) を束ねる。
-    /// `v` は常に 1。
+    /// 必須材料 (stage / scope / 部索引 / 束縛 / gate) を束ねる。
     #[must_use]
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "トークンの必須材料 (4 ダイジェスト束縛 + 文脈 4 点) そのもの — 束ねる中間型は複製にしかならない"
-    )]
-    pub fn new(
-        stage: impl Into<String>,
-        scope: impl Into<String>,
-        next_part_index: u32,
-        bundle_digest: impl Into<String>,
-        directive_digest: impl Into<String>,
-        route_hash: impl Into<String>,
-        state_hash: impl Into<String>,
+    pub const fn new(
+        stage: StageSlug,
+        scope: ScopeSlug,
+        next_part_index: PartIndex,
+        bindings: Bindings,
         gate: GateField,
     ) -> ContinueTokenBuilder {
         ContinueTokenBuilder {
             token: ContinueToken {
-                version: 1,
-                stage: stage.into(),
-                scope: scope.into(),
+                version: TokenVersion::CURRENT,
+                stage,
+                scope,
                 next_part_index,
-                bundle_digest: bundle_digest.into(),
-                directive_digest: directive_digest.into(),
-                route_hash: route_hash.into(),
-                state_aware: true,
-                unit: None,
-                unit_kind: None,
-                force_persona: false,
+                bindings,
                 gate,
                 next_stage: None,
+                unit: None,
                 single: false,
-                per_unit: false,
-                wave: false,
-                swarm_settled: false,
-                state_hash: state_hash.into(),
             },
         }
     }
 
-    /// per-unit 反復の unit と種別を伴う。
+    /// per-unit 反復の unit を伴う (per-unit フラグは unit の有無から導出される)。
     #[must_use]
-    pub fn with_unit(
-        mut self,
-        unit: impl Into<String>,
-        kind: impl Into<String>,
-    ) -> ContinueTokenBuilder {
-        self.token.unit = Some(unit.into());
-        self.token.unit_kind = Some(kind.into());
-        self.token.per_unit = true;
+    pub fn with_unit(mut self, unit: UnitRef) -> ContinueTokenBuilder {
+        self.token.unit = Some(unit);
         self
     }
 
     /// 次ステージの表示名を伴う。
     #[must_use]
-    pub fn with_next_stage(mut self, next_stage: impl Into<String>) -> ContinueTokenBuilder {
-        self.token.next_stage = Some(next_stage.into());
+    pub fn with_next_stage(mut self, next_stage: StageName) -> ContinueTokenBuilder {
+        self.token.next_stage = Some(next_stage);
         self
     }
 
@@ -102,13 +83,6 @@ impl ContinueTokenBuilder {
     #[must_use]
     pub const fn with_single(mut self) -> ContinueTokenBuilder {
         self.token.single = true;
-        self
-    }
-
-    /// state 束縛なし (state なしのジャンプ等) にする。
-    #[must_use]
-    pub const fn without_state_binding(mut self) -> ContinueTokenBuilder {
-        self.token.state_aware = false;
         self
     }
 
@@ -120,70 +94,46 @@ impl ContinueTokenBuilder {
 }
 
 impl ContinueToken {
-    /// バージョン (常に 1)。
+    /// バージョン (常に現行版)。
     #[must_use]
-    pub const fn version(&self) -> u32 {
+    pub const fn version(&self) -> TokenVersion {
         self.version
     }
 
     /// 連鎖が属するステージ slug。
     #[must_use]
-    pub fn stage(&self) -> &str {
+    pub const fn stage(&self) -> &StageSlug {
         &self.stage
     }
 
     /// 解決済み scope。
     #[must_use]
-    pub fn scope(&self) -> &str {
+    pub const fn scope(&self) -> &ScopeSlug {
         &self.scope
     }
 
     /// 次に届けるパートの索引 (1 始まり。パート総数と等しければ終端 = run-stage)。
     #[must_use]
-    pub const fn next_part_index(&self) -> u32 {
+    pub const fn next_part_index(&self) -> PartIndex {
         self.next_part_index
     }
 
-    /// ルール束のダイジェスト。
+    /// 4 ダイジェスト束縛 (bundle / directive / route / state)。
     #[must_use]
-    pub fn bundle_digest(&self) -> &str {
-        &self.bundle_digest
+    pub const fn bindings(&self) -> &Bindings {
+        &self.bindings
     }
 
-    /// 届けようとしている run-stage のダイジェスト。
+    /// per-unit 反復の unit (名前 + 種別)。
     #[must_use]
-    pub fn directive_digest(&self) -> &str {
-        &self.directive_digest
+    pub const fn unit(&self) -> Option<&UnitRef> {
+        self.unit.as_ref()
     }
 
-    /// グラフノードと scope メンバーシップのルートハッシュ。
+    /// per-unit 反復か (unit の有無から導出 — 別フィールドは持たない)。
     #[must_use]
-    pub fn route_hash(&self) -> &str {
-        &self.route_hash
-    }
-
-    /// state 束縛の有無。
-    #[must_use]
-    pub const fn is_state_aware(&self) -> bool {
-        self.state_aware
-    }
-
-    /// per-unit 反復の unit。
-    #[must_use]
-    pub fn unit(&self) -> Option<&str> {
-        self.unit.as_deref()
-    }
-
-    /// unit の種別。
-    #[must_use]
-    pub fn unit_kind(&self) -> Option<&str> {
-        self.unit_kind.as_deref()
-    }
-
-    /// ペルソナ強制フラグ。
-    #[must_use]
-    pub const fn is_force_persona(&self) -> bool {
-        self.force_persona
+    pub const fn is_per_unit(&self) -> bool {
+        self.unit.is_some()
     }
 
     /// ピン留めされたゲート判定。
@@ -194,8 +144,8 @@ impl ContinueToken {
 
     /// ピン留めされた次ステージ表示名。
     #[must_use]
-    pub fn next_stage(&self) -> Option<&str> {
-        self.next_stage.as_deref()
+    pub const fn next_stage(&self) -> Option<&StageName> {
+        self.next_stage.as_ref()
     }
 
     /// 単一ステージ隔離モードか。
@@ -203,78 +153,77 @@ impl ContinueToken {
     pub const fn is_single(&self) -> bool {
         self.single
     }
-
-    /// per-unit 反復か。
-    #[must_use]
-    pub const fn is_per_unit(&self) -> bool {
-        self.per_unit
-    }
-
-    /// wave 並列面か。
-    #[must_use]
-    pub const fn is_wave(&self) -> bool {
-        self.wave
-    }
-
-    /// settled swarm 再入か。
-    #[must_use]
-    pub const fn is_swarm_settled(&self) -> bool {
-        self.swarm_settled
-    }
-
-    /// state ダイジェスト (`state_aware` のときだけ照合する)。
-    #[must_use]
-    pub fn state_hash(&self) -> &str {
-        &self.state_hash
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestration::{
+        BundleDigest, DirectiveDigest, RouteDigest, StateBinding, UnitKind, UnitName,
+    };
+
+    fn bindings() -> Bindings {
+        Bindings::new(
+            BundleDigest::new("sha256:aaaa"),
+            DirectiveDigest::new("dddd"),
+            RouteDigest::new("rrrr"),
+            Some(StateBinding::new("hhhh")),
+        )
+    }
 
     #[test]
     fn the_builder_pins_the_delivery_context() {
         let token = ContinueTokenBuilder::new(
-            "functional-design",
-            "classic",
-            2,
-            "sha256:aaaa",
-            "dddd",
-            "rrrr",
-            "hhhh",
+            StageSlug::parse("functional-design").unwrap(),
+            ScopeSlug::parse("classic").unwrap(),
+            PartIndex::FIRST.next(),
+            bindings(),
             GateField::Gated,
         )
-        .with_unit("u4-read-model-updater", "library")
-        .with_next_stage("NFR Requirements")
+        .with_unit(UnitRef::new(
+            UnitName::parse("u4-read-model-updater").unwrap(),
+            UnitKind::Library,
+        ))
+        .with_next_stage(StageName::parse("NFR Requirements").unwrap())
         .build();
-        assert_eq!(token.version(), 1);
-        assert_eq!(token.stage(), "functional-design");
-        assert_eq!(token.scope(), "classic");
-        assert_eq!(token.next_part_index(), 2);
-        assert_eq!(token.bundle_digest(), "sha256:aaaa");
-        assert_eq!(token.directive_digest(), "dddd");
-        assert_eq!(token.route_hash(), "rrrr");
-        assert_eq!(token.state_hash(), "hhhh");
-        assert!(token.is_state_aware());
-        assert_eq!(token.unit(), Some("u4-read-model-updater"));
-        assert_eq!(token.unit_kind(), Some("library"));
+        assert!(token.version().is_supported());
+        assert_eq!(token.stage().as_str(), "functional-design");
+        assert_eq!(token.scope().as_str(), "classic");
+        assert_eq!(token.next_part_index().as_u32(), 2);
+        assert_eq!(token.bindings(), &bindings());
+        assert_eq!(
+            token.unit().map(|unit| unit.name().as_str()),
+            Some("u4-read-model-updater")
+        );
+        assert_eq!(token.unit().map(UnitRef::kind), Some(UnitKind::Library));
         assert!(token.is_per_unit());
-        assert_eq!(token.next_stage(), Some("NFR Requirements"));
+        assert_eq!(
+            token.next_stage().map(StageName::as_str),
+            Some("NFR Requirements")
+        );
         assert_eq!(token.gate(), GateField::Gated);
         assert!(!token.is_single());
-        assert!(!token.is_wave());
-        assert!(!token.is_swarm_settled());
-        assert!(!token.is_force_persona());
     }
 
     #[test]
-    fn the_state_binding_can_be_dropped() {
-        let token = ContinueTokenBuilder::new("s", "c", 1, "b", "d", "r", "h", GateField::Ungated)
-            .without_state_binding()
-            .with_single()
-            .build();
-        assert!(!token.is_state_aware());
+    fn a_stateless_binding_is_part_of_the_bindings_pair() {
+        let stateless = Bindings::new(
+            BundleDigest::new("b"),
+            DirectiveDigest::new("d"),
+            RouteDigest::new("r"),
+            None,
+        );
+        let token = ContinueTokenBuilder::new(
+            StageSlug::parse("s").unwrap(),
+            ScopeSlug::parse("c").unwrap(),
+            PartIndex::FIRST,
+            stateless,
+            GateField::Ungated,
+        )
+        .with_single()
+        .build();
+        assert!(token.bindings().state().is_none());
         assert!(token.is_single());
+        assert!(!token.is_per_unit());
     }
 }

@@ -8,10 +8,10 @@ use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::CheckboxState;
 
 use super::commit_error::CommitError;
-use super::intent_execution_repository::IntentExecutionRepository;
-use super::intent_repository::IntentRepository;
+use super::port::IntentExecutionRepository;
+use super::port::IntentRepository;
+use super::port::RepositoryError;
 use super::reported_transition::ReportedTransition;
-use super::repository_error::RepositoryError;
 
 /// コンダクタが報告した結末（[`ReportedTransition`]）を 1 つの遷移としてコミットする。
 ///
@@ -370,8 +370,8 @@ mod tests {
 
     use super::super::commit_error::CommitError;
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
+    use super::super::port::RepositoryError;
     use super::super::reported_transition::ReportedTransition;
-    use super::super::repository_error::RepositoryError;
     use super::super::test_support::{
         InMemoryIntentExecutionRepository, InMemoryIntentRepository, absent_execution, at,
         execution_id, genesis, slug, start_from_plan,
