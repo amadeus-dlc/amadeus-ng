@@ -87,12 +87,32 @@ pub struct IntentExecution {
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     seq_nr: usize,
+    /// ストアが採番した楽観 version — **次の書込に提示する不透明トークン**である。
+    ///
+    /// 採番するのはストアであり正本はスナップショット行の列 (本家 v3 の
+    /// `SnapshotEnvelope::version()`) だが、読んだ版を書込まで引き回すのは集約の仕事である
+    /// (オーナー裁定 2026-08-30 — 読んだ時点の版で書くから、その間の書込を競合として弾ける)。
+    /// 再構成した Repository が [`IntentExecution::with_version`] で刻み、書込む Repository が
+    /// [`IntentExecution::version`] で読む。まだ 1 度も永続化していない集約は
+    /// [`IntentExecution::UNPERSISTED_VERSION`] を持つ。
+    ///
+    /// `seq_nr` とは別物である — あちらはドメインが採番する順序番号で、値がたまたま一致する
+    /// ことがあっても意味は違う。**型は基本データ型 `usize` のままにする** — 不透明トークンを
+    /// newtype で包む案は却下済みであり、`seq_nr` と隣り合っていても包まない
+    /// (オーナー裁定 2026-08-30。取り違えは型ではなく規律とレビューで防ぐ)。
+    version: usize,
     /// 最後に適用したイベントの発生時刻。集約は時計を持たないので、この値は常に適用した
     /// イベントから来る (NFR3.1)。Repository はこれをイベント封筒の `occurred_at` に使う。
     last_updated_at: DateTime<Utc>,
 }
 
 impl IntentExecution {
+    /// まだ 1 度も永続化していない集約が提示する版 (新規作成の楽観 version)。
+    ///
+    /// 本家 v3 の規約「新規作成は `seq_nr == 1` かつ `version == 0`」の 0 に名前を与えた
+    /// ものである — 呼出側にも Repository 実装にも裸の `0` を書かせない。
+    pub const UNPERSISTED_VERSION: usize = 0;
+
     // ---- W1: 生成 (BR2.2 / BR2.6) ----
 
     /// intent を 1 回実行し始める (genesis)。
@@ -160,8 +180,21 @@ impl IntentExecution {
             approved: vec![false; count],
             revision_count: vec![0; count],
             seq_nr: 1,
+            version: IntentExecution::UNPERSISTED_VERSION,
             last_updated_at: occurred_at,
         }
+    }
+
+    /// ストアが採番した版を刻む (**Repository 実装専用**)。
+    ///
+    /// 再構成の最後にストアが読んだ版を載せるための一手である — ユースケースは呼ばない。
+    /// 版はドメインが導出できない値 (正本はスナップショット行の列) なので、外から刻む口が
+    /// 要る。`store` を通ったあとの集約が持つ版は**書込前に提示した版**のままであり、次の
+    /// 書込は再構成からやり直す (`coding-rules` の楽観ロック方針)。
+    #[must_use]
+    pub const fn with_version(mut self, version: usize) -> IntentExecution {
+        self.version = version;
+        self
     }
 
     /// ジャーナル全体から集約を復元する (Event Sourcing の再生経路)。
@@ -183,6 +216,7 @@ impl IntentExecution {
     )]
     pub fn replay(
         id: IntentExecutionId,
+        version: usize,
         events: impl IntoIterator<Item = (usize, DateTime<Utc>, IntentExecutionEvent)>,
     ) -> (IntentExecution, Intent) {
         let mut events = events.into_iter();
@@ -198,7 +232,7 @@ impl IntentExecution {
         for (seq_nr, occurred_at, event) in events {
             execution.apply_event(&intent, seq_nr, occurred_at, &event);
         }
-        (execution, intent)
+        (execution.with_version(version), intent)
     }
 
     // ---- 観測 (read model) ----
@@ -233,6 +267,15 @@ impl IntentExecution {
     #[must_use]
     pub const fn seq_nr(&self) -> usize {
         self.seq_nr
+    }
+
+    /// 次の書込に提示する楽観 version (ストアが採番した不透明トークン)。
+    ///
+    /// 解釈も比較も算術もしない — 読んだ値をそのままストアへ返すだけである (BR5.3)。
+    /// `seq_nr` から導いてはならない。
+    #[must_use]
+    pub const fn version(&self) -> usize {
+        self.version
     }
 
     /// 最後に適用したイベントの発生時刻 (集約は時計を持たない — NFR3.1)。
@@ -2332,15 +2375,43 @@ mod tests {
         let event = w.reject_gate(None, occurred()).unwrap();
         journal.push((w.seq_nr(), *w.last_updated_at(), event));
 
-        let (replayed, intent) = IntentExecution::replay(execution_id(), journal);
+        let (replayed, intent) = IntentExecution::replay(
+            execution_id(),
+            IntentExecution::UNPERSISTED_VERSION,
+            journal,
+        );
         assert_eq!(replayed, w.execution);
         assert_eq!(intent, w.intent);
     }
 
     #[test]
+    fn a_replayed_aggregate_carries_the_version_the_store_assigned() {
+        // 版はイベント列から導出できない — ストアが読んだ値を再構成の最後に刻む。
+        let mut w = all_exec(3);
+        let journal = vec![(
+            1,
+            occurred(),
+            IntentExecutionEvent::Started(Started::new(w.intent.clone())),
+        )];
+        let (fresh, _intent) = IntentExecution::replay(execution_id(), 7, journal);
+        assert_eq!(fresh.version(), 7);
+        // genesis は未永続 — `start` を通った集約はまだ版を持たない。
+        assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
+        // 版はコマンドで動かない (採番するのはストアである)。
+        let _ = w.complete_stage(occurred()).unwrap();
+        assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
+        // 刻んだ版は通番と独立である。
+        assert_eq!(fresh.seq_nr(), 1);
+    }
+
+    #[test]
     #[should_panic(expected = "replay: empty journal")]
     fn replaying_an_empty_journal_crashes() {
-        let _ = IntentExecution::replay(execution_id(), Vec::new());
+        let _ = IntentExecution::replay(
+            execution_id(),
+            IntentExecution::UNPERSISTED_VERSION,
+            Vec::new(),
+        );
     }
 
     #[test]
@@ -2348,7 +2419,11 @@ mod tests {
     fn replaying_a_journal_that_does_not_begin_with_started_crashes() {
         let mut w = all_exec(3);
         let event = w.complete_stage(occurred()).unwrap();
-        let _ = IntentExecution::replay(execution_id(), vec![(1, occurred(), event)]);
+        let _ = IntentExecution::replay(
+            execution_id(),
+            IntentExecution::UNPERSISTED_VERSION,
+            vec![(1, occurred(), event)],
+        );
     }
 
     #[test]
@@ -2356,7 +2431,11 @@ mod tests {
     fn replaying_a_genesis_with_the_wrong_seq_nr_crashes() {
         let w = all_exec(3);
         let started = IntentExecutionEvent::Started(Started::new(w.intent));
-        let _ = IntentExecution::replay(execution_id(), vec![(2, occurred(), started)]);
+        let _ = IntentExecution::replay(
+            execution_id(),
+            IntentExecution::UNPERSISTED_VERSION,
+            vec![(2, occurred(), started)],
+        );
     }
 
     // ---- W4: next_decision (BR3.1 / BR2.6) ----
@@ -2511,7 +2590,11 @@ mod tests {
                     vec![slug(0), slug(2)],
                 )),
             ));
-            let (execution, _intent) = IntentExecution::replay(execution_id(), journal);
+            let (execution, _intent) = IntentExecution::replay(
+                execution_id(),
+                IntentExecution::UNPERSISTED_VERSION,
+                journal,
+            );
             let w = Run {
                 intent: base.intent.clone(),
                 execution,
@@ -2845,7 +2928,11 @@ mod tests {
                 }
             }
 
-            let (replayed, intent) = IntentExecution::replay(execution_id(), journal);
+            let (replayed, intent) = IntentExecution::replay(
+                execution_id(),
+                IntentExecution::UNPERSISTED_VERSION,
+                journal,
+            );
             prop_assert_eq!(&replayed, &w.execution);
             prop_assert_eq!(&intent, &w.intent);
         }

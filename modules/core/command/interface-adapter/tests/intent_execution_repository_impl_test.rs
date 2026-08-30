@@ -14,7 +14,7 @@
 
 mod support;
 
-use core_command_domain::orchestration::{IntentExecutionEvent, StageCompleted};
+use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent, StageCompleted};
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
@@ -23,9 +23,7 @@ use core_command_interface_adapter::orchestration::{
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
 
-use core_command_use_case::orchestration::{
-    IntentExecutionRepository, RehydratedIntentExecution, RepositoryError,
-};
+use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -33,9 +31,6 @@ use support::{absent_execution_id, advance, at, contract, execution_id, genesis,
 
 /// 我々が封筒に書く型判別子 (アダプタの `EVENT_MANIFEST` と同じ綴り)。
 const MANIFEST: &str = "intent-execution-event/1";
-
-/// 未永続の集約が提示する版。
-const UNPERSISTED: usize = <Repository as IntentExecutionRepository>::UNPERSISTED_VERSION;
 
 /// 本家の SQLite イベントストア (Repository が内包しているものと同じ型)。
 type UpstreamStore = IntentExecutionSqliteStore;
@@ -74,7 +69,7 @@ impl Fixture {
 }
 
 /// genesis + 2 コマンドを書き、最後の再水和結果を返す。
-async fn seed(repository: &mut Repository) -> RehydratedIntentExecution {
+async fn seed(repository: &mut Repository) -> IntentExecution {
     let held = support::store_genesis(repository).await;
     let held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(&intent(), at())
@@ -138,8 +133,8 @@ async fn the_version_after_a_read_without_replay_is_the_one_the_store_assigned()
         .await
         .expect("読める");
     assert_eq!(found.version(), 3, "3 回の書込ぶん採番されている");
-    assert_eq!(found.aggregate().seq_nr(), 3);
-    assert_eq!(found.aggregate(), expected.aggregate());
+    assert_eq!(found.seq_nr(), 3);
+    assert_eq!(found, expected);
 }
 
 #[tokio::test]
@@ -155,8 +150,8 @@ async fn a_replay_does_not_move_the_version_the_store_assigned() {
         .find_by_id(&execution_id())
         .await
         .expect("読める");
-    assert_eq!(found.aggregate().seq_nr(), 3, "replay で追いつく");
-    assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
+    assert_eq!(found.seq_nr(), 3, "replay で追いつく");
+    assert_eq!(found, expected, "全状態が一致する");
     assert_eq!(
         found.version(),
         3,
@@ -270,7 +265,7 @@ async fn a_tampered_snapshot_state_does_not_affect_reconstruction() {
         .find_by_id(&execution_id())
         .await
         .expect("状態はジャーナルから導出される");
-    assert_eq!(found.aggregate(), expected.aggregate());
+    assert_eq!(found, expected);
 }
 
 #[tokio::test]
@@ -328,10 +323,7 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     let (aggregate, event) = genesis();
-    repository
-        .store(&event, &aggregate, UNPERSISTED)
-        .await
-        .expect("genesis");
+    repository.store(&event, &aggregate).await.expect("genesis");
 
     let mut store = fixture.store();
     // 生の行を作るので、封筒に載せるのはアダプタの永続化 DTO である。
@@ -433,7 +425,7 @@ async fn the_contract_seed_writes_five_events() {
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     let held = contract::seed(&mut repository).await;
-    assert_eq!(held.aggregate().seq_nr(), 5);
+    assert_eq!(held.seq_nr(), 5);
     assert_eq!(held.version(), 5);
 }
 
@@ -445,7 +437,7 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
     let mut repository = fixture.repository();
     let (aggregate, started) = genesis();
     repository
-        .store(&started, &aggregate, UNPERSISTED)
+        .store(&started, &aggregate)
         .await
         .expect("genesis は書ける");
     let held = repository

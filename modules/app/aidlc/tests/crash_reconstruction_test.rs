@@ -18,12 +18,12 @@
 
 mod support;
 
-use core_command_domain::orchestration::AutonomyMode;
+use core_command_domain::orchestration::{AutonomyMode, IntentExecution};
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
 };
-use core_command_use_case::orchestration::{IntentExecutionRepository, RehydratedIntentExecution};
+use core_command_use_case::orchestration::IntentExecutionRepository;
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
 };
@@ -60,7 +60,7 @@ impl Fixture {
 }
 
 /// 5 コマンドぶん書き進め、最後の再水和結果を返す。
-async fn write_five(repository: &mut Repository) -> RehydratedIntentExecution {
+async fn write_five(repository: &mut Repository) -> IntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
         aggregate.complete_stage(&intent(), at())
@@ -96,9 +96,9 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
         .find_by_id(&execution_id())
         .await
         .expect("読み直せる");
-    assert_eq!(found.aggregate(), expected.aggregate(), "全状態が一致する");
+    assert_eq!(found, expected, "全状態が一致する");
     assert_eq!(found.version(), 5);
-    assert_eq!(found.aggregate().seq_nr(), 5);
+    assert_eq!(found.seq_nr(), 5);
 }
 
 #[tokio::test]
@@ -204,16 +204,13 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
         .find_by_id(&execution_id())
         .await
         .expect("再水和");
-    let mut aggregate = held.aggregate().clone();
+    let mut aggregate = held.clone();
     let event = aggregate
         .approve_gate(&intent(), Some("ok".to_string()), at())
         .or_else(|_| aggregate.complete_stage(&intent(), at()))
         .expect("次のコマンド");
     assert_eq!(aggregate.seq_nr(), 6);
-    repository
-        .store(&event, &aggregate, held.version())
-        .await
-        .expect("6 件目");
+    repository.store(&event, &aggregate).await.expect("6 件目");
 
     let reader = fixture.reader();
     let rows: Result<Vec<_>, JournalReadError> = reader.events_after(GlobalSeqNr::new(5)).await;

@@ -15,8 +15,6 @@ use super::next_turn_input::NextTurnInput;
 use super::port::ContinueTokenCodec;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
-use super::port::StatePosition;
-use super::port::StoreVersion;
 use super::port::WorkflowDefinitionRepository;
 use super::port::{RuleBundleReadError, RuleBundleSource};
 
@@ -184,7 +182,7 @@ where
                 message: wording::STATE_MOVED_ON.to_string(),
             }));
         };
-        let rehydrated = self
+        let execution = self
             .execution_repository
             .find_by_id(active.execution_id())
             .await
@@ -193,10 +191,9 @@ where
                     message: wording::STATE_MOVED_ON.to_string(),
                 })
             })?;
-        let version = rehydrated.version();
-        let execution = rehydrated.into_aggregate();
-        let intent = self
-            .intent_repository
+        // 束縛のダイジェストは集約だけで組めるが、**intent が読めること**は束縛の前提である
+        // (読めなければ定義のピンも解決できない)。fail-closed を保つため、ここで確かめる。
+        self.intent_repository
             .find_by_id(active.intent_id())
             .await
             .map_err(|_| {
@@ -204,11 +201,7 @@ where
                     message: wording::STATE_MOVED_ON.to_string(),
                 })
             })?;
-        let current = self.codec.state_binding(&StatePosition::new(
-            intent.id().clone(),
-            execution.seq_nr(),
-            StoreVersion::new(version),
-        ));
+        let current = self.codec.state_binding(&execution);
         if &current != bound {
             return Err(Box::new(Directive::Error {
                 message: wording::STATE_MOVED_ON.to_string(),

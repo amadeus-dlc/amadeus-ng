@@ -1,8 +1,18 @@
-//! `ContinueTokenCodec` の実 Gateway — HMAC-SHA256 封筒 `{p, m}` の base64url (02 §4.4)。
+//! `ContinueTokenCodec` の実 Gateway — ドメイン型と upstream ワイヤ形式の**変換**だけを持つ。
 //!
-//! 鍵はマシンローカルの `.aidlc-steering-token-key` を遅延鋳造する (I8 の例外 1 —
-//! "machine-local runtime state, not a project-derived value an untrusted continuation can
-//! recompute")。検証は timing-safe (`Mac::verify_slice`)。デコードは厳密型表 —
+//! 封緘そのもの (HMAC-SHA256 封筒 `{p, m}` の base64url — 02 §4.4) は**純粋なコーデック**で
+//! あり、言語拡張の [`core_infrastructure::codec`] が持つ (オーナー裁定 2026-08-30
+//! 「I/O を含まない純粋なコーデックロジックをインフラストラクチャ層に配置せよ」)。ここに
+//! 残るのは upstream 固有のもの — 18 キーの 1 文字綴り・センチネル・厳密型表・ドメイン型への
+//! parse である (`coding-rules/upstream-contracts.md`「境界で変換」)。
+//!
+//! **本 Gateway は I/O を持たない** — 計算だけである (オーナー裁定 2026-08-30「コーデックの
+//! 計算部分と I/O 部分を分離しろ」)。鍵はマシンローカルの `.aidlc-steering-token-key` を
+//! 遅延鋳造した**結果のバイト列**を受け取る (I8 の例外 1 — "machine-local runtime state,
+//! not a project-derived value an untrusted continuation can recompute")。鋳造そのものは
+//! 鋳造そのものは同じアダプタ層の機構モジュール [`crate::read_or_mint_secret`] が持ち、
+//! 配線するのは合成ルートである。
+//! 検証は timing-safe (`Mac::verify_slice`)。デコードは厳密型表 —
 //! 未知キー・型違反は serde の `deny_unknown_fields` と型で拒否し、ドメイン型へ上げる
 //! parse が文法違反 (slug・部索引 0・予約フラグの真値・unit 対の片割れ) を拒否する。
 //!
@@ -10,25 +20,15 @@
 //! 表現への依存は derive 変更で黙ってダイジェストが変わる時限爆弾であり、区切り文字連結は
 //! 区切り文字注入を許すので、どちらも使わない (オーナー裁定 2026-08-30)。
 
-use std::io;
-use std::path::Path;
-
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use core_command_domain::orchestration::{
     Bindings, BundleDigest, ContinueToken, ContinueTokenBuilder, DirectiveDigest, GateField,
-    PartIndex, RouteDigest, RunStageDirective, StageName, StateBinding, SteeringPlan, TokenVersion,
-    UnitKind, UnitName, UnitRef,
+    IntentExecution, PartIndex, RouteDigest, RunStageDirective, StageName, StateBinding,
+    SteeringPlan, TokenVersion, UnitKind, UnitName, UnitRef,
 };
 use core_command_domain::workflow_definition::{ScopeSlug, StageRoute, StageSlug};
-use core_command_use_case::orchestration::{
-    ContinueTokenCodec, InvalidContinueToken, StatePosition,
-};
-use hmac::{Hmac, Mac};
+use core_command_use_case::orchestration::{ContinueTokenCodec, InvalidContinueToken};
+use core_infrastructure::codec::{digest_hex, seal, unseal};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest as _, Sha256};
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// state 束縛なしのときワイヤ `h` に置くセンチネル (輸送形の詳細 — ドメインへは出さない)。
 const NO_STATE_SENTINEL: &str = "-";
@@ -68,14 +68,6 @@ struct WirePayload {
     h: String,
 }
 
-/// 封筒 `{p, m}`。
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WireEnvelope {
-    p: WirePayload,
-    m: String,
-}
-
 /// run-stage ダイジェストの素材 (キー項目の名前付き直列化)。
 #[derive(Serialize)]
 struct DirectiveMaterial<'a> {
@@ -109,8 +101,8 @@ struct RouteMaterial<'a> {
     stages: Vec<&'a str>,
 }
 
-/// state 束縛の素材。`version` はストア採番の不透明トークン
-/// ([`core_command_use_case::orchestration::StoreVersion`]) の生値。
+/// state 束縛の素材。`version` はストアが採番した楽観 version
+/// ([`core_command_domain::orchestration::IntentExecution::version`]) である。
 #[derive(Serialize)]
 struct StateMaterial<'a> {
     intent_id: &'a str,
@@ -125,45 +117,15 @@ pub struct ContinueTokenCodecImpl {
 }
 
 impl ContinueTokenCodecImpl {
-    /// 鍵ファイルを開く (無ければ 32 バイトの乱数を鋳造して書く)。
+    /// 鋳造済みの鍵バイト列を受け取って組む。
     ///
-    /// # Errors
-    ///
-    /// 鍵ファイルの読み書きの失敗 (I/O)。
-    pub fn open(key_path: &Path) -> io::Result<ContinueTokenCodecImpl> {
-        let key = match std::fs::read(key_path) {
-            Ok(key) if !key.is_empty() => key,
-            Ok(_) | Err(_) => {
-                let mut minted = vec![0u8; 32];
-                getrandom::fill(&mut minted).map_err(io::Error::other)?;
-                std::fs::write(key_path, &minted)?;
-                minted
-            }
-        };
-        Ok(ContinueTokenCodecImpl { key })
+    /// 鍵の取得 (ファイル読み・乱数鋳造・書込) は**本型の責務ではない** — 合成ルートが
+    /// 用意した鍵バイト列を渡す。おかげで本型は I/O を持たず、テストは一時ディレクトリを
+    /// 作らずに鍵を直接渡せる。
+    #[must_use]
+    pub const fn new(key: Vec<u8>) -> ContinueTokenCodecImpl {
+        ContinueTokenCodecImpl { key }
     }
-
-    /// ペイロードの MAC (HMAC-SHA256 は任意長鍵を受けるため失敗しないが、防御的に
-    /// 失敗時は空 MAC を返す — 空 MAC のトークンは決して検証を通らない = fail-closed)。
-    fn mac_of(&self, payload_bytes: &[u8]) -> Vec<u8> {
-        let Ok(mut mac) = HmacSha256::new_from_slice(&self.key) else {
-            return Vec::new();
-        };
-        mac.update(payload_bytes);
-        mac.finalize().into_bytes().to_vec()
-    }
-}
-
-/// 名前付き素材の JSON 直列化 → sha256 hex。
-#[expect(
-    clippy::disallowed_methods,
-    reason = "契約 JSON ではなくダイジェスト素材のエスケープ付き直列化 (BR1.7 の射程外) — canon-json を通す契約面ではない"
-)]
-fn digest_of<T: Serialize>(material: &T) -> String {
-    let bytes = serde_json::to_vec(material).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    hex(&hasher.finalize())
 }
 
 fn wire_gate(gate: GateField) -> WireGate {
@@ -262,36 +224,16 @@ fn domain_token(payload: &WirePayload) -> Result<ContinueToken, InvalidContinueT
 }
 
 impl ContinueTokenCodec for ContinueTokenCodecImpl {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "契約 JSON ではなくマシンローカルなトークンのワイヤ形式 (BR1.7 の射程外) — canon-json を通す契約面ではない"
-    )]
     fn mint(&self, token: &ContinueToken) -> String {
-        let payload = wire_payload(token);
-        let payload_bytes = serde_json::to_vec(&payload).unwrap_or_default();
-        let mac = hex(&self.mac_of(&payload_bytes));
-        let envelope = WireEnvelope { p: payload, m: mac };
-        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&envelope).unwrap_or_default())
+        // ここが持つのはドメイン型 → upstream ワイヤ形式の変換だけ。封緘は純粋コーデック。
+        seal(&self.key, &wire_payload(token))
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "契約 JSON ではなくマシンローカルなトークンのワイヤ形式 (BR1.7 の射程外) — canon-json を通す契約面ではない"
-    )]
     fn verify(&self, encoded: &str) -> Result<ContinueToken, InvalidContinueToken> {
-        let bytes = URL_SAFE_NO_PAD
-            .decode(encoded)
-            .map_err(|_| InvalidContinueToken)?;
-        let envelope: WireEnvelope =
-            serde_json::from_slice(&bytes).map_err(|_| InvalidContinueToken)?;
-        let payload_bytes = serde_json::to_vec(&envelope.p).map_err(|_| InvalidContinueToken)?;
-        let mut mac = HmacSha256::new_from_slice(&self.key).map_err(|_| InvalidContinueToken)?;
-        mac.update(&payload_bytes);
-        let expected = unhex(&envelope.m).ok_or(InvalidContinueToken)?;
-        // timing-safe 比較は Mac::verify_slice が行う。
-        mac.verify_slice(&expected)
-            .map_err(|_| InvalidContinueToken)?;
-        domain_token(&envelope.p)
+        // 封緘を解くのは純粋コーデック (MAC 不一致・復号不能はどちらも `None` = fail-closed)。
+        // ここが持つのは、解けた upstream ワイヤ形式をドメイン型へ上げる厳密型表である。
+        let payload: WirePayload = unseal(&self.key, encoded).ok_or(InvalidContinueToken)?;
+        domain_token(&payload)
     }
 
     fn bundle_digest(&self, plan: &SteeringPlan) -> BundleDigest {
@@ -304,7 +246,7 @@ impl ContinueTokenCodec for ContinueTokenCodecImpl {
                 text: piece.text(),
             })
             .collect();
-        BundleDigest::new(digest_of(&pieces))
+        BundleDigest::new(digest_hex(&pieces))
     }
 
     fn directive_digest(&self, run_stage: &RunStageDirective) -> DirectiveDigest {
@@ -320,7 +262,7 @@ impl ContinueTokenCodec for ContinueTokenCodecImpl {
             }),
             single: run_stage.is_single(),
         };
-        DirectiveDigest::new(digest_of(&material))
+        DirectiveDigest::new(digest_hex(&material))
     }
 
     fn route_digest(&self, route: &StageRoute) -> RouteDigest {
@@ -332,45 +274,29 @@ impl ContinueTokenCodec for ContinueTokenCodecImpl {
                 .map(StageSlug::as_str)
                 .collect(),
         };
-        RouteDigest::new(digest_of(&material))
+        RouteDigest::new(digest_hex(&material))
     }
 
-    fn state_binding(&self, position: &StatePosition) -> StateBinding {
+    fn state_binding(&self, execution: &IntentExecution) -> StateBinding {
         let material = StateMaterial {
-            intent_id: position.intent_id().as_str(),
-            seq_nr: position.seq_nr(),
-            version: position.store_version().as_usize(),
+            intent_id: execution.intent_id().as_str(),
+            seq_nr: execution.seq_nr(),
+            version: execution.version(),
         };
-        StateBinding::new(digest_of(&material))
+        StateBinding::new(digest_hex(&material))
     }
-}
-
-/// 16 進小文字。
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-/// 16 進小文字の復号 (奇数長・非 16 進は `None`)。
-fn unhex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(text.get(index..index + 2)?, 16).ok())
-        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use core_command_domain::orchestration::GateField;
 
-    fn codec() -> (tempfile::TempDir, ContinueTokenCodecImpl) {
-        let dir = tempfile::tempdir().expect("一時ディレクトリ");
-        let codec =
-            ContinueTokenCodecImpl::open(&dir.path().join(".aidlc-steering-token-key")).unwrap();
-        (dir, codec)
+    /// 試験用の鍵 (鋳造は `core_infrastructure::secret_file` の責務なのでここでは要らない)。
+    fn codec() -> ContinueTokenCodecImpl {
+        ContinueTokenCodecImpl::new(vec![7u8; 32])
     }
 
     fn bindings() -> Bindings {
@@ -400,14 +326,14 @@ mod tests {
 
     #[test]
     fn a_minted_token_round_trips() {
-        let (_dir, codec) = codec();
+        let codec = codec();
         let encoded = codec.mint(&token());
         assert_eq!(codec.verify(&encoded).unwrap(), token());
     }
 
     #[test]
     fn a_stateless_token_round_trips_with_the_sentinel_on_the_wire() {
-        let (_dir, codec) = codec();
+        let codec = codec();
         let stateless = ContinueTokenBuilder::new(
             StageSlug::parse("functional-design").unwrap(),
             ScopeSlug::parse("classic").unwrap(),
@@ -434,7 +360,7 @@ mod tests {
 
     #[test]
     fn a_tampered_payload_fails_the_mac() {
-        let (_dir, codec) = codec();
+        let codec = codec();
         let encoded = codec.mint(&token());
         let bytes = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
         let tampered = String::from_utf8(bytes)
@@ -446,10 +372,10 @@ mod tests {
 
     #[test]
     fn garbage_and_wrong_key_fail_closed() {
-        let (_dir, subject) = codec();
+        let subject = codec();
         assert_eq!(subject.verify("not-base64url!!"), Err(InvalidContinueToken));
         assert_eq!(subject.verify(""), Err(InvalidContinueToken));
-        let (_dir2, other) = codec();
+        let other = ContinueTokenCodecImpl::new(vec![9u8; 32]);
         let encoded = other.mint(&token());
         assert_eq!(subject.verify(&encoded), Err(InvalidContinueToken));
     }
@@ -510,7 +436,7 @@ mod tests {
 
     #[test]
     fn an_unknown_key_is_rejected_by_the_strict_table() {
-        let (_dir, codec) = codec();
+        let codec = codec();
         let encoded = codec.mint(&token());
         let bytes = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
         let smuggled = String::from_utf8(bytes)
@@ -521,20 +447,60 @@ mod tests {
     }
 
     #[test]
-    fn the_key_is_minted_once_and_reused() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(".aidlc-steering-token-key");
-        let first = ContinueTokenCodecImpl::open(&path).unwrap();
+    fn the_same_key_verifies_a_token_minted_by_another_instance() {
+        // 封緘は鍵だけに依る — 同じ鍵を渡した別インスタンスが検証できる (プロセスをまたいだ
+        // 継続の本体)。鍵ファイルの遅延鋳造そのものは `core_infrastructure::secret_file` の
+        // テストが固定している。
+        let first = codec();
         let encoded = first.mint(&token());
-        let second = ContinueTokenCodecImpl::open(&path).unwrap();
+        let second = codec();
         assert_eq!(second.verify(&encoded).unwrap(), token());
+    }
+
+    /// state 束縛の素材になる集約 — 版だけ差し替えられる形で組む。
+    fn execution(version: usize) -> IntentExecution {
+        use chrono::{DateTime, Utc};
+        use core_command_domain::orchestration::{
+            Created, Intent, IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest,
+            WorkspaceScan,
+        };
+        use core_command_domain::workflow_definition::{
+            BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber,
+            WorkflowDefinitionId,
+        };
+        let intent = Intent::from(Created::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "state binding"),
+            vec![StageEntry::new(
+                StageSlug::parse("state-init").unwrap(),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                StageDisplay::new(StageNumber::parse("0.1").unwrap(), "Stage", "orchestrator")
+                    .unwrap(),
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .unwrap(),
+        ));
+        let (execution, _event) = IntentExecution::start(
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            intent,
+            DateTime::<Utc>::UNIX_EPOCH,
+        );
+        execution.with_version(version)
     }
 
     #[test]
     fn digests_are_deterministic_and_subject_specific() {
-        use core_command_domain::orchestration::{IntentId, RuleContent};
-        use core_command_use_case::orchestration::StoreVersion;
-        let (_dir, codec) = codec();
+        use core_command_domain::orchestration::RuleContent;
+        let codec = codec();
         let plan = SteeringPlan::new(vec![vec![RuleContent::new(
             "org.md".to_string(),
             "# Org\n".to_string(),
@@ -552,21 +518,11 @@ mod tests {
         );
         assert_eq!(codec.route_digest(&route), codec.route_digest(&route));
 
-        let position = StatePosition::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            3,
-            StoreVersion::new(4),
-        );
-        assert_eq!(
-            codec.state_binding(&position),
-            codec.state_binding(&position)
-        );
-        let moved = StatePosition::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            4,
-            StoreVersion::new(5),
-        );
-        assert_ne!(codec.state_binding(&position), codec.state_binding(&moved));
+        let held = execution(4);
+        assert_eq!(codec.state_binding(&held), codec.state_binding(&held));
+        // 版が動けば束縛も動く — 通番が同じでも別の state である。
+        let moved = execution(5);
+        assert_ne!(codec.state_binding(&held), codec.state_binding(&moved));
     }
 
     #[test]
@@ -574,7 +530,7 @@ mod tests {
         use core_command_domain::orchestration::RunStageDirectiveBuilder;
         use core_command_domain::workflow_definition::PhaseId;
         use core_command_domain::workflow_definition::StageMode;
-        let (_dir, codec) = codec();
+        let codec = codec();
         let run_stage = RunStageDirectiveBuilder::new(
             StageSlug::parse("functional-design").unwrap(),
             PhaseId::Inception,

@@ -3,18 +3,17 @@
 //! HMAC-SHA256・base64url・直列化 (エスケープ付き — 区切り文字注入を許さない) という
 //! **機構**はアダプタ層の実装が持ち、ユースケースは型付きペイロード ([`ContinueToken`]) と
 //! 型付きダイジェストの授受だけを行う。ダイジェストの**対象**は名前付きの VO
-//! ([`SteeringPlan`] / [`RunStageDirective`] / [`StageRoute`] / [`StatePosition`]) で渡し、
+//! ([`SteeringPlan`] / [`RunStageDirective`] / [`StageRoute`] / [`IntentExecution`]) で渡し、
 //! 素材文字列はポート面に現れない (オーナー裁定 2026-08-30)。検証は timing-safe (実装の
-//! 責務)。鍵 `.aidlc-steering-token-key` はマシンローカルで、実装が遅延鋳造する
-//! (I8 の例外 1 — 02 §3.1)。
+//! 責務)。鍵 `.aidlc-steering-token-key` はマシンローカルで、**合成ルートが遅延鋳造して
+//! 実装へ渡す** — 契約にも実装にも I/O は無い (I8 の例外 1 — 02 §3.1、オーナー裁定
+//! 2026-08-30「計算部分と I/O 部分を分離しろ」)。
 
 use core_command_domain::orchestration::{
-    BundleDigest, ContinueToken, DirectiveDigest, RouteDigest, RunStageDirective, StateBinding,
-    SteeringPlan,
+    BundleDigest, ContinueToken, DirectiveDigest, IntentExecution, RouteDigest, RunStageDirective,
+    StateBinding, SteeringPlan,
 };
 use core_command_domain::workflow_definition::StageRoute;
-
-use super::state_position::StatePosition;
 
 /// 無効なトークン (材料なし — 契約は「無効」だけを約束する。fail-closed の逐語文言は
 /// 呼出側の wording が組む)。
@@ -52,7 +51,11 @@ pub trait ContinueTokenCodec {
     fn route_digest(&self, route: &StageRoute) -> RouteDigest;
 
     /// state 束縛のダイジェスト (`h`)。
-    fn state_binding(&self, position: &StatePosition) -> StateBinding;
+    ///
+    /// 束縛の対象は「どの intent の・何番目まで進んだ歴史の・どの採番版か」であり、その 3 つは
+    /// すべて集約が持っている — 三つ組 VO (`StatePosition`) は廃止した
+    /// (オーナー裁定 2026-08-30)。素材文字列の組み立ては実装 (アダプタ層) の責務である。
+    fn state_binding(&self, execution: &IntentExecution) -> StateBinding;
 }
 
 #[cfg(test)]

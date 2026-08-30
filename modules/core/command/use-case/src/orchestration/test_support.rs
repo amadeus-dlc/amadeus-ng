@@ -23,7 +23,6 @@ use core_command_domain::workflow_definition::{
 
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
-use super::port::RehydratedIntentExecution;
 use super::port::RepositoryError;
 
 /// フィクスチャの intent 識別子 (UUIDv7)。
@@ -236,12 +235,13 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
-    ) -> Result<RehydratedIntentExecution, RepositoryError<IntentExecutionId>> {
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
         // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
+        // 返す集約にはストアが採番した版を刻む — 呼出側はそれをそのまま書込へ提示する。
         self.stored
             .clone()
             .filter(|aggregate| aggregate.id() == id)
-            .map(|aggregate| RehydratedIntentExecution::new(aggregate, self.version))
+            .map(|aggregate| aggregate.with_version(self.version))
             .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
     }
 
@@ -249,8 +249,9 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
         &mut self,
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
-        expected_version: usize,
     ) -> Result<(), RepositoryError<IntentExecutionId>> {
+        // 提示される版は集約が運んできたもの — 生値へ戻すのはストア境界を組む側だけである。
+        let expected_version = aggregate.version();
         self.store_attempts += 1;
         if self.interrupting_writes > 0 {
             // 別の書き手が先に書いた — ストアの版が進み、提示された版が古くなる。

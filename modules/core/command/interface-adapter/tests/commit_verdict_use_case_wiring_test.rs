@@ -44,7 +44,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     let mut repository = IntentExecutionRepositoryImpl::in_memory();
     let held = store_genesis(&mut repository).await;
     assert_eq!(
-        held.aggregate().checkbox(held.aggregate().cursor()),
+        held.checkbox(held.cursor()),
         Some(CheckboxState::InProgress),
         "genesis のカーソルは initialization（非ゲート）"
     );
@@ -71,12 +71,12 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
         .find_by_id(&execution_id())
         .await
         .expect("書いた集約は握り直せる");
-    assert_eq!(after.aggregate().seq_nr(), 2, "genesis に 1 件積んだ");
+    assert_eq!(after.seq_nr(), 2, "genesis に 1 件積んだ");
     assert_eq!(after.version(), 2, "版を採番したのはストアである");
     assert_eq!(
         intent()
             .stages()
-            .get(after.aggregate().cursor().to_usize())
+            .get(after.cursor().to_usize())
             .expect("カーソルは範囲内")
             .slug()
             .as_str(),
@@ -84,10 +84,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
         "カーソルは次のステージへ進んだ"
     );
     assert_eq!(
-        after
-            .aggregate()
-            .checkbox(after.aggregate().cursor())
-            .expect("カーソルは範囲内"),
+        after.checkbox(after.cursor()).expect("カーソルは範囲内"),
         CheckboxState::InProgress,
         "進んだ先のステージは着手済みになる"
     );
