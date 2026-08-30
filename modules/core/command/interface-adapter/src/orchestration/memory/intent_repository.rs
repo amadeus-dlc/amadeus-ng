@@ -48,12 +48,20 @@ impl IntentRepository for InMemoryIntentRepository {
 
     async fn store(
         &mut self,
-        _event: &IntentEvent,
+        event: &IntentEvent,
         intent: &Intent,
         _occurred_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError<IntentId>> {
-        // 実物と同じ約束の最小形 — genesis の重複は `Conflict` (実物ではストアの現行スロット
-        // 一意性が拒む。issue #50)。
+        // 実物と同じ約束の最小形。誕生記録と一致しない対は書込契約違反 (`Corrupt`)、
+        // genesis の重複は `Conflict` (実物ではストアの現行スロット一意性が拒む。issue #50)。
+        let IntentEvent::Created(created) = event;
+        if Intent::from(created.clone()) != *intent {
+            return Err(RepositoryError::Corrupt {
+                id: intent.id().clone(),
+                seq_nr: Some(1),
+                source: Box::new(std::io::Error::other("event does not match the aggregate")),
+            });
+        }
         if self.held.contains_key(intent.id()) {
             return Err(RepositoryError::Conflict {
                 expected: 0,

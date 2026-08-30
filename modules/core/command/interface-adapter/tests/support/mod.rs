@@ -260,6 +260,20 @@ pub(crate) fn intent_genesis() -> (Intent, IntentEvent) {
     (intent(), IntentEvent::Created(intent_created()))
 }
 
+/// **別の** intent (識別子だけ違う — 対の取り違え検査の材料)。
+#[must_use]
+pub(crate) fn other_intent() -> Intent {
+    Intent::from(Created::new(
+        absent_intent_id(),
+        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+            .expect("契約テストの定義 revision"),
+        StartRequest::new("classic", "contract").with_depth("standard"),
+        stages(),
+        scan(),
+    ))
+}
+
 /// intent の genesis を 1 件書き、握り直した結果を返す。
 pub(crate) async fn store_intent_genesis<R: IntentRepository>(repository: &mut R) -> Intent {
     let (aggregate, event) = intent_genesis();

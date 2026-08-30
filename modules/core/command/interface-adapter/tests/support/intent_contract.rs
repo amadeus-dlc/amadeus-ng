@@ -11,7 +11,8 @@
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 
 use super::{
-    IntentStoreFixture, absent_intent_id, at, intent_genesis, intent_id, store_intent_genesis,
+    IntentStoreFixture, absent_intent_id, at, intent_genesis, intent_id, other_intent,
+    store_intent_genesis,
 };
 
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
@@ -97,4 +98,37 @@ pub(crate) async fn a_duplicate_genesis_is_a_conflict<F: IntentStoreFixture>(fix
 
     let found = repository.find_by_id(&intent_id()).await.expect("読める");
     assert_eq!(found, aggregate, "拒否は保持中の intent を壊さない");
+}
+
+/// イベントと一致しない集約を渡す対は書込契約違反 (`Corrupt`) — 何も保存されない。
+///
+/// intent のイベントは誕生の材料 (= 集約の全状態) を運ぶので、対の取り違えが型で構成不能に
+/// ならない (実行イベントとの違い)。黙って保存すると journal と snapshot が別々の歴史を語る
+/// (CodeRabbit 指摘)。
+pub(crate) async fn a_mismatched_pair_is_refused<F: IntentStoreFixture>(fixture: &F) {
+    let mut repository = fixture.open();
+    let (_, event) = intent_genesis();
+    let mismatched = other_intent();
+
+    let err = repository
+        .store(&event, &mismatched, at())
+        .await
+        .expect_err("誕生記録と一致しない対は拒否");
+    assert!(matches!(
+        err,
+        RepositoryError::Corrupt {
+            seq_nr: Some(1),
+            ..
+        }
+    ));
+
+    for id in [&intent_id(), &absent_intent_id()] {
+        assert!(
+            matches!(
+                repository.find_by_id(id).await,
+                Err(RepositoryError::NotFound { .. })
+            ),
+            "拒否した対はどちらの識別子にも何も残さない"
+        );
+    }
 }

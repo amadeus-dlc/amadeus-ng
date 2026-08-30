@@ -350,11 +350,22 @@ where
         occurred_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError<IntentId>> {
         // イベントの通番はイベント自身から導く — `Created` は必ず 1 (genesis)。変異イベント
-        // が増えたらこの網羅 match がビルドで落ち、通番の導出とスナップショットストラテジの
-        // 分岐 (`IntentExecutionRepositoryImpl::store` の形) をここへ足すことになる。
-        let seq_nr = match event {
-            IntentEvent::Created(_) => FIRST_SEQ_NR,
-        };
+        // が増えたらこの単一変種の分配束縛がビルドで落ち、通番の導出とスナップショット
+        // ストラテジの分岐 (`IntentExecutionRepositoryImpl::store` の形) をここへ足すことに
+        // なる。
+        let IntentEvent::Created(created) = event;
+        let seq_nr = FIRST_SEQ_NR;
+        // イベントと集約の照合 — intent のイベントは誕生の材料 (= 集約の全状態) を運ぶので、
+        // 対の取り違えが型で構成不能にならない (実行イベントとの違い — あちらは識別子を
+        // 運ばない)。誕生記録から起こした集約と一致しない対は、journal と snapshot が別々の
+        // 歴史を語る書込になるため、呼出側の書込契約違反として拒む (CodeRabbit 指摘)。
+        if Intent::from(created.clone()) != *intent {
+            return Err(RepositoryError::Corrupt {
+                id: intent.id().clone(),
+                seq_nr: Some(FIRST_SEQ_NR),
+                source: Box::new(CorruptDetail::WriteContract),
+            });
+        }
         // genesis は本家の作成規約どおり journal と snapshot を原子的に書く — 基底が無いと
         // リプレイできない (初回 `persist_event_and_snapshot` — オーナー裁定 2026-08-30)。
         let envelope = EventEnvelope::new(

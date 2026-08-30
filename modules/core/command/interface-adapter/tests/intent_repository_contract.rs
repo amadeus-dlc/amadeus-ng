@@ -130,4 +130,5 @@ contract_tests!(
     round_trip,
     not_found,
     a_duplicate_genesis_is_a_conflict,
+    a_mismatched_pair_is_refused,
 );

@@ -134,7 +134,7 @@ async fn the_intent_stream_coexists_with_the_execution_stream_in_the_same_file()
             .expect("実行も読める")
             .seq_nr(),
         1,
-        "同じファイル・同じ UUID 値でもストリームは混ざらない"
+        "同じファイルに同居してもストリームは混ざらない (前提は識別子の値の一意性)"
     );
 }
 
