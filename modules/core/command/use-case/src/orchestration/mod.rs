@@ -19,13 +19,14 @@ mod port;
 mod reported_transition;
 #[cfg(test)]
 mod test_support;
+mod turn_materials;
 
 // ポート (trait) — Repository は集約名＋Repository で命名する
 // (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 // ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-010)。
 // 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
-pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository};
+pub use port::{IntentExecutionRepository, IntentRepository};
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の
@@ -36,13 +37,12 @@ pub use continue_use_case::ContinueUseCase;
 pub use next_turn_input::{ActiveWorkflow, NextTurnInput, NounFamily, NounToken, WorkspaceLayout};
 pub use next_use_case::NextUseCase;
 
-// steering 連鎖の読取ポート (実装はアダプタ層) と、そのポート入出力 VO。
-// ダイジェスト・綴り・封緘の旧ポート (`ContinueTokenCodec` / `CommandSpelling`) は廃止 —
-// 純計算はドメイン (steering_digest / EngineCommand::cli_spelling)、封緘・開封はアダプタの
-// free function になった (issue #45。ポートは Repository を目指して縮める)。
-pub use port::{RuleBundleReadError, RuleBundleSource};
+// 読取素材の値渡し (ポートではなく値 — issue #46。旧 `WorkflowDefinitionRepository` /
+// `RuleBundleSource` ポートは廃止し、use-case のポートは Repository 2 本だけになった。
+// 旧 `ContinueTokenCodec` / `CommandSpelling` の廃止 (issue #45) と合わせてポート正常化完結)。
 pub use reported_transition::ReportedTransition;
+pub use turn_materials::{RuleUnreadable, TurnMaterials};
 
 // エラー
 pub use commit_error::CommitError;
-pub use port::{GraphReadError, RepositoryError};
+pub use port::RepositoryError;

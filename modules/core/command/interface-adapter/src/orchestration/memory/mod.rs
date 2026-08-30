@@ -12,7 +12,5 @@
 //! 本 mod 自体が private。公開は親 (`orchestration`) のファサードが再輸出する。
 
 mod intent_repository;
-mod workflow_definition_repository;
 
 pub use intent_repository::InMemoryIntentRepository;
-pub use workflow_definition_repository::InMemoryWorkflowDefinitionRepository;

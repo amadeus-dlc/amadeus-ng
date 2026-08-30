@@ -26,8 +26,7 @@ use core_command_domain::workflow_definition::{
 use super::next_turn_input::{NextTurnInput, WorkspaceLayout};
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
-use super::port::WorkflowDefinitionRepository;
-use super::port::{RuleBundleReadError, RuleBundleSource};
+use super::turn_materials::TurnMaterials;
 
 /// 逐語文言 — ラダーが放出する公開契約の文字列 (出典: 契約マップ §1。コマンド参照は写像形)。
 mod wording {
@@ -49,6 +48,18 @@ mod wording {
 
     /// 分岐 9b。
     pub(super) const NO_STATE: &str = "No workflow state found (no active intent). Start one by describing what to build (/aidlc \"build the auth service\") or by naming a scope (/aidlc --scope <scope>).";
+
+    /// 定義の取り違え (BR2.6 / ADR-008)。upstream に定義 id の概念が無いため対応する逐語は
+    /// 無く、self-host 側の文言である (旧実装は `GraphReadError::NotFound` の Debug 表示 —
+    /// issue #46 で人間が読める形に是正した)。
+    pub(super) fn definition_mismatch(
+        expected: &core_command_domain::workflow_definition::WorkflowDefinitionId,
+        actual: &core_command_domain::workflow_definition::WorkflowDefinitionId,
+    ) -> String {
+        format!(
+            "The workflow definition \"{actual}\" is available, but \"{expected}\" was requested. One harness provides exactly one definition."
+        )
+    }
 
     /// 分岐 2.5。
     pub(super) fn parked(stage: &str) -> String {
@@ -138,11 +149,9 @@ mod wording {
 
 /// `next` の 21 分岐ラダー (読取専用 — 書込ポートを持たない)。
 #[derive(Debug)]
-pub struct NextUseCase<E, I, D, B> {
+pub struct NextUseCase<E, I> {
     execution_repository: E,
     intent_repository: I,
-    definition_repository: D,
-    bundle_source: B,
 }
 
 /// 稼働中ワークフローの読取済みコンテキスト。
@@ -153,33 +162,26 @@ struct LoadedWorkflow {
     execution: IntentExecution,
 }
 
-impl<E, I, D, B> NextUseCase<E, I, D, B>
+impl<E, I> NextUseCase<E, I>
 where
     E: IntentExecutionRepository,
     I: IntentRepository,
-    D: WorkflowDefinitionRepository,
-    B: RuleBundleSource,
 {
-    /// 読取専用ポート 4 本を注入する (find / load 系のみ — 書込動詞は呼ばない。ダイジェスト
-    /// と綴りはドメインの純計算になったので注入しない — issue #45)。
+    /// 読取専用の Repository 2 本を注入する — use-case のポートはこれだけである
+    /// (issue #45 / #46 — ポート正常化。定義とルール束は [`TurnMaterials`] の値渡し)。
     #[must_use]
-    pub const fn new(
-        execution_repository: E,
-        intent_repository: I,
-        definition_repository: D,
-        bundle_source: B,
-    ) -> NextUseCase<E, I, D, B> {
+    pub const fn new(execution_repository: E, intent_repository: I) -> NextUseCase<E, I> {
         NextUseCase {
             execution_repository,
             intent_repository,
-            definition_repository,
-            bundle_source,
         }
     }
 
     /// 観測 1 回を directive ちょうど 1 つに写す。失敗も `Directive::Error` で返す —
     /// エンジンの契約は「stdout に directive ちょうど 1 つ」である (§3.2)。
-    pub async fn execute(&self, input: &NextTurnInput) -> Directive {
+    ///
+    /// `materials` は合成ルートが読み終えた定義とルール束 (値渡し — issue #46)。
+    pub async fn execute(&self, input: &NextTurnInput, materials: &TurnMaterials) -> Directive {
         // ---- 前置ガード ----
         if let Some(message) = input.parse_error() {
             return Directive::Error {
@@ -229,8 +231,8 @@ where
             Ok(context) => context,
             Err(message) => return Directive::Error { message },
         };
-        // ---- 定義の読取 (state あり: intent がピンした定義。無し: ハーネスの定義) ----
-        let definition = match self.load_definition(input, context.as_ref()) {
+        // ---- 定義の照合 (state あり: intent のピンと突合せ。無し: 要求 id と突合せ) ----
+        let definition = match resolve_definition(materials, input, context.as_ref()) {
             Ok(definition) => definition,
             Err(message) => return Directive::Error { message },
         };
@@ -329,7 +331,7 @@ where
         }
         // ---- 分岐 4b: --single (scope-change / jump より前) ----
         if input.is_single() {
-            return self.emit_single(input, &definition, resolved.name());
+            return Self::emit_single(materials, input, &definition, resolved.name());
         }
         // ---- 分岐 5: state あり + 有効で異なる設定 ----
         if let Some(context) = context.as_ref() {
@@ -398,7 +400,13 @@ where
         }
         // ---- 分岐 7: --stage / --phase (jump) ----
         if input.stage().is_some() || input.phase().is_some() {
-            return self.emit_jump(input, context.as_ref(), &definition, resolved.name());
+            return Self::emit_jump(
+                materials,
+                input,
+                context.as_ref(),
+                &definition,
+                resolved.name(),
+            );
         }
         // ---- state なしの群: 7b / 8 / 9a / 9b ----
         if context.is_none() {
@@ -435,7 +443,8 @@ where
                 };
             }
         };
-        self.emit_happy_path(
+        Self::emit_happy_path(
+            materials,
             input,
             &context_value,
             &definition,
@@ -447,23 +456,25 @@ where
     /// run-stage を steering 連鎖経由で届ける — ルール束が空なら bare run-stage、あれば
     /// 第 1 部の `load-steering` + continue_token (02 §10)。
     fn deliver(
-        &self,
+        materials: &TurnMaterials,
         definition: &WorkflowDefinition,
         scope: &ScopeSlug,
         node: &StageNode,
         run_stage: &RunStageDirective,
         state: Option<StateBinding>,
     ) -> Directive {
-        let plan = match self.bundle_source.load(node.phase()) {
-            Ok(plan) => plan,
-            Err(RuleBundleReadError::Unreadable { path, cause }) => {
+        let plan = match materials.rules() {
+            Ok(rules) => match rules.plan_for(node.phase()) {
+                Ok(plan) => plan,
+                Err(_) => {
+                    return Directive::Error {
+                        message: wording::UNSPLITTABLE_SECTION.to_string(),
+                    };
+                }
+            },
+            Err(unreadable) => {
                 return Directive::Error {
-                    message: wording::rule_unreadable(&path, &cause),
-                };
-            }
-            Err(RuleBundleReadError::Unsplittable { .. }) => {
-                return Directive::Error {
-                    message: wording::UNSPLITTABLE_SECTION.to_string(),
+                    message: wording::rule_unreadable(unreadable.path(), unreadable.cause()),
                 };
             }
         };
@@ -504,27 +515,9 @@ where
         Ok(Some(LoadedWorkflow { intent, execution }))
     }
 
-    /// 定義を読む — state ありなら intent がピンした定義 id、無しならハーネスの定義 id。
-    fn load_definition(
-        &self,
-        input: &NextTurnInput,
-        context: Option<&LoadedWorkflow>,
-    ) -> Result<WorkflowDefinition, String> {
-        let id = match context {
-            Some(context) => context.intent.definition_id().clone(),
-            None => input
-                .definition_id()
-                .cloned()
-                .ok_or_else(|| "No workflow definition id was provided.".to_string())?,
-        };
-        self.definition_repository
-            .find_by_id(&id)
-            .map_err(|error| format!("{error:?}"))
-    }
-
     /// 分岐 4b — 単一ステージ隔離モード。
     fn emit_single(
-        &self,
+        materials: &TurnMaterials,
         input: &NextTurnInput,
         definition: &WorkflowDefinition,
         scope: &ScopeSlug,
@@ -540,7 +533,7 @@ where
                 match build_run_stage(node, definition, scope.as_str(), input.layout(), gate, true)
                 {
                     Ok(Directive::RunStage(run_stage)) => {
-                        self.deliver(definition, scope, node, &run_stage, None)
+                        Self::deliver(materials, definition, scope, node, &run_stage, None)
                     }
                     Ok(directive) => directive,
                     Err(message) => Directive::Error { message },
@@ -554,7 +547,7 @@ where
 
     /// 分岐 7 — jump。state ありなら純読み取り解決の名指し、無しなら直接グラフ検索。
     fn emit_jump(
-        &self,
+        materials: &TurnMaterials,
         input: &NextTurnInput,
         context: Option<&LoadedWorkflow>,
         definition: &WorkflowDefinition,
@@ -621,12 +614,36 @@ where
             false,
         ) {
             Ok(Directive::RunStage(run_stage)) => {
-                self.deliver(definition, scope, target, &run_stage, None)
+                Self::deliver(materials, definition, scope, target, &run_stage, None)
             }
             Ok(directive) => directive,
             Err(message) => Directive::Error { message },
         }
     }
+}
+
+/// 定義の照合 — 供給された定義 (値) と、要求されている定義 id の突合せ (issue #46)。
+///
+/// state ありなら intent がピンした定義 id、無しなら入力の定義 id と照合する。1 つの
+/// ハーネスが供給できる定義は 1 つだけなので、不一致は「取り違え」であり fatal (BR2.6 /
+/// ADR-008)。読取そのものの失敗は診断済みの逐語文言 (合成ルートが組む) をそのまま返す。
+fn resolve_definition(
+    materials: &TurnMaterials,
+    input: &NextTurnInput,
+    context: Option<&LoadedWorkflow>,
+) -> Result<WorkflowDefinition, String> {
+    let definition = materials.definition().map_err(str::to_string)?;
+    let expected = match context {
+        Some(context) => context.intent.definition_id().clone(),
+        None => input
+            .definition_id()
+            .cloned()
+            .ok_or_else(|| "No workflow definition id was provided.".to_string())?,
+    };
+    if definition.id() != &expected {
+        return Err(wording::definition_mismatch(&expected, definition.id()));
+    }
+    Ok(definition.clone())
 }
 
 /// state なしの群 (7b / 8 / 9a / 9b)。
@@ -685,15 +702,13 @@ fn mint_intent_print(definition: &WorkflowDefinition, scope: &str) -> Directive 
 }
 
 /// 分岐 10 — ハッピーパス。判断 (`NextDecision`) を directive に写すだけ。
-impl<E, I, D, B> NextUseCase<E, I, D, B>
+impl<E, I> NextUseCase<E, I>
 where
     E: IntentExecutionRepository,
     I: IntentRepository,
-    D: WorkflowDefinitionRepository,
-    B: RuleBundleSource,
 {
     fn emit_happy_path(
-        &self,
+        materials: &TurnMaterials,
         input: &NextTurnInput,
         context: &LoadedWorkflow,
         definition: &WorkflowDefinition,
@@ -721,7 +736,9 @@ where
                         ) {
                             Ok(Directive::RunStage(run_stage)) => {
                                 let binding = Self::state_binding(Some(context));
-                                self.deliver(definition, scope, node, &run_stage, binding)
+                                Self::deliver(
+                                    materials, definition, scope, node, &run_stage, binding,
+                                )
                             }
                             Ok(directive) => directive,
                             Err(message) => Directive::Error { message },
@@ -958,67 +975,33 @@ mod tests {
     use super::super::next_turn_input::{
         ActiveWorkflow, NextTurnInput, NounFamily, NounToken, WorkspaceLayout,
     };
-    use super::super::port::{GraphReadError, WorkflowDefinitionRepository};
-    use super::super::port::{RuleBundleReadError, RuleBundleSource};
     use super::super::test_support::{
         InMemoryIntentExecutionRepository, InMemoryIntentRepository, at, execution_id, genesis,
         intent as intent_id, slug,
     };
+    use super::super::turn_materials::RuleUnreadable;
     use super::*;
-    use core_command_domain::orchestration::{ContinueTokenBuilder, RuleContent};
+    use core_command_domain::orchestration::MemoryRules;
+    use core_command_domain::orchestration::{ContinueToken, ContinueTokenBuilder, RuleContent};
     use core_command_domain::orchestration::{
-        PartIndex, ReadOnlyVerb, SteeringPlan, UnitKind, UnitName, UnitRef,
+        PartIndex, ReadOnlyVerb, UnitKind, UnitName, UnitRef,
     };
     use core_command_domain::workflow_definition::ScopeSlug;
 
-    /// ルール束なしのダブル (bare run-stage 経路)。
-    #[derive(Debug, Default)]
-    struct NoRules;
+    /// org.md のフィクスチャパス (読取素材の材料)。
+    const ORG_PATH: &str = "aidlc/spaces/default/memory/org.md";
 
-    impl RuleBundleSource for NoRules {
-        fn load(&self, _phase: PhaseId) -> Result<SteeringPlan, RuleBundleReadError> {
-            Ok(SteeringPlan::new(Vec::new()))
-        }
+    /// ルール束なし (bare run-stage 経路) — memory 層が未整備の値。
+    fn no_rules() -> MemoryRules {
+        MemoryRules::default()
     }
 
-    /// 固定の配信計画を返すダブル (分割はアダプタの知識なので、テストは計画を直接組む)。
-    #[derive(Debug, Clone, Default)]
-    struct StaticRules {
-        chunks: Vec<Vec<RuleContent>>,
-    }
-
-    impl RuleBundleSource for StaticRules {
-        fn load(&self, _phase: PhaseId) -> Result<SteeringPlan, RuleBundleReadError> {
-            Ok(SteeringPlan::new(self.chunks.clone()))
-        }
-    }
-
-    /// 読取に失敗するダブル。
-    #[derive(Debug, Default)]
-    struct BrokenRules;
-
-    impl RuleBundleSource for BrokenRules {
-        fn load(&self, _phase: PhaseId) -> Result<SteeringPlan, RuleBundleReadError> {
-            Err(RuleBundleReadError::Unreadable {
-                path: "aidlc/spaces/default/memory/org.md".to_string(),
-                cause: "permission denied".to_string(),
-            })
-        }
-    }
-
-    /// 定義フィクスチャを保持する読取専用ダブル。
-    #[derive(Debug)]
-    struct InMemoryWorkflowDefinitionRepository {
-        held: WorkflowDefinition,
-    }
-
-    impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
-        fn find_by_id(
-            &self,
-            _id: &WorkflowDefinitionId,
-        ) -> Result<WorkflowDefinition, GraphReadError> {
-            Ok(self.held.clone())
-        }
+    /// 読取に失敗した素材 (在るのに読めない org.md)。
+    fn broken_rules() -> Result<MemoryRules, RuleUnreadable> {
+        Err(RuleUnreadable::new(
+            ORG_PATH.to_string(),
+            "permission denied".to_string(),
+        ))
     }
 
     /// genesis の合成計画 (索引 0 = initialization、以降 = inception) に一致する定義。
@@ -1110,64 +1093,56 @@ mod tests {
             .with_definition_id(WorkflowDefinitionId::parse("claude").unwrap())
     }
 
+    /// テスト用ハーネス — ユースケースと読取素材の対 (呼出し面を旧形のまま保つ)。
+    struct Harness {
+        use_case: NextUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository>,
+        materials: TurnMaterials,
+    }
+
+    impl Harness {
+        async fn execute(&self, input: &NextTurnInput) -> Directive {
+            self.use_case.execute(input, &self.materials).await
+        }
+    }
+
+    /// 素材を組む (定義 + ルール束)。
+    fn materials_of(definition: WorkflowDefinition, rules: MemoryRules) -> TurnMaterials {
+        TurnMaterials::new(Ok(definition), Ok(rules))
+    }
+
     /// ユースケースを組む (state あり)。
-    fn with_workflow(
-        stage_count: usize,
-    ) -> NextUseCase<
-        InMemoryIntentExecutionRepository,
-        InMemoryIntentRepository,
-        InMemoryWorkflowDefinitionRepository,
-        NoRules,
-    > {
+    fn with_workflow(stage_count: usize) -> Harness {
         let (intent, execution, _) = genesis(stage_count);
-        NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(stage_count),
-            },
-            NoRules,
-        )
+        Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(stage_count), no_rules()),
+        }
     }
 
     /// ユースケースを組む (集約を差し替えて)。
-    fn with_execution(
-        stage_count: usize,
-        execution: IntentExecution,
-    ) -> NextUseCase<
-        InMemoryIntentExecutionRepository,
-        InMemoryIntentRepository,
-        InMemoryWorkflowDefinitionRepository,
-        NoRules,
-    > {
+    fn with_execution(stage_count: usize, execution: IntentExecution) -> Harness {
         let (intent, _, _) = genesis(stage_count);
-        NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(stage_count),
-            },
-            NoRules,
-        )
+        Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(stage_count), no_rules()),
+        }
     }
 
     /// ユースケースを組む (state なし)。
-    fn without_workflow(
-        stage_count: usize,
-    ) -> NextUseCase<
-        InMemoryIntentExecutionRepository,
-        InMemoryIntentRepository,
-        InMemoryWorkflowDefinitionRepository,
-        NoRules,
-    > {
-        NextUseCase::new(
-            InMemoryIntentExecutionRepository::empty(),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(stage_count),
-            },
-            NoRules,
-        )
+    fn without_workflow(stage_count: usize) -> Harness {
+        Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::empty(),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(stage_count), no_rules()),
+        }
     }
 
     fn expect_load_steering(
@@ -1614,7 +1589,8 @@ mod tests {
     fn branch_10_a_recoverable_skip_inconsistency_names_the_repair() {
         let (intent, execution, _) = genesis(2);
         let context = LoadedWorkflow { intent, execution };
-        let directive = with_workflow(2).emit_happy_path(
+        let directive = NextUseCase::<InMemoryIntentExecutionRepository, InMemoryIntentRepository>::emit_happy_path(
+            &materials_of(definition(2), no_rules()),
             &active_input(),
             &context,
             &definition(2),
@@ -1634,7 +1610,8 @@ mod tests {
     fn branch_10_an_unrecoverable_skip_inconsistency_is_refused_verbatim() {
         let (intent, execution, _) = genesis(2);
         let context = LoadedWorkflow { intent, execution };
-        let directive = with_workflow(2).emit_happy_path(
+        let directive = NextUseCase::<InMemoryIntentExecutionRepository, InMemoryIntentRepository>::emit_happy_path(
+            &materials_of(definition(2), no_rules()),
             &active_input(),
             &context,
             &definition(2),
@@ -1654,7 +1631,8 @@ mod tests {
     fn a_routing_decision_that_reaches_the_happy_path_is_a_defensive_error() {
         let (intent, execution, _) = genesis(2);
         let context = LoadedWorkflow { intent, execution };
-        let directive = with_workflow(2).emit_happy_path(
+        let directive = NextUseCase::<InMemoryIntentExecutionRepository, InMemoryIntentRepository>::emit_happy_path(
+            &materials_of(definition(2), no_rules()),
             &active_input(),
             &context,
             &definition(2),
@@ -1840,14 +1818,13 @@ mod tests {
     async fn a_missing_intent_row_stops_before_the_ladder_continues() {
         // 実行は在るのに intent が引けない — 読取ガードは 2 本目のポートでも働く。
         let (_, execution, _) = genesis(2);
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            NoRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), no_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         assert!(error_message(&directive).starts_with("not found:"));
     }
@@ -1911,12 +1888,13 @@ mod tests {
         );
         let (intent, mut execution, _) = genesis(2);
         execution.complete_stage(&intent, at()).unwrap();
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository { held: definition },
-            NoRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition, no_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         let run_stage = expect_run_stage(directive);
         assert_eq!(run_stage.reviewer(), Some("aidlc-product-lead-agent"));
@@ -2039,12 +2017,13 @@ mod tests {
             scopes,
         );
         let (intent, execution, _) = genesis(2);
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository { held },
-            NoRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(held, no_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         assert_eq!(
             error_message(&directive),
@@ -2100,12 +2079,13 @@ mod tests {
             )
         };
         let (intent, execution, _) = genesis(2);
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository { held },
-            NoRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(held, no_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         assert!(
             error_message(&directive).contains("definition"),
@@ -2187,12 +2167,13 @@ mod tests {
         );
         let (intent, mut execution, _) = genesis(2);
         execution.complete_stage(&intent, at()).unwrap();
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository { held },
-            NoRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(held, no_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         let run_stage = expect_run_stage(directive);
         assert!(run_stage.inline_context_paths().is_empty());
@@ -2357,66 +2338,60 @@ mod tests {
             .collect(),
         );
         let (intent, execution, _) = genesis(1);
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository { held },
-            NoRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(held, no_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         assert_eq!(error_message(&directive), "Unknown stage \"stage-0\".");
     }
 
     // ---- B16: steering 連鎖 ----
 
-    /// 2 部の配信計画 (同一ファイル由来の 2 チャンク)。
-    fn two_part_rules() -> StaticRules {
+    /// 2 部に分かれるルール束 (12KiB セクション × 2 → 20KiB 目標で 2 チャンク —
+    /// 分割・パックはドメインの `SteeringPlan::pack` が行う)。
+    fn two_part_rules() -> MemoryRules {
         let big = "x".repeat(12 * 1024);
-        StaticRules {
-            chunks: vec![
-                vec![RuleContent::new(
-                    "aidlc/spaces/default/memory/org.md".to_string(),
-                    format!("# Org\n{big}\n"),
-                )],
-                vec![RuleContent::new(
-                    "aidlc/spaces/default/memory/org.md".to_string(),
-                    format!("# Team\n{big}\n"),
-                )],
-            ],
+        MemoryRules::new(
+            vec![RuleContent::new(
+                ORG_PATH.to_string(),
+                format!("# Org\n{big}\n# Team\n{big}\n"),
+            )],
+            std::collections::BTreeMap::new(),
+        )
+    }
+
+    /// continue 側のテスト用ハーネス。
+    struct ContinueHarness {
+        use_case: ContinueUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository>,
+        materials: TurnMaterials,
+    }
+
+    impl ContinueHarness {
+        async fn execute(&self, token: Option<ContinueToken>, input: &NextTurnInput) -> Directive {
+            self.use_case.execute(token, input, &self.materials).await
         }
     }
 
-    type ChainedNext = NextUseCase<
-        InMemoryIntentExecutionRepository,
-        InMemoryIntentRepository,
-        InMemoryWorkflowDefinitionRepository,
-        StaticRules,
-    >;
-    type ChainedContinue = ContinueUseCase<
-        InMemoryIntentExecutionRepository,
-        InMemoryIntentRepository,
-        InMemoryWorkflowDefinitionRepository,
-        StaticRules,
-    >;
-
-    fn chained_use_cases(rules: StaticRules) -> (ChainedNext, ChainedContinue) {
+    fn chained_use_cases(rules: MemoryRules) -> (Harness, ContinueHarness) {
         let (intent, execution, _) = genesis(2);
-        let next = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution.clone(), 1),
-            InMemoryIntentRepository::holding(intent.clone()),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            rules.clone(),
-        );
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            rules,
-        );
+        let next = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution.clone(), 1),
+                InMemoryIntentRepository::holding(intent.clone()),
+            ),
+            materials: materials_of(definition(2), rules.clone()),
+        };
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(2), rules),
+        };
         (next, continuation)
     }
 
@@ -2460,22 +2435,20 @@ mod tests {
         // state 束縛の前提は intent が読めること — 読めなければ STATE_MOVED_ON で止める
         // (fail-closed。定義のピンも解決できないため)。
         let (intent, execution, _) = genesis(2);
-        let next = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution.clone(), 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            two_part_rules(),
-        );
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            two_part_rules(),
-        );
+        let next = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution.clone(), 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(2), two_part_rules()),
+        };
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), two_part_rules()),
+        };
         let directive = next.execute(&active_input()).await;
         let part1 = expect_load_steering(directive);
         let directive = continuation
@@ -2511,14 +2484,13 @@ mod tests {
         // continue 側のストアでは実行が 1 コマンド進んでいる (通番が動いた)。
         let (intent, mut execution, _) = genesis(2);
         execution.complete_stage(&intent, at()).unwrap();
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 2),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            two_part_rules(),
-        );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 2),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(2), two_part_rules()),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2535,19 +2507,20 @@ mod tests {
         let part1 = expect_load_steering(directive);
         // continue 側ではルールが書き換わっている。
         let (intent, execution, _) = genesis(2);
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            StaticRules {
-                chunks: vec![vec![RuleContent::new(
-                    "aidlc/spaces/default/memory/org.md".to_string(),
-                    "# Org\nrewritten\n".to_string(),
-                )]],
-            },
+        let rewritten = MemoryRules::new(
+            vec![RuleContent::new(
+                ORG_PATH.to_string(),
+                "# Org\nrewritten\n".to_string(),
+            )],
+            std::collections::BTreeMap::new(),
         );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(2), rewritten),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2607,12 +2580,13 @@ mod tests {
             )
         };
         let (intent, execution, _) = genesis(2);
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository { held },
-            two_part_rules(),
-        );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(held, two_part_rules()),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2629,14 +2603,13 @@ mod tests {
         let part1 = expect_load_steering(directive);
         // scope のステージメンバーシップが変わった (3 ステージ目が増えた)。
         let (intent, execution, _) = genesis(2);
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(3),
-            },
-            two_part_rules(),
-        );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: materials_of(definition(3), two_part_rules()),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2674,14 +2647,13 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_rule_file_blocks_the_stage_verbatim() {
         let (intent, execution, _) = genesis(2);
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            BrokenRules,
-        );
+        let use_case = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: TurnMaterials::new(Ok(definition(2)), broken_rules()),
+        };
         let directive = use_case.execute(&active_input()).await;
         assert_eq!(
             error_message(&directive),
@@ -2713,22 +2685,20 @@ mod tests {
     async fn a_stateless_chain_continues_without_a_workflow() {
         // state なしの --single 連鎖 — トークンは state 束縛なしで、active なしでも継続できる。
         let rules = two_part_rules();
-        let next = NextUseCase::new(
-            InMemoryIntentExecutionRepository::empty(),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            rules.clone(),
-        );
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::empty(),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            rules,
-        );
+        let next = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::empty(),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), rules.clone()),
+        };
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::empty(),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), rules),
+        };
         let input = stateless_input().with_single().with_stage("stage-1");
         let directive = next.execute(&input).await;
         let part1 = expect_load_steering(directive);
@@ -2747,22 +2717,20 @@ mod tests {
     #[tokio::test]
     async fn a_stateless_continue_without_a_definition_id_fails_closed() {
         let rules = two_part_rules();
-        let next = NextUseCase::new(
-            InMemoryIntentExecutionRepository::empty(),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            rules.clone(),
-        );
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::empty(),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            rules,
-        );
+        let next = Harness {
+            use_case: NextUseCase::new(
+                InMemoryIntentExecutionRepository::empty(),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), rules.clone()),
+        };
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::empty(),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), rules),
+        };
         let input = stateless_input().with_single().with_stage("stage-1");
         let part1 = expect_load_steering(next.execute(&input).await);
         let bare = NextTurnInput::new().with_layout(layout());
@@ -2780,14 +2748,13 @@ mod tests {
         let (next, _) = chained_use_cases(two_part_rules());
         let part1 = expect_load_steering(next.execute(&active_input()).await);
         let (intent, execution, _) = genesis(2);
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            BrokenRules,
-        );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: TurnMaterials::new(Ok(definition(2)), broken_rules()),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2853,34 +2820,18 @@ mod tests {
         assert_eq!(rebuilt.support_agents(), ["aidlc-design-agent"]);
     }
 
-    /// 定義が読めない読取専用ダブル。
-    #[derive(Debug)]
-    struct BrokenDefinitions;
-
-    impl WorkflowDefinitionRepository for BrokenDefinitions {
-        fn find_by_id(
-            &self,
-            _id: &WorkflowDefinitionId,
-        ) -> Result<WorkflowDefinition, GraphReadError> {
-            Err(GraphReadError::ScopeFile {
-                message: "broken".to_string(),
-            })
-        }
-    }
-
     #[tokio::test]
     async fn a_state_aware_token_with_a_vanished_store_moves_on() {
         let (next, _) = chained_use_cases(two_part_rules());
         let part1 = expect_load_steering(next.execute(&active_input()).await);
         // continue 側のストアが空 (実行が消えた)。
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::empty(),
-            InMemoryIntentRepository::empty(),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            two_part_rules(),
-        );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::empty(),
+                InMemoryIntentRepository::empty(),
+            ),
+            materials: materials_of(definition(2), two_part_rules()),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2895,12 +2846,13 @@ mod tests {
         let (next, _) = chained_use_cases(two_part_rules());
         let part1 = expect_load_steering(next.execute(&active_input()).await);
         let (intent, execution, _) = genesis(2);
-        let continuation = ContinueUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            BrokenDefinitions,
-            two_part_rules(),
-        );
+        let continuation = ContinueHarness {
+            use_case: ContinueUseCase::new(
+                InMemoryIntentExecutionRepository::holding(execution, 1),
+                InMemoryIntentRepository::holding(intent),
+            ),
+            materials: TurnMaterials::new(Err("broken".to_string()), Ok(two_part_rules())),
+        };
         let directive = continuation
             .execute(Some(part1.continue_token().clone()), &active_input())
             .await;
@@ -2930,34 +2882,6 @@ mod tests {
         assert_eq!(
             error_message(&directive),
             "No workspace layout was provided for run-stage assembly."
-        );
-    }
-
-    #[tokio::test]
-    async fn an_unsplittable_bundle_blocks_the_stage_verbatim() {
-        /// 分割不能を返すダブル。
-        #[derive(Debug, Default)]
-        struct UnsplittableRules;
-        impl RuleBundleSource for UnsplittableRules {
-            fn load(&self, _phase: PhaseId) -> Result<SteeringPlan, RuleBundleReadError> {
-                Err(RuleBundleReadError::Unsplittable {
-                    path: "aidlc/spaces/default/memory/org.md".to_string(),
-                })
-            }
-        }
-        let (intent, execution, _) = genesis(2);
-        let use_case = NextUseCase::new(
-            InMemoryIntentExecutionRepository::holding(execution, 1),
-            InMemoryIntentRepository::holding(intent),
-            InMemoryWorkflowDefinitionRepository {
-                held: definition(2),
-            },
-            UnsplittableRules,
-        );
-        let directive = use_case.execute(&active_input()).await;
-        assert_eq!(
-            error_message(&directive),
-            "A rule section could not be split below the directive transport limit. Shorten the affected heading section, then run a fresh `next`."
         );
     }
 }

@@ -14,8 +14,7 @@ use core_command_domain::workflow_definition::WorkflowDefinition;
 use super::next_turn_input::NextTurnInput;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
-use super::port::WorkflowDefinitionRepository;
-use super::port::{RuleBundleReadError, RuleBundleSource};
+use super::turn_materials::TurnMaterials;
 
 /// fail-closed の逐語文言 (02 §4.4 の完全列挙)。
 mod wording {
@@ -44,33 +43,23 @@ mod wording {
 
 /// steering 連鎖の継続 (読取専用 — 書込ポートを持たない)。
 #[derive(Debug)]
-pub struct ContinueUseCase<E, I, D, B> {
+pub struct ContinueUseCase<E, I> {
     execution_repository: E,
     intent_repository: I,
-    definition_repository: D,
-    bundle_source: B,
 }
 
-impl<E, I, D, B> ContinueUseCase<E, I, D, B>
+impl<E, I> ContinueUseCase<E, I>
 where
     E: IntentExecutionRepository,
     I: IntentRepository,
-    D: WorkflowDefinitionRepository,
-    B: RuleBundleSource,
 {
-    /// 読取専用ポート 4 本を注入する ([`super::NextUseCase`] と同じ読取束)。
+    /// 読取専用の Repository 2 本を注入する ([`super::NextUseCase`] と同じ読取束 —
+    /// issue #45 / #46 のポート正常化)。
     #[must_use]
-    pub const fn new(
-        execution_repository: E,
-        intent_repository: I,
-        definition_repository: D,
-        bundle_source: B,
-    ) -> ContinueUseCase<E, I, D, B> {
+    pub const fn new(execution_repository: E, intent_repository: I) -> ContinueUseCase<E, I> {
         ContinueUseCase {
             execution_repository,
             intent_repository,
-            definition_repository,
-            bundle_source,
         }
     }
 
@@ -79,7 +68,12 @@ where
     /// 開封 (base64url 復号 + MAC 検証 + 厳密型表) は Controller (U7) の責務であり、失敗は
     /// `None` で渡される — 契約は fail-closed の逐語文言 1 本である (issue #45 — 検証は
     /// ユースケースの外へ出た)。
-    pub async fn execute(&self, token: Option<ContinueToken>, input: &NextTurnInput) -> Directive {
+    pub async fn execute(
+        &self,
+        token: Option<ContinueToken>,
+        input: &NextTurnInput,
+        materials: &TurnMaterials,
+    ) -> Directive {
         let Some(token) = token else {
             return Directive::Error {
                 message: wording::INVALID_TOKEN.to_string(),
@@ -90,7 +84,7 @@ where
             Ok(state) => state,
             Err(directive) => return *directive,
         };
-        let definition = match self.load_definition(&token, input).await {
+        let definition = match self.resolve_definition(materials, &token, input).await {
             Ok(definition) => definition,
             Err(directive) => return *directive,
         };
@@ -127,15 +121,12 @@ where
                 };
             }
         };
-        let plan = match self.bundle_source.load(node.phase()) {
-            Ok(plan) => plan,
-            Err(
-                RuleBundleReadError::Unreadable { .. } | RuleBundleReadError::Unsplittable { .. },
-            ) => {
-                return Directive::Error {
-                    message: wording::STALE.to_string(),
-                };
-            }
+        // ルール束の読取失敗・分割不能は continue ではすべて STALE (fail-closed — 次の
+        // fresh `next` が本来の文言で止め直す)。
+        let Ok(Ok(plan)) = materials.rules().map(|rules| rules.plan_for(node.phase())) else {
+            return Directive::Error {
+                message: wording::STALE.to_string(),
+            };
         };
         let bindings = Bindings::new(
             plan.bundle_digest(),
@@ -204,9 +195,13 @@ where
         Ok(Some(current))
     }
 
-    /// 定義の読取 — state ありなら intent のピン、無しならハーネスの定義 id。
-    async fn load_definition(
+    /// 定義の照合 — state ありなら intent のピン、無しなら入力の定義 id と突合せる。
+    ///
+    /// 供給された定義が読めていない・照合の id が無い・不一致 — continue のドリフトは
+    /// **すべて fail-closed** で、区別は診断に不要である (I12)。
+    async fn resolve_definition(
         &self,
+        materials: &TurnMaterials,
         token: &ContinueToken,
         input: &NextTurnInput,
     ) -> Result<WorkflowDefinition, Box<Directive>> {
@@ -222,10 +217,15 @@ where
                 message: wording::STALE.to_string(),
             }));
         };
-        self.definition_repository.find_by_id(&id).map_err(|_| {
+        let stage_gone = || {
             Box::new(Directive::Error {
                 message: wording::stage_gone(token.stage().as_str()),
             })
-        })
+        };
+        let definition = materials.definition().map_err(|_| stage_gone())?;
+        if definition.id() != &id {
+            return Err(stage_gone());
+        }
+        Ok(definition.clone())
     }
 }

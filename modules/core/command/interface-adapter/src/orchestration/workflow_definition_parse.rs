@@ -1,18 +1,18 @@
-//! `WorkflowDefinitionRepository` の実装 (Gateway) — Published Language 3 入力
-//! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
-//! ディスクから読み、集約 `WorkflowDefinition` へ写す (12-workflow-definition §6)。
+//! Published Language 3 入力 (`stage-graph.json` / `scope-grid.json` /
+//! `<harnessRoot>/scopes/aidlc-<name>.md`) の**純 parse** — 読み終えた生バイト
+//! ([`DefinitionArtifacts`]) を集約 `WorkflowDefinition` へ写す (12-workflow-definition §6)。
 //!
-//! ポート trait は use-case 層が所有し、その実装は `XxxRepositoryImpl` としてアダプタ層に
-//! 置く (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。**格納形式がファイルであることはこの実装の内部
-//! 詳細**であり、ポート名にも facade にも現れない。
+//! **ポートではない** (issue #46 — 旧 `WorkflowDefinitionRepository` ポートの廃止)。
+//! `stage-graph.json` は compile コンテキストのイベント投影 = **リードモデル**であり、
+//! コマンド側から読むのは CQRS 違反 — 読めるのは両側を知る合成ルートだけである
+//! (オーナー裁定 2026-08-30)。ファイルの読取・パス解決・env オーバライドの解決・scopes
+//! ディレクトリの列挙は合成ルート (`modules/app/aidlc`) の loader が行い、本モジュールは
+//! **fs 呼び出しゼロ**の変換だけを持つ。
 //!
-//! **この実装が所有するもの** (12 §6):
-//! - パス解決とテストシーム (`<data_dir>/{stage-graph,scope-grid}.json` / `<scopes_dir>`、
-//!   および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` 相当のオーバライド)。
-//!   **env の読取そのものは合成ルートの責務**で、ここは注入されたパスだけを見る
-//!   (テストを hermetic に保つため)。
+//! **このモジュールが所有するもの** (12 §6):
 //! - JSON コーデック (serde ワイヤ構造体) と frontmatter パーサ (手書き — 00-policy R9)。
-//! - 逐語文言の組み立て。
+//! - 逐語文言の組み立て (I/O 失敗の文言も含む — loader は [`GraphReadError`] を組んで
+//!   ここの文言関数で描く)。
 //!
 //! **serde の厳格度** (12 §10 の表):
 //! 1. 未知フィールドは**許容**する (`deny_unknown_fields` を付けない — F1)。将来版や
@@ -33,26 +33,66 @@ use core_command_domain::workflow_definition::{
     SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
 use core_infrastructure::canon_json::{hash_canonical, to_value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// グラフ成果物のファイル名 (`<harnessRoot>/tools/data/` 直下)。
-const STAGE_GRAPH_FILE: &str = "stage-graph.json";
-/// グリッド成果物のファイル名 (同上)。
-const SCOPE_GRID_FILE: &str = "scope-grid.json";
-/// ハーネス identity ファイルの名前 (同上)。定義 id の供給元 (ADR-008)。
-const HARNESS_FILE: &str = "harness.json";
-/// scope identity ファイルの接頭辞 (`aidlc-<name>.md`)。
-const SCOPE_FILE_PREFIX: &str = "aidlc-";
-/// scope identity ファイルの拡張子。
-const SCOPE_FILE_SUFFIX: &str = ".md";
 /// frontmatter の区切り行。
 const FRONTMATTER_FENCE: &str = "---";
+
+/// 3 入力の読取・parse 失敗。逐語文言そのものは持たず、**文言を組み立てる材料**を運ぶ
+/// (レンダリングは [`graph_read_error_message`] — 12 §6)。I/O 由来の変種
+/// (`NotReadable` / `HarnessIdentity` の読取失敗・`ScopeFile` の列挙失敗) は loader
+/// (合成ルート) が組み、parse 由来の変種はここが組む — 型は 1 本で、出所が 2 層に分かれる
+/// (issue #46。旧 use-case ポートの語彙から移設。要求 id の照合はユースケースへ移ったので
+/// 旧 `NotFound` 変種は無い)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphReadError {
+    /// `stage-graph.json` が読めない (12 §4 #1)。
+    ///
+    /// `env_override` はパスが `AIDLC_STAGE_GRAPH` 由来かを表す。真のとき逐語文言の hint 節が
+    /// 「unset して既定に戻せ」形へ切り替わる — **この分岐自体が観測可能な契約**。
+    NotReadable {
+        /// 読もうとした `stage-graph.json` の解決済みパス。
+        path: String,
+        /// 読取が失敗した理由 (OS 由来)。
+        cause: String,
+        /// `path` が `AIDLC_STAGE_GRAPH` 由来か。
+        env_override: bool,
+    },
+    /// `stage-graph.json` が不正 JSON (12 §4 #2)。`NotReadable` とは別文言。
+    InvalidJson {
+        /// パースに失敗した `stage-graph.json` の解決済みパス。
+        path: String,
+        /// パースが失敗した理由 (JSON パーサ由来)。
+        cause: String,
+    },
+    /// scope identity ファイルの読取・frontmatter 検証の失敗 (`name` 欠落・`skeleton` の
+    /// 不正値など — 12 §3.3)。
+    ScopeFile {
+        /// 失敗の詳細。逐語文言そのものではなく、その材料。
+        message: String,
+    },
+    /// JSON としては読めたがドメイン型へ写せない (未知 `phase`、文法外 `slug` など)。
+    ///
+    /// upstream はロード時に検証しないが、serde による構造的パースは「ロード時無検証」からの
+    /// 逸脱ではなく補強として扱う (12 §10) — dist の正規データに対しては観測差が生じない。
+    Malformed {
+        /// 写像に失敗した箇所の詳細。逐語文言そのものではなく、その材料。
+        message: String,
+    },
+    /// ハーネス identity ファイル (`harness.json`) を読めない・不正 JSON・`name` が無い
+    /// ないし id として不正 (ADR-008)。
+    ///
+    /// 定義 id の供給元が失われている状態であり、グラフと同じく **fatal**。
+    HarnessIdentity {
+        /// 読もうとした `harness.json` の解決済みパス。
+        path: String,
+        /// 失敗の理由 (OS / JSON パーサ / id の形式検証のいずれか由来)。
+        cause: String,
+    },
+}
 
 // ---------------------------------------------------------------------------
 // 逐語文言
@@ -104,23 +144,8 @@ pub fn graph_read_error_message(error: &GraphReadError) -> String {
         GraphReadError::ScopeFile { message } | GraphReadError::Malformed { message } => {
             message.clone()
         }
-        GraphReadError::NotFound { expected, actual } => {
-            definition_not_found_message(expected, actual)
-        }
         GraphReadError::HarnessIdentity { path, cause } => harness_identity_message(path, cause),
     }
-}
-
-/// 要求された定義 id がこのハーネスの定義 id と違う (ADR-008)。
-///
-/// upstream には定義 id の概念自体が無いため、対応する逐語文言は存在しない
-/// (診断文言なので互換対象外 — `malformed` と同じ扱い)。
-#[must_use]
-fn definition_not_found_message(
-    expected: &WorkflowDefinitionId,
-    actual: &WorkflowDefinitionId,
-) -> String {
-    format!("Workflow definition {actual} not found: this harness provides {expected}")
 }
 
 /// ハーネス identity (`harness.json`) を読めない・`name` が無い (ADR-008)。upstream に
@@ -336,211 +361,180 @@ struct RevisionScope {
 }
 
 // ---------------------------------------------------------------------------
-// Gateway
+// 読み終えた素材 (loader が集める) と純 parse
 // ---------------------------------------------------------------------------
 
-/// ファイルシステムを裏に持つ `WorkflowDefinitionRepository` の実装。
-///
-/// 呼出のたびに 3 入力を読み直す。キャッシュ戦略 (`OnceCell` / 注入 / 呼出ごとのロード) は
-/// **観測不能なので実装の自由** (12 §10) — upstream のモジュールレベル可変シングルトンと
-/// `_reset*ForTests()` は模倣しない。
+/// 生テキスト 1 つと、その出所 (逐語文言の材料)。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowDefinitionRepositoryImpl {
-    data_dir: PathBuf,
-    scopes_dir: PathBuf,
-    stage_graph_override: Option<PathBuf>,
-    scope_grid_override: Option<PathBuf>,
+pub struct RawArtifact {
+    path: String,
+    text: String,
 }
 
-impl WorkflowDefinitionRepositoryImpl {
-    /// `data_dir` は `stage-graph.json` / `scope-grid.json` の置き場
-    /// (`<harnessRoot>/tools/data/`)、`scopes_dir` は identity ファイルの置き場
-    /// (`<harnessRoot>/scopes/`)。
+impl RawArtifact {
+    /// 解決済みパスと読み終えた全文から組む。
     #[must_use]
-    pub const fn new(data_dir: PathBuf, scopes_dir: PathBuf) -> WorkflowDefinitionRepositoryImpl {
-        WorkflowDefinitionRepositoryImpl {
-            data_dir,
-            scopes_dir,
-            stage_graph_override: None,
-            scope_grid_override: None,
-        }
-    }
-
-    /// `AIDLC_STAGE_GRAPH` 相当のオーバライド。設定すると読取失敗時の逐語文言の hint 節が
-    /// 「unset して既定に戻せ」形へ切り替わる (12 §4 #1)。
-    #[must_use]
-    pub fn with_stage_graph_override(mut self, path: PathBuf) -> WorkflowDefinitionRepositoryImpl {
-        self.stage_graph_override = Some(path);
-        self
-    }
-
-    /// `AIDLC_SCOPE_GRID` 相当のオーバライド。グリッドの欠損は fatal ではないため、
-    /// こちらに hint 節の分岐は無い。
-    #[must_use]
-    pub fn with_scope_grid_override(mut self, path: PathBuf) -> WorkflowDefinitionRepositoryImpl {
-        self.scope_grid_override = Some(path);
-        self
-    }
-
-    /// 解決済みの `stage-graph.json` パス。
-    #[must_use]
-    pub fn stage_graph_path(&self) -> PathBuf {
-        self.stage_graph_override
-            .clone()
-            .unwrap_or_else(|| self.data_dir.join(STAGE_GRAPH_FILE))
-    }
-
-    /// 解決済みの `scope-grid.json` パス。
-    #[must_use]
-    pub fn scope_grid_path(&self) -> PathBuf {
-        self.scope_grid_override
-            .clone()
-            .unwrap_or_else(|| self.data_dir.join(SCOPE_GRID_FILE))
-    }
-
-    /// 解決済みの `harness.json` パス。env オーバライドは無い (upstream に対応する env が
-    /// 無く、identity はハーネスの配置そのものだからである)。
-    #[must_use]
-    pub fn harness_path(&self) -> PathBuf {
-        self.data_dir.join(HARNESS_FILE)
-    }
-
-    /// `harness.json` の `name` を定義 id として読む (ADR-008)。**fatal な入力**。
-    ///
-    /// 欠落・不正 JSON・`name` 欠落・id として不正、のいずれも `HarnessIdentity` に畳む。
-    /// upstream には定義 id の概念が無いので、この 4 分岐に対応する逐語文言も無い。
-    fn load_harness_identity(&self) -> Result<WorkflowDefinitionId, GraphReadError> {
-        let path = self.harness_path();
-        let identity = |cause: String| GraphReadError::HarnessIdentity {
-            path: path.display().to_string(),
-            cause,
-        };
-        let content = fs::read_to_string(&path).map_err(|e| identity(e.to_string()))?;
-        let wire: WireHarness =
-            serde_json::from_str(&content).map_err(|e| identity(e.to_string()))?;
-        WorkflowDefinitionId::parse(&wire.name).map_err(|e| identity(e.to_string()))
-    }
-
-    /// グラフを読む。**唯一 fatal な入力** (12 §4 #1・#2)。
-    ///
-    /// ドメイン型の `StageGraph` と、**読んだままの生値**を返す。後者は `DefinitionRevision`
-    /// のハッシュ入力で、ドメイン型へ写す過程で落ちる情報 (未知フィールド・キー順) まで
-    /// 内容版に含めるために要る。
-    fn load_graph(&self) -> Result<(StageGraph, serde_json::Value), GraphReadError> {
-        let path = self.stage_graph_path();
-        let content = fs::read_to_string(&path).map_err(|e| GraphReadError::NotReadable {
-            path: path.display().to_string(),
-            cause: e.to_string(),
-            env_override: self.stage_graph_override.is_some(),
-        })?;
-        let invalid_json = |e: &serde_json::Error| GraphReadError::InvalidJson {
-            path: path.display().to_string(),
-            cause: e.to_string(),
-        };
-        let raw: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
-        let wire: Vec<WireStageNode> =
-            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
-        let mut nodes = Vec::with_capacity(wire.len());
-        for node in wire {
-            nodes.push(to_stage_node(node, &path)?);
-        }
-        // 文書順のまま渡す (F2 — 読込時に数値順へ正規化しない)。
-        let graph = StageGraph::new(nodes).map_err(|e| malformed(&path, &format!("{e:?}")))?;
-        Ok((graph, raw))
-    }
-
-    /// グリッドを読む。**読めない / 不正なら `None`** を返し、呼出側が転置導出へ倒す
-    /// (12 §4 #3 — *"callers never see a hard ENOENT for a derivable artifact"*)。
-    ///
-    /// ドメイン型の `ScopeGrid` と読んだままの生値を返す (生値は revision のハッシュ入力)。
-    fn load_grid(&self) -> Option<(ScopeGrid, serde_json::Value)> {
-        let content = fs::read_to_string(self.scope_grid_path()).ok()?;
-        let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
-        let wire: BTreeMap<String, WireScopeColumn> = serde_json::from_str(&content).ok()?;
-        let mut columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>> = BTreeMap::new();
-        for (scope, column) in wire {
-            let mut cells: BTreeMap<StageSlug, PlanAction> = BTreeMap::new();
-            for (slug, action) in column.stages {
-                // 文法外 slug・`EXECUTE`/`SKIP` 以外の値はセルごと落とす。結果は 3 値契約の
-                // `None` (=「このグリッドがコンパイルしていないステージ」) になり、
-                // upstream の「列に slug が無い」と同じ観測になる (F8)。
-                // 全体を転置導出へ倒さないのは、1 セルの異常でグリッド全体を捨てないため。
-                if let (Ok(slug), Some(action)) =
-                    (StageSlug::parse(&slug), PlanAction::parse(&action))
-                {
-                    cells.insert(slug, action);
-                }
-            }
-            columns.insert(scope, cells);
-        }
-        Some((ScopeGrid::new(columns), raw))
-    }
-
-    /// identity ファイルを列挙して frontmatter を読む。**有効スコープの権威**はここ (F7)。
-    ///
-    /// ディレクトリ自体が無い場合は空カタログとして扱う (グラフと違い fatal にしない)。
-    /// TODO(spec: 12 §11): scopes ディレクトリ欠損時の態度は upstream 側の裏取りが未了。
-    fn load_scopes(&self) -> Result<BTreeMap<String, ScopeMetadata>, GraphReadError> {
-        let paths = match scope_file_paths(&self.scopes_dir) {
-            Ok(paths) => paths,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => {
-                return Err(GraphReadError::ScopeFile {
-                    message: format!("{}: {e}", self.scopes_dir.display()),
-                });
-            }
-        };
-        let mut scopes: BTreeMap<String, ScopeMetadata> = BTreeMap::new();
-        let mut origins: BTreeMap<String, PathBuf> = BTreeMap::new();
-        for path in paths {
-            let content = fs::read_to_string(&path).map_err(|e| GraphReadError::ScopeFile {
-                message: format!("{}: {e}", path.display()),
-            })?;
-            let metadata = parse_scope_metadata(&path, &content)?;
-            let name = metadata.name().to_string();
-            if let Some(first) = origins.get(&name) {
-                return Err(GraphReadError::ScopeFile {
-                    message: scope_duplicate_name_message(&name, first, &path),
-                });
-            }
-            origins.insert(name.clone(), path);
-            scopes.insert(name, metadata);
-        }
-        Ok(scopes)
+    pub const fn new(path: String, text: String) -> RawArtifact {
+        RawArtifact { path, text }
     }
 }
 
-impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
-    fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError> {
-        // 識別子の検査が先。1 ハーネス 1 定義なので、要求 id が違えば 3 入力を読む意味がない
-        // (BR2.6 — expected = 提供できる id、actual = 要求された id)。
-        let harness_id = self.load_harness_identity()?;
-        if &harness_id != id {
-            return Err(GraphReadError::NotFound {
-                expected: harness_id,
-                actual: id.clone(),
+/// 読み終えた Published Language 3 入力 + scope identity ファイル群。
+///
+/// 集めるのは合成ルートの loader である — パス解決 (`<data_dir>/{stage-graph,scope-grid}.json`
+/// / `<scopes_dir>` と `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` 相当のオーバライド) と
+/// ファイル読取・列挙はそちらに閉じ、ここは値だけを見る。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitionArtifacts {
+    harness: RawArtifact,
+    stage_graph: RawArtifact,
+    scope_grid: Option<String>,
+    scopes: Vec<RawArtifact>,
+}
+
+impl DefinitionArtifacts {
+    /// loader が読み終えた素材から組む。
+    ///
+    /// `scope_grid` の `None` は「読めない / 無い」— fatal ではなく転置導出へ倒れる
+    /// (12 §4 #3)。`scopes` はパス昇順 (重複 `name:` 検出を決定的にするため — 並べるのは
+    /// loader の列挙)。`AIDLC_STAGE_GRAPH` オーバライドの hint 分岐は**読取失敗**
+    /// (`NotReadable` — loader が組む) にだけ効くので、読めた素材はその区別を運ばない。
+    #[must_use]
+    pub const fn new(
+        harness: RawArtifact,
+        stage_graph: RawArtifact,
+        scope_grid: Option<String>,
+        scopes: Vec<RawArtifact>,
+    ) -> DefinitionArtifacts {
+        DefinitionArtifacts {
+            harness,
+            stage_graph,
+            scope_grid,
+            scopes,
+        }
+    }
+}
+
+/// 読み終えた素材を集約 `WorkflowDefinition` へ写す (fs 呼び出しゼロの純 parse)。
+///
+/// **失敗態度は 3 入力で意図的に非対称** (12 §4。この非対称そのものが観測可能な契約で、
+/// 「より厳格にする」方向の改変も逸脱になる): ハーネス identity とグラフは fatal、
+/// グリッドの不正は転置導出フォールバック、identity とグリッド列の不一致は双方向とも正当。
+///
+/// # Errors
+///
+/// ハーネス identity の検証失敗 (`HarnessIdentity`)、グラフの不正 JSON (`InvalidJson`)、
+/// scope identity の検証失敗 (`ScopeFile`)、ドメイン型への写像失敗 (`Malformed`)。
+/// **グリッドの欠損・不正はエラーにしない** — 転置導出へフォールバックする (12 §4 #3)。
+pub fn parse_workflow_definition(
+    artifacts: &DefinitionArtifacts,
+) -> Result<WorkflowDefinition, GraphReadError> {
+    let harness_id = parse_harness_identity(&artifacts.harness)?;
+    let (graph, raw_graph) = parse_graph(&artifacts.stage_graph)?;
+    let (grid, raw_grid) = match artifacts.scope_grid.as_deref().and_then(parse_grid) {
+        Some(read) => read,
+        // グリッド欠損・不正は fatal にしない (12 §4 #3)。revision も導出グリッドから作る —
+        // 「読めた 3 入力の内容版」であって「ディスクにあったバイトの版」ではない。
+        None => {
+            let derived = ScopeGrid::from_graph(&graph);
+            let raw = serialize_grid(&derived);
+            (derived, raw)
+        }
+    };
+    let scopes = parse_scopes(&artifacts.scopes)?;
+    let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
+
+    Ok(WorkflowDefinition::from_artifacts(
+        harness_id, revision, graph, grid, scopes,
+    ))
+}
+
+/// `harness.json` の `name` を定義 id として読む (ADR-008)。**fatal な入力**。
+///
+/// 不正 JSON・`name` 欠落・id として不正、のいずれも `HarnessIdentity` に畳む (ファイルが
+/// 読めない場合は loader が同じ変種を組む)。upstream には定義 id の概念が無いので、この
+/// 分岐に対応する逐語文言も無い。
+fn parse_harness_identity(harness: &RawArtifact) -> Result<WorkflowDefinitionId, GraphReadError> {
+    let identity = |cause: String| GraphReadError::HarnessIdentity {
+        path: harness.path.clone(),
+        cause,
+    };
+    let wire: WireHarness =
+        serde_json::from_str(&harness.text).map_err(|e| identity(e.to_string()))?;
+    WorkflowDefinitionId::parse(&wire.name).map_err(|e| identity(e.to_string()))
+}
+
+/// グラフを写す。**唯一 fatal な入力** (12 §4 #1・#2 — #1 の読取失敗は loader が組む)。
+///
+/// ドメイン型の `StageGraph` と、**読んだままの生値**を返す。後者は `DefinitionRevision`
+/// のハッシュ入力で、ドメイン型へ写す過程で落ちる情報 (未知フィールド・キー順) まで
+/// 内容版に含めるために要る。
+fn parse_graph(
+    stage_graph: &RawArtifact,
+) -> Result<(StageGraph, serde_json::Value), GraphReadError> {
+    let path = Path::new(&stage_graph.path);
+    let invalid_json = |e: &serde_json::Error| GraphReadError::InvalidJson {
+        path: stage_graph.path.clone(),
+        cause: e.to_string(),
+    };
+    let raw: serde_json::Value =
+        serde_json::from_str(&stage_graph.text).map_err(|e| invalid_json(&e))?;
+    let wire: Vec<WireStageNode> =
+        serde_json::from_str(&stage_graph.text).map_err(|e| invalid_json(&e))?;
+    let mut nodes = Vec::with_capacity(wire.len());
+    for node in wire {
+        nodes.push(to_stage_node(node, path)?);
+    }
+    // 文書順のまま渡す (F2 — 読込時に数値順へ正規化しない)。
+    let graph = StageGraph::new(nodes).map_err(|e| malformed(path, &format!("{e:?}")))?;
+    Ok((graph, raw))
+}
+
+/// グリッドを写す。**不正なら `None`** を返し、呼出側が転置導出へ倒す
+/// (12 §4 #3 — *"callers never see a hard ENOENT for a derivable artifact"*)。
+///
+/// ドメイン型の `ScopeGrid` と読んだままの生値を返す (生値は revision のハッシュ入力)。
+fn parse_grid(content: &str) -> Option<(ScopeGrid, serde_json::Value)> {
+    let raw: serde_json::Value = serde_json::from_str(content).ok()?;
+    let wire: BTreeMap<String, WireScopeColumn> = serde_json::from_str(content).ok()?;
+    let mut columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>> = BTreeMap::new();
+    for (scope, column) in wire {
+        let mut cells: BTreeMap<StageSlug, PlanAction> = BTreeMap::new();
+        for (slug, action) in column.stages {
+            // 文法外 slug・`EXECUTE`/`SKIP` 以外の値はセルごと落とす。結果は 3 値契約の
+            // `None` (=「このグリッドがコンパイルしていないステージ」) になり、
+            // upstream の「列に slug が無い」と同じ観測になる (F8)。
+            // 全体を転置導出へ倒さないのは、1 セルの異常でグリッド全体を捨てないため。
+            if let (Ok(slug), Some(action)) = (StageSlug::parse(&slug), PlanAction::parse(&action))
+            {
+                cells.insert(slug, action);
+            }
+        }
+        columns.insert(scope, cells);
+    }
+    Some((ScopeGrid::new(columns), raw))
+}
+
+/// identity ファイル群の frontmatter を読む。**有効スコープの権威**はここ (F7)。
+///
+/// ディレクトリの列挙 (パス昇順・欠損時は空) は loader の責務で、ここは読み終えた列を
+/// 検証する。
+fn parse_scopes(files: &[RawArtifact]) -> Result<BTreeMap<String, ScopeMetadata>, GraphReadError> {
+    let mut scopes: BTreeMap<String, ScopeMetadata> = BTreeMap::new();
+    let mut origins: BTreeMap<String, String> = BTreeMap::new();
+    for file in files {
+        let path = Path::new(&file.path);
+        let metadata = parse_scope_metadata(path, &file.text)?;
+        let name = metadata.name().to_string();
+        if let Some(first) = origins.get(&name) {
+            return Err(GraphReadError::ScopeFile {
+                message: scope_duplicate_name_message(&name, Path::new(first), path),
             });
         }
-
-        let (graph, raw_graph) = self.load_graph()?;
-        let (grid, raw_grid) = match self.load_grid() {
-            Some(read) => read,
-            // グリッド欠損は fatal にしない (12 §4 #3)。revision も導出グリッドから作る —
-            // 「読めた 3 入力の内容版」であって「ディスクにあったバイトの版」ではない。
-            None => {
-                let derived = ScopeGrid::from_graph(&graph);
-                let raw = serialize_grid(&derived);
-                (derived, raw)
-            }
-        };
-        let scopes = self.load_scopes()?;
-        let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
-
-        Ok(WorkflowDefinition::from_artifacts(
-            harness_id, revision, graph, grid, scopes,
-        ))
+        origins.insert(name.clone(), file.path.clone());
+        scopes.insert(name, metadata);
     }
+    Ok(scopes)
 }
 
 /// 転置導出グリッドを `scope-grid.json` と同じ 2 段構造へ直列化する
@@ -738,23 +732,6 @@ fn to_stage_node(wire: WireStageNode, path: &Path) -> Result<StageNode, GraphRea
 // ---------------------------------------------------------------------------
 // scope identity ファイル (手書き frontmatter パーサ — 00-policy R9)
 // ---------------------------------------------------------------------------
-
-/// `<scopes_dir>/aidlc-*.md` をパス昇順で列挙する (重複 `name:` 検出を決定的にするため)。
-fn scope_file_paths(scopes_dir: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(scopes_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        if file_name.starts_with(SCOPE_FILE_PREFIX) && file_name.ends_with(SCOPE_FILE_SUFFIX) {
-            paths.push(path);
-        }
-    }
-    paths.sort();
-    Ok(paths)
-}
 
 /// frontmatter の最小 YAML サブセットを手書きで読む。
 ///
@@ -1062,29 +1039,6 @@ mod tests {
     }
 
     #[test]
-    fn path_resolution_prefers_the_overrides() {
-        let reader =
-            WorkflowDefinitionRepositoryImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
-        assert_eq!(
-            reader.stage_graph_path(),
-            PathBuf::from("/data/stage-graph.json")
-        );
-        assert_eq!(
-            reader.scope_grid_path(),
-            PathBuf::from("/data/scope-grid.json")
-        );
-
-        let reader = reader
-            .with_stage_graph_override(PathBuf::from("/pinned/graph.json"))
-            .with_scope_grid_override(PathBuf::from("/pinned/grid.json"));
-        assert_eq!(
-            reader.stage_graph_path(),
-            PathBuf::from("/pinned/graph.json")
-        );
-        assert_eq!(reader.scope_grid_path(), PathBuf::from("/pinned/grid.json"));
-    }
-
-    #[test]
     fn unquote_strips_only_one_matching_pair() {
         assert_eq!(unquote("\"a\""), "a");
         assert_eq!(unquote("'a'"), "a");
@@ -1094,18 +1048,10 @@ mod tests {
     }
 
     #[test]
-    fn the_two_identity_failures_have_their_own_diagnostic_wordings() {
-        // ADR-008 で足した 2 変種。upstream には定義 id の概念が無いので逐語の縛りは
-        // 無いが、`graph_read_error_message` が 1 行の診断へ畳むところまでが契約である。
-        let rendered = graph_read_error_message(&GraphReadError::NotFound {
-            expected: WorkflowDefinitionId::parse("claude").unwrap(),
-            actual: WorkflowDefinitionId::parse("codex").unwrap(),
-        });
-        assert_eq!(
-            rendered,
-            "Workflow definition codex not found: this harness provides claude"
-        );
-
+    fn the_identity_failure_has_its_own_diagnostic_wording() {
+        // ADR-008 の変種。upstream には定義 id の概念が無いので逐語の縛りは無いが、
+        // `graph_read_error_message` が 1 行の診断へ畳むところまでが契約である
+        // (要求 id の取り違えはユースケースの照合へ移った — issue #46)。
         let rendered = graph_read_error_message(&GraphReadError::HarnessIdentity {
             path: "/d/harness.json".to_string(),
             cause: "missing name".to_string(),

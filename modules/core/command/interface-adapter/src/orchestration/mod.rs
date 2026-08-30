@@ -20,11 +20,10 @@ mod continue_token_wire;
 mod intent_execution_repository_impl;
 mod intent_repository_impl;
 mod memory;
-mod rule_bundle_source_impl;
 mod snapshot_strategy;
 mod store_failure;
 mod wire;
-mod workflow_definition_repository_impl;
+mod workflow_definition_parse;
 
 // 実 I/O Gateway (Repository 実装)
 pub use cli_wording::invalid_mode_message;
@@ -33,9 +32,12 @@ pub use cli_wording::invalid_mode_message;
 pub use continue_token_wire::{InvalidContinueToken, mint_continue_token, verify_continue_token};
 pub use intent_execution_repository_impl::IntentExecutionRepositoryImpl;
 pub use intent_repository_impl::IntentRepositoryImpl;
-pub use rule_bundle_source_impl::RuleBundleSourceImpl;
 pub use snapshot_strategy::SnapshotStrategy;
-pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
+// Published Language 3 入力の純 parse (fs 呼び出しゼロ — 読取は合成ルートの loader。
+// issue #46 で旧 WorkflowDefinitionRepository ポート/実装から置き換え)。
+pub use workflow_definition_parse::{
+    DefinitionArtifacts, GraphReadError, RawArtifact, parse_workflow_definition,
+};
 
 // 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である
 // (coding-rules/domain-persistence-neutrality.md)。ストアを具体化するのに型名が要るので
@@ -54,9 +56,9 @@ pub use intent_execution_repository_impl::{
 pub use intent_repository_impl::{IntentMemoryStore, IntentSqliteStore};
 
 // テスト用 in-memory 実装
-pub use memory::{InMemoryIntentRepository, InMemoryWorkflowDefinitionRepository};
+pub use memory::InMemoryIntentRepository;
 
 // 逐語文言の組み立て (12 §6 — レンダリングはアダプタ層に閉じる)
-pub use workflow_definition_repository_impl::{
+pub use workflow_definition_parse::{
     graph_read_error_message, stage_graph_invalid_json_message, stage_graph_not_readable_message,
 };

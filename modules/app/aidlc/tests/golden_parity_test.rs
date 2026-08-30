@@ -23,11 +23,8 @@
 // ヘルパは `#[test]` の外にあるため clippy.toml の `allow-*-in-tests` が効かない。
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use core_command_domain::workflow_definition::{
-    PlanAction, ReviewClass, WorkflowDefinition, WorkflowDefinitionId,
-};
-use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
-use core_command_use_case::orchestration::WorkflowDefinitionRepository;
+use aidlc::{DefinitionPaths, load_workflow_definition};
+use core_command_domain::workflow_definition::{PlanAction, ReviewClass, WorkflowDefinition};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -69,23 +66,22 @@ const EXPECTED_ADVISORY: usize = 8;
 
 /// ゴールデンフィクスチャの置き場（`tests/golden/upstream-3c3146cf/`）。
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-3c3146cf")
 }
 
-/// フィクスチャの `data_dir` と空の `scopes_dir` を与えたリーダ。
+/// フィクスチャの `data_dir` と空の `scopes_dir` を与えたパス束。
 ///
 /// `TempDir` は返り値で保持する — drop すると scopes ディレクトリが消えてしまうため。
-fn reader() -> (WorkflowDefinitionRepositoryImpl, TempDir) {
+fn reader() -> (DefinitionPaths, TempDir) {
     let scopes = TempDir::new().unwrap();
-    let reader = WorkflowDefinitionRepositoryImpl::new(golden_dir(), scopes.path().to_path_buf());
+    let reader = DefinitionPaths::new(golden_dir(), scopes.path().to_path_buf());
     (reader, scopes)
 }
 
 /// 3 入力を読んだ `WorkflowDefinition`。定義 id は配布 `harness.json` の `name` = `claude`。
 fn load() -> (WorkflowDefinition, TempDir) {
     let (reader, scopes) = reader();
-    let definition = reader
-        .find_by_id(&WorkflowDefinitionId::parse("claude").unwrap())
+    let definition = load_workflow_definition(&reader)
         .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     (definition, scopes)
 }
@@ -274,21 +270,6 @@ fn the_shipped_harness_identity_is_the_key_to_the_shipped_graph() {
     assert_eq!(definition.id().as_str(), "claude");
     assert!(definition.revision().as_str().starts_with("sha256:"));
     assert_eq!(definition.graph().nodes().len(), EXPECTED_NODE_COUNT);
-}
-
-#[test]
-fn another_harness_name_cannot_open_the_shipped_graph() {
-    let (reader, _scopes) = reader();
-    let error = reader
-        .find_by_id(&WorkflowDefinitionId::parse("kiro").unwrap())
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            core_command_use_case::orchestration::GraphReadError::NotFound { .. }
-        ),
-        "{error:?}"
-    );
 }
 
 #[test]

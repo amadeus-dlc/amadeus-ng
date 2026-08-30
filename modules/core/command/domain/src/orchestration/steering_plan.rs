@@ -1,10 +1,38 @@
 //! `SteeringPlan` — 「何をどの順で届けるか」の配信計画 (02 §10)。
 //!
-//! 計画の**概念** (順序付きの部・部索引・配信済みパス台帳) だけをドメインが持つ。
-//! Markdown の分割・輸送上限へのパックという**形式と輸送の知識**はアダプタ層
-//! (`RuleBundleSource` 実装) が持ち、分割済みのチャンク列で本型を組む。
+//! 計画の概念 (順序付きの部・部索引・配信済みパス台帳) に加えて、**分割とパック**
+//! (Markdown 見出し境界・過大セクションのコードポイント分割・輸送目標へのパック — 02 §10)
+//! も本型のファクトリ [`SteeringPlan::pack`] が持つ (issue #46 — 旧 `RuleBundleSource`
+//! ポートの廃止。CPU とメモリだけの計算はドメインの責務で、構築規則は型が所有する —
+//! `coding-rules/domain-services.md` / `factory-naming.md`)。ファイルの読取 (I/O) は
+//! 合成ルートの loader が行い、読み順どおりの [`RuleContent`] 列で渡す。
 
 use super::directive::RuleContent;
+
+/// チャンクのテキスト目標 (`STEERING_TEXT_TARGET_BYTES = 20 * 1024` — 02 §10)。
+const STEERING_TEXT_TARGET_BYTES: usize = 20 * 1024;
+
+/// セクションを輸送目標未満へ分割できない (防御的 — 1 コードポイントが目標を超える場合のみ)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsplittableSection {
+    path: String,
+}
+
+impl UnsplittableSection {
+    /// 該当セクションを含むルールファイルのパス。
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+impl std::fmt::Display for UnsplittableSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unsplittable section in {}", self.path)
+    }
+}
+
+impl std::error::Error for UnsplittableSection {}
 
 /// 配信部の索引 (1 始まり)。
 ///
@@ -81,7 +109,7 @@ impl SteeringPart<'_> {
     }
 }
 
-/// 配信計画 — piece をパック済みのチャンク列 (アダプタ層が組む)。
+/// 配信計画 — piece をパック済みのチャンク列。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SteeringPlan {
     chunks: Vec<Vec<RuleContent>>,
@@ -94,6 +122,50 @@ impl SteeringPlan {
         SteeringPlan {
             chunks: chunks.into_iter().filter(|c| !c.is_empty()).collect(),
         }
+    }
+
+    /// ルールファイル列 (読み順の path + 全文) を分割・パックして計画に組む
+    /// (本型のファクトリ — issue #46)。束が空なら空計画 (bare run-stage)。
+    ///
+    /// Markdown 見出し境界 (`#` 始まりの行) で分割し、目標を超えるセクションは
+    /// コードポイント境界で無損失に刻み、読み順のまま輸送目標へパックする (02 §10)。
+    ///
+    /// # Errors
+    ///
+    /// 1 コードポイントが輸送目標を超えるセクションは分割不能 (`UnsplittableSection` —
+    /// 防御的)。
+    pub fn pack(files: &[RuleContent]) -> Result<SteeringPlan, UnsplittableSection> {
+        let mut pieces = Vec::new();
+        for file in files {
+            for section in split_at_headings(file.text()) {
+                if section.len() <= STEERING_TEXT_TARGET_BYTES {
+                    pieces.push(RuleContent::new(file.path().to_string(), section));
+                    continue;
+                }
+                let slices = split_by_codepoints(&section).ok_or_else(|| UnsplittableSection {
+                    path: file.path().to_string(),
+                })?;
+                for slice in slices {
+                    pieces.push(RuleContent::new(file.path().to_string(), slice));
+                }
+            }
+        }
+        let mut chunks: Vec<Vec<RuleContent>> = Vec::new();
+        let mut current: Vec<RuleContent> = Vec::new();
+        let mut current_bytes = 0usize;
+        for piece in pieces {
+            let piece_bytes = piece.text().len() + piece.path().len();
+            if !current.is_empty() && current_bytes + piece_bytes > STEERING_TEXT_TARGET_BYTES {
+                chunks.push(std::mem::take(&mut current));
+                current_bytes = 0;
+            }
+            current_bytes += piece_bytes;
+            current.push(piece);
+        }
+        if !current.is_empty() {
+            chunks.push(current);
+        }
+        Ok(SteeringPlan::new(chunks))
     }
 
     /// チャンク列 (読み順)。
@@ -156,6 +228,43 @@ impl SteeringPlan {
     }
 }
 
+/// Markdown 見出し境界 (`#` 始まりの行) で分割する。見出しの無いファイルは丸ごと 1 piece。
+fn split_at_headings(text: &str) -> Vec<String> {
+    let mut sections: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for line in text.lines() {
+        if line.starts_with('#') && !current.trim().is_empty() {
+            sections.push(std::mem::take(&mut current));
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.trim().is_empty() {
+        sections.push(current);
+    }
+    sections
+}
+
+/// 過大セクションをコードポイント境界でターゲット以下へ分割する。分割不能は `None`。
+fn split_by_codepoints(section: &str) -> Option<Vec<String>> {
+    let mut slices = Vec::new();
+    let mut current = String::new();
+    for c in section.chars() {
+        if current.len() + c.len_utf8() > STEERING_TEXT_TARGET_BYTES {
+            if current.is_empty() {
+                // 1 コードポイントが上限を超える — 分割不能 (防御的)。
+                return None;
+            }
+            slices.push(std::mem::take(&mut current));
+        }
+        current.push(c);
+    }
+    if !current.is_empty() {
+        slices.push(current);
+    }
+    Some(slices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +316,59 @@ mod tests {
         assert_eq!(PartIndex::from_raw(0), None);
         assert_eq!(PartIndex::from_raw(2).map(PartIndex::as_u32), Some(2));
         assert_eq!(PartIndex::FIRST.next().as_u32(), 2);
+    }
+
+    #[test]
+    fn sections_split_at_heading_boundaries_and_pack_to_the_target() {
+        // 12KiB のセクション 3 つ → 20KiB ターゲットで 3 部 (12KiB×2 は 20KiB 超)。
+        let big = "x".repeat(12 * 1024);
+        let file = RuleContent::new(
+            "org.md".to_string(),
+            format!("# A\n{big}\n# B\n{big}\n# C\n{big}\n"),
+        );
+        let plan = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap();
+        assert_eq!(plan.part_count().as_u32(), 3);
+    }
+
+    #[test]
+    fn an_oversize_section_splits_losslessly_at_codepoint_boundaries() {
+        let huge = "あ".repeat(9 * 1024); // 27KiB (3 bytes × 9K) — 1 セクションでターゲット超
+        let body = format!("# Huge\n{huge}\n");
+        let file = RuleContent::new("org.md".to_string(), body.clone());
+        let plan = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap();
+        assert!(plan.part_count().as_u32() >= 2);
+        let rebuilt: String = plan
+            .chunks()
+            .iter()
+            .flatten()
+            .map(RuleContent::text)
+            .collect();
+        assert_eq!(rebuilt, body, "分割は無損失");
+    }
+
+    #[test]
+    fn a_file_without_headings_is_a_single_piece() {
+        let file = RuleContent::new(
+            "org.md".to_string(),
+            "plain text\nno headings\n".to_string(),
+        );
+        let plan = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap();
+        assert_eq!(plan.chunks().iter().flatten().count(), 1);
+    }
+
+    #[test]
+    fn packing_no_files_plans_nothing() {
+        assert!(SteeringPlan::pack(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_unsplittable_error_names_its_file() {
+        let error = UnsplittableSection {
+            path: "org.md".to_string(),
+        };
+        assert_eq!(error.path(), "org.md");
+        assert_eq!(error.to_string(), "unsplittable section in org.md");
+        let boxed: Box<dyn std::error::Error> = Box::new(error);
+        assert_eq!(boxed.to_string(), "unsplittable section in org.md");
     }
 }

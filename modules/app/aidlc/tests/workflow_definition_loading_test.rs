@@ -1,4 +1,6 @@
-//! 統合テスト: `WorkflowDefinitionRepositoryImpl` が 12-workflow-definition §4 の失敗態度表を全行満たすこと。
+//! 統合テスト: 定義 loader (`load_workflow_definition`) + アダプタ純 parse の合成が
+//! 12-workflow-definition §4 の失敗態度表を全行満たすこと (issue #46 で旧
+//! `WorkflowDefinitionRepositoryImpl` から移設 — 読取は合成ルート、変換はアダプタ)。
 //!
 //! 各テストは tempdir に合成 `stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md` を
 //! 書いて 1 行ずつ検証する:
@@ -9,12 +11,12 @@
 // 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
+use aidlc::{DefinitionPaths, load_workflow_definition};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
-use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
+use core_command_interface_adapter::orchestration::GraphReadError;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -193,8 +195,8 @@ impl Fixture {
         }
     }
 
-    fn reader(&self) -> WorkflowDefinitionRepositoryImpl {
-        WorkflowDefinitionRepositoryImpl::new(self.data_dir.clone(), self.scopes_dir.clone())
+    fn reader(&self) -> DefinitionPaths {
+        DefinitionPaths::new(self.data_dir.clone(), self.scopes_dir.clone())
     }
 
     fn graph_path(&self) -> PathBuf {
@@ -248,10 +250,7 @@ fn definition_id(value: &str) -> WorkflowDefinitionId {
 }
 
 fn find_definition(fixture: &Fixture) -> WorkflowDefinition {
-    fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap()
+    load_workflow_definition(&fixture.reader()).unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -407,10 +406,7 @@ fn a_full_read_wires_up_the_five_predicates() {
 #[test]
 fn b_a_missing_stage_graph_is_fatal() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     let GraphReadError::NotReadable {
         path, env_override, ..
     } = error
@@ -426,7 +422,7 @@ fn b_the_env_override_flag_follows_the_injected_path() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
     let missing = fixture.data_dir.join("pinned-graph.json");
     let reader = fixture.reader().with_stage_graph_override(missing.clone());
-    let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
+    let error = load_workflow_definition(&reader).unwrap_err();
     let GraphReadError::NotReadable {
         path, env_override, ..
     } = error
@@ -437,6 +433,21 @@ fn b_the_env_override_flag_follows_the_injected_path() {
     assert!(env_override);
 }
 
+#[test]
+fn b_the_scope_grid_override_points_the_read_at_the_injected_path() {
+    // AIDLC_SCOPE_GRID 相当 — 既定の場所に grid が無くても、注入されたパスの grid が読まれる
+    // (欠損は fatal ではないので、オーバライドが効いていることは列の実在で観測する)。
+    let fixture = Fixture::new(Some(GRAPH_JSON), None, &scope_files());
+    let pinned = fixture.data_dir.join("pinned-grid.json");
+    std::fs::write(&pinned, GRID_JSON).unwrap();
+    let reader = fixture.reader().with_scope_grid_override(pinned);
+    let definition = load_workflow_definition(&reader).unwrap();
+    assert!(
+        definition.grid().column("feature").is_some(),
+        "注入した grid の列が読まれている"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // (c) 不正 JSON = Err (欠損とは別文言)
 // ---------------------------------------------------------------------------
@@ -444,10 +455,7 @@ fn b_the_env_override_flag_follows_the_injected_path() {
 #[test]
 fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     assert!(
         matches!(error, GraphReadError::InvalidJson { ref path, .. } if *path == fixture.graph_path().display().to_string()),
         "expected InvalidJson, got {error:?}"
@@ -457,10 +465,7 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
 #[test]
 fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
     let fixture = Fixture::new(Some("{\"stages\": []}"), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     assert!(matches!(error, GraphReadError::InvalidJson { .. }));
 }
 
@@ -664,10 +669,7 @@ fn an_invalid_skeleton_value_is_rejected_with_the_verbatim_wording() {
         Some(GRID_JSON),
         &[("feature", "---\nname: feature\nskeleton: enabled\n---\n")],
     );
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     let GraphReadError::ScopeFile { message } = error else {
         panic!("expected ScopeFile, got {error:?}");
     };
@@ -688,10 +690,7 @@ fn a_scope_file_without_a_name_is_rejected() {
         Some(GRID_JSON),
         &[("feature", "---\ndepth: standard\n---\n")],
     );
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     let GraphReadError::ScopeFile { message } = error else {
         panic!("expected ScopeFile, got {error:?}");
     };
@@ -711,10 +710,7 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
             ("feature-alias", "---\nname: feature\n---\n"),
         ],
     );
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     // upstream 逐語 (aidlc-lib.ts:8666-8668 @3c3146cf) の形を pin する
     assert!(
         matches!(error, GraphReadError::ScopeFile { ref message }
@@ -728,11 +724,11 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
 #[test]
 fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let reader = WorkflowDefinitionRepositoryImpl::new(
+    let reader = DefinitionPaths::new(
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );
-    let definition = reader.find_by_id(&definition_id("claude")).unwrap();
+    let definition = load_workflow_definition(&reader).unwrap();
     assert!(definition.valid_scopes().is_empty());
     // グリッド列は読めているが、権威が無いので全スコープが未知になる。
     assert!(definition.grid().contains_scope("feature"));
@@ -752,10 +748,7 @@ fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
     ]
     "#;
     let fixture = Fixture::new(Some(graph), None, &[]);
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     assert!(
         matches!(error, GraphReadError::Malformed { ref message } if message.contains("unknown phase")),
         "{error:?}"
@@ -812,16 +805,13 @@ fn grid_cells_that_cannot_be_represented_collapse_to_the_third_value_not_to_skip
 }
 
 // ---------------------------------------------------------------------------
-// 追加: 定義の識別子と内容版 (ADR-008 / C4 — find_by_id)
+// 追加: 定義の識別子と内容版 (ADR-008 / C4)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn find_by_id_returns_the_definition_stamped_with_the_harness_identity() {
+fn the_loaded_definition_is_stamped_with_the_harness_identity() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap();
+    let definition = load_workflow_definition(&fixture.reader()).unwrap();
 
     // id は harness.json の `name`。
     assert_eq!(definition.id(), &definition_id("claude"));
@@ -831,43 +821,9 @@ fn find_by_id_returns_the_definition_stamped_with_the_harness_identity() {
 }
 
 #[test]
-fn a_request_for_a_definition_this_harness_does_not_provide_is_not_found() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("kiro"))
-        .unwrap_err();
-    assert_eq!(
-        error,
-        GraphReadError::NotFound {
-            // expected = この Repository が提供できる id、actual = 要求された id。
-            expected: definition_id("claude"),
-            actual: definition_id("kiro"),
-        }
-    );
-}
-
-#[test]
-fn the_identity_is_checked_before_the_three_inputs_are_read() {
-    // グラフが無くても、id 不一致は NotFound で落ちる (3 入力の読取に進まない)。
-    let fixture = Fixture::new(None, None, &[]);
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("kiro"))
-        .unwrap_err();
-    assert!(
-        matches!(error, GraphReadError::NotFound { .. }),
-        "識別子の検査はグラフ読取より前: {error:?}"
-    );
-}
-
-#[test]
 fn a_missing_harness_identity_file_is_fatal() {
     let fixture = Fixture::with_harness(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files(), None);
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     let GraphReadError::HarnessIdentity { path, cause } = error else {
         panic!("HarnessIdentity を期待した");
     };
@@ -884,10 +840,7 @@ fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_fatal() {
             &scope_files(),
             Some(harness),
         );
-        let error = fixture
-            .reader()
-            .find_by_id(&definition_id("claude"))
-            .unwrap_err();
+        let error = load_workflow_definition(&fixture.reader()).unwrap_err();
         assert!(
             matches!(error, GraphReadError::HarnessIdentity { .. }),
             "harness.json {harness:?} は HarnessIdentity で落ちるはず: {error:?}"
@@ -1001,10 +954,7 @@ fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it(
 
     for (graph, fragment) in cases {
         let fixture = Fixture::new(Some(graph), None, &[]);
-        let error = fixture
-            .reader()
-            .find_by_id(&definition_id("claude"))
-            .unwrap_err();
+        let error = load_workflow_definition(&fixture.reader()).unwrap_err();
         assert!(
             matches!(error, GraphReadError::Malformed { ref message }
                 if message.contains(fragment) && message.contains("stage-graph.json")),
@@ -1021,11 +971,11 @@ fn a_scopes_path_that_is_not_a_directory_is_reported_instead_of_being_treated_as
     let not_a_dir = fixture.data_dir.join("scopes-as-a-file");
     std::fs::write(&not_a_dir, "これはディレクトリではない\n").unwrap();
 
-    let reader = WorkflowDefinitionRepositoryImpl::new(
+    let reader = DefinitionPaths::new(
         fixture.data_dir.clone(),
         fixture.data_dir.join("scopes-as-a-file"),
     );
-    let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
+    let error = load_workflow_definition(&reader).unwrap_err();
     assert!(
         matches!(error, GraphReadError::ScopeFile { ref message }
             if message.starts_with(&format!("{}: ", not_a_dir.display()))),
@@ -1041,10 +991,7 @@ fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
     let masquerading = fixture.scopes_dir.join("aidlc-not-a-file.md");
     std::fs::create_dir_all(&masquerading).unwrap();
 
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
+    let error = load_workflow_definition(&fixture.reader()).unwrap_err();
     assert!(
         matches!(error, GraphReadError::ScopeFile { ref message }
             if message.starts_with(&format!("{}: ", masquerading.display()))),

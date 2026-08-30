@@ -69,6 +69,7 @@ mod intent_execution_event;
 mod intent_execution_id;
 mod intent_id;
 mod jump_direction;
+mod memory_rules;
 mod next_decision;
 mod phase_boundary;
 mod scope_resolution;
@@ -101,6 +102,7 @@ pub use engine_command::{ConfigField, EngineCommand, ReadOnlyVerb};
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
+pub use memory_rules::MemoryRules;
 pub use phase_boundary::PhaseBoundary;
 pub use scope_resolution::{
     ResolvedScope, ScopeResolutionError, ScopeSource, infer_scope_from_text, resolve_scope,
@@ -115,7 +117,7 @@ pub use start_request::StartRequest;
 pub use steering_binding::{Bindings, BundleDigest, DirectiveDigest, RouteDigest, StateBinding};
 // steering ダイジェストの導出は所有する型の関連メソッド (steering_digest モジュールの impl —
 // coding-rules/domain-services.md)。輸出する自由関数は無い。
-pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
+pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan, UnsplittableSection};
 pub use token_version::TokenVersion;
 pub use unit_ref::{UnitKind, UnitName, UnitRef};
 pub use verdict::Verdict;
