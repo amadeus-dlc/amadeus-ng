@@ -26301,3 +26301,18 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T10:42:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9a6927801f705f9d
+**Message**: amadeus-ng のオーナー裁定に基づく設計是正を bolt 単位で進行中。b22（Started を intent_id に痩身 + RMU 骨格材料の intent ジャーナル移行）が PR #59 でマージ確定、Issue #56 完了。次は #45 純計算系ポート廃止の着手可否の選択です。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T11:04:51Z
+**Event**: HUMAN_TURN
+
+---

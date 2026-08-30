@@ -14,7 +14,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use hmac::{Hmac, Mac};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest as _, Sha256};
+use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -60,23 +60,6 @@ pub fn unseal<T: DeserializeOwned + Serialize>(key: &[u8], encoded: &str) -> Opt
     // timing-safe 比較は `Mac::verify_slice` が行う。
     mac.verify_slice(&unhex(&envelope.m)?).ok()?;
     Some(envelope.p)
-}
-
-/// 名前付き素材の直列化バイトの sha256 (64 桁小文字 16 進)。
-///
-/// `Debug` 表現への依存は derive 変更で黙ってダイジェストが変わる時限爆弾であり、区切り文字
-/// 連結は区切り文字注入を許すので、素材は**名前付き構造体の直列化**で与える
-/// (オーナー裁定 2026-08-30)。
-#[must_use]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "契約 JSON ではなくダイジェスト素材のエスケープ付き直列化 (BR1.7 の射程外) — canon-json を通す契約面ではない"
-)]
-pub fn digest_hex<T: Serialize>(material: &T) -> String {
-    let bytes = serde_json::to_vec(material).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    hex(&hasher.finalize())
 }
 
 /// HMAC-SHA256 (任意長鍵を受けるため失敗しないが、防御的に失敗時は空 MAC を返す —
@@ -157,16 +140,5 @@ mod tests {
     fn garbage_fails_closed() {
         assert_eq!(unseal::<Payload>(KEY, "not-base64url!!"), None);
         assert_eq!(unseal::<Payload>(KEY, ""), None);
-    }
-
-    #[test]
-    fn a_digest_is_deterministic_and_material_specific() {
-        assert_eq!(digest_hex(&payload()), digest_hex(&payload()));
-        let other = Payload {
-            v: 1,
-            s: "domain-design".to_string(),
-        };
-        assert_ne!(digest_hex(&payload()), digest_hex(&other));
-        assert_eq!(digest_hex(&payload()).len(), 64, "sha256 の 64 桁 hex");
     }
 }

@@ -12,7 +12,6 @@ use core_command_domain::orchestration::{Bindings, ContinueToken, Directive, Sta
 use core_command_domain::workflow_definition::WorkflowDefinition;
 
 use super::next_turn_input::NextTurnInput;
-use super::port::ContinueTokenCodec;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::WorkflowDefinitionRepository;
@@ -45,44 +44,43 @@ mod wording {
 
 /// steering 連鎖の継続 (読取専用 — 書込ポートを持たない)。
 #[derive(Debug)]
-pub struct ContinueUseCase<E, I, D, B, C> {
+pub struct ContinueUseCase<E, I, D, B> {
     execution_repository: E,
     intent_repository: I,
     definition_repository: D,
     bundle_source: B,
-    codec: C,
 }
 
-impl<E, I, D, B, C> ContinueUseCase<E, I, D, B, C>
+impl<E, I, D, B> ContinueUseCase<E, I, D, B>
 where
     E: IntentExecutionRepository,
     I: IntentRepository,
     D: WorkflowDefinitionRepository,
     B: RuleBundleSource,
-    C: ContinueTokenCodec,
 {
-    /// 読取専用ポート 5 本を注入する ([`super::NextUseCase`] と同じ読取束 — 綴りポートは
-    /// 使わないので受けない)。
+    /// 読取専用ポート 4 本を注入する ([`super::NextUseCase`] と同じ読取束)。
     #[must_use]
     pub const fn new(
         execution_repository: E,
         intent_repository: I,
         definition_repository: D,
         bundle_source: B,
-        codec: C,
-    ) -> ContinueUseCase<E, I, D, B, C> {
+    ) -> ContinueUseCase<E, I, D, B> {
         ContinueUseCase {
             execution_repository,
             intent_repository,
             definition_repository,
             bundle_source,
-            codec,
         }
     }
 
-    /// encode 済みトークン 1 つを directive ちょうど 1 つに写す。
-    pub async fn execute(&self, encoded: &str, input: &NextTurnInput) -> Directive {
-        let Ok(token) = self.codec.verify(encoded) else {
+    /// 開封済みトークン 1 つを directive ちょうど 1 つに写す。
+    ///
+    /// 開封 (base64url 復号 + MAC 検証 + 厳密型表) は Controller (U7) の責務であり、失敗は
+    /// `None` で渡される — 契約は fail-closed の逐語文言 1 本である (issue #45 — 検証は
+    /// ユースケースの外へ出た)。
+    pub async fn execute(&self, token: Option<ContinueToken>, input: &NextTurnInput) -> Directive {
+        let Some(token) = token else {
             return Directive::Error {
                 message: wording::INVALID_TOKEN.to_string(),
             };
@@ -107,9 +105,7 @@ where
             };
         };
         let scope = token.scope();
-        let route = self
-            .codec
-            .route_digest(&definition.stage_route(scope.as_str(), node));
+        let route = definition.stage_route(scope.as_str(), node).route_digest();
         if &route != token.bindings().route() {
             return Directive::Error {
                 message: wording::ROUTE_CHANGED.to_string(),
@@ -142,8 +138,8 @@ where
             }
         };
         let bindings = Bindings::new(
-            self.codec.bundle_digest(&plan),
-            self.codec.directive_digest(&rebuilt),
+            plan.bundle_digest(),
+            rebuilt.directive_digest(),
             route,
             state,
         );
@@ -159,9 +155,7 @@ where
             return Directive::RunStage(rebuilt.with_rules_in_context(plan.delivered_paths()));
         }
         match plan.part_after(delivered) {
-            Some(part) => {
-                super::next_use_case::emit_part(&self.codec, &part, &rebuilt, scope, &bindings)
-            }
+            Some(part) => super::next_use_case::emit_part(&part, &rebuilt, scope, &bindings),
             None => Directive::Error {
                 message: wording::PART_NOT_EXIST.to_string(),
             },
@@ -201,7 +195,7 @@ where
                     message: wording::STATE_MOVED_ON.to_string(),
                 })
             })?;
-        let current = self.codec.state_binding(&execution);
+        let current = execution.state_binding();
         if &current != bound {
             return Err(Box::new(Directive::Error {
                 message: wording::STATE_MOVED_ON.to_string(),

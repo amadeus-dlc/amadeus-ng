@@ -137,6 +137,7 @@ name = "core-command-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "core-infrastructure",
  "proptest",
  "serde_json",
  "uuid",

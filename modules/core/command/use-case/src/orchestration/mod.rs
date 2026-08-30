@@ -36,11 +36,11 @@ pub use continue_use_case::ContinueUseCase;
 pub use next_turn_input::{ActiveWorkflow, NextTurnInput, NounFamily, NounToken, WorkspaceLayout};
 pub use next_use_case::NextUseCase;
 
-// steering 連鎖のポート (実装はアダプタ層) と、そのポート入出力 VO
-pub use port::{
-    CommandSpelling, ContinueTokenCodec, InvalidContinueToken, RuleBundleReadError,
-    RuleBundleSource,
-};
+// steering 連鎖の読取ポート (実装はアダプタ層) と、そのポート入出力 VO。
+// ダイジェスト・綴り・封緘の旧ポート (`ContinueTokenCodec` / `CommandSpelling`) は廃止 —
+// 純計算はドメイン (steering_digest / EngineCommand::cli_spelling)、封緘・開封はアダプタの
+// free function になった (issue #45。ポートは Repository を目指して縮める)。
+pub use port::{RuleBundleReadError, RuleBundleSource};
 pub use reported_transition::ReportedTransition;
 
 // エラー
