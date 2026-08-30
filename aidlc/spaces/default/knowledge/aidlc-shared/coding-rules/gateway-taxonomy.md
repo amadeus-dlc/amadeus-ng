@@ -37,7 +37,8 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 - 使ってよい動詞: **`find_by_id` / `find`（単一集約の named retrieval）/ `save` / `remove`** ＋ **ドメイン概念を表す named retrievals**。`load` / `get` / `fetch` 等は使わない。
 - `find_by_...` の無秩序な増殖は禁止。複雑な検索・画面向け読取は**読取モデル側**で行う（ADR-003 / ADR-004 — `aidlc-state.md` と監査シャードが読取モデルで、`ReadModelUpdater` が投影する）。Repository に生やす前に、まず「ドメイン概念を表す named retrieval」で表現できるか、そもそも読取モデルの仕事ではないかを考える。
-- インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find_by_id` の not-found は契約上 fatal な `Err`（`NotFound { expected, actual }`、identity ファイルの読取失敗は `HarnessIdentity { path, cause }`）、grid 欠損は転置導出 — 12 §4。引数なしの `find()` は廃止済み — C4 改訂 2026-08-23 / ADR-008）。
+- インターフェイスで **not-found の挙動・ロック・トランザクション所有・永続化エラー**を明示的に定義する（例: `WorkflowDefinitionRepository::find_by_id` の失敗は `RepositoryError<WorkflowDefinitionId>` 1 本で、not-found は契約上 fatal な `Err(NotFound)` — 運ぶのは**要求された id だけ**である。引数なしの `find()` は廃止済み — C4 改訂 2026-08-23 / ADR-008）。
+  **改訂 2026-08-31（オーナー裁定、b26 段階2）**: ポート専用エラー `GraphReadError`（`NotFound { expected, actual }` / `HarnessIdentity { path, cause }` ほか計 6 変種）は**廃止**し、[error-handling.md](error-handling.md)「Repository エラーはジェネリック 1 本」（2026-08-30 裁定）へ収束させた — リポジトリにビジネスロジックエラーを扱わせない。expected/actual の対も identity ファイルの診断もポート契約から消え、**契約は「壊れていた」としか約束しない**（OS 由来の読取失敗は `Io { kind, path }`、不正 JSON・frontmatter 検証失敗・ドメイン写像失敗・harness identity の内容不正は `Corrupt`）。どのファイルがどう壊れていたかは**アダプタ私有の型を `Error::source` 連鎖で運ぶ**。grid 欠損を fatal にせず転置導出へフォールバックする失敗の非対称（12 §4）は**実装の挙動として維持**され、ポート契約には載せない。
 - **アンチパターン**（スキル逐語より）: Repository が内部エンティティを返す / 集約が Repository を呼ぶ / **`updateField` 系メソッドで集約の振る舞いを迂回する**（外科的ライタ（フィールド単位で状態ファイルを書き換える純関数）は `XxxRepositoryImpl` の内部詳細に限り、Repository のメソッドにしない）/ ジェネリックな基底 Repository。
 
 **ES Repository の拡張語彙**: イベントソーシングの Repository（`IntentExecutionRepository` — ~~`WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29 に追随）は `store(event, aggregate)` / `find_by_id` を動詞とする。上の許容動詞一覧は**ステートソーシング Repository の規則**であり、ES Repository の動詞は本家ライブラリ（event-store-adapter-rs）の語彙に従う — `store` はその拡張語彙として明示的に許可する（ADR-006）。
@@ -111,6 +112,8 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 
 例: [`10-orchestration.md`](../../../../../../docs/specs/10-orchestration.md) I8（`next` は読み取り専用）は、`Next` ユースケースに `IntentExecutionRepository` を注入せず、Controller が `find_by_id` 済みの `IntentExecution` を `&` で渡すことで型強制する（設計監査 C2 / 2026-08-23）。
 
+> **注記 2026-08-31（オーナー裁定、b26 段階2）— 上の I8 例は履歴である**: `next` / `continue` はクエリ側（`modules/core/query/use-case` / `modules/core/query/interface-adapter`）へ**移設済み**で、コマンド側に `Next` ユースケースは存在しない。読むだけのユースケース自体がコマンド側から消えたため、「読取専用を型で保証する」2 手段も対象を失った（[cqrs-boundaries.md](cqrs-boundaries.md) 規則 5〜7 + 追補、[use-case-rules.md](use-case-rules.md) §4 の再々裁定）。逐語は履歴として残す。
+
 ### 5. 配置と命名 — trait は use-case 層、実装は `XxxRepositoryImpl`
 
 | 種別 | 層 | 命名 | 例 |
@@ -144,7 +147,7 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 1. **ポート造語の検出**: use-case 層の `pub trait` 名が `Store` / `Reader` / `Writer` / `Source` / `Provider` で終わったら拒否。
 2. **Repository 名と集約名の照合**: `XxxRepository` の `Xxx` が `core-domain` に存在する集約ルート型名であることを検査（集約表を機械可読にする前提が要る）。
 3. **技術接頭辞の検出**: interface-adapter 層の `XxxRepository` 実装型名が `Fs` / `Sys` / `Db` 等で始まったら拒否（`XxxRepositoryImpl` / `InMemoryXxxRepository` のみ許可）。
-4. **I8 の型強制**: `Next` ユースケースの構造体フィールドに Repository 型が現れないことを検査。
+4. ~~**I8 の型強制**: `Next` ユースケースの構造体フィールドに Repository 型が現れないことを検査。~~ — **退役（2026-08-31・オーナー、b26 段階2）**: `next` はクエリ側へ移設され、コマンド側に `Next` ユースケースが存在しないため、検査対象ごと失効した。
 
 ## 根拠
 
