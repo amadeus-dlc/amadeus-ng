@@ -2226,6 +2226,87 @@ mod tests {
     }
 
     #[test]
+    fn a_jump_to_an_out_of_range_target_is_refused() {
+        // ガードは jump コマンド側 (jump_resolve) — 範囲外索引は InvalidTarget。
+        let mut w = all_exec(3);
+        w.complete_stage(occurred()).unwrap();
+        let out_of_range = StageIndex::new(9);
+        assert_eq!(
+            w.jump(out_of_range, occurred()),
+            Err(CommandError::InvalidTarget(out_of_range))
+        );
+    }
+
+    #[test]
+    fn skipping_the_last_in_scope_stage_completes_the_workflow() {
+        // 導出 advance の None 腕 — skip でも次が無ければ完了になる。
+        let mut w = start_with(1, &[Execute, Execute], &[false, true]);
+        w.complete_stage(occurred()).unwrap();
+        w.skip_stage("conditional".to_string(), occurred()).unwrap();
+        assert_eq!(w.status(), Status::Completed);
+    }
+
+    #[test]
+    fn a_forward_jump_leaves_out_of_scope_intermediates_untouched() {
+        // 実効 SKIP の介在は触らない — upstream 実バイト
+        // (cli/jump/execute-forward-across-phases) を正本とする v2.1 の規則。
+        let mut w = start_with(1, &[Execute, Skip, Execute, Execute], &[false; 4]);
+        w.complete_stage(occurred()).unwrap();
+        // カーソルは 2 (索引 1 は実効 SKIP なので飛ばされている)。3 へ前方跳躍。
+        assert_eq!(w.cursor(), at(&w, 2));
+        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
+        w.apply_event(w.seq_nr() + 1, occurred(), &event);
+        assert_eq!(
+            w.checkbox(at(&w, 1)),
+            Some(Pending),
+            "実効 SKIP の介在は checkbox を触らない"
+        );
+        assert_eq!(w.checkbox(at(&w, 2)), Some(Skipped), "出発点は skipped");
+        assert_eq!(w.checkbox(at(&w, 3)), Some(InProgress));
+        assert_eq!(w.cursor(), at(&w, 3));
+    }
+
+    #[test]
+    fn a_forward_jump_skips_pending_in_scope_intermediates() {
+        // 中間の in-scope は Pending でも skipped になる (02 §8 — v2 の忠実性修正のまま)。
+        let mut w = all_exec(4);
+        w.complete_stage(occurred()).unwrap();
+        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
+        w.apply_event(w.seq_nr() + 1, occurred(), &event);
+        assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped), "出発点 (稼働中)");
+        assert_eq!(
+            w.checkbox(at(&w, 2)),
+            Some(Skipped),
+            "中間の Pending in-scope"
+        );
+        assert_eq!(w.checkbox(at(&w, 3)), Some(InProgress));
+    }
+
+    #[test]
+    fn a_redo_jump_event_invalidates_the_source_approval_only() {
+        // redo (到達点 = 出発点) — 出発点の承認だけが消え、checkbox は [-] のまま。
+        let mut w = all_exec(3);
+        w.complete_stage(occurred()).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
+        // カーソルは 2。redo で 2 へ跳び直す。
+        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(2)));
+        w.apply_event(w.seq_nr() + 1, occurred(), &event);
+        assert_eq!(w.cursor(), at(&w, 2));
+        assert_eq!(w.checkbox(at(&w, 2)), Some(InProgress));
+        assert_eq!(w.approved(at(&w, 1)), Some(true), "他の承認は残る");
+    }
+
+    #[test]
+    #[should_panic(expected = "apply_event: corrupted history")]
+    fn a_jump_event_to_an_unknown_stage_crashes() {
+        let mut w = all_exec(3);
+        let unknown = StageSlug::parse("no-such-stage").unwrap();
+        let event = IntentExecutionEvent::Jumped(Jumped::new(unknown));
+        w.apply_event(2, occurred(), &event);
+    }
+
+    #[test]
     #[should_panic(expected = "apply_event: invariant violated — parked_position")]
     fn applying_a_park_away_from_the_cursor_crashes() {
         // park の位置はカーソルと同じでなければならない (parked_position)。カーソル 0 のまま

@@ -272,3 +272,11 @@ fn an_optional_request_field_round_trips_when_present() {
     assert_eq!(payload.intent().test_strategy(), Some("balanced"));
     assert_eq!(payload.intent().depth(), Some("standard"));
 }
+
+#[test]
+fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
+    // 列の中の 1 本でも文法外の slug は復号を止める (slugs_of の失敗面)。
+    let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
+    let decoded: WireEvent = serde_json::from_str(tampered).expect("JSON としては読める");
+    assert!(decoded.to_domain().is_err());
+}

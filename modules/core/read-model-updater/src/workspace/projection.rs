@@ -1865,6 +1865,172 @@ mod tests {
     }
 
     #[test]
+    fn skipping_the_last_effective_stage_completes_the_workflow_row() {
+        // 導出 leave_for の None 腕 — second を skip すると次の実効 EXECUTE は無い
+        // (late は SKIP) ので WORKFLOW_COMPLETED 行になる。
+        let mut read_model = ReadModel::new(
+            SKELETON
+                .replace(
+                    "- **Current Stage**: state-init",
+                    "- **Current Stage**: second",
+                )
+                .replace("- [-] state-init — EXECUTE", "- [x] state-init — EXECUTE")
+                .replace("- [ ] first — EXECUTE", "- [x] first — EXECUTE")
+                .replace("- [ ] second — EXECUTE", "- [-] second — EXECUTE"),
+        );
+        project(
+            &[entry(IntentExecutionEvent::StageSkipped(
+                StageSkipped::new(slug("second"), "not needed".to_string()),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Event**: WORKFLOW_COMPLETED")
+        );
+        assert!(read_model.state().contains("- [S] second — EXECUTE"));
+    }
+
+    #[test]
+    fn a_forward_jump_emits_skips_in_plan_order_with_the_source_last() {
+        // upstream の emit 順 — 中間 (計画順) → 最後に出発点。実効 SKIP の介在 (late) は
+        // 触らない (実バイトが正本)。first で稼働中の状態から second を跨いで…は 4 ステージ
+        // 構成では作れないので、state-init 稼働中から second へ跳ぶ。
+        let mut read_model = ReadModel::new(SKELETON.to_string());
+        project(
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(slug(
+                "second",
+            ))))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        let skipped: Vec<&str> = read_model
+            .appended_audit()
+            .lines()
+            .filter_map(|line| line.strip_prefix("**Stage**: "))
+            .collect();
+        // STAGE_SKIPPED は first (中間)、state-init (出発点) の順。STAGE_STARTED の
+        // second が最後に混ざるので先頭 2 つを見る。
+        assert_eq!(skipped.first(), Some(&"first"), "中間が先");
+        assert_eq!(skipped.get(1), Some(&"state-init"), "出発点が最後");
+        assert!(read_model.state().contains("- [S] state-init — EXECUTE"));
+        assert!(read_model.state().contains("- [S] first — EXECUTE"));
+        assert!(read_model.state().contains("- [-] second — EXECUTE"));
+        assert!(
+            read_model.state().contains("- [ ] late — SKIP"),
+            "実効 SKIP の行は触らない"
+        );
+    }
+
+    #[test]
+    fn a_non_numeric_revision_count_is_coerced_to_zero_before_the_bump() {
+        // upstream getField + 1 と同じ防御 — 非数値 (手編集・欠落) は 0 に畳んでから +1。
+        let mut read_model = ReadModel::new(
+            SKELETON.replace("- **Revision Count**: 0", "- **Revision Count**: abc"),
+        );
+        project(
+            &[entry(IntentExecutionEvent::GateRejected(
+                GateRejected::new(slug("state-init"), None),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        assert!(read_model.state().contains("- **Revision Count**: 1\n"));
+    }
+
+    #[test]
+    fn a_second_rejection_bumps_the_read_model_counter_again() {
+        // read-modify-write の連続性 — 現値 1 の状態からの差し戻しは 2 を書く
+        // (upstream getField + 1 と同じ)。
+        let mut read_model =
+            ReadModel::new(SKELETON.replace("- **Revision Count**: 0", "- **Revision Count**: 1"));
+        project(
+            &[entry(IntentExecutionEvent::GateRejected(
+                GateRejected::new(slug("state-init"), None),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        assert!(read_model.state().contains("- **Revision Count**: 2\n"));
+    }
+
+    #[test]
+    fn an_unknown_plan_suffix_token_falls_back_to_the_static_plan() {
+        // 行末トークンが閉集合外なら静的計画の値で読む (次の導出が止まらない)。
+        let mut read_model =
+            ReadModel::new(SKELETON.replace("- [ ] first — EXECUTE", "- [ ] first — WHAT"));
+        project(
+            &[entry(IntentExecutionEvent::StageCompleted(
+                StageCompleted::new(slug("state-init")),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        // first の静的計画は EXECUTE — 次の開始先として選ばれる。
+        assert!(read_model.state().contains("- [-] first — WHAT"));
+    }
+
+    #[test]
+    fn a_redo_jump_reopens_the_current_stage_without_touching_neighbours() {
+        // 到達点 = 現在地 (redo)。checkbox の書き換えは到達点の [-] 化だけで、隣は触らない。
+        let read_model = run(IntentExecutionEvent::Jumped(Jumped::new(slug(
+            "state-init",
+        ))));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Direction**: REDO\n")
+        );
+        assert!(read_model.appended_audit().contains(
+            "**Details**: REDO jump from state-init to state-init (0.1). Scope: classic.\n"
+        ));
+        assert!(read_model.state().contains("- [-] state-init — EXECUTE"));
+        assert!(read_model.state().contains("- [ ] first — EXECUTE"));
+    }
+
+    #[test]
+    fn a_jump_with_a_broken_current_stage_row_is_refused() {
+        // 出発点の導出元 (`Current Stage` 行) が壊れていれば、読み替えずに止める (fail-closed)。
+        let mut read_model = ReadModel::new(SKELETON.replace(
+            "- **Current Stage**: state-init",
+            "- **Current Stage**: NOT A SLUG",
+        ));
+        let error = project(
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(slug(
+                "first",
+            ))))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("出発点が導けない");
+        assert_eq!(error.to_string(), "unknown stage: NOT A SLUG");
+    }
+
+    #[test]
+    fn a_rejection_without_feedback_omits_the_feedback_rows() {
+        // feedback 無しの差し戻し — 行は出ず、Revision Count は現値 +1 (0 → 1)。
+        let read_model = run(IntentExecutionEvent::GateRejected(GateRejected::new(
+            slug("state-init"),
+            None,
+        )));
+        assert!(!read_model.appended_audit().contains("**Feedback**"));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Revision count**: 1\n")
+        );
+        assert!(read_model.state().contains("- **Revision Count**: 1\n"));
+        assert!(read_model.state().contains("- [R] state-init — EXECUTE"));
+    }
+
+    #[test]
     fn recomposing_back_into_scope_moves_the_entry_the_other_way() {
         // 適用後の in-scope 数は行末トークンの反転後に自分の行から導く (= 4)。
         let read_model = run(IntentExecutionEvent::Recomposed(Recomposed::new(

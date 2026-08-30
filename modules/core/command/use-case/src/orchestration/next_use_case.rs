@@ -2644,6 +2644,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_continuation_whose_intent_cannot_be_read_fails_closed() {
+        // state 束縛の前提は intent が読めること — 読めなければ STATE_MOVED_ON で止める
+        // (fail-closed。定義のピンも解決できないため)。
+        let codec = FakeCodec::default();
+        let (intent, execution, _) = genesis(2);
+        let next = NextUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution.clone(), 1),
+            InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            two_part_rules(),
+            codec.clone(),
+            FakeSpelling,
+        );
+        let continuation = ContinueUseCase::new(
+            InMemoryIntentExecutionRepository::holding(execution, 1),
+            InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository {
+                held: definition(2),
+            },
+            two_part_rules(),
+            codec,
+        );
+        let directive = next.execute(&active_input()).await;
+        let part1 = expect_load_steering(directive);
+        let directive = continuation
+            .execute(part1.continue_token(), &active_input())
+            .await;
+        assert_eq!(
+            directive,
+            Directive::Error {
+                message: "The saved position moved on: the workflow state changed while this \
+                          stage's rules were being loaded. Run a fresh `next` to restart \
+                          delivery from part 1."
+                    .to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn an_invalid_continuation_token_fails_closed_verbatim() {
         let (_, continuation) = chained_use_cases(two_part_rules());
         let directive = continuation.execute("garbage", &active_input()).await;

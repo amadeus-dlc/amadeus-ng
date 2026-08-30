@@ -442,3 +442,11 @@ fn a_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
         serde_json::from_str(GENESIS_SNAPSHOT).expect("記録済みの行は読める");
     assert!(intact.to_domain().is_ok());
 }
+
+#[test]
+fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
+    // 列の中の 1 本でも文法外の slug は復号を止める (slugs_of の失敗面)。
+    let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
+    let decoded: WireEvent = serde_json::from_str(tampered).expect("JSON としては読める");
+    assert!(decoded.to_domain().is_err());
+}
