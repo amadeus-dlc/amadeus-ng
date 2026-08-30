@@ -484,7 +484,11 @@ mod tests {
             .expect("既に開いているゲートへの再報告は成功扱い");
         assert!(subject.repository().committed().is_empty());
         assert_eq!(subject.repository().store_attempts(), 0, "書込を試みない");
-        assert_eq!(subject.repository().version(), 2, "版も動かない");
+        assert_eq!(
+            subject.repository().version_of(&execution_id()),
+            Some(2),
+            "版も動かない"
+        );
     }
 
     #[tokio::test]
@@ -601,7 +605,7 @@ mod tests {
             .expect("通過済み completed への再報告は冪等な成功");
         assert!(subject.repository().committed().is_empty());
         assert_eq!(subject.repository().store_attempts(), 0, "書込を試みない");
-        assert_eq!(subject.repository().version(), 2);
+        assert_eq!(subject.repository().version_of(&execution_id()), Some(2));
     }
 
     #[tokio::test]
@@ -660,8 +664,8 @@ mod tests {
             .await
             .expect("承認は通る");
         assert_eq!(
-            subject.repository().version(),
-            8,
+            subject.repository().version_of(&execution_id()),
+            Some(8),
             "版 7 を提示して書けたので、ストアは 8 を採番した"
         );
     }
@@ -764,7 +768,7 @@ mod tests {
         );
         // 2 回目が通ったこと自体が「再構成からやり直した」証拠である — このストアは現在の版を
         // 提示した書込しか受理しないので、古い集約に `store` だけ打ち直していたら再び競合する。
-        assert_eq!(subject.repository().version(), 9);
+        assert_eq!(subject.repository().version_of(&execution_id()), Some(9));
     }
 
     #[tokio::test]
@@ -806,8 +810,8 @@ mod tests {
             "書込は 1 回目の失敗だけ — 再試行は BR1.9 の no-op に畳まれる"
         );
         assert_eq!(
-            subject.repository().version(),
-            8,
+            subject.repository().version_of(&execution_id()),
+            Some(8),
             "版は相手の書込ぶんだけ進む"
         );
     }

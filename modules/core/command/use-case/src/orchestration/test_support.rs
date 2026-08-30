@@ -11,6 +11,8 @@
 //! [`InMemoryIntentExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
@@ -149,8 +151,8 @@ pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentExecution, IntentExe
 ///   状況に相当し、再構成し直した呼出は報告したステージが通過済みになっているのを見る。
 #[derive(Debug)]
 pub(crate) struct InMemoryIntentExecutionRepository {
-    stored: Option<IntentExecution>,
-    version: usize,
+    /// 識別子 → (集約, ストアが採番している版)。
+    stored: HashMap<IntentExecutionId, (IntentExecution, usize)>,
     interrupting_writes: usize,
     competing_commit: Option<IntentExecution>,
     store_attempts: usize,
@@ -158,19 +160,16 @@ pub(crate) struct InMemoryIntentExecutionRepository {
 }
 
 impl InMemoryIntentExecutionRepository {
-    /// 基本コンストラクタ — 構築経路はここ 1 本に集約する
-    /// (`coding-rules/factory-naming.md`)。
-    fn new(
-        stored: Option<IntentExecution>,
-        version: usize,
-        interrupting_writes: usize,
-        competing_commit: Option<IntentExecution>,
+    /// 基本コンストラクタ — 中身の写像 (識別子 → 集約と版) をそのまま受け取る
+    /// (`coding-rules/factory-naming.md`。単一スロット保持は手抜き — オーナー指摘
+    /// 2026-08-30、issue #54)。
+    pub(crate) fn new(
+        stored: HashMap<IntentExecutionId, (IntentExecution, usize)>,
     ) -> InMemoryIntentExecutionRepository {
         InMemoryIntentExecutionRepository {
             stored,
-            version,
-            interrupting_writes,
-            competing_commit,
+            interrupting_writes: 0,
+            competing_commit: None,
             store_attempts: 0,
             committed: Vec::new(),
         }
@@ -178,15 +177,17 @@ impl InMemoryIntentExecutionRepository {
 
     /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
     pub(crate) fn empty() -> InMemoryIntentExecutionRepository {
-        InMemoryIntentExecutionRepository::new(None, 0, 0, None)
+        InMemoryIntentExecutionRepository::new(HashMap::new())
     }
 
-    /// 集約 1 つを版 `version` で保持するストア。
+    /// 集約 1 つを版 `version` で保持するストア (単発テストの便宜)。
     pub(crate) fn holding(
         aggregate: IntentExecution,
         version: usize,
     ) -> InMemoryIntentExecutionRepository {
-        InMemoryIntentExecutionRepository::new(Some(aggregate), version, 0, None)
+        let mut stored = HashMap::new();
+        stored.insert(aggregate.id().clone(), (aggregate, version));
+        InMemoryIntentExecutionRepository::new(stored)
     }
 
     /// 最初の `writes` 回の `store` に、別の書き手の書込が割り込むストア。
@@ -199,7 +200,9 @@ impl InMemoryIntentExecutionRepository {
         version: usize,
         writes: usize,
     ) -> InMemoryIntentExecutionRepository {
-        InMemoryIntentExecutionRepository::new(Some(aggregate), version, writes, None)
+        let mut repository = InMemoryIntentExecutionRepository::holding(aggregate, version);
+        repository.interrupting_writes = writes;
+        repository
     }
 
     /// 最初の `store` に、**集約を前進させる**別の書き手の書込が割り込むストア。
@@ -212,7 +215,10 @@ impl InMemoryIntentExecutionRepository {
         advanced: IntentExecution,
         version: usize,
     ) -> InMemoryIntentExecutionRepository {
-        InMemoryIntentExecutionRepository::new(Some(aggregate), version, 1, Some(advanced))
+        let mut repository = InMemoryIntentExecutionRepository::holding(aggregate, version);
+        repository.interrupting_writes = 1;
+        repository.competing_commit = Some(advanced);
+        repository
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
@@ -225,9 +231,9 @@ impl InMemoryIntentExecutionRepository {
         self.store_attempts
     }
 
-    /// ストアが採番している現在の版。
-    pub(crate) const fn version(&self) -> usize {
-        self.version
+    /// 識別子の集約についてストアが採番している現在の版 (行が無ければ `None`)。
+    pub(crate) fn version_of(&self, id: &IntentExecutionId) -> Option<usize> {
+        self.stored.get(id).map(|(_, version)| *version)
     }
 }
 
@@ -236,12 +242,11 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
         &self,
         id: &IntentExecutionId,
     ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
-        // 識別子検索なので、保持している集約の識別子と一致するときだけ返す（ポート契約）。
-        // 返す集約にはストアが採番した版を刻む — 呼出側はそれをそのまま書込へ提示する。
+        // 識別子検索 (ポート契約)。返す集約にはストアが採番した版を刻む — 呼出側はそれを
+        // そのまま書込へ提示する。
         self.stored
-            .clone()
-            .filter(|aggregate| aggregate.id() == id)
-            .map(|aggregate| aggregate.with_version(self.version))
+            .get(id)
+            .map(|(aggregate, version)| aggregate.clone().with_version(*version))
             .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
     }
 
@@ -250,30 +255,36 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
     ) -> Result<(), RepositoryError<IntentExecutionId>> {
-        // 提示される版は集約が運んできたもの — 生値へ戻すのはストア境界を組む側だけである。
+        // 提示される版は集約が運んできたものである。
         let expected_version = aggregate.version();
         self.store_attempts += 1;
+        let id = aggregate.id().clone();
+        let current = self.stored.get(&id).map_or(0, |(_, version)| *version);
         if self.interrupting_writes > 0 {
-            // 別の書き手が先に書いた — ストアの版が進み、提示された版が古くなる。
+            // 別の書き手が先に書いた — その行の版が進み、提示された版が古くなる。
             self.interrupting_writes -= 1;
-            self.version += 1;
+            let bumped = current + 1;
             // カーソルを動かす競合なら、保持している集約も相手の書込後の状態へ差し替える。
-            if let Some(advanced) = self.competing_commit.take() {
-                self.stored = Some(advanced);
+            let held = self
+                .competing_commit
+                .take()
+                .or_else(|| self.stored.get(&id).map(|(held, _)| held.clone()));
+            if let Some(held) = held {
+                self.stored.insert(id, (held, bumped));
             }
             return Err(RepositoryError::Conflict {
                 expected: expected_version,
-                actual: self.version,
+                actual: bumped,
             });
         }
-        if expected_version != self.version {
+        if expected_version != current {
             return Err(RepositoryError::Conflict {
                 expected: expected_version,
-                actual: self.version,
+                actual: current,
             });
         }
-        self.version = expected_version + 1;
-        self.stored = Some(aggregate.clone());
+        self.stored
+            .insert(id, (aggregate.clone(), expected_version + 1));
         self.committed.push(event.clone());
         Ok(())
     }
@@ -286,25 +297,29 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
 /// 呼ばれるたびに同じ値が返る。
 #[derive(Debug)]
 pub(crate) struct InMemoryIntentRepository {
-    held: Option<Intent>,
+    held: HashMap<IntentId, Intent>,
     lookups: std::cell::Cell<usize>,
 }
 
 impl InMemoryIntentRepository {
-    /// 1 つの intent を保持する（この intent の識別子で引けば返る）。
-    pub(crate) const fn holding(intent: Intent) -> InMemoryIntentRepository {
+    /// 基本コンストラクタ — 中身の写像 (識別子 → intent) をそのまま受け取る (issue #54)。
+    pub(crate) fn new(held: HashMap<IntentId, Intent>) -> InMemoryIntentRepository {
         InMemoryIntentRepository {
-            held: Some(intent),
+            held,
             lookups: std::cell::Cell::new(0),
         }
     }
 
+    /// 1 つの intent を保持する（この intent の識別子で引けば返る — 単発テストの便宜）。
+    pub(crate) fn holding(intent: Intent) -> InMemoryIntentRepository {
+        let mut held = HashMap::new();
+        held.insert(intent.id().clone(), intent);
+        InMemoryIntentRepository::new(held)
+    }
+
     /// 何も保持しない（どの識別子で引いても `NotFound`）。
-    pub(crate) const fn empty() -> InMemoryIntentRepository {
-        InMemoryIntentRepository {
-            held: None,
-            lookups: std::cell::Cell::new(0),
-        }
+    pub(crate) fn empty() -> InMemoryIntentRepository {
+        InMemoryIntentRepository::new(HashMap::new())
     }
 
     /// これまでに引かれた回数（再試行が intent を取り直すことの観測点）。
@@ -316,9 +331,9 @@ impl InMemoryIntentRepository {
 impl IntentRepository for InMemoryIntentRepository {
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         self.lookups.set(self.lookups.get() + 1);
-        match &self.held {
-            Some(held) if held.id() == id => Ok(held.clone()),
-            _ => Err(RepositoryError::NotFound { id: id.clone() }),
-        }
+        self.held
+            .get(id)
+            .cloned()
+            .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
     }
 }
