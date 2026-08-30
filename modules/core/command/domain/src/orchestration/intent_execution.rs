@@ -2503,6 +2503,25 @@ mod tests {
             )
             .is_err()
         );
+        // 範囲外の parked 位置。
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                keys.clone(),
+                overlay.clone(),
+                checkbox.clone(),
+                0,
+                source.status(),
+                Some(9),
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
         // 範囲外カーソルと通番 0。
         assert!(
             IntentExecution::new(

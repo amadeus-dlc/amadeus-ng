@@ -413,3 +413,46 @@ fn an_optional_request_field_round_trips_when_present() {
     assert_eq!(payload.intent().test_strategy(), Some("balanced"));
     assert_eq!(payload.intent().depth(), Some("standard"));
 }
+
+#[test]
+fn a_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
+    // to_domain の失敗面 — 識別子の文法違反と閉集合外の綴りは、どの列でも復号を止める
+    // (BR1.5。基底の復元は完全コンストラクタを必ず通り、検査を迂回する読取口は無い)。
+    for (from, to) in [
+        // 識別子の文法違反。
+        (
+            r#""id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000""#,
+            r#""id":"broken""#,
+        ),
+        (
+            r#""intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
+            r#""intent_id":"broken""#,
+        ),
+        // 添字帳の slug / phase。
+        (r#""slug":"state-init""#, r#""slug":"NOT A SLUG""#),
+        (r#""phase":"Initialization""#, r#""phase":"initialization""#),
+        // 実行時ベクトルと列挙の綴り。
+        (r#""overlay":["Execute""#, r#""overlay":["execute""#),
+        (
+            r#""checkbox":["InProgress""#,
+            r#""checkbox":["in-progress""#,
+        ),
+        (r#""status":"Running""#, r#""status":"running""#),
+        (r#""autonomy":"Gated""#, r#""autonomy":"gated""#),
+        // 集約不変条件 (範囲外カーソル) — 完全コンストラクタが拒む。
+        (r#""cursor":0"#, r#""cursor":99"#),
+    ] {
+        let mutated = GENESIS_SNAPSHOT.replace(from, to);
+        assert_ne!(mutated, GENESIS_SNAPSHOT, "置換対象が行に無い: {from}");
+        let decoded: WireIntentExecution =
+            serde_json::from_str(&mutated).expect("DTO としては読める");
+        assert!(
+            decoded.to_domain().is_err(),
+            "{from} -> {to} は復号を止める"
+        );
+    }
+    // 対照: 無改竄の行はドメインへ戻る。
+    let intact: WireIntentExecution =
+        serde_json::from_str(GENESIS_SNAPSHOT).expect("記録済みの行は読める");
+    assert!(intact.to_domain().is_ok());
+}
