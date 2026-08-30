@@ -31,3 +31,40 @@
 @../../aidlc/spaces/default/memory/phases/inception.md
 @../../aidlc/spaces/default/memory/phases/construction.md
 @../../aidlc/spaces/default/memory/phases/operation.md
+
+<!--
+  Coding-rules canon — ALWAYS machine-loaded (owner ruling 2026-08-30).
+
+  project.md mandates reading aidlc/spaces/default/knowledge/aidlc-shared/
+  coding-rules/ before writing any code, spec, or review. Relying on the agent
+  to re-read it each time proved fragile (a freshly ruled rule was missed in
+  PR #61 and needed a fix-up commit), so the canon is pulled into ambient
+  context here, one @-line per rule file (no glob support). When a rule file
+  is added or renamed there, add or update the matching @-line below.
+
+  Deliberately NOT imported: CONSISTENCY-AUDIT-2026-08-24.md — a point-in-time
+  audit snapshot, not a rule.
+-->
+
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/README.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/aggregate-commands.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/aggregate-references.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/command-query-separation.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-persistence-neutrality.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-services.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/error-handling.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/factory-naming.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/good-examples.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/infrastructure-layer.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/interior-mutability.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/no-backward-compatibility.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/tell-dont-ask.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ubiquitous-language.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/upstream-contracts.md
+@../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/use-case-rules.md
