@@ -298,21 +298,6 @@ async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "apply_event: sequence gap")]
-async fn a_gap_in_the_replayed_journal_crashes_reconstruction() {
-    let fixture = Fixture::new();
-    let mut repository = fixture.repository();
-    seed(&mut repository).await;
-
-    let conn = fixture.raw();
-    rewind_snapshot_to_genesis(&conn, &genesis_payload().await);
-    conn.execute("DELETE FROM journal WHERE seq_nr = 2", [])
-        .expect("途中の行を消す");
-
-    let _ = repository.find_by_id(&execution_id()).await;
-}
-
-#[tokio::test]
 #[should_panic(expected = "apply_event: corrupted history")]
 async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction() {
     // 復号はできるが、解決済み計画に無いステージを名指すイベント — 壊れた歴史であり、
@@ -633,4 +618,32 @@ async fn a_stale_snapshot_plus_delta_matches_the_freshest_state() {
         .expect("基底 + 差分で最新へ");
     assert_eq!(found, expected);
     assert_eq!(found.seq_nr(), 3);
+}
+
+#[tokio::test]
+async fn a_gap_in_the_delta_rows_is_corrupt_not_a_crash() {
+    // 基底より後の行が 1 件欠けても読取はプロセスを止めない — 他の破損と同じく
+    // `Corrupt` に分類する (CodeRabbit 指摘 — 差分再生への転換で到達可能になった経路)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    seed(&mut repository).await;
+    fixture
+        .raw()
+        .execute("DELETE FROM journal WHERE seq_nr = 2", [])
+        .expect("差分行を 1 件欠けさせる");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("行の欠けは Corrupt");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: Some(3), .. } if *id == execution_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "sequence gap"
+    );
 }

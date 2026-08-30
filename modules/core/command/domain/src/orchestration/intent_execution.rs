@@ -273,6 +273,17 @@ impl IntentExecution {
         if seq_nr == 0 {
             return Err(IntentExecutionError::new("seq_nr must be at least 1"));
         }
+        // slug はイベントのステージ参照の解決先 — 重複すると `resolve` が常に前方だけを
+        // 返し、静かに誤った集約になる。検査点はここ 1 か所である (BR1.5)。
+        let mut seen = BTreeSet::new();
+        for key in &stage_keys {
+            if !seen.insert(key.slug().as_str()) {
+                return Err(IntentExecutionError::new(format!(
+                    "duplicate stage slug: {}",
+                    key.slug()
+                )));
+            }
+        }
         let execution = IntentExecution {
             id,
             intent_id,
@@ -2491,6 +2502,26 @@ mod tests {
                 source.intent_id().clone(),
                 keys.clone(),
                 vec![PlanAction::Execute; 2],
+                checkbox.clone(),
+                0,
+                source.status(),
+                None,
+                source.autonomy(),
+                vec![false; 3],
+                vec![0; 3],
+                1,
+                *source.last_updated_at(),
+            )
+            .is_err()
+        );
+        // slug の重複 (resolve が前方しか見ないため、静かな取り違えになる — 拒否)。
+        let duplicated = vec![keys[0].clone(), keys[0].clone(), keys[2].clone()];
+        assert!(
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                duplicated,
+                overlay.clone(),
                 checkbox.clone(),
                 0,
                 source.status(),

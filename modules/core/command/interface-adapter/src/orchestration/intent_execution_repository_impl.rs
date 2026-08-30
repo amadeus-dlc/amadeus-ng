@@ -95,6 +95,8 @@ enum CorruptDetail {
     MissingSnapshot,
     /// ジャーナル行が別の型判別子を名乗っている (foreign manifest)。
     ForeignManifest,
+    /// 差分行の通番が連続していない (行の欠け — 再生すると誤った状態になる)。
+    SequenceGap,
     /// 行のペイロードをドメイン型へ復号できない。
     Undecodable(WireDecodeError),
     /// ストアの復号そのものが失敗した (本家の `DeserializationError`)。
@@ -108,6 +110,7 @@ impl std::fmt::Display for CorruptDetail {
         match self {
             CorruptDetail::MissingSnapshot => f.write_str("missing snapshot"),
             CorruptDetail::ForeignManifest => f.write_str("foreign manifest"),
+            CorruptDetail::SequenceGap => f.write_str("sequence gap"),
             CorruptDetail::Undecodable(_) => f.write_str("undecodable payload"),
             CorruptDetail::StoreDeserialization => f.write_str("store deserialization failed"),
             CorruptDetail::WriteContract => f.write_str("write contract violation"),
@@ -360,8 +363,26 @@ where
             .get_events_by_id_since_seq_nr(&AggregateKey::of(id), base.seq_nr() + 1)
             .await
             .map_err(|error| self.read_error(&error, id))?;
+        // 通番の連続性は再生前にここで検査する — `apply_event` は通番の飛びをクラッシュで
+        // 止めるが、行の欠けは**読取時に分類できる破損**であり、他の破損 (MissingSnapshot /
+        // ForeignManifest / Undecodable) と同じく `Corrupt` に写す (BR1.5 — CodeRabbit 指摘)。
+        let mut expected_seq = base.seq_nr();
         let mut events = Vec::with_capacity(delta.len());
         for envelope in &delta {
+            expected_seq = expected_seq
+                .checked_add(1)
+                .ok_or_else(|| RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::SequenceGap),
+                })?;
+            if envelope.seq_nr() != expected_seq {
+                return Err(RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::SequenceGap),
+                });
+            }
             if envelope.manifest() != EVENT_MANIFEST {
                 return Err(RepositoryError::Corrupt {
                     id: id.clone(),
@@ -506,6 +527,7 @@ mod tests {
         for (detail, wording) in [
             (CorruptDetail::MissingSnapshot, "missing snapshot"),
             (CorruptDetail::ForeignManifest, "foreign manifest"),
+            (CorruptDetail::SequenceGap, "sequence gap"),
             (
                 CorruptDetail::Undecodable(WireDecodeError::InvariantViolation),
                 "undecodable payload",

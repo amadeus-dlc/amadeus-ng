@@ -49,7 +49,9 @@ impl WireIntentExecution {
     /// 集約の読取面からスナップショット行の形を組む (書き)。
     ///
     /// memento 型は経由しない (オーナー裁定 2026-08-30 — 集約と構造同一の写し型は複製で
-    /// しかない)。**フィールド名と並びと綴りは従来と同一**であり、行のバイトは変わらない。
+    /// しかない)。issue #44 で `stages` (添字帳) が行に加わった — 旧形式 (`stages` なし) の
+    /// 行は読めないが、互換処理は持たない: プレリリースのローカルストアであり、旧ストアは
+    /// 作り直す (`coding-rules/no-backward-compatibility.md` — 使われない口を並立させない)。
     #[must_use]
     pub fn of(execution: &IntentExecution) -> WireIntentExecution {
         let stages = 0..execution.stage_count();
