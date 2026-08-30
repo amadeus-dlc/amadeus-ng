@@ -1,0 +1,20 @@
+[package]
+name = "core-query-use-case"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+# クエリ側のユースケース層 — **自前のクエリモデル**（ワークフロー定義リードモデルのビュー型）
+# を所有する。依存は std のみで、外部クレートも内部クレートも 1 つも引かない。
+#
+# **ここにコマンド側 (`core-command-*`) と RMU (`core-read-model-updater`) を書いてはならない**
+# — クエリ側はドメインに絶対依存せず、集約の再構成もしない (`coding-rules/cqrs-boundaries.md`
+# 規則 6 / 2026-08-29 オーナー裁定)。境界はクレート分離で物理強制され、違反はビルドで落ちる。
+[dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true }

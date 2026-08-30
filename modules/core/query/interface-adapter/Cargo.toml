@@ -1,0 +1,28 @@
+[package]
+name = "core-query-interface-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+# クエリ側のインターフェイスアダプタ層 — **リードモデルを読む側**（オーナー裁定 2026-08-30）。
+# `stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md` は compile コンテキストの
+# イベント投影 = リードモデルであり、それを読む・パースする実装はコマンド側には置けない
+# (`coding-rules/cqrs-boundaries.md` 規則 7)。
+#
+# **ここにコマンド側 (`core-command-*`) と RMU (`core-read-model-updater`) を書いてはならない**
+# — 読んだ結果を写す先は自前のクエリモデル (`core-query-use-case` のビュー型) である。
+[dependencies]
+# クエリモデル（ビュー型）の所有者。
+core-query-use-case = { workspace = true }
+# 内容版 (`DefinitionRevisionView`) の正準ダイジェスト。infrastructure は言語拡張であり、
+# どちらの側にも属さない (`coding-rules/infrastructure-layer.md`)。
+core-infrastructure = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
