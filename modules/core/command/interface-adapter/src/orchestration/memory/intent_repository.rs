@@ -1,9 +1,11 @@
 //! `InMemoryIntentRepository` — `IntentRepository` の揮発実装（結線テスト用）。
 
+use std::collections::HashMap;
+
 use core_command_domain::orchestration::{Intent, IntentId};
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 
-/// 保持している intent をそのまま返す揮発の `IntentRepository`。
+/// 保持している intent を識別子で引いて返す揮発の `IntentRepository`。
 ///
 /// **本物の Gateway 実装ではない**ので `Impl` 接尾辞を付けない
 /// (`coding-rules/gateway-taxonomy.md`)。実物 — intent 自身のジャーナルから再構成する実装 —
@@ -15,24 +17,32 @@ use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 /// `IntentRepository` の実装を 1 つ必要とする）。
 #[derive(Debug, Clone)]
 pub struct InMemoryIntentRepository {
-    held: Intent,
+    held: HashMap<IntentId, Intent>,
 }
 
 impl InMemoryIntentRepository {
-    /// 1 つの intent を保持する。
+    /// 基本コンストラクタ — 中身の写像 (識別子 → intent) をそのまま受け取る
+    /// (単一スロット保持は手抜き — オーナー指摘 2026-08-30、issue #54)。
     #[must_use]
-    pub const fn holding(held: Intent) -> InMemoryIntentRepository {
+    pub const fn new(held: HashMap<IntentId, Intent>) -> InMemoryIntentRepository {
         InMemoryIntentRepository { held }
+    }
+
+    /// 1 つの intent を保持する (単発の結線テストの便宜)。
+    #[must_use]
+    pub fn holding(held: Intent) -> InMemoryIntentRepository {
+        let mut map = HashMap::new();
+        map.insert(held.id().clone(), held);
+        InMemoryIntentRepository::new(map)
     }
 }
 
 impl IntentRepository for InMemoryIntentRepository {
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
-        if self.held.id() == id {
-            Ok(self.held.clone())
-        } else {
-            Err(RepositoryError::NotFound { id: id.clone() })
-        }
+        self.held
+            .get(id)
+            .cloned()
+            .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
     }
 }
 
@@ -77,6 +87,39 @@ mod tests {
         let repository = InMemoryIntentRepository::holding(held());
         let found = repository.find_by_id(held().id()).await.expect("保持中");
         assert_eq!(found, held());
+    }
+
+    #[tokio::test]
+    async fn multiple_intents_are_looked_up_by_identifier() {
+        // HashMap 内蔵の受入 — 複数保持でも識別子で正しい 1 件が返る (issue #54)。
+        let second_id = IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap();
+        let second = Intent::from(Created::new(
+            second_id.clone(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "1".repeat(64))).unwrap(),
+            StartRequest::new("classic", "second"),
+            vec![StageEntry::new(
+                StageSlug::parse("state-init").unwrap(),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                StageDisplay::new(StageNumber::parse("0.1").unwrap(), "Stage", "orchestrator")
+                    .unwrap(),
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .unwrap(),
+        ));
+        let mut map = std::collections::HashMap::new();
+        map.insert(held().id().clone(), held());
+        map.insert(second_id.clone(), second.clone());
+        let repository = InMemoryIntentRepository::new(map);
+        assert_eq!(repository.find_by_id(held().id()).await.unwrap(), held());
+        assert_eq!(repository.find_by_id(&second_id).await.unwrap(), second);
     }
 
     #[tokio::test]
