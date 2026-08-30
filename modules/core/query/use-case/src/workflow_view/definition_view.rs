@@ -29,6 +29,7 @@ use super::plan_action_view::PlanActionView;
 use super::scope_grid_view::ScopeGridView;
 use super::scope_metadata_view::ScopeMetadataView;
 use super::stage_graph_view::StageGraphView;
+use super::stage_route_view::StageRouteView;
 use super::stage_slug_view::StageSlugView;
 use super::stage_view::StageView;
 
@@ -225,6 +226,20 @@ impl DefinitionView {
                 )
             })
             .collect()
+    }
+
+    /// steering 連鎖の route 束縛 (`r`) が指す対象 — 名指しステージと、その scope の
+    /// in-scope ステージ列 (文書順)。
+    ///
+    /// 素材の組み立てもダイジェストの計算もここでは行わない — 値の同一性だけを運ぶ。
+    #[must_use]
+    pub fn stage_route(&self, scope: &str, node: &StageView) -> StageRouteView {
+        let stages = self
+            .stages_in_scope(scope)
+            .iter()
+            .map(|(slug, _, _)| (*slug).clone())
+            .collect();
+        StageRouteView::new(node.slug().clone(), stages)
     }
 }
 

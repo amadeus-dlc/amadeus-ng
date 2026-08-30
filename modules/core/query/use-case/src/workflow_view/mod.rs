@@ -30,11 +30,13 @@ mod rule_in_context_view;
 mod rule_scope_view;
 mod scope_grid_view;
 mod scope_metadata_view;
+mod scope_slug_view;
 mod sensor_ref_view;
 mod skeleton_default_view;
 mod stage_graph_view;
 mod stage_mode_view;
 mod stage_number_view;
+mod stage_route_view;
 mod stage_slug_view;
 mod stage_view;
 mod unknown_value;
@@ -53,6 +55,7 @@ pub use stage_mode_view::StageModeView;
 // 検証付きの値
 pub use definition_id_view::DefinitionIdView;
 pub use definition_revision_view::DefinitionRevisionView;
+pub use scope_slug_view::ScopeSlugView;
 pub use stage_number_view::StageNumberView;
 pub use stage_slug_view::StageSlugView;
 
@@ -61,6 +64,7 @@ pub use consume_decl_view::ConsumeDeclView;
 pub use rule_in_context_view::RuleInContextView;
 pub use scope_metadata_view::ScopeMetadataView;
 pub use sensor_ref_view::SensorRefView;
+pub use stage_route_view::StageRouteView;
 pub use stage_view::{StageView, StageViewBuilder};
 
 // リードモデル本体
@@ -73,6 +77,7 @@ pub use definition_id_view::DefinitionIdError;
 pub use definition_revision_view::DefinitionRevisionError;
 pub use definition_view::UnknownScope;
 pub use scope_metadata_view::ScopeMetadataError;
+pub use scope_slug_view::ScopeSlugError;
 pub use stage_graph_view::StageGraphError;
 pub use stage_number_view::StageNumberError;
 pub use stage_slug_view::StageSlugError;

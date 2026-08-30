@@ -147,7 +147,6 @@ dependencies = [
 name = "core-command-interface-adapter"
 version = "0.1.0"
 dependencies = [
- "base64",
  "chrono",
  "core-command-domain",
  "core-command-use-case",
@@ -195,6 +194,7 @@ dependencies = [
 name = "core-query-interface-adapter"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "core-infrastructure",
  "core-query-use-case",
  "serde",
@@ -206,7 +206,9 @@ dependencies = [
 name = "core-query-use-case"
 version = "0.1.0"
 dependencies = [
+ "core-infrastructure",
  "proptest",
+ "serde_json",
 ]
 
 [[package]]
