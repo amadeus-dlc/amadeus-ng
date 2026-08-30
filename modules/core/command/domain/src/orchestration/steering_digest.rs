@@ -31,21 +31,32 @@ use crate::workflow_definition::{StageRoute, StageSlug};
 use super::directive::{GateField, RunStageDirective};
 
 impl SteeringPlan {
-    /// ルール束のダイジェスト (`b`) — piece の読み順 (path + text の列)。
+    /// ルール束のダイジェスト (`b`) — **部境界ごと**の piece の読み順 (path + text)。
+    ///
+    /// 素材は chunk の入れ子配列である — 平坦化すると `[[A], [B]]` と `[[A, B]]` が同じ
+    /// ダイジェストになり、内容が同じまま分割だけが変わった計画 (分割アルゴリズムの更新
+    /// など) を continue の照合が見逃して、部の欠落・重複配信を許してしまう
+    /// (CodeRabbit 指摘 — fail-closed I12 の網羅)。
     #[must_use]
     pub fn bundle_digest(&self) -> BundleDigest {
-        let pieces = self
+        let chunks = self
             .chunks()
             .iter()
-            .flatten()
-            .map(|piece| {
-                object([
-                    ("path", JsonValue::String(piece.path().to_string())),
-                    ("text", JsonValue::String(piece.text().to_string())),
-                ])
+            .map(|chunk| {
+                JsonValue::Array(
+                    chunk
+                        .iter()
+                        .map(|piece| {
+                            object([
+                                ("path", JsonValue::String(piece.path().to_string())),
+                                ("text", JsonValue::String(piece.text().to_string())),
+                            ])
+                        })
+                        .collect(),
+                )
             })
             .collect();
-        BundleDigest::new(hash_compact(&JsonValue::Array(pieces)).rendered())
+        BundleDigest::new(hash_compact(&JsonValue::Array(chunks)).rendered())
     }
 }
 
@@ -214,6 +225,13 @@ mod tests {
             "# Org2\n".to_string(),
         )]]);
         assert_ne!(plan.bundle_digest(), other.bundle_digest());
+
+        // 部境界はダイジェストの一部 — 内容が同じでも分割が違えば別の束である
+        // (平坦化すると照合が分割の変化を見逃す — CodeRabbit 指摘)。
+        let piece = |name: &str| RuleContent::new(name.to_string(), "# X\n".to_string());
+        let split = SteeringPlan::new(vec![vec![piece("a.md")], vec![piece("b.md")]]);
+        let joined = SteeringPlan::new(vec![vec![piece("a.md"), piece("b.md")]]);
+        assert_ne!(split.bundle_digest(), joined.bundle_digest());
 
         let route = StageRoute::new(
             StageSlug::parse("functional-design").unwrap(),
