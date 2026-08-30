@@ -500,6 +500,10 @@ impl RuleContent {
 ///
 /// クロスフィールド規則 `part <= parts` は**コンストラクタで**強制する
 /// (`aidlc-directive.ts:603-611` — validateDirective 相当を型で行う)。
+///
+/// `continue_token` は**中身 (型付き [`ContinueToken`])** を運ぶ — HMAC 封緘した base64url
+/// 文字列にするのは出力境界 (U7 Presenter) の仕事である (issue #45 — ポートは Repository
+/// のみで、封緘はアダプタ層の純計算)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadSteeringDirective {
     stage: StageSlug,
@@ -507,7 +511,7 @@ pub struct LoadSteeringDirective {
     part: PartIndex,
     parts: PartCount,
     rules_content: Vec<RuleContent>,
-    continue_token: String,
+    continue_token: ContinueToken,
 }
 
 impl LoadSteeringDirective {
@@ -520,7 +524,7 @@ impl LoadSteeringDirective {
         stage: StageSlug,
         bundle: BundleDigest,
         part: &SteeringPart<'_>,
-        continue_token: impl Into<String>,
+        continue_token: ContinueToken,
     ) -> LoadSteeringDirective {
         LoadSteeringDirective {
             stage,
@@ -528,7 +532,7 @@ impl LoadSteeringDirective {
             part: part.index(),
             parts: part.of(),
             rules_content: part.chunk().to_vec(),
-            continue_token: continue_token.into(),
+            continue_token,
         }
     }
 
@@ -562,9 +566,9 @@ impl LoadSteeringDirective {
         &self.rules_content
     }
 
-    /// 次の `continue` に渡すトークン (encode 済み)。
+    /// 次の `continue` に渡すトークンの中身 (封緘は U7 Presenter)。
     #[must_use]
-    pub fn continue_token(&self) -> &str {
+    pub const fn continue_token(&self) -> &ContinueToken {
         &self.continue_token
     }
 }
@@ -740,14 +744,35 @@ mod tests {
             )],
         ]);
         let first = plan.first_part().unwrap();
-        let part =
-            LoadSteeringDirective::new(slug(), BundleDigest::new("sha256:bbbb"), &first, "token-1");
+        let token = super::super::continue_token::ContinueTokenBuilder::new(
+            slug(),
+            crate::workflow_definition::ScopeSlug::parse("classic").unwrap(),
+            PartIndex::FIRST,
+            super::super::steering_binding::Bindings::new(
+                BundleDigest::new("sha256:bbbb"),
+                super::super::steering_binding::DirectiveDigest::new("d"),
+                super::super::steering_binding::RouteDigest::new("r"),
+                None,
+            ),
+            GateField::Ungated,
+        )
+        .build();
+        let part = LoadSteeringDirective::new(
+            slug(),
+            BundleDigest::new("sha256:bbbb"),
+            &first,
+            token.clone(),
+        );
         assert_eq!(part.stage().as_str(), "requirements-analysis");
         assert_eq!(part.bundle().as_str(), "sha256:bbbb");
         assert_eq!(part.part(), PartIndex::FIRST);
         assert_eq!(part.parts().as_u32(), 2);
         assert_eq!(part.rules_content().len(), 1);
-        assert_eq!(part.continue_token(), "token-1");
+        assert_eq!(
+            part.continue_token(),
+            &token,
+            "中身 (型付きトークン) を運ぶ"
+        );
         assert_eq!(
             Directive::LoadSteering(part).kind(),
             DirectiveKind::LoadSteering

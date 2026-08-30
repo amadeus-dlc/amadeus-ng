@@ -16,8 +16,7 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod cli_wording;
-mod command_spelling_impl;
-mod continue_token_codec_impl;
+mod continue_token_wire;
 mod intent_execution_repository_impl;
 mod intent_repository_impl;
 mod memory;
@@ -29,8 +28,9 @@ mod workflow_definition_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
 pub use cli_wording::invalid_mode_message;
-pub use command_spelling_impl::MulticallCommandSpelling;
-pub use continue_token_codec_impl::ContinueTokenCodecImpl;
+// continue_token の封緘 (Presenter) と開封 (Controller) — ポートではなく U7 の変換
+// (issue #45)。
+pub use continue_token_wire::{InvalidContinueToken, mint_continue_token, verify_continue_token};
 pub use intent_execution_repository_impl::IntentExecutionRepositoryImpl;
 pub use intent_repository_impl::IntentRepositoryImpl;
 pub use rule_bundle_source_impl::RuleBundleSourceImpl;

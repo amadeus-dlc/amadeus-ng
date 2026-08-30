@@ -18,6 +18,11 @@ workspace = true
 chrono = { workspace = true }
 # uuid は解析のみ (識別子 Domain Primitive の検査点 uuid_v7.rs)。採番はインフラ側の責務。
 uuid = { workspace = true }
+# 言語拡張 (canon_json のみ — steering ダイジェストの素材組みとハッシュ計算)。純計算で
+# あり I/O を持たない。serde derive・ストア語彙は持ち込まないので
+# domain-persistence-neutrality の機械強制 (serde / event-store-adapter-rs の不在) は保たれる
+# (issue #45。規則正本への射程注記の追記はオーナー確認事項)。
+core-infrastructure = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
