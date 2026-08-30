@@ -45,6 +45,12 @@ pub enum CatchUpError {
     /// が無い、のどちらでも 1 行も描けない。ジャーナルが途中から切り落とされた兆候であり、
     /// 読み替えずに止める。
     PlanUnavailable,
+    /// ジャーナルに**複数の intent** を指す実行が混在している。
+    ///
+    /// この取得ループは単一 intent の状態ファイル 1 面へ描く（`ProjectionTargets` は 1 組）。
+    /// 別 intent の実行を同じ計画で描くと誤った表示属性が焼き込まれるため、混在は読み替えず
+    /// 止める。intent ごとの書込先振り分けは合成ルート（U7）の駆動設計と対で扱う。
+    MixedIntents,
 }
 
 impl core::fmt::Display for CatchUpError {
@@ -58,6 +64,7 @@ impl core::fmt::Display for CatchUpError {
             CatchUpError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
             CatchUpError::AuditShardWrite(inner) => write!(f, "audit shard write: {inner}"),
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
+            CatchUpError::MixedIntents => f.write_str("mixed intents"),
         }
     }
 }
@@ -205,15 +212,23 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             return Ok(plan.clone());
         }
         let history = self.reader.events_after(GlobalSeqNr::ZERO).await?;
-        let intent_id = history
+        let mut started_ids = history
             .executions()
             .iter()
-            .find_map(|entry| match entry.event() {
+            .filter_map(|entry| match entry.event() {
                 IntentExecutionEvent::Started(started) => Some(started.intent_id().clone()),
                 _ => None,
-            });
-        let plan = intent_id
-            .and_then(|id| history.intents().iter().find(|intent| intent.id() == &id))
+            })
+            .collect::<Vec<_>>();
+        started_ids.dedup();
+        // 単一 intent が本ループの契約である — 混在を黙って 1 つの計画で描かない
+        // (CodeRabbit 指摘。intent ごとの振り分けは U7 の駆動設計と対で扱う)。
+        if started_ids.len() > 1 {
+            return Err(CatchUpError::MixedIntents);
+        }
+        let plan = started_ids
+            .first()
+            .and_then(|id| history.intents().iter().find(|intent| intent.id() == id))
             .map(ResolvedPlan::of)
             .ok_or(CatchUpError::PlanUnavailable)?;
         self.plan = Some(plan.clone());
@@ -257,6 +272,7 @@ mod tests {
             CatchUpError::PlanUnavailable.to_string(),
             "plan unavailable"
         );
+        assert_eq!(CatchUpError::MixedIntents.to_string(), "mixed intents");
 
         let shard_write = CatchUpError::AuditShardWrite(AuditShardWriteError::Io {
             kind: std::io::ErrorKind::PermissionDenied,

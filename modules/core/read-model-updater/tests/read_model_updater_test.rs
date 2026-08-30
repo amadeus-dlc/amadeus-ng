@@ -403,6 +403,30 @@ async fn a_journal_without_a_started_is_plan_unavailable() {
 }
 
 #[tokio::test]
+async fn executions_of_two_different_intents_are_refused_as_mixed() {
+    // この取得ループは単一 intent の状態ファイル 1 面へ描く — 別 intent の実行を同じ計画で
+    // 描かない (intent ごとの振り分けは U7 の駆動設計と対で扱う)。
+    let fixture = Fixture::new();
+    let other = IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").expect("UUIDv7");
+    let journal = vec![
+        entry(2, genesis()),
+        entry(3, IntentExecutionEvent::Started(Started::new(other))),
+        entry(
+            4,
+            IntentExecutionEvent::GateOpened(GateOpened::new(
+                slug("practices-discovery"),
+                Vec::new(),
+            )),
+        ),
+    ];
+    let mut updater = fixture.updater(journal, intents());
+
+    let error = updater.catch_up().await.expect_err("混在は拒否");
+    assert_eq!(error.to_string(), "mixed intents");
+    assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
+}
+
+#[tokio::test]
 async fn a_started_without_its_created_is_plan_unavailable() {
     // `Started` は intent の識別子しか運ばない — 指された誕生記録がジャーナルに無ければ
     // 計画は組めない（ジャーナルが途中から切り落とされた兆候）。

@@ -353,6 +353,16 @@ const INTENT_EVENT_MANIFEST: &str = "intent-event/1";
 fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
     let row_seq = usize::try_from(row.seq_nr)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
+    // intent のイベントは現状 `Created` 1 種 = 必ず genesis (通番 1)。それ以外の通番を名乗る
+    // 行は破損した歴史であり、payload を解釈する前に止める (CodeRabbit 指摘)。変種が増えた
+    // ときはこの前提ごと見直す (`WireIntentEvent` の網羅がビルドで教える)。
+    if row_seq != 1 {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
     let intent_id = IntentId::parse(&row.aggregate_id).map_err(|_| {
         corrupt_error(
             &row.aggregate_id,
@@ -1622,6 +1632,23 @@ mod tests {
                 aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
                 seq_nr: Some(1),
                 cause: CorruptCause::UndecodablePayload,
+            }
+        );
+    }
+
+    #[test]
+    fn an_intent_row_that_is_not_the_genesis_sequence_is_corrupt() {
+        // `Created` は必ず通番 1 — それ以外を名乗る行は payload を解釈する前に止める。
+        let row = JournalRow {
+            seq_nr: 2,
+            ..intent_row()
+        };
+        assert_eq!(
+            decode_intent_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(2),
+                cause: CorruptCause::InvariantViolation,
             }
         );
     }
