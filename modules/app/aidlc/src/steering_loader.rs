@@ -44,16 +44,19 @@ pub fn load_memory_rules(memory_dir: &Path) -> Result<MemoryRules, RuleUnreadabl
 }
 
 /// 存在するファイルだけを読む — 無いのは正常、在るのに読めないのは blocking。
+///
+/// 判定は**読取 1 回の失敗種別**で行う (`NotFound` だけが「無い」)。`Path::exists()` は
+/// stat の失敗 (親ディレクトリの権限など) も「無い」に畳んでしまい、在るのに読めない
+/// ルールが黙って束から落ちる — 02 §10 の blocking 態度と食い違う (CodeRabbit 指摘。
+/// 判定と読取の間の隙間も消える)。
 fn read_if_present(
     memory_dir: &Path,
     relative: &str,
 ) -> Result<Option<RuleContent>, RuleUnreadable> {
     let path = memory_dir.join(relative);
-    if !path.exists() {
-        return Ok(None);
-    }
     match std::fs::read_to_string(&path) {
         Ok(text) => Ok(Some(RuleContent::new(path.display().to_string(), text))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(RuleUnreadable::new(
             path.display().to_string(),
             error.to_string(),

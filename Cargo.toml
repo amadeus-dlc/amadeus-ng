@@ -4,6 +4,7 @@ members = [
   "modules/core/command/domain",
   "modules/core/command/use-case",
   "modules/core/command/interface-adapter",
+  "modules/core/query/interface-adapter",
   "modules/core/read-model-updater",
   "modules/core/infrastructure",
   "modules/app/aidlc",
@@ -89,6 +90,7 @@ core-command-domain = { path = "modules/core/command/domain" }
 # (`coding-rules/cqrs-boundaries.md`)。
 core-command-use-case = { path = "modules/core/command/use-case" }
 core-command-interface-adapter = { path = "modules/core/command/interface-adapter" }
+core-query-interface-adapter = { path = "modules/core/query/interface-adapter" }
 core-read-model-updater = { path = "modules/core/read-model-updater" }
 # infrastructure 層は文脈ごとに置く (`coding-rules/infrastructure-layer.md`)。
 core-infrastructure = { path = "modules/core/infrastructure" }

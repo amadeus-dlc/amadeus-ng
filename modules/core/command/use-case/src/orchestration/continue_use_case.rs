@@ -53,8 +53,8 @@ where
     E: IntentExecutionRepository,
     I: IntentRepository,
 {
-    /// 読取専用の Repository 2 本を注入する ([`super::NextUseCase`] と同じ読取束 —
-    /// issue #45 / #46 のポート正常化)。
+    /// 読取専用の Gateway (ポート — 現在は Repository のみ) を注入する
+    /// ([`super::NextUseCase`] と同じ読取束 — issue #45 / #46 のポート正常化)。
     #[must_use]
     pub const fn new(execution_repository: E, intent_repository: I) -> ContinueUseCase<E, I> {
         ContinueUseCase {

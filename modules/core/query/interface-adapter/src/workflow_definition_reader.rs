@@ -1,20 +1,21 @@
-//! ワークフロー定義の loader — パス解決とファイル読取 (I/O はここに閉じる)。
+//! ワークフロー定義の reader — パス解決とファイル読取 (I/O はここに閉じる)。
 //!
 //! 3 入力 (`harness.json` / `stage-graph.json` / `scope-grid.json`) と scope identity
-//! ファイル群 (`<scopes_dir>/aidlc-*.md`) を読み、生バイトをアダプタの純 parse
+//! ファイル群 (`<scopes_dir>/aidlc-*.md`) を読み、生バイトを純 parse
 //! ([`parse_workflow_definition`]) へ渡す。**失敗態度は 12 §4 の表のとおり**で、I/O 由来の
 //! 変種 (`NotReadable` / `HarnessIdentity` の読取失敗・`ScopeFile` の列挙失敗) はここが組み、
-//! parse 由来の変種はアダプタが組む — 型は [`GraphReadError`] 1 本である。
+//! parse 由来の変種は parse 側が組む — 型は [`GraphReadError`] 1 本である。
 //!
 //! `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` 相当のオーバライドは**パスとして注入**する —
-//! env の読取そのものはバイナリの main が行う (テストを hermetic に保つため)。
+//! env の読取そのものは合成ルートのバイナリ (main) が行う (テストを hermetic に保つため)。
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use core_command_domain::workflow_definition::WorkflowDefinition;
-use core_command_interface_adapter::orchestration::{
+
+use super::workflow_definition_parse::{
     DefinitionArtifacts, GraphReadError, RawArtifact, parse_workflow_definition,
 };
 

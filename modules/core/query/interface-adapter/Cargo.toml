@@ -1,0 +1,26 @@
+[package]
+name = "core-query-interface-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+# クエリサイドのインターフェイスアダプタ — **リードモデルを読む側** (オーナー裁定
+# 2026-08-30)。`stage-graph.json` は compile コンテキストのイベント投影 = リードモデルで
+# あり、それを読む・パースする実装はコマンド側には置けない (CQRS 境界はクレート分離で
+# 物理強制する — `coding-rules/cqrs-boundaries.md`)。コマンド側クレートはこのクレートに
+# 依存してはならない。両方を知ってよいのは合成ルート (`modules/app/aidlc`) だけである。
+[dependencies]
+# ドメインの語彙 (`WorkflowDefinition` とその部品) はコマンド側ドメインが所有する —
+# 読み手が語彙に依存するのは RMU と同じ向きで合法 (`coding-rules/cqrs-boundaries.md`)。
+core-command-domain = { workspace = true }
+# 内容版 (`DefinitionRevision`) の正準ダイジェスト。
+core-infrastructure = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

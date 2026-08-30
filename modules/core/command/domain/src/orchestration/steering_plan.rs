@@ -137,14 +137,20 @@ impl SteeringPlan {
     pub fn pack(files: &[RuleContent]) -> Result<SteeringPlan, UnsplittableSection> {
         let mut pieces = Vec::new();
         for file in files {
+            // 分割予算はパック予算と同じ帳簿で数える — piece は text + path のバイト数で
+            // パックされるので、分割の閾値からも path のぶんを差し引く。帳簿が食い違うと、
+            // 目標ちょうどのセクションが分割されず 1 チャンクが目標を path 長ぶん超える
+            // (CodeRabbit 指摘)。
+            let budget = STEERING_TEXT_TARGET_BYTES.saturating_sub(file.path().len());
             for section in split_at_headings(file.text()) {
-                if section.len() <= STEERING_TEXT_TARGET_BYTES {
+                if section.len() <= budget {
                     pieces.push(RuleContent::new(file.path().to_string(), section));
                     continue;
                 }
-                let slices = split_by_codepoints(&section).ok_or_else(|| UnsplittableSection {
-                    path: file.path().to_string(),
-                })?;
+                let slices =
+                    split_by_codepoints(&section, budget).ok_or_else(|| UnsplittableSection {
+                        path: file.path().to_string(),
+                    })?;
                 for slice in slices {
                     pieces.push(RuleContent::new(file.path().to_string(), slice));
                 }
@@ -245,14 +251,14 @@ fn split_at_headings(text: &str) -> Vec<String> {
     sections
 }
 
-/// 過大セクションをコードポイント境界でターゲット以下へ分割する。分割不能は `None`。
-fn split_by_codepoints(section: &str) -> Option<Vec<String>> {
+/// 過大セクションをコードポイント境界で予算以下へ分割する。分割不能は `None`。
+fn split_by_codepoints(section: &str, budget: usize) -> Option<Vec<String>> {
     let mut slices = Vec::new();
     let mut current = String::new();
     for c in section.chars() {
-        if current.len() + c.len_utf8() > STEERING_TEXT_TARGET_BYTES {
+        if current.len() + c.len_utf8() > budget {
             if current.is_empty() {
-                // 1 コードポイントが上限を超える — 分割不能 (防御的)。
+                // 1 コードポイントが予算を超える — 分割不能 (防御的)。
                 return None;
             }
             slices.push(std::mem::take(&mut current));
@@ -354,6 +360,31 @@ mod tests {
         );
         let plan = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap();
         assert_eq!(plan.chunks().iter().flatten().count(), 1);
+    }
+
+    #[test]
+    fn the_split_budget_counts_the_path_so_no_chunk_exceeds_the_target() {
+        // 目標ちょうどのセクションでも、piece は text + path で数えられる — 分割予算が
+        // path のぶんを差し引かないと 1 チャンクが目標を超える (CodeRabbit 指摘の回帰)。
+        // 末尾改行つきの 20480 バイト 1 行 (見出し分割は行を改行正規化するので、無損失比較は
+        // 改行で終わる素材で行う)。
+        let body = format!("{}\n", "x".repeat(20 * 1024 - 1));
+        let file = RuleContent::new("p.md".to_string(), body);
+        let plan = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap();
+        for chunk in plan.chunks() {
+            let total: usize = chunk
+                .iter()
+                .map(|piece| piece.text().len() + piece.path().len())
+                .sum();
+            assert!(total <= 20 * 1024, "チャンク {total} バイトが目標を超えた");
+        }
+        let rebuilt: String = plan
+            .chunks()
+            .iter()
+            .flatten()
+            .map(RuleContent::text)
+            .collect();
+        assert_eq!(rebuilt.len(), 20 * 1024, "分割は無損失");
     }
 
     #[test]

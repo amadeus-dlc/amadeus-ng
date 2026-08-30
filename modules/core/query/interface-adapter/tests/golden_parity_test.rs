@@ -23,8 +23,8 @@
 // ヘルパは `#[test]` の外にあるため clippy.toml の `allow-*-in-tests` が効かない。
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use aidlc::{DefinitionPaths, load_workflow_definition};
 use core_command_domain::workflow_definition::{PlanAction, ReviewClass, WorkflowDefinition};
+use core_query_interface_adapter::{DefinitionPaths, load_workflow_definition};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -66,7 +66,7 @@ const EXPECTED_ADVISORY: usize = 8;
 
 /// ゴールデンフィクスチャの置き場（`tests/golden/upstream-3c3146cf/`）。
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../tests/golden/upstream-3c3146cf")
 }
 
 /// フィクスチャの `data_dir` と空の `scopes_dir` を与えたパス束。

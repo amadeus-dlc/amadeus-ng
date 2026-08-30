@@ -192,6 +192,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "core-query-interface-adapter"
+version = "0.1.0"
+dependencies = [
+ "core-command-domain",
+ "core-infrastructure",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "core-read-model-updater"
 version = "0.1.0"
 dependencies = [

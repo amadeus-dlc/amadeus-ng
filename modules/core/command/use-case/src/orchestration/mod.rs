@@ -38,8 +38,10 @@ pub use next_turn_input::{ActiveWorkflow, NextTurnInput, NounFamily, NounToken, 
 pub use next_use_case::NextUseCase;
 
 // 読取素材の値渡し (ポートではなく値 — issue #46。旧 `WorkflowDefinitionRepository` /
-// `RuleBundleSource` ポートは廃止し、use-case のポートは Repository 2 本だけになった。
-// 旧 `ContinueTokenCodec` / `CommandSpelling` の廃止 (issue #45) と合わせてポート正常化完結)。
+// `RuleBundleSource` ポートは廃止)。ユースケース層から見ると**ポートは Gateway のみ**で
+// あり、現在の Gateway は Repository のみである (オーナー裁定 2026-08-30 —
+// gateway-taxonomy の 2 責務のうち外部システムクライアントは現状存在しない。旧
+// `ContinueTokenCodec` / `CommandSpelling` の廃止 (issue #45) と合わせてポート正常化完結)。
 pub use reported_transition::ReportedTransition;
 pub use turn_materials::{RuleUnreadable, TurnMaterials};
 

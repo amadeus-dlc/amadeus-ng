@@ -167,8 +167,9 @@ where
     E: IntentExecutionRepository,
     I: IntentRepository,
 {
-    /// 読取専用の Repository 2 本を注入する — use-case のポートはこれだけである
-    /// (issue #45 / #46 — ポート正常化。定義とルール束は [`TurnMaterials`] の値渡し)。
+    /// 読取専用の Gateway (ポート) を注入する — ユースケース層から見るとポートは Gateway
+    /// のみで、現在の Gateway は Repository のみである (issue #45 / #46 — ポート正常化。
+    /// 定義とルール束は [`TurnMaterials`] の値渡し)。
     #[must_use]
     pub const fn new(execution_repository: E, intent_repository: I) -> NextUseCase<E, I> {
         NextUseCase {

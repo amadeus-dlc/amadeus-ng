@@ -11,12 +11,11 @@
 // 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
-use aidlc::{DefinitionPaths, load_workflow_definition};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_command_interface_adapter::orchestration::GraphReadError;
+use core_query_interface_adapter::{DefinitionPaths, GraphReadError, load_workflow_definition};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -442,9 +441,14 @@ fn b_the_scope_grid_override_points_the_read_at_the_injected_path() {
     std::fs::write(&pinned, GRID_JSON).unwrap();
     let reader = fixture.reader().with_scope_grid_override(pinned);
     let definition = load_workflow_definition(&reader).unwrap();
-    assert!(
-        definition.grid().column("feature").is_some(),
-        "注入した grid の列が読まれている"
+    // 判別はグラフからの転置導出では**現れ得ない**セルで行う — `requirements-analysis` の
+    // scopes は ["feature"] なので、導出 grid の bugfix 列にはこのセルが無い。注入 grid
+    // だけが SKIP を持つ (CodeRabbit 指摘: feature 列の実在だけでは導出と区別できない)。
+    let column = definition.grid().column("bugfix").expect("bugfix 列");
+    assert_eq!(
+        column.get(&slug("requirements-analysis")),
+        Some(&PlanAction::Skip),
+        "注入した grid のセルが読まれている"
     );
 }
 
