@@ -5,18 +5,21 @@
 
 use core_command_domain::orchestration::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    PhaseBoundary, Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
 
 use super::wire_error::WireDecodeError;
 use super::wire_intent::WireIntent;
-use super::wire_vocabulary::{
-    autonomy_of, autonomy_spelling, direction_of, direction_spelling, phase_of, phase_spelling,
-};
+use super::wire_vocabulary::{autonomy_of, autonomy_spelling};
 
 /// ジャーナル行 `payload` の形。
+#[expect(
+    clippy::large_enum_variant,
+    reason = "イベント痩身 (issue #56) で他変種は事実のみになったが、Started はまだ Intent の \\
+              複製を運ぶ — 撤去は issue #50 が前提の残件"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WireEvent {
     /// 実行の開始 (解決済み計画を自己完結で持つ)。
@@ -55,7 +58,6 @@ pub struct WireStarted {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireStageCompleted {
     stage: String,
-    next_stage: Option<String>,
 }
 
 /// `GateOpened` の材料。
@@ -70,8 +72,6 @@ pub struct WireGateOpened {
 pub struct WireGateApproved {
     stage: String,
     user_input: Option<String>,
-    next_stage: Option<String>,
-    phase_boundary: Option<WirePhaseBoundary>,
 }
 
 /// `GateRejected` の材料。
@@ -79,7 +79,6 @@ pub struct WireGateApproved {
 pub struct WireGateRejected {
     stage: String,
     feedback: Option<String>,
-    revision_count: u32,
 }
 
 /// `StageRevised` の材料。
@@ -93,17 +92,12 @@ pub struct WireStageRevised {
 pub struct WireStageSkipped {
     stage: String,
     reason: String,
-    next_stage: Option<String>,
 }
 
 /// `Jumped` の材料。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireJumped {
-    direction: String,
-    source: String,
     target: String,
-    stages_reset: Vec<String>,
-    stages_skipped: Vec<String>,
 }
 
 /// `Parked` の材料。
@@ -117,20 +111,12 @@ pub struct WireParked {
 pub struct WireRecomposed {
     skipped: Vec<String>,
     added: Vec<String>,
-    stages_in_scope: Vec<String>,
 }
 
 /// `AutonomyModeSet` の材料。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireAutonomyModeSet {
     mode: String,
-}
-
-/// フェーズ境界の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct WirePhaseBoundary {
-    from_phase: String,
-    to_phase: String,
 }
 
 /// ステージ参照の綴り。
@@ -148,14 +134,6 @@ fn slugs_of(raw: &[String], field: &'static str) -> Result<Vec<StageSlug>, WireD
     raw.iter().map(|value| slug_of(value, field)).collect()
 }
 
-/// 省略可能なステージ参照の復号。
-fn optional_slug_of(
-    raw: Option<&String>,
-    field: &'static str,
-) -> Result<Option<StageSlug>, WireDecodeError> {
-    raw.map(|value| slug_of(value, field)).transpose()
-}
-
 impl WireEvent {
     /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
     #[must_use]
@@ -167,7 +145,6 @@ impl WireEvent {
             IntentExecutionEvent::StageCompleted(payload) => {
                 WireEvent::StageCompleted(WireStageCompleted {
                     stage: slug_spelling(payload.stage()),
-                    next_stage: payload.next_stage().map(slug_spelling),
                 })
             }
             IntentExecutionEvent::GateOpened(payload) => WireEvent::GateOpened(WireGateOpened {
@@ -178,15 +155,12 @@ impl WireEvent {
                 WireEvent::GateApproved(WireGateApproved {
                     stage: slug_spelling(payload.stage()),
                     user_input: payload.user_input().map(str::to_string),
-                    next_stage: payload.next_stage().map(slug_spelling),
-                    phase_boundary: payload.phase_boundary().map(WirePhaseBoundary::of),
                 })
             }
             IntentExecutionEvent::GateRejected(payload) => {
                 WireEvent::GateRejected(WireGateRejected {
                     stage: slug_spelling(payload.stage()),
                     feedback: payload.feedback().map(str::to_string),
-                    revision_count: payload.revision_count(),
                 })
             }
             IntentExecutionEvent::StageRevised(payload) => {
@@ -198,15 +172,10 @@ impl WireEvent {
                 WireEvent::StageSkipped(WireStageSkipped {
                     stage: slug_spelling(payload.stage()),
                     reason: payload.reason().to_string(),
-                    next_stage: payload.next_stage().map(slug_spelling),
                 })
             }
             IntentExecutionEvent::Jumped(payload) => WireEvent::Jumped(WireJumped {
-                direction: direction_spelling(payload.direction()).to_string(),
-                source: slug_spelling(payload.source()),
                 target: slug_spelling(payload.target()),
-                stages_reset: payload.stages_reset().iter().map(slug_spelling).collect(),
-                stages_skipped: payload.stages_skipped().iter().map(slug_spelling).collect(),
             }),
             IntentExecutionEvent::Parked(payload) => WireEvent::Parked(WireParked {
                 stage: slug_spelling(payload.stage()),
@@ -215,11 +184,6 @@ impl WireEvent {
             IntentExecutionEvent::Recomposed(payload) => WireEvent::Recomposed(WireRecomposed {
                 skipped: payload.skipped().iter().map(slug_spelling).collect(),
                 added: payload.added().iter().map(slug_spelling).collect(),
-                stages_in_scope: payload
-                    .stages_in_scope()
-                    .iter()
-                    .map(slug_spelling)
-                    .collect(),
             }),
             IntentExecutionEvent::AutonomyModeSet(payload) => {
                 WireEvent::AutonomyModeSet(WireAutonomyModeSet {
@@ -240,12 +204,9 @@ impl WireEvent {
             WireEvent::Started(payload) => {
                 IntentExecutionEvent::Started(Started::new(payload.intent.to_domain()?))
             }
-            WireEvent::StageCompleted(payload) => {
-                IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                    slug_of(&payload.stage, "stage")?,
-                    optional_slug_of(payload.next_stage.as_ref(), "next_stage")?,
-                ))
-            }
+            WireEvent::StageCompleted(payload) => IntentExecutionEvent::StageCompleted(
+                StageCompleted::new(slug_of(&payload.stage, "stage")?),
+            ),
             WireEvent::GateOpened(payload) => IntentExecutionEvent::GateOpened(GateOpened::new(
                 slug_of(&payload.stage, "stage")?,
                 payload.artifacts.clone(),
@@ -254,38 +215,20 @@ impl WireEvent {
                 IntentExecutionEvent::GateApproved(GateApproved::new(
                     slug_of(&payload.stage, "stage")?,
                     payload.user_input.clone(),
-                    optional_slug_of(payload.next_stage.as_ref(), "next_stage")?,
-                    payload
-                        .phase_boundary
-                        .as_ref()
-                        .map(WirePhaseBoundary::to_domain)
-                        .transpose()?,
                 ))
             }
-            WireEvent::GateRejected(payload) => {
-                IntentExecutionEvent::GateRejected(GateRejected::new(
-                    slug_of(&payload.stage, "stage")?,
-                    payload.feedback.clone(),
-                    payload.revision_count,
-                ))
-            }
+            WireEvent::GateRejected(payload) => IntentExecutionEvent::GateRejected(
+                GateRejected::new(slug_of(&payload.stage, "stage")?, payload.feedback.clone()),
+            ),
             WireEvent::StageRevised(payload) => IntentExecutionEvent::StageRevised(
                 StageRevised::new(slug_of(&payload.stage, "stage")?),
             ),
-            WireEvent::StageSkipped(payload) => {
-                IntentExecutionEvent::StageSkipped(StageSkipped::new(
-                    slug_of(&payload.stage, "stage")?,
-                    payload.reason.clone(),
-                    optional_slug_of(payload.next_stage.as_ref(), "next_stage")?,
-                ))
+            WireEvent::StageSkipped(payload) => IntentExecutionEvent::StageSkipped(
+                StageSkipped::new(slug_of(&payload.stage, "stage")?, payload.reason.clone()),
+            ),
+            WireEvent::Jumped(payload) => {
+                IntentExecutionEvent::Jumped(Jumped::new(slug_of(&payload.target, "target")?))
             }
-            WireEvent::Jumped(payload) => IntentExecutionEvent::Jumped(Jumped::new(
-                direction_of(&payload.direction)?,
-                slug_of(&payload.source, "source")?,
-                slug_of(&payload.target, "target")?,
-                slugs_of(&payload.stages_reset, "stages_reset")?,
-                slugs_of(&payload.stages_skipped, "stages_skipped")?,
-            )),
             WireEvent::Parked(payload) => {
                 IntentExecutionEvent::Parked(Parked::new(slug_of(&payload.stage, "stage")?))
             }
@@ -293,27 +236,10 @@ impl WireEvent {
             WireEvent::Recomposed(payload) => IntentExecutionEvent::Recomposed(Recomposed::new(
                 slugs_of(&payload.skipped, "skipped")?,
                 slugs_of(&payload.added, "added")?,
-                slugs_of(&payload.stages_in_scope, "stages_in_scope")?,
             )),
             WireEvent::AutonomyModeSet(payload) => IntentExecutionEvent::AutonomyModeSet(
                 AutonomyModeSet::new(autonomy_of(&payload.mode)?),
             ),
         })
-    }
-}
-
-impl WirePhaseBoundary {
-    fn of(boundary: PhaseBoundary) -> WirePhaseBoundary {
-        WirePhaseBoundary {
-            from_phase: phase_spelling(boundary.from_phase()).to_string(),
-            to_phase: phase_spelling(boundary.to_phase()).to_string(),
-        }
-    }
-
-    fn to_domain(&self) -> Result<PhaseBoundary, WireDecodeError> {
-        Ok(PhaseBoundary::new(
-            phase_of(&self.from_phase, "from_phase")?,
-            phase_of(&self.to_phase, "to_phase")?,
-        ))
     }
 }

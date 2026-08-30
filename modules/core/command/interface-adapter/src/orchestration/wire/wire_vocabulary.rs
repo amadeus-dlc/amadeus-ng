@@ -3,7 +3,7 @@
 //! ドメイン側の `as_str` / `parse` は流用しない (`mod.rs` の「綴りの正本はここにある」)。
 //! ここの綴りを変えると既に書かれた行が読めなくなるので、対応表は逐語テストで固定する。
 
-use core_command_domain::orchestration::{AutonomyMode, JumpDirection, Status};
+use core_command_domain::orchestration::{AutonomyMode, Status};
 use core_command_domain::workflow_definition::{BrownfieldGreenfield, PhaseId, PlanAction};
 use core_command_domain::workspace::CheckboxState;
 
@@ -93,25 +93,6 @@ pub(super) fn autonomy_of(raw: &str) -> Result<AutonomyMode, WireDecodeError> {
     }
 }
 
-/// jump の方向の綴り。
-pub(super) const fn direction_spelling(value: JumpDirection) -> &'static str {
-    match value {
-        JumpDirection::Forward => "Forward",
-        JumpDirection::Backward => "Backward",
-        JumpDirection::Redo => "Redo",
-    }
-}
-
-/// jump の方向の復号。
-pub(super) fn direction_of(raw: &str) -> Result<JumpDirection, WireDecodeError> {
-    match raw {
-        "Forward" => Ok(JumpDirection::Forward),
-        "Backward" => Ok(JumpDirection::Backward),
-        "Redo" => Ok(JumpDirection::Redo),
-        other => Err(WireDecodeError::malformed("direction", other)),
-    }
-}
-
 /// フェーズの綴り (**ジャーナル面**。`stage-graph.json` 面の小文字とは別物)。
 pub(super) const fn phase_spelling(value: PhaseId) -> &'static str {
     match value {
@@ -181,13 +162,6 @@ mod tests {
             assert_eq!(autonomy_of(autonomy_spelling(value)).unwrap(), value);
         }
         for value in [
-            JumpDirection::Forward,
-            JumpDirection::Backward,
-            JumpDirection::Redo,
-        ] {
-            assert_eq!(direction_of(direction_spelling(value)).unwrap(), value);
-        }
-        for value in [
             PhaseId::Initialization,
             PhaseId::Ideation,
             PhaseId::Inception,
@@ -212,7 +186,6 @@ mod tests {
         assert_eq!(checkbox_spelling(CheckboxState::InProgress), "InProgress");
         assert_eq!(status_spelling(Status::Running), "Running");
         assert_eq!(autonomy_spelling(AutonomyMode::Gated), "Gated");
-        assert_eq!(direction_spelling(JumpDirection::Forward), "Forward");
         assert_eq!(phase_spelling(PhaseId::Ideation), "Ideation");
         assert_eq!(
             PhaseId::Ideation.as_str(),
@@ -234,7 +207,6 @@ mod tests {
         assert!(checkbox_of("done").is_err());
         assert!(status_of("running").is_err());
         assert!(autonomy_of("gated").is_err());
-        assert!(direction_of("forward").is_err());
         assert!(phase_of("ideation", "phase").is_err());
         assert!(project_type_of("Greenfield").is_err());
     }

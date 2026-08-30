@@ -3,6 +3,10 @@
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.1 (2026-08-30): actJumpForward の介在条件へ inScope(u) を追加 — upstream 実バイト
+//   (cli/jump/execute-forward-across-phases: 実効 SKIP の介在行は `[ ]` のまま・
+//   STAGE_SKIPPED 行も出ない) が正本であり、観測互換はモデル記述に常に勝つ。
+//   イベント痩身 (issue #56: 事実のみ — 適用側が読み飛ばし列を導出) で乖離が顕在化した。
 // v2 (2026-08-22): 敵対的レビュー + mutation テストの結果を反映 —
 //   - actJumpForward の忠実性修正 (介在 Pending も skipped、非 Pending 条件は現ステージ専用)
 //   - 空回り不変条件の是正: cursor_in_scope (状態レベル) を追加、stale re-report は
@@ -239,8 +243,9 @@ module engine_loop {
     }
   }
 
-  // jump forward: 介在 (cursor < u < t) の in-flight は Pending 含め skipped、
-  // 現ステージは in-flight かつ非 Pending のときのみ skipped (02 §8)
+  // jump forward: 介在 (cursor < u < t) の in-scope in-flight は Pending 含め skipped、
+  // 現ステージは in-flight かつ非 Pending のときのみ skipped (02 §8)。実効 SKIP の介在は
+  // 触らない (upstream 実バイト cli/jump/execute-forward-across-phases — v2.1)
   action actJumpForward = {
     nondet t = STAGES.oneOf()
     all {
@@ -249,7 +254,7 @@ module engine_loop {
       checkbox' = STAGES.mapBy(u =>
         if (u == t) InProgress
         else if (u == cursor and isInFlight(checkbox.get(u)) and checkbox.get(u) != Pending) SkippedBox
-        else if (u > cursor and u < t and isInFlight(checkbox.get(u))) SkippedBox
+        else if (u > cursor and u < t and inScope(u) and isInFlight(checkbox.get(u))) SkippedBox
         else checkbox.get(u)),
       cursor' = t,
       plan' = plan, overlay' = overlay, conditional' = conditional,

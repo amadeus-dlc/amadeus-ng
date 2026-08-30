@@ -34,9 +34,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
     Created, GateApproved, GateOpened, GateRejected, Intent, IntentExecutionEvent,
-    IntentExecutionId, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary, Recomposed,
-    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
-    WorkspaceScan,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay,
+    StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -274,7 +273,6 @@ fn rejecting_a_gate_writes_two_rows_and_bumps_the_revision_count() {
         IntentExecutionEvent::GateRejected(GateRejected::new(
             slug("practices-discovery"),
             Some("Sharpen the testing posture.".to_string()),
-            1,
         )),
     );
 }
@@ -297,8 +295,6 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
         IntentExecutionEvent::GateApproved(GateApproved::new(
             slug("practices-discovery"),
             Some("A".to_string()),
-            Some(slug("requirements-analysis")),
-            None,
         )),
         concat!(
             "### INITIALIZATION PHASE\n",
@@ -318,10 +314,7 @@ fn completing_an_ungated_stage_writes_its_own_details_wording() {
     // あり、投影が次ステージ workspace-detection の担当を書き直した結果と一致するかで検証される。
     assert_case_with_context(
         "report/completed-ungated",
-        IntentExecutionEvent::StageCompleted(StageCompleted::new(
-            slug("workspace-scaffold"),
-            Some(slug("workspace-detection")),
-        )),
+        IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("workspace-scaffold"))),
         "- **Active Agent**: orchestrator\n",
     );
 }
@@ -333,7 +326,6 @@ fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
         IntentExecutionEvent::StageSkipped(StageSkipped::new(
             slug("user-stories"),
             "No UI surface in this workflow.".to_string(),
-            Some(slug("refined-mockups")),
         )),
     );
 }
@@ -344,13 +336,7 @@ fn jumping_forward_skips_the_source_and_opens_the_target() {
     // だけなので initialization 3 本を補う（補い方が正しければ 4 になる — それが検証になる）。
     assert_case_with_context(
         "jump/execute-forward",
-        IntentExecutionEvent::Jumped(Jumped::new(
-            JumpDirection::Forward,
-            slug("refined-mockups"),
-            slug("domain-design"),
-            Vec::new(),
-            vec![slug("refined-mockups")],
-        )),
+        IntentExecutionEvent::Jumped(Jumped::new(slug("domain-design"))),
         concat!(
             "### INITIALIZATION PHASE\n",
             "- [x] workspace-scaffold — EXECUTE\n",
@@ -368,22 +354,7 @@ fn jumping_backward_resets_the_downstream_and_hands_the_phase_row_back() {
     // ため upstream の既定値 `state-init` になる。
     assert_case(
         "jump/execute-backward",
-        IntentExecutionEvent::Jumped(Jumped::new(
-            JumpDirection::Backward,
-            slug("domain-design"),
-            slug("workspace-scaffold"),
-            vec![
-                slug("workspace-scaffold"),
-                slug("workspace-detection"),
-                slug("state-init"),
-                slug("practices-discovery"),
-                slug("requirements-analysis"),
-                slug("user-stories"),
-                slug("refined-mockups"),
-                slug("domain-design"),
-            ],
-            Vec::new(),
-        )),
+        IntentExecutionEvent::Jumped(Jumped::new(slug("workspace-scaffold"))),
     );
 }
 
@@ -396,22 +367,7 @@ fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
     // **最後に出発点そのもの**が来る。
     assert_case(
         "jump/execute-forward-across-phases",
-        IntentExecutionEvent::Jumped(Jumped::new(
-            JumpDirection::Forward,
-            slug("workspace-detection"),
-            slug("contract-design"),
-            Vec::new(),
-            vec![
-                slug("state-init"),
-                slug("practices-discovery"),
-                slug("requirements-analysis"),
-                slug("user-stories"),
-                slug("refined-mockups"),
-                slug("domain-design"),
-                slug("units-generation"),
-                slug("workspace-detection"),
-            ],
-        )),
+        IntentExecutionEvent::Jumped(Jumped::new(slug("contract-design"))),
     );
 }
 
@@ -426,11 +382,6 @@ fn approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan() {
         IntentExecutionEvent::GateApproved(GateApproved::new(
             slug("delivery-planning"),
             Some("A".to_string()),
-            Some(slug("functional-design")),
-            Some(PhaseBoundary::new(
-                PhaseId::Inception,
-                PhaseId::Construction,
-            )),
         )),
         "- [x] workspace-scaffold — EXECUTE\n",
     );
@@ -445,7 +396,6 @@ fn recomposing_keeps_existing_skip_entries_where_they_are() {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             vec![slug("deployment-execution"), slug("feedback-optimization")],
             Vec::new(),
-            (0..22).map(|_| slug("placeholder")).collect(),
         )),
     );
 }
@@ -464,7 +414,6 @@ fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             Vec::new(),
             vec![slug("reverse-engineering")],
-            (0..23).map(|_| slug("placeholder")).collect(),
         )),
         concat!(
             "- [ ] deployment-execution — SKIP\n",
@@ -481,7 +430,6 @@ fn recomposing_moves_a_stage_between_the_two_plan_lists() {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             vec![slug("incident-response")],
             Vec::new(),
-            (0..24).map(|_| slug("placeholder")).collect(),
         )),
     );
 }
@@ -525,8 +473,6 @@ fn projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes()
     let event = IntentExecutionEvent::GateApproved(GateApproved::new(
         slug("practices-discovery"),
         Some("A".to_string()),
-        Some(slug("requirements-analysis")),
-        None,
     ));
     let diff =
         std::fs::read_to_string(golden("report/approved").join("state.diff")).expect("state.diff");
@@ -548,7 +494,7 @@ fn a_stage_outside_the_plan_is_refused_rather_than_drawn_wrong() {
     let mut model = ReadModel::new("## Stage Progress\n- [-] ghost — EXECUTE\n".to_string());
     let error = project(
         &[entry(IntentExecutionEvent::GateApproved(
-            GateApproved::new(slug("ghost"), None, None, None),
+            GateApproved::new(slug("ghost"), None),
         ))],
         &plan(),
         &mut model,

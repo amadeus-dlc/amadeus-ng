@@ -13,9 +13,8 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentExecutionEvent, IntentId, JumpDirection, Jumped, Parked, PhaseBoundary, Recomposed,
-    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
-    WorkspaceScan,
+    IntentExecutionEvent, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay,
+    StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -89,11 +88,8 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             r#"{"Started":{"intent":{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"}}}}"#,
         ),
         (
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                slug("state-init"),
-                Some(slug("intent-capture")),
-            )),
-            r#"{"StageCompleted":{"stage":"state-init","next_stage":"intent-capture"}}"#,
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
+            r#"{"StageCompleted":{"stage":"state-init"}}"#,
         ),
         (
             IntentExecutionEvent::GateOpened(GateOpened::new(
@@ -106,18 +102,15 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             IntentExecutionEvent::GateApproved(GateApproved::new(
                 slug("intent-capture"),
                 Some("ok".to_string()),
-                Some(slug("scope-definition")),
-                Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception)),
             )),
-            r#"{"GateApproved":{"stage":"intent-capture","user_input":"ok","next_stage":"scope-definition","phase_boundary":{"from_phase":"Ideation","to_phase":"Inception"}}}"#,
+            r#"{"GateApproved":{"stage":"intent-capture","user_input":"ok"}}"#,
         ),
         (
             IntentExecutionEvent::GateRejected(GateRejected::new(
                 slug("intent-capture"),
                 Some("why".to_string()),
-                2,
             )),
-            r#"{"GateRejected":{"stage":"intent-capture","feedback":"why","revision_count":2}}"#,
+            r#"{"GateRejected":{"stage":"intent-capture","feedback":"why"}}"#,
         ),
         (
             IntentExecutionEvent::StageRevised(StageRevised::new(slug("intent-capture"))),
@@ -127,19 +120,12 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             IntentExecutionEvent::StageSkipped(StageSkipped::new(
                 slug("intent-capture"),
                 "not needed".to_string(),
-                Some(slug("scope-definition")),
             )),
-            r#"{"StageSkipped":{"stage":"intent-capture","reason":"not needed","next_stage":"scope-definition"}}"#,
+            r#"{"StageSkipped":{"stage":"intent-capture","reason":"not needed"}}"#,
         ),
         (
-            IntentExecutionEvent::Jumped(Jumped::new(
-                JumpDirection::Forward,
-                slug("state-init"),
-                slug("intent-capture"),
-                vec![slug("scope-definition")],
-                vec![slug("intent-capture")],
-            )),
-            r#"{"Jumped":{"direction":"Forward","source":"state-init","target":"intent-capture","stages_reset":["scope-definition"],"stages_skipped":["intent-capture"]}}"#,
+            IntentExecutionEvent::Jumped(Jumped::new(slug("intent-capture"))),
+            r#"{"Jumped":{"target":"intent-capture"}}"#,
         ),
         (
             IntentExecutionEvent::Parked(Parked::new(slug("intent-capture"))),
@@ -150,9 +136,8 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             IntentExecutionEvent::Recomposed(Recomposed::new(
                 vec![slug("scope-definition")],
                 vec![slug("intent-capture")],
-                vec![slug("state-init")],
             )),
-            r#"{"Recomposed":{"skipped":["scope-definition"],"added":["intent-capture"],"stages_in_scope":["state-init"]}}"#,
+            r#"{"Recomposed":{"skipped":["scope-definition"],"added":["intent-capture"]}}"#,
         ),
         (
             IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(AutonomyMode::Autonomous)),
@@ -252,11 +237,11 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
 
 #[test]
 fn a_malformed_closed_set_value_in_a_control_variant_is_refused() {
+    // direction / phase_boundary はイベントから消えた (導出 — 2026-08-30) ため、残る閉集合は
+    // mode と、Started が運ぶ intent 側の綴りである。
     for (from, to) in [
-        (r#""direction":"Forward""#, r#""direction":"forward""#),
         (r#""mode":"Autonomous""#, r#""mode":"autonomous""#),
-        (r#""from_phase":"Ideation""#, r#""from_phase":"ideation""#),
-        (r#""to_phase":"Inception""#, r#""to_phase":"inception""#),
+        (r#""plan_action":"Execute""#, r#""plan_action":"EXECUTE""#),
     ] {
         let row = every_variant()
             .into_iter()
@@ -286,4 +271,12 @@ fn an_optional_request_field_round_trips_when_present() {
     };
     assert_eq!(payload.intent().test_strategy(), Some("balanced"));
     assert_eq!(payload.intent().depth(), Some("standard"));
+}
+
+#[test]
+fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
+    // 列の中の 1 本でも文法外の slug は復号を止める (slugs_of の失敗面)。
+    let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
+    let decoded: WireEvent = serde_json::from_str(tampered).expect("JSON としては読める");
+    assert!(decoded.to_domain().is_err());
 }

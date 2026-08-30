@@ -44,7 +44,6 @@ use super::intent_execution_id::IntentExecutionId;
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::{NextDecision, NextRequest};
-use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::stage_key::StageKey;
@@ -491,24 +490,6 @@ impl IntentExecution {
             .find(|&stage| self.in_scope(stage))
     }
 
-    fn next_in_scope_slug(&self, after: StageIndex) -> Option<StageSlug> {
-        self.next_in_scope(after)
-            .and_then(|stage| self.key_at(stage))
-            .map(|key| key.slug().clone())
-    }
-
-    /// 名指しステージの完了で跨ぐフェーズ境界 (跨がなければ `None`)。
-    ///
-    /// 走査は [`IntentExecution::next_in_scope_slug`] と同じ「次の実効 EXECUTE ステージ」で
-    /// あり、`plan` と `overlay` を知っている集約だけが正しく答えられる。フェーズが違えば
-    /// 境界、同じか次が無い (= 最終) なら `None` — upstream の `crossesPhaseBoundary`
-    /// (`aidlc-state.ts` の `completedStage.phase !== nextStage.phase`) と同一の規則である。
-    fn crossed_phase_boundary(&self, stage: StageIndex) -> Option<PhaseBoundary> {
-        let from = self.key_at(stage)?.phase();
-        let to = self.key_at(self.next_in_scope(stage)?)?.phase();
-        (from != to).then(|| PhaseBoundary::new(from, to))
-    }
-
     fn slug_of(&self, stage: StageIndex) -> Result<StageSlug, CommandError> {
         self.key_at(stage)
             .map(|key| key.slug().clone())
@@ -642,7 +623,7 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, false)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = StageCompleted::new(self.slug_of(stage)?, self.next_in_scope_slug(stage));
+        let material = StageCompleted::new(self.slug_of(stage)?);
         self.commit(IntentExecutionEvent::StageCompleted(material), occurred_at)
     }
 
@@ -684,16 +665,11 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = GateApproved::new(
-            self.slug_of(stage)?,
-            user_input,
-            self.next_in_scope_slug(stage),
-            self.crossed_phase_boundary(stage),
-        );
+        let material = GateApproved::new(self.slug_of(stage)?, user_input);
         self.commit(IntentExecutionEvent::GateApproved(material), occurred_at)
     }
 
-    /// 承認ゲートでの差し戻し — `GateRejected`。改訂回数を +1 してイベントに載せる (BR1.4)。
+    /// 承認ゲートでの差し戻し — `GateRejected` (改訂回数の +1 は適用側の導出 — BR1.4)。
     ///
     /// # Errors
     ///
@@ -707,11 +683,7 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let next = self
-            .revision_count(stage)
-            .ok_or(CommandError::InvalidTarget(stage))?
-            .saturating_add(1);
-        let material = GateRejected::new(self.slug_of(stage)?, feedback, next);
+        let material = GateRejected::new(self.slug_of(stage)?, feedback);
         self.commit(IntentExecutionEvent::GateRejected(material), occurred_at)
     }
 
@@ -755,8 +727,7 @@ impl IntentExecution {
         if !(conditional || self.effective_plan(stage) == Some(PlanAction::Skip)) {
             return Err(CommandError::NotSkippable(stage));
         }
-        let material =
-            StageSkipped::new(self.slug_of(stage)?, reason, self.next_in_scope_slug(stage));
+        let material = StageSkipped::new(self.slug_of(stage)?, reason);
         self.commit(IntentExecutionEvent::StageSkipped(material), occurred_at)
     }
 
@@ -772,42 +743,10 @@ impl IntentExecution {
         target: StageIndex,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let direction = self.jump_resolve(intent, target)?;
-        let source = self.cursor;
-        let mut stages_reset = Vec::new();
-        let mut stages_skipped = Vec::new();
-        match direction {
-            JumpDirection::Forward => {
-                for value in source.to_usize()..target.to_usize() {
-                    let stage = StageIndex::new(value);
-                    let Some(marker) = self.checkbox(stage) else {
-                        continue;
-                    };
-                    let skip_current = value == source.to_usize() && marker.is_active();
-                    let skip_between = value > source.to_usize() && marker.is_in_flight();
-                    if skip_current || skip_between {
-                        stages_skipped.push(self.slug_of(stage)?);
-                    }
-                }
-            }
-            JumpDirection::Backward => {
-                for value in (target.to_usize() + 1)..self.stage_count() {
-                    let stage = StageIndex::new(value);
-                    if self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
-                    {
-                        stages_reset.push(self.slug_of(stage)?);
-                    }
-                }
-            }
-            JumpDirection::Redo => {}
-        }
-        let material = Jumped::new(
-            direction,
-            self.slug_of(source)?,
-            self.slug_of(target)?,
-            stages_reset,
-            stages_skipped,
-        );
+        // ガード (到達可否) はここ、読み飛ばし・巻き戻しの導出は適用側 (`apply_jump`) が
+        // 持つ — イベントは到達点という事実だけを運ぶ (オーナー裁定 2026-08-30)。
+        let _ = self.jump_resolve(intent, target)?;
+        let material = Jumped::new(self.slug_of(target)?);
         self.commit(IntentExecutionEvent::Jumped(material), occurred_at)
     }
 
@@ -877,7 +816,6 @@ impl IntentExecution {
             self.require_checkbox(stage, &[CheckboxState::Pending])?;
         }
 
-        let mut projected = self.overlay.clone();
         let mut skipped = Vec::new();
         let mut added = Vec::new();
         for &value in &targets {
@@ -888,20 +826,10 @@ impl IntentExecution {
                 Some(PlanAction::Skip) => added.push(slug),
                 None => return Err(CommandError::InvalidTarget(stage)),
             }
-            if let Some(slot) = projected.get_mut(value) {
-                *slot = slot.flipped();
-            }
         }
-        let stages_in_scope = projected
-            .iter()
-            .enumerate()
-            .filter(|(_, action)| **action == PlanAction::Execute)
-            .filter_map(|(index, _)| {
-                self.key_at(StageIndex::new(index))
-                    .map(|key| key.slug().clone())
-            })
-            .collect();
-        let material = Recomposed::new(skipped, added, stages_in_scope);
+        // 適用後の in-scope 列はイベントに載せない — 状態は反転の事実から導ける
+        // (オーナー裁定 2026-08-30)。
+        let material = Recomposed::new(skipped, added);
         self.commit(IntentExecutionEvent::Recomposed(material), occurred_at)
     }
 
@@ -988,7 +916,7 @@ impl IntentExecution {
             IntentExecutionEvent::StageCompleted(completed) => {
                 let stage = self.resolve(completed.stage())?;
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(completed.next_stage())?;
+                self.advance_from(stage);
             }
             IntentExecutionEvent::GateOpened(opened) => {
                 let stage = self.resolve(opened.stage())?;
@@ -998,13 +926,14 @@ impl IntentExecution {
                 let stage = self.resolve(approved.stage())?;
                 self.record_approval(stage);
                 self.mark_stage(stage, CheckboxState::Completed);
-                self.advance(approved.next_stage())?;
+                self.advance_from(stage);
             }
             IntentExecutionEvent::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
                 self.mark_stage(stage, CheckboxState::Revising);
+                // 改訂回数はイベントに載らない — 差し戻しという事実から +1 を導く (BR1.4)。
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
-                    *slot = rejected.revision_count();
+                    *slot = slot.saturating_add(1);
                 }
             }
             IntentExecutionEvent::StageRevised(revised) => {
@@ -1014,7 +943,7 @@ impl IntentExecution {
             IntentExecutionEvent::StageSkipped(skipped) => {
                 let stage = self.resolve(skipped.stage())?;
                 self.mark_stage(stage, CheckboxState::Skipped);
-                self.advance(skipped.next_stage())?;
+                self.advance_from(stage);
             }
             IntentExecutionEvent::Jumped(jumped) => {
                 self.apply_jump(jumped)?;
@@ -1048,42 +977,77 @@ impl IntentExecution {
     }
 
     fn apply_jump(&mut self, jumped: &Jumped) -> Result<(), ApplyError> {
-        let source = self.resolve(jumped.source())?;
+        // イベントは到達点しか運ばない — 方向・読み飛ばし列・巻き戻し列は跳躍規則 (BR1.6)
+        // による導出であり、出発点 = 適用前のカーソルである (オーナー裁定 2026-08-30)。
+        let source = self.cursor;
         let target = self.resolve(jumped.target())?;
-        for slug in jumped.stages_reset() {
-            let stage = self.resolve(slug)?;
-            self.mark_stage(stage, CheckboxState::Pending);
-        }
-        for slug in jumped.stages_skipped() {
-            let stage = self.resolve(slug)?;
-            self.mark_stage(stage, CheckboxState::Skipped);
-        }
-        match jumped.direction() {
-            // backward は target 以降の承認履歴を、redo は出発点の承認履歴を無効化する (BR1.6)。
+        let direction = JumpDirection::of(source.to_usize(), target.to_usize());
+        match direction {
+            JumpDirection::Forward => {
+                for stage in self.stages_skipped_by_forward_jump(source, target) {
+                    self.mark_stage(stage, CheckboxState::Skipped);
+                }
+            }
             JumpDirection::Backward => {
+                for stage in self.stages_reset_by_backward_jump(target) {
+                    self.mark_stage(stage, CheckboxState::Pending);
+                }
+                // backward は target 以降の承認履歴を無効化する (BR1.6)。
                 for value in target.to_usize()..self.stage_count() {
                     self.invalidate_approval(StageIndex::new(value));
                 }
             }
+            // redo は出発点の承認履歴を無効化する (BR1.6)。
             JumpDirection::Redo => self.invalidate_approval(source),
-            JumpDirection::Forward => {}
         }
         self.mark_stage(target, CheckboxState::InProgress);
         self.cursor = target;
         Ok(())
     }
 
+    /// 前方跳躍が読み飛ばすステージ列 (出発点で稼働中のもの + 中間の in-scope 未了 — BR1.6)。
+    ///
+    /// 実効 SKIP の中間は触らない — upstream の実バイト
+    /// (`jump/execute-forward-across-phases` — `SKIP` 行はそのまま) が正本である。
+    fn stages_skipped_by_forward_jump(
+        &self,
+        source: StageIndex,
+        target: StageIndex,
+    ) -> Vec<StageIndex> {
+        (source.to_usize()..target.to_usize())
+            .map(StageIndex::new)
+            .filter(|&stage| {
+                let Some(marker) = self.checkbox(stage) else {
+                    return false;
+                };
+                let skip_current = stage == source && marker.is_active();
+                let skip_between = stage != source && self.in_scope(stage) && marker.is_in_flight();
+                skip_current || skip_between
+            })
+            .collect()
+    }
+
+    /// 後方跳躍が pending へ巻き戻すステージ列 (到達点より後ろの in-scope 既着手 — BR1.6)。
+    fn stages_reset_by_backward_jump(&self, target: StageIndex) -> Vec<StageIndex> {
+        ((target.to_usize() + 1)..self.stage_count())
+            .map(StageIndex::new)
+            .filter(|&stage| {
+                self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
+            })
+            .collect()
+    }
+
     /// 完了・スキップの後段 — 次の in-scope ステージへ進むか、無ければ完了する (BR1.5)。
-    fn advance(&mut self, next_stage: Option<&StageSlug>) -> Result<(), ApplyError> {
-        match next_stage {
-            Some(slug) => {
-                let stage = self.resolve(slug)?;
-                self.mark_stage(stage, CheckboxState::InProgress);
-                self.cursor = stage;
+    ///
+    /// 次カーソルはイベントに載らない — 自分の実効プランから導く (オーナー裁定 2026-08-30)。
+    fn advance_from(&mut self, stage: StageIndex) {
+        match self.next_in_scope(stage) {
+            Some(next) => {
+                self.mark_stage(next, CheckboxState::InProgress);
+                self.cursor = next;
             }
             None => self.status = Status::Completed,
         }
-        Ok(())
     }
 
     /// 集約不変条件 (Quint の cursor_in_scope / at_most_one_active / no_gate_bypass /
@@ -1260,8 +1224,8 @@ mod tests {
     use crate::orchestration::{
         AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError, IntentEvent,
         IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, NextDecision,
-        NextRequest, PhaseBoundary, StageCompleted, StageDisplay, StageEntry, StageIndex,
-        StartRequest, Started, Status, WorkspaceScan,
+        NextRequest, StageCompleted, StageDisplay, StageEntry, StageIndex, StartRequest, Started,
+        Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -1526,37 +1490,7 @@ mod tests {
     }
 
     /// フェーズと実効プランを名指しした合成計画で開始する (フェーズ境界の導出を見るテスト用)。
-    fn start_from_phased_plan(phased: &[(PhaseId, PlanAction)]) -> Run {
-        let stages = phased
-            .iter()
-            .enumerate()
-            .map(|(i, (phase, action))| {
-                StageEntry::new(
-                    slug(i),
-                    *phase,
-                    *action,
-                    false,
-                    display(&format!("{}.{}", phase.index(), i + 1)),
-                )
-            })
-            .collect();
-        Run::start(Intent::from(Created::new(
-            intent_id(),
-            def_id("claude"),
-            revision('0'),
-            start_request(),
-            stages,
-            scan(),
-        )))
-    }
-
     /// 全ステージ EXECUTE の、フェーズだけ名指しした合成計画。
-    fn phased(phases: &[PhaseId]) -> Run {
-        let plan: Vec<(PhaseId, PlanAction)> =
-            phases.iter().map(|phase| (*phase, Execute)).collect();
-        start_from_phased_plan(&plan)
-    }
-
     /// 定義から計画を解決して実行を開始する (旧 7 引数の genesis に相当)。
     fn start_from_definition(
         definition: &WorkflowDefinition,
@@ -1566,15 +1500,6 @@ mod tests {
         // (改訂 8 / coding-rules/aggregate-commands.md)。
         let (intent, _created) = Intent::create(intent_id(), definition, request, scan()).unwrap();
         Run::genesis(intent)
-    }
-
-    /// カーソルのゲートを承認し、生まれた `GateApproved` が載せた境界を取り出す。
-    fn approval_boundary(w: &mut Run) -> Option<PhaseBoundary> {
-        let event = w.approve_gate(None, occurred()).unwrap();
-        let IntentExecutionEvent::GateApproved(approved) = &event else {
-            panic!("expected GateApproved");
-        };
-        approved.phase_boundary()
     }
 
     fn at(w: &IntentExecution, i: usize) -> StageIndex {
@@ -1934,8 +1859,9 @@ mod tests {
         };
         assert_eq!(approved.user_input(), Some("ok"));
         assert_eq!(approved.stage(), &slug(1));
-        assert_eq!(approved.next_stage(), Some(&slug(2)));
+        // 次カーソルはイベントに載らない — 集約の観測面で検収する (導出 — 2026-08-30)。
         assert_eq!(w.checkbox(at(&w, 1)), Some(Completed));
+        assert_eq!(w.cursor(), at(&w, 2));
     }
 
     #[test]
@@ -1958,14 +1884,14 @@ mod tests {
     }
 
     #[test]
-    fn reject_gate_increments_the_revision_count_and_carries_it() {
+    fn reject_gate_increments_the_revision_count() {
         let mut w = all_exec(3);
         w.complete_stage(occurred()).unwrap();
         let first = w.reject_gate(Some("redo".to_string()), occurred()).unwrap();
         let IntentExecutionEvent::GateRejected(rejected) = &first else {
             panic!("expected GateRejected");
         };
-        assert_eq!(rejected.revision_count(), 1);
+        // 改訂回数はイベントに載らない — 差し戻しの事実から適用側が +1 を導く (2026-08-30)。
         assert_eq!(rejected.feedback(), Some("redo"));
         assert_eq!(w.revision_count(at(&w, 1)), Some(1));
         w.revise_stage(occurred()).unwrap();
@@ -1988,7 +1914,6 @@ mod tests {
             panic!("expected StageSkipped");
         };
         assert_eq!(skipped.reason(), "conditional");
-        assert_eq!(skipped.next_stage(), None);
         assert_eq!(w.status(), Status::Completed);
         assert_eq!(w.checkbox(at(&w, 2)), Some(Skipped));
     }
@@ -2002,11 +1927,8 @@ mod tests {
         let IntentExecutionEvent::Jumped(jumped) = &event else {
             panic!("expected Jumped");
         };
-        assert_eq!(jumped.direction(), JumpDirection::Forward);
-        assert_eq!(jumped.source(), &slug(1));
+        // イベントは到達点という事実だけ — 方向・読み飛ばし列は適用の観測面で検収する。
         assert_eq!(jumped.target(), &slug(3));
-        assert_eq!(jumped.stages_skipped(), [slug(1), slug(2)]);
-        assert!(jumped.stages_reset().is_empty());
         assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped));
         assert_eq!(w.checkbox(at(&w, 2)), Some(Skipped));
         assert_eq!(w.checkbox(at(&w, 3)), Some(InProgress));
@@ -2024,8 +1946,7 @@ mod tests {
         let IntentExecutionEvent::Jumped(jumped) = &event else {
             panic!("expected Jumped");
         };
-        assert_eq!(jumped.direction(), JumpDirection::Backward);
-        assert_eq!(jumped.stages_reset(), [slug(2)]);
+        assert_eq!(jumped.target(), &slug(1));
         assert_eq!(w.checkbox(at(&w, 1)), Some(InProgress));
         assert_eq!(w.checkbox(at(&w, 2)), Some(Pending));
         assert_eq!(w.approved(at(&w, 1)), Some(false));
@@ -2148,7 +2069,6 @@ mod tests {
         };
         assert_eq!(recomposed.skipped(), [slug(2), slug(3)]);
         assert!(recomposed.added().is_empty());
-        assert_eq!(recomposed.stages_in_scope(), [slug(0), slug(1)]);
         assert_eq!(w.effective_plan(at(&w, 2)), Some(Skip));
         assert_eq!(w.effective_plan(at(&w, 3)), Some(Skip));
         // plan (静的グリッド) は不変 — オーバレイだけが動く。
@@ -2230,8 +2150,7 @@ mod tests {
     fn apply_event_crashes_on_a_sequence_gap() {
         // 通番の飛びは壊れた歴史 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)。
         let mut w = all_exec(3);
-        let event =
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0)));
         w.apply_event(9, occurred(), &event);
     }
 
@@ -2245,8 +2164,7 @@ mod tests {
             intent: base.intent,
             execution: base.execution.with_seq_nr(usize::MAX),
         };
-        let event =
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0), Some(slug(1))));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0)));
         w.apply_event(1, occurred(), &event);
     }
 
@@ -2269,7 +2187,7 @@ mod tests {
     fn apply_event_crashes_on_an_unknown_stage() {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(unknown, None));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(unknown));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2278,8 +2196,7 @@ mod tests {
     fn apply_event_crashes_on_an_event_that_breaks_an_invariant() {
         let mut w = all_exec(3);
         // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
-        let event =
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(1), Some(slug(2))));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(1)));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2309,54 +2226,84 @@ mod tests {
     }
 
     #[test]
-    fn a_gate_approval_derives_the_boundary_it_crosses_from_its_own_plan() {
-        // ideation の最終ステージを承認すると、次の実効 EXECUTE は inception なので境界が立つ。
-        let mut w = phased(&[
-            PhaseId::Initialization,
-            PhaseId::Ideation,
-            PhaseId::Inception,
-        ]);
+    fn a_jump_to_an_out_of_range_target_is_refused() {
+        // ガードは jump コマンド側 (jump_resolve) — 範囲外索引は InvalidTarget。
+        let mut w = all_exec(3);
         w.complete_stage(occurred()).unwrap();
+        let out_of_range = StageIndex::new(9);
         assert_eq!(
-            approval_boundary(&mut w),
-            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception))
+            w.jump(out_of_range, occurred()),
+            Err(CommandError::InvalidTarget(out_of_range))
         );
     }
 
     #[test]
-    fn a_gate_approval_inside_one_phase_derives_no_boundary() {
-        // 次の実効 EXECUTE が同じフェーズなら境界は立たない。
-        let mut w = phased(&[
-            PhaseId::Initialization,
-            PhaseId::Ideation,
-            PhaseId::Ideation,
-        ]);
+    fn skipping_the_last_in_scope_stage_completes_the_workflow() {
+        // 導出 advance の None 腕 — skip でも次が無ければ完了になる。
+        let mut w = start_with(1, &[Execute, Execute], &[false, true]);
         w.complete_stage(occurred()).unwrap();
-        assert_eq!(approval_boundary(&mut w), None);
+        w.skip_stage("conditional".to_string(), occurred()).unwrap();
+        assert_eq!(w.status(), Status::Completed);
     }
 
     #[test]
-    fn approving_the_last_stage_in_scope_derives_no_boundary() {
-        // 次が無い (= 最終) なら境界は立たない。
-        let mut w = phased(&[PhaseId::Initialization, PhaseId::Ideation]);
+    fn a_forward_jump_leaves_out_of_scope_intermediates_untouched() {
+        // 実効 SKIP の介在は触らない — upstream 実バイト
+        // (cli/jump/execute-forward-across-phases) を正本とする v2.1 の規則。
+        let mut w = start_with(1, &[Execute, Skip, Execute, Execute], &[false; 4]);
         w.complete_stage(occurred()).unwrap();
-        assert_eq!(approval_boundary(&mut w), None);
-    }
-
-    #[test]
-    fn the_boundary_skips_over_stages_that_are_not_in_scope() {
-        // 導出は `next_in_scope_slug` と同じ走査なので、実効 SKIP のステージは跨いで数える。
-        let mut w = start_from_phased_plan(&[
-            (PhaseId::Initialization, Execute),
-            (PhaseId::Ideation, Execute),
-            (PhaseId::Ideation, Skip),
-            (PhaseId::Inception, Execute),
-        ]);
-        w.complete_stage(occurred()).unwrap();
+        // カーソルは 2 (索引 1 は実効 SKIP なので飛ばされている)。3 へ前方跳躍。
+        assert_eq!(w.cursor(), at(&w, 2));
+        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
+        w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(
-            approval_boundary(&mut w),
-            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception))
+            w.checkbox(at(&w, 1)),
+            Some(Pending),
+            "実効 SKIP の介在は checkbox を触らない"
         );
+        assert_eq!(w.checkbox(at(&w, 2)), Some(Skipped), "出発点は skipped");
+        assert_eq!(w.checkbox(at(&w, 3)), Some(InProgress));
+        assert_eq!(w.cursor(), at(&w, 3));
+    }
+
+    #[test]
+    fn a_forward_jump_skips_pending_in_scope_intermediates() {
+        // 中間の in-scope は Pending でも skipped になる (02 §8 — v2 の忠実性修正のまま)。
+        let mut w = all_exec(4);
+        w.complete_stage(occurred()).unwrap();
+        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
+        w.apply_event(w.seq_nr() + 1, occurred(), &event);
+        assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped), "出発点 (稼働中)");
+        assert_eq!(
+            w.checkbox(at(&w, 2)),
+            Some(Skipped),
+            "中間の Pending in-scope"
+        );
+        assert_eq!(w.checkbox(at(&w, 3)), Some(InProgress));
+    }
+
+    #[test]
+    fn a_redo_jump_event_invalidates_the_source_approval_only() {
+        // redo (到達点 = 出発点) — 出発点の承認だけが消え、checkbox は [-] のまま。
+        let mut w = all_exec(3);
+        w.complete_stage(occurred()).unwrap();
+        w.open_gate(Vec::new(), occurred()).unwrap();
+        w.approve_gate(None, occurred()).unwrap();
+        // カーソルは 2。redo で 2 へ跳び直す。
+        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(2)));
+        w.apply_event(w.seq_nr() + 1, occurred(), &event);
+        assert_eq!(w.cursor(), at(&w, 2));
+        assert_eq!(w.checkbox(at(&w, 2)), Some(InProgress));
+        assert_eq!(w.approved(at(&w, 1)), Some(true), "他の承認は残る");
+    }
+
+    #[test]
+    #[should_panic(expected = "apply_event: corrupted history")]
+    fn a_jump_event_to_an_unknown_stage_crashes() {
+        let mut w = all_exec(3);
+        let unknown = StageSlug::parse("no-such-stage").unwrap();
+        let event = IntentExecutionEvent::Jumped(Jumped::new(unknown));
+        w.apply_event(2, occurred(), &event);
     }
 
     #[test]
@@ -2375,27 +2322,7 @@ mod tests {
         // park していない実行のカーソルは実効 EXECUTE の上に居なければならない
         // (cursor_in_scope)。カーソル上のステージを SKIP へ畳む差分は壊れた歴史である。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Recomposed(Recomposed::new(
-            vec![slug(0)],
-            Vec::new(),
-            vec![slug(1), slug(2)],
-        ));
-        w.apply_event(2, occurred(), &event);
-    }
-
-    #[test]
-    #[should_panic(expected = "apply_event: invariant violated — at_most_one_active")]
-    fn applying_a_jump_that_leaves_two_active_stages_crashes() {
-        // 出発点を reset も skip もしない jump は出発点の InProgress を残したまま到達先も
-        // InProgress にする — active が 2 つになる歴史は壊れている (at_most_one_active)。
-        let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Jumped(Jumped::new(
-            JumpDirection::Forward,
-            slug(0),
-            slug(1),
-            Vec::new(),
-            Vec::new(),
-        ));
+        let event = IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(0)], Vec::new()));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2710,29 +2637,22 @@ mod tests {
                 InProgress,
                 vec![IntentExecutionEvent::StageCompleted(StageCompleted::new(
                     slug(0),
-                    Some(slug(1)),
                 ))],
                 true,
             ),
             (
                 Revising,
                 vec![
-                    IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                        slug(0),
-                        Some(slug(1)),
-                    )),
+                    IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0))),
                     IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
-                    IntentExecutionEvent::GateRejected(GateRejected::new(slug(1), None, 1)),
+                    IntentExecutionEvent::GateRejected(GateRejected::new(slug(1), None)),
                 ],
                 true,
             ),
             (
                 AwaitingApproval,
                 vec![
-                    IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                        slug(0),
-                        Some(slug(1)),
-                    )),
+                    IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0))),
                     IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
                 ],
                 false,
@@ -2751,11 +2671,7 @@ mod tests {
             delta.push((
                 delta.len() + 2,
                 occurred(),
-                IntentExecutionEvent::Recomposed(Recomposed::new(
-                    vec![slug(1)],
-                    Vec::new(),
-                    vec![slug(0), slug(2)],
-                )),
+                IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(1)], Vec::new())),
             ));
             let execution = IntentExecution::replay(base.execution.clone(), delta);
             let w = Run {
