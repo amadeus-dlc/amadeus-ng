@@ -5,8 +5,9 @@
 //! の対を返す**ことが必須なので (coding-rules/aggregate-commands.md)、intent 側にもイベント
 //! 語彙を持たせる。
 //!
-//! 現スコープでは**ジャーナルへ接続しない** — 型と形だけを規則へ適合させ、`Created` を
-//! `store` する `IntentRepository` は U7 (intent-create の実装) の課題である。
+//! `Created` は intent 自身のジャーナルへ書かれる — `store` / `find_by_id` を持つ
+//! `IntentRepository` の実装はアダプタ層にある (issue #50)。ジャーナルへ書く upstream
+//! コマンド (`intent-create`) の実装は U7 の課題である。
 //!
 //! イベントは**内容 (値) を運ぶ** — 集約はイベント列から `From<Created>` +
 //! [`Intent::replay`] で導出する (オーナー裁定 2026-08-30、本家 v3 サンプル同型)。

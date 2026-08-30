@@ -7,17 +7,18 @@
 #![allow(dead_code)]
 
 pub(crate) mod contract;
+pub(crate) mod intent_contract;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    CommandError, Created, Intent, IntentEvent, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_command_use_case::orchestration::IntentExecutionRepository;
+use core_command_use_case::orchestration::{IntentExecutionRepository, IntentRepository};
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -217,4 +218,57 @@ pub(crate) async fn store_stage_completed<R: IntentExecutionRepository>(
         aggregate.complete_stage(&intent(), at())
     })
     .await
+}
+
+/// intent の Repository の契約テストが使う試験装置 ([`StoreFixture`] の intent 版)。
+///
+/// 課す約束も同じである: `open` は空のストア、`reopen` は同じストアを指す別インスタンス。
+pub(crate) trait IntentStoreFixture {
+    /// 試験対象の Repository (内包するバックエンドだけが違う)。
+    type Repository: IntentRepository;
+
+    /// **空のストア**を指す新しい Repository を開く (呼ぶたびに独立した空のストア)。
+    fn open(&self) -> Self::Repository;
+
+    /// `repository` が書いているストアを、別のインスタンスから開き直す。
+    fn reopen(&self, repository: &Self::Repository) -> Self::Repository;
+}
+
+/// ストアに存在しない intent 識別子。
+#[must_use]
+pub(crate) fn absent_intent_id() -> IntentId {
+    IntentId::parse(ABSENT_INTENT).expect("契約テストの IntentId は UUIDv7")
+}
+
+/// intent の誕生記録 (`intent()` と同じ材料)。
+#[must_use]
+pub(crate) fn intent_created() -> Created {
+    Created::new(
+        intent_id(),
+        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+            .expect("契約テストの定義 revision"),
+        StartRequest::new("classic", "contract").with_depth("standard"),
+        stages(),
+        scan(),
+    )
+}
+
+/// intent の genesis の (集約, 誕生イベント) の対 (`Intent::create` が返す形と同じ)。
+#[must_use]
+pub(crate) fn intent_genesis() -> (Intent, IntentEvent) {
+    (intent(), IntentEvent::Created(intent_created()))
+}
+
+/// intent の genesis を 1 件書き、握り直した結果を返す。
+pub(crate) async fn store_intent_genesis<R: IntentRepository>(repository: &mut R) -> Intent {
+    let (aggregate, event) = intent_genesis();
+    repository
+        .store(&event, &aggregate, at())
+        .await
+        .expect("store");
+    repository
+        .find_by_id(aggregate.id())
+        .await
+        .expect("書いた intent は握り直せる")
 }

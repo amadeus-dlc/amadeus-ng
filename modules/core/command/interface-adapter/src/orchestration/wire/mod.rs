@@ -27,16 +27,19 @@ mod aggregate_key;
 mod wire_error;
 mod wire_event;
 mod wire_intent;
+mod wire_intent_event;
 mod wire_intent_execution;
 mod wire_vocabulary;
 
-pub use aggregate_key::AggregateKey;
+pub use aggregate_key::{AggregateKey, IntentAggregateKey};
 pub use wire_error::WireDecodeError;
 pub use wire_event::{
     WireAutonomyModeSet, WireEvent, WireGateApproved, WireGateOpened, WireGateRejected, WireJumped,
     WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
     WireStarted,
 };
+pub use wire_intent::WireIntent;
+pub use wire_intent_event::WireIntentEvent;
 pub use wire_intent_execution::WireIntentExecution;
 
 #[cfg(test)]

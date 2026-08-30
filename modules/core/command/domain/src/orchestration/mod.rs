@@ -135,8 +135,8 @@ pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
     Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
 };
-// intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。ジャーナルへは未接続で、
-// `store` する `IntentRepository` は U7 の課題である。
+// intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
+// `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。
 pub use intent_event::{Created, IntentEvent};
 
 // エラー

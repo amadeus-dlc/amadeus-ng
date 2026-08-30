@@ -2623,6 +2623,70 @@ mod tests {
     }
 
     #[test]
+    fn next_decision_walks_past_a_finished_cursor() {
+        // カーソルの checkbox が終了済み (completed / skipped) のまま Running — コマンド経由
+        // では作れず、手編集された状態ファイルを読み込んだ再構成 (完全コンストラクタ) だけが
+        // 持ち込む形である。upstream の前進走査 (`nextInScopeStage`) は終了済みを読み飛ばす
+        // ので、次の in-scope があれば run-stage、無ければ Done になる (BR3.1 (7))。
+        let definition = bare_definition("claude");
+        let w = all_exec(3);
+        let source = &w.execution;
+        let rebuild = |checkbox: Vec<CheckboxState>, cursor: usize, approved: Vec<bool>| {
+            IntentExecution::new(
+                source.id().clone(),
+                source.intent_id().clone(),
+                source.stage_keys().to_vec(),
+                vec![Execute; 3],
+                checkbox,
+                cursor,
+                Status::Running,
+                None,
+                source.autonomy(),
+                approved,
+                vec![0, 0, 0],
+                1,
+                *source.last_updated_at(),
+            )
+            .unwrap()
+        };
+
+        let walked = rebuild(
+            vec![
+                CheckboxState::Completed,
+                CheckboxState::Pending,
+                CheckboxState::Pending,
+            ],
+            0,
+            vec![false, false, false],
+        );
+        assert_eq!(
+            walked.next_decision(&w.intent, &definition, &NextRequest::default()),
+            Ok(NextDecision::RunStage {
+                stage: at(&walked, 1),
+                gate: true
+            }),
+            "終了済みカーソルは読み飛ばし、次の in-scope を指す"
+        );
+
+        let done = rebuild(
+            vec![
+                CheckboxState::Completed,
+                CheckboxState::Completed,
+                CheckboxState::Skipped,
+            ],
+            2,
+            // 終了済みのゲート付きステージ (索引 1) は承認済みでなければ完全コンストラクタが
+            // 拒む (no_gate_bypass)。
+            vec![false, true, false],
+        );
+        assert_eq!(
+            done.next_decision(&w.intent, &definition, &NextRequest::default()),
+            Ok(NextDecision::Done),
+            "終了済みカーソルの先に in-scope が無ければ Done"
+        );
+    }
+
+    #[test]
     fn next_decision_reports_the_two_skip_inconsistencies() {
         // 実効 SKIP のカーソルは `cursor_in_scope` が禁じるので、集約のコマンド経由では作れない。
         // 到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) に

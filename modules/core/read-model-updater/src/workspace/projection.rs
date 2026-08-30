@@ -1534,6 +1534,17 @@ mod park_marker {
 mod tests {
     use super::*;
     use core_command_domain::orchestration::Created;
+
+    #[test]
+    fn a_missing_field_converts_into_the_projection_error() {
+        // `set_field(...)?` が通る変換経路 (From) — 材料をそのまま包む。
+        let inner = FieldNotFound::new("Field not found: Current Stage");
+        assert_eq!(
+            ProjectionError::from(inner.clone()),
+            ProjectionError::StateField(inner)
+        );
+    }
+
     use core_command_domain::orchestration::{
         AutonomyModeSet, Intent, IntentExecutionId, IntentId, StageDisplay, StageEntry,
         StartRequest, Started, WorkspaceScan,
