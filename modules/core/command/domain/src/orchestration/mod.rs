@@ -57,8 +57,10 @@
 mod apply_error;
 mod autonomy_mode;
 mod command_error;
+mod continue_token;
 mod directive;
 mod directive_schema;
+mod engine_command;
 mod intent;
 mod intent_event;
 mod intent_execution;
@@ -68,12 +70,18 @@ mod intent_id;
 mod jump_direction;
 mod next_decision;
 mod phase_boundary;
+mod scope_resolution;
 mod skeleton_stance;
 mod stage_display;
 mod stage_entry;
 mod stage_index;
+mod stage_name;
 mod start_request;
 mod status;
+mod steering_binding;
+mod steering_plan;
+mod token_version;
+mod unit_ref;
 mod verdict;
 mod workspace_scan;
 
@@ -81,18 +89,29 @@ mod workspace_scan;
 pub use autonomy_mode::AutonomyMode;
 pub use directive_schema::DirectiveKind;
 // directive 判別共用体 (構築できる部分集合 — placeholder / slice 2 / B16 の kind は variant を持たない)
+pub use continue_token::{ContinueToken, ContinueTokenBuilder};
 pub use directive::{
-    AskDirective, AskKind, Directive, GateField, RunStageDirective, RunStageDirectiveBuilder,
+    AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, RuleContent,
+    RunStageDirective, RunStageDirectiveBuilder,
 };
+pub use engine_command::{ConfigField, EngineCommand, ReadOnlyVerb};
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
+pub use scope_resolution::{
+    ResolvedScope, ScopeResolutionError, ScopeSource, infer_scope_from_text, resolve_scope,
+};
 pub use skeleton_stance::SkeletonStance;
 pub use stage_display::StageDisplay;
 pub use stage_entry::StageEntry;
 pub use stage_index::StageIndex;
+pub use stage_name::StageName;
 pub use start_request::StartRequest;
+pub use steering_binding::{Bindings, BundleDigest, DirectiveDigest, RouteDigest, StateBinding};
+pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
+pub use token_version::TokenVersion;
+pub use unit_ref::{UnitKind, UnitName, UnitRef};
 pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
 
@@ -124,6 +143,8 @@ pub use intent::IntentError;
 pub use intent_execution_id::IntentExecutionIdError;
 pub use intent_id::IntentIdError;
 pub use skeleton_stance::UnknownStance;
+pub use stage_name::BlankStageName;
+pub use unit_ref::{UnitNameError, UnknownUnitKind};
 pub use verdict::UnknownVerdict;
 
 // 逐語定数

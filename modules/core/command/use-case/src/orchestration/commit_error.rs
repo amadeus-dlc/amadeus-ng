@@ -7,7 +7,7 @@ use core_command_domain::workflow_definition::StageSlug;
 
 use core_command_domain::orchestration::{IntentExecutionId, IntentId};
 
-use super::repository_error::RepositoryError;
+use super::port::RepositoryError;
 
 /// `CommitVerdictUseCase` の失敗（材料のみ — 逐語文言は出す側が組む）。
 ///

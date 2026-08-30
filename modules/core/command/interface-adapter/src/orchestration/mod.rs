@@ -16,15 +16,21 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod cli_wording;
+mod command_spelling_impl;
+mod continue_token_codec_impl;
 mod intent_execution_repository_impl;
 mod memory;
+mod rule_bundle_source_impl;
 mod store_failure;
 mod wire;
 mod workflow_definition_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
 pub use cli_wording::invalid_mode_message;
+pub use command_spelling_impl::MulticallCommandSpelling;
+pub use continue_token_codec_impl::ContinueTokenCodecImpl;
 pub use intent_execution_repository_impl::IntentExecutionRepositoryImpl;
+pub use rule_bundle_source_impl::RuleBundleSourceImpl;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 
 // 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である

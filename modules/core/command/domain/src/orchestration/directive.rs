@@ -5,12 +5,16 @@
 //! 28KiB 上限 (超過は emit 拒否 — half-emitted を出さない) は Presenter (U7) の責務で、
 //! ここには持ち込まない (`coding-rules/domain-persistence-neutrality.md`)。
 //!
-//! placeholder 2 種 (`dispatch-subagent` / `present-gate`)、slice 2 の `invoke-swarm`、
-//! B16 スライスの `load-steering` は variant を**持たない** — 「エンジンは今日これを
-//! 構築しない」を構成不能で表す (投機実装禁止 — 02 §4.1)。[`DirectiveKind`] は 10 種の
-//! 閉集合 (ワイヤ判別子のカタログ) のままで、この共用体は**構築できる部分集合**である。
+//! placeholder 2 種 (`dispatch-subagent` / `present-gate`) と slice 2 の `invoke-swarm` は
+//! variant を**持たない** — 「エンジンは今日これを構築しない」を構成不能で表す
+//! (投機実装禁止 — 02 §4.1)。[`DirectiveKind`] は 10 種の閉集合 (ワイヤ判別子のカタログ) の
+//! ままで、この共用体は**構築できる部分集合**である。
 
+use super::continue_token::ContinueToken;
 use super::directive_schema::DirectiveKind;
+use super::steering_binding::BundleDigest;
+use super::steering_plan::{PartCount, PartIndex, SteeringPart};
+use super::unit_ref::UnitRef;
 use crate::workflow_definition::StageSlug;
 use crate::workflow_definition::{PhaseId, ReviewClass, StageMode};
 
@@ -124,6 +128,8 @@ pub struct RunStageDirective {
     protocol_modules: Vec<String>,
     narration: Option<String>,
     single: bool,
+    unit: Option<UnitRef>,
+    rules_in_context: Vec<String>,
 }
 
 /// [`RunStageDirective`] の組み立て器 — 必須 6 点を基本コンストラクタ相当で受け、残りは
@@ -149,6 +155,8 @@ pub struct RunStageDirectiveBuilder {
     protocol_modules: Vec<String>,
     narration: Option<String>,
     single: bool,
+    unit: Option<UnitRef>,
+    rules_in_context: Vec<String>,
 }
 
 impl RunStageDirectiveBuilder {
@@ -183,6 +191,8 @@ impl RunStageDirectiveBuilder {
             protocol_modules: Vec::new(),
             narration: None,
             single: false,
+            unit: None,
+            rules_in_context: Vec::new(),
         }
     }
 
@@ -263,6 +273,20 @@ impl RunStageDirectiveBuilder {
         self
     }
 
+    /// per-unit 反復の unit を伴う。
+    #[must_use]
+    pub fn with_unit(mut self, unit: UnitRef) -> RunStageDirectiveBuilder {
+        self.unit = Some(unit);
+        self
+    }
+
+    /// 配信済みルール束のパス台帳 (`rules_in_context`) を伴う。
+    #[must_use]
+    pub fn with_rules_in_context(mut self, paths: Vec<String>) -> RunStageDirectiveBuilder {
+        self.rules_in_context = paths;
+        self
+    }
+
     /// 組み上げる (構造体リテラルはここだけ)。
     #[must_use]
     pub fn build(self) -> RunStageDirective {
@@ -286,6 +310,8 @@ impl RunStageDirectiveBuilder {
             protocol_modules: self.protocol_modules,
             narration: self.narration,
             single: self.single,
+            unit: self.unit,
+            rules_in_context: self.rules_in_context,
         }
     }
 }
@@ -404,6 +430,143 @@ impl RunStageDirective {
     pub const fn is_single(&self) -> bool {
         self.single
     }
+
+    /// per-unit 反復の unit。
+    #[must_use]
+    pub const fn unit(&self) -> Option<&UnitRef> {
+        self.unit.as_ref()
+    }
+
+    /// 配信済みルール束のパス台帳。
+    #[must_use]
+    pub fn rules_in_context(&self) -> &[String] {
+        &self.rules_in_context
+    }
+
+    /// パス台帳 (`rules_in_context`) だけを載せ替えた複製。
+    ///
+    /// 不変オブジェクトの部分更新はドメインが持つ — 呼出側の全フィールド手動移送は
+    /// フィールド追加時に黙って欠落するので禁止 (オーナー裁定 2026-08-30)。
+    #[must_use]
+    pub fn with_rules_in_context(&self, paths: Vec<String>) -> RunStageDirective {
+        let mut copy = self.clone();
+        copy.rules_in_context = paths;
+        copy
+    }
+
+    /// トークンのピン (`gate` / `next_stage` / `unit` / `single`) を再適用した複製
+    /// (再構築原則 `:5996-6037` — キャッシュを信用せず、ピンだけを引き継ぐ)。
+    #[must_use]
+    pub fn with_pins(&self, token: &ContinueToken) -> RunStageDirective {
+        let mut copy = self.clone();
+        copy.gate = token.gate();
+        copy.next_stage = token.next_stage().map(|name| name.as_str().to_string());
+        copy.unit = token.unit().cloned();
+        copy.single = token.is_single();
+        copy
+    }
+}
+
+/// `load-steering` の `rules_content[]` の 1 要素 — ルールの**テキスト**が必須 steering で、
+/// パスはルーティングメタデータである (02 §10 「No rule is downgraded to a discretionary
+/// path read」)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleContent {
+    path: String,
+    text: String,
+}
+
+impl RuleContent {
+    /// パスとテキストを束ねる。
+    #[must_use]
+    pub const fn new(path: String, text: String) -> RuleContent {
+        RuleContent { path, text }
+    }
+
+    /// ルールファイルのパス (ルーティングメタデータ)。
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// ルールのテキスト (必須 steering)。
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// `load-steering` — ルール束の分割配信 1 部 (02 §4.1)。
+///
+/// クロスフィールド規則 `part <= parts` は**コンストラクタで**強制する
+/// (`aidlc-directive.ts:603-611` — validateDirective 相当を型で行う)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadSteeringDirective {
+    stage: StageSlug,
+    bundle: BundleDigest,
+    part: PartIndex,
+    parts: PartCount,
+    rules_content: Vec<RuleContent>,
+    continue_token: String,
+}
+
+impl LoadSteeringDirective {
+    /// 1 部を組む (基本コンストラクタ)。
+    ///
+    /// `part <= parts` は [`SteeringPart`] の構築経路 (計画のクエリのみ) が保証するので、
+    /// クロスフィールド検証のエラーは**表現不能**である。
+    #[must_use]
+    pub fn new(
+        stage: StageSlug,
+        bundle: BundleDigest,
+        part: &SteeringPart<'_>,
+        continue_token: impl Into<String>,
+    ) -> LoadSteeringDirective {
+        LoadSteeringDirective {
+            stage,
+            bundle,
+            part: part.index(),
+            parts: part.of(),
+            rules_content: part.chunk().to_vec(),
+            continue_token: continue_token.into(),
+        }
+    }
+
+    /// 連鎖が属するステージ。
+    #[must_use]
+    pub const fn stage(&self) -> &StageSlug {
+        &self.stage
+    }
+
+    /// ルール束のダイジェスト。
+    #[must_use]
+    pub const fn bundle(&self) -> &BundleDigest {
+        &self.bundle
+    }
+
+    /// この部の索引 (1 始まり)。
+    #[must_use]
+    pub const fn part(&self) -> PartIndex {
+        self.part
+    }
+
+    /// パート総数。
+    #[must_use]
+    pub const fn parts(&self) -> PartCount {
+        self.parts
+    }
+
+    /// この部が運ぶルール内容 (配列順に適用する)。
+    #[must_use]
+    pub fn rules_content(&self) -> &[RuleContent] {
+        &self.rules_content
+    }
+
+    /// 次の `continue` に渡すトークン (encode 済み)。
+    #[must_use]
+    pub fn continue_token(&self) -> &str {
+        &self.continue_token
+    }
 }
 
 /// 放出できる directive の判別共用体。
@@ -414,6 +577,8 @@ impl RunStageDirective {
 )]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Directive {
+    /// ルール束の分割配信 1 部。
+    LoadSteering(LoadSteeringDirective),
     /// ステージ本体の実行。
     RunStage(RunStageDirective),
     /// 構造化質問の提示。
@@ -447,6 +612,7 @@ impl Directive {
     #[must_use]
     pub const fn kind(&self) -> DirectiveKind {
         match self {
+            Directive::LoadSteering(_) => DirectiveKind::LoadSteering,
             Directive::RunStage(_) => DirectiveKind::RunStage,
             Directive::Ask(_) => DirectiveKind::Ask,
             Directive::Print { .. } => DirectiveKind::Print,
@@ -559,5 +725,103 @@ mod tests {
         assert_eq!(ask.ask_kind(), AskKind::NewWorkRouting);
         assert_eq!(ask.proposed_scope(), Some("bugfix"));
         assert_eq!(ask.new_work_description(), Some("fix the login crash"));
+    }
+
+    #[test]
+    fn a_load_steering_part_reports_its_faces() {
+        let content = RuleContent::new("memory/org.md".to_string(), "# Org\n".to_string());
+        assert_eq!(content.path(), "memory/org.md");
+        assert_eq!(content.text(), "# Org\n");
+        let plan = super::super::steering_plan::SteeringPlan::new(vec![
+            vec![content],
+            vec![RuleContent::new(
+                "memory/team.md".to_string(),
+                "# T\n".to_string(),
+            )],
+        ]);
+        let first = plan.first_part().unwrap();
+        let part =
+            LoadSteeringDirective::new(slug(), BundleDigest::new("sha256:bbbb"), &first, "token-1");
+        assert_eq!(part.stage().as_str(), "requirements-analysis");
+        assert_eq!(part.bundle().as_str(), "sha256:bbbb");
+        assert_eq!(part.part(), PartIndex::FIRST);
+        assert_eq!(part.parts().as_u32(), 2);
+        assert_eq!(part.rules_content().len(), 1);
+        assert_eq!(part.continue_token(), "token-1");
+        assert_eq!(
+            Directive::LoadSteering(part).kind(),
+            DirectiveKind::LoadSteering
+        );
+    }
+
+    #[test]
+    fn a_run_stage_carries_its_unit_and_rule_ledger() {
+        let unit = UnitRef::new(
+            super::super::unit_ref::UnitName::parse("u6-next-continue-use-case").unwrap(),
+            super::super::unit_ref::UnitKind::Library,
+        );
+        let directive = RunStageDirectiveBuilder::new(
+            slug(),
+            PhaseId::Construction,
+            "aidlc-developer-agent",
+            StageMode::Inline,
+            GateField::Gated,
+            "stage.md",
+            "memory.md",
+        )
+        .with_unit(unit.clone())
+        .with_rules_in_context(vec!["memory/org.md".to_string()])
+        .build();
+        assert_eq!(directive.unit(), Some(&unit));
+        assert_eq!(directive.rules_in_context(), ["memory/org.md"]);
+    }
+
+    #[test]
+    fn the_ledger_swap_and_the_pin_reapplication_are_owned_by_the_directive() {
+        let directive = RunStageDirectiveBuilder::new(
+            slug(),
+            PhaseId::Construction,
+            "aidlc-developer-agent",
+            StageMode::Inline,
+            GateField::Gated,
+            "stage.md",
+            "memory.md",
+        )
+        .with_narration("keep me")
+        .build();
+        let swapped = directive.with_rules_in_context(vec!["memory/org.md".to_string()]);
+        assert_eq!(swapped.rules_in_context(), ["memory/org.md"]);
+        assert_eq!(
+            swapped.narration(),
+            Some("keep me"),
+            "他フィールドは保存される"
+        );
+
+        let unit = UnitRef::new(
+            super::super::unit_ref::UnitName::parse("u6-next-continue-use-case").unwrap(),
+            super::super::unit_ref::UnitKind::Library,
+        );
+        let token = super::super::continue_token::ContinueTokenBuilder::new(
+            slug(),
+            crate::workflow_definition::ScopeSlug::parse("classic").unwrap(),
+            PartIndex::FIRST,
+            super::super::steering_binding::Bindings::new(
+                BundleDigest::new("b"),
+                super::super::steering_binding::DirectiveDigest::new("d"),
+                super::super::steering_binding::RouteDigest::new("r"),
+                None,
+            ),
+            GateField::Unresolved,
+        )
+        .with_unit(unit.clone())
+        .with_next_stage(super::super::stage_name::StageName::parse("User Stories").unwrap())
+        .with_single()
+        .build();
+        let pinned = directive.with_pins(&token);
+        assert_eq!(pinned.gate(), GateField::Unresolved);
+        assert_eq!(pinned.next_stage(), Some("User Stories"));
+        assert_eq!(pinned.unit(), Some(&unit));
+        assert!(pinned.is_single());
+        assert_eq!(pinned.narration(), Some("keep me"), "ピン以外は保存される");
     }
 }

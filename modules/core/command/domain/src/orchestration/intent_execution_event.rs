@@ -653,12 +653,90 @@ mod tests {
                 IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        assert_eq!(name(&IntentExecutionEvent::Unparked), "Unparked");
-        assert_eq!(
-            name(&IntentExecutionEvent::AutonomyModeSet(
-                AutonomyModeSet::new(AutonomyMode::Gated)
-            )),
-            "AutonomyModeSet"
-        );
+        let entries = vec![StageEntry::new(
+            slug("state-init"),
+            PhaseId::Initialization,
+            PlanAction::Execute,
+            false,
+            display("0.1"),
+        )];
+        let started = Started::new(Intent::from(Created::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "build it"),
+            entries,
+            scan(),
+        )));
+        let named = [
+            (IntentExecutionEvent::Started(started), "Started"),
+            (
+                IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"), None)),
+                "StageCompleted",
+            ),
+            (
+                IntentExecutionEvent::GateOpened(GateOpened::new(slug("intent-capture"), vec![])),
+                "GateOpened",
+            ),
+            (
+                IntentExecutionEvent::GateApproved(GateApproved::new(
+                    slug("intent-capture"),
+                    None,
+                    None,
+                    None,
+                )),
+                "GateApproved",
+            ),
+            (
+                IntentExecutionEvent::GateRejected(GateRejected::new(
+                    slug("intent-capture"),
+                    None,
+                    1,
+                )),
+                "GateRejected",
+            ),
+            (
+                IntentExecutionEvent::StageRevised(StageRevised::new(slug("intent-capture"))),
+                "StageRevised",
+            ),
+            (
+                IntentExecutionEvent::StageSkipped(StageSkipped::new(
+                    slug("market-research"),
+                    "out of scope".to_string(),
+                    None,
+                )),
+                "StageSkipped",
+            ),
+            (
+                IntentExecutionEvent::Jumped(Jumped::new(
+                    JumpDirection::Backward,
+                    slug("intent-capture"),
+                    slug("state-init"),
+                    Vec::new(),
+                    Vec::new(),
+                )),
+                "Jumped",
+            ),
+            (
+                IntentExecutionEvent::Parked(Parked::new(slug("intent-capture"))),
+                "Parked",
+            ),
+            (IntentExecutionEvent::Unparked, "Unparked"),
+            (
+                IntentExecutionEvent::Recomposed(Recomposed::new(
+                    Vec::new(),
+                    Vec::new(),
+                    vec![slug("state-init")],
+                )),
+                "Recomposed",
+            ),
+            (
+                IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(AutonomyMode::Gated)),
+                "AutonomyModeSet",
+            ),
+        ];
+        for (event, expected) in &named {
+            assert_eq!(name(event), *expected);
+        }
     }
 }

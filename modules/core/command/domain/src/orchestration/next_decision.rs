@@ -230,5 +230,34 @@ mod tests {
         }
         assert_eq!(name(&NextDecision::Done), "Done");
         assert_eq!(name(&NextDecision::ResumeMenu), "ResumeMenu");
+        assert_eq!(
+            name(&NextDecision::RunStage {
+                stage: StageIndex::new(0),
+                gate: false
+            }),
+            "RunStage"
+        );
+        assert_eq!(
+            name(&NextDecision::Parked {
+                stage: StageIndex::new(0)
+            }),
+            "Parked"
+        );
+        assert_eq!(name(&NextDecision::UnparkThenResume), "UnparkThenResume");
+        assert_eq!(name(&NextDecision::NewWorkRouting), "NewWorkRouting");
+        assert_eq!(
+            name(&NextDecision::RecoverSkipInconsistency {
+                stage: StageIndex::new(1),
+                checkbox: CheckboxState::InProgress
+            }),
+            "RecoverSkipInconsistency"
+        );
+        assert_eq!(
+            name(&NextDecision::InconsistentSkip {
+                stage: StageIndex::new(1),
+                checkbox: CheckboxState::Pending
+            }),
+            "InconsistentSkip"
+        );
     }
 }

@@ -10,45 +10,42 @@
 //! 消費側のパスは `core_command_use_case::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
-mod command_spelling;
 mod commit_error;
 mod commit_verdict_use_case;
-mod intent_execution_repository;
-mod intent_repository;
+mod continue_use_case;
 mod next_turn_input;
 mod next_use_case;
-mod rehydrated_intent_execution;
+mod port;
 mod reported_transition;
-mod repository_error;
-mod scope_resolution;
 #[cfg(test)]
 mod test_support;
-mod workflow_definition_repository;
 
 // ポート (trait) — Repository は集約名＋Repository で命名する
 // (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 // ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-010)。
 // 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
-pub use intent_execution_repository::IntentExecutionRepository;
-pub use intent_repository::IntentRepository;
-pub use workflow_definition_repository::WorkflowDefinitionRepository;
+pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository};
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
-pub use rehydrated_intent_execution::RehydratedIntentExecution;
+pub use port::RehydratedIntentExecution;
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の
 // 持ち物である。型名は upstream の CLI 動詞ではなく更新の意図から取る
 // (オーナー裁定 2026-08-29 — 動詞 report は「レポート」と誤読される)。
 pub use commit_verdict_use_case::CommitVerdictUseCase;
-pub use next_turn_input::{
-    ActiveWorkflow, NextTurnInput, NounFamily, NounToken, ReadOnlyVerb, WorkspaceLayout,
-};
+pub use continue_use_case::ContinueUseCase;
+pub use next_turn_input::{ActiveWorkflow, NextTurnInput, NounFamily, NounToken, WorkspaceLayout};
 pub use next_use_case::NextUseCase;
+
+// steering 連鎖のポート (実装はアダプタ層) と、そのポート入出力 VO
+pub use port::{
+    CommandSpelling, ContinueTokenCodec, InvalidContinueToken, RuleBundleReadError,
+    RuleBundleSource, StatePosition, StoreVersion,
+};
 pub use reported_transition::ReportedTransition;
 
 // エラー
 pub use commit_error::CommitError;
-pub use repository_error::RepositoryError;
-pub use workflow_definition_repository::GraphReadError;
+pub use port::{GraphReadError, RepositoryError};

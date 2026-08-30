@@ -21,10 +21,10 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 
-use super::intent_execution_repository::IntentExecutionRepository;
-use super::intent_repository::IntentRepository;
-use super::rehydrated_intent_execution::RehydratedIntentExecution;
-use super::repository_error::RepositoryError;
+use super::port::IntentExecutionRepository;
+use super::port::IntentRepository;
+use super::port::RehydratedIntentExecution;
+use super::port::RepositoryError;
 
 /// フィクスチャの intent 識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";

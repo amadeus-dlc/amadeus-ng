@@ -118,6 +118,12 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 # UUID の解析は自作しない (オーナー裁定 2026-08-30)。既定 feature は落とし、解析のみに使う。
 # 採番 (v7 feature) は U7 でインフラ側 (composition root) にだけ足す。
 uuid = { version = "1.26", default-features = false, features = ["std"] }
+# continue_token の封緘 (オーナー承認 2026-08-30 — 暗号構成とエンコードを自作しない)。
+# 消費はアダプタ層のみ (domain / use-case は codec ポート越し)。
+hmac = { version = "0.12", default-features = false }
+base64 = { version = "0.22", default-features = false, features = ["std"] }
+# steering MAC 鍵のマシンローカル鋳造 (乱数)。
+getrandom = { version = "0.3", default-features = false, features = ["std"] }
 sha2 = "0.10"
 proptest = "1"
 # 非同期ポート (AFIT) のテスト実行時。`rt` の current_thread ランタイムだけを使い、

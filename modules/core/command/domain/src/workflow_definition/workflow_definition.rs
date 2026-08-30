@@ -39,6 +39,7 @@ use super::scope_grid::ScopeGrid;
 use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
+use super::stage_route::StageRoute;
 use super::stage_slug::StageSlug;
 use super::workflow_definition_event::{Defined, WorkflowDefinitionEvent};
 use super::workflow_definition_id::WorkflowDefinitionId;
@@ -256,6 +257,18 @@ impl WorkflowDefinition {
                 )
             })
             .collect()
+    }
+
+    /// ステージの route 同一性 — 対象ステージと、その scope の in-scope ステージ列。
+    /// steering 連鎖の route 束縛が指す対象を VO として返す (素材文字列は組まない)。
+    #[must_use]
+    pub fn stage_route(&self, scope: &str, node: &StageNode) -> StageRoute {
+        let stages = self
+            .stages_in_scope(scope)
+            .iter()
+            .map(|(slug, _, _)| (*slug).clone())
+            .collect();
+        StageRoute::new(node.slug().clone(), stages)
     }
 }
 
