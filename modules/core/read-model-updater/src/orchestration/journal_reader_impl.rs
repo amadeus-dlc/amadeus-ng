@@ -56,14 +56,15 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, pa
 
 use super::corrupt_cause::CorruptCause;
 use super::global_seq_nr::GlobalSeqNr;
+use super::journal_batch::JournalBatch;
 use super::journal_entry::JournalEntry;
 use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
-use core_command_domain::orchestration::IntentExecutionId;
+use core_command_domain::orchestration::{Intent, IntentExecutionId, IntentId};
 
-use super::wire::{WireDecodeError, WireEvent};
+use super::wire::{WireDecodeError, WireEvent, WireIntentEvent};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -333,13 +334,55 @@ fn table_exists(
 /// 横断適合テスト (`journal_protocol_conformance` / ゴールデンパリティ) が固定する。
 const EVENT_MANIFEST: &str = "intent-execution-event/1";
 
-/// intent 自身のジャーナル行の型判別子 — 同じストアファイルに同居する**既知の別ストリーム**
+/// intent 自身のジャーナル行の型判別子 — 同じストアファイルに同居する別ストリーム
 /// (issue #50: intent の `Created` は実行と同じ journal 表に書かれる)。
 ///
-/// 実行の投影はこの行を**読み飛ばす** — 別集約の歴史であって破損ではない。intent 行からの
-/// リードモデル投影 (intents.json の骨格材料) は issue #56 の課題である。読み飛ばすのは
-/// この 1 値だけで、未知の判別子は従来どおり `Corrupt` に落ちる (検出力を弱めない)。
+/// この行は**消費する** (issue #56) — `Created` の誕生材料を検査付き再構成で [`Intent`] へ
+/// 戻し、バッチの `intents` として返す。状態ファイルの骨格 (全ステージ行・表示属性・走査
+/// 結果) を描く材料の正本である。未知の判別子は従来どおり `Corrupt` に落ちる。
+///
+/// [`Intent`]: core_command_domain::orchestration::Intent
 const INTENT_EVENT_MANIFEST: &str = "intent-event/1";
+
+/// intent ジャーナル 1 行を集約値へ写す。
+///
+/// 実行の行 ([`decode_entry`]) と同じ検査態度である: 行が名乗る識別子は文法検査を通し、
+/// payload はこの側の DTO ([`WireIntentEvent`]) で受けてから検査付き再構成でドメインへ
+/// 写す。行の名乗り (`aid`) と誕生材料の識別子が食い違う行は、どちらかが噓をついている —
+/// 解釈せず `Corrupt` で止める。
+fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
+    let row_seq = usize::try_from(row.seq_nr)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
+    // intent のイベントは現状 `Created` 1 種 = 必ず genesis (通番 1)。それ以外の通番を名乗る
+    // 行は破損した歴史であり、payload を解釈する前に止める (CodeRabbit 指摘)。変種が増えた
+    // ときはこの前提ごと見直す (`WireIntentEvent` の網羅がビルドで教える)。
+    if row_seq != 1 {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
+    let intent_id = IntentId::parse(&row.aggregate_id).map_err(|_| {
+        corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        )
+    })?;
+    let intent = serde_json::from_slice::<WireIntentEvent>(&row.payload)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
+        .to_domain()
+        .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
+    if intent.id() != &intent_id {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
+    Ok(intent)
+}
 
 /// 復号の失敗を `Corrupt` の原因へ写す。
 const fn decode_cause(error: &WireDecodeError) -> CorruptCause {
@@ -391,10 +434,7 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 }
 
 impl JournalReader for JournalReaderImpl {
-    async fn events_after(
-        &self,
-        after: GlobalSeqNr,
-    ) -> Result<Vec<JournalEntry>, JournalReadError> {
+    async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
         let from = to_i64(after.to_u64())?;
         let rows = {
             let mut statement = self
@@ -420,15 +460,21 @@ impl JournalReader for JournalReaderImpl {
             collected
         };
 
-        let mut entries = Vec::with_capacity(rows.len());
+        let scanned_to = rows
+            .last()
+            .map(|row| to_u64(row.rowid, &row.aggregate_id).map(GlobalSeqNr::new))
+            .transpose()?;
+        let mut entries = Vec::new();
+        let mut intents = Vec::new();
         for row in &rows {
-            // 既知の別ストリーム (intent 自身のジャーナル) はまたいで読み進める。
+            // 同居する 2 ストリームを判別子で振り分ける (issue #50 / #56)。
             if row.manifest == INTENT_EVENT_MANIFEST {
-                continue;
+                intents.push(decode_intent_row(row)?);
+            } else {
+                entries.push(decode_entry(row)?);
             }
-            entries.push(decode_entry(row)?);
         }
-        Ok(entries)
+        Ok(JournalBatch::new(entries, intents, scanned_to))
     }
 
     async fn checkpoint(
@@ -1476,6 +1522,146 @@ mod tests {
                 seq_nr: None,
                 cause: CorruptCause::InvariantViolation,
             }
+        );
+    }
+
+    /// intent 行のフィクスチャ (誕生の材料 = 検査付き再構成で戻る集約値)。
+    fn birth_intent() -> core_command_domain::orchestration::Intent {
+        use core_command_domain::orchestration::{
+            Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+        };
+        use core_command_domain::workflow_definition::{
+            BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+            WorkflowDefinitionId,
+        };
+        Intent::from(Created::new(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "unit"),
+            vec![StageEntry::new(
+                StageSlug::parse("state-init").unwrap(),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                StageDisplay::new(
+                    StageNumber::parse("0.1").unwrap(),
+                    "State Init",
+                    "orchestrator",
+                )
+                .unwrap(),
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
+    )]
+    fn intent_row() -> JournalRow {
+        JournalRow {
+            rowid: 1,
+            seq_nr: 1,
+            aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+            payload: serde_json::to_vec(&WireIntentEvent::of(&birth_intent())).unwrap(),
+            occurred_at: 1_756_425_600_000_000_000,
+            manifest: INTENT_EVENT_MANIFEST.to_string(),
+        }
+    }
+
+    #[test]
+    fn an_intent_row_decodes_into_the_birth_material() {
+        assert_eq!(decode_intent_row(&intent_row()).unwrap(), birth_intent());
+    }
+
+    #[test]
+    fn an_intent_row_whose_aid_is_not_an_identifier_is_corrupt() {
+        let row = JournalRow {
+            aggregate_id: "not-a-uuid".to_string(),
+            ..intent_row()
+        };
+        assert_eq!(
+            decode_intent_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "not-a-uuid".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    #[test]
+    fn an_intent_row_whose_aid_disagrees_with_its_birth_material_is_corrupt() {
+        // 行の名乗り (aid) と誕生材料の識別子が食い違う — どちらかが噓をついているので
+        // 解釈せず止める。
+        let row = JournalRow {
+            aggregate_id: "018f3b2c-4d5e-7f60-8abc-def012345678".to_string(),
+            ..intent_row()
+        };
+        assert_eq!(
+            decode_intent_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "018f3b2c-4d5e-7f60-8abc-def012345678".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    #[test]
+    fn an_intent_row_whose_material_cannot_be_carried_into_the_domain_is_corrupt() {
+        // JSON としては読めて DTO にもなるが、識別子の文法違反でドメインへ戻せない行。
+        let sound = intent_row();
+        let tampered = String::from_utf8(sound.payload.clone())
+            .unwrap()
+            .replace("01a02785-1bd8-76eb-aeea-5aa303ebd5b6", "not-a-uuid");
+        let row = JournalRow {
+            payload: tampered.into_bytes(),
+            ..sound
+        };
+        assert_eq!(
+            decode_intent_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::UndecodablePayload,
+            }
+        );
+    }
+
+    #[test]
+    fn an_intent_row_that_is_not_the_genesis_sequence_is_corrupt() {
+        // `Created` は必ず通番 1 — それ以外を名乗る行は payload を解釈する前に止める。
+        let row = JournalRow {
+            seq_nr: 2,
+            ..intent_row()
+        };
+        assert_eq!(
+            decode_intent_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(2),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    #[test]
+    fn every_decode_cause_maps_to_its_corrupt_classification() {
+        assert_eq!(
+            decode_cause(&WireDecodeError::malformed("id", "x")),
+            CorruptCause::UndecodablePayload
+        );
+        assert_eq!(
+            decode_cause(&WireDecodeError::InvariantViolation),
+            CorruptCause::InvariantViolation
         );
     }
 }

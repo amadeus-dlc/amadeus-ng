@@ -13,6 +13,8 @@
 
 use std::path::{Path, PathBuf};
 
+use core_command_domain::orchestration::IntentExecutionEvent;
+
 use crate::workspace::{
     AuditShardWriteError, ProjectionError, ReadModel, ResolvedPlan, StateFileReadError,
     StateFileWriteError,
@@ -36,11 +38,19 @@ pub enum CatchUpError {
     StateFileWrite(StateFileWriteError),
     /// 監査シャードへ追記できなかった。
     AuditShardWrite(AuditShardWriteError),
-    /// 描くべき差分はあるのに、解決済み計画（`Started`）がジャーナルに無い。
+    /// 描くべき差分はあるのに、解決済み計画の材料がジャーナルに無い。
     ///
-    /// 表示属性と走査結果を運ぶのは `Started` だけなので、これが無ければ 1 行も描けない。
-    /// ジャーナルが途中から切り落とされた兆候であり、読み替えずに止める。
+    /// 計画（表示属性・走査結果）の正本は intent 自身の誕生記録（`Created`）であり、どの
+    /// intent かは実行の `Started` が指す（issue #56）。`Started` が無い・指された `Created`
+    /// が無い、のどちらでも 1 行も描けない。ジャーナルが途中から切り落とされた兆候であり、
+    /// 読み替えずに止める。
     PlanUnavailable,
+    /// ジャーナルに**複数の intent** を指す実行が混在している。
+    ///
+    /// この取得ループは単一 intent の状態ファイル 1 面へ描く（`ProjectionTargets` は 1 組）。
+    /// 別 intent の実行を同じ計画で描くと誤った表示属性が焼き込まれるため、混在は読み替えず
+    /// 止める。intent ごとの書込先振り分けは合成ルート（U7）の駆動設計と対で扱う。
+    MixedIntents,
 }
 
 impl core::fmt::Display for CatchUpError {
@@ -54,6 +64,7 @@ impl core::fmt::Display for CatchUpError {
             CatchUpError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
             CatchUpError::AuditShardWrite(inner) => write!(f, "audit shard write: {inner}"),
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
+            CatchUpError::MixedIntents => f.write_str("mixed intents"),
         }
     }
 }
@@ -158,27 +169,29 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
         let checkpoint = self.reader.checkpoint(&self.projection).await?;
-        let entries = self.reader.events_after(checkpoint).await?;
-        let Some(last) = entries
-            .last()
-            .map(super::journal_entry::JournalEntry::global_seq)
-        else {
+        let batch = self.reader.events_after(checkpoint).await?;
+        let Some(last) = batch.scanned_to() else {
             return Ok(checkpoint);
         };
 
-        let plan = self.resolve_plan().await?;
-        let state = crate::workspace::read_state_file(self.targets.state_file())
-            .map_err(CatchUpError::StateFileRead)?;
-        let mut read_model = ReadModel::new(state);
-        crate::workspace::project(&entries, &plan, &mut read_model)?;
+        // 実行のイベントがあるときだけ描く。intent の行しか無いバッチは書くものが無い —
+        // それでもチェックポイントは走査済み位置まで進める（intent 行を毎回再走査しない。
+        // issue #56 申し送りの解消）。
+        if !batch.executions().is_empty() {
+            let plan = self.resolve_plan().await?;
+            let state = crate::workspace::read_state_file(self.targets.state_file())
+                .map_err(CatchUpError::StateFileRead)?;
+            let mut read_model = ReadModel::new(state);
+            crate::workspace::project(batch.executions(), &plan, &mut read_model)?;
 
-        crate::workspace::write_state_file(self.targets.state_file(), read_model.state())
-            .map_err(CatchUpError::StateFileWrite)?;
-        crate::workspace::append_audit_shard(
-            self.targets.audit_shard(),
-            read_model.appended_audit(),
-        )
-        .map_err(CatchUpError::AuditShardWrite)?;
+            crate::workspace::write_state_file(self.targets.state_file(), read_model.state())
+                .map_err(CatchUpError::StateFileWrite)?;
+            crate::workspace::append_audit_shard(
+                self.targets.audit_shard(),
+                read_model.appended_audit(),
+            )
+            .map_err(CatchUpError::AuditShardWrite)?;
+        }
 
         self.reader
             .advance_checkpoint(&self.projection, last)
@@ -186,20 +199,38 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         Ok(last)
     }
 
-    /// 解決済み計画を得る（初回だけジャーナルの先頭から `Started` を引く）。
+    /// 解決済み計画を得る（初回だけジャーナルの先頭から引く）。
     ///
-    /// 表示属性と走査結果を運ぶのは `Started` だけであり、差分投影のバッチにそれが入って
+    /// 計画（表示属性・走査結果）の正本は intent 自身の誕生記録（`Created`）であり、どの
+    /// intent かは実行の `Started` が指す（issue #56）。差分投影のバッチにその 2 行が入って
     /// いるとは限らない。取ってくるのは**この層の仕事**である — 投影核は計画を受け取るだけで、
     /// どこから来たかを知らない（二層構造）。
     ///
-    /// `Started` はワークフローごとに 1 度しか書かれないので、一度引けば控えを使い回す。
+    /// どちらもワークフローごとに 1 度しか書かれないので、一度引けば控えを使い回す。
     async fn resolve_plan(&mut self) -> Result<ResolvedPlan, CatchUpError> {
         if let Some(plan) = &self.plan {
             return Ok(plan.clone());
         }
         let history = self.reader.events_after(GlobalSeqNr::ZERO).await?;
-        let events: Vec<_> = history.iter().map(|entry| entry.event().clone()).collect();
-        let plan = ResolvedPlan::find_in(&events).ok_or(CatchUpError::PlanUnavailable)?;
+        let mut started_ids = history
+            .executions()
+            .iter()
+            .filter_map(|entry| match entry.event() {
+                IntentExecutionEvent::Started(started) => Some(started.intent_id().clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        started_ids.dedup();
+        // 単一 intent が本ループの契約である — 混在を黙って 1 つの計画で描かない
+        // (CodeRabbit 指摘。intent ごとの振り分けは U7 の駆動設計と対で扱う)。
+        if started_ids.len() > 1 {
+            return Err(CatchUpError::MixedIntents);
+        }
+        let plan = started_ids
+            .first()
+            .and_then(|id| history.intents().iter().find(|intent| intent.id() == id))
+            .map(ResolvedPlan::of)
+            .ok_or(CatchUpError::PlanUnavailable)?;
         self.plan = Some(plan.clone());
         Ok(plan)
     }
@@ -241,6 +272,7 @@ mod tests {
             CatchUpError::PlanUnavailable.to_string(),
             "plan unavailable"
         );
+        assert_eq!(CatchUpError::MixedIntents.to_string(), "mixed intents");
 
         let shard_write = CatchUpError::AuditShardWrite(AuditShardWriteError::Io {
             kind: std::io::ErrorKind::PermissionDenied,

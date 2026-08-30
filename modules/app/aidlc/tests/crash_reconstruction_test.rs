@@ -25,7 +25,7 @@ use core_command_interface_adapter::orchestration::{
 };
 use core_command_use_case::orchestration::IntentExecutionRepository;
 use core_read_model_updater::orchestration::{
-    GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
+    GlobalSeqNr, JournalEntry, JournalReader, JournalReaderImpl,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -110,7 +110,8 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
     }
 
     let reader = fixture.reader();
-    let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let batch = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let rows = batch.executions();
     assert_eq!(rows.len(), 5, "COMMIT 済みの 5 件が残る");
     assert_eq!(
         rows.iter()
@@ -148,7 +149,7 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
 
     let reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    assert_eq!(rows.len(), 5, "書きかけの 6 件目は残らない");
+    assert_eq!(rows.executions().len(), 5, "書きかけの 6 件目は残らない");
 
     let repository = fixture.repository();
     let found = repository
@@ -213,6 +214,6 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     repository.store(&event, &aggregate).await.expect("6 件目");
 
     let reader = fixture.reader();
-    let rows: Result<Vec<_>, JournalReadError> = reader.events_after(GlobalSeqNr::new(5)).await;
-    assert_eq!(rows.expect("差分").len(), 1);
+    let rows = reader.events_after(GlobalSeqNr::new(5)).await;
+    assert_eq!(rows.expect("差分").executions().len(), 1);
 }

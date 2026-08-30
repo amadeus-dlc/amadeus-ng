@@ -49,8 +49,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
-    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEvent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -58,9 +58,12 @@ use core_command_domain::workflow_definition::{
 };
 use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore, SnapshotStrategy,
+    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore, IntentRepositoryImpl,
+    SnapshotStrategy,
 };
-use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
+use core_command_use_case::orchestration::{
+    IntentExecutionRepository, IntentRepository, RepositoryError,
+};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
@@ -81,6 +84,10 @@ fn at() -> DateTime<Utc> {
 
 /// 再生に使う集約識別子 (UUIDv7)。
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+/// 再生の実行識別子 — intent と**別の値**であることは前提である (本家 journal の
+/// `(aid, seq_nr)` UNIQUE 索引は type_name 抜きの生値で張られる — issue #50)。
+const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
 /// モデルの `WRITERS`。
 const WRITERS: usize = 2;
@@ -164,7 +171,7 @@ fn parse_state(v: &Value) -> ModelState {
 // ---- 再生先の組み立て ----
 
 fn execution_id() -> IntentExecutionId {
-    IntentExecutionId::parse(INTENT).expect("再生の IntentExecutionId は UUIDv7")
+    IntentExecutionId::parse(EXECUTION).expect("再生の IntentExecutionId は UUIDv7")
 }
 
 fn projection_name() -> ProjectionName {
@@ -255,7 +262,7 @@ fn intent() -> Intent {
 }
 
 fn genesis() -> (IntentExecution, IntentExecutionEvent) {
-    IntentExecution::start(execution_id(), intent(), at())
+    IntentExecution::start(execution_id(), &intent(), at())
 }
 
 /// カーソル位置から打てる唯一のコマンドを打ち、1 イベントを得る (1 ステップ 1 イベント)。
@@ -345,6 +352,9 @@ struct RealProjection {
     _dir: TempDir,
     targets: ProjectionTargets,
     read_model_seq: u64,
+    /// キャッチアップが一度でも走ったか (モデルとの通番写像の分岐点 — 下の
+    /// `INTENT_ROW_OFFSET` を参照)。
+    caught_up: bool,
 }
 
 impl RealProjection {
@@ -357,6 +367,7 @@ impl RealProjection {
             targets: ProjectionTargets::new(state_file, audit_shard),
             _dir: dir,
             read_model_seq: 0,
+            caught_up: false,
         }
     }
 
@@ -366,6 +377,24 @@ impl RealProjection {
             ReadModelUpdater::new(store.reader(), projection_name(), self.targets.clone());
         let reached = updater.catch_up().await.expect("キャッチアップは通る");
         self.read_model_seq = reached.to_u64();
+        self.caught_up = true;
+    }
+}
+
+/// intent の誕生記録 1 行 (rowid 1) が実ジャーナルに先行するぶんの通番補正 (issue #56)。
+///
+/// モデル (`journal_protocol.qnt`) は**実行のストリームだけ**を抽象する。実ストアでは同じ
+/// journal 表に intent の `Created` が rowid 1 で同居するため、実行の行の global 通番は
+/// モデル値 + 1、チェックポイントと readModelSeq は**キャッチアップが一度でも走った後は**
+/// モデル値 + 1 になる (走査は intent 行もまたいで前進する)。走る前は 0 のままで一致する。
+const INTENT_ROW_OFFSET: u64 = 1;
+
+/// チェックポイント / readModelSeq のモデル値を実ストアの通番へ写す。
+const fn shifted(model_value: u64, caught_up: bool) -> u64 {
+    if caught_up {
+        model_value + INTENT_ROW_OFFSET
+    } else {
+        model_value
     }
 }
 
@@ -413,21 +442,23 @@ async fn assert_projection(
     label: &str,
 ) {
     let reader = store.reader();
-    let rows = reader
+    let batch = reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("ジャーナルは読める");
+    let rows = batch.executions();
     assert_eq!(
         u64::try_from(rows.len()).expect("行数"),
         m.journal_len,
         "{label}: journalLen"
     );
-    // 単一集約なので global 通番と seq_nr は 1 から同じ連番になる (失敗した書込は採番しない)。
+    // 単一集約なので seq_nr は 1 からの連番、global 通番は intent 行 1 本ぶんずれた連番に
+    // なる (失敗した書込は採番しない)。
     for (offset, entry) in rows.iter().enumerate() {
         let expected = offset + 1;
         assert_eq!(
             entry.global_seq().to_u64(),
-            u64::try_from(expected).expect("行番号"),
+            u64::try_from(expected).expect("行番号") + INTENT_ROW_OFFSET,
             "{label}: global 通番"
         );
         assert_eq!(entry.seq_nr(), expected, "{label}: seq_nr");
@@ -447,9 +478,14 @@ async fn assert_projection(
         .checkpoint(&projection_name())
         .await
         .expect("チェックポイントは読める");
-    assert_eq!(checkpoint.to_u64(), m.checkpoint, "{label}: checkpoint");
     assert_eq!(
-        projection.read_model_seq, m.read_model_seq,
+        checkpoint.to_u64(),
+        shifted(m.checkpoint, projection.caught_up),
+        "{label}: checkpoint"
+    );
+    assert_eq!(
+        projection.read_model_seq,
+        shifted(m.read_model_seq, projection.caught_up),
         "{label}: readModelSeq"
     );
 
@@ -482,6 +518,24 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
     // (本家は接続を露出しないので、横断読取は別接続で行う — ADR-010 決定 4)。
     // crash (プロセス再起動) のたびに開き直す。
     let store = Store::new();
+    // intent の誕生記録を先に書く — 実運用の順序 (intent-create → 実行開始) と同じで、
+    // 実 RMU の計画供給元は intent 自身のジャーナルである (issue #56)。
+    {
+        let mut intents = IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
+        let held = intent();
+        let created = IntentEvent::Created(Created::new(
+            held.id().clone(),
+            held.definition_id().clone(),
+            held.definition_revision().clone(),
+            StartRequest::new(held.scope(), held.request()),
+            held.stages().to_vec(),
+            held.scan().clone(),
+        ));
+        intents
+            .store(&created, &held, at())
+            .await
+            .expect("intent の genesis は書ける");
+    }
     let mut repository = store.repository();
     let mut projection = RealProjection::new();
     let mut writers: Vec<Writer> = (0..WRITERS).map(|_| Writer::genesis()).collect();

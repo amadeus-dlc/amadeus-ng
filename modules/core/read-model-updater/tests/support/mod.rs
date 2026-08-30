@@ -31,7 +31,7 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::StorePath;
-use core_read_model_updater::orchestration::WireEvent;
+use core_read_model_updater::orchestration::{WireEvent, WireIntentEvent};
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{AggregateId, EventStore};
@@ -76,8 +76,15 @@ pub(crate) type UpstreamStore = EventStoreForSqlite<StoreKey, serde_json::Value,
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
 
-/// テストの集約識別子 (UUIDv7)。
+/// テストの intent 識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+/// テストの実行識別子 (UUIDv7)。
+///
+/// intent と**別の値**であることは前提である — 本家の journal は `(aid, seq_nr)` に UNIQUE
+/// 索引を type_name 抜きの生値で張るため、同じストアに同居する 2 ストリームの識別子の値は
+/// 一意でなければならない (issue #50)。
+pub(crate) const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
 /// 2 集約を並べるときの相手側 (UUIDv7)。
 pub(crate) const OTHER_INTENT: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
@@ -99,7 +106,7 @@ pub(crate) fn intent_id() -> IntentId {
 /// テストの実行識別子 (ジャーナル行の集約キー)。
 #[must_use]
 pub(crate) fn execution_id() -> IntentExecutionId {
-    IntentExecutionId::parse(INTENT).expect("テストの IntentExecutionId は UUIDv7")
+    IntentExecutionId::parse(EXECUTION).expect("テストの IntentExecutionId は UUIDv7")
 }
 
 /// 相手側の実行識別子。
@@ -179,7 +186,7 @@ pub(crate) fn intent() -> Intent {
 /// 指定した実行識別子の genesis (横断読取のテストが 2 実行を並べるのに使う)。
 #[must_use]
 pub(crate) fn genesis_for(execution: IntentExecutionId) -> (IntentExecution, IntentExecutionEvent) {
-    IntentExecution::start(execution, intent(), at())
+    IntentExecution::start(execution, &intent(), at())
 }
 
 /// 1 つの集約を本家のストアへ書き進める書き手。
@@ -261,4 +268,45 @@ pub(crate) async fn seed(store: &mut UpstreamStore) {
 #[must_use]
 pub(crate) fn open_store(path: &StorePath) -> UpstreamStore {
     UpstreamStore::new(path.as_path()).expect("本家ストアは開ける")
+}
+
+/// intent ストリームのストア鍵 (`type_name = "Intent"` — 実行の行と同じファイルに同居する)。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct IntentStoreKey(String);
+
+impl std::fmt::Display for IntentStoreKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AggregateId for IntentStoreKey {
+    fn type_name(&self) -> String {
+        "Intent".to_string()
+    }
+
+    fn value(&self) -> String {
+        self.0.clone()
+    }
+}
+
+/// intent の誕生記録 (`Created`) を 1 行書く (aid = intent 識別子、seq_nr = 1)。
+///
+/// payload は読む側の DTO ([`WireIntentEvent`]) で組む — 書く側との一致は横断適合テスト
+/// (`journal_protocol_conformance`) が固定する (実行の行と同じ理屈)。
+pub(crate) async fn seed_intent(path: &StorePath) {
+    let mut store: EventStoreForSqlite<IntentStoreKey, serde_json::Value, WireIntentEvent> =
+        EventStoreForSqlite::new(path.as_path()).expect("本家ストアは開ける");
+    let held = intent();
+    let envelope = EventEnvelope::new(
+        IntentStoreKey(held.id().as_str().to_string()),
+        1,
+        at(),
+        WireIntentEvent::of(&held),
+    )
+    .with_manifest("intent-event/1");
+    store
+        .persist_event_and_snapshot(envelope, serde_json::Value::Null, 0)
+        .await
+        .expect("本家ストアは書ける");
 }

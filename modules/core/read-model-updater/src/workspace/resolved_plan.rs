@@ -1,27 +1,27 @@
-//! `ResolvedPlan` — 投影が参照する解決済み計画（`Started` が運んだステージ列）。
+//! `ResolvedPlan` — 投影が参照する解決済み計画（intent の誕生記録が運んだステージ列）。
 //!
 //! # なぜ投影の「引数」なのか
 //!
-//! 表示属性（ステージ番号・表題・担当エージェント）は `Started` だけが運ぶ（オーナー裁定
-//! 2026-08-29）。ところが差分投影は checkpoint 以降しか読まないので、`GateApproved` を描く
-//! バッチに `Started` が入っているとは限らない。
+//! 表示属性（ステージ番号・表題・担当エージェント）と走査結果の正本は intent 自身の
+//! ジャーナルの `Created`（誕生材料）である（issue #50 / #56 — `Started` は intent の
+//! 識別子だけを運ぶ）。ところが差分投影は checkpoint 以降しか読まないので、`GateApproved`
+//! を描くバッチにその記録が入っているとは限らない。
 //!
 //! そこで計画は**投影核の引数**にした — リードモデルと同じ「渡されるデータ」である。取ってくる
 //! のは取得ループの仕事であり、投影核は相変わらず `JournalReader`・接続・checkpoint を知らない
 //! （`coding-rules/cqrs-boundaries.md` の二層構造は保たれる）。
 //!
 //! イベントを太らせる案（遷移イベントごとに表示属性を持たせる）を採らなかったのは、同じ事実が
-//! ジャーナルに何度も転写され、`Started` の計画と食い違いうるからである。正本は 1 つでよい。
+//! ジャーナルに何度も転写され、誕生記録の計画と食い違いうるからである。正本は 1 つでよい。
 
-use core_command_domain::orchestration::{
-    IntentExecutionEvent, StageDisplay, Started, WorkspaceScan,
-};
+use core_command_domain::orchestration::{Intent, StageDisplay, WorkspaceScan};
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
 /// 投影が参照する解決済み計画（文書順の全ステージ + 走査結果）。
 ///
-/// 外から組み立てられるのは `Started` からだけである — 順序も表示属性も `Started` が確定した
-/// 事実であり、投影が勝手に足したり並べ替えたりしてよいものではない。
+/// 外から組み立てられるのは [`Intent`]（誕生記録から再構成した集約値）からだけである —
+/// 順序も表示属性も intent の誕生で確定した事実であり、投影が勝手に足したり並べ替えたり
+/// してよいものではない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedPlan {
     stages: Vec<PlannedStage>,
@@ -72,11 +72,11 @@ impl PlannedStage {
 }
 
 impl ResolvedPlan {
-    /// `Started` から計画を写す（唯一の構成関数）。
+    /// intent（誕生記録から再構成した集約値）から計画を写す（唯一の構成関数）。
     #[must_use]
-    pub fn of(started: &Started) -> ResolvedPlan {
+    pub fn of(intent: &Intent) -> ResolvedPlan {
         ResolvedPlan {
-            stages: started
+            stages: intent
                 .stages()
                 .iter()
                 .map(|entry| PlannedStage {
@@ -86,21 +86,10 @@ impl ResolvedPlan {
                     display: entry.display().clone(),
                 })
                 .collect(),
-            scan: started.scan().clone(),
-            scope: started.scope().to_string(),
-            request: started.request().to_string(),
+            scan: intent.scan().clone(),
+            scope: intent.scope().to_string(),
+            request: intent.request().to_string(),
         }
-    }
-
-    /// ジャーナル行の列から `Started` を探して計画を組む（先頭の 1 件だけを見る）。
-    ///
-    /// 見つからなければ `None` — 呼出側（取得ループ）が「計画がまだ無い」として扱う。
-    #[must_use]
-    pub fn find_in(events: &[IntentExecutionEvent]) -> Option<ResolvedPlan> {
-        events.iter().find_map(|event| match event {
-            IntentExecutionEvent::Started(started) => Some(ResolvedPlan::of(started)),
-            _ => None,
-        })
     }
 
     /// 文書順の全ステージ。
@@ -225,8 +214,8 @@ mod tests {
         )
     }
 
-    fn started() -> Started {
-        Started::new(Intent::from(Created::new(
+    fn genesis_intent() -> Intent {
+        Intent::from(Created::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -266,15 +255,15 @@ mod tests {
                 "Unknown",
             )
             .expect("単一行"),
-        )))
+        ))
     }
 
     fn plan() -> ResolvedPlan {
-        ResolvedPlan::of(&started())
+        ResolvedPlan::of(&genesis_intent())
     }
 
     #[test]
-    fn the_plan_copies_the_stage_list_the_started_event_resolved() {
+    fn the_plan_copies_the_stage_list_the_birth_record_resolved() {
         let plan = plan();
         assert_eq!(plan.stages().len(), 6);
         assert_eq!(plan.scope(), "classic");
@@ -333,19 +322,5 @@ mod tests {
             [PhaseId::Initialization, PhaseId::Inception]
         );
         assert_eq!(plan.phases_out_of_scope(), [PhaseId::Ideation]);
-    }
-
-    #[test]
-    fn the_plan_is_found_in_a_journal_batch_that_carries_the_genesis() {
-        let events = vec![
-            IntentExecutionEvent::Unparked,
-            IntentExecutionEvent::Started(started()),
-        ];
-        assert_eq!(ResolvedPlan::find_in(&events), Some(plan()));
-        assert_eq!(
-            ResolvedPlan::find_in(&[IntentExecutionEvent::Unparked]),
-            None
-        );
-        assert_eq!(ResolvedPlan::find_in(&[]), None);
     }
 }

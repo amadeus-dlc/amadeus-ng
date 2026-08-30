@@ -1,9 +1,10 @@
-//! `Intent` とその部品の永続化 DTO — `Started` / `Created` が運ぶ静的材料のバイト形。
+//! `Intent` とその部品の永続化 DTO — `Created` が運ぶ誕生の材料のバイト形。
 //!
-//! この 1 つの型が **3 つの面**で同じバイトを張る: (a) 実行ジャーナルの `Started` が埋め込む
-//! intent、(b) intent 自身のジャーナルの `Created` ペイロード、(c) intent 集約のスナップ
-//! ショット行。3 面とも運ぶ内容は「誕生の材料 = 集約の全状態」で完全に同一なので、綴りを
-//! 1 か所に束ねて面ごとの乖離を構造的に不能にする (issue #50)。
+//! この 1 つの型が **2 つの面**で同じバイトを張る: (a) intent 自身のジャーナルの `Created`
+//! ペイロード、(b) intent 集約のスナップショット行。どちらも運ぶ内容は「誕生の材料 = 集約の
+//! 全状態」で完全に同一なので、綴りを 1 か所に束ねて面ごとの乖離を構造的に不能にする
+//! (issue #50)。かつての第 3 面 (実行ジャーナルの `Started` が埋め込む intent) は issue #56
+//! で消えた — `Started` は intent の識別子だけを運ぶ。
 
 use core_command_domain::orchestration::{
     Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,

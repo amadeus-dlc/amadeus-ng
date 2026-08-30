@@ -110,7 +110,7 @@ pub(crate) fn start_from_plan(
         stages,
         scan(),
     ));
-    let (execution, event) = IntentExecution::start(execution_id(), intent.clone(), at());
+    let (execution, event) = IntentExecution::start(execution_id(), &intent, at());
     (intent, execution, event)
 }
 

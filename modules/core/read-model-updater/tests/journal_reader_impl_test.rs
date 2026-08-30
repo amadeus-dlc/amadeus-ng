@@ -26,6 +26,7 @@ use tempfile::TempDir;
 
 use support::{
     JournalWriter, UpstreamStore, at, execution_id, intent, open_store, other_execution_id, seed,
+    seed_intent,
 };
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
@@ -73,10 +74,11 @@ async fn the_journal_reads_every_event_in_global_order() {
     seed(&mut store).await;
 
     let reader = fixture.reader();
-    let rows = reader
+    let batch = reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("差分読取");
+    let rows = batch.executions();
     assert_eq!(rows.len(), 5);
     let globals: Vec<u64> = rows
         .iter()
@@ -85,6 +87,11 @@ async fn the_journal_reads_every_event_in_global_order() {
     let mut sorted = globals.clone();
     sorted.sort_unstable();
     assert_eq!(globals, sorted, "global 通番の昇順");
+    assert_eq!(
+        batch.scanned_to(),
+        globals.last().copied().map(GlobalSeqNr::new),
+        "走査済み位置は最終行"
+    );
     let seqs: Vec<usize> = rows.iter().map(JournalEntry::seq_nr).collect();
     assert_eq!(seqs, [1, 2, 3, 4, 5], "欠落なく順に読める");
     assert!(
@@ -99,10 +106,36 @@ async fn the_journal_reads_every_event_in_global_order() {
 }
 
 #[tokio::test]
-async fn a_row_of_the_intent_stream_is_passed_over_not_corrupt() {
+async fn a_row_of_the_intent_stream_is_consumed_as_an_intent() {
     // intent 自身のジャーナル (issue #50) は同じストアファイルの同じ journal 表に同居する。
-    // 実行の投影にとっては**既知の別ストリーム**であり、破損ではない — またいで読み進める。
-    // intent 行からの投影 (intents.json の骨格材料) は issue #56 の課題である。
+    // 読取はこの行を**消費する** (issue #56) — 誕生の材料を検査付き再構成した intent として
+    // 返し、実行のイベント列には混ぜない。走査済み位置は intent 行も数える。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+    seed_intent(&fixture.path).await;
+
+    let reader = fixture.reader();
+    let batch = reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("intent 行は消費できる");
+    assert_eq!(
+        batch.executions().len(),
+        5,
+        "実行のイベント列には混ざらない"
+    );
+    assert_eq!(batch.intents(), &[intent()], "誕生の材料が集約値で返る");
+    assert_eq!(
+        batch.scanned_to(),
+        Some(GlobalSeqNr::new(6)),
+        "走査済み位置は intent 行も数える (チェックポイントが前進できる)"
+    );
+}
+
+#[tokio::test]
+async fn an_undecodable_intent_row_is_corrupt() {
+    // intent 行も検査を通る — 形にならない payload は読み飛ばさず破損として止める。
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed(&mut store).await;
@@ -116,16 +149,17 @@ async fn a_row_of_the_intent_stream_is_passed_over_not_corrupt() {
         .expect("intent ストリームの行を差し込む");
 
     let reader = fixture.reader();
-    let rows = reader
+    let err = reader
         .events_after(GlobalSeqNr::ZERO)
         .await
-        .expect("intent 行は破損ではない");
-    assert_eq!(rows.len(), 5, "実行のイベントだけが返る");
-    assert!(
-        rows.iter()
-            .all(|entry| entry.execution_id() == &execution_id()),
-        "intent 行は実行の投影に流れ込まない"
-    );
+        .expect_err("形にならない intent 行は破損");
+    assert!(matches!(
+        err,
+        JournalReadError::Corrupt {
+            cause: CorruptCause::UndecodablePayload,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
@@ -136,10 +170,15 @@ async fn the_journal_reads_only_the_difference() {
 
     let reader = fixture.reader();
     let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = all.get(2).expect("3 件目").global_seq();
-    let rest = reader.events_after(third).await.expect("差分");
-    assert_eq!(rest.len(), 2);
-    assert!(rest.iter().all(|entry| entry.global_seq() > third));
+    let third = all.executions().get(2).expect("3 件目").global_seq();
+    let batch = reader.events_after(third).await.expect("差分");
+    assert_eq!(batch.executions().len(), 2);
+    assert!(
+        batch
+            .executions()
+            .iter()
+            .all(|entry| entry.global_seq() > third)
+    );
 }
 
 #[tokio::test]
@@ -154,7 +193,7 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
 
     let mut reader = fixture.reader();
     let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = before.get(2).expect("3 件目").global_seq();
+    let third = before.executions().get(2).expect("3 件目").global_seq();
     reader
         .advance_checkpoint(&projection(), third)
         .await
@@ -203,7 +242,7 @@ async fn a_truncated_journal_behind_the_checkpoint_is_refused() {
 
     let mut reader = fixture.reader();
     let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let last = all.last().expect("末尾").global_seq();
+    let last = all.executions().last().expect("末尾").global_seq();
     reader
         .advance_checkpoint(&projection(), last)
         .await
@@ -245,7 +284,7 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
 
     let mut reader = fixture.reader();
     let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let third = before.get(2).expect("3 件目").global_seq();
+    let third = before.executions().get(2).expect("3 件目").global_seq();
     reader
         .advance_checkpoint(&projection(), third)
         .await
@@ -264,13 +303,17 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
             .map(|entry| entry.global_seq().to_u64())
             .collect::<Vec<_>>()
     };
-    assert_eq!(keys(&after), keys(&before), "rowid は VACUUM 前と同一");
+    assert_eq!(
+        keys(after.executions()),
+        keys(before.executions()),
+        "rowid は VACUUM 前と同一"
+    );
     let saved = reader.checkpoint(&projection()).await.expect("保存済み");
     assert_eq!(saved, third, "チェックポイントも生きている");
     let resumed = reader.events_after(saved).await.expect("差分");
     assert_eq!(
-        keys(&resumed),
-        keys(&before)[3..].to_vec(),
+        keys(resumed.executions()),
+        keys(before.executions())[3..].to_vec(),
         "続行が欠落も重複もしない"
     );
 }
@@ -293,16 +336,17 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
     let reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
     assert_eq!(
-        rows.iter()
+        rows.executions()
+            .iter()
             .map(|entry| (
                 entry.global_seq().to_u64(),
                 entry.execution_id().as_str().to_string()
             ))
             .collect::<Vec<_>>(),
         [
-            (1, support::INTENT.to_string()),
+            (1, support::EXECUTION.to_string()),
             (2, support::OTHER_INTENT.to_string()),
-            (3, support::INTENT.to_string()),
+            (3, support::EXECUTION.to_string()),
         ],
         "書いた順に 1 本の列へ並ぶ"
     );
@@ -323,7 +367,7 @@ async fn the_reader_observes_writes_made_after_it_was_opened() {
         .await;
 
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.executions().len(), 2);
 }
 
 #[tokio::test]
@@ -345,7 +389,7 @@ async fn a_tampered_journal_payload_is_corrupt() {
     assert_eq!(
         err,
         JournalReadError::Corrupt {
-            aggregate_id: support::INTENT.to_string(),
+            aggregate_id: support::EXECUTION.to_string(),
             seq_nr: None,
             cause: CorruptCause::UndecodablePayload,
         }
@@ -375,7 +419,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
 
     let mut reader = fixture.reader();
     let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
-    let last = rows.last().expect("5 件ある").global_seq();
+    let last = rows.executions().last().expect("5 件ある").global_seq();
 
     reader
         .advance_checkpoint(&projection(), last)
@@ -388,8 +432,9 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
         .await
         .expect("同値は no-op");
     assert_eq!(reader.checkpoint(&projection()).await.expect("読取"), last);
-    assert!(
-        reader.events_after(last).await.expect("差分").is_empty(),
+    assert_eq!(
+        reader.events_after(last).await.expect("差分").scanned_to(),
+        None,
         "追いついた投影に差分は無い"
     );
 }

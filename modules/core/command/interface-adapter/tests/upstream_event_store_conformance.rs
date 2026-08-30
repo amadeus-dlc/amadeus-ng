@@ -129,7 +129,7 @@ fn execution_id() -> IntentExecutionId {
 }
 
 fn genesis() -> (IntentExecution, IntentExecutionEvent) {
-    IntentExecution::start(execution_id(), intent(), at(0))
+    IntentExecution::start(execution_id(), &intent(), at(0))
 }
 
 /// commit 済みの集約とイベントから封筒を組む (Repository と同じ手順 — B7 裁定 3)。

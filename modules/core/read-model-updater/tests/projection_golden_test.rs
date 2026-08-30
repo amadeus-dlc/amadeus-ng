@@ -93,8 +93,9 @@ fn entry(event: IntentExecutionEvent) -> JournalEntry {
     )
 }
 
-/// 出荷グラフとスコープグリッドから `Started` を組む（表示属性は upstream の実データ）。
-fn started() -> Started {
+/// 出荷グラフとスコープグリッドから intent（誕生の材料）を組む（表示属性は upstream の
+/// 実データ）。計画・走査結果の正本は intent 側で、`Started` は識別子だけを運ぶ (issue #56)。
+fn genesis_intent() -> Intent {
     let nodes: Vec<serde_json::Value> = serde_json::from_str(
         &std::fs::read_to_string(golden_root().join("stage-graph.json")).expect("stage-graph"),
     )
@@ -130,7 +131,7 @@ fn started() -> Started {
         })
         .collect();
 
-    Started::new(Intent::from(Created::new(
+    Intent::from(Created::new(
         IntentId::parse(INTENT).expect("UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -143,11 +144,15 @@ fn started() -> Started {
             "Unknown",
         )
         .expect("単一行"),
-    )))
+    ))
+}
+
+fn started() -> Started {
+    Started::new(IntentId::parse(INTENT).expect("UUIDv7"))
 }
 
 fn plan() -> ResolvedPlan {
-    ResolvedPlan::of(&started())
+    ResolvedPlan::of(&genesis_intent())
 }
 
 /// 実測値へゴールデンと同じ正規化（ISO 8601 UTC → `<TS>`）を当てる。
