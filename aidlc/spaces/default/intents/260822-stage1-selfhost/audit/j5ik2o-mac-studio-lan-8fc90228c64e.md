@@ -26331,3 +26331,218 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Session Compacted
+**Timestamp**: 2026-08-30T13:10:40Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T13:12:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a27b6bfb447a4d17c
+**Message**: <analysis>\nThis session continues owner-driven architectural remediation of amadeus-ng (Rust reimplementation of AI-DLC). The session (already once compacted) covered bolts b21 through b24, and ended 
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:21:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:21:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T13:24:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a01b9f5b05510cb22
+**Message**: CQRS裁定の恒久対策として正本改訂PR #64を作成済みで、CI全緑・PR #63クローズ・サルベージ修正も完了しています。CodeRabbitのレビュー枠回復を待って再実測しマージし、その後クエリサイド再設計のプラン提示に進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:42:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T13:45:33Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a711fcd9efb8c72c3
+**Message**: CQRS裁定（規則5〜7）をcqrs-boundaries.md正本に記録するPR #64を収束中です。CI全green確認済みで、CodeRabbitレビュー完了待ち。完了次第、AI裁定でマージし、その後クエリサイド再設計のプラン提示に進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:46:04Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:47:26Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:47:26Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T13:47:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a5566b177655fd030
+**Message**: マージできたらクエリサイド再設計のプランを出して
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T13:47:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae4826c55e6b26675
+**Message**: マージできたらクエリサイド再設計のプランを出して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:48:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:48:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:49:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:49:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:51:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:51:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:54:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T13:54:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T13:58:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a60cfbb204ba7ef2b
+**Message**: CQRS側分類のオーナー裁定を正本化する対策は完了、PR #64はmainへマージ済みで次セッションから自動ロードされます。次はクエリサイド再設計のプラン策定(next/continueのクエリ側移設)への着手待ちで、選択肢4件を提示中です。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T14:06:18Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T14:36:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abe0240322dd855b3
+**Message**: 1と2、両方その理解でよい
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T14:36:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T14:38:46Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T14:47:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a3700531af4cd6256
+**Message**: CQRS再設計(Issue #65)の3 Bolt実行中で、いまは b25(クエリ側2クレート新設)を委任エージェントが実装中です。次は完了報告を受けて差分レビューとCIゲート実測、PR化です。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T14:48:50Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T14:49:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a67e34e77935fd689
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T15:02:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b25-impl
+**Agent ID**: ab25-impl-d2e0872f033b594c
+**Message**: クエリ側 2 クレートを新設し、4 ゲートすべて緑・golden parity 33 ノード全数緑で完了しました。コミットはしていません。\n\n## 作成 / 変更ファイル\n\n**変更（2 件）**\n- `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/Cargo.toml` — members に 2 クレート追加、`[workspace.depende
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T15:04:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b25-impl
+**Agent ID**: ab25-impl-d2e0872f033b594c
+**Message**: 最終報告を team-lead へ送信しました。作業は完了しており、残作業はありません（コミット・push は指示どおり未実施）。\n\n送った内容の要点:\n\n- **作成/変更ファイル** — 変更 2 件（`Cargo.toml` の members + `[workspace.dependencies]`、cargo が更新した `Cargo.lock` 18 行追加）、新設 `core-que
+
+---

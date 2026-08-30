@@ -4,6 +4,8 @@ members = [
   "modules/core/command/domain",
   "modules/core/command/use-case",
   "modules/core/command/interface-adapter",
+  "modules/core/query/use-case",
+  "modules/core/query/interface-adapter",
   "modules/core/read-model-updater",
   "modules/core/infrastructure",
   "modules/app/aidlc",
@@ -89,6 +91,9 @@ core-command-domain = { path = "modules/core/command/domain" }
 # (`coding-rules/cqrs-boundaries.md`)。
 core-command-use-case = { path = "modules/core/command/use-case" }
 core-command-interface-adapter = { path = "modules/core/command/interface-adapter" }
+# クエリ側 — RMU が構築したリードモデルだけを読む。自前のクエリモデル (ビュー型) を持ち、
+# コマンド側クレートには絶対依存しない (`coding-rules/cqrs-boundaries.md` 規則 6)。
+core-query-use-case = { path = "modules/core/query/use-case" }
 core-read-model-updater = { path = "modules/core/read-model-updater" }
 # infrastructure 層は文脈ごとに置く (`coding-rules/infrastructure-layer.md`)。
 core-infrastructure = { path = "modules/core/infrastructure" }
