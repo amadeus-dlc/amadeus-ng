@@ -81,7 +81,7 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 
 ### 3. ポート造語（Store / Reader / Writer / Source / Provider）は禁止
 
-`XxxStore` / `XxxReader` / `XxxWriter` は DDD の語彙ではない。「読むだけの Gateway だから Reader」という命名は、**Repository の一部の操作にポートを 1 つずつ立てる**ことになり、集約単位のトランザクション境界を name の上で解体する。読取専用の集約（本システムから書き換えない `WorkflowDefinition` のような Published Language 成果物）は、`save` を持たない Repository として表現すればよい。
+`XxxStore` / `XxxReader` / `XxxWriter` は DDD の語彙ではない。「読むだけの Gateway だから Reader」という命名は、**Repository の一部の操作にポートを 1 つずつ立てる**ことになり、集約単位のトランザクション境界を name の上で解体する。~~読取専用の集約（本システムから書き換えない `WorkflowDefinition` のような Published Language 成果物）は、`save` を持たない Repository として表現すればよい~~ — **失効（2026-08-30 オーナー裁定）**: リポジトリは `find_by_id` と `store` の両動詞を持つのが正であり、`find_by_id` だけを呼んで何も書かない使い方こそが違反（それはクエリ側の仕事 — [cqrs-boundaries.md](cqrs-boundaries.md) 追補）。`WorkflowDefinitionRepository` も両動詞を持つ（`store` 実装は定義を変更する最初のユースケースと同じ Bolt で書く）。
 
 **明示的な例外（2026-08-24）**: **§1c の永続化基盤ポート `EventStore` / `JournalReader` は本禁止の対象外**である。
 理由は 2 つ。(a) これらは Repository ではないので「Repository の操作を分割した」という本禁止の
