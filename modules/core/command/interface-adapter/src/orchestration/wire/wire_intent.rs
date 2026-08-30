@@ -1,4 +1,9 @@
 //! `Intent` とその部品の永続化 DTO — `Started` / `Created` が運ぶ静的材料のバイト形。
+//!
+//! この 1 つの型が **3 つの面**で同じバイトを張る: (a) 実行ジャーナルの `Started` が埋め込む
+//! intent、(b) intent 自身のジャーナルの `Created` ペイロード、(c) intent 集約のスナップ
+//! ショット行。3 面とも運ぶ内容は「誕生の材料 = 集約の全状態」で完全に同一なので、綴りを
+//! 1 か所に束ねて面ごとの乖離を構造的に不能にする (issue #50)。
 
 use core_command_domain::orchestration::{
     Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
@@ -16,7 +21,7 @@ use super::wire_vocabulary::{
 
 /// 静的な intent の行の形。**フィールド名と並びが契約**である。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct WireIntent {
+pub struct WireIntent {
     id: String,
     definition_id: String,
     definition_revision: String,
@@ -63,7 +68,8 @@ struct WireWorkspaceScan {
 
 impl WireIntent {
     /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
-    pub(super) fn of(intent: &Intent) -> WireIntent {
+    #[must_use]
+    pub fn of(intent: &Intent) -> WireIntent {
         WireIntent {
             id: intent.id().as_str().to_string(),
             definition_id: intent.definition_id().as_str().to_string(),
@@ -86,7 +92,19 @@ impl WireIntent {
     /// 閉集合外の綴り・文法外の識別子は `Malformed` を返す。組み上げ (誕生記録の変換) が
     /// Always Valid を破る場合は回復せずクラッシュする — 再構成は失敗を返さない
     /// (オーナー裁定 2026-08-30)。
-    pub(super) fn to_domain(&self) -> Result<Intent, WireDecodeError> {
+    pub fn to_domain(&self) -> Result<Intent, WireDecodeError> {
+        Ok(Intent::from(self.to_created()?))
+    }
+
+    /// 誕生記録 (`Created` ペイロード) として復号する (読み — intent ジャーナル面)。
+    ///
+    /// [`to_domain`](WireIntent::to_domain) と同じ検査を通る — 誕生の材料と集約の全状態は
+    /// 同一物であり、復号経路も 1 本である。
+    ///
+    /// # Errors
+    ///
+    /// 閉集合外の綴り・文法外の識別子は `Malformed` を返す。
+    pub(super) fn to_created(&self) -> Result<Created, WireDecodeError> {
         let stages = self
             .stages
             .iter()
@@ -102,7 +120,7 @@ impl WireIntent {
         if let Some(strategy) = &self.start_request.test_strategy {
             request = request.with_test_strategy(strategy.clone());
         }
-        Ok(Intent::from(Created::new(
+        Ok(Created::new(
             IntentId::parse(&self.id)
                 .map_err(|_| WireDecodeError::malformed("id", self.id.clone()))?,
             WorkflowDefinitionId::parse(&self.definition_id).map_err(|_| {
@@ -114,7 +132,7 @@ impl WireIntent {
             request,
             stages,
             self.scan.to_domain()?,
-        )))
+        ))
     }
 }
 

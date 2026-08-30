@@ -15,8 +15,8 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
-    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEvent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -100,7 +100,7 @@ pub(crate) fn start_from_plan(
         })
         .collect();
     // 合成計画からの組み直しは完全コンストラクタ (IntentExecution::new) を通す — 検査点は genesis と
-    // 同一である。誕生イベントを `store` する `IntentRepository` は U7 の課題である。
+    // 同一である。
     let intent = Intent::from(Created::new(
         intent(),
         WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
@@ -292,9 +292,9 @@ impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
 
 /// ユースケースのテストが使う [`IntentRepository`] のダブル。
 ///
-/// 実物の実装はまだ無い（読み先の設計ごと U7 の課題 — ポート doc を参照）ので、ここでは
-/// 「保持している intent を返す / 無ければ `NotFound`」だけを模す。intent は不変なので、
-/// 呼ばれるたびに同じ値が返る。
+/// 「保持している intent を返す / 無ければ `NotFound`」と「genesis を 1 度だけ書ける」を
+/// 模す。intent は不変なので、呼ばれるたびに同じ値が返る。実物 (`IntentRepositoryImpl`) の
+/// 契約はアダプタ層の契約テストが固定する (issue #50)。
 #[derive(Debug)]
 pub(crate) struct InMemoryIntentRepository {
     held: HashMap<IntentId, Intent>,
@@ -335,5 +335,96 @@ impl IntentRepository for InMemoryIntentRepository {
             .get(id)
             .cloned()
             .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
+    }
+
+    async fn store(
+        &mut self,
+        event: &IntentEvent,
+        intent: &Intent,
+        _occurred_at: DateTime<Utc>,
+    ) -> Result<(), RepositoryError<IntentId>> {
+        // 実物 (`IntentRepositoryImpl`) と同じ約束の最小形。誕生記録と一致しない対は
+        // 書込契約違反 (`Corrupt`)、genesis の重複は `Conflict` (実物ではストアの現行
+        // スロット一意性が拒む。issue #50)。
+        let IntentEvent::Created(created) = event;
+        if Intent::from(created.clone()) != *intent {
+            return Err(RepositoryError::Corrupt {
+                id: intent.id().clone(),
+                seq_nr: Some(1),
+                source: Box::new(std::io::Error::other("event does not match the aggregate")),
+            });
+        }
+        if self.held.contains_key(intent.id()) {
+            return Err(RepositoryError::Conflict {
+                expected: 0,
+                actual: 1,
+            });
+        }
+        self.held.insert(intent.id().clone(), intent.clone());
+        Ok(())
+    }
+}
+
+/// ダブル自身の約束の検査 — 実物 (`IntentRepositoryImpl`) と同じ契約の最小形を守っている
+/// ことを固定する (issue #50。実物側はアダプタの契約テストが 3 実装横断で固定する)。
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_intent_double_stores_a_genesis_once_and_conflicts_on_the_second() {
+        let mut repository = InMemoryIntentRepository::empty();
+        let (held, _, _) = genesis(2);
+        let event = IntentEvent::Created(Created::new(
+            held.id().clone(),
+            held.definition_id().clone(),
+            held.definition_revision().clone(),
+            StartRequest::new(held.scope(), held.request()),
+            held.stages().to_vec(),
+            held.scan().clone(),
+        ));
+        repository
+            .store(&event, &held, at())
+            .await
+            .expect("genesis は書ける");
+        assert_eq!(
+            repository.find_by_id(held.id()).await.expect("読める"),
+            held
+        );
+
+        let err = repository
+            .store(&event, &held, at())
+            .await
+            .expect_err("重複作成は拒否");
+        assert!(matches!(err, RepositoryError::Conflict { expected: 0, .. }));
+    }
+
+    #[tokio::test]
+    async fn the_intent_double_refuses_a_mismatched_pair() {
+        // 誕生記録と一致しない集約を渡す対は書込契約違反 — 実物と同じ約束 (CodeRabbit 指摘)。
+        let mut repository = InMemoryIntentRepository::empty();
+        let (held, _, _) = genesis(2);
+        let mismatched_event = IntentEvent::Created(Created::new(
+            held.id().clone(),
+            held.definition_id().clone(),
+            held.definition_revision().clone(),
+            StartRequest::new(held.scope(), "different request"),
+            held.stages().to_vec(),
+            held.scan().clone(),
+        ));
+        let err = repository
+            .store(&mismatched_event, &held, at())
+            .await
+            .expect_err("誕生記録と一致しない対は拒否");
+        assert!(matches!(
+            err,
+            RepositoryError::Corrupt {
+                seq_nr: Some(1),
+                ..
+            }
+        ));
+        assert!(
+            repository.find_by_id(held.id()).await.is_err(),
+            "何も残さない"
+        );
     }
 }

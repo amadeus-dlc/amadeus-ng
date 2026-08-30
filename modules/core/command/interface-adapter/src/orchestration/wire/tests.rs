@@ -21,7 +21,9 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 
-use super::{WireEvent, WireIntentExecution};
+use core_command_domain::orchestration::IntentEvent;
+
+use super::{WireEvent, WireIntent, WireIntentEvent, WireIntentExecution};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
@@ -449,4 +451,77 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
     let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
     let decoded: WireEvent = serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err());
+}
+
+// ---------------------------------------------------------------------------
+// intent 自身のジャーナル面 (issue #50)
+// ---------------------------------------------------------------------------
+
+/// intent の材料のバイト形 (3 面共通 — `Started` の埋め込み・`Created` の中身・
+/// intent 集約のスナップショット行)。
+const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"}}"#;
+
+/// intent の誕生イベント (ジャーナル面の材料 — `intent()` と同じ材料から組む)。
+fn created_event() -> IntentEvent {
+    IntentEvent::Created(Created::new(
+        IntentId::parse(INTENT).expect("UUIDv7"),
+        WorkflowDefinitionId::parse("claude").expect("定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+        StartRequest::new("classic", "contract").with_depth("standard"),
+        stages(),
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .expect("単一行"),
+    ))
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
+    let event = created_event();
+    let expected = format!(r#"{{"Created":{INTENT_BODY}}}"#);
+    let json = serde_json::to_string(&WireIntentEvent::of(&event)).expect("DTO は直列化できる");
+    assert_eq!(json, expected, "intent ジャーナルのワイヤ形式が変わった");
+
+    let decoded: WireIntentEvent = serde_json::from_str(&expected).expect("記録済みの行は読める");
+    assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_three_intent_faces_share_the_same_bytes() {
+    // (a) `Started` の埋め込み、(b) `Created` の中身、(c) intent 集約のスナップショット行は
+    // 同じ材料 = 同じバイトである (issue #50 — `WireIntent` 1 本に束ねた根拠)。
+    let snapshot = serde_json::to_string(&WireIntent::of(&intent())).expect("DTO は直列化できる");
+    assert_eq!(
+        snapshot, INTENT_BODY,
+        "スナップショット面のバイトが変わった"
+    );
+
+    let started = serde_json::to_string(&WireEvent::of(&IntentExecutionEvent::Started(
+        Started::new(intent()),
+    )))
+    .expect("DTO は直列化できる");
+    assert!(
+        started.contains(INTENT_BODY),
+        "Started の埋め込み面が同じバイトを共有していない"
+    );
+}
+
+#[test]
+fn a_malformed_identifier_in_the_intent_journal_is_refused_with_its_field() {
+    let broken = format!(r#"{{"Created":{INTENT_BODY}}}"#).replace(INTENT, "not-a-uuid");
+    let decoded: WireIntentEvent = serde_json::from_str(&broken).expect("形は DTO として読める");
+    let err = decoded.to_domain().expect_err("識別子の文法違反は拒否");
+    assert_eq!(err.to_string(), "malformed field id: not-a-uuid");
 }

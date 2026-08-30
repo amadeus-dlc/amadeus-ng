@@ -2,19 +2,20 @@
 
 use std::collections::HashMap;
 
-use core_command_domain::orchestration::{Intent, IntentId};
+use chrono::{DateTime, Utc};
+use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 
 /// 保持している intent を識別子で引いて返す揮発の `IntentRepository`。
 ///
 /// **本物の Gateway 実装ではない**ので `Impl` 接尾辞を付けない
-/// (`coding-rules/gateway-taxonomy.md`)。実物 — intent 自身のジャーナルから再構成する実装 —
-/// は U7 の課題である。現時点で intent の完全な材料が永続化されているのは各実行のジャーナル
-/// 先頭の `Started` だけなので、読み先の設計ごと U7 で決める（改訂 10 の申し送り）。
+/// (`coding-rules/gateway-taxonomy.md`)。実物 — intent 自身のジャーナルから再構成する
+/// [`IntentRepositoryImpl`] — は issue #50 で入った。こちらに残る理由は 1 つだけで、
+/// **合成ルートが書く結線の形を型として固定する**ことである（`CommitVerdictUseCase` が
+/// ポート 2 本の注入を要求するようになったため、結線テストが `IntentRepository` の実装を
+/// 1 つ必要とする）。
 ///
-/// ここに置く理由は 1 つだけで、**合成ルートが書く結線の形を型として固定する**ことである
-/// （`CommitVerdictUseCase` がポート 2 本の注入を要求するようになったため、結線テストが
-/// `IntentRepository` の実装を 1 つ必要とする）。
+/// [`IntentRepositoryImpl`]: crate::orchestration::IntentRepositoryImpl
 #[derive(Debug, Clone)]
 pub struct InMemoryIntentRepository {
     held: HashMap<IntentId, Intent>,
@@ -43,6 +44,32 @@ impl IntentRepository for InMemoryIntentRepository {
             .get(id)
             .cloned()
             .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
+    }
+
+    async fn store(
+        &mut self,
+        event: &IntentEvent,
+        intent: &Intent,
+        _occurred_at: DateTime<Utc>,
+    ) -> Result<(), RepositoryError<IntentId>> {
+        // 実物と同じ約束の最小形。誕生記録と一致しない対は書込契約違反 (`Corrupt`)、
+        // genesis の重複は `Conflict` (実物ではストアの現行スロット一意性が拒む。issue #50)。
+        let IntentEvent::Created(created) = event;
+        if Intent::from(created.clone()) != *intent {
+            return Err(RepositoryError::Corrupt {
+                id: intent.id().clone(),
+                seq_nr: Some(1),
+                source: Box::new(std::io::Error::other("event does not match the aggregate")),
+            });
+        }
+        if self.held.contains_key(intent.id()) {
+            return Err(RepositoryError::Conflict {
+                expected: 0,
+                actual: 1,
+            });
+        }
+        self.held.insert(intent.id().clone(), intent.clone());
+        Ok(())
     }
 }
 

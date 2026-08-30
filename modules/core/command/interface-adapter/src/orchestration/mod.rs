@@ -19,6 +19,7 @@ mod cli_wording;
 mod command_spelling_impl;
 mod continue_token_codec_impl;
 mod intent_execution_repository_impl;
+mod intent_repository_impl;
 mod memory;
 mod rule_bundle_source_impl;
 mod snapshot_strategy;
@@ -31,6 +32,7 @@ pub use cli_wording::invalid_mode_message;
 pub use command_spelling_impl::MulticallCommandSpelling;
 pub use continue_token_codec_impl::ContinueTokenCodecImpl;
 pub use intent_execution_repository_impl::IntentExecutionRepositoryImpl;
+pub use intent_repository_impl::IntentRepositoryImpl;
 pub use rule_bundle_source_impl::RuleBundleSourceImpl;
 pub use snapshot_strategy::SnapshotStrategy;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
@@ -40,14 +42,16 @@ pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 // 公開する — 見えるのはこのクレートの外の**アダプタ利用者**だけで、ドメインとユースケースは
 // 依存の向き (層 = クレート) により参照できない。
 pub use wire::{
-    AggregateKey, WireAutonomyModeSet, WireDecodeError, WireEvent, WireGateApproved,
-    WireGateOpened, WireGateRejected, WireIntentExecution, WireJumped, WireParked, WireRecomposed,
-    WireStageCompleted, WireStageRevised, WireStageSkipped, WireStarted,
+    AggregateKey, IntentAggregateKey, WireAutonomyModeSet, WireDecodeError, WireEvent,
+    WireGateApproved, WireGateOpened, WireGateRejected, WireIntent, WireIntentEvent,
+    WireIntentExecution, WireJumped, WireParked, WireRecomposed, WireStageCompleted,
+    WireStageRevised, WireStageSkipped, WireStarted,
 };
 // ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
 pub use intent_execution_repository_impl::{
     IntentExecutionMemoryStore, IntentExecutionSqliteStore,
 };
+pub use intent_repository_impl::{IntentMemoryStore, IntentSqliteStore};
 
 // テスト用 in-memory 実装
 pub use memory::{InMemoryIntentRepository, InMemoryWorkflowDefinitionRepository};

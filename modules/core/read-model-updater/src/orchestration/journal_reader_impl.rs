@@ -333,6 +333,14 @@ fn table_exists(
 /// 横断適合テスト (`journal_protocol_conformance` / ゴールデンパリティ) が固定する。
 const EVENT_MANIFEST: &str = "intent-execution-event/1";
 
+/// intent 自身のジャーナル行の型判別子 — 同じストアファイルに同居する**既知の別ストリーム**
+/// (issue #50: intent の `Created` は実行と同じ journal 表に書かれる)。
+///
+/// 実行の投影はこの行を**読み飛ばす** — 別集約の歴史であって破損ではない。intent 行からの
+/// リードモデル投影 (intents.json の骨格材料) は issue #56 の課題である。読み飛ばすのは
+/// この 1 値だけで、未知の判別子は従来どおり `Corrupt` に落ちる (検出力を弱めない)。
+const INTENT_EVENT_MANIFEST: &str = "intent-event/1";
+
 /// 復号の失敗を `Corrupt` の原因へ写す。
 const fn decode_cause(error: &WireDecodeError) -> CorruptCause {
     match error {
@@ -414,6 +422,10 @@ impl JournalReader for JournalReaderImpl {
 
         let mut entries = Vec::with_capacity(rows.len());
         for row in &rows {
+            // 既知の別ストリーム (intent 自身のジャーナル) はまたいで読み進める。
+            if row.manifest == INTENT_EVENT_MANIFEST {
+                continue;
+            }
             entries.push(decode_entry(row)?);
         }
         Ok(entries)

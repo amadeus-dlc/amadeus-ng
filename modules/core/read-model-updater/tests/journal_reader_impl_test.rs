@@ -99,6 +99,36 @@ async fn the_journal_reads_every_event_in_global_order() {
 }
 
 #[tokio::test]
+async fn a_row_of_the_intent_stream_is_passed_over_not_corrupt() {
+    // intent 自身のジャーナル (issue #50) は同じストアファイルの同じ journal 表に同居する。
+    // 実行の投影にとっては**既知の別ストリーム**であり、破損ではない — またいで読み進める。
+    // intent 行からの投影 (intents.json の骨格材料) は issue #56 の課題である。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO journal (pkey, skey, aid, seq_nr, payload, occurred_at, manifest)              VALUES ('Intent-0', 'Intent-018f3b2c-4d5e-7f60-8abc-def012345678-1',              '018f3b2c-4d5e-7f60-8abc-def012345678', 1, X'7B7D', 0, 'intent-event/1')",
+            [],
+        )
+        .expect("intent ストリームの行を差し込む");
+
+    let reader = fixture.reader();
+    let rows = reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("intent 行は破損ではない");
+    assert_eq!(rows.len(), 5, "実行のイベントだけが返る");
+    assert!(
+        rows.iter()
+            .all(|entry| entry.execution_id() == &execution_id()),
+        "intent 行は実行の投影に流れ込まない"
+    );
+}
+
+#[tokio::test]
 async fn the_journal_reads_only_the_difference() {
     let fixture = Fixture::new();
     let mut store = fixture.store();
