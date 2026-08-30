@@ -1,0 +1,6 @@
+{
+  // 監査シャード (`<record>/audit/*.md`) は機械追記の台帳で、同型見出しの反復
+  // (`## Subagent Completed` など) が形式そのものである — MD024 の対象外にする
+  // (バイトの正本は upstream 逐語形式で、lint 適合のための改変はパリティを壊す)。
+  "ignores": ["aidlc/spaces/*/intents/*/audit/*.md"]
+}
