@@ -113,7 +113,8 @@ pub use stage_key::StageKey;
 pub use stage_name::StageName;
 pub use start_request::StartRequest;
 pub use steering_binding::{Bindings, BundleDigest, DirectiveDigest, RouteDigest, StateBinding};
-pub use steering_digest::{bundle_digest, directive_digest, route_digest, state_binding};
+// steering ダイジェストの導出は所有する型の関連メソッド (steering_digest モジュールの impl —
+// coding-rules/domain-services.md)。輸出する自由関数は無い。
 pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
 pub use token_version::TokenVersion;
 pub use unit_ref::{UnitKind, UnitName, UnitRef};

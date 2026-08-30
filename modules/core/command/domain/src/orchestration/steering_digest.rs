@@ -3,9 +3,10 @@
 //! ダイジェストは CPU とメモリだけを使う計算であり、I/O を持たない — したがってポートでは
 //! なくドメインの責務である (オーナー裁定 2026-08-30「CPU とメモリだけを使った計算機のこと
 //! をいっているならドメインモデルの責務だろ」。旧 `ContinueTokenCodec` ポートの廃止 —
-//! issue #45)。素材の正本はすべてドメインの型 ([`SteeringPlan`] / [`RunStageDirective`] /
-//! [`StageRoute`] / [`IntentExecution`]) が持っており、複数の型を横断して素材を束ねるので
-//! 単一の集約のメソッドにはせず、この導出モジュールに閉じる。
+//! issue #45)。各ダイジェストの素材の正本は**それぞれ 1 つの型**が持つので、導出は自由関数
+//! ではなく**所有する型の関連メソッド**である (`coding-rules/domain-services.md` — 対象を
+//! 決めれば `::` / `.` で全タスクが見える)。素材の組み方 (canon_json 手組み) は 4 種で同じ
+//! 規律なので、`impl` ブロックをこのモジュールに束ねて材料ヘルパを共有する。
 //!
 //! # 素材は名前付き構造の canon_json 手組みである
 //!
@@ -29,96 +30,105 @@ use crate::workflow_definition::{StageRoute, StageSlug};
 
 use super::directive::{GateField, RunStageDirective};
 
-/// ルール束のダイジェスト (`b`) — piece の読み順 (path + text の列)。
-#[must_use]
-pub fn bundle_digest(plan: &SteeringPlan) -> BundleDigest {
-    let pieces = plan
-        .chunks()
-        .iter()
-        .flatten()
-        .map(|piece| {
+impl SteeringPlan {
+    /// ルール束のダイジェスト (`b`) — piece の読み順 (path + text の列)。
+    #[must_use]
+    pub fn bundle_digest(&self) -> BundleDigest {
+        let pieces = self
+            .chunks()
+            .iter()
+            .flatten()
+            .map(|piece| {
+                object([
+                    ("path", JsonValue::String(piece.path().to_string())),
+                    ("text", JsonValue::String(piece.text().to_string())),
+                ])
+            })
+            .collect();
+        BundleDigest::new(hash_compact(&JsonValue::Array(pieces)).rendered())
+    }
+}
+
+impl RunStageDirective {
+    /// 届けようとしている run-stage のダイジェスト (`d`) — キー項目の名前付き素材。
+    #[must_use]
+    pub fn directive_digest(&self) -> DirectiveDigest {
+        let unit = self.unit().map_or(JsonValue::Null, |unit| {
             object([
-                ("path", JsonValue::String(piece.path().to_string())),
-                ("text", JsonValue::String(piece.text().to_string())),
+                ("name", JsonValue::String(unit.name().as_str().to_string())),
+                ("kind", JsonValue::String(unit.kind().as_str().to_string())),
             ])
-        })
-        .collect();
-    BundleDigest::new(hash_compact(&JsonValue::Array(pieces)).rendered())
-}
-
-/// 届けようとしている run-stage のダイジェスト (`d`) — キー項目の名前付き素材。
-#[must_use]
-pub fn directive_digest(run_stage: &RunStageDirective) -> DirectiveDigest {
-    let unit = run_stage.unit().map_or(JsonValue::Null, |unit| {
-        object([
-            ("name", JsonValue::String(unit.name().as_str().to_string())),
-            ("kind", JsonValue::String(unit.kind().as_str().to_string())),
-        ])
-    });
-    let material = object([
-        (
-            "stage",
-            JsonValue::String(run_stage.stage().as_str().to_string()),
-        ),
-        ("gate", gate_material(run_stage.gate())),
-        (
-            "stage_file",
-            JsonValue::String(run_stage.stage_file().to_string()),
-        ),
-        (
-            "memory_path",
-            JsonValue::String(run_stage.memory_path().to_string()),
-        ),
-        (
-            "next_stage",
-            run_stage
-                .next_stage()
-                .map_or(JsonValue::Null, |name| JsonValue::String(name.to_string())),
-        ),
-        ("unit", unit),
-        ("single", JsonValue::Bool(run_stage.is_single())),
-    ]);
-    DirectiveDigest::new(hash_compact(&material).rendered())
-}
-
-/// グラフノードと scope メンバーシップの route ダイジェスト (`r`)。
-#[must_use]
-pub fn route_digest(route: &StageRoute) -> RouteDigest {
-    let material = object([
-        (
-            "stage",
-            JsonValue::String(route.stage().as_str().to_string()),
-        ),
-        (
-            "stages",
-            JsonValue::Array(
-                route
-                    .stages_in_scope()
-                    .iter()
-                    .map(StageSlug::as_str)
-                    .map(|slug| JsonValue::String(slug.to_string()))
-                    .collect(),
+        });
+        let material = object([
+            (
+                "stage",
+                JsonValue::String(self.stage().as_str().to_string()),
             ),
-        ),
-    ]);
-    RouteDigest::new(hash_compact(&material).rendered())
+            ("gate", gate_material(self.gate())),
+            (
+                "stage_file",
+                JsonValue::String(self.stage_file().to_string()),
+            ),
+            (
+                "memory_path",
+                JsonValue::String(self.memory_path().to_string()),
+            ),
+            (
+                "next_stage",
+                self.next_stage()
+                    .map_or(JsonValue::Null, |name| JsonValue::String(name.to_string())),
+            ),
+            ("unit", unit),
+            ("single", JsonValue::Bool(self.is_single())),
+        ]);
+        DirectiveDigest::new(hash_compact(&material).rendered())
+    }
 }
 
-/// state 束縛のダイジェスト (`h`)。
-///
-/// 束縛の対象は「どの intent の・何番目まで進んだ歴史の・どの採番版か」であり、その 3 つは
-/// すべて集約が持っている (オーナー裁定 2026-08-30 — 三つ組 VO は廃止済み)。
-#[must_use]
-pub fn state_binding(execution: &IntentExecution) -> StateBinding {
-    let material = object([
-        (
-            "intent_id",
-            JsonValue::String(execution.intent_id().as_str().to_string()),
-        ),
-        ("seq_nr", integer(execution.seq_nr())),
-        ("version", integer(execution.version())),
-    ]);
-    StateBinding::new(hash_compact(&material).rendered())
+impl StageRoute {
+    /// グラフノードと scope メンバーシップの route ダイジェスト (`r`)。
+    ///
+    /// 型は `workflow_definition` の語彙だが、ダイジェストは steering 連鎖の束縛語彙なので
+    /// `impl` はこのモジュールに置く (素材規律を 4 種で共有するため)。
+    #[must_use]
+    pub fn route_digest(&self) -> RouteDigest {
+        let material = object([
+            (
+                "stage",
+                JsonValue::String(self.stage().as_str().to_string()),
+            ),
+            (
+                "stages",
+                JsonValue::Array(
+                    self.stages_in_scope()
+                        .iter()
+                        .map(StageSlug::as_str)
+                        .map(|slug| JsonValue::String(slug.to_string()))
+                        .collect(),
+                ),
+            ),
+        ]);
+        RouteDigest::new(hash_compact(&material).rendered())
+    }
+}
+
+impl IntentExecution {
+    /// state 束縛のダイジェスト (`h`)。
+    ///
+    /// 束縛の対象は「どの intent の・何番目まで進んだ歴史の・どの採番版か」であり、その
+    /// 3 つはすべてこの集約が持っている (オーナー裁定 2026-08-30 — 三つ組 VO は廃止済み)。
+    #[must_use]
+    pub fn state_binding(&self) -> StateBinding {
+        let material = object([
+            (
+                "intent_id",
+                JsonValue::String(self.intent_id().as_str().to_string()),
+            ),
+            ("seq_nr", integer(self.seq_nr())),
+            ("version", integer(self.version())),
+        ]);
+        StateBinding::new(hash_compact(&material).rendered())
+    }
 }
 
 /// `gate` の素材 — boolean か `"unresolved"` (upstream ワイヤ形式と同じ 3 値)。
@@ -198,18 +208,18 @@ mod tests {
             "org.md".to_string(),
             "# Org\n".to_string(),
         )]]);
-        assert_eq!(bundle_digest(&plan), bundle_digest(&plan));
+        assert_eq!(plan.bundle_digest(), plan.bundle_digest());
         let other = SteeringPlan::new(vec![vec![RuleContent::new(
             "org.md".to_string(),
             "# Org2\n".to_string(),
         )]]);
-        assert_ne!(bundle_digest(&plan), bundle_digest(&other));
+        assert_ne!(plan.bundle_digest(), other.bundle_digest());
 
         let route = StageRoute::new(
             StageSlug::parse("functional-design").unwrap(),
             vec![StageSlug::parse("intent-capture").unwrap()],
         );
-        assert_eq!(route_digest(&route), route_digest(&route));
+        assert_eq!(route.route_digest(), route.route_digest());
         let moved_route = StageRoute::new(
             StageSlug::parse("functional-design").unwrap(),
             vec![
@@ -217,13 +227,13 @@ mod tests {
                 StageSlug::parse("scope-definition").unwrap(),
             ],
         );
-        assert_ne!(route_digest(&route), route_digest(&moved_route));
+        assert_ne!(route.route_digest(), moved_route.route_digest());
 
         let held = execution(4);
-        assert_eq!(state_binding(&held), state_binding(&held));
+        assert_eq!(held.state_binding(), held.state_binding());
         // 版が動けば束縛も動く — 通番が同じでも別の state である。
         let moved = execution(5);
-        assert_ne!(state_binding(&held), state_binding(&moved));
+        assert_ne!(held.state_binding(), moved.state_binding());
     }
 
     #[test]
@@ -238,8 +248,8 @@ mod tests {
             "memory.md",
         )
         .build();
-        let same = directive_digest(&run_stage);
-        assert_eq!(directive_digest(&run_stage), same);
+        let same = run_stage.directive_digest();
+        assert_eq!(run_stage.directive_digest(), same);
         let pinned_single = ContinueTokenBuilder::new(
             StageSlug::parse("functional-design").unwrap(),
             ScopeSlug::parse("classic").unwrap(),
@@ -254,7 +264,7 @@ mod tests {
         )
         .with_single()
         .build();
-        let single = directive_digest(&run_stage.with_pins(&pinned_single));
+        let single = run_stage.with_pins(&pinned_single).directive_digest();
         assert_ne!(single, same, "single ピンはダイジェストに効く");
 
         // unit を運ぶ run-stage は別素材 (unit の名前 + 種別が素材に載る)。
@@ -275,23 +285,22 @@ mod tests {
             UnitKind::Library,
         ))
         .build();
-        let with_unit = directive_digest(&run_stage.with_pins(&pinned_unit));
+        let with_unit = run_stage.with_pins(&pinned_unit).directive_digest();
         assert_ne!(with_unit, same, "unit ピンはダイジェストに効く");
         assert_ne!(with_unit, single);
 
         // gate の 3 値はどれも別素材である (unresolved は文字列素材)。
-        let unresolved = directive_digest(
-            &RunStageDirectiveBuilder::new(
-                StageSlug::parse("functional-design").unwrap(),
-                PhaseId::Inception,
-                "aidlc-architect-agent",
-                StageMode::Inline,
-                GateField::Unresolved,
-                "stage.md",
-                "memory.md",
-            )
-            .build(),
-        );
+        let unresolved = RunStageDirectiveBuilder::new(
+            StageSlug::parse("functional-design").unwrap(),
+            PhaseId::Inception,
+            "aidlc-architect-agent",
+            StageMode::Inline,
+            GateField::Unresolved,
+            "stage.md",
+            "memory.md",
+        )
+        .build()
+        .directive_digest();
         assert_ne!(unresolved, same);
     }
 }

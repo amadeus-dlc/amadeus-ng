@@ -8,10 +8,7 @@
 //! [`RunStageDirective::with_pins`] (ドメインの部分更新)、束縛の照合は型付きダイジェスト
 //! ([`Bindings`]) の等値比較で行う。
 
-use core_command_domain::orchestration::{
-    Bindings, ContinueToken, Directive, StateBinding, bundle_digest, directive_digest,
-    route_digest, state_binding,
-};
+use core_command_domain::orchestration::{Bindings, ContinueToken, Directive, StateBinding};
 use core_command_domain::workflow_definition::WorkflowDefinition;
 
 use super::next_turn_input::NextTurnInput;
@@ -108,7 +105,7 @@ where
             };
         };
         let scope = token.scope();
-        let route = route_digest(&definition.stage_route(scope.as_str(), node));
+        let route = definition.stage_route(scope.as_str(), node).route_digest();
         if &route != token.bindings().route() {
             return Directive::Error {
                 message: wording::ROUTE_CHANGED.to_string(),
@@ -141,8 +138,8 @@ where
             }
         };
         let bindings = Bindings::new(
-            bundle_digest(&plan),
-            directive_digest(&rebuilt),
+            plan.bundle_digest(),
+            rebuilt.directive_digest(),
             route,
             state,
         );
@@ -198,7 +195,7 @@ where
                     message: wording::STATE_MOVED_ON.to_string(),
                 })
             })?;
-        let current = state_binding(&execution);
+        let current = execution.state_binding();
         if &current != bound {
             return Err(Box::new(Directive::Error {
                 message: wording::STATE_MOVED_ON.to_string(),

@@ -17,8 +17,7 @@ use core_command_domain::orchestration::{
     AskDirective, AskKind, Bindings, ConfigField, ContinueTokenBuilder, Directive, EngineCommand,
     GateField, Intent, IntentExecution, LoadSteeringDirective, NextDecision, NextRequest,
     RunStageDirective, RunStageDirectiveBuilder, ScopeResolutionError, StageIndex, StageName,
-    StateBinding, SteeringPart, bundle_digest, directive_digest, resolve_scope, route_digest,
-    state_binding,
+    StateBinding, SteeringPart, resolve_scope,
 };
 use core_command_domain::workflow_definition::{
     PhaseId, PlanAction, ScopeSlug, StageMode, StageNode, WorkflowDefinition,
@@ -473,9 +472,9 @@ where
             return Directive::RunStage(run_stage.with_rules_in_context(plan.delivered_paths()));
         };
         let bindings = Bindings::new(
-            bundle_digest(&plan),
-            directive_digest(run_stage),
-            route_digest(&definition.stage_route(scope.as_str(), node)),
+            plan.bundle_digest(),
+            run_stage.directive_digest(),
+            definition.stage_route(scope.as_str(), node).route_digest(),
             state,
         );
         emit_part(&first, run_stage, scope, &bindings)
@@ -483,7 +482,7 @@ where
 
     /// state 束縛のダイジェスト (state ありのときだけ)。
     fn state_binding(context: Option<&LoadedWorkflow>) -> Option<StateBinding> {
-        context.map(|context| state_binding(&context.execution))
+        context.map(|context| context.execution.state_binding())
     }
 
     /// active-intent カーソルが指す集約群を読む。読取失敗は逐語メッセージで返す (材料は
