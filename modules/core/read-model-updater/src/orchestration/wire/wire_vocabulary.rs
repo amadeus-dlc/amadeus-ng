@@ -5,7 +5,7 @@
 //! 書く側の同名モジュールとも共有しない (`mod.rs` の側ごと専用化)。両者が一致していることは
 //! 横断適合テストが固定する。
 
-use core_command_domain::orchestration::{AutonomyMode, JumpDirection};
+use core_command_domain::orchestration::AutonomyMode;
 use core_command_domain::workflow_definition::{BrownfieldGreenfield, PhaseId, PlanAction};
 
 use super::wire_error::WireDecodeError;
@@ -44,25 +44,6 @@ pub(crate) fn autonomy_of(raw: &str) -> Result<AutonomyMode, WireDecodeError> {
         "Autonomous" => Ok(AutonomyMode::Autonomous),
         "Gated" => Ok(AutonomyMode::Gated),
         other => Err(WireDecodeError::malformed("autonomy", other)),
-    }
-}
-
-/// jump の方向の綴り。
-pub(crate) const fn direction_spelling(value: JumpDirection) -> &'static str {
-    match value {
-        JumpDirection::Forward => "Forward",
-        JumpDirection::Backward => "Backward",
-        JumpDirection::Redo => "Redo",
-    }
-}
-
-/// jump の方向の復号。
-pub(crate) fn direction_of(raw: &str) -> Result<JumpDirection, WireDecodeError> {
-    match raw {
-        "Forward" => Ok(JumpDirection::Forward),
-        "Backward" => Ok(JumpDirection::Backward),
-        "Redo" => Ok(JumpDirection::Redo),
-        other => Err(WireDecodeError::malformed("direction", other)),
     }
 }
 
@@ -122,13 +103,6 @@ mod tests {
             assert_eq!(autonomy_of(autonomy_spelling(value)).unwrap(), value);
         }
         for value in [
-            JumpDirection::Forward,
-            JumpDirection::Backward,
-            JumpDirection::Redo,
-        ] {
-            assert_eq!(direction_of(direction_spelling(value)).unwrap(), value);
-        }
-        for value in [
             PhaseId::Initialization,
             PhaseId::Ideation,
             PhaseId::Inception,
@@ -151,7 +125,6 @@ mod tests {
         // 例えば PhaseId はここでは大文字始まり、`stage-graph.json` 面では小文字である。
         assert_eq!(plan_action_spelling(PlanAction::Execute), "Execute");
         assert_eq!(autonomy_spelling(AutonomyMode::Gated), "Gated");
-        assert_eq!(direction_spelling(JumpDirection::Forward), "Forward");
         assert_eq!(phase_spelling(PhaseId::Ideation), "Ideation");
         assert_eq!(
             PhaseId::Ideation.as_str(),
@@ -171,7 +144,6 @@ mod tests {
             WireDecodeError::malformed("overlay", "EXECUTE")
         );
         assert!(autonomy_of("gated").is_err());
-        assert!(direction_of("forward").is_err());
         assert!(phase_of("ideation", "phase").is_err());
         assert!(project_type_of("Greenfield").is_err());
     }

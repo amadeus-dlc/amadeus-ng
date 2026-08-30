@@ -373,7 +373,7 @@ mod tests {
     };
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        CommandError, Intent, IntentExecution, IntentExecutionEvent, PhaseBoundary, Verdict,
+        CommandError, Intent, IntentExecution, IntentExecutionEvent, Verdict,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
     use core_command_domain::workspace::CheckboxState;
@@ -504,7 +504,6 @@ mod tests {
         };
         assert_eq!(approved.stage(), &slug(1));
         assert_eq!(approved.user_input(), Some("Approve"));
-        assert_eq!(approved.next_stage(), Some(&slug(2)));
     }
 
     #[tokio::test]
@@ -522,7 +521,6 @@ mod tests {
             panic!("StageCompleted を期待した");
         };
         assert_eq!(completed.stage(), &slug(0));
-        assert_eq!(completed.next_stage(), Some(&slug(1)));
     }
 
     #[tokio::test]
@@ -543,7 +541,6 @@ mod tests {
             panic!("GateRejected を期待した");
         };
         assert_eq!(rejected.feedback(), Some("Sharpen the testing posture."));
-        assert_eq!(rejected.revision_count(), 1);
     }
 
     #[tokio::test]
@@ -590,7 +587,6 @@ mod tests {
             panic!("StageSkipped を期待した");
         };
         assert_eq!(skipped.reason(), "Not applicable");
-        assert_eq!(skipped.next_stage(), Some(&slug(2)));
     }
 
     // ---- 冪等・no-op ----
@@ -864,49 +860,6 @@ mod tests {
             subject.repository().committed().is_empty(),
             "拒否されたコマンドは 1 バイトも書かない"
         );
-    }
-
-    // ---- 層の境界 ----
-
-    #[tokio::test]
-    async fn the_phase_boundary_comes_from_the_aggregate_not_from_the_use_case() {
-        // 裁定 2 — ユースケースは境界を導出しないし、渡しもしない。
-        let (intent, mut aggregate, _) = start_from_plan(&[
-            (PhaseId::Initialization, PlanAction::Execute, false),
-            (PhaseId::Ideation, PlanAction::Execute, false),
-            (PhaseId::Inception, PlanAction::Execute, false),
-        ]);
-        aggregate
-            .complete_stage(&intent, at())
-            .expect("初期化は完了できる");
-        let mut subject = use_case((intent, aggregate), 1);
-        subject
-            .execute(None, forward(), at())
-            .await
-            .expect("承認は通る");
-        let IntentExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
-        else {
-            panic!("GateApproved を期待した");
-        };
-        assert_eq!(
-            approved.phase_boundary(),
-            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception))
-        );
-    }
-
-    #[tokio::test]
-    async fn approving_the_last_stage_reports_no_next_stage() {
-        let mut subject = use_case(at_the_first_gate(2), 1);
-        subject
-            .execute(None, forward(), at())
-            .await
-            .expect("最終ステージも承認できる");
-        let IntentExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
-        else {
-            panic!("GateApproved を期待した");
-        };
-        assert_eq!(approved.next_stage(), None);
-        assert_eq!(approved.phase_boundary(), None);
     }
 
     // ---- 入力の正規化 ----

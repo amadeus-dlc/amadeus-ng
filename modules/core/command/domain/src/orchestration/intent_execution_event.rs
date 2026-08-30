@@ -21,8 +21,6 @@
 
 use super::autonomy_mode::AutonomyMode;
 use super::intent::Intent;
-use super::jump_direction::JumpDirection;
-use super::phase_boundary::PhaseBoundary;
 use super::stage_entry::StageEntry;
 use super::workspace_scan::WorkspaceScan;
 use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefinitionId};
@@ -32,9 +30,15 @@ use crate::workflow_definition::{DefinitionRevision, StageSlug, WorkflowDefiniti
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
 /// するので専用の材料型を持たない単位変種にした。
+#[expect(
+    clippy::large_enum_variant,
+    reason = "イベント痩身 (issue #56) で他変種は事実のみになったが、Started はまだ Intent の \
+              複製を運ぶ — 計画の正本供給を Intent 自身のジャーナルへ移す issue #50 が前提の \
+              残件であり、Box で包んでも意味は変わらない"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentExecutionEvent {
-    /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2)。
+    /// 実行の開始 (解決済み計画を自己完結で持つ — BR2.2。Intent 複製の撤去は #50 待ち)。
     Started(Started),
     /// 非ゲート (initialization フェーズ) ステージの完了。
     StageCompleted(StageCompleted),
@@ -141,30 +145,26 @@ impl Started {
     }
 }
 
-/// `StageCompleted` のペイロード。`next_stage` が `None` ならワークフロー完了。
+/// `StageCompleted` のペイロード — 起きた事実 (どのステージが完了したか) だけを運ぶ。
+///
+/// 次カーソルは載せない — 導出された状態であり、適用側 (集約) とリードモデル側 (RMU) が
+/// それぞれ自分の状態から導く (オーナー裁定 2026-08-30「イベントに状態は含めるな」)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageCompleted {
     stage: StageSlug,
-    next_stage: Option<StageSlug>,
 }
 
 impl StageCompleted {
-    /// 完了したステージと次に開くステージ。
+    /// 完了したステージ。
     #[must_use]
-    pub const fn new(stage: StageSlug, next_stage: Option<StageSlug>) -> StageCompleted {
-        StageCompleted { stage, next_stage }
+    pub const fn new(stage: StageSlug) -> StageCompleted {
+        StageCompleted { stage }
     }
 
     /// 完了したステージ。
     #[must_use]
     pub const fn stage(&self) -> &StageSlug {
         &self.stage
-    }
-
-    /// 次に開くステージ (`None` = ワークフロー完了)。
-    #[must_use]
-    pub const fn next_stage(&self) -> Option<&StageSlug> {
-        self.next_stage.as_ref()
     }
 }
 
@@ -195,33 +195,21 @@ impl GateOpened {
     }
 }
 
-/// `GateApproved` のペイロード。`phase_boundary` は集約が自分の計画から導出する投影材料 (C5)。
+/// `GateApproved` のペイロード — 事実 (どのゲートが・どの入力で承認されたか) だけを運ぶ。
+///
+/// 次カーソルとフェーズ境界は載せない — どちらも導出された状態であり、適用側とリードモデル
+/// 側が自分の状態から導く (オーナー裁定 2026-08-30)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateApproved {
     stage: StageSlug,
     user_input: Option<String>,
-    next_stage: Option<StageSlug>,
-    phase_boundary: Option<PhaseBoundary>,
 }
 
 impl GateApproved {
-    /// 承認されたステージと、承認時の人間入力・次ステージ・フェーズ境界。
-    ///
-    /// 4 成分はすべて `IntentExecution::approve_gate` が組む — `next_stage` と
-    /// `phase_boundary` は解決済み計画からの導出であり、外から与えられる材料ではない。
+    /// 承認されたステージと、承認時の人間入力。
     #[must_use]
-    pub const fn new(
-        stage: StageSlug,
-        user_input: Option<String>,
-        next_stage: Option<StageSlug>,
-        phase_boundary: Option<PhaseBoundary>,
-    ) -> GateApproved {
-        GateApproved {
-            stage,
-            user_input,
-            next_stage,
-            phase_boundary,
-        }
+    pub const fn new(stage: StageSlug, user_input: Option<String>) -> GateApproved {
+        GateApproved { stage, user_input }
     }
 
     /// 承認されたステージ。
@@ -235,41 +223,24 @@ impl GateApproved {
     pub fn user_input(&self) -> Option<&str> {
         self.user_input.as_deref()
     }
-
-    /// 次に開くステージ (`None` = ワークフロー完了)。
-    #[must_use]
-    pub const fn next_stage(&self) -> Option<&StageSlug> {
-        self.next_stage.as_ref()
-    }
-
-    /// 跨いだフェーズ境界 (集約が計画から導出した投影材料。同一フェーズ内・最終なら `None`)。
-    #[must_use]
-    pub const fn phase_boundary(&self) -> Option<PhaseBoundary> {
-        self.phase_boundary
-    }
 }
 
-/// `GateRejected` のペイロード。`revision_count` は集約が +1 した後の値 (BR1.4)。
+/// `GateRejected` のペイロード — 事実 (どのゲートが・どの理由で差し戻されたか) だけを運ぶ。
+///
+/// 改訂回数は載せない — 適用後の値 = 状態である。集約は自分のカウンタを +1 し、RMU は
+/// リードモデルの `Revision Count` を read-modify-write する (upstream `aidlc-state.ts`
+/// 自身が getField + 1 で書いており、この導出が正本互換 — オーナー裁定 2026-08-30)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateRejected {
     stage: StageSlug,
     feedback: Option<String>,
-    revision_count: u32,
 }
 
 impl GateRejected {
-    /// 差し戻したステージと、差し戻し理由・改訂回数。
+    /// 差し戻したステージと、差し戻し理由。
     #[must_use]
-    pub const fn new(
-        stage: StageSlug,
-        feedback: Option<String>,
-        revision_count: u32,
-    ) -> GateRejected {
-        GateRejected {
-            stage,
-            feedback,
-            revision_count,
-        }
+    pub const fn new(stage: StageSlug, feedback: Option<String>) -> GateRejected {
+        GateRejected { stage, feedback }
     }
 
     /// 差し戻したステージ。
@@ -282,12 +253,6 @@ impl GateRejected {
     #[must_use]
     pub fn feedback(&self) -> Option<&str> {
         self.feedback.as_deref()
-    }
-
-    /// 差し戻し後の改訂回数 (状態ファイル `Revision Count` の材料)。
-    #[must_use]
-    pub const fn revision_count(&self) -> u32 {
-        self.revision_count
     }
 }
 
@@ -316,22 +281,13 @@ impl StageRevised {
 pub struct StageSkipped {
     stage: StageSlug,
     reason: String,
-    next_stage: Option<StageSlug>,
 }
 
 impl StageSkipped {
-    /// 読み飛ばしたステージと、理由・次ステージ。
+    /// 読み飛ばしたステージと、理由。次カーソルは載せない (導出 — オーナー裁定 2026-08-30)。
     #[must_use]
-    pub const fn new(
-        stage: StageSlug,
-        reason: String,
-        next_stage: Option<StageSlug>,
-    ) -> StageSkipped {
-        StageSkipped {
-            stage,
-            reason,
-            next_stage,
-        }
+    pub const fn new(stage: StageSlug, reason: String) -> StageSkipped {
+        StageSkipped { stage, reason }
     }
 
     /// 読み飛ばしたステージ。
@@ -345,71 +301,29 @@ impl StageSkipped {
     pub fn reason(&self) -> &str {
         &self.reason
     }
-
-    /// 次に開くステージ (`None` = ワークフロー完了)。
-    #[must_use]
-    pub const fn next_stage(&self) -> Option<&StageSlug> {
-        self.next_stage.as_ref()
-    }
 }
 
-/// `Jumped` のペイロード。承認の消去は `direction` と `target` から適用側が導出する (BR1.6)。
+/// `Jumped` のペイロード — 事実 (どこへ跳んだか) だけを運ぶ。
+///
+/// 方向・出発点・読み飛ばし列・巻き戻し列は載せない — すべて跳躍規則 (BR1.6) による導出で
+/// あり、適用側 (集約) とリードモデル側 (RMU) がそれぞれ自分の状態 (カーソル・checkbox・
+/// 実効プラン) から導く (オーナー裁定 2026-08-30「イベントに状態は含めるな」)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Jumped {
-    direction: JumpDirection,
-    source: StageSlug,
     target: StageSlug,
-    stages_reset: Vec<StageSlug>,
-    stages_skipped: Vec<StageSlug>,
 }
 
 impl Jumped {
-    /// 方向・出発点・到達点と、pending へ戻す列 / skipped にする列。
+    /// 跳んだ先。
     #[must_use]
-    pub const fn new(
-        direction: JumpDirection,
-        source: StageSlug,
-        target: StageSlug,
-        stages_reset: Vec<StageSlug>,
-        stages_skipped: Vec<StageSlug>,
-    ) -> Jumped {
-        Jumped {
-            direction,
-            source,
-            target,
-            stages_reset,
-            stages_skipped,
-        }
-    }
-
-    /// 跳んだ方向 (カーソルとターゲットの大小から導出済み)。
-    #[must_use]
-    pub const fn direction(&self) -> JumpDirection {
-        self.direction
-    }
-
-    /// 跳ぶ前のカーソル位置。
-    #[must_use]
-    pub const fn source(&self) -> &StageSlug {
-        &self.source
+    pub const fn new(target: StageSlug) -> Jumped {
+        Jumped { target }
     }
 
     /// 跳んだ先。
     #[must_use]
     pub const fn target(&self) -> &StageSlug {
         &self.target
-    }
-
-    /// pending へ戻したステージ列 (backward)。
-    #[must_use]
-    pub fn stages_reset(&self) -> &[StageSlug] {
-        &self.stages_reset
-    }
-
-    /// skipped にしたステージ列 (forward)。
-    #[must_use]
-    pub fn stages_skipped(&self) -> &[StageSlug] {
-        &self.stages_skipped
     }
 }
 
@@ -433,27 +347,21 @@ impl Parked {
     }
 }
 
-/// `Recomposed` のペイロード。1 コマンドの複数反転をまとめて 1 イベントにする (C5)。
+/// `Recomposed` のペイロード — 事実 (どの反転が起きたか) だけを運ぶ。
+///
+/// 適用後の in-scope 列は載せない — 適用後の状態であり、適用側とリードモデル側が自分の
+/// 実効プランから導く (オーナー裁定 2026-08-30)。1 コマンドの複数反転は 1 イベント (C5)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recomposed {
     skipped: Vec<StageSlug>,
     added: Vec<StageSlug>,
-    stages_in_scope: Vec<StageSlug>,
 }
 
 impl Recomposed {
-    /// EXECUTE → SKIP にした列、SKIP → EXECUTE にした列、適用後の in-scope 列。
+    /// EXECUTE → SKIP にした列、SKIP → EXECUTE にした列。
     #[must_use]
-    pub const fn new(
-        skipped: Vec<StageSlug>,
-        added: Vec<StageSlug>,
-        stages_in_scope: Vec<StageSlug>,
-    ) -> Recomposed {
-        Recomposed {
-            skipped,
-            added,
-            stages_in_scope,
-        }
+    pub const fn new(skipped: Vec<StageSlug>, added: Vec<StageSlug>) -> Recomposed {
+        Recomposed { skipped, added }
     }
 
     /// EXECUTE → SKIP に反転したステージ列。
@@ -466,12 +374,6 @@ impl Recomposed {
     #[must_use]
     pub fn added(&self) -> &[StageSlug] {
         &self.added
-    }
-
-    /// 適用後に実効プランが EXECUTE のステージ列 (状態ファイル `Total Stages` の材料)。
-    #[must_use]
-    pub fn stages_in_scope(&self) -> &[StageSlug] {
-        &self.stages_in_scope
     }
 }
 
@@ -503,8 +405,7 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, Created, IntentId, JumpDirection, PhaseBoundary, StageDisplay, StageEntry,
-        StartRequest, WorkspaceScan,
+        AutonomyMode, Created, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -561,65 +462,40 @@ mod tests {
 
     #[test]
     fn the_stage_lifecycle_payloads_carry_their_slugs_and_material() {
-        let completed = StageCompleted::new(slug("state-init"), Some(slug("intent-capture")));
+        let completed = StageCompleted::new(slug("state-init"));
         assert_eq!(completed.stage(), &slug("state-init"));
-        assert_eq!(completed.next_stage(), Some(&slug("intent-capture")));
 
         let opened = GateOpened::new(slug("intent-capture"), vec!["intent.md".to_string()]);
         assert_eq!(opened.stage(), &slug("intent-capture"));
         assert_eq!(opened.artifacts(), ["intent.md".to_string()]);
 
-        let approved = GateApproved::new(
-            slug("intent-capture"),
-            Some("looks good".to_string()),
-            None,
-            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception)),
-        );
+        let approved = GateApproved::new(slug("intent-capture"), Some("looks good".to_string()));
+        assert_eq!(approved.stage(), &slug("intent-capture"));
         assert_eq!(approved.user_input(), Some("looks good"));
-        assert_eq!(approved.next_stage(), None);
-        assert_eq!(
-            approved.phase_boundary(),
-            Some(PhaseBoundary::new(PhaseId::Ideation, PhaseId::Inception))
-        );
 
-        let rejected = GateRejected::new(slug("intent-capture"), None, 2);
+        let rejected = GateRejected::new(slug("intent-capture"), None);
+        assert_eq!(rejected.stage(), &slug("intent-capture"));
         assert_eq!(rejected.feedback(), None);
-        assert_eq!(rejected.revision_count(), 2);
 
         let revised = StageRevised::new(slug("intent-capture"));
         assert_eq!(revised.stage(), &slug("intent-capture"));
 
-        let skipped = StageSkipped::new(slug("market-research"), "out of scope".to_string(), None);
+        let skipped = StageSkipped::new(slug("market-research"), "out of scope".to_string());
+        assert_eq!(skipped.stage(), &slug("market-research"));
         assert_eq!(skipped.reason(), "out of scope");
-        assert_eq!(skipped.next_stage(), None);
     }
 
     #[test]
     fn the_control_payloads_carry_the_jump_park_and_recompose_material() {
-        let jumped = Jumped::new(
-            JumpDirection::Backward,
-            slug("intent-capture"),
-            slug("state-init"),
-            vec![slug("intent-capture")],
-            Vec::new(),
-        );
-        assert_eq!(jumped.direction(), JumpDirection::Backward);
-        assert_eq!(jumped.source(), &slug("intent-capture"));
+        let jumped = Jumped::new(slug("state-init"));
         assert_eq!(jumped.target(), &slug("state-init"));
-        assert_eq!(jumped.stages_reset(), [slug("intent-capture")]);
-        assert!(jumped.stages_skipped().is_empty());
 
         let parked = Parked::new(slug("intent-capture"));
         assert_eq!(parked.stage(), &slug("intent-capture"));
 
-        let recomposed = Recomposed::new(
-            vec![slug("market-research")],
-            Vec::new(),
-            vec![slug("state-init")],
-        );
+        let recomposed = Recomposed::new(vec![slug("market-research")], Vec::new());
         assert_eq!(recomposed.skipped(), [slug("market-research")]);
         assert!(recomposed.added().is_empty());
-        assert_eq!(recomposed.stages_in_scope(), [slug("state-init")]);
 
         let mode = AutonomyModeSet::new(AutonomyMode::Autonomous);
         assert_eq!(mode.mode(), AutonomyMode::Autonomous);
@@ -671,7 +547,7 @@ mod tests {
         let named = [
             (IntentExecutionEvent::Started(started), "Started"),
             (
-                IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"), None)),
+                IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
                 "StageCompleted",
             ),
             (
@@ -679,20 +555,11 @@ mod tests {
                 "GateOpened",
             ),
             (
-                IntentExecutionEvent::GateApproved(GateApproved::new(
-                    slug("intent-capture"),
-                    None,
-                    None,
-                    None,
-                )),
+                IntentExecutionEvent::GateApproved(GateApproved::new(slug("intent-capture"), None)),
                 "GateApproved",
             ),
             (
-                IntentExecutionEvent::GateRejected(GateRejected::new(
-                    slug("intent-capture"),
-                    None,
-                    1,
-                )),
+                IntentExecutionEvent::GateRejected(GateRejected::new(slug("intent-capture"), None)),
                 "GateRejected",
             ),
             (
@@ -703,18 +570,11 @@ mod tests {
                 IntentExecutionEvent::StageSkipped(StageSkipped::new(
                     slug("market-research"),
                     "out of scope".to_string(),
-                    None,
                 )),
                 "StageSkipped",
             ),
             (
-                IntentExecutionEvent::Jumped(Jumped::new(
-                    JumpDirection::Backward,
-                    slug("intent-capture"),
-                    slug("state-init"),
-                    Vec::new(),
-                    Vec::new(),
-                )),
+                IntentExecutionEvent::Jumped(Jumped::new(slug("state-init"))),
                 "Jumped",
             ),
             (
@@ -724,7 +584,6 @@ mod tests {
             (IntentExecutionEvent::Unparked, "Unparked"),
             (
                 IntentExecutionEvent::Recomposed(Recomposed::new(
-                    Vec::new(),
                     Vec::new(),
                     vec![slug("state-init")],
                 )),

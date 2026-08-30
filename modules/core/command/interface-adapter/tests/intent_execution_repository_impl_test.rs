@@ -315,7 +315,6 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction
         at(),
         WireEvent::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
-            None,
         ))),
     )
     .with_manifest(MANIFEST);

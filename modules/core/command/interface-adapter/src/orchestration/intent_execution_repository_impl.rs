@@ -593,7 +593,6 @@ mod tests {
         let (aggregate, _) = genesis();
         let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("state-init").expect("slug"),
-            None,
         ));
         let mut repository = repository();
         repository

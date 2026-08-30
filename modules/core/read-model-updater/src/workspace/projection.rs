@@ -600,7 +600,12 @@ fn gate_rejected(
 ) -> Result<(), ProjectionError> {
     let stage = rejected.stage().as_str();
     let feedback = rejected.feedback().unwrap_or_default();
-    let revisions = rejected.revision_count().to_string();
+    // 改訂回数はイベントに載らない — upstream `aidlc-state.ts` と同じく、リードモデルの
+    // `Revision Count` を読んで +1 する (非数値・欠落は 0 に畳む — 正本互換の導出)。
+    let prior = find_field(read_model.state(), field::REVISION_COUNT)
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(0);
+    let revisions = prior.saturating_add(1).to_string();
 
     let mut gate = AuditFields::new().with(key(key::STAGE)?, stage);
     if rejected.feedback().is_some() {
@@ -671,12 +676,17 @@ fn gate_approved(
     // スコープ件数 8 とは一致しない）。監査行の順序はここでは動かない — `complete_stage` は
     // 状態面だけを触り、行を描かないからである。
     complete_stage(read_model, stage)?;
-    if let Some(boundary) = approved.phase_boundary() {
+    // 次カーソルとフェーズ境界はイベントに載らない — リードモデルの実効プランと計画から
+    // 導く (`Jumped` の境界導出と同じ理由 — 材料が足りているうちはイベントを太らせない)。
+    let next = next_in_effective_scope(read_model, plan, stage);
+    if let Some(next) = &next
+        && let Some(boundary) = crossed_phase_boundary(plan, stage, next)?
+    {
         let completed = completed_count(read_model);
         append_phase_boundary(read_model, at, plan, boundary, &completed)?;
         set_phase_progress_for_advance(read_model, boundary)?;
     }
-    leave_for(read_model, at, plan, approved.next_stage())
+    leave_for(read_model, at, plan, next.as_ref())
 }
 
 // ---------------------------------------------------------------------------
@@ -708,7 +718,8 @@ fn stage_completed(
             .with(key(key::DETAILS)?, &format!("Stage {title} completed")),
     ));
     complete_stage(read_model, stage)?;
-    leave_for(read_model, at, plan, completed.next_stage())
+    let next = next_in_effective_scope(read_model, plan, stage);
+    leave_for(read_model, at, plan, next.as_ref())
 }
 
 /// `StageSkipped` → `STAGE_SKIPPED` + 次ステージの開始。完了数と最終完了ステージは動かさない。
@@ -726,7 +737,8 @@ fn stage_skipped(
             .with(key(key::REASON)?, skipped.reason()),
     ));
     set_checkbox(read_model, skipped.stage().as_str(), CheckboxState::Skipped)?;
-    leave_for(read_model, at, plan, skipped.next_stage())
+    let next = next_in_effective_scope(read_model, plan, skipped.stage());
+    leave_for(read_model, at, plan, next.as_ref())
 }
 
 /// `Jumped` → 読み飛ばした各ステージの `STAGE_SKIPPED` + (フェーズ境界) + `STAGE_JUMPED`
@@ -751,31 +763,87 @@ fn jumped_event(
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
     let target = jumped.target();
-    let wire = direction_wire(jumped.direction());
+    // イベントは到達点しか運ばない — 出発点は自分の `Current Stage` 行、方向は計画上の
+    // 位置の大小、読み飛ばし・巻き戻しの列は跳躍規則 (BR1.6) をリードモデルの行へ適用して
+    // 導く (オーナー裁定 2026-08-30「イベントに状態は含めるな」)。
+    let source_raw = find_field(read_model.state(), field::CURRENT_STAGE).unwrap_or_default();
+    let source =
+        StageSlug::parse(source_raw.trim()).map_err(|_| ProjectionError::UnknownStage {
+            stage: source_raw.trim().to_string(),
+        })?;
+    let position = |slug: &StageSlug| -> Result<usize, ProjectionError> {
+        plan.stages()
+            .iter()
+            .position(|stage| stage.slug() == slug)
+            .ok_or_else(|| unknown(slug))
+    };
+    let (src_at, tgt_at) = (position(&source)?, position(target)?);
+    let direction = JumpDirection::of(src_at, tgt_at);
+    let wire = direction_wire(direction);
     let lowered = wire.to_lowercase();
 
-    for slug in jumped.stages_skipped() {
-        read_model.append_audit(&render_audit_block(
-            EventType::StageSkipped,
-            at,
-            &AuditFields::new()
-                .with(key(key::STAGE)?, slug.as_str())
-                .with(
-                    key(key::REASON)?,
-                    &format!("Skipped by jump to {} ({lowered})", target.as_str()),
-                ),
-        ));
-        set_checkbox(read_model, slug.as_str(), CheckboxState::Skipped)?;
-    }
-    for slug in jumped.stages_reset() {
-        set_checkbox(read_model, slug.as_str(), CheckboxState::Pending)?;
+    let checkboxes = Checkboxes::parse(read_model.state());
+    let state_of = |slug: &StageSlug| {
+        checkboxes
+            .iter()
+            .find(|entry| entry.slug() == slug.as_str())
+            .map(core_command_domain::workspace::CheckboxEntry::state)
+    };
+    match direction {
+        JumpDirection::Forward => {
+            // 中間の未了 + 出発点で稼働中のものを skipped にする。行の並びは upstream の
+            // emit 順 — **中間ステージを計画順に並べたあと、最後に出発点そのもの**が来る
+            // (`jump/execute-forward-across-phases` の実バイト)。
+            let mut skipped: Vec<&StageSlug> = plan
+                .stages()
+                .get(src_at + 1..tgt_at)
+                .unwrap_or_default()
+                .iter()
+                .filter(|stage| {
+                    // 実効 SKIP の中間は触らない (`SKIP` 行はそのまま — upstream 実バイト)。
+                    effective_action(read_model, stage) == PlanAction::Execute
+                        && state_of(stage.slug()).is_some_and(CheckboxState::is_in_flight)
+                })
+                .map(PlannedStage::slug)
+                .collect();
+            if state_of(&source).is_some_and(CheckboxState::is_active) {
+                skipped.push(&source);
+            }
+            for slug in skipped {
+                read_model.append_audit(&render_audit_block(
+                    EventType::StageSkipped,
+                    at,
+                    &AuditFields::new()
+                        .with(key(key::STAGE)?, slug.as_str())
+                        .with(
+                            key(key::REASON)?,
+                            &format!("Skipped by jump to {} ({lowered})", target.as_str()),
+                        ),
+                ));
+                set_checkbox(read_model, slug.as_str(), CheckboxState::Skipped)?;
+            }
+        }
+        JumpDirection::Backward => {
+            // 到達点**以降**の in-scope 既着手を pending へ戻す — upstream は到達点自身も
+            // 一度 pending へ戻してから開始し直す (`jump/execute-backward` の
+            // `**Stages completed**: 0` は到達点の [x] を戻した後の数え直しでしか説明が
+            // 付かない)。
+            for stage in plan.stages().get(tgt_at..).unwrap_or_default() {
+                let touched =
+                    state_of(stage.slug()).is_some_and(|marker| marker != CheckboxState::Pending);
+                if effective_action(read_model, stage) == PlanAction::Execute && touched {
+                    set_checkbox(read_model, stage.slug().as_str(), CheckboxState::Pending)?;
+                }
+            }
+        }
+        JumpDirection::Redo => {}
     }
     // 完了数はジャンプでも**数え直す**。後方ジャンプは `[x]` を `[ ]` へ戻すので減る
     // （`cli/jump/execute-backward` は 4 → 0）。境界をまたがないジャンプでも upstream は
     // 同じ書き換えを打つ（値が動かないだけ）。
     set_field(read_model, field::COMPLETED, &completed_count(read_model))?;
 
-    if let Some(boundary) = crossed_phase_boundary(plan, jumped.source(), target)? {
+    if let Some(boundary) = crossed_phase_boundary(plan, &source, target)? {
         append_jump_phase_boundary(read_model, at, plan, boundary, &lowered)?;
     }
 
@@ -785,14 +853,14 @@ fn jumped_event(
         at,
         &AuditFields::new()
             .with(key(key::DIRECTION)?, wire)
-            .with(key(key::SOURCE)?, jumped.source().as_str())
+            .with(key(key::SOURCE)?, source.as_str())
             .with(key(key::TARGET)?, target.as_str())
             .with(key(key::SCOPE)?, plan.scope())
             .with(
                 key(key::DETAILS)?,
                 &format!(
                     "{wire} jump from {} to {} ({number}). Scope: {}.",
-                    jumped.source().as_str(),
+                    source.as_str(),
                     target.as_str(),
                     plan.scope()
                 ),
@@ -933,7 +1001,20 @@ fn recomposed_event(
     plan: &ResolvedPlan,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
-    let in_scope = recomposed.stages_in_scope().len().to_string();
+    // 適用後の in-scope 数はイベントに載らない — 行末トークンを反転してから自分の行を
+    // 数える (オーナー裁定 2026-08-30)。監査行の位置は従来と同じ (このイベントで 1 行)。
+    for slug in recomposed.skipped() {
+        set_suffix(read_model, slug.as_str(), PlanAction::Skip)?;
+    }
+    for slug in recomposed.added() {
+        set_suffix(read_model, slug.as_str(), PlanAction::Execute)?;
+    }
+    let in_scope = plan
+        .stages()
+        .iter()
+        .filter(|stage| effective_action(read_model, stage) == PlanAction::Execute)
+        .count()
+        .to_string();
     read_model.append_audit(&render_audit_block(
         EventType::Recomposed,
         at,
@@ -943,13 +1024,6 @@ fn recomposed_event(
             .with(key(key::STAGES_ADDED)?, &stage_list(recomposed.added()))
             .with(key(key::STAGES_IN_SCOPE)?, &in_scope),
     ));
-
-    for slug in recomposed.skipped() {
-        set_suffix(read_model, slug.as_str(), PlanAction::Skip)?;
-    }
-    for slug in recomposed.added() {
-        set_suffix(read_model, slug.as_str(), PlanAction::Execute)?;
-    }
     rebuild_plan_rows(read_model, plan)
 }
 
@@ -1243,6 +1317,36 @@ fn completed_count(read_model: &ReadModel) -> String {
     Checkboxes::parse(read_model.state())
         .count_completed()
         .to_string()
+}
+
+/// リードモデルの行末トークンから実効プランを読む (無ければ静的計画の値)。
+///
+/// イベントは事実だけを運ぶ (オーナー裁定 2026-08-30) ので、次カーソル・in-scope 数の材料は
+/// **リードモデル自身**である — `rebuild_plan_rows` と同じ読み方 (状態の正本は自分の行)。
+fn effective_action(read_model: &ReadModel, stage: &PlannedStage) -> PlanAction {
+    Checkboxes::parse(read_model.state())
+        .iter()
+        .find(|entry| entry.slug() == stage.slug().as_str())
+        .and_then(|entry| match entry.rest().trim() {
+            "EXECUTE" => Some(PlanAction::Execute),
+            "SKIP" => Some(PlanAction::Skip),
+            _ => None,
+        })
+        .unwrap_or_else(|| stage.plan_action())
+}
+
+/// 名指しステージの後で実効 EXECUTE の最初のステージ (無ければ `None` = ワークフロー完了)。
+fn next_in_effective_scope(
+    read_model: &ReadModel,
+    plan: &ResolvedPlan,
+    after: &StageSlug,
+) -> Option<StageSlug> {
+    plan.stages()
+        .iter()
+        .skip_while(|stage| stage.slug() != after)
+        .skip(1)
+        .find(|stage| effective_action(read_model, stage) == PlanAction::Execute)
+        .map(|stage| stage.slug().clone())
 }
 
 /// 計画上の表題を引く。
@@ -1644,10 +1748,9 @@ mod tests {
 
     #[test]
     fn approving_the_last_stage_completes_the_workflow_instead_of_starting_one() {
+        // 次は導出 — second の後の実効 EXECUTE は無い (late は SKIP) ので完了行になる。
         let read_model = run(IntentExecutionEvent::GateApproved(GateApproved::new(
             slug("second"),
-            None,
-            None,
             None,
         )));
         assert!(
@@ -1667,14 +1770,11 @@ mod tests {
 
     #[test]
     fn a_phase_boundary_adds_the_three_boundary_rows_in_order() {
+        // 境界はイベントに載らない — state-init (initialization) の次の実効 EXECUTE が
+        // first (inception) なので、計画からの導出で境界が立つ。
         let read_model = run(IntentExecutionEvent::GateApproved(GateApproved::new(
-            slug("first"),
+            slug("state-init"),
             Some("A".to_string()),
-            Some(slug("second")),
-            Some(PhaseBoundary::new(
-                PhaseId::Inception,
-                PhaseId::Construction,
-            )),
         )));
         let events: Vec<&str> = read_model
             .appended_audit()
@@ -1695,10 +1795,9 @@ mod tests {
         assert!(
             read_model
                 .appended_audit()
-                .contains("**Phase boundary**: inception → construction\n")
+                .contains("**Phase boundary**: initialization → inception\n")
         );
-        // 数え直しである — 承認で `first` が `[x]` になった時点の 1 本
-        // （計画上の inception 内スコープ件数 2 ではない）。
+        // 数え直しである — 承認で `state-init` が `[x]` になった時点の 1 本。
         assert!(
             read_model
                 .appended_audit()
@@ -1710,7 +1809,6 @@ mod tests {
     fn completing_a_non_gated_stage_uses_the_completed_wording() {
         let read_model = run(IntentExecutionEvent::StageCompleted(StageCompleted::new(
             slug("state-init"),
-            Some(slug("first")),
         )));
         assert!(
             read_model
@@ -1722,13 +1820,26 @@ mod tests {
 
     #[test]
     fn a_backward_jump_resets_the_downstream_checkboxes() {
-        let read_model = run(IntentExecutionEvent::Jumped(Jumped::new(
-            JumpDirection::Backward,
-            slug("second"),
-            slug("first"),
-            vec![slug("second")],
-            Vec::new(),
-        )));
+        // 出発点はイベントに載らない — 自分の `Current Stage` 行から導く。second で稼働中の
+        // 状態を作り、first へ跳ぶ。
+        let mut read_model = ReadModel::new(
+            SKELETON
+                .replace(
+                    "- **Current Stage**: state-init",
+                    "- **Current Stage**: second",
+                )
+                .replace("- [-] state-init — EXECUTE", "- [x] state-init — EXECUTE")
+                .replace("- [ ] first — EXECUTE", "- [x] first — EXECUTE")
+                .replace("- [ ] second — EXECUTE", "- [-] second — EXECUTE"),
+        );
+        project(
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(slug(
+                "first",
+            ))))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
         assert!(
             read_model
                 .appended_audit()
@@ -1755,15 +1866,10 @@ mod tests {
 
     #[test]
     fn recomposing_back_into_scope_moves_the_entry_the_other_way() {
+        // 適用後の in-scope 数は行末トークンの反転後に自分の行から導く (= 4)。
         let read_model = run(IntentExecutionEvent::Recomposed(Recomposed::new(
             Vec::new(),
             vec![slug("late")],
-            vec![
-                slug("state-init"),
-                slug("first"),
-                slug("second"),
-                slug("late"),
-            ],
         )));
         // Execute 行は graph 順に組み直される（4.1 は末尾で、ここでは順序が変わらない）。
         assert!(
