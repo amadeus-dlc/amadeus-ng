@@ -27071,3 +27071,224 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: b28 完了。全ゲート緑、差分は配置・参照パス・doc のみです。\n\n## 実施内容\n\n**A. 物理移動 — 32 ファイル（全て `git mv`、履歴保持）**\n\n`src/workflow_view/`（25）と `src/execution_view/`（6）をディレクトリごと、`orchestration/memory_rules.rs`（1）を単体で `orchestration/p
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:40:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:40:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a5c3b5d5725c1bd74
+**Message**: b29(配線)に進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:40:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6d25187d9f0b60ed
+**Message**: b29(配線)へ進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:41:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:41:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aeefd79410a77d54c
+**Message**: マージまで進めて。次はb29(配線)に着手して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:42:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:42:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aee1cee734169708c
+**Message**: マージまで進めて。次はb29(配線)へ
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:49:04Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:49:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac23cfdde7c6b8548
+**Message**: b28がマージされたら配線Boltに進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:52:13Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:52:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9f7ed4fe3db2c1ae
+**Message**: b29(配線)を進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T08:55:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T08:59:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aaa02fa305c5c985d
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:07:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: a3d8d57aac0322505
+**Message**: 調査完了。以下、実測結果を報告する。\n\n---\n\n# amadeus-ng — steering MAC 鍵と load-steering 分割配信の契約（実測）\n\n---\n\n## 1. steering MAC 鍵ファイル `.aidlc-steering-token-key`\n\n### 1.1 定数と鍵長（upstream 実装）\n\n`/Users/j5ik2o/orca/workspaces
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T09:07:05Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:07:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: ac8cb7b7662ea7a40
+**Message**: ## 0. 出典の整理（重要な実測事実）\n\n指定された6ファイルのうち `research/` 配下の4本は**二次資料**（2026-08-22 の抽出メモ）だった。**一次資料そのもの（upstream as-built 仕様）がこのリポジトリ内に存在する**:\n\n```\n/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/docs/upstream/s
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T09:07:35Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:14:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b29-u7
+**Agent ID**: ab29-u7-be35ad624532640d
+**Message**: 段階0 の契約調査を完了し、team-lead へ報告済みです。実装には入っていません（ブリーフの「GO を待つ」規律どおり）。\n\n## 何が分かったか\n\n一次資料を切り替えたのが最大の収穫です。研究文書 `docs/specs/research/*.md` は写しであり、**upstream の実 TypeScript ソースが `.claude/tools/` にそのまま同梱されている**ので
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:14:13Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a166d48c4e2bfe57d
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:15:07Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4038baac271a5081
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:17:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a463d610abf421fe3
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:33:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a78b8647e317a4ea9
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T09:53:42Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a033e8e434062e69d
+**Message**: 続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T09:59:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T10:00:08Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T10:01:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0aa1b8c5f5e1d691
+**Message**: b30もそのまま進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T10:34:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b29-u7
+**Agent ID**: ab29-u7-be35ad624532640d
+**Message**: Bolt b29 は段階0から段階2まで完了しました。差分は残したままで、コミット・push はしていません。\n\n## 成果\n\n**全ゲート緑**: fmt / clippy / `cargo lint` / `cargo test --workspace` **1311 passed・0 failed**、カバレッジ **98.24%**（床 90%）。`scripts/coverage.sh`
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-31T10:34:43Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
