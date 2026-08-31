@@ -1,0 +1,783 @@
+//! 合成ルートの縦切り — 鋳造から報告まで（コマンド側 → RMU → クエリ側の一巡）。
+//!
+//! `intent-create` が 2 つの集約をジャーナルへ書き、RMU がそれを `aidlc-state.md` と
+//! 監査シャードへ投影し、`next` がその投影を読んで directive を出し、`report` が遷移を
+//! コミットして再び投影される。**両側と中間が実際に噛み合うか**を見る唯一のテストである。
+#![allow(clippy::expect_used, clippy::panic)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use core_infrastructure::canon_json::{JsonValue, parse};
+
+struct Workspace {
+    root: tempfile::TempDir,
+}
+
+impl Workspace {
+    /// 定義 3 入力と memory 層を書き、ストアの置き場だけ用意した fresh なワークスペース。
+    ///
+    /// **カーソルも record も置かない** — intent がまだ生まれていない状態から始める。
+    fn create() -> Workspace {
+        let workspace = Workspace {
+            root: tempfile::tempdir().expect("一時ディレクトリ"),
+        };
+        workspace.write_definition();
+        let memory = workspace.path("aidlc/spaces/default/memory");
+        fs::create_dir_all(&memory).expect("memory");
+        fs::write(memory.join("org.md"), "# Org\n\n規則なし。\n").expect("org.md");
+        // ストアの親 (`intents/`) は upstream の既存ディレクトリ扱いなので先に作る。
+        fs::create_dir_all(workspace.path("aidlc/spaces/default/intents")).expect("intents");
+        workspace
+    }
+
+    fn path(&self, relative: &str) -> PathBuf {
+        self.root.path().join(relative)
+    }
+
+    fn project_dir(&self) -> &Path {
+        self.root.path()
+    }
+
+    fn record_dir(&self) -> Option<PathBuf> {
+        let cursor =
+            fs::read_to_string(self.path("aidlc/spaces/default/intents/active-intent")).ok()?;
+        Some(
+            self.path("aidlc/spaces/default/intents")
+                .join(cursor.trim()),
+        )
+    }
+
+    fn state_file(&self) -> Option<String> {
+        fs::read_to_string(self.record_dir()?.join("aidlc-state.md")).ok()
+    }
+
+    fn audit_shard(&self) -> Option<String> {
+        let audit = self.record_dir()?.join("audit");
+        let entry = fs::read_dir(audit).ok()?.filter_map(Result::ok).next()?;
+        fs::read_to_string(entry.path()).ok()
+    }
+
+    fn write_definition(&self) {
+        let data = self.path(".claude/tools/data");
+        let scopes = self.path(".claude/scopes");
+        fs::create_dir_all(&data).expect("data");
+        fs::create_dir_all(&scopes).expect("scopes");
+        fs::write(
+            data.join("harness.json"),
+            r#"{"name":"claude","harnessDir":".claude","rulesSubdir":"rules"}"#,
+        )
+        .expect("harness.json");
+        let node = |slug: &str, number: &str, name: &str, phase: &str| {
+            format!(
+                r#"{{"slug":"{slug}","number":"{number}","name":"{name}","phase":"{phase}",
+                     "execution":"ALWAYS","mode":"inline","lead_agent":"orchestrator",
+                     "scopes":["classic"]}}"#
+            )
+        };
+        fs::write(
+            data.join("stage-graph.json"),
+            format!(
+                "[{},{},{}]",
+                node("state-init", "0.1", "State Init", "initialization"),
+                node("domain-design", "1.1", "Domain Design", "inception"),
+                node("contract-design", "1.2", "Contract Design", "inception"),
+            ),
+        )
+        .expect("stage-graph.json");
+        fs::write(
+            data.join("scope-grid.json"),
+            r#"{"classic":{"stages":{"state-init":"EXECUTE","domain-design":"EXECUTE","contract-design":"EXECUTE"}}}"#,
+        )
+        .expect("scope-grid.json");
+        fs::write(
+            scopes.join("aidlc-classic.md"),
+            "---\nname: classic\n---\n\n# Classic\n",
+        )
+        .expect("scope identity");
+    }
+}
+
+async fn invoke(workspace: &Workspace, argv0: &str, args: &[&str]) -> aidlc::runtime::Completion {
+    let mut owned: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+    owned.push("--project-dir".to_string());
+    owned.push(workspace.project_dir().to_string_lossy().into_owned());
+    aidlc::runtime::run(argv0, &owned, workspace.project_dir()).await
+}
+
+fn line_of(completion: &aidlc::runtime::Completion) -> JsonValue {
+    let line = completion
+        .line()
+        .unwrap_or_else(|| panic!("stdout に 1 行が要る: {completion:?}"));
+    assert!(!line.contains('\n'), "1 行である: {line}");
+    parse(line).expect("JSON として読める")
+}
+
+fn string_of(value: &JsonValue, key: &str) -> String {
+    match value {
+        JsonValue::Object(members) => match members.get(key) {
+            Some(JsonValue::String(text)) => text.clone(),
+            other => panic!("{key} は文字列であるべき: {other:?}"),
+        },
+        other => panic!("オブジェクトであるべき: {other:?}"),
+    }
+}
+
+/// 鋳造は record を作り、カーソルを据え、リードモデル 2 面を投影する。
+#[tokio::test]
+async fn creating_an_intent_projects_both_read_model_faces() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    // 記録名の形は `<yymmdd>-<kebab ラベル>-<id8>`。3 つの成分を**それぞれ独立に**
+    // 確かめる（記録名から取り出した値を記録名に突き合わせても何も検査したことにならない）。
+    let record = string_of(&line_of(&completion), "record");
+    let (head, id8) = record.rsplit_once('-').expect("`-<id8>` で終わる");
+    assert_eq!(id8.len(), 8, "{record}");
+    assert!(
+        id8.chars()
+            .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase() && c.is_ascii_hexdigit()),
+        "id8 は小文字 16 進: {record}"
+    );
+    let date = head.get(..6).unwrap_or_default();
+    assert!(
+        date.len() == 6 && date.chars().all(|c| c.is_ascii_digit()),
+        "先頭は yymmdd: {record}"
+    );
+    assert_eq!(head.get(6..), Some("-demo-run"), "{record}");
+
+    // カーソルが据わり、record が実在する。
+    let record = workspace.record_dir().expect("カーソルが据わっている");
+    assert!(record.is_dir());
+
+    // RMU が 2 面を描いた。
+    let state = workspace.state_file().expect("状態ファイルが投影された");
+    assert!(state.contains("- **Scope**: classic"), "{state}");
+    assert!(state.contains("state-init"), "{state}");
+    let audit = workspace.audit_shard().expect("監査シャードが投影された");
+    assert!(audit.contains("WORKFLOW_STARTED"), "{audit}");
+}
+
+/// 鋳造の直後に `next` が同じワークスペースで進める（A-1 追加条項の受入）。
+///
+/// カーソルと record が用意されていなければ、`next` は record を解決できずここで倒れる。
+#[tokio::test]
+async fn next_runs_against_the_freshly_created_intent() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let directive = line_of(&completion);
+    // 規則束が小さいので 1 部で収まり、そのまま load-steering が届く。
+    assert_eq!(string_of(&directive, "kind"), "load-steering");
+    // 誕生の投影が initialization を完了させ、最初のゲート付きステージへ着地している
+    // ので、`next` が届けるのは `state-init` ではなく `domain-design` の規則である。
+    assert_eq!(string_of(&directive, "stage"), "domain-design");
+}
+
+/// `report --result` が遷移をコミットし、投影が読み面へ落ちる。
+///
+/// # ここが写している既知の乖離（b29 で発見・未修正）
+///
+/// 誕生の**投影**は初期化ステージを `[x]` にして最初のゲート付きステージへカーソルを
+/// 進めるが、**集約はそれをしていない** — `IntentExecution::start` が出すのは `Started`
+/// 1 本だけで、カーソルは 0（`state-init`）のままである。つまり読み面は書き面より
+/// 先へ進んでいる。
+///
+/// その結果、`report --result completed` は集約のカーソル（`state-init`）を完了させ、
+/// 監査シャードには `STAGE_COMPLETED` が**2 度**現れる（誕生の投影で 1 度、この報告で
+/// もう 1 度）。監査証跡は第一級の成果物なので、この重複は是正されるべきである。
+///
+/// **本テストは現状を逐語で固定している** — 是正が入ればここが落ちるので、乖離が
+/// 静かに残ることはない。
+#[tokio::test]
+async fn reporting_a_verdict_commits_and_projects() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    // 誕生の投影で initialization は完了済み、最初のゲート付きステージが in-flight。
+    let before = workspace.state_file().expect("投影済み");
+    assert!(before.contains("- [x] state-init"), "{before}");
+    assert!(before.contains("- [-] domain-design"), "{before}");
+    let before_completions = workspace
+        .audit_shard()
+        .expect("監査シャード")
+        .matches("STAGE_COMPLETED")
+        .count();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "completed"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(string_of(&line_of(&completion), "kind"), "done");
+    // 遷移がコミットされ、投影が監査へ 1 行足した。
+    let after_completions = workspace
+        .audit_shard()
+        .expect("監査シャード")
+        .matches("STAGE_COMPLETED")
+        .count();
+    assert_eq!(
+        after_completions,
+        before_completions + 1,
+        "報告が監査へ 1 行足す（乖離により対象は state-init である）"
+    );
+}
+
+/// 受理されない `--result` は逐語で拒否される（ビジネス拒否 — stdout・exit 0）。
+#[tokio::test]
+async fn an_unknown_result_is_refused_verbatim() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "ok"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Unknown --result \"ok\". accepted outcomes: approved, completed, complete, done, awaiting-approval, rejected, revised, resume, resumed, skipped."
+    );
+}
+
+/// park は**ビジネス拒否**として stdout に出る（未配線でも自己防衛拒否ではない）。
+#[tokio::test]
+async fn park_is_refused_as_a_business_error_on_stdout() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Cannot park the workflow: park is not wired in this build."
+    );
+}
+
+/// ユーティリティ面の未知動詞は**自己防衛拒否**（stderr・exit 1・stdout は無音）。
+#[tokio::test]
+async fn an_unknown_utility_verb_is_refused_on_stderr() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(&workspace, "aidlc-utility", &["teleport"]).await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert_eq!(
+        completion.diagnostic(),
+        Some("aidlc-orchestrate: Unknown subcommand: teleport")
+    );
+}
+
+/// `report` は `--result` が要る（ビジネス拒否）。
+#[tokio::test]
+async fn reporting_without_a_result_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["report"]).await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "report requires --result <outcome>."
+    );
+}
+
+/// resume 系の結末は遷移ではない — コミットせずに経路を返す。
+#[tokio::test]
+async fn a_resume_result_is_routed_rather_than_committed() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "resume"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Resume is routed, not committed. Run a fresh `next --resume`."
+    );
+}
+
+/// 進行中の実行が無ければ報告先が無い。
+#[tokio::test]
+async fn reporting_before_any_intent_exists_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "completed"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "No workflow execution to report against. Run `next` first."
+    );
+}
+
+/// 記録ディレクトリを作れないときは**何も作らず**拒む（半端な record を残さない）。
+#[tokio::test]
+async fn a_record_directory_that_cannot_be_created_is_refused() {
+    let workspace = Workspace::create();
+    // `intents/` の場所をファイルが占めていれば、その下にディレクトリは作れない。
+    let intents = workspace.path("aidlc/spaces/default/intents");
+    fs::remove_dir_all(&intents).expect("既存の intents を退ける");
+    fs::write(&intents, "not a directory\n").expect("同名のファイル");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: cannot create the record directory:"),
+        "{completion:?}"
+    );
+}
+
+/// ストアを開けないときも拒む（イベントを書けないのに record だけ増やさない）。
+#[tokio::test]
+async fn an_unopenable_store_is_refused() {
+    let workspace = Workspace::create();
+    // ストアファイルの場所をディレクトリが占めていれば SQLite は開けない。
+    fs::create_dir_all(workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite"))
+        .expect("同名のディレクトリ");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("aidlc-orchestrate: cannot open the event store")
+    );
+}
+
+/// `--depth` / `--test-strategy` も `--review` と同じ形で状態ファイルまで届く。
+#[tokio::test]
+async fn the_scope_configuration_flags_reach_the_projected_state_file() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "demo run",
+            "--depth",
+            "standard",
+            "--test-strategy",
+            "minimal",
+        ],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let state = workspace.state_file().expect("状態ファイルが投影された");
+    assert!(state.contains("- **Depth**: standard"), "{state}");
+    assert!(state.contains("- **Test Strategy**: minimal"), "{state}");
+}
+
+/// 鍵が読めなければ `next` は**ビジネス拒否**として逐語で止まる（fail-closed）。
+#[tokio::test]
+async fn an_unreadable_steering_key_stops_next_with_its_wording() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    // 鍵の場所をディレクトリが塞いでいれば「在るのに読めない」になる。
+    let key = workspace
+        .record_dir()
+        .expect("カーソル")
+        .join(".aidlc-steering-token-key");
+    fs::create_dir_all(&key).expect("同名のディレクトリ");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let message = string_of(&line_of(&completion), "message");
+    assert!(message.contains("local key file at"), "{message}");
+}
+
+/// `continue` 側も同じ鍵の失敗で止まる（こちらは鋳造しないので読取の失敗がそのまま出る）。
+#[tokio::test]
+async fn an_unreadable_steering_key_stops_continue_too() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    let key = workspace
+        .record_dir()
+        .expect("カーソル")
+        .join(".aidlc-steering-token-key");
+    fs::create_dir_all(&key).expect("同名のディレクトリ");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["continue", "token"]).await;
+
+    assert_eq!(completion.code(), 0);
+    let message = string_of(&line_of(&completion), "message");
+    assert!(message.contains("local key file at"), "{message}");
+}
+
+/// 上限を超える directive は**出さずに拒む**（1 行 JSON の transport 契約）。
+#[tokio::test]
+async fn an_oversize_directive_is_refused_instead_of_emitted() {
+    let workspace = Workspace::create();
+    // 拒否文言は与えられた `--result` を逐語で引用するので、巨大な値は巨大な directive になる。
+    let huge = "x".repeat(30 * 1024);
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", &huge],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1, "自己防衛拒否");
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert_eq!(
+        completion.diagnostic(),
+        Some("aidlc-orchestrate: refusing to emit a directive larger than 28672 bytes")
+    );
+}
+
+/// 定義が読めなければ鋳造は止まる（壊れたインストールで空の intent を作らない）。
+#[tokio::test]
+async fn a_definition_that_cannot_be_read_stops_the_mint() {
+    let workspace = Workspace::create();
+    fs::remove_file(workspace.path(".claude/tools/data/stage-graph.json")).expect("定義を欠く");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: definition repository: io: NotFound at"),
+        "{completion:?}"
+    );
+    assert!(workspace.record_dir().is_none(), "カーソルは据わらない");
+}
+
+/// 書いた後の投影に失敗したら**それも拒否する**（書けたのに読み面へ落ちない状態を
+/// 「成功」と言わない）。クローン ID の場所をディレクトリが塞いでいると投影は始まれない。
+#[tokio::test]
+async fn a_projection_that_cannot_run_after_the_write_is_refused() {
+    let workspace = Workspace::create();
+    fs::create_dir_all(workspace.path("aidlc/.aidlc-clone-id")).expect("同名のディレクトリ");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: clone id:"),
+        "{completion:?}"
+    );
+}
+
+/// `--stage` は slug でなければ受け付けない（遷移先を取り違えないための門）。
+#[tokio::test]
+async fn a_stage_value_that_is_not_a_slug_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "completed", "--stage", "NOT A SLUG"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "The --stage value is not a stage slug."
+    );
+}
+
+/// カーソル以外のステージを報告すると集約が拒み、その理由が中継される。
+#[tokio::test]
+async fn reporting_a_stage_that_is_not_the_cursor_is_rejected() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "completed",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let message = string_of(&line_of(&completion), "message");
+    assert!(message.starts_with("Transition rejected: "), "{message}");
+}
+
+/// 空間名として成立しないカーソルは**既定へ落とさず**拒む（record とイベントが散るため）。
+#[tokio::test]
+async fn an_invalid_active_space_is_refused_rather_than_defaulted() {
+    let workspace = Workspace::create();
+    fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("カーソル");
+
+    let created = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(created.code(), 1);
+    assert_eq!(
+        created.diagnostic(),
+        Some(
+            "The active space \"../escape\" is not a valid space name. Fix aidlc/active-space (or remove it to use the default space), then run the command again."
+        )
+    );
+
+    // 読み側（report）も同じ判断で止まる。こちらはビジネス拒否層。
+    let reported = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "completed"],
+    )
+    .await;
+    assert_eq!(reported.code(), 0);
+    assert!(
+        string_of(&line_of(&reported), "message").starts_with("The active space \"../escape\""),
+        "{reported:?}"
+    );
+}
+
+/// `--review` は鋳造から状態ファイルまで貫通する。
+#[tokio::test]
+async fn a_review_override_reaches_the_projected_state_file() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "demo run",
+            "--review",
+            "advisory",
+        ],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let state = workspace.state_file().expect("状態ファイルが投影された");
+    assert!(state.contains("- **Review Override**: advisory"), "{state}");
+}
+
+/// 閉集合外の `--review` は upstream 逐語で拒み、**何も作らない**。
+#[tokio::test]
+async fn an_unknown_review_class_is_refused_verbatim() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--review", "strict"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Unknown review class: \"strict\". Valid: adversarial, advisory, none.")
+    );
+    assert!(workspace.record_dir().is_none(), "何も作らない");
+}
+
+/// print が名指しした命令行を、シェルと同じ規則で argv へ割る（テスト用の最小トークナイザ）。
+///
+/// 単一引用符（`shellArg` が出す形。内側は `'"'"'` で綴られる）と二重引用符（`--label`
+/// のプレースホルダ）の両方を剥がす。エスケープ記号は upstream の綴りに現れないので扱わない。
+fn shell_split(command: &str) -> Vec<String> {
+    #[derive(PartialEq, Eq)]
+    enum Quote {
+        None,
+        Single,
+        Double,
+    }
+    let mut argv = Vec::new();
+    let mut token = String::new();
+    let mut open = false;
+    let mut quote = Quote::None;
+    for character in command.chars() {
+        match (&quote, character) {
+            (Quote::None, ' ') => {
+                if open {
+                    argv.push(std::mem::take(&mut token));
+                    open = false;
+                }
+            }
+            (Quote::None, '\'') => {
+                quote = Quote::Single;
+                open = true;
+            }
+            (Quote::None, '"') => {
+                quote = Quote::Double;
+                open = true;
+            }
+            (Quote::Single, '\'') | (Quote::Double, '"') => quote = Quote::None,
+            _ => {
+                token.push(character);
+                open = true;
+            }
+        }
+    }
+    if open {
+        argv.push(token);
+    }
+    argv
+}
+
+/// 名指し側（クエリ側 `next` の誕生 print）と受け口（`intent-create`）が噛み合う。
+///
+/// 命令行はテストが組み立てず、**print が出した文字列から切り出して**そのまま走らせる。
+/// 置き換えるのは `--label` のプレースホルダだけで、これは upstream が明示的に
+/// 「conductor が 2〜3 語のケバブに畳め」と指示している継ぎ目である（`:889-890`）。
+/// 逸脱3（MintIntent の引数面が upstream 完全形か）が壊れたら、受け口側が値を取り違えて
+/// ここが落ちる。
+#[tokio::test]
+async fn the_birth_print_names_a_command_the_receiving_surface_accepts() {
+    let workspace = Workspace::create();
+
+    let named = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["next", "--scope", "classic", "build the auth service"],
+    )
+    .await;
+    assert_eq!(named.code(), 0, "{named:?}");
+    let directive = line_of(&named);
+    assert_eq!(string_of(&directive, "kind"), "print");
+    let message = string_of(&directive, "message");
+    let command = message
+        .split('`')
+        .nth(1)
+        .expect("print はコマンドをバッククォートで括る");
+    assert_eq!(
+        command,
+        "aidlc-utility intent-create --scope classic --arguments='build the auth service' --label \"<2-3 word kebab essence>\""
+    );
+
+    // conductor がラベルを畳む（唯一の置換）。
+    let argv = shell_split(&command.replace("<2-3 word kebab essence>", "auth service"));
+    let (face, rest) = argv.split_first().expect("argv0 がある");
+    assert_eq!(face, "aidlc-utility");
+    let borrowed: Vec<&str> = rest.iter().map(String::as_str).collect();
+
+    let created = invoke(&workspace, face, &borrowed).await;
+
+    assert_eq!(created.code(), 0, "{created:?}");
+    let record = string_of(&line_of(&created), "record");
+    assert!(record.contains("-auth-service-"), "{record}");
+    // 自由記述は intent の Project 欄へ通っている（`--arguments` が届いた証拠）。
+    let state = workspace.state_file().expect("状態ファイルが投影された");
+    assert!(state.contains("build the auth service"), "{state}");
+
+    // 名指し → 実行 → 再び `next`、で最初のステージへ着地する。
+    let resumed = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(string_of(&line_of(&resumed), "stage"), "domain-design");
+}
+
+/// `--scope` の無い鋳造は拒否される（bare invocation で既定の intent を作らない）。
+#[tokio::test]
+async fn creating_an_intent_without_a_scope_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(&workspace, "aidlc-utility", &["intent-create"]).await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None);
+    assert!(workspace.record_dir().is_none(), "何も作らない");
+}

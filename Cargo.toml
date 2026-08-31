@@ -94,6 +94,7 @@ core-command-interface-adapter = { path = "modules/core/command/interface-adapte
 # クエリ側 — RMU が構築したリードモデルだけを読む。自前のクエリモデル (ビュー型) を持ち、
 # コマンド側クレートには絶対依存しない (`coding-rules/cqrs-boundaries.md` 規則 6)。
 core-query-use-case = { path = "modules/core/query/use-case" }
+core-query-interface-adapter = { path = "modules/core/query/interface-adapter" }
 core-read-model-updater = { path = "modules/core/read-model-updater" }
 # infrastructure 層は文脈ごとに置く (`coding-rules/infrastructure-layer.md`)。
 core-infrastructure = { path = "modules/core/infrastructure" }
@@ -129,6 +130,10 @@ hmac = { version = "0.12", default-features = false }
 base64 = { version = "0.22", default-features = false, features = ["std"] }
 # steering MAC 鍵のマシンローカル鋳造 (乱数)。
 getrandom = { version = "0.3", default-features = false, features = ["std"] }
+# 監査シャード名のホスト部 (upstream は `node:os` の `hostname()`)。Rust の std に
+# 相当 API が無く、`unsafe_code = "forbid"` のため自前 FFI も採れないので薄いクレートを
+# 使う。消費は合成ルートだけ (正規化は `ShardName::of` が持つ)。
+hostname = { version = "0.4", default-features = false }
 sha2 = "0.10"
 proptest = "1"
 # 非同期ポート (AFIT) のテスト実行時。`rt` の current_thread ランタイムだけを使い、

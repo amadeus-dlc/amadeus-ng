@@ -62,6 +62,15 @@ mod tests {
         assert!(CloneId::parse(&"a".repeat(32)).is_ok());
     }
 
+    /// 表示は検証済みトークンそのもの — 監査シャード名 `<host>-<cloneId>.md` の接尾辞は
+    /// この綴りで組まれるので、`Display` と `as_str` がずれるとシャードが割れる。
+    #[test]
+    fn the_rendering_is_the_token_itself() {
+        let id = CloneId::parse("8fc90228c64e").expect("固定のトークン");
+        assert_eq!(id.to_string(), id.as_str());
+        assert_eq!(id.to_string(), "8fc90228c64e");
+    }
+
     #[test]
     fn rejects_empty_uppercase_and_overlong_tokens() {
         assert!(CloneId::parse("").is_err());

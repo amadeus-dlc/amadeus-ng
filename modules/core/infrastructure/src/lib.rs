@@ -22,3 +22,4 @@ pub mod atomic;
 pub mod canon_json;
 pub mod codec;
 pub mod fs_meta;
+pub mod secret_file;

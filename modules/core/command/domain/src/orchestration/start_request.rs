@@ -1,13 +1,15 @@
-//! `StartRequest` — `start` に渡す呼出側の要求 (scope / request / depth / test_strategy)。
+//! `StartRequest` — `start` に渡す呼出側の要求 (scope / request / depth / test_strategy /
+//! review)。
 
 /// 実行開始時に呼出側 (birth ユースケース) が解決して渡す要求 (C5 `Started` の payload 材料)。
 ///
-/// `depth` / `test_strategy` は upstream 状態ファイルの `Scope Configuration` 行 (`Depth` /
-/// `Test Strategy`) を U4 が描くための材料であり、**集約はこの 4 値に意味論を持たない** —
+/// `depth` / `test_strategy` / `review` は upstream 状態ファイルの `Scope Configuration` 行
+/// (`Depth` / `Test Strategy` / `Review Override`) を描くための材料であり、**集約はこの 5 値に
+/// 意味論を持たない** —
 /// フラグ上書きと scope metadata の既定のどちらを採るかの解決は呼出側の責務で、ここは素通しの
 /// 投影材料である。`Started` が自己完結する (投影が定義を読み直さない) ためにイベントへ載せる。
 ///
-/// serde は表現の写しである。この 4 値に不変条件は無い (`new` は検査をしない) ので、復号が
+/// serde は表現の写しである。この 5 値に不変条件は無い (`new` は検査をしない) ので、復号が
 /// 検査点を迂回する余地も無い。`Intent` の一部として直列化されるために導出している。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StartRequest {
@@ -15,10 +17,12 @@ pub struct StartRequest {
     request: String,
     depth: Option<String>,
     test_strategy: Option<String>,
+    review: Option<String>,
 }
 
 impl StartRequest {
-    /// スコープ名と人間の要求から組む。`depth` / `test_strategy` は既定で「指定なし」。
+    /// スコープ名と人間の要求から組む。`depth` / `test_strategy` / `review` は既定で
+    /// 「指定なし」。
     #[must_use]
     pub fn new(scope: impl Into<String>, request: impl Into<String>) -> StartRequest {
         StartRequest {
@@ -26,6 +30,7 @@ impl StartRequest {
             request: request.into(),
             depth: None,
             test_strategy: None,
+            review: None,
         }
     }
 
@@ -40,6 +45,13 @@ impl StartRequest {
     #[must_use]
     pub fn with_test_strategy(mut self, test_strategy: impl Into<String>) -> StartRequest {
         self.test_strategy = Some(test_strategy.into());
+        self
+    }
+
+    /// 解決済みのレビュー上限を載せる (再呼出は上書き)。
+    #[must_use]
+    pub fn with_review(mut self, review: impl Into<String>) -> StartRequest {
+        self.review = Some(review.into());
         self
     }
 
@@ -65,6 +77,12 @@ impl StartRequest {
     #[must_use]
     pub fn test_strategy(&self) -> Option<&str> {
         self.test_strategy.as_deref()
+    }
+
+    /// 解決済みのレビュー上限 (`None` = 指定なし)。
+    #[must_use]
+    pub fn review(&self) -> Option<&str> {
+        self.review.as_deref()
     }
 }
 

@@ -11,7 +11,7 @@
 //! [`InMemoryIntentExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
@@ -19,13 +19,15 @@ use core_command_domain::orchestration::{
     IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
+    ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
+    WorkflowDefinition, WorkflowDefinitionId,
 };
 
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
+use super::port::WorkflowDefinitionRepository;
 
 /// フィクスチャの intent 識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
@@ -80,6 +82,81 @@ pub(crate) fn scan() -> WorkspaceScan {
         "Unknown",
     )
     .expect("単一行")
+}
+
+/// フィクスチャの定義識別子 (1 ハーネス 1 定義 — BR2.6)。
+pub(crate) fn definition_id() -> WorkflowDefinitionId {
+    WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id")
+}
+
+/// フィクスチャの定義内容版。
+pub(crate) fn definition_revision() -> DefinitionRevision {
+    DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+        .expect("フィクスチャの定義 revision")
+}
+
+/// `stage_count` 段の定義 — 索引 0 が initialization、以降 inception。
+///
+/// [`genesis`] が組み立てる合成計画と**同じ形**にしてある。したがって
+/// `Intent::create` にこの定義を渡すと、`start_from_plan` が直接組む計画と
+/// 同じ段数・同じフェーズ配置の intent が得られる。
+pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
+    let nodes = (0..stage_count)
+        .map(|index| {
+            let phase = if index == 0 {
+                PhaseId::Initialization
+            } else {
+                PhaseId::Inception
+            };
+            StageNodeBuilder::new(
+                slug(index),
+                StageNumber::parse(&format!("{}.{}", phase.index(), index + 1))
+                    .expect("フィクスチャのステージ番号は文法内"),
+                "Stage".to_string(),
+                phase,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .scopes(vec!["classic".to_string()])
+            .build()
+        })
+        .collect();
+    let graph = StageGraph::new(nodes).expect("フィクスチャのグラフは検証を通る");
+    let grid = ScopeGrid::from_graph(&graph);
+    let mut scopes = BTreeMap::new();
+    scopes.insert(
+        "classic".to_string(),
+        ScopeMetadata::new("classic").expect("フィクスチャの scope メタデータ"),
+    );
+    WorkflowDefinition::from_artifacts(definition_id(), definition_revision(), graph, grid, scopes)
+}
+
+/// [`WorkflowDefinitionRepository`] のインメモリ実装。
+///
+/// 「1 Repository 1 定義、要求 id が違えば `NotFound`」(BR2.6) だけを模す。3 入力の
+/// パースと失敗注入はアダプタ層の実 Gateway の持ち物である。
+#[derive(Debug)]
+pub(crate) struct InMemoryWorkflowDefinitionRepository {
+    held: WorkflowDefinition,
+}
+
+impl InMemoryWorkflowDefinitionRepository {
+    /// 組み立て済みの定義を据える。
+    pub(crate) const fn holding(held: WorkflowDefinition) -> InMemoryWorkflowDefinitionRepository {
+        InMemoryWorkflowDefinitionRepository { held }
+    }
+}
+
+impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
+    fn find_by_id(
+        &self,
+        id: &WorkflowDefinitionId,
+    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
+        if self.held.id() != id {
+            return Err(RepositoryError::NotFound { id: id.clone() });
+        }
+        Ok(self.held.clone())
+    }
 }
 
 /// フェーズと実効プラン・CONDITIONAL を名指しした合成計画で開始する。

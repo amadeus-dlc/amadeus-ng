@@ -17,6 +17,8 @@ sha2 = { workspace = true }
 # 鍵付き封緘の純粋コーデック (`codec`) — HMAC-SHA256 と base64url。I/O は含まない。
 hmac = { workspace = true }
 base64 = { workspace = true }
+# マシンローカル秘密鍵の鋳造 (`secret_file`) — 乱数の唯一の出所。
+getrandom = { workspace = true }
 nix = { version = "0.30", default-features = false, features = ["signal", "fs"] }
 
 [dev-dependencies]

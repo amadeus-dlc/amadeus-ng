@@ -20,12 +20,16 @@ dependencies = [
  "core-command-interface-adapter",
  "core-command-use-case",
  "core-infrastructure",
+ "core-query-interface-adapter",
+ "core-query-use-case",
  "core-read-model-updater",
  "event-store-adapter-rs",
+ "hostname",
  "rusqlite",
  "serde_json",
  "tempfile",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -179,6 +183,7 @@ name = "core-infrastructure"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "getrandom 0.3.4",
  "hmac",
  "libc",
  "nix",
@@ -425,6 +430,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest",
+]
+
+[[package]]
+name = "hostname"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617aaa3557aef3810a6369d0a99fac8a080891b68bd9f9812a1eeda0c0730cbd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-link",
 ]
 
 [[package]]
@@ -961,6 +977,7 @@ version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "wasm-bindgen",
 ]

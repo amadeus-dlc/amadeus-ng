@@ -24,7 +24,7 @@ use super::directive::{
     AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, RunStageDirective,
     RunStageDirectiveBuilder,
 };
-use super::engine_command::{ConfigField, EngineCommand};
+use super::engine_command::EngineCommand;
 use super::next_decision::{NextDecision, NextRequest};
 use super::next_turn_input::{NextTurnInput, WorkspaceLayout};
 use super::scope_resolution::ScopeResolutionError;
@@ -48,7 +48,7 @@ use crate::orchestration::{
 /// ユースケースになったためである。
 mod wording {
 
-    use super::{ExecutionStateReadError, WorkflowDefinitionReadError};
+    use super::{ExecutionStateReadError, ScopeCost, WorkflowDefinitionReadError};
     use crate::orchestration::CheckboxState;
 
     /// `--review` の併用ガード (前置)。
@@ -169,10 +169,120 @@ mod wording {
         )
     }
 
-    /// 分岐 1。
+    /// 分岐 4a — 記述が空 (upstream `aidlc-orchestrate.ts:2980-2982` 逐語)。
+    pub(super) const NEW_INTENT_BLANK: &str =
+        "`next --new-intent` requires a nonblank new-work description after the confirmed scope.";
+
+    /// `--label` の畳み方を conductor へ伝える一文 (upstream `:889-890` 逐語)。
+    ///
+    /// 先頭の空白は upstream のまま — 直前の文へ連結される位置にある。
+    const LABEL_HINT: &str = " Replace `--label` with a 2-3 word kebab essence of the description (e.g. \"simple calc\"), which becomes the readable folder name for this piece of work.";
+
+    /// 誕生 print の本文 (upstream `createPrintDirective` `:900-910` 逐語)。
+    ///
+    /// `new_intent` が真なら「別 intent なのでこのセッションを畳め」の 4 文が続き、偽なら
+    /// 「そのまま `next` を再実行せよ」の継続形になる。分岐するのは尾部だけで、コマンドの
+    /// 名指し・コスト節・ラベル助言は共通である。
+    pub(super) fn birth_print(
+        spelled: &str,
+        cost: &str,
+        has_description: bool,
+        new_intent: bool,
+    ) -> String {
+        let label_hint = if has_description { LABEL_HINT } else { "" };
+        if new_intent {
+            format!(
+                "Run `{spelled}` to start the new intent{cost}.{label_hint} Then STOP, do NOT re-run `next` in this session. \
+This is a NEW, unrelated intent, and the current session still carries the previous intent's context. \
+Tell the user to start a fresh session using this harness's reset or restart flow, then invoke its AI-DLC entry skill to begin the new intent with a clean slate. \
+Nothing is lost: the intent is saved on disk and resumes on the next `next`."
+            )
+        } else {
+            format!(
+                "Run `{spelled}` to start the workflow{cost}, then re-run `next` to continue.{label_hint}"
+            )
+        }
+    }
+
+    /// コスト節 (upstream `costClause` `:669-676` 逐語)。括弧は呼出側が付ける。
+    pub(super) fn cost_clause(cost: &ScopeCost) -> String {
+        let per_unit = match cost.per_unit_stages() {
+            0 => String::new(),
+            1 => ", 1 stage repeats per unit of work in Construction".to_string(),
+            count => format!(", {count} stages repeat per unit of work in Construction"),
+        };
+        format!(
+            "{} of {} stages, {} approval gates{per_unit}",
+            cost.execute(),
+            cost.total(),
+            cost.gates()
+        )
+    }
+
+    /// 未知ステージ (upstream `:4441` / `:4605` / `:5281` 逐語 — 一覧への案内まで含む)。
+    pub(super) fn unknown_stage(stage: &str) -> String {
+        format!("Unknown stage \"{stage}\". Run /aidlc --help for the full list.")
+    }
+
+    /// 未知フェーズ (upstream `:4578` 逐語)。
+    ///
+    /// フェーズ語彙の並びは upstream `PHASES` の宣言順である (`aidlc-lib.ts:130-136`、
+    /// 辞書順ではない)。列挙を所有すべきなのは [`PhaseView`] だが、その定義ファイルは
+    /// b29 の書込スコープ外なので文言側に置いた — 移設は後続 Bolt。
+    ///
+    /// [`PhaseView`]: crate::orchestration::PhaseView
+    pub(super) fn unknown_phase(phase: &str) -> String {
+        format!(
+            "Unknown phase \"{phase}\". Valid phases: initialization, ideation, inception, construction, operation."
+        )
+    }
+
+    /// 分岐 5 — scope 変更の名指し (upstream `:3056` 逐語)。
+    pub(super) fn scope_change(spelled: &str) -> String {
+        format!("Run `{spelled}` to change scope, then print its output verbatim and stop.")
+    }
+
+    /// 分岐 5 — 設定変更の名指し (upstream `:3072` 逐語)。
+    pub(super) fn config_change(spelled: &str) -> String {
+        format!(
+            "Run `{spelled}` to update the configuration, then print its output verbatim and stop."
+        )
+    }
+
+    /// 分岐 8 — キーワードが当たった scope の確認 (upstream `:3150-3152` 逐語)。
+    ///
+    /// コスト節の区切りは誕生 print の括弧ではなく ` - ` である (upstream `:3148`)。
+    pub(super) fn scope_confirm(scope: &str, intent: &str, cost: &str) -> String {
+        format!(
+            "This looks like \"{scope}\" work, so I'd run the \"{scope}\" plan for: \"{intent}\"{cost}. \
+Say go ahead, name a different plan, or say \"compose\" and I'll tailor one to this task."
+        )
+    }
+
+    /// 分岐 8 — どの既製 scope も当たらないときの compose 提案 (upstream `:3168-3171` 逐語)。
+    pub(super) fn compose_offer(intent: &str, examples: &str) -> String {
+        format!(
+            "None of the ready-made plans is an obvious fit for: \"{intent}\". \
+I can work out a plan tailored to this task (recommended: reply \"compose\"), \
+or you can pick one directly (e.g. {examples}; see /aidlc --help for the full list)."
+        )
+    }
+
+    /// 分岐 1 (upstream `:2717` 逐語)。
     pub(super) fn read_only(spelled: &str) -> String {
         format!(
-            "Run `{spelled}`. This is a read-only utility, NOT workflow work: do NOT run `next` for it."
+            "Run `{spelled}`, print its output verbatim, then stop. \
+This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
+        )
+    }
+
+    /// 分岐 1b/1c/1d — 名詞トークンの終端コマンド (upstream `:2764` 逐語)。
+    ///
+    /// 読み取り専用ユーティリティとは 1 語だけ違う (`read-only` ではなく `terminal`)。
+    pub(super) fn terminal_utility(spelled: &str) -> String {
+        format!(
+            "Run `{spelled}`, print its output verbatim, then stop. \
+This is a terminal utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
         )
     }
 
@@ -183,10 +293,11 @@ mod wording {
         )
     }
 
-    /// 分岐 10 手順 3 (回復可能な plan/cursor 不整合)。
-    pub(super) fn recover_skip(stage: &str) -> String {
+    /// 分岐 10 手順 3 (回復可能な plan/cursor 不整合。upstream `:3294-3297` 逐語)。
+    pub(super) fn recover_skip(stage: &str, spelled: &str) -> String {
         format!(
-            "Run `aidlc-orchestrate report --stage {stage} --result skipped --reason \"stage is SKIP in the approved workflow plan\"`, then re-run `next`."
+            "Stage \"{stage}\" is SKIP in the approved workflow plan but is still the active cursor. \
+Do not run this stage. Run `{spelled}` to recover the stale pointer, then re-run `next` to continue."
         )
     }
 
@@ -198,9 +309,18 @@ mod wording {
         )
     }
 
-    /// 分岐 10 手順 5。
+    /// 完了した intent の `done` reason に必ず続く新規作業のヒント (upstream `:855-859` 逐語)。
+    ///
+    /// 先頭の空白は upstream のまま — reason 本文へ連結される位置にある。scope-runner の
+    /// 転送ループがここで行き止まりにならないための出口案内であり、落とすと「新しい仕事は
+    /// どう始めるのか」が読み手に届かない。
+    const NEW_WORK_HINT: &str = " If this input is genuinely NEW, unrelated work (not a follow-up to the completed intent), don't stop here: offer to start a second intent, and on the human's yes run `next --new-intent --scope <scope> \"<text>\"` (see the SKILL's new-work offer, never auto-birth).";
+
+    /// 分岐 10 手順 5 (upstream `:3332-3348` — reason + `NEW_WORK_HINT`)。
     pub(super) fn workflow_complete(stage: &str, scope: &str) -> String {
-        format!("Workflow complete — no in-scope stage remains after {stage} (scope: {scope}).")
+        format!(
+            "Workflow complete — no in-scope stage remains after {stage} (scope: {scope}).{NEW_WORK_HINT}"
+        )
     }
 
     /// steering 読取失敗 (blocking — run-stage の代わりに error)。
@@ -290,9 +410,8 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
         // ---- 分岐 1b/1c/1d: 名詞トークン (先頭トークン意味論のみ) ----
         if let Some(token) = input.noun_token() {
             return Directive::Print {
-                message: format!(
-                    "Run `{}`.",
-                    EngineCommand::NounTokens(token.tokens().to_vec()).cli_spelling()
+                message: wording::terminal_utility(
+                    &EngineCommand::NounTokens(token.tokens().to_vec()).cli_spelling(),
                 ),
             };
         }
@@ -382,39 +501,34 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
                 ),
             };
         }
-        // ---- 分岐 4a: --new-intent (scope は明示 --scope のみ — ラダーを使わない) ----
+        // ---- 分岐 4a: --new-intent ----
+        //
+        // scope は **明示 `--scope` が勝ち、無ければ解決済み scope へ落ちる**
+        // (upstream `flags.scope ?? scope` — `:2991`)。明示があればそれを使うのは、確認された
+        // のが「新しい仕事の scope」であって進行中 intent の state scope ではないためである。
         if let Some(description) = input.new_intent() {
-            if description.trim().is_empty() {
+            let description = description.trim();
+            if description.is_empty() {
                 return Directive::Error {
-                    message:
-                        "The --new-intent description must not be blank. Describe the new work."
-                            .to_string(),
+                    message: wording::NEW_INTENT_BLANK.to_string(),
                 };
             }
-            let Some(scope) = input.scope() else {
-                return Directive::Error {
-                    message: "--new-intent requires an explicit --scope <name>.".to_string(),
-                };
-            };
-            let Ok(scope) = ScopeSlugView::parse(scope) else {
-                // ラダーが既に membership 検証済み — 文法違反はここへ届かない (防御的)。
-                return Directive::Error {
-                    message: wording::unknown_scope(scope, &definition.valid_scopes()),
-                };
-            };
-            return Directive::Print {
-                message: format!(
-                    "Run `{}`, then hand off to a fresh session.",
-                    EngineCommand::MintIntent { scope }.cli_spelling()
-                ),
-            };
+            let scope = input.scope().unwrap_or_else(|| resolved.name().as_str());
+            return mint_intent_print(definition, scope, Some(description), input, true);
         }
         // ---- 分岐 4b: --single (scope-change / jump より前) ----
         if input.is_single() {
             return self.emit_single(input, definition, resolved.name());
         }
         // ---- 分岐 5: state あり + 有効で異なる設定 ----
+        //
+        // 設定修飾 (`--depth` / `--test-strategy` / `--review`) は **1 本の命令へまとめて**
+        // 載せる (upstream `:3051-3054` / `:3067-3070`)。フィールドごとに命令を分けると、
+        // 人間が 2 つ指定したときに片方が黙って落ちる。
         if let Some(view) = state {
+            let depth = input.depth().map(str::to_string);
+            let test_strategy = input.test_strategy().map(str::to_string);
+            let review = input.review().map(str::to_string);
             if let Some(scope) = input.scope()
                 && scope != view.scope().as_str()
             {
@@ -425,45 +539,26 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
                     };
                 };
                 return Directive::Print {
-                    message: format!(
-                        "Run `{}`.",
-                        EngineCommand::ChangeScope { scope }.cli_spelling()
+                    message: wording::scope_change(
+                        &EngineCommand::ChangeScope {
+                            scope,
+                            depth,
+                            test_strategy,
+                            review,
+                        }
+                        .cli_spelling(),
                     ),
                 };
             }
-            if let Some(depth) = input.depth() {
+            if depth.is_some() || test_strategy.is_some() || review.is_some() {
                 return Directive::Print {
-                    message: format!(
-                        "Run `{}`.",
-                        EngineCommand::ChangeConfig {
-                            field: ConfigField::Depth,
-                            value: depth.to_string(),
+                    message: wording::config_change(
+                        &EngineCommand::ChangeConfig {
+                            depth,
+                            test_strategy,
+                            review,
                         }
-                        .cli_spelling()
-                    ),
-                };
-            }
-            if let Some(level) = input.test_strategy() {
-                return Directive::Print {
-                    message: format!(
-                        "Run `{}`.",
-                        EngineCommand::ChangeConfig {
-                            field: ConfigField::TestStrategy,
-                            value: level.to_string(),
-                        }
-                        .cli_spelling()
-                    ),
-                };
-            }
-            if let Some(class) = input.review() {
-                return Directive::Print {
-                    message: format!(
-                        "Run `{}`.",
-                        EngineCommand::ChangeConfig {
-                            field: ConfigField::Review,
-                            value: class.to_string(),
-                        }
-                        .cli_spelling()
+                        .cli_spelling(),
                     ),
                 };
             }
@@ -572,7 +667,7 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
                 }
             }
             None => Directive::Error {
-                message: format!("Unknown stage \"{stage}\"."),
+                message: wording::unknown_stage(stage),
             },
         }
     }
@@ -590,14 +685,14 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
                 Some(node) => node,
                 None => {
                     return Directive::Error {
-                        message: format!("Unknown stage \"{stage}\"."),
+                        message: wording::unknown_stage(stage),
                     };
                 }
             },
             (None, Some(phase)) => {
                 let Ok(phase) = PhaseView::parse(&phase.to_lowercase()) else {
                     return Directive::Error {
-                        message: format!("Unknown phase \"{phase}\"."),
+                        message: wording::unknown_phase(phase),
                     };
                 };
                 match definition.first_in_scope_stage_of_phase(phase, scope.as_str()) {
@@ -693,15 +788,19 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
                         }
                     }
                     None => Directive::Error {
-                        message: format!("Unknown stage \"{}\".", slug.as_str()),
+                        message: wording::unknown_stage(slug.as_str()),
                     },
                 }
             }
             NextDecision::Done => done_with_reason(state, scope.as_str()),
             NextDecision::RecoverSkipInconsistency { stage, .. } => {
-                let slug = stage_slug(state, stage);
+                let slug = stage_slug(state, stage).clone();
+                let spelled = EngineCommand::ReportSkipped {
+                    stage: slug.clone(),
+                }
+                .cli_spelling();
                 Directive::Print {
-                    message: wording::recover_skip(slug.as_str()),
+                    message: wording::recover_skip(slug.as_str(), &spelled),
                 }
             }
             NextDecision::InconsistentSkip { stage, checkbox } => {
@@ -723,9 +822,10 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
 
 /// state なしの群 (7b / 8 / 9a / 9b)。
 fn emit_birth_group(input: &NextTurnInput, definition: &DefinitionView) -> Directive {
-    // 分岐 9a: 明示 --scope (membership はラダーが検証済み)。
+    // 分岐 9a: 明示 --scope (membership はラダーが検証済み)。自由記述が併記されていれば
+    // 生まれる intent の説明として運ぶ (upstream `:3196` — `flags.intent`)。
     if let Some(scope) = input.scope() {
-        return mint_intent_print(definition, scope);
+        return mint_intent_print(definition, scope, input.freeform(), input, false);
     }
     if let Some(text) = input.freeform() {
         // 分岐 7b: 位置引数が scope 名そのもの。
@@ -736,20 +836,24 @@ fn emit_birth_group(input: &NextTurnInput, definition: &DefinitionView) -> Direc
                     "Existing intent records were found without an active cursor. Which intent should become active?".to_string(),
                 ));
             }
-            return mint_intent_print(definition, text.trim());
+            // 位置引数が scope 名そのものなので、記述として残る語は無い (upstream は
+            // scope 語を剥がした残りを `flags.intent` に持つが、その剥がしは未実装 —
+            // b29 の対象外)。
+            return mint_intent_print(definition, text.trim(), None, input, false);
         }
         // 分岐 8: キーワードヒット → scope 確認 / 非ヒット → compose 提案。
         if let Some(scope) = definition.infer_scope_from_text(text) {
+            let cost = scope_cost(definition, scope.as_str()).map_or_else(String::new, |cost| {
+                format!(" - {}", wording::cost_clause(&cost))
+            });
             return Directive::Ask(AskDirective::new(
                 AskKind::ScopeConfirm,
-                format!(
-                    "This looks like \"{scope}\" work. Start a {scope} workflow for it? Larger scopes run more stages and cost more."
-                ),
+                wording::scope_confirm(scope.as_str(), text, &cost),
             ));
         }
         return Directive::Ask(AskDirective::new(
             AskKind::ComposeOffer,
-            "No stock scope matched. Compose a tailored plan for this task?".to_string(),
+            wording::compose_offer(text, &compose_examples(definition)),
         ));
     }
     // 分岐 9b: 何も名指しされていない。
@@ -758,20 +862,149 @@ fn emit_birth_group(input: &NextTurnInput, definition: &DefinitionView) -> Direc
     }
 }
 
-/// intent 鋳造の名指し (分岐 7b / 9a) — scope は membership 検証済みの綴りを型に上げる。
-fn mint_intent_print(definition: &DefinitionView, scope: &str) -> Directive {
-    match ScopeSlugView::parse(scope) {
-        Ok(scope) => Directive::Print {
-            message: format!(
-                "Run `{}`.",
-                EngineCommand::MintIntent { scope }.cli_spelling()
-            ),
-        },
+/// intent 鋳造の名指し (分岐 4a / 7b / 9a) — upstream `createPrintDirective` (`:878-918`)。
+///
+/// scope は membership 検証済みの綴りを型に上げる。自由記述・任意フラグ・コスト節は
+/// upstream と同じ材料から組み、尾部だけ `new_intent` で分岐する。
+fn mint_intent_print(
+    definition: &DefinitionView,
+    scope: &str,
+    description: Option<&str>,
+    input: &NextTurnInput,
+    new_intent: bool,
+) -> Directive {
+    let Ok(parsed) = ScopeSlugView::parse(scope) else {
         // membership 検証済みなので文法違反はここへ届かない (防御的)。
-        Err(_) => Directive::Error {
+        return Directive::Error {
             message: wording::unknown_scope(scope, &definition.valid_scopes()),
-        },
+        };
+    };
+    let description = description.filter(|text| !text.is_empty());
+    let command = EngineCommand::MintIntent {
+        scope: parsed,
+        description: description.map(str::to_string),
+        depth: input.depth().map(str::to_string),
+        test_strategy: input.test_strategy().map(str::to_string),
+        review: input.review().map(str::to_string),
+    };
+    let cost = match scope_cost(definition, scope) {
+        Some(cost) => format!(" ({})", wording::cost_clause(&cost)),
+        // グリッド列が無い scope (フィクスチャ木) — upstream も括弧ごと落とす。
+        None => String::new(),
+    };
+    Directive::Print {
+        message: wording::birth_print(
+            &command.cli_spelling(),
+            &cost,
+            description.is_some(),
+            new_intent,
+        ),
     }
+}
+
+/// compose 提案が並べる目安 (upstream `:3158-3166`)。
+///
+/// 3 つの既製 scope がすべて解決できたときだけ実数を出し、1 つでも欠ければ有効 scope の
+/// 先頭 3 件へ落ちる (upstream の `fallbackExamples`)。並び順は定義ビューの辞書順である。
+fn compose_examples(definition: &DefinitionView) -> String {
+    if let (Some(express), Some(classic), Some(feature)) = (
+        scope_cost(definition, "express"),
+        scope_cost(definition, "classic"),
+        scope_cost(definition, "feature"),
+    ) {
+        return format!(
+            "express = {} of {} stages, classic = {}, feature = all {}",
+            express.execute(),
+            express.total(),
+            classic.execute(),
+            feature.execute()
+        );
+    }
+    let names: Vec<&str> = definition.valid_scopes().into_iter().take(3).collect();
+    if names.is_empty() {
+        "an explicit scope".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+/// スコープ 1 列のコスト材料 (upstream `ScopeCostSummary` `aidlc-lib.ts:9820-9827`)。
+///
+/// **本来の置き場は [`DefinitionView`]** — グリッド列とグラフを所有する型が導出も持つべきで
+/// ある (`coding-rules/domain-services.md`)。b29 の書込スコープが `next_use_case.rs` /
+/// `engine_command.rs` に限定されているため、ここに私有で置いて据え置いた。移設は後続 Bolt。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScopeCost {
+    total: usize,
+    execute: usize,
+    gates: usize,
+    per_unit_stages: usize,
+}
+
+impl ScopeCost {
+    /// グリッド列に載るステージ数 (EXECUTE + SKIP)。
+    const fn total(&self) -> usize {
+        self.total
+    }
+
+    /// EXECUTE 数。
+    const fn execute(&self) -> usize {
+        self.execute
+    }
+
+    /// 承認ゲート数 = initialization 以外の EXECUTE ステージ数。
+    const fn gates(&self) -> usize {
+        self.gates
+    }
+
+    /// Unit of Work ごとに反復する EXECUTE ステージ数。
+    const fn per_unit_stages(&self) -> usize {
+        self.per_unit_stages
+    }
+}
+
+/// 反復軸の観測値 (upstream `PER_UNIT_FOR_EACH`)。
+const PER_UNIT_FOR_EACH: &str = "unit-of-work";
+
+/// `for_each` の誤記に備えた既知の per-unit ステージ (upstream `KNOWN_PER_UNIT_STAGES`)。
+const KNOWN_PER_UNIT_STAGES: [&str; 5] = [
+    "nfr-requirements",
+    "nfr-design",
+    "functional-design",
+    "infrastructure-design",
+    "code-generation",
+];
+
+/// スコープ 1 列のコストを数える (upstream `gridCostSummary` `aidlc-lib.ts:9836-9854`)。
+///
+/// グリッドに在ってグラフに無い slug は total / execute には数え、gates / per-unit には
+/// 数えない (upstream と同じ防御)。
+fn scope_cost(definition: &DefinitionView, scope: &str) -> Option<ScopeCost> {
+    let column = definition.grid().column(scope)?;
+    let mut cost = ScopeCost {
+        total: column.len(),
+        execute: 0,
+        gates: 0,
+        per_unit_stages: 0,
+    };
+    for (slug, action) in column {
+        if *action != PlanActionView::Execute {
+            continue;
+        }
+        cost.execute += 1;
+        let Some(node) = find_node(definition, slug.as_str()) else {
+            continue;
+        };
+        if node.phase() != PhaseView::Initialization {
+            cost.gates += 1;
+        }
+        if node.for_each() == Some(PER_UNIT_FOR_EACH)
+            || KNOWN_PER_UNIT_STAGES.contains(&slug.as_str())
+        {
+            cost.per_unit_stages += 1;
+        }
+    }
+    Some(cost)
 }
 
 /// 完了 reason つきの `done` (分岐 10 手順 5) — ビューの Done は最終ステージ通過後に出るため、
@@ -1128,11 +1361,10 @@ mod tests {
             &definition(2),
             &input().with_read_only(ReadOnlyVerb::Status),
         );
-        let message = print_message(&directive);
-        assert!(message.contains("aidlc-utility status"), "{message}");
-        assert!(
-            message.contains("This is a read-only utility, NOT workflow work: do NOT run `next`"),
-            "{message}"
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility status`, print its output verbatim, then stop. \
+This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
         );
     }
 
@@ -1143,7 +1375,12 @@ mod tests {
             vec!["intent".to_string(), "list".to_string()],
         );
         let directive = run_without(&definition(2), &input().with_noun_token(token));
-        assert!(print_message(&directive).contains("aidlc-utility intent list"));
+        // 名詞は「終端ユーティリティ」— 読み取り専用フラグとは 1 語だけ違う (upstream `:2764`)。
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility intent list`, print its output verbatim, then stop. \
+This is a terminal utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
+        );
     }
 
     #[test]
@@ -1419,17 +1656,199 @@ mod tests {
         assert!(print_message(&directive).contains("aidlc-composer detect"));
     }
 
+    /// 配置が無ければ run-stage は組めない — 逐語で止め、run-stage は出さない。
+    ///
+    /// 分岐 10（ハッピーパス）・分岐 4b（`--single`）・分岐 7（jump）の 3 経路がいずれも
+    /// 同じ組み立てを通るので、3 つとも同じ拒否になる。
     #[test]
-    fn branch_4a_a_blank_new_intent_description_is_refused() {
+    fn a_run_stage_cannot_be_assembled_without_a_workspace_layout() {
+        let bare = || NextTurnInput::new();
+        let expected = "No workspace layout was provided for run-stage assembly.";
+
+        // 分岐 10 — state ありのハッピーパス。
+        assert_eq!(
+            error_message(&run_with(&genesis_state(2), &definition(2), &bare())),
+            expected
+        );
+        // 分岐 4b — `--single`。
+        assert_eq!(
+            error_message(&run_without(
+                &definition(2),
+                &bare().with_single().with_stage("stage-1")
+            )),
+            expected
+        );
+        // 分岐 7 — jump（state 無しでも組み立てまで進む）。
+        assert_eq!(
+            error_message(&run_without(&definition(2), &bare().with_stage("stage-1"))),
+            expected
+        );
+    }
+
+    /// コスト算術を見るための定義 — 3 つの既製 scope・SKIP セル・per-unit ステージ 2 種・
+    /// グリッドにだけ在る slug・グリッド列を持たない scope をすべて含む。
+    fn cost_definition() -> DefinitionView {
+        use crate::orchestration::{
+            DefinitionIdView, DefinitionRevisionView, ExecutionKindView, ScopeGridView,
+            ScopeMetadataView, StageGraphView, StageNumberView, StageViewBuilder,
+        };
+        use std::collections::BTreeMap;
+
+        let node = |slug: &str, number: &str, phase: PhaseView, per_unit: bool| {
+            let builder = StageViewBuilder::new(
+                StageSlugView::parse(slug).expect("固定の slug"),
+                StageNumberView::parse(number).expect("固定の番号"),
+                format!("Stage {slug}"),
+                phase,
+                ExecutionKindView::Always,
+                StageModeView::Inline,
+            )
+            .with_lead_agent("orchestrator".to_string());
+            if per_unit {
+                builder.with_for_each("unit-of-work".to_string()).build()
+            } else {
+                builder.build()
+            }
+        };
+        let nodes = vec![
+            node("state-init", "0.1", PhaseView::Initialization, false),
+            node("domain-design", "1.1", PhaseView::Inception, false),
+            // KNOWN_PER_UNIT_STAGES による判定（`for_each` は付いていない）。
+            node("nfr-design", "3.2", PhaseView::Construction, false),
+            // `for_each` による判定。
+            node("code-generation", "3.5", PhaseView::Construction, true),
+        ];
+        let cell = |slug: &str, action: PlanActionView| {
+            (StageSlugView::parse(slug).expect("固定の slug"), action)
+        };
+        let grid = ScopeGridView::new(
+            [
+                (
+                    "express".to_string(),
+                    [
+                        cell("state-init", PlanActionView::Execute),
+                        cell("domain-design", PlanActionView::Skip),
+                        cell("nfr-design", PlanActionView::Skip),
+                        cell("code-generation", PlanActionView::Execute),
+                    ]
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>(),
+                ),
+                (
+                    "classic".to_string(),
+                    [
+                        cell("state-init", PlanActionView::Execute),
+                        cell("domain-design", PlanActionView::Execute),
+                        cell("nfr-design", PlanActionView::Execute),
+                        cell("code-generation", PlanActionView::Execute),
+                        // グリッドにだけ在る slug — total / execute には数え、
+                        // gate と per-unit には数えない（upstream と同じ防御）。
+                        cell("ghost-stage", PlanActionView::Execute),
+                    ]
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>(),
+                ),
+                (
+                    "feature".to_string(),
+                    [
+                        cell("state-init", PlanActionView::Execute),
+                        cell("domain-design", PlanActionView::Execute),
+                    ]
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let scopes: BTreeMap<String, ScopeMetadataView> =
+            ["express", "classic", "feature", "gridless"]
+                .into_iter()
+                .map(|name| {
+                    (
+                        name.to_string(),
+                        ScopeMetadataView::new(name).expect("固定の scope 名"),
+                    )
+                })
+                .collect();
+        DefinitionView::new(
+            DefinitionIdView::parse("claude").expect("固定の定義 id"),
+            DefinitionRevisionView::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("固定の内容版"),
+            StageGraphView::new(nodes).expect("固定のグラフ"),
+            grid,
+            scopes,
+        )
+    }
+
+    /// コスト節はグリッドを数える — EXECUTE / 総数 / ゲート（initialization を除く）/
+    /// per-unit の反復。反復 1 本は単数形。
+    #[test]
+    fn the_cost_clause_counts_gates_and_per_unit_repeats() {
+        let directive = run_without(&cost_definition(), &input().with_scope("express"));
+        let message = print_message(&directive);
+        assert!(
+            message.contains(
+                " (2 of 4 stages, 1 approval gates, 1 stage repeats per unit of work in Construction)"
+            ),
+            "{message}"
+        );
+    }
+
+    /// 反復が 2 本以上なら複数形。グラフに無い slug は総数には入るがゲートには入らない。
+    #[test]
+    fn the_cost_clause_pluralises_repeats_and_ignores_slugs_outside_the_graph() {
+        let directive = run_without(&cost_definition(), &input().with_scope("classic"));
+        let message = print_message(&directive);
+        assert!(
+            message.contains(
+                " (5 of 5 stages, 3 approval gates, 2 stages repeat per unit of work in Construction)"
+            ),
+            "{message}"
+        );
+    }
+
+    /// グリッド列を持たない scope では括弧ごと落ちる（upstream も同じ）。
+    #[test]
+    fn a_scope_without_a_grid_column_drops_the_cost_parenthetical() {
+        let directive = run_without(&cost_definition(), &input().with_scope("gridless"));
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility intent-create --scope gridless` to start the workflow, then re-run `next` to continue."
+        );
+    }
+
+    /// compose 提案は 3 つの既製 scope の実数を並べる（3 つとも解決できたとき）。
+    #[test]
+    fn branch_8_the_compose_offer_lists_the_three_stock_scopes() {
+        let directive = run_without(
+            &cost_definition(),
+            &input().with_freeform("something entirely novel"),
+        );
+        let ask = expect_ask(directive);
+        assert_eq!(ask.ask_kind(), AskKind::ComposeOffer);
+        let question = ask.question();
+        assert!(
+            question.contains("(e.g. express = 2 of 4 stages, classic = 5, feature = all 2;"),
+            "{question}"
+        );
+    }
+
+    #[test]
+    fn branch_4a_a_blank_new_intent_description_is_refused_verbatim() {
         let directive = run_without(
             &definition(2),
             &input().with_new_intent("   ").with_scope("bugfix"),
         );
-        assert!(error_message(&directive).contains("must not be blank"));
+        assert_eq!(
+            error_message(&directive),
+            "`next --new-intent` requires a nonblank new-work description after the confirmed scope."
+        );
     }
 
+    /// 明示 `--scope` があればそれが勝ち、命令行は upstream の完全形になる。
     #[test]
-    fn branch_4a_new_intent_names_intent_create_with_the_explicit_scope_only() {
+    fn branch_4a_new_intent_names_the_full_intent_create_command() {
         let directive = run_without(
             &definition(2),
             &input()
@@ -1438,19 +1857,111 @@ mod tests {
         );
         let message = print_message(&directive);
         assert!(
-            message.contains(
-                "aidlc-utility intent-create --scope bugfix --label \"<2-3 word kebab essence>\""
+            message.starts_with(
+                "Run `aidlc-utility intent-create --scope bugfix --arguments='fix the crash' --label \"<2-3 word kebab essence>\"` to start the new intent (2 of 2 stages, 1 approval gates)."
             ),
             "{message}"
         );
     }
 
+    /// 任意フラグは命令行へ素通しされる (upstream `:892-894`)。
     #[test]
-    fn branch_4a_new_intent_without_an_explicit_scope_is_refused() {
+    fn branch_4a_new_intent_threads_the_optional_flags() {
+        let directive = run_without(
+            &definition(2),
+            &input()
+                .with_new_intent("fix the crash")
+                .with_scope("bugfix")
+                .with_depth("standard")
+                .with_test_strategy("minimal"),
+        );
+        let message = print_message(&directive);
+        assert!(
+            message.contains(
+                "--label \"<2-3 word kebab essence>\" --depth standard --test-strategy minimal`"
+            ),
+            "{message}"
+        );
+    }
+
+    /// 散文 3 点 (コスト節・ラベル助言・STOP 4 文) が upstream 逐語で載る。
+    #[test]
+    fn branch_4a_new_intent_carries_the_upstream_prose() {
+        let directive = run_without(
+            &definition(2),
+            &input()
+                .with_new_intent("fix the crash")
+                .with_scope("bugfix"),
+        );
+        let message = print_message(&directive);
+        assert!(
+            message.contains(" (2 of 2 stages, 1 approval gates)."),
+            "{message}"
+        );
+        assert!(
+            message.contains(
+                " Replace `--label` with a 2-3 word kebab essence of the description (e.g. \"simple calc\"), which becomes the readable folder name for this piece of work."
+            ),
+            "{message}"
+        );
+        assert!(
+            message.ends_with(
+                "Then STOP, do NOT re-run `next` in this session. \
+This is a NEW, unrelated intent, and the current session still carries the previous intent's context. \
+Tell the user to start a fresh session using this harness's reset or restart flow, then invoke its AI-DLC entry skill to begin the new intent with a clean slate. \
+Nothing is lost: the intent is saved on disk and resumes on the next `next`."
+            ),
+            "{message}"
+        );
+    }
+
+    /// 稼働中の intent があっても、確認された **新しい仕事の scope** が勝つ。
+    ///
+    /// ラダーは state scope を最優先にするので、そちらを使うと新 intent が進行中の仕事の
+    /// scope で生まれてしまう (upstream `:2985-2990` がまさにこれを避けている)。
+    #[test]
+    fn branch_4a_the_explicit_scope_outranks_the_active_intents_state_scope() {
+        // 実行状態の scope は classic。新しい仕事は bugfix として確認された。
+        let directive = run_with(
+            &genesis_state(2),
+            &definition(2),
+            &input()
+                .with_new_intent("fix the crash")
+                .with_scope("bugfix"),
+        );
+        let message = print_message(&directive);
+        assert!(
+            message.starts_with("Run `aidlc-utility intent-create --scope bugfix"),
+            "{message}"
+        );
+    }
+
+    /// 明示が無いときは解決済み scope (稼働中なら state の scope) が使われる。
+    #[test]
+    fn branch_4a_without_an_explicit_scope_the_active_state_scope_is_inherited() {
+        let directive = run_with(
+            &genesis_state(2),
+            &definition(2),
+            &input().with_new_intent("fix the crash"),
+        );
+        let message = print_message(&directive);
+        assert!(
+            message.starts_with("Run `aidlc-utility intent-create --scope classic"),
+            "{message}"
+        );
+    }
+
+    /// 明示 `--scope` が無ければ解決済み scope へ落ちる (upstream `flags.scope ?? scope`)。
+    /// 拒否ではない — ここで拒むのは upstream に無い造語だった。
+    #[test]
+    fn branch_4a_new_intent_without_an_explicit_scope_falls_back_to_the_resolved_scope() {
         let directive = run_without(&definition(2), &input().with_new_intent("fix the crash"));
-        assert_eq!(
-            error_message(&directive),
-            "--new-intent requires an explicit --scope <name>."
+        let message = print_message(&directive);
+        assert!(
+            message.starts_with(
+                "Run `aidlc-utility intent-create --scope classic --arguments='fix the crash'"
+            ),
+            "{message}"
         );
     }
 
@@ -1479,7 +1990,7 @@ mod tests {
         );
         assert_eq!(
             error_message(&directive),
-            "Unknown stage \"no-such-stage\"."
+            "Unknown stage \"no-such-stage\". Run /aidlc --help for the full list."
         );
     }
 
@@ -1498,7 +2009,27 @@ mod tests {
             &definition(2),
             &input().with_scope("bugfix"),
         );
-        assert!(print_message(&directive).contains("aidlc-utility scope-change --scope bugfix"));
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility scope-change --scope bugfix` to change scope, then print its output verbatim and stop."
+        );
+    }
+
+    /// scope 変更に併記された設定修飾は同じ 1 本へ載る (upstream `:3051-3054`)。
+    #[test]
+    fn branch_5_a_scope_change_carries_the_modifiers_typed_alongside_it() {
+        let directive = run_with(
+            &genesis_state(2),
+            &definition(2),
+            &input()
+                .with_scope("bugfix")
+                .with_depth("minimal")
+                .with_review("none"),
+        );
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility scope-change --scope bugfix --depth minimal --review none` to change scope, then print its output verbatim and stop."
+        );
     }
 
     #[test]
@@ -1508,7 +2039,24 @@ mod tests {
             &definition(2),
             &input().with_depth("minimal"),
         );
-        assert!(print_message(&directive).contains("aidlc-utility config-change --depth minimal"));
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility config-change --depth minimal` to update the configuration, then print its output verbatim and stop."
+        );
+    }
+
+    /// 修飾を 2 つ与えたら 2 つとも同じ命令に載る（片方が黙って落ちない）。
+    #[test]
+    fn branch_5_two_modifiers_ride_one_config_change() {
+        let directive = run_with(
+            &genesis_state(2),
+            &definition(2),
+            &input().with_depth("minimal").with_test_strategy("standard"),
+        );
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility config-change --depth minimal --test-strategy standard` to update the configuration, then print its output verbatim and stop."
+        );
     }
 
     #[test]
@@ -1589,7 +2137,7 @@ mod tests {
         );
         assert_eq!(
             error_message(&directive),
-            "Unknown stage \"no-such-stage\"."
+            "Unknown stage \"no-such-stage\". Run /aidlc --help for the full list."
         );
     }
 
@@ -1606,7 +2154,10 @@ mod tests {
     #[test]
     fn branch_7_an_unknown_phase_is_refused() {
         let directive = run_without(&definition(2), &input().with_phase("Daydreaming"));
-        assert_eq!(error_message(&directive), "Unknown phase \"Daydreaming\".");
+        assert_eq!(
+            error_message(&directive),
+            "Unknown phase \"Daydreaming\". Valid phases: initialization, ideation, inception, construction, operation."
+        );
     }
 
     #[test]
@@ -1672,7 +2223,12 @@ mod tests {
         let directive = run_without(&definition(2), &input().with_freeform("fix the login"));
         let ask = expect_ask(directive);
         assert_eq!(ask.ask_kind(), AskKind::ScopeConfirm);
-        assert!(ask.question().contains("bugfix"));
+        // 逐語 — コスト節の区切りは ` - ` (誕生 print の括弧とは違う)。
+        assert_eq!(
+            ask.question(),
+            "This looks like \"bugfix\" work, so I'd run the \"bugfix\" plan for: \"fix the login\" - 2 of 2 stages, 1 approval gates. \
+Say go ahead, name a different plan, or say \"compose\" and I'll tailor one to this task."
+        );
     }
 
     #[test]
@@ -1682,13 +2238,41 @@ mod tests {
             &definition(2),
             &input().with_freeform("please fix the login page for our production customers"),
         );
-        assert_eq!(expect_ask(directive).ask_kind(), AskKind::ComposeOffer);
+        let ask = expect_ask(directive);
+        assert_eq!(ask.ask_kind(), AskKind::ComposeOffer);
+        // 逐語。フィクスチャに express / feature が無いので目安は有効 scope 先頭 3 件へ落ちる。
+        assert_eq!(
+            ask.question(),
+            "None of the ready-made plans is an obvious fit for: \"please fix the login page for our production customers\". \
+I can work out a plan tailored to this task (recommended: reply \"compose\"), \
+or you can pick one directly (e.g. bugfix, classic; see /aidlc --help for the full list)."
+        );
     }
 
     #[test]
     fn branch_9a_an_explicit_scope_names_the_birth() {
         let directive = run_without(&definition(2), &input().with_scope("classic"));
-        assert!(print_message(&directive).contains("aidlc-utility intent-create --scope classic"));
+        // 記述が無いので `--arguments` / `--label` もラベル助言も出ない (upstream `:881`)。
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility intent-create --scope classic` to start the workflow (2 of 2 stages, 1 approval gates), then re-run `next` to continue."
+        );
+    }
+
+    /// 明示 scope に自由記述が併記されると、記述が `--arguments` へ乗りラベル助言が続く。
+    #[test]
+    fn branch_9a_a_described_birth_threads_the_arguments_and_label_hint() {
+        let directive = run_without(
+            &definition(2),
+            &input()
+                .with_scope("classic")
+                .with_freeform("build the auth service"),
+        );
+        assert_eq!(
+            print_message(&directive),
+            "Run `aidlc-utility intent-create --scope classic --arguments='build the auth service' --label \"<2-3 word kebab essence>\"` to start the workflow (2 of 2 stages, 1 approval gates), then re-run `next` to continue. \
+Replace `--label` with a 2-3 word kebab essence of the description (e.g. \"simple calc\"), which becomes the readable folder name for this piece of work."
+        );
     }
 
     #[test]
@@ -1767,7 +2351,8 @@ mod tests {
             directive,
             Directive::Done {
                 reason: Some(
-                    "Workflow complete — no in-scope stage remains after stage-0 (scope: classic)."
+                    "Workflow complete — no in-scope stage remains after stage-0 (scope: classic). \
+If this input is genuinely NEW, unrelated work (not a follow-up to the completed intent), don't stop here: offer to start a second intent, and on the human's yes run `next --new-intent --scope <scope> \"<text>\"` (see the SKILL's new-work offer, never auto-birth)."
                         .to_string()
                 )
             }
@@ -1786,7 +2371,9 @@ mod tests {
         let directive = run_with(&held, &definition(2), &input());
         assert_eq!(
             print_message(&directive),
-            "Run `aidlc-orchestrate report --stage stage-1 --result skipped --reason \"stage is SKIP in the approved workflow plan\"`, then re-run `next`."
+            "Stage \"stage-1\" is SKIP in the approved workflow plan but is still the active cursor. \
+Do not run this stage. Run `aidlc-orchestrate report --stage stage-1 --result skipped --reason 'stage is SKIP in the approved workflow plan'` \
+to recover the stale pointer, then re-run `next` to continue."
         );
     }
 
@@ -1844,7 +2431,10 @@ mod tests {
         // 定義のグラフに cursor の slug が無い (定義とリードモデルの食い違い方の一種)。
         let held = definition_with_single_node("someone-else");
         let directive = run_with(&genesis_state(1), &held, &input());
-        assert_eq!(error_message(&directive), "Unknown stage \"stage-0\".");
+        assert_eq!(
+            error_message(&directive),
+            "Unknown stage \"stage-0\". Run /aidlc --help for the full list."
+        );
     }
 
     // ---- run-stage 組み立ての面 (レビュアー・モード別 inline paths) ----
