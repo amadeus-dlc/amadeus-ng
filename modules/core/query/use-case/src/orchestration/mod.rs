@@ -65,7 +65,7 @@ pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
 pub use token_version::TokenVersion;
 
 // エンジンコマンドの概念と綴り
-pub use engine_command::{ConfigField, EngineCommand, ReadOnlyVerb};
+pub use engine_command::{EngineCommand, ReadOnlyVerb};
 
 // 値オブジェクト
 pub use stage_name::StageName;
