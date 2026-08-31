@@ -47,7 +47,22 @@ impl fmt::Display for CreateIntentError {
     }
 }
 
-impl std::error::Error for CreateIntentError {}
+impl std::error::Error for CreateIntentError {
+    /// 内包した失敗へ連鎖する。
+    ///
+    /// **封筒は連鎖を切ってはならない。** `RepositoryError::Corrupt` は「壊れていた」としか
+    /// `Display` に書かず、どの行がどう壊れていたかという実材料は `Error::source` の連鎖に
+    /// 載せる（裁定 6 — エラーは契約の一部であり、内部実装がバレる分類を契約に含めない）。
+    /// ここで `None` を返すと、その材料はこの型で行き止まりになり、診断には分類だけが残る。
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CreateIntentError::DefinitionRepository(error) => Some(error),
+            CreateIntentError::Intent(error) => Some(error),
+            CreateIntentError::IntentRepository(error) => Some(error),
+            CreateIntentError::ExecutionRepository(error) => Some(error),
+        }
+    }
+}
 
 impl From<RepositoryError<WorkflowDefinitionId>> for CreateIntentError {
     fn from(error: RepositoryError<WorkflowDefinitionId>) -> CreateIntentError {
@@ -70,5 +85,44 @@ impl From<RepositoryError<IntentId>> for CreateIntentError {
 impl From<RepositoryError<IntentExecutionId>> for CreateIntentError {
     fn from(error: RepositoryError<IntentExecutionId>) -> CreateIntentError {
         CreateIntentError::ExecutionRepository(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn definition_id() -> WorkflowDefinitionId {
+        WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id")
+    }
+
+    #[test]
+    fn the_envelope_chains_to_the_material_the_port_hid_in_its_source() {
+        // `RepositoryError::Corrupt` は分類 (「壊れていた」) しか `Display` に書かない
+        // (裁定 6)。どの行がどう壊れていたかは `source` の連鎖に載るので、封筒がそこで
+        // 連鎖を切ると診断には分類しか残らない。
+        let error = CreateIntentError::DefinitionRepository(RepositoryError::Corrupt {
+            id: definition_id(),
+            seq_nr: Some(1),
+            source: Box::new(std::io::Error::other("undecodable payload")),
+        });
+
+        let port = std::error::Error::source(&error).expect("ポートの失敗へ連鎖する");
+        assert_eq!(
+            std::error::Error::source(port)
+                .expect("ポートは原因へ連鎖する")
+                .to_string(),
+            "undecodable payload"
+        );
+    }
+
+    #[test]
+    fn a_rejected_genesis_chains_to_the_aggregate_rejection() {
+        // 集約の拒否は材料を自分の `Display` に持つ — 連鎖は 1 段で終わる。
+        let error = CreateIntentError::Intent(IntentError::Empty);
+
+        let inner = std::error::Error::source(&error).expect("拒否そのものへ連鎖する");
+        assert!(!inner.to_string().is_empty(), "材料を語る");
+        assert!(std::error::Error::source(inner).is_none(), "その先は無い");
     }
 }

@@ -437,13 +437,13 @@ async fn mint_intent(
             now,
         )
         .await
-        .map_err(|error| wording::orchestrate_failure(&error.to_string()))?;
+        .map_err(|error| wording::orchestrate_failure(&chained(&error)))?;
     // 骨格を書く — 投影は既存の行を**書き換える**ので、書き換え先が無いと 1 行も描けない
     // (`crate::scaffold` の doc / RMU の `ScaffoldMissing`)。
     let intent = intents_reader
         .find_by_id(&intent_id)
         .await
-        .map_err(|error| fault("cannot read back the minted intent", &error.to_string()))?;
+        .map_err(|error| diagnose("cannot read back the minted intent", &error))?;
     let scaffold = crate::scaffold::compose(
         &intent,
         &layout.project_dir().to_string_lossy(),
@@ -488,7 +488,7 @@ async fn ensure_defined(
     )
     .execute(now)
     .await
-    .map_err(|error| fault("cannot ingest the workflow definition", &error.to_string()))
+    .map_err(|error| diagnose("cannot ingest the workflow definition", &error))
 }
 
 fn build_request(scope: &str, args: &IntentCreateArgs, review: Option<&str>) -> StartRequest {
@@ -510,6 +510,37 @@ fn build_request(scope: &str, args: &IntentCreateArgs, review: Option<&str>) -> 
 /// 接頭辞は既存の自己防衛拒否と揃える）。
 fn fault(what: &str, cause: &str) -> String {
     wording::orchestrate_failure(&format!("{what}: {cause}"))
+}
+
+/// 失敗を `source` 連鎖の**末端まで辿って**診断 1 行に畳む。
+///
+/// 封筒型（`DefineWorkflowError` / `RepositoryError`）は分類だけを `Display` に書き、
+/// 「どのファイルがどう壊れていたか」という実材料は `Error::source` の連鎖に載せる
+/// （裁定 6 — エラーは契約の一部なので、内部実装がバレる分類を契約に含めない）。辿らないと
+/// 利用者には「壊れていた」しか届かない。
+///
+/// 家風として封筒の `Display` は子の文言を内包する（`"definition artifacts: {error}"`）ので、
+/// **既に描かれている末尾は二度書かない** — 同じ文言が `caused by` で 2 度並ぶのを防ぐ。
+fn diagnose(what: &str, error: &dyn std::error::Error) -> String {
+    fault(what, &chained(error))
+}
+
+/// 失敗と `source` 連鎖の末端までを 1 つの文字列に畳む（`what` を冠さない形）。
+///
+/// 既に「何をしようとして失敗したか」が文言に含まれている経路（ユースケースの失敗をそのまま
+/// 出す場合）はこちらを使う。連鎖の辿り方は [`diagnose`] と同一である。
+fn chained(error: &dyn std::error::Error) -> String {
+    let mut rendered = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if !rendered.ends_with(&text) {
+            rendered.push_str(" caused by ");
+            rendered.push_str(&text);
+        }
+        source = cause.source();
+    }
+    rendered
 }
 
 /// `--review` を upstream の閉集合へ畳む（`parseReviewOverride` `aidlc-utility.ts:155-162`）。
@@ -663,7 +694,87 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::*;
+    use core_command_domain::workflow_definition::WorkflowDefinitionId;
     use core_command_domain::workspace::CloneId;
+    use core_command_use_case::orchestration::{CreateIntentError, RepositoryError};
+
+    /// 連鎖の途中に居る封筒 (自分の `Display` に子の文言を内包しない形)。
+    #[derive(Debug)]
+    struct Envelope {
+        label: &'static str,
+        cause: Box<dyn std::error::Error + Send + Sync>,
+    }
+
+    impl std::fmt::Display for Envelope {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.label)
+        }
+    }
+
+    impl std::error::Error for Envelope {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(self.cause.as_ref())
+        }
+    }
+
+    #[test]
+    fn the_diagnostic_walks_the_chain_to_the_material_at_the_end() {
+        // 封筒は分類しか `Display` に書かない (裁定 6)。辿らなければ「壊れていた」しか
+        // 利用者に届かない。
+        let error = Envelope {
+            label: "corrupt",
+            cause: Box::new(std::io::Error::other(
+                "stage graph at /w/g.json is not valid JSON",
+            )),
+        };
+
+        assert_eq!(
+            diagnose("cannot ingest the workflow definition", &error),
+            wording::orchestrate_failure(
+                "cannot ingest the workflow definition: corrupt \
+                 caused by stage graph at /w/g.json is not valid JSON"
+            )
+        );
+    }
+
+    #[test]
+    fn a_wording_that_already_carries_its_cause_is_not_written_twice() {
+        // 家風として封筒の `Display` が子の文言を内包することがある
+        // (`"definition artifacts: {error}"`)。そのときは `caused by` で重ねない。
+        let inner = std::io::Error::other("io: NotFound at /w/g.json");
+        let error = Envelope {
+            label: "definition artifacts: io: NotFound at /w/g.json",
+            cause: Box::new(inner),
+        };
+
+        assert_eq!(
+            diagnose("cannot ingest the workflow definition", &error),
+            wording::orchestrate_failure(
+                "cannot ingest the workflow definition: \
+                 definition artifacts: io: NotFound at /w/g.json"
+            )
+        );
+    }
+
+    #[test]
+    fn the_mint_failure_reaches_the_material_the_repository_hid() {
+        // 鋳造の失敗はユースケースの文言をそのまま出す経路である（`what` を冠さない）。
+        // `RepositoryError::Corrupt` が `source` に載せた実材料まで届くことを、**出す文字列
+        // そのもの**で固定する。
+        let error = CreateIntentError::DefinitionRepository(RepositoryError::Corrupt {
+            id: WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            seq_nr: Some(1),
+            source: Box::new(std::io::Error::other("undecodable payload")),
+        });
+
+        assert_eq!(
+            wording::orchestrate_failure(&chained(&error)),
+            wording::orchestrate_failure(
+                "definition repository: corrupt: aggregate claude, seq_nr 1 \
+                 caused by undecodable payload"
+            )
+        );
+    }
 
     /// 実在シャード名の形 — macOS の `<user>-Mac-Studio.lan` が既存シャードと同じ綴りへ
     /// 落ちる。ここが崩れると監査証跡が 2 つのファイルへ割れる。

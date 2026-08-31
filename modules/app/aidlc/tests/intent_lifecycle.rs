@@ -550,6 +550,40 @@ async fn a_definition_that_cannot_be_read_stops_the_mint() {
     assert!(workspace.record_dir().is_none(), "カーソルは据わらない");
 }
 
+/// 壊れた定義の診断は**原因の末端まで**届く（PR #78 レビュー指摘）。
+///
+/// `DefinitionArtifactsError::Corrupt` は「壊れていた」としか `Display` に書かない（裁定 6 —
+/// 分類を契約に載せない）。どのファイルがどう壊れていたかという実材料は `Error::source` の
+/// 連鎖に載るので、診断はそれを末端まで辿らないと利用者に届かない。
+#[tokio::test]
+async fn a_corrupt_definition_names_the_file_and_the_reason_in_the_diagnostic() {
+    let workspace = Workspace::create();
+    let graph = workspace.path(".claude/tools/data/stage-graph.json");
+    fs::write(&graph, "{ not json").expect("壊れた定義を置く");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    let diagnostic = completion.diagnostic().unwrap_or_default();
+    assert!(
+        diagnostic.contains("caused by"),
+        "原因連鎖を辿っていない: {diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(&format!(
+            "stage graph at {} is not valid JSON",
+            graph.display()
+        )),
+        "壊れたファイルと理由が届いていない: {diagnostic}"
+    );
+}
+
 /// 定義の取込は**冪等**である — 2 度目の鋳造は定義のストリームに 1 行も足さない。
 ///
 /// ensure-defined は毎回の鋳造の前段で走る（配布物を読んで定義をストアへ合わせる）。
