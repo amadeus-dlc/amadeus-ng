@@ -104,6 +104,6 @@ fn に落ちた」形になっている（`code-summary` §7 に申し送り済�
 
 ## 対象外
 
-- **ワイヤ表現の型**（`interface-adapter/src/orchestration/wire/`）— 外部形式の写しであって
+- **永続化・ワイヤ表現の DTO**（`interface-adapter/src/orchestration/dto/`）— 外部形式の写しであって
   ドメインの抽象データ型ではない。ただしドメイン型へ写す境界では、ドメイン側の契約に従う
 - infrastructure の汎用モジュール（`core_infrastructure::canon_json` など）— ドメインを持たない部品（2026-08-29 の shared 解体で移設）
