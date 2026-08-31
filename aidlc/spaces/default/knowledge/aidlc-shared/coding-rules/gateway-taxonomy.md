@@ -1,7 +1,10 @@
 # Gateway の責務分類と命名 — Repository は集約名から名付ける
 
-**裁定日**: 2026-08-22（オーナー、共通ルール）
-**適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）
+**裁定日**: 2026-08-22（オーナー、共通ルール）/ **改訂**: 2026-08-31（オーナー裁定 — クエリ側の
+リードモデル読取ポートは `XxxDao` / `XxxDaoImpl` / `InMemoryXxxDao`。§3 に追記。b27）、
+同日追補（オーナー — **DAO はファイルや SQLite のテーブルを読んで DTO で返してよい。媒体は
+実装詳細でポート契約に漏らさない**。§3 の DAO 項末尾。b27）
+**適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）
 **機械強制**: レビュー基準（未リント化）。将来 `cargo lint` ルール候補は下記「機械強制の候補」
 
 ## ルール
@@ -90,6 +93,34 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 ドメイン語へ言い換えると対応が読めなくなる（[ubiquitous-language.md](ubiquitous-language.md)）。
 **例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
 機械化する場合も、この 2 本を除外リストに持つ実装にすること。
+
+**クエリ側のリードモデル読取ポートは `XxxDao`（オーナー裁定 2026-08-31）**: 読む先が集約では
+なくリードモデルなので Repository とは名乗らず、DTO/DAO の語で `XxxDao`（ポート trait）/
+`XxxDaoImpl`（実 Gateway）/ `InMemoryXxxDao`（テストダブル）とする。`Impl` 接尾辞と `InMemory`
+接頭辞の使い分けは §5 の Repository と同じ規約に従う。**Reader 造語の禁止を迂回する抜け道では
+ない** — `XxxReader` が禁じられるのは「Repository の操作を 1 つずつポートに割る」からであって、
+DAO は集約を扱わないのでその根拠自体が当たらない。対の一行:
+
+| 側 | 読む先 | ポート | 動詞 |
+| --- | --- | --- | --- |
+| コマンド | 集約（書くための再構成） | `XxxRepository` | `find_by_id` **と** `store`（両方。片方だけ使うのは違反） |
+| クエリ | リードモデル | `XxxDao` | `find` **のみ**（更新動詞が無いことが「リードモデルは更新できない」の型保証） |
+
+配置は use-case 層の `port/` でコマンド側と同型、実装は interface-adapter 層
+（[cqrs-boundaries.md](cqrs-boundaries.md) 規則 6 の同日追記）。§1c の例外 2 本
+（`EventStore` / `JournalReader`）とは独立の話である。
+
+**DAO はファイルや SQLite のテーブルを読んで DTO で返してよい（オーナー追補裁定 2026-08-31）。
+媒体は実装詳細でポート契約に漏らさない。** どちらを読むかは実装が決めることで、ポート面が
+語るのは DTO（クエリモデル）だけである。媒体名も格納形式も**ポート名にもシグネチャにも
+現れない** — これは §2「ストレージ媒体名の Repository は禁止」と同じ理屈であり、格納形式の
+変更（ファイル → SQLite → リモート）がポート面に波及しないことが目的である。
+
+例外はエラーの材料に限る: upstream の逐語文言そのものが媒体を名指している場合
+（12 §4 の「Stage graph not readable at {path}」「... is not valid JSON」など）、その文言を
+組む材料としてだけ形式語が残る。これは媒体の選択が契約に漏れているのではなく**契約が媒体を
+名指している**ケースであり、観測互換が設計規則より上位である（[README.md](README.md) の
+衝突優先順 1）。裏を返せば、upstream 逐語に裏付けのない形式語をポート面に置くのは違反である。
 
 ### 4. 読取専用ユースケースは型で保証する
 
