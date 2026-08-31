@@ -1,11 +1,25 @@
 //! `WorkflowDefinition` — Published Language (`stage-graph.json` / `scope-grid.json` /
-//! `scopes/*.md`) のモデルを内包するエンティティ。「何を実行しうるか」の静的定義を
+//! `scopes/*.md`) のモデルを内包する集約。「何を実行しうるか」の静的定義を
 //! 1 つの集約にまとめ、orchestration が依存する 6 述語を純関数として提供する
 //! (01 §3.1 / 10 §3)。
 //!
 //! 識別子 `WorkflowDefinitionId` と内容版 `DefinitionRevision` を持つ (ADR-008)。id は
 //! 内容が変わっても不変の系譜 ID、revision は 3 入力の内容ダイジェストであり、どちらも
-//! Repository 実装が付与する (ドメインは計算しない)。
+//! **取込境界**が付与する (ドメインは計算しない — 正準 JSON とダイジェストはアダプタの
+//! 責務である)。
+//!
+//! # 状態の正本はジャーナルである (2026-08-31 オーナー裁定)
+//!
+//! かつてこの集約は Repository 実装が dist の 3 入力をディスクから読んで組み立てていた。
+//! その実装は 2026-08-31 に破棄された (「NG 中の NG」) — 集約の最新状態をファイルから
+//! 組み立てるのは `coding-rules/cqrs-boundaries.md` 規則 4 への正面違反だからである。
+//!
+//! いまの構築経路は 3 本だけである (coding-rules/aggregate-commands.md「再構成の形」):
+//! genesis [`WorkflowDefinition::define`]、リプレイ [`WorkflowDefinition::replay`]、
+//! および誕生記録の変換 [`From<(Defined, DateTime<Utc>)>`]。**保存値からの検証付き再構成 (旧
+//! `from_artifacts`) は撤去した** — 第 3 の構築口であり、genesis と同一引数列の双子
+//! でもあった (`Intent::from_material` と同じ誤りの形)。dist の 3 入力を読むのは
+//! 書込ユースケースの取込境界であって、この集約の再構成経路ではない。
 //!
 //! # 観測可能契約 (レポート §6.1 — 逸脱台帳行き)
 //!
@@ -31,6 +45,9 @@
 //! 実効プランの合成は集約が行う。
 
 use std::collections::BTreeMap;
+use std::fmt;
+
+use chrono::{DateTime, Utc};
 
 use super::definition_revision::DefinitionRevision;
 use super::phase::PhaseId;
@@ -41,7 +58,7 @@ use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
 use super::stage_route::StageRoute;
 use super::stage_slug::StageSlug;
-use super::workflow_definition_event::{Defined, WorkflowDefinitionEvent};
+use super::workflow_definition_event::{Defined, Redefined, WorkflowDefinitionEvent};
 use super::workflow_definition_id::WorkflowDefinitionId;
 
 /// `validScopes()` に無いスコープ名。
@@ -79,11 +96,11 @@ impl UnknownScope {
     }
 }
 
-/// ワークフロー定義のエンティティ (構築後 immutable)。
+/// ワークフロー定義の集約。
 ///
-/// 等価は**内容と識別子の両方**で決まる (derive)。読取モデルは 3 入力から毎回組み立て直す
-/// 値であり、「同じ系譜の同じ内容」を 1 つの等価関係で表すのが自然だからである。id だけの
-/// 同一性比較が要るのは `IntentExecution` 側の定義照合で、そちらは `id()` 同士を突き合わせる
+/// 等価は**内容と識別子の両方**で決まる (derive)。「同じ系譜の同じ内容」を 1 つの等価関係で
+/// 表すのが自然だからである。id だけの同一性比較が要るのは `IntentExecution` 側の定義照合で、
+/// そちらは `id()` 同士を突き合わせる
 /// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDefinition {
@@ -92,19 +109,57 @@ pub struct WorkflowDefinition {
     graph: StageGraph,
     grid: ScopeGrid,
     scopes: BTreeMap<String, ScopeMetadata>,
+    /// 適用済みイベント数と一致する順序番号 (`Defined` = 1)。次のイベントの通番は
+    /// `seq_nr + 1` であり、封筒を組む Repository はこの値を使う。
+    seq_nr: usize,
+    /// ストアが採番した楽観 version — **次の書込に提示する不透明トークン**である。
+    ///
+    /// 解釈も比較も算術もしない (BR5.3)。再構成した Repository が
+    /// [`WorkflowDefinition::with_version`] で刻み、書込む Repository が
+    /// [`WorkflowDefinition::version`] で読む。
+    version: usize,
+    /// 最後に適用したイベントの発生時刻 (集約は時計を持たない — NFR3.1)。
+    ///
+    /// 封筒の `occurred_at` はここから来る。`IntentExecution` と同型であり、`store` の
+    /// 引数で時刻を運ばない (オーナー裁定 2026-08-31 — 手本と対にする)。
+    last_updated_at: DateTime<Utc>,
+}
+
+/// 改訂を受け付けられない形 (材料のみ — 利用者向け文言はアダプタ層)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RedefineError {
+    /// 提示された内容版が現在と同じ — 書くべき事実が無い。
+    ///
+    /// 無言の no-op にはしない (coding-rules/aggregate-commands.md「拒否はガード付き Err」)。
+    /// 取込を冪等に見せるかどうかは呼出側 (ユースケース) の判断であり、集約は「変化が無い」
+    /// という事実を返すだけである。
+    Unchanged {
+        /// 現在と一致した内容版。
+        revision: DefinitionRevision,
+    },
+    /// 通番が上限に達した (飽和加算で成功を装わない)。
+    SequenceExhausted,
 }
 
 impl WorkflowDefinition {
+    /// まだ 1 度も永続化していない集約が提示する版 (新規作成の楽観 version)。
+    ///
+    /// 本家 v3 の規約「新規作成は `seq_nr == 1` かつ `version == 0`」の 0 に名前を与えた
+    /// ものである — 呼出側にも Repository 実装にも裸の `0` を書かせない。
+    pub const UNPERSISTED_VERSION: usize = 0;
+
     /// 定義を**確立する** — 集約と誕生イベントの対を返す (genesis ファクトリ)。
     ///
     /// 集約のファクトリは (集約インスタンス, 誕生イベント) の**両方**を返すことが必須である
     /// (coding-rules/aggregate-commands.md)。Repository の永続化は
-    /// `store(&event, &aggregate, ..)` の形でジャーナル追記分と スナップショット分を同一
+    /// `store(&event, &aggregate)` の形でジャーナル追記分とスナップショット分を同一
     /// トランザクションで受け取るので、どちらが欠けても永続化が組めない。
     ///
-    /// 現スコープではこのイベントをジャーナルへ**接続していない** — 定義の変異取込は
-    /// 後続 intent の課題であり、ここでは規則が要求する形だけを満たす。実ファイルからの
-    /// 読取は genesis ではなく再構成なので [`WorkflowDefinition::from_artifacts`] を使う。
+    /// `id` / `revision` は**取込境界が付与する** (ADR-008)。ドメインは revision を計算しない。
+    /// `occurred_at` も同様に外から来る — 集約は時計を持たない (NFR3.1)。
+    ///
+    /// グリッド列と `.md` の**不一致は検証しない** — 双方向の不一致がどちらも正当な
+    /// 観測可能契約だからである (zero-EXECUTE スコープ / ランタイム不可視スコープ)。
     #[must_use]
     pub fn define(
         id: WorkflowDefinitionId,
@@ -112,41 +167,153 @@ impl WorkflowDefinition {
         graph: StageGraph,
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
+        occurred_at: DateTime<Utc>,
     ) -> (WorkflowDefinition, WorkflowDefinitionEvent) {
-        let event = WorkflowDefinitionEvent::Defined(Defined::new(id.clone(), revision.clone()));
+        let defined = Defined::new(id, revision, graph, grid, scopes);
         (
-            WorkflowDefinition::from_artifacts(id, revision, graph, grid, scopes),
-            event,
+            WorkflowDefinition::from((defined.clone(), occurred_at)),
+            WorkflowDefinitionEvent::Defined(defined),
         )
     }
 
-    /// 実ファイル (Published Language) から読み直した 3 入力を束ね直す (再構成)。
+    /// 定義を別の内容版へ**改訂する** (1 コマンド 1 イベント)。
     ///
-    /// **再構成はファクトリではない** — 歴史を読み戻す経路なのでイベントを作らない
-    /// (coding-rules/aggregate-commands.md の再構成条項)。Repository の読取経路はこちらを
-    /// 呼ぶ。構造体リテラルが現れるのはこの 1 か所だけで、`define` もここへ委譲する
-    /// (coding-rules/factory-naming.md「すべての構築経路が基本コンストラクタを通る」)。
+    /// 取込が読んだ 3 入力が現在の内容版と違うときに呼ぶ。同じ内容版なら書くべき事実が
+    /// 無いので `Unchanged` で拒否する — 判断は集約が持ち、呼出側に内容版の比較を
+    /// 再実装させない (tell-dont-ask.md)。取込を冪等に見せたい呼出側はこの拒否を
+    /// 「変化なし」として畳めばよい。
     ///
-    /// `id` / `revision` は **Repository 実装が付与する** (ADR-008)。ドメインは revision を
-    /// 計算しない — 正準 JSON とダイジェストはアダプタ層の責務である。
+    /// # Errors
     ///
-    /// グリッド列と `.md` の**不一致は検証しない** — 双方向の不一致がどちらも正当な
-    /// 観測可能契約だからである (zero-EXECUTE スコープ / ランタイム不可視スコープ)。
-    #[must_use]
-    pub const fn from_artifacts(
-        id: WorkflowDefinitionId,
+    /// 内容版が現在と同じ (`Unchanged`)、通番の枯渇 (`SequenceExhausted`)。
+    pub fn redefine(
+        &mut self,
         revision: DefinitionRevision,
         graph: StageGraph,
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
-    ) -> WorkflowDefinition {
-        WorkflowDefinition {
-            id,
-            revision,
-            graph,
-            grid,
-            scopes,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<WorkflowDefinitionEvent, RedefineError> {
+        if self.revision == revision {
+            return Err(RedefineError::Unchanged { revision });
         }
+        let Some(seq_nr) = self.seq_nr.checked_add(1) else {
+            return Err(RedefineError::SequenceExhausted);
+        };
+        let event =
+            WorkflowDefinitionEvent::Redefined(Redefined::new(revision, graph, grid, scopes));
+        self.apply_event(seq_nr, occurred_at, &event);
+        Ok(event)
+    }
+
+    /// スナップショット種に差分イベントを畳み込んで復元する (Event Sourcing の再生経路)。
+    ///
+    /// 本家 v3 の `UserAccount::replay(events, snapshot)` と同型。スナップショット種は
+    /// 誕生記録の変換 (`From<(Defined, DateTime<Utc>)>`) で得る。**再構成は失敗を返さない** — 歴史を読む
+    /// だけであり、壊れた歴史は回復せずクラッシュする (オーナー裁定 2026-08-30)。
+    ///
+    /// # Panics
+    ///
+    /// 通番の飛び (行の欠け・重複)。
+    #[must_use]
+    pub fn replay(
+        snapshot: WorkflowDefinition,
+        events: impl IntoIterator<Item = (usize, DateTime<Utc>, WorkflowDefinitionEvent)>,
+    ) -> WorkflowDefinition {
+        let mut definition = snapshot;
+        for (seq_nr, occurred_at, event) in events {
+            definition.apply_event(seq_nr, occurred_at, &event);
+        }
+        definition
+    }
+
+    /// イベントを 1 つ適用する (通常実行とリプレイの唯一の状態遷移経路 — BR1.1)。
+    ///
+    /// 通番も発生時刻も**適用の引数**であって、イベントに載る材料ではない (輸送のメタデータは
+    /// 封筒が運ぶ — ADR-010 / B7)。適用が通れば `self.seq_nr` / `self.last_updated_at` が
+    /// そのイベントの通番と発生時刻になる。
+    #[allow(
+        clippy::expect_used,
+        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
+    )]
+    fn apply_event(
+        &mut self,
+        seq_nr: usize,
+        occurred_at: DateTime<Utc>,
+        event: &WorkflowDefinitionEvent,
+    ) {
+        let expected = self
+            .seq_nr
+            .checked_add(1)
+            .expect("apply_event: sequence exhausted");
+        assert_eq!(
+            seq_nr, expected,
+            "apply_event: sequence gap (expected {expected}, actual {seq_nr})"
+        );
+        // 変種の網羅 match — 腕の欠落はビルドで落ちる。
+        match event {
+            // genesis イベントは差分適用では何も変えない — スナップショット種が誕生を
+            // 含む (本家サンプル同型: apply は変異イベントだけを見る)。
+            WorkflowDefinitionEvent::Defined(_) => {}
+            WorkflowDefinitionEvent::Redefined(redefined) => {
+                self.revision = redefined.revision().clone();
+                self.graph = redefined.graph().clone();
+                self.grid = redefined.grid().clone();
+                self.scopes = redefined.scopes().clone();
+            }
+        }
+        self.seq_nr = seq_nr;
+        self.last_updated_at = occurred_at;
+    }
+
+    /// ストアが採番した版を刻む (**Repository 実装専用**)。
+    ///
+    /// 再構成の最後にストアが読んだ版を載せるための一手である — ユースケースは呼ばない。
+    /// 版はドメインが導出できない値 (正本はスナップショット行の列) なので、外から刻む口が
+    /// 要る。
+    #[must_use]
+    pub const fn with_version(mut self, version: usize) -> WorkflowDefinition {
+        self.version = version;
+        self
+    }
+
+    /// 再構成した通番を刻む (**Repository 実装専用**)。
+    ///
+    /// 基底の通番はスナップショット**封筒の列**から来る — 定義のスナップショット行は
+    /// 通番を内容として持たない (`Intent` と同じ形)。差分再生はここで刻んだ値の次から
+    /// 始まる。
+    #[must_use]
+    pub const fn with_seq_nr(mut self, seq_nr: usize) -> WorkflowDefinition {
+        self.seq_nr = seq_nr;
+        self
+    }
+
+    /// 適用済みイベント数と一致する順序番号 (`Defined` = 1)。
+    ///
+    /// 次のイベントの通番は `seq_nr + 1` であり、改訂を通ったあとの値は**そのイベントの
+    /// 通番そのもの**である。封筒を組む Repository はこの値を使う。
+    #[must_use]
+    pub const fn seq_nr(&self) -> usize {
+        self.seq_nr
+    }
+
+    /// 次の書込に提示する楽観 version (ストアが採番した不透明トークン)。
+    ///
+    /// 解釈も比較も算術もしない — 読んだ値をそのままストアへ返すだけである (BR5.3)。
+    /// `seq_nr` から導いてはならない。
+    #[must_use]
+    pub const fn version(&self) -> usize {
+        self.version
+    }
+
+    /// 最後に適用したイベントの発生時刻 (集約は時計を持たない — NFR3.1)。
+    ///
+    /// `define` / `redefine` を通ったあとの値は**そのイベントの発生時刻**であり、封筒の
+    /// `occurred_at` になる。封筒を組む Repository はここから読む
+    /// (`IntentExecution::last_updated_at` と同型 — オーナー裁定 2026-08-31)。
+    #[must_use]
+    pub const fn last_updated_at(&self) -> &DateTime<Utc> {
+        &self.last_updated_at
     }
 
     /// この定義の系譜 ID。内容が変わっても不変 (ADR-008)。
@@ -272,11 +439,48 @@ impl WorkflowDefinition {
     }
 }
 
+impl From<(Defined, DateTime<Utc>)> for WorkflowDefinition {
+    /// 誕生記録とその発生時刻から集約を導出する (リプレイのスナップショット種)。
+    ///
+    /// **構造体リテラルはここだけ** — genesis ([`WorkflowDefinition::define`]) もこの変換を
+    /// 通る (coding-rules/factory-naming.md「すべての構築経路が基本コンストラクタを通る」)。
+    /// 誕生時点の通番は 1、版は未永続 (ストアが採番する) である。
+    ///
+    /// 時刻を対で受けるのは、**発生時刻がイベントの材料ではなく封筒のメタデータ**だから
+    /// である (`Defined` は時刻を持たない — ADR-010 / B7)。誕生記録だけでは集約の
+    /// `last_updated_at` を埋められないので、変換の入力は対になる。
+    fn from((defined, occurred_at): (Defined, DateTime<Utc>)) -> WorkflowDefinition {
+        WorkflowDefinition {
+            id: defined.id().clone(),
+            revision: defined.revision().clone(),
+            graph: defined.graph().clone(),
+            grid: defined.grid().clone(),
+            scopes: defined.scopes().clone(),
+            seq_nr: 1,
+            version: WorkflowDefinition::UNPERSISTED_VERSION,
+            last_updated_at: occurred_at,
+        }
+    }
+}
+
+impl fmt::Display for RedefineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RedefineError::Unchanged { revision } => {
+                write!(f, "definition unchanged at revision {}", revision.as_str())
+            }
+            RedefineError::SequenceExhausted => f.write_str("sequence exhausted"),
+        }
+    }
+}
+
+impl std::error::Error for RedefineError {}
+
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
-    // allow)。
-    #![allow(clippy::indexing_slicing)]
+    // allow)。panic! は想定外バリアントの即時失敗という検証用途で使う。
+    #![allow(clippy::indexing_slicing, clippy::panic)]
 
     use super::*;
     use crate::workflow_definition::{ExecutionKind, StageMode, StageNodeBuilder, StageNumber};
@@ -318,6 +522,13 @@ mod tests {
         DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64))).unwrap()
     }
 
+    /// イベントの発生時刻 (集約は時計を持たないので固定値を渡す)。
+    fn at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-08-31T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
     /// 文書順 = 数値順の小さな出荷グラフ相当の 3 入力。
     fn artifacts() -> (StageGraph, ScopeGrid) {
         let graph = StageGraph::new(vec![
@@ -346,13 +557,15 @@ mod tests {
     /// 文書順 = 数値順の小さな出荷グラフ相当。
     fn sample() -> WorkflowDefinition {
         let (graph, grid) = artifacts();
-        WorkflowDefinition::from_artifacts(
+        WorkflowDefinition::define(
             id("claude"),
             revision('0'),
             graph,
             grid,
             registry(&REGISTERED),
+            at(),
         )
+        .0
     }
 
     // ---- ファクトリ (coding-rules/aggregate-commands.md) ----
@@ -365,35 +578,213 @@ mod tests {
         let (definition, event) = WorkflowDefinition::define(
             id("claude"),
             revision('0'),
-            graph,
-            grid,
-            registry(&REGISTERED),
-        );
-        let WorkflowDefinitionEvent::Defined(defined) = &event;
-        assert_eq!(defined.id(), definition.id());
-        assert_eq!(defined.revision(), definition.revision());
-    }
-
-    #[test]
-    fn reconstruction_produces_the_same_definition_without_an_event() {
-        // 再構成はファクトリではない — 歴史を読み戻す経路なので**イベントを作らない**
-        // (作ればリプレイのたびに歴史が増える)。型がそれを保証する: 戻り値は集約だけである。
-        let (graph, grid) = artifacts();
-        let (born, _) = WorkflowDefinition::define(
-            id("claude"),
-            revision('0'),
             graph.clone(),
             grid.clone(),
             registry(&REGISTERED),
+            at(),
         );
-        let restored = WorkflowDefinition::from_artifacts(
+        let WorkflowDefinitionEvent::Defined(defined) = &event else {
+            panic!("genesis は Defined を返す: {event:?}");
+        };
+        assert_eq!(defined.id(), definition.id());
+        assert_eq!(defined.revision(), definition.revision());
+        // 誕生イベントは**内容そのもの**を運ぶ — これがリプレイのスナップショット種になる。
+        assert_eq!(defined.graph(), &graph);
+        assert_eq!(defined.grid(), &grid);
+        assert_eq!(defined.scopes(), &registry(&REGISTERED));
+        assert_eq!(definition.seq_nr(), 1, "誕生の通番は 1");
+        assert_eq!(
+            definition.version(),
+            WorkflowDefinition::UNPERSISTED_VERSION
+        );
+    }
+
+    #[test]
+    fn the_birth_record_converts_back_into_the_same_definition() {
+        // 再構成はファクトリではない — 歴史を読み戻す経路なので**イベントを作らない**。
+        // 型がそれを保証する: 変換の戻り値は集約だけである。
+        let (graph, grid) = artifacts();
+        let (born, event) = WorkflowDefinition::define(
             id("claude"),
             revision('0'),
             graph,
             grid,
             registry(&REGISTERED),
+            at(),
         );
-        assert_eq!(restored, born, "同じ材料からは同じ定義が組み上がる");
+        let WorkflowDefinitionEvent::Defined(defined) = event else {
+            panic!("genesis は Defined を返す");
+        };
+        assert_eq!(WorkflowDefinition::from((defined, at())), born);
+    }
+
+    #[test]
+    fn the_aggregate_carries_the_time_of_the_event_it_last_applied() {
+        // 封筒の `occurred_at` はここから来る (`IntentExecution` と同型) — `store` の引数で
+        // 時刻を運ばないので、集約が運ばなければ封筒が組めない。
+        let definition = sample();
+        assert_eq!(definition.last_updated_at(), &at(), "誕生の時刻が刻まれる");
+
+        let later = at() + chrono::TimeDelta::try_seconds(90).expect("固定のオフセット");
+        let mut redefined = definition;
+        let (graph, grid) = artifacts();
+        redefined
+            .redefine(revision('1'), graph, grid, registry(&["alpha"]), later)
+            .expect("内容版が違えば改訂できる");
+        assert_eq!(
+            redefined.last_updated_at(),
+            &later,
+            "改訂はその事実の発生時刻へ進める"
+        );
+    }
+
+    #[test]
+    fn replaying_takes_the_time_from_each_envelope() {
+        // リプレイと通常実行は同一経路 (BR1.1) — 時刻も差分イベントごとに封筒から来る。
+        let later = at() + chrono::TimeDelta::try_seconds(90).expect("固定のオフセット");
+        let (graph, grid) = artifacts();
+        let event = WorkflowDefinitionEvent::Redefined(Redefined::new(
+            revision('1'),
+            graph,
+            grid,
+            registry(&["alpha"]),
+        ));
+
+        let replayed = WorkflowDefinition::replay(sample(), vec![(2, later, event)]);
+
+        assert_eq!(replayed.last_updated_at(), &later);
+        assert_eq!(replayed.seq_nr(), 2);
+    }
+
+    // ---- 改訂 (1 コマンド 1 イベント) ----
+
+    #[test]
+    fn redefining_with_a_new_revision_replaces_the_content_and_advances_the_sequence() {
+        let mut definition = sample();
+        let (graph, grid) = artifacts();
+        let event = definition
+            .redefine(revision('1'), graph, grid, registry(&["alpha"]), at())
+            .expect("内容版が違えば改訂できる");
+
+        let WorkflowDefinitionEvent::Redefined(redefined) = &event else {
+            panic!("改訂は Redefined を返す: {event:?}");
+        };
+        assert_eq!(redefined.revision(), &revision('1'));
+        assert_eq!(definition.revision(), &revision('1'));
+        assert_eq!(definition.valid_scopes(), ["alpha"], "内容が入れ替わる");
+        assert_eq!(definition.id(), &id("claude"), "系譜 ID は不変");
+        assert_eq!(definition.seq_nr(), 2, "改訂は次の通番になる");
+    }
+
+    #[test]
+    fn redefining_with_the_same_revision_is_refused_instead_of_silently_doing_nothing() {
+        // 拒否はガード付き Err (coding-rules/aggregate-commands.md)。冪等に見せるかどうかは
+        // 呼出側の判断であり、集約は「変化が無い」という事実を返すだけである。
+        let mut definition = sample();
+        let before = definition.clone();
+        let (graph, grid) = artifacts();
+        let error = definition
+            .redefine(revision('0'), graph, grid, registry(&REGISTERED), at())
+            .expect_err("同じ内容版は拒否される");
+
+        assert_eq!(
+            error,
+            RedefineError::Unchanged {
+                revision: revision('0')
+            }
+        );
+        assert_eq!(definition, before, "拒否された改訂は何も動かさない");
+    }
+
+    #[test]
+    fn the_refusal_carries_material_not_wording() {
+        assert_eq!(
+            RedefineError::Unchanged {
+                revision: revision('0')
+            }
+            .to_string(),
+            format!("definition unchanged at revision sha256:{}", "0".repeat(64))
+        );
+        assert_eq!(
+            RedefineError::SequenceExhausted.to_string(),
+            "sequence exhausted"
+        );
+        let error: Box<dyn std::error::Error> = Box::new(RedefineError::SequenceExhausted);
+        assert_eq!(error.to_string(), "sequence exhausted");
+    }
+
+    #[test]
+    fn an_exhausted_sequence_is_refused_rather_than_saturating() {
+        let mut definition = sample().with_seq_nr(usize::MAX);
+        let (graph, grid) = artifacts();
+        assert_eq!(
+            definition.redefine(revision('1'), graph, grid, registry(&["alpha"]), at()),
+            Err(RedefineError::SequenceExhausted)
+        );
+    }
+
+    // ---- リプレイ (通常実行と同一経路 — BR1.1) ----
+
+    #[test]
+    fn replaying_no_events_returns_the_snapshot_state() {
+        let snapshot = sample();
+        assert_eq!(
+            WorkflowDefinition::replay(snapshot.clone(), Vec::new()),
+            snapshot
+        );
+    }
+
+    #[test]
+    fn replaying_the_genesis_event_is_a_no_op() {
+        // スナップショット種が誕生を含むので、genesis イベントの差分適用は何も変えない
+        // (本家サンプル同型)。通番だけが基底の次へ進む。
+        let (graph, grid) = artifacts();
+        let (definition, event) = WorkflowDefinition::define(
+            id("claude"),
+            revision('0'),
+            graph,
+            grid,
+            registry(&REGISTERED),
+            at(),
+        );
+        let replayed = WorkflowDefinition::replay(definition.clone(), vec![(2, at(), event)]);
+        assert_eq!(replayed.revision(), definition.revision());
+        assert_eq!(replayed.valid_scopes(), definition.valid_scopes());
+    }
+
+    #[test]
+    fn replaying_a_redefinition_reaches_the_same_state_as_the_command_path() {
+        // 通常実行とリプレイは同じ `apply_event` を通る (BR1.1) — 片方だけ直す余地が無い。
+        let (graph, grid) = artifacts();
+        let mut commanded = sample();
+        let event = commanded
+            .redefine(revision('1'), graph, grid, registry(&["alpha"]), at())
+            .expect("改訂できる");
+
+        let replayed = WorkflowDefinition::replay(sample(), vec![(2, at(), event)]);
+        assert_eq!(replayed, commanded);
+    }
+
+    #[test]
+    #[should_panic(expected = "sequence gap")]
+    fn a_sequence_gap_crashes_the_replay() {
+        // 壊れた歴史は回復せずクラッシュが正 (オーナー裁定 2026-08-30)。
+        let (graph, grid) = artifacts();
+        let event = WorkflowDefinitionEvent::Redefined(crate::workflow_definition::Redefined::new(
+            revision('1'),
+            graph,
+            grid,
+            registry(&["alpha"]),
+        ));
+        let _ = WorkflowDefinition::replay(sample(), vec![(5, at(), event)]);
+    }
+
+    #[test]
+    fn the_store_stamps_the_version_it_read() {
+        // 版はドメインが導出できない値 (正本はスナップショット行の列) なので外から刻む。
+        let definition = sample().with_version(7);
+        assert_eq!(definition.version(), 7);
+        assert_eq!(definition.seq_nr(), 1, "版と通番は別物である");
     }
 
     // ---- エンティティの識別子と内容版 (ADR-008) ----
@@ -412,13 +803,15 @@ mod tests {
         let one = sample();
         let graph = one.graph().clone();
         let grid = one.grid().clone();
-        let other = WorkflowDefinition::from_artifacts(
+        let other = WorkflowDefinition::define(
             id("kiro"),
             revision('0'),
             graph,
             grid,
             registry(&REGISTERED),
-        );
+            at(),
+        )
+        .0;
         assert_ne!(one, other);
         assert_ne!(one.id(), other.id());
         // 内容版は同じ — 系譜だけが違う。
@@ -428,13 +821,15 @@ mod tests {
     #[test]
     fn the_revision_changes_without_the_identity_changing() {
         let one = sample();
-        let other = WorkflowDefinition::from_artifacts(
+        let other = WorkflowDefinition::define(
             one.id().clone(),
             revision('1'),
             one.graph().clone(),
             one.grid().clone(),
             registry(&REGISTERED),
-        );
+            at(),
+        )
+        .0;
         // ピン更新 = 内容版だけが進む。系譜 ID は不変 (ADR-008)。
         assert_eq!(one.id(), other.id());
         assert_ne!(one.revision(), other.revision());
@@ -578,13 +973,15 @@ mod tests {
         ])
         .unwrap();
         let grid = ScopeGrid::from_graph(&graph);
-        let wd = WorkflowDefinition::from_artifacts(
+        let wd = WorkflowDefinition::define(
             id("claude"),
             revision('0'),
             graph,
             grid,
             registry(&["alpha"]),
-        );
+            at(),
+        )
+        .0;
 
         let numeric: Vec<&str> = wd
             .subgraph_for_scope("alpha")
@@ -635,13 +1032,15 @@ mod tests {
             .collect();
         let graph = StageGraph::new(nodes).unwrap();
         let grid = ScopeGrid::from_graph(&graph);
-        WorkflowDefinition::from_artifacts(
+        WorkflowDefinition::define(
             id("claude"),
             revision('0'),
             graph,
             grid,
             registry(&REGISTERED),
+            at(),
         )
+        .0
     }
 
     proptest! {

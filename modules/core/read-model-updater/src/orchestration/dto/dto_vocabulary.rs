@@ -8,7 +8,7 @@
 use core_command_domain::orchestration::AutonomyMode;
 use core_command_domain::workflow_definition::{BrownfieldGreenfield, PhaseId, PlanAction};
 
-use super::wire_error::WireDecodeError;
+use super::dto_decode_error::DtoDecodeError;
 
 /// 実効プラン 1 要素の綴り。
 pub(crate) const fn plan_action_spelling(value: PlanAction) -> &'static str {
@@ -19,14 +19,11 @@ pub(crate) const fn plan_action_spelling(value: PlanAction) -> &'static str {
 }
 
 /// 実効プラン 1 要素の復号。
-pub(crate) fn plan_action_of(
-    raw: &str,
-    field: &'static str,
-) -> Result<PlanAction, WireDecodeError> {
+pub(crate) fn plan_action_of(raw: &str, field: &'static str) -> Result<PlanAction, DtoDecodeError> {
     match raw {
         "Execute" => Ok(PlanAction::Execute),
         "Skip" => Ok(PlanAction::Skip),
-        other => Err(WireDecodeError::malformed(field, other)),
+        other => Err(DtoDecodeError::malformed(field, other)),
     }
 }
 
@@ -39,11 +36,11 @@ pub(crate) const fn autonomy_spelling(value: AutonomyMode) -> &'static str {
 }
 
 /// 自律モードの復号。
-pub(crate) fn autonomy_of(raw: &str) -> Result<AutonomyMode, WireDecodeError> {
+pub(crate) fn autonomy_of(raw: &str) -> Result<AutonomyMode, DtoDecodeError> {
     match raw {
         "Autonomous" => Ok(AutonomyMode::Autonomous),
         "Gated" => Ok(AutonomyMode::Gated),
-        other => Err(WireDecodeError::malformed("autonomy", other)),
+        other => Err(DtoDecodeError::malformed("autonomy", other)),
     }
 }
 
@@ -59,14 +56,14 @@ pub(crate) const fn phase_spelling(value: PhaseId) -> &'static str {
 }
 
 /// フェーズの復号 (ジャーナル面)。
-pub(crate) fn phase_of(raw: &str, field: &'static str) -> Result<PhaseId, WireDecodeError> {
+pub(crate) fn phase_of(raw: &str, field: &'static str) -> Result<PhaseId, DtoDecodeError> {
     match raw {
         "Initialization" => Ok(PhaseId::Initialization),
         "Ideation" => Ok(PhaseId::Ideation),
         "Inception" => Ok(PhaseId::Inception),
         "Construction" => Ok(PhaseId::Construction),
         "Operation" => Ok(PhaseId::Operation),
-        other => Err(WireDecodeError::malformed(field, other)),
+        other => Err(DtoDecodeError::malformed(field, other)),
     }
 }
 
@@ -79,11 +76,11 @@ pub(crate) const fn project_type_spelling(value: BrownfieldGreenfield) -> &'stat
 }
 
 /// プロジェクト種別の復号。
-pub(crate) fn project_type_of(raw: &str) -> Result<BrownfieldGreenfield, WireDecodeError> {
+pub(crate) fn project_type_of(raw: &str) -> Result<BrownfieldGreenfield, DtoDecodeError> {
     match raw {
         "brownfield" => Ok(BrownfieldGreenfield::Brownfield),
         "greenfield" => Ok(BrownfieldGreenfield::Greenfield),
-        other => Err(WireDecodeError::malformed("project_type", other)),
+        other => Err(DtoDecodeError::malformed("project_type", other)),
     }
 }
 
@@ -141,7 +138,7 @@ mod tests {
     fn an_unknown_spelling_is_refused_with_its_raw_value() {
         assert_eq!(
             plan_action_of("EXECUTE", "overlay").unwrap_err(),
-            WireDecodeError::malformed("overlay", "EXECUTE")
+            DtoDecodeError::malformed("overlay", "EXECUTE")
         );
         assert!(autonomy_of("gated").is_err());
         assert!(phase_of("ideation", "phase").is_err());

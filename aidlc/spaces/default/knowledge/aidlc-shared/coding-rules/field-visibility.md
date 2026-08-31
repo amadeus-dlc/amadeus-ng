@@ -53,7 +53,7 @@
 「例外を認めない」は**射程の中で**の話である。次は**そもそも本ルールの対象外**であり、
 例外ではない（[abstract-data-type.md](abstract-data-type.md) §対象外 と同じ範囲）。
 
-- **ワイヤ表現・外部形式の DTO**（`interface-adapter/src/orchestration/wire/` など、
+- **ワイヤ表現・外部形式の DTO**（`interface-adapter/src/orchestration/dto/` など、
   serde の外部表現を写す型）— ドメインの抽象データ型ではなく、外部形式の写しである
 - **infrastructure の汎用モジュール**（`core_infrastructure::canon_json` など）— ドメインを持たない部品（2026-08-29 の shared 解体で移設）
 - **`enum` の変種フィールド** — 言語仕様上 private にできない

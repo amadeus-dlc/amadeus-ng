@@ -58,6 +58,27 @@ impl Workspace {
         fs::read_to_string(entry.path()).ok()
     }
 
+    /// ジャーナル行数を 2 つに割って数える — (定義ストリーム, それ以外)。
+    ///
+    /// 定義 id はハーネス名 (`claude`) なので、UUID を名乗る intent / 実行の 2 集約と同じ表に
+    /// 居ても `aid` で分かれる。
+    fn journal_rows(&self) -> (usize, usize) {
+        let store = self.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+        let connection = rusqlite::Connection::open(&store).expect("ストアは開ける");
+        let count = |predicate: &str| -> usize {
+            connection
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM journal WHERE aid {predicate} 'claude'"),
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("行数は数えられる")
+                .try_into()
+                .expect("行数は非負")
+        };
+        (count("="), count("<>"))
+    }
+
     fn write_definition(&self) {
         let data = self.path(".claude/tools/data");
         let scopes = self.path(".claude/scopes");
@@ -500,7 +521,11 @@ async fn an_oversize_directive_is_refused_instead_of_emitted() {
     );
 }
 
-/// 定義が読めなければ鋳造は止まる（壊れたインストールで空の intent を作らない）。
+/// 配布物が読めなければ鋳造は止まる（壊れたインストールで空の intent を作らない）。
+///
+/// 止まる位置は 2026-08-31 の ES 転換で**手前へ動いた**。以前は鋳造の途中で Repository が
+/// ファイルを読んで失敗していたが、いまは鋳造の前段の ensure-defined（取込 → 定義の確立）が
+/// 失敗する。観測は同じ「stdout には何も出さず、カーソルも据わらない」である。
 #[tokio::test]
 async fn a_definition_that_cannot_be_read_stops_the_mint() {
     let workspace = Workspace::create();
@@ -514,14 +539,92 @@ async fn a_definition_that_cannot_be_read_stops_the_mint() {
     .await;
 
     assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
     assert!(
-        completion
-            .diagnostic()
-            .unwrap_or_default()
-            .starts_with("aidlc-orchestrate: definition repository: io: NotFound at"),
+        completion.diagnostic().unwrap_or_default().starts_with(
+            "aidlc-orchestrate: cannot ingest the workflow definition: \
+                 definition artifacts: io: NotFound at"
+        ),
         "{completion:?}"
     );
     assert!(workspace.record_dir().is_none(), "カーソルは据わらない");
+}
+
+/// 壊れた定義の診断は**原因の末端まで**届く（PR #78 レビュー指摘）。
+///
+/// `DefinitionArtifactsError::Corrupt` は「壊れていた」としか `Display` に書かない（裁定 6 —
+/// 分類を契約に載せない）。どのファイルがどう壊れていたかという実材料は `Error::source` の
+/// 連鎖に載るので、診断はそれを末端まで辿らないと利用者に届かない。
+#[tokio::test]
+async fn a_corrupt_definition_names_the_file_and_the_reason_in_the_diagnostic() {
+    let workspace = Workspace::create();
+    let graph = workspace.path(".claude/tools/data/stage-graph.json");
+    fs::write(&graph, "{ not json").expect("壊れた定義を置く");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    let diagnostic = completion.diagnostic().unwrap_or_default();
+    assert!(
+        diagnostic.contains("caused by"),
+        "原因連鎖を辿っていない: {diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(&format!(
+            "stage graph at {} is not valid JSON",
+            graph.display()
+        )),
+        "壊れたファイルと理由が届いていない: {diagnostic}"
+    );
+}
+
+/// 定義の取込は**冪等**である — 2 度目の鋳造は定義のストリームに 1 行も足さない。
+///
+/// ensure-defined は毎回の鋳造の前段で走る（配布物を読んで定義をストアへ合わせる）。
+/// 配布物が 1 バイトも変わっていなければ、集約が `Unchanged` ガードで改訂を拒否し、
+/// ユースケースがそれを `Ok(())` へ畳むので**店に行かない**（`store` を呼ばない）。
+/// ジャーナルを直接数えて、2 度目に行が増えていないことを固定する
+/// （オーナー裁定 2026-08-31 の受入条件）。
+#[tokio::test]
+async fn a_second_mint_does_not_write_the_definition_again() {
+    let workspace = Workspace::create();
+
+    let first = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "one"],
+    )
+    .await;
+    assert_eq!(first.code(), 0, "{first:?}");
+    let (definitions, intents) = workspace.journal_rows();
+    assert_eq!(definitions, 1, "定義は誕生の 1 行だけ");
+
+    // 2 つ目の鋳造。**この invoke 自体は投影で倒れる**（1 ワークスペースに 2 intent が
+    // 同居する形は RMU がまだ受け付けない）が、それは ensure-defined と鋳造の**後段**で
+    // ある。intent 側の行が増えたことが「そこまで到達した」証拠になるので、それを併せて
+    // 確かめる — 手前で倒れていたら定義の行数が変わらないのは当たり前になってしまう。
+    let second = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "two"],
+    )
+    .await;
+
+    let (definitions_after, intents_after) = workspace.journal_rows();
+    assert!(
+        intents_after > intents,
+        "2 度目の鋳造は ensure-defined を抜けて集約を書いている: {second:?}"
+    );
+    assert_eq!(
+        definitions_after, definitions,
+        "内容版が同じなら改訂イベントは書かれない（取込は冪等）"
+    );
 }
 
 /// 書いた後の投影に失敗したら**それも拒否する**（書けたのに読み面へ落ちない状態を

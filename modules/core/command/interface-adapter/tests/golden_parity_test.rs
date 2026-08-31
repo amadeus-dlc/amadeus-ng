@@ -1,9 +1,20 @@
-//! ゴールデンパリティ: `WorkflowDefinitionRepositoryImpl` が **upstream の配布実バイト**を本家と同じに読むこと。
+//! ゴールデンパリティ: **upstream の配布実バイト**が本家と同じに読まれ、イベントストアを
+//! 往復しても 1 ビットも変わらないこと。
 //!
 //! 入力は `tests/golden/upstream-3c3146cf/{stage-graph.json,scope-grid.json}` — ピン留めコミット
 //! `3c3146cf` (v2.6.40) の `dist/claude/.claude/tools/data/` からバイト無変更で持ってきたもの。
 //! 期待値はすべて採取レポート `docs/specs/research/golden-3c3146cf-graph-dist.md` の実測に由来する
 //! （推測値は 1 つも無い）。
+//!
+//! # 2026-08-31: 検収する経路が伸びた（オーナー裁定の ES 転換）
+//!
+//! 旧テストは `WorkflowDefinitionRepositoryImpl` が 3 入力を**ファイルから読んで組み立てた**
+//! 集約を突いていた。その実装は破棄された（`coding-rules/cqrs-boundaries.md` 規則 4 違反）。
+//! いま検収するのは **取込 → define → store → find_by_id** の全経路であり、主張は 2 つに増える:
+//!
+//! 1. 配布実バイトが**取込境界**で全数ドメイン型へ写る（旧テストの主張。33 ノード全数パース）。
+//! 2. 写った内容が**イベントストアを往復しても同値**である（新しい主張。永続化 DTO の
+//!    往復で 1 フィールドも落ちない — これが落ちると定義が静かに欠けたまま実行が始まる）。
 //!
 //! 本テストが閉じる仕様上の宿題:
 //! - 12 §10 表 #3（全列挙を load 時厳格にする裁定）の残条件「ゴールデン採取で正規データが
@@ -16,18 +27,24 @@
 //!   （`applyPluginSelection` が毎回 `delete` してから無効時のみ `= false` を立てるため）。
 //!
 //! scopes ディレクトリには**空の tempdir** を渡す。identity ファイルが 1 つも無い場合の挙動
-//! （空カタログ = `valid_scopes()` が空）は `fs_stage_graph_reader_test.rs` で確立済みで、
+//! （空カタログ = `valid_scopes()` が空）は `definition_artifacts_client_impl_test.rs` で確立済みで、
 //! ここでの関心はグラフとグリッドの実バイトだけだからである。グリッドが 11 列を持っていても
 //! `valid_scopes()` が空になることは 12 §4 #6（グリッド列は有効スコープの権威ではない）の
 //! 帰結であり、下の `the_grid_is_not_the_authority_for_valid_scopes` で明示する。
 // ヘルパは `#[test]` の外にあるため clippy.toml の `allow-*-in-tests` が効かない。
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use chrono::{DateTime, Utc};
 use core_command_domain::workflow_definition::{
     PlanAction, ReviewClass, WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
-use core_command_use_case::orchestration::WorkflowDefinitionRepository;
+use core_command_domain::workspace::{SpaceName, StorePath};
+use core_command_interface_adapter::orchestration::{
+    DefinitionArtifactsClientImpl, WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
+};
+use core_command_use_case::orchestration::{
+    DefineWorkflowUseCase, WorkflowDefinitionRepository as _,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -72,31 +89,76 @@ fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../tests/golden/upstream-3c3146cf")
 }
 
-/// フィクスチャの `data_dir` と空の `scopes_dir` を与えたリーダ。
-///
-/// `TempDir` は返り値で保持する — drop すると scopes ディレクトリが消えてしまうため。
-fn reader() -> (WorkflowDefinitionRepositoryImpl, TempDir) {
-    let scopes = TempDir::new().unwrap();
-    let reader = WorkflowDefinitionRepositoryImpl::new(golden_dir(), scopes.path().to_path_buf());
-    (reader, scopes)
+/// 取込のイベント発生時刻（封筒のメタデータにしか出ないので固定値でよい）。
+fn at() -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339("2026-08-31T00:00:00Z")
+        .expect("固定の ISO 8601 UTC")
+        .with_timezone(&Utc)
 }
 
-/// 3 入力を読んだ `WorkflowDefinition`。定義 id は配布 `harness.json` の `name` = `claude`。
-fn load() -> (WorkflowDefinition, TempDir) {
-    let (reader, scopes) = reader();
+/// フィクスチャの `data_dir` と空の `scopes_dir` を与えた取込クライアント。
+///
+/// `TempDir` は返り値で保持する — drop すると scopes ディレクトリが消えてしまうため。
+fn client() -> (DefinitionArtifactsClientImpl, TempDir) {
+    let scopes = TempDir::new().unwrap();
+    let client = DefinitionArtifactsClientImpl::new(golden_dir(), scopes.path().to_path_buf());
+    (client, scopes)
+}
+
+/// **実 SQLite ファイル**のストアを内包した Repository（+ その置き場）。
+///
+/// パリティは揮発ストアではなく実ストア経由で見る（オーナー命令 2026-08-31「リポジトリの
+/// テストは必ず `EventStoreForSqlite` を利用したかチェックしろ。全部だ」）。手順は
+/// `in_memory()` と 1 行も違わないが、**実際に本家の SQLite 実装を通ったバイト**でパリティを
+/// 主張できる点が違う。
+fn sqlite_repository() -> (
+    WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>,
+    TempDir,
+) {
+    let dir = TempDir::new().unwrap();
+    let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
+    // ストアの親 (`intents/`) は upstream の既存ディレクトリ扱いなので先に作る。
+    std::fs::create_dir_all(path.as_path().parent().unwrap()).unwrap();
+    let repository = WorkflowDefinitionRepositoryImpl::open(&path).expect("ストアは開ける");
+    (repository, dir)
+}
+
+/// **配布実バイトを取り込み、確立し、ストアから読み直した**定義。
+///
+/// 検収する経路は「取込 → `define` → `store` → `find_by_id`」の全体であり、返る集約は
+/// **イベントストアの永続化 DTO を往復したもの**である。定義 id は配布 `harness.json` の
+/// `name` = `claude`。
+async fn load() -> (WorkflowDefinition, TempDirs) {
+    let (client, scopes) = client();
+    let (repository, store) = sqlite_repository();
+    // 同じストアファイルを指す口を先に取っておく（ユースケースは Repository を所有する）。
+    let reader = repository.reopened();
+    DefineWorkflowUseCase::new(client, repository)
+        .execute(at())
+        .await
+        .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     let definition = reader
         .find_by_id(&WorkflowDefinitionId::parse("claude").unwrap())
-        .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
-    (definition, scopes)
+        .await
+        .expect("確立した定義はストアから読み直せる");
+    (definition, TempDirs { scopes, store })
+}
+
+/// 検収のあいだ生かしておく一時ディレクトリ（scopes カタログとストアファイル）。
+struct TempDirs {
+    #[expect(dead_code, reason = "drop 時に消えては困るので保持するだけ")]
+    scopes: TempDir,
+    #[expect(dead_code, reason = "drop 時に消えては困るので保持するだけ")]
+    store: TempDir,
 }
 
 // ---------------------------------------------------------------------------
 // (a) 33 ノード全パース成功
 // ---------------------------------------------------------------------------
 
-#[test]
-fn every_node_of_the_shipped_graph_parses() {
-    let (definition, _scopes) = load();
+#[tokio::test]
+async fn every_node_of_the_shipped_graph_parses() {
+    let (definition, _dirs) = load().await;
     assert_eq!(
         definition.graph().nodes().len(),
         EXPECTED_NODE_COUNT,
@@ -116,9 +178,9 @@ fn every_node_of_the_shipped_graph_parses() {
 // (b) 文書順 = 数値順（"0.1"〜"4.7"）
 // ---------------------------------------------------------------------------
 
-#[test]
-fn the_document_order_is_already_the_numeric_order() {
-    let (definition, _scopes) = load();
+#[tokio::test]
+async fn the_document_order_is_already_the_numeric_order() {
+    let (definition, _dirs) = load().await;
     let graph = definition.graph();
 
     let numbers: Vec<&str> = graph
@@ -151,9 +213,9 @@ fn the_document_order_is_already_the_numeric_order() {
 // (c) グリッド 11 列・列ごとの EXECUTE 数
 // ---------------------------------------------------------------------------
 
-#[test]
-fn the_grid_has_eleven_columns_with_the_measured_execute_counts() {
-    let (definition, _scopes) = load();
+#[tokio::test]
+async fn the_grid_has_eleven_columns_with_the_measured_execute_counts() {
+    let (definition, _dirs) = load().await;
     let grid = definition.grid();
 
     let expected_names: Vec<&str> = EXPECTED_EXECUTE_COUNTS
@@ -188,11 +250,11 @@ fn the_grid_has_eleven_columns_with_the_measured_execute_counts() {
     assert_eq!(cells, EXPECTED_NODE_COUNT * EXPECTED_SCOPE_COLUMN_COUNT);
 }
 
-#[test]
-fn the_grid_is_not_the_authority_for_valid_scopes() {
+#[tokio::test]
+async fn the_grid_is_not_the_authority_for_valid_scopes() {
     // identity ファイルが 1 つも無いので、グリッドが 11 列を持っていても有効スコープは 0 件
     // （12 §4 #6 / F7 — 権威は `.md` の存在）。
-    let (definition, _scopes) = load();
+    let (definition, _dirs) = load().await;
     assert_eq!(
         definition.grid().scope_names().len(),
         EXPECTED_SCOPE_COLUMN_COUNT
@@ -204,9 +266,9 @@ fn the_grid_is_not_the_authority_for_valid_scopes() {
 // (d) reviewer 宣言 13 ステージ・adversarial 5 / advisory 8
 // ---------------------------------------------------------------------------
 
-#[test]
-fn thirteen_stages_declare_a_reviewer_split_five_adversarial_and_eight_advisory() {
-    let (definition, _scopes) = load();
+#[tokio::test]
+async fn thirteen_stages_declare_a_reviewer_split_five_adversarial_and_eight_advisory() {
+    let (definition, _dirs) = load().await;
     let nodes = definition.graph().nodes();
 
     let with_reviewer = nodes.iter().filter(|n| n.reviewer().is_some()).count();
@@ -245,8 +307,8 @@ fn thirteen_stages_declare_a_reviewer_split_five_adversarial_and_eight_advisory(
 // (e) `enabled` キーの出現 0（全ノード有効）
 // ---------------------------------------------------------------------------
 
-#[test]
-fn the_shipped_graph_carries_no_enabled_key_at_all() {
+#[tokio::test]
+async fn the_shipped_graph_carries_no_enabled_key_at_all() {
     // 生バイト側: プラグイン無選択の配布物では `enabled` キーが 1 つも emit されない
     // （`applyPluginSelection` は毎回 `delete stage.enabled` してから無効時のみ `= false`)。
     let raw = std::fs::read_to_string(golden_dir().join("stage-graph.json")).unwrap();
@@ -256,7 +318,8 @@ fn the_shipped_graph_carries_no_enabled_key_at_all() {
     );
 
     // ドメイン側: キー不在は `None` として運ばれ、`is_enabled()` は全ノード true。
-    let (definition, _scopes) = load();
+    // 永続化 DTO も 3 値をそのまま往復させる（`Some(true)` へ畳まない）。
+    let (definition, _dirs) = load().await;
     for node in definition.graph().nodes() {
         assert_eq!(node.enabled(), None, "stage {:?}", node.slug().as_str());
         assert!(node.is_enabled());
@@ -267,20 +330,31 @@ fn the_shipped_graph_carries_no_enabled_key_at_all() {
 // (f) 配布 `harness.json` の identity で実グラフが引ける (ADR-008 / C4)
 // ---------------------------------------------------------------------------
 
-#[test]
-fn the_shipped_harness_identity_is_the_key_to_the_shipped_graph() {
-    let (definition, _scopes) = load();
+#[tokio::test]
+async fn the_shipped_harness_identity_is_the_key_to_the_shipped_graph() {
+    let (definition, _dirs) = load().await;
     // 採取レポート: 配布 `harness.json` の `name` は `claude`。
     assert_eq!(definition.id().as_str(), "claude");
     assert!(definition.revision().as_str().starts_with("sha256:"));
     assert_eq!(definition.graph().nodes().len(), EXPECTED_NODE_COUNT);
 }
 
-#[test]
-fn another_harness_name_cannot_open_the_shipped_graph() {
-    let (reader, _scopes) = reader();
+#[tokio::test]
+async fn another_harness_name_has_no_stream_in_the_store() {
+    // 取込が名乗るのは配布物の identity だけである。別の名前で引けば、そのストリームは
+    // 存在しない — 旧実装の「要求 id ≠ harness の name なら NotFound」は、いまはストアの
+    // 事実として現れる。
+    let (client, _scopes) = client();
+    let (repository, _store) = sqlite_repository();
+    let reader = repository.reopened();
+    DefineWorkflowUseCase::new(client, repository)
+        .execute(at())
+        .await
+        .expect("配布物は取り込める");
+
     let error = reader
         .find_by_id(&WorkflowDefinitionId::parse("kiro").unwrap())
+        .await
         .unwrap_err();
     assert!(
         matches!(
@@ -291,10 +365,42 @@ fn another_harness_name_cannot_open_the_shipped_graph() {
     );
 }
 
-#[test]
-fn the_shipped_revision_is_reproducible_from_the_pinned_bytes() {
-    let (first, _a) = load();
-    let (second, _b) = load();
+#[tokio::test]
+async fn the_shipped_revision_is_reproducible_from_the_pinned_bytes() {
+    let (first, _a) = load().await;
+    let (second, _b) = load().await;
     // 実バイトが変わらないかぎり内容版も変わらない (来歴の再現性)。
     assert_eq!(first.revision(), second.revision());
+}
+
+// ---------------------------------------------------------------------------
+// (g) 永続化の往復で 1 フィールドも落ちない（2026-08-31 の ES 転換で足した主張）
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() {
+    // 取込直後に確立した集約と、ストアから読み直した集約が同値であること。33 ノード ×
+    // 28 フィールド + グリッド 363 セルが永続化 DTO の往復を無傷で通ることを 1 本で押さえる
+    // （どれか 1 つでも DTO から落ちれば `PartialEq` が破れる）。
+    let (client, _scopes) = client();
+    let artifacts = {
+        use core_command_use_case::orchestration::DefinitionArtifactsClient as _;
+        client.load().expect("配布実バイトは取り込める")
+    };
+    let id = artifacts.id().clone();
+    let revision = artifacts.revision().clone();
+    let (graph, grid, scopes) = artifacts.into_content();
+    let (established, event) =
+        WorkflowDefinition::define(id.clone(), revision, graph, grid, scopes, at());
+
+    let (mut repository, _store) = sqlite_repository();
+    let reader = repository.reopened();
+    repository
+        .store(&event, &established)
+        .await
+        .expect("確立した定義は書ける");
+
+    let round_tripped = reader.find_by_id(&id).await.expect("読み直せる");
+    // 版だけはストアが採番する（確立直後は未永続の 0、読み直すと 1）。
+    assert_eq!(round_tripped, established.with_version(1));
 }

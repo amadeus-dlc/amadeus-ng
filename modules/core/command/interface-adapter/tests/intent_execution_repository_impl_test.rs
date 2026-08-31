@@ -18,7 +18,8 @@ use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent, 
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore, WireEvent,
+    IntentExecutionAggregateKeyDto, IntentExecutionEventDto, IntentExecutionRepositoryImpl,
+    IntentExecutionSqliteStore,
 };
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
@@ -310,10 +311,10 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction
     let mut store = fixture.store();
     // 生の行を作るので、封筒に載せるのはアダプタの永続化 DTO である。
     let bogus = EventEnvelope::new(
-        AggregateKey::of(&execution_id()),
+        IntentExecutionAggregateKeyDto::of(&execution_id()),
         2,
         at(),
-        WireEvent::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        IntentExecutionEventDto::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
         ))),
     )

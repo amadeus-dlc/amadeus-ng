@@ -43,7 +43,7 @@ const NO_STATE_SENTINEL: &str = "-";
 /// `gate` のワイヤ形 — boolean か `"unresolved"` のみ。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
-enum WireGate {
+enum ContinueTokenGateDto {
     /// `true` = ゲート付き / `false` = ゲートなし。
     Flag(bool),
     /// `"unresolved"` (walking-skeleton 判定待ち)。
@@ -54,7 +54,7 @@ enum WireGate {
 /// 決めるので変更は破壊的 (トークンはセッションローカルなので互換負債にはならない)。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WirePayload {
+struct ContinueTokenPayloadDto {
     v: u32,
     s: String,
     c: String,
@@ -66,7 +66,7 @@ struct WirePayload {
     u: Option<String>,
     k: Option<String>,
     f: bool,
-    g: WireGate,
+    g: ContinueTokenGateDto,
     n: Option<String>,
     x: bool,
     p: bool,
@@ -83,7 +83,7 @@ struct WirePayload {
 #[must_use]
 pub fn mint_continue_token(key: &[u8], token: &ContinueToken) -> String {
     // ここが持つのはクエリモデル → upstream ワイヤ形式の変換だけ。封緘は純粋コーデック。
-    seal(key, &wire_payload(token))
+    seal(key, &to_payload_dto(token))
 }
 
 /// encode 済みトークンを検証してペイロードへ戻す (U7 Controller の変換)。
@@ -98,29 +98,29 @@ pub fn verify_continue_token(
 ) -> Result<ContinueToken, InvalidContinueToken> {
     // 封緘を解くのは純粋コーデック (MAC 不一致・復号不能はどちらも `None` = fail-closed)。
     // ここが持つのは、解けた upstream ワイヤ形式をクエリモデルへ上げる厳密型表である。
-    let payload: WirePayload = unseal(key, encoded).ok_or(InvalidContinueToken)?;
+    let payload: ContinueTokenPayloadDto = unseal(key, encoded).ok_or(InvalidContinueToken)?;
     query_token(&payload)
 }
 
-fn wire_gate(gate: GateField) -> WireGate {
+fn to_gate_dto(gate: GateField) -> ContinueTokenGateDto {
     match gate {
-        GateField::Gated => WireGate::Flag(true),
-        GateField::Ungated => WireGate::Flag(false),
-        GateField::Unresolved => WireGate::Text("unresolved".to_string()),
+        GateField::Gated => ContinueTokenGateDto::Flag(true),
+        GateField::Ungated => ContinueTokenGateDto::Flag(false),
+        GateField::Unresolved => ContinueTokenGateDto::Text("unresolved".to_string()),
     }
 }
 
-fn query_gate(gate: &WireGate) -> Result<GateField, InvalidContinueToken> {
+fn query_gate(gate: &ContinueTokenGateDto) -> Result<GateField, InvalidContinueToken> {
     match gate {
-        WireGate::Flag(true) => Ok(GateField::Gated),
-        WireGate::Flag(false) => Ok(GateField::Ungated),
-        WireGate::Text(text) if text == "unresolved" => Ok(GateField::Unresolved),
-        WireGate::Text(_) => Err(InvalidContinueToken),
+        ContinueTokenGateDto::Flag(true) => Ok(GateField::Gated),
+        ContinueTokenGateDto::Flag(false) => Ok(GateField::Ungated),
+        ContinueTokenGateDto::Text(text) if text == "unresolved" => Ok(GateField::Unresolved),
+        ContinueTokenGateDto::Text(_) => Err(InvalidContinueToken),
     }
 }
 
-fn wire_payload(token: &ContinueToken) -> WirePayload {
-    WirePayload {
+fn to_payload_dto(token: &ContinueToken) -> ContinueTokenPayloadDto {
+    ContinueTokenPayloadDto {
         v: token.version().as_u32(),
         s: token.stage().as_str().to_string(),
         c: token.scope().as_str().to_string(),
@@ -132,7 +132,7 @@ fn wire_payload(token: &ContinueToken) -> WirePayload {
         u: token.unit().map(|unit| unit.name().as_str().to_string()),
         k: token.unit().map(|unit| unit.kind().as_str().to_string()),
         f: false,
-        g: wire_gate(token.gate()),
+        g: to_gate_dto(token.gate()),
         n: token.next_stage().map(|name| name.as_str().to_string()),
         x: token.is_single(),
         p: token.is_per_unit(),
@@ -145,7 +145,7 @@ fn wire_payload(token: &ContinueToken) -> WirePayload {
     }
 }
 
-fn query_token(payload: &WirePayload) -> Result<ContinueToken, InvalidContinueToken> {
+fn query_token(payload: &ContinueTokenPayloadDto) -> Result<ContinueToken, InvalidContinueToken> {
     if !TokenVersion::from_raw(payload.v).is_supported() {
         return Err(InvalidContinueToken);
     }
@@ -252,7 +252,10 @@ mod tests {
             GateField::Ungated,
         )
         .build();
-        assert_eq!(wire_payload(&ungated).g, WireGate::Flag(false));
+        assert_eq!(
+            to_payload_dto(&ungated).g,
+            ContinueTokenGateDto::Flag(false)
+        );
         let encoded = mint_continue_token(KEY, &ungated);
         assert_eq!(
             verify_continue_token(KEY, &encoded).unwrap().gate(),
@@ -283,10 +286,13 @@ mod tests {
         )
         .with_single()
         .build();
-        let payload = wire_payload(&stateless);
+        let payload = to_payload_dto(&stateless);
         assert!(!payload.a);
         assert_eq!(payload.h, NO_STATE_SENTINEL, "センチネルは輸送形の詳細");
-        assert_eq!(payload.g, WireGate::Text("unresolved".to_string()));
+        assert_eq!(
+            payload.g,
+            ContinueTokenGateDto::Text("unresolved".to_string())
+        );
         let encoded = mint_continue_token(KEY, &stateless);
         let verified = verify_continue_token(KEY, &encoded).unwrap();
         assert!(verified.bindings().state().is_none());
@@ -324,22 +330,28 @@ mod tests {
     #[test]
     fn the_strict_type_table_rejects_foreign_shapes() {
         // v ≠ 1、未知の gate 語、部索引 0、予約フラグの真値、unit 対の不整合は fail-closed。
-        let mut wrong_version = wire_payload(&token());
+        let mut wrong_version = to_payload_dto(&token());
         wrong_version.v = 2;
         assert_eq!(query_token(&wrong_version), Err(InvalidContinueToken));
         assert_eq!(
-            query_gate(&WireGate::Text("weird".to_string())),
+            query_gate(&ContinueTokenGateDto::Text("weird".to_string())),
             Err(InvalidContinueToken)
         );
-        assert_eq!(query_gate(&WireGate::Flag(true)), Ok(GateField::Gated));
-        assert_eq!(query_gate(&WireGate::Flag(false)), Ok(GateField::Ungated));
+        assert_eq!(
+            query_gate(&ContinueTokenGateDto::Flag(true)),
+            Ok(GateField::Gated)
+        );
+        assert_eq!(
+            query_gate(&ContinueTokenGateDto::Flag(false)),
+            Ok(GateField::Ungated)
+        );
 
-        let mut zero_index = wire_payload(&token());
+        let mut zero_index = to_payload_dto(&token());
         zero_index.i = 0;
         assert_eq!(query_token(&zero_index), Err(InvalidContinueToken));
 
         for flag in ["f", "w", "z"] {
-            let mut reserved = wire_payload(&token());
+            let mut reserved = to_payload_dto(&token());
             match flag {
                 "f" => reserved.f = true,
                 "w" => reserved.w = true,
@@ -348,26 +360,26 @@ mod tests {
             assert_eq!(query_token(&reserved), Err(InvalidContinueToken));
         }
 
-        let mut half_unit = wire_payload(&token());
+        let mut half_unit = to_payload_dto(&token());
         half_unit.k = None;
         assert_eq!(query_token(&half_unit), Err(InvalidContinueToken));
 
-        let mut per_unit_mismatch = wire_payload(&token());
+        let mut per_unit_mismatch = to_payload_dto(&token());
         per_unit_mismatch.p = false;
         assert_eq!(query_token(&per_unit_mismatch), Err(InvalidContinueToken));
 
-        let mut unknown_kind = wire_payload(&token());
+        let mut unknown_kind = to_payload_dto(&token());
         unknown_kind.k = Some("weird".to_string());
         assert_eq!(query_token(&unknown_kind), Err(InvalidContinueToken));
 
-        let mut aware_without_digest = wire_payload(&token());
+        let mut aware_without_digest = to_payload_dto(&token());
         aware_without_digest.h = NO_STATE_SENTINEL.to_string();
         assert_eq!(
             query_token(&aware_without_digest),
             Err(InvalidContinueToken)
         );
 
-        let mut stateless_with_digest = wire_payload(&token());
+        let mut stateless_with_digest = to_payload_dto(&token());
         stateless_with_digest.a = false;
         assert_eq!(
             query_token(&stateless_with_digest),

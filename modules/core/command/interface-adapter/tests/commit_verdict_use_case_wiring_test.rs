@@ -29,13 +29,13 @@ mod support;
 
 use core_command_domain::workspace::CheckboxState;
 use core_command_interface_adapter::orchestration::{
-    InMemoryIntentRepository, IntentExecutionRepositoryImpl,
+    IntentExecutionRepositoryImpl, IntentRepositoryImpl,
 };
 use core_command_use_case::orchestration::{
     CommitVerdictUseCase, IntentExecutionRepository, ReportedTransition,
 };
 
-use support::{at, execution_id, intent, store_genesis};
+use support::{at, execution_id, intent, store_genesis, store_intent_genesis};
 
 #[tokio::test]
 async fn the_use_case_commits_a_transition_through_the_real_repository() {
@@ -51,11 +51,16 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     // 同じストアを指す別の口。ユースケースが書いた行を外から観測するために先に取っておく。
     let observer = repository.reopened();
 
+    // intent 側も**本家 memory バックエンドを内包した実 Repository** に預ける — 自作
+    // HashMap ダブルは 2026-08-31 のオーナー裁定で退役した (インメモリ形は
+    // `IntentRepositoryImpl<IntentMemoryStore>` に一本化)。シードは `store()` 経由である。
+    let mut intents = IntentRepositoryImpl::in_memory();
+    store_intent_genesis(&mut intents).await;
+
     // ポートは 2 本注入する（改訂 10）。ユースケースは計画を自分で引くので、`execute` に
     // `&Intent` は渡らない — 引数は集約 ID と値オブジェクトだけである
     // (`coding-rules/use-case-rules.md` §2b)。
-    let mut use_case =
-        CommitVerdictUseCase::new(repository, InMemoryIntentRepository::holding(intent()));
+    let mut use_case = CommitVerdictUseCase::new(repository, intents);
     use_case
         .execute(
             &execution_id(),

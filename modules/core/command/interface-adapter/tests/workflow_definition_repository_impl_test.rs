@@ -1,1070 +1,467 @@
-//! 統合テスト: `WorkflowDefinitionRepositoryImpl` が 12-workflow-definition §4 の失敗態度表を全行満たすこと。
+//! `WorkflowDefinitionRepositoryImpl` の実装固有の契約 (2026-08-31 の ES 転換)。
 //!
-//! 各テストは tempdir に合成 `stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md` を
-//! 書いて 1 行ずつ検証する:
-//! (a) 正常読取と述語の疎通 / (b) graph 欠損 = Err / (c) 不正 JSON = Err /
-//! (d) grid 欠損 = 転置導出 (initialization 特例込み) / (e) `.md` あり × 列なし = zero-EXECUTE /
-//! (f) 列あり × `.md` なし = `valid_scopes` に不出現 / (g) 未知フィールド入り JSON が読めること。
-// indexing_slicing (固定長フィクスチャの添字参照) と panic (想定外ケースの即時失敗という
-// 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。expect は `#[test]` の外の
-// ヘルパで使うため clippy.toml の allow-expect-in-tests が効かず、同じく file 単位で要る。
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::panic
-)]
+//! ポートの面から見える約束は `workflow_definition_repository_contract.rs` が 2 つの
+//! バックエンドで共有して検査する。本ファイルが持つのは**行を直接壊してしか作れない状態**の
+//! 振る舞いと、実行・intent ストリームとの**同一ストアファイル同居**である。破壊は生の SQL で
+//! 行う — 実装に破壊用のフックを開けない (BR2.8)。
+//!
+//! 形は `intent_repository_impl_test.rs` と同型である。定義の Repository がイベントストア形に
+//! なったからこそ、同じ破損の分類 (`MissingSnapshot` / `ForeignManifest` / `SequenceGap` /
+//! `Undecodable` / `StoreDeserialization`) が意味を持つようになった。
 
-use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
-    WorkflowDefinition, WorkflowDefinitionId,
+// テストコードでは unwrap / expect を許可 (オーナー規約)。integration test は
+// clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
+// panic! は想定外バリアントの即時失敗という検証用途で使う。
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+mod support;
+
+use std::num::NonZeroUsize;
+
+use core_command_domain::orchestration::IntentExecutionId;
+use core_command_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionEvent};
+use core_command_domain::workspace::{SpaceName, StorePath};
+use core_command_interface_adapter::orchestration::{
+    IntentExecutionRepositoryImpl, IntentRepositoryImpl, SnapshotStrategy,
+    WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionEventDto,
+    WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
 };
-use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
-use core_command_use_case::orchestration::{RepositoryError, WorkflowDefinitionRepository};
-use std::error::Error;
-use std::path::PathBuf;
+use core_command_use_case::orchestration::{
+    IntentExecutionRepository, IntentRepository, RepositoryError, WorkflowDefinitionRepository,
+};
+use event_store_adapter_rs::event_envelope::EventEnvelope;
+use event_store_adapter_rs::types::EventStore;
+use rusqlite::Connection;
 use tempfile::TempDir;
 
-/// 定義読取の失敗 (ポート契約はジェネリック 1 本 — オーナー裁定 2026-08-31)。
-type ReadError = RepositoryError<WorkflowDefinitionId>;
+use support::{
+    EXECUTION, at, definition_content, definition_genesis, definition_id, definition_revision,
+    genesis_for, intent_genesis, store_definition_genesis,
+};
 
-/// `Corrupt` が原因連鎖で運ぶ診断表示を取り出す。
-///
-/// 契約は「壊れていた」としか約束しないので、**どう壊れていたか**はアダプタ私有の型が
-/// `Error::source` の連鎖でだけ運ぶ (裁定 6)。テストはその表示文字列で判定する
-/// (`RepositoryError` は `source` が比較不能なため `PartialEq` を持たない)。
-fn corrupt_cause(error: &ReadError) -> String {
-    assert!(
-        matches!(error, RepositoryError::Corrupt { .. }),
-        "Corrupt を期待した: {error:?}"
-    );
-    Error::source(error)
-        .expect("Corrupt は原因を連鎖する")
-        .to_string()
-}
+/// 我々が封筒に書く型判別子 (アダプタの `EVENT_MANIFEST` と同じ綴り)。
+const MANIFEST: &str = "workflow-definition-event/1";
 
-/// `Io` が運ぶ対象パス。
-fn io_path(error: &ReadError) -> PathBuf {
-    let RepositoryError::Io { path, .. } = error else {
-        panic!("Io を期待した: {error:?}");
-    };
-    path.clone().expect("読取失敗は対象パスを運ぶ")
-}
+/// Repository の具体型 (SQLite バックエンド)。
+type Repository = WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>;
 
-/// 出荷グラフを縮めた 5 ステージ。`bootstrap` / `workspace-init` が initialization 特例の材料、
-/// `code-generation` が 28 フィールドのうち任意フィールド群の写像を通す代表ノード。
-const GRAPH_JSON: &str = r#"[
-  {
-    "slug": "bootstrap",
-    "number": "0.1",
-    "name": "Bootstrap",
-    "phase": "initialization",
-    "execution": "ALWAYS",
-    "condition": "always",
-    "lead_agent": "orchestrator",
-    "mode": "inline",
-    "inputs": "none",
-    "outputs": "workspace skeleton",
-    "scopes": []
-  },
-  {
-    "slug": "workspace-init",
-    "number": "0.2",
-    "name": "Workspace Init",
-    "phase": "initialization",
-    "execution": "ALWAYS",
-    "condition": "always",
-    "lead_agent": "orchestrator",
-    "mode": "inline",
-    "inputs": "none",
-    "outputs": "workspace",
-    "scopes": []
-  },
-  {
-    "slug": "intent-capture",
-    "number": "1.1",
-    "name": "Intent Capture",
-    "phase": "ideation",
-    "execution": "ALWAYS",
-    "condition": "always",
-    "lead_agent": "analyst",
-    "mode": "inline",
-    "inputs": "user request",
-    "outputs": "intent",
-    "produces": ["intent"],
-    "scopes": ["feature", "bugfix"]
-  },
-  {
-    "slug": "requirements-analysis",
-    "number": "2.1",
-    "name": "Requirements Analysis",
-    "phase": "inception",
-    "execution": "ALWAYS",
-    "condition": "always",
-    "lead_agent": "analyst",
-    "mode": "subagent",
-    "inputs": "intent",
-    "outputs": "requirements",
-    "produces": ["requirements"],
-    "requires_stage": ["intent-capture"],
-    "reviewer": "requirements-reviewer",
-    "reviewer_max_iterations": 2,
-    "review_class": "advisory",
-    "scopes": ["feature"]
-  },
-  {
-    "slug": "code-generation",
-    "number": "3.1",
-    "name": "Code Generation",
-    "phase": "construction",
-    "execution": "CONDITIONAL",
-    "condition": "when units of work exist",
-    "lead_agent": "developer",
-    "support_agents": ["tester"],
-    "mode": "pipeline",
-    "for_each": "unit-of-work",
-    "workspace_requires": true,
-    "produces": ["code"],
-    "optional_produces": ["migration"],
-    "produces_kinds": { "code": ["service", "ui"] },
-    "consumes": [
-      { "artifact": "requirements", "required": true },
-      { "artifact": "legacy-survey", "required": false, "conditional_on": "brownfield" }
-    ],
-    "requires_stage": ["requirements-analysis"],
-    "sensors": ["code-quality"],
-    "scopes": ["feature"],
-    "reviewer": "adversarial-reviewer",
-    "reviewer_max_iterations": 3,
-    "review_class": "adversarial",
-    "summary_confirmation": "required",
-    "enabled": true,
-    "inputs": "requirements.md",
-    "outputs": "source files",
-    "rules_in_context": [
-      { "path": "aidlc/spaces/default/memory/org.md", "scope": "org" },
-      { "path": "aidlc/spaces/default/memory/construction.md", "scope": "phase" }
-    ],
-    "sensors_applicable": [
-      { "id": "code-quality", "path": ".claude/sensors/code-quality.ts", "matches": "**/*.rs" }
-    ]
-  }
-]
-"#;
-
-/// `feature` / `bugfix` に加えて、`.md` を持たない `ghost` 列を含む (§4 #6 の材料)。
-const GRID_JSON: &str = r#"{
-  "bugfix": {
-    "stages": {
-      "bootstrap": "EXECUTE",
-      "workspace-init": "EXECUTE",
-      "intent-capture": "EXECUTE",
-      "requirements-analysis": "SKIP",
-      "code-generation": "SKIP"
-    }
-  },
-  "feature": {
-    "stages": {
-      "bootstrap": "EXECUTE",
-      "workspace-init": "EXECUTE",
-      "intent-capture": "EXECUTE",
-      "requirements-analysis": "EXECUTE",
-      "code-generation": "EXECUTE"
-    }
-  },
-  "ghost": {
-    "stages": {
-      "bootstrap": "EXECUTE",
-      "intent-capture": "EXECUTE"
-    }
-  }
-}
-"#;
-
+/// 一時ディレクトリ配下の SQLite ストアと、それを開く Repository。
 struct Fixture {
     _dir: TempDir,
-    data_dir: PathBuf,
-    scopes_dir: PathBuf,
+    path: StorePath,
 }
 
 impl Fixture {
-    /// graph / grid / identity 3 ファイル群と `harness.json` を書いた tempdir。
-    /// `grid` が `None` なら `scope-grid.json` を置かない (§4 #3 の材料)。
-    /// `harness.json` は既定の `{"name":"claude"}` を置く。
-    fn new(graph: Option<&str>, grid: Option<&str>, scopes: &[(&str, &str)]) -> Fixture {
-        Fixture::with_harness(graph, grid, scopes, Some(DEFAULT_HARNESS_JSON))
+    fn new() -> Fixture {
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
+        std::fs::create_dir_all(path.as_path().parent().expect("親 dir を持つ"))
+            .expect("intents/ を先に作る");
+        Fixture { _dir: dir, path }
     }
 
-    /// `harness.json` の内容まで指定する版 (`None` ならファイルを置かない)。
-    fn with_harness(
-        graph: Option<&str>,
-        grid: Option<&str>,
-        scopes: &[(&str, &str)],
-        harness: Option<&str>,
-    ) -> Fixture {
-        let dir = tempfile::tempdir().unwrap();
-        let data_dir = dir.path().join("tools/data");
-        let scopes_dir = dir.path().join("scopes");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        std::fs::create_dir_all(&scopes_dir).unwrap();
-        if let Some(graph) = graph {
-            std::fs::write(data_dir.join("stage-graph.json"), graph).unwrap();
-        }
-        if let Some(grid) = grid {
-            std::fs::write(data_dir.join("scope-grid.json"), grid).unwrap();
-        }
-        if let Some(harness) = harness {
-            std::fs::write(data_dir.join("harness.json"), harness).unwrap();
-        }
-        for (name, content) in scopes {
-            std::fs::write(scopes_dir.join(format!("aidlc-{name}.md")), content).unwrap();
-        }
-        Fixture {
-            _dir: dir,
-            data_dir,
-            scopes_dir,
-        }
+    fn repository(&self) -> Repository {
+        WorkflowDefinitionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
-    fn reader(&self) -> WorkflowDefinitionRepositoryImpl {
-        WorkflowDefinitionRepositoryImpl::new(self.data_dir.clone(), self.scopes_dir.clone())
+    fn raw(&self) -> Connection {
+        Connection::open(self.path.as_path()).expect("生の接続")
     }
 
-    fn graph_path(&self) -> PathBuf {
-        self.data_dir.join("stage-graph.json")
-    }
-
-    fn harness_path(&self) -> PathBuf {
-        self.data_dir.join("harness.json")
-    }
-
-    /// `scope-grid.json` を書き換える (revision の変化を見るため)。
-    fn rewrite_grid(&self, grid: &str) {
-        std::fs::write(self.data_dir.join("scope-grid.json"), grid).unwrap();
+    /// Repository を経由せずに同じストアへ書くためのハンドル
+    /// (スナップショットより後ろへジャーナル行を足す唯一の口)。
+    fn store(&self) -> WorkflowDefinitionSqliteStore {
+        WorkflowDefinitionSqliteStore::new(self.path.as_path()).expect("本家ストアは開ける")
     }
 }
 
-/// 出荷ハーネスの `harness.json` と同じ形 (upstream 実バイトは
-/// `tests/golden/upstream-3c3146cf/harness.json`)。
-const DEFAULT_HARNESS_JSON: &str = r#"{
-  "name": "claude",
-  "harnessDir": ".claude",
-  "rulesSubdir": "rules"
-}
-"#;
-
-/// `.md` は 3 つ: `feature` / `bugfix` はグリッド列を持ち、`express` は持たない (§4 #5 の材料)。
-fn scope_files() -> Vec<(&'static str, &'static str)> {
-    vec![
-        (
-            "feature",
-            "---\nname: feature\ndepth: standard\nkeywords: [api, endpoint]\nskeleton: on\nreview_cap: adversarial\n---\n\n# Feature scope\n",
-        ),
-        ("bugfix", "---\nname: bugfix\ndepth: light\n---\n"),
-        ("express", "---\nname: express\n---\n"),
-    ]
+/// 改訂 (`Redefined`) の差分イベント。
+fn redefinition() -> WorkflowDefinitionEvent {
+    let mut definition = definition_genesis().0;
+    let (graph, grid, scopes) = definition_content(5);
+    definition
+        .redefine(definition_revision('1'), graph, grid, scopes, at())
+        .expect("内容版が違えば改訂できる")
 }
 
-fn slug(s: &str) -> StageSlug {
-    StageSlug::parse(s).unwrap()
-}
-
-fn slugs(nodes: &[&core_command_domain::workflow_definition::StageNode]) -> Vec<String> {
-    nodes
-        .iter()
-        .map(|n| n.slug().as_str().to_string())
-        .collect()
-}
-
-fn definition_id(value: &str) -> WorkflowDefinitionId {
-    WorkflowDefinitionId::parse(value).unwrap()
-}
-
-fn find_definition(fixture: &Fixture) -> WorkflowDefinition {
+/// スナップショットより後ろの差分行を 1 件書く。
+async fn append_delta(
+    fixture: &Fixture,
+    seq_nr: usize,
+    manifest: &str,
+    event: &WorkflowDefinitionEvent,
+) {
+    let envelope = EventEnvelope::new(
+        WorkflowDefinitionAggregateKeyDto::of(&definition_id()),
+        seq_nr,
+        at(),
+        WorkflowDefinitionEventDto::of(event),
+    )
+    .with_manifest(manifest);
     fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap()
+        .store()
+        .persist_event(envelope, 1)
+        .await
+        .expect("差分行は追記できる");
+}
+
+/// 指定した通番のジャーナル行 payload。
+fn journal_payload(conn: &Connection, seq_nr: i64) -> Vec<u8> {
+    conn.query_row(
+        "SELECT payload FROM journal WHERE seq_nr = ?1 AND aid = 'claude'",
+        [seq_nr],
+        |row| row.get(0),
+    )
+    .expect("ジャーナル payload")
 }
 
 // ---------------------------------------------------------------------------
-// (a) 正常読取と述語の疎通
+// 同一ストアファイル同居 (3 ストリーム)
 // ---------------------------------------------------------------------------
 
-#[test]
-fn a_full_read_maps_every_field_group_onto_the_domain_model() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = find_definition(&fixture);
+#[tokio::test]
+async fn the_definition_stream_coexists_with_the_other_two_in_the_same_file() {
+    let fixture = Fixture::new();
 
-    assert_eq!(definition.graph().len(), 5);
-    let node = definition.graph().get(&slug("code-generation")).unwrap();
-    assert_eq!(node.number().as_str(), "3.1");
-    assert_eq!(node.phase(), PhaseId::Construction);
-    assert_eq!(node.mode(), StageMode::Pipeline);
-    assert_eq!(node.for_each(), Some("unit-of-work"));
-    assert!(node.workspace_requires());
-    assert_eq!(node.support_agents(), ["tester".to_string()]);
-    assert_eq!(node.optional_produces(), ["migration".to_string()]);
+    // 定義 id はハーネス名 (`claude`)、他の 2 つは UUID。本家の journal は `(aid, seq_nr)` に
+    // UNIQUE 索引を **type_name 抜きの生値**で張るため、同居の前提は識別子の値の一意性で
+    // ある — ハーネス名と UUID は決して衝突しない。
+    let mut intents =
+        IntentRepositoryImpl::open(&fixture.path).expect("intent ストアは同じファイル");
+    let (intent, created) = intent_genesis();
+    intents
+        .store(&created, &intent, at())
+        .await
+        .expect("intent の genesis");
+
+    let mut executions =
+        IntentExecutionRepositoryImpl::open(&fixture.path).expect("実行ストアも同じファイル");
+    let (execution, started) = genesis_for(IntentExecutionId::parse(EXECUTION).unwrap());
+    executions
+        .store(&started, &execution)
+        .await
+        .expect("実行の genesis");
+
+    let mut definitions = fixture.repository();
+    let stored = store_definition_genesis(&mut definitions).await;
+
     assert_eq!(
-        node.produces_kinds().get("code").map(Vec::as_slice),
-        Some(["service".to_string(), "ui".to_string()].as_slice())
-    );
-    assert_eq!(node.consumes().len(), 2);
-    assert!(node.consumes()[0].required());
-    assert_eq!(node.consumes()[0].conditional_on(), None);
-    assert!(!node.consumes()[1].required());
-    assert_eq!(
-        node.consumes()[1].conditional_on(),
-        Some(BrownfieldGreenfield::Brownfield)
-    );
-    assert_eq!(node.requires_stage(), [slug("requirements-analysis")]);
-    assert_eq!(node.reviewer(), Some("adversarial-reviewer"));
-    assert_eq!(node.reviewer_max_iterations(), Some(3));
-    assert_eq!(node.review_class(), Some(ReviewClass::Adversarial));
-    assert_eq!(node.summary_confirmation(), Some("required"));
-    assert_eq!(node.enabled(), Some(true));
-    assert!(node.is_enabled());
-    assert_eq!(node.inputs(), "requirements.md");
-    assert_eq!(node.outputs(), "source files");
-
-    // F4: オブジェクト配列のまま保持し、directive 射影は別 API で取り出す。
-    assert_eq!(node.rules_in_context().len(), 2);
-    assert_eq!(node.rules_in_context()[0].scope(), RuleScope::Org);
-    assert_eq!(node.rules_in_context()[1].scope(), RuleScope::Phase);
-    assert_eq!(
-        node.rule_paths(),
-        [
-            "aidlc/spaces/default/memory/org.md",
-            "aidlc/spaces/default/memory/construction.md"
-        ]
-    );
-    assert_eq!(node.sensors_applicable().len(), 1);
-    assert_eq!(node.sensors_applicable()[0].matches(), Some("**/*.rs"));
-    assert_eq!(node.sensor_ids(), ["code-quality"]);
-
-    // キー不在の任意フィールドは既定値のまま。
-    let bootstrap = definition.graph().get(&slug("bootstrap")).unwrap();
-    assert_eq!(bootstrap.enabled(), None);
-    assert!(bootstrap.is_enabled());
-    assert_eq!(bootstrap.reviewer(), None);
-    assert!(bootstrap.produces().is_empty());
-    assert!(!bootstrap.workspace_requires());
-
-    // scope identity の frontmatter。
-    let feature = definition.scope_metadata("feature").unwrap();
-    assert_eq!(feature.depth(), Some("standard"));
-    assert_eq!(
-        feature.keywords(),
-        ["api".to_string(), "endpoint".to_string()]
-    );
-    assert!(feature.skeleton().is_some());
-    assert!(feature.review_cap().is_some());
-    assert!(!feature.freeform_default());
-}
-
-#[test]
-fn a_full_read_wires_up_the_five_predicates() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = find_definition(&fixture);
-
-    // valid_scopes の権威は `.md` の存在。グリッド専用の `ghost` は現れない。
-    assert_eq!(definition.valid_scopes(), ["bugfix", "express", "feature"]);
-
-    // subgraph_for_scope は数値順。
-    assert_eq!(
-        slugs(&definition.subgraph_for_scope("feature").unwrap()),
-        [
-            "bootstrap",
-            "workspace-init",
-            "intent-capture",
-            "requirements-analysis",
-            "code-generation"
-        ]
+        definitions
+            .find_by_id(&definition_id())
+            .await
+            .expect("定義は読める"),
+        stored
     );
     assert_eq!(
-        slugs(&definition.subgraph_for_scope("bugfix").unwrap()),
-        ["bootstrap", "workspace-init", "intent-capture"]
-    );
-
-    // first_in_scope_stage_of_phase はハードコードではなく subgraph からの導出。
-    assert_eq!(
-        definition
-            .first_in_scope_stage_of_phase(PhaseId::Construction, "feature")
-            .map(|n| n.slug().as_str()),
-        Some("code-generation")
+        intents
+            .find_by_id(intent.id())
+            .await
+            .expect("intent も読める"),
+        intent
     );
     assert_eq!(
-        definition.first_in_scope_stage_of_phase(PhaseId::Construction, "bugfix"),
-        None
-    );
-
-    // stages_in_scope は全ステージ分の 3 値を文書順で返す。
-    let rows = definition.stages_in_scope("feature");
-    assert_eq!(rows.len(), 5);
-    let listed: Vec<&str> = rows.iter().map(|(s, _, _)| s.as_str()).collect();
-    assert_eq!(
-        listed,
-        [
-            "bootstrap",
-            "workspace-init",
-            "intent-capture",
-            "requirements-analysis",
-            "code-generation"
-        ]
-    );
-    let rows = definition.stages_in_scope("bugfix");
-    assert_eq!(rows.len(), 5);
-    assert_eq!(rows[0].1, PhaseId::Initialization);
-    assert_eq!(rows[0].2, Some(PlanAction::Execute));
-    assert_eq!(rows[4].2, Some(PlanAction::Skip));
-
-    // 静的グリッドの照会は 3 値。実効プランの合成 (recompose オーバレイとの重ね合わせ) は
-    // FR8.4 で `IntentExecution` へ移設したのでここには無い。
-    assert_eq!(
-        definition
-            .grid()
-            .action("feature", &slug("code-generation")),
-        Some(PlanAction::Execute)
-    );
-    // グリッド列に載っていない slug は 3 値の None (SKIP に畳まない)。
-    assert_eq!(
-        definition.grid().action("ghost", &slug("code-generation")),
-        None
-    );
-}
-
-// ---------------------------------------------------------------------------
-// (b) graph 欠損 = Err
-// ---------------------------------------------------------------------------
-
-#[test]
-fn b_a_missing_stage_graph_is_fatal() {
-    let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    // OS 由来の読取失敗は `Io` — 対象パスと `ErrorKind` だけを運ぶ。
-    assert_eq!(io_path(&error), fixture.graph_path());
-}
-
-#[test]
-fn b_the_reported_path_follows_the_injected_override() {
-    // env オーバライドは**パス解決**の話であって、契約に載る分類ではない (逐語文言の hint
-    // 分岐はクエリ側が所有する — b26 段階 2)。ここで固定するのは「注入したパスがそのまま
-    // 失敗の対象として報告される」ことだけ。
-    let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let missing = fixture.data_dir.join("pinned-graph.json");
-    let reader = fixture.reader().with_stage_graph_override(missing.clone());
-    let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
-    assert_eq!(io_path(&error), missing);
-}
-
-// ---------------------------------------------------------------------------
-// (c) 不正 JSON = Err (欠損とは別変種)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
-    // 読めたが内容が壊れている = `Corrupt`。欠損 (`Io`) とは別変種で、どう壊れていたかは
-    // 原因連鎖にだけ現れる。
-    let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    let cause = corrupt_cause(&error);
-    assert!(cause.contains("not valid JSON"), "{cause}");
-    assert!(
-        cause.contains(&fixture.graph_path().display().to_string()),
-        "{cause}"
-    );
-}
-
-#[test]
-fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
-    let fixture = Fixture::new(Some("{\"stages\": []}"), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    assert!(corrupt_cause(&error).contains("not valid JSON"));
-}
-
-// ---------------------------------------------------------------------------
-// (d) grid 欠損 = 転置導出 (initialization 特例込み)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn d_a_missing_scope_grid_falls_back_to_the_transpose_instead_of_failing() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), None, &scope_files());
-    let definition = find_definition(&fixture);
-
-    // 列はノードが宣言したスコープ名の和集合。`ghost` はグリッド由来なので消える。
-    assert_eq!(definition.grid().scope_names(), ["bugfix", "feature"]);
-    // 有効スコープは `.md` 側の権威のまま。
-    assert_eq!(definition.valid_scopes(), ["bugfix", "express", "feature"]);
-
-    // initialization 特例: frontmatter に関係なく全列で EXECUTE。
-    for scope in ["bugfix", "feature"] {
-        for init in ["bootstrap", "workspace-init"] {
-            assert_eq!(
-                definition.grid().action(scope, &slug(init)),
-                Some(PlanAction::Execute),
-                "{scope}/{init}"
-            );
-        }
-    }
-    assert_eq!(
-        definition.grid().action("bugfix", &slug("code-generation")),
-        Some(PlanAction::Skip)
-    );
-    assert_eq!(
-        slugs(&definition.subgraph_for_scope("bugfix").unwrap()),
-        ["bootstrap", "workspace-init", "intent-capture"]
-    );
-}
-
-#[test]
-fn d_an_unreadable_scope_grid_falls_back_the_same_way() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some("{ not json"), &scope_files());
-    let definition = find_definition(&fixture);
-    assert_eq!(definition.grid().scope_names(), ["bugfix", "feature"]);
-    assert_eq!(
-        definition
-            .grid()
-            .action("feature", &slug("code-generation")),
-        Some(PlanAction::Execute)
-    );
-}
-
-// ---------------------------------------------------------------------------
-// (e) `.md` あり × 列なし = zero-EXECUTE な正当スコープ
-// ---------------------------------------------------------------------------
-
-#[test]
-fn e_an_identity_file_without_a_grid_column_is_a_zero_execute_scope_not_an_unknown_one() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = find_definition(&fixture);
-
-    assert!(definition.is_valid_scope("express"));
-    assert!(!definition.grid().contains_scope("express"));
-    // 拒否ではなく空。
-    assert!(definition.subgraph_for_scope("express").unwrap().is_empty());
-    assert_eq!(
-        definition.first_in_scope_stage_of_phase(PhaseId::Ideation, "express"),
-        None
-    );
-    // 全ステージ分の行は返るが、action はすべて 3 値の None。
-    let rows = definition.stages_in_scope("express");
-    assert_eq!(rows.len(), 5);
-    assert!(rows.iter().all(|(_, _, action)| action.is_none()));
-}
-
-// ---------------------------------------------------------------------------
-// (f) 列あり × `.md` なし = ランタイムから不可視
-// ---------------------------------------------------------------------------
-
-#[test]
-fn f_a_grid_column_without_an_identity_file_is_invisible_to_the_runtime() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = find_definition(&fixture);
-
-    // 列は読めているが、有効スコープではない。
-    assert!(definition.grid().contains_scope("ghost"));
-    assert!(!definition.is_valid_scope("ghost"));
-    assert!(!definition.valid_scopes().contains(&"ghost"));
-
-    // 未知スコープの非対称: subgraph だけが Err、他は None / 空。
-    let error = definition.subgraph_for_scope("ghost").unwrap_err();
-    assert_eq!(error.scope(), "ghost");
-    assert_eq!(error.valid_scopes(), ["bugfix", "express", "feature"]);
-    assert_eq!(
-        definition.first_in_scope_stage_of_phase(PhaseId::Ideation, "ghost"),
-        None
-    );
-    assert!(definition.stages_in_scope("ghost").is_empty());
-}
-
-// ---------------------------------------------------------------------------
-// (g) 未知フィールドの許容 (F1)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn g_unknown_fields_are_ignored_so_future_versions_and_plugins_stay_readable() {
-    let graph = r#"[
-      {
-        "slug": "acme-scan",
-        "number": "0.1",
-        "name": "Acme Scan",
-        "phase": "initialization",
-        "execution": "ALWAYS",
-        "condition": "always",
-        "lead_agent": "orchestrator",
-        "mode": "inline",
-        "inputs": "none",
-        "outputs": "report",
-        "plugin": "acme",
-        "enabled": false,
-        "scopes": ["feature"],
-        "when": "producer-in-plan",
-        "required_sections": ["summary"],
-        "plugin_source": "acme@1.2.3",
-        "bundle": { "kind": "extra", "weight": 3 },
-        "category": ["a", "b"]
-      }
-    ]
-    "#;
-    let fixture = Fixture::new(
-        Some(graph),
-        None,
-        &[(
-            "feature",
-            "---\nname: feature\nunknown_key: whatever\n---\n",
-        )],
-    );
-    let definition = find_definition(&fixture);
-
-    let node = definition.graph().get(&slug("acme-scan")).unwrap();
-    assert_eq!(node.plugin(), Some("acme"));
-    // `enabled: false` のノードも読取モデルからは除外しない (判断は呼出側)。
-    assert_eq!(node.enabled(), Some(false));
-    assert!(!node.is_enabled());
-    assert_eq!(definition.valid_scopes(), ["feature"]);
-}
-
-// ---------------------------------------------------------------------------
-// 追加: 文書順の保持 (F2 — 2 経路の使い分けを潰さない)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn the_reader_preserves_document_order_and_keeps_the_two_ordering_paths_distinct() {
-    // 文書順が数値順と食い違う手編集グラフ。読込時に数値順へ正規化してはならない。
-    let graph = r#"[
-      { "slug": "later", "number": "1.10", "name": "Later", "phase": "ideation",
-        "execution": "ALWAYS", "condition": "always", "lead_agent": "a", "mode": "inline",
-        "inputs": "i", "outputs": "o", "scopes": ["feature"] },
-      { "slug": "earlier", "number": "1.9", "name": "Earlier", "phase": "ideation",
-        "execution": "ALWAYS", "condition": "always", "lead_agent": "a", "mode": "inline",
-        "inputs": "i", "outputs": "o", "scopes": ["feature"] }
-    ]
-    "#;
-    let fixture = Fixture::new(
-        Some(graph),
-        None,
-        &[("feature", "---\nname: feature\n---\n")],
-    );
-    let definition = find_definition(&fixture);
-
-    // 文書順はディスクの配列順そのまま。
-    let document_order: Vec<&str> = definition
-        .graph()
-        .nodes()
-        .iter()
-        .map(|n| n.slug().as_str())
-        .collect();
-    assert_eq!(document_order, ["later", "earlier"]);
-
-    // subgraph_for_scope だけが数値順に並べ替える ("1.10" > "1.9")。
-    assert_eq!(
-        slugs(&definition.subgraph_for_scope("feature").unwrap()),
-        ["earlier", "later"]
-    );
-
-    // stages_in_scope は文書順走査なので配列順そのまま。
-    let listed: Vec<&str> = definition
-        .stages_in_scope("feature")
-        .iter()
-        .map(|(s, _, _)| s.as_str())
-        .collect();
-    assert_eq!(listed, ["later", "earlier"]);
-}
-
-// ---------------------------------------------------------------------------
-// 追加: scope identity ファイルの拒否 (診断は原因連鎖にだけ現れる)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn an_invalid_skeleton_value_is_rejected_with_the_offending_value_in_the_cause() {
-    let fixture = Fixture::new(
-        Some(GRAPH_JSON),
-        Some(GRID_JSON),
-        &[("feature", "---\nname: feature\nskeleton: enabled\n---\n")],
-    );
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    let cause = corrupt_cause(&error);
-    let path = fixture.scopes_dir.join("aidlc-feature.md");
-    assert!(cause.contains(&path.display().to_string()), "{cause}");
-    assert!(cause.contains("skeleton"), "{cause}");
-    assert!(cause.contains("enabled"), "{cause}");
-}
-
-#[test]
-fn a_scope_file_without_a_name_is_rejected() {
-    let fixture = Fixture::new(
-        Some(GRAPH_JSON),
-        Some(GRID_JSON),
-        &[("feature", "---\ndepth: standard\n---\n")],
-    );
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    let cause = corrupt_cause(&error);
-    assert!(
-        cause.ends_with("missing required frontmatter: name"),
-        "{cause}"
-    );
-}
-
-#[test]
-fn two_identity_files_declaring_the_same_name_are_fatal() {
-    let fixture = Fixture::new(
-        Some(GRAPH_JSON),
-        Some(GRID_JSON),
-        &[
-            ("feature", "---\nname: feature\n---\n"),
-            ("feature-alias", "---\nname: feature\n---\n"),
-        ],
-    );
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    // 重複した名前と両方のファイルが診断に載る (どちらを直せばよいかが分かる材料)。
-    let cause = corrupt_cause(&error);
-    assert!(cause.contains("feature"), "{cause}");
-    assert!(cause.contains("already declared in"), "{cause}");
-}
-
-#[test]
-fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let reader = WorkflowDefinitionRepositoryImpl::new(
-        fixture.data_dir.clone(),
-        fixture.scopes_dir.join("does-not-exist"),
-    );
-    let definition = reader.find_by_id(&definition_id("claude")).unwrap();
-    assert!(definition.valid_scopes().is_empty());
-    // グリッド列は読めているが、権威が無いので全スコープが未知になる。
-    assert!(definition.grid().contains_scope("feature"));
-    assert!(definition.subgraph_for_scope("feature").is_err());
-}
-
-// ---------------------------------------------------------------------------
-// 追加: ドメイン型へ写せない値
-// ---------------------------------------------------------------------------
-
-#[test]
-fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
-    let graph = r#"[
-      { "slug": "s", "number": "1.1", "name": "S", "phase": "delivery",
-        "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
-        "inputs": "i", "outputs": "o", "scopes": [] }
-    ]
-    "#;
-    let fixture = Fixture::new(Some(graph), None, &[]);
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    assert!(corrupt_cause(&error).contains("unknown phase"));
-}
-
-#[test]
-fn the_reserved_agent_team_mode_is_carried_through_instead_of_being_defaulted() {
-    let graph = r#"[
-      { "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-        "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "agent-team",
-        "inputs": "i", "outputs": "o", "scopes": [] }
-    ]
-    "#;
-    let fixture = Fixture::new(Some(graph), None, &[]);
-    let definition = find_definition(&fixture);
-    let node = definition.graph().get(&slug("s")).unwrap();
-    assert_eq!(node.mode(), StageMode::AgentTeam);
-    assert!(node.mode().is_reserved());
-}
-
-#[test]
-fn grid_cells_that_cannot_be_represented_collapse_to_the_third_value_not_to_skip() {
-    let grid = r#"{
-      "feature": {
-        "stages": {
-          "intent-capture": "EXECUTE",
-          "requirements-analysis": "MAYBE",
-          "Not A Slug": "EXECUTE"
-        }
-      }
-    }
-    "#;
-    let fixture = Fixture::new(
-        Some(GRAPH_JSON),
-        Some(grid),
-        &[("feature", "---\nname: feature\n---\n")],
-    );
-    let definition = find_definition(&fixture);
-    assert_eq!(
-        definition.grid().action("feature", &slug("intent-capture")),
-        Some(PlanAction::Execute)
-    );
-    assert_eq!(
-        definition
-            .grid()
-            .action("feature", &slug("requirements-analysis")),
-        None
-    );
-    assert_eq!(
-        slugs(&definition.subgraph_for_scope("feature").unwrap()),
-        ["intent-capture"]
-    );
-}
-
-// ---------------------------------------------------------------------------
-// 追加: 定義の識別子と内容版 (ADR-008 / C4 — find_by_id)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn find_by_id_returns_the_definition_stamped_with_the_harness_identity() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let definition = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap();
-
-    // id は harness.json の `name`。
-    assert_eq!(definition.id(), &definition_id("claude"));
-    // revision は 3 入力の正準ダイジェスト。
-    assert_eq!(definition.revision().as_str().len(), "sha256:".len() + 64);
-    assert!(definition.revision().as_str().starts_with("sha256:"));
-}
-
-#[test]
-fn a_request_for_a_definition_this_harness_does_not_provide_is_not_found() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("kiro"))
-        .unwrap_err();
-    // 新契約の `NotFound` が運ぶのは**要求された id** だけ。「このハーネスが提供できる id」は
-    // ビジネス文脈であってポートには載せない (オーナー裁定 2026-08-31)。
-    let RepositoryError::NotFound { id } = error else {
-        panic!("NotFound を期待した: {error:?}");
-    };
-    assert_eq!(id, definition_id("kiro"));
-}
-
-#[test]
-fn the_identity_is_checked_before_the_three_inputs_are_read() {
-    // グラフが無くても、id 不一致は NotFound で落ちる (3 入力の読取に進まない)。
-    let fixture = Fixture::new(None, None, &[]);
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("kiro"))
-        .unwrap_err();
-    assert!(
-        matches!(error, RepositoryError::NotFound { .. }),
-        "識別子の検査はグラフ読取より前: {error:?}"
-    );
-}
-
-#[test]
-fn a_missing_harness_identity_file_is_fatal() {
-    let fixture = Fixture::with_harness(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files(), None);
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    // ファイルが無いのは OS 由来の読取失敗 — 内容の破損ではない。
-    assert_eq!(io_path(&error), fixture.harness_path());
-}
-
-#[test]
-fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_corrupt_not_io() {
-    // 読めたが内容が定義 id を与えない — 欠損 (`Io`) と読み分ける。
-    for harness in ["{", r#"{"harnessDir": ".claude"}"#, r#"{"name": ""}"#] {
-        let fixture = Fixture::with_harness(
-            Some(GRAPH_JSON),
-            Some(GRID_JSON),
-            &scope_files(),
-            Some(harness),
-        );
-        let error = fixture
-            .reader()
-            .find_by_id(&definition_id("claude"))
-            .unwrap_err();
-        let cause = corrupt_cause(&error);
-        assert!(
-            cause.contains(&fixture.harness_path().display().to_string()),
-            "harness.json {harness:?}: {cause}"
-        );
-    }
-}
-
-#[test]
-fn the_corrupt_variant_names_the_requested_definition() {
-    // `Corrupt { id }` は「どの集約が壊れていたか」— 要求された定義 id である。
-    let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    let RepositoryError::Corrupt { id, seq_nr, .. } = &error else {
-        panic!("Corrupt を期待した: {error:?}");
-    };
-    assert_eq!(id, &definition_id("claude"));
-    // 定義はイベント列ではないので行番号は無い。
-    assert_eq!(*seq_nr, None);
-}
-
-#[test]
-fn the_revision_is_stable_for_the_same_inputs_and_changes_with_them() {
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let first = find_definition(&fixture);
-    let second = find_definition(&fixture);
-    // 同一入力を 2 回読んでも同じ内容版。
-    assert_eq!(first.revision(), second.revision());
-
-    // グリッドを 1 文字変えれば変わる (EXECUTE → SKIP)。
-    fixture.rewrite_grid(&GRID_JSON.replacen(
-        "\"intent-capture\": \"EXECUTE\"",
-        "\"intent-capture\": \"SKIP\"",
+        executions
+            .find_by_id(execution.id())
+            .await
+            .expect("実行も読める")
+            .seq_nr(),
         1,
+        "3 ストリームが同居しても混ざらない"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 差分再生の経路 (本家 example 同型)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_rehydration_replays_the_delta_beyond_the_snapshot() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
+
+    append_delta(&fixture, 2, MANIFEST, &redefinition()).await;
+
+    let found = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect("読める");
+    assert_eq!(
+        found.revision(),
+        &definition_revision('1'),
+        "スナップショットより後ろの改訂が適用される"
+    );
+    assert_eq!(found.graph().len(), 5);
+    assert_eq!(found.seq_nr(), 2);
+}
+
+#[tokio::test]
+async fn a_genesis_payload_in_the_delta_replays_as_a_no_op() {
+    // 誕生イベントが差分に現れても状態は動かない (スナップショット種が誕生を含む)。
+    // 復号の経路そのものは通るので、`Defined` の payload も読めることを押さえる。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    let stored = store_definition_genesis(&mut repository).await;
+
+    append_delta(&fixture, 2, MANIFEST, &definition_genesis().1).await;
+
+    let found = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect("読める");
+    assert_eq!(found.revision(), stored.revision());
+    assert_eq!(found.graph().len(), stored.graph().len());
+    assert_eq!(found.seq_nr(), 2, "通番だけが進む");
+}
+
+#[tokio::test]
+async fn a_gap_in_the_delta_is_corrupt() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
+
+    // seq_nr = 2 を飛ばして 3 を書く (本家の CAS は version しか見ないので追記はできる)。
+    append_delta(&fixture, 3, MANIFEST, &redefinition()).await;
+
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("行の欠け");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: Some(3), .. } if *id == definition_id()
     ));
-    let after = find_definition(&fixture);
-    assert_ne!(first.revision(), after.revision());
-    // 系譜 ID は変わらない (ADR-008)。
-    assert_eq!(first.id(), after.id());
-}
-
-#[test]
-fn the_revision_covers_the_scope_identity_files_as_well_as_the_two_json_inputs() {
-    let base = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    let mut altered_scopes = scope_files();
-    // `feature` の depth だけを変える — グラフもグリッドも同一。
-    altered_scopes[0] = (
-        "feature",
-        "---\nname: feature\ndepth: deep\nkeywords: [api, endpoint]\nskeleton: on\nreview_cap: adversarial\n---\n\n# Feature scope\n",
-    );
-    let altered = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &altered_scopes);
-
-    assert_ne!(
-        find_definition(&base).revision(),
-        find_definition(&altered).revision(),
-        "scope identity は revision の入力の 1 つ"
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "sequence gap"
     );
 }
 
-#[test]
-fn a_missing_grid_still_yields_a_revision_derived_from_the_transposed_grid() {
-    // グリッド欠損は fatal にしない (§4 #3) — revision は導出グリッドから作る。
-    let without = Fixture::new(Some(GRAPH_JSON), None, &scope_files());
-    let definition = find_definition(&without);
-    assert!(definition.revision().as_str().starts_with("sha256:"));
+#[tokio::test]
+async fn a_foreign_manifest_in_the_delta_is_corrupt() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
 
-    // 導出グリッドと配布グリッドは中身が違うので revision も違う。
-    let with = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    assert_ne!(definition.revision(), find_definition(&with).revision());
-}
+    // intent ジャーナルの判別子を名乗る行 — 別の型名・別の読み方の版は状態遷移に流さない。
+    append_delta(&fixture, 2, "intent-event/1", &redefinition()).await;
 
-#[test]
-fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it() {
-    // 未知の列挙値は load 時に落とす (12 §10 表 #3) — ドメイン型に `Unknown` variant を
-    // 持たせず Always Valid を保つため。診断文言はキーごとに違い、どのフィールドが原因かが
-    // 1 行で分かる。`slug` / `phase` は既存テストが押さえているので残り 7 キーを埋める。
-    let cases: [(&str, &str); 7] = [
-        (
-            r#"[{ "slug": "s", "number": "one", "name": "S", "phase": "ideation",
-                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
-                  "inputs": "i", "outputs": "o", "scopes": [] }]"#,
-            "has invalid number",
-        ),
-        (
-            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-                  "execution": "SOMETIMES", "condition": "c", "lead_agent": "a", "mode": "inline",
-                  "inputs": "i", "outputs": "o", "scopes": [] }]"#,
-            "has unknown execution",
-        ),
-        (
-            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "telepathy",
-                  "inputs": "i", "outputs": "o", "scopes": [] }]"#,
-            "has unknown mode",
-        ),
-        (
-            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
-                  "inputs": "i", "outputs": "o", "scopes": [],
-                  "consumes": [{ "artifact": "x", "required": true, "conditional_on": "bluefield" }] }]"#,
-            "has unknown conditional_on",
-        ),
-        (
-            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
-                  "inputs": "i", "outputs": "o", "scopes": [],
-                  "requires_stage": ["Not A Slug"] }]"#,
-            "requires invalid slug",
-        ),
-        (
-            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
-                  "inputs": "i", "outputs": "o", "scopes": [],
-                  "rules_in_context": [{ "path": "memory/org.md", "scope": "galaxy" }] }]"#,
-            "has unknown rule scope",
-        ),
-        (
-            r#"[{ "slug": "s", "number": "1.1", "name": "S", "phase": "ideation",
-                  "execution": "ALWAYS", "condition": "c", "lead_agent": "a", "mode": "inline",
-                  "inputs": "i", "outputs": "o", "scopes": [],
-                  "review_class": "casual" }]"#,
-            "has unknown review_class",
-        ),
-    ];
-
-    for (graph, fragment) in cases {
-        let fixture = Fixture::new(Some(graph), None, &[]);
-        let error = fixture
-            .reader()
-            .find_by_id(&definition_id("claude"))
-            .unwrap_err();
-        let cause = corrupt_cause(&error);
-        assert!(
-            cause.contains(fragment) && cause.contains("stage-graph.json"),
-            "{fragment} を期待したが {cause}"
-        );
-    }
-}
-
-#[test]
-fn a_scopes_path_that_is_not_a_directory_is_reported_instead_of_being_treated_as_empty() {
-    // ディレクトリ**欠落**だけが空カタログ扱い (12 §4)。存在するのに読めない場合は、
-    // 黙って 0 スコープにすると「有効スコープが 1 つも無い」と区別できなくなるので報告する。
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let not_a_dir = fixture.data_dir.join("scopes-as-a-file");
-    std::fs::write(&not_a_dir, "これはディレクトリではない\n").unwrap();
-
-    let reader = WorkflowDefinitionRepositoryImpl::new(
-        fixture.data_dir.clone(),
-        fixture.data_dir.join("scopes-as-a-file"),
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("foreign manifest");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: Some(2), .. } if *id == definition_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "foreign manifest"
     );
-    let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
-    assert_eq!(io_path(&error), not_a_dir);
 }
 
-#[test]
-fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
-    // 列挙は名前だけを見るので、`aidlc-*.md` という名のディレクトリも候補に入る。
-    // 読めない候補は 1 件でも致命 — 有効スコープの権威が欠けたまま進まない (F7)。
-    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let masquerading = fixture.scopes_dir.join("aidlc-not-a-file.md");
-    std::fs::create_dir_all(&masquerading).unwrap();
+#[tokio::test]
+async fn an_undecodable_delta_payload_is_corrupt() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
+    append_delta(&fixture, 2, MANIFEST, &redefinition()).await;
 
-    let error = fixture
-        .reader()
-        .find_by_id(&definition_id("claude"))
-        .unwrap_err();
-    assert_eq!(io_path(&error), masquerading);
+    // 形 (DTO) としては読めるが、内容版の文法違反でドメインへ戻せない行にする。
+    let conn = fixture.raw();
+    let payload = journal_payload(&conn, 2);
+    let broken = String::from_utf8(payload)
+        .expect("payload は JSON 文字列")
+        .replace("sha256:", "nope:");
+    conn.execute(
+        "UPDATE journal SET payload = ?1 WHERE seq_nr = 2 AND aid = 'claude'",
+        [broken.into_bytes()],
+    )
+    .expect("payload を壊す");
+
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("復号不能");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: Some(2), .. } if *id == definition_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "undecodable payload"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 行を直接壊してしか作れない破損
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_journal_row_without_a_snapshot_row_is_corrupt() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
+
+    fixture
+        .raw()
+        .execute("DELETE FROM snapshot", [])
+        .expect("スナップショット行を消す");
+
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("片方だけは矛盾");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == definition_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "missing snapshot"
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_snapshot_payload_is_corrupt() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
+
+    fixture
+        .raw()
+        .execute("UPDATE snapshot SET payload = X'00'", [])
+        .expect("payload をバイトごと壊す");
+
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("ストアの復号が失敗");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { seq_nr: None, .. }
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "store deserialization failed"
+    );
+}
+
+#[tokio::test]
+async fn a_snapshot_that_decodes_but_breaks_the_domain_is_corrupt() {
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    store_definition_genesis(&mut repository).await;
+
+    let conn = fixture.raw();
+    let payload: Vec<u8> = conn
+        .query_row("SELECT payload FROM snapshot", [], |row| row.get(0))
+        .expect("スナップショット payload");
+    let broken = String::from_utf8(payload)
+        .expect("payload は JSON 文字列")
+        .replace("sha256:", "nope:");
+    conn.execute("UPDATE snapshot SET payload = ?1", [broken.into_bytes()])
+        .expect("payload を壊す");
+
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("検査付き再構成が拒む");
+    assert!(matches!(
+        &err,
+        RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == definition_id()
+    ));
+    assert_eq!(
+        std::error::Error::source(&err)
+            .expect("原因が連鎖する")
+            .to_string(),
+        "undecodable payload"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// スナップショットの書き直し間隔 (実装の内部設定 — ポート面に現れない)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_snapshot_strategy_of_one_rewrites_the_snapshot_on_every_event() {
+    let fixture = Fixture::new();
+    let mut repository = fixture
+        .repository()
+        .with_snapshot_strategy(SnapshotStrategy::every(NonZeroUsize::MIN));
+    let mut held = store_definition_genesis(&mut repository).await;
+
+    let (graph, grid, scopes) = definition_content(5);
+    let event = held
+        .redefine(definition_revision('1'), graph, grid, scopes, at())
+        .expect("改訂できる");
+    repository.store(&event, &held).await.expect("改訂は書ける");
+
+    // スナップショット行の通番が改訂まで進んでいる = 差分ゼロで再水和できる。
+    let snapshot_seq: i64 = fixture
+        .raw()
+        .query_row(
+            "SELECT seq_nr FROM snapshot WHERE aid = 'claude'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("スナップショット行");
+    assert_eq!(snapshot_seq, 2, "毎イベントで書き直す設定なので基底が進む");
+
+    let found: WorkflowDefinition = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect("読める");
+    assert_eq!(found.revision(), &definition_revision('1'));
+    assert_eq!(found.seq_nr(), 2);
+}
+
+// ---------------------------------------------------------------------------
+// 開けない場所
+// ---------------------------------------------------------------------------
+
+#[test]
+fn opening_under_a_missing_parent_directory_is_a_not_found() {
+    let dir = tempfile::tempdir().expect("一時ディレクトリ");
+    // `intents/` を作らない — upstream の既存ディレクトリが無い状態。
+    let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
+    let err = WorkflowDefinitionRepositoryImpl::open(&path).expect_err("親 dir が無ければ開けない");
+    assert!(matches!(
+        err,
+        RepositoryError::Io {
+            kind: std::io::ErrorKind::NotFound,
+            path: Some(_)
+        }
+    ));
+}
+
+#[tokio::test]
+async fn a_sqlite_repository_reports_its_location_in_its_failures() {
+    // 揮発のストアと違い、SQLite のストアは失敗の材料に場所を添えられる。
+    let fixture = Fixture::new();
+    let repository = fixture.repository();
+    assert_eq!(repository.path(), Some(&fixture.path));
+
+    fixture
+        .raw()
+        .execute("DROP TABLE journal", [])
+        .expect("表ごと落とす");
+    let err = repository
+        .find_by_id(&definition_id())
+        .await
+        .expect_err("表が無ければ読めない");
+    let RepositoryError::Io { path, .. } = err else {
+        panic!("Io を期待した: {err:?}");
+    };
+    assert_eq!(path.as_deref(), Some(fixture.path.as_path()));
 }

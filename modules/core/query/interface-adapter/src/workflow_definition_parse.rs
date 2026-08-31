@@ -125,12 +125,12 @@ fn malformed(path: &Path, detail: &str) -> WorkflowDefinitionReadError {
 // ワイヤ構造体 (serde — 本モジュールの内部部品。ビュー型は serde 非依存)
 // ---------------------------------------------------------------------------
 
-/// `stage-graph.json` の 1 要素。**ルートは配列**なので `Vec<WireStageNode>` として読む。
+/// `stage-graph.json` の 1 要素。**ルートは配列**なので `Vec<StageNodeDto>` として読む。
 ///
 /// `deny_unknown_fields` は**付けない** (F1)。`when` / `required_sections` / 予約 4 キーの
 /// ようにグラフへ到達しないキーが混ざっても、単に無視される。
 #[derive(Debug, Deserialize)]
-struct WireStageNode {
+struct StageNodeDto {
     slug: String,
     number: String,
     name: String,
@@ -154,7 +154,7 @@ struct WireStageNode {
     #[serde(default)]
     produces_kinds: BTreeMap<String, Vec<String>>,
     #[serde(default)]
-    consumes: Vec<WireConsume>,
+    consumes: Vec<ConsumeDto>,
     #[serde(default)]
     requires_stage: Vec<String>,
     #[serde(default)]
@@ -179,13 +179,13 @@ struct WireStageNode {
     #[serde(default)]
     outputs: String,
     #[serde(default)]
-    rules_in_context: Vec<WireRuleInContext>,
+    rules_in_context: Vec<RuleInContextDto>,
     #[serde(default)]
-    sensors_applicable: Vec<WireSensorRef>,
+    sensors_applicable: Vec<SensorRefDto>,
 }
 
 #[derive(Debug, Deserialize)]
-struct WireConsume {
+struct ConsumeDto {
     artifact: String,
     #[serde(default)]
     required: bool,
@@ -194,13 +194,13 @@ struct WireConsume {
 }
 
 #[derive(Debug, Deserialize)]
-struct WireRuleInContext {
+struct RuleInContextDto {
     path: String,
     scope: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct WireSensorRef {
+struct SensorRefDto {
     id: String,
     path: String,
     #[serde(default)]
@@ -211,7 +211,7 @@ struct WireSensorRef {
 /// `mapping[scope].stages` 互換のための 2 段構造)。ドメイン側は 2 段写像だけを持つので、
 /// この中間キーの知識はここに閉じる。
 #[derive(Debug, Deserialize)]
-struct WireScopeColumn {
+struct ScopeColumnDto {
     #[serde(default)]
     stages: BTreeMap<String, String>,
 }
@@ -219,7 +219,7 @@ struct WireScopeColumn {
 /// `harness.json` の読取に必要な部分。`harnessDir` / `rulesSubdir` は本 Repository の関心外
 /// なので写さない (未知フィールドの許容は F1 と同じ方針)。
 #[derive(Debug, Deserialize)]
-struct WireHarness {
+struct HarnessDto {
     #[serde(default)]
     name: String,
 }
@@ -355,9 +355,9 @@ fn parse_harness_identity(
         path: harness.path.clone(),
         cause,
     };
-    let wire: WireHarness =
+    let dto: HarnessDto =
         serde_json::from_str(&harness.text).map_err(|e| identity(e.to_string()))?;
-    DefinitionIdView::parse(&wire.name).map_err(|e| identity(e.to_string()))
+    DefinitionIdView::parse(&dto.name).map_err(|e| identity(e.to_string()))
 }
 
 /// グラフを写す。**唯一 fatal な入力** (12 §4 #1・#2 — #1 の読取失敗は reader が組む)。
@@ -374,10 +374,10 @@ fn parse_graph(
     };
     let raw: serde_json::Value =
         serde_json::from_str(&stage_graph.text).map_err(|e| invalid_json(&e))?;
-    let wire: Vec<WireStageNode> =
+    let stage_nodes: Vec<StageNodeDto> =
         serde_json::from_str(&stage_graph.text).map_err(|e| invalid_json(&e))?;
-    let mut nodes = Vec::with_capacity(wire.len());
-    for node in wire {
+    let mut nodes = Vec::with_capacity(stage_nodes.len());
+    for node in stage_nodes {
         nodes.push(to_stage_view(node, path)?);
     }
     // 文書順のまま渡す (F2 — 読込時に数値順へ正規化しない)。
@@ -391,9 +391,9 @@ fn parse_graph(
 /// ビュー型の `ScopeGridView` と読んだままの生値を返す (生値は revision のハッシュ入力)。
 fn parse_grid(content: &str) -> Option<(ScopeGridView, serde_json::Value)> {
     let raw: serde_json::Value = serde_json::from_str(content).ok()?;
-    let wire: BTreeMap<String, WireScopeColumn> = serde_json::from_str(content).ok()?;
+    let scope_columns: BTreeMap<String, ScopeColumnDto> = serde_json::from_str(content).ok()?;
     let mut columns: BTreeMap<String, BTreeMap<StageSlugView, PlanActionView>> = BTreeMap::new();
-    for (scope, column) in wire {
+    for (scope, column) in scope_columns {
         let mut cells: BTreeMap<StageSlugView, PlanActionView> = BTreeMap::new();
         for (slug, action) in column.stages {
             // 文法外 slug・`EXECUTE`/`SKIP` 以外の値はセルごと落とす。結果は 3 値契約の
@@ -498,48 +498,45 @@ fn compute_revision(
 // ワイヤ → ビュー型の写像
 // ---------------------------------------------------------------------------
 
-fn to_stage_view(
-    wire: WireStageNode,
-    path: &Path,
-) -> Result<StageView, WorkflowDefinitionReadError> {
-    let slug = StageSlugView::parse(&wire.slug)
-        .map_err(|e| malformed(path, &format!("invalid slug {:?} ({e:?})", wire.slug)))?;
-    let number = StageNumberView::parse(&wire.number).map_err(|e| {
+fn to_stage_view(dto: StageNodeDto, path: &Path) -> Result<StageView, WorkflowDefinitionReadError> {
+    let slug = StageSlugView::parse(&dto.slug)
+        .map_err(|e| malformed(path, &format!("invalid slug {:?} ({e:?})", dto.slug)))?;
+    let number = StageNumberView::parse(&dto.number).map_err(|e| {
         malformed(
             path,
             &format!(
                 "stage {:?} has invalid number {:?} ({e:?})",
-                wire.slug, wire.number
+                dto.slug, dto.number
             ),
         )
     })?;
-    let phase = PhaseView::parse(&wire.phase).map_err(|e| {
+    let phase = PhaseView::parse(&dto.phase).map_err(|e| {
         malformed(
             path,
-            &format!("stage {:?} has unknown phase ({e:?})", wire.slug),
+            &format!("stage {:?} has unknown phase ({e:?})", dto.slug),
         )
     })?;
-    let execution = ExecutionKindView::parse(&wire.execution).map_err(|e| {
+    let execution = ExecutionKindView::parse(&dto.execution).map_err(|e| {
         malformed(
             path,
-            &format!("stage {:?} has unknown execution ({e:?})", wire.slug),
+            &format!("stage {:?} has unknown execution ({e:?})", dto.slug),
         )
     })?;
-    let mode = StageModeView::parse(&wire.mode).map_err(|e| {
+    let mode = StageModeView::parse(&dto.mode).map_err(|e| {
         malformed(
             path,
-            &format!("stage {:?} has unknown mode ({e:?})", wire.slug),
+            &format!("stage {:?} has unknown mode ({e:?})", dto.slug),
         )
     })?;
 
-    let mut consumes = Vec::with_capacity(wire.consumes.len());
-    for decl in wire.consumes {
+    let mut consumes = Vec::with_capacity(dto.consumes.len());
+    for decl in dto.consumes {
         let conditional_on = match decl.conditional_on {
             None => None,
             Some(raw) => Some(BrownfieldGreenfieldView::parse(&raw).map_err(|e| {
                 malformed(
                     path,
-                    &format!("stage {:?} has unknown conditional_on ({e:?})", wire.slug),
+                    &format!("stage {:?} has unknown conditional_on ({e:?})", dto.slug),
                 )
             })?),
         };
@@ -550,81 +547,78 @@ fn to_stage_view(
         ));
     }
 
-    let mut requires_stage = Vec::with_capacity(wire.requires_stage.len());
-    for dep in &wire.requires_stage {
+    let mut requires_stage = Vec::with_capacity(dto.requires_stage.len());
+    for dep in &dto.requires_stage {
         requires_stage.push(StageSlugView::parse(dep).map_err(|e| {
             malformed(
                 path,
-                &format!(
-                    "stage {:?} requires invalid slug {dep:?} ({e:?})",
-                    wire.slug
-                ),
+                &format!("stage {:?} requires invalid slug {dep:?} ({e:?})", dto.slug),
             )
         })?);
     }
 
-    let mut rules_in_context = Vec::with_capacity(wire.rules_in_context.len());
-    for rule in wire.rules_in_context {
+    let mut rules_in_context = Vec::with_capacity(dto.rules_in_context.len());
+    for rule in dto.rules_in_context {
         let scope = RuleScopeView::parse(&rule.scope).map_err(|e| {
             malformed(
                 path,
-                &format!("stage {:?} has unknown rule scope ({e:?})", wire.slug),
+                &format!("stage {:?} has unknown rule scope ({e:?})", dto.slug),
             )
         })?;
         rules_in_context.push(RuleInContextView::new(rule.path, scope));
     }
 
-    let review_class = match wire.review_class {
+    let review_class = match dto.review_class {
         None => None,
         Some(ref raw) => Some(ReviewClassView::parse(raw).map_err(|e| {
             malformed(
                 path,
-                &format!("stage {:?} has unknown review_class ({e:?})", wire.slug),
+                &format!("stage {:?} has unknown review_class ({e:?})", dto.slug),
             )
         })?),
     };
 
-    let sensors_applicable = wire
+    let sensors_applicable = dto
         .sensors_applicable
         .into_iter()
         .map(|s| SensorRefView::new(s.id, s.path, s.matches))
         .collect();
 
-    let mut builder = StageViewBuilder::new(slug, number, wire.name, phase, execution, mode)
-        .with_condition(wire.condition)
-        .with_lead_agent(wire.lead_agent)
-        .with_support_agents(wire.support_agents)
-        .with_workspace_requires(wire.workspace_requires)
-        .with_produces(wire.produces)
-        .with_optional_produces(wire.optional_produces)
-        .with_produces_kinds(wire.produces_kinds)
+    let mut builder = StageViewBuilder::new(slug, number, dto.name, phase, execution, mode)
+        .with_condition(dto.condition)
+        .with_lead_agent(dto.lead_agent)
+        .with_support_agents(dto.support_agents)
+        .with_workspace_requires(dto.workspace_requires)
+        .with_produces(dto.produces)
+        .with_optional_produces(dto.optional_produces)
+        .with_produces_kinds(dto.produces_kinds)
         .with_consumes(consumes)
         .with_requires_stage(requires_stage)
-        .with_sensors(wire.sensors)
-        .with_scopes(wire.scopes)
-        .with_inputs(wire.inputs)
-        .with_outputs(wire.outputs)
+        .with_sensors(dto.sensors)
+        .with_scopes(dto.scopes)
+        .with_inputs(dto.inputs)
+        .with_outputs(dto.outputs)
         .with_rules_in_context(rules_in_context)
         .with_sensors_applicable(sensors_applicable);
-    if let Some(v) = wire.for_each {
+    if let Some(v) = dto.for_each {
         builder = builder.with_for_each(v);
     }
-    if let Some(v) = wire.reviewer {
+    if let Some(v) = dto.reviewer {
         builder = builder.with_reviewer(v);
     }
-    if let Some(v) = wire.reviewer_max_iterations {
+    if let Some(v) = dto.reviewer_max_iterations {
         builder = builder.with_reviewer_max_iterations(v);
     }
     if let Some(v) = review_class {
         builder = builder.with_review_class(v);
     }
-    if let Some(v) = wire.summary_confirmation {
+    if let Some(v) = dto.summary_confirmation {
         builder = builder.with_summary_confirmation(v);
     }
-    if let Some(v) = wire.plugin {
+    if let Some(v) = dto.plugin {
         builder = builder.with_plugin(v);
     }
-    if let Some(v) = wire.enabled {
+    if let Some(v) = dto.enabled {
         builder = builder.with_enabled(v);
     }
     Ok(builder.build())

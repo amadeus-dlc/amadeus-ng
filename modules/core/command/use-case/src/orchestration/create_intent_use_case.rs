@@ -84,7 +84,7 @@ where
         scan: WorkspaceScan,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), CreateIntentError> {
-        let definition = self.definition_repository.find_by_id(definition_id)?;
+        let definition = self.definition_repository.find_by_id(definition_id).await?;
         let (intent, born) = Intent::create(intent_id, &definition, request, scan)?;
         self.intent_repository
             .store(&born, &intent, occurred_at)

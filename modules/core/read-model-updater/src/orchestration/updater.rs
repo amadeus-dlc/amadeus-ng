@@ -69,7 +69,28 @@ impl core::fmt::Display for CatchUpError {
     }
 }
 
-impl std::error::Error for CatchUpError {}
+impl std::error::Error for CatchUpError {
+    /// 内包した失敗へ連鎖する。
+    ///
+    /// **封筒は連鎖を切ってはならない** — 内包した失敗が自分の `source` に材料を載せている
+    /// 場合、ここで `None` を返すとその材料はこの型で行き止まりになる（裁定 6 の帰結）。
+    ///
+    /// 連鎖できるのは本物のエラー型を包む 3 変種だけである。`StateFileRead` /
+    /// `StateFileWrite` が包む型は `std::error::Error` ではなく**逐語文言を運ぶ値**であり
+    /// （upstream 出力と 1 文字も違ってはならない文字列）、材料はこの型の `Display` が既に
+    /// 描いている。`PlanUnavailable` / `MixedIntents` はループ自身の拒否で内包物を持たない。
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CatchUpError::Read(inner) => Some(inner),
+            CatchUpError::Projection(inner) => Some(inner),
+            CatchUpError::AuditShardWrite(inner) => Some(inner),
+            CatchUpError::StateFileRead(_)
+            | CatchUpError::StateFileWrite(_)
+            | CatchUpError::PlanUnavailable
+            | CatchUpError::MixedIntents => None,
+        }
+    }
+}
 
 impl From<JournalReadError> for CatchUpError {
     fn from(inner: JournalReadError) -> CatchUpError {
@@ -240,6 +261,38 @@ impl<R: JournalReader> ReadModelUpdater<R> {
 mod tests {
     use super::*;
     use crate::workspace::{AuditShardWriteError, StateFileReadError};
+
+    #[test]
+    fn the_envelope_chains_to_the_failure_it_wraps() {
+        // 封筒がここで連鎖を切ると、内包した失敗が自分の `source` に載せている材料へ
+        // 辿り着けなくなる。読取・投影・監査追記の 3 変種は本物のエラー型を包む。
+        let read: CatchUpError = JournalReadError::Io {
+            kind: std::io::ErrorKind::WouldBlock,
+            path: None,
+        }
+        .into();
+        assert_eq!(
+            std::error::Error::source(&read)
+                .expect("読取の失敗へ連鎖する")
+                .to_string(),
+            "io: WouldBlock at -"
+        );
+
+        let projection: CatchUpError = ProjectionError::ParkSectionMissing.into();
+        assert_eq!(
+            std::error::Error::source(&projection)
+                .expect("投影の失敗へ連鎖する")
+                .to_string(),
+            "park section missing"
+        );
+    }
+
+    #[test]
+    fn a_failure_that_owns_its_material_ends_the_chain() {
+        // ループ自身の拒否は材料を自分の `Display` に持つ — 連鎖の先は無い。
+        assert!(std::error::Error::source(&CatchUpError::MixedIntents).is_none());
+        assert!(std::error::Error::source(&CatchUpError::PlanUnavailable).is_none());
+    }
 
     #[test]
     fn every_catch_up_failure_renders_its_material() {

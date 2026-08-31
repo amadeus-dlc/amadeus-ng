@@ -16,6 +16,10 @@ const MAX_LEN: usize = 64;
 pub struct ProjectionName(String);
 
 /// `ProjectionName::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
+///
+/// **この型は他のエラーを内包しない** — 3 変種の材料 (長さ・位置) はすべて自分の `Display`
+/// が描く。したがって `Error::source` の連鎖は無く、既定 (`None`) が正しい。常に `None` を
+/// 返すだけの `source` は書かない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectionNameError {
     /// 空文字列。

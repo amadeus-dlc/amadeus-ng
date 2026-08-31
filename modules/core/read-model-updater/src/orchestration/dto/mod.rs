@@ -25,19 +25,19 @@
 //!
 //! [`CorruptCause`]: super::corrupt_cause::CorruptCause
 
-mod wire_error;
-mod wire_event;
-mod wire_intent;
-mod wire_intent_event;
-mod wire_vocabulary;
+mod dto_decode_error;
+mod dto_vocabulary;
+mod intent_dto;
+mod intent_event_dto;
+mod intent_execution_event_dto;
 
-pub use wire_error::WireDecodeError;
-pub use wire_event::{
-    WireAutonomyModeSet, WireEvent, WireGateApproved, WireGateOpened, WireGateRejected, WireJumped,
-    WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
-    WireStarted,
+pub use dto_decode_error::DtoDecodeError;
+pub use intent_event_dto::IntentEventDto;
+pub use intent_execution_event_dto::{
+    AutonomyModeSetDto, GateApprovedDto, GateOpenedDto, GateRejectedDto, IntentExecutionEventDto,
+    JumpedDto, ParkedDto, RecomposedDto, StageCompletedDto, StageRevisedDto, StageSkippedDto,
+    StartedDto,
 };
-pub use wire_intent_event::WireIntentEvent;
 
 #[cfg(test)]
 mod tests;

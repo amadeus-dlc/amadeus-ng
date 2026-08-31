@@ -5,8 +5,11 @@
 同日追補（オーナー — **DAO はファイルや SQLite のテーブルを読んで DTO で返してよい。媒体は
 実装詳細でポート契約に漏らさない**。§3 の DAO 項末尾。b27）、同日追補（オーナー — **`port/` には
 trait・エラー・DTO が同居する**。「Port の Dao が依存する型も port/ にいれて。`*View`」。
-§3 の DAO 項。b28）
-**適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）
+§3 の DAO 項。b28）、同日追補（オーナー — **リポジトリの実装はイベントストアを使う**。
+「`workflow_definition_repository_impl.rs` この実装を破棄せよ。NG中のNGです。リポジトリの実装は
+EventStoreForSqlite を使わないといけない」。配布物の取込は**外部システムクライアント**
+`DefinitionArtifactsClient` へ退去。§1 の追記・§3 の追記・§5 の取込 Gateway 行。b30）
+**適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）、b30（`WorkflowDefinitionRepositoryImpl` の ES 化と `DefinitionArtifactsClient` の新設）
 **機械強制**: レビュー基準（未リント化）。将来 `cargo lint` ルール候補は下記「機械強制の候補」
 
 ## ルール
@@ -23,6 +26,15 @@ trait・エラー・DTO が同居する**。「Port の Dao が依存する型�
 | --- | --- | --- |
 | **Repository** | 集約の永続化・再構成 | `XxxRepository`（`Xxx` = 集約名） |
 | **外部システムクライアント** | Git / GitHub / ハーネス CLI など、別プロセス・別システムとの RPC | 外部システム名を冠した専用ポート（例: `GitHubPullRequestClient`） |
+
+**追記 2026-08-31（オーナー裁定、b30）— 相手がファイルシステム上の配布物でも、相手方システムの
+契約を知るなら外部システムクライアントである。** 分類の判定は媒体ではなく「**相手方システムの
+契約（成果物の形式・語彙）を知るか**」で行う（[infrastructure-layer.md](infrastructure-layer.md)
+の判定基準と同じ）。実例は `DefinitionArtifactsClient`（ポート）/ `DefinitionArtifactsClientImpl`
+（実装）— upstream の compile が出力してハーネスと一緒に配ったバイト（`stage-graph.json` /
+`scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md` + `harness.json`）を読む**取込境界**で
+あり、相手の成果物形式を知るのでこの分類に入る。媒体がファイルシステムであることは実装の内部
+詳細である。
 
 **機構（時計・ID 生成・プロセス生存判定・乱数・環境変数読取）は Gateway ではない。** clean-architecture の層責務では、時計と ID 生成器と DI 配線は Infrastructure が所有する機構であって、アプリケーション境界のポートではない（典拠: `j5ik2o-clean-architecture/references/layer-responsibilities.md` — *"Infrastructure ... Owns mechanisms: logging, metrics, configuration, dependency injection, concrete database drivers, HTTP clients, **clocks, ID generators**, and runtime wiring."*）。
 
@@ -54,7 +66,13 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 - `IntentExecution` → `IntentExecutionRepository`（~~`WorkflowExecution` → `WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29）
 - `Intent` → `IntentRepository`（U7 の intent-create 実装時に新設予定。**Repository は自分の集約・エンティティだけを I/O する** — `IntentRepository` は `Intent` のみ、`IntentExecutionRepository` は `IntentExecution` のみ。他方を復元して返すのも違反。**署名は自集約の ID だけを取る** — 他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が要る場合、それは自ストリームの誕生イベントに記録されているはずであり、Impl がそこから内部復元する（`find_by_id(&IntentExecutionId)` が `Started` から再生用 `Intent` を組む実例 — オーナー確定 2026-08-29）（オーナー確認 2026-08-29）。再生・判断に他方のデータが要るときは `&` 参照のパラメータ渡し — [aggregate-references.md](aggregate-references.md)）
-- `WorkflowDefinition` → `WorkflowDefinitionRepository`
+- `WorkflowDefinition` → `WorkflowDefinitionRepository`（**改訂 2026-08-31 オーナー裁定、b30**:
+  この Repository は他の 2 つと同じく**イベントストアを内包する ES リポジトリ**である —
+  `find_by_id` は最新スナップショット + 差分イベントの replay、`store(&event, &definition)`
+  はジャーナル追記 + スナップショット（**封筒の `occurred_at` は集約の `last_updated_at()` から
+  組む** — 手本 `IntentExecutionRepositoryImpl` と対にせよというオーナー裁定 2026-08-31。
+  `store` の引数で時刻を運ばない）。~~3 入力を読んで集約を組み立てて供給する~~ 旧実装は
+  同日に破棄された。配布物の取込は §1 追記の `DefinitionArtifactsClient` が担う）
 
 `AuditLedger` はイベントログ（`IntentExecution` のイベント列）であって集約ではないため、Repository を持たない — 監査シャードは ReadModelUpdater の投影である（ADR-001 / 003）。
 
@@ -63,7 +81,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 | 禁止名 | 理由 |
 | --- | --- |
 | `StateFileRepository` | `StateFile`（`aidlc-state.md`）は**永続化媒体**であって集約ではない。集約は `IntentExecution`（旧 `WorkflowExecution`）であり、「状態がファイルに入っている」は Repository **実装**の内部詳細 |
-| `StageGraphRepository` | `stage-graph.json` という**ファイル名由来**の名前。集約は 3 入力を束ねた `WorkflowDefinition` で、`StageGraph` はその内包物 |
+| `StageGraphRepository` | `stage-graph.json` という**ファイル名由来**の名前。集約は 3 入力を束ねた `WorkflowDefinition` で、`StageGraph` はその内包物（「3 入力を束ねた」は**集約の内容**の話であって、Repository がファイルを読むという意味ではない — 2026-08-31 の追記） |
 
 媒体名を冠すると、格納形式の変更（ファイル → SQLite → リモート）がポート名の変更に波及し、ユースケース層が永続化の都合を知ってしまう。
 
@@ -89,12 +107,26 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 
 `XxxStore` / `XxxReader` / `XxxWriter` は DDD の語彙ではない。「読むだけの Gateway だから Reader」という命名は、**Repository の一部の操作にポートを 1 つずつ立てる**ことになり、集約単位のトランザクション境界を name の上で解体する。~~読取専用の集約（本システムから書き換えない `WorkflowDefinition` のような Published Language 成果物）は、`save` を持たない Repository として表現すればよい~~ — **失効（2026-08-30 オーナー裁定）**: リポジトリは `find_by_id` と `store` の両動詞を持つのが正であり、`find_by_id` だけを呼んで何も書かない使い方こそが違反（それはクエリ側の仕事 — [cqrs-boundaries.md](cqrs-boundaries.md) 追補）。`WorkflowDefinitionRepository` も両動詞を持つ（`store` 実装は定義を変更する最初のユースケースと同じ Bolt で書く）。
 
+**追記 2026-08-31（オーナー裁定、b30）— リポジトリの実装はイベントストアを使う。**
+「`workflow_definition_repository_impl.rs` この実装を破棄せよ。NG中のNGです。リポジトリの実装は
+EventStoreForSqlite を使わないといけない」。**ファイルから集約を組み立てる Repository 実装は
+[cqrs-boundaries.md](cqrs-boundaries.md) 規則 4（コマンド側の最新状態は常に集約から）への違反**で
+あり、`WorkflowDefinitionRepositoryImpl` の旧実装（Published Language 3 入力をディスクから読んで
+集約を組み立てていた）は同日に破棄された。現在は本家 event-store-adapter-rs のストア
+（`EventStoreForSqlite` / `EventStoreForMemory`）を内包し、intent / intent-execution の 2 リポジトリと
+手順が 1 行も違わない。**外部成果物を材料に集約を確立するのは書込ユースケース
+（`DefineWorkflowUseCase`）の取込境界の仕事**であり、Repository の読取経路ではない。
+
 **明示的な例外（2026-08-24）**: **§1c の永続化基盤ポート `EventStore` / `JournalReader` は本禁止の対象外**である。
 理由は 2 つ。(a) これらは Repository ではないので「Repository の操作を分割した」という本禁止の
 根拠が当てはまらない。(b) 名前が本家 event-store-adapter-rs の Published Language であり、
 ドメイン語へ言い換えると対応が読めなくなる（[ubiquitous-language.md](ubiquitous-language.md)）。
 **例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
 機械化する場合も、この 2 本を除外リストに持つ実装にすること。
+
+なお §1 追記の `DefinitionArtifactsClient` は**例外の追加ではない** — `Store` / `Reader` /
+`Writer` / `Source` / `Provider` のいずれの造語でもなく、相手方（配布物を出す upstream）を
+冠した `Client` であって §1 の「外部システムクライアント」分類そのものである。
 
 **クエリ側のリードモデル読取ポートは `XxxDao`（オーナー裁定 2026-08-31）**: 読む先が集約では
 なくリードモデルなので Repository とは名乗らず、DTO/DAO の語で `XxxDao`（ポート trait）/
@@ -160,17 +192,45 @@ DAO は集約を扱わないのでその根拠自体が当たらない。対の�
 | --- | --- | --- | --- |
 | ポート（trait） | use-case | `XxxRepository` | `WorkflowDefinitionRepository` |
 | 実 Gateway 実装 | interface-adapter | `XxxRepositoryImpl` | `WorkflowDefinitionRepositoryImpl` |
-| テストダブル | interface-adapter（`memory/` 配下） | `InMemoryXxxRepository` | `InMemoryWorkflowDefinitionRepository` |
+| インメモリ形 | interface-adapter（実装は 1 つ） | `XxxRepositoryImpl<EventStoreForMemory>`（型 alias `XxxMemoryStore`） | `IntentRepositoryImpl<IntentMemoryStore>` |
+| 取込ポート（trait）— §1 の外部システムクライアント | use-case（`port/`） | `XxxClient` | `DefinitionArtifactsClient` |
+| 取込 Gateway 実装 | interface-adapter | `XxxClientImpl` | `DefinitionArtifactsClientImpl` |
 
+- **取込 Gateway は Repository ではないので集約名を冠さない**（追加 2026-08-31、b30）。名乗るのは
+  相手方の成果物であって我々の集約ではない — §2「Repository 名 = 集約名 + Repository」の命名規則は
+  当たらない。`Impl` 接尾辞の規約（下記）は Repository と共通である。
+- **インメモリ形に自作 HashMap ダブルを書かない**（オーナー裁定 2026-08-31「インメモリなら
+  `EventStoreForMemory` を使ったかチェック」）。本家の memory バックエンドを内包した
+  `XxxRepositoryImpl::in_memory()` が唯一のインメモリ形である — 実装コードが実ストアと 1 行も
+  違わないので、契約テストが両バックエンドに同じ約束を課せる。同じ役割の口を 2 つ並立させない
+  （[no-backward-compatibility.md](no-backward-compatibility.md)）。**use-case 層の trait フェイク
+  だけは対象外** — DIP のクレート分離により use-case は event-store-adapter-rs に依存できないので、
+  `#[cfg(test)]` のフェイクがそこでの唯一の手段である。
 - **1 trait 1 Impl**。`Fs` / `Sys` / `Postgres` のような技術接頭辞は使わない — 格納形式は実装の内部詳細であり、型名に出せば「どの技術を使うか」がレビュー対象の公開 API になってしまう。
 - `Impl` 接尾辞は**本物の Gateway 実装の印**。テストダブルには付けず、`InMemory` 接頭辞で区別する。
 - 集約が使う trait はユースケース層に置くが、**集約自身は Repository を呼ばない**（典拠: `j5ik2o-ddd-repository-placement` — *"Aggregate code: no repository dependencies."* / *"Application/use-case layer: depends on repository interfaces and orchestrates loading/saving."*）。find / save の指揮はユースケースが執る（動詞は §2b の許容語彙に合わせた — 設計監査 C2 / 2026-08-23）。
+
+### 5b. 永続化 DTO は `*Dto`（`wire` 語は全廃）
+
+Repository 実装が本家ストアへ渡す永続化モデル（DTO）は `<対象><面>Dto` を名乗り、
+`dto/` ディレクトリに 1 型 1 ファイルで置く（`IntentExecutionDto` / `IntentExecutionEventDto` /
+`WorkflowDefinitionDto` / `WorkflowDefinitionEventDto` / `IntentExecutionAggregateKeyDto` …）。
+
+**`Wire` 接頭辞・`wire/` ディレクトリは全廃する**（オーナー裁定 2026-09-01「wire プレフィクス
+おかしいだろ。wire/ も使うな」）。命名は**不統一を避けることが目的**なので、鍵型のような
+長い名前も略さず明示名で揃える（`AggregateKey` ではなく `IntentExecutionAggregateKeyDto`
+— オーナー指摘 2026-09-01「なんでこんなに命名規則がばらばらなんだ」）。DTO ではない型
+（復号失敗のエラーなど）には `*Dto` を付けず、`wire` を含まない実態の名を選び、
+理由を doc に一行書く。
 
 ### 6. Repository は in-memory から始める
 
 典拠: `j5ik2o-ddd-domain-model-first/references/details.md` § Repository Timing — *"Do not introduce database repositories before use cases need persistence. In-memory repositories reveal the port contract without locking the domain to a database."*
 
-`InMemoryXxxRepository` を先に書いてポート契約を露出させ、実 I/O 実装は後から足す。実装前のポートに永続化の都合（ファイル名・スキーマ）を混ぜないための順序である。
+`XxxRepositoryImpl::in_memory()`（本家 memory バックエンド）を先に通してポート契約を露出させ、
+実ファイルの格納先は後から足す。実装前のポートに永続化の都合（ファイル名・スキーマ）を混ぜない
+ための順序である。~~`InMemoryXxxRepository` を先に書く~~ という旧文は、自作ダブル退役
+（2026-08-31）に伴い上のとおり読み替える。
 
 ## 適用の帰結（2026-08-22 の再設計）
 
@@ -186,7 +246,7 @@ DAO は集約を扱わないのでその根拠自体が当たらない。対の�
 
 1. **ポート造語の検出**: use-case 層の `pub trait` 名が `Store` / `Reader` / `Writer` / `Source` / `Provider` で終わったら拒否。
 2. **Repository 名と集約名の照合**: `XxxRepository` の `Xxx` が `core-domain` に存在する集約ルート型名であることを検査（集約表を機械可読にする前提が要る）。
-3. **技術接頭辞の検出**: interface-adapter 層の `XxxRepository` 実装型名が `Fs` / `Sys` / `Db` 等で始まったら拒否（`XxxRepositoryImpl` / `InMemoryXxxRepository` のみ許可）。
+3. **技術接頭辞の検出**: interface-adapter 層の `XxxRepository` 実装型名が `Fs` / `Sys` / `Db` 等で始まったら拒否（`XxxRepositoryImpl` のみ許可）。
 4. ~~**I8 の型強制**: `Next` ユースケースの構造体フィールドに Repository 型が現れないことを検査。~~ — **退役（2026-08-31・オーナー、b26 段階2）**: `next` はクエリ側へ移設され、コマンド側に `Next` ユースケースが存在しないため、検査対象ごと失効した。
 
 ## 根拠

@@ -43,7 +43,7 @@
 //! 実装ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言である
 //! (`coding-rules/module-visibility.md`)。
 
-mod continue_token_wire;
+mod continue_token_dto;
 mod execution_state_dao_impl;
 mod execution_state_parse;
 mod memory;
@@ -62,7 +62,7 @@ pub use memory::{
 };
 
 // 継続トークンの封緘・開封 (輸送形の境界)。
-pub use continue_token_wire::{InvalidContinueToken, mint_continue_token, verify_continue_token};
+pub use continue_token_dto::{InvalidContinueToken, mint_continue_token, verify_continue_token};
 
 // 純 parse (fs 呼び出しゼロ) — DAO 実装の下請けだが、ゴールデンパリティテストが
 // 読み終えたバイトを直接与えるために公開する。

@@ -14,7 +14,9 @@
 **同日追補（オーナー — DAO はファイルや SQLite のテーブルを読んで DTO で返してよい。媒体は
 実装詳細でポート契約に漏らさない。規則 6 に追記。b27）**、**同日追補（オーナー — **DTO も DAO と
 同じ `port/` に同居する**。「Port の Dao が依存する型も port/ にいれて。`*View`」。規則 6 に
-追記。b28）**
+追記。b28）**、**同日追補（オーナー — **リポジトリの実装はイベントストアを使う**。ファイルから
+集約を組み立てる `WorkflowDefinitionRepositoryImpl` の破棄。規則 4 の節末と規則 7 直後に追記。
+b30）**
 **関連**: ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004（状態ファイルは
 リードモデル）/ **ADR-009（本規則の記録）**、[gateway-taxonomy.md](gateway-taxonomy.md) §4
 **機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる
@@ -83,6 +85,13 @@
    イベントを RMU が捉えて作成・更新するリードモデルであり、**クエリサイドはこれを読む
    だけ**である。コマンド側がこれを読む・パースする実装を持つのは違反（2026-08-30 に
    実際に起きた誤り — `workflow_definition_parse.rs` をコマンド側アダプタに置いた）。
+
+   **外部配布物の取込は規則 7 の対象外**（追記 2026-08-31、b30）: 規則 7 が禁じるのは
+   **コマンド側が自分のリードモデル（RMU の投影物）を読む**ことである。書込ユースケースの
+   取込境界（`DefinitionArtifactsClient`）が読む dist の 3 入力は RMU が描いたものではなく、
+   **外部から来た Published Language 成果物**なので対象が違う。compile コンテキストが本
+   システムに実装されたら（現在は未実装）、この取込は当該コンテキストのフロー（集約 →
+   イベント → RMU）に置換され、取込ポートは消える。
 
 **steering の配信計画はドメインモデルではない**（オーナー裁定 2026-08-31、b26 段階2 — 規則 7 と
 同じ理屈の具体形）: `SteeringPlan`（ステージへ配る規則束の配信計画）は**リードモデル由来の
@@ -156,6 +165,24 @@ fn project(events: &[IntentExecutionEvent], read_model: &mut ReadModel) -> Resul
 
 したがってコマンド側の現在状態は、**必ず集約から**得る — スナップショット + ジャーナル replay
 （`find_by_id` による再水和）である。リードモデルを覗きに行く設計は、遅延の分だけ静かに壊れる。
+
+**2026-08-31 の実例（オーナー裁定、b30）**: `WorkflowDefinitionRepositoryImpl` が dist の 3 入力
+（`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md` + `harness.json`）を
+ファイルから読んで集約 `WorkflowDefinition` を組み立てていた実装は、本規則への正面違反として
+破棄された — 「`workflow_definition_repository_impl.rs` この実装を破棄せよ。NG中のNGです。
+リポジトリの実装は EventStoreForSqlite を使わないといけない」。**定義の取込は書込ユースケースの
+境界、集約の読取は常にイベントストアから**である。現在の `WorkflowDefinitionRepositoryImpl` は
+本家 event-store-adapter-rs のストア（`EventStoreForSqlite` / `EventStoreForMemory`）を内包し、
+`find_by_id` = 最新スナップショット + 差分イベント replay、`store(&event, &definition)`
+= ジャーナル追記 + スナップショット（封筒の `occurred_at` は集約の `last_updated_at()` から組む —
+手本 `IntentExecutionRepositoryImpl` と対にする裁定 2026-08-31）で、intent / intent-execution の
+2 リポジトリと手順が 1 行も違わない。3 入力のパースは取込ポート `DefinitionArtifactsClient` / 実装
+`DefinitionArtifactsClientImpl`（責務分類は**外部システムクライアント** —
+[gateway-taxonomy.md](gateway-taxonomy.md) §1 の追記）へ移り、書込ユースケース
+`DefineWorkflowUseCase` が「取込 → 既存が無ければ `define`（genesis）/ 内容版が違えば `redefine` /
+同じなら何も書かない」を行う。ジャーナルが内容の正本になったので、ドメインイベント
+`WorkflowDefinitionEvent` の `Defined` / `Redefined` は**どちらも内容そのもの（graph / grid /
+scopes）を運ぶ**（旧 `Defined` は id と内容版だけを運び「内容の正本は実ファイル」と述べていた）。
 
 ## 機械強制 — クレート境界
 

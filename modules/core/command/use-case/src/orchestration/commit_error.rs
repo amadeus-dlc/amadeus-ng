@@ -42,7 +42,22 @@ impl fmt::Display for CommitError {
     }
 }
 
-impl std::error::Error for CommitError {}
+impl std::error::Error for CommitError {
+    /// 内包した失敗へ連鎖する（`UnknownStage` だけは材料を自分で持つので連鎖しない）。
+    ///
+    /// **封筒は連鎖を切ってはならない。** `RepositoryError::Corrupt` は「壊れていた」としか
+    /// `Display` に書かず、実材料は `Error::source` の連鎖に載せる（裁定 6）。ここで `None` を
+    /// 返すと、その材料はこの型で行き止まりになり、診断には分類だけが残る。
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CommitError::Repository(error) => Some(error),
+            CommitError::IntentRepository(error) => Some(error),
+            CommitError::Command(error) => Some(error),
+            // ユースケース自身の失敗 — 材料 (slug) は自分の `Display` にある。
+            CommitError::UnknownStage { .. } => None,
+        }
+    }
+}
 
 impl From<RepositoryError<IntentExecutionId>> for CommitError {
     fn from(error: RepositoryError<IntentExecutionId>) -> CommitError {
@@ -97,6 +112,36 @@ mod tests {
             CommitError::Command(CommandError::NotRunning)
         ));
         assert!(error.to_string().starts_with("command: "));
+    }
+
+    #[test]
+    fn the_envelope_chains_to_the_material_the_port_hid_in_its_source() {
+        // `RepositoryError::Corrupt` は分類しか `Display` に書かない (裁定 6) — 実材料は
+        // `source` の連鎖に載る。封筒がそこで連鎖を切ると、診断には分類しか残らない。
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
+        let error = CommitError::Repository(RepositoryError::Corrupt {
+            id: execution_id,
+            seq_nr: Some(3),
+            source: Box::new(std::io::Error::other("undecodable payload")),
+        });
+
+        let port = std::error::Error::source(&error).expect("ポートの失敗へ連鎖する");
+        assert_eq!(
+            std::error::Error::source(port)
+                .expect("ポートは原因へ連鎖する")
+                .to_string(),
+            "undecodable payload"
+        );
+    }
+
+    #[test]
+    fn a_failure_that_owns_its_material_ends_the_chain() {
+        // 未解決ステージはユースケース自身の失敗で、材料 (slug) は自分の `Display` にある。
+        // 連鎖の先は無い — 辿る側が末端で止まれることを固定する。
+        let error = CommitError::UnknownStage { stage: stage() };
+
+        assert!(std::error::Error::source(&error).is_none());
     }
 
     #[test]

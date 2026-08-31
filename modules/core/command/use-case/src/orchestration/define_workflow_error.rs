@@ -1,0 +1,148 @@
+//! `DefineWorkflowError` — `DefineWorkflowUseCase` の失敗。
+
+use std::fmt;
+
+use core_command_domain::workflow_definition::{RedefineError, WorkflowDefinitionId};
+
+use super::port::{DefinitionArtifactsError, RepositoryError};
+
+/// `DefineWorkflowUseCase` の失敗 (材料のみ — 逐語文言は出す側が組む)。
+///
+/// 3 変種はいずれも**そのまま伝播させるための封筒**である。ユースケースはポートや集約の
+/// 拒否を握り潰さないし言い換えもしない (`coding-rules/error-handling.md`)。失敗の位置は
+/// 復旧手順を変えるので変種で分かる必要がある — 配布物が読めないのはハーネス配置の問題、
+/// ストアの失敗は永続化の問題である。
+///
+/// **「内容が変わっていない」はここに現れない。** それは失敗ではなく取込が冪等であること
+/// の帰結であり、ユースケースが `Ok` へ畳む ([`DefineWorkflowUseCase`] の doc を参照)。
+///
+/// `Clone` / `PartialEq` は実装しない — `Corrupt` の `source` (原因連鎖) が比較・複製不能で
+/// ある (裁定 6 で受容済み)。テストは `matches!` で判定する。
+///
+/// [`DefineWorkflowUseCase`]: super::define_workflow_use_case::DefineWorkflowUseCase
+#[derive(Debug)]
+pub enum DefineWorkflowError {
+    /// ハーネス配布物の取込の失敗 (ポートからそのまま伝播)。
+    Artifacts(DefinitionArtifactsError),
+    /// 定義の取得ないし永続化の失敗 (ポートからそのまま伝播)。
+    DefinitionRepository(RepositoryError<WorkflowDefinitionId>),
+    /// 集約が改訂を拒否した (そのまま伝播 — 通番の枯渇)。
+    Redefine(RedefineError),
+}
+
+impl fmt::Display for DefineWorkflowError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DefineWorkflowError::Artifacts(error) => write!(f, "definition artifacts: {error}"),
+            DefineWorkflowError::DefinitionRepository(error) => {
+                write!(f, "definition repository: {error}")
+            }
+            DefineWorkflowError::Redefine(error) => write!(f, "redefine: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for DefineWorkflowError {
+    /// 内包した失敗へ連鎖する。
+    ///
+    /// **封筒は連鎖を切ってはならない。** `DefinitionArtifactsError::Corrupt` /
+    /// `RepositoryError::Corrupt` は「壊れていた」としか `Display` に書かず、どのファイルが
+    /// どう壊れていたかという実材料は `Error::source` の連鎖に載せる (裁定 6 — エラーは契約の
+    /// 一部であり、内部実装がバレる分類を契約に含めない)。ここで `None` を返すと、その材料は
+    /// この型で行き止まりになり、診断には分類だけが残る。
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DefineWorkflowError::Artifacts(error) => Some(error),
+            DefineWorkflowError::DefinitionRepository(error) => Some(error),
+            DefineWorkflowError::Redefine(error) => Some(error),
+        }
+    }
+}
+
+impl From<DefinitionArtifactsError> for DefineWorkflowError {
+    fn from(error: DefinitionArtifactsError) -> DefineWorkflowError {
+        DefineWorkflowError::Artifacts(error)
+    }
+}
+
+impl From<RepositoryError<WorkflowDefinitionId>> for DefineWorkflowError {
+    fn from(error: RepositoryError<WorkflowDefinitionId>) -> DefineWorkflowError {
+        DefineWorkflowError::DefinitionRepository(error)
+    }
+}
+
+impl From<RedefineError> for DefineWorkflowError {
+    fn from(error: RedefineError) -> DefineWorkflowError {
+        DefineWorkflowError::Redefine(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::error::Error as _;
+
+    use core_command_domain::workflow_definition::DefinitionRevision;
+
+    fn definition_id() -> WorkflowDefinitionId {
+        WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id")
+    }
+
+    fn boxed(message: &str) -> Box<dyn std::error::Error + Send + Sync> {
+        Box::new(std::io::Error::other(message.to_string()))
+    }
+
+    /// 連鎖の末端の文言 (診断が最後に見せるべき実材料)。
+    fn terminal(error: &dyn std::error::Error) -> String {
+        let mut last = error.to_string();
+        let mut source = error.source();
+        while let Some(cause) = source {
+            last = cause.to_string();
+            source = cause.source();
+        }
+        last
+    }
+
+    #[test]
+    fn the_envelope_chains_through_to_the_material_at_the_end() {
+        // 封筒が `source` を返さないと、`Corrupt` が連鎖に載せた実材料 (どのファイルが
+        // どう壊れていたか) がこの型で行き止まりになる。診断はそこから先を辿れなくなり、
+        // 利用者には分類 (「壊れていた」) しか届かない。
+        let artifacts = DefineWorkflowError::Artifacts(DefinitionArtifactsError::Corrupt {
+            source: boxed("stage graph at /w/stage-graph.json is not valid JSON: expected value"),
+        });
+        assert_eq!(
+            terminal(&artifacts),
+            "stage graph at /w/stage-graph.json is not valid JSON: expected value"
+        );
+        // 1 段目は包んだポートのエラーそのものである (構造を偽らない — 末端へ飛ばさない)。
+        assert_eq!(
+            artifacts
+                .source()
+                .expect("取込の失敗へ連鎖する")
+                .to_string(),
+            "corrupt definition artifacts"
+        );
+
+        let repository = DefineWorkflowError::DefinitionRepository(RepositoryError::Corrupt {
+            id: definition_id(),
+            seq_nr: Some(2),
+            source: boxed("undecodable payload"),
+        });
+        assert_eq!(terminal(&repository), "undecodable payload");
+    }
+
+    #[test]
+    fn a_rejection_carries_its_material_in_its_own_wording() {
+        // 集約の拒否は材料を自分の `Display` に持つ — その先に連鎖は無い。辿る側が
+        // 末端で止まれることを固定する。
+        let revision =
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision");
+        let rejected = DefineWorkflowError::Redefine(RedefineError::Unchanged { revision });
+
+        let inner = rejected.source().expect("拒否そのものへ連鎖する");
+        assert!(inner.to_string().starts_with("definition unchanged at "));
+        assert!(inner.source().is_none(), "その先は無い");
+    }
+}

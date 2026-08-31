@@ -4,7 +4,7 @@
 //! 出典: upstream `aidlc-audit.ts:39-189` (03 §6.5 の完全転記、検算 86/22 済み)。
 //! 2026-08-29 オーナー裁定「audit-events の中身は domain に移せ」により独立クレート
 //! `modules/shared/audit-events` から本モジュールへ移設 — 監査イベント語彙はドメイン知識で
-//! あり、ドメインモデルの中に置く（外部消費者は wire 上の文字列として読む）。
+//! あり、ドメインモデルの中に置く（外部消費者は監査行の文字列として読む）。
 //!
 //! CLI_RESERVED (8) と MERGE_PROTECTED (26+DOCUMENT_*) は as-built 仕様に全列挙が無く、
 //! upstream ソース読解 (stage-0 ゴールデン採取) 待ち — 誤推測は audit-merge 互換を壊すため未定義。

@@ -7,7 +7,10 @@
 #![allow(dead_code)]
 
 pub(crate) mod contract;
+pub(crate) mod definition_contract;
 pub(crate) mod intent_contract;
+
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
@@ -15,10 +18,13 @@ use core_command_domain::orchestration::{
     IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
+    ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
+    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
-use core_command_use_case::orchestration::{IntentExecutionRepository, IntentRepository};
+use core_command_use_case::orchestration::{
+    IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository,
+};
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -285,4 +291,94 @@ pub(crate) async fn store_intent_genesis<R: IntentRepository>(repository: &mut R
         .find_by_id(aggregate.id())
         .await
         .expect("書いた intent は握り直せる")
+}
+
+/// 定義の Repository の契約テストが使う試験装置 ([`StoreFixture`] の定義版)。
+///
+/// 課す約束も同じである: `open` は空のストア、`reopen` は同じストアを指す別インスタンス。
+pub(crate) trait DefinitionStoreFixture {
+    /// 試験対象の Repository (内包するバックエンドだけが違う)。
+    type Repository: WorkflowDefinitionRepository;
+
+    /// **空のストア**を指す新しい Repository を開く (呼ぶたびに独立した空のストア)。
+    fn open(&self) -> Self::Repository;
+
+    /// `repository` が書いているストアを、別のインスタンスから開き直す。
+    fn reopen(&self, repository: &Self::Repository) -> Self::Repository;
+}
+
+/// 契約テストの定義識別子 (1 ハーネス 1 定義 — ADR-008)。
+#[must_use]
+pub(crate) fn definition_id() -> WorkflowDefinitionId {
+    WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id")
+}
+
+/// ストアに存在しない定義識別子。
+#[must_use]
+pub(crate) fn absent_definition_id() -> WorkflowDefinitionId {
+    WorkflowDefinitionId::parse("kiro").expect("契約テストの定義 id")
+}
+
+/// 契約テストの内容版 (`fill` を変えれば別の版になる)。
+#[must_use]
+pub(crate) fn definition_revision(fill: char) -> DefinitionRevision {
+    DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64)))
+        .expect("契約テストの定義 revision")
+}
+
+/// `stage_count` 段の定義の内容 (3 入力のモデル)。
+#[must_use]
+pub(crate) fn definition_content(
+    stage_count: usize,
+) -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
+    let nodes = (0..stage_count)
+        .map(|index| {
+            StageNodeBuilder::new(
+                slug(&format!("stage-{index}")),
+                StageNumber::parse(&format!("0.{}", index + 1))
+                    .expect("契約テストのステージ番号は文法内"),
+                "Stage".to_string(),
+                PhaseId::Initialization,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .scopes(vec!["classic".to_string()])
+            .build()
+        })
+        .collect();
+    let graph = StageGraph::new(nodes).expect("契約テストのグラフは検証を通る");
+    let grid = ScopeGrid::from_graph(&graph);
+    let scopes = [(
+        "classic".to_string(),
+        ScopeMetadata::new("classic").expect("契約テストの scope メタデータ"),
+    )]
+    .into_iter()
+    .collect();
+    (graph, grid, scopes)
+}
+
+/// 定義の genesis の (集約, 誕生イベント) の対 (`WorkflowDefinition::define` が返す形)。
+#[must_use]
+pub(crate) fn definition_genesis() -> (WorkflowDefinition, WorkflowDefinitionEvent) {
+    let (graph, grid, scopes) = definition_content(3);
+    WorkflowDefinition::define(
+        definition_id(),
+        definition_revision('0'),
+        graph,
+        grid,
+        scopes,
+        at(),
+    )
+}
+
+/// 定義の genesis を 1 件書き、握り直した結果を返す。
+pub(crate) async fn store_definition_genesis<R: WorkflowDefinitionRepository>(
+    repository: &mut R,
+) -> WorkflowDefinition {
+    let (aggregate, event) = definition_genesis();
+    repository.store(&event, &aggregate).await.expect("store");
+    repository
+        .find_by_id(aggregate.id())
+        .await
+        .expect("書いた定義は握り直せる")
 }

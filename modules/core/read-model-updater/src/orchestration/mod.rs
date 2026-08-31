@@ -10,6 +10,7 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod corrupt_cause;
+mod dto;
 mod global_seq_nr;
 mod journal_batch;
 mod journal_entry;
@@ -19,7 +20,6 @@ mod journal_reader_impl;
 mod projection_name;
 mod store_failure;
 mod updater;
-mod wire;
 
 // ポート (trait) と実 I/O 実装
 pub use journal_reader::JournalReader;
@@ -38,10 +38,10 @@ pub use journal_entry::JournalEntry;
 
 // エラー
 // 読む側の永続化 DTO (側ごと専用化 — coding-rules/cqrs-boundaries.md)。
-pub use wire::{
-    WireAutonomyModeSet, WireDecodeError, WireEvent, WireGateApproved, WireGateOpened,
-    WireGateRejected, WireIntentEvent, WireJumped, WireParked, WireRecomposed, WireStageCompleted,
-    WireStageRevised, WireStageSkipped, WireStarted,
+pub use dto::{
+    AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
+    IntentEventDto, IntentExecutionEventDto, JumpedDto, ParkedDto, RecomposedDto,
+    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
 };
 
 pub use corrupt_cause::CorruptCause;
