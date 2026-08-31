@@ -248,7 +248,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::workflow_view::{
+    use crate::orchestration::{
         ExecutionKindView, StageModeView, StageNumberView, StageViewBuilder,
     };
 

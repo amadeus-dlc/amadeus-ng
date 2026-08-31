@@ -12,8 +12,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use core_query_use_case::execution_view::ExecutionStateView;
-use core_query_use_case::orchestration::{ExecutionStateDao, ExecutionStateReadError};
+use core_query_use_case::orchestration::{
+    ExecutionStateDao, ExecutionStateReadError, ExecutionStateView,
+};
 
 use super::execution_state_parse::parse_execution_state;
 
@@ -76,7 +77,7 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::*;
-    use core_query_use_case::execution_view::ExecutionStatus;
+    use core_query_use_case::orchestration::ExecutionStatus;
     use tempfile::tempdir;
 
     fn state_file() -> String {

@@ -3,7 +3,9 @@
 **裁定日**: 2026-08-22（オーナー、共通ルール）/ **改訂**: 2026-08-31（オーナー裁定 — クエリ側の
 リードモデル読取ポートは `XxxDao` / `XxxDaoImpl` / `InMemoryXxxDao`。§3 に追記。b27）、
 同日追補（オーナー — **DAO はファイルや SQLite のテーブルを読んで DTO で返してよい。媒体は
-実装詳細でポート契約に漏らさない**。§3 の DAO 項末尾。b27）
+実装詳細でポート契約に漏らさない**。§3 の DAO 項末尾。b27）、同日追補（オーナー — **`port/` には
+trait・エラー・DTO が同居する**。「Port の Dao が依存する型も port/ にいれて。`*View`」。
+§3 の DAO 項。b28）
 **適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）
 **機械強制**: レビュー基準（未リント化）。将来 `cargo lint` ルール候補は下記「機械強制の候補」
 
@@ -109,6 +111,13 @@ DAO は集約を扱わないのでその根拠自体が当たらない。対の�
 配置は use-case 層の `port/` でコマンド側と同型、実装は interface-adapter 層
 （[cqrs-boundaries.md](cqrs-boundaries.md) 規則 6 の同日追記）。§1c の例外 2 本
 （`EventStore` / `JournalReader`）とは独立の話である。
+
+その `port/` には **trait・ポート面のエラー・DAO が返す DTO の 3 つが同居する**（オーナー裁定
+2026-08-31 追補「Port の Dao が依存する型も port/ にいれて。`*View`」）— **DTO/DAO ポートは
+一つのパッケージである**。契約とその契約が返す型は同じ理由で変わるので、変更の単位を
+1 ディレクトリに揃える。DTO 族の mod も `port` 自身も private のままで、公開はコンテキストの
+ファサードの `pub use`（[module-visibility.md](module-visibility.md)）— 消費側は読む対象に
+よらず `<クレート>::<コンテキスト>::<型>` の平坦なパスで参照する。
 
 **DAO はファイルや SQLite のテーブルを読んで DTO で返してよい（オーナー追補裁定 2026-08-31）。
 媒体は実装詳細でポート契約に漏らさない。** どちらを読むかは実装が決めることで、ポート面が

@@ -12,8 +12,13 @@
 //! `review_class` / `mode` などの未知値は読取時に落とし、`Unknown` 変種へ逃がさない。
 //! 観測差は手編集グラフに限られ、配布実バイトでは生じないことをゴールデンパリティが固定する。
 //!
-//! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、消費側の
-//! パスは `core_query_use_case::workflow_view::<型>` で安定する
+//! **DTO は DAO と同じ `port/` に同居する** — DTO/DAO ポートは一つのパッケージである
+//! (オーナー裁定 2026-08-31)。本モジュールが返す型を読む契約 (`WorkflowDefinitionDao`) は
+//! 隣に住む。
+//!
+//! 型ファイルの mod も本モジュール自身も private。公開 API は以下の `pub use` を親
+//! (`port` → `orchestration`) が中継したものが唯一の宣言であり、消費側のパスは
+//! `core_query_use_case::orchestration::<型>` で安定する
 //! (`coding-rules/module-visibility.md`)。
 
 mod brownfield_greenfield_view;

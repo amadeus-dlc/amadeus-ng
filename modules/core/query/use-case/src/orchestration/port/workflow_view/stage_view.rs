@@ -511,7 +511,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::workflow_view::RuleScopeView;
+    use crate::orchestration::RuleScopeView;
 
     fn node(slug: &str, number: &str) -> StageViewBuilder {
         StageViewBuilder::new(

@@ -31,8 +31,7 @@ impl MemoryRulesDao for InMemoryMemoryRulesDao {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_query_use_case::orchestration::RuleContent;
-    use core_query_use_case::workflow_view::PhaseView;
+    use core_query_use_case::orchestration::{PhaseView, RuleContent};
     use std::collections::BTreeMap;
 
     #[test]

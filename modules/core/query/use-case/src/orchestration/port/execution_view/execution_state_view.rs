@@ -39,8 +39,9 @@ use super::checkbox_state::CheckboxState;
 use super::execution_status::ExecutionStatus;
 use super::stage_index::StageIndex;
 use super::stage_progress_view::StageProgressView;
-use crate::orchestration::{NextDecision, NextRequest, StateBinding};
-use crate::workflow_view::{PlanActionView, ScopeSlugView, StageSlugView};
+use crate::orchestration::{
+    NextDecision, NextRequest, PlanActionView, ScopeSlugView, StageSlugView, StateBinding,
+};
 
 /// 実効 SKIP の不整合から自力で復旧できる checkbox 前提集合 (`skip_stage` を呼べる状態)。
 const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, CheckboxState::Revising];
@@ -385,7 +386,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::workflow_view::PhaseView;
+    use crate::orchestration::PhaseView;
     use proptest::prelude::*;
 
     fn row(

@@ -8,13 +8,16 @@
 //! `coding-rules/cqrs-boundaries.md` 規則 5)。したがって本モジュールは Repository を 1 本も
 //! 持たず、集約の再構成もしない (同規則 6)。
 //!
-//! 読取素材 ([`crate::execution_view::ExecutionStateView`] /
-//! [`crate::workflow_view::DefinitionView`] / [`MemoryRules`]) は、リードモデルを読む
-//! **DTO/DAO ポート** ([`ExecutionStateDao`] / [`WorkflowDefinitionDao`] /
+//! 読取素材 ([`ExecutionStateView`] / [`DefinitionView`] / [`MemoryRules`]) は、リードモデルを
+//! 読む **DTO/DAO ポート** ([`ExecutionStateDao`] / [`WorkflowDefinitionDao`] /
 //! [`MemoryRulesDao`]) 経由で取得する (オーナー裁定 2026-08-31)。ポートは読取動詞 `find`
 //! 1 本だけを持ち、更新動詞が存在しないことが「リードモデルは更新できない」の型保証である。
 //! **読取元 (ファイル / SQLite のテーブル) は実装の内部詳細**であり、ポート面が語るのは
 //! DTO だけである (同日追補裁定)。
+//!
+//! その DTO 自身も DAO と同じ `port/` に住む — 「Port の Dao が依存する型も port/ にいれて。
+//! `*View`」(オーナー裁定 2026-08-31)。DTO/DAO ポートは一つのパッケージであり、契約とその
+//! 契約が返す型は同じ理由で変わるので、変更の単位を 1 ディレクトリに揃える。
 //!
 //! # 出力モデルであってビューではない
 //!
@@ -32,7 +35,6 @@ mod continue_use_case;
 mod directive;
 mod directive_schema;
 mod engine_command;
-mod memory_rules;
 mod next_decision;
 mod next_turn_input;
 mod next_use_case;
@@ -59,7 +61,6 @@ pub use continue_token::{ContinueToken, ContinueTokenBuilder};
 pub use steering_binding::{Bindings, BundleDigest, DirectiveDigest, RouteDigest, StateBinding};
 // steering ダイジェストの導出は所有する型の関連メソッド (steering_digest モジュールの impl —
 // `coding-rules/domain-services.md`)。輸出する自由関数は無い。
-pub use memory_rules::MemoryRules;
 pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
 pub use token_version::TokenVersion;
 
@@ -78,6 +79,23 @@ pub use scope_resolution::{ResolvedScope, ScopeSource};
 // (`coding-rules/cqrs-boundaries.md` 規則 6 / `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
 pub use port::{ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao};
 
+// ポートの DTO — DAO が返すクエリモデル。DAO と同じ `port/` に同居する (オーナー裁定
+// 2026-08-31 — DTO/DAO ポートは一つのパッケージ)。読む対象は 2 族あるが、消費側のパスは
+// 本ファサードで平坦に揃う。
+//
+// ワークフロー定義リードモデル (3 入力) のビュー型
+pub use port::{
+    BrownfieldGreenfieldView, ConsumeDeclView, DefinitionIdView, DefinitionRevisionView,
+    DefinitionView, ExecutionKindView, PhaseView, PlanActionView, ReviewCapValueView,
+    ReviewClassView, RuleInContextView, RuleScopeView, ScopeGridView, ScopeMetadataView,
+    ScopeSlugView, SensorRefView, SkeletonDefaultView, StageGraphView, StageModeView,
+    StageNumberView, StageRouteView, StageSlugView, StageView, StageViewBuilder,
+};
+// 実行状態リードモデル (`aidlc-state.md`) のビュー型と、その上の判断 (BR3.1 の 8 分岐)
+pub use port::{CheckboxState, ExecutionStateView, ExecutionStatus, StageIndex, StageProgressView};
+// memory 層ルール束 (`MemoryRulesDao` の戻り値 — リードモデルの写しではないので `View` 無し)
+pub use port::MemoryRules;
+
 // ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ)
 pub use continue_use_case::ContinueUseCase;
 pub use next_turn_input::{NextTurnInput, NounFamily, NounToken, WorkspaceLayout};
@@ -85,6 +103,11 @@ pub use next_use_case::NextUseCase;
 
 // 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側のユースケースが組む)
 pub use port::{ExecutionStateReadError, MemoryRulesReadError, WorkflowDefinitionReadError};
+// 拒否 (DTO の復号 — ビューではないので `View` 接尾辞を付けない)
+pub use port::{
+    DefinitionIdError, DefinitionRevisionError, ExecutionStateError, ScopeMetadataError,
+    ScopeSlugError, StageGraphError, StageNumberError, StageSlugError, UnknownScope, UnknownValue,
+};
 pub use scope_resolution::ScopeResolutionError;
 pub use stage_name::BlankStageName;
 pub use steering_plan::UnsplittableSection;

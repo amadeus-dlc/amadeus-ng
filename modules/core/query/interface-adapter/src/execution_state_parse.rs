@@ -24,10 +24,10 @@
 //! (upstream 同等)。閉集合 (`Status` / フェーズ見出し / マーカー / EXECUTE\|SKIP) だけは
 //! 厳密に落とす — 未知値を `Unknown` 変種へ逃がさない (12 §10 表 #3 と同じ方針)。
 
-use core_query_use_case::execution_view::{
-    CheckboxState, ExecutionStateError, ExecutionStateView, ExecutionStatus, StageProgressView,
+use core_query_use_case::orchestration::{
+    CheckboxState, ExecutionStateError, ExecutionStateView, ExecutionStatus, PhaseView,
+    PlanActionView, ScopeSlugView, StageProgressView, StageSlugView,
 };
-use core_query_use_case::workflow_view::{PhaseView, PlanActionView, ScopeSlugView, StageSlugView};
 
 /// `- **Scope**:` — scope 名。
 const FIELD_SCOPE: &str = "Scope";
@@ -246,7 +246,7 @@ fn require_field(content: &str, field: &str) -> Result<String, ExecutionStatePar
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_query_use_case::execution_view::StageIndex;
+    use core_query_use_case::orchestration::StageIndex;
 
     /// 出荷テンプレートと同じ節構成の最小状態ファイル。
     fn state_file() -> String {

@@ -1,6 +1,20 @@
 //! アウトプットポート — クエリ側のインタラクタが依存する**契約 (trait)** と、その契約に
-//! 依存する型 (ポート面のエラー) の置き場。配置はコマンド側の `port/` と同型である
-//! (オーナー裁定 2026-08-31)。
+//! 依存する型 (ポート面のエラーと、DAO が返す DTO) の置き場。配置はコマンド側の `port/` と
+//! 同型である (オーナー裁定 2026-08-31)。
+//!
+//! # DTO は DAO と同じ port/ に同居する
+//!
+//! 「Port の Dao が依存する型も port/ にいれて。`*View`」(オーナー裁定 2026-08-31) —
+//! **DTO/DAO ポートは一つのパッケージである**。DAO の契約とその契約が返す DTO は同じ理由で
+//! 変わる (読取対象のリードモデルが変わったとき) ので、変更の単位を 1 ディレクトリに揃える。
+//! DTO は読む対象ごとに 2 族に分かれる:
+//!
+//! - `workflow_view` — ワークフロー定義リードモデル (3 入力) のビュー型
+//! - `execution_view` — 実行状態リードモデル (`aidlc-state.md`) のビュー型と、その上の判断
+//!   (BR3.1 の 8 分岐)
+//!
+//! `MemoryRules` は `MemoryRulesDao` の戻り値 DTO なので同じ理由でここに住むが、`View`
+//! 接尾辞を持たない — 読むのは memory 層のルール本文であってリードモデルの写しではない。
 //!
 //! # なぜクエリ側にポートがあるのか
 //!
@@ -31,8 +45,8 @@
 //! 目的である)。現行の実装 3 本はいずれもファイルを読むが、それは**いま選んでいる媒体**で
 //! あって契約ではない。
 //!
-//! [`ExecutionStateView`]: crate::execution_view::ExecutionStateView
-//! [`DefinitionView`]: crate::workflow_view::DefinitionView
+//! [`ExecutionStateView`]: crate::orchestration::ExecutionStateView
+//! [`DefinitionView`]: crate::orchestration::DefinitionView
 //! [`MemoryRules`]: crate::orchestration::MemoryRules
 //!
 //! 実装 (Gateway) は `core-query-interface-adapter` に置く (DIP — `use-case-rules.md` §1)。
@@ -42,6 +56,7 @@
 //! 型ファイルの mod は private。公開 API は親モジュールの `pub use` ファサードが唯一の宣言
 //! (`coding-rules/module-visibility.md`)。
 
+// 契約 (trait) と、そのポート面のエラー
 mod execution_state_dao;
 mod execution_state_read_error;
 mod memory_rules_dao;
@@ -49,9 +64,50 @@ mod memory_rules_read_error;
 mod workflow_definition_dao;
 mod workflow_definition_read_error;
 
+// 契約が返す DTO (同居 — オーナー裁定 2026-08-31)
+mod execution_view;
+mod memory_rules;
+mod workflow_view;
+
 pub use execution_state_dao::ExecutionStateDao;
 pub use execution_state_read_error::ExecutionStateReadError;
 pub use memory_rules_dao::MemoryRulesDao;
 pub use memory_rules_read_error::MemoryRulesReadError;
 pub use workflow_definition_dao::WorkflowDefinitionDao;
 pub use workflow_definition_read_error::WorkflowDefinitionReadError;
+
+// --- DTO: ワークフロー定義リードモデルのビュー型 (`workflow_view`) ---
+
+// 閉集合の語彙
+pub use workflow_view::{
+    BrownfieldGreenfieldView, ExecutionKindView, PhaseView, PlanActionView, ReviewCapValueView,
+    ReviewClassView, RuleScopeView, SkeletonDefaultView, StageModeView,
+};
+// 検証付きの値
+pub use workflow_view::{
+    DefinitionIdView, DefinitionRevisionView, ScopeSlugView, StageNumberView, StageSlugView,
+};
+// レコード
+pub use workflow_view::{
+    ConsumeDeclView, RuleInContextView, ScopeMetadataView, SensorRefView, StageRouteView,
+    StageView, StageViewBuilder,
+};
+// リードモデル本体
+pub use workflow_view::{DefinitionView, ScopeGridView, StageGraphView};
+// 拒否 (ビューではないので `View` 接尾辞を付けない)
+pub use workflow_view::{
+    DefinitionIdError, DefinitionRevisionError, ScopeMetadataError, ScopeSlugError,
+    StageGraphError, StageNumberError, StageSlugError, UnknownScope, UnknownValue,
+};
+
+// --- DTO: 実行状態リードモデルのビュー型 (`execution_view`) ---
+
+// 閉集合の語彙と位置
+pub use execution_view::{CheckboxState, ExecutionStatus, StageIndex};
+// リードモデル本体
+pub use execution_view::{ExecutionStateView, StageProgressView};
+// 拒否
+pub use execution_view::ExecutionStateError;
+
+// --- DTO: memory 層ルール束 (`MemoryRulesDao` の戻り値) ---
+pub use memory_rules::MemoryRules;

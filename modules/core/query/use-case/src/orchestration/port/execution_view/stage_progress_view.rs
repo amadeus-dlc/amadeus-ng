@@ -6,7 +6,7 @@
 //! 材料が、リードモデル上では**この 1 行に畳まれている**ため、クエリ側は 1 型で持つ。
 
 use super::checkbox_state::CheckboxState;
-use crate::workflow_view::{PhaseView, PlanActionView, StageSlugView};
+use crate::orchestration::{PhaseView, PlanActionView, StageSlugView};
 
 /// 1 ステージ分の進捗行 (構築後 immutable)。
 #[derive(Debug, Clone, PartialEq, Eq)]

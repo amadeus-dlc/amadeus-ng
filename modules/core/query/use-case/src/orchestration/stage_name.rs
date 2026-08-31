@@ -1,6 +1,6 @@
 //! `StageName` — ステージの表示名 (例 "NFR Requirements")。
 //!
-//! slug ([`crate::workflow_view::StageSlugView`]) とは別語彙 — 表示名は人間向けの文言で、
+//! slug ([`crate::orchestration::StageSlugView`]) とは別語彙 — 表示名は人間向けの文言で、
 //! グラフの同一性には使わない。空白のみの名前は名指しとして成立しないので拒否する。
 
 use std::fmt;

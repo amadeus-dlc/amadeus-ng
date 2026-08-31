@@ -25,8 +25,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use core_query_interface_adapter::{DefinitionPaths, WorkflowDefinitionDaoImpl};
-use core_query_use_case::orchestration::WorkflowDefinitionDao;
-use core_query_use_case::workflow_view::{DefinitionView, PlanActionView, ReviewClassView};
+use core_query_use_case::orchestration::{
+    DefinitionView, PlanActionView, ReviewClassView, WorkflowDefinitionDao,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 

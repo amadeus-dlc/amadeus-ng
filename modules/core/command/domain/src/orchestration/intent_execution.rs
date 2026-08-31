@@ -7,7 +7,7 @@
 //!
 //! 「次に何をすべきか」の判断 (旧 `next_decision`) は**ここには無い**。`next` / `continue` は
 //! 読むだけの動詞なのでクエリ側の責務であり、判断はリードモデルのビュー
-//! (`core_query_use_case::execution_view::ExecutionStateView::next_decision`) が所有する
+//! (`core_query_use_case::orchestration::ExecutionStateView::next_decision`) が所有する
 //! (`coding-rules/cqrs-boundaries.md` 規則 5〜7 / オーナー裁定 2026-08-30、b26 段階 2 で移設)。
 //! 残る 2 つのクエリは読取そのものが目的ではなく、**書込コマンドの直前に受理可否を決める**
 //! ガードである (jump の方向導出・stale 再報告の受理判定)。

@@ -10,8 +10,13 @@
 //! データではなく語彙・索引であり、`workflow_view` の閉集合 (`PhaseView` 等) を再利用する
 //! 側と綴りが揃う。拒否 (エラー) 型もビューではないので接尾辞を付けない。
 //!
-//! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、消費側の
-//! パスは `core_query_use_case::execution_view::<型>` で安定する
+//! **DTO は DAO と同じ `port/` に同居する** — DTO/DAO ポートは一つのパッケージである
+//! (オーナー裁定 2026-08-31)。本モジュールが返す型を読む契約 (`ExecutionStateDao`) は
+//! 隣に住む。
+//!
+//! 型ファイルの mod も本モジュール自身も private。公開 API は以下の `pub use` を親
+//! (`port` → `orchestration`) が中継したものが唯一の宣言であり、消費側のパスは
+//! `core_query_use_case::orchestration::<型>` で安定する
 //! (`coding-rules/module-visibility.md`)。
 
 mod checkbox_state;

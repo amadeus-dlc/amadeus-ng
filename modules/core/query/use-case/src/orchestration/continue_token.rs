@@ -16,7 +16,7 @@ use super::steering_binding::Bindings;
 use super::steering_plan::PartIndex;
 use super::token_version::TokenVersion;
 use super::unit_ref::UnitRef;
-use crate::workflow_view::{ScopeSlugView, StageSlugView};
+use crate::orchestration::{ScopeSlugView, StageSlugView};
 
 /// steering 連鎖の継続ペイロード。キーは upstream の 1 文字綴り (`v`/`s`/`c`/…) に対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]

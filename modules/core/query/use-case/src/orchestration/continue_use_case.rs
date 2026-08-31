@@ -18,11 +18,11 @@
 use super::continue_token::ContinueToken;
 use super::directive::Directive;
 use super::next_turn_input::NextTurnInput;
-use super::port::{
+use super::steering_binding::{Bindings, StateBinding};
+use crate::orchestration::DefinitionView;
+use crate::orchestration::{
     ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao, WorkflowDefinitionReadError,
 };
-use super::steering_binding::{Bindings, StateBinding};
-use crate::workflow_view::DefinitionView;
 
 /// fail-closed の逐語文言 (02 §4.4 の完全列挙)。
 mod wording {
@@ -220,20 +220,19 @@ mod tests {
 
     use super::super::continue_token::ContinueTokenBuilder;
     use super::super::directive::{LoadSteeringDirective, RuleContent, RunStageDirective};
-    use super::super::memory_rules::MemoryRules;
     use super::super::next_turn_input::WorkspaceLayout;
     use super::super::next_use_case::NextUseCase;
-    use super::super::port::ExecutionStateReadError;
     use super::super::steering_plan::PartIndex;
     use super::super::test_fixtures::{
         FakeDefinitionDao, FakeRulesDao, FakeStateDao, definition, genesis_state, slug, state,
     };
     use super::*;
-    use crate::execution_view::{CheckboxState, ExecutionStateView};
-    use crate::workflow_view::{
-        DefinitionIdView, DefinitionRevisionView, ExecutionKindView, PhaseView, PlanActionView,
-        ScopeGridView, ScopeMetadataView, StageGraphView, StageModeView, StageNumberView,
-        StageSlugView, StageViewBuilder,
+    use crate::orchestration::ExecutionStateReadError;
+    use crate::orchestration::MemoryRules;
+    use crate::orchestration::{
+        CheckboxState, DefinitionIdView, DefinitionRevisionView, ExecutionKindView,
+        ExecutionStateView, PhaseView, PlanActionView, ScopeGridView, ScopeMetadataView,
+        StageGraphView, StageModeView, StageNumberView, StageSlugView, StageViewBuilder,
     };
 
     /// 在るのに読めないルールファイル。

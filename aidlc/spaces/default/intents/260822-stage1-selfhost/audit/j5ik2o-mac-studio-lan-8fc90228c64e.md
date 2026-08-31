@@ -26882,3 +26882,192 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: Bolt b27 is complete. All acceptance criteria met, working tree clean of experiment residue, nothing committed.\n\n## 結果サマリ\n\nクエリ側ユースケースを DTO/DAO ポート経由の読取へ是正しました。4ゲート + カバレッジすべて緑です。\n\n| ゲート | 結果 |\n| --- |
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:36:07Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:36:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0a6ee20e4081cb88
+**Message**: マージまで収束ループを回して。完了したら b28(配線)の計画を出して
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:36:25Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a68f5724bf6cd48a3
+**Message**: マージまで畳んだら、次の U7 配線 Bolt も進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:36:58Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:37:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6c1869780303950d
+**Message**: ContinueUseCaseのトークン開封もDAOポート経由にすべきでは?
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:38:00Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:38:06Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae1b9907e9b49bf0a
+**Message**: マージまで収束ルールで進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:42:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:42:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a3d6c793777568d39
+**Message**: .coderabbit.yaml のパースエラーも直しておいて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:44:11Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b27-dao
+**Agent ID**: ab27-dao-fe7c5aa20b699210
+**Message**: オーナー追補裁定を反映し、全ゲート緑を再確認しました。\n\n## 先に報告すべき2点\n\n**1. ブランチは既にコミット・push 済みです（私の操作ではありません）。** 作業中に team-lead が `bolt/b27-query-dao-ports` へ3コミット（`69e2a31c` / `164afbe0` / `21975720`）を作成して origin へ push していました
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:45:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:45:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a03242c7a8a6eda53
+**Message**: b28で進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:45:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T02:45:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:45:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9f687f593ab29696
+**Message**: b28(配線)へ進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:45:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a661d8246c5a8ca02
+**Message**: b28で進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:45:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b27-dao
+**Agent ID**: ab27-dao-fe7c5aa20b699210
+**Message**: 承知しました。以後 cargo 実行・ファイル編集は行いません。切れた箇所（`副次的に、ExecutionStateReadError::Ma…`）以降を送り直します。内容は**追補裁定を反映した最終状態**に更新してあります。\n\n## 副次事項（切れた段落の続き）\n\n`ExecutionStateReadError::Malformed` の `cause` が `ExecutionStateP
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:46:09Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4451216e7bc9900f
+**Message**: b28で進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T03:21:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a7796ad2e6737fc56
+**Message**: b26(next/continueのクエリ側化)とb27(DAOポート化是正)を両方PR #67/#68でマージ完了、全ゲート緑です。次はb28(intent新規作成ユースケース+U7配線)への着手指示待ちです。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:09:42Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:10:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae2e3e98855b727a1
+**Message**: b28進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T04:21:03Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:23:42Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a35b40efa00124736
+**Message**: マージまで進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T04:39:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b28-dto
+**Agent ID**: ab28-dto-e616f21844dcf5e1
+**Message**: b28 完了。全ゲート緑、差分は配置・参照パス・doc のみです。\n\n## 実施内容\n\n**A. 物理移動 — 32 ファイル（全て `git mv`、履歴保持）**\n\n`src/workflow_view/`（25）と `src/execution_view/`（6）をディレクトリごと、`orchestration/memory_rules.rs`（1）を単体で `orchestration/p
+
+---

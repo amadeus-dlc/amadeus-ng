@@ -15,7 +15,7 @@ use super::directive_schema::DirectiveKind;
 use super::steering_binding::BundleDigest;
 use super::steering_plan::{PartCount, PartIndex, SteeringPart};
 use super::unit_ref::UnitRef;
-use crate::workflow_view::{PhaseView, ReviewClassView, StageModeView, StageSlugView};
+use crate::orchestration::{PhaseView, ReviewClassView, StageModeView, StageSlugView};
 
 /// `run-stage` の `gate` フィールド — boolean か `"unresolved"` のみ (E2)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -632,7 +632,7 @@ mod tests {
     use super::super::steering_plan::SteeringPlan;
     use super::super::unit_ref::{UnitKind, UnitName};
     use super::*;
-    use crate::workflow_view::ScopeSlugView;
+    use crate::orchestration::ScopeSlugView;
 
     fn slug() -> StageSlugView {
         StageSlugView::parse("requirements-analysis").unwrap()

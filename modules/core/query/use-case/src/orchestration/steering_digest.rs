@@ -10,7 +10,7 @@
 //! モジュールに束ねて材料ヘルパを共有する。
 //!
 //! 4 つめの state 束縛 (`h`) だけはリードモデルの持ち物なので、
-//! [`crate::execution_view::ExecutionStateView::state_binding`] が所有する。
+//! [`crate::orchestration::ExecutionStateView::state_binding`] が所有する。
 //!
 //! # 素材は名前付き構造の canon_json 手組みである
 //!
@@ -27,7 +27,7 @@ use core_infrastructure::canon_json::{JsonValue, hash_compact};
 use super::directive::{GateField, RunStageDirective};
 use super::steering_binding::{BundleDigest, DirectiveDigest, RouteDigest};
 use super::steering_plan::SteeringPlan;
-use crate::workflow_view::{StageRouteView, StageSlugView};
+use crate::orchestration::{StageRouteView, StageSlugView};
 
 impl SteeringPlan {
     /// ルール束のダイジェスト (`b`) — **部境界ごと**の piece の読み順 (path + text)。
@@ -149,7 +149,7 @@ mod tests {
     use super::super::steering_plan::PartIndex;
     use super::super::unit_ref::{UnitKind, UnitName, UnitRef};
     use super::*;
-    use crate::workflow_view::{PhaseView, ScopeSlugView, StageModeView};
+    use crate::orchestration::{PhaseView, ScopeSlugView, StageModeView};
 
     fn run_stage(gate: GateField) -> RunStageDirective {
         RunStageDirectiveBuilder::new(
