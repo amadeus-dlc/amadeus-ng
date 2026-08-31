@@ -1,0 +1,35 @@
+//! 合成ルート（U7）の**テスト可能な本体**。
+//!
+//! `main.rs` は配線だけの薄さに保ち（カバレッジ除外はあの 1 ファイルのみ —
+//! `scripts/coverage.sh`）、パース・写像・描画・パス解決といった**判断を持つ部分は
+//! すべてここへ置く**。除外領域に実ロジックを落とさないための分割である
+//! （`coding-rules/cqrs-boundaries.md` 禁止パターン「駆動ループを合成ルートに置く」と
+//! 同じ趣旨）。
+//!
+//! # ここが両側を知る唯一の場所である
+//!
+//! コマンド側（`core-command-*`）・クエリ側（`core-query-*`）・中間の RMU を同時に
+//! `Cargo.toml` に書いてよいのは本クレートだけである（`coding-rules/cqrs-boundaries.md`
+//! §対象外「合成ルートは両側を知る。それが合成ルートの仕事である」）。
+//!
+//! # モジュールの分担
+//!
+//! - [`cli`] — argv を型付きの要求へ写す（マルチコール解決とフラグのパース）
+//! - [`layout`] — カーソルを読んでワークスペースの配置を決める
+//! - [`presenter`] — directive を stdout の 1 行 JSON へ描き、28KiB を守る
+//! - [`steering`] — 継続トークンの封緘鍵の**置き場と鋳造方針**（機構は
+//!   `core_infrastructure::secret_file`）
+//! - [`wording`] — 逐語文言。ドメインとポートは材料しか運ばないので、文言を組むのは
+//!   出す側であるここである（`coding-rules/error-handling.md`）
+
+#![forbid(unsafe_code)]
+
+pub mod cli;
+pub mod clone_identity;
+pub mod layout;
+pub mod presenter;
+pub mod record_name;
+pub mod runtime;
+pub mod scaffold;
+pub mod steering;
+pub mod wording;

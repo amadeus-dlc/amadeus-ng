@@ -13,14 +13,25 @@ workspace = true
 # この組み合わせを `Cargo.toml` に書いてはならない。
 [dependencies]
 core-command-domain = { workspace = true }
+# クエリ側 2 クレート — 合成ルートだけが両側を知る (`coding-rules/cqrs-boundaries.md`
+# §対象外「合成ルートは両側を知る。それが合成ルートの仕事である」)。他のどのクレートも
+# この組み合わせを `Cargo.toml` に書いてはならない。
+core-query-use-case = { workspace = true }
+core-query-interface-adapter = { workspace = true }
 core-command-use-case = { workspace = true }
 core-command-interface-adapter = { workspace = true }
 core-read-model-updater = { workspace = true }
 core-infrastructure = { workspace = true }
+chrono = { workspace = true }
+# directive を 1 行 JSON へ描く (Presenter)。
+serde_json = { workspace = true }
+# 非同期ポート (AFIT) を回す current_thread ランタイム。合成ルートだけが持つ。
+tokio = { workspace = true }
+# 識別子の採番 — 集約もユースケースも乱数を持たないので、合成ルートが唯一の出所である
+# (workspace の注記「採番 (v7 feature) は U7 でインフラ側 (composition root) にだけ足す」)。
+uuid = { workspace = true, features = ["v7"] }
 
 [dev-dependencies]
-chrono = { workspace = true }
-serde_json = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true }
 event-store-adapter-rs = { workspace = true, features = ["sqlite"] }
