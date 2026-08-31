@@ -12,6 +12,8 @@
 
 mod commit_error;
 mod commit_verdict_use_case;
+mod create_intent_error;
+mod create_intent_use_case;
 mod port;
 mod reported_transition;
 #[cfg(test)]
@@ -33,8 +35,10 @@ pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRe
 // 動詞と、それが要した steering 連鎖の読取ポートはクエリ側へ移った
 // (`coding-rules/cqrs-boundaries.md` 規則 5 / オーナー裁定 2026-08-31、b26 段階 2)。
 pub use commit_verdict_use_case::CommitVerdictUseCase;
+pub use create_intent_use_case::CreateIntentUseCase;
 pub use reported_transition::ReportedTransition;
 
 // エラー
 pub use commit_error::CommitError;
+pub use create_intent_error::CreateIntentError;
 pub use port::RepositoryError;
