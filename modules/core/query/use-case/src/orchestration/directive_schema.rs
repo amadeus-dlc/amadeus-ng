@@ -1,8 +1,8 @@
 //! directive プロトコル — `DirectiveKind` 10 種の閉集合。
 //!
-//! 2026-08-29 オーナー裁定により独立クレート `modules/shared/directive-schema` から本モジュールへ
-//! 移設 — directive 語彙はドメイン知識であり、ドメインの pub 型がそのまま公開言語になる。
-//! Directive 本体の判別共用体・28KiB 上限・continue_token ペイロード型は後続スライス。
+//! directive は `next` / `continue` が放出する**エンジンへの指示書**であり、その判別子は
+//! 公開言語 (B14) である。読むだけの動詞が出す**出力モデル**なので、クエリ側が所有する
+//! (`coding-rules/cqrs-boundaries.md` 規則 5)。ワイヤ上の綴りは 1 バイトも変えられない。
 //! 出典: upstream `aidlc-directive.ts:419-430` (02 §4.1)。
 
 /// 10 種の閉集合。`PresentGate` と `DispatchSubagent` は upstream の placeholder —

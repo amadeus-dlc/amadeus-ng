@@ -1,9 +1,9 @@
-//! `Directive` — `next` / `continue` が放出する判別共用体 (公開言語 B14 のドメイン面)。
+//! `Directive` — `next` / `continue` が放出する判別共用体 (公開言語 B14)。
 //!
 //! upstream `validateDirective` 相当の検証は**型で**行う — kind ごとの typed variant なので
 //! 未知キー・型違反・cross-field 違反は構成不能である (E1+E2)。ワイヤ JSON への直列化と
 //! 28KiB 上限 (超過は emit 拒否 — half-emitted を出さない) は Presenter (U7) の責務で、
-//! ここには持ち込まない (`coding-rules/domain-persistence-neutrality.md`)。
+//! ここには持ち込まない。
 //!
 //! placeholder 2 種 (`dispatch-subagent` / `present-gate`) と slice 2 の `invoke-swarm` は
 //! variant を**持たない** — 「エンジンは今日これを構築しない」を構成不能で表す
@@ -15,8 +15,7 @@ use super::directive_schema::DirectiveKind;
 use super::steering_binding::BundleDigest;
 use super::steering_plan::{PartCount, PartIndex, SteeringPart};
 use super::unit_ref::UnitRef;
-use crate::workflow_definition::StageSlug;
-use crate::workflow_definition::{PhaseId, ReviewClass, StageMode};
+use crate::workflow_view::{PhaseView, ReviewClassView, StageModeView, StageSlugView};
 
 /// `run-stage` の `gate` フィールド — boolean か `"unresolved"` のみ (E2)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,15 +104,14 @@ impl AskDirective {
 
 /// `run-stage` — ステージ本体の実行指示。
 ///
-/// steering 由来のフィールド (`rules_in_context` / 束ダイジェスト) は B16 (load-steering
-/// 連鎖) で載る。フィールドは private + アクセサ (`coding-rules/field-visibility.md`)。
+/// フィールドは private + アクセサ (`coding-rules/field-visibility.md`)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunStageDirective {
-    stage: StageSlug,
-    phase: PhaseId,
+    stage: StageSlugView,
+    phase: PhaseView,
     lead_agent: String,
     support_agents: Vec<String>,
-    mode: StageMode,
+    mode: StageModeView,
     gate: GateField,
     stage_file: String,
     memory_path: String,
@@ -123,7 +121,7 @@ pub struct RunStageDirective {
     sensors_applicable: Vec<String>,
     next_stage: Option<String>,
     reviewer: Option<String>,
-    review_class: Option<ReviewClass>,
+    review_class: Option<ReviewClassView>,
     reviewer_max_iterations: Option<u32>,
     protocol_modules: Vec<String>,
     narration: Option<String>,
@@ -136,10 +134,10 @@ pub struct RunStageDirective {
 /// `with_*` で伴わせる。`build()` だけが構造体リテラルを書く (factory-naming.md)。
 #[derive(Debug, Clone)]
 pub struct RunStageDirectiveBuilder {
-    stage: StageSlug,
-    phase: PhaseId,
+    stage: StageSlugView,
+    phase: PhaseView,
     lead_agent: String,
-    mode: StageMode,
+    mode: StageModeView,
     gate: GateField,
     stage_file: String,
     memory_path: String,
@@ -150,7 +148,7 @@ pub struct RunStageDirectiveBuilder {
     sensors_applicable: Vec<String>,
     next_stage: Option<String>,
     reviewer: Option<String>,
-    review_class: Option<ReviewClass>,
+    review_class: Option<ReviewClassView>,
     reviewer_max_iterations: Option<u32>,
     protocol_modules: Vec<String>,
     narration: Option<String>,
@@ -163,10 +161,10 @@ impl RunStageDirectiveBuilder {
     /// 必須材料 (ステージ・フェーズ・リード・モード・ゲート・本体ファイル・日誌) を束ねる。
     #[must_use]
     pub fn new(
-        stage: StageSlug,
-        phase: PhaseId,
+        stage: StageSlugView,
+        phase: PhaseView,
         lead_agent: impl Into<String>,
-        mode: StageMode,
+        mode: StageModeView,
         gate: GateField,
         stage_file: impl Into<String>,
         memory_path: impl Into<String>,
@@ -243,7 +241,7 @@ impl RunStageDirectiveBuilder {
     pub fn with_reviewer(
         mut self,
         reviewer: impl Into<String>,
-        class: ReviewClass,
+        class: ReviewClassView,
         max_iterations: u32,
     ) -> RunStageDirectiveBuilder {
         self.reviewer = Some(reviewer.into());
@@ -319,13 +317,13 @@ impl RunStageDirectiveBuilder {
 impl RunStageDirective {
     /// 走らせるステージ。
     #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
+    pub const fn stage(&self) -> &StageSlugView {
         &self.stage
     }
 
     /// フェーズ。
     #[must_use]
-    pub const fn phase(&self) -> PhaseId {
+    pub const fn phase(&self) -> PhaseView {
         self.phase
     }
 
@@ -343,7 +341,7 @@ impl RunStageDirective {
 
     /// 通信トポロジ。
     #[must_use]
-    pub const fn mode(&self) -> StageMode {
+    pub const fn mode(&self) -> StageModeView {
         self.mode
     }
 
@@ -403,7 +401,7 @@ impl RunStageDirective {
 
     /// レビュークラス。
     #[must_use]
-    pub const fn review_class(&self) -> Option<ReviewClass> {
+    pub const fn review_class(&self) -> Option<ReviewClassView> {
         self.review_class
     }
 
@@ -445,7 +443,7 @@ impl RunStageDirective {
 
     /// パス台帳 (`rules_in_context`) だけを載せ替えた複製。
     ///
-    /// 不変オブジェクトの部分更新はドメインが持つ — 呼出側の全フィールド手動移送は
+    /// 不変オブジェクトの部分更新は本型が持つ — 呼出側の全フィールド手動移送は
     /// フィールド追加時に黙って欠落するので禁止 (オーナー裁定 2026-08-30)。
     #[must_use]
     pub fn with_rules_in_context(&self, paths: Vec<String>) -> RunStageDirective {
@@ -502,11 +500,10 @@ impl RuleContent {
 /// (`aidlc-directive.ts:603-611` — validateDirective 相当を型で行う)。
 ///
 /// `continue_token` は**中身 (型付き [`ContinueToken`])** を運ぶ — HMAC 封緘した base64url
-/// 文字列にするのは出力境界 (U7 Presenter) の仕事である (issue #45 — ポートは Repository
-/// のみで、封緘はアダプタ層の純計算)。
+/// 文字列にするのは出力境界 (U7 Presenter) の仕事である。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadSteeringDirective {
-    stage: StageSlug,
+    stage: StageSlugView,
     bundle: BundleDigest,
     part: PartIndex,
     parts: PartCount,
@@ -521,7 +518,7 @@ impl LoadSteeringDirective {
     /// クロスフィールド検証のエラーは**表現不能**である。
     #[must_use]
     pub fn new(
-        stage: StageSlug,
+        stage: StageSlugView,
         bundle: BundleDigest,
         part: &SteeringPart<'_>,
         continue_token: ContinueToken,
@@ -538,7 +535,7 @@ impl LoadSteeringDirective {
 
     /// 連鎖が属するステージ。
     #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
+    pub const fn stage(&self) -> &StageSlugView {
         &self.stage
     }
 
@@ -605,7 +602,7 @@ pub enum Directive {
     /// park 済みワークフローでの停止。
     Parked {
         /// park している位置。
-        stage: StageSlug,
+        stage: StageSlugView,
         /// 逐語メッセージ (`Workflow parked at ...`)。
         message: String,
     },
@@ -629,20 +626,40 @@ impl Directive {
 
 #[cfg(test)]
 mod tests {
+    use super::super::continue_token::ContinueTokenBuilder;
+    use super::super::stage_name::StageName;
+    use super::super::steering_binding::{Bindings, DirectiveDigest, RouteDigest};
+    use super::super::steering_plan::SteeringPlan;
+    use super::super::unit_ref::{UnitKind, UnitName};
     use super::*;
-    use crate::workflow_definition::StageSlug;
+    use crate::workflow_view::ScopeSlugView;
 
-    fn slug() -> StageSlug {
-        StageSlug::parse("requirements-analysis").unwrap()
+    fn slug() -> StageSlugView {
+        StageSlugView::parse("requirements-analysis").unwrap()
+    }
+
+    fn token(gate: GateField) -> ContinueTokenBuilder {
+        ContinueTokenBuilder::new(
+            slug(),
+            ScopeSlugView::parse("classic").unwrap(),
+            PartIndex::FIRST,
+            Bindings::new(
+                BundleDigest::new("sha256:bbbb"),
+                DirectiveDigest::new("d"),
+                RouteDigest::new("r"),
+                None,
+            ),
+            gate,
+        )
     }
 
     #[test]
     fn every_constructible_variant_names_its_wire_kind() {
         let run_stage = RunStageDirectiveBuilder::new(
             slug(),
-            PhaseId::Inception,
+            PhaseView::Inception,
             "aidlc-product-agent",
-            StageMode::Inline,
+            StageModeView::Inline,
             GateField::Gated,
             "stages/inception/requirements-analysis.md",
             "record/inception/requirements-analysis/memory.md",
@@ -689,9 +706,9 @@ mod tests {
     fn the_builder_carries_every_optional_face() {
         let directive = RunStageDirectiveBuilder::new(
             slug(),
-            PhaseId::Inception,
+            PhaseView::Inception,
             "aidlc-product-agent",
-            StageMode::Inline,
+            StageModeView::Inline,
             GateField::Unresolved,
             "stage.md",
             "memory.md",
@@ -702,11 +719,17 @@ mod tests {
         .with_produces(vec!["b.md".to_string()])
         .with_sensors(vec!["traceability".to_string()])
         .with_next_stage("User Stories")
-        .with_reviewer("aidlc-product-lead-agent", ReviewClass::Advisory, 1)
+        .with_reviewer("aidlc-product-lead-agent", ReviewClassView::Advisory, 1)
         .with_protocol_modules(vec!["reviewer".to_string()])
         .with_narration("Now working on requirements.")
         .with_single()
         .build();
+        assert_eq!(directive.stage().as_str(), "requirements-analysis");
+        assert_eq!(directive.phase(), PhaseView::Inception);
+        assert_eq!(directive.lead_agent(), "aidlc-product-agent");
+        assert_eq!(directive.mode(), StageModeView::Inline);
+        assert_eq!(directive.stage_file(), "stage.md");
+        assert_eq!(directive.memory_path(), "memory.md");
         assert_eq!(directive.support_agents(), ["aidlc-design-agent"]);
         assert_eq!(directive.inline_context_paths().len(), 1);
         assert_eq!(directive.consumes(), ["a.md"]);
@@ -714,7 +737,7 @@ mod tests {
         assert_eq!(directive.sensors_applicable(), ["traceability"]);
         assert_eq!(directive.next_stage(), Some("User Stories"));
         assert_eq!(directive.reviewer(), Some("aidlc-product-lead-agent"));
-        assert_eq!(directive.review_class(), Some(ReviewClass::Advisory));
+        assert_eq!(directive.review_class(), Some(ReviewClassView::Advisory));
         assert_eq!(directive.reviewer_max_iterations(), Some(1));
         assert_eq!(directive.protocol_modules(), ["reviewer"]);
         assert_eq!(directive.narration(), Some("Now working on requirements."));
@@ -727,6 +750,7 @@ mod tests {
         let ask = AskDirective::new(AskKind::NewWorkRouting, "route?".to_string())
             .with_new_work("bugfix", "fix the login crash");
         assert_eq!(ask.ask_kind(), AskKind::NewWorkRouting);
+        assert_eq!(ask.question(), "route?");
         assert_eq!(ask.proposed_scope(), Some("bugfix"));
         assert_eq!(ask.new_work_description(), Some("fix the login crash"));
     }
@@ -736,7 +760,7 @@ mod tests {
         let content = RuleContent::new("memory/org.md".to_string(), "# Org\n".to_string());
         assert_eq!(content.path(), "memory/org.md");
         assert_eq!(content.text(), "# Org\n");
-        let plan = super::super::steering_plan::SteeringPlan::new(vec![
+        let plan = SteeringPlan::new(vec![
             vec![content],
             vec![RuleContent::new(
                 "memory/team.md".to_string(),
@@ -744,24 +768,12 @@ mod tests {
             )],
         ]);
         let first = plan.first_part().unwrap();
-        let token = super::super::continue_token::ContinueTokenBuilder::new(
-            slug(),
-            crate::workflow_definition::ScopeSlug::parse("classic").unwrap(),
-            PartIndex::FIRST,
-            super::super::steering_binding::Bindings::new(
-                BundleDigest::new("sha256:bbbb"),
-                super::super::steering_binding::DirectiveDigest::new("d"),
-                super::super::steering_binding::RouteDigest::new("r"),
-                None,
-            ),
-            GateField::Ungated,
-        )
-        .build();
+        let pinned = token(GateField::Ungated).build();
         let part = LoadSteeringDirective::new(
             slug(),
             BundleDigest::new("sha256:bbbb"),
             &first,
-            token.clone(),
+            pinned.clone(),
         );
         assert_eq!(part.stage().as_str(), "requirements-analysis");
         assert_eq!(part.bundle().as_str(), "sha256:bbbb");
@@ -770,7 +782,7 @@ mod tests {
         assert_eq!(part.rules_content().len(), 1);
         assert_eq!(
             part.continue_token(),
-            &token,
+            &pinned,
             "中身 (型付きトークン) を運ぶ"
         );
         assert_eq!(
@@ -782,14 +794,14 @@ mod tests {
     #[test]
     fn a_run_stage_carries_its_unit_and_rule_ledger() {
         let unit = UnitRef::new(
-            super::super::unit_ref::UnitName::parse("u6-next-continue-use-case").unwrap(),
-            super::super::unit_ref::UnitKind::Library,
+            UnitName::parse("u6-next-continue-use-case").unwrap(),
+            UnitKind::Library,
         );
         let directive = RunStageDirectiveBuilder::new(
             slug(),
-            PhaseId::Construction,
+            PhaseView::Construction,
             "aidlc-developer-agent",
-            StageMode::Inline,
+            StageModeView::Inline,
             GateField::Gated,
             "stage.md",
             "memory.md",
@@ -805,9 +817,9 @@ mod tests {
     fn the_ledger_swap_and_the_pin_reapplication_are_owned_by_the_directive() {
         let directive = RunStageDirectiveBuilder::new(
             slug(),
-            PhaseId::Construction,
+            PhaseView::Construction,
             "aidlc-developer-agent",
-            StageMode::Inline,
+            StageModeView::Inline,
             GateField::Gated,
             "stage.md",
             "memory.md",
@@ -823,30 +835,23 @@ mod tests {
         );
 
         let unit = UnitRef::new(
-            super::super::unit_ref::UnitName::parse("u6-next-continue-use-case").unwrap(),
-            super::super::unit_ref::UnitKind::Library,
+            UnitName::parse("u6-next-continue-use-case").unwrap(),
+            UnitKind::Library,
         );
-        let token = super::super::continue_token::ContinueTokenBuilder::new(
-            slug(),
-            crate::workflow_definition::ScopeSlug::parse("classic").unwrap(),
-            PartIndex::FIRST,
-            super::super::steering_binding::Bindings::new(
-                BundleDigest::new("b"),
-                super::super::steering_binding::DirectiveDigest::new("d"),
-                super::super::steering_binding::RouteDigest::new("r"),
-                None,
-            ),
-            GateField::Unresolved,
-        )
-        .with_unit(unit.clone())
-        .with_next_stage(super::super::stage_name::StageName::parse("User Stories").unwrap())
-        .with_single()
-        .build();
-        let pinned = directive.with_pins(&token);
-        assert_eq!(pinned.gate(), GateField::Unresolved);
-        assert_eq!(pinned.next_stage(), Some("User Stories"));
-        assert_eq!(pinned.unit(), Some(&unit));
-        assert!(pinned.is_single());
-        assert_eq!(pinned.narration(), Some("keep me"), "ピン以外は保存される");
+        let pinned = token(GateField::Unresolved)
+            .with_unit(unit.clone())
+            .with_next_stage(StageName::parse("User Stories").unwrap())
+            .with_single()
+            .build();
+        let reapplied = directive.with_pins(&pinned);
+        assert_eq!(reapplied.gate(), GateField::Unresolved);
+        assert_eq!(reapplied.next_stage(), Some("User Stories"));
+        assert_eq!(reapplied.unit(), Some(&unit));
+        assert!(reapplied.is_single());
+        assert_eq!(
+            reapplied.narration(),
+            Some("keep me"),
+            "ピン以外は保存される"
+        );
     }
 }

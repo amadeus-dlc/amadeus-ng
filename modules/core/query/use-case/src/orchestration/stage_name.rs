@@ -1,6 +1,6 @@
 //! `StageName` — ステージの表示名 (例 "NFR Requirements")。
 //!
-//! slug ([`crate::workflow_definition::StageSlug`]) とは別語彙 — 表示名は人間向けの文言で、
+//! slug ([`crate::workflow_view::StageSlugView`]) とは別語彙 — 表示名は人間向けの文言で、
 //! グラフの同一性には使わない。空白のみの名前は名指しとして成立しないので拒否する。
 
 use std::fmt;
@@ -50,13 +50,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_display_name_parses_and_a_blank_one_does_not() {
-        assert_eq!(
-            StageName::parse("NFR Requirements").unwrap().as_str(),
-            "NFR Requirements"
-        );
-        assert_eq!(StageName::parse("  "), Err(BlankStageName));
+    fn a_display_name_keeps_its_spelling() {
+        let name = StageName::parse("NFR Requirements").unwrap();
+        assert_eq!(name.as_str(), "NFR Requirements");
+        assert_eq!(name.to_string(), "NFR Requirements");
+    }
+
+    #[test]
+    fn blank_names_are_not_a_naming() {
+        assert_eq!(StageName::parse(""), Err(BlankStageName));
+        assert_eq!(StageName::parse("   \t"), Err(BlankStageName));
         assert_eq!(BlankStageName.to_string(), "blank stage name");
-        assert_eq!(StageName::parse("X").unwrap().to_string(), "X");
+        let boxed: Box<dyn std::error::Error> = Box::new(BlankStageName);
+        assert_eq!(boxed.to_string(), "blank stage name");
     }
 }

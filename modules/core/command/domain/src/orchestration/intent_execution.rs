@@ -3,7 +3,14 @@
 //!
 //! **状態としてのデータ**(カーソル・CheckboxState・`Status` と直交する park マーカー・recompose
 //! オーバレイ・AutonomyMode・ゲート承認履歴・差し戻し回数)、**状態遷移**(12 の decide コマンド)、
-//! **判断**(`next_decision` / `jump_resolve` / `stale_report`) を 1 つの型に閉じ込める。
+//! **書込の前段ガード**(`jump_resolve` / `stale_report`) を 1 つの型に閉じ込める。
+//!
+//! 「次に何をすべきか」の判断 (旧 `next_decision`) は**ここには無い**。`next` / `continue` は
+//! 読むだけの動詞なのでクエリ側の責務であり、判断はリードモデルのビュー
+//! (`core_query_use_case::execution_view::ExecutionStateView::next_decision`) が所有する
+//! (`coding-rules/cqrs-boundaries.md` 規則 5〜7 / オーナー裁定 2026-08-30、b26 段階 2 で移設)。
+//! 残る 2 つのクエリは読取そのものが目的ではなく、**書込コマンドの直前に受理可否を決める**
+//! ガードである (jump の方向導出・stale 再報告の受理判定)。
 //!
 //! - **1 コマンド 1 イベント** (BR1.1): 各 decide はガードを全て通してからイベントを 1 つ構築し、
 //!   `apply_event` で自身に適用して返す。ガード不成立の `Err` では `self` に触れない。
@@ -43,12 +50,11 @@ use super::intent_execution_event::{
 use super::intent_execution_id::IntentExecutionId;
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
-use super::next_decision::{NextDecision, NextRequest};
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::stage_key::StageKey;
 use super::status::Status;
-use crate::workflow_definition::{PlanAction, StageSlug, WorkflowDefinition};
+use crate::workflow_definition::{PlanAction, StageSlug};
 use crate::workspace::CheckboxState;
 
 /// 前進 (`complete_stage` / `approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
@@ -1084,79 +1090,7 @@ impl IntentExecution {
         Ok(())
     }
 
-    // ---- W4 / W5: クエリ (書込なし) ----
-
-    /// 現状態から次に何をすべきかを 1 つ決める (BR3.1 の優先順)。書込なし。
-    ///
-    /// 第 2 引数の定義は id の照合にだけ使う — 計画は `Started` で自己完結しているため、現時点の
-    /// 分岐は定義の内容を参照しない (将来の分岐のための契約上の引数)。
-    ///
-    /// # Errors
-    ///
-    /// 引数の定義 id が `definition_id` と異なれば `DefinitionMismatch` (revision の差は Ok — BR2.6)。
-    pub fn next_decision(
-        &self,
-        intent: &Intent,
-        definition: &WorkflowDefinition,
-        request: &NextRequest,
-    ) -> Result<NextDecision, CommandError> {
-        if !self.matches(intent) {
-            return Err(CommandError::IntentMismatch);
-        }
-        if definition.id() != intent.definition_id() {
-            return Err(CommandError::DefinitionMismatch {
-                expected: intent.definition_id().clone(),
-                actual: definition.id().clone(),
-            });
-        }
-        if self.parked_active() && !request.is_reentry() {
-            return Ok(if request.is_resume() {
-                NextDecision::UnparkThenResume
-            } else {
-                NextDecision::Parked { stage: self.cursor }
-            });
-        }
-        if request.is_resume() {
-            return Ok(NextDecision::ResumeMenu);
-        }
-        if request.is_free_text() {
-            return Ok(NextDecision::NewWorkRouting);
-        }
-        if !self.status.is_running() {
-            return Ok(NextDecision::Done);
-        }
-        let cursor = self.cursor;
-        if let Some(marker) = self.checkbox(cursor)
-            && marker.is_in_flight()
-        {
-            if self.effective_plan(cursor) == Some(PlanAction::Skip) {
-                // 実効 SKIP のステージに run-stage は出さない。自力で `skip_stage` を呼べる
-                // 前提集合 (SKIP_PRECONDITION) にいるときだけ復旧可能と報告する。
-                return Ok(if SKIP_PRECONDITION.contains(&marker) {
-                    NextDecision::RecoverSkipInconsistency {
-                        stage: cursor,
-                        checkbox: marker,
-                    }
-                } else {
-                    NextDecision::InconsistentSkip {
-                        stage: cursor,
-                        checkbox: marker,
-                    }
-                });
-            }
-            return Ok(NextDecision::RunStage {
-                stage: cursor,
-                gate: self.is_gated(cursor),
-            });
-        }
-        Ok(match self.next_in_scope(cursor) {
-            Some(stage) => NextDecision::RunStage {
-                stage,
-                gate: self.is_gated(stage),
-            },
-            None => NextDecision::Done,
-        })
-    }
+    // ---- W5: 書込の前段ガード (書込なし) ----
 
     /// jump の検証と方向の導出 (書込なし — `aidlc-jump resolve` に対応、BR3.3)。
     ///
@@ -1195,12 +1129,16 @@ impl IntentExecution {
         Ok(direction)
     }
 
-    /// カーソル通過済み completed への再報告は**何もコミットせず**冪等 done (BR1.9)。
+    /// カーソル通過済み completed への再報告を**受理してよいか**のガードクエリ (BR1.9)。
+    ///
+    /// 受理できる報告は「何もコミットしない冪等 done」なので、このガードを通った呼出側は
+    /// **イベントを起こさずに終える**。`Ok(())` が意味するのはその 1 点だけであり、次に何を
+    /// すべきかを答えるものではない (判断はクエリ側 — モジュール doc)。
     ///
     /// # Errors
     ///
     /// 非受理 (`NotRunning`)、カーソル通過済み completed でない対象 (`NotStale`)。
-    pub fn stale_report(&self, stage: StageIndex) -> Result<NextDecision, CommandError> {
+    pub fn stale_report(&self, stage: StageIndex) -> Result<(), CommandError> {
         if !self.accepts_commands() {
             return Err(CommandError::NotRunning);
         }
@@ -1209,7 +1147,7 @@ impl IntentExecution {
         {
             return Err(CommandError::NotStale(stage));
         }
-        Ok(NextDecision::Done)
+        Ok(())
     }
 }
 
@@ -1222,10 +1160,9 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentError, IntentEvent,
-        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, NextDecision,
-        NextRequest, StageCompleted, StageDisplay, StageEntry, StageIndex, StartRequest, Started,
-        Status, WorkspaceScan,
+        AutonomyMode, CommandError, Created, Intent, IntentError, IntentEvent,
+        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, StageCompleted,
+        StageDisplay, StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
@@ -1403,15 +1340,6 @@ mod tests {
             self.execution.apply_event(seq_nr, occurred_at, event);
         }
 
-        fn next_decision(
-            &self,
-            definition: &WorkflowDefinition,
-            request: NextRequest,
-        ) -> Result<NextDecision, CommandError> {
-            self.execution
-                .next_decision(&self.intent, definition, &request)
-        }
-
         fn jump_resolve(&self, target: StageIndex) -> Result<JumpDirection, CommandError> {
             self.execution.jump_resolve(&self.intent, target)
         }
@@ -1503,17 +1431,6 @@ mod tests {
 
     fn at(w: &IntentExecution, i: usize) -> StageIndex {
         w.stage_index(i).unwrap()
-    }
-
-    /// `next_decision` の第 2 引数用の最小定義 (id の照合にしか使われない — BR3.1)。
-    fn bare_definition(id: &str) -> WorkflowDefinition {
-        WorkflowDefinition::from_artifacts(
-            def_id(id),
-            revision('0'),
-            StageGraph::new(Vec::new()).unwrap(),
-            ScopeGrid::new(BTreeMap::new()),
-            BTreeMap::new(),
-        )
     }
 
     fn node(name: &str, number: &str, phase: PhaseId, execution: ExecutionKind) -> StageNode {
@@ -1755,12 +1672,6 @@ mod tests {
     fn the_queries_that_need_the_plan_refuse_a_foreign_intent() {
         let w = all_exec(3);
         let foreign = foreign_plan(3);
-        let definition = bare_definition("claude");
-        assert_eq!(
-            w.execution
-                .next_decision(&foreign, &definition, &NextRequest::default()),
-            Err(CommandError::IntentMismatch)
-        );
         assert_eq!(
             w.execution.jump_resolve(&foreign, at(&w, 1)),
             Err(CommandError::IntentMismatch)
@@ -2099,12 +2010,15 @@ mod tests {
     // ---- BR1.9: stale_report ----
 
     #[test]
-    fn stale_rereport_yields_done_and_commits_nothing() {
+    fn stale_rereport_is_accepted_as_a_no_op_and_commits_nothing() {
+        // ガードは受理可否だけを答える (b26 段階 2 — 「次に何をすべきか」はクエリ側)。受理 =
+        // 何も起こさない、なので集約は 1 ビットも動かない。
         let mut w = all_exec(3);
         w.complete_stage(occurred()).unwrap();
         let before = w.clone();
-        assert_eq!(w.stale_report(at(&w, 0)), Ok(NextDecision::Done));
+        assert_eq!(w.stale_report(at(&w, 0)), Ok(()));
         assert_eq!(w, before);
+        assert_eq!(w.seq_nr(), before.seq_nr());
         let cursor = at(&w, 1);
         assert_eq!(w.stale_report(cursor), Err(CommandError::NotStale(cursor)));
     }
@@ -2492,237 +2406,6 @@ mod tests {
         assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
     }
 
-    // ---- W4: next_decision (BR3.1 / BR2.6) ----
-
-    #[test]
-    fn next_decision_refuses_a_different_definition() {
-        let w = all_exec(3);
-        let other = bare_definition("kiro");
-        assert_eq!(
-            w.next_decision(&other, NextRequest::default()),
-            Err(CommandError::DefinitionMismatch {
-                expected: def_id("claude"),
-                actual: def_id("kiro"),
-            })
-        );
-    }
-
-    #[test]
-    fn a_newer_revision_of_the_same_definition_is_accepted() {
-        let w = all_exec(3);
-        let drifted = WorkflowDefinition::from_artifacts(
-            def_id("claude"),
-            revision('f'),
-            StageGraph::new(Vec::new()).unwrap(),
-            ScopeGrid::new(BTreeMap::new()),
-            BTreeMap::new(),
-        );
-        assert!(w.next_decision(&drifted, NextRequest::default()).is_ok());
-    }
-
-    #[test]
-    fn next_decision_walks_the_branches_in_priority_order() {
-        let definition = bare_definition("claude");
-        let mut w = all_exec(3);
-
-        // (6) cursor が in-flight
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::default()),
-            Ok(NextDecision::RunStage {
-                stage: at(&w, 0),
-                gate: false
-            })
-        );
-        // (1) park 中
-        w.park(occurred()).unwrap();
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::default()),
-            Ok(NextDecision::Parked { stage: at(&w, 0) })
-        );
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::new(true, false, false)),
-            Ok(NextDecision::UnparkThenResume)
-        );
-        // 再入フラグは park ガードを外す
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::new(false, true, false)),
-            Ok(NextDecision::RunStage {
-                stage: at(&w, 0),
-                gate: false
-            })
-        );
-        w.unpark(occurred()).unwrap();
-        // (2) resume
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::new(true, false, false)),
-            Ok(NextDecision::ResumeMenu)
-        );
-        // (3) 自由記述
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::new(false, false, true)),
-            Ok(NextDecision::NewWorkRouting)
-        );
-        // (7) 次の in-scope / gate = true
-        w.complete_stage(occurred()).unwrap();
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::default()),
-            Ok(NextDecision::RunStage {
-                stage: at(&w, 1),
-                gate: true
-            })
-        );
-        // (4) completed
-        w.approve_gate(None, occurred()).unwrap();
-        w.approve_gate(None, occurred()).unwrap();
-        assert_eq!(w.status(), Status::Completed);
-        assert_eq!(
-            w.next_decision(&definition, NextRequest::default()),
-            Ok(NextDecision::Done)
-        );
-    }
-
-    #[test]
-    fn next_decision_walks_past_a_finished_cursor() {
-        // カーソルの checkbox が終了済み (completed / skipped) のまま Running — コマンド経由
-        // では作れず、手編集された状態ファイルを読み込んだ再構成 (完全コンストラクタ) だけが
-        // 持ち込む形である。upstream の前進走査 (`nextInScopeStage`) は終了済みを読み飛ばす
-        // ので、次の in-scope があれば run-stage、無ければ Done になる (BR3.1 (7))。
-        let definition = bare_definition("claude");
-        let w = all_exec(3);
-        let source = &w.execution;
-        let rebuild = |checkbox: Vec<CheckboxState>, cursor: usize, approved: Vec<bool>| {
-            IntentExecution::new(
-                source.id().clone(),
-                source.intent_id().clone(),
-                source.stage_keys().to_vec(),
-                vec![Execute; 3],
-                checkbox,
-                cursor,
-                Status::Running,
-                None,
-                source.autonomy(),
-                approved,
-                vec![0, 0, 0],
-                1,
-                *source.last_updated_at(),
-            )
-            .unwrap()
-        };
-
-        let walked = rebuild(
-            vec![
-                CheckboxState::Completed,
-                CheckboxState::Pending,
-                CheckboxState::Pending,
-            ],
-            0,
-            vec![false, false, false],
-        );
-        assert_eq!(
-            walked.next_decision(&w.intent, &definition, &NextRequest::default()),
-            Ok(NextDecision::RunStage {
-                stage: at(&walked, 1),
-                gate: true
-            }),
-            "終了済みカーソルは読み飛ばし、次の in-scope を指す"
-        );
-
-        let done = rebuild(
-            vec![
-                CheckboxState::Completed,
-                CheckboxState::Completed,
-                CheckboxState::Skipped,
-            ],
-            2,
-            // 終了済みのゲート付きステージ (索引 1) は承認済みでなければ完全コンストラクタが
-            // 拒む (no_gate_bypass)。
-            vec![false, true, false],
-        );
-        assert_eq!(
-            done.next_decision(&w.intent, &definition, &NextRequest::default()),
-            Ok(NextDecision::Done),
-            "終了済みカーソルの先に in-scope が無ければ Done"
-        );
-    }
-
-    #[test]
-    fn next_decision_reports_the_two_skip_inconsistencies() {
-        // 実効 SKIP のカーソルは `cursor_in_scope` が禁じるので、集約のコマンド経由では作れない。
-        // 到達しうるのは「park 中 (受理述語が偽なので cursor_in_scope を検査しない) に
-        // recompose のイベントが畳まれた歴史」の全再生である (BR3.1 (5) の防御腕)。
-        // Pending は再生でも作れない (advance / jump が到達先を必ず InProgress にする) ため、
-        // 到達可能な 3 マーカーで両分岐 (回復可能 / 不能) を固定する。
-        let definition = bare_definition("claude");
-        let base = all_exec(3);
-        let reentry = NextRequest::new(false, true, false);
-        for (marker, mid_events, expected_recoverable) in [
-            (
-                InProgress,
-                vec![IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                    slug(0),
-                ))],
-                true,
-            ),
-            (
-                Revising,
-                vec![
-                    IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0))),
-                    IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
-                    IntentExecutionEvent::GateRejected(GateRejected::new(slug(1), None)),
-                ],
-                true,
-            ),
-            (
-                AwaitingApproval,
-                vec![
-                    IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0))),
-                    IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
-                ],
-                false,
-            ),
-        ] {
-            // genesis のスナップショット (seq 1) を基底に、以降のイベントを差分再生する。
-            let mut delta = Vec::new();
-            for event in mid_events {
-                delta.push((delta.len() + 2, occurred(), event));
-            }
-            delta.push((
-                delta.len() + 2,
-                occurred(),
-                IntentExecutionEvent::Parked(Parked::new(slug(1))),
-            ));
-            delta.push((
-                delta.len() + 2,
-                occurred(),
-                IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(1)], Vec::new())),
-            ));
-            let execution = IntentExecution::replay(base.execution.clone(), delta);
-            let w = Run {
-                intent: base.intent.clone(),
-                execution,
-            };
-            assert_eq!(w.checkbox(at(&w, 1)), Some(marker));
-            let stage = at(&w, 1);
-            let expected = if expected_recoverable {
-                NextDecision::RecoverSkipInconsistency {
-                    stage,
-                    checkbox: marker,
-                }
-            } else {
-                NextDecision::InconsistentSkip {
-                    stage,
-                    checkbox: marker,
-                }
-            };
-            assert_eq!(w.next_decision(&definition, reentry), Ok(expected));
-            // どちらの不整合も Quint の DError に写る (BR3.1)。
-            assert_eq!(
-                EngineSignal::from(&w.next_decision(&definition, reentry).unwrap()),
-                EngineSignal::EngineError
-            );
-        }
-    }
-
     #[test]
     fn jump_resolve_is_a_read_only_query() {
         let mut w = all_exec(4);
@@ -2794,20 +2477,7 @@ mod tests {
         assert_eq!(narrow.revision_count(foreign), None);
     }
 
-    #[test]
-    fn the_signal_projection_of_a_decision_matches_the_model_vocabulary() {
-        let definition = bare_definition("claude");
-        let w = all_exec(3);
-        let decision = w
-            .next_decision(&definition, NextRequest::default())
-            .unwrap();
-        assert_eq!(
-            EngineSignal::from(&decision),
-            EngineSignal::RunStage(at(&w, 0))
-        );
-    }
-
-    // ---- PBT (NFR2.2): 6 性質 + 定義側から移設した 2 性質 ----
+    // ---- PBT (NFR2.2): 6 性質 + 定義側から移設した 1 性質 ----
     //
     // 生成器は合成定義 (stage_count 2〜8、initialization 1〜3 ステージ) とコマンド列 (≤ 60)。
     // シードは `PROPTEST_RNG_SEED` で固定する (scripts/coverage.sh / CI と同値)。
@@ -2827,7 +2497,6 @@ mod tests {
         Unpark,
         Recompose(usize),
         SetAutonomy(bool),
-        Next,
         Stale(usize),
     }
 
@@ -2844,7 +2513,6 @@ mod tests {
             Just(Cmd::Unpark),
             (0..n).prop_map(Cmd::Recompose),
             any::<bool>().prop_map(Cmd::SetAutonomy),
-            Just(Cmd::Next),
             (0..n).prop_map(Cmd::Stale),
         ]
     }
@@ -2901,11 +2569,7 @@ mod tests {
     }
 
     /// 1 コマンドを駆動する。`Err` は「発火しないアクション」なので状態は一切動かない (BR1.1 (e))。
-    fn drive(
-        w: &mut Run,
-        definition: &WorkflowDefinition,
-        cmd: &Cmd,
-    ) -> Option<IntentExecutionEvent> {
+    fn drive(w: &mut Run, cmd: &Cmd) -> Option<IntentExecutionEvent> {
         let before = w.clone();
         let outcome = match cmd {
             Cmd::Complete => w.complete_stage(occurred()),
@@ -2932,11 +2596,6 @@ mod tests {
                 },
                 occurred(),
             ),
-            Cmd::Next => {
-                let _ = w.next_decision(definition, NextRequest::default());
-                assert_eq!(*w, before, "next_decision は書き込まない");
-                return None;
-            }
             Cmd::Stale(target) => {
                 if let Some(stage) = w.stage_index(*target) {
                     let _ = w.stale_report(stage);
@@ -2991,12 +2650,11 @@ mod tests {
             stages in synthetic_stages(),
             cmds in proptest::collection::vec(cmd_strategy(8), 1..60),
         ) {
-            let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
             assert_quint_invariants(&w);
             for cmd in &cmds {
                 let before = w.clone();
-                if let Some(event) = drive(&mut w, &definition, cmd) {
+                if let Some(event) = drive(&mut w, cmd) {
                     let mut replayed = before;
                     replayed.apply_event(w.seq_nr(), *w.last_updated_at(), &event);
                     prop_assert_eq!(&replayed.execution, &w.execution);
@@ -3014,14 +2672,13 @@ mod tests {
             stages in synthetic_stages(),
             cmds in proptest::collection::vec(cmd_strategy(8), 1..60),
         ) {
-            let definition = bare_definition("claude");
             let mut w = start_synthetic(stages);
             let snapshot = w.execution.clone();
             // 封筒の材料 (通番・発生時刻) は commit を通った集約から採る (B7 — Repository も同じ)。
             let mut delta: Vec<(usize, DateTime<Utc>, IntentExecutionEvent)> = Vec::new();
             let mut expected_seq = w.seq_nr();
             for cmd in &cmds {
-                if let Some(event) = drive(&mut w, &definition, cmd) {
+                if let Some(event) = drive(&mut w, cmd) {
                     expected_seq += 1;
                     prop_assert_eq!(w.seq_nr(), expected_seq);
                     delta.push((w.seq_nr(), *w.last_updated_at(), event));
@@ -3039,12 +2696,11 @@ mod tests {
             stages in synthetic_stages(),
             cmds in proptest::collection::vec(cmd_strategy(8), 1..60),
         ) {
-            let definition = bare_definition("claude");
             let grid: Vec<PlanAction> = stages.iter().map(StageEntry::plan_action).collect();
             let mut w = start_synthetic(stages);
             let mut expected = grid.clone();
             for cmd in &cmds {
-                if let Some(event) = drive(&mut w, &definition, cmd)
+                if let Some(event) = drive(&mut w, cmd)
                     && let IntentExecutionEvent::Recomposed(recomposed) = &event
                 {
                     for slug in recomposed.skipped() {
@@ -3064,43 +2720,5 @@ mod tests {
             }
         }
 
-        /// 定義側から移設した性質 (2): `next_decision` が名指しする先読みステージは、カーソルより
-        /// 後ろで**最初**の in-scope ステージである (読み飛ばしの最小性)。無ければ `Done`。
-        #[test]
-        fn the_lookahead_target_is_the_first_in_scope_stage_in_document_order(
-            stages in synthetic_stages(),
-            cmds in proptest::collection::vec(cmd_strategy(8), 1..60),
-        ) {
-            let definition = bare_definition("claude");
-            let mut w = start_synthetic(stages);
-            for cmd in &cmds {
-                drive(&mut w, &definition, cmd);
-                let Ok(decision) = w.next_decision(&definition, NextRequest::default()) else {
-                    continue;
-                };
-                let cursor = w.cursor().to_usize();
-                let cursor_in_flight = w
-                    .checkbox(w.cursor())
-                    .is_some_and(CheckboxState::is_in_flight);
-                match decision {
-                    NextDecision::RunStage { stage, gate } if stage.to_usize() != cursor => {
-                        prop_assert!(stage.to_usize() > cursor);
-                        for value in (cursor + 1)..stage.to_usize() {
-                            let earlier = w.stage_index(value).unwrap();
-                            prop_assert_ne!(w.effective_plan(earlier), Some(Execute));
-                        }
-                        prop_assert_eq!(w.effective_plan(stage), Some(Execute));
-                        prop_assert_eq!(gate, w.gated(stage).unwrap());
-                    }
-                    NextDecision::Done if w.accepts_commands() && !cursor_in_flight => {
-                        for value in (cursor + 1)..w.stage_count() {
-                            let later = w.stage_index(value).unwrap();
-                            prop_assert_ne!(w.effective_plan(later), Some(Execute));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
     }
 }

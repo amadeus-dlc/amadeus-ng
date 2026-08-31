@@ -151,55 +151,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_unit_ref_pairs_the_name_with_its_kind() {
-        let unit = UnitRef::new(
-            UnitName::parse("u4-read-model-updater").unwrap(),
-            UnitKind::Library,
-        );
-        assert_eq!(unit.name().as_str(), "u4-read-model-updater");
-        assert_eq!(unit.kind(), UnitKind::Library);
-        assert_eq!(unit.kind().as_str(), "library");
-    }
-
-    #[test]
-    fn the_kind_vocabulary_is_closed() {
-        for (word, kind) in [
-            ("service", UnitKind::Service),
-            ("spec", UnitKind::Spec),
-            ("ui", UnitKind::Ui),
-            ("packaging", UnitKind::Packaging),
-            ("library", UnitKind::Library),
-        ] {
-            assert_eq!(UnitKind::parse(word), Ok(kind));
-            assert_eq!(kind.as_str(), word);
-        }
+    fn the_name_follows_the_slug_grammar() {
         assert_eq!(
-            UnitKind::parse("weird"),
-            Err(UnknownUnitKind("weird".to_string()))
+            UnitName::parse("u6-next-continue-use-case")
+                .unwrap()
+                .as_str(),
+            "u6-next-continue-use-case"
         );
-        assert_eq!(
-            UnknownUnitKind("weird".to_string()).to_string(),
-            "unknown unit kind \"weird\""
-        );
-    }
-
-    #[test]
-    fn invalid_unit_names_are_rejected() {
         assert_eq!(UnitName::parse(""), Err(UnitNameError::Empty));
         assert_eq!(
-            UnitName::parse("4u"),
-            Err(UnitNameError::InvalidLeading('4'))
+            UnitName::parse("U6"),
+            Err(UnitNameError::InvalidLeading('U'))
         );
-        assert_eq!(UnitName::parse("a b"), Err(UnitNameError::InvalidChar(' ')));
+        assert_eq!(
+            UnitName::parse("u6_next"),
+            Err(UnitNameError::InvalidChar('_'))
+        );
+        assert_eq!(UnitName::parse("u6").unwrap().to_string(), "u6");
+    }
+
+    #[test]
+    fn the_name_rejection_carries_material_not_wording() {
         assert_eq!(UnitNameError::Empty.to_string(), "empty");
         assert_eq!(
-            UnitNameError::InvalidLeading('4').to_string(),
-            "leading character '4'"
+            UnitNameError::InvalidLeading('U').to_string(),
+            "leading character 'U'"
         );
         assert_eq!(
-            UnitNameError::InvalidChar(' ').to_string(),
-            "invalid character ' '"
+            UnitNameError::InvalidChar('_').to_string(),
+            "invalid character '_'"
         );
-        assert_eq!(UnitName::parse("u1").unwrap().to_string(), "u1");
+        let boxed: Box<dyn std::error::Error> = Box::new(UnitNameError::Empty);
+        assert_eq!(boxed.to_string(), "empty");
+    }
+
+    #[test]
+    fn the_five_kinds_round_trip_and_unknown_is_rejected() {
+        for kind in [
+            UnitKind::Service,
+            UnitKind::Spec,
+            UnitKind::Ui,
+            UnitKind::Packaging,
+            UnitKind::Library,
+        ] {
+            assert_eq!(UnitKind::parse(kind.as_str()), Ok(kind));
+        }
+        let error = UnitKind::parse("weird").unwrap_err();
+        assert_eq!(error.to_string(), "unknown unit kind \"weird\"");
+        let boxed: Box<dyn std::error::Error> = Box::new(error);
+        assert_eq!(boxed.to_string(), "unknown unit kind \"weird\"");
+    }
+
+    #[test]
+    fn the_pair_carries_both_halves() {
+        let unit = UnitRef::new(
+            UnitName::parse("u3-event-store").unwrap(),
+            UnitKind::Library,
+        );
+        assert_eq!(unit.name().as_str(), "u3-event-store");
+        assert_eq!(unit.kind(), UnitKind::Library);
     }
 }

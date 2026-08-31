@@ -1,0 +1,169 @@
+//! ラダーのテストが共有するフィクスチャ (テスト専用)。
+//!
+//! 定義ビューと実行状態ビューを 1 か所で組み、`scope_resolution` / `next_use_case` /
+//! `continue_use_case` の各テストが同じ形を見るようにする。
+
+use std::collections::BTreeMap;
+
+use crate::execution_view::{
+    CheckboxState, ExecutionStateView, ExecutionStatus, StageProgressView,
+};
+use crate::workflow_view::{
+    DefinitionIdView, DefinitionRevisionView, DefinitionView, ExecutionKindView, PhaseView,
+    PlanActionView, ScopeGridView, ScopeMetadataView, ScopeSlugView, StageGraphView, StageModeView,
+    StageNumberView, StageSlugView, StageViewBuilder,
+};
+
+/// `stage-<index>` の slug。
+pub(super) fn slug(index: usize) -> StageSlugView {
+    StageSlugView::parse(&format!("stage-{index}")).expect("固定の slug")
+}
+
+/// 索引 0 = initialization、以降 = inception のフェーズ割り当て。
+pub(super) const fn phase_of(index: usize) -> PhaseView {
+    if index == 0 {
+        PhaseView::Initialization
+    } else {
+        PhaseView::Inception
+    }
+}
+
+/// 実行状態ビューの合成計画に一致する定義ビュー。
+/// scope は `classic` (推論キーワードなし) と `bugfix` (キーワード `fix`)。
+pub(super) fn definition(stage_count: usize) -> DefinitionView {
+    let nodes = (0..stage_count)
+        .map(|index| {
+            StageViewBuilder::new(
+                slug(index),
+                StageNumberView::parse(&format!("{index}.1")).expect("固定のステージ番号"),
+                format!("Stage {index}"),
+                phase_of(index),
+                ExecutionKindView::Always,
+                StageModeView::Inline,
+            )
+            .with_lead_agent("orchestrator".to_string())
+            .with_scopes(vec!["classic".to_string(), "bugfix".to_string()])
+            .build()
+        })
+        .collect::<Vec<_>>();
+    let column = || {
+        (0..stage_count)
+            .map(|index| (slug(index), PlanActionView::Execute))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let grid = ScopeGridView::new(
+        [
+            ("classic".to_string(), column()),
+            ("bugfix".to_string(), column()),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    let scopes: BTreeMap<String, ScopeMetadataView> = [
+        (
+            "classic".to_string(),
+            ScopeMetadataView::new("classic").expect("固定の scope 名"),
+        ),
+        (
+            "bugfix".to_string(),
+            ScopeMetadataView::new("bugfix")
+                .expect("固定の scope 名")
+                .with_keywords(vec!["fix".to_string()]),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    DefinitionView::new(
+        DefinitionIdView::parse("claude").expect("固定の定義 id"),
+        DefinitionRevisionView::parse(&format!("sha256:{}", "0".repeat(64))).expect("固定の内容版"),
+        StageGraphView::new(nodes).expect("固定のグラフ"),
+        grid,
+        scopes,
+    )
+}
+
+/// genesis 直後に相当する実行状態ビュー — 索引 0 が in-progress、以降は pending・全 EXECUTE。
+pub(super) fn genesis_state(stage_count: usize) -> ExecutionStateView {
+    let markers = (0..stage_count)
+        .map(|index| {
+            if index == 0 {
+                CheckboxState::InProgress
+            } else {
+                CheckboxState::Pending
+            }
+        })
+        .collect::<Vec<_>>();
+    state(
+        stage_count,
+        0,
+        &markers,
+        &vec![PlanActionView::Execute; stage_count],
+    )
+}
+
+/// カーソル位置・マーカー列・実効プラン列を指定して実行状態ビューを組む (Running / 非 park)。
+pub(super) fn state(
+    stage_count: usize,
+    cursor: usize,
+    markers: &[CheckboxState],
+    plans: &[PlanActionView],
+) -> ExecutionStateView {
+    parked_state(stage_count, cursor, None, markers, plans)
+}
+
+/// park マーカー付き (あるいは無し) の実行状態ビュー。
+pub(super) fn parked_state(
+    stage_count: usize,
+    cursor: usize,
+    parked_at: Option<usize>,
+    markers: &[CheckboxState],
+    plans: &[PlanActionView],
+) -> ExecutionStateView {
+    let rows = (0..stage_count)
+        .map(|index| {
+            StageProgressView::new(
+                slug(index),
+                phase_of(index),
+                markers
+                    .get(index)
+                    .copied()
+                    .unwrap_or(CheckboxState::Pending),
+                plans.get(index).copied().unwrap_or(PlanActionView::Execute),
+            )
+        })
+        .collect();
+    let cursor_slug = format!("stage-{cursor}");
+    let parked_slug = parked_at.map(|index| format!("stage-{index}"));
+    ExecutionStateView::new(
+        ScopeSlugView::parse("classic").expect("固定の scope"),
+        ExecutionStatus::Running,
+        &cursor_slug,
+        parked_slug.as_deref(),
+        "2026-08-29T16:36:24Z",
+        rows,
+    )
+    .expect("固定のリードモデル")
+}
+
+/// `Status: Completed` の実行状態ビュー。
+pub(super) fn completed_state(stage_count: usize) -> ExecutionStateView {
+    let rows = (0..stage_count)
+        .map(|index| {
+            StageProgressView::new(
+                slug(index),
+                phase_of(index),
+                CheckboxState::Completed,
+                PlanActionView::Execute,
+            )
+        })
+        .collect();
+    ExecutionStateView::new(
+        ScopeSlugView::parse("classic").expect("固定の scope"),
+        ExecutionStatus::Completed,
+        &format!("stage-{}", stage_count.saturating_sub(1)),
+        None,
+        "2026-08-29T16:36:24Z",
+        rows,
+    )
+    .expect("固定のリードモデル")
+}

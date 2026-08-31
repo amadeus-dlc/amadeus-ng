@@ -1,8 +1,21 @@
 //! `WorkflowDefinitionRepository` ポート — 集約 `WorkflowDefinition` (12-workflow-definition
-//! §2.1) の **load 専用 Repository**。集約は Published Language のコンパイル成果物であり
-//! 本システムからは書き換えないため `save` を持たない (書き側 = compile はスライス 2 の
-//! 別コンテキスト)。10-orchestration §3 のポート表に対応し、規範は 12-workflow-definition
+//! §2.1) の Repository。10-orchestration §3 のポート表に対応し、規範は 12-workflow-definition
 //! §4 / §5 が所有する。
+//!
+//! **コマンド側に残る通常の Repository である** (オーナー裁定 2026-08-30 追補 —
+//! `coding-rules/cqrs-boundaries.md`「リポジトリの使い方」)。`find_by_id` で集約を取得し、
+//! ビジネスロジックを実行し、更新された集約を `store` で保存する、というのが正しい使い方で
+//! ある。ここで `find_by_id` だけを宣言しているのは**書込ユースケースの中の集約再構成**
+//! (同規則 5) のためで、読取専用ポートだからではない。`store` は**定義を変更する最初の
+//! ユースケースと同じ Bolt で書く** — 呼び手のいない口を先行実装しない
+//! (`coding-rules/no-backward-compatibility.md` の同じ精神)。
+//!
+//! **読むだけの用途はこのポートの仕事ではない。** `next` / `continue` のように定義を読んで
+//! 何も書かない動詞はクエリ側が担い、クエリ側は同じ Published Language を**自分の
+//! リードモデル読取実装**で読む (`core_query_interface_adapter::load_workflow_definition`)。
+//! 両者は側ごと専用の別実装であり、一方が他方の読取結果を受け取ることはない (同規則 6)。
+//! upstream 逐語文言 (12 §4 / §6 の「Stage graph not readable at ...」等) の所有も
+//! **クエリ側へ移った** (b26 段階 2)。
 //!
 //! Published Language の 3 入力
 //! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
@@ -13,87 +26,40 @@
 //! (`stage-graph.json` というファイル名) は Repository **実装**の内部詳細であり、ポート名に
 //! 現れてはならない。
 //!
-//! **失敗態度は 3 入力で意図的に非対称** (12 §4。この非対称そのものが観測可能な契約で、
-//! 「より厳格にする」方向の改変も逸脱になる):
+//! # 失敗はジェネリック 1 本 (オーナー裁定 2026-08-31)
 //!
-//! - `harness.json` が読めない / 不正 JSON / `name` 欠落 = **fatal** (`Err`)。定義 id の
-//!   供給元であり、失われると集約に識別子を与えられない (ADR-008)。
-//! - `stage-graph.json` が読めない / 不正 JSON = **fatal** (`Err`)。`AIDLC_STAGE_GRAPH` の
-//!   オーバライドが効いているときだけ逐語文言の hint 節が切り替わる (#1・#2)。
+//! ポート専用のエラー型 (3 入力の失敗を分類していた 6 変種) は持たない。失敗は
+//! [`RepositoryError<WorkflowDefinitionId>`] で表し、**リポジトリにビジネスロジックの
+//! エラーを扱わせない** (`coding-rules/error-handling.md`「Repository エラーはジェネリック
+//! 1 本」への収束)。どのファイルがどう壊れていたかという文脈はアダプタ私有の型を
+//! `Error::source` の連鎖で運び、契約は「壊れていた」としか約束しない (裁定 6 —
+//! エラーは契約の一部であり、内部実装がバレる情報を含めない)。
+//!
+//! **3 入力で失敗態度が非対称なことは実装の挙動として維持される** (12 §4。この非対称そのものが
+//! 観測可能な契約で、「より厳格にする」方向の改変も逸脱になる):
+//!
+//! - `harness.json` が読めない / 不正 JSON / `name` 欠落 = **fatal**。定義 id の供給元であり、
+//!   失われると集約に識別子を与えられない (ADR-008)。
+//! - `stage-graph.json` が読めない / 不正 JSON = **fatal**。
 //! - `scope-grid.json` が読めない / 不正 = **fatal にしない**。グラフの `scopes[]` からの
-//!   転置導出へフォールバックする (#3)。したがって `load` はグリッド欠損では失敗しない。
+//!   転置導出へフォールバックする (#3)。したがって `find_by_id` はグリッド欠損では失敗しない。
 //! - identity ファイルとグリッド列の不一致は**双方向とも正当** (#5 zero-EXECUTE な正当
 //!   スコープ / #6 ランタイム不可視) であり、どちらもエラーにしない。
 //! - いずれの失敗でも **stdout に何も書かない** (#10 — half-emitted directive を出さない)。
 //!
-//! 実装は `core-interface-adapter`
+//! ただしこの非対称の**分類はポート契約に載せない** — どの入力がどう壊れていたかは
+//! `Corrupt` の原因連鎖にだけ現れる。
+//!
+//! 実装は `core-command-interface-adapter`
 //! (`orchestration::WorkflowDefinitionRepositoryImpl` が実 I/O、
 //! `orchestration::InMemoryWorkflowDefinitionRepository` がテストダブル)。パス解決と env
-//! オーバライドの意味論、および逐語文言の組み立ては実装側に閉じる (12 §6)。ポートは
-//! **材料だけ**を運ぶ。
+//! オーバライドの意味論は実装側に閉じる (12 §6)。
 
 use core_command_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
 
-/// 3 入力の読取失敗。逐語文言そのものは持たず、**文言を組み立てる材料**を運ぶ
-/// (レンダリングはアダプタ層 — 12 §6)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GraphReadError {
-    /// `stage-graph.json` が読めない (12 §4 #1)。
-    ///
-    /// `env_override` はパスが `AIDLC_STAGE_GRAPH` 由来かを表す。真のとき逐語文言の hint 節が
-    /// 「unset して既定に戻せ」形へ切り替わる — **この分岐自体が観測可能な契約**。
-    NotReadable {
-        /// 読もうとした `stage-graph.json` の解決済みパス。
-        path: String,
-        /// 読取が失敗した理由 (OS 由来)。
-        cause: String,
-        /// `path` が `AIDLC_STAGE_GRAPH` 由来か。
-        env_override: bool,
-    },
-    /// `stage-graph.json` が不正 JSON (12 §4 #2)。`NotReadable` とは別文言。
-    InvalidJson {
-        /// パースに失敗した `stage-graph.json` の解決済みパス。
-        path: String,
-        /// パースが失敗した理由 (JSON パーサ由来)。
-        cause: String,
-    },
-    /// scope identity ファイルの読取・frontmatter 検証の失敗 (`name` 欠落・`skeleton` の
-    /// 不正値など — 12 §3.3)。
-    ScopeFile {
-        /// 失敗の詳細。逐語文言そのものではなく、その材料。
-        message: String,
-    },
-    /// JSON としては読めたがドメイン型へ写せない (未知 `phase`、文法外 `slug` など)。
-    ///
-    /// upstream はロード時に検証しないが、serde による構造的パースは「ロード時無検証」からの
-    /// 逸脱ではなく補強として扱う (12 §10) — dist の正規データに対しては観測差が生じない。
-    Malformed {
-        /// 写像に失敗した箇所の詳細。逐語文言そのものではなく、その材料。
-        message: String,
-    },
-    /// 要求された定義 id が、この Repository が提供できる定義 id と違う (BR2.6 / ADR-008)。
-    ///
-    /// 1 つのハーネスには定義が 1 つしか無いため、これは「取り違え」であって「探したが無い」
-    /// ではない。契約上 fatal。
-    NotFound {
-        /// **この Repository が提供できる** 定義 id (`harness.json` の `name` 由来)。
-        expected: WorkflowDefinitionId,
-        /// **要求された** 定義 id。
-        actual: WorkflowDefinitionId,
-    },
-    /// ハーネス identity ファイル (`harness.json`) を読めない・不正 JSON・`name` が無い
-    /// ないし id として不正 (ADR-008)。
-    ///
-    /// 定義 id の供給元が失われている状態であり、グラフと同じく **fatal**。
-    HarnessIdentity {
-        /// 読もうとした `harness.json` の解決済みパス。
-        path: String,
-        /// 失敗の理由 (OS / JSON パーサ / id の形式検証のいずれか由来)。
-        cause: String,
-    },
-}
+use super::repository_error::RepositoryError;
 
-/// 集約 `WorkflowDefinition` の Repository (load 専用)。
+/// 集約 `WorkflowDefinition` の Repository。
 pub trait WorkflowDefinitionRepository {
     /// 定義 id で引き、3 入力を読んで集約 `WorkflowDefinition` を組み立てて返す。
     ///
@@ -103,9 +69,13 @@ pub trait WorkflowDefinitionRepository {
     ///
     /// # Errors
     ///
-    /// ハーネス identity の読取・検証失敗 (`HarnessIdentity`)、要求 id の不一致 (`NotFound`)、
-    /// グラフの読取失敗 (`NotReadable`)、不正 JSON (`InvalidJson`)、scope identity の検証失敗
-    /// (`ScopeFile`)、ドメイン型への写像失敗 (`Malformed`)。
+    /// 要求 id をこのハーネスが提供していない (`NotFound` — 運ぶのは**要求された id** だけ)、
+    /// OS 由来の読取失敗 (`Io`)、読めたが内容が壊れている (`Corrupt` — 不正 JSON・identity の
+    /// 内容不正・scope frontmatter の検証失敗・ドメイン型への写像失敗。原因は
+    /// `Error::source` の連鎖が運ぶ)。
     /// **グリッドの欠損・不正はエラーにしない** — 転置導出へフォールバックする (12 §4 #3)。
-    fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError>;
+    fn find_by_id(
+        &self,
+        id: &WorkflowDefinitionId,
+    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>>;
 }

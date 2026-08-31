@@ -2,17 +2,16 @@
 //!
 //! 概念 (どの操作を指しているか) と綴り (upstream 3 形のうち self-host 正準の
 //! **素のマルチコール形** — 例 `aidlc-utility status`、`07-hooks.md:260` に実在し ADR 0002
-//! 決定 3) はどちらもドメインの閉じた語彙である。綴りの導出は CPU とメモリだけの純計算
-//! なのでポートにしない (旧 `CommandSpelling` ポートの廃止 — issue #45)。ディスパッチャ
-//! 語彙の完全 ROUTES 写し (30 経路 + SLASH_FLAG_ALIASES) は U7 / A1 で表として実体化し、
-//! 差し替えは [`EngineCommand::cli_spelling`] 1 点で行う (逸脱台帳 #1)。
+//! 決定 3) はどちらも読み手の閉じた出力語彙である。綴りの導出は CPU とメモリだけの純計算
+//! なのでポートにしない。ディスパッチャ語彙の完全 ROUTES 写し (30 経路 +
+//! SLASH_FLAG_ALIASES) は U7 / A1 で表として実体化し、差し替えは
+//! [`EngineCommand::cli_spelling`] 1 点で行う (逸脱台帳 #1)。
 
-use crate::workflow_definition::{ScopeSlug, StageSlug};
+use crate::workflow_view::{ScopeSlugView, StageSlugView};
 
 /// 読み取り専用ユーティリティの語彙 (分岐 1 — `--status` などのフラグが指す操作)。
 ///
-/// 変種名は操作の意図から取る (状態報告・使い方・健全性診断・版表示)。CLI 綴りへの写像は
-/// アダプタ層が持つ。
+/// 変種名は操作の意図から取る (状態報告・使い方・健全性診断・版表示)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadOnlyVerb {
     /// ワークフロー状態の報告。
@@ -48,17 +47,17 @@ pub enum EngineCommand {
     /// jump の純読み取り解決 (分岐 7)。
     ResolveJump {
         /// ジャンプ先ステージ。
-        stage: StageSlug,
+        stage: StageSlugView,
     },
     /// intent の鋳造 (birth — `next` は自身で実行しない)。
     MintIntent {
         /// 鋳造する intent の scope。
-        scope: ScopeSlug,
+        scope: ScopeSlugView,
     },
     /// scope 変更の名指し (分岐 5)。
     ChangeScope {
         /// 変更先 scope。
-        scope: ScopeSlug,
+        scope: ScopeSlugView,
     },
     /// depth / test-strategy / review の設定変更の名指し (分岐 5)。
     ChangeConfig {
@@ -149,7 +148,6 @@ mod tests {
 
     #[test]
     fn every_command_concept_spells_in_multicall_form() {
-        use crate::workflow_definition::{ScopeSlug, StageSlug};
         assert_eq!(
             EngineCommand::ReadOnlyUtility(ReadOnlyVerb::Status).cli_spelling(),
             "aidlc-utility status"
@@ -174,21 +172,21 @@ mod tests {
         assert_eq!(EngineCommand::Unpark.cli_spelling(), "aidlc-state unpark");
         assert_eq!(
             EngineCommand::ResolveJump {
-                stage: StageSlug::parse("domain-design").unwrap(),
+                stage: StageSlugView::parse("domain-design").unwrap(),
             }
             .cli_spelling(),
             "aidlc-jump resolve --stage domain-design"
         );
         assert_eq!(
             EngineCommand::MintIntent {
-                scope: ScopeSlug::parse("bugfix").unwrap(),
+                scope: ScopeSlugView::parse("bugfix").unwrap(),
             }
             .cli_spelling(),
             "aidlc-utility intent-create --scope bugfix --label \"<2-3 word kebab essence>\""
         );
         assert_eq!(
             EngineCommand::ChangeScope {
-                scope: ScopeSlug::parse("mvp").unwrap(),
+                scope: ScopeSlugView::parse("mvp").unwrap(),
             }
             .cli_spelling(),
             "aidlc-utility scope-change --scope mvp"

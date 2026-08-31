@@ -3,12 +3,13 @@
 //! 3 入力を固定値として与え、ファイル I/O 抜きで述語 6 種のユースケーステストを回すための
 //! Gateway (12-workflow-definition §9-3)。集約は構築後 immutable なので、`find_by_id` は
 //! 保持している `WorkflowDefinition` の複製を返す。識別子の契約 (要求 id が保持している定義の
-//! id と違えば `NotFound`) は実 Gateway と同じに保つ。
+//! id と違えば `NotFound`) は実 Gateway と同じに保つ — 失敗もポート契約の
+//! `RepositoryError<WorkflowDefinitionId>` 1 本である (オーナー裁定 2026-08-31)。
 //!
 //! テストダブルなので `Impl` 接尾辞は付けない (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
 
 use core_command_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
-use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
+use core_command_use_case::orchestration::{RepositoryError, WorkflowDefinitionRepository};
 
 /// 組み立て済みの `WorkflowDefinition` を保持するだけの `WorkflowDefinitionRepository`。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,14 +33,14 @@ impl InMemoryWorkflowDefinitionRepository {
 }
 
 impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
-    fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError> {
+    fn find_by_id(
+        &self,
+        id: &WorkflowDefinitionId,
+    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
         // テストダブルでも識別子の契約は本物と同じ — 「1 Repository 1 定義、要求 id が
         // 違えば NotFound」(BR2.6)。違うのは 3 入力のパースと失敗注入が無いことだけ。
         if self.definition.id() != id {
-            return Err(GraphReadError::NotFound {
-                expected: self.definition.id().clone(),
-                actual: id.clone(),
-            });
+            return Err(RepositoryError::NotFound { id: id.clone() });
         }
         Ok(self.definition.clone())
     }
@@ -109,25 +110,22 @@ mod tests {
     fn a_request_for_another_definition_is_not_found() {
         // テストダブルも実 Gateway と同じ契約を守る (12 §9-3)。
         let reader = InMemoryWorkflowDefinitionRepository::new(definition());
-        assert_eq!(
+        assert!(matches!(
             reader.find_by_id(&id("kiro")),
-            Err(GraphReadError::NotFound {
-                expected: id("claude"),
-                actual: id("kiro"),
-            })
-        );
+            Err(RepositoryError::NotFound { .. })
+        ));
     }
 
     #[test]
-    fn the_not_found_error_names_the_provider_as_expected_and_the_request_as_actual() {
+    fn the_not_found_error_names_the_requested_definition() {
         let reader = InMemoryWorkflowDefinitionRepository::new(definition());
         let error = reader.find_by_id(&id("codex")).unwrap_err();
-        let GraphReadError::NotFound { expected, actual } = error else {
+        let RepositoryError::NotFound { id: requested } = error else {
             panic!("NotFound を期待した");
         };
-        // expected = この Repository が提供できる id、actual = 要求された id。
-        assert_eq!(expected.as_str(), "claude");
-        assert_eq!(actual.as_str(), "codex");
+        // 運ぶのは**要求された id** だけ (オーナー裁定 2026-08-31 — このリポジトリが提供
+        // できる id はビジネス文脈なのでポート契約に載せない)。
+        assert_eq!(requested.as_str(), "codex");
     }
 
     #[test]

@@ -2,15 +2,15 @@
 //!
 //! ダイジェストは**不透明トークン**である: 等値比較だけが契約で、解釈も加工もしない。
 //! 4 本を別型の newtype にするのは、相互代入・取り違え比較をコンパイルエラーにするため
-//! (同型プリミティブの隣接は取り違えの温床)。計算 (直列化 + sha256) は codec (アダプタ層)
-//! が持ち、ドメインは値の型だけを持つ。
+//! (同型プリミティブの隣接は取り違えの温床)。値の**計算**は所有する型の関連メソッドが持ち
+//! (`steering_digest` モジュール)、ここは値の型だけを持つ。
 
 /// ルール束ダイジェスト (`b`)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleDigest(String);
 
 impl BundleDigest {
-    /// codec が計算した値を包む。
+    /// 計算済みの値を包む。
     #[must_use]
     pub fn new(value: impl Into<String>) -> BundleDigest {
         BundleDigest(value.into())
@@ -28,7 +28,7 @@ impl BundleDigest {
 pub struct DirectiveDigest(String);
 
 impl DirectiveDigest {
-    /// codec が計算した値を包む。
+    /// 計算済みの値を包む。
     #[must_use]
     pub fn new(value: impl Into<String>) -> DirectiveDigest {
         DirectiveDigest(value.into())
@@ -46,7 +46,7 @@ impl DirectiveDigest {
 pub struct RouteDigest(String);
 
 impl RouteDigest {
-    /// codec が計算した値を包む。
+    /// 計算済みの値を包む。
     #[must_use]
     pub fn new(value: impl Into<String>) -> RouteDigest {
         RouteDigest(value.into())
@@ -67,7 +67,7 @@ impl RouteDigest {
 pub struct StateBinding(String);
 
 impl StateBinding {
-    /// codec が計算した値を包む。
+    /// 計算済みの値を包む。
     #[must_use]
     pub fn new(value: impl Into<String>) -> StateBinding {
         StateBinding(value.into())

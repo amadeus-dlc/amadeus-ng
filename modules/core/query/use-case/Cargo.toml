@@ -8,13 +8,21 @@ repository.workspace = true
 [lints]
 workspace = true
 
-# クエリ側のユースケース層 — **自前のクエリモデル**（ワークフロー定義リードモデルのビュー型）
-# を所有する。依存は std のみで、外部クレートも内部クレートも 1 つも引かない。
+# クエリ側のユースケース層 — **自前のクエリモデル**（ワークフロー定義リードモデルのビュー型・
+# 実行状態リードモデルのビュー型）と、読むだけの動詞 (`next` / `continue`) を所有する。
 #
 # **ここにコマンド側 (`core-command-*`) と RMU (`core-read-model-updater`) を書いてはならない**
 # — クエリ側はドメインに絶対依存せず、集約の再構成もしない (`coding-rules/cqrs-boundaries.md`
 # 規則 6 / 2026-08-29 オーナー裁定)。境界はクレート分離で物理強制され、違反はビルドで落ちる。
 [dependencies]
+# steering 束縛ダイジェストの正準素材 (`canon_json`)。infrastructure は**言語拡張**であり
+# どちらの側にも属さないので、クエリ側から引いても側の独立は破れない
+# (`coding-rules/infrastructure-layer.md`)。
+core-infrastructure = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# ITF 準拠テストが Quint トレース JSON という**外部フィクスチャを読む手段**
+# (`Value` 読取のみ — derive は使わない)。クエリモデル自身は直列化の記述を持たない
+# (`coding-rules/domain-persistence-neutrality.md` の同趣旨の対象外条項)。
+serde_json = { workspace = true }

@@ -6,17 +6,50 @@
 //! (d) grid 欠損 = 転置導出 (initialization 特例込み) / (e) `.md` あり × 列なし = zero-EXECUTE /
 //! (f) 列あり × `.md` なし = `valid_scopes` に不出現 / (g) 未知フィールド入り JSON が読めること。
 // indexing_slicing (固定長フィクスチャの添字参照) と panic (想定外ケースの即時失敗という
-// 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+// 検証用途) も unwrap_used と同じ理由で file 単位の allow が要る。expect は `#[test]` の外の
+// ヘルパで使うため clippy.toml の allow-expect-in-tests が効かず、同じく file 単位で要る。
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
 use core_command_interface_adapter::orchestration::WorkflowDefinitionRepositoryImpl;
-use core_command_use_case::orchestration::{GraphReadError, WorkflowDefinitionRepository};
+use core_command_use_case::orchestration::{RepositoryError, WorkflowDefinitionRepository};
+use std::error::Error;
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// 定義読取の失敗 (ポート契約はジェネリック 1 本 — オーナー裁定 2026-08-31)。
+type ReadError = RepositoryError<WorkflowDefinitionId>;
+
+/// `Corrupt` が原因連鎖で運ぶ診断表示を取り出す。
+///
+/// 契約は「壊れていた」としか約束しないので、**どう壊れていたか**はアダプタ私有の型が
+/// `Error::source` の連鎖でだけ運ぶ (裁定 6)。テストはその表示文字列で判定する
+/// (`RepositoryError` は `source` が比較不能なため `PartialEq` を持たない)。
+fn corrupt_cause(error: &ReadError) -> String {
+    assert!(
+        matches!(error, RepositoryError::Corrupt { .. }),
+        "Corrupt を期待した: {error:?}"
+    );
+    Error::source(error)
+        .expect("Corrupt は原因を連鎖する")
+        .to_string()
+}
+
+/// `Io` が運ぶ対象パス。
+fn io_path(error: &ReadError) -> PathBuf {
+    let RepositoryError::Io { path, .. } = error else {
+        panic!("Io を期待した: {error:?}");
+    };
+    path.clone().expect("読取失敗は対象パスを運ぶ")
+}
 
 /// 出荷グラフを縮めた 5 ステージ。`bootstrap` / `workspace-init` が initialization 特例の材料、
 /// `code-generation` が 28 フィールドのうち任意フィールド群の写像を通す代表ノード。
@@ -411,46 +444,40 @@ fn b_a_missing_stage_graph_is_fatal() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    let GraphReadError::NotReadable {
-        path, env_override, ..
-    } = error
-    else {
-        panic!("expected NotReadable, got {error:?}");
-    };
-    assert_eq!(path, fixture.graph_path().display().to_string());
-    assert!(!env_override);
+    // OS 由来の読取失敗は `Io` — 対象パスと `ErrorKind` だけを運ぶ。
+    assert_eq!(io_path(&error), fixture.graph_path());
 }
 
 #[test]
-fn b_the_env_override_flag_follows_the_injected_path() {
+fn b_the_reported_path_follows_the_injected_override() {
+    // env オーバライドは**パス解決**の話であって、契約に載る分類ではない (逐語文言の hint
+    // 分岐はクエリ側が所有する — b26 段階 2)。ここで固定するのは「注入したパスがそのまま
+    // 失敗の対象として報告される」ことだけ。
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
     let missing = fixture.data_dir.join("pinned-graph.json");
     let reader = fixture.reader().with_stage_graph_override(missing.clone());
     let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
-    let GraphReadError::NotReadable {
-        path, env_override, ..
-    } = error
-    else {
-        panic!("expected NotReadable, got {error:?}");
-    };
-    assert_eq!(path, missing.display().to_string());
-    assert!(env_override);
+    assert_eq!(io_path(&error), missing);
 }
 
 // ---------------------------------------------------------------------------
-// (c) 不正 JSON = Err (欠損とは別文言)
+// (c) 不正 JSON = Err (欠損とは別変種)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
+    // 読めたが内容が壊れている = `Corrupt`。欠損 (`Io`) とは別変種で、どう壊れていたかは
+    // 原因連鎖にだけ現れる。
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
     let error = fixture
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
+    let cause = corrupt_cause(&error);
+    assert!(cause.contains("not valid JSON"), "{cause}");
     assert!(
-        matches!(error, GraphReadError::InvalidJson { ref path, .. } if *path == fixture.graph_path().display().to_string()),
-        "expected InvalidJson, got {error:?}"
+        cause.contains(&fixture.graph_path().display().to_string()),
+        "{cause}"
     );
 }
 
@@ -461,7 +488,7 @@ fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    assert!(matches!(error, GraphReadError::InvalidJson { .. }));
+    assert!(corrupt_cause(&error).contains("not valid JSON"));
 }
 
 // ---------------------------------------------------------------------------
@@ -654,11 +681,11 @@ fn the_reader_preserves_document_order_and_keeps_the_two_ordering_paths_distinct
 }
 
 // ---------------------------------------------------------------------------
-// 追加: scope identity ファイルの拒否文言
+// 追加: scope identity ファイルの拒否 (診断は原因連鎖にだけ現れる)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn an_invalid_skeleton_value_is_rejected_with_the_verbatim_wording() {
+fn an_invalid_skeleton_value_is_rejected_with_the_offending_value_in_the_cause() {
     let fixture = Fixture::new(
         Some(GRAPH_JSON),
         Some(GRID_JSON),
@@ -668,17 +695,11 @@ fn an_invalid_skeleton_value_is_rejected_with_the_verbatim_wording() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    let GraphReadError::ScopeFile { message } = error else {
-        panic!("expected ScopeFile, got {error:?}");
-    };
+    let cause = corrupt_cause(&error);
     let path = fixture.scopes_dir.join("aidlc-feature.md");
-    assert_eq!(
-        message,
-        format!(
-            "Scope file {} has invalid skeleton value \"enabled\". Expected \"on\" or \"off\".",
-            path.display()
-        )
-    );
+    assert!(cause.contains(&path.display().to_string()), "{cause}");
+    assert!(cause.contains("skeleton"), "{cause}");
+    assert!(cause.contains("enabled"), "{cause}");
 }
 
 #[test]
@@ -692,12 +713,10 @@ fn a_scope_file_without_a_name_is_rejected() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    let GraphReadError::ScopeFile { message } = error else {
-        panic!("expected ScopeFile, got {error:?}");
-    };
+    let cause = corrupt_cause(&error);
     assert!(
-        message.ends_with("missing required frontmatter: name"),
-        "{message}"
+        cause.ends_with("missing required frontmatter: name"),
+        "{cause}"
     );
 }
 
@@ -715,14 +734,10 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    // upstream 逐語 (aidlc-lib.ts:8666-8668 @3c3146cf) の形を pin する
-    assert!(
-        matches!(error, GraphReadError::ScopeFile { ref message }
-            if message.starts_with("Duplicate scope name \"feature\" in ")
-                && message.contains(": already declared in ")
-                && message.ends_with(". Rename one of them.")),
-        "{error:?}"
-    );
+    // 重複した名前と両方のファイルが診断に載る (どちらを直せばよいかが分かる材料)。
+    let cause = corrupt_cause(&error);
+    assert!(cause.contains("feature"), "{cause}");
+    assert!(cause.contains("already declared in"), "{cause}");
 }
 
 #[test]
@@ -756,10 +771,7 @@ fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    assert!(
-        matches!(error, GraphReadError::Malformed { ref message } if message.contains("unknown phase")),
-        "{error:?}"
-    );
+    assert!(corrupt_cause(&error).contains("unknown phase"));
 }
 
 #[test]
@@ -837,14 +849,12 @@ fn a_request_for_a_definition_this_harness_does_not_provide_is_not_found() {
         .reader()
         .find_by_id(&definition_id("kiro"))
         .unwrap_err();
-    assert_eq!(
-        error,
-        GraphReadError::NotFound {
-            // expected = この Repository が提供できる id、actual = 要求された id。
-            expected: definition_id("claude"),
-            actual: definition_id("kiro"),
-        }
-    );
+    // 新契約の `NotFound` が運ぶのは**要求された id** だけ。「このハーネスが提供できる id」は
+    // ビジネス文脈であってポートには載せない (オーナー裁定 2026-08-31)。
+    let RepositoryError::NotFound { id } = error else {
+        panic!("NotFound を期待した: {error:?}");
+    };
+    assert_eq!(id, definition_id("kiro"));
 }
 
 #[test]
@@ -856,7 +866,7 @@ fn the_identity_is_checked_before_the_three_inputs_are_read() {
         .find_by_id(&definition_id("kiro"))
         .unwrap_err();
     assert!(
-        matches!(error, GraphReadError::NotFound { .. }),
+        matches!(error, RepositoryError::NotFound { .. }),
         "識別子の検査はグラフ読取より前: {error:?}"
     );
 }
@@ -868,15 +878,13 @@ fn a_missing_harness_identity_file_is_fatal() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    let GraphReadError::HarnessIdentity { path, cause } = error else {
-        panic!("HarnessIdentity を期待した");
-    };
-    assert_eq!(path, fixture.harness_path().display().to_string());
-    assert!(!cause.is_empty(), "OS 由来の理由を材料として運ぶ");
+    // ファイルが無いのは OS 由来の読取失敗 — 内容の破損ではない。
+    assert_eq!(io_path(&error), fixture.harness_path());
 }
 
 #[test]
-fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_fatal() {
+fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_corrupt_not_io() {
+    // 読めたが内容が定義 id を与えない — 欠損 (`Io`) と読み分ける。
     for harness in ["{", r#"{"harnessDir": ".claude"}"#, r#"{"name": ""}"#] {
         let fixture = Fixture::with_harness(
             Some(GRAPH_JSON),
@@ -888,11 +896,28 @@ fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_fatal() {
             .reader()
             .find_by_id(&definition_id("claude"))
             .unwrap_err();
+        let cause = corrupt_cause(&error);
         assert!(
-            matches!(error, GraphReadError::HarnessIdentity { .. }),
-            "harness.json {harness:?} は HarnessIdentity で落ちるはず: {error:?}"
+            cause.contains(&fixture.harness_path().display().to_string()),
+            "harness.json {harness:?}: {cause}"
         );
     }
+}
+
+#[test]
+fn the_corrupt_variant_names_the_requested_definition() {
+    // `Corrupt { id }` は「どの集約が壊れていたか」— 要求された定義 id である。
+    let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
+    let error = fixture
+        .reader()
+        .find_by_id(&definition_id("claude"))
+        .unwrap_err();
+    let RepositoryError::Corrupt { id, seq_nr, .. } = &error else {
+        panic!("Corrupt を期待した: {error:?}");
+    };
+    assert_eq!(id, &definition_id("claude"));
+    // 定義はイベント列ではないので行番号は無い。
+    assert_eq!(*seq_nr, None);
 }
 
 #[test]
@@ -1005,10 +1030,10 @@ fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it(
             .reader()
             .find_by_id(&definition_id("claude"))
             .unwrap_err();
+        let cause = corrupt_cause(&error);
         assert!(
-            matches!(error, GraphReadError::Malformed { ref message }
-                if message.contains(fragment) && message.contains("stage-graph.json")),
-            "{fragment} を期待したが {error:?}"
+            cause.contains(fragment) && cause.contains("stage-graph.json"),
+            "{fragment} を期待したが {cause}"
         );
     }
 }
@@ -1026,11 +1051,7 @@ fn a_scopes_path_that_is_not_a_directory_is_reported_instead_of_being_treated_as
         fixture.data_dir.join("scopes-as-a-file"),
     );
     let error = reader.find_by_id(&definition_id("claude")).unwrap_err();
-    assert!(
-        matches!(error, GraphReadError::ScopeFile { ref message }
-            if message.starts_with(&format!("{}: ", not_a_dir.display()))),
-        "{error:?}"
-    );
+    assert_eq!(io_path(&error), not_a_dir);
 }
 
 #[test]
@@ -1045,9 +1066,5 @@ fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
         .reader()
         .find_by_id(&definition_id("claude"))
         .unwrap_err();
-    assert!(
-        matches!(error, GraphReadError::ScopeFile { ref message }
-            if message.starts_with(&format!("{}: ", masquerading.display()))),
-        "{error:?}"
-    );
+    assert_eq!(io_path(&error), masquerading);
 }

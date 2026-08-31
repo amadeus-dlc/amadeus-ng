@@ -285,7 +285,7 @@ fn another_harness_name_cannot_open_the_shipped_graph() {
     assert!(
         matches!(
             error,
-            core_command_use_case::orchestration::GraphReadError::NotFound { .. }
+            core_command_use_case::orchestration::RepositoryError::NotFound { .. }
         ),
         "{error:?}"
     );

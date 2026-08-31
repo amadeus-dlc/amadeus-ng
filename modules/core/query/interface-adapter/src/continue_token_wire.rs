@@ -1,35 +1,31 @@
-//! `continue_token` の封緘 (mint) と開封 (verify) — ドメイン型と upstream ワイヤ形式の変換。
+//! `continue_token` の封緘 (mint) と開封 (verify) — クエリモデルと upstream ワイヤ形式の変換。
 //!
 //! **ポートではない** — 封緘は Presenter・開封は Controller (どちらも U7) の変換であり、
-//! use-case のポートは Repository のみである (issue #45 — 旧 `ContinueTokenCodec` ポートの
-//! 廃止)。型付きダイジェスト 4 種の導出はドメインの純計算
-//! (`core_command_domain::orchestration::steering_digest`) へ移った。
+//! `next` / `continue` はどちらも型付きの [`ContinueToken`] だけを見る。
 //!
 //! 封緘そのもの (HMAC-SHA256 封筒 `{p, m}` の base64url — 02 §4.4) は**純粋なコーデック**で
 //! あり、言語拡張の [`core_infrastructure::codec`] が持つ (オーナー裁定 2026-08-30
 //! 「I/O を含まない純粋なコーデックロジックをインフラストラクチャ層に配置せよ」)。ここに
-//! 残るのは upstream 固有のもの — 18 キーの 1 文字綴り・センチネル・厳密型表・ドメイン型への
+//! 残るのは upstream 固有のもの — 18 キーの 1 文字綴り・センチネル・厳密型表・クエリモデルへの
 //! parse である (`coding-rules/upstream-contracts.md`「境界で変換」)。
 //!
 //! **I/O は無い** — 計算だけである。鍵はマシンローカルの `.aidlc-steering-token-key` を
 //! 遅延鋳造した**結果のバイト列**を受け取る (I8 の例外 1 — "machine-local runtime state,
 //! not a project-derived value an untrusted continuation can recompute")。鋳造そのものは
-//! 同じアダプタ層の機構モジュール [`crate::read_or_mint_secret`] が持ち、配線するのは
-//! 合成ルートである。検証は timing-safe (`Mac::verify_slice`)。デコードは厳密型表 —
-//! 未知キー・型違反は serde の `deny_unknown_fields` と型で拒否し、ドメイン型へ上げる
+//! 合成ルートの責務である。検証は timing-safe (`Mac::verify_slice`)。デコードは厳密型表 —
+//! 未知キー・型違反は serde の `deny_unknown_fields` と型で拒否し、クエリモデルへ上げる
 //! parse が文法違反 (slug・部索引 0・予約フラグの真値・unit 対の片割れ) を拒否する。
 
-use core_command_domain::orchestration::{
+use core_infrastructure::codec::{seal, unseal};
+use core_query_use_case::orchestration::{
     Bindings, BundleDigest, ContinueToken, ContinueTokenBuilder, DirectiveDigest, GateField,
     PartIndex, RouteDigest, StageName, StateBinding, TokenVersion, UnitKind, UnitName, UnitRef,
 };
-use core_command_domain::workflow_definition::{ScopeSlug, StageSlug};
-use core_infrastructure::codec::{seal, unseal};
+use core_query_use_case::workflow_view::{ScopeSlugView, StageSlugView};
 use serde::{Deserialize, Serialize};
 
 /// 無効なトークン (材料なし — 「無効」だけを約束する。fail-closed の逐語文言は呼出側の
-/// wording が組む)。旧ポートの語彙からこの層へ移った (issue #45 — 開封は Controller の
-/// 責務であり、失敗はユースケースへ `None` として渡る)。
+/// wording が組む)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidContinueToken;
 
@@ -41,7 +37,7 @@ impl std::fmt::Display for InvalidContinueToken {
 
 impl std::error::Error for InvalidContinueToken {}
 
-/// state 束縛なしのときワイヤ `h` に置くセンチネル (輸送形の詳細 — ドメインへは出さない)。
+/// state 束縛なしのときワイヤ `h` に置くセンチネル (輸送形の詳細 — クエリモデルへは出さない)。
 const NO_STATE_SENTINEL: &str = "-";
 
 /// `gate` のワイヤ形 — boolean か `"unresolved"` のみ。
@@ -86,7 +82,7 @@ struct WirePayload {
 /// 作らずに鍵を直接渡せる。
 #[must_use]
 pub fn mint_continue_token(key: &[u8], token: &ContinueToken) -> String {
-    // ここが持つのはドメイン型 → upstream ワイヤ形式の変換だけ。封緘は純粋コーデック。
+    // ここが持つのはクエリモデル → upstream ワイヤ形式の変換だけ。封緘は純粋コーデック。
     seal(key, &wire_payload(token))
 }
 
@@ -101,9 +97,9 @@ pub fn verify_continue_token(
     encoded: &str,
 ) -> Result<ContinueToken, InvalidContinueToken> {
     // 封緘を解くのは純粋コーデック (MAC 不一致・復号不能はどちらも `None` = fail-closed)。
-    // ここが持つのは、解けた upstream ワイヤ形式をドメイン型へ上げる厳密型表である。
+    // ここが持つのは、解けた upstream ワイヤ形式をクエリモデルへ上げる厳密型表である。
     let payload: WirePayload = unseal(key, encoded).ok_or(InvalidContinueToken)?;
-    domain_token(&payload)
+    query_token(&payload)
 }
 
 fn wire_gate(gate: GateField) -> WireGate {
@@ -114,7 +110,7 @@ fn wire_gate(gate: GateField) -> WireGate {
     }
 }
 
-fn domain_gate(gate: &WireGate) -> Result<GateField, InvalidContinueToken> {
+fn query_gate(gate: &WireGate) -> Result<GateField, InvalidContinueToken> {
     match gate {
         WireGate::Flag(true) => Ok(GateField::Gated),
         WireGate::Flag(false) => Ok(GateField::Ungated),
@@ -149,12 +145,12 @@ fn wire_payload(token: &ContinueToken) -> WirePayload {
     }
 }
 
-fn domain_token(payload: &WirePayload) -> Result<ContinueToken, InvalidContinueToken> {
+fn query_token(payload: &WirePayload) -> Result<ContinueToken, InvalidContinueToken> {
     if !TokenVersion::from_raw(payload.v).is_supported() {
         return Err(InvalidContinueToken);
     }
-    let stage = StageSlug::parse(&payload.s).map_err(|_| InvalidContinueToken)?;
-    let scope = ScopeSlug::parse(&payload.c).map_err(|_| InvalidContinueToken)?;
+    let stage = StageSlugView::parse(&payload.s).map_err(|_| InvalidContinueToken)?;
+    let scope = ScopeSlugView::parse(&payload.c).map_err(|_| InvalidContinueToken)?;
     let index = PartIndex::from_raw(payload.i).ok_or(InvalidContinueToken)?;
     // 予約フラグ (`f`/`w`/`z`) — エンジンは今日この真値を構築しない (fail-closed)。
     if payload.f || payload.w || payload.z {
@@ -187,7 +183,7 @@ fn domain_token(payload: &WirePayload) -> Result<ContinueToken, InvalidContinueT
         state,
     );
     let mut builder =
-        ContinueTokenBuilder::new(stage, scope, index, bindings, domain_gate(&payload.g)?);
+        ContinueTokenBuilder::new(stage, scope, index, bindings, query_gate(&payload.g)?);
     if let Some(unit) = unit {
         builder = builder.with_unit(unit);
     }
@@ -206,7 +202,6 @@ mod tests {
     use super::*;
     use base64::Engine as _;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use core_command_domain::orchestration::GateField;
 
     /// 試験用の鍵 (鋳造は `core_infrastructure::secret_file` の責務なのでここでは要らない)。
     const KEY: &[u8] = &[7u8; 32];
@@ -222,8 +217,8 @@ mod tests {
 
     fn token() -> ContinueToken {
         ContinueTokenBuilder::new(
-            StageSlug::parse("functional-design").unwrap(),
-            ScopeSlug::parse("classic").unwrap(),
+            StageSlugView::parse("functional-design").unwrap(),
+            ScopeSlugView::parse("classic").unwrap(),
             PartIndex::FIRST.next(),
             bindings(),
             GateField::Gated,
@@ -245,8 +240,8 @@ mod tests {
     #[test]
     fn an_ungated_token_round_trips_with_the_boolean_gate() {
         let ungated = ContinueTokenBuilder::new(
-            StageSlug::parse("functional-design").unwrap(),
-            ScopeSlug::parse("classic").unwrap(),
+            StageSlugView::parse("functional-design").unwrap(),
+            ScopeSlugView::parse("classic").unwrap(),
             PartIndex::FIRST,
             Bindings::new(
                 BundleDigest::new("b"),
@@ -275,8 +270,8 @@ mod tests {
     #[test]
     fn a_stateless_token_round_trips_with_the_sentinel_on_the_wire() {
         let stateless = ContinueTokenBuilder::new(
-            StageSlug::parse("functional-design").unwrap(),
-            ScopeSlug::parse("classic").unwrap(),
+            StageSlugView::parse("functional-design").unwrap(),
+            ScopeSlugView::parse("classic").unwrap(),
             PartIndex::FIRST,
             Bindings::new(
                 BundleDigest::new("b"),
@@ -331,17 +326,17 @@ mod tests {
         // v ≠ 1、未知の gate 語、部索引 0、予約フラグの真値、unit 対の不整合は fail-closed。
         let mut wrong_version = wire_payload(&token());
         wrong_version.v = 2;
-        assert_eq!(domain_token(&wrong_version), Err(InvalidContinueToken));
+        assert_eq!(query_token(&wrong_version), Err(InvalidContinueToken));
         assert_eq!(
-            domain_gate(&WireGate::Text("weird".to_string())),
+            query_gate(&WireGate::Text("weird".to_string())),
             Err(InvalidContinueToken)
         );
-        assert_eq!(domain_gate(&WireGate::Flag(true)), Ok(GateField::Gated));
-        assert_eq!(domain_gate(&WireGate::Flag(false)), Ok(GateField::Ungated));
+        assert_eq!(query_gate(&WireGate::Flag(true)), Ok(GateField::Gated));
+        assert_eq!(query_gate(&WireGate::Flag(false)), Ok(GateField::Ungated));
 
         let mut zero_index = wire_payload(&token());
         zero_index.i = 0;
-        assert_eq!(domain_token(&zero_index), Err(InvalidContinueToken));
+        assert_eq!(query_token(&zero_index), Err(InvalidContinueToken));
 
         for flag in ["f", "w", "z"] {
             let mut reserved = wire_payload(&token());
@@ -350,32 +345,32 @@ mod tests {
                 "w" => reserved.w = true,
                 _ => reserved.z = true,
             }
-            assert_eq!(domain_token(&reserved), Err(InvalidContinueToken));
+            assert_eq!(query_token(&reserved), Err(InvalidContinueToken));
         }
 
         let mut half_unit = wire_payload(&token());
         half_unit.k = None;
-        assert_eq!(domain_token(&half_unit), Err(InvalidContinueToken));
+        assert_eq!(query_token(&half_unit), Err(InvalidContinueToken));
 
         let mut per_unit_mismatch = wire_payload(&token());
         per_unit_mismatch.p = false;
-        assert_eq!(domain_token(&per_unit_mismatch), Err(InvalidContinueToken));
+        assert_eq!(query_token(&per_unit_mismatch), Err(InvalidContinueToken));
 
         let mut unknown_kind = wire_payload(&token());
         unknown_kind.k = Some("weird".to_string());
-        assert_eq!(domain_token(&unknown_kind), Err(InvalidContinueToken));
+        assert_eq!(query_token(&unknown_kind), Err(InvalidContinueToken));
 
         let mut aware_without_digest = wire_payload(&token());
         aware_without_digest.h = NO_STATE_SENTINEL.to_string();
         assert_eq!(
-            domain_token(&aware_without_digest),
+            query_token(&aware_without_digest),
             Err(InvalidContinueToken)
         );
 
         let mut stateless_with_digest = wire_payload(&token());
         stateless_with_digest.a = false;
         assert_eq!(
-            domain_token(&stateless_with_digest),
+            query_token(&stateless_with_digest),
             Err(InvalidContinueToken)
         );
     }

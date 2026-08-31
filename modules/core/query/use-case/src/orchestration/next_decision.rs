@@ -1,13 +1,13 @@
 //! `NextRequest` / `NextDecision` / `EngineSignal` — `next` の状態依存分岐 (BR3.1)。
 //!
 //! 状態**非依存**の分岐 (read-only フラグ、名詞トークン、scope 検証、compose、`--single` 等) は
-//! 集約のクエリではなくユースケース前段の要求分類に属する (BR3.2 — U6 が所有)。ここに来るのは
-//! 「集約の状態を見なければ決まらない」観測だけである。
+//! 実行状態ビューのクエリではなくユースケース前段の要求分類に属する (BR3.2)。ここに来るのは
+//! 「実行状態を見なければ決まらない」観測だけである。
 
-use super::stage_index::StageIndex;
-use crate::workspace::CheckboxState;
+use crate::execution_view::{CheckboxState, StageIndex};
 
-/// `next_decision` への入力のうち、ワークフロー状態の判断に要る観測 (entities.md NextRequest)。
+/// [`crate::execution_view::ExecutionStateView::next_decision`] への入力のうち、ワークフロー
+/// 状態の判断に要る観測 (entities.md NextRequest)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NextRequest {
     resume: bool,
@@ -55,7 +55,7 @@ impl NextRequest {
     }
 }
 
-/// `next_decision` の結果 (書込なし)。状態依存の分岐だけを表す閉集合 (entities.md NextDecision)。
+/// 状態依存の分岐だけを表す閉集合 (entities.md NextDecision)。書込なし。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NextDecision {
     /// 名指しのステージを走らせる。
@@ -130,8 +130,33 @@ impl From<&NextDecision> for EngineSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestration::StageIndex;
-    use crate::workspace::CheckboxState;
+    use crate::execution_view::{ExecutionStateView, ExecutionStatus, StageProgressView};
+    use crate::workflow_view::{PhaseView, PlanActionView, ScopeSlugView, StageSlugView};
+
+    /// [`StageIndex`] を作れるのは実行状態ビューだけなので、テストも同じ経路を通す。
+    fn index(value: usize) -> StageIndex {
+        let stages = (0..8)
+            .map(|i| {
+                StageProgressView::new(
+                    StageSlugView::parse(&format!("stage-{i}")).unwrap(),
+                    PhaseView::Inception,
+                    CheckboxState::Pending,
+                    PlanActionView::Execute,
+                )
+            })
+            .collect();
+        ExecutionStateView::new(
+            ScopeSlugView::parse("classic").unwrap(),
+            ExecutionStatus::Running,
+            "stage-0",
+            None,
+            "t",
+            stages,
+        )
+        .unwrap()
+        .stage_index(value)
+        .unwrap()
+    }
 
     #[test]
     fn the_request_carries_the_three_state_relevant_observations() {
@@ -152,18 +177,18 @@ mod tests {
     #[test]
     fn run_stage_and_the_error_arms_carry_the_stage() {
         let decision = NextDecision::RunStage {
-            stage: StageIndex::new(2),
+            stage: index(2),
             gate: true,
         };
         assert_eq!(
             decision,
             NextDecision::RunStage {
-                stage: StageIndex::new(2),
+                stage: index(2),
                 gate: true
             }
         );
         let inconsistent = NextDecision::InconsistentSkip {
-            stage: StageIndex::new(1),
+            stage: index(1),
             checkbox: CheckboxState::Pending,
         };
         assert_ne!(inconsistent, NextDecision::Done);
@@ -173,28 +198,26 @@ mod tests {
     fn the_signal_derives_run_stage_done_parked_and_error() {
         assert_eq!(
             EngineSignal::from(&NextDecision::RunStage {
-                stage: StageIndex::new(4),
+                stage: index(4),
                 gate: false
             }),
-            EngineSignal::RunStage(StageIndex::new(4))
+            EngineSignal::RunStage(index(4))
         );
         assert_eq!(EngineSignal::from(&NextDecision::Done), EngineSignal::Done);
         assert_eq!(
-            EngineSignal::from(&NextDecision::Parked {
-                stage: StageIndex::new(0)
-            }),
+            EngineSignal::from(&NextDecision::Parked { stage: index(0) }),
             EngineSignal::Parked
         );
         assert_eq!(
             EngineSignal::from(&NextDecision::RecoverSkipInconsistency {
-                stage: StageIndex::new(1),
+                stage: index(1),
                 checkbox: CheckboxState::InProgress
             }),
             EngineSignal::EngineError
         );
         assert_eq!(
             EngineSignal::from(&NextDecision::InconsistentSkip {
-                stage: StageIndex::new(1),
+                stage: index(1),
                 checkbox: CheckboxState::Pending
             }),
             EngineSignal::EngineError
@@ -232,29 +255,24 @@ mod tests {
         assert_eq!(name(&NextDecision::ResumeMenu), "ResumeMenu");
         assert_eq!(
             name(&NextDecision::RunStage {
-                stage: StageIndex::new(0),
+                stage: index(0),
                 gate: false
             }),
             "RunStage"
         );
-        assert_eq!(
-            name(&NextDecision::Parked {
-                stage: StageIndex::new(0)
-            }),
-            "Parked"
-        );
+        assert_eq!(name(&NextDecision::Parked { stage: index(0) }), "Parked");
         assert_eq!(name(&NextDecision::UnparkThenResume), "UnparkThenResume");
         assert_eq!(name(&NextDecision::NewWorkRouting), "NewWorkRouting");
         assert_eq!(
             name(&NextDecision::RecoverSkipInconsistency {
-                stage: StageIndex::new(1),
+                stage: index(1),
                 checkbox: CheckboxState::InProgress
             }),
             "RecoverSkipInconsistency"
         );
         assert_eq!(
             name(&NextDecision::InconsistentSkip {
-                stage: StageIndex::new(1),
+                stage: index(1),
                 checkbox: CheckboxState::Pending
             }),
             "InconsistentSkip"

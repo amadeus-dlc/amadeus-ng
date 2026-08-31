@@ -26546,3 +26546,210 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 最終報告を team-lead へ送信しました。作業は完了しており、残作業はありません（コミット・push は指示どおり未実施）。\n\n送った内容の要点:\n\n- **作成/変更ファイル** — 変更 2 件（`Cargo.toml` の members + `[workspace.dependencies]`、cargo が更新した `Cargo.lock` 18 行追加）、新設 `core-que
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-30T15:08:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T15:08:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T15:11:13Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T15:11:13Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T15:17:14Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a020662f5273683f2
+**Message**: クエリサイド再設計3本のうち、b25(土台)はマージ済み、いまb26でnext/continueをクエリ側へ移設する実装を委任中です。次は段階1の完了報告をレビューし、段階2(コマンド側撤去)へ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T15:52:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage1
+**Agent ID**: ab26-stage1-84f92e6a3f814004
+**Message**: All four gates are green and the tree is clean. Stage 1 (query-side build-out) is complete.\n\n## 完了報告 — b26 段階1: クエリ側の増築\n\n### 4ゲート結果（すべて緑）\n\n| ゲート | 結果 |\n|---|---|\n| `cargo fmt --all --check` | OK |\n| `
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-08-30T15:52:46Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T15:54:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad18f410a219c3ed1
+**Message**: <analysis>\nLet me chronologically analyze this conversation:\n\n1. **Initial teammate message (team-lead)**: This was the single user-role message, a detailed task assignment in Japanese for "b26 段階1 クエ
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T15:57:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage1
+**Agent ID**: ab26-stage1-84f92e6a3f814004
+**Message**: b26 段階1（クエリ側の増築）は完了済みで、team-lead へ最終報告を送付しました。報告前に4ゲートを再実測しています。\n\n**4ゲート（2026-08-31 実測）**: `cargo fmt --all --check` 差分なし、`cargo clippy --workspace --all-targets -- -D warnings` 診断0件、`cargo lint` 所見0件
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T16:07:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage1
+**Agent ID**: ab26-stage1-84f92e6a3f814004
+**Message**: 是正を完了し、最終報告を team-lead へ送りました。\n\n**是正の中身**: `RuleBundleSource` トレイトポートと `NextUseCase<B>` / `ContinueUseCase<B>` の型パラメータを撤去し、両ユースケースをフィールドなしの unit struct にしました。ルール束は b24 の先行設計に合わせて `MemoryRules`（base の解
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T21:45:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T21:45:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage2
+**Agent ID**: ab26-stage2-4a83a7a82401d4dd
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T21:46:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session End
+**Timestamp**: 2026-08-30T21:46:43Z
+**Event**: SESSION_ENDED
+**Reason**: prompt_input_exit
+
+---
+
+## Session Start
+**Timestamp**: 2026-08-30T21:46:47Z
+**Event**: SESSION_STARTED
+**Source**: startup
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T21:47:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T22:04:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T22:17:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4f72a5bd94cc5700
+**Message**: B26段階2(コマンド側からnext/continue撤去+リポジトリのエラー契約修正)をOpusサブエージェントに委任して実行中です。完了通知が来たら差分をレビューし、4ゲート確認→コミット→PR作成へ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T22:21:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: general-purpose
+**Agent ID**: a5824933600ba8eeb
+**Message**: 4 ファイルの改訂を完了しました。Rust ソース・git commit には一切触れていません（`git status` の Rust 側変更は別担当のもので、セッション開始時のスナップショットと同一）。\n\n## 変更内容\n\n### 1. `use-case-rules.md`（+3 箇所）\n- **§2 のコード例**を実在する書込ユースケースへ差し替え。`commit_verdict_use
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T22:21:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T22:23:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: general-purpose
+**Agent ID**: af50a45681bbd1e60
+**Message**: サルベージ確認を完了しました。**移植が必要な検証は 0 件**です（段階1 が既に全数を移植済み）。ファイルは 1 行も編集していません。\n\n## 1. コマンド側 3 ファイルのテストが固定していた性質（全 9 本）\n\n`steering_plan.rs`（5 本）\n- `an_empty_plan_has_no_parts` → 空計画は部を持たず、`part_count`=0・`first
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T22:23:23Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T22:27:38Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a5e4f9dd7bcb3d99b
+**Message**: b26段階2(コマンド側からnext/continue撤去+リポジトリエラー契約の是正)をOpusサブエージェントに委任中です。canon改訂とsteeringテスト確認は完了、Rust本体の撤去が進行中。完了報告が来たら統合レビューして4ゲート確認、コミットとPR作成に進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:20:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage2
+**Agent ID**: ab26-stage2-84c7adeac6a229a0
+**Message**: b26 段階2 の実装が完了しました。4ゲート全緑、カバレッジ 98.88%（床 90%）です。\n\n## 削除したファイル（19本）\n\n**domain (12)**: `continue_token.rs` / `directive.rs` / `directive_schema.rs` / `engine_command.rs` / `next_decision.rs` / `scope_re
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:29:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage2
+**Agent ID**: ab26-stage2-84c7adeac6a229a0
+**Message**: 追加指示の1本を実装し、全ゲートを再検証しました。\n\n## 追加したテスト\n\n`modules/core/query/use-case/src/orchestration/steering_plan.rs` の既存 tests モジュールに `a_codepoint_wider_than_the_remaining_budget_is_refused_through_pack` を追加しました（`
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:34:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa14b8feb32310d7b
+**Message**: b26 段階2(コマンド側から next/continue 撤去+オーナー指摘2件の是正)を委任実行中で、実装とゲートは緑、残りは削除した先読みPBTのクエリ側復元のみです。完了報告が来たら最終検証してコミットとPR作成に進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:43:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage2
+**Agent ID**: ab26-stage2-84c7adeac6a229a0
+**Message**: PBT を追加しました。全ゲート緑（1200 passed / coverage 98.88587%）です。以下、指示の3点に順に返します。\n\n## 1. 切れていた申し送り4の全文と、申し送り5の全文\n\n**4. `docs/specs/10-orchestration.md` が5箇所で失効（編集スコープ外のため未対応）**\n\n| 行 | 失効内容 |\n|---|---|\n| 55 | `ne
+
+---

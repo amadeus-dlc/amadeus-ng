@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 82428558a8e1f46046168756d6eb7ac7cd8ca9390403013458616473e13f9152 # shrinks to view = ExecutionStateView { scope: ScopeSlugView("classic"), status: Running, cursor: StageIndex(0), parked_at: None, last_updated: "pbt", stages: [StageProgressView { slug: StageSlugView("stage-0"), phase: Initialization, checkbox: Completed, plan: Execute }, StageProgressView { slug: StageSlugView("stage-1"), phase: Inception, checkbox: Pending, plan: Execute }, StageProgressView { slug: StageSlugView("stage-2"), phase: Inception, checkbox: Pending, plan: Execute }] }
+cc 57fafb63bd2ca459320c2fe3ee3b391d9e41e07b3f7b290b20f1d9d79eeed376 # shrinks to view = ExecutionStateView { scope: ScopeSlugView("classic"), status: Running, cursor: StageIndex(0), parked_at: None, last_updated: "pbt", stages: [StageProgressView { slug: StageSlugView("stage-0"), phase: Initialization, checkbox: Completed, plan: Execute }, StageProgressView { slug: StageSlugView("stage-1"), phase: Inception, checkbox: Pending, plan: Skip }] }

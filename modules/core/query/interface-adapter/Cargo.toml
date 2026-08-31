@@ -26,3 +26,6 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+# ワイヤ形式の改竄テストが封筒を直接組み替えるため (プロダクションでは使わない —
+# 封緘は `core-infrastructure::codec` の純計算に委譲した)。
+base64 = { workspace = true }

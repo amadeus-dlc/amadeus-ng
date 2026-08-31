@@ -1,15 +1,14 @@
 //! `ContinueToken` — steering 連鎖の継続ペイロード (18 キーの厳密型表 — 02 §4.4)。
 //!
 //! HMAC 封筒 `{p, m}` の**ペイロード側の型**である。暗号 (MAC の計算・検証・base64url) と
-//! 直列化はアダプタ層の codec が持ち、ドメインは**型表**だけを持つ
-//! (`coding-rules/domain-persistence-neutrality.md`)。デコード時に型表へ反するペイロードは
-//! codec が拒否する — この型に不正値は存在しない (Always Valid)。
+//! 直列化はアダプタ層の codec が持ち、ここは**型表**だけを持つ。デコード時に型表へ反する
+//! ペイロードは codec が拒否する — この型に不正値は存在しない (Always Valid)。
 //!
-//! フィールドはすべてドメインプリミティブで運ぶ: 同型プリミティブの隣接 (String 4 本の
-//! ダイジェスト等) は取り違えがコンパイルを通る温床なので、束縛は [`Bindings`]、unit は
-//! [`UnitRef`]、部索引は [`PartIndex`] で受ける。ワイヤ予約キー (`f`/`p`/`w`/`z` —
-//! force-persona / per-unit / wave / settled-swarm) のうちエンジンが今日構築しない値は
-//! **フィールドを持たない** (構成不能で表す — 02 §4.1。`p` は unit の有無から導出される)。
+//! フィールドはすべて型付きの値で運ぶ: 同型プリミティブの隣接 (String 4 本のダイジェスト等)
+//! は取り違えがコンパイルを通る温床なので、束縛は [`Bindings`]、unit は [`UnitRef`]、
+//! 部索引は [`PartIndex`] で受ける。ワイヤ予約キー (`f`/`p`/`w`/`z` — force-persona /
+//! per-unit / wave / settled-swarm) のうちエンジンが今日構築しない値は**フィールドを
+//! 持たない** (構成不能で表す — 02 §4.1。`p` は unit の有無から導出される)。
 
 use super::directive::GateField;
 use super::stage_name::StageName;
@@ -17,14 +16,14 @@ use super::steering_binding::Bindings;
 use super::steering_plan::PartIndex;
 use super::token_version::TokenVersion;
 use super::unit_ref::UnitRef;
-use crate::workflow_definition::{ScopeSlug, StageSlug};
+use crate::workflow_view::{ScopeSlugView, StageSlugView};
 
 /// steering 連鎖の継続ペイロード。キーは upstream の 1 文字綴り (`v`/`s`/`c`/…) に対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinueToken {
     version: TokenVersion,
-    stage: StageSlug,
-    scope: ScopeSlug,
+    stage: StageSlugView,
+    scope: ScopeSlugView,
     next_part_index: PartIndex,
     bindings: Bindings,
     gate: GateField,
@@ -44,8 +43,8 @@ impl ContinueTokenBuilder {
     /// 必須材料 (stage / scope / 部索引 / 束縛 / gate) を束ねる。
     #[must_use]
     pub const fn new(
-        stage: StageSlug,
-        scope: ScopeSlug,
+        stage: StageSlugView,
+        scope: ScopeSlugView,
         next_part_index: PartIndex,
         bindings: Bindings,
         gate: GateField,
@@ -102,13 +101,13 @@ impl ContinueToken {
 
     /// 連鎖が属するステージ slug。
     #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
+    pub const fn stage(&self) -> &StageSlugView {
         &self.stage
     }
 
     /// 解決済み scope。
     #[must_use]
-    pub const fn scope(&self) -> &ScopeSlug {
+    pub const fn scope(&self) -> &ScopeSlugView {
         &self.scope
     }
 
@@ -157,10 +156,11 @@ impl ContinueToken {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::orchestration::{
-        BundleDigest, DirectiveDigest, RouteDigest, StateBinding, UnitKind, UnitName,
+    use super::super::steering_binding::{
+        BundleDigest, DirectiveDigest, RouteDigest, StateBinding,
     };
+    use super::super::unit_ref::{UnitKind, UnitName};
+    use super::*;
 
     fn bindings() -> Bindings {
         Bindings::new(
@@ -174,8 +174,8 @@ mod tests {
     #[test]
     fn the_builder_pins_the_delivery_context() {
         let token = ContinueTokenBuilder::new(
-            StageSlug::parse("functional-design").unwrap(),
-            ScopeSlug::parse("classic").unwrap(),
+            StageSlugView::parse("functional-design").unwrap(),
+            ScopeSlugView::parse("classic").unwrap(),
             PartIndex::FIRST.next(),
             bindings(),
             GateField::Gated,
@@ -214,8 +214,8 @@ mod tests {
             None,
         );
         let token = ContinueTokenBuilder::new(
-            StageSlug::parse("s").unwrap(),
-            ScopeSlug::parse("c").unwrap(),
+            StageSlugView::parse("s").unwrap(),
+            ScopeSlugView::parse("c").unwrap(),
             PartIndex::FIRST,
             stateless,
             GateField::Ungated,

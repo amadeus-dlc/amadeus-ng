@@ -1,8 +1,17 @@
 //! ITF 準拠テスト (ADR 0003 決定 5) — `formal/orchestration/engine_loop.qnt` のトレースを
 //! イベントソーシング形の `IntentExecution` に **decide → apply** 経路で再生し、全ステップで
-//! 状態射影とディレクティブ観測を突き合わせる (BR2.5)。
+//! 状態射影を突き合わせる (BR2.5)。
 //! フィクスチャは `tests/conformance/fixtures/engine_loop/` にコミット済み (#meta 正規化済み)。
 //! トレースの各遷移は `lastAction` で駆動する (lastAction 規約)。
+//!
+//! # 遷移面と観測面の分割 (b26 段階 2)
+//!
+//! 本ファイルが担うのは**遷移面**である — 各アクションが集約の状態をモデルどおりに動かすこと
+//! (`assert_projection` の frame 等価)。モデルの `lastDirective` が表す**観測面**
+//! (「次に何をせよと言うか」) はここでは照合しない: directive を出すのは読むだけの動詞であり
+//! クエリ側の責務なので (`coding-rules/cqrs-boundaries.md` 規則 5〜7)、その ITF は
+//! `core-query-use-case/tests/engine_loop_ladder_conformance.rs` が同じフィクスチャで担う。
+//! **アクション網羅のアサートは両ファイルで維持する** — 分割で片側の網羅が緩まないように。
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
 //! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
@@ -16,16 +25,14 @@
 // 妥当なため同様に許容する。
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
-use std::collections::BTreeMap;
-
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, Created, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId,
-    NextRequest, StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
+    AutonomyMode, Created, Intent, IntentExecution, IntentExecutionId, IntentId, StageDisplay,
+    StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ScopeGrid, StageGraph,
-    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
+    WorkflowDefinitionId,
 };
 use core_command_domain::workspace::CheckboxState;
 use serde_json::Value;
@@ -82,7 +89,6 @@ fn plan_of(v: &Value) -> PlanAction {
 struct ModelState {
     last_action: String,
     directive_tag: String,
-    directive_stage: Option<usize>,
     cursor: usize,
     status: String,
     parked_at: i64,
@@ -96,14 +102,12 @@ struct ModelState {
 
 fn parse_state(v: &Value) -> ModelState {
     let n = v["plan"]["#map"].as_array().unwrap().len();
-    let d = &v["lastDirective"];
-    let directive_tag = tag(d).to_string();
-    let directive_stage =
-        (directive_tag == "DRunStage").then(|| usize::try_from(bigint(&d["value"])).unwrap());
+    // 遷移面が見るのは directive の**種別**だけ (report のエピローグ / park の停止)。
+    // run-stage の対象ステージまで照合するのは観測面であり、クエリ側 ITF の仕事である。
+    let directive_tag = tag(&v["lastDirective"]).to_string();
     ModelState {
         last_action: v["lastAction"].as_str().unwrap().to_string(),
         directive_tag,
-        directive_stage,
         cursor: usize::try_from(bigint(&v["cursor"])).unwrap(),
         status: tag(&v["status"]).to_string(),
         parked_at: bigint(&v["parkedAt"]),
@@ -126,17 +130,6 @@ fn synthetic_id() -> WorkflowDefinitionId {
 
 fn synthetic_revision() -> DefinitionRevision {
     DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap()
-}
-
-/// `next_decision` の第 2 引数用。集約は id の一致だけを見る (BR2.6 / BR3.1)。
-fn synthetic_definition() -> WorkflowDefinition {
-    WorkflowDefinition::from_artifacts(
-        synthetic_id(),
-        synthetic_revision(),
-        StageGraph::new(Vec::new()).unwrap(),
-        ScopeGrid::new(BTreeMap::new()),
-        BTreeMap::new(),
-    )
 }
 
 /// モデルの初期 plan / conditional から合成計画を作る (索引 0 = initialization)。
@@ -228,23 +221,10 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
     }
 }
 
-fn assert_signal(sig: EngineSignal, m: &ModelState, step: usize) {
-    match (sig, m.directive_tag.as_str()) {
-        (EngineSignal::RunStage(s), "DRunStage") => {
-            assert_eq!(
-                Some(s.to_usize()),
-                m.directive_stage,
-                "step {step}: run-stage target"
-            );
-        }
-        (EngineSignal::Done, "DDone")
-        | (EngineSignal::Parked, "DParked")
-        | (EngineSignal::EngineError, "DError") => {}
-        (got, want) => panic!("step {step}: signal {got:?} vs model {want}"),
-    }
-}
-
 /// 遷移コマンドの後にモデルが載せるディレクティブ (report のエピローグ / park の停止) を照合する。
+///
+/// これはモデル側フィクスチャの健全性チェックであって、集約の観測面の照合ではない
+/// (集約は directive を出さない — ファイル冒頭の「遷移面と観測面の分割」)。
 fn assert_directive(m: &ModelState, want: &str, step: usize) {
     assert_eq!(
         m.directive_tag, want,
@@ -264,7 +244,6 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         .collect();
     let m0 = &states[0];
     assert_eq!(m0.last_action, "init");
-    let definition = synthetic_definition();
     // 合成計画からの組み直しは完全コンストラクタ経由の再構成を通す — イベントは不要で、
     // 検査点は genesis と同一である (coding-rules/aggregate-commands.md)。
     let intent = Intent::from(Created::new(
@@ -287,21 +266,18 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         seen.insert(m.last_action.clone());
         let prev = &states[i - 1];
         match m.last_action.as_str() {
-            // 観測アクション (状態不変)
-            "next" | "next_parked" | "done_stutter" => {
-                let decision = agg
-                    .next_decision(&intent, &definition, &NextRequest::default())
-                    .unwrap();
-                assert_signal(EngineSignal::from(&decision), m, i);
-            }
+            // 観測アクション (状態不変)。集約は何も呼ばれない — directive を出すのはクエリ側で
+            // あり、その照合はクエリ側 ITF が担う。ここで固定するのは「観測は状態を動かさない」
+            // という frame 等価だけである (末尾の assert_projection)。
+            "next" | "next_parked" | "done_stutter" => {}
             "report_stale" => {
                 // モデルは nondet に stale 対象を選ぶ — 前状態から有効な対象を 1 つ選んで
-                // メンバーシップ検査 (frame 等価は assert_projection が担う)
+                // メンバーシップ検査 (frame 等価は assert_projection が担う)。ガードは受理可否
+                // だけを答え、何もコミットしない (BR1.9)。
                 let s = (0..prev.cursor)
                     .find(|&s| prev.checkbox[s] == CheckboxState::Completed)
                     .unwrap();
-                let decision = agg.stale_report(index(&agg, s)).unwrap();
-                assert_signal(EngineSignal::from(&decision), m, i);
+                agg.stale_report(index(&agg, s)).unwrap();
             }
             // 遷移コマンド (decide → 1 イベント → apply)
             "report_forward" => {

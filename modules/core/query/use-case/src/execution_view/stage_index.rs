@@ -1,21 +1,21 @@
-//! `StageIndex` — 集約が所有するステージ位置 (BR5.1)。
+//! `StageIndex` — 実行状態ビューが所有するステージ位置 (BR5.1)。
 
 use std::fmt;
 
 /// 文書順のステージ位置。
 ///
-/// **構築できるのは集約だけ** (`IntentExecution::stage_index(usize) -> Option<StageIndex>`)
-/// で、その集約の `stage_count` 未満であることが構築時に保証される。生の `usize` を集約 API・
-/// イベント・ガードの戻り値に露出させないための E1 型であり、範囲外は `None` で表して
-/// panic しない (BR5.1)。
+/// **構築できるのは実行状態ビューだけ**
+/// ([`super::ExecutionStateView::stage_index`]) で、そのビューの `stage_count` 未満で
+/// あることが構築時に保証される。生の `usize` をビュー API・[`crate::orchestration`] の
+/// 判断結果に露出させないための E1 型であり、範囲外は `None` で表して panic しない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StageIndex(usize);
 
 impl StageIndex {
-    /// 集約 (と同一クレート内の再水和経路) だけが使う構築子。
+    /// 実行状態ビュー (と同一クレート内の走査経路) だけが使う構築子。
     ///
-    /// 範囲の保証は呼出側の責務であり、公開経路は `IntentExecution::stage_index` と
-    /// `IntentExecution::new` (完全コンストラクタ) の検証を必ず通る。
+    /// 範囲の保証は呼出側の責務であり、公開経路は
+    /// [`super::ExecutionStateView::stage_index`] の検証を必ず通る。
     pub(crate) const fn new(value: usize) -> StageIndex {
         StageIndex(value)
     }

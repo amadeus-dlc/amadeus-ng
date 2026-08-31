@@ -1,7 +1,7 @@
 # エラーハンドリング様式 — モジュールごとの手実装エラー enum
 
 **裁定日**: 2026-08-23（オーナー、FD Q1 = A）
-**適用例**: Bolt B1 / B3 のエラー型（core-domain `CommandError` / `ApplyError` / `StartError` / `SnapshotError`、core-use-case `GraphReadError`）
+**適用例**: Bolt B1 / B3 のエラー型（core-domain `CommandError` / `ApplyError` / `StartError` / `SnapshotError`、~~core-use-case `GraphReadError`~~ → 廃止 2026-08-31・b26 段階2。下記「Repository エラーはジェネリック 1 本」を参照）
 **機械強制**: `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（`Cargo.toml` workspace lints）。`thiserror` / `anyhow` 禁止は `cargo lint` ルール候補（赤例テスト必須）
 
 ## ルール
@@ -27,6 +27,12 @@
   バレる情報を含めない）。原因はアダプタ私有の型を `Error::source` 連鎖で運び、契約は
   「壊れていた」としか約束しない。代償として `PartialEq` を失う — テストは `matches!` +
   `source` の文字列確認で判定する（受容済み）。
+- **適用（2026-08-31 オーナー裁定、b26 段階2）**: `WorkflowDefinitionRepository` も本則へ
+  収束した — ポート専用エラー `GraphReadError`（6 変種）を**廃止**し、
+  `RepositoryError<WorkflowDefinitionId>` 1 本にした（リポジトリにビジネスロジックエラーを
+  扱わせない）。upstream 逐語文言（`docs/specs/12-workflow-definition.md` §4/§6 が規範）の
+  所有は**クエリ側へ移った** — 「文言は出す側が持つ」の帰結であり、コマンド側のポートは
+  材料すら持たず「壊れていた」としか言わない。
 
 ## 再構成は失敗を返さない（オーナー裁定 2026-08-30 — 「# Panics を作らない」の例外）
 

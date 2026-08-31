@@ -1,11 +1,15 @@
 //! `NextTurnInput` — `next` 1 回分の観測 (Controller がパース済みの材料だけを運ぶ VO)。
 //!
 //! CLI フラグのパース・環境変数の読取・マシンローカルマーカーの観測は Controller (U7) の
-//! 責務で、本 VO はその**結果**だけを運ぶ。ユースケースは本 VO + 読取専用ポートで 21 分岐
-//! ラダーを畳む (use-case-rules §2b — execute 引数は ID + VO のみ)。
+//! 責務で、本 VO はその**結果**だけを運ぶ。ユースケースは本 VO + 読み終えたビューで
+//! 21 分岐ラダーを畳む。
+//!
+//! **識別子は運ばない** — 旧コマンド側の `ActiveWorkflow` (intent / execution の uuid) と
+//! `definition_id` は Repository を引くための材料だった。クエリ側は Repository を持たず、
+//! 読み終えたリードモデルそのものを [`super::ExecutionStateSource`] /
+//! [`super::DefinitionSource`] で受けるので、識別子は observed 面から消える。
 
-use core_command_domain::orchestration::{IntentExecutionId, IntentId, ReadOnlyVerb};
-use core_command_domain::workflow_definition::WorkflowDefinitionId;
+use super::engine_command::ReadOnlyVerb;
 
 /// 名詞トークンの族 (分岐 1b/1c/1d — 先頭トークン意味論のみ)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,36 +46,6 @@ impl NounToken {
     #[must_use]
     pub fn tokens(&self) -> &[String] {
         &self.tokens
-    }
-}
-
-/// 稼働中ワークフローの識別子束 (active-intent カーソルの解決結果 — Controller 供給)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActiveWorkflow {
-    intent_id: IntentId,
-    execution_id: IntentExecutionId,
-}
-
-impl ActiveWorkflow {
-    /// 2 識別子を束ねる。
-    #[must_use]
-    pub const fn new(intent_id: IntentId, execution_id: IntentExecutionId) -> ActiveWorkflow {
-        ActiveWorkflow {
-            intent_id,
-            execution_id,
-        }
-    }
-
-    /// intent の識別子。
-    #[must_use]
-    pub const fn intent_id(&self) -> &IntentId {
-        &self.intent_id
-    }
-
-    /// 実行の識別子。
-    #[must_use]
-    pub const fn execution_id(&self) -> &IntentExecutionId {
-        &self.execution_id
     }
 }
 
@@ -137,9 +111,7 @@ pub struct NextTurnInput {
     env_default_scope: Option<String>,
     kiro_latch_bare_next: bool,
     records_exist_without_cursor: bool,
-    active: Option<ActiveWorkflow>,
     layout: Option<WorkspaceLayout>,
-    definition_id: Option<WorkflowDefinitionId>,
 }
 
 impl NextTurnInput {
@@ -268,24 +240,10 @@ impl NextTurnInput {
         self
     }
 
-    /// 稼働中ワークフローの識別子束を伴う。
-    #[must_use]
-    pub fn with_active(mut self, active: ActiveWorkflow) -> NextTurnInput {
-        self.active = Some(active);
-        self
-    }
-
     /// ワークスペース配置を伴う。
     #[must_use]
     pub fn with_layout(mut self, layout: WorkspaceLayout) -> NextTurnInput {
         self.layout = Some(layout);
-        self
-    }
-
-    /// ハーネスの定義 id (state 不在時の birth / jump 用) を伴う。
-    #[must_use]
-    pub fn with_definition_id(mut self, id: WorkflowDefinitionId) -> NextTurnInput {
-        self.definition_id = Some(id);
         self
     }
 
@@ -393,21 +351,103 @@ impl NextTurnInput {
         self.records_exist_without_cursor
     }
 
-    /// 稼働中ワークフローの識別子束。
-    #[must_use]
-    pub const fn active(&self) -> Option<&ActiveWorkflow> {
-        self.active.as_ref()
-    }
-
     /// ワークスペース配置。
     #[must_use]
     pub const fn layout(&self) -> Option<&WorkspaceLayout> {
         self.layout.as_ref()
     }
+}
 
-    /// ハーネスの定義 id。
-    #[must_use]
-    pub const fn definition_id(&self) -> Option<&WorkflowDefinitionId> {
-        self.definition_id.as_ref()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plain_turn_observes_nothing() {
+        let input = NextTurnInput::new();
+        assert_eq!(input.parse_error(), None);
+        assert_eq!(input.review(), None);
+        assert_eq!(input.read_only(), None);
+        assert_eq!(input.noun_token(), None);
+        assert_eq!(input.stage(), None);
+        assert_eq!(input.phase(), None);
+        assert_eq!(input.scope(), None);
+        assert_eq!(input.depth(), None);
+        assert_eq!(input.test_strategy(), None);
+        assert_eq!(input.freeform(), None);
+        assert!(!input.is_resume());
+        assert!(!input.is_single());
+        assert!(!input.is_compose());
+        assert_eq!(input.new_intent(), None);
+        assert_eq!(input.env_default_scope(), None);
+        assert!(!input.is_kiro_latch_bare_next());
+        assert!(!input.records_exist_without_cursor());
+        assert_eq!(input.layout(), None);
+    }
+
+    #[test]
+    fn the_builder_carries_every_observation() {
+        let input = NextTurnInput::new()
+            .with_parse_error("boom")
+            .with_review("advisory")
+            .with_read_only(ReadOnlyVerb::Status)
+            .with_noun_token(NounToken::new(
+                NounFamily::Workspace,
+                vec!["intent".to_string(), "list".to_string()],
+            ))
+            .with_stage("domain-design")
+            .with_phase("inception")
+            .with_scope("bugfix")
+            .with_depth("standard")
+            .with_test_strategy("minimal")
+            .with_freeform("fix the login crash")
+            .with_resume()
+            .with_single()
+            .with_compose()
+            .with_new_intent("new work")
+            .with_env_default_scope("mvp")
+            .with_kiro_latch_bare_next()
+            .with_records_without_cursor()
+            .with_layout(WorkspaceLayout::new(
+                "record".to_string(),
+                "stages".to_string(),
+                "agents".to_string(),
+            ));
+        assert_eq!(input.parse_error(), Some("boom"));
+        assert_eq!(input.review(), Some("advisory"));
+        assert_eq!(input.read_only(), Some(ReadOnlyVerb::Status));
+        assert_eq!(
+            input.noun_token().map(NounToken::family),
+            Some(NounFamily::Workspace)
+        );
+        assert_eq!(
+            input.noun_token().map(NounToken::tokens),
+            Some(&["intent".to_string(), "list".to_string()][..])
+        );
+        assert_eq!(input.stage(), Some("domain-design"));
+        assert_eq!(input.phase(), Some("inception"));
+        assert_eq!(input.scope(), Some("bugfix"));
+        assert_eq!(input.depth(), Some("standard"));
+        assert_eq!(input.test_strategy(), Some("minimal"));
+        assert_eq!(input.freeform(), Some("fix the login crash"));
+        assert!(input.is_resume());
+        assert!(input.is_single());
+        assert!(input.is_compose());
+        assert_eq!(input.new_intent(), Some("new work"));
+        assert_eq!(input.env_default_scope(), Some("mvp"));
+        assert!(input.is_kiro_latch_bare_next());
+        assert!(input.records_exist_without_cursor());
+        assert_eq!(
+            input.layout().map(WorkspaceLayout::record_dir),
+            Some("record")
+        );
+        assert_eq!(
+            input.layout().map(WorkspaceLayout::stage_library_dir),
+            Some("stages")
+        );
+        assert_eq!(
+            input.layout().map(WorkspaceLayout::agent_dir),
+            Some("agents")
+        );
     }
 }

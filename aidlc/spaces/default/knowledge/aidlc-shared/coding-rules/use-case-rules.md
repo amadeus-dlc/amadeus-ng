@@ -13,16 +13,19 @@
 ## 2. バインディングはスタティックが既定
 
 ```rust
-pub struct NextUseCase<R: WorkflowDefinitionRepository> {
-    repository: R,
+pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
+    execution_repository: E,
+    intent_repository: I,
 }
 
-impl<R: WorkflowDefinitionRepository> NextUseCase<R> {
-    pub fn new(repository: R) -> Self { Self { repository } }
+impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, I> {
+    pub const fn new(execution_repository: E, intent_repository: I) -> CommitVerdictUseCase<E, I> {
+        CommitVerdictUseCase { execution_repository, intent_repository }
+    }
 }
 ```
 
-例の `WorkflowDefinitionRepository` は `save` を持たない読取専用ポートなので、§4 の I8（`Next` に書込側の `IntentExecutionRepository` を注入しない）と両立する — 注入禁止の対象は書込側の Repository であり、読取専用の定義 Repository ではない（10 §3）。
+**例の差し替え 2026-08-31（オーナー裁定、b26 段階2 完了）**: 旧例は `NextUseCase<R: WorkflowDefinitionRepository>` だったが、`next` / `continue` のような**読むだけ**の動詞はクエリ側（`modules/core/query/use-case` / `modules/core/query/interface-adapter`）へ移設済みであり、コマンド側に `NextUseCase` は存在しない（[cqrs-boundaries.md](cqrs-boundaries.md) 規則 5〜7 + 追補、§4 の再々裁定）。**コマンド側に残るユースケースは書き込むものだけ**なので、例も実在する書込ユースケース `CommitVerdictUseCase` に差し替えた。`WorkflowDefinitionRepository` が消えたわけではない — `find_by_id` と `store` の両動詞を持つ**通常のリポジトリ**としてコマンド側に残る（`store` の実装は定義を変更する最初のユースケースと同じ Bolt で書く — 先行実装しない）。
 
 - **既定はジェネリクス（単相化）**。理由: ①`dyn` の object safety 制約で**契約の設計が歪む**のを防ぐ（`-> impl Iterator`・関連型・ジェネリックメソッドが使える）②ワンショット CLI で実装は実質 2 つ（Impl + InMemory）— 単相化コストは無視できる ③テストが `XxxUseCase<InMemoryXxxRepository>` の素の値で組める ④配線ミスがコンパイル時に落ちる（E1 文化）。
 - **`dyn` を使ってよいのは**: 機構シーム（Gateway 実装内部の `Arc<dyn Clock>` 等 — 複数インスタンスで fake を共有する用途）と、将来ディスパッチャが多数のユースケースを一様保持する必要が実際に生じた**その境界だけ**。ユースケース自身の設計には持ち込まない。
@@ -42,7 +45,9 @@ execute(&mut self, id: &IntentExecutionId, intent: &Intent, ...)
 ```
 
 - 読み取り専用ユースケースの「書けない」保証は、**find 系動詞しか持たない読取専用ポートの注入**
-  で型保証する（§2 の `NextUseCase<WorkflowDefinitionRepository>` が既にこの形）。
+  で型保証する。~~（§2 の `NextUseCase<WorkflowDefinitionRepository>` が既にこの形）~~ —
+  **この手法は失効（2026-08-31・オーナー、b26 段階2）**: 読むだけのユースケース自体が
+  コマンド側から消え（クエリ側へ移設済み — §4 の再々裁定）、対象を失った。
 - 本規則は**ユースケース層の署名**の話である。集約の**メソッド**が他集約を `&` 参照で受ける
   （`next_decision(&self, &WorkflowDefinition, ..)` 等）のは
   [aggregate-references.md](aggregate-references.md) が定めるドメイン内のパラメータ渡しで
@@ -60,6 +65,6 @@ execute(&mut self, id: &IntentExecutionId, intent: &Intent, ...)
 
 > **射程の再裁定（2026-08-30・オーナー）**: 本節の「Controller が集約を `&` で渡す」機構は **§2b により失効** — execute の引数に集約は渡さない（読み取り専用でも）。読み取り専用の型保証は **find 系動詞しか持たない読取専用ポートの注入**へ置き換える（書込不能はポートの動詞集合が型で保証する）。本節の目的（読取専用を型で保証する）は生きており、手段だけが変わった。`CommitVerdictUseCase` への誤適用は B12 改訂 10 で是正済み。~~U6（Next）実装時は§2b の形で設計する~~
 >
-> **同日夕の再々裁定（2026-08-30・オーナー — 本節ごと失効）**: 読むだけのユースケース（next/continue）は**そもそもコマンド側に存在しない** — クエリ側（リードモデルを読む実装）へ移る（[cqrs-boundaries.md](cqrs-boundaries.md) 規則 5〜7 + 追補）。したがって「読取専用ポートの注入」という型保証の手法も対象を失って失効。コマンド側のリポジトリは `find_by_id` + `store` の両動詞を持ち、`find_by_id` だけを呼んで何も書かないユースケースが違反である。移設は Issue #65 の Bolt で実施。
+> **同日夕の再々裁定（2026-08-30・オーナー — 本節ごと失効）**: 読むだけのユースケース（next/continue）は**そもそもコマンド側に存在しない** — クエリ側（リードモデルを読む実装）へ移る（[cqrs-boundaries.md](cqrs-boundaries.md) 規則 5〜7 + 追補）。したがって「読取専用ポートの注入」という型保証の手法も対象を失って失効。コマンド側のリポジトリは `find_by_id` + `store` の両動詞を持ち、`find_by_id` だけを呼んで何も書かないユースケースが違反である。移設は Issue #65 の Bolt で実施。**（2026-08-31 追記）移設は b26 段階2 で実施済み** — コマンド側の `NextUseCase` / `ContinueUseCase` / `NextTurnInput` を削除し、実装をクエリ側（`modules/core/query/use-case` / `modules/core/query/interface-adapter`）へ移した。
 
 書込を型で禁じたいユースケース（例: `Next`）には Repository を**そもそも注入しない**。Controller が `repository.find_by_id()` した集約を `&` 参照で渡す — リードモデルを経由せずに、Rust の参照とポート非注入だけで書込不能が成立する（動詞は gateway-taxonomy §2b の許容語彙に合わせた。`find()` は廃止 — C4 改訂 2026-08-23）。（**2026-08-24 改訂**: 旧文は「CQRS を導入せずに（gateway-taxonomy.md — CQRS 不採用）」だったが、ADR-001/003/004 で CQRS + ES を採用済みのため前提が失効した。本節が言いたいのは「読取専用を**型で**保証する」ことであり CQRS の採否とは独立である。依存境界は [cqrs-boundaries.md](cqrs-boundaries.md) を参照）
