@@ -233,17 +233,20 @@ impl SteeringPlan {
 }
 
 /// Markdown 見出し境界 (`#` 始まりの行) で分割する。見出しの無いファイルは丸ごと 1 piece。
+///
+/// 分割は**無損失** — 全セクションを結合すると入力と 1 バイトも違わない
+/// (`lines()` は終端改行の有無と CRLF を潰すので使わない — PR #67 レビュー指摘)。
+/// 本文はダイジェスト (`bundle_digest`) の素材でもあるため、正規化はここに置かない。
 fn split_at_headings(text: &str) -> Vec<String> {
     let mut sections: Vec<String> = Vec::new();
     let mut current = String::new();
-    for line in text.lines() {
-        if line.starts_with('#') && !current.trim().is_empty() {
+    for line in text.split_inclusive('\n') {
+        if line.starts_with('#') && !current.is_empty() {
             sections.push(std::mem::take(&mut current));
         }
         current.push_str(line);
-        current.push('\n');
     }
-    if !current.trim().is_empty() {
+    if !current.is_empty() {
         sections.push(current);
     }
     sections
@@ -348,6 +351,25 @@ mod tests {
             .map(RuleContent::text)
             .collect();
         assert_eq!(rebuilt, body, "分割は無損失");
+    }
+
+    #[test]
+    fn the_split_preserves_the_body_byte_for_byte() {
+        // ルールのテキストは必須 steering であり、配信もダイジェスト (`bundle_digest`) も
+        // `RuleContent::text()` を素材にする — 分割が本文を 1 バイトでも変えると、届く規則と
+        // ファイルの規則が食い違う。終端改行なし・CRLF・空白のみ、のいずれも逐語で保つ
+        // (PR #67 レビュー指摘)。
+        for body in ["a", "a\r\nb", " \t", "# H\r\npara\r\n", "pre\n# H\nbody"] {
+            let file = RuleContent::new("org.md".to_string(), body.to_string());
+            let plan = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap();
+            let rebuilt: String = plan
+                .chunks()
+                .iter()
+                .flatten()
+                .map(RuleContent::text)
+                .collect();
+            assert_eq!(rebuilt, body, "分割は無損失: {body:?}");
+        }
     }
 
     #[test]
