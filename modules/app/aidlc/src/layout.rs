@@ -10,6 +10,7 @@
 //! 済みである（同僚が別の intent を指していてよいので、共有された状態にしてはならない）。
 //! したがって**どちらも無いのが正常な状態**であり、読めなければ既定へ倒す。
 
+use core_infrastructure::atomic::write_file_atomic;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -134,15 +135,20 @@ impl Layout {
 
     /// active-intent カーソルを据える（intent 鋳造の直後に合成ルートが書く）。
     ///
+    /// 書込は**不可分**である。`fs::write` は切り詰めてから書くので、その隙に読んだ側は
+    /// 空のカーソルを見る — [`read_cursor`] は空を「無い」と読むので、鋳造直後の `next` が
+    /// record を解決できず、追いつきが素通りする。tmp + rename なら読み手が見るのは
+    /// 常に古い値か新しい値のどちらかである。
+    ///
     /// # Errors
     ///
     /// ディレクトリを作れない・書けない場合の I/O エラー。
     pub fn point_at(&self, record_dir_name: &str) -> std::io::Result<()> {
         let intents = self.intents_dir();
         fs::create_dir_all(&intents)?;
-        fs::write(
-            intents.join("active-intent"),
-            format!("{record_dir_name}\n"),
+        write_file_atomic(
+            &intents.join("active-intent"),
+            format!("{record_dir_name}\n").as_bytes(),
         )
     }
 }

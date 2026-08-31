@@ -137,7 +137,8 @@ mod tests {
     fn a_long_description_is_truncated_within_the_name_limit() {
         let long = "a".repeat(200);
         let name = compose("260831", Some(&long), None, &id()).expect("文法内");
-        assert!(name.as_str().chars().count() <= 64, "{}", name.as_str());
+        let composed = name.as_str();
+        assert!(composed.chars().count() <= 64, "{composed}");
         assert!(name.as_str().ends_with("-01a02785"));
     }
 

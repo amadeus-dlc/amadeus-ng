@@ -18,10 +18,18 @@ async fn main() -> ExitCode {
 
     let completion = aidlc::runtime::run(&argv0, &args, &cwd).await;
 
+    // directive を出せなかったのに 0 で終わると、呼び手は「1 個出た」と信じて次へ進む
+    // （1 起動 1 directive が契約なので、出せなかったことは黙って呑めない）。
     if let Some(line) = completion.line() {
         let mut stdout = std::io::stdout().lock();
-        let _ = writeln!(stdout, "{line}");
-        let _ = stdout.flush();
+        if let Err(error) = writeln!(stdout, "{line}").and_then(|()| stdout.flush()) {
+            let mut stderr = std::io::stderr().lock();
+            let _ = writeln!(
+                stderr,
+                "aidlc: cannot write the directive to stdout: {error}"
+            );
+            return ExitCode::FAILURE;
+        }
     }
     if let Some(diagnostic) = completion.diagnostic() {
         let mut stderr = std::io::stderr().lock();

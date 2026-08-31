@@ -38,6 +38,7 @@ struct WireStartRequest {
     request: String,
     depth: Option<String>,
     test_strategy: Option<String>,
+    review: Option<String>,
 }
 
 /// 解決済み計画 1 要素の行の形。
@@ -80,6 +81,7 @@ impl WireIntent {
                 request: intent.request().to_string(),
                 depth: intent.depth().map(str::to_string),
                 test_strategy: intent.test_strategy().map(str::to_string),
+                review: intent.review().map(str::to_string),
             },
             stages: intent.stages().iter().map(WireStageEntry::of).collect(),
             scan: WireWorkspaceScan::of(intent.scan()),
@@ -120,6 +122,9 @@ impl WireIntent {
         }
         if let Some(strategy) = &self.start_request.test_strategy {
             request = request.with_test_strategy(strategy.clone());
+        }
+        if let Some(review) = &self.start_request.review {
+            request = request.with_review(review.clone());
         }
         Ok(Created::new(
             IntentId::parse(&self.id)

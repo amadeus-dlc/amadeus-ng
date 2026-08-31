@@ -82,7 +82,7 @@ pub fn compose(intent: &Intent, project_root: &str, started_at: &str) -> String 
         "Test Strategy",
         intent.test_strategy().unwrap_or(""),
     );
-    push_field(&mut out, "Review Override", "");
+    push_field(&mut out, "Review Override", stored_review(intent.review()));
 
     out.push_str("\n## Workspace State\n");
     push_field(&mut out, "Project Root", project_root);
@@ -131,6 +131,18 @@ pub fn compose(intent: &Intent, project_root: &str, started_at: &str) -> String 
     push_field(&mut out, "Pending Artifacts", "none");
 
     out
+}
+
+/// `Review Override` の格納形（upstream `storedReviewOverride` `aidlc-utility.ts:164-168`）。
+///
+/// `adversarial` は「このランに上限を掛けない」の意であり、**空欄で表す** —
+/// ステージ宣言と scope の上限がそのまま効く状態を、`config-change` も同じ空欄で書く。
+/// 値を書いてしまうと「上限が設定されている」に読める。
+fn stored_review(review: Option<&str>) -> &str {
+    match review {
+        Some("adversarial") | None => "",
+        Some(value) => value,
+    }
 }
 
 /// `- **<name>**: <value>` の 1 行（値が空でもコロンまでは書く — 投影の書き換え先になる）。
@@ -232,11 +244,18 @@ mod tests {
     }
 
     fn intent(stages: Vec<StageEntry>) -> Intent {
+        intent_with(
+            stages,
+            StartRequest::new("classic", "build the auth service"),
+        )
+    }
+
+    fn intent_with(stages: Vec<StageEntry>, request: StartRequest) -> Intent {
         Intent::from(Created::new(
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "build the auth service"),
+            request,
             stages,
             WorkspaceScan::new(BrownfieldGreenfield::Greenfield, "Rust", "None", "Cargo")
                 .expect("単一行"),
@@ -244,7 +263,11 @@ mod tests {
     }
 
     fn three_stage() -> Intent {
-        intent(vec![
+        intent(three_stage_plan())
+    }
+
+    fn three_stage_plan() -> Vec<StageEntry> {
+        vec![
             stage(
                 "state-init",
                 "0.1",
@@ -263,7 +286,79 @@ mod tests {
                 PhaseId::Inception,
                 PlanAction::Execute,
             ),
-        ])
+        ]
+    }
+
+    /// スコープ外のフェーズは `Skipped` と書く（`Pending` と区別が要る — 実施しないため）。
+    #[test]
+    fn a_phase_with_no_in_scope_stage_is_skipped() {
+        let plan = vec![
+            stage(
+                "state-init",
+                "0.1",
+                PhaseId::Initialization,
+                PlanAction::Execute,
+            ),
+            stage(
+                "domain-design",
+                "1.1",
+                PhaseId::Inception,
+                PlanAction::Execute,
+            ),
+            stage(
+                "code-generation",
+                "3.5",
+                PhaseId::Construction,
+                PlanAction::Skip,
+            ),
+            stage(
+                "incident-response",
+                "4.2",
+                PhaseId::Operation,
+                PlanAction::Execute,
+            ),
+        ];
+
+        let state = compose(&intent(plan), "/ws", "2026-08-31T00:00:00Z");
+
+        assert!(state.contains("- **Construction**: Skipped"), "{state}");
+        assert!(state.contains("- **Inception**: Active"), "{state}");
+        // 着地フェーズより後ろで EXECUTE が残っているものは `Pending`（未実施であって
+        // 実施しないわけではない — `Skipped` と混ぜない）。
+        assert!(state.contains("- **Operation**: Pending"), "{state}");
+    }
+
+    /// `--review` は状態ファイルまで貫通する（`--depth` / `--test-strategy` と同じ形）。
+    #[test]
+    fn the_review_override_reaches_the_state_file() {
+        let request = StartRequest::new("classic", "build it")
+            .with_depth("standard")
+            .with_test_strategy("minimal")
+            .with_review("advisory");
+
+        let state = compose(
+            &intent_with(three_stage_plan(), request),
+            "/ws",
+            "2026-08-31T00:00:00Z",
+        );
+
+        assert!(state.contains("- **Depth**: standard"), "{state}");
+        assert!(state.contains("- **Test Strategy**: minimal"), "{state}");
+        assert!(state.contains("- **Review Override**: advisory"), "{state}");
+    }
+
+    /// `adversarial` は「上限なし」なので**空欄**で書く（upstream `storedReviewOverride`）。
+    #[test]
+    fn an_adversarial_review_is_stored_as_the_empty_field() {
+        let request = StartRequest::new("classic", "build it").with_review("adversarial");
+
+        let state = compose(
+            &intent_with(three_stage_plan(), request),
+            "/ws",
+            "2026-08-31T00:00:00Z",
+        );
+
+        assert!(state.contains("- **Review Override**:\n"), "{state}");
     }
 
     #[test]

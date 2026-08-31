@@ -436,4 +436,81 @@ mod tests {
         };
         assert!(error.to_string().contains(".secret"));
     }
+
+    /// 3 態はそれぞれ別の文言になり、原因が在るものは `source` で辿れる（材料のみ）。
+    #[test]
+    fn the_three_failures_read_differently_and_chain_their_cause() {
+        use std::error::Error as _;
+
+        let corrupt = SecretFileError::Corrupt {
+            path: PathBuf::from("/ws/key"),
+        };
+        let unreadable = SecretFileError::Unreadable {
+            path: PathBuf::from("/ws/key"),
+            cause: io::Error::other("EACCES"),
+        };
+        let uncreatable = SecretFileError::Uncreatable {
+            path: PathBuf::from("/ws/key"),
+            cause: io::Error::other("EROFS"),
+        };
+
+        assert_eq!(corrupt.to_string(), "corrupt secret file: /ws/key");
+        assert_eq!(
+            unreadable.to_string(),
+            "unreadable secret file: /ws/key (EACCES)"
+        );
+        assert_eq!(
+            uncreatable.to_string(),
+            "uncreatable secret file: /ws/key (EROFS)"
+        );
+        assert!(corrupt.source().is_none(), "壊れた鍵に下位原因は無い");
+        assert_eq!(
+            unreadable.source().map(ToString::to_string),
+            Some("EACCES".to_string())
+        );
+        assert_eq!(
+            uncreatable.source().map(ToString::to_string),
+            Some("EROFS".to_string())
+        );
+    }
+
+    /// 「読めない」は不在ではない — 名前がディレクトリに取られていれば `Unreadable` である
+    /// （不在なら `Ok(None)` で鋳造へ進んでしまう）。
+    #[test]
+    fn a_name_taken_by_a_directory_is_unreadable_not_absent() {
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let path = dir.path().join("key");
+        fs::create_dir(&path).expect("同名のディレクトリ");
+
+        let error = SecretFile::new(path, 32).read().expect_err("読めない");
+
+        assert!(
+            matches!(error, SecretFileError::Unreadable { .. }),
+            "{error:?}"
+        );
+        assert!(error.to_string().contains("unreadable"), "{error}");
+    }
+
+    /// 親ディレクトリが書けなければ鋳造は `Uncreatable` で止まる（黙って諦めない）。
+    #[cfg(unix)]
+    #[test]
+    fn minting_under_a_read_only_parent_is_uncreatable() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let parent = dir.path().join("locked");
+        fs::create_dir(&parent).expect("親");
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o555)).expect("読取専用へ");
+
+        let error = SecretFile::new(parent.join("key"), 32)
+            .load_or_mint()
+            .expect_err("書けない");
+
+        // 後片付けのために戻す（tempdir の削除が失敗しないように）。
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).expect("戻す");
+        assert!(
+            matches!(error, SecretFileError::Uncreatable { .. }),
+            "{error:?}"
+        );
+    }
 }

@@ -254,6 +254,12 @@ impl Intent {
         self.start_request.test_strategy()
     }
 
+    /// 呼出側が解決したレビュー上限 (`None` = 指定なし)。
+    #[must_use]
+    pub fn review(&self) -> Option<&str> {
+        self.start_request.review()
+    }
+
     /// 文書順の解決済み計画。
     #[must_use]
     pub fn stages(&self) -> &[StageEntry] {

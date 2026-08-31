@@ -28,6 +28,30 @@ pub fn refusing_oversize_directive(cap: usize) -> String {
     format!("aidlc-orchestrate: refusing to emit a directive larger than {cap} bytes")
 }
 
+/// `aidlc/active-space` の値が空間名として成立しない。
+///
+/// upstream の `activeSpace()` は値を検証せず**そのままパス片として使う**
+/// （`aidlc-lib.ts:1300-1308`）ので、対応する逐語は存在しない。我々のストアは空間名を
+/// 型で受けるため、通せない値は既定へ落とさずここで止める — 落とすと record と
+/// イベントが別々の空間へ散る。
+#[must_use]
+pub fn invalid_active_space(raw: &str) -> String {
+    format!(
+        "The active space \"{raw}\" is not a valid space name. Fix aidlc/active-space (or remove it to use the default space), then run the command again."
+    )
+}
+
+/// `--review` に閉集合外の値が来た（upstream `aidlc-utility.ts:159` 逐語）。
+///
+/// 接頭辞を付けないのは、これが `aidlc-utility` 面の拒否だからである（`aidlc-orchestrate:`
+/// と名乗ると出所を偽る）。upstream は同じ文言を `{"error": …}` に包んで stderr へ出し
+/// exit 1 する。包み方をここで変えないのは、stderr のエンベロープ形式が本文言だけの問題では
+/// なく自己防衛拒否の全面に関わるためである（横断の是正は別 Bolt）。
+#[must_use]
+pub fn unknown_review_class(raw: &str) -> String {
+    format!("Unknown review class: \"{raw}\". Valid: adversarial, advisory, none.")
+}
+
 /// 未捕捉の失敗（upstream `aidlc-orchestrate.ts:6167`）。
 #[must_use]
 pub fn orchestrate_failure(detail: &str) -> String {
@@ -122,6 +146,35 @@ mod tests {
         );
         assert!(unreadable_key_file("/tmp/k", "EACCES").contains("\"/tmp/k\""));
         assert!(uncreatable_key_file("/tmp/k", "EACCES").contains("\"/tmp/k\""));
+    }
+
+    /// 遷移拒否は理由を前置きの後ろへそのまま運ぶ。
+    #[test]
+    fn a_rejected_transition_carries_its_detail() {
+        assert_eq!(
+            transition_rejected("stage 3 is not the cursor"),
+            "Transition rejected: stage 3 is not the cursor"
+        );
+    }
+
+    /// 空間名の拒否は値を二重引用符で囲み、直し方を名指しする。
+    #[test]
+    fn the_invalid_active_space_wording_names_the_cursor_file() {
+        let message = invalid_active_space("../escape");
+        assert!(
+            message.starts_with("The active space \"../escape\""),
+            "{message}"
+        );
+        assert!(message.contains("aidlc/active-space"), "{message}");
+    }
+
+    /// 閉集合外の `--review` は upstream の逐語で拒む。
+    #[test]
+    fn the_unknown_review_class_wording_is_verbatim() {
+        assert_eq!(
+            unknown_review_class("strict"),
+            "Unknown review class: \"strict\". Valid: adversarial, advisory, none."
+        );
     }
 
     #[test]

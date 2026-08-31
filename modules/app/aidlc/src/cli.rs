@@ -391,6 +391,29 @@ mod tests {
 
     use super::*;
 
+    /// 変種の取り出し — `let ... else { panic! }` を各テストに散らすと、到達しない腕が
+    /// テストの数だけ増える。取り出しはここ 1 か所に閉じる（テスト衛生）。
+    fn expect_next(request: Request) -> Box<NextTurnInput> {
+        match request {
+            Request::Next(input) => input,
+            other => panic!("next へ行く: {other:?}"),
+        }
+    }
+
+    fn expect_report(request: Request) -> ReportArgs {
+        match request {
+            Request::Report(flags) => flags,
+            other => panic!("report へ行く: {other:?}"),
+        }
+    }
+
+    fn expect_intent_create(request: Request) -> IntentCreateArgs {
+        match request {
+            Request::IntentCreate(flags) => flags,
+            other => panic!("intent-create へ行く: {other:?}"),
+        }
+    }
+
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|a| (*a).to_string()).collect()
     }
@@ -483,7 +506,7 @@ mod tests {
 
     #[test]
     fn report_collects_every_flag_it_understands() {
-        let Request::Report(flags) = parse(
+        let flags = expect_report(parse(
             Face::Orchestrate,
             &argv(&[
                 "report",
@@ -499,9 +522,7 @@ mod tests {
                 "off",
                 "--single",
             ]),
-        ) else {
-            panic!("report へ行く");
-        };
+        ));
         assert_eq!(flags.result(), Some("approved"));
         assert_eq!(flags.stage(), Some("domain-design"));
         assert_eq!(flags.user_input(), Some("looks good"));
@@ -513,19 +534,17 @@ mod tests {
     /// `--stage` の**有無それ自体が契約**なので、省略は `None` のまま運ぶ。
     #[test]
     fn report_without_an_explicit_stage_carries_none() {
-        let Request::Report(flags) = parse(
+        let flags = expect_report(parse(
             Face::Orchestrate,
             &argv(&["report", "--result", "approved"]),
-        ) else {
-            panic!("report へ行く");
-        };
+        ));
         assert_eq!(flags.stage(), None);
         assert!(!flags.is_single());
     }
 
     #[test]
     fn intent_create_is_reached_through_the_utility_face() {
-        let Request::IntentCreate(flags) = parse(
+        let flags = expect_intent_create(parse(
             Face::Utility,
             &argv(&[
                 "intent-create",
@@ -540,9 +559,7 @@ mod tests {
                 "--review",
                 "advisory",
             ]),
-        ) else {
-            panic!("intent-create へ行く");
-        };
+        ));
         assert_eq!(flags.scope(), Some("bugfix"));
         assert_eq!(flags.label(), Some("fix crash"));
         assert_eq!(flags.depth(), Some("standard"));
@@ -553,7 +570,7 @@ mod tests {
     /// upstream の誕生 print は `--arguments=<shell-quoted>` の等号形を出す。
     #[test]
     fn intent_create_accepts_the_equals_form_upstream_emits() {
-        let Request::IntentCreate(flags) = parse(
+        let flags = expect_intent_create(parse(
             Face::Utility,
             &argv(&[
                 "intent-create",
@@ -561,9 +578,7 @@ mod tests {
                 "bugfix",
                 "--arguments=fix the crash",
             ]),
-        ) else {
-            panic!("intent-create へ行く");
-        };
+        ));
         assert_eq!(flags.arguments(), Some("fix the crash"));
         assert_eq!(flags.scope(), Some("bugfix"));
     }
@@ -583,7 +598,7 @@ mod tests {
 
     #[test]
     fn next_collects_the_flags_the_ladder_understands() {
-        let Request::Next(input) = parse(
+        let input = expect_next(parse(
             Face::Orchestrate,
             &argv(&[
                 "next",
@@ -602,9 +617,7 @@ mod tests {
                 "--resume",
                 "--single",
             ]),
-        ) else {
-            panic!("next へ行く");
-        };
+        ));
         assert_eq!(input.scope(), Some("bugfix"));
         assert_eq!(input.stage(), Some("domain-design"));
         assert_eq!(input.phase(), Some("inception"));
@@ -618,19 +631,16 @@ mod tests {
     /// 値を伴わない `--review` は**パース失敗**として運ぶ（ラダーが逐語で拒否する）。
     #[test]
     fn review_without_a_value_is_a_parse_error() {
-        let Request::Next(input) = parse(Face::Orchestrate, &argv(&["next", "--review"])) else {
-            panic!("next へ行く");
-        };
+        let input = expect_next(parse(Face::Orchestrate, &argv(&["next", "--review"])));
         assert_eq!(
             input.parse_error(),
             Some("--review requires <adversarial|advisory|none>.")
         );
 
-        let Request::Next(input) =
-            parse(Face::Orchestrate, &argv(&["next", "--review", "--resume"]))
-        else {
-            panic!("next へ行く");
-        };
+        let input = expect_next(parse(
+            Face::Orchestrate,
+            &argv(&["next", "--review", "--resume"]),
+        ));
         assert_eq!(
             input.parse_error(),
             Some("--review requires <adversarial|advisory|none>.")
@@ -639,24 +649,20 @@ mod tests {
 
     #[test]
     fn free_text_becomes_the_freeform_description() {
-        let Request::Next(input) = parse(
+        let input = expect_next(parse(
             Face::Orchestrate,
             &argv(&["next", "build", "the", "auth", "service"]),
-        ) else {
-            panic!("next へ行く");
-        };
+        ));
         assert_eq!(input.freeform(), Some("build the auth service"));
     }
 
     /// `--new-intent` は後続の自由記述を**自分の欄**で運ぶ。
     #[test]
     fn new_intent_carries_the_description_in_its_own_slot() {
-        let Request::Next(input) = parse(
+        let input = expect_next(parse(
             Face::Orchestrate,
             &argv(&["next", "--new-intent", "--scope", "bugfix", "fix the crash"]),
-        ) else {
-            panic!("next へ行く");
-        };
+        ));
         assert_eq!(input.new_intent(), Some("fix the crash"));
         assert_eq!(input.scope(), Some("bugfix"));
         assert_eq!(input.freeform(), None);
@@ -665,17 +671,13 @@ mod tests {
     /// 先頭の `compose` だけが動詞。文中の "compose" は自由記述のままである。
     #[test]
     fn only_a_leading_compose_token_is_the_verb() {
-        let Request::Next(input) = parse(Face::Orchestrate, &argv(&["next", "compose"])) else {
-            panic!("next へ行く");
-        };
+        let input = expect_next(parse(Face::Orchestrate, &argv(&["next", "compose"])));
         assert!(input.is_compose());
 
-        let Request::Next(input) = parse(
+        let input = expect_next(parse(
             Face::Orchestrate,
             &argv(&["next", "help", "me", "compose", "a", "song"]),
-        ) else {
-            panic!("next へ行く");
-        };
+        ));
         assert!(!input.is_compose());
         assert_eq!(input.freeform(), Some("help me compose a song"));
     }
@@ -683,13 +685,45 @@ mod tests {
     /// `--` 以降は逐語の自由記述（フラグと同じ綴りでも解釈しない）。
     #[test]
     fn the_literal_marker_stops_flag_interpretation() {
-        let Request::Next(input) = parse(
+        let input = expect_next(parse(
             Face::Orchestrate,
             &argv(&["next", "--", "--scope", "bugfix"]),
-        ) else {
-            panic!("next へ行く");
-        };
+        ));
         assert_eq!(input.scope(), None);
         assert_eq!(input.freeform(), Some("--scope bugfix"));
+    }
+
+    /// 知らないフラグは**値を食わない** — 次のトークンは次のフラグとして読まれる。
+    #[test]
+    fn an_unknown_report_flag_does_not_swallow_the_next_token() {
+        let flags = expect_report(parse(
+            Face::Orchestrate,
+            &argv(&["report", "--wat", "--result", "approved"]),
+        ));
+        assert_eq!(flags.result(), Some("approved"));
+    }
+
+    #[test]
+    fn an_unknown_intent_create_flag_does_not_swallow_the_next_token() {
+        let flags = expect_intent_create(parse(
+            Face::Utility,
+            &argv(&["intent-create", "--wat", "--scope", "bugfix"]),
+        ));
+        assert_eq!(flags.scope(), Some("bugfix"));
+    }
+
+    /// ユーティリティ面の未知動詞は動詞名を運ぶ（診断に出す材料）。
+    #[test]
+    fn an_unknown_utility_verb_carries_the_given_word() {
+        assert_eq!(
+            parse(Face::Utility, &argv(&["teleport"])),
+            Request::UnknownUtilityVerb {
+                given: Some("teleport".to_string())
+            }
+        );
+        assert_eq!(
+            parse(Face::Utility, &argv(&[])),
+            Request::UnknownUtilityVerb { given: None }
+        );
     }
 }

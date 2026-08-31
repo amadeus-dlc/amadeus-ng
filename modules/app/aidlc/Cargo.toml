@@ -23,6 +23,8 @@ core-command-interface-adapter = { workspace = true }
 core-read-model-updater = { workspace = true }
 core-infrastructure = { workspace = true }
 chrono = { workspace = true }
+# 監査シャード名のホスト部を実測する (env 頼みだとシャードが割れる)。
+hostname = { workspace = true }
 # directive を 1 行 JSON へ描く (Presenter)。
 serde_json = { workspace = true }
 # 非同期ポート (AFIT) を回す current_thread ランタイム。合成ルートだけが持つ。

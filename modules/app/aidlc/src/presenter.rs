@@ -235,7 +235,10 @@ mod tests {
     #![allow(clippy::expect_used, clippy::panic)]
 
     use super::*;
-    use core_query_use_case::orchestration::{AskKind, StageSlugView};
+    use core_query_use_case::orchestration::{
+        AskKind, PhaseView, ReviewClassView, RunStageDirectiveBuilder, StageModeView,
+        StageSlugView, UnitKind, UnitName, UnitRef,
+    };
 
     const KEY: &[u8] = &[7u8; 32];
 
@@ -263,6 +266,149 @@ mod tests {
             Some(JsonValue::String(text)) => text.clone(),
             other => panic!("{key} は文字列であるべき: {other:?}"),
         }
+    }
+
+    /// 全部の任意欄を載せた run-stage。**キーの綴りが upstream 契約**なので逐語で確かめる。
+    #[test]
+    fn a_run_stage_renders_every_contract_key() {
+        let directive = Directive::RunStage(
+            RunStageDirectiveBuilder::new(
+                StageSlugView::parse("domain-design").expect("slug"),
+                PhaseView::Inception,
+                "aidlc-architect-agent",
+                StageModeView::Inline,
+                GateField::Gated,
+                ".claude/aidlc-common/stages/inception/domain-design.md",
+                "<record>/inception/domain-design/memory.md",
+            )
+            .with_support_agents(vec!["aidlc-developer-agent".to_string()])
+            .with_inline_context_paths(vec!["docs/a.md".to_string()])
+            .with_consumes(vec!["requirements.md".to_string()])
+            .with_produces(vec!["domain-model.md".to_string()])
+            .with_sensors(vec!["aidlc-traceability".to_string()])
+            .with_rules_in_context(vec!["memory/org.md".to_string()])
+            .with_next_stage("Contract Design")
+            .with_reviewer(
+                "aidlc-architecture-reviewer-agent",
+                ReviewClassView::Adversarial,
+                3,
+            )
+            .with_protocol_modules(vec!["gate".to_string()])
+            .with_narration("Designing the domain model.")
+            .with_unit(UnitRef::new(
+                UnitName::parse("u6-next-continue-use-case").expect("unit 名"),
+                UnitKind::Library,
+            ))
+            .with_single()
+            .build(),
+        );
+
+        let value = rendered(&directive);
+
+        assert_eq!(string_of(&value, "kind"), "run-stage");
+        assert_eq!(string_of(&value, "stage"), "domain-design");
+        assert_eq!(string_of(&value, "phase"), "inception");
+        assert_eq!(string_of(&value, "lead_agent"), "aidlc-architect-agent");
+        assert_eq!(string_of(&value, "mode"), "inline");
+        assert_eq!(field(&value, "gate"), Some(&JsonValue::Bool(true)));
+        assert_eq!(field(&value, "single"), Some(&JsonValue::Bool(true)));
+        assert_eq!(
+            string_of(&value, "memory_path"),
+            "<record>/inception/domain-design/memory.md"
+        );
+        assert_eq!(
+            string_of(&value, "stage_file"),
+            ".claude/aidlc-common/stages/inception/domain-design.md"
+        );
+        assert_eq!(string_of(&value, "next_stage"), "Contract Design");
+        assert_eq!(
+            string_of(&value, "reviewer"),
+            "aidlc-architecture-reviewer-agent"
+        );
+        assert_eq!(string_of(&value, "review_class"), "adversarial");
+        assert_eq!(
+            field(&value, "reviewer_max_iterations"),
+            Some(&JsonValue::Number(
+                core_infrastructure::canon_json::Number::PosInt(3)
+            ))
+        );
+        assert_eq!(
+            string_of(&value, "narration"),
+            "Designing the domain model."
+        );
+        assert_eq!(string_of(&value, "unit"), "u6-next-continue-use-case");
+        for (key, member) in [
+            ("support_agents", "aidlc-developer-agent"),
+            ("inline_context_paths", "docs/a.md"),
+            ("consumes", "requirements.md"),
+            ("produces", "domain-model.md"),
+            ("sensors_applicable", "aidlc-traceability"),
+            ("rules_in_context", "memory/org.md"),
+            ("protocol_modules", "gate"),
+        ] {
+            assert_eq!(
+                field(&value, key),
+                Some(&JsonValue::Array(vec![JsonValue::String(
+                    member.to_string()
+                )])),
+                "{key}"
+            );
+        }
+    }
+
+    /// 任意欄は**与えられていなければ出ない**（upstream も optional は不在で表す）。
+    #[test]
+    fn a_bare_run_stage_omits_the_optional_keys() {
+        let value = rendered(&Directive::RunStage(bare_run_stage(GateField::Ungated)));
+
+        assert_eq!(field(&value, "gate"), Some(&JsonValue::Bool(false)));
+        for key in [
+            "single",
+            "narration",
+            "reviewer",
+            "review_class",
+            "reviewer_max_iterations",
+            "protocol_modules",
+            "next_stage",
+            "unit",
+        ] {
+            assert_eq!(field(&value, key), None, "{key} は出ないはず");
+        }
+    }
+
+    /// walking-skeleton の未解決ゲートだけが番兵文字列で出る（他は boolean）。
+    #[test]
+    fn an_unresolved_gate_is_the_sentinel_string() {
+        let value = rendered(&Directive::RunStage(bare_run_stage(GateField::Unresolved)));
+        assert_eq!(string_of(&value, "gate"), "unresolved");
+    }
+
+    /// 上限超過のエラーはバイト数を名指しする（診断の材料）。
+    #[test]
+    fn the_oversize_error_names_the_byte_count() {
+        let huge = Directive::Error {
+            message: "x".repeat(DIRECTIVE_MAX_BYTES),
+        };
+        let reported = presenter()
+            .render(&huge)
+            .expect_err("上限を超える")
+            .to_string();
+        assert!(reported.starts_with("directive of "), "{reported}");
+        assert!(reported.ends_with("bytes exceeds the cap"), "{reported}");
+    }
+
+    /// 任意欄を 1 つも持たない run-stage。
+    fn bare_run_stage(gate: GateField) -> RunStageDirective {
+        RunStageDirectiveBuilder::new(
+            StageSlugView::parse("state-init").expect("slug"),
+            PhaseView::Initialization,
+            "orchestrator",
+            StageModeView::Inline,
+            gate,
+            "stage.md",
+            "memory.md",
+        )
+        .build()
     }
 
     #[test]
