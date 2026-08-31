@@ -2,7 +2,9 @@
 //! または終端 run-stage — 02 §10 / §4.4)。
 //!
 //! `next` と同じく**読むだけの動詞**なのでクエリ側にある (`coding-rules/cqrs-boundaries.md`
-//! 規則 5)。ポートを 1 本も持たず、読み終えた読取素材を値で受ける。
+//! 規則 5)。読取素材はリードモデルを読む DAO ポート経由で取得する (オーナー裁定 2026-08-31)。
+//! 読取はここでも遅延で、`token` が欠けているターンは I/O を 1 回も起こさず、state を読むのも
+//! トークンが state 束縛を運んでいるときだけである。
 //!
 //! **キャッシュを信用しない** (再構築原則 `:5996-6037`): 現在のディスク状態から run-stage と
 //! ルール束を作り直し、トークンのピン (`gate` / `next_stage` / `unit` / `single`) を再適用し、
@@ -16,7 +18,9 @@
 use super::continue_token::ContinueToken;
 use super::directive::Directive;
 use super::next_turn_input::NextTurnInput;
-use super::sources::{DefinitionSource, ExecutionStateSource, SteeringSource};
+use super::port::{
+    ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao, WorkflowDefinitionReadError,
+};
 use super::steering_binding::{Bindings, StateBinding};
 use crate::workflow_view::DefinitionView;
 
@@ -45,43 +49,57 @@ mod wording {
     }
 }
 
-/// steering 連鎖の継続 (読取専用 — ポートを 1 本も持たない)。
+/// steering 連鎖の継続 (読取専用 — [`super::NextUseCase`] と同じ 3 つの DAO を持つ)。
 ///
-/// 注入はゼロである ([`super::NextUseCase`] と同じ形) — 読取結果はすべて `execute` の
-/// 引数で値として受ける。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ContinueUseCase;
+/// 保持するのは読取専用 DAO だけで、更新動詞は 1 つも無い
+/// (`coding-rules/cqrs-boundaries.md` 規則 6 / オーナー裁定 2026-08-31)。
+#[derive(Debug)]
+pub struct ContinueUseCase<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> {
+    definition_dao: D,
+    state_dao: S,
+    memory_rules_dao: M,
+}
 
-impl ContinueUseCase {
+impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> ContinueUseCase<D, S, M> {
+    /// 3 つの読取専用 DAO を束ねる。
+    #[must_use]
+    pub const fn new(
+        definition_dao: D,
+        state_dao: S,
+        memory_rules_dao: M,
+    ) -> ContinueUseCase<D, S, M> {
+        ContinueUseCase {
+            definition_dao,
+            state_dao,
+            memory_rules_dao,
+        }
+    }
+
     /// 開封済みトークン 1 つを directive ちょうど 1 つに写す。
     ///
     /// 開封 (base64url 復号 + MAC 検証 + 厳密型表) は Controller (U7) の責務であり、失敗は
-    /// `None` で渡される — 契約は fail-closed の逐語文言 1 本である。
+    /// `None` で渡される — 契約は fail-closed の逐語文言 1 本である。トークンは**リードモデル
+    /// ではなく要求素材**なので、ポートではなく引数で受ける。
     ///
-    /// `steering` はルール束の読取結果。ここでの失敗はすべて `STALE` に畳む — 継続の契約は
-    /// 「やり直せ」1 本であり、原因の区別を漏らさない (I12)。
+    /// ルール束の読取失敗はすべて `STALE` に畳む — 継続の契約は「やり直せ」1 本であり、
+    /// 原因の区別を漏らさない (I12)。読み取るだけなので `&self` のクエリである (CQS)。
     #[must_use]
-    pub fn execute(
-        token: Option<ContinueToken>,
-        state: ExecutionStateSource<'_>,
-        definition: DefinitionSource<'_>,
-        steering: SteeringSource<'_>,
-        input: &NextTurnInput,
-    ) -> Directive {
+    pub fn execute(&self, token: Option<ContinueToken>, input: &NextTurnInput) -> Directive {
         let Some(token) = token else {
             return Directive::Error {
                 message: wording::INVALID_TOKEN.to_string(),
             };
         };
         // state 束縛 — 現在の state ダイジェストと照合する。
-        let state = match Self::state_binding(&token, state) {
+        let state = match self.state_binding(&token) {
             Ok(state) => state,
             Err(directive) => return *directive,
         };
-        let definition = match Self::definition_of(&token, definition) {
+        let definition = match self.definition_of(&token) {
             Ok(definition) => definition,
             Err(directive) => return *directive,
         };
+        let definition = &definition;
         let Some(node) = definition
             .graph()
             .nodes()
@@ -115,21 +133,16 @@ impl ContinueUseCase {
                 };
             }
         };
-        let plan = match steering {
-            // 読めない・分割不能のどちらも継続はできない — 区別せず fail-closed。
-            SteeringSource::Loaded(rules) => match rules.plan_for(node.phase()) {
-                Ok(plan) => plan,
-                Err(_) => {
-                    return Directive::Error {
-                        message: wording::STALE.to_string(),
-                    };
-                }
-            },
-            SteeringSource::Unreadable { .. } => {
-                return Directive::Error {
-                    message: wording::STALE.to_string(),
-                };
-            }
+        // 読めない・分割不能のどちらも継続はできない — 区別せず fail-closed。
+        let Ok(plan) = self
+            .memory_rules_dao
+            .find()
+            .map_err(|_| ())
+            .and_then(|rules| rules.plan_for(node.phase()).map_err(|_| ()))
+        else {
+            return Directive::Error {
+                message: wording::STALE.to_string(),
+            };
         };
         let bindings = Bindings::new(
             plan.bundle_digest(),
@@ -158,12 +171,10 @@ impl ContinueUseCase {
 
     /// state 束縛の照合。state-aware なら現行リードモデルのダイジェストを計算して比較する。
     ///
-    /// リードモデルが無い・読めないのはどちらも「保存された位置が動いた」扱いで fail-closed
-    /// にする — 束縛を確かめられない以上、続きを届けてはならない。
-    fn state_binding(
-        token: &ContinueToken,
-        state: ExecutionStateSource<'_>,
-    ) -> Result<Option<StateBinding>, Box<Directive>> {
+    /// トークンが state 束縛を運んでいないときは**読みに行かない** — 照合すべきものが無い。
+    /// 運んでいる場合、リードモデルが無い・読めないのはどちらも「保存された位置が動いた」
+    /// 扱いで fail-closed にする — 束縛を確かめられない以上、続きを届けてはならない。
+    fn state_binding(&self, token: &ContinueToken) -> Result<Option<StateBinding>, Box<Directive>> {
         let Some(bound) = token.bindings().state() else {
             return Ok(None);
         };
@@ -172,7 +183,7 @@ impl ContinueUseCase {
                 message: wording::STATE_MOVED_ON.to_string(),
             })
         };
-        let ExecutionStateSource::Loaded(view) = state else {
+        let Ok(Some(view)) = self.state_dao.find() else {
             return Err(moved_on());
         };
         let current = view.state_binding();
@@ -182,20 +193,17 @@ impl ContinueUseCase {
         Ok(Some(current))
     }
 
-    /// 定義ビューの取り出し — 読めない・特定できないは fail-closed。
+    /// 定義ビューの読取 — 読めない・特定できないは fail-closed。
     ///
     /// どちらの逐語文言になるかは失敗の種類で決まる: 定義 id が特定できないのは連鎖の材料が
     /// 欠けている (`STALE`)、読めないのはステージへ到達できない (`stage_gone`)。
-    fn definition_of<'a>(
-        token: &ContinueToken,
-        definition: DefinitionSource<'a>,
-    ) -> Result<&'a DefinitionView, Box<Directive>> {
-        match definition {
-            DefinitionSource::Loaded(view) => Ok(view),
-            DefinitionSource::Unidentified => Err(Box::new(Directive::Error {
+    fn definition_of(&self, token: &ContinueToken) -> Result<DefinitionView, Box<Directive>> {
+        match self.definition_dao.find() {
+            Ok(view) => Ok(view),
+            Err(WorkflowDefinitionReadError::Unidentified) => Err(Box::new(Directive::Error {
                 message: wording::STALE.to_string(),
             })),
-            DefinitionSource::Unreadable(_) => Err(Box::new(Directive::Error {
+            Err(_) => Err(Box::new(Directive::Error {
                 message: wording::stage_gone(token.stage().as_str()),
             })),
         }
@@ -215,8 +223,11 @@ mod tests {
     use super::super::memory_rules::MemoryRules;
     use super::super::next_turn_input::WorkspaceLayout;
     use super::super::next_use_case::NextUseCase;
+    use super::super::port::ExecutionStateReadError;
     use super::super::steering_plan::PartIndex;
-    use super::super::test_fixtures::{definition, genesis_state, slug, state};
+    use super::super::test_fixtures::{
+        FakeDefinitionDao, FakeRulesDao, FakeStateDao, definition, genesis_state, slug, state,
+    };
     use super::*;
     use crate::execution_view::{CheckboxState, ExecutionStateView};
     use crate::workflow_view::{
@@ -226,10 +237,30 @@ mod tests {
     };
 
     /// 在るのに読めないルールファイル。
-    const UNREADABLE_RULES: SteeringSource<'static> = SteeringSource::Unreadable {
-        path: "aidlc/spaces/default/memory/org.md",
-        cause: "permission denied",
-    };
+    fn unreadable_rules() -> FakeRulesDao {
+        FakeRulesDao::unreadable("aidlc/spaces/default/memory/org.md", "permission denied")
+    }
+
+    /// 継続のユースケース (DAO 3 本を注入する)。
+    fn continuing(
+        definition_dao: FakeDefinitionDao,
+        state_dao: FakeStateDao,
+        rules_dao: FakeRulesDao,
+    ) -> ContinueUseCase<FakeDefinitionDao, FakeStateDao, FakeRulesDao> {
+        ContinueUseCase::new(definition_dao, state_dao, rules_dao)
+    }
+
+    /// 2 部束・state ありの継続 (最も多い形)。
+    fn continuing_with(
+        graph: &DefinitionView,
+        held: &ExecutionStateView,
+    ) -> ContinueUseCase<FakeDefinitionDao, FakeStateDao, FakeRulesDao> {
+        continuing(
+            FakeDefinitionDao::holding(graph.clone()),
+            FakeStateDao::holding(held.clone()),
+            FakeRulesDao::holding(two_part_rules()),
+        )
+    }
 
     /// 2 部に分かれるルール束 (12KiB セクション × 2 → 20KiB 目標で 2 チャンク)。
     fn two_part_rules() -> MemoryRules {
@@ -278,26 +309,21 @@ mod tests {
 
     /// state ありの連鎖を 1 部だけ起こし、その第 1 部を返す。
     fn first_part(held: &ExecutionStateView, graph: &DefinitionView) -> LoadSteeringDirective {
-        let rules = two_part_rules();
-        expect_load_steering(NextUseCase::execute(
-            ExecutionStateSource::Loaded(held),
-            DefinitionSource::Loaded(graph),
-            SteeringSource::Loaded(&rules),
-            &input(),
-        ))
+        expect_load_steering(
+            NextUseCase::new(
+                FakeDefinitionDao::holding(graph.clone()),
+                FakeStateDao::holding(held.clone()),
+                FakeRulesDao::holding(two_part_rules()),
+            )
+            .execute(&input()),
+        )
     }
 
     #[test]
     fn an_invalid_continuation_token_fails_closed_verbatim() {
         let held = genesis_state(2);
         let graph = definition(2);
-        let directive = ContinueUseCase::execute(
-            None,
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            SteeringSource::Loaded(&two_part_rules()),
-            &input(),
-        );
+        let directive = continuing_with(&graph, &held).execute(None, &input());
         assert_eq!(
             error_message(&directive),
             "Invalid steering continuation token: this stage's rules cannot be loaded from where they left off. Run a fresh `next` to restart delivery from part 1."
@@ -316,13 +342,8 @@ mod tests {
             &[CheckboxState::Completed, CheckboxState::InProgress],
             &[PlanActionView::Execute; 2],
         );
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&moved),
-            DefinitionSource::Loaded(&graph),
-            SteeringSource::Loaded(&two_part_rules()),
-            &input(),
-        );
+        let directive =
+            continuing_with(&graph, &moved).execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "The saved position moved on: the workflow state changed while this stage's rules were being loaded. Run a fresh `next` to restart delivery from part 1."
@@ -335,16 +356,18 @@ mod tests {
         let graph = definition(2);
         let part1 = first_part(&held, &graph);
         for absent in [
-            ExecutionStateSource::Missing,
-            ExecutionStateSource::Unreadable("State file not found"),
+            FakeStateDao::absent(),
+            FakeStateDao::failing(ExecutionStateReadError::NotReadable {
+                path: "/r/aidlc-state.md".to_string(),
+                cause: "permission denied".to_string(),
+            }),
         ] {
-            let directive = ContinueUseCase::execute(
-                Some(part1.continue_token().clone()),
+            let directive = continuing(
+                FakeDefinitionDao::holding(graph.clone()),
                 absent,
-                DefinitionSource::Loaded(&graph),
-                SteeringSource::Loaded(&two_part_rules()),
-                &input(),
-            );
+                FakeRulesDao::holding(two_part_rules()),
+            )
+            .execute(Some(part1.continue_token().clone()), &input());
             assert_eq!(
                 error_message(&directive),
                 "The saved position moved on: the workflow state changed while this stage's rules were being loaded. Run a fresh `next` to restart delivery from part 1."
@@ -365,13 +388,12 @@ mod tests {
             )],
             BTreeMap::new(),
         );
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            SteeringSource::Loaded(&rewritten),
-            &input(),
-        );
+        let directive = continuing(
+            FakeDefinitionDao::holding(graph),
+            FakeStateDao::holding(held),
+            FakeRulesDao::holding(rewritten),
+        )
+        .execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."
@@ -385,13 +407,8 @@ mod tests {
         let part1 = first_part(&held, &graph);
         // グラフが再コンパイルされ stage-0 が消えた。
         let recompiled = definition_with_single_node("someone-else");
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&recompiled),
-            SteeringSource::Loaded(&two_part_rules()),
-            &input(),
-        );
+        let directive = continuing_with(&recompiled, &held)
+            .execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "Stage \"stage-0\" no longer exists. Run a fresh `next` after recompiling the stage graph."
@@ -404,13 +421,8 @@ mod tests {
         let graph = definition(2);
         let part1 = first_part(&held, &graph);
         // scope のステージメンバーシップが変わった (3 ステージ目が増えた)。
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&definition(3)),
-            SteeringSource::Loaded(&two_part_rules()),
-            &input(),
-        );
+        let directive = continuing_with(&definition(3), &held)
+            .execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "Which stage runs next has changed: the stage route changed while its rules were being loaded. Run a fresh `next` to restart delivery from part 1."
@@ -434,13 +446,7 @@ mod tests {
         if let Some(next_stage) = token.next_stage() {
             beyond = beyond.with_next_stage(next_stage.clone());
         }
-        let directive = ContinueUseCase::execute(
-            Some(beyond.build()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            SteeringSource::Loaded(&two_part_rules()),
-            &input(),
-        );
+        let directive = continuing_with(&graph, &held).execute(Some(beyond.build()), &input());
         assert_eq!(
             error_message(&directive),
             "This request asks for a part of the stage rules that does not exist. Run a fresh `next` to restart delivery from part 1."
@@ -452,13 +458,12 @@ mod tests {
         let held = genesis_state(2);
         let graph = definition(2);
         let part1 = first_part(&held, &graph);
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            UNREADABLE_RULES,
-            &input(),
-        );
+        let directive = continuing(
+            FakeDefinitionDao::holding(graph),
+            FakeStateDao::holding(held),
+            unreadable_rules(),
+        )
+        .execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."
@@ -470,13 +475,14 @@ mod tests {
         let held = genesis_state(2);
         let graph = definition(2);
         let part1 = first_part(&held, &graph);
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Unreadable("broken"),
-            SteeringSource::Loaded(&two_part_rules()),
-            &input(),
-        );
+        let directive = continuing(
+            FakeDefinitionDao::failing(WorkflowDefinitionReadError::ScopeFile {
+                message: "broken".to_string(),
+            }),
+            FakeStateDao::holding(held),
+            FakeRulesDao::holding(two_part_rules()),
+        )
+        .execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "Stage \"stage-0\" no longer exists. Run a fresh `next` after recompiling the stage graph."
@@ -488,13 +494,8 @@ mod tests {
         let held = genesis_state(2);
         let graph = definition(2);
         let part1 = first_part(&held, &graph);
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            SteeringSource::Loaded(&two_part_rules()),
-            &NextTurnInput::new(),
-        );
+        let directive = continuing_with(&graph, &held)
+            .execute(Some(part1.continue_token().clone()), &NextTurnInput::new());
         assert_eq!(
             error_message(&directive),
             "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."
@@ -503,56 +504,48 @@ mod tests {
 
     // ---- state なしの連鎖 (`--single`) ----
 
+    /// state 束縛なしの連鎖 (`--single`) の第 1 部。
+    fn stateless_first_part(graph: &DefinitionView) -> LoadSteeringDirective {
+        expect_load_steering(
+            NextUseCase::new(
+                FakeDefinitionDao::holding(graph.clone()),
+                FakeStateDao::absent(),
+                FakeRulesDao::holding(two_part_rules()),
+            )
+            .execute(&input().with_single().with_stage("stage-1")),
+        )
+    }
+
     #[test]
     fn a_stateless_chain_continues_without_a_read_model() {
         // トークンは state 束縛なしなので、リードモデルが無くても継続できる。
-        let rules = two_part_rules();
-        let steering = SteeringSource::Loaded(&rules);
         let graph = definition(2);
-        let turn = input().with_single().with_stage("stage-1");
-        let part1 = expect_load_steering(NextUseCase::execute(
-            ExecutionStateSource::Missing,
-            DefinitionSource::Loaded(&graph),
-            steering,
-            &turn,
-        ));
-        let part2 = expect_load_steering(ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Missing,
-            DefinitionSource::Loaded(&graph),
-            steering,
-            &input(),
-        ));
-        let run_stage = expect_run_stage(ContinueUseCase::execute(
-            Some(part2.continue_token().clone()),
-            ExecutionStateSource::Missing,
-            DefinitionSource::Loaded(&graph),
-            steering,
-            &input(),
-        ));
+        let chain = || {
+            continuing(
+                FakeDefinitionDao::holding(graph.clone()),
+                FakeStateDao::absent(),
+                FakeRulesDao::holding(two_part_rules()),
+            )
+        };
+        let part1 = stateless_first_part(&graph);
+        let part2 =
+            expect_load_steering(chain().execute(Some(part1.continue_token().clone()), &input()));
+        let run_stage =
+            expect_run_stage(chain().execute(Some(part2.continue_token().clone()), &input()));
         assert!(run_stage.is_single(), "single ピンの再適用");
         assert_eq!(run_stage.stage().as_str(), "stage-1");
     }
 
     #[test]
     fn a_stateless_continue_without_a_definition_id_fails_closed() {
-        let rules = two_part_rules();
-        let steering = SteeringSource::Loaded(&rules);
         let graph = definition(2);
-        let turn = input().with_single().with_stage("stage-1");
-        let part1 = expect_load_steering(NextUseCase::execute(
-            ExecutionStateSource::Missing,
-            DefinitionSource::Loaded(&graph),
-            steering,
-            &turn,
-        ));
-        let directive = ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Missing,
-            DefinitionSource::Unidentified,
-            steering,
-            &input(),
-        );
+        let part1 = stateless_first_part(&graph);
+        let directive = continuing(
+            FakeDefinitionDao::failing(WorkflowDefinitionReadError::Unidentified),
+            FakeStateDao::absent(),
+            FakeRulesDao::holding(two_part_rules()),
+        )
+        .execute(Some(part1.continue_token().clone()), &input());
         assert_eq!(
             error_message(&directive),
             "This stage or its rules changed while they were being loaded, so what has arrived so far is stale. Run a fresh `next` to restart delivery from part 1."

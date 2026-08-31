@@ -9,13 +9,17 @@
 //! ドメインの集約ではない (同規則 6: クエリ側はドメインに絶対依存せず集約を再構成しない)。
 //!
 //! ファイルの読取・パス解決・オーバライドの解決・scopes ディレクトリの列挙は同クレートの
-//! reader ([`super::workflow_definition_reader`]) が行い、本モジュールは **fs 呼び出しゼロ**の
-//! 変換だけを持つ。
+//! DAO 実装 ([`super::workflow_definition_dao_impl`]) が行い、本モジュールは
+//! **fs 呼び出しゼロ**の変換だけを持つ。
 //!
 //! **このモジュールが所有するもの** (12 §6):
 //! - JSON コーデック (serde ワイヤ構造体) と frontmatter パーサ (手書き — 00-policy R9)。
-//! - 逐語文言の組み立て (I/O 失敗の文言も含む — reader は [`GraphReadError`] を組んで
-//!   ここの文言関数で描く)。
+//! - scope identity の拒否文言 — 拒否理由がパスと値に依存するため、材料の分解形では組み直せず
+//!   [`WorkflowDefinitionReadError::ScopeFile`] / `Malformed` が組み立て済みの文言を運ぶ。
+//!
+//! **I/O 失敗の逐語文言 (12 §4 #1 / #2 と identity 診断) はここには無い** — ポートが運ぶのは
+//! 材料だけで、文言を組むのは出す側のユースケース (`core_query_use_case` の `next` ラダーの
+//! `wording`) である (`coding-rules/error-handling.md`、オーナー裁定 2026-08-31 のポート化)。
 //!
 //! **serde の厳格度** (12 §10 の表):
 //! 1. 未知フィールドは**許容**する (`deny_unknown_fields` を付けない — F1)。将来版や
@@ -31,6 +35,7 @@
 //! グリッド列の不一致は双方向とも正当。
 
 use core_infrastructure::canon_json::{hash_canonical, to_value};
+use core_query_use_case::orchestration::WorkflowDefinitionReadError;
 use core_query_use_case::workflow_view::{
     BrownfieldGreenfieldView, ConsumeDeclView, DefinitionIdView, DefinitionRevisionView,
     DefinitionView, ExecutionKindView, PhaseView, PlanActionView, ReviewCapValueView,
@@ -44,118 +49,6 @@ use std::path::Path;
 
 /// frontmatter の区切り行。
 const FRONTMATTER_FENCE: &str = "---";
-
-/// 3 入力の読取・parse 失敗。逐語文言そのものは持たず、**文言を組み立てる材料**を運ぶ
-/// (レンダリングは [`graph_read_error_message`] — 12 §6)。I/O 由来の変種
-/// (`NotReadable` / `HarnessIdentity` の読取失敗・`ScopeFile` の列挙失敗) は reader が組み、parse 由来の変種はここが組む — 型は 1 本で、出所が 2 層に分かれる
-/// (要求 id の照合はクエリ側ユースケースの仕事なので `NotFound` 変種は持たない)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GraphReadError {
-    /// `stage-graph.json` が読めない (12 §4 #1)。
-    ///
-    /// `env_override` はパスが `AIDLC_STAGE_GRAPH` 由来かを表す。真のとき逐語文言の hint 節が
-    /// 「unset して既定に戻せ」形へ切り替わる — **この分岐自体が観測可能な契約**。
-    NotReadable {
-        /// 読もうとした `stage-graph.json` の解決済みパス。
-        path: String,
-        /// 読取が失敗した理由 (OS 由来)。
-        cause: String,
-        /// `path` が `AIDLC_STAGE_GRAPH` 由来か。
-        env_override: bool,
-    },
-    /// `stage-graph.json` が不正 JSON (12 §4 #2)。`NotReadable` とは別文言。
-    InvalidJson {
-        /// パースに失敗した `stage-graph.json` の解決済みパス。
-        path: String,
-        /// パースが失敗した理由 (JSON パーサ由来)。
-        cause: String,
-    },
-    /// scope identity ファイルの読取・frontmatter 検証の失敗 (`name` 欠落・`skeleton` の
-    /// 不正値など — 12 §3.3)。
-    ScopeFile {
-        /// 失敗の詳細。逐語文言そのものではなく、その材料。
-        message: String,
-    },
-    /// JSON としては読めたがビュー型へ写せない (未知 `phase`、文法外 `slug` など)。
-    ///
-    /// upstream はロード時に検証しないが、serde による構造的パースは「ロード時無検証」からの
-    /// 逸脱ではなく補強として扱う (12 §10) — dist の正規データに対しては観測差が生じない。
-    Malformed {
-        /// 写像に失敗した箇所の詳細。逐語文言そのものではなく、その材料。
-        message: String,
-    },
-    /// ハーネス identity ファイル (`harness.json`) を読めない・不正 JSON・`name` が無い
-    /// ないし id として不正 (ADR-008)。
-    ///
-    /// 定義 id の供給元が失われている状態であり、グラフと同じく **fatal**。
-    HarnessIdentity {
-        /// 読もうとした `harness.json` の解決済みパス。
-        path: String,
-        /// 失敗の理由 (OS / JSON パーサ / id の形式検証のいずれか由来)。
-        cause: String,
-    },
-}
-
-// ---------------------------------------------------------------------------
-// 逐語文言
-// ---------------------------------------------------------------------------
-
-/// `stage-graph.json` が読めないときの逐語文言 (12 §4 #1)。
-///
-/// `env_override` が真のときだけ hint 節が「`AIDLC_STAGE_GRAPH` を unset して既定に戻せ」形へ
-/// 切り替わる — この分岐自体が観測可能な契約。
-///
-/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8565-8570` @3c3146cf、`loadStageGraphAll`
-/// `:8558-8585` の内側 — `docs/specs/research/golden-3c3146cf-lib.md` §8.2)。hint 分岐の条件は
-/// `process.env.AIDLC_STAGE_GRAPH` の **truthy 判定**なので、空文字列の env では既定 hint に落ちる。
-/// 文言はこのモジュールが組み立てる (出す側が逐語文言を持つ — `coding-rules/error-handling.md`)。
-#[must_use]
-pub fn stage_graph_not_readable_message(path: &str, cause: &str, env_override: bool) -> String {
-    if env_override {
-        format!(
-            "Stage graph not readable at {path}: {cause}. AIDLC_STAGE_GRAPH points to {path}; unset it to use the default."
-        )
-    } else {
-        format!(
-            "Stage graph not readable at {path}: {cause}. Reinstall the framework or re-run setup to restore the data file."
-        )
-    }
-}
-
-/// `stage-graph.json` が不正 JSON のときの逐語文言 (12 §4 #2 — `NotReadable` とは別文言)。
-///
-/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8579-8581` @3c3146cf —
-/// `docs/specs/research/golden-3c3146cf-lib.md` §8.2)。
-#[must_use]
-pub fn stage_graph_invalid_json_message(path: &str, cause: &str) -> String {
-    format!("Stage graph at {path} is not valid JSON: {cause}")
-}
-
-/// 読取失敗を stderr へ出す 1 行に整形する (stdout は汚さない — 12 §4 #10)。
-#[must_use]
-pub fn graph_read_error_message(error: &GraphReadError) -> String {
-    match error {
-        GraphReadError::NotReadable {
-            path,
-            cause,
-            env_override,
-        } => stage_graph_not_readable_message(path, cause, *env_override),
-        GraphReadError::InvalidJson { path, cause } => {
-            stage_graph_invalid_json_message(path, cause)
-        }
-        GraphReadError::ScopeFile { message } | GraphReadError::Malformed { message } => {
-            message.clone()
-        }
-        GraphReadError::HarnessIdentity { path, cause } => harness_identity_message(path, cause),
-    }
-}
-
-/// ハーネス identity (`harness.json`) を読めない・`name` が無い (ADR-008)。upstream に
-/// 対応する逐語文言は無い (診断文言)。
-#[must_use]
-fn harness_identity_message(path: &str, cause: &str) -> String {
-    format!("Harness identity not readable at {path}: {cause}")
-}
 
 /// scope identity ファイルに frontmatter が無い。
 ///
@@ -223,8 +116,8 @@ fn scope_duplicate_name_message(name: &str, first: &Path, duplicate: &Path) -> S
 /// 存在しない (12 §10 — 構造的パースはロード時検証の補強)。
 ///
 /// TODO(golden: stage-0): 診断文言なので互換対象外だが、採取後に文言カタログへ載せるかを判断。
-fn malformed(path: &Path, detail: &str) -> GraphReadError {
-    GraphReadError::Malformed {
+fn malformed(path: &Path, detail: &str) -> WorkflowDefinitionReadError {
+    WorkflowDefinitionReadError::Malformed {
         message: format!("Stage graph at {}: {detail}", path.display()),
     }
 }
@@ -430,7 +323,7 @@ impl DefinitionArtifacts {
 /// **グリッドの欠損・不正はエラーにしない** — 転置導出へフォールバックする (12 §4 #3)。
 pub fn parse_workflow_definition(
     artifacts: &DefinitionArtifacts,
-) -> Result<DefinitionView, GraphReadError> {
+) -> Result<DefinitionView, WorkflowDefinitionReadError> {
     let harness_id = parse_harness_identity(&artifacts.harness)?;
     let (graph, raw_graph) = parse_graph(&artifacts.stage_graph)?;
     let (grid, raw_grid) = match artifacts.scope_grid.as_deref().and_then(parse_grid) {
@@ -456,8 +349,10 @@ pub fn parse_workflow_definition(
 /// 不正 JSON・`name` 欠落・id として不正、のいずれも `HarnessIdentity` に畳む (ファイルが
 /// 読めない場合は reader が同じ変種を組む)。upstream には定義 id の概念が無いので、この
 /// 分岐に対応する逐語文言も無い。
-fn parse_harness_identity(harness: &RawArtifact) -> Result<DefinitionIdView, GraphReadError> {
-    let identity = |cause: String| GraphReadError::HarnessIdentity {
+fn parse_harness_identity(
+    harness: &RawArtifact,
+) -> Result<DefinitionIdView, WorkflowDefinitionReadError> {
+    let identity = |cause: String| WorkflowDefinitionReadError::HarnessIdentity {
         path: harness.path.clone(),
         cause,
     };
@@ -472,9 +367,9 @@ fn parse_harness_identity(harness: &RawArtifact) -> Result<DefinitionIdView, Gra
 /// ビュー型へ写す過程で落ちる情報 (未知フィールド・キー順) まで内容版に含めるために要る。
 fn parse_graph(
     stage_graph: &RawArtifact,
-) -> Result<(StageGraphView, serde_json::Value), GraphReadError> {
+) -> Result<(StageGraphView, serde_json::Value), WorkflowDefinitionReadError> {
     let path = Path::new(&stage_graph.path);
-    let invalid_json = |e: &serde_json::Error| GraphReadError::InvalidJson {
+    let invalid_json = |e: &serde_json::Error| WorkflowDefinitionReadError::InvalidJson {
         path: stage_graph.path.clone(),
         cause: e.to_string(),
     };
@@ -523,7 +418,7 @@ fn parse_grid(content: &str) -> Option<(ScopeGridView, serde_json::Value)> {
 /// 検証する。
 fn parse_scopes(
     files: &[RawArtifact],
-) -> Result<BTreeMap<String, ScopeMetadataView>, GraphReadError> {
+) -> Result<BTreeMap<String, ScopeMetadataView>, WorkflowDefinitionReadError> {
     let mut scopes: BTreeMap<String, ScopeMetadataView> = BTreeMap::new();
     let mut origins: BTreeMap<String, String> = BTreeMap::new();
     for file in files {
@@ -531,7 +426,7 @@ fn parse_scopes(
         let metadata = parse_scope_metadata(path, &file.text)?;
         let name = metadata.name().to_string();
         if let Some(first) = origins.get(&name) {
-            return Err(GraphReadError::ScopeFile {
+            return Err(WorkflowDefinitionReadError::ScopeFile {
                 message: scope_duplicate_name_message(&name, Path::new(first), path),
             });
         }
@@ -574,7 +469,7 @@ fn compute_revision(
     raw_graph: &serde_json::Value,
     raw_grid: &serde_json::Value,
     scopes: &BTreeMap<String, ScopeMetadataView>,
-) -> Result<DefinitionRevisionView, GraphReadError> {
+) -> Result<DefinitionRevisionView, WorkflowDefinitionReadError> {
     let input = RevisionInput {
         stage_graph: raw_graph.clone(),
         scope_grid: raw_grid.clone(),
@@ -590,11 +485,11 @@ fn compute_revision(
             })
             .collect(),
     };
-    let value = to_value(&input).map_err(|e| GraphReadError::Malformed {
+    let value = to_value(&input).map_err(|e| WorkflowDefinitionReadError::Malformed {
         message: format!("definition revision input: {e}"),
     })?;
     DefinitionRevisionView::parse(&hash_canonical(&value).rendered()).map_err(|e| {
-        GraphReadError::Malformed {
+        WorkflowDefinitionReadError::Malformed {
             message: format!("definition revision: {e}"),
         }
     })
@@ -604,7 +499,10 @@ fn compute_revision(
 // ワイヤ → ビュー型の写像
 // ---------------------------------------------------------------------------
 
-fn to_stage_view(wire: WireStageNode, path: &Path) -> Result<StageView, GraphReadError> {
+fn to_stage_view(
+    wire: WireStageNode,
+    path: &Path,
+) -> Result<StageView, WorkflowDefinitionReadError> {
     let slug = StageSlugView::parse(&wire.slug)
         .map_err(|e| malformed(path, &format!("invalid slug {:?} ({e:?})", wire.slug)))?;
     let number = StageNumberView::parse(&wire.number).map_err(|e| {
@@ -742,8 +640,11 @@ fn to_stage_view(wire: WireStageNode, path: &Path) -> Result<StageView, GraphRea
 /// 受理する形は `---` で挟まれた `key: value` 行と `keywords: [a, b]` のフロー列だけで、
 /// 未知キー (`description` / `testStrategy` / `runner` / `plugin` 等) は黙って無視する。
 /// 汎用 YAML パーサへ置換すると寛容パースと逐語拒否文言の契約が静かに変わる (12 §3.3)。
-fn parse_scope_metadata(path: &Path, content: &str) -> Result<ScopeMetadataView, GraphReadError> {
-    let body = frontmatter_body(content).ok_or_else(|| GraphReadError::ScopeFile {
+fn parse_scope_metadata(
+    path: &Path,
+    content: &str,
+) -> Result<ScopeMetadataView, WorkflowDefinitionReadError> {
+    let body = frontmatter_body(content).ok_or_else(|| WorkflowDefinitionReadError::ScopeFile {
         message: scope_missing_frontmatter_message(path),
     })?;
 
@@ -775,14 +676,14 @@ fn parse_scope_metadata(path: &Path, content: &str) -> Result<ScopeMetadataView,
             "keywords" => keywords = parse_flow_sequence(value),
             "skeleton" => {
                 skeleton = Some(SkeletonDefaultView::parse(value).map_err(|_| {
-                    GraphReadError::ScopeFile {
+                    WorkflowDefinitionReadError::ScopeFile {
                         message: scope_invalid_skeleton_message(path, value),
                     }
                 })?);
             }
             "review_cap" => {
                 review_cap = Some(ReviewCapValueView::parse(value).map_err(|_| {
-                    GraphReadError::ScopeFile {
+                    WorkflowDefinitionReadError::ScopeFile {
                         message: scope_invalid_review_cap_message(path, value),
                     }
                 })?);
@@ -794,12 +695,13 @@ fn parse_scope_metadata(path: &Path, content: &str) -> Result<ScopeMetadataView,
         }
     }
 
-    let name = name.ok_or_else(|| GraphReadError::ScopeFile {
+    let name = name.ok_or_else(|| WorkflowDefinitionReadError::ScopeFile {
         message: scope_missing_name_message(path),
     })?;
-    let mut metadata = ScopeMetadataView::new(&name).map_err(|_| GraphReadError::ScopeFile {
-        message: scope_missing_name_message(path),
-    })?;
+    let mut metadata =
+        ScopeMetadataView::new(&name).map_err(|_| WorkflowDefinitionReadError::ScopeFile {
+            message: scope_missing_name_message(path),
+        })?;
     if let Some(depth) = depth {
         metadata = metadata.with_depth(depth);
     }
@@ -865,52 +767,6 @@ mod tests {
     }
 
     #[test]
-    fn the_not_readable_hint_clause_switches_on_the_env_override() {
-        let plain = stage_graph_not_readable_message("/d/stage-graph.json", "ENOENT", false);
-        assert!(plain.starts_with("Stage graph not readable at /d/stage-graph.json: ENOENT."));
-        assert!(
-            plain.ends_with("Reinstall the framework or re-run setup to restore the data file.")
-        );
-
-        let overridden = stage_graph_not_readable_message("/x.json", "ENOENT", true);
-        assert!(
-            overridden
-                .ends_with("AIDLC_STAGE_GRAPH points to /x.json; unset it to use the default.")
-        );
-    }
-
-    #[test]
-    fn invalid_json_has_its_own_wording() {
-        assert_eq!(
-            stage_graph_invalid_json_message("/d/stage-graph.json", "eof"),
-            "Stage graph at /d/stage-graph.json is not valid JSON: eof"
-        );
-    }
-
-    #[test]
-    fn graph_read_error_message_renders_every_variant() {
-        let rendered = graph_read_error_message(&GraphReadError::ScopeFile {
-            message: "boom".to_string(),
-        });
-        assert_eq!(rendered, "boom");
-        let rendered = graph_read_error_message(&GraphReadError::Malformed {
-            message: "bang".to_string(),
-        });
-        assert_eq!(rendered, "bang");
-        let rendered = graph_read_error_message(&GraphReadError::InvalidJson {
-            path: "/p".to_string(),
-            cause: "c".to_string(),
-        });
-        assert_eq!(rendered, "Stage graph at /p is not valid JSON: c");
-        let rendered = graph_read_error_message(&GraphReadError::NotReadable {
-            path: "/p".to_string(),
-            cause: "c".to_string(),
-            env_override: false,
-        });
-        assert!(rendered.starts_with("Stage graph not readable at /p: c."));
-    }
-
-    #[test]
     fn frontmatter_needs_both_fences() {
         assert_eq!(
             frontmatter_body("---\nname: a\n---\nbody\n"),
@@ -941,20 +797,20 @@ mod tests {
         let err = parse_scope_metadata(scope_path(), "no frontmatter here\n").unwrap_err();
         assert_eq!(
             err,
-            GraphReadError::ScopeFile {
+            WorkflowDefinitionReadError::ScopeFile {
                 message: "Scope file missing frontmatter: /scopes/aidlc-feature.md".to_string()
             }
         );
         let err = parse_scope_metadata(scope_path(), "---\ndepth: standard\n---\n").unwrap_err();
         assert_eq!(
             err,
-            GraphReadError::ScopeFile {
+            WorkflowDefinitionReadError::ScopeFile {
                 message: "Scope file /scopes/aidlc-feature.md missing required frontmatter: name"
                     .to_string()
             }
         );
         let err = parse_scope_metadata(scope_path(), "---\nname: \"\"\n---\n").unwrap_err();
-        assert!(matches!(err, GraphReadError::ScopeFile { .. }));
+        assert!(matches!(err, WorkflowDefinitionReadError::ScopeFile { .. }));
     }
 
     #[test]
@@ -976,7 +832,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             err,
-            GraphReadError::ScopeFile {
+            WorkflowDefinitionReadError::ScopeFile {
                 message: "Scope file /scopes/aidlc-feature.md has invalid skeleton value \"yes\". Expected \"on\" or \"off\"."
                     .to_string()
             }
@@ -1003,7 +859,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(
-            matches!(err, GraphReadError::ScopeFile { message } if message.contains("review_cap"))
+            matches!(err, WorkflowDefinitionReadError::ScopeFile { message } if message.contains("review_cap"))
         );
     }
 
@@ -1047,21 +903,6 @@ mod tests {
         assert_eq!(unquote("\"a"), "\"a");
         assert_eq!(unquote("''"), "");
         assert_eq!(unquote("a"), "a");
-    }
-
-    #[test]
-    fn the_identity_failure_has_its_own_diagnostic_wording() {
-        // ADR-008 の変種。upstream には定義 id の概念が無いので逐語の縛りは無いが、
-        // `graph_read_error_message` が 1 行の診断へ畳むところまでが契約である
-        // (要求 id の取り違えはユースケースの照合へ移った — issue #46)。
-        let rendered = graph_read_error_message(&GraphReadError::HarnessIdentity {
-            path: "/d/harness.json".to_string(),
-            cause: "missing name".to_string(),
-        });
-        assert_eq!(
-            rendered,
-            "Harness identity not readable at /d/harness.json: missing name"
-        );
     }
 
     #[test]

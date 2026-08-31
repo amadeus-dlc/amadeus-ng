@@ -26753,3 +26753,132 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: PBT を追加しました。全ゲート緑（1200 passed / coverage 98.88587%）です。以下、指示の3点に順に返します。\n\n## 1. 切れていた申し送り4の全文と、申し送り5の全文\n\n**4. `docs/specs/10-orchestration.md` が5箇所で失効（編集スコープ外のため未対応）**\n\n| 行 | 失効内容 |\n|---|---|\n| 55 | `ne
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:51:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage2
+**Agent ID**: ab26-stage2-84c7adeac6a229a0
+**Message**: 先読み最小性 PBT をクエリ側へ復元しました。**cargo の実行はこれで停止します**（以降あなたの直列検証の邪魔をしません）。\n\n## 経緯の訂正\n\n指示2は前ターンで実施済みで、その報告も送っています（届いていないか行き違ったようです）。ただし当時は **「旧 PBT の生成器の意図を履歴で確認する」という手順を踏んでいませんでした**。今回それを実施した結果、移設が不完全だったことが判
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:52:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b26-stage2
+**Agent ID**: ab26-stage2-84c7adeac6a229a0
+**Message**: I've stopped. No further file edits, cargo runs, or git operations from me.\n\nTwo facts for your recovery, from my last actions only — no verification run, since that would violate the stop:\n\nThe `next
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T23:52:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T23:54:01Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-30T23:55:04Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-30T23:58:11Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a51760f4a838315dd
+**Message**: b26(next/continueのクエリ側化+コマンド側撤去)は実装・全ゲート緑でPR #67をオープン済み。CI 9/10通過・失敗なしで、残り1ジョブとCodeRabbitレビュー完了を待って収束判定しマージします。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T00:05:32Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T00:14:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T00:15:58Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T00:17:01Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T00:20:09Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T00:24:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8ec2967d7cf3c1d5
+**Message**: b26(next/continueのクエリ側化)は完了し、PR #67 をCI全緑・レビュー収束のうえマージ済みです。次はb27(intent新規作成ユースケース+U7配線)への着手判断待ちです。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T01:25:19Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T01:47:17Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T01:51:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac89b03b355053711
+**Message**: 進めて。完了したら収束ルールでマージまで畳んで
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T01:55:16Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T01:55:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a046dd67e027212aa
+**Message**: 完了したら収束ルールでマージまで畳んで
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T02:30:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b27-dao
+**Agent ID**: ab27-dao-fe7c5aa20b699210
+**Message**: Bolt b27 is complete. All acceptance criteria met, working tree clean of experiment residue, nothing committed.\n\n## 結果サマリ\n\nクエリ側ユースケースを DTO/DAO ポート経由の読取へ是正しました。4ゲート + カバレッジすべて緑です。\n\n| ゲート | 結果 |\n| --- |
+
+---

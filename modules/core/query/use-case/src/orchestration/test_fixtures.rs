@@ -2,9 +2,18 @@
 //!
 //! 定義ビューと実行状態ビューを 1 か所で組み、`scope_resolution` / `next_use_case` /
 //! `continue_use_case` の各テストが同じ形を見るようにする。
+//!
+//! DAO ポートのフェイクもここに置く。use-case 層はアダプタ層に依存できない (層 = クレートで
+//! 物理強制 — `coding-rules/use-case-rules.md` §1) ので、アダプタの `InMemory*Dao` は
+//! 使えない。フェイクは**読み終えた値を握って返すだけ**で、I/O も状態遷移も持たない。
 
 use std::collections::BTreeMap;
 
+use super::memory_rules::MemoryRules;
+use super::port::{
+    ExecutionStateDao, ExecutionStateReadError, MemoryRulesDao, MemoryRulesReadError,
+    WorkflowDefinitionDao, WorkflowDefinitionReadError,
+};
 use crate::execution_view::{
     CheckboxState, ExecutionStateView, ExecutionStatus, StageProgressView,
 };
@@ -13,6 +22,82 @@ use crate::workflow_view::{
     PlanActionView, ScopeGridView, ScopeMetadataView, ScopeSlugView, StageGraphView, StageModeView,
     StageNumberView, StageSlugView, StageViewBuilder,
 };
+
+/// 定義リードモデルの読取結果を握るフェイク DAO。
+pub(super) struct FakeDefinitionDao(Result<DefinitionView, WorkflowDefinitionReadError>);
+
+impl FakeDefinitionDao {
+    /// 読める定義。
+    pub(super) fn holding(view: DefinitionView) -> FakeDefinitionDao {
+        FakeDefinitionDao(Ok(view))
+    }
+
+    /// 読取に失敗する定義。
+    pub(super) const fn failing(error: WorkflowDefinitionReadError) -> FakeDefinitionDao {
+        FakeDefinitionDao(Err(error))
+    }
+}
+
+impl WorkflowDefinitionDao for FakeDefinitionDao {
+    fn find(&self) -> Result<DefinitionView, WorkflowDefinitionReadError> {
+        self.0.clone()
+    }
+}
+
+/// 実行状態リードモデルの読取結果を握るフェイク DAO。
+pub(super) struct FakeStateDao(Result<Option<ExecutionStateView>, ExecutionStateReadError>);
+
+impl FakeStateDao {
+    /// 稼働中のリードモデルがある。
+    pub(super) const fn holding(view: ExecutionStateView) -> FakeStateDao {
+        FakeStateDao(Ok(Some(view)))
+    }
+
+    /// リードモデルが無い (誕生分岐へ — 正常な観測)。
+    pub(super) const fn absent() -> FakeStateDao {
+        FakeStateDao(Ok(None))
+    }
+
+    /// リードモデルが在るのに読めない。
+    pub(super) const fn failing(error: ExecutionStateReadError) -> FakeStateDao {
+        FakeStateDao(Err(error))
+    }
+}
+
+impl ExecutionStateDao for FakeStateDao {
+    fn find(&self) -> Result<Option<ExecutionStateView>, ExecutionStateReadError> {
+        self.0.clone()
+    }
+}
+
+/// memory 層ルール束の読取結果を握るフェイク DAO。
+pub(super) struct FakeRulesDao(Result<MemoryRules, MemoryRulesReadError>);
+
+impl FakeRulesDao {
+    /// 読めたルール束 (空も正常 — bare run-stage)。
+    pub(super) const fn holding(rules: MemoryRules) -> FakeRulesDao {
+        FakeRulesDao(Ok(rules))
+    }
+
+    /// ルール未整備 (空束)。
+    pub(super) fn empty() -> FakeRulesDao {
+        FakeRulesDao(Ok(MemoryRules::default()))
+    }
+
+    /// 必須ルールファイルが在るのに読めない。
+    pub(super) fn unreadable(path: &str, cause: &str) -> FakeRulesDao {
+        FakeRulesDao(Err(MemoryRulesReadError::new(
+            path.to_string(),
+            cause.to_string(),
+        )))
+    }
+}
+
+impl MemoryRulesDao for FakeRulesDao {
+    fn find(&self) -> Result<MemoryRules, MemoryRulesReadError> {
+        self.0.clone()
+    }
+}
 
 /// `stage-<index>` の slug。
 pub(super) fn slug(index: usize) -> StageSlugView {

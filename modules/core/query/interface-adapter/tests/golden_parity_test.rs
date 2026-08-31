@@ -1,4 +1,4 @@
-//! ゴールデンパリティ: クエリ側の読取 (`load_workflow_definition`) が **upstream の配布実バイト**を
+//! ゴールデンパリティ: クエリ側の読取 (`WorkflowDefinitionDaoImpl`) が **upstream の配布実バイト**を
 //! 本家と同じに読むこと。
 //!
 //! 入力は `tests/golden/upstream-3c3146cf/{stage-graph.json,scope-grid.json}` — ピン留めコミット
@@ -24,7 +24,8 @@
 // ヘルパは `#[test]` の外にあるため clippy.toml の `allow-*-in-tests` が効かない。
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use core_query_interface_adapter::{DefinitionPaths, load_workflow_definition};
+use core_query_interface_adapter::{DefinitionPaths, WorkflowDefinitionDaoImpl};
+use core_query_use_case::orchestration::WorkflowDefinitionDao;
 use core_query_use_case::workflow_view::{DefinitionView, PlanActionView, ReviewClassView};
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -82,7 +83,8 @@ fn reader() -> (DefinitionPaths, TempDir) {
 /// 3 入力を読んだ [`DefinitionView`]。定義 id は配布 `harness.json` の `name` = `claude`。
 fn load() -> (DefinitionView, TempDir) {
     let (reader, scopes) = reader();
-    let definition = load_workflow_definition(&reader)
+    let definition = WorkflowDefinitionDaoImpl::new(reader)
+        .find()
         .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     (definition, scopes)
 }

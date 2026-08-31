@@ -1,11 +1,16 @@
 //! `Next` — `next` 1 回の 21 分岐ラダー (フロー制御のみ — FR3.1 / FR3.3)。
 //!
 //! **読むだけの動詞なのでクエリ側にある** (`coding-rules/cqrs-boundaries.md` 規則 5 —
-//! 「ただ集約や集約以外のデータを読むための責務はコマンド側では許容されない」)。したがって
-//! **ポートを 1 本も注入せず**、集約の再構成もしない — 実行状態・定義・ルール束はいずれも
-//! 読み終えた値として `execute` の引数で届く (use-case-rules §4 の 2026-08-30 夕・再々裁定)。
-//! 状態判断は実行状態ビュー ([`ExecutionStateView::next_decision`]) が持ち、本ユースケースは
-//! 観測 ([`NextTurnInput`]) と読み終えた読取素材を畳んで directive ちょうど 1 つに写す。
+//! 「ただ集約や集約以外のデータを読むための責務はコマンド側では許容されない」)。Repository は
+//! 1 本も持たず、集約の再構成もしない — 実行状態・定義・ルール束はいずれも**リードモデルを
+//! 読む DAO ポート**から取得する (オーナー裁定 2026-08-31)。状態判断は実行状態ビュー
+//! ([`ExecutionStateView::next_decision`]) が持ち、本ユースケースは観測 ([`NextTurnInput`]) と
+//! 読み取った素材を畳んで directive ちょうど 1 つに写す。
+//!
+//! **読取はラダーの位置で遅延して行う。** 前置ガード (パース失敗・`--review` 併用・Kiro
+//! ラッチ・読み取り専用ユーティリティ・名詞トークン・`--stage`/`--phase` 併用) はどの
+//! リードモデルも読まずに答えが決まるので、そこへ到達したターンは I/O を 1 回も起こさない。
+//! ルール束はさらに遅く、run-stage を届ける段 ([`NextUseCase::deliver`]) でだけ読む。
 //!
 //! ラダーの分岐順・逐語文言の正本は契約マップ
 //! `docs/specs/research/orchestration-next-ladder.md` §1。コマンドの概念と綴りは
@@ -22,8 +27,11 @@ use super::directive::{
 use super::engine_command::{ConfigField, EngineCommand};
 use super::next_decision::{NextDecision, NextRequest};
 use super::next_turn_input::{NextTurnInput, WorkspaceLayout};
+use super::port::{
+    ExecutionStateDao, ExecutionStateReadError, MemoryRulesDao, WorkflowDefinitionDao,
+    WorkflowDefinitionReadError,
+};
 use super::scope_resolution::ScopeResolutionError;
-use super::sources::{DefinitionSource, ExecutionStateSource, SteeringSource};
 use super::stage_name::StageName;
 use super::steering_binding::{Bindings, StateBinding};
 use super::steering_plan::SteeringPart;
@@ -34,8 +42,14 @@ use crate::workflow_view::{
 };
 
 /// 逐語文言 — ラダーが放出する公開契約の文字列 (出典: 契約マップ §1。コマンド参照は写像形)。
+///
+/// リードモデル読取の失敗もここで文言になる。ポートが運ぶのは材料だけなので、**文言を持つのは
+/// 出す側**である (`coding-rules/error-handling.md`)。定義 3 入力の逐語文言 (12 §4 / §6) は
+/// 2026-08-31 のポート化でアダプタからここへ移した — 材料を受け取って描く主体が
+/// ユースケースになったためである。
 mod wording {
 
+    use super::{ExecutionStateReadError, WorkflowDefinitionReadError};
     use crate::execution_view::CheckboxState;
 
     /// `--review` の併用ガード (前置)。
@@ -54,8 +68,79 @@ mod wording {
     /// 分岐 9b。
     pub(super) const NO_STATE: &str = "No workflow state found (no active intent). Start one by describing what to build (/aidlc \"build the auth service\") or by naming a scope (/aidlc --scope <scope>).";
 
-    /// 定義 id が特定できない (state も harness の指定も無い)。
-    pub(super) const NO_DEFINITION_ID: &str = "No workflow definition id was provided.";
+    /// 定義 id が特定できない (読取対象を名指しできなかった)。
+    const NO_DEFINITION_ID: &str = "No workflow definition id was provided.";
+
+    /// 実行状態リードモデルの読取失敗 → 文言。
+    ///
+    /// upstream に対応する逐語文言は無い (旧 state バージョンガードに相当する位置であり、
+    /// 本家は復号器の例外をそのまま出す)。したがって材料を素直に並べた診断文言とし、
+    /// 「どのファイルが、なぜ」だけを述べる。
+    pub(super) fn state_read_error(error: &ExecutionStateReadError) -> String {
+        match error {
+            ExecutionStateReadError::NotReadable { path, cause }
+            | ExecutionStateReadError::Malformed { path, cause } => format!("{path}: {cause}"),
+        }
+    }
+
+    /// 定義リードモデルの読取失敗 → 逐語文言 (12 §4 / §6)。
+    ///
+    /// 読取対象を名指しできなかった [`WorkflowDefinitionReadError::Unidentified`] だけが
+    /// 別系統の文言 (`NO_DEFINITION_ID`) になる — 「読めなかった」ではなく「読む先が
+    /// 決まらなかった」という別の観測だからである。
+    pub(super) fn definition_read_error(error: &WorkflowDefinitionReadError) -> String {
+        match error {
+            WorkflowDefinitionReadError::Unidentified => NO_DEFINITION_ID.to_string(),
+            WorkflowDefinitionReadError::NotReadable {
+                path,
+                cause,
+                env_override,
+            } => stage_graph_not_readable(path, cause, *env_override),
+            WorkflowDefinitionReadError::InvalidJson { path, cause } => {
+                stage_graph_invalid_json(path, cause)
+            }
+            WorkflowDefinitionReadError::ScopeFile { message }
+            | WorkflowDefinitionReadError::Malformed { message } => message.clone(),
+            WorkflowDefinitionReadError::HarnessIdentity { path, cause } => {
+                harness_identity(path, cause)
+            }
+        }
+    }
+
+    /// `stage-graph.json` が読めないときの逐語文言 (12 §4 #1)。
+    ///
+    /// `env_override` が真のときだけ hint 節が「`AIDLC_STAGE_GRAPH` を unset して既定に戻せ」
+    /// 形へ切り替わる — この分岐自体が観測可能な契約。
+    ///
+    /// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8565-8570` @3c3146cf、`loadStageGraphAll`
+    /// `:8558-8585` の内側 — `docs/specs/research/golden-3c3146cf-lib.md` §8.2)。hint 分岐の
+    /// 条件は `process.env.AIDLC_STAGE_GRAPH` の **truthy 判定**なので、空文字列の env では
+    /// 既定 hint に落ちる。
+    fn stage_graph_not_readable(path: &str, cause: &str, env_override: bool) -> String {
+        if env_override {
+            format!(
+                "Stage graph not readable at {path}: {cause}. AIDLC_STAGE_GRAPH points to {path}; unset it to use the default."
+            )
+        } else {
+            format!(
+                "Stage graph not readable at {path}: {cause}. Reinstall the framework or re-run setup to restore the data file."
+            )
+        }
+    }
+
+    /// `stage-graph.json` が不正 JSON のときの逐語文言 (12 §4 #2 — 読めない場合とは別文言)。
+    ///
+    /// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8579-8581` @3c3146cf —
+    /// `docs/specs/research/golden-3c3146cf-lib.md` §8.2)。
+    fn stage_graph_invalid_json(path: &str, cause: &str) -> String {
+        format!("Stage graph at {path} is not valid JSON: {cause}")
+    }
+
+    /// ハーネス identity (`harness.json`) を読めない・`name` が無い (ADR-008)。upstream に
+    /// 対応する逐語文言は無い (診断文言)。
+    fn harness_identity(path: &str, cause: &str) -> String {
+        format!("Harness identity not readable at {path}: {cause}")
+    }
 
     /// 分岐 2.5。
     pub(super) fn parked(stage: &str) -> String {
@@ -143,28 +228,37 @@ mod wording {
     }
 }
 
-/// `next` の 21 分岐ラダー (読取専用 — ポートを 1 本も持たない)。
+/// `next` の 21 分岐ラダー (読取専用 — リードモデルを読む DAO ポートだけを持つ)。
 ///
-/// 注入はゼロである。読取結果 (実行状態・定義・ルール束) はすべて `execute` の引数で
-/// **値**として受ける — 読むのは Controller (U7) の仕事であり、ユースケースは畳んで
-/// directive に写すだけである。状態を持たないので手続きは関連関数として置く
-/// (`clippy::unused_self` が deny)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NextUseCase;
+/// 保持するのは 3 つの読取専用 DAO である。いずれも動詞は `find` 1 本で、更新動詞が
+/// 存在しないことが「リードモデルは更新できない」の型保証になる
+/// (`coding-rules/cqrs-boundaries.md` 規則 6 / オーナー裁定 2026-08-31)。バインディングは
+/// スタティックが既定なので型パラメータで受ける (`coding-rules/use-case-rules.md` §2)。
+#[derive(Debug)]
+pub struct NextUseCase<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> {
+    definition_dao: D,
+    state_dao: S,
+    memory_rules_dao: M,
+}
 
-impl NextUseCase {
+impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseCase<D, S, M> {
+    /// 3 つの読取専用 DAO を束ねる。
+    #[must_use]
+    pub const fn new(definition_dao: D, state_dao: S, memory_rules_dao: M) -> NextUseCase<D, S, M> {
+        NextUseCase {
+            definition_dao,
+            state_dao,
+            memory_rules_dao,
+        }
+    }
+
     /// 観測 1 回を directive ちょうど 1 つに写す。失敗も `Directive::Error` で返す —
     /// エンジンの契約は「stdout に directive ちょうど 1 つ」である (§3.2)。
     ///
-    /// `steering` は読み終えた memory 層ルール束 (無いファイルは列に現れない = 正常。
-    /// 在るのに読めないときだけ [`SteeringSource::Unreadable`])。
+    /// 読み取るだけなので `&self` のクエリである (CQS)。リードモデルはラダーの位置で遅延して
+    /// 読む — 前置ガードで答えが決まるターンは I/O を 1 回も起こさない。
     #[must_use]
-    pub fn execute(
-        state: ExecutionStateSource<'_>,
-        definition: DefinitionSource<'_>,
-        steering: SteeringSource<'_>,
-        input: &NextTurnInput,
-    ) -> Directive {
+    pub fn execute(&self, input: &NextTurnInput) -> Directive {
         // ---- 前置ガード ----
         if let Some(message) = input.parse_error() {
             return Directive::Error {
@@ -209,30 +303,27 @@ impl NextUseCase {
                 message: wording::STAGE_AND_PHASE.to_string(),
             };
         }
-        // ---- state の読取結果 (読取失敗はカーソルを使う前に逐語で止める) ----
-        let state = match state {
-            ExecutionStateSource::Missing => None,
-            ExecutionStateSource::Loaded(view) => Some(view),
-            ExecutionStateSource::Unreadable(message) => {
+        // ---- state の読取 (読取失敗はカーソルを使う前に逐語で止める) ----
+        // 不在は失敗ではない (誕生分岐の群へ) — 「無い」と「読めない」で行き先が違う。
+        let held = match self.state_dao.find() {
+            Ok(held) => held,
+            Err(error) => {
                 return Directive::Error {
-                    message: message.to_string(),
+                    message: wording::state_read_error(&error),
                 };
             }
         };
-        // ---- 定義の読取結果 ----
-        let definition = match definition {
-            DefinitionSource::Loaded(view) => view,
-            DefinitionSource::Unidentified => {
+        let state = held.as_ref();
+        // ---- 定義の読取 ----
+        let definition = match self.definition_dao.find() {
+            Ok(view) => view,
+            Err(error) => {
                 return Directive::Error {
-                    message: wording::NO_DEFINITION_ID.to_string(),
-                };
-            }
-            DefinitionSource::Unreadable(message) => {
-                return Directive::Error {
-                    message: message.to_string(),
+                    message: wording::definition_read_error(&error),
                 };
             }
         };
+        let definition = &definition;
         // ---- 分岐 2.5 / 2.6: park (判断はビュー — reentry フラグは NextRequest に畳む) ----
         let request = NextRequest::new(
             input.is_resume(),
@@ -321,7 +412,7 @@ impl NextUseCase {
         }
         // ---- 分岐 4b: --single (scope-change / jump より前) ----
         if input.is_single() {
-            return Self::emit_single(input, definition, steering, resolved.name());
+            return self.emit_single(input, definition, resolved.name());
         }
         // ---- 分岐 5: state あり + 有効で異なる設定 ----
         if let Some(view) = state {
@@ -390,7 +481,7 @@ impl NextUseCase {
         }
         // ---- 分岐 7: --stage / --phase (jump) ----
         if input.stage().is_some() || input.phase().is_some() {
-            return Self::emit_jump(input, state, definition, steering, resolved.name());
+            return self.emit_jump(input, state, definition, resolved.name());
         }
         // ---- state なしの群: 7b / 8 / 9a / 9b ----
         let (Some(view), Some(decision)) = (state, decision) else {
@@ -414,34 +505,35 @@ impl NextUseCase {
             );
         }
         // ---- 分岐 10: ハッピーパス (判断はビューの next_decision) ----
-        Self::emit_happy_path(input, view, definition, steering, resolved.name(), decision)
+        self.emit_happy_path(input, view, definition, resolved.name(), decision)
     }
 
     /// run-stage を steering 連鎖経由で届ける — ルール束が空なら bare run-stage、あれば
     /// 第 1 部の `load-steering` + continue_token (02 §10)。
+    ///
+    /// ルール束を読むのはここだけである。run-stage を届ける段に来て初めて要るものなので、
+    /// ラダーが手前で止まったターンでは memory 層に触れない。
     fn deliver(
+        &self,
         definition: &DefinitionView,
         scope: &ScopeSlugView,
-        steering: SteeringSource<'_>,
         node: &StageView,
         run_stage: &RunStageDirective,
         state: Option<StateBinding>,
     ) -> Directive {
-        let plan = match steering {
-            // 分割不能はパック時に判明する (読取結果の分類には現れない)。
-            SteeringSource::Loaded(rules) => match rules.plan_for(node.phase()) {
-                Ok(plan) => plan,
-                Err(_) => {
-                    return Directive::Error {
-                        message: wording::UNSPLITTABLE_SECTION.to_string(),
-                    };
-                }
-            },
-            SteeringSource::Unreadable { path, cause } => {
+        let rules = match self.memory_rules_dao.find() {
+            Ok(rules) => rules,
+            Err(error) => {
                 return Directive::Error {
-                    message: wording::rule_unreadable(path, cause),
+                    message: wording::rule_unreadable(error.path(), error.cause()),
                 };
             }
+        };
+        // 分割不能は読取時ではなくパック時に判明する。
+        let Ok(plan) = rules.plan_for(node.phase()) else {
+            return Directive::Error {
+                message: wording::UNSPLITTABLE_SECTION.to_string(),
+            };
         };
         let Some(first) = plan.first_part() else {
             // 空計画 — bare run-stage (台帳は空)。
@@ -458,9 +550,9 @@ impl NextUseCase {
 
     /// 分岐 4b — 単一ステージ隔離モード。
     fn emit_single(
+        &self,
         input: &NextTurnInput,
         definition: &DefinitionView,
-        steering: SteeringSource<'_>,
         scope: &ScopeSlugView,
     ) -> Directive {
         let Some(stage) = input.stage() else {
@@ -474,7 +566,7 @@ impl NextUseCase {
                 match build_run_stage(node, definition, scope.as_str(), input.layout(), gate, true)
                 {
                     Ok(Directive::RunStage(run_stage)) => {
-                        Self::deliver(definition, scope, steering, node, &run_stage, None)
+                        self.deliver(definition, scope, node, &run_stage, None)
                     }
                     Ok(directive) => directive,
                     Err(message) => Directive::Error { message },
@@ -488,10 +580,10 @@ impl NextUseCase {
 
     /// 分岐 7 — jump。state ありなら純読み取り解決の名指し、無しなら直接グラフ検索。
     fn emit_jump(
+        &self,
         input: &NextTurnInput,
         state: Option<&ExecutionStateView>,
         definition: &DefinitionView,
-        steering: SteeringSource<'_>,
         scope: &ScopeSlugView,
     ) -> Directive {
         let target = match (input.stage(), input.phase()) {
@@ -555,7 +647,7 @@ impl NextUseCase {
             false,
         ) {
             Ok(Directive::RunStage(run_stage)) => {
-                Self::deliver(definition, scope, steering, target, &run_stage, None)
+                self.deliver(definition, scope, target, &run_stage, None)
             }
             Ok(directive) => directive,
             Err(message) => Directive::Error { message },
@@ -564,10 +656,10 @@ impl NextUseCase {
 
     /// 分岐 10 — ハッピーパス。判断 ([`NextDecision`]) を directive に写すだけ。
     fn emit_happy_path(
+        &self,
         input: &NextTurnInput,
         state: &ExecutionStateView,
         definition: &DefinitionView,
-        steering: SteeringSource<'_>,
         scope: &ScopeSlugView,
         decision: NextDecision,
     ) -> Directive {
@@ -590,10 +682,9 @@ impl NextUseCase {
                             gate,
                             false,
                         ) {
-                            Ok(Directive::RunStage(run_stage)) => Self::deliver(
+                            Ok(Directive::RunStage(run_stage)) => self.deliver(
                                 definition,
                                 scope,
-                                steering,
                                 node,
                                 &run_stage,
                                 Some(state.state_binding()),
@@ -873,6 +964,7 @@ mod tests {
     use super::super::scope_resolution::ScopeSource;
     use super::super::steering_binding::{BundleDigest, DirectiveDigest, RouteDigest};
     use super::super::steering_plan::PartIndex;
+    use super::super::test_fixtures::{FakeDefinitionDao, FakeRulesDao, FakeStateDao};
     use super::super::unit_ref::{UnitKind, UnitName, UnitRef};
     use super::super::{ReadOnlyVerb, test_fixtures};
     use super::*;
@@ -884,16 +976,10 @@ mod tests {
 
     use test_fixtures::{definition, genesis_state, parked_state, slug, state};
 
-    /// ルール束なし (bare run-stage 経路)。ポートのダブルではなく**値**である。
-    fn no_rules() -> MemoryRules {
-        MemoryRules::default()
-    }
-
     /// 在るのに読めないルールファイル (blocking)。
-    const UNREADABLE_RULES: SteeringSource<'static> = SteeringSource::Unreadable {
-        path: "aidlc/spaces/default/memory/org.md",
-        cause: "permission denied",
-    };
+    fn unreadable_rules() -> FakeRulesDao {
+        FakeRulesDao::unreadable("aidlc/spaces/default/memory/org.md", "permission denied")
+    }
 
     fn layout() -> WorkspaceLayout {
         WorkspaceLayout::new(
@@ -903,9 +989,18 @@ mod tests {
         )
     }
 
-    /// 入力の共通形 (state の有無は execute の引数で決まる)。
+    /// 入力の共通形 (state の有無は注入する DAO で決まる)。
     fn input() -> NextTurnInput {
         NextTurnInput::new().with_layout(layout())
+    }
+
+    /// 3 つの DAO を束ねたユースケース。
+    fn use_case(
+        definition_dao: FakeDefinitionDao,
+        state_dao: FakeStateDao,
+        rules_dao: FakeRulesDao,
+    ) -> NextUseCase<FakeDefinitionDao, FakeStateDao, FakeRulesDao> {
+        NextUseCase::new(definition_dao, state_dao, rules_dao)
     }
 
     /// state ありで走らせる (ルール束なし)。
@@ -914,37 +1009,32 @@ mod tests {
         definition_view: &DefinitionView,
         turn: &NextTurnInput,
     ) -> Directive {
-        run_with_steering(
-            held,
-            definition_view,
-            SteeringSource::Loaded(&no_rules()),
-            turn,
-        )
+        run_with_rules(held, definition_view, FakeRulesDao::empty(), turn)
     }
 
     /// state ありで、ルール束の読取結果を指定して走らせる。
-    fn run_with_steering(
+    fn run_with_rules(
         held: &ExecutionStateView,
         definition_view: &DefinitionView,
-        steering: SteeringSource<'_>,
+        rules_dao: FakeRulesDao,
         turn: &NextTurnInput,
     ) -> Directive {
-        NextUseCase::execute(
-            ExecutionStateSource::Loaded(held),
-            DefinitionSource::Loaded(definition_view),
-            steering,
-            turn,
+        use_case(
+            FakeDefinitionDao::holding(definition_view.clone()),
+            FakeStateDao::holding(held.clone()),
+            rules_dao,
         )
+        .execute(turn)
     }
 
     /// state なしで走らせる (ルール束なし)。
     fn run_without(definition_view: &DefinitionView, turn: &NextTurnInput) -> Directive {
-        NextUseCase::execute(
-            ExecutionStateSource::Missing,
-            DefinitionSource::Loaded(definition_view),
-            SteeringSource::Loaded(&no_rules()),
-            turn,
+        use_case(
+            FakeDefinitionDao::holding(definition_view.clone()),
+            FakeStateDao::absent(),
+            FakeRulesDao::empty(),
         )
+        .execute(turn)
     }
 
     fn expect_load_steering(directive: Directive) -> LoadSteeringDirective {
@@ -1095,43 +1185,144 @@ mod tests {
 
     #[test]
     fn a_broken_state_read_stops_before_the_cursor_is_used() {
-        // 旧 state バージョンガードの相当 — 読取失敗は復元前に逐語で止める。
-        let held = definition(2);
-        let directive = NextUseCase::execute(
-            ExecutionStateSource::Unreadable("State file not found: /tmp/aidlc-state.md"),
-            DefinitionSource::Loaded(&held),
-            SteeringSource::Loaded(&no_rules()),
-            &input(),
-        );
+        // 旧 state バージョンガードの相当 — 読取失敗は復元前に材料つきで止める。
+        let directive = use_case(
+            FakeDefinitionDao::holding(definition(2)),
+            FakeStateDao::failing(ExecutionStateReadError::NotReadable {
+                path: "/tmp/aidlc-state.md".to_string(),
+                cause: "permission denied".to_string(),
+            }),
+            FakeRulesDao::empty(),
+        )
+        .execute(&input());
         assert_eq!(
             error_message(&directive),
-            "State file not found: /tmp/aidlc-state.md"
+            "/tmp/aidlc-state.md: permission denied"
         );
     }
 
     #[test]
-    fn an_unreadable_definition_is_relayed_verbatim() {
-        let directive = NextUseCase::execute(
-            ExecutionStateSource::Missing,
-            DefinitionSource::Unreadable("stage graph not readable"),
-            SteeringSource::Loaded(&no_rules()),
-            &input(),
+    fn a_malformed_state_read_stops_with_the_decoding_refusal() {
+        let directive = use_case(
+            FakeDefinitionDao::holding(definition(2)),
+            FakeStateDao::failing(ExecutionStateReadError::Malformed {
+                path: "/tmp/aidlc-state.md".to_string(),
+                cause: "missing field \"Status\"".to_string(),
+            }),
+            FakeRulesDao::empty(),
+        )
+        .execute(&input());
+        assert_eq!(
+            error_message(&directive),
+            "/tmp/aidlc-state.md: missing field \"Status\""
         );
-        assert_eq!(error_message(&directive), "stage graph not readable");
+    }
+
+    /// 定義の読取失敗は 12 §4 の逐語文言になる (文言は出す側 = 本ユースケースが組む)。
+    #[test]
+    fn an_unreadable_definition_is_refused_with_the_upstream_wording() {
+        let directive = use_case(
+            FakeDefinitionDao::failing(WorkflowDefinitionReadError::NotReadable {
+                path: "/d/stage-graph.json".to_string(),
+                cause: "ENOENT".to_string(),
+                env_override: false,
+            }),
+            FakeStateDao::absent(),
+            FakeRulesDao::empty(),
+        )
+        .execute(&input());
+        assert_eq!(
+            error_message(&directive),
+            "Stage graph not readable at /d/stage-graph.json: ENOENT. Reinstall the framework or re-run setup to restore the data file."
+        );
+    }
+
+    #[test]
+    fn an_env_overridden_graph_path_switches_the_hint_clause() {
+        let directive = use_case(
+            FakeDefinitionDao::failing(WorkflowDefinitionReadError::NotReadable {
+                path: "/x.json".to_string(),
+                cause: "ENOENT".to_string(),
+                env_override: true,
+            }),
+            FakeStateDao::absent(),
+            FakeRulesDao::empty(),
+        )
+        .execute(&input());
+        assert_eq!(
+            error_message(&directive),
+            "Stage graph not readable at /x.json: ENOENT. AIDLC_STAGE_GRAPH points to /x.json; unset it to use the default."
+        );
+    }
+
+    #[test]
+    fn every_definition_read_failure_has_its_wording() {
+        for (error, expected) in [
+            (
+                WorkflowDefinitionReadError::InvalidJson {
+                    path: "/d/stage-graph.json".to_string(),
+                    cause: "eof".to_string(),
+                },
+                "Stage graph at /d/stage-graph.json is not valid JSON: eof",
+            ),
+            (
+                WorkflowDefinitionReadError::HarnessIdentity {
+                    path: "/d/harness.json".to_string(),
+                    cause: "ENOENT".to_string(),
+                },
+                "Harness identity not readable at /d/harness.json: ENOENT",
+            ),
+            (
+                WorkflowDefinitionReadError::ScopeFile {
+                    message: "Scope file missing frontmatter: /s/aidlc-x.md".to_string(),
+                },
+                "Scope file missing frontmatter: /s/aidlc-x.md",
+            ),
+            (
+                WorkflowDefinitionReadError::Malformed {
+                    message: "unknown phase \"daydreaming\"".to_string(),
+                },
+                "unknown phase \"daydreaming\"",
+            ),
+        ] {
+            let directive = use_case(
+                FakeDefinitionDao::failing(error),
+                FakeStateDao::absent(),
+                FakeRulesDao::empty(),
+            )
+            .execute(&input());
+            assert_eq!(error_message(&directive), expected);
+        }
     }
 
     #[test]
     fn a_missing_definition_id_without_state_is_refused() {
-        let directive = NextUseCase::execute(
-            ExecutionStateSource::Missing,
-            DefinitionSource::Unidentified,
-            SteeringSource::Loaded(&no_rules()),
-            &input(),
-        );
+        let directive = use_case(
+            FakeDefinitionDao::failing(WorkflowDefinitionReadError::Unidentified),
+            FakeStateDao::absent(),
+            FakeRulesDao::empty(),
+        )
+        .execute(&input());
         assert_eq!(
             error_message(&directive),
             "No workflow definition id was provided."
         );
+    }
+
+    /// 前置ガードで答えが決まるターンは、どのリードモデルにも触れない。
+    #[test]
+    fn a_pre_guard_turn_reads_no_read_model() {
+        // 3 つの DAO をすべて失敗させても、前置ガードの逐語文言がそのまま出る。
+        let directive = use_case(
+            FakeDefinitionDao::failing(WorkflowDefinitionReadError::Unidentified),
+            FakeStateDao::failing(ExecutionStateReadError::NotReadable {
+                path: "/tmp/aidlc-state.md".to_string(),
+                cause: "permission denied".to_string(),
+            }),
+            unreadable_rules(),
+        )
+        .execute(&input().with_read_only(ReadOnlyVerb::Status));
+        assert!(print_message(&directive).contains("aidlc-utility status"));
     }
 
     // ---- 分岐 2.5 / 2.6 (park) ----
@@ -1619,11 +1810,15 @@ mod tests {
     #[test]
     fn a_routing_decision_that_reaches_the_happy_path_is_a_defensive_error() {
         let held = genesis_state(2);
-        let directive = NextUseCase::emit_happy_path(
+        let directive = use_case(
+            FakeDefinitionDao::holding(definition(2)),
+            FakeStateDao::holding(held.clone()),
+            FakeRulesDao::empty(),
+        )
+        .emit_happy_path(
             &input(),
             &held,
             &definition(2),
-            SteeringSource::Loaded(&no_rules()),
             &ScopeSlugView::parse("classic").unwrap(),
             NextDecision::ResumeMenu,
         );
@@ -1842,12 +2037,22 @@ mod tests {
 
     #[test]
     fn a_rule_bundle_is_delivered_in_parts_then_the_run_stage_arrives() {
-        let rules = two_part_rules();
-        let steering = SteeringSource::Loaded(&rules);
         let held = genesis_state(2);
         let graph = definition(2);
+        let chain = || {
+            ContinueUseCase::new(
+                FakeDefinitionDao::holding(graph.clone()),
+                FakeStateDao::holding(held.clone()),
+                FakeRulesDao::holding(two_part_rules()),
+            )
+        };
         // 第 1 部。
-        let part1 = expect_load_steering(run_with_steering(&held, &graph, steering, &input()));
+        let part1 = expect_load_steering(run_with_rules(
+            &held,
+            &graph,
+            FakeRulesDao::holding(two_part_rules()),
+            &input(),
+        ));
         assert_eq!(part1.part().as_u32(), 1);
         assert_eq!(part1.parts().as_u32(), 2);
         assert_eq!(part1.stage().as_str(), "stage-0");
@@ -1857,23 +2062,13 @@ mod tests {
             Some("aidlc/spaces/default/memory/org.md")
         );
         // 第 2 部。
-        let part2 = expect_load_steering(ContinueUseCase::execute(
-            Some(part1.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            steering,
-            &input(),
-        ));
+        let part2 =
+            expect_load_steering(chain().execute(Some(part1.continue_token().clone()), &input()));
         assert_eq!(part2.part().as_u32(), 2);
         assert_eq!(part2.parts().as_u32(), 2);
         // 終端 — run-stage がルール台帳つきで届く。
-        let run_stage = expect_run_stage(ContinueUseCase::execute(
-            Some(part2.continue_token().clone()),
-            ExecutionStateSource::Loaded(&held),
-            DefinitionSource::Loaded(&graph),
-            steering,
-            &input(),
-        ));
+        let run_stage =
+            expect_run_stage(chain().execute(Some(part2.continue_token().clone()), &input()));
         assert_eq!(run_stage.stage().as_str(), "stage-0");
         assert_eq!(
             run_stage.rules_in_context(),
@@ -1885,10 +2080,10 @@ mod tests {
 
     #[test]
     fn an_unreadable_rule_file_blocks_the_stage_verbatim() {
-        let directive = run_with_steering(
+        let directive = run_with_rules(
             &genesis_state(2),
             &definition(2),
-            UNREADABLE_RULES,
+            unreadable_rules(),
             &input(),
         );
         assert_eq!(
@@ -1907,10 +2102,10 @@ mod tests {
             )],
             BTreeMap::new(),
         );
-        let directive = run_with_steering(
+        let directive = run_with_rules(
             &genesis_state(2),
             &definition(2),
-            SteeringSource::Loaded(&rules),
+            FakeRulesDao::holding(rules),
             &input(),
         );
         assert_eq!(

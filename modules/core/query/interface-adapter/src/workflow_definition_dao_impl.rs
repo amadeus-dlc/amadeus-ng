@@ -1,10 +1,10 @@
-//! ワークフロー定義の reader — パス解決とファイル読取 (I/O はここに閉じる)。
+//! `WorkflowDefinitionDao` の実 Gateway — パス解決とファイル読取 (I/O はここに閉じる)。
 //!
 //! 3 入力 (`harness.json` / `stage-graph.json` / `scope-grid.json`) と scope identity
 //! ファイル群 (`<scopes_dir>/aidlc-*.md`) を読み、生バイトを純 parse
 //! ([`parse_workflow_definition`]) へ渡す。**失敗態度は 12 §4 の表のとおり**で、I/O 由来の
 //! 変種 (`NotReadable` / `HarnessIdentity` の読取失敗・`ScopeFile` の列挙失敗) はここが組み、
-//! parse 由来の変種は parse 側が組む — 型は [`GraphReadError`] 1 本である。
+//! parse 由来の変種は parse 側が組む — 型はポートの [`WorkflowDefinitionReadError`] 1 本である。
 //!
 //! `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` 相当のオーバライドは**パスとして注入**する —
 //! env の読取そのものは合成ルートのバイナリ (main) が行う (テストを hermetic に保つため)。
@@ -16,10 +16,11 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use core_query_use_case::orchestration::{WorkflowDefinitionDao, WorkflowDefinitionReadError};
 use core_query_use_case::workflow_view::DefinitionView;
 
 use super::workflow_definition_parse::{
-    DefinitionArtifacts, GraphReadError, RawArtifact, parse_workflow_definition,
+    DefinitionArtifacts, RawArtifact, parse_workflow_definition,
 };
 
 /// グラフ成果物のファイル名 (`<harnessRoot>/tools/data/` 直下)。
@@ -96,69 +97,81 @@ impl DefinitionPaths {
     }
 }
 
-/// 3 入力 + scope identity 群を読み、クエリモデル [`DefinitionView`] を組み立てて返す。
+/// 3 入力 + scope identity 群を読む実装。
 ///
-/// 呼出のたびに読み直す。キャッシュ戦略は**観測不能なので実装の自由** (12 §10) — upstream の
-/// モジュールレベル可変シングルトンと `_reset*ForTests()` は模倣しない。いずれの失敗でも
-/// **stdout に何も書かない** (12 §4 #10 — half-emitted directive を出さない)。
-///
-/// # Errors
-///
-/// ハーネス identity の読取・検証失敗 (`HarnessIdentity`)、グラフの読取失敗 (`NotReadable`)、
-/// 不正 JSON (`InvalidJson`)、scope identity の列挙・読取・検証失敗 (`ScopeFile`)、ビュー型
-/// への写像失敗 (`Malformed`)。**グリッドの欠損・不正はエラーにしない** — 転置導出へ
-/// フォールバックする (12 §4 #3)。
-pub fn load_workflow_definition(paths: &DefinitionPaths) -> Result<DefinitionView, GraphReadError> {
-    let harness_path = paths.harness_path();
-    let harness_text =
-        fs::read_to_string(&harness_path).map_err(|e| GraphReadError::HarnessIdentity {
-            path: harness_path.display().to_string(),
-            cause: e.to_string(),
-        })?;
+/// 読取対象は構築時に決まる ([`DefinitionPaths`]) ので、`find` は引数を取らない —
+/// 1 つのハーネスが提供できる定義は 1 つだけである (BR2.6 / ADR-008)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowDefinitionDaoImpl {
+    paths: DefinitionPaths,
+}
 
-    let graph_path = paths.stage_graph_path();
-    let graph_text = fs::read_to_string(&graph_path).map_err(|e| GraphReadError::NotReadable {
-        path: graph_path.display().to_string(),
-        cause: e.to_string(),
-        env_override: paths.stage_graph_override.is_some(),
-    })?;
-
-    // グリッドは読めなければ `None` — 転置導出は parse 側が行う (12 §4 #3)。
-    let grid_text = fs::read_to_string(paths.scope_grid_path()).ok();
-
-    let mut scopes = Vec::new();
-    for path in scope_file_paths(&paths.scopes_dir)? {
-        let text = fs::read_to_string(&path).map_err(|e| GraphReadError::ScopeFile {
-            message: format!("{}: {e}", path.display()),
-        })?;
-        scopes.push(RawArtifact::new(path.display().to_string(), text));
+impl WorkflowDefinitionDaoImpl {
+    /// 3 入力の置き場を指す。
+    #[must_use]
+    pub const fn new(paths: DefinitionPaths) -> WorkflowDefinitionDaoImpl {
+        WorkflowDefinitionDaoImpl { paths }
     }
+}
 
-    parse_workflow_definition(&DefinitionArtifacts::new(
-        RawArtifact::new(harness_path.display().to_string(), harness_text),
-        RawArtifact::new(graph_path.display().to_string(), graph_text),
-        grid_text,
-        scopes,
-    ))
+impl WorkflowDefinitionDao for WorkflowDefinitionDaoImpl {
+    fn find(&self) -> Result<DefinitionView, WorkflowDefinitionReadError> {
+        let paths = &self.paths;
+        let harness_path = paths.harness_path();
+        let harness_text = fs::read_to_string(&harness_path).map_err(|e| {
+            WorkflowDefinitionReadError::HarnessIdentity {
+                path: harness_path.display().to_string(),
+                cause: e.to_string(),
+            }
+        })?;
+
+        let graph_path = paths.stage_graph_path();
+        let graph_text = fs::read_to_string(&graph_path).map_err(|e| {
+            WorkflowDefinitionReadError::NotReadable {
+                path: graph_path.display().to_string(),
+                cause: e.to_string(),
+                env_override: paths.stage_graph_override.is_some(),
+            }
+        })?;
+
+        // グリッドは読めなければ `None` — 転置導出は parse 側が行う (12 §4 #3)。
+        let grid_text = fs::read_to_string(paths.scope_grid_path()).ok();
+
+        let mut scopes = Vec::new();
+        for path in scope_file_paths(&paths.scopes_dir)? {
+            let text =
+                fs::read_to_string(&path).map_err(|e| WorkflowDefinitionReadError::ScopeFile {
+                    message: format!("{}: {e}", path.display()),
+                })?;
+            scopes.push(RawArtifact::new(path.display().to_string(), text));
+        }
+
+        parse_workflow_definition(&DefinitionArtifacts::new(
+            RawArtifact::new(harness_path.display().to_string(), harness_text),
+            RawArtifact::new(graph_path.display().to_string(), graph_text),
+            grid_text,
+            scopes,
+        ))
+    }
 }
 
 /// `<scopes_dir>/aidlc-*.md` をパス昇順で列挙する (重複 `name:` 検出を決定的にするため)。
 ///
 /// ディレクトリ自体が無い場合は空カタログとして扱う (グラフと違い fatal にしない)。
 /// TODO(spec: 12 §11): scopes ディレクトリ欠損時の態度は upstream 側の裏取りが未了。
-fn scope_file_paths(scopes_dir: &Path) -> Result<Vec<PathBuf>, GraphReadError> {
+fn scope_file_paths(scopes_dir: &Path) -> Result<Vec<PathBuf>, WorkflowDefinitionReadError> {
     let entries = match fs::read_dir(scopes_dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => {
-            return Err(GraphReadError::ScopeFile {
+            return Err(WorkflowDefinitionReadError::ScopeFile {
                 message: format!("{}: {e}", scopes_dir.display()),
             });
         }
     };
     let mut paths = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|e| GraphReadError::ScopeFile {
+        let entry = entry.map_err(|e| WorkflowDefinitionReadError::ScopeFile {
             message: format!("{}: {e}", scopes_dir.display()),
         })?;
         let path = entry.path();

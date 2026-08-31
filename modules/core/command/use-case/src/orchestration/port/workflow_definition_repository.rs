@@ -12,10 +12,12 @@
 //!
 //! **読むだけの用途はこのポートの仕事ではない。** `next` / `continue` のように定義を読んで
 //! 何も書かない動詞はクエリ側が担い、クエリ側は同じ Published Language を**自分の
-//! リードモデル読取実装**で読む (`core_query_interface_adapter::load_workflow_definition`)。
+//! リードモデル読取実装**で読む (`core_query_interface_adapter::WorkflowDefinitionDaoImpl` —
+//! クエリ側は読取専用 DAO ポート経由で読む。オーナー裁定 2026-08-31、b27)。
 //! 両者は側ごと専用の別実装であり、一方が他方の読取結果を受け取ることはない (同規則 6)。
 //! upstream 逐語文言 (12 §4 / §6 の「Stage graph not readable at ...」等) の所有も
-//! **クエリ側へ移った** (b26 段階 2)。
+//! **クエリ側へ移った** (b26 段階 2。b27 でさらにアダプタからクエリ側ユースケースの
+//! `wording` へ移り、ポートは材料だけを運ぶ)。
 //!
 //! Published Language の 3 入力
 //! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
