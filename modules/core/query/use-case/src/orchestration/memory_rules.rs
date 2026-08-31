@@ -1,9 +1,10 @@
 //! `MemoryRules` — active-space の memory 層 (決定論的 steering) の読取済みルール束。
 //!
-//! ファイルの読取 (I/O) は Controller (U7) が行い、本型は**読み終えた値**を運ぶ。
-//! クエリ側のユースケースはポートを持たない — 読取結果はすべて値で受ける
-//! (`coding-rules/use-case-rules.md` §4 の 2026-08-30 夕・再々裁定。読むだけの動詞は
-//! クエリ側へ移り、「読取専用ポートの注入」という型保証の手法も対象を失って失効した)。
+//! ファイルの読取 (I/O) は [`MemoryRulesDao`] の実装 (アダプタ層) が行い、本型はその
+//! **読み終えた結果**を運ぶ DTO である (オーナー裁定 2026-08-31 — クエリ側のユースケースは
+//! リードモデルを読む DTO/DAO ポート経由で読む)。
+//!
+//! [`MemoryRulesDao`]: super::MemoryRulesDao
 //!
 //! フェーズの選択と配信計画への分割・パックは純計算であり、[`MemoryRules::plan_for`] →
 //! [`SteeringPlan::pack`] が行う。読み順は memory 層の解決順
@@ -19,8 +20,9 @@ use crate::workflow_view::PhaseView;
 /// 読取済みの memory 層ルール束 (base 3 ファイル + フェーズ別ファイル)。
 ///
 /// ファイルが**無い**のは正常 (ルール未整備・initialization はフェーズルールを持たない) —
-/// 無いファイルは単に列に現れない。「在るのに読めない」は読んだ側が blocking で止めるので
-/// (`super::sources::SteeringSource::Unreadable`)、本型に失敗の表現は無い (Always Valid)。
+/// 無いファイルは単に列に現れない。「在るのに読めない」は DAO が
+/// [`MemoryRulesReadError`](super::MemoryRulesReadError) で返し、呼出側が blocking で
+/// 止めるので、本型に失敗の表現は無い (Always Valid)。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MemoryRules {
     base: Vec<RuleContent>,

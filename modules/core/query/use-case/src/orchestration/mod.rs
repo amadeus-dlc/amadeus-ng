@@ -6,10 +6,15 @@
 //! `next` / `continue` は directive を放出するだけで**何も書かない**。「ただ読むための責務は
 //! コマンド側では許容されない — それはクエリ側の実装である」(オーナー裁定 2026-08-30、
 //! `coding-rules/cqrs-boundaries.md` 規則 5)。したがって本モジュールは Repository を 1 本も
-//! 持たず、集約の再構成もしない (同規則 6)。ポートも 1 本も持たない — 読み終えた読取素材
-//! ([`crate::execution_view::ExecutionStateView`] / [`crate::workflow_view::DefinitionView`] /
-//! [`MemoryRules`]) を値で受け取り、directive ちょうど 1 つに写す (use-case-rules §4 の
-//! 2026-08-30 夕・再々裁定)。
+//! 持たず、集約の再構成もしない (同規則 6)。
+//!
+//! 読取素材 ([`crate::execution_view::ExecutionStateView`] /
+//! [`crate::workflow_view::DefinitionView`] / [`MemoryRules`]) は、リードモデルを読む
+//! **DTO/DAO ポート** ([`ExecutionStateDao`] / [`WorkflowDefinitionDao`] /
+//! [`MemoryRulesDao`]) 経由で取得する (オーナー裁定 2026-08-31)。ポートは読取動詞 `find`
+//! 1 本だけを持ち、更新動詞が存在しないことが「リードモデルは更新できない」の型保証である。
+//! **読取元 (ファイル / SQLite のテーブル) は実装の内部詳細**であり、ポート面が語るのは
+//! DTO だけである (同日追補裁定)。
 //!
 //! # 出力モデルであってビューではない
 //!
@@ -31,8 +36,8 @@ mod memory_rules;
 mod next_decision;
 mod next_turn_input;
 mod next_use_case;
+mod port;
 mod scope_resolution;
-mod sources;
 mod stage_name;
 mod steering_binding;
 mod steering_digest;
@@ -69,13 +74,17 @@ pub use unit_ref::{UnitKind, UnitName, UnitRef};
 pub use next_decision::{EngineSignal, NextDecision, NextRequest};
 pub use scope_resolution::{ResolvedScope, ScopeSource};
 
-// ユースケース (読取専用 — 注入ゼロ。読取素材は execute の引数で値として受ける)
+// ポート (trait) — リードモデルを読む DAO。動詞は読取 (`find`) だけで、更新動詞は無い
+// (`coding-rules/cqrs-boundaries.md` 規則 6 / `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
+pub use port::{ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao};
+
+// ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ)
 pub use continue_use_case::ContinueUseCase;
 pub use next_turn_input::{NextTurnInput, NounFamily, NounToken, WorkspaceLayout};
 pub use next_use_case::NextUseCase;
-pub use sources::{DefinitionSource, ExecutionStateSource, SteeringSource};
 
-// 拒否
+// 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側のユースケースが組む)
+pub use port::{ExecutionStateReadError, MemoryRulesReadError, WorkflowDefinitionReadError};
 pub use scope_resolution::ScopeResolutionError;
 pub use stage_name::BlankStageName;
 pub use steering_plan::UnsplittableSection;

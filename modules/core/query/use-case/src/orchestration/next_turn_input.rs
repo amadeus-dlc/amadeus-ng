@@ -6,8 +6,9 @@
 //!
 //! **識別子は運ばない** — 旧コマンド側の `ActiveWorkflow` (intent / execution の uuid) と
 //! `definition_id` は Repository を引くための材料だった。クエリ側は Repository を持たず、
-//! 読み終えたリードモデルそのものを [`super::ExecutionStateSource`] /
-//! [`super::DefinitionSource`] で受けるので、識別子は observed 面から消える。
+//! リードモデルを読む DAO ポート ([`super::ExecutionStateDao`] /
+//! [`super::WorkflowDefinitionDao`]) が**どこを読むかを構築時に決めている**ので、識別子は
+//! observed 面から消える。
 
 use super::engine_command::ReadOnlyVerb;
 
