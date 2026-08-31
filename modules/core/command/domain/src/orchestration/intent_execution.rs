@@ -74,7 +74,7 @@ const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, Checkb
 
 /// エンジンループの状態機械 (集約ルート)。
 ///
-/// serde はアダプタ層の永続化 DTO (`WireIntentExecution`) が持ち、復号は完全コンストラクタ
+/// serde はアダプタ層の永続化 DTO (`IntentExecutionDto`) が持ち、復号は完全コンストラクタ
 /// [`IntentExecution::new`] を必ず通る — 検査点が 1 か所に保たれる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentExecution {
@@ -1475,7 +1475,15 @@ mod tests {
         )]
         .into_iter()
         .collect();
-        WorkflowDefinition::from_artifacts(def_id("claude"), revision('a'), graph, grid, scopes)
+        WorkflowDefinition::define(
+            def_id("claude"),
+            revision('a'),
+            graph,
+            grid,
+            scopes,
+            occurred(),
+        )
+        .0
     }
 
     fn full_grid() -> ScopeGrid {

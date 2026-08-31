@@ -21,7 +21,7 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 
-use super::{WireEvent, WireIntentEvent};
+use super::{IntentEventDto, IntentExecutionEventDto};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 fn slug(value: &str) -> StageSlug {
@@ -82,7 +82,7 @@ fn intent() -> Intent {
 
 /// intent ジャーナル行の逐語 (issue #56 — 計画・表示属性・走査結果はこの面が正本)。
 ///
-/// 書く側 (command interface-adapter の `WireIntentEvent`) と同じバイトであることは
+/// 書く側 (command interface-adapter の `IntentEventDto`) と同じバイトであることは
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
 const INTENT_ROW: &str = r#"{"Created":{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"}}}"#;
 
@@ -163,7 +163,8 @@ fn every_event_variant_serialises_to_the_recorded_bytes() {
     // 書く側と**同じリテラル**である。両側が独立に同じ綴りを固定しているので、
     // 片側だけが動けばここか向こうが落ちる。
     for (event, expected) in every_variant() {
-        let json = serde_json::to_string(&WireEvent::of(&event)).expect("DTO は直列化できる");
+        let json = serde_json::to_string(&IntentExecutionEventDto::of(&event))
+            .expect("DTO は直列化できる");
         assert_eq!(json, expected, "変種のワイヤ形式が変わった");
     }
 }
@@ -171,7 +172,8 @@ fn every_event_variant_serialises_to_the_recorded_bytes() {
 #[test]
 fn every_event_variant_round_trips_through_the_wire() {
     for (event, expected) in every_variant() {
-        let decoded: WireEvent = serde_json::from_str(expected).expect("記録済みの行は読める");
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(expected).expect("記録済みの行は読める");
         assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
     }
 }
@@ -181,7 +183,7 @@ fn a_row_whose_spelling_is_outside_the_closed_set_is_refused() {
     // 閉集合外の綴りは推測せずに拒む。ドメインへ写す前に止まるので、壊れた値が投影核に入らない
     // (intent ジャーナル面 — 計画の綴りは誕生の材料が正本である。issue #56)。
     let tampered = INTENT_ROW.replace(r#""phase":"Ideation""#, r#""phase":"ideation""#);
-    let decoded: WireIntentEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+    let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "小文字の phase は閉集合の外");
 }
 
@@ -192,7 +194,7 @@ fn a_row_that_breaks_an_aggregate_invariant_crashes_reconstruction() {
     // (オーナー裁定 2026-08-30)。
     // 先頭ステージ (initialization) を SKIP に畳むと Always Valid を破る。
     let tampered = INTENT_ROW.replacen(r#""plan_action":"Execute""#, r#""plan_action":"Skip""#, 1);
-    let decoded: WireIntentEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+    let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
     let _ = decoded.to_domain();
 }
 
@@ -217,16 +219,16 @@ fn a_malformed_identifier_is_refused_with_its_field() {
         (r#""plan_action":"Execute""#, r#""plan_action":"EXECUTE""#),
     ] {
         let tampered = INTENT_ROW.replacen(from, to, 1);
-        let decoded: WireIntentEvent =
-            serde_json::from_str(&tampered).expect("JSON としては読める");
+        let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
     }
 }
 
 #[test]
 fn a_started_row_with_a_malformed_intent_id_is_refused() {
-    let decoded: WireEvent = serde_json::from_str(r#"{"Started":{"intent_id":"not-a-uuid"}}"#)
-        .expect("JSON としては読める");
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(r#"{"Started":{"intent_id":"not-a-uuid"}}"#)
+            .expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "文法外の intent 識別子は拒む");
 }
 
@@ -244,7 +246,8 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
             .replace(r#""intent-capture""#, r#""Not A Slug""#)
             .replace(r#""state-init""#, r#""Not A Slug""#)
             .replace(r#""scope-definition""#, r#""Not A Slug""#);
-        let decoded: WireEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき行: {tampered}");
     }
 }
@@ -262,7 +265,8 @@ fn a_malformed_closed_set_value_in_a_control_variant_is_refused() {
             .find(|json| json.contains(from))
             .expect("その綴りを含む変種がある");
         let tampered = row.replace(from, to);
-        let decoded: WireEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
     }
 }
@@ -277,7 +281,7 @@ fn an_optional_request_field_round_trips_when_present() {
         r#""test_strategy":"balanced""#,
         1,
     );
-    let decoded: WireIntentEvent = serde_json::from_str(&row).expect("記録済みの行は読める");
+    let decoded: IntentEventDto = serde_json::from_str(&row).expect("記録済みの行は読める");
     let intent = decoded.to_domain().expect("ドメインへ戻せる");
     assert_eq!(intent.test_strategy(), Some("balanced"));
     assert_eq!(intent.depth(), Some("standard"));
@@ -287,7 +291,8 @@ fn an_optional_request_field_round_trips_when_present() {
 fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
     // 列の中の 1 本でも文法外の slug は復号を止める (slugs_of の失敗面)。
     let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
-    let decoded: WireEvent = serde_json::from_str(tampered).expect("JSON としては読める");
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err());
 }
 
@@ -297,10 +302,10 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
 )]
 #[test]
 fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
-    let json = serde_json::to_string(&WireIntentEvent::of(&intent())).expect("DTO は直列化できる");
+    let json = serde_json::to_string(&IntentEventDto::of(&intent())).expect("DTO は直列化できる");
     assert_eq!(json, INTENT_ROW, "intent ジャーナルのワイヤ形式が変わった");
 
-    let decoded: WireIntentEvent = serde_json::from_str(INTENT_ROW).expect("記録済みの行は読める");
+    let decoded: IntentEventDto = serde_json::from_str(INTENT_ROW).expect("記録済みの行は読める");
     assert_eq!(
         decoded.to_domain().expect("ドメインへ戻せる"),
         intent(),
@@ -315,6 +320,6 @@ fn a_malformed_intent_row_is_refused() {
         r#""id":"not-a-uuid""#,
         1,
     );
-    let decoded: WireIntentEvent = serde_json::from_str(&broken).expect("形は DTO として読める");
+    let decoded: IntentEventDto = serde_json::from_str(&broken).expect("形は DTO として読める");
     assert!(decoded.to_domain().is_err(), "識別子の文法違反は拒否");
 }

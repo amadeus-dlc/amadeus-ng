@@ -58,8 +58,8 @@ use core_command_domain::workflow_definition::{
 };
 use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    AggregateKey, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore, IntentRepositoryImpl,
-    SnapshotStrategy,
+    IntentExecutionAggregateKeyDto, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
+    IntentRepositoryImpl, SnapshotStrategy,
 };
 use core_command_use_case::orchestration::{
     IntentExecutionRepository, IntentRepository, RepositoryError,
@@ -466,7 +466,7 @@ async fn assert_projection(
 
     let snapshot = store
         .snapshot_view()
-        .get_latest_snapshot_by_id(&AggregateKey::of(&execution_id()))
+        .get_latest_snapshot_by_id(&IntentExecutionAggregateKeyDto::of(&execution_id()))
         .await
         .expect("スナップショットは読める");
     let (version, seq_nr) =

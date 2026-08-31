@@ -342,6 +342,8 @@ mod tests {
     };
     use std::collections::BTreeMap;
 
+    use chrono::{DateTime, Utc};
+
     const SAMPLE: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
     fn id() -> IntentId {
@@ -350,6 +352,13 @@ mod tests {
 
     fn def_id() -> WorkflowDefinitionId {
         WorkflowDefinitionId::parse("claude").unwrap()
+    }
+
+    /// 定義イベントの発生時刻 (定義の genesis に渡す固定値)。
+    fn defined_at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-08-31T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
     }
 
     fn revision() -> DefinitionRevision {
@@ -445,13 +454,15 @@ mod tests {
         )]
         .into_iter()
         .collect();
-        WorkflowDefinition::from_artifacts(
+        WorkflowDefinition::define(
             def_id(),
             revision(),
             StageGraph::new(vec![node]).unwrap(),
             grid,
             scopes,
+            defined_at(),
         )
+        .0
     }
 
     #[test]
@@ -633,13 +644,15 @@ mod tests {
         )]
         .into_iter()
         .collect();
-        let definition = WorkflowDefinition::from_artifacts(
+        let definition = WorkflowDefinition::define(
             def_id(),
             revision(),
             StageGraph::new(vec![node]).unwrap(),
             grid,
             scopes,
-        );
+            defined_at(),
+        )
+        .0;
         assert_eq!(
             Intent::create(id(), &definition, request(), scan()),
             Err(IntentError::StageDisplayNotSingleLine {

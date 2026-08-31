@@ -780,8 +780,8 @@ fn jumped_event(
     };
     let (src_at, tgt_at) = (position(&source)?, position(target)?);
     let direction = JumpDirection::of(src_at, tgt_at);
-    let wire = direction_wire(direction);
-    let lowered = wire.to_lowercase();
+    let spelling = direction_spelling(direction);
+    let lowered = spelling.to_lowercase();
 
     let checkboxes = Checkboxes::parse(read_model.state());
     let state_of = |slug: &StageSlug| {
@@ -853,14 +853,14 @@ fn jumped_event(
         EventType::StageJumped,
         at,
         &AuditFields::new()
-            .with(key(key::DIRECTION)?, wire)
+            .with(key(key::DIRECTION)?, spelling)
             .with(key(key::SOURCE)?, source.as_str())
             .with(key(key::TARGET)?, target.as_str())
             .with(key(key::SCOPE)?, plan.scope())
             .with(
                 key(key::DETAILS)?,
                 &format!(
-                    "{wire} jump from {} to {} ({number}). Scope: {}.",
+                    "{spelling} jump from {} to {} ({number}). Scope: {}.",
                     source.as_str(),
                     target.as_str(),
                     plan.scope()
@@ -1386,7 +1386,7 @@ const fn phase_order(phase: PhaseId) -> usize {
 }
 
 /// `JumpDirection` のワイヤ綴り（`**Direction**:` は大文字）。
-const fn direction_wire(direction: JumpDirection) -> &'static str {
+const fn direction_spelling(direction: JumpDirection) -> &'static str {
     match direction {
         JumpDirection::Forward => "FORWARD",
         JumpDirection::Backward => "BACKWARD",
@@ -1874,10 +1874,10 @@ mod tests {
     }
 
     #[test]
-    fn every_jump_direction_has_a_wire_spelling() {
-        assert_eq!(direction_wire(JumpDirection::Forward), "FORWARD");
-        assert_eq!(direction_wire(JumpDirection::Backward), "BACKWARD");
-        assert_eq!(direction_wire(JumpDirection::Redo), "REDO");
+    fn every_jump_direction_has_an_audit_spelling() {
+        assert_eq!(direction_spelling(JumpDirection::Forward), "FORWARD");
+        assert_eq!(direction_spelling(JumpDirection::Backward), "BACKWARD");
+        assert_eq!(direction_spelling(JumpDirection::Redo), "REDO");
     }
 
     #[test]

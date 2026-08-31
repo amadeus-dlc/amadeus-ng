@@ -64,7 +64,7 @@ use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
 use core_command_domain::orchestration::{Intent, IntentExecutionId, IntentId};
 
-use super::wire::{WireDecodeError, WireEvent, WireIntentEvent};
+use super::dto::{DtoDecodeError, IntentEventDto, IntentExecutionEventDto};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -344,10 +344,27 @@ const EVENT_MANIFEST: &str = "intent-execution-event/1";
 /// [`Intent`]: core_command_domain::orchestration::Intent
 const INTENT_EVENT_MANIFEST: &str = "intent-event/1";
 
+/// 定義ジャーナル行の型判別子 — 同じストアファイルに同居する**第 3 のストリーム**
+/// (2026-08-31 のオーナー裁定で `WorkflowDefinition` の Repository がイベントストア形に
+/// なったため)。
+///
+/// **この投影は消費しない。** orchestration の読み面 (`aidlc-state.md` と監査シャード) は
+/// 実行と intent に起きた事実だけから描かれ、定義の確立・改訂はそこに現れない。したがって
+/// 行を読み飛ばす — チェックポイントは行を数えて進むので、飛ばした行の分だけ再訪も起きない。
+///
+/// **既知の判別子として明示的に飛ばす**ことが要点である。「知らない判別子は黙って飛ばす」に
+/// してしまうと、[`decode_entry`] が守っている「名乗りが違う行の中身は解釈しない」guard が
+/// 崩れる — 未知の判別子は従来どおり `Corrupt` に落ちる。
+///
+/// **この読み飛ばしは暫定である**: 規則 7 の最終形では RMU が定義イベントから
+/// `stage-graph.json` を投影する (`coding-rules/cqrs-boundaries.md` 規則 7)。その時点で
+/// この skip は投影経路に置き換わる。
+const DEFINITION_EVENT_MANIFEST: &str = "workflow-definition-event/1";
+
 /// intent ジャーナル 1 行を集約値へ写す。
 ///
 /// 実行の行 ([`decode_entry`]) と同じ検査態度である: 行が名乗る識別子は文法検査を通し、
-/// payload はこの側の DTO ([`WireIntentEvent`]) で受けてから検査付き再構成でドメインへ
+/// payload はこの側の DTO ([`IntentEventDto`]) で受けてから検査付き再構成でドメインへ
 /// 写す。行の名乗り (`aid`) と誕生材料の識別子が食い違う行は、どちらかが噓をついている —
 /// 解釈せず `Corrupt` で止める。
 fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
@@ -355,7 +372,7 @@ fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
     // intent のイベントは現状 `Created` 1 種 = 必ず genesis (通番 1)。それ以外の通番を名乗る
     // 行は破損した歴史であり、payload を解釈する前に止める (CodeRabbit 指摘)。変種が増えた
-    // ときはこの前提ごと見直す (`WireIntentEvent` の網羅がビルドで教える)。
+    // ときはこの前提ごと見直す (`IntentEventDto` の網羅がビルドで教える)。
     if row_seq != 1 {
         return Err(corrupt_error(
             &row.aggregate_id,
@@ -370,7 +387,7 @@ fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
             CorruptCause::InvariantViolation,
         )
     })?;
-    let intent = serde_json::from_slice::<WireIntentEvent>(&row.payload)
+    let intent = serde_json::from_slice::<IntentEventDto>(&row.payload)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
         .to_domain()
         .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
@@ -385,10 +402,10 @@ fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
 }
 
 /// 復号の失敗を `Corrupt` の原因へ写す。
-const fn decode_cause(error: &WireDecodeError) -> CorruptCause {
+const fn decode_cause(error: &DtoDecodeError) -> CorruptCause {
     match error {
-        WireDecodeError::Malformed { .. } => CorruptCause::UndecodablePayload,
-        WireDecodeError::InvariantViolation => CorruptCause::InvariantViolation,
+        DtoDecodeError::Malformed { .. } => CorruptCause::UndecodablePayload,
+        DtoDecodeError::InvariantViolation => CorruptCause::InvariantViolation,
     }
 }
 
@@ -411,7 +428,7 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
     }
     // 行のバイトは**この側の DTO** で受けてからドメインイベントへ写す
     // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。
-    let event = serde_json::from_slice::<WireEvent>(&row.payload)
+    let event = serde_json::from_slice::<IntentExecutionEventDto>(&row.payload)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
         .to_domain()
         .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
@@ -467,7 +484,11 @@ impl JournalReader for JournalReaderImpl {
         let mut entries = Vec::new();
         let mut intents = Vec::new();
         for row in &rows {
-            // 同居する 2 ストリームを判別子で振り分ける (issue #50 / #56)。
+            // 同居する 3 ストリームを判別子で振り分ける (issue #50 / #56、定義は 2026-08-31)。
+            if row.manifest == DEFINITION_EVENT_MANIFEST {
+                // この投影の消費対象外 — 読み飛ばす (下の定数の doc を参照)。
+                continue;
+            }
             if row.manifest == INTENT_EVENT_MANIFEST {
                 intents.push(decode_intent_row(row)?);
             } else {
@@ -1331,7 +1352,7 @@ mod tests {
             clippy::disallowed_methods,
             reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
         )]
-        serde_json::to_vec(&WireEvent::Unparked).unwrap()
+        serde_json::to_vec(&IntentExecutionEventDto::Unparked).unwrap()
     }
 
     /// 正常な 1 行 (個々のフィールドを崩して境界を踏むための素体)。
@@ -1355,7 +1376,7 @@ mod tests {
         // JSON としては読めて DTO にもなるが、閉集合外の綴りを名乗る行。ドメインへ写す時点で
         // 止まるので、壊れた値が投影核に流れ込まない。
         let tampered = String::from_utf8(
-            serde_json::to_vec(&WireEvent::Parked(
+            serde_json::to_vec(&IntentExecutionEventDto::Parked(
                 serde_json::from_str(r#"{"stage":"intent-capture"}"#).unwrap(),
             ))
             .unwrap(),
@@ -1492,6 +1513,52 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn the_definition_stream_is_skipped_instead_of_being_read_as_ours() {
+        // 定義のジャーナルは同じストアファイルに同居するが、この投影は消費しない
+        // (2026-08-31 の ES 転換)。**既知の判別子として飛ばす**ので、名乗りが違う行を
+        // `Corrupt` にする guard は緩まない — 未知の判別子は従来どおり落ちる。
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let connection = raw(&path);
+        connection
+            .execute(
+                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+                 VALUES ('p', 's', 'claude', 1, X'7B7D', 0, ?1)",
+                params![DEFINITION_EVENT_MANIFEST],
+            )
+            .expect("定義の行を置く");
+
+        let batch = reader
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .expect("定義の行は解釈されずに飛ばされる");
+        assert!(batch.executions().is_empty());
+        assert!(batch.intents().is_empty());
+        assert_eq!(
+            batch.scanned_to(),
+            Some(GlobalSeqNr::new(1)),
+            "飛ばした行の分もチェックポイントは進む (再訪しない)"
+        );
+
+        // 未知の判別子は飛ばさない — 中身を解釈せず `Corrupt` で止める。
+        connection
+            .execute(
+                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+                 VALUES ('p2', 's2', 'claude', 2, X'7B7D', 0, 'some-other-type/1')",
+                [],
+            )
+            .expect("未知の判別子の行を置く");
+        assert!(matches!(
+            reader
+                .events_after(GlobalSeqNr::ZERO)
+                .await
+                .expect_err("未知の判別子は落ちる"),
+            JournalReadError::Corrupt { .. }
+        ));
+    }
+
     #[test]
     fn a_payload_that_is_not_an_event_is_corrupt() {
         let row = JournalRow {
@@ -1570,7 +1637,7 @@ mod tests {
             rowid: 1,
             seq_nr: 1,
             aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-            payload: serde_json::to_vec(&WireIntentEvent::of(&birth_intent())).unwrap(),
+            payload: serde_json::to_vec(&IntentEventDto::of(&birth_intent())).unwrap(),
             occurred_at: 1_756_425_600_000_000_000,
             manifest: INTENT_EVENT_MANIFEST.to_string(),
         }
@@ -1656,11 +1723,11 @@ mod tests {
     #[test]
     fn every_decode_cause_maps_to_its_corrupt_classification() {
         assert_eq!(
-            decode_cause(&WireDecodeError::malformed("id", "x")),
+            decode_cause(&DtoDecodeError::malformed("id", "x")),
             CorruptCause::UndecodablePayload
         );
         assert_eq!(
-            decode_cause(&WireDecodeError::InvariantViolation),
+            decode_cause(&DtoDecodeError::InvariantViolation),
             CorruptCause::InvariantViolation
         );
     }

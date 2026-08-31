@@ -15,7 +15,7 @@
 //!
 //! # 綴りの正本はここにある
 //!
-//! 閉集合の綴りは [`wire_vocabulary`] が持つ。ドメイン側の `as_str` / `parse` を**流用しない** —
+//! 閉集合の綴りは [`dto_vocabulary`] が持つ。ドメイン側の `as_str` / `parse` を**流用しない** —
 //! 同じ値でも面ごとに綴りが違うからである (例: `PhaseId` はジャーナル上 `"Ideation"` だが
 //! `stage-graph.json` 上は `"ideation"`、`BrownfieldGreenfield` はどちらも `"greenfield"`)。
 //! 流用すると片方の綴りを変えた瞬間にもう片方のバイトが壊れる。
@@ -23,24 +23,32 @@
 //! 読む側 (RMU) は**自前の**復号 DTO を持つ (`coding-rules/cqrs-boundaries.md` — 共有部品は
 //! 側の独立を DRY に優先する)。書き手と読み手のワイヤ形式の一致は横断適合テストが固定する。
 
-mod aggregate_key;
-mod wire_error;
-mod wire_event;
-mod wire_intent;
-mod wire_intent_event;
-mod wire_intent_execution;
-mod wire_vocabulary;
+mod dto_decode_error;
+mod dto_vocabulary;
+mod intent_aggregate_key_dto;
+mod intent_dto;
+mod intent_event_dto;
+mod intent_execution_aggregate_key_dto;
+mod intent_execution_dto;
+mod intent_execution_event_dto;
+mod workflow_definition_aggregate_key_dto;
+mod workflow_definition_dto;
+mod workflow_definition_event_dto;
 
-pub use aggregate_key::{AggregateKey, IntentAggregateKey};
-pub use wire_error::WireDecodeError;
-pub use wire_event::{
-    WireAutonomyModeSet, WireEvent, WireGateApproved, WireGateOpened, WireGateRejected, WireJumped,
-    WireParked, WireRecomposed, WireStageCompleted, WireStageRevised, WireStageSkipped,
-    WireStarted,
+pub use dto_decode_error::DtoDecodeError;
+pub use intent_aggregate_key_dto::IntentAggregateKeyDto;
+pub use intent_dto::IntentDto;
+pub use intent_event_dto::IntentEventDto;
+pub use intent_execution_aggregate_key_dto::IntentExecutionAggregateKeyDto;
+pub use intent_execution_dto::IntentExecutionDto;
+pub use intent_execution_event_dto::{
+    AutonomyModeSetDto, GateApprovedDto, GateOpenedDto, GateRejectedDto, IntentExecutionEventDto,
+    JumpedDto, ParkedDto, RecomposedDto, StageCompletedDto, StageRevisedDto, StageSkippedDto,
+    StartedDto,
 };
-pub use wire_intent::WireIntent;
-pub use wire_intent_event::WireIntentEvent;
-pub use wire_intent_execution::WireIntentExecution;
+pub use workflow_definition_aggregate_key_dto::WorkflowDefinitionAggregateKeyDto;
+pub use workflow_definition_dto::WorkflowDefinitionDto;
+pub use workflow_definition_event_dto::WorkflowDefinitionEventDto;
 
 #[cfg(test)]
 mod tests;

@@ -10,6 +10,11 @@
 //! ここに置くのは 1 つだけである — ポートのテストも `CommitVerdictUseCase` のテストも同じ
 //! [`InMemoryIntentExecutionRepository`] を通す (`coding-rules/no-backward-compatibility.md`
 //! — 同じ役割の口を 2 つ並立させない)。
+//!
+//! **リポジトリのインメモリ実装は、アダプタ層の `XxxRepositoryImpl<EventStoreForMemory>` が
+//! 正である** (オーナー裁定 2026-08-31 — 自作 HashMap ダブルは禁止)。ここの trait フェイクは
+//! その禁止の対象外で、**DIP 制約下の use-case 単体テスト専用**である (上記のとおり
+//! アダプタ層を dev-dependency にも書けないため、ここには本家ストアが届かない)。
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -21,9 +26,12 @@ use core_command_domain::orchestration::{
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
     ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
-    WorkflowDefinition, WorkflowDefinitionId,
+    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
 
+use super::port::DefinitionArtifacts;
+use super::port::DefinitionArtifactsClient;
+use super::port::DefinitionArtifactsError;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
@@ -95,12 +103,12 @@ pub(crate) fn definition_revision() -> DefinitionRevision {
         .expect("フィクスチャの定義 revision")
 }
 
-/// `stage_count` 段の定義 — 索引 0 が initialization、以降 inception。
+/// `stage_count` 段の定義の 3 入力 — 索引 0 が initialization、以降 inception。
 ///
 /// [`genesis`] が組み立てる合成計画と**同じ形**にしてある。したがって
 /// `Intent::create` にこの定義を渡すと、`start_from_plan` が直接組む計画と
 /// 同じ段数・同じフェーズ配置の intent が得られる。
-pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
+fn content(stage_count: usize) -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
     let nodes = (0..stage_count)
         .map(|index| {
             let phase = if index == 0 {
@@ -128,34 +136,193 @@ pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
         "classic".to_string(),
         ScopeMetadata::new("classic").expect("フィクスチャの scope メタデータ"),
     );
-    WorkflowDefinition::from_artifacts(definition_id(), definition_revision(), graph, grid, scopes)
+    (graph, grid, scopes)
+}
+
+/// `stage_count` 段の確立済み定義 (genesis を通った集約)。
+pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
+    let (graph, grid, scopes) = content(stage_count);
+    WorkflowDefinition::define(
+        definition_id(),
+        definition_revision(),
+        graph,
+        grid,
+        scopes,
+        at(),
+    )
+    .0
+}
+
+/// 取込境界が返す材料 — 内容版だけを差し替えられる形にしてある。
+pub(crate) fn artifacts(revision: DefinitionRevision, stage_count: usize) -> DefinitionArtifacts {
+    let (graph, grid, scopes) = content(stage_count);
+    DefinitionArtifacts::new(definition_id(), revision, graph, grid, scopes)
+}
+
+/// フィクスチャの別の内容版 (改訂を見るテスト用)。
+pub(crate) fn other_revision() -> DefinitionRevision {
+    DefinitionRevision::parse(&format!("sha256:{}", "1".repeat(64)))
+        .expect("フィクスチャの定義 revision")
 }
 
 /// [`WorkflowDefinitionRepository`] のインメモリ実装。
 ///
-/// 「1 Repository 1 定義、要求 id が違えば `NotFound`」(BR2.6) だけを模す。3 入力の
-/// パースと失敗注入はアダプタ層の実 Gateway の持ち物である。
+/// 「1 ハーネス 1 定義」(BR2.6) を単一スロットで模す。楽観 version は本家の実測どおり
+/// 「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。イベントストアの実体
+/// (`WorkflowDefinitionRepositoryImpl`) の契約はアダプタ層の契約テストが固定する。
 #[derive(Debug)]
 pub(crate) struct InMemoryWorkflowDefinitionRepository {
-    held: WorkflowDefinition,
+    stored: Option<(WorkflowDefinition, usize)>,
+    committed: Vec<WorkflowDefinitionEvent>,
+    /// 読取を破損で失敗させる台本 (`corrupt()` が立てる)。
+    corrupt: bool,
+    /// 書込に割り込む別の書き手の回数 (`holding_behind_a_concurrent_write` が立てる)。
+    interrupting_writes: usize,
 }
 
 impl InMemoryWorkflowDefinitionRepository {
-    /// 組み立て済みの定義を据える。
+    /// 基本コンストラクタ — 中身 (集約とストアが採番している版) をそのまま受け取る。
+    pub(crate) const fn new(
+        stored: Option<(WorkflowDefinition, usize)>,
+    ) -> InMemoryWorkflowDefinitionRepository {
+        InMemoryWorkflowDefinitionRepository {
+            stored,
+            committed: Vec::new(),
+            corrupt: false,
+            interrupting_writes: 0,
+        }
+    }
+
+    /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
+    pub(crate) const fn empty() -> InMemoryWorkflowDefinitionRepository {
+        InMemoryWorkflowDefinitionRepository::new(None)
+    }
+
+    /// 確立済みの定義を版 1 で保持する (genesis が 1 度書かれた状態)。
     pub(crate) const fn holding(held: WorkflowDefinition) -> InMemoryWorkflowDefinitionRepository {
-        InMemoryWorkflowDefinitionRepository { held }
+        InMemoryWorkflowDefinitionRepository::new(Some((held, 1)))
+    }
+
+    /// 確立済みの定義を保持しつつ、最初の `store` に**別の書き手の書込が割り込む**ストア。
+    ///
+    /// 割り込んだ回は版だけが 1 つ進み、提示された版は古くなるので `Conflict` になる。
+    /// 単一スレッドのテストから競合を作る唯一の手であり、実物では別プロセスが先に改訂した
+    /// 状況にあたる (`InMemoryIntentExecutionRepository::holding_behind_concurrent_writes`
+    /// と同じ役目)。
+    pub(crate) fn holding_behind_a_concurrent_write(
+        held: WorkflowDefinition,
+    ) -> InMemoryWorkflowDefinitionRepository {
+        let mut repository = InMemoryWorkflowDefinitionRepository::holding(held);
+        repository.interrupting_writes = 1;
+        repository
+    }
+
+    /// 読取そのものが**破損で失敗する**ストア。
+    ///
+    /// `NotFound` 以外の読取失敗をユースケースがどう運ぶかを見るための台本 — 実物では
+    /// ジャーナル行を直接壊さないと作れない状態である。
+    pub(crate) const fn corrupt() -> InMemoryWorkflowDefinitionRepository {
+        InMemoryWorkflowDefinitionRepository {
+            stored: None,
+            committed: Vec::new(),
+            corrupt: true,
+            interrupting_writes: 0,
+        }
+    }
+
+    /// このストアが受理したイベント列 (書込の有無を見るテスト用)。
+    pub(crate) fn committed(&self) -> &[WorkflowDefinitionEvent] {
+        &self.committed
     }
 }
 
 impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
-    fn find_by_id(
+    async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
     ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
-        if self.held.id() != id {
-            return Err(RepositoryError::NotFound { id: id.clone() });
+        if self.corrupt {
+            return Err(RepositoryError::Corrupt {
+                id: id.clone(),
+                seq_nr: Some(1),
+                source: Box::new(std::io::Error::other("journal row is unreadable")),
+            });
         }
-        Ok(self.held.clone())
+        match &self.stored {
+            // 返す集約にはストアが採番した版を刻む — 呼出側はそれをそのまま書込へ提示する。
+            Some((held, version)) if held.id() == id => Ok(held.clone().with_version(*version)),
+            _ => Err(RepositoryError::NotFound { id: id.clone() }),
+        }
+    }
+
+    async fn store(
+        &mut self,
+        event: &WorkflowDefinitionEvent,
+        definition: &WorkflowDefinition,
+    ) -> Result<(), RepositoryError<WorkflowDefinitionId>> {
+        let expected_version = definition.version();
+        let mut current = self.stored.as_ref().map_or(0, |(_, version)| *version);
+        if self.interrupting_writes > 0 {
+            // 別の書き手が先に書いた — その行の版が進み、提示された版が古くなる。
+            self.interrupting_writes -= 1;
+            current += 1;
+            if let Some((held, version)) = self.stored.take() {
+                let _ = version;
+                self.stored = Some((held, current));
+            }
+        }
+        if expected_version != current {
+            return Err(RepositoryError::Conflict {
+                expected: expected_version,
+                actual: current,
+            });
+        }
+        self.stored = Some((definition.clone(), current + 1));
+        self.committed.push(event.clone());
+        Ok(())
+    }
+}
+
+/// [`DefinitionArtifactsClient`] のテストダブル — 決まった材料を返すか、決まった失敗を返す。
+#[derive(Debug)]
+pub(crate) struct StubDefinitionArtifactsClient {
+    outcome: StubOutcome,
+}
+
+/// ダブルの台本 (失敗は複製不能なので、材料ではなく「どう振る舞うか」を持つ)。
+#[derive(Debug)]
+enum StubOutcome {
+    /// この材料を返す。
+    Serving(DefinitionArtifacts),
+    /// 配布物が読めない (`stage-graph.json` の欠損に相当)。
+    Unreadable,
+}
+
+impl StubDefinitionArtifactsClient {
+    /// 決まった材料を返すダブル。
+    pub(crate) const fn serving(artifacts: DefinitionArtifacts) -> StubDefinitionArtifactsClient {
+        StubDefinitionArtifactsClient {
+            outcome: StubOutcome::Serving(artifacts),
+        }
+    }
+
+    /// 配布物が読めないダブル。
+    pub(crate) const fn unreadable() -> StubDefinitionArtifactsClient {
+        StubDefinitionArtifactsClient {
+            outcome: StubOutcome::Unreadable,
+        }
+    }
+}
+
+impl DefinitionArtifactsClient for StubDefinitionArtifactsClient {
+    fn load(&self) -> Result<DefinitionArtifacts, DefinitionArtifactsError> {
+        match &self.outcome {
+            StubOutcome::Serving(artifacts) => Ok(artifacts.clone()),
+            StubOutcome::Unreadable => Err(DefinitionArtifactsError::Io {
+                kind: std::io::ErrorKind::NotFound,
+                path: std::path::PathBuf::from("/harness/tools/data/stage-graph.json"),
+            }),
+        }
     }
 }
 

@@ -27,11 +27,13 @@ use core_command_domain::orchestration::{IntentExecutionId, IntentId, StartReque
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{ShardName, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    IntentExecutionRepositoryImpl, IntentRepositoryImpl, WorkflowDefinitionRepositoryImpl,
+    DefinitionArtifactsClientImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
+    WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
 };
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
-    CommitVerdictUseCase, CreateIntentUseCase, IntentRepository as _, ReportedTransition,
+    CommitVerdictUseCase, CreateIntentUseCase, DefineWorkflowUseCase, IntentRepository as _,
+    ReportedTransition,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::{
@@ -405,18 +407,24 @@ async fn mint_intent(
         .map_err(|error| fault("cannot scan the workspace", &format!("{error:?}")))?;
     let request = build_request(scope, args, review.as_deref());
     let store = store_path(layout)?;
-    let (Ok(intents), Ok(executions)) = (
+    let (Ok(intents), Ok(executions), Ok(definitions)) = (
         IntentRepositoryImpl::open(&store),
         IntentExecutionRepositoryImpl::open(&store),
+        WorkflowDefinitionRepositoryImpl::open(&store),
     ) else {
         return Err(wording::orchestrate_failure("cannot open the event store"));
     };
     let intents_reader = intents.reopened();
-    let mut use_case = CreateIntentUseCase::new(
-        WorkflowDefinitionRepositoryImpl::new(layout.definition_data_dir(), layout.scopes_dir()),
-        intents,
-        executions,
-    );
+    // 鋳造の前に定義を確立しておく（ensure-defined）。ハーネス配布物の 3 入力を取り込み、
+    // ストアに定義が無ければ確立し、内容版が違えば改訂する。同じなら何も書かない
+    // （冪等は集約の `Unchanged` ガードが決める — `DefineWorkflowUseCase` の doc）。
+    //
+    // ここに置くのは、`intent-create` が**定義を読む最初の書込動詞**だからである。
+    // クエリ側の動詞（`next` / `continue`）は自分のリードモデル読取でファイルを直接読むので
+    // この前段を要しない（`coding-rules/cqrs-boundaries.md` 規則 6）。
+    let definitions_reader = definitions.reopened();
+    ensure_defined(layout, definitions, now).await?;
+    let mut use_case = CreateIntentUseCase::new(definitions_reader, intents, executions);
     let definition_id =
         definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
     use_case
@@ -462,6 +470,25 @@ async fn mint_intent(
         &JsonValue::Object(created),
         SerializationProfile::ContractCompact,
     )))
+}
+
+/// ハーネス配布物を取り込んで定義を確立・改訂する（ensure-defined）。
+///
+/// 3 入力を読むのは**取込境界**であり、集約の読取ではない — 集約は常にイベントストアから
+/// 読む（オーナー裁定 2026-08-31。`coding-rules/cqrs-boundaries.md` 規則 4）。配布物が
+/// 読めなければ intent は鋳造できないので、失敗は自己防衛拒否として surface する。
+async fn ensure_defined(
+    layout: &Layout,
+    definitions: WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>,
+    now: chrono::DateTime<Utc>,
+) -> Result<(), String> {
+    DefineWorkflowUseCase::new(
+        DefinitionArtifactsClientImpl::new(layout.definition_data_dir(), layout.scopes_dir()),
+        definitions,
+    )
+    .execute(now)
+    .await
+    .map_err(|error| fault("cannot ingest the workflow definition", &error.to_string()))
 }
 
 fn build_request(scope: &str, args: &IntentCreateArgs, review: Option<&str>) -> StartRequest {

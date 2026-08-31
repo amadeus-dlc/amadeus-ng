@@ -1,13 +1,14 @@
-//! `IntentRepository` の契約テスト (issue #50 — BR2.7 の形)。
+//! `WorkflowDefinitionRepository` の契約テスト (BR2.7 の形)。
 //!
-//! 契約そのものは `support/intent_contract.rs` のジェネリック関数が持つ。本ファイルは本家
-//! event-store-adapter-rs の 2 バックエンド (memory / SQLite) を**同じ関数群**に流し込む。
-//! 実 Repository の実装コードは 1 つしか無く、違うのは内包するストアだけである (ADR-010)。
+//! 契約そのものは `support/definition_contract.rs` のジェネリック関数が持つ。本ファイルは
+//! 本家 event-store-adapter-rs の 2 バックエンド (memory / SQLite) を**同じ関数群**に
+//! 流し込む。実 Repository の実装コードは 1 つしか無く、違うのは内包するストアだけである
+//! (ADR-010)。
 //!
-//! かつてここには自作 HashMap ダブル (`InMemoryIntentRepository`) の第 3 実装があった。
-//! 2026-08-31 のオーナー裁定「インメモリなら `EventStoreForMemory` を使ったかチェック」で
-//! **インメモリ形は `IntentRepositoryImpl<IntentMemoryStore>` に一本化**され、同じ役割の口が
-//! 2 つ並立する状態 (`coding-rules/no-backward-compatibility.md`) ごと解消した。
+//! **このファイルの存在自体が 2026-08-31 のオーナー裁定の検収である** — 定義の Repository が
+//! イベントストア形になったからこそ、intent / intent-execution と同じ契約テストの形が
+//! 書けるようになった。旧実装 (3 入力をファイルから読む) には「同じ約束を 2 つの
+//! バックエンドに課す」という概念自体が存在しなかった。
 
 // テストコードでは unwrap / expect を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -17,25 +18,25 @@ mod support;
 
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    IntentMemoryStore, IntentRepositoryImpl, IntentSqliteStore,
+    WorkflowDefinitionMemoryStore, WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
 };
-use support::{IntentStoreFixture, intent_contract};
+use support::{DefinitionStoreFixture, definition_contract};
 use tempfile::TempDir;
 
 /// 揮発のストアを内包した Repository。
-type MemoryRepository = IntentRepositoryImpl<IntentMemoryStore>;
+type MemoryRepository = WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore>;
 
 /// SQLite ファイルのストアを内包した Repository。
-type SqliteRepository = IntentRepositoryImpl<IntentSqliteStore>;
+type SqliteRepository = WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>;
 
 /// 本家 memory バックエンドの試験装置。
 struct MemoryFixture;
 
-impl IntentStoreFixture for MemoryFixture {
+impl DefinitionStoreFixture for MemoryFixture {
     type Repository = MemoryRepository;
 
     fn open(&self) -> MemoryRepository {
-        IntentRepositoryImpl::in_memory()
+        WorkflowDefinitionRepositoryImpl::in_memory()
     }
 
     fn reopen(&self, repository: &MemoryRepository) -> MemoryRepository {
@@ -71,16 +72,18 @@ impl SqliteFixture {
     }
 }
 
-impl IntentStoreFixture for SqliteFixture {
+impl DefinitionStoreFixture for SqliteFixture {
     type Repository = SqliteRepository;
 
     fn open(&self) -> SqliteRepository {
-        IntentRepositoryImpl::open(&self.fresh_path()).expect("ストアは開ける")
+        WorkflowDefinitionRepositoryImpl::open(&self.fresh_path()).expect("ストアは開ける")
     }
 
     fn reopen(&self, repository: &SqliteRepository) -> SqliteRepository {
-        IntentRepositoryImpl::open(repository.path().expect("SQLite ストアは場所を持つ"))
-            .expect("開き直せる")
+        WorkflowDefinitionRepositoryImpl::open(
+            repository.path().expect("SQLite ストアは場所を持つ"),
+        )
+        .expect("開き直せる")
     }
 }
 
@@ -88,16 +91,16 @@ macro_rules! contract_tests {
     ($($name:ident),* $(,)?) => {
         $(
             mod $name {
-                use super::{MemoryFixture, SqliteFixture, intent_contract};
+                use super::{MemoryFixture, SqliteFixture, definition_contract};
 
                 #[tokio::test]
                 async fn memory() {
-                    intent_contract::$name(&MemoryFixture).await;
+                    definition_contract::$name(&MemoryFixture).await;
                 }
 
                 #[tokio::test]
                 async fn sqlite() {
-                    intent_contract::$name(&SqliteFixture::new()).await;
+                    definition_contract::$name(&SqliteFixture::new()).await;
                 }
             }
         )*
@@ -109,5 +112,6 @@ contract_tests!(
     round_trip,
     not_found,
     a_duplicate_genesis_is_a_conflict,
-    a_mismatched_pair_is_refused,
+    a_redefinition_advances_the_stream,
+    a_write_that_presents_a_stale_version_conflicts,
 );

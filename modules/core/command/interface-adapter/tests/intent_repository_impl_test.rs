@@ -15,8 +15,8 @@ mod support;
 use core_command_domain::orchestration::IntentExecutionId;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    IntentAggregateKey, IntentExecutionRepositoryImpl, IntentRepositoryImpl, IntentSqliteStore,
-    WireIntentEvent,
+    IntentAggregateKeyDto, IntentEventDto, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
+    IntentSqliteStore,
 };
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::EventStore;
@@ -75,10 +75,10 @@ impl Fixture {
 async fn append_delta(fixture: &Fixture, seq_nr: usize, manifest: &str) {
     let (_, event) = intent_genesis();
     let envelope = EventEnvelope::new(
-        IntentAggregateKey::of(&intent_id()),
+        IntentAggregateKeyDto::of(&intent_id()),
         seq_nr,
         at(),
-        WireIntentEvent::of(&event),
+        IntentEventDto::of(&event),
     )
     .with_manifest(manifest);
     fixture
@@ -108,7 +108,7 @@ async fn the_intent_stream_coexists_with_the_execution_stream_in_the_same_file()
 
     // 識別子は別の UUID (実運用と同じ形)。本家の journal は `(aid, seq_nr)` に UNIQUE 索引を
     // **type_name 抜きの生値**で張るため、同居の前提は識別子の値の一意性である
-    // (`IntentAggregateKey` の doc 参照)。UUID どうしなら満たされる。
+    // (`IntentAggregateKeyDto` の doc 参照)。UUID どうしなら満たされる。
     let mut executions =
         IntentExecutionRepositoryImpl::open(&fixture.path).expect("実行ストアは同じファイル");
     let (execution, started) = genesis_for(IntentExecutionId::parse(EXECUTION).unwrap());

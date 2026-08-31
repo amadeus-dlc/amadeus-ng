@@ -38,8 +38,8 @@ mod workflow_definition_id;
 #[allow(clippy::module_inception)]
 mod workflow_definition;
 
-// ドメインイベント (定義集約の genesis — coding-rules/aggregate-commands.md)
-pub use workflow_definition_event::{Defined, WorkflowDefinitionEvent};
+// ドメインイベント (定義集約の genesis と改訂 — coding-rules/aggregate-commands.md)
+pub use workflow_definition_event::{Defined, Redefined, WorkflowDefinitionEvent};
 
 // Domain Primitive
 pub use definition_revision::DefinitionRevision;
@@ -77,5 +77,5 @@ pub use stage_mode::UnknownStageMode;
 pub use stage_node::{UnknownBrownfieldGreenfield, UnknownRuleScope};
 pub use stage_number::StageNumberError;
 pub use stage_slug::StageSlugError;
-pub use workflow_definition::UnknownScope;
+pub use workflow_definition::{RedefineError, UnknownScope};
 pub use workflow_definition_id::WorkflowDefinitionIdError;

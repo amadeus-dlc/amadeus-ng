@@ -14,7 +14,7 @@
 //! # 行のバイトはこの側の DTO で組む (改訂 9)
 //!
 //! ドメインは永続化知識から中立になったので、封筒に載せる payload とストア鍵は
-//! **RMU 自身の** `orchestration::wire` が持つ型である
+//! **RMU 自身の** `orchestration::dto` が持つ型である
 //! (`coding-rules/domain-persistence-neutrality.md` / `cqrs-boundaries.md`)。書く側の DTO を
 //! 借りていないので、このテストは「読む側の綴りで書いた行を読む」ことしか示さない —
 //! 書く側との一致は横断適合テスト (`journal_protocol_conformance`) が固定する。
@@ -31,7 +31,7 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::StorePath;
-use core_read_model_updater::orchestration::{WireEvent, WireIntentEvent};
+use core_read_model_updater::orchestration::{IntentEventDto, IntentExecutionEventDto};
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{AggregateId, EventStore};
@@ -70,8 +70,9 @@ impl AggregateId for StoreKey {
 /// 本家の SQLite イベントストア (ジャーナル行の書き手)。
 ///
 /// 集約 payload は `serde_json::Value` である — RMU はスナップショット行を読まないので、
-/// この側にスナップショットの DTO は無い (`orchestration::wire` の doc を参照)。
-pub(crate) type UpstreamStore = EventStoreForSqlite<StoreKey, serde_json::Value, WireEvent>;
+/// この側にスナップショットの DTO は無い (`orchestration::dto` の doc を参照)。
+pub(crate) type UpstreamStore =
+    EventStoreForSqlite<StoreKey, serde_json::Value, IntentExecutionEventDto>;
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -228,7 +229,7 @@ impl JournalWriter {
             StoreKey::of(self.aggregate.id()),
             self.aggregate.seq_nr(),
             *self.aggregate.last_updated_at(),
-            WireEvent::of(event),
+            IntentExecutionEventDto::of(event),
         )
         .with_manifest(MANIFEST);
         // スナップショット行の中身は RMU の関心外である (読むのは journal 表だけ)。
@@ -292,17 +293,17 @@ impl AggregateId for IntentStoreKey {
 
 /// intent の誕生記録 (`Created`) を 1 行書く (aid = intent 識別子、seq_nr = 1)。
 ///
-/// payload は読む側の DTO ([`WireIntentEvent`]) で組む — 書く側との一致は横断適合テスト
+/// payload は読む側の DTO ([`IntentEventDto`]) で組む — 書く側との一致は横断適合テスト
 /// (`journal_protocol_conformance`) が固定する (実行の行と同じ理屈)。
 pub(crate) async fn seed_intent(path: &StorePath) {
-    let mut store: EventStoreForSqlite<IntentStoreKey, serde_json::Value, WireIntentEvent> =
+    let mut store: EventStoreForSqlite<IntentStoreKey, serde_json::Value, IntentEventDto> =
         EventStoreForSqlite::new(path.as_path()).expect("本家ストアは開ける");
     let held = intent();
     let envelope = EventEnvelope::new(
         IntentStoreKey(held.id().as_str().to_string()),
         1,
         at(),
-        WireIntentEvent::of(&held),
+        IntentEventDto::of(&held),
     )
     .with_manifest("intent-event/1");
     store

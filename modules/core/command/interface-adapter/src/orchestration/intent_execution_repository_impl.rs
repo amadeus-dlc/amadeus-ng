@@ -47,9 +47,11 @@ use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
 use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 
+use super::dto::{
+    DtoDecodeError, IntentExecutionAggregateKeyDto, IntentExecutionDto, IntentExecutionEventDto,
+};
 use super::snapshot_strategy::SnapshotStrategy;
 use super::store_failure::io_kind_of_source;
-use super::wire::{AggregateKey, WireDecodeError, WireEvent, WireIntentExecution};
 
 /// ジャーナル行 `manifest` 列に書く型判別子 — **書く側の正本**。
 ///
@@ -66,12 +68,18 @@ const FIRST_SEQ_NR: usize = 1;
 ///
 /// 型引数はいずれも**この層の永続化 DTO** である — ドメイン型はストアに触れない
 /// (`coding-rules/domain-persistence-neutrality.md`)。
-pub type IntentExecutionSqliteStore =
-    EventStoreForSqlite<AggregateKey, WireIntentExecution, WireEvent>;
+pub type IntentExecutionSqliteStore = EventStoreForSqlite<
+    IntentExecutionAggregateKeyDto,
+    IntentExecutionDto,
+    IntentExecutionEventDto,
+>;
 
 /// 揮発の格納先にするイベントストア (本家)。
-pub type IntentExecutionMemoryStore =
-    EventStoreForMemory<AggregateKey, WireIntentExecution, WireEvent>;
+pub type IntentExecutionMemoryStore = EventStoreForMemory<
+    IntentExecutionAggregateKeyDto,
+    IntentExecutionDto,
+    IntentExecutionEventDto,
+>;
 
 /// 本家のイベントストアを**単一所有**する `IntentExecutionRepository` の実装。
 ///
@@ -98,7 +106,7 @@ enum CorruptDetail {
     /// 差分行の通番が連続していない (行の欠け — 再生すると誤った状態になる)。
     SequenceGap,
     /// 行のペイロードをドメイン型へ復号できない。
-    Undecodable(WireDecodeError),
+    Undecodable(DtoDecodeError),
     /// ストアの復号そのものが失敗した (本家の `DeserializationError`)。
     StoreDeserialization,
     /// 呼出側の書込契約違反 (本家の `ContractViolation` / `SerializationError`)。
@@ -209,7 +217,11 @@ impl<S: Clone> IntentExecutionRepositoryImpl<S> {
 
 impl<S> IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = AggregateKey, A = WireIntentExecution, P = WireEvent>,
+    S: EventStore<
+            AID = IntentExecutionAggregateKeyDto,
+            A = IntentExecutionDto,
+            P = IntentExecutionEventDto,
+        >,
 {
     /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
     ///
@@ -221,12 +233,12 @@ where
     fn envelope(
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
-    ) -> EventEnvelope<AggregateKey, WireEvent> {
+    ) -> EventEnvelope<IntentExecutionAggregateKeyDto, IntentExecutionEventDto> {
         EventEnvelope::new(
-            AggregateKey::of(aggregate.id()),
+            IntentExecutionAggregateKeyDto::of(aggregate.id()),
             aggregate.seq_nr(),
             *aggregate.last_updated_at(),
-            WireEvent::of(event),
+            IntentExecutionEventDto::of(event),
         )
         .with_manifest(EVENT_MANIFEST)
     }
@@ -302,7 +314,7 @@ where
     /// ストアに実在する楽観 version (行が無い・読めないときは 0)。競合の材料にだけ使う。
     async fn stored_version(&self, id: &IntentExecutionId) -> usize {
         self.store
-            .get_latest_snapshot_by_id(&AggregateKey::of(id))
+            .get_latest_snapshot_by_id(&IntentExecutionAggregateKeyDto::of(id))
             .await
             .ok()
             .flatten()
@@ -312,7 +324,11 @@ where
 
 impl<S> IntentExecutionRepository for IntentExecutionRepositoryImpl<S>
 where
-    S: EventStore<AID = AggregateKey, A = WireIntentExecution, P = WireEvent>,
+    S: EventStore<
+            AID = IntentExecutionAggregateKeyDto,
+            A = IntentExecutionDto,
+            P = IntentExecutionEventDto,
+        >,
 {
     async fn find_by_id(
         &self,
@@ -323,7 +339,7 @@ where
         // 「find_by_id は本家の example どおり」)。楽観 version の正本は行の列 (BR5.3)。
         let snapshot = self
             .store
-            .get_latest_snapshot_by_id(&AggregateKey::of(id))
+            .get_latest_snapshot_by_id(&IntentExecutionAggregateKeyDto::of(id))
             .await
             .map_err(|error| self.read_error(&error, id))?;
         let Some(snapshot) = snapshot else {
@@ -331,7 +347,10 @@ where
             // genesis は journal と snapshot を原子的に書くので、片方だけは矛盾である)。
             let journal = self
                 .store
-                .get_events_by_id_since_seq_nr(&AggregateKey::of(id), FIRST_SEQ_NR)
+                .get_events_by_id_since_seq_nr(
+                    &IntentExecutionAggregateKeyDto::of(id),
+                    FIRST_SEQ_NR,
+                )
                 .await
                 .map_err(|error| self.read_error(&error, id))?;
             return Err(if journal.is_empty() {
@@ -360,7 +379,10 @@ where
         // 読取側 (`JournalReaderImpl::decode_entry`) と同じ拒否条件で対称にする (PR #31)。
         let delta = self
             .store
-            .get_events_by_id_since_seq_nr(&AggregateKey::of(id), base.seq_nr() + 1)
+            .get_events_by_id_since_seq_nr(
+                &IntentExecutionAggregateKeyDto::of(id),
+                base.seq_nr() + 1,
+            )
             .await
             .map_err(|error| self.read_error(&error, id))?;
         // 通番の連続性は再生前にここで検査する — `apply_event` は通番の飛びをクラッシュで
@@ -427,7 +449,7 @@ where
             self.store
                 .persist_event_and_snapshot(
                     envelope,
-                    WireIntentExecution::of(aggregate),
+                    IntentExecutionDto::of(aggregate),
                     expected_version,
                 )
                 .await
@@ -529,7 +551,7 @@ mod tests {
             (CorruptDetail::ForeignManifest, "foreign manifest"),
             (CorruptDetail::SequenceGap, "sequence gap"),
             (
-                CorruptDetail::Undecodable(WireDecodeError::InvariantViolation),
+                CorruptDetail::Undecodable(DtoDecodeError::InvariantViolation),
                 "undecodable payload",
             ),
             (
@@ -543,8 +565,8 @@ mod tests {
     }
 
     #[test]
-    fn the_undecodable_detail_chains_its_wire_error() {
-        let detail = CorruptDetail::Undecodable(WireDecodeError::malformed("id", "x"));
+    fn the_undecodable_detail_chains_its_dto_decode_error() {
+        let detail = CorruptDetail::Undecodable(DtoDecodeError::malformed("id", "x"));
         let source = std::error::Error::source(&detail).expect("復号失敗は原因を連鎖する");
         assert_eq!(source.to_string(), "malformed field id: x");
         assert!(std::error::Error::source(&CorruptDetail::MissingSnapshot).is_none());
@@ -564,7 +586,10 @@ mod tests {
         let envelope = IntentExecutionRepositoryImpl::<IntentExecutionMemoryStore>::envelope(
             &event, &aggregate,
         );
-        assert_eq!(envelope.aggregate_id(), &AggregateKey::of(&intent()));
+        assert_eq!(
+            envelope.aggregate_id(),
+            &IntentExecutionAggregateKeyDto::of(&intent())
+        );
         assert_eq!(envelope.seq_nr(), aggregate.seq_nr());
         assert_eq!(envelope.occurred_at(), aggregate.last_updated_at());
         assert_eq!(envelope.manifest(), EVENT_MANIFEST);

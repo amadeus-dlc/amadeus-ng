@@ -1,7 +1,10 @@
 //! orchestration コンテキストの**コマンド側**実 Gateway (10-orchestration §4)。ポート (trait)
-//! は core-command-use-case が所有し、ここでは実 I/O 実装 (`...RepositoryImpl`) とテスト用
-//! in-memory 実装 (`InMemory...`) を提供する
+//! は core-command-use-case が所有し、ここでは実 I/O 実装 (`...RepositoryImpl`) を提供する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
+//!
+//! **インメモリ形も同じ `...RepositoryImpl`** である — 本家の `EventStoreForMemory` を内包した
+//! `in_memory()` が格納先だけを替える。自作 HashMap ダブルは 2026-08-31 のオーナー裁定
+//! (「インメモリなら `EventStoreForMemory` を使ったかチェック」) で退役した。
 //!
 //! 集約の永続化そのものは本家 event-store-adapter-rs が担う (ADR-010)。ここに残るのは
 //! 「本家に無いもの」— 集約の再構成手順を持つ Repository である。全集約横断の順序読取と
@@ -22,12 +25,12 @@
 //! 消費側のパスは `core_command_interface_adapter::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod definition_artifacts_client_impl;
+mod dto;
 mod intent_execution_repository_impl;
 mod intent_repository_impl;
-mod memory;
 mod snapshot_strategy;
 mod store_failure;
-mod wire;
 mod workflow_definition_repository_impl;
 
 // 実 I/O Gateway (Repository 実装)
@@ -36,21 +39,26 @@ pub use intent_repository_impl::IntentRepositoryImpl;
 pub use snapshot_strategy::SnapshotStrategy;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 
+// 実 I/O Gateway (外部システムクライアント) — ハーネス配布物の取込境界。Repository では
+// ないので `Impl` は付くが集約名は冠さない (`coding-rules/gateway-taxonomy.md` §1)。
+pub use definition_artifacts_client_impl::DefinitionArtifactsClientImpl;
+
 // 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である
 // (coding-rules/domain-persistence-neutrality.md)。ストアを具体化するのに型名が要るので
 // 公開する — 見えるのはこのクレートの外の**アダプタ利用者**だけで、ドメインとユースケースは
 // 依存の向き (層 = クレート) により参照できない。
-pub use wire::{
-    AggregateKey, IntentAggregateKey, WireAutonomyModeSet, WireDecodeError, WireEvent,
-    WireGateApproved, WireGateOpened, WireGateRejected, WireIntent, WireIntentEvent,
-    WireIntentExecution, WireJumped, WireParked, WireRecomposed, WireStageCompleted,
-    WireStageRevised, WireStageSkipped, WireStarted,
+pub use dto::{
+    AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
+    IntentAggregateKeyDto, IntentDto, IntentEventDto, IntentExecutionAggregateKeyDto,
+    IntentExecutionDto, IntentExecutionEventDto, JumpedDto, ParkedDto, RecomposedDto,
+    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
+    WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto, WorkflowDefinitionEventDto,
 };
 // ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
 pub use intent_execution_repository_impl::{
     IntentExecutionMemoryStore, IntentExecutionSqliteStore,
 };
 pub use intent_repository_impl::{IntentMemoryStore, IntentSqliteStore};
-
-// テスト用 in-memory 実装
-pub use memory::{InMemoryIntentRepository, InMemoryWorkflowDefinitionRepository};
+pub use workflow_definition_repository_impl::{
+    WorkflowDefinitionMemoryStore, WorkflowDefinitionSqliteStore,
+};

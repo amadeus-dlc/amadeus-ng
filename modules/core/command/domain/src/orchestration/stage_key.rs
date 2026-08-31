@@ -32,7 +32,7 @@ impl StageKey {
         &self.slug
     }
 
-    /// ステージのフェーズ (ジャーナル面の綴りは wire 側が持つ)。
+    /// ステージのフェーズ (ジャーナル面の綴りは DTO 側が持つ)。
     #[must_use]
     pub const fn phase(&self) -> PhaseId {
         self.phase

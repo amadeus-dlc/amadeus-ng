@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn every_constructible_variant_names_its_wire_kind() {
+    fn every_constructible_variant_names_its_serialized_kind() {
         let run_stage = RunStageDirectiveBuilder::new(
             slug(),
             PhaseView::Inception,

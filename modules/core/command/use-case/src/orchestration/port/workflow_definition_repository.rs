@@ -1,83 +1,101 @@
 //! `WorkflowDefinitionRepository` ポート — 集約 `WorkflowDefinition` (12-workflow-definition
-//! §2.1) の Repository。10-orchestration §3 のポート表に対応し、規範は 12-workflow-definition
-//! §4 / §5 が所有する。
+//! §2.1) の Repository。10-orchestration §3 のポート表に対応する。
 //!
 //! **コマンド側に残る通常の Repository である** (オーナー裁定 2026-08-30 追補 —
 //! `coding-rules/cqrs-boundaries.md`「リポジトリの使い方」)。`find_by_id` で集約を取得し、
 //! ビジネスロジックを実行し、更新された集約を `store` で保存する、というのが正しい使い方で
-//! ある。ここで `find_by_id` だけを宣言しているのは**書込ユースケースの中の集約再構成**
-//! (同規則 5) のためで、読取専用ポートだからではない。`store` は**定義を変更する最初の
-//! ユースケースと同じ Bolt で書く** — 呼び手のいない口を先行実装しない
-//! (`coding-rules/no-backward-compatibility.md` の同じ精神)。
+//! ある。両動詞が揃ったのは 2026-08-31 で、追補裁定「`store` は定義を変更する最初の
+//! ユースケースと同じ Bolt で書く」の条件が `DefineWorkflowUseCase` の登場で満たされた。
+//!
+//! # 格納先はイベントストアである (2026-08-31 オーナー裁定)
+//!
+//! 「リポジトリの実装は `EventStoreForSqlite` を使わないといけない」。**このポートの実装が
+//! dist の 3 入力をファイルから読んで集約を組み立てることは無い** — それは
+//! `coding-rules/cqrs-boundaries.md` 規則 4 (コマンド側の最新状態は常に集約から。リードモデルは
+//! 遅延するので物理的に読めない) への正面違反であり、2026-08-31 に破棄された。
+//!
+//! 3 入力を読むのは**取込境界** ([`DefinitionArtifactsClient`]) であり、読んだ材料から定義を
+//! 確立・改訂して**このポートへ書く**のが `DefineWorkflowUseCase` である。以後の読取は
+//! 常にジャーナル + スナップショットからの再構成になる。
 //!
 //! **読むだけの用途はこのポートの仕事ではない。** `next` / `continue` のように定義を読んで
-//! 何も書かない動詞はクエリ側が担い、クエリ側は同じ Published Language を**自分の
+//! 何も書かない動詞はクエリ側が担い、クエリ側は Published Language を**自分の
 //! リードモデル読取実装**で読む (`core_query_interface_adapter::WorkflowDefinitionDaoImpl` —
-//! クエリ側は読取専用 DAO ポート経由で読む。オーナー裁定 2026-08-31、b27)。
-//! 両者は側ごと専用の別実装であり、一方が他方の読取結果を受け取ることはない (同規則 6)。
-//! upstream 逐語文言 (12 §4 / §6 の「Stage graph not readable at ...」等) の所有も
-//! **クエリ側へ移った** (b26 段階 2。b27 でさらにアダプタからクエリ側ユースケースの
-//! `wording` へ移り、ポートは材料だけを運ぶ)。
-//!
-//! Published Language の 3 入力
-//! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
-//! **1 つの Repository で** 集約 `WorkflowDefinition` に束ねて供給する (compile が graph と
-//! grid を lockstep で出すため、片方だけ新しい状態は upstream でも想定外)。
+//! オーナー裁定 2026-08-31、b27)。両者は側ごと専用の別実装であり、一方が他方の読取結果を
+//! 受け取ることはない (同規則 6)。
 //!
 //! 名前は「集約名＋Repository」規則に従う (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。格納形式
-//! (`stage-graph.json` というファイル名) は Repository **実装**の内部詳細であり、ポート名に
-//! 現れてはならない。
+//! (イベントストアであること) は Repository **実装**の内部詳細であり、ポート名に現れない。
 //!
 //! # 失敗はジェネリック 1 本 (オーナー裁定 2026-08-31)
 //!
-//! ポート専用のエラー型 (3 入力の失敗を分類していた 6 変種) は持たない。失敗は
-//! [`RepositoryError<WorkflowDefinitionId>`] で表し、**リポジトリにビジネスロジックの
-//! エラーを扱わせない** (`coding-rules/error-handling.md`「Repository エラーはジェネリック
-//! 1 本」への収束)。どのファイルがどう壊れていたかという文脈はアダプタ私有の型を
-//! `Error::source` の連鎖で運び、契約は「壊れていた」としか約束しない (裁定 6 —
-//! エラーは契約の一部であり、内部実装がバレる情報を含めない)。
-//!
-//! **3 入力で失敗態度が非対称なことは実装の挙動として維持される** (12 §4。この非対称そのものが
-//! 観測可能な契約で、「より厳格にする」方向の改変も逸脱になる):
-//!
-//! - `harness.json` が読めない / 不正 JSON / `name` 欠落 = **fatal**。定義 id の供給元であり、
-//!   失われると集約に識別子を与えられない (ADR-008)。
-//! - `stage-graph.json` が読めない / 不正 JSON = **fatal**。
-//! - `scope-grid.json` が読めない / 不正 = **fatal にしない**。グラフの `scopes[]` からの
-//!   転置導出へフォールバックする (#3)。したがって `find_by_id` はグリッド欠損では失敗しない。
-//! - identity ファイルとグリッド列の不一致は**双方向とも正当** (#5 zero-EXECUTE な正当
-//!   スコープ / #6 ランタイム不可視) であり、どちらもエラーにしない。
-//! - いずれの失敗でも **stdout に何も書かない** (#10 — half-emitted directive を出さない)。
-//!
-//! ただしこの非対称の**分類はポート契約に載せない** — どの入力がどう壊れていたかは
-//! `Corrupt` の原因連鎖にだけ現れる。
+//! ポート専用のエラー型は持たない。失敗は [`RepositoryError<WorkflowDefinitionId>`] で表し、
+//! **リポジトリにビジネスロジックのエラーを扱わせない** (`coding-rules/error-handling.md`)。
+//! 何がどう壊れていたかという文脈はアダプタ私有の型を `Error::source` の連鎖で運び、契約は
+//! 「壊れていた」としか約束しない (裁定 6)。
 //!
 //! 実装は `core-command-interface-adapter`
-//! (`orchestration::WorkflowDefinitionRepositoryImpl` が実 I/O、
-//! `orchestration::InMemoryWorkflowDefinitionRepository` がテストダブル)。パス解決と env
-//! オーバライドの意味論は実装側に閉じる (12 §6)。
+//! (`orchestration::WorkflowDefinitionRepositoryImpl` — SQLite / memory のどちらのストアを
+//! 内包しても手順は同一である)。
+//!
+//! [`DefinitionArtifactsClient`]: super::definition_artifacts_client::DefinitionArtifactsClient
 
-use core_command_domain::workflow_definition::{WorkflowDefinition, WorkflowDefinitionId};
+use core_command_domain::workflow_definition::{
+    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
+};
 
 use super::repository_error::RepositoryError;
 
-/// 集約 `WorkflowDefinition` の Repository。
+/// 集約 `WorkflowDefinition` の Repository (イベントソーシング形 — ADR-010)。
+///
+/// 署名は**自集約の ID だけ**を取る (`coding-rules/gateway-taxonomy.md`)。動詞は本家
+/// ライブラリ (event-store-adapter-rs) の語彙に従い `store` / `find_by_id` である。
+///
+/// レシーバは CQS に従う (`coding-rules/command-query-separation.md`) — 読取は `&self`、
+/// 永続化は `&mut self`。
+#[allow(
+    async_fn_in_trait,
+    reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\
+              `IntentRepository` / `IntentExecutionRepository` と同じ方針である。"
+)]
 pub trait WorkflowDefinitionRepository {
-    /// 定義 id で引き、3 入力を読んで集約 `WorkflowDefinition` を組み立てて返す。
+    /// 定義を再構成して返す。
     ///
-    /// 1 つのハーネスが提供できる定義は 1 つだけなので、この Repository は「id で探す」
-    /// のではなく「**要求された id が自分の id か**」を検査する (BR2.6 / ADR-008)。
-    /// 一致すれば 3 入力を読み、`id` と内容版 `DefinitionRevision` を載せた集約を返す。
+    /// 1 つのハーネスが提供する定義は 1 つだけだが、それは**ストアに何が書かれているか**で
+    /// 決まる — 要求 id のストリームが無ければ `NotFound` である (BR2.6 / ADR-008)。
+    ///
+    /// 返るのは Always Valid な [`WorkflowDefinition`] である — 実装は復号したあと必ず
+    /// 検査付き再構成経路 (誕生記録の変換 + [`WorkflowDefinition::replay`]) を通す
+    /// (`coding-rules/domain-persistence-neutrality.md`)。
     ///
     /// # Errors
     ///
-    /// 要求 id をこのハーネスが提供していない (`NotFound` — 運ぶのは**要求された id** だけ)、
-    /// OS 由来の読取失敗 (`Io`)、読めたが内容が壊れている (`Corrupt` — 不正 JSON・identity の
-    /// 内容不正・scope frontmatter の検証失敗・ドメイン型への写像失敗。原因は
-    /// `Error::source` の連鎖が運ぶ)。
-    /// **グリッドの欠損・不正はエラーにしない** — 転置導出へフォールバックする (12 §4 #3)。
-    fn find_by_id(
+    /// 定義がまだ確立されていない (`NotFound`)、ストア I/O (`Io`)、ストアの記録の破損
+    /// (`Corrupt` — 原因は `source` 連鎖) を返す。
+    async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
     ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>>;
+
+    /// イベントを 1 件と、適用後の集約を永続化する。
+    ///
+    /// 呼出側は [`WorkflowDefinition::define`] が返す対、または
+    /// [`WorkflowDefinition::redefine`] が返したイベントと改訂後の集約をそのまま渡す —
+    /// いつスナップショットを書くかは実装の内部政策である (オーナー裁定 2026-08-30)。
+    ///
+    /// 発生時刻は**引数で受けない**。集約が `last_updated_at` として運んでくるので、封筒の
+    /// `occurred_at` はそこから組む
+    /// ([`IntentExecutionRepository::store`](super::intent_execution_repository::IntentExecutionRepository::store)
+    /// と同じ形 — オーナー裁定 2026-08-31「手本と対にせよ」)。時刻そのものは `define` /
+    /// `redefine` の引数として合成ルートの clock から集約へ入る。
+    ///
+    /// # Errors
+    ///
+    /// 楽観 version の不一致 (`Conflict` — 別プロセスが先に改訂した)、ストア I/O (`Io`)、
+    /// 書込契約の違反 (`Corrupt`) を返す。
+    async fn store(
+        &mut self,
+        event: &WorkflowDefinitionEvent,
+        definition: &WorkflowDefinition,
+    ) -> Result<(), RepositoryError<WorkflowDefinitionId>>;
 }

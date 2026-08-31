@@ -23,7 +23,7 @@ use core_command_domain::workflow_definition::{
 
 use core_command_domain::orchestration::IntentEvent;
 
-use super::{WireEvent, WireIntent, WireIntentEvent, WireIntentExecution};
+use super::{IntentDto, IntentEventDto, IntentExecutionDto, IntentExecutionEventDto};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
@@ -167,7 +167,8 @@ const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","
 #[test]
 fn every_event_variant_serialises_to_the_recorded_bytes() {
     for (event, expected) in every_variant() {
-        let json = serde_json::to_string(&WireEvent::of(&event)).expect("DTO は直列化できる");
+        let json = serde_json::to_string(&IntentExecutionEventDto::of(&event))
+            .expect("DTO は直列化できる");
         assert_eq!(json, expected, "変種のワイヤ形式が変わった");
     }
 }
@@ -175,7 +176,8 @@ fn every_event_variant_serialises_to_the_recorded_bytes() {
 #[test]
 fn every_event_variant_round_trips_through_the_wire() {
     for (event, expected) in every_variant() {
-        let decoded: WireEvent = serde_json::from_str(expected).expect("記録済みの行は読める");
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(expected).expect("記録済みの行は読める");
         assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
     }
 }
@@ -192,17 +194,17 @@ fn the_snapshot_serialises_to_the_recorded_bytes_and_round_trips() {
         at(),
     );
     let json =
-        serde_json::to_string(&WireIntentExecution::of(&aggregate)).expect("DTO は直列化できる");
+        serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
     assert_eq!(
         json, GENESIS_SNAPSHOT,
         "スナップショットのワイヤ形式が変わった"
     );
 
-    let decoded: WireIntentExecution =
+    let decoded: IntentExecutionDto =
         serde_json::from_str(GENESIS_SNAPSHOT).expect("記録済みの行は読める");
     assert_eq!(
         decoded,
-        WireIntentExecution::of(&aggregate),
+        IntentExecutionDto::of(&aggregate),
         "行の形は DTO として往復する (差分再生の基底 — 本家 example 同型。オーナー裁定 2026-08-30)"
     );
 }
@@ -217,7 +219,8 @@ fn the_payload_carries_no_transport_metadata() {
     // payload 列に混ざっていないことを綴りで固定する (旧 `schema_version` も同様に消えた)。
     // 改訂 9 でドメインから serde が消えたため、この検査の置き場もここへ移った。
     let event = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-    let json = serde_json::to_string(&WireEvent::of(&event)).expect("DTO は直列化できる");
+    let json =
+        serde_json::to_string(&IntentExecutionEventDto::of(&event)).expect("DTO は直列化できる");
     for absent in [
         "seq_nr",
         "occurred_at",
@@ -246,7 +249,7 @@ fn the_snapshot_payload_carries_no_optimistic_version() {
         at(),
     );
     let json =
-        serde_json::to_string(&WireIntentExecution::of(&aggregate)).expect("DTO は直列化できる");
+        serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
     assert!(
         !json.contains("version"),
         "楽観 version は payload に載らない: {json}"
@@ -269,7 +272,7 @@ fn the_snapshot_carries_only_the_stage_keys_as_static_material() {
         at(),
     );
     let json =
-        serde_json::to_string(&WireIntentExecution::of(&aggregate)).expect("DTO は直列化できる");
+        serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
     assert!(
         json.contains(r#""stages":[{"slug":"state-init","phase":"Initialization"}"#),
         "添字帳 (slug + phase) は写しに載る: {json}"
@@ -325,16 +328,16 @@ fn a_malformed_identifier_is_refused_with_its_field() {
         (r#""plan_action":"Execute""#, r#""plan_action":"EXECUTE""#),
     ] {
         let tampered = row.replacen(from, to, 1);
-        let decoded: WireIntentEvent =
-            serde_json::from_str(&tampered).expect("JSON としては読める");
+        let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
     }
 }
 
 #[test]
 fn a_started_row_with_a_malformed_intent_id_is_refused() {
-    let decoded: WireEvent = serde_json::from_str(r#"{"Started":{"intent_id":"not-a-uuid"}}"#)
-        .expect("JSON としては読める");
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(r#"{"Started":{"intent_id":"not-a-uuid"}}"#)
+            .expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "文法外の intent 識別子は拒む");
 }
 
@@ -352,7 +355,8 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
             .replace(r#""intent-capture""#, r#""Not A Slug""#)
             .replace(r#""state-init""#, r#""Not A Slug""#)
             .replace(r#""scope-definition""#, r#""Not A Slug""#);
-        let decoded: WireEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき行: {tampered}");
     }
 }
@@ -368,7 +372,8 @@ fn a_malformed_closed_set_value_in_a_control_variant_is_refused() {
         .find(|json| json.contains(r#""mode":"Autonomous""#))
         .expect("その綴りを含む変種がある");
     let tampered = row.replace(r#""mode":"Autonomous""#, r#""mode":"autonomous""#);
-    let decoded: WireEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(&tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "拒むべき値: autonomous");
 }
 
@@ -378,7 +383,7 @@ fn a_row_whose_stage_display_is_not_single_line_is_refused() {
     // (intent ジャーナル面 — 表示属性の正本は誕生の材料である。issue #56)。
     let row = format!(r#"{{"Created":{INTENT_BODY}}}"#);
     let tampered = row.replacen(r#""name":"State Init""#, r#""name":"State\nInit""#, 1);
-    let decoded: WireIntentEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+    let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "改行入りの表示属性は拒む");
 }
 
@@ -386,7 +391,7 @@ fn a_row_whose_stage_display_is_not_single_line_is_refused() {
 fn a_row_whose_scan_field_is_not_single_line_is_refused() {
     let row = format!(r#"{{"Created":{INTENT_BODY}}}"#);
     let tampered = row.replacen(r#""languages":"Unknown""#, r#""languages":"a\nb""#, 1);
-    let decoded: WireIntentEvent = serde_json::from_str(&tampered).expect("JSON としては読める");
+    let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "改行入りの走査結果は拒む");
 }
 
@@ -400,7 +405,7 @@ fn an_optional_request_field_round_trips_when_present() {
         r#""test_strategy":"balanced""#,
         1,
     );
-    let decoded: WireIntentEvent = serde_json::from_str(&filled).expect("記録済みの行は読める");
+    let decoded: IntentEventDto = serde_json::from_str(&filled).expect("記録済みの行は読める");
     let IntentEvent::Created(created) = decoded.to_domain().expect("ドメインへ戻せる");
     let intent = Intent::from(created);
     assert_eq!(intent.test_strategy(), Some("balanced"));
@@ -437,7 +442,7 @@ fn a_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
     ] {
         let mutated = GENESIS_SNAPSHOT.replace(from, to);
         assert_ne!(mutated, GENESIS_SNAPSHOT, "置換対象が行に無い: {from}");
-        let decoded: WireIntentExecution =
+        let decoded: IntentExecutionDto =
             serde_json::from_str(&mutated).expect("DTO としては読める");
         assert!(
             decoded.to_domain().is_err(),
@@ -445,7 +450,7 @@ fn a_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
         );
     }
     // 対照: 無改竄の行はドメインへ戻る。
-    let intact: WireIntentExecution =
+    let intact: IntentExecutionDto =
         serde_json::from_str(GENESIS_SNAPSHOT).expect("記録済みの行は読める");
     assert!(intact.to_domain().is_ok());
 }
@@ -454,7 +459,8 @@ fn a_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
 fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
     // 列の中の 1 本でも文法外の slug は復号を止める (slugs_of の失敗面)。
     let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
-    let decoded: WireEvent = serde_json::from_str(tampered).expect("JSON としては読める");
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err());
 }
 
@@ -491,10 +497,10 @@ fn created_event() -> IntentEvent {
 fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
     let event = created_event();
     let expected = format!(r#"{{"Created":{INTENT_BODY}}}"#);
-    let json = serde_json::to_string(&WireIntentEvent::of(&event)).expect("DTO は直列化できる");
+    let json = serde_json::to_string(&IntentEventDto::of(&event)).expect("DTO は直列化できる");
     assert_eq!(json, expected, "intent ジャーナルのワイヤ形式が変わった");
 
-    let decoded: WireIntentEvent = serde_json::from_str(&expected).expect("記録済みの行は読める");
+    let decoded: IntentEventDto = serde_json::from_str(&expected).expect("記録済みの行は読める");
     assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
 }
 
@@ -505,9 +511,9 @@ fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
 #[test]
 fn the_intent_faces_share_the_same_bytes() {
     // (a) `Created` の中身と (b) intent 集約のスナップショット行は同じ材料 = 同じバイトで
-    // ある (issue #50 — `WireIntent` 1 本に束ねた根拠)。かつての第 3 面 (`Started` の埋め
+    // ある (issue #50 — `IntentDto` 1 本に束ねた根拠)。かつての第 3 面 (`Started` の埋め
     // 込み) は issue #56 で消えた — `Started` は intent の識別子だけを運ぶ。
-    let snapshot = serde_json::to_string(&WireIntent::of(&intent())).expect("DTO は直列化できる");
+    let snapshot = serde_json::to_string(&IntentDto::of(&intent())).expect("DTO は直列化できる");
     assert_eq!(
         snapshot, INTENT_BODY,
         "スナップショット面のバイトが変わった"
@@ -517,7 +523,7 @@ fn the_intent_faces_share_the_same_bytes() {
 #[test]
 fn a_malformed_identifier_in_the_intent_journal_is_refused_with_its_field() {
     let broken = format!(r#"{{"Created":{INTENT_BODY}}}"#).replace(INTENT, "not-a-uuid");
-    let decoded: WireIntentEvent = serde_json::from_str(&broken).expect("形は DTO として読める");
+    let decoded: IntentEventDto = serde_json::from_str(&broken).expect("形は DTO として読める");
     let err = decoded.to_domain().expect_err("識別子の文法違反は拒否");
     assert_eq!(err.to_string(), "malformed field id: not-a-uuid");
 }

@@ -1,1180 +1,707 @@
-//! `WorkflowDefinitionRepository` の実装 (Gateway) — Published Language 3 入力
-//! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
-//! ディスクから読み、集約 `WorkflowDefinition` へ写す (12-workflow-definition §6)。
+//! `WorkflowDefinitionRepository` の実 Gateway (1 trait 1 Impl — gateway-taxonomy §5)。
 //!
-//! ポート trait は use-case 層が所有し、その実装は `XxxRepositoryImpl` としてアダプタ層に
-//! 置く (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。**格納形式がファイルであることはこの実装の内部
-//! 詳細**であり、ポート名にも facade にも現れない。
+//! 集約 `WorkflowDefinition` の再構成と永続化を、**本家 event-store-adapter-rs のイベント
+//! ストアを内包して**行う (ADR-010 Conformist — 腐敗防止層なし)。
 //!
-//! **この実装が所有するもの** (12 §6):
-//! - パス解決とテストシーム (`<data_dir>/{stage-graph,scope-grid}.json` / `<scopes_dir>`、
-//!   および `AIDLC_STAGE_GRAPH` / `AIDLC_SCOPE_GRID` 相当のオーバライド)。
-//!   **env の読取そのものは合成ルートの責務**で、ここは注入されたパスだけを見る
-//!   (テストを hermetic に保つため)。
-//! - JSON コーデック (serde ワイヤ構造体) と frontmatter パーサ (手書き — 00-policy R9)。
-//! - 逐語文言の組み立て。
+//! # 2026-08-31 の全面転換 (オーナー裁定)
 //!
-//! **serde の厳格度** (12 §10 の表):
-//! 1. 未知フィールドは**許容**する (`deny_unknown_fields` を付けない — F1)。将来版や
-//!    プラグインが `FIELD_ORDER` を増やしても読めなくなってはならない。
-//! 2. 欠損 optional は `Option` ないし空 default (`#[serde(default)]`)。
-//! 3. 未知の列挙値は**全列挙 (`phase` / `execution` / `review_class` / `mode`) を load 時に
-//!    厳密 enum で落とす** (12 §10 表 #3 — 2026-08-22 裁定)。ドメイン型に `Unknown` variant を
-//!    持たせず Always Valid を維持する。upstream との観測差は手編集グラフの未知値に限られ、
-//!    dist の正規データでは生じない — ピン留め `3c3146cf` の配布実バイト 33 ノードが全数
-//!    load できることは `tests/golden_parity_test.rs` が固定した。
+//! 「`workflow_definition_repository_impl.rs` この実装を破棄せよ。NG 中の NG です。
+//! リポジトリの実装は `EventStoreForSqlite` を使わないといけない」。
 //!
-//! **失敗態度** (12 §4): グラフは fatal、グリッドは転置導出フォールバック、identity と
-//! グリッド列の不一致は双方向とも正当。
+//! 旧実装は dist の 3 入力 (`stage-graph.json` / `scope-grid.json` / `scopes/*.md`) を
+//! ディスクから読んで集約を組み立てていた。それは `coding-rules/cqrs-boundaries.md` 規則 4
+//! (コマンド側の最新状態は常に集約から。**リードモデルは遅延しているので物理的に読めない**)
+//! への正面違反である。パースの中身は取込境界 [`DefinitionArtifactsClientImpl`] へ移り、
+//! ここは他の 2 つの Repository と 1 行も違わない ES の手順だけになった。
+//!
+//! # 3 集約が 1 つのストアに同居する
+//!
+//! 定義のストリームは実行・intent のストリームと**同じストアファイル**に置く。集約種別は
+//! 鍵 ([`WorkflowDefinitionAggregateKeyDto`] の `type_name = "WorkflowDefinition"`) が分ける。
+//! 前提は集約識別子の値の一意性で、定義 id はハーネス名 (`claude` 等) なので UUID 空間と
+//! 衝突しない。
+//!
+//! # 楽観 version はポートを往復する (BR5.3)
+//!
+//! `find_by_id` が読んだ版を集約に刻み、`store` がそれを提示する。**書込直前に読み直しては
+//! ならない** — 常に最新版を提示することになり、楽観ロックが成立しなくなる。定義は
+//! 改訂 (`Redefined`) を持つので、この往復は実際に効く。
+//!
+//! [`DefinitionArtifactsClientImpl`]: super::definition_artifacts_client_impl::DefinitionArtifactsClientImpl
+
+use std::io::ErrorKind;
 
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
-    ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef,
-    SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
-    WorkflowDefinition, WorkflowDefinitionId,
+    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
+use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{RepositoryError, WorkflowDefinitionRepository};
-use core_infrastructure::canon_json::{hash_canonical, to_value};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::error::Error;
-use std::fmt;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use event_store_adapter_rs::event_envelope::EventEnvelope;
+use event_store_adapter_rs::types::{EventStore, EventStoreReadError, EventStoreWriteError};
+use event_store_adapter_rs::{EventStoreForMemory, EventStoreForSqlite};
 
-/// グラフ成果物のファイル名 (`<harnessRoot>/tools/data/` 直下)。
-const STAGE_GRAPH_FILE: &str = "stage-graph.json";
-/// グリッド成果物のファイル名 (同上)。
-const SCOPE_GRID_FILE: &str = "scope-grid.json";
-/// ハーネス identity ファイルの名前 (同上)。定義 id の供給元 (ADR-008)。
-const HARNESS_FILE: &str = "harness.json";
-/// scope identity ファイルの接頭辞 (`aidlc-<name>.md`)。
-const SCOPE_FILE_PREFIX: &str = "aidlc-";
-/// scope identity ファイルの拡張子。
-const SCOPE_FILE_SUFFIX: &str = ".md";
-/// frontmatter の区切り行。
-const FRONTMATTER_FENCE: &str = "---";
+use super::dto::{
+    DtoDecodeError, WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto,
+    WorkflowDefinitionEventDto,
+};
+use super::snapshot_strategy::SnapshotStrategy;
+use super::store_failure::io_kind_of_source;
 
-// ---------------------------------------------------------------------------
-// 失敗 (アダプタ私有 — ポート契約には分類を載せない)
-// ---------------------------------------------------------------------------
-
-/// 3 入力の読取失敗 (この実装の内部中間表現)。
+/// ジャーナル行 `manifest` 列に書く型判別子 — **書く側の正本**。
 ///
-/// ポート契約は `RepositoryError<WorkflowDefinitionId>` 1 本であり、そこには**要求された
-/// 集約 id** が要る。一方で内部の読取ヘルパは「どの定義を要求されたか」を知る必要が無いので、
-/// id を載せるのは [`DefinitionReadFailure::into_repository_error`] の 1 箇所に閉じる。
+/// 実行 (`intent-execution-event/1`) / intent (`intent-event/1`) とは別の型・別の読み方な
+/// ので判別子も別である。版を上げるのは payload の読み方が変わるときだけである。
+const EVENT_MANIFEST: &str = "workflow-definition-event/1";
+
+/// 集約の最初の `seq_nr` (`Defined` は必ず 1)。本家 v3 はこの値で新規作成と更新を分岐する。
+const FIRST_SEQ_NR: usize = 1;
+
+/// SQLite ファイルを格納先にするイベントストア (本家)。
+///
+/// 型引数はいずれも**この層の永続化 DTO** である — ドメイン型はストアに触れない
+/// (`coding-rules/domain-persistence-neutrality.md`)。
+pub type WorkflowDefinitionSqliteStore = EventStoreForSqlite<
+    WorkflowDefinitionAggregateKeyDto,
+    WorkflowDefinitionDto,
+    WorkflowDefinitionEventDto,
+>;
+
+/// 揮発の格納先にするイベントストア (本家)。
+pub type WorkflowDefinitionMemoryStore = EventStoreForMemory<
+    WorkflowDefinitionAggregateKeyDto,
+    WorkflowDefinitionDto,
+    WorkflowDefinitionEventDto,
+>;
+
+/// 本家のイベントストアを**単一所有**する `WorkflowDefinitionRepository` の実装。
+///
+/// 内部可変性は持たない — 再構成 (Query) は `&self`、永続化 (Command) は `&mut self` で、
+/// 本家 `EventStore` のレシーバとそのまま揃う
+/// (`coding-rules/interior-mutability.md` / `coding-rules/command-query-separation.md`)。
 #[derive(Debug)]
-enum DefinitionReadFailure {
-    /// 要求された定義をこのハーネスが提供していない (BR2.6 / ADR-008)。
-    NotProvided,
-    /// OS 由来の読取失敗 (欠損・権限・種別違い)。**内容の破損ではない**。
-    Io {
-        /// OS 由来の分類。
-        kind: io::ErrorKind,
-        /// 読もうとしたパス。
-        path: PathBuf,
-    },
-    /// 読めたが内容が壊れている。
-    Corrupt(DefinitionCorruption),
+pub struct WorkflowDefinitionRepositoryImpl<S> {
+    store: S,
+    /// 失敗の材料に添える場所 (揮発のストアには無いので `Option`)。
+    location: Option<StorePath>,
+    /// いつスナップショットを書き直すか (実装の内部設定 — ポート面に現れない)。
+    strategy: SnapshotStrategy,
 }
 
-impl DefinitionReadFailure {
-    /// OS の失敗から起こす。
-    fn from_io(path: &Path, error: &io::Error) -> DefinitionReadFailure {
-        DefinitionReadFailure::Io {
-            kind: error.kind(),
-            path: path.to_path_buf(),
+/// `Corrupt` の原因分類 — **この実装の私有物** (裁定 6: エラー分類はポート契約に載せない。
+/// 契約は「壊れていた」としか約束せず、診断表示は `Error::source` の連鎖で残る)。
+#[derive(Debug)]
+enum CorruptDetail {
+    /// ジャーナル行はあるのにスナップショット行が無い (genesis は原子的に両方書く)。
+    MissingSnapshot,
+    /// ジャーナル行が別の型判別子を名乗っている (foreign manifest)。
+    ForeignManifest,
+    /// 差分行の通番が連続していない (行の欠け — 再生すると誤った状態になる)。
+    SequenceGap,
+    /// 行のペイロードをドメイン型へ復号できない。
+    Undecodable(DtoDecodeError),
+    /// ストアの復号そのものが失敗した (本家の `DeserializationError`)。
+    StoreDeserialization,
+    /// 呼出側の書込契約違反 (本家の `ContractViolation` / `SerializationError`)。
+    WriteContract,
+}
+
+impl std::fmt::Display for CorruptDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CorruptDetail::MissingSnapshot => f.write_str("missing snapshot"),
+            CorruptDetail::ForeignManifest => f.write_str("foreign manifest"),
+            CorruptDetail::SequenceGap => f.write_str("sequence gap"),
+            CorruptDetail::Undecodable(_) => f.write_str("undecodable payload"),
+            CorruptDetail::StoreDeserialization => f.write_str("store deserialization failed"),
+            CorruptDetail::WriteContract => f.write_str("write contract violation"),
         }
     }
+}
 
-    /// 要求された定義 id を載せてポート契約のエラーにする。
+impl std::error::Error for CorruptDetail {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CorruptDetail::Undecodable(inner) => Some(inner),
+            _ => None,
+        }
+    }
+}
+
+impl WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore> {
+    /// SQLite ファイルのストアを開く (無ければ作る)。
     ///
-    /// `Corrupt` の分類は契約に載せない (裁定 6) — 原因は `Error::source` の連鎖で
-    /// 診断表示だけを運ぶ。定義はイベント列ではないので `seq_nr` は常に `None`。
-    fn into_repository_error(
-        self,
+    /// 親ディレクトリ (`intents/`) は upstream の既存ディレクトリなので**作らない** —
+    /// 無ければ `Io { kind: NotFound }` で止まる。表と索引は本家が冪等に作る。
+    ///
+    /// # Errors
+    ///
+    /// 親ディレクトリ欠落・権限・ディスク (`Io`) を返す。
+    pub fn open(
+        path: &StorePath,
+    ) -> Result<
+        WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>,
+        RepositoryError<WorkflowDefinitionId>,
+    > {
+        let store = WorkflowDefinitionSqliteStore::new(path.as_path()).map_err(|error| {
+            RepositoryError::Io {
+                kind: match &error {
+                    EventStoreWriteError::IOError(source) => io_kind_of_source(source.as_ref()),
+                    _ => ErrorKind::Other,
+                },
+                path: Some(path.as_path().to_path_buf()),
+            }
+        })?;
+        Ok(WorkflowDefinitionRepositoryImpl {
+            store,
+            location: Some(path.clone()),
+            strategy: SnapshotStrategy::default(),
+        })
+    }
+
+    /// 内包しているストアの場所 (開き直しの材料)。
+    #[must_use]
+    pub const fn path(&self) -> Option<&StorePath> {
+        self.location.as_ref()
+    }
+}
+
+impl WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
+    /// 揮発のストアを持つ Repository を作る (テストとユースケース試験の足場)。
+    ///
+    /// テストダブルではなく**本家の memory バックエンド**であり、手順は SQLite と 1 行も
+    /// 違わない。だからこそ契約テストが両方に同じ約束を課せる (BR2.7)。
+    #[must_use]
+    pub fn in_memory() -> WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
+        WorkflowDefinitionRepositoryImpl {
+            store: WorkflowDefinitionMemoryStore::new(),
+            location: None,
+            strategy: SnapshotStrategy::default(),
+        }
+    }
+}
+
+impl<S> WorkflowDefinitionRepositoryImpl<S> {
+    /// スナップショットの書き直し間隔を差し替える (既定は 10 イベントごと)。
+    #[must_use]
+    pub const fn with_snapshot_strategy(
+        mut self,
+        strategy: SnapshotStrategy,
+    ) -> WorkflowDefinitionRepositoryImpl<S> {
+        self.strategy = strategy;
+        self
+    }
+}
+
+impl<S: Clone> WorkflowDefinitionRepositoryImpl<S> {
+    /// **同じストアを指す**別インスタンスを開き直す (別プロセスからの再オープン相当)。
+    ///
+    /// 本家のストアはどのバックエンドでも `Clone` が基底状態 (SQLite なら接続、memory なら
+    /// 表) を共有する設計なので、写しではなく同じストアを指す別の口が得られる。
+    #[must_use]
+    pub fn reopened(&self) -> WorkflowDefinitionRepositoryImpl<S> {
+        WorkflowDefinitionRepositoryImpl {
+            store: self.store.clone(),
+            location: self.location.clone(),
+            strategy: self.strategy,
+        }
+    }
+}
+
+impl<S> WorkflowDefinitionRepositoryImpl<S>
+where
+    S: EventStore<
+            AID = WorkflowDefinitionAggregateKeyDto,
+            A = WorkflowDefinitionDto,
+            P = WorkflowDefinitionEventDto,
+        >,
+{
+    /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
+    ///
+    /// 材料はすべて集約が持っている — 識別子、`define` / `redefine` 成功後の `seq_nr`
+    /// (= そのイベントの通番)、`last_updated_at` (= そのイベントの発生時刻)。
+    /// `IntentExecutionRepositoryImpl::envelope` と同型であり、**呼出側が時刻を運ぶ口は
+    /// 無い** (オーナー裁定 2026-08-31 — 手本と対にする)。
+    fn envelope(
+        event: &WorkflowDefinitionEvent,
+        definition: &WorkflowDefinition,
+    ) -> EventEnvelope<WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionEventDto> {
+        EventEnvelope::new(
+            WorkflowDefinitionAggregateKeyDto::of(definition.id()),
+            definition.seq_nr(),
+            *definition.last_updated_at(),
+            WorkflowDefinitionEventDto::of(event),
+        )
+        .with_manifest(EVENT_MANIFEST)
+    }
+
+    /// 本家の読取失敗を Repository 面へ写す。
+    fn read_error(
+        &self,
+        error: &EventStoreReadError,
         id: &WorkflowDefinitionId,
     ) -> RepositoryError<WorkflowDefinitionId> {
-        match self {
-            DefinitionReadFailure::NotProvided => RepositoryError::NotFound { id: id.clone() },
-            DefinitionReadFailure::Io { kind, path } => RepositoryError::Io {
-                kind,
-                path: Some(path),
-            },
-            DefinitionReadFailure::Corrupt(cause) => RepositoryError::Corrupt {
+        match error {
+            EventStoreReadError::DeserializationError(_) => RepositoryError::Corrupt {
                 id: id.clone(),
                 seq_nr: None,
-                source: Box::new(cause),
+                source: Box::new(CorruptDetail::StoreDeserialization),
+            },
+            EventStoreReadError::IOError(source) => RepositoryError::Io {
+                kind: io_kind_of_source(source.as_ref()),
+                path: self.store_path(),
+            },
+            EventStoreReadError::OtherError(_) => RepositoryError::Io {
+                kind: ErrorKind::Other,
+                path: self.store_path(),
             },
         }
     }
-}
 
-/// 「読めたが内容が壊れている」の原因 (アダプタ私有)。
-///
-/// ポート契約は「壊れていた」としか約束しないので、本型は `Corrupt` の `source` として
-/// **診断表示だけ**を運ぶ (`coding-rules/error-handling.md` — エラーは契約の一部であり、
-/// 内部実装がバレる情報を含めない)。
-///
-/// **upstream 逐語文言はここには無い。** 12 §4 / §6 の利用者向け文言 (「Stage graph not
-/// readable at ...」等) を所有するのは**クエリ側**の読取実装
-/// (`core_query_interface_adapter::workflow_definition_parse`) である — 定義 3 入力は
-/// リードモデルであり、それを読んで人に見せるのはクエリ側の仕事だからである
-/// (`coding-rules/cqrs-boundaries.md` 規則 7、b26 段階 2 でコマンド側から撤去)。
-/// ここに残るのは同じ材料を開発者向けに 1 行へ畳んだ**診断**であって、互換対象ではない。
-#[derive(Debug)]
-enum DefinitionCorruption {
-    /// `stage-graph.json` が不正 JSON (12 §4 #2)。
-    InvalidJson {
-        /// パースに失敗したパス。
-        path: PathBuf,
-        /// JSON パーサ由来の理由。
-        cause: String,
-    },
-    /// `harness.json` は読めたが定義 id を与えない (不正 JSON / `name` 欠落 / id として不正
-    /// — ADR-008)。
-    HarnessIdentity {
-        /// 読んだパス。
-        path: PathBuf,
-        /// JSON パーサないし id の形式検証由来の理由。
-        cause: String,
-    },
-    /// scope identity ファイルの frontmatter 検証の失敗 (`name` 欠落・`skeleton` の
-    /// 不正値・名前の重複など — 12 §3.3)。
-    ScopeFile {
-        /// 失敗の詳細 (材料)。
-        message: String,
-    },
-    /// JSON としては読めたがドメイン型へ写せない (未知 `phase`、文法外 `slug` など)。
+    /// 本家の書込失敗を Repository 面へ写す。
     ///
-    /// upstream はロード時に検証しないが、serde による構造的パースは「ロード時無検証」からの
-    /// 逸脱ではなく補強として扱う (12 §10) — dist の正規データに対しては観測差が生じない。
-    Malformed {
-        /// 写像に失敗した箇所の詳細 (材料)。
-        message: String,
-    },
-}
-
-impl fmt::Display for DefinitionCorruption {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DefinitionCorruption::InvalidJson { path, cause } => write!(
-                f,
-                "stage graph at {} is not valid JSON: {cause}",
-                path.display()
-            ),
-            DefinitionCorruption::HarnessIdentity { path, cause } => write!(
-                f,
-                "harness identity at {} does not provide a definition id: {cause}",
-                path.display()
-            ),
-            DefinitionCorruption::ScopeFile { message }
-            | DefinitionCorruption::Malformed { message } => f.write_str(message),
-        }
-    }
-}
-
-impl Error for DefinitionCorruption {}
-
-/// scope identity ファイルに frontmatter が無い。
-fn scope_missing_frontmatter_message(path: &Path) -> String {
-    format!("Scope file missing frontmatter: {}", path.display())
-}
-
-/// scope identity ファイルに `name:` が無い。「キー不在」と「空値」は同じ材料へ倒す。
-fn scope_missing_name_message(path: &Path) -> String {
-    format!(
-        "Scope file {} missing required frontmatter: name",
-        path.display()
-    )
-}
-
-/// `skeleton:` の不正値 (値域は `on` / `off`)。
-fn scope_invalid_skeleton_message(path: &Path, value: &str) -> String {
-    format!(
-        "Scope file {} has invalid skeleton value \"{value}\". Expected \"on\" or \"off\".",
-        path.display()
-    )
-}
-
-/// `review_cap:` の不正値 (値域は `adversarial` / `advisory` / `none`)。
-fn scope_invalid_review_cap_message(path: &Path, value: &str) -> String {
-    format!(
-        "Scope file {} has invalid review_cap value \"{value}\". Expected \"adversarial\", \"advisory\", or \"none\".",
-        path.display()
-    )
-}
-
-/// 2 つの identity ファイルが同じ `name:` を宣言している (12 §3.3 — 致命)。
-///
-/// `duplicate` = いま読んでいる重複側、`first` = 先に宣言していた側。どちらを直せばよいかが
-/// 分かるよう両方を材料に載せる。
-fn scope_duplicate_name_message(name: &str, first: &Path, duplicate: &Path) -> String {
-    format!(
-        "Duplicate scope name \"{name}\" in {}: already declared in {}. Rename one of them.",
-        duplicate.display(),
-        first.display()
-    )
-}
-
-/// グラフノードをドメイン型へ写せない (12 §10 — 構造的パースはロード時検証の補強)。
-fn malformed(path: &Path, detail: &str) -> DefinitionReadFailure {
-    DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-        message: format!("Stage graph at {}: {detail}", path.display()),
-    })
-}
-
-/// scope identity の検証失敗を畳む。
-const fn scope_file(message: String) -> DefinitionReadFailure {
-    DefinitionReadFailure::Corrupt(DefinitionCorruption::ScopeFile { message })
-}
-
-// ---------------------------------------------------------------------------
-// ワイヤ構造体 (serde — Gateway 内部部品。ドメインは serde 非依存)
-// ---------------------------------------------------------------------------
-
-/// `stage-graph.json` の 1 要素。**ルートは配列**なので `Vec<WireStageNode>` として読む。
-///
-/// `deny_unknown_fields` は**付けない** (F1)。`when` / `required_sections` / 予約 4 キーの
-/// ようにグラフへ到達しないキーが混ざっても、単に無視される。
-#[derive(Debug, Deserialize)]
-struct WireStageNode {
-    slug: String,
-    number: String,
-    name: String,
-    phase: String,
-    execution: String,
-    mode: String,
-    #[serde(default)]
-    condition: String,
-    #[serde(default)]
-    lead_agent: String,
-    #[serde(default)]
-    support_agents: Vec<String>,
-    #[serde(default)]
-    for_each: Option<String>,
-    #[serde(default)]
-    workspace_requires: bool,
-    #[serde(default)]
-    produces: Vec<String>,
-    #[serde(default)]
-    optional_produces: Vec<String>,
-    #[serde(default)]
-    produces_kinds: BTreeMap<String, Vec<String>>,
-    #[serde(default)]
-    consumes: Vec<WireConsume>,
-    #[serde(default)]
-    requires_stage: Vec<String>,
-    #[serde(default)]
-    sensors: Vec<String>,
-    #[serde(default)]
-    scopes: Vec<String>,
-    #[serde(default)]
-    reviewer: Option<String>,
-    #[serde(default)]
-    reviewer_max_iterations: Option<u32>,
-    #[serde(default)]
-    review_class: Option<String>,
-    #[serde(default)]
-    summary_confirmation: Option<String>,
-    #[serde(default)]
-    plugin: Option<String>,
-    /// `None` = キー不在 = 有効 (12 §3.1)。
-    #[serde(default)]
-    enabled: Option<bool>,
-    #[serde(default)]
-    inputs: String,
-    #[serde(default)]
-    outputs: String,
-    #[serde(default)]
-    rules_in_context: Vec<WireRuleInContext>,
-    #[serde(default)]
-    sensors_applicable: Vec<WireSensorRef>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WireConsume {
-    artifact: String,
-    #[serde(default)]
-    required: bool,
-    #[serde(default)]
-    conditional_on: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WireRuleInContext {
-    path: String,
-    scope: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct WireSensorRef {
-    id: String,
-    path: String,
-    #[serde(default)]
-    matches: Option<String>,
-}
-
-/// `scope-grid.json` の 1 列。**中間の `"stages"` キーは省略できない** (F6 — レガシー
-/// `mapping[scope].stages` 互換のための 2 段構造)。ドメイン側は 2 段写像だけを持つので、
-/// この中間キーの知識はここに閉じる。
-#[derive(Debug, Deserialize)]
-struct WireScopeColumn {
-    #[serde(default)]
-    stages: BTreeMap<String, String>,
-}
-
-/// `harness.json` の読取に必要な部分。`harnessDir` / `rulesSubdir` は本 Repository の関心外
-/// なので写さない (未知フィールドの許容は F1 と同じ方針)。
-#[derive(Debug, Deserialize)]
-struct WireHarness {
-    #[serde(default)]
-    name: String,
-}
-
-/// `DefinitionRevision` のハッシュ入力 (ADR-008)。**3 入力そのもの**を宣言順に束ねた
-/// アダプタ層のワイヤ構造体で、ドメインには現れない。
-///
-/// フィールド順は canon-json の `to_value` が宣言順で写し、`hash_canonical` が再帰キーソートを
-/// かけるため結果には効かない。順序を宣言順で固定してあるのは読み手のためである。
-#[derive(Debug, Serialize)]
-struct RevisionInput {
-    /// `stage-graph.json` をそのまま読んだ値 (ドメイン型へ写す前)。
-    stage_graph: serde_json::Value,
-    /// `scope-grid.json` をそのまま読んだ値。欠損・不正時は転置導出グリッドを
-    /// `{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` 形へ直列化した値。
-    scope_grid: serde_json::Value,
-    /// scope identity の frontmatter を `name` 昇順に並べた配列。
-    scopes: Vec<RevisionScope>,
-}
-
-/// `RevisionInput` の scope 要素 — frontmatter のうち読取モデルが保持する値。
-///
-/// 本 Repository が写さないキー (`description` など) はハッシュ入力にも入らない。revision は
-/// 「この Repository が読んだ 3 入力」の内容版であって、ファイルの生バイトの版ではない。
-#[derive(Debug, Serialize)]
-struct RevisionScope {
-    name: String,
-    depth: Option<String>,
-    keywords: Vec<String>,
-    skeleton: Option<String>,
-    review_cap: Option<String>,
-    freeform_default: bool,
-}
-
-// ---------------------------------------------------------------------------
-// Gateway
-// ---------------------------------------------------------------------------
-
-/// ファイルシステムを裏に持つ `WorkflowDefinitionRepository` の実装。
-///
-/// 呼出のたびに 3 入力を読み直す。キャッシュ戦略 (`OnceCell` / 注入 / 呼出ごとのロード) は
-/// **観測不能なので実装の自由** (12 §10) — upstream のモジュールレベル可変シングルトンと
-/// `_reset*ForTests()` は模倣しない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowDefinitionRepositoryImpl {
-    data_dir: PathBuf,
-    scopes_dir: PathBuf,
-    stage_graph_override: Option<PathBuf>,
-    scope_grid_override: Option<PathBuf>,
-}
-
-impl WorkflowDefinitionRepositoryImpl {
-    /// `data_dir` は `stage-graph.json` / `scope-grid.json` の置き場
-    /// (`<harnessRoot>/tools/data/`)、`scopes_dir` は identity ファイルの置き場
-    /// (`<harnessRoot>/scopes/`)。
-    #[must_use]
-    pub const fn new(data_dir: PathBuf, scopes_dir: PathBuf) -> WorkflowDefinitionRepositoryImpl {
-        WorkflowDefinitionRepositoryImpl {
-            data_dir,
-            scopes_dir,
-            stage_graph_override: None,
-            scope_grid_override: None,
+    /// 楽観ロックの競合だけは材料 (`expected` / `actual`) を組み直す — 本家は整形済みの
+    /// 文字列 1 本で返すので、文言を解析する代わりに**ストアに実在する version を読み直す**。
+    /// この読み直しは**失敗の材料を揃えるためだけ**であり、書込の判定には一切関与しない。
+    async fn write_error(
+        &self,
+        error: EventStoreWriteError,
+        definition: &WorkflowDefinition,
+        expected_version: usize,
+    ) -> RepositoryError<WorkflowDefinitionId> {
+        match error {
+            EventStoreWriteError::OptimisticLockError(_) => RepositoryError::Conflict {
+                expected: expected_version,
+                actual: self.stored_version(definition.id()).await,
+            },
+            EventStoreWriteError::SerializationError(_)
+            | EventStoreWriteError::ContractViolation(_) => RepositoryError::Corrupt {
+                id: definition.id().clone(),
+                seq_nr: Some(definition.seq_nr()),
+                source: Box::new(CorruptDetail::WriteContract),
+            },
+            EventStoreWriteError::IOError(source) => RepositoryError::Io {
+                kind: io_kind_of_source(source.as_ref()),
+                path: self.store_path(),
+            },
+            EventStoreWriteError::OtherError(_) => RepositoryError::Io {
+                kind: ErrorKind::Other,
+                path: self.store_path(),
+            },
         }
     }
 
-    /// `AIDLC_STAGE_GRAPH` 相当のオーバライド。設定すると読取失敗時の逐語文言の hint 節が
-    /// 「unset して既定に戻せ」形へ切り替わる (12 §4 #1)。
-    #[must_use]
-    pub fn with_stage_graph_override(mut self, path: PathBuf) -> WorkflowDefinitionRepositoryImpl {
-        self.stage_graph_override = Some(path);
-        self
+    /// 失敗の材料に添える場所 (揮発のストアには無い)。
+    fn store_path(&self) -> Option<std::path::PathBuf> {
+        self.location
+            .as_ref()
+            .map(|path| path.as_path().to_path_buf())
     }
 
-    /// `AIDLC_SCOPE_GRID` 相当のオーバライド。グリッドの欠損は fatal ではないため、
-    /// こちらに hint 節の分岐は無い。
-    #[must_use]
-    pub fn with_scope_grid_override(mut self, path: PathBuf) -> WorkflowDefinitionRepositoryImpl {
-        self.scope_grid_override = Some(path);
-        self
-    }
-
-    /// 解決済みの `stage-graph.json` パス。
-    #[must_use]
-    pub fn stage_graph_path(&self) -> PathBuf {
-        self.stage_graph_override
-            .clone()
-            .unwrap_or_else(|| self.data_dir.join(STAGE_GRAPH_FILE))
-    }
-
-    /// 解決済みの `scope-grid.json` パス。
-    #[must_use]
-    pub fn scope_grid_path(&self) -> PathBuf {
-        self.scope_grid_override
-            .clone()
-            .unwrap_or_else(|| self.data_dir.join(SCOPE_GRID_FILE))
-    }
-
-    /// 解決済みの `harness.json` パス。env オーバライドは無い (upstream に対応する env が
-    /// 無く、identity はハーネスの配置そのものだからである)。
-    #[must_use]
-    pub fn harness_path(&self) -> PathBuf {
-        self.data_dir.join(HARNESS_FILE)
-    }
-
-    /// `harness.json` の `name` を定義 id として読む (ADR-008)。**fatal な入力**。
-    ///
-    /// ファイルが読めないのは OS 由来の失敗 (`Io`)、読めたが定義 id を与えない (不正 JSON /
-    /// `name` 欠落 / id として不正) のは内容の破損 (`Corrupt`) と読み分ける。
-    fn load_harness_identity(&self) -> Result<WorkflowDefinitionId, DefinitionReadFailure> {
-        let path = self.harness_path();
-        let identity = |cause: String| {
-            DefinitionReadFailure::Corrupt(DefinitionCorruption::HarnessIdentity {
-                path: path.clone(),
-                cause,
-            })
-        };
-        let content =
-            fs::read_to_string(&path).map_err(|e| DefinitionReadFailure::from_io(&path, &e))?;
-        let wire: WireHarness =
-            serde_json::from_str(&content).map_err(|e| identity(e.to_string()))?;
-        WorkflowDefinitionId::parse(&wire.name).map_err(|e| identity(e.to_string()))
-    }
-
-    /// グラフを読む。**唯一 fatal な入力** (12 §4 #1・#2)。
-    ///
-    /// ドメイン型の `StageGraph` と、**読んだままの生値**を返す。後者は `DefinitionRevision`
-    /// のハッシュ入力で、ドメイン型へ写す過程で落ちる情報 (未知フィールド・キー順) まで
-    /// 内容版に含めるために要る。
-    fn load_graph(&self) -> Result<(StageGraph, serde_json::Value), DefinitionReadFailure> {
-        let path = self.stage_graph_path();
-        let content =
-            fs::read_to_string(&path).map_err(|e| DefinitionReadFailure::from_io(&path, &e))?;
-        let invalid_json = |e: &serde_json::Error| {
-            DefinitionReadFailure::Corrupt(DefinitionCorruption::InvalidJson {
-                path: path.clone(),
-                cause: e.to_string(),
-            })
-        };
-        let raw: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
-        let wire: Vec<WireStageNode> =
-            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
-        let mut nodes = Vec::with_capacity(wire.len());
-        for node in wire {
-            nodes.push(to_stage_node(node, &path)?);
-        }
-        // 文書順のまま渡す (F2 — 読込時に数値順へ正規化しない)。
-        let graph = StageGraph::new(nodes).map_err(|e| malformed(&path, &format!("{e:?}")))?;
-        Ok((graph, raw))
-    }
-
-    /// グリッドを読む。**読めない / 不正なら `None`** を返し、呼出側が転置導出へ倒す
-    /// (12 §4 #3 — *"callers never see a hard ENOENT for a derivable artifact"*)。
-    ///
-    /// ドメイン型の `ScopeGrid` と読んだままの生値を返す (生値は revision のハッシュ入力)。
-    fn load_grid(&self) -> Option<(ScopeGrid, serde_json::Value)> {
-        let content = fs::read_to_string(self.scope_grid_path()).ok()?;
-        let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
-        let wire: BTreeMap<String, WireScopeColumn> = serde_json::from_str(&content).ok()?;
-        let mut columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>> = BTreeMap::new();
-        for (scope, column) in wire {
-            let mut cells: BTreeMap<StageSlug, PlanAction> = BTreeMap::new();
-            for (slug, action) in column.stages {
-                // 文法外 slug・`EXECUTE`/`SKIP` 以外の値はセルごと落とす。結果は 3 値契約の
-                // `None` (=「このグリッドがコンパイルしていないステージ」) になり、
-                // upstream の「列に slug が無い」と同じ観測になる (F8)。
-                // 全体を転置導出へ倒さないのは、1 セルの異常でグリッド全体を捨てないため。
-                if let (Ok(slug), Some(action)) =
-                    (StageSlug::parse(&slug), PlanAction::parse(&action))
-                {
-                    cells.insert(slug, action);
-                }
-            }
-            columns.insert(scope, cells);
-        }
-        Some((ScopeGrid::new(columns), raw))
-    }
-
-    /// identity ファイルを列挙して frontmatter を読む。**有効スコープの権威**はここ (F7)。
-    ///
-    /// ディレクトリ自体が無い場合は空カタログとして扱う (グラフと違い fatal にしない)。
-    /// TODO(spec: 12 §11): scopes ディレクトリ欠損時の態度は upstream 側の裏取りが未了。
-    fn load_scopes(&self) -> Result<BTreeMap<String, ScopeMetadata>, DefinitionReadFailure> {
-        let paths = match scope_file_paths(&self.scopes_dir) {
-            Ok(paths) => paths,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => return Err(DefinitionReadFailure::from_io(&self.scopes_dir, &e)),
-        };
-        let mut scopes: BTreeMap<String, ScopeMetadata> = BTreeMap::new();
-        let mut origins: BTreeMap<String, PathBuf> = BTreeMap::new();
-        for path in paths {
-            let content =
-                fs::read_to_string(&path).map_err(|e| DefinitionReadFailure::from_io(&path, &e))?;
-            let metadata = parse_scope_metadata(&path, &content)?;
-            let name = metadata.name().to_string();
-            if let Some(first) = origins.get(&name) {
-                return Err(scope_file(scope_duplicate_name_message(
-                    &name, first, &path,
-                )));
-            }
-            origins.insert(name.clone(), path);
-            scopes.insert(name, metadata);
-        }
-        Ok(scopes)
+    /// ストアに実在する楽観 version (行が無い・読めないときは 0)。競合の材料にだけ使う。
+    async fn stored_version(&self, id: &WorkflowDefinitionId) -> usize {
+        self.store
+            .get_latest_snapshot_by_id(&WorkflowDefinitionAggregateKeyDto::of(id))
+            .await
+            .ok()
+            .flatten()
+            .map_or(0, |snapshot| snapshot.version())
     }
 }
 
-impl WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl {
-    fn find_by_id(
+impl<S> WorkflowDefinitionRepository for WorkflowDefinitionRepositoryImpl<S>
+where
+    S: EventStore<
+            AID = WorkflowDefinitionAggregateKeyDto,
+            A = WorkflowDefinitionDto,
+            P = WorkflowDefinitionEventDto,
+        >,
+{
+    async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
     ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
-        self.read(id)
-            .map_err(|failure| failure.into_repository_error(id))
-    }
-}
-
-impl WorkflowDefinitionRepositoryImpl {
-    /// 3 入力を読んで集約を組み立てる本体。失敗はアダプタ私有の中間表現で返し、ポート契約への
-    /// 写像 (要求 id を載せる) は [`WorkflowDefinitionRepository::find_by_id`] が 1 箇所で行う。
-    fn read(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, DefinitionReadFailure> {
-        // 識別子の検査が先。1 ハーネス 1 定義なので、要求 id が違えば 3 入力を読む意味がない
-        // (BR2.6)。「探したが無い」ではなく「取り違え」だが、ポート契約の語彙では `NotFound`
-        // であり、運ぶのは**要求された id** だけである (オーナー裁定 2026-08-31 — このハーネスが
-        // 提供できる id はビジネス文脈なので契約に載せない)。
-        let harness_id = self.load_harness_identity()?;
-        if &harness_id != id {
-            return Err(DefinitionReadFailure::NotProvided);
-        }
-
-        let (graph, raw_graph) = self.load_graph()?;
-        let (grid, raw_grid) = match self.load_grid() {
-            Some(read) => read,
-            // グリッド欠損は fatal にしない (12 §4 #3)。revision も導出グリッドから作る —
-            // 「読めた 3 入力の内容版」であって「ディスクにあったバイトの版」ではない。
-            None => {
-                let derived = ScopeGrid::from_graph(&graph);
-                let raw = serialize_grid(&derived);
-                (derived, raw)
-            }
+        // 本家 example と同型 — スナップショット行 (ある時点の集約) を基底に、その通番より
+        // 後のイベントだけを差分再生する (オーナー裁定 2026-08-30)。
+        let key = WorkflowDefinitionAggregateKeyDto::of(id);
+        let snapshot = self
+            .store
+            .get_latest_snapshot_by_id(&key)
+            .await
+            .map_err(|error| self.read_error(&error, id))?;
+        let Some(snapshot) = snapshot else {
+            // ジャーナル行が 1 件も無ければ「まだ確立されていない」、あるなら「壊れている」—
+            // genesis は journal と snapshot を原子的に書くので、片方だけは矛盾である。
+            let journal = self
+                .store
+                .get_events_by_id_since_seq_nr(&key, FIRST_SEQ_NR)
+                .await
+                .map_err(|error| self.read_error(&error, id))?;
+            return Err(if journal.is_empty() {
+                RepositoryError::NotFound { id: id.clone() }
+            } else {
+                RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: None,
+                    source: Box::new(CorruptDetail::MissingSnapshot),
+                }
+            });
         };
-        let scopes = self.load_scopes()?;
-        let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
-
-        Ok(WorkflowDefinition::from_artifacts(
-            harness_id, revision, graph, grid, scopes,
-        ))
-    }
-}
-
-/// 転置導出グリッドを `scope-grid.json` と同じ 2 段構造へ直列化する
-/// (`{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` — F6 の中間キー込み)。
-///
-/// グリッドが読めなかったときの revision 入力。ファイルから読めたときの値と同じ形にして
-/// おくことで、「導出グリッドと同じ内容の grid ファイルが置かれた」場合に同じ revision に
-/// なる — 内容版が入力の**内容**だけで決まるという性質が保たれる。
-fn serialize_grid(grid: &ScopeGrid) -> serde_json::Value {
-    let mut columns = serde_json::Map::new();
-    for scope in grid.scope_names() {
-        let mut stages = serde_json::Map::new();
-        if let Some(column) = grid.column(scope) {
-            for (slug, action) in column {
-                stages.insert(
-                    slug.as_str().to_string(),
-                    serde_json::Value::String(action.as_str().to_string()),
-                );
+        let version = snapshot.version();
+        // 基底の通番は封筒の列から読む — 定義のスナップショット行は通番を内容に持たない
+        // (`IntentDto` と同じ形)。
+        let base_seq = snapshot.seq_nr();
+        // 基底の復元は検査付き再構成経路を必ず通る。
+        let base = snapshot
+            .aggregate()
+            .to_domain()
+            .map_err(|error| RepositoryError::Corrupt {
+                id: id.clone(),
+                seq_nr: None,
+                source: Box::new(CorruptDetail::Undecodable(error)),
+            })?
+            .with_seq_nr(base_seq);
+        // 差分 — 基底の通番より後のイベントだけを読む。復号は封筒ごとに行い、manifest を
+        // 照合する。本家は manifest を検証せず復号だけして返すため、ここで拒まないと foreign
+        // manifest の行 (別の型名・別の読み方の版を名乗る行) がそのまま状態遷移に流れ込む。
+        let delta = self
+            .store
+            .get_events_by_id_since_seq_nr(&key, base_seq + 1)
+            .await
+            .map_err(|error| self.read_error(&error, id))?;
+        // 通番の連続性は再生前にここで検査する — `apply_event` は通番の飛びをクラッシュで
+        // 止めるが、行の欠けは**読取時に分類できる破損**であり、他の破損と同じく `Corrupt`
+        // に写す。
+        let mut expected_seq = base_seq;
+        let mut events = Vec::with_capacity(delta.len());
+        for envelope in &delta {
+            expected_seq = expected_seq
+                .checked_add(1)
+                .ok_or_else(|| RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::SequenceGap),
+                })?;
+            if envelope.seq_nr() != expected_seq {
+                return Err(RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::SequenceGap),
+                });
             }
+            if envelope.manifest() != EVENT_MANIFEST {
+                return Err(RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::ForeignManifest),
+                });
+            }
+            let event =
+                envelope
+                    .payload()
+                    .to_domain()
+                    .map_err(|error| RepositoryError::Corrupt {
+                        id: id.clone(),
+                        seq_nr: Some(envelope.seq_nr()),
+                        source: Box::new(CorruptDetail::Undecodable(error)),
+                    })?;
+            events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
         }
-        let mut wrapper = serde_json::Map::new();
-        wrapper.insert("stages".to_string(), serde_json::Value::Object(stages));
-        columns.insert(scope.to_string(), serde_json::Value::Object(wrapper));
+        // 差分再生 — 壊れた歴史はドメインがクラッシュで止める (オーナー裁定 2026-08-30)。
+        // 版はストアが読んだ値を刻む。
+        Ok(WorkflowDefinition::replay(base, events).with_version(version))
     }
-    serde_json::Value::Object(columns)
-}
 
-/// 3 入力の正準 JSON ダイジェストを `DefinitionRevision` にする (ADR-008)。
-///
-/// `hash_canonical` は再帰キーソート + `sha256:` 接頭辞 (正準族) なので、入力の**内容**だけで
-/// 決まりキーの並び順には依存しない。scope は `BTreeMap` から取るため常に `name` 昇順。
-fn compute_revision(
-    raw_graph: &serde_json::Value,
-    raw_grid: &serde_json::Value,
-    scopes: &BTreeMap<String, ScopeMetadata>,
-) -> Result<DefinitionRevision, DefinitionReadFailure> {
-    let input = RevisionInput {
-        stage_graph: raw_graph.clone(),
-        scope_grid: raw_grid.clone(),
-        scopes: scopes
-            .values()
-            .map(|metadata| RevisionScope {
-                name: metadata.name().to_string(),
-                depth: metadata.depth().map(str::to_string),
-                keywords: metadata.keywords().to_vec(),
-                skeleton: metadata.skeleton().map(|s| s.as_str().to_string()),
-                review_cap: metadata.review_cap().map(|c| c.as_str().to_string()),
-                freeform_default: metadata.freeform_default(),
-            })
-            .collect(),
-    };
-    let value = to_value(&input).map_err(|e| {
-        DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-            message: format!("definition revision input: {e}"),
-        })
-    })?;
-    DefinitionRevision::parse(&hash_canonical(&value).rendered()).map_err(|e| {
-        DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-            message: format!("definition revision: {e}"),
-        })
-    })
-}
-
-// ---------------------------------------------------------------------------
-// ワイヤ → ドメインの写像
-// ---------------------------------------------------------------------------
-
-fn to_stage_node(wire: WireStageNode, path: &Path) -> Result<StageNode, DefinitionReadFailure> {
-    let slug = StageSlug::parse(&wire.slug)
-        .map_err(|e| malformed(path, &format!("invalid slug {:?} ({e:?})", wire.slug)))?;
-    let number = StageNumber::parse(&wire.number).map_err(|e| {
-        malformed(
-            path,
-            &format!(
-                "stage {:?} has invalid number {:?} ({e:?})",
-                wire.slug, wire.number
-            ),
-        )
-    })?;
-    let phase = PhaseId::parse(&wire.phase).map_err(|e| {
-        malformed(
-            path,
-            &format!("stage {:?} has unknown phase ({e:?})", wire.slug),
-        )
-    })?;
-    let execution = ExecutionKind::parse(&wire.execution).map_err(|e| {
-        malformed(
-            path,
-            &format!("stage {:?} has unknown execution ({e:?})", wire.slug),
-        )
-    })?;
-    let mode = StageMode::parse(&wire.mode).map_err(|e| {
-        malformed(
-            path,
-            &format!("stage {:?} has unknown mode ({e:?})", wire.slug),
-        )
-    })?;
-
-    let mut consumes = Vec::with_capacity(wire.consumes.len());
-    for decl in wire.consumes {
-        let conditional_on = match decl.conditional_on {
-            None => None,
-            Some(raw) => Some(BrownfieldGreenfield::parse(&raw).map_err(|e| {
-                malformed(
-                    path,
-                    &format!("stage {:?} has unknown conditional_on ({e:?})", wire.slug),
+    async fn store(
+        &mut self,
+        event: &WorkflowDefinitionEvent,
+        definition: &WorkflowDefinition,
+    ) -> Result<(), RepositoryError<WorkflowDefinitionId>> {
+        // 提示する版は集約が運んできたものである (書込直前に読み直さない — BR5.3)。
+        let expected_version = definition.version();
+        let envelope = WorkflowDefinitionRepositoryImpl::<S>::envelope(event, definition);
+        // スナップショットは**初回は必ず**書く (基底が無いとリプレイできない)。以後は設定
+        // されたストラテジに従って書き直す。イベントのみの書込でも楽観 version は進む。
+        let outcome = if definition.seq_nr() == FIRST_SEQ_NR
+            || self.strategy.wants_snapshot(definition.seq_nr())
+        {
+            self.store
+                .persist_event_and_snapshot(
+                    envelope,
+                    WorkflowDefinitionDto::of(definition),
+                    expected_version,
                 )
-            })?),
+                .await
+        } else {
+            self.store.persist_event(envelope, expected_version).await
         };
-        consumes.push(ConsumeDecl::new(
-            decl.artifact,
-            decl.required,
-            conditional_on,
-        ));
-    }
-
-    let mut requires_stage = Vec::with_capacity(wire.requires_stage.len());
-    for dep in &wire.requires_stage {
-        requires_stage.push(StageSlug::parse(dep).map_err(|e| {
-            malformed(
-                path,
-                &format!(
-                    "stage {:?} requires invalid slug {dep:?} ({e:?})",
-                    wire.slug
-                ),
-            )
-        })?);
-    }
-
-    let mut rules_in_context = Vec::with_capacity(wire.rules_in_context.len());
-    for rule in wire.rules_in_context {
-        let scope = RuleScope::parse(&rule.scope).map_err(|e| {
-            malformed(
-                path,
-                &format!("stage {:?} has unknown rule scope ({e:?})", wire.slug),
-            )
-        })?;
-        rules_in_context.push(RuleInContext::new(rule.path, scope));
-    }
-
-    let review_class = match wire.review_class {
-        None => None,
-        Some(ref raw) => Some(ReviewClass::parse(raw).map_err(|e| {
-            malformed(
-                path,
-                &format!("stage {:?} has unknown review_class ({e:?})", wire.slug),
-            )
-        })?),
-    };
-
-    let sensors_applicable = wire
-        .sensors_applicable
-        .into_iter()
-        .map(|s| SensorRef::new(s.id, s.path, s.matches))
-        .collect();
-
-    let mut builder = StageNodeBuilder::new(slug, number, wire.name, phase, execution, mode)
-        .condition(wire.condition)
-        .lead_agent(wire.lead_agent)
-        .support_agents(wire.support_agents)
-        .workspace_requires(wire.workspace_requires)
-        .produces(wire.produces)
-        .optional_produces(wire.optional_produces)
-        .produces_kinds(wire.produces_kinds)
-        .consumes(consumes)
-        .requires_stage(requires_stage)
-        .sensors(wire.sensors)
-        .scopes(wire.scopes)
-        .inputs(wire.inputs)
-        .outputs(wire.outputs)
-        .rules_in_context(rules_in_context)
-        .sensors_applicable(sensors_applicable);
-    if let Some(v) = wire.for_each {
-        builder = builder.for_each(v);
-    }
-    if let Some(v) = wire.reviewer {
-        builder = builder.reviewer(v);
-    }
-    if let Some(v) = wire.reviewer_max_iterations {
-        builder = builder.reviewer_max_iterations(v);
-    }
-    if let Some(v) = review_class {
-        builder = builder.review_class(v);
-    }
-    if let Some(v) = wire.summary_confirmation {
-        builder = builder.summary_confirmation(v);
-    }
-    if let Some(v) = wire.plugin {
-        builder = builder.plugin(v);
-    }
-    if let Some(v) = wire.enabled {
-        builder = builder.enabled(v);
-    }
-    Ok(builder.build())
-}
-
-// ---------------------------------------------------------------------------
-// scope identity ファイル (手書き frontmatter パーサ — 00-policy R9)
-// ---------------------------------------------------------------------------
-
-/// `<scopes_dir>/aidlc-*.md` をパス昇順で列挙する (重複 `name:` 検出を決定的にするため)。
-fn scope_file_paths(scopes_dir: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(scopes_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        if file_name.starts_with(SCOPE_FILE_PREFIX) && file_name.ends_with(SCOPE_FILE_SUFFIX) {
-            paths.push(path);
+        match outcome {
+            Ok(()) => Ok(()),
+            Err(error) => Err(self.write_error(error, definition, expected_version).await),
         }
     }
-    paths.sort();
-    Ok(paths)
-}
-
-/// frontmatter の最小 YAML サブセットを手書きで読む。
-///
-/// 受理する形は `---` で挟まれた `key: value` 行と `keywords: [a, b]` のフロー列だけで、
-/// 未知キー (`description` / `testStrategy` / `runner` / `plugin` 等) は黙って無視する。
-/// 汎用 YAML パーサへ置換すると寛容パースと逐語拒否文言の契約が静かに変わる (12 §3.3)。
-fn parse_scope_metadata(
-    path: &Path,
-    content: &str,
-) -> Result<ScopeMetadata, DefinitionReadFailure> {
-    let body = frontmatter_body(content)
-        .ok_or_else(|| scope_file(scope_missing_frontmatter_message(path)))?;
-
-    let mut name: Option<String> = None;
-    let mut depth: Option<String> = None;
-    let mut keywords: Vec<String> = Vec::new();
-    let mut skeleton: Option<SkeletonDefault> = None;
-    let mut review_cap: Option<ReviewCapValue> = None;
-    let mut freeform_default = false;
-
-    for line in body.lines() {
-        // インデントされた行は未知キーのブロックマッピング配下 (入れ子) の中身であり、
-        // トップレベルキーとして解釈しない — trim してから split すると `plugin:` 配下の
-        // `name: acme` が `name` を上書きし、寛容パース (「未知キーは黙って無視」) が壊れる。
-        if line.starts_with(' ') || line.starts_with('\t') {
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let Some((key, raw)) = trimmed.split_once(':') else {
-            continue;
-        };
-        let value = unquote(raw.trim());
-        match key.trim() {
-            "name" => name = Some(value.to_string()),
-            "depth" => depth = Some(value.to_string()),
-            "keywords" => keywords = parse_flow_sequence(value),
-            "skeleton" => {
-                skeleton = Some(
-                    SkeletonDefault::parse(value)
-                        .map_err(|_| scope_file(scope_invalid_skeleton_message(path, value)))?,
-                );
-            }
-            "review_cap" => {
-                review_cap = Some(
-                    ReviewCapValue::parse(value)
-                        .map_err(|_| scope_file(scope_invalid_review_cap_message(path, value)))?,
-                );
-            }
-            // 有効スコープ中 1 つまでという集合レベルの一意性はスライス 1 の範囲外。
-            // TODO(spec: 12 §3.3): `freeform_default` の集合一意性検証は compile 側と併せて実装する。
-            "freeform_default" => freeform_default = value == "true",
-            _ => {}
-        }
-    }
-
-    let name = name.ok_or_else(|| scope_file(scope_missing_name_message(path)))?;
-    let mut metadata =
-        ScopeMetadata::new(&name).map_err(|_| scope_file(scope_missing_name_message(path)))?;
-    if let Some(depth) = depth {
-        metadata = metadata.with_depth(depth);
-    }
-    if !keywords.is_empty() {
-        metadata = metadata.with_keywords(keywords);
-    }
-    if let Some(skeleton) = skeleton {
-        metadata = metadata.with_skeleton(skeleton);
-    }
-    if let Some(review_cap) = review_cap {
-        metadata = metadata.with_review_cap(review_cap);
-    }
-    Ok(metadata.with_freeform_default(freeform_default))
-}
-
-/// 先頭の `---` から次の `---` までを返す。どちらかが無ければ `None` (= frontmatter 無し)。
-fn frontmatter_body(content: &str) -> Option<&str> {
-    let rest = content.strip_prefix(FRONTMATTER_FENCE)?;
-    // 開始フェンス行の残り (改行まで) は捨てる。
-    let rest = rest
-        .strip_prefix("\r\n")
-        .or_else(|| rest.strip_prefix('\n'))?;
-    let mut offset = 0usize;
-    for line in rest.split_inclusive('\n') {
-        if line.trim_end() == FRONTMATTER_FENCE {
-            return Some(&rest[..offset]);
-        }
-        offset += line.len();
-    }
-    None
-}
-
-/// `[a, b]` のフロー列を読む。角括弧が無い形は「1 要素の列」として寛容に受ける。
-fn parse_flow_sequence(value: &str) -> Vec<String> {
-    let inner = match value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        Some(inner) => inner,
-        None => value,
-    };
-    inner
-        .split(',')
-        .map(|item| unquote(item.trim()).to_string())
-        .filter(|item| !item.is_empty())
-        .collect()
-}
-
-/// 前後を囲う `"` / `'` を 1 組だけ剥がす。
-fn unquote(value: &str) -> &str {
-    for quote in ['"', '\''] {
-        if value.len() >= 2 && value.starts_with(quote) && value.ends_with(quote) {
-            return &value[1..value.len() - 1];
-        }
-    }
-    value
 }
 
 #[cfg(test)]
 mod tests {
-    // panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗のシグナル
-    // として妥当なため許容する。
-    #![allow(clippy::panic)]
-
     use super::*;
-    use std::path::Path;
 
-    fn scope_path() -> &'static Path {
-        Path::new("/scopes/aidlc-feature.md")
+    use std::collections::BTreeMap;
+
+    use core_command_domain::workflow_definition::{
+        ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder,
+        StageNumber, StageSlug,
+    };
+
+    fn id() -> WorkflowDefinitionId {
+        WorkflowDefinitionId::parse("claude").expect("定義 id")
     }
 
-    /// 破損の診断表示を取り出す (パーサは `Corrupt` 以外を返さない)。
-    fn cause_of(failure: DefinitionReadFailure) -> String {
-        let DefinitionReadFailure::Corrupt(cause) = failure else {
-            panic!("Corrupt を期待した: {failure:?}");
-        };
-        cause.to_string()
+    fn other_id() -> WorkflowDefinitionId {
+        WorkflowDefinitionId::parse("kiro").expect("定義 id")
     }
 
-    /// 私有の破損原因を `Display` で 1 行に畳んだ診断表示。
-    fn rendered(cause: &DefinitionCorruption) -> String {
-        cause.to_string()
+    fn revision(fill: char) -> core_command_domain::workflow_definition::DefinitionRevision {
+        core_command_domain::workflow_definition::DefinitionRevision::parse(&format!(
+            "sha256:{}",
+            fill.to_string().repeat(64)
+        ))
+        .expect("revision")
+    }
+
+    fn content(stage_count: usize) -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
+        let nodes = (0..stage_count)
+            .map(|index| {
+                StageNodeBuilder::new(
+                    StageSlug::parse(&format!("stage-{index}")).expect("slug"),
+                    StageNumber::parse(&format!("0.{}", index + 1)).expect("番号"),
+                    "Stage".to_string(),
+                    PhaseId::Initialization,
+                    ExecutionKind::Always,
+                    StageMode::Inline,
+                )
+                .scopes(vec!["classic".to_string()])
+                .build()
+            })
+            .collect();
+        let graph = StageGraph::new(nodes).expect("グラフ");
+        let grid = ScopeGrid::from_graph(&graph);
+        let scopes = [(
+            "classic".to_string(),
+            ScopeMetadata::new("classic").expect("スコープ"),
+        )]
+        .into_iter()
+        .collect();
+        (graph, grid, scopes)
+    }
+
+    fn genesis(stage_count: usize) -> (WorkflowDefinition, WorkflowDefinitionEvent) {
+        let (graph, grid, scopes) = content(stage_count);
+        WorkflowDefinition::define(id(), revision('0'), graph, grid, scopes, at())
+    }
+
+    fn at() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-08-31T00:00:00Z")
+            .expect("固定の ISO 8601 UTC")
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn repository() -> WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
+        WorkflowDefinitionRepositoryImpl::in_memory()
+    }
+
+    /// 本家が `Box<dyn Error>` に包んで運ぶ SQLite の失敗。
+    fn boxed_busy() -> Box<dyn std::error::Error + Send + Sync> {
+        Box::new(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ErrorCode::DatabaseBusy,
+                extended_code: 5,
+            },
+            None,
+        ))
     }
 
     #[test]
-    fn every_corruption_renders_its_material_in_one_line() {
-        // 利用者向けの upstream 逐語文言はクエリ側が所有する (b26 段階 2)。ここに残るのは
-        // `Error::source` の連鎖に載る開発者向け診断であり、材料だけを運ぶ。
-        assert_eq!(
-            rendered(&DefinitionCorruption::ScopeFile {
-                message: "boom".to_string(),
-            }),
-            "boom"
+    fn a_read_failure_is_mapped_by_its_kind() {
+        let repository = repository();
+        let corrupt = repository.read_error(
+            &EventStoreReadError::DeserializationError(Box::new(std::io::Error::other("x"))),
+            &id(),
         );
+        assert!(matches!(
+            &corrupt,
+            RepositoryError::Corrupt { id: got, seq_nr: None, .. } if *got == id()
+        ));
         assert_eq!(
-            rendered(&DefinitionCorruption::Malformed {
-                message: "bang".to_string(),
-            }),
-            "bang"
-        );
-        assert_eq!(
-            rendered(&DefinitionCorruption::InvalidJson {
-                path: PathBuf::from("/p"),
-                cause: "c".to_string(),
-            }),
-            "stage graph at /p is not valid JSON: c"
-        );
-        assert_eq!(
-            rendered(&DefinitionCorruption::HarnessIdentity {
-                path: PathBuf::from("/d/harness.json"),
-                cause: "missing name".to_string(),
-            }),
-            "harness identity at /d/harness.json does not provide a definition id: missing name"
-        );
-    }
-
-    #[test]
-    fn the_failure_maps_onto_the_generic_port_contract() {
-        let id = WorkflowDefinitionId::parse("claude").unwrap();
-
-        // 提供していない定義は `NotFound` — 運ぶのは要求された id だけ。
-        let error = DefinitionReadFailure::NotProvided.into_repository_error(&id);
-        assert!(matches!(error, RepositoryError::NotFound { id: ref got } if *got == id));
-
-        // OS 由来は `Io` — 分類と対象パスを運び、原因連鎖は持たない。
-        let error = DefinitionReadFailure::Io {
-            kind: io::ErrorKind::NotFound,
-            path: PathBuf::from("/d/stage-graph.json"),
-        }
-        .into_repository_error(&id);
-        let RepositoryError::Io { kind, ref path } = error else {
-            panic!("Io を期待した: {error:?}");
-        };
-        assert_eq!(kind, io::ErrorKind::NotFound);
-        assert_eq!(path.as_deref(), Some(Path::new("/d/stage-graph.json")));
-        assert!(Error::source(&error).is_none());
-
-        // 破損は `Corrupt` — 分類は契約に載せず、原因連鎖だけが診断を運ぶ。
-        let error = DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-            message: "bang".to_string(),
-        })
-        .into_repository_error(&id);
-        let RepositoryError::Corrupt {
-            id: ref got,
-            seq_nr,
-            ..
-        } = error
-        else {
-            panic!("Corrupt を期待した: {error:?}");
-        };
-        assert_eq!(*got, id);
-        // 定義はイベント列ではないので行番号を持たない。
-        assert_eq!(seq_nr, None);
-        assert_eq!(
-            Error::source(&error)
-                .expect("Corrupt は原因を連鎖する")
+            std::error::Error::source(&corrupt)
+                .expect("原因が連鎖する")
                 .to_string(),
-            "bang"
+            "store deserialization failed"
         );
+        assert!(matches!(
+            repository.read_error(&EventStoreReadError::IOError(boxed_busy()), &id()),
+            RepositoryError::Io {
+                kind: ErrorKind::WouldBlock,
+                path: None,
+            }
+        ));
+        assert!(matches!(
+            repository.read_error(
+                &EventStoreReadError::OtherError("分類できない".to_string()),
+                &id()
+            ),
+            RepositoryError::Io {
+                kind: ErrorKind::Other,
+                path: None,
+            }
+        ));
     }
 
-    #[test]
-    fn frontmatter_needs_both_fences() {
+    #[tokio::test]
+    async fn a_write_failure_is_mapped_by_its_kind() {
+        let repository = repository();
+        let (definition, _) = genesis(2);
+
+        assert!(
+            matches!(
+                repository
+                    .write_error(
+                        EventStoreWriteError::OptimisticLockError(
+                            "optimistic lock failed".to_string()
+                        ),
+                        &definition,
+                        0,
+                    )
+                    .await,
+                RepositoryError::Conflict {
+                    expected: 0,
+                    actual: 0,
+                }
+            ),
+            "提示した版はそのまま、実在する version は読み直して材料にする (行が無ければ 0)"
+        );
+        let corrupt = repository
+            .write_error(
+                EventStoreWriteError::SerializationError(Box::new(std::io::Error::other("x"))),
+                &definition,
+                0,
+            )
+            .await;
+        assert!(matches!(
+            &corrupt,
+            RepositoryError::Corrupt { id: got, seq_nr: Some(1), .. } if *got == id()
+        ));
         assert_eq!(
-            frontmatter_body("---\nname: a\n---\nbody\n"),
-            Some("name: a\n")
+            std::error::Error::source(&corrupt)
+                .expect("原因が連鎖する")
+                .to_string(),
+            "write contract violation"
         );
+        assert!(matches!(
+            repository
+                .write_error(
+                    EventStoreWriteError::ContractViolation("BR2.6".to_string()),
+                    &definition,
+                    0,
+                )
+                .await,
+            RepositoryError::Corrupt {
+                seq_nr: Some(1),
+                ..
+            }
+        ));
+        assert!(matches!(
+            repository
+                .write_error(EventStoreWriteError::IOError(boxed_busy()), &definition, 0)
+                .await,
+            RepositoryError::Io {
+                kind: ErrorKind::WouldBlock,
+                path: None,
+            }
+        ));
+        assert!(matches!(
+            repository
+                .write_error(
+                    EventStoreWriteError::OtherError("分類できない".to_string()),
+                    &definition,
+                    0,
+                )
+                .await,
+            RepositoryError::Io {
+                kind: ErrorKind::Other,
+                path: None,
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_conflict_material_is_the_version_that_is_actually_stored() {
+        let mut repository = repository();
+        let (definition, event) = genesis(2);
+        repository
+            .store(&event, &definition)
+            .await
+            .expect("genesis");
+        assert_eq!(repository.stored_version(&id()).await, 1);
         assert_eq!(
-            frontmatter_body("---\r\nname: a\r\n---\r\n"),
-            Some("name: a\r\n")
+            repository.stored_version(&other_id()).await,
+            0,
+            "行が無ければ 0"
         );
-        assert_eq!(frontmatter_body("name: a\n"), None);
-        assert_eq!(frontmatter_body("---\nname: a\n"), None);
     }
 
-    #[test]
-    fn name_is_the_only_required_key_and_unknown_keys_are_ignored() {
-        let metadata = parse_scope_metadata(
-            scope_path(),
-            "---\nname: feature\ndescription: anything\nrunner: cargo\n---\n# body\n",
-        )
-        .unwrap();
-        assert_eq!(metadata.name(), "feature");
-        assert_eq!(metadata.depth(), None);
-        assert!(metadata.keywords().is_empty());
-    }
+    #[tokio::test]
+    async fn the_volatile_store_is_shared_by_the_reopened_handle() {
+        let mut repository = repository();
+        let (definition, event) = genesis(2);
+        repository
+            .store(&event, &definition)
+            .await
+            .expect("genesis");
 
-    #[test]
-    fn missing_frontmatter_and_missing_name_have_distinct_wordings() {
-        let err = parse_scope_metadata(scope_path(), "no frontmatter here\n").unwrap_err();
+        let reopened = repository.reopened();
         assert_eq!(
-            cause_of(err),
-            "Scope file missing frontmatter: /scopes/aidlc-feature.md"
-        );
-        let err = parse_scope_metadata(scope_path(), "---\ndepth: standard\n---\n").unwrap_err();
-        assert_eq!(
-            cause_of(err),
-            "Scope file /scopes/aidlc-feature.md missing required frontmatter: name"
-        );
-        let err = parse_scope_metadata(scope_path(), "---\nname: \"\"\n---\n").unwrap_err();
-        assert!(cause_of(err).ends_with("missing required frontmatter: name"));
-    }
-
-    #[test]
-    fn indented_lines_under_an_unknown_block_key_are_not_top_level_keys() {
-        // 未知キー `plugin:` のブロック配下に name / skeleton が現れても、トップレベルの
-        // name を上書きせず、skeleton の不正値検査にも掛からない (寛容パースの契約)。
-        let metadata = parse_scope_metadata(
-            scope_path(),
-            "---\nname: feature\nplugin:\n  name: acme\n  skeleton: enabled\n---\n",
-        )
-        .unwrap();
-        assert_eq!(metadata.name(), "feature");
-        assert_eq!(metadata.skeleton(), None);
-    }
-
-    #[test]
-    fn the_skeleton_rejection_is_verbatim() {
-        let err = parse_scope_metadata(scope_path(), "---\nname: feature\nskeleton: yes\n---\n")
-            .unwrap_err();
-        assert_eq!(
-            cause_of(err),
-            "Scope file /scopes/aidlc-feature.md has invalid skeleton value \"yes\". Expected \"on\" or \"off\"."
+            reopened
+                .find_by_id(&id())
+                .await
+                .expect("同じストアを指す")
+                .revision(),
+            &revision('0')
         );
     }
 
     #[test]
-    fn review_cap_accepts_the_three_declared_values_and_rejects_the_rest() {
-        for (raw, expected) in [
-            ("adversarial", ReviewCapValue::Adversarial),
-            ("advisory", ReviewCapValue::Advisory),
-            ("none", ReviewCapValue::None),
+    fn every_corrupt_detail_renders_its_material() {
+        // 分類はポート契約に載らない (裁定 6) — 診断表示 (caused by: ...) がここの文字列である。
+        for (detail, wording) in [
+            (CorruptDetail::MissingSnapshot, "missing snapshot"),
+            (CorruptDetail::ForeignManifest, "foreign manifest"),
+            (CorruptDetail::SequenceGap, "sequence gap"),
+            (
+                CorruptDetail::Undecodable(DtoDecodeError::InvariantViolation),
+                "undecodable payload",
+            ),
+            (
+                CorruptDetail::StoreDeserialization,
+                "store deserialization failed",
+            ),
+            (CorruptDetail::WriteContract, "write contract violation"),
         ] {
-            let metadata = parse_scope_metadata(
-                scope_path(),
-                &format!("---\nname: feature\nreview_cap: {raw}\n---\n"),
-            )
-            .unwrap();
-            assert_eq!(metadata.review_cap(), Some(expected));
-        }
-        let err = parse_scope_metadata(
-            scope_path(),
-            "---\nname: feature\nreview_cap: strict\n---\n",
-        )
-        .unwrap_err();
-        assert!(cause_of(err).contains("review_cap"));
-    }
-
-    #[test]
-    fn keywords_read_the_flow_sequence_and_tolerate_a_bare_scalar() {
-        let metadata = parse_scope_metadata(
-            scope_path(),
-            "---\nname: feature\nkeywords: [\"api\", endpoint , ]\n---\n",
-        )
-        .unwrap();
-        assert_eq!(
-            metadata.keywords(),
-            ["api".to_string(), "endpoint".to_string()]
-        );
-
-        let metadata =
-            parse_scope_metadata(scope_path(), "---\nname: feature\nkeywords: api\n---\n").unwrap();
-        assert_eq!(metadata.keywords(), ["api".to_string()]);
-
-        let metadata =
-            parse_scope_metadata(scope_path(), "---\nname: feature\nkeywords: []\n---\n").unwrap();
-        assert!(metadata.keywords().is_empty());
-    }
-
-    #[test]
-    fn freeform_default_is_true_only_for_the_literal_true() {
-        for (raw, expected) in [("true", true), ("false", false), ("yes", false)] {
-            let metadata = parse_scope_metadata(
-                scope_path(),
-                &format!("---\nname: feature\nfreeform_default: {raw}\n---\n"),
-            )
-            .unwrap();
-            assert_eq!(metadata.freeform_default(), expected);
+            assert_eq!(detail.to_string(), wording);
         }
     }
 
     #[test]
-    fn path_resolution_prefers_the_overrides() {
-        let reader =
-            WorkflowDefinitionRepositoryImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
-        assert_eq!(
-            reader.stage_graph_path(),
-            PathBuf::from("/data/stage-graph.json")
-        );
-        assert_eq!(
-            reader.scope_grid_path(),
-            PathBuf::from("/data/scope-grid.json")
-        );
-
-        let reader = reader
-            .with_stage_graph_override(PathBuf::from("/pinned/graph.json"))
-            .with_scope_grid_override(PathBuf::from("/pinned/grid.json"));
-        assert_eq!(
-            reader.stage_graph_path(),
-            PathBuf::from("/pinned/graph.json")
-        );
-        assert_eq!(reader.scope_grid_path(), PathBuf::from("/pinned/grid.json"));
+    fn the_undecodable_detail_chains_its_dto_decode_error() {
+        let detail = CorruptDetail::Undecodable(DtoDecodeError::malformed("id", "x"));
+        let source = std::error::Error::source(&detail).expect("復号失敗は原因を連鎖する");
+        assert_eq!(source.to_string(), "malformed field id: x");
+        assert!(std::error::Error::source(&CorruptDetail::MissingSnapshot).is_none());
     }
 
     #[test]
-    fn unquote_strips_only_one_matching_pair() {
-        assert_eq!(unquote("\"a\""), "a");
-        assert_eq!(unquote("'a'"), "a");
-        assert_eq!(unquote("\"a"), "\"a");
-        assert_eq!(unquote("''"), "");
-        assert_eq!(unquote("a"), "a");
-    }
-
-    #[test]
-    fn blank_comment_and_keyless_lines_are_skipped_instead_of_breaking_the_parse() {
-        // frontmatter の最小 YAML サブセットは、空行・`#` コメント・`:` を持たない行を
-        // 黙って読み飛ばす (寛容パースの契約 — 汎用 YAML パーサへ置換しない理由の 1 つ)。
-        let metadata = parse_scope_metadata(
-            scope_path(),
-            "---\n\nname: feature\n# コメント行\n  \nbare-line-without-a-colon\ndepth: standard\n---\n",
-        )
-        .unwrap();
-        assert_eq!(metadata.name(), "feature");
-        assert_eq!(metadata.depth(), Some("standard"));
+    fn a_volatile_store_has_no_place_to_name_in_its_failures() {
+        let repository = repository();
+        assert_eq!(repository.store_path(), None);
+        assert!(repository.reopened().location.is_none());
     }
 }
