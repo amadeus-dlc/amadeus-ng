@@ -12,12 +12,20 @@
 //!
 //! # モジュールの分担
 //!
-//! - [`workflow_view`] — ワークフロー定義リードモデル (3 入力) のビュー型。「何を実行しうるか」
-//! - [`execution_view`] — 実行状態リードモデル (`aidlc-state.md`) のビュー型と、その上の判断
-//!   (BR3.1 の 8 分岐)。「いま何が起きているか」
-//! - [`orchestration`] — 読むだけの動詞 (`next` / `continue`) と、それが放出する directive
+//! コンテキストは [`orchestration`] 1 つで、その中が読み手の責務ごとに分かれる。
+//!
+//! - `orchestration/port/` — リードモデルを読む **DTO/DAO ポート**。DAO の契約 (trait) と
+//!   ポート面のエラーに加え、**DAO が依存する DTO も同居する** — DTO/DAO ポートは一つの
+//!   パッケージである (オーナー裁定 2026-08-31)。DTO は読む対象ごとに 2 族:
+//!   `workflow_view` (ワークフロー定義リードモデル 3 入力のビュー型。「何を実行しうるか」) と
+//!   `execution_view` (実行状態リードモデル `aidlc-state.md` のビュー型と、その上の判断 =
+//!   BR3.1 の 8 分岐。「いま何が起きているか」)
+//! - `orchestration` 直下 — 読むだけの動詞 (`next` / `continue`) と、それが放出する directive
 //!   プロトコル (公開言語 B14)。「次に何をせよと言うか」
+//!
+//! `port` も 2 つの DTO 族も mod は private であり、公開 API は
+//! [`orchestration`] のフラットなファサード (`pub use`) が唯一の宣言である。消費側のパスは
+//! 読む対象によらず `core_query_use_case::orchestration::<型>` で安定する
+//! (`coding-rules/module-visibility.md`)。
 
-pub mod execution_view;
 pub mod orchestration;
-pub mod workflow_view;

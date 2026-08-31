@@ -5,7 +5,7 @@
 //! クエリ側にある (オーナー裁定 2026-08-30 — コマンド側に置くのは CQRS 違反。
 //! `coding-rules/cqrs-boundaries.md` 規則 7)。
 //!
-//! 読んだ結果は**自前のクエリモデル**([`core_query_use_case::workflow_view`] のビュー型) に
+//! 読んだ結果は**自前のクエリモデル**([`core_query_use_case::orchestration`] の `~View` 型) に
 //! 写す。クエリ側のユースケース (`next` / `continue` のような読むだけの動詞) はこのビューを
 //! 消費する。コマンド側は同じ Published Language を読むにしても、自分の
 //! `WorkflowDefinitionRepository` で自分の集約を再構成し、書込ユースケースの中でだけ使う —

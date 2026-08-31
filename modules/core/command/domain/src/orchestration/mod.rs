@@ -26,7 +26,7 @@
 //! `jump_resolve` / `stale_report` はクエリ (書込なし) で、いずれも**書込の前段ガード**である
 //! — jump の方向導出と、カーソル通過済み completed への再報告の受理可否。「次に何をすべきか」
 //! の判断 (旧 `next_decision`) はここには無い: `next` / `continue` は読むだけの動詞なので
-//! クエリ側 (`core_query_use_case::execution_view::ExecutionStateView::next_decision`) が
+//! クエリ側 (`core_query_use_case::orchestration::ExecutionStateView::next_decision`) が
 //! 所有する (`coding-rules/cqrs-boundaries.md` 規則 5〜7、b26 段階 2)。
 //!
 //! # ゲート判定はフェーズで決まる (BR1.3)

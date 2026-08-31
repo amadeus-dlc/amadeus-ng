@@ -7,7 +7,7 @@
 //! SLASH_FLAG_ALIASES) は U7 / A1 で表として実体化し、差し替えは
 //! [`EngineCommand::cli_spelling`] 1 点で行う (逸脱台帳 #1)。
 
-use crate::workflow_view::{ScopeSlugView, StageSlugView};
+use crate::orchestration::{ScopeSlugView, StageSlugView};
 
 /// 読み取り専用ユーティリティの語彙 (分岐 1 — `--status` などのフラグが指す操作)。
 ///

@@ -1,7 +1,7 @@
 //! `MemoryRulesDao` ポート — active-space の memory 層 (決定論的 steering) を読む DAO。
 
 use super::memory_rules_read_error::MemoryRulesReadError;
-use crate::orchestration::memory_rules::MemoryRules;
+use crate::orchestration::MemoryRules;
 
 /// memory 層ルール束を読む DAO (**読取専用**)。
 ///

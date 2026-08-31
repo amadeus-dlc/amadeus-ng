@@ -16,8 +16,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use core_query_use_case::orchestration::{WorkflowDefinitionDao, WorkflowDefinitionReadError};
-use core_query_use_case::workflow_view::DefinitionView;
+use core_query_use_case::orchestration::{
+    DefinitionView, WorkflowDefinitionDao, WorkflowDefinitionReadError,
+};
 
 use super::workflow_definition_parse::{
     DefinitionArtifacts, RawArtifact, parse_workflow_definition,

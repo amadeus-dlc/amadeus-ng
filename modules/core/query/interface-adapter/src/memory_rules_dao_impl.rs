@@ -17,9 +17,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use core_query_use_case::orchestration::{
-    MemoryRules, MemoryRulesDao, MemoryRulesReadError, RuleContent,
+    MemoryRules, MemoryRulesDao, MemoryRulesReadError, PhaseView, RuleContent,
 };
-use core_query_use_case::workflow_view::PhaseView;
 
 /// base ルールの解決順 (strict-additive — 後のものが前のものを特殊化する)。
 const BASE_FILES: [&str; 3] = ["org.md", "team.md", "project.md"];

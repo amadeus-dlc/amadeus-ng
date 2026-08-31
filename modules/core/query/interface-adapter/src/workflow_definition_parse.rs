@@ -35,13 +35,12 @@
 //! グリッド列の不一致は双方向とも正当。
 
 use core_infrastructure::canon_json::{hash_canonical, to_value};
-use core_query_use_case::orchestration::WorkflowDefinitionReadError;
-use core_query_use_case::workflow_view::{
+use core_query_use_case::orchestration::{
     BrownfieldGreenfieldView, ConsumeDeclView, DefinitionIdView, DefinitionRevisionView,
     DefinitionView, ExecutionKindView, PhaseView, PlanActionView, ReviewCapValueView,
     ReviewClassView, RuleInContextView, RuleScopeView, ScopeGridView, ScopeMetadataView,
     SensorRefView, SkeletonDefaultView, StageGraphView, StageModeView, StageNumberView,
-    StageSlugView, StageView, StageViewBuilder,
+    StageSlugView, StageView, StageViewBuilder, WorkflowDefinitionReadError,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

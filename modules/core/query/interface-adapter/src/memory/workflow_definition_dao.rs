@@ -1,7 +1,8 @@
 //! `WorkflowDefinitionDao` の in-memory テストダブル。
 
-use core_query_use_case::orchestration::{WorkflowDefinitionDao, WorkflowDefinitionReadError};
-use core_query_use_case::workflow_view::DefinitionView;
+use core_query_use_case::orchestration::{
+    DefinitionView, WorkflowDefinitionDao, WorkflowDefinitionReadError,
+};
 
 /// 定義リードモデルの読取結果を握るダブル。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +33,7 @@ impl WorkflowDefinitionDao for InMemoryWorkflowDefinitionDao {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_query_use_case::workflow_view::{
+    use core_query_use_case::orchestration::{
         DefinitionIdView, DefinitionRevisionView, ExecutionKindView, PhaseView, ScopeGridView,
         StageGraphView, StageModeView, StageNumberView, StageSlugView, StageViewBuilder,
     };

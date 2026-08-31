@@ -30,11 +30,10 @@
 // 妥当なため同様に許容する。
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
-use core_query_use_case::execution_view::{
-    CheckboxState, ExecutionStateView, ExecutionStatus, StageProgressView,
+use core_query_use_case::orchestration::{
+    CheckboxState, EngineSignal, ExecutionStateView, ExecutionStatus, NextRequest, PhaseView,
+    PlanActionView, ScopeSlugView, StageProgressView, StageSlugView,
 };
-use core_query_use_case::orchestration::{EngineSignal, NextRequest};
-use core_query_use_case::workflow_view::{PhaseView, PlanActionView, ScopeSlugView, StageSlugView};
 use serde_json::Value;
 
 /// 観測アクション — 状態を動かさず directive だけを出す 3 つ。本ファイルの照合対象である。

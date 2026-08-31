@@ -1,6 +1,6 @@
 //! `WorkflowDefinitionDao` ポート — ワークフロー定義リードモデルを読む DAO。
 
-use crate::workflow_view::DefinitionView;
+use crate::orchestration::DefinitionView;
 
 use super::workflow_definition_read_error::WorkflowDefinitionReadError;
 

@@ -18,7 +18,7 @@
 //! (逸脱台帳 #1)。scope 解決ラダー・キーワード推論は定義ビューの判断ポリシーである
 //! ([`DefinitionView::resolve_scope`])。
 //!
-//! [`ExecutionStateView::next_decision`]: crate::execution_view::ExecutionStateView::next_decision
+//! [`ExecutionStateView::next_decision`]: crate::orchestration::ExecutionStateView::next_decision
 
 use super::directive::{
     AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, RunStageDirective,
@@ -27,18 +27,17 @@ use super::directive::{
 use super::engine_command::{ConfigField, EngineCommand};
 use super::next_decision::{NextDecision, NextRequest};
 use super::next_turn_input::{NextTurnInput, WorkspaceLayout};
-use super::port::{
-    ExecutionStateDao, ExecutionStateReadError, MemoryRulesDao, WorkflowDefinitionDao,
-    WorkflowDefinitionReadError,
-};
 use super::scope_resolution::ScopeResolutionError;
 use super::stage_name::StageName;
 use super::steering_binding::{Bindings, StateBinding};
 use super::steering_plan::SteeringPart;
-use crate::execution_view::{ExecutionStateView, StageIndex};
-use crate::workflow_view::{
-    DefinitionView, PhaseView, PlanActionView, ScopeSlugView, StageModeView, StageSlugView,
-    StageView,
+use crate::orchestration::{
+    DefinitionView, ExecutionStateView, PhaseView, PlanActionView, ScopeSlugView, StageIndex,
+    StageModeView, StageSlugView, StageView,
+};
+use crate::orchestration::{
+    ExecutionStateDao, ExecutionStateReadError, MemoryRulesDao, WorkflowDefinitionDao,
+    WorkflowDefinitionReadError,
 };
 
 /// 逐語文言 — ラダーが放出する公開契約の文字列 (出典: 契約マップ §1。コマンド参照は写像形)。
@@ -50,7 +49,7 @@ use crate::workflow_view::{
 mod wording {
 
     use super::{ExecutionStateReadError, WorkflowDefinitionReadError};
-    use crate::execution_view::CheckboxState;
+    use crate::orchestration::CheckboxState;
 
     /// `--review` の併用ガード (前置)。
     pub(super) const REVIEW_COMBINATION: &str = "Cannot combine --review with read-only, workspace, compose, single-stage, jump, or resume modes. Apply /aidlc --review <class> first, then run the other command.";
@@ -959,7 +958,6 @@ mod tests {
     use super::super::continue_token::ContinueTokenBuilder;
     use super::super::continue_use_case::ContinueUseCase;
     use super::super::directive::RuleContent;
-    use super::super::memory_rules::MemoryRules;
     use super::super::next_turn_input::{NounFamily, NounToken};
     use super::super::scope_resolution::ScopeSource;
     use super::super::steering_binding::{BundleDigest, DirectiveDigest, RouteDigest};
@@ -968,10 +966,11 @@ mod tests {
     use super::super::unit_ref::{UnitKind, UnitName, UnitRef};
     use super::super::{ReadOnlyVerb, test_fixtures};
     use super::*;
-    use crate::execution_view::{CheckboxState, ExecutionStatus, StageProgressView};
-    use crate::workflow_view::{
-        DefinitionIdView, DefinitionRevisionView, ExecutionKindView, ReviewClassView,
-        ScopeGridView, ScopeMetadataView, StageGraphView, StageNumberView, StageViewBuilder,
+    use crate::orchestration::MemoryRules;
+    use crate::orchestration::{
+        CheckboxState, DefinitionIdView, DefinitionRevisionView, ExecutionKindView,
+        ExecutionStatus, ReviewClassView, ScopeGridView, ScopeMetadataView, StageGraphView,
+        StageNumberView, StageProgressView, StageViewBuilder,
     };
 
     use test_fixtures::{definition, genesis_state, parked_state, slug, state};

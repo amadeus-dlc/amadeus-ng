@@ -4,9 +4,9 @@
 //! 実行状態ビューのクエリではなくユースケース前段の要求分類に属する (BR3.2)。ここに来るのは
 //! 「実行状態を見なければ決まらない」観測だけである。
 
-use crate::execution_view::{CheckboxState, StageIndex};
+use crate::orchestration::{CheckboxState, StageIndex};
 
-/// [`crate::execution_view::ExecutionStateView::next_decision`] への入力のうち、ワークフロー
+/// [`crate::orchestration::ExecutionStateView::next_decision`] への入力のうち、ワークフロー
 /// 状態の判断に要る観測 (entities.md NextRequest)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NextRequest {
@@ -130,8 +130,10 @@ impl From<&NextDecision> for EngineSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution_view::{ExecutionStateView, ExecutionStatus, StageProgressView};
-    use crate::workflow_view::{PhaseView, PlanActionView, ScopeSlugView, StageSlugView};
+    use crate::orchestration::{
+        ExecutionStateView, ExecutionStatus, PhaseView, PlanActionView, ScopeSlugView,
+        StageProgressView, StageSlugView,
+    };
 
     /// [`StageIndex`] を作れるのは実行状態ビューだけなので、テストも同じ経路を通す。
     fn index(value: usize) -> StageIndex {

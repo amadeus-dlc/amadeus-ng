@@ -136,7 +136,7 @@ impl std::error::Error for StageGraphError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_view::{
+    use crate::orchestration::{
         ExecutionKindView, PhaseView, StageModeView, StageNumberView, StageViewBuilder,
     };
 

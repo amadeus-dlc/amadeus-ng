@@ -4,7 +4,7 @@
 //! **読み終えた結果**を運ぶ DTO である (オーナー裁定 2026-08-31 — クエリ側のユースケースは
 //! リードモデルを読む DTO/DAO ポート経由で読む)。
 //!
-//! [`MemoryRulesDao`]: super::MemoryRulesDao
+//! [`MemoryRulesDao`]: crate::orchestration::MemoryRulesDao
 //!
 //! フェーズの選択と配信計画への分割・パックは純計算であり、[`MemoryRules::plan_for`] →
 //! [`SteeringPlan::pack`] が行う。読み順は memory 層の解決順
@@ -13,15 +13,13 @@
 
 use std::collections::BTreeMap;
 
-use super::directive::RuleContent;
-use super::steering_plan::{SteeringPlan, UnsplittableSection};
-use crate::workflow_view::PhaseView;
+use crate::orchestration::{PhaseView, RuleContent, SteeringPlan, UnsplittableSection};
 
 /// 読取済みの memory 層ルール束 (base 3 ファイル + フェーズ別ファイル)。
 ///
 /// ファイルが**無い**のは正常 (ルール未整備・initialization はフェーズルールを持たない) —
 /// 無いファイルは単に列に現れない。「在るのに読めない」は DAO が
-/// [`MemoryRulesReadError`](super::MemoryRulesReadError) で返し、呼出側が blocking で
+/// [`MemoryRulesReadError`](crate::orchestration::MemoryRulesReadError) で返し、呼出側が blocking で
 /// 止めるので、本型に失敗の表現は無い (Always Valid)。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MemoryRules {

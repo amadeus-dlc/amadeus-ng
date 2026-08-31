@@ -1,7 +1,8 @@
 //! `ExecutionStateDao` の in-memory テストダブル。
 
-use core_query_use_case::execution_view::ExecutionStateView;
-use core_query_use_case::orchestration::{ExecutionStateDao, ExecutionStateReadError};
+use core_query_use_case::orchestration::{
+    ExecutionStateDao, ExecutionStateReadError, ExecutionStateView,
+};
 
 /// 実行状態リードモデルの読取結果を握るダブル。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,9 +41,9 @@ impl ExecutionStateDao for InMemoryExecutionStateDao {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_query_use_case::execution_view::{CheckboxState, ExecutionStatus, StageProgressView};
-    use core_query_use_case::workflow_view::{
-        PhaseView, PlanActionView, ScopeSlugView, StageSlugView,
+    use core_query_use_case::orchestration::{
+        CheckboxState, ExecutionStatus, PhaseView, PlanActionView, ScopeSlugView,
+        StageProgressView, StageSlugView,
     };
 
     fn view() -> ExecutionStateView {

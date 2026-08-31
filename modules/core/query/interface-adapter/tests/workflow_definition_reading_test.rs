@@ -1,7 +1,7 @@
 //! 統合テスト: クエリ側の DAO 実装 (`WorkflowDefinitionDaoImpl`) と純 parse の合成が
 //! 12-workflow-definition §4 の失敗態度表を全行満たすこと。
 //!
-//! 読み終えた先は**クエリモデル** (`core_query_use_case::workflow_view` のビュー型) であり、
+//! 読み終えた先は**クエリモデル** (`core_query_use_case::orchestration` の `~View` 型) であり、
 //! コマンド側の集約ではない (`coding-rules/cqrs-boundaries.md` 規則 6)。
 //!
 //! 各テストは tempdir に合成 `stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md` を
@@ -14,10 +14,10 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use core_query_interface_adapter::{DefinitionPaths, WorkflowDefinitionDaoImpl};
-use core_query_use_case::orchestration::{WorkflowDefinitionDao, WorkflowDefinitionReadError};
-use core_query_use_case::workflow_view::{
+use core_query_use_case::orchestration::{
     BrownfieldGreenfieldView, DefinitionIdView, DefinitionView, PhaseView, PlanActionView,
-    ReviewClassView, RuleScopeView, StageModeView, StageSlugView,
+    ReviewClassView, RuleScopeView, StageModeView, StageSlugView, WorkflowDefinitionDao,
+    WorkflowDefinitionReadError,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -245,7 +245,7 @@ fn slug(s: &str) -> StageSlugView {
     StageSlugView::parse(s).unwrap()
 }
 
-fn slugs(nodes: &[&core_query_use_case::workflow_view::StageView]) -> Vec<String> {
+fn slugs(nodes: &[&core_query_use_case::orchestration::StageView]) -> Vec<String> {
     nodes
         .iter()
         .map(|n| n.slug().as_str().to_string())

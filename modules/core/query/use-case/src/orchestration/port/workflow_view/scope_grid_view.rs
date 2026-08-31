@@ -110,7 +110,7 @@ impl ScopeGridView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_view::{
+    use crate::orchestration::{
         ExecutionKindView, PhaseView, StageModeView, StageNumberView, StageView, StageViewBuilder,
     };
 

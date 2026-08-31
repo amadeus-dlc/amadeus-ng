@@ -19,9 +19,9 @@
 use core_infrastructure::codec::{seal, unseal};
 use core_query_use_case::orchestration::{
     Bindings, BundleDigest, ContinueToken, ContinueTokenBuilder, DirectiveDigest, GateField,
-    PartIndex, RouteDigest, StageName, StateBinding, TokenVersion, UnitKind, UnitName, UnitRef,
+    PartIndex, RouteDigest, ScopeSlugView, StageName, StageSlugView, StateBinding, TokenVersion,
+    UnitKind, UnitName, UnitRef,
 };
-use core_query_use_case::workflow_view::{ScopeSlugView, StageSlugView};
 use serde::{Deserialize, Serialize};
 
 /// 無効なトークン (材料なし — 「無効」だけを約束する。fail-closed の逐語文言は呼出側の

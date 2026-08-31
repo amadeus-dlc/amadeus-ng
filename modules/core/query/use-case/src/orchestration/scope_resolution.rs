@@ -7,7 +7,7 @@
 //! アルファベット順スキャン・**5 語超のテキストでは抑止** (`:5586-5594`)。デフォルトは
 //! `classic` (`aidlc-lib.ts:8896`)。
 
-use crate::workflow_view::{DefinitionView, ScopeSlugView};
+use crate::orchestration::{DefinitionView, ScopeSlugView};
 
 /// デフォルト scope (`export const DEFAULT_SCOPE = "classic";`)。
 const DEFAULT_SCOPE: &str = "classic";
