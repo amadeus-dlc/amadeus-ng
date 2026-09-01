@@ -32,8 +32,8 @@ use core_command_interface_adapter::orchestration::{
 };
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
-    CommitVerdictUseCase, CreateIntentUseCase, DefineWorkflowUseCase, IntentRepository as _,
-    ReportedTransition,
+    CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase, DefineWorkflowUseCase,
+    IntentRepository as _, ReportedTransition,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::{
@@ -446,7 +446,7 @@ async fn mint_intent(
             now,
         )
         .await
-        .map_err(|error| wording::orchestrate_failure(&chained(&error)))?;
+        .map_err(|error| mint_failure_wording(&error))?;
     // 骨格を書く — 投影は既存の行を**書き換える**ので、書き換え先が無いと 1 行も描けない
     // (`crate::scaffold` の doc / RMU の `ScaffoldMissing`)。
     let intent = reopened_intent_repository
@@ -532,6 +532,20 @@ fn fault(what: &str, cause: &str) -> String {
 /// **既に描かれている末尾は二度書かない** — 同じ文言が `caused by` で 2 度並ぶのを防ぐ。
 fn diagnose(what: &str, error: &dyn std::error::Error) -> String {
     fault(what, &chained(error))
+}
+
+/// 鋳造の失敗をユースケースの変種から最終文言へ写す（材料は use-case、文言は出す側 — 家風）。
+///
+/// 部分失敗（intent 着地後に実行の永続化だけが倒れた）だけは特別扱いする — 変種が運ぶ
+/// 孤児 intent の識別子と復旧手順を利用者向けの文言に組む（issue #77 の先行改善。恒久対応は
+/// doctor の検出・修復）。それ以外は従来どおり連鎖診断 1 行。
+fn mint_failure_wording(error: &CreateIntentError) -> String {
+    match error {
+        CreateIntentError::ExecutionRepository { orphan, .. } => {
+            wording::orphaned_intent(orphan.as_str(), &chained(error))
+        }
+        _ => wording::orchestrate_failure(&chained(error)),
+    }
 }
 
 /// 失敗と `source` 連鎖の末端までを 1 つの文字列に畳む（`what` を冠さない形）。
@@ -705,7 +719,7 @@ mod tests {
     use super::*;
     use core_command_domain::workflow_definition::WorkflowDefinitionId;
     use core_command_domain::workspace::CloneId;
-    use core_command_use_case::orchestration::{CreateIntentError, RepositoryError};
+    use core_command_use_case::orchestration::RepositoryError;
 
     /// 連鎖の途中に居る封筒 (自分の `Display` に子の文言を内包しない形)。
     #[derive(Debug)]
@@ -762,6 +776,46 @@ mod tests {
                 "cannot ingest the workflow definition: \
                  definition artifacts: io: NotFound at /w/g.json"
             )
+        );
+    }
+
+    #[test]
+    fn a_partial_mint_failure_names_the_orphan_and_the_recovery_path() {
+        // intent 着地後に実行の永続化だけが倒れた部分失敗 (issue #77 の先行改善)。
+        // 利用者は「どの intent が孤児か」「次に何をすればよいか」をこの文言だけで知る。
+        let orphan = IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("孤児の id");
+        let error = CreateIntentError::ExecutionRepository {
+            orphan,
+            error: RepositoryError::Conflict {
+                expected: 0,
+                actual: 1,
+            },
+        };
+
+        let text = mint_failure_wording(&error);
+        assert!(
+            text.contains("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"),
+            "孤児 intent の識別子を名指す: {text}"
+        );
+        assert!(
+            text.contains("re-run intent-create"),
+            "復旧手順 (再実行で新しい intent が鋳造される) を言う: {text}"
+        );
+        assert!(
+            text.contains("issue #77"),
+            "恒久対応 (doctor の検出・修復) の追跡先を言う: {text}"
+        );
+    }
+
+    #[test]
+    fn a_non_partial_mint_failure_keeps_the_plain_diagnostic() {
+        // 部分失敗でない鋳造の失敗は従来どおりの診断 1 行 — 孤児の話をしない。
+        let error = CreateIntentError::DefinitionRepository(RepositoryError::NotFound {
+            id: WorkflowDefinitionId::parse("claude").expect("定義 id"),
+        });
+        assert_eq!(
+            mint_failure_wording(&error),
+            wording::orchestrate_failure(&chained(&error))
         );
     }
 
