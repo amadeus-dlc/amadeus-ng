@@ -91,7 +91,7 @@ pub(crate) async fn a_duplicate_genesis_is_a_conflict<F: IntentStoreFixture>(fix
 
     let (aggregate, event) = intent_genesis();
     let err = repository
-        .store(&event, &aggregate, at())
+        .store(&event, &aggregate)
         .await
         .expect_err("重複作成は拒否");
     assert!(matches!(err, RepositoryError::Conflict { expected: 0, .. }));
@@ -111,7 +111,7 @@ pub(crate) async fn a_mismatched_pair_is_refused<F: IntentStoreFixture>(fixture:
     let mismatched = other_intent();
 
     let err = repository
-        .store(&event, &mismatched, at())
+        .store(&event, &mismatched)
         .await
         .expect_err("誕生記録と一致しない対は拒否");
     assert!(matches!(

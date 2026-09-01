@@ -1,21 +1,20 @@
-//! `DefinitionArtifactsClient` の実装 (Gateway) — ハーネス配布物 (Published Language 3 入力:
-//! `stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) を
-//! ディスクから読み、定義を確立するための材料へ写す (12-workflow-definition §6)。
+//! `CompiledDefinitionRepository` の実装 — コンパイル済み定義 (配布束) を 3 入力
+//! (`stage-graph.json` / `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md`) から
+//! 再構成する (12-workflow-definition §6)。
 //!
-//! # ここは Repository ではない (2026-08-31 オーナー裁定)
+//! # これは集約 [`CompiledDefinition`] の Repository である (オーナー裁定 2026-09-02、b36)
 //!
-//! かつてこのコードは `WorkflowDefinitionRepositoryImpl` として、3 入力から集約を組み立てて
-//! いた。その実装は破棄された (「NG 中の NG です。リポジトリの実装は EventStoreForSqlite を
-//! 使わないといけない」) — 集約の最新状態をファイルから組み立てるのは
-//! `coding-rules/cqrs-boundaries.md` 規則 4 への正面違反だからである。
+//! 配布束は**同一システムのドメインモデル**であり、外部システムの成果物ではない
+//! (「クライアントをリポジトリに、クライアントが扱うデータを集約に昇格」— #79 §1-4 / #80)。
+//! 媒体が 3 ファイルであることは**この実装の内部詳細**で、ポート面には現れない
+//! (`coding-rules/gateway-taxonomy.md` §2 — 媒体名を契約に漏らさない)。
 //!
-//! パースの中身はそのまま**取込境界**へ移した。これは**暫定の足場**である (オーナー裁定
-//! 2026-09-01、#79 §5-g / b33 — かつての「外部システムクライアント」分類は棄却。3 入力は
-//! AI-DLC v2 系内の成果物であり、都合よく外部システム扱いしない): compile コンテキストが
-//! 未実装の間、genesis の内容の唯一の出所である dist バイトを読んで播種するためだけの口で
-//! あり、compile 実装 (slice 2) でそのフロー (集約 → イベント → RMU) に置換されて実装ごと
-//! 消える (#80)。読んだ材料から定義を確立・改訂して**イベントストアへ書く**のは
-//! `DefineWorkflowUseCase` の仕事で、以後の集約の読取は常にジャーナルからの再構成になる。
+//! `WorkflowDefinition` (ジャーナルに住む定義) とは**別集約・同一系譜**である。b30 裁定
+//! 「リポジトリの実装は EventStoreForSqlite を使う」は ES 集約 `WorkflowDefinition` の
+//! Repository の話で、本 Repository の永続化面は配布束そのもの — compile コンテキストが
+//! 実装されたら (slice 2)、compile が `store` の書き手としてここに現れる。読んだ内容から
+//! 定義を確立・改訂して**イベントストアへ書く**のは `DefineWorkflowUseCase` の仕事で、
+//! 以後のジャーナル側の読取は常にイベントからの再構成になる。
 //!
 //! **この実装が所有するもの** (12 §6):
 //! - パス解決とテストシーム (`<data_dir>/{stage-graph,scope-grid}.json` / `<scopes_dir>`、
@@ -39,14 +38,12 @@
 //! グリッド列の不一致は双方向とも正当。
 
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
-    ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef,
-    SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
+    ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ReviewCapValue,
+    ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault,
+    StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
 };
-use core_command_use_case::orchestration::{
-    DefinitionArtifacts, DefinitionArtifactsClient, DefinitionArtifactsError,
-};
+use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
 use core_infrastructure::canon_json::{hash_canonical, to_value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -100,10 +97,18 @@ impl DefinitionReadFailure {
     ///
     /// `Corrupt` の分類は契約に載せない (裁定 6) — 原因は `Error::source` の連鎖で
     /// 診断表示だけを運ぶ。
-    fn into_artifacts_error(self) -> DefinitionArtifactsError {
+    fn into_repository_error(
+        self,
+        id: &CompiledDefinitionId,
+    ) -> RepositoryError<CompiledDefinitionId> {
         match self {
-            DefinitionReadFailure::Io { kind, path } => DefinitionArtifactsError::Io { kind, path },
-            DefinitionReadFailure::Corrupt(cause) => DefinitionArtifactsError::Corrupt {
+            DefinitionReadFailure::Io { kind, path } => RepositoryError::Io {
+                kind,
+                path: Some(path),
+            },
+            DefinitionReadFailure::Corrupt(cause) => RepositoryError::Corrupt {
+                id: id.clone(),
+                seq_nr: None,
                 source: Box::new(cause),
             },
         }
@@ -259,8 +264,8 @@ struct StageNodeDto {
     produces: Vec<String>,
     #[serde(default)]
     optional_produces: Vec<String>,
-    #[serde(default)]
-    produces_kinds: BTreeMap<String, Vec<String>>,
+    #[serde(default, with = "crate::orchestration::kinds_codec")]
+    produces_kinds: Vec<(String, Vec<String>)>,
     #[serde(default)]
     consumes: Vec<ConsumeDto>,
     #[serde(default)]
@@ -372,20 +377,20 @@ struct RevisionScope {
 /// **観測不能なので実装の自由** (12 §10) — upstream のモジュールレベル可変シングルトンと
 /// `_reset*ForTests()` は模倣しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DefinitionArtifactsClientImpl {
+pub struct CompiledDefinitionRepositoryImpl {
     data_dir: PathBuf,
     scopes_dir: PathBuf,
     stage_graph_override: Option<PathBuf>,
     scope_grid_override: Option<PathBuf>,
 }
 
-impl DefinitionArtifactsClientImpl {
+impl CompiledDefinitionRepositoryImpl {
     /// `data_dir` は `stage-graph.json` / `scope-grid.json` の置き場
     /// (`<harnessRoot>/tools/data/`)、`scopes_dir` は identity ファイルの置き場
     /// (`<harnessRoot>/scopes/`)。
     #[must_use]
-    pub const fn new(data_dir: PathBuf, scopes_dir: PathBuf) -> DefinitionArtifactsClientImpl {
-        DefinitionArtifactsClientImpl {
+    pub const fn new(data_dir: PathBuf, scopes_dir: PathBuf) -> CompiledDefinitionRepositoryImpl {
+        CompiledDefinitionRepositoryImpl {
             data_dir,
             scopes_dir,
             stage_graph_override: None,
@@ -395,14 +400,14 @@ impl DefinitionArtifactsClientImpl {
 
     /// `AIDLC_STAGE_GRAPH` 相当のオーバライド。
     #[must_use]
-    pub fn with_stage_graph_override(mut self, path: PathBuf) -> DefinitionArtifactsClientImpl {
+    pub fn with_stage_graph_override(mut self, path: PathBuf) -> CompiledDefinitionRepositoryImpl {
         self.stage_graph_override = Some(path);
         self
     }
 
     /// `AIDLC_SCOPE_GRID` 相当のオーバライド。グリッドの欠損は fatal ではない。
     #[must_use]
-    pub fn with_scope_grid_override(mut self, path: PathBuf) -> DefinitionArtifactsClientImpl {
+    pub fn with_scope_grid_override(mut self, path: PathBuf) -> CompiledDefinitionRepositoryImpl {
         self.scope_grid_override = Some(path);
         self
     }
@@ -434,7 +439,7 @@ impl DefinitionArtifactsClientImpl {
     ///
     /// ファイルが読めないのは OS 由来の失敗 (`Io`)、読めたが定義 id を与えない (不正 JSON /
     /// `name` 欠落 / id として不正) のは内容の破損 (`Corrupt`) と読み分ける。
-    fn load_harness_identity(&self) -> Result<WorkflowDefinitionId, DefinitionReadFailure> {
+    fn load_harness_identity(&self) -> Result<CompiledDefinitionId, DefinitionReadFailure> {
         let path = self.harness_path();
         let identity = |cause: String| {
             DefinitionReadFailure::Corrupt(DefinitionCorruption::HarnessIdentity {
@@ -446,7 +451,7 @@ impl DefinitionArtifactsClientImpl {
             fs::read_to_string(&path).map_err(|e| DefinitionReadFailure::from_io(&path, &e))?;
         let dto: HarnessDto =
             serde_json::from_str(&content).map_err(|e| identity(e.to_string()))?;
-        WorkflowDefinitionId::parse(&dto.name).map_err(|e| identity(e.to_string()))
+        CompiledDefinitionId::parse(&dto.name).map_err(|e| identity(e.to_string()))
     }
 
     /// グラフを読む。**唯一 fatal な入力** (12 §4 #1・#2)。
@@ -534,7 +539,7 @@ impl DefinitionArtifactsClientImpl {
 
     /// 3 入力を読んで材料を組み立てる本体。失敗はアダプタ私有の中間表現で返し、ポート契約への
     /// 写像は [`DefinitionArtifactsClient::fetch`] が 1 箇所で行う。
-    fn read(&self) -> Result<DefinitionArtifacts, DefinitionReadFailure> {
+    fn read(&self) -> Result<CompiledDefinition, DefinitionReadFailure> {
         // 定義 id は配布物自身が名乗る (ADR-008) — 呼出側が id を指定して照合するのではない。
         let id = self.load_harness_identity()?;
         let (graph, raw_graph) = self.load_graph()?;
@@ -550,14 +555,114 @@ impl DefinitionArtifactsClientImpl {
         };
         let scopes = self.load_scopes()?;
         let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
-        Ok(DefinitionArtifacts::new(id, revision, graph, grid, scopes))
+        Ok(CompiledDefinition::new(id, revision, graph, grid, scopes))
     }
 }
 
-impl DefinitionArtifactsClient for DefinitionArtifactsClientImpl {
-    fn load(&self) -> Result<DefinitionArtifacts, DefinitionArtifactsError> {
-        self.read()
-            .map_err(DefinitionReadFailure::into_artifacts_error)
+impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
+    async fn find_by_id(
+        &self,
+        id: &CompiledDefinitionId,
+    ) -> Result<CompiledDefinition, RepositoryError<CompiledDefinitionId>> {
+        let compiled_definition = self
+            .read()
+            .map_err(|failure| failure.into_repository_error(id))?;
+        // 配布束が別の系譜 ID を名乗っていれば、要求された ID の配布定義は「無い」。
+        // 呼出側 (合成ルート) は同じ harness.json から ID を解決しているので、実際に
+        // ここへ落ちるのは配布物が要求と食い違う異常系だけである。
+        if compiled_definition.id() != id {
+            return Err(RepositoryError::NotFound { id: id.clone() });
+        }
+        Ok(compiled_definition)
+    }
+    async fn store(
+        &mut self,
+        event: &CompiledDefinitionEvent,
+        compiled_definition: &CompiledDefinition,
+    ) -> Result<(), RepositoryError<CompiledDefinitionId>> {
+        let id = compiled_definition.id();
+        // イベントと集約の照合 — `Compiled` は内容そのものを運ぶので、対の取り違えは
+        // 「歴史と保存像が別の内容を語る」書込契約違反として拒む (`IntentRepositoryImpl` の
+        // 写し — 対で受ける契約の意味を実装が守る)。
+        let CompiledDefinitionEvent::Compiled(compiled) = event;
+        if compiled.id() != compiled_definition.id()
+            || compiled.revision() != compiled_definition.revision()
+            || compiled.graph() != compiled_definition.graph()
+            || compiled.grid() != compiled_definition.grid()
+            || compiled.scopes() != compiled_definition.scopes()
+        {
+            return Err(RepositoryError::Corrupt {
+                id: id.clone(),
+                seq_nr: None,
+                source: Box::new(DefinitionCorruption::Malformed {
+                    message: "store pair mismatch: the event does not describe the aggregate"
+                        .to_string(),
+                }),
+            });
+        }
+        let corrupt = |cause: String| RepositoryError::Corrupt {
+            id: id.clone(),
+            seq_nr: None,
+            source: Box::new(DefinitionCorruption::Malformed { message: cause }),
+        };
+        let graph_bytes = emit_graph(compiled_definition.graph())
+            .map_err(|e| corrupt(format!("emit stage graph: {e}")))?;
+        let grid_bytes = emit_grid(compiled_definition.graph(), compiled_definition.grid())
+            .map_err(|e| corrupt(format!("emit scope grid: {e}")))?;
+        let harness_bytes = contract_pretty(&HarnessEmitDto { name: id.as_str() })
+            .map_err(|e| corrupt(format!("emit harness identity: {e}")))?;
+
+        let write =
+            |path: &Path, bytes: &str| -> Result<(), RepositoryError<CompiledDefinitionId>> {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| RepositoryError::Io {
+                        kind: e.kind(),
+                        path: Some(parent.to_path_buf()),
+                    })?;
+                }
+                fs::write(path, bytes).map_err(|e| RepositoryError::Io {
+                    kind: e.kind(),
+                    path: Some(path.to_path_buf()),
+                })
+            };
+
+        write(&self.data_dir.join(HARNESS_FILE), &harness_bytes)?;
+        write(&self.data_dir.join(STAGE_GRAPH_FILE), &graph_bytes)?;
+        write(&self.data_dir.join(SCOPE_GRID_FILE), &grid_bytes)?;
+
+        // scope identity ファイル群: 集約が持つ集合と一致させる — 集合に無い既存の
+        // `aidlc-*.md` は残すと次の find_by_id が余分なスコープとして読み戻すので消す。
+        fs::create_dir_all(&self.scopes_dir).map_err(|e| RepositoryError::Io {
+            kind: e.kind(),
+            path: Some(self.scopes_dir.clone()),
+        })?;
+        let wanted: std::collections::BTreeSet<String> = compiled_definition
+            .scopes()
+            .keys()
+            .map(|name| format!("{SCOPE_FILE_PREFIX}{name}{SCOPE_FILE_SUFFIX}"))
+            .collect();
+        if let Ok(existing) = scope_file_paths(&self.scopes_dir) {
+            for path in existing {
+                let keeps = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| wanted.contains(n));
+                if !keeps {
+                    fs::remove_file(&path).map_err(|e| RepositoryError::Io {
+                        kind: e.kind(),
+                        path: Some(path.clone()),
+                    })?;
+                }
+            }
+        }
+        for metadata in compiled_definition.scopes().values() {
+            let file = self.scopes_dir.join(format!(
+                "{SCOPE_FILE_PREFIX}{}{SCOPE_FILE_SUFFIX}",
+                metadata.name()
+            ));
+            write(&file, &emit_scope_markdown(metadata))?;
+        }
+        Ok(())
     }
 }
 
@@ -620,6 +725,232 @@ fn compute_revision(
             message: format!("definition revision: {e}"),
         })
     })
+}
+
+// ---------------------------------------------------------------------------
+// 書き手 (store) — contract-pretty のバイト契約 (12 §10 / golden-3c3146cf-graph-dist §1-§2)
+// ---------------------------------------------------------------------------
+
+/// `FIELD_ORDER` 28 キーを **struct 宣言順で符号化**した emit 用ワイヤ構造体
+/// (ADR 0001 決定 3)。`undefined` 落としに相当するのは skip 属性だけで、
+/// `null` / `[]` / `""` / `false` は落とさない — ただし dist 実測 (golden §2) で
+/// 「キーごと不在」が常態のフィールド (`workspace_requires` は true の 1 件のみ・
+/// `optional_produces` / `produces_kinds` は非空の数件のみ) は、その実測どおり
+/// 既定値で省略する。
+#[derive(Serialize)]
+struct StageNodeEmitDto<'a> {
+    slug: &'a str,
+    number: &'a str,
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plugin: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+    phase: &'a str,
+    execution: &'a str,
+    condition: &'a str,
+    lead_agent: &'a str,
+    support_agents: &'a [String],
+    mode: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    for_each: Option<&'a str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    workspace_requires: bool,
+    produces: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    optional_produces: &'a [String],
+    #[serde(
+        with = "crate::orchestration::kinds_codec",
+        skip_serializing_if = "<[(String, Vec<String>)]>::is_empty"
+    )]
+    produces_kinds: &'a [(String, Vec<String>)],
+    consumes: Vec<ConsumeEmitDto<'a>>,
+    requires_stage: Vec<&'a str>,
+    sensors: &'a [String],
+    scopes: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reviewer: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reviewer_max_iterations: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    review_class: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary_confirmation: Option<&'a str>,
+    inputs: &'a str,
+    outputs: &'a str,
+    rules_in_context: Vec<RuleInContextEmitDto<'a>>,
+    sensors_applicable: Vec<SensorRefEmitDto<'a>>,
+}
+
+/// consume 宣言の emit 形 (キー順は dist 実測: artifact, required, conditional_on)。
+#[derive(Serialize)]
+struct ConsumeEmitDto<'a> {
+    artifact: &'a str,
+    required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conditional_on: Option<&'a str>,
+}
+
+/// rules_in_context 項の emit 形 (キー順: path, scope)。
+#[derive(Serialize)]
+struct RuleInContextEmitDto<'a> {
+    path: &'a str,
+    scope: &'a str,
+}
+
+/// sensors_applicable 項の emit 形 (キー順は dist 実測: id, path, matches)。
+#[derive(Serialize)]
+struct SensorRefEmitDto<'a> {
+    id: &'a str,
+    path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matches: Option<&'a str>,
+}
+
+/// `harness.json` の emit 形 — 集約の内容である識別子だけを書く (それ以外のキーは
+/// 集約の内容ではない)。
+#[derive(Serialize)]
+struct HarnessEmitDto<'a> {
+    name: &'a str,
+}
+
+/// `JSON.stringify(x, null, 2)` + 末尾改行 1 個の体裁 (contract-pretty)。
+fn contract_pretty<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    Ok(format!("{}\n", serde_json::to_string_pretty(value)?))
+}
+
+/// `stage-graph.json` のバイトを組む (ノード配列は文書順のまま)。
+fn emit_graph(graph: &StageGraph) -> Result<String, serde_json::Error> {
+    let nodes: Vec<StageNodeEmitDto<'_>> = graph
+        .nodes()
+        .iter()
+        .map(|node| StageNodeEmitDto {
+            slug: node.slug().as_str(),
+            number: node.number().as_str(),
+            name: node.name(),
+            plugin: node.plugin(),
+            enabled: node.enabled(),
+            phase: node.phase().as_str(),
+            execution: node.execution().as_str(),
+            condition: node.condition(),
+            lead_agent: node.lead_agent(),
+            support_agents: node.support_agents(),
+            mode: node.mode().as_str(),
+            for_each: node.for_each(),
+            workspace_requires: node.workspace_requires(),
+            produces: node.produces(),
+            optional_produces: node.optional_produces(),
+            produces_kinds: node.produces_kinds(),
+            consumes: node
+                .consumes()
+                .iter()
+                .map(|consume| ConsumeEmitDto {
+                    artifact: consume.artifact(),
+                    required: consume.required(),
+                    conditional_on: consume.conditional_on().map(BrownfieldGreenfield::as_str),
+                })
+                .collect(),
+            requires_stage: node
+                .requires_stage()
+                .iter()
+                .map(StageSlug::as_str)
+                .collect(),
+            sensors: node.sensors(),
+            scopes: node.scopes(),
+            reviewer: node.reviewer(),
+            reviewer_max_iterations: node.reviewer_max_iterations(),
+            review_class: node.review_class().map(ReviewClass::as_str),
+            summary_confirmation: node.summary_confirmation(),
+            inputs: node.inputs(),
+            outputs: node.outputs(),
+            rules_in_context: node
+                .rules_in_context()
+                .iter()
+                .map(|rule| RuleInContextEmitDto {
+                    path: rule.path(),
+                    scope: rule.scope().as_str(),
+                })
+                .collect(),
+            sensors_applicable: node
+                .sensors_applicable()
+                .iter()
+                .map(|sensor| SensorRefEmitDto {
+                    id: sensor.id(),
+                    path: sensor.path(),
+                    matches: sensor.matches(),
+                })
+                .collect(),
+        })
+        .collect();
+    contract_pretty(&nodes)
+}
+
+/// `scope-grid.json` のバイトを組む。
+///
+/// スコープ列は名前の辞書順 (dist 実測 — golden §2)、各列の stage キーは**グラフ文書順**
+/// (dist 実測: ソートではなく `numericStageOrder` = 文書順の部分列)。動的キーの順序保存の
+/// ため serde の Map を通さず手組みする — キーと値のエスケープは `serde_json` に委ねる。
+fn emit_grid(graph: &StageGraph, grid: &ScopeGrid) -> Result<String, serde_json::Error> {
+    let mut out = String::from("{\n");
+    let scope_names = grid.scope_names();
+    for (scope_index, scope) in scope_names.iter().enumerate() {
+        out.push_str("  ");
+        out.push_str(&serde_json::to_string(scope)?);
+        out.push_str(": {\n    \"stages\": {");
+        let mut wrote_stage = false;
+        for node in graph.nodes() {
+            let Some(action) = grid.action(scope, node.slug()) else {
+                continue;
+            };
+            if wrote_stage {
+                out.push(',');
+            }
+            wrote_stage = true;
+            out.push_str("\n      ");
+            out.push_str(&serde_json::to_string(node.slug().as_str())?);
+            out.push_str(": ");
+            out.push_str(&serde_json::to_string(action.as_str())?);
+        }
+        if wrote_stage {
+            out.push_str("\n    }");
+        } else {
+            out.push('}');
+        }
+        out.push_str("\n  }");
+        if scope_index + 1 < scope_names.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str("}\n");
+    Ok(out)
+}
+
+/// scope identity ファイル (`aidlc-<name>.md`) のバイトを組む。
+///
+/// frontmatter は [`parse_scope_metadata`] が読む最小サブセットと対称 — 集約が持たない
+/// 散文本文は書かない (内容版 `DefinitionRevision` の入力はメタデータのみで、本文は
+/// 集約の内容ではない)。
+fn emit_scope_markdown(metadata: &ScopeMetadata) -> String {
+    let mut out = String::from("---\n");
+    out.push_str(&format!("name: {}\n", metadata.name()));
+    if let Some(depth) = metadata.depth() {
+        out.push_str(&format!("depth: {depth}\n"));
+    }
+    if !metadata.keywords().is_empty() {
+        out.push_str(&format!("keywords: [{}]\n", metadata.keywords().join(", ")));
+    }
+    if let Some(skeleton) = metadata.skeleton() {
+        out.push_str(&format!("skeleton: {}\n", skeleton.as_str()));
+    }
+    if let Some(review_cap) = metadata.review_cap() {
+        out.push_str(&format!("review_cap: {}\n", review_cap.as_str()));
+    }
+    if metadata.freeform_default() {
+        out.push_str("freeform_default: true\n");
+    }
+    out.push_str("---\n");
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -948,25 +1279,26 @@ mod tests {
 
     #[test]
     fn the_failure_maps_onto_the_port_contract() {
+        let id = CompiledDefinitionId::parse("claude").expect("定義 id");
         // OS 由来は `Io` — 分類と対象パスを運び、原因連鎖は持たない。
         let error = DefinitionReadFailure::Io {
             kind: io::ErrorKind::NotFound,
             path: PathBuf::from("/d/stage-graph.json"),
         }
-        .into_artifacts_error();
-        let DefinitionArtifactsError::Io { kind, ref path } = error else {
+        .into_repository_error(&id);
+        let RepositoryError::Io { kind, ref path } = error else {
             panic!("Io を期待した: {error:?}");
         };
         assert_eq!(kind, io::ErrorKind::NotFound);
-        assert_eq!(path.as_path(), Path::new("/d/stage-graph.json"));
+        assert_eq!(path.as_deref(), Some(Path::new("/d/stage-graph.json")));
         assert!(Error::source(&error).is_none());
 
         // 破損は `Corrupt` — 分類は契約に載せず、原因連鎖だけが診断を運ぶ。
         let error = DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
             message: "bang".to_string(),
         })
-        .into_artifacts_error();
-        assert!(matches!(error, DefinitionArtifactsError::Corrupt { .. }));
+        .into_repository_error(&id);
+        assert!(matches!(error, RepositoryError::Corrupt { .. }));
         assert_eq!(
             Error::source(&error)
                 .expect("Corrupt は原因を連鎖する")
@@ -1098,7 +1430,7 @@ mod tests {
     #[test]
     fn path_resolution_prefers_the_overrides() {
         let definition_artifacts_client =
-            DefinitionArtifactsClientImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
+            CompiledDefinitionRepositoryImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
         assert_eq!(
             definition_artifacts_client.stage_graph_path(),
             PathBuf::from("/data/stage-graph.json")

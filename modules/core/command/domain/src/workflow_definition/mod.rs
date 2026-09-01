@@ -19,6 +19,10 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod brownfield_greenfield;
+mod compiled_definition;
+mod compiled_definition_event;
+mod compiled_definition_id;
+mod compiled_definition_id_error;
 mod consume_decl;
 mod definition_revision;
 mod definition_revision_error;
@@ -67,6 +71,10 @@ pub use workflow_definition_event::{Defined, Redefined, WorkflowDefinitionEvent}
 
 // Domain Primitive
 pub use brownfield_greenfield::BrownfieldGreenfield;
+pub use compiled_definition::CompiledDefinition;
+pub use compiled_definition_event::{Compiled, CompiledDefinitionEvent};
+pub use compiled_definition_id::CompiledDefinitionId;
+pub use compiled_definition_id_error::CompiledDefinitionIdError;
 pub use consume_decl::ConsumeDecl;
 pub use definition_revision::DefinitionRevision;
 pub use execution_kind::ExecutionKind;

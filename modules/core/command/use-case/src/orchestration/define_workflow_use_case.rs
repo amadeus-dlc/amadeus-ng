@@ -1,18 +1,18 @@
-//! `DefineWorkflow` — ハーネス配布物を取り込んで定義を確立・改訂する。
+//! `DefineWorkflow` — コンパイル済み定義を読み、ジャーナルの定義をそれに合わせる。
 //!
 //! **書き込む動詞なのでコマンド側にある** (`coding-rules/cqrs-boundaries.md` 規則 5)。形は
-//! 追補裁定の正型「`find_by_id` → ビジネスロジック → `store`」であり、`find_by_id` だけを
-//! 呼んで何も書かない使い方 (= クエリ側の仕事) には当たらない。
+//! 「集約 A ([`CompiledDefinition`]) をその Repository で読む → ビジネスロジック →
+//! 集約 B ([`WorkflowDefinition`]) を `store`」— `CreateIntentUseCase` が定義を読んで
+//! `Intent` を書くのと同型の正規形であり、`find_by_id` だけを呼んで何も書かない使い方
+//! (= クエリ側の仕事) には当たらない。
 //!
-//! # なぜ取込がコマンド側にあるのか — 暫定の足場 (オーナー裁定 2026-09-01、#79 §5-g / b33)
+//! # 「取込境界」「暫定の足場」は退役した (オーナー裁定 2026-09-02、b36)
 //!
-//! コマンド側が定義を読む正規の口は集約 + リポジトリ (`find_by_id`) だけである。本ユース
-//! ケースの取込は読取口ではなく**ジャーナルの最初の 1 行 (genesis の内容) の播種**であり、
-//! compile コンテキスト (本システム未実装) が内容の出所になるまでの**暫定の足場**として
-//! dist の 3 入力を読む (規則 5「書くための読取」の暫定形。かつての「外部から来た成果物
-//! だから規則 7 の対象外」という根拠は棄却済み — 3 入力は AI-DLC v2 系内の成果物である)。
-//! compile コンテキストが実装されたら、この播種は当該コンテキストのフロー (集約 → イベント
-//! → RMU) に置換され、取込ポートごと消える (#80)。
+//! 配布束は**同一システムのドメインモデル**なので、外部システムクライアントでも暫定の
+//! 播種口でもなく、集約 `CompiledDefinition` + その Repository である (#79 §1-4 / #80 の
+//! 帰結 — 「クライアントをリポジトリに、クライアントが扱うデータを集約に昇格」)。
+//! compile コンテキストが実装されたら (slice 2)、compile がこの集約の**書き手**になる —
+//! 消えるのではなく、書き手を得る。
 //!
 //! # 時計は持たない
 //!
@@ -20,40 +20,41 @@
 //! 決定的にテストできなくなる。時計は合成ルート (U7) の持ち物である。
 
 use chrono::{DateTime, Utc};
-use core_command_domain::workflow_definition::{RedefineError, WorkflowDefinition};
-
-use super::define_workflow_error::DefineWorkflowError;
-use super::port::{
-    DefinitionArtifacts, DefinitionArtifactsClient, RepositoryError, WorkflowDefinitionRepository,
+use core_command_domain::workflow_definition::{
+    CompiledDefinition, CompiledDefinitionId, RedefineError, WorkflowDefinition,
+    WorkflowDefinitionId,
 };
 
-/// ハーネス配布物を取り込み、定義を確立ないし改訂する。
+use super::define_workflow_error::DefineWorkflowError;
+use super::port::{CompiledDefinitionRepository, RepositoryError, WorkflowDefinitionRepository};
+
+/// コンパイル済み定義 (配布束) を読み、ジャーナルの定義をそれに合わせる。
 ///
 /// ポートを 2 本保持し、`execute` の内部で使う (`coding-rules/use-case-rules.md` §2b —
 /// リポジトリをユースケースの外で使わない)。束縛はスタティック (単相化) である。
 #[derive(Debug)]
 pub struct DefineWorkflowUseCase<C, R> {
-    definition_artifacts_client: C,
+    compiled_definition_repository: C,
     workflow_definition_repository: R,
 }
 
 impl<C, R> DefineWorkflowUseCase<C, R>
 where
-    C: DefinitionArtifactsClient,
+    C: CompiledDefinitionRepository,
     R: WorkflowDefinitionRepository,
 {
     /// ポートの実装を 2 つ注入する。
     pub const fn new(
-        definition_artifacts_client: C,
+        compiled_definition_repository: C,
         workflow_definition_repository: R,
     ) -> DefineWorkflowUseCase<C, R> {
         DefineWorkflowUseCase {
-            definition_artifacts_client,
+            compiled_definition_repository,
             workflow_definition_repository,
         }
     }
 
-    /// 配布物を取り込み、ストアの定義をそれに合わせる。
+    /// コンパイル済み定義 (配布束) を読み、ジャーナルの定義をそれに合わせる。
     ///
     /// **冪等である** — 配布物の内容版がストアの定義と同じなら何も書かない。判断は集約が
     /// 持っており ([`WorkflowDefinition::redefine`] の `Unchanged` ガード)、ここが内容版を
@@ -63,21 +64,39 @@ where
     /// 成功では何も返さない (CQS の Command — 裁定 7)。何が起きたかを知りたい呼出側は
     /// 定義を読み直す。
     ///
+    /// 2 つの識別子は合成ルートが同じ `harness.json` から鋳造する — 集約は各自の ID 型を
+    /// 持ち、Repository は自集約の ID で引くので、系譜の突合せは値 (同じ name) で成立する。
+    ///
     /// # Errors
     ///
-    /// 配布物の取込の失敗 (`Artifacts`)、定義の取得ないし永続化の失敗
-    /// (`DefinitionRepository` — 別プロセスが先に改訂していれば `Conflict`)、集約が改訂を
-    /// 拒否した (`Redefine` — 通番の枯渇) を返す。
-    pub async fn execute(&mut self, occurred_at: DateTime<Utc>) -> Result<(), DefineWorkflowError> {
-        let artifacts = self.definition_artifacts_client.load()?;
+    /// コンパイル済み定義の取得の失敗 (`CompiledDefinitionRepository`)、ジャーナル側の定義の
+    /// 取得ないし永続化の失敗 (`DefinitionRepository` — 別プロセスが先に改訂していれば
+    /// `Conflict`)、集約が改訂を拒否した (`Redefine` — 通番の枯渇) を返す。
+    pub async fn execute(
+        &mut self,
+        compiled_definition_id: &CompiledDefinitionId,
+        definition_id: &WorkflowDefinitionId,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<(), DefineWorkflowError> {
+        let compiled_definition = self
+            .compiled_definition_repository
+            .find_by_id(compiled_definition_id)
+            .await
+            .map_err(DefineWorkflowError::CompiledDefinitionRepository)?;
         match self
             .workflow_definition_repository
-            .find_by_id(artifacts.id())
+            .find_by_id(definition_id)
             .await
         {
             // まだ確立されていない — 誕生させる。
-            Err(RepositoryError::NotFound { .. }) => self.define(artifacts, occurred_at).await,
-            Ok(definition) => self.redefine(definition, artifacts, occurred_at).await,
+            Err(RepositoryError::NotFound { .. }) => {
+                self.define(definition_id, compiled_definition, occurred_at)
+                    .await
+            }
+            Ok(definition) => {
+                self.redefine(definition, compiled_definition, occurred_at)
+                    .await
+            }
             Err(error) => Err(DefineWorkflowError::DefinitionRepository(error)),
         }
     }
@@ -85,12 +104,13 @@ where
     /// 定義を確立して書く (genesis)。
     async fn define(
         &mut self,
-        artifacts: DefinitionArtifacts,
+        definition_id: &WorkflowDefinitionId,
+        compiled_definition: CompiledDefinition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), DefineWorkflowError> {
-        let id = artifacts.id().clone();
-        let revision = artifacts.revision().clone();
-        let (graph, grid, scopes) = artifacts.into_content();
+        let id = definition_id.clone();
+        let revision = compiled_definition.revision().clone();
+        let (graph, grid, scopes) = compiled_definition.into_content();
         let (definition, event) =
             WorkflowDefinition::define(id, revision, graph, grid, scopes, occurred_at);
         self.workflow_definition_repository
@@ -99,15 +119,15 @@ where
         Ok(())
     }
 
-    /// 既存の定義を配布物の内容版へ改訂して書く。内容が変わっていなければ何も書かない。
+    /// 既存の定義を配布束の内容版へ改訂して書く。内容が変わっていなければ何も書かない。
     async fn redefine(
         &mut self,
         mut definition: WorkflowDefinition,
-        artifacts: DefinitionArtifacts,
+        compiled_definition: CompiledDefinition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), DefineWorkflowError> {
-        let revision = artifacts.revision().clone();
-        let (graph, grid, scopes) = artifacts.into_content();
+        let revision = compiled_definition.revision().clone();
+        let (graph, grid, scopes) = compiled_definition.into_content();
         match definition.redefine(revision, graph, grid, scopes, occurred_at) {
             Ok(event) => {
                 self.workflow_definition_repository
@@ -126,8 +146,8 @@ where
 mod tests {
     use super::*;
     use crate::orchestration::test_support::{
-        InMemoryWorkflowDefinitionRepository, StubDefinitionArtifactsClient, artifacts, at,
-        definition, definition_id, definition_revision, other_revision,
+        InMemoryCompiledDefinitionRepository, InMemoryWorkflowDefinitionRepository, at, compiled,
+        compiled_definition_id, definition, definition_id, definition_revision, other_revision,
     };
     use core_command_domain::workflow_definition::WorkflowDefinitionEvent;
 
@@ -135,11 +155,14 @@ mod tests {
     #[tokio::test]
     async fn ingesting_into_an_empty_store_establishes_the_definition() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
             InMemoryWorkflowDefinitionRepository::empty(),
         );
 
-        use_case.execute(at()).await.expect("取込は成功する");
+        use_case
+            .execute(&compiled_definition_id(), &definition_id(), at())
+            .await
+            .expect("取込は成功する");
 
         let stored = use_case
             .workflow_definition_repository
@@ -162,11 +185,14 @@ mod tests {
     #[tokio::test]
     async fn ingesting_a_changed_distribution_redefines_the_definition() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(other_revision(), 5)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(other_revision(), 5)),
             InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
 
-        use_case.execute(at()).await.expect("改訂は成功する");
+        use_case
+            .execute(&compiled_definition_id(), &definition_id(), at())
+            .await
+            .expect("改訂は成功する");
 
         let stored = use_case
             .workflow_definition_repository
@@ -189,11 +215,14 @@ mod tests {
     #[tokio::test]
     async fn ingesting_an_unchanged_distribution_writes_nothing() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
             InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
 
-        use_case.execute(at()).await.expect("変化なしは成功である");
+        use_case
+            .execute(&compiled_definition_id(), &definition_id(), at())
+            .await
+            .expect("変化なしは成功である");
 
         assert!(
             use_case
@@ -208,12 +237,18 @@ mod tests {
     #[tokio::test]
     async fn ingesting_twice_leaves_a_single_event() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
             InMemoryWorkflowDefinitionRepository::empty(),
         );
 
-        use_case.execute(at()).await.expect("1 回目は誕生");
-        use_case.execute(at()).await.expect("2 回目は変化なし");
+        use_case
+            .execute(&compiled_definition_id(), &definition_id(), at())
+            .await
+            .expect("1 回目は誕生");
+        use_case
+            .execute(&compiled_definition_id(), &definition_id(), at())
+            .await
+            .expect("2 回目は変化なし");
 
         assert_eq!(
             use_case.workflow_definition_repository.committed().len(),
@@ -226,17 +261,17 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_distribution_propagates_the_client_refusal() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::unreadable(),
+            InMemoryCompiledDefinitionRepository::unreadable(),
             InMemoryWorkflowDefinitionRepository::empty(),
         );
 
         let error = use_case
-            .execute(at())
+            .execute(&compiled_definition_id(), &definition_id(), at())
             .await
-            .expect_err("読めない配布物は拒否される");
+            .expect_err("読めない配布束は拒否される");
 
         assert!(
-            matches!(error, DefineWorkflowError::Artifacts(_)),
+            matches!(error, DefineWorkflowError::CompiledDefinitionRepository(_)),
             "{error:?}"
         );
         assert!(
@@ -252,12 +287,12 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_definition_stops_the_ingestion() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
             InMemoryWorkflowDefinitionRepository::corrupt(),
         );
 
         let error = use_case
-            .execute(at())
+            .execute(&compiled_definition_id(), &definition_id(), at())
             .await
             .expect_err("壊れた記録の上には確立しない");
 
@@ -280,12 +315,12 @@ mod tests {
     #[tokio::test]
     async fn a_stale_version_propagates_the_repository_conflict() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(other_revision(), 5)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(other_revision(), 5)),
             InMemoryWorkflowDefinitionRepository::holding_behind_a_concurrent_write(definition(3)),
         );
 
         let error = use_case
-            .execute(at())
+            .execute(&compiled_definition_id(), &definition_id(), at())
             .await
             .expect_err("古い版を提示した改訂は弾かれる");
 
@@ -302,12 +337,12 @@ mod tests {
     #[tokio::test]
     async fn an_exhausted_sequence_propagates_the_aggregate_refusal() {
         let mut use_case = DefineWorkflowUseCase::new(
-            StubDefinitionArtifactsClient::serving(artifacts(other_revision(), 5)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(other_revision(), 5)),
             InMemoryWorkflowDefinitionRepository::holding(definition(3).with_seq_nr(usize::MAX)),
         );
 
         let error = use_case
-            .execute(at())
+            .execute(&compiled_definition_id(), &definition_id(), at())
             .await
             .expect_err("通番の枯渇は拒否される");
 

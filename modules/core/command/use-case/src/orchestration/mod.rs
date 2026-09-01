@@ -30,7 +30,7 @@ pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRe
 
 // 取込境界 — genesis 播種のための暫定の足場 (compile 実装で消える。「外部システム
 // クライアント」分類は棄却済み — `coding-rules/gateway-taxonomy.md` §1 是正 2026-09-01)。
-pub use port::{DefinitionArtifacts, DefinitionArtifactsClient, DefinitionArtifactsError};
+pub use port::CompiledDefinitionRepository;
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の

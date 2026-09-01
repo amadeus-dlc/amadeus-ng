@@ -118,14 +118,17 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 /// 契約テストの intent (解決済み合成計画)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from(Created::new(
-        intent_id(),
-        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("契約テストの定義 revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            intent_id(),
+            WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("契約テストの定義 revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            scan(),
+        ),
+        at(),
     ))
 }
 

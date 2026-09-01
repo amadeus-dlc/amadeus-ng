@@ -179,46 +179,51 @@ mod tests {
     }
 
     fn genesis_intent() -> Intent {
-        Intent::from(Created::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "/aidlc Build a small ordering service"),
-            vec![
-                entry(
-                    "state-init",
-                    "0.3",
-                    PhaseId::Initialization,
-                    PlanAction::Execute,
-                ),
-                entry("intent-capture", "1.1", PhaseId::Ideation, PlanAction::Skip),
-                entry(
-                    "practices-discovery",
-                    "2.2",
-                    PhaseId::Inception,
-                    PlanAction::Execute,
-                ),
-                entry(
-                    "requirements-analysis",
-                    "2.3",
-                    PhaseId::Inception,
-                    PlanAction::Execute,
-                ),
-                entry("user-stories", "2.4", PhaseId::Inception, PlanAction::Skip),
-                entry(
-                    "domain-design",
-                    "2.6",
-                    PhaseId::Inception,
-                    PlanAction::Execute,
-                ),
-            ],
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .expect("単一行"),
+        Intent::from((
+            Created::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "/aidlc Build a small ordering service"),
+                vec![
+                    entry(
+                        "state-init",
+                        "0.3",
+                        PhaseId::Initialization,
+                        PlanAction::Execute,
+                    ),
+                    entry("intent-capture", "1.1", PhaseId::Ideation, PlanAction::Skip),
+                    entry(
+                        "practices-discovery",
+                        "2.2",
+                        PhaseId::Inception,
+                        PlanAction::Execute,
+                    ),
+                    entry(
+                        "requirements-analysis",
+                        "2.3",
+                        PhaseId::Inception,
+                        PlanAction::Execute,
+                    ),
+                    entry("user-stories", "2.4", PhaseId::Inception, PlanAction::Skip),
+                    entry(
+                        "domain-design",
+                        "2.6",
+                        PhaseId::Inception,
+                        PlanAction::Execute,
+                    ),
+                ],
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
+            ),
+            chrono::DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+                .expect("固定時刻")
+                .with_timezone(&chrono::Utc),
         ))
     }
 

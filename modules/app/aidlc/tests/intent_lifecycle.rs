@@ -566,8 +566,8 @@ async fn a_definition_that_cannot_be_read_stops_the_mint() {
     assert_eq!(completion.line(), None, "stdout には何も出さない");
     assert!(
         completion.diagnostic().unwrap_or_default().starts_with(
-            "aidlc-orchestrate: cannot ingest the workflow definition: \
-                 definition artifacts: io: NotFound at"
+            "aidlc-orchestrate: cannot read the compiled definition: \
+                 compiled definition repository: io: NotFound at"
         ),
         "{completion:?}"
     );

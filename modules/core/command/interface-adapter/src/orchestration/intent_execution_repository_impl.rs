@@ -508,19 +508,22 @@ mod tests {
     }
 
     fn intent_plan() -> Intent {
-        Intent::from(Created::new(
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "unit"),
-            vec![StageEntry::new(
-                StageSlug::parse("state-init").expect("slug"),
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-                display("0.1"),
-            )],
-            scan(),
+        Intent::from((
+            Created::new(
+                IntentId::parse(INTENT).expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "unit"),
+                vec![StageEntry::new(
+                    StageSlug::parse("state-init").expect("slug"),
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                    false,
+                    display("0.1"),
+                )],
+                scan(),
+            ),
+            at(),
         ))
     }
 

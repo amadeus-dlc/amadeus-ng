@@ -75,19 +75,22 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::from(Created::new(
-        IntentId::parse(INTENT).expect("UUIDv7"),
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .expect("単一行"),
+    Intent::from((
+        Created::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
     ))
 }
 
@@ -411,7 +414,7 @@ fn an_optional_request_field_round_trips_when_present() {
     );
     let decoded: IntentEventDto = serde_json::from_str(&filled).expect("記録済みの行は読める");
     let IntentEvent::Created(created) = decoded.to_domain().expect("ドメインへ戻せる");
-    let intent = Intent::from(created);
+    let intent = Intent::from((created, at()));
     assert_eq!(intent.test_strategy(), Some("balanced"));
     assert_eq!(intent.depth(), Some("standard"));
 }
@@ -470,7 +473,7 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
 // ---------------------------------------------------------------------------
 
 /// intent の材料のバイト形 (2 面共通 — `Created` の中身・intent 集約のスナップショット行)。
-const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"}}"#;
+const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
 
 /// intent の誕生イベント (ジャーナル面の材料 — `intent()` と同じ材料から組む)。
 fn created_event() -> IntentEvent {
@@ -498,7 +501,8 @@ fn created_event() -> IntentEvent {
 fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
     let event = created_event();
     let expected = format!(r#"{{"Created":{INTENT_BODY}}}"#);
-    let json = serde_json::to_string(&IntentEventDto::of(&event)).expect("DTO は直列化できる");
+    let json =
+        serde_json::to_string(&IntentEventDto::of(&event, at())).expect("DTO は直列化できる");
     assert_eq!(json, expected, "intent ジャーナルのワイヤ形式が変わった");
 
     let decoded: IntentEventDto = serde_json::from_str(&expected).expect("記録済みの行は読める");

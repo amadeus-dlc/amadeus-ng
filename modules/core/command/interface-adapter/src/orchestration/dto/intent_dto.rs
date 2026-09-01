@@ -29,6 +29,9 @@ pub struct IntentDto {
     start_request: StartRequestDto,
     stages: Vec<StageEntryDto>,
     scan: WorkspaceScanDto,
+    /// 鋳造の発生時刻 (集約 `Intent::created_at` の写し — 封筒とスナップショットの両方が
+    /// 同じ値の出所を持つ)。
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// 呼出側の要求の行の形。
@@ -85,6 +88,7 @@ impl IntentDto {
             },
             stages: intent.stages().iter().map(StageEntryDto::of).collect(),
             scan: WorkspaceScanDto::of(intent.scan()),
+            created_at: *intent.created_at(),
         }
     }
 
@@ -96,7 +100,7 @@ impl IntentDto {
     /// Always Valid を破る場合は回復せずクラッシュする — 再構成は失敗を返さない
     /// (オーナー裁定 2026-08-30)。
     pub fn to_domain(&self) -> Result<Intent, DtoDecodeError> {
-        Ok(Intent::from(self.to_created()?))
+        Ok(Intent::from((self.to_created()?, self.created_at)))
     }
 
     /// 誕生記録 (`Created` ペイロード) として復号する (読み — intent ジャーナル面)。

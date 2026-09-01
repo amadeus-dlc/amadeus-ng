@@ -148,14 +148,17 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 /// 契約テストの intent (解決済み合成計画)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from(Created::new(
-        intent_id(),
-        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("契約テストの定義 revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            intent_id(),
+            WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("契約テストの定義 revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            scan(),
+        ),
+        at(),
     ))
 }
 
@@ -274,24 +277,24 @@ pub(crate) fn intent_genesis() -> (Intent, IntentEvent) {
 /// **別の** intent (識別子だけ違う — 対の取り違え検査の材料)。
 #[must_use]
 pub(crate) fn other_intent() -> Intent {
-    Intent::from(Created::new(
-        absent_intent_id(),
-        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("契約テストの定義 revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            absent_intent_id(),
+            WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("契約テストの定義 revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            scan(),
+        ),
+        at(),
     ))
 }
 
 /// intent の genesis を 1 件書き、握り直した結果を返す。
 pub(crate) async fn store_intent_genesis<R: IntentRepository>(repository: &mut R) -> Intent {
     let (aggregate, event) = intent_genesis();
-    repository
-        .store(&event, &aggregate, at())
-        .await
-        .expect("store");
+    repository.store(&event, &aggregate).await.expect("store");
     repository
         .find_by_id(aggregate.id())
         .await

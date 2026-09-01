@@ -4,8 +4,6 @@
 //! (子モジュールは親の private フィールドを見られるので、可視性を広げずに 1 ファイル
 //! 1 公開型にできる — `coding-rules/field-visibility.md` / `factory-naming.md`)。
 
-use std::collections::BTreeMap;
-
 use super::StageNode;
 use crate::workflow_definition::{
     ConsumeDecl, ExecutionKind, PhaseId, ReviewClass, RuleInContext, SensorRef, StageMode,
@@ -48,7 +46,7 @@ impl StageNodeBuilder {
                 workspace_requires: false,
                 produces: Vec::new(),
                 optional_produces: Vec::new(),
-                produces_kinds: BTreeMap::new(),
+                produces_kinds: Vec::new(),
                 consumes: Vec::new(),
                 requires_stage: Vec::new(),
                 sensors: Vec::new(),
@@ -120,7 +118,7 @@ impl StageNodeBuilder {
     #[must_use]
     pub fn produces_kinds(
         mut self,
-        produces_kinds: BTreeMap<String, Vec<String>>,
+        produces_kinds: Vec<(String, Vec<String>)>,
     ) -> StageNodeBuilder {
         self.node.produces_kinds = produces_kinds;
         self

@@ -27,7 +27,7 @@
 //!   （`applyPluginSelection` が毎回 `delete` してから無効時のみ `= false` を立てるため）。
 //!
 //! scopes ディレクトリには**空の tempdir** を渡す。identity ファイルが 1 つも無い場合の挙動
-//! （空カタログ = `valid_scopes()` が空）は `definition_artifacts_client_impl_test.rs` で確立済みで、
+//! （空カタログ = `valid_scopes()` が空）は `compiled_definition_repository_impl_test.rs` で確立済みで、
 //! ここでの関心はグラフとグリッドの実バイトだけだからである。グリッドが 11 列を持っていても
 //! `valid_scopes()` が空になることは 12 §4 #6（グリッド列は有効スコープの権威ではない）の
 //! 帰結であり、下の `the_grid_is_not_the_authority_for_valid_scopes` で明示する。
@@ -36,14 +36,16 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::workflow_definition::{
-    PlanAction, ReviewClass, WorkflowDefinition, WorkflowDefinitionId,
+    CompiledDefinition, CompiledDefinitionId, PlanAction, ReviewClass, WorkflowDefinition,
+    WorkflowDefinitionId,
 };
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    DefinitionArtifactsClientImpl, WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
+    CompiledDefinitionRepositoryImpl, WorkflowDefinitionRepositoryImpl,
+    WorkflowDefinitionSqliteStore,
 };
 use core_command_use_case::orchestration::{
-    DefineWorkflowUseCase, WorkflowDefinitionRepository as _,
+    CompiledDefinitionRepository as _, DefineWorkflowUseCase, WorkflowDefinitionRepository as _,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -99,11 +101,11 @@ fn at() -> DateTime<Utc> {
 /// フィクスチャの `data_dir` と空の `scopes_dir` を与えた取込クライアント。
 ///
 /// `TempDir` は返り値で保持する — drop すると scopes ディレクトリが消えてしまうため。
-fn definition_artifacts_client() -> (DefinitionArtifactsClientImpl, TempDir) {
+fn compiled_definition_repository() -> (CompiledDefinitionRepositoryImpl, TempDir) {
     let scopes = TempDir::new().unwrap();
-    let definition_artifacts_client =
-        DefinitionArtifactsClientImpl::new(golden_dir(), scopes.path().to_path_buf());
-    (definition_artifacts_client, scopes)
+    let compiled_definition_repository =
+        CompiledDefinitionRepositoryImpl::new(golden_dir(), scopes.path().to_path_buf());
+    (compiled_definition_repository, scopes)
 }
 
 /// **実 SQLite ファイル**のストアを内包した Repository（+ その置き場）。
@@ -131,14 +133,21 @@ fn sqlite_repository() -> (
 /// **イベントストアの永続化 DTO を往復したもの**である。定義 id は配布 `harness.json` の
 /// `name` = `claude`。
 async fn load() -> (WorkflowDefinition, TempDirs) {
-    let (definition_artifacts_client, scopes) = definition_artifacts_client();
+    let (compiled_definition_repository, scopes) = compiled_definition_repository();
     let (workflow_definition_repository, store) = sqlite_repository();
     // 同じストアファイルを指す口を先に取っておく（ユースケースは Repository を所有する）。
     let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
-    DefineWorkflowUseCase::new(definition_artifacts_client, workflow_definition_repository)
-        .execute(at())
-        .await
-        .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
+    DefineWorkflowUseCase::new(
+        compiled_definition_repository,
+        workflow_definition_repository,
+    )
+    .execute(
+        &CompiledDefinitionId::parse("claude").unwrap(),
+        &WorkflowDefinitionId::parse("claude").unwrap(),
+        at(),
+    )
+    .await
+    .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
     let definition = reopened_workflow_definition_repository
         .find_by_id(&WorkflowDefinitionId::parse("claude").unwrap())
         .await
@@ -346,13 +355,20 @@ async fn another_harness_name_has_no_stream_in_the_store() {
     // 取込が名乗るのは配布物の identity だけである。別の名前で引けば、そのストリームは
     // 存在しない — 旧実装の「要求 id ≠ harness の name なら NotFound」は、いまはストアの
     // 事実として現れる。
-    let (definition_artifacts_client, _scopes) = definition_artifacts_client();
+    let (compiled_definition_repository, _scopes) = compiled_definition_repository();
     let (workflow_definition_repository, _store) = sqlite_repository();
     let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
-    DefineWorkflowUseCase::new(definition_artifacts_client, workflow_definition_repository)
-        .execute(at())
-        .await
-        .expect("配布物は取り込める");
+    DefineWorkflowUseCase::new(
+        compiled_definition_repository,
+        workflow_definition_repository,
+    )
+    .execute(
+        &CompiledDefinitionId::parse("claude").unwrap(),
+        &WorkflowDefinitionId::parse("claude").unwrap(),
+        at(),
+    )
+    .await
+    .expect("配布物は取り込める");
 
     let error = reopened_workflow_definition_repository
         .find_by_id(&WorkflowDefinitionId::parse("kiro").unwrap())
@@ -384,16 +400,14 @@ async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() 
     // 取込直後に確立した集約と、ストアから読み直した集約が同値であること。33 ノード ×
     // 28 フィールド + グリッド 363 セルが永続化 DTO の往復を無傷で通ることを 1 本で押さえる
     // （どれか 1 つでも DTO から落ちれば `PartialEq` が破れる）。
-    let (definition_artifacts_client, _scopes) = definition_artifacts_client();
-    let artifacts = {
-        use core_command_use_case::orchestration::DefinitionArtifactsClient as _;
-        definition_artifacts_client
-            .load()
-            .expect("配布実バイトは取り込める")
-    };
-    let id = artifacts.id().clone();
-    let revision = artifacts.revision().clone();
-    let (graph, grid, scopes) = artifacts.into_content();
+    let (compiled_definition_repository, _scopes) = compiled_definition_repository();
+    let compiled = compiled_definition_repository
+        .find_by_id(&CompiledDefinitionId::parse("claude").unwrap())
+        .await
+        .expect("配布実バイトは取り込める");
+    let id = WorkflowDefinitionId::parse("claude").unwrap();
+    let revision = compiled.revision().clone();
+    let (graph, grid, scopes) = compiled.into_content();
     let (established, event) =
         WorkflowDefinition::define(id.clone(), revision, graph, grid, scopes, at());
 
@@ -410,4 +424,69 @@ async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() 
         .expect("読み直せる");
     // 版だけはストアが採番する（確立直後は未永続の 0、読み直すと 1）。
     assert_eq!(round_tripped, established.with_version(1));
+}
+
+/// バイト位置つきの比較 — 失敗時に全文ダンプせず最初の乖離点だけを示す。
+fn assert_bytes_equal(written: &[u8], golden: &[u8], label: &str) {
+    if written == golden {
+        return;
+    }
+    let at = written
+        .iter()
+        .zip(golden.iter())
+        .position(|(w, g)| w != g)
+        .unwrap_or_else(|| written.len().min(golden.len()));
+    let start = at.saturating_sub(80);
+    panic!(
+        "{label}: byte {at} で乖離 (written {} bytes / golden {} bytes)\n written: …{:?}\n golden:  …{:?}",
+        written.len(),
+        golden.len(),
+        String::from_utf8_lossy(&written[start..(at + 80).min(written.len())]),
+        String::from_utf8_lossy(&golden[start..(at + 80).min(golden.len())]),
+    );
+}
+
+/// 取り込んだ配布束を `store` で書き戻すと、graph と grid は dist と**バイト完全一致**する
+/// (書き側バイト契約 12 §10 — `FIELD_ORDER` 28 キー順・`undefined` 落とし・
+/// `JSON.stringify(x, null, 2)` + 末尾改行 1 個。b36 `store` の検収)。
+#[tokio::test]
+async fn storing_the_ingested_bundle_reproduces_the_dist_bytes() {
+    let (compiled_definition_repository, _scopes) = compiled_definition_repository();
+    let id = CompiledDefinitionId::parse("claude").unwrap();
+    let compiled = compiled_definition_repository
+        .find_by_id(&id)
+        .await
+        .unwrap();
+
+    let data_out = TempDir::new().unwrap();
+    let scopes_out = TempDir::new().unwrap();
+    let mut writer = CompiledDefinitionRepositoryImpl::new(
+        data_out.path().to_path_buf(),
+        scopes_out.path().to_path_buf(),
+    );
+    // 他リポジトリと同じ (イベント, 集約) の対で書く — genesis が対を鋳造する。
+    let (reborn, event) = CompiledDefinition::compile(
+        compiled.id().clone(),
+        compiled.revision().clone(),
+        compiled.graph().clone(),
+        compiled.grid().clone(),
+        compiled.scopes().clone(),
+    );
+    assert_eq!(reborn, compiled, "genesis は同じ内容の集約を返す");
+    writer.store(&event, &reborn).await.unwrap();
+
+    assert_bytes_equal(
+        &std::fs::read(data_out.path().join("stage-graph.json")).unwrap(),
+        &std::fs::read(golden_dir().join("stage-graph.json")).unwrap(),
+        "stage-graph.json",
+    );
+    assert_bytes_equal(
+        &std::fs::read(data_out.path().join("scope-grid.json")).unwrap(),
+        &std::fs::read(golden_dir().join("scope-grid.json")).unwrap(),
+        "scope-grid.json",
+    );
+
+    // 書いた面を読み戻すと同じ集約になる (store ⇄ find_by_id の往復)。
+    let reread = writer.find_by_id(&id).await.unwrap();
+    assert_eq!(reread, compiled, "store ⇄ find_by_id round trip");
 }

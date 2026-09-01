@@ -78,7 +78,7 @@ async fn append_delta(fixture: &Fixture, seq_nr: usize, manifest: &str) {
         IntentAggregateKeyDto::of(&intent_id()),
         seq_nr,
         at(),
-        IntentEventDto::of(&event),
+        IntentEventDto::of(&event, at()),
     )
     .with_manifest(manifest);
     fixture

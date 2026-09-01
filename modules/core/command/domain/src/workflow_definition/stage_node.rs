@@ -14,8 +14,6 @@
 //! **compile 時**に検証され、ロード経路では再検査されない (レポート §4.3)。本読取モデルも
 //! 同様に再検査しない — 「グラフ全体が読めない」と「1 ノードが使えない」の観測差を作らない。
 
-use std::collections::BTreeMap;
-
 use super::consume_decl::ConsumeDecl;
 use super::execution_kind::ExecutionKind;
 use super::phase_id::PhaseId;
@@ -50,7 +48,7 @@ pub struct StageNode {
     workspace_requires: bool,
     produces: Vec<String>,
     optional_produces: Vec<String>,
-    produces_kinds: BTreeMap<String, Vec<String>>,
+    produces_kinds: Vec<(String, Vec<String>)>,
     consumes: Vec<ConsumeDecl>,
     requires_stage: Vec<StageSlug>,
     sensors: Vec<String>,
@@ -156,7 +154,9 @@ impl StageNode {
 
     /// 成果物 → 適用 unit kind。**マップに無い成果物は全 kind に適用**される。
     #[must_use]
-    pub const fn produces_kinds(&self) -> &BTreeMap<String, Vec<String>> {
+    /// 成果物 → 適用 unit kind の写像 (**文書順を保持** — upstream の emit 順は内容の一部で
+    /// あり、書き手 (`store`) がバイト忠実に再現するため並びを失わない。b36)。
+    pub fn produces_kinds(&self) -> &[(String, Vec<String>)] {
         &self.produces_kinds
     }
 

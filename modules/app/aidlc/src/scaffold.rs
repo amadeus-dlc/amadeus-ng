@@ -251,14 +251,19 @@ mod tests {
     }
 
     fn intent_with(stages: Vec<StageEntry>, request: StartRequest) -> Intent {
-        Intent::from(Created::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            request,
-            stages,
-            WorkspaceScan::new(BrownfieldGreenfield::Greenfield, "Rust", "None", "Cargo")
-                .expect("単一行"),
+        Intent::from((
+            Created::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                request,
+                stages,
+                WorkspaceScan::new(BrownfieldGreenfield::Greenfield, "Rust", "None", "Cargo")
+                    .expect("単一行"),
+            ),
+            chrono::DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+                .expect("固定時刻")
+                .with_timezone(&chrono::Utc),
         ))
     }
 

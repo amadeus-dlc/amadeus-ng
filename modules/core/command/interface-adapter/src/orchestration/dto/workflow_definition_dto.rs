@@ -80,7 +80,8 @@ struct StageNodeDto {
     workspace_requires: bool,
     produces: Vec<String>,
     optional_produces: Vec<String>,
-    produces_kinds: BTreeMap<String, Vec<String>>,
+    #[serde(with = "crate::orchestration::kinds_codec")]
+    produces_kinds: Vec<(String, Vec<String>)>,
     consumes: Vec<ConsumeDeclDto>,
     requires_stage: Vec<String>,
     sensors: Vec<String>,
@@ -251,7 +252,7 @@ impl StageNodeDto {
             workspace_requires: node.workspace_requires(),
             produces: node.produces().to_vec(),
             optional_produces: node.optional_produces().to_vec(),
-            produces_kinds: node.produces_kinds().clone(),
+            produces_kinds: node.produces_kinds().to_vec(),
             consumes: node.consumes().iter().map(ConsumeDeclDto::of).collect(),
             requires_stage: node
                 .requires_stage()

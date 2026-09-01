@@ -131,19 +131,22 @@ fn genesis_intent() -> Intent {
         })
         .collect();
 
-    Intent::from(Created::new(
-        IntentId::parse(INTENT).expect("UUIDv7"),
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        StartRequest::new(SCOPE, REQUEST),
-        stages,
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .expect("単一行"),
+    Intent::from((
+        Created::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new(SCOPE, REQUEST),
+            stages,
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
     ))
 }
 

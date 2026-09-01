@@ -173,14 +173,17 @@ pub(crate) fn stages() -> Vec<StageEntry> {
 /// 指定した集約識別子の genesis (集約と `Started` イベント)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from(Created::new(
-        intent_id(),
-        WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("テストの定義 revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            intent_id(),
+            WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("テストの定義 revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            scan(),
+        ),
+        at(),
     ))
 }
 

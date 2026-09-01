@@ -27,7 +27,7 @@ use core_command_domain::orchestration::{IntentExecutionId, IntentId, StartReque
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{ShardName, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
-    DefinitionArtifactsClientImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
+    CompiledDefinitionRepositoryImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
     WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
 };
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
@@ -428,14 +428,23 @@ async fn mint_intent(
     // クエリ側の動詞（`next` / `continue`）は自分のリードモデル読取でファイルを直接読むので
     // この前段を要しない（`coding-rules/cqrs-boundaries.md` 規則 6）。
     let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
-    ensure_defined(layout, workflow_definition_repository, now).await?;
+    let definition_id =
+        definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    let compiled_definition_id =
+        compiled_definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    ensure_defined(
+        layout,
+        workflow_definition_repository,
+        &compiled_definition_id,
+        &definition_id,
+        now,
+    )
+    .await?;
     let mut use_case = CreateIntentUseCase::new(
         reopened_workflow_definition_repository,
         intent_repository,
         intent_execution_repository,
     );
-    let definition_id =
-        definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
     use_case
         .execute(
             intent_id.clone(),
@@ -489,15 +498,17 @@ async fn mint_intent(
 async fn ensure_defined(
     layout: &Layout,
     workflow_definition_repository: WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>,
+    compiled_definition_id: &core_command_domain::workflow_definition::CompiledDefinitionId,
+    definition_id: &core_command_domain::workflow_definition::WorkflowDefinitionId,
     now: chrono::DateTime<Utc>,
 ) -> Result<(), String> {
     DefineWorkflowUseCase::new(
-        DefinitionArtifactsClientImpl::new(layout.definition_data_dir(), layout.scopes_dir()),
+        CompiledDefinitionRepositoryImpl::new(layout.definition_data_dir(), layout.scopes_dir()),
         workflow_definition_repository,
     )
-    .execute(now)
+    .execute(compiled_definition_id, definition_id, now)
     .await
-    .map_err(|error| diagnose("cannot ingest the workflow definition", &error))
+    .map_err(|error| diagnose("cannot read the compiled definition", &error))
 }
 
 fn build_request(scope: &str, args: &IntentCreateArgs, review: Option<&str>) -> StartRequest {
@@ -650,6 +661,16 @@ fn definition_id(
     let _ = layout;
     core_command_domain::workflow_definition::WorkflowDefinitionId::parse("claude")
         .map_err(|error| format!("cannot resolve the definition id: {error:?}"))
+}
+
+/// 配布束の識別子 — 系譜は [`definition_id`] と同じ name (集約ごとに自前の ID 型を持ち、
+/// 突合せは合成ルートが同じ源から両方を鋳造することで成立する)。
+fn compiled_definition_id(
+    layout: &Layout,
+) -> Result<core_command_domain::workflow_definition::CompiledDefinitionId, String> {
+    let _ = layout;
+    core_command_domain::workflow_definition::CompiledDefinitionId::parse("claude")
+        .map_err(|error| format!("cannot resolve the compiled definition id: {error:?}"))
 }
 
 fn use_case(

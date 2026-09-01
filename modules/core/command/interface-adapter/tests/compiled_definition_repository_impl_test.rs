@@ -1,17 +1,14 @@
-//! 統合テスト: `DefinitionArtifactsClientImpl` が 12-workflow-definition §4 の失敗態度表を
+//! 統合テスト: `CompiledDefinitionRepositoryImpl` が 12-workflow-definition §4 の失敗態度表を
 //! 全行満たすこと。
 //!
-//! # なぜ Repository ではなく取込 Gateway のテストなのか (2026-08-31 オーナー裁定)
+//! # 集約 `CompiledDefinition` の Repository のテストである (2026-09-02 オーナー裁定、b36)
 //!
-//! ここに並ぶ検収は元は `WorkflowDefinitionRepositoryImpl` に張られていた。その実装 —
-//! 「3 入力をファイルから読んで集約を組み立てる」— は破棄された
-//! (`coding-rules/cqrs-boundaries.md` 規則 4: 集約の最新状態はイベントストアからしか作れない)。
-//! パースの中身はそのまま**取込境界**の外部システムクライアント `DefinitionArtifactsClientImpl`
-//! へ移り、Repository は `EventStoreForSqlite` ベースの ES リポジトリになった。
-//!
-//! 失敗態度の表そのものは**観測可能な契約**であって集約の作り方とは独立なので、対象を
-//! `find_by_id(&id)` から `load()` へ張り替えて全行を維持する。取り込んだ材料が定義の述語と
-//! して立つことは、`WorkflowDefinition::define` で集約へ materialize してから突く。
+//! ここに並ぶ検収は元は旧 `WorkflowDefinitionRepositoryImpl` (ファイルから集約を組む実装 —
+//! b30 で破棄) に張られ、b30 で取込境界 (外部システムクライアント擬制) へ移った。b36 で
+//! その擬制が棄却され、対象は配布束の集約 `CompiledDefinition` を `find_by_id(&id)` で
+//! 再構成する Repository になった — 失敗態度の表そのものは**観測可能な契約**であって
+//! 対象の分類とは独立なので、全行を維持する。読んだ内容が定義の述語として立つことは、
+//! `WorkflowDefinition::define` で集約へ materialize してから突く。
 //!
 //! 各テストは tempdir に合成 `stage-graph.json` / `scope-grid.json` / `harness.json` /
 //! `scopes/aidlc-*.md` を書いて 1 行ずつ検証する:
@@ -32,25 +29,40 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_command_interface_adapter::orchestration::DefinitionArtifactsClientImpl;
-use core_command_use_case::orchestration::{
-    DefinitionArtifacts, DefinitionArtifactsClient, DefinitionArtifactsError,
-};
+use core_command_domain::workflow_definition::{CompiledDefinition, CompiledDefinitionId};
+use core_command_interface_adapter::orchestration::CompiledDefinitionRepositoryImpl;
+use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
 use std::error::Error;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// 配布物を取り込めない形 (取込境界の契約 — `Io` / `Corrupt` の 2 変種)。
-type ReadError = DefinitionArtifactsError;
+/// 配布束を読めない形 (Repository 契約のジェネリックエラー)。
+type ReadError = RepositoryError<CompiledDefinitionId>;
+
+/// フィクスチャの harness.json が名乗る識別子。
+fn claude_id() -> CompiledDefinitionId {
+    CompiledDefinitionId::parse("claude").expect("フィクスチャの配布束 id")
+}
+
+/// 同期の呼び口 — 本ファイルの検収は失敗態度の表を 1 行ずつ見るだけなので、都度
+/// current-thread ランタイムで `find_by_id` を回す (I/O は同期 fs 読取)。
+fn find(
+    compiled_definition_repository: &CompiledDefinitionRepositoryImpl,
+) -> Result<CompiledDefinition, ReadError> {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("current-thread ランタイム")
+        .block_on(compiled_definition_repository.find_by_id(&claude_id()))
+}
 
 /// `Corrupt` が原因連鎖で運ぶ診断表示を取り出す。
 ///
 /// 契約は「壊れていた」としか約束しないので、**どう壊れていたか**はアダプタ私有の型が
 /// `Error::source` の連鎖でだけ運ぶ (裁定 6)。テストはその表示文字列で判定する
-/// (`DefinitionArtifactsError` は `source` が比較不能なため `PartialEq` を持たない)。
+/// (`RepositoryError<WorkflowDefinitionId>` は `source` が比較不能なため `PartialEq` を持たない)。
 fn corrupt_cause(error: &ReadError) -> String {
     assert!(
-        matches!(error, DefinitionArtifactsError::Corrupt { .. }),
+        matches!(error, RepositoryError::Corrupt { .. }),
         "Corrupt を期待した: {error:?}"
     );
     Error::source(error)
@@ -60,10 +72,10 @@ fn corrupt_cause(error: &ReadError) -> String {
 
 /// `Io` が運ぶ対象パス。
 fn io_path(error: &ReadError) -> PathBuf {
-    let DefinitionArtifactsError::Io { path, .. } = error else {
+    let RepositoryError::Io { path, .. } = error else {
         panic!("Io を期待した: {error:?}");
     };
-    path.clone()
+    path.clone().expect("読取失敗は対象パスを運ぶ")
 }
 
 /// 出荷グラフを縮めた 5 ステージ。`bootstrap` / `workspace-init` が initialization 特例の材料、
@@ -241,8 +253,8 @@ impl Fixture {
         }
     }
 
-    fn definition_artifacts_client(&self) -> DefinitionArtifactsClientImpl {
-        DefinitionArtifactsClientImpl::new(self.data_dir.clone(), self.scopes_dir.clone())
+    fn compiled_definition_repository(&self) -> CompiledDefinitionRepositoryImpl {
+        CompiledDefinitionRepositoryImpl::new(self.data_dir.clone(), self.scopes_dir.clone())
     }
 
     fn graph_path(&self) -> PathBuf {
@@ -291,13 +303,9 @@ fn slugs(nodes: &[&core_command_domain::workflow_definition::StageNode]) -> Vec<
         .collect()
 }
 
-fn definition_id(value: &str) -> WorkflowDefinitionId {
-    WorkflowDefinitionId::parse(value).unwrap()
-}
-
-/// 配布物を取り込む (成功を期待する経路)。
-fn load(fixture: &Fixture) -> DefinitionArtifacts {
-    fixture.definition_artifacts_client().load().unwrap()
+/// 配布束を読む (成功を期待する経路)。
+fn load(fixture: &Fixture) -> CompiledDefinition {
+    find(&fixture.compiled_definition_repository()).unwrap()
 }
 
 /// 取り込んだ材料をそのまま定義集約へ立てる。
@@ -306,8 +314,10 @@ fn load(fixture: &Fixture) -> DefinitionArtifacts {
 /// `first_in_scope_stage_of_phase`) は集約が所有するので、取込の検収でそれを突くには
 /// 一度 genesis を通す。`define` は (集約, 誕生イベント) の対を返すので集約側だけを取る
 /// (`coding-rules/aggregate-commands.md`)。
-fn materialize(artifacts: DefinitionArtifacts) -> WorkflowDefinition {
-    let id = artifacts.id().clone();
+fn materialize(artifacts: CompiledDefinition) -> WorkflowDefinition {
+    // 集約ごとに自前の ID 型を持つ — 系譜は同じ name なので値で写す (合成ルートが両 ID を
+    // 同じ源から鋳造するのと同じ突合せ)。
+    let id = WorkflowDefinitionId::parse(artifacts.id().as_str()).expect("同一文法の系譜 ID");
     let revision = artifacts.revision().clone();
     let (graph, grid, scopes) = artifacts.into_content();
     WorkflowDefinition::define(id, revision, graph, grid, scopes, at()).0
@@ -344,7 +354,10 @@ fn a_full_read_maps_every_field_group_onto_the_domain_model() {
     assert_eq!(node.support_agents(), ["tester".to_string()]);
     assert_eq!(node.optional_produces(), ["migration".to_string()]);
     assert_eq!(
-        node.produces_kinds().get("code").map(Vec::as_slice),
+        node.produces_kinds()
+            .iter()
+            .find(|(kind, _)| kind == "code")
+            .map(|(_, artifacts)| artifacts.as_slice()),
         Some(["service".to_string(), "ui".to_string()].as_slice())
     );
     assert_eq!(node.consumes().len(), 2);
@@ -480,7 +493,7 @@ fn a_full_read_wires_up_the_five_predicates() {
 #[test]
 fn b_a_missing_stage_graph_is_fatal() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     // OS 由来の読取失敗は `Io` — 対象パスと `ErrorKind` だけを運ぶ。
     assert_eq!(io_path(&error), fixture.graph_path());
 }
@@ -492,10 +505,10 @@ fn b_the_reported_path_follows_the_injected_override() {
     // 失敗の対象として報告される」ことだけ。
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
     let missing = fixture.data_dir.join("pinned-graph.json");
-    let definition_artifacts_client = fixture
-        .definition_artifacts_client()
+    let compiled_definition_repository = fixture
+        .compiled_definition_repository()
         .with_stage_graph_override(missing.clone());
-    let error = definition_artifacts_client.load().unwrap_err();
+    let error = find(&compiled_definition_repository).unwrap_err();
     assert_eq!(io_path(&error), missing);
 }
 
@@ -508,7 +521,7 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
     // 読めたが内容が壊れている = `Corrupt`。欠損 (`Io`) とは別変種で、どう壊れていたかは
     // 原因連鎖にだけ現れる。
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     let cause = corrupt_cause(&error);
     assert!(cause.contains("not valid JSON"), "{cause}");
     assert!(
@@ -520,7 +533,7 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
 #[test]
 fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
     let fixture = Fixture::new(Some("{\"stages\": []}"), Some(GRID_JSON), &scope_files());
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     assert!(corrupt_cause(&error).contains("not valid JSON"));
 }
 
@@ -724,7 +737,7 @@ fn an_invalid_skeleton_value_is_rejected_with_the_offending_value_in_the_cause()
         Some(GRID_JSON),
         &[("feature", "---\nname: feature\nskeleton: enabled\n---\n")],
     );
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     let cause = corrupt_cause(&error);
     let path = fixture.scopes_dir.join("aidlc-feature.md");
     assert!(cause.contains(&path.display().to_string()), "{cause}");
@@ -739,7 +752,7 @@ fn a_scope_file_without_a_name_is_rejected() {
         Some(GRID_JSON),
         &[("feature", "---\ndepth: standard\n---\n")],
     );
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     let cause = corrupt_cause(&error);
     assert!(
         cause.ends_with("missing required frontmatter: name"),
@@ -757,7 +770,7 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
             ("feature-alias", "---\nname: feature\n---\n"),
         ],
     );
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     // 重複した名前と両方のファイルが診断に載る (どちらを直せばよいかが分かる材料)。
     let cause = corrupt_cause(&error);
     assert!(cause.contains("feature"), "{cause}");
@@ -767,11 +780,11 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
 #[test]
 fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let definition_artifacts_client = DefinitionArtifactsClientImpl::new(
+    let compiled_definition_repository = CompiledDefinitionRepositoryImpl::new(
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );
-    let definition = materialize(definition_artifacts_client.load().unwrap());
+    let definition = materialize(find(&compiled_definition_repository).unwrap());
     assert!(definition.valid_scopes().is_empty());
     // グリッド列は読めているが、権威が無いので全スコープが未知になる。
     assert!(definition.grid().contains_scope("feature"));
@@ -791,7 +804,7 @@ fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
     ]
     "#;
     let fixture = Fixture::new(Some(graph), None, &[]);
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     assert!(corrupt_cause(&error).contains("unknown phase"));
 }
 
@@ -854,7 +867,7 @@ fn load_returns_the_artifacts_stamped_with_the_harness_identity() {
     let artifacts = load(&fixture);
 
     // id は harness.json の `name`。
-    assert_eq!(artifacts.id(), &definition_id("claude"));
+    assert_eq!(artifacts.id(), &claude_id());
     // revision は 3 入力の正準ダイジェスト。
     assert_eq!(artifacts.revision().as_str().len(), "sha256:".len() + 64);
     assert!(artifacts.revision().as_str().starts_with("sha256:"));
@@ -868,7 +881,7 @@ fn the_distribution_names_its_own_definition_id_instead_of_matching_a_requested_
     // 「ストアにその id のストリームが無い」= `IntentExecutionRepository` 同様の ES
     // リポジトリ側の `NotFound` として現れる。
     let claude = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
-    assert_eq!(load(&claude).id(), &definition_id("claude"));
+    assert_eq!(load(&claude).id(), &claude_id());
 
     let kiro = Fixture::with_harness(
         Some(GRAPH_JSON),
@@ -876,7 +889,10 @@ fn the_distribution_names_its_own_definition_id_instead_of_matching_a_requested_
         &scope_files(),
         Some(r#"{"name": "kiro"}"#),
     );
-    assert_eq!(load(&kiro).id(), &definition_id("kiro"));
+    assert_eq!(
+        load(&kiro).id(),
+        &CompiledDefinitionId::parse("kiro").unwrap()
+    );
 
     // 系譜 ID が違えば別の定義。3 入力が同一でも内容版は同じなので、id だけが違う。
     assert_eq!(load(&claude).revision(), load(&kiro).revision());
@@ -888,7 +904,7 @@ fn the_identity_is_read_before_the_three_inputs() {
     // 識別子の読取が 3 入力より前にあることの検収 (id を与えられない配布物は、内容を
     // 読めても定義を確立できない)。
     let fixture = Fixture::with_harness(None, None, &[], None);
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     assert_eq!(
         io_path(&error),
         fixture.harness_path(),
@@ -899,7 +915,7 @@ fn the_identity_is_read_before_the_three_inputs() {
 #[test]
 fn a_missing_harness_identity_file_is_fatal() {
     let fixture = Fixture::with_harness(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files(), None);
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     // ファイルが無いのは OS 由来の読取失敗 — 内容の破損ではない。
     assert_eq!(io_path(&error), fixture.harness_path());
 }
@@ -914,7 +930,7 @@ fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_corrupt_not_io() {
             &scope_files(),
             Some(harness),
         );
-        let error = fixture.definition_artifacts_client().load().unwrap_err();
+        let error = find(&fixture.compiled_definition_repository()).unwrap_err();
         let cause = corrupt_cause(&error);
         assert!(
             cause.contains(&fixture.harness_path().display().to_string()),
@@ -929,8 +945,8 @@ fn the_corrupt_variant_carries_only_a_diagnostic_not_a_classification() {
     // 契約は**分類を載せない** (裁定 6 — 内部実装がバレる情報を含めない): 運ぶのは
     // `Error::source` に連なる診断表示だけで、`Display` は種別を明かさない。
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
-    assert!(matches!(error, DefinitionArtifactsError::Corrupt { .. }));
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
+    assert!(matches!(error, RepositoryError::Corrupt { .. }));
     assert_eq!(error.to_string(), "corrupt definition artifacts");
     // 材料 (どのファイルがどう壊れていたか) は原因連鎖にだけ現れる。
     let cause = corrupt_cause(&error);
@@ -1046,7 +1062,7 @@ fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it(
 
     for (graph, fragment) in cases {
         let fixture = Fixture::new(Some(graph), None, &[]);
-        let error = fixture.definition_artifacts_client().load().unwrap_err();
+        let error = find(&fixture.compiled_definition_repository()).unwrap_err();
         let cause = corrupt_cause(&error);
         assert!(
             cause.contains(fragment) && cause.contains("stage-graph.json"),
@@ -1063,11 +1079,11 @@ fn a_scopes_path_that_is_not_a_directory_is_reported_instead_of_being_treated_as
     let not_a_dir = fixture.data_dir.join("scopes-as-a-file");
     std::fs::write(&not_a_dir, "これはディレクトリではない\n").unwrap();
 
-    let definition_artifacts_client = DefinitionArtifactsClientImpl::new(
+    let compiled_definition_repository = CompiledDefinitionRepositoryImpl::new(
         fixture.data_dir.clone(),
         fixture.data_dir.join("scopes-as-a-file"),
     );
-    let error = definition_artifacts_client.load().unwrap_err();
+    let error = find(&compiled_definition_repository).unwrap_err();
     assert_eq!(io_path(&error), not_a_dir);
 }
 
@@ -1079,6 +1095,6 @@ fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
     let masquerading = fixture.scopes_dir.join("aidlc-not-a-file.md");
     std::fs::create_dir_all(&masquerading).unwrap();
 
-    let error = fixture.definition_artifacts_client().load().unwrap_err();
+    let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     assert_eq!(io_path(&error), masquerading);
 }

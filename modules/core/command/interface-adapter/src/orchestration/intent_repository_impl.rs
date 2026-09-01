@@ -31,7 +31,6 @@
 
 use std::io::ErrorKind;
 
-use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
@@ -347,7 +346,6 @@ where
         &mut self,
         event: &IntentEvent,
         intent: &Intent,
-        occurred_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError<IntentId>> {
         // イベントの通番はイベント自身から導く — `Created` は必ず 1 (genesis)。変異イベント
         // が増えたらこの単一変種の分配束縛がビルドで落ち、通番の導出とスナップショット
@@ -359,7 +357,7 @@ where
         // 対の取り違えが型で構成不能にならない (実行イベントとの違い — あちらは識別子を
         // 運ばない)。誕生記録から起こした集約と一致しない対は、journal と snapshot が別々の
         // 歴史を語る書込になるため、呼出側の書込契約違反として拒む (CodeRabbit 指摘)。
-        if Intent::from(created.clone()) != *intent {
+        if Intent::from((created.clone(), *intent.created_at())) != *intent {
             return Err(RepositoryError::Corrupt {
                 id: intent.id().clone(),
                 seq_nr: Some(FIRST_SEQ_NR),
@@ -368,11 +366,13 @@ where
         }
         // genesis は本家の作成規約どおり journal と snapshot を原子的に書く — 基底が無いと
         // リプレイできない (初回 `persist_event_and_snapshot` — オーナー裁定 2026-08-30)。
+        // 封筒の時刻は集約から組む (`IntentExecutionRepositoryImpl` と対 — オーナー裁定
+        // 2026-09-02: store は (イベント, 集約) の 2 引数)。
         let envelope = EventEnvelope::new(
             IntentAggregateKeyDto::of(intent.id()),
             seq_nr,
-            occurred_at,
-            IntentEventDto::of(event),
+            *intent.created_at(),
+            IntentEventDto::of(event, *intent.created_at()),
         )
         .with_manifest(EVENT_MANIFEST);
         match self
@@ -389,6 +389,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use chrono::{DateTime, Utc};
 
     use core_command_domain::orchestration::{
         Created, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
@@ -445,7 +447,10 @@ mod tests {
 
     /// genesis の (集約, 誕生イベント) の対 (`Intent::create` が返す形と同じ)。
     fn genesis() -> (Intent, IntentEvent) {
-        (Intent::from(created()), IntentEvent::Created(created()))
+        (
+            Intent::from((created(), at())),
+            IntentEvent::Created(created()),
+        )
     }
 
     fn intent_repository() -> IntentRepositoryImpl<IntentMemoryStore> {
@@ -580,7 +585,7 @@ mod tests {
         let mut intent_repository = intent_repository();
         let (aggregate, event) = genesis();
         intent_repository
-            .store(&event, &aggregate, at())
+            .store(&event, &aggregate)
             .await
             .expect("genesis");
         assert_eq!(intent_repository.stored_version(&intent_id()).await, 1);
@@ -596,7 +601,7 @@ mod tests {
         let mut intent_repository = intent_repository();
         let (aggregate, event) = genesis();
         intent_repository
-            .store(&event, &aggregate, at())
+            .store(&event, &aggregate)
             .await
             .expect("genesis");
 

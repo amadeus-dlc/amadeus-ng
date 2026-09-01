@@ -130,7 +130,7 @@ async fn the_definition_stream_coexists_with_the_other_two_in_the_same_file() {
         IntentRepositoryImpl::open(&fixture.path).expect("intent ストアは同じファイル");
     let (intent, created) = intent_genesis();
     intent_repository
-        .store(&created, &intent, at())
+        .store(&created, &intent)
         .await
         .expect("intent の genesis");
 

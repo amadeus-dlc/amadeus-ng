@@ -24,6 +24,12 @@ use core_command_domain::workflow_definition::{
 use super::{IntentEventDto, IntentExecutionEventDto};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+
+fn at() -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+        .expect("固定時刻")
+        .with_timezone(&chrono::Utc)
+}
 fn slug(value: &str) -> StageSlug {
     StageSlug::parse(value).expect("文法内の slug")
 }
@@ -64,19 +70,22 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::from(Created::new(
-        IntentId::parse(INTENT).expect("UUIDv7"),
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .expect("単一行"),
+    Intent::from((
+        Created::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
     ))
 }
 
@@ -84,7 +93,7 @@ fn intent() -> Intent {
 ///
 /// 書く側 (command interface-adapter の `IntentEventDto`) と同じバイトであることは
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
-const INTENT_ROW: &str = r#"{"Created":{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"}}}"#;
+const INTENT_ROW: &str = r#"{"Created":{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}}"#;
 
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {

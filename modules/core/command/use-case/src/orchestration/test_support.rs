@@ -24,14 +24,13 @@ use core_command_domain::orchestration::{
     IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
-    ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
-    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
+    DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph,
+    StageMode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+    WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
 
-use super::port::DefinitionArtifacts;
-use super::port::DefinitionArtifactsClient;
-use super::port::DefinitionArtifactsError;
+use super::port::CompiledDefinitionRepository;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
@@ -154,9 +153,14 @@ pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
 }
 
 /// 取込境界が返す材料 — 内容版だけを差し替えられる形にしてある。
-pub(crate) fn artifacts(revision: DefinitionRevision, stage_count: usize) -> DefinitionArtifacts {
+pub(crate) fn compiled(revision: DefinitionRevision, stage_count: usize) -> CompiledDefinition {
     let (graph, grid, scopes) = content(stage_count);
-    DefinitionArtifacts::new(definition_id(), revision, graph, grid, scopes)
+    CompiledDefinition::new(compiled_definition_id(), revision, graph, grid, scopes)
+}
+
+/// フィクスチャの配布束 id (系譜は `definition_id` と同じ name)。
+pub(crate) fn compiled_definition_id() -> CompiledDefinitionId {
+    CompiledDefinitionId::parse("claude").expect("フィクスチャの配布束 id")
 }
 
 /// フィクスチャの別の内容版 (改訂を見るテスト用)。
@@ -286,44 +290,60 @@ impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
 
 /// [`DefinitionArtifactsClient`] のテストダブル — 決まった材料を返すか、決まった失敗を返す。
 #[derive(Debug)]
-pub(crate) struct StubDefinitionArtifactsClient {
+pub(crate) struct InMemoryCompiledDefinitionRepository {
     outcome: StubOutcome,
 }
 
 /// ダブルの台本 (失敗は複製不能なので、材料ではなく「どう振る舞うか」を持つ)。
 #[derive(Debug)]
 enum StubOutcome {
-    /// この材料を返す。
-    Serving(DefinitionArtifacts),
-    /// 配布物が読めない (`stage-graph.json` の欠損に相当)。
+    /// この配布束を返す。
+    Serving(CompiledDefinition),
+    /// 配布束が読めない (`stage-graph.json` の欠損に相当)。
     Unreadable,
 }
 
-impl StubDefinitionArtifactsClient {
-    /// 決まった材料を返すダブル。
-    pub(crate) const fn serving(artifacts: DefinitionArtifacts) -> StubDefinitionArtifactsClient {
-        StubDefinitionArtifactsClient {
-            outcome: StubOutcome::Serving(artifacts),
+impl InMemoryCompiledDefinitionRepository {
+    /// 決まった配布束を返すダブル。
+    pub(crate) const fn serving(
+        compiled_definition: CompiledDefinition,
+    ) -> InMemoryCompiledDefinitionRepository {
+        InMemoryCompiledDefinitionRepository {
+            outcome: StubOutcome::Serving(compiled_definition),
         }
     }
 
-    /// 配布物が読めないダブル。
-    pub(crate) const fn unreadable() -> StubDefinitionArtifactsClient {
-        StubDefinitionArtifactsClient {
+    /// 配布束が読めないダブル。
+    pub(crate) const fn unreadable() -> InMemoryCompiledDefinitionRepository {
+        InMemoryCompiledDefinitionRepository {
             outcome: StubOutcome::Unreadable,
         }
     }
 }
 
-impl DefinitionArtifactsClient for StubDefinitionArtifactsClient {
-    fn load(&self) -> Result<DefinitionArtifacts, DefinitionArtifactsError> {
+impl CompiledDefinitionRepository for InMemoryCompiledDefinitionRepository {
+    async fn find_by_id(
+        &self,
+        _id: &CompiledDefinitionId,
+    ) -> Result<CompiledDefinition, RepositoryError<CompiledDefinitionId>> {
         match &self.outcome {
-            StubOutcome::Serving(artifacts) => Ok(artifacts.clone()),
-            StubOutcome::Unreadable => Err(DefinitionArtifactsError::Io {
+            StubOutcome::Serving(compiled_definition) => Ok(compiled_definition.clone()),
+            StubOutcome::Unreadable => Err(RepositoryError::Io {
                 kind: std::io::ErrorKind::NotFound,
-                path: std::path::PathBuf::from("/harness/tools/data/stage-graph.json"),
+                path: Some(std::path::PathBuf::from(
+                    "/harness/tools/data/stage-graph.json",
+                )),
             }),
         }
+    }
+
+    async fn store(
+        &mut self,
+        _event: &CompiledDefinitionEvent,
+        compiled_definition: &CompiledDefinition,
+    ) -> Result<(), RepositoryError<CompiledDefinitionId>> {
+        self.outcome = StubOutcome::Serving(compiled_definition.clone());
+        Ok(())
     }
 }
 
@@ -346,14 +366,17 @@ pub(crate) fn start_from_plan(
         .collect();
     // 合成計画からの組み直しは完全コンストラクタ (IntentExecution::new) を通す — 検査点は genesis と
     // 同一である。
-    let intent = Intent::from(Created::new(
-        intent(),
-        WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("フィクスチャの定義 revision"),
-        StartRequest::new("classic", "report use case"),
-        stages,
-        scan(),
+    let intent = Intent::from((
+        Created::new(
+            intent(),
+            WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("フィクスチャの定義 revision"),
+            StartRequest::new("classic", "report use case"),
+            stages,
+            scan(),
+        ),
+        at(),
     ));
     let (execution, event) = IntentExecution::start(execution_id(), &intent, at());
     (intent, execution, event)
@@ -588,13 +611,12 @@ impl IntentRepository for InMemoryIntentRepository {
         &mut self,
         event: &IntentEvent,
         intent: &Intent,
-        _occurred_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError<IntentId>> {
         // 実物 (`IntentRepositoryImpl`) と同じ約束の最小形。誕生記録と一致しない対は
         // 書込契約違反 (`Corrupt`)、genesis の重複は `Conflict` (実物ではストアの現行
         // スロット一意性が拒む。issue #50)。
         let IntentEvent::Created(created) = event;
-        if Intent::from(created.clone()) != *intent {
+        if Intent::from((created.clone(), *intent.created_at())) != *intent {
             return Err(RepositoryError::Corrupt {
                 id: intent.id().clone(),
                 seq_nr: Some(1),
@@ -630,7 +652,7 @@ mod tests {
             held.scan().clone(),
         ));
         intent_repository
-            .store(&event, &held, at())
+            .store(&event, &held)
             .await
             .expect("genesis は書ける");
         assert_eq!(
@@ -642,7 +664,7 @@ mod tests {
         );
 
         let err = intent_repository
-            .store(&event, &held, at())
+            .store(&event, &held)
             .await
             .expect_err("重複作成は拒否");
         assert!(matches!(err, RepositoryError::Conflict { expected: 0, .. }));
@@ -662,7 +684,7 @@ mod tests {
             held.scan().clone(),
         ));
         let err = intent_repository
-            .store(&mismatched_event, &held, at())
+            .store(&mismatched_event, &held)
             .await
             .expect_err("誕生記録と一致しない対は拒否");
         assert!(matches!(
