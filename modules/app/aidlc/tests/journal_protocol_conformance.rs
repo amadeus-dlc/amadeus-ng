@@ -207,7 +207,7 @@ impl Store {
     }
 
     /// 投影が使う横断読取 (同じファイルへの別接続)。
-    fn reader(&self) -> JournalReaderImpl {
+    fn journal_reader(&self) -> JournalReaderImpl {
         JournalReaderImpl::open(&self.path).expect("Reader は開ける")
     }
 
@@ -373,8 +373,11 @@ impl RealProjection {
 
     /// チェックポイント以降を読んで描き、位置を進める (実 RMU の取得ループ)。
     async fn catch_up(&mut self, store: &Store) {
-        let mut updater =
-            ReadModelUpdater::new(store.reader(), projection_name(), self.targets.clone());
+        let mut updater = ReadModelUpdater::new(
+            store.journal_reader(),
+            projection_name(),
+            self.targets.clone(),
+        );
         let reached = updater.catch_up().await.expect("キャッチアップは通る");
         self.read_model_seq = reached.to_u64();
         self.caught_up = true;
@@ -441,8 +444,8 @@ async fn assert_projection(
     m: &ModelState,
     label: &str,
 ) {
-    let reader = store.reader();
-    let batch = reader
+    let journal_reader = store.journal_reader();
+    let batch = journal_reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("ジャーナルは読める");
@@ -474,7 +477,7 @@ async fn assert_projection(
     assert_eq!(version, m.snap_version, "{label}: snapVersion");
     assert_eq!(seq_nr, m.snap_seq, "{label}: snapSeq");
 
-    let checkpoint = reader
+    let checkpoint = journal_reader
         .checkpoint(&projection_name())
         .await
         .expect("チェックポイントは読める");
@@ -521,7 +524,8 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
     // intent の誕生記録を先に書く — 実運用の順序 (intent-create → 実行開始) と同じで、
     // 実 RMU の計画供給元は intent 自身のジャーナルである (issue #56)。
     {
-        let mut intents = IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
+        let mut intent_repository =
+            IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
         let held = intent();
         let created = IntentEvent::Created(Created::new(
             held.id().clone(),
@@ -531,7 +535,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             held.stages().to_vec(),
             held.scan().clone(),
         ));
-        intents
+        intent_repository
             .store(&created, &held, at())
             .await
             .expect("intent の genesis は書ける");

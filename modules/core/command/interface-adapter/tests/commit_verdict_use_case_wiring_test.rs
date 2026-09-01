@@ -41,26 +41,26 @@ use support::{at, execution_id, intent, store_genesis, store_intent_genesis};
 async fn the_use_case_commits_a_transition_through_the_real_repository() {
     // 合成ルート（U7）が書くのと同じ結線 — ポートの実装を注入するだけで、ユースケースは
     // 実装の型を知らない（静的束縛。`dyn` は使わない）。
-    let mut repository = IntentExecutionRepositoryImpl::in_memory();
-    let held = store_genesis(&mut repository).await;
+    let mut intent_execution_repository = IntentExecutionRepositoryImpl::in_memory();
+    let held = store_genesis(&mut intent_execution_repository).await;
     assert_eq!(
         held.checkbox(held.cursor()),
         Some(CheckboxState::InProgress),
         "genesis のカーソルは initialization（非ゲート）"
     );
     // 同じストアを指す別の口。ユースケースが書いた行を外から観測するために先に取っておく。
-    let observer = repository.reopened();
+    let reopened_intent_execution_repository = intent_execution_repository.reopened();
 
     // intent 側も**本家 memory バックエンドを内包した実 Repository** に預ける — 自作
     // HashMap ダブルは 2026-08-31 のオーナー裁定で退役した (インメモリ形は
     // `IntentRepositoryImpl<IntentMemoryStore>` に一本化)。シードは `store()` 経由である。
-    let mut intents = IntentRepositoryImpl::in_memory();
-    store_intent_genesis(&mut intents).await;
+    let mut intent_repository = IntentRepositoryImpl::in_memory();
+    store_intent_genesis(&mut intent_repository).await;
 
     // ポートは 2 本注入する（改訂 10）。ユースケースは計画を自分で引くので、`execute` に
     // `&Intent` は渡らない — 引数は集約 ID と値オブジェクトだけである
     // (`coding-rules/use-case-rules.md` §2b)。
-    let mut use_case = CommitVerdictUseCase::new(repository, intents);
+    let mut use_case = CommitVerdictUseCase::new(intent_execution_repository, intent_repository);
     use_case
         .execute(
             &execution_id(),
@@ -72,7 +72,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
         .expect("非ゲートのカーソルは完了できる");
 
     // 実物のストアに載ったことを、別の口から再構成して確かめる。
-    let after = observer
+    let after = reopened_intent_execution_repository
         .find_by_id(&execution_id())
         .await
         .expect("書いた集約は握り直せる");

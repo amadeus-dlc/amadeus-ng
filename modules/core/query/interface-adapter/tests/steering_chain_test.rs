@@ -111,31 +111,39 @@ impl Workspace {
         fs::write(self.record_dir().join("aidlc-state.md"), text).expect("状態ファイル");
     }
 
-    fn definition_dao(&self) -> WorkflowDefinitionDaoImpl {
+    fn workflow_definition_dao(&self) -> WorkflowDefinitionDaoImpl {
         WorkflowDefinitionDaoImpl::new(DefinitionPaths::new(
             self.path("tools/data"),
             self.path("scopes"),
         ))
     }
 
-    fn state_dao(&self) -> ExecutionStateDaoImpl {
+    fn execution_state_dao(&self) -> ExecutionStateDaoImpl {
         ExecutionStateDaoImpl::new(self.record_dir())
     }
 
-    fn rules_dao(&self) -> MemoryRulesDaoImpl {
+    fn memory_rules_dao(&self) -> MemoryRulesDaoImpl {
         MemoryRulesDaoImpl::new(self.memory_dir())
     }
 
     fn next(
         &self,
     ) -> NextUseCase<WorkflowDefinitionDaoImpl, ExecutionStateDaoImpl, MemoryRulesDaoImpl> {
-        NextUseCase::new(self.definition_dao(), self.state_dao(), self.rules_dao())
+        NextUseCase::new(
+            self.workflow_definition_dao(),
+            self.execution_state_dao(),
+            self.memory_rules_dao(),
+        )
     }
 
     fn continuing(
         &self,
     ) -> ContinueUseCase<WorkflowDefinitionDaoImpl, ExecutionStateDaoImpl, MemoryRulesDaoImpl> {
-        ContinueUseCase::new(self.definition_dao(), self.state_dao(), self.rules_dao())
+        ContinueUseCase::new(
+            self.workflow_definition_dao(),
+            self.execution_state_dao(),
+            self.memory_rules_dao(),
+        )
     }
 }
 
@@ -197,7 +205,7 @@ fn the_chain_walks_from_the_files_to_the_run_stage_through_sealed_tokens() {
     workspace.write_state(&state_file());
 
     let state = workspace
-        .state_dao()
+        .execution_state_dao()
         .find()
         .expect("状態ファイルの読取")
         .expect("状態ファイルは書いたので読めるはず");
@@ -263,7 +271,10 @@ fn the_chain_walks_from_the_files_to_the_run_stage_through_sealed_tokens() {
 fn a_record_without_a_state_file_falls_through_to_the_birth_group() {
     let workspace = Workspace::create();
     assert_eq!(
-        workspace.state_dao().find().expect("不在は失敗ではない"),
+        workspace
+            .execution_state_dao()
+            .find()
+            .expect("不在は失敗ではない"),
         None
     );
     let directive = workspace.next().execute(
@@ -289,7 +300,7 @@ fn a_continuation_after_the_state_moved_on_fails_closed() {
     let workspace = Workspace::create();
     workspace.write_state(&state_file());
     let before = workspace
-        .state_dao()
+        .execution_state_dao()
         .find()
         .expect("状態ファイルの読取")
         .expect("読めるはず");
@@ -310,7 +321,7 @@ fn a_continuation_after_the_state_moved_on_fails_closed() {
             ),
     );
     let after = workspace
-        .state_dao()
+        .execution_state_dao()
         .find()
         .expect("更新後も読める")
         .expect("読めるはず");

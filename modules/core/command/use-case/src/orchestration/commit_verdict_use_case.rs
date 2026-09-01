@@ -46,7 +46,7 @@ use super::reported_transition::ReportedTransition;
 /// 合成ルートだけが行い、ユースケースはポートの trait しか知らない。
 #[derive(Debug)]
 pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
-    execution_repository: E,
+    intent_execution_repository: E,
     intent_repository: I,
 }
 
@@ -76,9 +76,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
     /// 以前は Controller が `&Intent` を読んで渡していたが、あれは I8 — 読取専用ユースケース
     /// (`Next`) 専用のパターン — の誤適用だった (`coding-rules/use-case-rules.md` §4 の射程)。
     #[must_use]
-    pub const fn new(execution_repository: E, intent_repository: I) -> CommitVerdictUseCase<E, I> {
+    pub const fn new(
+        intent_execution_repository: E,
+        intent_repository: I,
+    ) -> CommitVerdictUseCase<E, I> {
         CommitVerdictUseCase {
-            execution_repository,
+            intent_execution_repository,
             intent_repository,
         }
     }
@@ -201,7 +204,10 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
         // 再構成した集約は**ストアが刻んだ版を運んでいる**ので、書込へはそれをそのまま提示
         // する（ポート doc「楽観 version は集約が運ぶ」— 版は不透明なトークンであり
         // `aggregate.seq_nr()` から導いてはならない）。
-        let mut aggregate = self.execution_repository.find_by_id(execution_id).await?;
+        let mut aggregate = self
+            .intent_execution_repository
+            .find_by_id(execution_id)
+            .await?;
         // 計画は**保持しているリポジトリから内部で取る**（改訂 10）。実行は intent を ID で
         // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
         // 取り違えのガードは従来どおり集約側で発火する — ここでは構成上一致する。
@@ -225,7 +231,11 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
         // ここまで来たら対象は必ずカーソルである — `stage` が名指ししていた場合、カーソルより
         // 手前のステージは既に上の no-op で返しているからである。
         let event = Self::command(intent, &mut aggregate, cursor, transition, occurred_at)?;
-        match self.execution_repository.store(&event, &aggregate).await {
+        match self
+            .intent_execution_repository
+            .store(&event, &aggregate)
+            .await
+        {
             Ok(()) => Ok(AttemptOutcome::Settled),
             Err(conflict @ RepositoryError::Conflict { .. }) => {
                 match Self::slug_at(intent, cursor) {
@@ -346,8 +356,8 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
 
     /// 注入された実行ポートの実装（テストが**効果**を観測するための継ぎ目）。
     #[cfg(test)]
-    pub(crate) const fn execution_repository(&self) -> &E {
-        &self.execution_repository
+    pub(crate) const fn intent_execution_repository(&self) -> &E {
+        &self.intent_execution_repository
     }
 
     /// 注入された intent ポートの実装（テストが取得回数を観測するための継ぎ目）。
@@ -407,11 +417,11 @@ mod tests {
                 .await
         }
 
-        const fn repository(&self) -> &InMemoryIntentExecutionRepository {
-            self.use_case.execution_repository()
+        const fn intent_execution_repository(&self) -> &InMemoryIntentExecutionRepository {
+            self.use_case.intent_execution_repository()
         }
 
-        const fn intents(&self) -> &InMemoryIntentRepository {
+        const fn intent_repository(&self) -> &InMemoryIntentRepository {
             self.use_case.intent_repository()
         }
     }
@@ -436,8 +446,10 @@ mod tests {
     ///
     /// ユースケースは何が起きたかを返さないので、テストは戻り値ではなくストアに残った
     /// 痕跡でコミット内容を固定する。
-    fn only_committed(repository: &InMemoryIntentExecutionRepository) -> &IntentExecutionEvent {
-        let committed = repository.committed();
+    fn only_committed(
+        intent_execution_repository: &InMemoryIntentExecutionRepository,
+    ) -> &IntentExecutionEvent {
+        let committed = intent_execution_repository.committed();
         assert_eq!(committed.len(), 1, "コミットは 1 件のはず");
         committed.first().expect("1 件ある")
     }
@@ -457,7 +469,9 @@ mod tests {
             )
             .await
             .expect("in-progress のゲート付きステージは開ける");
-        let IntentExecutionEvent::GateOpened(opened) = only_committed(subject.repository()) else {
+        let IntentExecutionEvent::GateOpened(opened) =
+            only_committed(subject.intent_execution_repository())
+        else {
             panic!("GateOpened を期待した");
         };
         assert_eq!(opened.stage(), &slug(1));
@@ -482,10 +496,16 @@ mod tests {
             )
             .await
             .expect("既に開いているゲートへの再報告は成功扱い");
-        assert!(subject.repository().committed().is_empty());
-        assert_eq!(subject.repository().store_attempts(), 0, "書込を試みない");
+        assert!(subject.intent_execution_repository().committed().is_empty());
         assert_eq!(
-            subject.repository().version_of(&execution_id()),
+            subject.intent_execution_repository().store_attempts(),
+            0,
+            "書込を試みない"
+        );
+        assert_eq!(
+            subject
+                .intent_execution_repository()
+                .version_of(&execution_id()),
             Some(2),
             "版も動かない"
         );
@@ -498,7 +518,8 @@ mod tests {
             .execute(None, forward(), at())
             .await
             .expect("ゲート付きステージは承認できる");
-        let IntentExecutionEvent::GateApproved(approved) = only_committed(subject.repository())
+        let IntentExecutionEvent::GateApproved(approved) =
+            only_committed(subject.intent_execution_repository())
         else {
             panic!("GateApproved を期待した");
         };
@@ -516,7 +537,8 @@ mod tests {
             .execute(None, forward(), at())
             .await
             .expect("非ゲートステージは完了できる");
-        let IntentExecutionEvent::StageCompleted(completed) = only_committed(subject.repository())
+        let IntentExecutionEvent::StageCompleted(completed) =
+            only_committed(subject.intent_execution_repository())
         else {
             panic!("StageCompleted を期待した");
         };
@@ -536,7 +558,8 @@ mod tests {
             )
             .await
             .expect("ゲート付きステージは差し戻せる");
-        let IntentExecutionEvent::GateRejected(rejected) = only_committed(subject.repository())
+        let IntentExecutionEvent::GateRejected(rejected) =
+            only_committed(subject.intent_execution_repository())
         else {
             panic!("GateRejected を期待した");
         };
@@ -554,7 +577,8 @@ mod tests {
             .execute(None, ReportedTransition::Revised, at())
             .await
             .expect("revising のステージはゲートへ再入できる");
-        let IntentExecutionEvent::StageRevised(revised) = only_committed(subject.repository())
+        let IntentExecutionEvent::StageRevised(revised) =
+            only_committed(subject.intent_execution_repository())
         else {
             panic!("StageRevised を期待した");
         };
@@ -582,7 +606,8 @@ mod tests {
             )
             .await
             .expect("CONDITIONAL なステージは読み飛ばせる");
-        let IntentExecutionEvent::StageSkipped(skipped) = only_committed(subject.repository())
+        let IntentExecutionEvent::StageSkipped(skipped) =
+            only_committed(subject.intent_execution_repository())
         else {
             panic!("StageSkipped を期待した");
         };
@@ -599,9 +624,18 @@ mod tests {
             .execute(Some(&slug(0)), forward(), at())
             .await
             .expect("通過済み completed への再報告は冪等な成功");
-        assert!(subject.repository().committed().is_empty());
-        assert_eq!(subject.repository().store_attempts(), 0, "書込を試みない");
-        assert_eq!(subject.repository().version_of(&execution_id()), Some(2));
+        assert!(subject.intent_execution_repository().committed().is_empty());
+        assert_eq!(
+            subject.intent_execution_repository().store_attempts(),
+            0,
+            "書込を試みない"
+        );
+        assert_eq!(
+            subject
+                .intent_execution_repository()
+                .version_of(&execution_id()),
+            Some(2)
+        );
     }
 
     #[tokio::test]
@@ -612,7 +646,7 @@ mod tests {
             .await
             .expect("カーソル自身を名指しした報告は通常経路");
         assert!(matches!(
-            only_committed(subject.repository()),
+            only_committed(subject.intent_execution_repository()),
             IntentExecutionEvent::GateApproved(_)
         ));
     }
@@ -626,7 +660,7 @@ mod tests {
             .await
             .expect_err("計画に無いステージは解決できない");
         assert!(matches!(err, CommitError::UnknownStage { stage } if stage == unknown));
-        assert!(subject.repository().committed().is_empty());
+        assert!(subject.intent_execution_repository().committed().is_empty());
     }
 
     #[tokio::test]
@@ -644,7 +678,7 @@ mod tests {
             err,
             CommitError::Command(CommandError::NotStale(inner)) if inner == stage
         ));
-        assert!(subject.repository().committed().is_empty());
+        assert!(subject.intent_execution_repository().committed().is_empty());
     }
 
     // ---- 楽観 version の往復 ----
@@ -660,7 +694,9 @@ mod tests {
             .await
             .expect("承認は通る");
         assert_eq!(
-            subject.repository().version_of(&execution_id()),
+            subject
+                .intent_execution_repository()
+                .version_of(&execution_id()),
             Some(8),
             "版 7 を提示して書けたので、ストアは 8 を採番した"
         );
@@ -673,12 +709,16 @@ mod tests {
         // 改訂 10: `execute` は intent を受け取らない。実行を再構成し、その `intent_id` で
         // 保持しているリポジトリから引く。
         let mut subject = use_case(at_the_first_gate(3), 7);
-        assert_eq!(subject.intents().lookups(), 0, "呼ぶ前は 0 回");
+        assert_eq!(subject.intent_repository().lookups(), 0, "呼ぶ前は 0 回");
         subject
             .execute(None, forward(), at())
             .await
             .expect("ゲートは承認できる");
-        assert_eq!(subject.intents().lookups(), 1, "1 試行につき 1 回引く");
+        assert_eq!(
+            subject.intent_repository().lookups(),
+            1,
+            "1 試行につき 1 回引く"
+        );
     }
 
     #[tokio::test]
@@ -717,7 +757,11 @@ mod tests {
             .execute(None, forward(), at())
             .await
             .expect("1 回だけ再試行すれば通る");
-        assert_eq!(subject.intents().lookups(), 2, "2 試行なので 2 回引く");
+        assert_eq!(
+            subject.intent_repository().lookups(),
+            2,
+            "2 試行なので 2 回引く"
+        );
     }
 
     #[tokio::test]
@@ -754,17 +798,22 @@ mod tests {
             .await
             .expect("1 回だけ再試行すれば通る");
         assert!(matches!(
-            only_committed(subject.repository()),
+            only_committed(subject.intent_execution_repository()),
             IntentExecutionEvent::GateApproved(_)
         ));
         assert_eq!(
-            subject.repository().store_attempts(),
+            subject.intent_execution_repository().store_attempts(),
             2,
             "再試行は 1 回だけ"
         );
         // 2 回目が通ったこと自体が「再構成からやり直した」証拠である — このストアは現在の版を
         // 提示した書込しか受理しないので、古い集約に `store` だけ打ち直していたら再び競合する。
-        assert_eq!(subject.repository().version_of(&execution_id()), Some(9));
+        assert_eq!(
+            subject
+                .intent_execution_repository()
+                .version_of(&execution_id()),
+            Some(9)
+        );
     }
 
     #[tokio::test]
@@ -797,16 +846,18 @@ mod tests {
             .expect("通過済みになった報告は冪等な成功");
 
         assert!(
-            subject.repository().committed().is_empty(),
+            subject.intent_execution_repository().committed().is_empty(),
             "次ステージを勝手にコミットしない"
         );
         assert_eq!(
-            subject.repository().store_attempts(),
+            subject.intent_execution_repository().store_attempts(),
             1,
             "書込は 1 回目の失敗だけ — 再試行は BR1.9 の no-op に畳まれる"
         );
         assert_eq!(
-            subject.repository().version_of(&execution_id()),
+            subject
+                .intent_execution_repository()
+                .version_of(&execution_id()),
             Some(8),
             "版は相手の書込ぶんだけ進む"
         );
@@ -835,8 +886,12 @@ mod tests {
                 actual: 9,
             })
         ));
-        assert_eq!(subject.repository().store_attempts(), 2, "3 回目は打たない");
-        assert!(subject.repository().committed().is_empty());
+        assert_eq!(
+            subject.intent_execution_repository().store_attempts(),
+            2,
+            "3 回目は打たない"
+        );
+        assert!(subject.intent_execution_repository().committed().is_empty());
     }
 
     #[tokio::test]
@@ -857,7 +912,7 @@ mod tests {
             }) if inner == stage
         ));
         assert!(
-            subject.repository().committed().is_empty(),
+            subject.intent_execution_repository().committed().is_empty(),
             "拒否されたコマンドは 1 バイトも書かない"
         );
     }

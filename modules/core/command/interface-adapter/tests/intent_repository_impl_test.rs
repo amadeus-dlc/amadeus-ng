@@ -109,26 +109,26 @@ async fn the_intent_stream_coexists_with_the_execution_stream_in_the_same_file()
     // 識別子は別の UUID (実運用と同じ形)。本家の journal は `(aid, seq_nr)` に UNIQUE 索引を
     // **type_name 抜きの生値**で張るため、同居の前提は識別子の値の一意性である
     // (`IntentAggregateKeyDto` の doc 参照)。UUID どうしなら満たされる。
-    let mut executions =
+    let mut intent_execution_repository =
         IntentExecutionRepositoryImpl::open(&fixture.path).expect("実行ストアは同じファイル");
     let (execution, started) = genesis_for(IntentExecutionId::parse(EXECUTION).unwrap());
-    executions
+    intent_execution_repository
         .store(&started, &execution)
         .await
         .expect("実行の genesis");
 
-    let mut intents = fixture.repository();
-    let stored = store_intent_genesis(&mut intents).await;
+    let mut intent_repository = fixture.repository();
+    let stored = store_intent_genesis(&mut intent_repository).await;
 
     assert_eq!(
-        intents
+        intent_repository
             .find_by_id(&intent_id())
             .await
             .expect("intent は読める"),
         stored
     );
     assert_eq!(
-        executions
+        intent_execution_repository
             .find_by_id(execution.id())
             .await
             .expect("実行も読める")

@@ -54,7 +54,7 @@ impl Fixture {
         IntentExecutionRepositoryImpl::open(&self.path).expect("ストアは開ける")
     }
 
-    fn reader(&self) -> JournalReaderImpl {
+    fn journal_reader(&self) -> JournalReaderImpl {
         JournalReaderImpl::open(&self.path).expect("Reader は開ける")
     }
 }
@@ -109,8 +109,11 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
         write_five(&mut repository).await;
     }
 
-    let reader = fixture.reader();
-    let batch = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let journal_reader = fixture.journal_reader();
+    let batch = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let rows = batch.executions();
     assert_eq!(rows.len(), 5, "COMMIT 済みの 5 件が残る");
     assert_eq!(
@@ -147,8 +150,11 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
             .expect("書きかけ");
     }
 
-    let reader = fixture.reader();
-    let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let journal_reader = fixture.journal_reader();
+    let rows = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     assert_eq!(rows.executions().len(), 5, "書きかけの 6 件目は残らない");
 
     let repository = fixture.repository();
@@ -213,7 +219,7 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     assert_eq!(aggregate.seq_nr(), 6);
     repository.store(&event, &aggregate).await.expect("6 件目");
 
-    let reader = fixture.reader();
-    let rows = reader.events_after(GlobalSeqNr::new(5)).await;
+    let journal_reader = fixture.journal_reader();
+    let rows = journal_reader.events_after(GlobalSeqNr::new(5)).await;
     assert_eq!(rows.expect("差分").executions().len(), 1);
 }

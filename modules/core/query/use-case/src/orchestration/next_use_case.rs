@@ -355,18 +355,22 @@ Do not run this stage. Run `{spelled}` to recover the stale pointer, then re-run
 /// スタティックが既定なので型パラメータで受ける (`coding-rules/use-case-rules.md` §2)。
 #[derive(Debug)]
 pub struct NextUseCase<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> {
-    definition_dao: D,
-    state_dao: S,
+    workflow_definition_dao: D,
+    execution_state_dao: S,
     memory_rules_dao: M,
 }
 
 impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseCase<D, S, M> {
     /// 3 つの読取専用 DAO を束ねる。
     #[must_use]
-    pub const fn new(definition_dao: D, state_dao: S, memory_rules_dao: M) -> NextUseCase<D, S, M> {
+    pub const fn new(
+        workflow_definition_dao: D,
+        execution_state_dao: S,
+        memory_rules_dao: M,
+    ) -> NextUseCase<D, S, M> {
         NextUseCase {
-            definition_dao,
-            state_dao,
+            workflow_definition_dao,
+            execution_state_dao,
             memory_rules_dao,
         }
     }
@@ -423,7 +427,7 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
         }
         // ---- state の読取 (読取失敗はカーソルを使う前に逐語で止める) ----
         // 不在は失敗ではない (誕生分岐の群へ) — 「無い」と「読めない」で行き先が違う。
-        let held = match self.state_dao.find() {
+        let held = match self.execution_state_dao.find() {
             Ok(held) => held,
             Err(error) => {
                 return Directive::Error {
@@ -433,7 +437,7 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> NextUseC
         };
         let state = held.as_ref();
         // ---- 定義の読取 ----
-        let definition = match self.definition_dao.find() {
+        let definition = match self.workflow_definition_dao.find() {
             Ok(view) => view,
             Err(error) => {
                 return Directive::Error {
@@ -1228,11 +1232,15 @@ mod tests {
 
     /// 3 つの DAO を束ねたユースケース。
     fn use_case(
-        definition_dao: FakeDefinitionDao,
-        state_dao: FakeStateDao,
-        rules_dao: FakeRulesDao,
+        workflow_definition_dao: FakeDefinitionDao,
+        execution_state_dao: FakeStateDao,
+        memory_rules_dao: FakeRulesDao,
     ) -> NextUseCase<FakeDefinitionDao, FakeStateDao, FakeRulesDao> {
-        NextUseCase::new(definition_dao, state_dao, rules_dao)
+        NextUseCase::new(
+            workflow_definition_dao,
+            execution_state_dao,
+            memory_rules_dao,
+        )
     }
 
     /// state ありで走らせる (ルール束なし)。
@@ -1248,13 +1256,13 @@ mod tests {
     fn run_with_rules(
         held: &ExecutionStateView,
         definition_view: &DefinitionView,
-        rules_dao: FakeRulesDao,
+        memory_rules_dao: FakeRulesDao,
         turn: &NextTurnInput,
     ) -> Directive {
         use_case(
             FakeDefinitionDao::holding(definition_view.clone()),
             FakeStateDao::holding(held.clone()),
-            rules_dao,
+            memory_rules_dao,
         )
         .execute(turn)
     }

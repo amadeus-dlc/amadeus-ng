@@ -99,10 +99,11 @@ fn at() -> DateTime<Utc> {
 /// フィクスチャの `data_dir` と空の `scopes_dir` を与えた取込クライアント。
 ///
 /// `TempDir` は返り値で保持する — drop すると scopes ディレクトリが消えてしまうため。
-fn client() -> (DefinitionArtifactsClientImpl, TempDir) {
+fn definition_artifacts_client() -> (DefinitionArtifactsClientImpl, TempDir) {
     let scopes = TempDir::new().unwrap();
-    let client = DefinitionArtifactsClientImpl::new(golden_dir(), scopes.path().to_path_buf());
-    (client, scopes)
+    let definition_artifacts_client =
+        DefinitionArtifactsClientImpl::new(golden_dir(), scopes.path().to_path_buf());
+    (definition_artifacts_client, scopes)
 }
 
 /// **実 SQLite ファイル**のストアを内包した Repository（+ その置き場）。
@@ -119,8 +120,9 @@ fn sqlite_repository() -> (
     let path = StorePath::for_space(&dir.path().join("aidlc"), &SpaceName::default());
     // ストアの親 (`intents/`) は upstream の既存ディレクトリ扱いなので先に作る。
     std::fs::create_dir_all(path.as_path().parent().unwrap()).unwrap();
-    let repository = WorkflowDefinitionRepositoryImpl::open(&path).expect("ストアは開ける");
-    (repository, dir)
+    let workflow_definition_repository =
+        WorkflowDefinitionRepositoryImpl::open(&path).expect("ストアは開ける");
+    (workflow_definition_repository, dir)
 }
 
 /// **配布実バイトを取り込み、確立し、ストアから読み直した**定義。
@@ -129,15 +131,15 @@ fn sqlite_repository() -> (
 /// **イベントストアの永続化 DTO を往復したもの**である。定義 id は配布 `harness.json` の
 /// `name` = `claude`。
 async fn load() -> (WorkflowDefinition, TempDirs) {
-    let (client, scopes) = client();
-    let (repository, store) = sqlite_repository();
+    let (definition_artifacts_client, scopes) = definition_artifacts_client();
+    let (workflow_definition_repository, store) = sqlite_repository();
     // 同じストアファイルを指す口を先に取っておく（ユースケースは Repository を所有する）。
-    let reader = repository.reopened();
-    DefineWorkflowUseCase::new(client, repository)
+    let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
+    DefineWorkflowUseCase::new(definition_artifacts_client, workflow_definition_repository)
         .execute(at())
         .await
         .expect("ピン留め配布物は 33 ノード全数が厳密パースを通るはず");
-    let definition = reader
+    let definition = reopened_workflow_definition_repository
         .find_by_id(&WorkflowDefinitionId::parse("claude").unwrap())
         .await
         .expect("確立した定義はストアから読み直せる");
@@ -344,15 +346,15 @@ async fn another_harness_name_has_no_stream_in_the_store() {
     // 取込が名乗るのは配布物の identity だけである。別の名前で引けば、そのストリームは
     // 存在しない — 旧実装の「要求 id ≠ harness の name なら NotFound」は、いまはストアの
     // 事実として現れる。
-    let (client, _scopes) = client();
-    let (repository, _store) = sqlite_repository();
-    let reader = repository.reopened();
-    DefineWorkflowUseCase::new(client, repository)
+    let (definition_artifacts_client, _scopes) = definition_artifacts_client();
+    let (workflow_definition_repository, _store) = sqlite_repository();
+    let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
+    DefineWorkflowUseCase::new(definition_artifacts_client, workflow_definition_repository)
         .execute(at())
         .await
         .expect("配布物は取り込める");
 
-    let error = reader
+    let error = reopened_workflow_definition_repository
         .find_by_id(&WorkflowDefinitionId::parse("kiro").unwrap())
         .await
         .unwrap_err();
@@ -382,10 +384,12 @@ async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() 
     // 取込直後に確立した集約と、ストアから読み直した集約が同値であること。33 ノード ×
     // 28 フィールド + グリッド 363 セルが永続化 DTO の往復を無傷で通ることを 1 本で押さえる
     // （どれか 1 つでも DTO から落ちれば `PartialEq` が破れる）。
-    let (client, _scopes) = client();
+    let (definition_artifacts_client, _scopes) = definition_artifacts_client();
     let artifacts = {
         use core_command_use_case::orchestration::DefinitionArtifactsClient as _;
-        client.load().expect("配布実バイトは取り込める")
+        definition_artifacts_client
+            .load()
+            .expect("配布実バイトは取り込める")
     };
     let id = artifacts.id().clone();
     let revision = artifacts.revision().clone();
@@ -393,14 +397,17 @@ async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() 
     let (established, event) =
         WorkflowDefinition::define(id.clone(), revision, graph, grid, scopes, at());
 
-    let (mut repository, _store) = sqlite_repository();
-    let reader = repository.reopened();
-    repository
+    let (mut workflow_definition_repository, _store) = sqlite_repository();
+    let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
+    workflow_definition_repository
         .store(&event, &established)
         .await
         .expect("確立した定義は書ける");
 
-    let round_tripped = reader.find_by_id(&id).await.expect("読み直せる");
+    let round_tripped = reopened_workflow_definition_repository
+        .find_by_id(&id)
+        .await
+        .expect("読み直せる");
     // 版だけはストアが採番する（確立直後は未永続の 0、読み直すと 1）。
     assert_eq!(round_tripped, established.with_version(1));
 }

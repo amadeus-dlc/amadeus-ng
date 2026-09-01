@@ -55,8 +55,8 @@ mod wording {
 /// (`coding-rules/cqrs-boundaries.md` 規則 6 / オーナー裁定 2026-08-31)。
 #[derive(Debug)]
 pub struct ContinueUseCase<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> {
-    definition_dao: D,
-    state_dao: S,
+    workflow_definition_dao: D,
+    execution_state_dao: S,
     memory_rules_dao: M,
 }
 
@@ -64,13 +64,13 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> Continue
     /// 3 つの読取専用 DAO を束ねる。
     #[must_use]
     pub const fn new(
-        definition_dao: D,
-        state_dao: S,
+        workflow_definition_dao: D,
+        execution_state_dao: S,
         memory_rules_dao: M,
     ) -> ContinueUseCase<D, S, M> {
         ContinueUseCase {
-            definition_dao,
-            state_dao,
+            workflow_definition_dao,
+            execution_state_dao,
             memory_rules_dao,
         }
     }
@@ -183,7 +183,7 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> Continue
                 message: wording::STATE_MOVED_ON.to_string(),
             })
         };
-        let Ok(Some(view)) = self.state_dao.find() else {
+        let Ok(Some(view)) = self.execution_state_dao.find() else {
             return Err(moved_on());
         };
         let current = view.state_binding();
@@ -198,7 +198,7 @@ impl<D: WorkflowDefinitionDao, S: ExecutionStateDao, M: MemoryRulesDao> Continue
     /// どちらの逐語文言になるかは失敗の種類で決まる: 定義 id が特定できないのは連鎖の材料が
     /// 欠けている (`STALE`)、読めないのはステージへ到達できない (`stage_gone`)。
     fn definition_of(&self, token: &ContinueToken) -> Result<DefinitionView, Box<Directive>> {
-        match self.definition_dao.find() {
+        match self.workflow_definition_dao.find() {
             Ok(view) => Ok(view),
             Err(WorkflowDefinitionReadError::Unidentified) => Err(Box::new(Directive::Error {
                 message: wording::STALE.to_string(),
@@ -242,11 +242,15 @@ mod tests {
 
     /// 継続のユースケース (DAO 3 本を注入する)。
     fn continuing(
-        definition_dao: FakeDefinitionDao,
-        state_dao: FakeStateDao,
-        rules_dao: FakeRulesDao,
+        workflow_definition_dao: FakeDefinitionDao,
+        execution_state_dao: FakeStateDao,
+        memory_rules_dao: FakeRulesDao,
     ) -> ContinueUseCase<FakeDefinitionDao, FakeStateDao, FakeRulesDao> {
-        ContinueUseCase::new(definition_dao, state_dao, rules_dao)
+        ContinueUseCase::new(
+            workflow_definition_dao,
+            execution_state_dao,
+            memory_rules_dao,
+        )
     }
 
     /// 2 部束・state ありの継続 (最も多い形)。

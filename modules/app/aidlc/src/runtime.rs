@@ -187,9 +187,9 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
     let verified = verify_continue_token(&bytes, token).ok();
     let input = with_layout(layout, NextTurnInput::new());
     let directive = ContinueUseCase::new(
-        definition_dao(layout),
-        state_dao(layout),
-        memory_dao(layout),
+        workflow_definition_dao(layout),
+        execution_state_dao(layout),
+        memory_rules_dao(layout),
     )
     .execute(verified, &input);
     Ok((directive, bytes))
@@ -228,13 +228,13 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             "No workflow execution to report against. Run `next` first.".to_string(),
         );
     };
-    let (Ok(executions), Ok(intents)) = (
+    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
         IntentExecutionRepositoryImpl::open(&store),
         IntentRepositoryImpl::open(&store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
-    if let Err(error) = CommitVerdictUseCase::new(executions, intents)
+    if let Err(error) = CommitVerdictUseCase::new(intent_execution_repository, intent_repository)
         .execute(&execution_id, stage.as_ref(), transition, Utc::now())
         .await
     {
@@ -288,8 +288,8 @@ fn parse_stage(args: &crate::cli::ReportArgs) -> Option<Option<StageSlug>> {
 /// 唯一の実行を指す。複数 intent を扱うようになったら、ここは登録簿（A-1 の裁定待ち）に
 /// 置き換わる。
 async fn active_execution(store: &StorePath) -> Result<IntentExecutionId, ()> {
-    let reader = JournalReaderImpl::open(store).map_err(|_| ())?;
-    let batch = reader
+    let journal_reader = JournalReaderImpl::open(store).map_err(|_| ())?;
+    let batch = journal_reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .map_err(|_| ())?;
@@ -407,14 +407,19 @@ async fn mint_intent(
         .map_err(|error| fault("cannot scan the workspace", &format!("{error:?}")))?;
     let request = build_request(scope, args, review.as_deref());
     let store = store_path(layout)?;
-    let (Ok(intents), Ok(executions), Ok(definitions)) = (
+    let (
+        Ok(intent_repository),
+        Ok(intent_execution_repository),
+        Ok(workflow_definition_repository),
+    ) = (
         IntentRepositoryImpl::open(&store),
         IntentExecutionRepositoryImpl::open(&store),
         WorkflowDefinitionRepositoryImpl::open(&store),
-    ) else {
+    )
+    else {
         return Err(wording::orchestrate_failure("cannot open the event store"));
     };
-    let intents_reader = intents.reopened();
+    let reopened_intent_repository = intent_repository.reopened();
     // 鋳造の前に定義を確立しておく（ensure-defined）。ハーネス配布物の 3 入力を取り込み、
     // ストアに定義が無ければ確立し、内容版が違えば改訂する。同じなら何も書かない
     // （冪等は集約の `Unchanged` ガードが決める — `DefineWorkflowUseCase` の doc）。
@@ -422,9 +427,13 @@ async fn mint_intent(
     // ここに置くのは、`intent-create` が**定義を読む最初の書込動詞**だからである。
     // クエリ側の動詞（`next` / `continue`）は自分のリードモデル読取でファイルを直接読むので
     // この前段を要しない（`coding-rules/cqrs-boundaries.md` 規則 6）。
-    let definitions_reader = definitions.reopened();
-    ensure_defined(layout, definitions, now).await?;
-    let mut use_case = CreateIntentUseCase::new(definitions_reader, intents, executions);
+    let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
+    ensure_defined(layout, workflow_definition_repository, now).await?;
+    let mut use_case = CreateIntentUseCase::new(
+        reopened_workflow_definition_repository,
+        intent_repository,
+        intent_execution_repository,
+    );
     let definition_id =
         definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
     use_case
@@ -440,7 +449,7 @@ async fn mint_intent(
         .map_err(|error| wording::orchestrate_failure(&chained(&error)))?;
     // 骨格を書く — 投影は既存の行を**書き換える**ので、書き換え先が無いと 1 行も描けない
     // (`crate::scaffold` の doc / RMU の `ScaffoldMissing`)。
-    let intent = intents_reader
+    let intent = reopened_intent_repository
         .find_by_id(&intent_id)
         .await
         .map_err(|error| diagnose("cannot read back the minted intent", &error))?;
@@ -479,12 +488,12 @@ async fn mint_intent(
 /// 読めなければ intent は鋳造できないので、失敗は自己防衛拒否として surface する。
 async fn ensure_defined(
     layout: &Layout,
-    definitions: WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>,
+    workflow_definition_repository: WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore>,
     now: chrono::DateTime<Utc>,
 ) -> Result<(), String> {
     DefineWorkflowUseCase::new(
         DefinitionArtifactsClientImpl::new(layout.definition_data_dir(), layout.scopes_dir()),
-        definitions,
+        workflow_definition_repository,
     )
     .execute(now)
     .await
@@ -562,13 +571,13 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
     };
     let projection =
         ProjectionName::parse(PROJECTION).map_err(|error| format!("projection name: {error:?}"))?;
-    let reader = JournalReaderImpl::open(&store_path(layout)?)
+    let journal_reader = JournalReaderImpl::open(&store_path(layout)?)
         .map_err(|error| format!("journal: {error}"))?;
     let clone_id = crate::clone_identity::load_or_mint(&layout.aidlc_root())
         .map_err(|error| format!("clone id: {error}"))?;
     let shard = ShardName::of(&host_name(), &clone_id);
     let targets = ProjectionTargets::new(state_file, audit_dir.join(shard.as_str()));
-    ReadModelUpdater::new(reader, projection, targets)
+    ReadModelUpdater::new(journal_reader, projection, targets)
         .catch_up()
         .await
         .map(|_| ())
@@ -633,20 +642,20 @@ fn use_case(
     layout: &Layout,
 ) -> NextUseCase<WorkflowDefinitionDaoImpl, ExecutionStateDaoImpl, MemoryRulesDaoImpl> {
     NextUseCase::new(
-        definition_dao(layout),
-        state_dao(layout),
-        memory_dao(layout),
+        workflow_definition_dao(layout),
+        execution_state_dao(layout),
+        memory_rules_dao(layout),
     )
 }
 
-fn definition_dao(layout: &Layout) -> WorkflowDefinitionDaoImpl {
+fn workflow_definition_dao(layout: &Layout) -> WorkflowDefinitionDaoImpl {
     WorkflowDefinitionDaoImpl::new(DefinitionPaths::new(
         layout.definition_data_dir(),
         layout.scopes_dir(),
     ))
 }
 
-fn state_dao(layout: &Layout) -> ExecutionStateDaoImpl {
+fn execution_state_dao(layout: &Layout) -> ExecutionStateDaoImpl {
     ExecutionStateDaoImpl::new(
         layout
             .record_dir()
@@ -655,7 +664,7 @@ fn state_dao(layout: &Layout) -> ExecutionStateDaoImpl {
     )
 }
 
-fn memory_dao(layout: &Layout) -> MemoryRulesDaoImpl {
+fn memory_rules_dao(layout: &Layout) -> MemoryRulesDaoImpl {
     MemoryRulesDaoImpl::new(layout.memory_dir())
 }
 
