@@ -28,8 +28,8 @@ mod test_support;
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
 pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository};
 
-// 取込境界 (外部システムクライアント) — ハーネス配布物の 3 入力を読む口。Repository では
-// ないので `coding-rules/gateway-taxonomy.md` §1 の第 2 分類に属する。
+// 取込境界 — genesis 播種のための暫定の足場 (compile 実装で消える。「外部システム
+// クライアント」分類は棄却済み — `coding-rules/gateway-taxonomy.md` §1 是正 2026-09-01)。
 pub use port::{DefinitionArtifacts, DefinitionArtifactsClient, DefinitionArtifactsError};
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —

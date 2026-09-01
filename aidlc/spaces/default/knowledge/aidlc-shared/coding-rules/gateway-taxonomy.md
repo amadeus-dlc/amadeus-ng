@@ -8,7 +8,10 @@ trait・エラー・DTO が同居する**。「Port の Dao が依存する型�
 §3 の DAO 項。b28）、同日追補（オーナー — **リポジトリの実装はイベントストアを使う**。
 「`workflow_definition_repository_impl.rs` この実装を破棄せよ。NG中のNGです。リポジトリの実装は
 EventStoreForSqlite を使わないといけない」。配布物の取込は**外部システムクライアント**
-`DefinitionArtifactsClient` へ退去。§1 の追記・§3 の追記・§5 の取込 Gateway 行。b30）
+`DefinitionArtifactsClient` へ退去。§1 の追記・§3 の追記・§5 の取込 Gateway 行。b30）、
+**是正 2026-09-01**（オーナー裁定、#79 §5-g / b33 — 定義取込の「外部システムクライアント」
+分類を**棄却**。実体は **compile 実装まで の暫定の足場（genesis 播種口）**であり、コマンド側が
+定義を読む正規の口は集約 + リポジトリのみ。§1 是正・§3 是正・§5 の取込行を書き換え）
 **適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）、b30（`WorkflowDefinitionRepositoryImpl` の ES 化と `DefinitionArtifactsClient` の新設）
 **機械強制**: レビュー基準（未リント化）。将来 `cargo lint` ルール候補は下記「機械強制の候補」
 
@@ -27,14 +30,23 @@ EventStoreForSqlite を使わないといけない」。配布物の取込は**�
 | **Repository** | 集約の永続化・再構成 | `XxxRepository`（`Xxx` = 集約名） |
 | **外部システムクライアント** | Git / GitHub / ハーネス CLI など、別プロセス・別システムとの RPC | 外部システム名を冠した専用ポート（例: `GitHubPullRequestClient`） |
 
-**追記 2026-08-31（オーナー裁定、b30）— 相手がファイルシステム上の配布物でも、相手方システムの
-契約を知るなら外部システムクライアントである。** 分類の判定は媒体ではなく「**相手方システムの
-契約（成果物の形式・語彙）を知るか**」で行う（[infrastructure-layer.md](infrastructure-layer.md)
-の判定基準と同じ）。実例は `DefinitionArtifactsClient`（ポート）/ `DefinitionArtifactsClientImpl`
-（実装）— upstream の compile が出力してハーネスと一緒に配ったバイト（`stage-graph.json` /
-`scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md` + `harness.json`）を読む**取込境界**で
-あり、相手の成果物形式を知るのでこの分類に入る。媒体がファイルシステムであることは実装の内部
-詳細である。
+**追記 2026-08-31（b30）→ 是正 2026-09-01（オーナー裁定、#79 §5-g / b33）— 定義取込の
+「外部システムクライアント」分類は棄却。実体は暫定の足場（播種口）である。** b30 はこの位置に
+「相手がファイルシステム上の配布物でも、相手方システムの契約を知るなら外部システム
+クライアントである」と書き、`DefinitionArtifactsClient`（ポート）/ `DefinitionArtifactsClientImpl`
+（実装）をその実例としたが、この分類根拠は棄却された — 3 入力（`stage-graph.json` /
+`scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md` + `harness.json`）は **AI-DLC v2 系内の
+成果物**であり、都合よく外部システム扱いしない（#79 §1-4）。
+
+正しい位置づけ: コマンド側が定義を読む正規の口は**集約 + リポジトリ**
+（`WorkflowDefinitionRepository::find_by_id` = snapshot + journal replay）だけであり、第 3 の
+読取口は存在しない。本取込は読取口ではなく、**ジャーナルの最初の 1 行（genesis の内容）を
+播種するための暫定の足場**である — compile コンテキストが未実装の間、定義内容の唯一の出所が
+dist バイトであるためだけに存在し、compile 実装（slice 2）でそのフロー（集約 → イベント →
+RMU）に置換されて**ポートごと消える**（#80）。消えるまでの間、改名・分類新設による恒久化は
+しない（2026-09-01 裁定 —「暫定の足場だとわかるように書く」）。なお「相手方システムの契約を
+知るなら外部システムクライアント」という判定基準そのものは、**本当に別システムである相手**
+（GitHub 等）については引き続き有効である。
 
 **機構（時計・ID 生成・プロセス生存判定・乱数・環境変数読取）は Gateway ではない。** clean-architecture の層責務では、時計と ID 生成器と DI 配線は Infrastructure が所有する機構であって、アプリケーション境界のポートではない（典拠: `j5ik2o-clean-architecture/references/layer-responsibilities.md` — *"Infrastructure ... Owns mechanisms: logging, metrics, configuration, dependency injection, concrete database drivers, HTTP clients, **clocks, ID generators**, and runtime wiring."*）。
 
@@ -124,9 +136,12 @@ EventStoreForSqlite を使わないといけない」。**ファイルから集�
 **例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
 機械化する場合も、この 2 本を除外リストに持つ実装にすること。
 
-なお §1 追記の `DefinitionArtifactsClient` は**例外の追加ではない** — `Store` / `Reader` /
-`Writer` / `Source` / `Provider` のいずれの造語でもなく、相手方（配布物を出す upstream）を
-冠した `Client` であって §1 の「外部システムクライアント」分類そのものである。
+なお `DefinitionArtifactsClient` は**例外の追加ではない** — `Store` / `Reader` /
+`Writer` / `Source` / `Provider` のいずれの造語でもない。~~相手方（配布物を出す upstream）を
+冠した `Client` であって §1 の「外部システムクライアント」分類そのものである。~~ —
+**是正（2026-09-01、#79 §5-g / b33）**: 「外部システムクライアント」分類は棄却。§1 の是正の
+とおり**暫定の足場（genesis 播種口）**であり、compile 実装で消えるまで現名のまま存置する
+（改名による恒久化はしない）。
 
 **クエリ側のリードモデル読取ポートは `XxxDao`（オーナー裁定 2026-08-31）**: 読む先が集約では
 なくリードモデルなので Repository とは名乗らず、DTO/DAO の語で `XxxDao`（ポート trait）/
@@ -193,8 +208,8 @@ DAO は集約を扱わないのでその根拠自体が当たらない。対の�
 | ポート（trait） | use-case | `XxxRepository` | `WorkflowDefinitionRepository` |
 | 実 Gateway 実装 | interface-adapter | `XxxRepositoryImpl` | `WorkflowDefinitionRepositoryImpl` |
 | インメモリ形 | interface-adapter（実装は 1 つ） | `XxxRepositoryImpl<EventStoreForMemory>`（型 alias `XxxMemoryStore`） | `IntentRepositoryImpl<IntentMemoryStore>` |
-| 取込ポート（trait）— §1 の外部システムクライアント | use-case（`port/`） | `XxxClient` | `DefinitionArtifactsClient` |
-| 取込 Gateway 実装 | interface-adapter | `XxxClientImpl` | `DefinitionArtifactsClientImpl` |
+| 取込ポート（trait）— **暫定の足場**（§1 是正 2026-09-01。compile 実装で消える） | use-case（`port/`） | 現名のまま存置（改名しない） | `DefinitionArtifactsClient` |
+| 取込 Gateway 実装 — 暫定（同上） | interface-adapter | 同上 | `DefinitionArtifactsClientImpl` |
 
 - **取込 Gateway は Repository ではないので集約名を冠さない**（追加 2026-08-31、b30）。名乗るのは
   相手方の成果物であって我々の集約ではない — §2「Repository 名 = 集約名 + Repository」の命名規則は

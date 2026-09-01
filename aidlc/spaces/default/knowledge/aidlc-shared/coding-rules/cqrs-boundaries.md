@@ -86,12 +86,15 @@ b30）**
    だけ**である。コマンド側がこれを読む・パースする実装を持つのは違反（2026-08-30 に
    実際に起きた誤り — `workflow_definition_parse.rs` をコマンド側アダプタに置いた）。
 
-   **外部配布物の取込は規則 7 の対象外**（追記 2026-08-31、b30）: 規則 7 が禁じるのは
-   **コマンド側が自分のリードモデル（RMU の投影物）を読む**ことである。書込ユースケースの
-   取込境界（`DefinitionArtifactsClient`）が読む dist の 3 入力は RMU が描いたものではなく、
-   **外部から来た Published Language 成果物**なので対象が違う。compile コンテキストが本
-   システムに実装されたら（現在は未実装）、この取込は当該コンテキストのフロー（集約 →
-   イベント → RMU）に置換され、取込ポートは消える。
+   **定義の播種は規則 7 の対象外**（追記 2026-08-31、b30 / 是正 2026-09-01、#79 §5-g / b33）:
+   規則 7 が禁じるのは**コマンド側が自分のリードモデル（RMU の投影物）を読む**ことである。
+   書込ユースケースの取込境界（`DefinitionArtifactsClient`）が dist の 3 入力を読んでよいのは、
+   ~~外部から来た Published Language 成果物だから~~（この根拠は棄却 — 3 入力は AI-DLC v2
+   系内の成果物であり、都合よく外部システム扱いしない）ではなく、**ジャーナルの最初の 1 行
+   （genesis の内容）を播種するための暫定の足場**（規則 5「書くための読取」の暫定形）だから
+   である。コマンド側が定義を読む正規の口は集約 + リポジトリだけであり、compile コンテキスト
+   が本システムに実装されたら（現在は未実装）、この播種は当該コンテキストのフロー（集約 →
+   イベント → RMU）に置換され、取込ポートは消える（#80）。
 
 **steering の配信計画はドメインモデルではない**（オーナー裁定 2026-08-31、b26 段階2 — 規則 7 と
 同じ理屈の具体形）: `SteeringPlan`（ステージへ配る規則束の配信計画）は**リードモデル由来の
@@ -177,8 +180,8 @@ fn project(events: &[IntentExecutionEvent], read_model: &mut ReadModel) -> Resul
 = ジャーナル追記 + スナップショット（封筒の `occurred_at` は集約の `last_updated_at()` から組む —
 手本 `IntentExecutionRepositoryImpl` と対にする裁定 2026-08-31）で、intent / intent-execution の
 2 リポジトリと手順が 1 行も違わない。3 入力のパースは取込ポート `DefinitionArtifactsClient` / 実装
-`DefinitionArtifactsClientImpl`（責務分類は**外部システムクライアント** —
-[gateway-taxonomy.md](gateway-taxonomy.md) §1 の追記）へ移り、書込ユースケース
+`DefinitionArtifactsClientImpl`（当初の「外部システムクライアント」分類は 2026-09-01 に棄却 —
+**暫定の足場（genesis 播種口）**、[gateway-taxonomy.md](gateway-taxonomy.md) §1 の是正）へ移り、書込ユースケース
 `DefineWorkflowUseCase` が「取込 → 既存が無ければ `define`（genesis）/ 内容版が違えば `redefine` /
 同じなら何も書かない」を行う。ジャーナルが内容の正本になったので、ドメインイベント
 `WorkflowDefinitionEvent` の `Defined` / `Redefined` は**どちらも内容そのもの（graph / grid /
