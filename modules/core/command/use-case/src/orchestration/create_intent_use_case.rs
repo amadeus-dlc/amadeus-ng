@@ -95,9 +95,16 @@ where
         // intent が着地してから実行を開始する。逆順にすると、実行だけがストアに居て
         // 指す先の intent が無い状態が残りうる（RMU の `PlanUnavailable` に落ちる）。
         let (execution, started) = IntentExecution::start(execution_id, &intent, occurred_at);
+        // ここで倒れると intent だけが着地した部分失敗になる。孤児の識別子を材料として
+        // 包み、出す側が「intent は作られたが実行が始まっていない」と復旧手順を組めるように
+        // する（issue #77 の先行改善 — 恒久対応は doctor の検出・修復）。
         self.intent_execution_repository
             .store(&started, &execution)
-            .await?;
+            .await
+            .map_err(|error| CreateIntentError::ExecutionRepository {
+                orphan: intent.id().clone(),
+                error,
+            })?;
         Ok(())
     }
 }
@@ -319,6 +326,50 @@ mod tests {
         );
     }
 
+    /// intent 着地後に実行の永続化が失敗すると、エラーが孤児 intent の識別子を材料として
+    /// 運ぶ（issue #77 の先行改善 — 出す側が「intent だけが着地した」ことと復旧手順を
+    /// 組めるようにする）。
+    #[tokio::test]
+    async fn a_partial_failure_names_the_orphaned_intent() {
+        let held_definition = definition(3);
+        let (held_intent, _) = Intent::create(intent(), &held_definition, request(), scan())
+            .expect("フィクスチャの intent");
+        let (held_execution, _) = IntentExecution::start(execution_id(), &held_intent, at());
+        let mut use_case = CreateIntentUseCase::new(
+            InMemoryWorkflowDefinitionRepository::holding(held_definition),
+            InMemoryIntentRepository::empty(),
+            // 最初の store に別の書き手が割り込む台本 — intent 着地後の実行書込だけが倒れる。
+            InMemoryIntentExecutionRepository::holding_behind_concurrent_writes(
+                held_execution,
+                0,
+                1,
+            ),
+        );
+
+        let error = use_case
+            .execute(
+                intent(),
+                execution_id(),
+                &definition_id(),
+                request(),
+                scan(),
+                at(),
+            )
+            .await
+            .expect_err("実行の永続化が失敗する");
+
+        let CreateIntentError::ExecutionRepository { orphan, .. } = &error else {
+            panic!("実行ポートの変種で失敗する: {error:?}");
+        };
+        assert_eq!(orphan, &intent(), "孤児 intent の識別子を材料として運ぶ");
+        // 部分失敗の証拠: intent 自体は既に着地している（これが孤児）。
+        use_case
+            .intent_repository
+            .find_by_id(&intent())
+            .await
+            .expect("intent だけが着地している");
+    }
+
     /// 失敗の位置が変種で分かる（出す側が復旧手順を選べる材料になっている）。
     #[test]
     fn the_error_envelope_names_the_failing_port() {
@@ -333,11 +384,20 @@ mod tests {
         });
         assert!(error.to_string().starts_with("intent repository: "));
 
-        let error = CreateIntentError::ExecutionRepository(RepositoryError::Conflict {
-            expected: 0,
-            actual: 1,
-        });
-        assert!(error.to_string().starts_with("execution repository: "));
+        let error = CreateIntentError::ExecutionRepository {
+            orphan: intent(),
+            error: RepositoryError::Conflict {
+                expected: 0,
+                actual: 1,
+            },
+        };
+        // 孤児 id は前置 (出す側 `chained` の ends_with 重複抑止が効くよう、末尾は
+        // ポートの失敗文言で終える — PR #87 Bugbot 指摘)。
+        assert!(error.to_string().starts_with("execution repository ("));
+        assert!(
+            error.to_string().contains(intent().as_str()),
+            "孤児 intent の識別子を材料として語る: {error}"
+        );
 
         let error = CreateIntentError::Intent(IntentError::Empty);
         assert!(error.to_string().starts_with("intent: "));
