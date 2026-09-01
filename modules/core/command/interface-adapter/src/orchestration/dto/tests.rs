@@ -158,7 +158,11 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 }
 
 /// スナップショット行の逐語形 (genesis 直後)。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["InProgress","Pending","Pending"],"cursor":0,"status":"Running","parked_at":null,"autonomy":"Gated","approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+///
+/// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
+/// 最初のゲート付きステージ (索引 1) である。**ワイヤの形** (項目名・並び) は変わって
+/// いない — 変わったのは誕生時の状態そのものである。
+const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -431,14 +435,11 @@ fn a_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
         (r#""phase":"Initialization""#, r#""phase":"initialization""#),
         // 実行時ベクトルと列挙の綴り。
         (r#""overlay":["Execute""#, r#""overlay":["execute""#),
-        (
-            r#""checkbox":["InProgress""#,
-            r#""checkbox":["in-progress""#,
-        ),
+        (r#""checkbox":["Completed""#, r#""checkbox":["completed""#),
         (r#""status":"Running""#, r#""status":"running""#),
         (r#""autonomy":"Gated""#, r#""autonomy":"gated""#),
         // 集約不変条件 (範囲外カーソル) — 完全コンストラクタが拒む。
-        (r#""cursor":0"#, r#""cursor":99"#),
+        (r#""cursor":1"#, r#""cursor":99"#),
     ] {
         let mutated = GENESIS_SNAPSHOT.replace(from, to);
         assert_ne!(mutated, GENESIS_SNAPSHOT, "置換対象が行に無い: {from}");

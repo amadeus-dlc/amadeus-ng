@@ -70,14 +70,19 @@ impl Fixture {
 }
 
 /// genesis + 2 コマンドを書き、最後の再水和結果を返す。
+///
+/// 誕生 = 初期化完了済み (issue #76) なので、カーソルは genesis の時点で索引 1 の
+/// ゲート付きステージに立っている。かつての 2 手 (`complete_stage` → `open_gate`) は
+/// その位置から打てる 2 手 (`open_gate` → `approve_gate`) に置き換わった — 行数
+/// (genesis + 2 = 3) は変わらないので、差分再生の経路もこれまでと同じ長さで通る。
 async fn seed(repository: &mut Repository) -> IntentExecution {
     let held = support::store_genesis(repository).await;
     let held = advance(repository, &held, |aggregate| {
-        aggregate.complete_stage(&intent(), at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
     })
     .await
 }
@@ -246,11 +251,12 @@ async fn a_tampered_snapshot_state_is_corrupt() {
     let mut repository = fixture.repository();
     seed(&mut repository).await;
     let conn = fixture.raw();
-    // 既定ストラテジではスナップショットは genesis のまま (カーソル 0)。
+    // 既定ストラテジではスナップショットは genesis のまま (誕生のカーソルは索引 1 —
+    // initialization は誕生で完了済み、issue #76)。
     let before = String::from_utf8(snapshot_payload(&conn)).expect("payload は UTF-8 の JSON");
-    assert!(before.contains(r#""cursor":0"#), "{before}");
+    assert!(before.contains(r#""cursor":1"#), "{before}");
     conn.execute(
-        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"cursor":0', '"cursor":99') AS BLOB)"#,
+        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"cursor":1', '"cursor":99') AS BLOB)"#,
         [],
     )
     .expect("カーソルを範囲外へ");
@@ -276,7 +282,7 @@ async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
     rewind_snapshot_to_genesis(&conn, &genesis_payload().await);
     conn.execute(
         r#"UPDATE journal
-           SET payload = CAST(replace(CAST(payload AS TEXT), '"StageCompleted"', '"Exploded"') AS BLOB)
+           SET payload = CAST(replace(CAST(payload AS TEXT), '"GateOpened"', '"Exploded"') AS BLOB)
            WHERE seq_nr = 2"#,
         [],
     )
@@ -403,12 +409,12 @@ async fn a_missing_journal_table_fails_the_not_found_check() {
 
 // 契約テストと重ならない補助 (未使用の import を避けるための参照)。
 #[tokio::test]
-async fn the_contract_seed_writes_five_events() {
+async fn the_contract_seed_writes_four_events() {
     let fixture = Fixture::new();
     let mut repository = fixture.repository();
     let held = contract::seed(&mut repository).await;
-    assert_eq!(held.seq_nr(), 5);
-    assert_eq!(held.version(), 5);
+    assert_eq!(held.seq_nr(), 4);
+    assert_eq!(held.version(), 4);
 }
 
 #[tokio::test]
@@ -427,7 +433,7 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
         .await
         .expect("握り直せる");
     advance(&mut repository, &held, |aggregate| {
-        aggregate.complete_stage(&intent(), at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await;
 
@@ -501,11 +507,14 @@ async fn a_snapshot_that_breaks_the_aggregate_invariants_is_corrupt() {
     let conn = fixture.raw();
     let genesis = genesis_payload().await;
     rewind_snapshot_to_genesis(&conn, &genesis);
+    // 畳むのは**カーソルが立っているステージ** (索引 1) である — 誕生 = 初期化完了済み
+    // (issue #76) でカーソルが索引 0 から動いたので、先頭を畳んでも cursor_in_scope は
+    // 破れない。
     conn.execute(
-        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"overlay":["Execute"', '"overlay":["Skip"') AS BLOB)"#,
+        r#"UPDATE snapshot SET payload = CAST(replace(CAST(payload AS TEXT), '"overlay":["Execute","Execute"', '"overlay":["Execute","Skip"') AS BLOB)"#,
         [],
     )
-    .expect("先頭ステージの実効プランを SKIP に畳む");
+    .expect("カーソル位置のステージの実効プランを SKIP に畳む");
     drop(conn);
 
     let err = repository
@@ -529,7 +538,7 @@ async fn a_replayed_row_whose_spelling_is_outside_the_closed_set_is_refused() {
     let genesis = genesis_payload().await;
     rewind_snapshot_to_genesis(&conn, &genesis);
     conn.execute(
-        r#"UPDATE journal SET payload = CAST(replace(CAST(payload AS TEXT), '"stage":"state-init"', '"stage":"Not A Slug"') AS BLOB) WHERE seq_nr = 2"#,
+        r#"UPDATE journal SET payload = CAST(replace(CAST(payload AS TEXT), '"stage":"intent-capture"', '"stage":"Not A Slug"') AS BLOB) WHERE seq_nr = 2"#,
         [],
     )
     .expect("再生行のステージ参照を壊す");
@@ -581,18 +590,18 @@ async fn the_strategy_refreshes_the_snapshot_every_n_events() {
     let held = support::store_genesis(&mut repository).await;
     assert_eq!(snapshot_seq(&fixture.raw()), 1);
     let held = advance(&mut repository, &held, |aggregate| {
-        aggregate.complete_stage(&intent(), at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 2 は基底を書き直す");
     let held = advance(&mut repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
     })
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 3 はイベントのみ");
     assert_eq!(held.version(), 3, "イベントのみの書込でも版は進む");
     let held = advance(&mut repository, &held, |aggregate| {
-        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
+        aggregate.open_gate(&intent(), vec!["scope.md".to_string()], at())
     })
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 4, "seq 4 は基底を書き直す");

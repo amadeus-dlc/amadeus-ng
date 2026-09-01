@@ -160,10 +160,13 @@ mod tests {
         assert_eq!(stored.stage_count(), 3, "定義の 3 段が計画として解決される");
     }
 
-    /// 鋳造に続けて最初の実行が開始され、カーソルは先頭に置かれる。
+    /// 鋳造に続けて最初の実行が開始され、カーソルは最初のゲート付きステージに置かれる。
     ///
     /// これが無いと直後の `next` が読む `aidlc-state.md` を RMU が描けない — intent だけを
     /// 書いて実行を開始しない状態は、ワークフローが始まったのに進められない中途半端である。
+    ///
+    /// 誕生 = 初期化完了済み（issue #76）なので、着地点は索引 0（initialization）ではなく
+    /// 索引 1 である — 書き面が誕生の投影と同じ位置から始まり、両面が一致する。
     #[tokio::test]
     async fn creating_an_intent_starts_its_first_execution() {
         let mut use_case = use_case(3);
@@ -191,7 +194,11 @@ mod tests {
             &intent(),
             "実行は鋳造した intent を指す"
         );
-        assert_eq!(execution.cursor().to_usize(), 0, "カーソルは先頭");
+        assert_eq!(
+            execution.cursor().to_usize(),
+            1,
+            "initialization は誕生で完了済みなので、カーソルは最初のゲート付きステージ"
+        );
         assert_eq!(execution.stage_count(), 3);
     }
 

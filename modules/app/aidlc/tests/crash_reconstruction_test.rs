@@ -59,13 +59,14 @@ impl Fixture {
     }
 }
 
-/// 5 コマンドぶん書き進め、最後の再水和結果を返す。
-async fn write_five(repository: &mut Repository) -> IntentExecution {
+/// 4 コマンドぶん書き進め、最後の再水和結果を返す。
+///
+/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった `StageCompleted`
+/// (索引 0 = 非ゲートの initialization を完了させる 1 件) は構成不能になった — 誕生の
+/// 時点でその checkbox は completed で、カーソルは索引 1 のゲート付きステージに立って
+/// いる。前置きが 1 件消えたぶん、以後の通番と版が 1 つずつ詰まる。
+async fn write_four(repository: &mut Repository) -> IntentExecution {
     let mut held = store_genesis(repository).await;
-    held = advance(repository, &held, |aggregate| {
-        aggregate.complete_stage(&intent(), at())
-    })
-    .await;
     held = advance(repository, &held, |aggregate| {
         aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
@@ -86,7 +87,7 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
 
     let expected = {
         let mut repository = fixture.repository();
-        let expected = write_five(&mut repository).await;
+        let expected = write_four(&mut repository).await;
         // ここで「プロセスが落ちる」— Repository も接続も drop される。
         expected
     };
@@ -97,8 +98,8 @@ async fn a_new_connection_after_a_crash_reconstructs_the_same_aggregate() {
         .await
         .expect("読み直せる");
     assert_eq!(found, expected, "全状態が一致する");
-    assert_eq!(found.version(), 5);
-    assert_eq!(found.seq_nr(), 5);
+    assert_eq!(found.version(), 4);
+    assert_eq!(found.seq_nr(), 4);
 }
 
 #[tokio::test]
@@ -106,7 +107,7 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
     let fixture = Fixture::new();
     {
         let mut repository = fixture.repository();
-        write_five(&mut repository).await;
+        write_four(&mut repository).await;
     }
 
     let journal_reader = fixture.journal_reader();
@@ -115,16 +116,16 @@ async fn a_new_connection_after_a_crash_reads_the_whole_journal() {
         .await
         .expect("全件");
     let rows = batch.executions();
-    assert_eq!(rows.len(), 5, "COMMIT 済みの 5 件が残る");
+    assert_eq!(rows.len(), 4, "COMMIT 済みの 4 件が残る");
     assert_eq!(
         rows.iter()
             .map(|entry| entry.global_seq().to_u64())
             .collect::<Vec<_>>(),
-        [1, 2, 3, 4, 5]
+        [1, 2, 3, 4]
     );
     assert_eq!(
         rows.iter().map(JournalEntry::seq_nr).collect::<Vec<_>>(),
-        [1, 2, 3, 4, 5]
+        [1, 2, 3, 4]
     );
 }
 
@@ -133,7 +134,7 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
     let fixture = Fixture::new();
     {
         let mut repository = fixture.repository();
-        write_five(&mut repository).await;
+        write_four(&mut repository).await;
     }
 
     // COMMIT を通らない Tx を開いたまま接続を捨てる (= Tx 途中のクラッシュ)。
@@ -144,7 +145,7 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
             .execute_batch(
                 "BEGIN IMMEDIATE;
                  INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
-                 VALUES ('p', 's-6', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 6, X'7B7D', 0,
+                 VALUES ('p', 's-5', '01a02785-1bd8-76eb-aeea-5aa303ebd5b6', 5, X'7B7D', 0,
                          'intent-execution-event/1');",
             )
             .expect("書きかけ");
@@ -155,14 +156,14 @@ async fn a_transaction_abandoned_by_a_crash_leaves_nothing_behind() {
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("全件");
-    assert_eq!(rows.executions().len(), 5, "書きかけの 6 件目は残らない");
+    assert_eq!(rows.executions().len(), 4, "書きかけの 5 件目は残らない");
 
     let repository = fixture.repository();
     let found = repository
         .find_by_id(&execution_id())
         .await
         .expect("読める");
-    assert_eq!(found.version(), 5);
+    assert_eq!(found.version(), 4);
 }
 
 #[tokio::test]
@@ -170,7 +171,7 @@ async fn the_store_survives_being_opened_and_closed_repeatedly() {
     let fixture = Fixture::new();
     {
         let mut repository = fixture.repository();
-        write_five(&mut repository).await;
+        write_four(&mut repository).await;
     }
 
     for _ in 0..3 {
@@ -179,7 +180,7 @@ async fn the_store_survives_being_opened_and_closed_repeatedly() {
             .find_by_id(&execution_id())
             .await
             .expect("読める");
-        assert_eq!(found.version(), 5);
+        assert_eq!(found.version(), 4);
     }
 
     // 開き直しで表を作り直したりしないこと (本家の DDL は `IF NOT EXISTS`)。
@@ -187,7 +188,7 @@ async fn the_store_survives_being_opened_and_closed_repeatedly() {
     let journal_rows: i64 = conn
         .query_row("SELECT count(*) FROM journal", [], |row| row.get(0))
         .expect("件数");
-    assert_eq!(journal_rows, 5);
+    assert_eq!(journal_rows, 4);
     let snapshot_rows: i64 = conn
         .query_row("SELECT count(*) FROM snapshot", [], |row| row.get(0))
         .expect("件数");
@@ -203,7 +204,7 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     let fixture = Fixture::new();
     {
         let mut repository = fixture.repository();
-        write_five(&mut repository).await;
+        write_four(&mut repository).await;
     }
 
     let mut repository = fixture.repository();
@@ -212,14 +213,15 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
         .await
         .expect("再水和");
     let mut aggregate = held.clone();
+    // 誕生 = 初期化完了済み (issue #76) 以降、カーソルは常にゲート付きステージなので次の
+    // 1 手は承認である (`complete_stage` への分岐は実行時に到達しない)。
     let event = aggregate
         .approve_gate(&intent(), Some("ok".to_string()), at())
-        .or_else(|_| aggregate.complete_stage(&intent(), at()))
         .expect("次のコマンド");
-    assert_eq!(aggregate.seq_nr(), 6);
-    repository.store(&event, &aggregate).await.expect("6 件目");
+    assert_eq!(aggregate.seq_nr(), 5);
+    repository.store(&event, &aggregate).await.expect("5 件目");
 
     let journal_reader = fixture.journal_reader();
-    let rows = journal_reader.events_after(GlobalSeqNr::new(5)).await;
+    let rows = journal_reader.events_after(GlobalSeqNr::new(4)).await;
     assert_eq!(rows.expect("差分").executions().len(), 1);
 }

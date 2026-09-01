@@ -15,19 +15,20 @@ use core_command_domain::orchestration::{AutonomyMode, IntentExecution};
 use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
 
 use super::{
-    StoreFixture, absent_execution_id, advance, at, execution_id, genesis, intent, store_genesis,
-    store_stage_completed,
+    StoreFixture, absent_execution_id, advance, at, execution_id, genesis, intent,
+    store_gate_opened, store_genesis,
 };
 
-/// genesis から 5 イベントぶん書き進め、最後の再水和結果を返す。
+/// genesis から 4 イベントぶん書き進め、最後の再水和結果を返す。
 ///
-/// 内訳: `Started` → `StageCompleted` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
+/// 内訳: `Started` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
+///
+/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった `StageCompleted`
+/// (索引 0 = 非ゲートの initialization を完了させる 1 件) は**構成不能**になった —
+/// 誕生の時点でその checkbox は既に completed で、カーソルは索引 1 のゲート付き
+/// ステージに立っている。前置きが 1 件消えたぶん、以後の通番と版が 1 つずつ詰まる。
 pub(crate) async fn seed<R: IntentExecutionRepository>(repository: &mut R) -> IntentExecution {
     let mut held = store_genesis(repository).await;
-    held = advance(repository, &held, |aggregate| {
-        aggregate.complete_stage(&intent(), at())
-    })
-    .await;
     held = advance(repository, &held, |aggregate| {
         aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
@@ -79,7 +80,7 @@ pub(crate) async fn reopen_reflects_the_writes_completed_before_it_was_reopened<
     let found = early.find_by_id(&execution_id()).await.expect("読み直せる");
     assert_eq!(found.version(), 1, "genesis まで書き終えた時点の開き直し");
 
-    store_stage_completed(&mut repository, &held).await;
+    store_gate_opened(&mut repository, &held).await;
 
     let late = fixture.reopen(&repository);
     let found = late.find_by_id(&execution_id()).await.expect("読み直せる");
@@ -98,8 +99,8 @@ pub(crate) async fn round_trip<F: StoreFixture>(fixture: &F) {
         .expect("書いた集約は読み直せる");
 
     assert_eq!(found, expected, "全状態が一致する");
-    assert_eq!(found.version(), 5, "5 回の書込ぶんストアが採番した版");
-    assert_eq!(found.seq_nr(), 5, "順序番号は適用済みイベント数");
+    assert_eq!(found.version(), 4, "4 回の書込ぶんストアが採番した版");
+    assert_eq!(found.seq_nr(), 4, "順序番号は適用済みイベント数");
 }
 
 /// 書いていない集約は `NotFound` (部分データを返さない — C3 ①)。
@@ -192,8 +193,8 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
     assert!(matches!(
         err,
         RepositoryError::Conflict {
-            expected: 5,
-            actual: 6,
+            expected: 4,
+            actual: 5,
         }
     ));
 
@@ -202,7 +203,7 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
         .find_by_id(&execution_id())
         .await
         .expect("読み直せる");
-    assert_eq!(found.version(), 6);
+    assert_eq!(found.version(), 5);
 }
 
 /// 古い版を提示した書込は `Conflict` である (楽観 version はストアの関心 — BR5.3)。
@@ -214,13 +215,13 @@ pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixt
     let stale = store_genesis(&mut repository).await;
 
     // 別の書き手が 1 件進めて版が動く。
-    store_stage_completed(&mut repository, &stale).await;
+    store_gate_opened(&mut repository, &stale).await;
 
     // 握ったままの版 (genesis 時点) で次を書こうとする。
     let mut aggregate = stale.clone();
     let next = aggregate
-        .complete_stage(&intent(), at())
-        .expect("索引 0 は非ゲート");
+        .open_gate(&intent(), vec!["intent.md".to_string()], at())
+        .expect("誕生のカーソルは索引 1 のゲート付きステージで in-progress");
     let err = repository
         .store(&next, &aggregate)
         .await
@@ -238,7 +239,7 @@ pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixt
 pub(crate) async fn a_write_from_the_rehydrated_version_succeeds<F: StoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     let held = store_genesis(&mut repository).await;
-    let next = store_stage_completed(&mut repository, &held).await;
+    let next = store_gate_opened(&mut repository, &held).await;
     assert_eq!(next.version(), 2);
     assert_eq!(next.seq_nr(), 2);
 }
