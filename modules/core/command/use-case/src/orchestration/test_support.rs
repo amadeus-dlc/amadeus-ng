@@ -212,9 +212,10 @@ impl InMemoryWorkflowDefinitionRepository {
     pub(crate) fn holding_behind_a_concurrent_write(
         held: WorkflowDefinition,
     ) -> InMemoryWorkflowDefinitionRepository {
-        let mut repository = InMemoryWorkflowDefinitionRepository::holding(held);
-        repository.interrupting_writes = 1;
-        repository
+        let mut workflow_definition_repository =
+            InMemoryWorkflowDefinitionRepository::holding(held);
+        workflow_definition_repository.interrupting_writes = 1;
+        workflow_definition_repository
     }
 
     /// 読取そのものが**破損で失敗する**ストア。
@@ -444,9 +445,10 @@ impl InMemoryIntentExecutionRepository {
         version: usize,
         writes: usize,
     ) -> InMemoryIntentExecutionRepository {
-        let mut repository = InMemoryIntentExecutionRepository::holding(aggregate, version);
-        repository.interrupting_writes = writes;
-        repository
+        let mut intent_execution_repository =
+            InMemoryIntentExecutionRepository::holding(aggregate, version);
+        intent_execution_repository.interrupting_writes = writes;
+        intent_execution_repository
     }
 
     /// 最初の `store` に、**集約を前進させる**別の書き手の書込が割り込むストア。
@@ -459,10 +461,11 @@ impl InMemoryIntentExecutionRepository {
         advanced: IntentExecution,
         version: usize,
     ) -> InMemoryIntentExecutionRepository {
-        let mut repository = InMemoryIntentExecutionRepository::holding(aggregate, version);
-        repository.interrupting_writes = 1;
-        repository.competing_commit = Some(advanced);
-        repository
+        let mut intent_execution_repository =
+            InMemoryIntentExecutionRepository::holding(aggregate, version);
+        intent_execution_repository.interrupting_writes = 1;
+        intent_execution_repository.competing_commit = Some(advanced);
+        intent_execution_repository
     }
 
     /// このストアが受理したイベント列 (コミットの有無を見るテスト用)。
@@ -616,7 +619,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_intent_double_stores_a_genesis_once_and_conflicts_on_the_second() {
-        let mut repository = InMemoryIntentRepository::empty();
+        let mut intent_repository = InMemoryIntentRepository::empty();
         let (held, _, _) = genesis(2);
         let event = IntentEvent::Created(Created::new(
             held.id().clone(),
@@ -626,16 +629,19 @@ mod tests {
             held.stages().to_vec(),
             held.scan().clone(),
         ));
-        repository
+        intent_repository
             .store(&event, &held, at())
             .await
             .expect("genesis は書ける");
         assert_eq!(
-            repository.find_by_id(held.id()).await.expect("読める"),
+            intent_repository
+                .find_by_id(held.id())
+                .await
+                .expect("読める"),
             held
         );
 
-        let err = repository
+        let err = intent_repository
             .store(&event, &held, at())
             .await
             .expect_err("重複作成は拒否");
@@ -645,7 +651,7 @@ mod tests {
     #[tokio::test]
     async fn the_intent_double_refuses_a_mismatched_pair() {
         // 誕生記録と一致しない集約を渡す対は書込契約違反 — 実物と同じ約束 (CodeRabbit 指摘)。
-        let mut repository = InMemoryIntentRepository::empty();
+        let mut intent_repository = InMemoryIntentRepository::empty();
         let (held, _, _) = genesis(2);
         let mismatched_event = IntentEvent::Created(Created::new(
             held.id().clone(),
@@ -655,7 +661,7 @@ mod tests {
             held.stages().to_vec(),
             held.scan().clone(),
         ));
-        let err = repository
+        let err = intent_repository
             .store(&mismatched_event, &held, at())
             .await
             .expect_err("誕生記録と一致しない対は拒否");
@@ -667,7 +673,7 @@ mod tests {
             }
         ));
         assert!(
-            repository.find_by_id(held.id()).await.is_err(),
+            intent_repository.find_by_id(held.id()).await.is_err(),
             "何も残さない"
         );
     }

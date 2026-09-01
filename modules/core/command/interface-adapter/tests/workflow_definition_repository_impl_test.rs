@@ -126,41 +126,41 @@ async fn the_definition_stream_coexists_with_the_other_two_in_the_same_file() {
     // 定義 id はハーネス名 (`claude`)、他の 2 つは UUID。本家の journal は `(aid, seq_nr)` に
     // UNIQUE 索引を **type_name 抜きの生値**で張るため、同居の前提は識別子の値の一意性で
     // ある — ハーネス名と UUID は決して衝突しない。
-    let mut intents =
+    let mut intent_repository =
         IntentRepositoryImpl::open(&fixture.path).expect("intent ストアは同じファイル");
     let (intent, created) = intent_genesis();
-    intents
+    intent_repository
         .store(&created, &intent, at())
         .await
         .expect("intent の genesis");
 
-    let mut executions =
+    let mut intent_execution_repository =
         IntentExecutionRepositoryImpl::open(&fixture.path).expect("実行ストアも同じファイル");
     let (execution, started) = genesis_for(IntentExecutionId::parse(EXECUTION).unwrap());
-    executions
+    intent_execution_repository
         .store(&started, &execution)
         .await
         .expect("実行の genesis");
 
-    let mut definitions = fixture.repository();
-    let stored = store_definition_genesis(&mut definitions).await;
+    let mut workflow_definition_repository = fixture.repository();
+    let stored = store_definition_genesis(&mut workflow_definition_repository).await;
 
     assert_eq!(
-        definitions
+        workflow_definition_repository
             .find_by_id(&definition_id())
             .await
             .expect("定義は読める"),
         stored
     );
     assert_eq!(
-        intents
+        intent_repository
             .find_by_id(intent.id())
             .await
             .expect("intent も読める"),
         intent
     );
     assert_eq!(
-        executions
+        intent_execution_repository
             .find_by_id(execution.id())
             .await
             .expect("実行も読める")

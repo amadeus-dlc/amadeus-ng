@@ -143,7 +143,7 @@ impl ProjectionTargets {
 /// ReadModelUpdater — チェックポイント以降のイベントをリードモデルへ流し込む差分関数。
 #[derive(Debug)]
 pub struct ReadModelUpdater<R> {
-    reader: R,
+    journal_reader: R,
     projection: ProjectionName,
     targets: ProjectionTargets,
     /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
@@ -153,12 +153,12 @@ pub struct ReadModelUpdater<R> {
 impl<R: JournalReader> ReadModelUpdater<R> {
     /// 読み手・投影名・書込先から組む。
     pub const fn new(
-        reader: R,
+        journal_reader: R,
         projection: ProjectionName,
         targets: ProjectionTargets,
     ) -> ReadModelUpdater<R> {
         ReadModelUpdater {
-            reader,
+            journal_reader,
             projection,
             targets,
             plan: None,
@@ -189,8 +189,8 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// （`Projection`）、状態ファイルを読めない（`StateFileRead`）・書けない
     /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
-        let checkpoint = self.reader.checkpoint(&self.projection).await?;
-        let batch = self.reader.events_after(checkpoint).await?;
+        let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
+        let batch = self.journal_reader.events_after(checkpoint).await?;
         let Some(last) = batch.scanned_to() else {
             return Ok(checkpoint);
         };
@@ -214,7 +214,7 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             .map_err(CatchUpError::AuditShardWrite)?;
         }
 
-        self.reader
+        self.journal_reader
             .advance_checkpoint(&self.projection, last)
             .await?;
         Ok(last)
@@ -232,7 +232,7 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         if let Some(plan) = &self.plan {
             return Ok(plan.clone());
         }
-        let history = self.reader.events_after(GlobalSeqNr::ZERO).await?;
+        let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
         let mut started_ids = history
             .executions()
             .iter()

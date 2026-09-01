@@ -30,8 +30,8 @@ use super::port::{
 /// リポジトリをユースケースの外で使わない)。束縛はスタティック (単相化) である。
 #[derive(Debug)]
 pub struct DefineWorkflowUseCase<C, R> {
-    artifacts: C,
-    definitions: R,
+    definition_artifacts_client: C,
+    workflow_definition_repository: R,
 }
 
 impl<C, R> DefineWorkflowUseCase<C, R>
@@ -40,10 +40,13 @@ where
     R: WorkflowDefinitionRepository,
 {
     /// ポートの実装を 2 つ注入する。
-    pub const fn new(artifacts: C, definitions: R) -> DefineWorkflowUseCase<C, R> {
+    pub const fn new(
+        definition_artifacts_client: C,
+        workflow_definition_repository: R,
+    ) -> DefineWorkflowUseCase<C, R> {
         DefineWorkflowUseCase {
-            artifacts,
-            definitions,
+            definition_artifacts_client,
+            workflow_definition_repository,
         }
     }
 
@@ -63,8 +66,12 @@ where
     /// (`DefinitionRepository` — 別プロセスが先に改訂していれば `Conflict`)、集約が改訂を
     /// 拒否した (`Redefine` — 通番の枯渇) を返す。
     pub async fn execute(&mut self, occurred_at: DateTime<Utc>) -> Result<(), DefineWorkflowError> {
-        let artifacts = self.artifacts.load()?;
-        match self.definitions.find_by_id(artifacts.id()).await {
+        let artifacts = self.definition_artifacts_client.load()?;
+        match self
+            .workflow_definition_repository
+            .find_by_id(artifacts.id())
+            .await
+        {
             // まだ確立されていない — 誕生させる。
             Err(RepositoryError::NotFound { .. }) => self.define(artifacts, occurred_at).await,
             Ok(definition) => self.redefine(definition, artifacts, occurred_at).await,
@@ -83,7 +90,9 @@ where
         let (graph, grid, scopes) = artifacts.into_content();
         let (definition, event) =
             WorkflowDefinition::define(id, revision, graph, grid, scopes, occurred_at);
-        self.definitions.store(&event, &definition).await?;
+        self.workflow_definition_repository
+            .store(&event, &definition)
+            .await?;
         Ok(())
     }
 
@@ -98,7 +107,9 @@ where
         let (graph, grid, scopes) = artifacts.into_content();
         match definition.redefine(revision, graph, grid, scopes, occurred_at) {
             Ok(event) => {
-                self.definitions.store(&event, &definition).await?;
+                self.workflow_definition_repository
+                    .store(&event, &definition)
+                    .await?;
                 Ok(())
             }
             // 変化が無いのは失敗ではない — 取込が冪等であることの帰結である。
@@ -128,7 +139,7 @@ mod tests {
         use_case.execute(at()).await.expect("取込は成功する");
 
         let stored = use_case
-            .definitions
+            .workflow_definition_repository
             .find_by_id(&definition_id())
             .await
             .expect("確立した定義はストアに居る");
@@ -137,7 +148,7 @@ mod tests {
         assert_eq!(stored.seq_nr(), 1, "誕生の通番は 1");
         assert!(
             matches!(
-                use_case.definitions.committed(),
+                use_case.workflow_definition_repository.committed(),
                 [WorkflowDefinitionEvent::Defined(_)]
             ),
             "ジャーナルに書かれるのは誕生 1 件"
@@ -155,7 +166,7 @@ mod tests {
         use_case.execute(at()).await.expect("改訂は成功する");
 
         let stored = use_case
-            .definitions
+            .workflow_definition_repository
             .find_by_id(&definition_id())
             .await
             .expect("改訂した定義はストアに居る");
@@ -164,7 +175,7 @@ mod tests {
         assert_eq!(stored.id(), &definition_id(), "系譜 ID は不変");
         assert!(
             matches!(
-                use_case.definitions.committed(),
+                use_case.workflow_definition_repository.committed(),
                 [WorkflowDefinitionEvent::Redefined(_)]
             ),
             "ジャーナルに書かれるのは改訂 1 件"
@@ -182,7 +193,10 @@ mod tests {
         use_case.execute(at()).await.expect("変化なしは成功である");
 
         assert!(
-            use_case.definitions.committed().is_empty(),
+            use_case
+                .workflow_definition_repository
+                .committed()
+                .is_empty(),
             "書くべき事実が無いのでジャーナルは伸びない"
         );
     }
@@ -199,7 +213,7 @@ mod tests {
         use_case.execute(at()).await.expect("2 回目は変化なし");
 
         assert_eq!(
-            use_case.definitions.committed().len(),
+            use_case.workflow_definition_repository.committed().len(),
             1,
             "同じ配布物を 2 度取り込んでも歴史は 1 件のまま"
         );
@@ -223,7 +237,10 @@ mod tests {
             "{error:?}"
         );
         assert!(
-            use_case.definitions.committed().is_empty(),
+            use_case
+                .workflow_definition_repository
+                .committed()
+                .is_empty(),
             "拒否された取込は何も書かない"
         );
     }
@@ -248,7 +265,12 @@ mod tests {
             ),
             "{error:?}"
         );
-        assert!(use_case.definitions.committed().is_empty());
+        assert!(
+            use_case
+                .workflow_definition_repository
+                .committed()
+                .is_empty()
+        );
     }
 
     /// 書込の失敗もそのまま伝播する (別の書き手が先に改訂していれば `Conflict`)。
@@ -293,7 +315,12 @@ mod tests {
             ),
             "{error:?}"
         );
-        assert!(use_case.definitions.committed().is_empty());
+        assert!(
+            use_case
+                .workflow_definition_repository
+                .committed()
+                .is_empty()
+        );
     }
 
     /// 失敗の位置が変種で分かる (出す側が復旧手順を選べる材料になっている)。

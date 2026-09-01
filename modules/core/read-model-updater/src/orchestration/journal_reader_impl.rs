@@ -715,8 +715,8 @@ mod tests {
     fn opening_creates_the_checkpoint_table_next_to_the_upstream_tables() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
-        assert_eq!(reader.path(), &path);
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
+        assert_eq!(journal_reader.path(), &path);
 
         let conn = Connection::open(path.as_path()).expect("生の接続");
         let mut statement = conn
@@ -804,15 +804,15 @@ mod tests {
     async fn a_cursor_beyond_the_column_range_is_refused_before_the_query() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         assert!(
-            reader
+            journal_reader
                 .events_after(GlobalSeqNr::new(u64::MAX))
                 .await
                 .is_err()
         );
         assert!(
-            reader
+            journal_reader
                 .advance_checkpoint(&projection(), GlobalSeqNr::new(u64::MAX))
                 .await
                 .is_err()
@@ -823,12 +823,12 @@ mod tests {
     async fn a_missing_journal_table_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute_batch("DROP TABLE journal")
             .expect("表を落とす");
 
-        let error = reader
+        let error = journal_reader
             .events_after(GlobalSeqNr::ZERO)
             .await
             .expect_err("表が無い");
@@ -845,12 +845,12 @@ mod tests {
     async fn a_missing_checkpoint_table_is_reported_as_io_on_both_faces() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute_batch("DROP TABLE amadeus_projection_checkpoint")
             .expect("表を落とす");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("表が無い");
@@ -861,7 +861,7 @@ mod tests {
                 path: Some(path.as_path().to_path_buf()),
             }
         );
-        let error = reader
+        let error = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("表が無い");
@@ -879,7 +879,7 @@ mod tests {
         // 正のチェックポイントには advance が必ずアンカーを書く。欠けた行は直接改変の兆候。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
@@ -888,7 +888,7 @@ mod tests {
             )
             .expect("アンカー無しの正値を置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("照合できない");
@@ -906,7 +906,7 @@ mod tests {
     async fn a_negative_anchor_seq_nr_is_corrupt() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
@@ -915,7 +915,7 @@ mod tests {
             )
             .expect("負のアンカーを置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("負の通番は無い");
@@ -935,13 +935,16 @@ mod tests {
         // アンカーも無し。読み返しは照合をスキップして ZERO を返す。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
 
-        reader
+        journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::ZERO)
             .await
             .expect("ZERO への前進は通る");
-        let saved = reader.checkpoint(&projection()).await.expect("読める");
+        let saved = journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読める");
         assert_eq!(saved, GlobalSeqNr::ZERO);
     }
 
@@ -950,9 +953,9 @@ mod tests {
         // journal に無い位置へ進めると以後の照合が必ず失敗するため、前進の時点で止める。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
 
-        let error = reader
+        let error = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("空のジャーナルに位置 1 は無い");
@@ -970,7 +973,7 @@ mod tests {
     async fn a_negative_checkpoint_row_is_corrupt() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
@@ -979,7 +982,7 @@ mod tests {
             )
             .expect("負値を置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("負の通番は無い");
@@ -997,7 +1000,7 @@ mod tests {
     async fn a_checkpoint_row_whose_anchor_aid_is_not_text_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
@@ -1006,7 +1009,7 @@ mod tests {
             )
             .expect("UTF-8 でないアンカーを置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("列を読めない");
@@ -1023,7 +1026,7 @@ mod tests {
     async fn a_journal_row_whose_aid_is_not_text_fails_anchor_verification_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         let conn = raw(&path);
         conn.execute(
             "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1038,7 +1041,7 @@ mod tests {
         )
         .expect("正のチェックポイントを置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("照合先の列を読めない");
@@ -1055,7 +1058,7 @@ mod tests {
     async fn advancing_over_a_journal_row_whose_aid_is_not_text_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1064,7 +1067,7 @@ mod tests {
             )
             .expect("UTF-8 でない aid の行を置く");
 
-        let error = reader
+        let error = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("アンカー列を読めない");
@@ -1081,7 +1084,7 @@ mod tests {
     async fn a_checkpoint_row_whose_value_is_not_an_integer_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
@@ -1090,7 +1093,7 @@ mod tests {
             )
             .expect("整数でないチェックポイント値を置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("列を読めない");
@@ -1107,7 +1110,7 @@ mod tests {
     async fn a_checkpoint_row_whose_anchor_seq_nr_is_not_an_integer_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
@@ -1116,7 +1119,7 @@ mod tests {
             )
             .expect("整数でないアンカー通番を置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("列を読めない");
@@ -1133,7 +1136,7 @@ mod tests {
     async fn a_journal_row_whose_seq_nr_is_not_an_integer_fails_anchor_verification_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         let conn = raw(&path);
         conn.execute(
             "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1148,7 +1151,7 @@ mod tests {
         )
         .expect("正のチェックポイントを置く");
 
-        let error = reader
+        let error = journal_reader
             .checkpoint(&projection())
             .await
             .expect_err("照合先の列を読めない");
@@ -1165,7 +1168,7 @@ mod tests {
     async fn advancing_over_a_journal_row_whose_seq_nr_is_not_an_integer_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1174,7 +1177,7 @@ mod tests {
             )
             .expect("整数でない seq_nr の行を置く");
 
-        let error = reader
+        let error = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("アンカー列を読めない");
@@ -1191,7 +1194,7 @@ mod tests {
     async fn a_row_whose_seq_nr_is_not_an_integer_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1200,7 +1203,7 @@ mod tests {
             )
             .expect("整数でない seq_nr の行を置く");
 
-        let error = reader
+        let error = journal_reader
             .events_after(GlobalSeqNr::ZERO)
             .await
             .expect_err("列を読めない");
@@ -1218,7 +1221,7 @@ mod tests {
         // UPSERT 自体の失敗経路。トリガで書込を落とし、握り潰されないことを確かめる。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader = JournalReaderImpl::open(&path).expect("開ける");
+        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         let conn = raw(&path);
         conn.execute(
             "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1234,7 +1237,7 @@ mod tests {
         .expect("書込を落とすトリガを置く");
         drop(conn);
 
-        let error = reader
+        let error = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("書込が落ちる");
@@ -1251,7 +1254,7 @@ mod tests {
     async fn a_row_whose_aggregate_id_is_not_text_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1260,7 +1263,7 @@ mod tests {
             )
             .expect("UTF-8 でない aid を置く");
 
-        let error = reader
+        let error = journal_reader
             .events_after(GlobalSeqNr::ZERO)
             .await
             .expect_err("列を読めない");
@@ -1277,7 +1280,7 @@ mod tests {
     async fn a_row_whose_payload_is_not_bytes_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         raw(&path)
             .execute(
                 "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
@@ -1286,7 +1289,7 @@ mod tests {
             )
             .expect("BLOB でない payload を置く");
 
-        let error = reader
+        let error = journal_reader
             .events_after(GlobalSeqNr::ZERO)
             .await
             .expect_err("列を読めない");
@@ -1305,7 +1308,7 @@ mod tests {
         // `open_with_busy_timeout` で上限を縮めて `WouldBlock` を実測する (NFR3.5)。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut reader =
+        let mut journal_reader =
             JournalReaderImpl::open_with_busy_timeout(&path, Duration::from_millis(20))
                 .expect("開ける");
 
@@ -1314,7 +1317,7 @@ mod tests {
             .execute_batch("BEGIN EXCLUSIVE")
             .expect("書込ロックを握る");
 
-        let error = reader
+        let error = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .expect_err("他の書き手がいる");
@@ -1520,7 +1523,7 @@ mod tests {
         // `Corrupt` にする guard は緩まない — 未知の判別子は従来どおり落ちる。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         let connection = raw(&path);
         connection
             .execute(
@@ -1530,7 +1533,7 @@ mod tests {
             )
             .expect("定義の行を置く");
 
-        let batch = reader
+        let batch = journal_reader
             .events_after(GlobalSeqNr::ZERO)
             .await
             .expect("定義の行は解釈されずに飛ばされる");
@@ -1551,7 +1554,7 @@ mod tests {
             )
             .expect("未知の判別子の行を置く");
         assert!(matches!(
-            reader
+            journal_reader
                 .events_after(GlobalSeqNr::ZERO)
                 .await
                 .expect_err("未知の判別子は落ちる"),

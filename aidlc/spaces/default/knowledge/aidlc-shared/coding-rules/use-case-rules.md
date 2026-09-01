@@ -14,13 +14,19 @@
 
 ```rust
 pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
-    execution_repository: E,
+    intent_execution_repository: E,
     intent_repository: I,
 }
 
 impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, I> {
-    pub const fn new(execution_repository: E, intent_repository: I) -> CommitVerdictUseCase<E, I> {
-        CommitVerdictUseCase { execution_repository, intent_repository }
+    pub const fn new(
+        intent_execution_repository: E,
+        intent_repository: I,
+    ) -> CommitVerdictUseCase<E, I> {
+        CommitVerdictUseCase {
+            intent_execution_repository,
+            intent_repository,
+        }
     }
 }
 ```

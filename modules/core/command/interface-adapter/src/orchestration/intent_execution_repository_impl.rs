@@ -528,7 +528,7 @@ mod tests {
         IntentExecution::start(intent(), &intent_plan(), at())
     }
 
-    fn repository() -> IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
+    fn intent_execution_repository() -> IntentExecutionRepositoryImpl<IntentExecutionMemoryStore> {
         IntentExecutionRepositoryImpl::in_memory()
     }
 
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn a_volatile_store_has_no_place_to_name_in_its_failures() {
-        assert_eq!(repository().store_path(), None);
+        assert_eq!(intent_execution_repository().store_path(), None);
     }
 
     #[test]
@@ -619,12 +619,12 @@ mod tests {
         let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
             StageSlug::parse("state-init").expect("slug"),
         ));
-        let mut repository = repository();
-        repository
+        let mut intent_execution_repository = intent_execution_repository();
+        intent_execution_repository
             .store(&impostor, &aggregate)
             .await
             .expect("行としては書ける");
-        let found = repository
+        let found = intent_execution_repository
             .find_by_id(&intent())
             .await
             .expect("基底はスナップショット");
@@ -634,8 +634,8 @@ mod tests {
 
     #[test]
     fn a_read_failure_is_mapped_by_its_kind() {
-        let repository = repository();
-        let corrupt = repository.read_error(
+        let intent_execution_repository = intent_execution_repository();
+        let corrupt = intent_execution_repository.read_error(
             &EventStoreReadError::DeserializationError(Box::new(std::io::Error::other("x"))),
             &intent(),
         );
@@ -650,14 +650,15 @@ mod tests {
             "store deserialization failed"
         );
         assert!(matches!(
-            repository.read_error(&EventStoreReadError::IOError(boxed_busy()), &intent()),
+            intent_execution_repository
+                .read_error(&EventStoreReadError::IOError(boxed_busy()), &intent()),
             RepositoryError::Io {
                 kind: ErrorKind::WouldBlock,
                 path: None,
             }
         ));
         assert!(matches!(
-            repository.read_error(
+            intent_execution_repository.read_error(
                 &EventStoreReadError::OtherError("分類できない".to_string()),
                 &intent()
             ),
@@ -670,12 +671,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_write_failure_is_mapped_by_its_kind() {
-        let repository = repository();
+        let intent_execution_repository = intent_execution_repository();
         let (aggregate, _) = genesis();
 
         assert!(
             matches!(
-                repository
+                intent_execution_repository
                     .write_error(
                         EventStoreWriteError::OptimisticLockError(
                             "optimistic lock failed".to_string()
@@ -691,7 +692,7 @@ mod tests {
             ),
             "提示した版はそのまま、実在する version は読み直して材料にする (行が無ければ 0)"
         );
-        let corrupt = repository
+        let corrupt = intent_execution_repository
             .write_error(
                 EventStoreWriteError::SerializationError(Box::new(std::io::Error::other("x"))),
                 &aggregate,
@@ -708,7 +709,7 @@ mod tests {
                 .to_string(),
             "write contract violation"
         );
-        let contract = repository
+        let contract = intent_execution_repository
             .write_error(
                 EventStoreWriteError::ContractViolation("BR2.6".to_string()),
                 &aggregate,
@@ -723,7 +724,7 @@ mod tests {
             "契約違反は我々が封筒を組み違えたときにしか出ない (v3 で増えた腕)"
         );
         assert!(matches!(
-            repository
+            intent_execution_repository
                 .write_error(EventStoreWriteError::IOError(boxed_busy()), &aggregate, 0)
                 .await,
             RepositoryError::Io {
@@ -732,7 +733,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            repository
+            intent_execution_repository
                 .write_error(
                     EventStoreWriteError::OtherError("分類できない".to_string()),
                     &aggregate,
@@ -748,12 +749,20 @@ mod tests {
 
     #[tokio::test]
     async fn the_conflict_material_is_the_version_that_is_actually_stored() {
-        let mut repository = repository();
+        let mut intent_execution_repository = intent_execution_repository();
         let (aggregate, event) = genesis();
-        repository.store(&event, &aggregate).await.expect("genesis");
-        assert_eq!(repository.stored_version(&intent()).await, 1);
+        intent_execution_repository
+            .store(&event, &aggregate)
+            .await
+            .expect("genesis");
         assert_eq!(
-            repository.stored_version(&other_intent()).await,
+            intent_execution_repository.stored_version(&intent()).await,
+            1
+        );
+        assert_eq!(
+            intent_execution_repository
+                .stored_version(&other_intent())
+                .await,
             0,
             "行が無ければ 0"
         );
@@ -761,11 +770,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_volatile_store_is_shared_by_the_reopened_handle() {
-        let mut repository = repository();
+        let mut intent_execution_repository = intent_execution_repository();
         let (aggregate, event) = genesis();
-        repository.store(&event, &aggregate).await.expect("genesis");
+        intent_execution_repository
+            .store(&event, &aggregate)
+            .await
+            .expect("genesis");
 
-        let reopened = repository.reopened();
+        let reopened = intent_execution_repository.reopened();
         assert_eq!(
             reopened
                 .find_by_id(&intent())

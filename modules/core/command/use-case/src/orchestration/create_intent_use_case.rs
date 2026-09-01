@@ -43,9 +43,9 @@ use super::port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitio
 /// リポジトリをユースケースの外で使わない）。束縛はスタティック（単相化）である。
 #[derive(Debug)]
 pub struct CreateIntentUseCase<D, I, E> {
-    definition_repository: D,
+    workflow_definition_repository: D,
     intent_repository: I,
-    execution_repository: E,
+    intent_execution_repository: E,
 }
 
 impl<D, I, E> CreateIntentUseCase<D, I, E>
@@ -56,14 +56,14 @@ where
 {
     /// ポートの実装を 3 つ注入する。
     pub const fn new(
-        definition_repository: D,
+        workflow_definition_repository: D,
         intent_repository: I,
-        execution_repository: E,
+        intent_execution_repository: E,
     ) -> CreateIntentUseCase<D, I, E> {
         CreateIntentUseCase {
-            definition_repository,
+            workflow_definition_repository,
             intent_repository,
-            execution_repository,
+            intent_execution_repository,
         }
     }
 
@@ -84,7 +84,10 @@ where
         scan: WorkspaceScan,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), CreateIntentError> {
-        let definition = self.definition_repository.find_by_id(definition_id).await?;
+        let definition = self
+            .workflow_definition_repository
+            .find_by_id(definition_id)
+            .await?;
         let (intent, born) = Intent::create(intent_id, &definition, request, scan)?;
         self.intent_repository
             .store(&born, &intent, occurred_at)
@@ -92,7 +95,7 @@ where
         // intent が着地してから実行を開始する。逆順にすると、実行だけがストアに居て
         // 指す先の intent が無い状態が残りうる（RMU の `PlanUnavailable` に落ちる）。
         let (execution, started) = IntentExecution::start(execution_id, &intent, occurred_at);
-        self.execution_repository
+        self.intent_execution_repository
             .store(&started, &execution)
             .await?;
         Ok(())
@@ -178,7 +181,7 @@ mod tests {
             .expect("鋳造は成功する");
 
         let execution = use_case
-            .execution_repository
+            .intent_execution_repository
             .find_by_id(&execution_id())
             .await
             .expect("開始した実行はストアに居る");
@@ -244,7 +247,7 @@ mod tests {
         );
         assert!(
             use_case
-                .execution_repository
+                .intent_execution_repository
                 .find_by_id(&execution_id())
                 .await
                 .is_err(),
