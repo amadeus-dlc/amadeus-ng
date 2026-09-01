@@ -28612,3 +28612,21 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: compile コンテキストの設計前提（リードモデル投影・集約は WorkflowDefinition・完結表現イベント）を Event Storming で整理し、Issue #79 に記録済み、ファイルは削除済みです。次はドラフト裁定（サービス不採用・イベント形）の承認可否をご判断ください。
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-01T06:12:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T06:13:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T06:13:39Z
+**Event**: HUMAN_TURN
+
+---
