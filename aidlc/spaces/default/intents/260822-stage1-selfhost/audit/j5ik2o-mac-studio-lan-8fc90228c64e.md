@@ -27958,3 +27958,217 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 同型 5 件の掃き出しを完了し、報告した。ただし**指示どおりの「5 型に `source()` 実装」にはなっていない**ので、そこを先に書く。\n\n## 実測の結果、連鎖を持つのは 5 型のうち 3 つだった\n\n`CreateIntentError`・`CommitError`・`CatchUpError` は本物のエラー型（`RepositoryError::Corrupt` など、材料を `
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-08-31T19:54:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T19:54:56Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b30-defrepo
+**Agent ID**: ab30-defrepo-7b07758add3eb404
+**Message**: 同型 5 件の掃き出しが受理・統合された（コミット 658fc802、push 済み、レビュースレッドの返信と resolve も完了、CI 再走中）。ACK を返して作業を停止し、再び待機に入った。\n\n承認された判断は 3 件。全腕 `None` の `source()` を書かない（dead code を足す方が家風に反する、という適用が正しいとの評価）、`StateFile*` が非連鎖であ
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T19:55:47Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T19:56:50Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T20:03:08Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T20:04:11Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T20:06:17Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T22:42:36Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:26:31Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:27:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:27:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T23:32:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa1b4ea42fd301fe7
+**Message**: amadeus-ng のセルフホスト実装を Bolt 単位で進めており、b26〜b30(クエリ側化・DAO ポート・ES 転換・Dto 統一)は全てマージ済み。現在は b31(受け手変数名の省略全廃、例: execution_repository→intent_execution_repository)を委任実行中で、完了報告を待って統合・PR 化します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:41:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:41:57Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T23:42:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9a2d05ff743a482e
+**Message**: その解釈でOK。b31終わったらb32進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:42:30Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T23:42:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a51034520c5daba02
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T23:43:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac87420a900841deb
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T23:47:39Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: adf1d506b36f02d23
+**Message**: # 調査結果 — ポート/リポジトリ/DAO/クライアント/ジャーナル読み手の受け手名切り詰め\n\n`modules/` 配下の `.rs`（src・tests・`#[cfg(test)]` インライン含む）を全数走査した。対象トレイト/実装型は以下の8種:\n\n- `JournalReader` / `JournalReaderImpl`（read-model-updater）\n- `Workflo
+
+---
+
+## Human Turn
+**Timestamp**: 2026-08-31T23:47:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-08-31T23:50:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b31-names
+**Agent ID**: ab31-names-b4575be5f05c174c
+**Message**: I'll stop polling and wait for the monitor to fire.
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T00:22:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a387bf4b2b7f5a70b
+**Message**: amadeus-ng の Bolt 直列進行中で、b26〜b30(クエリ側化・DAO/DTO 整備・定義リポの ES 化)はマージ済み。現在は b31(受け手変数名の完全形化)を委任先が仕上げ中で、次は最終報告を統合して PR を出します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T00:23:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-01T00:34:28Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/handoff-b31-b32.md
+**Context**: construction > handoff-b31-b32.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-01T00:34:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: bebab695
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/handoff-b31-b32.md
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-01T00:34:28Z
+**Event**: SENSOR_PASSED
+**Fire id**: bebab695
+**Sensor ID**: required-sections
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/handoff-b31-b32.md
+**Duration ms**: 20
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-01T00:34:28Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3149b75f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/handoff-b31-b32.md
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-01T00:34:28Z
+**Event**: SENSOR_FAILED
+**Fire id**: 3149b75f
+**Sensor ID**: upstream-coverage
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/handoff-b31-b32.md
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/upstream-coverage-3149b75f.md
+**Findings count**: 5
+
+---
