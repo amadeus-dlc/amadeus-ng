@@ -80,7 +80,10 @@ mod tests {
 
     #[test]
     fn reading_twice_yields_the_same_answer() {
-        let dao = InMemoryWorkflowDefinitionDao::holding(view());
-        assert_eq!(dao.find().unwrap(), dao.find().unwrap());
+        let workflow_definition_dao = InMemoryWorkflowDefinitionDao::holding(view());
+        assert_eq!(
+            workflow_definition_dao.find().unwrap(),
+            workflow_definition_dao.find().unwrap()
+        );
     }
 }

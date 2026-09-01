@@ -505,7 +505,8 @@ mod tests {
             .with_timezone(&chrono::Utc)
     }
 
-    fn repository() -> WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
+    fn workflow_definition_repository()
+    -> WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
         WorkflowDefinitionRepositoryImpl::in_memory()
     }
 
@@ -522,8 +523,8 @@ mod tests {
 
     #[test]
     fn a_read_failure_is_mapped_by_its_kind() {
-        let repository = repository();
-        let corrupt = repository.read_error(
+        let workflow_definition_repository = workflow_definition_repository();
+        let corrupt = workflow_definition_repository.read_error(
             &EventStoreReadError::DeserializationError(Box::new(std::io::Error::other("x"))),
             &id(),
         );
@@ -538,14 +539,15 @@ mod tests {
             "store deserialization failed"
         );
         assert!(matches!(
-            repository.read_error(&EventStoreReadError::IOError(boxed_busy()), &id()),
+            workflow_definition_repository
+                .read_error(&EventStoreReadError::IOError(boxed_busy()), &id()),
             RepositoryError::Io {
                 kind: ErrorKind::WouldBlock,
                 path: None,
             }
         ));
         assert!(matches!(
-            repository.read_error(
+            workflow_definition_repository.read_error(
                 &EventStoreReadError::OtherError("分類できない".to_string()),
                 &id()
             ),
@@ -558,12 +560,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_write_failure_is_mapped_by_its_kind() {
-        let repository = repository();
+        let workflow_definition_repository = workflow_definition_repository();
         let (definition, _) = genesis(2);
 
         assert!(
             matches!(
-                repository
+                workflow_definition_repository
                     .write_error(
                         EventStoreWriteError::OptimisticLockError(
                             "optimistic lock failed".to_string()
@@ -579,7 +581,7 @@ mod tests {
             ),
             "提示した版はそのまま、実在する version は読み直して材料にする (行が無ければ 0)"
         );
-        let corrupt = repository
+        let corrupt = workflow_definition_repository
             .write_error(
                 EventStoreWriteError::SerializationError(Box::new(std::io::Error::other("x"))),
                 &definition,
@@ -597,7 +599,7 @@ mod tests {
             "write contract violation"
         );
         assert!(matches!(
-            repository
+            workflow_definition_repository
                 .write_error(
                     EventStoreWriteError::ContractViolation("BR2.6".to_string()),
                     &definition,
@@ -610,7 +612,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            repository
+            workflow_definition_repository
                 .write_error(EventStoreWriteError::IOError(boxed_busy()), &definition, 0)
                 .await,
             RepositoryError::Io {
@@ -619,7 +621,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            repository
+            workflow_definition_repository
                 .write_error(
                     EventStoreWriteError::OtherError("分類できない".to_string()),
                     &definition,
@@ -635,15 +637,20 @@ mod tests {
 
     #[tokio::test]
     async fn the_conflict_material_is_the_version_that_is_actually_stored() {
-        let mut repository = repository();
+        let mut workflow_definition_repository = workflow_definition_repository();
         let (definition, event) = genesis(2);
-        repository
+        workflow_definition_repository
             .store(&event, &definition)
             .await
             .expect("genesis");
-        assert_eq!(repository.stored_version(&id()).await, 1);
         assert_eq!(
-            repository.stored_version(&other_id()).await,
+            workflow_definition_repository.stored_version(&id()).await,
+            1
+        );
+        assert_eq!(
+            workflow_definition_repository
+                .stored_version(&other_id())
+                .await,
             0,
             "行が無ければ 0"
         );
@@ -651,14 +658,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_volatile_store_is_shared_by_the_reopened_handle() {
-        let mut repository = repository();
+        let mut workflow_definition_repository = workflow_definition_repository();
         let (definition, event) = genesis(2);
-        repository
+        workflow_definition_repository
             .store(&event, &definition)
             .await
             .expect("genesis");
 
-        let reopened = repository.reopened();
+        let reopened = workflow_definition_repository.reopened();
         assert_eq!(
             reopened
                 .find_by_id(&id())
@@ -700,8 +707,8 @@ mod tests {
 
     #[test]
     fn a_volatile_store_has_no_place_to_name_in_its_failures() {
-        let repository = repository();
-        assert_eq!(repository.store_path(), None);
-        assert!(repository.reopened().location.is_none());
+        let workflow_definition_repository = workflow_definition_repository();
+        assert_eq!(workflow_definition_repository.store_path(), None);
+        assert!(workflow_definition_repository.reopened().location.is_none());
     }
 }

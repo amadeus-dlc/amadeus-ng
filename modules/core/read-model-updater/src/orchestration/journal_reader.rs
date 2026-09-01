@@ -147,7 +147,7 @@ mod tests {
         }
     }
 
-    fn reader() -> FakeReader {
+    fn journal_reader() -> FakeReader {
         FakeReader {
             journal: vec![entry(1), entry(2)],
             checkpoints: BTreeMap::new(),
@@ -160,8 +160,11 @@ mod tests {
 
     #[tokio::test]
     async fn reading_from_zero_returns_the_whole_journal_in_ascending_order() {
-        let reader = reader();
-        let batch = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
+        let journal_reader = journal_reader();
+        let batch = journal_reader
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .unwrap();
         assert_eq!(
             batch
                 .executions()
@@ -175,8 +178,11 @@ mod tests {
 
     #[tokio::test]
     async fn reading_after_a_position_returns_only_the_difference() {
-        let reader = reader();
-        let batch = reader.events_after(GlobalSeqNr::new(1)).await.unwrap();
+        let journal_reader = journal_reader();
+        let batch = journal_reader
+            .events_after(GlobalSeqNr::new(1))
+            .await
+            .unwrap();
         let rows = batch.executions();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].global_seq(), GlobalSeqNr::new(2));
@@ -190,34 +196,34 @@ mod tests {
 
     #[tokio::test]
     async fn an_unregistered_projection_reads_as_zero() {
-        let reader = reader();
+        let journal_reader = journal_reader();
         assert_eq!(
-            reader.checkpoint(&projection()).await.unwrap(),
+            journal_reader.checkpoint(&projection()).await.unwrap(),
             GlobalSeqNr::ZERO
         );
     }
 
     #[tokio::test]
     async fn the_checkpoint_advances_and_is_readable_again() {
-        let mut reader = reader();
-        reader
+        let mut journal_reader = journal_reader();
+        journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
             .await
             .unwrap();
         assert_eq!(
-            reader.checkpoint(&projection()).await.unwrap(),
+            journal_reader.checkpoint(&projection()).await.unwrap(),
             GlobalSeqNr::new(2)
         );
     }
 
     #[tokio::test]
     async fn moving_the_checkpoint_backwards_is_a_regression() {
-        let mut reader = reader();
-        reader
+        let mut journal_reader = journal_reader();
+        journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
             .await
             .unwrap();
-        let err = reader
+        let err = journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
             .await
             .unwrap_err();

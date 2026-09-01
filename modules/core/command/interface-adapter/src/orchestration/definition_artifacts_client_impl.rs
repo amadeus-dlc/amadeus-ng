@@ -1095,26 +1095,32 @@ mod tests {
 
     #[test]
     fn path_resolution_prefers_the_overrides() {
-        let client =
+        let definition_artifacts_client =
             DefinitionArtifactsClientImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
         assert_eq!(
-            client.stage_graph_path(),
+            definition_artifacts_client.stage_graph_path(),
             PathBuf::from("/data/stage-graph.json")
         );
         assert_eq!(
-            client.scope_grid_path(),
+            definition_artifacts_client.scope_grid_path(),
             PathBuf::from("/data/scope-grid.json")
         );
-        assert_eq!(client.harness_path(), PathBuf::from("/data/harness.json"));
+        assert_eq!(
+            definition_artifacts_client.harness_path(),
+            PathBuf::from("/data/harness.json")
+        );
 
-        let client = client
+        let definition_artifacts_client = definition_artifacts_client
             .with_stage_graph_override(PathBuf::from("/pinned/graph.json"))
             .with_scope_grid_override(PathBuf::from("/pinned/grid.json"));
         assert_eq!(
-            client.stage_graph_path(),
+            definition_artifacts_client.stage_graph_path(),
             PathBuf::from("/pinned/graph.json")
         );
-        assert_eq!(client.scope_grid_path(), PathBuf::from("/pinned/grid.json"));
+        assert_eq!(
+            definition_artifacts_client.scope_grid_path(),
+            PathBuf::from("/pinned/grid.json")
+        );
     }
 
     #[test]

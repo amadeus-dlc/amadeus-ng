@@ -50,7 +50,7 @@ impl Fixture {
         open_store(&self.path)
     }
 
-    fn reader(&self) -> JournalReaderImpl {
+    fn journal_reader(&self) -> JournalReaderImpl {
         JournalReaderImpl::open(&self.path).expect("Reader は開ける")
     }
 
@@ -73,8 +73,8 @@ async fn the_journal_reads_every_event_in_global_order() {
     let mut store = fixture.store();
     seed(&mut store).await;
 
-    let reader = fixture.reader();
-    let batch = reader
+    let journal_reader = fixture.journal_reader();
+    let batch = journal_reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("差分読取");
@@ -115,8 +115,8 @@ async fn a_row_of_the_intent_stream_is_consumed_as_an_intent() {
     seed(&mut store).await;
     seed_intent(&fixture.path).await;
 
-    let reader = fixture.reader();
-    let batch = reader
+    let journal_reader = fixture.journal_reader();
+    let batch = journal_reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("intent 行は消費できる");
@@ -148,8 +148,8 @@ async fn an_undecodable_intent_row_is_corrupt() {
         )
         .expect("intent ストリームの行を差し込む");
 
-    let reader = fixture.reader();
-    let err = reader
+    let journal_reader = fixture.journal_reader();
+    let err = journal_reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect_err("形にならない intent 行は破損");
@@ -168,10 +168,13 @@ async fn the_journal_reads_only_the_difference() {
     let mut store = fixture.store();
     seed(&mut store).await;
 
-    let reader = fixture.reader();
-    let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let journal_reader = fixture.journal_reader();
+    let all = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let third = all.executions().get(2).expect("3 件目").global_seq();
-    let batch = reader.events_after(third).await.expect("差分");
+    let batch = journal_reader.events_after(third).await.expect("差分");
     assert_eq!(batch.executions().len(), 2);
     assert!(
         batch
@@ -191,14 +194,17 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
     seed(&mut store).await;
     drop(store);
 
-    let mut reader = fixture.reader();
-    let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let mut journal_reader = fixture.journal_reader();
+    let before = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let third = before.executions().get(2).expect("3 件目").global_seq();
-    reader
+    journal_reader
         .advance_checkpoint(&projection(), third)
         .await
         .expect("チェックポイント前進");
-    drop(reader);
+    drop(journal_reader);
 
     // SQLite の仕様は「INTEGER PRIMARY KEY の無い表の rowid を VACUUM が変えてよい」と
     // している (現行 3.51 は隙間があっても保持する — 下の VACUUM 釘留めテスト参照)。
@@ -215,8 +221,8 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
     }
     drop(conn);
 
-    let reader = fixture.reader();
-    let error = reader
+    let journal_reader = fixture.journal_reader();
+    let error = journal_reader
         .checkpoint(&projection())
         .await
         .expect_err("アンカー照合で止まる");
@@ -240,22 +246,25 @@ async fn a_truncated_journal_behind_the_checkpoint_is_refused() {
     seed(&mut store).await;
     drop(store);
 
-    let mut reader = fixture.reader();
-    let all = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let mut journal_reader = fixture.journal_reader();
+    let all = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let last = all.executions().last().expect("末尾").global_seq();
-    reader
+    journal_reader
         .advance_checkpoint(&projection(), last)
         .await
         .expect("チェックポイント前進");
-    drop(reader);
+    drop(journal_reader);
 
     fixture
         .raw()
         .execute("DELETE FROM journal WHERE rowid >= 4", [])
         .expect("末尾を切り落とす");
 
-    let reader = fixture.reader();
-    let error = reader
+    let journal_reader = fixture.journal_reader();
+    let error = journal_reader
         .checkpoint(&projection())
         .await
         .expect_err("指し先が無い");
@@ -282,22 +291,28 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
     seed(&mut store).await;
     drop(store);
 
-    let mut reader = fixture.reader();
-    let before = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let mut journal_reader = fixture.journal_reader();
+    let before = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let third = before.executions().get(2).expect("3 件目").global_seq();
-    reader
+    journal_reader
         .advance_checkpoint(&projection(), third)
         .await
         .expect("チェックポイント前進");
-    drop(reader); // VACUUM は排他を要するため他接続を全部閉じてから実行する
+    drop(journal_reader); // VACUUM は排他を要するため他接続を全部閉じてから実行する
 
     fixture
         .raw()
         .execute_batch("VACUUM")
         .expect("VACUUM は通る");
 
-    let reader = fixture.reader();
-    let after = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let journal_reader = fixture.journal_reader();
+    let after = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let keys = |rows: &[JournalEntry]| -> Vec<u64> {
         rows.iter()
             .map(|entry| entry.global_seq().to_u64())
@@ -308,9 +323,12 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
         keys(before.executions()),
         "rowid は VACUUM 前と同一"
     );
-    let saved = reader.checkpoint(&projection()).await.expect("保存済み");
+    let saved = journal_reader
+        .checkpoint(&projection())
+        .await
+        .expect("保存済み");
     assert_eq!(saved, third, "チェックポイントも生きている");
-    let resumed = reader.events_after(saved).await.expect("差分");
+    let resumed = journal_reader.events_after(saved).await.expect("差分");
     assert_eq!(
         keys(resumed.executions()),
         keys(before.executions())[3..].to_vec(),
@@ -333,8 +351,11 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
         })
         .await;
 
-    let reader = fixture.reader();
-    let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let journal_reader = fixture.journal_reader();
+    let rows = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     assert_eq!(
         rows.executions()
             .iter()
@@ -359,14 +380,17 @@ async fn the_reader_observes_writes_made_after_it_was_opened() {
     let mut store = fixture.store();
     let mut writer = JournalWriter::start(&mut store, execution_id()).await;
 
-    let reader = fixture.reader();
+    let journal_reader = fixture.journal_reader();
     writer
         .advance(&mut store, |aggregate| {
             aggregate.complete_stage(&intent(), at())
         })
         .await;
 
-    let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let rows = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     assert_eq!(rows.executions().len(), 2);
 }
 
@@ -381,8 +405,8 @@ async fn a_tampered_journal_payload_is_corrupt() {
         .execute("UPDATE journal SET payload = X'7B6E6F74206A736F6E'", [])
         .expect("payload を壊す");
 
-    let reader = fixture.reader();
-    let err = reader
+    let journal_reader = fixture.journal_reader();
+    let err = journal_reader
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect_err("復号できない");
@@ -404,9 +428,12 @@ async fn a_tampered_journal_payload_is_corrupt() {
 async fn an_unregistered_projection_reads_as_zero() {
     let fixture = Fixture::new();
     let _store = fixture.store();
-    let reader = fixture.reader();
+    let journal_reader = fixture.journal_reader();
     assert_eq!(
-        reader.checkpoint(&projection()).await.expect("読取"),
+        journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読取"),
         GlobalSeqNr::ZERO
     );
 }
@@ -417,23 +444,42 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
     let mut store = fixture.store();
     seed(&mut store).await;
 
-    let mut reader = fixture.reader();
-    let rows = reader.events_after(GlobalSeqNr::ZERO).await.expect("全件");
+    let mut journal_reader = fixture.journal_reader();
+    let rows = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
     let last = rows.executions().last().expect("5 件ある").global_seq();
 
-    reader
+    journal_reader
         .advance_checkpoint(&projection(), last)
         .await
         .expect("前進");
-    assert_eq!(reader.checkpoint(&projection()).await.expect("読取"), last);
+    assert_eq!(
+        journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読取"),
+        last
+    );
 
-    reader
+    journal_reader
         .advance_checkpoint(&projection(), last)
         .await
         .expect("同値は no-op");
-    assert_eq!(reader.checkpoint(&projection()).await.expect("読取"), last);
     assert_eq!(
-        reader.events_after(last).await.expect("差分").scanned_to(),
+        journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読取"),
+        last
+    );
+    assert_eq!(
+        journal_reader
+            .events_after(last)
+            .await
+            .expect("差分")
+            .scanned_to(),
         None,
         "追いついた投影に差分は無い"
     );
@@ -445,16 +491,19 @@ async fn the_checkpoint_survives_reopening_the_store() {
     let mut store = fixture.store();
     seed(&mut store).await;
     {
-        let mut reader = fixture.reader();
-        reader
+        let mut journal_reader = fixture.journal_reader();
+        journal_reader
             .advance_checkpoint(&projection(), GlobalSeqNr::new(3))
             .await
             .expect("前進");
     }
 
-    let reader = fixture.reader();
+    let journal_reader = fixture.journal_reader();
     assert_eq!(
-        reader.checkpoint(&projection()).await.expect("読取"),
+        journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読取"),
         GlobalSeqNr::new(3),
         "自前の表はファイルに残る"
     );
@@ -466,12 +515,12 @@ async fn a_checkpoint_regression_is_refused() {
     let mut store = fixture.store();
     seed(&mut store).await;
 
-    let mut reader = fixture.reader();
-    reader
+    let mut journal_reader = fixture.journal_reader();
+    journal_reader
         .advance_checkpoint(&projection(), GlobalSeqNr::new(3))
         .await
         .expect("前進");
-    let err = reader
+    let err = journal_reader
         .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
         .await
         .expect_err("後退は拒否");
@@ -484,7 +533,10 @@ async fn a_checkpoint_regression_is_refused() {
         }
     );
     assert_eq!(
-        reader.checkpoint(&projection()).await.expect("読取"),
+        journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読取"),
         GlobalSeqNr::new(3),
         "拒否しても現在値は動かない"
     );
@@ -497,26 +549,29 @@ async fn two_projections_keep_independent_checkpoints() {
     seed(&mut store).await;
 
     let other = ProjectionName::parse("intents-registry").expect("投影名は kebab");
-    let mut reader = fixture.reader();
-    reader
+    let mut journal_reader = fixture.journal_reader();
+    journal_reader
         .advance_checkpoint(&projection(), GlobalSeqNr::new(4))
         .await
         .expect("前進");
     assert_eq!(
-        reader.checkpoint(&other).await.expect("読取"),
+        journal_reader.checkpoint(&other).await.expect("読取"),
         GlobalSeqNr::ZERO,
         "別の投影は動かない"
     );
-    reader
+    journal_reader
         .advance_checkpoint(&other, GlobalSeqNr::new(2))
         .await
         .expect("前進");
     assert_eq!(
-        reader.checkpoint(&projection()).await.expect("読取"),
+        journal_reader
+            .checkpoint(&projection())
+            .await
+            .expect("読取"),
         GlobalSeqNr::new(4)
     );
     assert_eq!(
-        reader.checkpoint(&other).await.expect("読取"),
+        journal_reader.checkpoint(&other).await.expect("読取"),
         GlobalSeqNr::new(2)
     );
 }

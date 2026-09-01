@@ -84,7 +84,10 @@ mod tests {
 
     #[test]
     fn reading_twice_yields_the_same_answer() {
-        let dao = InMemoryExecutionStateDao::holding(view());
-        assert_eq!(dao.find().unwrap(), dao.find().unwrap());
+        let execution_state_dao = InMemoryExecutionStateDao::holding(view());
+        assert_eq!(
+            execution_state_dao.find().unwrap(),
+            execution_state_dao.find().unwrap()
+        );
     }
 }

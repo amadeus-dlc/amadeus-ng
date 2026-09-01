@@ -241,7 +241,7 @@ impl Fixture {
         }
     }
 
-    fn client(&self) -> DefinitionArtifactsClientImpl {
+    fn definition_artifacts_client(&self) -> DefinitionArtifactsClientImpl {
         DefinitionArtifactsClientImpl::new(self.data_dir.clone(), self.scopes_dir.clone())
     }
 
@@ -297,7 +297,7 @@ fn definition_id(value: &str) -> WorkflowDefinitionId {
 
 /// 配布物を取り込む (成功を期待する経路)。
 fn load(fixture: &Fixture) -> DefinitionArtifacts {
-    fixture.client().load().unwrap()
+    fixture.definition_artifacts_client().load().unwrap()
 }
 
 /// 取り込んだ材料をそのまま定義集約へ立てる。
@@ -480,7 +480,7 @@ fn a_full_read_wires_up_the_five_predicates() {
 #[test]
 fn b_a_missing_stage_graph_is_fatal() {
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     // OS 由来の読取失敗は `Io` — 対象パスと `ErrorKind` だけを運ぶ。
     assert_eq!(io_path(&error), fixture.graph_path());
 }
@@ -492,8 +492,10 @@ fn b_the_reported_path_follows_the_injected_override() {
     // 失敗の対象として報告される」ことだけ。
     let fixture = Fixture::new(None, Some(GRID_JSON), &scope_files());
     let missing = fixture.data_dir.join("pinned-graph.json");
-    let client = fixture.client().with_stage_graph_override(missing.clone());
-    let error = client.load().unwrap_err();
+    let definition_artifacts_client = fixture
+        .definition_artifacts_client()
+        .with_stage_graph_override(missing.clone());
+    let error = definition_artifacts_client.load().unwrap_err();
     assert_eq!(io_path(&error), missing);
 }
 
@@ -506,7 +508,7 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
     // 読めたが内容が壊れている = `Corrupt`。欠損 (`Io`) とは別変種で、どう壊れていたかは
     // 原因連鎖にだけ現れる。
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     let cause = corrupt_cause(&error);
     assert!(cause.contains("not valid JSON"), "{cause}");
     assert!(
@@ -518,7 +520,7 @@ fn c_a_malformed_stage_graph_is_fatal_under_a_different_variant() {
 #[test]
 fn c_a_stage_graph_object_root_is_rejected_because_the_root_is_an_array() {
     let fixture = Fixture::new(Some("{\"stages\": []}"), Some(GRID_JSON), &scope_files());
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     assert!(corrupt_cause(&error).contains("not valid JSON"));
 }
 
@@ -722,7 +724,7 @@ fn an_invalid_skeleton_value_is_rejected_with_the_offending_value_in_the_cause()
         Some(GRID_JSON),
         &[("feature", "---\nname: feature\nskeleton: enabled\n---\n")],
     );
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     let cause = corrupt_cause(&error);
     let path = fixture.scopes_dir.join("aidlc-feature.md");
     assert!(cause.contains(&path.display().to_string()), "{cause}");
@@ -737,7 +739,7 @@ fn a_scope_file_without_a_name_is_rejected() {
         Some(GRID_JSON),
         &[("feature", "---\ndepth: standard\n---\n")],
     );
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     let cause = corrupt_cause(&error);
     assert!(
         cause.ends_with("missing required frontmatter: name"),
@@ -755,7 +757,7 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
             ("feature-alias", "---\nname: feature\n---\n"),
         ],
     );
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     // 重複した名前と両方のファイルが診断に載る (どちらを直せばよいかが分かる材料)。
     let cause = corrupt_cause(&error);
     assert!(cause.contains("feature"), "{cause}");
@@ -765,11 +767,11 @@ fn two_identity_files_declaring_the_same_name_are_fatal() {
 #[test]
 fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &[]);
-    let client = DefinitionArtifactsClientImpl::new(
+    let definition_artifacts_client = DefinitionArtifactsClientImpl::new(
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );
-    let definition = materialize(client.load().unwrap());
+    let definition = materialize(definition_artifacts_client.load().unwrap());
     assert!(definition.valid_scopes().is_empty());
     // グリッド列は読めているが、権威が無いので全スコープが未知になる。
     assert!(definition.grid().contains_scope("feature"));
@@ -789,7 +791,7 @@ fn an_unknown_phase_is_reported_as_malformed_rather_than_falling_through() {
     ]
     "#;
     let fixture = Fixture::new(Some(graph), None, &[]);
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     assert!(corrupt_cause(&error).contains("unknown phase"));
 }
 
@@ -886,7 +888,7 @@ fn the_identity_is_read_before_the_three_inputs() {
     // 識別子の読取が 3 入力より前にあることの検収 (id を与えられない配布物は、内容を
     // 読めても定義を確立できない)。
     let fixture = Fixture::with_harness(None, None, &[], None);
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     assert_eq!(
         io_path(&error),
         fixture.harness_path(),
@@ -897,7 +899,7 @@ fn the_identity_is_read_before_the_three_inputs() {
 #[test]
 fn a_missing_harness_identity_file_is_fatal() {
     let fixture = Fixture::with_harness(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files(), None);
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     // ファイルが無いのは OS 由来の読取失敗 — 内容の破損ではない。
     assert_eq!(io_path(&error), fixture.harness_path());
 }
@@ -912,7 +914,7 @@ fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_corrupt_not_io() {
             &scope_files(),
             Some(harness),
         );
-        let error = fixture.client().load().unwrap_err();
+        let error = fixture.definition_artifacts_client().load().unwrap_err();
         let cause = corrupt_cause(&error);
         assert!(
             cause.contains(&fixture.harness_path().display().to_string()),
@@ -927,7 +929,7 @@ fn the_corrupt_variant_carries_only_a_diagnostic_not_a_classification() {
     // 契約は**分類を載せない** (裁定 6 — 内部実装がバレる情報を含めない): 運ぶのは
     // `Error::source` に連なる診断表示だけで、`Display` は種別を明かさない。
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     assert!(matches!(error, DefinitionArtifactsError::Corrupt { .. }));
     assert_eq!(error.to_string(), "corrupt definition artifacts");
     // 材料 (どのファイルがどう壊れていたか) は原因連鎖にだけ現れる。
@@ -1044,7 +1046,7 @@ fn every_enum_valued_field_is_reported_as_malformed_with_the_key_that_caused_it(
 
     for (graph, fragment) in cases {
         let fixture = Fixture::new(Some(graph), None, &[]);
-        let error = fixture.client().load().unwrap_err();
+        let error = fixture.definition_artifacts_client().load().unwrap_err();
         let cause = corrupt_cause(&error);
         assert!(
             cause.contains(fragment) && cause.contains("stage-graph.json"),
@@ -1061,11 +1063,11 @@ fn a_scopes_path_that_is_not_a_directory_is_reported_instead_of_being_treated_as
     let not_a_dir = fixture.data_dir.join("scopes-as-a-file");
     std::fs::write(&not_a_dir, "これはディレクトリではない\n").unwrap();
 
-    let client = DefinitionArtifactsClientImpl::new(
+    let definition_artifacts_client = DefinitionArtifactsClientImpl::new(
         fixture.data_dir.clone(),
         fixture.data_dir.join("scopes-as-a-file"),
     );
-    let error = client.load().unwrap_err();
+    let error = definition_artifacts_client.load().unwrap_err();
     assert_eq!(io_path(&error), not_a_dir);
 }
 
@@ -1077,6 +1079,6 @@ fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
     let masquerading = fixture.scopes_dir.join("aidlc-not-a-file.md");
     std::fs::create_dir_all(&masquerading).unwrap();
 
-    let error = fixture.client().load().unwrap_err();
+    let error = fixture.definition_artifacts_client().load().unwrap_err();
     assert_eq!(io_path(&error), masquerading);
 }
