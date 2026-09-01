@@ -39,8 +39,9 @@ pub use intent_repository_impl::IntentRepositoryImpl;
 pub use snapshot_strategy::SnapshotStrategy;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 
-// 実 I/O Gateway (外部システムクライアント) — ハーネス配布物の取込境界。Repository では
-// ないので `Impl` は付くが集約名は冠さない (`coding-rules/gateway-taxonomy.md` §1)。
+// 実 I/O Gateway — genesis 播種のための暫定の足場 (compile 実装で消える。「外部システム
+// クライアント」分類は棄却済み — `coding-rules/gateway-taxonomy.md` §1 是正 2026-09-01)。
+// Repository ではないので `Impl` は付くが集約名は冠さない。
 pub use definition_artifacts_client_impl::DefinitionArtifactsClientImpl;
 
 // 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である
