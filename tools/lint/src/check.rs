@@ -6,7 +6,9 @@
 //!
 //! 検出の哲学 (R1): getter の存在そのものは咎めない。**他オブジェクトから状態を抜き出して
 //! 所有者の判断を呼出側で代行する**濫用パターンだけを検出する。R3 はこの前段 — アクセサを
-//! 経由せず内部構造をそのまま公開する `pub` フィールドを禁じる。
+//! 経由せず内部構造をそのまま公開する `pub` フィールドを禁じる。R4 はカプセル化の単位を
+//! ファイル構成で支える — 1 ファイル 1 公開型 (「モジュール private ≒ struct private」の
+//! 成立条件、abstract-data-type.md)。
 
 use std::collections::BTreeSet;
 
@@ -25,15 +27,29 @@ pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
 /// 無条件の検出は過剰だから。`enum` の変種フィールドは言語仕様上 private にできず
 /// (syn 上も可視性を持たない) 対象外。
 pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
+/// R4: 1 ファイルに公開型 (`pub struct` / `pub enum` / `pub trait`) が 2 つ以上ある
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型、
+/// オーナー裁定 2026-09-01)。
+///
+/// 検出境界: **ファイルのトップレベル**の**無制限 `pub`** に限る。`pub(crate)` 以下
+/// (package-private 相当)・private 補助型・`pub type` エイリアス・自由関数は同居可で、
+/// 検出しない。深い `pub mod` の中の型は module-visibility 側の主題なので数えない。
+/// 公開型ゼロの自由関数モジュール (`codec.rs` 等) は正当。
+pub(crate) const RULE_ONE_PUBLIC_TYPE: &str = "one-public-type";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
-const CHECKBOX_OWNER: &str = "modules/core/command/domain/src/workspace/checkbox.rs";
+/// b32 の 1 ファイル 1 公開型分割で `checkbox.rs` から `checkbox_state.rs` へ移った
+/// (`CheckboxState` の自ファイル) のに追随している。
+const CHECKBOX_OWNER: &str = "modules/core/command/domain/src/workspace/checkbox_state.rs";
 
 const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished / is_active) を使う。\
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
 `// amadeus-lint: allow(checkbox-vocabulary) — 理由` で理由を明示する";
 const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アクセサ \
 (as_str / message / フィールド名) と必要なら new() を公開する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md";
+const ONE_PUBLIC_TYPE_HELP: &str = "公開型ごとに型名の snake_case のファイルへ分け、\
+ファサード (mod.rs) の pub use で公開する — \
+aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +79,7 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
         findings: Vec::new(),
     };
     visitor.visit_file(&file);
+    visitor.findings.extend(one_public_type_findings(&file));
 
     let lines: Vec<&str> = source.lines().collect();
     let mut findings: Vec<Finding> = visitor
@@ -77,6 +94,42 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
 /// `/tests/` を含むパスは統合テスト。
 fn is_test_path(path: &str) -> bool {
     path.contains("/tests/") || path.starts_with("tests/")
+}
+
+/// R4: ファイルのトップレベルにある無制限 `pub` の型宣言を文書順に集め、
+/// 2 つ目以降を所見にする。行は `pub` トークン (可視性) の行 — 抑制コメントを
+/// doc コメントの後・宣言の直前行に置ける位置で報告する (R3 と同じ規約)。
+fn one_public_type_findings(file: &syn::File) -> Vec<Finding> {
+    let mut types: Vec<(usize, String)> = Vec::new();
+    for item in &file.items {
+        if has_cfg_test(item_attrs(item)) {
+            continue;
+        }
+        let (vis, ident) = match item {
+            syn::Item::Struct(i) => (&i.vis, &i.ident),
+            syn::Item::Enum(i) => (&i.vis, &i.ident),
+            syn::Item::Trait(i) => (&i.vis, &i.ident),
+            _ => continue,
+        };
+        if !matches!(vis, syn::Visibility::Public(_)) {
+            continue;
+        }
+        types.push((vis.span().start().line, ident.to_string()));
+    }
+    let Some(((_, first), surplus)) = types.split_first() else {
+        return Vec::new();
+    };
+    surplus
+        .iter()
+        .map(|(line, name)| Finding {
+            rule: RULE_ONE_PUBLIC_TYPE,
+            line: *line,
+            message: format!(
+                "ファイル 2 つ目以降の公開型 `{name}` — 1 ファイル 1 公開型 (最初の公開型は `{first}`)"
+            ),
+            help: ONE_PUBLIC_TYPE_HELP,
+        })
+        .collect()
 }
 
 /// 所見の開始行の直前行が `// amadeus-lint: allow(<rule-id>) <理由>` で始まれば抑制する。
@@ -701,8 +754,8 @@ pub struct Snapshot(pub Vec<u8>);
 
     #[test]
     fn r3_allows_private_fields_with_accessors() {
-        // スイープ後の現行形。
-        let source = r#"
+        // スイープ後の現行形 (R4 裁定後は 1 ファイル 1 公開型なので、ファイルごとに検査する)。
+        let tuple = r#"
 pub struct UnknownPhase(String);
 
 impl UnknownPhase {
@@ -714,7 +767,10 @@ impl UnknownPhase {
         &self.0
     }
 }
+"#;
+        assert!(check(DOMAIN_PATH, tuple).is_empty());
 
+        let named = r#"
 pub struct UnknownScope {
     scope: String,
     valid_scopes: Vec<String>,
@@ -730,7 +786,7 @@ impl UnknownScope {
     }
 }
 "#;
-        assert!(check(DOMAIN_PATH, source).is_empty());
+        assert!(check(DOMAIN_PATH, named).is_empty());
     }
 
     #[test]
@@ -748,16 +804,19 @@ pub enum E {
     #[test]
     fn r3_ignores_restricted_visibility() {
         // pub(crate) は同一クレート内の実装詳細共有として条件付きで許される。
-        let source = r#"
+        let named = r#"
 pub struct Inner {
     pub(crate) shared: u32,
     pub(super) parent_only: u32,
     pub(in crate::workspace) scoped: u32,
 }
+"#;
+        assert!(check(DOMAIN_PATH, named).is_empty());
 
+        let tuple = r#"
 pub struct Wrapper(pub(crate) String);
 "#;
-        assert!(check(DOMAIN_PATH, source).is_empty());
+        assert!(check(DOMAIN_PATH, tuple).is_empty());
     }
 
     #[test]
@@ -787,6 +846,164 @@ pub struct Wire {
 }
 "#;
         assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    // ---- R4 赤例 (2026-09-01 裁定時に実在した形) ---------------------------
+
+    #[test]
+    fn r4_detects_a_second_public_type_in_one_file() {
+        // 裁定時の典型形: 値オブジェクトとそのエラー enum の同居 (stage_slug.rs ほか約 45 件)。
+        let source = r#"
+pub struct StageSlug(String);
+
+pub enum StageSlugError {
+    Empty,
+}
+"#;
+        let findings = check(DOMAIN_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_ONE_PUBLIC_TYPE]);
+        assert_eq!(findings[0].line, 4, "2 つ目の公開型の pub 行を指すこと");
+        assert!(
+            findings[0].message.contains("`StageSlugError`"),
+            "余剰の型名を message に含めること: {}",
+            findings[0].message
+        );
+        assert!(
+            findings[0].message.contains("`StageSlug`"),
+            "最初の公開型名も message に含めること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r4_reports_one_finding_per_surplus_public_type() {
+        // 裁定時の最大例はイベント族 (enum + 変種ペイロード 12 型/1 ファイル)。
+        let source = r#"
+pub enum IntentExecutionEvent {
+    Started(Started),
+}
+
+pub struct Started;
+
+pub struct StageCompleted;
+
+pub trait EventLike {}
+"#;
+        let findings = check(DOMAIN_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![
+                RULE_ONE_PUBLIC_TYPE,
+                RULE_ONE_PUBLIC_TYPE,
+                RULE_ONE_PUBLIC_TYPE
+            ],
+            "2 つ目以降の公開型ごとに 1 所見 (struct / enum / trait すべて対象)"
+        );
+        assert_eq!(findings[0].line, 6);
+        assert_eq!(findings[1].line, 8);
+        assert_eq!(findings[2].line, 10);
+    }
+
+    // ---- R4 緑例 ---------------------------------------------------------
+
+    #[test]
+    fn r4_allows_one_public_type_with_its_servants() {
+        // 同居可: private 補助型・pub type エイリアス・主題型に仕える自由関数・pub(crate) 以下。
+        let source = r#"
+pub struct StageSlug(String);
+
+struct Parser;
+
+pub(crate) struct SharedDetail;
+
+pub type SlugResult = Result<StageSlug, String>;
+
+pub fn parse_all(raw: &str) -> Vec<StageSlug> {
+    Vec::new()
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r4_allows_zero_public_type_free_function_modules() {
+        // 公開型ゼロの自由関数モジュール (codec.rs 等 — 裁定済みの free function 化) は正当。
+        let source = r#"
+pub fn encode(input: &str) -> String {
+    input.to_string()
+}
+
+pub fn decode(input: &str) -> String {
+    input.to_string()
+}
+"#;
+        assert!(check(ADAPTER_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r4_ignores_types_inside_cfg_test_and_test_paths() {
+        let source = r#"
+pub struct Subject;
+
+#[cfg(test)]
+pub struct Fixture;
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+
+        let bare = r#"
+pub struct A;
+pub struct B;
+"#;
+        assert!(check(ADAPTER_TEST_PATH, bare).is_empty());
+    }
+
+    #[test]
+    fn r4_does_not_count_types_nested_in_modules() {
+        // 検出はファイルのトップレベルに限る (深い pub mod は module-visibility 側の主題)。
+        let source = r#"
+pub struct Subject;
+
+mod detail {
+    pub(crate) struct Inner;
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r4_applies_outside_domain_paths_too() {
+        let source = r#"
+pub struct DefinitionPaths;
+
+pub struct WorkflowDefinitionDaoImpl;
+"#;
+        assert_eq!(
+            rules(&check(ADAPTER_PATH, source)),
+            vec![RULE_ONE_PUBLIC_TYPE]
+        );
+    }
+
+    #[test]
+    fn r4_is_suppressed_by_a_matching_allow_comment_with_reason() {
+        let source = r#"
+pub struct Subject;
+
+// amadeus-lint: allow(one-public-type) — 移行途中の暫定同居 (次 Bolt で分離)
+pub struct Companion;
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+
+        let bare = r#"
+pub struct Subject;
+
+// amadeus-lint: allow(one-public-type)
+pub struct Companion;
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, bare)),
+            vec![RULE_ONE_PUBLIC_TYPE],
+            "理由の無い裸の allow は抑制しない"
+        );
     }
 
     // ---- 共通 ------------------------------------------------------------
