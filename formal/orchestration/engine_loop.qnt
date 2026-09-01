@@ -3,6 +3,10 @@
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.2 (2026-09-01): 誕生 = 初期化完了済み (issue #76 / オーナー裁定) — init が stage 0 を
+//   CompletedBox で生み、カーソルは最初の in-scope 実ステージに立つ。書き面 (集約) と
+//   読み面 (RMU 誕生投影) の「いまどこ」を一致させ、誕生直後の report が initialization を
+//   再完了して STAGE_COMPLETED を二重記録する経路を構成不能にした。
 // v2.1 (2026-08-30): actJumpForward の介在条件へ inScope(u) を追加 — upstream 実バイト
 //   (cli/jump/execute-forward-across-phases: 実効 SKIP の介在行は `[ ]` のまま・
 //   STAGE_SKIPPED 行も出ない) が正本であり、観測互換はモデル記述に常に勝つ。
@@ -33,8 +37,12 @@
 //   - per-unit 反復・swarm・load-steering/continue_token・human-presence・Build-and-Test
 //     loop-back は未モデル化
 //   - recompose の 8 ガードのうち 4 (Running/非autonomous/pending/前方) のみ
-//   - 到達不能枝 (意図どおり、cursor_in_scope が成立するため): actNext の DError 枝と
-//     完了済みカーソル枝、actReportSkipped の effectivePlan == SkipPlan 腕
+//   - 到達不能枝 (意図どおり): actNext の DError 枝、actReportSkipped の
+//     effectivePlan == SkipPlan 腕、actReportForward の非 gated 腕 (v2.2 — 誕生 =
+//     初期化完了済みにより cursor が stage 0 の in-flight に乗る歴史が構成不能になった。
+//     upstream 自身も一般分岐として持つ実行時到達不能コードの鏡として存置)
+//   - actNext の完了済みカーソル枝は v2.2 で到達可能になった (縮退誕生 — 実ステージが
+//     全て実効 SKIP のとき cursor 0 が CompletedBox のまま Running で生まれる)
 //   - skipped 受理条件 e の [S] 再報告 (upstream は冪等再 skip を受理) は省略 —
 //     slice 1 では Running 中に cursor が SkippedBox に乗らないため
 //
@@ -87,18 +95,28 @@ module engine_loop {
     STAGES.filter(s => s > after and inScope(s))
       .fold(-1, (acc, s) => if (acc == -1 or s < acc) s else acc)
 
+  // 誕生 = 初期化完了済み (issue #76 / オーナー裁定 2026-09-01、v2.2): upstream の意味論では
+  // initialization (stage 0) は鋳造の一部として完了し、カーソルは最初の in-scope 実ステージに
+  // 立つ。実ステージが 1 つも in-scope に無い縮退形はカーソル 0 (CompletedBox) のまま Running —
+  // actNext の完了済みカーソル枝 (branch 10) がこの形を受ける。
   action init = {
     nondet execSet = STAGES.powerset().oneOf()
     nondet condSet = STAGES.powerset().oneOf()
     val p = STAGES.mapBy(s => if (s == 0 or execSet.contains(s)) Execute else SkipPlan)
-    val cb0 = STAGES.mapBy(s => if (s == 0) InProgress else Pending)
+    val firstReal = STAGES.filter(s => s > 0 and p.get(s) == Execute)
+      .fold(-1, (acc, s) => if (acc == -1 or s < acc) s else acc)
+    val cb0 = STAGES.mapBy(s =>
+      if (s == 0) CompletedBox
+      else if (s == firstReal) InProgress
+      else Pending)
+    val cur0 = if (firstReal == -1) 0 else firstReal
     val ap0 = STAGES.mapBy(s => false)
     all {
       plan' = p,
       overlay' = p,
       conditional' = STAGES.mapBy(s => s != 0 and condSet.contains(s)),
       checkbox' = cb0,
-      cursor' = 0,
+      cursor' = cur0,
       status' = Running,
       parkedAt' = -1,
       autonomous' = false,
@@ -106,7 +124,7 @@ module engine_loop {
       lastDirective' = DNone,
       lastAction' = "init",
       prevCheckbox' = cb0,
-      prevCursor' = 0,
+      prevCursor' = cur0,
       prevOverlay' = p,
       prevApproved' = ap0,
       prevStatus' = Running,
