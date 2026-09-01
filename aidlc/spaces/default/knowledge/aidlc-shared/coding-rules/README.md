@@ -36,7 +36,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 
 | ルール | 一言 | 機械強制 |
 | --- | --- | --- |
-| [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod` | 部分的（`cargo lint` の no-public-fields ほか） |
+| [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod`。**1 ファイル 1 公開型**（2026-09-01 改訂 — 全層へ拡張） | 部分的（`cargo lint` の no-public-fields / one-public-type） |
 | [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
 | [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ。**アクセサを `value()`/`inner()`/`raw()` と名乗って内部型を意識させない**（2026-08-24 追記） | `cargo lint`（checkbox-vocabulary） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
@@ -66,6 +66,12 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 （`checkbox-vocabulary` / `no-public-fields`）。一方、各規則に散らばる「ルール化予定 / 候補」は
 **8 本**ある。**予定が実装の 4 倍あるのは規則の信頼を下げる** — 「そのうち機械が見てくれる」と
 読まれ、レビューでの適用が緩む。
+
+**更新 2026-09-01**: `one-public-type`（1 ファイル 1 公開型 —
+[abstract-data-type.md](abstract-data-type.md) §改訂 2026-09-01）が加わり実装済みは **3 本**。
+下表の 4 本より先に着地したのは、同日のオーナー裁定で新設された規則であり待ち行列に並んで
+いなかったため。着手条件 1〜3 は充足済み（反例が構造的に無い / 赤例テスト同梱 / 検出と
+実測 71 ファイルの是正を b32 の同一 Bolt で着地）。
 
 そこで、**順序と着手条件をここ 1 箇所で管理する**。個々の規則に「予定」と書き足すのをやめる
 （規則側は「レビュー基準」か「`cargo lint`（ルール名）」のどちらかだけを書く）。

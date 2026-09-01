@@ -3,7 +3,7 @@
 **裁定日**: 2026-08-24（オーナー）
 **性格**: **土台**。他の複数の規則がここから導かれる（下記「ここから導かれる規則」）
 **関連スキル**: `j5ik2o-ddd-domain-primitives-and-always-valid`、`j5ik2o-ddd-domain-building-blocks`
-**機械強制**: 部分的（`cargo lint` の `no-public-fields`。それ以外はレビュー基準）
+**機械強制**: 部分的（`cargo lint` の `no-public-fields` / `one-public-type`。それ以外はレビュー基準）
 
 ## 原則
 
@@ -53,6 +53,25 @@ Rust のフィールド private は**定義モジュールとその子孫**か�
 `&str -> String` の自由関数が並ぶモジュールで、まさに「`mod` を単位と見た結果、全部単体の
 fn に落ちた」形になっている（`code-summary` §7 に申し送り済み — 命名だけでなく、
 その手続きがどの型の振る舞いなのかから問い直す）。
+
+### 改訂 2026-09-01（オーナー裁定、b32）— 1 ファイル 1 公開型（全層へ拡張）
+
+「1 ファイル 1 型」は当初ドメインの値オブジェクト・エンティティの帰結として書かれていたが、
+**全層の公開型（`pub struct` / `pub enum` / `pub trait`）の規則に拡張**する（Java 形式 —
+1 ファイル 1 公開クラス。b32 で実測 71 ファイル・146 所見を検出と同一 Bolt で一斉是正して着地）。
+
+- ファイル名は型名の snake_case。
+- **同居可**: private 補助型・`pub type` エイリアス・主題型に仕える自由関数・
+  `pub(crate)` 以下（package-private 相当）。
+- 非公開型は従属する公開型のファイルに納める（private 型だけの孤立ファイルを作らない）。
+  複数公開型に共有される private 型は主たる従属先へ寄せるか、公開昇格を個別判定する。
+- 公開型ゼロの自由関数モジュール（`codec.rs` 等 — 裁定済みの free function 化）は正当。
+- イベント族（enum + 変種ペイロード）のディレクトリ化の形と、DTO 族の dto/ 直下フラット
+  配置は [module-visibility.md](module-visibility.md) §追記 2026-09-01 を参照。
+
+機械強制は `cargo lint` の `one-public-type` — 検出は**ファイルのトップレベル・無制限
+`pub`** のみ（`pub(crate)` 以下・`pub type`・自由関数・`#[cfg(test)]` は数えない）。
+抑制は共通規約（`// amadeus-lint: allow(one-public-type) 理由` — 理由必須）。
 
 ## 判定 — 呼び手は何に依存しているか
 
