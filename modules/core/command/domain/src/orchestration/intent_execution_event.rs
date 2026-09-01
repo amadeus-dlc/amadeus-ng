@@ -19,9 +19,32 @@
 //!
 //! [`EventEnvelope`]: https://docs.rs/event-store-adapter-rs/3.0.0/event_store_adapter_rs/event_envelope/struct.EventEnvelope.html
 
-use super::autonomy_mode::AutonomyMode;
-use super::intent_id::IntentId;
-use crate::workflow_definition::StageSlug;
+// 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
+// 再輸出する (所有サブツリーのファサード — 利便再エクスポートではない。
+// coding-rules/module-visibility.md)。
+mod autonomy_mode_set;
+mod gate_approved;
+mod gate_opened;
+mod gate_rejected;
+mod jumped;
+mod parked;
+mod recomposed;
+mod stage_completed;
+mod stage_revised;
+mod stage_skipped;
+mod started;
+
+pub use autonomy_mode_set::AutonomyModeSet;
+pub use gate_approved::GateApproved;
+pub use gate_opened::GateOpened;
+pub use gate_rejected::GateRejected;
+pub use jumped::Jumped;
+pub use parked::Parked;
+pub use recomposed::Recomposed;
+pub use stage_completed::StageCompleted;
+pub use stage_revised::StageRevised;
+pub use stage_skipped::StageSkipped;
+pub use started::Started;
 
 /// 12 変種のドメインイベント (C5 の 11 + `StageCompleted`)。
 ///
@@ -56,285 +79,6 @@ pub enum IntentExecutionEvent {
     AutonomyModeSet(AutonomyModeSet),
 }
 
-/// `Started` のペイロード — 起きた事実 (どの intent の実行が始まったか) だけを運ぶ。
-///
-/// **イベントはそのイベントを説明するプロパティだけに絞る** (オーナー裁定 2026-08-30)。
-/// かつて丸ごと運んでいた `Intent` の複製 (解決済み計画・表示属性・走査結果・依頼文) は
-/// 撤去した — それらは実行開始という事実の説明ではなく **intent 自身の誕生の記録**であり、
-/// 正本は intent 自身のジャーナルの `Created` にある (issue #50 / #56)。RMU が状態ファイル
-/// の骨格を描く材料もそこから取る。集約参照は ID で行う
-/// (coding-rules/aggregate-references.md)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Started {
-    intent_id: IntentId,
-}
-
-impl Started {
-    /// 開始された intent の識別子を束ねる。
-    #[must_use]
-    pub const fn new(intent_id: IntentId) -> Started {
-        Started { intent_id }
-    }
-
-    /// 開始された intent の識別子。
-    #[must_use]
-    pub const fn intent_id(&self) -> &IntentId {
-        &self.intent_id
-    }
-}
-
-/// `StageCompleted` のペイロード — 起きた事実 (どのステージが完了したか) だけを運ぶ。
-///
-/// 次カーソルは載せない — 導出された状態であり、適用側 (集約) とリードモデル側 (RMU) が
-/// それぞれ自分の状態から導く (オーナー裁定 2026-08-30「イベントに状態は含めるな」)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StageCompleted {
-    stage: StageSlug,
-}
-
-impl StageCompleted {
-    /// 完了したステージ。
-    #[must_use]
-    pub const fn new(stage: StageSlug) -> StageCompleted {
-        StageCompleted { stage }
-    }
-
-    /// 完了したステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-}
-
-/// `GateOpened` のペイロード。`artifacts` は呼出側が渡す投影材料 (C5)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GateOpened {
-    stage: StageSlug,
-    artifacts: Vec<String>,
-}
-
-impl GateOpened {
-    /// ゲートを開いたステージと、レビュー対象の成果物パス列。
-    #[must_use]
-    pub const fn new(stage: StageSlug, artifacts: Vec<String>) -> GateOpened {
-        GateOpened { stage, artifacts }
-    }
-
-    /// ゲートを開いたステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-
-    /// レビュー対象の成果物パス列 (集約は検証せず載せるだけ)。
-    #[must_use]
-    pub fn artifacts(&self) -> &[String] {
-        &self.artifacts
-    }
-}
-
-/// `GateApproved` のペイロード — 事実 (どのゲートが・どの入力で承認されたか) だけを運ぶ。
-///
-/// 次カーソルとフェーズ境界は載せない — どちらも導出された状態であり、適用側とリードモデル
-/// 側が自分の状態から導く (オーナー裁定 2026-08-30)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GateApproved {
-    stage: StageSlug,
-    user_input: Option<String>,
-}
-
-impl GateApproved {
-    /// 承認されたステージと、承認時の人間入力。
-    #[must_use]
-    pub const fn new(stage: StageSlug, user_input: Option<String>) -> GateApproved {
-        GateApproved { stage, user_input }
-    }
-
-    /// 承認されたステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-
-    /// 承認時の人間入力 (逐語保持)。
-    #[must_use]
-    pub fn user_input(&self) -> Option<&str> {
-        self.user_input.as_deref()
-    }
-}
-
-/// `GateRejected` のペイロード — 事実 (どのゲートが・どの理由で差し戻されたか) だけを運ぶ。
-///
-/// 改訂回数は載せない — 適用後の値 = 状態である。集約は自分のカウンタを +1 し、RMU は
-/// リードモデルの `Revision Count` を read-modify-write する (upstream `aidlc-state.ts`
-/// 自身が getField + 1 で書いており、この導出が正本互換 — オーナー裁定 2026-08-30)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GateRejected {
-    stage: StageSlug,
-    feedback: Option<String>,
-}
-
-impl GateRejected {
-    /// 差し戻したステージと、差し戻し理由。
-    #[must_use]
-    pub const fn new(stage: StageSlug, feedback: Option<String>) -> GateRejected {
-        GateRejected { stage, feedback }
-    }
-
-    /// 差し戻したステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-
-    /// 差し戻し理由 (逐語保持)。
-    #[must_use]
-    pub fn feedback(&self) -> Option<&str> {
-        self.feedback.as_deref()
-    }
-}
-
-/// `StageRevised` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StageRevised {
-    stage: StageSlug,
-}
-
-impl StageRevised {
-    /// ゲートに再入したステージ。
-    #[must_use]
-    pub const fn new(stage: StageSlug) -> StageRevised {
-        StageRevised { stage }
-    }
-
-    /// ゲートに再入したステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-}
-
-/// `StageSkipped` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StageSkipped {
-    stage: StageSlug,
-    reason: String,
-}
-
-impl StageSkipped {
-    /// 読み飛ばしたステージと、理由。次カーソルは載せない (導出 — オーナー裁定 2026-08-30)。
-    #[must_use]
-    pub const fn new(stage: StageSlug, reason: String) -> StageSkipped {
-        StageSkipped { stage, reason }
-    }
-
-    /// 読み飛ばしたステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-
-    /// 読み飛ばしの理由 (逐語保持)。
-    #[must_use]
-    pub fn reason(&self) -> &str {
-        &self.reason
-    }
-}
-
-/// `Jumped` のペイロード — 事実 (どこへ跳んだか) だけを運ぶ。
-///
-/// 方向・出発点・読み飛ばし列・巻き戻し列は載せない — すべて跳躍規則 (BR1.6) による導出で
-/// あり、適用側 (集約) とリードモデル側 (RMU) がそれぞれ自分の状態 (カーソル・checkbox・
-/// 実効プラン) から導く (オーナー裁定 2026-08-30「イベントに状態は含めるな」)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Jumped {
-    target: StageSlug,
-}
-
-impl Jumped {
-    /// 跳んだ先。
-    #[must_use]
-    pub const fn new(target: StageSlug) -> Jumped {
-        Jumped { target }
-    }
-
-    /// 跳んだ先。
-    #[must_use]
-    pub const fn target(&self) -> &StageSlug {
-        &self.target
-    }
-}
-
-/// `Parked` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Parked {
-    stage: StageSlug,
-}
-
-impl Parked {
-    /// park した位置のステージ。
-    #[must_use]
-    pub const fn new(stage: StageSlug) -> Parked {
-        Parked { stage }
-    }
-
-    /// park した位置のステージ。
-    #[must_use]
-    pub const fn stage(&self) -> &StageSlug {
-        &self.stage
-    }
-}
-
-/// `Recomposed` のペイロード — 事実 (どの反転が起きたか) だけを運ぶ。
-///
-/// 適用後の in-scope 列は載せない — 適用後の状態であり、適用側とリードモデル側が自分の
-/// 実効プランから導く (オーナー裁定 2026-08-30)。1 コマンドの複数反転は 1 イベント (C5)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Recomposed {
-    skipped: Vec<StageSlug>,
-    added: Vec<StageSlug>,
-}
-
-impl Recomposed {
-    /// EXECUTE → SKIP にした列、SKIP → EXECUTE にした列。
-    #[must_use]
-    pub const fn new(skipped: Vec<StageSlug>, added: Vec<StageSlug>) -> Recomposed {
-        Recomposed { skipped, added }
-    }
-
-    /// EXECUTE → SKIP に反転したステージ列。
-    #[must_use]
-    pub fn skipped(&self) -> &[StageSlug] {
-        &self.skipped
-    }
-
-    /// SKIP → EXECUTE に反転したステージ列。
-    #[must_use]
-    pub fn added(&self) -> &[StageSlug] {
-        &self.added
-    }
-}
-
-/// `AutonomyModeSet` のペイロード。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AutonomyModeSet {
-    mode: AutonomyMode,
-}
-
-impl AutonomyModeSet {
-    /// 設定後のモード。
-    #[must_use]
-    pub const fn new(mode: AutonomyMode) -> AutonomyModeSet {
-        AutonomyModeSet { mode }
-    }
-
-    /// 設定後のモード。
-    #[must_use]
-    pub const fn mode(&self) -> AutonomyMode {
-        self.mode
-    }
-}
-
 #[cfg(test)]
 mod tests {
     // panic! は想定外バリアントの即時失敗という検証用途で使っており、テスト失敗のシグナル
@@ -344,6 +88,8 @@ mod tests {
     use super::*;
     use crate::orchestration::AutonomyMode;
     use crate::workflow_definition::StageSlug;
+
+    use super::super::intent_id::IntentId;
 
     fn slug(s: &str) -> StageSlug {
         StageSlug::parse(s).unwrap()

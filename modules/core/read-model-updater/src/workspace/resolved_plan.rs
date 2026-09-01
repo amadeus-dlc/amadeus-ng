@@ -15,7 +15,17 @@
 //! ジャーナルに何度も転写され、誕生記録の計画と食い違いうるからである。正本は 1 つでよい。
 
 use core_command_domain::orchestration::{Intent, StageDisplay, WorkspaceScan};
-use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
+use core_command_domain::workflow_definition::{PhaseId, StageSlug};
+
+// `PlannedStage` は独立ファイルに 1 型 1 ファイルで置く（`one-public-type`）。
+// 子モジュール `resolved_plan::planned_stage`（`resolved_plan/planned_stage.rs`）として
+// 所有し、ここから `pub use` で再輸出する — 兄弟ファイルを跨いだ利便再エクスポートではなく、
+// 通常のファサード（`mod.rs` と同型の所有連鎖）である
+// (`coding-rules/module-visibility.md`)。`super::resolved_plan::{PlannedStage, ResolvedPlan}`
+// のような直接参照はこの形のまま変わらない。
+mod planned_stage;
+
+pub use planned_stage::PlannedStage;
 
 /// 投影が参照する解決済み計画（文書順の全ステージ + 走査結果）。
 ///
@@ -30,47 +40,6 @@ pub struct ResolvedPlan {
     request: String,
 }
 
-/// 計画上の 1 ステージ（`StageEntry` から投影が要る分だけ写したもの）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlannedStage {
-    slug: StageSlug,
-    phase: PhaseId,
-    plan_action: PlanAction,
-    display: StageDisplay,
-}
-
-impl PlannedStage {
-    /// ステージ slug。
-    #[must_use]
-    pub const fn slug(&self) -> &StageSlug {
-        &self.slug
-    }
-
-    /// このステージのフェーズ。
-    #[must_use]
-    pub const fn phase(&self) -> PhaseId {
-        self.phase
-    }
-
-    /// 静的グリッド由来の計画。
-    #[must_use]
-    pub const fn plan_action(&self) -> PlanAction {
-        self.plan_action
-    }
-
-    /// 表示属性（番号・表題・担当）。
-    #[must_use]
-    pub const fn display(&self) -> &StageDisplay {
-        &self.display
-    }
-
-    /// スコープ内か（`EXECUTE` のもの）。
-    #[must_use]
-    pub fn is_in_scope(&self) -> bool {
-        self.plan_action == PlanAction::Execute
-    }
-}
-
 impl ResolvedPlan {
     /// intent（誕生記録から再構成した集約値）から計画を写す（唯一の構成関数）。
     #[must_use]
@@ -79,12 +48,7 @@ impl ResolvedPlan {
             stages: intent
                 .stages()
                 .iter()
-                .map(|entry| PlannedStage {
-                    slug: entry.slug().clone(),
-                    phase: entry.phase(),
-                    plan_action: entry.plan_action(),
-                    display: entry.display().clone(),
-                })
+                .map(PlannedStage::from_stage_entry)
                 .collect(),
             scan: intent.scan().clone(),
             scope: intent.scope().to_string(),
@@ -192,7 +156,7 @@ mod tests {
     use core_command_domain::orchestration::Created;
     use core_command_domain::orchestration::{Intent, IntentId, StageEntry, StartRequest};
     use core_command_domain::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
+        BrownfieldGreenfield, DefinitionRevision, PlanAction, StageNumber, WorkflowDefinitionId,
     };
 
     fn slug(value: &str) -> StageSlug {

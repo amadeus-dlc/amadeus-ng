@@ -2,8 +2,15 @@
 
 use std::fmt;
 
+use super::projection_name_error::ProjectionNameError;
+
 /// 投影名の上限文字数 (C6 `checkpoint.projection`)。
-const MAX_LEN: usize = 64;
+///
+/// `ProjectionNameError` の `Display` (別ファイル) が「max 64」の材料として参照するため
+/// `pub(super)` へ昇格する — 主たる従属先であるこのファイルに定数を置いたまま、兄弟からは
+/// `super::projection_name::MAX_LEN` で参照する
+/// (`coding-rules/module-visibility.md` の「複数公開型に共有される private 補助」に準じる)。
+pub(super) const MAX_LEN: usize = 64;
 
 /// 投影の名前 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -14,27 +21,6 @@ const MAX_LEN: usize = 64;
 /// `Ord` は生文字列の辞書順。チェックポイントを名前で引く表の鍵になる。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProjectionName(String);
-
-/// `ProjectionName::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
-///
-/// **この型は他のエラーを内包しない** — 3 変種の材料 (長さ・位置) はすべて自分の `Display`
-/// が描く。したがって `Error::source` の連鎖は無く、既定 (`None`) が正しい。常に `None` を
-/// 返すだけの `source` は書かない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProjectionNameError {
-    /// 空文字列。
-    Empty,
-    /// 64 字を超える。
-    Length {
-        /// 実際の文字数。
-        actual: usize,
-    },
-    /// 先頭が小文字英字でない、または `[a-z0-9-]` の外の文字がある。
-    Format {
-        /// 最初に形式へ合わなかった文字の 0 始まり位置。
-        position: usize,
-    },
-}
 
 impl ProjectionName {
     /// kebab (`^[a-z][a-z0-9-]*$`、1〜64 字) として検証する。正規化はしない。
@@ -75,20 +61,6 @@ impl fmt::Display for ProjectionName {
         f.write_str(&self.0)
     }
 }
-
-impl fmt::Display for ProjectionNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ProjectionNameError::Empty => f.write_str("empty"),
-            ProjectionNameError::Length { actual } => {
-                write!(f, "length {actual} (max {MAX_LEN})")
-            }
-            ProjectionNameError::Format { position } => write!(f, "format at {position}"),
-        }
-    }
-}
-
-impl std::error::Error for ProjectionNameError {}
 
 #[cfg(test)]
 mod tests {
@@ -172,29 +144,6 @@ mod tests {
         assert_eq!(
             ProjectionNameError::Format { position: 3 }.to_string(),
             "format at 3"
-        );
-    }
-
-    #[test]
-    fn every_rejection_renders_its_material_and_nothing_else() {
-        // `Display` は材料だけを描く (利用者向け文言はアダプタ層の message-catalog —
-        // coding-rules/error-handling.md)。3 変種すべての綴りを固定する。
-        assert_eq!(ProjectionNameError::Empty.to_string(), "empty");
-        assert_eq!(
-            ProjectionNameError::Length { actual: 65 }.to_string(),
-            "length 65 (max 64)"
-        );
-        assert_eq!(
-            ProjectionNameError::Format { position: 0 }.to_string(),
-            "format at 0"
-        );
-        // parse から返る値でも同じ綴りになること (材料が素通しであること)。
-        assert_eq!(ProjectionName::parse("").unwrap_err().to_string(), "empty");
-        assert_eq!(
-            ProjectionName::parse(&"a".repeat(65))
-                .unwrap_err()
-                .to_string(),
-            "length 65 (max 64)"
         );
     }
 }

@@ -9,6 +9,8 @@ use std::fmt;
 
 use uuid::Uuid;
 
+use super::intent_execution_id_error::IntentExecutionIdError;
+
 /// 1 回の実行の識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
 /// 形は **UUIDv7 の正準表記**に限る —
@@ -20,13 +22,6 @@ use uuid::Uuid;
 /// ミリ秒粒度の作成順になる。型としては形式だけを保証し、時刻の妥当性は検証しない。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntentExecutionId(String);
-
-/// `IntentExecutionId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IntentExecutionIdError {
-    /// UUIDv7 の正準表記 (小文字 `8-4-4-4-12`・version `7`・RFC variant) でない。
-    NotCanonicalUuidV7,
-}
 
 impl IntentExecutionId {
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
@@ -63,18 +58,6 @@ impl fmt::Display for IntentExecutionId {
         f.write_str(&self.0)
     }
 }
-
-impl fmt::Display for IntentExecutionIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IntentExecutionIdError::NotCanonicalUuidV7 => {
-                f.write_str("not a canonical UUIDv7 (expected lowercase 8-4-4-4-12)")
-            }
-        }
-    }
-}
-
-impl std::error::Error for IntentExecutionIdError {}
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,7 @@
 //! `DefinitionIdView` — ワークフロー定義の**系譜 ID** (ADR-008)。値は `harness.json` の
 //! `name` (出荷ハーネスでは `claude`)。
 
-use std::fmt;
+use super::definition_id_error::DefinitionIdError;
 
 /// このハーネスにインストールされたワークフロー定義の系譜 ID。
 ///
@@ -9,15 +9,6 @@ use std::fmt;
 /// [`super::DefinitionRevisionView`] が別に持つ。`Ord` は生文字列の辞書順。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefinitionIdView(String);
-
-/// `DefinitionIdView::parse` が拒否する形。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DefinitionIdError {
-    /// 前後の空白を除くと空になる。
-    Empty,
-    /// 制御文字を含む。
-    ControlCharacter(char),
-}
 
 impl DefinitionIdView {
     /// 前後の空白を落としてから検証する。
@@ -42,19 +33,6 @@ impl DefinitionIdView {
         &self.0
     }
 }
-
-impl fmt::Display for DefinitionIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DefinitionIdError::Empty => f.write_str("empty"),
-            DefinitionIdError::ControlCharacter(c) => {
-                write!(f, "control character U+{:04X}", u32::from(*c))
-            }
-        }
-    }
-}
-
-impl std::error::Error for DefinitionIdError {}
 
 #[cfg(test)]
 mod tests {
@@ -84,15 +62,6 @@ mod tests {
         assert_eq!(
             DefinitionIdView::parse("cla\u{7}ude"),
             Err(DefinitionIdError::ControlCharacter('\u{7}'))
-        );
-    }
-
-    #[test]
-    fn the_rejection_carries_material_not_wording() {
-        assert_eq!(DefinitionIdError::Empty.to_string(), "empty");
-        assert_eq!(
-            DefinitionIdError::ControlCharacter('\u{7}').to_string(),
-            "control character U+0007"
         );
     }
 }

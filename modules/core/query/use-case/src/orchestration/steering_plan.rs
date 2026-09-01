@@ -6,107 +6,14 @@
 //! 型が所有する (`coding-rules/domain-services.md` / `factory-naming.md`)。ファイルの読取
 //! (I/O) は読み手 (アダプタ層・合成ルート) が行い、読み順どおりの [`RuleContent`] 列で渡す。
 
-use super::directive::RuleContent;
+use super::part_count::PartCount;
+use super::part_index::PartIndex;
+use super::rule_content::RuleContent;
+use super::steering_part::SteeringPart;
+use super::unsplittable_section::UnsplittableSection;
 
 /// チャンクのテキスト目標 (`STEERING_TEXT_TARGET_BYTES = 20 * 1024` — 02 §10)。
 const STEERING_TEXT_TARGET_BYTES: usize = 20 * 1024;
-
-/// セクションを輸送目標未満へ分割できない (防御的 — 1 コードポイントが目標を超える場合のみ)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnsplittableSection {
-    path: String,
-}
-
-impl UnsplittableSection {
-    /// 該当セクションを含むルールファイルのパス。
-    #[must_use]
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-}
-
-impl std::fmt::Display for UnsplittableSection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unsplittable section in {}", self.path)
-    }
-}
-
-impl std::error::Error for UnsplittableSection {}
-
-/// 配信部の索引 (1 始まり)。
-///
-/// 算術は公開しない — 進めるのは `next()` だけ、範囲判定は [`SteeringPlan`] のクエリだけが
-/// 行う (取り違え防止)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PartIndex(u32);
-
-impl PartIndex {
-    /// 第 1 部。
-    pub const FIRST: PartIndex = PartIndex(1);
-
-    /// 次の部。
-    #[must_use]
-    pub const fn next(self) -> PartIndex {
-        PartIndex(self.0.saturating_add(1))
-    }
-
-    /// ワイヤ生値から復元する (0 は索引として不正 — 1 始まり)。
-    #[must_use]
-    pub const fn from_raw(raw: u32) -> Option<PartIndex> {
-        if raw == 0 { None } else { Some(PartIndex(raw)) }
-    }
-
-    /// ワイヤ・表示用の生値。
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-}
-
-/// パート総数。
-///
-/// [`PartIndex`] と隣接しても取り違えられないよう別型で運ぶ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PartCount(u32);
-
-impl PartCount {
-    /// ワイヤ・表示用の生値。
-    #[must_use]
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-}
-
-/// 計画上の 1 部 — 索引・総数・その部が運ぶルール内容の借用。
-///
-/// [`SteeringPlan`] のクエリだけが構築する (`index <= of` は構築経路で保証される —
-/// 範囲外の部は表現不能)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SteeringPart<'a> {
-    index: PartIndex,
-    of: PartCount,
-    chunk: &'a [RuleContent],
-}
-
-impl SteeringPart<'_> {
-    /// この部の索引 (1 始まり)。
-    #[must_use]
-    pub const fn index(&self) -> PartIndex {
-        self.index
-    }
-
-    /// パート総数。
-    #[must_use]
-    pub const fn of(&self) -> PartCount {
-        self.of
-    }
-
-    /// この部が運ぶルール内容 (配列順に適用する)。
-    #[must_use]
-    pub const fn chunk(&self) -> &[RuleContent] {
-        self.chunk
-    }
-}
 
 /// 配信計画 — piece をパック済みのチャンク列。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,10 +52,8 @@ impl SteeringPlan {
                     pieces.push(RuleContent::new(file.path().to_string(), section));
                     continue;
                 }
-                let slices =
-                    split_by_codepoints(&section, budget).ok_or_else(|| UnsplittableSection {
-                        path: file.path().to_string(),
-                    })?;
+                let slices = split_by_codepoints(&section, budget)
+                    .ok_or_else(|| UnsplittableSection::new(file.path().to_string()))?;
                 for slice in slices {
                     pieces.push(RuleContent::new(file.path().to_string(), slice));
                 }
@@ -181,7 +86,7 @@ impl SteeringPlan {
     /// パート総数。
     #[must_use]
     pub fn part_count(&self) -> PartCount {
-        PartCount(u32::try_from(self.chunks.len()).unwrap_or(u32::MAX))
+        PartCount::new(u32::try_from(self.chunks.len()).unwrap_or(u32::MAX))
     }
 
     /// 束が空か (bare run-stage でよい)。
@@ -224,11 +129,9 @@ impl SteeringPlan {
 
     fn part_at(&self, index: PartIndex) -> Option<SteeringPart<'_>> {
         let position = usize::try_from(index.as_u32()).ok()?.checked_sub(1)?;
-        self.chunks.get(position).map(|chunk| SteeringPart {
-            index,
-            of: self.part_count(),
-            chunk,
-        })
+        self.chunks
+            .get(position)
+            .map(|chunk| SteeringPart::new(index, self.part_count(), chunk))
     }
 }
 
@@ -316,13 +219,6 @@ mod tests {
             vec![piece("b.md", "3")],
         ]);
         assert_eq!(plan.delivered_paths(), ["a.md", "b.md"]);
-    }
-
-    #[test]
-    fn the_part_index_starts_at_one_and_rejects_zero() {
-        assert_eq!(PartIndex::from_raw(0), None);
-        assert_eq!(PartIndex::from_raw(2).map(PartIndex::as_u32), Some(2));
-        assert_eq!(PartIndex::FIRST.next().as_u32(), 2);
     }
 
     #[test]
@@ -437,16 +333,5 @@ mod tests {
         let error = SteeringPlan::pack(std::slice::from_ref(&file)).unwrap_err();
         assert_eq!(error.path(), path, "拒否はどのファイルかを運ぶ");
         assert_eq!(error.to_string(), format!("unsplittable section in {path}"));
-    }
-
-    #[test]
-    fn the_unsplittable_error_names_its_file() {
-        let error = UnsplittableSection {
-            path: "org.md".to_string(),
-        };
-        assert_eq!(error.path(), "org.md");
-        assert_eq!(error.to_string(), "unsplittable section in org.md");
-        let boxed: Box<dyn std::error::Error> = Box::new(error);
-        assert_eq!(boxed.to_string(), "unsplittable section in org.md");
     }
 }

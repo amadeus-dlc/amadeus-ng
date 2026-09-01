@@ -10,87 +10,9 @@
 //! [`super::WorkflowDefinitionDao`]) が**どこを読むかを構築時に決めている**ので、識別子は
 //! observed 面から消える。
 
-use super::engine_command::ReadOnlyVerb;
-
-/// 名詞トークンの族 (分岐 1b/1c/1d — 先頭トークン意味論のみ)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NounFamily {
-    /// `space` / `intent` (分岐 1b)。
-    Workspace,
-    /// `plugin` (分岐 1c)。
-    Plugin,
-    /// `knowledge` (分岐 1d)。
-    Knowledge,
-}
-
-/// 名詞トークン (族 + 残りのトークン列は逐語で通す)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NounToken {
-    family: NounFamily,
-    tokens: Vec<String>,
-}
-
-impl NounToken {
-    /// 族と残トークンを束ねる。
-    #[must_use]
-    pub const fn new(family: NounFamily, tokens: Vec<String>) -> NounToken {
-        NounToken { family, tokens }
-    }
-
-    /// 族。
-    #[must_use]
-    pub const fn family(&self) -> NounFamily {
-        self.family
-    }
-
-    /// 先頭トークンを含む残りのトークン列 (逐語)。
-    #[must_use]
-    pub fn tokens(&self) -> &[String] {
-        &self.tokens
-    }
-}
-
-/// レコードとステージ資産の配置 (パス組み立ての材料 — Controller 供給)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkspaceLayout {
-    record_dir: String,
-    stage_library_dir: String,
-    agent_dir: String,
-}
-
-impl WorkspaceLayout {
-    /// 3 つの配置を束ねる。
-    #[must_use]
-    pub const fn new(
-        record_dir: String,
-        stage_library_dir: String,
-        agent_dir: String,
-    ) -> WorkspaceLayout {
-        WorkspaceLayout {
-            record_dir,
-            stage_library_dir,
-            agent_dir,
-        }
-    }
-
-    /// 稼働中 intent の record ディレクトリ (`aidlc/spaces/<space>/intents/<slug>-<id8>`)。
-    #[must_use]
-    pub fn record_dir(&self) -> &str {
-        &self.record_dir
-    }
-
-    /// ステージ本体ファイルの置き場 (`.claude/aidlc-common/stages`)。
-    #[must_use]
-    pub fn stage_library_dir(&self) -> &str {
-        &self.stage_library_dir
-    }
-
-    /// エージェントペルソナの置き場 (`.claude/agents`)。
-    #[must_use]
-    pub fn agent_dir(&self) -> &str {
-        &self.agent_dir
-    }
-}
+use super::noun_token::NounToken;
+use super::read_only_verb::ReadOnlyVerb;
+use super::workspace_layout::WorkspaceLayout;
 
 /// `next` 1 回分の観測。フィールドは private + アクセサ、構築はビルダー (材料が多いため)。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -361,6 +283,7 @@ impl NextTurnInput {
 
 #[cfg(test)]
 mod tests {
+    use super::super::noun_family::NounFamily;
     use super::*;
 
     #[test]

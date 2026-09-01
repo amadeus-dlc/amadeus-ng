@@ -3,20 +3,11 @@
 
 use std::fmt;
 
+use super::space_name_error::SpaceNameError;
+
 /// パース済みの space 名 (Always Valid — 不正値はこの型に存在しない)。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SpaceName(String);
-
-/// `parse` の拒否理由。正規化 (小文字化・区切り置換) は一切しない — 受理か拒否のみ。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SpaceNameError {
-    /// 空文字列。
-    Empty,
-    /// 先頭は `[a-z]` 必須。
-    InvalidLeading(char),
-    /// 2 文字目以降は `[a-z0-9-]` のみ。
-    InvalidChar(char),
-}
 
 /// default space (ディスクに何もなくても常に有効 — upstream 特例)。
 impl Default for SpaceName {

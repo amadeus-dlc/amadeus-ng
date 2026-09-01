@@ -7,25 +7,12 @@
 //! アルファベット順スキャン・**5 語超のテキストでは抑止** (`:5586-5594`)。デフォルトは
 //! `classic` (`aidlc-lib.ts:8896`)。
 
+use super::scope_resolution_error::ScopeResolutionError;
+use super::scope_source::ScopeSource;
 use crate::orchestration::{DefinitionView, ScopeSlugView};
 
 /// デフォルト scope (`export const DEFAULT_SCOPE = "classic";`)。
 const DEFAULT_SCOPE: &str = "classic";
-
-/// 解決の出所 (観測可能な分類 — 逐語文言は出す側が組む)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeSource {
-    /// リードモデルの `Scope` (稼働中は常に勝つ)。
-    State,
-    /// 明示 `--scope`。
-    Explicit,
-    /// 位置引数のキーワード推論。
-    Inferred,
-    /// `AWS_AIDLC_DEFAULT_SCOPE`。
-    Env,
-    /// デフォルト定数 (自由記述含む)。
-    Default,
-}
 
 /// 解決結果。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,26 +33,6 @@ impl ResolvedScope {
     pub const fn source(&self) -> ScopeSource {
         self.source
     }
-}
-
-/// 解決の失敗 (材料のみ — 逐語文言は出す側が組む)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScopeResolutionError {
-    /// 無効な明示 `--scope` (分岐 3b — 無条件検証)。
-    UnknownExplicit {
-        /// 拒否された scope 名。
-        scope: String,
-    },
-    /// 無効な `AWS_AIDLC_DEFAULT_SCOPE` (分岐 4)。
-    UnknownEnv {
-        /// 拒否された環境変数の値。
-        value: String,
-    },
-    /// ラダーを通しても解決できない (state 由来値が定義に無い等)。
-    Unresolvable {
-        /// 拒否された scope 名。
-        scope: String,
-    },
 }
 
 impl DefinitionView {

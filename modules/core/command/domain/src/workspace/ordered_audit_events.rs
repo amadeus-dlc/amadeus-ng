@@ -17,59 +17,11 @@
 //! 同一秒のタイを「順序不明」として拒否するのは authority 比較（`humanActedSinceGate` —
 //! orchestration の述語、B9）の側の話である。本サービスは順序を**必ず 1 つ返す**。
 
-use core::fmt;
-
-use super::audit_events::EventType;
+use super::audit_event_record::AuditEventRecord;
+use super::audit_event_record::record_of;
 
 /// ブロックの区切り（upstream の読み手はここで割る）。
 const BLOCK_SEPARATOR: &str = "\n---\n";
-/// タイムスタンプ行の接頭辞。
-const TIMESTAMP_PREFIX: &str = "**Timestamp**: ";
-/// イベント行の接頭辞。
-const EVENT_PREFIX: &str = "**Event**: ";
-
-/// 台帳から読み取ったイベント 1 件（位置つき）。
-///
-/// フィールドは private。順序の材料（タイムスタンプと位置）を外から書き換えられると、
-/// 並びの意味が壊れるためである。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuditEventRecord {
-    timestamp: String,
-    event: EventType,
-    position: usize,
-}
-
-impl AuditEventRecord {
-    /// 行が名乗っていた秒精度 ISO タイムスタンプ（逐語 — 解釈しない）。
-    #[must_use]
-    pub fn timestamp(&self) -> &str {
-        &self.timestamp
-    }
-
-    /// イベント型（閉集合の 86 語）。
-    #[must_use]
-    pub const fn event(&self) -> EventType {
-        self.event
-    }
-
-    /// 連結バッファ内でのブロックの位置（0 始まり）。タイを破る材料である。
-    #[must_use]
-    pub const fn position(&self) -> usize {
-        self.position
-    }
-}
-
-impl fmt::Display for AuditEventRecord {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} {} @{}",
-            self.timestamp,
-            self.event.as_str(),
-            self.position
-        )
-    }
-}
 
 /// 順序付きのイベント列（W15 の E1 装置）。
 ///
@@ -125,36 +77,14 @@ impl OrderedAuditEvents {
             .enumerate()
             .filter_map(|(position, block)| record_of(block, position))
             .collect();
-        records.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+        records.sort_by(|left, right| left.timestamp().cmp(right.timestamp()));
         OrderedAuditEvents(records)
     }
 }
 
-/// ブロック 1 つから順序の材料を取り出す（欠落・閉集合外は `None`）。
-fn record_of(block: &str, position: usize) -> Option<AuditEventRecord> {
-    let mut timestamp = None;
-    let mut event = None;
-    for line in block.lines() {
-        if timestamp.is_none()
-            && let Some(value) = line.strip_prefix(TIMESTAMP_PREFIX)
-        {
-            timestamp = Some(value.to_string());
-        }
-        if event.is_none()
-            && let Some(value) = line.strip_prefix(EVENT_PREFIX)
-        {
-            event = EventType::parse(value);
-        }
-    }
-    Some(AuditEventRecord {
-        timestamp: timestamp?,
-        event: event?,
-        position,
-    })
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::audit_events::EventType;
     use super::*;
 
     fn block(timestamp: &str, event: &str) -> String {

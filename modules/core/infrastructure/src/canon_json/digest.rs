@@ -1,4 +1,4 @@
-//! sha256 ダイジェストの 2 族 (BR1.6)。
+//! sha256 ダイジェスト本体 (BR1.6)。族は [`DigestFamily`](super::digest_family::DigestFamily)。
 
 use sha2::{Digest as _, Sha256};
 
@@ -6,22 +6,10 @@ use crate::canon_json::profile::SerializationProfile;
 use crate::canon_json::value::JsonValue;
 use crate::canon_json::writer::serialize;
 
+use super::digest_family::DigestFamily;
+
 /// 小文字 16 進の桁。
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
-
-/// ダイジェストの族。どのプロファイルのバイト列から計算し、どう表記するかを型で固定する。
-///
-/// 族を型で持つのは取り違えを防ぐため — 正準族と非正準族は同じ 64 桁 hex でも
-/// 入力バイト列が違うので、混ぜると静かに不一致になる。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DigestFamily {
-    /// `hashObject` 互換。hash-canonical 出力の sha256 を `sha256:` 接頭辞付きで表記する。
-    /// `contract_sha256`・approval fingerprint がこの族。
-    CanonicalPrefixed,
-    /// contract-compact 出力の sha256 を生 hex で表記する。
-    /// bundle hash・`directiveHash`・route hash・ルール配送の冪等 digest がこの族。
-    CompactRaw,
-}
 
 /// sha256 ダイジェスト。族と 64 桁小文字 hex を持つ。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -18,10 +18,16 @@
 #![forbid(unsafe_code)]
 
 mod clock;
+mod fake_clock;
+mod system_clock;
+mod unscanned_workspace;
 mod workspace_scanner;
 
 pub mod orchestration;
 
 // 横断機構の注入シーム (Gateway ではない)
-pub use clock::{Clock, FakeClock, SystemClock};
-pub use workspace_scanner::{UnscannedWorkspace, WorkspaceScanner};
+pub use clock::Clock;
+pub use fake_clock::FakeClock;
+pub use system_clock::SystemClock;
+pub use unscanned_workspace::UnscannedWorkspace;
+pub use workspace_scanner::WorkspaceScanner;

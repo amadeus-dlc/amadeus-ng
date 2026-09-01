@@ -62,12 +62,16 @@ mod apply_error;
 mod autonomy_mode;
 mod command_error;
 mod intent;
+mod intent_error;
 mod intent_event;
 mod intent_execution;
 mod intent_execution_error;
 mod intent_execution_event;
 mod intent_execution_id;
+mod intent_execution_id_error;
 mod intent_id;
+mod intent_id_error;
+mod invalid_mode_arg;
 mod jump_direction;
 mod phase_boundary;
 mod skeleton_stance;
@@ -77,6 +81,8 @@ mod stage_index;
 mod stage_key;
 mod start_request;
 mod status;
+mod unknown_stance;
+mod unknown_verdict;
 mod verdict;
 mod workspace_scan;
 
@@ -116,14 +122,14 @@ pub use intent_execution_event::{
 pub use intent_event::{Created, IntentEvent};
 
 // エラー
-pub use autonomy_mode::InvalidModeArg;
 pub use command_error::CommandError;
-pub use intent::IntentError;
+pub use intent_error::IntentError;
 pub use intent_execution_error::IntentExecutionError;
-pub use intent_execution_id::IntentExecutionIdError;
-pub use intent_id::IntentIdError;
-pub use skeleton_stance::UnknownStance;
-pub use verdict::UnknownVerdict;
+pub use intent_execution_id_error::IntentExecutionIdError;
+pub use intent_id_error::IntentIdError;
+pub use invalid_mode_arg::InvalidModeArg;
+pub use unknown_stance::UnknownStance;
+pub use unknown_verdict::UnknownVerdict;
 
 // 逐語定数
 pub use verdict::ACCEPTED_RESULTS;

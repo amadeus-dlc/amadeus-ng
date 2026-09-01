@@ -24,12 +24,12 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::workflow_definition::{
-    ConsumeDecl, Defined, DefinitionRevision, RuleInContext, ScopeGrid, ScopeMetadata, SensorRef,
-    StageGraph, StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
-    WorkflowDefinitionId,
+    ConsumeDecl, RuleInContext, ScopeGrid, ScopeMetadata, SensorRef, StageGraph, StageNode,
+    StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
 };
 use serde::{Deserialize, Serialize};
 
+use super::defined_dto::DefinedDto;
 use super::dto_decode_error::DtoDecodeError;
 use super::dto_vocabulary::{
     execution_kind_of, execution_kind_spelling, phase_of, phase_spelling, plan_action_of,
@@ -50,16 +50,6 @@ pub struct WorkflowDefinitionDto {
     defined: DefinedDto,
     /// 最後に適用したイベントの発生時刻 (封筒由来のメタデータ)。
     last_updated_at: DateTime<Utc>,
-}
-
-/// 誕生記録の行の形 — 系譜 ID・内容版・内容。
-///
-/// 誕生イベント `Defined` の payload であり、スナップショット行の内容部分でもある。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DefinedDto {
-    id: String,
-    revision: String,
-    content: DefinitionContentDto,
 }
 
 /// 定義の内容 (3 入力のモデル) の行の形。誕生と改訂の両方が同じ形を運ぶ。
@@ -174,36 +164,6 @@ impl WorkflowDefinitionDto {
             self.defined.to_domain()?,
             self.last_updated_at,
         )))
-    }
-}
-
-impl DefinedDto {
-    /// 誕生記録から DTO を組む (書き)。
-    #[must_use]
-    pub(super) fn of(defined: &Defined) -> DefinedDto {
-        DefinedDto {
-            id: defined.id().as_str().to_string(),
-            revision: defined.revision().as_str().to_string(),
-            content: DefinitionContentDto::of(defined.graph(), defined.grid(), defined.scopes()),
-        }
-    }
-
-    /// 誕生記録として復号する (読み — 定義ジャーナル面・スナップショット面の共通経路)。
-    ///
-    /// # Errors
-    ///
-    /// 閉集合外の綴り・文法外の識別子・不変条件違反。
-    pub(super) fn to_domain(&self) -> Result<Defined, DtoDecodeError> {
-        let (graph, grid, scopes) = self.content.to_domain()?;
-        Ok(Defined::new(
-            WorkflowDefinitionId::parse(&self.id)
-                .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
-            DefinitionRevision::parse(&self.revision)
-                .map_err(|_| DtoDecodeError::malformed("revision", self.revision.clone()))?,
-            graph,
-            grid,
-            scopes,
-        ))
     }
 }
 
@@ -495,6 +455,7 @@ mod tests {
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, ReviewCapValue,
         ReviewClass, RuleScope, SkeletonDefault, StageMode, StageNodeBuilder, WorkflowDefinition,
+        WorkflowDefinitionId,
     };
 
     /// スナップショット行に載る発生時刻 (固定値)。

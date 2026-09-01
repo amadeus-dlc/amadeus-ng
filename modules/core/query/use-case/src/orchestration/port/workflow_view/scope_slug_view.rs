@@ -6,20 +6,11 @@
 
 use std::fmt;
 
+use super::scope_slug_error::ScopeSlugError;
+
 /// パース済みの scope 名 (不正値はこの型に存在しない)。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeSlugView(String);
-
-/// `ScopeSlugView::parse` が拒否する文法違反。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScopeSlugError {
-    /// 入力が空文字列。
-    Empty,
-    /// 先頭は `[a-z]` 必須。
-    InvalidLeading(char),
-    /// 2 文字目以降は `[a-z0-9-]` のみ。
-    InvalidChar(char),
-}
 
 impl ScopeSlugView {
     /// # Errors
@@ -53,18 +44,6 @@ impl fmt::Display for ScopeSlugView {
     }
 }
 
-impl fmt::Display for ScopeSlugError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ScopeSlugError::Empty => f.write_str("empty"),
-            ScopeSlugError::InvalidLeading(c) => write!(f, "leading character '{c}'"),
-            ScopeSlugError::InvalidChar(c) => write!(f, "invalid character '{c}'"),
-        }
-    }
-}
-
-impl std::error::Error for ScopeSlugError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,21 +70,6 @@ mod tests {
             ScopeSlugView::parse("security_patch"),
             Err(ScopeSlugError::InvalidChar('_'))
         );
-    }
-
-    #[test]
-    fn the_rejection_carries_material_not_wording() {
-        assert_eq!(ScopeSlugError::Empty.to_string(), "empty");
-        assert_eq!(
-            ScopeSlugError::InvalidLeading('C').to_string(),
-            "leading character 'C'"
-        );
-        assert_eq!(
-            ScopeSlugError::InvalidChar('_').to_string(),
-            "invalid character '_'"
-        );
-        let boxed: Box<dyn std::error::Error> = Box::new(ScopeSlugError::Empty);
-        assert_eq!(boxed.to_string(), "empty");
     }
 
     #[test]

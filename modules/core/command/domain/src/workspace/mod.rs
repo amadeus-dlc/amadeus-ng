@@ -11,43 +11,63 @@
 //! 消費側のパスは `core_command_domain::workspace::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod audit_event_record;
 mod audit_events;
-mod audit_field;
-mod audit_ordering;
+mod audit_field_key;
+mod audit_field_key_error;
+mod audit_field_value;
+mod audit_fields;
 mod bolt_refs;
-mod checkbox;
+mod bolt_refs_error;
+mod checkbox_entry;
+mod checkbox_state;
+mod checkbox_update_error;
+mod checkboxes;
 mod clone_id;
+mod clone_id_error;
 mod intent_dir_name;
+mod intent_dir_name_error;
+mod ordered_audit_events;
 mod shard_name;
 mod space_name;
+mod space_name_error;
 mod state_field_value;
-mod state_version;
+mod state_version_classification;
+mod state_version_kind;
 mod store_path;
+mod unsafe_line_char;
 
 // Domain Primitive
+pub use audit_event_record::AuditEventRecord;
 pub use audit_events::{EventCategory, EventType};
-pub use audit_field::{AuditFieldKey, AuditFieldValue, AuditFields};
-pub use audit_ordering::{AuditEventRecord, OrderedAuditEvents};
+pub use audit_field_key::AuditFieldKey;
+pub use audit_field_value::AuditFieldValue;
+pub use audit_fields::AuditFields;
 pub use bolt_refs::BoltRefs;
 pub use clone_id::CloneId;
 pub use intent_dir_name::IntentDirName;
+pub use ordered_audit_events::OrderedAuditEvents;
 pub use shard_name::ShardName;
 pub use space_name::SpaceName;
 pub use state_field_value::StateFieldValue;
-pub use state_version::{StateVersionClassification, StateVersionKind};
+pub use state_version_classification::StateVersionClassification;
+pub use state_version_kind::StateVersionKind;
 pub use store_path::StorePath;
 
 // 純関数ドメインサービス
-pub use checkbox::{CheckboxEntry, CheckboxState, CheckboxUpdateError, Checkboxes};
+pub use checkbox_entry::CheckboxEntry;
+pub use checkbox_state::CheckboxState;
+pub use checkbox_update_error::CheckboxUpdateError;
+pub use checkboxes::Checkboxes;
 
 // エラー
-pub use audit_field::AuditFieldKeyError;
-pub use bolt_refs::BoltRefsError;
-pub use clone_id::CloneIdError;
-pub use intent_dir_name::IntentDirNameError;
-pub use space_name::SpaceNameError;
-pub use state_field_value::UnsafeLineChar;
+pub use audit_field_key_error::AuditFieldKeyError;
+pub use bolt_refs_error::BoltRefsError;
+pub use clone_id_error::CloneIdError;
+pub use intent_dir_name_error::IntentDirNameError;
+pub use space_name_error::SpaceNameError;
+pub use unsafe_line_char::UnsafeLineChar;
 
 // 逐語定数
 pub use bolt_refs::EMPTY_LIST_LITERAL;
-pub use state_version::CURRENT_STATE_VERSION;
+pub use state_version_classification::CURRENT_STATE_VERSION;

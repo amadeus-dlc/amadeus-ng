@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use super::workflow_definition_id_error::WorkflowDefinitionIdError;
+
 /// このハーネスにインストールされたワークフロー定義の**系譜 ID** (Always Valid — 不正値は
 /// この型に存在しない)。
 ///
@@ -12,15 +14,6 @@ use std::fmt;
 /// `Ord` は生文字列の辞書順。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WorkflowDefinitionId(String);
-
-/// `WorkflowDefinitionId::parse` が拒否する形。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WorkflowDefinitionIdError {
-    /// 前後の空白を除くと空になる。
-    Empty,
-    /// 制御文字を含む。
-    ControlCharacter(char),
-}
 
 impl WorkflowDefinitionId {
     /// 前後の空白を落としてから検証する。
@@ -59,19 +52,6 @@ impl fmt::Display for WorkflowDefinitionId {
         f.write_str(&self.0)
     }
 }
-
-impl fmt::Display for WorkflowDefinitionIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WorkflowDefinitionIdError::Empty => f.write_str("empty"),
-            WorkflowDefinitionIdError::ControlCharacter(c) => {
-                write!(f, "control character U+{:04X}", u32::from(*c))
-            }
-        }
-    }
-}
-
-impl std::error::Error for WorkflowDefinitionIdError {}
 
 #[cfg(test)]
 mod tests {

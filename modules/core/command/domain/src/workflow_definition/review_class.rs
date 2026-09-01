@@ -5,6 +5,8 @@
 //! TODO(B7: 項目 3 スライス B): verification クレート新設時に正準 3 値束
 //! (`none < advisory < adversarial` — 01 §125) へ統合し、本型は依存参照へ移行する。
 
+use super::unknown_review_class::UnknownReviewClass;
+
 /// レビュークラス。`reviewer` を宣言したステージのみが持つ。
 ///
 /// `derive(Ord)` は宣言順に従うため、正準の強度順 (`advisory < adversarial` — low-wins 束の
@@ -16,24 +18,6 @@ pub enum ReviewClass {
     Advisory,
     /// 反駁と修復のループ。`reviewer_max_iterations` 回まで、パスの間に lead の修正を挟む。
     Adversarial,
-}
-
-/// 閉集合外の値。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownReviewClass(String);
-
-impl UnknownReviewClass {
-    /// 拒否された生値をそのまま包む (トリム・小文字化などの正規化はしない)。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownReviewClass {
-        UnknownReviewClass(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl ReviewClass {

@@ -2,8 +2,21 @@
 //! `with_field_if_present` は不在で無言 no-op、`with_field` は不在で Err (「無言 no-op は検出不能な
 //! ドリフト」)、`with_field_or_insert` は指定 `## Heading` 末尾に bullet を追記、`without_field`
 //! は bullet 行ごと削除 (不在は no-op)。フィールド行文法は `- **<Field>**:[ \t]*(.*)`。
+//!
+//! `FieldNotFound` / `HeadingNotFound` は独立ファイルに 1 型 1 ファイルで置く
+//! (`one-public-type`)。子モジュール `state_writers::{field_not_found, heading_not_found}`
+//! （`state_writers/{field_not_found,heading_not_found}.rs`）として所有し、ここから
+//! `pub use` で再輸出する — 兄弟ファイルを跨いだ利便再エクスポートではなく、通常のファサード
+//! （`mod.rs` と同型の所有連鎖）である (`coding-rules/module-visibility.md`)。
+//! `super::state_writers::{FieldNotFound, ..}` のような直接参照はこの形のまま変わらない。
 
 use super::wording as msg;
+
+mod field_not_found;
+mod heading_not_found;
+
+pub use field_not_found::FieldNotFound;
+pub use heading_not_found::HeadingNotFound;
 
 /// フィールド読取 (`getField`) — 最初に一致した行の値を trim して返す。
 #[must_use]
@@ -21,29 +34,6 @@ pub fn with_field_if_present(content: &str, field: &str, value: &str) -> String 
     replace_field(content, field, value).unwrap_or_else(|| content.to_string())
 }
 
-/// `with_field` の拒否 — 対象フィールド行が state ファイルに存在しない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldNotFound {
-    /// upstream 逐語の拒否文言 (文言カタログ経由)。
-    message: String,
-}
-
-impl FieldNotFound {
-    /// 文言カタログが組んだ拒否文言から構成する (文言の正本はカタログ側)。
-    #[must_use]
-    pub fn new(message: impl Into<String>) -> FieldNotFound {
-        FieldNotFound {
-            message: message.into(),
-        }
-    }
-
-    /// upstream 逐語の拒否文言 — フィールド名を含む完成形で、Presenter はこれをそのまま出す。
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-}
-
 /// 状態機械遷移用 — 不在フィールドは Err (検出不能ドリフトの拒否)。
 /// # Errors
 ///
@@ -51,24 +41,6 @@ impl FieldNotFound {
 pub fn with_field(content: &str, field: &str, value: &str) -> Result<String, FieldNotFound> {
     replace_field(content, field, value)
         .ok_or_else(|| FieldNotFound::new(msg::field_not_found_message(field)))
-}
-
-/// `with_field_or_insert` の拒否 — 挿入先の `## Heading` セクションが state ファイルに存在しない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HeadingNotFound(String);
-
-impl HeadingNotFound {
-    /// 見つからなかった見出し名 (`## ` を含まない裸の名前) から構成する。
-    #[must_use]
-    pub fn new(heading: impl Into<String>) -> HeadingNotFound {
-        HeadingNotFound(heading.into())
-    }
-
-    /// 見つからなかった見出し名を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 /// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記

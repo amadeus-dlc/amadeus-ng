@@ -16,7 +16,8 @@ mod audit_shard;
 mod projection;
 mod read_model;
 mod resolved_plan;
-mod state_file;
+mod state_file_read_error;
+mod state_file_write_error;
 mod state_writers;
 mod wording;
 
@@ -32,10 +33,8 @@ pub use audit_block::{SHARD_HEADER, render_audit_block};
 pub use audit_shard::{
     AuditShardWriteError, append as append_audit_shard, read_all as read_all_audit_shards,
 };
-pub use state_file::{
-    StateFileReadError, StateFileWriteError, read as read_state_file,
-    write_atomic as write_state_file,
-};
+pub use state_file_read_error::{StateFileReadError, read as read_state_file};
+pub use state_file_write_error::{StateFileWriteError, write_atomic as write_state_file};
 
 // 状態ファイルの writer 4 種 + 読取（純粋な string→string — 11-workspace §2.3）
 pub use state_writers::{

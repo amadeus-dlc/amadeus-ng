@@ -2,16 +2,27 @@
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`) で、`Unparked` だけが材料を持たない単位変種
 //! (`"Unparked"`) である。**変種名・フィールド名・並びが契約**である。
+//!
+//! 各変種の材料 DTO は自分専用のファイルに 1 型 1 ファイルで置き (`one-public-type`)、
+//! `of` / `to_domain` もそれぞれの型が持つ。ここでの `of` / `to_domain` は各変種への
+//! 委譲だけを行う (`coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型)。
 
-use core_command_domain::orchestration::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, IntentId,
-    Jumped, Parked, Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
-};
+use core_command_domain::orchestration::IntentExecutionEvent;
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
 
+use super::autonomy_mode_set_dto::AutonomyModeSetDto;
 use super::dto_decode_error::DtoDecodeError;
-use super::dto_vocabulary::{autonomy_of, autonomy_spelling};
+use super::gate_approved_dto::GateApprovedDto;
+use super::gate_opened_dto::GateOpenedDto;
+use super::gate_rejected_dto::GateRejectedDto;
+use super::jumped_dto::JumpedDto;
+use super::parked_dto::ParkedDto;
+use super::recomposed_dto::RecomposedDto;
+use super::stage_completed_dto::StageCompletedDto;
+use super::stage_revised_dto::StageRevisedDto;
+use super::stage_skipped_dto::StageSkippedDto;
+use super::started_dto::StartedDto;
 
 /// ジャーナル行 `payload` の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,89 +53,25 @@ pub enum IntentExecutionEventDto {
     AutonomyModeSet(AutonomyModeSetDto),
 }
 
-/// `Started` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StartedDto {
-    intent_id: String,
-}
-
-/// `StageCompleted` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageCompletedDto {
-    stage: String,
-}
-
-/// `GateOpened` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateOpenedDto {
-    stage: String,
-    artifacts: Vec<String>,
-}
-
-/// `GateApproved` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateApprovedDto {
-    stage: String,
-    user_input: Option<String>,
-}
-
-/// `GateRejected` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateRejectedDto {
-    stage: String,
-    feedback: Option<String>,
-}
-
-/// `StageRevised` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageRevisedDto {
-    stage: String,
-}
-
-/// `StageSkipped` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageSkippedDto {
-    stage: String,
-    reason: String,
-}
-
-/// `Jumped` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JumpedDto {
-    target: String,
-}
-
-/// `Parked` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParkedDto {
-    stage: String,
-}
-
-/// `Recomposed` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RecomposedDto {
-    skipped: Vec<String>,
-    added: Vec<String>,
-}
-
-/// `AutonomyModeSet` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AutonomyModeSetDto {
-    mode: String,
-}
-
 /// ステージ参照の綴り。
-fn slug_spelling(slug: &StageSlug) -> String {
+///
+/// `IntentExecutionEventDto` の変種 DTO 複数から共有される private 補助 —
+/// 主たる従属先であるこのファイルに置き `pub(crate)` へ昇格する
+/// (`coding-rules/module-visibility.md` の「複数公開型に共有される private 補助」)。
+pub(crate) fn slug_spelling(slug: &StageSlug) -> String {
     slug.as_str().to_string()
 }
 
 /// ステージ参照の復号。
-fn slug_of(raw: &str, field: &'static str) -> Result<StageSlug, DtoDecodeError> {
+pub(crate) fn slug_of(raw: &str, field: &'static str) -> Result<StageSlug, DtoDecodeError> {
     StageSlug::parse(raw).map_err(|_| DtoDecodeError::malformed(field, raw))
 }
 
 /// ステージ参照の列の復号。
-fn slugs_of(raw: &[String], field: &'static str) -> Result<Vec<StageSlug>, DtoDecodeError> {
+pub(crate) fn slugs_of(
+    raw: &[String],
+    field: &'static str,
+) -> Result<Vec<StageSlug>, DtoDecodeError> {
     raw.iter().map(|value| slug_of(value, field)).collect()
 }
 
@@ -134,61 +81,38 @@ impl IntentExecutionEventDto {
     pub fn of(event: &IntentExecutionEvent) -> IntentExecutionEventDto {
         match event {
             IntentExecutionEvent::Started(payload) => {
-                IntentExecutionEventDto::Started(StartedDto {
-                    intent_id: payload.intent_id().as_str().to_string(),
-                })
+                IntentExecutionEventDto::Started(StartedDto::of(payload))
             }
             IntentExecutionEvent::StageCompleted(payload) => {
-                IntentExecutionEventDto::StageCompleted(StageCompletedDto {
-                    stage: slug_spelling(payload.stage()),
-                })
+                IntentExecutionEventDto::StageCompleted(StageCompletedDto::of(payload))
             }
             IntentExecutionEvent::GateOpened(payload) => {
-                IntentExecutionEventDto::GateOpened(GateOpenedDto {
-                    stage: slug_spelling(payload.stage()),
-                    artifacts: payload.artifacts().to_vec(),
-                })
+                IntentExecutionEventDto::GateOpened(GateOpenedDto::of(payload))
             }
             IntentExecutionEvent::GateApproved(payload) => {
-                IntentExecutionEventDto::GateApproved(GateApprovedDto {
-                    stage: slug_spelling(payload.stage()),
-                    user_input: payload.user_input().map(str::to_string),
-                })
+                IntentExecutionEventDto::GateApproved(GateApprovedDto::of(payload))
             }
             IntentExecutionEvent::GateRejected(payload) => {
-                IntentExecutionEventDto::GateRejected(GateRejectedDto {
-                    stage: slug_spelling(payload.stage()),
-                    feedback: payload.feedback().map(str::to_string),
-                })
+                IntentExecutionEventDto::GateRejected(GateRejectedDto::of(payload))
             }
             IntentExecutionEvent::StageRevised(payload) => {
-                IntentExecutionEventDto::StageRevised(StageRevisedDto {
-                    stage: slug_spelling(payload.stage()),
-                })
+                IntentExecutionEventDto::StageRevised(StageRevisedDto::of(payload))
             }
             IntentExecutionEvent::StageSkipped(payload) => {
-                IntentExecutionEventDto::StageSkipped(StageSkippedDto {
-                    stage: slug_spelling(payload.stage()),
-                    reason: payload.reason().to_string(),
-                })
+                IntentExecutionEventDto::StageSkipped(StageSkippedDto::of(payload))
             }
-            IntentExecutionEvent::Jumped(payload) => IntentExecutionEventDto::Jumped(JumpedDto {
-                target: slug_spelling(payload.target()),
-            }),
-            IntentExecutionEvent::Parked(payload) => IntentExecutionEventDto::Parked(ParkedDto {
-                stage: slug_spelling(payload.stage()),
-            }),
+            IntentExecutionEvent::Jumped(payload) => {
+                IntentExecutionEventDto::Jumped(JumpedDto::of(payload))
+            }
+            IntentExecutionEvent::Parked(payload) => {
+                IntentExecutionEventDto::Parked(ParkedDto::of(payload))
+            }
             IntentExecutionEvent::Unparked => IntentExecutionEventDto::Unparked,
             IntentExecutionEvent::Recomposed(payload) => {
-                IntentExecutionEventDto::Recomposed(RecomposedDto {
-                    skipped: payload.skipped().iter().map(slug_spelling).collect(),
-                    added: payload.added().iter().map(slug_spelling).collect(),
-                })
+                IntentExecutionEventDto::Recomposed(RecomposedDto::of(payload))
             }
             IntentExecutionEvent::AutonomyModeSet(payload) => {
-                IntentExecutionEventDto::AutonomyModeSet(AutonomyModeSetDto {
-                    mode: autonomy_spelling(payload.mode()).to_string(),
-                })
+                IntentExecutionEventDto::AutonomyModeSet(AutonomyModeSetDto::of(payload))
             }
         }
     }
@@ -201,52 +125,38 @@ impl IntentExecutionEventDto {
     pub fn to_domain(&self) -> Result<IntentExecutionEvent, DtoDecodeError> {
         Ok(match self {
             IntentExecutionEventDto::Started(payload) => {
-                IntentExecutionEvent::Started(Started::new(
-                    IntentId::parse(&payload.intent_id)
-                        .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
-                ))
+                IntentExecutionEvent::Started(payload.to_domain()?)
             }
             IntentExecutionEventDto::StageCompleted(payload) => {
-                IntentExecutionEvent::StageCompleted(StageCompleted::new(slug_of(
-                    &payload.stage,
-                    "stage",
-                )?))
+                IntentExecutionEvent::StageCompleted(payload.to_domain()?)
             }
-            IntentExecutionEventDto::GateOpened(payload) => IntentExecutionEvent::GateOpened(
-                GateOpened::new(slug_of(&payload.stage, "stage")?, payload.artifacts.clone()),
-            ),
+            IntentExecutionEventDto::GateOpened(payload) => {
+                IntentExecutionEvent::GateOpened(payload.to_domain()?)
+            }
             IntentExecutionEventDto::GateApproved(payload) => {
-                IntentExecutionEvent::GateApproved(GateApproved::new(
-                    slug_of(&payload.stage, "stage")?,
-                    payload.user_input.clone(),
-                ))
+                IntentExecutionEvent::GateApproved(payload.to_domain()?)
             }
-            IntentExecutionEventDto::GateRejected(payload) => IntentExecutionEvent::GateRejected(
-                GateRejected::new(slug_of(&payload.stage, "stage")?, payload.feedback.clone()),
-            ),
-            IntentExecutionEventDto::StageRevised(payload) => IntentExecutionEvent::StageRevised(
-                StageRevised::new(slug_of(&payload.stage, "stage")?),
-            ),
-            IntentExecutionEventDto::StageSkipped(payload) => IntentExecutionEvent::StageSkipped(
-                StageSkipped::new(slug_of(&payload.stage, "stage")?, payload.reason.clone()),
-            ),
+            IntentExecutionEventDto::GateRejected(payload) => {
+                IntentExecutionEvent::GateRejected(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::StageRevised(payload) => {
+                IntentExecutionEvent::StageRevised(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::StageSkipped(payload) => {
+                IntentExecutionEvent::StageSkipped(payload.to_domain()?)
+            }
             IntentExecutionEventDto::Jumped(payload) => {
-                IntentExecutionEvent::Jumped(Jumped::new(slug_of(&payload.target, "target")?))
+                IntentExecutionEvent::Jumped(payload.to_domain()?)
             }
             IntentExecutionEventDto::Parked(payload) => {
-                IntentExecutionEvent::Parked(Parked::new(slug_of(&payload.stage, "stage")?))
+                IntentExecutionEvent::Parked(payload.to_domain()?)
             }
             IntentExecutionEventDto::Unparked => IntentExecutionEvent::Unparked,
             IntentExecutionEventDto::Recomposed(payload) => {
-                IntentExecutionEvent::Recomposed(Recomposed::new(
-                    slugs_of(&payload.skipped, "skipped")?,
-                    slugs_of(&payload.added, "added")?,
-                ))
+                IntentExecutionEvent::Recomposed(payload.to_domain()?)
             }
             IntentExecutionEventDto::AutonomyModeSet(payload) => {
-                IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(autonomy_of(
-                    &payload.mode,
-                )?))
+                IntentExecutionEvent::AutonomyModeSet(payload.to_domain()?)
             }
         })
     }

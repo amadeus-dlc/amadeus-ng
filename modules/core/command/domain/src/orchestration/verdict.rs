@@ -2,6 +2,8 @@
 //! `complete` / `done` は**相互交換可能な同義語** (コミットするサブコマンドは呼出側でなく
 //! エンジンが選ぶ)。`resume` / `resumed` も同義。未知語は Err (逐語拒否は Presenter 側)。
 
+use super::unknown_verdict::UnknownVerdict;
+
 /// 正規化済み verdict (パースの結果としてのみ得られる)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Verdict {
@@ -21,24 +23,6 @@ pub enum Verdict {
     /// (「a routed lifecycle outcome, not a completion」)。全 completion ガードより先に
     /// 判定される (I13)。
     Skipped,
-}
-
-/// 受理 10 語以外の生値 — `parse` の拒否経路 (未知語を既定 verdict へ丸めない)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownVerdict(String);
-
-impl UnknownVerdict {
-    /// 拒否された生値をそのまま包む (トリム・大小文字の正規化はしない)。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownVerdict {
-        UnknownVerdict(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 /// 受理語の正準列挙 (エラーメッセージ描画用 — 順序も upstream の提示順)。

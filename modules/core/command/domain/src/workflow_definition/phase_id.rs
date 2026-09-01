@@ -1,6 +1,8 @@
 //! `PhaseId` — 5 値の閉集合 (upstream 01 §2.1)。`initialization = 0 … operation = 4` の
 //! インデックスは `StageNumber` の `<phaseIndex>` と同じ番号体系。
 
+use super::unknown_phase::UnknownPhase;
+
 /// ワークフローの 5 フェーズ。宣言順 = `index()` 順 = 派生 `Ord` 順。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PhaseId {
@@ -15,24 +17,6 @@ pub enum PhaseId {
     Construction,
     /// 出荷・観測・対応と、NFR に照らした検証。
     Operation,
-}
-
-/// 閉集合外の値。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownPhase(String);
-
-impl UnknownPhase {
-    /// 拒否された生値をそのまま包む (トリム・小文字化などの正規化はしない)。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownPhase {
-        UnknownPhase(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl PhaseId {

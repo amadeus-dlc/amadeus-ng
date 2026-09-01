@@ -36,6 +36,7 @@
 use core_infrastructure::canon_json::{JsonValue, hash_compact};
 
 use super::checkbox_state::CheckboxState;
+use super::execution_state_error::ExecutionStateError;
 use super::execution_status::ExecutionStatus;
 use super::stage_index::StageIndex;
 use super::stage_progress_view::StageProgressView;
@@ -59,42 +60,6 @@ pub struct ExecutionStateView {
     last_updated: String,
     stages: Vec<StageProgressView>,
 }
-
-/// [`ExecutionStateView`] の構築が拒否する形。
-///
-/// リードモデルとして成立しない (= 判断の土台にできない) 観測だけを拒否する。文言は
-/// 出す側が組む (`coding-rules/error-handling.md`)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExecutionStateError {
-    /// Stage Progress の行が 1 本も無い (カーソルの置き場が無い)。
-    NoStages,
-    /// `Current Stage` が Stage Progress のどの行とも一致しない。
-    UnknownCursor {
-        /// 一致しなかった slug (逐語)。
-        stage: String,
-    },
-    /// `Parked At Stage` が Stage Progress のどの行とも一致しない。
-    UnknownParkedStage {
-        /// 一致しなかった slug (逐語)。
-        stage: String,
-    },
-}
-
-impl std::fmt::Display for ExecutionStateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExecutionStateError::NoStages => f.write_str("no stage progress rows"),
-            ExecutionStateError::UnknownCursor { stage } => {
-                write!(f, "unknown current stage {stage:?}")
-            }
-            ExecutionStateError::UnknownParkedStage { stage } => {
-                write!(f, "unknown parked stage {stage:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ExecutionStateError {}
 
 impl ExecutionStateView {
     /// 読み終えたリードモデルを束ねる (基本コンストラクタ — 構造体リテラルはここだけ)。
@@ -520,25 +485,6 @@ mod tests {
                 stage: "ghost".to_string()
             })
         );
-    }
-
-    #[test]
-    fn the_rejection_carries_material_not_wording() {
-        assert_eq!(
-            ExecutionStateError::NoStages.to_string(),
-            "no stage progress rows"
-        );
-        assert_eq!(
-            ExecutionStateError::UnknownCursor {
-                stage: "ghost".to_string()
-            }
-            .to_string(),
-            "unknown current stage \"ghost\""
-        );
-        let boxed: Box<dyn std::error::Error> = Box::new(ExecutionStateError::UnknownParkedStage {
-            stage: "ghost".to_string(),
-        });
-        assert_eq!(boxed.to_string(), "unknown parked stage \"ghost\"");
     }
 
     #[test]

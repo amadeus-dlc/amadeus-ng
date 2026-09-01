@@ -46,6 +46,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use super::raw_artifact::RawArtifact;
+
 /// frontmatter の区切り行。
 const FRONTMATTER_FENCE: &str = "---";
 
@@ -257,21 +259,6 @@ struct RevisionScope {
 // ---------------------------------------------------------------------------
 // 読み終えた素材 (loader が集める) と純 parse
 // ---------------------------------------------------------------------------
-
-/// 生テキスト 1 つと、その出所 (逐語文言の材料)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawArtifact {
-    path: String,
-    text: String,
-}
-
-impl RawArtifact {
-    /// 解決済みパスと読み終えた全文から組む。
-    #[must_use]
-    pub const fn new(path: String, text: String) -> RawArtifact {
-        RawArtifact { path, text }
-    }
-}
 
 /// 読み終えた Published Language 3 入力 + scope identity ファイル群。
 ///

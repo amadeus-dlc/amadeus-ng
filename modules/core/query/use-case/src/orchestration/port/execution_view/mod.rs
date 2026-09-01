@@ -20,6 +20,7 @@
 //! (`coding-rules/module-visibility.md`)。
 
 mod checkbox_state;
+mod execution_state_error;
 mod execution_state_view;
 mod execution_status;
 mod stage_index;
@@ -35,4 +36,4 @@ pub use execution_state_view::ExecutionStateView;
 pub use stage_progress_view::StageProgressView;
 
 // 拒否 (ビューではないので `View` 接尾辞を付けない)
-pub use execution_state_view::ExecutionStateError;
+pub use execution_state_error::ExecutionStateError;

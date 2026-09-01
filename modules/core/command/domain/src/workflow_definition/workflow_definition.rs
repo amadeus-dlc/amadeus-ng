@@ -45,56 +45,25 @@
 //! 実効プランの合成は集約が行う。
 
 use std::collections::BTreeMap;
-use std::fmt;
 
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
+use chrono::Utc;
 
 use super::definition_revision::DefinitionRevision;
-use super::phase::PhaseId;
+use super::phase_id::PhaseId;
 use super::plan_action::PlanAction;
+use super::redefine_error::RedefineError;
 use super::scope_grid::ScopeGrid;
 use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
 use super::stage_node::StageNode;
 use super::stage_route::StageRoute;
 use super::stage_slug::StageSlug;
-use super::workflow_definition_event::{Defined, Redefined, WorkflowDefinitionEvent};
+use super::unknown_scope::UnknownScope;
+use super::workflow_definition_event::Defined;
+use super::workflow_definition_event::Redefined;
+use super::workflow_definition_event::WorkflowDefinitionEvent;
 use super::workflow_definition_id::WorkflowDefinitionId;
-
-/// `validScopes()` に無いスコープ名。
-///
-/// upstream の逐語文言 `Unknown scope: "<scope>". Valid scopes: <csv>` を組み立てるのに
-/// 必要な材料をそのまま保持する (文言化は文言カタログ側の責務)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownScope {
-    scope: String,
-    /// 有効スコープ名 (辞書順)。
-    valid_scopes: Vec<String>,
-}
-
-impl UnknownScope {
-    /// 拒否されたスコープ名と、拒否時点の有効スコープ一覧 (辞書順) を束ねる。
-    /// どちらも生値のまま保持する。
-    #[must_use]
-    pub fn new(scope: impl Into<String>, valid_scopes: Vec<String>) -> UnknownScope {
-        UnknownScope {
-            scope: scope.into(),
-            valid_scopes,
-        }
-    }
-
-    /// 拒否されたスコープ名。
-    #[must_use]
-    pub fn scope(&self) -> &str {
-        &self.scope
-    }
-
-    /// 有効スコープ名 (辞書順)。
-    #[must_use]
-    pub fn valid_scopes(&self) -> &[String] {
-        &self.valid_scopes
-    }
-}
 
 /// ワークフロー定義の集約。
 ///
@@ -123,22 +92,6 @@ pub struct WorkflowDefinition {
     /// 封筒の `occurred_at` はここから来る。`IntentExecution` と同型であり、`store` の
     /// 引数で時刻を運ばない (オーナー裁定 2026-08-31 — 手本と対にする)。
     last_updated_at: DateTime<Utc>,
-}
-
-/// 改訂を受け付けられない形 (材料のみ — 利用者向け文言はアダプタ層)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RedefineError {
-    /// 提示された内容版が現在と同じ — 書くべき事実が無い。
-    ///
-    /// 無言の no-op にはしない (coding-rules/aggregate-commands.md「拒否はガード付き Err」)。
-    /// 取込を冪等に見せるかどうかは呼出側 (ユースケース) の判断であり、集約は「変化が無い」
-    /// という事実を返すだけである。
-    Unchanged {
-        /// 現在と一致した内容版。
-        revision: DefinitionRevision,
-    },
-    /// 通番が上限に達した (飽和加算で成功を装わない)。
-    SequenceExhausted,
 }
 
 impl WorkflowDefinition {
@@ -462,19 +415,6 @@ impl From<(Defined, DateTime<Utc>)> for WorkflowDefinition {
         }
     }
 }
-
-impl fmt::Display for RedefineError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RedefineError::Unchanged { revision } => {
-                write!(f, "definition unchanged at revision {}", revision.as_str())
-            }
-            RedefineError::SequenceExhausted => f.write_str("sequence exhausted"),
-        }
-    }
-}
-
-impl std::error::Error for RedefineError {}
 
 #[cfg(test)]
 mod tests {

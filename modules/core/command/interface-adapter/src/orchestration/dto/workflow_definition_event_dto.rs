@@ -14,8 +14,10 @@ use core_command_domain::workflow_definition::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::defined_dto::DefinedDto;
 use super::dto_decode_error::DtoDecodeError;
-use super::workflow_definition_dto::{DefinedDto, DefinitionContentDto};
+use super::redefined_dto::RedefinedDto;
+use super::workflow_definition_dto::DefinitionContentDto;
 
 /// 定義ジャーナル行の payload。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,13 +26,6 @@ pub enum WorkflowDefinitionEventDto {
     Defined(DefinedDto),
     /// 定義が別の内容版へ改訂された。
     Redefined(RedefinedDto),
-}
-
-/// 改訂の payload — 改訂後の内容版と内容。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RedefinedDto {
-    revision: String,
-    content: DefinitionContentDto,
 }
 
 impl WorkflowDefinitionEventDto {

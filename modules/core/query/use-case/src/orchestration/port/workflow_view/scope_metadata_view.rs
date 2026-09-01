@@ -3,9 +3,8 @@
 //! **有効スコープの権威はこのファイルの存在**であってグリッドではない (`validScopes()` —
 //! 12 §4.6)。深さ・キーワードなどはグリッドではなくここに入る (12 §3.1)。
 
-use std::fmt;
-
 use super::review_cap_value_view::ReviewCapValueView;
+use super::scope_metadata_error::ScopeMetadataError;
 use super::skeleton_default_view::SkeletonDefaultView;
 
 /// スコープ identity ファイルの frontmatter (最小ビュー)。
@@ -17,13 +16,6 @@ pub struct ScopeMetadataView {
     skeleton: Option<SkeletonDefaultView>,
     review_cap: Option<ReviewCapValueView>,
     freeform_default: bool,
-}
-
-/// `ScopeMetadataView` の構成が拒否される理由。frontmatter の必須キー欠落のみ。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScopeMetadataError {
-    /// `name:` が無い / 空 (upstream: `missing required frontmatter: name`)。
-    MissingName,
 }
 
 impl ScopeMetadataView {
@@ -121,16 +113,6 @@ impl ScopeMetadataView {
         self.freeform_default
     }
 }
-
-impl fmt::Display for ScopeMetadataError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ScopeMetadataError::MissingName => f.write_str("missing required frontmatter: name"),
-        }
-    }
-}
-
-impl std::error::Error for ScopeMetadataError {}
 
 #[cfg(test)]
 mod tests {

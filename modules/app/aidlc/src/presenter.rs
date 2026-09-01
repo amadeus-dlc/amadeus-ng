@@ -36,6 +36,8 @@ use core_query_use_case::orchestration::{
     AskDirective, Directive, GateField, LoadSteeringDirective, RunStageDirective,
 };
 
+use crate::oversize_directive::OversizeDirective;
+
 /// 文字列値。
 fn text(value: impl Into<String>) -> JsonValue {
     JsonValue::String(value.into())
@@ -48,30 +50,6 @@ fn texts(values: &[String]) -> JsonValue {
 
 /// upstream の `DIRECTIVE_MAX_BYTES`（`aidlc-orchestrate.ts:1151` — `28 * 1024`）。
 pub const DIRECTIVE_MAX_BYTES: usize = 28 * 1024;
-
-/// 上限を超えた directive — **emit 自体を拒否する**（half-emitted を出さない — I1）。
-///
-/// 材料だけを運ぶ（逐語文言は [`crate::wording`] が組む）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OversizeDirective {
-    bytes: usize,
-}
-
-impl OversizeDirective {
-    /// 描こうとした JSON のバイト数。
-    #[must_use]
-    pub const fn bytes(&self) -> usize {
-        self.bytes
-    }
-}
-
-impl core::fmt::Display for OversizeDirective {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "directive of {} bytes exceeds the cap", self.bytes)
-    }
-}
-
-impl std::error::Error for OversizeDirective {}
 
 /// directive を 1 行 JSON へ写す。
 ///
@@ -106,7 +84,7 @@ impl Presenter {
         );
         let bytes = rendered.len();
         if bytes > DIRECTIVE_MAX_BYTES {
-            return Err(OversizeDirective { bytes });
+            return Err(OversizeDirective::new(bytes));
         }
         Ok(rendered)
     }
