@@ -797,8 +797,13 @@ mod tests {
             text.contains("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"),
             "孤児 intent の識別子を名指す: {text}"
         );
+        assert_eq!(
+            text.matches("conflict").count(),
+            1,
+            "ポートの失敗文言を二重に描かない (chained の ends_with 重複抑止が効く形): {text}"
+        );
         assert!(
-            text.contains("re-run intent-create"),
+            text.contains("Re-run intent-create"),
             "復旧手順 (再実行で新しい intent が鋳造される) を言う: {text}"
         );
         assert!(

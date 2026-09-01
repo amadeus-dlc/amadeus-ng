@@ -32,7 +32,10 @@ pub enum CreateIntentError {
     /// そのために**孤児になった intent の識別子を材料として運ぶ**（issue #77 の先行改善 —
     /// 恒久対応は doctor の検出・修復。オーナー裁定 2026-09-01）。
     ExecutionRepository {
-        /// 着地済みで実行を持たない intent（孤児）。
+        /// 着地済みで、実行の書込が失敗として報告された intent（孤児）。
+        ///
+        /// ポート契約は Err ⇒ 未永続化を**約束しない**ので、実行行の存否そのものは
+        /// ここでは断定できない — 存否の確認と修復は doctor の仕事である（issue #77）。
         orphan: IntentId,
         /// ポートからそのまま伝播した失敗。
         error: RepositoryError<IntentExecutionId>,
@@ -48,7 +51,10 @@ impl fmt::Display for CreateIntentError {
             CreateIntentError::Intent(error) => write!(f, "intent: {error}"),
             CreateIntentError::IntentRepository(error) => write!(f, "intent repository: {error}"),
             CreateIntentError::ExecutionRepository { orphan, error } => {
-                write!(f, "execution repository: {error} (orphan intent {orphan})")
+                // 孤児 id は**前置**に置く — 出す側の `chained` は「表示が原因の文言で
+                // **終わる**とき」だけ `caused by` の重複を抑止する (ends_with 判定) ので、
+                // 接尾辞にすると内側の失敗が二重描画される (PR #87 Bugbot 指摘で実証)。
+                write!(f, "execution repository (orphan intent {orphan}): {error}")
             }
         }
     }

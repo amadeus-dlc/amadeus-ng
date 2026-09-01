@@ -391,7 +391,9 @@ mod tests {
                 actual: 1,
             },
         };
-        assert!(error.to_string().starts_with("execution repository: "));
+        // 孤児 id は前置 (出す側 `chained` の ends_with 重複抑止が効くよう、末尾は
+        // ポートの失敗文言で終える — PR #87 Bugbot 指摘)。
+        assert!(error.to_string().starts_with("execution repository ("));
         assert!(
             error.to_string().contains(intent().as_str()),
             "孤児 intent の識別子を材料として語る: {error}"

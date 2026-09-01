@@ -66,12 +66,16 @@ pub fn orchestrate_failure(detail: &str) -> String {
 /// 固有の診断である。孤児は無害に残り、恒久の検出・修復は doctor が担う。
 #[must_use]
 pub fn orphaned_intent(orphan: &str, detail: &str) -> String {
+    // 断定するのは検証済みの事実だけ — 状態ファイルが書かれていないこと (骨格の書込は
+    // ユースケース成功後にしか走らない) と、実行の書込が失敗として報告されたこと。
+    // 実行行の存否そのものはポート契約が Err ⇒ 未永続化を約束しないので断定しない
+    // (存否の確認と修復は doctor の仕事 — issue #77、PR #87 CodeRabbit 指摘の反映)。
     format!(
         "aidlc-orchestrate: {detail}\n\
-         Intent {orphan} was minted but its first execution could not be stored. \
-         The intent remains as an inert orphan (it has no execution and no state file); \
-         re-run intent-create to mint a fresh intent. \
-         Orphan detection and repair is tracked by the doctor command (issue #77)."
+         Intent {orphan} was minted, but storing its first execution failed - the \
+         intent is left behind without a started workflow (no state file was written). \
+         Re-run intent-create to mint a fresh intent; the leftover intent is inert. \
+         Detection and repair of leftovers is tracked by the doctor command (issue #77)."
     )
 }
 
