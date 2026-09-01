@@ -29091,3 +29091,171 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-01T10:30:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:30:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a63c285c6e2a5f751
+**Message**: マージまで進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:30:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a14dc39d97c116b63
+**Message**: マージまで進めて。完了したら次の作業候補を出して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T10:31:15Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:31:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abe65983851da16d1
+**Message**: マージまでいって、b34 の計画を出して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T10:32:02Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:32:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aff2a983ee0a5535d
+**Message**: CI green ならそのままマージして、b34 の計画を出して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T10:32:48Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:32:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0602fe07c90e2047
+**Message**: マージまで進めて、そのあと次の作業候補を提示して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T10:35:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:36:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a90bb25f5d7569377
+**Message**: マージ確定したら b33 の次の残件整理して
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T10:38:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T10:39:33Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aa7cffb89daaca0ba
+**Message**: 1
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T11:13:30Z
+**Event**: HUMAN_TURN
+
+---
+
+## Rule Learned
+**Timestamp**: 2026-09-01T11:15:56Z
+**Event**: RULE_LEARNED
+**Stage**: functional-design
+**Candidate-ID**: user-2026-09-01-plain-ruling-explanations
+**Content-Hash**: 46b52a8031513e4fe1166dc4a900c98c48b0733acabeae5be179a98f59d2209c
+**Destination**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/memory/project.md
+**Heading**: ## Corrections
+**Source**: user_addition
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T11:26:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T11:47:46Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T11:50:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a65a0aa34f84890cc
+**Message**: b34（誕生時=初期化完了済みへの是正、#76裁定A）を実装中。コア（集約genesis・Quintモデル・ITFフィクスチャ）は完了して全ゲート緑、残るはテスト追随ワーカー2本の完了待ち。完了次第、全ゲート→PR→マージへ進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T11:54:41Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T11:54:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: wa-domain-tests
+**Agent ID**: awa-domain-tests-f489b58030fc9f87
+**Message**: Wα 完了。domain ユニットテスト 32 本を b34「誕生 = 初期化完了済み」の新意味論へ追随させました。\n\n## 検証結果（すべて緑）\n\n- `cargo test -p core-command-domain --lib` → **343 passed / 0 failed**（339 + 新規 4 本）\n- `cargo fmt -p core-command-domain -- 
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-01T13:27:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: wb-downstream-tests
+**Agent ID**: awb-downstream-tests-722c332a98617e06
+**Message**: Every file keeps its exact test count — no test was deleted or added. Work is complete and verified.\n\n## 完了報告\n\n### 直したファイル（14本、すべて担当範囲内）\n\n| ファイル | 内容 |\n|---|---|\n| `modules/core/command/interface-adap
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-01T13:36:08Z
+**Event**: HUMAN_TURN
+
+---
