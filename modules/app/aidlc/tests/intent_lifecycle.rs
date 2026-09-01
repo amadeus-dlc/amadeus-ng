@@ -212,19 +212,22 @@ async fn next_runs_against_the_freshly_created_intent() {
 
 /// `report --result` が遷移をコミットし、投影が読み面へ落ちる。
 ///
-/// # ここが写している既知の乖離（b29 で発見・未修正）
+/// # issue #76 是正済み — 書き面と読み面は誕生時から一致する
 ///
-/// 誕生の**投影**は初期化ステージを `[x]` にして最初のゲート付きステージへカーソルを
-/// 進めるが、**集約はそれをしていない** — `IntentExecution::start` が出すのは `Started`
-/// 1 本だけで、カーソルは 0（`state-init`）のままである。つまり読み面は書き面より
-/// 先へ進んでいる。
+/// かつては誕生の**投影**だけが初期化ステージを `[x]` にして最初のゲート付きステージへ
+/// カーソルを進め、**集約はそれをしていなかった**（`IntentExecution::start` が出すのは
+/// `Started` 1 本で、カーソルは 0 = `state-init` のまま）。読み面が書き面より先へ進んで
+/// いたため、直後の `report --result completed` が `state-init` を**もう一度**完了させ、
+/// 監査シャードに `STAGE_COMPLETED` が 2 度現れていた。
 ///
-/// その結果、`report --result completed` は集約のカーソル（`state-init`）を完了させ、
-/// 監査シャードには `STAGE_COMPLETED` が**2 度**現れる（誕生の投影で 1 度、この報告で
-/// もう 1 度）。監査証跡は第一級の成果物なので、この重複は是正されるべきである。
+/// 誕生 = 初期化完了済み（オーナー裁定 2026-09-01）でこの乖離は閉じた。集約も誕生の
+/// 時点で initialization を completed にし、カーソルは最初のゲート付きステージ
+/// （`domain-design`）に立つ。したがってこの報告が完了させるのは `state-init` ではなく
+/// `domain-design` であり、しかもそれは**ゲート付き**なので `Forward` は承認
+/// （`GATE_APPROVED` + ゲート経由の `STAGE_COMPLETED`）になる。
 ///
-/// **本テストは現状を逐語で固定している** — 是正が入ればここが落ちるので、乖離が
-/// 静かに残ることはない。
+/// 本テストはその両面一致を逐語で固定する — `state-init` の完了行が最後まで 1 本の
+/// ままであることが、二重記録が戻っていないことの証拠である。
 #[tokio::test]
 async fn reporting_a_verdict_commits_and_projects() {
     let workspace = Workspace::create();
@@ -234,15 +237,18 @@ async fn reporting_a_verdict_commits_and_projects() {
         &["intent-create", "--scope", "classic", "--label", "demo run"],
     )
     .await;
-    // 誕生の投影で initialization は完了済み、最初のゲート付きステージが in-flight。
+    // 誕生の時点で initialization は完了済み、最初のゲート付きステージが in-flight。
+    // これは読み面（投影）だけでなく書き面（集約のカーソル）でも同じである。
     let before = workspace.state_file().expect("投影済み");
     assert!(before.contains("- [x] state-init"), "{before}");
     assert!(before.contains("- [-] domain-design"), "{before}");
-    let before_completions = workspace
-        .audit_shard()
-        .expect("監査シャード")
-        .matches("STAGE_COMPLETED")
-        .count();
+    let before_audit = workspace.audit_shard().expect("監査シャード");
+    let before_completions = before_audit.matches("STAGE_COMPLETED").count();
+    assert_eq!(
+        before_audit.matches("GATE_APPROVED").count(),
+        0,
+        "誕生の投影はゲートを承認しない: {before_audit}"
+    );
 
     let completion = invoke(
         &workspace,
@@ -253,16 +259,34 @@ async fn reporting_a_verdict_commits_and_projects() {
 
     assert_eq!(completion.code(), 0, "{completion:?}");
     assert_eq!(string_of(&line_of(&completion), "kind"), "done");
-    // 遷移がコミットされ、投影が監査へ 1 行足した。
-    let after_completions = workspace
-        .audit_shard()
-        .expect("監査シャード")
-        .matches("STAGE_COMPLETED")
-        .count();
+    // 遷移がコミットされ、投影が監査へ足した行の対象は `domain-design` である。
+    let after_audit = workspace.audit_shard().expect("監査シャード");
     assert_eq!(
-        after_completions,
+        after_audit.matches("STAGE_COMPLETED").count(),
         before_completions + 1,
-        "報告が監査へ 1 行足す（乖離により対象は state-init である）"
+        "報告が監査へ完了行を 1 本足す: {after_audit}"
+    );
+    assert_eq!(
+        after_audit.matches("GATE_APPROVED").count(),
+        1,
+        "カーソルはゲート付きなので Forward は承認になる: {after_audit}"
+    );
+    assert!(
+        after_audit.contains("Stage Domain Design approved by gate"),
+        "完了したのは domain-design（ゲート経由の逐語）: {after_audit}"
+    );
+    // 二重記録が戻っていないことの証拠 — state-init の完了行は誕生の 1 本のままである。
+    assert_eq!(
+        after_audit.matches("State initialized:").count(),
+        1,
+        "state-init を 2 度完了させない（issue #76 の症状）: {after_audit}"
+    );
+    // 承認でカーソルが次のゲートへ進み、読み面もそこへ動く。
+    let after_state = workspace.state_file().expect("投影済み");
+    assert!(after_state.contains("- [x] domain-design"), "{after_state}");
+    assert!(
+        after_state.contains("- [-] contract-design"),
+        "{after_state}"
     );
 }
 

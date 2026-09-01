@@ -46,7 +46,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     assert_eq!(
         held.checkbox(held.cursor()),
         Some(CheckboxState::InProgress),
-        "genesis のカーソルは initialization（非ゲート）"
+        "誕生のカーソルは最初のゲート付きステージ（initialization は誕生で完了済み — issue #76）"
     );
     // 同じストアを指す別の口。ユースケースが書いた行を外から観測するために先に取っておく。
     let reopened_intent_execution_repository = intent_execution_repository.reopened();
@@ -69,7 +69,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
             at(),
         )
         .await
-        .expect("非ゲートのカーソルは完了できる");
+        .expect("ゲート付きのカーソルは承認できる");
 
     // 実物のストアに載ったことを、別の口から再構成して確かめる。
     let after = reopened_intent_execution_repository
@@ -85,7 +85,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
             .expect("カーソルは範囲内")
             .slug()
             .as_str(),
-        "intent-capture",
+        "scope-definition",
         "カーソルは次のステージへ進んだ"
     );
     assert_eq!(

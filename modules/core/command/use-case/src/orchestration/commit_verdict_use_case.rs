@@ -388,12 +388,14 @@ mod tests {
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
     use core_command_domain::workspace::CheckboxState;
 
-    /// 索引 0（initialization）を完了させ、カーソルを最初のゲート付きステージへ進めた実行。
+    /// カーソルが最初のゲート付きステージに立っている実行。
+    ///
+    /// 誕生 = 初期化完了済み（issue #76）以降、genesis がそのまま**この状態**である —
+    /// かつてここで打っていた `complete_stage` の 1 手（索引 0 = 非ゲートの initialization を
+    /// 完了させる）は、誕生の時点で済んでいるので不要になった。名前は役割を述べているので
+    /// そのまま残す。
     fn at_the_first_gate(stage_count: usize) -> (Intent, IntentExecution) {
-        let (intent, mut aggregate, _) = genesis(stage_count);
-        aggregate
-            .complete_stage(&intent, at())
-            .expect("初期化ステージは非ゲートなので完了できる");
+        let (intent, aggregate, _) = genesis(stage_count);
         (intent, aggregate)
     }
 
@@ -529,10 +531,31 @@ mod tests {
 
     #[tokio::test]
     async fn a_forward_report_on_an_ungated_stage_completes_the_stage() {
-        // カーソルは索引 0（initialization = 非ゲート）。どちらのコマンドを打つかは集約の
-        // `gated` クエリで決まる。
-        let (intent, aggregate, _) = genesis(3);
-        let mut subject = use_case((intent, aggregate), 1);
+        // どちらのコマンドを打つかは集約の `gated` クエリで決まる、という分岐そのものを
+        // 固定する。
+        //
+        // # なぜ計画の並びが不自然なのか
+        //
+        // 誕生 = 初期化完了済み（issue #76）以降、**実在の計画では**この分岐に到達しない —
+        // 非ゲートなのは initialization だけで、それは誕生の時点で completed になり、
+        // カーソルは最初のゲート付きステージに立つ。`jump` も initialization を拒否する
+        // （INIT_JUMP_ERROR）ので、以後カーソルが非ゲートに戻る歴史は構成不能である。
+        // それでも `command()` の非ゲート腕は upstream の鏡として存置されているので、
+        // ここでは initialization を**後ろに置いた**合成計画で到達させ、分岐を覆う。
+        // 実在の定義はフェーズ順（initialization が先頭ブロック）なのでこの並びは起きない。
+        let (intent, mut aggregate, _) = start_from_plan(&[
+            (PhaseId::Inception, PlanAction::Execute, false),
+            (PhaseId::Initialization, PlanAction::Execute, false),
+        ]);
+        aggregate
+            .approve_gate(&intent, Some("Approve".to_string()), at())
+            .expect("索引 0 はゲート付きで in-progress");
+        assert_eq!(
+            aggregate.cursor(),
+            aggregate.stage_index(1).expect("索引 1 は範囲内"),
+            "承認でカーソルが非ゲートの索引 1 へ進んでいる前提のテストである"
+        );
+        let mut subject = use_case((intent, aggregate), 2);
         subject
             .execute(None, forward(), at())
             .await
@@ -542,7 +565,7 @@ mod tests {
         else {
             panic!("StageCompleted を期待した");
         };
-        assert_eq!(completed.stage(), &slug(0));
+        assert_eq!(completed.stage(), &slug(1));
     }
 
     #[tokio::test]
@@ -587,14 +610,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_skipped_report_carries_the_reason() {
-        let (intent, mut aggregate, _) = start_from_plan(&[
+        let (intent, aggregate, _) = start_from_plan(&[
             (PhaseId::Initialization, PlanAction::Execute, false),
             (PhaseId::Inception, PlanAction::Execute, true),
             (PhaseId::Inception, PlanAction::Execute, false),
         ]);
-        aggregate
-            .complete_stage(&intent, at())
-            .expect("初期化は完了できる");
         let mut subject = use_case((intent, aggregate), 1);
         subject
             .execute(
@@ -687,7 +707,7 @@ mod tests {
     async fn the_write_presents_the_version_the_rehydration_returned() {
         // `aggregate.seq_nr()` から導かない — 再構成が返した版そのものを渡す（ポート doc C3）。
         let pair = at_the_first_gate(3);
-        assert_eq!(pair.1.seq_nr(), 2, "通番と版はたまたま一致させない");
+        assert_eq!(pair.1.seq_nr(), 1, "通番と版はたまたま一致させない");
         let mut subject = use_case(pair, 7);
         subject
             .execute(None, forward(), at())

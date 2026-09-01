@@ -185,13 +185,17 @@ where
     store_and_reload(repository, &event, &aggregate).await
 }
 
-/// 続きの 1 件 (`StageCompleted`) を書き、握り直した結果を返す。
-pub(crate) async fn store_stage_completed<R: IntentExecutionRepository>(
+/// 続きの 1 件 (`GateOpened`) を書き、握り直した結果を返す。
+///
+/// 誕生 = 初期化完了済み (issue #76) なので、genesis の直後にカーソルが立っているのは
+/// **最初のゲート付きステージ** (索引 1) である。そこから打てて、かつカーソルも活動位置も
+/// 動かさない 1 件が `open_gate` である。
+pub(crate) async fn store_gate_opened<R: IntentExecutionRepository>(
     repository: &mut R,
     held: &IntentExecution,
 ) -> IntentExecution {
     advance(repository, held, |aggregate| {
-        aggregate.complete_stage(&intent(), at())
+        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
     })
     .await
 }

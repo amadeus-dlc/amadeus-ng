@@ -241,13 +241,15 @@ impl JournalWriter {
     }
 }
 
-/// 5 件のジャーナル行を書く (`Started` / `StageCompleted` / `GateOpened` / `GateApproved` /
+/// 4 件のジャーナル行を書く (`Started` / `GateOpened` / `GateApproved` /
 /// `AutonomyModeSet`)。読み方の約束を見るテストが共通で使う土台である。
+///
+/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった `StageCompleted`
+/// (索引 0 = 非ゲートの initialization を完了させる 1 件) は構成不能になった — 誕生の
+/// 時点でその checkbox は completed で、カーソルは索引 1 のゲート付きステージに立って
+/// いる。前置きが 1 件消えたぶん、以後の通番が 1 つずつ詰まる。
 pub(crate) async fn seed(store: &mut UpstreamStore) {
     let mut writer = JournalWriter::start(store, execution_id()).await;
-    writer
-        .advance(store, |aggregate| aggregate.complete_stage(&intent(), at()))
-        .await;
     writer
         .advance(store, |aggregate| {
             aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())

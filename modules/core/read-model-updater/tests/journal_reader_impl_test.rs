@@ -79,7 +79,7 @@ async fn the_journal_reads_every_event_in_global_order() {
         .await
         .expect("差分読取");
     let rows = batch.executions();
-    assert_eq!(rows.len(), 5);
+    assert_eq!(rows.len(), 4);
     let globals: Vec<u64> = rows
         .iter()
         .map(|entry| entry.global_seq().to_u64())
@@ -93,7 +93,7 @@ async fn the_journal_reads_every_event_in_global_order() {
         "走査済み位置は最終行"
     );
     let seqs: Vec<usize> = rows.iter().map(JournalEntry::seq_nr).collect();
-    assert_eq!(seqs, [1, 2, 3, 4, 5], "欠落なく順に読める");
+    assert_eq!(seqs, [1, 2, 3, 4], "欠落なく順に読める");
     assert!(
         rows.iter()
             .all(|entry| entry.execution_id() == &execution_id()),
@@ -122,13 +122,13 @@ async fn a_row_of_the_intent_stream_is_consumed_as_an_intent() {
         .expect("intent 行は消費できる");
     assert_eq!(
         batch.executions().len(),
-        5,
+        4,
         "実行のイベント列には混ざらない"
     );
     assert_eq!(batch.intents(), &[intent()], "誕生の材料が集約値で返る");
     assert_eq!(
         batch.scanned_to(),
-        Some(GlobalSeqNr::new(6)),
+        Some(GlobalSeqNr::new(5)),
         "走査済み位置は intent 行も数える (チェックポイントが前進できる)"
     );
 }
@@ -173,14 +173,14 @@ async fn the_journal_reads_only_the_difference() {
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("全件");
-    let third = all.executions().get(2).expect("3 件目").global_seq();
-    let batch = journal_reader.events_after(third).await.expect("差分");
+    let second = all.executions().get(1).expect("2 件目").global_seq();
+    let batch = journal_reader.events_after(second).await.expect("差分");
     assert_eq!(batch.executions().len(), 2);
     assert!(
         batch
             .executions()
             .iter()
-            .all(|entry| entry.global_seq() > third)
+            .all(|entry| entry.global_seq() > second)
     );
 }
 
@@ -212,7 +212,7 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
     let conn = fixture.raw();
     conn.execute("DELETE FROM journal WHERE rowid = 1", [])
         .expect("先頭行を消して隙間を作る");
-    for old_rowid in 2i64..=5 {
+    for old_rowid in 2i64..=4 {
         conn.execute(
             "UPDATE journal SET rowid = ?1 WHERE rowid = ?2",
             rusqlite::params![old_rowid - 1, old_rowid],
@@ -347,7 +347,9 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
     JournalWriter::start(&mut store, other_execution_id()).await;
     first
         .advance(&mut store, |aggregate| {
-            aggregate.complete_stage(&intent(), at())
+            // 誕生 = 初期化完了済み (issue #76) なので、genesis の次に打てるのは
+            // カーソル (索引 1 のゲート付きステージ) の開放である。
+            aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
         })
         .await;
 
@@ -383,7 +385,9 @@ async fn the_reader_observes_writes_made_after_it_was_opened() {
     let journal_reader = fixture.journal_reader();
     writer
         .advance(&mut store, |aggregate| {
-            aggregate.complete_stage(&intent(), at())
+            // 誕生 = 初期化完了済み (issue #76) なので、genesis の次に打てるのは
+            // カーソル (索引 1 のゲート付きステージ) の開放である。
+            aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
         })
         .await;
 
@@ -449,7 +453,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
         .events_after(GlobalSeqNr::ZERO)
         .await
         .expect("全件");
-    let last = rows.executions().last().expect("5 件ある").global_seq();
+    let last = rows.executions().last().expect("4 件ある").global_seq();
 
     journal_reader
         .advance_checkpoint(&projection(), last)

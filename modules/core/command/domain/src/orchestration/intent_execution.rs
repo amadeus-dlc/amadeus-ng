@@ -54,7 +54,7 @@ use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::stage_key::StageKey;
 use super::status::Status;
-use crate::workflow_definition::{PlanAction, StageSlug};
+use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use crate::workspace::CheckboxState;
 
 /// 前進 (`complete_stage` / `approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
@@ -165,6 +165,16 @@ impl IntentExecution {
 
     /// genesis 時点の状態を組む (構造体リテラルはここだけ — [`IntentExecution::start`] と
     /// [`IntentExecution::replay`] の両経路が必ずここを通る)。
+    ///
+    /// # 誕生 = 初期化完了済み (issue #76 / オーナー裁定 2026-09-01)
+    ///
+    /// upstream の意味論では initialization フェーズは鋳造の一部として完了する (誕生 16 行が
+    /// 初期化 3 ステージを `[x]` にする)。集約も同じ位置から始まる — in-scope の initialization
+    /// を completed にし、カーソルは**最初の in-scope 実ステージ** (RMU の誕生投影
+    /// `first_gated_in_scope` と同じ導出) に立って in-progress。実ステージが 1 つも in-scope に
+    /// 無い縮退形では、活動中ステージ 0 のままカーソル 0 に留まる (next が branch 10 の done を
+    /// 導く)。これにより誕生直後の report が initialization を再完了して `STAGE_COMPLETED` を
+    /// 二重記録する経路は構成不能になる。
     fn genesis_state(
         id: IntentExecutionId,
         intent: &Intent,
@@ -182,8 +192,28 @@ impl IntentExecution {
             .map(StageEntry::plan_action)
             .collect();
         let mut checkbox = vec![CheckboxState::Pending; count];
-        if let Some(first) = checkbox.first_mut() {
-            *first = CheckboxState::InProgress;
+        for (index, entry) in intent.stages().iter().enumerate() {
+            if entry.phase() == PhaseId::Initialization
+                && entry.plan_action() == PlanAction::Execute
+                && let Some(marker) = checkbox.get_mut(index)
+            {
+                *marker = CheckboxState::Completed;
+            }
+        }
+        let first_in_scope_gated = intent
+            .stages()
+            .iter()
+            .enumerate()
+            .find_map(|(index, entry)| {
+                (entry.phase() != PhaseId::Initialization
+                    && entry.plan_action() == PlanAction::Execute)
+                    .then_some(index)
+            });
+        let cursor = first_in_scope_gated.unwrap_or(0);
+        if let Some(first) = first_in_scope_gated
+            && let Some(marker) = checkbox.get_mut(first)
+        {
+            *marker = CheckboxState::InProgress;
         }
         IntentExecution {
             id,
@@ -191,7 +221,7 @@ impl IntentExecution {
             stage_keys,
             overlay,
             checkbox,
-            cursor: StageIndex::new(0),
+            cursor: StageIndex::new(cursor),
             status: Status::Running,
             parked_at: None,
             autonomy: AutonomyMode::Gated,
@@ -1416,6 +1446,40 @@ mod tests {
         start_with(1, &vec![Execute; n], &vec![false; n])
     }
 
+    /// カーソルが initialization 上で in-progress の状態を直接組む。
+    ///
+    /// b34 (誕生 = 初期化完了済み) 以降、この配置は**誕生からは到達不能**である — 誕生が
+    /// initialization を completed にし、カーソルを最初の実ステージへ立てるため。それでも
+    /// `complete_stage` 本体と `StageCompleted` の適用腕は、upstream 自身も持つ「実行時
+    /// 到達不能の一般分岐」の鏡として存置されており (b34 裁定)、その検証にはこの状態が要る。
+    /// 歴史からは構成不能だが**復号上は valid** なので、検査付きの完全コンストラクタが受け付ける。
+    fn at_initialization_cursor(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Run {
+        let born = start_with(init, actions, conditional);
+        let count = actions.len();
+        let mut checkbox = vec![Pending; count];
+        checkbox[0] = InProgress;
+        let execution = IntentExecution::new(
+            born.id().clone(),
+            born.intent_id().clone(),
+            born.stage_keys().to_vec(),
+            actions.to_vec(),
+            checkbox,
+            0,
+            Status::Running,
+            None,
+            AutonomyMode::Gated,
+            vec![false; count],
+            vec![0; count],
+            1,
+            occurred(),
+        )
+        .unwrap();
+        Run {
+            intent: born.intent,
+            execution,
+        }
+    }
+
     /// フェーズと実効プランを名指しした合成計画で開始する (フェーズ境界の導出を見るテスト用)。
     /// 全ステージ EXECUTE の、フェーズだけ名指しした合成計画。
     /// 定義から計画を解決して実行を開始する (旧 7 引数の genesis に相当)。
@@ -1543,15 +1607,53 @@ mod tests {
         assert_eq!(started.intent_id(), &intent_id());
 
         assert_eq!(w.stage_count(), 3);
-        assert_eq!(w.cursor(), at(&w, 0));
-        assert_eq!(w.checkbox(at(&w, 0)), Some(InProgress));
-        assert_eq!(w.checkbox(at(&w, 1)), Some(Pending));
+        // 誕生 = 初期化完了済み (issue #76 / オーナー裁定 2026-09-01)。upstream の意味論では
+        // initialization は鋳造の一部として完了し、カーソルは最初のゲート付きステージに立つ。
+        assert_eq!(w.cursor(), at(&w, 1));
+        assert_eq!(w.checkbox(at(&w, 0)), Some(Completed));
+        assert_eq!(w.checkbox(at(&w, 1)), Some(InProgress));
+        assert_eq!(w.checkbox(at(&w, 2)), Some(Pending));
         assert_eq!(w.status(), Status::Running);
         assert_eq!(w.autonomy(), AutonomyMode::Gated);
         assert_eq!(w.parked_at(), None);
         assert_eq!(w.definition_id(), definition.id());
         assert_eq!(w.definition_revision(), definition.revision());
         assert_eq!(w.revision_count(at(&w, 0)), Some(0));
+    }
+
+    #[test]
+    fn birth_completes_initialization_and_stands_on_the_first_in_scope_gated_stage() {
+        // 実効 SKIP の先頭実ステージは飛ばし、次の in-scope ステージに立つ
+        // (RMU の誕生投影 first_gated_in_scope と同じ導出 — issue #76)。
+        let w = start_with(2, &[Execute, Execute, Skip, Execute], &[false; 4]);
+        assert_eq!(w.checkbox(at(&w, 0)), Some(Completed));
+        assert_eq!(w.checkbox(at(&w, 1)), Some(Completed));
+        assert_eq!(w.checkbox(at(&w, 2)), Some(Pending));
+        assert_eq!(w.checkbox(at(&w, 3)), Some(InProgress));
+        assert_eq!(w.cursor(), at(&w, 3));
+        assert_eq!(w.status(), Status::Running);
+    }
+
+    #[test]
+    fn birth_with_no_gated_stage_in_scope_stays_put_with_nothing_active() {
+        // 縮退形: 実ステージが全て実効 SKIP。誕生時点で活動中ステージ 0 のまま Running —
+        // next はここから branch 10 (done) を導く (モデル actNext の完了済みカーソル枝)。
+        let w = start_with(1, &[Execute, Skip, Skip], &[false; 3]);
+        assert_eq!(w.checkbox(at(&w, 0)), Some(Completed));
+        assert_eq!(w.checkbox(at(&w, 1)), Some(Pending));
+        assert_eq!(w.checkbox(at(&w, 2)), Some(Pending));
+        assert_eq!(w.cursor(), at(&w, 0));
+        assert_eq!(w.status(), Status::Running);
+    }
+
+    #[test]
+    fn a_report_on_a_completed_initialization_stage_is_a_stale_idempotent_done() {
+        // issue #76 の症状そのもの: 鋳造直後に initialization へ report が届いても、
+        // カーソル通過済み completed への再報告 (BR1.9) として無コミットの冪等 done になり、
+        // STAGE_COMPLETED が二重記録される経路は存在しない。
+        let w = all_exec(3);
+        assert_eq!(w.cursor(), at(&w, 1), "誕生時のカーソルは最初の実ステージ");
+        w.stale_report(at(&w, 0)).unwrap();
     }
 
     #[test]
@@ -1696,7 +1798,6 @@ mod tests {
     #[test]
     fn a_gated_stage_cannot_complete_without_passing_through_approval() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         assert_eq!(w.cursor(), at(&w, 1));
         w.open_gate(Vec::new(), occurred()).unwrap();
         w.approve_gate(None, occurred()).unwrap();
@@ -1707,7 +1808,6 @@ mod tests {
     #[test]
     fn complete_stage_is_refused_on_a_gated_stage() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         let target = at(&w, 1);
         assert_eq!(
             w.complete_stage(occurred()),
@@ -1717,8 +1817,11 @@ mod tests {
 
     #[test]
     fn approve_gate_and_the_gate_openers_are_refused_on_a_non_gated_stage() {
-        let mut w = all_exec(3);
+        // b34 以降、カーソルが非ゲート (initialization) 上に立つのは縮退形だけである —
+        // 実ステージが 1 つも in-scope に無いとき、誕生はカーソル 0 に留まる。
+        let mut w = start_with(1, &[Execute, Skip, Skip], &[false; 3]);
         let target = at(&w, 0);
+        assert_eq!(w.cursor(), target);
         assert_eq!(
             w.approve_gate(None, occurred()),
             Err(CommandError::InvalidTarget(target))
@@ -1736,7 +1839,6 @@ mod tests {
     #[test]
     fn approve_gate_accepts_the_open_gate_shortcut() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         // open_gate を省いた in-progress からの承認も受理する (BR1.3)。
         let event = w.approve_gate(Some("ok".to_string()), occurred()).unwrap();
         let IntentExecutionEvent::GateApproved(approved) = &event else {
@@ -1752,7 +1854,6 @@ mod tests {
     #[test]
     fn gate_lifecycle_preconditions_are_strict() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         assert!(matches!(
             w.revise_stage(occurred()),
             Err(CommandError::CheckboxPrecondition { .. })
@@ -1771,7 +1872,6 @@ mod tests {
     #[test]
     fn reject_gate_increments_the_revision_count() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         let first = w.reject_gate(Some("redo".to_string()), occurred()).unwrap();
         let IntentExecutionEvent::GateRejected(rejected) = &first else {
             panic!("expected GateRejected");
@@ -1787,7 +1887,6 @@ mod tests {
     #[test]
     fn skipped_is_refused_unless_conditional_or_plan_skip() {
         let mut w = start_with(1, &[Execute, Execute, Execute], &[false, false, true]);
-        w.complete_stage(occurred()).unwrap();
         let cursor = at(&w, 1);
         assert_eq!(
             w.skip_stage("no".to_string(), occurred()),
@@ -1806,7 +1905,6 @@ mod tests {
     #[test]
     fn forward_jump_skips_intervening_in_flight_stages() {
         let mut w = all_exec(5);
-        w.complete_stage(occurred()).unwrap();
         let target = at(&w, 3);
         let event = w.jump(target, occurred()).unwrap();
         let IntentExecutionEvent::Jumped(jumped) = &event else {
@@ -1823,7 +1921,6 @@ mod tests {
     #[test]
     fn backward_jump_resets_downstream_and_invalidates_approvals() {
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
         w.open_gate(Vec::new(), occurred()).unwrap();
         w.approve_gate(None, occurred()).unwrap();
         let target = at(&w, 1);
@@ -1840,7 +1937,6 @@ mod tests {
     #[test]
     fn jump_to_an_initialization_stage_is_refused() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         let target = at(&w, 0);
         assert_eq!(
             w.jump(target, occurred()),
@@ -1855,7 +1951,6 @@ mod tests {
     #[test]
     fn redo_reopens_the_cursor_and_drops_its_approval() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         w.open_gate(Vec::new(), occurred()).unwrap();
         w.reject_gate(None, occurred()).unwrap();
         let cursor = w.cursor();
@@ -1867,8 +1962,11 @@ mod tests {
 
     #[test]
     fn a_redo_on_an_initialization_cursor_is_refused() {
-        let w = all_exec(3);
+        // b34 以降、カーソルが initialization 上に残るのは縮退形だけ (実ステージが 1 つも
+        // in-scope に無い) — その配置でも redo は拒否されたままである。
+        let w = start_with(1, &[Execute, Skip, Skip], &[false; 3]);
         let cursor = w.cursor();
+        assert_eq!(cursor, at(&w, 0));
         assert_eq!(
             w.jump_resolve(cursor),
             Err(CommandError::InvalidTarget(cursor))
@@ -1878,7 +1976,6 @@ mod tests {
     #[test]
     fn park_preserves_position_and_autonomous_park_is_refused() {
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         let event = w.park(occurred()).unwrap();
         let IntentExecutionEvent::Parked(parked) = &event else {
             panic!("expected Parked");
@@ -1897,7 +1994,6 @@ mod tests {
     #[test]
     fn every_command_but_unpark_is_refused_while_parked() {
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
         w.park(occurred()).unwrap();
         let target = at(&w, 2);
         assert_eq!(w.complete_stage(occurred()), Err(CommandError::NotRunning));
@@ -1942,7 +2038,6 @@ mod tests {
     #[test]
     fn recompose_flips_only_pending_stages_ahead_of_the_cursor() {
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
         let cursor = w.cursor();
         assert_eq!(
             w.recompose(&[cursor], occurred()),
@@ -1969,7 +2064,6 @@ mod tests {
     #[test]
     fn recompose_rejects_the_whole_set_when_one_target_is_invalid() {
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
         let cursor = w.cursor();
         assert_eq!(
             w.recompose(&[at(&w, 2), cursor], occurred()),
@@ -2008,7 +2102,6 @@ mod tests {
     #[test]
     fn a_completed_workflow_refuses_every_command() {
         let mut w = all_exec(2);
-        w.complete_stage(occurred()).unwrap();
         w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert!(!w.accepts_commands());
@@ -2021,8 +2114,7 @@ mod tests {
     fn stale_rereport_is_accepted_as_a_no_op_and_commits_nothing() {
         // ガードは受理可否だけを答える (b26 段階 2 — 「次に何をすべきか」はクエリ側)。受理 =
         // 何も起こさない、なので集約は 1 ビットも動かない。
-        let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
+        let w = all_exec(3);
         let before = w.clone();
         assert_eq!(w.stale_report(at(&w, 0)), Ok(()));
         assert_eq!(w, before);
@@ -2058,13 +2150,15 @@ mod tests {
 
     #[test]
     fn a_command_at_sequence_exhaustion_is_refused() {
+        // 通番枯渇の拒否は `commit` が持つ — ガードを全部通ったコマンドが最後に落ちる。
+        // 誕生カーソルはゲート付きなので、そこまで届く代表として `approve_gate` を使う (b34)。
         let base = all_exec(3);
         let mut w = Run {
             intent: base.intent,
             execution: base.execution.with_seq_nr(usize::MAX),
         };
         assert_eq!(
-            w.complete_stage(occurred()),
+            w.approve_gate(None, occurred()),
             Err(CommandError::SequenceExhausted)
         );
         assert_eq!(w.seq_nr(), usize::MAX, "状態は変わらない");
@@ -2098,7 +2192,9 @@ mod tests {
 
     #[test]
     fn a_command_equals_the_old_state_plus_its_event() {
-        let mut w = all_exec(4);
+        // 誕生からは到達不能 — b34 裁定で存置した分岐 (`complete_stage` / `StageCompleted` の
+        // 適用腕) の検証。歴史からは構成不能だが復号上は valid な状態を直接組む。
+        let mut w = at_initialization_cursor(1, &[Execute; 4], &[false; 4]);
         let before = w.clone();
         let event = w.complete_stage(occurred()).unwrap();
         let mut replayed = before;
@@ -2110,7 +2206,6 @@ mod tests {
     fn a_jump_to_an_out_of_range_target_is_refused() {
         // ガードは jump コマンド側 (jump_resolve) — 範囲外索引は InvalidTarget。
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         let out_of_range = StageIndex::new(9);
         assert_eq!(
             w.jump(out_of_range, occurred()),
@@ -2122,7 +2217,6 @@ mod tests {
     fn skipping_the_last_in_scope_stage_completes_the_workflow() {
         // 導出 advance の None 腕 — skip でも次が無ければ完了になる。
         let mut w = start_with(1, &[Execute, Execute], &[false, true]);
-        w.complete_stage(occurred()).unwrap();
         w.skip_stage("conditional".to_string(), occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
     }
@@ -2132,8 +2226,7 @@ mod tests {
         // 実効 SKIP の介在は触らない — upstream 実バイト
         // (cli/jump/execute-forward-across-phases) を正本とする v2.1 の規則。
         let mut w = start_with(1, &[Execute, Skip, Execute, Execute], &[false; 4]);
-        w.complete_stage(occurred()).unwrap();
-        // カーソルは 2 (索引 1 は実効 SKIP なので飛ばされている)。3 へ前方跳躍。
+        // 誕生カーソルは 2 (索引 1 は実効 SKIP なので飛ばされている)。3 へ前方跳躍。
         assert_eq!(w.cursor(), at(&w, 2));
         let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
@@ -2151,7 +2244,6 @@ mod tests {
     fn a_forward_jump_skips_pending_in_scope_intermediates() {
         // 中間の in-scope は Pending でも skipped になる (02 §8 — v2 の忠実性修正のまま)。
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
         let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped), "出発点 (稼働中)");
@@ -2167,7 +2259,6 @@ mod tests {
     fn a_redo_jump_event_invalidates_the_source_approval_only() {
         // redo (到達点 = 出発点) — 出発点の承認だけが消え、checkbox は [-] のまま。
         let mut w = all_exec(3);
-        w.complete_stage(occurred()).unwrap();
         w.open_gate(Vec::new(), occurred()).unwrap();
         w.approve_gate(None, occurred()).unwrap();
         // カーソルは 2。redo で 2 へ跳び直す。
@@ -2190,10 +2281,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "apply_event: invariant violated — parked_position")]
     fn applying_a_park_away_from_the_cursor_crashes() {
-        // park の位置はカーソルと同じでなければならない (parked_position)。カーソル 0 のまま
-        // ステージ 1 を park するイベントは壊れた歴史である。
+        // park の位置はカーソルと同じでなければならない (parked_position)。誕生カーソル 1 の
+        // まま、ステージ 2 を park するイベントは壊れた歴史である。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Parked(Parked::new(slug(1)));
+        let event = IntentExecutionEvent::Parked(Parked::new(slug(2)));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2201,9 +2292,10 @@ mod tests {
     #[should_panic(expected = "apply_event: invariant violated — cursor_in_scope")]
     fn applying_a_recompose_that_skips_the_cursor_crashes() {
         // park していない実行のカーソルは実効 EXECUTE の上に居なければならない
-        // (cursor_in_scope)。カーソル上のステージを SKIP へ畳む差分は壊れた歴史である。
+        // (cursor_in_scope)。カーソル上のステージ (誕生カーソルは 1) を SKIP へ畳む差分は
+        // 壊れた歴史である。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(0)], Vec::new()));
+        let event = IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(1)], Vec::new()));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2217,11 +2309,11 @@ mod tests {
         let mut w = all_exec(4);
         let snapshot = w.execution.clone(); // genesis 時点の写し (= ある時点の集約)
         let mut delta = Vec::new();
-        let event = w.complete_stage(occurred()).unwrap();
-        delta.push((w.seq_nr(), *w.last_updated_at(), event));
         let event = w.open_gate(Vec::new(), occurred()).unwrap();
         delta.push((w.seq_nr(), *w.last_updated_at(), event));
         let event = w.reject_gate(None, occurred()).unwrap();
+        delta.push((w.seq_nr(), *w.last_updated_at(), event));
+        let event = w.revise_stage(occurred()).unwrap();
         delta.push((w.seq_nr(), *w.last_updated_at(), event));
 
         let replayed = IntentExecution::replay(snapshot, delta);
@@ -2240,7 +2332,7 @@ mod tests {
     fn the_full_constructor_round_trips_the_aggregate_state() {
         // 集約 → 列の材料 → 完全コンストラクタが同じ状態へ戻る (検査付きの唯一の口 — BR1.5)。
         let mut w = all_exec(3);
-        let _ = w.complete_stage(occurred()).unwrap();
+        let _ = w.approve_gate(None, occurred()).unwrap();
         let source = &w.execution;
         let rebuilt = IntentExecution::new(
             source.id().clone(),
@@ -2410,14 +2502,13 @@ mod tests {
         // genesis は未永続 — `start` を通った集約はまだ版を持たない。
         assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
         // 版はコマンドで動かない (採番するのはストアである)。
-        let _ = w.complete_stage(occurred()).unwrap();
+        let _ = w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.execution.version(), IntentExecution::UNPERSISTED_VERSION);
     }
 
     #[test]
     fn jump_resolve_is_a_read_only_query() {
         let mut w = all_exec(4);
-        w.complete_stage(occurred()).unwrap();
         let before = w.clone();
         assert_eq!(w.jump_resolve(at(&w, 3)), Ok(JumpDirection::Forward));
         assert_eq!(w, before);
@@ -2433,7 +2524,10 @@ mod tests {
 
     #[test]
     fn every_initialization_stage_is_non_gated_and_the_rest_are_gated() {
-        let mut w = start_with(3, &[Execute; 6], &[false; 6]);
+        // 誕生からは到達不能 — b34 裁定で存置した分岐 (`complete_stage` 本体と非ゲート完了の
+        // 前進) の検証。歴史からは構成不能だが復号上は valid な状態を直接組み、initialization
+        // を 1 段ずつ踏破する。ゲート判定そのものは誕生状態でも同じである。
+        let mut w = at_initialization_cursor(3, &[Execute; 6], &[false; 6]);
         for i in 0..3 {
             assert_eq!(w.gated(at(&w, i)), Some(false), "stage {i}");
         }

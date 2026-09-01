@@ -341,11 +341,18 @@ mod conformance {
         assert_eq!(restored.version, 1, "最初の版はストアが 1 で採番する");
 
         // 2. スナップショット同時更新 — 本家が version を 1 つ進める。
+        //
+        // 誕生 = 初期化完了済み (issue #76) なので、カーソルは genesis の時点で索引 1 の
+        // ゲート付きステージに立っている。かつてここで打っていた `complete_stage` は
+        // 構成不能になったため、同じ位置から打てる `open_gate` に置き換えた — ストア
+        // 操作の並び (create → 写し同時更新 → イベントのみ → 写し同時更新) は変えない。
         let mut aggregate = restored.aggregate;
-        let completed = aggregate.complete_stage(&intent(), at(1)).unwrap();
+        let opened = aggregate
+            .open_gate(&intent(), vec!["docs/x.md".to_string()], at(1))
+            .unwrap();
         store
             .persist_event_and_snapshot(
-                envelope(&aggregate, &completed),
+                envelope(&aggregate, &opened),
                 snapshot_of(&aggregate),
                 restored.version,
             )
@@ -359,15 +366,19 @@ mod conformance {
             restored.aggregate.cursor(),
             restored.aggregate.stage_index(1).unwrap()
         );
+        assert_eq!(
+            restored
+                .aggregate
+                .checkbox(restored.aggregate.stage_index(1).unwrap()),
+            Some(CheckboxState::AwaitingApproval)
+        );
         assert_eq!(restored.aggregate.last_updated_at(), &at(1));
 
         // 3. ジャーナルだけへの追記 — スナップショットは進まないので、復元はリプレイを通る。
         let mut aggregate = restored.aggregate;
-        let opened = aggregate
-            .open_gate(&intent(), vec!["docs/x.md".to_string()], at(2))
-            .unwrap();
+        let approved = aggregate.approve_gate(&intent(), None, at(2)).unwrap();
         store
-            .persist_event(envelope(&aggregate, &opened), restored.version)
+            .persist_event(envelope(&aggregate, &approved), restored.version)
             .await
             .unwrap();
 
@@ -381,17 +392,25 @@ mod conformance {
             restored
                 .aggregate
                 .checkbox(restored.aggregate.stage_index(1).unwrap()),
-            Some(CheckboxState::AwaitingApproval)
+            Some(CheckboxState::Completed)
+        );
+        assert_eq!(
+            restored
+                .aggregate
+                .approved(restored.aggregate.stage_index(1).unwrap()),
+            Some(true)
         );
         assert_eq!(restored.aggregate.last_updated_at(), &at(2));
         assert_eq!(restored.version, 3, "イベントのみの書込でも版は進む");
 
         // 4. もう 1 度スナップショット同時更新 — 直前のリプレイ結果から続けられる。
         let mut aggregate = restored.aggregate;
-        let approved = aggregate.approve_gate(&intent(), None, at(3)).unwrap();
+        let opened = aggregate
+            .open_gate(&intent(), vec!["docs/y.md".to_string()], at(3))
+            .unwrap();
         store
             .persist_event_and_snapshot(
-                envelope(&aggregate, &approved),
+                envelope(&aggregate, &opened),
                 snapshot_of(&aggregate),
                 restored.version,
             )
@@ -408,14 +427,15 @@ mod conformance {
         assert_eq!(
             restored
                 .aggregate
-                .checkbox(restored.aggregate.stage_index(1).unwrap()),
-            Some(CheckboxState::Completed)
+                .checkbox(restored.aggregate.stage_index(2).unwrap()),
+            Some(CheckboxState::AwaitingApproval)
         );
         assert_eq!(
             restored
                 .aggregate
                 .approved(restored.aggregate.stage_index(1).unwrap()),
-            Some(true)
+            Some(true),
+            "索引 1 の承認は写しと差分をまたいで残る"
         );
         assert_eq!(restored.aggregate.last_updated_at(), &at(3));
     }
@@ -437,13 +457,11 @@ mod conformance {
             )
             .await
             .unwrap();
-        let completed = aggregate.complete_stage(&intent(), at(1)).unwrap();
+        let opened = aggregate
+            .open_gate(&intent(), vec!["docs/x.md".to_string()], at(1))
+            .unwrap();
         store
-            .persist_event_and_snapshot(
-                envelope(&aggregate, &completed),
-                snapshot_of(&aggregate),
-                1,
-            )
+            .persist_event_and_snapshot(envelope(&aggregate, &opened), snapshot_of(&aggregate), 1)
             .await
             .unwrap();
 
