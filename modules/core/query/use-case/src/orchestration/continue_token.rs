@@ -10,13 +10,17 @@
 //! per-unit / wave / settled-swarm) のうちエンジンが今日構築しない値は**フィールドを
 //! 持たない** (構成不能で表す — 02 §4.1。`p` は unit の有無から導出される)。
 
-use super::directive::GateField;
+use super::bindings::Bindings;
+use super::gate_field::GateField;
+use super::part_index::PartIndex;
 use super::stage_name::StageName;
-use super::steering_binding::Bindings;
-use super::steering_plan::PartIndex;
 use super::token_version::TokenVersion;
 use super::unit_ref::UnitRef;
 use crate::orchestration::{ScopeSlugView, StageSlugView};
+
+mod continue_token_builder;
+
+pub use continue_token_builder::ContinueTokenBuilder;
 
 /// steering 連鎖の継続ペイロード。キーは upstream の 1 文字綴り (`v`/`s`/`c`/…) に対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,66 +34,6 @@ pub struct ContinueToken {
     next_stage: Option<StageName>,
     unit: Option<UnitRef>,
     single: bool,
-}
-
-/// [`ContinueToken`] の組み立て器 — 必須 5 点を受け、残りは `with_*` で伴わせる。
-/// `v` は常に現行版。
-#[derive(Debug, Clone)]
-pub struct ContinueTokenBuilder {
-    token: ContinueToken,
-}
-
-impl ContinueTokenBuilder {
-    /// 必須材料 (stage / scope / 部索引 / 束縛 / gate) を束ねる。
-    #[must_use]
-    pub const fn new(
-        stage: StageSlugView,
-        scope: ScopeSlugView,
-        next_part_index: PartIndex,
-        bindings: Bindings,
-        gate: GateField,
-    ) -> ContinueTokenBuilder {
-        ContinueTokenBuilder {
-            token: ContinueToken {
-                version: TokenVersion::CURRENT,
-                stage,
-                scope,
-                next_part_index,
-                bindings,
-                gate,
-                next_stage: None,
-                unit: None,
-                single: false,
-            },
-        }
-    }
-
-    /// per-unit 反復の unit を伴う (per-unit フラグは unit の有無から導出される)。
-    #[must_use]
-    pub fn with_unit(mut self, unit: UnitRef) -> ContinueTokenBuilder {
-        self.token.unit = Some(unit);
-        self
-    }
-
-    /// 次ステージの表示名を伴う。
-    #[must_use]
-    pub fn with_next_stage(mut self, next_stage: StageName) -> ContinueTokenBuilder {
-        self.token.next_stage = Some(next_stage);
-        self
-    }
-
-    /// 単一ステージ隔離モードを伴う。
-    #[must_use]
-    pub const fn with_single(mut self) -> ContinueTokenBuilder {
-        self.token.single = true;
-        self
-    }
-
-    /// 組み上げる。
-    #[must_use]
-    pub fn build(self) -> ContinueToken {
-        self.token
-    }
 }
 
 impl ContinueToken {
@@ -156,10 +100,12 @@ impl ContinueToken {
 
 #[cfg(test)]
 mod tests {
-    use super::super::steering_binding::{
-        BundleDigest, DirectiveDigest, RouteDigest, StateBinding,
-    };
-    use super::super::unit_ref::{UnitKind, UnitName};
+    use super::super::bundle_digest::BundleDigest;
+    use super::super::directive_digest::DirectiveDigest;
+    use super::super::route_digest::RouteDigest;
+    use super::super::state_binding::StateBinding;
+    use super::super::unit_kind::UnitKind;
+    use super::super::unit_name::UnitName;
     use super::*;
 
     fn bindings() -> Bindings {

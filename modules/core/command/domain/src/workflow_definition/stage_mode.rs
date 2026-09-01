@@ -3,6 +3,8 @@
 //! `agent-team` は**予約値**で出荷グラフには現れない。読み手は明示的に扱い、既定経路へ
 //! フォールスルーさせてはならない (レポート §6.1-14 — [S] `02:154`, [S] `04:98`)。
 
+use super::unknown_stage_mode::UnknownStageMode;
+
 /// ステージ実行トポロジ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StageMode {
@@ -16,24 +18,6 @@ pub enum StageMode {
     Mob,
     /// 予約 — 未実装。`is_reserved()` が真を返す唯一の値。
     AgentTeam,
-}
-
-/// 閉集合外の値。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownStageMode(String);
-
-impl UnknownStageMode {
-    /// 拒否された生値をそのまま包む (トリム・区切り文字の補正などの正規化はしない)。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownStageMode {
-        UnknownStageMode(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl StageMode {

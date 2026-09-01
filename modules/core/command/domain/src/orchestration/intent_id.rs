@@ -5,6 +5,8 @@ use std::fmt;
 
 use uuid::Uuid;
 
+use super::intent_id_error::IntentIdError;
+
 /// `intents.json` の uuid にあたる集約識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
 /// 形は **UUIDv7 の正準表記**に限る —
@@ -19,13 +21,6 @@ use uuid::Uuid;
 /// 時刻の妥当性は検証しない — entities.md IntentId)。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntentId(String);
-
-/// `IntentId::parse` が拒否する形 (材料のみ — 利用者向け文言はアダプタ層)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IntentIdError {
-    /// UUIDv7 の正準表記 (小文字 `8-4-4-4-12`・version `7`・RFC variant) でない。
-    NotCanonicalUuidV7,
-}
 
 impl IntentId {
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
@@ -62,18 +57,6 @@ impl fmt::Display for IntentId {
         f.write_str(&self.0)
     }
 }
-
-impl fmt::Display for IntentIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IntentIdError::NotCanonicalUuidV7 => {
-                f.write_str("not a canonical UUIDv7 (expected lowercase 8-4-4-4-12)")
-            }
-        }
-    }
-}
-
-impl std::error::Error for IntentIdError {}
 
 #[cfg(test)]
 mod tests {

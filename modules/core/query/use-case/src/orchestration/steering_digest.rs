@@ -19,13 +19,16 @@
 //! 持ち込むこともしない — 素材は言語拡張 [`canon_json`] の [`JsonValue`] を**手で組み**、
 //! CompactRaw 族 ([`hash_compact`]) でハッシュする。
 //!
-//! [`Bindings`]: super::steering_binding::Bindings
+//! [`Bindings`]: super::bindings::Bindings
 //! [`canon_json`]: core_infrastructure::canon_json
 
 use core_infrastructure::canon_json::{JsonValue, hash_compact};
 
-use super::directive::{GateField, RunStageDirective};
-use super::steering_binding::{BundleDigest, DirectiveDigest, RouteDigest};
+use super::bundle_digest::BundleDigest;
+use super::directive_digest::DirectiveDigest;
+use super::gate_field::GateField;
+use super::route_digest::RouteDigest;
+use super::run_stage_directive::RunStageDirective;
 use super::steering_plan::SteeringPlan;
 use crate::orchestration::{StageRouteView, StageSlugView};
 
@@ -143,11 +146,14 @@ fn object<const N: usize>(members: [(&str, JsonValue); N]) -> JsonValue {
 
 #[cfg(test)]
 mod tests {
+    use super::super::bindings::Bindings;
     use super::super::continue_token::ContinueTokenBuilder;
-    use super::super::directive::{RuleContent, RunStageDirectiveBuilder};
-    use super::super::steering_binding::Bindings;
-    use super::super::steering_plan::PartIndex;
-    use super::super::unit_ref::{UnitKind, UnitName, UnitRef};
+    use super::super::part_index::PartIndex;
+    use super::super::rule_content::RuleContent;
+    use super::super::run_stage_directive::RunStageDirectiveBuilder;
+    use super::super::unit_kind::UnitKind;
+    use super::super::unit_name::UnitName;
+    use super::super::unit_ref::UnitRef;
     use super::*;
     use crate::orchestration::{PhaseView, ScopeSlugView, StageModeView};
 

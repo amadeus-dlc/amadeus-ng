@@ -5,13 +5,11 @@
 
 use std::fmt;
 
+use super::blank_stage_name::BlankStageName;
+
 /// パース済みのステージ表示名 (空・空白のみは存在しない)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageName(String);
-
-/// `StageName::parse` が拒否する形。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BlankStageName;
 
 impl StageName {
     /// # Errors
@@ -36,14 +34,6 @@ impl fmt::Display for StageName {
         f.write_str(&self.0)
     }
 }
-
-impl fmt::Display for BlankStageName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("blank stage name")
-    }
-}
-
-impl std::error::Error for BlankStageName {}
 
 #[cfg(test)]
 mod tests {

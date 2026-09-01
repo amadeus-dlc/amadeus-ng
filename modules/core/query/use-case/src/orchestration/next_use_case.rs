@@ -20,17 +20,23 @@
 //!
 //! [`ExecutionStateView::next_decision`]: crate::orchestration::ExecutionStateView::next_decision
 
-use super::directive::{
-    AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, RunStageDirective,
-    RunStageDirectiveBuilder,
-};
+use super::ask_directive::AskDirective;
+use super::ask_kind::AskKind;
+use super::bindings::Bindings;
+use super::directive::Directive;
 use super::engine_command::EngineCommand;
-use super::next_decision::{NextDecision, NextRequest};
-use super::next_turn_input::{NextTurnInput, WorkspaceLayout};
-use super::scope_resolution::ScopeResolutionError;
+use super::gate_field::GateField;
+use super::load_steering_directive::LoadSteeringDirective;
+use super::next_decision::NextDecision;
+use super::next_request::NextRequest;
+use super::next_turn_input::NextTurnInput;
+use super::run_stage_directive::RunStageDirective;
+use super::run_stage_directive::RunStageDirectiveBuilder;
+use super::scope_resolution_error::ScopeResolutionError;
 use super::stage_name::StageName;
-use super::steering_binding::{Bindings, StateBinding};
-use super::steering_plan::SteeringPart;
+use super::state_binding::StateBinding;
+use super::steering_part::SteeringPart;
+use super::workspace_layout::WorkspaceLayout;
 use crate::orchestration::{
     DefinitionView, ExecutionStateView, PhaseView, PlanActionView, ScopeSlugView, StageIndex,
     StageModeView, StageSlugView, StageView,
@@ -1192,15 +1198,20 @@ mod tests {
 
     use std::collections::BTreeMap;
 
+    use super::super::bundle_digest::BundleDigest;
     use super::super::continue_token::ContinueTokenBuilder;
     use super::super::continue_use_case::ContinueUseCase;
-    use super::super::directive::RuleContent;
-    use super::super::next_turn_input::{NounFamily, NounToken};
-    use super::super::scope_resolution::ScopeSource;
-    use super::super::steering_binding::{BundleDigest, DirectiveDigest, RouteDigest};
-    use super::super::steering_plan::PartIndex;
+    use super::super::directive_digest::DirectiveDigest;
+    use super::super::noun_family::NounFamily;
+    use super::super::noun_token::NounToken;
+    use super::super::part_index::PartIndex;
+    use super::super::route_digest::RouteDigest;
+    use super::super::rule_content::RuleContent;
+    use super::super::scope_source::ScopeSource;
     use super::super::test_fixtures::{FakeDefinitionDao, FakeRulesDao, FakeStateDao};
-    use super::super::unit_ref::{UnitKind, UnitName, UnitRef};
+    use super::super::unit_kind::UnitKind;
+    use super::super::unit_name::UnitName;
+    use super::super::unit_ref::UnitRef;
     use super::super::{ReadOnlyVerb, test_fixtures};
     use super::*;
     use crate::orchestration::MemoryRules;

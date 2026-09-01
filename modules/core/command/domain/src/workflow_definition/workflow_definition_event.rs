@@ -26,13 +26,14 @@
 //!
 //! [`WorkflowDefinition`]: super::workflow_definition::WorkflowDefinition
 
-use std::collections::BTreeMap;
+// 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
+// 再輸出する (所有サブツリーのファサード — 利便再エクスポートではない。
+// coding-rules/module-visibility.md)。
+mod defined;
+mod redefined;
 
-use super::definition_revision::DefinitionRevision;
-use super::scope_grid::ScopeGrid;
-use super::scope_metadata::ScopeMetadata;
-use super::stage_graph::StageGraph;
-use super::workflow_definition_id::WorkflowDefinitionId;
+pub use defined::Defined;
+pub use redefined::Redefined;
 
 /// 定義集約に起きた事実。
 ///
@@ -47,129 +48,14 @@ pub enum WorkflowDefinitionEvent {
     Redefined(Redefined),
 }
 
-/// `Defined` のペイロード — 確立された定義の系譜 ID・内容版・内容そのもの。
-///
-/// 系譜 ID を運ぶのは genesis だけである (以後の改訂で識別子は変わらない)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Defined {
-    id: WorkflowDefinitionId,
-    revision: DefinitionRevision,
-    graph: StageGraph,
-    grid: ScopeGrid,
-    scopes: BTreeMap<String, ScopeMetadata>,
-}
-
-impl Defined {
-    /// 系譜 ID・内容版・3 入力のモデルを束ねる。
-    #[must_use]
-    pub const fn new(
-        id: WorkflowDefinitionId,
-        revision: DefinitionRevision,
-        graph: StageGraph,
-        grid: ScopeGrid,
-        scopes: BTreeMap<String, ScopeMetadata>,
-    ) -> Defined {
-        Defined {
-            id,
-            revision,
-            graph,
-            grid,
-            scopes,
-        }
-    }
-
-    /// 確立された定義の系譜 ID (内容が変わっても不変 — ADR-008)。
-    #[must_use]
-    pub const fn id(&self) -> &WorkflowDefinitionId {
-        &self.id
-    }
-
-    /// 確立された時点の内容版 (3 入力の内容ダイジェスト)。
-    #[must_use]
-    pub const fn revision(&self) -> &DefinitionRevision {
-        &self.revision
-    }
-
-    /// 確立された時点のステージグラフ (文書順を保持したまま)。
-    #[must_use]
-    pub const fn graph(&self) -> &StageGraph {
-        &self.graph
-    }
-
-    /// 確立された時点の静的 EXECUTE / SKIP グリッド。
-    #[must_use]
-    pub const fn grid(&self) -> &ScopeGrid {
-        &self.grid
-    }
-
-    /// 確立された時点のスコープカタログ (スコープ名の辞書順)。
-    #[must_use]
-    pub const fn scopes(&self) -> &BTreeMap<String, ScopeMetadata> {
-        &self.scopes
-    }
-}
-
-/// `Redefined` のペイロード — 改訂後の内容版と内容そのもの。
-///
-/// 系譜 ID は載せない — 改訂は既存のストリームに追記される事実であり、どの集約に起きたかは
-/// ジャーナル行の集約識別子が持つ (`coding-rules/aggregate-references.md` と同じ理由で、
-/// 変異イベントは自集約の識別子を複製しない)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Redefined {
-    revision: DefinitionRevision,
-    graph: StageGraph,
-    grid: ScopeGrid,
-    scopes: BTreeMap<String, ScopeMetadata>,
-}
-
-impl Redefined {
-    /// 改訂後の内容版と 3 入力のモデルを束ねる。
-    #[must_use]
-    pub const fn new(
-        revision: DefinitionRevision,
-        graph: StageGraph,
-        grid: ScopeGrid,
-        scopes: BTreeMap<String, ScopeMetadata>,
-    ) -> Redefined {
-        Redefined {
-            revision,
-            graph,
-            grid,
-            scopes,
-        }
-    }
-
-    /// 改訂後の内容版。
-    #[must_use]
-    pub const fn revision(&self) -> &DefinitionRevision {
-        &self.revision
-    }
-
-    /// 改訂後のステージグラフ。
-    #[must_use]
-    pub const fn graph(&self) -> &StageGraph {
-        &self.graph
-    }
-
-    /// 改訂後の静的 EXECUTE / SKIP グリッド。
-    #[must_use]
-    pub const fn grid(&self) -> &ScopeGrid {
-        &self.grid
-    }
-
-    /// 改訂後のスコープカタログ。
-    #[must_use]
-    pub const fn scopes(&self) -> &BTreeMap<String, ScopeMetadata> {
-        &self.scopes
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::workflow_definition::{
-        DefinitionRevision, ExecutionKind, PhaseId, StageMode, StageNodeBuilder, StageNumber,
-        StageSlug, WorkflowDefinitionId,
+        DefinitionRevision, ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph,
+        StageMode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinitionId,
     };
 
     fn id() -> WorkflowDefinitionId {

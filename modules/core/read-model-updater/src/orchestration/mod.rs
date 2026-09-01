@@ -9,6 +9,7 @@
 //! 消費側のパスは `core_read_model_updater::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod catch_up_error;
 mod corrupt_cause;
 mod dto;
 mod global_seq_nr;
@@ -18,15 +19,18 @@ mod journal_read_error;
 mod journal_reader;
 mod journal_reader_impl;
 mod projection_name;
+mod projection_name_error;
+mod projection_targets;
+mod read_model_updater;
 mod store_failure;
-mod updater;
 
 // ポート (trait) と実 I/O 実装
 pub use journal_reader::JournalReader;
 pub use journal_reader_impl::JournalReaderImpl;
 
 // 取得ループ (RMU コンポーネント本体 — 二層構造の上側)
-pub use updater::{ProjectionTargets, ReadModelUpdater};
+pub use projection_targets::ProjectionTargets;
+pub use read_model_updater::ReadModelUpdater;
 
 // Domain Primitive (永続化の通番と投影の名前)
 pub use global_seq_nr::GlobalSeqNr;
@@ -44,7 +48,7 @@ pub use dto::{
     StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
 };
 
+pub use catch_up_error::CatchUpError;
 pub use corrupt_cause::CorruptCause;
 pub use journal_read_error::JournalReadError;
-pub use projection_name::ProjectionNameError;
-pub use updater::CatchUpError;
+pub use projection_name_error::ProjectionNameError;

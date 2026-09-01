@@ -44,17 +44,20 @@
 //! (`coding-rules/module-visibility.md`)。
 
 mod continue_token_dto;
+mod definition_paths;
 mod execution_state_dao_impl;
 mod execution_state_parse;
 mod memory;
 mod memory_rules_dao_impl;
+mod raw_artifact;
 mod workflow_definition_dao_impl;
 mod workflow_definition_parse;
 
 // 実 Gateway (DAO 実装) — ポート (trait) は `core_query_use_case::orchestration` が所有する。
+pub use definition_paths::DefinitionPaths;
 pub use execution_state_dao_impl::ExecutionStateDaoImpl;
 pub use memory_rules_dao_impl::MemoryRulesDaoImpl;
-pub use workflow_definition_dao_impl::{DefinitionPaths, WorkflowDefinitionDaoImpl};
+pub use workflow_definition_dao_impl::WorkflowDefinitionDaoImpl;
 
 // テスト用 in-memory 実装 (合成ルートとその周辺のテストが実 I/O 無しで組むための口)。
 pub use memory::{
@@ -67,4 +70,5 @@ pub use continue_token_dto::{InvalidContinueToken, mint_continue_token, verify_c
 // 純 parse (fs 呼び出しゼロ) — DAO 実装の下請けだが、ゴールデンパリティテストが
 // 読み終えたバイトを直接与えるために公開する。
 pub use execution_state_parse::{ExecutionStateParseError, parse_execution_state};
-pub use workflow_definition_parse::{DefinitionArtifacts, RawArtifact, parse_workflow_definition};
+pub use raw_artifact::RawArtifact;
+pub use workflow_definition_parse::{DefinitionArtifacts, parse_workflow_definition};

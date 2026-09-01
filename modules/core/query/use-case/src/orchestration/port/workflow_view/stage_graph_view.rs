@@ -7,8 +7,8 @@
 //! slug → 文書順インデックスの索引は**実装の自由** (12 §6.2)。
 
 use std::collections::BTreeMap;
-use std::fmt;
 
+use super::stage_graph_error::StageGraphError;
 use super::stage_slug_view::StageSlugView;
 use super::stage_view::StageView;
 
@@ -17,20 +17,6 @@ use super::stage_view::StageView;
 pub struct StageGraphView {
     nodes: Vec<StageView>,
     index: BTreeMap<StageSlugView, usize>,
-}
-
-/// `StageGraphView::new` が拒否する構成違反。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StageGraphError {
-    /// slug がグラフ内で重複している。
-    DuplicateSlug {
-        /// 重複した slug の生値。
-        slug: String,
-        /// 最初の出現の文書順インデックス。
-        first_index: usize,
-        /// 重複として拒否された出現の文書順インデックス。
-        duplicate_index: usize,
-    },
 }
 
 impl StageGraphView {
@@ -115,23 +101,6 @@ impl StageGraphView {
         names
     }
 }
-
-impl fmt::Display for StageGraphError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StageGraphError::DuplicateSlug {
-                slug,
-                first_index,
-                duplicate_index,
-            } => write!(
-                f,
-                "duplicate stage slug {slug:?} at index {duplicate_index} (first seen at {first_index})"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for StageGraphError {}
 
 #[cfg(test)]
 mod tests {

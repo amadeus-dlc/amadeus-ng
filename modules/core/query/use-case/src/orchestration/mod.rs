@@ -30,50 +30,95 @@
 //! パスは `core_query_use_case::orchestration::<型>` で安定する
 //! (`coding-rules/module-visibility.md`)。
 
+mod ask_directive;
+mod ask_kind;
+mod bindings;
+mod blank_stage_name;
+mod bundle_digest;
 mod continue_token;
 mod continue_use_case;
 mod directive;
+mod directive_digest;
 mod directive_schema;
 mod engine_command;
+mod engine_signal;
+mod gate_field;
+mod load_steering_directive;
 mod next_decision;
+mod next_request;
 mod next_turn_input;
 mod next_use_case;
+mod noun_family;
+mod noun_token;
+mod part_count;
+mod part_index;
 mod port;
+mod read_only_verb;
+mod route_digest;
+mod rule_content;
+mod run_stage_directive;
 mod scope_resolution;
+mod scope_resolution_error;
+mod scope_source;
 mod stage_name;
-mod steering_binding;
+mod state_binding;
 mod steering_digest;
+mod steering_part;
 mod steering_plan;
 #[cfg(test)]
 mod test_fixtures;
 mod token_version;
+mod unit_kind;
+mod unit_name;
+mod unit_name_error;
 mod unit_ref;
+mod unknown_unit_kind;
+mod unsplittable_section;
+mod workspace_layout;
 
 // directive プロトコル (10 種の閉集合と、構築できる部分集合の判別共用体)
-pub use directive::{
-    AskDirective, AskKind, Directive, GateField, LoadSteeringDirective, RuleContent,
-    RunStageDirective, RunStageDirectiveBuilder,
-};
+pub use ask_directive::AskDirective;
+pub use ask_kind::AskKind;
+pub use directive::Directive;
 pub use directive_schema::DirectiveKind;
+pub use gate_field::GateField;
+pub use load_steering_directive::LoadSteeringDirective;
+pub use rule_content::RuleContent;
+// ビルダーは対象型の所有サブツリー (`run_stage_directive/`) に住み、型ファイル自身が
+// ファサード連鎖の一段を担う (`coding-rules/module-visibility.md` §追記 2026-09-01)。
+pub use run_stage_directive::{RunStageDirective, RunStageDirectiveBuilder};
 
 // steering 連鎖 (継続トークン・束縛・配信計画)
+pub use bindings::Bindings;
+pub use bundle_digest::BundleDigest;
 pub use continue_token::{ContinueToken, ContinueTokenBuilder};
-pub use steering_binding::{Bindings, BundleDigest, DirectiveDigest, RouteDigest, StateBinding};
+pub use directive_digest::DirectiveDigest;
+pub use route_digest::RouteDigest;
+pub use state_binding::StateBinding;
 // steering ダイジェストの導出は所有する型の関連メソッド (steering_digest モジュールの impl —
 // `coding-rules/domain-services.md`)。輸出する自由関数は無い。
-pub use steering_plan::{PartCount, PartIndex, SteeringPart, SteeringPlan};
+pub use part_count::PartCount;
+pub use part_index::PartIndex;
+pub use steering_part::SteeringPart;
+pub use steering_plan::SteeringPlan;
 pub use token_version::TokenVersion;
 
 // エンジンコマンドの概念と綴り
-pub use engine_command::{EngineCommand, ReadOnlyVerb};
+pub use engine_command::EngineCommand;
+pub use read_only_verb::ReadOnlyVerb;
 
 // 値オブジェクト
 pub use stage_name::StageName;
-pub use unit_ref::{UnitKind, UnitName, UnitRef};
+pub use unit_kind::UnitKind;
+pub use unit_name::UnitName;
+pub use unit_ref::UnitRef;
 
 // 判断の入出力
-pub use next_decision::{EngineSignal, NextDecision, NextRequest};
-pub use scope_resolution::{ResolvedScope, ScopeSource};
+pub use engine_signal::EngineSignal;
+pub use next_decision::NextDecision;
+pub use next_request::NextRequest;
+pub use scope_resolution::ResolvedScope;
+pub use scope_source::ScopeSource;
 
 // ポート (trait) — リードモデルを読む DAO。動詞は読取 (`find`) だけで、更新動詞は無い
 // (`coding-rules/cqrs-boundaries.md` 規則 6 / `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
@@ -96,19 +141,23 @@ pub use port::{CheckboxState, ExecutionStateView, ExecutionStatus, StageIndex, S
 // memory 層ルール束 (`MemoryRulesDao` の戻り値 — リードモデルの写しではないので `View` 無し)
 pub use port::MemoryRules;
 
-// ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ)
+// ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ) と、その観測
 pub use continue_use_case::ContinueUseCase;
-pub use next_turn_input::{NextTurnInput, NounFamily, NounToken, WorkspaceLayout};
+pub use next_turn_input::NextTurnInput;
 pub use next_use_case::NextUseCase;
+pub use noun_family::NounFamily;
+pub use noun_token::NounToken;
+pub use workspace_layout::WorkspaceLayout;
 
 // 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側のユースケースが組む)
 pub use port::{ExecutionStateReadError, MemoryRulesReadError, WorkflowDefinitionReadError};
 // 拒否 (DTO の復号 — ビューではないので `View` 接尾辞を付けない)
+pub use blank_stage_name::BlankStageName;
 pub use port::{
     DefinitionIdError, DefinitionRevisionError, ExecutionStateError, ScopeMetadataError,
     ScopeSlugError, StageGraphError, StageNumberError, StageSlugError, UnknownScope, UnknownValue,
 };
-pub use scope_resolution::ScopeResolutionError;
-pub use stage_name::BlankStageName;
-pub use steering_plan::UnsplittableSection;
-pub use unit_ref::{UnitNameError, UnknownUnitKind};
+pub use scope_resolution_error::ScopeResolutionError;
+pub use unit_name_error::UnitNameError;
+pub use unknown_unit_kind::UnknownUnitKind;
+pub use unsplittable_section::UnsplittableSection;

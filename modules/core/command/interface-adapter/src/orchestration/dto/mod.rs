@@ -23,29 +23,49 @@
 //! 読む側 (RMU) は**自前の**復号 DTO を持つ (`coding-rules/cqrs-boundaries.md` — 共有部品は
 //! 側の独立を DRY に優先する)。書き手と読み手のワイヤ形式の一致は横断適合テストが固定する。
 
+mod autonomy_mode_set_dto;
+mod defined_dto;
 mod dto_decode_error;
 mod dto_vocabulary;
+mod gate_approved_dto;
+mod gate_opened_dto;
+mod gate_rejected_dto;
 mod intent_aggregate_key_dto;
 mod intent_dto;
 mod intent_event_dto;
 mod intent_execution_aggregate_key_dto;
 mod intent_execution_dto;
 mod intent_execution_event_dto;
+mod jumped_dto;
+mod parked_dto;
+mod recomposed_dto;
+mod redefined_dto;
+mod stage_completed_dto;
+mod stage_revised_dto;
+mod stage_skipped_dto;
+mod started_dto;
 mod workflow_definition_aggregate_key_dto;
 mod workflow_definition_dto;
 mod workflow_definition_event_dto;
 
+pub use autonomy_mode_set_dto::AutonomyModeSetDto;
 pub use dto_decode_error::DtoDecodeError;
+pub use gate_approved_dto::GateApprovedDto;
+pub use gate_opened_dto::GateOpenedDto;
+pub use gate_rejected_dto::GateRejectedDto;
 pub use intent_aggregate_key_dto::IntentAggregateKeyDto;
 pub use intent_dto::IntentDto;
 pub use intent_event_dto::IntentEventDto;
 pub use intent_execution_aggregate_key_dto::IntentExecutionAggregateKeyDto;
 pub use intent_execution_dto::IntentExecutionDto;
-pub use intent_execution_event_dto::{
-    AutonomyModeSetDto, GateApprovedDto, GateOpenedDto, GateRejectedDto, IntentExecutionEventDto,
-    JumpedDto, ParkedDto, RecomposedDto, StageCompletedDto, StageRevisedDto, StageSkippedDto,
-    StartedDto,
-};
+pub use intent_execution_event_dto::IntentExecutionEventDto;
+pub use jumped_dto::JumpedDto;
+pub use parked_dto::ParkedDto;
+pub use recomposed_dto::RecomposedDto;
+pub use stage_completed_dto::StageCompletedDto;
+pub use stage_revised_dto::StageRevisedDto;
+pub use stage_skipped_dto::StageSkippedDto;
+pub use started_dto::StartedDto;
 pub use workflow_definition_aggregate_key_dto::WorkflowDefinitionAggregateKeyDto;
 pub use workflow_definition_dto::WorkflowDefinitionDto;
 pub use workflow_definition_event_dto::WorkflowDefinitionEventDto;

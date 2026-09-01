@@ -10,8 +10,19 @@ use core_command_domain::orchestration::{
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
 
+use super::autonomy_mode_set_dto::AutonomyModeSetDto;
 use super::dto_decode_error::DtoDecodeError;
 use super::dto_vocabulary::{autonomy_of, autonomy_spelling};
+use super::gate_approved_dto::GateApprovedDto;
+use super::gate_opened_dto::GateOpenedDto;
+use super::gate_rejected_dto::GateRejectedDto;
+use super::jumped_dto::JumpedDto;
+use super::parked_dto::ParkedDto;
+use super::recomposed_dto::RecomposedDto;
+use super::stage_completed_dto::StageCompletedDto;
+use super::stage_revised_dto::StageRevisedDto;
+use super::stage_skipped_dto::StageSkippedDto;
+use super::started_dto::StartedDto;
 
 /// ジャーナル行 `payload` の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,77 +51,6 @@ pub enum IntentExecutionEventDto {
     Recomposed(RecomposedDto),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSetDto),
-}
-
-/// `Started` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StartedDto {
-    intent_id: String,
-}
-
-/// `StageCompleted` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageCompletedDto {
-    stage: String,
-}
-
-/// `GateOpened` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateOpenedDto {
-    stage: String,
-    artifacts: Vec<String>,
-}
-
-/// `GateApproved` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateApprovedDto {
-    stage: String,
-    user_input: Option<String>,
-}
-
-/// `GateRejected` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateRejectedDto {
-    stage: String,
-    feedback: Option<String>,
-}
-
-/// `StageRevised` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageRevisedDto {
-    stage: String,
-}
-
-/// `StageSkipped` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageSkippedDto {
-    stage: String,
-    reason: String,
-}
-
-/// `Jumped` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JumpedDto {
-    target: String,
-}
-
-/// `Parked` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParkedDto {
-    stage: String,
-}
-
-/// `Recomposed` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RecomposedDto {
-    skipped: Vec<String>,
-    added: Vec<String>,
-}
-
-/// `AutonomyModeSet` の材料。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AutonomyModeSetDto {
-    mode: String,
 }
 
 /// ステージ参照の綴り。

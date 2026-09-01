@@ -23,6 +23,13 @@
 //! あり、違うのは拒否が起きる位置だけである。この依存はテスト
 //! `a_padded_spelling_is_rejected_by_the_strict_decoder` が固定する — エンジンや設定を
 //! 寛容なものへ替えたらそこが落ちるので、そのときは往復検査を足すこと。
+//!
+//! `SecretFileError` は独立ファイルに 1 型 1 ファイルで置く（`one-public-type`）。
+//! 子モジュール `secret_file::secret_file_error`（`secret_file/secret_file_error.rs`）として
+//! 所有し、ここから `pub use` で再輸出する — 兄弟ファイルを跨いだ利便再エクスポートではなく、
+//! 通常のファサード（`mod.rs` と同型の所有連鎖）である
+//! (`coding-rules/module-visibility.md`)。`core_infrastructure::secret_file::{SecretFile,
+//! SecretFileError}` というクレート境界越しの直接参照はこの形のまま変わらない。
 
 use std::fs;
 use std::io;
@@ -33,61 +40,12 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 use crate::atomic::create_new_file;
 
+mod secret_file_error;
+
+pub use secret_file_error::SecretFileError;
+
 /// 一時ファイル名の nonce の長さ（衝突しなければよいので短くてよい）。
 const NONCE_LEN: usize = 8;
-
-/// 秘密鍵ファイルの読取・鋳造の失敗（**材料のみ** — 利用者向け文言は出す側が組む）。
-///
-/// 変種が読取と作成で分かれているのは、復旧手順が違うからである（読めないのはファイルの
-/// 問題、作れないのはディレクトリの権限の問題）。`coding-rules/error-handling.md`。
-#[derive(Debug)]
-pub enum SecretFileError {
-    /// ファイルはあるが中身が鍵として成立しない（長さ違い・非正準な綴り）。
-    Corrupt {
-        /// 問題のあったファイル。
-        path: PathBuf,
-    },
-    /// ファイルはあるが読めない。
-    Unreadable {
-        /// 読もうとしたファイル。
-        path: PathBuf,
-        /// OS が返した原因。
-        cause: io::Error,
-    },
-    /// 鋳造できない（親ディレクトリの権限・ディスクなど）。
-    Uncreatable {
-        /// 作ろうとしたファイル。
-        path: PathBuf,
-        /// OS が返した原因。
-        cause: io::Error,
-    },
-}
-
-impl core::fmt::Display for SecretFileError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            SecretFileError::Corrupt { path } => {
-                write!(f, "corrupt secret file: {}", path.display())
-            }
-            SecretFileError::Unreadable { path, cause } => {
-                write!(f, "unreadable secret file: {} ({cause})", path.display())
-            }
-            SecretFileError::Uncreatable { path, cause } => {
-                write!(f, "uncreatable secret file: {} ({cause})", path.display())
-            }
-        }
-    }
-}
-
-impl std::error::Error for SecretFileError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            SecretFileError::Corrupt { .. } => None,
-            SecretFileError::Unreadable { cause, .. }
-            | SecretFileError::Uncreatable { cause, .. } => Some(cause),
-        }
-    }
-}
 
 /// 決まった長さの秘密を base64url で保持するマシンローカルなファイル。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -425,53 +383,6 @@ mod tests {
 
         let mode = fs::metadata(secret.path()).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "mode was {:o}", mode & 0o777);
-    }
-
-    #[test]
-    fn the_error_envelope_names_the_offending_path() {
-        let dir = tempdir().unwrap();
-        let secret = secret_at(dir.path());
-        let error = SecretFileError::Corrupt {
-            path: secret.path().to_path_buf(),
-        };
-        assert!(error.to_string().contains(".secret"));
-    }
-
-    /// 3 態はそれぞれ別の文言になり、原因が在るものは `source` で辿れる（材料のみ）。
-    #[test]
-    fn the_three_failures_read_differently_and_chain_their_cause() {
-        use std::error::Error as _;
-
-        let corrupt = SecretFileError::Corrupt {
-            path: PathBuf::from("/ws/key"),
-        };
-        let unreadable = SecretFileError::Unreadable {
-            path: PathBuf::from("/ws/key"),
-            cause: io::Error::other("EACCES"),
-        };
-        let uncreatable = SecretFileError::Uncreatable {
-            path: PathBuf::from("/ws/key"),
-            cause: io::Error::other("EROFS"),
-        };
-
-        assert_eq!(corrupt.to_string(), "corrupt secret file: /ws/key");
-        assert_eq!(
-            unreadable.to_string(),
-            "unreadable secret file: /ws/key (EACCES)"
-        );
-        assert_eq!(
-            uncreatable.to_string(),
-            "uncreatable secret file: /ws/key (EROFS)"
-        );
-        assert!(corrupt.source().is_none(), "壊れた鍵に下位原因は無い");
-        assert_eq!(
-            unreadable.source().map(ToString::to_string),
-            Some("EACCES".to_string())
-        );
-        assert_eq!(
-            uncreatable.source().map(ToString::to_string),
-            Some("EROFS".to_string())
-        );
     }
 
     /// 「読めない」は不在ではない — 名前がディレクトリに取られていれば `Unreadable` である

@@ -4,119 +4,9 @@
 //! (`validScopes()` — レポート §4.6)。深さ・キーワードなどはグリッドではなくここに入る
 //! (レポート §3.1)。
 
-/// `skeleton:` の既定値。scope frontmatter では `on` / `off` の 2 値のみ
-/// (orchestration の `SkeletonStance` が持つ `scope-dependent` はここには現れない)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SkeletonDefault {
-    /// スコープ既定で walking skeleton Bolt を先に走らせる (upstream 01 §6.4)。
-    On,
-    /// スコープ既定では walking skeleton Bolt を走らせない。
-    Off,
-}
-
-/// 閉集合外の値 (upstream: `has invalid skeleton value "..." . Expected "on" or "off".`)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownSkeletonDefault(String);
-
-impl UnknownSkeletonDefault {
-    /// 拒否された生値をそのまま包む。トリムも小文字化もしない。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownSkeletonDefault {
-        UnknownSkeletonDefault(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl SkeletonDefault {
-    /// 宣言順の全値 (2 値の網羅走査の正本)。
-    pub const ALL: [SkeletonDefault; 2] = [SkeletonDefault::On, SkeletonDefault::Off];
-
-    /// # Errors
-    ///
-    /// `on` / `off` 以外は `UnknownSkeletonDefault` で拒否する。
-    pub fn parse(s: &str) -> Result<SkeletonDefault, UnknownSkeletonDefault> {
-        Ok(match s {
-            "on" => SkeletonDefault::On,
-            "off" => SkeletonDefault::Off,
-            other => return Err(UnknownSkeletonDefault::new(other)),
-        })
-    }
-
-    /// frontmatter 上の正準綴り (`parse` の逆写像)。
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            SkeletonDefault::On => "on",
-            SkeletonDefault::Off => "off",
-        }
-    }
-}
-
-/// `review_cap:` の値。`None` は「`none` と**宣言された**」ことを表す値であり、
-/// 「宣言が無い」は `Option<ReviewCapValue>` の `None` 側で表す (2 つを混同しないこと)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ReviewCapValue {
-    /// 上限を課さない。ステージ宣言のレビュー重量がそのまま通る (upstream 01 §6.2)。
-    Adversarial,
-    /// adversarial なステージを advisory 1 パスへ格下げする。
-    Advisory,
-    /// レビュアーのディスパッチ自体を無効化する。
-    None,
-}
-
-/// 閉集合外の値。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownReviewCap(String);
-
-impl UnknownReviewCap {
-    /// 拒否された生値をそのまま包む。空文字列も既定へ畳まずそのまま保つ。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownReviewCap {
-        UnknownReviewCap(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl ReviewCapValue {
-    /// 宣言順の全値 (3 値の網羅走査の正本)。並びは上限の緩い側から厳しい側へ。
-    pub const ALL: [ReviewCapValue; 3] = [
-        ReviewCapValue::Adversarial,
-        ReviewCapValue::Advisory,
-        ReviewCapValue::None,
-    ];
-
-    /// # Errors
-    ///
-    /// `adversarial` / `advisory` / `none` 以外は `UnknownReviewCap` で拒否する。
-    pub fn parse(s: &str) -> Result<ReviewCapValue, UnknownReviewCap> {
-        Ok(match s {
-            "adversarial" => ReviewCapValue::Adversarial,
-            "advisory" => ReviewCapValue::Advisory,
-            "none" => ReviewCapValue::None,
-            other => return Err(UnknownReviewCap::new(other)),
-        })
-    }
-
-    /// frontmatter 上の正準綴り (`parse` の逆写像)。
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            ReviewCapValue::Adversarial => "adversarial",
-            ReviewCapValue::Advisory => "advisory",
-            ReviewCapValue::None => "none",
-        }
-    }
-}
+use super::review_cap_value::ReviewCapValue;
+use super::scope_metadata_error::ScopeMetadataError;
+use super::skeleton_default::SkeletonDefault;
 
 /// スコープ identity ファイルの frontmatter (最小モデル)。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,13 +17,6 @@ pub struct ScopeMetadata {
     skeleton: Option<SkeletonDefault>,
     review_cap: Option<ReviewCapValue>,
     freeform_default: bool,
-}
-
-/// `ScopeMetadata` の構成が拒否される理由。frontmatter の必須キー欠落のみ。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScopeMetadataError {
-    /// `name:` が無い / 空 (upstream: `missing required frontmatter: name`)。
-    MissingName,
 }
 
 impl ScopeMetadata {
@@ -237,6 +120,9 @@ impl ScopeMetadata {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    use super::super::unknown_review_cap::UnknownReviewCap;
+    use super::super::unknown_skeleton_default::UnknownSkeletonDefault;
 
     #[test]
     fn name_is_the_only_required_field() {

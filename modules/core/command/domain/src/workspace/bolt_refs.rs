@@ -5,6 +5,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use super::bolt_refs_error::BoltRefsError;
+
 /// 空リストの唯一の放出形。`parse` は `""` もこのリテラルも空として受理するが、`emit` は常に
 /// こちらを書く (round-trip 決定性の要)。
 pub const EMPTY_LIST_LITERAL: &str = "[empty list]";
@@ -13,17 +15,6 @@ pub const EMPTY_LIST_LITERAL: &str = "[empty list]";
 /// 重複を持たず、放出順は入力順によらず整列。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BoltRefs(BTreeSet<String>);
-
-/// `BoltRefs` の拒否理由 (重複・不在を無言 no-op にしないための閉集合)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BoltRefsError {
-    /// ブラケットで始まらない・閉じない等の不正形。
-    Malformed(String),
-    /// append 対象が既に存在する。
-    DuplicateSlug(String),
-    /// remove 対象が存在しない。
-    MissingSlug(String),
-}
 
 impl BoltRefs {
     /// 受理形: `""` / `[empty list]` / `[a, b]` (upstream `parseRefsList`)。

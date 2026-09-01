@@ -25,19 +25,37 @@
 //!
 //! [`CorruptCause`]: super::corrupt_cause::CorruptCause
 
+mod autonomy_mode_set_dto;
 mod dto_decode_error;
 mod dto_vocabulary;
+mod gate_approved_dto;
+mod gate_opened_dto;
+mod gate_rejected_dto;
 mod intent_dto;
 mod intent_event_dto;
 mod intent_execution_event_dto;
+mod jumped_dto;
+mod parked_dto;
+mod recomposed_dto;
+mod stage_completed_dto;
+mod stage_revised_dto;
+mod stage_skipped_dto;
+mod started_dto;
 
+pub use autonomy_mode_set_dto::AutonomyModeSetDto;
 pub use dto_decode_error::DtoDecodeError;
+pub use gate_approved_dto::GateApprovedDto;
+pub use gate_opened_dto::GateOpenedDto;
+pub use gate_rejected_dto::GateRejectedDto;
 pub use intent_event_dto::IntentEventDto;
-pub use intent_execution_event_dto::{
-    AutonomyModeSetDto, GateApprovedDto, GateOpenedDto, GateRejectedDto, IntentExecutionEventDto,
-    JumpedDto, ParkedDto, RecomposedDto, StageCompletedDto, StageRevisedDto, StageSkippedDto,
-    StartedDto,
-};
+pub use intent_execution_event_dto::IntentExecutionEventDto;
+pub use jumped_dto::JumpedDto;
+pub use parked_dto::ParkedDto;
+pub use recomposed_dto::RecomposedDto;
+pub use stage_completed_dto::StageCompletedDto;
+pub use stage_revised_dto::StageRevisedDto;
+pub use stage_skipped_dto::StageSkippedDto;
+pub use started_dto::StartedDto;
 
 #[cfg(test)]
 mod tests;

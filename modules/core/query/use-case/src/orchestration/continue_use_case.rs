@@ -15,10 +15,11 @@
 //!
 //! [`RunStageDirective::with_pins`]: super::RunStageDirective::with_pins
 
+use super::bindings::Bindings;
 use super::continue_token::ContinueToken;
 use super::directive::Directive;
 use super::next_turn_input::NextTurnInput;
-use super::steering_binding::{Bindings, StateBinding};
+use super::state_binding::StateBinding;
 use crate::orchestration::DefinitionView;
 use crate::orchestration::{
     ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao, WorkflowDefinitionReadError,
@@ -219,13 +220,15 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::super::continue_token::ContinueTokenBuilder;
-    use super::super::directive::{LoadSteeringDirective, RuleContent, RunStageDirective};
-    use super::super::next_turn_input::WorkspaceLayout;
+    use super::super::load_steering_directive::LoadSteeringDirective;
     use super::super::next_use_case::NextUseCase;
-    use super::super::steering_plan::PartIndex;
+    use super::super::part_index::PartIndex;
+    use super::super::rule_content::RuleContent;
+    use super::super::run_stage_directive::RunStageDirective;
     use super::super::test_fixtures::{
         FakeDefinitionDao, FakeRulesDao, FakeStateDao, definition, genesis_state, slug, state,
     };
+    use super::super::workspace_layout::WorkspaceLayout;
     use super::*;
     use crate::orchestration::ExecutionStateReadError;
     use crate::orchestration::MemoryRules;

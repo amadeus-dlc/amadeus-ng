@@ -90,12 +90,14 @@
 // (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 mod canonical;
 mod digest;
+mod digest_family;
 mod parse;
 mod profile;
 mod value;
 mod writer;
 
-pub use digest::{Digest, DigestFamily, hash_canonical, hash_compact};
+pub use digest::{Digest, hash_canonical, hash_compact};
+pub use digest_family::DigestFamily;
 pub use parse::{MAX_DEPTH, ParseError, parse, parse_bytes};
 pub use profile::{Indent, KeyOrder, SerializationProfile};
 pub use value::{JsonValue, Number, ObjectMembers, ToValueError, to_value};

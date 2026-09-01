@@ -20,15 +20,17 @@
 //! 型ファイルの mod は private。公開 API は親モジュールの `pub use` ファサードが唯一の宣言
 //! (`coding-rules/module-visibility.md`)。
 
+mod definition_artifacts;
 mod definition_artifacts_client;
+mod definition_artifacts_error;
 mod intent_execution_repository;
 mod intent_repository;
 mod repository_error;
 mod workflow_definition_repository;
 
-pub use definition_artifacts_client::{
-    DefinitionArtifacts, DefinitionArtifactsClient, DefinitionArtifactsError,
-};
+pub use definition_artifacts::DefinitionArtifacts;
+pub use definition_artifacts_client::DefinitionArtifactsClient;
+pub use definition_artifacts_error::DefinitionArtifactsError;
 pub use intent_execution_repository::IntentExecutionRepository;
 pub use intent_repository::IntentRepository;
 pub use repository_error::RepositoryError;

@@ -2,10 +2,13 @@
 
 use std::fmt;
 
+use super::definition_revision_error::DefinitionRevisionError;
+
 /// 正準ダイジェストの接頭辞 (canon-json の正準族 `Digest::rendered()` と同じ表記)。
 const PREFIX: &str = "sha256:";
-/// sha256 の 16 進表記の桁数。
-const HEX_LEN: usize = 64;
+/// sha256 の 16 進表記の桁数。`DefinitionRevisionError` の Display も同じ桁数を文言に
+/// 載せるため、値の正本をここ 1 箇所に置いたまま兄弟モジュールへ見せる。
+pub(super) const HEX_LEN: usize = 64;
 
 /// 3 入力 (コンパイル済み `stage-graph.json` / `scope-grid.json` / scope identity 群) の
 /// 正準 JSON の sha256 ダイジェスト (Always Valid)。
@@ -17,20 +20,6 @@ const HEX_LEN: usize = 64;
 /// 保持だけを担う (core-command-domain は canon-json に依存しない — NFR4.1)。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefinitionRevision(String);
-
-/// `DefinitionRevision::parse` が拒否する形。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DefinitionRevisionError {
-    /// `sha256:` 接頭辞が無い (生 hex の非正準族ダイジェストを取り違えた場合を含む)。
-    MissingPrefix,
-    /// 接頭辞の後ろが 16 進 64 桁ではない。
-    InvalidLength {
-        /// 実際の桁数。
-        actual: usize,
-    },
-    /// 16 進小文字 (`0-9a-f`) 以外の文字を含む。大文字 hex もここで落ちる。
-    InvalidHexDigit(char),
-}
 
 impl DefinitionRevision {
     /// `sha256:<hex64>` (16 進は小文字) のみを受理する。
@@ -80,22 +69,6 @@ impl fmt::Display for DefinitionRevision {
         f.write_str(&self.0)
     }
 }
-
-impl fmt::Display for DefinitionRevisionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DefinitionRevisionError::MissingPrefix => f.write_str("missing sha256: prefix"),
-            DefinitionRevisionError::InvalidLength { actual } => {
-                write!(f, "expected {HEX_LEN} hex digits, got {actual}")
-            }
-            DefinitionRevisionError::InvalidHexDigit(c) => {
-                write!(f, "not a lowercase hex digit: {c:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DefinitionRevisionError {}
 
 #[cfg(test)]
 mod tests {

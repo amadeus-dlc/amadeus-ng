@@ -7,22 +7,8 @@
 //! SLASH_FLAG_ALIASES) は U7 / A1 で表として実体化し、差し替えは
 //! [`EngineCommand::cli_spelling`] 1 点で行う (逸脱台帳 #1)。
 
+use super::read_only_verb::ReadOnlyVerb;
 use crate::orchestration::{ScopeSlugView, StageSlugView};
-
-/// 読み取り専用ユーティリティの語彙 (分岐 1 — `--status` などのフラグが指す操作)。
-///
-/// 変種名は操作の意図から取る (状態報告・使い方・健全性診断・版表示)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReadOnlyVerb {
-    /// ワークフロー状態の報告。
-    Status,
-    /// 使い方の表示。
-    Help,
-    /// セットアップ健全性の診断。
-    Doctor,
-    /// フレームワーク版の表示。
-    Version,
-}
 
 /// `next` が名指しするエンジンコマンドの閉じた語彙。
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -23,7 +23,9 @@
 
 mod brownfield_greenfield_view;
 mod consume_decl_view;
+mod definition_id_error;
 mod definition_id_view;
+mod definition_revision_error;
 mod definition_revision_view;
 mod definition_view;
 mod execution_kind_view;
@@ -34,16 +36,22 @@ mod review_class_view;
 mod rule_in_context_view;
 mod rule_scope_view;
 mod scope_grid_view;
+mod scope_metadata_error;
 mod scope_metadata_view;
+mod scope_slug_error;
 mod scope_slug_view;
 mod sensor_ref_view;
 mod skeleton_default_view;
+mod stage_graph_error;
 mod stage_graph_view;
 mod stage_mode_view;
+mod stage_number_error;
 mod stage_number_view;
 mod stage_route_view;
+mod stage_slug_error;
 mod stage_slug_view;
 mod stage_view;
+mod unknown_scope;
 mod unknown_value;
 
 // 閉集合の語彙
@@ -78,12 +86,12 @@ pub use scope_grid_view::ScopeGridView;
 pub use stage_graph_view::StageGraphView;
 
 // 拒否 (ビューではないので `View` 接尾辞を付けない)
-pub use definition_id_view::DefinitionIdError;
-pub use definition_revision_view::DefinitionRevisionError;
-pub use definition_view::UnknownScope;
-pub use scope_metadata_view::ScopeMetadataError;
-pub use scope_slug_view::ScopeSlugError;
-pub use stage_graph_view::StageGraphError;
-pub use stage_number_view::StageNumberError;
-pub use stage_slug_view::StageSlugError;
+pub use definition_id_error::DefinitionIdError;
+pub use definition_revision_error::DefinitionRevisionError;
+pub use scope_metadata_error::ScopeMetadataError;
+pub use scope_slug_error::ScopeSlugError;
+pub use stage_graph_error::StageGraphError;
+pub use stage_number_error::StageNumberError;
+pub use stage_slug_error::StageSlugError;
+pub use unknown_scope::UnknownScope;
 pub use unknown_value::UnknownValue;

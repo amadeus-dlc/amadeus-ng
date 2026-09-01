@@ -1,11 +1,14 @@
 //! `DefinitionRevisionView` — リードモデル 3 入力の**内容版** (ADR-008)。識別子ではなく値属性。
 
-use std::fmt;
+use super::definition_revision_error::DefinitionRevisionError;
 
 /// 正準ダイジェストの接頭辞 (canon-json の正準族 `Digest::rendered()` と同じ表記)。
 const PREFIX: &str = "sha256:";
 /// sha256 の 16 進表記の桁数。
-const HEX_LEN: usize = 64;
+///
+/// 拒否の文言も同じ桁数を述べるので、主たる従属先である本ファイルに置いて
+/// `definition_revision_error` から参照する。
+pub(super) const HEX_LEN: usize = 64;
 
 /// 3 入力の正準 JSON の sha256 ダイジェスト。
 ///
@@ -14,20 +17,6 @@ const HEX_LEN: usize = 64;
 /// (canon-json) が行い、本型は形の検証と保持だけを担う。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefinitionRevisionView(String);
-
-/// `DefinitionRevisionView::parse` が拒否する形。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DefinitionRevisionError {
-    /// `sha256:` 接頭辞が無い (生 hex の非正準族ダイジェストを取り違えた場合を含む)。
-    MissingPrefix,
-    /// 接頭辞の後ろが 16 進 64 桁ではない。
-    InvalidLength {
-        /// 実際の桁数。
-        actual: usize,
-    },
-    /// 16 進小文字 (`0-9a-f`) 以外の文字を含む。大文字 hex もここで落ちる。
-    InvalidHexDigit(char),
-}
 
 impl DefinitionRevisionView {
     /// `sha256:<hex64>` (16 進は小文字) のみを受理する。
@@ -64,22 +53,6 @@ impl DefinitionRevisionView {
     }
 }
 
-impl fmt::Display for DefinitionRevisionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DefinitionRevisionError::MissingPrefix => f.write_str("missing sha256: prefix"),
-            DefinitionRevisionError::InvalidLength { actual } => {
-                write!(f, "expected {HEX_LEN} hex digits, got {actual}")
-            }
-            DefinitionRevisionError::InvalidHexDigit(c) => {
-                write!(f, "not a lowercase hex digit: {c:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DefinitionRevisionError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,22 +83,6 @@ mod tests {
         assert_eq!(
             DefinitionRevisionView::parse(&upper),
             Err(DefinitionRevisionError::InvalidHexDigit('A'))
-        );
-    }
-
-    #[test]
-    fn the_rejection_carries_material_not_wording() {
-        assert_eq!(
-            DefinitionRevisionError::MissingPrefix.to_string(),
-            "missing sha256: prefix"
-        );
-        assert_eq!(
-            DefinitionRevisionError::InvalidLength { actual: 3 }.to_string(),
-            "expected 64 hex digits, got 3"
-        );
-        assert_eq!(
-            DefinitionRevisionError::InvalidHexDigit('A').to_string(),
-            "not a lowercase hex digit: 'A'"
         );
     }
 }

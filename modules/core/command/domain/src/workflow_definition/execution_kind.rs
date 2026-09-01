@@ -3,6 +3,8 @@
 //! **ステージ著者側の適用可否**であり、プラン所属 (`PlanAction` の EXECUTE / SKIP) とも
 //! ゲート軸とも**直交**する。3 軸を畳み込まないこと。
 
+use super::unknown_execution_kind::UnknownExecutionKind;
+
 /// ステージ著者が宣言する適用可否。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExecutionKind {
@@ -11,24 +13,6 @@ pub enum ExecutionKind {
     /// `condition` が成立しなければ実行を辞退しうる — `skipped` の自己申告が受理される
     /// 唯一の宣言 (プランが既に SKIP と言っている場合を除く)。
     Conditional,
-}
-
-/// 閉集合外の値。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownExecutionKind(String);
-
-impl UnknownExecutionKind {
-    /// 拒否された生値をそのまま包む (大文字化などの正規化はしない)。
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> UnknownExecutionKind {
-        UnknownExecutionKind(value.into())
-    }
-
-    /// 拒否された生値を逐語で持ち帰る (文言化は Presenter 側の責務)。
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl ExecutionKind {
