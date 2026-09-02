@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS read_intent_stage (
 CREATE TABLE IF NOT EXISTS read_execution (
   execution_id     TEXT PRIMARY KEY,
   intent_id        TEXT    NOT NULL,
+  scope            TEXT    NOT NULL,
   status           TEXT    NOT NULL,
   cursor_index     INTEGER,
   cursor_slug      TEXT,
@@ -495,13 +496,14 @@ pub(crate) fn replace_all(
     for row in tables.executions() {
         transaction.execute(
             "INSERT INTO read_execution
-             (execution_id, intent_id, status, cursor_index, cursor_slug, parked_at_index,
-              parked_at_slug, parked_active, accepts_commands, autonomy, seq_nr,
-              last_updated_at, state_binding, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             (execution_id, intent_id, scope, status, cursor_index, cursor_slug,
+              parked_at_index, parked_at_slug, parked_active, accepts_commands, autonomy,
+              seq_nr, last_updated_at, state_binding, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 row.execution_id(),
                 row.intent_id(),
+                row.scope(),
                 row.status(),
                 optional_integer(row.cursor_index())?,
                 row.cursor_slug(),

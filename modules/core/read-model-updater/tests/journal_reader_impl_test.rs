@@ -867,9 +867,12 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
     let connection = fixture.raw();
     let as_of = i64::try_from(last.to_u64()).expect("i64 に収まる");
 
-    // read_execution — 実行 1 本の代表列。
+    // read_execution — 実行 1 本の代表列。`scope` を含めるのは、行型が持つ値が DDL と
+    // INSERT の両方に届いていることを見るためである (どちらかが欠けると、投影は正しいのに
+    // 引き当てた行だけが黙って値を失う)。
     let expected = tables.executions().first().expect("実行が 1 本");
-    let (execution_id, status, cursor_slug, autonomy, seq_nr, stamp): (
+    let (execution_id, scope, status, cursor_slug, autonomy, seq_nr, stamp): (
+        String,
         String,
         String,
         Option<String>,
@@ -878,7 +881,8 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
         i64,
     ) = connection
         .query_row(
-            "SELECT execution_id, status, cursor_slug, autonomy, seq_nr, as_of FROM read_execution",
+            "SELECT execution_id, scope, status, cursor_slug, autonomy, seq_nr, as_of
+             FROM read_execution",
             [],
             |row| {
                 Ok((
@@ -888,11 +892,17 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
                     row.get(3)?,
                     row.get(4)?,
                     row.get(5)?,
+                    row.get(6)?,
                 ))
             },
         )
         .expect("行は 1 件");
     assert_eq!(execution_id, expected.execution_id());
+    assert_eq!(
+        scope,
+        expected.scope(),
+        "intent から非正規化した scope が届く"
+    );
     assert_eq!(status, expected.status());
     assert_eq!(cursor_slug.as_deref(), expected.cursor_slug());
     assert_eq!(autonomy, expected.autonomy());
@@ -923,11 +933,11 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
     assert_eq!(gated, expected_stage.gated());
 }
 
-/// 13 表の名前と、その表に行が在ることを確かめる引き当て。
+/// ジャーナル由来 15 表の名前と、その表に行が在ることを確かめる引き当て。
 ///
 /// 表ごとの INSERT が失敗を握り潰していないかを見るので、**その表に行が 1 件も無ければ
 /// 試験が空振りする**。行数を一緒に持って、空振りをテスト自身が検出できるようにする。
-fn read_table_rows(tables: &ReadTables) -> [(&'static str, usize); 13] {
+fn read_table_rows(tables: &ReadTables) -> [(&'static str, usize); 15] {
     [
         ("read_definition", tables.definitions().len()),
         ("read_definition_stage", tables.definition_stages().len()),
@@ -951,12 +961,14 @@ fn read_table_rows(tables: &ReadTables) -> [(&'static str, usize); 13] {
         ("read_next_answer", tables.next_answers().len()),
         ("read_next_jump", tables.next_jumps().len()),
         ("read_next_jump_phase", tables.next_jump_phases().len()),
+        ("read_run_stage", tables.run_stages().len()),
+        ("read_scope_change", tables.scope_changes().len()),
     ]
 }
 
 #[tokio::test]
 async fn a_read_table_whose_shape_drifted_fails_the_advance_instead_of_writing_partial_rows() {
-    // 全差し替えは 13 表への INSERT の並びである。どの 1 本も失敗を握り潰してはならない
+    // 全差し替えは 15 表への INSERT の並びである。どの 1 本も失敗を握り潰してはならない
     // — 握り潰せば「他の表は新しく、その表だけ空」という嘘の断面が残る。表を 1 つずつ
     // 列の合わない形へ作り替えて、前進ごと失敗し行が 1 つも動かないことを見る。
     for (table, rows) in read_table_rows(&{
