@@ -45,6 +45,7 @@ mod stage_completed_dto;
 mod stage_revised_dto;
 mod stage_skipped_dto;
 mod started_dto;
+mod unparked_dto;
 mod workflow_definition_event_dto;
 
 pub use autonomy_mode_set_dto::AutonomyModeSetDto;

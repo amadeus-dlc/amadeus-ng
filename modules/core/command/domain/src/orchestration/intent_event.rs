@@ -19,6 +19,9 @@
 // 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
 // 再輸出する (所有サブツリーのファサード — 利便再エクスポートではない。
 // coding-rules/module-visibility.md)。
+use super::intent_event_id::IntentEventId;
+use super::intent_id::IntentId;
+
 mod created;
 
 pub use created::Created;
@@ -36,9 +39,34 @@ pub enum IntentEvent {
     Created(Created),
 }
 
+impl IntentEvent {
+    /// このイベント自身の識別子 (全変種が持つ — イベントはエンティティ)。
+    #[must_use]
+    pub const fn id(&self) -> &IntentEventId {
+        match self {
+            IntentEvent::Created(payload) => payload.id(),
+        }
+    }
+
+    /// **どの集約の事実か** — 全変種が運ぶ intent の識別子。
+    ///
+    /// 復号境界 (Repository の再生・RMU の `decode_intent_row`) はこれと行の `aid` を照合する。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &IntentId {
+        match self {
+            IntentEvent::Created(payload) => payload.aggregate_id(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// テスト用の固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap()
+    }
     use crate::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
         WorkflowDefinitionId,
@@ -64,6 +92,7 @@ mod tests {
             .unwrap(),
         )];
         Created::new(
+            intent_event_id(),
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
@@ -83,7 +112,7 @@ mod tests {
     fn the_created_payload_carries_the_birth_material() {
         let created = created();
         assert_eq!(
-            created.id().to_string(),
+            created.aggregate_id().to_string(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(created.definition_id().to_string(), "claude");
@@ -101,6 +130,17 @@ mod tests {
         assert_eq!(
             IntentEvent::Created(created()),
             IntentEvent::Created(created())
+        );
+    }
+
+    #[test]
+    fn the_event_answers_its_own_id_and_its_aggregate_id() {
+        // イベントはエンティティ — 変種によらず自前の id と「どの集約の事実か」を答える。
+        let event = IntentEvent::Created(created());
+        assert_eq!(event.id(), &intent_event_id());
+        assert_eq!(
+            event.aggregate_id(),
+            &IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
         );
     }
 }

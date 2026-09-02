@@ -1,19 +1,23 @@
-//! `DefinedDto` — 誕生記録 (genesis) の行の形 (**読む側**)。系譜 ID・内容版・内容。
+//! `DefinedDto` — 誕生記録 (genesis) の行の形 (**読む側**)。イベント識別子・系譜 ID・内容版・内容。
 
-use core_command_domain::workflow_definition::{Defined, DefinitionRevision, WorkflowDefinitionId};
+use core_command_domain::workflow_definition::{
+    Defined, DefinitionRevision, WorkflowDefinitionEventId, WorkflowDefinitionId,
+};
 use serde::{Deserialize, Serialize};
 
 use super::definition_content_dto::DefinitionContentDto;
 use super::dto_decode_error::DtoDecodeError;
 
-/// 誕生記録の行の形 — 系譜 ID・内容版・内容。**フィールド名と並びが契約**である。
+/// 誕生記録の行の形。**フィールド名と並びが契約**である。
 ///
-/// 書く側ではスナップショット行 (`WorkflowDefinitionDto`) の内容部分でもあるが、RMU は
-/// スナップショット行を読まないので、この側にはジャーナル面しか無い
-/// (`dto/mod.rs` の「スナップショットは読まない」)。
+/// 先頭 2 つは `id` (イベント自身の識別子) と `aggregate_id` (系譜 ID) — ドメインイベントは
+/// エンティティの一種だからである (オーナー裁定 2026-09-02)。書き手ではスナップショット行
+/// (`WorkflowDefinitionDto`) が同じ内容部分を持つが、RMU はスナップショット行を読まないので、
+/// この側にはジャーナル面しか無い (`dto/mod.rs` の「スナップショットは読まない」)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DefinedDto {
     id: String,
+    aggregate_id: String,
     revision: String,
     content: DefinitionContentDto,
 }
@@ -23,6 +27,7 @@ impl DefinedDto {
     pub(super) fn of(defined: &Defined) -> DefinedDto {
         DefinedDto {
             id: defined.id().as_str().to_string(),
+            aggregate_id: defined.aggregate_id().as_str().to_string(),
             revision: defined.revision().as_str().to_string(),
             content: DefinitionContentDto::of(defined.graph(), defined.grid(), defined.scopes()),
         }
@@ -32,8 +37,11 @@ impl DefinedDto {
     pub(super) fn to_domain(&self) -> Result<Defined, DtoDecodeError> {
         let (graph, grid, scopes) = self.content.to_domain()?;
         Ok(Defined::new(
-            WorkflowDefinitionId::parse(&self.id)
+            WorkflowDefinitionEventId::parse(&self.id)
                 .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
+            WorkflowDefinitionId::parse(&self.aggregate_id).map_err(|_| {
+                DtoDecodeError::malformed("aggregate_id", self.aggregate_id.clone())
+            })?,
             DefinitionRevision::parse(&self.revision)
                 .map_err(|_| DtoDecodeError::malformed("revision", self.revision.clone()))?,
             graph,

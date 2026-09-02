@@ -1,6 +1,6 @@
 //! `Created` — `IntentEvent::Created` のペイロード。
 
-use crate::orchestration::{IntentId, StageEntry, StartRequest, WorkspaceScan};
+use crate::orchestration::{IntentEventId, IntentId, StageEntry, StartRequest, WorkspaceScan};
 use crate::workflow_definition::{DefinitionRevision, WorkflowDefinitionId};
 
 /// `Created` のペイロード — 作られた時点の intent の**内容 (値)** を運ぶ。
@@ -17,7 +17,9 @@ use crate::workflow_definition::{DefinitionRevision, WorkflowDefinitionId};
 /// [`Intent`]: crate::orchestration::Intent
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Created {
-    pub(crate) id: IntentId,
+    /// このイベント自身の識別子。`From<Created>` は集約へ持ち込まないので private のまま。
+    id: IntentEventId,
+    pub(crate) aggregate_id: IntentId,
     pub(crate) definition_id: WorkflowDefinitionId,
     pub(crate) definition_revision: DefinitionRevision,
     pub(crate) start_request: StartRequest,
@@ -29,7 +31,8 @@ impl Created {
     /// 誕生の材料を束ねる (検査なし — イベントは記録であり、集約への変換時に検査される)。
     #[must_use]
     pub const fn new(
-        id: IntentId,
+        id: IntentEventId,
+        aggregate_id: IntentId,
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         start_request: StartRequest,
@@ -38,6 +41,7 @@ impl Created {
     ) -> Created {
         Created {
             id,
+            aggregate_id,
             definition_id,
             definition_revision,
             start_request,
@@ -46,10 +50,18 @@ impl Created {
         }
     }
 
-    /// 作られた intent の識別子。
+    /// このイベント自身の識別子 — ドメインイベントはエンティティの一種なので自前の id を
+    /// 持つ (`coding-rules/domain-object-kinds.md`)。
     #[must_use]
-    pub const fn id(&self) -> &IntentId {
+    pub const fn id(&self) -> &IntentEventId {
         &self.id
+    }
+
+    /// **どの集約の事実か** — 作られた intent の識別子。集約の ID をイベントの id に流用
+    /// しない (オーナー裁定 2026-09-02)。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &IntentId {
+        &self.aggregate_id
     }
 
     /// 参照した定義の系譜 ID。

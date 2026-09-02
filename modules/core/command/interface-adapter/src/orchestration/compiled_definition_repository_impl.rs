@@ -40,9 +40,10 @@
 
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, Compiled, CompiledDefinition, CompiledDefinitionEvent,
-    CompiledDefinitionId, ConsumeDecl, ExecutionKind, PhaseId, PlanAction, ReviewCapValue,
-    ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault,
-    StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
+    CompiledDefinitionEventId, CompiledDefinitionId, ConsumeDecl, ExecutionKind, PhaseId,
+    PlanAction, ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata,
+    SensorRef, SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber,
+    StageSlug,
 };
 use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
 use core_infrastructure::atomic::write_file_atomic;
@@ -249,19 +250,19 @@ fn event_describes(event: &CompiledDefinitionEvent, aggregate: &CompiledDefiniti
             CompiledDefinition::from(compiled.clone()) == *aggregate
         }
         CompiledDefinitionEvent::Recompiled(recompiled) => {
-            recompiled.id() == aggregate.id()
+            recompiled.aggregate_id() == aggregate.id()
                 && recompiled.graph() == aggregate.graph()
                 && recompiled.grid() == aggregate.grid()
                 && recompiled.scopes() == aggregate.scopes()
         }
         CompiledDefinitionEvent::ScopeRegistered(registered) => {
             let name = registered.metadata().name();
-            registered.id() == aggregate.id()
+            registered.aggregate_id() == aggregate.id()
                 && aggregate.scopes().get(name) == Some(registered.metadata())
                 && aggregate.grid().column(name) == Some(registered.column())
         }
         CompiledDefinitionEvent::PluginSelectionApplied(applied) => {
-            applied.id() == aggregate.id()
+            applied.aggregate_id() == aggregate.id()
                 && aggregate
                     .graph()
                     .with_plugin_selection(applied.enabled_plugins())
@@ -607,8 +608,15 @@ impl CompiledDefinitionRepositoryImpl {
             .load_grid()
             .unwrap_or_else(|| ScopeGrid::from_graph(&graph));
         let scopes = self.load_scopes()?;
+        // 誕生記録の再構成にはイベント識別子が要るが、媒体 (配布ファイル) はイベントでは
+        // ないので同一性を持たない。ここで採る値は `From<Compiled>` に捨てられる
+        // (`coding-rules/aggregate-commands.md` — 再構成はイベントを歴史に足さない)。
         Ok(CompiledDefinition::from(Compiled::new(
-            id, graph, grid, scopes,
+            CompiledDefinitionEventId::generate(),
+            id,
+            graph,
+            grid,
+            scopes,
         )))
     }
 }

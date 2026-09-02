@@ -3,15 +3,18 @@
 use std::collections::BTreeMap;
 
 use crate::workflow_definition::{
-    DefinitionRevision, ScopeGrid, ScopeMetadata, StageGraph, WorkflowDefinitionId,
+    DefinitionRevision, ScopeGrid, ScopeMetadata, StageGraph, WorkflowDefinitionEventId,
+    WorkflowDefinitionId,
 };
 
 /// `Defined` のペイロード — 確立された定義の系譜 ID・内容版・内容そのもの。
 ///
-/// 系譜 ID を運ぶのは genesis だけである (以後の改訂で識別子は変わらない)。
+/// 系譜 ID は全変種が `aggregate_id` として運ぶ (イベントはエンティティ — オーナー裁定
+/// 2026-09-02)。かつては genesis だけが持ち、改訂は行の `aid` に頼っていた。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Defined {
-    id: WorkflowDefinitionId,
+    id: WorkflowDefinitionEventId,
+    aggregate_id: WorkflowDefinitionId,
     revision: DefinitionRevision,
     graph: StageGraph,
     grid: ScopeGrid,
@@ -19,10 +22,11 @@ pub struct Defined {
 }
 
 impl Defined {
-    /// 系譜 ID・内容版・3 入力のモデルを束ねる。
+    /// イベント識別子・系譜 ID・内容版・3 入力のモデルを束ねる。
     #[must_use]
     pub const fn new(
-        id: WorkflowDefinitionId,
+        id: WorkflowDefinitionEventId,
+        aggregate_id: WorkflowDefinitionId,
         revision: DefinitionRevision,
         graph: StageGraph,
         grid: ScopeGrid,
@@ -30,6 +34,7 @@ impl Defined {
     ) -> Defined {
         Defined {
             id,
+            aggregate_id,
             revision,
             graph,
             grid,
@@ -37,10 +42,17 @@ impl Defined {
         }
     }
 
-    /// 確立された定義の系譜 ID (内容が変わっても不変 — ADR-008)。
+    /// このイベント自身の識別子 — ドメインイベントはエンティティの一種なので自前の id を
+    /// 持つ (`coding-rules/domain-object-kinds.md`)。
     #[must_use]
-    pub const fn id(&self) -> &WorkflowDefinitionId {
+    pub const fn id(&self) -> &WorkflowDefinitionEventId {
         &self.id
+    }
+
+    /// **どの集約の事実か** — 確立された定義の系譜 ID (内容が変わっても不変 — ADR-008)。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &WorkflowDefinitionId {
+        &self.aggregate_id
     }
 
     /// 確立された時点の内容版 (3 入力の内容ダイジェスト)。

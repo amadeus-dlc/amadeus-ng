@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEvent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
@@ -63,6 +63,11 @@ pub(crate) fn execution_id() -> IntentExecutionId {
 pub(crate) fn absent_execution() -> IntentExecutionId {
     IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678")
         .expect("フィクスチャの IntentExecutionId は UUIDv7")
+}
+
+/// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
 }
 
 /// 合成計画の slug (文書順の位置がそのまま名前になる)。
@@ -355,6 +360,7 @@ pub(crate) fn start_from_plan(
     // 同一である。
     let intent = Intent::from((
         Created::new(
+            intent_event_id(),
             intent(),
             WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -631,6 +637,7 @@ mod tests {
         let mut intent_repository = InMemoryIntentRepository::empty();
         let (held, _, _) = genesis(2);
         let event = IntentEvent::Created(Created::new(
+            intent_event_id(),
             held.id().clone(),
             held.definition_id().clone(),
             held.definition_revision().clone(),
@@ -663,6 +670,7 @@ mod tests {
         let mut intent_repository = InMemoryIntentRepository::empty();
         let (held, _, _) = genesis(2);
         let mismatched_event = IntentEvent::Created(Created::new(
+            intent_event_id(),
             held.id().clone(),
             held.definition_id().clone(),
             held.definition_revision().clone(),

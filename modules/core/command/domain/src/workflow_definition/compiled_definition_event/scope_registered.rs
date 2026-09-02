@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::workflow_definition::compiled_definition_event_id::CompiledDefinitionEventId;
 use crate::workflow_definition::compiled_definition_id::CompiledDefinitionId;
 use crate::workflow_definition::plan_action::PlanAction;
 use crate::workflow_definition::scope_metadata::ScopeMetadata;
@@ -13,30 +14,40 @@ use crate::workflow_definition::stage_slug::StageSlug;
 /// 列追加) に対応する。列は空でもよい (zero-EXECUTE スコープ — 12 §4 #6)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeRegistered {
-    id: CompiledDefinitionId,
+    id: CompiledDefinitionEventId,
+    aggregate_id: CompiledDefinitionId,
     metadata: ScopeMetadata,
     column: BTreeMap<StageSlug, PlanAction>,
 }
 
 impl ScopeRegistered {
-    /// 材料をそのまま束ねる。
+    /// イベント識別子・配布束の識別子と材料をそのまま束ねる。
     #[must_use]
     pub const fn new(
-        id: CompiledDefinitionId,
+        id: CompiledDefinitionEventId,
+        aggregate_id: CompiledDefinitionId,
         metadata: ScopeMetadata,
         column: BTreeMap<StageSlug, PlanAction>,
     ) -> ScopeRegistered {
         ScopeRegistered {
             id,
+            aggregate_id,
             metadata,
             column,
         }
     }
 
-    /// 配布束の識別子。
+    /// このイベント自身の識別子 — ドメインイベントはエンティティの一種なので自前の id を
+    /// 持つ (`coding-rules/domain-object-kinds.md`)。
     #[must_use]
-    pub const fn id(&self) -> &CompiledDefinitionId {
+    pub const fn id(&self) -> &CompiledDefinitionEventId {
         &self.id
+    }
+
+    /// **どの集約の事実か** — 配布束の識別子。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &CompiledDefinitionId {
+        &self.aggregate_id
     }
 
     /// 登記されたスコープの identity (frontmatter)。

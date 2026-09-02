@@ -27,8 +27,9 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, Created, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId,
-    NextRequest, StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
+    AutonomyMode, Created, EngineSignal, Intent, IntentEventId, IntentExecution, IntentExecutionId,
+    IntentId, NextRequest, StageDisplay, StageEntry, StageIndex, StartRequest, Status,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -275,6 +276,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     // 検査点は genesis と同一である (coding-rules/aggregate-commands.md)。
     let intent = Intent::from((
         Created::new(
+            IntentEventId::generate(),
             IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
             synthetic_id(),
             synthetic_revision(),

@@ -2,9 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// `GateOpened` の材料。
+/// `GateOpened` の材料。**`id` (イベント自身の識別子) と `aggregate_id`
+/// (どの集約の事実か) を先頭に置く並びが契約**である。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GateOpenedDto {
+    pub(super) id: String,
+    pub(super) aggregate_id: String,
     pub(super) stage: String,
     pub(super) artifacts: Vec<String>,
 }

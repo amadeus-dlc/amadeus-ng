@@ -84,9 +84,15 @@ mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        IntentExecution, IntentExecutionId, IntentId, StageDisplay, StageEntry, StageIndex, Started,
+        IntentExecution, IntentExecutionEventId, IntentExecutionId, IntentId, StageDisplay,
+        StageEntry, StageIndex, Started,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
+
+    /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+    }
 
     #[test]
     fn the_two_statuses_and_the_six_checkboxes_are_spelled_in_kebab_case() {
@@ -186,6 +192,7 @@ mod tests {
             display,
         )];
         let started = Started::new(
+            event_id(),
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("実行 id"),
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("intent id"),
             stages,

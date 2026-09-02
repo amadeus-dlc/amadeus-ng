@@ -376,10 +376,9 @@ const DEFINITION_EVENT_MANIFEST: &str = "workflow-definition-event/1";
 /// 名乗り (`manifest`) を照合し、行の `aid` を文法検査でドメイン型にし、payload はこの側の
 /// DTO ([`WorkflowDefinitionEventDto`]) で受けてから検査付き再構成でドメインへ写す。
 ///
-/// 定義 id の出所は**行の `aid` 列**である。誕生 (`Defined`) だけは payload にも系譜 ID を
-/// 持つので、両者の一致を検査する — 食い違う行はどちらかが嘘をついており、解釈せず
-/// `Corrupt` で止める (intent の行と同じ規律)。改訂 (`Redefined`) は識別子を運ばない
-/// (`coding-rules/aggregate-references.md`) ので、照合する相手がそもそも無い。
+/// 定義 id の出所は**行の `aid` 列**である。payload 側も全変種が `aggregate_id` を運ぶので
+/// (b40 — イベントはエンティティ)、両者の一致を全変種で検査する。食い違う行はどちらかが
+/// 嘘をついており、解釈せず `Corrupt` で止める (intent の行・実行の行と同じ規律)。
 fn decode_definition_row(row: &JournalRow) -> Result<DefinitionEntry, JournalReadError> {
     let row_seq = usize::try_from(row.seq_nr)
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
@@ -401,9 +400,11 @@ fn decode_definition_row(row: &JournalRow) -> Result<DefinitionEntry, JournalRea
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
         .to_domain()
         .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
-    if let WorkflowDefinitionEvent::Defined(defined) = &event
-        && defined.id() != &definition_id
-    {
+    // 行の `aid` と payload の `aggregate_id` を**全変種で**照合する — 食い違う行はどちらかが
+    // 嘘をついており、解釈せず `Corrupt` で止める (intent 行・実行の行と同じ規律)。b40 で
+    // `Redefined` も系譜 ID を運ぶようになったので、かつての「改訂は照合相手が無いので行の
+    // `aid` が正」という片肺は解消した。
+    if event.aggregate_id() != &definition_id {
         return Err(corrupt_error(
             &row.aggregate_id,
             Some(row_seq),
@@ -461,6 +462,8 @@ fn decode_intent_row(row: &JournalRow) -> Result<Intent, JournalReadError> {
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
         .to_domain()
         .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
+    // `Intent::from((Created, _))` は `aggregate_id` をそのまま集約 id にするので、集約の id を
+    // 見ることが payload の `aggregate_id` の照合である (b40 の一般形)。
     if intent.id() != &intent_id {
         return Err(corrupt_error(
             &row.aggregate_id,
@@ -502,12 +505,10 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
         .to_domain()
         .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
-    // 誕生記録だけは payload にも実行 id を持つ。行の `aid` と食い違う行はどちらかが嘘を
-    // ついている — 解釈せず止める (intent 行・定義行と同じ規律)。以降のイベントは識別子を
-    // 運ばない (`coding-rules/aggregate-references.md`) ので、照合する相手がそもそも無い。
-    if let IntentExecutionEvent::Started(started) = &event
-        && started.aggregate_id() != &execution_id
-    {
+    // 行の `aid` と payload の `aggregate_id` を**全変種で**照合する — 食い違う行はどちらかが
+    // 嘘をついている。解釈せず止める (intent 行・定義行と同じ規律)。b40 で全変種が
+    // `aggregate_id` を運ぶようになったので、かつて genesis だけだった照合が全変種に広がった。
+    if event.aggregate_id() != &execution_id {
         return Err(corrupt_error(
             &row.aggregate_id,
             Some(row_seq),
@@ -672,13 +673,30 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use core_command_domain::orchestration::IntentExecutionEvent;
+    use core_command_domain::orchestration::{
+        IntentEventId, IntentExecutionEvent, IntentExecutionEventId, Unparked,
+    };
 
     /// 投影チェックポイントの表 (**我々の表**。本家の `journal` / `snapshot` と衝突しない)。
     const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
     use core_command_domain::workspace::SpaceName;
     use event_store_adapter_rs::EventStoreForSqlite;
     use event_store_adapter_rs::types::AggregateId;
+
+    /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+    }
+
+    /// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("実行 id")
+    }
+
+    /// b40 のテスト用固定イベント識別子 (intent 面)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+    }
 
     /// 本家 `AggregateId` を満たすテスト用のストア鍵。
     ///
@@ -1485,7 +1503,10 @@ mod tests {
             clippy::disallowed_methods,
             reason = "本家シリアライザと同形式のフィクスチャ生成 (BR1.7 の射程外)"
         )]
-        serde_json::to_vec(&IntentExecutionEventDto::Unparked).unwrap()
+        serde_json::to_vec(&IntentExecutionEventDto::of(
+            &IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id())),
+        ))
+        .unwrap()
     }
 
     /// 正常な 1 行 (個々のフィールドを崩して境界を踏むための素体)。
@@ -1512,9 +1533,14 @@ mod tests {
         // JSON としては読めて DTO にもなるが、閉集合外の綴りを名乗る行。ドメインへ写す時点で
         // 止まるので、壊れた値が投影核に流れ込まない。
         let tampered = String::from_utf8(
-            serde_json::to_vec(&IntentExecutionEventDto::Parked(
-                serde_json::from_str(r#"{"stage":"intent-capture"}"#).unwrap(),
-            ))
+            serde_json::to_vec(&IntentExecutionEventDto::of(&IntentExecutionEvent::Parked(
+                core_command_domain::orchestration::Parked::new(
+                    event_id(),
+                    execution_id(),
+                    core_command_domain::workflow_definition::StageSlug::parse("intent-capture")
+                        .expect("slug"),
+                ),
+            )))
             .unwrap(),
         )
         .unwrap()
@@ -1542,7 +1568,10 @@ mod tests {
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
         assert_eq!(entry.seq_nr(), 2);
-        assert_eq!(entry.event(), &IntentExecutionEvent::Unparked);
+        assert_eq!(
+            entry.event(),
+            &IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id()))
+        );
         assert_eq!(
             entry.occurred_at().timestamp_nanos_opt(),
             Some(1_756_425_600_000_000_000),
@@ -1731,42 +1760,55 @@ mod tests {
     }
 
     /// intent 行のフィクスチャ (誕生の材料 = 検査付き再構成で戻る集約値)。
-    fn birth_intent() -> core_command_domain::orchestration::Intent {
+    fn birth_created() -> core_command_domain::orchestration::Created {
         use core_command_domain::orchestration::{
-            Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+            Created, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
         };
         use core_command_domain::workflow_definition::{
             BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
             WorkflowDefinitionId,
         };
-        Intent::from((
-            Created::new(
-                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-                WorkflowDefinitionId::parse("claude").unwrap(),
-                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-                StartRequest::new("classic", "unit"),
-                vec![StageEntry::new(
-                    StageSlug::parse("state-init").unwrap(),
-                    PhaseId::Initialization,
-                    PlanAction::Execute,
-                    false,
-                    StageDisplay::new(
-                        StageNumber::parse("0.1").unwrap(),
-                        "State Init",
-                        "orchestrator",
-                    )
-                    .unwrap(),
-                )],
-                WorkspaceScan::new(
-                    BrownfieldGreenfield::Greenfield,
-                    "Unknown",
-                    "Unknown",
-                    "Unknown",
+        Created::new(
+            intent_event_id(),
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("classic", "unit"),
+            vec![StageEntry::new(
+                StageSlug::parse("state-init").unwrap(),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                StageDisplay::new(
+                    StageNumber::parse("0.1").unwrap(),
+                    "State Init",
+                    "orchestrator",
                 )
                 .unwrap(),
-            ),
-            occurred_at_of(0),
-        ))
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .unwrap(),
+        )
+    }
+
+    /// 誕生イベント (行を組む材料)。
+    fn birth_event() -> core_command_domain::orchestration::IntentEvent {
+        core_command_domain::orchestration::IntentEvent::Created(birth_created())
+    }
+
+    /// 誕生記録から起こした集約 (復号結果との突き合わせ用)。
+    fn birth_intent() -> core_command_domain::orchestration::Intent {
+        core_command_domain::orchestration::Intent::from((birth_created(), birth_at()))
+    }
+
+    /// 誕生の発生時刻 (`birth_created` と対で行を組む)。
+    fn birth_at() -> chrono::DateTime<chrono::Utc> {
+        occurred_at_of(0)
     }
 
     #[expect(
@@ -1778,7 +1820,7 @@ mod tests {
             rowid: 1,
             seq_nr: 1,
             aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-            payload: serde_json::to_vec(&IntentEventDto::of(&birth_intent())).unwrap(),
+            payload: serde_json::to_vec(&IntentEventDto::of(&birth_event(), birth_at())).unwrap(),
             occurred_at: 1_756_425_600_000_000_000,
             manifest: INTENT_EVENT_MANIFEST.to_string(),
         }
@@ -1949,11 +1991,21 @@ mod tests {
         .expect("テストの revision")
     }
 
+    /// b40 のテスト用固定イベント識別子 (定義面)。
+    fn definition_event_id() -> core_command_domain::workflow_definition::WorkflowDefinitionEventId
+    {
+        core_command_domain::workflow_definition::WorkflowDefinitionEventId::parse(
+            "0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003",
+        )
+        .expect("UUIDv7")
+    }
+
     /// 誕生イベント (`Defined` — 通番 1 でしか現れない)。
     fn defined_event() -> WorkflowDefinitionEvent {
         use core_command_domain::workflow_definition::Defined;
         let (graph, grid, scopes) = definition_content();
         WorkflowDefinitionEvent::Defined(Defined::new(
+            definition_event_id(),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             definition_revision('0'),
             graph,
@@ -1967,6 +2019,8 @@ mod tests {
         use core_command_domain::workflow_definition::Redefined;
         let (graph, grid, scopes) = definition_content();
         WorkflowDefinitionEvent::Redefined(Redefined::new(
+            definition_event_id(),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
             definition_revision('1'),
             graph,
             grid,
@@ -2058,7 +2112,10 @@ mod tests {
             ),
             (
                 1_i64,
-                IntentExecutionEventDto::Unparked,
+                IntentExecutionEventDto::of(&IntentExecutionEvent::Unparked(Unparked::new(
+                    event_id(),
+                    execution_id(),
+                ))),
                 "誕生でないイベントが通番 1 を名乗る",
             ),
         ] {
@@ -2106,6 +2163,7 @@ mod tests {
         // ことを、この層の面で固定する。
         use core_command_domain::orchestration::Started;
         let broken = IntentExecutionEvent::Started(Started::new(
+            event_id(),
             IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("実行 id"),
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("intent id"),
             Vec::new(),

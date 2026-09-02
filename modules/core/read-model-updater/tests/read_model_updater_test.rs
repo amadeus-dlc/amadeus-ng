@@ -16,8 +16,9 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, GateOpened, Intent, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay,
-    StageEntry, StageRevised, StartRequest, Started, WorkspaceScan,
+    Created, GateOpened, Intent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StageRevised, StartRequest, Started,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -29,6 +30,21 @@ use core_read_model_updater::orchestration::{
 };
 use core_read_model_updater::read_tables::ReadTables;
 use tempfile::TempDir;
+
+/// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+fn event_id() -> IntentExecutionEventId {
+    IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+}
+
+/// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(EXECUTION).expect("UUIDv7")
+}
+
+/// b40 のテスト用固定イベント識別子 (intent 面)。
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
 
 /// 状態ファイルの出発点（投影が触る行だけを持つ最小の本文）。
 const STATE: &str = "\
@@ -88,6 +104,7 @@ fn genesis_intent() -> Intent {
     };
     Intent::from((
         Created::new(
+            intent_event_id(),
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -113,6 +130,7 @@ fn genesis_intent() -> Intent {
 fn genesis() -> IntentExecutionEvent {
     let intent = genesis_intent();
     IntentExecutionEvent::Started(Started::new(
+        event_id(),
         IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         intent.id().clone(),
         intent.stages().to_vec(),
@@ -136,6 +154,8 @@ fn journal() -> Vec<JournalEntry> {
             3,
             2,
             IntentExecutionEvent::GateOpened(GateOpened::new(
+                event_id(),
+                execution_id(),
                 slug("practices-discovery"),
                 Vec::new(),
             )),
@@ -143,7 +163,11 @@ fn journal() -> Vec<JournalEntry> {
         entry(
             4,
             3,
-            IntentExecutionEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
+            IntentExecutionEvent::StageRevised(StageRevised::new(
+                event_id(),
+                execution_id(),
+                slug("practices-discovery"),
+            )),
         ),
     ]
 }
@@ -386,7 +410,12 @@ async fn a_row_that_lands_between_the_two_reads_is_drawn_on_both_faces_at_one_po
     let late = entry(
         5,
         4,
-        IntentExecutionEvent::GateOpened(GateOpened::new(slug("practices-discovery"), Vec::new())),
+        IntentExecutionEvent::GateOpened(GateOpened::new(
+            event_id(),
+            execution_id(),
+            slug("practices-discovery"),
+            Vec::new(),
+        )),
     );
     let (mut updater, spy) = fixture.racing_updater(journal(), intents(), late);
 
@@ -529,7 +558,12 @@ async fn a_journal_without_a_started_is_plan_unavailable() {
     let journal = vec![entry(
         3,
         2,
-        IntentExecutionEvent::GateOpened(GateOpened::new(slug("practices-discovery"), Vec::new())),
+        IntentExecutionEvent::GateOpened(GateOpened::new(
+            event_id(),
+            execution_id(),
+            slug("practices-discovery"),
+            Vec::new(),
+        )),
     )];
     let mut updater = fixture.updater(journal, intents());
 
@@ -549,6 +583,7 @@ async fn executions_of_two_different_intents_are_refused_as_mixed() {
             3,
             1,
             IntentExecutionEvent::Started(Started::new(
+                event_id(),
                 IntentExecutionId::parse("0190cccc-dddd-7eee-8fff-000011112222").expect("UUIDv7"),
                 other,
                 genesis_intent().stages().to_vec(),
@@ -558,6 +593,8 @@ async fn executions_of_two_different_intents_are_refused_as_mixed() {
             4,
             2,
             IntentExecutionEvent::GateOpened(GateOpened::new(
+                event_id(),
+                execution_id(),
                 slug("practices-discovery"),
                 Vec::new(),
             )),

@@ -86,8 +86,20 @@ impl JournalEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core_command_domain::orchestration::{IntentExecutionEvent, Parked};
+    use core_command_domain::orchestration::{
+        IntentExecutionEvent, IntentExecutionEventId, Parked, Unparked,
+    };
     use core_command_domain::workflow_definition::StageSlug;
+
+    /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+    }
+
+    /// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    }
 
     fn intent() -> IntentExecutionId {
         IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
@@ -105,7 +117,7 @@ mod tests {
             intent(),
             seq_nr,
             at(),
-            IntentExecutionEvent::Unparked,
+            IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id())),
         )
     }
 
@@ -116,13 +128,19 @@ mod tests {
         assert_eq!(row.execution_id(), &intent());
         assert_eq!(row.seq_nr(), 3);
         assert_eq!(row.occurred_at(), &at());
-        assert_eq!(row.event(), &IntentExecutionEvent::Unparked);
+        assert_eq!(
+            row.event(),
+            &IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id()))
+        );
     }
 
     #[test]
     fn the_entry_keeps_the_event_it_was_given() {
-        let parked =
-            IntentExecutionEvent::Parked(Parked::new(StageSlug::parse("intent-capture").unwrap()));
+        let parked = IntentExecutionEvent::Parked(Parked::new(
+            event_id(),
+            execution_id(),
+            StageSlug::parse("intent-capture").unwrap(),
+        ));
         let row = JournalEntry::new(GlobalSeqNr::new(1), intent(), 1, at(), parked.clone());
         assert_eq!(row.event(), &parked);
     }

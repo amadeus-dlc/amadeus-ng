@@ -1,6 +1,6 @@
 //! `Started` — `IntentExecutionEvent::Started` のペイロード。
 
-use crate::orchestration::{IntentExecutionId, IntentId, StageEntry};
+use crate::orchestration::{IntentExecutionEventId, IntentExecutionId, IntentId, StageEntry};
 
 /// `Started` のペイロード — genesis の材料 (実行の識別子・対象 intent の識別子・
 /// 解決済み計画の写し) を運ぶ。
@@ -20,32 +20,38 @@ use crate::orchestration::{IntentExecutionId, IntentId, StageEntry};
 /// [`IntentExecution`]: crate::orchestration::IntentExecution
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
+    id: IntentExecutionEventId,
     aggregate_id: IntentExecutionId,
     intent_id: IntentId,
     stages: Vec<StageEntry>,
 }
 
 impl Started {
-    /// genesis の材料 3 つを束ねる。
+    /// イベントの識別子と genesis の材料 3 つを束ねる。
     #[must_use]
     pub const fn new(
+        id: IntentExecutionEventId,
         aggregate_id: IntentExecutionId,
         intent_id: IntentId,
         stages: Vec<StageEntry>,
     ) -> Started {
         Started {
+            id,
             aggregate_id,
             intent_id,
             stages,
         }
     }
 
-    /// **どの集約の事実か** — 始まった実行の識別子。
-    ///
-    /// これは集約の識別子であって**イベント自身の id ではない**。ドメインイベントは
-    /// エンティティなので自前の識別子を持つべきだが、その `IntentExecutionEventId` は
-    /// 次の Bolt でイベント全体に加わる。ここで `id` と名乗ると集約 ID をイベントの id に
-    /// 流用したことになるため、名前で区別しておく。
+    /// このイベント自身の識別子 — ドメインイベントはエンティティの一種なので自前の id を
+    /// 持つ (`coding-rules/domain-object-kinds.md`)。
+    #[must_use]
+    pub const fn id(&self) -> &IntentExecutionEventId {
+        &self.id
+    }
+
+    /// **どの集約の事実か** — 始まった実行の識別子。集約の ID をイベントの id に流用しない
+    /// (オーナー裁定 2026-09-02) ので、こちらは `aggregate_id` と名乗る。
     #[must_use]
     pub const fn aggregate_id(&self) -> &IntentExecutionId {
         &self.aggregate_id

@@ -25,6 +25,7 @@ use chrono::{DateTime, Utc};
 use super::intent_error::IntentError;
 use super::intent_event::Created;
 use super::intent_event::IntentEvent;
+use super::intent_event_id::IntentEventId;
 use super::intent_id::IntentId;
 use super::stage_display::StageDisplay;
 use super::stage_entry::StageEntry;
@@ -129,6 +130,7 @@ impl Intent {
         }
         Intent::check_plan(&stages)?;
         let created = Created::new(
+            IntentEventId::generate(),
             id,
             definition.id().clone(),
             definition.revision().clone(),
@@ -269,7 +271,7 @@ impl From<(Created, DateTime<Utc>)> for Intent {
     fn from((created, occurred_at): (Created, DateTime<Utc>)) -> Intent {
         Intent::check_plan(&created.stages).expect("recorded history violates the plan invariants");
         Intent {
-            id: created.id,
+            id: created.aggregate_id,
             definition_id: created.definition_id,
             definition_revision: created.definition_revision,
             start_request: created.start_request,
@@ -283,6 +285,11 @@ impl From<(Created, DateTime<Utc>)> for Intent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// テスト用の固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap()
+    }
 
     use crate::orchestration::{IntentId, StageDisplay, StageEntry, WorkspaceScan};
     use crate::workflow_definition::{
@@ -367,7 +374,15 @@ mod tests {
 
     fn intent() -> Intent {
         Intent::from((
-            Created::new(id(), def_id(), revision(), request(), stages(), scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                stages(),
+                scan(),
+            ),
             defined_at(),
         ))
     }
@@ -439,7 +454,15 @@ mod tests {
     fn an_empty_plan_crashes_reconstruction() {
         // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
         let _ = Intent::from((
-            Created::new(id(), def_id(), revision(), request(), Vec::new(), scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                Vec::new(),
+                scan(),
+            ),
             defined_at(),
         ));
     }
@@ -464,7 +487,15 @@ mod tests {
             ),
         ];
         let _ = Intent::from((
-            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                stages,
+                scan(),
+            ),
             defined_at(),
         ));
     }
@@ -488,7 +519,15 @@ mod tests {
             ),
         ];
         let _ = Intent::from((
-            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                stages,
+                scan(),
+            ),
             defined_at(),
         ));
     }
@@ -514,7 +553,15 @@ mod tests {
             conditional,
         ];
         let _ = Intent::from((
-            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                stages,
+                scan(),
+            ),
             defined_at(),
         ));
     }
@@ -538,7 +585,15 @@ mod tests {
             conditional,
         ];
         let intent = Intent::from((
-            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                stages,
+                scan(),
+            ),
             defined_at(),
         ));
         assert_eq!(intent.stage_count(), 2);
@@ -601,6 +656,7 @@ mod tests {
         assert_eq!(intent(), intent());
         let other = Intent::from((
             Created::new(
+                intent_event_id(),
                 IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
                 def_id(),
                 revision(),
@@ -627,7 +683,7 @@ mod tests {
         )
         .expect("解決できる計画");
         let IntentEvent::Created(created) = event;
-        assert_eq!(created.id(), intent.id());
+        assert_eq!(created.aggregate_id(), intent.id());
         assert_eq!(created.stages(), intent.stages());
         assert_eq!(Intent::from((created, defined_at())), intent);
         assert_eq!(intent.stage_count(), 1);
@@ -638,7 +694,15 @@ mod tests {
         // 再構成は歴史を読み戻す経路である — イベントを作ればリプレイのたびに歴史が増える。
         // 戻り値の型に `IntentEvent` が現れないことがその保証である。
         let intent: Intent = Intent::from((
-            Created::new(id(), def_id(), revision(), request(), stages(), scan()),
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request(),
+                stages(),
+                scan(),
+            ),
             defined_at(),
         ));
         assert_eq!(intent.stages(), stages().as_slice());
@@ -658,6 +722,7 @@ mod tests {
         .expect("解決できる計画");
         let round_tripped = Intent::from((
             Created::new(
+                intent_event_id(),
                 intent.id().clone(),
                 intent.definition_id().clone(),
                 intent.definition_revision().clone(),
@@ -741,5 +806,31 @@ mod tests {
             .to_string(),
             "stage display is not single line: stage state-init, found U+000A"
         );
+    }
+
+    #[test]
+    fn creating_an_intent_stamps_the_event_with_a_fresh_id_and_the_aggregate_id() {
+        // イベントはエンティティ — genesis も自前の id を持ち、集約 ID は `aggregate_id`
+        // として別に運ぶ (オーナー裁定 2026-09-02)。
+        let (intent, event) = Intent::create(
+            id(),
+            &single_stage_definition(),
+            request(),
+            scan(),
+            defined_at(),
+        )
+        .expect("解決できる計画");
+        assert_eq!(event.aggregate_id(), intent.id());
+
+        let (other, second) = Intent::create(
+            IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
+            &single_stage_definition(),
+            request(),
+            scan(),
+            defined_at(),
+        )
+        .expect("解決できる計画");
+        assert_ne!(event.id(), second.id(), "採番が重複した");
+        assert_eq!(second.aggregate_id(), other.id());
     }
 }

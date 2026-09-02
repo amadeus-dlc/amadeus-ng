@@ -5,6 +5,9 @@
 // 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
 // 再輸出する (所有サブツリーのファサード — coding-rules/module-visibility.md §追記
 // 2026-09-01)。
+use super::compiled_definition_event_id::CompiledDefinitionEventId;
+use super::compiled_definition_id::CompiledDefinitionId;
+
 mod compiled;
 mod plugin_selection_applied;
 mod recompiled;
@@ -30,4 +33,28 @@ pub enum CompiledDefinitionEvent {
     ScopeRegistered(ScopeRegistered),
     /// プラグインの有効・無効の選択が適用された。
     PluginSelectionApplied(PluginSelectionApplied),
+}
+
+impl CompiledDefinitionEvent {
+    /// このイベント自身の識別子 (全変種が持つ — イベントはエンティティ)。
+    #[must_use]
+    pub const fn id(&self) -> &CompiledDefinitionEventId {
+        match self {
+            CompiledDefinitionEvent::Compiled(payload) => payload.id(),
+            CompiledDefinitionEvent::Recompiled(payload) => payload.id(),
+            CompiledDefinitionEvent::ScopeRegistered(payload) => payload.id(),
+            CompiledDefinitionEvent::PluginSelectionApplied(payload) => payload.id(),
+        }
+    }
+
+    /// **どの集約の事実か** — 全変種が運ぶ配布束の識別子。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &CompiledDefinitionId {
+        match self {
+            CompiledDefinitionEvent::Compiled(payload) => payload.aggregate_id(),
+            CompiledDefinitionEvent::Recompiled(payload) => payload.aggregate_id(),
+            CompiledDefinitionEvent::ScopeRegistered(payload) => payload.aggregate_id(),
+            CompiledDefinitionEvent::PluginSelectionApplied(payload) => payload.aggregate_id(),
+        }
+    }
 }

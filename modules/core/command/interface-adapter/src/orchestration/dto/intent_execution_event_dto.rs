@@ -1,12 +1,15 @@
 //! ドメインイベント 12 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
 //!
-//! 外部タグ付き列挙 (`{"Started": { .. }}`) で、`Unparked` だけが材料を持たない単位変種
-//! (`"Unparked"`) である。**変種名・フィールド名・並びが契約**である。
+//! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
+//!
+//! 全変種が `id` (イベント自身の識別子) と `aggregate_id` (どの集約の事実か) をこの順で
+//! 先頭に持つ — ドメインイベントはエンティティの一種だからである (オーナー裁定 2026-09-02)。
+//! `Unparked` はドメインの材料を持たないが識別子は運ぶので、単位変種ではなく構造体である。
 
 use core_command_domain::orchestration::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
-    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageEntry,
-    StageRevised, StageSkipped, Started,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
+    StageCompleted, StageEntry, StageRevised, StageSkipped, Started, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -25,6 +28,7 @@ use super::stage_completed_dto::StageCompletedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
+use super::unparked_dto::UnparkedDto;
 
 /// ジャーナル行 `payload` の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,12 +51,22 @@ pub enum IntentExecutionEventDto {
     Jumped(JumpedDto),
     /// park マーカーの設置。
     Parked(ParkedDto),
-    /// park マーカーの除去 (材料なし)。
-    Unparked,
+    /// park マーカーの除去 (ドメインの材料は無いが識別子は運ぶ)。
+    Unparked(UnparkedDto),
     /// 実効プランの再形成。
     Recomposed(RecomposedDto),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSetDto),
+}
+
+/// イベント識別子の復号。
+fn event_id_of(raw: &str) -> Result<IntentExecutionEventId, DtoDecodeError> {
+    IntentExecutionEventId::parse(raw).map_err(|_| DtoDecodeError::malformed("id", raw))
+}
+
+/// 集約識別子 (どの実行の事実か) の復号。
+fn aggregate_id_of(raw: &str) -> Result<IntentExecutionId, DtoDecodeError> {
+    IntentExecutionId::parse(raw).map_err(|_| DtoDecodeError::malformed("aggregate_id", raw))
 }
 
 /// ステージ参照の綴り。
@@ -77,6 +91,7 @@ impl IntentExecutionEventDto {
         match event {
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto {
+                    id: payload.id().as_str().to_string(),
                     aggregate_id: payload.aggregate_id().as_str().to_string(),
                     intent_id: payload.intent_id().as_str().to_string(),
                     stages: payload.stages().iter().map(StageEntryDto::of).collect(),
@@ -84,53 +99,78 @@ impl IntentExecutionEventDto {
             }
             IntentExecutionEvent::StageCompleted(payload) => {
                 IntentExecutionEventDto::StageCompleted(StageCompletedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
                 })
             }
             IntentExecutionEvent::GateOpened(payload) => {
                 IntentExecutionEventDto::GateOpened(GateOpenedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
                     artifacts: payload.artifacts().to_vec(),
                 })
             }
             IntentExecutionEvent::GateApproved(payload) => {
                 IntentExecutionEventDto::GateApproved(GateApprovedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
                     user_input: payload.user_input().map(str::to_string),
                 })
             }
             IntentExecutionEvent::GateRejected(payload) => {
                 IntentExecutionEventDto::GateRejected(GateRejectedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
                     feedback: payload.feedback().map(str::to_string),
                 })
             }
             IntentExecutionEvent::StageRevised(payload) => {
                 IntentExecutionEventDto::StageRevised(StageRevisedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
                 })
             }
             IntentExecutionEvent::StageSkipped(payload) => {
                 IntentExecutionEventDto::StageSkipped(StageSkippedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
                     reason: payload.reason().to_string(),
                 })
             }
             IntentExecutionEvent::Jumped(payload) => IntentExecutionEventDto::Jumped(JumpedDto {
+                id: payload.id().as_str().to_string(),
+                aggregate_id: payload.aggregate_id().as_str().to_string(),
                 target: slug_spelling(payload.target()),
             }),
             IntentExecutionEvent::Parked(payload) => IntentExecutionEventDto::Parked(ParkedDto {
+                id: payload.id().as_str().to_string(),
+                aggregate_id: payload.aggregate_id().as_str().to_string(),
                 stage: slug_spelling(payload.stage()),
             }),
-            IntentExecutionEvent::Unparked => IntentExecutionEventDto::Unparked,
+            IntentExecutionEvent::Unparked(payload) => {
+                IntentExecutionEventDto::Unparked(UnparkedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                })
+            }
             IntentExecutionEvent::Recomposed(payload) => {
                 IntentExecutionEventDto::Recomposed(RecomposedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     skipped: payload.skipped().iter().map(slug_spelling).collect(),
                     added: payload.added().iter().map(slug_spelling).collect(),
                 })
             }
             IntentExecutionEvent::AutonomyModeSet(payload) => {
                 IntentExecutionEventDto::AutonomyModeSet(AutonomyModeSetDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     mode: autonomy_spelling(payload.mode()).to_string(),
                 })
             }
@@ -155,55 +195,89 @@ impl IntentExecutionEventDto {
                 // 集約の再構成まで届いてクラッシュする (再構成は失敗を返さない)。
                 StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
                 IntentExecutionEvent::Started(Started::new(
-                    IntentExecutionId::parse(&payload.aggregate_id).map_err(|_| {
-                        DtoDecodeError::malformed("aggregate_id", &payload.aggregate_id)
-                    })?,
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
                     IntentId::parse(&payload.intent_id)
                         .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
                     stages,
                 ))
             }
             IntentExecutionEventDto::StageCompleted(payload) => {
-                IntentExecutionEvent::StageCompleted(StageCompleted::new(slug_of(
-                    &payload.stage,
-                    "stage",
-                )?))
+                IntentExecutionEvent::StageCompleted(StageCompleted::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                ))
             }
-            IntentExecutionEventDto::GateOpened(payload) => IntentExecutionEvent::GateOpened(
-                GateOpened::new(slug_of(&payload.stage, "stage")?, payload.artifacts.clone()),
-            ),
+            IntentExecutionEventDto::GateOpened(payload) => {
+                IntentExecutionEvent::GateOpened(GateOpened::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                    payload.artifacts.clone(),
+                ))
+            }
             IntentExecutionEventDto::GateApproved(payload) => {
                 IntentExecutionEvent::GateApproved(GateApproved::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
                     slug_of(&payload.stage, "stage")?,
                     payload.user_input.clone(),
                 ))
             }
-            IntentExecutionEventDto::GateRejected(payload) => IntentExecutionEvent::GateRejected(
-                GateRejected::new(slug_of(&payload.stage, "stage")?, payload.feedback.clone()),
-            ),
-            IntentExecutionEventDto::StageRevised(payload) => IntentExecutionEvent::StageRevised(
-                StageRevised::new(slug_of(&payload.stage, "stage")?),
-            ),
-            IntentExecutionEventDto::StageSkipped(payload) => IntentExecutionEvent::StageSkipped(
-                StageSkipped::new(slug_of(&payload.stage, "stage")?, payload.reason.clone()),
-            ),
-            IntentExecutionEventDto::Jumped(payload) => {
-                IntentExecutionEvent::Jumped(Jumped::new(slug_of(&payload.target, "target")?))
+            IntentExecutionEventDto::GateRejected(payload) => {
+                IntentExecutionEvent::GateRejected(GateRejected::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                    payload.feedback.clone(),
+                ))
             }
-            IntentExecutionEventDto::Parked(payload) => {
-                IntentExecutionEvent::Parked(Parked::new(slug_of(&payload.stage, "stage")?))
+            IntentExecutionEventDto::StageRevised(payload) => {
+                IntentExecutionEvent::StageRevised(StageRevised::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                ))
             }
-            IntentExecutionEventDto::Unparked => IntentExecutionEvent::Unparked,
+            IntentExecutionEventDto::StageSkipped(payload) => {
+                IntentExecutionEvent::StageSkipped(StageSkipped::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                    payload.reason.clone(),
+                ))
+            }
+            IntentExecutionEventDto::Jumped(payload) => IntentExecutionEvent::Jumped(Jumped::new(
+                event_id_of(&payload.id)?,
+                aggregate_id_of(&payload.aggregate_id)?,
+                slug_of(&payload.target, "target")?,
+            )),
+            IntentExecutionEventDto::Parked(payload) => IntentExecutionEvent::Parked(Parked::new(
+                event_id_of(&payload.id)?,
+                aggregate_id_of(&payload.aggregate_id)?,
+                slug_of(&payload.stage, "stage")?,
+            )),
+            IntentExecutionEventDto::Unparked(payload) => {
+                IntentExecutionEvent::Unparked(Unparked::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                ))
+            }
             IntentExecutionEventDto::Recomposed(payload) => {
                 IntentExecutionEvent::Recomposed(Recomposed::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
                     slugs_of(&payload.skipped, "skipped")?,
                     slugs_of(&payload.added, "added")?,
                 ))
             }
             IntentExecutionEventDto::AutonomyModeSet(payload) => {
-                IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(autonomy_of(
-                    &payload.mode,
-                )?))
+                IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    autonomy_of(&payload.mode)?,
+                ))
             }
         })
     }

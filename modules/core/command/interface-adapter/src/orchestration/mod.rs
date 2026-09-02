@@ -50,11 +50,12 @@ pub use compiled_definition_repository_impl::CompiledDefinitionRepositoryImpl;
 // 公開する — 見えるのはこのクレートの外の**アダプタ利用者**だけで、ドメインとユースケースは
 // 依存の向き (層 = クレート) により参照できない。
 pub use dto::{
-    AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
-    IntentAggregateKeyDto, IntentDto, IntentEventDto, IntentExecutionAggregateKeyDto,
-    IntentExecutionDto, IntentExecutionEventDto, JumpedDto, ParkedDto, RecomposedDto,
-    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
-    WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto, WorkflowDefinitionEventDto,
+    AutonomyModeSetDto, CreatedDto, DtoDecodeError, GateApprovedDto, GateOpenedDto,
+    GateRejectedDto, IntentAggregateKeyDto, IntentDto, IntentEventDto,
+    IntentExecutionAggregateKeyDto, IntentExecutionDto, IntentExecutionEventDto, JumpedDto,
+    ParkedDto, RecomposedDto, StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
+    UnparkedDto, WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto,
+    WorkflowDefinitionEventDto,
 };
 // ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
 pub use intent_execution_repository_impl::{

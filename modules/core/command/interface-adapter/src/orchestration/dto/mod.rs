@@ -24,6 +24,7 @@
 //! 側の独立を DRY に優先する)。書き手と読み手のワイヤ形式の一致は横断適合テストが固定する。
 
 mod autonomy_mode_set_dto;
+mod created_dto;
 mod defined_dto;
 mod dto_decode_error;
 mod dto_vocabulary;
@@ -44,11 +45,13 @@ mod stage_completed_dto;
 mod stage_revised_dto;
 mod stage_skipped_dto;
 mod started_dto;
+mod unparked_dto;
 mod workflow_definition_aggregate_key_dto;
 mod workflow_definition_dto;
 mod workflow_definition_event_dto;
 
 pub use autonomy_mode_set_dto::AutonomyModeSetDto;
+pub use created_dto::CreatedDto;
 pub use dto_decode_error::DtoDecodeError;
 pub use gate_approved_dto::GateApprovedDto;
 pub use gate_opened_dto::GateOpenedDto;
@@ -66,6 +69,7 @@ pub use stage_completed_dto::StageCompletedDto;
 pub use stage_revised_dto::StageRevisedDto;
 pub use stage_skipped_dto::StageSkippedDto;
 pub use started_dto::StartedDto;
+pub use unparked_dto::UnparkedDto;
 pub use workflow_definition_aggregate_key_dto::WorkflowDefinitionAggregateKeyDto;
 pub use workflow_definition_dto::WorkflowDefinitionDto;
 pub use workflow_definition_event_dto::WorkflowDefinitionEventDto;

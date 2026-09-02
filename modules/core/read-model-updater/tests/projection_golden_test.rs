@@ -33,9 +33,10 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    Created, GateApproved, GateOpened, GateRejected, Intent, IntentExecutionEvent,
-    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay,
-    StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    Created, GateApproved, GateOpened, GateRejected, Intent, IntentEventId, IntentExecutionEvent,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
+    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
+    Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -43,6 +44,21 @@ use core_command_domain::workflow_definition::{
 };
 use core_read_model_updater::orchestration::{GlobalSeqNr, JournalEntry};
 use core_read_model_updater::workspace::{ReadModel, ResolvedPlan, project};
+
+/// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+fn event_id() -> IntentExecutionEventId {
+    IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+}
+
+/// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(EXECUTION).expect("UUIDv7")
+}
+
+/// b40 のテスト用固定イベント識別子 (intent 面)。
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
 
 /// ゴールデンが正規化で潰した実行時値の置き換え先。
 const TS_PLACEHOLDER: &str = "<TS>";
@@ -133,6 +149,7 @@ fn genesis_intent() -> Intent {
 
     Intent::from((
         Created::new(
+            intent_event_id(),
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -153,6 +170,7 @@ fn genesis_intent() -> Intent {
 fn started() -> Started {
     let intent = genesis_intent();
     Started::new(
+        event_id(),
         IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         intent.id().clone(),
         intent.stages().to_vec(),
@@ -275,7 +293,12 @@ fn assert_audit_only(case: &str, event: IntentExecutionEvent, state: &str) {
 fn opening_a_gate_writes_the_awaiting_approval_row_and_moves_the_checkbox() {
     assert_case(
         "report/awaiting-approval",
-        IntentExecutionEvent::GateOpened(GateOpened::new(slug("practices-discovery"), vec![])),
+        IntentExecutionEvent::GateOpened(GateOpened::new(
+            event_id(),
+            execution_id(),
+            slug("practices-discovery"),
+            vec![],
+        )),
     );
 }
 
@@ -284,6 +307,8 @@ fn rejecting_a_gate_writes_two_rows_and_bumps_the_revision_count() {
     assert_case(
         "report/rejected",
         IntentExecutionEvent::GateRejected(GateRejected::new(
+            event_id(),
+            execution_id(),
             slug("practices-discovery"),
             Some("Sharpen the testing posture.".to_string()),
         )),
@@ -294,7 +319,11 @@ fn rejecting_a_gate_writes_two_rows_and_bumps_the_revision_count() {
 fn revising_a_stage_re_enters_the_gate_with_the_verbatim_details() {
     assert_case(
         "report/revised",
-        IntentExecutionEvent::StageRevised(StageRevised::new(slug("practices-discovery"))),
+        IntentExecutionEvent::StageRevised(StageRevised::new(
+            event_id(),
+            execution_id(),
+            slug("practices-discovery"),
+        )),
     );
 }
 
@@ -306,6 +335,8 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
     assert_case_with_context(
         "report/approved",
         IntentExecutionEvent::GateApproved(GateApproved::new(
+            event_id(),
+            execution_id(),
             slug("practices-discovery"),
             Some("A".to_string()),
         )),
@@ -327,7 +358,11 @@ fn completing_an_ungated_stage_writes_its_own_details_wording() {
     // あり、投影が次ステージ workspace-detection の担当を書き直した結果と一致するかで検証される。
     assert_case_with_context(
         "report/completed-ungated",
-        IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("workspace-scaffold"))),
+        IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            event_id(),
+            execution_id(),
+            slug("workspace-scaffold"),
+        )),
         "- **Active Agent**: orchestrator\n",
     );
 }
@@ -337,6 +372,8 @@ fn skipping_a_stage_moves_on_without_touching_the_completed_count() {
     assert_case(
         "skip/skipped",
         IntentExecutionEvent::StageSkipped(StageSkipped::new(
+            event_id(),
+            execution_id(),
             slug("user-stories"),
             "No UI surface in this workflow.".to_string(),
         )),
@@ -349,7 +386,11 @@ fn jumping_forward_skips_the_source_and_opens_the_target() {
     // だけなので initialization 3 本を補う（補い方が正しければ 4 になる — それが検証になる）。
     assert_case_with_context(
         "jump/execute-forward",
-        IntentExecutionEvent::Jumped(Jumped::new(slug("domain-design"))),
+        IntentExecutionEvent::Jumped(Jumped::new(
+            event_id(),
+            execution_id(),
+            slug("domain-design"),
+        )),
         concat!(
             "### INITIALIZATION PHASE\n",
             "- [x] workspace-scaffold — EXECUTE\n",
@@ -367,7 +408,11 @@ fn jumping_backward_resets_the_downstream_and_hands_the_phase_row_back() {
     // ため upstream の既定値 `state-init` になる。
     assert_case(
         "jump/execute-backward",
-        IntentExecutionEvent::Jumped(Jumped::new(slug("workspace-scaffold"))),
+        IntentExecutionEvent::Jumped(Jumped::new(
+            event_id(),
+            execution_id(),
+            slug("workspace-scaffold"),
+        )),
     );
 }
 
@@ -380,7 +425,11 @@ fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
     // **最後に出発点そのもの**が来る。
     assert_case(
         "jump/execute-forward-across-phases",
-        IntentExecutionEvent::Jumped(Jumped::new(slug("contract-design"))),
+        IntentExecutionEvent::Jumped(Jumped::new(
+            event_id(),
+            execution_id(),
+            slug("contract-design"),
+        )),
     );
 }
 
@@ -393,6 +442,8 @@ fn approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan() {
     assert_case_with_context(
         "report/approved-across-phases",
         IntentExecutionEvent::GateApproved(GateApproved::new(
+            event_id(),
+            execution_id(),
             slug("delivery-planning"),
             Some("A".to_string()),
         )),
@@ -407,6 +458,8 @@ fn recomposing_keeps_existing_skip_entries_where_they_are() {
     assert_case(
         "recompose/skip-two-appends-in-graph-order",
         IntentExecutionEvent::Recomposed(Recomposed::new(
+            event_id(),
+            execution_id(),
             vec![slug("deployment-execution"), slug("feedback-optimization")],
             Vec::new(),
         )),
@@ -425,6 +478,8 @@ fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
     assert_case_with_context(
         "recompose/add-restores-conditional",
         IntentExecutionEvent::Recomposed(Recomposed::new(
+            event_id(),
+            execution_id(),
             Vec::new(),
             vec![slug("reverse-engineering")],
         )),
@@ -441,6 +496,8 @@ fn recomposing_moves_a_stage_between_the_two_plan_lists() {
     assert_case(
         "recompose/skip-one",
         IntentExecutionEvent::Recomposed(Recomposed::new(
+            event_id(),
+            execution_id(),
             vec![slug("incident-response")],
             Vec::new(),
         )),
@@ -451,13 +508,20 @@ fn recomposing_moves_a_stage_between_the_two_plan_lists() {
 fn parking_writes_the_marker_at_the_end_of_the_runtime_section() {
     assert_case(
         "park/park",
-        IntentExecutionEvent::Parked(Parked::new(slug("domain-design"))),
+        IntentExecutionEvent::Parked(Parked::new(
+            event_id(),
+            execution_id(),
+            slug("domain-design"),
+        )),
     );
 }
 
 #[test]
 fn unparking_removes_both_marker_lines() {
-    assert_case("unpark/unpark", IntentExecutionEvent::Unparked);
+    assert_case(
+        "unpark/unpark",
+        IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id())),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +548,8 @@ fn the_genesis_draws_all_sixteen_initialization_rows() {
 #[test]
 fn projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes() {
     let event = IntentExecutionEvent::GateApproved(GateApproved::new(
+        event_id(),
+        execution_id(),
         slug("practices-discovery"),
         Some("A".to_string()),
     ));
@@ -507,7 +573,7 @@ fn a_stage_outside_the_plan_is_refused_rather_than_drawn_wrong() {
     let mut model = ReadModel::new("## Stage Progress\n- [-] ghost — EXECUTE\n".to_string());
     let error = project(
         &[entry(IntentExecutionEvent::GateApproved(
-            GateApproved::new(slug("ghost"), None),
+            GateApproved::new(event_id(), execution_id(), slug("ghost"), None),
         ))],
         &plan(),
         &mut model,

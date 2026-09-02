@@ -1,22 +1,24 @@
 //! intent ジャーナル行 `payload` 列のバイト形 — `IntentEvent` の永続化 DTO。
 //!
 //! 実行のジャーナル ([`IntentExecutionEventDto`]) と同じ**外部タグ形**である: 変種名がトップレベルの
-//! 唯一のキーになる (`{"Created":{...}}`)。`Created` の中身は [`IntentDto`] そのもの —
-//! 誕生の材料と集約の全状態は同一物なので、綴りを別に定義しない (issue #50)。
+//! 唯一のキーになる (`{"Created":{...}}`)。中身は [`CreatedDto`] で、先頭に `id` (イベント
+//! 自身の識別子) と `aggregate_id` (どの集約の事実か) を持ち、以降は誕生の材料 = 集約の全状態
+//! である。内容の綴りはスナップショット行 [`IntentDto`](super::IntentDto) と部品 DTO を共有
+//! するので、面ごとの乖離は起きない (issue #50 の意図を保ったまま b40 で識別子を分けた)。
 //!
 //! [`IntentExecutionEventDto`]: super::intent_execution_event_dto::IntentExecutionEventDto
 
-use core_command_domain::orchestration::{Intent, IntentEvent};
+use core_command_domain::orchestration::IntentEvent;
 use serde::{Deserialize, Serialize};
 
+use super::created_dto::CreatedDto;
 use super::dto_decode_error::DtoDecodeError;
-use super::intent_dto::IntentDto;
 
 /// intent ジャーナル行の形。**変種名とフィールド名が契約**である。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IntentEventDto {
-    /// intent が作られた (誕生の材料 = 集約の全状態)。
-    Created(IntentDto),
+    /// intent が作られた (誕生の材料 = 集約の全状態 + イベント自身の識別子)。
+    Created(CreatedDto),
 }
 
 impl IntentEventDto {
@@ -28,9 +30,9 @@ impl IntentEventDto {
     #[must_use]
     pub fn of(event: &IntentEvent, occurred_at: chrono::DateTime<chrono::Utc>) -> IntentEventDto {
         match event {
-            IntentEvent::Created(created) => IntentEventDto::Created(IntentDto::of(&Intent::from(
-                (created.clone(), occurred_at),
-            ))),
+            IntentEvent::Created(created) => {
+                IntentEventDto::Created(CreatedDto::of(created, occurred_at))
+            }
         }
     }
 
@@ -41,7 +43,7 @@ impl IntentEventDto {
     /// 閉集合外の綴り・文法外の識別子は `Malformed` を返す。
     pub fn to_domain(&self) -> Result<IntentEvent, DtoDecodeError> {
         match self {
-            IntentEventDto::Created(intent) => Ok(IntentEvent::Created(intent.to_created()?)),
+            IntentEventDto::Created(created) => Ok(IntentEvent::Created(created.to_domain()?)),
         }
     }
 }

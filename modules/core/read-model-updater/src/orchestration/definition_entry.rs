@@ -89,8 +89,13 @@ mod tests {
     use super::*;
     use core_command_domain::workflow_definition::{
         Defined, DefinitionRevision, ExecutionKind, PhaseId, Redefined, ScopeGrid, StageGraph,
-        StageMode, StageNodeBuilder, StageNumber, StageSlug,
+        StageMode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinitionEventId,
     };
+
+    /// b40 のテスト用固定イベント識別子 (定義面)。
+    fn definition_event_id() -> WorkflowDefinitionEventId {
+        WorkflowDefinitionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").unwrap()
+    }
 
     fn definition_id() -> WorkflowDefinitionId {
         WorkflowDefinitionId::parse("claude").unwrap()
@@ -123,6 +128,7 @@ mod tests {
 
     fn defined() -> WorkflowDefinitionEvent {
         WorkflowDefinitionEvent::Defined(Defined::new(
+            definition_event_id(),
             definition_id(),
             revision('0'),
             graph(),
@@ -133,6 +139,8 @@ mod tests {
 
     fn redefined() -> WorkflowDefinitionEvent {
         WorkflowDefinitionEvent::Redefined(Redefined::new(
+            definition_event_id(),
+            definition_id(),
             revision('1'),
             graph(),
             ScopeGrid::from_graph(&graph()),
