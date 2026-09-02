@@ -1,8 +1,12 @@
 //! **取得ループ** — RMU の上側の層（2026-08-28 裁定 / `coding-rules/cqrs-boundaries.md`）。
 //!
 //! ```text
+//! 参照入力の読取 → source_digest 比較 → (変化時のみ) replace_steering   ← 別 Tx
 //! checkpoint 読取 → 差分の探り → 全履歴 1 回の読取 → 純粋投影核 → リードモデルを書く → advance_checkpoint
 //! ```
+//!
+//! 1 行目が参照入力（memory 層の規則ファイル）の面、2 行目がジャーナルの面である。規則の
+//! 編集はイベントを伴わないので、ジャーナル差分が空でも 1 行目は毎回走る。
 //!
 //! SQLite にはストリームが無いので、AWS 版 RMU が Streams から**受信する**のと同じ役割を、
 //! ここでは**自分で引く**形で果たす。イベントを運ぶのは RMU 自身であり、合成ルート（U7）は
@@ -13,7 +17,7 @@
 
 use core_command_domain::orchestration::IntentExecutionEvent;
 
-use crate::read_tables::ReadTables;
+use crate::read_tables::{ReadTables, SteeringTables};
 use crate::workspace::{ReadModel, ResolvedPlan};
 
 use super::catch_up_error::CatchUpError;
@@ -22,6 +26,7 @@ use super::journal_batch::JournalBatch;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::projection_targets::ProjectionTargets;
+use super::steering_source::SteeringSource;
 
 /// ReadModelUpdater — チェックポイント以降のイベントをリードモデルへ流し込む差分関数。
 #[derive(Debug)]
@@ -29,21 +34,25 @@ pub struct ReadModelUpdater<R> {
     journal_reader: R,
     projection: ProjectionName,
     targets: ProjectionTargets,
+    /// 参照入力 (memory 層) の読取先。ジャーナルとは別の入口である。
+    steering: SteeringSource,
     /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
     plan: Option<ResolvedPlan>,
 }
 
 impl<R: JournalReader> ReadModelUpdater<R> {
-    /// 読み手・投影名・書込先から組む。
+    /// 読み手・投影名・書込先・参照入力の読取先から組む。
     pub const fn new(
         journal_reader: R,
         projection: ProjectionName,
         targets: ProjectionTargets,
+        steering: SteeringSource,
     ) -> ReadModelUpdater<R> {
         ReadModelUpdater {
             journal_reader,
             projection,
             targets,
+            steering,
             plan: None,
         }
     }
@@ -52,6 +61,12 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     #[must_use]
     pub const fn targets(&self) -> &ProjectionTargets {
         &self.targets
+    }
+
+    /// 参照入力の読取先。
+    #[must_use]
+    pub const fn steering(&self) -> &SteeringSource {
+        &self.steering
     }
 
     /// チェックポイント以降を読んで描き、チェックポイントを進める。
@@ -77,13 +92,24 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// 行の差し替えとチェックポイントの前進は `advance_checkpoint` の中で 1 トランザクション
     /// に閉じる（裁定 §3）。
     ///
+    /// # 参照入力はジャーナルより先に見る
+    ///
+    /// steering の面（`read_steering_*`）の材料は**人が編集するファイル**であって
+    /// ジャーナルではない。規則を直してもイベントは 1 件も増えないので、ジャーナル差分が
+    /// 空でも参照入力は見る — したがって差分の探りより**前**に置く。読むのは毎回だが、
+    /// 書き替えるのは `source_digest` が動いたときだけであり、その比較と差し替えは
+    /// チェックポイントとは別のトランザクションである（設計 §3）。
+    ///
     /// # Errors
     ///
     /// ジャーナルの読取・チェックポイントの失敗（`Read`）、投影核が描けなかった
     /// （`Projection`）、状態ファイルを読めない（`StateFileRead`）・書けない
     /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）、構造化投影核が
-    /// 歴史の切り落としを見つけた（`ReadTables`）。
+    /// 歴史の切り落としを見つけた（`ReadTables`）、参照入力の規則ファイルが在るのに読めない
+    /// （`SteeringRead`）・刻めない（`SteeringPack`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
+        self.catch_up_steering().await?;
+
         let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
         // 差分読取は「進む先があるか」の**探り**にだけ使う。ここで得た行を描く材料に
         // 使ってはいけない — 構造化面は全履歴を要するので読取が 2 回になり、その間に
@@ -137,6 +163,25 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             .advance_checkpoint(&self.projection, last, &tables)
             .await?;
         Ok(last)
+    }
+
+    /// 参照入力が動いていれば steering の面を作り直す。
+    ///
+    /// 読むのは毎回である — 規則ファイルの編集はイベントを伴わないので、「動いたかどうか」を
+    /// 読まずに知る手立てが無い。読んだうえで [`MemoryRules::source_digest`] を保存済みの値と
+    /// 比べ、**同じなら 1 行も書かない**。毎回書き替えると、規則を 1 文字も触っていないのに
+    /// 束のバイトが動きうる。
+    ///
+    /// [`MemoryRules::source_digest`]: crate::read_tables::MemoryRules::source_digest
+    async fn catch_up_steering(&mut self) -> Result<(), CatchUpError> {
+        let rules = self.steering.read()?;
+        let source_digest = rules.source_digest();
+        if self.journal_reader.steering_source_digest().await? == Some(source_digest) {
+            return Ok(());
+        }
+        let tables = SteeringTables::pack(&rules)?;
+        self.journal_reader.replace_steering(&tables).await?;
+        Ok(())
     }
 
     /// 解決済み計画を得る（初回だけ履歴から引く）。

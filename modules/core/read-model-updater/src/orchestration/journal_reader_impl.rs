@@ -71,7 +71,9 @@ use core_command_domain::workflow_definition::{WorkflowDefinitionEvent, Workflow
 use super::dto::{
     DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
 };
-use crate::read_tables::{ReadTables, ensure_tables, replace_all};
+use crate::read_tables::{
+    ReadTables, SteeringTables, ensure_tables, replace_all, replace_steering,
+};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -102,6 +104,10 @@ const SELECT_CHECKPOINT: &str = "SELECT last_global_seq, anchor_aid, anchor_seq_
 
 /// チェックポイント位置の journal 行の識別子 (アンカーの記録・照合の両方が使う)。
 const SELECT_ANCHOR_ROW: &str = "SELECT aid, seq_nr FROM journal WHERE rowid = ?1";
+
+/// 保存済み steering 面の出所 (全行に同じ値が書かれているので 1 行で足りる)。
+const SELECT_STEERING_SOURCE: &str =
+    "SELECT source_digest FROM read_steering_plan ORDER BY phase LIMIT 1";
 
 /// チェックポイントの前進 (未登録なら登録)。
 const UPSERT_CHECKPOINT: &str =
@@ -222,7 +228,7 @@ impl JournalReaderImpl {
         connection
             .execute_batch(CREATE_CHECKPOINT_TABLE)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
-        // 構造化リードモデルの 13 表も我々の表である (本家の DDL とは衝突しない
+        // 構造化リードモデルの 17 表も我々の表である (本家の DDL とは衝突しない
         // `read_` 接頭)。チェックポイント表と同じく冪等な `CREATE TABLE IF NOT EXISTS`。
         ensure_tables(&connection).map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         Ok(JournalReaderImpl {
@@ -665,6 +671,30 @@ impl JournalReader for JournalReaderImpl {
             .commit()
             .map_err(|error| map_sqlite_error(&error, path.as_path()))
     }
+
+    async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
+        self.connection
+            .query_row(SELECT_STEERING_SOURCE, [], |row| row.get(0))
+            .optional()
+            .map_err(|error| map_sqlite_error(&error, self.path.as_path()))
+    }
+
+    async fn replace_steering(&mut self, tables: &SteeringTables) -> Result<(), JournalReadError> {
+        let path = self.path.clone();
+        // 読み取ってから書くので `BEGIN IMMEDIATE` で書込ロックを最初に取る (BR2.3)。
+        // チェックポイントの前進とは**別の Tx** である — 参照入力はジャーナルの走査位置と
+        // 無関係に変わるので束ねる理由が無く、束ねると規則を 1 文字直すたびにチェック
+        // ポイントの書込ロックを取り合うことになる。
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+        replace_steering(&transaction, tables)
+            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+        transaction
+            .commit()
+            .map_err(|error| map_sqlite_error(&error, path.as_path()))
+    }
 }
 
 #[cfg(test)]
@@ -833,7 +863,7 @@ mod tests {
     #[test]
     fn opening_creates_our_tables_next_to_the_upstream_ones() {
         // 同じ DB ファイルに 3 種の表が同居する: 本家の 2 つ (`journal` / `snapshot`)、
-        // 我々のチェックポイント表、そして構造化リードモデルの 13 表 (`read_` 接頭)。
+        // 我々のチェックポイント表、そして構造化リードモデルの 17 表 (`read_` 接頭)。
         // 名前が衝突しないことが同居の前提なので、集合そのものを固定する。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
@@ -866,8 +896,8 @@ mod tests {
                 .iter()
                 .filter(|name| name.starts_with("read_"))
                 .count(),
-            13,
-            "構造化リードモデルは 13 表"
+            17,
+            "構造化リードモデルは 17 表 (ジャーナル由来 15 + 参照入力由来 2)"
         );
     }
 

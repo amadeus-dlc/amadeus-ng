@@ -82,16 +82,16 @@
 | `read_next_answer` | execution_id × request_kind ∈ {bare, resume, free_text, reentry} | decision_kind（run-stage / done / parked / unpark-then-resume / resume-menu / new-work-routing / inconsistent-skip / recover-skip-inconsistency）, stage_index, gated, checkbox, reason | **`IntentExecution::next_decision(request)`**（集約へ復元） |
 | `read_next_jump` | execution_id × target_stage_slug | outcome（resolve-forward / resolve-backward / refused-init / refused-current / unknown）, direction, target_index | **`IntentExecution::jump_resolve`**（集約へ復元） |
 | `read_next_jump_phase` | execution_id × phase | target_stage_slug（そのフェーズの最初の in-scope ステージ） | 計画 + 定義述語 |
-| `read_run_stage` | execution_id × stage_index | run-stage 指示の材料一式: stage_slug, phase, lead_agent, support_agents, mode, gate（gate field）, stage_file, memory_path（ハーネス相対）, inline_context_paths, consumes, produces, sensors_applicable, next_stage（次の in-scope）, reviewer, review_class, reviewer_max_iterations, protocol_modules, narration, unit（unit-major のときの unit kind / name）, rules_in_context, **directive_digest**, **route_digest** | 計画 + 定義 + 集約のクエリ。パスは**ハーネス相対**で持ち、絶対パスはプレゼンタが Layout から補う |
+| `read_run_stage` | **definition_id × scope × stage_slug**（訂正 2026-09-03: 材料は定義 × scope で決まり実行状態に依存しない。`gate` も phase 由来） | run-stage 指示の材料一式: stage_slug, phase, lead_agent, support_agents, mode, gate（gate field）, stage_file, memory_path（ハーネス相対）, inline_context_paths, consumes, produces, sensors_applicable, next_stage（次の in-scope）, reviewer, review_class, reviewer_max_iterations, protocol_modules, narration, unit（unit-major のときの unit kind / name）, rules_in_context, **directive_digest**, **route_digest** | 計画 + 定義 + 集約のクエリ。パスは**ハーネス相対**で持ち、絶対パスはプレゼンタが Layout から補う |
 | `read_scope_change` | execution_id × scope | kind（scope-change / same-as-state）, command 材料（scope、修飾子の受け皿） | 「state scope と異なる有効 scope か」を RMU が事前計算。同じなら `same-as-state`（コントローラは bare の行へ流すだけ） |
-| `read_config_current` | execution_id | depth, test_strategy, review（現在値） | 設定変更（branch 5）の引当: DAO が要求値と `WHERE` で突き合わせ、差があれば config-change 行を返す |
+| ~~`read_config_current`~~ | — | — | **不要（訂正 2026-09-03、b41 調査）**: upstream / 現行クエリ側の config-change は現在値を見ず「`--depth` / `--test-strategy` / `--review` のいずれかが来たら出す」構文分岐。現在値との差分判定は存在しないので表を作らない |
 
-### 4.4 steering 由来（出所: **参照入力** = memory 規則ファイル `org.md` / `team.md` / `project.md` / `phases/<phase>.md` とステージの `rules_in_context`。イベントではないので、RMU が `catch_up` のたびに内容ダイジェストを見て変化時だけ再投影する）
+### 4.4 steering 由来（出所: **参照入力** = memory 規則ファイル `org.md` / `team.md` / `project.md` / `phases/<phase>.md` — 束の選択と `source_digest` は**この 4 ファイルと phase だけ**で決まる。ステージの `rules_in_context` は入力ではなく、run-stage が返す**配信済みパス台帳**（`delivered_paths`）である（訂正 2026-09-03、b41 調査）。イベントではないので、RMU が `catch_up` のたびに内容ダイジェストを見て変化時だけ再投影する）
 
 | 表 | キー | 列 |
 | --- | --- | --- |
-| `read_steering_plan` | definition_id × stage_slug | bundle_digest, part_count, source_digest（規則ファイル群の内容ダイジェスト — 再投影の要否判定に使う） |
-| `read_steering_part` | definition_id × stage_slug × part_index | rules_content（path + text の JSON 配列 — 02 §10 の分割・パック済み） |
+| `read_steering_plan` | **phase**（訂正 2026-09-03: 束は `org.md` → `team.md` → `project.md` → `phases/<phase>.md` で決まり、ステージの `rules_in_context` は選択に関与しない） | bundle_digest, part_count, delivered_paths, source_digest（規則ファイル群の内容ダイジェスト — 再投影の要否判定に使う） |
+| `read_steering_part` | **phase** × part_index | rules_content（path + text の JSON 配列 — 02 §10 の分割・パック済み） |
 
 分割・パック（`SteeringPlan::pack`）は**RMU の投影ヘルパ**へ移す（判断ではなく導出。集約の関心事
 でもない）。

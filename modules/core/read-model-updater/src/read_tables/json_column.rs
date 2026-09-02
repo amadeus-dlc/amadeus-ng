@@ -10,6 +10,8 @@
 //! 判断は 1 つも含まない。
 
 use core_command_domain::workflow_definition::{ConsumeDecl, RuleInContext, SensorRef, StageSlug};
+
+use super::rule_content::RuleContent;
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 
 /// `JsonValue` を 1 行 JSON にする。
@@ -105,6 +107,23 @@ pub(crate) fn rules_in_context(values: &[RuleInContext]) -> String {
     ))
 }
 
+/// `rules_content` — 1 部が届ける規則の断片 (パスと本文) の配列。
+///
+/// 本文はそのまま載せる — 正規化も切り詰めもしない (届く規則とファイルの規則が食い違う)。
+pub(crate) fn rule_contents(values: &[RuleContent]) -> String {
+    compact(&JsonValue::Array(
+        values
+            .iter()
+            .map(|content| {
+                let mut members = ObjectMembers::new();
+                members.insert("path", JsonValue::String(content.path().to_string()));
+                members.insert("text", JsonValue::String(content.text().to_string()));
+                JsonValue::Object(members)
+            })
+            .collect(),
+    ))
+}
+
 /// `sensors_applicable` — compile 時に確定したセンサー適用宣言の配列。
 pub(crate) fn sensors_applicable(values: &[SensorRef]) -> String {
     compact(&JsonValue::Array(
@@ -134,6 +153,7 @@ mod tests {
         assert_eq!(consumes(&[]), "[]");
         assert_eq!(rules_in_context(&[]), "[]");
         assert_eq!(sensors_applicable(&[]), "[]");
+        assert_eq!(rule_contents(&[]), "[]");
     }
 
     #[test]
@@ -177,6 +197,18 @@ mod tests {
         assert_eq!(
             sensors_applicable(&[SensorRef::new("id", "sensors/id.md", None)]),
             r#"[{"id":"id","path":"sensors/id.md","matches":null}]"#
+        );
+    }
+
+    #[test]
+    fn a_rule_piece_carries_its_path_and_its_body_verbatim() {
+        assert_eq!(
+            rule_contents(&[RuleContent::new(
+                "org.md".to_string(),
+                "# Org\r\n".to_string()
+            )]),
+            r##"[{"path":"org.md","text":"# Org\r\n"}]"##,
+            "本文は改行も含めて逐語 (JSON のエスケープだけが掛かる)"
         );
     }
 

@@ -31,6 +31,7 @@ mod projection_name;
 mod projection_name_error;
 mod projection_targets;
 mod read_model_updater;
+mod steering_source;
 mod store_failure;
 
 // ポート (trait) と実 I/O 実装
@@ -40,6 +41,7 @@ pub use journal_reader_impl::JournalReaderImpl;
 // 取得ループ (RMU コンポーネント本体 — 二層構造の上側)
 pub use projection_targets::ProjectionTargets;
 pub use read_model_updater::ReadModelUpdater;
+pub use steering_source::SteeringSource;
 
 // Domain Primitive (永続化の通番と投影の名前)
 pub use global_seq_nr::GlobalSeqNr;

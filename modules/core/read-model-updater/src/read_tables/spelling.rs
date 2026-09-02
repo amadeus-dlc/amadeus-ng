@@ -17,6 +17,15 @@ use core_command_domain::workspace::CheckboxState;
 /// `read_next_jump.outcome` の受理されなかった場合の値。
 pub(crate) const JUMP_REFUSED: &str = "refused";
 
+/// `read_scope_change.kind` の 2 値 — 要求された scope が state の scope と同じか。
+pub(crate) const fn scope_change(same_as_state: bool) -> &'static str {
+    if same_as_state {
+        "same-as-state"
+    } else {
+        "scope-change"
+    }
+}
+
 /// ワークフロー全体の 2 値。
 pub(crate) const fn status(value: Status) -> &'static str {
     match value {
@@ -92,6 +101,12 @@ mod tests {
     /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
     fn event_id() -> IntentExecutionEventId {
         IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+    }
+
+    #[test]
+    fn the_scope_comparison_spells_both_answers_in_kebab_case() {
+        assert_eq!(scope_change(true), "same-as-state");
+        assert_eq!(scope_change(false), "scope-change");
     }
 
     #[test]

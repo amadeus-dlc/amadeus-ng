@@ -1,6 +1,6 @@
 //! `JournalReader` ポート — 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 
-use crate::read_tables::ReadTables;
+use crate::read_tables::{ReadTables, SteeringTables};
 
 use super::global_seq_nr::GlobalSeqNr;
 use super::journal_batch::JournalBatch;
@@ -78,6 +78,30 @@ pub trait JournalReader {
         to: GlobalSeqNr,
         tables: &ReadTables,
     ) -> Result<(), JournalReadError>;
+
+    /// 保存済み steering 面が**どの参照入力から作られたか**。未投影なら `None`。
+    ///
+    /// 取得ループはこの値を、いま読んだ memory 層のダイジェストと比べる。同じなら
+    /// steering の行に触らない。値は不透明で、等値比較だけが契約である。
+    ///
+    /// # Errors
+    ///
+    /// ストア I/O (`Io`) を返す。
+    async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError>;
+
+    /// steering 面の行を差し替える (`read_steering_plan` / `read_steering_part`)。
+    ///
+    /// # チェックポイントとは束ねない
+    ///
+    /// この面は**参照入力由来**であり、ジャーナルの走査位置とは無関係に変わる。行が
+    /// どの参照入力のものかは `tables` が運ぶ `source_digest` が言うので、チェックポイント
+    /// と同じ Tx に閉じる理由が無い (裁定 §3 の対象はジャーナル由来の面である)。
+    /// したがって実装はこれ**だけ**を 1 つの原子的な差し替えとして書く。
+    ///
+    /// # Errors
+    ///
+    /// ストア I/O (`Io`) を返す。
+    async fn replace_steering(&mut self, tables: &SteeringTables) -> Result<(), JournalReadError>;
 }
 
 #[cfg(test)]
@@ -127,6 +151,8 @@ mod tests {
         checkpoints: BTreeMap<ProjectionName, GlobalSeqNr>,
         /// 最後に受け取った構造化リードモデル (前進と同じ呼出で届く)。
         tables: Option<ReadTables>,
+        /// 最後に受け取った steering 面 (前進とは**別の**呼出で届く)。
+        steering: Option<SteeringTables>,
     }
 
     impl JournalReader for FakeReader {
@@ -175,6 +201,21 @@ mod tests {
             self.tables = Some(tables.clone());
             Ok(())
         }
+
+        async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
+            Ok(self
+                .steering
+                .as_ref()
+                .map(|tables| tables.source_digest().to_string()))
+        }
+
+        async fn replace_steering(
+            &mut self,
+            tables: &SteeringTables,
+        ) -> Result<(), JournalReadError> {
+            self.steering = Some(tables.clone());
+            Ok(())
+        }
     }
 
     fn journal_reader() -> FakeReader {
@@ -182,6 +223,7 @@ mod tests {
             journal: vec![entry(1), entry(2)],
             checkpoints: BTreeMap::new(),
             tables: None,
+            steering: None,
         }
     }
 
@@ -249,6 +291,38 @@ mod tests {
         assert_eq!(
             journal_reader.checkpoint(&projection()).await.unwrap(),
             GlobalSeqNr::new(2)
+        );
+    }
+
+    /// 参照入力から作った steering 面 (空の memory 層で足りる)。
+    fn steering_tables() -> SteeringTables {
+        SteeringTables::pack(&crate::read_tables::MemoryRules::default()).expect("空も計画できる")
+    }
+
+    #[tokio::test]
+    async fn an_unprojected_steering_face_has_no_source_yet() {
+        let journal_reader = journal_reader();
+        assert_eq!(
+            journal_reader.steering_source_digest().await.unwrap(),
+            None,
+            "まだ 1 度も投影していない"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_steering_face_is_replaced_on_its_own_and_names_its_source() {
+        // 前進とは別の呼出である — ジャーナルの走査位置と参照入力は無関係に動く。
+        let mut journal_reader = journal_reader();
+        let tables = steering_tables();
+        journal_reader.replace_steering(&tables).await.unwrap();
+        assert_eq!(
+            journal_reader.steering_source_digest().await.unwrap(),
+            Some(tables.source_digest().to_string())
+        );
+        assert_eq!(
+            journal_reader.checkpoint(&projection()).await.unwrap(),
+            GlobalSeqNr::ZERO,
+            "steering の差し替えはチェックポイントを動かさない"
         );
     }
 

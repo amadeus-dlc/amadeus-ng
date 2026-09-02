@@ -132,16 +132,17 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 | 系統 | 読み手 | 形 | 更新者 |
 | --- | --- | --- | --- |
 | (1) 人・upstream ツール向けファイル面 | 人が開く、upstream の hook / ステージが読む | `aidlc-state.md`、監査シャード、配布束の面 `stage-graph.json` / `scope-grid.json` | RMU（バイト互換、golden 固定） |
-| (2) CLI 読取コマンド向け構造化リードモデル | `next` / `continue` /（将来）`--status` / `doctor` の DAO | イベントストアと同じ SQLite ファイル（`aidlc/spaces/<space>/intents/.aidlc-store.sqlite`）の接頭辞 `read_` の表 | RMU（`catch_up` ごとに**全履歴から再計算し全差し替え**、チェックポイント前進と**同一トランザクション**） |
+| (2) CLI 読取コマンド向け構造化リードモデル | `next` / `continue` /（将来）`--status` / `doctor` の DAO | イベントストアと同じ SQLite ファイル（`aidlc/spaces/<space>/intents/.aidlc-store.sqlite`）の接頭辞 `read_` の表 | RMU。**ジャーナル由来の表**は `catch_up` ごとに**全履歴から再計算し全差し替え**、チェックポイント前進と**同一トランザクション**。**参照入力由来の表**（steering — 下記の例外）は `source_digest` の比較で変化時だけ差し替え、**別トランザクション** |
 
-(2) の規範:
+(2) の規範（**ジャーナル由来の表**に適用。steering の 2 表は下の例外）:
 
 - **行の値はすべて集約のクエリメソッドの戻り値の写し**である。RMU はジャーナル 3 ストリーム（intent / 実行 / 定義）から `replay` で集約を起こし（投影核の入口はイベント列 — cqrs-boundaries 規則 3）、`next_decision` / `jump_resolve` / `scope_cost` / 述語面を**呼んで**行に書く。判断を RMU で再実装しない。
 - **非正規化**する — 読取コマンドが 1 回の引当（`WHERE`）で答えを得る形に置く。クエリ側の DAO はキーで引くだけで、行に無い事実を作らない（作れば CQRS 違反 — オーナー裁定）。
 - 全行が `as_of`（投影に使った最後のジャーナル通番 = `GlobalSeqNr`）を持つ。壁時計は読まない（冪等・決定性）。
+- **例外 — steering の参照入力由来の表**（`read_steering_plan` / `read_steering_part`、b41）: 出所はイベントではなく memory 規則ファイル（`org.md` / `team.md` / `project.md` / `phases/<phase>.md`）なので、行は集約クエリの写しではなく**規則本文の分割・パック（判断を含まない計算）**であり、`as_of` を持たず、代わりに `source_digest`（規則ファイル群の内容ダイジェスト）を持つ。`catch_up` ごとに `source_digest` を比べ、変化時だけ**別トランザクション**で全差し替えする（オーナー裁定 2026-09-02 §10-4）。
 - 表の作成は `CREATE TABLE IF NOT EXISTS`（`amadeus_projection_checkpoint` と同じ流儀）、RMU の `JournalReaderImpl::open` が行う。
 
-表カタログ（b39 で作る 13 表。列の定義と計算元は `construction/b39-rmu-read-tables/design.md` §4.1 が正本。b40 で `read_run_stage` / `read_scope_change` / `read_config_current` / `read_steering_plan` / `read_steering_part` を追加する）:
+表カタログ（b39 の 13 表 + b41 の 4 表と `read_execution.scope`。列の定義と計算元は `construction/b39-rmu-read-tables/design.md` §4.1 と `construction/b41-rmu-run-stage-steering/design.md` §1 が正本。`read_config_current` は不要 — config-change は現在値を見ない構文分岐）:
 
 | 表 | キー | 出所の集約 |
 | --- | --- | --- |
@@ -150,6 +151,9 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 | `read_execution` / `read_execution_stage` | execution_id（× stage_index） | `IntentExecution`（`Started` からの再生） |
 | `read_next_answer` | execution_id × request_kind ∈ {`bare`, `resume`, `free-text`, `reentry`}（kebab-case） | `IntentExecution::next_decision` |
 | `read_next_jump` / `read_next_jump_phase` | execution_id × target_index / phase | `IntentExecution::jump_resolve` / `first_in_scope_of_phase` |
+| `read_run_stage`（b41） | definition_id × scope × stage_slug | `WorkflowDefinition`（`StageNode` の属性、`stages_in_scope` の次 EXECUTE、相対パス規則、`route_digest` / `directive_digest`） |
+| `read_scope_change`（b41） | execution_id × scope | `Intent::scope` との一致（same-as-state / scope-change） |
+| `read_steering_plan` / `read_steering_part`（b41） | phase（× part_index） | **参照入力**（memory 規則ファイル `org.md` / `team.md` / `project.md` / `phases/<phase>.md`）— イベントではないので `catch_up` ごとに内容ダイジェストを比べ、変化時だけ再パック（別 Tx） |
 
 前提となるドメインの是正（b39）: `Started` は**集約 id と解決済み計画の写し**を運ぶ（従来は `intent_id` のみで、genesis が `&Intent` を要し自ストリームだけで再生できなかった）。`IntentExecution: From<(Started, DateTime<Utc>)>` が genesis イベントからの唯一の状態導出であり、`start` はそれを通る（`Intent` / `WorkflowDefinition` と同型 — coding-rules/aggregate-commands.md）。
 

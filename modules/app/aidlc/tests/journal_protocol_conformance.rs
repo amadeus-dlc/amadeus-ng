@@ -75,7 +75,7 @@ use core_read_model_updater::orchestration::IntentExecutionEventDto as Projectio
 use core_read_model_updater::orchestration::WorkflowDefinitionEventDto as ProjectionDefinitionEventDto;
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
-    ReadModelUpdater,
+    ReadModelUpdater, SteeringSource,
 };
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
@@ -385,6 +385,8 @@ struct RealProjection {
     /// キャッチアップが一度でも走ったか (モデルとの通番写像の分岐点 — 下の
     /// `INTENT_ROW_OFFSET` を参照)。
     caught_up: bool,
+    /// 参照入力の読取先 (置かないので空計画になる)。
+    memory_dir: std::path::PathBuf,
 }
 
 impl RealProjection {
@@ -393,8 +395,12 @@ impl RealProjection {
         let state_file = dir.path().join("aidlc-state.md");
         std::fs::write(&state_file, synthetic_state_file()).expect("状態ファイルを置く");
         let audit_shard = dir.path().join("audit/host-abcd1234.md");
+        // memory 層は置かない — 規則未整備は正常であり、steering の面は空計画になる
+        // (このモデルが抽象するのは実行のストリームだけである)。
+        let memory_dir = dir.path().join("memory");
         RealProjection {
             targets: ProjectionTargets::new(state_file, audit_shard),
+            memory_dir,
             _dir: dir,
             read_model_seq: 0,
             caught_up: false,
@@ -407,6 +413,7 @@ impl RealProjection {
             store.journal_reader(),
             projection_name(),
             self.targets.clone(),
+            SteeringSource::new(self.memory_dir.clone()),
         );
         let reached = updater.catch_up().await.expect("キャッチアップは通る");
         self.read_model_seq = reached.to_u64();

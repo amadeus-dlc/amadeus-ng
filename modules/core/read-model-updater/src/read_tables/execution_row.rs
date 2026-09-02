@@ -1,7 +1,7 @@
 //! `ExecutionRow` — `read_execution` の 1 行 (実行 1 本の現在状態)。
 
 use chrono::SecondsFormat;
-use core_command_domain::orchestration::{IntentExecution, StageIndex};
+use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex};
 
 use super::spelling;
 use super::stage_lookup::slug_at;
@@ -15,6 +15,7 @@ use super::stage_lookup::slug_at;
 pub struct ExecutionRow {
     execution_id: String,
     intent_id: String,
+    scope: String,
     status: String,
     cursor_index: Option<usize>,
     cursor_slug: Option<String>,
@@ -30,12 +31,17 @@ pub struct ExecutionRow {
 
 impl ExecutionRow {
     /// 実行の集約を 1 行へ写す (**この型の唯一の構築経路**)。
+    ///
+    /// `scope` だけは実行が持たない — 選ばれた scope は静的な intent の持ち物なので、
+    /// この実行が指す intent から**非正規化して**載せる。読取コマンドは scope で分岐する
+    /// たびに intent の行を引き直さずに済む (裁定 §10-1)。
     #[must_use]
-    pub fn of(execution: &IntentExecution) -> ExecutionRow {
+    pub fn of(execution: &IntentExecution, intent: &Intent) -> ExecutionRow {
         let cursor = execution.cursor();
         ExecutionRow {
             execution_id: execution.id().as_str().to_string(),
             intent_id: execution.intent_id().as_str().to_string(),
+            scope: intent.scope().to_string(),
             status: spelling::status(execution.status()).to_string(),
             cursor_index: Some(cursor.to_usize()),
             cursor_slug: slug_at(execution, cursor),
@@ -62,6 +68,12 @@ impl ExecutionRow {
     #[must_use]
     pub fn intent_id(&self) -> &str {
         &self.intent_id
+    }
+
+    /// 選ばれたスコープ名 (intent から非正規化)。
+    #[must_use]
+    pub fn scope(&self) -> &str {
+        &self.scope
     }
 
     /// ワークフロー全体の 2 値 (`running` / `completed`)。
