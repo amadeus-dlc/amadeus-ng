@@ -1,6 +1,6 @@
 //! `ReadModelUpdater::catch_up` の失敗。
 
-use crate::read_tables::ReadTablesError;
+use crate::read_tables::{ReadTablesError, UnsplittableSection};
 use crate::workspace::{
     AuditShardWriteError, ProjectionError, StateFileReadError, StateFileWriteError,
 };
@@ -42,6 +42,22 @@ pub enum CatchUpError {
     /// 読み替えて部分的な行を書くと、読取コマンドが「間違った答えが在る」を見ることに
     /// なるので止める。
     ReadTables(ReadTablesError),
+    /// 参照入力 (memory 層) の規則ファイルが**在るのに読めない**。
+    ///
+    /// 無いのは正常 (規則未整備) だが、読めないのは blocking である — 規則を静かに落として
+    /// 進むと、届く steering が痩せたまま誰も気づかない (02 §10)。運ぶのは材料だけ
+    /// (どのファイルが・どう読めなかったか) で、利用者向けの文言は出す側が組む。
+    SteeringRead {
+        /// 読めなかった規則ファイルのパス (読み手が決めた綴り)。
+        path: String,
+        /// OS が言った理由の分類。
+        kind: std::io::ErrorKind,
+    },
+    /// 参照入力を輸送目標未満へ刻めなかった (防御的)。
+    ///
+    /// 1 コードポイントが目標を超えるセクションでのみ成立する。1 フェーズでも刻めなければ
+    /// steering の行を 1 つも書かずに止める。
+    SteeringPack(UnsplittableSection),
 }
 
 impl core::fmt::Display for CatchUpError {
@@ -57,6 +73,10 @@ impl core::fmt::Display for CatchUpError {
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
             CatchUpError::MixedIntents => f.write_str("mixed intents"),
             CatchUpError::ReadTables(inner) => write!(f, "read tables: {inner}"),
+            CatchUpError::SteeringRead { path, kind } => {
+                write!(f, "steering read: {kind:?} at {path}")
+            }
+            CatchUpError::SteeringPack(inner) => write!(f, "steering pack: {inner}"),
         }
     }
 }
@@ -77,10 +97,12 @@ impl std::error::Error for CatchUpError {
             CatchUpError::Projection(inner) => Some(inner),
             CatchUpError::AuditShardWrite(inner) => Some(inner),
             CatchUpError::ReadTables(inner) => Some(inner),
+            CatchUpError::SteeringPack(inner) => Some(inner),
             CatchUpError::StateFileRead(_)
             | CatchUpError::StateFileWrite(_)
             | CatchUpError::PlanUnavailable
-            | CatchUpError::MixedIntents => None,
+            | CatchUpError::MixedIntents
+            | CatchUpError::SteeringRead { .. } => None,
         }
     }
 }
@@ -100,6 +122,12 @@ impl From<ProjectionError> for CatchUpError {
 impl From<ReadTablesError> for CatchUpError {
     fn from(inner: ReadTablesError) -> CatchUpError {
         CatchUpError::ReadTables(inner)
+    }
+}
+
+impl From<UnsplittableSection> for CatchUpError {
+    fn from(inner: UnsplittableSection) -> CatchUpError {
+        CatchUpError::SteeringPack(inner)
     }
 }
 
@@ -194,6 +222,19 @@ mod tests {
                 .expect("構造化投影の失敗へ連鎖する")
                 .to_string(),
             "missing genesis for claude"
+        );
+
+        let steering_read = CatchUpError::SteeringRead {
+            path: "memory/team.md".to_string(),
+            kind: std::io::ErrorKind::PermissionDenied,
+        };
+        assert_eq!(
+            steering_read.to_string(),
+            "steering read: PermissionDenied at memory/team.md"
+        );
+        assert!(
+            std::error::Error::source(&steering_read).is_none(),
+            "材料は自分の Display に載っている"
         );
 
         let boxed: Box<dyn std::error::Error> = Box::new(projection);

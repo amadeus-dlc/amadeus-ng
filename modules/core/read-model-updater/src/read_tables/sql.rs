@@ -17,6 +17,7 @@
 use rusqlite::{Connection, Transaction, params};
 
 use super::ReadTables;
+use super::steering_tables::SteeringTables;
 
 /// 数を SQLite の `INTEGER` (i64) へ写す。
 ///
@@ -32,7 +33,7 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
     value.map(integer).transpose()
 }
 
-/// 13 表の DDL (この順に作る)。
+/// 17 表の DDL (この順に作る — ジャーナル由来 15 + 参照入力由来 2)。
 const CREATE_TABLES: &str = "
 CREATE TABLE IF NOT EXISTS read_definition (
   definition_id TEXT PRIMARY KEY,
@@ -204,9 +205,56 @@ CREATE TABLE IF NOT EXISTS read_next_jump_phase (
   as_of        INTEGER NOT NULL,
   PRIMARY KEY (execution_id, phase)
 );
+CREATE TABLE IF NOT EXISTS read_run_stage (
+  definition_id            TEXT    NOT NULL,
+  scope                    TEXT    NOT NULL,
+  stage_slug               TEXT    NOT NULL,
+  phase                    TEXT    NOT NULL,
+  lead_agent               TEXT    NOT NULL,
+  support_agents           TEXT    NOT NULL,
+  mode                     TEXT    NOT NULL,
+  gate_default             INTEGER NOT NULL,
+  inline_context_paths_rel TEXT    NOT NULL,
+  stage_file_rel           TEXT    NOT NULL,
+  memory_path_rel          TEXT    NOT NULL,
+  consumes_rel             TEXT    NOT NULL,
+  produces_rel             TEXT    NOT NULL,
+  sensors_applicable       TEXT    NOT NULL,
+  reviewer                 TEXT,
+  reviewer_max_iterations  INTEGER,
+  review_class             TEXT,
+  protocol_modules         TEXT    NOT NULL,
+  next_stage_name          TEXT,
+  route_digest             TEXT    NOT NULL,
+  directive_digest         TEXT    NOT NULL,
+  as_of                    INTEGER NOT NULL,
+  PRIMARY KEY (definition_id, scope, stage_slug)
+);
+CREATE TABLE IF NOT EXISTS read_scope_change (
+  execution_id TEXT    NOT NULL,
+  scope        TEXT    NOT NULL,
+  kind         TEXT    NOT NULL,
+  as_of        INTEGER NOT NULL,
+  PRIMARY KEY (execution_id, scope)
+);
+CREATE TABLE IF NOT EXISTS read_steering_plan (
+  phase           TEXT PRIMARY KEY,
+  bundle_digest   TEXT    NOT NULL,
+  part_count      INTEGER NOT NULL,
+  delivered_paths TEXT    NOT NULL,
+  source_digest   TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS read_steering_part (
+  phase         TEXT    NOT NULL,
+  part_index    INTEGER NOT NULL,
+  rules_content TEXT    NOT NULL,
+  PRIMARY KEY (phase, part_index)
+);
 ";
 
-/// 全差し替えの `DELETE` (DDL と同じ 13 表・同じ順)。
+/// ジャーナル由来 15 表の全差し替えの `DELETE` (DDL と同じ順)。
+///
+/// steering の 2 表はここに**含めない** — 別の投影単位であり、別 Tx で差し替わる。
 const DELETE_TABLES: &str = "
 DELETE FROM read_definition;
 DELETE FROM read_definition_stage;
@@ -221,9 +269,17 @@ DELETE FROM read_execution_stage;
 DELETE FROM read_next_answer;
 DELETE FROM read_next_jump;
 DELETE FROM read_next_jump_phase;
+DELETE FROM read_run_stage;
+DELETE FROM read_scope_change;
 ";
 
-/// 13 表を (無ければ) 作る。冪等なので何度呼んでもよい。
+/// 参照入力由来 2 表の全差し替えの `DELETE`。
+const DELETE_STEERING_TABLES: &str = "
+DELETE FROM read_steering_plan;
+DELETE FROM read_steering_part;
+";
+
+/// 17 表を (無ければ) 作る。冪等なので何度呼んでもよい。
 ///
 /// # Errors
 ///
@@ -232,7 +288,7 @@ pub(crate) fn ensure_tables(connection: &Connection) -> Result<(), rusqlite::Err
     connection.execute_batch(CREATE_TABLES)
 }
 
-/// 13 表の行を全部差し替える。
+/// ジャーナル由来 15 表の行を全部差し替える。
 ///
 /// トランザクションは**呼出側が持つ** — チェックポイントの前進と同じ 1 つの Tx に閉じる
 /// ためである (裁定 §3)。
@@ -242,7 +298,7 @@ pub(crate) fn ensure_tables(connection: &Connection) -> Result<(), rusqlite::Err
 /// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
 #[allow(
     clippy::too_many_lines,
-    reason = "13 表の INSERT を 1 か所に並べる — 表と列の対応が一覧で読めることを優先する"
+    reason = "15 表の INSERT を 1 か所に並べる — 表と列の対応が一覧で読めることを優先する"
 )]
 pub(crate) fn replace_all(
     transaction: &Transaction<'_>,
@@ -518,6 +574,52 @@ pub(crate) fn replace_all(
         )?;
     }
 
+    for row in tables.run_stages() {
+        transaction.execute(
+            "INSERT INTO read_run_stage
+             (definition_id, scope, stage_slug, phase, lead_agent, support_agents, mode,
+              gate_default, inline_context_paths_rel, stage_file_rel, memory_path_rel,
+              consumes_rel, produces_rel, sensors_applicable, reviewer,
+              reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
+              route_digest, directive_digest, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                     ?17, ?18, ?19, ?20, ?21, ?22)",
+            params![
+                row.definition_id(),
+                row.scope(),
+                row.stage_slug(),
+                row.phase(),
+                row.lead_agent(),
+                row.support_agents(),
+                row.mode(),
+                row.gate_default(),
+                row.inline_context_paths_rel(),
+                row.stage_file_rel(),
+                row.memory_path_rel(),
+                row.consumes_rel(),
+                row.produces_rel(),
+                row.sensors_applicable(),
+                row.reviewer(),
+                row.reviewer_max_iterations(),
+                row.review_class(),
+                row.protocol_modules(),
+                row.next_stage_name(),
+                row.route_digest(),
+                row.directive_digest(),
+                as_of
+            ],
+        )?;
+    }
+
+    for row in tables.scope_changes() {
+        transaction.execute(
+            "INSERT INTO read_scope_change
+             (execution_id, scope, kind, as_of)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![row.execution_id(), row.scope(), row.kind(), as_of],
+        )?;
+    }
+
     for row in tables.next_jump_phases() {
         transaction.execute(
             "INSERT INTO read_next_jump_phase
@@ -536,6 +638,53 @@ pub(crate) fn replace_all(
     Ok(())
 }
 
+/// steering の 2 表の行を全部差し替える。
+///
+/// **ジャーナル由来の差し替えとは別のトランザクションである** — 参照入力はジャーナルの
+/// 走査位置と無関係に変わるので、チェックポイントの前進と束ねる理由が無い。整合性の鍵は
+/// `source_digest` であり、行と一緒に書かれる (設計 §3)。
+///
+/// トランザクションは**呼出側が持つ** (ジャーナル側と同じ流儀)。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn replace_steering(
+    transaction: &Transaction<'_>,
+    tables: &SteeringTables,
+) -> Result<(), rusqlite::Error> {
+    transaction.execute_batch(DELETE_STEERING_TABLES)?;
+    // 素になった参照入力はスナップショット全体の性質なので、全行に同じ値を書く
+    // (`as_of` と同じ流儀)。
+    let source_digest = tables.source_digest();
+
+    for row in tables.plans() {
+        transaction.execute(
+            "INSERT INTO read_steering_plan
+             (phase, bundle_digest, part_count, delivered_paths, source_digest)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                row.phase(),
+                row.bundle_digest(),
+                integer(row.part_count())?,
+                row.delivered_paths(),
+                source_digest
+            ],
+        )?;
+    }
+
+    for row in tables.parts() {
+        transaction.execute(
+            "INSERT INTO read_steering_part
+             (phase, part_index, rules_content)
+             VALUES (?1, ?2, ?3)",
+            params![row.phase(), integer(row.part_index())?, row.rules_content()],
+        )?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     // 想定外ケースの即時失敗はテストの検証手段である (house style)。
@@ -546,9 +695,11 @@ mod tests {
 
     use super::*;
     use crate::orchestration::JournalBatch;
+    use crate::read_tables::{MemoryRules, RuleContent};
+    use std::collections::BTreeMap;
 
-    /// 13 表の名前 (DDL と `DELETE` が同じ集合を指していることを固定する)。
-    const TABLES: [&str; 13] = [
+    /// ジャーナル由来の表の名前 (DDL と `DELETE` が同じ集合を指していることを固定する)。
+    const TABLES: [&str; 15] = [
         "read_definition",
         "read_definition_stage",
         "read_definition_scope",
@@ -562,14 +713,19 @@ mod tests {
         "read_next_answer",
         "read_next_jump",
         "read_next_jump_phase",
+        "read_run_stage",
+        "read_scope_change",
     ];
 
+    /// 参照入力由来の表の名前 (別 Tx で差し替わる — `as_of` を持たない)。
+    const STEERING_TABLES: [&str; 2] = ["read_steering_plan", "read_steering_part"];
+
     #[test]
-    fn the_ddl_creates_all_thirteen_tables_and_is_idempotent() {
+    fn the_ddl_creates_every_table_and_is_idempotent() {
         let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
         ensure_tables(&connection).expect("初回の DDL");
         ensure_tables(&connection).expect("2 回目も通る (IF NOT EXISTS)");
-        for name in TABLES {
+        for name in TABLES.into_iter().chain(STEERING_TABLES) {
             let found: String = connection
                 .query_row(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -579,6 +735,120 @@ mod tests {
                 .unwrap_or_else(|_| panic!("{name} が作られている"));
             assert_eq!(found, name);
         }
+    }
+
+    /// 表の列の有無 (`pragma_table_info` の 1 行検索)。
+    fn has_column(connection: &Connection, table: &str, column: &str) -> bool {
+        let count: i64 = connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+                params![column],
+                |row| row.get(0),
+            )
+            .expect("pragma は引ける");
+        count == 1
+    }
+
+    #[test]
+    fn the_steering_tables_carry_no_scan_position_and_name_their_source_instead() {
+        // steering の面は参照入力由来である — ジャーナルの走査位置とは無関係なので
+        // `as_of` を持たない。いつ時点かを名乗るのは `source_digest` である。
+        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        for name in STEERING_TABLES {
+            assert!(!has_column(&connection, name, "as_of"), "{name}");
+        }
+        assert!(has_column(
+            &connection,
+            "read_steering_plan",
+            "source_digest"
+        ));
+    }
+
+    #[test]
+    fn the_steering_rows_replace_wholesale_and_report_the_source_they_came_from() {
+        let mut connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+
+        let big = "x".repeat(12 * 1024);
+        let rules = MemoryRules::new(
+            vec![RuleContent::new(
+                "org.md".to_string(),
+                format!("# A\n{big}\n# B\n{big}\n"),
+            )],
+            BTreeMap::new(),
+        );
+        let tables = SteeringTables::pack(&rules).expect("パックできる");
+        let transaction = connection.transaction().expect("Tx は張れる");
+        replace_steering(&transaction, &tables).expect("書ける");
+        transaction.commit().expect("commit");
+
+        let plans: i64 = connection
+            .query_row("SELECT COUNT(*) FROM read_steering_plan", [], |row| {
+                row.get(0)
+            })
+            .expect("引ける");
+        assert_eq!(plans, 5, "5 フェーズすべてに計画の行が立つ");
+        let parts: i64 = connection
+            .query_row("SELECT COUNT(*) FROM read_steering_part", [], |row| {
+                row.get(0)
+            })
+            .expect("引ける");
+        assert_eq!(parts, 10, "2 部 × 5 フェーズ");
+        let digest: String = connection
+            .query_row(
+                "SELECT source_digest FROM read_steering_plan ORDER BY phase LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("引ける");
+        assert_eq!(digest, tables.source_digest());
+
+        // 2 度目は全差し替え — 前の行が残らない。
+        let smaller = SteeringTables::pack(&MemoryRules::default()).expect("空も計画できる");
+        let transaction = connection.transaction().expect("Tx は張れる");
+        replace_steering(&transaction, &smaller).expect("書ける");
+        transaction.commit().expect("commit");
+        let parts: i64 = connection
+            .query_row("SELECT COUNT(*) FROM read_steering_part", [], |row| {
+                row.get(0)
+            })
+            .expect("引ける");
+        assert_eq!(parts, 0, "古い部が残らない");
+    }
+
+    #[test]
+    fn the_journal_rows_and_the_steering_rows_are_replaced_independently() {
+        // steering は別 Tx で差し替わる — ジャーナル側の全差し替えが steering の行を
+        // 消してしまうと、参照入力が変わっていないのに束が消える。
+        let mut connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        let steering = SteeringTables::pack(&MemoryRules::new(
+            vec![RuleContent::new(
+                "org.md".to_string(),
+                "# Org\n".to_string(),
+            )],
+            BTreeMap::new(),
+        ))
+        .expect("パックできる");
+        let transaction = connection.transaction().expect("Tx は張れる");
+        replace_steering(&transaction, &steering).expect("書ける");
+        transaction.commit().expect("commit");
+
+        let transaction = connection.transaction().expect("Tx は張れる");
+        replace_all(
+            &transaction,
+            &ReadTables::project(&JournalBatch::empty()).expect("投影"),
+        )
+        .expect("書ける");
+        transaction.commit().expect("commit");
+
+        let parts: i64 = connection
+            .query_row("SELECT COUNT(*) FROM read_steering_part", [], |row| {
+                row.get(0)
+            })
+            .expect("引ける");
+        assert_eq!(parts, 5, "ジャーナル側の差し替えは steering の行に触らない");
     }
 
     #[test]
@@ -624,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn the_delete_batch_covers_the_same_thirteen_tables() {
+    fn the_delete_batch_covers_the_same_journal_tables() {
         // `DELETE` が 1 表でも欠けると、その表だけ古い行が残る (全差し替えの穴)。
         for name in TABLES {
             assert!(

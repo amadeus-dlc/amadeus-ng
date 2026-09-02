@@ -13,6 +13,19 @@
 //! **非正規化リードモデル**である。クエリ側が系統 (1) を逆パースして自分で計算することは
 //! 禁じられている (b26 / b27 の誤りの是正)。
 //!
+//! # 材料が 2 系統ある
+//!
+//! この層が作る表は 2 つの投影単位に分かれる。
+//!
+//! | 投影単位 | 材料 | 表 | 時点の名乗り | Tx |
+//! | --- | --- | --- | --- | --- |
+//! | [`ReadTables`] | ジャーナルの全履歴 | 15 表 | `as_of` (走査位置) | チェックポイントと同一 |
+//! | [`SteeringTables`] | 参照入力 (memory 層の規則ファイル) | 2 表 | `source_digest` | 別 Tx |
+//!
+//! 分けるのは、規則ファイルの編集がイベントを 1 件も伴わないからである。ジャーナルの走査
+//! 位置と無関係に変わるものを `as_of` で名乗らせると、「進んでいないのに行が動いた」という
+//! 読めない断面が残る。
+//!
 //! # 全再計算・全差し替え
 //!
 //! 投影は差分ではなく**全履歴からの再計算**であり、書込は全行の差し替えである (裁定 §5)。
@@ -34,7 +47,7 @@ use std::collections::BTreeMap;
 
 use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent};
 use core_command_domain::workflow_definition::{
-    PhaseId, PlanAction, WorkflowDefinition, WorkflowDefinitionEvent,
+    PhaseId, PlanAction, StageNode, WorkflowDefinition, WorkflowDefinitionEvent,
 };
 
 use crate::orchestration::{DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry};
@@ -45,19 +58,28 @@ mod definition_scope_phase_entry_row;
 mod definition_scope_row;
 mod definition_scope_stage_row;
 mod definition_stage_row;
+mod digest;
 mod execution_row;
 mod execution_stage_row;
 mod intent_row;
 mod intent_stage_row;
 mod json_column;
+mod memory_rules;
 mod next_answer_row;
 mod next_jump_phase_row;
 mod next_jump_row;
 mod read_tables_error;
 mod request_kind;
+mod rule_content;
+mod run_stage_row;
+mod scope_change_row;
 mod spelling;
 mod sql;
 mod stage_lookup;
+mod steering_part_row;
+mod steering_plan_row;
+mod steering_tables;
+mod unsplittable_section;
 
 pub use definition_row::DefinitionRow;
 pub use definition_scope_keyword_row::DefinitionScopeKeywordRow;
@@ -69,14 +91,22 @@ pub use execution_row::ExecutionRow;
 pub use execution_stage_row::ExecutionStageRow;
 pub use intent_row::IntentRow;
 pub use intent_stage_row::IntentStageRow;
+pub use memory_rules::MemoryRules;
 pub use next_answer_row::NextAnswerRow;
 pub use next_jump_phase_row::NextJumpPhaseRow;
 pub use next_jump_row::NextJumpRow;
 pub use read_tables_error::ReadTablesError;
 pub use request_kind::RequestKind;
+pub use rule_content::RuleContent;
+pub use run_stage_row::RunStageRow;
+pub use scope_change_row::ScopeChangeRow;
+pub use steering_part_row::SteeringPartRow;
+pub use steering_plan_row::SteeringPlanRow;
+pub use steering_tables::SteeringTables;
+pub use unsplittable_section::UnsplittableSection;
 
 // 表の DDL と全差し替えは取得ループ (`JournalReaderImpl`) だけが呼ぶ内部の口である。
-pub(crate) use sql::{ensure_tables, replace_all};
+pub(crate) use sql::{ensure_tables, replace_all, replace_steering};
 
 /// 1 回の投影で作った `read_*` 表の全行。
 ///
@@ -90,6 +120,7 @@ pub struct ReadTables {
     definition_scope_keywords: Vec<DefinitionScopeKeywordRow>,
     definition_scope_stages: Vec<DefinitionScopeStageRow>,
     definition_scope_phase_entries: Vec<DefinitionScopePhaseEntryRow>,
+    run_stages: Vec<RunStageRow>,
     intents: Vec<IntentRow>,
     intent_stages: Vec<IntentStageRow>,
     executions: Vec<ExecutionRow>,
@@ -97,6 +128,7 @@ pub struct ReadTables {
     next_answers: Vec<NextAnswerRow>,
     next_jumps: Vec<NextJumpRow>,
     next_jump_phases: Vec<NextJumpPhaseRow>,
+    scope_changes: Vec<ScopeChangeRow>,
     as_of: Option<GlobalSeqNr>,
 }
 
@@ -121,16 +153,19 @@ impl ReadTables {
     /// 集約の再構成が壊れた歴史を踏んだとき (通番の飛び・不変条件違反)。再構成は失敗を
     /// 返さずクラッシュするのがキャノンである (オーナー裁定 2026-08-30)。
     pub fn project(history: &JournalBatch) -> Result<ReadTables, ReadTablesError> {
-        let mut definitions = Vec::new();
+        let mut definitions_rows = Vec::new();
         let mut definition_stages = Vec::new();
         let mut definition_scopes = Vec::new();
         let mut definition_scope_keywords = Vec::new();
         let mut definition_scope_stages = Vec::new();
         let mut definition_scope_phase_entries = Vec::new();
+        let mut run_stages = Vec::new();
 
-        for definition in replay_definitions(history)? {
+        // 定義は実行の行 (scope-change) でも要るので、束ねた形で持ち回る。
+        let definitions = replay_definitions(history)?;
+        for definition in &definitions {
             let id = definition.id();
-            definitions.push(DefinitionRow::of(&definition));
+            definitions_rows.push(DefinitionRow::of(definition));
             for (position, node) in definition.graph().nodes().iter().enumerate() {
                 definition_stages.push(DefinitionStageRow::of(id, position, node));
             }
@@ -138,7 +173,7 @@ impl ReadTables {
             // 先着」になる (選択ではなく決定的な畳み込み)。
             let mut first_scope_of_keyword: BTreeMap<&str, &str> = BTreeMap::new();
             for (scope, metadata) in definition.scopes() {
-                definition_scopes.push(DefinitionScopeRow::of(&definition, scope, metadata));
+                definition_scopes.push(DefinitionScopeRow::of(definition, scope, metadata));
                 for keyword in metadata.keywords() {
                     first_scope_of_keyword
                         .entry(keyword.as_str())
@@ -162,6 +197,18 @@ impl ReadTables {
                             .push(DefinitionScopePhaseEntryRow::of(id, scope, phase, first));
                     }
                 }
+                // run-stage の材料は定義 × scope × 全ステージ。EXECUTE で絞らないのは、
+                // SKIP のステージにも「--stage で名指しされたら何を出すか」があるからで
+                // ある (計画は実行が畳む)。
+                for node in definition.graph().nodes() {
+                    run_stages.push(RunStageRow::of(
+                        id,
+                        scope,
+                        node,
+                        &definition.stage_route(scope, node),
+                        next_in_scope_name(definition, scope, node),
+                    ));
+                }
             }
             for (keyword, scope) in first_scope_of_keyword {
                 definition_scope_keywords.push(DefinitionScopeKeywordRow::of(id, keyword, scope));
@@ -182,6 +229,7 @@ impl ReadTables {
         let mut next_answers = Vec::new();
         let mut next_jumps = Vec::new();
         let mut next_jump_phases = Vec::new();
+        let mut scope_changes = Vec::new();
         for execution in replay_executions(history)? {
             let intent = history
                 .intents()
@@ -191,7 +239,22 @@ impl ReadTables {
                     execution_id: execution.id().as_str().to_string(),
                     intent_id: execution.intent_id().as_str().to_string(),
                 })?;
-            executions.push(ExecutionRow::of(&execution));
+            executions.push(ExecutionRow::of(&execution, intent));
+            // 要求されうる scope の照合。有効 scope の権威は定義なので、その定義が履歴に
+            // 無ければ 1 行も立たない — 「どれが有効か」を知らないまま行を書くと、読み手は
+            // 無効な scope を有効だと読む。
+            if let Some(definition) = definitions
+                .iter()
+                .find(|definition| definition.id() == intent.definition_id())
+            {
+                for scope in definition.valid_scopes() {
+                    scope_changes.push(ScopeChangeRow::of(
+                        execution.id(),
+                        scope,
+                        scope == intent.scope(),
+                    ));
+                }
+            }
             // 位置は添字帳の索引からしか作れない (`StageIndex` の構築子は集約が持つ) ので、
             // 引けた索引だけを対にして回す。添字帳の長さは stage_count と同じなので実際に
             // 落ちる索引は無く、`filter_map` は「位置を作る」ためだけに在る。
@@ -215,12 +278,13 @@ impl ReadTables {
         }
 
         Ok(ReadTables {
-            definitions,
+            definitions: definitions_rows,
             definition_stages,
             definition_scopes,
             definition_scope_keywords,
             definition_scope_stages,
             definition_scope_phase_entries,
+            run_stages,
             intents,
             intent_stages,
             executions,
@@ -228,6 +292,7 @@ impl ReadTables {
             next_answers,
             next_jumps,
             next_jump_phases,
+            scope_changes,
             as_of: history.scanned_to(),
         })
     }
@@ -274,6 +339,12 @@ impl ReadTables {
         &self.definition_scope_phase_entries
     }
 
+    /// `read_run_stage` の行。
+    #[must_use]
+    pub fn run_stages(&self) -> &[RunStageRow] {
+        &self.run_stages
+    }
+
     /// `read_intent` の行。
     #[must_use]
     pub fn intents(&self) -> &[IntentRow] {
@@ -315,6 +386,39 @@ impl ReadTables {
     pub fn next_jump_phases(&self) -> &[NextJumpPhaseRow] {
         &self.next_jump_phases
     }
+
+    /// `read_scope_change` の行。
+    #[must_use]
+    pub fn scope_changes(&self) -> &[ScopeChangeRow] {
+        &self.scope_changes
+    }
+}
+
+/// 文書順で `node` の後にある最初の in-scope EXECUTE ステージの**表示名**。
+///
+/// 列挙と写像だけである — 文書順の全ステージ列 (`stages_in_scope`) を集約から受け取り、
+/// 自分の位置の後ろで最初に EXECUTE を名乗るものを拾い、そのノードの表示名を読む。
+/// どれを EXECUTE と呼ぶかを決めているのはグリッド (集約) であって、ここではない。
+///
+/// **定義側にこの問いのクエリは無い** — かつての `next_in_scope_stage` は recompose
+/// オーバレイと checkbox を要する実行側の問いとして `IntentExecution` へ移った (定義の doc
+/// が記録している)。ここで要るのは静的グリッドだけで答えられる版であり、実行に依らない。
+/// 集約に静的版のクエリが生えたら、この列挙はその呼出に置き換わる。
+fn next_in_scope_name<'a>(
+    definition: &'a WorkflowDefinition,
+    scope: &str,
+    node: &StageNode,
+) -> Option<&'a str> {
+    let stages = definition.stages_in_scope(scope);
+    let position = stages
+        .iter()
+        .position(|(slug, _, _)| *slug == node.slug())?;
+    stages
+        .iter()
+        .skip(position + 1)
+        .find(|(_, _, action)| *action == Some(PlanAction::Execute))
+        .and_then(|(slug, _, _)| definition.graph().get(slug))
+        .map(StageNode::name)
 }
 
 /// フェーズの全列挙 (番号順)。フェーズ横断の表はこの順で行を並べる。

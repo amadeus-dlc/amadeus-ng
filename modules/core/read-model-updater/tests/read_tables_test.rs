@@ -33,7 +33,7 @@ use core_command_domain::workflow_definition::{
 use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry,
 };
-use core_read_model_updater::read_tables::{ReadTables, ReadTablesError, RequestKind};
+use core_read_model_updater::read_tables::{ReadTables, ReadTablesError, RequestKind, RunStageRow};
 
 const DEFINITION: &str = "claude";
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
@@ -385,6 +385,37 @@ fn history() -> JournalBatch {
 
 fn tables() -> ReadTables {
     ReadTables::project(&history()).expect("健全な履歴は投影できる")
+}
+
+/// 定義ストリームだけの履歴 (グラフを差し替えて run-stage の列だけを見る)。
+///
+/// スコープカタログは `revised_scopes()` のまま — 有効 scope は `.md` の存在が権威なので、
+/// グラフを差し替えても `classic` / `express` の 2 つで変わらない。
+fn tables_with_graph(graph: StageGraph) -> ReadTables {
+    let redefined = WorkflowDefinitionEvent::Redefined(Redefined::new(
+        definition_event_id(),
+        definition_id(),
+        revision('2'),
+        graph,
+        ScopeGrid::new(BTreeMap::new()),
+        revised_scopes(),
+    ));
+    ReadTables::project(&JournalBatch::new(
+        Vec::new(),
+        Vec::new(),
+        vec![
+            DefinitionEntry::new(
+                GlobalSeqNr::new(1),
+                definition_id(),
+                1,
+                at(),
+                defined_event(),
+            ),
+            DefinitionEntry::new(GlobalSeqNr::new(2), definition_id(), 2, at(), redefined),
+        ],
+        Some(GlobalSeqNr::new(2)),
+    ))
+    .expect("定義だけの履歴も投影できる")
 }
 
 // ---- 検収 ----
@@ -1008,6 +1039,292 @@ fn next_jump_phase_rows_mirror_first_in_scope_of_phase() {
     }
     let phases: Vec<&str> = rows.iter().map(|row| row.phase()).collect();
     assert_eq!(phases, ["initialization", "ideation", "inception"]);
+}
+
+// ---- run-stage の材料 (定義 × scope × ステージ) ----
+
+/// 行 1 件を主キーで引く。
+fn run_stage_row<'a>(tables: &'a ReadTables, scope: &str, stage_slug: &str) -> &'a RunStageRow {
+    tables
+        .run_stages()
+        .iter()
+        .find(|row| row.scope() == scope && row.stage_slug() == stage_slug)
+        .unwrap_or_else(|| panic!("{scope} × {stage_slug} の行"))
+}
+
+#[test]
+fn run_stage_rows_cover_every_valid_scope_crossed_with_every_stage() {
+    let definition = replayed_definition();
+    let tables = tables();
+    let scopes = definition.valid_scopes();
+    assert_eq!(
+        tables.run_stages().len(),
+        scopes.len() * definition.graph().len(),
+        "行は定義 × 全有効 scope × 全ステージ (実行には依らない)"
+    );
+    // 列を持たない有効 scope (`express`) にも行が立つ — 有効性の権威はスコープ `.md` で
+    // あってグリッド列ではない。
+    assert!(scopes.contains(&"express"));
+    assert_eq!(
+        tables
+            .run_stages()
+            .iter()
+            .filter(|row| row.scope() == "express")
+            .count(),
+        definition.graph().len()
+    );
+}
+
+#[test]
+fn the_run_stage_row_mirrors_the_definition_node() {
+    let definition = replayed_definition();
+    let node = definition.graph().get(&slug("intent-capture")).unwrap();
+    let tables = tables();
+    let row = run_stage_row(&tables, "classic", "intent-capture");
+
+    assert_eq!(row.definition_id(), definition.id().as_str());
+    assert_eq!(row.phase(), node.phase().as_str());
+    assert_eq!(row.lead_agent(), node.lead_agent());
+    assert_eq!(row.mode(), node.mode().as_str());
+    assert_eq!(row.support_agents(), r#"["aidlc-design-agent"]"#);
+    assert_eq!(
+        row.sensors_applicable(),
+        r#"[{"id":"aidlc-claim-sources","path":"sensors/aidlc-claim-sources.md","matches":"*.md"}]"#
+    );
+    // reviewer 3 列は**対で載る** (どちらか欠ければ 3 つとも NULL — クエリ側の組み立て規則)。
+    assert_eq!(row.reviewer(), node.reviewer());
+    assert_eq!(row.review_class(), Some("adversarial"));
+    assert_eq!(row.reviewer_max_iterations(), Some(2));
+}
+
+#[test]
+fn a_stage_without_a_declared_review_iteration_count_defaults_to_one() {
+    // 定義が回数を宣言しないときの既定は 1 (クエリ側 `build_run_stage` と同じ)。
+    let node = StageNodeBuilder::new(
+        slug("nfr-design"),
+        StageNumber::parse("3.4").expect("番号"),
+        "NFR Design".to_string(),
+        PhaseId::Construction,
+        ExecutionKind::Always,
+        StageMode::Inline,
+    )
+    .reviewer("aidlc-architecture-reviewer-agent".to_string())
+    .review_class(ReviewClass::Advisory)
+    .build();
+    assert_eq!(node.reviewer_max_iterations(), None);
+    let tables = tables_with_graph(StageGraph::new(vec![node]).expect("1 ノード"));
+    let row = run_stage_row(&tables, "classic", "nfr-design");
+    assert_eq!(row.reviewer_max_iterations(), Some(1));
+}
+
+#[test]
+fn a_stage_that_names_a_reviewer_without_a_class_carries_neither() {
+    // クエリ側は reviewer と review_class が**両方**揃ったときだけ 3 列を載せる。
+    // 片方だけを載せると、読み手は階級なしのレビューを回せると誤解する。
+    let node = StageNodeBuilder::new(
+        slug("nfr-design"),
+        StageNumber::parse("3.4").expect("番号"),
+        "NFR Design".to_string(),
+        PhaseId::Construction,
+        ExecutionKind::Always,
+        StageMode::Inline,
+    )
+    .reviewer("aidlc-architecture-reviewer-agent".to_string())
+    .build();
+    let tables = tables_with_graph(StageGraph::new(vec![node]).expect("1 ノード"));
+    let row = run_stage_row(&tables, "classic", "nfr-design");
+    assert_eq!(row.reviewer(), None);
+    assert_eq!(row.review_class(), None);
+    assert_eq!(row.reviewer_max_iterations(), None);
+    assert_eq!(
+        row.protocol_modules(),
+        r#"["reviewer","construction"]"#,
+        "protocol_modules は reviewer の宣言だけを見る (階級は見ない)"
+    );
+}
+
+#[test]
+fn the_relative_paths_follow_the_phase_directory_rule() {
+    let tables = tables();
+    let row = run_stage_row(&tables, "classic", "intent-capture");
+    assert_eq!(row.stage_file_rel(), "ideation/intent-capture.md");
+    assert_eq!(row.memory_path_rel(), "ideation/intent-capture/memory.md");
+    // consumes は record 直下の成果物名そのもの、produces は当該ステージの部屋の下。
+    assert_eq!(row.consumes_rel(), r#"["scan.md"]"#);
+    assert_eq!(
+        row.produces_rel(),
+        r#"["ideation/intent-capture/intent.md"]"#
+    );
+}
+
+#[test]
+fn the_inline_context_paths_follow_the_stage_mode() {
+    let tables = tables();
+    // Mob = lead だけ。
+    assert_eq!(
+        run_stage_row(&tables, "classic", "intent-capture").inline_context_paths_rel(),
+        r#"["agents/aidlc-product-agent.md"]"#
+    );
+    // Subagent / Pipeline / AgentTeam = 空。
+    assert_eq!(
+        run_stage_row(&tables, "classic", "scope-definition").inline_context_paths_rel(),
+        "[]"
+    );
+    // Inline = lead + support。
+    let node = StageNodeBuilder::new(
+        slug("nfr-design"),
+        StageNumber::parse("3.4").expect("番号"),
+        "NFR Design".to_string(),
+        PhaseId::Construction,
+        ExecutionKind::Always,
+        StageMode::Inline,
+    )
+    .lead_agent("aidlc-architect-agent".to_string())
+    .support_agents(vec!["aidlc-quality-agent".to_string()])
+    .build();
+    let inline = tables_with_graph(StageGraph::new(vec![node]).expect("1 ノード"));
+    assert_eq!(
+        run_stage_row(&inline, "classic", "nfr-design").inline_context_paths_rel(),
+        r#"["agents/aidlc-architect-agent.md","agents/aidlc-quality-agent.md"]"#
+    );
+}
+
+#[test]
+fn the_default_gate_is_the_domain_predicate_not_a_rewritten_rule() {
+    let definition = replayed_definition();
+    let tables = tables();
+    for node in definition.graph().nodes() {
+        let row = run_stage_row(&tables, "classic", node.slug().as_str());
+        let key =
+            core_command_domain::orchestration::StageKey::new(node.slug().clone(), node.phase());
+        assert_eq!(
+            row.gate_default(),
+            key.is_gated(),
+            "{}",
+            node.slug().as_str()
+        );
+    }
+    assert!(!run_stage_row(&tables, "classic", "state-init").gate_default());
+    assert!(run_stage_row(&tables, "classic", "intent-capture").gate_default());
+}
+
+#[test]
+fn the_next_stage_name_is_the_display_name_of_the_next_execute_in_document_order() {
+    let tables = tables();
+    // classic: state-init(E) → intent-capture(E) → scope-definition(SKIP) →
+    // requirements-analysis(E)。SKIP は飛ばす。
+    assert_eq!(
+        run_stage_row(&tables, "classic", "state-init").next_stage_name(),
+        Some("Intent Capture")
+    );
+    assert_eq!(
+        run_stage_row(&tables, "classic", "intent-capture").next_stage_name(),
+        Some("Requirements Analysis"),
+        "SKIP のステージは次段にならない"
+    );
+    assert_eq!(
+        run_stage_row(&tables, "classic", "scope-definition").next_stage_name(),
+        Some("Requirements Analysis"),
+        "自分が SKIP でも「後ろの最初の EXECUTE」は答えられる"
+    );
+    assert_eq!(
+        run_stage_row(&tables, "classic", "requirements-analysis").next_stage_name(),
+        None,
+        "最後の EXECUTE の後には次段が無い"
+    );
+    // 列を持たない scope は EXECUTE が 1 つも無いので、どのステージにも次段が無い。
+    assert_eq!(
+        run_stage_row(&tables, "express", "state-init").next_stage_name(),
+        None
+    );
+}
+
+#[test]
+fn the_route_digest_is_the_hash_of_the_whole_scope_membership() {
+    let definition = replayed_definition();
+    let tables = tables();
+    // 同じ scope の行は「対象ステージ」だけが違う — 顔ぶれは共有する。
+    let a = run_stage_row(&tables, "classic", "state-init").route_digest();
+    let b = run_stage_row(&tables, "classic", "intent-capture").route_digest();
+    assert_ne!(a, b);
+    // scope が違えば顔ぶれが違いうる (grid 列の有無で in-scope の action が変わる)。
+    // ここでは stages_in_scope の slug 列そのものが素材であることを、列を持たない scope が
+    // 同じ slug 列を返すこと (= 同じ route) で確かめる。
+    assert_eq!(
+        run_stage_row(&tables, "express", "state-init").route_digest(),
+        a,
+        "素材は slug 全列であって EXECUTE の絞り込みではない"
+    );
+    assert_eq!(
+        definition
+            .stage_route(
+                "classic",
+                definition.graph().get(&slug("state-init")).unwrap()
+            )
+            .stages_in_scope()
+            .len(),
+        4,
+        "顔ぶれは EXECUTE で絞らない"
+    );
+}
+
+#[test]
+fn the_directive_digest_moves_with_the_environment_and_not_with_the_scope_alone() {
+    let tables = tables();
+    let classic = run_stage_row(&tables, "classic", "intent-capture");
+    let express = run_stage_row(&tables, "express", "intent-capture");
+    assert_eq!(
+        classic.stage_file_rel(),
+        express.stage_file_rel(),
+        "パスは scope に依らない"
+    );
+    assert_ne!(
+        classic.directive_digest(),
+        express.directive_digest(),
+        "次段が違えば別の directive (classic は次段あり、express は無し)"
+    );
+    assert_ne!(
+        classic.directive_digest(),
+        run_stage_row(&tables, "classic", "state-init").directive_digest()
+    );
+    assert_eq!(classic.directive_digest().len(), 64);
+}
+
+// ---- scope-change ----
+
+#[test]
+fn scope_change_rows_answer_every_valid_scope_for_every_execution() {
+    let definition = replayed_definition();
+    let tables = tables();
+    let scopes = definition.valid_scopes();
+    assert_eq!(
+        tables.scope_changes().len(),
+        scopes.len() * 2,
+        "実行 2 本 × 有効 scope"
+    );
+    for row in tables.scope_changes() {
+        assert!(scopes.contains(&row.scope()), "無効 scope の行は無い");
+    }
+    let of = |scope: &str| {
+        tables
+            .scope_changes()
+            .iter()
+            .find(|row| row.execution_id() == EXECUTION_A && row.scope() == scope)
+            .unwrap_or_else(|| panic!("{scope} の行"))
+            .kind()
+            .to_string()
+    };
+    assert_eq!(intent().scope(), "classic");
+    assert_eq!(of("classic"), "same-as-state", "state の scope と一致");
+    assert_eq!(of("express"), "scope-change");
+}
+
+#[test]
+fn the_execution_row_carries_the_scope_denormalised_from_the_intent() {
+    let tables = tables();
+    for row in tables.executions() {
+        assert_eq!(row.scope(), intent().scope());
+    }
 }
 
 #[test]

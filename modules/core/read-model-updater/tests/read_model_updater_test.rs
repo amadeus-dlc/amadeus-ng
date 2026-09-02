@@ -25,10 +25,10 @@ use core_command_domain::workflow_definition::{
     WorkflowDefinitionId,
 };
 use core_read_model_updater::orchestration::{
-    GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader, ProjectionName,
-    ProjectionTargets, ReadModelUpdater,
+    CatchUpError, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
+    ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
 };
-use core_read_model_updater::read_tables::ReadTables;
+use core_read_model_updater::read_tables::{ReadTables, SteeringTables};
 use tempfile::TempDir;
 
 /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
@@ -191,6 +191,10 @@ struct FakeReader {
     /// 現れる。ここではそれをフェイクで決定的に起こす。
     late_row: Rc<RefCell<Option<JournalEntry>>>,
     reads: Rc<RefCell<usize>>,
+    /// 保存済みの steering 面 (差し替えのたびに丸ごと入れ替わる — 実装と同じ約束)。
+    steering: Rc<RefCell<Option<SteeringTables>>>,
+    /// steering 面を差し替えた回数 (再投影が走ったかどうかの観測点)。
+    steering_writes: Rc<RefCell<usize>>,
 }
 
 impl JournalReader for FakeReader {
@@ -265,6 +269,20 @@ impl JournalReader for FakeReader {
         *self.tables.borrow_mut() = Some(tables.clone());
         Ok(())
     }
+
+    async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
+        Ok(self
+            .steering
+            .borrow()
+            .as_ref()
+            .map(|tables| tables.source_digest().to_string()))
+    }
+
+    async fn replace_steering(&mut self, tables: &SteeringTables) -> Result<(), JournalReadError> {
+        *self.steering.borrow_mut() = Some(tables.clone());
+        *self.steering_writes.borrow_mut() += 1;
+        Ok(())
+    }
 }
 
 fn projection() -> ProjectionName {
@@ -276,6 +294,9 @@ struct Fixture {
     _dir: TempDir,
     state_file: PathBuf,
     audit_shard: PathBuf,
+    memory_dir: PathBuf,
+    steering: Rc<RefCell<Option<SteeringTables>>>,
+    steering_writes: Rc<RefCell<usize>>,
 }
 
 impl Fixture {
@@ -284,11 +305,41 @@ impl Fixture {
         let state_file = dir.path().join("aidlc-state.md");
         std::fs::write(&state_file, STATE).expect("出発点を置く");
         let audit_shard = dir.path().join("audit/host-abcd1234.md");
+        let memory_dir = dir.path().join("memory");
+        std::fs::create_dir_all(memory_dir.join("phases")).expect("memory 層を作る");
+        std::fs::write(memory_dir.join("org.md"), "# Org\n").expect("規則を置く");
         Fixture {
             _dir: dir,
             state_file,
             audit_shard,
+            memory_dir,
+            steering: Rc::new(RefCell::new(None)),
+            steering_writes: Rc::new(RefCell::new(0)),
         }
+    }
+
+    /// memory 層のファイルを 1 本置き換える (参照入力の編集)。
+    fn write_rule(&self, relative: &str, text: &str) {
+        std::fs::write(self.memory_dir.join(relative), text).expect("規則を書く");
+    }
+
+    /// memory 層のファイルを 1 本消す。
+    fn remove_rule(&self, relative: &str) {
+        std::fs::remove_file(self.memory_dir.join(relative)).expect("規則を消す");
+    }
+
+    fn steering_source(&self) -> SteeringSource {
+        SteeringSource::new(self.memory_dir.clone())
+    }
+
+    /// steering 面を差し替えた回数。
+    fn steering_writes(&self) -> usize {
+        *self.steering_writes.borrow()
+    }
+
+    /// 保存済みの steering 面。
+    fn steering(&self) -> Option<SteeringTables> {
+        self.steering.borrow().clone()
     }
 
     fn targets(&self) -> ProjectionTargets {
@@ -326,9 +377,12 @@ impl Fixture {
                 tables: Rc::clone(&spy),
                 late_row: Rc::new(RefCell::new(None)),
                 reads: Rc::new(RefCell::new(0)),
+                steering: Rc::clone(&self.steering),
+                steering_writes: Rc::clone(&self.steering_writes),
             },
             projection(),
             self.targets(),
+            self.steering_source(),
         );
         (updater, spy)
     }
@@ -356,9 +410,12 @@ impl Fixture {
                 tables: Rc::clone(&spy),
                 late_row: Rc::new(RefCell::new(Some(late_row))),
                 reads: Rc::new(RefCell::new(0)),
+                steering: Rc::clone(&self.steering),
+                steering_writes: Rc::clone(&self.steering_writes),
             },
             projection(),
             self.targets(),
+            self.steering_source(),
         );
         (updater, spy)
     }
@@ -671,4 +728,142 @@ async fn a_second_catch_up_leaves_the_rows_as_the_first_one_left_them() {
         Some(&after_first),
         "差分が無ければ行も書き直さない"
     );
+}
+
+// ---- 参照入力 (steering) ----
+
+#[tokio::test]
+async fn the_first_catch_up_projects_the_memory_layer_it_finds() {
+    let fixture = Fixture::new();
+    fixture.write_rule("phases/inception.md", "# Inception\n");
+    let mut updater = fixture.updater(journal(), intents());
+    updater.catch_up().await.expect("キャッチアップ");
+
+    assert_eq!(fixture.steering_writes(), 1);
+    let steering = fixture.steering().expect("steering 面が書かれている");
+    assert_eq!(steering.plans().len(), 5, "束は phase の関数 (5 フェーズ)");
+    let inception = steering
+        .plans()
+        .iter()
+        .find(|row| row.phase() == "inception")
+        .expect("inception の行");
+    assert_eq!(inception.part_count(), 1);
+    assert!(
+        inception.delivered_paths().contains("org.md")
+            && inception.delivered_paths().contains("phases/inception.md"),
+        "実際: {}",
+        inception.delivered_paths()
+    );
+}
+
+#[tokio::test]
+async fn an_unchanged_memory_layer_is_not_reprojected() {
+    // 参照入力を読み直すのは毎回だが、**書き替えるのはダイジェストが動いたときだけ**である。
+    // 毎回書き替えると、規則を 1 文字も触っていないのに束のバイトが動きうる。
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(journal(), intents());
+    updater.catch_up().await.expect("1 回目");
+    assert_eq!(fixture.steering_writes(), 1);
+    updater.catch_up().await.expect("2 回目");
+    assert_eq!(fixture.steering_writes(), 1, "同じ参照入力では書き替えない");
+}
+
+#[tokio::test]
+async fn an_edited_rule_file_is_reprojected_even_when_the_journal_has_not_moved() {
+    // ジャーナル差分が空でも参照入力は見る — 規則は人が編集するので、イベントを伴わない。
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(journal(), intents());
+    updater.catch_up().await.expect("1 回目");
+    let before = fixture.steering().expect("1 回目の面");
+
+    fixture.write_rule("org.md", "# Org\n\n変更した規則\n");
+    updater
+        .catch_up()
+        .await
+        .expect("2 回目 — ジャーナル差分は空");
+
+    assert_eq!(fixture.steering_writes(), 2);
+    let after = fixture.steering().expect("2 回目の面");
+    assert_ne!(before.source_digest(), after.source_digest());
+    assert_ne!(
+        before
+            .plans()
+            .first()
+            .map(|row| row.bundle_digest().to_string()),
+        after
+            .plans()
+            .first()
+            .map(|row| row.bundle_digest().to_string()),
+        "束のダイジェストも動く"
+    );
+}
+
+#[tokio::test]
+async fn a_rule_file_that_disappears_is_normal_and_shrinks_the_bundle() {
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(journal(), intents());
+    updater.catch_up().await.expect("1 回目");
+    fixture.remove_rule("org.md");
+    updater.catch_up().await.expect("欠損は正常");
+
+    let steering = fixture.steering().expect("steering 面");
+    assert_eq!(fixture.steering_writes(), 2);
+    for row in steering.plans() {
+        assert_eq!(row.part_count(), 0, "配る規則が 1 本も無い");
+        assert_eq!(row.delivered_paths(), "[]");
+    }
+}
+
+#[tokio::test]
+async fn a_missing_memory_directory_is_normal_too() {
+    // 規則未整備のワークスペース — ディレクトリごと無くても止まらない (bare run-stage)。
+    let dir = tempfile::tempdir().expect("一時ディレクトリ");
+    let source = SteeringSource::new(dir.path().join("absent"));
+    let rules = source.read().expect("欠損は正常");
+    assert_eq!(rules, Default::default());
+}
+
+#[tokio::test]
+async fn a_rule_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
+    // 「在るのに読めない」は blocking である — 規則を落として進むと、届く steering が
+    // 静かに痩せる。
+    let fixture = Fixture::new();
+    fixture.write_rule("team.md", "# Team\n");
+    let path = fixture.memory_dir.join("team.md");
+    std::fs::write(&path, [0x80_u8, 0x81]).expect("UTF-8 として不正なバイトを置く");
+
+    let mut updater = fixture.updater(journal(), intents());
+    let error = updater.catch_up().await.expect_err("読めない規則は止める");
+    match error {
+        CatchUpError::SteeringRead { path: named, kind } => {
+            assert!(named.ends_with("team.md"), "実際: {named}");
+            assert_eq!(kind, std::io::ErrorKind::InvalidData);
+        }
+        other => panic!("読取の失敗として上がる (実際: {other:?})"),
+    }
+    assert_eq!(fixture.steering_writes(), 0, "1 行も書かない");
+}
+
+#[tokio::test]
+async fn the_steering_failure_renders_its_material() {
+    let error = CatchUpError::SteeringRead {
+        path: "memory/team.md".to_string(),
+        kind: std::io::ErrorKind::PermissionDenied,
+    };
+    assert_eq!(
+        error.to_string(),
+        "steering read: PermissionDenied at memory/team.md"
+    );
+    assert!(std::error::Error::source(&error).is_none());
+}
+
+#[tokio::test]
+async fn the_memory_layer_is_read_before_the_journal_difference_is_probed() {
+    // 空のジャーナルでも steering は投影される — 参照入力の比較は早期 return の**前**に
+    // 行われる (ジャーナルが動くまで規則が届かない、という穴を塞ぐ)。
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(Vec::new(), Vec::new());
+    updater.catch_up().await.expect("空のジャーナル");
+    assert_eq!(fixture.steering_writes(), 1);
+    assert_eq!(fixture.steering().expect("steering 面").plans().len(), 5);
 }

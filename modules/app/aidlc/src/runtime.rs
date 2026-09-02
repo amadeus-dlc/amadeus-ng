@@ -45,7 +45,7 @@ use core_query_use_case::orchestration::{
 };
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader as _, JournalReaderImpl, ProjectionName, ProjectionTargets,
-    ReadModelUpdater,
+    ReadModelUpdater, SteeringSource,
 };
 
 use crate::cli::{Face, IntentCreateArgs, Invocation, Request, parse};
@@ -602,7 +602,10 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
         .map_err(|error| format!("clone id: {error}"))?;
     let shard = ShardName::of(&host_name(), &clone_id);
     let targets = ProjectionTargets::new(state_file, audit_dir.join(shard.as_str()));
-    ReadModelUpdater::new(journal_reader, projection, targets)
+    // 参照入力 (memory 層) はジャーナルとは別の入口である — 規則の編集はイベントを
+    // 伴わないので、読取先を明示的に渡す。
+    let steering = SteeringSource::new(layout.memory_dir());
+    ReadModelUpdater::new(journal_reader, projection, targets, steering)
         .catch_up()
         .await
         .map(|_| ())
