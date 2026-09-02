@@ -64,3 +64,39 @@
 #70 / #71 / #72 / #73 / **#74（park 本体 — b36 割り込みで未着手）** / #75 相当なし /
 #76 済 / #77（doctor 本体）/ #82（coverage ジッタ — 対応案 1 の優先度上げ提案済み）/
 #85（存置 or 撤去裁定待ち）
+
+## 再開（2026-09-02、同日）
+
+再開手順 1〜3 を実施した。本節が最新の現在地であり、上の「再開手順」は消化済み。
+
+### 実施したこと
+
+1. **ブランチ整理**: b34 起点で b35 の未 squash コミットを含んでいたため、`git rebase --onto
+   origin/main cf2390be` で b36 の 4 コミットだけを `origin/main`（b35 #87 squash 済み）へ移植
+   （ツリーは旧 tip と同一。監査シャードのみ差分）。
+2. **ゲートチェーン完走**: fmt / clippy / `cargo lint` / `cargo test --workspace`（48 スイート
+   1459 本）緑。coverage は絶対床（90%）は通過、**相対ゲートが当初赤**（head 98.69% < base
+   98.97%）— 旧ポート 3 ファイル（100% カバー）の削除で分母が減った分と、`store` 経路の未通過
+   分岐が原因。→ テスト追加と防御分岐の共通化で **head 98.974% ≥ base 98.971%** に回復し緑（同日、5 ゲート全緑）。
+3. **レビュー是正（Fable メインセッション）**:
+   - clippy `disallowed_methods`: `store` の書き手が `serde_json::to_string(_pretty)` を直接
+     呼んでいた（BR1.7 違反）→ `canon_json::to_value` + `serialize(ContractPretty)` の 1 経路へ。
+     grid の手組み文字列も `Serialize` 実装（挿入順保存 — BR1.8）へ置換。golden 往復は緑のまま。
+   - `CompiledDefinition::new`（genesis 以外の第 2 の構築口 — aggregate-commands「再構成の形」
+     違反）を撤去し、`Intent` / `WorkflowDefinition` と同型の `From<Compiled>` に統一。Repository
+     の読取経路は復号内容を `Compiled` に束ねてこの変換を通す。
+   - 「`DefinitionArtifactsClient`」「暫定の足場」の古い記述（use-case ファサード・アダプタ doc・
+     テスト名・canon 2 箇所）を b36 裁定に追随。仕様 12 §2.1 / 01 §3 の集約表に
+     `CompiledDefinition` を追加（Repository 名は集約表から取る規則の根拠）。
+   - 合成ルートの 2 ID を同じ源 `harness_name` から鋳造（doc の主張と実装を一致）。
+   - 旧セマンティクス前提の結合テスト 2 本を Repository 契約に追随（ID 不一致 = `NotFound`、
+     `Corrupt` の `Display` は分類・材料を漏らさない）。
+   - coverage 回復のテスト追加: scope ファイルの書出し/掃除と往復、対の不一致拒否、I/O 失敗
+     3 形、削除失敗（unix 権限）、`kinds_codec` 順序往復、`CompiledDefinitionId::try_from`、
+     `DefineWorkflowError::from`、`PlanAction::flipped`。`store_corrupt` / `revision_failure` の
+     共通化で防御分岐を 1 箇所ずつに畳んだ。
+
+### 次
+
+PR 作成 → 収束ルール（project.md Corrections）で畳む → merge queue。マージ後は上の
+「再開手順 4」（#79 / #80 追記、#85 とキューの選択）へ。
