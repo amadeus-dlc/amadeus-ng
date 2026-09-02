@@ -27,6 +27,13 @@
 - Markdown 面（`aidlc-state.md` / 監査シャード）は従来どおり差分投影で、単一 intent 契約（`MixedIntents`）も従来どおり。
   構造化面は複数 intent / 複数実行をキーで自然に扱う。
 
+## レビュー（PR #91）で入った是正
+
+- Bugbot: RMU `StartRequestDto` に `review` が無く復号で落ちていた（両側ワイヤ一致で是正、app 横断テストに `review` を含む往復を追加）。`decode_entry` が `Started` の集約 id と行 `aid` を照合していなかった（是正）。
+- CodeRabbit: 定義 DTO の重複 scope 名を両側で拒否、`decode_definition_row` / `decode_entry` の genesis 通番検査（`Defined` / `Started` ⇔ `seq_nr == 1`）、`catch_up` の差分・全履歴を**同じ読取**から導く（`as_of` とチェックポイントの一致。`resolve_plan` も同じ読取を使う）、`Started` の計画不変条件を復号境界で検証（ドメインに `StageEntry::check_plan` / `PlanError` を新設し `Intent::check_plan` もそこへ一本化）。
+- オーナー指摘: `Started { id: IntentExecutionId }` は集約 ID をイベントの id に流用した誤り → フィールドを `aggregate_id` に改名（イベント自身の `id: IntentExecutionEventId` は 2c で付与）。
+- 申し送り（2c で揃える）: intent 行（`Created`）の復号は計画不変条件を復号境界で検査しておらず、壊れた行は `Intent::from` の `expect` でクラッシュする（既存テスト `a_row_that_breaks_an_aggregate_invariant_crashes_reconstruction` が固定）。2c で全イベント族の復号を触るときに `Started` と同じ「復号境界で `Corrupt`」に揃えるか裁定する。
+
 ## 次（b40 — Bolt 2 後半、`read-model-spec.md` §4.3〜4.5）
 
 1. `read_run_stage`（run-stage 指示の材料一式。パスはハーネス相対、`directive_digest` / `route_digest`）、
@@ -37,4 +44,4 @@
 3. `read_definition` の `default_scope` / stock 判定は Bolt 3 の必要に応じて（upstream 定数 `DEFAULT_SCOPE = "classic"`
    はクエリ側 `scope_resolution.rs` にある）。
 
-その後 **#7 キュー 2b（#85 = A、非ゲート完了パイプラインの撤去）** → **Bolt 3（クエリ側縮小）**。
+順序（#7 確定）: b39 → **2c（ドメインイベントの ID `XxxEventId` / `aggregate_id`）** → b40 → **2b（#85 = A、非ゲート完了パイプラインの撤去）** → **Bolt 3（クエリ側縮小）**。
