@@ -47,8 +47,8 @@ impl CompiledDefinition {
     ///
     /// 動詞 `compile` はこの集約を生む行為そのもの (upstream の compile / slice 2 の自前
     /// compile)。イベント [`Compiled`] は内容そのものを運ぶ ([`WorkflowDefinitionEvent::Defined`]
-    /// と同じ理由)。再構成 ([`CompiledDefinition::new`]) はファクトリではないので委譲規律の
-    /// 対象外である。
+    /// と同じ理由)。集約は誕生記録からの変換 (`From<Compiled>`) で導出する — 構築口は
+    /// genesis とこの変換だけである (`coding-rules/aggregate-commands.md`「再構成の形」)。
     ///
     /// [`WorkflowDefinitionEvent::Defined`]: super::WorkflowDefinitionEvent
     #[must_use]
@@ -59,38 +59,12 @@ impl CompiledDefinition {
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
     ) -> (CompiledDefinition, CompiledDefinitionEvent) {
-        let compiled_definition = CompiledDefinition::new(
-            id.clone(),
-            revision.clone(),
-            graph.clone(),
-            grid.clone(),
-            scopes.clone(),
-        );
+        let compiled = Compiled::new(id, revision, graph, grid, scopes);
+        let compiled_definition = CompiledDefinition::from(compiled.clone());
         (
             compiled_definition,
-            CompiledDefinitionEvent::Compiled(Compiled::new(id, revision, graph, grid, scopes)),
+            CompiledDefinitionEvent::Compiled(compiled),
         )
-    }
-
-    /// 検査済みの部品から再構成する (完全コンストラクタ — Repository の読取経路)。
-    ///
-    /// 部品は各 Domain Primitive が Always Valid を済ませている
-    /// (`coding-rules/factory-naming.md`)。
-    #[must_use]
-    pub const fn new(
-        id: CompiledDefinitionId,
-        revision: DefinitionRevision,
-        graph: StageGraph,
-        grid: ScopeGrid,
-        scopes: BTreeMap<String, ScopeMetadata>,
-    ) -> CompiledDefinition {
-        CompiledDefinition {
-            id,
-            revision,
-            graph,
-            grid,
-            scopes,
-        }
     }
 
     /// 配布束が名乗る系譜 ID (`harness.json` の `name` — ADR-008)。
@@ -139,6 +113,28 @@ impl CompiledDefinition {
     }
 }
 
+impl From<Compiled> for CompiledDefinition {
+    /// 誕生記録から集約を導出する (リプレイのスナップショット種 — `Intent` の
+    /// `From<(Created, occurred_at)>` / `WorkflowDefinition` の `From<(Defined, occurred_at)>`
+    /// と対)。
+    ///
+    /// **構造体リテラルはここだけ** — genesis ([`CompiledDefinition::compile`]) もこの変換を
+    /// 通る (`coding-rules/factory-naming.md`「すべての構築経路が基本コンストラクタを通る」)。
+    /// Repository の読取経路も、媒体から復号した内容を [`Compiled`] に束ねてここを通す
+    /// (ジャーナルを読む Repository が genesis イベントからスナップショット種を起こすのと
+    /// 同じ形)。発生時刻を対にしないのは、この集約が通番・版・更新時刻を持たない
+    /// (媒体がジャーナルではない) からである。
+    fn from(compiled: Compiled) -> CompiledDefinition {
+        CompiledDefinition {
+            id: compiled.id().clone(),
+            revision: compiled.revision().clone(),
+            graph: compiled.graph().clone(),
+            grid: compiled.grid().clone(),
+            scopes: compiled.scopes().clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,13 +171,16 @@ mod tests {
         let revision =
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision");
 
-        let compiled_definition = CompiledDefinition::new(
+        let (compiled_definition, event) = CompiledDefinition::compile(
             id.clone(),
             revision.clone(),
             graph.clone(),
             grid.clone(),
             scopes.clone(),
         );
+        // 誕生イベントは材料 (値) を運ぶ — 変換で対の左と同じ集約に戻る。
+        let CompiledDefinitionEvent::Compiled(compiled) = event;
+        assert_eq!(CompiledDefinition::from(compiled), compiled_definition);
         assert_eq!(compiled_definition.id(), &id);
         assert_eq!(compiled_definition.revision(), &revision);
         assert_eq!(compiled_definition.graph(), &graph);

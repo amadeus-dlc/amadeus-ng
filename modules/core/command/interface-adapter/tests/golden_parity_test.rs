@@ -426,23 +426,29 @@ async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() 
     assert_eq!(round_tripped, established.with_version(1));
 }
 
-/// バイト位置つきの比較 — 失敗時に全文ダンプせず最初の乖離点だけを示す。
+/// バイト位置つきの比較 — 失敗時に全文ダンプせず最初の乖離点の前後だけを示す。
 fn assert_bytes_equal(written: &[u8], golden: &[u8], label: &str) {
-    if written == golden {
-        return;
-    }
     let at = written
         .iter()
         .zip(golden.iter())
         .position(|(w, g)| w != g)
         .unwrap_or_else(|| written.len().min(golden.len()));
     let start = at.saturating_sub(80);
-    panic!(
+    let excerpt = |bytes: &[u8]| {
+        String::from_utf8_lossy(
+            bytes
+                .get(start..(at + 80).min(bytes.len()))
+                .unwrap_or_default(),
+        )
+        .into_owned()
+    };
+    assert!(
+        written == golden,
         "{label}: byte {at} で乖離 (written {} bytes / golden {} bytes)\n written: …{:?}\n golden:  …{:?}",
         written.len(),
         golden.len(),
-        String::from_utf8_lossy(&written[start..(at + 80).min(written.len())]),
-        String::from_utf8_lossy(&golden[start..(at + 80).min(golden.len())]),
+        excerpt(written),
+        excerpt(golden),
     );
 }
 

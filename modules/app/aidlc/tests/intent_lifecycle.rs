@@ -576,7 +576,7 @@ async fn a_definition_that_cannot_be_read_stops_the_mint() {
 
 /// 壊れた定義の診断は**原因の末端まで**届く（PR #78 レビュー指摘）。
 ///
-/// `DefinitionArtifactsError::Corrupt` は「壊れていた」としか `Display` に書かない（裁定 6 —
+/// `RepositoryError::Corrupt` は「壊れていた」としか `Display` に書かない（裁定 6 —
 /// 分類を契約に載せない）。どのファイルがどう壊れていたかという実材料は `Error::source` の
 /// 連鎖に載るので、診断はそれを末端まで辿らないと利用者に届かない。
 #[tokio::test]

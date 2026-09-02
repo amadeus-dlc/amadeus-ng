@@ -11,7 +11,7 @@
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 
 use super::{
-    IntentStoreFixture, absent_intent_id, at, intent_genesis, intent_id, other_intent,
+    IntentStoreFixture, absent_intent_id, intent_genesis, intent_id, other_intent,
     store_intent_genesis,
 };
 

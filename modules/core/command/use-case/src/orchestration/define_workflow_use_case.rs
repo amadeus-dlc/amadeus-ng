@@ -259,7 +259,7 @@ mod tests {
 
     /// 配布物が読めなければ取込の失敗がそのまま伝播する (言い換えない)。
     #[tokio::test]
-    async fn an_unreadable_distribution_propagates_the_client_refusal() {
+    async fn an_unreadable_distribution_propagates_the_repository_refusal() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::unreadable(),
             InMemoryWorkflowDefinitionRepository::empty(),

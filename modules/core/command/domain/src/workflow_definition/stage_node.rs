@@ -152,10 +152,11 @@ impl StageNode {
         &self.optional_produces
     }
 
-    /// 成果物 → 適用 unit kind。**マップに無い成果物は全 kind に適用**される。
+    /// 成果物 → 適用 unit kind の写像。**マップに無い成果物は全 kind に適用**される。
+    ///
+    /// **文書順を保持する** — upstream の emit 順は内容の一部であり、書き手 (`store`) が
+    /// バイト忠実に再現するため並びを失わない (b36)。
     #[must_use]
-    /// 成果物 → 適用 unit kind の写像 (**文書順を保持** — upstream の emit 順は内容の一部で
-    /// あり、書き手 (`store`) がバイト忠実に再現するため並びを失わない。b36)。
     pub fn produces_kinds(&self) -> &[(String, Vec<String>)] {
         &self.produces_kinds
     }

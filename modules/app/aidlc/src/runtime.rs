@@ -655,21 +655,26 @@ fn observed_host(raw: Option<std::ffi::OsString>) -> String {
         .unwrap_or_default()
 }
 
+/// 定義の系譜名 — `harness.json` の `name`（ADR-008）。出荷ハーネスは `claude` で、現状の
+/// 合成ルートはその固定値を使う。2 つの識別子（[`definition_id`] / [`compiled_definition_id`]）
+/// の源はここ 1 箇所であり、`Layout` から読む形にしても両者が食い違う余地は無い。
+const fn harness_name(_layout: &Layout) -> &'static str {
+    "claude"
+}
+
 fn definition_id(
     layout: &Layout,
 ) -> Result<core_command_domain::workflow_definition::WorkflowDefinitionId, String> {
-    let _ = layout;
-    core_command_domain::workflow_definition::WorkflowDefinitionId::parse("claude")
+    core_command_domain::workflow_definition::WorkflowDefinitionId::parse(harness_name(layout))
         .map_err(|error| format!("cannot resolve the definition id: {error:?}"))
 }
 
-/// 配布束の識別子 — 系譜は [`definition_id`] と同じ name (集約ごとに自前の ID 型を持ち、
-/// 突合せは合成ルートが同じ源から両方を鋳造することで成立する)。
+/// 配布束の識別子 — 系譜は [`definition_id`] と同じ name（集約ごとに自前の ID 型を持ち、
+/// 突合せは合成ルートが同じ源 [`harness_name`] から両方を鋳造することで成立する）。
 fn compiled_definition_id(
     layout: &Layout,
 ) -> Result<core_command_domain::workflow_definition::CompiledDefinitionId, String> {
-    let _ = layout;
-    core_command_domain::workflow_definition::CompiledDefinitionId::parse("claude")
+    core_command_domain::workflow_definition::CompiledDefinitionId::parse(harness_name(layout))
         .map_err(|error| format!("cannot resolve the compiled definition id: {error:?}"))
 }
 

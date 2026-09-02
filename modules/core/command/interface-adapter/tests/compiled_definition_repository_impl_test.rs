@@ -49,10 +49,18 @@ fn claude_id() -> CompiledDefinitionId {
 fn find(
     compiled_definition_repository: &CompiledDefinitionRepositoryImpl,
 ) -> Result<CompiledDefinition, ReadError> {
+    find_by(compiled_definition_repository, &claude_id())
+}
+
+/// 任意の id で引く (id 照合の検収用)。
+fn find_by(
+    compiled_definition_repository: &CompiledDefinitionRepositoryImpl,
+    id: &CompiledDefinitionId,
+) -> Result<CompiledDefinition, ReadError> {
     tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("current-thread ランタイム")
-        .block_on(compiled_definition_repository.find_by_id(&claude_id()))
+        .block_on(compiled_definition_repository.find_by_id(id))
 }
 
 /// `Corrupt` が原因連鎖で運ぶ診断表示を取り出す。
@@ -874,12 +882,12 @@ fn load_returns_the_artifacts_stamped_with_the_harness_identity() {
 }
 
 #[test]
-fn the_distribution_names_its_own_definition_id_instead_of_matching_a_requested_one() {
-    // 旧 `WorkflowDefinitionRepositoryImpl` は「要求 id ≠ harness.json の `name`」を
-    // `NotFound` で拒否していた。取込境界にその照合は無い — **配布物が名乗る id をそのまま
-    // 返す** (ADR-008: harness.json が定義 id の供給元)。要求 id との不一致は、いまは
-    // 「ストアにその id のストリームが無い」= `IntentExecutionRepository` 同様の ES
-    // リポジトリ側の `NotFound` として現れる。
+fn a_distribution_naming_another_id_is_not_found_under_the_requested_one() {
+    // Repository は自集約の ID で引く — 要求 id と配布束が名乗る id (harness.json の
+    // `name`、ADR-008) が食い違えば、要求された id の配布定義は「無い」(`NotFound`)。
+    // 旧取込境界は「配布物が名乗る id をそのまま返す」形だったが、Repository への昇格で
+    // 照合が契約に戻った (b36)。合成ルートは同じ harness.json から両 ID を鋳造するので、
+    // 実際にここへ落ちるのは配布物が要求と食い違う異常系だけである。
     let claude = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
     assert_eq!(load(&claude).id(), &claude_id());
 
@@ -889,13 +897,18 @@ fn the_distribution_names_its_own_definition_id_instead_of_matching_a_requested_
         &scope_files(),
         Some(r#"{"name": "kiro"}"#),
     );
-    assert_eq!(
-        load(&kiro).id(),
-        &CompiledDefinitionId::parse("kiro").unwrap()
+    let error = find(&kiro.compiled_definition_repository()).unwrap_err();
+    assert!(
+        matches!(&error, RepositoryError::NotFound { id } if id == &claude_id()),
+        "要求 id で引けない: {error:?}"
     );
 
-    // 系譜 ID が違えば別の定義。3 入力が同一でも内容版は同じなので、id だけが違う。
-    assert_eq!(load(&claude).revision(), load(&kiro).revision());
+    // 名乗っている id で引けば見つかる。系譜 ID が違えば別の定義だが、3 入力が同一なので
+    // 内容版は同じ — id だけが違う。
+    let kiro_id = CompiledDefinitionId::parse("kiro").unwrap();
+    let found = find_by(&kiro.compiled_definition_repository(), &kiro_id).unwrap();
+    assert_eq!(found.id(), &kiro_id);
+    assert_eq!(found.revision(), load(&claude).revision());
 }
 
 #[test]
@@ -941,13 +954,18 @@ fn a_harness_identity_file_that_is_not_json_or_has_no_name_is_corrupt_not_io() {
 
 #[test]
 fn the_corrupt_variant_carries_only_a_diagnostic_not_a_classification() {
-    // 旧契約の `Corrupt { id, seq_nr }` は「どの集約が壊れていたか」を運んでいた。取込境界の
-    // 契約は**分類を載せない** (裁定 6 — 内部実装がバレる情報を含めない): 運ぶのは
-    // `Error::source` に連なる診断表示だけで、`Display` は種別を明かさない。
+    // Repository の契約は**分類を載せない** (裁定 6 — 内部実装がバレる情報を含めない):
+    // `Corrupt` の `Display` は「どの集約が壊れていたか」(id・通番) までしか言わず、どの
+    // ファイルがどう壊れていたかは `Error::source` に連なる診断表示だけが運ぶ。
     let fixture = Fixture::new(Some("[ { \"slug\": "), Some(GRID_JSON), &scope_files());
     let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     assert!(matches!(error, RepositoryError::Corrupt { .. }));
-    assert_eq!(error.to_string(), "corrupt definition artifacts");
+    let rendered = error.to_string();
+    assert!(rendered.starts_with("corrupt"), "{rendered}");
+    assert!(
+        !rendered.contains("stage-graph") && !rendered.contains("JSON"),
+        "分類・材料が Display に漏れている: {rendered}"
+    );
     // 材料 (どのファイルがどう壊れていたか) は原因連鎖にだけ現れる。
     let cause = corrupt_cause(&error);
     assert!(

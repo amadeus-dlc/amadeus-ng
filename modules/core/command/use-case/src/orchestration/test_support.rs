@@ -152,10 +152,10 @@ pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
     .0
 }
 
-/// 取込境界が返す材料 — 内容版だけを差し替えられる形にしてある。
+/// フィクスチャの配布束 — 内容版だけを差し替えられる形にしてある (genesis の対の左)。
 pub(crate) fn compiled(revision: DefinitionRevision, stage_count: usize) -> CompiledDefinition {
     let (graph, grid, scopes) = content(stage_count);
-    CompiledDefinition::new(compiled_definition_id(), revision, graph, grid, scopes)
+    CompiledDefinition::compile(compiled_definition_id(), revision, graph, grid, scopes).0
 }
 
 /// フィクスチャの配布束 id (系譜は `definition_id` と同じ name)。
@@ -288,7 +288,7 @@ impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
     }
 }
 
-/// [`DefinitionArtifactsClient`] のテストダブル — 決まった材料を返すか、決まった失敗を返す。
+/// [`CompiledDefinitionRepository`] のテストダブル — 決まった配布束を返すか、決まった失敗を返す。
 #[derive(Debug)]
 pub(crate) struct InMemoryCompiledDefinitionRepository {
     outcome: StubOutcome,

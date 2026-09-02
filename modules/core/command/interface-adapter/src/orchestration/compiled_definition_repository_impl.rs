@@ -38,13 +38,16 @@
 //! グリッド列の不一致は双方向とも正当。
 
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
-    ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ReviewCapValue,
-    ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault,
-    StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
+    BrownfieldGreenfield, Compiled, CompiledDefinition, CompiledDefinitionEvent,
+    CompiledDefinitionId, ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
+    ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef,
+    SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
 };
 use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
-use core_infrastructure::canon_json::{hash_canonical, to_value};
+use core_infrastructure::canon_json::{
+    SerializationProfile, ToValueError, hash_canonical, serialize, to_value,
+};
+use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -371,7 +374,7 @@ struct RevisionScope {
 // Gateway
 // ---------------------------------------------------------------------------
 
-/// ファイルシステムを裏に持つ `DefinitionArtifactsClient` の実装。
+/// 配布 3 ファイルを媒体に持つ [`CompiledDefinitionRepository`] の実装。
 ///
 /// 呼出のたびに 3 入力を読み直す。キャッシュ戦略 (`OnceCell` / 注入 / 呼出ごとのロード) は
 /// **観測不能なので実装の自由** (12 §10) — upstream のモジュールレベル可変シングルトンと
@@ -537,8 +540,13 @@ impl CompiledDefinitionRepositoryImpl {
         Ok(scopes)
     }
 
-    /// 3 入力を読んで材料を組み立てる本体。失敗はアダプタ私有の中間表現で返し、ポート契約への
-    /// 写像は [`DefinitionArtifactsClient::fetch`] が 1 箇所で行う。
+    /// 3 入力を読んで集約を再構成する本体。失敗はアダプタ私有の中間表現で返し、ポート契約への
+    /// 写像は `find_by_id` が 1 箇所で行う。
+    ///
+    /// 復号した内容は誕生記録 [`Compiled`] に束ね、集約は `From<Compiled>` で導出する —
+    /// ジャーナルを読む Repository が genesis イベントからスナップショット種を起こすのと
+    /// 同じ経路である。再構成がイベントを**生成**しているのではなく、媒体に書かれている
+    /// 誕生の内容を読み戻しているだけである。
     fn read(&self) -> Result<CompiledDefinition, DefinitionReadFailure> {
         // 定義 id は配布物自身が名乗る (ADR-008) — 呼出側が id を指定して照合するのではない。
         let id = self.load_harness_identity()?;
@@ -555,7 +563,9 @@ impl CompiledDefinitionRepositoryImpl {
         };
         let scopes = self.load_scopes()?;
         let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
-        Ok(CompiledDefinition::new(id, revision, graph, grid, scopes))
+        Ok(CompiledDefinition::from(Compiled::new(
+            id, revision, graph, grid, scopes,
+        )))
     }
 }
 
@@ -585,12 +595,7 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
         // 「歴史と保存像が別の内容を語る」書込契約違反として拒む (`IntentRepositoryImpl` の
         // 写し — 対で受ける契約の意味を実装が守る)。
         let CompiledDefinitionEvent::Compiled(compiled) = event;
-        if compiled.id() != compiled_definition.id()
-            || compiled.revision() != compiled_definition.revision()
-            || compiled.graph() != compiled_definition.graph()
-            || compiled.grid() != compiled_definition.grid()
-            || compiled.scopes() != compiled_definition.scopes()
-        {
+        if CompiledDefinition::from(compiled.clone()) != *compiled_definition {
             return Err(RepositoryError::Corrupt {
                 id: id.clone(),
                 seq_nr: None,
@@ -815,12 +820,20 @@ struct HarnessEmitDto<'a> {
 }
 
 /// `JSON.stringify(x, null, 2)` + 末尾改行 1 個の体裁 (contract-pretty)。
-fn contract_pretty<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
-    Ok(format!("{}\n", serde_json::to_string_pretty(value)?))
+///
+/// 契約 JSON の直列化は canon-json の 1 経路に固定する (BR1.7 / ADR 0001 決定 5 —
+/// `serde_json` の直列化関数は `clippy.toml` が拒否する)。struct は宣言順、動的マップは
+/// `Serialize` 実装が流した順で `JsonValue` になる (BR1.8) ので、emit 用 DTO の並びが
+/// そのままバイトの並びになる。
+fn contract_pretty<T: Serialize>(value: &T) -> Result<String, ToValueError> {
+    Ok(serialize(
+        &to_value(value)?,
+        SerializationProfile::ContractPretty,
+    ))
 }
 
 /// `stage-graph.json` のバイトを組む (ノード配列は文書順のまま)。
-fn emit_graph(graph: &StageGraph) -> Result<String, serde_json::Error> {
+fn emit_graph(graph: &StageGraph) -> Result<String, ToValueError> {
     let nodes: Vec<StageNodeEmitDto<'_>> = graph
         .nodes()
         .iter()
@@ -888,42 +901,62 @@ fn emit_graph(graph: &StageGraph) -> Result<String, serde_json::Error> {
 /// `scope-grid.json` のバイトを組む。
 ///
 /// スコープ列は名前の辞書順 (dist 実測 — golden §2)、各列の stage キーは**グラフ文書順**
-/// (dist 実測: ソートではなく `numericStageOrder` = 文書順の部分列)。動的キーの順序保存の
-/// ため serde の Map を通さず手組みする — キーと値のエスケープは `serde_json` に委ねる。
-fn emit_grid(graph: &StageGraph, grid: &ScopeGrid) -> Result<String, serde_json::Error> {
-    let mut out = String::from("{\n");
-    let scope_names = grid.scope_names();
-    for (scope_index, scope) in scope_names.iter().enumerate() {
-        out.push_str("  ");
-        out.push_str(&serde_json::to_string(scope)?);
-        out.push_str(": {\n    \"stages\": {");
-        let mut wrote_stage = false;
-        for node in graph.nodes() {
-            let Some(action) = grid.action(scope, node.slug()) else {
-                continue;
-            };
-            if wrote_stage {
-                out.push(',');
-            }
-            wrote_stage = true;
-            out.push_str("\n      ");
-            out.push_str(&serde_json::to_string(node.slug().as_str())?);
-            out.push_str(": ");
-            out.push_str(&serde_json::to_string(action.as_str())?);
+/// (dist 実測: ソートではなく `numericStageOrder` = 文書順の部分列)。動的キーの順序は
+/// [`ScopeGridEmitDto`] / [`ScopeStagesEmitDto`] の `Serialize` 実装が流す順で保たれる
+/// (canon-json の `to_value` は挿入順を保つ — BR1.8)。
+fn emit_grid(graph: &StageGraph, grid: &ScopeGrid) -> Result<String, ToValueError> {
+    contract_pretty(&ScopeGridEmitDto { graph, grid })
+}
+
+/// `scope-grid.json` の emit 形 — スコープ名 → 列。キー順は `ScopeGrid` の列順 (辞書順)。
+struct ScopeGridEmitDto<'a> {
+    graph: &'a StageGraph,
+    grid: &'a ScopeGrid,
+}
+
+impl Serialize for ScopeGridEmitDto<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let scope_names = self.grid.scope_names();
+        let mut columns = serializer.serialize_map(Some(scope_names.len()))?;
+        for scope in scope_names {
+            columns.serialize_entry(
+                scope,
+                &ScopeColumnEmitDto {
+                    stages: ScopeStagesEmitDto {
+                        graph: self.graph,
+                        grid: self.grid,
+                        scope,
+                    },
+                },
+            )?;
         }
-        if wrote_stage {
-            out.push_str("\n    }");
-        } else {
-            out.push('}');
-        }
-        out.push_str("\n  }");
-        if scope_index + 1 < scope_names.len() {
-            out.push(',');
-        }
-        out.push('\n');
+        columns.end()
     }
-    out.push_str("}\n");
-    Ok(out)
+}
+
+/// 1 列の emit 形 — 中間キー `stages` (F6) の 2 段構造。
+#[derive(Serialize)]
+struct ScopeColumnEmitDto<'a> {
+    stages: ScopeStagesEmitDto<'a>,
+}
+
+/// 列の中身 — グラフ文書順で、このグリッドがコンパイルした slug だけを EXECUTE / SKIP で流す。
+struct ScopeStagesEmitDto<'a> {
+    graph: &'a StageGraph,
+    grid: &'a ScopeGrid,
+    scope: &'a str,
+}
+
+impl Serialize for ScopeStagesEmitDto<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut stages = serializer.serialize_map(None)?;
+        for node in self.graph.nodes() {
+            if let Some(action) = self.grid.action(self.scope, node.slug()) {
+                stages.serialize_entry(node.slug().as_str(), action.as_str())?;
+            }
+        }
+        stages.end()
+    }
 }
 
 /// scope identity ファイル (`aidlc-<name>.md`) のバイトを組む。
@@ -1429,30 +1462,30 @@ mod tests {
 
     #[test]
     fn path_resolution_prefers_the_overrides() {
-        let definition_artifacts_client =
+        let compiled_definition_repository =
             CompiledDefinitionRepositoryImpl::new(PathBuf::from("/data"), PathBuf::from("/scopes"));
         assert_eq!(
-            definition_artifacts_client.stage_graph_path(),
+            compiled_definition_repository.stage_graph_path(),
             PathBuf::from("/data/stage-graph.json")
         );
         assert_eq!(
-            definition_artifacts_client.scope_grid_path(),
+            compiled_definition_repository.scope_grid_path(),
             PathBuf::from("/data/scope-grid.json")
         );
         assert_eq!(
-            definition_artifacts_client.harness_path(),
+            compiled_definition_repository.harness_path(),
             PathBuf::from("/data/harness.json")
         );
 
-        let definition_artifacts_client = definition_artifacts_client
+        let compiled_definition_repository = compiled_definition_repository
             .with_stage_graph_override(PathBuf::from("/pinned/graph.json"))
             .with_scope_grid_override(PathBuf::from("/pinned/grid.json"));
         assert_eq!(
-            definition_artifacts_client.stage_graph_path(),
+            compiled_definition_repository.stage_graph_path(),
             PathBuf::from("/pinned/graph.json")
         );
         assert_eq!(
-            definition_artifacts_client.scope_grid_path(),
+            compiled_definition_repository.scope_grid_path(),
             PathBuf::from("/pinned/grid.json")
         );
     }
