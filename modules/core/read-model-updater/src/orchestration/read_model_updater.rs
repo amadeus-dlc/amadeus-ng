@@ -13,6 +13,7 @@
 
 use core_command_domain::orchestration::IntentExecutionEvent;
 
+use crate::read_tables::ReadTables;
 use crate::workspace::{ReadModel, ResolvedPlan};
 
 use super::catch_up_error::CatchUpError;
@@ -64,11 +65,20 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// 落ち着く（冪等）が、監査シャードには同じブロックがもう一度並ぶ。この非対称は
     /// 「欠落しない」ことと引き換えに受け入れている。
     ///
+    /// # 2 系統を 1 回で描く
+    ///
+    /// キャッチアップ 1 回で Markdown 面（系統 (1) — `aidlc-state.md` と監査シャード）と
+    /// 構造化面（系統 (2) — SQLite の `read_*` 表）の両方を描く。構造化面は**全履歴からの
+    /// 再計算**なので、差分ではなくチェックポイント 0 からの読み直しを入力にする。
+    /// 行の差し替えとチェックポイントの前進は `advance_checkpoint` の中で 1 トランザクション
+    /// に閉じる（裁定 §3）。
+    ///
     /// # Errors
     ///
     /// ジャーナルの読取・チェックポイントの失敗（`Read`）、投影核が描けなかった
     /// （`Projection`）、状態ファイルを読めない（`StateFileRead`）・書けない
-    /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）。
+    /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）、構造化投影核が
+    /// 歴史の切り落としを見つけた（`ReadTables`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
         let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
         let batch = self.journal_reader.events_after(checkpoint).await?;
@@ -95,8 +105,17 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             .map_err(CatchUpError::AuditShardWrite)?;
         }
 
+        // 構造化面は差分投影ではなく全再計算である。差分がチェックポイント 0 から始まって
+        // いれば差分そのものが全履歴であり、そうでなければ読み直す。
+        let tables = if checkpoint == GlobalSeqNr::ZERO {
+            ReadTables::project(&batch)?
+        } else {
+            let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
+            ReadTables::project(&history)?
+        };
+
         self.journal_reader
-            .advance_checkpoint(&self.projection, last)
+            .advance_checkpoint(&self.projection, last, &tables)
             .await?;
         Ok(last)
     }

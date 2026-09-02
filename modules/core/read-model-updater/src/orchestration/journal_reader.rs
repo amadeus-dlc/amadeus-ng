@@ -1,5 +1,7 @@
 //! `JournalReader` ポート — 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 
+use crate::read_tables::ReadTables;
+
 use super::global_seq_nr::GlobalSeqNr;
 use super::journal_batch::JournalBatch;
 use super::journal_read_error::JournalReadError;
@@ -52,9 +54,19 @@ pub trait JournalReader {
         projection: &ProjectionName,
     ) -> Result<GlobalSeqNr, JournalReadError>;
 
-    /// チェックポイントを `to` へ進める。同値は no-op、現在値未満は拒否 (単調 — BR1.4)。
+    /// 構造化リードモデルの行を差し替え、チェックポイントを `to` へ進める。
+    /// 同値は no-op、現在値未満は拒否 (単調 — BR1.4)。
     ///
     /// 巻き戻し (投影の再生成) は行削除で行う。本ポートには後退の口を置かない。
+    ///
+    /// # 行の差し替えと前進は 1 つの原子的な操作である
+    ///
+    /// `tables` は全履歴からの再計算の結果であり、書込は**全行の差し替え**である。それと
+    /// チェックポイントの前進が別々にコミットされると、行だけ新しくてチェックポイントが
+    /// 古い (次のキャッチアップで同じ差分をもう一度描く) か、逆に行が古いままチェック
+    /// ポイントだけ進む (読取コマンドが永久に古い答えを見る) かのどちらかになる。
+    /// したがって実装は両方を 1 トランザクションに閉じる (裁定 §3)。前進を拒否するときは
+    /// 行も変えない。
     ///
     /// # Errors
     ///
@@ -64,6 +76,7 @@ pub trait JournalReader {
         &mut self,
         projection: &ProjectionName,
         to: GlobalSeqNr,
+        tables: &ReadTables,
     ) -> Result<(), JournalReadError>;
 }
 
@@ -100,6 +113,8 @@ mod tests {
     struct FakeReader {
         journal: Vec<JournalEntry>,
         checkpoints: BTreeMap<ProjectionName, GlobalSeqNr>,
+        /// 最後に受け取った構造化リードモデル (前進と同じ呼出で届く)。
+        tables: Option<ReadTables>,
     }
 
     impl JournalReader for FakeReader {
@@ -129,6 +144,7 @@ mod tests {
             &mut self,
             projection: &ProjectionName,
             to: GlobalSeqNr,
+            tables: &ReadTables,
         ) -> Result<(), JournalReadError> {
             let current = self
                 .checkpoints
@@ -136,6 +152,7 @@ mod tests {
                 .copied()
                 .unwrap_or(GlobalSeqNr::ZERO);
             if to < current {
+                // 拒否したら行も変えない (原子性の約束をフェイクも守る)。
                 return Err(JournalReadError::CheckpointRegression {
                     projection: projection.clone(),
                     current,
@@ -143,6 +160,7 @@ mod tests {
                 });
             }
             self.checkpoints.insert(projection.clone(), to);
+            self.tables = Some(tables.clone());
             Ok(())
         }
     }
@@ -151,6 +169,7 @@ mod tests {
         FakeReader {
             journal: vec![entry(1), entry(2)],
             checkpoints: BTreeMap::new(),
+            tables: None,
         }
     }
 
@@ -203,11 +222,16 @@ mod tests {
         );
     }
 
+    /// 前進と同じ呼出で渡す構造化リードモデル (空の履歴からの投影で足りる)。
+    fn tables() -> ReadTables {
+        ReadTables::project(&JournalBatch::empty()).expect("空も投影できる")
+    }
+
     #[tokio::test]
     async fn the_checkpoint_advances_and_is_readable_again() {
         let mut journal_reader = journal_reader();
         journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &tables())
             .await
             .unwrap();
         assert_eq!(
@@ -217,14 +241,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn moving_the_checkpoint_backwards_is_a_regression() {
+    async fn the_rows_arrive_with_the_advance_not_in_a_separate_call() {
+        // ポートの形そのものの確認 — 行と前進が同じ呼出で届くことが原子性の前提である。
+        let mut journal_reader = journal_reader();
+        assert!(journal_reader.tables.is_none());
+        journal_reader
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &tables())
+            .await
+            .unwrap();
+        assert_eq!(journal_reader.tables, Some(tables()));
+    }
+
+    #[tokio::test]
+    async fn moving_the_checkpoint_backwards_is_a_regression_and_leaves_the_rows_alone() {
         let mut journal_reader = journal_reader();
         journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &tables())
             .await
             .unwrap();
         let err = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &tables())
             .await
             .unwrap_err();
         assert_eq!(

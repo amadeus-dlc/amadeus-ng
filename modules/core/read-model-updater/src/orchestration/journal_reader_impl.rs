@@ -69,6 +69,7 @@ use core_command_domain::workflow_definition::{WorkflowDefinitionEvent, Workflow
 use super::dto::{
     DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
 };
+use crate::read_tables::{ReadTables, ensure_tables, replace_all};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -219,6 +220,9 @@ impl JournalReaderImpl {
         connection
             .execute_batch(CREATE_CHECKPOINT_TABLE)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+        // 構造化リードモデルの 13 表も我々の表である (本家の DDL とは衝突しない
+        // `read_` 接頭)。チェックポイント表と同じく冪等な `CREATE TABLE IF NOT EXISTS`。
+        ensure_tables(&connection).map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         Ok(JournalReaderImpl {
             path: path.clone(),
             connection,
@@ -563,6 +567,7 @@ impl JournalReader for JournalReaderImpl {
         &mut self,
         projection: &ProjectionName,
         to: GlobalSeqNr,
+        tables: &ReadTables,
     ) -> Result<(), JournalReadError> {
         let target = to_i64(to.to_u64())?;
         let path = self.path.clone();
@@ -607,6 +612,11 @@ impl JournalReader for JournalReaderImpl {
             Some((aid, seq_nr)) => (Some(aid.as_str()), Some(*seq_nr)),
             None => (None, None),
         };
+        // 行の全差し替えとチェックポイントの前進は**同じ Tx** である (裁定 §3)。
+        // 上の単調性・アンカー照合で早期 return したときは行も 1 つも変わっていない
+        // (Tx は commit されずに落ちる)。
+        replace_all(&transaction, tables)
+            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         transaction
             .execute(
                 UPSERT_CHECKPOINT,
@@ -766,7 +776,10 @@ mod tests {
     }
 
     #[test]
-    fn opening_creates_the_checkpoint_table_next_to_the_upstream_tables() {
+    fn opening_creates_our_tables_next_to_the_upstream_ones() {
+        // 同じ DB ファイルに 3 種の表が同居する: 本家の 2 つ (`journal` / `snapshot`)、
+        // 我々のチェックポイント表、そして構造化リードモデルの 13 表 (`read_` 接頭)。
+        // 名前が衝突しないことが同居の前提なので、集合そのものを固定する。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
         let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
@@ -782,7 +795,25 @@ mod tests {
             .filter_map(Result::ok)
             .filter(|name| !name.starts_with("sqlite_"))
             .collect();
-        assert_eq!(tables, [CHECKPOINT_TABLE, "journal", "snapshot"]);
+
+        let upstream: Vec<&str> = tables
+            .iter()
+            .map(String::as_str)
+            .filter(|name| !name.starts_with("read_") && *name != CHECKPOINT_TABLE)
+            .collect();
+        assert_eq!(upstream, ["journal", "snapshot"], "本家の表は 2 つだけ");
+        assert!(
+            tables.iter().any(|name| name == CHECKPOINT_TABLE),
+            "チェックポイント表がある"
+        );
+        assert_eq!(
+            tables
+                .iter()
+                .filter(|name| name.starts_with("read_"))
+                .count(),
+            13,
+            "構造化リードモデルは 13 表"
+        );
     }
 
     #[test]
@@ -867,7 +898,7 @@ mod tests {
         );
         assert!(
             journal_reader
-                .advance_checkpoint(&projection(), GlobalSeqNr::new(u64::MAX))
+                .advance_checkpoint(&projection(), GlobalSeqNr::new(u64::MAX), &empty_tables())
                 .await
                 .is_err()
         );
@@ -916,7 +947,7 @@ mod tests {
             }
         );
         let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
             .await
             .expect_err("表が無い");
         assert_eq!(
@@ -992,7 +1023,7 @@ mod tests {
         let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
 
         journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::ZERO)
+            .advance_checkpoint(&projection(), GlobalSeqNr::ZERO, &empty_tables())
             .await
             .expect("ZERO への前進は通る");
         let saved = journal_reader
@@ -1010,7 +1041,7 @@ mod tests {
         let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
 
         let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
             .await
             .expect_err("空のジャーナルに位置 1 は無い");
         assert_eq!(
@@ -1122,7 +1153,7 @@ mod tests {
             .expect("UTF-8 でない aid の行を置く");
 
         let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
             .await
             .expect_err("アンカー列を読めない");
         assert_eq!(
@@ -1232,7 +1263,7 @@ mod tests {
             .expect("整数でない seq_nr の行を置く");
 
         let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
             .await
             .expect_err("アンカー列を読めない");
         assert_eq!(
@@ -1292,7 +1323,7 @@ mod tests {
         drop(conn);
 
         let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
             .await
             .expect_err("書込が落ちる");
         assert_eq!(
@@ -1372,7 +1403,7 @@ mod tests {
             .expect("書込ロックを握る");
 
         let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
             .await
             .expect_err("他の書き手がいる");
         assert_eq!(
@@ -1387,6 +1418,14 @@ mod tests {
     /// 失敗経路の試験が使う投影名。
     fn projection() -> ProjectionName {
         ProjectionName::parse("state-file").expect("投影名は kebab")
+    }
+
+    /// 前進と一緒に渡す構造化リードモデル。
+    ///
+    /// 単調性・アンカー照合を見る試験は行の中身に依存しないので、空の履歴からの投影
+    /// (= 全表 0 行) で足りる。行の往復そのものは `journal_reader_impl_test.rs` が見る。
+    fn empty_tables() -> ReadTables {
+        ReadTables::project(&JournalBatch::empty()).expect("空も投影できる")
     }
 
     #[test]

@@ -22,9 +22,10 @@ mod support;
 use core_command_domain::workflow_definition::WorkflowDefinitionId;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
-    CorruptCause, GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
-    ProjectionName, WorkflowDefinitionEventDto,
+    CorruptCause, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
+    JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
 };
+use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -33,6 +34,11 @@ use support::{
     execution_id, intent, open_store, other_execution_id, redefined_event, seed, seed_definition,
     seed_intent,
 };
+
+/// 行の中身に依存しない試験が前進と一緒に渡す構造化リードモデル (全表 0 行)。
+fn empty_tables() -> ReadTables {
+    ReadTables::project(&JournalBatch::empty()).expect("空も投影できる")
+}
 
 /// 一時ディレクトリ配下の 1 つのストアファイル。
 struct Fixture {
@@ -330,7 +336,7 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
         .expect("全件");
     let third = before.executions().get(2).expect("3 件目").global_seq();
     journal_reader
-        .advance_checkpoint(&projection(), third)
+        .advance_checkpoint(&projection(), third, &empty_tables())
         .await
         .expect("チェックポイント前進");
     drop(journal_reader);
@@ -382,7 +388,7 @@ async fn a_truncated_journal_behind_the_checkpoint_is_refused() {
         .expect("全件");
     let last = all.executions().last().expect("末尾").global_seq();
     journal_reader
-        .advance_checkpoint(&projection(), last)
+        .advance_checkpoint(&projection(), last, &empty_tables())
         .await
         .expect("チェックポイント前進");
     drop(journal_reader);
@@ -427,7 +433,7 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
         .expect("全件");
     let third = before.executions().get(2).expect("3 件目").global_seq();
     journal_reader
-        .advance_checkpoint(&projection(), third)
+        .advance_checkpoint(&projection(), third, &empty_tables())
         .await
         .expect("チェックポイント前進");
     drop(journal_reader); // VACUUM は排他を要するため他接続を全部閉じてから実行する
@@ -585,7 +591,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
     let last = rows.executions().last().expect("4 件ある").global_seq();
 
     journal_reader
-        .advance_checkpoint(&projection(), last)
+        .advance_checkpoint(&projection(), last, &empty_tables())
         .await
         .expect("前進");
     assert_eq!(
@@ -597,7 +603,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
     );
 
     journal_reader
-        .advance_checkpoint(&projection(), last)
+        .advance_checkpoint(&projection(), last, &empty_tables())
         .await
         .expect("同値は no-op");
     assert_eq!(
@@ -626,7 +632,7 @@ async fn the_checkpoint_survives_reopening_the_store() {
     {
         let mut journal_reader = fixture.journal_reader();
         journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(3))
+            .advance_checkpoint(&projection(), GlobalSeqNr::new(3), &empty_tables())
             .await
             .expect("前進");
     }
@@ -650,11 +656,11 @@ async fn a_checkpoint_regression_is_refused() {
 
     let mut journal_reader = fixture.journal_reader();
     journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(3))
+        .advance_checkpoint(&projection(), GlobalSeqNr::new(3), &empty_tables())
         .await
         .expect("前進");
     let err = journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(2))
+        .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &empty_tables())
         .await
         .expect_err("後退は拒否");
     assert_eq!(
@@ -684,7 +690,7 @@ async fn two_projections_keep_independent_checkpoints() {
     let other = ProjectionName::parse("intents-registry").expect("投影名は kebab");
     let mut journal_reader = fixture.journal_reader();
     journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(4))
+        .advance_checkpoint(&projection(), GlobalSeqNr::new(4), &empty_tables())
         .await
         .expect("前進");
     assert_eq!(
@@ -693,7 +699,7 @@ async fn two_projections_keep_independent_checkpoints() {
         "別の投影は動かない"
     );
     journal_reader
-        .advance_checkpoint(&other, GlobalSeqNr::new(2))
+        .advance_checkpoint(&other, GlobalSeqNr::new(2), &empty_tables())
         .await
         .expect("前進");
     assert_eq!(
@@ -707,4 +713,191 @@ async fn two_projections_keep_independent_checkpoints() {
         journal_reader.checkpoint(&other).await.expect("読取"),
         GlobalSeqNr::new(2)
     );
+}
+
+// ---------------------------------------------------------------------------
+// 構造化リードモデル (`read_*` 表) — 行の往復と、前進との原子性 (b39 / 裁定 §3)
+// ---------------------------------------------------------------------------
+
+/// 実行・intent・定義の 3 ストリームを 1 本の履歴として読み直し、行へ投影する。
+async fn seeded_tables(journal_reader: &JournalReaderImpl) -> ReadTables {
+    let history = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("全件");
+    ReadTables::project(&history).expect("健全な履歴は投影できる")
+}
+
+#[tokio::test]
+async fn opening_the_store_twice_leaves_the_read_tables_intact() {
+    // DDL は `CREATE TABLE IF NOT EXISTS` — 2 度目の open で落ちないし、行も消さない。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+
+    let reopened = fixture.journal_reader();
+    assert_eq!(
+        reopened.checkpoint(&projection()).await.expect("読取"),
+        last
+    );
+    let rows: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_execution", [], |row| row.get(0))
+        .expect("表は残っている");
+    assert_eq!(rows, 1, "2 度目の open は行を消さない");
+}
+
+#[tokio::test]
+async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed_definition(&fixture.path).await;
+    seed(&mut store).await;
+
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+
+    let connection = fixture.raw();
+    let as_of = i64::try_from(last.to_u64()).expect("i64 に収まる");
+
+    // read_execution — 実行 1 本の代表列。
+    let expected = tables.executions().first().expect("実行が 1 本");
+    let (execution_id, status, cursor_slug, autonomy, seq_nr, stamp): (
+        String,
+        String,
+        Option<String>,
+        String,
+        i64,
+        i64,
+    ) = connection
+        .query_row(
+            "SELECT execution_id, status, cursor_slug, autonomy, seq_nr, as_of FROM read_execution",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("行は 1 件");
+    assert_eq!(execution_id, expected.execution_id());
+    assert_eq!(status, expected.status());
+    assert_eq!(cursor_slug.as_deref(), expected.cursor_slug());
+    assert_eq!(autonomy, expected.autonomy());
+    assert_eq!(usize::try_from(seq_nr).expect("非負"), expected.seq_nr());
+    assert_eq!(stamp, as_of, "as_of は走査済み最終位置");
+
+    // read_next_answer — 4 kind そろっている。
+    let kinds: Vec<String> = connection
+        .prepare("SELECT request_kind FROM read_next_answer ORDER BY request_kind")
+        .expect("準備")
+        .query_map([], |row| row.get(0))
+        .expect("問い合わせ")
+        .collect::<Result<Vec<String>, _>>()
+        .expect("収集");
+    assert_eq!(kinds, ["bare", "free-text", "reentry", "resume"]);
+
+    // read_definition_stage — 定義ストリームの改訂まで畳んだ結果が行になっている。
+    let (slug, phase, gated): (String, String, bool) = connection
+        .query_row(
+            "SELECT stage_slug, phase, gated FROM read_definition_stage",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("行は 1 件");
+    let expected_stage = tables.definition_stages().first().expect("ステージ 1 件");
+    assert_eq!(slug, expected_stage.stage_slug());
+    assert_eq!(phase, expected_stage.phase());
+    assert_eq!(gated, expected_stage.gated());
+}
+
+#[tokio::test]
+async fn a_refused_advance_leaves_the_rows_untouched() {
+    // 行の差し替えと前進は 1 Tx である — 後退が拒否されたら行も 1 つも動かない (裁定 §3)。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+
+    let before: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_next_jump", [], |row| row.get(0))
+        .expect("件数");
+    assert!(before > 0, "前進で行が入っている");
+
+    // 後退を、**行が空の**リードモデルと一緒に要求する。拒否されるので行は消えない。
+    let err = journal_reader
+        .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
+        .await
+        .expect_err("後退は拒否");
+    assert!(matches!(err, JournalReadError::CheckpointRegression { .. }));
+
+    let after: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_next_jump", [], |row| row.get(0))
+        .expect("件数");
+    assert_eq!(after, before, "拒否した Tx は行を 1 つも消していない");
+}
+
+#[tokio::test]
+async fn a_second_advance_replaces_every_row_instead_of_appending() {
+    // 投影は全再計算・全差し替えである — 2 度書いても行は増えない。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+    let first: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_execution_stage", [], |row| {
+            row.get(0)
+        })
+        .expect("件数");
+
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("同値は no-op だが行は書き直す");
+    let second: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_execution_stage", [], |row| {
+            row.get(0)
+        })
+        .expect("件数");
+    assert_eq!(second, first, "差し替えであって追記ではない");
 }
