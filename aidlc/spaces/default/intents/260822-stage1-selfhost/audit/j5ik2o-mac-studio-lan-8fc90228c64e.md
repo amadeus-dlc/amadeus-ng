@@ -31467,3 +31467,249 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: b41 は完了しました。設計書 §1 の 4 表 + `read_execution.scope` を実装し、全ゲートが緑です。コミットはしていません。\n\n## 追加ファイル（10 本、いずれも 1 ファイル 1 公開型）\n\n- `/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/modules/core/read-model-updater/src/re
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:27:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af060148dfec1c6d1
+**Message**: 進捗は
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:27:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4bc0e5e11f30a730
+**Message**: Grepping ReportedTransition in commit_verdict_use_case.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:28:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a85323fe114423371
+**Message**: Grepping report_forward in engine_loop ITF fixtures
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:28:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4f28d64c4e687aff
+**Message**: Reading stage_completed in projection.rs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:29:19Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:29:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a57eef65a22021fca
+**Message**: Grepping StageCompleted in 10-orchestration.md
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:29:22Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:29:25Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a575f08caa66e3142
+**Message**: 進捗は
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:29:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a24916642be9f0814
+**Message**: 進捗は
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:29:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:29:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac8452493952bfff7
+**Message**: Reading require_gated in intent_execution.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:29:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6ea5acac5db3b887
+**Message**: 進捗は
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:30:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab6ce2261801a67d9
+**Message**: Reading seed helpers in crash_reconstruction_test.rs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:30:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:30:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:30:56Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a59ec2a78aa1cc183
+**Message**: Locating AutonomyModeSet match arms in intent_execution.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:30:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4b6e5b6b698aaed0
+**Message**: 進捗は
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:31:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a3f45ca4630d7f7cf
+**Message**: 進捗は
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:32:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: a896d67d9990ecd89
+**Message**: 調査完了。以下、削除・調整対象の完全な一覧です。\n\n## 1. Domain (`modules/core/command/domain`)\n\n**削除する本体**\n\n| 対象 | 場所 |\n|---|---|\n| `complete_stage` 本体 (doc コメント 625-630 含む) | `src/orchestration/intent_execution.rs:625-645` 
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:32:02Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:32:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a95ac6207bdc71afb
+**Message**: 進捗は
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:36:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:37:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a62369b7ecc20b0fd
+**Message**: 進捗は
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:37:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:38:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab29561d15fa3b1ec
+**Message**: 進捗は
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:38:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:38:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:38:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a04afbae857b9b04b
+**Message**: 進捗は
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T18:38:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:39:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a529d051d8ff82b42
+**Message**: 進捗は
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T18:53:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b41-run-stage-steering
+**Agent ID**: ab41-run-stage-steering-0973748d212f8466
+**Message**: The Bugbot finding was real and is now fixed. `ExecutionRow` carried `scope`, but `read_execution` had no such column and the INSERT bound only 14 values, so the projected value was silently dropped o
+
+---
