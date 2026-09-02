@@ -4,8 +4,9 @@
 //! (`"Unparked"`) である。**変種名・フィールド名・並びが契約**である。
 
 use core_command_domain::orchestration::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, IntentId,
-    Jumped, Parked, Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageEntry,
+    StageRevised, StageSkipped, Started,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ use super::dto_vocabulary::{autonomy_of, autonomy_spelling};
 use super::gate_approved_dto::GateApprovedDto;
 use super::gate_opened_dto::GateOpenedDto;
 use super::gate_rejected_dto::GateRejectedDto;
+use super::intent_dto::StageEntryDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
@@ -75,7 +77,9 @@ impl IntentExecutionEventDto {
         match event {
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto {
+                    id: payload.id().as_str().to_string(),
                     intent_id: payload.intent_id().as_str().to_string(),
+                    stages: payload.stages().iter().map(StageEntryDto::of).collect(),
                 })
             }
             IntentExecutionEvent::StageCompleted(payload) => {
@@ -142,8 +146,15 @@ impl IntentExecutionEventDto {
         Ok(match self {
             IntentExecutionEventDto::Started(payload) => {
                 IntentExecutionEvent::Started(Started::new(
+                    IntentExecutionId::parse(&payload.id)
+                        .map_err(|_| DtoDecodeError::malformed("id", &payload.id))?,
                     IntentId::parse(&payload.intent_id)
                         .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
+                    payload
+                        .stages
+                        .iter()
+                        .map(StageEntryDto::to_domain)
+                        .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?,
                 ))
             }
             IntentExecutionEventDto::StageCompleted(payload) => {

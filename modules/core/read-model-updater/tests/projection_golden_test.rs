@@ -151,7 +151,12 @@ fn genesis_intent() -> Intent {
 }
 
 fn started() -> Started {
-    Started::new(IntentId::parse(INTENT).expect("UUIDv7"))
+    let intent = genesis_intent();
+    Started::new(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        intent.id().clone(),
+        intent.stages().to_vec(),
+    )
 }
 
 fn plan() -> ResolvedPlan {

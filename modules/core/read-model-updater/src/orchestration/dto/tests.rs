@@ -13,8 +13,8 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentExecutionEvent, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay,
-    StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted,
+    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -24,6 +24,7 @@ use core_command_domain::workflow_definition::{
 use super::{IntentEventDto, IntentExecutionEventDto};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
+const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 
 fn at() -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
@@ -95,14 +96,22 @@ fn intent() -> Intent {
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
 const INTENT_ROW: &str = r#"{"Created":{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}}"#;
 
+/// `Started` 行の逐語 — genesis の材料 3 点 (実行 id・intent id・解決済み計画)。
+///
+/// 書く側 (command interface-adapter の `StartedDto`) と**同一の文字列**であることは
+/// 横断適合テスト (`journal_protocol_conformance`) が固定する。
+const STARTED_ROW: &str = r#"{"Started":{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
+
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
             IntentExecutionEvent::Started(Started::new(
-                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                IntentId::parse(INTENT).expect("UUIDv7"),
+                stages(),
             )),
-            r#"{"Started":{"intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6"}}"#,
+            STARTED_ROW,
         ),
         (
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
@@ -234,11 +243,31 @@ fn a_malformed_identifier_is_refused_with_its_field() {
 }
 
 #[test]
-fn a_started_row_with_a_malformed_intent_id_is_refused() {
-    let decoded: IntentExecutionEventDto =
-        serde_json::from_str(r#"{"Started":{"intent_id":"not-a-uuid"}}"#)
-            .expect("JSON としては読める");
-    assert!(decoded.to_domain().is_err(), "文法外の intent 識別子は拒む");
+fn a_started_row_with_malformed_material_is_refused() {
+    // 識別子 2 種と計画の綴りを 1 つずつ壊す — genesis の材料はどれも検査付き再構成を通る。
+    for (from, to) in [
+        (
+            r#""id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000""#,
+            r#""id":"not-a-uuid""#,
+        ),
+        (
+            r#""intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
+            r#""intent_id":"not-a-uuid""#,
+        ),
+        (r#""slug":"state-init""#, r#""slug":"Not A Slug""#),
+        (r#""phase":"Initialization""#, r#""phase":"Nowhere""#),
+        (r#""plan_action":"Execute""#, r#""plan_action":"EXECUTE""#),
+        (r#""number":"0.1""#, r#""number":"zero""#),
+    ] {
+        let tampered = STARTED_ROW.replacen(from, to, 1);
+        assert_ne!(
+            tampered, STARTED_ROW,
+            "差し替え元が逐語形に存在する: {from}"
+        );
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&tampered).expect("JSON としては読める");
+        assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
+    }
 }
 
 #[test]

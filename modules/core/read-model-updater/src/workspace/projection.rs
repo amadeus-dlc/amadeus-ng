@@ -1611,7 +1611,12 @@ mod tests {
     }
 
     fn started() -> Started {
-        Started::new(IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"))
+        let intent = genesis_intent();
+        Started::new(
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7"),
+            intent.id().clone(),
+            intent.stages().to_vec(),
+        )
     }
 
     fn plan() -> ResolvedPlan {

@@ -1,28 +1,45 @@
 //! `Started` の永続化 DTO (**読む側**)。
 
-use core_command_domain::orchestration::{IntentId, Started};
+use core_command_domain::orchestration::{IntentExecutionId, IntentId, StageEntry, Started};
 use serde::{Deserialize, Serialize};
 
 use super::dto_decode_error::DtoDecodeError;
+use super::intent_dto::StageEntryDto;
 
-/// `Started` の材料。
+/// `Started` の材料 — genesis の 3 点 (実行 id・intent id・解決済み計画)。
+///
+/// 計画の写しを運ぶのは、実行の歴史が自ストリームだけで再生できるための条件である
+/// (`coding-rules/aggregate-commands.md`)。1 要素の綴りは `IntentDto` の `StageEntryDto` を
+/// 共有するので、intent 面と同じバイトになる。書き手 (コマンド側アダプタ) の
+/// `StartedDto` とワイヤ形式が一致していることは横断適合テストが固定する。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartedDto {
+    id: String,
     intent_id: String,
+    stages: Vec<StageEntryDto>,
 }
 
 impl StartedDto {
     /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
     pub(super) fn of(payload: &Started) -> StartedDto {
         StartedDto {
+            id: payload.id().as_str().to_string(),
             intent_id: payload.intent_id().as_str().to_string(),
+            stages: payload.stages().iter().map(StageEntryDto::of).collect(),
         }
     }
 
     /// ドメインの材料へ戻す (読み)。
     pub(super) fn to_domain(&self) -> Result<Started, DtoDecodeError> {
-        Ok(Started::new(IntentId::parse(&self.intent_id).map_err(
-            |_| DtoDecodeError::malformed("intent_id", &self.intent_id),
-        )?))
+        Ok(Started::new(
+            IntentExecutionId::parse(&self.id)
+                .map_err(|_| DtoDecodeError::malformed("id", &self.id))?,
+            IntentId::parse(&self.intent_id)
+                .map_err(|_| DtoDecodeError::malformed("intent_id", &self.intent_id))?,
+            self.stages
+                .iter()
+                .map(StageEntryDto::to_domain)
+                .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?,
+        ))
     }
 }

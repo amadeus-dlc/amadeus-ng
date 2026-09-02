@@ -1,30 +1,60 @@
 //! `Started` — `IntentExecutionEvent::Started` のペイロード。
 
-use crate::orchestration::IntentId;
+use crate::orchestration::{IntentExecutionId, IntentId, StageEntry};
 
-/// `Started` のペイロード — 起きた事実 (どの intent の実行が始まったか) だけを運ぶ。
+/// `Started` のペイロード — genesis の材料 (実行の識別子・対象 intent の識別子・
+/// 解決済み計画の写し) を運ぶ。
 ///
-/// **イベントはそのイベントを説明するプロパティだけに絞る** (オーナー裁定 2026-08-30)。
-/// かつて丸ごと運んでいた `Intent` の複製 (解決済み計画・表示属性・走査結果・依頼文) は
-/// 撤去した — それらは実行開始という事実の説明ではなく **intent 自身の誕生の記録**であり、
-/// 正本は intent 自身のジャーナルの `Created` にある (issue #50 / #56)。RMU が状態ファイル
-/// の骨格を描く材料もそこから取る。集約参照は ID で行う
-/// (coding-rules/aggregate-references.md)。
+/// **集約の歴史は自ストリームだけで再生できる**のが ES の基本である
+/// (`coding-rules/aggregate-commands.md`「genesis イベントから集約を導出する変換が
+/// リプレイのスナップショット種」)。誕生状態の導出に `&Intent` が要る形は、実行の
+/// ストリームだけでは再生できないという意味でこの基本に反していた (issue #56 で計画の
+/// 写しを落とした際の見落とし)。したがって genesis に要る材料 —— 誕生の状態を組むのに
+/// 必要な最小の静的材料 —— はこのイベントが運ぶ。
+///
+/// イベントが intent の材料の複製を運ぶのは**歴史**であって集約参照の違反ではない
+/// (`coding-rules/aggregate-references.md`「イベントが材料の複製を運ぶのは歴史」)。
+/// 禁じられるのは集約の**保持状態**への埋め込みであり、[`IntentExecution`] は従来どおり
+/// intent を ID で参照し、計画からは添字帳 (slug + phase) と実効プランだけを取り込む。
+///
+/// [`IntentExecution`]: crate::orchestration::IntentExecution
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
+    id: IntentExecutionId,
     intent_id: IntentId,
+    stages: Vec<StageEntry>,
 }
 
 impl Started {
-    /// 開始された intent の識別子を束ねる。
+    /// genesis の材料 3 つを束ねる。
     #[must_use]
-    pub const fn new(intent_id: IntentId) -> Started {
-        Started { intent_id }
+    pub const fn new(
+        id: IntentExecutionId,
+        intent_id: IntentId,
+        stages: Vec<StageEntry>,
+    ) -> Started {
+        Started {
+            id,
+            intent_id,
+            stages,
+        }
+    }
+
+    /// 始まった実行の識別子。
+    #[must_use]
+    pub const fn id(&self) -> &IntentExecutionId {
+        &self.id
     }
 
     /// 開始された intent の識別子。
     #[must_use]
     pub const fn intent_id(&self) -> &IntentId {
         &self.intent_id
+    }
+
+    /// 開始時点の解決済み計画 (文書順)。
+    #[must_use]
+    pub fn stages(&self) -> &[StageEntry] {
+        &self.stages
     }
 }

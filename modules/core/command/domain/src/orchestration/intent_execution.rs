@@ -148,19 +148,22 @@ impl IntentExecution {
     /// 戻り値が**対**なのは規則である (coding-rules/aggregate-commands.md) — Repository の
     /// 永続化は `store(&event, &aggregate, ..)` の形でジャーナル追記分 (誕生イベント) と
     /// スナップショット分 (適用後の集約) を同一トランザクションで受け取るので、どちらが
-    /// 欠けても永続化が組めない。再構成経路 (`from_snapshot` / `apply_event`) は逆に
+    /// 欠けても永続化が組めない。再構成経路 ([`IntentExecution::replay`] /
+    /// [`IntentExecution::apply_event`] / `From<(Started, occurred_at)>`) は逆に
     /// **イベントを作らない** — 作ればリプレイのたびに歴史が増える。
+    ///
+    /// 誕生状態そのものは `From<(Started, occurred_at)>` が導出する — genesis も
+    /// リプレイも同じ変換を通るので、実行のストリームは**自ストリームだけで再生できる**
+    /// (`coding-rules/aggregate-commands.md`)。
     #[must_use]
     pub fn start(
         id: IntentExecutionId,
         intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> (IntentExecution, IntentExecutionEvent) {
-        let execution = IntentExecution::genesis_state(id, intent, occurred_at);
-        (
-            execution,
-            IntentExecutionEvent::Started(Started::new(intent.id().clone())),
-        )
+        let started = Started::new(id, intent.id().clone(), intent.stages().to_vec());
+        let execution = IntentExecution::from((started.clone(), occurred_at));
+        (execution, IntentExecutionEvent::Started(started))
     }
 
     /// テスト専用: 通番だけ差し替えた複製 (通番枯渇の境界を memento 無しで作るため)。
@@ -168,76 +171,6 @@ impl IntentExecution {
     const fn with_seq_nr(mut self, seq_nr: usize) -> IntentExecution {
         self.seq_nr = seq_nr;
         self
-    }
-
-    /// genesis 時点の状態を組む (構造体リテラルはここだけ — [`IntentExecution::start`] と
-    /// [`IntentExecution::replay`] の両経路が必ずここを通る)。
-    ///
-    /// # 誕生 = 初期化完了済み (issue #76 / オーナー裁定 2026-09-01)
-    ///
-    /// upstream の意味論では initialization フェーズは鋳造の一部として完了する (誕生 16 行が
-    /// 初期化 3 ステージを `[x]` にする)。集約も同じ位置から始まる — in-scope の initialization
-    /// を completed にし、カーソルは**最初の in-scope 実ステージ** (RMU の誕生投影
-    /// `first_gated_in_scope` と同じ導出) に立って in-progress。実ステージが 1 つも in-scope に
-    /// 無い縮退形では、活動中ステージ 0 のままカーソル 0 に留まる (next が branch 10 の done を
-    /// 導く)。これにより誕生直後の report が initialization を再完了して `STAGE_COMPLETED` を
-    /// 二重記録する経路は構成不能になる。
-    fn genesis_state(
-        id: IntentExecutionId,
-        intent: &Intent,
-        occurred_at: DateTime<Utc>,
-    ) -> IntentExecution {
-        let count = intent.stage_count();
-        let stage_keys: Vec<StageKey> = intent
-            .stages()
-            .iter()
-            .map(|entry| StageKey::new(entry.slug().clone(), entry.phase()))
-            .collect();
-        let overlay: Vec<PlanAction> = intent
-            .stages()
-            .iter()
-            .map(StageEntry::plan_action)
-            .collect();
-        let mut checkbox = vec![CheckboxState::Pending; count];
-        for (index, entry) in intent.stages().iter().enumerate() {
-            if entry.phase() == PhaseId::Initialization
-                && entry.plan_action() == PlanAction::Execute
-                && let Some(marker) = checkbox.get_mut(index)
-            {
-                *marker = CheckboxState::Completed;
-            }
-        }
-        let first_in_scope_gated = intent
-            .stages()
-            .iter()
-            .enumerate()
-            .find_map(|(index, entry)| {
-                (entry.phase() != PhaseId::Initialization
-                    && entry.plan_action() == PlanAction::Execute)
-                    .then_some(index)
-            });
-        let cursor = first_in_scope_gated.unwrap_or(0);
-        if let Some(first) = first_in_scope_gated
-            && let Some(marker) = checkbox.get_mut(first)
-        {
-            *marker = CheckboxState::InProgress;
-        }
-        IntentExecution {
-            id,
-            intent_id: intent.id().clone(),
-            stage_keys,
-            overlay,
-            checkbox,
-            cursor: StageIndex::new(cursor),
-            status: Status::Running,
-            parked_at: None,
-            autonomy: AutonomyMode::Gated,
-            approved: vec![false; count],
-            revision_count: vec![0; count],
-            seq_nr: 1,
-            version: IntentExecution::UNPERSISTED_VERSION,
-            last_updated_at: occurred_at,
-        }
     }
 
     /// ストアが採番した版を刻む (**Repository 実装専用**)。
@@ -259,6 +192,10 @@ impl IntentExecution {
     /// 集約そのもの**であり、専用の型も専用のコンストラクタ名も無い (オーナー裁定
     /// 2026-08-30「集約そのものがすでに snapshot」)。楽観 version はここでは載らない
     /// (正本は行の列 — [`IntentExecution::with_version`] で刻む)。
+    ///
+    /// **構造体リテラルはこのメソッドの中だけ**にある — genesis (`From<(Started,
+    /// occurred_at)>`) もここへ委譲するので、不変条件の確立場所は 1 か所である
+    /// (`coding-rules/factory-naming.md`「構造体リテラルは型ごとに 1 箇所」)。
     ///
     /// # Errors
     ///
@@ -499,6 +436,23 @@ impl IntentExecution {
             return None;
         }
         self.key_at(stage).map(StageKey::is_gated)
+    }
+
+    /// 名指しフェーズで**最初に実行される in-scope ステージ** (`--phase` ジャンプの目的地)。
+    ///
+    /// 判定は**実効プラン** ([`IntentExecution::effective_plan`]) で行う — recompose の
+    /// オーバレイが静的グリッドに勝つ (BR4.2) ので、同じフェーズでも「いま実行される
+    /// 最初のステージ」は recompose で動く。該当が無ければ `None`。
+    ///
+    /// upstream の `--phase <name>` は「そのフェーズの最初のステージへ跳ぶ」動詞であり
+    /// (`docs/upstream/specs/02-orchestration-engine.ja.md` §8 の `emitJumpDirective`)、
+    /// その目的地の導出が本クエリである。跳べるかどうか (初期化ガード・方向) は
+    /// [`IntentExecution::jump_resolve`] が別途決める。
+    #[must_use]
+    pub fn first_in_scope_of_phase(&self, phase: PhaseId) -> Option<StageIndex> {
+        (0..self.stage_count()).map(StageIndex::new).find(|&stage| {
+            self.key_at(stage).is_some_and(|key| key.phase() == phase) && self.in_scope(stage)
+        })
     }
 
     /// parked 分岐の発火は導出述語 (マーカー有 ∧ 位置一致 — BR1.7)。
@@ -1271,6 +1225,92 @@ impl IntentExecution {
     }
 }
 
+impl From<(Started, DateTime<Utc>)> for IntentExecution {
+    /// 誕生記録とその発生時刻から集約を導出する (リプレイのスナップショット種 —
+    /// [`Intent`] の `From<(Created, occurred_at)>` と対)。
+    ///
+    /// 発生時刻は封筒 (ジャーナル行のメタデータ) の持ち物なのでイベントは運ばず、読み手が
+    /// 封筒から対にして渡す。genesis ([`IntentExecution::start`]) もリプレイもこの変換を
+    /// 通るので、**実行のストリームは自ストリームだけで再生できる**
+    /// (`coding-rules/aggregate-commands.md`)。組み立ては完全コンストラクタ
+    /// [`IntentExecution::new`] に委ね、**構造体リテラルは型ごとに 1 箇所**という約束を
+    /// 保つ (`coding-rules/factory-naming.md`)。
+    ///
+    /// # 誕生 = 初期化完了済み (issue #76 / オーナー裁定 2026-09-01)
+    ///
+    /// upstream の意味論では initialization フェーズは鋳造の一部として完了する (誕生 16 行が
+    /// 初期化 3 ステージを `[x]` にする)。集約も同じ位置から始まる — in-scope の initialization
+    /// を completed にし、カーソルは**最初の in-scope 実ステージ** (RMU の誕生投影
+    /// `first_gated_in_scope` と同じ導出) に立って in-progress。実ステージが 1 つも in-scope に
+    /// 無い縮退形では、活動中ステージ 0 のままカーソル 0 に留まる (next が branch 10 の done を
+    /// 導く)。これにより誕生直後の report が initialization を再完了して `STAGE_COMPLETED` を
+    /// 二重記録する経路は構成不能になる。
+    ///
+    /// # Panics
+    ///
+    /// 壊れた歴史 (空の計画・slug 重複・集約不変条件の違反)。記録された歴史は書込時に
+    /// 検査済みであり、再構成は失敗を返さず**クラッシュが正**である (オーナー裁定
+    /// 2026-08-30)。
+    #[allow(
+        clippy::expect_used,
+        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
+    )]
+    fn from((started, occurred_at): (Started, DateTime<Utc>)) -> IntentExecution {
+        let count = started.stages().len();
+        let stage_keys: Vec<StageKey> = started
+            .stages()
+            .iter()
+            .map(|entry| StageKey::new(entry.slug().clone(), entry.phase()))
+            .collect();
+        let overlay: Vec<PlanAction> = started
+            .stages()
+            .iter()
+            .map(StageEntry::plan_action)
+            .collect();
+        let mut checkbox = vec![CheckboxState::Pending; count];
+        for (index, entry) in started.stages().iter().enumerate() {
+            if entry.phase() == PhaseId::Initialization
+                && entry.plan_action() == PlanAction::Execute
+                && let Some(marker) = checkbox.get_mut(index)
+            {
+                *marker = CheckboxState::Completed;
+            }
+        }
+        let first_in_scope_gated =
+            started
+                .stages()
+                .iter()
+                .enumerate()
+                .find_map(|(index, entry)| {
+                    (entry.phase() != PhaseId::Initialization
+                        && entry.plan_action() == PlanAction::Execute)
+                        .then_some(index)
+                });
+        let cursor = first_in_scope_gated.unwrap_or(0);
+        if let Some(first) = first_in_scope_gated
+            && let Some(marker) = checkbox.get_mut(first)
+        {
+            *marker = CheckboxState::InProgress;
+        }
+        IntentExecution::new(
+            started.id().clone(),
+            started.intent_id().clone(),
+            stage_keys,
+            overlay,
+            checkbox,
+            cursor,
+            Status::Running,
+            None,
+            AutonomyMode::Gated,
+            vec![false; count],
+            vec![0; count],
+            1,
+            occurred_at,
+        )
+        .expect("recorded genesis violates the aggregate invariants")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
@@ -1541,6 +1581,35 @@ mod tests {
         start_with(1, &vec![Execute; n], &vec![false; n])
     }
 
+    /// フェーズを 1 ステージずつ名指しした合成計画で開始する (フェーズ入口の導出を見る用)。
+    fn start_with_phases(phases: &[PhaseId], actions: &[PlanAction]) -> Run {
+        let stages: Vec<StageEntry> = phases
+            .iter()
+            .zip(actions.iter())
+            .enumerate()
+            .map(|(i, (phase, action))| {
+                StageEntry::new(
+                    slug(i),
+                    *phase,
+                    *action,
+                    false,
+                    display(&format!("{}.{}", phase.index(), i + 1)),
+                )
+            })
+            .collect();
+        Run::start(Intent::from((
+            Created::new(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            ),
+            occurred(),
+        )))
+    }
+
     /// カーソルが initialization 上で in-progress の状態を直接組む。
     ///
     /// b34 (誕生 = 初期化完了済み) 以降、この配置は**誕生からは到達不能**である — 誕生が
@@ -1685,8 +1754,11 @@ mod tests {
         let IntentExecutionEvent::Started(started) = &started else {
             panic!("start must emit Started");
         };
-        // `Started` が運ぶのは事実の主体 (intent の識別子) だけである (issue #56)。
+        // `Started` は genesis の材料 (実行 id・intent id・解決済み計画) を運ぶ — 誕生状態の
+        // 導出に `&Intent` を要さないので、実行のストリームは自ストリームだけで再生できる。
+        assert_eq!(started.id(), &execution_id());
         assert_eq!(started.intent_id(), intent.id());
+        assert_eq!(started.stages(), intent.stages());
     }
 
     #[test]
@@ -1700,12 +1772,14 @@ mod tests {
         assert_eq!(w.last_updated_at(), &occurred());
         assert_eq!(w.id(), &execution_id());
         assert_eq!(w.intent_id(), &intent_id());
-        // イベントは事実の主体だけを運ぶ — 定義の系譜・計画・依頼文は intent 側の記録である
-        // (issue #56)。
+        // イベントは genesis の材料を運ぶ。定義の系譜・依頼文・走査結果は intent 側の記録の
+        // ままである (issue #56 の切り分けは維持し、計画の写しだけを戻した)。
         let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
+        assert_eq!(started.id(), &execution_id());
         assert_eq!(started.intent_id(), &intent_id());
+        assert_eq!(started.stages().len(), 3);
 
         assert_eq!(w.stage_count(), 3);
         // 誕生 = 初期化完了済み (issue #76 / オーナー裁定 2026-09-01)。upstream の意味論では
@@ -1745,6 +1819,101 @@ mod tests {
         assert_eq!(w.checkbox(at(&w, 2)), Some(Pending));
         assert_eq!(w.cursor(), at(&w, 0));
         assert_eq!(w.status(), Status::Running);
+    }
+
+    #[test]
+    fn the_genesis_conversion_equals_the_started_command() {
+        // genesis (`start`) の左と、誕生イベントからの変換が一致する — 構築経路は 1 本である
+        // (`coding-rules/aggregate-commands.md`「genesis イベントから集約を導出する変換」)。
+        let (execution, event) = IntentExecution::start(
+            execution_id(),
+            &plan(1, &[Execute, Execute, Skip], &[false; 3]),
+            occurred(),
+        );
+        let IntentExecutionEvent::Started(started) = event else {
+            panic!("start must emit Started");
+        };
+        assert_eq!(IntentExecution::from((started, occurred())), execution);
+    }
+
+    #[test]
+    fn the_execution_stream_replays_without_the_intent() {
+        // ES の基本: 集約の歴史は**自ストリームだけ**で再生できる。誕生イベント 1 本を種に
+        // した再生が genesis と一致することで、`&Intent` を要さないことを示す。
+        let intent = plan(1, &[Execute, Execute, Execute], &[false; 3]);
+        let (execution, event) = IntentExecution::start(execution_id(), &intent, occurred());
+        let IntentExecutionEvent::Started(started) = event else {
+            panic!("start must emit Started");
+        };
+        let replayed = IntentExecution::replay(IntentExecution::from((started, occurred())), []);
+        assert_eq!(replayed, execution);
+    }
+
+    // ---- フェーズ入口 (`--phase` ジャンプの目的地) ----
+
+    #[test]
+    fn the_phase_entry_is_the_first_in_scope_stage_of_that_phase() {
+        let w = start_with_phases(
+            &[
+                PhaseId::Initialization,
+                PhaseId::Inception,
+                PhaseId::Construction,
+                PhaseId::Construction,
+            ],
+            &[Execute, Execute, Execute, Execute],
+        );
+        assert_eq!(
+            w.first_in_scope_of_phase(PhaseId::Construction),
+            Some(at(&w, 2))
+        );
+        assert_eq!(
+            w.first_in_scope_of_phase(PhaseId::Inception),
+            Some(at(&w, 1))
+        );
+    }
+
+    #[test]
+    fn the_phase_entry_follows_the_recompose_overlay() {
+        // 実効プランで判断する (BR4.2) — recompose で先頭を実効 SKIP にすると入口が後ろへ動く。
+        let mut w = start_with_phases(
+            &[
+                PhaseId::Initialization,
+                PhaseId::Inception,
+                PhaseId::Construction,
+                PhaseId::Construction,
+            ],
+            &[Execute, Execute, Execute, Execute],
+        );
+        assert_eq!(
+            w.first_in_scope_of_phase(PhaseId::Construction),
+            Some(at(&w, 2))
+        );
+        let target = at(&w, 2);
+        w.recompose(&[target], occurred()).unwrap();
+        assert_eq!(
+            w.effective_plan(target),
+            Some(Skip),
+            "静的な計画は動かず、オーバレイだけが反転する"
+        );
+        assert_eq!(
+            w.first_in_scope_of_phase(PhaseId::Construction),
+            Some(at(&w, 3))
+        );
+    }
+
+    #[test]
+    fn a_phase_with_no_in_scope_stage_has_no_entry() {
+        let w = start_with_phases(
+            &[
+                PhaseId::Initialization,
+                PhaseId::Inception,
+                PhaseId::Construction,
+            ],
+            &[Execute, Execute, Skip],
+        );
+        // 実効 SKIP しか無いフェーズにも、計画に無いフェーズにも入口は無い。
+        assert_eq!(w.first_in_scope_of_phase(PhaseId::Construction), None);
+        assert_eq!(w.first_in_scope_of_phase(PhaseId::Operation), None);
     }
 
     #[test]
@@ -2291,7 +2460,11 @@ mod tests {
     #[should_panic(expected = "Started applies only at genesis")]
     fn apply_event_crashes_on_a_started_outside_genesis() {
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Started(Started::new(intent_id()));
+        let event = IntentExecutionEvent::Started(Started::new(
+            execution_id(),
+            intent_id(),
+            w.stages().to_vec(),
+        ));
         w.apply_event(2, occurred(), &event);
     }
 

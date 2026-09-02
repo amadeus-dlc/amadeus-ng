@@ -100,9 +100,14 @@ fn genesis_intent() -> Intent {
     ))
 }
 
-/// 実行開始の事実（intent の識別子だけを運ぶ）。
+/// 実行開始の事実（genesis の材料 = 実行 id・intent id・解決済み計画）。
 fn genesis() -> IntentExecutionEvent {
-    IntentExecutionEvent::Started(Started::new(IntentId::parse(INTENT).expect("UUIDv7")))
+    let intent = genesis_intent();
+    IntentExecutionEvent::Started(Started::new(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        intent.id().clone(),
+        intent.stages().to_vec(),
+    ))
 }
 
 /// intent の誕生記録（global 1 — 実行のどの行よりも先に書かれている）。
@@ -413,7 +418,14 @@ async fn executions_of_two_different_intents_are_refused_as_mixed() {
     let other = IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").expect("UUIDv7");
     let journal = vec![
         entry(2, genesis()),
-        entry(3, IntentExecutionEvent::Started(Started::new(other))),
+        entry(
+            3,
+            IntentExecutionEvent::Started(Started::new(
+                IntentExecutionId::parse("0190cccc-dddd-7eee-8fff-000011112222").expect("UUIDv7"),
+                other,
+                genesis_intent().stages().to_vec(),
+            )),
+        ),
         entry(
             4,
             IntentExecutionEvent::GateOpened(GateOpened::new(

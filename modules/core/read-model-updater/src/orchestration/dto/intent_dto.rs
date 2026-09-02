@@ -1,4 +1,8 @@
-//! `Intent` とその部品の永続化 DTO — `Started` が運ぶ静的材料のバイト形 (**読む側**)。
+//! `Intent` とその部品の永続化 DTO — intent ジャーナル面のバイト形 (**読む側**)。
+//!
+//! 解決済み計画 1 要素の綴り (`StageEntryDto`) は `Started` 面と共有する — 実行の誕生記録も
+//! 同じ計画の写しを運ぶからである (共有 private 型は主たる従属先に置く —
+//! `coding-rules/abstract-data-type.md`)。
 
 use core_command_domain::orchestration::{
     Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
@@ -36,9 +40,9 @@ struct StartRequestDto {
     test_strategy: Option<String>,
 }
 
-/// 解決済み計画 1 要素の行の形。
+/// 解決済み計画 1 要素の行の形 (intent 面と `Started` 面が共有する)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct StageEntryDto {
+pub(super) struct StageEntryDto {
     slug: String,
     phase: String,
     plan_action: String,
@@ -128,7 +132,8 @@ impl IntentDto {
 }
 
 impl StageEntryDto {
-    fn of(entry: &StageEntry) -> StageEntryDto {
+    /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
+    pub(super) fn of(entry: &StageEntry) -> StageEntryDto {
         StageEntryDto {
             slug: entry.slug().as_str().to_string(),
             phase: phase_spelling(entry.phase()).to_string(),
@@ -142,7 +147,8 @@ impl StageEntryDto {
         }
     }
 
-    fn to_domain(&self) -> Result<StageEntry, DtoDecodeError> {
+    /// 検査付き再構成コンストラクタへ渡してドメインへ戻す (読み)。
+    pub(super) fn to_domain(&self) -> Result<StageEntry, DtoDecodeError> {
         let number = StageNumber::parse(&self.display.number)
             .map_err(|_| DtoDecodeError::malformed("number", self.display.number.clone()))?;
         let display = StageDisplay::new(number, &self.display.name, &self.display.lead_agent)
