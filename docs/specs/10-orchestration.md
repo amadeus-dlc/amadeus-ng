@@ -31,7 +31,7 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 - **B1**: scope grid は workflow-definition の不変の成果物として**読むだけ**。recompose の flip はこのコンテキストのコマンドであり、`effectivePlanAction`（grid ＋オーバレイの合成読み）はここが所有する read model — 合成の所有者は集約 `WorkflowExecution` の `effective_plan` である（ADR-002 / 設計監査 R2、Bolt B3 実装）。永続化は Repository 実装に委ねる（ADR-003）。
 - **B5**: 監査台帳の mechanics は workspace 所有。swarm のマージ失敗 converged unit の復旧（「監査行なし」中間状態から）は本コンテキストの**サーガ**。
 - **B9**: `HUMAN_TURN` の記録は workspace の事実、`humanActedSinceGate`（同秒 fail-closed を含む導出述語）と昇格可否の政策は本コンテキスト。
-- **B10**: レビューレシートの鮮度・凍結述語は **verification 所有のクレートを依存として呼ぶ**。二重実装しない。
+- **B10**: レビューレシートの鮮度・凍結述語は **verification 所有のクレートを依存として呼ぶ**。二重実装しない。 **stage-1 の射程はレシートの鮮度検査のみ**（オーナー裁定 2026-09-02、#51 = A。凍結検査（レビュー後の改変検出）は後続 intent へ繰り延べ、verification の最小面は鮮度のハッシュ照合 1 本で始める）。
 - **B11**: walking skeleton の stance 解決はここのプロセス。アンカー計算（scope で最初の Construction EXECUTE ステージ）は workflow-definition の純関数を呼ぶ。
 - **B13**: HOLD-MERGE は本コンテキストの政策値。workspace には opaque な保存 API としてだけ渡す。
 - **B14**: directive protocol（`next` / `report`、Directive スキーマ、`continue_token`、ask）は本コンテキストが公開する **Published Language**。stage runner はそれに conform する distribution の生成物。

@@ -48,6 +48,13 @@
   apply 対応が崩れる。*独立ドメインサービス / ユースケース層への判断配置*: 状態の所有者の外で
   判断する Ask 型。*typestate*: 動的アクション列のリプレイ・再構成と相性が悪く過剰。
 
+**改訂 2026-09-02（オーナー裁定 #85 = A — 非ゲート完了パイプラインの撤去）**: b34（#76 = A「誕生 =
+初期化完了済み」）以降、実行時のカーソルは常にゲート付きステージに立ち、非ゲート完了の経路
+（`IntentExecution::complete_stage` / `StageCompleted` 変種と両側 DTO / RMU の投影と `STAGE_COMPLETED`
+非ゲート文言 / commit_verdict の非ゲート腕）は到達不能になった。upstream 鏡としての存置ではなく
+**撤去**する（no-backward-compatibility の精神。イベントは 12 → 11 変種。観測互換への影響は無い —
+実行時に出ない文言のため）。撤去は #7 のキュー「是正 Bolt 2 の後」の独立 Bolt で行う。
+
 ## ADR-003: SQLite ストア + upstream 互換ファイルはリードモデル + RMU
 
 - **Context** — イベントの物理格納先が未裁定だった。upstream の監査台帳は markdown
