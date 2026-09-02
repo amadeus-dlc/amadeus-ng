@@ -84,7 +84,7 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 | `human_acted_since_gate` | ドメインサービス（純関数） | 監査行の射影 → bool。fail-closed になるのは**同秒かつ別シャード**のときのみ。同一シャードはシャード内 pos 順で決定的に判定 | B9 の導出述語 |
 | `jump_resolve` | 集約 `WorkflowExecution` のクエリ（`&self`） | (target, cursor) → `JumpDirection` ＋帰属検証 | `aidlc-jump resolve`（純読取）と `execute`（コミット）の分離 |
 
-**位置づけの注記（2026-08-23）**: `next_decision` と `jump_resolve` は**集約 `WorkflowExecution` のクエリメソッド**（`&self`、書込なし）であり、独立したドメインサービスではない — 状態の所有者の外で判断する Ask 型を避けるため（ADR-002 ④、Bolt B3 実装）。本表の「所在」列がその分類であり、入出力の規範は列を問わず本表が持つ。`human_acted_since_gate` は集約に置けない横断の判断なので純関数のドメインサービスのままとする（01 §7.1 原則 2）。
+**位置づけの注記（2026-08-23）**: `next_decision` と `jump_resolve` は**集約 `WorkflowExecution` のクエリメソッド**（`&self`、書込なし）であり、独立したドメインサービスではない — 状態の所有者の外で判断する Ask 型を避けるため（ADR-002 ④、Bolt B3 実装）。**追記 2026-09-02（b38）**: b26 が `next_decision` を集約から削除しクエリ側ビュー（`ExecutionStateView`）へ移していたが、オーナー裁定（クエリ側は DAO で View を読んで返すだけ・計算結果は RMU が投影）により**本表の所在どおり集約へ復帰**した（`IntentExecution::next_decision(&NextRequest) -> NextDecision` — 計画は `Started` で自己完結するため他集約の引数は不要）。併せて `state_binding`（continue_token の状態束縛）と `WorkflowDefinition::scope_cost`（費用節）も集約のクエリとして置いた。RMU はイベント列から集約を `replay` で起こしてこれらを呼び、リードモデルへ投影する（是正 Bolt 2）。本表の「所在」列がその分類であり、入出力の規範は列を問わず本表が持つ。`human_acted_since_gate` は集約に置けない横断の判断なので純関数のドメインサービスのままとする（01 §7.1 原則 2）。
 
 ## 3. ユースケース層
 
@@ -94,7 +94,7 @@ CLI 動詞・フック応答 1 つ = ユースケース 1 つ。ポート（trai
 
 `Report` は 13 段ガードの実行主体である。ただし段 2 の `--single` は **Controller が `Report` より前に `SingleStageRun` へ分岐**させ、`Report` には到達させない — これが I10 の E1（遷移ポート非注入）が成立する条件で、turn-shape marker と state-version guard は `SingleStageRun` 側でも実施する。段 11（completion-evidence: pipeline link レシート / per-unit カバレッジ / paused-unit 拒否 / ensemble contribution 証跡）と段 12（practices promotion レシート）、および approve 側の前提スタック（verifyStageArtifacts / summary confirmation / pipeline link / Practices Affirmed Timestamp / 冪等 replay guard / next-slug 非 SKIP — upstream 03 §5.7）は、レビュアー述語（B10）と同様に verification / workspace への依存として観測する。per-unit カバレッジと paused-unit 拒否の詳細は §7.3〜7.4。
 
-**ポート**: 名称は [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) の規則に従う（Repository は**集約名 + Repository**。`Store` / `Reader` / `Writer` のポート造語と、`StateFileRepository` のような**格納媒体名の Repository** は禁止 — 格納形式は Repository 実装の内部詳細）。CQRS は採用しない。
+**ポート**: 名称は [`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) の規則に従う（Repository は**集約名 + Repository**。`Store` / `Reader` / `Writer` のポート造語と、`StateFileRepository` のような**格納媒体名の Repository** は禁止 — 格納形式は Repository 実装の内部詳細）。~~CQRS は採用しない。~~ → **失効（ADR-001 / 003 / 004、2026-08-24 以降）**: CQRS + ES を採用済み。コマンド側の Repository と、クエリ側の DAO（リードモデルを読む）に分かれる（[`coding-rules/cqrs-boundaries.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md)）。
 
 ポート表の実装欄は **1 trait 1 Impl**（`XxxRepositoryImpl` ＋テストダブル `InMemoryXxxRepository`）を各行に明記する（gateway-taxonomy §5。「同上」は使わない — 設計監査 C11）。
 

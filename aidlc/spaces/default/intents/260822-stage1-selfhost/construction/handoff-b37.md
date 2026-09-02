@@ -21,6 +21,7 @@
    golden（directive / token 逐語）で外部観測を固定。
 
 着手順は (1)→(2)→(3)。#74（park 本体）ほかのキューとの優先順はオーナー判断。
+**(1) は b38 で着地**（`construction/handoff-b38.md`）。残作業キューの正本は #7 の本文。
 
 ## 教訓（学習儀式で project.md へ記録する候補）
 
