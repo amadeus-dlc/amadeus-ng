@@ -184,7 +184,9 @@ pub(crate) fn intent() -> Intent {
             WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
                 .expect("テストの定義 revision"),
-            StartRequest::new("classic", "contract").with_depth("standard"),
+            StartRequest::new("classic", "contract")
+                .with_depth("standard")
+                .with_review("adversarial"),
             stages(),
             scan(),
         ),
@@ -330,7 +332,12 @@ pub(crate) fn definition_id() -> WorkflowDefinitionId {
     WorkflowDefinitionId::parse(DEFINITION).expect("テストの定義 id")
 }
 
-/// 1 ノードだけの定義内容 (グラフ・そこから導いたグリッド・空のスコープカタログ)。
+/// 1 ノードだけの定義内容 (グラフ・そこから導いたグリッド・スコープカタログ 2 件)。
+///
+/// カタログを空にしないのは、語 → スコープの逆引き
+/// (`read_definition_scope_keyword`) が 0 行だと**その表を書く経路がテストに掛からない**
+/// からである。`shared` を両方に宣言させて、辞書順の先着 (`classic`) が行になる形も
+/// 一緒に通す。
 #[must_use]
 fn definition_content() -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
     let graph = StageGraph::new(vec![
@@ -345,8 +352,36 @@ fn definition_content() -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadat
         .build(),
     ])
     .expect("1 ノードのグラフ");
-    let grid = ScopeGrid::from_graph(&graph);
-    (graph, grid, BTreeMap::new())
+    // グラフのノードはスコープを宣言しないので `ScopeGrid::from_graph` は列を 1 本も
+    // 作らない。列が無いと in-scope の問い (フェーズ入口・スコープ内順序) がどれも None に
+    // なり、その 2 表が 0 行になってしまう。`classic` の列を明示して置く。
+    let grid = ScopeGrid::new(
+        [(
+            "classic".to_string(),
+            [(slug("state-init"), PlanAction::Execute)]
+                .into_iter()
+                .collect(),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let scopes = [
+        (
+            "classic".to_string(),
+            ScopeMetadata::new("classic")
+                .expect("名前あり")
+                .with_keywords(vec!["api".to_string(), "shared".to_string()]),
+        ),
+        (
+            "express".to_string(),
+            ScopeMetadata::new("express")
+                .expect("名前あり")
+                .with_keywords(vec!["shared".to_string()]),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    (graph, grid, scopes)
 }
 
 /// テストの定義内容版 (同じ文字で埋めた 64 桁)。

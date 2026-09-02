@@ -20,7 +20,7 @@ use crate::orchestration::{IntentExecutionId, IntentId, StageEntry};
 /// [`IntentExecution`]: crate::orchestration::IntentExecution
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Started {
-    id: IntentExecutionId,
+    aggregate_id: IntentExecutionId,
     intent_id: IntentId,
     stages: Vec<StageEntry>,
 }
@@ -29,21 +29,26 @@ impl Started {
     /// genesis の材料 3 つを束ねる。
     #[must_use]
     pub const fn new(
-        id: IntentExecutionId,
+        aggregate_id: IntentExecutionId,
         intent_id: IntentId,
         stages: Vec<StageEntry>,
     ) -> Started {
         Started {
-            id,
+            aggregate_id,
             intent_id,
             stages,
         }
     }
 
-    /// 始まった実行の識別子。
+    /// **どの集約の事実か** — 始まった実行の識別子。
+    ///
+    /// これは集約の識別子であって**イベント自身の id ではない**。ドメインイベントは
+    /// エンティティなので自前の識別子を持つべきだが、その `IntentExecutionEventId` は
+    /// 次の Bolt でイベント全体に加わる。ここで `id` と名乗ると集約 ID をイベントの id に
+    /// 流用したことになるため、名前で区別しておく。
     #[must_use]
-    pub const fn id(&self) -> &IntentExecutionId {
-        &self.id
+    pub const fn aggregate_id(&self) -> &IntentExecutionId {
+        &self.aggregate_id
     }
 
     /// 開始された intent の識別子。

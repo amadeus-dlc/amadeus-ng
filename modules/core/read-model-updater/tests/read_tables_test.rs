@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    IntentId, Recomposed, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ConsumeDecl, Defined, DefinitionRevision, ExecutionKind, PhaseId,
@@ -506,6 +506,12 @@ fn a_keyword_declared_twice_takes_the_lexicographically_first_scope() {
             ("shared", "classic")
         ]
     );
+    // 逆引きは系譜ごとに分かれる — どの行も自分の定義 id を主キーの一部として運ぶ。
+    assert!(
+        rows.iter()
+            .all(|row| row.definition_id() == definition_id().as_str()),
+        "語の逆引きは系譜 ID を伴う"
+    );
 }
 
 #[test]
@@ -646,7 +652,8 @@ fn execution_rows_mirror_the_replayed_executions() {
         );
         assert_eq!(row.state_binding(), aggregate.state_binding().as_str());
     }
-    // 2 本の実行は park の有無で分かれる。
+    // park はワークフローの状態ではなく実行時の重ね書きである — 2 本の実行が分かれるのは
+    // `status` ではなく `parked_active` のほうで、park 中の実行も `running` のままである。
     let statuses: BTreeSet<&str> = rows.iter().map(|row| row.status()).collect();
     assert_eq!(statuses, ["running"].into_iter().collect());
     assert!(rows.iter().any(|row| row.parked_active()));
@@ -749,6 +756,135 @@ const fn stage_of(decision: &core_command_domain::orchestration::NextDecision) -
         | NextDecision::ResumeMenu
         | NextDecision::NewWorkRouting => None,
     }
+}
+
+/// カーソル上のステージが実効 SKIP に反転した実行 — checkbox 不整合の 2 形。
+///
+/// この歴史はコマンドだけでは作れない。`recompose` はカーソル以下の反転を `InvalidTarget`
+/// で拒み、不変条件 `cursor_in_scope` も実効 SKIP のカーソルを禁じるからである。到達しうる
+/// のは **park 中 (受理述語が偽なので `cursor_in_scope` を検査しない) に反転のイベントが
+/// 畳まれた歴史**の全再生であり、`next` はそれを読み替えず**不整合として報告する**責務を
+/// 持つ (BR3.1 (5) の防御腕)。行にも同じ答えが載らなければならない。
+///
+/// 誕生直後のカーソルは in-progress なので自力復旧の前提集合に居る (`recover-skip-…`)。
+/// ゲートを開いた後は awaiting-approval になり前提集合から外れる (`inconsistent-skip`)。
+fn skip_inconsistency_events(
+    id: &IntentExecutionId,
+    open_the_gate: bool,
+) -> (IntentExecution, Vec<(usize, IntentExecutionEvent)>) {
+    let intent = intent();
+    let (mut aggregate, started) = IntentExecution::start(id.clone(), &intent, at());
+    let mut events = vec![(aggregate.seq_nr(), started)];
+    if open_the_gate {
+        let opened = aggregate
+            .open_gate(&intent, vec!["intent.md".to_string()], at())
+            .expect("ゲートは開く");
+        events.push((aggregate.seq_nr(), opened));
+    }
+    let switched = aggregate
+        .switch_autonomy(&intent, AutonomyMode::Gated, at())
+        .expect("gated への切替は受理される");
+    events.push((aggregate.seq_nr(), switched));
+    let parked = aggregate.park(&intent, at()).expect("park は受理される");
+    events.push((aggregate.seq_nr(), parked));
+
+    // park 中にカーソルの slug をそのまま SKIP へ反転させる (改竄された歴史の再現)。
+    let cursor_slug = aggregate.stage_keys()[aggregate.cursor().to_usize()]
+        .slug()
+        .clone();
+    let tampering =
+        IntentExecutionEvent::Recomposed(Recomposed::new(vec![cursor_slug], Vec::new()));
+    let seq_nr = aggregate.seq_nr() + 1;
+    aggregate = IntentExecution::replay(aggregate, [(seq_nr, at(), tampering.clone())]);
+    events.push((seq_nr, tampering));
+    (aggregate, events)
+}
+
+/// 不整合 2 形だけを載せた履歴 (定義 1 行・intent 1 件・実行 2 本)。
+fn skip_inconsistency_history() -> JournalBatch {
+    let mut executions = Vec::new();
+    let mut global = 2_u64;
+    for (id, open_the_gate) in [(execution_a(), false), (execution_b(), true)] {
+        let (_, events) = skip_inconsistency_events(&id, open_the_gate);
+        for (seq_nr, event) in events {
+            executions.push(JournalEntry::new(
+                GlobalSeqNr::new(global),
+                id.clone(),
+                seq_nr,
+                at(),
+                event,
+            ));
+            global += 1;
+        }
+    }
+    let definitions = vec![DefinitionEntry::new(
+        GlobalSeqNr::new(1),
+        definition_id(),
+        1,
+        at(),
+        defined_event(),
+    )];
+    JournalBatch::new(
+        executions,
+        vec![intent()],
+        definitions,
+        Some(GlobalSeqNr::new(global - 1)),
+    )
+}
+
+#[test]
+fn next_answer_rows_carry_the_observed_checkbox_of_both_skip_inconsistencies() {
+    let tables = ReadTables::project(&skip_inconsistency_history()).expect("不整合も投影できる");
+
+    for (id, open_the_gate, expected_kind, expected_checkbox) in [
+        (
+            execution_a(),
+            false,
+            "recover-skip-inconsistency",
+            "in-progress",
+        ),
+        (
+            execution_b(),
+            true,
+            "inconsistent-skip",
+            "awaiting-approval",
+        ),
+    ] {
+        let (aggregate, _) = skip_inconsistency_events(&id, open_the_gate);
+        // 再入の読みだけが park 分岐を素通りして不整合に到達する。
+        let decision = aggregate.next_decision(&RequestKind::Reentry.to_request());
+        assert_eq!(
+            decision_kind_of(&decision),
+            expected_kind,
+            "集約自身がこの不整合を報告する"
+        );
+
+        let row = tables
+            .next_answers()
+            .iter()
+            .find(|row| {
+                row.execution_id() == aggregate.id().as_str()
+                    && row.request_kind() == RequestKind::Reentry.as_str()
+            })
+            .expect("再入の行が在る");
+        assert_eq!(row.decision_kind(), expected_kind);
+        assert_eq!(row.stage_index(), stage_of(&decision));
+        assert_eq!(row.stage_slug(), Some("intent-capture"));
+        // 不整合 2 形だけが観測 checkbox を運ぶ — ゲートは名指さない。
+        assert_eq!(row.checkbox(), Some(expected_checkbox));
+        assert_eq!(row.gated(), None);
+    }
+
+    // 材料を運ばない分岐は checkbox 列を空のままにする (行に嘘を書かない)。
+    let bare = tables
+        .next_answers()
+        .iter()
+        .find(|row| {
+            row.execution_id() == execution_a().as_str()
+                && row.request_kind() == RequestKind::Bare.as_str()
+        })
+        .expect("素の要求の行が在る");
+    assert_eq!(bare.checkbox(), None);
 }
 
 #[test]

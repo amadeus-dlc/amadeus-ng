@@ -80,7 +80,9 @@ fn intent() -> Intent {
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "contract").with_depth("standard"),
+            StartRequest::new("classic", "contract")
+                .with_depth("standard")
+                .with_review("adversarial"),
             stages(),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
@@ -99,7 +101,7 @@ fn intent() -> Intent {
 /// genesis の材料 3 点 (実行 id・intent id・解決済み計画) を運ぶ。計画の写しを載せるのは
 /// 実行の歴史が**自ストリームだけ**で再生できるための条件であり、1 要素の綴りは
 /// intent 面 (`INTENT_BODY` の `stages`) と同一である。
-const STARTED_BODY: &str = r#"{"Started":{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
+const STARTED_BODY: &str = r#"{"Started":{"aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
@@ -356,8 +358,8 @@ fn a_started_row_with_malformed_material_is_refused() {
     // 識別子 2 種と計画の綴りを 1 つずつ壊す — genesis の材料はどれも検査付き再構成を通る。
     for (from, to) in [
         (
-            r#""id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000""#,
-            r#""id":"not-a-uuid""#,
+            r#""aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000""#,
+            r#""aggregate_id":"not-a-uuid""#,
         ),
         (
             r#""intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
@@ -504,7 +506,7 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
 // ---------------------------------------------------------------------------
 
 /// intent の材料のバイト形 (2 面共通 — `Created` の中身・intent 集約のスナップショット行)。
-const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
+const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
 
 /// intent の誕生イベント (ジャーナル面の材料 — `intent()` と同じ材料から組む)。
 fn created_event() -> IntentEvent {
@@ -512,7 +514,9 @@ fn created_event() -> IntentEvent {
         IntentId::parse(INTENT).expect("UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
+        StartRequest::new("classic", "contract")
+            .with_depth("standard")
+            .with_review("adversarial"),
         stages(),
         WorkspaceScan::new(
             BrownfieldGreenfield::Greenfield,

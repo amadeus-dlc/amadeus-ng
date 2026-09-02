@@ -545,6 +545,7 @@ mod tests {
     )]
 
     use super::*;
+    use crate::orchestration::JournalBatch;
 
     /// 13 表の名前 (DDL と `DELETE` が同じ集合を指していることを固定する)。
     const TABLES: [&str; 13] = [
@@ -596,6 +597,30 @@ mod tests {
                 .expect("pragma は引ける");
             assert_eq!(count, 1, "{name} に as_of 列がある");
         }
+    }
+
+    #[test]
+    fn a_scan_position_that_does_not_fit_the_column_fails_instead_of_being_rounded() {
+        // `as_of` は全表に同じ値で書かれる。`INTEGER` (i64) に収まらない走査位置を静かに
+        // 丸めると、行が「いつ時点か」を偽る。収まらないなら 1 行も書かずに失敗する。
+        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        let mut connection = connection;
+        let transaction = connection.transaction().expect("Tx は張れる");
+
+        let tables = ReadTables::project(&JournalBatch::new(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Some(crate::orchestration::GlobalSeqNr::new(u64::MAX)),
+        ))
+        .expect("空の履歴でも投影はできる");
+
+        let error = replace_all(&transaction, &tables).expect_err("i64 に収まらない走査位置");
+        assert!(
+            matches!(error, rusqlite::Error::ToSqlConversionFailure(_)),
+            "変換の失敗がそのまま SQLite の失敗として上がる (実際: {error:?})"
+        );
     }
 
     #[test]

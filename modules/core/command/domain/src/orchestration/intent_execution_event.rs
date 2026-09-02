@@ -121,7 +121,7 @@ mod tests {
         // `&Intent` を要さないので、実行のストリームは自ストリームだけで再生できる。
         let started = started();
         assert_eq!(
-            started.id().as_str(),
+            started.aggregate_id().as_str(),
             "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"
         );
         assert_eq!(

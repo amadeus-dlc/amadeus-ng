@@ -183,6 +183,25 @@ fn the_golden_rows_decode_back_into_the_same_events() {
 }
 
 #[test]
+fn a_scope_catalog_that_names_the_same_scope_twice_is_refused() {
+    // カタログはワイヤでは**並び**であり、ドメインでは名前を鍵にした写像である。黙って
+    // 後勝ちで畳むと、行が 2 件あるのに 1 件しか載らない — どちらが載ったかも読めない。
+    // 畳めない並びは解釈せず拒む (`StageGraph` が重複 slug を拒むのと同じ規律)。
+    let duplicated = DEFINED_GOLDEN.replace(
+        r#""scopes":[{"name":"feature","depth":"standard""#,
+        r#""scopes":[{"name":"feature","depth":"express","keywords":[],"skeleton":null,"review_cap":null,"freeform_default":false},{"name":"feature","depth":"standard""#,
+    );
+    assert_ne!(duplicated, DEFINED_GOLDEN, "置換が効いている");
+
+    let dto: WorkflowDefinitionEventDto =
+        serde_json::from_str(&duplicated).expect("JSON としては読める");
+    assert_eq!(
+        dto.to_domain().expect_err("同名スコープ 2 件は畳めない"),
+        DtoDecodeError::malformed("scope_name", "feature".to_string())
+    );
+}
+
+#[test]
 fn a_row_with_a_broken_spelling_is_refused_field_by_field() {
     // 閉集合外の綴り・文法外の識別子は、どの欄で落ちたかを材料に載せて拒む。
     // ワイヤ形式の JSON を直接壊す — 実装に破壊用のフックを開けない。

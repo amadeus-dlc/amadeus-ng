@@ -77,7 +77,7 @@ impl IntentExecutionEventDto {
         match event {
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto {
-                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     intent_id: payload.intent_id().as_str().to_string(),
                     stages: payload.stages().iter().map(StageEntryDto::of).collect(),
                 })
@@ -146,8 +146,9 @@ impl IntentExecutionEventDto {
         Ok(match self {
             IntentExecutionEventDto::Started(payload) => {
                 IntentExecutionEvent::Started(Started::new(
-                    IntentExecutionId::parse(&payload.id)
-                        .map_err(|_| DtoDecodeError::malformed("id", &payload.id))?,
+                    IntentExecutionId::parse(&payload.aggregate_id).map_err(|_| {
+                        DtoDecodeError::malformed("aggregate_id", &payload.aggregate_id)
+                    })?,
                     IntentId::parse(&payload.intent_id)
                         .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
                     payload

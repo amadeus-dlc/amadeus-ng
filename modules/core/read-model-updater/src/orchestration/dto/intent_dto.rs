@@ -38,6 +38,7 @@ struct StartRequestDto {
     request: String,
     depth: Option<String>,
     test_strategy: Option<String>,
+    review: Option<String>,
 }
 
 /// 解決済み計画 1 要素の行の形 (intent 面と `Started` 面が共有する)。
@@ -79,6 +80,7 @@ impl IntentDto {
                 request: intent.request().to_string(),
                 depth: intent.depth().map(str::to_string),
                 test_strategy: intent.test_strategy().map(str::to_string),
+                review: intent.review().map(str::to_string),
             },
             stages: intent.stages().iter().map(StageEntryDto::of).collect(),
             scan: WorkspaceScanDto::of(intent.scan()),
@@ -108,6 +110,9 @@ impl IntentDto {
         }
         if let Some(strategy) = &self.start_request.test_strategy {
             request = request.with_test_strategy(strategy.clone());
+        }
+        if let Some(review) = &self.start_request.review {
+            request = request.with_review(review.clone());
         }
         Ok(Intent::from((
             Created::new(

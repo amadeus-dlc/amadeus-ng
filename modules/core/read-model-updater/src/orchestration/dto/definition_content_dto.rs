@@ -178,7 +178,12 @@ impl DefinitionContentDto {
         let mut scopes = BTreeMap::new();
         for scope in &self.scopes {
             let metadata = scope.to_domain()?;
-            scopes.insert(metadata.name().to_string(), metadata);
+            // カタログはワイヤでは並び、ドメインでは名前を鍵にした写像である。同名が 2 度
+            // 現れる並びは畳めない — 黙って後勝ちにすると行が 1 件消える。
+            let name = metadata.name().to_string();
+            if scopes.insert(name.clone(), metadata).is_some() {
+                return Err(DtoDecodeError::malformed("scope_name", name));
+            }
         }
         Ok((graph, ScopeGrid::new(columns), scopes))
     }

@@ -259,7 +259,10 @@ fn intent() -> Intent {
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
                 .expect("定義 revision"),
-            StartRequest::new("classic", "conformance"),
+            StartRequest::new("classic", "conformance")
+                .with_depth("standard")
+                .with_test_strategy("standard")
+                .with_review("adversarial"),
             stages(),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
@@ -547,7 +550,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             held.id().clone(),
             held.definition_id().clone(),
             held.definition_revision().clone(),
-            StartRequest::new(held.scope(), held.request()),
+            request_of(&held),
             held.stages().to_vec(),
             held.scan().clone(),
         ));
@@ -756,6 +759,70 @@ fn definition_history() -> (
         .redefine(&definition_bundle(5), at())
         .expect("内容版が違えば改訂できる");
     (definition, defined, redefined)
+}
+
+/// 集約が握っている要求を、省略可能な 3 つまで含めて組み直す。
+///
+/// `scope` と `request` だけを写すと、`depth` / `test_strategy` / `review` が黙って落ちる。
+/// 落ちた値はワイヤにも現れないので、行の検査がその 3 つを素通りしてしまう。
+fn request_of(intent: &Intent) -> StartRequest {
+    let mut request = StartRequest::new(intent.scope(), intent.request());
+    if let Some(depth) = intent.depth() {
+        request = request.with_depth(depth);
+    }
+    if let Some(strategy) = intent.test_strategy() {
+        request = request.with_test_strategy(strategy);
+    }
+    if let Some(review) = intent.review() {
+        request = request.with_review(review);
+    }
+    request
+}
+
+#[tokio::test]
+async fn the_intent_stream_written_by_the_command_side_keeps_every_optional_request_member() {
+    // 書く側と読む側は別々の DTO を持つ (側ごと専用化)。片側にだけ列を足すとワイヤが
+    // 食い違い、落ちた値は**読めるが空になる**という形で静かに消える。省略可能な 3 つを
+    // 全部埋めた intent を実際に書いて読み戻し、1 つも落ちないことを見る。
+    let store = Store::new();
+    let held = intent();
+    assert_eq!(
+        held.review(),
+        Some("adversarial"),
+        "書く前の集約が握っている"
+    );
+
+    {
+        let mut repository =
+            IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
+        let created = IntentEvent::Created(Created::new(
+            held.id().clone(),
+            held.definition_id().clone(),
+            held.definition_revision().clone(),
+            request_of(&held),
+            held.stages().to_vec(),
+            held.scan().clone(),
+        ));
+        repository
+            .store(&created, &held)
+            .await
+            .expect("intent の genesis は書ける");
+    }
+
+    let reader = JournalReaderImpl::open(&store.path).expect("Reader は開ける");
+    let batch = reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("intent の行は読める");
+
+    let intents = batch.intents();
+    assert_eq!(intents.len(), 1, "誕生記録 1 行 (実行・定義は無い)");
+    let decoded = &intents[0];
+    assert_eq!(decoded.review(), held.review(), "review が読む側まで届く");
+    assert_eq!(decoded.depth(), held.depth());
+    assert_eq!(decoded.test_strategy(), held.test_strategy());
+    assert_eq!(decoded.scope(), held.scope());
+    assert_eq!(decoded, &held, "誕生の材料は集約値へそのまま戻る");
 }
 
 #[tokio::test]

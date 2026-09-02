@@ -14,7 +14,7 @@ use super::intent_dto::StageEntryDto;
 /// `StartedDto` とワイヤ形式が一致していることは横断適合テストが固定する。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartedDto {
-    id: String,
+    aggregate_id: String,
     intent_id: String,
     stages: Vec<StageEntryDto>,
 }
@@ -23,7 +23,7 @@ impl StartedDto {
     /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
     pub(super) fn of(payload: &Started) -> StartedDto {
         StartedDto {
-            id: payload.id().as_str().to_string(),
+            aggregate_id: payload.aggregate_id().as_str().to_string(),
             intent_id: payload.intent_id().as_str().to_string(),
             stages: payload.stages().iter().map(StageEntryDto::of).collect(),
         }
@@ -32,8 +32,8 @@ impl StartedDto {
     /// ドメインの材料へ戻す (読み)。
     pub(super) fn to_domain(&self) -> Result<Started, DtoDecodeError> {
         Ok(Started::new(
-            IntentExecutionId::parse(&self.id)
-                .map_err(|_| DtoDecodeError::malformed("id", &self.id))?,
+            IntentExecutionId::parse(&self.aggregate_id)
+                .map_err(|_| DtoDecodeError::malformed("aggregate_id", &self.aggregate_id))?,
             IntentId::parse(&self.intent_id)
                 .map_err(|_| DtoDecodeError::malformed("intent_id", &self.intent_id))?,
             self.stages

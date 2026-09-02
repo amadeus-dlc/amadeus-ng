@@ -13,7 +13,7 @@ use super::intent_dto::StageEntryDto;
 /// [`IntentDto`]: super::intent_dto::IntentDto
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartedDto {
-    pub(super) id: String,
+    pub(super) aggregate_id: String,
     pub(super) intent_id: String,
     pub(super) stages: Vec<StageEntryDto>,
 }

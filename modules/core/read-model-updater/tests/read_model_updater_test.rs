@@ -161,12 +161,29 @@ struct FakeReader {
     /// `coding-rules/abstract-data-type.md` が禁じているので、観測する側の器をテストが
     /// 持つ。設計上の内部可変性ではない (`advance_checkpoint` は `&mut self` のまま)。
     tables: Rc<RefCell<Option<ReadTables>>>,
+    /// 1 回目の読取の**後**に届く行 (書込との競合の再現)。2 回目以降の読取から見える。
+    ///
+    /// 実物では別プロセスの書き手が入れる行であり、取得ループが 2 度読むなら 2 度目に
+    /// 現れる。ここではそれをフェイクで決定的に起こす。
+    late_row: Rc<RefCell<Option<JournalEntry>>>,
+    reads: Rc<RefCell<usize>>,
 }
 
 impl JournalReader for FakeReader {
     async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
-        let executions: Vec<JournalEntry> = self
-            .journal
+        let reads = {
+            let mut counter = self.reads.borrow_mut();
+            let seen = *counter;
+            *counter += 1;
+            seen
+        };
+        let mut rows = self.journal.clone();
+        if reads >= 1
+            && let Some(row) = self.late_row.borrow().clone()
+        {
+            rows.push(row);
+        }
+        let executions: Vec<JournalEntry> = rows
             .iter()
             .filter(|entry| entry.global_seq() > after)
             .cloned()
@@ -283,6 +300,38 @@ impl Fixture {
                 intents,
                 checkpoints,
                 tables: Rc::clone(&spy),
+                late_row: Rc::new(RefCell::new(None)),
+                reads: Rc::new(RefCell::new(0)),
+            },
+            projection(),
+            self.targets(),
+        );
+        (updater, spy)
+    }
+
+    /// 1 回目の読取の後に 1 行だけ届く読み手で組む (書込との競合の再現)。
+    fn racing_updater(
+        &self,
+        journal: Vec<JournalEntry>,
+        intents: Vec<(u64, Intent)>,
+        late_row: JournalEntry,
+    ) -> (
+        ReadModelUpdater<FakeReader>,
+        Rc<RefCell<Option<ReadTables>>>,
+    ) {
+        let mut checkpoints = BTreeMap::new();
+        if !journal.is_empty() {
+            checkpoints.insert(projection(), GlobalSeqNr::new(2));
+        }
+        let spy = Rc::new(RefCell::new(None));
+        let updater = ReadModelUpdater::new(
+            FakeReader {
+                journal,
+                intents,
+                checkpoints,
+                tables: Rc::clone(&spy),
+                late_row: Rc::new(RefCell::new(Some(late_row))),
+                reads: Rc::new(RefCell::new(0)),
             },
             projection(),
             self.targets(),
@@ -324,6 +373,47 @@ async fn catching_up_writes_both_faces_and_advances_the_checkpoint() {
             .filter(|line| line.starts_with("**Event**: STAGE_AWAITING_APPROVAL"))
             .count(),
         2
+    );
+}
+
+#[tokio::test]
+async fn a_row_that_lands_between_the_two_reads_is_drawn_on_both_faces_at_one_position() {
+    // 取得ループが 2 度読むなら、その間に書込が入りうる。描く材料を 2 つの読取に跨がって
+    // 採ると、Markdown 面は古い断面・構造化面は新しい断面になり、`as_of` がチェックポイント
+    // を追い越す — 「行はもう新しいのに、そこまで進んでいない」という嘘の断面が残る。
+    // 材料はすべて**同じ 1 回の読取**から採らなければならない。
+    let fixture = Fixture::new();
+    let late = entry(
+        5,
+        4,
+        IntentExecutionEvent::GateOpened(GateOpened::new(slug("practices-discovery"), Vec::new())),
+    );
+    let (mut updater, spy) = fixture.racing_updater(journal(), intents(), late);
+
+    let reached = updater.catch_up().await.expect("キャッチアップ");
+    assert_eq!(
+        reached,
+        GlobalSeqNr::new(5),
+        "遅れて届いた行まで進む (読んだ断面が前進先を決める)"
+    );
+
+    let tables = spy.borrow().clone().expect("前進と一緒に届く");
+    assert_eq!(
+        tables.as_of(),
+        Some(reached),
+        "行の `as_of` はチェックポイントと一致する (追い越さない)"
+    );
+
+    // Markdown 面も同じ断面で描かれている — 遅れて届いた行のぶんまでブロックが並ぶ。
+    assert_eq!(
+        fixture
+            .shard()
+            .lines()
+            .filter(|line| line.starts_with("**Event**: STAGE_AWAITING_APPROVAL"))
+            .count(),
+        3,
+        "読んだ行はすべて監査面に出る: {}",
+        fixture.shard()
     );
 }
 

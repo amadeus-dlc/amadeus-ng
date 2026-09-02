@@ -63,7 +63,9 @@ use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
-use core_command_domain::orchestration::{Intent, IntentExecutionId, IntentId};
+use core_command_domain::orchestration::{
+    Intent, IntentExecutionEvent, IntentExecutionId, IntentId,
+};
 use core_command_domain::workflow_definition::{WorkflowDefinitionEvent, WorkflowDefinitionId};
 
 use super::dto::{
@@ -408,6 +410,17 @@ fn decode_definition_row(row: &JournalRow) -> Result<DefinitionEntry, JournalRea
             CorruptCause::InvariantViolation,
         ));
     }
+    // 誕生は必ず通番 1、改訂は 2 以上である。食い違う行は**復号の境界で**止める — そのまま
+    // 通すと通番の飛びが `replay` まで届き、壊れた歴史としてパニックになる (再構成は失敗を
+    // 返さない)。破損は復号で `Corrupt` として返すのが本層の役目である (intent 行と同じ)。
+    let genesis = matches!(event, WorkflowDefinitionEvent::Defined(_));
+    if genesis != (row_seq == 1) {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
     let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
     Ok(DefinitionEntry::new(
         global,
@@ -489,6 +502,18 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
         .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
         .to_domain()
         .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
+    // 誕生記録だけは payload にも実行 id を持つ。行の `aid` と食い違う行はどちらかが嘘を
+    // ついている — 解釈せず止める (intent 行・定義行と同じ規律)。以降のイベントは識別子を
+    // 運ばない (`coding-rules/aggregate-references.md`) ので、照合する相手がそもそも無い。
+    if let IntentExecutionEvent::Started(started) = &event
+        && started.aggregate_id() != &execution_id
+    {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
     let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
     Ok(JournalEntry::new(
         global,
@@ -1819,6 +1844,175 @@ mod tests {
                 cause: CorruptCause::InvariantViolation,
             }
         );
+    }
+
+    /// 定義ストリームの 1 行 (名乗りと `aid` の検査を踏むための素体)。
+    ///
+    /// payload は `{}` — 名乗りの照合も `aid` の文法検査も**payload を読む前**に効くので、
+    /// 素体が復号できない形であること自体が「中身を解釈していない」ことの証明になる。
+    fn definition_row() -> JournalRow {
+        JournalRow {
+            rowid: 1,
+            seq_nr: 1,
+            aggregate_id: "claude".to_string(),
+            payload: b"{}".to_vec(),
+            occurred_at: 1_756_425_600_000_000_000,
+            manifest: DEFINITION_EVENT_MANIFEST.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_definition_row_that_names_another_manifest_is_refused_before_its_payload_is_read() {
+        // 本番経路は判別子で振り分けるのでここへは来ないはずの行だが、来たら中身を
+        // 解釈しない (`decode_entry` と同じ検査態度 — 名乗りが違う行は破損として止める)。
+        let row = JournalRow {
+            manifest: EVENT_MANIFEST.to_string(),
+            ..definition_row()
+        };
+        assert_eq!(
+            decode_definition_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "claude".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::UndecodablePayload,
+            }
+        );
+    }
+
+    #[test]
+    fn a_definition_row_whose_aid_is_not_a_definition_id_is_corrupt() {
+        // 系譜 ID の出所は行の `aid` である (改訂は識別子を運ばない)。文法を外れた `aid` は
+        // 読み替えず止める — 空白だけの `aid` は `WorkflowDefinitionId` にならない。
+        let row = JournalRow {
+            aggregate_id: "   ".to_string(),
+            ..definition_row()
+        };
+        assert_eq!(
+            decode_definition_row(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "   ".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
+    }
+
+    /// 1 ノードだけの定義内容 (誕生と改訂で共有する素体)。
+    fn definition_content() -> (
+        core_command_domain::workflow_definition::StageGraph,
+        core_command_domain::workflow_definition::ScopeGrid,
+        std::collections::BTreeMap<String, core_command_domain::workflow_definition::ScopeMetadata>,
+    ) {
+        use core_command_domain::workflow_definition::{
+            ExecutionKind, PhaseId, ScopeGrid, StageGraph, StageMode, StageNodeBuilder,
+            StageNumber, StageSlug,
+        };
+        let graph = StageGraph::new(vec![
+            StageNodeBuilder::new(
+                StageSlug::parse("state-init").expect("slug は文法内"),
+                StageNumber::parse("0.1").expect("番号は文法内"),
+                "State Init".to_string(),
+                PhaseId::Initialization,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .build(),
+        ])
+        .expect("1 ノードのグラフ");
+        let grid = ScopeGrid::from_graph(&graph);
+        (graph, grid, std::collections::BTreeMap::new())
+    }
+
+    /// テストの定義内容版 (同じ文字で埋めた 64 桁)。
+    fn definition_revision(
+        fill: char,
+    ) -> core_command_domain::workflow_definition::DefinitionRevision {
+        core_command_domain::workflow_definition::DefinitionRevision::parse(&format!(
+            "sha256:{}",
+            fill.to_string().repeat(64)
+        ))
+        .expect("テストの revision")
+    }
+
+    /// 誕生イベント (`Defined` — 通番 1 でしか現れない)。
+    fn defined_event() -> WorkflowDefinitionEvent {
+        use core_command_domain::workflow_definition::Defined;
+        let (graph, grid, scopes) = definition_content();
+        WorkflowDefinitionEvent::Defined(Defined::new(
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            definition_revision('0'),
+            graph,
+            grid,
+            scopes,
+        ))
+    }
+
+    /// 改訂イベント (`Redefined` — 通番 2 以上でしか現れない)。
+    fn redefined_event() -> WorkflowDefinitionEvent {
+        use core_command_domain::workflow_definition::Redefined;
+        let (graph, grid, scopes) = definition_content();
+        WorkflowDefinitionEvent::Redefined(Redefined::new(
+            definition_revision('1'),
+            graph,
+            grid,
+            scopes,
+        ))
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn a_definition_row_whose_sequence_contradicts_its_event_is_corrupt() {
+        // 誕生 (`Defined`) は必ず通番 1、改訂 (`Redefined`) は 2 以上である。食い違う行は
+        // 復号の境界で止める — 通番の飛びは `replay` まで運ぶとパニックになり、破損した
+        // 行と区別がつかなくなる (intent 行と同じ検査態度)。
+        let birth = WorkflowDefinitionEventDto::of(&defined_event());
+        let revision = WorkflowDefinitionEventDto::of(&redefined_event());
+
+        for (seq_nr, dto, label) in [
+            (2_i64, &birth, "誕生が通番 2 を名乗る"),
+            (1_i64, &revision, "改訂が通番 1 を名乗る"),
+        ] {
+            let row = JournalRow {
+                seq_nr,
+                payload: serde_json::to_vec(dto).unwrap(),
+                ..definition_row()
+            };
+            assert_eq!(
+                decode_definition_row(&row).unwrap_err(),
+                JournalReadError::Corrupt {
+                    aggregate_id: "claude".to_string(),
+                    seq_nr: Some(usize::try_from(seq_nr).unwrap()),
+                    cause: CorruptCause::InvariantViolation,
+                },
+                "{label}"
+            );
+        }
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn a_definition_row_whose_sequence_agrees_with_its_event_is_read() {
+        // 上の裏返し — 正しい組は素通りする (検査が広すぎないことを固定する)。
+        let birth = JournalRow {
+            seq_nr: 1,
+            payload: serde_json::to_vec(&WorkflowDefinitionEventDto::of(&defined_event())).unwrap(),
+            ..definition_row()
+        };
+        assert_eq!(decode_definition_row(&birth).unwrap().seq_nr(), 1);
+
+        let revision = JournalRow {
+            seq_nr: 2,
+            payload: serde_json::to_vec(&WorkflowDefinitionEventDto::of(&redefined_event()))
+                .unwrap(),
+            ..definition_row()
+        };
+        assert_eq!(decode_definition_row(&revision).unwrap().seq_nr(), 2);
     }
 
     #[test]

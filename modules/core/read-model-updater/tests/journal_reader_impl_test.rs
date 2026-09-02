@@ -19,18 +19,19 @@
 
 mod support;
 
+use core_command_domain::orchestration::IntentExecution;
 use core_command_domain::workflow_definition::WorkflowDefinitionId;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
-    CorruptCause, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
-    JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
+    CorruptCause, GlobalSeqNr, IntentExecutionEventDto, JournalBatch, JournalEntry,
+    JournalReadError, JournalReader, JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
 };
 use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
 use support::{
-    DEFINITION_MANIFEST, JournalWriter, UpstreamStore, at, defined_event, definition_id,
+    DEFINITION_MANIFEST, JournalWriter, MANIFEST, UpstreamStore, at, defined_event, definition_id,
     execution_id, intent, open_store, other_execution_id, redefined_event, seed, seed_definition,
     seed_intent,
 };
@@ -226,6 +227,45 @@ async fn a_definition_row_whose_birth_record_names_another_lineage_is_corrupt() 
             .expect_err("系譜が食い違う行は解釈しない"),
         JournalReadError::Corrupt {
             aggregate_id: "kiro".to_string(),
+            seq_nr: Some(1),
+            cause: CorruptCause::InvariantViolation,
+        }
+    );
+}
+
+#[tokio::test]
+async fn an_execution_row_whose_birth_record_names_another_execution_is_corrupt() {
+    // 誕生記録は payload にも実行 id を持つ。行の `aid` と食い違う行はどちらかが嘘を
+    // ついている — 定義行・intent 行と同じ規律で、解釈せず止める。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+
+    // payload は `execution_id()` の誕生記録、行の `aid` は `other_execution_id()`。
+    let (_, started) = IntentExecution::start(execution_id(), &intent(), at());
+    let payload = serde_json::to_vec(&IntentExecutionEventDto::of(&started)).expect("直列化");
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO journal (pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+             VALUES ('IntentExecution-9', ?1, ?2, 1, ?3, 0, ?4)",
+            rusqlite::params![
+                format!("IntentExecution-{}-1", other_execution_id().as_str()),
+                other_execution_id().as_str(),
+                payload,
+                MANIFEST
+            ],
+        )
+        .expect("別の実行を名乗る誕生行を差し込む");
+
+    assert_eq!(
+        fixture
+            .journal_reader()
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .expect_err("実行 id が食い違う行は解釈しない"),
+        JournalReadError::Corrupt {
+            aggregate_id: other_execution_id().as_str().to_string(),
             seq_nr: Some(1),
             cause: CorruptCause::InvariantViolation,
         }
@@ -829,6 +869,91 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
     assert_eq!(slug, expected_stage.stage_slug());
     assert_eq!(phase, expected_stage.phase());
     assert_eq!(gated, expected_stage.gated());
+}
+
+/// 13 表の名前と、その表に行が在ることを確かめる引き当て。
+///
+/// 表ごとの INSERT が失敗を握り潰していないかを見るので、**その表に行が 1 件も無ければ
+/// 試験が空振りする**。行数を一緒に持って、空振りをテスト自身が検出できるようにする。
+fn read_table_rows(tables: &ReadTables) -> [(&'static str, usize); 13] {
+    [
+        ("read_definition", tables.definitions().len()),
+        ("read_definition_stage", tables.definition_stages().len()),
+        ("read_definition_scope", tables.definition_scopes().len()),
+        (
+            "read_definition_scope_keyword",
+            tables.definition_scope_keywords().len(),
+        ),
+        (
+            "read_definition_scope_stage",
+            tables.definition_scope_stages().len(),
+        ),
+        (
+            "read_definition_scope_phase_entry",
+            tables.definition_scope_phase_entries().len(),
+        ),
+        ("read_intent", tables.intents().len()),
+        ("read_intent_stage", tables.intent_stages().len()),
+        ("read_execution", tables.executions().len()),
+        ("read_execution_stage", tables.execution_stages().len()),
+        ("read_next_answer", tables.next_answers().len()),
+        ("read_next_jump", tables.next_jumps().len()),
+        ("read_next_jump_phase", tables.next_jump_phases().len()),
+    ]
+}
+
+#[tokio::test]
+async fn a_read_table_whose_shape_drifted_fails_the_advance_instead_of_writing_partial_rows() {
+    // 全差し替えは 13 表への INSERT の並びである。どの 1 本も失敗を握り潰してはならない
+    // — 握り潰せば「他の表は新しく、その表だけ空」という嘘の断面が残る。表を 1 つずつ
+    // 列の合わない形へ作り替えて、前進ごと失敗し行が 1 つも動かないことを見る。
+    for (table, rows) in read_table_rows(&{
+        let fixture = Fixture::new();
+        let mut store = fixture.store();
+        seed_intent(&fixture.path).await;
+        seed_definition(&fixture.path).await;
+        seed(&mut store).await;
+        seeded_tables(&fixture.journal_reader()).await
+    }) {
+        assert!(rows > 0, "{table} に行が無いと試験が空振りする");
+
+        let fixture = Fixture::new();
+        let mut store = fixture.store();
+        seed_intent(&fixture.path).await;
+        seed_definition(&fixture.path).await;
+        seed(&mut store).await;
+
+        let mut journal_reader = fixture.journal_reader();
+        let tables = seeded_tables(&journal_reader).await;
+        let last = tables.as_of().expect("走査位置");
+
+        // `DELETE` は通るが `INSERT` の列が解決できない形へ作り替える。
+        fixture
+            .raw()
+            .execute_batch(&format!(
+                "DROP TABLE {table}; CREATE TABLE {table} (definition_id TEXT)"
+            ))
+            .expect("表を作り替える");
+
+        let error = journal_reader
+            .advance_checkpoint(&projection(), last, &tables)
+            .await
+            .expect_err("列の合わない表への INSERT は失敗する");
+        assert!(
+            matches!(error, JournalReadError::Io { .. }),
+            "{table}: SQLite の失敗は I/O の失敗として上がる (実際: {error:?})"
+        );
+
+        // 同じ Tx なのでチェックポイントも前進していない (裁定 §3)。
+        assert_eq!(
+            journal_reader
+                .checkpoint(&projection())
+                .await
+                .expect("読取"),
+            GlobalSeqNr::ZERO,
+            "{table}: 失敗した前進はチェックポイントを動かさない"
+        );
+    }
 }
 
 #[tokio::test]

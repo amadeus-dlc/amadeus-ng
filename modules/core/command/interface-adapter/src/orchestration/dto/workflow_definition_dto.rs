@@ -230,7 +230,12 @@ impl DefinitionContentDto {
         let mut scopes = BTreeMap::new();
         for scope in &self.scopes {
             let metadata = scope.to_domain()?;
-            scopes.insert(metadata.name().to_string(), metadata);
+            // カタログはワイヤでは並び、ドメインでは名前を鍵にした写像である。同名が 2 度
+            // 現れる並びは畳めない — 黙って後勝ちにすると行が 1 件消える。
+            let name = metadata.name().to_string();
+            if scopes.insert(name.clone(), metadata).is_some() {
+                return Err(DtoDecodeError::malformed("scope_name", name));
+            }
         }
         Ok((graph, ScopeGrid::new(columns), scopes))
     }
@@ -597,6 +602,30 @@ mod tests {
             "{json}"
         );
         assert!(!json.contains(r#""defined":"#), "入れ子にしない: {json}");
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn a_scope_catalog_that_names_the_same_scope_twice_is_refused() {
+        // 読む側 (RMU) と同じ規律。カタログはワイヤでは並びなので同名が 2 度書けるが、
+        // ドメインでは名前が鍵である — 黙って後勝ちで畳むと行が 1 件消える。
+        let json = serde_json::to_string(&WorkflowDefinitionDto::of(&saturated_definition()))
+            .expect("DTO は直列化できる");
+        let duplicated = json.replace(
+            r#""scopes":[{"name":"feature""#,
+            r#""scopes":[{"name":"feature","depth":null,"keywords":[],"skeleton":null,"review_cap":null,"freeform_default":false},{"name":"feature""#,
+        );
+        assert_ne!(duplicated, json, "置換が効いている");
+
+        let dto: WorkflowDefinitionDto =
+            serde_json::from_str(&duplicated).expect("JSON としては読める");
+        assert_eq!(
+            dto.to_domain().expect_err("同名スコープ 2 件は畳めない"),
+            DtoDecodeError::malformed("scope_name", "feature".to_string())
+        );
     }
 
     #[expect(

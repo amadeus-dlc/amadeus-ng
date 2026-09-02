@@ -192,10 +192,15 @@ impl ReadTables {
                     intent_id: execution.intent_id().as_str().to_string(),
                 })?;
             executions.push(ExecutionRow::of(&execution));
-            for (index, key) in execution.stage_keys().iter().enumerate() {
-                let Some(stage) = execution.stage_index(index) else {
-                    continue;
-                };
+            // 位置は添字帳の索引からしか作れない (`StageIndex` の構築子は集約が持つ) ので、
+            // 引けた索引だけを対にして回す。添字帳の長さは stage_count と同じなので実際に
+            // 落ちる索引は無く、`filter_map` は「位置を作る」ためだけに在る。
+            for (key, stage) in execution
+                .stage_keys()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, key)| execution.stage_index(index).map(|stage| (key, stage)))
+            {
                 execution_stages.push(ExecutionStageRow::of(&execution, intent, stage, key));
                 next_jumps.push(NextJumpRow::of(&execution, intent, stage, key));
             }
@@ -319,18 +324,17 @@ fn phases() -> impl Iterator<Item = PhaseId> {
 
 /// 定義ストリームを系譜 ID ごとに束ねて再生する (系譜 ID の辞書順)。
 fn replay_definitions(history: &JournalBatch) -> Result<Vec<WorkflowDefinition>, ReadTablesError> {
-    let mut streams: BTreeMap<&str, Vec<&DefinitionEntry>> = BTreeMap::new();
+    // 束ねた時点で先頭を誕生記録の候補として取り分ける — 束が空である形を作らないので、
+    // 「先頭が無い」という起こりえない場合を後から捌かずに済む。
+    let mut streams: BTreeMap<&str, (&DefinitionEntry, Vec<&DefinitionEntry>)> = BTreeMap::new();
     for entry in history.definitions() {
         streams
             .entry(entry.definition_id().as_str())
-            .or_default()
-            .push(entry);
+            .and_modify(|(_, rest)| rest.push(entry))
+            .or_insert_with(|| (entry, Vec::new()));
     }
     let mut replayed = Vec::new();
-    for (id, entries) in streams {
-        let Some((genesis, rest)) = entries.split_first() else {
-            continue;
-        };
+    for (id, (genesis, rest)) in streams {
         let WorkflowDefinitionEvent::Defined(defined) = genesis.event() else {
             return Err(ReadTablesError::MissingGenesis {
                 aggregate_id: id.to_string(),
@@ -348,18 +352,16 @@ fn replay_definitions(history: &JournalBatch) -> Result<Vec<WorkflowDefinition>,
 
 /// 実行ストリームを実行 ID ごとに束ねて再生する (実行 ID の辞書順)。
 fn replay_executions(history: &JournalBatch) -> Result<Vec<IntentExecution>, ReadTablesError> {
-    let mut streams: BTreeMap<&str, Vec<&JournalEntry>> = BTreeMap::new();
+    // 定義側と同じ形 — 束ねる時点で先頭を取り分け、空の束を作らない。
+    let mut streams: BTreeMap<&str, (&JournalEntry, Vec<&JournalEntry>)> = BTreeMap::new();
     for entry in history.executions() {
         streams
             .entry(entry.execution_id().as_str())
-            .or_default()
-            .push(entry);
+            .and_modify(|(_, rest)| rest.push(entry))
+            .or_insert_with(|| (entry, Vec::new()));
     }
     let mut replayed = Vec::new();
-    for (id, entries) in streams {
-        let Some((genesis, rest)) = entries.split_first() else {
-            continue;
-        };
+    for (id, (genesis, rest)) in streams {
         let IntentExecutionEvent::Started(started) = genesis.event() else {
             return Err(ReadTablesError::MissingGenesis {
                 aggregate_id: id.to_string(),

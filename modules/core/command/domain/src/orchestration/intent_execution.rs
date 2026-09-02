@@ -1293,7 +1293,7 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
             *marker = CheckboxState::InProgress;
         }
         IntentExecution::new(
-            started.id().clone(),
+            started.aggregate_id().clone(),
             started.intent_id().clone(),
             stage_keys,
             overlay,
@@ -1756,7 +1756,7 @@ mod tests {
         };
         // `Started` は genesis の材料 (実行 id・intent id・解決済み計画) を運ぶ — 誕生状態の
         // 導出に `&Intent` を要さないので、実行のストリームは自ストリームだけで再生できる。
-        assert_eq!(started.id(), &execution_id());
+        assert_eq!(started.aggregate_id(), &execution_id());
         assert_eq!(started.intent_id(), intent.id());
         assert_eq!(started.stages(), intent.stages());
     }
@@ -1777,7 +1777,7 @@ mod tests {
         let IntentExecutionEvent::Started(started) = &event else {
             panic!("start must emit Started");
         };
-        assert_eq!(started.id(), &execution_id());
+        assert_eq!(started.aggregate_id(), &execution_id());
         assert_eq!(started.intent_id(), &intent_id());
         assert_eq!(started.stages().len(), 3);
 
