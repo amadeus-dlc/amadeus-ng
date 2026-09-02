@@ -31233,3 +31233,45 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 追加タスク 8 と 9 を TDD で完了しました。コミットはしていません。\n\n**8. `decode_entry` の genesis 通番検査**\n\n誕生イベントと通番の整合を復号境界で検査し、不一致は `Corrupt(InvariantViolation)` にしました。定義行の同名検査と同じ形です。素体フィクスチャは payload が `Unparked` なので通番 1 では構成不
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:08:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:09:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:10:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:10:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:12:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:14:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:14:14Z
+**Event**: HUMAN_TURN
+
+---
