@@ -1247,12 +1247,13 @@ fn a_store_target_that_cannot_be_written_is_reported_as_io_with_the_offending_pa
     let blocker = dir.path().join("blocker");
     std::fs::write(&blocker, "not a directory").unwrap();
 
-    // data_dir の親が通常ファイル — ディレクトリを作れない。
+    // data_dir の親が通常ファイル — 既存 identity の読取もディレクトリ作成もできない。
+    // 最初に触る harness.json のパスで報告する。
     let data_dir = blocker.join("data");
     let mut writer =
         CompiledDefinitionRepositoryImpl::new(data_dir.clone(), dir.path().join("scopes"));
     let error = store_into(&mut writer, &compiled).unwrap_err();
-    assert_eq!(io_path(&error), data_dir);
+    assert_eq!(io_path(&error), data_dir.join("harness.json"));
 
     // data_dir は作れるが harness.json の位置にディレクトリが居座る — 書けない。
     let data_dir = dir.path().join("data");
@@ -1291,4 +1292,113 @@ fn a_stale_identity_file_that_cannot_be_removed_is_reported_as_io_with_its_path(
     std::fs::set_permissions(&scopes_out, std::fs::Permissions::from_mode(0o755)).unwrap();
     let error = outcome.unwrap_err();
     assert_eq!(io_path(&error), stale);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_scopes_dir_that_cannot_be_listed_is_reported_as_io_instead_of_skipping_the_sweep() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // 一覧が取れないのに続けると、消すべき stale ファイルを残したまま新しい識別ファイルだけが
+    // 増える (Bugbot 指摘)。一覧の失敗も `Io` として報告する。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let (mut writer, out) = empty_writer();
+    let scopes_out = out.path().join("scopes");
+    std::fs::create_dir_all(&scopes_out).unwrap();
+    std::fs::set_permissions(&scopes_out, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let outcome = store_into(&mut writer, &compiled);
+
+    std::fs::set_permissions(&scopes_out, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let error = outcome.unwrap_err();
+    assert_eq!(io_path(&error), scopes_out);
+    assert!(
+        std::fs::read_dir(&scopes_out).unwrap().next().is_none(),
+        "一覧に失敗した時点で止まり、識別ファイルは書かれない"
+    );
+}
+
+#[test]
+fn storing_keeps_the_prose_of_identity_files_and_the_extra_keys_of_harness_json() {
+    // 「散文本文と harness.json の付随キーは書かない」= 壊さない。既存ファイルがあれば
+    // 集約が所有する部分 (frontmatter / `name`) だけを差し替える (CodeRabbit 指摘)。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let (mut writer, out) = empty_writer();
+    let data_out = out.path().join("tools/data");
+    let scopes_out = out.path().join("scopes");
+    std::fs::create_dir_all(&data_out).unwrap();
+    std::fs::create_dir_all(&scopes_out).unwrap();
+    std::fs::write(
+        data_out.join("harness.json"),
+        "{\n  \"name\": \"old\",\n  \"harnessDir\": \".claude\",\n  \"rulesSubdir\": \"rules\"\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        scopes_out.join("aidlc-feature.md"),
+        "---\nname: feature\ndepth: light\n---\n\n# Feature scope\n\nprose stays\n",
+    )
+    .unwrap();
+
+    store_into(&mut writer, &compiled).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(data_out.join("harness.json")).unwrap(),
+        "{\n  \"name\": \"claude\",\n  \"harnessDir\": \".claude\",\n  \"rulesSubdir\": \"rules\"\n}\n",
+        "付随キーとその順序を保ったまま name だけが差し替わる"
+    );
+    assert_eq!(
+        std::fs::read_to_string(scopes_out.join("aidlc-feature.md")).unwrap(),
+        "---\nname: feature\ndepth: standard\nkeywords: [api, endpoint]\nskeleton: on\nreview_cap: adversarial\n---\n\n# Feature scope\n\nprose stays\n",
+        "frontmatter は集約の内容に差し替わり、本文はそのまま"
+    );
+    assert_eq!(find(&writer).unwrap().scopes(), compiled.scopes());
+}
+
+#[test]
+fn a_harness_identity_that_is_not_a_json_object_is_not_overwritten() {
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let (mut writer, out) = empty_writer();
+    let data_out = out.path().join("tools/data");
+    std::fs::create_dir_all(&data_out).unwrap();
+    std::fs::write(data_out.join("harness.json"), "[\"not\", \"an object\"]\n").unwrap();
+
+    let error = store_into(&mut writer, &compiled).unwrap_err();
+
+    assert!(
+        corrupt_cause(&error).contains("is not a JSON object"),
+        "{error:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(data_out.join("harness.json")).unwrap(),
+        "[\"not\", \"an object\"]\n",
+        "読めない内容を黙って捨てない"
+    );
+}
+
+#[test]
+fn storing_writes_to_the_override_paths_so_the_round_trip_reads_what_it_wrote() {
+    // override を設定した Repository は、読む先と同じパスへ書く (CodeRabbit 指摘)。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let out = tempfile::tempdir().unwrap();
+    let graph_override = out.path().join("pinned/graph.json");
+    let grid_override = out.path().join("pinned/grid.json");
+    let mut writer = CompiledDefinitionRepositoryImpl::new(
+        out.path().join("tools/data"),
+        out.path().join("scopes"),
+    )
+    .with_stage_graph_override(graph_override.clone())
+    .with_scope_grid_override(grid_override.clone());
+
+    store_into(&mut writer, &compiled).unwrap();
+
+    assert!(graph_override.is_file() && grid_override.is_file());
+    assert!(!out.path().join("tools/data/stage-graph.json").exists());
+    assert!(!out.path().join("tools/data/scope-grid.json").exists());
+    let reread = find(&writer).unwrap();
+    assert_eq!(reread.graph(), compiled.graph());
+    assert_eq!(reread.grid(), compiled.grid());
 }

@@ -324,10 +324,14 @@ impl InMemoryCompiledDefinitionRepository {
 impl CompiledDefinitionRepository for InMemoryCompiledDefinitionRepository {
     async fn find_by_id(
         &self,
-        _id: &CompiledDefinitionId,
+        id: &CompiledDefinitionId,
     ) -> Result<CompiledDefinition, RepositoryError<CompiledDefinitionId>> {
         match &self.outcome {
-            StubOutcome::Serving(compiled_definition) => Ok(compiled_definition.clone()),
+            // 実物と同じ約束 — 要求 id と配布束が名乗る id が違えば `NotFound`。
+            StubOutcome::Serving(compiled_definition) if compiled_definition.id() == id => {
+                Ok(compiled_definition.clone())
+            }
+            StubOutcome::Serving(_) => Err(RepositoryError::NotFound { id: id.clone() }),
             StubOutcome::Unreadable => Err(RepositoryError::Io {
                 kind: std::io::ErrorKind::NotFound,
                 path: Some(std::path::PathBuf::from(

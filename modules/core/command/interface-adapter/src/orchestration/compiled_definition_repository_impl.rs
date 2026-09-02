@@ -44,6 +44,7 @@ use core_command_domain::workflow_definition::{
     SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
 };
 use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
+use core_infrastructure::atomic::write_file_atomic;
 use core_infrastructure::canon_json::{
     SerializationProfile, ToValueError, hash_canonical, serialize, to_value,
 };
@@ -247,6 +248,14 @@ fn store_corrupt(
         id: id.clone(),
         seq_nr: None,
         source: Box::new(DefinitionCorruption::Malformed { message }),
+    }
+}
+
+/// `store` の OS 由来の失敗を、対象パスつきの `Io` に畳む。
+fn io_at(path: &Path, error: &io::Error) -> RepositoryError<CompiledDefinitionId> {
+    RepositoryError::Io {
+        kind: error.kind(),
+        path: Some(path.to_path_buf()),
     }
 }
 
@@ -561,6 +570,42 @@ impl CompiledDefinitionRepositoryImpl {
         Ok(scopes)
     }
 
+    /// `harness.json` の書込バイト。
+    ///
+    /// 集約の内容は識別子 (`name`) だけである。既存ファイルがあれば、集約の内容ではない
+    /// 付随キー (`harnessDir` / `rulesSubdir` …) をキー順ごと保ったまま `name` だけを
+    /// 差し替える (「書かない」= 壊さない)。無ければ `name` だけの identity を新設する。
+    /// 既存ファイルが JSON オブジェクトとして読めないときは、読めない内容を黙って捨てず
+    /// `Corrupt` で拒む。
+    fn emit_harness_identity(
+        &self,
+        id: &CompiledDefinitionId,
+    ) -> Result<String, RepositoryError<CompiledDefinitionId>> {
+        let path = self.harness_path();
+        let mut members = match fs::read_to_string(&path) {
+            Ok(existing) => match serde_json::from_str::<serde_json::Value>(&existing) {
+                Ok(serde_json::Value::Object(members)) => members,
+                Ok(_) | Err(_) => {
+                    return Err(store_corrupt(
+                        id,
+                        format!(
+                            "harness identity at {} is not a JSON object; refusing to overwrite it",
+                            path.display()
+                        ),
+                    ));
+                }
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound => serde_json::Map::new(),
+            Err(e) => return Err(io_at(&path, &e)),
+        };
+        members.insert(
+            "name".to_string(),
+            serde_json::Value::String(id.as_str().to_string()),
+        );
+        contract_pretty(&serde_json::Value::Object(members))
+            .map_err(|e| store_corrupt(id, format!("emit harness identity: {e}")))
+    }
+
     /// 3 入力を読んで集約を再構成する本体。失敗はアダプタ私有の中間表現で返し、ポート契約への
     /// 写像は `find_by_id` が 1 箇所で行う。
     ///
@@ -626,50 +671,47 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
             .map_err(|e| store_corrupt(id, format!("emit stage graph: {e}")))?;
         let grid_bytes = emit_grid(compiled_definition.graph(), compiled_definition.grid())
             .map_err(|e| store_corrupt(id, format!("emit scope grid: {e}")))?;
-        let harness_bytes = contract_pretty(&HarnessEmitDto { name: id.as_str() })
-            .map_err(|e| store_corrupt(id, format!("emit harness identity: {e}")))?;
+        let harness_bytes = self.emit_harness_identity(id)?;
 
+        // 書込の原子性は**ファイル単位** (同一ディレクトリの一時ファイルへ書いて rename —
+        // 途中で落ちても読み手が半端なファイルを見ることはない)。配布束は 2 ディレクトリ
+        // (`tools/data` と `scopes`) に跨るので、**束全体の原子性** (途中で落ちたときに古い束と
+        // 新しい束が混ざらないこと) はここでは与えない — 書き手 (compile コンテキスト、
+        // slice 2) が「新しいハーネスディレクトリへ書いてから差し替える」等で担う。書き出す
+        // バイトはディスクに触れる前にすべて用意してある (上の emit 3 本) ので、内容の
+        // 直列化失敗では何も書かない。
         let write =
             |path: &Path, bytes: &str| -> Result<(), RepositoryError<CompiledDefinitionId>> {
                 if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(|e| RepositoryError::Io {
-                        kind: e.kind(),
-                        path: Some(parent.to_path_buf()),
-                    })?;
+                    fs::create_dir_all(parent).map_err(|e| io_at(parent, &e))?;
                 }
-                fs::write(path, bytes).map_err(|e| RepositoryError::Io {
-                    kind: e.kind(),
-                    path: Some(path.to_path_buf()),
-                })
+                write_file_atomic(path, bytes.as_bytes()).map_err(|e| io_at(path, &e))
             };
 
-        write(&self.data_dir.join(HARNESS_FILE), &harness_bytes)?;
-        write(&self.data_dir.join(STAGE_GRAPH_FILE), &graph_bytes)?;
-        write(&self.data_dir.join(SCOPE_GRID_FILE), &grid_bytes)?;
+        // 書込先は読取と同じ解決済みパス (override 込み) — 書いた面を `find_by_id` が読む。
+        write(&self.harness_path(), &harness_bytes)?;
+        write(&self.stage_graph_path(), &graph_bytes)?;
+        write(&self.scope_grid_path(), &grid_bytes)?;
 
         // scope identity ファイル群: 集約が持つ集合と一致させる — 集合に無い既存の
         // `aidlc-*.md` は残すと次の find_by_id が余分なスコープとして読み戻すので消す。
-        fs::create_dir_all(&self.scopes_dir).map_err(|e| RepositoryError::Io {
-            kind: e.kind(),
-            path: Some(self.scopes_dir.clone()),
-        })?;
+        // 一覧が取れないのも失敗である (黙って続けると、消すべきものを消さないまま
+        // 新しい識別ファイルだけが増える)。
+        fs::create_dir_all(&self.scopes_dir).map_err(|e| io_at(&self.scopes_dir, &e))?;
         let wanted: std::collections::BTreeSet<String> = compiled_definition
             .scopes()
             .keys()
             .map(|name| format!("{SCOPE_FILE_PREFIX}{name}{SCOPE_FILE_SUFFIX}"))
             .collect();
-        if let Ok(existing) = scope_file_paths(&self.scopes_dir) {
-            for path in existing {
-                let keeps = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| wanted.contains(n));
-                if !keeps {
-                    fs::remove_file(&path).map_err(|e| RepositoryError::Io {
-                        kind: e.kind(),
-                        path: Some(path.clone()),
-                    })?;
-                }
+        let existing =
+            scope_file_paths(&self.scopes_dir).map_err(|e| io_at(&self.scopes_dir, &e))?;
+        for path in existing {
+            let keeps = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| wanted.contains(n));
+            if !keeps {
+                fs::remove_file(&path).map_err(|e| io_at(&path, &e))?;
             }
         }
         for metadata in compiled_definition.scopes().values() {
@@ -677,7 +719,15 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
                 "{SCOPE_FILE_PREFIX}{}{SCOPE_FILE_SUFFIX}",
                 metadata.name()
             ));
-            write(&file, &emit_scope_markdown(metadata))?;
+            // 散文本文は集約の内容ではない — 既存ファイルがあれば frontmatter だけを
+            // 差し替え、本文はそのまま残す (「書かない」= 壊さない)。
+            let mut bytes = emit_scope_markdown(metadata);
+            match fs::read_to_string(&file) {
+                Ok(existing) => bytes.push_str(scope_prose(&existing)),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(io_at(&file, &e)),
+            }
+            write(&file, &bytes)?;
         }
         Ok(())
     }
@@ -813,13 +863,6 @@ struct SensorRefEmitDto<'a> {
     path: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     matches: Option<&'a str>,
-}
-
-/// `harness.json` の emit 形 — 集約の内容である識別子だけを書く (それ以外のキーは
-/// 集約の内容ではない)。
-#[derive(Serialize)]
-struct HarnessEmitDto<'a> {
-    name: &'a str,
 }
 
 /// `JSON.stringify(x, null, 2)` + 末尾改行 1 個の体裁 (contract-pretty)。
@@ -1232,6 +1275,29 @@ fn frontmatter_body(content: &str) -> Option<&str> {
     None
 }
 
+/// frontmatter の直後から末尾まで (散文本文)。frontmatter が無い内容は全体を本文とみなす —
+/// `store` が既存ファイルの本文を保つための切り出しで、読取の検証 (`frontmatter_body`) とは
+/// 役目が違う。
+fn scope_prose(content: &str) -> &str {
+    let Some(rest) = content.strip_prefix(FRONTMATTER_FENCE).and_then(|rest| {
+        rest.strip_prefix("\r\n")
+            .or_else(|| rest.strip_prefix('\n'))
+    }) else {
+        return content;
+    };
+    let head_len = content.len() - rest.len();
+    let mut offset = 0usize;
+    for line in rest.split_inclusive('\n') {
+        if line.trim_end() == FRONTMATTER_FENCE {
+            return content
+                .get(head_len + offset + line.len()..)
+                .unwrap_or_default();
+        }
+        offset += line.len();
+    }
+    content
+}
+
 /// `[a, b]` のフロー列を読む。角括弧が無い形は「1 要素の列」として寛容に受ける。
 fn parse_flow_sequence(value: &str) -> Vec<String> {
     let inner = match value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
@@ -1491,6 +1557,16 @@ mod tests {
             compiled_definition_repository.scope_grid_path(),
             PathBuf::from("/pinned/grid.json")
         );
+    }
+
+    #[test]
+    fn scope_prose_is_everything_after_the_closing_fence() {
+        assert_eq!(scope_prose("---\nname: a\n---\n\n# body\n"), "\n# body\n");
+        assert_eq!(scope_prose("---\r\nname: a\r\n---\r\nbody"), "body");
+        assert_eq!(scope_prose("---\nname: a\n---"), "");
+        // frontmatter が無い (壊れた) 内容は全体が本文 — 捨てずに frontmatter を前置する。
+        assert_eq!(scope_prose("no frontmatter\n"), "no frontmatter\n");
+        assert_eq!(scope_prose("---\nname: a\n"), "---\nname: a\n");
     }
 
     #[test]
