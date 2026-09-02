@@ -55,6 +55,7 @@ use super::lineage_mismatch::LineageMismatch;
 use super::phase_id::PhaseId;
 use super::plan_action::PlanAction;
 use super::redefine_error::RedefineError;
+use super::scope_cost::ScopeCost;
 use super::scope_grid::ScopeGrid;
 use super::scope_metadata::ScopeMetadata;
 use super::stage_graph::StageGraph;
@@ -66,6 +67,18 @@ use super::workflow_definition_event::Defined;
 use super::workflow_definition_event::Redefined;
 use super::workflow_definition_event::WorkflowDefinitionEvent;
 use super::workflow_definition_id::WorkflowDefinitionId;
+
+/// 反復軸の観測値 (upstream `PER_UNIT_FOR_EACH` — Published Language の値、逐語)。
+const PER_UNIT_FOR_EACH: &str = "unit-of-work";
+
+/// `for_each` の誤記に備えた既知の per-unit ステージ (upstream `KNOWN_PER_UNIT_STAGES`、逐語)。
+const KNOWN_PER_UNIT_STAGES: [&str; 5] = [
+    "nfr-requirements",
+    "nfr-design",
+    "functional-design",
+    "infrastructure-design",
+    "code-generation",
+];
 
 /// ワークフロー定義の集約。
 ///
@@ -401,6 +414,42 @@ impl WorkflowDefinition {
                 )
             })
             .collect()
+    }
+
+    /// スコープ 1 列の費用 (upstream `gridCostSummary`)。列が無ければ `None`。
+    ///
+    /// EXECUTE のうち `phase != initialization` を承認ゲート、`for_each == "unit-of-work"`
+    /// または既知の per-unit ステージを unit 反復に数える。グリッドに在ってグラフに無い slug は
+    /// total / execute には数え、gates / per-unit には数えない (upstream と同じ防御)。
+    #[must_use]
+    pub fn scope_cost(&self, scope: &str) -> Option<ScopeCost> {
+        let column = self.grid.column(scope)?;
+        let mut execute = 0usize;
+        let mut gates = 0usize;
+        let mut per_unit_stages = 0usize;
+        for (slug, action) in column {
+            if *action != PlanAction::Execute {
+                continue;
+            }
+            execute += 1;
+            let Some(node) = self.graph.get(slug) else {
+                continue;
+            };
+            if node.phase() != PhaseId::Initialization {
+                gates += 1;
+            }
+            if node.for_each() == Some(PER_UNIT_FOR_EACH)
+                || KNOWN_PER_UNIT_STAGES.contains(&slug.as_str())
+            {
+                per_unit_stages += 1;
+            }
+        }
+        Some(ScopeCost::new(
+            column.len(),
+            execute,
+            gates,
+            per_unit_stages,
+        ))
     }
 
     /// ステージの route 同一性 — 対象ステージと、その scope の in-scope ステージ列。
@@ -1005,6 +1054,108 @@ mod tests {
             .map(|(s, _, _)| s.as_str())
             .collect();
         assert_eq!(listed, vec!["late", "boot", "early"]);
+    }
+
+    // ---- 費用 (scope_cost) — compose / intent-create の費用節の材料 ----
+
+    /// コスト算術を見るための定義 — SKIP セル・per-unit ステージ 2 種 (`for_each` と既知
+    /// リスト)・グリッドにだけ在る slug・グリッド列を持たない scope をすべて含む。
+    fn cost_bundle() -> CompiledDefinition {
+        let per_unit = |name: &str, number: &str, for_each: bool| {
+            let builder = StageNodeBuilder::new(
+                slug(name),
+                StageNumber::parse(number).unwrap(),
+                name.to_string(),
+                PhaseId::Construction,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            );
+            if for_each {
+                builder.for_each("unit-of-work".to_string()).build()
+            } else {
+                builder.build()
+            }
+        };
+        let graph = StageGraph::new(vec![
+            node("state-init", "0.1", PhaseId::Initialization, &[]),
+            node("domain-design", "1.1", PhaseId::Inception, &[]),
+            // 既知の per-unit ステージ (`for_each` は付いていない)。
+            per_unit("nfr-design", "3.2", false),
+            // `for_each` による判定。
+            per_unit("code-generation", "3.5", true),
+        ])
+        .unwrap();
+        let cell = |name: &str, action: PlanAction| (slug(name), action);
+        let grid = ScopeGrid::new(
+            [
+                (
+                    "express".to_string(),
+                    [
+                        cell("state-init", PlanAction::Execute),
+                        cell("domain-design", PlanAction::Skip),
+                        cell("nfr-design", PlanAction::Skip),
+                        cell("code-generation", PlanAction::Execute),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                (
+                    "classic".to_string(),
+                    [
+                        cell("state-init", PlanAction::Execute),
+                        cell("domain-design", PlanAction::Execute),
+                        cell("nfr-design", PlanAction::Execute),
+                        cell("code-generation", PlanAction::Execute),
+                        // グリッドにだけ在る slug — total / execute には数え、gate と
+                        // per-unit には数えない (upstream と同じ防御)。
+                        cell("ghost-stage", PlanAction::Execute),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        bundle(
+            "claude",
+            graph,
+            grid,
+            registry(&["express", "classic", "gridless"]),
+        )
+    }
+
+    #[test]
+    fn the_scope_cost_counts_execute_gates_and_per_unit_repeats() {
+        let definition = WorkflowDefinition::define(id("claude"), &cost_bundle(), at())
+            .unwrap()
+            .0;
+        let express = definition.scope_cost("express").unwrap();
+        assert_eq!(
+            (
+                express.total(),
+                express.execute(),
+                express.gates(),
+                express.per_unit_stages()
+            ),
+            (4, 2, 1, 1)
+        );
+        let classic = definition.scope_cost("classic").unwrap();
+        assert_eq!(
+            (
+                classic.total(),
+                classic.execute(),
+                classic.gates(),
+                classic.per_unit_stages()
+            ),
+            (5, 5, 3, 2),
+            "グラフに無い slug は総数と EXECUTE には入るが、ゲートと per-unit には入らない"
+        );
+        assert_eq!(
+            definition.scope_cost("gridless"),
+            None,
+            "グリッド列を持たない scope に費用は無い"
+        );
     }
 
     // ---- PBT: ランダム合成グラフ + グリッド ----

@@ -38,6 +38,7 @@ mod review_cap_value;
 mod review_class;
 mod rule_in_context;
 mod rule_scope;
+mod scope_cost;
 mod scope_grid;
 mod scope_metadata;
 mod scope_metadata_error;
@@ -101,6 +102,7 @@ pub use stage_slug::StageSlug;
 pub use workflow_definition_id::WorkflowDefinitionId;
 
 // 読取モデル (Published Language 1 本目)
+pub use scope_cost::ScopeCost;
 pub use scope_grid::ScopeGrid;
 pub use stage_graph::StageGraph;
 pub use stage_node::StageNode;
