@@ -34,14 +34,16 @@
 - ドメインイベントは**エンティティ**であり、自前の `XxxEventId` と、どの集約の事実かを示す
   `aggregate_id: XxxId` を**別々のフィールド**で持つ。`Started { id: IntentExecutionId }` のように集約 ID を
   イベントの `id` に流用した形は誤り（オーナー指摘 2026-09-02 — b39 で作り込んだ誤りで、是正 Bolt で直す）。
-- ドメインイベントは**集約のコマンドの戻り値**としてだけ生まれる（再構成経路は作らない、
+- **新しい**ドメインイベントは**集約のコマンドの戻り値**としてだけ生まれる（集約の再構成経路 `replay` /
+  `apply_event` はイベントを**作らない**。保存済みイベントを永続化 DTO から**検査付きで復号**するのは新しい
+  事実の生成ではなく、アダプタ層・RMU の正当な仕事 — [domain-persistence-neutrality.md](domain-persistence-neutrality.md)）（
   イベント族は enum + 変種ペイロードの形 — [aggregate-commands.md](aggregate-commands.md) /
   [module-visibility.md](module-visibility.md) §追記 2026-09-01）。「イベントっぽい型」を集約の外で
   組み立てるのは、この種類ではなく 5 段目の「それ以外」に当たる。
 
 ## 判定フロー
 
-```
+```text
 1. それは識別子で同一性が決まるか？
    ├─ Yes → エンティティ。集約の外から ID で参照されるか？
    │         ├─ Yes → 集約のルートエンティティ（自前の ID、Repository はこの ID で引く）
