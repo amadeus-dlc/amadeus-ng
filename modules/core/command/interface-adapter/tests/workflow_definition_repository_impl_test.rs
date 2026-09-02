@@ -35,8 +35,8 @@ use rusqlite::Connection;
 use tempfile::TempDir;
 
 use support::{
-    EXECUTION, at, definition_content, definition_genesis, definition_id, definition_revision,
-    genesis_for, intent_genesis, store_definition_genesis,
+    EXECUTION, at, definition_bundle, definition_genesis, definition_id, genesis_for,
+    intent_genesis, store_definition_genesis,
 };
 
 /// 我々が封筒に書く型判別子 (アダプタの `EVENT_MANIFEST` と同じ綴り)。
@@ -78,9 +78,8 @@ impl Fixture {
 /// 改訂 (`Redefined`) の差分イベント。
 fn redefinition() -> WorkflowDefinitionEvent {
     let mut definition = definition_genesis().0;
-    let (graph, grid, scopes) = definition_content(5);
     definition
-        .redefine(definition_revision('1'), graph, grid, scopes, at())
+        .redefine(&definition_bundle(5), at())
         .expect("内容版が違えば改訂できる")
 }
 
@@ -130,7 +129,7 @@ async fn the_definition_stream_coexists_with_the_other_two_in_the_same_file() {
         IntentRepositoryImpl::open(&fixture.path).expect("intent ストアは同じファイル");
     let (intent, created) = intent_genesis();
     intent_repository
-        .store(&created, &intent, at())
+        .store(&created, &intent)
         .await
         .expect("intent の genesis");
 
@@ -188,7 +187,7 @@ async fn the_rehydration_replays_the_delta_beyond_the_snapshot() {
         .expect("読める");
     assert_eq!(
         found.revision(),
-        &definition_revision('1'),
+        definition_bundle(5).revision(),
         "スナップショットより後ろの改訂が適用される"
     );
     assert_eq!(found.graph().len(), 5);
@@ -401,9 +400,8 @@ async fn a_snapshot_strategy_of_one_rewrites_the_snapshot_on_every_event() {
         .with_snapshot_strategy(SnapshotStrategy::every(NonZeroUsize::MIN));
     let mut held = store_definition_genesis(&mut repository).await;
 
-    let (graph, grid, scopes) = definition_content(5);
     let event = held
-        .redefine(definition_revision('1'), graph, grid, scopes, at())
+        .redefine(&definition_bundle(5), at())
         .expect("改訂できる");
     repository.store(&event, &held).await.expect("改訂は書ける");
 
@@ -422,7 +420,7 @@ async fn a_snapshot_strategy_of_one_rewrites_the_snapshot_on_every_event() {
         .find_by_id(&definition_id())
         .await
         .expect("読める");
-    assert_eq!(found.revision(), &definition_revision('1'));
+    assert_eq!(found.revision(), definition_bundle(5).revision());
     assert_eq!(found.seq_nr(), 2);
 }
 

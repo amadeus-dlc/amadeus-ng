@@ -23,13 +23,14 @@ impl IntentEventDto {
     /// ドメインイベントから行の形を組む (書き)。
     ///
     /// `Created` は誕生の材料をそのまま運ぶ — 材料から起こした集約の読取面と同じバイトに
-    /// なる (誕生記録の変換 `From<Created>` は全属性の素通しである)。
+    /// なる (誕生記録の変換 `From<(Created, occurred_at)>` は全属性の素通しである)。
+    /// 発生時刻は封筒の持ち物なので呼出側 (Repository の `store`) が集約から渡す。
     #[must_use]
-    pub fn of(event: &IntentEvent) -> IntentEventDto {
+    pub fn of(event: &IntentEvent, occurred_at: chrono::DateTime<chrono::Utc>) -> IntentEventDto {
         match event {
-            IntentEvent::Created(created) => {
-                IntentEventDto::Created(IntentDto::of(&Intent::from(created.clone())))
-            }
+            IntentEvent::Created(created) => IntentEventDto::Created(IntentDto::of(&Intent::from(
+                (created.clone(), occurred_at),
+            ))),
         }
     }
 

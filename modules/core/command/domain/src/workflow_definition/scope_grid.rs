@@ -54,6 +54,18 @@ impl ScopeGrid {
         ScopeGrid { columns }
     }
 
+    /// 列を 1 つ足した (同名があれば差し替えた) 写し (scope 登記 —
+    /// `CompiledDefinition::register_scope`)。
+    #[must_use]
+    pub fn with_column(
+        mut self,
+        scope: String,
+        column: BTreeMap<StageSlug, PlanAction>,
+    ) -> ScopeGrid {
+        self.columns.insert(scope, column);
+        self
+    }
+
     /// グリッドが列を持つスコープ名 (辞書順)。
     ///
     /// **`validScopes()` ではない** — 有効スコープの権威はスコープ `.md` の存在であって

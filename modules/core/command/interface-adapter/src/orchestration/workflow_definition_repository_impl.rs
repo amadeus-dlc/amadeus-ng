@@ -11,7 +11,8 @@
 //! 旧実装は dist の 3 入力 (`stage-graph.json` / `scope-grid.json` / `scopes/*.md`) を
 //! ディスクから読んで集約を組み立てていた。それは `coding-rules/cqrs-boundaries.md` 規則 4
 //! (コマンド側の最新状態は常に集約から。**リードモデルは遅延しているので物理的に読めない**)
-//! への正面違反である。パースの中身は取込境界 [`DefinitionArtifactsClientImpl`] へ移り、
+//! への正面違反である。パースの中身は配布束の Repository [`CompiledDefinitionRepositoryImpl`]
+//! (集約 `CompiledDefinition` の媒体は配布 3 ファイル — b36) へ移り、
 //! ここは他の 2 つの Repository と 1 行も違わない ES の手順だけになった。
 //!
 //! # 3 集約が 1 つのストアに同居する
@@ -27,7 +28,7 @@
 //! ならない** — 常に最新版を提示することになり、楽観ロックが成立しなくなる。定義は
 //! 改訂 (`Redefined`) を持つので、この往復は実際に効く。
 //!
-//! [`DefinitionArtifactsClientImpl`]: super::definition_artifacts_client_impl::DefinitionArtifactsClientImpl
+//! [`CompiledDefinitionRepositoryImpl`]: super::compiled_definition_repository_impl::CompiledDefinitionRepositoryImpl
 
 use std::io::ErrorKind;
 
@@ -448,8 +449,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use core_command_domain::workflow_definition::{
-        ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder,
-        StageNumber, StageSlug,
+        CompiledDefinition, CompiledDefinitionId, ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata,
+        StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
     };
 
     fn id() -> WorkflowDefinitionId {
@@ -458,14 +459,6 @@ mod tests {
 
     fn other_id() -> WorkflowDefinitionId {
         WorkflowDefinitionId::parse("kiro").expect("定義 id")
-    }
-
-    fn revision(fill: char) -> core_command_domain::workflow_definition::DefinitionRevision {
-        core_command_domain::workflow_definition::DefinitionRevision::parse(&format!(
-            "sha256:{}",
-            fill.to_string().repeat(64)
-        ))
-        .expect("revision")
     }
 
     fn content(stage_count: usize) -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
@@ -496,7 +489,13 @@ mod tests {
 
     fn genesis(stage_count: usize) -> (WorkflowDefinition, WorkflowDefinitionEvent) {
         let (graph, grid, scopes) = content(stage_count);
-        WorkflowDefinition::define(id(), revision('0'), graph, grid, scopes, at())
+        let (bundle, _) = CompiledDefinition::compile(
+            CompiledDefinitionId::parse("claude").expect("配布束 id"),
+            graph,
+            grid,
+            scopes,
+        );
+        WorkflowDefinition::define(id(), &bundle, at()).expect("同じ系譜")
     }
 
     fn at() -> chrono::DateTime<chrono::Utc> {
@@ -672,7 +671,7 @@ mod tests {
                 .await
                 .expect("同じストアを指す")
                 .revision(),
-            &revision('0')
+            definition.revision()
         );
     }
 

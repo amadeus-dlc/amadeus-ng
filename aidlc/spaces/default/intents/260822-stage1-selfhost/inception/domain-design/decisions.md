@@ -172,6 +172,20 @@
   する*: ピンはデータに含まれず（`stage-graph.json` に version 無し）、テストシームのローカル差し替えを
   区別できない。*ID なしのまま `find()` を維持*: エンティティに ID が無い現状の温存。
 
+- **改訂 2026-09-02（Bolt b36 — 内容版はドメインが導出する、オーナー裁定「集約は FSM」の帰結）**:
+  Decision (1) の「`revision` は Repository 実装が計算し、ドメインは計算しない」を改める。配布束が
+  集約 `CompiledDefinition`（自前の `CompiledDefinitionId`、`recompile` / `register_scope` /
+  `apply_plugin_selection` の 3 遷移）に昇格したことで、内容を変える遷移の直後に集約が自分の
+  内容版を知っている必要が生じた。呼出側に適用後の内容を先読みして計算させるのは
+  Tell-Don't-Ask に反するため、**内容版は内容の純粋な関数として集約が導出する**
+  （`DefinitionRevision::of_content(graph, grid, scopes)` — 投影はドメインの値だけから組み、
+  ダイジェストは言語拡張 `core_infrastructure::canon_json::hash_canonical`。domain の
+  canon-json 依存は issue #45 の裁定で既に許可済み）。生バイト・未知フィールド・キー順といった
+  **表現**は入力に含めない（同じ内容なら同じ版、という「値属性」の意味論はむしろ厳密になる）。
+  `produces_kinds` は並びが内容なので配列で投影する。ジャーナルの定義（`WorkflowDefinition`）は
+  `define(id, &CompiledDefinition, at)` / `redefine(&CompiledDefinition, at)` で配布束から内容と
+  内容版を受け取り、系譜違いを `LineageMismatch` で拒む（集約間の `&` 参照 + id 照合の家風）。
+  識別子（系譜 ID）の付与は従来どおり Repository 実装（`harness.json` の `name`）。
 - **追記 2026-08-29（Bolt B8 — 解決済み計画の表示属性は例外、オーナー裁定）**: 「定義の詳細を
   イベントへ複製しない」に限定的な例外を設ける。監査シャードの逐語互換（FR1.1）に必要な
   **表示属性 3 値**（ステージ番号・表題・担当エージェント名 — `StageDisplay`）と**走査結果**

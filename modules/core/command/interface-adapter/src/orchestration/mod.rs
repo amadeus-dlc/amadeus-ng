@@ -25,10 +25,11 @@
 //! 消費側のパスは `core_command_interface_adapter::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
-mod definition_artifacts_client_impl;
+mod compiled_definition_repository_impl;
 mod dto;
 mod intent_execution_repository_impl;
 mod intent_repository_impl;
+mod kinds_codec;
 mod snapshot_strategy;
 mod store_failure;
 mod workflow_definition_repository_impl;
@@ -39,10 +40,10 @@ pub use intent_repository_impl::IntentRepositoryImpl;
 pub use snapshot_strategy::SnapshotStrategy;
 pub use workflow_definition_repository_impl::WorkflowDefinitionRepositoryImpl;
 
-// 実 I/O Gateway — genesis 播種のための暫定の足場 (compile 実装で消える。「外部システム
-// クライアント」分類は棄却済み — `coding-rules/gateway-taxonomy.md` §1 是正 2026-09-01)。
-// Repository ではないので `Impl` は付くが集約名は冠さない。
-pub use definition_artifacts_client_impl::DefinitionArtifactsClientImpl;
+// 集約 `CompiledDefinition` (コンパイル済み定義の配布束) の Repository 実装 — 媒体が
+// 配布 3 ファイルであることは内部詳細 (オーナー裁定 2026-09-02、b36 — クライアントを
+// リポジトリに、扱うデータを集約に昇格)。
+pub use compiled_definition_repository_impl::CompiledDefinitionRepositoryImpl;
 
 // 永続化モデル (DTO) — ジャーナル行・スナップショット行のバイトを決めるのはこの層である
 // (coding-rules/domain-persistence-neutrality.md)。ストアを具体化するのに型名が要るので

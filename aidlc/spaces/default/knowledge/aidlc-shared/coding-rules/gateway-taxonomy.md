@@ -11,7 +11,12 @@ EventStoreForSqlite を使わないといけない」。配布物の取込は**�
 `DefinitionArtifactsClient` へ退去。§1 の追記・§3 の追記・§5 の取込 Gateway 行。b30）、
 **是正 2026-09-01**（オーナー裁定、#79 §5-g / b33 — 定義取込の「外部システムクライアント」
 分類を**棄却**。実体は **compile 実装まで の暫定の足場（genesis 播種口）**であり、コマンド側が
-定義を読む正規の口は集約 + リポジトリのみ。§1 是正・§3 是正・§5 の取込行を書き換え）
+定義を読む正規の口は集約 + リポジトリのみ。§1 是正・§3 是正・§5 の取込行を書き換え）、
+**昇格 2026-09-02**（オーナー裁定、b36 —「クライアントをリポジトリに、クライアントが扱う
+データを集約に昇格」。配布束は集約 `CompiledDefinition`（自前の `CompiledDefinitionId`）に
+なり、読み書きは通常の `CompiledDefinitionRepository` / `CompiledDefinitionRepositoryImpl`。
+「取込ポート」「暫定の足場」という位置づけごと消滅 — §1 是正の再是正・§2 の行追加・
+§5 の取込行削除）
 **適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）、b30（`WorkflowDefinitionRepositoryImpl` の ES 化と `DefinitionArtifactsClient` の新設）
 **機械強制**: レビュー基準（未リント化）。将来 `cargo lint` ルール候補は下記「機械強制の候補」
 
@@ -38,15 +43,18 @@ EventStoreForSqlite を使わないといけない」。配布物の取込は**�
 `scope-grid.json` / `<harnessRoot>/scopes/aidlc-<name>.md` + `harness.json`）は **AI-DLC v2 系内の
 成果物**であり、都合よく外部システム扱いしない（#79 §1-4）。
 
-正しい位置づけ: コマンド側が定義を読む正規の口は**集約 + リポジトリ**
-（`WorkflowDefinitionRepository::find_by_id` = snapshot + journal replay）だけであり、第 3 の
-読取口は存在しない。本取込は読取口ではなく、**ジャーナルの最初の 1 行（genesis の内容）を
-播種するための暫定の足場**である — compile コンテキストが未実装の間、定義内容の唯一の出所が
-dist バイトであるためだけに存在し、compile 実装（slice 2）でそのフロー（集約 → イベント →
-RMU）に置換されて**ポートごと消える**（#80）。消えるまでの間、改名・分類新設による恒久化は
-しない（2026-09-01 裁定 —「暫定の足場だとわかるように書く」）。なお「相手方システムの契約を
-知るなら外部システムクライアント」という判定基準そのものは、**本当に別システムである相手**
-（GitHub 等）については引き続き有効である。
+~~正しい位置づけ: … 暫定の足場 …~~ — **再是正（2026-09-02 オーナー裁定、b36）**:
+「暫定の足場（播種口）」という位置づけも終了した。配布束は**同一システムのドメインモデル**
+なので、集約 `CompiledDefinition`（識別子は自前の `CompiledDefinitionId` — 集約は自前の ID を
+持ち、Repository は自集約の ID で引く一般原則）へ昇格し、読み書きは通常の Repository
+（`CompiledDefinitionRepository` / 実装 `CompiledDefinitionRepositoryImpl`。媒体 = 配布 3
+ファイルは実装の内部詳細）が担う。`DefineWorkflowUseCase` は「集約 A（配布束）をその
+Repository で読み、集約 B（ジャーナルの定義）を書く」正規形（cqrs-boundaries 規則 5 —
+`CreateIntentUseCase` と同型）になった。`store` も実装済みで、graph / grid は dist と
+**バイト完全一致**で書ける（書き側バイト契約 12 §10 — golden 検収）。compile コンテキスト
+（slice 2）は「取込を置換して消す」のではなく、**この Repository の `store` の書き手**として
+現れる。なお「相手方システムの契約を知るなら外部システムクライアント」という判定基準
+そのものは、**本当に別システムである相手**（GitHub 等）については引き続き有効である。
 
 **機構（時計・ID 生成・プロセス生存判定・乱数・環境変数読取）は Gateway ではない。** clean-architecture の層責務では、時計と ID 生成器と DI 配線は Infrastructure が所有する機構であって、アプリケーション境界のポートではない（典拠: `j5ik2o-clean-architecture/references/layer-responsibilities.md` — *"Infrastructure ... Owns mechanisms: logging, metrics, configuration, dependency injection, concrete database drivers, HTTP clients, **clocks, ID generators**, and runtime wiring."*）。
 
@@ -78,13 +86,23 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 
 - `IntentExecution` → `IntentExecutionRepository`（~~`WorkflowExecution` → `WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29）
 - `Intent` → `IntentRepository`（U7 の intent-create 実装時に新設予定。**Repository は自分の集約・エンティティだけを I/O する** — `IntentRepository` は `Intent` のみ、`IntentExecutionRepository` は `IntentExecution` のみ。他方を復元して返すのも違反。**署名は自集約の ID だけを取る** — 他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が要る場合、それは自ストリームの誕生イベントに記録されているはずであり、Impl がそこから内部復元する（`find_by_id(&IntentExecutionId)` が `Started` から再生用 `Intent` を組む実例 — オーナー確定 2026-08-29）（オーナー確認 2026-08-29）。再生・判断に他方のデータが要るときは `&` 参照のパラメータ渡し — [aggregate-references.md](aggregate-references.md)）
+- `CompiledDefinition` → `CompiledDefinitionRepository`（**新設 2026-09-02、b36** — 配布束の
+  集約。識別子は自前の `CompiledDefinitionId`。`find_by_id` と `store` の両動詞（「書き込め
+  ないと読み込めない」裁定）。媒体 = 配布 3 ファイルは実装の内部詳細で、graph / grid は
+  書き側バイト契約（12 §10）どおり dist とバイト完全一致で書く。scope `.md` の散文本文と
+  `harness.json` の付随キーは集約の内容ではないので `store` は**壊さない**（既存ファイルの
+  frontmatter / `name` だけを差し替える）。内容版 `DefinitionRevision` は集約が内容から導出する
+  ので Repository は計算しない（ADR-008 改訂 2026-09-02）。集約は FSM — `recompile` /
+  `register_scope` / `apply_plugin_selection` の 3 遷移（12 §2.1）。`store` は 4 変種すべての
+  (イベント, 集約) の対を受け、対が同じ内容を語っていなければ `Corrupt` で拒む）
 - `WorkflowDefinition` → `WorkflowDefinitionRepository`（**改訂 2026-08-31 オーナー裁定、b30**:
   この Repository は他の 2 つと同じく**イベントストアを内包する ES リポジトリ**である —
   `find_by_id` は最新スナップショット + 差分イベントの replay、`store(&event, &definition)`
   はジャーナル追記 + スナップショット（**封筒の `occurred_at` は集約の `last_updated_at()` から
   組む** — 手本 `IntentExecutionRepositoryImpl` と対にせよというオーナー裁定 2026-08-31。
   `store` の引数で時刻を運ばない）。~~3 入力を読んで集約を組み立てて供給する~~ 旧実装は
-  同日に破棄された。配布物の取込は §1 追記の `DefinitionArtifactsClient` が担う）
+  同日に破棄された。~~配布物の取込は §1 追記の `DefinitionArtifactsClient` が担う~~ →
+  配布束の読取は集約 `CompiledDefinition` の Repository（上の行、2026-09-02 昇格）が担う）
 
 `AuditLedger` はイベントログ（`IntentExecution` のイベント列）であって集約ではないため、Repository を持たない — 監査シャードは ReadModelUpdater の投影である（ADR-001 / 003）。
 
@@ -136,12 +154,9 @@ EventStoreForSqlite を使わないといけない」。**ファイルから集�
 **例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
 機械化する場合も、この 2 本を除外リストに持つ実装にすること。
 
-なお `DefinitionArtifactsClient` は**例外の追加ではない** — `Store` / `Reader` /
-`Writer` / `Source` / `Provider` のいずれの造語でもない。~~相手方（配布物を出す upstream）を
-冠した `Client` であって §1 の「外部システムクライアント」分類そのものである。~~ —
-**是正（2026-09-01、#79 §5-g / b33）**: 「外部システムクライアント」分類は棄却。§1 の是正の
-とおり**暫定の足場（genesis 播種口）**であり、compile 実装で消えるまで現名のまま存置する
-（改名による恒久化はしない）。
+~~なお `DefinitionArtifactsClient` は…~~ — **決着（2026-09-02、b36）**: この型は
+`CompiledDefinitionRepository` へ昇格して消滅した（§1 の再是正）。`Client` 命名は本当に
+別システムである相手（GitHub 等）にだけ使う。
 
 **クエリ側のリードモデル読取ポートは `XxxDao`（オーナー裁定 2026-08-31）**: 読む先が集約では
 なくリードモデルなので Repository とは名乗らず、DTO/DAO の語で `XxxDao`（ポート trait）/
@@ -208,8 +223,7 @@ DAO は集約を扱わないのでその根拠自体が当たらない。対の�
 | ポート（trait） | use-case | `XxxRepository` | `WorkflowDefinitionRepository` |
 | 実 Gateway 実装 | interface-adapter | `XxxRepositoryImpl` | `WorkflowDefinitionRepositoryImpl` |
 | インメモリ形 | interface-adapter（実装は 1 つ） | `XxxRepositoryImpl<EventStoreForMemory>`（型 alias `XxxMemoryStore`） | `IntentRepositoryImpl<IntentMemoryStore>` |
-| 取込ポート（trait）— **暫定の足場**（§1 是正 2026-09-01。compile 実装で消える） | use-case（`port/`） | 現名のまま存置（改名しない） | `DefinitionArtifactsClient` |
-| 取込 Gateway 実装 — 暫定（同上） | interface-adapter | 同上 | `DefinitionArtifactsClientImpl` |
+| ~~取込ポート（暫定の足場）~~ — 2026-09-02 に Repository へ昇格し消滅（§1 再是正） | — | — | ~~`DefinitionArtifactsClient`~~ → `CompiledDefinitionRepository` |
 
 - **取込 Gateway は Repository ではないので集約名を冠さない**（追加 2026-08-31、b30）。名乗るのは
   相手方の成果物であって我々の集約ではない — §2「Repository 名 = 集約名 + Repository」の命名規則は

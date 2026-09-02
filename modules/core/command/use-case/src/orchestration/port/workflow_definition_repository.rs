@@ -14,7 +14,7 @@
 //! `coding-rules/cqrs-boundaries.md` 規則 4 (コマンド側の最新状態は常に集約から。リードモデルは
 //! 遅延するので物理的に読めない) への正面違反であり、2026-08-31 に破棄された。
 //!
-//! 3 入力を読むのは**取込境界** ([`DefinitionArtifactsClient`]) であり、読んだ材料から定義を
+//! 3 入力を読むのは配布束の Repository ([`CompiledDefinitionRepository`]) であり、読んだ内容から定義を
 //! 確立・改訂して**このポートへ書く**のが `DefineWorkflowUseCase` である。以後の読取は
 //! 常にジャーナル + スナップショットからの再構成になる。
 //!
@@ -38,7 +38,7 @@
 //! (`orchestration::WorkflowDefinitionRepositoryImpl` — SQLite / memory のどちらのストアを
 //! 内包しても手順は同一である)。
 //!
-//! [`DefinitionArtifactsClient`]: super::definition_artifacts_client::DefinitionArtifactsClient
+//! [`CompiledDefinitionRepository`]: super::compiled_definition_repository::CompiledDefinitionRepository
 
 use core_command_domain::workflow_definition::{
     WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,

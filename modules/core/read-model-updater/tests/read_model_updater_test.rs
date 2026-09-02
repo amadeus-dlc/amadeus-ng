@@ -77,23 +77,26 @@ fn genesis_intent() -> Intent {
             .expect("単一行"),
         )
     };
-    Intent::from(Created::new(
-        IntentId::parse(INTENT).expect("UUIDv7"),
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        StartRequest::new("classic", "build it"),
-        vec![stage(
-            "practices-discovery",
-            "2.2",
-            "aidlc-pipeline-deploy-agent",
-        )],
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .expect("単一行"),
+    Intent::from((
+        Created::new(
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "build it"),
+            vec![stage(
+                "practices-discovery",
+                "2.2",
+                "aidlc-pipeline-deploy-agent",
+            )],
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
     ))
 }
 

@@ -1604,30 +1604,33 @@ mod tests {
             BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
             WorkflowDefinitionId,
         };
-        Intent::from(Created::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            WorkflowDefinitionId::parse("claude").unwrap(),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-            StartRequest::new("classic", "unit"),
-            vec![StageEntry::new(
-                StageSlug::parse("state-init").unwrap(),
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-                StageDisplay::new(
-                    StageNumber::parse("0.1").unwrap(),
-                    "State Init",
-                    "orchestrator",
+        Intent::from((
+            Created::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+                WorkflowDefinitionId::parse("claude").unwrap(),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+                StartRequest::new("classic", "unit"),
+                vec![StageEntry::new(
+                    StageSlug::parse("state-init").unwrap(),
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                    false,
+                    StageDisplay::new(
+                        StageNumber::parse("0.1").unwrap(),
+                        "State Init",
+                        "orchestrator",
+                    )
+                    .unwrap(),
+                )],
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
                 )
                 .unwrap(),
-            )],
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .unwrap(),
+            ),
+            occurred_at_of(0),
         ))
     }
 

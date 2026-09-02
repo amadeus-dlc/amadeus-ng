@@ -1195,9 +1195,10 @@ mod tests {
         StageDisplay, StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
-        ScopeMetadata, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
-        WorkflowDefinition, WorkflowDefinitionId,
+        BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
+        ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
+        StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+        WorkflowDefinitionId,
     };
     use crate::workspace::CheckboxState;
     use std::collections::BTreeMap;
@@ -1428,13 +1429,16 @@ mod tests {
 
     /// 合成計画から intent を組む (検査は `From<Created>` の 1 か所)。
     fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
-        Intent::from(Created::new(
-            intent_id(),
-            def_id("claude"),
-            revision('0'),
-            start_request(),
-            entries(init, actions, conditional),
-            scan(),
+        Intent::from((
+            Created::new(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                entries(init, actions, conditional),
+                scan(),
+            ),
+            occurred(),
         ))
     }
 
@@ -1489,7 +1493,8 @@ mod tests {
     ) -> (Run, IntentExecutionEvent) {
         // genesis は (集約, 誕生イベント) の対を返す。実行を起こすのに要るのは対の左である
         // (改訂 8 / coding-rules/aggregate-commands.md)。
-        let (intent, _created) = Intent::create(intent_id(), definition, request, scan()).unwrap();
+        let (intent, _created) =
+            Intent::create(intent_id(), definition, request, scan(), occurred()).unwrap();
         Run::genesis(intent)
     }
 
@@ -1541,12 +1546,16 @@ mod tests {
         .collect();
         WorkflowDefinition::define(
             def_id("claude"),
-            revision('a'),
-            graph,
-            grid,
-            scopes,
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                graph,
+                grid,
+                scopes,
+            )
+            .0,
             occurred(),
         )
+        .unwrap()
         .0
     }
 
@@ -1573,11 +1582,12 @@ mod tests {
             &shipped_definition(full_grid()),
             start_request(),
             scan(),
+            occurred(),
         )
         .unwrap();
-        // 誕生イベントは材料 (値) を運ぶ — 変換で対の左と同じ集約に戻る。
+        // 誕生イベントは材料 (値) を運ぶ — 発生時刻と対にした変換で対の左と同じ集約に戻る。
         let IntentEvent::Created(payload) = created;
-        assert_eq!(Intent::from(payload), intent);
+        assert_eq!(Intent::from((payload, occurred())), intent);
 
         let (execution, started) = IntentExecution::start(execution_id(), &intent, occurred());
         assert_eq!(execution.intent_id(), intent.id());
@@ -1660,7 +1670,8 @@ mod tests {
     fn an_unknown_scope_is_refused_with_the_definition_material() {
         let definition = shipped_definition(full_grid());
         let unknown = StartRequest::new("nope", "build it");
-        let err = Intent::create(intent_id(), &definition, unknown, scan()).unwrap_err();
+        let err =
+            Intent::create(intent_id(), &definition, unknown, scan(), occurred()).unwrap_err();
         let IntentError::UnknownScope(scope) = err else {
             panic!("expected UnknownScope");
         };
@@ -1688,13 +1699,16 @@ mod tests {
 
     /// 同じ形の計画を、**別の intent 識別子**で組む。
     fn foreign_plan(n: usize) -> Intent {
-        Intent::from(Created::new(
-            IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
-            def_id("claude"),
-            revision('0'),
-            start_request(),
-            entries(1, &vec![Execute; n], &vec![false; n]),
-            scan(),
+        Intent::from((
+            Created::new(
+                IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                entries(1, &vec![Execute; n], &vec![false; n]),
+                scan(),
+            ),
+            occurred(),
         ))
     }
 
@@ -2660,13 +2674,16 @@ mod tests {
     }
 
     fn start_synthetic(stages: Vec<StageEntry>) -> Run {
-        Run::start(Intent::from(Created::new(
-            intent_id(),
-            def_id("claude"),
-            revision('0'),
-            start_request(),
-            stages,
-            scan(),
+        Run::start(Intent::from((
+            Created::new(
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            ),
+            occurred(),
         )))
     }
 

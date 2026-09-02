@@ -14,8 +14,6 @@
 //! **compile 時**に検証され、ロード経路では再検査されない (レポート §4.3)。本読取モデルも
 //! 同様に再検査しない — 「グラフ全体が読めない」と「1 ノードが使えない」の観測差を作らない。
 
-use std::collections::BTreeMap;
-
 use super::consume_decl::ConsumeDecl;
 use super::execution_kind::ExecutionKind;
 use super::phase_id::PhaseId;
@@ -50,7 +48,7 @@ pub struct StageNode {
     workspace_requires: bool,
     produces: Vec<String>,
     optional_produces: Vec<String>,
-    produces_kinds: BTreeMap<String, Vec<String>>,
+    produces_kinds: Vec<(String, Vec<String>)>,
     consumes: Vec<ConsumeDecl>,
     requires_stage: Vec<StageSlug>,
     sensors: Vec<String>,
@@ -154,9 +152,20 @@ impl StageNode {
         &self.optional_produces
     }
 
-    /// 成果物 → 適用 unit kind。**マップに無い成果物は全 kind に適用**される。
+    /// `enabled` を差し替えた写し (プラグイン選択の適用 — `StageGraph::with_plugin_selection`
+    /// が使う。`None` = キー不在 = 有効)。
     #[must_use]
-    pub const fn produces_kinds(&self) -> &BTreeMap<String, Vec<String>> {
+    pub const fn with_enabled(mut self, enabled: Option<bool>) -> StageNode {
+        self.enabled = enabled;
+        self
+    }
+
+    /// 成果物 → 適用 unit kind の写像。**マップに無い成果物は全 kind に適用**される。
+    ///
+    /// **文書順を保持する** — upstream の emit 順は内容の一部であり、書き手 (`store`) が
+    /// バイト忠実に再現するため並びを失わない (b36)。
+    #[must_use]
+    pub fn produces_kinds(&self) -> &[(String, Vec<String>)] {
         &self.produces_kinds
     }
 

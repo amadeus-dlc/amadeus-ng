@@ -56,4 +56,11 @@ mod tests {
         assert_eq!(PlanAction::parse("SKIP"), Some(PlanAction::Skip));
         assert_eq!(PlanAction::parse("execute"), None);
     }
+
+    #[test]
+    fn flipped_swaps_the_two_values_and_is_its_own_inverse() {
+        assert_eq!(PlanAction::Execute.flipped(), PlanAction::Skip);
+        assert_eq!(PlanAction::Skip.flipped(), PlanAction::Execute);
+        assert_eq!(PlanAction::Execute.flipped().flipped(), PlanAction::Execute);
+    }
 }

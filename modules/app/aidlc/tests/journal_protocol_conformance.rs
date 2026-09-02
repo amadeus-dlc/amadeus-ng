@@ -248,19 +248,23 @@ fn stages() -> Vec<StageEntry> {
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
 fn intent() -> Intent {
-    Intent::from(Created::new(
-        IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7"),
-        WorkflowDefinitionId::parse("claude").expect("定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("定義 revision"),
-        StartRequest::new("classic", "conformance"),
-        stages(),
-        WorkspaceScan::new(
-            BrownfieldGreenfield::Greenfield,
-            "Unknown",
-            "Unknown",
-            "Unknown",
-        )
-        .expect("単一行"),
+    Intent::from((
+        Created::new(
+            IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("定義 revision"),
+            StartRequest::new("classic", "conformance"),
+            stages(),
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
     ))
 }
 
@@ -543,7 +547,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             held.scan().clone(),
         ));
         intent_repository
-            .store(&created, &held, at())
+            .store(&created, &held)
             .await
             .expect("intent の genesis は書ける");
     }

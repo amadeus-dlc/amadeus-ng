@@ -18,9 +18,10 @@ use core_command_domain::orchestration::{
     IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
-    ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
-    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
+    ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
+    StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent,
+    WorkflowDefinitionId,
 };
 use core_command_use_case::orchestration::{
     IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository,
@@ -148,14 +149,17 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 /// 契約テストの intent (解決済み合成計画)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from(Created::new(
-        intent_id(),
-        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("契約テストの定義 revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            intent_id(),
+            WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("契約テストの定義 revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            scan(),
+        ),
+        at(),
     ))
 }
 
@@ -274,24 +278,24 @@ pub(crate) fn intent_genesis() -> (Intent, IntentEvent) {
 /// **別の** intent (識別子だけ違う — 対の取り違え検査の材料)。
 #[must_use]
 pub(crate) fn other_intent() -> Intent {
-    Intent::from(Created::new(
-        absent_intent_id(),
-        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-            .expect("契約テストの定義 revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            absent_intent_id(),
+            WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("契約テストの定義 revision"),
+            StartRequest::new("classic", "contract").with_depth("standard"),
+            stages(),
+            scan(),
+        ),
+        at(),
     ))
 }
 
 /// intent の genesis を 1 件書き、握り直した結果を返す。
 pub(crate) async fn store_intent_genesis<R: IntentRepository>(repository: &mut R) -> Intent {
     let (aggregate, event) = intent_genesis();
-    repository
-        .store(&event, &aggregate, at())
-        .await
-        .expect("store");
+    repository.store(&event, &aggregate).await.expect("store");
     repository
         .find_by_id(aggregate.id())
         .await
@@ -324,11 +328,18 @@ pub(crate) fn absent_definition_id() -> WorkflowDefinitionId {
     WorkflowDefinitionId::parse("kiro").expect("契約テストの定義 id")
 }
 
-/// 契約テストの内容版 (`fill` を変えれば別の版になる)。
+/// `stage_count` 段の配布束 (系譜は `definition_id` と同じ name)。内容版は内容から導出される
+/// ので、段数を変えれば別の内容版になる。
 #[must_use]
-pub(crate) fn definition_revision(fill: char) -> DefinitionRevision {
-    DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64)))
-        .expect("契約テストの定義 revision")
+pub(crate) fn definition_bundle(stage_count: usize) -> CompiledDefinition {
+    let (graph, grid, scopes) = definition_content(stage_count);
+    CompiledDefinition::compile(
+        CompiledDefinitionId::parse("claude").expect("契約テストの配布束 id"),
+        graph,
+        grid,
+        scopes,
+    )
+    .0
 }
 
 /// `stage_count` 段の定義の内容 (3 入力のモデル)。
@@ -365,15 +376,8 @@ pub(crate) fn definition_content(
 /// 定義の genesis の (集約, 誕生イベント) の対 (`WorkflowDefinition::define` が返す形)。
 #[must_use]
 pub(crate) fn definition_genesis() -> (WorkflowDefinition, WorkflowDefinitionEvent) {
-    let (graph, grid, scopes) = definition_content(3);
-    WorkflowDefinition::define(
-        definition_id(),
-        definition_revision('0'),
-        graph,
-        grid,
-        scopes,
-        at(),
-    )
+    WorkflowDefinition::define(definition_id(), &definition_bundle(3), at())
+        .expect("契約テストの配布束は同じ系譜")
 }
 
 /// 定義の genesis を 1 件書き、握り直した結果を返す。

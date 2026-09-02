@@ -1,6 +1,5 @@
 //! `IntentRepository` ポート — 集約 `Intent` の Repository (改訂 10 で前倒し新設)。
 
-use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
 
 use super::repository_error::RepositoryError;
@@ -18,13 +17,12 @@ use super::repository_error::RepositoryError;
 /// (`Started`) に埋め込まれた intent はこの正本の写しであり、イベント痩身 (issue #56) で
 /// `intent_id` 参照へ置き換わる。
 ///
-/// # 発生時刻は呼出側が渡す
+/// # 発生時刻は集約から読む
 ///
-/// `IntentExecutionRepository::store` が発生時刻を集約 (`last_updated_at`) から読むのに
-/// 対し、intent は**時刻を状態に持たない** (実行が何回起きても変わらない側 — 時刻は実行の
-/// 語彙である)。そのため `store` は発生時刻を引数で受け、ジャーナル封筒のメタデータにだけ
-/// 刻む。時刻の出所は genesis コマンドの呼出側 (upstream `intent-create` — U7) の clock で
-/// ある。
+/// 他のリポジトリと同じく `store` は (イベント, 集約) の 2 引数である (オーナー裁定
+/// 2026-09-02 — 発生時刻を引数で運ぶ変則を撤去)。ジャーナル封筒の時刻は集約の
+/// `created_at` (genesis の `occurred_at`) から組む — `IntentExecutionRepositoryImpl` が
+/// `last_updated_at` から組むのと対である。
 ///
 /// レシーバは CQS に従う (`coding-rules/command-query-separation.md`) — 読取は `&self`、
 /// 永続化は `&mut self`。
@@ -61,6 +59,5 @@ pub trait IntentRepository {
         &mut self,
         event: &IntentEvent,
         intent: &Intent,
-        occurred_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError<IntentId>>;
 }

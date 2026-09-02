@@ -23,6 +23,8 @@ pub struct IntentDto {
     start_request: StartRequestDto,
     stages: Vec<StageEntryDto>,
     scan: WorkspaceScanDto,
+    /// 鋳造の発生時刻 (書き手の `IntentDto` と同じワイヤ位置 — 側ごと専用化した写し)。
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// 呼出側の要求の行の形。
@@ -76,6 +78,7 @@ impl IntentDto {
             },
             stages: intent.stages().iter().map(StageEntryDto::of).collect(),
             scan: WorkspaceScanDto::of(intent.scan()),
+            created_at: *intent.created_at(),
         }
     }
 
@@ -102,18 +105,24 @@ impl IntentDto {
         if let Some(strategy) = &self.start_request.test_strategy {
             request = request.with_test_strategy(strategy.clone());
         }
-        Ok(Intent::from(Created::new(
-            IntentId::parse(&self.id)
-                .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
-            WorkflowDefinitionId::parse(&self.definition_id).map_err(|_| {
-                DtoDecodeError::malformed("definition_id", self.definition_id.clone())
-            })?,
-            DefinitionRevision::parse(&self.definition_revision).map_err(|_| {
-                DtoDecodeError::malformed("definition_revision", self.definition_revision.clone())
-            })?,
-            request,
-            stages,
-            self.scan.to_domain()?,
+        Ok(Intent::from((
+            Created::new(
+                IntentId::parse(&self.id)
+                    .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
+                WorkflowDefinitionId::parse(&self.definition_id).map_err(|_| {
+                    DtoDecodeError::malformed("definition_id", self.definition_id.clone())
+                })?,
+                DefinitionRevision::parse(&self.definition_revision).map_err(|_| {
+                    DtoDecodeError::malformed(
+                        "definition_revision",
+                        self.definition_revision.clone(),
+                    )
+                })?,
+                request,
+                stages,
+                self.scan.to_domain()?,
+            ),
+            self.created_at,
         )))
     }
 }

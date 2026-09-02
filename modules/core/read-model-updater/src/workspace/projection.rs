@@ -1581,29 +1581,32 @@ mod tests {
 
     /// initialization 1 + inception 2 + operation 1 の合成計画。
     fn genesis_intent() -> Intent {
-        Intent::from(Created::new(
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "build it"),
-            vec![
-                stage(
-                    "state-init",
-                    "0.1",
-                    PhaseId::Initialization,
-                    PlanAction::Execute,
-                ),
-                stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
-                stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
-                stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
-            ],
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .expect("単一行"),
+        Intent::from((
+            Created::new(
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "build it"),
+                vec![
+                    stage(
+                        "state-init",
+                        "0.1",
+                        PhaseId::Initialization,
+                        PlanAction::Execute,
+                    ),
+                    stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
+                    stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
+                    stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
+                ],
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
+            ),
+            at(),
         ))
     }
 

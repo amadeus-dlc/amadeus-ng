@@ -49,7 +49,9 @@ use std::collections::BTreeMap;
 use chrono::DateTime;
 use chrono::Utc;
 
+use super::compiled_definition::CompiledDefinition;
 use super::definition_revision::DefinitionRevision;
+use super::lineage_mismatch::LineageMismatch;
 use super::phase_id::PhaseId;
 use super::plan_action::PlanAction;
 use super::redefine_error::RedefineError;
@@ -108,53 +110,75 @@ impl WorkflowDefinition {
     /// `store(&event, &aggregate)` の形でジャーナル追記分とスナップショット分を同一
     /// トランザクションで受け取るので、どちらが欠けても永続化が組めない。
     ///
-    /// `id` / `revision` は**取込境界が付与する** (ADR-008)。ドメインは revision を計算しない。
-    /// `occurred_at` も同様に外から来る — 集約は時計を持たない (NFR3.1)。
+    /// 内容と内容版は配布束 (集約 [`CompiledDefinition`]) から取る — 定義は配布束から
+    /// 確立される。系譜 ID は呼出側が鋳造して渡し、配布束が名乗る系譜と**一致しなければ
+    /// 拒む** (他集約を `&` 参照で受ける側が取り違えをガードする —
+    /// `coding-rules/aggregate-references.md`)。`occurred_at` は外から来る — 集約は時計を
+    /// 持たない (NFR3.1)。
     ///
     /// グリッド列と `.md` の**不一致は検証しない** — 双方向の不一致がどちらも正当な
     /// 観測可能契約だからである (zero-EXECUTE スコープ / ランタイム不可視スコープ)。
-    #[must_use]
-    pub fn define(
-        id: WorkflowDefinitionId,
-        revision: DefinitionRevision,
-        graph: StageGraph,
-        grid: ScopeGrid,
-        scopes: BTreeMap<String, ScopeMetadata>,
-        occurred_at: DateTime<Utc>,
-    ) -> (WorkflowDefinition, WorkflowDefinitionEvent) {
-        let defined = Defined::new(id, revision, graph, grid, scopes);
-        (
-            WorkflowDefinition::from((defined.clone(), occurred_at)),
-            WorkflowDefinitionEvent::Defined(defined),
-        )
-    }
-
-    /// 定義を別の内容版へ**改訂する** (1 コマンド 1 イベント)。
-    ///
-    /// 取込が読んだ 3 入力が現在の内容版と違うときに呼ぶ。同じ内容版なら書くべき事実が
-    /// 無いので `Unchanged` で拒否する — 判断は集約が持ち、呼出側に内容版の比較を
-    /// 再実装させない (tell-dont-ask.md)。取込を冪等に見せたい呼出側はこの拒否を
-    /// 「変化なし」として畳めばよい。
     ///
     /// # Errors
     ///
-    /// 内容版が現在と同じ (`Unchanged`)、通番の枯渇 (`SequenceExhausted`)。
+    /// 配布束の識別子が `id` の系譜と違う (`LineageMismatch`)。
+    pub fn define(
+        id: WorkflowDefinitionId,
+        compiled: &CompiledDefinition,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<(WorkflowDefinition, WorkflowDefinitionEvent), LineageMismatch> {
+        if compiled.id() != &id {
+            return Err(LineageMismatch::new(id, compiled.id().clone()));
+        }
+        let defined = Defined::new(
+            id,
+            compiled.revision().clone(),
+            compiled.graph().clone(),
+            compiled.grid().clone(),
+            compiled.scopes().clone(),
+        );
+        Ok((
+            WorkflowDefinition::from((defined.clone(), occurred_at)),
+            WorkflowDefinitionEvent::Defined(defined),
+        ))
+    }
+
+    /// 定義を配布束の内容版へ**改訂する** (1 コマンド 1 イベント)。
+    ///
+    /// 配布束の内容版が現在と違うときに呼ぶ。同じ内容版なら書くべき事実が無いので
+    /// `Unchanged` で拒否する — 判断は集約が持ち、呼出側に内容版の比較を再実装させない
+    /// (tell-dont-ask.md)。取込を冪等に見せたい呼出側はこの拒否を「変化なし」として
+    /// 畳めばよい。系譜が違う配布束は取り違えとして拒む。
+    ///
+    /// # Errors
+    ///
+    /// 配布束の系譜が違う (`Lineage`)、内容版が現在と同じ (`Unchanged`)、通番の枯渇
+    /// (`SequenceExhausted`)。
     pub fn redefine(
         &mut self,
-        revision: DefinitionRevision,
-        graph: StageGraph,
-        grid: ScopeGrid,
-        scopes: BTreeMap<String, ScopeMetadata>,
+        compiled: &CompiledDefinition,
         occurred_at: DateTime<Utc>,
     ) -> Result<WorkflowDefinitionEvent, RedefineError> {
-        if self.revision == revision {
-            return Err(RedefineError::Unchanged { revision });
+        if compiled.id() != &self.id {
+            return Err(RedefineError::Lineage(LineageMismatch::new(
+                self.id.clone(),
+                compiled.id().clone(),
+            )));
+        }
+        if self.revision == *compiled.revision() {
+            return Err(RedefineError::Unchanged {
+                revision: compiled.revision().clone(),
+            });
         }
         let Some(seq_nr) = self.seq_nr.checked_add(1) else {
             return Err(RedefineError::SequenceExhausted);
         };
-        let event =
-            WorkflowDefinitionEvent::Redefined(Redefined::new(revision, graph, grid, scopes));
+        let event = WorkflowDefinitionEvent::Redefined(Redefined::new(
+            compiled.revision().clone(),
+            compiled.graph().clone(),
+            compiled.grid().clone(),
+            compiled.scopes().clone(),
+        ));
         self.apply_event(seq_nr, occurred_at, &event);
         Ok(event)
     }
@@ -423,7 +447,9 @@ mod tests {
     #![allow(clippy::indexing_slicing, clippy::panic)]
 
     use super::*;
-    use crate::workflow_definition::{ExecutionKind, StageMode, StageNodeBuilder, StageNumber};
+    use crate::workflow_definition::{
+        CompiledDefinitionId, ExecutionKind, StageMode, StageNodeBuilder, StageNumber,
+    };
     use proptest::prelude::*;
 
     /// grid 列がある 2 スコープ + `.md` だけがある 1 スコープ + `.md` が無い 1 スコープ。
@@ -460,6 +486,22 @@ mod tests {
 
     fn revision(fill: char) -> DefinitionRevision {
         DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64))).unwrap()
+    }
+
+    /// 定義の材料になる配布束 (系譜名つき)。内容版は内容から導出される。
+    fn bundle(
+        name: &str,
+        graph: StageGraph,
+        grid: ScopeGrid,
+        scopes: BTreeMap<String, ScopeMetadata>,
+    ) -> CompiledDefinition {
+        CompiledDefinition::compile(
+            CompiledDefinitionId::parse(name).unwrap(),
+            graph,
+            grid,
+            scopes,
+        )
+        .0
     }
 
     /// イベントの発生時刻 (集約は時計を持たないので固定値を渡す)。
@@ -499,12 +541,10 @@ mod tests {
         let (graph, grid) = artifacts();
         WorkflowDefinition::define(
             id("claude"),
-            revision('0'),
-            graph,
-            grid,
-            registry(&REGISTERED),
+            &bundle("claude", graph, grid, registry(&REGISTERED)),
             at(),
         )
+        .unwrap()
         .0
     }
 
@@ -515,19 +555,19 @@ mod tests {
         // 集約のファクトリは (集約, 誕生イベント) の対を返すことが必須である —
         // Repository の永続化が `store(&event, &aggregate, ..)` の形でその両方を要求する。
         let (graph, grid) = artifacts();
-        let (definition, event) = WorkflowDefinition::define(
-            id("claude"),
-            revision('0'),
-            graph.clone(),
-            grid.clone(),
-            registry(&REGISTERED),
-            at(),
-        );
+        let compiled = bundle("claude", graph.clone(), grid.clone(), registry(&REGISTERED));
+        let (definition, event) =
+            WorkflowDefinition::define(id("claude"), &compiled, at()).unwrap();
         let WorkflowDefinitionEvent::Defined(defined) = &event else {
             panic!("genesis は Defined を返す: {event:?}");
         };
         assert_eq!(defined.id(), definition.id());
         assert_eq!(defined.revision(), definition.revision());
+        assert_eq!(
+            definition.revision(),
+            compiled.revision(),
+            "内容版は配布束から"
+        );
         // 誕生イベントは**内容そのもの**を運ぶ — これがリプレイのスナップショット種になる。
         assert_eq!(defined.graph(), &graph);
         assert_eq!(defined.grid(), &grid);
@@ -546,16 +586,42 @@ mod tests {
         let (graph, grid) = artifacts();
         let (born, event) = WorkflowDefinition::define(
             id("claude"),
-            revision('0'),
-            graph,
-            grid,
-            registry(&REGISTERED),
+            &bundle("claude", graph, grid, registry(&REGISTERED)),
             at(),
-        );
+        )
+        .unwrap();
         let WorkflowDefinitionEvent::Defined(defined) = event else {
             panic!("genesis は Defined を返す");
         };
         assert_eq!(WorkflowDefinition::from((defined, at())), born);
+    }
+
+    #[test]
+    fn a_bundle_of_another_lineage_cannot_establish_the_definition() {
+        // 他集約を `&` 参照で受ける側が取り違えをガードする (coding-rules/aggregate-references.md)。
+        let (graph, grid) = artifacts();
+        let foreign = bundle("kiro", graph, grid, registry(&REGISTERED));
+        let error = WorkflowDefinition::define(id("claude"), &foreign, at())
+            .expect_err("系譜が違う配布束では確立できない");
+        assert_eq!(error.definition(), &id("claude"));
+        assert_eq!(error.bundle(), foreign.id());
+        assert_eq!(
+            error.to_string(),
+            "lineage mismatch: definition claude was handed the bundle kiro"
+        );
+    }
+
+    #[test]
+    fn a_bundle_of_another_lineage_cannot_redefine_the_definition() {
+        let mut definition = sample();
+        let before = definition.clone();
+        let (graph, grid) = artifacts();
+        let foreign = bundle("kiro", graph, grid, registry(&["alpha"]));
+        let error = definition
+            .redefine(&foreign, at())
+            .expect_err("系譜が違う配布束では改訂できない");
+        assert!(matches!(error, RedefineError::Lineage(_)), "{error:?}");
+        assert_eq!(definition, before, "拒否された改訂は何も動かさない");
     }
 
     #[test]
@@ -569,8 +635,8 @@ mod tests {
         let mut redefined = definition;
         let (graph, grid) = artifacts();
         redefined
-            .redefine(revision('1'), graph, grid, registry(&["alpha"]), later)
-            .expect("内容版が違えば改訂できる");
+            .redefine(&bundle("claude", graph, grid, registry(&["alpha"])), later)
+            .expect("内容が違えば改訂できる");
         assert_eq!(
             redefined.last_updated_at(),
             &later,
@@ -602,15 +668,16 @@ mod tests {
     fn redefining_with_a_new_revision_replaces_the_content_and_advances_the_sequence() {
         let mut definition = sample();
         let (graph, grid) = artifacts();
+        let compiled = bundle("claude", graph, grid, registry(&["alpha"]));
         let event = definition
-            .redefine(revision('1'), graph, grid, registry(&["alpha"]), at())
+            .redefine(&compiled, at())
             .expect("内容版が違えば改訂できる");
 
         let WorkflowDefinitionEvent::Redefined(redefined) = &event else {
             panic!("改訂は Redefined を返す: {event:?}");
         };
-        assert_eq!(redefined.revision(), &revision('1'));
-        assert_eq!(definition.revision(), &revision('1'));
+        assert_eq!(redefined.revision(), compiled.revision());
+        assert_eq!(definition.revision(), compiled.revision());
         assert_eq!(definition.valid_scopes(), ["alpha"], "内容が入れ替わる");
         assert_eq!(definition.id(), &id("claude"), "系譜 ID は不変");
         assert_eq!(definition.seq_nr(), 2, "改訂は次の通番になる");
@@ -624,13 +691,13 @@ mod tests {
         let before = definition.clone();
         let (graph, grid) = artifacts();
         let error = definition
-            .redefine(revision('0'), graph, grid, registry(&REGISTERED), at())
+            .redefine(&bundle("claude", graph, grid, registry(&REGISTERED)), at())
             .expect_err("同じ内容版は拒否される");
 
         assert_eq!(
             error,
             RedefineError::Unchanged {
-                revision: revision('0')
+                revision: before.revision().clone()
             }
         );
         assert_eq!(definition, before, "拒否された改訂は何も動かさない");
@@ -658,7 +725,7 @@ mod tests {
         let mut definition = sample().with_seq_nr(usize::MAX);
         let (graph, grid) = artifacts();
         assert_eq!(
-            definition.redefine(revision('1'), graph, grid, registry(&["alpha"]), at()),
+            definition.redefine(&bundle("claude", graph, grid, registry(&["alpha"])), at()),
             Err(RedefineError::SequenceExhausted)
         );
     }
@@ -681,12 +748,10 @@ mod tests {
         let (graph, grid) = artifacts();
         let (definition, event) = WorkflowDefinition::define(
             id("claude"),
-            revision('0'),
-            graph,
-            grid,
-            registry(&REGISTERED),
+            &bundle("claude", graph, grid, registry(&REGISTERED)),
             at(),
-        );
+        )
+        .unwrap();
         let replayed = WorkflowDefinition::replay(definition.clone(), vec![(2, at(), event)]);
         assert_eq!(replayed.revision(), definition.revision());
         assert_eq!(replayed.valid_scopes(), definition.valid_scopes());
@@ -698,7 +763,7 @@ mod tests {
         let (graph, grid) = artifacts();
         let mut commanded = sample();
         let event = commanded
-            .redefine(revision('1'), graph, grid, registry(&["alpha"]), at())
+            .redefine(&bundle("claude", graph, grid, registry(&["alpha"])), at())
             .expect("改訂できる");
 
         let replayed = WorkflowDefinition::replay(sample(), vec![(2, at(), event)]);
@@ -733,7 +798,10 @@ mod tests {
     fn the_definition_carries_the_identity_and_the_revision_the_repository_assigned() {
         let wd = sample();
         assert_eq!(wd.id(), &id("claude"));
-        assert_eq!(wd.revision(), &revision('0'));
+        assert_eq!(
+            wd.revision(),
+            &DefinitionRevision::of_content(wd.graph(), wd.grid(), wd.scopes())
+        );
         assert_eq!(wd.id().as_str(), "claude");
         assert!(wd.revision().as_str().starts_with("sha256:"));
     }
@@ -745,12 +813,10 @@ mod tests {
         let grid = one.grid().clone();
         let other = WorkflowDefinition::define(
             id("kiro"),
-            revision('0'),
-            graph,
-            grid,
-            registry(&REGISTERED),
+            &bundle("kiro", graph, grid, registry(&REGISTERED)),
             at(),
         )
+        .unwrap()
         .0;
         assert_ne!(one, other);
         assert_ne!(one.id(), other.id());
@@ -763,14 +829,17 @@ mod tests {
         let one = sample();
         let other = WorkflowDefinition::define(
             one.id().clone(),
-            revision('1'),
-            one.graph().clone(),
-            one.grid().clone(),
-            registry(&REGISTERED),
+            &bundle(
+                "claude",
+                one.graph().clone(),
+                one.grid().clone(),
+                registry(&["alpha"]),
+            ),
             at(),
         )
+        .unwrap()
         .0;
-        // ピン更新 = 内容版だけが進む。系譜 ID は不変 (ADR-008)。
+        // ピン更新 = 内容が変わって内容版だけが進む。系譜 ID は不変 (ADR-008)。
         assert_eq!(one.id(), other.id());
         assert_ne!(one.revision(), other.revision());
         assert_ne!(one, other);
@@ -915,12 +984,10 @@ mod tests {
         let grid = ScopeGrid::from_graph(&graph);
         let wd = WorkflowDefinition::define(
             id("claude"),
-            revision('0'),
-            graph,
-            grid,
-            registry(&["alpha"]),
+            &bundle("claude", graph, grid, registry(&["alpha"])),
             at(),
         )
+        .unwrap()
         .0;
 
         let numeric: Vec<&str> = wd
@@ -974,12 +1041,10 @@ mod tests {
         let grid = ScopeGrid::from_graph(&graph);
         WorkflowDefinition::define(
             id("claude"),
-            revision('0'),
-            graph,
-            grid,
-            registry(&REGISTERED),
+            &bundle("claude", graph, grid, registry(&REGISTERED)),
             at(),
         )
+        .unwrap()
         .0
     }
 

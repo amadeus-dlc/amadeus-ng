@@ -185,13 +185,16 @@ fn stages() -> Vec<StageEntry> {
 }
 
 fn intent() -> Intent {
-    Intent::from(Created::new(
-        intent_id(),
-        WorkflowDefinitionId::parse("claude").unwrap(),
-        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
-        StartRequest::new("mvp", "本家ストアへの適合を確かめる"),
-        stages(),
-        scan(),
+    Intent::from((
+        Created::new(
+            intent_id(),
+            WorkflowDefinitionId::parse("claude").unwrap(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
+            StartRequest::new("mvp", "本家ストアへの適合を確かめる"),
+            stages(),
+            scan(),
+        ),
+        at(0),
     ))
 }
 

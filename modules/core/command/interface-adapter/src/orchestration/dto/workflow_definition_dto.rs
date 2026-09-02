@@ -80,7 +80,8 @@ struct StageNodeDto {
     workspace_requires: bool,
     produces: Vec<String>,
     optional_produces: Vec<String>,
-    produces_kinds: BTreeMap<String, Vec<String>>,
+    #[serde(with = "crate::orchestration::kinds_codec")]
+    produces_kinds: Vec<(String, Vec<String>)>,
     consumes: Vec<ConsumeDeclDto>,
     requires_stage: Vec<String>,
     sensors: Vec<String>,
@@ -251,7 +252,7 @@ impl StageNodeDto {
             workspace_requires: node.workspace_requires(),
             produces: node.produces().to_vec(),
             optional_produces: node.optional_produces().to_vec(),
-            produces_kinds: node.produces_kinds().clone(),
+            produces_kinds: node.produces_kinds().to_vec(),
             consumes: node.consumes().iter().map(ConsumeDeclDto::of).collect(),
             requires_stage: node
                 .requires_stage()
@@ -453,9 +454,9 @@ mod tests {
 
     use super::*;
     use core_command_domain::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, ReviewCapValue,
-        ReviewClass, RuleScope, SkeletonDefault, StageMode, StageNodeBuilder, WorkflowDefinition,
-        WorkflowDefinitionId,
+        BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, ExecutionKind, PhaseId,
+        ReviewCapValue, ReviewClass, RuleScope, SkeletonDefault, StageMode, StageNodeBuilder,
+        WorkflowDefinition, WorkflowDefinitionId,
     };
 
     /// スナップショット行に載る発生時刻 (固定値)。
@@ -531,14 +532,18 @@ mod tests {
     fn saturated_definition() -> WorkflowDefinition {
         let graph = StageGraph::new(vec![saturated_node()]).expect("グラフ");
         let grid = ScopeGrid::from_graph(&graph);
-        WorkflowDefinition::define(
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+        let (bundle, _) = CompiledDefinition::compile(
+            CompiledDefinitionId::parse("claude").expect("配布束 id"),
             graph,
             grid,
             saturated_scopes(),
+        );
+        WorkflowDefinition::define(
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            &bundle,
             at(),
         )
+        .expect("同じ系譜")
         .0
     }
 

@@ -28,9 +28,10 @@ mod test_support;
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。
 pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRepository};
 
-// 取込境界 — genesis 播種のための暫定の足場 (compile 実装で消える。「外部システム
-// クライアント」分類は棄却済み — `coding-rules/gateway-taxonomy.md` §1 是正 2026-09-01)。
-pub use port::{DefinitionArtifacts, DefinitionArtifactsClient, DefinitionArtifactsError};
+// 集約 `CompiledDefinition` (コンパイル済み定義の配布束) の Repository ポート — 配布束は
+// 同一システムのドメインモデルであり、「取込境界」「暫定の足場」の位置づけは退役した
+// (オーナー裁定 2026-09-02、b36 — `coding-rules/gateway-taxonomy.md` §1 再是正)。
+pub use port::CompiledDefinitionRepository;
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
 // 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の

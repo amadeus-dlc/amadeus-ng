@@ -20,6 +20,8 @@
 //! [`IntentExecution`]: super::intent_execution::IntentExecution
 //! [`WorkflowDefinition`]: crate::workflow_definition::WorkflowDefinition
 
+use chrono::{DateTime, Utc};
+
 use super::intent_error::IntentError;
 use super::intent_event::Created;
 use super::intent_event::IntentEvent;
@@ -53,6 +55,7 @@ pub struct Intent {
     start_request: StartRequest,
     stages: Vec<StageEntry>,
     scan: WorkspaceScan,
+    created_at: DateTime<Utc>,
 }
 
 impl Intent {
@@ -85,6 +88,7 @@ impl Intent {
         definition: &WorkflowDefinition,
         start_request: StartRequest,
         scan: WorkspaceScan,
+        occurred_at: DateTime<Utc>,
     ) -> Result<(Intent, IntentEvent), IntentError> {
         let scope = start_request.scope();
         if !definition.is_valid_scope(scope) {
@@ -133,7 +137,7 @@ impl Intent {
             stages,
             scan,
         );
-        let intent = Intent::from(created.clone());
+        let intent = Intent::from((created.clone(), occurred_at));
         Ok((intent, IntentEvent::Created(created)))
     }
 
@@ -254,20 +258,30 @@ impl Intent {
     pub const fn scan(&self) -> &WorkspaceScan {
         &self.scan
     }
+
+    /// 鋳造の発生時刻 (genesis の `occurred_at` — ジャーナル封筒の時刻の出所。
+    /// `IntentExecution::last_updated_at` / `WorkflowDefinition::last_updated_at` と対)。
+    #[must_use]
+    pub const fn created_at(&self) -> &DateTime<Utc> {
+        &self.created_at
+    }
 }
 
-impl From<Created> for Intent {
-    /// 誕生記録から集約を導出する (リプレイのスナップショット種)。
+impl From<(Created, DateTime<Utc>)> for Intent {
+    /// 誕生記録とその発生時刻から集約を導出する (リプレイのスナップショット種 —
+    /// `WorkflowDefinition` の `From<(Defined, occurred_at)>` と対)。
     ///
-    /// 構造体リテラルはここだけ — genesis ([`Intent::create`]) もこの変換を通る。記録された
-    /// 歴史は書込時に検査済みである。万一壊れた歴史 (計画不変条件違反) を読んだ場合は
-    /// 回復せずクラッシュする (オーナー裁定 2026-08-30 — 再構成は失敗を返さない。
-    /// 本家 v3 ではこの位置づけの検査自体が無く、serde 復号がそのまま集約になる)。
+    /// 発生時刻は封筒 (ジャーナル行のメタデータ) の持ち物なのでイベントは運ばず、
+    /// 読み手が封筒から対にして渡す。構造体リテラルはここだけ — genesis
+    /// ([`Intent::create`]) もこの変換を通る。記録された歴史は書込時に検査済みである。
+    /// 万一壊れた歴史 (計画不変条件違反) を読んだ場合は回復せずクラッシュする
+    /// (オーナー裁定 2026-08-30 — 再構成は失敗を返さない。本家 v3 ではこの位置づけの
+    /// 検査自体が無く、serde 復号がそのまま集約になる)。
     #[allow(
         clippy::expect_used,
         reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
     )]
-    fn from(created: Created) -> Intent {
+    fn from((created, occurred_at): (Created, DateTime<Utc>)) -> Intent {
         Intent::check_plan(&created.stages).expect("recorded history violates the plan invariants");
         Intent {
             id: created.id,
@@ -276,6 +290,7 @@ impl From<Created> for Intent {
             start_request: created.start_request,
             stages: created.stages,
             scan: created.scan,
+            created_at: occurred_at,
         }
     }
 }
@@ -286,9 +301,9 @@ mod tests {
 
     use crate::orchestration::{IntentId, StageDisplay, StageEntry, WorkspaceScan};
     use crate::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
-        ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
-        WorkflowDefinition, WorkflowDefinitionId,
+        BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
+        ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
+        StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionId,
     };
     use std::collections::BTreeMap;
 
@@ -366,13 +381,9 @@ mod tests {
     }
 
     fn intent() -> Intent {
-        Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            stages(),
-            scan(),
+        Intent::from((
+            Created::new(id(), def_id(), revision(), request(), stages(), scan()),
+            defined_at(),
         ))
     }
 
@@ -406,12 +417,16 @@ mod tests {
         .collect();
         WorkflowDefinition::define(
             def_id(),
-            revision(),
-            StageGraph::new(vec![node]).unwrap(),
-            grid,
-            scopes,
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                StageGraph::new(vec![node]).unwrap(),
+                grid,
+                scopes,
+            )
+            .0,
             defined_at(),
         )
+        .unwrap()
         .0
     }
 
@@ -438,13 +453,9 @@ mod tests {
     #[should_panic(expected = "recorded history violates the plan invariants")]
     fn an_empty_plan_crashes_reconstruction() {
         // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
-        let _ = Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            Vec::new(),
-            scan(),
+        let _ = Intent::from((
+            Created::new(id(), def_id(), revision(), request(), Vec::new(), scan()),
+            defined_at(),
         ));
     }
 
@@ -467,13 +478,9 @@ mod tests {
                 PlanAction::Execute,
             ),
         ];
-        let _ = Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            stages,
-            scan(),
+        let _ = Intent::from((
+            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            defined_at(),
         ));
     }
 
@@ -495,13 +502,9 @@ mod tests {
                 PlanAction::Skip,
             ),
         ];
-        let _ = Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            stages,
-            scan(),
+        let _ = Intent::from((
+            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            defined_at(),
         ));
     }
 
@@ -525,13 +528,9 @@ mod tests {
             ),
             conditional,
         ];
-        let _ = Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            stages,
-            scan(),
+        let _ = Intent::from((
+            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            defined_at(),
         ));
     }
 
@@ -553,13 +552,9 @@ mod tests {
             ),
             conditional,
         ];
-        let intent = Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            stages,
-            scan(),
+        let intent = Intent::from((
+            Created::new(id(), def_id(), revision(), request(), stages, scan()),
+            defined_at(),
         ));
         assert_eq!(intent.stage_count(), 2);
     }
@@ -596,15 +591,19 @@ mod tests {
         .collect();
         let definition = WorkflowDefinition::define(
             def_id(),
-            revision(),
-            StageGraph::new(vec![node]).unwrap(),
-            grid,
-            scopes,
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                StageGraph::new(vec![node]).unwrap(),
+                grid,
+                scopes,
+            )
+            .0,
             defined_at(),
         )
+        .unwrap()
         .0;
         assert_eq!(
-            Intent::create(id(), &definition, request(), scan()),
+            Intent::create(id(), &definition, request(), scan(), defined_at()),
             Err(IntentError::StageDisplayNotSingleLine {
                 stage: "state-init".to_string(),
                 found: '\n',
@@ -615,13 +614,16 @@ mod tests {
     #[test]
     fn intents_built_from_the_same_parts_compare_equal() {
         assert_eq!(intent(), intent());
-        let other = Intent::from(Created::new(
-            IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
-            def_id(),
-            revision(),
-            request(),
-            stages(),
-            scan(),
+        let other = Intent::from((
+            Created::new(
+                IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
+                def_id(),
+                revision(),
+                request(),
+                stages(),
+                scan(),
+            ),
+            defined_at(),
         ));
         assert_ne!(intent(), other);
     }
@@ -631,12 +633,18 @@ mod tests {
         // 基本コンストラクタ = genesis は定義から計画を解決し、(インスタンス, 誕生イベント) の
         // 対を返す (coding-rules/aggregate-commands.md)。イベントは誕生の材料 (値) を運び、
         // 変換 `From<Created>` で同じ集約に戻る。
-        let (intent, event) = Intent::create(id(), &single_stage_definition(), request(), scan())
-            .expect("解決できる計画");
+        let (intent, event) = Intent::create(
+            id(),
+            &single_stage_definition(),
+            request(),
+            scan(),
+            defined_at(),
+        )
+        .expect("解決できる計画");
         let IntentEvent::Created(created) = event;
         assert_eq!(created.id(), intent.id());
         assert_eq!(created.stages(), intent.stages());
-        assert_eq!(Intent::from(created), intent);
+        assert_eq!(Intent::from((created, defined_at())), intent);
         assert_eq!(intent.stage_count(), 1);
     }
 
@@ -644,13 +652,9 @@ mod tests {
     fn reconstructing_an_intent_produces_no_event() {
         // 再構成は歴史を読み戻す経路である — イベントを作ればリプレイのたびに歴史が増える。
         // 戻り値の型に `IntentEvent` が現れないことがその保証である。
-        let intent: Intent = Intent::from(Created::new(
-            id(),
-            def_id(),
-            revision(),
-            request(),
-            stages(),
-            scan(),
+        let intent: Intent = Intent::from((
+            Created::new(id(), def_id(), revision(), request(), stages(), scan()),
+            defined_at(),
         ));
         assert_eq!(intent.stages(), stages().as_slice());
     }
@@ -659,15 +663,24 @@ mod tests {
     fn a_birth_record_round_trip_preserves_the_aggregate() {
         // 集約の読取値 → 誕生記録 → 変換の 1 往復が同値に戻ること — 永続化境界を渡っても
         // 情報が欠けない保証である (アダプタ復号と同じ経路)。
-        let (intent, _event) = Intent::create(id(), &single_stage_definition(), request(), scan())
-            .expect("解決できる計画");
-        let round_tripped = Intent::from(Created::new(
-            intent.id().clone(),
-            intent.definition_id().clone(),
-            intent.definition_revision().clone(),
+        let (intent, _event) = Intent::create(
+            id(),
+            &single_stage_definition(),
             request(),
-            intent.stages().to_vec(),
-            intent.scan().clone(),
+            scan(),
+            defined_at(),
+        )
+        .expect("解決できる計画");
+        let round_tripped = Intent::from((
+            Created::new(
+                intent.id().clone(),
+                intent.definition_id().clone(),
+                intent.definition_revision().clone(),
+                request(),
+                intent.stages().to_vec(),
+                intent.scan().clone(),
+            ),
+            defined_at(),
         ));
         assert_eq!(round_tripped, intent);
     }
@@ -676,8 +689,14 @@ mod tests {
     fn replaying_no_events_returns_the_snapshot_state() {
         // 差分が空ならスナップショット種がそのまま返る — 現状イベントは `Created` 1 種のみ
         // なので、実運用の差分は常に空である。
-        let (intent, _event) = Intent::create(id(), &single_stage_definition(), request(), scan())
-            .expect("解決できる計画");
+        let (intent, _event) = Intent::create(
+            id(),
+            &single_stage_definition(),
+            request(),
+            scan(),
+            defined_at(),
+        )
+        .expect("解決できる計画");
         let replayed = Intent::replay(Vec::new(), intent.clone());
         assert_eq!(replayed, intent);
     }
@@ -686,8 +705,14 @@ mod tests {
     fn replaying_the_genesis_event_is_a_no_op() {
         // genesis イベントは差分適用では何も変えない — スナップショット種が誕生を含む
         // (本家サンプル同型: apply は変異イベントだけを見る)。
-        let (intent, event) = Intent::create(id(), &single_stage_definition(), request(), scan())
-            .expect("解決できる計画");
+        let (intent, event) = Intent::create(
+            id(),
+            &single_stage_definition(),
+            request(),
+            scan(),
+            defined_at(),
+        )
+        .expect("解決できる計画");
         let replayed = Intent::replay(vec![event], intent.clone());
         assert_eq!(replayed, intent);
     }

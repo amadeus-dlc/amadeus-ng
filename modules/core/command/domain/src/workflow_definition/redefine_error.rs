@@ -3,6 +3,7 @@
 use std::fmt;
 
 use super::definition_revision::DefinitionRevision;
+use super::lineage_mismatch::LineageMismatch;
 
 /// 改訂を受け付けられない形 (材料のみ — 利用者向け文言はアダプタ層)。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,8 @@ pub enum RedefineError {
     },
     /// 通番が上限に達した (飽和加算で成功を装わない)。
     SequenceExhausted,
+    /// 渡された配布束がこの定義の系譜のものではない (取り違えのガード)。
+    Lineage(LineageMismatch),
 }
 
 impl fmt::Display for RedefineError {
@@ -27,8 +30,28 @@ impl fmt::Display for RedefineError {
                 write!(f, "definition unchanged at revision {}", revision.as_str())
             }
             RedefineError::SequenceExhausted => f.write_str("sequence exhausted"),
+            RedefineError::Lineage(mismatch) => write!(f, "{mismatch}"),
         }
     }
 }
 
 impl std::error::Error for RedefineError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::workflow_definition::{CompiledDefinitionId, WorkflowDefinitionId};
+
+    #[test]
+    fn a_lineage_refusal_renders_the_mismatch_it_wraps() {
+        let error = RedefineError::Lineage(LineageMismatch::new(
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            CompiledDefinitionId::parse("kiro").expect("配布束 id"),
+        ));
+        assert_eq!(
+            error.to_string(),
+            "lineage mismatch: definition claude was handed the bundle kiro"
+        );
+    }
+}

@@ -7,7 +7,7 @@
 //! slug → 文書順インデックスの索引は**実装の自由** (レポート §6.2)。upstream の線形
 //! スキャンを模倣する必要はない。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::stage_graph_error::StageGraphError;
 use super::stage_node::StageNode;
@@ -39,6 +39,34 @@ impl StageGraph {
             index.insert(node.slug().clone(), position);
         }
         Ok(StageGraph { nodes, index })
+    }
+
+    /// ノードが宣言するプラグイン名の集合 (`plugin` を持つノードだけ)。
+    #[must_use]
+    pub fn declared_plugins(&self) -> BTreeSet<&str> {
+        self.nodes.iter().filter_map(StageNode::plugin).collect()
+    }
+
+    /// プラグイン選択を反映した写し (upstream `applyPluginSelection` の意味論)。
+    ///
+    /// plugin 所属ノードの `enabled` を一度落とし、選択に**無い**プラグインのノードだけ
+    /// `false` を立てる。非プラグインノードは触らない。slug 集合は変わらないので索引は
+    /// そのまま写す (不変条件は構築時に検査済み)。
+    #[must_use]
+    pub fn with_plugin_selection(&self, enabled_plugins: &BTreeSet<String>) -> StageGraph {
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|node| match node.plugin() {
+                None => node.clone(),
+                Some(plugin) if enabled_plugins.contains(plugin) => node.clone().with_enabled(None),
+                Some(_) => node.clone().with_enabled(Some(false)),
+            })
+            .collect();
+        StageGraph {
+            nodes,
+            index: self.index.clone(),
+        }
     }
 
     /// **文書順**のノード列 (`stage-graph.json` の配列順そのもの)。

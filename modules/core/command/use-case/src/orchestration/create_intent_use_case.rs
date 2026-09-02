@@ -88,10 +88,8 @@ where
             .workflow_definition_repository
             .find_by_id(definition_id)
             .await?;
-        let (intent, born) = Intent::create(intent_id, &definition, request, scan)?;
-        self.intent_repository
-            .store(&born, &intent, occurred_at)
-            .await?;
+        let (intent, born) = Intent::create(intent_id, &definition, request, scan, occurred_at)?;
+        self.intent_repository.store(&born, &intent).await?;
         // intent が着地してから実行を開始する。逆順にすると、実行だけがストアに居て
         // 指す先の intent が無い状態が残りうる（RMU の `PlanUnavailable` に落ちる）。
         let (execution, started) = IntentExecution::start(execution_id, &intent, occurred_at);
@@ -332,7 +330,7 @@ mod tests {
     #[tokio::test]
     async fn a_partial_failure_names_the_orphaned_intent() {
         let held_definition = definition(3);
-        let (held_intent, _) = Intent::create(intent(), &held_definition, request(), scan())
+        let (held_intent, _) = Intent::create(intent(), &held_definition, request(), scan(), at())
             .expect("フィクスチャの intent");
         let (held_execution, _) = IntentExecution::start(execution_id(), &held_intent, at());
         let mut use_case = CreateIntentUseCase::new(

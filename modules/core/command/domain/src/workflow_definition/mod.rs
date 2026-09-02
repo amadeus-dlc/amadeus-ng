@@ -19,13 +19,21 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod brownfield_greenfield;
+mod compiled_definition;
+mod compiled_definition_event;
+mod compiled_definition_id;
+mod compiled_definition_id_error;
 mod consume_decl;
 mod definition_revision;
 mod definition_revision_error;
 mod execution_kind;
+mod lineage_mismatch;
 mod phase_id;
 mod plan_action;
+mod plugin_selection_error;
+mod recompile_error;
 mod redefine_error;
+mod register_scope_error;
 mod review_cap_value;
 mod review_class;
 mod rule_in_context;
@@ -67,6 +75,12 @@ pub use workflow_definition_event::{Defined, Redefined, WorkflowDefinitionEvent}
 
 // Domain Primitive
 pub use brownfield_greenfield::BrownfieldGreenfield;
+pub use compiled_definition::CompiledDefinition;
+pub use compiled_definition_event::{
+    Compiled, CompiledDefinitionEvent, PluginSelectionApplied, Recompiled, ScopeRegistered,
+};
+pub use compiled_definition_id::CompiledDefinitionId;
+pub use compiled_definition_id_error::CompiledDefinitionIdError;
 pub use consume_decl::ConsumeDecl;
 pub use definition_revision::DefinitionRevision;
 pub use execution_kind::ExecutionKind;
@@ -97,7 +111,11 @@ pub use stage_node::StageNodeBuilder;
 
 // エラー
 pub use definition_revision_error::DefinitionRevisionError;
+pub use lineage_mismatch::LineageMismatch;
+pub use plugin_selection_error::PluginSelectionError;
+pub use recompile_error::RecompileError;
 pub use redefine_error::RedefineError;
+pub use register_scope_error::RegisterScopeError;
 pub use scope_metadata_error::ScopeMetadataError;
 pub use scope_slug_error::ScopeSlugError;
 pub use stage_graph_error::StageGraphError;

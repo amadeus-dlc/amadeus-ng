@@ -246,13 +246,16 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     assert_eq!(m0.last_action, "init");
     // 合成計画からの組み直しは完全コンストラクタ経由の再構成を通す — イベントは不要で、
     // 検査点は genesis と同一である (coding-rules/aggregate-commands.md)。
-    let intent = Intent::from(Created::new(
-        IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
-        synthetic_id(),
-        synthetic_revision(),
-        StartRequest::new("itf", "conformance"),
-        synthetic_stages(m0),
-        scan(),
+    let intent = Intent::from((
+        Created::new(
+            IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            synthetic_id(),
+            synthetic_revision(),
+            StartRequest::new("itf", "conformance"),
+            synthetic_stages(m0),
+            scan(),
+        ),
+        at(),
     ));
     let (mut agg, _started) = IntentExecution::start(
         IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),

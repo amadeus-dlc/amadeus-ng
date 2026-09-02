@@ -8,7 +8,10 @@ CQS 規則の字面との矛盾を閉じる）
 [error-handling.md](error-handling.md)
 **適用例**: `IntentExecution` の全 11 コマンド（`complete_stage` / `open_gate` / `approve_gate` /
 `reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` /
-`switch_autonomy` — いずれも `Result<IntentExecutionEvent, CommandError>`）
+`switch_autonomy` — いずれも `Result<IntentExecutionEvent, CommandError>`）、
+`WorkflowDefinition::redefine`、`CompiledDefinition` の 3 コマンド（`recompile` /
+`register_scope` / `apply_plugin_selection` — b36、2026-09-02。媒体がスナップショットなので
+`replay` は無く、genesis `compile` と `From<Compiled>` が構築口）
 **機械強制**: レビュー基準 + `cargo lint` ルール候補（集約 impl の pub `&mut self` メソッドが
 `Result<Xxx…Event, _>` 以外を返したら違反。`apply_event` は除外。赤例テスト必須）
 
