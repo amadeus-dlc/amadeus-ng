@@ -59,6 +59,10 @@ pub fn start(..) -> (IntentExecution, IntentExecutionEvent)
   現状の `Created { id: IntentId }` / `Defined { id: WorkflowDefinitionId }` / `Started { id: IntentExecutionId }`
   （b39）は誤りで、是正 Bolt（#7 キュー 2c）で全イベント族を `{ id: XxxEventId, aggregate_id: XxxId, .. }` へ
   揃える。
+  **採番は集約のコマンド内**（`XxxEventId::generate()` — UUIDv7。本家サンプルの `UserAccountEventId::new()` と
+  同型。ID は識別だけで投影や ITF の答えに影響しないので、ドメインの純粋性の例外として認める）。
+  **`seq_nr` / `occurred_at` は従来どおり封筒（ジャーナル行の列）が運ぶ**（ADR-010 / B7 を維持 — 本家
+  サンプルとの差はここだけ）。いずれもオーナー裁定 2026-09-02（Q1 = A / Q2 = A）。
 - **genesis イベントは集約 id と genesis の材料を運ぶ**（追記 2026-09-02、b39）— `Created` が
   `id` と依頼・計画を、`Defined` が `id` と内容を運ぶように、`Started` も `id` と解決済み計画
   （各ステージの slug / phase / plan_action）を運ぶ。理由: 集約の歴史は**自ストリームだけで**
