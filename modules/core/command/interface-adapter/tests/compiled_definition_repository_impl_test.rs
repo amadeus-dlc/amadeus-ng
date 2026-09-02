@@ -1116,3 +1116,156 @@ fn an_identity_entry_that_cannot_be_read_as_a_file_is_reported_with_its_path() {
     let error = find(&fixture.compiled_definition_repository()).unwrap_err();
     assert_eq!(io_path(&error), masquerading);
 }
+
+// ---------------------------------------------------------------------------
+// store — 書き側 (b36)。graph / grid のバイト忠実は `golden_parity_test.rs` が検収する。
+// ここは scope identity ファイル群の書出しと掃除、(イベント, 集約) の対の照合、I/O 失敗の
+// 報告を見る。
+// ---------------------------------------------------------------------------
+
+/// 同期の書き口 — genesis で対を鋳造し、他リポジトリと同じ形で `store` へ渡す。
+fn store_into(
+    compiled_definition_repository: &mut CompiledDefinitionRepositoryImpl,
+    compiled_definition: &CompiledDefinition,
+) -> Result<(), ReadError> {
+    let (reborn, event) = CompiledDefinition::compile(
+        compiled_definition.id().clone(),
+        compiled_definition.revision().clone(),
+        compiled_definition.graph().clone(),
+        compiled_definition.grid().clone(),
+        compiled_definition.scopes().clone(),
+    );
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("current-thread ランタイム")
+        .block_on(compiled_definition_repository.store(&event, &reborn))
+}
+
+/// 書き先の tempdir を持つ書き手 (`<dir>/tools/data` / `<dir>/scopes`)。
+fn empty_writer() -> (CompiledDefinitionRepositoryImpl, TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let writer = CompiledDefinitionRepositoryImpl::new(
+        dir.path().join("tools/data"),
+        dir.path().join("scopes"),
+    );
+    (writer, dir)
+}
+
+#[test]
+fn storing_writes_one_identity_file_per_scope_and_sweeps_the_stale_ones() {
+    // 集約が持つ scope 集合と `aidlc-*.md` の集合を一致させる — 集合に無い既存ファイルは
+    // 残すと次の find_by_id が余分なスコープとして読み戻すので消す。パターン外のファイルは
+    // 触らない。
+    let fixture = Fixture::new(
+        Some(GRAPH_JSON),
+        Some(GRID_JSON),
+        &[
+            (
+                "feature",
+                "---\nname: feature\ndepth: standard\nkeywords: [api, endpoint]\nskeleton: on\nreview_cap: adversarial\n---\n\n# Feature scope\n",
+            ),
+            (
+                "express",
+                "---\nname: express\nfreeform_default: true\n---\n",
+            ),
+        ],
+    );
+    let compiled = load(&fixture);
+
+    let (mut writer, out) = empty_writer();
+    let scopes_out = out.path().join("scopes");
+    std::fs::create_dir_all(&scopes_out).unwrap();
+    std::fs::write(scopes_out.join("aidlc-stale.md"), "---\nname: stale\n---\n").unwrap();
+    std::fs::write(scopes_out.join("README.md"), "kept\n").unwrap();
+
+    store_into(&mut writer, &compiled).unwrap();
+
+    let mut names: Vec<String> = std::fs::read_dir(&scopes_out)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["README.md", "aidlc-express.md", "aidlc-feature.md"]);
+    // frontmatter は読み手が受ける最小サブセットと対称 — 散文本文は集約の内容ではないので
+    // 書かない。
+    assert_eq!(
+        std::fs::read_to_string(scopes_out.join("aidlc-feature.md")).unwrap(),
+        "---\nname: feature\ndepth: standard\nkeywords: [api, endpoint]\nskeleton: on\nreview_cap: adversarial\n---\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(scopes_out.join("aidlc-express.md")).unwrap(),
+        "---\nname: express\nfreeform_default: true\n---\n"
+    );
+
+    // 書いた面を読み戻すと同じ内容になる (store ⇄ find_by_id の往復)。内容版だけは
+    // 「読めた入力の内容の版」なので、手書きフィクスチャの表記ゆれ (既定値のキー明示など)
+    // を書き手が正規化した分だけ変わりうる — バイト同一の場合は golden 検収が固定する。
+    let reread = find(&writer).unwrap();
+    assert_eq!(reread.id(), compiled.id());
+    assert_eq!(reread.graph(), compiled.graph());
+    assert_eq!(reread.grid(), compiled.grid());
+    assert_eq!(reread.scopes(), compiled.scopes());
+}
+
+#[test]
+fn storing_a_pair_whose_event_does_not_describe_the_aggregate_is_refused() {
+    // `Compiled` は内容そのものを運ぶ — 別の内容版を名乗る誕生記録と組ませた対は、歴史と
+    // 保存像が別の内容を語る書込契約違反として拒む (`IntentRepositoryImpl` の写し)。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let foreign_revision = core_command_domain::workflow_definition::DefinitionRevision::parse(
+        &format!("sha256:{}", "f".repeat(64)),
+    )
+    .unwrap();
+    let (_, foreign_event) = CompiledDefinition::compile(
+        compiled.id().clone(),
+        foreign_revision,
+        compiled.graph().clone(),
+        compiled.grid().clone(),
+        compiled.scopes().clone(),
+    );
+
+    let (mut writer, out) = empty_writer();
+    let error = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(writer.store(&foreign_event, &compiled))
+        .unwrap_err();
+    assert!(
+        corrupt_cause(&error).contains("store pair mismatch"),
+        "{error:?}"
+    );
+    // 拒んだ書込は何も残さない。
+    assert!(!out.path().join("tools/data/harness.json").exists());
+}
+
+#[test]
+fn a_store_target_that_cannot_be_written_is_reported_as_io_with_the_offending_path() {
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("blocker");
+    std::fs::write(&blocker, "not a directory").unwrap();
+
+    // data_dir の親が通常ファイル — ディレクトリを作れない。
+    let data_dir = blocker.join("data");
+    let mut writer =
+        CompiledDefinitionRepositoryImpl::new(data_dir.clone(), dir.path().join("scopes"));
+    let error = store_into(&mut writer, &compiled).unwrap_err();
+    assert_eq!(io_path(&error), data_dir);
+
+    // data_dir は作れるが harness.json の位置にディレクトリが居座る — 書けない。
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir_all(data_dir.join("harness.json")).unwrap();
+    let mut writer =
+        CompiledDefinitionRepositoryImpl::new(data_dir.clone(), dir.path().join("scopes"));
+    let error = store_into(&mut writer, &compiled).unwrap_err();
+    assert_eq!(io_path(&error), data_dir.join("harness.json"));
+
+    // 3 ファイルは書けたが scopes_dir を作れない。
+    let data_dir = dir.path().join("data2");
+    let scopes_dir = blocker.join("scopes");
+    let mut writer = CompiledDefinitionRepositoryImpl::new(data_dir, scopes_dir.clone());
+    let error = store_into(&mut writer, &compiled).unwrap_err();
+    assert_eq!(io_path(&error), scopes_dir);
+}

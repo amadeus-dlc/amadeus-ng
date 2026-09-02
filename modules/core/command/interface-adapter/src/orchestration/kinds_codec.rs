@@ -62,3 +62,42 @@ where
 
     deserializer.deserialize_map(KindsVisitor)
 }
+
+#[cfg(test)]
+mod tests {
+    use core_infrastructure::canon_json::{SerializationProfile, serialize, to_value};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct Holder {
+        #[serde(with = "super")]
+        kinds: Vec<(String, Vec<String>)>,
+    }
+
+    #[test]
+    fn the_document_order_survives_a_round_trip() {
+        // `b` が `a` より先 — BTreeMap なら並び替わる順を、タプル列はそのまま保つ。
+        let holder: Holder = serde_json::from_str(r#"{"kinds":{"b":["x"],"a":[]}}"#).unwrap();
+        assert_eq!(
+            holder.kinds,
+            vec![
+                ("b".to_string(), vec!["x".to_string()]),
+                ("a".to_string(), Vec::new()),
+            ]
+        );
+        let value = to_value(&holder).unwrap();
+        assert_eq!(
+            serialize(&value, SerializationProfile::ContractCompact),
+            r#"{"kinds":{"b":["x"],"a":[]}}"#
+        );
+    }
+
+    #[test]
+    fn a_non_map_is_rejected_with_the_expected_shape_in_the_message() {
+        let error = serde_json::from_str::<Holder>(r#"{"kinds":[1]}"#).unwrap_err();
+        assert!(
+            error.to_string().contains("a map of kind -> artifact list"),
+            "{error}"
+        );
+    }
+}

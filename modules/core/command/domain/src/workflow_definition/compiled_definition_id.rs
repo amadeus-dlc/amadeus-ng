@@ -92,6 +92,18 @@ mod tests {
     }
 
     #[test]
+    fn try_from_string_is_the_same_gate_as_parse() {
+        assert_eq!(
+            CompiledDefinitionId::try_from("  claude ".to_string()),
+            CompiledDefinitionId::parse("claude")
+        );
+        assert_eq!(
+            CompiledDefinitionId::try_from(String::new()),
+            Err(CompiledDefinitionIdError::Empty)
+        );
+    }
+
+    #[test]
     fn the_rejection_carries_material_not_wording() {
         assert_eq!(CompiledDefinitionIdError::Empty.to_string(), "empty");
         assert_eq!(

@@ -146,6 +146,16 @@ mod tests {
     }
 
     #[test]
+    fn a_redefine_refusal_converts_into_its_own_variant() {
+        // `?` で伝播させる経路 — 変種の取り違えが起きないことを固定する。
+        let error: DefineWorkflowError = RedefineError::SequenceExhausted.into();
+        assert!(matches!(
+            error,
+            DefineWorkflowError::Redefine(RedefineError::SequenceExhausted)
+        ));
+    }
+
+    #[test]
     fn a_rejection_carries_its_material_in_its_own_wording() {
         // 集約の拒否は材料を自分の `Display` に持つ — その先に連鎖は無い。辿る側が
         // 末端で止まれることを固定する。
