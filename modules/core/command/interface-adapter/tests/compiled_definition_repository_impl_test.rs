@@ -1269,3 +1269,26 @@ fn a_store_target_that_cannot_be_written_is_reported_as_io_with_the_offending_pa
     let error = store_into(&mut writer, &compiled).unwrap_err();
     assert_eq!(io_path(&error), scopes_dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_stale_identity_file_that_cannot_be_removed_is_reported_as_io_with_its_path() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let compiled = load(&fixture);
+    let (mut writer, out) = empty_writer();
+    let scopes_out = out.path().join("scopes");
+    std::fs::create_dir_all(&scopes_out).unwrap();
+    let stale = scopes_out.join("aidlc-stale.md");
+    std::fs::write(&stale, "---\nname: stale\n---\n").unwrap();
+    // ディレクトリの書込を禁じると、その中のファイルは消せない。
+    std::fs::set_permissions(&scopes_out, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let outcome = store_into(&mut writer, &compiled);
+
+    // tempdir の後始末のため、判定より先に戻す。
+    std::fs::set_permissions(&scopes_out, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let error = outcome.unwrap_err();
+    assert_eq!(io_path(&error), stale);
+}

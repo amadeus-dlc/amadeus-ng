@@ -237,6 +237,27 @@ const fn scope_file(message: String) -> DefinitionReadFailure {
     DefinitionReadFailure::Corrupt(DefinitionCorruption::ScopeFile { message })
 }
 
+/// `store` の書込契約違反・永続化表現への写像失敗を `Corrupt` に畳む (分類は契約に載せず、
+/// 材料は原因連鎖で運ぶ — 読取側の `into_repository_error` と対)。
+fn store_corrupt(
+    id: &CompiledDefinitionId,
+    message: String,
+) -> RepositoryError<CompiledDefinitionId> {
+    RepositoryError::Corrupt {
+        id: id.clone(),
+        seq_nr: None,
+        source: Box::new(DefinitionCorruption::Malformed { message }),
+    }
+}
+
+/// 内容版の算出失敗を `Corrupt` に畳む (`to_value` / `DefinitionRevision::parse` は正常な
+/// 入力では失敗しない — 防御的な写像なので分岐は 1 箇所に寄せる)。
+fn revision_failure(context: &str, cause: &dyn fmt::Display) -> DefinitionReadFailure {
+    DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
+        message: format!("{context}: {cause}"),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // ワイヤ構造体 (serde — Gateway 内部部品。ドメインは serde 非依存)
 // ---------------------------------------------------------------------------
@@ -596,26 +617,17 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
         // 写し — 対で受ける契約の意味を実装が守る)。
         let CompiledDefinitionEvent::Compiled(compiled) = event;
         if CompiledDefinition::from(compiled.clone()) != *compiled_definition {
-            return Err(RepositoryError::Corrupt {
-                id: id.clone(),
-                seq_nr: None,
-                source: Box::new(DefinitionCorruption::Malformed {
-                    message: "store pair mismatch: the event does not describe the aggregate"
-                        .to_string(),
-                }),
-            });
+            return Err(store_corrupt(
+                id,
+                "store pair mismatch: the event does not describe the aggregate".to_string(),
+            ));
         }
-        let corrupt = |cause: String| RepositoryError::Corrupt {
-            id: id.clone(),
-            seq_nr: None,
-            source: Box::new(DefinitionCorruption::Malformed { message: cause }),
-        };
         let graph_bytes = emit_graph(compiled_definition.graph())
-            .map_err(|e| corrupt(format!("emit stage graph: {e}")))?;
+            .map_err(|e| store_corrupt(id, format!("emit stage graph: {e}")))?;
         let grid_bytes = emit_grid(compiled_definition.graph(), compiled_definition.grid())
-            .map_err(|e| corrupt(format!("emit scope grid: {e}")))?;
+            .map_err(|e| store_corrupt(id, format!("emit scope grid: {e}")))?;
         let harness_bytes = contract_pretty(&HarnessEmitDto { name: id.as_str() })
-            .map_err(|e| corrupt(format!("emit harness identity: {e}")))?;
+            .map_err(|e| store_corrupt(id, format!("emit harness identity: {e}")))?;
 
         let write =
             |path: &Path, bytes: &str| -> Result<(), RepositoryError<CompiledDefinitionId>> {
@@ -679,15 +691,13 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
 /// なる — 内容版が入力の**内容**だけで決まるという性質が保たれる。
 fn serialize_grid(grid: &ScopeGrid) -> serde_json::Value {
     let mut columns = serde_json::Map::new();
-    for scope in grid.scope_names() {
+    for (scope, column) in grid.columns() {
         let mut stages = serde_json::Map::new();
-        if let Some(column) = grid.column(scope) {
-            for (slug, action) in column {
-                stages.insert(
-                    slug.as_str().to_string(),
-                    serde_json::Value::String(action.as_str().to_string()),
-                );
-            }
+        for (slug, action) in column {
+            stages.insert(
+                slug.as_str().to_string(),
+                serde_json::Value::String(action.as_str().to_string()),
+            );
         }
         let mut wrapper = serde_json::Map::new();
         wrapper.insert("stages".to_string(), serde_json::Value::Object(stages));
@@ -720,16 +730,9 @@ fn compute_revision(
             })
             .collect(),
     };
-    let value = to_value(&input).map_err(|e| {
-        DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-            message: format!("definition revision input: {e}"),
-        })
-    })?;
-    DefinitionRevision::parse(&hash_canonical(&value).rendered()).map_err(|e| {
-        DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-            message: format!("definition revision: {e}"),
-        })
-    })
+    let value = to_value(&input).map_err(|e| revision_failure("definition revision input", &e))?;
+    DefinitionRevision::parse(&hash_canonical(&value).rendered())
+        .map_err(|e| revision_failure("definition revision", &e))
 }
 
 // ---------------------------------------------------------------------------
