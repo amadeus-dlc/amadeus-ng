@@ -31132,3 +31132,104 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: All seven items are done and the coverage gate passes. Nothing is committed.\n\n```\nhead line coverage: 99.03121310284278%\nbase (origin/main) line coverage: 99.01748159831754%\n[PASS] absolute gate: head
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:44:39Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:45:38Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T11:48:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a08569f1180e0aed2
+**Message**: RMU の構造化投影（b39、PR #91）を収束中で、レビュー指摘は全件修正・解決済み、CI の確定待ちです。次は必須チェックが緑になったらマージキューへ投入し、その後 2c（イベント ID）へ進みます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:50:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:51:43Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:53:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:54:45Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:55:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T11:56:46Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T11:59:54Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aba32298a92f3cd58
+**Message**: PR #91（RMU の構造化投影、Bolt 2 前半）の収束中で、CI は緑、残るレビュー指摘 2 件のコード修正を担当エージェントが実装中です。完了次第 push してスレッドを閉じ、マージキューへ投入します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T12:16:10Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b39-coverage
+**Agent ID**: ab39-coverage-801a38fec3a0a9d6
+**Message**: All three batches were already complete before your message arrived; my earlier report crossed with it. The work is intact and you have since committed it as `b3229fe4`, plus `f408d066` on top. I did 
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-02T12:16:10Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T12:18:50Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aed4ba031e7f8ce02
+**Message**: <analysis>\nLet me chronologically trace the conversation.\n\n**Message 1 (team-lead, initial brief):** I'm a delegated implementer for amadeus-ng Rust workspace at `/Users/j5ik2o/orca/workspaces/amadeus
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T13:06:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b39-coverage
+**Agent ID**: ab39-coverage-801a38fec3a0a9d6
+**Message**: 追加タスク 8 と 9 を TDD で完了しました。コミットはしていません。\n\n**8. `decode_entry` の genesis 通番検査**\n\n誕生イベントと通番の整合を復号境界で検査し、不一致は `Corrupt(InvariantViolation)` にしました。定義行の同名検査と同じ形です。素体フィクスチャは payload が `Unparked` なので通番 1 では構成不
+
+---
