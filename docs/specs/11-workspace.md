@@ -132,7 +132,7 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 | 系統 | 読み手 | 形 | 更新者 |
 | --- | --- | --- | --- |
 | (1) 人・upstream ツール向けファイル面 | 人が開く、upstream の hook / ステージが読む | `aidlc-state.md`、監査シャード、配布束の面 `stage-graph.json` / `scope-grid.json` | RMU（バイト互換、golden 固定） |
-| (2) CLI 読取コマンド向け構造化リードモデル | `next` / `continue` /（将来）`--status` / `doctor` の DAO | イベントストアと同じ SQLite ファイル（`aidlc/spaces/<space>/.aidlc-store.sqlite`）の接頭辞 `read_` の表 | RMU（`catch_up` ごとに**全履歴から再計算し全差し替え**、チェックポイント前進と**同一トランザクション**） |
+| (2) CLI 読取コマンド向け構造化リードモデル | `next` / `continue` /（将来）`--status` / `doctor` の DAO | イベントストアと同じ SQLite ファイル（`aidlc/spaces/<space>/intents/.aidlc-store.sqlite`）の接頭辞 `read_` の表 | RMU（`catch_up` ごとに**全履歴から再計算し全差し替え**、チェックポイント前進と**同一トランザクション**） |
 
 (2) の規範:
 
@@ -148,7 +148,7 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 | `read_definition` / `read_definition_stage` / `read_definition_scope` / `read_definition_scope_keyword` / `read_definition_scope_stage` / `read_definition_scope_phase_entry` | definition_id（× stage_slug / scope / keyword / phase） | `WorkflowDefinition`（`Defined` / `Redefined` の再生） |
 | `read_intent` / `read_intent_stage` | intent_id（× stage_index） | `Intent`（`Created`） |
 | `read_execution` / `read_execution_stage` | execution_id（× stage_index） | `IntentExecution`（`Started` からの再生） |
-| `read_next_answer` | execution_id × request_kind ∈ {bare, resume, free_text, reentry} | `IntentExecution::next_decision` |
+| `read_next_answer` | execution_id × request_kind ∈ {`bare`, `resume`, `free-text`, `reentry`}（kebab-case） | `IntentExecution::next_decision` |
 | `read_next_jump` / `read_next_jump_phase` | execution_id × target_index / phase | `IntentExecution::jump_resolve` / `first_in_scope_of_phase` |
 
 前提となるドメインの是正（b39）: `Started` は**集約 id と解決済み計画の写し**を運ぶ（従来は `intent_id` のみで、genesis が `&Intent` を要し自ストリームだけで再生できなかった）。`IntentExecution: From<(Started, DateTime<Utc>)>` が genesis イベントからの唯一の状態導出であり、`start` はそれを通る（`Intent` / `WorkflowDefinition` と同型 — coding-rules/aggregate-commands.md）。

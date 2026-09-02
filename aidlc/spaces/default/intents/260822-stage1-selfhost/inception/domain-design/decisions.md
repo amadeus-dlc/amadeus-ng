@@ -203,6 +203,15 @@
   引き続き禁止** — 例外は解決済み計画の表示属性と走査結果に限る。差分投影への計画の供給は
   イベントを太らせず `ResolvedPlan` を投影核の引数とする（取得ループが初回にジャーナル先頭から
   控える — 実装の詳細は `construction/u4-read-model-updater/developer-report-1.md` §6）。
+- **supersede 2026-09-02（b39 — 材料の所在の整理）**: 上の追記が「`Started` へ焼き込む」とした
+  走査結果（`WorkspaceScan`）と表示属性は、issue #56（2026-08-30）以降 **intent 自身の誕生記録
+  `IntentEvent::Created` が運ぶ**（`Intent` 集約の材料。`Started` は `intent_id` だけになっていた）。
+  b39 で `Started` は **`id` / `intent_id` / `stages`（解決済み計画の写し — 各ステージの slug / phase /
+  plan_action / conditional / display）** を運ぶ形へ是正した。理由は自ストリームだけで実行集約を
+  再生すること（`aggregate-commands.md` 2026-09-02 追記）。NFR3（ジャーナルだけで完全復元）は
+  次の分担で保たれる: 実行集約の再生は `Started` + 以降の実行イベント、Markdown 面の骨格（表示属性・
+  走査結果）は `Created`（RMU が `Started.intent_id` で引く `ResolvedPlan::of(&Intent)`）。どちらも
+  ジャーナルにあり、定義ファイルは引かない。`WorkspaceScan` を `Started` に戻す必要は無い。
 
 ## ADR ステータス注記
 
@@ -484,7 +493,7 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
 
 **Decision**: 判断は集約に戻し（b38）、RMU がジャーナル 3 ストリームから集約を `replay` で起こして
 クエリメソッドを呼び、その答えを**イベントストアと同じ SQLite ファイルの `read_*` 表**へ非正規化して
-書く（b39 / b40）。行の差し替えとチェックポイント前進は同一トランザクション。クエリ側の DAO は
+書く（b39 / b40）。行の差し替えとチェックポイント前進は同一トランザクション — **これは RMU 側の接続（`JournalReaderImpl` の別接続）の中の話**であり、ADR-010 2026-08-27 追記「チェックポイントの更新は書込 Tx の外（`JournalReaderImpl` の別接続・別 Tx）」は変わらない。コマンド側の書込 Tx と RMU の投影 Tx は従来どおり別で、RMU の Tx の中で `read_*` の全差し替えと `amadeus_projection_checkpoint` の前進が一緒に確定する、という意味である。クエリ側の DAO は
 キーで引くだけ（`WHERE` は可、行に無い事実の導出は不可）。スコープ解決の優先順はコントローラの
 ルーティング順、steering の参照入力（memory 規則ファイル）は `catch_up` ごとのダイジェスト比較で
 変化時だけ再投影、advisory マーカーの書込は合成ルートの機構モジュール（`read-model-spec.md` §10）。
