@@ -183,7 +183,10 @@ fn project(events: &[IntentExecutionEvent], read_model: &mut ReadModel) -> Resul
 手本 `IntentExecutionRepositoryImpl` と対にする裁定 2026-08-31）で、intent / intent-execution の
 2 リポジトリと手順が 1 行も違わない。3 入力のパースは取込ポート `DefinitionArtifactsClient` / 実装
 `DefinitionArtifactsClientImpl`（当初の「外部システムクライアント」分類は 2026-09-01 に棄却 —
-**暫定の足場（genesis 播種口）**、[gateway-taxonomy.md](gateway-taxonomy.md) §1 の是正）へ移り、書込ユースケース
+**暫定の足場（genesis 播種口）**、[gateway-taxonomy.md](gateway-taxonomy.md) §1 の是正。**その位置づけも
+2026-09-02 に終了 — 配布束は集約 `CompiledDefinition` へ昇格し、読み書きは通常の Repository
+`CompiledDefinitionRepository` / `CompiledDefinitionRepositoryImpl` が担う。規則 7 直後の追記と
+gateway-taxonomy §1 再是正を参照、b36**）へ移り、書込ユースケース
 `DefineWorkflowUseCase` が「取込 → 既存が無ければ `define`（genesis）/ 内容版が違えば `redefine` /
 同じなら何も書かない」を行う。ジャーナルが内容の正本になったので、ドメインイベント
 `WorkflowDefinitionEvent` の `Defined` / `Redefined` は**どちらも内容そのもの（graph / grid /

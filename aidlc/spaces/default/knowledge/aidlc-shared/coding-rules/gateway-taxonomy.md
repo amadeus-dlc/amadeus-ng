@@ -98,7 +98,8 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
   はジャーナル追記 + スナップショット（**封筒の `occurred_at` は集約の `last_updated_at()` から
   組む** — 手本 `IntentExecutionRepositoryImpl` と対にせよというオーナー裁定 2026-08-31。
   `store` の引数で時刻を運ばない）。~~3 入力を読んで集約を組み立てて供給する~~ 旧実装は
-  同日に破棄された。配布物の取込は §1 追記の `DefinitionArtifactsClient` が担う）
+  同日に破棄された。~~配布物の取込は §1 追記の `DefinitionArtifactsClient` が担う~~ →
+  配布束の読取は集約 `CompiledDefinition` の Repository（上の行、2026-09-02 昇格）が担う）
 
 `AuditLedger` はイベントログ（`IntentExecution` のイベント列）であって集約ではないため、Repository を持たない — 監査シャードは ReadModelUpdater の投影である（ADR-001 / 003）。
 
