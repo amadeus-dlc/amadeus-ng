@@ -30793,3 +30793,45 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: スライス A（`Started` の自己完結化）を完了しました。全ゲート緑、コミットはしていません。\n\n## 変更ファイルと要点\n\n**ドメイン** (`modules/core/command/domain/src/orchestration/`)\n\n- `intent_execution_event/started.rs` — `Started { id: IntentExecutionId,
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T07:17:42Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a3add91fb889b8b79
+**Message**: 是正 Bolt 2 前半（b39: RMU が集約を再生して SQLite の read_* 表を作る）を実装中で、スライス A・B はマージ済み、スライス C を委譲中です。次は C の完了とゲート結果をレビューして PR を出します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T07:36:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T07:39:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0e93180597ecdde0
+**Message**: Bolt 2 前半（b39: RMU が SQLite の read_* 表を投影する）を実装中で、ドメインと定義ストリームの 2 スライスはマージ済み、投影核とトランザクションのスライス C を委譲中です。次は C のレビューと PR 作成です。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:22:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b39-slice-c
+**Agent ID**: ab39-slice-c-aa569a8dde67de80
+**Message**: スライス C 完了。全ゲート緑です。\n\n## 追加ファイル\n\n`/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/modules/core/read-model-updater/` 配下:\n\n- `src/read_tables.rs` — ファサード + `ReadTables`（`read_tables/read_tables.rs` は `clipp
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:24:06Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b39-slice-c
+**Agent ID**: ab39-slice-c-aa569a8dde67de80
+**Message**: DDL は省略し、3 点だけ再送します。\n\n## (1) 設計書 §4.1 と食い違った列\n\n- **`workspace_requires` / `inputs` / `outputs`（`read_definition_stage`）** — §4.1 は `(JSON)` ですが、`StageNode::workspace_requires()` は `bool`、`inputs()`/`o
+
+---
