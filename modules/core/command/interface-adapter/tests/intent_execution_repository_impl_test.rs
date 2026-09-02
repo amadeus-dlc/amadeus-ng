@@ -14,7 +14,10 @@
 
 mod support;
 
-use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent, StageCompleted};
+use core_command_domain::orchestration::{
+    IntentExecution, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+    StageCompleted,
+};
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
@@ -305,6 +308,50 @@ async fn a_journal_row_with_an_unknown_event_type_is_corrupt() {
 }
 
 #[tokio::test]
+async fn a_delta_row_whose_payload_names_another_execution_is_corrupt() {
+    // b40 以降は全変種が `aggregate_id` を運ぶので、復号境界は行の `aid` と payload を
+    // **全変種で**照合する。別の実行を名乗る差分行は解釈せず `Corrupt` で止める — 通すと
+    // 他所の歴史がこの集約の状態遷移に流れ込む。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    let (aggregate, event) = genesis();
+    repository.store(&event, &aggregate).await.expect("genesis");
+
+    let mut store = fixture.store();
+    let impostor = EventEnvelope::new(
+        IntentExecutionAggregateKeyDto::of(&execution_id()),
+        2,
+        at(),
+        IntentExecutionEventDto::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            IntentExecutionEventId::generate(),
+            // payload は**別の実行**を名乗る。
+            IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").expect("UUIDv7"),
+            StageSlug::parse("state-init").expect("文法内の slug"),
+        ))),
+    )
+    .with_manifest(MANIFEST);
+    store
+        .persist_event(impostor, 1)
+        .await
+        .expect("ジャーナルだけに追記");
+
+    let err = repository
+        .find_by_id(&execution_id())
+        .await
+        .expect_err("実行 id が食い違う行は解釈しない");
+    assert!(
+        matches!(
+            err,
+            RepositoryError::Corrupt {
+                seq_nr: Some(2),
+                ..
+            }
+        ),
+        "照合の食い違いは破損として止まる: {err:?}"
+    );
+}
+
+#[tokio::test]
 #[should_panic(expected = "apply_event: corrupted history")]
 async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction() {
     // 復号はできるが、解決済み計画に無いステージを名指すイベント — 壊れた歴史であり、
@@ -321,6 +368,8 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction
         2,
         at(),
         IntentExecutionEventDto::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            IntentExecutionEventId::generate(),
+            execution_id(),
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
         ))),
     )

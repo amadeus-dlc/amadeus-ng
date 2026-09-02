@@ -421,6 +421,18 @@ where
                         seq_nr: Some(envelope.seq_nr()),
                         source: Box::new(CorruptDetail::Undecodable(error)),
                     })?;
+            // 行の `aid` と payload の `aggregate_id` を照合する — 食い違う行はどちらかが
+            // 嘘をついている (b40: 全変種が `aggregate_id` を運ぶので、genesis 以外にも
+            // 照合相手ができた)。解釈せず `Corrupt` で止める。
+            if event.aggregate_id() != id {
+                return Err(RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::Undecodable(
+                        DtoDecodeError::InvariantViolation,
+                    )),
+                });
+            }
             events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
         }
         // 差分再生 — 壊れた歴史 (通番の飛び・未知ステージ・不変条件違反) はドメインが
@@ -468,6 +480,11 @@ mod tests {
     use super::*;
     use core_command_domain::orchestration::{StageDisplay, WorkspaceScan};
     use core_command_domain::workflow_definition::{BrownfieldGreenfield, StageNumber};
+    /// テストの固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+    }
+
     fn display(number: &str) -> StageDisplay {
         StageDisplay::new(StageNumber::parse(number).unwrap(), "Stage", "orchestrator").unwrap()
     }
@@ -484,7 +501,8 @@ mod tests {
 
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        Created, Intent, IntentId, StageCompleted, StageEntry, StartRequest,
+        Created, Intent, IntentEventId, IntentExecutionEventId, IntentId, StageCompleted,
+        StageEntry, StartRequest,
     };
     use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
@@ -510,6 +528,7 @@ mod tests {
     fn intent_plan() -> Intent {
         Intent::from((
             Created::new(
+                intent_event_id(),
                 IntentId::parse(INTENT).expect("UUIDv7"),
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -620,6 +639,8 @@ mod tests {
         // スナップショットが正しければ再水和は genesis の状態を返す (issue #44)。
         let (aggregate, _) = genesis();
         let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            IntentExecutionEventId::generate(),
+            intent(),
             StageSlug::parse("state-init").expect("slug"),
         ));
         let mut intent_execution_repository = intent_execution_repository();

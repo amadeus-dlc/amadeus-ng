@@ -21,6 +21,8 @@
 mod brownfield_greenfield;
 mod compiled_definition;
 mod compiled_definition_event;
+mod compiled_definition_event_id;
+mod compiled_definition_event_id_error;
 mod compiled_definition_id;
 mod compiled_definition_id_error;
 mod consume_decl;
@@ -65,6 +67,8 @@ mod unknown_scope;
 mod unknown_skeleton_default;
 mod unknown_stage_mode;
 mod workflow_definition_event;
+mod workflow_definition_event_id;
+mod workflow_definition_event_id_error;
 mod workflow_definition_id;
 mod workflow_definition_id_error;
 // 集約名とモジュール名が一致する意図的な構成 (集約の正本ファイル)。
@@ -80,6 +84,8 @@ pub use compiled_definition::CompiledDefinition;
 pub use compiled_definition_event::{
     Compiled, CompiledDefinitionEvent, PluginSelectionApplied, Recompiled, ScopeRegistered,
 };
+pub use compiled_definition_event_id::CompiledDefinitionEventId;
+pub use compiled_definition_event_id_error::CompiledDefinitionEventIdError;
 pub use compiled_definition_id::CompiledDefinitionId;
 pub use compiled_definition_id_error::CompiledDefinitionIdError;
 pub use consume_decl::ConsumeDecl;
@@ -99,6 +105,7 @@ pub use stage_mode::StageMode;
 pub use stage_number::StageNumber;
 pub use stage_route::StageRoute;
 pub use stage_slug::StageSlug;
+pub use workflow_definition_event_id::WorkflowDefinitionEventId;
 pub use workflow_definition_id::WorkflowDefinitionId;
 
 // 読取モデル (Published Language 1 本目)
@@ -132,4 +139,5 @@ pub use unknown_rule_scope::UnknownRuleScope;
 pub use unknown_scope::UnknownScope;
 pub use unknown_skeleton_default::UnknownSkeletonDefault;
 pub use unknown_stage_mode::UnknownStageMode;
+pub use workflow_definition_event_id_error::WorkflowDefinitionEventIdError;
 pub use workflow_definition_id_error::WorkflowDefinitionIdError;

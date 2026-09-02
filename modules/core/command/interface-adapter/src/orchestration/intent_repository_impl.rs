@@ -336,6 +336,18 @@ where
                         seq_nr: Some(envelope.seq_nr()),
                         source: Box::new(CorruptDetail::Undecodable(error)),
                     })?;
+            // 行の `aid` と payload の `aggregate_id` を照合する — 食い違う行はどちらかが
+            // 嘘をついている (b40: 全変種が `aggregate_id` を運ぶので、genesis 以外にも
+            // 照合相手ができた)。解釈せず `Corrupt` で止める。
+            if event.aggregate_id() != id {
+                return Err(RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::Undecodable(
+                        DtoDecodeError::InvariantViolation,
+                    )),
+                });
+            }
             events.push(event);
         }
         // 差分再生 — 壊れた歴史はドメインがクラッシュで止める (オーナー裁定 2026-08-30)。
@@ -392,8 +404,13 @@ mod tests {
 
     use chrono::{DateTime, Utc};
 
+    /// テストの固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+    }
+
     use core_command_domain::orchestration::{
-        Created, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+        Created, IntentEventId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -419,6 +436,7 @@ mod tests {
 
     fn created() -> Created {
         Created::new(
+            intent_event_id(),
             intent_id(),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),

@@ -19,8 +19,10 @@
 
 mod support;
 
-use core_command_domain::orchestration::IntentExecution;
-use core_command_domain::workflow_definition::WorkflowDefinitionId;
+use core_command_domain::orchestration::{
+    IntentExecution, IntentExecutionEvent, IntentExecutionEventId, Parked,
+};
+use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     CorruptCause, GlobalSeqNr, IntentExecutionEventDto, JournalBatch, JournalEntry,
@@ -29,6 +31,11 @@ use core_read_model_updater::orchestration::{
 use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
 use tempfile::TempDir;
+
+/// b40 のテスト用固定イベント識別子。
+fn event_id() -> IntentExecutionEventId {
+    IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+}
 
 use support::{
     DEFINITION_MANIFEST, JournalWriter, MANIFEST, UpstreamStore, at, defined_event, definition_id,
@@ -273,10 +280,54 @@ async fn an_execution_row_whose_birth_record_names_another_execution_is_corrupt(
 }
 
 #[tokio::test]
-async fn a_revision_row_takes_its_lineage_from_the_row_itself() {
-    // 改訂は系譜 ID を運ばない (`coding-rules/aggregate-references.md`) ので照合する相手が
-    // 無い — 定義 id は行の `aid` がそのまま正本になる。誕生行と同じ検査で落ちないことを
-    // 別系譜の `aid` で確かめる。
+async fn a_later_execution_row_whose_payload_names_another_execution_is_corrupt() {
+    // b40 以降は genesis 以外の変種も `aggregate_id` を運ぶので、照合は**全変種**に効く。
+    // 誕生後の行 (`Parked`) を別の実行の `aid` に差しても、payload が自分の実行を名乗って
+    // いる限り食い違いとして止まる。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+
+    let parked = IntentExecutionEvent::Parked(Parked::new(
+        event_id(),
+        execution_id(),
+        StageSlug::parse("intent-capture").expect("slug"),
+    ));
+    let payload = serde_json::to_vec(&IntentExecutionEventDto::of(&parked)).expect("直列化");
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO journal (pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+             VALUES ('IntentExecution-9', ?1, ?2, 2, ?3, 0, ?4)",
+            rusqlite::params![
+                format!("IntentExecution-{}-2", other_execution_id().as_str()),
+                other_execution_id().as_str(),
+                payload,
+                MANIFEST
+            ],
+        )
+        .expect("別の実行を名乗る park 行を差し込む");
+
+    assert_eq!(
+        fixture
+            .journal_reader()
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .expect_err("実行 id が食い違う行は解釈しない"),
+        JournalReadError::Corrupt {
+            aggregate_id: other_execution_id().as_str().to_string(),
+            seq_nr: Some(2),
+            cause: CorruptCause::InvariantViolation,
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_revision_row_whose_lineage_disagrees_with_the_row_is_corrupt() {
+    // b40 以降、改訂も系譜 ID を `aggregate_id` として運ぶ (イベントはエンティティ) ので、
+    // 行の `aid` と照合する相手ができた。別系譜の `aid` に差した改訂行はどちらかが嘘を
+    // ついている — 解釈せず `Corrupt` で止める (誕生行・intent 行と同じ規律)。かつては
+    // 「改訂は照合相手が無いので行の `aid` が正」という片肺だった。
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed(&mut store).await;
@@ -292,20 +343,21 @@ async fn a_revision_row_takes_its_lineage_from_the_row_itself() {
         )
         .expect("別系譜の改訂行を差し込む");
 
-    let batch = fixture
+    let failure = fixture
         .journal_reader()
         .events_after(GlobalSeqNr::ZERO)
         .await
-        .expect("改訂行は照合の対象を持たないので読める");
-    let entry = &batch.definitions()[0];
-    assert_eq!(
-        entry.definition_id(),
-        &WorkflowDefinitionId::parse("kiro").expect("定義 id"),
-        "行の `aid` が定義 id になる"
+        .expect_err("行と payload が別の系譜を語る");
+    assert!(
+        matches!(
+            failure,
+            JournalReadError::Corrupt {
+                cause: CorruptCause::InvariantViolation,
+                ..
+            }
+        ),
+        "照合の食い違いは破損として止まる: {failure:?}"
     );
-    assert_ne!(entry.definition_id(), &definition_id());
-    assert_eq!(entry.event(), &redefined_event());
-    assert_eq!(entry.seq_nr(), 2);
 }
 
 #[tokio::test]

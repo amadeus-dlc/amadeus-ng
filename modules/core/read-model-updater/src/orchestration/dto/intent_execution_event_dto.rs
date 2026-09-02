@@ -1,13 +1,18 @@
 //! ドメインイベント 12 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
 //!
-//! 外部タグ付き列挙 (`{"Started": { .. }}`) で、`Unparked` だけが材料を持たない単位変種
-//! (`"Unparked"`) である。**変種名・フィールド名・並びが契約**である。
+//! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
+//!
+//! 全変種が `id` (イベント自身の識別子) と `aggregate_id` (どの集約の事実か) をこの順で
+//! 先頭に持つ — ドメインイベントはエンティティの一種だからである (オーナー裁定 2026-09-02)。
+//! `Unparked` はドメインの材料を持たないが識別子は運ぶので、単位変種ではなく構造体である。
 //!
 //! 各変種の材料 DTO は自分専用のファイルに 1 型 1 ファイルで置き (`one-public-type`)、
 //! `of` / `to_domain` もそれぞれの型が持つ。ここでの `of` / `to_domain` は各変種への
 //! 委譲だけを行う (`coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型)。
 
-use core_command_domain::orchestration::IntentExecutionEvent;
+use core_command_domain::orchestration::{
+    IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+};
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +28,7 @@ use super::stage_completed_dto::StageCompletedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
+use super::unparked_dto::UnparkedDto;
 
 /// ジャーナル行 `payload` の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,12 +51,22 @@ pub enum IntentExecutionEventDto {
     Jumped(JumpedDto),
     /// park マーカーの設置。
     Parked(ParkedDto),
-    /// park マーカーの除去 (材料なし)。
-    Unparked,
+    /// park マーカーの除去 (ドメインの材料は無いが識別子は運ぶ)。
+    Unparked(UnparkedDto),
     /// 実効プランの再形成。
     Recomposed(RecomposedDto),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSetDto),
+}
+
+/// イベント識別子の復号 (全変種が共有する private 補助 — 主たる従属先はこのファイル)。
+pub(super) fn event_id_of(raw: &str) -> Result<IntentExecutionEventId, DtoDecodeError> {
+    IntentExecutionEventId::parse(raw).map_err(|_| DtoDecodeError::malformed("id", raw))
+}
+
+/// 集約識別子 (どの実行の事実か) の復号。
+pub(super) fn aggregate_id_of(raw: &str) -> Result<IntentExecutionId, DtoDecodeError> {
+    IntentExecutionId::parse(raw).map_err(|_| DtoDecodeError::malformed("aggregate_id", raw))
 }
 
 /// ステージ参照の綴り。
@@ -107,7 +123,9 @@ impl IntentExecutionEventDto {
             IntentExecutionEvent::Parked(payload) => {
                 IntentExecutionEventDto::Parked(ParkedDto::of(payload))
             }
-            IntentExecutionEvent::Unparked => IntentExecutionEventDto::Unparked,
+            IntentExecutionEvent::Unparked(payload) => {
+                IntentExecutionEventDto::Unparked(UnparkedDto::of(payload))
+            }
             IntentExecutionEvent::Recomposed(payload) => {
                 IntentExecutionEventDto::Recomposed(RecomposedDto::of(payload))
             }
@@ -151,7 +169,9 @@ impl IntentExecutionEventDto {
             IntentExecutionEventDto::Parked(payload) => {
                 IntentExecutionEvent::Parked(payload.to_domain()?)
             }
-            IntentExecutionEventDto::Unparked => IntentExecutionEvent::Unparked,
+            IntentExecutionEventDto::Unparked(payload) => {
+                IntentExecutionEvent::Unparked(payload.to_domain()?)
+            }
             IntentExecutionEventDto::Recomposed(payload) => {
                 IntentExecutionEvent::Recomposed(payload.to_domain()?)
             }

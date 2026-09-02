@@ -89,8 +89,20 @@ mod tests {
     use super::*;
     use crate::orchestration::{GlobalSeqNr, JournalEntry, JournalReadError, ProjectionName};
     use chrono::{DateTime, Utc};
-    use core_command_domain::orchestration::{IntentExecutionEvent, IntentExecutionId};
+    use core_command_domain::orchestration::{
+        IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, Unparked,
+    };
     use std::collections::BTreeMap;
+
+    /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+    }
+
+    /// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
+    }
 
     fn intent() -> IntentExecutionId {
         IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap()
@@ -104,7 +116,7 @@ mod tests {
             DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            IntentExecutionEvent::Unparked,
+            IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id())),
         )
     }
 

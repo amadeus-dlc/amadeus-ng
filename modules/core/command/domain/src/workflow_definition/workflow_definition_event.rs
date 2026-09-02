@@ -29,6 +29,9 @@
 // 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
 // 再輸出する (所有サブツリーのファサード — 利便再エクスポートではない。
 // coding-rules/module-visibility.md)。
+use super::workflow_definition_event_id::WorkflowDefinitionEventId;
+use super::workflow_definition_id::WorkflowDefinitionId;
+
 mod defined;
 mod redefined;
 
@@ -48,11 +51,40 @@ pub enum WorkflowDefinitionEvent {
     Redefined(Redefined),
 }
 
+impl WorkflowDefinitionEvent {
+    /// このイベント自身の識別子 (全変種が持つ — イベントはエンティティ)。
+    #[must_use]
+    pub const fn id(&self) -> &WorkflowDefinitionEventId {
+        match self {
+            WorkflowDefinitionEvent::Defined(payload) => payload.id(),
+            WorkflowDefinitionEvent::Redefined(payload) => payload.id(),
+        }
+    }
+
+    /// **どの集約の事実か** — 全変種が運ぶ系譜 ID。
+    ///
+    /// 復号境界 (Repository の再生・RMU の `decode_definition_row`) はこれと行の `aid` を
+    /// 照合する。かつて `Redefined` が識別子を持たず「行の `aid` が正」としていた片肺は、
+    /// 全変種が `aggregate_id` を持つことで解消した (オーナー裁定 2026-09-02)。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &WorkflowDefinitionId {
+        match self {
+            WorkflowDefinitionEvent::Defined(payload) => payload.aggregate_id(),
+            WorkflowDefinitionEvent::Redefined(payload) => payload.aggregate_id(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+
+    /// テスト用の固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn definition_event_id() -> WorkflowDefinitionEventId {
+        WorkflowDefinitionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").unwrap()
+    }
     use crate::workflow_definition::{
         DefinitionRevision, ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph,
         StageMode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -97,8 +129,16 @@ mod tests {
         // (2026-08-31 — これが無いとジャーナルからの再構成が組めない)。
         let graph = graph();
         let grid = ScopeGrid::from_graph(&graph);
-        let defined = Defined::new(id(), revision('0'), graph.clone(), grid.clone(), scopes());
-        assert_eq!(defined.id(), &id());
+        let defined = Defined::new(
+            definition_event_id(),
+            id(),
+            revision('0'),
+            graph.clone(),
+            grid.clone(),
+            scopes(),
+        );
+        assert_eq!(defined.aggregate_id(), &id());
+        assert_eq!(defined.id(), &definition_event_id());
         assert_eq!(defined.revision(), &revision('0'));
         assert_eq!(defined.graph(), &graph);
         assert_eq!(defined.grid(), &grid);
@@ -110,7 +150,14 @@ mod tests {
         // 系譜 ID はジャーナル行の集約識別子が持つ — 変異イベントは複製しない。
         let graph = graph();
         let grid = ScopeGrid::from_graph(&graph);
-        let redefined = Redefined::new(revision('1'), graph.clone(), grid.clone(), scopes());
+        let redefined = Redefined::new(
+            definition_event_id(),
+            id(),
+            revision('1'),
+            graph.clone(),
+            grid.clone(),
+            scopes(),
+        );
         assert_eq!(redefined.revision(), &revision('1'));
         assert_eq!(redefined.graph(), &graph);
         assert_eq!(redefined.grid(), &grid);
@@ -122,6 +169,7 @@ mod tests {
         let graph = graph();
         let grid = ScopeGrid::from_graph(&graph);
         let first = WorkflowDefinitionEvent::Defined(Defined::new(
+            definition_event_id(),
             id(),
             revision('0'),
             graph.clone(),
@@ -129,6 +177,7 @@ mod tests {
             scopes(),
         ));
         let second = WorkflowDefinitionEvent::Defined(Defined::new(
+            definition_event_id(),
             id(),
             revision('0'),
             graph.clone(),
@@ -137,6 +186,7 @@ mod tests {
         ));
         assert_eq!(first, second);
         let other = WorkflowDefinitionEvent::Defined(Defined::new(
+            definition_event_id(),
             WorkflowDefinitionId::parse("kiro").expect("テストの定義 id"),
             revision('0'),
             graph.clone(),
@@ -146,11 +196,40 @@ mod tests {
         assert_ne!(first, other);
         // 誕生と改訂は同じ内容でも別の事実である。
         let redefined = WorkflowDefinitionEvent::Redefined(Redefined::new(
+            definition_event_id(),
+            id(),
             revision('0'),
             graph,
             grid,
             scopes(),
         ));
         assert_ne!(first, redefined);
+    }
+
+    #[test]
+    fn both_variants_answer_their_own_id_and_the_lineage_id() {
+        // b40 — 改訂も系譜 ID を運ぶので、どちらの変種でも照合の材料が揃う。
+        let (graph, grid) = (graph(), ScopeGrid::from_graph(&graph()));
+        for event in [
+            WorkflowDefinitionEvent::Defined(Defined::new(
+                definition_event_id(),
+                id(),
+                revision('0'),
+                graph.clone(),
+                grid.clone(),
+                scopes(),
+            )),
+            WorkflowDefinitionEvent::Redefined(Redefined::new(
+                definition_event_id(),
+                id(),
+                revision('1'),
+                graph,
+                grid,
+                scopes(),
+            )),
+        ] {
+            assert_eq!(event.id(), &definition_event_id());
+            assert_eq!(event.aggregate_id(), &id());
+        }
     }
 }

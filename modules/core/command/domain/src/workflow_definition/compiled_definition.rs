@@ -52,6 +52,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::compiled_definition_event::{
     Compiled, CompiledDefinitionEvent, PluginSelectionApplied, Recompiled, ScopeRegistered,
 };
+use super::compiled_definition_event_id::CompiledDefinitionEventId;
 use super::compiled_definition_id::CompiledDefinitionId;
 use super::definition_revision::DefinitionRevision;
 use super::plan_action::PlanAction;
@@ -89,7 +90,13 @@ impl CompiledDefinition {
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
     ) -> (CompiledDefinition, CompiledDefinitionEvent) {
-        let compiled = Compiled::new(id, graph, grid, scopes);
+        let compiled = Compiled::new(
+            CompiledDefinitionEventId::generate(),
+            id,
+            graph,
+            grid,
+            scopes,
+        );
         let compiled_definition = CompiledDefinition::from(compiled.clone());
         (
             compiled_definition,
@@ -118,6 +125,7 @@ impl CompiledDefinition {
             });
         }
         let event = CompiledDefinitionEvent::Recompiled(Recompiled::new(
+            CompiledDefinitionEventId::generate(),
             self.id.clone(),
             graph,
             grid,
@@ -158,6 +166,7 @@ impl CompiledDefinition {
             return Err(RegisterScopeError::UnknownStage { slug: slug.clone() });
         }
         let event = CompiledDefinitionEvent::ScopeRegistered(ScopeRegistered::new(
+            CompiledDefinitionEventId::generate(),
             self.id.clone(),
             metadata,
             column,
@@ -190,6 +199,7 @@ impl CompiledDefinition {
             return Err(PluginSelectionError::Unchanged);
         }
         let event = CompiledDefinitionEvent::PluginSelectionApplied(PluginSelectionApplied::new(
+            CompiledDefinitionEventId::generate(),
             self.id.clone(),
             enabled_plugins,
         ));
@@ -269,7 +279,7 @@ impl From<Compiled> for CompiledDefinition {
     /// ではない) からである。内容版はここで導出する。
     fn from(compiled: Compiled) -> CompiledDefinition {
         CompiledDefinition {
-            id: compiled.id().clone(),
+            id: compiled.aggregate_id().clone(),
             revision: DefinitionRevision::of_content(
                 compiled.graph(),
                 compiled.grid(),
@@ -573,5 +583,63 @@ mod tests {
         right.apply_plugin_selection(BTreeSet::new()).expect("遷移");
         assert_eq!(left.revision(), right.revision());
         assert_eq!(left, right);
+    }
+
+    #[test]
+    fn every_transition_stamps_the_event_with_a_fresh_id_and_the_bundle_id() {
+        // イベントはエンティティ — 4 変種すべてが自前の id と `aggregate_id` を持つ
+        // (オーナー裁定 2026-09-02)。
+        let seed = graph(vec![
+            node("state-init", "0.1", None),
+            node("acme-audit", "2.9", Some("acme")),
+        ]);
+        let (mut compiled_definition, genesis) = CompiledDefinition::compile(
+            id(),
+            seed.clone(),
+            ScopeGrid::from_graph(&seed),
+            scopes(&["classic"]),
+        );
+        assert_eq!(genesis.aggregate_id(), compiled_definition.id());
+
+        let leaner = graph(vec![node("state-init", "0.1", None)]);
+        let recompiled = compiled_definition
+            .recompile(
+                leaner.clone(),
+                ScopeGrid::from_graph(&leaner),
+                scopes(&["classic"]),
+            )
+            .expect("内容が違えば再コンパイルできる");
+        assert_eq!(recompiled.aggregate_id(), compiled_definition.id());
+
+        let registered = compiled_definition
+            .register_scope(
+                scopes(&["feature"])
+                    .remove("feature")
+                    .expect("登記する identity"),
+                column(&[("state-init", PlanAction::Execute)]),
+            )
+            .expect("未登記のスコープ");
+        assert_eq!(registered.aggregate_id(), compiled_definition.id());
+
+        // プラグイン選択も同じ規律である (4 変種すべてが id と aggregate_id を答える)。
+        let seeded = graph(vec![
+            node("state-init", "0.1", None),
+            node("acme-audit", "2.9", Some("acme")),
+        ]);
+        let mut with_plugin = CompiledDefinition::compile(
+            id(),
+            seeded.clone(),
+            ScopeGrid::from_graph(&seeded),
+            scopes(&["classic"]),
+        )
+        .0;
+        let applied = with_plugin
+            .apply_plugin_selection(BTreeSet::new())
+            .expect("宣言済みプラグインを外す選択は変化を生む");
+        assert_eq!(applied.aggregate_id(), with_plugin.id());
+
+        let minted = [genesis.id(), recompiled.id(), registered.id(), applied.id()];
+        let distinct: std::collections::HashSet<_> = minted.iter().collect();
+        assert_eq!(distinct.len(), minted.len(), "採番が重複した");
     }
 }

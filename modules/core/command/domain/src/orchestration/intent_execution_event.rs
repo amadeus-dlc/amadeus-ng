@@ -22,6 +22,9 @@
 // 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
 // 再輸出する (所有サブツリーのファサード — 利便再エクスポートではない。
 // coding-rules/module-visibility.md)。
+use super::intent_execution_event_id::IntentExecutionEventId;
+use super::intent_execution_id::IntentExecutionId;
+
 mod autonomy_mode_set;
 mod gate_approved;
 mod gate_opened;
@@ -33,6 +36,7 @@ mod stage_completed;
 mod stage_revised;
 mod stage_skipped;
 mod started;
+mod unparked;
 
 pub use autonomy_mode_set::AutonomyModeSet;
 pub use gate_approved::GateApproved;
@@ -45,12 +49,25 @@ pub use stage_completed::StageCompleted;
 pub use stage_revised::StageRevised;
 pub use stage_skipped::StageSkipped;
 pub use started::Started;
+pub use unparked::Unparked;
 
 /// 12 変種のドメインイベント (C5 の 11 + `StageCompleted`)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
-/// 網羅 match が落ちること自体が検出手段である (NFR1.3)。`Unparked` は C5 が `payload: {}` と
-/// するので専用の材料型を持たない単位変種にした。
+/// 網羅 match が落ちること自体が検出手段である (NFR1.3)。
+///
+/// # イベントはエンティティ — 全変種が `id` と `aggregate_id` を持つ
+///
+/// ドメインイベントはエンティティの一種なので、変種ごとに自前の識別子
+/// [`IntentExecutionEventId`] を持ち、どの集約の事実かは別フィールド `aggregate_id` が運ぶ
+/// (オーナー裁定 2026-09-02、`coding-rules/domain-object-kinds.md` /
+/// `coding-rules/aggregate-commands.md`)。採番は集約のコマンド内 (`generate`) であり、通番
+/// `seq_nr` と発生時刻 `occurred_at` は従来どおり封筒が運ぶ (ADR-010 / B7)。
+///
+/// `Unparked` は C5 が `payload: {}` とする材料なしの事実だが、それでも識別子は持つので
+/// 単位変種ではなく [`Unparked`] 構造体を張る。
+///
+/// [`IntentExecutionEventId`]: super::intent_execution_event_id::IntentExecutionEventId
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentExecutionEvent {
     /// 実行の開始。
@@ -72,11 +89,53 @@ pub enum IntentExecutionEvent {
     /// park マーカーの設置。
     Parked(Parked),
     /// park マーカーの除去 (位置は `parked_at` から復元されるので材料なし)。
-    Unparked,
+    Unparked(Unparked),
     /// 実効プランの再形成 (オーバレイの反転)。
     Recomposed(Recomposed),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSet),
+}
+
+impl IntentExecutionEvent {
+    /// このイベント自身の識別子 (全変種が持つ — イベントはエンティティ)。
+    #[must_use]
+    pub const fn id(&self) -> &IntentExecutionEventId {
+        match self {
+            IntentExecutionEvent::Started(payload) => payload.id(),
+            IntentExecutionEvent::StageCompleted(payload) => payload.id(),
+            IntentExecutionEvent::GateOpened(payload) => payload.id(),
+            IntentExecutionEvent::GateApproved(payload) => payload.id(),
+            IntentExecutionEvent::GateRejected(payload) => payload.id(),
+            IntentExecutionEvent::StageRevised(payload) => payload.id(),
+            IntentExecutionEvent::StageSkipped(payload) => payload.id(),
+            IntentExecutionEvent::Jumped(payload) => payload.id(),
+            IntentExecutionEvent::Parked(payload) => payload.id(),
+            IntentExecutionEvent::Unparked(payload) => payload.id(),
+            IntentExecutionEvent::Recomposed(payload) => payload.id(),
+            IntentExecutionEvent::AutonomyModeSet(payload) => payload.id(),
+        }
+    }
+
+    /// **どの集約の事実か** — 全変種が運ぶ実行の識別子。
+    ///
+    /// 復号境界 (Repository の再生・RMU の `decode_entry`) はこれと行の `aid` を照合する。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &IntentExecutionId {
+        match self {
+            IntentExecutionEvent::Started(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::StageCompleted(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::GateOpened(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::GateApproved(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::GateRejected(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::StageRevised(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::StageSkipped(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::Jumped(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::Parked(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::Unparked(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::Recomposed(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::AutonomyModeSet(payload) => payload.aggregate_id(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -85,8 +144,10 @@ mod tests {
     // として妥当なため許容する (集約のテストモジュールと同じ作法)。
     #![allow(clippy::panic)]
 
+    use std::collections::HashSet;
+
     use super::*;
-    use crate::orchestration::{AutonomyMode, IntentExecutionId, StageDisplay, StageEntry};
+    use crate::orchestration::{AutonomyMode, StageDisplay, StageEntry};
     use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
 
     use super::super::intent_id::IntentId;
@@ -95,10 +156,20 @@ mod tests {
         StageSlug::parse(s).unwrap()
     }
 
-    /// genesis の材料 3 つを束ねたペイロード (計画は 1 ステージの最小形)。
+    /// 決め打ちのイベント識別子 (綴りを固定したいテスト用)。
+    fn evid() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap()
+    }
+
+    fn agg() -> IntentExecutionId {
+        IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap()
+    }
+
+    /// genesis の材料を束ねたペイロード (計画は 1 ステージの最小形)。
     fn started() -> Started {
         Started::new(
-            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            evid(),
+            agg(),
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
             vec![StageEntry::new(
                 slug("state-init"),
@@ -113,6 +184,61 @@ mod tests {
                 .unwrap(),
             )],
         )
+    }
+
+    /// 12 変種を 1 つずつ (同じ id / aggregate_id で組む)。
+    fn every_variant() -> Vec<IntentExecutionEvent> {
+        vec![
+            IntentExecutionEvent::Started(started()),
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(
+                evid(),
+                agg(),
+                slug("state-init"),
+            )),
+            IntentExecutionEvent::GateOpened(GateOpened::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+                vec!["intent.md".to_string()],
+            )),
+            IntentExecutionEvent::GateApproved(GateApproved::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+                Some("looks good".to_string()),
+            )),
+            IntentExecutionEvent::GateRejected(GateRejected::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+                None,
+            )),
+            IntentExecutionEvent::StageRevised(StageRevised::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+            )),
+            IntentExecutionEvent::StageSkipped(StageSkipped::new(
+                evid(),
+                agg(),
+                slug("market-research"),
+                "out of scope".to_string(),
+            )),
+            IntentExecutionEvent::Jumped(Jumped::new(evid(), agg(), slug("state-init"))),
+            IntentExecutionEvent::Parked(Parked::new(evid(), agg(), slug("intent-capture"))),
+            IntentExecutionEvent::Unparked(Unparked::new(evid(), agg())),
+            IntentExecutionEvent::Recomposed(Recomposed::new(
+                evid(),
+                agg(),
+                vec![slug("market-research")],
+                Vec::new(),
+            )),
+            IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
+                evid(),
+                agg(),
+                AutonomyMode::Autonomous,
+            )),
+        ]
     }
 
     #[test]
@@ -137,58 +263,107 @@ mod tests {
 
     #[test]
     fn the_stage_lifecycle_payloads_carry_their_slugs_and_material() {
-        let completed = StageCompleted::new(slug("state-init"));
+        let completed = StageCompleted::new(evid(), agg(), slug("state-init"));
         assert_eq!(completed.stage(), &slug("state-init"));
 
-        let opened = GateOpened::new(slug("intent-capture"), vec!["intent.md".to_string()]);
+        let opened = GateOpened::new(
+            evid(),
+            agg(),
+            slug("intent-capture"),
+            vec!["intent.md".to_string()],
+        );
         assert_eq!(opened.stage(), &slug("intent-capture"));
         assert_eq!(opened.artifacts(), ["intent.md".to_string()]);
 
-        let approved = GateApproved::new(slug("intent-capture"), Some("looks good".to_string()));
+        let approved = GateApproved::new(
+            evid(),
+            agg(),
+            slug("intent-capture"),
+            Some("looks good".to_string()),
+        );
         assert_eq!(approved.stage(), &slug("intent-capture"));
         assert_eq!(approved.user_input(), Some("looks good"));
 
-        let rejected = GateRejected::new(slug("intent-capture"), None);
+        let rejected = GateRejected::new(evid(), agg(), slug("intent-capture"), None);
         assert_eq!(rejected.stage(), &slug("intent-capture"));
         assert_eq!(rejected.feedback(), None);
 
-        let revised = StageRevised::new(slug("intent-capture"));
+        let revised = StageRevised::new(evid(), agg(), slug("intent-capture"));
         assert_eq!(revised.stage(), &slug("intent-capture"));
 
-        let skipped = StageSkipped::new(slug("market-research"), "out of scope".to_string());
+        let skipped = StageSkipped::new(
+            evid(),
+            agg(),
+            slug("market-research"),
+            "out of scope".to_string(),
+        );
         assert_eq!(skipped.stage(), &slug("market-research"));
         assert_eq!(skipped.reason(), "out of scope");
     }
 
     #[test]
     fn the_control_payloads_carry_the_jump_park_and_recompose_material() {
-        let jumped = Jumped::new(slug("state-init"));
+        let jumped = Jumped::new(evid(), agg(), slug("state-init"));
         assert_eq!(jumped.target(), &slug("state-init"));
 
-        let parked = Parked::new(slug("intent-capture"));
+        let parked = Parked::new(evid(), agg(), slug("intent-capture"));
         assert_eq!(parked.stage(), &slug("intent-capture"));
 
-        let recomposed = Recomposed::new(vec![slug("market-research")], Vec::new());
+        // `Unparked` は材料なしだが単位変種ではない — 識別子は持つ。
+        let unparked = Unparked::new(evid(), agg());
+        assert_eq!(unparked.id(), &evid());
+        assert_eq!(unparked.aggregate_id(), &agg());
+
+        let recomposed = Recomposed::new(evid(), agg(), vec![slug("market-research")], Vec::new());
         assert_eq!(recomposed.skipped(), [slug("market-research")]);
         assert!(recomposed.added().is_empty());
 
-        let mode = AutonomyModeSet::new(AutonomyMode::Autonomous);
+        let mode = AutonomyModeSet::new(evid(), agg(), AutonomyMode::Autonomous);
         assert_eq!(mode.mode(), AutonomyMode::Autonomous);
     }
 
     #[test]
+    fn every_variant_answers_its_own_id_and_its_aggregate_id() {
+        // イベントはエンティティ — 変種によらず自前の id と「どの集約の事実か」を答える。
+        for event in every_variant() {
+            assert_eq!(event.id(), &evid());
+            assert_eq!(event.aggregate_id(), &agg());
+        }
+    }
+
+    #[test]
     fn events_compare_by_value() {
-        let a = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
-        let b = IntentExecutionEvent::Parked(Parked::new(slug("intent-capture")));
+        let a = IntentExecutionEvent::Parked(Parked::new(evid(), agg(), slug("intent-capture")));
+        let b = IntentExecutionEvent::Parked(Parked::new(evid(), agg(), slug("intent-capture")));
         assert_eq!(a, b);
-        assert_ne!(a, IntentExecutionEvent::Unparked);
+        assert_ne!(
+            a,
+            IntentExecutionEvent::Unparked(Unparked::new(evid(), agg()))
+        );
+    }
+
+    #[test]
+    fn two_events_of_the_same_shape_are_distinguished_by_their_generated_ids() {
+        // 同じ材料でも別の事実である — 識別子が違えば別のエンティティになる。
+        let first = Parked::new(
+            IntentExecutionEventId::generate(),
+            agg(),
+            slug("intent-capture"),
+        );
+        let second = Parked::new(
+            IntentExecutionEventId::generate(),
+            agg(),
+            slug("intent-capture"),
+        );
+        assert_ne!(first.id(), second.id());
+        assert_ne!(first, second);
     }
 
     #[test]
     fn the_twelve_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
-        fn name(payload: &IntentExecutionEvent) -> &'static str {
+        const fn name(payload: &IntentExecutionEvent) -> &'static str {
             match payload {
                 IntentExecutionEvent::Started(_) => "Started",
                 IntentExecutionEvent::StageCompleted(_) => "StageCompleted",
@@ -199,63 +374,28 @@ mod tests {
                 IntentExecutionEvent::StageSkipped(_) => "StageSkipped",
                 IntentExecutionEvent::Jumped(_) => "Jumped",
                 IntentExecutionEvent::Parked(_) => "Parked",
-                IntentExecutionEvent::Unparked => "Unparked",
+                IntentExecutionEvent::Unparked(_) => "Unparked",
                 IntentExecutionEvent::Recomposed(_) => "Recomposed",
                 IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        let named = [
-            (IntentExecutionEvent::Started(started()), "Started"),
-            (
-                IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
-                "StageCompleted",
-            ),
-            (
-                IntentExecutionEvent::GateOpened(GateOpened::new(slug("intent-capture"), vec![])),
-                "GateOpened",
-            ),
-            (
-                IntentExecutionEvent::GateApproved(GateApproved::new(slug("intent-capture"), None)),
-                "GateApproved",
-            ),
-            (
-                IntentExecutionEvent::GateRejected(GateRejected::new(slug("intent-capture"), None)),
-                "GateRejected",
-            ),
-            (
-                IntentExecutionEvent::StageRevised(StageRevised::new(slug("intent-capture"))),
-                "StageRevised",
-            ),
-            (
-                IntentExecutionEvent::StageSkipped(StageSkipped::new(
-                    slug("market-research"),
-                    "out of scope".to_string(),
-                )),
-                "StageSkipped",
-            ),
-            (
-                IntentExecutionEvent::Jumped(Jumped::new(slug("state-init"))),
-                "Jumped",
-            ),
-            (
-                IntentExecutionEvent::Parked(Parked::new(slug("intent-capture"))),
-                "Parked",
-            ),
-            (IntentExecutionEvent::Unparked, "Unparked"),
-            (
-                IntentExecutionEvent::Recomposed(Recomposed::new(
-                    Vec::new(),
-                    vec![slug("state-init")],
-                )),
-                "Recomposed",
-            ),
-            (
-                IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(AutonomyMode::Gated)),
-                "AutonomyModeSet",
-            ),
+        let expected = [
+            "Started",
+            "StageCompleted",
+            "GateOpened",
+            "GateApproved",
+            "GateRejected",
+            "StageRevised",
+            "StageSkipped",
+            "Jumped",
+            "Parked",
+            "Unparked",
+            "Recomposed",
+            "AutonomyModeSet",
         ];
-        for (event, expected) in &named {
-            assert_eq!(name(event), *expected);
-        }
+        let named: Vec<&'static str> = every_variant().iter().map(name).collect();
+        assert_eq!(named, expected);
+        let distinct: HashSet<&'static str> = named.iter().copied().collect();
+        assert_eq!(distinct.len(), 12);
     }
 }

@@ -9,14 +9,20 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    CommandError, Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 use core_command_use_case::orchestration::IntentExecutionRepository;
+
+/// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+#[must_use]
+pub(crate) fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
 
 /// イベントの `occurred_at` の逐語形 (集約は値を素通しするので固定値でよい)。
 pub(crate) const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -120,6 +126,7 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 pub(crate) fn intent() -> Intent {
     Intent::from((
         Created::new(
+            intent_event_id(),
             intent_id(),
             WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))

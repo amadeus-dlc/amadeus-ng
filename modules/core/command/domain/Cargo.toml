@@ -16,8 +16,10 @@ workspace = true
 #
 # chrono は残る — 時刻の**値**は永続化知識ではない (規則の対象外条項)。
 chrono = { workspace = true }
-# uuid は解析のみ (識別子 Domain Primitive の検査点 uuid_v7.rs)。採番はインフラ側の責務。
-uuid = { workspace = true }
+# uuid は識別子 Domain Primitive の解析 (検査点 uuid_v7.rs) と、ドメインイベント ID の採番
+# (`XxxEventId::generate` — 集約のコマンド内、オーナー裁定 2026-09-02 Q1 = A。`v7` はそのため)。
+# 集約 ID (IntentId 等) の採番は従来どおり合成ルート側。
+uuid = { workspace = true, features = ["v7"] }
 # 言語拡張 (canon_json のみ — steering ダイジェストの素材組みとハッシュ計算)。純計算で
 # あり I/O を持たない。serde derive・ストア語彙は持ち込まないので
 # domain-persistence-neutrality の機械強制 (serde / event-store-adapter-rs の不在) は保たれる

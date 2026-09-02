@@ -3,13 +3,14 @@
 //! 書く側 (command interface-adapter の `IntentEventDto`) と**共有しない**同名の別の型で
 //! ある (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。一致は横断適合テストが固定する。
 //!
-//! `Created` の中身は [`IntentDto`] そのもの — 誕生の材料 = 集約の全状態であり、復号結果は
-//! 検査付き再構成を通った [`Intent`] として返す。RMU が状態ファイルの骨格 (全ステージ行・
-//! 表示属性・走査結果) を描く材料の正本である (issue #56)。
+//! `Created` の中身は [`IntentDto`] — 先頭に `id` (イベント自身の識別子) と `aggregate_id`
+//! (どの集約の事実か) を持ち、以降は誕生の材料 = 集約の全状態である。復号結果は検査付き
+//! 再構成を通った [`Intent`] として返す。RMU が状態ファイルの骨格 (全ステージ行・表示属性・
+//! 走査結果) を描く材料の正本である (issue #56)。
 //!
 //! [`Intent`]: core_command_domain::orchestration::Intent
 
-use core_command_domain::orchestration::Intent;
+use core_command_domain::orchestration::{Intent, IntentEvent};
 use serde::{Deserialize, Serialize};
 
 use super::dto_decode_error::DtoDecodeError;
@@ -23,11 +24,15 @@ pub enum IntentEventDto {
 }
 
 impl IntentEventDto {
-    /// intent (誕生記録から起こした集約値) から行の形を組む (書き — テストが行を用意する
-    /// ためだけの口。本番の書き手はコマンド側である)。
+    /// 誕生イベントから行の形を組む (書き — テストが行を用意するためだけの口。本番の
+    /// 書き手はコマンド側である)。
     #[must_use]
-    pub fn of(intent: &Intent) -> IntentEventDto {
-        IntentEventDto::Created(IntentDto::of(intent))
+    pub fn of(event: &IntentEvent, occurred_at: chrono::DateTime<chrono::Utc>) -> IntentEventDto {
+        match event {
+            IntentEvent::Created(created) => {
+                IntentEventDto::Created(IntentDto::of(created, occurred_at))
+            }
+        }
     }
 
     /// 誕生の材料を検査付き再構成で [`Intent`] へ戻す (読み)。

@@ -9,7 +9,7 @@
 //! (共有 private 型は主たる従属先に置く — `coding-rules/abstract-data-type.md`)。
 
 use core_command_domain::orchestration::{
-    Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEventId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -36,14 +36,14 @@ pub struct IntentDto {
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// 呼出側の要求の行の形。
+/// 呼出側の要求の行の形 (intent 面と `Created` 面が共有する)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct StartRequestDto {
-    scope: String,
-    request: String,
-    depth: Option<String>,
-    test_strategy: Option<String>,
-    review: Option<String>,
+pub(super) struct StartRequestDto {
+    pub(super) scope: String,
+    pub(super) request: String,
+    pub(super) depth: Option<String>,
+    pub(super) test_strategy: Option<String>,
+    pub(super) review: Option<String>,
 }
 
 /// 解決済み計画 1 要素の行の形 (intent 面と `Started` 面が共有する)。
@@ -64,13 +64,13 @@ struct StageDisplayDto {
     lead_agent: String,
 }
 
-/// ワークスペース走査結果の行の形。
+/// ワークスペース走査結果の行の形 (intent 面と `Created` 面が共有する)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct WorkspaceScanDto {
-    project_type: String,
-    languages: String,
-    frameworks: String,
-    build_system: String,
+pub(super) struct WorkspaceScanDto {
+    pub(super) project_type: String,
+    pub(super) languages: String,
+    pub(super) frameworks: String,
+    pub(super) build_system: String,
 }
 
 impl IntentDto {
@@ -81,13 +81,7 @@ impl IntentDto {
             id: intent.id().as_str().to_string(),
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
-            start_request: StartRequestDto {
-                scope: intent.scope().to_string(),
-                request: intent.request().to_string(),
-                depth: intent.depth().map(str::to_string),
-                test_strategy: intent.test_strategy().map(str::to_string),
-                review: intent.review().map(str::to_string),
-            },
+            start_request: StartRequestDto::of(intent),
             stages: intent.stages().iter().map(StageEntryDto::of).collect(),
             scan: WorkspaceScanDto::of(intent.scan()),
             created_at: *intent.created_at(),
@@ -105,34 +99,22 @@ impl IntentDto {
         Ok(Intent::from((self.to_created()?, self.created_at)))
     }
 
-    /// 誕生記録 (`Created` ペイロード) として復号する (読み — intent ジャーナル面)。
+    /// スナップショット行を集約へ写すための誕生記録を組む (読み — スナップショット面)。
     ///
-    /// [`to_domain`](IntentDto::to_domain) と同じ検査を通る — 誕生の材料と集約の全状態は
-    /// 同一物であり、復号経路も 1 本である。
-    ///
-    /// # Errors
-    ///
-    /// 閉集合外の綴り・文法外の識別子は `Malformed` を返す。
-    pub(super) fn to_created(&self) -> Result<Created, DtoDecodeError> {
+    /// `Intent` の唯一の再構成経路が `From<(Created, occurred_at)>` なので、スナップショット
+    /// からの復元もここを通す。**イベント識別子はここで捨てられる**値である — スナップ
+    /// ショット行はイベントではないので同一性を持たず、[`Intent`] も `Created` の `id` を
+    /// 保持しない。ジャーナル面の復号は [`CreatedDto`](super::CreatedDto) が行い、そちらは
+    /// 行に書かれた本物の識別子を運ぶ。
+    fn to_created(&self) -> Result<Created, DtoDecodeError> {
         let stages = self
             .stages
             .iter()
             .map(StageEntryDto::to_domain)
             .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
-        let mut request = StartRequest::new(
-            self.start_request.scope.clone(),
-            self.start_request.request.clone(),
-        );
-        if let Some(depth) = &self.start_request.depth {
-            request = request.with_depth(depth.clone());
-        }
-        if let Some(strategy) = &self.start_request.test_strategy {
-            request = request.with_test_strategy(strategy.clone());
-        }
-        if let Some(review) = &self.start_request.review {
-            request = request.with_review(review.clone());
-        }
+        let request = self.start_request.to_domain();
         Ok(Created::new(
+            IntentEventId::generate(),
             IntentId::parse(&self.id)
                 .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
             WorkflowDefinitionId::parse(&self.definition_id).map_err(|_| {
@@ -145,6 +127,34 @@ impl IntentDto {
             stages,
             self.scan.to_domain()?,
         ))
+    }
+}
+
+impl StartRequestDto {
+    /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
+    pub(super) fn of(intent: &Intent) -> StartRequestDto {
+        StartRequestDto {
+            scope: intent.scope().to_string(),
+            request: intent.request().to_string(),
+            depth: intent.depth().map(str::to_string),
+            test_strategy: intent.test_strategy().map(str::to_string),
+            review: intent.review().map(str::to_string),
+        }
+    }
+
+    /// ドメインへ戻す (読み — 任意項目はビルダーの `with_*` で足す)。
+    pub(super) fn to_domain(&self) -> StartRequest {
+        let mut request = StartRequest::new(self.scope.clone(), self.request.clone());
+        if let Some(depth) = &self.depth {
+            request = request.with_depth(depth.clone());
+        }
+        if let Some(strategy) = &self.test_strategy {
+            request = request.with_test_strategy(strategy.clone());
+        }
+        if let Some(review) = &self.review {
+            request = request.with_review(review.clone());
+        }
+        request
     }
 }
 
@@ -186,7 +196,7 @@ impl StageEntryDto {
 }
 
 impl WorkspaceScanDto {
-    fn of(scan: &WorkspaceScan) -> WorkspaceScanDto {
+    pub(super) fn of(scan: &WorkspaceScan) -> WorkspaceScanDto {
         WorkspaceScanDto {
             project_type: project_type_spelling(scan.project_kind()).to_string(),
             languages: scan.languages().to_string(),
@@ -195,7 +205,7 @@ impl WorkspaceScanDto {
         }
     }
 
-    fn to_domain(&self) -> Result<WorkspaceScan, DtoDecodeError> {
+    pub(super) fn to_domain(&self) -> Result<WorkspaceScan, DtoDecodeError> {
         WorkspaceScan::new(
             project_type_of(&self.project_type)?,
             &self.languages,

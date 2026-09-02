@@ -334,7 +334,7 @@ fn project_one(
         IntentExecutionEvent::StageSkipped(skipped) => stage_skipped(skipped, at, plan, read_model),
         IntentExecutionEvent::Jumped(jumped) => jumped_event(jumped, at, plan, read_model),
         IntentExecutionEvent::Parked(parked) => parked_event(parked, at, read_model),
-        IntentExecutionEvent::Unparked => {
+        IntentExecutionEvent::Unparked(_) => {
             unparked(at, read_model);
             Ok(())
         }
@@ -1536,6 +1536,21 @@ mod tests {
     use super::*;
     use core_command_domain::orchestration::Created;
 
+    /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+    }
+
+    /// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+    fn execution_id() -> IntentExecutionId {
+        IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7")
+    }
+
+    /// b40 のテスト用固定イベント識別子 (intent 面)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+    }
+
     #[test]
     fn a_missing_field_converts_into_the_projection_error() {
         // `set_field(...)?` が通る変換経路 (From) — 材料をそのまま包む。
@@ -1547,8 +1562,8 @@ mod tests {
     }
 
     use core_command_domain::orchestration::{
-        AutonomyModeSet, Intent, IntentExecutionId, IntentId, StageDisplay, StageEntry,
-        StartRequest, Started, WorkspaceScan,
+        AutonomyModeSet, Intent, IntentEventId, IntentExecutionEventId, IntentExecutionId,
+        IntentId, StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
@@ -1583,6 +1598,7 @@ mod tests {
     fn genesis_intent() -> Intent {
         Intent::from((
             Created::new(
+                intent_event_id(),
                 IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
@@ -1613,6 +1629,7 @@ mod tests {
     fn started() -> Started {
         let intent = genesis_intent();
         Started::new(
+            event_id(),
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7"),
             intent.id().clone(),
             intent.stages().to_vec(),
@@ -1751,6 +1768,8 @@ mod tests {
     #[test]
     fn switching_the_autonomy_mode_writes_the_row_and_the_field() {
         let read_model = run(IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
+            event_id(),
+            execution_id(),
             AutonomyMode::Autonomous,
         )));
         assert!(
@@ -1774,6 +1793,8 @@ mod tests {
     fn approving_the_last_stage_completes_the_workflow_instead_of_starting_one() {
         // 次は導出 — second の後の実効 EXECUTE は無い (late は SKIP) ので完了行になる。
         let read_model = run(IntentExecutionEvent::GateApproved(GateApproved::new(
+            event_id(),
+            execution_id(),
             slug("second"),
             None,
         )));
@@ -1797,6 +1818,8 @@ mod tests {
         // 境界はイベントに載らない — state-init (initialization) の次の実効 EXECUTE が
         // first (inception) なので、計画からの導出で境界が立つ。
         let read_model = run(IntentExecutionEvent::GateApproved(GateApproved::new(
+            event_id(),
+            execution_id(),
             slug("state-init"),
             Some("A".to_string()),
         )));
@@ -1832,6 +1855,8 @@ mod tests {
     #[test]
     fn completing_a_non_gated_stage_uses_the_completed_wording() {
         let read_model = run(IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            event_id(),
+            execution_id(),
             slug("state-init"),
         )));
         assert!(
@@ -1857,9 +1882,11 @@ mod tests {
                 .replace("- [ ] second — EXECUTE", "- [-] second — EXECUTE"),
         );
         project(
-            &[entry(IntentExecutionEvent::Jumped(Jumped::new(slug(
-                "first",
-            ))))],
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(
+                event_id(),
+                execution_id(),
+                slug("first"),
+            )))],
             &plan(),
             &mut read_model,
         )
@@ -1904,7 +1931,12 @@ mod tests {
         );
         project(
             &[entry(IntentExecutionEvent::StageSkipped(
-                StageSkipped::new(slug("second"), "not needed".to_string()),
+                StageSkipped::new(
+                    event_id(),
+                    execution_id(),
+                    slug("second"),
+                    "not needed".to_string(),
+                ),
             ))],
             &plan(),
             &mut read_model,
@@ -1925,9 +1957,11 @@ mod tests {
         // 構成では作れないので、state-init 稼働中から second へ跳ぶ。
         let mut read_model = ReadModel::new(SKELETON.to_string());
         project(
-            &[entry(IntentExecutionEvent::Jumped(Jumped::new(slug(
-                "second",
-            ))))],
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(
+                event_id(),
+                execution_id(),
+                slug("second"),
+            )))],
             &plan(),
             &mut read_model,
         )
@@ -1958,7 +1992,7 @@ mod tests {
         );
         project(
             &[entry(IntentExecutionEvent::GateRejected(
-                GateRejected::new(slug("state-init"), None),
+                GateRejected::new(event_id(), execution_id(), slug("state-init"), None),
             ))],
             &plan(),
             &mut read_model,
@@ -1975,7 +2009,7 @@ mod tests {
             ReadModel::new(SKELETON.replace("- **Revision Count**: 0", "- **Revision Count**: 1"));
         project(
             &[entry(IntentExecutionEvent::GateRejected(
-                GateRejected::new(slug("state-init"), None),
+                GateRejected::new(event_id(), execution_id(), slug("state-init"), None),
             ))],
             &plan(),
             &mut read_model,
@@ -1991,7 +2025,7 @@ mod tests {
             ReadModel::new(SKELETON.replace("- [ ] first — EXECUTE", "- [ ] first — WHAT"));
         project(
             &[entry(IntentExecutionEvent::StageCompleted(
-                StageCompleted::new(slug("state-init")),
+                StageCompleted::new(event_id(), execution_id(), slug("state-init")),
             ))],
             &plan(),
             &mut read_model,
@@ -2004,9 +2038,11 @@ mod tests {
     #[test]
     fn a_redo_jump_reopens_the_current_stage_without_touching_neighbours() {
         // 到達点 = 現在地 (redo)。checkbox の書き換えは到達点の [-] 化だけで、隣は触らない。
-        let read_model = run(IntentExecutionEvent::Jumped(Jumped::new(slug(
-            "state-init",
-        ))));
+        let read_model = run(IntentExecutionEvent::Jumped(Jumped::new(
+            event_id(),
+            execution_id(),
+            slug("state-init"),
+        )));
         assert!(
             read_model
                 .appended_audit()
@@ -2027,9 +2063,11 @@ mod tests {
             "- **Current Stage**: NOT A SLUG",
         ));
         let error = project(
-            &[entry(IntentExecutionEvent::Jumped(Jumped::new(slug(
-                "first",
-            ))))],
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(
+                event_id(),
+                execution_id(),
+                slug("first"),
+            )))],
             &plan(),
             &mut read_model,
         )
@@ -2041,6 +2079,8 @@ mod tests {
     fn a_rejection_without_feedback_omits_the_feedback_rows() {
         // feedback 無しの差し戻し — 行は出ず、Revision Count は現値 +1 (0 → 1)。
         let read_model = run(IntentExecutionEvent::GateRejected(GateRejected::new(
+            event_id(),
+            execution_id(),
             slug("state-init"),
             None,
         )));
@@ -2058,6 +2098,8 @@ mod tests {
     fn recomposing_back_into_scope_moves_the_entry_the_other_way() {
         // 適用後の in-scope 数は行末トークンの反転後に自分の行から導く (= 4)。
         let read_model = run(IntentExecutionEvent::Recomposed(Recomposed::new(
+            event_id(),
+            execution_id(),
             Vec::new(),
             vec![slug("late")],
         )));

@@ -154,7 +154,15 @@ impl ResolvedPlan {
 mod tests {
     use super::*;
     use core_command_domain::orchestration::Created;
-    use core_command_domain::orchestration::{Intent, IntentId, StageEntry, StartRequest};
+
+    /// b40 のテスト用固定イベント識別子 (intent 面)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+    }
+    use core_command_domain::orchestration::{
+        Intent, IntentEventId, IntentId, StageEntry, StartRequest,
+    };
+
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PlanAction, StageNumber, WorkflowDefinitionId,
     };
@@ -181,6 +189,7 @@ mod tests {
     fn genesis_intent() -> Intent {
         Intent::from((
             Created::new(
+                intent_event_id(),
                 IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),

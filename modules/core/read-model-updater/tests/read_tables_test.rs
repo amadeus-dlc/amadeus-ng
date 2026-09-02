@@ -19,14 +19,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, Recomposed, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    AutonomyMode, Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Recomposed, StageDisplay, StageEntry,
+    StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ConsumeDecl, Defined, DefinitionRevision, ExecutionKind, PhaseId,
     PlanAction, Redefined, ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid,
     ScopeMetadata, SensorRef, SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder,
-    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionEventId,
+    WorkflowDefinitionId,
 };
 use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry,
@@ -46,6 +48,22 @@ fn at() -> DateTime<Utc> {
 
 fn slug(value: &str) -> StageSlug {
     StageSlug::parse(value).expect("テストの slug は文法内")
+}
+
+fn event_id() -> IntentExecutionEventId {
+    IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+}
+
+fn execution_id() -> IntentExecutionId {
+    execution_a()
+}
+
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
+
+fn definition_event_id() -> WorkflowDefinitionEventId {
+    WorkflowDefinitionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").expect("UUIDv7")
 }
 
 fn definition_id() -> WorkflowDefinitionId {
@@ -203,6 +221,7 @@ fn revised_scopes() -> BTreeMap<String, ScopeMetadata> {
 
 fn defined_event() -> WorkflowDefinitionEvent {
     WorkflowDefinitionEvent::Defined(Defined::new(
+        definition_event_id(),
         definition_id(),
         revision('0'),
         genesis_graph(),
@@ -213,6 +232,8 @@ fn defined_event() -> WorkflowDefinitionEvent {
 
 fn redefined_event() -> WorkflowDefinitionEvent {
     WorkflowDefinitionEvent::Redefined(Redefined::new(
+        definition_event_id(),
+        definition_id(),
         revision('1'),
         revised_graph(),
         revised_grid(),
@@ -276,6 +297,7 @@ fn scan() -> WorkspaceScan {
 fn intent() -> Intent {
     Intent::from((
         Created::new(
+            intent_event_id(),
             intent_id(),
             definition_id(),
             revision('1'),
@@ -792,8 +814,12 @@ fn skip_inconsistency_events(
     let cursor_slug = aggregate.stage_keys()[aggregate.cursor().to_usize()]
         .slug()
         .clone();
-    let tampering =
-        IntentExecutionEvent::Recomposed(Recomposed::new(vec![cursor_slug], Vec::new()));
+    let tampering = IntentExecutionEvent::Recomposed(Recomposed::new(
+        event_id(),
+        execution_id(),
+        vec![cursor_slug],
+        Vec::new(),
+    ));
     let seq_nr = aggregate.seq_nr() + 1;
     aggregate = IntentExecution::replay(aggregate, [(seq_nr, at(), tampering.clone())]);
     events.push((seq_nr, tampering));
@@ -952,6 +978,7 @@ const fn direction_of(
 
 fn refusal_of(error: &core_command_domain::orchestration::CommandError) -> &'static str {
     use core_command_domain::orchestration::CommandError;
+
     match error {
         CommandError::NotRunning => "not-running",
         CommandError::InvalidTarget(_) => "invalid-target",

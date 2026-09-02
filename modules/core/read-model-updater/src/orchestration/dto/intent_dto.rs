@@ -1,11 +1,15 @@
-//! `Intent` とその部品の永続化 DTO — intent ジャーナル面のバイト形 (**読む側**)。
+//! `IntentEvent::Created` とその部品の永続化 DTO — intent ジャーナル面のバイト形 (**読む側**)。
+//!
+//! 先頭 2 つは `id` (イベント自身の識別子) と `aggregate_id` (どの集約の事実か) —
+//! ドメインイベントはエンティティの一種だからである (オーナー裁定 2026-09-02)。書き手
+//! (コマンド側の `CreatedDto`) とバイトが一致していることは横断適合テストが固定する。
 //!
 //! 解決済み計画 1 要素の綴り (`StageEntryDto`) は `Started` 面と共有する — 実行の誕生記録も
 //! 同じ計画の写しを運ぶからである (共有 private 型は主たる従属先に置く —
 //! `coding-rules/abstract-data-type.md`)。
 
 use core_command_domain::orchestration::{
-    Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEventId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -18,10 +22,11 @@ use super::dto_vocabulary::{
     project_type_spelling,
 };
 
-/// 静的な intent の行の形。**フィールド名と並びが契約**である。
+/// 誕生記録の行の形。**フィールド名と並びが契約**である。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IntentDto {
     id: String,
+    aggregate_id: String,
     definition_id: String,
     definition_revision: String,
     start_request: StartRequestDto,
@@ -70,9 +75,12 @@ struct WorkspaceScanDto {
 
 impl IntentDto {
     /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
-    pub(crate) fn of(intent: &Intent) -> IntentDto {
+    pub(crate) fn of(created: &Created, occurred_at: chrono::DateTime<chrono::Utc>) -> IntentDto {
+        // 誕生の材料は集約の全状態と同一なので、内容の綴りは集約の読取面から組む。
+        let intent = Intent::from((created.clone(), occurred_at));
         IntentDto {
-            id: intent.id().as_str().to_string(),
+            id: created.id().as_str().to_string(),
+            aggregate_id: created.aggregate_id().as_str().to_string(),
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
             start_request: StartRequestDto {
@@ -84,7 +92,7 @@ impl IntentDto {
             },
             stages: intent.stages().iter().map(StageEntryDto::of).collect(),
             scan: WorkspaceScanDto::of(intent.scan()),
-            created_at: *intent.created_at(),
+            created_at: occurred_at,
         }
     }
 
@@ -92,15 +100,20 @@ impl IntentDto {
     ///
     /// # Errors
     ///
-    /// 閉集合外の綴り・文法外の識別子は `Malformed` を返す。組み上げ (誕生記録の変換) が
-    /// Always Valid を破る場合は回復せずクラッシュする — 再構成は失敗を返さない
-    /// (オーナー裁定 2026-08-30)。
+    /// 閉集合外の綴り・文法外の識別子は `Malformed`、計画の不変条件違反は
+    /// `InvariantViolation` を返す。後者を**復号の境界で**止めるのは `Started` 面と同じ
+    /// 規律である (b40 で intent 面にも揃えた) — 通すと集約の再構成まで届いてクラッシュ
+    /// する (再構成は失敗を返さない — オーナー裁定 2026-08-30)。復号境界で拒めない破損
+    /// (通番の飛びなど) は従来どおりクラッシュが正である。
     pub(crate) fn to_domain(&self) -> Result<Intent, DtoDecodeError> {
         let stages = self
             .stages
             .iter()
             .map(StageEntryDto::to_domain)
             .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
+        // 計画そのものの不変条件はドメインが持つ (`StageEntry::check_plan`) — 判断を DTO に
+        // 複製せず呼ぶだけにする。
+        StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
         let mut request = StartRequest::new(
             self.start_request.scope.clone(),
             self.start_request.request.clone(),
@@ -116,8 +129,11 @@ impl IntentDto {
         }
         Ok(Intent::from((
             Created::new(
-                IntentId::parse(&self.id)
+                IntentEventId::parse(&self.id)
                     .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
+                IntentId::parse(&self.aggregate_id).map_err(|_| {
+                    DtoDecodeError::malformed("aggregate_id", self.aggregate_id.clone())
+                })?,
                 WorkflowDefinitionId::parse(&self.definition_id).map_err(|_| {
                     DtoDecodeError::malformed("definition_id", self.definition_id.clone())
                 })?,

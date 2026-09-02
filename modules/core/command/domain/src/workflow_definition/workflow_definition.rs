@@ -66,6 +66,7 @@ use super::unknown_scope::UnknownScope;
 use super::workflow_definition_event::Defined;
 use super::workflow_definition_event::Redefined;
 use super::workflow_definition_event::WorkflowDefinitionEvent;
+use super::workflow_definition_event_id::WorkflowDefinitionEventId;
 use super::workflow_definition_id::WorkflowDefinitionId;
 
 /// 反復軸の観測値 (upstream `PER_UNIT_FOR_EACH` — Published Language の値、逐語)。
@@ -144,6 +145,7 @@ impl WorkflowDefinition {
             return Err(LineageMismatch::new(id, compiled.id().clone()));
         }
         let defined = Defined::new(
+            WorkflowDefinitionEventId::generate(),
             id,
             compiled.revision().clone(),
             compiled.graph().clone(),
@@ -187,6 +189,8 @@ impl WorkflowDefinition {
             return Err(RedefineError::SequenceExhausted);
         };
         let event = WorkflowDefinitionEvent::Redefined(Redefined::new(
+            WorkflowDefinitionEventId::generate(),
+            self.id.clone(),
             compiled.revision().clone(),
             compiled.graph().clone(),
             compiled.grid().clone(),
@@ -477,7 +481,7 @@ impl From<(Defined, DateTime<Utc>)> for WorkflowDefinition {
     /// `last_updated_at` を埋められないので、変換の入力は対になる。
     fn from((defined, occurred_at): (Defined, DateTime<Utc>)) -> WorkflowDefinition {
         WorkflowDefinition {
-            id: defined.id().clone(),
+            id: defined.aggregate_id().clone(),
             revision: defined.revision().clone(),
             graph: defined.graph().clone(),
             grid: defined.grid().clone(),
@@ -496,6 +500,11 @@ mod tests {
     #![allow(clippy::indexing_slicing, clippy::panic)]
 
     use super::*;
+
+    /// テスト用の固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn definition_event_id() -> WorkflowDefinitionEventId {
+        WorkflowDefinitionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").unwrap()
+    }
     use crate::workflow_definition::{
         CompiledDefinitionId, ExecutionKind, StageMode, StageNodeBuilder, StageNumber,
     };
@@ -610,7 +619,7 @@ mod tests {
         let WorkflowDefinitionEvent::Defined(defined) = &event else {
             panic!("genesis は Defined を返す: {event:?}");
         };
-        assert_eq!(defined.id(), definition.id());
+        assert_eq!(defined.aggregate_id(), definition.id());
         assert_eq!(defined.revision(), definition.revision());
         assert_eq!(
             definition.revision(),
@@ -699,6 +708,8 @@ mod tests {
         let later = at() + chrono::TimeDelta::try_seconds(90).expect("固定のオフセット");
         let (graph, grid) = artifacts();
         let event = WorkflowDefinitionEvent::Redefined(Redefined::new(
+            definition_event_id(),
+            id("claude"),
             revision('1'),
             graph,
             grid,
@@ -825,6 +836,8 @@ mod tests {
         // 壊れた歴史は回復せずクラッシュが正 (オーナー裁定 2026-08-30)。
         let (graph, grid) = artifacts();
         let event = WorkflowDefinitionEvent::Redefined(crate::workflow_definition::Redefined::new(
+            definition_event_id(),
+            id("claude"),
             revision('1'),
             graph,
             grid,
@@ -1280,5 +1293,26 @@ mod tests {
                 prop_assert_eq!(actual, expected);
             }
         }
+    }
+
+    #[test]
+    fn define_and_redefine_stamp_the_event_with_a_fresh_id_and_the_lineage_id() {
+        // 全変種が `aggregate_id` を運ぶ — かつて `Redefined` は識別子を持たず、復号境界は
+        // 行の `aid` に頼っていた (オーナー裁定 2026-09-02 で解消)。
+        let (graph, grid) = artifacts();
+        let (mut definition, genesis) = WorkflowDefinition::define(
+            id("claude"),
+            &bundle("claude", graph, grid, registry(&REGISTERED)),
+            at(),
+        )
+        .expect("同じ系譜");
+        assert_eq!(genesis.aggregate_id(), definition.id());
+
+        let (graph, grid) = artifacts();
+        let revised = definition
+            .redefine(&bundle("claude", graph, grid, registry(&["alpha"])), at())
+            .expect("内容が違えば改訂できる");
+        assert_eq!(revised.aggregate_id(), definition.id());
+        assert_ne!(genesis.id(), revised.id(), "採番が重複した");
     }
 }

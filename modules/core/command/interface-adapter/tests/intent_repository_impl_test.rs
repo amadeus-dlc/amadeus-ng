@@ -12,7 +12,7 @@
 
 mod support;
 
-use core_command_domain::orchestration::IntentExecutionId;
+use core_command_domain::orchestration::{IntentEvent, IntentExecutionId};
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentAggregateKeyDto, IntentEventDto, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
@@ -28,7 +28,8 @@ use rusqlite::Connection;
 use tempfile::TempDir;
 
 use support::{
-    EXECUTION, INTENT, at, genesis_for, intent_genesis, intent_id, store_intent_genesis,
+    EXECUTION, INTENT, at, genesis_for, intent_genesis, intent_id, other_intent_created,
+    store_intent_genesis,
 };
 
 /// 我々が封筒に書く型判別子 (アダプタの `EVENT_MANIFEST` と同じ綴り)。
@@ -349,4 +350,43 @@ fn opening_under_a_missing_parent_directory_is_a_not_found() {
             path: Some(_)
         }
     ));
+}
+
+#[tokio::test]
+async fn a_delta_row_whose_payload_names_another_intent_is_corrupt() {
+    // b40 以降は payload も `aggregate_id` を運ぶので、復号境界は行の `aid` と全変種で
+    // 照合する。別の intent を名乗る差分行は解釈せず `Corrupt` で止める — 通すと他所の
+    // 歴史がこの集約の再生に流れ込む。
+    let fixture = Fixture::new();
+    store_intent_genesis(&mut fixture.repository()).await;
+
+    // payload は `absent_intent_id()` の誕生記録、行の `aid` は `intent_id()`。
+    let envelope = EventEnvelope::new(
+        IntentAggregateKeyDto::of(&intent_id()),
+        2,
+        at(),
+        IntentEventDto::of(&IntentEvent::Created(other_intent_created()), at()),
+    )
+    .with_manifest(MANIFEST);
+    fixture
+        .store()
+        .persist_event(envelope, 1)
+        .await
+        .expect("行としては書ける");
+
+    let failure = fixture
+        .repository()
+        .find_by_id(&intent_id())
+        .await
+        .expect_err("intent id が食い違う行は解釈しない");
+    assert!(
+        matches!(
+            failure,
+            RepositoryError::Corrupt {
+                seq_nr: Some(2),
+                ..
+            }
+        ),
+        "照合の食い違いは破損として止まる: {failure:?}"
+    );
 }

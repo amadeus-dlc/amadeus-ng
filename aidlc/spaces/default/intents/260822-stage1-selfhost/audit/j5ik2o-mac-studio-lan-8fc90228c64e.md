@@ -31233,3 +31233,78 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: 追加タスク 8 と 9 を TDD で完了しました。コミットはしていません。\n\n**8. `decode_entry` の genesis 通番検査**\n\n誕生イベントと通番の整合を復号境界で検査し、不一致は `Corrupt(InvariantViolation)` にしました。定義行の同名検査と同じ形です。素体フィクスチャは payload が `Unparked` なので通番 1 では構成不
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:08:27Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:09:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:10:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:10:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:12:44Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:14:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T13:14:14Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T13:20:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a217331b26574bc90
+**Message**: CQRS 是正を進めており、b39（RMU の read_* 表投影）はマージ済みで、いまは b40（ドメインイベントに自前の id と aggregate_id を持たせる）を委譲実装中です。次は完了報告をレビューして PR #92 を出します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T14:04:38Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T14:08:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a665f3a8644340b42
+**Message**: RMU が計算結果のリードモデルを作りクエリ側は読むだけにする是正を進行中。b38・b39 はマージ済みで、いまは b40（ドメインイベントに自前の ID と aggregate_id）を実装中。次は完了報告を受けてレビューし PR を出します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T16:55:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b40-event-id
+**Agent ID**: ab40-event-id-647b3221581f1e63
+**Message**: b40 の実装が完了しました。全ゲート緑、コミットはしていません。\n\n## 実装したもの\n\n**新規 12 ファイル**（すべて絶対パスで記載）\n\n- 値オブジェクト 4 種とそのエラー型 8 ファイル。`/Users/j5ik2o/orca/workspaces/amadeus-ng/docs/modules/core/command/domain/src/orchestration/inten
+
+---

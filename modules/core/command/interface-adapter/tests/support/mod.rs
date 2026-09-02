@@ -14,8 +14,9 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, Created, Intent, IntentEvent, IntentExecution, IntentExecutionEvent,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    CommandError, Created, Intent, IntentEvent, IntentEventId, IntentExecution,
+    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -146,11 +147,18 @@ pub(crate) fn genesis() -> (IntentExecution, IntentExecutionEvent) {
     genesis_for(execution_id())
 }
 
+/// 契約テストの固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+#[must_use]
+pub(crate) fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("契約テストの UUIDv7")
+}
+
 /// 契約テストの intent (解決済み合成計画)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
     Intent::from((
         Created::new(
+            intent_event_id(),
             intent_id(),
             WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -259,6 +267,7 @@ pub(crate) fn absent_intent_id() -> IntentId {
 #[must_use]
 pub(crate) fn intent_created() -> Created {
     Created::new(
+        intent_event_id(),
         intent_id(),
         WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -275,11 +284,27 @@ pub(crate) fn intent_genesis() -> (Intent, IntentEvent) {
     (intent(), IntentEvent::Created(intent_created()))
 }
 
+/// **別の** intent の誕生記録 (行と payload の取り違え検査の材料)。
+#[must_use]
+pub(crate) fn other_intent_created() -> Created {
+    Created::new(
+        intent_event_id(),
+        absent_intent_id(),
+        WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+            .expect("契約テストの定義 revision"),
+        StartRequest::new("classic", "contract").with_depth("standard"),
+        stages(),
+        scan(),
+    )
+}
+
 /// **別の** intent (識別子だけ違う — 対の取り違え検査の材料)。
 #[must_use]
 pub(crate) fn other_intent() -> Intent {
     Intent::from((
         Created::new(
+            intent_event_id(),
             absent_intent_id(),
             WorkflowDefinitionId::parse("claude").expect("契約テストの定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))

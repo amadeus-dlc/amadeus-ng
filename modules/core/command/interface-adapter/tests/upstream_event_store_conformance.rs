@@ -38,8 +38,8 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId,
-    StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionId,
+    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -187,6 +187,7 @@ fn stages() -> Vec<StageEntry> {
 fn intent() -> Intent {
     Intent::from((
         Created::new(
+            IntentEventId::generate(),
             intent_id(),
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),

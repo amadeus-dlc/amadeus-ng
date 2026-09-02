@@ -25,13 +25,14 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, Created, Intent, IntentExecution, IntentExecutionEvent,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    AutonomyMode, CommandError, Created, Intent, IntentEvent, IntentEventId, IntentExecution,
+    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, Defined, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
     Redefined, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber,
-    StageSlug, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    StageSlug, WorkflowDefinitionEvent, WorkflowDefinitionEventId, WorkflowDefinitionId,
 };
 use core_command_domain::workspace::StorePath;
 use core_read_model_updater::orchestration::{
@@ -40,6 +41,11 @@ use core_read_model_updater::orchestration::{
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{AggregateId, EventStore};
+
+/// b40 のテスト用固定イベント識別子 (intent 面)。
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
 
 /// ジャーナル行 `manifest` 列に書く型判別子 (読む側の定数と同じ綴り)。
 pub(crate) const MANIFEST: &str = "intent-execution-event/1";
@@ -148,7 +154,6 @@ pub(crate) fn scan() -> WorkspaceScan {
 }
 
 /// 3 ステージの合成計画 (索引 0 = initialization、1〜2 = ideation)。
-#[must_use]
 pub(crate) fn stages() -> Vec<StageEntry> {
     vec![
         StageEntry::new(
@@ -175,23 +180,33 @@ pub(crate) fn stages() -> Vec<StageEntry> {
     ]
 }
 
+/// intent の誕生イベント (`intent()` と同じ材料)。
+#[must_use]
+pub(crate) fn intent_created_event() -> IntentEvent {
+    IntentEvent::Created(intent_created())
+}
+
+/// intent の誕生記録 (`intent()` と同じ材料)。
+#[must_use]
+pub(crate) fn intent_created() -> Created {
+    Created::new(
+        intent_event_id(),
+        intent_id(),
+        WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+            .expect("テストの定義 revision"),
+        StartRequest::new("classic", "contract")
+            .with_depth("standard")
+            .with_review("adversarial"),
+        stages(),
+        scan(),
+    )
+}
+
 /// 指定した集約識別子の genesis (集約と `Started` イベント)。
 #[must_use]
 pub(crate) fn intent() -> Intent {
-    Intent::from((
-        Created::new(
-            intent_id(),
-            WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-                .expect("テストの定義 revision"),
-            StartRequest::new("classic", "contract")
-                .with_depth("standard")
-                .with_review("adversarial"),
-            stages(),
-            scan(),
-        ),
-        at(),
-    ))
+    Intent::from((intent_created(), at()))
 }
 
 /// 指定した実行識別子の genesis (横断読取のテストが 2 実行を並べるのに使う)。
@@ -326,6 +341,12 @@ impl AggregateId for DefinitionStoreKey {
 /// テストの定義 id (ハーネス名 — UUID 空間とは決して衝突しない綴り)。
 pub(crate) const DEFINITION: &str = "claude";
 
+/// b40 のテスト用固定イベント識別子 (定義面)。
+#[must_use]
+pub(crate) fn definition_event_id() -> WorkflowDefinitionEventId {
+    WorkflowDefinitionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").expect("UUIDv7")
+}
+
 /// テストの定義識別子。
 #[must_use]
 pub(crate) fn definition_id() -> WorkflowDefinitionId {
@@ -396,6 +417,7 @@ pub(crate) fn definition_revision(fill: char) -> DefinitionRevision {
 pub(crate) fn defined_event() -> WorkflowDefinitionEvent {
     let (graph, grid, scopes) = definition_content();
     WorkflowDefinitionEvent::Defined(Defined::new(
+        definition_event_id(),
         definition_id(),
         definition_revision('0'),
         graph,
@@ -404,11 +426,13 @@ pub(crate) fn defined_event() -> WorkflowDefinitionEvent {
     ))
 }
 
-/// 改訂イベント (`Redefined` — 系譜 ID を運ばない)。
+/// 改訂イベント (`Redefined` — b40 で系譜 ID を `aggregate_id` として運ぶ)。
 #[must_use]
 pub(crate) fn redefined_event() -> WorkflowDefinitionEvent {
     let (graph, grid, scopes) = definition_content();
     WorkflowDefinitionEvent::Redefined(Redefined::new(
+        definition_event_id(),
+        definition_id(),
         definition_revision('1'),
         graph,
         grid,
@@ -452,12 +476,11 @@ pub(crate) const DEFINITION_MANIFEST: &str = "workflow-definition-event/1";
 pub(crate) async fn seed_intent(path: &StorePath) {
     let mut store: EventStoreForSqlite<IntentStoreKey, serde_json::Value, IntentEventDto> =
         EventStoreForSqlite::new(path.as_path()).expect("本家ストアは開ける");
-    let held = intent();
     let envelope = EventEnvelope::new(
-        IntentStoreKey(held.id().as_str().to_string()),
+        IntentStoreKey(intent().id().as_str().to_string()),
         1,
         at(),
-        IntentEventDto::of(&held),
+        IntentEventDto::of(&intent_created_event(), at()),
     )
     .with_manifest("intent-event/1");
     store

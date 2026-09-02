@@ -20,7 +20,7 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ConsumeDecl, Defined, DefinitionRevision, ExecutionKind, PhaseId,
     Redefined, ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata,
     SensorRef, SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber,
-    StageSlug, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    StageSlug, WorkflowDefinitionEvent, WorkflowDefinitionEventId, WorkflowDefinitionId,
 };
 
 use super::dto_decode_error::DtoDecodeError;
@@ -93,6 +93,10 @@ pub(super) fn content() -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadat
 }
 
 /// フィクスチャの系譜 ID。
+pub(super) fn definition_event_id() -> WorkflowDefinitionEventId {
+    WorkflowDefinitionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").unwrap()
+}
+
 pub(super) fn definition_id() -> WorkflowDefinitionId {
     WorkflowDefinitionId::parse("claude").unwrap()
 }
@@ -106,6 +110,7 @@ pub(super) fn revision(fill: char) -> DefinitionRevision {
 pub(super) fn defined_event() -> WorkflowDefinitionEvent {
     let (graph, grid, scopes) = content();
     WorkflowDefinitionEvent::Defined(Defined::new(
+        definition_event_id(),
         definition_id(),
         revision('0'),
         graph,
@@ -114,23 +119,30 @@ pub(super) fn defined_event() -> WorkflowDefinitionEvent {
     ))
 }
 
-/// 改訂イベント (系譜 ID を運ばない)。
+/// 改訂イベント (b40 で系譜 ID を `aggregate_id` として運ぶようになった)。
 pub(super) fn redefined_event() -> WorkflowDefinitionEvent {
     let (graph, grid, scopes) = content();
-    WorkflowDefinitionEvent::Redefined(Redefined::new(revision('1'), graph, grid, scopes))
+    WorkflowDefinitionEvent::Redefined(Redefined::new(
+        definition_event_id(),
+        definition_id(),
+        revision('1'),
+        graph,
+        grid,
+        scopes,
+    ))
 }
 
 /// 誕生行のワイヤ形式 (逐語)。
 const DEFINED_GOLDEN: &str = concat!(
-    r#"{"Defined":{"id":"claude","revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","content":{"#,
+    r#"{"Defined":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003","aggregate_id":"claude","revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","content":{"#,
     r#""graph":[{"slug":"code-generation","number":"3.1","name":"Code Generation","phase":"Construction","execution":"Conditional","mode":"Mob","condition":"brownfield","lead_agent":"developer","support_agents":["quality"],"for_each":"unit","workspace_requires":true,"produces":["code"],"optional_produces":["notes"],"produces_kinds":{"code":["rust"]},"consumes":[{"artifact":"design","required":true,"conditional_on":"brownfield"}],"requires_stage":["domain-design"],"sensors":["linter"],"scopes":["feature"],"reviewer":"architecture-reviewer","reviewer_max_iterations":2,"review_class":"Adversarial","summary_confirmation":"required","plugin":"acme","enabled":false,"inputs":"design","outputs":"code","rules_in_context":[{"path":"org.md","scope":"Org"}],"sensors_applicable":[{"id":"linter","path":"sensors/linter.md","matches":"*.rs"}]}],"#,
     r#""grid":{"feature":{"code-generation":"Execute"}},"#,
     r#""scopes":[{"name":"feature","depth":"standard","keywords":["api","endpoint"],"skeleton":"On","review_cap":"Advisory","freeform_default":true}]}}}"#,
 );
 
-/// 改訂行のワイヤ形式 (逐語 — 系譜 ID の欄が無いことが誕生との差)。
+/// 改訂行のワイヤ形式 (逐語 — b40 で誕生と同じく `id` / `aggregate_id` を持つ)。
 const REDEFINED_GOLDEN: &str = concat!(
-    r#"{"Redefined":{"revision":"sha256:1111111111111111111111111111111111111111111111111111111111111111","content":{"#,
+    r#"{"Redefined":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003","aggregate_id":"claude","revision":"sha256:1111111111111111111111111111111111111111111111111111111111111111","content":{"#,
     r#""graph":[{"slug":"code-generation","number":"3.1","name":"Code Generation","phase":"Construction","execution":"Conditional","mode":"Mob","condition":"brownfield","lead_agent":"developer","support_agents":["quality"],"for_each":"unit","workspace_requires":true,"produces":["code"],"optional_produces":["notes"],"produces_kinds":{"code":["rust"]},"consumes":[{"artifact":"design","required":true,"conditional_on":"brownfield"}],"requires_stage":["domain-design"],"sensors":["linter"],"scopes":["feature"],"reviewer":"architecture-reviewer","reviewer_max_iterations":2,"review_class":"Adversarial","summary_confirmation":"required","plugin":"acme","enabled":false,"inputs":"design","outputs":"code","rules_in_context":[{"path":"org.md","scope":"Org"}],"sensors_applicable":[{"id":"linter","path":"sensors/linter.md","matches":"*.rs"}]}],"#,
     r#""grid":{"feature":{"code-generation":"Execute"}},"#,
     r#""scopes":[{"name":"feature","depth":"standard","keywords":["api","endpoint"],"skeleton":"On","review_cap":"Advisory","freeform_default":true}]}}}"#,
@@ -157,7 +169,7 @@ fn the_revision_row_is_written_verbatim() {
     let json = serde_json::to_string(&WorkflowDefinitionEventDto::of(&redefined_event())).unwrap();
     assert_eq!(json, REDEFINED_GOLDEN);
     assert!(
-        json.starts_with(r#"{"Redefined":{"revision":"#),
+        json.starts_with(r#"{"Redefined":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003","aggregate_id":"claude","revision":"#),
         "改訂は系譜 ID を運ばない (誕生と違い先頭が revision): {json}"
     );
 }
@@ -206,7 +218,16 @@ fn a_row_with_a_broken_spelling_is_refused_field_by_field() {
     // 閉集合外の綴り・文法外の識別子は、どの欄で落ちたかを材料に載せて拒む。
     // ワイヤ形式の JSON を直接壊す — 実装に破壊用のフックを開けない。
     for (from, to, field) in [
-        (r#""id":"claude""#, r#""id":"  ""#, "id"),
+        (
+            r#""id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003""#,
+            r#""id":"not-a-uuid""#,
+            "id",
+        ),
+        (
+            r#""aggregate_id":"claude""#,
+            r#""aggregate_id":"  ""#,
+            "aggregate_id",
+        ),
         (r#""revision":"sha256:"#, r#""revision":"nope:"#, "revision"),
         (r#""mode":"Mob""#, r#""mode":"mob""#, "mode"),
         (
@@ -284,4 +305,30 @@ fn a_graph_that_breaks_its_invariant_is_refused_as_an_invariant_violation() {
         dto.to_domain().unwrap_err(),
         DtoDecodeError::InvariantViolation
     );
+}
+
+#[test]
+fn a_revision_row_with_a_broken_identifier_is_refused_field_by_field() {
+    // 改訂も b40 で識別子 2 つを運ぶので、誕生と同じ検査を受ける。
+    for (from, to, field) in [
+        (
+            r#""id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003""#,
+            r#""id":"not-a-uuid""#,
+            "id",
+        ),
+        (
+            r#""aggregate_id":"claude""#,
+            r#""aggregate_id":"  ""#,
+            "aggregate_id",
+        ),
+        (r#""revision":"sha256:"#, r#""revision":"nope:"#, "revision"),
+    ] {
+        let broken = REDEFINED_GOLDEN.replacen(from, to, 1);
+        assert_ne!(broken, REDEFINED_GOLDEN, "置換が効いていない: {from}");
+        let dto: WorkflowDefinitionEventDto = serde_json::from_str(&broken).unwrap();
+        match dto.to_domain().unwrap_err() {
+            DtoDecodeError::Malformed { field: got, .. } => assert_eq!(got, field),
+            other => panic!("{field}: 綴りの拒否ではない — {other:?}"),
+        }
+    }
 }

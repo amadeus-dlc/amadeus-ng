@@ -65,9 +65,13 @@ mod engine_signal;
 mod intent;
 mod intent_error;
 mod intent_event;
+mod intent_event_id;
+mod intent_event_id_error;
 mod intent_execution;
 mod intent_execution_error;
 mod intent_execution_event;
+mod intent_execution_event_id;
+mod intent_execution_event_id_error;
 mod intent_execution_id;
 mod intent_execution_id_error;
 mod intent_id;
@@ -93,6 +97,10 @@ mod workspace_scan;
 
 // Domain Primitive
 pub use autonomy_mode::AutonomyMode;
+pub use intent_event_id::IntentEventId;
+pub use intent_event_id_error::IntentEventIdError;
+pub use intent_execution_event_id::IntentExecutionEventId;
+pub use intent_execution_event_id_error::IntentExecutionEventIdError;
 pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
@@ -126,7 +134,7 @@ pub use state_binding::StateBinding;
 // (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
 pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+    Recomposed, StageCompleted, StageRevised, StageSkipped, Started, Unparked,
 };
 // intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
 // `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。

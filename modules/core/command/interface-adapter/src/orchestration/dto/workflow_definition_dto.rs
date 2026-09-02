@@ -1,10 +1,15 @@
 //! `WorkflowDefinition` とその部品の永続化 DTO — 定義ジャーナル・スナップショットのバイト形。
 //!
-//! 誕生記録 ([`DefinedDto`]) が「確立された定義の全内容」を張り、スナップショット行
-//! ([`WorkflowDefinitionDto`]) はそれに**封筒由来のメタデータ** (`last_updated_at`) を
-//! 足した形である (`serde(flatten)` なので行のキーは平坦のまま)。内容の綴りが 1 か所に
-//! 束なるので、面ごとの乖離が構造的に起きない。改訂イベント `Redefined` は系譜 ID を
-//! 持たないぶんだけ狭く、内容部分 ([`DefinitionContentDto`]) を共有する。
+//! スナップショット行 ([`WorkflowDefinitionDto`]) は系譜 ID・内容版・内容
+//! ([`DefinitionContentDto`])・封筒由来の `last_updated_at` を持つ。内容の綴りは誕生記録
+//! ([`DefinedDto`](super::DefinedDto)) と改訂記録 ([`RedefinedDto`](super::RedefinedDto)) が
+//! 同じ [`DefinitionContentDto`] を共有するので、面ごとの乖離が構造的に起きない。
+//!
+//! **スナップショット行にイベント識別子は無い** — 行はイベントではないので同一性を持たない。
+//! イベント面の `id` はイベント自身の識別子であり、系譜 ID は `aggregate_id` が運ぶ
+//! (b40 / オーナー裁定 2026-09-02)。かつてこの行は `DefinedDto` を `serde(flatten)` して
+//! いたが、両者の `id` の意味が分かれたので平坦なフィールドを自分で宣言する形にした
+//! (行のバイトは変わらない)。
 //!
 //! スナップショット行だけが時刻を持つのは、**発生時刻がイベントの材料ではなく封筒の
 //! メタデータ**だからである。ジャーナル行の時刻は封筒が運ぶので payload に重複させない
@@ -24,12 +29,12 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::workflow_definition::{
-    ConsumeDecl, RuleInContext, ScopeGrid, ScopeMetadata, SensorRef, StageGraph, StageNode,
-    StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+    ConsumeDecl, Defined, DefinitionRevision, RuleInContext, ScopeGrid, ScopeMetadata, SensorRef,
+    StageGraph, StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+    WorkflowDefinitionEventId, WorkflowDefinitionId,
 };
 use serde::{Deserialize, Serialize};
 
-use super::defined_dto::DefinedDto;
 use super::dto_decode_error::DtoDecodeError;
 use super::dto_vocabulary::{
     execution_kind_of, execution_kind_spelling, phase_of, phase_spelling, plan_action_of,
@@ -45,9 +50,13 @@ use super::dto_vocabulary::{
 /// 最終更新時刻だけは封筒が持たないので行に書く (モジュール doc 参照)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowDefinitionDto {
-    /// 誕生記録と同じ内容 — 行のキーは平坦のまま (`flatten`)。
-    #[serde(flatten)]
-    defined: DefinedDto,
+    /// 集約の系譜 ID。**イベント面の `id` とは意味が違う** — あちらはイベント自身の識別子で
+    /// ある (b40)。スナップショット行はイベントではないので同一性を持たない。
+    id: String,
+    /// この時点の内容版。
+    revision: String,
+    /// 誕生記録と同じ内容 (綴りは [`DefinitionContentDto`] を共有する)。
+    content: DefinitionContentDto,
     /// 最後に適用したイベントの発生時刻 (封筒由来のメタデータ)。
     last_updated_at: DateTime<Utc>,
 }
@@ -138,15 +147,13 @@ impl WorkflowDefinitionDto {
     #[must_use]
     pub fn of(definition: &WorkflowDefinition) -> WorkflowDefinitionDto {
         WorkflowDefinitionDto {
-            defined: DefinedDto {
-                id: definition.id().as_str().to_string(),
-                revision: definition.revision().as_str().to_string(),
-                content: DefinitionContentDto::of(
-                    definition.graph(),
-                    definition.grid(),
-                    definition.scopes(),
-                ),
-            },
+            id: definition.id().as_str().to_string(),
+            revision: definition.revision().as_str().to_string(),
+            content: DefinitionContentDto::of(
+                definition.graph(),
+                definition.grid(),
+                definition.scopes(),
+            ),
             last_updated_at: *definition.last_updated_at(),
         }
     }
@@ -161,10 +168,23 @@ impl WorkflowDefinitionDto {
     /// 閉集合外の綴り・文法外の識別子は `Malformed`、グラフの不変条件違反 (slug 重複など)
     /// は `InvariantViolation` を返す。
     pub fn to_domain(&self) -> Result<WorkflowDefinition, DtoDecodeError> {
-        Ok(WorkflowDefinition::from((
-            self.defined.to_domain()?,
-            self.last_updated_at,
-        )))
+        let (graph, grid, scopes) = self.content.to_domain()?;
+        // `WorkflowDefinition` の唯一の再構成経路が `From<(Defined, occurred_at)>` なので、
+        // スナップショットからの復元もここを通す。**イベント識別子はここで捨てられる**値で
+        // ある — スナップショット行はイベントではないので同一性を持たず、集約も `Defined` の
+        // `id` を保持しない。ジャーナル面の復号は [`DefinedDto`] が行い、そちらは行に書かれた
+        // 本物の識別子を運ぶ。
+        let defined = Defined::new(
+            WorkflowDefinitionEventId::generate(),
+            WorkflowDefinitionId::parse(&self.id)
+                .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,
+            DefinitionRevision::parse(&self.revision)
+                .map_err(|_| DtoDecodeError::malformed("revision", self.revision.clone()))?,
+            graph,
+            grid,
+            scopes,
+        );
+        Ok(WorkflowDefinition::from((defined, self.last_updated_at)))
     }
 }
 

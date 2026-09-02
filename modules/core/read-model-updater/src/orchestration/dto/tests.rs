@@ -13,8 +13,9 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted,
-    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    IntentEvent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+    IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay, StageEntry, StageRevised,
+    StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -22,6 +23,21 @@ use core_command_domain::workflow_definition::{
 };
 
 use super::{DtoDecodeError, IntentEventDto, IntentExecutionEventDto};
+
+/// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+fn event_id() -> IntentExecutionEventId {
+    IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").expect("UUIDv7")
+}
+
+/// b40 のテスト用集約識別子 (行の `aid` と payload の `aggregate_id` を揃える)。
+fn execution_id() -> IntentExecutionId {
+    IntentExecutionId::parse(EXECUTION).expect("UUIDv7")
+}
+
+/// b40 のテスト用固定イベント識別子 (intent 面)。
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
@@ -70,45 +86,53 @@ fn stages() -> Vec<StageEntry> {
     ]
 }
 
+/// intent の誕生イベント (行を組む材料)。
+fn created_event() -> IntentEvent {
+    IntentEvent::Created(created())
+}
+
 fn intent() -> Intent {
-    Intent::from((
-        Created::new(
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "contract")
-                .with_depth("standard")
-                .with_review("adversarial"),
-            stages(),
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .expect("単一行"),
-        ),
-        at(),
-    ))
+    Intent::from((created(), at()))
+}
+
+fn created() -> Created {
+    Created::new(
+        intent_event_id(),
+        IntentId::parse(INTENT).expect("UUIDv7"),
+        WorkflowDefinitionId::parse("claude").expect("定義 id"),
+        DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+        StartRequest::new("classic", "contract")
+            .with_depth("standard")
+            .with_review("adversarial"),
+        stages(),
+        WorkspaceScan::new(
+            BrownfieldGreenfield::Greenfield,
+            "Unknown",
+            "Unknown",
+            "Unknown",
+        )
+        .expect("単一行"),
+    )
 }
 
 /// intent ジャーナル行の逐語 (issue #56 — 計画・表示属性・走査結果はこの面が正本)。
 ///
 /// 書く側 (command interface-adapter の `IntentEventDto`) と同じバイトであることは
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
-const INTENT_ROW: &str = r#"{"Created":{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}}"#;
+const INTENT_ROW: &str = r#"{"Created":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001","aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}}"#;
 
 /// `Started` 行の逐語 — genesis の材料 3 点 (実行 id・intent id・解決済み計画)。
 ///
 /// 書く側 (command interface-adapter の `StartedDto`) と**同一の文字列**であることは
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
-const STARTED_ROW: &str = r#"{"Started":{"aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
+const STARTED_ROW: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
             IntentExecutionEvent::Started(Started::new(
+                event_id(),
                 IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
                 IntentId::parse(INTENT).expect("UUIDv7"),
                 stages(),
@@ -116,60 +140,93 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             STARTED_ROW,
         ),
         (
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
-            r#"{"StageCompleted":{"stage":"state-init"}}"#,
+            IntentExecutionEvent::StageCompleted(StageCompleted::new(
+                event_id(),
+                execution_id(),
+                slug("state-init"),
+            )),
+            r#"{"StageCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"state-init"}}"#,
         ),
         (
             IntentExecutionEvent::GateOpened(GateOpened::new(
+                event_id(),
+                execution_id(),
                 slug("intent-capture"),
                 vec!["a.md".to_string()],
             )),
-            r#"{"GateOpened":{"stage":"intent-capture","artifacts":["a.md"]}}"#,
+            r#"{"GateOpened":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","artifacts":["a.md"]}}"#,
         ),
         (
             IntentExecutionEvent::GateApproved(GateApproved::new(
+                event_id(),
+                execution_id(),
                 slug("intent-capture"),
                 Some("ok".to_string()),
             )),
-            r#"{"GateApproved":{"stage":"intent-capture","user_input":"ok"}}"#,
+            r#"{"GateApproved":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","user_input":"ok"}}"#,
         ),
         (
             IntentExecutionEvent::GateRejected(GateRejected::new(
+                event_id(),
+                execution_id(),
                 slug("intent-capture"),
                 Some("why".to_string()),
             )),
-            r#"{"GateRejected":{"stage":"intent-capture","feedback":"why"}}"#,
+            r#"{"GateRejected":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","feedback":"why"}}"#,
         ),
         (
-            IntentExecutionEvent::StageRevised(StageRevised::new(slug("intent-capture"))),
-            r#"{"StageRevised":{"stage":"intent-capture"}}"#,
+            IntentExecutionEvent::StageRevised(StageRevised::new(
+                event_id(),
+                execution_id(),
+                slug("intent-capture"),
+            )),
+            r#"{"StageRevised":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture"}}"#,
         ),
         (
             IntentExecutionEvent::StageSkipped(StageSkipped::new(
+                event_id(),
+                execution_id(),
                 slug("intent-capture"),
                 "not needed".to_string(),
             )),
-            r#"{"StageSkipped":{"stage":"intent-capture","reason":"not needed"}}"#,
+            r#"{"StageSkipped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reason":"not needed"}}"#,
         ),
         (
-            IntentExecutionEvent::Jumped(Jumped::new(slug("intent-capture"))),
-            r#"{"Jumped":{"target":"intent-capture"}}"#,
+            IntentExecutionEvent::Jumped(Jumped::new(
+                event_id(),
+                execution_id(),
+                slug("intent-capture"),
+            )),
+            r#"{"Jumped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","target":"intent-capture"}}"#,
         ),
         (
-            IntentExecutionEvent::Parked(Parked::new(slug("intent-capture"))),
-            r#"{"Parked":{"stage":"intent-capture"}}"#,
+            IntentExecutionEvent::Parked(Parked::new(
+                event_id(),
+                execution_id(),
+                slug("intent-capture"),
+            )),
+            r#"{"Parked":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture"}}"#,
         ),
-        (IntentExecutionEvent::Unparked, r#""Unparked""#),
+        (
+            IntentExecutionEvent::Unparked(Unparked::new(event_id(), execution_id())),
+            r#"{"Unparked":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"}}"#,
+        ),
         (
             IntentExecutionEvent::Recomposed(Recomposed::new(
+                event_id(),
+                execution_id(),
                 vec![slug("scope-definition")],
                 vec![slug("intent-capture")],
             )),
-            r#"{"Recomposed":{"skipped":["scope-definition"],"added":["intent-capture"]}}"#,
+            r#"{"Recomposed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","skipped":["scope-definition"],"added":["intent-capture"]}}"#,
         ),
         (
-            IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(AutonomyMode::Autonomous)),
-            r#"{"AutonomyModeSet":{"mode":"Autonomous"}}"#,
+            IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
+                event_id(),
+                execution_id(),
+                AutonomyMode::Autonomous,
+            )),
+            r#"{"AutonomyModeSet":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","mode":"Autonomous"}}"#,
         ),
     ]
 }
@@ -208,22 +265,59 @@ fn a_row_whose_spelling_is_outside_the_closed_set_is_refused() {
 }
 
 #[test]
-#[should_panic(expected = "recorded history violates the plan invariants")]
-fn a_row_that_breaks_an_aggregate_invariant_crashes_reconstruction() {
-    // 形は読めるが Always Valid を破る行 — 再構成は失敗を返さず、壊れた歴史はクラッシュが正
-    // (オーナー裁定 2026-08-30)。
+fn a_row_whose_plan_breaks_its_invariants_is_refused_at_the_decode_boundary() {
+    // 形は読めるが計画の不変条件を破る行は、**復号の境界で** `InvariantViolation` として
+    // 止める (b40 — `Started` 面と同じ規律を intent 面にも揃えた)。通すと集約の再構成まで
+    // 届いてクラッシュするが、行のバイトから分類できる破損をクラッシュに任せる理由は無い。
     // 先頭ステージ (initialization) を SKIP に畳むと Always Valid を破る。
     let tampered = INTENT_ROW.replacen(r#""plan_action":"Execute""#, r#""plan_action":"Skip""#, 1);
     let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
-    let _ = decoded.to_domain();
+    assert_eq!(decoded.to_domain(), Err(DtoDecodeError::InvariantViolation));
+}
+
+#[test]
+#[should_panic(expected = "recorded history violates the plan invariants")]
+fn an_invariant_violation_that_slips_past_the_decode_boundary_crashes_reconstruction() {
+    // 復号の境界を通り抜けた不変条件違反は回復せずクラッシュが正である (オーナー裁定
+    // 2026-08-30 — 再構成は失敗を返さない)。b40 で境界の検査が増えたが、**クラッシュ規律
+    // そのものは変わらない**ことをここで固定する: 検査を経ない `Intent::from` は落ちる。
+    let broken = vec![StageEntry::new(
+        slug("state-init"),
+        PhaseId::Initialization,
+        PlanAction::Skip,
+        false,
+        display("0.1", "State Init"),
+    )];
+    let _ = Intent::from((
+        Created::new(
+            intent_event_id(),
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "contract"),
+            broken,
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
+    ));
 }
 
 #[test]
 fn a_malformed_identifier_is_refused_with_its_field() {
     for (from, to) in [
         (
-            r#""id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
+            r#""id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001""#,
             r#""id":"not-a-uuid""#,
+        ),
+        (
+            r#""aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
+            r#""aggregate_id":"not-a-uuid""#,
         ),
         (r#""definition_id":"claude""#, r#""definition_id":"""#),
         (
@@ -330,7 +424,7 @@ fn an_optional_request_field_round_trips_when_present() {
 #[test]
 fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
     // 列の中の 1 本でも文法外の slug は復号を止める (slugs_of の失敗面)。
-    let tampered = r#"{"Recomposed":{"skipped":["NOT A SLUG"],"added":[]}}"#;
+    let tampered = r#"{"Recomposed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","skipped":["NOT A SLUG"],"added":[]}}"#;
     let decoded: IntentExecutionEventDto =
         serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err());
@@ -342,7 +436,8 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
 )]
 #[test]
 fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
-    let json = serde_json::to_string(&IntentEventDto::of(&intent())).expect("DTO は直列化できる");
+    let json = serde_json::to_string(&IntentEventDto::of(&created_event(), at()))
+        .expect("DTO は直列化できる");
     assert_eq!(json, INTENT_ROW, "intent ジャーナルのワイヤ形式が変わった");
 
     let decoded: IntentEventDto = serde_json::from_str(INTENT_ROW).expect("記録済みの行は読める");
@@ -355,13 +450,24 @@ fn the_intent_journal_row_serialises_to_the_recorded_bytes_and_round_trips() {
 
 #[test]
 fn a_malformed_intent_row_is_refused() {
-    let broken = INTENT_ROW.replacen(
-        r#""id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
-        r#""id":"not-a-uuid""#,
-        1,
-    );
-    let decoded: IntentEventDto = serde_json::from_str(&broken).expect("形は DTO として読める");
-    assert!(decoded.to_domain().is_err(), "識別子の文法違反は拒否");
+    for from in [
+        r#""id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001""#,
+        r#""aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
+    ] {
+        let broken = INTENT_ROW.replacen(
+            from,
+            &from
+                .replace("-1bd8-76eb-aeea-5aa303ebd5b6", "")
+                .replace("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001", "not-a-uuid")
+                .replace("01a02785", "not-a-uuid"),
+            1,
+        );
+        let decoded: IntentEventDto = serde_json::from_str(&broken).expect("形は DTO として読める");
+        assert!(
+            decoded.to_domain().is_err(),
+            "識別子の文法違反は拒否: {from}"
+        );
+    }
 }
 
 #[test]
@@ -389,6 +495,7 @@ fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
         ("索引 0 が非 EXECUTE", vec![skipped_head]),
     ] {
         let dto = IntentExecutionEventDto::of(&IntentExecutionEvent::Started(Started::new(
+            event_id(),
             IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
             IntentId::parse(INTENT).expect("UUIDv7"),
             plan,
@@ -397,6 +504,36 @@ fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
             dto.to_domain().expect_err("破れた計画は復号の境界で止める"),
             DtoDecodeError::InvariantViolation,
             "{label}"
+        );
+    }
+}
+
+#[test]
+fn an_unparked_row_with_a_broken_identifier_is_refused_with_its_field() {
+    // `Unparked` はドメインの材料を持たないが識別子は持つ (b40)。材料が無い変種でも
+    // 復号の検査を素通ししないことを固定する。
+    let row = every_variant()
+        .into_iter()
+        .find_map(|(event, json)| {
+            matches!(event, IntentExecutionEvent::Unparked(_)).then_some(json)
+        })
+        .expect("Unparked の行がある");
+    for (field, outlaw) in [
+        ("id", "0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002"),
+        ("aggregate_id", "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"),
+    ] {
+        let tampered = row.replacen(
+            &format!(r#""{field}":"{outlaw}""#),
+            &format!(r#""{field}":"not-a-uuid""#),
+            1,
+        );
+        assert_ne!(tampered, row, "置換対象が行に無い: {field}");
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&tampered).expect("JSON としては読める");
+        let error = decoded.to_domain().expect_err("文法外の識別子は拒否");
+        assert!(
+            matches!(&error, DtoDecodeError::Malformed { field: got, .. } if *got == field),
+            "{field}: 綴りの拒否ではない — {error:?}"
         );
     }
 }

@@ -48,8 +48,9 @@ use super::intent::Intent;
 use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+    Recomposed, StageCompleted, StageRevised, StageSkipped, Started, Unparked,
 };
+use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
@@ -161,7 +162,12 @@ impl IntentExecution {
         intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> (IntentExecution, IntentExecutionEvent) {
-        let started = Started::new(id, intent.id().clone(), intent.stages().to_vec());
+        let started = Started::new(
+            IntentExecutionEventId::generate(),
+            id,
+            intent.id().clone(),
+            intent.stages().to_vec(),
+        );
         let execution = IntentExecution::from((started.clone(), occurred_at));
         (execution, IntentExecutionEvent::Started(started))
     }
@@ -594,6 +600,16 @@ impl IntentExecution {
         Ok(event)
     }
 
+    /// これから返すイベントの識別子を採番する。
+    ///
+    /// **採番は集約のコマンド内**で行う (オーナー裁定 2026-09-02 Q1 = A、本家サンプルの
+    /// `UserAccountEventId::new()` と同型)。集約は時計も乱数も持たないのが原則だが、
+    /// イベント id は識別だけの値で投影・ITF の答えに影響しないので、その例外として認める
+    /// (`coding-rules/aggregate-commands.md`)。発生時刻は従来どおり呼出側が渡す。
+    fn next_event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::generate()
+    }
+
     // ---- W2: decide (11 コマンド、1 コマンド 1 イベント) ----
     //
     // 以下のコマンドはすべて `Result<IntentExecutionEvent, CommandError>` を返す —
@@ -620,7 +636,11 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, false)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = StageCompleted::new(self.slug_of(stage)?);
+        let material = StageCompleted::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+        );
         self.commit(IntentExecutionEvent::StageCompleted(material), occurred_at)
     }
 
@@ -639,7 +659,12 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, true)?;
         self.require_checkbox(stage, &[CheckboxState::InProgress])?;
-        let material = GateOpened::new(self.slug_of(stage)?, artifacts);
+        let material = GateOpened::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+            artifacts,
+        );
         self.commit(IntentExecutionEvent::GateOpened(material), occurred_at)
     }
 
@@ -662,7 +687,12 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = GateApproved::new(self.slug_of(stage)?, user_input);
+        let material = GateApproved::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+            user_input,
+        );
         self.commit(IntentExecutionEvent::GateApproved(material), occurred_at)
     }
 
@@ -680,7 +710,12 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage, true)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = GateRejected::new(self.slug_of(stage)?, feedback);
+        let material = GateRejected::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+            feedback,
+        );
         self.commit(IntentExecutionEvent::GateRejected(material), occurred_at)
     }
 
@@ -697,7 +732,11 @@ impl IntentExecution {
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
         self.require_checkbox(stage, &[CheckboxState::Revising])?;
-        let material = StageRevised::new(self.slug_of(stage)?);
+        let material = StageRevised::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+        );
         self.commit(IntentExecutionEvent::StageRevised(material), occurred_at)
     }
 
@@ -724,7 +763,12 @@ impl IntentExecution {
         if !(conditional || self.effective_plan(stage) == Some(PlanAction::Skip)) {
             return Err(CommandError::NotSkippable(stage));
         }
-        let material = StageSkipped::new(self.slug_of(stage)?, reason);
+        let material = StageSkipped::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+            reason,
+        );
         self.commit(IntentExecutionEvent::StageSkipped(material), occurred_at)
     }
 
@@ -743,7 +787,11 @@ impl IntentExecution {
         // ガード (到達可否) はここ、読み飛ばし・巻き戻しの導出は適用側 (`apply_jump`) が
         // 持つ — イベントは到達点という事実だけを運ぶ (オーナー裁定 2026-08-30)。
         let _ = self.jump_resolve(intent, target)?;
-        let material = Jumped::new(self.slug_of(target)?);
+        let material = Jumped::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(target)?,
+        );
         self.commit(IntentExecutionEvent::Jumped(material), occurred_at)
     }
 
@@ -761,7 +809,11 @@ impl IntentExecution {
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
-        let material = Parked::new(self.slug_of(stage)?);
+        let material = Parked::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+        );
         self.commit(IntentExecutionEvent::Parked(material), occurred_at)
     }
 
@@ -781,7 +833,8 @@ impl IntentExecution {
         if !self.parked_active() {
             return Err(CommandError::NotRunning);
         }
-        self.commit(IntentExecutionEvent::Unparked, occurred_at)
+        let material = Unparked::new(IntentExecution::next_event_id(), self.id.clone());
+        self.commit(IntentExecutionEvent::Unparked(material), occurred_at)
     }
 
     /// 実効プランの再形成 — `Recomposed` (BR1.8)。反転対象は 1 件以上で、いずれかが不正なら
@@ -826,7 +879,12 @@ impl IntentExecution {
         }
         // 適用後の in-scope 列はイベントに載せない — 状態は反転の事実から導ける
         // (オーナー裁定 2026-08-30)。
-        let material = Recomposed::new(skipped, added);
+        let material = Recomposed::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            skipped,
+            added,
+        );
         self.commit(IntentExecutionEvent::Recomposed(material), occurred_at)
     }
 
@@ -851,7 +909,11 @@ impl IntentExecution {
     ) -> Result<IntentExecutionEvent, CommandError> {
         self.guard_running_for(intent)?;
         self.commit(
-            IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(mode)),
+            IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
+                IntentExecution::next_event_id(),
+                self.id.clone(),
+                mode,
+            )),
             occurred_at,
         )
     }
@@ -949,7 +1011,7 @@ impl IntentExecution {
                 let stage = self.resolve(parked.stage())?;
                 self.parked_at = Some(stage);
             }
-            IntentExecutionEvent::Unparked => {
+            IntentExecutionEvent::Unparked(_) => {
                 self.parked_at = None;
             }
             IntentExecutionEvent::Recomposed(recomposed) => {
@@ -1319,6 +1381,17 @@ mod tests {
     #![allow(clippy::indexing_slicing, clippy::panic)]
 
     use super::*;
+    use crate::orchestration::IntentEventId;
+
+    /// テスト用の固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+    fn intent_event_id() -> IntentEventId {
+        IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap()
+    }
+
+    /// テスト用の固定イベント識別子 (同上 — 実行のイベント)。
+    fn execution_event_id() -> IntentExecutionEventId {
+        IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").unwrap()
+    }
     use crate::orchestration::{
         AutonomyMode, CommandError, Created, Intent, IntentError, IntentEvent,
         IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, StageCompleted,
@@ -1562,6 +1635,7 @@ mod tests {
     fn plan(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Intent {
         Intent::from((
             Created::new(
+                intent_event_id(),
                 intent_id(),
                 def_id("claude"),
                 revision('0'),
@@ -1599,6 +1673,7 @@ mod tests {
             .collect();
         Run::start(Intent::from((
             Created::new(
+                intent_event_id(),
                 intent_id(),
                 def_id("claude"),
                 revision('0'),
@@ -1961,6 +2036,7 @@ mod tests {
     fn foreign_plan(n: usize) -> Intent {
         Intent::from((
             Created::new(
+                intent_event_id(),
                 IntentId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").unwrap(),
                 def_id("claude"),
                 revision('0'),
@@ -2404,7 +2480,11 @@ mod tests {
     fn apply_event_crashes_on_a_sequence_gap() {
         // 通番の飛びは壊れた歴史 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0)));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            execution_event_id(),
+            execution_id(),
+            slug(0),
+        ));
         w.apply_event(9, occurred(), &event);
     }
 
@@ -2418,7 +2498,11 @@ mod tests {
             intent: base.intent,
             execution: base.execution.with_seq_nr(usize::MAX),
         };
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(0)));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            execution_event_id(),
+            execution_id(),
+            slug(0),
+        ));
         w.apply_event(1, occurred(), &event);
     }
 
@@ -2443,7 +2527,11 @@ mod tests {
     fn apply_event_crashes_on_an_unknown_stage() {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(unknown));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            execution_event_id(),
+            execution_id(),
+            unknown,
+        ));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2452,7 +2540,11 @@ mod tests {
     fn apply_event_crashes_on_an_event_that_breaks_an_invariant() {
         let mut w = all_exec(3);
         // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(slug(1)));
+        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+            execution_event_id(),
+            execution_id(),
+            slug(1),
+        ));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2461,6 +2553,7 @@ mod tests {
     fn apply_event_crashes_on_a_started_outside_genesis() {
         let mut w = all_exec(3);
         let event = IntentExecutionEvent::Started(Started::new(
+            execution_event_id(),
             execution_id(),
             intent_id(),
             w.stages().to_vec(),
@@ -2506,7 +2599,11 @@ mod tests {
         let mut w = start_with(1, &[Execute, Skip, Execute, Execute], &[false; 4]);
         // 誕生カーソルは 2 (索引 1 は実効 SKIP なので飛ばされている)。3 へ前方跳躍。
         assert_eq!(w.cursor(), at(&w, 2));
-        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
+        let event = IntentExecutionEvent::Jumped(Jumped::new(
+            execution_event_id(),
+            execution_id(),
+            slug(3),
+        ));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(
             w.checkbox(at(&w, 1)),
@@ -2522,7 +2619,11 @@ mod tests {
     fn a_forward_jump_skips_pending_in_scope_intermediates() {
         // 中間の in-scope は Pending でも skipped になる (02 §8 — v2 の忠実性修正のまま)。
         let mut w = all_exec(4);
-        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(3)));
+        let event = IntentExecutionEvent::Jumped(Jumped::new(
+            execution_event_id(),
+            execution_id(),
+            slug(3),
+        ));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped), "出発点 (稼働中)");
         assert_eq!(
@@ -2540,7 +2641,11 @@ mod tests {
         w.open_gate(Vec::new(), occurred()).unwrap();
         w.approve_gate(None, occurred()).unwrap();
         // カーソルは 2。redo で 2 へ跳び直す。
-        let event = IntentExecutionEvent::Jumped(Jumped::new(slug(2)));
+        let event = IntentExecutionEvent::Jumped(Jumped::new(
+            execution_event_id(),
+            execution_id(),
+            slug(2),
+        ));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(w.cursor(), at(&w, 2));
         assert_eq!(w.checkbox(at(&w, 2)), Some(InProgress));
@@ -2552,7 +2657,11 @@ mod tests {
     fn a_jump_event_to_an_unknown_stage_crashes() {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
-        let event = IntentExecutionEvent::Jumped(Jumped::new(unknown));
+        let event = IntentExecutionEvent::Jumped(Jumped::new(
+            execution_event_id(),
+            execution_id(),
+            unknown,
+        ));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2562,7 +2671,11 @@ mod tests {
         // park の位置はカーソルと同じでなければならない (parked_position)。誕生カーソル 1 の
         // まま、ステージ 2 を park するイベントは壊れた歴史である。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Parked(Parked::new(slug(2)));
+        let event = IntentExecutionEvent::Parked(Parked::new(
+            execution_event_id(),
+            execution_id(),
+            slug(2),
+        ));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2573,7 +2686,12 @@ mod tests {
         // (cursor_in_scope)。カーソル上のステージ (誕生カーソルは 1) を SKIP へ畳む差分は
         // 壊れた歴史である。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(1)], Vec::new()));
+        let event = IntentExecutionEvent::Recomposed(Recomposed::new(
+            execution_event_id(),
+            execution_id(),
+            vec![slug(1)],
+            Vec::new(),
+        ));
         w.apply_event(2, occurred(), &event);
     }
 
@@ -2986,14 +3104,26 @@ mod tests {
             (
                 Revising,
                 vec![
-                    IntentExecutionEvent::GateOpened(GateOpened::new(slug(1), Vec::new())),
-                    IntentExecutionEvent::GateRejected(GateRejected::new(slug(1), None)),
+                    IntentExecutionEvent::GateOpened(GateOpened::new(
+                        execution_event_id(),
+                        execution_id(),
+                        slug(1),
+                        Vec::new(),
+                    )),
+                    IntentExecutionEvent::GateRejected(GateRejected::new(
+                        execution_event_id(),
+                        execution_id(),
+                        slug(1),
+                        None,
+                    )),
                 ],
                 true,
             ),
             (
                 AwaitingApproval,
                 vec![IntentExecutionEvent::GateOpened(GateOpened::new(
+                    execution_event_id(),
+                    execution_id(),
                     slug(1),
                     Vec::new(),
                 ))],
@@ -3008,12 +3138,21 @@ mod tests {
             delta.push((
                 delta.len() + 2,
                 occurred(),
-                IntentExecutionEvent::Parked(Parked::new(slug(1))),
+                IntentExecutionEvent::Parked(Parked::new(
+                    execution_event_id(),
+                    execution_id(),
+                    slug(1),
+                )),
             ));
             delta.push((
                 delta.len() + 2,
                 occurred(),
-                IntentExecutionEvent::Recomposed(Recomposed::new(vec![slug(1)], Vec::new())),
+                IntentExecutionEvent::Recomposed(Recomposed::new(
+                    execution_event_id(),
+                    execution_id(),
+                    vec![slug(1)],
+                    Vec::new(),
+                )),
             ));
             let execution = IntentExecution::replay(base.execution.clone(), delta);
             let w = Run {
@@ -3154,6 +3293,7 @@ mod tests {
     fn start_synthetic(stages: Vec<StageEntry>) -> Run {
         Run::start(Intent::from((
             Created::new(
+                intent_event_id(),
                 intent_id(),
                 def_id("claude"),
                 revision('0'),
@@ -3317,5 +3457,46 @@ mod tests {
             }
         }
 
+    }
+
+    #[test]
+    fn every_command_stamps_the_event_with_this_aggregate_and_a_fresh_id() {
+        // イベントはエンティティ — 自前の id を持ち、どの集約の事実かを `aggregate_id` で
+        // 述べる (オーナー裁定 2026-09-02)。採番は集約のコマンド内なので、コマンドを打つ
+        // たびに別の id になる。
+        let intent = plan(1, &[Execute, Execute, Execute], &[false, false, false]);
+        let (mut run, genesis) = Run::genesis(intent);
+        assert_eq!(genesis.aggregate_id(), run.id());
+
+        // 誕生時点で initialization は完了済みで、カーソルは最初の実ステージ (ゲート付き)
+        // に立っている (issue #76) ので、ゲートの語彙から打ち始める。
+        let mut minted = vec![genesis.id().clone()];
+        for event in [
+            run.open_gate(Vec::new(), occurred()).expect("ゲート開放"),
+            run.reject_gate(None, occurred()).expect("差し戻し"),
+            run.revise_stage(occurred()).expect("ゲート再入"),
+            run.approve_gate(None, occurred()).expect("承認"),
+            run.park(occurred()).expect("park"),
+            run.unpark(occurred()).expect("unpark"),
+            run.switch_autonomy(AutonomyMode::Autonomous, occurred())
+                .expect("自律モード"),
+        ] {
+            assert_eq!(event.aggregate_id(), run.id());
+            minted.push(event.id().clone());
+        }
+
+        let distinct: std::collections::HashSet<&IntentExecutionEventId> = minted.iter().collect();
+        assert_eq!(distinct.len(), minted.len(), "イベント id が重複した");
+    }
+
+    #[test]
+    fn two_consecutive_commands_mint_different_event_ids() {
+        // 連続する 2 コマンドの id が違うこと — 集約 ID の流用ならここが同値になる。
+        let mut run = all_exec(3);
+        let first = run.open_gate(Vec::new(), occurred()).expect("ゲート開放");
+        let second = run.reject_gate(None, occurred()).expect("差し戻し");
+        assert_ne!(first.id(), second.id());
+        assert_eq!(first.aggregate_id(), second.aggregate_id());
+        assert_eq!(first.aggregate_id(), run.id());
     }
 }

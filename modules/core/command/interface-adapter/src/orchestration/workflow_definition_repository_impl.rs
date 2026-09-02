@@ -405,6 +405,18 @@ where
                         seq_nr: Some(envelope.seq_nr()),
                         source: Box::new(CorruptDetail::Undecodable(error)),
                     })?;
+            // 行の `aid` と payload の `aggregate_id` を照合する — 食い違う行はどちらかが
+            // 嘘をついている。b40 で `Redefined` も系譜 ID を運ぶようになったので、genesis
+            // 以外の行にも照合相手ができた (かつては「行の `aid` が正」の片肺だった)。
+            if event.aggregate_id() != id {
+                return Err(RepositoryError::Corrupt {
+                    id: id.clone(),
+                    seq_nr: Some(envelope.seq_nr()),
+                    source: Box::new(CorruptDetail::Undecodable(
+                        DtoDecodeError::InvariantViolation,
+                    )),
+                });
+            }
             events.push((envelope.seq_nr(), *envelope.occurred_at(), event));
         }
         // 差分再生 — 壊れた歴史はドメインがクラッシュで止める (オーナー裁定 2026-08-30)。
@@ -449,8 +461,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use core_command_domain::workflow_definition::{
-        CompiledDefinition, CompiledDefinitionId, ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata,
-        StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
+        CompiledDefinition, CompiledDefinitionId, DefinitionRevision, ExecutionKind, PhaseId,
+        Redefined, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber,
+        StageSlug, WorkflowDefinitionEventId,
     };
 
     fn id() -> WorkflowDefinitionId {
@@ -709,5 +722,98 @@ mod tests {
         let workflow_definition_repository = workflow_definition_repository();
         assert_eq!(workflow_definition_repository.store_path(), None);
         assert!(workflow_definition_repository.reopened().location.is_none());
+    }
+
+    /// 別系譜を名乗る改訂イベント (行の `aid` と payload が食い違う材料)。
+    fn impostor_revision() -> WorkflowDefinitionEvent {
+        let (graph, grid, scopes) = content(3);
+        let revision = DefinitionRevision::of_content(&graph, &grid, &scopes);
+        WorkflowDefinitionEvent::Redefined(Redefined::new(
+            WorkflowDefinitionEventId::generate(),
+            other_id(),
+            revision,
+            graph,
+            grid,
+            scopes,
+        ))
+    }
+
+    #[tokio::test]
+    async fn a_delta_row_whose_payload_names_another_lineage_is_corrupt() {
+        // b40 以降は改訂も系譜 ID を `aggregate_id` として運ぶので、復号境界は行の `aid` と
+        // 全変種で照合する。別系譜を名乗る差分行は解釈せず `Corrupt` で止める — 通すと
+        // 他所の歴史がこの定義の状態遷移に流れ込む。
+        let mut workflow_definition_repository = workflow_definition_repository();
+        let (definition, event) = genesis(2);
+        workflow_definition_repository
+            .store(&event, &definition)
+            .await
+            .expect("genesis");
+
+        let impostor = impostor_revision();
+        let envelope = EventEnvelope::new(
+            WorkflowDefinitionAggregateKeyDto::of(&id()),
+            2,
+            *definition.last_updated_at(),
+            WorkflowDefinitionEventDto::of(&impostor),
+        )
+        .with_manifest(EVENT_MANIFEST);
+        workflow_definition_repository
+            .store
+            .persist_event(envelope, 1)
+            .await
+            .expect("行としては書ける");
+
+        let failure = workflow_definition_repository
+            .find_by_id(&id())
+            .await
+            .expect_err("系譜が食い違う行は解釈しない");
+        assert!(
+            matches!(
+                failure,
+                RepositoryError::Corrupt {
+                    seq_nr: Some(2),
+                    ..
+                }
+            ),
+            "照合の食い違いは破損として止まる: {failure:?}"
+        );
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなくワイヤ形式そのものを壊す (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn a_definition_row_with_a_broken_identifier_is_refused_field_by_field() {
+        // 誕生・改訂のどちらも `id` (イベント自身) と `aggregate_id` (系譜) を運ぶので、
+        // どちらの欄が壊れても復号の境界で止まる。書く側の DTO 面で固定する。
+        let (_, genesis_event) = genesis(2);
+        for event in [genesis_event, impostor_revision()] {
+            let row = serde_json::to_value(WorkflowDefinitionEventDto::of(&event))
+                .expect("DTO は直列化できる");
+            let decoded: WorkflowDefinitionEventDto =
+                serde_json::from_value(row.clone()).expect("記録した行は読める");
+            assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
+
+            // `id` は UUIDv7、`aggregate_id` はハーネス名 (空白のみは不正) なので、欄ごとに
+            // その文法を外す値を差す。
+            for (field, outlaw) in [("id", "not-a-uuid"), ("aggregate_id", "  ")] {
+                let mut broken = row.clone();
+                let payload = broken
+                    .as_object_mut()
+                    .and_then(|variant| variant.values_mut().next())
+                    .and_then(serde_json::Value::as_object_mut)
+                    .expect("外部タグ形の payload");
+                payload.insert(field.to_string(), serde_json::Value::from(outlaw));
+                let dto: WorkflowDefinitionEventDto =
+                    serde_json::from_value(broken).expect("形は DTO として読める");
+                let error = dto.to_domain().expect_err("文法外の識別子は拒否");
+                assert!(
+                    matches!(&error, DtoDecodeError::Malformed { field: got, .. } if *got == field),
+                    "{field}: 綴りの拒否ではない — {error:?}"
+                );
+            }
+        }
     }
 }

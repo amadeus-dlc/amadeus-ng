@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::workflow_definition::compiled_definition_event_id::CompiledDefinitionEventId;
 use crate::workflow_definition::compiled_definition_id::CompiledDefinitionId;
 use crate::workflow_definition::scope_grid::ScopeGrid;
 use crate::workflow_definition::scope_metadata::ScopeMetadata;
@@ -14,33 +15,43 @@ use crate::workflow_definition::stage_graph::StageGraph;
 /// 内容から導出できる値であり、集約が `From<Compiled>` で自分で計算する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Compiled {
-    id: CompiledDefinitionId,
+    id: CompiledDefinitionEventId,
+    aggregate_id: CompiledDefinitionId,
     graph: StageGraph,
     grid: ScopeGrid,
     scopes: BTreeMap<String, ScopeMetadata>,
 }
 
 impl Compiled {
-    /// 材料をそのまま束ねる。
+    /// イベント識別子・配布束の識別子と材料をそのまま束ねる。
     #[must_use]
     pub const fn new(
-        id: CompiledDefinitionId,
+        id: CompiledDefinitionEventId,
+        aggregate_id: CompiledDefinitionId,
         graph: StageGraph,
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
     ) -> Compiled {
         Compiled {
             id,
+            aggregate_id,
             graph,
             grid,
             scopes,
         }
     }
 
-    /// 配布束の識別子。
+    /// このイベント自身の識別子 — ドメインイベントはエンティティの一種なので自前の id を
+    /// 持つ (`coding-rules/domain-object-kinds.md`)。
     #[must_use]
-    pub const fn id(&self) -> &CompiledDefinitionId {
+    pub const fn id(&self) -> &CompiledDefinitionEventId {
         &self.id
+    }
+
+    /// **どの集約の事実か** — 配布束の識別子。
+    #[must_use]
+    pub const fn aggregate_id(&self) -> &CompiledDefinitionId {
+        &self.aggregate_id
     }
 
     /// ステージグラフ (文書順)。

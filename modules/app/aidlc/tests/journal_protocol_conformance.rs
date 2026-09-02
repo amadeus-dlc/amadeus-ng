@@ -49,8 +49,10 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEvent, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
+    IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay,
+    StageEntry, StageRevised, StageSkipped, StartRequest, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -64,10 +66,12 @@ use core_command_interface_adapter::orchestration::{
 };
 // 両側の永続化 DTO は**同名の別の型**である (側ごと専用化 —
 // `coding-rules/cqrs-boundaries.md`)。同じファイルで名指すために別名で引く。
+use core_command_interface_adapter::orchestration::IntentExecutionEventDto as CommandExecutionEventDto;
 use core_command_interface_adapter::orchestration::WorkflowDefinitionEventDto as CommandDefinitionEventDto;
 use core_command_use_case::orchestration::{
     IntentExecutionRepository, IntentRepository, RepositoryError, WorkflowDefinitionRepository,
 };
+use core_read_model_updater::orchestration::IntentExecutionEventDto as ProjectionExecutionEventDto;
 use core_read_model_updater::orchestration::WorkflowDefinitionEventDto as ProjectionDefinitionEventDto;
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
@@ -76,6 +80,12 @@ use core_read_model_updater::orchestration::{
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
 use tempfile::TempDir;
+
+/// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
+#[must_use]
+fn intent_event_id() -> IntentEventId {
+    IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
+}
 
 /// ITF 再生は時計を持たない — `occurred_at` は固定値でよい (集約は値を素通しする)。
 const AT_TEXT: &str = "2026-08-23T00:00:00Z";
@@ -255,6 +265,7 @@ fn stages() -> Vec<StageEntry> {
 fn intent() -> Intent {
     Intent::from((
         Created::new(
+            intent_event_id(),
             IntentId::parse(INTENT).expect("再生の IntentId は UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
@@ -547,6 +558,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
         let held = intent();
         let created = IntentEvent::Created(Created::new(
+            intent_event_id(),
             held.id().clone(),
             held.definition_id().clone(),
             held.definition_revision().clone(),
@@ -796,6 +808,7 @@ async fn the_intent_stream_written_by_the_command_side_keeps_every_optional_requ
         let mut repository =
             IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
         let created = IntentEvent::Created(Created::new(
+            intent_event_id(),
             held.id().clone(),
             held.definition_id().clone(),
             held.definition_revision().clone(),
@@ -903,5 +916,84 @@ fn both_sides_write_the_definition_payload_with_the_same_bytes() {
         let read = serde_json::to_string(&ProjectionDefinitionEventDto::of(&event))
             .expect("読む側は直列化できる");
         assert_eq!(written, read, "両側のワイヤ形式は同一である");
+    }
+}
+
+/// 実行イベント 12 変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
+fn every_execution_variant() -> Vec<IntentExecutionEvent> {
+    let ev = || IntentExecutionEventId::generate();
+    let agg = execution_id;
+    let slug = |s: &str| StageSlug::parse(s).expect("文法内の slug");
+    let (_, started) = IntentExecution::start(execution_id(), &intent(), at());
+    vec![
+        started,
+        IntentExecutionEvent::StageCompleted(StageCompleted::new(ev(), agg(), slug("stage-0"))),
+        IntentExecutionEvent::GateOpened(GateOpened::new(
+            ev(),
+            agg(),
+            slug("stage-1"),
+            vec!["artifact.md".to_string()],
+        )),
+        IntentExecutionEvent::GateApproved(GateApproved::new(
+            ev(),
+            agg(),
+            slug("stage-1"),
+            Some("ok".to_string()),
+        )),
+        IntentExecutionEvent::GateRejected(GateRejected::new(
+            ev(),
+            agg(),
+            slug("stage-1"),
+            Some("why".to_string()),
+        )),
+        IntentExecutionEvent::StageRevised(StageRevised::new(ev(), agg(), slug("stage-1"))),
+        IntentExecutionEvent::StageSkipped(StageSkipped::new(
+            ev(),
+            agg(),
+            slug("stage-1"),
+            "out of scope".to_string(),
+        )),
+        IntentExecutionEvent::Jumped(Jumped::new(ev(), agg(), slug("stage-0"))),
+        IntentExecutionEvent::Parked(Parked::new(ev(), agg(), slug("stage-1"))),
+        IntentExecutionEvent::Unparked(Unparked::new(ev(), agg())),
+        IntentExecutionEvent::Recomposed(Recomposed::new(
+            ev(),
+            agg(),
+            vec![slug("stage-1")],
+            Vec::new(),
+        )),
+        IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
+            ev(),
+            agg(),
+            AutonomyMode::Autonomous,
+        )),
+    ]
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの横断照合 (BR1.7 の射程外)"
+)]
+#[test]
+fn every_execution_variant_written_by_the_command_side_is_read_back_by_the_projection() {
+    // 両側の DTO は**同名の別の型**であり、一致は型ではなくこのテストが保証する
+    // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。b40 で全 12 変種に `id` と
+    // `aggregate_id` が加わり、`Unparked` は単位変種から構造体へ変わったので、変種ごとに
+    // 書いて読み戻す照合をここに置く (ITF 駆動の経路は park / jump / recompose を通らない)。
+    for event in every_execution_variant() {
+        let bytes = serde_json::to_string(&CommandExecutionEventDto::of(&event))
+            .expect("書く側の DTO は直列化できる");
+        let read: ProjectionExecutionEventDto =
+            serde_json::from_str(&bytes).expect("読む側の DTO が同じバイトを受ける");
+        assert_eq!(
+            read.to_domain().expect("ドメインへ戻せる"),
+            event,
+            "変種のワイヤ形式が両側で食い違う: {bytes}"
+        );
+        // 識別子 2 つが実際に行へ載っていること (載っていなければ照合の材料が無い)。
+        assert!(
+            bytes.contains(event.id().as_str()) && bytes.contains(event.aggregate_id().as_str()),
+            "id / aggregate_id が行に載っていない: {bytes}"
+        );
     }
 }
