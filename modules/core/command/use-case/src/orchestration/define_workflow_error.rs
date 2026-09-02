@@ -156,6 +156,24 @@ mod tests {
     }
 
     #[test]
+    fn a_lineage_refusal_converts_into_the_define_variant_and_chains_to_it() {
+        let error: DefineWorkflowError =
+            LineageMismatch::new(definition_id(), compiled_definition_id()).into();
+        assert!(matches!(error, DefineWorkflowError::Define(_)));
+        assert_eq!(
+            error.to_string(),
+            "define: lineage mismatch: definition claude was handed the bundle claude"
+        );
+        assert!(
+            error
+                .source()
+                .expect("拒否そのものへ連鎖する")
+                .to_string()
+                .starts_with("lineage mismatch")
+        );
+    }
+
+    #[test]
     fn a_redefine_refusal_converts_into_its_own_variant() {
         // `?` で伝播させる経路 — 変種の取り違えが起きないことを固定する。
         let error: DefineWorkflowError = RedefineError::SequenceExhausted.into();

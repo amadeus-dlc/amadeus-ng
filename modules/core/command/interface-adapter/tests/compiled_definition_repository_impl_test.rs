@@ -29,7 +29,10 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, PhaseId, PlanAction, ReviewClass, RuleScope, StageMode, StageSlug,
     WorkflowDefinition, WorkflowDefinitionId,
 };
-use core_command_domain::workflow_definition::{CompiledDefinition, CompiledDefinitionId};
+use core_command_domain::workflow_definition::{
+    CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId, ExecutionKind, ScopeGrid,
+    ScopeMetadata, StageGraph, StageNodeBuilder, StageNumber,
+};
 use core_command_interface_adapter::orchestration::CompiledDefinitionRepositoryImpl;
 use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
 use std::error::Error;
@@ -1395,4 +1398,155 @@ fn storing_writes_to_the_override_paths_so_the_round_trip_reads_what_it_wrote() 
     let reread = find(&writer).unwrap();
     assert_eq!(reread.graph(), compiled.graph());
     assert_eq!(reread.grid(), compiled.grid());
+}
+
+/// 同期の書き口 (対をそのまま渡す)。
+fn store_pair(
+    compiled_definition_repository: &mut CompiledDefinitionRepositoryImpl,
+    event: &CompiledDefinitionEvent,
+    compiled_definition: &CompiledDefinition,
+) -> Result<(), ReadError> {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("current-thread ランタイム")
+        .block_on(compiled_definition_repository.store(event, compiled_definition))
+}
+
+/// プラグイン所属ステージを 1 つ持つ配布束 (`apply_plugin_selection` の検収用)。
+fn bundle_with_a_plugin_stage() -> CompiledDefinition {
+    let graph = StageGraph::new(vec![
+        StageNodeBuilder::new(
+            slug("state-init"),
+            StageNumber::parse("0.1").unwrap(),
+            "State Init".to_string(),
+            PhaseId::Initialization,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .scopes(vec!["classic".to_string()])
+        .build(),
+        StageNodeBuilder::new(
+            slug("acme-audit"),
+            StageNumber::parse("2.9").unwrap(),
+            "Acme Audit".to_string(),
+            PhaseId::Inception,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .scopes(vec!["classic".to_string()])
+        .plugin("acme".to_string())
+        .build(),
+    ])
+    .unwrap();
+    let grid = ScopeGrid::from_graph(&graph);
+    let scopes = [(
+        "classic".to_string(),
+        ScopeMetadata::new("classic").unwrap(),
+    )]
+    .into_iter()
+    .collect();
+    CompiledDefinition::compile(claude_id(), graph, grid, scopes).0
+}
+
+#[test]
+fn storing_after_each_transition_accepts_the_pair_and_the_written_face_reads_back() {
+    // 変異 3 種の (イベント, 集約) の対はどれも `store` が受け、書いた面を読み戻すと遷移後の
+    // 状態になる (媒体はスナップショットなので書くのは集約のほう — イベントは受領証)。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let mut bundle = load(&fixture);
+    let (mut writer, _out) = empty_writer();
+
+    // scope 登記 — identity ファイルと grid 列が増える。
+    let event = bundle
+        .register_scope(
+            ScopeMetadata::new("poc").unwrap(),
+            std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+    store_pair(&mut writer, &event, &bundle).unwrap();
+    let reread = find(&writer).unwrap();
+    assert!(reread.scopes().contains_key("poc"));
+    assert!(reread.grid().contains_scope("poc"));
+    assert_eq!(reread.revision(), bundle.revision());
+
+    // 再コンパイル — 内容が入れ替わり、消えた scope の identity ファイルは掃かれる。
+    let event = bundle
+        .recompile(
+            bundle.graph().clone(),
+            bundle.grid().clone(),
+            std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+    store_pair(&mut writer, &event, &bundle).unwrap();
+    let reread = find(&writer).unwrap();
+    assert!(reread.scopes().is_empty());
+    assert_eq!(reread.revision(), bundle.revision());
+
+    // プラグイン選択 — `enabled: false` がグラフに立ち、書いた面にも現れる。
+    let mut plugged = bundle_with_a_plugin_stage();
+    let (mut plugin_writer, _plugin_out) = empty_writer();
+    let event = plugged
+        .apply_plugin_selection(std::collections::BTreeSet::new())
+        .unwrap();
+    store_pair(&mut plugin_writer, &event, &plugged).unwrap();
+    let reread = find(&plugin_writer).unwrap();
+    assert_eq!(
+        reread
+            .graph()
+            .get(&slug("acme-audit"))
+            .and_then(|node| node.enabled()),
+        Some(false)
+    );
+    assert_eq!(reread, plugged, "store ⇄ find_by_id の往復");
+}
+
+#[test]
+fn storing_a_transition_event_against_an_aggregate_it_does_not_describe_is_refused() {
+    // 遷移イベントと、その遷移を適用していない集約の対 — 歴史と保存像が食い違う。
+    let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
+    let stale = load(&fixture);
+    let (mut writer, out) = empty_writer();
+
+    let mut registered = stale.clone();
+    let event = registered
+        .register_scope(
+            ScopeMetadata::new("poc").unwrap(),
+            std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+    let error = store_pair(&mut writer, &event, &stale).unwrap_err();
+    assert!(
+        corrupt_cause(&error).contains("store pair mismatch"),
+        "{error:?}"
+    );
+
+    let mut recompiled = stale.clone();
+    let event = recompiled
+        .recompile(
+            stale.graph().clone(),
+            stale.grid().clone(),
+            std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+    let error = store_pair(&mut writer, &event, &stale).unwrap_err();
+    assert!(
+        corrupt_cause(&error).contains("store pair mismatch"),
+        "{error:?}"
+    );
+
+    let unselected = bundle_with_a_plugin_stage();
+    let mut selected = unselected.clone();
+    let event = selected
+        .apply_plugin_selection(std::collections::BTreeSet::new())
+        .unwrap();
+    let error = store_pair(&mut writer, &event, &unselected).unwrap_err();
+    assert!(
+        corrupt_cause(&error).contains("store pair mismatch"),
+        "{error:?}"
+    );
+
+    assert!(
+        !out.path().join("tools/data/harness.json").exists(),
+        "拒んだ対は何も書かない"
+    );
 }

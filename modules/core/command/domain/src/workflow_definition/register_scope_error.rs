@@ -39,3 +39,37 @@ impl fmt::Display for RegisterScopeError {
 }
 
 impl std::error::Error for RegisterScopeError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_refusal_carries_material_not_wording() {
+        assert_eq!(
+            RegisterScopeError::DuplicateScope {
+                name: "feature".to_string()
+            }
+            .to_string(),
+            "duplicate scope feature"
+        );
+        assert_eq!(
+            RegisterScopeError::FreeformDefaultAlreadyTaken {
+                holder: "express".to_string()
+            }
+            .to_string(),
+            "freeform_default already taken by scope express"
+        );
+        assert_eq!(
+            RegisterScopeError::UnknownStage {
+                slug: StageSlug::parse("nope").expect("slug")
+            }
+            .to_string(),
+            "unknown stage nope in scope column"
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(RegisterScopeError::DuplicateScope {
+            name: "x".to_string(),
+        });
+        assert_eq!(boxed.to_string(), "duplicate scope x");
+    }
+}

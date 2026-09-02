@@ -36,3 +36,22 @@ impl fmt::Display for RedefineError {
 }
 
 impl std::error::Error for RedefineError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::workflow_definition::{CompiledDefinitionId, WorkflowDefinitionId};
+
+    #[test]
+    fn a_lineage_refusal_renders_the_mismatch_it_wraps() {
+        let error = RedefineError::Lineage(LineageMismatch::new(
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            CompiledDefinitionId::parse("kiro").expect("配布束 id"),
+        ));
+        assert_eq!(
+            error.to_string(),
+            "lineage mismatch: definition claude was handed the bundle kiro"
+        );
+    }
+}

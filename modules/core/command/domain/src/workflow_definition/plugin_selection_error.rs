@@ -24,3 +24,25 @@ impl fmt::Display for PluginSelectionError {
 }
 
 impl std::error::Error for PluginSelectionError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_refusal_carries_material_not_wording() {
+        assert_eq!(
+            PluginSelectionError::UnknownPlugin {
+                name: "ghost".to_string()
+            }
+            .to_string(),
+            "unknown plugin ghost"
+        );
+        assert_eq!(
+            PluginSelectionError::Unchanged.to_string(),
+            "plugin selection unchanged"
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(PluginSelectionError::Unchanged);
+        assert_eq!(boxed.to_string(), "plugin selection unchanged");
+    }
+}

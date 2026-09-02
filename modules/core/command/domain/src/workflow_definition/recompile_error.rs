@@ -29,3 +29,28 @@ impl fmt::Display for RecompileError {
 }
 
 impl std::error::Error for RecompileError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_refusal_carries_material_not_wording() {
+        let revision =
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision");
+        let error = RecompileError::Unchanged { revision };
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "compiled definition unchanged at revision sha256:{}",
+                "0".repeat(64)
+            )
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(error);
+        assert!(
+            boxed
+                .to_string()
+                .starts_with("compiled definition unchanged")
+        );
+    }
+}
