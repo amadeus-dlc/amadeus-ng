@@ -30,16 +30,26 @@ impl StartedDto {
     }
 
     /// ドメインの材料へ戻す (読み)。
+    ///
+    /// # Errors
+    ///
+    /// 識別子・計画の綴りが文法を外れる、または計画そのものが不変条件を破る。
     pub(super) fn to_domain(&self) -> Result<Started, DtoDecodeError> {
+        let stages = self
+            .stages
+            .iter()
+            .map(StageEntryDto::to_domain)
+            .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
+        // 計画そのものの不変条件はドメインが持つ ([`StageEntry::check_plan`]) —
+        // 判断を DTO に複製せず呼ぶだけにする。ここで止めないと、破れた計画が集約の
+        // 再構成まで届いてクラッシュする (再構成は失敗を返さない)。
+        StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
         Ok(Started::new(
             IntentExecutionId::parse(&self.aggregate_id)
                 .map_err(|_| DtoDecodeError::malformed("aggregate_id", &self.aggregate_id))?,
             IntentId::parse(&self.intent_id)
                 .map_err(|_| DtoDecodeError::malformed("intent_id", &self.intent_id))?,
-            self.stages
-                .iter()
-                .map(StageEntryDto::to_domain)
-                .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?,
+            stages,
         ))
     }
 }

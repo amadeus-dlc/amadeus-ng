@@ -145,17 +145,22 @@ impl IntentExecutionEventDto {
     pub fn to_domain(&self) -> Result<IntentExecutionEvent, DtoDecodeError> {
         Ok(match self {
             IntentExecutionEventDto::Started(payload) => {
+                let stages = payload
+                    .stages
+                    .iter()
+                    .map(StageEntryDto::to_domain)
+                    .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
+                // 計画そのものの不変条件はドメインが持つ (`StageEntry::check_plan`) —
+                // 判断を DTO に複製せず呼ぶだけにする。ここで止めないと、破れた計画が
+                // 集約の再構成まで届いてクラッシュする (再構成は失敗を返さない)。
+                StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
                 IntentExecutionEvent::Started(Started::new(
                     IntentExecutionId::parse(&payload.aggregate_id).map_err(|_| {
                         DtoDecodeError::malformed("aggregate_id", &payload.aggregate_id)
                     })?,
                     IntentId::parse(&payload.intent_id)
                         .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
-                    payload
-                        .stages
-                        .iter()
-                        .map(StageEntryDto::to_domain)
-                        .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?,
+                    stages,
                 ))
             }
             IntentExecutionEventDto::StageCompleted(payload) => {

@@ -23,7 +23,9 @@ use core_command_domain::workflow_definition::{
 
 use core_command_domain::orchestration::IntentEvent;
 
-use super::{IntentDto, IntentEventDto, IntentExecutionDto, IntentExecutionEventDto};
+use super::{
+    DtoDecodeError, IntentDto, IntentEventDto, IntentExecutionDto, IntentExecutionEventDto,
+};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
@@ -566,4 +568,41 @@ fn a_malformed_identifier_in_the_intent_journal_is_refused_with_its_field() {
     let decoded: IntentEventDto = serde_json::from_str(&broken).expect("形は DTO として読める");
     let err = decoded.to_domain().expect_err("識別子の文法違反は拒否");
     assert_eq!(err.to_string(), "malformed field id: not-a-uuid");
+}
+
+#[test]
+fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
+    // 計画そのものの不変条件はドメイン (`StageEntry::check_plan`) が持つ。DTO はそれを呼ぶ
+    // だけで判断を複製しない。ここで止めないと、破れた計画が集約の再構成まで届いて
+    // クラッシュする (再構成は失敗を返さない — オーナー裁定 2026-08-30)。
+    let init = StageEntry::new(
+        slug("state-init"),
+        PhaseId::Initialization,
+        PlanAction::Execute,
+        false,
+        display("0.1", "State Init"),
+    );
+    let skipped_head = StageEntry::new(
+        slug("intent-capture"),
+        PhaseId::Ideation,
+        PlanAction::Skip,
+        false,
+        display("1.1", "Intent Capture"),
+    );
+    for (label, plan) in [
+        ("空の計画", Vec::new()),
+        ("同じ slug が 2 回", vec![init.clone(), init]),
+        ("索引 0 が非 EXECUTE", vec![skipped_head]),
+    ] {
+        let dto = IntentExecutionEventDto::of(&IntentExecutionEvent::Started(Started::new(
+            IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            plan,
+        )));
+        assert_eq!(
+            dto.to_domain().expect_err("破れた計画は復号の境界で止める"),
+            DtoDecodeError::InvariantViolation,
+            "{label}"
+        );
+    }
 }

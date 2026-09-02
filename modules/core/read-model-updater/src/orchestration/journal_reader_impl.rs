@@ -514,6 +514,18 @@ fn decode_entry(row: &JournalRow) -> Result<JournalEntry, JournalReadError> {
             CorruptCause::InvariantViolation,
         ));
     }
+    // 誕生 (`Started`) は必ず通番 1、以降のイベントは 2 以上である。食い違う行は**復号の
+    // 境界で**止める — 通番の飛びをそのまま通すと `replay` まで届き、壊れた歴史として
+    // パニックになる (再構成は失敗を返さない)。破損は `Corrupt` として返すのが本層の
+    // 役目である (定義行・intent 行と同じ検査態度)。
+    let genesis = matches!(event, IntentExecutionEvent::Started(_));
+    if genesis != (row_seq == 1) {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
     let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
     Ok(JournalEntry::new(
         global,
@@ -1477,10 +1489,13 @@ mod tests {
     }
 
     /// 正常な 1 行 (個々のフィールドを崩して境界を踏むための素体)。
+    ///
+    /// 通番が 2 なのは payload が誕生イベントでないからである — 誕生 (`Started`) は通番 1
+    /// でしか現れず、`Unparked` が通番 1 を名乗る行は復号の境界で破損として止まる。
     fn sound_row() -> JournalRow {
         JournalRow {
             rowid: 1,
-            seq_nr: 1,
+            seq_nr: 2,
             aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
             payload: payload_bytes(),
             occurred_at: 1_756_425_600_000_000_000,
@@ -1512,7 +1527,7 @@ mod tests {
             decode_entry(&row).expect_err("閉集合外の綴り"),
             JournalReadError::Corrupt {
                 aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-                seq_nr: Some(1),
+                seq_nr: Some(2),
                 cause: CorruptCause::UndecodablePayload,
             }
         );
@@ -1526,7 +1541,7 @@ mod tests {
             entry.execution_id().as_str(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
         );
-        assert_eq!(entry.seq_nr(), 1);
+        assert_eq!(entry.seq_nr(), 2);
         assert_eq!(entry.event(), &IntentExecutionEvent::Unparked);
         assert_eq!(
             entry.occurred_at().timestamp_nanos_opt(),
@@ -1548,7 +1563,7 @@ mod tests {
             decode_entry(&row).expect_err("IntentExecutionId にならない"),
             JournalReadError::Corrupt {
                 aggregate_id: "not-a-uuid-v7".to_string(),
-                seq_nr: Some(1),
+                seq_nr: Some(2),
                 cause: CorruptCause::InvariantViolation,
             }
         );
@@ -1626,7 +1641,7 @@ mod tests {
                 decode_entry(&row).expect_err("名乗りが違う"),
                 JournalReadError::Corrupt {
                     aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
-                    seq_nr: Some(1),
+                    seq_nr: Some(2),
                     cause: CorruptCause::UndecodablePayload,
                 },
                 "manifest = {foreign:?}"
@@ -2013,6 +2028,101 @@ mod tests {
             ..definition_row()
         };
         assert_eq!(decode_definition_row(&revision).unwrap().seq_nr(), 2);
+    }
+
+    /// 実行ストリームの誕生イベント (`Started` — 通番 1 でしか現れない)。
+    fn started_event() -> IntentExecutionEvent {
+        use core_command_domain::orchestration::IntentExecution;
+        let (_, event) = IntentExecution::start(
+            IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("実行 id"),
+            &birth_intent(),
+            occurred_at_of(1_756_425_600_000_000_000),
+        );
+        event
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn an_execution_row_whose_sequence_contradicts_its_event_is_corrupt() {
+        // 誕生 (`Started`) は必ず通番 1、以降のイベントは 2 以上である。食い違う行は復号の
+        // 境界で止める — 通番の飛びをそのまま通すと `replay` まで届いてパニックになり、
+        // 破損した行と区別がつかなくなる (定義行・intent 行と同じ検査態度)。
+        for (seq_nr, dto, label) in [
+            (
+                2_i64,
+                IntentExecutionEventDto::of(&started_event()),
+                "誕生が通番 2 を名乗る",
+            ),
+            (
+                1_i64,
+                IntentExecutionEventDto::Unparked,
+                "誕生でないイベントが通番 1 を名乗る",
+            ),
+        ] {
+            let row = JournalRow {
+                seq_nr,
+                payload: serde_json::to_vec(&dto).unwrap(),
+                ..sound_row()
+            };
+            assert_eq!(
+                decode_entry(&row).unwrap_err(),
+                JournalReadError::Corrupt {
+                    aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                    seq_nr: Some(usize::try_from(seq_nr).unwrap()),
+                    cause: CorruptCause::InvariantViolation,
+                },
+                "{label}"
+            );
+        }
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn an_execution_row_whose_sequence_agrees_with_its_event_is_read() {
+        // 上の裏返し — 正しい組は素通りする (検査が広すぎないことを固定する)。
+        let birth = JournalRow {
+            seq_nr: 1,
+            payload: serde_json::to_vec(&IntentExecutionEventDto::of(&started_event())).unwrap(),
+            ..sound_row()
+        };
+        assert_eq!(decode_entry(&birth).unwrap().seq_nr(), 1);
+        assert_eq!(decode_entry(&sound_row()).unwrap().seq_nr(), 2);
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
+    )]
+    #[test]
+    fn an_execution_row_whose_birth_plan_is_broken_is_corrupt() {
+        // 計画そのものの不変条件を破る誕生行は復号の境界で止まる — 通すと集約の再構成まで
+        // 届いてクラッシュする。DTO 側の拒否 (`InvariantViolation`) がここで `Corrupt` に写る
+        // ことを、この層の面で固定する。
+        use core_command_domain::orchestration::Started;
+        let broken = IntentExecutionEvent::Started(Started::new(
+            IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("実行 id"),
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("intent id"),
+            Vec::new(),
+        ));
+        let row = JournalRow {
+            seq_nr: 1,
+            payload: serde_json::to_vec(&IntentExecutionEventDto::of(&broken)).unwrap(),
+            ..sound_row()
+        };
+        assert_eq!(
+            decode_entry(&row).unwrap_err(),
+            JournalReadError::Corrupt {
+                aggregate_id: "01a02785-1bd8-76eb-aeea-5aa303ebd5b6".to_string(),
+                seq_nr: Some(1),
+                cause: CorruptCause::InvariantViolation,
+            }
+        );
     }
 
     #[test]

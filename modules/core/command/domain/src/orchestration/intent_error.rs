@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use super::plan_error::PlanError;
 use crate::workflow_definition::UnknownScope;
 
 /// `Intent` を組めない形 (材料のみ — 利用者向け文言はアダプタ層)。
@@ -18,6 +19,11 @@ pub enum IntentError {
     InitializationMustExecute,
     /// initialization フェーズのステージが CONDITIONAL。
     InitializationMustBeUnconditional,
+    /// 解決済み計画に同じ slug が 2 回以上現れる (BR1.5)。
+    DuplicateSlug {
+        /// 文書順で最初に重複した slug。
+        slug: String,
+    },
     /// ステージの表示属性 (表題・担当エージェント) が単一行でない。
     ///
     /// 表示属性は状態ファイルの bullet 行に書かれる値なので、改行が混ざると 2 行目以降が
@@ -46,6 +52,7 @@ impl fmt::Display for IntentError {
             IntentError::InitializationMustBeUnconditional => {
                 f.write_str("initialization stage is CONDITIONAL")
             }
+            IntentError::DuplicateSlug { slug } => write!(f, "duplicate stage slug: {slug}"),
             IntentError::StageDisplayNotSingleLine { stage, found } => write!(
                 f,
                 "stage display is not single line: stage {stage}, found U+{:04X}",
@@ -55,4 +62,58 @@ impl fmt::Display for IntentError {
     }
 }
 
+impl From<PlanError> for IntentError {
+    /// 計画そのものの違反を intent の構築エラーへ写す。検査の正本は
+    /// [`StageEntry::check_plan`] であり、`Intent` はそれを呼ぶだけである。
+    ///
+    /// [`StageEntry::check_plan`]: crate::orchestration::StageEntry::check_plan
+    fn from(error: PlanError) -> IntentError {
+        match error {
+            PlanError::Empty => IntentError::Empty,
+            PlanError::InitializationMustExecute => IntentError::InitializationMustExecute,
+            PlanError::InitializationMustBeUnconditional => {
+                IntentError::InitializationMustBeUnconditional
+            }
+            PlanError::DuplicateSlug { slug } => IntentError::DuplicateSlug { slug },
+        }
+    }
+}
+
 impl std::error::Error for IntentError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_plan_violation_maps_to_its_intent_rejection() {
+        // 計画の検査は `StageEntry::check_plan` が正本で、`Intent` はその結果を写すだけ
+        // である。写し漏れがあれば拒否の意味が変わるので、対応を 1 か所で固定する。
+        for (violation, expected, wording) in [
+            (PlanError::Empty, IntentError::Empty, "empty stage list"),
+            (
+                PlanError::InitializationMustExecute,
+                IntentError::InitializationMustExecute,
+                "initialization stage is not EXECUTE",
+            ),
+            (
+                PlanError::InitializationMustBeUnconditional,
+                IntentError::InitializationMustBeUnconditional,
+                "initialization stage is CONDITIONAL",
+            ),
+            (
+                PlanError::DuplicateSlug {
+                    slug: "intent-capture".to_string(),
+                },
+                IntentError::DuplicateSlug {
+                    slug: "intent-capture".to_string(),
+                },
+                "duplicate stage slug: intent-capture",
+            ),
+        ] {
+            let mapped = IntentError::from(violation);
+            assert_eq!(mapped, expected);
+            assert_eq!(mapped.to_string(), wording);
+        }
+    }
+}
