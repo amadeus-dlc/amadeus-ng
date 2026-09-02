@@ -90,8 +90,11 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
   集約。識別子は自前の `CompiledDefinitionId`。`find_by_id` と `store` の両動詞（「書き込め
   ないと読み込めない」裁定）。媒体 = 配布 3 ファイルは実装の内部詳細で、graph / grid は
   書き側バイト契約（12 §10）どおり dist とバイト完全一致で書く。scope `.md` の散文本文と
-  `harness.json` の付随キーは集約の内容ではないので `store` は書かない — 内容版
-  `DefinitionRevision` の入力もメタデータのみ）
+  `harness.json` の付随キーは集約の内容ではないので `store` は**壊さない**（既存ファイルの
+  frontmatter / `name` だけを差し替える）。内容版 `DefinitionRevision` は集約が内容から導出する
+  ので Repository は計算しない（ADR-008 改訂 2026-09-02）。集約は FSM — `recompile` /
+  `register_scope` / `apply_plugin_selection` の 3 遷移（12 §2.1）。`store` は 4 変種すべての
+  (イベント, 集約) の対を受け、対が同じ内容を語っていなければ `Corrupt` で拒む）
 - `WorkflowDefinition` → `WorkflowDefinitionRepository`（**改訂 2026-08-31 オーナー裁定、b30**:
   この Repository は他の 2 つと同じく**イベントストアを内包する ES リポジトリ**である —
   `find_by_id` は最新スナップショット + 差分イベントの replay、`store(&event, &definition)`

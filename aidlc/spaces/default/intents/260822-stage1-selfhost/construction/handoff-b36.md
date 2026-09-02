@@ -96,6 +96,21 @@
      `DefineWorkflowError::from`、`PlanAction::flipped`。`store_corrupt` / `revision_failure` の
      共通化で防御分岐を 1 箇所ずつに畳んだ。
 
+### PR #88 の収束中に加わった裁定（2026-09-02）
+
+- **集約は FSM**（オーナー「CompiledDefinition これ状態遷移しないってこと？」→「今の実装は途中段階か。
+  推奨で早めに修正したほうがいい」）: `recompile` / `register_scope` / `apply_plugin_selection` の
+  3 遷移とガード、decide / apply 分離、`replay` なし（媒体がスナップショット）。12 §2.1・
+  aggregate-commands 適用例に記録。
+- **内容版はドメインが導出**（推奨 A で進行、ADR-008 改訂として decisions.md に追記）:
+  `DefinitionRevision::of_content`。Repository の生 JSON ハッシュを撤去。golden の
+  `the_shipped_revision_is_reproducible_from_the_pinned_bytes` は 2 回読取の同値比較なので固定値なし。
+- **系譜照合は受け手の集約が持つ**: `WorkflowDefinition::define(id, &bundle, at)` /
+  `redefine(&bundle, at)` + `LineageMismatch`。
+- Bugbot 2 件・CodeRabbit 7 件は返信・resolve 済み（系譜照合 1 件は FSM 着地後に閉じる）。
+  `store` はファイル単位の原子的書込、既存 `harness.json` の付随キーと scope `.md` の本文を保持、
+  override 先へ書込、一覧失敗は `Io`。
+
 ### 次
 
 PR 作成 → 収束ルール（project.md Corrections）で畳む → merge queue。マージ後は上の
