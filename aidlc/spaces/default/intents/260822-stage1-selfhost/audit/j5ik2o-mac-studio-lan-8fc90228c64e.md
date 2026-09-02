@@ -30850,3 +30850,198 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Event**: HUMAN_TURN
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:50:54Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:50:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2d2826f611e93c13
+**Message**: Reading memory_rules_dao_impl.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:51:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a5f8358442582d2a1
+**Message**: Grepping state_binding and runtime.rs layout wiring
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:51:57Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:51:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1b668db26962eb4d
+**Message**: Grepping narration and SerializationProfile definitions
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:52:25Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:52:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a35a586cee2aa2cf0
+**Message**: Reading interface-adapter lib.rs exports
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:53:00Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:53:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a61074588b2aec8a5
+**Message**: Grepping line numbers in next_use_case.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:53:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac6993631dde39489
+**Message**: 続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:53:56Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:53:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:54:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a330bd910df021aac
+**Message**: 続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:54:20Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:54:51Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: Explore
+**Agent ID**: a3664f7dbf00ac4e7
+**Message**: I have everything needed. Here is the report.\n\n---\n\n# b40 事前調査: クエリ側が今日計算しているもの (run-stage / steering / continue / scope-config)\n\n## A. run-stage directive の材料\n\n### A-1. 型と組み立て経路\n\n- 型: `/Users/j5ik2o/
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T08:54:55Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:54:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abacc54f030d5d35c
+**Message**: 進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T08:56:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abda1db641bd37099
+**Message**: b40 の設計ドラフトを控えました。主な発見は、steering の束が「ステージではなく phase の関数」であること、run-stage 材料が「定義 × scope」だけで決まり実行状態に依存しないこと、config-change が現在値を見ない構文分岐なので `read_config_current` は不要なことです。\n\n引き続き coverage の是正（＋Bugbot 指摘 2 
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T09:06:05Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T09:08:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4a854d3ffe0ec76e
+**Message**: 続けて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T09:09:07Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T09:09:14Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2fa86d35792ae5ad
+**Message**: 進捗どう？
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-02T09:12:16Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ace0e40683da32cd3
+**Message**: CQRS 是正の Bolt 2 前半（RMU が集約の判断を read_* 表へ投影）を PR #91 として提出し、いまは coverage 不足とレビュー指摘 7 件の修正を担当エージェントが実装中です。完了報告が来たら push して返信 → resolve し、マージ待ちに入ります。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-02T09:19:50Z
+**Event**: HUMAN_TURN
+
+---
+
+## Rule Learned
+**Timestamp**: 2026-09-02T09:20:59Z
+**Event**: RULE_LEARNED
+**Stage**: functional-design
+**Candidate-ID**: domain-object-kinds-2026-09-02
+**Content-Hash**: 3eaba10e9bc52d0c61a49cf1c98ba69b934630d45e29c71c0253b6fc54a25e25
+**Destination**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/memory/project.md
+**Heading**: ## Corrections
+**Source**: user_addition
+
+---
