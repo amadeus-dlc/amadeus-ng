@@ -163,6 +163,7 @@ impl JournalReader for FakeReader {
         Ok(JournalBatch::new(
             executions,
             intents.into_iter().map(|(_, intent)| intent).collect(),
+            Vec::new(),
             scanned_to,
         ))
     }

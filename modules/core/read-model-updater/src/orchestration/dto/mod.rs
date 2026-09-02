@@ -26,6 +26,9 @@
 //! [`CorruptCause`]: super::corrupt_cause::CorruptCause
 
 mod autonomy_mode_set_dto;
+mod consume_decl_dto;
+mod defined_dto;
+mod definition_content_dto;
 mod dto_decode_error;
 mod dto_vocabulary;
 mod gate_approved_dto;
@@ -35,12 +38,19 @@ mod intent_dto;
 mod intent_event_dto;
 mod intent_execution_event_dto;
 mod jumped_dto;
+mod kinds_codec;
 mod parked_dto;
 mod recomposed_dto;
+mod redefined_dto;
+mod rule_in_context_dto;
+mod scope_metadata_dto;
+mod sensor_ref_dto;
 mod stage_completed_dto;
+mod stage_node_dto;
 mod stage_revised_dto;
 mod stage_skipped_dto;
 mod started_dto;
+mod workflow_definition_event_dto;
 
 pub use autonomy_mode_set_dto::AutonomyModeSetDto;
 pub use dto_decode_error::DtoDecodeError;
@@ -56,6 +66,9 @@ pub use stage_completed_dto::StageCompletedDto;
 pub use stage_revised_dto::StageRevisedDto;
 pub use stage_skipped_dto::StageSkippedDto;
 pub use started_dto::StartedDto;
+pub use workflow_definition_event_dto::WorkflowDefinitionEventDto;
 
+#[cfg(test)]
+mod definition_dto_tests;
 #[cfg(test)]
 mod tests;

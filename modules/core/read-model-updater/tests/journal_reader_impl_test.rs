@@ -13,19 +13,24 @@
 // テストコードでは unwrap / expect を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+// ジャーナル行の payload は**契約 JSON ではなくワイヤ形式そのもの**であり、行を用意する
+// テストは本家のシリアライザと同じ素の serde で書く (BR1.7 の射程外)。
+#![allow(clippy::disallowed_methods)]
 
 mod support;
 
+use core_command_domain::workflow_definition::WorkflowDefinitionId;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     CorruptCause, GlobalSeqNr, JournalEntry, JournalReadError, JournalReader, JournalReaderImpl,
-    ProjectionName,
+    ProjectionName, WorkflowDefinitionEventDto,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
 
 use support::{
-    JournalWriter, UpstreamStore, at, execution_id, intent, open_store, other_execution_id, seed,
+    DEFINITION_MANIFEST, JournalWriter, UpstreamStore, at, defined_event, definition_id,
+    execution_id, intent, open_store, other_execution_id, redefined_event, seed, seed_definition,
     seed_intent,
 };
 
@@ -131,6 +136,130 @@ async fn a_row_of_the_intent_stream_is_consumed_as_an_intent() {
         Some(GlobalSeqNr::new(5)),
         "走査済み位置は intent 行も数える (チェックポイントが前進できる)"
     );
+}
+
+#[tokio::test]
+async fn the_rows_of_the_definition_stream_are_consumed_as_definition_events() {
+    // 定義のジャーナル (2026-08-31 の ES 転換) は同じストアファイルの同じ journal 表に
+    // 同居する第 3 のストリームである。読取はこの行を**消費する** (b39) — 誕生と改訂を
+    // ドメインイベントへ戻し、実行・intent の列には混ぜない。走査済み位置も定義行を数える。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+    seed_intent(&fixture.path).await;
+    seed_definition(&fixture.path).await;
+
+    let journal_reader = fixture.journal_reader();
+    let batch = journal_reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("定義の行は消費できる");
+
+    assert_eq!(batch.executions().len(), 4, "実行の列には混ざらない");
+    assert_eq!(batch.intents(), &[intent()], "intent の列にも混ざらない");
+
+    let definitions = batch.definitions();
+    assert_eq!(definitions.len(), 2, "誕生と改訂の 2 行");
+    assert_eq!(
+        definitions[0].event(),
+        &defined_event(),
+        "先頭は誕生 (`Defined`)"
+    );
+    assert_eq!(definitions[0].seq_nr(), 1);
+    assert_eq!(
+        definitions[1].event(),
+        &redefined_event(),
+        "続くのは改訂 (`Redefined`)"
+    );
+    assert_eq!(definitions[1].seq_nr(), 2);
+    assert!(
+        definitions
+            .iter()
+            .all(|entry| entry.definition_id() == &definition_id()),
+        "改訂は識別子を運ばないので、定義 id は行の `aid` 由来である"
+    );
+    assert!(
+        definitions[0].global_seq() < definitions[1].global_seq(),
+        "書いた順 (rowid 昇順) で返る"
+    );
+    assert!(
+        definitions.iter().all(|entry| entry.occurred_at() == &at()),
+        "発生時刻はドメイン供給値のまま往復する"
+    );
+    assert_eq!(
+        batch.scanned_to(),
+        Some(GlobalSeqNr::new(7)),
+        "走査済み位置は定義行も数える (チェックポイントが前進できる)"
+    );
+}
+
+#[tokio::test]
+async fn a_definition_row_whose_birth_record_names_another_lineage_is_corrupt() {
+    // 誕生記録だけは payload にも系譜 ID を持つ。行の `aid` と食い違う行はどちらかが嘘を
+    // ついている — 解釈せず止める (intent 行と同じ規律)。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+
+    let payload =
+        serde_json::to_vec(&WorkflowDefinitionEventDto::of(&defined_event())).expect("直列化");
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO journal (pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+             VALUES ('WorkflowDefinition-0', 'WorkflowDefinition-kiro-1', 'kiro', 1, ?1, 0, ?2)",
+            rusqlite::params![payload, DEFINITION_MANIFEST],
+        )
+        .expect("別系譜を名乗る定義行を差し込む");
+
+    assert_eq!(
+        fixture
+            .journal_reader()
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .expect_err("系譜が食い違う行は解釈しない"),
+        JournalReadError::Corrupt {
+            aggregate_id: "kiro".to_string(),
+            seq_nr: Some(1),
+            cause: CorruptCause::InvariantViolation,
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_revision_row_takes_its_lineage_from_the_row_itself() {
+    // 改訂は系譜 ID を運ばない (`coding-rules/aggregate-references.md`) ので照合する相手が
+    // 無い — 定義 id は行の `aid` がそのまま正本になる。誕生行と同じ検査で落ちないことを
+    // 別系譜の `aid` で確かめる。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed(&mut store).await;
+
+    let payload =
+        serde_json::to_vec(&WorkflowDefinitionEventDto::of(&redefined_event())).expect("直列化");
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO journal (pkey, skey, aid, seq_nr, payload, occurred_at, manifest)
+             VALUES ('WorkflowDefinition-0', 'WorkflowDefinition-kiro-2', 'kiro', 2, ?1, 0, ?2)",
+            rusqlite::params![payload, DEFINITION_MANIFEST],
+        )
+        .expect("別系譜の改訂行を差し込む");
+
+    let batch = fixture
+        .journal_reader()
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("改訂行は照合の対象を持たないので読める");
+    let entry = &batch.definitions()[0];
+    assert_eq!(
+        entry.definition_id(),
+        &WorkflowDefinitionId::parse("kiro").expect("定義 id"),
+        "行の `aid` が定義 id になる"
+    );
+    assert_ne!(entry.definition_id(), &definition_id());
+    assert_eq!(entry.event(), &redefined_event());
+    assert_eq!(entry.seq_nr(), 2);
 }
 
 #[tokio::test]
