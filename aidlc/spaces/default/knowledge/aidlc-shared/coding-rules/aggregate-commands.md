@@ -51,12 +51,21 @@ pub fn start(..) -> (IntentExecution, IntentExecutionEvent)
   集約が要り、集約はイベントからしか作れない」という循環が生じ、イベントからのリプレイが
   成立しない。genesis イベントから集約を導出する変換（`From<Created> for Intent`）が
   リプレイのスナップショット種を与える。
+- **ドメインイベントはエンティティ — 自前の `XxxEventId` を持ち、集約 ID は `aggregate_id`**（オーナー裁定
+  2026-09-02「ドメインイベントはエンティティの一種です。ドメインイベントごとに id を持たせるべきですが、
+  集約の ID をあたかもドメインイベントの ID にしているのはまずいです。`XxxEvent { id: XxxId, .. }` に
+  なっているでしょ。じゃなくて `XxxEvent { id: XxxEventId, aggregateId: XxxId, .. }` だよ」）。
+  本家サンプル `UserAccountEvent::Created { id: UserAccountEventId, aggregate_id: UserAccountId, .. }` と同型。
+  現状の `Created { id: IntentId }` / `Defined { id: WorkflowDefinitionId }` / `Started { id: IntentExecutionId }`
+  （b39）は誤りで、是正 Bolt（#7 キュー 2c）で全イベント族を `{ id: XxxEventId, aggregate_id: XxxId, .. }` へ
+  揃える。
 - **genesis イベントは集約 id と genesis の材料を運ぶ**（追記 2026-09-02、b39）— `Created` が
   `id` と依頼・計画を、`Defined` が `id` と内容を運ぶように、`Started` も `id` と解決済み計画
   （各ステージの slug / phase / plan_action）を運ぶ。理由: 集約の歴史は**自ストリームだけで**
   再生できなければならない。`Started` が `intent_id` しか運ばず genesis が `&Intent` を要した
   旧形は、再生に他集約の状態を要する ES の基本違反だった（RMU が集約を `replay` で起こそうと
   して発覚）。`From<(Started, DateTime<Utc>)>` が唯一の genesis 状態導出で、`start` はそれを通る。
+  （ここで言う「集約 id」は `aggregate_id` フィールドのこと — イベント自身の `id` ではない。上の裁定）
 - **再構成は失敗を返さない** — `replay` / `apply_event` は `Result` を返さない。歴史を読む
   だけの経路にエラー型は要らず、壊れた歴史（通番の飛び・未知ステージ・不変条件違反）は
   回復せず**クラッシュが正**である（`expect` / `panic` 容認 — 万一発生したらアプリケーション

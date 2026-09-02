@@ -21,7 +21,7 @@
 | **エンティティ** | 識別子で同一性が決まるオブジェクト。**集約のルートエンティティ（グローバルエンティティ）** — 自前の ID を持ち、集約の外から ID で参照される — と、**ローカルエンティティ** — 集約の内側でだけ識別される — の 2 種 | ルート: `Intent` / `IntentExecution` / `WorkflowDefinition` / `CompiledDefinition`。ローカル: 集約内で位置や slug で識別される要素（`StageEntry` 等） |
 | **値オブジェクト** | 属性の値で同一性が決まる不変のオブジェクト（Domain Primitive を含む — `parse` が唯一の入口の AVDM） | `StageSlug` / `IntentId` / `StageIndex` / `DefinitionRevision` / `ScopeMetadata` / `ScopeCost` |
 | **ファーストクラスコレクション** | 配列・コレクションを隠蔽し、そのコレクションに対する操作と不変条件を所有する型 | `Checkboxes` / `OrderedAuditEvents` / `StageGraph` / `ScopeGrid` |
-| **ドメインイベント** | 集約のコマンドが返す「起きた事実」の記録。内容（値）を運び、集約を埋め込まない。1 コマンド 1 イベント（ADR-002 / [aggregate-commands.md](aggregate-commands.md)） | `IntentExecutionEvent`（`Started` / `GateApproved` …）/ `IntentEvent::Created` / `WorkflowDefinitionEvent::Defined` / `CompiledDefinitionEvent` |
+| **ドメインイベント** | **エンティティの一種** — イベントごとに自前の識別子 `XxxEventId` を持つ（オーナー裁定 2026-09-02）。集約のコマンドが返す「起きた事実」の記録で、内容（値）を運び、集約を埋め込まない。1 コマンド 1 イベント（ADR-002 / [aggregate-commands.md](aggregate-commands.md)）。形は `XxxEvent { id: XxxEventId, aggregate_id: XxxId, .. }` — **集約の ID をイベントの `id` に流用してはならない** | `IntentExecutionEvent`（`Started` / `GateApproved` …）/ `IntentEvent::Created` / `WorkflowDefinitionEvent::Defined` / `CompiledDefinitionEvent` |
 
 - **ドメインサービスを作るときは人間の裁定が必須**である。[domain-services.md](domain-services.md) の
   「どの型も所有できない操作だけ」という条件を満たすと自分で判断しても、置く前に裁定にかける
@@ -31,6 +31,9 @@
   写し）を実装したいときは、**実測ありの問題**（何が・どのコードで・どう困っているか）と
   **対策内容**（何を作り、なぜ 3 種では表現できないか）を添えて**人間の裁定にかける**。
   裁定前に実装しない。
+- ドメインイベントは**エンティティ**であり、自前の `XxxEventId` と、どの集約の事実かを示す
+  `aggregate_id: XxxId` を**別々のフィールド**で持つ。`Started { id: IntentExecutionId }` のように集約 ID を
+  イベントの `id` に流用した形は誤り（オーナー指摘 2026-09-02 — b39 で作り込んだ誤りで、是正 Bolt で直す）。
 - ドメインイベントは**集約のコマンドの戻り値**としてだけ生まれる（再構成経路は作らない、
   イベント族は enum + 変種ペイロードの形 — [aggregate-commands.md](aggregate-commands.md) /
   [module-visibility.md](module-visibility.md) §追記 2026-09-01）。「イベントっぽい型」を集約の外で
