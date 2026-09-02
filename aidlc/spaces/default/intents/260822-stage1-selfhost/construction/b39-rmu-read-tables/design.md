@@ -93,6 +93,23 @@ Bolt 2（RMU の構造化投影）を PR 2 本に分ける。**b39（本書）**
 
 DDL は `CREATE TABLE IF NOT EXISTS`（checkpoint 表と同じ流儀）、`JournalReaderImpl::open` で作る。
 
+### 4.2 実装時の差分（b39 実測 — 型は集約の答えに従う）
+
+| 列 | §4.1 | 実装 | 理由 |
+| --- | --- | --- | --- |
+| `read_definition_stage.workspace_requires` / `inputs` / `outputs` | JSON | INTEGER(bool) / TEXT / TEXT | `StageNode` の答えが `bool` と散文 `&str` |
+| `read_intent.languages` / `frameworks` | JSON | TEXT | `WorkspaceScan` の答えが `&str` |
+| `read_definition_scope_stage.action` | EXECUTE / SKIP | NULL 許容 | `stages_in_scope` はグリッド列の無い有効スコープで `None` を返す。丸めない |
+| `read_execution.cursor_slug` / `read_next_jump_phase.target_slug` | NOT NULL | NULL 許容 | 添字帳を `get` で引くので型上 `Option`（実運用は常に値あり） |
+| `read_next_jump.refusal` | 2 綴り | `CommandError` 全変種の綴り | `jump_resolve` の戻り型に `IntentMismatch` 等も含まれる。起きない値を既存に寄せない |
+| `read_definition_stage.produces_kinds` | JSON | `[{"artifact","kinds"}]` の配列 | オブジェクトのキーに畳むと同名成果物が潰れる |
+| `as_of` | 各行型のフィールド | SQL 側で 1 値を全表に書く | スナップショット全体で 1 つの値を 13 型に複製しない |
+
+ドメインに無かったもの（RMU で導出せず、既存の述語に問うた）: `StageNode` のゲート付き述語は
+`StageKey::new(slug, phase).is_gated()` に委ね、`Status` / `CheckboxState` の読取面の綴り（kebab-case）は
+`read_tables/spelling.rs` 1 箇所に置いた（`PhaseId` / `PlanAction` / `ExecutionKind` / `StageMode` /
+`ReviewClass` / `AutonomyMode` はドメインの `as_str` 系をそのまま使用）。
+
 ## 5. 取得ループと Tx（スライス C）
 
 - ポート変更: `JournalReader::advance_checkpoint(&mut self, projection, to, tables: &ReadTables)` —
