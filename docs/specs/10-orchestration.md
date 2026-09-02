@@ -52,7 +52,7 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 - **メメント**: `state()` / `from_state()` が全状態を値オブジェクト `WorkflowExecutionState`（Bolt B5 で `WorkflowExecutionSnapshot` から改名）へ写し、復元時に不変条件を検査する唯一の経路になる。~~集約は serde を知らない~~ → **失効**（2026-08-27 / ADR-010・Bolt B6）: 本家 `Aggregate` / `Event` trait が `Serialize` / `Deserialize` を境界に要求するため、集約・ドメインイベント・集約識別子は serde を持つ（Conformist、腐敗防止層なし）。ただし **serde はメメントを経由する** — `#[serde(into = "WorkflowExecutionState", try_from = "WorkflowExecutionState")]` により直列化は `state()`、復号は `from_state()` へ委ねられ、**復号側の検査点は 1 か所のまま**である（オーナー裁定 2026-08-27）。upstream 観測面のワイヤ形式（監査行・状態ファイル）はアダプタ層のままなので互換への影響は無い（ADR-001 / ADR-004 / ADR-010）。
 - **ゲート判定はフェーズで決まる**: `gated(stage) = stages[stage].phase != initialization`。**索引 0 の特別扱いはしない** — 出荷グラフの initialization は 3 ステージあり、そのいずれも承認ゲートを持たない。Quint slice-1 の `gated(s) = s != 0` は「initialization 1 ステージだけの合成計画」に対する抽象であり、ITF 準拠テストはその合成計画で駆動する（Bolt B3 実装 `StageEntry::is_gated()`）。
 - **有効プランの畳み込み**: `effective_plan(stage)`（recompose オーバレイが静的グリッドに勝つ合成読み）は**集約の所有**である。workflow-definition が供給するのはグリッド側の 3 値照会だけ（B1 / ADR-002 ⑤ / 設計監査 R2、Bolt B3 実装）。
-- **`next_decision` は `Result`**: `next_decision(&self, &WorkflowDefinition, &NextRequest) -> Result<NextDecision, CommandError>`。引数の定義の `id` が `definition_id` と一致しなければ `Err(CommandError::DefinitionMismatch { expected, actual })` で拒否する。**`revision` の差は `Ok`**（計画は `Started` で自己完結しており、upstream も dist 更新をまたいでワークフローを続ける — ADR-008）。
+- **`next_decision` は失敗しないクエリ**（改訂 2026-09-02、b38）: `next_decision(&self, &NextRequest) -> NextDecision`。~~`&WorkflowDefinition` を受けて `id` 不一致を `Err(CommandError::DefinitionMismatch)` で拒否する~~ — 計画は `Started` で自己完結しており（ADR-008、upstream も dist 更新をまたいでワークフローを続ける）、判断に他集約の参照は要らない。取り違えガードは他集約を渡す呼出形のための物であり、RMU が `replay` した集約自身に問う形では存在しない。
 - **トランザクション境界**: 集約 1 更新 = SQLite の 1 トランザクション（ジャーナル追記 + スナップショット更新を同一 Tx、楽観 `version` で直列化 — ADR-001 / ADR-003 / ADR-007）。「1 トランザクション 1 集約」の DDD 規範に一致する。upstream の `withAuditLock` 区間（audit-first）は、この Tx とその後の投影に置き換わる（逸脱台帳 [`deviations.md`](deviations.md) 参照）。
 - **主要不変条件**: §6 の表。
 
@@ -79,7 +79,7 @@ orchestration は「**次に何が起こるか**」を所有する。engine（`n
 
 | 関数 | 所在 | 入力 → 出力 | 対応する upstream |
 | --- | --- | --- | --- |
-| `next_decision` | 集約 `WorkflowExecution` のクエリ（`&self`） | 観測状態＋コンパイル済みグラフ → `Directive` ちょうど 1 つ。**書き込みなし** | `handleNext` 21 分岐ラダー |
+| `next_decision` | 集約 `WorkflowExecution`（= `IntentExecution`）のクエリ（`&self`） | 自身の状態 + 要求の観測 `NextRequest` → **状態依存の分岐 `NextDecision` ちょうど 1 つ**（改訂 2026-09-02、b38 — ~~観測状態＋コンパイル済みグラフ → `Directive`~~。directive への写しは RMU の投影とプレゼンタの仕事）。**書き込みなし** | `handleNext` 21 分岐ラダーのうち状態依存の分岐（状態非依存の分岐は要求の形だけで決まるルーティング） |
 | `report_dispatch` | ドメインサービス（純関数） | (verdict, checkbox, gated, final, moved-on, explicit-stage) → 遷移コマンド列 or 拒否。**対応範囲は段 10 の gate-lifecycle アームと §7.3 forward ディスパッチ表に限る**。段 1〜9・11〜13 は `Report` ユースケースが所有（§3） | verdict → サブコマンド選択は**エンジンが**行い、呼び出し側は選ばない |
 | `human_acted_since_gate` | ドメインサービス（純関数） | 監査行の射影 → bool。fail-closed になるのは**同秒かつ別シャード**のときのみ。同一シャードはシャード内 pos 順で決定的に判定 | B9 の導出述語 |
 | `jump_resolve` | 集約 `WorkflowExecution` のクエリ（`&self`） | (target, cursor) → `JumpDirection` ＋帰属検証 | `aidlc-jump resolve`（純読取）と `execute`（コミット）の分離 |
