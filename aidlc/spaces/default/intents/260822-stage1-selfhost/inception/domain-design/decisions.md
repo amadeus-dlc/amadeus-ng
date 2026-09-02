@@ -55,6 +55,14 @@
 **撤去**する（no-backward-compatibility の精神。イベントは 12 → 11 変種。観測互換への影響は無い —
 実行時に出ない文言のため）。撤去は #7 のキュー「是正 Bolt 2 の後」の独立 Bolt で行う。
 
+**改訂 2026-09-02（オーナー裁定 — ドメインイベントはエンティティ、b40）**: ドメインイベントは
+エンティティの一種であり、各変種が自前の識別子 `id: XxxEventId`（UUIDv7）と、どの集約の事実かを示す
+`aggregate_id: XxxId` を**別々のフィールド**で持つ（`XxxEvent { id: XxxEventId, aggregate_id: XxxId, .. }` —
+本家サンプル `UserAccountEvent` と同型）。集約の ID をイベントの `id` に流用した従来形（`Created { id: IntentId }`
+/ `Defined { id: WorkflowDefinitionId }` / b39 の `Started { id: IntentExecutionId }`）は誤りとして是正する。
+採番は集約のコマンド内 `XxxEventId::generate()`（Q1 = A。ID は識別だけで投影・ITF の答えに影響しないため、
+ドメインの純粋性の例外として認める）。
+
 ## ADR-003: SQLite ストア + upstream 互換ファイルはリードモデル + RMU
 
 - **Context** — イベントの物理格納先が未裁定だった。upstream の監査台帳は markdown
@@ -483,6 +491,12 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
 
   出典: [`developer-report-1.md`](../../construction/esa-v3-migration/developer-report-1.md)
   （§2 裁定 1〜9、§4-(a) TOCTOU 経緯、§4-(b) newtype 見送り）。
+
+**追記 2026-09-02（b40 — イベント ID は payload、封筒は輸送メタデータ）**: 本家 v3 の `EventEnvelope` は
+イベント ID を持たない（集約識別子・通番・発生時刻・型判別子と payload）。ドメインイベントの `id: XxxEventId`
+は payload（ドメインイベント自身）に閉じ、`seq_nr` / `occurred_at` は従来どおり封筒が運ぶ（Q2 = A —
+本家サンプルとの差はここだけ）。復号境界（Repository の再生・RMU の `decode_*`）は行の `aid` と payload の
+`aggregate_id` を全変種で照合し、不一致は `Corrupt`。
 
 ## ADR-011: CLI 読取コマンド向けリードモデルは SQLite の `read_*` 表 — RMU が集約のクエリの答えを投影する（2026-09-02 追加）
 
