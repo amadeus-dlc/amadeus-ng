@@ -141,7 +141,7 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 - 全行が `as_of`（投影に使った最後のジャーナル通番 = `GlobalSeqNr`）を持つ。壁時計は読まない（冪等・決定性）。
 - 表の作成は `CREATE TABLE IF NOT EXISTS`（`amadeus_projection_checkpoint` と同じ流儀）、RMU の `JournalReaderImpl::open` が行う。
 
-表カタログ（b39 で作る 13 表。列の定義と計算元は `construction/b39-rmu-read-tables/design.md` §4.1 が正本。b40 で `read_run_stage` / `read_scope_change` / `read_config_current` / `read_steering_plan` / `read_steering_part` を追加する）:
+表カタログ（b39 の 13 表 + b41 の 4 表と `read_execution.scope`。列の定義と計算元は `construction/b39-rmu-read-tables/design.md` §4.1 と `construction/b41-rmu-run-stage-steering/design.md` §1 が正本。`read_config_current` は不要 — config-change は現在値を見ない構文分岐）:
 
 | 表 | キー | 出所の集約 |
 | --- | --- | --- |
@@ -150,6 +150,9 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 | `read_execution` / `read_execution_stage` | execution_id（× stage_index） | `IntentExecution`（`Started` からの再生） |
 | `read_next_answer` | execution_id × request_kind ∈ {`bare`, `resume`, `free-text`, `reentry`}（kebab-case） | `IntentExecution::next_decision` |
 | `read_next_jump` / `read_next_jump_phase` | execution_id × target_index / phase | `IntentExecution::jump_resolve` / `first_in_scope_of_phase` |
+| `read_run_stage`（b41） | definition_id × scope × stage_slug | `WorkflowDefinition`（`StageNode` の属性、`stages_in_scope` の次 EXECUTE、相対パス規則、`route_digest` / `directive_digest`） |
+| `read_scope_change`（b41） | execution_id × scope | `Intent::scope` との一致（same-as-state / scope-change） |
+| `read_steering_plan` / `read_steering_part`（b41） | phase（× part_index） | **参照入力**（memory 規則ファイル `org.md` / `team.md` / `project.md` / `phases/<phase>.md`）— イベントではないので `catch_up` ごとに内容ダイジェストを比べ、変化時だけ再パック（別 Tx） |
 
 前提となるドメインの是正（b39）: `Started` は**集約 id と解決済み計画の写し**を運ぶ（従来は `intent_id` のみで、genesis が `&Intent` を要し自ストリームだけで再生できなかった）。`IntentExecution: From<(Started, DateTime<Utc>)>` が genesis イベントからの唯一の状態導出であり、`start` はそれを通る（`Intent` / `WorkflowDefinition` と同型 — coding-rules/aggregate-commands.md）。
 
