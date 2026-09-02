@@ -75,7 +75,12 @@ impl DefinitionRevision {
         input.insert("scope_grid", project_grid(grid));
         input.insert(
             "scopes",
-            JsonValue::Array(scopes.values().map(project_scope).collect()),
+            JsonValue::Array(
+                scopes
+                    .iter()
+                    .map(|(name, metadata)| project_scope(name, metadata))
+                    .collect(),
+            ),
         );
         DefinitionRevision::of_digest(&hash_canonical(&JsonValue::Object(input)))
     }
@@ -244,8 +249,11 @@ fn project_grid(grid: &ScopeGrid) -> JsonValue {
     JsonValue::Object(columns)
 }
 
-fn project_scope(metadata: &ScopeMetadata) -> JsonValue {
+/// 辞書のキー (`valid_scopes` / `scope_metadata` が観測するスコープ識別子) とメタデータの両方を
+/// 投影する — 同じメタデータを別のキーで持つ辞書は別の内容である。
+fn project_scope(name: &str, metadata: &ScopeMetadata) -> JsonValue {
     let mut members = ObjectMembers::new();
+    members.insert("key", text(name));
     members.insert("name", text(metadata.name()));
     members.insert("depth", optional_text(metadata.depth()));
     members.insert("keywords", texts(metadata.keywords()));
@@ -372,6 +380,64 @@ mod tests {
         assert_eq!(
             DefinitionRevisionError::InvalidHexDigit('A').to_string(),
             "not a lowercase hex digit: 'A'"
+        );
+    }
+}
+
+#[cfg(test)]
+mod content_tests {
+    use super::*;
+
+    use crate::workflow_definition::{
+        ExecutionKind, PhaseId, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
+    };
+
+    fn graph() -> StageGraph {
+        StageGraph::new(vec![
+            StageNodeBuilder::new(
+                StageSlug::parse("state-init").expect("slug"),
+                StageNumber::parse("0.1").expect("番号"),
+                "State Init".to_string(),
+                PhaseId::Initialization,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .scopes(vec!["classic".to_string()])
+            .build(),
+        ])
+        .expect("グラフ")
+    }
+
+    fn scopes_under(key: &str) -> BTreeMap<String, ScopeMetadata> {
+        [(
+            key.to_string(),
+            ScopeMetadata::new("classic").expect("スコープ"),
+        )]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn the_revision_round_trips_through_parse() {
+        let graph = graph();
+        let grid = ScopeGrid::from_graph(&graph);
+        let revision = DefinitionRevision::of_content(&graph, &grid, &scopes_under("classic"));
+        assert_eq!(
+            DefinitionRevision::parse(revision.as_str()),
+            Ok(revision.clone()),
+            "正準ダイジェストは受理される綴りそのもの"
+        );
+    }
+
+    #[test]
+    fn the_same_metadata_under_another_key_is_another_content() {
+        // 辞書のキーはスコープ識別子 (`valid_scopes` が観測する) なので投影に含める —
+        // 落とすと、キーだけを変えた改訂が `Unchanged` に潰れる (CodeRabbit 指摘)。
+        let graph = graph();
+        let grid = ScopeGrid::from_graph(&graph);
+        assert_ne!(
+            DefinitionRevision::of_content(&graph, &grid, &scopes_under("alpha")),
+            DefinitionRevision::of_content(&graph, &grid, &scopes_under("beta"))
         );
     }
 }
