@@ -449,8 +449,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use core_command_domain::workflow_definition::{
-        ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder,
-        StageNumber, StageSlug,
+        CompiledDefinition, CompiledDefinitionId, ExecutionKind, PhaseId, ScopeGrid, ScopeMetadata,
+        StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
     };
 
     fn id() -> WorkflowDefinitionId {
@@ -459,14 +459,6 @@ mod tests {
 
     fn other_id() -> WorkflowDefinitionId {
         WorkflowDefinitionId::parse("kiro").expect("定義 id")
-    }
-
-    fn revision(fill: char) -> core_command_domain::workflow_definition::DefinitionRevision {
-        core_command_domain::workflow_definition::DefinitionRevision::parse(&format!(
-            "sha256:{}",
-            fill.to_string().repeat(64)
-        ))
-        .expect("revision")
     }
 
     fn content(stage_count: usize) -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
@@ -497,7 +489,13 @@ mod tests {
 
     fn genesis(stage_count: usize) -> (WorkflowDefinition, WorkflowDefinitionEvent) {
         let (graph, grid, scopes) = content(stage_count);
-        WorkflowDefinition::define(id(), revision('0'), graph, grid, scopes, at())
+        let (bundle, _) = CompiledDefinition::compile(
+            CompiledDefinitionId::parse("claude").expect("配布束 id"),
+            graph,
+            grid,
+            scopes,
+        );
+        WorkflowDefinition::define(id(), &bundle, at()).expect("同じ系譜")
     }
 
     fn at() -> chrono::DateTime<chrono::Utc> {
@@ -673,7 +671,7 @@ mod tests {
                 .await
                 .expect("同じストアを指す")
                 .revision(),
-            &revision('0')
+            definition.revision()
         );
     }
 

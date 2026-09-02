@@ -1,4 +1,4 @@
-//! `Compiled` — 配布束の誕生イベントのペイロード。
+//! `Recompiled` — 配布束が再コンパイルされた (内容が入れ替わった) イベントのペイロード。
 
 use std::collections::BTreeMap;
 
@@ -7,20 +7,17 @@ use crate::workflow_definition::scope_grid::ScopeGrid;
 use crate::workflow_definition::scope_metadata::ScopeMetadata;
 use crate::workflow_definition::stage_graph::StageGraph;
 
-/// 配布束がコンパイルされて存在するようになった、という事実の材料。
-///
-/// **内容そのもの**を運ぶ — イベントが材料の複製を運ぶのは歴史であり違反ではない
-/// (`coding-rules/aggregate-references.md`)。内容版 (`DefinitionRevision`) は運ばない —
-/// 内容から導出できる値であり、集約が `From<Compiled>` で自分で計算する。
+/// 源 (ステージ定義・エージェント・スコープ・プラグイン) が変わり、配布束が新しい内容へ
+/// 再コンパイルされた、という事実の材料。新しい内容そのものを運ぶ (`Compiled` の鏡)。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Compiled {
+pub struct Recompiled {
     id: CompiledDefinitionId,
     graph: StageGraph,
     grid: ScopeGrid,
     scopes: BTreeMap<String, ScopeMetadata>,
 }
 
-impl Compiled {
+impl Recompiled {
     /// 材料をそのまま束ねる。
     #[must_use]
     pub const fn new(
@@ -28,8 +25,8 @@ impl Compiled {
         graph: StageGraph,
         grid: ScopeGrid,
         scopes: BTreeMap<String, ScopeMetadata>,
-    ) -> Compiled {
-        Compiled {
+    ) -> Recompiled {
+        Recompiled {
             id,
             graph,
             grid,
@@ -43,19 +40,19 @@ impl Compiled {
         &self.id
     }
 
-    /// ステージグラフ (文書順)。
+    /// 新しいステージグラフ (文書順)。
     #[must_use]
     pub const fn graph(&self) -> &StageGraph {
         &self.graph
     }
 
-    /// EXECUTE / SKIP グリッド。
+    /// 新しい EXECUTE / SKIP グリッド。
     #[must_use]
     pub const fn grid(&self) -> &ScopeGrid {
         &self.grid
     }
 
-    /// スコープメタデータ (名前の辞書順)。
+    /// 新しいスコープメタデータ (名前の辞書順)。
     #[must_use]
     pub const fn scopes(&self) -> &BTreeMap<String, ScopeMetadata> {
         &self.scopes

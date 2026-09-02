@@ -11,8 +11,8 @@
 use core_command_use_case::orchestration::{RepositoryError, WorkflowDefinitionRepository};
 
 use super::{
-    DefinitionStoreFixture, absent_definition_id, at, definition_content, definition_genesis,
-    definition_id, definition_revision, store_definition_genesis,
+    DefinitionStoreFixture, absent_definition_id, at, definition_bundle, definition_genesis,
+    definition_id, store_definition_genesis,
 };
 
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
@@ -39,7 +39,7 @@ pub(crate) async fn open_twice_yields_independent_empty_stores<F: DefinitionStor
         .expect("読み直せる");
     assert_eq!(
         found.revision(),
-        &definition_revision('0'),
+        definition_bundle(3).revision(),
         "1 つ目は 2 つ目の書込に影響されない"
     );
 }
@@ -104,9 +104,8 @@ pub(crate) async fn a_redefinition_advances_the_stream<F: DefinitionStoreFixture
     let mut repository = fixture.open();
     let mut held = store_definition_genesis(&mut repository).await;
 
-    let (graph, grid, scopes) = definition_content(5);
     let event = held
-        .redefine(definition_revision('1'), graph, grid, scopes, at())
+        .redefine(&definition_bundle(5), at())
         .expect("内容版が違えば改訂できる");
     repository.store(&event, &held).await.expect("改訂は書ける");
 
@@ -115,7 +114,7 @@ pub(crate) async fn a_redefinition_advances_the_stream<F: DefinitionStoreFixture
         .find_by_id(&definition_id())
         .await
         .expect("改訂後の定義は読み直せる");
-    assert_eq!(found.revision(), &definition_revision('1'));
+    assert_eq!(found.revision(), definition_bundle(5).revision());
     assert_eq!(found.graph().len(), 5, "内容が入れ替わっている");
     assert_eq!(found.seq_nr(), 2, "改訂は次の通番になる");
     assert_eq!(found.id(), &definition_id(), "系譜 ID は不変");
@@ -133,9 +132,8 @@ pub(crate) async fn a_write_that_presents_a_stale_version_conflicts<F: Definitio
 
     // 同じ版を握った 2 人が順に改訂する。
     let mut first = held.clone();
-    let (graph, grid, scopes) = definition_content(5);
     let event = first
-        .redefine(definition_revision('1'), graph, grid, scopes, at())
+        .redefine(&definition_bundle(5), at())
         .expect("改訂できる");
     repository
         .store(&event, &first)
@@ -143,9 +141,8 @@ pub(crate) async fn a_write_that_presents_a_stale_version_conflicts<F: Definitio
         .expect("先に書いたほうは通る");
 
     let mut second = held;
-    let (graph, grid, scopes) = definition_content(7);
     let event = second
-        .redefine(definition_revision('2'), graph, grid, scopes, at())
+        .redefine(&definition_bundle(7), at())
         .expect("改訂そのものは組める");
     let err = repository
         .store(&event, &second)

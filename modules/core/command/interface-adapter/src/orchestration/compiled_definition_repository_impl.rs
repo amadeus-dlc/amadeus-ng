@@ -22,7 +22,8 @@
 //!   **env の読取そのものは合成ルートの責務**で、ここは注入されたパスだけを見る
 //!   (テストを hermetic に保つため)。
 //! - JSON コーデック (serde ワイヤ構造体) と frontmatter パーサ (手書き — 00-policy R9)。
-//! - 内容版 `DefinitionRevision` の算出 (正準 JSON ダイジェスト — ADR-008)。
+//! - (内容版 `DefinitionRevision` はここでは算出しない — 集約が内容から導出する。
+//!   ADR-008 改訂 2026-09-02、b36)。
 //!
 //! **serde の厳格度** (12 §10 の表):
 //! 1. 未知フィールドは**許容**する (`deny_unknown_fields` を付けない — F1)。将来版や
@@ -39,15 +40,13 @@
 
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, Compiled, CompiledDefinition, CompiledDefinitionEvent,
-    CompiledDefinitionId, ConsumeDecl, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
-    ReviewCapValue, ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef,
-    SkeletonDefault, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
+    CompiledDefinitionId, ConsumeDecl, ExecutionKind, PhaseId, PlanAction, ReviewCapValue,
+    ReviewClass, RuleInContext, RuleScope, ScopeGrid, ScopeMetadata, SensorRef, SkeletonDefault,
+    StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
 };
 use core_command_use_case::orchestration::{CompiledDefinitionRepository, RepositoryError};
 use core_infrastructure::atomic::write_file_atomic;
-use core_infrastructure::canon_json::{
-    SerializationProfile, ToValueError, hash_canonical, serialize, to_value,
-};
+use core_infrastructure::canon_json::{SerializationProfile, ToValueError, serialize, to_value};
 use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -238,6 +237,39 @@ const fn scope_file(message: String) -> DefinitionReadFailure {
     DefinitionReadFailure::Corrupt(DefinitionCorruption::ScopeFile { message })
 }
 
+/// (イベント, 集約) の対が同じ内容を語っているか — `store` の書込契約。
+///
+/// 媒体はスナップショット (配布ファイル) なので書くのは集約のほうだが、イベントが集約の
+/// 現在の状態を説明していない対は歴史と保存像の食い違いであり、拒む。誕生と再コンパイルは
+/// 内容全量が集約と一致すること、scope 登記は登記した identity と列が集約に載っていること、
+/// プラグイン選択は集約のグラフがその選択の不動点であること。
+fn event_describes(event: &CompiledDefinitionEvent, aggregate: &CompiledDefinition) -> bool {
+    match event {
+        CompiledDefinitionEvent::Compiled(compiled) => {
+            CompiledDefinition::from(compiled.clone()) == *aggregate
+        }
+        CompiledDefinitionEvent::Recompiled(recompiled) => {
+            recompiled.id() == aggregate.id()
+                && recompiled.graph() == aggregate.graph()
+                && recompiled.grid() == aggregate.grid()
+                && recompiled.scopes() == aggregate.scopes()
+        }
+        CompiledDefinitionEvent::ScopeRegistered(registered) => {
+            let name = registered.metadata().name();
+            registered.id() == aggregate.id()
+                && aggregate.scopes().get(name) == Some(registered.metadata())
+                && aggregate.grid().column(name) == Some(registered.column())
+        }
+        CompiledDefinitionEvent::PluginSelectionApplied(applied) => {
+            applied.id() == aggregate.id()
+                && aggregate
+                    .graph()
+                    .with_plugin_selection(applied.enabled_plugins())
+                    == *aggregate.graph()
+        }
+    }
+}
+
 /// `store` の書込契約違反・永続化表現への写像失敗を `Corrupt` に畳む (分類は契約に載せず、
 /// 材料は原因連鎖で運ぶ — 読取側の `into_repository_error` と対)。
 fn store_corrupt(
@@ -257,14 +289,6 @@ fn io_at(path: &Path, error: &io::Error) -> RepositoryError<CompiledDefinitionId
         kind: error.kind(),
         path: Some(path.to_path_buf()),
     }
-}
-
-/// 内容版の算出失敗を `Corrupt` に畳む (`to_value` / `DefinitionRevision::parse` は正常な
-/// 入力では失敗しない — 防御的な写像なので分岐は 1 箇所に寄せる)。
-fn revision_failure(context: &str, cause: &dyn fmt::Display) -> DefinitionReadFailure {
-    DefinitionReadFailure::Corrupt(DefinitionCorruption::Malformed {
-        message: format!("{context}: {cause}"),
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -370,36 +394,6 @@ struct HarnessDto {
     name: String,
 }
 
-/// `DefinitionRevision` のハッシュ入力 (ADR-008)。**3 入力そのもの**を宣言順に束ねた
-/// アダプタ層のワイヤ構造体で、ドメインには現れない。
-///
-/// フィールド順は canon-json の `to_value` が宣言順で写し、`hash_canonical` が再帰キーソートを
-/// かけるため結果には効かない。順序を宣言順で固定してあるのは読み手のためである。
-#[derive(Debug, Serialize)]
-struct RevisionInput {
-    /// `stage-graph.json` をそのまま読んだ値 (ドメイン型へ写す前)。
-    stage_graph: serde_json::Value,
-    /// `scope-grid.json` をそのまま読んだ値。欠損・不正時は転置導出グリッドを
-    /// `{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` 形へ直列化した値。
-    scope_grid: serde_json::Value,
-    /// scope identity の frontmatter を `name` 昇順に並べた配列。
-    scopes: Vec<RevisionScope>,
-}
-
-/// `RevisionInput` の scope 要素 — frontmatter のうち読取モデルが保持する値。
-///
-/// 本 Gateway が写さないキー (`description` など) はハッシュ入力にも入らない。revision は
-/// 「この Gateway が読んだ 3 入力」の内容版であって、ファイルの生バイトの版ではない。
-#[derive(Debug, Serialize)]
-struct RevisionScope {
-    name: String,
-    depth: Option<String>,
-    keywords: Vec<String>,
-    skeleton: Option<String>,
-    review_cap: Option<String>,
-    freeform_default: bool,
-}
-
 // ---------------------------------------------------------------------------
 // Gateway
 // ---------------------------------------------------------------------------
@@ -488,11 +482,7 @@ impl CompiledDefinitionRepositoryImpl {
     }
 
     /// グラフを読む。**唯一 fatal な入力** (12 §4 #1・#2)。
-    ///
-    /// ドメイン型の `StageGraph` と、**読んだままの生値**を返す。後者は `DefinitionRevision`
-    /// のハッシュ入力で、ドメイン型へ写す過程で落ちる情報 (未知フィールド・キー順) まで
-    /// 内容版に含めるために要る。
-    fn load_graph(&self) -> Result<(StageGraph, serde_json::Value), DefinitionReadFailure> {
+    fn load_graph(&self) -> Result<StageGraph, DefinitionReadFailure> {
         let path = self.stage_graph_path();
         let content =
             fs::read_to_string(&path).map_err(|e| DefinitionReadFailure::from_io(&path, &e))?;
@@ -502,8 +492,6 @@ impl CompiledDefinitionRepositoryImpl {
                 cause: e.to_string(),
             })
         };
-        let raw: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
         let dto: Vec<StageNodeDto> =
             serde_json::from_str(&content).map_err(|e| invalid_json(&e))?;
         let mut nodes = Vec::with_capacity(dto.len());
@@ -511,17 +499,13 @@ impl CompiledDefinitionRepositoryImpl {
             nodes.push(to_stage_node(node, &path)?);
         }
         // 文書順のまま渡す (F2 — 読込時に数値順へ正規化しない)。
-        let graph = StageGraph::new(nodes).map_err(|e| malformed(&path, &format!("{e:?}")))?;
-        Ok((graph, raw))
+        StageGraph::new(nodes).map_err(|e| malformed(&path, &format!("{e:?}")))
     }
 
     /// グリッドを読む。**読めない / 不正なら `None`** を返し、呼出側が転置導出へ倒す
     /// (12 §4 #3 — *"callers never see a hard ENOENT for a derivable artifact"*)。
-    ///
-    /// ドメイン型の `ScopeGrid` と読んだままの生値を返す (生値は revision のハッシュ入力)。
-    fn load_grid(&self) -> Option<(ScopeGrid, serde_json::Value)> {
+    fn load_grid(&self) -> Option<ScopeGrid> {
         let content = fs::read_to_string(self.scope_grid_path()).ok()?;
-        let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
         let dto: BTreeMap<String, ScopeColumnDto> = serde_json::from_str(&content).ok()?;
         let mut columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>> = BTreeMap::new();
         for (scope, column) in dto {
@@ -539,7 +523,7 @@ impl CompiledDefinitionRepositoryImpl {
             }
             columns.insert(scope, cells);
         }
-        Some((ScopeGrid::new(columns), raw))
+        Some(ScopeGrid::new(columns))
     }
 
     /// identity ファイルを列挙して frontmatter を読む。**有効スコープの権威**はここ (F7)。
@@ -616,21 +600,15 @@ impl CompiledDefinitionRepositoryImpl {
     fn read(&self) -> Result<CompiledDefinition, DefinitionReadFailure> {
         // 定義 id は配布物自身が名乗る (ADR-008) — 呼出側が id を指定して照合するのではない。
         let id = self.load_harness_identity()?;
-        let (graph, raw_graph) = self.load_graph()?;
-        let (grid, raw_grid) = match self.load_grid() {
-            Some(read) => read,
-            // グリッド欠損は fatal にしない (12 §4 #3)。revision も導出グリッドから作る —
-            // 「読めた 3 入力の内容版」であって「ディスクにあったバイトの版」ではない。
-            None => {
-                let derived = ScopeGrid::from_graph(&graph);
-                let raw = serialize_grid(&derived);
-                (derived, raw)
-            }
-        };
+        let graph = self.load_graph()?;
+        // グリッド欠損は fatal にしない (12 §4 #3) — 転置導出へ倒す。内容版は集約が内容から
+        // 導出するので、導出グリッドと同じ内容の grid ファイルが置かれた場合と同じ値になる。
+        let grid = self
+            .load_grid()
+            .unwrap_or_else(|| ScopeGrid::from_graph(&graph));
         let scopes = self.load_scopes()?;
-        let revision = compute_revision(&raw_graph, &raw_grid, &scopes)?;
         Ok(CompiledDefinition::from(Compiled::new(
-            id, revision, graph, grid, scopes,
+            id, graph, grid, scopes,
         )))
     }
 }
@@ -657,11 +635,9 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
         compiled_definition: &CompiledDefinition,
     ) -> Result<(), RepositoryError<CompiledDefinitionId>> {
         let id = compiled_definition.id();
-        // イベントと集約の照合 — `Compiled` は内容そのものを運ぶので、対の取り違えは
-        // 「歴史と保存像が別の内容を語る」書込契約違反として拒む (`IntentRepositoryImpl` の
-        // 写し — 対で受ける契約の意味を実装が守る)。
-        let CompiledDefinitionEvent::Compiled(compiled) = event;
-        if CompiledDefinition::from(compiled.clone()) != *compiled_definition {
+        // イベントと集約の照合 — 対の取り違えは「歴史と保存像が別の内容を語る」書込契約違反
+        // として拒む (`IntentRepositoryImpl` の写し — 対で受ける契約の意味を実装が守る)。
+        if !event_describes(event, compiled_definition) {
             return Err(store_corrupt(
                 id,
                 "store pair mismatch: the event does not describe the aggregate".to_string(),
@@ -731,58 +707,6 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
         }
         Ok(())
     }
-}
-
-/// 転置導出グリッドを `scope-grid.json` と同じ 2 段構造へ直列化する
-/// (`{ <scope>: { stages: { <slug>: "EXECUTE"|"SKIP" } } }` — F6 の中間キー込み)。
-///
-/// グリッドが読めなかったときの revision 入力。ファイルから読めたときの値と同じ形にして
-/// おくことで、「導出グリッドと同じ内容の grid ファイルが置かれた」場合に同じ revision に
-/// なる — 内容版が入力の**内容**だけで決まるという性質が保たれる。
-fn serialize_grid(grid: &ScopeGrid) -> serde_json::Value {
-    let mut columns = serde_json::Map::new();
-    for (scope, column) in grid.columns() {
-        let mut stages = serde_json::Map::new();
-        for (slug, action) in column {
-            stages.insert(
-                slug.as_str().to_string(),
-                serde_json::Value::String(action.as_str().to_string()),
-            );
-        }
-        let mut wrapper = serde_json::Map::new();
-        wrapper.insert("stages".to_string(), serde_json::Value::Object(stages));
-        columns.insert(scope.to_string(), serde_json::Value::Object(wrapper));
-    }
-    serde_json::Value::Object(columns)
-}
-
-/// 3 入力の正準 JSON ダイジェストを `DefinitionRevision` にする (ADR-008)。
-///
-/// `hash_canonical` は再帰キーソート + `sha256:` 接頭辞 (正準族) なので、入力の**内容**だけで
-/// 決まりキーの並び順には依存しない。scope は `BTreeMap` から取るため常に `name` 昇順。
-fn compute_revision(
-    raw_graph: &serde_json::Value,
-    raw_grid: &serde_json::Value,
-    scopes: &BTreeMap<String, ScopeMetadata>,
-) -> Result<DefinitionRevision, DefinitionReadFailure> {
-    let input = RevisionInput {
-        stage_graph: raw_graph.clone(),
-        scope_grid: raw_grid.clone(),
-        scopes: scopes
-            .values()
-            .map(|metadata| RevisionScope {
-                name: metadata.name().to_string(),
-                depth: metadata.depth().map(str::to_string),
-                keywords: metadata.keywords().to_vec(),
-                skeleton: metadata.skeleton().map(|s| s.as_str().to_string()),
-                review_cap: metadata.review_cap().map(|c| c.as_str().to_string()),
-                freeform_default: metadata.freeform_default(),
-            })
-            .collect(),
-    };
-    let value = to_value(&input).map_err(|e| revision_failure("definition revision input", &e))?;
-    DefinitionRevision::parse(&hash_canonical(&value).rendered())
-        .map_err(|e| revision_failure("definition revision", &e))
 }
 
 // ---------------------------------------------------------------------------
@@ -1008,8 +932,7 @@ impl Serialize for ScopeStagesEmitDto<'_> {
 /// scope identity ファイル (`aidlc-<name>.md`) のバイトを組む。
 ///
 /// frontmatter は [`parse_scope_metadata`] が読む最小サブセットと対称 — 集約が持たない
-/// 散文本文は書かない (内容版 `DefinitionRevision` の入力はメタデータのみで、本文は
-/// 集約の内容ではない)。
+/// 散文本文は書かない (本文は集約の内容ではなく、内容版の入力にも入らない)。
 fn emit_scope_markdown(metadata: &ScopeMetadata) -> String {
     let mut out = String::from("---\n");
     out.push_str(&format!("name: {}\n", metadata.name()));

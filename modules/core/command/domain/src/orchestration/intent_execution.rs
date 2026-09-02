@@ -1195,9 +1195,10 @@ mod tests {
         StageDisplay, StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
-        ScopeMetadata, StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
-        WorkflowDefinition, WorkflowDefinitionId,
+        BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
+        ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
+        StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
+        WorkflowDefinitionId,
     };
     use crate::workspace::CheckboxState;
     use std::collections::BTreeMap;
@@ -1545,12 +1546,16 @@ mod tests {
         .collect();
         WorkflowDefinition::define(
             def_id("claude"),
-            revision('a'),
-            graph,
-            grid,
-            scopes,
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                graph,
+                grid,
+                scopes,
+            )
+            .0,
             occurred(),
         )
+        .unwrap()
         .0
     }
 

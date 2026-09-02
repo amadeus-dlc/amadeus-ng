@@ -322,13 +322,13 @@ fn load(fixture: &Fixture) -> CompiledDefinition {
 /// `first_in_scope_stage_of_phase`) は集約が所有するので、取込の検収でそれを突くには
 /// 一度 genesis を通す。`define` は (集約, 誕生イベント) の対を返すので集約側だけを取る
 /// (`coding-rules/aggregate-commands.md`)。
-fn materialize(artifacts: CompiledDefinition) -> WorkflowDefinition {
+fn materialize(artifacts: &CompiledDefinition) -> WorkflowDefinition {
     // 集約ごとに自前の ID 型を持つ — 系譜は同じ name なので値で写す (合成ルートが両 ID を
     // 同じ源から鋳造するのと同じ突合せ)。
     let id = WorkflowDefinitionId::parse(artifacts.id().as_str()).expect("同一文法の系譜 ID");
-    let revision = artifacts.revision().clone();
-    let (graph, grid, scopes) = artifacts.into_content();
-    WorkflowDefinition::define(id, revision, graph, grid, scopes, at()).0
+    WorkflowDefinition::define(id, artifacts, at())
+        .expect("同じ系譜")
+        .0
 }
 
 /// 定義イベントの発生時刻 (取込の検収では時刻そのものは問わないので固定値)。
@@ -340,7 +340,7 @@ fn at() -> chrono::DateTime<chrono::Utc> {
 
 /// 取込 → materialize の短縮形。
 fn definition_of(fixture: &Fixture) -> WorkflowDefinition {
-    materialize(load(fixture))
+    materialize(&load(fixture))
 }
 
 // ---------------------------------------------------------------------------
@@ -792,7 +792,7 @@ fn a_missing_scopes_directory_yields_an_empty_catalog_rather_than_a_failure() {
         fixture.data_dir.clone(),
         fixture.scopes_dir.join("does-not-exist"),
     );
-    let definition = materialize(find(&compiled_definition_repository).unwrap());
+    let definition = materialize(&find(&compiled_definition_repository).unwrap());
     assert!(definition.valid_scopes().is_empty());
     // グリッド列は読めているが、権威が無いので全スコープが未知になる。
     assert!(definition.grid().contains_scope("feature"));
@@ -1130,7 +1130,6 @@ fn store_into(
 ) -> Result<(), ReadError> {
     let (reborn, event) = CompiledDefinition::compile(
         compiled_definition.id().clone(),
-        compiled_definition.revision().clone(),
         compiled_definition.graph().clone(),
         compiled_definition.grid().clone(),
         compiled_definition.scopes().clone(),
@@ -1209,20 +1208,15 @@ fn storing_writes_one_identity_file_per_scope_and_sweeps_the_stale_ones() {
 
 #[test]
 fn storing_a_pair_whose_event_does_not_describe_the_aggregate_is_refused() {
-    // `Compiled` は内容そのものを運ぶ — 別の内容版を名乗る誕生記録と組ませた対は、歴史と
+    // `Compiled` は内容そのものを運ぶ — 別の内容を語る誕生記録と組ませた対は、歴史と
     // 保存像が別の内容を語る書込契約違反として拒む (`IntentRepositoryImpl` の写し)。
     let fixture = Fixture::new(Some(GRAPH_JSON), Some(GRID_JSON), &scope_files());
     let compiled = load(&fixture);
-    let foreign_revision = core_command_domain::workflow_definition::DefinitionRevision::parse(
-        &format!("sha256:{}", "f".repeat(64)),
-    )
-    .unwrap();
     let (_, foreign_event) = CompiledDefinition::compile(
         compiled.id().clone(),
-        foreign_revision,
         compiled.graph().clone(),
         compiled.grid().clone(),
-        compiled.scopes().clone(),
+        std::collections::BTreeMap::new(),
     );
 
     let (mut writer, out) = empty_writer();

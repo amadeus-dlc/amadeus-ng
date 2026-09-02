@@ -5,6 +5,7 @@
 use std::fmt;
 
 use super::compiled_definition_id_error::CompiledDefinitionIdError;
+use super::workflow_definition_id::WorkflowDefinitionId;
 
 /// コンパイル済み定義 (配布束) の識別子 (Always Valid — 不正値はこの型に存在しない)。
 ///
@@ -39,6 +40,23 @@ impl CompiledDefinitionId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl PartialEq<WorkflowDefinitionId> for CompiledDefinitionId {
+    /// 系譜の同一性 — 配布束の識別子とジャーナルの定義の系譜 ID は、同じ `harness.json` の
+    /// `name` を同じ文法で指す。等しい名前 = 同じ系譜 (`coding-rules/domain-equality.md`:
+    /// ドメインの同値関係は `PartialEq` で表す)。受け手の集約 (`WorkflowDefinition`) は
+    /// これで取り違えをガードする。
+    fn eq(&self, other: &WorkflowDefinitionId) -> bool {
+        self.0 == other.as_str()
+    }
+}
+
+impl PartialEq<CompiledDefinitionId> for WorkflowDefinitionId {
+    /// [`PartialEq<WorkflowDefinitionId> for CompiledDefinitionId`] の対称形。
+    fn eq(&self, other: &CompiledDefinitionId) -> bool {
+        other == self
     }
 }
 
@@ -101,6 +119,14 @@ mod tests {
             CompiledDefinitionId::try_from(String::new()),
             Err(CompiledDefinitionIdError::Empty)
         );
+    }
+
+    #[test]
+    fn the_same_name_is_the_same_lineage_across_the_two_id_types() {
+        let bundle = CompiledDefinitionId::parse("claude").unwrap();
+        assert!(bundle == WorkflowDefinitionId::parse("claude").unwrap());
+        assert!(WorkflowDefinitionId::parse("claude").unwrap() == bundle);
+        assert!(bundle != WorkflowDefinitionId::parse("kiro").unwrap());
     }
 
     #[test]

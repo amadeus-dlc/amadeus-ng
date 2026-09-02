@@ -301,9 +301,9 @@ mod tests {
 
     use crate::orchestration::{IntentId, StageDisplay, StageEntry, WorkspaceScan};
     use crate::workflow_definition::{
-        BrownfieldGreenfield, DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid,
-        ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
-        WorkflowDefinition, WorkflowDefinitionId,
+        BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
+        ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
+        StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionId,
     };
     use std::collections::BTreeMap;
 
@@ -417,12 +417,16 @@ mod tests {
         .collect();
         WorkflowDefinition::define(
             def_id(),
-            revision(),
-            StageGraph::new(vec![node]).unwrap(),
-            grid,
-            scopes,
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                StageGraph::new(vec![node]).unwrap(),
+                grid,
+                scopes,
+            )
+            .0,
             defined_at(),
         )
+        .unwrap()
         .0
     }
 
@@ -587,12 +591,16 @@ mod tests {
         .collect();
         let definition = WorkflowDefinition::define(
             def_id(),
-            revision(),
-            StageGraph::new(vec![node]).unwrap(),
-            grid,
-            scopes,
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                StageGraph::new(vec![node]).unwrap(),
+                grid,
+                scopes,
+            )
+            .0,
             defined_at(),
         )
+        .unwrap()
         .0;
         assert_eq!(
             Intent::create(id(), &definition, request(), scan(), defined_at()),

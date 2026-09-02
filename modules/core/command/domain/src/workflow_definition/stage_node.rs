@@ -152,6 +152,14 @@ impl StageNode {
         &self.optional_produces
     }
 
+    /// `enabled` を差し替えた写し (プラグイン選択の適用 — `StageGraph::with_plugin_selection`
+    /// が使う。`None` = キー不在 = 有効)。
+    #[must_use]
+    pub const fn with_enabled(mut self, enabled: Option<bool>) -> StageNode {
+        self.enabled = enabled;
+        self
+    }
+
     /// 成果物 → 適用 unit kind の写像。**マップに無い成果物は全 kind に適用**される。
     ///
     /// **文書順を保持する** — upstream の emit 順は内容の一部であり、書き手 (`store`) が

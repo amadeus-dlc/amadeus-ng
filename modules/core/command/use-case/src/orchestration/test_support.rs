@@ -97,11 +97,6 @@ pub(crate) fn definition_id() -> WorkflowDefinitionId {
 }
 
 /// フィクスチャの定義内容版。
-pub(crate) fn definition_revision() -> DefinitionRevision {
-    DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
-        .expect("フィクスチャの定義 revision")
-}
-
 /// `stage_count` 段の定義の 3 入力 — 索引 0 が initialization、以降 inception。
 ///
 /// [`genesis`] が組み立てる合成計画と**同じ形**にしてある。したがって
@@ -138,35 +133,23 @@ fn content(stage_count: usize) -> (StageGraph, ScopeGrid, BTreeMap<String, Scope
     (graph, grid, scopes)
 }
 
-/// `stage_count` 段の確立済み定義 (genesis を通った集約)。
+/// `stage_count` 段の確立済み定義 (同じ段数の配布束から genesis を通った集約)。
 pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
-    let (graph, grid, scopes) = content(stage_count);
-    WorkflowDefinition::define(
-        definition_id(),
-        definition_revision(),
-        graph,
-        grid,
-        scopes,
-        at(),
-    )
-    .0
+    WorkflowDefinition::define(definition_id(), &compiled(stage_count), at())
+        .expect("フィクスチャの配布束は同じ系譜")
+        .0
 }
 
-/// フィクスチャの配布束 — 内容版だけを差し替えられる形にしてある (genesis の対の左)。
-pub(crate) fn compiled(revision: DefinitionRevision, stage_count: usize) -> CompiledDefinition {
+/// `stage_count` 段の配布束 (genesis の対の左)。内容版は内容から導出されるので、段数が
+/// 違えば内容版も違う — 改訂を見るテストは段数を変える。
+pub(crate) fn compiled(stage_count: usize) -> CompiledDefinition {
     let (graph, grid, scopes) = content(stage_count);
-    CompiledDefinition::compile(compiled_definition_id(), revision, graph, grid, scopes).0
+    CompiledDefinition::compile(compiled_definition_id(), graph, grid, scopes).0
 }
 
 /// フィクスチャの配布束 id (系譜は `definition_id` と同じ name)。
 pub(crate) fn compiled_definition_id() -> CompiledDefinitionId {
     CompiledDefinitionId::parse("claude").expect("フィクスチャの配布束 id")
-}
-
-/// フィクスチャの別の内容版 (改訂を見るテスト用)。
-pub(crate) fn other_revision() -> DefinitionRevision {
-    DefinitionRevision::parse(&format!("sha256:{}", "1".repeat(64)))
-        .expect("フィクスチャの定義 revision")
 }
 
 /// [`WorkflowDefinitionRepository`] のインメモリ実装。

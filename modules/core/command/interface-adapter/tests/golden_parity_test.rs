@@ -406,10 +406,7 @@ async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() 
         .await
         .expect("配布実バイトは取り込める");
     let id = WorkflowDefinitionId::parse("claude").unwrap();
-    let revision = compiled.revision().clone();
-    let (graph, grid, scopes) = compiled.into_content();
-    let (established, event) =
-        WorkflowDefinition::define(id.clone(), revision, graph, grid, scopes, at());
+    let (established, event) = WorkflowDefinition::define(id.clone(), &compiled, at()).unwrap();
 
     let (mut workflow_definition_repository, _store) = sqlite_repository();
     let reopened_workflow_definition_repository = workflow_definition_repository.reopened();
@@ -473,7 +470,6 @@ async fn storing_the_ingested_bundle_reproduces_the_dist_bytes() {
     // 他リポジトリと同じ (イベント, 集約) の対で書く — genesis が対を鋳造する。
     let (reborn, event) = CompiledDefinition::compile(
         compiled.id().clone(),
-        compiled.revision().clone(),
         compiled.graph().clone(),
         compiled.grid().clone(),
         compiled.scopes().clone(),

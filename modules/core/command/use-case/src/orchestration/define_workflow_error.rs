@@ -3,14 +3,14 @@
 use std::fmt;
 
 use core_command_domain::workflow_definition::{
-    CompiledDefinitionId, RedefineError, WorkflowDefinitionId,
+    CompiledDefinitionId, LineageMismatch, RedefineError, WorkflowDefinitionId,
 };
 
 use super::port::RepositoryError;
 
 /// `DefineWorkflowUseCase` の失敗 (材料のみ — 逐語文言は出す側が組む)。
 ///
-/// 3 変種はいずれも**そのまま伝播させるための封筒**である。ユースケースはポートや集約の
+/// 4 変種はいずれも**そのまま伝播させるための封筒**である。ユースケースはポートや集約の
 /// 拒否を握り潰さないし言い換えもしない (`coding-rules/error-handling.md`)。失敗の位置は
 /// 復旧手順を変えるので変種で分かる必要がある — コンパイル済み定義 (配布束) が読めないのは
 /// ハーネス配置の問題、ジャーナル側の失敗は永続化の問題である (集約ごとに自前の ID 型を
@@ -29,7 +29,9 @@ pub enum DefineWorkflowError {
     CompiledDefinitionRepository(RepositoryError<CompiledDefinitionId>),
     /// ジャーナル側の定義の取得ないし永続化の失敗 (ポートからそのまま伝播)。
     DefinitionRepository(RepositoryError<WorkflowDefinitionId>),
-    /// 集約が改訂を拒否した (そのまま伝播 — 通番の枯渇)。
+    /// 集約が確立を拒否した (そのまま伝播 — 配布束の系譜が違う)。
+    Define(LineageMismatch),
+    /// 集約が改訂を拒否した (そのまま伝播 — 系譜違い・通番の枯渇)。
     Redefine(RedefineError),
 }
 
@@ -42,6 +44,7 @@ impl fmt::Display for DefineWorkflowError {
             DefineWorkflowError::DefinitionRepository(error) => {
                 write!(f, "definition repository: {error}")
             }
+            DefineWorkflowError::Define(error) => write!(f, "define: {error}"),
             DefineWorkflowError::Redefine(error) => write!(f, "redefine: {error}"),
         }
     }
@@ -59,6 +62,7 @@ impl std::error::Error for DefineWorkflowError {
         match self {
             DefineWorkflowError::CompiledDefinitionRepository(error) => Some(error),
             DefineWorkflowError::DefinitionRepository(error) => Some(error),
+            DefineWorkflowError::Define(error) => Some(error),
             DefineWorkflowError::Redefine(error) => Some(error),
         }
     }
@@ -71,6 +75,12 @@ impl std::error::Error for DefineWorkflowError {
 impl From<RepositoryError<WorkflowDefinitionId>> for DefineWorkflowError {
     fn from(error: RepositoryError<WorkflowDefinitionId>) -> DefineWorkflowError {
         DefineWorkflowError::DefinitionRepository(error)
+    }
+}
+
+impl From<LineageMismatch> for DefineWorkflowError {
+    fn from(error: LineageMismatch) -> DefineWorkflowError {
+        DefineWorkflowError::Define(error)
     }
 }
 

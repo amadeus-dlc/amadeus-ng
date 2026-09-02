@@ -71,7 +71,8 @@ where
     ///
     /// コンパイル済み定義の取得の失敗 (`CompiledDefinitionRepository`)、ジャーナル側の定義の
     /// 取得ないし永続化の失敗 (`DefinitionRepository` — 別プロセスが先に改訂していれば
-    /// `Conflict`)、集約が改訂を拒否した (`Redefine` — 通番の枯渇) を返す。
+    /// `Conflict`)、集約が確立を拒否した (`Define` — 配布束の系譜が違う)、集約が改訂を
+    /// 拒否した (`Redefine` — 系譜違い・通番の枯渇) を返す。
     pub async fn execute(
         &mut self,
         compiled_definition_id: &CompiledDefinitionId,
@@ -108,11 +109,8 @@ where
         compiled_definition: CompiledDefinition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), DefineWorkflowError> {
-        let id = definition_id.clone();
-        let revision = compiled_definition.revision().clone();
-        let (graph, grid, scopes) = compiled_definition.into_content();
         let (definition, event) =
-            WorkflowDefinition::define(id, revision, graph, grid, scopes, occurred_at);
+            WorkflowDefinition::define(definition_id.clone(), &compiled_definition, occurred_at)?;
         self.workflow_definition_repository
             .store(&event, &definition)
             .await?;
@@ -126,9 +124,7 @@ where
         compiled_definition: CompiledDefinition,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), DefineWorkflowError> {
-        let revision = compiled_definition.revision().clone();
-        let (graph, grid, scopes) = compiled_definition.into_content();
-        match definition.redefine(revision, graph, grid, scopes, occurred_at) {
+        match definition.redefine(&compiled_definition, occurred_at) {
             Ok(event) => {
                 self.workflow_definition_repository
                     .store(&event, &definition)
@@ -147,7 +143,7 @@ mod tests {
     use super::*;
     use crate::orchestration::test_support::{
         InMemoryCompiledDefinitionRepository, InMemoryWorkflowDefinitionRepository, at, compiled,
-        compiled_definition_id, definition, definition_id, definition_revision, other_revision,
+        compiled_definition_id, definition, definition_id,
     };
     use core_command_domain::workflow_definition::WorkflowDefinitionEvent;
 
@@ -155,7 +151,7 @@ mod tests {
     #[tokio::test]
     async fn ingesting_into_an_empty_store_establishes_the_definition() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(3)),
             InMemoryWorkflowDefinitionRepository::empty(),
         );
 
@@ -169,7 +165,7 @@ mod tests {
             .find_by_id(&definition_id())
             .await
             .expect("確立した定義はストアに居る");
-        assert_eq!(stored.revision(), &definition_revision());
+        assert_eq!(stored.revision(), compiled(3).revision());
         assert_eq!(stored.graph().len(), 3, "配布物の内容がそのまま入る");
         assert_eq!(stored.seq_nr(), 1, "誕生の通番は 1");
         assert!(
@@ -185,7 +181,7 @@ mod tests {
     #[tokio::test]
     async fn ingesting_a_changed_distribution_redefines_the_definition() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(other_revision(), 5)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(5)),
             InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
 
@@ -199,7 +195,7 @@ mod tests {
             .find_by_id(&definition_id())
             .await
             .expect("改訂した定義はストアに居る");
-        assert_eq!(stored.revision(), &other_revision());
+        assert_eq!(stored.revision(), compiled(5).revision());
         assert_eq!(stored.graph().len(), 5, "内容が入れ替わる");
         assert_eq!(stored.id(), &definition_id(), "系譜 ID は不変");
         assert!(
@@ -215,7 +211,7 @@ mod tests {
     #[tokio::test]
     async fn ingesting_an_unchanged_distribution_writes_nothing() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(3)),
             InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
 
@@ -237,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn ingesting_twice_leaves_a_single_event() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(3)),
             InMemoryWorkflowDefinitionRepository::empty(),
         );
 
@@ -287,7 +283,7 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_definition_stops_the_ingestion() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(definition_revision(), 3)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(3)),
             InMemoryWorkflowDefinitionRepository::corrupt(),
         );
 
@@ -315,7 +311,7 @@ mod tests {
     #[tokio::test]
     async fn a_stale_version_propagates_the_repository_conflict() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(other_revision(), 5)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(5)),
             InMemoryWorkflowDefinitionRepository::holding_behind_a_concurrent_write(definition(3)),
         );
 
@@ -337,7 +333,7 @@ mod tests {
     #[tokio::test]
     async fn an_exhausted_sequence_propagates_the_aggregate_refusal() {
         let mut use_case = DefineWorkflowUseCase::new(
-            InMemoryCompiledDefinitionRepository::serving(compiled(other_revision(), 5)),
+            InMemoryCompiledDefinitionRepository::serving(compiled(5)),
             InMemoryWorkflowDefinitionRepository::holding(definition(3).with_seq_nr(usize::MAX)),
         );
 
@@ -358,6 +354,31 @@ mod tests {
                 .workflow_definition_repository
                 .committed()
                 .is_empty()
+        );
+    }
+
+    /// 配布束と定義の系譜が違えば、集約のガードが確立を拒み何も書かない (CodeRabbit 指摘 —
+    /// 判断はユースケースではなく受け手の集約が持つ)。
+    #[tokio::test]
+    async fn a_bundle_of_another_lineage_is_refused_and_writes_nothing() {
+        let mut use_case = DefineWorkflowUseCase::new(
+            InMemoryCompiledDefinitionRepository::serving(compiled(3)),
+            InMemoryWorkflowDefinitionRepository::empty(),
+        );
+        let foreign = WorkflowDefinitionId::parse("kiro").expect("別系譜の定義 id");
+
+        let error = use_case
+            .execute(&compiled_definition_id(), &foreign, at())
+            .await
+            .expect_err("系譜が違う配布束では確立できない");
+
+        assert!(matches!(error, DefineWorkflowError::Define(_)), "{error:?}");
+        assert!(
+            use_case
+                .workflow_definition_repository
+                .committed()
+                .is_empty(),
+            "拒否された確立は何も書かない"
         );
     }
 
