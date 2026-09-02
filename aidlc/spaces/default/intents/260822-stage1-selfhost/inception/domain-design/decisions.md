@@ -467,3 +467,27 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
 
   出典: [`developer-report-1.md`](../../construction/esa-v3-migration/developer-report-1.md)
   （§2 裁定 1〜9、§4-(a) TOCTOU 経緯、§4-(b) newtype 見送り）。
+
+## ADR-011: CLI 読取コマンド向けリードモデルは SQLite の `read_*` 表 — RMU が集約のクエリの答えを投影する（2026-09-02 追加）
+
+**Context**: クエリ側（`modules/core/query/*`）が upstream 互換の Markdown 面と配布 3 ファイルを逆パースし、
+`next` の判断（`next_decision` 等）を自前で再実装していた（監査 `construction/query-side-audit/audit-1.md`）。
+オーナー裁定: 「クエリ側のユースケースは DAO で DTO(View) を読んで返すだけ。RMU が計算結果としての
+リードモデルを構築する。SQLite でも JSON でもよい — 最適なリードモデル仕様を考えて」。
+
+**Decision**: 判断は集約に戻し（b38）、RMU がジャーナル 3 ストリームから集約を `replay` で起こして
+クエリメソッドを呼び、その答えを**イベントストアと同じ SQLite ファイルの `read_*` 表**へ非正規化して
+書く（b39 / b40）。行の差し替えとチェックポイント前進は同一トランザクション。クエリ側の DAO は
+キーで引くだけ（`WHERE` は可、行に無い事実の導出は不可）。スコープ解決の優先順はコントローラの
+ルーティング順、steering の参照入力（memory 規則ファイル）は `catch_up` ごとのダイジェスト比較で
+変化時だけ再投影、advisory マーカーの書込は合成ルートの機構モジュール（`read-model-spec.md` §10）。
+
+**Alternatives Rejected**: (a) JSON ファイル群 — ファイル間の整合をトランザクションで保証できず、
+要求パラメータでの引当が DAO のコード走査になり「読むだけ」の境界が曖昧になる（オーナー:
+「SQLite のほうが自由度が高い。非正規データとしてのリードモデルを読むときに楽」）。(b) クエリ側が
+リードモデルから導出する — CQRS 違反（オーナー: 「作ったら CQRS 違反」）。
+
+**Consequences**: RMU が定義ストリームも購読する（従来の「暫定の読み飛ばし」を撤去）。`Started` が
+集約 id と計画の写しを運ぶよう是正（自ストリームだけで再生できる ES の基本）。クエリ側の Markdown
+逆パース・配布 3 ファイルのパース・判断型は Bolt 3 で削除される。表カタログの正本は仕様 11 §4.1 と
+`construction/b39-rmu-read-tables/design.md` §4.1。
