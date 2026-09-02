@@ -1,5 +1,6 @@
 //! `ReadModelUpdater::catch_up` の失敗。
 
+use crate::read_tables::ReadTablesError;
 use crate::workspace::{
     AuditShardWriteError, ProjectionError, StateFileReadError, StateFileWriteError,
 };
@@ -31,7 +32,16 @@ pub enum CatchUpError {
     /// この取得ループは単一 intent の状態ファイル 1 面へ描く（`ProjectionTargets` は 1 組）。
     /// 別 intent の実行を同じ計画で描くと誤った表示属性が焼き込まれるため、混在は読み替えず
     /// 止める。intent ごとの書込先振り分けは合成ルート（U7）の駆動設計と対で扱う。
+    ///
+    /// **この契約は Markdown 面（系統 (1)）の話である** — 構造化面（`read_*` 表）は複数の
+    /// intent も複数の実行もキーで自然に扱うので、混在そのものは構造化面の問題ではない。
     MixedIntents,
+    /// 構造化投影核が歴史の切り落としを見つけた。
+    ///
+    /// ストリームの先頭に誕生記録が無い・実行が指す intent が履歴に無い、のどちらか。
+    /// 読み替えて部分的な行を書くと、読取コマンドが「間違った答えが在る」を見ることに
+    /// なるので止める。
+    ReadTables(ReadTablesError),
 }
 
 impl core::fmt::Display for CatchUpError {
@@ -46,6 +56,7 @@ impl core::fmt::Display for CatchUpError {
             CatchUpError::AuditShardWrite(inner) => write!(f, "audit shard write: {inner}"),
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
             CatchUpError::MixedIntents => f.write_str("mixed intents"),
+            CatchUpError::ReadTables(inner) => write!(f, "read tables: {inner}"),
         }
     }
 }
@@ -65,6 +76,7 @@ impl std::error::Error for CatchUpError {
             CatchUpError::Read(inner) => Some(inner),
             CatchUpError::Projection(inner) => Some(inner),
             CatchUpError::AuditShardWrite(inner) => Some(inner),
+            CatchUpError::ReadTables(inner) => Some(inner),
             CatchUpError::StateFileRead(_)
             | CatchUpError::StateFileWrite(_)
             | CatchUpError::PlanUnavailable
@@ -82,6 +94,12 @@ impl From<JournalReadError> for CatchUpError {
 impl From<ProjectionError> for CatchUpError {
     fn from(inner: ProjectionError) -> CatchUpError {
         CatchUpError::Projection(inner)
+    }
+}
+
+impl From<ReadTablesError> for CatchUpError {
+    fn from(inner: ReadTablesError) -> CatchUpError {
+        CatchUpError::ReadTables(inner)
     }
 }
 
@@ -161,6 +179,21 @@ mod tests {
         assert_eq!(
             shard_write.to_string(),
             "audit shard write: io: PermissionDenied"
+        );
+
+        let read_tables: CatchUpError = ReadTablesError::MissingGenesis {
+            aggregate_id: "claude".to_string(),
+        }
+        .into();
+        assert_eq!(
+            read_tables.to_string(),
+            "read tables: missing genesis for claude"
+        );
+        assert_eq!(
+            std::error::Error::source(&read_tables)
+                .expect("構造化投影の失敗へ連鎖する")
+                .to_string(),
+            "missing genesis for claude"
         );
 
         let boxed: Box<dyn std::error::Error> = Box::new(projection);

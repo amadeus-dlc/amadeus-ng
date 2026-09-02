@@ -125,6 +125,34 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 - **配置の規範**（§3 の帰結）: `Clock` は**アダプタ層の機構モジュール**（コンテキストの外、クレート root）に置き、実物と fake の差し替えは composition root が配線する（`ProcessProbe` は退役 — reap 機構の消滅に伴う、ADR-007 / Bolt B5）。`FileStore`（アトミック書込・追記専用 open・封じ込め検査）と正準 JSON（A2）・ハッシュは **Repository 実装と投影ライタの内部部品**として実装側に閉じる。いずれも use-case 層に trait を置かない（[`coding-rules/gateway-taxonomy.md`](../../aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md) §1、設計監査 C4）。
 - **Gateways**: `FileStore` 実装（`O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW|O_NONBLOCK` open、fstat regular-file 検査、書込前後の記述子同一性再検証 — 書込中 rename は行方不明の行ではなく**囲んでいる audit-first トランザクションの失敗**になる。**nlink の意図的非対称**: 通常 append 経路は `nlink != 1` を拒否**しない** — rsync `--link-dest` / `cp -al` スナップショットへの拒否が「以後の全 gate/hook 追記をフレームワーク全体で文鎮化した」実績による。厳格な多重リンク拒否は fork/merge 経路のみ。Rust 再実装で防御を「強化」すると同じ障害を再現する）、外部システムクライアント（Git）実装（spawn 基盤 A4 経由、30s タイムアウト、SIGTERM でタイムアウトと失敗を区別）。ロック dir 実装（mkdir-EEXIST、owner.json スタンプ、rename CAS reap）は**退役**し、並行制御は `WorkflowExecutionRepositoryImpl` の SQLite Tx ＋ 楽観 version に移る（ADR-007。逸脱台帳 [`deviations.md`](deviations.md) 参照）。**I/O 責務はすべてここ**。テスト用 in-memory 実装を最初に用意する。
 
+### 4.1 構造化リードモデル（`read_*` 表）— CLI 読取コマンド向けの第 2 系統（2026-09-02 追加、b39）
+
+リードモデルは **2 系統**ある（オーナー裁定 2026-09-02、`construction/query-side-audit/read-model-spec.md`）。
+
+| 系統 | 読み手 | 形 | 更新者 |
+| --- | --- | --- | --- |
+| (1) 人・upstream ツール向けファイル面 | 人が開く、upstream の hook / ステージが読む | `aidlc-state.md`、監査シャード、配布束の面 `stage-graph.json` / `scope-grid.json` | RMU（バイト互換、golden 固定） |
+| (2) CLI 読取コマンド向け構造化リードモデル | `next` / `continue` /（将来）`--status` / `doctor` の DAO | イベントストアと同じ SQLite ファイル（`aidlc/spaces/<space>/intents/.aidlc-store.sqlite`）の接頭辞 `read_` の表 | RMU（`catch_up` ごとに**全履歴から再計算し全差し替え**、チェックポイント前進と**同一トランザクション**） |
+
+(2) の規範:
+
+- **行の値はすべて集約のクエリメソッドの戻り値の写し**である。RMU はジャーナル 3 ストリーム（intent / 実行 / 定義）から `replay` で集約を起こし（投影核の入口はイベント列 — cqrs-boundaries 規則 3）、`next_decision` / `jump_resolve` / `scope_cost` / 述語面を**呼んで**行に書く。判断を RMU で再実装しない。
+- **非正規化**する — 読取コマンドが 1 回の引当（`WHERE`）で答えを得る形に置く。クエリ側の DAO はキーで引くだけで、行に無い事実を作らない（作れば CQRS 違反 — オーナー裁定）。
+- 全行が `as_of`（投影に使った最後のジャーナル通番 = `GlobalSeqNr`）を持つ。壁時計は読まない（冪等・決定性）。
+- 表の作成は `CREATE TABLE IF NOT EXISTS`（`amadeus_projection_checkpoint` と同じ流儀）、RMU の `JournalReaderImpl::open` が行う。
+
+表カタログ（b39 で作る 13 表。列の定義と計算元は `construction/b39-rmu-read-tables/design.md` §4.1 が正本。b40 で `read_run_stage` / `read_scope_change` / `read_config_current` / `read_steering_plan` / `read_steering_part` を追加する）:
+
+| 表 | キー | 出所の集約 |
+| --- | --- | --- |
+| `read_definition` / `read_definition_stage` / `read_definition_scope` / `read_definition_scope_keyword` / `read_definition_scope_stage` / `read_definition_scope_phase_entry` | definition_id（× stage_slug / scope / keyword / phase） | `WorkflowDefinition`（`Defined` / `Redefined` の再生） |
+| `read_intent` / `read_intent_stage` | intent_id（× stage_index） | `Intent`（`Created`） |
+| `read_execution` / `read_execution_stage` | execution_id（× stage_index） | `IntentExecution`（`Started` からの再生） |
+| `read_next_answer` | execution_id × request_kind ∈ {`bare`, `resume`, `free-text`, `reentry`}（kebab-case） | `IntentExecution::next_decision` |
+| `read_next_jump` / `read_next_jump_phase` | execution_id × target_index / phase | `IntentExecution::jump_resolve` / `first_in_scope_of_phase` |
+
+前提となるドメインの是正（b39）: `Started` は**集約 id と解決済み計画の写し**を運ぶ（従来は `intent_id` のみで、genesis が `&Intent` を要し自ストリームだけで再生できなかった）。`IntentExecution: From<(Started, DateTime<Utc>)>` が genesis イベントからの唯一の状態導出であり、`start` はそれを通る（`Intent` / `WorkflowDefinition` と同型 — coding-rules/aggregate-commands.md）。
+
 ## 5. インフラストラクチャ層の利用
 
 正準 JSON（A2 — `intents.json` は 2-space、`runtime-graph.json` は決定性契約「同一監査ログ → バイト同値」）、文言カタログ（A3）、ハッシュ（SHA-256 prefix-hash）は純粋部品。MD5 のロック dir 名はロック機構の退役に伴い不要になる（ADR-007。stage-0/1 併用期の互換維持は §9・§10 の論点）。アトミック書込・spawn 基盤（A4）を呼ぶのは Gateway のみ。`tracing` 計装（A10）は application/adapter 層で、派生イベント発行のチョークポイントは**ジャーナル追記の Tx コミット成功後**（`WorkflowExecutionRepositoryImpl` の `store`）に置く（ADR-003）。**POSIX 前提**（O_NOFOLLOW・`kill(pid,0)`・mkdir ロック・rename 意味論）は方針書 R3 のとおり初期フェーズの明示的制約で、Windows はフェーズ D で防御の等価物定義とセット。

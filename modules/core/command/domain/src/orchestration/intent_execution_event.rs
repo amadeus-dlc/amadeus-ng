@@ -86,8 +86,8 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::*;
-    use crate::orchestration::AutonomyMode;
-    use crate::workflow_definition::StageSlug;
+    use crate::orchestration::{AutonomyMode, IntentExecutionId, StageDisplay, StageEntry};
+    use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
 
     use super::super::intent_id::IntentId;
 
@@ -95,16 +95,43 @@ mod tests {
         StageSlug::parse(s).unwrap()
     }
 
+    /// genesis の材料 3 つを束ねたペイロード (計画は 1 ステージの最小形)。
+    fn started() -> Started {
+        Started::new(
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+            vec![StageEntry::new(
+                slug("state-init"),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                StageDisplay::new(
+                    StageNumber::parse("0.1").unwrap(),
+                    "State Init",
+                    "orchestrator",
+                )
+                .unwrap(),
+            )],
+        )
+    }
+
     #[test]
-    fn the_started_payload_carries_only_the_fact() {
-        // イベントはそのイベントを説明するプロパティだけに絞る (オーナー裁定 2026-08-30) —
-        // 実行開始の説明は「どの intent か」だけであり、計画・表示属性・走査結果は intent
-        // 自身の誕生の記録 (`Created`) が正本である (issue #56)。
-        let started =
-            Started::new(IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap());
+    fn the_started_payload_carries_the_genesis_material() {
+        // genesis の材料 (実行 id・intent id・解決済み計画) を運ぶ — 誕生状態の導出に
+        // `&Intent` を要さないので、実行のストリームは自ストリームだけで再生できる。
+        let started = started();
+        assert_eq!(
+            started.aggregate_id().as_str(),
+            "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000"
+        );
         assert_eq!(
             started.intent_id().as_str(),
             "01a02785-1bd8-76eb-aeea-5aa303ebd5b6"
+        );
+        assert_eq!(started.stages().len(), 1);
+        assert_eq!(
+            started.stages().first().map(StageEntry::slug),
+            Some(&slug("state-init"))
         );
     }
 
@@ -177,10 +204,8 @@ mod tests {
                 IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
             }
         }
-        let started =
-            Started::new(IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap());
         let named = [
-            (IntentExecutionEvent::Started(started), "Started"),
+            (IntentExecutionEvent::Started(started()), "Started"),
             (
                 IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
                 "StageCompleted",

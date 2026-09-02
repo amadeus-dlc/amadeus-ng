@@ -4,8 +4,9 @@
 //! (`"Unparked"`) である。**変種名・フィールド名・並びが契約**である。
 
 use core_command_domain::orchestration::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, IntentId,
-    Jumped, Parked, Recomposed, StageCompleted, StageRevised, StageSkipped, Started,
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageEntry,
+    StageRevised, StageSkipped, Started,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ use super::dto_vocabulary::{autonomy_of, autonomy_spelling};
 use super::gate_approved_dto::GateApprovedDto;
 use super::gate_opened_dto::GateOpenedDto;
 use super::gate_rejected_dto::GateRejectedDto;
+use super::intent_dto::StageEntryDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
@@ -75,7 +77,9 @@ impl IntentExecutionEventDto {
         match event {
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto {
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
                     intent_id: payload.intent_id().as_str().to_string(),
+                    stages: payload.stages().iter().map(StageEntryDto::of).collect(),
                 })
             }
             IntentExecutionEvent::StageCompleted(payload) => {
@@ -141,9 +145,22 @@ impl IntentExecutionEventDto {
     pub fn to_domain(&self) -> Result<IntentExecutionEvent, DtoDecodeError> {
         Ok(match self {
             IntentExecutionEventDto::Started(payload) => {
+                let stages = payload
+                    .stages
+                    .iter()
+                    .map(StageEntryDto::to_domain)
+                    .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
+                // 計画そのものの不変条件はドメインが持つ (`StageEntry::check_plan`) —
+                // 判断を DTO に複製せず呼ぶだけにする。ここで止めないと、破れた計画が
+                // 集約の再構成まで届いてクラッシュする (再構成は失敗を返さない)。
+                StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
                 IntentExecutionEvent::Started(Started::new(
+                    IntentExecutionId::parse(&payload.aggregate_id).map_err(|_| {
+                        DtoDecodeError::malformed("aggregate_id", &payload.aggregate_id)
+                    })?,
                     IntentId::parse(&payload.intent_id)
                         .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
+                    stages,
                 ))
             }
             IntentExecutionEventDto::StageCompleted(payload) => {

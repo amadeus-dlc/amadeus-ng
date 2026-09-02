@@ -52,7 +52,7 @@
 
 - FR2.1 `report` の遷移コミット（approve / reject / revise / skip / awaiting-approval / resumed）を
   ユースケースとして実装する。合格 = 0a 抽出済み契約マップとの一致 + ITF 準拠（engine_loop）維持。
-- FR2.2 report_dispatch + B10 述語（ゲート受理の最小前提）+ verification モジュール最小面を実装する。
+- FR2.2 report_dispatch + B10 述語（ゲート受理の最小前提）+ verification モジュール最小面を実装する。（B10 述語の射程はレシートの**鮮度のみ** — オーナー裁定 2026-09-02、#51 = A。凍結検査は後続 intent）
 
 ### FR3 — next ユースケース と Continue【条件1 / Issue 項目3-C】
 

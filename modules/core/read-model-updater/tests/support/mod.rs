@@ -21,17 +21,22 @@
 
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, CommandError, Created, Intent, IntentExecution, IntentExecutionEvent,
     IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, Defined, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
+    Redefined, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber,
+    StageSlug, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
 use core_command_domain::workspace::StorePath;
-use core_read_model_updater::orchestration::{IntentEventDto, IntentExecutionEventDto};
+use core_read_model_updater::orchestration::{
+    IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
+};
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{AggregateId, EventStore};
@@ -179,7 +184,9 @@ pub(crate) fn intent() -> Intent {
             WorkflowDefinitionId::parse("claude").expect("テストの定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
                 .expect("テストの定義 revision"),
-            StartRequest::new("classic", "contract").with_depth("standard"),
+            StartRequest::new("classic", "contract")
+                .with_depth("standard")
+                .with_review("adversarial"),
             stages(),
             scan(),
         ),
@@ -295,6 +302,148 @@ impl AggregateId for IntentStoreKey {
         self.0.clone()
     }
 }
+
+/// 定義ストリームのストア鍵 (`type_name = "WorkflowDefinition"` — 第 3 のストリーム)。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DefinitionStoreKey(String);
+
+impl std::fmt::Display for DefinitionStoreKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AggregateId for DefinitionStoreKey {
+    fn type_name(&self) -> String {
+        "WorkflowDefinition".to_string()
+    }
+
+    fn value(&self) -> String {
+        self.0.clone()
+    }
+}
+
+/// テストの定義 id (ハーネス名 — UUID 空間とは決して衝突しない綴り)。
+pub(crate) const DEFINITION: &str = "claude";
+
+/// テストの定義識別子。
+#[must_use]
+pub(crate) fn definition_id() -> WorkflowDefinitionId {
+    WorkflowDefinitionId::parse(DEFINITION).expect("テストの定義 id")
+}
+
+/// 1 ノードだけの定義内容 (グラフ・そこから導いたグリッド・スコープカタログ 2 件)。
+///
+/// カタログを空にしないのは、語 → スコープの逆引き
+/// (`read_definition_scope_keyword`) が 0 行だと**その表を書く経路がテストに掛からない**
+/// からである。`shared` を両方に宣言させて、辞書順の先着 (`classic`) が行になる形も
+/// 一緒に通す。
+#[must_use]
+fn definition_content() -> (StageGraph, ScopeGrid, BTreeMap<String, ScopeMetadata>) {
+    let graph = StageGraph::new(vec![
+        StageNodeBuilder::new(
+            slug("state-init"),
+            StageNumber::parse("0.1").expect("テストのステージ番号は文法内"),
+            "State Init".to_string(),
+            PhaseId::Initialization,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .build(),
+    ])
+    .expect("1 ノードのグラフ");
+    // グラフのノードはスコープを宣言しないので `ScopeGrid::from_graph` は列を 1 本も
+    // 作らない。列が無いと in-scope の問い (フェーズ入口・スコープ内順序) がどれも None に
+    // なり、その 2 表が 0 行になってしまう。`classic` の列を明示して置く。
+    let grid = ScopeGrid::new(
+        [(
+            "classic".to_string(),
+            [(slug("state-init"), PlanAction::Execute)]
+                .into_iter()
+                .collect(),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let scopes = [
+        (
+            "classic".to_string(),
+            ScopeMetadata::new("classic")
+                .expect("名前あり")
+                .with_keywords(vec!["api".to_string(), "shared".to_string()]),
+        ),
+        (
+            "express".to_string(),
+            ScopeMetadata::new("express")
+                .expect("名前あり")
+                .with_keywords(vec!["shared".to_string()]),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    (graph, grid, scopes)
+}
+
+/// テストの定義内容版 (同じ文字で埋めた 64 桁)。
+#[must_use]
+pub(crate) fn definition_revision(fill: char) -> DefinitionRevision {
+    DefinitionRevision::parse(&format!("sha256:{}", fill.to_string().repeat(64)))
+        .expect("テストの定義 revision")
+}
+
+/// 誕生イベント (`Defined`)。
+#[must_use]
+pub(crate) fn defined_event() -> WorkflowDefinitionEvent {
+    let (graph, grid, scopes) = definition_content();
+    WorkflowDefinitionEvent::Defined(Defined::new(
+        definition_id(),
+        definition_revision('0'),
+        graph,
+        grid,
+        scopes,
+    ))
+}
+
+/// 改訂イベント (`Redefined` — 系譜 ID を運ばない)。
+#[must_use]
+pub(crate) fn redefined_event() -> WorkflowDefinitionEvent {
+    let (graph, grid, scopes) = definition_content();
+    WorkflowDefinitionEvent::Redefined(Redefined::new(
+        definition_revision('1'),
+        graph,
+        grid,
+        scopes,
+    ))
+}
+
+/// 定義ストリームへ `Defined` (seq_nr = 1) と `Redefined` (seq_nr = 2) を 1 行ずつ書く。
+///
+/// payload は読む側の DTO ([`WorkflowDefinitionEventDto`]) で組む — 書く側との一致は横断
+/// 適合テスト (`journal_protocol_conformance`) が固定する (実行・intent の行と同じ理屈)。
+pub(crate) async fn seed_definition(path: &StorePath) {
+    let mut store: EventStoreForSqlite<
+        DefinitionStoreKey,
+        serde_json::Value,
+        WorkflowDefinitionEventDto,
+    > = EventStoreForSqlite::new(path.as_path()).expect("本家ストアは開ける");
+    let key = DefinitionStoreKey(DEFINITION.to_string());
+    for (seq_nr, event, version) in [(1, defined_event(), 0), (2, redefined_event(), 1)] {
+        let envelope = EventEnvelope::new(
+            key.clone(),
+            seq_nr,
+            at(),
+            WorkflowDefinitionEventDto::of(&event),
+        )
+        .with_manifest(DEFINITION_MANIFEST);
+        store
+            .persist_event_and_snapshot(envelope, serde_json::Value::Null, version)
+            .await
+            .expect("本家ストアは書ける");
+    }
+}
+
+/// 定義ジャーナル行 `manifest` 列に書く型判別子 (読む側の定数と同じ綴り)。
+pub(crate) const DEFINITION_MANIFEST: &str = "workflow-definition-event/1";
 
 /// intent の誕生記録 (`Created`) を 1 行書く (aid = intent 識別子、seq_nr = 1)。
 ///

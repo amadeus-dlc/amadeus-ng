@@ -32,7 +32,6 @@ use super::start_request::StartRequest;
 use super::workspace_scan::WorkspaceScan;
 use crate::workflow_definition::DefinitionRevision;
 use crate::workflow_definition::ExecutionKind;
-use crate::workflow_definition::PhaseId;
 use crate::workflow_definition::PlanAction;
 use crate::workflow_definition::UnknownScope;
 use crate::workflow_definition::WorkflowDefinition;
@@ -171,26 +170,12 @@ impl Intent {
     }
 
     /// 解決済み計画の不変条件 (genesis と再構成で完全に同一の 1 か所)。
+    ///
+    /// 検査の正本は計画を所有する型の [`StageEntry::check_plan`] で、ここはその結果を
+    /// intent の構築エラーへ写すだけである。実行の誕生記録 (`Started`) を復号する両側の
+    /// DTO も同じ 1 か所を通るので、計画の判断はリポジトリ全体で 1 実装しかない。
     fn check_plan(stages: &[StageEntry]) -> Result<(), IntentError> {
-        match stages.first() {
-            None => return Err(IntentError::Empty),
-            Some(first) if first.plan_action() != PlanAction::Execute => {
-                return Err(IntentError::InitializationMustExecute);
-            }
-            Some(_) => {}
-        }
-        for entry in stages {
-            if entry.phase() != PhaseId::Initialization {
-                continue;
-            }
-            if entry.plan_action() != PlanAction::Execute {
-                return Err(IntentError::InitializationMustExecute);
-            }
-            if entry.is_conditional() {
-                return Err(IntentError::InitializationMustBeUnconditional);
-            }
-        }
-        Ok(())
+        StageEntry::check_plan(stages).map_err(IntentError::from)
     }
 
     /// この intent の識別子 (以後不変。`intents.json` の uuid にあたる)。

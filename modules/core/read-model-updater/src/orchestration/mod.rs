@@ -5,12 +5,21 @@
 //! 呼ぶのは RMU だけであり、ジャーナルを読むことが RMU の仕事そのものだからである
 //! （2026-08-28 / 2026-08-29 裁定 — ADR-009）。中立クレートへ切り出す必要は無い。
 //!
+//! # 取得ループは 2 系統のリードモデルを 1 回で描く
+//!
+//! Markdown 面（系統 (1) — `aidlc-state.md` と監査シャード）は [`crate::workspace`] の投影核が
+//! 描き、構造化面（系統 (2) — SQLite の `read_*` 表）は [`crate::read_tables`] の投影核が描く。
+//! 後者の行は `advance_checkpoint` の引数として読み手へ渡り、**行の差し替えとチェックポイントの
+//! 前進は 1 トランザクション**に閉じる（裁定 §3）。ポートが行を受け取る形になっているのは
+//! そのためであり、行を書く別の口を並立させない。
+//!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_read_model_updater::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod catch_up_error;
 mod corrupt_cause;
+mod definition_entry;
 mod dto;
 mod global_seq_nr;
 mod journal_batch;
@@ -37,6 +46,7 @@ pub use global_seq_nr::GlobalSeqNr;
 pub use projection_name::ProjectionName;
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
+pub use definition_entry::DefinitionEntry;
 pub use journal_batch::JournalBatch;
 pub use journal_entry::JournalEntry;
 
@@ -45,7 +55,7 @@ pub use journal_entry::JournalEntry;
 pub use dto::{
     AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
     IntentEventDto, IntentExecutionEventDto, JumpedDto, ParkedDto, RecomposedDto,
-    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
+    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto, WorkflowDefinitionEventDto,
 };
 
 pub use catch_up_error::CatchUpError;

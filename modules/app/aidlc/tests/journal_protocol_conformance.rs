@@ -44,7 +44,7 @@
     clippy::indexing_slicing
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -53,17 +53,22 @@ use core_command_domain::orchestration::{
     IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
+    ExecutionKind, PhaseId, PlanAction, ScopeGrid, StageGraph, StageMode, StageNodeBuilder,
+    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
 use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionAggregateKeyDto, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
-    IntentRepositoryImpl, SnapshotStrategy,
+    IntentRepositoryImpl, SnapshotStrategy, WorkflowDefinitionRepositoryImpl,
 };
+// 両側の永続化 DTO は**同名の別の型**である (側ごと専用化 —
+// `coding-rules/cqrs-boundaries.md`)。同じファイルで名指すために別名で引く。
+use core_command_interface_adapter::orchestration::WorkflowDefinitionEventDto as CommandDefinitionEventDto;
 use core_command_use_case::orchestration::{
-    IntentExecutionRepository, IntentRepository, RepositoryError,
+    IntentExecutionRepository, IntentRepository, RepositoryError, WorkflowDefinitionRepository,
 };
+use core_read_model_updater::orchestration::WorkflowDefinitionEventDto as ProjectionDefinitionEventDto;
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
     ReadModelUpdater,
@@ -254,7 +259,10 @@ fn intent() -> Intent {
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
                 .expect("定義 revision"),
-            StartRequest::new("classic", "conformance"),
+            StartRequest::new("classic", "conformance")
+                .with_depth("standard")
+                .with_test_strategy("standard")
+                .with_review("adversarial"),
             stages(),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
@@ -542,7 +550,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             held.id().clone(),
             held.definition_id().clone(),
             held.definition_revision().clone(),
-            StartRequest::new(held.scope(), held.request()),
+            request_of(&held),
             held.stages().to_vec(),
             held.scan().clone(),
         ));
@@ -694,5 +702,206 @@ async fn the_store_conforms_to_every_committed_journal_protocol_trace() {
             seen.contains(action),
             "action {action} を通るコミット済みトレースが無い"
         );
+    }
+}
+
+// ---- 定義ストリームの横断適合 (b39) ----
+//
+// 実行・intent と同じストアファイルに同居する**第 3 のストリーム**である。書く側
+// (`WorkflowDefinitionRepositoryImpl`) が本当に書いた行を、読む側 (`JournalReaderImpl`) が
+// 本当に読めるかをここで固定する — 両側の DTO は同名の別の型であり
+// (`coding-rules/cqrs-boundaries.md` の側ごと専用化)、型を共有して静的に揃えるのではなく
+// 「書いた行が読める」ことで揃っていると示す。
+
+/// 定義ストリームの試験に使う系譜 ID (ハーネス名 — UUID 空間と衝突しない綴り)。
+const DEFINITION: &str = "claude";
+
+/// `stage_count` 段の配布束 (系譜は [`DEFINITION`] と同じ name)。内容版は内容から導出される
+/// ので、段数を変えれば別の内容版になる。
+fn definition_bundle(stage_count: usize) -> CompiledDefinition {
+    let nodes = (0..stage_count)
+        .map(|index| {
+            StageNodeBuilder::new(
+                StageSlug::parse(&format!("stage-{index}")).expect("合成 slug は文法内"),
+                StageNumber::parse(&format!("0.{}", index + 1)).expect("合成の番号は文法内"),
+                "Stage".to_string(),
+                PhaseId::Initialization,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .build()
+        })
+        .collect();
+    let graph = StageGraph::new(nodes).expect("slug は重複しない");
+    let grid = ScopeGrid::from_graph(&graph);
+    CompiledDefinition::compile(
+        CompiledDefinitionId::parse(DEFINITION).expect("配布束 id"),
+        graph,
+        grid,
+        BTreeMap::new(),
+    )
+    .0
+}
+
+/// 誕生と改訂の対 (定義集約・誕生イベント・改訂イベント)。
+fn definition_history() -> (
+    WorkflowDefinition,
+    WorkflowDefinitionEvent,
+    WorkflowDefinitionEvent,
+) {
+    let (mut definition, defined) = WorkflowDefinition::define(
+        WorkflowDefinitionId::parse(DEFINITION).expect("定義 id"),
+        &definition_bundle(3),
+        at(),
+    )
+    .expect("配布束は同じ系譜");
+    let redefined = definition
+        .redefine(&definition_bundle(5), at())
+        .expect("内容版が違えば改訂できる");
+    (definition, defined, redefined)
+}
+
+/// 集約が握っている要求を、省略可能な 3 つまで含めて組み直す。
+///
+/// `scope` と `request` だけを写すと、`depth` / `test_strategy` / `review` が黙って落ちる。
+/// 落ちた値はワイヤにも現れないので、行の検査がその 3 つを素通りしてしまう。
+fn request_of(intent: &Intent) -> StartRequest {
+    let mut request = StartRequest::new(intent.scope(), intent.request());
+    if let Some(depth) = intent.depth() {
+        request = request.with_depth(depth);
+    }
+    if let Some(strategy) = intent.test_strategy() {
+        request = request.with_test_strategy(strategy);
+    }
+    if let Some(review) = intent.review() {
+        request = request.with_review(review);
+    }
+    request
+}
+
+#[tokio::test]
+async fn the_intent_stream_written_by_the_command_side_keeps_every_optional_request_member() {
+    // 書く側と読む側は別々の DTO を持つ (側ごと専用化)。片側にだけ列を足すとワイヤが
+    // 食い違い、落ちた値は**読めるが空になる**という形で静かに消える。省略可能な 3 つを
+    // 全部埋めた intent を実際に書いて読み戻し、1 つも落ちないことを見る。
+    let store = Store::new();
+    let held = intent();
+    assert_eq!(
+        held.review(),
+        Some("adversarial"),
+        "書く前の集約が握っている"
+    );
+
+    {
+        let mut repository =
+            IntentRepositoryImpl::open(&store.path).expect("intent ストアは開ける");
+        let created = IntentEvent::Created(Created::new(
+            held.id().clone(),
+            held.definition_id().clone(),
+            held.definition_revision().clone(),
+            request_of(&held),
+            held.stages().to_vec(),
+            held.scan().clone(),
+        ));
+        repository
+            .store(&created, &held)
+            .await
+            .expect("intent の genesis は書ける");
+    }
+
+    let reader = JournalReaderImpl::open(&store.path).expect("Reader は開ける");
+    let batch = reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("intent の行は読める");
+
+    let intents = batch.intents();
+    assert_eq!(intents.len(), 1, "誕生記録 1 行 (実行・定義は無い)");
+    let decoded = &intents[0];
+    assert_eq!(decoded.review(), held.review(), "review が読む側まで届く");
+    assert_eq!(decoded.depth(), held.depth());
+    assert_eq!(decoded.test_strategy(), held.test_strategy());
+    assert_eq!(decoded.scope(), held.scope());
+    assert_eq!(decoded, &held, "誕生の材料は集約値へそのまま戻る");
+}
+
+#[tokio::test]
+async fn the_definition_stream_written_by_the_command_side_is_read_back_by_the_projection() {
+    let store = Store::new();
+    let mut repository =
+        WorkflowDefinitionRepositoryImpl::open(&store.path).expect("定義ストアは開ける");
+
+    // 誕生 → 改訂。どちらも本番の書き手 (コマンド側の Repository) が本家ストアへ書く。
+    let (genesis, defined) = WorkflowDefinition::define(
+        WorkflowDefinitionId::parse(DEFINITION).expect("定義 id"),
+        &definition_bundle(3),
+        at(),
+    )
+    .expect("配布束は同じ系譜");
+    repository
+        .store(&defined, &genesis)
+        .await
+        .expect("誕生は書ける");
+    // 楽観 version はストアが採番する — 握り直してから改訂を打つ (書込ユースケースと同型)。
+    let mut definition = repository
+        .find_by_id(genesis.id())
+        .await
+        .expect("書いた定義は握り直せる");
+    let redefined = definition
+        .redefine(&definition_bundle(5), at())
+        .expect("内容版が違えば改訂できる");
+    repository
+        .store(&redefined, &definition)
+        .await
+        .expect("改訂は書ける");
+
+    // 読む側は同じファイルを別接続で開き、定義の 2 行をドメインイベントへ戻す。
+    let reader = JournalReaderImpl::open(&store.path).expect("Reader は開ける");
+    let batch = reader
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .expect("定義の行は読める");
+
+    let definitions = batch.definitions();
+    assert_eq!(
+        definitions.len(),
+        2,
+        "誕生と改訂の 2 行 (実行・intent は無い)"
+    );
+    assert!(batch.executions().is_empty());
+    assert!(batch.intents().is_empty());
+
+    assert_eq!(definitions[0].event(), &defined, "誕生が逐語で戻る");
+    assert_eq!(definitions[0].seq_nr(), 1);
+    assert_eq!(definitions[1].event(), &redefined, "改訂が逐語で戻る");
+    assert_eq!(definitions[1].seq_nr(), 2);
+    assert!(
+        definitions
+            .iter()
+            .all(|entry| entry.definition_id().as_str() == DEFINITION),
+        "系譜 ID は行の `aid` 由来 (改訂は識別子を運ばない)"
+    );
+    assert!(
+        definitions.iter().all(|entry| entry.occurred_at() == &at()),
+        "発生時刻は封筒の列から戻る"
+    );
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの一致検査 (BR1.7 の射程外)"
+)]
+#[test]
+fn both_sides_write_the_definition_payload_with_the_same_bytes() {
+    // 側ごと専用化した DTO の**ワイヤ形式の同一性**を直接固定する。上のテストが
+    // 「読める」ことを示すのに対し、ここは「1 バイトも違わない」ことを示す — 片側にだけ
+    // 欄が増える・並びが変わる、といった差分をゴールデン文字列を持たずに検出できる。
+    let (_definition, defined, redefined) = definition_history();
+    for event in [defined, redefined] {
+        let written = serde_json::to_string(&CommandDefinitionEventDto::of(&event))
+            .expect("書く側は直列化できる");
+        let read = serde_json::to_string(&ProjectionDefinitionEventDto::of(&event))
+            .expect("読む側は直列化できる");
+        assert_eq!(written, read, "両側のワイヤ形式は同一である");
     }
 }

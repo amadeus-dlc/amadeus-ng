@@ -77,6 +77,7 @@ mod jump_direction;
 mod next_decision;
 mod next_request;
 mod phase_boundary;
+mod plan_error;
 mod skeleton_stance;
 mod stage_display;
 mod stage_entry;
@@ -138,6 +139,7 @@ pub use intent_execution_error::IntentExecutionError;
 pub use intent_execution_id_error::IntentExecutionIdError;
 pub use intent_id_error::IntentIdError;
 pub use invalid_mode_arg::InvalidModeArg;
+pub use plan_error::PlanError;
 pub use unknown_stance::UnknownStance;
 pub use unknown_verdict::UnknownVerdict;
 

@@ -3,8 +3,10 @@
 //! この 1 つの型が **2 つの面**で同じバイトを張る: (a) intent 自身のジャーナルの `Created`
 //! ペイロード、(b) intent 集約のスナップショット行。どちらも運ぶ内容は「誕生の材料 = 集約の
 //! 全状態」で完全に同一なので、綴りを 1 か所に束ねて面ごとの乖離を構造的に不能にする
-//! (issue #50)。かつての第 3 面 (実行ジャーナルの `Started` が埋め込む intent) は issue #56
-//! で消えた — `Started` は intent の識別子だけを運ぶ。
+//! (issue #50)。実行ジャーナルの `Started` は intent 全体を埋め込まない (issue #56) が、
+//! 誕生状態の導出に要る**計画の写し**は運ぶ — その 1 要素の綴りは本モジュールの
+//! `StageEntryDto` を共有するので、intent 面と `Started` 面で同じバイトになる
+//! (共有 private 型は主たる従属先に置く — `coding-rules/abstract-data-type.md`)。
 
 use core_command_domain::orchestration::{
     Created, Intent, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
@@ -44,9 +46,9 @@ struct StartRequestDto {
     review: Option<String>,
 }
 
-/// 解決済み計画 1 要素の行の形。
+/// 解決済み計画 1 要素の行の形 (intent 面と `Started` 面が共有する)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct StageEntryDto {
+pub(super) struct StageEntryDto {
     slug: String,
     phase: String,
     plan_action: String,
@@ -147,7 +149,8 @@ impl IntentDto {
 }
 
 impl StageEntryDto {
-    fn of(entry: &StageEntry) -> StageEntryDto {
+    /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
+    pub(super) fn of(entry: &StageEntry) -> StageEntryDto {
         StageEntryDto {
             slug: entry.slug().as_str().to_string(),
             phase: phase_spelling(entry.phase()).to_string(),
@@ -161,7 +164,12 @@ impl StageEntryDto {
         }
     }
 
-    fn to_domain(&self) -> Result<StageEntry, DtoDecodeError> {
+    /// 検査付き再構成コンストラクタへ渡してドメインへ戻す (読み)。
+    ///
+    /// # Errors
+    ///
+    /// 閉集合外の綴り・文法外の識別子・単一行でない表示属性は `Malformed` を返す。
+    pub(super) fn to_domain(&self) -> Result<StageEntry, DtoDecodeError> {
         let number = StageNumber::parse(&self.display.number)
             .map_err(|_| DtoDecodeError::malformed("number", self.display.number.clone()))?;
         let display = StageDisplay::new(number, &self.display.name, &self.display.lead_agent)

@@ -23,7 +23,9 @@ use core_command_domain::workflow_definition::{
 
 use core_command_domain::orchestration::IntentEvent;
 
-use super::{IntentDto, IntentEventDto, IntentExecutionDto, IntentExecutionEventDto};
+use super::{
+    DtoDecodeError, IntentDto, IntentEventDto, IntentExecutionDto, IntentExecutionEventDto,
+};
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
@@ -80,7 +82,9 @@ fn intent() -> Intent {
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "contract").with_depth("standard"),
+            StartRequest::new("classic", "contract")
+                .with_depth("standard")
+                .with_review("adversarial"),
             stages(),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
@@ -94,12 +98,23 @@ fn intent() -> Intent {
     ))
 }
 
+/// `Started` の逐語形。
+///
+/// genesis の材料 3 点 (実行 id・intent id・解決済み計画) を運ぶ。計画の写しを載せるのは
+/// 実行の歴史が**自ストリームだけ**で再生できるための条件であり、1 要素の綴りは
+/// intent 面 (`INTENT_BODY` の `stages`) と同一である。
+const STARTED_BODY: &str = r#"{"Started":{"aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
+
 /// 全 12 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
-            IntentExecutionEvent::Started(Started::new(IntentId::parse(INTENT).expect("UUIDv7"))),
-            r#"{"Started":{"intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6"}}"#,
+            IntentExecutionEvent::Started(Started::new(
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                IntentId::parse(INTENT).expect("UUIDv7"),
+                stages(),
+            )),
+            STARTED_BODY,
         ),
         (
             IntentExecutionEvent::StageCompleted(StageCompleted::new(slug("state-init"))),
@@ -341,11 +356,31 @@ fn a_malformed_identifier_is_refused_with_its_field() {
 }
 
 #[test]
-fn a_started_row_with_a_malformed_intent_id_is_refused() {
-    let decoded: IntentExecutionEventDto =
-        serde_json::from_str(r#"{"Started":{"intent_id":"not-a-uuid"}}"#)
-            .expect("JSON としては読める");
-    assert!(decoded.to_domain().is_err(), "文法外の intent 識別子は拒む");
+fn a_started_row_with_malformed_material_is_refused() {
+    // 識別子 2 種と計画の綴りを 1 つずつ壊す — genesis の材料はどれも検査付き再構成を通る。
+    for (from, to) in [
+        (
+            r#""aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000""#,
+            r#""aggregate_id":"not-a-uuid""#,
+        ),
+        (
+            r#""intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6""#,
+            r#""intent_id":"not-a-uuid""#,
+        ),
+        (r#""slug":"state-init""#, r#""slug":"Not A Slug""#),
+        (r#""phase":"Initialization""#, r#""phase":"Nowhere""#),
+        (r#""plan_action":"Execute""#, r#""plan_action":"MAYBE""#),
+        (r#""number":"0.1""#, r#""number":"not-a-number""#),
+    ] {
+        let tampered = STARTED_BODY.replacen(from, to, 1);
+        assert_ne!(
+            tampered, STARTED_BODY,
+            "差し替え元が逐語形に存在する: {from}"
+        );
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&tampered).expect("JSON としては読める");
+        assert!(decoded.to_domain().is_err(), "拒むべき値: {to}");
+    }
 }
 
 #[test]
@@ -473,7 +508,7 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
 // ---------------------------------------------------------------------------
 
 /// intent の材料のバイト形 (2 面共通 — `Created` の中身・intent 集約のスナップショット行)。
-const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":null},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
+const INTENT_BODY: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
 
 /// intent の誕生イベント (ジャーナル面の材料 — `intent()` と同じ材料から組む)。
 fn created_event() -> IntentEvent {
@@ -481,7 +516,9 @@ fn created_event() -> IntentEvent {
         IntentId::parse(INTENT).expect("UUIDv7"),
         WorkflowDefinitionId::parse("claude").expect("定義 id"),
         DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-        StartRequest::new("classic", "contract").with_depth("standard"),
+        StartRequest::new("classic", "contract")
+            .with_depth("standard")
+            .with_review("adversarial"),
         stages(),
         WorkspaceScan::new(
             BrownfieldGreenfield::Greenfield,
@@ -531,4 +568,41 @@ fn a_malformed_identifier_in_the_intent_journal_is_refused_with_its_field() {
     let decoded: IntentEventDto = serde_json::from_str(&broken).expect("形は DTO として読める");
     let err = decoded.to_domain().expect_err("識別子の文法違反は拒否");
     assert_eq!(err.to_string(), "malformed field id: not-a-uuid");
+}
+
+#[test]
+fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
+    // 計画そのものの不変条件はドメイン (`StageEntry::check_plan`) が持つ。DTO はそれを呼ぶ
+    // だけで判断を複製しない。ここで止めないと、破れた計画が集約の再構成まで届いて
+    // クラッシュする (再構成は失敗を返さない — オーナー裁定 2026-08-30)。
+    let init = StageEntry::new(
+        slug("state-init"),
+        PhaseId::Initialization,
+        PlanAction::Execute,
+        false,
+        display("0.1", "State Init"),
+    );
+    let skipped_head = StageEntry::new(
+        slug("intent-capture"),
+        PhaseId::Ideation,
+        PlanAction::Skip,
+        false,
+        display("1.1", "Intent Capture"),
+    );
+    for (label, plan) in [
+        ("空の計画", Vec::new()),
+        ("同じ slug が 2 回", vec![init.clone(), init]),
+        ("索引 0 が非 EXECUTE", vec![skipped_head]),
+    ] {
+        let dto = IntentExecutionEventDto::of(&IntentExecutionEvent::Started(Started::new(
+            IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            plan,
+        )));
+        assert_eq!(
+            dto.to_domain().expect_err("破れた計画は復号の境界で止める"),
+            DtoDecodeError::InvariantViolation,
+            "{label}"
+        );
+    }
 }

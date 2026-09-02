@@ -48,6 +48,13 @@
   apply 対応が崩れる。*独立ドメインサービス / ユースケース層への判断配置*: 状態の所有者の外で
   判断する Ask 型。*typestate*: 動的アクション列のリプレイ・再構成と相性が悪く過剰。
 
+**改訂 2026-09-02（オーナー裁定 #85 = A — 非ゲート完了パイプラインの撤去）**: b34（#76 = A「誕生 =
+初期化完了済み」）以降、実行時のカーソルは常にゲート付きステージに立ち、非ゲート完了の経路
+（`IntentExecution::complete_stage` / `StageCompleted` 変種と両側 DTO / RMU の投影と `STAGE_COMPLETED`
+非ゲート文言 / commit_verdict の非ゲート腕）は到達不能になった。upstream 鏡としての存置ではなく
+**撤去**する（no-backward-compatibility の精神。イベントは 12 → 11 変種。観測互換への影響は無い —
+実行時に出ない文言のため）。撤去は #7 のキュー「是正 Bolt 2 の後」の独立 Bolt で行う。
+
 ## ADR-003: SQLite ストア + upstream 互換ファイルはリードモデル + RMU
 
 - **Context** — イベントの物理格納先が未裁定だった。upstream の監査台帳は markdown
@@ -196,6 +203,15 @@
   引き続き禁止** — 例外は解決済み計画の表示属性と走査結果に限る。差分投影への計画の供給は
   イベントを太らせず `ResolvedPlan` を投影核の引数とする（取得ループが初回にジャーナル先頭から
   控える — 実装の詳細は `construction/u4-read-model-updater/developer-report-1.md` §6）。
+- **supersede 2026-09-02（b39 — 材料の所在の整理）**: 上の追記が「`Started` へ焼き込む」とした
+  走査結果（`WorkspaceScan`）と表示属性は、issue #56（2026-08-30）以降 **intent 自身の誕生記録
+  `IntentEvent::Created` が運ぶ**（`Intent` 集約の材料。`Started` は `intent_id` だけになっていた）。
+  b39 で `Started` は **`id` / `intent_id` / `stages`（解決済み計画の写し — 各ステージの slug / phase /
+  plan_action / conditional / display）** を運ぶ形へ是正した。理由は自ストリームだけで実行集約を
+  再生すること（`aggregate-commands.md` 2026-09-02 追記）。NFR3（ジャーナルだけで完全復元）は
+  次の分担で保たれる: 実行集約の再生は `Started` + 以降の実行イベント、Markdown 面の骨格（表示属性・
+  走査結果）は `Created`（RMU が `Started.intent_id` で引く `ResolvedPlan::of(&Intent)`）。どちらも
+  ジャーナルにあり、定義ファイルは引かない。`WorkspaceScan` を `Started` に戻す必要は無い。
 
 ## ADR ステータス注記
 
@@ -467,3 +483,27 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
 
   出典: [`developer-report-1.md`](../../construction/esa-v3-migration/developer-report-1.md)
   （§2 裁定 1〜9、§4-(a) TOCTOU 経緯、§4-(b) newtype 見送り）。
+
+## ADR-011: CLI 読取コマンド向けリードモデルは SQLite の `read_*` 表 — RMU が集約のクエリの答えを投影する（2026-09-02 追加）
+
+**Context**: クエリ側（`modules/core/query/*`）が upstream 互換の Markdown 面と配布 3 ファイルを逆パースし、
+`next` の判断（`next_decision` 等）を自前で再実装していた（監査 `construction/query-side-audit/audit-1.md`）。
+オーナー裁定: 「クエリ側のユースケースは DAO で DTO(View) を読んで返すだけ。RMU が計算結果としての
+リードモデルを構築する。SQLite でも JSON でもよい — 最適なリードモデル仕様を考えて」。
+
+**Decision**: 判断は集約に戻し（b38）、RMU がジャーナル 3 ストリームから集約を `replay` で起こして
+クエリメソッドを呼び、その答えを**イベントストアと同じ SQLite ファイルの `read_*` 表**へ非正規化して
+書く（b39 / b40）。行の差し替えとチェックポイント前進は同一トランザクション — **これは RMU 側の接続（`JournalReaderImpl` の別接続）の中の話**であり、ADR-010 2026-08-27 追記「チェックポイントの更新は書込 Tx の外（`JournalReaderImpl` の別接続・別 Tx）」は変わらない。コマンド側の書込 Tx と RMU の投影 Tx は従来どおり別で、RMU の Tx の中で `read_*` の全差し替えと `amadeus_projection_checkpoint` の前進が一緒に確定する、という意味である。クエリ側の DAO は
+キーで引くだけ（`WHERE` は可、行に無い事実の導出は不可）。スコープ解決の優先順はコントローラの
+ルーティング順、steering の参照入力（memory 規則ファイル）は `catch_up` ごとのダイジェスト比較で
+変化時だけ再投影、advisory マーカーの書込は合成ルートの機構モジュール（`read-model-spec.md` §10）。
+
+**Alternatives Rejected**: (a) JSON ファイル群 — ファイル間の整合をトランザクションで保証できず、
+要求パラメータでの引当が DAO のコード走査になり「読むだけ」の境界が曖昧になる（オーナー:
+「SQLite のほうが自由度が高い。非正規データとしてのリードモデルを読むときに楽」）。(b) クエリ側が
+リードモデルから導出する — CQRS 違反（オーナー: 「作ったら CQRS 違反」）。
+
+**Consequences**: RMU が定義ストリームも購読する（従来の「暫定の読み飛ばし」を撤去）。`Started` が
+集約 id と計画の写しを運ぶよう是正（自ストリームだけで再生できる ES の基本）。クエリ側の Markdown
+逆パース・配布 3 ファイルのパース・判断型は Bolt 3 で削除される。表カタログの正本は仕様 11 §4.1 と
+`construction/b39-rmu-read-tables/design.md` §4.1。

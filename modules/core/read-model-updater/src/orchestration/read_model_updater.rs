@@ -1,7 +1,7 @@
 //! **取得ループ** — RMU の上側の層（2026-08-28 裁定 / `coding-rules/cqrs-boundaries.md`）。
 //!
 //! ```text
-//! checkpoint 読取 → events_after で差分取得 → 純粋投影核 → リードモデルを書く → advance_checkpoint
+//! checkpoint 読取 → 差分の探り → 全履歴 1 回の読取 → 純粋投影核 → リードモデルを書く → advance_checkpoint
 //! ```
 //!
 //! SQLite にはストリームが無いので、AWS 版 RMU が Streams から**受信する**のと同じ役割を、
@@ -13,10 +13,12 @@
 
 use core_command_domain::orchestration::IntentExecutionEvent;
 
+use crate::read_tables::ReadTables;
 use crate::workspace::{ReadModel, ResolvedPlan};
 
 use super::catch_up_error::CatchUpError;
 use super::global_seq_nr::GlobalSeqNr;
+use super::journal_batch::JournalBatch;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::projection_targets::ProjectionTargets;
@@ -64,27 +66,60 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// 落ち着く（冪等）が、監査シャードには同じブロックがもう一度並ぶ。この非対称は
     /// 「欠落しない」ことと引き換えに受け入れている。
     ///
+    /// # 2 系統を 1 回で描く
+    ///
+    /// キャッチアップ 1 回で Markdown 面（系統 (1) — `aidlc-state.md` と監査シャード）と
+    /// 構造化面（系統 (2) — SQLite の `read_*` 表）の両方を描く。構造化面は**全履歴からの
+    /// 再計算**なので入力は全履歴であり、Markdown 面の差分もその履歴から
+    /// 「チェックポイントより後の行」として切り出す — **描く材料は 1 回の読取に揃える**。
+    /// 2 つの読取に跨がると、その間に入った書込のぶんだけ両面の断面がずれ、行の `as_of` が
+    /// チェックポイントを追い越す。差分読取は「進む先があるか」の探りにだけ使う。
+    /// 行の差し替えとチェックポイントの前進は `advance_checkpoint` の中で 1 トランザクション
+    /// に閉じる（裁定 §3）。
+    ///
     /// # Errors
     ///
     /// ジャーナルの読取・チェックポイントの失敗（`Read`）、投影核が描けなかった
     /// （`Projection`）、状態ファイルを読めない（`StateFileRead`）・書けない
-    /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）。
+    /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）、構造化投影核が
+    /// 歴史の切り落としを見つけた（`ReadTables`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
         let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
-        let batch = self.journal_reader.events_after(checkpoint).await?;
-        let Some(last) = batch.scanned_to() else {
+        // 差分読取は「進む先があるか」の**探り**にだけ使う。ここで得た行を描く材料に
+        // 使ってはいけない — 構造化面は全履歴を要するので読取が 2 回になり、その間に
+        // 入った書込のぶんだけ 2 つの断面が食い違う (Markdown 面は古く、行は新しく、
+        // `as_of` がチェックポイントを追い越す)。
+        if self
+            .journal_reader
+            .events_after(checkpoint)
+            .await?
+            .scanned_to()
+            .is_none()
+        {
+            return Ok(checkpoint);
+        }
+
+        // 描く材料はすべてこの**1 回の読取**から採る — Markdown 面の差分・構造化面の行・
+        // 前進先の 3 つが同じ断面を指す。
+        let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
+        let Some(last) = history.scanned_to() else {
             return Ok(checkpoint);
         };
 
-        // 実行のイベントがあるときだけ描く。intent の行しか無いバッチは書くものが無い —
-        // それでもチェックポイントは走査済み位置まで進める（intent 行を毎回再走査しない。
-        // issue #56 申し送りの解消）。
-        if !batch.executions().is_empty() {
-            let plan = self.resolve_plan().await?;
+        // 未投影の実行イベントがあるときだけ描く。intent の行しか無い区間は書くものが
+        // 無い — それでもチェックポイントは走査済み位置まで進める（intent 行を毎回
+        // 再走査しない。issue #56 申し送りの解消）。行は global 通番の昇順なので、
+        // 境界は二分探索で 1 か所に定まる。
+        let executions = history.executions();
+        let unprojected = executions
+            .split_at(executions.partition_point(|entry| entry.global_seq() <= checkpoint))
+            .1;
+        if !unprojected.is_empty() {
+            let plan = self.resolve_plan(&history)?;
             let state = crate::workspace::read_state_file(self.targets.state_file())
                 .map_err(CatchUpError::StateFileRead)?;
             let mut read_model = ReadModel::new(state);
-            crate::workspace::project(batch.executions(), &plan, &mut read_model)?;
+            crate::workspace::project(unprojected, &plan, &mut read_model)?;
 
             crate::workspace::write_state_file(self.targets.state_file(), read_model.state())
                 .map_err(CatchUpError::StateFileWrite)?;
@@ -95,25 +130,30 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             .map_err(CatchUpError::AuditShardWrite)?;
         }
 
+        // 構造化面は差分投影ではなく全再計算である（同じ履歴から作る）。
+        let tables = ReadTables::project(&history)?;
+
         self.journal_reader
-            .advance_checkpoint(&self.projection, last)
+            .advance_checkpoint(&self.projection, last, &tables)
             .await?;
         Ok(last)
     }
 
-    /// 解決済み計画を得る（初回だけジャーナルの先頭から引く）。
+    /// 解決済み計画を得る（初回だけ履歴から引く）。
     ///
     /// 計画（表示属性・走査結果）の正本は intent 自身の誕生記録（`Created`）であり、どの
-    /// intent かは実行の `Started` が指す（issue #56）。差分投影のバッチにその 2 行が入って
-    /// いるとは限らない。取ってくるのは**この層の仕事**である — 投影核は計画を受け取るだけで、
-    /// どこから来たかを知らない（二層構造）。
+    /// intent かは実行の `Started` が指す（issue #56）。未投影の差分にその 2 行が入って
+    /// いるとは限らないので、探すのは全履歴からである。取ってくるのは**この層の仕事**で
+    /// ある — 投影核は計画を受け取るだけで、どこから来たかを知らない（二層構造）。
     ///
     /// どちらもワークフローごとに 1 度しか書かれないので、一度引けば控えを使い回す。
-    async fn resolve_plan(&mut self) -> Result<ResolvedPlan, CatchUpError> {
+    ///
+    /// 履歴は**呼出側が読んだものを受け取る** — ここで独自に読み直すと、キャッチアップ 1 回の
+    /// 中で断面がもう 1 つ増えてしまう。
+    fn resolve_plan(&mut self, history: &JournalBatch) -> Result<ResolvedPlan, CatchUpError> {
         if let Some(plan) = &self.plan {
             return Ok(plan.clone());
         }
-        let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
         let mut started_ids = history
             .executions()
             .iter()
