@@ -27,8 +27,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, Created, Intent, IntentExecution, IntentExecutionId, IntentId, StageDisplay,
-    StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
+    AutonomyMode, Created, EngineSignal, Intent, IntentExecution, IntentExecutionId, IntentId,
+    NextRequest, StageDisplay, StageEntry, StageIndex, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -89,6 +89,8 @@ fn plan_of(v: &Value) -> PlanAction {
 struct ModelState {
     last_action: String,
     directive_tag: String,
+    /// `DRunStage` の対象ステージ (観測面の照合に使う)。
+    directive_stage: Option<usize>,
     cursor: usize,
     status: String,
     parked_at: i64,
@@ -102,12 +104,14 @@ struct ModelState {
 
 fn parse_state(v: &Value) -> ModelState {
     let n = v["plan"]["#map"].as_array().unwrap().len();
-    // 遷移面が見るのは directive の**種別**だけ (report のエピローグ / park の停止)。
-    // run-stage の対象ステージまで照合するのは観測面であり、クエリ側 ITF の仕事である。
-    let directive_tag = tag(&v["lastDirective"]).to_string();
+    let d = &v["lastDirective"];
+    let directive_tag = tag(d).to_string();
+    let directive_stage =
+        (directive_tag == "DRunStage").then(|| usize::try_from(bigint(&d["value"])).unwrap());
     ModelState {
         last_action: v["lastAction"].as_str().unwrap().to_string(),
         directive_tag,
+        directive_stage,
         cursor: usize::try_from(bigint(&v["cursor"])).unwrap(),
         status: tag(&v["status"]).to_string(),
         parked_at: bigint(&v["parkedAt"]),
@@ -221,10 +225,33 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
     }
 }
 
+/// 観測面 — 集約の判断 (`next_decision`) をモデルの `lastDirective` と突き合わせる (BR3.1)。
+///
+/// 判断は集約が所有する (仕様 10 §2.3。2026-09-02 の裁定でクエリ側から復帰)。RMU は
+/// この同じクエリを呼んでリードモデルへ投影するので、ここで固定した対応がそのまま
+/// `read_next_answer` の正しさの根拠になる。
+fn assert_signal(agg: &IntentExecution, m: &ModelState, step: usize) {
+    let decision = agg.next_decision(&NextRequest::default());
+    let signal = EngineSignal::from(&decision);
+    match (signal, m.directive_tag.as_str()) {
+        (EngineSignal::RunStage(s), "DRunStage") => {
+            assert_eq!(
+                Some(s.to_usize()),
+                m.directive_stage,
+                "step {step}: run-stage target"
+            );
+        }
+        (EngineSignal::Done, "DDone")
+        | (EngineSignal::Parked, "DParked")
+        | (EngineSignal::EngineError, "DError") => {}
+        (got, want) => panic!("step {step}: signal {got:?} vs model {want}"),
+    }
+}
+
 /// 遷移コマンドの後にモデルが載せるディレクティブ (report のエピローグ / park の停止) を照合する。
 ///
-/// これはモデル側フィクスチャの健全性チェックであって、集約の観測面の照合ではない
-/// (集約は directive を出さない — ファイル冒頭の「遷移面と観測面の分割」)。
+/// これはモデル側フィクスチャの健全性チェックである (遷移コマンドの直後の `lastDirective` は
+/// 遷移の帰結であって、集約の観測クエリの答えではない)。
 fn assert_directive(m: &ModelState, want: &str, step: usize) {
     assert_eq!(
         m.directive_tag, want,
@@ -269,10 +296,9 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         seen.insert(m.last_action.clone());
         let prev = &states[i - 1];
         match m.last_action.as_str() {
-            // 観測アクション (状態不変)。集約は何も呼ばれない — directive を出すのはクエリ側で
-            // あり、その照合はクエリ側 ITF が担う。ここで固定するのは「観測は状態を動かさない」
-            // という frame 等価だけである (末尾の assert_projection)。
-            "next" | "next_parked" | "done_stutter" => {}
+            // 観測アクション (状態不変)。集約の判断をモデルの directive と突き合わせる
+            // (観測面)。frame 等価 (観測は状態を動かさない) は末尾の assert_projection が担う。
+            "next" | "next_parked" | "done_stutter" => assert_signal(&agg, m, i),
             "report_stale" => {
                 // モデルは nondet に stale 対象を選ぶ — 前状態から有効な対象を 1 つ選んで
                 // メンバーシップ検査 (frame 等価は assert_projection が担う)。ガードは受理可否

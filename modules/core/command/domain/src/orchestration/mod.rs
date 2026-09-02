@@ -61,6 +61,7 @@
 mod apply_error;
 mod autonomy_mode;
 mod command_error;
+mod engine_signal;
 mod intent;
 mod intent_error;
 mod intent_event;
@@ -73,6 +74,8 @@ mod intent_id;
 mod intent_id_error;
 mod invalid_mode_arg;
 mod jump_direction;
+mod next_decision;
+mod next_request;
 mod phase_boundary;
 mod skeleton_stance;
 mod stage_display;
@@ -80,6 +83,7 @@ mod stage_entry;
 mod stage_index;
 mod stage_key;
 mod start_request;
+mod state_binding;
 mod status;
 mod unknown_stance;
 mod unknown_verdict;
@@ -109,6 +113,12 @@ pub use intent_execution::IntentExecution;
 
 // 集約の観測結果
 pub use status::Status;
+
+// 集約のクエリ (判断) の入出力 — RMU が投影し、クエリ側は読むだけ (2026-09-02 裁定)。
+pub use engine_signal::EngineSignal;
+pub use next_decision::NextDecision;
+pub use next_request::NextRequest;
+pub use state_binding::StateBinding;
 
 // ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
