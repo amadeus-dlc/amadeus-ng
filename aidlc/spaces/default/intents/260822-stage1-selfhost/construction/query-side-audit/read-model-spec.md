@@ -86,7 +86,7 @@
 | `read_scope_change` | execution_id × scope | kind（scope-change / same-as-state）, command 材料（scope、修飾子の受け皿） | 「state scope と異なる有効 scope か」を RMU が事前計算。同じなら `same-as-state`（コントローラは bare の行へ流すだけ） |
 | ~~`read_config_current`~~ | — | — | **不要（訂正 2026-09-03、b41 調査）**: upstream / 現行クエリ側の config-change は現在値を見ず「`--depth` / `--test-strategy` / `--review` のいずれかが来たら出す」構文分岐。現在値との差分判定は存在しないので表を作らない |
 
-### 4.4 steering 由来（出所: **参照入力** = memory 規則ファイル `org.md` / `team.md` / `project.md` / `phases/<phase>.md` とステージの `rules_in_context`。イベントではないので、RMU が `catch_up` のたびに内容ダイジェストを見て変化時だけ再投影する）
+### 4.4 steering 由来（出所: **参照入力** = memory 規則ファイル `org.md` / `team.md` / `project.md` / `phases/<phase>.md` — 束の選択と `source_digest` は**この 4 ファイルと phase だけ**で決まる。ステージの `rules_in_context` は入力ではなく、run-stage が返す**配信済みパス台帳**（`delivered_paths`）である（訂正 2026-09-03、b41 調査）。イベントではないので、RMU が `catch_up` のたびに内容ダイジェストを見て変化時だけ再投影する）
 
 | 表 | キー | 列 |
 | --- | --- | --- |
