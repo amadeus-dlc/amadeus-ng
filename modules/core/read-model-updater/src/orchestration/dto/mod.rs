@@ -26,7 +26,6 @@
 //! [`CorruptCause`]: super::corrupt_cause::CorruptCause
 
 mod autonomy_mode_set_dto;
-mod consume_decl_dto;
 mod defined_dto;
 mod definition_content_dto;
 mod dto_decode_error;
@@ -42,11 +41,7 @@ mod kinds_codec;
 mod parked_dto;
 mod recomposed_dto;
 mod redefined_dto;
-mod rule_in_context_dto;
-mod scope_metadata_dto;
-mod sensor_ref_dto;
 mod stage_completed_dto;
-mod stage_node_dto;
 mod stage_revised_dto;
 mod stage_skipped_dto;
 mod started_dto;
