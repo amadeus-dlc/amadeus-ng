@@ -11,6 +11,7 @@
 
 mod catch_up_error;
 mod corrupt_cause;
+mod definition_entry;
 mod dto;
 mod global_seq_nr;
 mod journal_batch;
@@ -37,6 +38,7 @@ pub use global_seq_nr::GlobalSeqNr;
 pub use projection_name::ProjectionName;
 
 // ポートが返す読取レコード (本家の封筒型はポートから出さない — ADR-009 2026-08-28 追記)
+pub use definition_entry::DefinitionEntry;
 pub use journal_batch::JournalBatch;
 pub use journal_entry::JournalEntry;
 
@@ -45,7 +47,7 @@ pub use journal_entry::JournalEntry;
 pub use dto::{
     AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
     IntentEventDto, IntentExecutionEventDto, JumpedDto, ParkedDto, RecomposedDto,
-    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
+    StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto, WorkflowDefinitionEventDto,
 };
 
 pub use catch_up_error::CatchUpError;

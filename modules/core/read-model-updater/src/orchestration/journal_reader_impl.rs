@@ -55,6 +55,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
 use super::corrupt_cause::CorruptCause;
+use super::definition_entry::DefinitionEntry;
 use super::global_seq_nr::GlobalSeqNr;
 use super::journal_batch::JournalBatch;
 use super::journal_entry::JournalEntry;
@@ -63,8 +64,11 @@ use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::io_kind;
 use core_command_domain::orchestration::{Intent, IntentExecutionId, IntentId};
+use core_command_domain::workflow_definition::{WorkflowDefinitionEvent, WorkflowDefinitionId};
 
-use super::dto::{DtoDecodeError, IntentEventDto, IntentExecutionEventDto};
+use super::dto::{
+    DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
+};
 use core_command_domain::workspace::StorePath;
 
 /// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
@@ -348,18 +352,67 @@ const INTENT_EVENT_MANIFEST: &str = "intent-event/1";
 /// (2026-08-31 のオーナー裁定で `WorkflowDefinition` の Repository がイベントストア形に
 /// なったため)。
 ///
-/// **この投影は消費しない。** orchestration の読み面 (`aidlc-state.md` と監査シャード) は
-/// 実行と intent に起きた事実だけから描かれ、定義の確立・改訂はそこに現れない。したがって
-/// 行を読み飛ばす — チェックポイントは行を数えて進むので、飛ばした行の分だけ再訪も起きない。
+/// この行は**消費する** (b39)。かつては「orchestration の読み面 (`aidlc-state.md` と監査
+/// シャード) に定義の確立・改訂は現れない」という理由で読み飛ばしていたが、構造化リード
+/// モデル (`read_definition*` 表) が定義の内容を必要とするので、その暫定措置は撤去した
+/// (`coding-rules/cqrs-boundaries.md` 規則 3 の 2026-09-02 追記 — 投影核は集約を `replay`
+/// で起こしてクエリメソッドを呼ぶ)。復号は [`decode_definition_row`] が行い、結果は
+/// バッチの `definitions` として返る。
 ///
-/// **既知の判別子として明示的に飛ばす**ことが要点である。「知らない判別子は黙って飛ばす」に
-/// してしまうと、[`decode_entry`] が守っている「名乗りが違う行の中身は解釈しない」guard が
-/// 崩れる — 未知の判別子は従来どおり `Corrupt` に落ちる。
-///
-/// **この読み飛ばしは暫定である**: 規則 7 の最終形では RMU が定義イベントから
-/// `stage-graph.json` を投影する (`coding-rules/cqrs-boundaries.md` 規則 7)。その時点で
-/// この skip は投影経路に置き換わる。
+/// **既知の判別子として明示的に振り分ける**ことは変わらない。「知らない判別子は黙って
+/// 扱う」にしてしまうと、[`decode_entry`] が守っている「名乗りが違う行の中身は解釈
+/// しない」guard が崩れる — 未知の判別子は従来どおり `Corrupt` に落ちる。
 const DEFINITION_EVENT_MANIFEST: &str = "workflow-definition-event/1";
+
+/// 定義ジャーナル 1 行を読取レコードへ写す。
+///
+/// 実行の行 ([`decode_entry`]) / intent の行 ([`decode_intent_row`]) と同じ検査態度である:
+/// 名乗り (`manifest`) を照合し、行の `aid` を文法検査でドメイン型にし、payload はこの側の
+/// DTO ([`WorkflowDefinitionEventDto`]) で受けてから検査付き再構成でドメインへ写す。
+///
+/// 定義 id の出所は**行の `aid` 列**である。誕生 (`Defined`) だけは payload にも系譜 ID を
+/// 持つので、両者の一致を検査する — 食い違う行はどちらかが嘘をついており、解釈せず
+/// `Corrupt` で止める (intent の行と同じ規律)。改訂 (`Redefined`) は識別子を運ばない
+/// (`coding-rules/aggregate-references.md`) ので、照合する相手がそもそも無い。
+fn decode_definition_row(row: &JournalRow) -> Result<DefinitionEntry, JournalReadError> {
+    let row_seq = usize::try_from(row.seq_nr)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation))?;
+    if row.manifest != DEFINITION_EVENT_MANIFEST {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::UndecodablePayload,
+        ));
+    }
+    let definition_id = WorkflowDefinitionId::parse(&row.aggregate_id).map_err(|_| {
+        corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        )
+    })?;
+    let event = serde_json::from_slice::<WorkflowDefinitionEventDto>(&row.payload)
+        .map_err(|_| corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload))?
+        .to_domain()
+        .map_err(|error| corrupt_error(&row.aggregate_id, Some(row_seq), decode_cause(&error)))?;
+    if let WorkflowDefinitionEvent::Defined(defined) = &event
+        && defined.id() != &definition_id
+    {
+        return Err(corrupt_error(
+            &row.aggregate_id,
+            Some(row_seq),
+            CorruptCause::InvariantViolation,
+        ));
+    }
+    let global = GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?);
+    Ok(DefinitionEntry::new(
+        global,
+        definition_id,
+        row_seq,
+        occurred_at_of(row.occurred_at),
+        event,
+    ))
+}
 
 /// intent ジャーナル 1 行を集約値へ写す。
 ///
@@ -483,10 +536,11 @@ impl JournalReader for JournalReaderImpl {
             .transpose()?;
         let mut entries = Vec::new();
         let mut intents = Vec::new();
+        let mut definitions = Vec::new();
         for row in &rows {
             // 同居する 3 ストリームを判別子で振り分ける (issue #50 / #56、定義は 2026-08-31)。
             if row.manifest == DEFINITION_EVENT_MANIFEST {
-                // この投影の消費対象外 — 読み飛ばす (下の定数の doc を参照)。
+                definitions.push(decode_definition_row(row)?);
                 continue;
             }
             if row.manifest == INTENT_EVENT_MANIFEST {
@@ -495,7 +549,7 @@ impl JournalReader for JournalReaderImpl {
                 entries.push(decode_entry(row)?);
             }
         }
-        Ok(JournalBatch::new(entries, intents, scanned_to))
+        Ok(JournalBatch::new(entries, intents, definitions, scanned_to))
     }
 
     async fn checkpoint(
@@ -1517,10 +1571,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_definition_stream_is_skipped_instead_of_being_read_as_ours() {
-        // 定義のジャーナルは同じストアファイルに同居するが、この投影は消費しない
-        // (2026-08-31 の ES 転換)。**既知の判別子として飛ばす**ので、名乗りが違う行を
-        // `Corrupt` にする guard は緩まない — 未知の判別子は従来どおり落ちる。
+    async fn a_definition_row_that_cannot_be_decoded_stops_the_read() {
+        // 定義のジャーナルは同じストアファイルに同居し、いまは**消費する** (b39)。
+        // 復号できない payload は飛ばさない — 中身を解釈できないまま先へ進めない。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
         let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
@@ -1531,21 +1584,24 @@ mod tests {
                  VALUES ('p', 's', 'claude', 1, X'7B7D', 0, ?1)",
                 params![DEFINITION_EVENT_MANIFEST],
             )
-            .expect("定義の行を置く");
+            .expect("空オブジェクトの定義行を置く");
 
-        let batch = journal_reader
-            .events_after(GlobalSeqNr::ZERO)
-            .await
-            .expect("定義の行は解釈されずに飛ばされる");
-        assert!(batch.executions().is_empty());
-        assert!(batch.intents().is_empty());
         assert_eq!(
-            batch.scanned_to(),
-            Some(GlobalSeqNr::new(1)),
-            "飛ばした行の分もチェックポイントは進む (再訪しない)"
+            journal_reader
+                .events_after(GlobalSeqNr::ZERO)
+                .await
+                .expect_err("`{}` は定義イベントとして読めない"),
+            JournalReadError::Corrupt {
+                aggregate_id: "claude".to_string(),
+                seq_nr: None,
+                cause: CorruptCause::UndecodablePayload,
+            }
         );
 
-        // 未知の判別子は飛ばさない — 中身を解釈せず `Corrupt` で止める。
+        // 未知の判別子も従来どおり落ちる — 名乗りが違う行の中身は解釈しない。
+        connection
+            .execute("DELETE FROM journal", [])
+            .expect("行を片付ける");
         connection
             .execute(
                 "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at, manifest)

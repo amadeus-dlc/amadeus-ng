@@ -111,7 +111,7 @@ mod tests {
                 .cloned()
                 .collect();
             let scanned_to = rows.last().map(JournalEntry::global_seq);
-            Ok(JournalBatch::new(rows, Vec::new(), scanned_to))
+            Ok(JournalBatch::new(rows, Vec::new(), Vec::new(), scanned_to))
         }
 
         async fn checkpoint(
