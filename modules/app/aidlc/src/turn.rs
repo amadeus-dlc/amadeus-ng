@@ -44,7 +44,7 @@ const DEFINITION_ID: &str = "claude";
 /// である (§3.2)。
 #[must_use]
 pub(crate) fn next(layout: &Layout, input: &NextTurnInput) -> Directive {
-    if let Some(directive) = pre_guards(input) {
+    if let Some(directive) = pre_guard(input) {
         return directive;
     }
     match Turn::open(layout) {
@@ -68,7 +68,7 @@ pub(crate) fn resume(layout: &Layout, token: Option<&ContinueToken>) -> Directiv
 }
 
 /// リードモデルを 1 度も読まずに答えが決まる前置ガード。
-fn pre_guards(input: &NextTurnInput) -> Option<Directive> {
+pub(crate) fn pre_guard(input: &NextTurnInput) -> Option<Directive> {
     if let Some(message) = input.parse_error() {
         return Some(Directive::Error {
             message: message.to_string(),

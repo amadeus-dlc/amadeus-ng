@@ -15,10 +15,6 @@
 //!
 //! # 駆動できないケース (黙って飛ばさない)
 //!
-//! - **`next/no-active-intent`** — fresh なワークスペースでは構造化リードモデルに定義の行が
-//!   まだ無い (定義をジャーナルへ入れるのは `intent-create` の前段だけで、`next` は読むだけ
-//!   なので取り込めない)。state なしの誕生分岐そのものが新経路で成立しないため、駆動しても
-//!   比較にならない。RMU が配布束を参照入力として投影するようになったら再訪する。
 //! - **`next/stage-jump-print`** — **逸脱台帳 #1**。upstream は
 //!   `bun .claude/tools/aidlc-jump.ts execute --target <slug> --direction forward --scope <scope>`
 //!   を名指すが、こちらはマルチコール正準形 (`aidlc-jump resolve --stage <slug>`) を名指す。
