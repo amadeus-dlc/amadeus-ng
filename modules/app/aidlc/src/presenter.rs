@@ -26,9 +26,19 @@
 //! upstream は `JSON.stringify(validateDirective(d).data)` で、`data` は**検証した
 //! オブジェクトそのもの**（作り直さない）。したがってキー順は upstream の各構築点の
 //! 挿入順であって、契約として固定されたものではない。ここでは
-//! `aidlc-directive.ts` の interface 宣言順に合わせてある。**バイト一致は未検証**である —
-//! 0b ゴールデンの CLI 面は採取できておらず（`tests/golden/upstream-3c3146cf/cli/
-//! cases-missing.json`）、突き合わせる相手が存在しない。
+//! `aidlc-directive.ts` の interface 宣言順に合わせてある。
+//!
+//! # ゴールデンとの突き合わせ（b44 で配線した）
+//!
+//! CLI 面のゴールデンは `tests/golden/upstream-3c3146cf/cli/` に 28 ケース採取済みで、
+//! `modules/app/aidlc/tests/cli_golden_test.rs` が突き合わせる。**バイト一致で固定できるのは
+//! 逐語文言だけの directive**（`continue/invalid-token`）で、`load-steering` と `run-stage` は
+//! **キー集合**を固定する（中身は採取時のワークスペースの memory 層と配置に依存するため）。
+//! どのケースが駆動できないか（逸脱台帳 #1 のコマンド綴り・vendored されていない scope
+//! identity・state なし群）はそのテストのモジュール doc に列挙してある。
+//!
+//! 既知の欠落 2 つ — upstream の `run-stage` が載せる `conductor_persona` と `narration` を
+//! こちらは載せない（b44 以前から。同テストが差を明示的に固定している）。
 
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::mint_continue_token;
