@@ -13,14 +13,14 @@ use crate::orchestration::{ReadModelReadError, ScopeKeywordDao};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindScopeKeywordUseCase<D: ScopeKeywordDao> {
-    dao: D,
+    scope_keyword_dao: D,
 }
 
 impl<D: ScopeKeywordDao> FindScopeKeywordUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindScopeKeywordUseCase<D> {
-        FindScopeKeywordUseCase { dao }
+    pub const fn new(scope_keyword_dao: D) -> FindScopeKeywordUseCase<D> {
+        FindScopeKeywordUseCase { scope_keyword_dao }
     }
 
     /// 定義 × キーワードで scope 名を引く。語の割り方はコントローラが決める。
@@ -33,6 +33,6 @@ impl<D: ScopeKeywordDao> FindScopeKeywordUseCase<D> {
         definition_id: &str,
         keyword: &str,
     ) -> Result<Option<String>, ReadModelReadError> {
-        self.dao.find(definition_id, keyword)
+        self.scope_keyword_dao.find(definition_id, keyword)
     }
 }

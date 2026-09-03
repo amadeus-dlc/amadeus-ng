@@ -38,11 +38,11 @@ pub struct FindNextAnswerUseCase<
     P: SteeringPlanDao,
     S: SteeringPartDao,
 > {
-    answers: A,
-    executions: E,
-    run_stages: R,
-    plans: P,
-    parts: S,
+    next_answer_dao: A,
+    execution_dao: E,
+    run_stage_dao: R,
+    steering_plan_dao: P,
+    steering_part_dao: S,
 }
 
 impl<A: NextAnswerDao, E: ExecutionDao, R: RunStageDao, P: SteeringPlanDao, S: SteeringPartDao>
@@ -51,18 +51,18 @@ impl<A: NextAnswerDao, E: ExecutionDao, R: RunStageDao, P: SteeringPlanDao, S: S
     /// 5 つの引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
     pub const fn new(
-        answers: A,
-        executions: E,
-        run_stages: R,
-        plans: P,
-        parts: S,
+        next_answer_dao: A,
+        execution_dao: E,
+        run_stage_dao: R,
+        steering_plan_dao: P,
+        steering_part_dao: S,
     ) -> FindNextAnswerUseCase<A, E, R, P, S> {
         FindNextAnswerUseCase {
-            answers,
-            executions,
-            run_stages,
-            plans,
-            parts,
+            next_answer_dao,
+            execution_dao,
+            run_stage_dao,
+            steering_plan_dao,
+            steering_part_dao,
         }
     }
 
@@ -81,11 +81,11 @@ impl<A: NextAnswerDao, E: ExecutionDao, R: RunStageDao, P: SteeringPlanDao, S: S
         execution_id: &str,
         request_kind: &str,
     ) -> Result<Option<NextTurnView>, ReadModelReadError> {
-        let Some(answer) = self.answers.find(execution_id, request_kind)? else {
+        let Some(answer) = self.next_answer_dao.find(execution_id, request_kind)? else {
             return Ok(None);
         };
         let execution = self
-            .executions
+            .execution_dao
             .find(answer.execution_id())?
             .ok_or_else(ReadModelReadError::broken_projection)?;
         let run_stage = self.run_stage_of(answer.run_stage_id())?;
@@ -101,7 +101,7 @@ impl<A: NextAnswerDao, E: ExecutionDao, R: RunStageDao, P: SteeringPlanDao, S: S
         match id {
             None => Ok(None),
             Some(id) => self
-                .run_stages
+                .run_stage_dao
                 .find_by_id(id)?
                 .ok_or_else(ReadModelReadError::broken_projection)
                 .map(Some),
@@ -115,7 +115,7 @@ impl<A: NextAnswerDao, E: ExecutionDao, R: RunStageDao, P: SteeringPlanDao, S: S
     ) -> Result<Option<SteeringPlanView>, ReadModelReadError> {
         match run_stage {
             None => Ok(None),
-            Some(run_stage) => self.plans.find(run_stage.steering_plan_id()),
+            Some(run_stage) => self.steering_plan_dao.find(run_stage.steering_plan_id()),
         }
     }
 
@@ -126,7 +126,7 @@ impl<A: NextAnswerDao, E: ExecutionDao, R: RunStageDao, P: SteeringPlanDao, S: S
     ) -> Result<Option<SteeringPartView>, ReadModelReadError> {
         match plan {
             None => Ok(None),
-            Some(plan) => self.parts.find(plan.id(), S::FIRST_PART),
+            Some(plan) => self.steering_part_dao.find(plan.id(), S::FIRST_PART),
         }
     }
 }

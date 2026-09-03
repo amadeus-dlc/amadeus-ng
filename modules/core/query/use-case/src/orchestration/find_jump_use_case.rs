@@ -13,15 +13,18 @@ use crate::orchestration::{JumpDao, JumpPhaseDao, JumpView, ReadModelReadError};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindJumpUseCase<J: JumpDao, H: JumpPhaseDao> {
-    jumps: J,
-    phases: H,
+    jump_dao: J,
+    jump_phase_dao: H,
 }
 
 impl<J: JumpDao, H: JumpPhaseDao> FindJumpUseCase<J, H> {
     /// 2 つの引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(jumps: J, phases: H) -> FindJumpUseCase<J, H> {
-        FindJumpUseCase { jumps, phases }
+    pub const fn new(jump_dao: J, jump_phase_dao: H) -> FindJumpUseCase<J, H> {
+        FindJumpUseCase {
+            jump_dao,
+            jump_phase_dao,
+        }
     }
 
     /// 実行 × ジャンプ先 slug で受理判定を引く。拒否も 1 つの答えとして戻る。
@@ -34,7 +37,7 @@ impl<J: JumpDao, H: JumpPhaseDao> FindJumpUseCase<J, H> {
         execution_id: &str,
         target_slug: &str,
     ) -> Result<Option<JumpView>, ReadModelReadError> {
-        self.jumps.find(execution_id, target_slug)
+        self.jump_dao.find(execution_id, target_slug)
     }
 
     /// 実行 × フェーズで、実効プランが決めた目的地の受理判定を引く。
@@ -52,10 +55,10 @@ impl<J: JumpDao, H: JumpPhaseDao> FindJumpUseCase<J, H> {
         execution_id: &str,
         phase: &str,
     ) -> Result<Option<JumpView>, ReadModelReadError> {
-        let Some(target) = self.phases.find(execution_id, phase)? else {
+        let Some(target) = self.jump_phase_dao.find(execution_id, phase)? else {
             return Ok(None);
         };
-        self.jumps
+        self.jump_dao
             .find_by_target(execution_id, target.target_index())?
             .ok_or_else(ReadModelReadError::broken_projection)
             .map(Some)

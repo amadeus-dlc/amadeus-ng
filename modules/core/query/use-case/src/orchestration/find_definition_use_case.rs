@@ -13,14 +13,14 @@ use crate::orchestration::{DefinitionDao, DefinitionSummaryView, ReadModelReadEr
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindDefinitionUseCase<D: DefinitionDao> {
-    dao: D,
+    definition_dao: D,
 }
 
 impl<D: DefinitionDao> FindDefinitionUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindDefinitionUseCase<D> {
-        FindDefinitionUseCase { dao }
+    pub const fn new(definition_dao: D) -> FindDefinitionUseCase<D> {
+        FindDefinitionUseCase { definition_dao }
     }
 
     /// 定義識別子で要約を引く。引けないこと自体が「定義が未取込」の答えである。
@@ -32,6 +32,6 @@ impl<D: DefinitionDao> FindDefinitionUseCase<D> {
         &self,
         definition_id: &str,
     ) -> Result<Option<DefinitionSummaryView>, ReadModelReadError> {
-        self.dao.find(definition_id)
+        self.definition_dao.find(definition_id)
     }
 }

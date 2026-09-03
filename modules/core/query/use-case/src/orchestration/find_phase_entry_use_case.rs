@@ -13,14 +13,14 @@ use crate::orchestration::{PhaseEntryDao, PhaseEntryView, ReadModelReadError};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindPhaseEntryUseCase<D: PhaseEntryDao> {
-    dao: D,
+    phase_entry_dao: D,
 }
 
 impl<D: PhaseEntryDao> FindPhaseEntryUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindPhaseEntryUseCase<D> {
-        FindPhaseEntryUseCase { dao }
+    pub const fn new(phase_entry_dao: D) -> FindPhaseEntryUseCase<D> {
+        FindPhaseEntryUseCase { phase_entry_dao }
     }
 
     /// 定義 × scope × フェーズで入口ステージを引く。
@@ -34,6 +34,6 @@ impl<D: PhaseEntryDao> FindPhaseEntryUseCase<D> {
         scope: &str,
         phase: &str,
     ) -> Result<Option<PhaseEntryView>, ReadModelReadError> {
-        self.dao.find(definition_id, scope, phase)
+        self.phase_entry_dao.find(definition_id, scope, phase)
     }
 }

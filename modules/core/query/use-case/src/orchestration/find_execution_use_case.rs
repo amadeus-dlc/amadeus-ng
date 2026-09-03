@@ -13,14 +13,14 @@ use crate::orchestration::{ExecutionDao, ExecutionView, ReadModelReadError};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindExecutionUseCase<D: ExecutionDao> {
-    dao: D,
+    execution_dao: D,
 }
 
 impl<D: ExecutionDao> FindExecutionUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindExecutionUseCase<D> {
-        FindExecutionUseCase { dao }
+    pub const fn new(execution_dao: D) -> FindExecutionUseCase<D> {
+        FindExecutionUseCase { execution_dao }
     }
 
     /// 実行識別子で現在地を引く。
@@ -29,7 +29,7 @@ impl<D: ExecutionDao> FindExecutionUseCase<D> {
     ///
     /// リードモデルを引けない ([`ReadModelReadError`])。
     pub fn execute(&self, execution_id: &str) -> Result<Option<ExecutionView>, ReadModelReadError> {
-        self.dao.find(execution_id)
+        self.execution_dao.find(execution_id)
     }
 
     /// 状態の束縛ダイジェストで現在地を引く (`continue` の state 照合)。
@@ -45,6 +45,6 @@ impl<D: ExecutionDao> FindExecutionUseCase<D> {
         &self,
         state_binding: &str,
     ) -> Result<Option<ExecutionView>, ReadModelReadError> {
-        self.dao.find_by_state_binding(state_binding)
+        self.execution_dao.find_by_state_binding(state_binding)
     }
 }

@@ -23,19 +23,23 @@ use crate::orchestration::{
 /// (`coding-rules/use-case-rules.md` §2)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindContinuationUseCase<R: RunStageDao, P: SteeringPlanDao, S: SteeringPartDao> {
-    run_stages: R,
-    plans: P,
-    parts: S,
+    run_stage_dao: R,
+    steering_plan_dao: P,
+    steering_part_dao: S,
 }
 
 impl<R: RunStageDao, P: SteeringPlanDao, S: SteeringPartDao> FindContinuationUseCase<R, P, S> {
     /// 3 つの引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(run_stages: R, plans: P, parts: S) -> FindContinuationUseCase<R, P, S> {
+    pub const fn new(
+        run_stage_dao: R,
+        steering_plan_dao: P,
+        steering_part_dao: S,
+    ) -> FindContinuationUseCase<R, P, S> {
         FindContinuationUseCase {
-            run_stages,
-            plans,
-            parts,
+            run_stage_dao,
+            steering_plan_dao,
+            steering_part_dao,
         }
     }
 
@@ -62,7 +66,7 @@ impl<R: RunStageDao, P: SteeringPlanDao, S: SteeringPartDao> FindContinuationUse
         bundle_digest: &str,
         part_index: u32,
     ) -> Result<Option<ContinuationView>, ReadModelReadError> {
-        let Some(run_stage) = self.run_stages.find_bound(
+        let Some(run_stage) = self.run_stage_dao.find_bound(
             definition_id,
             scope,
             stage_slug,
@@ -73,12 +77,12 @@ impl<R: RunStageDao, P: SteeringPlanDao, S: SteeringPartDao> FindContinuationUse
             return Ok(None);
         };
         let Some(plan) = self
-            .plans
+            .steering_plan_dao
             .find_bound(run_stage.steering_plan_id(), bundle_digest)?
         else {
             return Ok(None);
         };
-        let next_part = self.parts.find(plan.id(), part_index)?;
+        let next_part = self.steering_part_dao.find(plan.id(), part_index)?;
         Ok(Some(ContinuationView::new(run_stage, plan, next_part)))
     }
 }

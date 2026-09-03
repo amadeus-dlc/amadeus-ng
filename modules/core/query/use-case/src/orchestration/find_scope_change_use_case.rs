@@ -13,14 +13,14 @@ use crate::orchestration::{ReadModelReadError, ScopeChangeDao, ScopeChangeView};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindScopeChangeUseCase<D: ScopeChangeDao> {
-    dao: D,
+    scope_change_dao: D,
 }
 
 impl<D: ScopeChangeDao> FindScopeChangeUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindScopeChangeUseCase<D> {
-        FindScopeChangeUseCase { dao }
+    pub const fn new(scope_change_dao: D) -> FindScopeChangeUseCase<D> {
+        FindScopeChangeUseCase { scope_change_dao }
     }
 
     /// 実行 × 要求 scope で照合結果を引く。行が無ければ無効な scope である。
@@ -33,6 +33,6 @@ impl<D: ScopeChangeDao> FindScopeChangeUseCase<D> {
         execution_id: &str,
         scope: &str,
     ) -> Result<Option<ScopeChangeView>, ReadModelReadError> {
-        self.dao.find(execution_id, scope)
+        self.scope_change_dao.find(execution_id, scope)
     }
 }

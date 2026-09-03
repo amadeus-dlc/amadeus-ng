@@ -13,14 +13,14 @@ use crate::orchestration::{ReadModelReadError, RunStageDao, RunStageView};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindRunStageUseCase<D: RunStageDao> {
-    dao: D,
+    run_stage_dao: D,
 }
 
 impl<D: RunStageDao> FindRunStageUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindRunStageUseCase<D> {
-        FindRunStageUseCase { dao }
+    pub const fn new(run_stage_dao: D) -> FindRunStageUseCase<D> {
+        FindRunStageUseCase { run_stage_dao }
     }
 
     /// 定義 × scope × ステージ slug で run-stage の材料を引く。
@@ -34,6 +34,6 @@ impl<D: RunStageDao> FindRunStageUseCase<D> {
         scope: &str,
         stage_slug: &str,
     ) -> Result<Option<RunStageView>, ReadModelReadError> {
-        self.dao.find(definition_id, scope, stage_slug)
+        self.run_stage_dao.find(definition_id, scope, stage_slug)
     }
 }

@@ -13,14 +13,14 @@ use crate::orchestration::{ReadModelReadError, ScopeDao, ScopeView};
 /// 合成ルートだけが行う (同 §1 の DIP)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindScopeUseCase<D: ScopeDao> {
-    dao: D,
+    scope_dao: D,
 }
 
 impl<D: ScopeDao> FindScopeUseCase<D> {
     /// 引当の口を注入する (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(dao: D) -> FindScopeUseCase<D> {
-        FindScopeUseCase { dao }
+    pub const fn new(scope_dao: D) -> FindScopeUseCase<D> {
+        FindScopeUseCase { scope_dao }
     }
 
     /// 定義 × scope 名で 1 列を引く。行が返ること自体が「有効な scope」の答えである。
@@ -33,7 +33,7 @@ impl<D: ScopeDao> FindScopeUseCase<D> {
         definition_id: &str,
         scope: &str,
     ) -> Result<Option<ScopeView>, ReadModelReadError> {
-        self.dao.find(definition_id, scope)
+        self.scope_dao.find(definition_id, scope)
     }
 
     /// 既製 3 scope (`express` / `classic` / `feature`) をその順で引く。
@@ -42,6 +42,6 @@ impl<D: ScopeDao> FindScopeUseCase<D> {
     ///
     /// リードモデルを引けない ([`ReadModelReadError`])。
     pub fn execute_stock(&self, definition_id: &str) -> Result<Vec<ScopeView>, ReadModelReadError> {
-        self.dao.find_stock(definition_id)
+        self.scope_dao.find_stock(definition_id)
     }
 }
