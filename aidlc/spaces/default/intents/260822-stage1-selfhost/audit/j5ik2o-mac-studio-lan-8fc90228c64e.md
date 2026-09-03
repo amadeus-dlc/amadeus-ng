@@ -32720,3 +32720,10 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Reason**: other
 
 ---
+
+## Workflow Parked
+**Timestamp**: 2026-09-03T15:04:27Z
+**Event**: WORKFLOW_PARKED
+**Stage**: functional-design
+
+---
