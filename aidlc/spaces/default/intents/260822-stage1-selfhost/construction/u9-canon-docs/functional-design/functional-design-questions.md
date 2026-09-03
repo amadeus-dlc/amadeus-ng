@@ -78,8 +78,9 @@ ADR / 契約で確定した次の事項も同じ B4 で仕様へ追従させる�
   の「load / save」→「find / save」、§2b に ES Repository の拡張語彙 `store`（ADR-006、event-store-adapter-rs 同形）の注記、§2 実例リストから
   旧称 `AuditLedgerRepository` を除去。`coding-rules/README.md` の一覧に `error-handling.md`（Q1 = A/B の場合）を追加。
 - P2. コード変更なし（仕様・正本の文書のみ）。合格はレビュー確認 + `coding-rules/README.md` との無矛盾 + 各仕様の自己整合。
-- P3. 成果物は entities.md（改訂対象文書の一覧 = エンティティ）/ rules.md（改訂内容と合格条件 = BR）/ traceability.json（FR8.1 / FR8.2 / FR9.6 →
-  BR）。functional-spec.md は spec kind のため作らない（produces_kinds）。
+- P3. 成果物は entities.md（改訂対象文書の一覧 = エンティティ）/ rules.md（改訂内容と合格条件 = BR）/
+  functional-spec.md（文書改訂の手順・失敗時の扱い・完了条件）/ traceability.json（FR8.1 / FR8.2 / FR9.6 → BR）。
+  現行のステージ契約では spec kind にも functional-spec.md が必須のため、旧前提「作らない」を置き換える。
 
 ## Consolidated Summary Confirmation
 
@@ -89,7 +90,8 @@ ADR / 契約で確定した次の事項も同じ B4 で仕様へ追従させる�
   `dirName` 用の型の分離は Bolt B5（U3）で行い、U2 機能設計 entities と 01 号の記述を同期（本 Bolt では 01 号に `IntentDirName` の行を追加）
 - Q3 = A: B 束は元の列挙 + ADR-008（12 号 / 01 号の識別子・内容版、10 号 `find_by_id`）+ ES 化の帰結（01 号集約表・11 号ポート表）+ B3 確定事項
   （gated = phase ≠ initialization、Started の自己完結、effective_plan の集約所有）+ deviations.md 登録 — すべて B4 に含める（規模 S → M 相当、文書のみ）
-- 前提 P1〜P3: A 束 4 点、コード変更なし、成果物は entities / rules / traceability（functional-spec は作らない）
+- 前提 P1〜P3: A 束 4 点、コード変更なし、成果物は entities / rules / functional-spec / traceability
+  （現行のステージ契約に合わせ、functional-spec は文書改訂の手順・失敗時の扱い・完了条件を定める）
 - 追加 1（オーナー質問「WorkspaceModel は集約か」への回答から）: 01 号 §3.3 の workspace 集約候補を ES 化後の姿に改訂（`Intent` / `Space` / `Worktree` が集約、
   `StateFile`・`AuditShard` はリードモデル、`WorkspaceLock` は退役）。`components.md` の `WorkspaceModel` を「workspace 語彙（値オブジェクト）」に縮退させ、
   状態ファイル描画の関数群は ReadModelUpdater（U4）へ移す方針を明記（コード移動は U4 の Bolt）

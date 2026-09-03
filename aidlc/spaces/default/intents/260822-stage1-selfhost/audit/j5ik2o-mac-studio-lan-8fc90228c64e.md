@@ -33151,3 +33151,161 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Message**: b44（クエリ側の旧経路削除と app の新経路配線）を進行中で、裁定 A を反映した実装を b44-query が作業中です。完了通知が来たら私が全 diff をレビューして検証し、PR を出します。
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-03T13:18:16Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T13:20:25Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae6945b7cdc278e11
+**Message**: A
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T13:28:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T13:42:52Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session End
+**Timestamp**: 2026-09-03T13:42:54Z
+**Event**: SESSION_ENDED
+**Reason**: prompt_input_exit
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-03T13:53:19Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-03T13:53:19Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-03T14:00:59Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-03T14:01:30Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:02:03Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:02:24Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-03T14:02:30Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-03T14:02:30Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:12:07Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:19:54Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:21:04Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-03T14:21:10Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-03T14:21:10Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Workflow Parked
+**Timestamp**: 2026-09-03T14:30:08Z
+**Event**: WORKFLOW_PARKED
+**Stage**: functional-design
+
+---
