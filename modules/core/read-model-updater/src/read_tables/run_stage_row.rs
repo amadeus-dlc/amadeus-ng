@@ -7,8 +7,12 @@ use core_command_domain::workflow_definition::{
 
 use super::digest;
 use super::json_column;
+use super::row_id;
 
-/// `read_run_stage` の 1 行。主キーは (`definition_id`, `scope`, `stage_slug`)。
+/// `read_run_stage` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`definition_id`, `scope`, `stage_slug`) から導いた代理キー)。`definition_id` は
+/// `read_definition.id` を、`steering_plan_id` は `read_steering_plan.id` を指す FK である
+/// (束は phase の関数なので、指す先はこのステージのフェーズの計画である)。
 ///
 /// # 定義 × scope で決まる (実行には依らない)
 ///
@@ -31,10 +35,12 @@ use super::json_column;
 /// | `inline_context_paths_rel` | ハーネス根 | `agents/{agent}.md` |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunStageRow {
+    id: String,
     definition_id: String,
     scope: String,
     stage_slug: String,
     phase: String,
+    steering_plan_id: String,
     lead_agent: String,
     support_agents: String,
     mode: String,
@@ -79,10 +85,12 @@ impl RunStageRow {
         // 階級の無いレビューは回せないので、片方だけ載せると行が嘘をつく。
         let review = node.reviewer().zip(node.review_class());
         RunStageRow {
+            id: row_id::run_stage(definition_id.as_str(), scope, slug),
             definition_id: definition_id.as_str().to_string(),
             scope: scope.to_string(),
             stage_slug: slug.to_string(),
             phase: phase_dir.to_string(),
+            steering_plan_id: row_id::steering_plan(phase_dir),
             lead_agent: node.lead_agent().to_string(),
             support_agents: json_column::strings(node.support_agents()),
             mode: node.mode().as_str().to_string(),
@@ -123,7 +131,13 @@ impl RunStageRow {
         }
     }
 
-    /// 定義の系譜 ID。
+    /// 主キー — 自然キー (`definition_id`, `scope`, `stage_slug`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_definition.id` を指す FK。
     #[must_use]
     pub fn definition_id(&self) -> &str {
         &self.definition_id
@@ -145,6 +159,12 @@ impl RunStageRow {
     #[must_use]
     pub fn phase(&self) -> &str {
         &self.phase
+    }
+
+    /// `read_steering_plan.id` を指す FK (このステージのフェーズの配信計画)。
+    #[must_use]
+    pub fn steering_plan_id(&self) -> &str {
+        &self.steering_plan_id
     }
 
     /// 主担当エージェント。

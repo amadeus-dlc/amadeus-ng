@@ -2,15 +2,19 @@
 
 use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex, StageKey};
 
+use super::row_id;
 use super::spelling;
 
-/// `read_next_jump` の 1 行。主キーは (`execution_id`, `target_index`)。
+/// `read_next_jump` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`execution_id`, `target_index`) から導いた代理キー)。`execution_id` は
+/// `read_execution.id` を指す FK である。
 ///
 /// 値は集約のクエリ [`IntentExecution::jump_resolve`] の答えである。行は**全 target を
 /// 網羅する** — 読取側が「跳べるか」を自分で判定しないための非正規化であり、拒否も
 /// 1 つの答えとして行になる (裁定 §10-1)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextJumpRow {
+    id: String,
     execution_id: String,
     target_index: usize,
     target_slug: String,
@@ -35,6 +39,7 @@ impl NextJumpRow {
             ),
         };
         NextJumpRow {
+            id: row_id::next_jump(execution.id().as_str(), target.to_usize()),
             execution_id: execution.id().as_str().to_string(),
             target_index: target.to_usize(),
             target_slug: key.slug().as_str().to_string(),
@@ -43,7 +48,13 @@ impl NextJumpRow {
         }
     }
 
-    /// 実行の識別子。
+    /// 主キー — 自然キー (`execution_id`, `target_index`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_execution.id` を指す FK。
     #[must_use]
     pub fn execution_id(&self) -> &str {
         &self.execution_id

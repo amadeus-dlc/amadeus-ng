@@ -4,9 +4,11 @@ use core_command_domain::workflow_definition::PhaseId;
 
 use super::digest;
 use super::json_column;
+use super::row_id;
 use super::rule_content::RuleContent;
 
-/// `read_steering_plan` の 1 行。主キーは `phase`。
+/// `read_steering_plan` の 1 行。主キーは 1 列 `id` (自然キー `phase` から導いた代理キー)。
+/// `read_run_stage.steering_plan_id` と `read_steering_part.steering_plan_id` がこの値を指す。
 ///
 /// **束は phase の関数である** — ステージの `rules_in_context` は束の選択に使わない
 /// (設計 §0 の調査事実)。したがって行はフェーズごとに 1 本で、実行にも scope にも依らない。
@@ -19,6 +21,7 @@ use super::rule_content::RuleContent;
 /// [`SteeringTables::source_digest`]: super::SteeringTables::source_digest
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SteeringPlanRow {
+    id: String,
     phase: String,
     bundle_digest: String,
     part_count: usize,
@@ -30,11 +33,18 @@ impl SteeringPlanRow {
     #[must_use]
     pub(crate) fn of(phase: PhaseId, chunks: &[Vec<RuleContent>]) -> SteeringPlanRow {
         SteeringPlanRow {
+            id: row_id::steering_plan(phase.as_str()),
             phase: phase.as_str().to_string(),
             bundle_digest: digest::bundle(chunks),
             part_count: chunks.len(),
             delivered_paths: json_column::strings(&delivered_paths(chunks)),
         }
+    }
+
+    /// 主キー — 自然キー `phase` から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// フェーズの綴り (`PhaseId::as_str`)。

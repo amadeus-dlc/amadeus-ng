@@ -6,14 +6,15 @@ use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex};
 use super::spelling;
 use super::stage_lookup::slug_at;
 
-/// `read_execution` の 1 行。主キーは `execution_id`。
+/// `read_execution` の 1 行。主キーは 1 列 `id` = 実行の識別子 (集約そのものの表なので
+/// 代理キーを作らない)。`intent_id` は `read_intent.id` を指す FK である。
 ///
 /// 値はすべて再生した [`IntentExecution`] のクエリの答えの写しである。`parked_active` と
 /// `accepts_commands` は集約の**導出述語**であり、読取側が `status` と `parked_at` から
 /// 組み直さなくてよいように列にしてある (裁定 §10-1 の非正規化)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionRow {
-    execution_id: String,
+    id: String,
     intent_id: String,
     scope: String,
     status: String,
@@ -39,7 +40,7 @@ impl ExecutionRow {
     pub fn of(execution: &IntentExecution, intent: &Intent) -> ExecutionRow {
         let cursor = execution.cursor();
         ExecutionRow {
-            execution_id: execution.id().as_str().to_string(),
+            id: execution.id().as_str().to_string(),
             intent_id: execution.intent_id().as_str().to_string(),
             scope: intent.scope().to_string(),
             status: spelling::status(execution.status()).to_string(),
@@ -58,10 +59,10 @@ impl ExecutionRow {
         }
     }
 
-    /// 実行の識別子 (UUIDv7)。
+    /// 主キー — 実行の識別子 (UUIDv7)。
     #[must_use]
-    pub fn execution_id(&self) -> &str {
-        &self.execution_id
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// この実行が対象にしている intent の識別子。

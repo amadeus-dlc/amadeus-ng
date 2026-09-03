@@ -43,7 +43,7 @@
 //! 消費側のパスは `core_read_model_updater::read_tables::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent};
 use core_command_domain::workflow_definition::{
@@ -70,6 +70,7 @@ mod next_jump_phase_row;
 mod next_jump_row;
 mod read_tables_error;
 mod request_kind;
+mod row_id;
 mod rule_content;
 mod run_stage_row;
 mod scope_change_row;
@@ -112,6 +113,11 @@ pub(crate) use sql::{ensure_tables, replace_all, replace_steering};
 ///
 /// フィールドは private。行の並びは決定的である — 定義と実行は識別子の辞書順、その中は
 /// 文書順・キー順であり、同じ履歴からは同じ順序の行が出る。
+///
+/// **どの行も主キー `id` を持つ** (関係モデリングの裁定 2026-09-03 — [`crate`] の doc)。
+/// 集約そのものを表す 3 表は集約 id を、それ以外は自然キーから導いた代理キーを `id` に
+/// 置き、関連は FK 列 (`intent_id` / `definition_id` / `execution_id` / `run_stage_id` /
+/// `steering_plan_id`) で指す。id も FK も履歴の関数なので、同じ履歴からは同じ値が出る。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadTables {
     definitions: Vec<DefinitionRow>,
@@ -224,6 +230,11 @@ impl ReadTables {
             }
         }
 
+        // 答えが指す run-stage は**この投影で立った行**でなければならない (届かない FK を
+        // 書くと、読み手が「引いたが無かった」を捌くことになる)。行はもう出来ているので、
+        // その id の集合を照合に回す。
+        let run_stage_ids: BTreeSet<&str> = run_stages.iter().map(RunStageRow::id).collect();
+
         let mut executions = Vec::new();
         let mut execution_stages = Vec::new();
         let mut next_answers = Vec::new();
@@ -268,7 +279,7 @@ impl ReadTables {
                 next_jumps.push(NextJumpRow::of(&execution, intent, stage, key));
             }
             for kind in RequestKind::ALL {
-                next_answers.push(NextAnswerRow::of(&execution, kind));
+                next_answers.push(NextAnswerRow::of(&execution, intent, kind, &run_stage_ids));
             }
             for phase in phases() {
                 if let Some(target) = execution.first_in_scope_of_phase(phase) {

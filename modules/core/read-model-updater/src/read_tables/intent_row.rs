@@ -3,7 +3,8 @@
 use chrono::SecondsFormat;
 use core_command_domain::orchestration::Intent;
 
-/// `read_intent` の 1 行。主キーは `intent_id`。
+/// `read_intent` の 1 行。主キーは 1 列 `id` = intent の識別子 (集約そのものの表なので
+/// 代理キーを作らない)。`definition_id` は `read_definition.id` を指す FK である。
 ///
 /// 値はすべて [`Intent`] のアクセサの写しである。走査結果は 2 つの綴りを持つ
 /// (`project_type` は状態ファイル面の `Greenfield` / `Brownfield`、`project_kind` は
@@ -11,7 +12,7 @@ use core_command_domain::orchestration::Intent;
 /// 読取側がもう一方の綴りを組み直すことになる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentRow {
-    intent_id: String,
+    id: String,
     definition_id: String,
     definition_revision: String,
     scope: String,
@@ -33,7 +34,7 @@ impl IntentRow {
     pub fn of(intent: &Intent) -> IntentRow {
         let scan = intent.scan();
         IntentRow {
-            intent_id: intent.id().as_str().to_string(),
+            id: intent.id().as_str().to_string(),
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
             scope: intent.scope().to_string(),
@@ -52,10 +53,10 @@ impl IntentRow {
         }
     }
 
-    /// intent の識別子 (UUIDv7)。
+    /// 主キー — intent の識別子 (UUIDv7)。
     #[must_use]
-    pub fn intent_id(&self) -> &str {
-        &self.intent_id
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// 依拠した定義の系譜 ID。

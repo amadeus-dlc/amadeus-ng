@@ -1,12 +1,17 @@
 //! `NextAnswerRow` — `read_next_answer` の 1 行 (`next` の答えを要求の形ごとに焼き込む)。
 
-use core_command_domain::orchestration::{IntentExecution, NextDecision};
+use std::collections::BTreeSet;
+
+use core_command_domain::orchestration::{Intent, IntentExecution, NextDecision};
 
 use super::request_kind::RequestKind;
+use super::row_id;
 use super::spelling;
 use super::stage_lookup::slug_of;
 
-/// `read_next_answer` の 1 行。主キーは (`execution_id`, `request_kind`)。
+/// `read_next_answer` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`execution_id`, `request_kind`) から導いた代理キー)。`execution_id` は
+/// `read_execution.id` を、`run_stage_id` は `read_run_stage.id` を指す FK である。
 ///
 /// 値は集約のクエリ [`IntentExecution::next_decision`] の答えである。**クエリ側は
 /// 21 分岐のラダーを持たない** — どの要求の形にどの答えが対応するかは書込側の集約が
@@ -15,8 +20,17 @@ use super::stage_lookup::slug_of;
 ///
 /// 逐語文言と directive の綴りはここに無い。それは行の `decision_kind` に従って
 /// **出す側 (プレゼンタ)** が描く。
+///
+/// `run_stage_id` は**指す先の行が同じスナップショットに在るときだけ**値を持つ。「答えは
+/// run-stage なので、材料はこの行にある」を FK 1 本で言うためであり、NULL は「材料の行が
+/// 無い」を意味する (判断ではなく不在である)。値が無くなるのは 2 つの場合である —
+/// 決定が run-stage ではない、または決定が名指すステージの run-stage 行が**この定義には
+/// 無い** (計画は誕生時の内容版に対して解決されるので、その後の改訂でステージが消えると
+/// 実行の計画だけが古いステージを名乗り続ける)。届かない FK を書かないのは、読み手に
+/// 「引いたが無かった」の後始末をさせないためである。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextAnswerRow {
+    id: String,
     execution_id: String,
     request_kind: String,
     decision_kind: String,
@@ -24,12 +38,23 @@ pub struct NextAnswerRow {
     stage_slug: Option<String>,
     gated: Option<bool>,
     checkbox: Option<String>,
+    run_stage_id: Option<String>,
 }
 
 impl NextAnswerRow {
     /// 1 つの要求の形に対する答えを 1 行へ写す (**この型の唯一の構築経路**)。
+    ///
+    /// `intent` は run-stage の材料を指す FK を組むためだけに要る — `read_run_stage` の
+    /// 行は定義 × scope × ステージで決まり、そのうち定義と scope は静的な intent が持つ。
+    /// `run_stage_ids` はそのスナップショットに実在する `read_run_stage.id` の集合であり、
+    /// **在る行しか指さない**ことをここで担保する (存在の照合であって判断ではない)。
     #[must_use]
-    pub fn of(execution: &IntentExecution, kind: RequestKind) -> NextAnswerRow {
+    pub fn of(
+        execution: &IntentExecution,
+        intent: &Intent,
+        kind: RequestKind,
+        run_stage_ids: &BTreeSet<&str>,
+    ) -> NextAnswerRow {
         let decision = execution.next_decision(&kind.to_request());
         let (stage_index, gated, checkbox) = match decision {
             NextDecision::RunStage { stage, gate } => (Some(stage.to_usize()), Some(gate), None),
@@ -45,18 +70,43 @@ impl NextAnswerRow {
             | NextDecision::ResumeMenu
             | NextDecision::NewWorkRouting => (None, None, None),
         };
+        let stage_slug = stage_index.and_then(|index| slug_of(execution, index));
+        let run_stage_id = if matches!(decision, NextDecision::RunStage { .. }) {
+            stage_slug
+                .as_deref()
+                .map(|slug| {
+                    row_id::run_stage(intent.definition_id().as_str(), intent.scope(), slug)
+                })
+                .filter(|id| run_stage_ids.contains(id.as_str()))
+        } else {
+            None
+        };
         NextAnswerRow {
+            id: row_id::next_answer(execution.id().as_str(), kind.as_str()),
             execution_id: execution.id().as_str().to_string(),
             request_kind: kind.as_str().to_string(),
             decision_kind: spelling::decision_kind(&decision).to_string(),
             stage_index,
-            stage_slug: stage_index.and_then(|index| slug_of(execution, index)),
+            stage_slug,
             gated,
             checkbox,
+            run_stage_id,
         }
     }
 
-    /// 実行の識別子。
+    /// 主キー — 自然キー (`execution_id`, `request_kind`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_run_stage.id` を指す FK (指す先の行が同じスナップショットに在るときだけ)。
+    #[must_use]
+    pub fn run_stage_id(&self) -> Option<&str> {
+        self.run_stage_id.as_deref()
+    }
+
+    /// `read_execution.id` を指す FK。
     #[must_use]
     pub fn execution_id(&self) -> &str {
         &self.execution_id

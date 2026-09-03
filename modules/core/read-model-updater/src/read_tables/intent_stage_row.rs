@@ -2,13 +2,18 @@
 
 use core_command_domain::orchestration::{IntentId, StageEntry};
 
-/// `read_intent_stage` の 1 行。主キーは (`intent_id`, `stage_index`)。
+use super::row_id;
+
+/// `read_intent_stage` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`intent_id`, `stage_index`) から導いた代理キー)。`intent_id` は `read_intent.id` を
+/// 指す FK である。
 ///
 /// 値は [`StageEntry`] とその表示属性 (`StageDisplay`) の写しである。**実行時に動く値
 /// (checkbox・実効プラン) はここには無い** — それは実行の表 (`read_execution_stage`) が
 /// 持つ。intent の計画は誕生時に確定して以後動かないので、2 つの表は別の理由で変わる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentStageRow {
+    id: String,
     intent_id: String,
     stage_index: usize,
     slug: String,
@@ -26,6 +31,7 @@ impl IntentStageRow {
     #[must_use]
     pub fn of(intent_id: &IntentId, stage_index: usize, entry: &StageEntry) -> IntentStageRow {
         IntentStageRow {
+            id: row_id::intent_stage(intent_id.as_str(), stage_index),
             intent_id: intent_id.as_str().to_string(),
             stage_index,
             slug: entry.slug().as_str().to_string(),
@@ -39,7 +45,13 @@ impl IntentStageRow {
         }
     }
 
-    /// intent の識別子。
+    /// 主キー — 自然キー (`intent_id`, `stage_index`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_intent.id` を指す FK。
     #[must_use]
     pub fn intent_id(&self) -> &str {
         &self.intent_id

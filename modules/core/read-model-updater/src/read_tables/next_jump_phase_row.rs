@@ -3,9 +3,12 @@
 use core_command_domain::orchestration::{IntentExecution, StageIndex};
 use core_command_domain::workflow_definition::PhaseId;
 
+use super::row_id;
 use super::stage_lookup::slug_of;
 
-/// `read_next_jump_phase` の 1 行。主キーは (`execution_id`, `phase`)。
+/// `read_next_jump_phase` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`execution_id`, `phase`) から導いた代理キー)。`execution_id` は `read_execution.id` を
+/// 指す FK である。
 ///
 /// 値は集約のクエリ [`IntentExecution::first_in_scope_of_phase`] の答えである。
 /// 目的地は**実効プラン**で決まる (recompose のオーバレイが静的グリッドに勝つ) ので、
@@ -15,6 +18,7 @@ use super::stage_lookup::slug_of;
 /// 答えが `None` のフェーズには行を作らない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextJumpPhaseRow {
+    id: String,
     execution_id: String,
     phase: String,
     target_index: usize,
@@ -26,6 +30,7 @@ impl NextJumpPhaseRow {
     #[must_use]
     pub fn of(execution: &IntentExecution, phase: PhaseId, target: StageIndex) -> NextJumpPhaseRow {
         NextJumpPhaseRow {
+            id: row_id::next_jump_phase(execution.id().as_str(), phase.as_str()),
             execution_id: execution.id().as_str().to_string(),
             phase: phase.as_str().to_string(),
             target_index: target.to_usize(),
@@ -33,7 +38,13 @@ impl NextJumpPhaseRow {
         }
     }
 
-    /// 実行の識別子。
+    /// 主キー — 自然キー (`execution_id`, `phase`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_execution.id` を指す FK。
     #[must_use]
     pub fn execution_id(&self) -> &str {
         &self.execution_id

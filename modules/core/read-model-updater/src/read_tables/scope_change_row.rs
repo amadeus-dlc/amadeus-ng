@@ -2,9 +2,12 @@
 
 use core_command_domain::orchestration::IntentExecutionId;
 
+use super::row_id;
 use super::spelling;
 
-/// `read_scope_change` の 1 行。主キーは (`execution_id`, `scope`)。
+/// `read_scope_change` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`execution_id`, `scope`) から導いた代理キー)。`execution_id` は `read_execution.id` を
+/// 指す FK である。
 ///
 /// 読取コマンドは `--scope <名前>` の値でこの表を引く。**行が返らなければ無効な scope**で
 /// あり (有効な scope にしか行が無い)、返れば `kind` が「state の scope と違うので
@@ -14,6 +17,7 @@ use super::spelling;
 /// scope だけは現在値との比較で分岐する — だから scope だけが表になる (設計 §0)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeChangeRow {
+    id: String,
     execution_id: String,
     scope: String,
     kind: String,
@@ -31,13 +35,20 @@ impl ScopeChangeRow {
         same_as_state: bool,
     ) -> ScopeChangeRow {
         ScopeChangeRow {
+            id: row_id::scope_change(execution_id.as_str(), scope),
             execution_id: execution_id.as_str().to_string(),
             scope: scope.to_string(),
             kind: spelling::scope_change(same_as_state).to_string(),
         }
     }
 
-    /// 実行の識別子。
+    /// 主キー — 自然キー (`execution_id`, `scope`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_execution.id` を指す FK。
     #[must_use]
     pub fn execution_id(&self) -> &str {
         &self.execution_id
