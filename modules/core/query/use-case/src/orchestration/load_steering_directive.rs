@@ -102,7 +102,6 @@ mod tests {
     use super::super::directive_schema::DirectiveKind;
     use super::super::gate_field::GateField;
     use super::super::route_digest::RouteDigest;
-    use super::super::steering_plan::SteeringPlan;
     use super::*;
     use crate::orchestration::ScopeSlugView;
 
@@ -139,23 +138,14 @@ mod tests {
             "# Org
 "
         );
-        let plan = SteeringPlan::new(vec![
-            vec![content],
-            vec![RuleContent::new(
-                "memory/team.md".to_string(),
-                "# T
-"
-                .to_string(),
-            )],
-        ]);
-        let first = plan.first_part().unwrap();
+        // 索引・総数・中身はいずれも行の値である (RMU がパック済み)。
         let pinned = token(GateField::Ungated).build();
         let part = LoadSteeringDirective::new(
             slug(),
             BundleDigest::new("sha256:bbbb"),
-            first.index(),
-            first.of(),
-            first.chunk().to_vec(),
+            PartIndex::FIRST,
+            PartCount::new(2),
+            vec![content],
             pinned.clone(),
         );
         assert_eq!(part.stage().as_str(), "requirements-analysis");

@@ -1,30 +1,38 @@
-//! orchestration コンテキストの**クエリ側** — 「次に何が起こるか」を読むだけの動詞
-//! (`next` / `continue`) と、その出力語彙 (directive プロトコル)。
+//! orchestration コンテキストの**クエリ側** — 蓄積されたリードモデルを鍵で引く口と、
+//! 読み手が放出する出力語彙 (directive プロトコル)。
 //!
-//! # なぜクエリ側にあるのか
+//! # 読むことしか許されない
 //!
 //! `next` / `continue` は directive を放出するだけで**何も書かない**。「ただ読むための責務は
 //! コマンド側では許容されない — それはクエリ側の実装である」(オーナー裁定 2026-08-30、
 //! `coding-rules/cqrs-boundaries.md` 規則 5)。したがって本モジュールは Repository を 1 本も
 //! 持たず、集約の再構成もしない (同規則 6)。
 //!
-//! 読取素材 ([`ExecutionStateView`] / [`DefinitionView`] / [`MemoryRules`]) は、リードモデルを
-//! 読む **DTO/DAO ポート** ([`ExecutionStateDao`] / [`WorkflowDefinitionDao`] /
-//! [`MemoryRulesDao`]) 経由で取得する (オーナー裁定 2026-08-31)。ポートは読取動詞 `find`
-//! 1 本だけを持ち、更新動詞が存在しないことが「リードモデルは更新できない」の型保証である。
-//! **読取元 (ファイル / SQLite のテーブル) は実装の内部詳細**であり、ポート面が語るのは
-//! DTO だけである (同日追補裁定)。
+//! さらに**判断・導出・選択・文言組立のどれも持たない** (オーナー裁定 2026-09-02)。
+//! ユースケースの本体は `execute(鍵) = dao.find(鍵) → View` であり、複数の表にまたがる答えは
+//! **FK をたどって表ごとに引く**ことで組む (同 2026-09-03 — DAO は 1 表 1 引当)。何を描くかを
+//! 決めるのは行の綴り (`read_next_answer.decision_kind`) であり、逐語文言・directive の綴り・
+//! token の封緘は出す側 (合成ルートのプレゼンタ) の仕事である。
 //!
-//! その DTO 自身も DAO と同じ `port/` に住む — 「Port の Dao が依存する型も port/ にいれて。
-//! `*View`」(オーナー裁定 2026-08-31)。DTO/DAO ポートは一つのパッケージであり、契約とその
-//! 契約が返す型は同じ理由で変わるので、変更の単位を 1 ディレクトリに揃える。
+//! b26 / b27 が持っていた 21 分岐ラダー・スコープ解決・steering 分割・Markdown 逆パースは
+//! b44 で**すべて撤去**した (`query-side-audit/read-model-spec.md` §7)。
+//!
+//! # 読取素材は 12 の DAO ポート
+//!
+//! リードモデルを読む **DTO/DAO ポート** (`port/`) 経由で取得する (オーナー裁定 2026-08-31)。
+//! ポートは読取動詞 `find` 1 本だけを持ち、更新動詞が存在しないことが「リードモデルは
+//! 更新できない」の型保証である。**読取元 (SQLite の `read_*` 表) は実装の内部詳細**であり、
+//! ポート面が語るのは DTO だけである (同日追補裁定)。DTO 自身も DAO と同じ `port/` に住む。
 //!
 //! # 出力モデルであってビューではない
 //!
-//! ここの型 (directive・continue_token・steering 束縛) はリードモデルの**写し**ではなく、
-//! 読み手が**放出する**出力モデルなので `View` 接尾辞を付けない (`workflow_view` /
-//! `execution_view` の命名方針と対をなす)。ワイヤに乗る値と綴りは公開言語 (B14) であり、
+//! directive・continue_token・束縛はリードモデルの**写し**ではなく、読み手が**放出する**
+//! 出力モデルなので `View` 接尾辞を付けない。ワイヤに乗る値と綴りは公開言語 (B14) であり、
 //! 1 バイトも変えられない。
+//!
+//! その出力モデルが使う小さな値 ([`StageSlugView`] / [`ScopeSlugView`] / [`PhaseView`] /
+//! [`StageModeView`] / [`ReviewClassView`]) は `View` 接尾辞を保つ — 綴りの出所は行
+//! (`read_run_stage.phase` 等) であり、検証済みの値だけを保持する読取側の語彙だからである。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、消費側の
 //! パスは `core_query_use_case::orchestration::<型>` で安定する
@@ -37,12 +45,10 @@ mod blank_stage_name;
 mod bundle_digest;
 mod continuation_view;
 mod continue_token;
-mod continue_use_case;
 mod directive;
 mod directive_digest;
 mod directive_schema;
 mod engine_command;
-mod engine_signal;
 mod find_continuation_use_case;
 mod find_definition_use_case;
 mod find_execution_use_case;
@@ -56,39 +62,34 @@ mod find_scope_use_case;
 mod find_steering_use_case;
 mod gate_field;
 mod load_steering_directive;
-mod next_decision;
-mod next_request;
 mod next_turn_input;
 mod next_turn_view;
-mod next_use_case;
 mod noun_family;
 mod noun_token;
 mod part_count;
 mod part_index;
+mod phase_view;
 mod port;
 mod read_only_verb;
+mod review_class_view;
 mod route_digest;
 mod rule_content;
 mod run_stage_directive;
-mod scope_resolution;
-mod scope_resolution_error;
-mod scope_source;
+mod scope_slug_error;
+mod scope_slug_view;
+mod stage_mode_view;
 mod stage_name;
+mod stage_slug_error;
+mod stage_slug_view;
 mod state_binding;
 mod steering_delivery_view;
-mod steering_digest;
-mod steering_part;
-mod steering_plan;
-#[cfg(test)]
-mod test_fixtures;
 mod token_version;
 mod unit_kind;
 mod unit_name;
 mod unit_name_error;
 mod unit_ref;
 mod unknown_unit_kind;
-mod unsplittable_section;
-mod workspace_layout;
+mod unknown_value;
 
 // directive プロトコル (10 種の閉集合と、構築できる部分集合の判別共用体)
 pub use ask_directive::AskDirective;
@@ -102,81 +103,58 @@ pub use rule_content::RuleContent;
 // ファサード連鎖の一段を担う (`coding-rules/module-visibility.md` §追記 2026-09-01)。
 pub use run_stage_directive::{RunStageDirective, RunStageDirectiveBuilder};
 
-// steering 連鎖 (継続トークン・束縛・配信計画)
+// steering 連鎖 (継続トークン・束縛・部の番号)
 pub use bindings::Bindings;
 pub use bundle_digest::BundleDigest;
 pub use continue_token::{ContinueToken, ContinueTokenBuilder};
 pub use directive_digest::DirectiveDigest;
-pub use route_digest::RouteDigest;
-pub use state_binding::StateBinding;
-// steering ダイジェストの導出は所有する型の関連メソッド (steering_digest モジュールの impl —
-// `coding-rules/domain-services.md`)。輸出する自由関数は無い。
 pub use part_count::PartCount;
 pub use part_index::PartIndex;
-pub use steering_part::SteeringPart;
-pub use steering_plan::SteeringPlan;
+pub use route_digest::RouteDigest;
+pub use state_binding::StateBinding;
 pub use token_version::TokenVersion;
 
 // エンジンコマンドの概念と綴り
 pub use engine_command::EngineCommand;
 pub use read_only_verb::ReadOnlyVerb;
 
-// 値オブジェクト
+// 値オブジェクト — 出力モデルが使う検証済みの値
+pub use phase_view::PhaseView;
+pub use review_class_view::ReviewClassView;
+pub use scope_slug_view::ScopeSlugView;
+pub use stage_mode_view::StageModeView;
 pub use stage_name::StageName;
+pub use stage_slug_view::StageSlugView;
 pub use unit_kind::UnitKind;
 pub use unit_name::UnitName;
 pub use unit_ref::UnitRef;
 
-// 判断の入出力
-pub use engine_signal::EngineSignal;
-pub use next_decision::NextDecision;
-pub use next_request::NextRequest;
-pub use scope_resolution::ResolvedScope;
-pub use scope_source::ScopeSource;
+// 要求の観測 (合成ルートが argv から畳む — 判断は持たない)
+pub use next_turn_input::NextTurnInput;
+pub use noun_family::NounFamily;
+pub use noun_token::NounToken;
 
-// ポート (trait) — リードモデルを読む DAO。動詞は読取 (`find`) だけで、更新動詞は無い
-// (`coding-rules/cqrs-boundaries.md` 規則 6 / `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
-pub use port::{ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao};
-
-// 構造化リードモデル (`read_*` 表) を引く 12 ポート (b43) — **1 表 1 ポート**。
+// ポート (trait) — 構造化リードモデル (`read_*` 表) を引く 12 の DAO。**1 表 1 ポート**で、
+// 動詞は読取 (`find`) だけ (`coding-rules/cqrs-boundaries.md` 規則 6 /
+// `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
 pub use port::{
     DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao, RunStageDao,
     ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao, SteeringPlanDao,
 };
 
-// 構造化リードモデルの行の写し (b43)。
+// 行の写し (1 表 1 View)。
 pub use port::{
     DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView, NextAnswerView, PhaseEntryView,
     RunStageView, ScopeChangeView, ScopeView, SteeringPartView, SteeringPlanView,
 };
 
-// 複数の表にまたがる答えの**組み立て View** (b43)。DAO が返す型ではない (ユースケースが
-// FK をたどって組む) ので `port/` ではなくここに住む。
+// 複数の表にまたがる答えの**組み立て View**。DAO が返す型ではない (ユースケースが FK を
+// たどって組む) ので `port/` ではなくここに住む。
 pub use continuation_view::ContinuationView;
 pub use next_turn_view::NextTurnView;
 pub use steering_delivery_view::SteeringDeliveryView;
 
-// ポートの DTO — DAO が返すクエリモデル。DAO と同じ `port/` に同居する (オーナー裁定
-// 2026-08-31 — DTO/DAO ポートは一つのパッケージ)。読む対象は 2 族あるが、消費側のパスは
-// 本ファサードで平坦に揃う。
-//
-// ワークフロー定義リードモデル (3 入力) のビュー型
-pub use port::{
-    BrownfieldGreenfieldView, ConsumeDeclView, DefinitionIdView, DefinitionRevisionView,
-    DefinitionView, ExecutionKindView, PhaseView, PlanActionView, ReviewCapValueView,
-    ReviewClassView, RuleInContextView, RuleScopeView, ScopeGridView, ScopeMetadataView,
-    ScopeSlugView, SensorRefView, SkeletonDefaultView, StageGraphView, StageModeView,
-    StageNumberView, StageRouteView, StageSlugView, StageView, StageViewBuilder,
-};
-// 実行状態リードモデル (`aidlc-state.md`) のビュー型と、その上の判断 (BR3.1 の 8 分岐)
-pub use port::{CheckboxState, ExecutionStateView, ExecutionStatus, StageIndex, StageProgressView};
-// memory 層ルール束 (`MemoryRulesDao` の戻り値 — リードモデルの写しではないので `View` 無し)
-pub use port::MemoryRules;
-
-// ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ) と、その観測
-pub use continue_use_case::ContinueUseCase;
-
-// 構造化リードモデルを引く 10 ユースケース (b43) — `execute(鍵) = dao.find(鍵)` だけを持つ。
+// ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ)。
 pub use find_continuation_use_case::FindContinuationUseCase;
 pub use find_definition_use_case::FindDefinitionUseCase;
 pub use find_execution_use_case::FindExecutionUseCase;
@@ -188,22 +166,13 @@ pub use find_scope_change_use_case::FindScopeChangeUseCase;
 pub use find_scope_keyword_use_case::FindScopeKeywordUseCase;
 pub use find_scope_use_case::FindScopeUseCase;
 pub use find_steering_use_case::FindSteeringUseCase;
-pub use next_turn_input::NextTurnInput;
-pub use next_use_case::NextUseCase;
-pub use noun_family::NounFamily;
-pub use noun_token::NounToken;
-pub use workspace_layout::WorkspaceLayout;
 
-// 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側のユースケースが組む)
+// 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側が組む)
 pub use port::ReadModelReadError;
-pub use port::{ExecutionStateReadError, MemoryRulesReadError, WorkflowDefinitionReadError};
-// 拒否 (DTO の復号 — ビューではないので `View` 接尾辞を付けない)
+// 拒否 (値の復号 — ビューではないので `View` 接尾辞を付けない)
 pub use blank_stage_name::BlankStageName;
-pub use port::{
-    DefinitionIdError, DefinitionRevisionError, ExecutionStateError, ScopeMetadataError,
-    ScopeSlugError, StageGraphError, StageNumberError, StageSlugError, UnknownScope, UnknownValue,
-};
-pub use scope_resolution_error::ScopeResolutionError;
+pub use scope_slug_error::ScopeSlugError;
+pub use stage_slug_error::StageSlugError;
 pub use unit_name_error::UnitNameError;
 pub use unknown_unit_kind::UnknownUnitKind;
-pub use unsplittable_section::UnsplittableSection;
+pub use unknown_value::UnknownValue;

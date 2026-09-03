@@ -33128,6 +33128,21 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 
 ---
 
+## Human Turn
+**Timestamp**: 2026-09-03T12:54:18Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:55:07Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a43a995340514a16f
+**Message**: 進捗報告
+
+---
+
 ## Workflow Parked
 **Timestamp**: 2026-09-03T15:04:27Z
 **Event**: WORKFLOW_PARKED
@@ -33154,3 +33169,4 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 ||||||| parent of e178ca59 (chore(aidlc): audit shard)
 ||||||| parent of 2e8aeba3 (rules(memory): コミットは作業ツリー全体を回収する — 監査シャードの回収漏れを禁じる規律を project.md へ登録)
 ||||||| parent of 3fafa934 (b44(W): app を新経路へ配線 — 行の kind で描くコントローラ / プレゼンタ、1 要求 1 接続)
+||||||| parent of 0b21e12b (b44(D): クエリ側の旧経路を全撤去 — 21 分岐ラダー・両パーサ・旧ポート 3 本（-14,618 行）)
