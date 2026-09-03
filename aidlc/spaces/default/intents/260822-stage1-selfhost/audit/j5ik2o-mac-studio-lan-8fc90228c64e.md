@@ -33143,6 +33143,15 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 
 ---
 
+## Subagent Completed
+**Timestamp**: 2026-09-03T13:01:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae85c50a32f5d8977
+**Message**: b44（クエリ側の旧経路削除と app の新経路配線）を進行中で、裁定 A を反映した実装を b44-query が作業中です。完了通知が来たら私が全 diff をレビューして検証し、PR を出します。
+
+---
+
 ## Workflow Parked
 **Timestamp**: 2026-09-03T15:04:27Z
 **Event**: WORKFLOW_PARKED
@@ -33170,3 +33179,4 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 ||||||| parent of 2e8aeba3 (rules(memory): コミットは作業ツリー全体を回収する — 監査シャードの回収漏れを禁じる規律を project.md へ登録)
 ||||||| parent of 3fafa934 (b44(W): app を新経路へ配線 — 行の kind で描くコントローラ / プレゼンタ、1 要求 1 接続)
 ||||||| parent of 0b21e12b (b44(D): クエリ側の旧経路を全撤去 — 21 分岐ラダー・両パーサ・旧ポート 3 本（-14,618 行）)
+||||||| parent of dd61ab05 (b44(G): CLI ゴールデンを配線 — バイト一致 1 ケース + キー集合 2 ケース、駆動不能は理由を明記)
