@@ -51,6 +51,27 @@ impl ReadModelStore {
         })
     }
 
+    /// 0 行以上を引く (行が無いのは失敗ではない — 空の列が返る)。
+    pub(crate) fn find_many<T>(
+        &self,
+        sql: &str,
+        params: &[&dyn ToSql],
+        map: impl Fn(&Row<'_>) -> rusqlite::Result<T>,
+    ) -> Result<Vec<T>, ReadModelReadError> {
+        let mut statement = self
+            .connection
+            .prepare(sql)
+            .map_err(|error| read_failure(&error, &self.path))?;
+        let rows = statement
+            .query_map(params, |row| map(row))
+            .map_err(|error| read_failure(&error, &self.path))?;
+        let mut found = Vec::new();
+        for row in rows {
+            found.push(row.map_err(|error| read_failure(&error, &self.path))?);
+        }
+        Ok(found)
+    }
+
     /// 高々 1 行を引く (行が無いのは失敗ではない)。
     pub(crate) fn find_one<T>(
         &self,

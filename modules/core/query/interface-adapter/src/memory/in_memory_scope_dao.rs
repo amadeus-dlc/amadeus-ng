@@ -51,6 +51,17 @@ impl InMemoryScopeDao {
 }
 
 impl ScopeDao for InMemoryScopeDao {
+    fn find_all(&self, definition_id: &str) -> Result<Vec<ScopeView>, ReadModelReadError> {
+        let rows = self.held.as_ref().map_err(Clone::clone)?;
+        let mut found: Vec<ScopeView> = rows
+            .iter()
+            .filter(|row| row.definition_id == definition_id)
+            .map(|row| row.view.clone())
+            .collect();
+        found.sort_by(|left, right| left.scope().cmp(right.scope()));
+        Ok(found)
+    }
+
     fn find(
         &self,
         definition_id: &str,
