@@ -3,7 +3,7 @@
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
-//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (11 コマンド) は
+//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (10 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
 //! 再構成は `replay` (ジャーナル全再生 — 先頭は `Started`) であり、memento 型は持たない

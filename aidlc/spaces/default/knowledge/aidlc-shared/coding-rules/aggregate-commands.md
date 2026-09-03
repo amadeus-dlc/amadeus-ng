@@ -6,9 +6,9 @@ CQS 規則の字面との矛盾を閉じる）
 **関連**: [command-query-separation.md](command-query-separation.md)（本規則が集約について
 これを精密化する）、[aggregate-references.md](aggregate-references.md)、
 [error-handling.md](error-handling.md)
-**適用例**: `IntentExecution` の全 11 コマンド（`complete_stage` / `open_gate` / `approve_gate` /
-`reject_gate` / `revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` /
-`switch_autonomy` — いずれも `Result<IntentExecutionEvent, CommandError>`）、
+**適用例**: `IntentExecution` の全 10 コマンド（`open_gate` / `approve_gate` / `reject_gate` /
+`revise_stage` / `skip_stage` / `jump` / `park` / `unpark` / `recompose` / `switch_autonomy` —
+いずれも `Result<IntentExecutionEvent, CommandError>`。`complete_stage` は b42 で撤去、#85 = A）、
 `WorkflowDefinition::redefine`、`CompiledDefinition` の 3 コマンド（`recompile` /
 `register_scope` / `apply_plugin_selection` — b36、2026-09-02。媒体がスナップショットなので
 `replay` は無く、genesis `compile` と `From<Compiled>` が構築口）
