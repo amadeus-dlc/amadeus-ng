@@ -23,10 +23,11 @@ use super::{
 ///
 /// 内訳: `Started` → `GateOpened` → `GateApproved` → `AutonomyModeSet`。
 ///
-/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった `StageCompleted`
-/// (索引 0 = 非ゲートの initialization を完了させる 1 件) は**構成不能**になった —
-/// 誕生の時点でその checkbox は既に completed で、カーソルは索引 1 のゲート付き
-/// ステージに立っている。前置きが 1 件消えたぶん、以後の通番と版が 1 つずつ詰まる。
+/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった非ゲート完了の 1 件
+/// (索引 0 = initialization を完了させる) は**構成不能**になった — 誕生の時点でその
+/// checkbox は既に completed で、カーソルは索引 1 のゲート付きステージに立っている。
+/// 前置きが 1 件消えたぶん、以後の通番と版が 1 つずつ詰まる。そのコマンドとイベント自体は
+/// b42 で撤去した (#85 = A)。
 pub(crate) async fn seed<R: IntentExecutionRepository>(repository: &mut R) -> IntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {

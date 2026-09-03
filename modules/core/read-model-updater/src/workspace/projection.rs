@@ -23,7 +23,7 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, JumpDirection,
-    Jumped, Parked, PhaseBoundary, Recomposed, StageCompleted, StageRevised, StageSkipped,
+    Jumped, Parked, PhaseBoundary, Recomposed, StageRevised, StageSkipped,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
@@ -322,9 +322,6 @@ fn project_one(
 ) -> Result<(), ProjectionError> {
     match event {
         IntentExecutionEvent::Started(_) => started(at, plan, read_model),
-        IntentExecutionEvent::StageCompleted(completed) => {
-            stage_completed(completed, at, plan, read_model)
-        }
         IntentExecutionEvent::GateOpened(opened) => gate_opened(opened, at, read_model),
         IntentExecutionEvent::GateApproved(approved) => {
             gate_approved(approved, at, plan, read_model)
@@ -674,7 +671,7 @@ fn gate_approved(
     ));
     // 境界行の `**Stages completed**:` は**倒したあとの**チェックボックスを数えた値なので、
     // 先に完了させる（`cli/report/approved-across-phases` は 2 — 計画上の inception 内
-    // スコープ件数 8 とは一致しない）。監査行の順序はここでは動かない — `complete_stage` は
+    // スコープ件数 8 とは一致しない）。監査行の順序はここでは動かない — 下のローカルヘルパは
     // 状態面だけを触り、行を描かないからである。
     complete_stage(read_model, stage)?;
     // 次カーソルとフェーズ境界はイベントに載らない — リードモデルの実効プランと計画から
@@ -693,35 +690,6 @@ fn gate_approved(
 // ---------------------------------------------------------------------------
 // 進行
 // ---------------------------------------------------------------------------
-
-/// `StageCompleted`（非ゲートの完了）→ `STAGE_COMPLETED` + 次ステージの開始。
-///
-/// `**Details**:` の逐語は `Stage <表示名> completed` である（`cli/report/completed-ungated`
-/// が実バイトを固定している）。ゲート経由の完了は `Stage <表示名> approved by gate` で、
-/// **同じ `STAGE_COMPLETED` でも文言が割れる** — 書き手が違うからで、片方に寄せてはならない。
-///
-/// 出荷グラフで非ゲートなのは initialization の 3 ステージだけであり、その 3 本は genesis で
-/// 完了済みになる。この単独経路へ到達するには**後方ジャンプで initialization ステージを
-/// `[-]` へ戻してから** `report --result completed` を打つ（採取手順は同ケースの `argv`）。
-fn stage_completed(
-    completed: &StageCompleted,
-    at: &DateTime<Utc>,
-    plan: &ResolvedPlan,
-    read_model: &mut ReadModel,
-) -> Result<(), ProjectionError> {
-    let stage = completed.stage();
-    let title = title_of(plan, stage)?;
-    read_model.append_audit(&render_audit_block(
-        EventType::StageCompleted,
-        at,
-        &AuditFields::new()
-            .with(key(key::STAGE)?, stage.as_str())
-            .with(key(key::DETAILS)?, &format!("Stage {title} completed")),
-    ));
-    complete_stage(read_model, stage)?;
-    let next = next_in_effective_scope(read_model, plan, stage);
-    leave_for(read_model, at, plan, next.as_ref())
-}
 
 /// `StageSkipped` → `STAGE_SKIPPED` + 次ステージの開始。完了数と最終完了ステージは動かさない。
 fn stage_skipped(
@@ -1853,21 +1821,6 @@ mod tests {
     }
 
     #[test]
-    fn completing_a_non_gated_stage_uses_the_completed_wording() {
-        let read_model = run(IntentExecutionEvent::StageCompleted(StageCompleted::new(
-            event_id(),
-            execution_id(),
-            slug("state-init"),
-        )));
-        assert!(
-            read_model
-                .appended_audit()
-                .contains("**Details**: Stage Some Title completed\n")
-        );
-        assert!(read_model.state().contains("- [x] state-init — EXECUTE"));
-    }
-
-    #[test]
     fn a_backward_jump_resets_the_downstream_checkboxes() {
         // 出発点はイベントに載らない — 自分の `Current Stage` 行から導く。second で稼働中の
         // 状態を作り、first へ跳ぶ。
@@ -2024,8 +1977,8 @@ mod tests {
         let mut read_model =
             ReadModel::new(SKELETON.replace("- [ ] first — EXECUTE", "- [ ] first — WHAT"));
         project(
-            &[entry(IntentExecutionEvent::StageCompleted(
-                StageCompleted::new(event_id(), execution_id(), slug("state-init")),
+            &[entry(IntentExecutionEvent::GateApproved(
+                GateApproved::new(event_id(), execution_id(), slug("state-init"), None),
             ))],
             &plan(),
             &mut read_model,

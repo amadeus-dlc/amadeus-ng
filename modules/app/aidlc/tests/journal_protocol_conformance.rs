@@ -51,8 +51,8 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageCompleted, StageDisplay,
-    StageEntry, StageRevised, StageSkipped, StartRequest, Unparked, WorkspaceScan,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageDisplay, StageEntry,
+    StageRevised, StageSkipped, StartRequest, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -293,27 +293,17 @@ fn genesis() -> (IntentExecution, IntentExecutionEvent) {
 
 /// カーソル位置から打てる唯一のコマンドを打ち、1 イベントを得る (1 ステップ 1 イベント)。
 ///
-/// 非ゲートは `complete_stage`、ゲート付きは `open_gate` → `approve_gate` の順。どのコマンドを
-/// 打つかは集約の状態だけで決まるので、モデル側に「どのコマンドか」の情報は要らない
-/// (モデルは書込の成否だけを持つ抽象である)。
-///
-/// 誕生 = 初期化完了済み (issue #76) 以降、カーソルが非ゲートに立つ歴史は構成不能なので
-/// `complete_stage` の腕は実際には通らない — 分岐そのものは集約の状態で決めるという形を
-/// 保つために残す。
+/// `open_gate` → `approve_gate` の順。どちらを打つかは集約の状態 (カーソルの checkbox) だけで
+/// 決まるので、モデル側に「どのコマンドか」の情報は要らない (モデルは書込の成否だけを持つ
+/// 抽象である)。誕生 = 初期化完了済み (issue #76) 以降カーソルは常にゲート付きに立つので、
+/// 非ゲート完了のコマンドは b42 で撤去した (#85 = A)。
 fn next_command(aggregate: &mut IntentExecution) -> IntentExecutionEvent {
     let cursor = aggregate.cursor();
-    let gated = aggregate
-        .gated(&intent(), cursor)
-        .expect("カーソルは範囲内");
     let checkbox = aggregate.checkbox(cursor).expect("カーソルは範囲内");
-    let result = if gated {
-        if checkbox == CheckboxState::InProgress {
-            aggregate.open_gate(&intent(), vec!["artifact.md".to_string()], at())
-        } else {
-            aggregate.approve_gate(&intent(), None, at())
-        }
+    let result = if checkbox == CheckboxState::InProgress {
+        aggregate.open_gate(&intent(), vec!["artifact.md".to_string()], at())
     } else {
-        aggregate.complete_stage(&intent(), at())
+        aggregate.approve_gate(&intent(), None, at())
     };
     result.expect("合成計画はフィクスチャ長ぶんのコマンドを受け付ける (STAGES の見積り)")
 }
@@ -926,7 +916,7 @@ fn both_sides_write_the_definition_payload_with_the_same_bytes() {
     }
 }
 
-/// 実行イベント 12 変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
+/// 実行イベント 11 変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
 fn every_execution_variant() -> Vec<IntentExecutionEvent> {
     let ev = || IntentExecutionEventId::generate();
     let agg = execution_id;
@@ -934,7 +924,6 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
     let (_, started) = IntentExecution::start(execution_id(), &intent(), at());
     vec![
         started,
-        IntentExecutionEvent::StageCompleted(StageCompleted::new(ev(), agg(), slug("stage-0"))),
         IntentExecutionEvent::GateOpened(GateOpened::new(
             ev(),
             agg(),
@@ -984,7 +973,7 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
 #[test]
 fn every_execution_variant_written_by_the_command_side_is_read_back_by_the_projection() {
     // 両側の DTO は**同名の別の型**であり、一致は型ではなくこのテストが保証する
-    // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。b40 で全 12 変種に `id` と
+    // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。b40 で全 11 変種に `id` と
     // `aggregate_id` が加わり、`Unparked` は単位変種から構造体へ変わったので、変種ごとに
     // 書いて読み戻す照合をここに置く (ITF 駆動の経路は park / jump / recompose を通らない)。
     for event in every_execution_variant() {

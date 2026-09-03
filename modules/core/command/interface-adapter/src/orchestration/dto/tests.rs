@@ -13,8 +13,7 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
-    WorkspaceScan,
+    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -122,7 +121,7 @@ fn intent() -> Intent {
 /// intent 面 (`INTENT_BODY` の `stages`) と同一である。
 const STARTED_BODY: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 12 変種を、逐語で固定した綴りと組で並べる。
+/// 全 11 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -133,14 +132,6 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 stages(),
             )),
             STARTED_BODY,
-        ),
-        (
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                execution_event_id(),
-                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
-                slug("state-init"),
-            )),
-            r#"{"StageCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"state-init"}}"#,
         ),
         (
             IntentExecutionEvent::GateOpened(GateOpened::new(

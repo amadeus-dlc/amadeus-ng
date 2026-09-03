@@ -61,10 +61,10 @@ impl Fixture {
 
 /// 4 コマンドぶん書き進め、最後の再水和結果を返す。
 ///
-/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった `StageCompleted`
-/// (索引 0 = 非ゲートの initialization を完了させる 1 件) は構成不能になった — 誕生の
-/// 時点でその checkbox は completed で、カーソルは索引 1 のゲート付きステージに立って
-/// いる。前置きが 1 件消えたぶん、以後の通番と版が 1 つずつ詰まる。
+/// 誕生 = 初期化完了済み (issue #76) により、かつて先頭にあった非ゲート完了の 1 件
+/// (索引 0 = initialization を完了させる) は構成不能になった — 誕生の時点でその checkbox は
+/// completed で、カーソルは索引 1 のゲート付きステージに立っている。前置きが 1 件消えたぶん、
+/// 以後の通番と版が 1 つずつ詰まる。そのコマンドとイベント自体も b42 で撤去した (#85 = A)。
 async fn write_four(repository: &mut Repository) -> IntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
@@ -214,7 +214,7 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
         .expect("再水和");
     let mut aggregate = held.clone();
     // 誕生 = 初期化完了済み (issue #76) 以降、カーソルは常にゲート付きステージなので次の
-    // 1 手は承認である (`complete_stage` への分岐は実行時に到達しない)。
+    // 1 手は承認である (非ゲート完了の分岐は b42 で撤去した — #85 = A)。
     let event = aggregate
         .approve_gate(&intent(), Some("ok".to_string()), at())
         .expect("次のコマンド");

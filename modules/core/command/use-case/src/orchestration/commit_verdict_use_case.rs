@@ -230,7 +230,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
 
         // ここまで来たら対象は必ずカーソルである — `stage` が名指ししていた場合、カーソルより
         // 手前のステージは既に上の no-op で返しているからである。
-        let event = Self::command(intent, &mut aggregate, cursor, transition, occurred_at)?;
+        let event = Self::command(intent, &mut aggregate, transition, occurred_at)?;
         match self
             .intent_execution_repository
             .store(&event, &aggregate)
@@ -319,13 +319,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
 
     /// 報告された結末に対応する集約コマンドを 1 つ打つ。
     ///
-    /// `Forward` がどちらのコマンドになるかは、報告された語ではなく**ステージの性質**で決まる
-    /// — ゲート付きなら承認、非ゲート（initialization）なら完了である（BR1.3）。どちらを打つかを
-    /// 集約の `gated` クエリに訊いて決めるのはフロー制御であって、業務判断の複製ではない。
+    /// `Forward` は承認ゲートの通過ただ 1 つである（BR1.3）。誕生が initialization を完了済みに
+    /// する（b34）のでカーソルは常にゲート付きステージに立ち、非ゲート完了の腕は b42 で撤去した
+    /// （#85 = A）。ゲートに立っていない実行は集約側が `InvalidTarget` で拒否する。
     fn command(
         intent: &Intent,
         aggregate: &mut IntentExecution,
-        cursor: StageIndex,
         transition: ReportedTransition,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommitError> {
@@ -334,14 +333,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
                 aggregate.open_gate(intent, artifacts, occurred_at)
             }
             ReportedTransition::Forward { user_input } => {
-                // カーソルは不変条件により常に範囲内なので `None` は起きない。起きたとしても
-                // 非ゲート扱いに畳めば `complete_stage` が `InvalidTarget` で拒否するので、
-                // ここで panic する理由はない（NFR4.3 — 集約の `commit` と同じ作法）。
-                if aggregate.gated(intent, cursor).unwrap_or(false) {
-                    aggregate.approve_gate(intent, user_input, occurred_at)
-                } else {
-                    aggregate.complete_stage(intent, occurred_at)
-                }
+                aggregate.approve_gate(intent, user_input, occurred_at)
             }
             ReportedTransition::Rejected { feedback } => {
                 aggregate.reject_gate(intent, feedback, occurred_at)
@@ -391,9 +383,8 @@ mod tests {
     /// カーソルが最初のゲート付きステージに立っている実行。
     ///
     /// 誕生 = 初期化完了済み（issue #76）以降、genesis がそのまま**この状態**である —
-    /// かつてここで打っていた `complete_stage` の 1 手（索引 0 = 非ゲートの initialization を
-    /// 完了させる）は、誕生の時点で済んでいるので不要になった。名前は役割を述べているので
-    /// そのまま残す。
+    /// かつてここで打っていた非ゲート完了の 1 手（索引 0 = initialization を完了させる）は、
+    /// 誕生の時点で済んでいるので不要になった。名前は役割を述べているのでそのまま残す。
     fn at_the_first_gate(stage_count: usize) -> (Intent, IntentExecution) {
         let (intent, aggregate, _) = genesis(stage_count);
         (intent, aggregate)
@@ -527,45 +518,6 @@ mod tests {
         };
         assert_eq!(approved.stage(), &slug(1));
         assert_eq!(approved.user_input(), Some("Approve"));
-    }
-
-    #[tokio::test]
-    async fn a_forward_report_on_an_ungated_stage_completes_the_stage() {
-        // どちらのコマンドを打つかは集約の `gated` クエリで決まる、という分岐そのものを
-        // 固定する。
-        //
-        // # なぜ計画の並びが不自然なのか
-        //
-        // 誕生 = 初期化完了済み（issue #76）以降、**実在の計画では**この分岐に到達しない —
-        // 非ゲートなのは initialization だけで、それは誕生の時点で completed になり、
-        // カーソルは最初のゲート付きステージに立つ。`jump` も initialization を拒否する
-        // （INIT_JUMP_ERROR）ので、以後カーソルが非ゲートに戻る歴史は構成不能である。
-        // それでも `command()` の非ゲート腕は upstream の鏡として存置されているので、
-        // ここでは initialization を**後ろに置いた**合成計画で到達させ、分岐を覆う。
-        // 実在の定義はフェーズ順（initialization が先頭ブロック）なのでこの並びは起きない。
-        let (intent, mut aggregate, _) = start_from_plan(&[
-            (PhaseId::Inception, PlanAction::Execute, false),
-            (PhaseId::Initialization, PlanAction::Execute, false),
-        ]);
-        aggregate
-            .approve_gate(&intent, Some("Approve".to_string()), at())
-            .expect("索引 0 はゲート付きで in-progress");
-        assert_eq!(
-            aggregate.cursor(),
-            aggregate.stage_index(1).expect("索引 1 は範囲内"),
-            "承認でカーソルが非ゲートの索引 1 へ進んでいる前提のテストである"
-        );
-        let mut subject = use_case((intent, aggregate), 2);
-        subject
-            .execute(None, forward(), at())
-            .await
-            .expect("非ゲートステージは完了できる");
-        let IntentExecutionEvent::StageCompleted(completed) =
-            only_committed(subject.intent_execution_repository())
-        else {
-            panic!("StageCompleted を期待した");
-        };
-        assert_eq!(completed.stage(), &slug(1));
     }
 
     #[tokio::test]

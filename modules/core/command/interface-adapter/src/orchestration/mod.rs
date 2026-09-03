@@ -53,9 +53,8 @@ pub use dto::{
     AutonomyModeSetDto, CreatedDto, DtoDecodeError, GateApprovedDto, GateOpenedDto,
     GateRejectedDto, IntentAggregateKeyDto, IntentDto, IntentEventDto,
     IntentExecutionAggregateKeyDto, IntentExecutionDto, IntentExecutionEventDto, JumpedDto,
-    ParkedDto, RecomposedDto, StageCompletedDto, StageRevisedDto, StageSkippedDto, StartedDto,
-    UnparkedDto, WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto,
-    WorkflowDefinitionEventDto,
+    ParkedDto, RecomposedDto, StageRevisedDto, StageSkippedDto, StartedDto, UnparkedDto,
+    WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto, WorkflowDefinitionEventDto,
 };
 // ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
 pub use intent_execution_repository_impl::{
