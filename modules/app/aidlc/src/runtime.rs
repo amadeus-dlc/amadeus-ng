@@ -44,11 +44,11 @@ use core_query_use_case::orchestration::{
     ContinueUseCase, Directive, NextTurnInput, NextUseCase, WorkspaceLayout,
 };
 use core_read_model_updater::orchestration::{
-    GlobalSeqNr, JournalReader as _, JournalReaderImpl, ProjectionName, ProjectionTargets,
-    ReadModelUpdater, SteeringSource,
+    JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
 };
 
 use crate::cli::{Face, IntentCreateArgs, Invocation, Request, parse};
+use crate::execution_cursor::{ExecutionCursor, ExecutionCursorError};
 use crate::layout::Layout;
 use crate::presenter::{DIRECTIVE_MAX_BYTES, Presenter};
 use crate::record_name;
@@ -223,10 +223,19 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         Ok(store) => store,
         Err(message) => return emit_error(message),
     };
-    let Ok(execution_id) = active_execution(&store).await else {
-        return emit_error(
-            "No workflow execution to report against. Run `next` first.".to_string(),
-        );
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        // 不在 = まだ鋳造していない（fresh なワークスペースの正常な姿）。
+        Ok(None) => {
+            return emit_error(
+                "No workflow execution to report against. Run `next` first.".to_string(),
+            );
+        }
+        // 在るのに読めない・壊れているは**不在と混ぜない** — 畳むと壊れた record の上で
+        // 作業が続く。文言は出す側が組み、材料（分類とパス）はエラーの `Display` から取る。
+        Err(error) => {
+            return emit_error(wording::unreadable_execution_cursor(&error.to_string()));
+        }
     };
     let (Ok(intent_execution_repository), Ok(intent_repository)) = (
         IntentExecutionRepositoryImpl::open(&store),
@@ -281,23 +290,17 @@ fn parse_stage(args: &crate::cli::ReportArgs) -> Option<Option<StageSlug>> {
     }
 }
 
-/// この実行の識別子をジャーナルから引く。
+/// この record が指す実行を**実行カーソルから**引く。
 ///
 /// **リードモデルは実行の識別子を記録していない**（`aidlc-state.md` にも `intents.json` にも
-/// 欄が無い — 実測）。stage-1 は単一 intent・単一実行なので、ジャーナル先頭の実行行が
-/// 唯一の実行を指す。複数 intent を扱うようになったら、ここは登録簿（A-1 の裁定待ち）に
-/// 置き換わる。
-async fn active_execution(store: &StorePath) -> Result<IntentExecutionId, ()> {
-    let journal_reader = JournalReaderImpl::open(store).map_err(|_| ())?;
-    let batch = journal_reader
-        .events_after(GlobalSeqNr::ZERO)
-        .await
-        .map_err(|_| ())?;
-    batch
-        .executions()
-        .first()
-        .map(|entry| entry.execution_id().clone())
-        .ok_or(())
+/// 欄が無い — 実測）。かつてはその穴をジャーナル先頭の実行行で埋めていたが、それは
+/// 「実行はワークスペースにただ 1 つ」という仮定に乗っており、2 本目が生まれた瞬間に静かに
+/// 別の実行へ報告する。いまは鋳造が [`ExecutionCursor`] を record に据えるので、
+/// **どの実行を握っているかは record 自身が答える**（`b43` 設計 §1）。
+///
+/// record そのものが無い（intent 未鋳造）ときは `Ok(None)` — 不在は失敗ではない。
+fn active_execution(layout: &Layout) -> Result<Option<ExecutionCursor>, ExecutionCursorError> {
+    layout.record_dir().map_or(Ok(None), ExecutionCursor::read)
 }
 
 /// ビジネス拒否を error directive として出す。
@@ -317,6 +320,12 @@ trait Records {
     fn create(&self, record: &Path) -> std::io::Result<()>;
     /// 状態ファイルの骨格を書く。
     fn write_state(&self, record: &Path, contents: &str) -> std::io::Result<()>;
+    /// 実行カーソルを record に据える。
+    fn write_execution_cursor(
+        &self,
+        record: &Path,
+        cursor: &ExecutionCursor,
+    ) -> Result<(), ExecutionCursorError>;
     /// active-intent カーソルを据える。
     fn point_at(&self, layout: &Layout, record_dir_name: &str) -> std::io::Result<()>;
 }
@@ -331,6 +340,14 @@ impl Records for RealRecords {
 
     fn write_state(&self, record: &Path, contents: &str) -> std::io::Result<()> {
         std::fs::write(record.join("aidlc-state.md"), contents)
+    }
+
+    fn write_execution_cursor(
+        &self,
+        record: &Path,
+        cursor: &ExecutionCursor,
+    ) -> Result<(), ExecutionCursorError> {
+        cursor.write(record)
     }
 
     fn point_at(&self, layout: &Layout, record_dir_name: &str) -> std::io::Result<()> {
@@ -382,6 +399,8 @@ async fn mint_intent(
     ) else {
         return Err(wording::orchestrate_failure("cannot mint an identifier"));
     };
+    // 鋳造した対をそのまま record の実行カーソルにする（`report` はこれで実行を解決する）。
+    let cursor = ExecutionCursor::new(execution_id.clone(), intent_id.clone());
     let now = Utc::now();
 
     // 記録ディレクトリとカーソルは**マシンローカルな構造**なので合成ルートが用意する。
@@ -470,6 +489,12 @@ async fn mint_intent(
     records
         .write_state(&record, &scaffold)
         .map_err(|error| fault("cannot write the state scaffold", &error.to_string()))?;
+    // 実行カーソルは active-intent カーソルより**先に**据える — 逆にすると、record を
+    // 解決できるのに「どの実行か」が答えられない瞬間が生まれ、その隙の `report` が
+    // 「まだ鋳造していない」と誤読する。
+    records
+        .write_execution_cursor(&record, &cursor)
+        .map_err(|error| fault("cannot write the execution cursor", &error.to_string()))?;
     records
         .point_at(layout, name.as_str())
         .map_err(|error| fault("cannot set the active-intent cursor", &error.to_string()))?;
@@ -896,13 +921,14 @@ mod tests {
         );
     }
 
-    /// 記録の書込 3 手のうち**1 手だけ**を失敗させるダブル。他は実 I/O を通すので、
+    /// 記録の書込 4 手のうち**1 手だけ**を失敗させるダブル。他は実 I/O を通すので、
     /// そこへ辿り着くまでの配線（鋳造・ストア・ユースケース）は本物のまま踏める。
     struct FailingAt(Step);
 
     #[derive(PartialEq, Eq)]
     enum Step {
         WriteState,
+        WriteExecutionCursor,
         PointAt,
     }
 
@@ -916,6 +942,20 @@ mod tests {
                 return Err(std::io::Error::other("disk full"));
             }
             RealRecords.write_state(record, contents)
+        }
+
+        fn write_execution_cursor(
+            &self,
+            record: &Path,
+            cursor: &ExecutionCursor,
+        ) -> Result<(), ExecutionCursorError> {
+            if self.0 == Step::WriteExecutionCursor {
+                return Err(ExecutionCursorError::Io {
+                    kind: std::io::ErrorKind::PermissionDenied,
+                    path: record.join(".aidlc-execution"),
+                });
+            }
+            RealRecords.write_execution_cursor(record, cursor)
         }
 
         fn point_at(&self, layout: &Layout, record_dir_name: &str) -> std::io::Result<()> {
@@ -992,6 +1032,33 @@ mod tests {
         assert_eq!(
             completion.diagnostic(),
             Some("aidlc-orchestrate: cannot write the state scaffold: disk full")
+        );
+    }
+
+    /// 実行カーソルを据えられなければ拒否する — 据わっていない record は「どの実行か」を
+    /// 答えられず、以後の `report` が「まだ鋳造していない」と誤読する。
+    #[tokio::test]
+    async fn an_execution_cursor_that_cannot_be_written_is_refused() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent_with(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+            &FailingAt(Step::WriteExecutionCursor),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 1);
+        assert_eq!(completion.line(), None, "stdout には何も出さない");
+        let diagnostic = completion.diagnostic().unwrap_or_default().to_string();
+        assert!(
+            diagnostic.starts_with("aidlc-orchestrate: cannot write the execution cursor: "),
+            "{diagnostic}"
+        );
+        assert!(
+            diagnostic.contains("io: PermissionDenied at "),
+            "{diagnostic}"
         );
     }
 

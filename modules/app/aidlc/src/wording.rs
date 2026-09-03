@@ -126,6 +126,22 @@ pub fn transition_rejected(detail: &str) -> String {
     format!("Transition rejected: {detail}")
 }
 
+/// 実行カーソル `<record>/.aidlc-execution` が在るのに読めない。
+///
+/// **upstream に対応する逐語は無い。** upstream は実行の識別子をどこにも持たない
+/// （リードモデルにも欄が無い）ので、この失敗そのものが upstream には存在しない。
+/// 我々はそれを record に据えるため、「不在」と「壊れている」を分けて答える必要がある
+/// ——不在（まだ鋳造していない）は `No workflow execution to report against.` で、
+/// 壊れているのがこちらである。原因（分類とパス）は
+/// [`crate::execution_cursor::ExecutionCursorError`] の `Display` が運ぶ材料をそのまま置く。
+#[must_use]
+pub fn unreadable_execution_cursor(cause: &str) -> String {
+    format!(
+        "The execution cursor cannot be read ({cause}). Fix that file, or remove it and mint \
+         a fresh intent with `aidlc-utility intent-create`."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +203,22 @@ mod tests {
             "{message}"
         );
         assert!(message.contains("aidlc/active-space"), "{message}");
+    }
+
+    /// 壊れた実行カーソルの文言は、原因（材料）と次の一手の両方を運ぶ。
+    #[test]
+    fn the_unreadable_execution_cursor_wording_carries_its_cause_and_the_recovery() {
+        let message =
+            unreadable_execution_cursor("malformed execution cursor at /w/record/.aidlc-execution");
+        assert!(
+            message.starts_with("The execution cursor cannot be read ("),
+            "{message}"
+        );
+        assert!(
+            message.contains("malformed execution cursor at /w/record/.aidlc-execution"),
+            "{message}"
+        );
+        assert!(message.contains("aidlc-utility intent-create"), "{message}");
     }
 
     /// 閉集合外の `--review` は upstream の逐語で拒む。
