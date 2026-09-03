@@ -1,7 +1,10 @@
 # Bolt 3 設計ドラフト — クエリ側縮小（調査 2026-09-03 に基づく）
 
 ## 原則（裁定済み）
-クエリ側ユースケース = `dao.find(key) → View` だけ。DAO はキーによる引当（JOIN もキー結合なら可）、行に無い事実を作らない。
+クエリ側ユースケース = `dao.find(key) → View` だけ。DAO はキーによる引当（**1 表 1 引当**）、行に無い事実を作らない。
+**改訂 2026-09-03（裁定 — JOIN 解体）**: 「JOIN もキー結合なら可」は撤回。オーナー裁定 2026-09-03 の逐語は「JOIN しない」であり、
+関連行は FK 列で指し、**ユースケースが FK をたどって表ごとに引き、組み立て View（`NextTurnView` / `ContinuationView`）を返す**。
+本節以下の JOIN を前提とした記述（設計判断の 1・2 行目、`continue` の等値 JOIN）は同裁定で置き換わり、正は `design.md` §0-2 / §2 / §3 である。
 要求の形による分岐（フラグ）はコントローラ（app `cli/request.rs` + `runtime.rs`）、逐語文言・directive JSON・token 封緘はプレゼンタ（app `presenter.rs` + `wording.rs`）。
 状態の値で決まる分岐は RMU が行に書いた `kind` に従ってプレゼンタが描く。
 

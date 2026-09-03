@@ -35,6 +35,7 @@ mod ask_kind;
 mod bindings;
 mod blank_stage_name;
 mod bundle_digest;
+mod continuation_view;
 mod continue_token;
 mod continue_use_case;
 mod directive;
@@ -42,11 +43,22 @@ mod directive_digest;
 mod directive_schema;
 mod engine_command;
 mod engine_signal;
+mod find_continuation_use_case;
+mod find_definition_use_case;
+mod find_execution_use_case;
+mod find_jump_use_case;
+mod find_next_answer_use_case;
+mod find_phase_entry_use_case;
+mod find_run_stage_use_case;
+mod find_scope_change_use_case;
+mod find_scope_keyword_use_case;
+mod find_scope_use_case;
 mod gate_field;
 mod load_steering_directive;
 mod next_decision;
 mod next_request;
 mod next_turn_input;
+mod next_turn_view;
 mod next_use_case;
 mod noun_family;
 mod noun_token;
@@ -124,6 +136,23 @@ pub use scope_source::ScopeSource;
 // (`coding-rules/cqrs-boundaries.md` 規則 6 / `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
 pub use port::{ExecutionStateDao, MemoryRulesDao, WorkflowDefinitionDao};
 
+// 構造化リードモデル (`read_*` 表) を引く 12 ポート (b43) — **1 表 1 ポート**。
+pub use port::{
+    DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao, RunStageDao,
+    ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao, SteeringPlanDao,
+};
+
+// 構造化リードモデルの行の写し (b43)。
+pub use port::{
+    DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView, NextAnswerView, PhaseEntryView,
+    RunStageView, ScopeChangeView, ScopeView, SteeringPartView, SteeringPlanView,
+};
+
+// 複数の表にまたがる答えの**組み立て View** (b43)。DAO が返す型ではない (ユースケースが
+// FK をたどって組む) ので `port/` ではなくここに住む。
+pub use continuation_view::ContinuationView;
+pub use next_turn_view::NextTurnView;
+
 // ポートの DTO — DAO が返すクエリモデル。DAO と同じ `port/` に同居する (オーナー裁定
 // 2026-08-31 — DTO/DAO ポートは一つのパッケージ)。読む対象は 2 族あるが、消費側のパスは
 // 本ファサードで平坦に揃う。
@@ -143,6 +172,18 @@ pub use port::MemoryRules;
 
 // ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ) と、その観測
 pub use continue_use_case::ContinueUseCase;
+
+// 構造化リードモデルを引く 10 ユースケース (b43) — `execute(鍵) = dao.find(鍵)` だけを持つ。
+pub use find_continuation_use_case::FindContinuationUseCase;
+pub use find_definition_use_case::FindDefinitionUseCase;
+pub use find_execution_use_case::FindExecutionUseCase;
+pub use find_jump_use_case::FindJumpUseCase;
+pub use find_next_answer_use_case::FindNextAnswerUseCase;
+pub use find_phase_entry_use_case::FindPhaseEntryUseCase;
+pub use find_run_stage_use_case::FindRunStageUseCase;
+pub use find_scope_change_use_case::FindScopeChangeUseCase;
+pub use find_scope_keyword_use_case::FindScopeKeywordUseCase;
+pub use find_scope_use_case::FindScopeUseCase;
 pub use next_turn_input::NextTurnInput;
 pub use next_use_case::NextUseCase;
 pub use noun_family::NounFamily;
@@ -150,6 +191,7 @@ pub use noun_token::NounToken;
 pub use workspace_layout::WorkspaceLayout;
 
 // 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側のユースケースが組む)
+pub use port::ReadModelReadError;
 pub use port::{ExecutionStateReadError, MemoryRulesReadError, WorkflowDefinitionReadError};
 // 拒否 (DTO の復号 — ビューではないので `View` 接尾辞を付けない)
 pub use blank_stage_name::BlankStageName;

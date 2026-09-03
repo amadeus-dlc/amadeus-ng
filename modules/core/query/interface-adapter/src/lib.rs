@@ -44,12 +44,27 @@
 //! (`coding-rules/module-visibility.md`)。
 
 mod continue_token_dto;
+mod definition_dao_impl;
 mod definition_paths;
+mod execution_dao_impl;
 mod execution_state_dao_impl;
 mod execution_state_parse;
+mod jump_dao_impl;
+mod jump_phase_dao_impl;
 mod memory;
 mod memory_rules_dao_impl;
+mod next_answer_dao_impl;
+mod phase_entry_dao_impl;
 mod raw_artifact;
+mod read_model_failure;
+mod read_model_store;
+mod run_stage_columns;
+mod run_stage_dao_impl;
+mod scope_change_dao_impl;
+mod scope_dao_impl;
+mod scope_keyword_dao_impl;
+mod steering_part_dao_impl;
+mod steering_plan_dao_impl;
 mod workflow_definition_dao_impl;
 mod workflow_definition_parse;
 
@@ -59,7 +74,31 @@ pub use execution_state_dao_impl::ExecutionStateDaoImpl;
 pub use memory_rules_dao_impl::MemoryRulesDaoImpl;
 pub use workflow_definition_dao_impl::WorkflowDefinitionDaoImpl;
 
+// 構造化リードモデル (`read_*` 表) を引く 12 DAO 実装 (b43)。媒体 (SQLite) はこの層の内部
+// 詳細であり、ポート面には現れない (`coding-rules/gateway-taxonomy.md` §3 の DAO 項)。
+//
+// **1 実装 = 1 表**である (オーナー裁定 2026-09-03)。どの SQL も `read_*` 表を 1 つしか
+// 読まない — JOIN も副問合せも無く、関連は行が運ぶ FK 列で表す。複数の表にまたがる答えは
+// ユースケースが FK をたどって組む。
+pub use definition_dao_impl::DefinitionDaoImpl;
+pub use execution_dao_impl::ExecutionDaoImpl;
+pub use jump_dao_impl::JumpDaoImpl;
+pub use jump_phase_dao_impl::JumpPhaseDaoImpl;
+pub use next_answer_dao_impl::NextAnswerDaoImpl;
+pub use phase_entry_dao_impl::PhaseEntryDaoImpl;
+pub use run_stage_dao_impl::RunStageDaoImpl;
+pub use scope_change_dao_impl::ScopeChangeDaoImpl;
+pub use scope_dao_impl::ScopeDaoImpl;
+pub use scope_keyword_dao_impl::ScopeKeywordDaoImpl;
+pub use steering_part_dao_impl::SteeringPartDaoImpl;
+pub use steering_plan_dao_impl::SteeringPlanDaoImpl;
+
 // テスト用 in-memory 実装 (合成ルートとその周辺のテストが実 I/O 無しで組むための口)。
+pub use memory::{
+    InMemoryDefinitionDao, InMemoryExecutionDao, InMemoryJumpDao, InMemoryJumpPhaseDao,
+    InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao, InMemoryScopeChangeDao,
+    InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao, InMemorySteeringPlanDao,
+};
 pub use memory::{
     InMemoryExecutionStateDao, InMemoryMemoryRulesDao, InMemoryWorkflowDefinitionDao,
 };
