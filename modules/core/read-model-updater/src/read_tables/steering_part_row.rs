@@ -3,9 +3,11 @@
 use core_command_domain::workflow_definition::PhaseId;
 
 use super::json_column;
+use super::row_id;
 use super::rule_content::RuleContent;
 
-/// `read_steering_part` の 1 行。主キーは (`phase`, `part_index`)。
+/// `read_steering_part` の 1 行。主キーは 1 列 `id` (自然キー (`phase`, `part_index`) から
+/// 導いた代理キー)。`steering_plan_id` は `read_steering_plan.id` を指す FK である。
 ///
 /// `part_index` は **1 始まり**である (upstream の部番号と同じ数え方 — 「1 / 3 部」)。
 /// `rules_content` は `[{path, text}]` の 1 行 JSON で、`load-steering` が届ける中身
@@ -14,6 +16,8 @@ use super::rule_content::RuleContent;
 /// `SteeringPlanRow` と同じく `as_of` 列を持たない (参照入力由来)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SteeringPartRow {
+    id: String,
+    steering_plan_id: String,
     phase: String,
     part_index: usize,
     rules_content: String,
@@ -26,10 +30,24 @@ impl SteeringPartRow {
     #[must_use]
     pub(crate) fn of(phase: PhaseId, part_index: usize, chunk: &[RuleContent]) -> SteeringPartRow {
         SteeringPartRow {
+            id: row_id::steering_part(phase.as_str(), part_index),
+            steering_plan_id: row_id::steering_plan(phase.as_str()),
             phase: phase.as_str().to_string(),
             part_index,
             rules_content: json_column::rule_contents(chunk),
         }
+    }
+
+    /// 主キー — 自然キー (`phase`, `part_index`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_steering_plan.id` を指す FK (同じフェーズの配信計画)。
+    #[must_use]
+    pub fn steering_plan_id(&self) -> &str {
+        &self.steering_plan_id
     }
 
     /// フェーズの綴り (`PhaseId::as_str`)。

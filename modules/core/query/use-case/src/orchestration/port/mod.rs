@@ -57,16 +57,30 @@
 //! (`coding-rules/module-visibility.md`)。
 
 // 契約 (trait) と、そのポート面のエラー
+mod definition_dao;
+mod execution_dao;
 mod execution_state_dao;
 mod execution_state_read_error;
+mod jump_dao;
+mod jump_phase_dao;
 mod memory_rules_dao;
 mod memory_rules_read_error;
+mod next_answer_dao;
+mod phase_entry_dao;
+mod read_model_read_error;
+mod run_stage_dao;
+mod scope_change_dao;
+mod scope_dao;
+mod scope_keyword_dao;
+mod steering_part_dao;
+mod steering_plan_dao;
 mod workflow_definition_dao;
 mod workflow_definition_read_error;
 
 // 契約が返す DTO (同居 — オーナー裁定 2026-08-31)
 mod execution_view;
 mod memory_rules;
+mod read_view;
 mod workflow_view;
 
 pub use execution_state_dao::ExecutionStateDao;
@@ -75,6 +89,32 @@ pub use memory_rules_dao::MemoryRulesDao;
 pub use memory_rules_read_error::MemoryRulesReadError;
 pub use workflow_definition_dao::WorkflowDefinitionDao;
 pub use workflow_definition_read_error::WorkflowDefinitionReadError;
+
+// --- 構造化リードモデル (`read_*` 表) を引く 12 ポートと、その共通の読取失敗 ---
+//
+// **1 表 1 ポート**である (オーナー裁定 2026-09-03 — DAO は 1 表 1 引当)。複数の表に
+// またがる答えは、ユースケースが FK をたどって表ごとに引いて組む。
+
+pub use definition_dao::DefinitionDao;
+pub use execution_dao::ExecutionDao;
+pub use jump_dao::JumpDao;
+pub use jump_phase_dao::JumpPhaseDao;
+pub use next_answer_dao::NextAnswerDao;
+pub use phase_entry_dao::PhaseEntryDao;
+pub use read_model_read_error::ReadModelReadError;
+pub use run_stage_dao::RunStageDao;
+pub use scope_change_dao::ScopeChangeDao;
+pub use scope_dao::ScopeDao;
+pub use scope_keyword_dao::ScopeKeywordDao;
+pub use steering_part_dao::SteeringPartDao;
+pub use steering_plan_dao::SteeringPlanDao;
+
+// --- DTO: 構造化リードモデルの行の写し (`read_view`) ---
+
+pub use read_view::{
+    DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView, NextAnswerView, PhaseEntryView,
+    RunStageView, ScopeChangeView, ScopeView, SteeringPartView, SteeringPlanView,
+};
 
 // --- DTO: ワークフロー定義リードモデルのビュー型 (`workflow_view`) ---
 

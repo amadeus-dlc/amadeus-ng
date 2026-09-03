@@ -4,14 +4,18 @@ use core_command_domain::orchestration::StageKey;
 use core_command_domain::workflow_definition::{ReviewClass, StageNode, WorkflowDefinitionId};
 
 use super::json_column;
+use super::row_id;
 
-/// `read_definition_stage` の 1 行。主キーは (`definition_id`, `stage_slug`)。
+/// `read_definition_stage` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`definition_id`, `stage_slug`) から導いた代理キー)。`definition_id` は
+/// `read_definition.id` を指す FK である。
 ///
 /// [`StageNode`] の 29 アクセサを 1 行に平らに写す。配列・構造は `ContractCompact` の
 /// 1 行 JSON にする — 読取コマンドが 1 回の引当で全属性を得るための非正規化である
 /// (裁定 §10-1)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionStageRow {
+    id: String,
     definition_id: String,
     stage_slug: String,
     position: usize,
@@ -59,6 +63,7 @@ impl DefinitionStageRow {
     ) -> DefinitionStageRow {
         let key = StageKey::new(node.slug().clone(), node.phase());
         DefinitionStageRow {
+            id: row_id::definition_stage(definition_id.as_str(), node.slug().as_str()),
             definition_id: definition_id.as_str().to_string(),
             stage_slug: node.slug().as_str().to_string(),
             position,
@@ -96,7 +101,13 @@ impl DefinitionStageRow {
         }
     }
 
-    /// 定義の系譜 ID。
+    /// 主キー — 自然キー (`definition_id`, `stage_slug`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_definition.id` を指す FK。
     #[must_use]
     pub fn definition_id(&self) -> &str {
         &self.definition_id

@@ -5,14 +5,18 @@ use core_command_domain::workflow_definition::{
 };
 
 use super::json_column;
+use super::row_id;
 
-/// `read_definition_scope` の 1 行。主キーは (`definition_id`, `scope`)。
+/// `read_definition_scope` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`definition_id`, `scope`) から導いた代理キー)。`definition_id` は `read_definition.id`
+/// を指す FK である。
 ///
 /// 費用 4 列は [`WorkflowDefinition::scope_cost`] の答えである。グリッド列を持たない
 /// 有効スコープでは答えが `None` になるので、4 列とも NULL になる (`has_grid_column` が
 /// その理由を語る)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionScopeRow {
+    id: String,
     definition_id: String,
     scope: String,
     depth: Option<String>,
@@ -37,6 +41,7 @@ impl DefinitionScopeRow {
     ) -> DefinitionScopeRow {
         let cost = definition.scope_cost(scope);
         DefinitionScopeRow {
+            id: row_id::definition_scope(definition.id().as_str(), scope),
             definition_id: definition.id().as_str().to_string(),
             scope: scope.to_string(),
             depth: metadata.depth().map(str::to_string),
@@ -58,7 +63,13 @@ impl DefinitionScopeRow {
         }
     }
 
-    /// 定義の系譜 ID。
+    /// 主キー — 自然キー (`definition_id`, `scope`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_definition.id` を指す FK。
     #[must_use]
     pub fn definition_id(&self) -> &str {
         &self.definition_id

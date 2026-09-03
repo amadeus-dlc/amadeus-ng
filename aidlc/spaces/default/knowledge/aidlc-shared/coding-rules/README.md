@@ -57,7 +57,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [domain-persistence-neutrality.md](domain-persistence-neutrality.md) | **ドメインは永続化知識から中立** — serde 属性・ストア trait 実装・ジャーナル語彙・復号中間表現を domain に書かない。永続化モデル（DTO）はアダプタが所有し、復号は検査付き再構成コンストラクタへ渡す。読む側（RMU）は自前 DTO（側ごと専用化） | クレート依存（domain の Cargo.toml に serde / ESA が無いこと）+ レビュー基準 |
 | [aggregate-commands.md](aggregate-commands.md) | **集約のコマンド（`&mut self` の状態遷移）は必ず単一のドメインイベントを戻り値で返す**（decide / apply 分離・1 コマンド 1 イベント・拒否はガード付き Err）。CQS の「Command は戻り値なし」は集約には適用しない — イベントは書込の産物であり読取チャネルではない | レビュー基準（`cargo lint` ルール候補） |
 | [aggregate-references.md](aggregate-references.md) | **集約は他の集約・エンティティを ID で参照する** — オブジェクトの埋め込み禁止（1:n で複製を抱え、整合性境界が壊れる）。判断に要るデータは `&` 参照のメソッド引数で渡し、`id` 照合でガードする。イベントが材料の複製を運ぶのは歴史であり違反ではない | レビュー基準（`cargo lint` ルール候補） |
-| [cqrs-boundaries.md](cqrs-boundaries.md) | コマンド側とクエリ側は相互に依存しない。**RMU だけが両側に依存できる**（橋）。**コマンド側の最新状態は常に集約から**（リードモデルは常に遅延しているので物理的に読めない）。境界は**クレート分離**で物理強制する（mod 分割では効かない） | クレート分離（`Cargo.toml` の不在）— 違反はビルドで落ちる |
+| [cqrs-boundaries.md](cqrs-boundaries.md) | コマンド側とクエリ側は相互に依存しない。**RMU だけが両側に依存できる**（橋）。**コマンド側の最新状態は常に集約から**（リードモデルは常に遅延しているので物理的に読めない）。境界は**クレート分離**で物理強制する（mod 分割では効かない）。**DAO は 1 表 1 引当**（規則 6、2026-09-03） | クレート分離（`Cargo.toml` の不在）— 違反はビルドで落ちる。加えて `cargo lint`（`dao-single-table`） |
 
 ---
 
@@ -73,6 +73,14 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 下表の 4 本より先に着地したのは、同日のオーナー裁定で新設された規則であり待ち行列に並んで
 いなかったため。着手条件 1〜3 は充足済み（反例が構造的に無い / 赤例テスト同梱 / 検出と
 実測 71 ファイルの是正を b32 の同一 Bolt で着地）。
+
+**更新 2026-09-03**: `dao-single-table`（クエリ側 DAO の SQL は 1 文 1 表 —
+[cqrs-boundaries.md](cqrs-boundaries.md) 規則 6「表の形と読み方」）が加わり実装済みは **4 本**。
+`one-public-type` と同じく、同日のオーナー裁定で新設された規則なので下表の待ち行列に並んで
+いない。着手条件 1〜3 の充足: (1) 裁定の逐語「JOIN しない」に留保が無く反例が構造的に無い
+（将来の例外は理由付き allow で通す）、(2) 赤例 4 形（素の文字列リテラルの JOIN /
+`concat!` 内の JOIN / `macro_rules!` 本体内 `concat!` の JOIN / `EXISTS` 副問合せ）を
+b43 の作業ツリーの現物から採ってテストに同梱、(3) 検出と JOIN 解体を b43 の同一 Bolt で着地。
 
 そこで、**順序と着手条件をここ 1 箇所で管理する**。個々の規則に「予定」と書き足すのをやめる
 （規則側は「レビュー基準」か「`cargo lint`（ルール名）」のどちらかだけを書く）。

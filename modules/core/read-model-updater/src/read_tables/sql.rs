@@ -12,6 +12,14 @@
 //! 持たないので、行型には持たせずここで書く — 「いつ時点の行か」はスナップショット全体の
 //! 性質である。
 //!
+//! # 表の形 — 単一主キー + FK + インデックス (オーナー裁定 2026-09-03)
+//!
+//! 主キーはどの表も **1 列 `id`** で、複合主キーにしない。集約そのものを表す 3 表は集約 id
+//! を、それ以外は自然キーから導いた代理キー (`super::row_id`) を `id` に置く。自然キーの列は
+//! 残り、その重複は [`CREATE_INDEXES`] の UNIQUE 索引が止める。関連行は FK 列で指し、
+//! `FOREIGN KEY` 句は書かない (steering の 2 表が別 Tx で差し替わるため — [`CREATE_TABLES`]
+//! の doc を参照)。クエリ側が `WHERE` に置く列にはセカンダリ索引を張る。
+//!
 //! [`ReadTables::as_of`]: super::ReadTables::as_of
 
 use rusqlite::{Connection, Transaction, params};
@@ -34,15 +42,26 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
 }
 
 /// 17 表の DDL (この順に作る — ジャーナル由来 15 + 参照入力由来 2)。
+///
+/// **主キーはどの表も 1 列 `id`** である (オーナー裁定 2026-09-03 — 基本的な関係
+/// モデリング)。集約そのものを表す 3 表 (`read_definition` / `read_intent` /
+/// `read_execution`) の `id` は集約 id そのもので、それ以外は自然キーから導いた代理キー
+/// (`row_id`) である。自然キーの列は残し、重複は UNIQUE 索引 ([`CREATE_INDEXES`]) が止める。
+///
+/// **`FOREIGN KEY` 句は書かない。** FK は列名と doc で表す — steering の 2 表は別の投影
+/// 単位として**別トランザクション**で差し替わるので、参照整合を DB に強制させると
+/// 投影の順序と衝突して書けなくなる断面が生まれる。対が揃っていることは投影核の契約
+/// テストが固定する。
 const CREATE_TABLES: &str = "
 CREATE TABLE IF NOT EXISTS read_definition (
-  definition_id TEXT PRIMARY KEY,
-  revision      TEXT    NOT NULL,
-  stage_count   INTEGER NOT NULL,
-  scope_count   INTEGER NOT NULL,
-  as_of         INTEGER NOT NULL
+  id          TEXT PRIMARY KEY,
+  revision    TEXT    NOT NULL,
+  stage_count INTEGER NOT NULL,
+  scope_count INTEGER NOT NULL,
+  as_of       INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_definition_stage (
+  id                      TEXT    PRIMARY KEY,
   definition_id           TEXT    NOT NULL,
   stage_slug              TEXT    NOT NULL,
   position                INTEGER NOT NULL,
@@ -74,10 +93,10 @@ CREATE TABLE IF NOT EXISTS read_definition_stage (
   outputs                 TEXT    NOT NULL,
   rules_in_context        TEXT    NOT NULL,
   sensors_applicable      TEXT    NOT NULL,
-  as_of                   INTEGER NOT NULL,
-  PRIMARY KEY (definition_id, stage_slug)
+  as_of                   INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_definition_scope (
+  id                   TEXT    PRIMARY KEY,
   definition_id        TEXT    NOT NULL,
   scope                TEXT    NOT NULL,
   depth                TEXT,
@@ -90,35 +109,34 @@ CREATE TABLE IF NOT EXISTS read_definition_scope (
   cost_execute         INTEGER,
   cost_gates           INTEGER,
   cost_per_unit_stages INTEGER,
-  as_of                INTEGER NOT NULL,
-  PRIMARY KEY (definition_id, scope)
+  as_of                INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_definition_scope_keyword (
+  id            TEXT    PRIMARY KEY,
   definition_id TEXT    NOT NULL,
   keyword       TEXT    NOT NULL,
   scope         TEXT    NOT NULL,
-  as_of         INTEGER NOT NULL,
-  PRIMARY KEY (definition_id, keyword)
+  as_of         INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_definition_scope_stage (
+  id             TEXT    PRIMARY KEY,
   definition_id  TEXT    NOT NULL,
   scope          TEXT    NOT NULL,
   stage_slug     TEXT    NOT NULL,
   action         TEXT,
   in_scope_order INTEGER,
-  as_of          INTEGER NOT NULL,
-  PRIMARY KEY (definition_id, scope, stage_slug)
+  as_of          INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_definition_scope_phase_entry (
+  id               TEXT    PRIMARY KEY,
   definition_id    TEXT    NOT NULL,
   scope            TEXT    NOT NULL,
   phase            TEXT    NOT NULL,
   first_stage_slug TEXT    NOT NULL,
-  as_of            INTEGER NOT NULL,
-  PRIMARY KEY (definition_id, scope, phase)
+  as_of            INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_intent (
-  intent_id           TEXT PRIMARY KEY,
+  id                  TEXT PRIMARY KEY,
   definition_id       TEXT    NOT NULL,
   definition_revision TEXT    NOT NULL,
   scope               TEXT    NOT NULL,
@@ -135,6 +153,7 @@ CREATE TABLE IF NOT EXISTS read_intent (
   as_of               INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_intent_stage (
+  id          TEXT    PRIMARY KEY,
   intent_id   TEXT    NOT NULL,
   stage_index INTEGER NOT NULL,
   slug        TEXT    NOT NULL,
@@ -145,11 +164,10 @@ CREATE TABLE IF NOT EXISTS read_intent_stage (
   name        TEXT    NOT NULL,
   lead_agent  TEXT    NOT NULL,
   gated       INTEGER NOT NULL,
-  as_of       INTEGER NOT NULL,
-  PRIMARY KEY (intent_id, stage_index)
+  as_of       INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_execution (
-  execution_id     TEXT PRIMARY KEY,
+  id               TEXT PRIMARY KEY,
   intent_id        TEXT    NOT NULL,
   scope            TEXT    NOT NULL,
   status           TEXT    NOT NULL,
@@ -166,6 +184,7 @@ CREATE TABLE IF NOT EXISTS read_execution (
   as_of            INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_execution_stage (
+  id             TEXT    PRIMARY KEY,
   execution_id   TEXT    NOT NULL,
   stage_index    INTEGER NOT NULL,
   slug           TEXT    NOT NULL,
@@ -175,10 +194,10 @@ CREATE TABLE IF NOT EXISTS read_execution_stage (
   approved       INTEGER,
   revision_count INTEGER,
   gated          INTEGER,
-  as_of          INTEGER NOT NULL,
-  PRIMARY KEY (execution_id, stage_index)
+  as_of          INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_next_answer (
+  id            TEXT    PRIMARY KEY,
   execution_id  TEXT    NOT NULL,
   request_kind  TEXT    NOT NULL,
   decision_kind TEXT    NOT NULL,
@@ -186,31 +205,33 @@ CREATE TABLE IF NOT EXISTS read_next_answer (
   stage_slug    TEXT,
   gated         INTEGER,
   checkbox      TEXT,
-  as_of         INTEGER NOT NULL,
-  PRIMARY KEY (execution_id, request_kind)
+  run_stage_id  TEXT,
+  as_of         INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_next_jump (
+  id           TEXT    PRIMARY KEY,
   execution_id TEXT    NOT NULL,
   target_index INTEGER NOT NULL,
   target_slug  TEXT    NOT NULL,
   outcome      TEXT    NOT NULL,
   refusal      TEXT,
-  as_of        INTEGER NOT NULL,
-  PRIMARY KEY (execution_id, target_index)
+  as_of        INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_next_jump_phase (
+  id           TEXT    PRIMARY KEY,
   execution_id TEXT    NOT NULL,
   phase        TEXT    NOT NULL,
   target_index INTEGER NOT NULL,
   target_slug  TEXT,
-  as_of        INTEGER NOT NULL,
-  PRIMARY KEY (execution_id, phase)
+  as_of        INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_run_stage (
+  id                       TEXT    PRIMARY KEY,
   definition_id            TEXT    NOT NULL,
   scope                    TEXT    NOT NULL,
   stage_slug               TEXT    NOT NULL,
   phase                    TEXT    NOT NULL,
+  steering_plan_id         TEXT    NOT NULL,
   lead_agent               TEXT    NOT NULL,
   support_agents           TEXT    NOT NULL,
   mode                     TEXT    NOT NULL,
@@ -228,29 +249,84 @@ CREATE TABLE IF NOT EXISTS read_run_stage (
   next_stage_name          TEXT,
   route_digest             TEXT    NOT NULL,
   directive_digest         TEXT    NOT NULL,
-  as_of                    INTEGER NOT NULL,
-  PRIMARY KEY (definition_id, scope, stage_slug)
+  as_of                    INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_scope_change (
+  id           TEXT    PRIMARY KEY,
   execution_id TEXT    NOT NULL,
   scope        TEXT    NOT NULL,
   kind         TEXT    NOT NULL,
-  as_of        INTEGER NOT NULL,
-  PRIMARY KEY (execution_id, scope)
+  as_of        INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_steering_plan (
-  phase           TEXT PRIMARY KEY,
+  id              TEXT PRIMARY KEY,
+  phase           TEXT    NOT NULL,
   bundle_digest   TEXT    NOT NULL,
   part_count      INTEGER NOT NULL,
   delivered_paths TEXT    NOT NULL,
   source_digest   TEXT    NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_steering_part (
-  phase         TEXT    NOT NULL,
-  part_index    INTEGER NOT NULL,
-  rules_content TEXT    NOT NULL,
-  PRIMARY KEY (phase, part_index)
+  id               TEXT    PRIMARY KEY,
+  steering_plan_id TEXT    NOT NULL,
+  phase            TEXT    NOT NULL,
+  part_index       INTEGER NOT NULL,
+  rules_content    TEXT    NOT NULL
 );
+";
+
+/// 索引 — 自然キーの UNIQUE と、クエリ側が `WHERE` に置く列のセカンダリ。
+///
+/// 主キーが代理キー `id` になったぶん、**自然キーの重複を止めるのは UNIQUE 索引だけ**で
+/// ある。並びは DDL と同じ順で、UNIQUE を先に、セカンダリを後に置く。
+///
+/// セカンダリは「引く列」にだけ張る。自然キーの UNIQUE 索引が**左端前置**で使える引当
+/// (例: `read_execution_stage` を `execution_id` だけで引く) には重ねない。子から親へ
+/// FK をたどる引当 (`read_next_answer.run_stage_id` → `read_run_stage.id` など) は親の
+/// 主キーを使うので、子側の FK 列には索引を張らない。
+const CREATE_INDEXES: &str = "
+CREATE UNIQUE INDEX IF NOT EXISTS read_definition_stage_key
+  ON read_definition_stage(definition_id, stage_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS read_definition_scope_key
+  ON read_definition_scope(definition_id, scope);
+CREATE UNIQUE INDEX IF NOT EXISTS read_definition_scope_keyword_key
+  ON read_definition_scope_keyword(definition_id, keyword);
+CREATE UNIQUE INDEX IF NOT EXISTS read_definition_scope_stage_key
+  ON read_definition_scope_stage(definition_id, scope, stage_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS read_definition_scope_phase_entry_key
+  ON read_definition_scope_phase_entry(definition_id, scope, phase);
+CREATE UNIQUE INDEX IF NOT EXISTS read_intent_stage_key
+  ON read_intent_stage(intent_id, stage_index);
+CREATE UNIQUE INDEX IF NOT EXISTS read_execution_stage_key
+  ON read_execution_stage(execution_id, stage_index);
+CREATE UNIQUE INDEX IF NOT EXISTS read_next_answer_key
+  ON read_next_answer(execution_id, request_kind);
+CREATE UNIQUE INDEX IF NOT EXISTS read_next_jump_key
+  ON read_next_jump(execution_id, target_index);
+CREATE UNIQUE INDEX IF NOT EXISTS read_next_jump_phase_key
+  ON read_next_jump_phase(execution_id, phase);
+CREATE UNIQUE INDEX IF NOT EXISTS read_run_stage_key
+  ON read_run_stage(definition_id, scope, stage_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS read_scope_change_key
+  ON read_scope_change(execution_id, scope);
+CREATE UNIQUE INDEX IF NOT EXISTS read_steering_plan_key
+  ON read_steering_plan(phase);
+CREATE UNIQUE INDEX IF NOT EXISTS read_steering_part_key
+  ON read_steering_part(phase, part_index);
+CREATE INDEX IF NOT EXISTS read_intent_definition_id
+  ON read_intent(definition_id);
+CREATE INDEX IF NOT EXISTS read_execution_intent_id
+  ON read_execution(intent_id);
+CREATE INDEX IF NOT EXISTS read_execution_state_binding
+  ON read_execution(state_binding);
+CREATE INDEX IF NOT EXISTS read_run_stage_digests
+  ON read_run_stage(route_digest, directive_digest);
+CREATE INDEX IF NOT EXISTS read_next_jump_target_slug
+  ON read_next_jump(execution_id, target_slug);
+CREATE INDEX IF NOT EXISTS read_steering_plan_bundle_digest
+  ON read_steering_plan(bundle_digest);
+CREATE INDEX IF NOT EXISTS read_steering_part_plan
+  ON read_steering_part(steering_plan_id, part_index);
 ";
 
 /// ジャーナル由来 15 表の全差し替えの `DELETE` (DDL と同じ順)。
@@ -280,13 +356,17 @@ DELETE FROM read_steering_plan;
 DELETE FROM read_steering_part;
 ";
 
-/// 17 表を (無ければ) 作る。冪等なので何度呼んでもよい。
+/// 17 表と索引を (無ければ) 作る。冪等なので何度呼んでもよい。
+///
+/// 索引は表と同じ口で作る — 表だけ在って UNIQUE 索引が無い断面を作ると、自然キーの
+/// 重複が静かに通る。
 ///
 /// # Errors
 ///
 /// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
 pub(crate) fn ensure_tables(connection: &Connection) -> Result<(), rusqlite::Error> {
-    connection.execute_batch(CREATE_TABLES)
+    connection.execute_batch(CREATE_TABLES)?;
+    connection.execute_batch(CREATE_INDEXES)
 }
 
 /// ジャーナル由来 15 表の行を全部差し替える。
@@ -320,10 +400,10 @@ pub(crate) fn replace_all(
     for row in tables.definitions() {
         transaction.execute(
             "INSERT INTO read_definition
-             (definition_id, revision, stage_count, scope_count, as_of)
+             (id, revision, stage_count, scope_count, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
-                row.definition_id(),
+                row.id(),
                 row.revision(),
                 integer(row.stage_count())?,
                 integer(row.scope_count())?,
@@ -335,15 +415,17 @@ pub(crate) fn replace_all(
     for row in tables.definition_stages() {
         transaction.execute(
             "INSERT INTO read_definition_stage
-             (definition_id, stage_slug, position, number, name, phase, execution, condition,
-              lead_agent, support_agents, mode, for_each, workspace_requires, produces,
-              optional_produces, produces_kinds, consumes, requires_stage, sensors, scopes,
-              reviewer, reviewer_max_iterations, review_class, summary_confirmation, plugin,
-              enabled, gated, inputs, outputs, rules_in_context, sensors_applicable, as_of)
+             (id, definition_id, stage_slug, position, number, name, phase, execution,
+              condition, lead_agent, support_agents, mode, for_each, workspace_requires,
+              produces, optional_produces, produces_kinds, consumes, requires_stage, sensors,
+              scopes, reviewer, reviewer_max_iterations, review_class, summary_confirmation,
+              plugin, enabled, gated, inputs, outputs, rules_in_context, sensors_applicable,
+              as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                      ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-                     ?31, ?32)",
+                     ?31, ?32, ?33)",
             params![
+                row.id(),
                 row.definition_id(),
                 row.stage_slug(),
                 integer(row.position())?,
@@ -383,10 +465,12 @@ pub(crate) fn replace_all(
     for row in tables.definition_scopes() {
         transaction.execute(
             "INSERT INTO read_definition_scope
-             (definition_id, scope, depth, keywords, skeleton, review_cap, freeform_default,
-              has_grid_column, cost_total, cost_execute, cost_gates, cost_per_unit_stages, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             (id, definition_id, scope, depth, keywords, skeleton, review_cap,
+              freeform_default, has_grid_column, cost_total, cost_execute, cost_gates,
+              cost_per_unit_stages, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
+                row.id(),
                 row.definition_id(),
                 row.scope(),
                 row.depth(),
@@ -407,18 +491,25 @@ pub(crate) fn replace_all(
     for row in tables.definition_scope_keywords() {
         transaction.execute(
             "INSERT INTO read_definition_scope_keyword
-             (definition_id, keyword, scope, as_of)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![row.definition_id(), row.keyword(), row.scope(), as_of],
+             (id, definition_id, keyword, scope, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                row.id(),
+                row.definition_id(),
+                row.keyword(),
+                row.scope(),
+                as_of
+            ],
         )?;
     }
 
     for row in tables.definition_scope_stages() {
         transaction.execute(
             "INSERT INTO read_definition_scope_stage
-             (definition_id, scope, stage_slug, action, in_scope_order, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+             (id, definition_id, scope, stage_slug, action, in_scope_order, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
+                row.id(),
                 row.definition_id(),
                 row.scope(),
                 row.stage_slug(),
@@ -432,9 +523,10 @@ pub(crate) fn replace_all(
     for row in tables.definition_scope_phase_entries() {
         transaction.execute(
             "INSERT INTO read_definition_scope_phase_entry
-             (definition_id, scope, phase, first_stage_slug, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             (id, definition_id, scope, phase, first_stage_slug, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
+                row.id(),
                 row.definition_id(),
                 row.scope(),
                 row.phase(),
@@ -447,12 +539,12 @@ pub(crate) fn replace_all(
     for row in tables.intents() {
         transaction.execute(
             "INSERT INTO read_intent
-             (intent_id, definition_id, definition_revision, scope, request, depth,
+             (id, definition_id, definition_revision, scope, request, depth,
               test_strategy, review, created_at, project_type, project_kind, languages,
               frameworks, build_system, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
-                row.intent_id(),
+                row.id(),
                 row.definition_id(),
                 row.definition_revision(),
                 row.scope(),
@@ -474,10 +566,11 @@ pub(crate) fn replace_all(
     for row in tables.intent_stages() {
         transaction.execute(
             "INSERT INTO read_intent_stage
-             (intent_id, stage_index, slug, phase, plan_action, conditional, number, name,
+             (id, intent_id, stage_index, slug, phase, plan_action, conditional, number, name,
               lead_agent, gated, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
+                row.id(),
                 row.intent_id(),
                 integer(row.stage_index())?,
                 row.slug(),
@@ -496,12 +589,12 @@ pub(crate) fn replace_all(
     for row in tables.executions() {
         transaction.execute(
             "INSERT INTO read_execution
-             (execution_id, intent_id, scope, status, cursor_index, cursor_slug,
+             (id, intent_id, scope, status, cursor_index, cursor_slug,
               parked_at_index, parked_at_slug, parked_active, accepts_commands, autonomy,
               seq_nr, last_updated_at, state_binding, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
-                row.execution_id(),
+                row.id(),
                 row.intent_id(),
                 row.scope(),
                 row.status(),
@@ -523,10 +616,11 @@ pub(crate) fn replace_all(
     for row in tables.execution_stages() {
         transaction.execute(
             "INSERT INTO read_execution_stage
-             (execution_id, stage_index, slug, phase, checkbox, effective_plan, approved,
+             (id, execution_id, stage_index, slug, phase, checkbox, effective_plan, approved,
               revision_count, gated, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
+                row.id(),
                 row.execution_id(),
                 integer(row.stage_index())?,
                 row.slug(),
@@ -544,10 +638,11 @@ pub(crate) fn replace_all(
     for row in tables.next_answers() {
         transaction.execute(
             "INSERT INTO read_next_answer
-             (execution_id, request_kind, decision_kind, stage_index, stage_slug, gated,
-              checkbox, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (id, execution_id, request_kind, decision_kind, stage_index, stage_slug, gated,
+              checkbox, run_stage_id, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
+                row.id(),
                 row.execution_id(),
                 row.request_kind(),
                 row.decision_kind(),
@@ -555,6 +650,7 @@ pub(crate) fn replace_all(
                 row.stage_slug(),
                 row.gated(),
                 row.checkbox(),
+                row.run_stage_id(),
                 as_of
             ],
         )?;
@@ -563,9 +659,10 @@ pub(crate) fn replace_all(
     for row in tables.next_jumps() {
         transaction.execute(
             "INSERT INTO read_next_jump
-             (execution_id, target_index, target_slug, outcome, refusal, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+             (id, execution_id, target_index, target_slug, outcome, refusal, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
+                row.id(),
                 row.execution_id(),
                 integer(row.target_index())?,
                 row.target_slug(),
@@ -579,18 +676,20 @@ pub(crate) fn replace_all(
     for row in tables.run_stages() {
         transaction.execute(
             "INSERT INTO read_run_stage
-             (definition_id, scope, stage_slug, phase, lead_agent, support_agents, mode,
-              gate_default, inline_context_paths_rel, stage_file_rel, memory_path_rel,
-              consumes_rel, produces_rel, sensors_applicable, reviewer,
+             (id, definition_id, scope, stage_slug, phase, steering_plan_id, lead_agent,
+              support_agents, mode, gate_default, inline_context_paths_rel, stage_file_rel,
+              memory_path_rel, consumes_rel, produces_rel, sensors_applicable, reviewer,
               reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
               route_digest, directive_digest, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20, ?21, ?22)",
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
             params![
+                row.id(),
                 row.definition_id(),
                 row.scope(),
                 row.stage_slug(),
                 row.phase(),
+                row.steering_plan_id(),
                 row.lead_agent(),
                 row.support_agents(),
                 row.mode(),
@@ -616,18 +715,19 @@ pub(crate) fn replace_all(
     for row in tables.scope_changes() {
         transaction.execute(
             "INSERT INTO read_scope_change
-             (execution_id, scope, kind, as_of)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![row.execution_id(), row.scope(), row.kind(), as_of],
+             (id, execution_id, scope, kind, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![row.id(), row.execution_id(), row.scope(), row.kind(), as_of],
         )?;
     }
 
     for row in tables.next_jump_phases() {
         transaction.execute(
             "INSERT INTO read_next_jump_phase
-             (execution_id, phase, target_index, target_slug, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             (id, execution_id, phase, target_index, target_slug, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
+                row.id(),
                 row.execution_id(),
                 row.phase(),
                 integer(row.target_index())?,
@@ -663,9 +763,10 @@ pub(crate) fn replace_steering(
     for row in tables.plans() {
         transaction.execute(
             "INSERT INTO read_steering_plan
-             (phase, bundle_digest, part_count, delivered_paths, source_digest)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             (id, phase, bundle_digest, part_count, delivered_paths, source_digest)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
+                row.id(),
                 row.phase(),
                 row.bundle_digest(),
                 integer(row.part_count())?,
@@ -678,9 +779,15 @@ pub(crate) fn replace_steering(
     for row in tables.parts() {
         transaction.execute(
             "INSERT INTO read_steering_part
-             (phase, part_index, rules_content)
-             VALUES (?1, ?2, ?3)",
-            params![row.phase(), integer(row.part_index())?, row.rules_content()],
+             (id, steering_plan_id, phase, part_index, rules_content)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                row.id(),
+                row.steering_plan_id(),
+                row.phase(),
+                integer(row.part_index())?,
+                row.rules_content()
+            ],
         )?;
     }
 
@@ -721,6 +828,212 @@ mod tests {
 
     /// 参照入力由来の表の名前 (別 Tx で差し替わる — `as_of` を持たない)。
     const STEERING_TABLES: [&str; 2] = ["read_steering_plan", "read_steering_part"];
+
+    /// 自然キーの UNIQUE インデックス (表・索引名・列)。
+    ///
+    /// 主キーは代理キー `id` なので、**自然キーの重複を止めるのはこの索引だけ**である。
+    /// 集約そのものを表す 3 表 (`read_definition` / `read_intent` / `read_execution`) は
+    /// 自然キー = 主キーなので、ここには載らない。
+    const NATURAL_KEY_INDEXES: [(&str, &str, &[&str]); 14] = [
+        (
+            "read_definition_stage",
+            "read_definition_stage_key",
+            &["definition_id", "stage_slug"],
+        ),
+        (
+            "read_definition_scope",
+            "read_definition_scope_key",
+            &["definition_id", "scope"],
+        ),
+        (
+            "read_definition_scope_keyword",
+            "read_definition_scope_keyword_key",
+            &["definition_id", "keyword"],
+        ),
+        (
+            "read_definition_scope_stage",
+            "read_definition_scope_stage_key",
+            &["definition_id", "scope", "stage_slug"],
+        ),
+        (
+            "read_definition_scope_phase_entry",
+            "read_definition_scope_phase_entry_key",
+            &["definition_id", "scope", "phase"],
+        ),
+        (
+            "read_intent_stage",
+            "read_intent_stage_key",
+            &["intent_id", "stage_index"],
+        ),
+        (
+            "read_execution_stage",
+            "read_execution_stage_key",
+            &["execution_id", "stage_index"],
+        ),
+        (
+            "read_next_answer",
+            "read_next_answer_key",
+            &["execution_id", "request_kind"],
+        ),
+        (
+            "read_next_jump",
+            "read_next_jump_key",
+            &["execution_id", "target_index"],
+        ),
+        (
+            "read_next_jump_phase",
+            "read_next_jump_phase_key",
+            &["execution_id", "phase"],
+        ),
+        (
+            "read_run_stage",
+            "read_run_stage_key",
+            &["definition_id", "scope", "stage_slug"],
+        ),
+        (
+            "read_scope_change",
+            "read_scope_change_key",
+            &["execution_id", "scope"],
+        ),
+        ("read_steering_plan", "read_steering_plan_key", &["phase"]),
+        (
+            "read_steering_part",
+            "read_steering_part_key",
+            &["phase", "part_index"],
+        ),
+    ];
+
+    /// クエリ側が `WHERE` に置く列のセカンダリ索引 (表・索引名・列)。
+    ///
+    /// 自然キーの UNIQUE 索引が左端前置で使える引当 (例 `read_execution_stage` を
+    /// `execution_id` で引く) はここに重ねない。
+    const LOOKUP_INDEXES: [(&str, &str, &[&str]); 7] = [
+        (
+            "read_intent",
+            "read_intent_definition_id",
+            &["definition_id"],
+        ),
+        ("read_execution", "read_execution_intent_id", &["intent_id"]),
+        (
+            "read_execution",
+            "read_execution_state_binding",
+            &["state_binding"],
+        ),
+        (
+            "read_run_stage",
+            "read_run_stage_digests",
+            &["route_digest", "directive_digest"],
+        ),
+        (
+            "read_next_jump",
+            "read_next_jump_target_slug",
+            &["execution_id", "target_slug"],
+        ),
+        (
+            "read_steering_plan",
+            "read_steering_plan_bundle_digest",
+            &["bundle_digest"],
+        ),
+        (
+            "read_steering_part",
+            "read_steering_part_plan",
+            &["steering_plan_id", "part_index"],
+        ),
+    ];
+
+    /// 表の主キー列 (`pk` の昇順)。
+    fn primary_key(connection: &Connection, table: &str) -> Vec<String> {
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT name FROM pragma_table_info('{table}') WHERE pk > 0 ORDER BY pk"
+            ))
+            .expect("pragma は引ける");
+        statement
+            .query_map([], |row| row.get(0))
+            .expect("問い合わせ")
+            .collect::<Result<Vec<String>, _>>()
+            .expect("収集")
+    }
+
+    /// 索引の列 (`seqno` の昇順) と一意性。索引が無ければ `None`。
+    fn index_shape(
+        connection: &Connection,
+        table: &str,
+        index: &str,
+    ) -> Option<(Vec<String>, bool)> {
+        let unique: bool = connection
+            .query_row(
+                &format!("SELECT \"unique\" FROM pragma_index_list('{table}') WHERE name = ?1"),
+                params![index],
+                |row| row.get(0),
+            )
+            .ok()?;
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT name FROM pragma_index_info('{index}') ORDER BY seqno"
+            ))
+            .expect("pragma は引ける");
+        let columns = statement
+            .query_map([], |row| row.get(0))
+            .expect("問い合わせ")
+            .collect::<Result<Vec<String>, _>>()
+            .expect("収集");
+        Some((columns, unique))
+    }
+
+    #[test]
+    fn every_table_has_a_single_primary_key_column_named_id() {
+        // 複合主キーにしない (オーナー裁定 2026-09-03)。関連行は FK 列 1 つで指せる。
+        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        for name in TABLES.into_iter().chain(STEERING_TABLES) {
+            assert_eq!(primary_key(&connection, name), ["id"], "{name}");
+        }
+    }
+
+    #[test]
+    fn every_natural_key_has_a_unique_index() {
+        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        for (table, index, columns) in NATURAL_KEY_INDEXES {
+            let (found, unique) =
+                index_shape(&connection, table, index).unwrap_or_else(|| panic!("{index} が無い"));
+            assert_eq!(found, columns, "{index} の列");
+            assert!(unique, "{index} は UNIQUE でなければ自然キーを守れない");
+        }
+    }
+
+    #[test]
+    fn the_columns_the_query_side_filters_on_are_indexed() {
+        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        for (table, index, columns) in LOOKUP_INDEXES {
+            let (found, _) =
+                index_shape(&connection, table, index).unwrap_or_else(|| panic!("{index} が無い"));
+            assert_eq!(found, columns, "{index} の列");
+        }
+    }
+
+    #[test]
+    fn a_second_row_with_the_same_natural_key_is_rejected_even_under_a_new_id() {
+        // 代理キーが違えば主キーは通る。自然キーの重複を止めるのは UNIQUE 索引であり、
+        // それが無いと全差し替えの取りこぼしが二重行として静かに積もる。
+        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
+        ensure_tables(&connection).expect("DDL");
+        let insert = "INSERT INTO read_next_answer
+             (id, execution_id, request_kind, decision_kind, as_of)
+             VALUES (?1, 'e1', 'bare', 'done', 0)";
+        connection
+            .execute(insert, params!["first"])
+            .expect("1 行目");
+        let error = connection
+            .execute(insert, params!["second"])
+            .expect_err("同じ自然キーの 2 行目");
+        assert!(
+            error.to_string().to_uppercase().contains("UNIQUE"),
+            "UNIQUE 制約で落ちる (実際: {error})"
+        );
+    }
 
     #[test]
     fn the_ddl_creates_every_table_and_is_idempotent() {

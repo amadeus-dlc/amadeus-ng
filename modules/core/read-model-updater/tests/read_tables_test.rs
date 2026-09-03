@@ -33,7 +33,9 @@ use core_command_domain::workflow_definition::{
 use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry,
 };
-use core_read_model_updater::read_tables::{ReadTables, ReadTablesError, RequestKind, RunStageRow};
+use core_read_model_updater::read_tables::{
+    MemoryRules, ReadTables, ReadTablesError, RequestKind, RunStageRow, SteeringTables,
+};
 
 const DEFINITION: &str = "claude";
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
@@ -432,7 +434,7 @@ fn the_definition_row_mirrors_the_replayed_aggregate() {
     let tables = tables();
     assert_eq!(tables.definitions().len(), 1);
     let row = &tables.definitions()[0];
-    assert_eq!(row.definition_id(), definition.id().as_str());
+    assert_eq!(row.id(), definition.id().as_str());
     assert_eq!(row.revision(), definition.revision().as_str());
     assert_eq!(row.stage_count(), definition.graph().len());
     assert_eq!(row.scope_count(), definition.scopes().len());
@@ -625,7 +627,7 @@ fn the_intent_row_mirrors_the_intent_aggregate() {
     let tables = tables();
     assert_eq!(tables.intents().len(), 1);
     let row = &tables.intents()[0];
-    assert_eq!(row.intent_id(), intent.id().as_str());
+    assert_eq!(row.id(), intent.id().as_str());
     assert_eq!(row.definition_id(), intent.definition_id().as_str());
     assert_eq!(
         row.definition_revision(),
@@ -678,7 +680,7 @@ fn execution_rows_mirror_the_replayed_executions() {
     for (aggregate, _) in [running_events(), parked_events()] {
         let row = rows
             .iter()
-            .find(|row| row.execution_id() == aggregate.id().as_str())
+            .find(|row| row.id() == aggregate.id().as_str())
             .expect("両方の実行が行になる");
         assert_eq!(row.intent_id(), aggregate.intent_id().as_str());
         assert_eq!(row.cursor_index(), Some(aggregate.cursor().to_usize()));
@@ -1409,4 +1411,223 @@ fn a_definition_stream_without_its_genesis_is_refused() {
             aggregate_id: DEFINITION.to_string()
         })
     );
+}
+
+// ---- 主キー・外部キー (2026-09-03 の関係モデリング裁定) ----
+
+#[test]
+fn the_aggregate_tables_key_themselves_by_the_aggregate_id() {
+    // 集約そのものを表す 3 表は代理キーを作らない — 集約 id が既に 1 列の主キーである。
+    let tables = tables();
+    assert_eq!(tables.definitions()[0].id(), definition_id().as_str());
+    assert_eq!(tables.intents()[0].id(), intent_id().as_str());
+    assert!(
+        tables
+            .executions()
+            .iter()
+            .any(|row| row.id() == EXECUTION_A)
+    );
+}
+
+#[test]
+fn every_id_is_derived_from_the_natural_key_and_does_not_move_between_projections() {
+    // 同じ履歴からは同じ id が出る (代理キーは決定的である)。行ごとに違う値であることも
+    // 一緒に見る — 同じ id が 2 行に付けば UNIQUE 以前に主キーが壊れている。
+    let first = tables();
+    let second = tables();
+    let ids = |tables: &ReadTables| -> Vec<Vec<String>> {
+        vec![
+            tables
+                .definitions()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .definition_stages()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .definition_scopes()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .definition_scope_keywords()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .definition_scope_stages()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .definition_scope_phase_entries()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .intents()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .intent_stages()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .executions()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .execution_stages()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .next_answers()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .next_jumps()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .next_jump_phases()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .run_stages()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+            tables
+                .scope_changes()
+                .iter()
+                .map(|r| r.id().to_string())
+                .collect(),
+        ]
+    };
+    let left = ids(&first);
+    assert_eq!(left, ids(&second), "同じ履歴からは同じ id");
+    for (position, table) in left.iter().enumerate() {
+        assert!(!table.is_empty(), "{position} 番目の表に行が無く空振りする");
+        let distinct: BTreeSet<&String> = table.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            table.len(),
+            "{position} 番目の表に id の重複"
+        );
+    }
+}
+
+#[test]
+fn every_child_row_points_at_a_parent_row_that_exists_in_the_same_snapshot() {
+    // FK は列と doc で表す (SQLite の FOREIGN KEY 句は張らない — steering は別 Tx で
+    // 差し替わるので参照整合の強制が投影順序と衝突する)。強制が無いぶん、投影が対を
+    // 揃えていることをここで固定する。
+    let tables = tables();
+    let definitions: BTreeSet<&str> = tables.definitions().iter().map(|r| r.id()).collect();
+    let intents: BTreeSet<&str> = tables.intents().iter().map(|r| r.id()).collect();
+    let executions: BTreeSet<&str> = tables.executions().iter().map(|r| r.id()).collect();
+    let run_stages: BTreeSet<&str> = tables.run_stages().iter().map(|r| r.id()).collect();
+
+    for id in tables
+        .definition_stages()
+        .iter()
+        .map(|r| r.definition_id())
+        .chain(tables.definition_scopes().iter().map(|r| r.definition_id()))
+        .chain(
+            tables
+                .definition_scope_keywords()
+                .iter()
+                .map(|r| r.definition_id()),
+        )
+        .chain(
+            tables
+                .definition_scope_stages()
+                .iter()
+                .map(|r| r.definition_id()),
+        )
+        .chain(
+            tables
+                .definition_scope_phase_entries()
+                .iter()
+                .map(|r| r.definition_id()),
+        )
+        .chain(tables.run_stages().iter().map(|r| r.definition_id()))
+        .chain(tables.intents().iter().map(|r| r.definition_id()))
+    {
+        assert!(definitions.contains(id), "定義 {id} の行が無い");
+    }
+    for id in tables
+        .intent_stages()
+        .iter()
+        .map(|r| r.intent_id())
+        .chain(tables.executions().iter().map(|r| r.intent_id()))
+    {
+        assert!(intents.contains(id), "intent {id} の行が無い");
+    }
+    for id in tables
+        .execution_stages()
+        .iter()
+        .map(|r| r.execution_id())
+        .chain(tables.next_answers().iter().map(|r| r.execution_id()))
+        .chain(tables.next_jumps().iter().map(|r| r.execution_id()))
+        .chain(tables.next_jump_phases().iter().map(|r| r.execution_id()))
+        .chain(tables.scope_changes().iter().map(|r| r.execution_id()))
+    {
+        assert!(executions.contains(id), "実行 {id} の行が無い");
+    }
+
+    let pointed = tables
+        .next_answers()
+        .iter()
+        .filter_map(|row| row.run_stage_id())
+        .count();
+    assert!(pointed > 0, "run-stage を指す答えが 1 行も無く空振りする");
+    for row in tables.next_answers() {
+        // FK が空になるのは「決定が run-stage ではない」か「その定義に材料の行が無い」の
+        // どちらかで、値が在るなら必ず届く (届かない FK を書かない)。
+        if let Some(id) = row.run_stage_id() {
+            assert_eq!(
+                row.decision_kind(),
+                "run-stage",
+                "run-stage 以外が FK を持つ"
+            );
+            assert!(run_stages.contains(id), "run-stage {id} の行が無い");
+        }
+    }
+}
+
+#[test]
+fn the_run_stage_and_the_steering_part_point_at_the_plan_of_their_phase() {
+    // 別々の投影単位 (ジャーナル由来 / 参照入力由来) をまたぐ FK なので、両方を起こして
+    // 突き合わせる。同じフェーズなら同じ id を指していなければ、continue の照合が届かない。
+    let tables = tables();
+    let steering = SteeringTables::pack(&MemoryRules::default()).expect("空でもパックできる");
+    let plan_of = |phase: &str| -> &str {
+        steering
+            .plans()
+            .iter()
+            .find(|plan| plan.phase() == phase)
+            .expect("5 フェーズすべてに計画の行がある")
+            .id()
+    };
+    assert!(
+        !tables.run_stages().is_empty(),
+        "run-stage の行が無く空振りする"
+    );
+    for row in tables.run_stages() {
+        assert_eq!(row.steering_plan_id(), plan_of(row.phase()));
+    }
+    for part in steering.parts() {
+        assert_eq!(part.steering_plan_id(), plan_of(part.phase()));
+    }
 }

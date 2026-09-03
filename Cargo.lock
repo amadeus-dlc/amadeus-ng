@@ -200,11 +200,16 @@ name = "core-query-interface-adapter"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "chrono",
+ "core-command-domain",
  "core-infrastructure",
  "core-query-use-case",
+ "core-read-model-updater",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

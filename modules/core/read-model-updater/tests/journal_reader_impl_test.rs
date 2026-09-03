@@ -881,7 +881,7 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
         i64,
     ) = connection
         .query_row(
-            "SELECT execution_id, scope, status, cursor_slug, autonomy, seq_nr, as_of
+            "SELECT id, scope, status, cursor_slug, autonomy, seq_nr, as_of
              FROM read_execution",
             [],
             |row| {
@@ -897,7 +897,7 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
             },
         )
         .expect("行は 1 件");
-    assert_eq!(execution_id, expected.execution_id());
+    assert_eq!(execution_id, expected.id());
     assert_eq!(
         scope,
         expected.scope(),
@@ -964,6 +964,112 @@ fn read_table_rows(tables: &ReadTables) -> [(&'static str, usize); 15] {
         ("read_run_stage", tables.run_stages().len()),
         ("read_scope_change", tables.scope_changes().len()),
     ]
+}
+
+#[tokio::test]
+async fn the_written_rows_carry_their_primary_key_and_resolve_their_foreign_keys() {
+    // 行型が id と FK を持っていても、`INSERT` の列に届いていなければ SQLite の側は空の
+    // ままである。ここは**書かれた行**を SQL で見る — 主キーが空でないこと、FK の指す先が
+    // 同じスナップショットに実在することの 2 つを確かめる。
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed_definition(&fixture.path).await;
+    seed(&mut store).await;
+
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+
+    let connection = fixture.raw();
+    for (table, rows) in read_table_rows(&tables) {
+        assert!(rows > 0, "{table} に行が無いと試験が空振りする");
+        let blank: i64 = connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE id IS NULL OR id = ''"),
+                [],
+                |row| row.get(0),
+            )
+            .expect("引ける");
+        assert_eq!(blank, 0, "{table} に主キーの空の行がある");
+    }
+
+    // 親を持つ表は、その親が同じスナップショットに居る。
+    for (child, foreign_key, parent) in [
+        ("read_definition_stage", "definition_id", "read_definition"),
+        ("read_definition_scope", "definition_id", "read_definition"),
+        (
+            "read_definition_scope_keyword",
+            "definition_id",
+            "read_definition",
+        ),
+        (
+            "read_definition_scope_stage",
+            "definition_id",
+            "read_definition",
+        ),
+        (
+            "read_definition_scope_phase_entry",
+            "definition_id",
+            "read_definition",
+        ),
+        ("read_run_stage", "definition_id", "read_definition"),
+        ("read_intent", "definition_id", "read_definition"),
+        ("read_intent_stage", "intent_id", "read_intent"),
+        ("read_execution", "intent_id", "read_intent"),
+        ("read_execution_stage", "execution_id", "read_execution"),
+        ("read_next_answer", "execution_id", "read_execution"),
+        ("read_next_jump", "execution_id", "read_execution"),
+        ("read_next_jump_phase", "execution_id", "read_execution"),
+        ("read_scope_change", "execution_id", "read_execution"),
+        ("read_next_answer", "run_stage_id", "read_run_stage"),
+    ] {
+        let orphans: i64 = connection
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM {child}
+                     WHERE {foreign_key} IS NOT NULL
+                       AND {foreign_key} NOT IN (SELECT id FROM {parent})"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .expect("引ける");
+        assert_eq!(orphans, 0, "{child}.{foreign_key} が {parent} に届かない");
+    }
+
+    // この fixture の定義グラフは `state-init` 1 ノードだが、実行の計画は 3 ステージを
+    // 名乗る (計画は誕生時の内容版に対して解決されるので、その後に痩せた定義とはずれる)。
+    // したがって材料の行が無い run-stage の答えが在り、その FK は**届かない値ではなく
+    // NULL** でなければならない。届く FK が書かれる側は行の契約テスト
+    // (`read_tables_test`) が固定する。
+    let run_stage_answers: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM read_next_answer WHERE decision_kind = 'run-stage'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("引ける");
+    assert!(
+        run_stage_answers > 0,
+        "run-stage の答えが 1 行も無く、FK の検査が空振りする"
+    );
+    let dangling: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM read_next_answer
+             WHERE decision_kind = 'run-stage' AND run_stage_id IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .expect("引ける");
+    assert_eq!(
+        dangling, 0,
+        "材料の行が無いのに FK が書かれている (この定義に run-stage の行は無い)"
+    );
 }
 
 #[tokio::test]

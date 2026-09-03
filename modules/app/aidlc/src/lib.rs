@@ -16,6 +16,9 @@
 //!
 //! - [`cli`] — argv を型付きの要求へ写す（マルチコール解決とフラグのパース）
 //! - [`layout`] — カーソルを読んでワークスペースの配置を決める
+//! - [`execution_cursor`] — record が指す実行（`<record>/.aidlc-execution`）の読み書き。
+//!   置き場は [`layout`] が決め、ファイル名はこちらが持つ（[`clone_identity`] /
+//!   [`steering`] と同じ流儀）
 //! - [`presenter`] — directive を stdout の 1 行 JSON へ描き、28KiB を守る
 //! - [`steering`] — 継続トークンの封緘鍵の**置き場と鋳造方針**（機構は
 //!   `core_infrastructure::secret_file`）
@@ -26,6 +29,7 @@
 
 pub mod cli;
 pub mod clone_identity;
+pub mod execution_cursor;
 pub mod layout;
 mod oversize_directive;
 pub mod presenter;

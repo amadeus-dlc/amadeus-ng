@@ -2,12 +2,14 @@
 
 use core_command_domain::workflow_definition::WorkflowDefinition;
 
-/// `read_definition` の 1 行。主キーは `definition_id`。
+/// `read_definition` の 1 行。主キーは 1 列 `id` = 定義の系譜 ID。
 ///
-/// 値はすべて再生した [`WorkflowDefinition`] のクエリの答えの写しである。
+/// 集約そのものを表す表なので代理キーを作らない — 集約 id が既に 1 列の主キーである
+/// (関係モデリングの裁定 2026-09-03)。値はすべて再生した [`WorkflowDefinition`] の
+/// クエリの答えの写しである。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionRow {
-    definition_id: String,
+    id: String,
     revision: String,
     stage_count: usize,
     scope_count: usize,
@@ -18,17 +20,17 @@ impl DefinitionRow {
     #[must_use]
     pub fn of(definition: &WorkflowDefinition) -> DefinitionRow {
         DefinitionRow {
-            definition_id: definition.id().as_str().to_string(),
+            id: definition.id().as_str().to_string(),
             revision: definition.revision().as_str().to_string(),
             stage_count: definition.graph().len(),
             scope_count: definition.scopes().len(),
         }
     }
 
-    /// 定義の系譜 ID。
+    /// 主キー — 定義の系譜 ID。
     #[must_use]
-    pub fn definition_id(&self) -> &str {
-        &self.definition_id
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// 内容版 (`sha256:` 接頭の 64 桁)。

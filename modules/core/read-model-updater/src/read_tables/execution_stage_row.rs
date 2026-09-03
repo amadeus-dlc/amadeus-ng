@@ -3,15 +3,19 @@
 use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex, StageKey};
 use core_command_domain::workflow_definition::PlanAction;
 
+use super::row_id;
 use super::spelling;
 
-/// `read_execution_stage` の 1 行。主キーは (`execution_id`, `stage_index`)。
+/// `read_execution_stage` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`execution_id`, `stage_index`) から導いた代理キー)。`execution_id` は
+/// `read_execution.id` を指す FK である。
 ///
 /// 値はすべて集約のステージ単位クエリの答えである — `checkbox` / `effective_plan` /
 /// `approved` / `revision_count` / `gated`。**実効プランは静的グリッドではない**
 /// (recompose のオーバレイが勝つ) ので、`read_intent_stage.plan_action` とは別の列である。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionStageRow {
+    id: String,
     execution_id: String,
     stage_index: usize,
     slug: String,
@@ -36,6 +40,7 @@ impl ExecutionStageRow {
         key: &StageKey,
     ) -> ExecutionStageRow {
         ExecutionStageRow {
+            id: row_id::execution_stage(execution.id().as_str(), stage.to_usize()),
             execution_id: execution.id().as_str().to_string(),
             stage_index: stage.to_usize(),
             slug: key.slug().as_str().to_string(),
@@ -54,7 +59,13 @@ impl ExecutionStageRow {
         }
     }
 
-    /// 実行の識別子。
+    /// 主キー — 自然キー (`execution_id`, `stage_index`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_execution.id` を指す FK。
     #[must_use]
     pub fn execution_id(&self) -> &str {
         &self.execution_id

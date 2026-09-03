@@ -23,9 +23,24 @@ core-query-use-case = { workspace = true }
 core-infrastructure = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# 構造化リードモデル (`read_*` 表) を引く DAO 実装。**媒体はこの層の内部詳細**であり、
+# ポート面には現れない (`coding-rules/gateway-taxonomy.md` §3 の DAO 項) — 格納形式を
+# 替えても差し替わるのはこのクレートだけである。
+rusqlite = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+# DAO 契約テストの行の書き手は **RMU 本体**である。期待値をテストに書き下さず、実際に
+# 投影を書いたストアから引けることを見るために dev-dependency として引く — プロダクション
+# 依存ではないので CQRS 境界 (クエリ側はコマンド側・RMU に依存しない) は破れていない
+# (`coding-rules/cqrs-boundaries.md` の判定対象は `[dependencies]`)。
+core-read-model-updater = { workspace = true }
+# 同じくフィクスチャ専用 — 投影の入力である履歴 (ドメインイベント) を組むため。
+core-command-domain = { workspace = true }
+# フィクスチャの発生時刻。
+chrono = { workspace = true }
+# 非同期ポート (AFIT) のフィクスチャを回す current_thread ランタイム。
+tokio = { workspace = true }
 # ワイヤ形式の改竄テストが封筒を直接組み替えるため (プロダクションでは使わない —
 # 封緘は `core-infrastructure::codec` の純計算に委譲した)。
 base64 = { workspace = true }

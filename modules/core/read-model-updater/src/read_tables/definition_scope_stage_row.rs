@@ -2,7 +2,11 @@
 
 use core_command_domain::workflow_definition::{PlanAction, StageSlug, WorkflowDefinitionId};
 
-/// `read_definition_scope_stage` の 1 行。主キーは (`definition_id`, `scope`, `stage_slug`)。
+use super::row_id;
+
+/// `read_definition_scope_stage` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`definition_id`, `scope`, `stage_slug`) から導いた代理キー)。`definition_id` は
+/// `read_definition.id` を指す FK である。
 ///
 /// 値は [`WorkflowDefinition::stages_in_scope`] の答えである。同クエリの `action` は
 /// `Option<PlanAction>` — グリッドにそのスコープの列が無い (または列にその slug が無い)
@@ -13,6 +17,7 @@ use core_command_domain::workflow_definition::{PlanAction, StageSlug, WorkflowDe
 /// [`WorkflowDefinition::stages_in_scope`]: core_command_domain::workflow_definition::WorkflowDefinition::stages_in_scope
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionScopeStageRow {
+    id: String,
     definition_id: String,
     scope: String,
     stage_slug: String,
@@ -31,6 +36,7 @@ impl DefinitionScopeStageRow {
         in_scope_order: Option<usize>,
     ) -> DefinitionScopeStageRow {
         DefinitionScopeStageRow {
+            id: row_id::definition_scope_stage(definition_id.as_str(), scope, stage_slug.as_str()),
             definition_id: definition_id.as_str().to_string(),
             scope: scope.to_string(),
             stage_slug: stage_slug.as_str().to_string(),
@@ -39,7 +45,13 @@ impl DefinitionScopeStageRow {
         }
     }
 
-    /// 定義の系譜 ID。
+    /// 主キー — 自然キー (`definition_id`, `scope`, `stage_slug`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_definition.id` を指す FK。
     #[must_use]
     pub fn definition_id(&self) -> &str {
         &self.definition_id
