@@ -32861,6 +32861,24 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 
 ---
 
+## Human Turn
+**Timestamp**: 2026-09-03T11:29:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Rule Learned
+**Timestamp**: 2026-09-03T11:29:37Z
+**Event**: RULE_LEARNED
+**Stage**: functional-design
+**Candidate-ID**: c1
+**Content-Hash**: 7b0c30b463e7d9bc89f1a507a2996c2aaf3faf63b9a46569dcbb235eac3fc10f
+**Destination**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/memory/project.md
+**Heading**: ## Corrections
+**Source**: user_addition
+
+---
+
 ## Workflow Parked
 **Timestamp**: 2026-09-03T15:04:27Z
 **Event**: WORKFLOW_PARKED
@@ -32885,3 +32903,4 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 
 ---
 ||||||| parent of e178ca59 (chore(aidlc): audit shard)
+||||||| parent of 2e8aeba3 (rules(memory): コミットは作業ツリー全体を回収する — 監査シャードの回収漏れを禁じる規律を project.md へ登録)
