@@ -16,6 +16,8 @@
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
+pub(crate) mod doubles;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 

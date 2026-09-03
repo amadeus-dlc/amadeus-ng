@@ -4,40 +4,67 @@ use core_query_use_case::orchestration::{
     DefinitionDao, DefinitionSummaryView, ReadModelReadError,
 };
 
-/// 引当の結果を握るダブル (鍵は見ない — 何を返すかはテストが決める)。
+/// `read_definition` の 1 行 (鍵 `id` は View が運ばないので明示的に持つ)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Row {
+    definition_id: String,
+    view: DefinitionSummaryView,
+}
+
+/// 定義要約の行を持ち、**鍵で引く**ダブル。
 ///
-/// 鍵で振り分けないのは、**このダブルが確かめる対象ではない**からである。鍵で引けることは
-/// SQLite 実装の契約テストが見る。ここが要るのは「行が在る / 無い / 読めない」の 3 状態を
-/// 合成ルート周辺のテストが実 I/O 無しで組めることだけである。
+/// 鍵を見るのは、SQLite 実装と**同じ契約を同じ入力で**満たすためである — 契約テストは
+/// ジェネリック関数 1 本を両実装に走らせるので、鍵を無視するダブルでは「当たらなければ
+/// `Ok(None)`」を満たせない (`coding-rules/good-examples.md` §契約テスト)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InMemoryDefinitionDao {
-    held: Result<Option<DefinitionSummaryView>, ReadModelReadError>,
+    held: Result<Vec<Row>, ReadModelReadError>,
 }
 
 impl InMemoryDefinitionDao {
-    /// 行が在る。
-    #[must_use]
-    pub const fn holding(view: DefinitionSummaryView) -> InMemoryDefinitionDao {
-        InMemoryDefinitionDao {
-            held: Ok(Some(view)),
-        }
+    /// 握る内容をそのまま組み立てる (**この型の唯一の構造体リテラル**)。
+    const fn new(held: Result<Vec<Row>, ReadModelReadError>) -> InMemoryDefinitionDao {
+        InMemoryDefinitionDao { held }
     }
 
-    /// 行が無い (正常な観測であって失敗ではない)。
+    /// 行が 1 つも無い (どの鍵にも当たらない)。
     #[must_use]
-    pub const fn absent() -> InMemoryDefinitionDao {
-        InMemoryDefinitionDao { held: Ok(None) }
+    pub const fn empty() -> InMemoryDefinitionDao {
+        InMemoryDefinitionDao::new(Ok(Vec::new()))
+    }
+
+    /// 行を 1 つ足す (鍵は `definition_id`)。
+    #[must_use]
+    pub fn with_row(
+        mut self,
+        definition_id: &str,
+        view: DefinitionSummaryView,
+    ) -> InMemoryDefinitionDao {
+        if let Ok(rows) = &mut self.held {
+            rows.push(Row {
+                definition_id: definition_id.to_string(),
+                view,
+            });
+        }
+        self
     }
 
     /// 引けない。
     #[must_use]
     pub const fn failing(error: ReadModelReadError) -> InMemoryDefinitionDao {
-        InMemoryDefinitionDao { held: Err(error) }
+        InMemoryDefinitionDao::new(Err(error))
     }
 }
 
 impl DefinitionDao for InMemoryDefinitionDao {
-    fn find(&self, _: &str) -> Result<Option<DefinitionSummaryView>, ReadModelReadError> {
-        self.held.clone()
+    fn find(
+        &self,
+        definition_id: &str,
+    ) -> Result<Option<DefinitionSummaryView>, ReadModelReadError> {
+        let rows = self.held.as_ref().map_err(Clone::clone)?;
+        Ok(rows
+            .iter()
+            .find(|row| row.definition_id == definition_id)
+            .map(|row| row.view.clone()))
     }
 }

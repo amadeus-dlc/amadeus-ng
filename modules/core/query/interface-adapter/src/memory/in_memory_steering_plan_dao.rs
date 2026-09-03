@@ -2,44 +2,60 @@
 
 use core_query_use_case::orchestration::{ReadModelReadError, SteeringPlanDao, SteeringPlanView};
 
-/// 引当の結果を握るダブル (鍵は見ない — 何を返すかはテストが決める)。
+/// 配信計画の行を持ち、**鍵で引く**ダブル。
 ///
-/// 鍵で振り分けないのは、**このダブルが確かめる対象ではない**からである。鍵で引けることは
-/// SQLite 実装の契約テストが見る。ここが要るのは「行が在る / 無い / 読めない」の 3 状態を
-/// 合成ルート周辺のテストが実 I/O 無しで組めることだけである。
+/// 2 つの鍵 (`id` / `id` + 束のダイジェスト) はどちらも行が運ぶ列なので、明示的な鍵引数を
+/// 取らず View から読む。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InMemorySteeringPlanDao {
-    held: Result<Option<SteeringPlanView>, ReadModelReadError>,
+    held: Result<Vec<SteeringPlanView>, ReadModelReadError>,
 }
 
 impl InMemorySteeringPlanDao {
-    /// 計画が在る。
-    #[must_use]
-    pub const fn holding(view: SteeringPlanView) -> InMemorySteeringPlanDao {
-        InMemorySteeringPlanDao {
-            held: Ok(Some(view)),
-        }
+    /// 握る内容をそのまま組み立てる (**この型の唯一の構造体リテラル**)。
+    const fn new(
+        held: Result<Vec<SteeringPlanView>, ReadModelReadError>,
+    ) -> InMemorySteeringPlanDao {
+        InMemorySteeringPlanDao { held }
     }
 
-    /// 計画が無い (まだパックしていない — 正常な観測)。
+    /// 行が 1 つも無い (どの鍵にも当たらない)。
     #[must_use]
-    pub const fn absent() -> InMemorySteeringPlanDao {
-        InMemorySteeringPlanDao { held: Ok(None) }
+    pub const fn empty() -> InMemorySteeringPlanDao {
+        InMemorySteeringPlanDao::new(Ok(Vec::new()))
+    }
+
+    /// 行を 1 つ足す (鍵はどちらも行の列)。
+    #[must_use]
+    pub fn with_row(mut self, view: SteeringPlanView) -> InMemorySteeringPlanDao {
+        if let Ok(rows) = &mut self.held {
+            rows.push(view);
+        }
+        self
     }
 
     /// 引けない。
     #[must_use]
     pub const fn failing(error: ReadModelReadError) -> InMemorySteeringPlanDao {
-        InMemorySteeringPlanDao { held: Err(error) }
+        InMemorySteeringPlanDao::new(Err(error))
     }
 }
 
 impl SteeringPlanDao for InMemorySteeringPlanDao {
-    fn find(&self, _: &str) -> Result<Option<SteeringPlanView>, ReadModelReadError> {
-        self.held.clone()
+    fn find(&self, id: &str) -> Result<Option<SteeringPlanView>, ReadModelReadError> {
+        let rows = self.held.as_ref().map_err(Clone::clone)?;
+        Ok(rows.iter().find(|view| view.id() == id).cloned())
     }
 
-    fn find_bound(&self, _: &str, _: &str) -> Result<Option<SteeringPlanView>, ReadModelReadError> {
-        self.held.clone()
+    fn find_bound(
+        &self,
+        id: &str,
+        bundle_digest: &str,
+    ) -> Result<Option<SteeringPlanView>, ReadModelReadError> {
+        let rows = self.held.as_ref().map_err(Clone::clone)?;
+        Ok(rows
+            .iter()
+            .find(|view| view.id() == id && view.bundle_digest() == bundle_digest)
+            .cloned())
     }
 }
