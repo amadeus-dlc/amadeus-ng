@@ -141,6 +141,7 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 - 全行が `as_of`（投影に使った最後のジャーナル通番 = `GlobalSeqNr`）を持つ。壁時計は読まない（冪等・決定性）。
 - **例外 — steering の参照入力由来の表**（`read_steering_plan` / `read_steering_part`、b41）: 出所はイベントではなく memory 規則ファイル（`org.md` / `team.md` / `project.md` / `phases/<phase>.md`）なので、行は集約クエリの写しではなく**規則本文の分割・パック（判断を含まない計算）**であり、`as_of` を持たず、代わりに `source_digest`（規則ファイル群の内容ダイジェスト）を持つ。`catch_up` ごとに `source_digest` を比べ、変化時だけ**別トランザクション**で全差し替えする（オーナー裁定 2026-09-02 §10-4）。
 - 表の作成は `CREATE TABLE IF NOT EXISTS`（`amadeus_projection_checkpoint` と同じ流儀）、RMU の `JournalReaderImpl::open` が行う。
+- **表の形は基本的な関係モデリング**（オーナー裁定 2026-09-03）: 主キーは 1 列 `id`（`read_execution` / `read_intent` / `read_definition` は集約 id そのもの、他は自然キーの正準 JSON の `hash_compact` による決定的な代理キー）。複合主キーにしない。他の列で引くならセカンダリインデックス、自然キー（例 `read_next_answer(execution_id, request_kind)`）の重複防止は UNIQUE インデックス、関連行は FK 列（`run_stage_id` / `steering_plan_id` / `intent_id` / `definition_id` …）で指す。クエリ側の DAO は **1 表 1 引当**（JOIN しない）で、ユースケースが FK をたどって View を組む（判断は無い — null の FK は「無し」）。
 
 表カタログ（b39 の 13 表 + b41 の 4 表と `read_execution.scope`。列の定義と計算元は `construction/b39-rmu-read-tables/design.md` §4.1 と `construction/b41-rmu-run-stage-steering/design.md` §1 が正本。`read_config_current` は不要 — config-change は現在値を見ない構文分岐）:
 
