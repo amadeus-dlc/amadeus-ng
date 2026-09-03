@@ -36,13 +36,8 @@ use core_command_use_case::orchestration::{
     IntentRepository as _, ReportedTransition,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
-use core_query_interface_adapter::{
-    DefinitionPaths, ExecutionStateDaoImpl, MemoryRulesDaoImpl, WorkflowDefinitionDaoImpl,
-    verify_continue_token,
-};
-use core_query_use_case::orchestration::{
-    ContinueUseCase, Directive, NextTurnInput, NextUseCase, WorkspaceLayout,
-};
+use core_query_interface_adapter::verify_continue_token;
+use core_query_use_case::orchestration::{Directive, NextTurnInput};
 use core_read_model_updater::orchestration::{
     JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
 };
@@ -53,6 +48,7 @@ use crate::layout::Layout;
 use crate::presenter::{DIRECTIVE_MAX_BYTES, Presenter};
 use crate::record_name;
 use crate::steering::SteeringKey;
+use crate::turn;
 use crate::wording;
 
 /// 投影の名前（チェックポイントの鍵）。
@@ -155,7 +151,7 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
     }
 }
 
-/// `next` — リードモデルを追いつかせてからラダーを回す。
+/// `next` — リードモデルを追いつかせてから構造化リードモデルを引く。
 async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u8>), String> {
     catch_up_before_reading(layout).await;
     // 鍵は `next` だけが鋳造する（I8 の例外 1 — steering MAC キー）。
@@ -163,8 +159,7 @@ async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u
     let bytes = key
         .mint_for_next()
         .map_err(|error| key_wording(&key, &error))?;
-    let directive = use_case(layout).execute(&with_layout(layout, input));
-    Ok((directive, bytes))
+    Ok((turn::next(layout, &input), bytes))
 }
 
 /// `continue` — 鍵は**読むだけ**。無ければ・壊れていれば fail-closed（I12）。
@@ -185,14 +180,7 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
         Err(error) => return Err(key_wording(&key, &error)),
     };
     let verified = verify_continue_token(&bytes, token).ok();
-    let input = with_layout(layout, NextTurnInput::new());
-    let directive = ContinueUseCase::new(
-        workflow_definition_dao(layout),
-        execution_state_dao(layout),
-        memory_rules_dao(layout),
-    )
-    .execute(verified, &input);
-    Ok((directive, bytes))
+    Ok((turn::resume(layout, verified.as_ref()), bytes))
 }
 
 /// `report` — 報告された結末を 1 つの遷移としてコミットし、投影で読み面へ落とす。
@@ -704,48 +692,6 @@ fn compiled_definition_id(
 ) -> Result<core_command_domain::workflow_definition::CompiledDefinitionId, String> {
     core_command_domain::workflow_definition::CompiledDefinitionId::parse(harness_name(layout))
         .map_err(|error| format!("cannot resolve the compiled definition id: {error:?}"))
-}
-
-fn use_case(
-    layout: &Layout,
-) -> NextUseCase<WorkflowDefinitionDaoImpl, ExecutionStateDaoImpl, MemoryRulesDaoImpl> {
-    NextUseCase::new(
-        workflow_definition_dao(layout),
-        execution_state_dao(layout),
-        memory_rules_dao(layout),
-    )
-}
-
-fn workflow_definition_dao(layout: &Layout) -> WorkflowDefinitionDaoImpl {
-    WorkflowDefinitionDaoImpl::new(DefinitionPaths::new(
-        layout.definition_data_dir(),
-        layout.scopes_dir(),
-    ))
-}
-
-fn execution_state_dao(layout: &Layout) -> ExecutionStateDaoImpl {
-    ExecutionStateDaoImpl::new(
-        layout
-            .record_dir()
-            .map(Path::to_path_buf)
-            .unwrap_or_default(),
-    )
-}
-
-fn memory_rules_dao(layout: &Layout) -> MemoryRulesDaoImpl {
-    MemoryRulesDaoImpl::new(layout.memory_dir())
-}
-
-/// ラダーへ渡す観測にワークスペース配置を載せる。
-fn with_layout(layout: &Layout, input: NextTurnInput) -> NextTurnInput {
-    input.with_layout(WorkspaceLayout::new(
-        layout
-            .record_dir()
-            .map(|dir| dir.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        layout.stage_library_dir().to_string_lossy().into_owned(),
-        layout.agent_dir().to_string_lossy().into_owned(),
-    ))
 }
 
 /// 鍵の失敗を逐語文言へ写す（3 形 — upstream `aidlc-orchestrate.ts:2323/2331/2350`）。

@@ -56,6 +56,7 @@ mod memory_rules_dao_impl;
 mod next_answer_dao_impl;
 mod phase_entry_dao_impl;
 mod raw_artifact;
+mod read_model_daos;
 mod read_model_failure;
 mod read_model_store;
 mod run_stage_columns;
@@ -80,6 +81,12 @@ pub use workflow_definition_dao_impl::WorkflowDefinitionDaoImpl;
 // **1 実装 = 1 表**である (オーナー裁定 2026-09-03)。どの SQL も `read_*` 表を 1 つしか
 // 読まない — JOIN も副問合せも無く、関連は行が運ぶ FK 列で表す。複数の表にまたがる答えは
 // ユースケースが FK をたどって組む。
+//
+// 12 実装の**唯一の構築経路**は [`ReadModelDaos`] である (b44) — 1 要求ぶんの読取専用接続を
+// 1 度だけ開き、12 実装がそれを分け合う。実装ごとに開くと、多段の引当が別々のスナップ
+// ショットを見る余地が残る。
+pub use read_model_daos::ReadModelDaos;
+
 pub use definition_dao_impl::DefinitionDaoImpl;
 pub use execution_dao_impl::ExecutionDaoImpl;
 pub use jump_dao_impl::JumpDaoImpl;

@@ -1,6 +1,6 @@
 //! `ScopeChangeDao` の実 Gateway — 要求 scope と state の scope の照合結果を引く。
 
-use std::path::Path;
+use std::rc::Rc;
 
 use core_query_use_case::orchestration::{ReadModelReadError, ScopeChangeDao, ScopeChangeView};
 
@@ -13,19 +13,17 @@ const SELECT_SCOPE_CHANGE: &str =
 /// 照合結果の綴りを返す実装。
 #[derive(Debug)]
 pub struct ScopeChangeDaoImpl {
-    store: ReadModelStore,
+    store: Rc<ReadModelStore>,
 }
 
 impl ScopeChangeDaoImpl {
-    /// 構造化リードモデルのストアを読取専用で開く。
+    /// 1 要求ぶんの共有ストアを受け取る (**この型の唯一の構築経路**)。
     ///
-    /// # Errors
-    ///
-    /// ストアを開けない ([`ReadModelReadError`])。
-    pub fn open(path: &Path) -> Result<ScopeChangeDaoImpl, ReadModelReadError> {
-        Ok(ScopeChangeDaoImpl {
-            store: ReadModelStore::open(path)?,
-        })
+    /// 開くのは [`super::ReadModelDaos`] 1 か所で、12 実装はその 1 接続を分け合う。
+    /// 実装ごとに開くと、多段の引当が別々のスナップショットを見る余地が残る。
+    #[must_use]
+    pub(crate) const fn new(store: Rc<ReadModelStore>) -> ScopeChangeDaoImpl {
+        ScopeChangeDaoImpl { store }
     }
 }
 

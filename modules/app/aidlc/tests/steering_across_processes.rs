@@ -17,27 +17,14 @@ use std::path::{Path, PathBuf};
 
 use core_infrastructure::canon_json::{JsonValue, parse};
 
-/// 出荷テンプレートと同じ節構成の状態ファイル（カーソルは `domain-design`）。
-const STATE_FILE: &str = concat!(
-    "# AI-DLC State Tracking\n\n",
-    "## Project Information\n",
-    "- **Scope**: classic\n",
-    "- **State Version**: 8\n\n",
-    "## Stage Progress\n\n",
-    "### INITIALIZATION PHASE\n",
-    "- [x] state-init — EXECUTE\n\n",
-    "### INCEPTION PHASE\n",
-    "- [-] domain-design — EXECUTE\n",
-    "- [ ] contract-design — EXECUTE\n\n",
-    "## Current Status\n",
-    "- **Current Stage**: domain-design\n",
-    "- **Status**: Running\n",
-    "- **Last Updated**: 2026-08-29T16:36:24Z\n",
-);
-
-/// 記録ディレクトリの名前（カーソルが指す先）。
-const RECORD: &str = "260831-demo-01a02785";
-
+/// ワークスペースの根 (定義 3 入力 + memory 層だけを置いた fresh な姿)。
+///
+/// # 状態ファイルを手で置かない
+///
+/// b44 以前はここが `aidlc-state.md` と `active-intent` を直接書いていた。新経路の
+/// `next` が読むのは構造化リードモデル (`read_*` 表) であり、その行を作れるのは
+/// **ジャーナルを投影した RMU だけ**なので、記録は `intent-create` に作らせる —
+/// 「書いて、投影して、読む」の一巡がそのまま前提になった。
 struct Workspace {
     root: tempfile::TempDir,
 }
@@ -49,11 +36,37 @@ impl Workspace {
         };
         workspace.write_definition();
         workspace.write_memory_layer();
-        fs::create_dir_all(workspace.record_dir().join("audit")).expect("record");
-        fs::write(workspace.record_dir().join("aidlc-state.md"), STATE_FILE).expect("状態ファイル");
-        let intents = workspace.path("aidlc/spaces/default/intents");
-        fs::write(intents.join("active-intent"), format!("{RECORD}\n")).expect("カーソル");
+        fs::create_dir_all(workspace.path("aidlc/spaces/default/intents")).expect("intents");
         workspace
+    }
+
+    /// intent を 1 件鋳造して記録とリードモデルを起こす (`next` の前提)。
+    ///
+    /// 面は utility (`intent-create` は utility 面の動詞)。
+    async fn mint(&self) {
+        let project = self.project_dir().to_string_lossy().into_owned();
+        let args: Vec<String> = [
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "demo",
+            "--project-dir",
+            &project,
+        ]
+        .iter()
+        .map(|a| (*a).to_string())
+        .collect();
+        let completion = aidlc::runtime::run("aidlc-utility", &args, self.project_dir()).await;
+        assert_eq!(completion.code(), 0, "鋳造は通る: {completion:?}");
+    }
+
+    /// カーソルが指す記録ディレクトリ。
+    fn record_dir(&self) -> PathBuf {
+        let cursor = fs::read_to_string(self.path("aidlc/spaces/default/intents/active-intent"))
+            .expect("カーソルが据わっている");
+        self.path("aidlc/spaces/default/intents")
+            .join(cursor.trim())
     }
 
     fn path(&self, relative: &str) -> PathBuf {
@@ -62,10 +75,6 @@ impl Workspace {
 
     fn project_dir(&self) -> &Path {
         self.root.path()
-    }
-
-    fn record_dir(&self) -> PathBuf {
-        self.path("aidlc/spaces/default/intents").join(RECORD)
     }
 
     fn key_file(&self) -> PathBuf {
@@ -166,6 +175,7 @@ fn number_of(value: &JsonValue, key: &str) -> u64 {
 #[tokio::test]
 async fn the_steering_chain_survives_across_invocations() {
     let workspace = Workspace::create();
+    workspace.mint().await;
 
     // --- 起動 1: next ---
     let first = invoke(
@@ -215,6 +225,7 @@ async fn the_steering_chain_survives_across_invocations() {
 #[tokio::test]
 async fn a_lost_key_breaks_the_chain() {
     let workspace = Workspace::create();
+    workspace.mint().await;
     let project = workspace.project_dir().to_string_lossy().into_owned();
 
     let first = invoke(&workspace, &["next", "--project-dir", &project]).await;
@@ -236,6 +247,7 @@ async fn a_lost_key_breaks_the_chain() {
 #[tokio::test]
 async fn continue_does_not_mint_the_key() {
     let workspace = Workspace::create();
+    workspace.mint().await;
     let project = workspace.project_dir().to_string_lossy().into_owned();
 
     let completion = invoke(
@@ -255,6 +267,7 @@ async fn continue_does_not_mint_the_key() {
 #[tokio::test]
 async fn a_tampered_token_is_refused() {
     let workspace = Workspace::create();
+    workspace.mint().await;
     let project = workspace.project_dir().to_string_lossy().into_owned();
 
     let first = invoke(&workspace, &["next", "--project-dir", &project]).await;
@@ -274,6 +287,7 @@ async fn a_tampered_token_is_refused() {
 #[tokio::test]
 async fn repeated_next_calls_reuse_one_key() {
     let workspace = Workspace::create();
+    workspace.mint().await;
     let project = workspace.project_dir().to_string_lossy().into_owned();
 
     invoke(&workspace, &["next", "--project-dir", &project]).await;
@@ -288,6 +302,7 @@ async fn repeated_next_calls_reuse_one_key() {
 #[tokio::test]
 async fn an_unknown_verb_is_refused_on_stderr_with_a_nonzero_exit() {
     let workspace = Workspace::create();
+    workspace.mint().await;
     let project = workspace.project_dir().to_string_lossy().into_owned();
 
     let completion = invoke(&workspace, &["frobnicate", "--project-dir", &project]).await;

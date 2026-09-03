@@ -1,6 +1,6 @@
 //! `JumpDao` の実 Gateway — ジャンプ先ごとの受理判定を `read_next_jump` から引く。
 
-use std::path::Path;
+use std::rc::Rc;
 
 use core_query_use_case::orchestration::{JumpDao, JumpView, ReadModelReadError};
 use rusqlite::Row;
@@ -33,19 +33,17 @@ const SELECT_BY_TARGET_INDEX: &str = select_jump!("execution_id = ?1 AND target_
 /// ジャンプの受理判定を返す実装 (2 動詞とも同じ 1 表を鍵違いで引く)。
 #[derive(Debug)]
 pub struct JumpDaoImpl {
-    store: ReadModelStore,
+    store: Rc<ReadModelStore>,
 }
 
 impl JumpDaoImpl {
-    /// 構造化リードモデルのストアを読取専用で開く。
+    /// 1 要求ぶんの共有ストアを受け取る (**この型の唯一の構築経路**)。
     ///
-    /// # Errors
-    ///
-    /// ストアを開けない ([`ReadModelReadError`])。
-    pub fn open(path: &Path) -> Result<JumpDaoImpl, ReadModelReadError> {
-        Ok(JumpDaoImpl {
-            store: ReadModelStore::open(path)?,
-        })
+    /// 開くのは [`super::ReadModelDaos`] 1 か所で、12 実装はその 1 接続を分け合う。
+    /// 実装ごとに開くと、多段の引当が別々のスナップショットを見る余地が残る。
+    #[must_use]
+    pub(crate) const fn new(store: Rc<ReadModelStore>) -> JumpDaoImpl {
+        JumpDaoImpl { store }
     }
 }
 

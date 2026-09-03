@@ -19,6 +19,9 @@
 //! - [`execution_cursor`] — record が指す実行（`<record>/.aidlc-execution`）の読み書き。
 //!   置き場は [`layout`] が決め、ファイル名はこちらが持つ（[`clone_identity`] /
 //!   [`steering`] と同じ流儀）
+//! - `turn` — `next` / `continue` の**構文的ルーティング**（どの引当をどの鍵で呼ぶか）
+//! - `directive_drawing` — リードモデルの行を directive へ描く（相対パスの絶対化・
+//!   1 行 JSON 列の展開・continue_token の中身）
 //! - [`presenter`] — directive を stdout の 1 行 JSON へ描き、28KiB を守る
 //! - [`steering`] — 継続トークンの封緘鍵の**置き場と鋳造方針**（機構は
 //!   `core_infrastructure::secret_file`）
@@ -29,6 +32,7 @@
 
 pub mod cli;
 pub mod clone_identity;
+mod directive_drawing;
 pub mod execution_cursor;
 pub mod layout;
 mod oversize_directive;
@@ -37,4 +41,5 @@ pub mod record_name;
 pub mod runtime;
 pub mod scaffold;
 pub mod steering;
+mod turn;
 pub mod wording;

@@ -10,12 +10,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use core_query_interface_adapter::{
-    DefinitionDaoImpl, ExecutionDaoImpl, InMemoryDefinitionDao, InMemoryExecutionDao,
-    InMemoryJumpDao, InMemoryJumpPhaseDao, InMemoryNextAnswerDao, InMemoryPhaseEntryDao,
-    InMemoryRunStageDao, InMemoryScopeChangeDao, InMemoryScopeDao, InMemoryScopeKeywordDao,
-    InMemorySteeringPartDao, InMemorySteeringPlanDao, JumpDaoImpl, JumpPhaseDaoImpl,
-    NextAnswerDaoImpl, PhaseEntryDaoImpl, RunStageDaoImpl, ScopeChangeDaoImpl, ScopeDaoImpl,
-    ScopeKeywordDaoImpl, SteeringPartDaoImpl, SteeringPlanDaoImpl,
+    InMemoryDefinitionDao, InMemoryExecutionDao, InMemoryJumpDao, InMemoryJumpPhaseDao,
+    InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao, InMemoryScopeChangeDao,
+    InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao, InMemorySteeringPlanDao,
+    ReadModelDaos,
 };
 use core_query_use_case::orchestration::{
     DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao, RunStageDao,
@@ -23,6 +21,11 @@ use core_query_use_case::orchestration::{
 };
 
 use super::{DEFINITION, EXECUTION, Fixture};
+
+/// フィクスチャのストアを 1 度だけ開き、12 実装をその上に建てる。
+fn daos(fixture: &Fixture) -> ReadModelDaos {
+    ReadModelDaos::open(fixture.store()).expect("フィクスチャのストアは開ける")
+}
 
 /// フィクスチャの定義が持つステージ (グラフの並び順)。
 pub(crate) const STAGES: [&str; 3] = ["state-init", "intent-capture", "requirements-analysis"];
@@ -43,7 +46,7 @@ const MAX_PART_INDEX: u32 = 3;
 
 /// `read_next_answer` の行を写したダブル。
 pub(crate) fn next_answer(fixture: &Fixture) -> InMemoryNextAnswerDao {
-    let source = NextAnswerDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).next_answer();
     let mut double = InMemoryNextAnswerDao::empty();
     for kind in REQUEST_KINDS {
         if let Some(view) = source.find(EXECUTION, kind).unwrap() {
@@ -55,7 +58,7 @@ pub(crate) fn next_answer(fixture: &Fixture) -> InMemoryNextAnswerDao {
 
 /// `read_execution` の行を写したダブル。
 pub(crate) fn execution(fixture: &Fixture) -> InMemoryExecutionDao {
-    let source = ExecutionDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).execution();
     let mut double = InMemoryExecutionDao::empty();
     if let Some(view) = source.find(EXECUTION).unwrap() {
         double = double.with_row(view);
@@ -65,7 +68,7 @@ pub(crate) fn execution(fixture: &Fixture) -> InMemoryExecutionDao {
 
 /// `read_run_stage` の行 (定義 × 全 scope × 全ステージ) を写したダブル。
 pub(crate) fn run_stage(fixture: &Fixture) -> InMemoryRunStageDao {
-    let source = RunStageDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).run_stage();
     let mut double = InMemoryRunStageDao::empty();
     for scope in SCOPES {
         for slug in STAGES {
@@ -79,7 +82,7 @@ pub(crate) fn run_stage(fixture: &Fixture) -> InMemoryRunStageDao {
 
 /// run-stage の行がたどらせる配信計画の識別子 (重複を畳んだ並び)。
 fn plan_ids(fixture: &Fixture) -> Vec<String> {
-    let source = RunStageDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).run_stage();
     let mut ids: Vec<String> = Vec::new();
     for slug in STAGES {
         if let Some(view) = source.find(DEFINITION, "classic", slug).unwrap() {
@@ -94,7 +97,7 @@ fn plan_ids(fixture: &Fixture) -> Vec<String> {
 
 /// `read_steering_plan` の行を写したダブル。
 pub(crate) fn steering_plan(fixture: &Fixture) -> InMemorySteeringPlanDao {
-    let source = SteeringPlanDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).steering_plan();
     let mut double = InMemorySteeringPlanDao::empty();
     for id in plan_ids(fixture) {
         if let Some(view) = source.find(&id).unwrap() {
@@ -106,7 +109,7 @@ pub(crate) fn steering_plan(fixture: &Fixture) -> InMemorySteeringPlanDao {
 
 /// `read_steering_part` の行を写したダブル。
 pub(crate) fn steering_part(fixture: &Fixture) -> InMemorySteeringPartDao {
-    let source = SteeringPartDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).steering_part();
     let mut double = InMemorySteeringPartDao::empty();
     for id in plan_ids(fixture) {
         for part_index in 1..=MAX_PART_INDEX {
@@ -120,7 +123,7 @@ pub(crate) fn steering_part(fixture: &Fixture) -> InMemorySteeringPartDao {
 
 /// `read_next_jump` の行を写したダブル。
 pub(crate) fn jump(fixture: &Fixture) -> InMemoryJumpDao {
-    let source = JumpDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).jump();
     let mut double = InMemoryJumpDao::empty();
     for slug in STAGES {
         if let Some(view) = source.find(EXECUTION, slug).unwrap() {
@@ -132,7 +135,7 @@ pub(crate) fn jump(fixture: &Fixture) -> InMemoryJumpDao {
 
 /// `read_next_jump_phase` の行を写したダブル。
 pub(crate) fn jump_phase(fixture: &Fixture) -> InMemoryJumpPhaseDao {
-    let source = JumpPhaseDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).jump_phase();
     let mut double = InMemoryJumpPhaseDao::empty();
     for phase in PHASES {
         if let Some(view) = source.find(EXECUTION, phase).unwrap() {
@@ -144,7 +147,7 @@ pub(crate) fn jump_phase(fixture: &Fixture) -> InMemoryJumpPhaseDao {
 
 /// `read_definition_scope` の行を写したダブル。
 pub(crate) fn scope(fixture: &Fixture) -> InMemoryScopeDao {
-    let source = ScopeDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).scope();
     let mut double = InMemoryScopeDao::empty();
     for name in SCOPES {
         if let Some(view) = source.find(DEFINITION, name).unwrap() {
@@ -156,7 +159,7 @@ pub(crate) fn scope(fixture: &Fixture) -> InMemoryScopeDao {
 
 /// `read_definition_scope_keyword` の行を写したダブル。
 pub(crate) fn scope_keyword(fixture: &Fixture) -> InMemoryScopeKeywordDao {
-    let source = ScopeKeywordDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).scope_keyword();
     let mut double = InMemoryScopeKeywordDao::empty();
     for keyword in ["api", "quick", "unclaimed"] {
         if let Some(name) = source.find(DEFINITION, keyword).unwrap() {
@@ -168,7 +171,7 @@ pub(crate) fn scope_keyword(fixture: &Fixture) -> InMemoryScopeKeywordDao {
 
 /// `read_definition_scope_phase_entry` の行を写したダブル。
 pub(crate) fn phase_entry(fixture: &Fixture) -> InMemoryPhaseEntryDao {
-    let source = PhaseEntryDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).phase_entry();
     let mut double = InMemoryPhaseEntryDao::empty();
     for name in SCOPES {
         for phase in PHASES {
@@ -182,7 +185,7 @@ pub(crate) fn phase_entry(fixture: &Fixture) -> InMemoryPhaseEntryDao {
 
 /// `read_scope_change` の行を写したダブル。
 pub(crate) fn scope_change(fixture: &Fixture) -> InMemoryScopeChangeDao {
-    let source = ScopeChangeDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).scope_change();
     let mut double = InMemoryScopeChangeDao::empty();
     for name in SCOPES {
         if let Some(view) = source.find(EXECUTION, name).unwrap() {
@@ -194,7 +197,7 @@ pub(crate) fn scope_change(fixture: &Fixture) -> InMemoryScopeChangeDao {
 
 /// `read_definition` の行を写したダブル。
 pub(crate) fn definition(fixture: &Fixture) -> InMemoryDefinitionDao {
-    let source = DefinitionDaoImpl::open(fixture.store()).unwrap();
+    let source = daos(fixture).definition();
     let mut double = InMemoryDefinitionDao::empty();
     if let Some(view) = source.find(DEFINITION).unwrap() {
         double = double.with_row(DEFINITION, view);
@@ -204,8 +207,8 @@ pub(crate) fn definition(fixture: &Fixture) -> InMemoryDefinitionDao {
 
 /// 契約が使う配信計画の識別子 (ideation の計画 — run-stage の FK が指す先)。
 pub(crate) fn ideation_plan_id(fixture: &Fixture) -> String {
-    RunStageDaoImpl::open(fixture.store())
-        .unwrap()
+    daos(fixture)
+        .run_stage()
         .find(DEFINITION, "classic", "intent-capture")
         .unwrap()
         .unwrap()

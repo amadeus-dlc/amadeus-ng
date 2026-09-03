@@ -53,6 +53,7 @@ mod find_run_stage_use_case;
 mod find_scope_change_use_case;
 mod find_scope_keyword_use_case;
 mod find_scope_use_case;
+mod find_steering_use_case;
 mod gate_field;
 mod load_steering_directive;
 mod next_decision;
@@ -74,6 +75,7 @@ mod scope_resolution_error;
 mod scope_source;
 mod stage_name;
 mod state_binding;
+mod steering_delivery_view;
 mod steering_digest;
 mod steering_part;
 mod steering_plan;
@@ -152,6 +154,7 @@ pub use port::{
 // FK をたどって組む) ので `port/` ではなくここに住む。
 pub use continuation_view::ContinuationView;
 pub use next_turn_view::NextTurnView;
+pub use steering_delivery_view::SteeringDeliveryView;
 
 // ポートの DTO — DAO が返すクエリモデル。DAO と同じ `port/` に同居する (オーナー裁定
 // 2026-08-31 — DTO/DAO ポートは一つのパッケージ)。読む対象は 2 族あるが、消費側のパスは
@@ -184,6 +187,7 @@ pub use find_run_stage_use_case::FindRunStageUseCase;
 pub use find_scope_change_use_case::FindScopeChangeUseCase;
 pub use find_scope_keyword_use_case::FindScopeKeywordUseCase;
 pub use find_scope_use_case::FindScopeUseCase;
+pub use find_steering_use_case::FindSteeringUseCase;
 pub use next_turn_input::NextTurnInput;
 pub use next_use_case::NextUseCase;
 pub use noun_family::NounFamily;

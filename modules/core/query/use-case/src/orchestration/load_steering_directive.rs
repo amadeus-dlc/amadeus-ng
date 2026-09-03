@@ -11,7 +11,6 @@ use super::continue_token::ContinueToken;
 use super::part_count::PartCount;
 use super::part_index::PartIndex;
 use super::rule_content::RuleContent;
-use super::steering_part::SteeringPart;
 use crate::orchestration::StageSlugView;
 
 /// `load-steering` — ルール束の分割配信 1 部 (02 §4.1)。
@@ -32,23 +31,27 @@ pub struct LoadSteeringDirective {
 }
 
 impl LoadSteeringDirective {
-    /// 1 部を組む (基本コンストラクタ)。
+    /// 1 部を組む (**この型の唯一の構築経路**)。
     ///
-    /// `part <= parts` は [`SteeringPart`] の構築経路 (計画のクエリのみ) が保証するので、
-    /// クロスフィールド検証のエラーは**表現不能**である。
+    /// 材料はすべて行の写しである — 索引と総数は `read_steering_part.part_index` /
+    /// `read_steering_plan.part_count`、中身は `read_steering_part.rules_content` を開いた
+    /// ものである。数え直しも切り直しもここでは起きない (分割は RMU がパック時に済ませて
+    /// いる — `coding-rules/cqrs-boundaries.md` 規則 6)。
     #[must_use]
-    pub fn new(
+    pub const fn new(
         stage: StageSlugView,
         bundle: BundleDigest,
-        part: &SteeringPart<'_>,
+        part: PartIndex,
+        parts: PartCount,
+        rules_content: Vec<RuleContent>,
         continue_token: ContinueToken,
     ) -> LoadSteeringDirective {
         LoadSteeringDirective {
             stage,
             bundle,
-            part: part.index(),
-            parts: part.of(),
-            rules_content: part.chunk().to_vec(),
+            part,
+            parts,
+            rules_content,
             continue_token,
         }
     }
@@ -150,7 +153,9 @@ mod tests {
         let part = LoadSteeringDirective::new(
             slug(),
             BundleDigest::new("sha256:bbbb"),
-            &first,
+            first.index(),
+            first.of(),
+            first.chunk().to_vec(),
             pinned.clone(),
         );
         assert_eq!(part.stage().as_str(), "requirements-analysis");

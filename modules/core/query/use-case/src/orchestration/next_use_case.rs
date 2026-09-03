@@ -1167,7 +1167,9 @@ pub(crate) fn emit_part(
     Directive::LoadSteering(LoadSteeringDirective::new(
         run_stage.stage().clone(),
         bindings.bundle().clone(),
-        part,
+        part.index(),
+        part.of(),
+        part.chunk().to_vec(),
         builder.build(),
     ))
 }

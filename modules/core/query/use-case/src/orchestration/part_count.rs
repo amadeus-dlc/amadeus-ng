@@ -16,9 +16,10 @@ pub struct PartCount(u32);
 impl PartCount {
     /// 数え上げ済みの総数を包む。
     ///
-    /// 数えるのは配信計画だけなので `pub(super)` に留める。
+    /// 数えるのは RMU (`read_steering_plan.part_count`) であり、ここへ来るのはその行の値
+    /// である — 数え直さない。
     #[must_use]
-    pub(super) const fn new(count: u32) -> PartCount {
+    pub const fn new(count: u32) -> PartCount {
         PartCount(count)
     }
 
