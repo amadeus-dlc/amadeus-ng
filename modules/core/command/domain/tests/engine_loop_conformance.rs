@@ -312,13 +312,10 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             }
             // 遷移コマンド (decide → 1 イベント → apply)
             "report_forward" => {
-                // 非ゲート (initialization) は complete_stage、ゲートは approve_gate (BR1.3)。
-                let cursor = agg.cursor();
-                if agg.gated(&intent, cursor) == Some(true) {
-                    agg.approve_gate(&intent, None, at()).unwrap();
-                } else {
-                    agg.complete_stage(&intent, at()).unwrap();
-                }
+                // 前進はゲート承認だけである (BR1.3)。誕生が initialization を完了済みにする
+                // (b34) ので、カーソルは常にゲート付きステージに立つ — 非ゲート完了の
+                // コマンドは b42 で撤去した (#85 = A)。
+                agg.approve_gate(&intent, None, at()).unwrap();
                 assert_directive(m, "DDone", i);
             }
             "report_awaiting_approval" => {

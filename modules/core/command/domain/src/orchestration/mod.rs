@@ -3,7 +3,7 @@
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
-//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (12 コマンド) は
+//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (10 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
 //! 再構成は `replay` (ジャーナル全再生 — 先頭は `Started`) であり、memento 型は持たない
@@ -12,7 +12,6 @@
 //! | コマンド | イベント |
 //! |---|---|
 //! | `start` | `Started` (解決済み計画を自己完結で持つ) |
-//! | `complete_stage` | `StageCompleted` |
 //! | `open_gate` | `GateOpened` |
 //! | `approve_gate` | `GateApproved` |
 //! | `reject_gate` | `GateRejected` |
@@ -33,7 +32,9 @@
 //!
 //! `gated(s) = stages[s].phase != initialization`。索引 0 の特別扱いはしない — 出荷グラフの
 //! initialization は 3 ステージ (`workspace-scaffold` / `workspace-detection` / `state-init`) あり、
-//! そのいずれも承認ゲートを持たない。非ゲートは `complete_stage`、ゲートは `approve_gate` で完了する。
+//! そのいずれも承認ゲートを持たない。誕生がその 3 段を完了済みにしてカーソルを最初の実ステージへ
+//! 立てる (b34) ので、ステージの完了は `approve_gate` だけが行う — 非ゲート完了のコマンドと
+//! イベントは b42 で撤去した (#85 = A。撤去した名前は仕様 10-orchestration.md が持つ)。
 //!
 //! # Quint モデルとの射影 (BR2.5)
 //!
@@ -129,12 +130,12 @@ pub use next_decision::NextDecision;
 pub use next_request::NextRequest;
 pub use state_binding::StateBinding;
 
-// ドメインイベント (C5 の語彙 — 12 変種)。輸送のメタデータ (識別子・通番・発生時刻・
+// ドメインイベント (C5 の語彙 — 11 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
 // (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
 pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageCompleted, StageRevised, StageSkipped, Started, Unparked,
+    Recomposed, StageRevised, StageSkipped, Started, Unparked,
 };
 // intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
 // `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。

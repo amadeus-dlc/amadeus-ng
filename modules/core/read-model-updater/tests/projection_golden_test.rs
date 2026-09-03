@@ -34,9 +34,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
     Created, GateApproved, GateOpened, GateRejected, Intent, IntentEventId, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    StageCompleted, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started,
-    Unparked, WorkspaceScan,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageDisplay,
+    StageEntry, StageRevised, StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -349,23 +348,9 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
     );
 }
 
-#[test]
-fn completing_an_ungated_stage_writes_its_own_details_wording() {
-    // 非ゲートの完了は `Stage <表示名> completed`、ゲート経由は `Stage <表示名> approved by
-    // gate` で文言が割れる（`cli/report/completed-ungated` と `cli/report/approved` の実バイト）。
-    // `- **Active Agent**:` はハンクの外（値が変わらないため差分に写らない）なので補う。
-    // 補った値 `orchestrator` は同じ採取列の `cli/jump/execute-backward` の後断片が示す実値で
-    // あり、投影が次ステージ workspace-detection の担当を書き直した結果と一致するかで検証される。
-    assert_case_with_context(
-        "report/completed-ungated",
-        IntentExecutionEvent::StageCompleted(StageCompleted::new(
-            event_id(),
-            execution_id(),
-            slug("workspace-scaffold"),
-        )),
-        "- **Active Agent**: orchestrator\n",
-    );
-}
+// `tests/golden/upstream-3c3146cf/cli/report/completed-ungated/` には参照テストが無い —
+// 非ゲート完了の投影 (`Stage <表示名> completed` の逐語) は b42 で撤去した (#85 = A)。
+// フィクスチャ自体は upstream 実バイトの証拠なので残してある。
 
 #[test]
 fn skipping_a_stage_moves_on_without_touching_the_completed_count() {

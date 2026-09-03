@@ -48,7 +48,7 @@ use super::intent::Intent;
 use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageCompleted, StageRevised, StageSkipped, Started, Unparked,
+    Recomposed, StageRevised, StageSkipped, Started, Unparked,
 };
 use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
@@ -65,7 +65,7 @@ use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use crate::workspace::CheckboxState;
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_compact};
 
-/// 前進 (`complete_stage` / `approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
+/// 前進 (`approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
 ///
 /// これは**本集約が所有する遷移の前提集合** (I7 ゲート前提) であって、`CheckboxState` の一般分類
 /// (in-flight / finished / active) ではない (tell-dont-ask.md「集約所有の前提集合」)。
@@ -569,8 +569,12 @@ impl IntentExecution {
         }
     }
 
-    fn require_gated(&self, stage: StageIndex, gated: bool) -> Result<(), CommandError> {
-        if self.is_gated(stage) == gated {
+    /// ゲート付きステージであることを要求する。
+    ///
+    /// 非ゲート側の要求は b42 で消えた (#85 = A) — 非ゲート完了のコマンドを撤去したので、
+    /// 「非ゲートであること」を要求する呼出が存在しなくなったためである。
+    fn require_gated(&self, stage: StageIndex) -> Result<(), CommandError> {
+        if self.is_gated(stage) {
             Ok(())
         } else {
             Err(CommandError::InvalidTarget(stage))
@@ -610,7 +614,7 @@ impl IntentExecution {
         IntentExecutionEventId::generate()
     }
 
-    // ---- W2: decide (11 コマンド、1 コマンド 1 イベント) ----
+    // ---- W2: decide (10 コマンド、1 コマンド 1 イベント) ----
     //
     // 以下のコマンドはすべて `Result<IntentExecutionEvent, CommandError>` を返す —
     // 「集約の `&mut self` コマンドは必ず単一のドメインイベントを戻り値で返す」という規則
@@ -621,28 +625,6 @@ impl IntentExecution {
     //
     // 計画が要るコマンドは `&Intent` を引数で受け取り、入口で取り違えを照合する
     // (coding-rules/aggregate-references.md)。
-
-    /// 非ゲート (initialization フェーズ) ステージの完了 — `StageCompleted`。
-    ///
-    /// # Errors
-    ///
-    /// 非受理 (`NotRunning`)、ゲート付きステージでの呼出 (`InvalidTarget`)、checkbox 前提違反
-    /// (`CheckboxPrecondition`) を拒否する。
-    pub fn complete_stage(
-        &mut self,
-        intent: &Intent,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running_for(intent)?;
-        self.require_gated(stage, false)?;
-        self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
-        let material = StageCompleted::new(
-            IntentExecution::next_event_id(),
-            self.id.clone(),
-            self.slug_of(stage)?,
-        );
-        self.commit(IntentExecutionEvent::StageCompleted(material), occurred_at)
-    }
 
     /// 承認ゲートの開放 — `GateOpened`。`artifacts` は呼出側が渡す投影材料 (C5)。
     ///
@@ -657,7 +639,7 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(stage, true)?;
+        self.require_gated(stage)?;
         self.require_checkbox(stage, &[CheckboxState::InProgress])?;
         let material = GateOpened::new(
             IntentExecution::next_event_id(),
@@ -685,7 +667,7 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(stage, true)?;
+        self.require_gated(stage)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let material = GateApproved::new(
             IntentExecution::next_event_id(),
@@ -708,7 +690,7 @@ impl IntentExecution {
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
-        self.require_gated(stage, true)?;
+        self.require_gated(stage)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
         let material = GateRejected::new(
             IntentExecution::next_event_id(),
@@ -963,7 +945,7 @@ impl IntentExecution {
         *self = next;
     }
 
-    /// 12 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
+    /// 11 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
     fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
@@ -971,11 +953,6 @@ impl IntentExecution {
                 return Err(ApplyError::InvariantViolation(
                     "Started applies only at genesis".to_string(),
                 ));
-            }
-            IntentExecutionEvent::StageCompleted(completed) => {
-                let stage = self.resolve(completed.stage())?;
-                self.mark_stage(stage, CheckboxState::Completed);
-                self.advance_from(stage);
             }
             IntentExecutionEvent::GateOpened(opened) => {
                 let stage = self.resolve(opened.stage())?;
@@ -1394,8 +1371,8 @@ mod tests {
     }
     use crate::orchestration::{
         AutonomyMode, CommandError, Created, Intent, IntentError, IntentEvent,
-        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, StageCompleted,
-        StageDisplay, StageEntry, StageIndex, StartRequest, Started, Status, WorkspaceScan,
+        IntentExecutionEvent, IntentExecutionId, IntentId, JumpDirection, StageDisplay, StageEntry,
+        StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::orchestration::{EngineSignal, NextDecision, NextRequest};
     use crate::workflow_definition::{
@@ -1476,13 +1453,6 @@ mod tests {
 
         fn gated(&self, stage: StageIndex) -> Option<bool> {
             self.execution.gated(&self.intent, stage)
-        }
-
-        fn complete_stage(
-            &mut self,
-            occurred_at: DateTime<Utc>,
-        ) -> Result<IntentExecutionEvent, CommandError> {
-            self.execution.complete_stage(&self.intent, occurred_at)
         }
 
         fn open_gate(
@@ -1683,40 +1653,6 @@ mod tests {
             ),
             occurred(),
         )))
-    }
-
-    /// カーソルが initialization 上で in-progress の状態を直接組む。
-    ///
-    /// b34 (誕生 = 初期化完了済み) 以降、この配置は**誕生からは到達不能**である — 誕生が
-    /// initialization を completed にし、カーソルを最初の実ステージへ立てるため。それでも
-    /// `complete_stage` 本体と `StageCompleted` の適用腕は、upstream 自身も持つ「実行時
-    /// 到達不能の一般分岐」の鏡として存置されており (b34 裁定)、その検証にはこの状態が要る。
-    /// 歴史からは構成不能だが**復号上は valid** なので、検査付きの完全コンストラクタが受け付ける。
-    fn at_initialization_cursor(init: usize, actions: &[PlanAction], conditional: &[bool]) -> Run {
-        let born = start_with(init, actions, conditional);
-        let count = actions.len();
-        let mut checkbox = vec![Pending; count];
-        checkbox[0] = InProgress;
-        let execution = IntentExecution::new(
-            born.id().clone(),
-            born.intent_id().clone(),
-            born.stage_keys().to_vec(),
-            actions.to_vec(),
-            checkbox,
-            0,
-            Status::Running,
-            None,
-            AutonomyMode::Gated,
-            vec![false; count],
-            vec![0; count],
-            1,
-            occurred(),
-        )
-        .unwrap();
-        Run {
-            intent: born.intent,
-            execution,
-        }
     }
 
     /// フェーズと実効プランを名指しした合成計画で開始する (フェーズ境界の導出を見るテスト用)。
@@ -2053,7 +1989,7 @@ mod tests {
         let mut w = all_exec(3);
         assert_eq!(
             w.execution
-                .complete_stage(&foreign_plan(3), occurred())
+                .approve_gate(&foreign_plan(3), None, occurred())
                 .unwrap_err(),
             CommandError::IntentMismatch
         );
@@ -2068,7 +2004,7 @@ mod tests {
         assert_eq!(shorter.id(), w.intent_id(), "識別子は一致している前提");
         assert_eq!(
             w.execution
-                .complete_stage(&shorter, occurred())
+                .approve_gate(&shorter, None, occurred())
                 .unwrap_err(),
             CommandError::IntentMismatch
         );
@@ -2143,7 +2079,7 @@ mod tests {
         );
     }
 
-    // ---- W2: 12 コマンド (BR1.0〜BR1.9) ----
+    // ---- W2: 11 コマンド (BR1.0〜BR1.9) ----
 
     #[test]
     fn a_gated_stage_cannot_complete_without_passing_through_approval() {
@@ -2153,16 +2089,6 @@ mod tests {
         w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.approved(at(&w, 1)), Some(true));
         assert_eq!(w.checkbox(at(&w, 1)), Some(Completed));
-    }
-
-    #[test]
-    fn complete_stage_is_refused_on_a_gated_stage() {
-        let mut w = all_exec(3);
-        let target = at(&w, 1);
-        assert_eq!(
-            w.complete_stage(occurred()),
-            Err(CommandError::InvalidTarget(target))
-        );
     }
 
     #[test]
@@ -2346,7 +2272,6 @@ mod tests {
         let mut w = all_exec(4);
         w.park(occurred()).unwrap();
         let target = at(&w, 2);
-        assert_eq!(w.complete_stage(occurred()), Err(CommandError::NotRunning));
         assert_eq!(
             w.open_gate(Vec::new(), occurred()),
             Err(CommandError::NotRunning)
@@ -2455,7 +2380,10 @@ mod tests {
         w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.status(), Status::Completed);
         assert!(!w.accepts_commands());
-        assert_eq!(w.complete_stage(occurred()), Err(CommandError::NotRunning));
+        assert_eq!(
+            w.approve_gate(None, occurred()),
+            Err(CommandError::NotRunning)
+        );
     }
 
     // ---- BR1.9: stale_report ----
@@ -2480,10 +2408,11 @@ mod tests {
     fn apply_event_crashes_on_a_sequence_gap() {
         // 通番の飛びは壊れた歴史 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)。
         let mut w = all_exec(3);
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        let event = IntentExecutionEvent::GateApproved(GateApproved::new(
             execution_event_id(),
             execution_id(),
-            slug(0),
+            slug(1),
+            None,
         ));
         w.apply_event(9, occurred(), &event);
     }
@@ -2498,10 +2427,11 @@ mod tests {
             intent: base.intent,
             execution: base.execution.with_seq_nr(usize::MAX),
         };
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        let event = IntentExecutionEvent::GateApproved(GateApproved::new(
             execution_event_id(),
             execution_id(),
-            slug(0),
+            slug(1),
+            None,
         ));
         w.apply_event(1, occurred(), &event);
     }
@@ -2527,25 +2457,47 @@ mod tests {
     fn apply_event_crashes_on_an_unknown_stage() {
         let mut w = all_exec(3);
         let unknown = StageSlug::parse("no-such-stage").unwrap();
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        let event = IntentExecutionEvent::GateApproved(GateApproved::new(
             execution_event_id(),
             execution_id(),
             unknown,
+            None,
         ));
         w.apply_event(2, occurred(), &event);
     }
 
     #[test]
-    #[should_panic(expected = "apply_event: invariant violated")]
-    fn apply_event_crashes_on_an_event_that_breaks_an_invariant() {
-        let mut w = all_exec(3);
-        // ゲート付きステージを承認なしで completed にすると no_gate_bypass が破れる。
-        let event = IntentExecutionEvent::StageCompleted(StageCompleted::new(
-            execution_event_id(),
-            execution_id(),
-            slug(1),
-        ));
-        w.apply_event(2, occurred(), &event);
+    fn a_gated_stage_completed_without_approval_is_refused_by_the_invariants() {
+        // no_gate_bypass — ゲート付きステージの completed は必ず承認履歴を伴う。b42 で
+        // 非ゲート完了イベントを撤去したので、この違反を運べるイベントはもう存在しない
+        // (承認を伴わずに completed へ落とす腕が無い)。検査そのものは完全コンストラクタが
+        // 復号境界で持ち続けるので、そちらで固定する。
+        let born = all_exec(3);
+        let count = born.stage_count();
+        let mut checkbox = vec![Pending; count];
+        // 索引 0 は initialization (誕生で completed)。索引 1 はゲート付き。
+        checkbox[0] = Completed;
+        checkbox[1] = Completed;
+        let error = IntentExecution::new(
+            born.id().clone(),
+            born.intent_id().clone(),
+            born.stage_keys().to_vec(),
+            vec![Execute; count],
+            checkbox,
+            1,
+            Status::Running,
+            None,
+            AutonomyMode::Gated,
+            vec![false; count],
+            vec![0; count],
+            1,
+            occurred(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid intent execution: invariant: no_gate_bypass at stage 1"
+        );
     }
 
     #[test]
@@ -2559,18 +2511,6 @@ mod tests {
             w.stages().to_vec(),
         ));
         w.apply_event(2, occurred(), &event);
-    }
-
-    #[test]
-    fn a_command_equals_the_old_state_plus_its_event() {
-        // 誕生からは到達不能 — b34 裁定で存置した分岐 (`complete_stage` / `StageCompleted` の
-        // 適用腕) の検証。歴史からは構成不能だが復号上は valid な状態を直接組む。
-        let mut w = at_initialization_cursor(1, &[Execute; 4], &[false; 4]);
-        let before = w.clone();
-        let event = w.complete_stage(occurred()).unwrap();
-        let mut replayed = before;
-        replayed.apply_event(w.seq_nr(), *w.last_updated_at(), &event);
-        assert_eq!(replayed, w);
     }
 
     #[test]
@@ -2920,34 +2860,23 @@ mod tests {
 
     #[test]
     fn every_initialization_stage_is_non_gated_and_the_rest_are_gated() {
-        // 誕生からは到達不能 — b34 裁定で存置した分岐 (`complete_stage` 本体と非ゲート完了の
-        // 前進) の検証。歴史からは構成不能だが復号上は valid な状態を直接組み、initialization
-        // を 1 段ずつ踏破する。ゲート判定そのものは誕生状態でも同じである。
-        let mut w = at_initialization_cursor(3, &[Execute; 6], &[false; 6]);
+        // 誕生は initialization 3 段を completed にし、カーソルを最初の実ステージ (索引 3)
+        // へ立てる (b34)。ゲート判定は計画から決まるので、誕生状態のまま全段を問える。
+        let mut w = start_with(3, &[Execute; 6], &[false; 6]);
         for i in 0..3 {
             assert_eq!(w.gated(at(&w, i)), Some(false), "stage {i}");
+            assert_eq!(w.checkbox(at(&w, i)), Some(Completed), "stage {i}");
+            assert_eq!(
+                w.approved(at(&w, i)),
+                Some(false),
+                "非ゲートの完了は承認履歴を伴わない"
+            );
         }
         for i in 3..6 {
             assert_eq!(w.gated(at(&w, i)), Some(true), "stage {i}");
         }
-        // 索引 0〜2 は complete_stage で進み、open_gate は拒否される。
-        for i in 0..3 {
-            let cursor = at(&w, i);
-            assert_eq!(w.cursor(), cursor);
-            assert_eq!(
-                w.open_gate(Vec::new(), occurred()),
-                Err(CommandError::InvalidTarget(cursor))
-            );
-            w.complete_stage(occurred()).unwrap();
-            assert_eq!(w.approved(cursor), Some(false));
-        }
-        // 索引 3 以降はゲート — complete_stage は拒否される。
-        let cursor = at(&w, 3);
-        assert_eq!(w.cursor(), cursor);
-        assert_eq!(
-            w.complete_stage(occurred()),
-            Err(CommandError::InvalidTarget(cursor))
-        );
+        // カーソルは最初のゲート付きステージ。initialization へは跳べない。
+        assert_eq!(w.cursor(), at(&w, 3));
         let init_target = at(&w, 1);
         assert_eq!(
             w.jump(init_target, occurred()),
@@ -3219,7 +3148,6 @@ mod tests {
 
     #[derive(Debug, Clone)]
     enum Cmd {
-        Complete,
         OpenGate,
         Approve,
         Reject,
@@ -3235,7 +3163,6 @@ mod tests {
 
     fn cmd_strategy(n: usize) -> impl Strategy<Value = Cmd> {
         prop_oneof![
-            Just(Cmd::Complete),
             Just(Cmd::OpenGate),
             Just(Cmd::Approve),
             Just(Cmd::Reject),
@@ -3309,7 +3236,6 @@ mod tests {
     fn drive(w: &mut Run, cmd: &Cmd) -> Option<IntentExecutionEvent> {
         let before = w.clone();
         let outcome = match cmd {
-            Cmd::Complete => w.complete_stage(occurred()),
             Cmd::OpenGate => w.open_gate(Vec::new(), occurred()),
             Cmd::Approve => w.approve_gate(None, occurred()),
             Cmd::Reject => w.reject_gate(None, occurred()),

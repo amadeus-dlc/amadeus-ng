@@ -15,8 +15,7 @@
 mod support;
 
 use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
-    StageCompleted,
+    GateApproved, IntentExecution, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
@@ -75,7 +74,7 @@ impl Fixture {
 /// genesis + 2 コマンドを書き、最後の再水和結果を返す。
 ///
 /// 誕生 = 初期化完了済み (issue #76) なので、カーソルは genesis の時点で索引 1 の
-/// ゲート付きステージに立っている。かつての 2 手 (`complete_stage` → `open_gate`) は
+/// ゲート付きステージに立っている。かつての 2 手 (非ゲート完了 → `open_gate`) は
 /// その位置から打てる 2 手 (`open_gate` → `approve_gate`) に置き換わった — 行数
 /// (genesis + 2 = 3) は変わらないので、差分再生の経路もこれまでと同じ長さで通る。
 async fn seed(repository: &mut Repository) -> IntentExecution {
@@ -322,11 +321,12 @@ async fn a_delta_row_whose_payload_names_another_execution_is_corrupt() {
         IntentExecutionAggregateKeyDto::of(&execution_id()),
         2,
         at(),
-        IntentExecutionEventDto::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        IntentExecutionEventDto::of(&IntentExecutionEvent::GateApproved(GateApproved::new(
             IntentExecutionEventId::generate(),
             // payload は**別の実行**を名乗る。
             IntentExecutionId::parse("018f3b2c-4d5e-7f60-8abc-def012345678").expect("UUIDv7"),
             StageSlug::parse("state-init").expect("文法内の slug"),
+            None,
         ))),
     )
     .with_manifest(MANIFEST);
@@ -367,10 +367,11 @@ async fn a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction
         IntentExecutionAggregateKeyDto::of(&execution_id()),
         2,
         at(),
-        IntentExecutionEventDto::of(&IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        IntentExecutionEventDto::of(&IntentExecutionEvent::GateApproved(GateApproved::new(
             IntentExecutionEventId::generate(),
             execution_id(),
             StageSlug::parse("no-such-stage").expect("文法内の slug"),
+            None,
         ))),
     )
     .with_manifest(MANIFEST);

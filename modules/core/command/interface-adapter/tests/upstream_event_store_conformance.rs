@@ -347,9 +347,9 @@ mod conformance {
         // 2. スナップショット同時更新 — 本家が version を 1 つ進める。
         //
         // 誕生 = 初期化完了済み (issue #76) なので、カーソルは genesis の時点で索引 1 の
-        // ゲート付きステージに立っている。かつてここで打っていた `complete_stage` は
-        // 構成不能になったため、同じ位置から打てる `open_gate` に置き換えた — ストア
-        // 操作の並び (create → 写し同時更新 → イベントのみ → 写し同時更新) は変えない。
+        // ゲート付きステージに立っている。かつてここで打っていた非ゲート完了は構成不能に
+        // なったため、同じ位置から打てる `open_gate` に置き換えた — ストア操作の並び
+        // (create → 写し同時更新 → イベントのみ → 写し同時更新) は変えない。
         let mut aggregate = restored.aggregate;
         let opened = aggregate
             .open_gate(&intent(), vec!["docs/x.md".to_string()], at(1))

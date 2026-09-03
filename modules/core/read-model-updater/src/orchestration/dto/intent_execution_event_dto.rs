@@ -1,4 +1,4 @@
-//! ドメインイベント 12 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
+//! ドメインイベント 11 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -24,7 +24,6 @@ use super::gate_rejected_dto::GateRejectedDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
-use super::stage_completed_dto::StageCompletedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
@@ -35,8 +34,6 @@ use super::unparked_dto::UnparkedDto;
 pub enum IntentExecutionEventDto {
     /// 実行の開始 (解決済み計画を自己完結で持つ)。
     Started(StartedDto),
-    /// 非ゲートステージの完了。
-    StageCompleted(StageCompletedDto),
     /// 承認ゲートの開放。
     GateOpened(GateOpenedDto),
     /// 承認ゲートの通過。
@@ -99,9 +96,6 @@ impl IntentExecutionEventDto {
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto::of(payload))
             }
-            IntentExecutionEvent::StageCompleted(payload) => {
-                IntentExecutionEventDto::StageCompleted(StageCompletedDto::of(payload))
-            }
             IntentExecutionEvent::GateOpened(payload) => {
                 IntentExecutionEventDto::GateOpened(GateOpenedDto::of(payload))
             }
@@ -144,9 +138,6 @@ impl IntentExecutionEventDto {
         Ok(match self {
             IntentExecutionEventDto::Started(payload) => {
                 IntentExecutionEvent::Started(payload.to_domain()?)
-            }
-            IntentExecutionEventDto::StageCompleted(payload) => {
-                IntentExecutionEvent::StageCompleted(payload.to_domain()?)
             }
             IntentExecutionEventDto::GateOpened(payload) => {
                 IntentExecutionEvent::GateOpened(payload.to_domain()?)

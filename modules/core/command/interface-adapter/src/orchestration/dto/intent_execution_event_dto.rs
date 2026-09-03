@@ -1,4 +1,4 @@
-//! ドメインイベント 12 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
+//! ドメインイベント 11 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -8,8 +8,8 @@
 
 use core_command_domain::orchestration::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    StageCompleted, StageEntry, StageRevised, StageSkipped, Started, Unparked,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageEntry,
+    StageRevised, StageSkipped, Started, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,6 @@ use super::intent_dto::StageEntryDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
-use super::stage_completed_dto::StageCompletedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
@@ -35,8 +34,6 @@ use super::unparked_dto::UnparkedDto;
 pub enum IntentExecutionEventDto {
     /// 実行の開始 (事実の主体 = intent の識別子だけ — issue #56)。
     Started(StartedDto),
-    /// 非ゲートステージの完了。
-    StageCompleted(StageCompletedDto),
     /// 承認ゲートの開放。
     GateOpened(GateOpenedDto),
     /// 承認ゲートの通過。
@@ -95,13 +92,6 @@ impl IntentExecutionEventDto {
                     aggregate_id: payload.aggregate_id().as_str().to_string(),
                     intent_id: payload.intent_id().as_str().to_string(),
                     stages: payload.stages().iter().map(StageEntryDto::of).collect(),
-                })
-            }
-            IntentExecutionEvent::StageCompleted(payload) => {
-                IntentExecutionEventDto::StageCompleted(StageCompletedDto {
-                    id: payload.id().as_str().to_string(),
-                    aggregate_id: payload.aggregate_id().as_str().to_string(),
-                    stage: slug_spelling(payload.stage()),
                 })
             }
             IntentExecutionEvent::GateOpened(payload) => {
@@ -200,13 +190,6 @@ impl IntentExecutionEventDto {
                     IntentId::parse(&payload.intent_id)
                         .map_err(|_| DtoDecodeError::malformed("intent_id", &payload.intent_id))?,
                     stages,
-                ))
-            }
-            IntentExecutionEventDto::StageCompleted(payload) => {
-                IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                    event_id_of(&payload.id)?,
-                    aggregate_id_of(&payload.aggregate_id)?,
-                    slug_of(&payload.stage, "stage")?,
                 ))
             }
             IntentExecutionEventDto::GateOpened(payload) => {

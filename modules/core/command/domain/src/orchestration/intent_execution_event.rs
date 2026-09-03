@@ -1,4 +1,4 @@
-//! `IntentExecutionEvent` — 12 変種のドメインイベント (C5、entities.md)。
+//! `IntentExecutionEvent` — 11 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -32,7 +32,6 @@ mod gate_rejected;
 mod jumped;
 mod parked;
 mod recomposed;
-mod stage_completed;
 mod stage_revised;
 mod stage_skipped;
 mod started;
@@ -45,13 +44,12 @@ pub use gate_rejected::GateRejected;
 pub use jumped::Jumped;
 pub use parked::Parked;
 pub use recomposed::Recomposed;
-pub use stage_completed::StageCompleted;
 pub use stage_revised::StageRevised;
 pub use stage_skipped::StageSkipped;
 pub use started::Started;
 pub use unparked::Unparked;
 
-/// 12 変種のドメインイベント (C5 の 11 + `StageCompleted`)。
+/// 11 変種のドメインイベント (C5)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。
@@ -72,8 +70,6 @@ pub use unparked::Unparked;
 pub enum IntentExecutionEvent {
     /// 実行の開始。
     Started(Started),
-    /// 非ゲート (initialization フェーズ) ステージの完了。
-    StageCompleted(StageCompleted),
     /// 承認ゲートの開放。
     GateOpened(GateOpened),
     /// 承認ゲートの通過。
@@ -102,7 +98,6 @@ impl IntentExecutionEvent {
     pub const fn id(&self) -> &IntentExecutionEventId {
         match self {
             IntentExecutionEvent::Started(payload) => payload.id(),
-            IntentExecutionEvent::StageCompleted(payload) => payload.id(),
             IntentExecutionEvent::GateOpened(payload) => payload.id(),
             IntentExecutionEvent::GateApproved(payload) => payload.id(),
             IntentExecutionEvent::GateRejected(payload) => payload.id(),
@@ -123,7 +118,6 @@ impl IntentExecutionEvent {
     pub const fn aggregate_id(&self) -> &IntentExecutionId {
         match self {
             IntentExecutionEvent::Started(payload) => payload.aggregate_id(),
-            IntentExecutionEvent::StageCompleted(payload) => payload.aggregate_id(),
             IntentExecutionEvent::GateOpened(payload) => payload.aggregate_id(),
             IntentExecutionEvent::GateApproved(payload) => payload.aggregate_id(),
             IntentExecutionEvent::GateRejected(payload) => payload.aggregate_id(),
@@ -186,15 +180,10 @@ mod tests {
         )
     }
 
-    /// 12 変種を 1 つずつ (同じ id / aggregate_id で組む)。
+    /// 11 変種を 1 つずつ (同じ id / aggregate_id で組む)。
     fn every_variant() -> Vec<IntentExecutionEvent> {
         vec![
             IntentExecutionEvent::Started(started()),
-            IntentExecutionEvent::StageCompleted(StageCompleted::new(
-                evid(),
-                agg(),
-                slug("state-init"),
-            )),
             IntentExecutionEvent::GateOpened(GateOpened::new(
                 evid(),
                 agg(),
@@ -263,9 +252,6 @@ mod tests {
 
     #[test]
     fn the_stage_lifecycle_payloads_carry_their_slugs_and_material() {
-        let completed = StageCompleted::new(evid(), agg(), slug("state-init"));
-        assert_eq!(completed.stage(), &slug("state-init"));
-
         let opened = GateOpened::new(
             evid(),
             agg(),
@@ -360,13 +346,12 @@ mod tests {
     }
 
     #[test]
-    fn the_twelve_variants_are_matched_exhaustively() {
+    fn the_eleven_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
         const fn name(payload: &IntentExecutionEvent) -> &'static str {
             match payload {
                 IntentExecutionEvent::Started(_) => "Started",
-                IntentExecutionEvent::StageCompleted(_) => "StageCompleted",
                 IntentExecutionEvent::GateOpened(_) => "GateOpened",
                 IntentExecutionEvent::GateApproved(_) => "GateApproved",
                 IntentExecutionEvent::GateRejected(_) => "GateRejected",
@@ -381,7 +366,6 @@ mod tests {
         }
         let expected = [
             "Started",
-            "StageCompleted",
             "GateOpened",
             "GateApproved",
             "GateRejected",
@@ -396,6 +380,6 @@ mod tests {
         let named: Vec<&'static str> = every_variant().iter().map(name).collect();
         assert_eq!(named, expected);
         let distinct: HashSet<&'static str> = named.iter().copied().collect();
-        assert_eq!(distinct.len(), 12);
+        assert_eq!(distinct.len(), 11);
     }
 }

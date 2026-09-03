@@ -501,8 +501,8 @@ mod tests {
 
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        Created, Intent, IntentEventId, IntentExecutionEventId, IntentId, StageCompleted,
-        StageEntry, StartRequest,
+        Created, GateApproved, Intent, IntentEventId, IntentExecutionEventId, IntentId, StageEntry,
+        StartRequest,
     };
     use core_command_domain::workflow_definition::{
         DefinitionRevision, PhaseId, PlanAction, StageSlug, WorkflowDefinitionId,
@@ -638,10 +638,11 @@ mod tests {
         // 以前のジャーナル行は読取に影響しない。genesis の行が偽イベントでも、原子的に書かれた
         // スナップショットが正しければ再水和は genesis の状態を返す (issue #44)。
         let (aggregate, _) = genesis();
-        let impostor = IntentExecutionEvent::StageCompleted(StageCompleted::new(
+        let impostor = IntentExecutionEvent::GateApproved(GateApproved::new(
             IntentExecutionEventId::generate(),
             intent(),
             StageSlug::parse("state-init").expect("slug"),
+            None,
         ));
         let mut intent_execution_repository = intent_execution_repository();
         intent_execution_repository
