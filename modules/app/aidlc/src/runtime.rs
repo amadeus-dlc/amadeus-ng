@@ -151,14 +151,22 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
     }
 }
 
-/// `next` — リードモデルを追いつかせてから構造化リードモデルを引く。
+/// `next` — 初回だけ定義を準備し、リードモデルを追いつかせてから構造化面を引く。
 async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u8>), String> {
-    catch_up_before_reading(layout).await;
     // 鍵は `next` だけが鋳造する（I8 の例外 1 — steering MAC キー）。
     let key = SteeringKey::resolve(layout.project_dir(), layout.record_dir());
     let bytes = key
         .mint_for_next()
         .map_err(|error| key_wording(&key, &error))?;
+
+    // 配布物やストアを読まなくても答えが決まる拒否・ユーティリティは、初回準備より先に返す。
+    if let Some(directive) = turn::pre_guard(&input) {
+        return Ok((directive, bytes));
+    }
+    if layout.record_dir().is_none() {
+        prepare_definition_for_first_read(layout).await?;
+    }
+    catch_up_before_reading(layout).await;
     Ok((turn::next(layout, &input), bytes))
 }
 
@@ -522,6 +530,38 @@ async fn ensure_defined(
     .execute(compiled_definition_id, definition_id, now)
     .await
     .map_err(|error| diagnose("cannot read the compiled definition", &error))
+}
+
+/// 最初の `next` が読む定義行を、intent の記録を作る前に用意する。
+///
+/// 書込ユースケースと RMU を起動するのは合成ルートの前処理であり、クエリ側ユースケースは
+/// 引き続き構造化リードモデルを読むだけである。intent が生まれる前は Markdown の投影先が
+/// 無いため、この時点では定義イベントから構造化面だけを描く。
+async fn prepare_definition_for_first_read(layout: &Layout) -> Result<(), String> {
+    let store = store_path(layout)?;
+    let workflow_definition_repository = WorkflowDefinitionRepositoryImpl::open(&store)
+        .map_err(|error| diagnose("cannot open the workflow definition repository", &error))?;
+    let definition_id =
+        definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    let compiled_definition_id =
+        compiled_definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    ensure_defined(
+        layout,
+        workflow_definition_repository,
+        &compiled_definition_id,
+        &definition_id,
+        Utc::now(),
+    )
+    .await?;
+
+    let projection =
+        ProjectionName::parse(PROJECTION).map_err(|error| format!("projection name: {error:?}"))?;
+    let mut journal_reader = JournalReaderImpl::open(&store)
+        .map_err(|error| diagnose("cannot open the definition journal", &error))?;
+    ReadModelUpdater::catch_up_structured(&mut journal_reader, &projection)
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("definition projection: {error}"))
 }
 
 fn build_request(scope: &str, args: &IntentCreateArgs, review: Option<&str>) -> StartRequest {
