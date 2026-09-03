@@ -8,7 +8,8 @@
 //! 所有者の判断を呼出側で代行する**濫用パターンだけを検出する。R3 はこの前段 — アクセサを
 //! 経由せず内部構造をそのまま公開する `pub` フィールドを禁じる。R4 はカプセル化の単位を
 //! ファイル構成で支える — 1 ファイル 1 公開型 (「モジュール private ≒ struct private」の
-//! 成立条件、abstract-data-type.md)。
+//! 成立条件、abstract-data-type.md)。R5 は CQRS の読取側の規律 — クエリ側 DAO の SQL が
+//! 1 文で 2 表以上を読んでいないか (1 表 1 引当、cqrs-boundaries.md 規則 6)。
 
 use std::collections::BTreeSet;
 
@@ -36,11 +37,24 @@ pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 /// 検出しない。深い `pub mod` の中の型は module-visibility 側の主題なので数えない。
 /// 公開型ゼロの自由関数モジュール (`codec.rs` 等) は正当。
 pub(crate) const RULE_ONE_PUBLIC_TYPE: &str = "one-public-type";
+/// R5: クエリ側 DAO の SQL が 1 文で 2 つ以上の `read_*` 表を読んでいる
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md` 規則 6 — DAO は 1 表 1 引当、
+/// オーナー裁定 2026-09-03)。
+///
+/// 検出境界: **クエリ側インターフェイスアダプタ** ([`QUERY_ADAPTER_SCOPE`]) の非テストコードに
+/// 限る。RMU (投影核) は 15 表を 1 バッチで差し替えるのが仕事なので射程外。検査するのは
+/// ソース上のリテラル SQL だけで、属性 (doc コメント) のリテラルは見ない — doc が「JOIN」と
+/// 書いただけで鳴らないようにするため。
+pub(crate) const RULE_DAO_SINGLE_TABLE: &str = "dao-single-table";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
 /// b32 の 1 ファイル 1 公開型分割で `checkbox.rs` から `checkbox_state.rs` へ移った
 /// (`CheckboxState` の自ファイル) のに追随している。
 const CHECKBOX_OWNER: &str = "modules/core/command/domain/src/workspace/checkbox_state.rs";
+
+/// R5 の射程。クエリ側の DAO 実装だけが「1 表 1 引当」の対象である
+/// (コマンド側・RMU・app は別の責務を持つ)。
+const QUERY_ADAPTER_SCOPE: &str = "modules/core/query/interface-adapter/src/";
 
 const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished / is_active) を使う。\
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
@@ -50,6 +64,8 @@ const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アク�
 const ONE_PUBLIC_TYPE_HELP: &str = "公開型ごとに型名の snake_case のファイルへ分け、\
 ファサード (mod.rs) の pub use で公開する — \
 aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)";
+const DAO_SINGLE_TABLE_HELP: &str = "表ごとに DAO を分け、FK はユースケースがたどる — \
+aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md (規則 6: DAO は 1 表 1 引当)";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +92,7 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     let file = syn::parse_file(source)?;
     let mut visitor = Visitor {
         checkbox_rule: !path.ends_with(CHECKBOX_OWNER),
+        dao_rule: path.starts_with(QUERY_ADAPTER_SCOPE),
         findings: Vec::new(),
     };
     visitor.visit_file(&file);
@@ -169,6 +186,7 @@ fn has_reason(rest: &str) -> bool {
 
 struct Visitor {
     checkbox_rule: bool,
+    dao_rule: bool,
     findings: Vec<Finding>,
 }
 
@@ -184,6 +202,21 @@ impl Visitor {
             ),
             help: CHECKBOX_HELP,
         });
+    }
+
+    /// R5: SQL テキスト 1 つ分を検査し、違反なら所見を積む。
+    fn check_dao_sql(&mut self, line: usize, sql: &str) {
+        if !self.dao_rule {
+            return;
+        }
+        if let Some(message) = dao_single_table_message(sql) {
+            self.findings.push(Finding {
+                rule: RULE_DAO_SINGLE_TABLE,
+                line,
+                message,
+                help: DAO_SINGLE_TABLE_HELP,
+            });
+        }
     }
 
     fn push_public_field(&mut self, line: usize, name: &str) {
@@ -214,6 +247,8 @@ impl<'ast> Visit<'ast> for Visitor {
     }
 
     /// R1 (a): `matches!` の引数トークン列に `CheckboxState::<Variant>` が 2 種類以上。
+    ///
+    /// R5 (b): `concat!` 1 呼出のリテラルを順に連結したものが 1 つの SQL テキスト。
     fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
         if self.checkbox_rule && path_ends_with_ident(&node.mac.path, "matches") {
             let mut variants = BTreeSet::new();
@@ -223,8 +258,37 @@ impl<'ast> Visit<'ast> for Visitor {
                 self.push_checkbox(line, &variants);
             }
         }
+        if self.dao_rule && path_ends_with_ident(&node.mac.path, "concat") {
+            let line = node.mac.path.span().start().line;
+            self.check_dao_sql(line, &concat_literals(&node.mac.tokens));
+        }
         syn::visit::visit_expr_macro(self, node);
     }
+
+    /// R5 (c): `macro_rules!` 本体に埋め込まれた `concat!`。マクロ定義の中身は未解析の
+    /// トークン列なので、`concat` `!` `(..)` の並びを直接探す。展開先 (`select_continuation!()`)
+    /// にはリテラルが無いので、同じ SQL を二重に数えることはない。
+    fn visit_item_macro(&mut self, node: &'ast syn::ItemMacro) {
+        if self.dao_rule {
+            let mut found = Vec::new();
+            collect_concat_sql_in_tokens(&node.mac.tokens, &mut found);
+            for (line, sql) in found {
+                self.check_dao_sql(line, &sql);
+            }
+        }
+        syn::visit::visit_item_macro(self, node);
+    }
+
+    /// R5 (a): 単独の文字列リテラル。
+    fn visit_lit_str(&mut self, node: &'ast syn::LitStr) {
+        self.check_dao_sql(node.span().start().line, &node.value());
+        syn::visit::visit_lit_str(self, node);
+    }
+
+    /// 属性のリテラルは走査しない。doc コメントは `#[doc = "..."]` になるので、
+    /// 「単独 SELECT でも JOIN でも同じ選択句を使える」と**説明した**だけの行が
+    /// R5 の所見になってしまうのを防ぐ。
+    fn visit_attribute(&mut self, _node: &'ast syn::Attribute) {}
 
     /// R1 (b): `match` 式の腕**パターン**に `CheckboxState` の変種が 2 種類以上。
     fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
@@ -260,6 +324,144 @@ impl<'ast> Visit<'ast> for Visitor {
             self.push_public_field(line, &name);
         }
         syn::visit::visit_item_struct(self, node);
+    }
+}
+
+/// R5 の判定本体 — SQL テキスト 1 つが「1 表 1 引当」に収まっているか。
+///
+/// `SELECT` を語として含まないテキストは SQL とみなさない (DDL・`DELETE` の全差し替え
+/// バッチ・普通の文字列は対象外)。違反の本則は**相異なる `read_*` 表が 2 つ以上**で、
+/// これが `JOIN` もカンマ結合も `UNION` も `EXISTS` も一様に捉える。`JOIN` の語と
+/// 副問合せ `(SELECT …)` は、表が 1 つしか綴られていない断片 (連結の一部) でも
+/// 掴まえるための補助であり、報告する理由を具体的にする役目も持つ。
+fn dao_single_table_message(sql: &str) -> Option<String> {
+    if !contains_word(sql, "select") {
+        return None;
+    }
+    let tables = read_table_names(sql);
+    let listed: Vec<String> = tables.iter().map(|name| format!("`{name}`")).collect();
+    let detail = if listed.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", listed.join(", "))
+    };
+    let rule = "1 表 1 引当 (cqrs-boundaries 規則 6、2026-09-03)";
+    if tables.len() >= 2 {
+        return Some(format!(
+            "DAO の SQL が {} 表を読んでいる{detail} — {rule}",
+            tables.len()
+        ));
+    }
+    if contains_word(sql, "join") {
+        return Some(format!("DAO の SQL に JOIN がある{detail} — {rule}"));
+    }
+    if has_subquery(sql) {
+        return Some(format!(
+            "DAO の SQL に副問合せ ((SELECT …)) がある{detail} — {rule}"
+        ));
+    }
+    None
+}
+
+/// SQL テキストに現れる `read_*` 表名 (重複を畳んだ集合)。
+///
+/// 識別子の連なりを取り出して `read_` で始まるものだけを拾う。列名は `read_` で始まらない
+/// ので (リードモデルの DDL 実測)、これで表だけが残る。
+fn read_table_names(sql: &str) -> BTreeSet<String> {
+    let lowered = sql.to_ascii_lowercase();
+    let mut names = BTreeSet::new();
+    let mut current = String::new();
+    for ch in lowered.chars() {
+        if is_ident_char(ch) {
+            current.push(ch);
+            continue;
+        }
+        push_read_table(&mut names, &current);
+        current.clear();
+    }
+    push_read_table(&mut names, &current);
+    names
+}
+
+fn push_read_table(names: &mut BTreeSet<String>, ident: &str) {
+    if let Some(suffix) = ident.strip_prefix("read_")
+        && !suffix.is_empty()
+    {
+        names.insert(ident.to_string());
+    }
+}
+
+/// 識別子の境界を守った語の検出 (大文字小文字を問わない)。`joined` は `join` に当たらない。
+fn contains_word(text: &str, word: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    lowered.match_indices(word).any(|(index, _)| {
+        let before = lowered[..index].chars().next_back();
+        let after = lowered[index + word.len()..].chars().next();
+        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
+    })
+}
+
+/// `(` の直後に語としての `select` が来る = 副問合せ (`EXISTS (SELECT …)` 等)。
+fn has_subquery(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    lowered.match_indices('(').any(|(index, _)| {
+        let rest = lowered[index + 1..].trim_start();
+        rest.strip_prefix("select")
+            .is_some_and(|after| !after.starts_with(is_ident_char))
+    })
+}
+
+fn is_ident_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+/// `concat!` の引数トークンから文字列リテラルだけを出現順に連結する。
+///
+/// リテラル以外 (入れ子のマクロ呼出・区切り) は素通しする — `run_stage_selection!()` の
+/// ように展開が要るものは読めないので、**読めた分だけ**で判定する。表を隠す方向へ
+/// 誤ることはあっても、無い表を見つけることはない。
+fn concat_literals(tokens: &TokenStream) -> String {
+    let mut text = String::new();
+    push_string_literals(tokens, &mut text);
+    text
+}
+
+fn push_string_literals(tokens: &TokenStream, out: &mut String) {
+    for tree in tokens.clone() {
+        match tree {
+            TokenTree::Literal(literal) => {
+                if let syn::Lit::Str(lit) = syn::Lit::new(literal) {
+                    out.push_str(&lit.value());
+                }
+            }
+            TokenTree::Group(group) => push_string_literals(&group.stream(), out),
+            _ => {}
+        }
+    }
+}
+
+/// トークン列から `concat` `!` `(..)` の並びを探し、(行, 連結後のテキスト) を集める。
+/// 見つけた `concat!` の引数は連結側に任せ、その中を再帰探索し直さない (二重計上の防止)。
+fn collect_concat_sql_in_tokens(tokens: &TokenStream, out: &mut Vec<(usize, String)>) {
+    let trees: Vec<TokenTree> = tokens.clone().into_iter().collect();
+    let mut index = 0usize;
+    while index < trees.len() {
+        if let (
+            Some(TokenTree::Ident(ident)),
+            Some(TokenTree::Punct(bang)),
+            Some(TokenTree::Group(group)),
+        ) = (trees.get(index), trees.get(index + 1), trees.get(index + 2))
+            && ident == "concat"
+            && bang.as_char() == '!'
+        {
+            out.push((ident.span().start().line, concat_literals(&group.stream())));
+            index += 3;
+            continue;
+        }
+        if let Some(TokenTree::Group(group)) = trees.get(index) {
+            collect_concat_sql_in_tokens(&group.stream(), out);
+        }
+        index += 1;
     }
 }
 
@@ -394,6 +596,14 @@ mod tests {
     const ADAPTER_PATH: &str = "modules/core/command/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs";
     const ADAPTER_TEST_PATH: &str =
         "modules/core/command/interface-adapter/tests/workflow_definition_repository_impl_test.rs";
+    /// R5 の射程 (クエリ側 DAO 実装)。
+    const QUERY_ADAPTER_PATH: &str =
+        "modules/core/query/interface-adapter/src/next_answer_dao_impl.rs";
+    /// 射程内だが `/tests/` を含むパス (is_test_path の免除を単独で確かめる)。
+    const QUERY_ADAPTER_TEST_PATH: &str =
+        "modules/core/query/interface-adapter/src/tests/dao_fixtures.rs";
+    /// 射程外 — RMU は 15 表を 1 バッチで差し替えるのが仕事。
+    const RMU_PATH: &str = "modules/core/read-model-updater/src/read_tables/sql.rs";
 
     fn check(path: &str, source: &str) -> Vec<Finding> {
         check_source(path, source).expect("テストのソースは構文解析できること")
@@ -1002,6 +1212,232 @@ pub struct Companion;
         assert_eq!(
             rules(&check(DOMAIN_PATH, bare)),
             vec![RULE_ONE_PUBLIC_TYPE],
+            "理由の無い裸の allow は抑制しない"
+        );
+    }
+
+    // ---- R5 赤例 (2026-09-03 裁定時に実在した 4 形) -------------------------
+
+    #[test]
+    fn r5_detects_a_join_in_a_plain_string_literal() {
+        // 実在形: execution_dao_impl.rs の SELECT_EXECUTION (read_execution × read_intent)。
+        let source = r#"
+//! `ExecutionDao` の実 Gateway — 実行の現在地を 2 表のキー結合で引く。
+
+/// `read_intent` は実行の `intent_id` を主キー `id` に当てて結合する (定義識別子を運ぶため)。
+const SELECT_EXECUTION: &str = "SELECT e.id, e.intent_id, i.definition_id, e.scope, \
+e.status, e.cursor_slug, e.parked_at_slug, e.parked_active, e.state_binding \
+FROM read_execution e \
+JOIN read_intent i ON i.id = e.intent_id \
+WHERE e.id = ?1";
+"#;
+        let findings = check(QUERY_ADAPTER_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_DAO_SINGLE_TABLE]);
+        assert_eq!(findings[0].line, 5, "リテラルの開始行を指すこと");
+        assert!(
+            findings[0].message.contains("`read_execution`")
+                && findings[0].message.contains("`read_intent`"),
+            "読んでいる表を message に列挙すること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r5_detects_joins_assembled_by_concat_in_a_const() {
+        // 実在形: next_answer_dao_impl.rs の SELECT_NEXT_ANSWER (6 表)。
+        let source = r#"
+const RUN_STAGE_OFFSET: usize = 11;
+
+/// 結合はすべて**キー結合**である。
+const SELECT_NEXT_ANSWER: &str = concat!(
+    "SELECT a.decision_kind, a.stage_index, a.stage_slug, a.gated, a.checkbox, ",
+    "e.scope, e.cursor_slug, e.parked_at_slug, e.status, e.state_binding, ",
+    "i.definition_id, ",
+    run_stage_selection!(),
+    ", p.bundle_digest, p.part_count, p.delivered_paths, sp.rules_content ",
+    "FROM read_next_answer a ",
+    "JOIN read_execution e ON e.id = a.execution_id ",
+    "JOIN read_intent i ON i.id = e.intent_id ",
+    "LEFT JOIN read_run_stage r ",
+    "  ON r.definition_id = i.definition_id AND r.scope = i.scope ",
+    "     AND r.stage_slug = a.stage_slug ",
+    "LEFT JOIN read_steering_plan p ON p.phase = r.phase ",
+    "LEFT JOIN read_steering_part sp ON sp.phase = r.phase AND sp.part_index = 1 ",
+    "WHERE a.execution_id = ?1 AND a.request_kind = ?2"
+);
+"#;
+        let findings = check(QUERY_ADAPTER_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![RULE_DAO_SINGLE_TABLE],
+            "concat! 1 呼出を 1 つの SQL とみなし、所見も 1 件"
+        );
+        assert_eq!(findings[0].line, 5, "concat! 呼出の行を指すこと");
+        assert!(
+            findings[0].message.contains("6 表")
+                && findings[0].message.contains("`read_steering_part`"),
+            "連結後の全表を数えること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r5_detects_joins_inside_a_macro_rules_body() {
+        // 実在形: continuation_dao_impl.rs の select_continuation! (3 表)。
+        let source = r#"
+/// 束縛はすべて鍵の一部である — 照合ではなく引当である。
+macro_rules! select_continuation {
+    () => {
+        concat!(
+            "SELECT ",
+            run_stage_selection!(),
+            ", p.part_count, p.delivered_paths, sp.phase, sp.part_index, sp.rules_content ",
+            "FROM read_run_stage r ",
+            "JOIN read_steering_plan p ON p.phase = r.phase AND p.bundle_digest = ?3 ",
+            "LEFT JOIN read_steering_part sp ON sp.phase = r.phase AND sp.part_index = ?4 ",
+            "WHERE r.route_digest = ?1 AND r.directive_digest = ?2"
+        )
+    };
+}
+
+const SELECT_CONTINUATION: &str = select_continuation!();
+"#;
+        let findings = check(QUERY_ADAPTER_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![RULE_DAO_SINGLE_TABLE],
+            "マクロ定義本体の concat! も検査し、その展開先では二重に数えない"
+        );
+        assert_eq!(
+            findings[0].line, 5,
+            "マクロ本体の concat! 呼出の行を指すこと"
+        );
+        assert!(
+            findings[0].message.contains("3 表"),
+            "{}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r5_detects_a_subquery_that_reads_another_table() {
+        // 実在形: continuation_dao_impl.rs の EXISTS 副問合せ。`JOIN` の綴りは無く、
+        // 連結断片に現れる read_* は 1 つだけなので、副問合せの検出が要る。
+        let source = r#"
+/// state 束縛を持つ token 用 — その束縛の実行が在ることも鍵に加える。
+const SELECT_CONTINUATION_BOUND_TO_STATE: &str = concat!(
+    select_continuation!(),
+    " AND EXISTS (SELECT 1 FROM read_execution x WHERE x.state_binding = ?5)"
+);
+"#;
+        let findings = check(QUERY_ADAPTER_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_DAO_SINGLE_TABLE]);
+        assert_eq!(findings[0].line, 3, "concat! 呼出の行を指すこと");
+        assert!(
+            findings[0].message.contains("副問合せ"),
+            "JOIN でも複数表でもない検出理由を message に書くこと: {}",
+            findings[0].message
+        );
+    }
+
+    // ---- R5 緑例 ---------------------------------------------------------
+
+    #[test]
+    fn r5_allows_a_single_table_select() {
+        // 是正後の形: 1 文 1 表。concat! で組み立てても表が 1 つなら適法。
+        let source = r#"
+const SELECT_RUN_STAGE: &str = concat!(
+    "SELECT ",
+    run_stage_selection!(),
+    " FROM read_run_stage r ",
+    "WHERE r.definition_id = ?1 AND r.scope = ?2 AND r.stage_slug = ?3"
+);
+
+const SELECT_JUMP: &str = "SELECT target_index, target_slug, outcome, refusal \
+FROM read_next_jump WHERE execution_id = ?1 AND target_slug = ?2";
+"#;
+        assert!(check(QUERY_ADAPTER_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r5_ignores_sql_words_written_in_doc_comments() {
+        // run_stage_columns.rs:7 の「単独 SELECT でも JOIN でも同じ選択句を使える」が
+        // 鳴らないこと。doc は属性 (`#[doc = "..."]`) なのでリテラル走査から外す。
+        let source = r#"
+//! 表別名は `r` に固定する — 単独 SELECT でも JOIN でも同じ選択句を使えるようにするため。
+
+/// `read_next_answer` と `read_execution` を JOIN する SELECT でも同じ並びで読める。
+const SELECT_RUN_STAGE: &str = "SELECT r.phase FROM read_run_stage r WHERE r.id = ?1";
+"#;
+        assert!(check(QUERY_ADAPTER_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r5_ignores_cfg_test_modules_and_test_paths() {
+        let source = r#"
+#[cfg(test)]
+mod tests {
+    const SELECT_JOINED: &str = "SELECT e.id FROM read_execution e \
+JOIN read_intent i ON i.id = e.intent_id WHERE e.id = ?1";
+}
+"#;
+        assert!(check(QUERY_ADAPTER_PATH, source).is_empty());
+
+        let bare = r#"
+const SELECT_JOINED: &str = "SELECT e.id FROM read_execution e \
+JOIN read_intent i ON i.id = e.intent_id WHERE e.id = ?1";
+"#;
+        assert!(
+            check(QUERY_ADAPTER_TEST_PATH, bare).is_empty(),
+            "射程内でも /tests/ を含むパスは対象外"
+        );
+        assert_eq!(
+            rules(&check(QUERY_ADAPTER_PATH, bare)),
+            vec![RULE_DAO_SINGLE_TABLE],
+            "同じソースが射程内の非テストパスでは鳴ること (緑例が空振りでない証明)"
+        );
+    }
+
+    #[test]
+    fn r5_is_scoped_to_the_query_side_interface_adapter() {
+        // RMU は 15 表の全差し替えを 1 バッチで持つのが仕事なので射程外。
+        let source = r#"
+const SELECT_JOINED: &str = "SELECT e.id FROM read_execution e \
+JOIN read_intent i ON i.id = e.intent_id WHERE e.id = ?1";
+
+const DELETE_TABLES: &str = "
+DELETE FROM read_execution;
+DELETE FROM read_intent;
+";
+"#;
+        assert!(check(RMU_PATH, source).is_empty());
+        assert_eq!(
+            rules(&check(QUERY_ADAPTER_PATH, source)),
+            vec![RULE_DAO_SINGLE_TABLE],
+            "同じソースが射程内では鳴ること (DELETE バッチは SELECT が無いので鳴らない)"
+        );
+    }
+
+    #[test]
+    fn r5_is_suppressed_by_a_matching_allow_comment_with_reason() {
+        let source = r#"
+// amadeus-lint: allow(dao-single-table) — 暫定: 次 Bolt で表ごとの DAO へ分ける
+const SELECT_EXECUTION: &str = "SELECT e.id FROM read_execution e \
+JOIN read_intent i ON i.id = e.intent_id WHERE e.id = ?1";
+"#;
+        assert!(check(QUERY_ADAPTER_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r5_bare_allow_without_a_reason_does_not_suppress() {
+        let source = r#"
+// amadeus-lint: allow(dao-single-table)
+const SELECT_EXECUTION: &str = "SELECT e.id FROM read_execution e \
+JOIN read_intent i ON i.id = e.intent_id WHERE e.id = ?1";
+"#;
+        assert_eq!(
+            rules(&check(QUERY_ADAPTER_PATH, source)),
+            vec![RULE_DAO_SINGLE_TABLE],
             "理由の無い裸の allow は抑制しない"
         );
     }

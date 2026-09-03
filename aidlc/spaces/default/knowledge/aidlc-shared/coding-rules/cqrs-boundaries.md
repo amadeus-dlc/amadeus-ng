@@ -22,7 +22,7 @@ SQLite の `read_*` 表）。規則 3 と規則 6 に追記。b26 / b27 が `nex
 誤りの是正 — `query-side-audit/audit-1.md` / `read-model-spec.md`）**
 **関連**: ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004（状態ファイルは
 リードモデル）/ **ADR-009（本規則の記録）**、[gateway-taxonomy.md](gateway-taxonomy.md) §4
-**機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる
+**機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる。規則 6 の「DAO は 1 表 1 引当」は `cargo lint`（`dao-single-table` — クエリ側 interface-adapter の SQL リテラルが 1 文で 2 表以上を読んだら所見、2026-09-03）
 
 ## 原則
 
