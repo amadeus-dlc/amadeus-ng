@@ -33,8 +33,8 @@
 //     {"additionalContext": "..."}; Codex expects the hookSpecificOutput
 //     wrapper (verified live, findings E1) — the shim re-wraps.
 //   - bind-bash-session: POSIX Bash input is rewritten through
-//     hookSpecificOutput.updatedInput so every command inherits the validated
-//     payload session without process inspection.
+//     hookSpecificOutput.permissionDecision=allow + updatedInput so every
+//     command inherits the validated payload session without process inspection.
 //   - continue-workflow: {"decision":"block","reason"} passes through VERBATIM — the
 //     contract is identical on Codex (stop_hook_active included).
 //   - everything else: advisory; stdout ignored, exit 0.
@@ -173,6 +173,39 @@ function explicitHumanSelectionText(toolResponse: unknown): string {
     // Non-structured prompt payloads use the direct fields below.
   }
   return "";
+}
+
+export function wrapUpdatedInput(updatedInput: Record<string, unknown>): string {
+  return `${JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+      updatedInput,
+    },
+  })}\n`;
+}
+
+export function normalizePreToolUseUpdatedInput(coreStdout: string): string {
+  try {
+    const parsed = JSON.parse(coreStdout) as {
+      hookSpecificOutput?: {
+        hookEventName?: unknown;
+        updatedInput?: unknown;
+      };
+    };
+    const output = parsed.hookSpecificOutput;
+    if (
+      output?.hookEventName === "PreToolUse" &&
+      output.updatedInput !== null &&
+      typeof output.updatedInput === "object" &&
+      !Array.isArray(output.updatedInput)
+    ) {
+      return wrapUpdatedInput(output.updatedInput as Record<string, unknown>);
+    }
+  } catch {
+    // Unparseable core output is passed through so its established diagnostics survive.
+  }
+  return coreStdout;
 }
 
 export async function run(
@@ -356,15 +389,6 @@ function wrapContext(coreStdout: string, eventName: string): string {
     // unparseable core output — pass through untouched
   }
   return coreStdout;
-}
-
-function wrapUpdatedInput(updatedInput: Record<string, unknown>): string {
-  return `${JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      updatedInput,
-    },
-  })}\n`;
 }
 
 // --- D-4: SESSION_ENDED reconcile-at-next-start ------------------------------
@@ -637,13 +661,15 @@ switch (target) {
   }
 
   case "deliver-stage-rules": {
-    // Codex 0.145 consumes the same PreToolUse hookSpecificOutput.updatedInput
-    // contract as Claude. The core hook recognizes spawn_agent and appends the
-    // exact active-stage bundle to message/items without adapter re-shaping.
+    // Codex requires permissionDecision:allow whenever a PreToolUse hook emits
+    // updatedInput. The shared core hook recognizes spawn_agent and appends the
+    // exact active-stage bundle to message/items; normalize its successful
+    // rewrite into Codex's stricter envelope before returning it.
     const r = runCoreWithStderr("aidlc-deliver-stage-rules.ts", rawInput);
     const answeredCode = r.code === 2 ? 2 : 0;
-    persistResponse(r.stdout, answeredCode, r.stderr);
-    if (r.stdout) process.stdout.write(r.stdout);
+    const stdout = normalizePreToolUseUpdatedInput(r.stdout);
+    persistResponse(stdout, answeredCode, r.stderr);
+    if (stdout) process.stdout.write(stdout);
     if (r.code === 2) {
       process.stderr.write(r.stderr);
       return 2;
