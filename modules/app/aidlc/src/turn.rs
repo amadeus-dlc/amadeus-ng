@@ -546,6 +546,9 @@ impl<'a> Turn<'a> {
             Ok(None) => Directive::Error {
                 message: absent.to_string(),
             },
+            // 行が在って拒否されている = 目的地は計画に載っているのに跳べない。集約が
+            // `InvalidTarget` を返すのはゲートを持たない (= initialization) か scope 外の
+            // ときなので、upstream の `INIT_JUMP_ERROR` がその逐語である。
             Ok(Some(jump)) if jump.outcome() == "refused" => Directive::Error {
                 message: match jump.refusal() {
                     Some("invalid-target") => wording::INIT_JUMP.to_string(),
@@ -700,6 +703,10 @@ impl<'a> Turn<'a> {
         let answer = view.answer();
         match answer.decision_kind() {
             "run-stage" => match view.run_stage() {
+                // ゲートは**答えの行**が正である (BR1.3 — 実行が持つ実効ゲート)。定義側の
+                // 静的既定へ落ちるのは行が値を持たないときだけで、`decision_kind` が
+                // `run-stage` の行は RMU が必ず `gated` を書くので実際には落ちない
+                // (どちらも行の値であり、ここに判断は無い)。
                 Some(row) => self.deliver(
                     row,
                     scope,
