@@ -62,8 +62,10 @@ D6 互換の配当により、upstream `dist/claude/` の資産（33 ステー�
 
 - **Construction Iteration**: unit-major
 - **Skeleton Stance**: off
-- **Parked**: 2026-09-03T15:04:27Z
-- **Parked At Stage**: functional-design
+- **Active Unit**: u9-canon-docs
+- **Unit State**: paused
+- **Unit Pause Reason**: Claude/Codex harness maintenance was completed before Functional Design artifact work resumed
+- **Unit Next Action**: Resume u9-canon-docs Functional Design and generate the missing functional-spec.md artifact
 ## Phase Progress
 <!-- Status values: Pending, Active, Verified, Skipped -->
 
@@ -125,7 +127,7 @@ Per unit: [TBD]
 - **Current Stage**: functional-design
 - **Next Stage**: nfr-requirements
 - **Status**: Running
-- **Last Updated**: 2026-09-03T15:04:27Z
+- **Last Updated**: 2026-09-03T16:20:01Z
 
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning
