@@ -52,6 +52,10 @@ impl Workspace {
         fs::read_to_string(self.record_dir()?.join("aidlc-state.md")).ok()
     }
 
+    fn execution_cursor(&self) -> Option<String> {
+        fs::read_to_string(self.record_dir()?.join(".aidlc-execution")).ok()
+    }
+
     fn audit_shard(&self) -> Option<String> {
         let audit = self.record_dir()?.join("audit");
         let entry = fs::read_dir(audit).ok()?.filter_map(Result::ok).next()?;
@@ -378,6 +382,86 @@ async fn a_resume_result_is_routed_rather_than_committed() {
     assert_eq!(
         string_of(&line_of(&completion), "message"),
         "Resume is routed, not committed. Run a fresh `next --resume`."
+    );
+}
+
+/// 鋳造は record に**実行カーソル**を据える — `report` はこれで実行を解決する。
+///
+/// かつて `report` はジャーナル先頭の実行行を実行の識別子と決め打っていた（リードモデルが
+/// 実行の識別子を記録していないため）。それは「実行はワークスペースにただ 1 つ」という
+/// 仮定に乗っており、2 本目が生まれた瞬間に静かに別の実行へ報告する。record が指す実行を
+/// record 自身に書くことでその仮定を外した。
+#[tokio::test]
+async fn minting_writes_the_execution_cursor_into_the_record() {
+    let workspace = Workspace::create();
+
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+
+    let cursor = workspace
+        .execution_cursor()
+        .expect("record に実行カーソルが据わっている");
+    let mut lines = cursor.lines();
+    let execution_id = lines.next().expect("1 行目 = 実行の識別子");
+    let intent_id = lines.next().expect("2 行目 = intent の識別子");
+    assert_eq!(lines.next(), None, "2 行だけである: {cursor:?}");
+    // どちらも UUIDv7 の正準表記で、**互いに違う**（実行は intent の識別子を借りない）。
+    assert_eq!(execution_id.len(), 36, "{cursor:?}");
+    assert_eq!(intent_id.len(), 36, "{cursor:?}");
+    assert_ne!(execution_id, intent_id, "{cursor:?}");
+    // 2 行目は record 名の id8 と一致する — record とカーソルが同じ intent を指す証拠。
+    let record = workspace.record_dir().expect("record");
+    let name = record
+        .file_name()
+        .and_then(|n| n.to_str())
+        .expect("record 名")
+        .to_string();
+    let id8: String = intent_id
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(8)
+        .collect();
+    assert!(
+        name.ends_with(&id8),
+        "record 名 {name} と intent {intent_id}"
+    );
+}
+
+/// 実行カーソルが壊れていれば**不在と混ぜず**に拒む。
+///
+/// 「まだ鋳造していない」に畳むと、壊れた record の上で作業が続いてしまう。
+#[tokio::test]
+async fn reporting_against_a_broken_execution_cursor_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "completed"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let message = string_of(&line_of(&completion), "message");
+    assert!(
+        message.starts_with("The execution cursor cannot be read"),
+        "{message}"
+    );
+    assert!(
+        message.contains("malformed execution cursor at"),
+        "{message}"
     );
 }
 
