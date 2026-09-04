@@ -76,9 +76,26 @@ b43 / b44 の PR 2 本で消化）。
   非 slug）、`622-627` / `633-639`（同じ DAO を先に引く 605 行で潰れる読取失敗腕）は到達不能。
   (d) `runtime.rs:717` の `harness_name` が `const fn` で `"claude"` を返すため `definition_id` /
   `compiled_definition_id` は失敗し得ず、447 / 449 / 545 / 547 の `map_err` は死にコード。
-  (e) `runtime.rs:405-414` の `record_name::compose` 失敗腕も到達不能。— これらは #7 キュー 11
-  （マルチコール CLI 配線）で `parse_next` が観測を立てるようになった時点で生きるものと、単純に
-  削るべきものが混在する。削るのは判断が要るので b44 では触らず記録に留める。
+  (e) `runtime.rs:405-414` の `record_name::compose` 失敗腕も到達不能（組み上がる名前は最大 56 字で
+  `IntentDirName` の上限 64 に収まり、`kebab` は `[a-z0-9-]` しか出さない）。(f) `append_only.rs:50-55`
+  の else 腕はループ不変条件により到達不能（doc 明記済み）、`57-62` の `Ok(0)` も実ファイルでは
+  起きない — 残る未カバー 8 行はこの 2 ブロック。(g) `read_model_updater.rs:68-70` の
+  `ReadModelUpdater::steering()` はどこからも呼ばれない死んだアクセサ。— これらは #7 キュー 11
+  （マルチコール CLI 配線）で `parse_next` が観測を立てるようになった時点で生きるもの（a）と、単純に
+  削るべきもの（b〜g）が混在する。削るのは判断が要るので b44 では触らず記録に留める。
+- **テスト手法の注記（テスト増強で採った判断）**: `park` が未配線（#74、`runtime.rs:123-128`）のため
+  `parked` / `unpark-then-resume` は CLI から作れず、`read_next_answer.decision_kind` の行を `rusqlite`
+  （`aidlc` の dev-dependency）で直接置いて固定した。壊れた投影（slug でない scope 行、JSON でない
+  `rules_content` / `delivered_paths`、NULL のコスト列）も同じ手。**#74 で park が配線されたら実駆動に
+  置き換える**。結合レベルの故障注入は「ストアを非 SQLite バイト列で上書き（開けるが引けない）」
+  「置き場をディレクトリで塞ぐ（開けない）」の 2 形に統一（表の DROP は `catch_up_before_reading` の
+  `CREATE TABLE IF NOT EXISTS` / `DELETE FROM` が元に戻すので効かない）。`cargo llvm-cov` は `aidlc`
+  ライブラリを rlib と test ビルドの 2 通りで計測し片方だけの通過は未カバーに数えるため、同じ分岐に
+  単体と結合の両方が要った。
+- **文言の所見**: state を持たない `--stage` / `--phase` / `--single` は
+  `No workspace record was resolved for run-stage assembly.` を返す — 作業前に跳ぶのはあり得る操作
+  なのに内部事情を述べる文言。b44 では現状を `next_branches.rs` に固定するだけに留めた。#73
+  （`--single` 面）で扱う。
 - **#47 §4 のセンサー補完**（意味レベルの疑義は報告のみ・非ブロック）は未着手 — lint 2 本で
   機械判定できる範囲だけを着地させた。
 - **`cargo doc` を CI に載せるか**は未裁定（今回は手元実測のみ。`rustdoc::broken_intra_doc_links =
