@@ -56,12 +56,18 @@ use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
 use super::next_decision::NextDecision;
 use super::next_request::NextRequest;
+use super::report_decision::ReportDecision;
+use super::report_no_op::ReportNoOp;
+use super::report_refusal::ReportRefusal;
+use super::report_request::ReportRequest;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::stage_key::StageKey;
 use super::state_binding::StateBinding;
 use super::status::Status;
-use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
+use super::transition_step::TransitionStep;
+use super::verdict::Verdict;
+use crate::workflow_definition::{ExecutionKind, PhaseId, PlanAction, StageSlug};
 use crate::workspace::CheckboxState;
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_compact};
 
@@ -79,6 +85,24 @@ const GATE_ADVANCE_PRECONDITION: [CheckboxState; 2] =
 /// `skip_stage` そのものだからである (BR3.1 (5) の `RecoverSkipInconsistency`)。
 // amadeus-lint: allow(checkbox-vocabulary) — I13: 集約が所有する skip 受理の前提集合
 const SKIP_PRECONDITION: [CheckboxState; 2] = [CheckboxState::InProgress, CheckboxState::Revising];
+
+/// `report --result skipped` を**受理してよい** checkbox 集合 (I13 の報告側、ピン `:5634-5643`)。
+///
+/// [`SKIP_PRECONDITION`] より 1 つ広い — upstream は「中断された `[S]`」の再ルーティングも
+/// 受理する。こちらの集約ではカーソルが `[S]` に留まる歴史が構成不能 (`StageSkipped` の適用が
+/// 直ちにカーソルを次へ送る) なので、その 1 値は**この build では到達しない**。それでも表から
+/// 落とさないのは、報告の受理集合が upstream の観測可能契約だからである。
+// amadeus-lint: allow(checkbox-vocabulary) — I13: 集約が所有する skipped 報告の受理集合
+const REPORT_SKIP_PRECONDITION: [CheckboxState; 3] = [
+    CheckboxState::InProgress,
+    CheckboxState::Revising,
+    CheckboxState::Skipped,
+];
+
+/// `report --result rejected` を受理する checkbox 集合 (段 10、ピン `:5712-5715`)。
+// amadeus-lint: allow(checkbox-vocabulary) — I7: 集約が所有する差し戻し受理の前提集合
+const REJECT_PRECONDITION: [CheckboxState; 2] =
+    [CheckboxState::InProgress, CheckboxState::AwaitingApproval];
 
 /// エンジンループの状態機械 (集約ルート)。
 ///
@@ -1269,6 +1293,298 @@ impl IntentExecution {
         }
     }
 
+    // ---- 判断 (書込なし) — 報告のディスパッチ ----
+
+    /// 報告された結末に対して**どの遷移を打つか / 拒むか**を 1 つ決める。書込なし。
+    ///
+    /// 仕様 10 §2.3 の `report_dispatch` である。判定は (verdict, checkbox, gated, final,
+    /// moved-on, explicit-stage) の 6 材料だけで決まり、そのすべてを本集約が所有している —
+    /// だから独立ドメインサービスにはせず、`next_decision` と同じ形 (`&self` のクエリ) で
+    /// ここに置く (オーナー規律「集約は FSM、導出を独立サービスに置かない」)。
+    ///
+    /// 判定順は upstream `handleReport` (ピン `:5545-5860`) と同順である:
+    /// 対象の解決 → `skipped` の腕 (**全 completion ガードより先**) → gate 系の腕 →
+    /// 段 13 human presence → forward 表。
+    ///
+    /// `&Intent` を取るのは `execution: CONDITIONAL` が静的材料 (計画側の持ち物) だからで
+    /// ある — 集約は intent を ID で参照し、材料は引数で受け取る
+    /// (`coding-rules/aggregate-references.md`)。呼出側 (ユースケース) は本実行の
+    /// `intent_id` で引いた計画を渡すので、取り違えは構成上起きない。
+    ///
+    /// # Errors
+    ///
+    /// 受理できない報告を [`ReportRefusal`] で返す (材料のみ — 逐語文言は出す側)。
+    pub fn report_dispatch(
+        &self,
+        intent: &Intent,
+        request: &ReportRequest,
+    ) -> Result<ReportDecision, ReportRefusal> {
+        let (target, slug) = self.report_target(request)?;
+        // 長さは計画と一致する (完全コンストラクタの検査) ので必ず在る。既定値の `Pending` は
+        // 到達しないが、万一の壊れた状態でも `StillPending` で前進を拒む安全側に倒れる。
+        let checkbox = self.checkbox(target).unwrap_or(CheckboxState::Pending);
+        let gated = self.is_gated(target);
+        let verdict = request.verdict();
+
+        if !gated && verdict.is_gate_lifecycle() {
+            return Err(ReportRefusal::UngatedStage {
+                stage: slug,
+                verdict,
+            });
+        }
+        match verdict {
+            Verdict::Skipped => self.dispatch_skip(intent, request, target, slug, checkbox),
+            Verdict::AwaitingApproval => Self::dispatch_gate_open(slug, checkbox),
+            Verdict::Rejected => Self::dispatch_gate_reject(request, slug, checkbox),
+            Verdict::Revised => Self::dispatch_gate_revise(slug, checkbox),
+            Verdict::Forward => self.dispatch_forward(request, target, slug, checkbox, gated),
+            // 遷移をコミットしない結末は合成ルートが段 4 で振り分ける。
+            Verdict::Resume => Err(ReportRefusal::RoutedVerdict { verdict }),
+        }
+    }
+
+    /// 作用対象を決める — 明示 `--stage` が勝ち、無ければカーソル (段 7、ピン `:5556-5570`)。
+    ///
+    /// # Errors
+    ///
+    /// 名指しされた slug が解決済み計画に無い (`UnknownStage`)。
+    fn report_target(
+        &self,
+        request: &ReportRequest,
+    ) -> Result<(StageIndex, StageSlug), ReportRefusal> {
+        let named = request.stage();
+        self.stage_keys
+            .iter()
+            .enumerate()
+            .find(|(position, key)| match named {
+                Some(slug) => key.slug() == slug,
+                None => *position == self.cursor.to_usize(),
+            })
+            .map(|(position, key)| (StageIndex::new(position), key.slug().clone()))
+            .ok_or_else(|| ReportRefusal::UnknownStage {
+                // 名指しが無いのに当たらないのは、カーソルが計画外を指す壊れた歴史だけで
+                // ある (再構成が既にクラッシュしている)。
+                named: named.map(StageSlug::as_str).unwrap_or_default().to_string(),
+            })
+    }
+
+    /// カーソルが指すステージの slug (添字帳から — 不変条件により必ず在る)。
+    fn cursor_slug(&self) -> Option<&StageSlug> {
+        self.stage_keys
+            .get(self.cursor.to_usize())
+            .map(StageKey::slug)
+    }
+
+    /// 段 9 — `skipped` の腕 (受理 5 条件、ピン `:5606-5666`)。
+    fn dispatch_skip(
+        &self,
+        intent: &Intent,
+        request: &ReportRequest,
+        target: StageIndex,
+        slug: StageSlug,
+        checkbox: CheckboxState,
+    ) -> Result<ReportDecision, ReportRefusal> {
+        // conditional は複製しない静的材料 — 計画から直接引く。
+        let conditional = intent
+            .stages()
+            .get(target.to_usize())
+            .is_some_and(StageEntry::is_conditional);
+        if !(conditional || self.effective_plan(target) == Some(PlanAction::Skip)) {
+            // ここへ来るのは `conditional` が偽のときだけなので、運ぶ宣言は必ず `ALWAYS`
+            // である (CONDITIONAL なら上のガードが成立して拒否そのものが起きない)。材料を
+            // 落とさないのは、逐語 `is execution: <kind>` が upstream の `node.execution` を
+            // そのまま埋める形だからである。
+            return Err(ReportRefusal::SkipNotConditional {
+                stage: slug,
+                execution: ExecutionKind::Always,
+            });
+        }
+        if !request.has_reason() {
+            return Err(ReportRefusal::SkipRequiresReason { stage: slug });
+        }
+        if target != self.cursor {
+            let current = self.cursor_slug().unwrap_or(&slug).clone();
+            return Err(ReportRefusal::SkipMustNameCursor {
+                named: slug,
+                current,
+            });
+        }
+        if !REPORT_SKIP_PRECONDITION.contains(&checkbox) {
+            return Err(ReportRefusal::SkipPrecondition {
+                stage: slug,
+                actual: checkbox,
+            });
+        }
+        Ok(ReportDecision::Commit {
+            stage: slug,
+            steps: vec![TransitionStep::Skip],
+        })
+    }
+
+    /// 段 10 — `awaiting-approval` (ピン `:5699-5710`)。
+    fn dispatch_gate_open(
+        slug: StageSlug,
+        checkbox: CheckboxState,
+    ) -> Result<ReportDecision, ReportRefusal> {
+        if checkbox == CheckboxState::AwaitingApproval {
+            return Ok(ReportDecision::NoOp(ReportNoOp::AlreadyAwaiting {
+                stage: slug,
+            }));
+        }
+        if checkbox != CheckboxState::InProgress {
+            return Err(ReportRefusal::GatePrecondition {
+                stage: slug,
+                verdict: Verdict::AwaitingApproval,
+                actual: checkbox,
+            });
+        }
+        Ok(ReportDecision::Commit {
+            stage: slug,
+            steps: vec![TransitionStep::GateStart],
+        })
+    }
+
+    /// 段 10 — `rejected` (ピン `:5711-5728`)。
+    fn dispatch_gate_reject(
+        request: &ReportRequest,
+        slug: StageSlug,
+        checkbox: CheckboxState,
+    ) -> Result<ReportDecision, ReportRefusal> {
+        if !REJECT_PRECONDITION.contains(&checkbox) {
+            return Err(ReportRefusal::GatePrecondition {
+                stage: slug,
+                verdict: Verdict::Rejected,
+                actual: checkbox,
+            });
+        }
+        if request.feedback().is_none() {
+            return Err(ReportRefusal::RejectRequiresFeedback { stage: slug });
+        }
+        Ok(ReportDecision::Commit {
+            stage: slug,
+            steps: vec![TransitionStep::Reject],
+        })
+    }
+
+    /// 段 10 — `revised` (ピン `:5729-5737`)。
+    fn dispatch_gate_revise(
+        slug: StageSlug,
+        checkbox: CheckboxState,
+    ) -> Result<ReportDecision, ReportRefusal> {
+        if checkbox != CheckboxState::Revising {
+            return Err(ReportRefusal::GatePrecondition {
+                stage: slug,
+                verdict: Verdict::Revised,
+                actual: checkbox,
+            });
+        }
+        Ok(ReportDecision::Commit {
+            stage: slug,
+            steps: vec![TransitionStep::Revise],
+        })
+    }
+
+    /// 段 13 + forward 表 (ピン `:5786-5891`)。
+    ///
+    /// `Advance` / `CompleteWorkflow` は**この build に対応する集約コマンドを持たない**
+    /// (非ゲート完了のパイプラインは b42 で撤去 — #85 = A)。それでも表から落とさないのは、
+    /// 初期化ステージだけが in-scope の縮退計画ではカーソルが `[x]` の非ゲートステージに
+    /// 立ちうるからである。読み替えて別の遷移を打つより、名指しして呼出側に断らせる。
+    fn dispatch_forward(
+        &self,
+        request: &ReportRequest,
+        target: StageIndex,
+        slug: StageSlug,
+        checkbox: CheckboxState,
+        gated: bool,
+    ) -> Result<ReportDecision, ReportRefusal> {
+        // 「最終ステージか」は位置から導く — 以降の判断は slug だけで足りる。
+        if gated
+            && checkbox != CheckboxState::Completed
+            && !self.autonomy.is_autonomous()
+            && request.human_presence_guard()
+            && !request.has_user_input()
+        {
+            return Err(ReportRefusal::HumanPresence {
+                stage: slug,
+                verdict: Verdict::Forward,
+            });
+        }
+        let final_stage = self.next_in_scope(target).is_none();
+        // amadeus-lint: allow(checkbox-vocabulary) — forward ディスパッチ表 (集約が所有する遷移表)
+        match checkbox {
+            CheckboxState::Skipped | CheckboxState::Revising => {
+                Err(ReportRefusal::ForwardCommitsCompletionsOnly {
+                    stage: slug,
+                    actual: checkbox,
+                })
+            }
+            CheckboxState::Pending => Err(ReportRefusal::StillPending { stage: slug }),
+            CheckboxState::Completed => Ok(self.dispatch_completed(slug, final_stage)),
+            CheckboxState::InProgress if gated => {
+                if request.stage().is_none() {
+                    return Err(ReportRefusal::InProgressRequiresExplicitStage { stage: slug });
+                }
+                Ok(ReportDecision::Commit {
+                    stage: slug,
+                    // ゲートを開き直してから承認する (監査の `Recovered` 行はこの段が決める)。
+                    steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
+                })
+            }
+            CheckboxState::AwaitingApproval if gated => Ok(ReportDecision::Commit {
+                stage: slug,
+                steps: vec![TransitionStep::Approve],
+            }),
+            // 非ゲートの着手済み — 誕生 = 初期化完了済み (b34) 以降は到達しない。
+            CheckboxState::InProgress | CheckboxState::AwaitingApproval => {
+                Ok(ReportDecision::Commit {
+                    stage: slug,
+                    steps: vec![Self::forward_tail(final_stage)],
+                })
+            }
+        }
+    }
+
+    /// forward 表の `[x]` の行 (ピン `:5828-5861`)。
+    fn dispatch_completed(&self, slug: StageSlug, final_stage: bool) -> ReportDecision {
+        if final_stage {
+            if self.status.is_running() {
+                return ReportDecision::Commit {
+                    stage: slug,
+                    steps: vec![TransitionStep::CompleteWorkflow],
+                };
+            }
+            return ReportDecision::NoOp(ReportNoOp::WorkflowAlreadyCompleted { stage: slug });
+        }
+        // stale re-report ガード: カーソルが別ステージへ移って着手済みなら、これは復旧では
+        // なく再生である (BR1.9)。我々の ES では「承認は済んだが advance 前」が原子的に
+        // 存在しないので、`[x]` の再報告はここか `WorkflowAlreadyCompleted` に落ちる。
+        let moved_on = self.cursor_slug() != Some(&slug)
+            && self
+                .checkbox(self.cursor)
+                .is_some_and(|marker| marker != CheckboxState::Pending);
+        if moved_on {
+            let current = self.cursor_slug().unwrap_or(&slug).clone();
+            return ReportDecision::NoOp(ReportNoOp::AlreadyCompletedMovedOn {
+                stage: slug,
+                current,
+            });
+        }
+        ReportDecision::Commit {
+            stage: slug,
+            steps: vec![TransitionStep::Advance],
+        }
+    }
+
+    /// 非ゲート前進の末尾 — 最終なら完了、そうでなければ前進 (ピン `:5885-5891`)。
+    const fn forward_tail(final_stage: bool) -> TransitionStep {
+        if final_stage {
+            TransitionStep::CompleteWorkflow
+        } else {
+            TransitionStep::Advance
+        }
+    }
+
     /// 実行状態の束縛ダイジェスト (`h`) — 「この state はまだ動いていないか」の照合子。
     ///
     /// 束縛の対象は「どの実行の・何番目まで進んだ歴史か」(`id` / `seq_nr`) で、どちらも
@@ -1400,6 +1716,9 @@ mod tests {
         StageIndex, StartRequest, Started, Status, WorkspaceScan,
     };
     use crate::orchestration::{EngineSignal, NextDecision, NextRequest};
+    use crate::orchestration::{
+        ReportDecision, ReportNoOp, ReportRefusal, ReportRequest, StageKey, Verdict,
+    };
     use crate::workflow_definition::{
         BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
         ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
@@ -1573,6 +1892,552 @@ mod tests {
         fn jump_resolve(&self, target: StageIndex) -> Result<JumpDirection, CommandError> {
             self.execution.jump_resolve(&self.intent, target)
         }
+
+        fn report_dispatch(
+            &self,
+            request: &ReportRequest,
+        ) -> Result<ReportDecision, ReportRefusal> {
+            self.execution.report_dispatch(&self.intent, request)
+        }
+    }
+
+    // ---- report_dispatch (仕様 10 §2.3 — 報告のディスパッチ) ----
+
+    /// カーソルと checkbox を名指しして組む合成実行 (report の表テスト用)。
+    ///
+    /// 索引 0 は initialization (非ゲート・誕生で `[x]`)、索引 1 以降は inception (ゲート付き)。
+    fn staged(
+        stage_count: usize,
+        cursor: usize,
+        marks: &[(usize, CheckboxState)],
+        status: Status,
+        autonomy: AutonomyMode,
+    ) -> Run {
+        let actions = vec![Execute; stage_count];
+        let intent = plan(1, &actions, &vec![false; stage_count]);
+        let stage_keys: Vec<StageKey> = intent
+            .stages()
+            .iter()
+            .map(|entry| StageKey::new(entry.slug().clone(), entry.phase()))
+            .collect();
+        let mut checkbox = vec![Pending; stage_count];
+        checkbox[0] = Completed;
+        let mut approved = vec![false; stage_count];
+        for &(index, state) in marks {
+            checkbox[index] = state;
+            approved[index] = state == Completed;
+        }
+        let execution = IntentExecution::new(
+            execution_id(),
+            intent_id(),
+            stage_keys,
+            actions,
+            checkbox,
+            cursor,
+            status,
+            None,
+            autonomy,
+            approved,
+            vec![0; stage_count],
+            1,
+            occurred(),
+        )
+        .unwrap();
+        Run { intent, execution }
+    }
+
+    /// 3 ステージ (init + ゲート 2 本) の実行を、カーソル索引 1 の checkbox だけ変えて組む。
+    fn at_gate_with(checkbox: CheckboxState) -> Run {
+        staged(3, 1, &[(1, checkbox)], Status::Running, AutonomyMode::Gated)
+    }
+
+    fn request(verdict: Verdict) -> ReportRequest {
+        ReportRequest::new(verdict, None, Some("A".to_string()), None, true)
+    }
+
+    fn steps_of(decision: &ReportDecision) -> Vec<&'static str> {
+        match decision {
+            ReportDecision::Commit { steps, .. } => {
+                steps.iter().map(|step| step.subcommand()).collect()
+            }
+            ReportDecision::NoOp(_) => panic!("Commit を期待した: {decision:?}"),
+        }
+    }
+
+    /// (verdict × checkbox) の全 24 組合せ — ゲート付き・非 final・名指し無しの断面。
+    #[test]
+    fn the_dispatch_table_pins_every_verdict_against_every_checkbox() {
+        // 各行の期待は「決定の要約」で綴る — `Commit` は段の綴り、それ以外は変種名である。
+        let summarize = |outcome: &Result<ReportDecision, ReportRefusal>| -> String {
+            match outcome {
+                Ok(ReportDecision::Commit { steps, .. }) => steps
+                    .iter()
+                    .map(|step| step.subcommand())
+                    .collect::<Vec<_>>()
+                    .join(" + "),
+                Ok(ReportDecision::NoOp(ReportNoOp::AlreadyAwaiting { .. })) => {
+                    "no-op:already-awaiting".to_string()
+                }
+                Ok(ReportDecision::NoOp(ReportNoOp::AlreadyCompletedMovedOn { .. })) => {
+                    "no-op:moved-on".to_string()
+                }
+                Ok(ReportDecision::NoOp(ReportNoOp::WorkflowAlreadyCompleted { .. })) => {
+                    "no-op:workflow-completed".to_string()
+                }
+                Err(ReportRefusal::GatePrecondition { .. }) => {
+                    "refuse:gate-precondition".to_string()
+                }
+                Err(ReportRefusal::StillPending { .. }) => "refuse:still-pending".to_string(),
+                Err(ReportRefusal::InProgressRequiresExplicitStage { .. }) => {
+                    "refuse:needs-explicit-stage".to_string()
+                }
+                Err(ReportRefusal::ForwardCommitsCompletionsOnly { .. }) => {
+                    "refuse:completions-only".to_string()
+                }
+                Err(other) => panic!("表に無い拒否: {other:?}"),
+            }
+        };
+        let table: [(CheckboxState, [&str; 4]); 6] = [
+            //                          awaiting-approval          rejected     revised                  forward
+            (
+                Pending,
+                [
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "refuse:still-pending",
+                ],
+            ),
+            (
+                InProgress,
+                [
+                    "gate-start",
+                    "reject",
+                    "refuse:gate-precondition",
+                    "refuse:needs-explicit-stage",
+                ],
+            ),
+            (
+                AwaitingApproval,
+                [
+                    "no-op:already-awaiting",
+                    "reject",
+                    "refuse:gate-precondition",
+                    "approve",
+                ],
+            ),
+            (
+                Revising,
+                [
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "revise",
+                    "refuse:completions-only",
+                ],
+            ),
+            (
+                Completed,
+                [
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "advance",
+                ],
+            ),
+            (
+                Skipped,
+                [
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "refuse:gate-precondition",
+                    "refuse:completions-only",
+                ],
+            ),
+        ];
+        let verdicts = [
+            Verdict::AwaitingApproval,
+            Verdict::Rejected,
+            Verdict::Revised,
+            Verdict::Forward,
+        ];
+        for (checkbox, expected) in table {
+            let run = at_gate_with(checkbox);
+            for (verdict, want) in verdicts.into_iter().zip(expected) {
+                let got = run.report_dispatch(&request(verdict));
+                assert_eq!(summarize(&got), want, "{checkbox:?} × {verdict:?}: {got:?}");
+            }
+        }
+    }
+
+    /// 非ゲート (initialization) のステージは gate 系 3 語を名乗れない (段 10)。
+    #[test]
+    fn an_ungated_stage_cannot_report_a_gate_lifecycle_outcome() {
+        let run = staged(
+            3,
+            1,
+            &[(1, InProgress)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        for verdict in [
+            Verdict::AwaitingApproval,
+            Verdict::Rejected,
+            Verdict::Revised,
+        ] {
+            let named =
+                ReportRequest::new(verdict, Some(slug(0)), Some("A".to_string()), None, true);
+            assert!(
+                matches!(
+                    run.report_dispatch(&named),
+                    Err(ReportRefusal::UngatedStage { stage, verdict: got })
+                        if stage == slug(0) && got == verdict
+                ),
+                "{verdict:?}"
+            );
+        }
+    }
+
+    /// 名指しが計画に無ければ、判断より先に拒む (段 8)。
+    #[test]
+    fn a_named_stage_outside_the_plan_is_refused_before_anything_else() {
+        let run = at_gate_with(AwaitingApproval);
+        let named = ReportRequest::new(
+            Verdict::Forward,
+            Some(StageSlug::parse("not-in-the-plan").unwrap()),
+            Some("A".to_string()),
+            None,
+            true,
+        );
+        assert!(matches!(
+            run.report_dispatch(&named),
+            Err(ReportRefusal::UnknownStage { named }) if named == "not-in-the-plan"
+        ));
+    }
+
+    /// `resume` はここへ来ない — 合成ルートが段 4 で振り分ける。
+    #[test]
+    fn a_routed_verdict_is_refused_instead_of_being_read_as_a_transition() {
+        let run = at_gate_with(AwaitingApproval);
+        assert!(matches!(
+            run.report_dispatch(&request(Verdict::Resume)),
+            Err(ReportRefusal::RoutedVerdict {
+                verdict: Verdict::Resume
+            })
+        ));
+    }
+
+    /// 明示 `--stage` があれば `[-]` のゲートを開き直してから承認する (2 段)。
+    #[test]
+    fn an_explicit_stage_recovers_the_missing_gate_before_approving() {
+        let run = at_gate_with(InProgress);
+        let named = ReportRequest::new(
+            Verdict::Forward,
+            Some(slug(1)),
+            Some("A".to_string()),
+            None,
+            true,
+        );
+        let decision = run.report_dispatch(&named).unwrap();
+        assert_eq!(steps_of(&decision), ["gate-start", "approve"]);
+        assert!(matches!(
+            decision,
+            ReportDecision::Commit { ref stage, .. } if *stage == slug(1)
+        ));
+    }
+
+    /// 最終ステージが `[x]` かつ完了済みなら、何もコミットしない (forward 表)。
+    #[test]
+    fn a_re_report_of_a_completed_workflow_commits_nothing() {
+        let run = staged(
+            2,
+            1,
+            &[(1, Completed)],
+            Status::Completed,
+            AutonomyMode::Gated,
+        );
+        assert!(matches!(
+            run.report_dispatch(&request(Verdict::Forward)),
+            Ok(ReportDecision::NoOp(ReportNoOp::WorkflowAlreadyCompleted { stage }))
+                if stage == slug(1)
+        ));
+    }
+
+    /// カーソルが先へ移っていれば、通過済み `[x]` の再報告は冪等 no-op である (BR1.9)。
+    #[test]
+    fn a_re_report_of_a_stage_the_workflow_moved_past_is_idempotent() {
+        let run = staged(
+            3,
+            2,
+            &[(1, Completed), (2, InProgress)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        let named = ReportRequest::new(
+            Verdict::Forward,
+            Some(slug(1)),
+            Some("A".to_string()),
+            None,
+            true,
+        );
+        assert!(matches!(
+            run.report_dispatch(&named),
+            Ok(ReportDecision::NoOp(ReportNoOp::AlreadyCompletedMovedOn { stage, current }))
+                if stage == slug(1) && current == slug(2)
+        ));
+    }
+
+    /// カーソルがまだ `[ ]` のままなら、`[x]` の再報告は前進の復旧である (moved-on ではない)。
+    #[test]
+    fn a_re_report_before_the_cursor_started_is_a_forward_recovery() {
+        let run = staged(
+            3,
+            2,
+            &[(1, Completed)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        let named = ReportRequest::new(
+            Verdict::Forward,
+            Some(slug(1)),
+            Some("A".to_string()),
+            None,
+            true,
+        );
+        assert_eq!(steps_of(&run.report_dispatch(&named).unwrap()), ["advance"]);
+    }
+
+    /// 段 13 — ゲート付き未完了・gated モード・ガード有効で `--user-input` が空なら拒む。
+    #[test]
+    fn the_human_presence_guard_refuses_a_forward_without_the_humans_choice() {
+        let run = at_gate_with(AwaitingApproval);
+        let blank = ReportRequest::new(Verdict::Forward, None, Some("  ".to_string()), None, true);
+        assert!(matches!(
+            run.report_dispatch(&blank),
+            Err(ReportRefusal::HumanPresence { stage, verdict: Verdict::Forward })
+                if stage == slug(1)
+        ));
+    }
+
+    /// 段 13 の 2 つの抜け道 — autonomous な実行と、ガード自体を切った要求。
+    #[test]
+    fn the_human_presence_guard_has_two_carve_outs() {
+        let autonomous = staged(
+            3,
+            1,
+            &[(1, AwaitingApproval)],
+            Status::Running,
+            AutonomyMode::Autonomous,
+        );
+        let blank = ReportRequest::new(Verdict::Forward, None, None, None, true);
+        assert_eq!(
+            steps_of(&autonomous.report_dispatch(&blank).unwrap()),
+            ["approve"]
+        );
+
+        let disabled = ReportRequest::new(Verdict::Forward, None, None, None, false);
+        assert_eq!(
+            steps_of(
+                &at_gate_with(AwaitingApproval)
+                    .report_dispatch(&disabled)
+                    .unwrap()
+            ),
+            ["approve"]
+        );
+    }
+
+    /// `skipped` の受理 5 条件 — 4 つの拒否と 1 つの受理。
+    #[test]
+    fn the_skipped_arm_pins_its_five_acceptance_conditions() {
+        let reason = |text: &str| Some(text.to_string());
+        // (a) 非 CONDITIONAL かつ実効 EXECUTE。
+        let always = at_gate_with(InProgress);
+        let named = |stage: usize, reason: Option<String>| {
+            ReportRequest::new(Verdict::Skipped, Some(slug(stage)), None, reason, true)
+        };
+        assert!(matches!(
+            always.report_dispatch(&named(1, reason("out of scope"))),
+            Err(ReportRefusal::SkipNotConditional {
+                stage,
+                execution: ExecutionKind::Always
+            }) if stage == slug(1)
+        ));
+
+        // (b) CONDITIONAL だが `--reason` が空。
+        let conditional_plan = plan(1, &[Execute, Execute, Execute], &[false, true, true]);
+        let mut conditional = staged(
+            3,
+            1,
+            &[(1, InProgress)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        conditional.intent = conditional_plan;
+        assert!(matches!(
+            conditional.report_dispatch(&named(1, None)),
+            Err(ReportRefusal::SkipRequiresReason { stage }) if stage == slug(1)
+        ));
+        assert!(matches!(
+            conditional.report_dispatch(&named(1, reason("   "))),
+            Err(ReportRefusal::SkipRequiresReason { .. })
+        ));
+
+        // (c) カーソル以外を名指しした (名指し先も CONDITIONAL — (a) は通る)。
+        assert!(matches!(
+            conditional.report_dispatch(&named(2, reason("out of scope"))),
+            Err(ReportRefusal::SkipMustNameCursor { named, current })
+                if named == slug(2) && current == slug(1)
+        ));
+
+        // (d) checkbox が受理集合の外。
+        let mut pending = staged(3, 1, &[], Status::Running, AutonomyMode::Gated);
+        pending.intent = plan(1, &[Execute, Execute, Execute], &[false, true, true]);
+        assert!(matches!(
+            pending.report_dispatch(&named(1, reason("out of scope"))),
+            Err(ReportRefusal::SkipPrecondition {
+                stage,
+                actual: Pending
+            }) if stage == slug(1)
+        ));
+
+        // (e) 5 条件すべて満たせば `skip` 1 段。
+        assert_eq!(
+            steps_of(
+                &conditional
+                    .report_dispatch(&named(1, reason("out of scope")))
+                    .unwrap()
+            ),
+            ["skip"]
+        );
+    }
+
+    /// 実効 SKIP のカーソルは**この build では構成できない** — 受理の片腕は到達しない。
+    ///
+    /// upstream は `planAction === "SKIP"` を CONDITIONAL と同格の受理条件に置く (ピン
+    /// `:5613-5619`) が、こちらの集約は不変条件 `cursor_in_scope` でカーソルが実効 SKIP に
+    /// 立つ歴史を禁じている。名指しが実効 SKIP でカーソルでなければ (c) の
+    /// `SkipMustNameCursor` に落ちるので、この腕から `Commit[skip]` へ抜ける経路は無い。
+    #[test]
+    fn an_effective_skip_cursor_cannot_be_constructed() {
+        let intent = plan(1, &[Execute, Execute, Execute], &[false, false, false]);
+        let stage_keys: Vec<StageKey> = intent
+            .stages()
+            .iter()
+            .map(|entry| StageKey::new(entry.slug().clone(), entry.phase()))
+            .collect();
+        let refused = IntentExecution::new(
+            execution_id(),
+            intent_id(),
+            stage_keys,
+            vec![Execute, Skip, Execute],
+            vec![Completed, InProgress, Pending],
+            1,
+            Status::Running,
+            None,
+            AutonomyMode::Gated,
+            vec![false; 3],
+            vec![0; 3],
+            1,
+            occurred(),
+        );
+        assert!(
+            refused.is_err(),
+            "実効 SKIP にカーソルが立つ状態は不変条件が拒む"
+        );
+    }
+
+    /// `rejected` は非空のフィードバックを要する — `--user-input` が無ければ `--reason`。
+    #[test]
+    fn a_rejection_needs_nonblank_feedback_from_either_flag() {
+        let run = at_gate_with(AwaitingApproval);
+        let blank = ReportRequest::new(Verdict::Rejected, None, None, None, true);
+        assert!(matches!(
+            run.report_dispatch(&blank),
+            Err(ReportRefusal::RejectRequiresFeedback { stage }) if stage == slug(1)
+        ));
+        let from_reason = ReportRequest::new(
+            Verdict::Rejected,
+            None,
+            None,
+            Some("直して".to_string()),
+            true,
+        );
+        assert_eq!(
+            steps_of(&run.report_dispatch(&from_reason).unwrap()),
+            ["reject"]
+        );
+    }
+
+    /// 初期化ステージだけが in-scope の縮退計画では、非ゲートの `[x]` が最終ステージになる。
+    ///
+    /// upstream はここで `complete-workflow` を打つが、こちらの build には対応する集約
+    /// コマンドが無い (非ゲート完了は b42 で撤去 — #85 = A)。判断は表どおりに段を名指しし、
+    /// **打てないことを断るのは呼出側**である。
+    #[test]
+    fn a_degenerate_initialization_only_plan_still_names_the_completing_step() {
+        let run = Run::start(plan(1, &[Execute], &[false]));
+        assert_eq!(run.cursor(), at(&run, 0));
+        assert_eq!(run.checkbox(at(&run, 0)), Some(Completed));
+        let decision = run.report_dispatch(&request(Verdict::Forward)).unwrap();
+        assert_eq!(steps_of(&decision), ["complete-workflow"]);
+    }
+
+    /// 非ゲートで着手済みかつ最終なら、表は `complete-workflow` を名指しする。
+    ///
+    /// 誕生以降は構成できない状態だが、判断そのものは全域である（到達不能なのは歴史で
+    /// あって判断ではない）。
+    #[test]
+    fn a_non_gated_final_stage_in_flight_names_the_completing_step() {
+        let run = staged(
+            1,
+            0,
+            &[(0, InProgress)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        assert_eq!(
+            steps_of(&run.report_dispatch(&request(Verdict::Forward)).unwrap()),
+            ["complete-workflow"]
+        );
+    }
+
+    /// 初期化ステージが 2 つとも in-scope なら、`[x]` の非最終で `advance` を名指しする。
+    #[test]
+    fn a_degenerate_plan_with_two_initialization_stages_names_advance() {
+        let run = Run::start(plan(2, &[Execute, Execute], &[false, false]));
+        assert_eq!(run.cursor(), at(&run, 0));
+        let decision = run.report_dispatch(&request(Verdict::Forward)).unwrap();
+        assert_eq!(steps_of(&decision), ["advance"]);
+    }
+
+    /// 非ゲートで着手済みの前進は誕生 (= 初期化完了済み) 以降**構成できない**。
+    ///
+    /// 表の残り 2 マス (非ゲート × `[-]` / `[?]`) を埋める腕は、この事実の記録である。
+    #[test]
+    fn a_non_gated_stage_is_never_left_in_flight_after_genesis() {
+        let run = Run::start(plan(2, &[Execute, Execute], &[false, false]));
+        for index in 0..2 {
+            assert_eq!(
+                run.checkbox(at(&run, index)),
+                Some(Completed),
+                "誕生は in-scope の initialization を全て完了させる"
+            );
+        }
+        // 直に組めば表は答えを返す (到達不能なのは歴史であって判断ではない)。
+        let staged_in_flight = staged(
+            2,
+            0,
+            &[(0, InProgress)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        assert_eq!(
+            steps_of(
+                &staged_in_flight
+                    .report_dispatch(&request(Verdict::Forward))
+                    .unwrap()
+            ),
+            ["advance"]
+        );
     }
 
     fn def_id(value: &str) -> WorkflowDefinitionId {

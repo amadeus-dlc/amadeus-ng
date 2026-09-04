@@ -129,9 +129,24 @@ impl Workspace {
     }
 
     /// カーソルのステージを 1 つ進める（ゲート付きなので承認の報告になる）。
-    async fn report(&self, result: &str) {
+    /// カーソルのゲートを 1 つ畳む。
+    ///
+    /// `[-]` のゲートは明示 `--stage` を要し（forward 表）、前進は人間の選択を要する
+    /// （段 13）ので、どちらも添えて叩く。
+    async fn report(&self, result: &str, stage: &str) {
         let completion = self
-            .invoke("aidlc-orchestrate", &["report", "--result", result])
+            .invoke(
+                "aidlc-orchestrate",
+                &[
+                    "report",
+                    "--result",
+                    result,
+                    "--user-input",
+                    "A",
+                    "--stage",
+                    stage,
+                ],
+            )
             .await;
         assert_eq!(completion.code(), 0, "報告は通る: {completion:?}");
     }
@@ -521,8 +536,8 @@ async fn a_bare_next_delivers_the_next_stage() {
 async fn a_finished_plan_stops_with_the_completion_reason() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
-    workspace.report("approved").await;
-    workspace.report("approved").await;
+    workspace.report("approved", "domain-design").await;
+    workspace.report("approved", "contract-design").await;
 
     let directive = workspace.next(&[]).await;
 

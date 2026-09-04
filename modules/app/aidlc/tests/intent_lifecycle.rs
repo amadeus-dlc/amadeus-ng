@@ -27,10 +27,19 @@ impl Workspace {
     ///
     /// **カーソルも record も置かない** — intent がまだ生まれていない状態から始める。
     fn create() -> Workspace {
+        Workspace::with_execution("ALWAYS")
+    }
+
+    /// 最初のゲート付きステージ (`domain-design`) を CONDITIONAL にした合成グラフ。
+    fn conditional() -> Workspace {
+        Workspace::with_execution("CONDITIONAL")
+    }
+
+    fn with_execution(execution: &str) -> Workspace {
         let workspace = Workspace {
             root: tempfile::tempdir().expect("一時ディレクトリ"),
         };
-        workspace.write_definition();
+        workspace.write_definition(execution);
         let memory = workspace.path("aidlc/spaces/default/memory");
         fs::create_dir_all(&memory).expect("memory");
         fs::write(memory.join("org.md"), "# Org\n\n規則なし。\n").expect("org.md");
@@ -125,7 +134,7 @@ impl Workspace {
             .expect("切替は書ける");
     }
 
-    fn write_definition(&self) {
+    fn write_definition(&self, execution: &str) {
         let data = self.path(".claude/tools/data");
         let scopes = self.path(".claude/scopes");
         fs::create_dir_all(&data).expect("data");
@@ -135,10 +144,10 @@ impl Workspace {
             r#"{"name":"claude","harnessDir":".claude","rulesSubdir":"rules"}"#,
         )
         .expect("harness.json");
-        let node = |slug: &str, number: &str, name: &str, phase: &str| {
+        let node = |slug: &str, number: &str, name: &str, phase: &str, execution: &str| {
             format!(
                 r#"{{"slug":"{slug}","number":"{number}","name":"{name}","phase":"{phase}",
-                     "execution":"ALWAYS","mode":"inline","lead_agent":"orchestrator",
+                     "execution":"{execution}","mode":"inline","lead_agent":"orchestrator",
                      "scopes":["classic"]}}"#
             )
         };
@@ -146,9 +155,28 @@ impl Workspace {
             data.join("stage-graph.json"),
             format!(
                 "[{},{},{}]",
-                node("state-init", "0.1", "State Init", "initialization"),
-                node("domain-design", "1.1", "Domain Design", "inception"),
-                node("contract-design", "1.2", "Contract Design", "inception"),
+                // initialization は CONDITIONAL にできない (計画の不変条件)。
+                node(
+                    "state-init",
+                    "0.1",
+                    "State Init",
+                    "initialization",
+                    "ALWAYS"
+                ),
+                node(
+                    "domain-design",
+                    "1.1",
+                    "Domain Design",
+                    "inception",
+                    execution
+                ),
+                node(
+                    "contract-design",
+                    "1.2",
+                    "Contract Design",
+                    "inception",
+                    "ALWAYS"
+                ),
             ),
         )
         .expect("stage-graph.json");
@@ -178,6 +206,26 @@ fn line_of(completion: &aidlc::runtime::Completion) -> JsonValue {
         .unwrap_or_else(|| panic!("stdout に 1 行が要る: {completion:?}"));
     assert!(!line.contains('\n'), "1 行である: {line}");
     parse(line).expect("JSON として読める")
+}
+
+/// `report` を 1 回叩き、directive の `kind` と本文（`message` か `reason`）を返す。
+async fn report_directive(workspace: &Workspace, args: &[&str]) -> (String, String) {
+    let mut argv = vec!["report"];
+    argv.extend_from_slice(args);
+    let completion = invoke(workspace, "aidlc-orchestrate", &argv).await;
+    assert_eq!(
+        completion.code(),
+        0,
+        "ビジネス拒否も成功も exit 0: {completion:?}"
+    );
+    let directive = line_of(&completion);
+    let kind = string_of(&directive, "kind");
+    let body = if kind == "done" {
+        string_of(&directive, "reason")
+    } else {
+        string_of(&directive, "message")
+    };
+    (kind, body)
 }
 
 fn string_of(value: &JsonValue, key: &str) -> String {
@@ -299,7 +347,15 @@ async fn reporting_a_verdict_commits_and_projects() {
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "completed"],
+        &[
+            "report",
+            "--result",
+            "completed",
+            "--user-input",
+            "A",
+            "--stage",
+            "domain-design",
+        ],
     )
     .await;
 
@@ -432,11 +488,20 @@ async fn parking_a_completed_workflow_is_refused_verbatim() {
     )
     .await;
     // ゲート付き 2 段（domain-design / contract-design）を畳んで Completed にする。
-    for _ in 0..2 {
+    // `[-]` のゲートは明示 `--stage` を要し（forward 表）、前進は人間の選択を要する（段 13）。
+    for stage in ["domain-design", "contract-design"] {
         let completion = invoke(
             &workspace,
             "aidlc-orchestrate",
-            &["report", "--result", "completed"],
+            &[
+                "report",
+                "--result",
+                "completed",
+                "--user-input",
+                "A",
+                "--stage",
+                stage,
+            ],
         )
         .await;
         assert_eq!(completion.code(), 0, "{completion:?}");
@@ -519,7 +584,7 @@ async fn an_unknown_utility_verb_is_refused_on_stderr() {
     );
 }
 
-/// `report` は `--result` が要る（ビジネス拒否）。
+/// 段 5 — `report` は `--result` が要る（受理 10 語を提示順で並べる）。
 #[tokio::test]
 async fn reporting_without_a_result_is_refused() {
     let workspace = Workspace::create();
@@ -529,13 +594,35 @@ async fn reporting_without_a_result_is_refused() {
     assert_eq!(completion.code(), 0);
     assert_eq!(
         string_of(&line_of(&completion), "message"),
-        "report requires --result <outcome>."
+        "report requires --result <outcome>. Accepted: approved, completed, complete, done, \
+awaiting-approval, rejected, revised, resume, resumed, skipped (the verdict for the stage just \
+acted on)."
     );
 }
 
-/// resume 系の結末は遷移ではない — コミットせずに経路を返す。
+/// 段 5 — 受理 10 語の外は硬いエラーである。
 #[tokio::test]
-async fn a_resume_result_is_routed_rather_than_committed() {
+async fn reporting_an_unknown_result_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "ok"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Unknown --result \"ok\". accepted outcomes: approved, completed, complete, done, \
+awaiting-approval, rejected, revised, resume, resumed, skipped."
+    );
+}
+
+/// 段 4 — resume 系の結末は遷移ではない。`--user-input` が無ければそこで止まる。
+#[tokio::test]
+async fn a_resume_result_without_the_humans_choice_is_refused() {
     let workspace = Workspace::create();
 
     let completion = invoke(
@@ -548,7 +635,119 @@ async fn a_resume_result_is_routed_rather_than_committed() {
     assert_eq!(completion.code(), 0);
     assert_eq!(
         string_of(&line_of(&completion), "message"),
-        "Resume is routed, not committed. Run a fresh `next --resume`."
+        "report --result resumed requires --user-input with the human's resume choice."
+    );
+}
+
+/// 段 4 — 再開の報告はステージ遷移ではないので `--stage` を受け付けない。
+#[tokio::test]
+async fn a_resume_result_with_a_stage_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "resumed",
+            "--user-input",
+            "1",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "A resume-choice report is not a stage transition; omit --stage."
+    );
+}
+
+/// 段 4 — 状態ファイルが無ければ再開する対象が無い（ダッシュは ASCII の `-`）。
+#[tokio::test]
+async fn a_resume_result_without_a_state_file_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "resumed", "--user-input", "1"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "No active intent workflow state found (aidlc-state.md is absent) - nothing to resume."
+    );
+}
+
+/// 段 4 — 4 つの選択肢は数字でも語でも同じ経路に落ち、5 つ目は拒否になる。
+#[tokio::test]
+async fn the_four_resume_choices_route_and_anything_else_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+    assert_eq!(kind, "print");
+    assert_eq!(
+        message,
+        "Resume choice accepted at \"domain-design\". Re-run `next` to continue from the last checkpoint."
+    );
+    let (_, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "2"]).await;
+    assert_eq!(
+        message,
+        "Redo accepted at \"domain-design\". Run `aidlc-jump execute --target domain-design \
+--direction redo --scope classic` to reset the current stage, then re-run `next` to start it over."
+    );
+    let (_, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "3"]).await;
+    assert_eq!(
+        message,
+        "Jump accepted. Ask the human which stage to jump to, then re-run `next --stage <slug>`; \
+the direction and the target are worked out and checked for you."
+    );
+    let (_, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "4"]).await;
+    assert_eq!(
+        message,
+        "Start-fresh accepted. Confirm the new work's scope and description with the human, then \
+run `next --new-intent --scope <scope> \"<description>\"` — the existing workflow stays in place \
+and the new intent starts alongside it."
+    );
+    // 語での応答も同じ経路に落ちる（数字は正規化してから意味で照合する）。
+    let (_, message) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "resume",
+            "--user-input",
+            "REDO the current stage",
+        ],
+    )
+    .await;
+    assert!(message.starts_with("Redo accepted at"), "{message}");
+    // 当たらない応答は**正規化前の生値**を埋めて拒む。
+    let (kind, message) = report_directive(
+        &workspace,
+        &["--result", "resumed", "--user-input", "  Maybe Later  "],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Unrecognized resume choice \"  Maybe Later  \". Accepted choices: 1/resume from last \
+checkpoint, 2/redo the current stage, 3/jump to a stage, or 4/start fresh."
     );
 }
 
@@ -647,7 +846,7 @@ async fn reporting_before_any_intent_exists_is_refused() {
     assert_eq!(completion.code(), 0);
     assert_eq!(
         string_of(&line_of(&completion), "message"),
-        "No workflow execution to report against. Run `next` first."
+        "No active intent workflow state found (aidlc-state.md is absent) — nothing to report a transition for."
     );
 }
 
@@ -941,7 +1140,40 @@ async fn a_stage_value_that_is_not_a_slug_is_refused() {
     assert_eq!(completion.code(), 0);
     assert_eq!(
         string_of(&line_of(&completion), "message"),
-        "The --stage value is not a stage slug."
+        "Internal: reported stage \"NOT A SLUG\" is not in the compiled graph — cannot commit its transition."
+    );
+}
+
+/// 段 8 — slug の文法内でも計画に無ければ同じ逐語で断る。
+#[tokio::test]
+async fn a_stage_outside_the_plan_is_refused_with_the_same_wording() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "completed",
+            "--user-input",
+            "A",
+            "--stage",
+            "not-in-the-plan",
+        ],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0);
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Internal: reported stage \"not-in-the-plan\" is not in the compiled graph — cannot commit its transition."
     );
 }
 
@@ -963,6 +1195,8 @@ async fn reporting_a_stage_that_is_not_the_cursor_is_rejected() {
             "report",
             "--result",
             "completed",
+            "--user-input",
+            "A",
             "--stage",
             "contract-design",
         ],
@@ -970,8 +1204,10 @@ async fn reporting_a_stage_that_is_not_the_cursor_is_rejected() {
     .await;
 
     assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
-    let message = string_of(&line_of(&completion), "message");
-    assert!(message.starts_with("Transition rejected: "), "{message}");
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Stage \"contract-design\" is still pending. Run the stage before reporting it complete."
+    );
 }
 
 /// 空間名として成立しないカーソルは**既定へ落とさず**拒む（record とイベントが散るため）。
@@ -1251,14 +1487,22 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
     )
     .await;
 
-    for outcome in ["awaiting-approval", "rejected", "revised", "approved"] {
+    // gate 系 3 語は `print` で `Recorded <result> for "<slug>".` を返す（コミットは
+    // するが、ワークフローは前へ進まない）。
+    for outcome in ["awaiting-approval", "rejected", "revised"] {
         let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
         assert_eq!(next.code(), 0, "{outcome} の直前の next: {next:?}");
 
         let completion = invoke(
             &workspace,
             "aidlc-orchestrate",
-            &["report", "--result", outcome],
+            &[
+                "report",
+                "--result",
+                outcome,
+                "--user-input",
+                "Sharpen the testing posture.",
+            ],
         )
         .await;
 
@@ -1268,12 +1512,27 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
             "{outcome} は受理される: {completion:?}"
         );
         let directive = line_of(&completion);
-        assert_eq!(string_of(&directive, "kind"), "done");
+        assert_eq!(string_of(&directive, "kind"), "print", "{directive:?}");
         assert_eq!(
-            string_of(&directive, "reason"),
-            format!("reported {outcome}")
+            string_of(&directive, "message"),
+            format!("Recorded {outcome} for \"domain-design\".")
         );
     }
+
+    // 承認だけが `done` で、コミットした段と scope を名乗る。
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "approved", "--user-input", "A"],
+    )
+    .await;
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "done");
+    assert_eq!(
+        string_of(&directive, "reason"),
+        "Committed approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
+    );
 
     let state = workspace.state_file().expect("骨格");
     assert!(
@@ -1282,9 +1541,265 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
     );
 }
 
-/// 計画が EXECUTE と言っているステージは飛ばせない — 集約の拒否を逐語で中継する。
+/// 段 10 — 既に開いているゲートへの `awaiting-approval` は**何もコミットしない**成功である。
 #[tokio::test]
-async fn skipping_a_stage_the_plan_marks_execute_is_rejected() {
+async fn a_repeated_awaiting_approval_report_is_an_idempotent_print() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    let before = workspace.audit_shard().expect("監査シャード");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "print");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Stage \"domain-design\" is already awaiting approval."
+    );
+    assert_eq!(
+        workspace.audit_shard().expect("監査シャード"),
+        before,
+        "監査行も状態差分も空である（upstream `awaiting-approval-repeat`）"
+    );
+}
+
+/// 段 10 — gate 系 3 語の前提違反は語ごとに別の逐語で断る。
+#[tokio::test]
+async fn each_gate_verdict_refuses_with_its_own_precondition_wording() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    // `[-]` から `revised` は通らない（再入できるのは revising だけ）。
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "revised"],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Stage \"domain-design\" is in-progress; only a revising stage can re-enter its gate."
+    );
+
+    // 差し戻して `[R]` にすると、今度は `awaiting-approval` が通らない。
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "rejected", "--reason", "直して"],
+    )
+    .await;
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Stage \"domain-design\" is revising; only an in-progress stage can open a gate."
+    );
+    // `[R]` は差し戻しの前提集合にも入らない。
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "rejected", "--reason", "もう一度"],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Stage \"domain-design\" is revising; only an active or awaiting-approval stage can be rejected."
+    );
+}
+
+/// 段 10 — `rejected` は非空のフィードバックを要する。
+#[tokio::test]
+async fn a_rejection_without_feedback_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "rejected", "--reason", "   "],
+    )
+    .await;
+
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "report --result rejected for \"domain-design\" requires nonblank --user-input or --reason feedback."
+    );
+}
+
+/// 段 13 — ゲート付き未完了の前進は人間の選択を要する。
+///
+/// 抜け道 2 つ（autonomous な実行・env `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1`）は集約の
+/// ユニットテストが固定する — env を差し替えるには `unsafe` が要り、workspace lint が
+/// `unsafe_code` を forbid しているのでプロセス内では踏めない。
+#[tokio::test]
+async fn the_human_presence_guard_refuses_a_blank_approval() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+
+    let (kind, message) = report_directive(&workspace, &["--result", "approved"]).await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "report --result approved for \"domain-design\" requires --user-input with the human's exact approval choice."
+    );
+}
+
+/// forward 表 — `[-]` のゲートは明示 `--stage` を要し、名乗れば 2 段でコミットする。
+#[tokio::test]
+async fn approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_it() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "approved", "--user-input", "A"],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Stage \"domain-design\" is still in-progress. To approve a gated stage that has not \
+entered awaiting-approval, report the acted directive explicitly with --stage \"domain-design\" \
+so the engine cannot mistake a freshly advanced Current Stage for the completed one."
+    );
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "approved",
+            "--user-input",
+            "A",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "reason"),
+        "Committed gate-start + approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
+    );
+}
+
+/// forward 表 — 未着手の `[ ]` と、通過済み `[x]` の再報告。
+#[tokio::test]
+async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "approved",
+            "--user-input",
+            "A",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "message"),
+        "Stage \"contract-design\" is still pending. Run the stage before reporting it complete."
+    );
+
+    // 最初のゲートを承認してカーソルを進めてから、通過済みステージを再報告する。
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "approved",
+            "--user-input",
+            "A",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "approved",
+            "--user-input",
+            "A",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&completion), "reason"),
+        "Stage \"domain-design\" is already completed and the workflow has moved on to \
+\"contract-design\" (scope: classic); idempotent re-report, no transition needed."
+    );
+}
+
+/// 段 9 — `skipped` の受理条件 4 形（明示 stage / CONDITIONAL / reason / カーソル一致）。
+#[tokio::test]
+async fn the_skipped_arm_refuses_each_missing_condition_verbatim() {
     let workspace = Workspace::create();
     invoke(
         &workspace,
@@ -1294,23 +1809,67 @@ async fn skipping_a_stage_the_plan_marks_execute_is_rejected() {
     .await;
     invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
 
-    let completion = invoke(
+    // (a) 明示・非空の `--stage` が要る（集約より前の構文的な段）。
+    let (kind, message) = report_directive(
         &workspace,
-        "aidlc-orchestrate",
-        &["report", "--result", "skipped", "--reason", "out of scope"],
+        &["--result", "skipped", "--reason", "out of scope"],
     )
     .await;
-
+    assert_eq!(kind, "error");
     assert_eq!(
-        completion.code(),
-        0,
-        "ビジネス拒否は exit 0: {completion:?}"
+        message,
+        "report --result skipped requires an explicit nonblank --stage <slug>."
     );
-    let directive = line_of(&completion);
-    assert_eq!(string_of(&directive, "kind"), "error");
+    let (_, message) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "skipped",
+            "--reason",
+            "out of scope",
+            "--stage",
+            "   ",
+        ],
+    )
+    .await;
     assert_eq!(
-        string_of(&directive, "message"),
-        "Transition rejected: command: stage 1 is not skippable"
+        message,
+        "report --result skipped requires an explicit nonblank --stage <slug>."
+    );
+    // (b) 計画が EXECUTE と言っている ALWAYS のステージは飛ばせない。
+    let (_, message) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "skipped",
+            "--reason",
+            "out of scope",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+    assert_eq!(
+        message,
+        "Stage \"domain-design\" is execution: ALWAYS; only a CONDITIONAL stage can report skipped."
+    );
+    // (c) カーソル以外を名指しした場合も (b) が先に立つ — 名指し先の宣言を先に見るからで
+    //     ある（ピンの判定順 `:5613-5633`）。
+    let (_, message) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "skipped",
+            "--reason",
+            "out of scope",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(
+        message,
+        "Stage \"contract-design\" is execution: ALWAYS; only a CONDITIONAL stage can report skipped."
     );
 }
 
@@ -1394,5 +1953,414 @@ async fn a_projection_that_cannot_run_after_the_park_is_refused() {
             .unwrap_or_default()
             .starts_with("aidlc-orchestrate: clone id:"),
         "{completion:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `report` の 13 段ガード — 段 1 / 2 / 3 と、コミットの残り 2 形
+// ---------------------------------------------------------------------------
+
+/// 段 1 — `State Version` が現行でない状態ファイルは**どの report 経路でも**先に断る。
+#[tokio::test]
+async fn the_state_version_guard_refuses_every_report_path() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let state_file = workspace
+        .record_dir()
+        .expect("record")
+        .join("aidlc-state.md");
+    let original = fs::read_to_string(&state_file).expect("状態ファイル");
+
+    // 3 形 (unparseable / past / future) を書き換えて 1 つずつ踏む。
+    let cases: [(&str, &str); 3] = [
+        (
+            "8 garbage",
+            "Incompatible workflow state: the State Version field is missing, empty, or \
+unparseable in aidlc-state.md, so this state cannot be matched to the current v8 stage graph and \
+cannot be advanced safely. Archive your workspace ('mv aidlc aidlc.archive') and start a fresh \
+workflow (describe what to build), or finish this workflow on the prior shell. Run `/aidlc \
+--doctor` for the full diagnosis.",
+        ),
+        (
+            "7",
+            "Incompatible workflow state: State Version 7 predates the current v8 stage graph. \
+v8 renamed the Inception `application-design` stage to `domain-design` and inserted \
+`contract-design`, so this state's stage rows no longer match the graph and cannot be advanced \
+safely. Archive your workspace ('mv aidlc aidlc.v7-archive') and start a fresh workflow (describe \
+what to build), or finish this workflow on the prior shell. Run `/aidlc --doctor` for the full \
+diagnosis.",
+        ),
+        (
+            "9",
+            "Incompatible workflow state: State Version 9 is newer than the current v8 stage \
+graph this build understands, so it cannot be advanced safely. Upgrade the framework to a build \
+that ships state schema v9 (or newer), or finish this workflow on the shell that produced it. Run \
+`/aidlc --doctor` for the full diagnosis.",
+        ),
+    ];
+    for (version, expected) in cases {
+        fs::write(
+            &state_file,
+            original.replace(
+                "- **State Version**: 8",
+                &format!("- **State Version**: {version}"),
+            ),
+        )
+        .expect("版を書き換える");
+        // 主経路も `--single` も `--skeleton-stance` も、段 1 で同じ文言に落ちる。
+        for args in [
+            vec!["--result", "approved"],
+            vec![
+                "--single",
+                "--result",
+                "approved",
+                "--stage",
+                "domain-design",
+            ],
+            vec!["--skeleton-stance", "on"],
+        ] {
+            let (kind, message) = report_directive(&workspace, &args).await;
+            assert_eq!(kind, "error", "{version}: {args:?}");
+            assert_eq!(message, expected, "{version}: {args:?}");
+        }
+    }
+}
+
+/// 段 1 — 0 バイトの状態ファイルは「不在」ではなく「版が読めない」である。
+#[tokio::test]
+async fn a_zero_byte_state_file_is_refused_as_an_unreadable_version() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let state_file = workspace
+        .record_dir()
+        .expect("record")
+        .join("aidlc-state.md");
+    fs::write(&state_file, "").expect("空にする");
+
+    let (kind, message) = report_directive(&workspace, &["--result", "approved"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Incompatible workflow state: the State Version field is missing"),
+        "{message}"
+    );
+}
+
+/// 段 2 — `--single` は構文を検証し、**本流を一歩も進めずに**未配線を名乗る（I10）。
+#[tokio::test]
+async fn the_single_report_validates_its_syntax_and_never_advances_the_main_workflow() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let before = workspace.state_file().expect("投影済み");
+
+    let (_, message) = report_directive(&workspace, &["--single"]).await;
+    assert_eq!(
+        message,
+        "report --single requires --result <outcome>. Accepted: approved, completed, complete, \
+done (the verdict for the single stage just run)."
+    );
+
+    let (_, message) = report_directive(&workspace, &["--single", "--result", "rejected"]).await;
+    assert_eq!(
+        message,
+        "Unknown --result \"rejected\". report commits forward outcomes only; accepted: approved, \
+completed, complete, done."
+    );
+
+    let (_, message) = report_directive(&workspace, &["--single", "--result", "approved"]).await;
+    assert_eq!(
+        message,
+        "report --single must not advance the main workflow. Pass --stage <slug> to commit the \
+single stage's synthetic-id pair; --single never writes the main workflow's Current Stage."
+    );
+
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Cannot complete isolated stage \"domain-design\": single-stage reporting is not wired in this build."
+    );
+    assert_eq!(
+        workspace.state_file().expect("投影済み"),
+        before,
+        "`--single` は本流の状態を 1 バイトも動かさない"
+    );
+}
+
+/// 段 3 — `--skeleton-stance` は値を検証し、state を要求してから未配線を名乗る。
+#[tokio::test]
+async fn the_skeleton_stance_report_validates_its_value_and_requires_a_state_file() {
+    let workspace = Workspace::create();
+
+    // state がまだ無い段階でも、値の検証が先に立つ（順序は upstream と同じ）。
+    let (_, message) = report_directive(&workspace, &["--skeleton-stance", "maybe"]).await;
+    assert_eq!(
+        message,
+        "Unknown --skeleton-stance \"maybe\". Accepted: on, off, scope-dependent (the \
+walking-skeleton stance classified from the team's ## Walking Skeleton prose)."
+    );
+
+    let (_, message) = report_directive(&workspace, &["--skeleton-stance", "on"]).await;
+    assert_eq!(
+        message,
+        "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for."
+    );
+
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let before = workspace.state_file().expect("投影済み");
+    let (kind, message) =
+        report_directive(&workspace, &["--skeleton-stance", "scope-dependent"]).await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Cannot record skeleton stance \"scope-dependent\": skeleton-stance reporting is not wired in this build."
+    );
+    assert_eq!(
+        workspace.state_file().expect("投影済み"),
+        before,
+        "未配線の段は状態を 1 バイトも動かさない"
+    );
+}
+
+/// `skipped` の受理 — CONDITIONAL なステージはルーティングされ、完了数には入らない。
+#[tokio::test]
+async fn a_conditional_stage_is_routed_forward_by_a_skipped_report() {
+    let workspace = Workspace::conditional();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let (kind, reason) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "skipped",
+            "--reason",
+            "  out of scope  ",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+
+    assert_eq!(kind, "done");
+    assert_eq!(
+        reason,
+        "Committed skip for \"domain-design\" (scope: classic). State routed forward; run next to continue."
+    );
+    let state = workspace.state_file().expect("投影済み");
+    assert!(state.contains("- [S] domain-design"), "{state}");
+    assert!(state.contains("- [-] contract-design"), "{state}");
+    let audit = workspace.audit_shard().expect("監査シャード");
+    // 理由は trim して運ぶ（upstream も `flags.reason?.trim()` を渡す）。
+    assert!(audit.contains("**Reason**: out of scope"), "{audit}");
+}
+
+/// 最後のゲートを畳むとワークフローが完了し、その再報告は冪等な `done` になる。
+#[tokio::test]
+async fn completing_the_last_gate_projects_the_workflow_completion_and_folds_a_re_report() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    for stage in ["domain-design", "contract-design"] {
+        let (kind, _) = report_directive(
+            &workspace,
+            &[
+                "--result",
+                "approved",
+                "--user-input",
+                "A",
+                "--stage",
+                stage,
+            ],
+        )
+        .await;
+        assert_eq!(kind, "done");
+    }
+
+    // 完了の投影 — 状態 7 欄とフェーズ行、監査 3 行。
+    let state = workspace.state_file().expect("投影済み");
+    for field in [
+        "- **Status**: Completed",
+        "- **In Progress**: none",
+        "- **Next Stage**: none",
+        "- **Next Action**: Workflow complete",
+        "- **Last Completed Stage**: contract-design",
+        "- **Completed**: 3",
+        "- **Inception**: Verified",
+    ] {
+        assert!(state.contains(field), "{field}:\n{state}");
+    }
+    let audit = workspace.audit_shard().expect("監査シャード");
+    for row in [
+        "**Event**: PHASE_COMPLETED",
+        "**To phase**: (end)",
+        "**Phase boundary**: inception → end",
+        "**Event**: WORKFLOW_COMPLETED",
+        "**Details**: Scope: classic, 3 stages completed",
+    ] {
+        assert!(audit.contains(row), "{row}:\n{audit}");
+    }
+
+    // 完了済みへの再報告は何もコミットせず、新規作業の出口案内が付く。
+    let (kind, reason) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--user-input",
+            "A",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done");
+    assert!(
+        reason.starts_with(
+            "Workflow is already completed at \"contract-design\" (scope: classic); no transition was needed."
+        ),
+        "{reason}"
+    );
+    assert!(
+        reason.contains("If this input is genuinely NEW, unrelated work"),
+        "{reason}"
+    );
+    assert_eq!(
+        workspace.state_file().expect("投影済み"),
+        state,
+        "冪等な再報告は状態を 1 バイトも動かさない"
+    );
+}
+
+/// 段 1 — 状態ファイルが**在るのに読めない**なら、版が読めないのとは別に材料を出して断る。
+#[tokio::test]
+async fn an_unreadable_state_file_is_reported_with_its_place_and_cause() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let state_file = workspace
+        .record_dir()
+        .expect("record")
+        .join("aidlc-state.md");
+    // 骨格の置き場をディレクトリで塞ぐ（在るが文字列として読めない）。
+    fs::remove_file(&state_file).expect("骨格");
+    fs::create_dir(&state_file).expect("塞ぐ");
+
+    let (kind, message) = report_directive(&workspace, &["--result", "approved"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
+    );
+    assert!(message.contains("aidlc-state.md"), "{message}");
+}
+
+/// 段 4 — 状態ファイルは在るのに現在地が引けなければ、再開先を名乗れない。
+#[tokio::test]
+async fn a_resume_without_a_resolvable_cursor_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 実行カーソルだけを外す — 状態ファイルは残るので段 4 の state 判定は通り、
+    // 現在地の引当だけが空になる。
+    fs::remove_file(
+        workspace
+            .record_dir()
+            .expect("record")
+            .join(".aidlc-execution"),
+    )
+    .expect("実行カーソル");
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "State file has no Current Stage field - cannot resume from the last checkpoint."
+    );
+}
+
+/// forward 表 — 差し戻し中 (`[R]`) のステージは前進の完了ではない。
+#[tokio::test]
+async fn a_revising_stage_cannot_be_reported_as_a_forward_completion() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "rejected", "--reason", "直して"],
+    )
+    .await;
+
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--user-input",
+            "A",
+            "--stage",
+            "domain-design",
+        ],
+    )
+    .await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Stage \"domain-design\" is revising; report commits forward completions only."
     );
 }

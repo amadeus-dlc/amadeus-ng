@@ -2,21 +2,21 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, StageIndex,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, ReportDecision, ReportNoOp,
+    ReportRequest, TransitionStep,
 };
 use core_command_domain::workflow_definition::StageSlug;
-use core_command_domain::workspace::CheckboxState;
 
 use super::commit_error::CommitError;
+use super::commit_outcome::CommitOutcome;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
-use super::reported_transition::ReportedTransition;
 
-/// コンダクタが報告した結末（[`ReportedTransition`]）を 1 つの遷移としてコミットする。
+/// コンダクタが報告した結末（[`ReportRequest`]）を 1 つの遷移としてコミットする。
 ///
-/// 定型は 3 手である: **`find_by_id` で集約を再構成 → 集約コマンドで判断 → `store` で保存**。
-/// 以降の U6・U7 もこの形に乗る。
+/// 定型は 3 手である: **`find_by_id` で集約を再構成 → 集約のクエリ `report_dispatch` に
+/// 何を打つか訊く → 決まった集約コマンドを打って `store` で保存**。
 ///
 /// # 名前について
 ///
@@ -27,18 +27,18 @@ use super::reported_transition::ReportedTransition;
 ///
 /// # ここに無いもの
 ///
-/// - **業務判断**。前提の検査（受理状態・ゲートの有無・checkbox の前提集合・読み飛ばし可否・
-///   通過済み判定）はすべて集約が持つ。ここにあるのは「どの集約コマンドを打つか」を集約の
-///   クエリに訊いて決めるフロー制御だけである（`coding-rules/tell-dont-ask.md` — 判断は
-///   状態の所有者へ）。
-/// - **何が起きたかの読取チャネル**。[`CommitVerdictUseCase::execute`] は成功しても値を返さない
-///   （下記「戻り値を持たない理由」）。
-/// - **文言**。「Committed approve for "..."」のような逐語は合成ルート（U7）の Presenter が組む。
+/// - **業務判断**。13 段ガードのうち状態で決まる段（`skipped` の受理 5 条件・gate 前提・
+///   human presence・forward 表・stale 再報告）はすべて集約のクエリ
+///   [`IntentExecution::report_dispatch`] が持つ。ここにあるのは「決まったとおりに打つ」
+///   フロー制御だけである（`coding-rules/tell-dont-ask.md` — 判断は状態の所有者へ）。
+/// - **文言**。「Committed approve for "..."」のような逐語は合成ルート（U7）の Presenter が
+///   組む。ここが返すのは材料（[`CommitOutcome`]）だけである。
 /// - **リードモデルの更新**。`aidlc-state.md` と監査シャードを最新化する `ReadModelUpdater` を
 ///   起動するのは合成ルート（U7）である。コマンド側のユースケースはクエリ側を知らない
 ///   （`coding-rules/cqrs-boundaries.md` — 境界はクレート分離で物理強制されている）。
-/// - **`resume` のルーティング**。遷移をコミットしないので入力型に無く、Controller（U7）が
-///   手前で分岐する（`coding-rules/use-case-rules.md` §3）。
+/// - **`resume` のルーティング**。遷移をコミットしないので合成ルートが手前で分岐する
+///   （`coding-rules/use-case-rules.md` §3）。集約まで届いた場合は
+///   `ReportRefusal::RoutedVerdict` になる。
 ///
 /// # 束縛はスタティック
 ///
@@ -58,8 +58,8 @@ pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepositor
 /// コミットしうる。
 #[derive(Debug)]
 enum AttemptOutcome {
-    /// 決着した — コミットしたか、何もコミットしない成功（ゲート既開・BR1.9）だった。
-    Settled,
+    /// 決着した — コミットしたか、何もコミットしない成功だった。
+    Settled(CommitOutcome),
     /// 楽観 version が競合した。
     Conflicted {
         /// この試行が対象にしたステージ（再試行はこれを名指しする）。
@@ -88,101 +88,73 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
 
     /// 報告された結末を 1 つの遷移としてコミットする。
     ///
-    /// `stage` は報告が名指ししたステージ（`None` はカーソル）。カーソル以外を名指しした報告は
-    /// **通過済み completed への再報告**としてのみ受理し、集約の `stale_report` に判断を委ねる
-    /// （BR1.9）。
-    ///
     /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない（NFR3.1）。
     ///
     /// # 引数は集約 ID と値オブジェクトだけである
     ///
     /// ユースケースの `execute` に**集約を渡さない** — 渡してよいのは集約 ID と値オブジェクト
     /// だけで、集約は保持するリポジトリから内部で取る
-    /// （`coding-rules/use-case-rules.md` §2b、改訂 10 のオーナー裁定）。したがって
-    /// 引数は `IntentExecutionId`（集約 ID）・`StageSlug`（値オブジェクト）・
-    /// `ReportedTransition`（値オブジェクト）・`DateTime<Utc>`（値）である。
+    /// （`coding-rules/use-case-rules.md` §2b、改訂 10 のオーナー裁定）。
     ///
-    /// 内部フローは ① 実行を再構成 → ② その `intent_id` を読む → ③ `IntentRepository` で
-    /// 計画を引く → ④ `&Intent` を集約コマンドへ → ⑤ `store`。以前は Controller が
-    /// `&Intent` を読んで渡していたが、あれは I8 — **読取専用**ユースケース専用のパターン —
-    /// の誤適用だった（§4 の射程）。
+    /// 内部フローは ① 実行を再構成 → ② その `intent_id` で計画を引く → ③ 集約のクエリに
+    /// 判断を訊く → ④ 決まった段を打つ → ⑤ `store`。
     ///
-    /// # 戻り値を持たない理由（CQS）
+    /// # 戻り値は「何をコミットしたか」の材料である
     ///
-    /// 状態を変えるので Command であり、CQS が定める Command の形（`&mut self` +
-    /// `Result<(), E>`）をそのまま採る（`coding-rules/command-query-separation.md`）。
+    /// b46 以前は CQS の Command の形（`Result<(), E>`）を採り、結果は投影後のリードモデルから
+    /// 読み直す前提だった。13 段ガードの逐語（`Committed <subs> for "<slug>" (scope: <scope>)` /
+    /// 拒否 12 形 / no-op 3 形）は**判断そのものが運ぶ材料**でしか組めないので、判断の答えを
+    /// 呼出側へ返す。CQS の Command 規則を曲げているのではなく、この動詞の答えが
+    /// 「状態の変化」ではなく「どの遷移を選んだか」だからである（集約コマンドが単一
+    /// イベントを返すのと同じ位置づけ — `coding-rules/aggregate-commands.md`）。
     ///
-    /// 「何をコミットしたか」を返さなくても呼出側は困らない。**この CLI では `ReadModelUpdater`
-    /// の catch_up が同一プロセス内で同期実行される**ので、コミット直後にリードモデルは最新に
-    /// なる。CLI サブコマンドの出力データはそこから、**コマンドユースケース → RMU（投影）→
-    /// クエリユースケース**の経路で得る（オーナー裁定 2026-08-29 — 「イベントを基に RMU で
-    /// 作ったリードモデルを読めばよい」）。クエリユースケースはクエリ側が所有し、ドメインには
-    /// 依存しない（`coding-rules/cqrs-boundaries.md`）ので、境界違反にはならない。
-    ///
-    /// その読み先は `aidlc-state.md` や監査シャードとは限らない。あれは「upstream 互換・
-    /// 人間可読・git 交換用」のリードモデルであってバイト逐語が契約であり、逆パースする設計には
-    /// しない。RMU は同じイベント列からクエリ向きの投影（SQLite テーブル）を別に作ってよく、
-    /// チェックポイント表は投影名をキーに持つので既に複数投影を許す形になっている。
-    ///
-    /// 集約コマンドが `&mut self -> Result<IntentExecutionEvent, _>` である事実は先例に
-    /// ならない。あれは `store()` へ渡す**書込パイプラインの配管**であって、Presenter に
-    /// 読ませる読取チャネルではない。
-    ///
-    /// **何もコミットしない成功が 2 つある** — 既に開いているゲートへの再報告
-    /// （golden `awaiting-approval-repeat` は監査行も状態差分も空）と、カーソル通過済み
-    /// ステージへの冪等な再報告（BR1.9）である。どちらも `Ok(())` であり、区別は戻り値では
-    /// 外へ出さない。呼出側が区別を要するなら、それもクエリ側から得る。
+    /// **何もコミットしない成功が 3 つある** — 既に開いているゲートへの再報告、カーソル
+    /// 通過済みステージへの冪等な再報告（BR1.9）、完了済みワークフローへの再報告である。
+    /// どれも `Ok(CommitOutcome::NoOp { .. })` であり、区別は変種が運ぶ。
     ///
     /// # `Conflict` は 1 回だけ再試行する
     ///
     /// 楽観 version の競合だけがこのユースケースの持つ唯一の再試行政策である
-    /// （contract-design Q6 = A — 「楽観 version 競合は即 `Err`、ユースケースが 1 回だけ再構成
-    /// して再試行、それでも競合なら CLI がエラー終了」）。ポート doc の C3 ③「`Conflict` 以外は
-    /// 再試行しない」は、`Conflict` **だけ**が再試行の対象であり、その政策の持ち主が
-    /// ユースケースであることを言っている。
+    /// （contract-design Q6 = A）。再試行は**再構成からやり直す** — 古い集約に `store` だけ
+    /// 打ち直すのは、読んだ時点の版で書くという楽観ロックの意味そのものを壊す。2 回目も
+    /// `Conflict` なら伝播する。
     ///
-    /// 再試行は**再構成からやり直す** — 古い集約に `store` だけ打ち直すのは、読んだ時点の版で
-    /// 書くという楽観ロックの意味そのものを壊す。したがって 2 回目は `find_by_id` から始め、
-    /// 新しい版の集約に改めてコマンドを打つ。2 回目も `Conflict` なら伝播する。
-    ///
-    /// **対象ステージは 1 回目が解決したものを名指しで引き継ぐ。** `stage` に `None` を受けた
-    /// まま再試行すると対象が「そのときのカーソル」に再解決されてしまい、競合相手が先に同じ
-    /// ゲートを承認していた場合、**報告されていない次のステージ**へ `Forward` を打つ
-    /// （次ステージは `[-]` なので BR1.3 により承認が通ってしまう）。名指しすれば、その状況は
-    /// `CommitVerdictUseCase::is_stale_re_report` が通過済み no-op
-    /// （BR1.9）に畳み、カーソルが動いていない競合（`set-autonomy` 等）は名指し == カーソルで
-    /// 通常経路に入る。再試行の意味論が「**同じ報告をもう一度**」に固定される。
-    ///
-    /// **再試行は attempt 全体をやり直す**ので、計画も引き直す。`Intent` は不変なので再取得は
-    /// 無害である（改訂 10）。
-    ///
-    /// 再試行後に集約がコマンドを拒否した場合も、そのまま伝播する。
+    /// **対象ステージは 1 回目が解決したものを名指しで引き継ぐ。** 名指し無しのまま再試行
+    /// すると対象が「そのときのカーソル」に再解決され、競合相手が先に同じゲートを承認して
+    /// いた場合に**報告されていない次のステージ**へ前進を打ってしまう。名指しすれば、その
+    /// 状況は集約の forward 表が通過済み no-op に畳む。
     ///
     /// # Errors
     ///
     /// 実行の再構成・永続化の失敗（`Repository`）、計画の取得の失敗（`IntentRepository`）、
-    /// 集約による拒否（`Command`）、計画に無いステージの名指し（`UnknownStage`）を返す。集約とポートの失敗は**そのまま伝播**する — 握り潰しも
-    /// 言い換えもしない。再試行するのは上記の `Conflict` 1 回だけである。
+    /// 集約の判断による拒否（`Refused`）、判断が名指しした段の集約コマンドによる拒否
+    /// （`Transition`）、この build に無い段（`UnwiredTransition`）を返す。集約とポートの
+    /// 失敗は**そのまま伝播**する — 握り潰しも言い換えもしない。
     pub async fn execute(
         &mut self,
         execution_id: &IntentExecutionId,
-        stage: Option<&StageSlug>,
-        transition: ReportedTransition,
+        request: ReportRequest,
         occurred_at: DateTime<Utc>,
-    ) -> Result<(), CommitError> {
-        let AttemptOutcome::Conflicted { target, .. } = self
-            .attempt(execution_id, stage, transition.clone(), occurred_at)
-            .await?
-        else {
-            return Ok(());
-        };
-        // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」を参照）。
-        match self
-            .attempt(execution_id, Some(&target), transition, occurred_at)
-            .await?
-        {
-            AttemptOutcome::Settled => Ok(()),
-            AttemptOutcome::Conflicted { conflict, .. } => Err(CommitError::Repository(conflict)),
+    ) -> Result<CommitOutcome, CommitError> {
+        // 1 回目。競合しなければここで決着する。
+        match self.attempt(execution_id, &request, occurred_at).await? {
+            AttemptOutcome::Settled(outcome) => Ok(outcome),
+            // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」）。
+            AttemptOutcome::Conflicted { target, .. } => {
+                let retried = ReportRequest::new(
+                    request.verdict(),
+                    Some(target),
+                    request.user_input().map(str::to_string),
+                    request.reason().map(str::to_string),
+                    request.human_presence_guard(),
+                );
+                match self.attempt(execution_id, &retried, occurred_at).await? {
+                    AttemptOutcome::Settled(outcome) => Ok(outcome),
+                    AttemptOutcome::Conflicted { conflict, .. } => {
+                        Err(CommitError::Repository(conflict))
+                    }
+                }
+            }
         }
     }
 
@@ -190,15 +162,13 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
     ///
     /// # Errors
     ///
-    /// 競合**以外**の失敗（再構成・集約の拒否・計画に無いステージ・符号化の失敗など）。
-    /// 楽観 version の競合だけは `Err` ではなく [`AttemptOutcome::Conflicted`] で返す —
-    /// 呼出側が再試行の対象を名指しできるように、この試行が対象にしたステージを添えるためで
-    /// ある。
+    /// 競合**以外**の失敗。楽観 version の競合だけは `Err` ではなく
+    /// [`AttemptOutcome::Conflicted`] で返す — 呼出側が再試行の対象を名指しできるように、
+    /// この試行が対象にしたステージを添えるためである。
     async fn attempt(
         &mut self,
         execution_id: &IntentExecutionId,
-        stage: Option<&StageSlug>,
-        transition: ReportedTransition,
+        request: &ReportRequest,
         occurred_at: DateTime<Utc>,
     ) -> Result<AttemptOutcome, CommitError> {
         // 再構成した集約は**ストアが刻んだ版を運んでいる**ので、書込へはそれをそのまま提示
@@ -210,140 +180,128 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
             .await?;
         // 計画は**保持しているリポジトリから内部で取る**（改訂 10）。実行は intent を ID で
         // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
-        // 取り違えのガードは従来どおり集約側で発火する — ここでは構成上一致する。
         let intent = self
             .intent_repository
             .find_by_id(aggregate.intent_id())
             .await?;
-        let intent = &intent;
+        let scope = intent.scope().to_string();
 
-        // 何もコミットしない 2 経路。どちらも成功であり、区別は戻り値に出さない。
-        if let Some(named) = stage
-            && Self::is_stale_re_report(intent, &aggregate, named)?
-        {
-            return Ok(AttemptOutcome::Settled);
-        }
-        let cursor = aggregate.cursor();
-        if Self::gate_is_already_open(&aggregate, cursor, &transition) {
-            return Ok(AttemptOutcome::Settled);
-        }
+        // 13 段ガードのうち状態で決まる段はすべてここで決着する（判断は集約に閉じる）。
+        let (stage, steps) = match aggregate.report_dispatch(&intent, request)? {
+            ReportDecision::NoOp(no_op) => {
+                return Ok(AttemptOutcome::Settled(CommitOutcome::NoOp {
+                    stage: Self::no_op_stage(&no_op).clone(),
+                    scope,
+                    no_op,
+                }));
+            }
+            ReportDecision::Commit { stage, steps } => (stage, steps),
+        };
 
-        // ここまで来たら対象は必ずカーソルである — `stage` が名指ししていた場合、カーソルより
-        // 手前のステージは既に上の no-op で返しているからである。
-        let event = Self::command(intent, &mut aggregate, transition, occurred_at)?;
+        let event = Self::commit_steps(
+            &intent,
+            &mut aggregate,
+            &stage,
+            &steps,
+            request,
+            occurred_at,
+        )?;
         match self
             .intent_execution_repository
             .store(&event, &aggregate)
             .await
         {
-            Ok(()) => Ok(AttemptOutcome::Settled),
-            Err(conflict @ RepositoryError::Conflict { .. }) => {
-                match Self::slug_at(intent, cursor) {
-                    Some(target) => Ok(AttemptOutcome::Conflicted { target, conflict }),
-                    // カーソルは不変条件により常に範囲内なので到達しない。万一名指しできない
-                    // なら盲目的にやり直さず伝播する — 誤ったステージを打つより安全である。
-                    None => Err(CommitError::Repository(conflict)),
-                }
-            }
+            Ok(()) => Ok(AttemptOutcome::Settled(CommitOutcome::Committed {
+                stage,
+                scope,
+                steps,
+            })),
+            Err(conflict @ RepositoryError::Conflict { .. }) => Ok(AttemptOutcome::Conflicted {
+                target: stage,
+                conflict,
+            }),
             Err(other) => Err(CommitError::Repository(other)),
         }
     }
 
-    /// 名指しに使うステージ slug（範囲外は `None`）。
+    /// 判断が名指しした段を打つ（**イベントは 1 つ**）。
     ///
-    /// 計画は intent の持ち物なので、集約ではなく `&Intent` から引く
-    /// （`coding-rules/aggregate-references.md`）。
-    fn slug_at(intent: &Intent, stage: StageIndex) -> Option<StageSlug> {
-        intent
-            .stages()
-            .get(stage.to_usize())
-            .map(|entry| entry.slug().clone())
-    }
-
-    /// 名指しされたステージがカーソルの手前なら、集約に通過済み判定を委ねる（BR1.9）。
-    ///
-    /// カーソル自身を名指しした報告は通常経路なので偽を返す。判断は集約の `stale_report` が
-    /// 持ち、ここがしているのは slug から位置への解決だけである。集約のガードが答えるのは
-    /// **受理してよいか**だけで、それは `Err` になるかどうかで既に済んでいる — 「次に何を
-    /// すべきか」を呼出側へ渡す読取チャネルは作らない（判断はクエリ側の持ち物である）。
+    /// 状態遷移を起こすのは列の**最後の段**である。先行する `GateStartRecovered` は監査の
+    /// 見え方（`STAGE_AWAITING_APPROVAL` の `Recovered` 行）を決めるだけで、遷移そのものは
+    /// 続く `Approve` の 1 イベント（BR1.3 — `[-]` からの承認）が担う。したがってここでも
+    /// 「1 コマンド 1 イベント」は崩れない（`coding-rules/aggregate-commands.md`）。
     ///
     /// # Errors
     ///
-    /// 計画に無いステージ（`UnknownStage`）、通過済み completed でない対象（集約の
-    /// `NotStale` をそのまま伝播）。
-    fn is_stale_re_report(
-        intent: &Intent,
-        aggregate: &IntentExecution,
-        named: &StageSlug,
-    ) -> Result<bool, CommitError> {
-        let target =
-            Self::locate(intent, aggregate, named).ok_or_else(|| CommitError::UnknownStage {
-                stage: named.clone(),
-            })?;
-        if target == aggregate.cursor() {
-            return Ok(false);
-        }
-        aggregate.stale_report(target)?;
-        Ok(true)
-    }
-
-    /// 解決済み計画の中での位置（計画に無ければ `None`）。
-    ///
-    /// 集約の読取モデル（`stages` / `stage_index`）だけで完結する**参照**であって判断ではない
-    /// — 前提の判定（通過済み completed か）は集約の `stale_report` が持つ。
-    fn locate(
-        intent: &Intent,
-        aggregate: &IntentExecution,
-        named: &StageSlug,
-    ) -> Option<StageIndex> {
-        let position = intent
-            .stages()
-            .iter()
-            .position(|entry| entry.slug() == named)?;
-        aggregate.stage_index(position)
-    }
-
-    /// 既に開いているゲートへの `awaiting-approval` 再報告か。
-    ///
-    /// upstream の `cli/report/awaiting-approval-repeat` は監査行も状態差分も空である。集約に
-    /// 打てば `CheckboxPrecondition` で拒否されるが、それは**失敗ではない**ので、報告された語と
-    /// 現在の印を突き合わせるフロー制御でここを分ける。
-    fn gate_is_already_open(
-        aggregate: &IntentExecution,
-        cursor: StageIndex,
-        transition: &ReportedTransition,
-    ) -> bool {
-        matches!(transition, ReportedTransition::AwaitingApproval { .. })
-            && aggregate.checkbox(cursor) == Some(CheckboxState::AwaitingApproval)
-    }
-
-    /// 報告された結末に対応する集約コマンドを 1 つ打つ。
-    ///
-    /// `Forward` は承認ゲートの通過ただ 1 つである（BR1.3）。誕生が initialization を完了済みに
-    /// する（b34）のでカーソルは常にゲート付きステージに立ち、非ゲート完了の腕は b42 で撤去した
-    /// （#85 = A）。ゲートに立っていない実行は集約側が `InvalidTarget` で拒否する。
-    fn command(
+    /// 集約がそのコマンドを拒否した（`Transition`）、この build に無い段だった
+    /// （`UnwiredTransition`）。
+    fn commit_steps(
         intent: &Intent,
         aggregate: &mut IntentExecution,
-        transition: ReportedTransition,
+        stage: &StageSlug,
+        steps: &[TransitionStep],
+        request: &ReportRequest,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommitError> {
-        let event = match transition {
-            ReportedTransition::AwaitingApproval { artifacts } => {
-                aggregate.open_gate(intent, artifacts, occurred_at)
-            }
-            ReportedTransition::Forward { user_input } => {
-                aggregate.approve_gate(intent, user_input, occurred_at)
-            }
-            ReportedTransition::Rejected { feedback } => {
-                aggregate.reject_gate(intent, feedback, occurred_at)
-            }
-            ReportedTransition::Revised => aggregate.revise_stage(intent, occurred_at),
-            ReportedTransition::Skipped { reason } => {
-                aggregate.skip_stage(intent, reason, occurred_at)
+        let (step, refused) = match steps {
+            [TransitionStep::GateStart] => (
+                TransitionStep::GateStart,
+                aggregate.open_gate(intent, Vec::new(), occurred_at),
+            ),
+            [TransitionStep::Reject] => (
+                TransitionStep::Reject,
+                aggregate.reject_gate(intent, request.feedback().map(str::to_string), occurred_at),
+            ),
+            [TransitionStep::Revise] => (
+                TransitionStep::Revise,
+                aggregate.revise_stage(intent, occurred_at),
+            ),
+            [TransitionStep::Skip] => (
+                TransitionStep::Skip,
+                aggregate.skip_stage(
+                    intent,
+                    request.reason().unwrap_or_default().trim().to_string(),
+                    occurred_at,
+                ),
+            ),
+            [TransitionStep::Approve]
+            | [TransitionStep::GateStartRecovered, TransitionStep::Approve] => (
+                TransitionStep::Approve,
+                // upstream の `approveArgs` は空文字列の `--user-input` を渡さない（JS の
+                // truthy 判定）。空白だけの値は渡すので、`trim` ではなく空判定である。
+                aggregate.approve_gate(
+                    intent,
+                    request
+                        .user_input()
+                        .filter(|text| !text.is_empty())
+                        .map(str::to_string),
+                    occurred_at,
+                ),
+            ),
+            // `advance` / `complete-workflow` はこの build に対応する集約コマンドを持たない
+            // （非ゲート完了のパイプラインは b42 で撤去 — #85 = A）。空列は判断が返さない
+            // ので、名指しは先頭の段で足りる。
+            other => {
+                return Err(CommitError::UnwiredTransition {
+                    step: other.first().copied().unwrap_or(TransitionStep::Advance),
+                    stage: stage.clone(),
+                });
             }
         };
-        Ok(event?)
+        refused.map_err(|error| CommitError::Transition {
+            step,
+            stage: stage.clone(),
+            error,
+        })
+    }
+
+    /// no-op 3 形が名指しするステージ。
+    const fn no_op_stage(no_op: &ReportNoOp) -> &StageSlug {
+        match no_op {
+            ReportNoOp::AlreadyAwaiting { stage }
+            | ReportNoOp::AlreadyCompletedMovedOn { stage, .. }
+            | ReportNoOp::WorkflowAlreadyCompleted { stage } => stage,
+        }
     }
 
     /// 注入された実行ポートの実装（テストが**効果**を観測するための継ぎ目）。
@@ -366,34 +324,29 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::super::commit_error::CommitError;
+    use super::super::commit_outcome::CommitOutcome;
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
     use super::super::port::RepositoryError;
-    use super::super::reported_transition::ReportedTransition;
     use super::super::test_support::{
         InMemoryIntentExecutionRepository, InMemoryIntentRepository, absent_execution, at,
         execution_id, genesis, slug, start_from_plan,
     };
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        CommandError, Intent, IntentExecution, IntentExecutionEvent, Verdict,
+        CommandError, Intent, IntentExecution, IntentExecutionEvent, ReportNoOp, ReportRefusal,
+        ReportRequest, TransitionStep, Verdict,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
-    use core_command_domain::workspace::CheckboxState;
 
     /// カーソルが最初のゲート付きステージに立っている実行。
     ///
-    /// 誕生 = 初期化完了済み（issue #76）以降、genesis がそのまま**この状態**である —
-    /// かつてここで打っていた非ゲート完了の 1 手（索引 0 = initialization を完了させる）は、
-    /// 誕生の時点で済んでいるので不要になった。名前は役割を述べているのでそのまま残す。
+    /// 誕生 = 初期化完了済み（issue #76）以降、genesis がそのまま**この状態**である。
     fn at_the_first_gate(stage_count: usize) -> (Intent, IntentExecution) {
         let (intent, aggregate, _) = genesis(stage_count);
         (intent, aggregate)
     }
 
     /// テストの主体 — 2 本のポートを注入したユースケース。
-    ///
-    /// **ユースケースは計画を自分で取る**（改訂 10）ので、テストが `&Intent` を持ち回る必要は
-    /// もう無い。intent は `InMemoryIntentRepository` に預けてある。
     struct Subject {
         use_case: CommitVerdictUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository>,
     }
@@ -401,12 +354,11 @@ mod tests {
     impl Subject {
         async fn execute(
             &mut self,
-            stage: Option<&StageSlug>,
-            transition: ReportedTransition,
+            request: ReportRequest,
             occurred_at: DateTime<Utc>,
-        ) -> Result<(), CommitError> {
+        ) -> Result<CommitOutcome, CommitError> {
             self.use_case
-                .execute(&execution_id(), stage, transition, occurred_at)
+                .execute(&execution_id(), request, occurred_at)
                 .await
         }
 
@@ -429,16 +381,28 @@ mod tests {
         }
     }
 
-    fn forward() -> ReportedTransition {
-        ReportedTransition::Forward {
-            user_input: Some("Approve".to_string()),
-        }
+    /// 承認の報告（人間の選択つき — 段 13 を通す）。
+    fn forward() -> ReportRequest {
+        ReportRequest::new(
+            Verdict::Forward,
+            None,
+            Some("Approve".to_string()),
+            None,
+            true,
+        )
+    }
+
+    fn named(verdict: Verdict, stage: &StageSlug) -> ReportRequest {
+        ReportRequest::new(
+            verdict,
+            Some(stage.clone()),
+            Some("Approve".to_string()),
+            None,
+            true,
+        )
     }
 
     /// **効果**の観測 — ストアが受理した唯一のイベントを取り出す。
-    ///
-    /// ユースケースは何が起きたかを返さないので、テストは戻り値ではなくストアに残った
-    /// 痕跡でコミット内容を固定する。
     fn only_committed(
         intent_execution_repository: &InMemoryIntentExecutionRepository,
     ) -> &IntentExecutionEvent {
@@ -447,28 +411,39 @@ mod tests {
         committed.first().expect("1 件ある")
     }
 
-    // ---- 経路ごとの正常系（効果で観測する） ----
+    /// 成功が名指しした段の綴り。
+    fn steps_of(outcome: &CommitOutcome) -> Vec<&'static str> {
+        match outcome {
+            CommitOutcome::Committed { steps, .. } => {
+                steps.iter().map(|step| step.subcommand()).collect()
+            }
+            CommitOutcome::NoOp { .. } => panic!("Committed を期待した: {outcome:?}"),
+        }
+    }
+
+    // ---- 経路ごとの正常系（効果と戻り値の両方で観測する） ----
 
     #[tokio::test]
     async fn an_awaiting_approval_report_opens_the_gate() {
         let mut subject = use_case(at_the_first_gate(3), 1);
-        subject
+        let outcome = subject
             .execute(
-                None,
-                ReportedTransition::AwaitingApproval {
-                    artifacts: vec!["intent.md".to_string()],
-                },
+                ReportRequest::new(Verdict::AwaitingApproval, None, None, None, true),
                 at(),
             )
             .await
             .expect("in-progress のゲート付きステージは開ける");
+        assert_eq!(steps_of(&outcome), ["gate-start"]);
+        assert!(matches!(
+            &outcome,
+            CommitOutcome::Committed { stage, scope, .. } if *stage == slug(1) && scope == "classic"
+        ));
         let IntentExecutionEvent::GateOpened(opened) =
             only_committed(subject.intent_execution_repository())
         else {
             panic!("GateOpened を期待した");
         };
         assert_eq!(opened.stage(), &slug(1));
-        assert_eq!(opened.artifacts(), ["intent.md".to_string()]);
     }
 
     #[tokio::test]
@@ -479,16 +454,21 @@ mod tests {
             .open_gate(&intent, vec!["intent.md".to_string()], at())
             .expect("最初の開放は通る");
         let mut subject = use_case((intent, aggregate), 2);
-        subject
+        let outcome = subject
             .execute(
-                None,
-                ReportedTransition::AwaitingApproval {
-                    artifacts: vec!["intent.md".to_string()],
-                },
+                ReportRequest::new(Verdict::AwaitingApproval, None, None, None, true),
                 at(),
             )
             .await
             .expect("既に開いているゲートへの再報告は成功扱い");
+        assert!(matches!(
+            &outcome,
+            CommitOutcome::NoOp {
+                stage,
+                no_op: ReportNoOp::AlreadyAwaiting { .. },
+                ..
+            } if *stage == slug(1)
+        ));
         assert!(subject.intent_execution_repository().committed().is_empty());
         assert_eq!(
             subject.intent_execution_repository().store_attempts(),
@@ -506,11 +486,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_forward_report_on_a_gated_stage_approves_the_gate() {
-        let mut subject = use_case(at_the_first_gate(3), 1);
-        subject
-            .execute(None, forward(), at())
+        let (intent, mut aggregate) = at_the_first_gate(3);
+        aggregate
+            .open_gate(&intent, Vec::new(), at())
+            .expect("ゲートは開ける");
+        let mut subject = use_case((intent, aggregate), 2);
+        let outcome = subject
+            .execute(forward(), at())
             .await
             .expect("ゲート付きステージは承認できる");
+        assert_eq!(steps_of(&outcome), ["approve"]);
         let IntentExecutionEvent::GateApproved(approved) =
             only_committed(subject.intent_execution_repository())
         else {
@@ -521,18 +506,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_explicit_stage_recovers_the_gate_before_approving_in_one_event() {
+        // `[-]` からの承認は 2 段を名乗るが、イベントは 1 本である（BR1.3）。
+        let mut subject = use_case(at_the_first_gate(3), 1);
+        let outcome = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect("明示 --stage はゲートを開き直して承認する");
+        assert_eq!(steps_of(&outcome), ["gate-start", "approve"]);
+        assert!(matches!(
+            only_committed(subject.intent_execution_repository()),
+            IntentExecutionEvent::GateApproved(_)
+        ));
+    }
+
+    #[tokio::test]
     async fn a_rejected_report_carries_the_feedback() {
         let mut subject = use_case(at_the_first_gate(3), 1);
-        subject
+        let outcome = subject
             .execute(
-                None,
-                ReportedTransition::Rejected {
-                    feedback: Some("Sharpen the testing posture.".to_string()),
-                },
+                ReportRequest::new(
+                    Verdict::Rejected,
+                    None,
+                    None,
+                    Some("Sharpen the testing posture.".to_string()),
+                    true,
+                ),
                 at(),
             )
             .await
             .expect("ゲート付きステージは差し戻せる");
+        assert_eq!(steps_of(&outcome), ["reject"]);
         let IntentExecutionEvent::GateRejected(rejected) =
             only_committed(subject.intent_execution_repository())
         else {
@@ -548,10 +552,14 @@ mod tests {
             .reject_gate(&intent, Some("直して".to_string()), at())
             .expect("差し戻しは通る");
         let mut subject = use_case((intent, aggregate), 2);
-        subject
-            .execute(None, ReportedTransition::Revised, at())
+        let outcome = subject
+            .execute(
+                ReportRequest::new(Verdict::Revised, None, None, None, true),
+                at(),
+            )
             .await
             .expect("revising のステージはゲートへ再入できる");
+        assert_eq!(steps_of(&outcome), ["revise"]);
         let IntentExecutionEvent::StageRevised(revised) =
             only_committed(subject.intent_execution_repository())
         else {
@@ -561,28 +569,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_skipped_report_carries_the_reason() {
+    async fn a_skipped_report_carries_the_trimmed_reason() {
         let (intent, aggregate, _) = start_from_plan(&[
             (PhaseId::Initialization, PlanAction::Execute, false),
             (PhaseId::Inception, PlanAction::Execute, true),
             (PhaseId::Inception, PlanAction::Execute, false),
         ]);
         let mut subject = use_case((intent, aggregate), 1);
-        subject
+        let outcome = subject
             .execute(
-                None,
-                ReportedTransition::Skipped {
-                    reason: "Not applicable".to_string(),
-                },
+                ReportRequest::new(
+                    Verdict::Skipped,
+                    Some(slug(1)),
+                    None,
+                    Some("  Not applicable  ".to_string()),
+                    true,
+                ),
                 at(),
             )
             .await
             .expect("CONDITIONAL なステージは読み飛ばせる");
+        assert_eq!(steps_of(&outcome), ["skip"]);
         let IntentExecutionEvent::StageSkipped(skipped) =
             only_committed(subject.intent_execution_repository())
         else {
             panic!("StageSkipped を期待した");
         };
+        // upstream も `flags.reason?.trim()` を渡す（ピン `:5620`）。
         assert_eq!(skipped.reason(), "Not applicable");
     }
 
@@ -590,67 +603,156 @@ mod tests {
 
     #[tokio::test]
     async fn a_re_report_of_a_stage_the_cursor_has_passed_commits_nothing() {
-        // BR1.9 — カーソル通過済み completed への再報告は冪等。判断は集約の `stale_report`。
-        let mut subject = use_case(at_the_first_gate(3), 2);
-        subject
-            .execute(Some(&slug(0)), forward(), at())
+        // BR1.9 — カーソル通過済み completed への再報告は冪等。判断は集約の forward 表。
+        let (intent, mut aggregate) = at_the_first_gate(3);
+        aggregate
+            .approve_gate(&intent, Some("Approve".to_string()), at())
+            .expect("最初のゲートは承認できる");
+        let mut subject = use_case((intent, aggregate), 2);
+        let outcome = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("通過済み completed への再報告は冪等な成功");
+        assert!(matches!(
+            &outcome,
+            CommitOutcome::NoOp {
+                no_op: ReportNoOp::AlreadyCompletedMovedOn { stage, current },
+                ..
+            } if *stage == slug(1) && *current == slug(2)
+        ));
         assert!(subject.intent_execution_repository().committed().is_empty());
-        assert_eq!(
-            subject.intent_execution_repository().store_attempts(),
-            0,
-            "書込を試みない"
-        );
-        assert_eq!(
-            subject
-                .intent_execution_repository()
-                .version_of(&execution_id()),
-            Some(2)
-        );
+        assert_eq!(subject.intent_execution_repository().store_attempts(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_re_report_of_a_completed_workflow_commits_nothing() {
+        let (intent, mut aggregate) = at_the_first_gate(2);
+        aggregate
+            .approve_gate(&intent, Some("Approve".to_string()), at())
+            .expect("最後のゲートは承認できる");
+        let mut subject = use_case((intent, aggregate), 2);
+        let outcome = subject
+            .execute(forward(), at())
+            .await
+            .expect("完了済みへの再報告は冪等な成功");
+        assert!(matches!(
+            &outcome,
+            CommitOutcome::NoOp {
+                no_op: ReportNoOp::WorkflowAlreadyCompleted { stage },
+                scope,
+                ..
+            } if *stage == slug(1) && scope == "classic"
+        ));
     }
 
     #[tokio::test]
     async fn naming_the_cursor_explicitly_still_takes_the_normal_route() {
-        let mut subject = use_case(at_the_first_gate(3), 1);
-        subject
-            .execute(Some(&slug(1)), forward(), at())
+        let (intent, mut aggregate) = at_the_first_gate(3);
+        aggregate
+            .open_gate(&intent, Vec::new(), at())
+            .expect("ゲートは開ける");
+        let mut subject = use_case((intent, aggregate), 2);
+        let outcome = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("カーソル自身を名指しした報告は通常経路");
-        assert!(matches!(
-            only_committed(subject.intent_execution_repository()),
-            IntentExecutionEvent::GateApproved(_)
-        ));
+        assert_eq!(steps_of(&outcome), ["approve"]);
     }
+
+    // ---- 拒否の伝播 ----
 
     #[tokio::test]
     async fn a_report_that_names_a_stage_outside_the_plan_is_refused() {
         let mut subject = use_case(at_the_first_gate(3), 1);
         let unknown = StageSlug::parse("not-in-the-plan").expect("slug は文法内");
         let err = subject
-            .execute(Some(&unknown), forward(), at())
+            .execute(named(Verdict::Forward, &unknown), at())
             .await
             .expect_err("計画に無いステージは解決できない");
-        assert!(matches!(err, CommitError::UnknownStage { stage } if stage == unknown));
+        assert!(matches!(
+            err,
+            CommitError::Refused(ReportRefusal::UnknownStage { named }) if named == "not-in-the-plan"
+        ));
         assert!(subject.intent_execution_repository().committed().is_empty());
     }
 
     #[tokio::test]
-    async fn a_report_that_names_a_stage_the_cursor_has_not_reached_is_refused_by_the_aggregate() {
+    async fn a_report_that_names_a_stage_the_cursor_has_not_reached_is_refused() {
         let mut subject = use_case(at_the_first_gate(3), 1);
         let err = subject
-            .execute(Some(&slug(2)), forward(), at())
+            .execute(named(Verdict::Forward, &slug(2)), at())
             .await
-            .expect_err("未着手のステージは通過済み completed ではない");
-        let stage = at_the_first_gate(3)
-            .1
-            .stage_index(2)
-            .expect("索引 2 は範囲内");
+            .expect_err("未着手のステージは前進の完了ではない");
         assert!(matches!(
             err,
-            CommitError::Command(CommandError::NotStale(inner)) if inner == stage
+            CommitError::Refused(ReportRefusal::StillPending { stage }) if stage == slug(2)
         ));
         assert!(subject.intent_execution_repository().committed().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_human_presence_refusal_is_propagated_verbatim() {
+        let mut subject = use_case(at_the_first_gate(3), 1);
+        let err = subject
+            .execute(
+                ReportRequest::new(Verdict::Forward, Some(slug(1)), None, None, true),
+                at(),
+            )
+            .await
+            .expect_err("人間の選択が無ければ承認できない");
+        assert!(matches!(
+            err,
+            CommitError::Refused(ReportRefusal::HumanPresence { stage, .. }) if stage == slug(1)
+        ));
+        assert!(subject.intent_execution_repository().committed().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_step_this_build_cannot_commit_is_named_rather_than_re_read() {
+        // 初期化ステージだけの縮退計画では、判断が `complete-workflow` を名指しする。
+        // この build には対応する集約コマンドが無い（b42 — #85 = A）ので、読み替えずに断る。
+        let (intent, aggregate, _) =
+            start_from_plan(&[(PhaseId::Initialization, PlanAction::Execute, false)]);
+        let mut subject = use_case((intent, aggregate), 1);
+        let err = subject
+            .execute(forward(), at())
+            .await
+            .expect_err("打てない段は成功にしない");
+        assert!(matches!(
+            err,
+            CommitError::UnwiredTransition {
+                step: TransitionStep::CompleteWorkflow,
+                stage,
+            } if stage == slug(0)
+        ));
+        assert!(subject.intent_execution_repository().committed().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_command_the_aggregate_refuses_names_the_step_it_was_committing() {
+        // 集約の判断を通っても、park 中なら集約コマンドは `NotRunning` で拒む。
+        let (intent, mut aggregate) = at_the_first_gate(3);
+        aggregate
+            .open_gate(&intent, Vec::new(), at())
+            .expect("ゲートは開ける");
+        aggregate.park(&intent, at()).expect("park は通る");
+        let mut subject = use_case((intent, aggregate), 3);
+        let err = subject
+            .execute(forward(), at())
+            .await
+            .expect_err("park 中の実行はコマンドを受理しない");
+        assert!(matches!(
+            err,
+            CommitError::Transition {
+                step: TransitionStep::Approve,
+                ref stage,
+                error: CommandError::NotRunning,
+            } if *stage == slug(1)
+        ));
+        assert!(
+            subject.intent_execution_repository().committed().is_empty(),
+            "拒否されたコマンドは 1 バイトも書かない"
+        );
     }
 
     // ---- 楽観 version の往復 ----
@@ -662,7 +764,7 @@ mod tests {
         assert_eq!(pair.1.seq_nr(), 1, "通番と版はたまたま一致させない");
         let mut subject = use_case(pair, 7);
         subject
-            .execute(None, forward(), at())
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("承認は通る");
         assert_eq!(
@@ -678,12 +780,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_use_case_fetches_the_intent_itself_from_the_port() {
-        // 改訂 10: `execute` は intent を受け取らない。実行を再構成し、その `intent_id` で
-        // 保持しているリポジトリから引く。
         let mut subject = use_case(at_the_first_gate(3), 7);
         assert_eq!(subject.intent_repository().lookups(), 0, "呼ぶ前は 0 回");
         subject
-            .execute(None, forward(), at())
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("ゲートは承認できる");
         assert_eq!(
@@ -695,15 +795,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_intent_is_propagated_from_its_own_port() {
-        // 実行は読めたが計画が引けない場合。ユースケースは握り潰さず、その面の失敗のまま
-        // 伝播する（`RepositoryError` ではなく `IntentRepositoryError` である）。
         let (intent, aggregate) = at_the_first_gate(3);
         let mut use_case = CommitVerdictUseCase::new(
             InMemoryIntentExecutionRepository::holding(aggregate, 7),
             InMemoryIntentRepository::empty(),
         );
         let err = use_case
-            .execute(&execution_id(), None, forward(), at())
+            .execute(&execution_id(), forward(), at())
             .await
             .expect_err("計画が無ければコミットできない");
         assert!(matches!(
@@ -714,8 +812,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_retry_fetches_the_intent_again() {
-        // 再試行は attempt 全体をやり直すので intent も引き直す。Intent は不変なので
-        // 再取得は無害である（改訂 10）。
         let (intent, aggregate) = at_the_first_gate(3);
         let mut subject = Subject {
             use_case: CommitVerdictUseCase::new(
@@ -726,7 +822,7 @@ mod tests {
             ),
         };
         subject
-            .execute(None, forward(), at())
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("1 回だけ再試行すれば通る");
         assert_eq!(
@@ -744,7 +840,7 @@ mod tests {
             InMemoryIntentRepository::holding(intent),
         );
         let err = subject
-            .execute(&absent_execution(), None, forward(), at())
+            .execute(&absent_execution(), forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
         assert!(matches!(
@@ -765,10 +861,11 @@ mod tests {
                 InMemoryIntentRepository::holding(intent),
             ),
         };
-        subject
-            .execute(None, forward(), at())
+        let outcome = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("1 回だけ再試行すれば通る");
+        assert_eq!(steps_of(&outcome), ["gate-start", "approve"]);
         assert!(matches!(
             only_committed(subject.intent_execution_repository()),
             IntentExecutionEvent::GateApproved(_)
@@ -778,8 +875,6 @@ mod tests {
             2,
             "再試行は 1 回だけ"
         );
-        // 2 回目が通ったこと自体が「再構成からやり直した」証拠である — このストアは現在の版を
-        // 提示した書込しか受理しないので、古い集約に `store` だけ打ち直していたら再び競合する。
         assert_eq!(
             subject
                 .intent_execution_repository()
@@ -791,8 +886,7 @@ mod tests {
     #[tokio::test]
     async fn a_retry_after_a_competitor_committed_the_same_gate_commits_nothing() {
         // 競合相手が先に同じゲートを承認してカーソルが動いたケース。再試行が対象を名指しし
-        // 直さないと、報告されていない次ステージ（`[-]` なので BR1.3 で承認が通ってしまう）へ
-        // `Forward` を打ってしまう。
+        // 直さないと、報告されていない次ステージへ前進を打ってしまう。
         let (intent, held) = at_the_first_gate(3);
         let mut advanced = held.clone();
         advanced
@@ -812,11 +906,17 @@ mod tests {
                 InMemoryIntentRepository::holding(intent),
             ),
         };
-        subject
-            .execute(None, forward(), at())
+        let outcome = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect("通過済みになった報告は冪等な成功");
-
+        assert!(matches!(
+            &outcome,
+            CommitOutcome::NoOp {
+                no_op: ReportNoOp::AlreadyCompletedMovedOn { .. },
+                ..
+            }
+        ));
         assert!(
             subject.intent_execution_repository().committed().is_empty(),
             "次ステージを勝手にコミットしない"
@@ -824,14 +924,7 @@ mod tests {
         assert_eq!(
             subject.intent_execution_repository().store_attempts(),
             1,
-            "書込は 1 回目の失敗だけ — 再試行は BR1.9 の no-op に畳まれる"
-        );
-        assert_eq!(
-            subject
-                .intent_execution_repository()
-                .version_of(&execution_id()),
-            Some(8),
-            "版は相手の書込ぶんだけ進む"
+            "書込は 1 回目の失敗だけ — 再試行は forward 表の no-op に畳まれる"
         );
     }
 
@@ -848,7 +941,7 @@ mod tests {
             ),
         };
         let err = subject
-            .execute(None, forward(), at())
+            .execute(named(Verdict::Forward, &slug(1)), at())
             .await
             .expect_err("2 回目も競合したら伝播する");
         assert!(matches!(
@@ -864,61 +957,5 @@ mod tests {
             "3 回目は打たない"
         );
         assert!(subject.intent_execution_repository().committed().is_empty());
-    }
-
-    #[tokio::test]
-    async fn a_command_the_aggregate_refuses_is_propagated_verbatim() {
-        // in-progress のステージは revise できない。ユースケースは言い換えも握り潰しもしない。
-        let (intent, aggregate) = at_the_first_gate(3);
-        let stage = aggregate.cursor();
-        let mut subject = use_case((intent, aggregate), 1);
-        let err = subject
-            .execute(None, ReportedTransition::Revised, at())
-            .await
-            .expect_err("revising 以外はゲートへ再入できない");
-        assert!(matches!(
-            err,
-            CommitError::Command(CommandError::CheckboxPrecondition {
-                stage: inner,
-                actual: CheckboxState::InProgress,
-            }) if inner == stage
-        ));
-        assert!(
-            subject.intent_execution_repository().committed().is_empty(),
-            "拒否されたコマンドは 1 バイトも書かない"
-        );
-    }
-
-    // ---- 入力の正規化 ----
-
-    #[test]
-    fn every_reported_transition_projects_onto_one_domain_verdict() {
-        // `Verdict::Resume` はここに現れない — 再開は U7 が手前でルーティングする。
-        let cases = [
-            (
-                ReportedTransition::AwaitingApproval {
-                    artifacts: Vec::new(),
-                },
-                Verdict::AwaitingApproval,
-            ),
-            (
-                ReportedTransition::Forward { user_input: None },
-                Verdict::Forward,
-            ),
-            (
-                ReportedTransition::Rejected { feedback: None },
-                Verdict::Rejected,
-            ),
-            (ReportedTransition::Revised, Verdict::Revised),
-            (
-                ReportedTransition::Skipped {
-                    reason: "x".to_string(),
-                },
-                Verdict::Skipped,
-            ),
-        ];
-        for (transition, verdict) in cases {
-            assert_eq!(transition.verdict(), verdict);
-        }
     }
 }

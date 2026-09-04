@@ -11,46 +11,75 @@ use super::state_version_kind::StateVersionKind;
 pub const CURRENT_STATE_VERSION: u32 = 8;
 
 /// 分類結果 (private フィールドにより外部構築不能)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateVersionClassification {
     kind: StateVersionKind,
+    version: Option<String>,
 }
 
 impl StateVersionClassification {
     /// 4 分類の値。runtime と doctor はこの同一の判定を見る (W7)。
     #[must_use]
-    pub const fn kind(self) -> StateVersionKind {
+    pub const fn kind(&self) -> StateVersionKind {
         self.kind
+    }
+
+    /// 読めた `State Version` の**生トークン** (`Past` / `Future` のときだけ在る)。
+    ///
+    /// upstream の拒否文言は読めた値をそのまま埋める (`State Version ${v} predates …`) ので、
+    /// 正規化した数値ではなく行に書かれていた綴りを運ぶ (`aidlc-lib.ts:10640` の `v`)。
+    #[must_use]
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
 
     /// 唯一の分類器 (runtime / doctor の双方がこれを呼ぶ — 2026-08-29 是正で
     /// 自由関数 `classify_state_version` から本型の関連関数へ)。
     #[must_use]
     pub fn classify(state_content: &str) -> StateVersionClassification {
-        StateVersionClassification {
-            kind: StateVersionClassification::kind_of(state_content),
-        }
+        StateVersionClassification::token_of(state_content).map_or_else(
+            || StateVersionClassification {
+                kind: StateVersionKind::Unparseable,
+                version: None,
+            },
+            |token| StateVersionClassification::of(&token),
+        )
     }
 
-    fn kind_of(content: &str) -> StateVersionKind {
+    /// 行から `State Version` の生トークンを取り出す。
+    ///
+    /// 行末アンカー: 値は空白を含まない 1 トークンのみ (`State Version: 8 garbage` は
+    /// 取り出せず unparseable に落ちる)。
+    fn token_of(content: &str) -> Option<String> {
         const PREFIX: &str = "- **State Version**:";
-        for line in content.lines() {
-            if let Some(rest) = line.strip_prefix(PREFIX) {
-                let trimmed = rest.trim_matches([' ', '\t']);
-                // 行末アンカー: 値は空白を含まない 1 トークンのみ
-                if trimmed.is_empty() || trimmed.contains(' ') || trimmed.contains('\t') {
-                    return StateVersionKind::Unparseable;
-                }
-                // TODO(golden: stage-0): 数値比較の受理集合 (非整数トークンの扱い) を upstream 実測で確定
-                return match trimmed.parse::<u32>() {
-                    Err(_) => StateVersionKind::Unparseable,
-                    Ok(v) if v == CURRENT_STATE_VERSION => StateVersionKind::Ok,
-                    Ok(v) if v < CURRENT_STATE_VERSION => StateVersionKind::Past,
-                    Ok(_) => StateVersionKind::Future,
-                };
+        let rest = content
+            .lines()
+            .find_map(|line| line.strip_prefix(PREFIX))?
+            .trim_matches([' ', '\t']);
+        (!rest.is_empty() && !rest.contains(' ') && !rest.contains('\t')).then(|| rest.to_string())
+    }
+
+    /// 生トークンを 4 分類へ写す。
+    ///
+    /// 一致判定は**綴りの一致**である (upstream `v === CURRENT_STATE_VERSION`) — 数値に
+    /// 畳んでから比べると `008` のような非正準の綴りが `ok` になってしまい、upstream が
+    /// `past` として拒む状態を通してしまう。数値比較は綴りが一致しなかった後で使う
+    /// (`aidlc-lib.ts:10642-10643`)。
+    fn of(token: &str) -> StateVersionClassification {
+        let kind = if token == CURRENT_STATE_VERSION.to_string() {
+            StateVersionKind::Ok
+        } else {
+            match token.parse::<u32>() {
+                Err(_) => StateVersionKind::Unparseable,
+                Ok(value) if value > CURRENT_STATE_VERSION => StateVersionKind::Future,
+                Ok(_) => StateVersionKind::Past,
             }
+        };
+        StateVersionClassification {
+            kind,
+            version: matches!(kind, StateVersionKind::Past | StateVersionKind::Future)
+                .then(|| token.to_string()),
         }
-        StateVersionKind::Unparseable
     }
 }
 
@@ -87,6 +116,35 @@ mod tests {
         assert_eq!(
             StateVersionClassification::classify(&with_version("9")).kind(),
             StateVersionKind::Future
+        );
+    }
+
+    #[test]
+    fn a_non_canonical_spelling_of_the_current_version_is_not_ok() {
+        // upstream は綴りで一致を見る (`v === "8"`) ので `008` は `past` である。数値に
+        // 畳んでから比べると `ok` になり、拒むべき状態を通してしまう。
+        let classified = StateVersionClassification::classify(&with_version("008"));
+        assert_eq!(classified.kind(), StateVersionKind::Past);
+        assert_eq!(classified.version(), Some("008"));
+    }
+
+    #[test]
+    fn only_the_past_and_future_arms_carry_the_version_token() {
+        assert_eq!(
+            StateVersionClassification::classify(&with_version("8")).version(),
+            None
+        );
+        assert_eq!(
+            StateVersionClassification::classify(&with_version("7")).version(),
+            Some("7")
+        );
+        assert_eq!(
+            StateVersionClassification::classify(&with_version("9")).version(),
+            Some("9")
+        );
+        assert_eq!(
+            StateVersionClassification::classify("# no version row\n").version(),
+            None
         );
     }
 

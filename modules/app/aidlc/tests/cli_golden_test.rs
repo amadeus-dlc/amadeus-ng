@@ -13,6 +13,7 @@
 //! | `next/start` (`load-steering`) | **キー集合**を固定 | 中身 (`rules_content` / `bundle`) は採取時のワークスペースの memory 層に依存する |
 //! | `continue/load-steering` (終端 `run-stage`) | **キー集合**を固定 | 同上 (パスは配置に依存する) |
 //! | `park/park` | `kind` / `reason` / `stage` を**バイト一致**、残りはキー集合 | 採取時のカーソルと合成グラフのカーソルがどちらも `domain-design` なので値まで比べられる |
+//! | `report/{approved,awaiting-approval,awaiting-approval-repeat,rejected,revised}` | **バイト一致**（ステージ slug だけ読み替え） | 逐語は 1 行 JSON で、可変なのは slug と scope だけ。scope はどちらも `classic` なので slug の置換だけで比べられる |
 //!
 //! # 駆動できないケース (黙って飛ばさない)
 //!
@@ -20,6 +21,10 @@
 //!   `bun .claude/tools/aidlc-jump.ts execute --target <slug> --direction forward --scope <scope>`
 //!   を名指すが、こちらはマルチコール正準形 (`aidlc-jump resolve --stage <slug>`) を名指す。
 //!   バイト一致は設計上ありえない。
+//! - **`report/completed-ungated`** — 非ゲートステージへの前進報告は、誕生 = 初期化完了済み
+//!   (issue #76 / b34) 以降**構成できない**。詳細は
+//!   [`the_report_directives_match_the_recorded_cases_after_the_slug_substitution`] の doc。
+//! - **`report/approved-across-phases`** — 合成グラフにフェーズをまたぐ位置が無い (同上)。
 //! - **`next/after-approval`** — 採取時のワークスペース (upstream 配布の 11 個の scope identity
 //!   ファイルとその metadata) が vendored されていないため、同じ計画を再現できない。
 //!   `stage-graph.json` / `scope-grid.json` / `harness.json` は在るが、有効 scope の権威は
@@ -300,5 +305,95 @@ async fn the_parked_directive_matches_the_recorded_case_except_the_known_gap() {
     assert!(
         keys(&emitted).difference(&keys(&expected)).next().is_none(),
         "採取済みケースに無いキーは足さない"
+    );
+}
+
+/// 採取時のステージ slug（33 ノードのグラフの最初のゲート付きステージ）。
+const RECORDED_SLUG: &str = "practices-discovery";
+/// 合成グラフの同じ位置のステージ。
+const SYNTHETIC_SLUG: &str = "domain-design";
+
+/// 採取済みケースの本文を、slug だけ合成グラフのものへ読み替えて返す。
+///
+/// 置換するのは**ステージ名だけ**である — 逐語の文型・句読点・`(scope: classic)` の綴りは
+/// 1 バイトも触らない。scope はどちらも `classic` なので置換が要らない。
+fn recorded_for_synthetic_graph(case: &str) -> String {
+    recorded(case).replace(RECORDED_SLUG, SYNTHETIC_SLUG)
+}
+
+/// `report` を 1 回叩いて出た 1 行を返す。
+async fn report_line(workspace: &Workspace, args: &[&str]) -> String {
+    let mut argv = vec!["report"];
+    argv.extend_from_slice(args);
+    let completion = workspace.invoke("aidlc-orchestrate", &argv).await;
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    line(&completion)
+}
+
+/// `report` の 5 ケース — slug を読み替えたうえで**バイト一致**する。
+///
+/// # 駆動できないケース（黙って飛ばさない）
+///
+/// - **`report/completed-ungated`** — 採取済みの本文は
+///   `Committed advance for "workspace-scaffold" (scope: classic).` である。誕生 = 初期化
+///   完了済み（issue #76 / b34）以降、初期化ステージは誕生の時点で `[x]` になりカーソルは
+///   最初のゲート付きステージに立つので、**非ゲートステージへの前進報告そのものが構成
+///   不能**である（#85 = A で非ゲート完了のコマンドも撤去済み）。
+/// - **`report/approved-across-phases`** — 採取時のワークスペースはフェーズをまたぐ 33
+///   ノードの計画で、合成グラフ（initialization 1 + inception 2）には対応する位置が無い。
+///   逐語そのものは `report/approved` と同型なので、こちらで固定した文型が両方を覆う。
+#[tokio::test]
+async fn the_report_directives_match_the_recorded_cases_after_the_slug_substitution() {
+    // ゲート開放 — `[-]` の in-progress からゲートを開く。
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    assert_eq!(
+        report_line(&workspace, &["--result", "awaiting-approval"]).await,
+        recorded_for_synthetic_graph("report/awaiting-approval")
+    );
+
+    // 再報告 — 既に開いているゲートは何もコミットしない。
+    assert_eq!(
+        report_line(&workspace, &["--result", "awaiting-approval"]).await,
+        recorded_for_synthetic_graph("report/awaiting-approval-repeat")
+    );
+
+    // 承認 — 採取時と同じく `[?]` からの承認なので、コミットする段は `approve` 1 つである。
+    assert_eq!(
+        report_line(&workspace, &["--result", "approved", "--user-input", "A"]).await,
+        recorded_for_synthetic_graph("report/approved")
+    );
+
+    // 差戻し — `[-]` の in-progress からでも受理される（前提集合は in-progress と
+    // awaiting-approval の 2 つ）。カーソルは次のステージへ進んでいる。
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    assert_eq!(
+        report_line(
+            &workspace,
+            &[
+                "--result",
+                "rejected",
+                "--reason",
+                "Sharpen the testing posture."
+            ]
+        )
+        .await,
+        recorded_for_synthetic_graph("report/rejected")
+    );
+
+    // 改訂 — 差戻し後の `[R]` からゲートへ再入する。
+    assert_eq!(
+        report_line(
+            &workspace,
+            &[
+                "--result",
+                "revised",
+                "--user-input",
+                "Tightened the testing posture."
+            ]
+        )
+        .await,
+        recorded_for_synthetic_graph("report/revised")
     );
 }

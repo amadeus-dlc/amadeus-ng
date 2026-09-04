@@ -51,6 +51,24 @@ impl CheckboxState {
         })
     }
 
+    /// upstream の checkbox 名 (`marker` の語形。`pending` / `in-progress` /
+    /// `awaiting-approval` / `revising` / `completed` / `skipped`)。
+    ///
+    /// 逐語文言 (`Stage "<slug>" is <state>; ...`) と読取面の行の値が**同じ綴り**を要るので、
+    /// 正本は本型 1 か所である — RMU の綴り表も出す側の `wording` もここを呼ぶ
+    /// (`coding-rules/tell-dont-ask.md` — 語彙は所有者が持つ)。
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            CheckboxState::Pending => "pending",
+            CheckboxState::InProgress => "in-progress",
+            CheckboxState::AwaitingApproval => "awaiting-approval",
+            CheckboxState::Revising => "revising",
+            CheckboxState::Completed => "completed",
+            CheckboxState::Skipped => "skipped",
+        }
+    }
+
     // ---- 分類述語 (マーカー語彙の分類は本型が所有する — Tell, Don't Ask)。
     //      呼出側で変種集合を再列挙しないこと。 ----
 
@@ -100,6 +118,21 @@ mod tests {
                 Some(state),
                 "{marker:?}"
             );
+        }
+    }
+
+    /// 6 状態それぞれが upstream の語形を 1 つ持ち、マーカーと 1:1 に対応する。
+    #[test]
+    fn every_state_spells_its_upstream_name() {
+        for (state, spelled) in [
+            (CheckboxState::Pending, "pending"),
+            (CheckboxState::InProgress, "in-progress"),
+            (CheckboxState::AwaitingApproval, "awaiting-approval"),
+            (CheckboxState::Revising, "revising"),
+            (CheckboxState::Completed, "completed"),
+            (CheckboxState::Skipped, "skipped"),
+        ] {
+            assert_eq!(state.spelling(), spelled, "{state:?}");
         }
     }
 

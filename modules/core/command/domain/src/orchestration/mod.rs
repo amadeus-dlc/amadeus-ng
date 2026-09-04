@@ -83,6 +83,10 @@ mod next_decision;
 mod next_request;
 mod phase_boundary;
 mod plan_error;
+mod report_decision;
+mod report_no_op;
+mod report_refusal;
+mod report_request;
 mod skeleton_stance;
 mod stage_display;
 mod stage_entry;
@@ -91,6 +95,7 @@ mod stage_key;
 mod start_request;
 mod state_binding;
 mod status;
+mod transition_step;
 mod unknown_stance;
 mod unknown_verdict;
 mod verdict;
@@ -106,12 +111,14 @@ pub use intent_execution_id::IntentExecutionId;
 pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
+pub use report_request::ReportRequest;
 pub use skeleton_stance::SkeletonStance;
 pub use stage_display::StageDisplay;
 pub use stage_entry::StageEntry;
 pub use stage_index::StageIndex;
 pub use stage_key::StageKey;
 pub use start_request::StartRequest;
+pub use transition_step::TransitionStep;
 pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
 
@@ -128,6 +135,8 @@ pub use status::Status;
 pub use engine_signal::EngineSignal;
 pub use next_decision::NextDecision;
 pub use next_request::NextRequest;
+pub use report_decision::ReportDecision;
+pub use report_no_op::ReportNoOp;
 pub use state_binding::StateBinding;
 
 // ドメインイベント (C5 の語彙 — 11 変種)。輸送のメタデータ (識別子・通番・発生時刻・
@@ -149,8 +158,9 @@ pub use intent_execution_id_error::IntentExecutionIdError;
 pub use intent_id_error::IntentIdError;
 pub use invalid_mode_arg::InvalidModeArg;
 pub use plan_error::PlanError;
+pub use report_refusal::ReportRefusal;
 pub use unknown_stance::UnknownStance;
 pub use unknown_verdict::UnknownVerdict;
 
 // 逐語定数
-pub use verdict::ACCEPTED_RESULTS;
+pub use verdict::{ACCEPTED_RESULTS, FORWARD_RESULTS};
