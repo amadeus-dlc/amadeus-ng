@@ -1,4 +1,4 @@
-//! `IntentExecutionEvent` — 15 変種のドメインイベント (C5、entities.md)。
+//! `IntentExecutionEvent` — 16 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -31,6 +31,7 @@ mod gate_opened;
 mod gate_rejected;
 mod jumped;
 mod parked;
+mod practices_affirmed;
 mod recomposed;
 mod review_completed;
 mod review_requested;
@@ -47,6 +48,7 @@ pub use gate_opened::GateOpened;
 pub use gate_rejected::GateRejected;
 pub use jumped::Jumped;
 pub use parked::Parked;
+pub use practices_affirmed::PracticesAffirmed;
 pub use recomposed::Recomposed;
 pub use review_completed::ReviewCompleted;
 pub use review_requested::ReviewRequested;
@@ -57,7 +59,7 @@ pub use stage_skipped::StageSkipped;
 pub use started::Started;
 pub use unparked::Unparked;
 
-/// 15 変種のドメインイベント (C5)。
+/// 16 変種のドメインイベント (C5)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。
@@ -106,6 +108,8 @@ pub enum IntentExecutionEvent {
     ReviewRequested(ReviewRequested),
     /// レビュアーの判定の記録 (受領証の対の右半分)。
     ReviewCompleted(ReviewCompleted),
+    /// 承認された実践がメモリ層の正本へ書き写された事実 (practices-discovery の受領証)。
+    PracticesAffirmed(PracticesAffirmed),
 }
 
 impl IntentExecutionEvent {
@@ -128,6 +132,7 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::SkeletonStanceRecorded(payload) => payload.id(),
             IntentExecutionEvent::ReviewRequested(payload) => payload.id(),
             IntentExecutionEvent::ReviewCompleted(payload) => payload.id(),
+            IntentExecutionEvent::PracticesAffirmed(payload) => payload.id(),
         }
     }
 
@@ -152,6 +157,7 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::SkeletonStanceRecorded(payload) => payload.aggregate_id(),
             IntentExecutionEvent::ReviewRequested(payload) => payload.aggregate_id(),
             IntentExecutionEvent::ReviewCompleted(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::PracticesAffirmed(payload) => payload.aggregate_id(),
         }
     }
 }
@@ -169,6 +175,7 @@ mod tests {
         AutonomyMode, ReviewVerdict, SkeletonStance, StageDisplay, StageEntry,
     };
     use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
+    use crate::workspace::PromotedSection;
 
     use super::super::intent_id::IntentId;
 
@@ -206,7 +213,7 @@ mod tests {
         )
     }
 
-    /// 15 変種を 1 つずつ (同じ id / aggregate_id で組む)。
+    /// 16 変種を 1 つずつ (同じ id / aggregate_id で組む)。
     fn every_variant() -> Vec<IntentExecutionEvent> {
         vec![
             IntentExecutionEvent::Started(started()),
@@ -278,6 +285,15 @@ mod tests {
                 "aidlc-product-lead-agent",
                 1,
                 ReviewVerdict::Ready,
+            )),
+            IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
+                evid(),
+                agg(),
+                slug("practices-discovery"),
+                "owner",
+                vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
+                vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
+                vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
             )),
         ]
     }
@@ -398,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fifteen_variants_are_matched_exhaustively() {
+    fn the_sixteen_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
         const fn name(payload: &IntentExecutionEvent) -> &'static str {
@@ -418,6 +434,7 @@ mod tests {
                 IntentExecutionEvent::SkeletonStanceRecorded(_) => "SkeletonStanceRecorded",
                 IntentExecutionEvent::ReviewRequested(_) => "ReviewRequested",
                 IntentExecutionEvent::ReviewCompleted(_) => "ReviewCompleted",
+                IntentExecutionEvent::PracticesAffirmed(_) => "PracticesAffirmed",
             }
         }
         let expected = [
@@ -436,10 +453,11 @@ mod tests {
             "SkeletonStanceRecorded",
             "ReviewRequested",
             "ReviewCompleted",
+            "PracticesAffirmed",
         ];
         let named: Vec<&'static str> = every_variant().iter().map(name).collect();
         assert_eq!(named, expected);
         let distinct: HashSet<&'static str> = named.iter().copied().collect();
-        assert_eq!(distinct.len(), 15);
+        assert_eq!(distinct.len(), 16);
     }
 }

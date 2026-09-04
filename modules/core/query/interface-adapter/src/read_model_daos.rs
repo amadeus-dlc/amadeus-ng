@@ -1,4 +1,4 @@
-//! `ReadModelDaos` — 1 要求ぶんの読取専用接続と、その上に建つ 12 の DAO 実装。
+//! `ReadModelDaos` — 1 要求ぶんの読取専用接続と、その上に建つ 13 の DAO 実装。
 
 use std::path::Path;
 use std::rc::Rc;
@@ -6,6 +6,7 @@ use std::rc::Rc;
 use core_query_use_case::orchestration::ReadModelReadError;
 
 use super::definition_dao_impl::DefinitionDaoImpl;
+use super::definition_stage_dao_impl::DefinitionStageDaoImpl;
 use super::execution_dao_impl::ExecutionDaoImpl;
 use super::jump_dao_impl::JumpDaoImpl;
 use super::jump_phase_dao_impl::JumpPhaseDaoImpl;
@@ -19,7 +20,7 @@ use super::scope_keyword_dao_impl::ScopeKeywordDaoImpl;
 use super::steering_part_dao_impl::SteeringPartDaoImpl;
 use super::steering_plan_dao_impl::SteeringPlanDaoImpl;
 
-/// **1 要求 = 1 接続**。12 の DAO 実装はこの 1 つを分け合う。
+/// **1 要求 = 1 接続**。13 の DAO 実装はこの 1 つを分け合う。
 ///
 /// # なぜ束ねるのか
 ///
@@ -60,6 +61,12 @@ impl ReadModelDaos {
     #[must_use]
     pub fn definition(&self) -> DefinitionDaoImpl {
         DefinitionDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// `read_definition_stage` を引く実装。
+    #[must_use]
+    pub fn definition_stage(&self) -> DefinitionStageDaoImpl {
+        DefinitionStageDaoImpl::new(Rc::clone(&self.store))
     }
 
     /// `read_execution` を引く実装。

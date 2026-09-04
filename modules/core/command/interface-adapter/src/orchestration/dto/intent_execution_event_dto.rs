@@ -1,4 +1,4 @@
-//! ドメインイベント 15 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
+//! ドメインイベント 16 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -8,9 +8,9 @@
 
 use core_command_domain::orchestration::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded, StageEntry,
-    StageRevised, StageSkipped, Started, Unparked,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed,
+    Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
+    StageEntry, StageRevised, StageSkipped, Started, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ use super::gate_rejected_dto::GateRejectedDto;
 use super::intent_dto::StageEntryDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
+use super::practices_affirmed_dto::{PracticesAffirmedDto, PromotedSectionDto};
 use super::recomposed_dto::RecomposedDto;
 use super::review_completed_dto::ReviewCompletedDto;
 use super::review_requested_dto::ReviewRequestedDto;
@@ -70,6 +71,8 @@ pub enum IntentExecutionEventDto {
     ReviewRequested(ReviewRequestedDto),
     /// レビュアーの判定の記録。
     ReviewCompleted(ReviewCompletedDto),
+    /// 承認された実践がメモリ層の正本へ書き写された事実。
+    PracticesAffirmed(PracticesAffirmedDto),
 }
 
 /// イベント識別子の復号。
@@ -214,6 +217,21 @@ impl IntentExecutionEventDto {
                     verdict: review_verdict_spelling(payload.verdict()).to_string(),
                 })
             }
+            IntentExecutionEvent::PracticesAffirmed(payload) => {
+                IntentExecutionEventDto::PracticesAffirmed(PracticesAffirmedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                    stage: slug_spelling(payload.stage()),
+                    affirming_user: payload.affirming_user().to_string(),
+                    sections: payload
+                        .sections()
+                        .iter()
+                        .map(PromotedSectionDto::of)
+                        .collect(),
+                    mandated: payload.mandated().to_vec(),
+                    forbidden: payload.forbidden().to_vec(),
+                })
+            }
         }
     }
 
@@ -344,6 +362,21 @@ impl IntentExecutionEventDto {
                     payload.reviewer.clone(),
                     payload.iteration,
                     review_verdict_of(&payload.verdict, "verdict")?,
+                ))
+            }
+            IntentExecutionEventDto::PracticesAffirmed(payload) => {
+                IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                    payload.affirming_user.clone(),
+                    payload
+                        .sections
+                        .iter()
+                        .map(PromotedSectionDto::to_domain)
+                        .collect(),
+                    payload.mandated.clone(),
+                    payload.forbidden.clone(),
                 ))
             }
         })

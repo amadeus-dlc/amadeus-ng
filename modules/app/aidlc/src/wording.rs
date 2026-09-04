@@ -1004,9 +1004,217 @@ pub fn review_log_failed(stage: &str, detail: &str) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// `aidlc-state`（状態ファイルの書込面 — b49 / B10）
+// ---------------------------------------------------------------------------
+
+/// 状態面の未知サブコマンド（upstream `aidlc-state.ts:630` 逐語）。
+///
+/// 一覧は upstream の綴りそのままである — switch が受理する `unit` は upstream 自身の
+/// 一覧にも載っていないので、こちらも載せない。
+#[must_use]
+pub fn unknown_state_subcommand(given: Option<&str>) -> String {
+    format!(
+        "Unknown subcommand: {}. Valid: get, set, set-skeleton-stance, \
+set-construction-iteration, checkbox, count, advance, finalize, complete-workflow, gate-start, \
+approve, reject, revise, skip, resume, acknowledge-compaction, reuse-artifact, lookup, \
+practices-event, practices-promote, fork, merge, park, unpark",
+        given.unwrap_or("undefined")
+    )
+}
+
+/// 認識はするが**この build に無い**状態動詞（own wording）。
+///
+/// upstream に対応する逐語は無い — あちらは 25 動詞すべてを持つ。b46 が導入した
+/// 「not wired in this build」の言い回しに揃えてある（[`log_verb_not_wired`] と同型）。
+#[must_use]
+pub fn state_verb_not_wired(verb: &str) -> String {
+    format!(
+        "Cannot run aidlc-state {verb}: the {verb} subcommand is not wired in this build. \
+Only `practices-promote` is available."
+    )
+}
+
+/// `--team-practices` / `--discovered-rules` が無い（upstream `:3522` 逐語）。
+pub const PROMOTE_USAGE: &str = "Usage: aidlc-state.ts practices-promote --team-practices <path> --discovered-rules <path> [--affirming-user <name>] [--target-dir <path>]";
+
+/// `--target-dir` は**この build に無い**（own wording）。
+///
+/// upstream の `--target-dir` はテストが書込先を差し替えるための口である。こちらは書込先を
+/// 投影 (RMU) の `ProjectionTargets` が持つので、動詞から差し替える経路が無い。
+pub const PROMOTE_TARGET_DIR_NOT_WIRED: &str = "Cannot redirect the promotion: --target-dir is not wired in this build. The affirmed practices are written to the active space's memory directory.";
+
+/// アクティブな intent が解決できない（own wording）。
+///
+/// upstream は暗黙に状態ファイルを読んで倒れるので、対応する逐語が無い。
+/// [`REVIEW_WITHOUT_INTENT`] と同型の言い回しに揃えてある。
+pub const PROMOTE_WITHOUT_INTENT: &str =
+    "Cannot resolve the active intent for practices promotion.";
+
+/// 昇格の拒否（upstream `fail()` `:3550` 逐語 — 理由は呼出側が組む）。
+#[must_use]
+pub fn promote_failed(reason: &str) -> String {
+    format!("practices-promote failed: {reason}")
+}
+
+/// practices-discovery がコンパイル済みグラフに無い（upstream `:3562` 逐語）。
+pub const PROMOTE_STAGE_ABSENT: &str =
+    "practices-discovery is absent from the compiled stage graph";
+
+/// ドラフト 2 本の親ディレクトリが違う（同 `:3566` 逐語）。
+pub const PROMOTE_DRAFTS_MUST_SHARE_DIR: &str =
+    "team-practices and discovered-rules drafts must share one stage directory";
+
+/// hub-and-spoke の証跡が欠けている（同 `:3584` 逐語。`missing` は `; ` 結合済み）。
+#[must_use]
+pub fn promote_incomplete_ensemble(missing: &str) -> String {
+    format!("ensemble evidence is incomplete: {missing}")
+}
+
+/// contributions のファイルが無い（同 `:3575` 逐語）。
+#[must_use]
+pub fn promote_missing_contribution(agent: &str) -> String {
+    format!("{agent} (no contribution file)")
+}
+
+/// contributions の 1 行目が identity marker と違う（同 `:3579` 逐語）。
+#[must_use]
+pub fn promote_missing_identity_marker(agent: &str) -> String {
+    format!("{agent} (missing identity-marker first line)")
+}
+
+/// `team-practices` ドラフトが無い（同 `:3590` 逐語）。
+#[must_use]
+pub fn promote_team_practices_not_found(path: &str) -> String {
+    format!("team-practices draft not found: {path}")
+}
+
+/// `discovered-rules` ドラフトが無い（同 `:3592` 逐語）。
+#[must_use]
+pub fn promote_discovered_rules_not_found(path: &str) -> String {
+    format!("discovered-rules draft not found: {path}")
+}
+
+/// ドラフトが読めない（同 `:3600` 逐語）。
+#[must_use]
+pub fn promote_unreadable_drafts(detail: &str) -> String {
+    format!("could not read drafts: {detail}")
+}
+
+/// 正本 `team.md` が無い（同 `:3605` 逐語）。
+#[must_use]
+pub fn promote_team_md_not_found(path: &str) -> String {
+    format!("team.md not found at {path}")
+}
+
+/// 正本 `project.md` が無い（同 `:3607` 逐語）。
+#[must_use]
+pub fn promote_project_md_not_found(path: &str) -> String {
+    format!("project.md not found at {path}")
+}
+
+/// 正本が読めない（同 `:3615` 逐語）。
+#[must_use]
+pub fn promote_unreadable_targets(detail: &str) -> String {
+    format!("could not read targets: {detail}")
+}
+
+/// team.md の節置換に失敗した（同 `:3642` 逐語 — 内側は `replaceSection` の throw）。
+#[must_use]
+pub fn promote_replace_section_failed(heading: &str) -> String {
+    format!(
+        "replaceSection failed on team.md for \"{heading}\": \
+replaceSection: heading not found: {heading}"
+    )
+}
+
+/// project.md への追記に失敗した（同 `:3684` / `:3700` 逐語）。
+///
+/// `label` は見出しの裸の名前（`Mandated` / `Forbidden`）で、内側の throw は `## ` 付きの
+/// 完全形を綴る — upstream の非対称をそのまま写す。
+#[must_use]
+pub fn promote_append_failed(label: &str) -> String {
+    format!(
+        "appendUnderHeading failed on {label}: \
+appendUnderHeading: heading not found: ## {label}"
+    )
+}
+
+/// 段 12 — practices-discovery の承認に昇格受領証が無い
+/// （upstream `handleReport` `aidlc-orchestrate.ts:5777-5781` 逐語）。
+///
+/// この文言は orchestrate 自身の `errorDirective` である（`aidlc-state approve` を spawn
+/// する**前**に効くので、[`transition_rejected_by`] の包み文には入らない）。
+pub const PRACTICES_RECEIPT_MISSING: &str = "Cannot approve \"practices-discovery\" before practices-promote succeeds. Run aidlc-state.ts practices-promote after the human approves; it records Practices Affirmed Timestamp and a fresh PRACTICES_AFFIRMED receipt for this stage attempt, then report --result approved --user-input \"<exact choice>\".";
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// b49 の昇格の逐語 — 理由は `practices-promote failed: ` に包まれる。
+    #[test]
+    fn the_promotion_failures_are_wrapped_in_the_upstream_prefix() {
+        assert_eq!(
+            promote_failed(PROMOTE_STAGE_ABSENT),
+            "practices-promote failed: practices-discovery is absent from the compiled stage graph"
+        );
+        assert_eq!(
+            promote_failed(&promote_incomplete_ensemble(
+                &[
+                    promote_missing_contribution("aidlc-developer-agent"),
+                    promote_missing_identity_marker("aidlc-quality-agent"),
+                ]
+                .join("; ")
+            )),
+            "practices-promote failed: ensemble evidence is incomplete: aidlc-developer-agent (no contribution file); aidlc-quality-agent (missing identity-marker first line)"
+        );
+        assert_eq!(
+            promote_failed(&promote_team_practices_not_found("a/team-practices.md")),
+            "practices-promote failed: team-practices draft not found: a/team-practices.md"
+        );
+        assert_eq!(
+            promote_failed(&promote_discovered_rules_not_found("a/discovered-rules.md")),
+            "practices-promote failed: discovered-rules draft not found: a/discovered-rules.md"
+        );
+        assert_eq!(
+            promote_failed(&promote_unreadable_drafts("EISDIR")),
+            "practices-promote failed: could not read drafts: EISDIR"
+        );
+        assert_eq!(
+            promote_failed(&promote_team_md_not_found("/w/memory/team.md")),
+            "practices-promote failed: team.md not found at /w/memory/team.md"
+        );
+        assert_eq!(
+            promote_failed(&promote_project_md_not_found("/w/memory/project.md")),
+            "practices-promote failed: project.md not found at /w/memory/project.md"
+        );
+        assert_eq!(
+            promote_failed(&promote_unreadable_targets("EISDIR")),
+            "practices-promote failed: could not read targets: EISDIR"
+        );
+        assert_eq!(
+            promote_failed(&promote_replace_section_failed("## Deployment")),
+            "practices-promote failed: replaceSection failed on team.md for \"## Deployment\": replaceSection: heading not found: ## Deployment"
+        );
+        assert_eq!(
+            promote_failed(&promote_append_failed("Forbidden")),
+            "practices-promote failed: appendUnderHeading failed on Forbidden: appendUnderHeading: heading not found: ## Forbidden"
+        );
+    }
+
+    /// 状態面の未知動詞は与えられた語を名指し、無ければ `undefined` を綴る。
+    #[test]
+    fn the_unknown_state_subcommand_line_names_the_given_verb_or_undefined() {
+        assert!(
+            unknown_state_subcommand(Some("frobnicate"))
+                .starts_with("Unknown subcommand: frobnicate. Valid: get, set, ")
+        );
+        assert!(unknown_state_subcommand(None).starts_with("Unknown subcommand: undefined. "));
+        assert_eq!(
+            state_verb_not_wired("approve"),
+            "Cannot run aidlc-state approve: the approve subcommand is not wired in this build. Only `practices-promote` is available."
+        );
+    }
 
     /// 材料が空なら文を「.」で閉じ、在れば「: 材料」で続ける（upstream の三項）。
     #[test]

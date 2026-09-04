@@ -131,8 +131,10 @@ NFR3 の冪等再構成は差分適用に適用され、骨格は環境成果物
 
 | 系統 | 読み手 | 形 | 更新者 |
 | --- | --- | --- | --- |
-| (1) 人・upstream ツール向けファイル面 | 人が開く、upstream の hook / ステージが読む | `aidlc-state.md`、監査シャード、配布束の面 `stage-graph.json` / `scope-grid.json` | RMU（バイト互換、golden 固定） |
+| (1) 人・upstream ツール向けファイル面 | 人が開く、upstream の hook / ステージが読む | `aidlc-state.md`、監査シャード、**メモリ層の `team.md` / `project.md`**（b49）、配布束の面 `stage-graph.json` / `scope-grid.json` | RMU（バイト互換、golden 固定） |
 | (2) CLI 読取コマンド向け構造化リードモデル | `next` / `continue` /（将来）`--status` / `doctor` の DAO | イベントストアと同じ SQLite ファイル（`aidlc/spaces/<space>/intents/.aidlc-store.sqlite`）の接頭辞 `read_` の表 | RMU。**ジャーナル由来の表**は `catch_up` ごとに**全履歴から再計算し全差し替え**、チェックポイント前進と**同一トランザクション**。**参照入力由来の表**（steering — 下記の例外）は `source_digest` の比較で変化時だけ差し替え、**別トランザクション** |
+
+**メモリ層 2 本は「人が編集する正本」であると同時に系統 (1) の投影面である**（2026-09-05、b49）。`practices-promote` が成功すると `PracticesAffirmed` の投影が `team.md` の 5 節（`Way of Working` / `Walking Skeleton` / `Testing Posture` / `Deployment` / `Code Style`）を置き換え、`project.md` の `## Mandated` / `## Forbidden` へ `(affirmed YYYY-MM-DD)` の印を付けた規則行を追記する。**投影が触るのはその節と行だけ**であり、他の本文・見出し・順序には一切手を出さない — 人の編集と共存できる形にするためである。書き替えなかったキャッチアップは 1 バイトも書かない（mtime を動かさない）。同じ 2 本は steering の参照入力（`read_steering_plan` / `read_steering_part` の出所）でもあり、昇格の後の `catch_up` は `source_digest` の変化を通じて steering の面も作り直す。
 
 (2) の規範（**ジャーナル由来の表**に適用。steering の 2 表は下の例外）:
 

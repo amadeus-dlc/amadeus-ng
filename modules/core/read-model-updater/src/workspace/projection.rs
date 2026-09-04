@@ -23,18 +23,20 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, JumpDirection,
-    Jumped, Parked, PhaseBoundary, Recomposed, ReviewCompleted, ReviewRequested,
+    Jumped, Parked, PhaseBoundary, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested,
     SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
     AuditFieldKey, AuditFieldKeyError, AuditFields, CheckboxState, CheckboxUpdateError, Checkboxes,
+    PromotedSection, append_under_heading, replace_section,
 };
 
 use chrono::{DateTime, Utc};
 use core_command_domain::workspace::EventType;
 
 use super::audit_block::{iso8601_seconds, render_audit_block};
+use super::memory_faces::MemoryFaces;
 use super::read_model::ReadModel;
 use super::resolved_plan::{PlannedStage, ResolvedPlan};
 use super::state_writers::{FieldNotFound, find_field, with_field, with_field_or_insert};
@@ -106,6 +108,14 @@ mod key {
     pub(super) const VERDICT: &str = "Verdict";
     /// `**Retry**:`（判定待ちの依頼の呼び直し — 同 `:1058`）。
     pub(super) const RETRY: &str = "Retry";
+    /// `**Affirming User**:`（昇格の承認者 — ピン `3c3146cf` `aidlc-state.ts:3734`）。
+    pub(super) const AFFIRMING_USER: &str = "Affirming User";
+    /// `**Sections Written**:`（同 `:3735`。空でも欄は描く）。
+    pub(super) const SECTIONS_WRITTEN: &str = "Sections Written";
+    /// `**Mandated Rules Appended**:`（同 `:3736`）。
+    pub(super) const MANDATED_RULES_APPENDED: &str = "Mandated Rules Appended";
+    /// `**Forbidden Rules Appended**:`（同 `:3737`）。
+    pub(super) const FORBIDDEN_RULES_APPENDED: &str = "Forbidden Rules Appended";
     /// `**Mode**:`。**upstream の実行出力としては採れない**（`cli/set-autonomy` は失敗経路
     /// しか捉えていない）。ピン `3c3146cf` の配布シェルには
     /// `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込む経路が 1 つも無く、
@@ -152,6 +162,9 @@ mod field {
     pub(super) const STATUS: &str = "Status";
     /// `- **Last Updated**:`（値はイベントの発生時刻 — 投影は壁時計を読まない）。
     pub(super) const LAST_UPDATED: &str = "Last Updated";
+    /// `- **Practices Affirmed Timestamp**:`（骨格テンプレートに無いランタイム欄 —
+    /// 無ければ `## Project Information` の末尾へ挿入する。upstream `:3743-3748`）。
+    pub(super) const PRACTICES_AFFIRMED_TIMESTAMP: &str = "Practices Affirmed Timestamp";
 
     /// `## Phase Progress` の 1 行のラベル（`- **Inception**:`）。
     ///
@@ -177,6 +190,21 @@ mod field {
 ///
 /// `with_field_or_insert` は `## ` を自分で前置するので、ここは見出し名だけを持つ。
 const RUNTIME_STATE_HEADING: &str = "Runtime State";
+
+/// 昇格のタイムスタンプが入るセクション見出し（upstream `:3745`）。
+const PROJECT_INFORMATION_HEADING: &str = "Project Information";
+
+/// メモリ層 team.md の 5 節（`## ` を前置してから置き換える）。
+const MEMORY_HEADING_PREFIX: &str = "## ";
+
+/// `## Mandated` / `## Forbidden` の綴り（project.md の追記先）。
+const MANDATED_HEADING: &str = "## Mandated";
+const FORBIDDEN_HEADING: &str = "## Forbidden";
+
+/// 診断が名指す書込先のファイル名。
+const TEAM_MD: &str = "team.md";
+const PROJECT_MD: &str = "project.md";
+const STATE_FILE: &str = "aidlc-state.md";
 
 /// `**Retry**:` の唯一の値（upstream `fields.Retry = "pending-request"` — `:1058`）。
 const RETRY_PENDING_REQUEST: &str = "pending-request";
@@ -252,6 +280,18 @@ pub enum ProjectionError {
     },
     /// 状態ファイルに park マーカーの置き場（`## Runtime State`）が無い。
     ParkSectionMissing,
+    /// メモリ層の 2 ファイルが載っていないのに `PracticesAffirmed` を描けと言われた。
+    ///
+    /// fail-closed である — 動詞側が 2 本の存在を確かめた後に消された場合だけ到達する。
+    /// 読めないものを黙って飛ばすと、受領証だけが立って正本が古いままになる。
+    MemoryFilesMissing,
+    /// メモリ層のファイルに置換先・追記先の見出しが無い。
+    MemoryHeadingMissing {
+        /// 見出しが無かったファイル（`team.md` / `project.md`）。
+        file: &'static str,
+        /// 見つからなかった見出しの綴り（`## ` を含む完全形）。
+        heading: String,
+    },
     /// 状態ファイルの**骨格が無い** — 投影の前提違反である。
     ///
     /// # 骨格を書くのは投影ではない（オーナー裁定 2026-08-29）
@@ -293,6 +333,10 @@ impl core::fmt::Display for ProjectionError {
             ProjectionError::AuditFieldKey(inner) => write!(f, "audit field key: {inner}"),
             ProjectionError::UnknownStage { stage } => write!(f, "unknown stage: {stage}"),
             ProjectionError::ParkSectionMissing => f.write_str("park section missing"),
+            ProjectionError::MemoryFilesMissing => f.write_str("memory files missing"),
+            ProjectionError::MemoryHeadingMissing { file, heading } => {
+                write!(f, "memory heading missing: {heading} in {file}")
+            }
             ProjectionError::ScaffoldMissing => f.write_str("scaffold missing"),
         }
     }
@@ -386,6 +430,9 @@ fn project_one(
         }
         IntentExecutionEvent::ReviewCompleted(completed) => {
             review_completed(completed, at, read_model)
+        }
+        IntentExecutionEvent::PracticesAffirmed(affirmed) => {
+            practices_affirmed(affirmed, at, read_model)
         }
     }
 }
@@ -1313,6 +1360,110 @@ fn review_completed(
     Ok(())
 }
 
+/// `PracticesAffirmed` → メモリ層 2 本の書き替え・状態ファイルの 2 欄・監査 1 行。
+///
+/// 書く順は upstream の Step 4〜7 の写しである: team.md の 5 節を置換 → project.md へ
+/// 印付きの規則行を追記 → 状態ファイルの `Practices Affirmed Timestamp` と `Last Updated`
+/// → 監査行 `PRACTICES_AFFIRMED`（ピン `3c3146cf` `aidlc-state.ts:3619-3757`）。
+/// ディスクへ落とす順序（project.md が先）は取得ループが持つ。
+///
+/// # 重複除去は**ここでも**効く
+///
+/// 集約が載せた行は「昇格を計画した時点の正本」に対して重複除去済みだが、at-least-once の
+/// 再投影ではその行が既に入っている。trim 一致で既在の行を飛ばすので、同じイベントを二度
+/// 描いても project.md は 1 行しか増えない（upstream の `existingGuardrailLines` と同じ形）。
+///
+/// # Errors
+///
+/// メモリ層が載っていない（`MemoryFilesMissing`）、置換先・追記先の見出しが無い
+/// （`MemoryHeadingMissing`）、状態ファイルの `## Project Information` が無い
+/// （`ParkSectionMissing` と同じ材料 — 見出し不在）、監査キーの綴り違反。
+fn practices_affirmed(
+    affirmed: &PracticesAffirmed,
+    at: &DateTime<Utc>,
+    read_model: &mut ReadModel,
+) -> Result<(), ProjectionError> {
+    let memory = read_model
+        .memory()
+        .ok_or(ProjectionError::MemoryFilesMissing)?;
+    let (team, project) = rewrite_memory(memory, affirmed)?;
+    read_model.replace_memory(team, project);
+
+    let stamp = iso8601_seconds(at);
+    let next = with_field_or_insert(
+        read_model.state(),
+        PROJECT_INFORMATION_HEADING,
+        field::PRACTICES_AFFIRMED_TIMESTAMP,
+        &stamp,
+    )
+    // `with_field_or_insert` の拒否は `## ` を含む完全形の綴りを運ぶので、そのまま載せる。
+    .map_err(|error| ProjectionError::MemoryHeadingMissing {
+        file: STATE_FILE,
+        heading: error.as_str().to_string(),
+    })?;
+    read_model.replace_state(next);
+    set_field(read_model, field::LAST_UPDATED, &stamp)?;
+
+    let sections = affirmed
+        .sections()
+        .iter()
+        .map(PromotedSection::heading)
+        .collect::<Vec<&str>>()
+        .join(LIST_SEPARATOR);
+    read_model.append_audit(&render_audit_block(
+        EventType::PracticesAffirmed,
+        at,
+        &AuditFields::new()
+            .with(key(key::AFFIRMING_USER)?, affirmed.affirming_user())
+            .with(key(key::SECTIONS_WRITTEN)?, &sections)
+            .with(
+                key(key::MANDATED_RULES_APPENDED)?,
+                &affirmed.mandated().len().to_string(),
+            )
+            .with(
+                key(key::FORBIDDEN_RULES_APPENDED)?,
+                &affirmed.forbidden().len().to_string(),
+            ),
+    ));
+    Ok(())
+}
+
+/// メモリ層 2 本の新しい本文を組む（純粋 — ディスクは触らない）。
+fn rewrite_memory(
+    memory: &MemoryFaces,
+    affirmed: &PracticesAffirmed,
+) -> Result<(String, String), ProjectionError> {
+    let mut team = memory.team().to_string();
+    for section in affirmed.sections() {
+        let heading = format!("{MEMORY_HEADING_PREFIX}{}", section.heading());
+        team = replace_section(&team, &heading, section.body()).map_err(|error| {
+            ProjectionError::MemoryHeadingMissing {
+                file: TEAM_MD,
+                heading: error.as_str().to_string(),
+            }
+        })?;
+    }
+    let mut project = memory.project().to_string();
+    for (heading, rules) in [
+        (MANDATED_HEADING, affirmed.mandated()),
+        (FORBIDDEN_HEADING, affirmed.forbidden()),
+    ] {
+        for rule in rules {
+            if project.split('\n').any(|line| line.trim() == rule) {
+                continue;
+            }
+            project =
+                append_under_heading(&project, heading, &format!("{rule}\n")).map_err(|error| {
+                    ProjectionError::MemoryHeadingMissing {
+                        file: PROJECT_MD,
+                        heading: error.as_str().to_string(),
+                    }
+                })?;
+        }
+    }
+    Ok((team, project))
+}
+
 // ---------------------------------------------------------------------------
 // 共有の断片
 // ---------------------------------------------------------------------------
@@ -1696,9 +1847,10 @@ fn list_of(read_model: &ReadModel, field: &str) -> Result<Vec<String>, Projectio
 ///
 /// # なぜ `with_field_or_insert` を使わないのか
 ///
-/// あちらは挿入位置をセクション末尾の**空行より前**へ巻き戻す（upstream `setOrInsertField`
-/// の挙動）。park マーカーはそうならない — ゴールデン `cli/park/park/state.diff` の実バイトは
-/// 空行の**あと**、次の `## ` 見出しの直前に 2 行が入っている。別の書き手なので別に実装する。
+/// 挿入位置は同じ（どちらも次の `## ` 見出しの直前 — ゴールデン `cli/park/park/state.diff`
+/// の実バイトがその形である）が、park マーカーは**2 行を対で置き直す**書き手である。
+/// 既存のマーカーを 2 行とも落としてから同じ位置へ 2 行入れる（再 park の冪等）ので、
+/// 「1 フィールドを置換 or 挿入」の口では表せない。
 mod park_marker {
     use super::{ProjectionError, ReadModel};
     use chrono::{DateTime, SecondsFormat, Utc};
@@ -2746,5 +2898,310 @@ mod tests {
                 stage: "ghost".to_string()
             })
         );
+    }
+
+    // ---- b49: 昇格受領証 (practices-discovery、段 12) ----
+
+    const TEAM_MD: &str = "\
+# Team
+
+## Way of Working
+old way.
+
+## Walking Skeleton
+old skeleton.
+
+## Code Style
+old style.
+";
+
+    const PROJECT_MD: &str = "\
+# Project
+
+## Mandated
+
+## Forbidden
+
+## Corrections
+";
+
+    fn affirmed(
+        sections: Vec<PromotedSection>,
+        mandated: &[&str],
+        forbidden: &[&str],
+    ) -> PracticesAffirmed {
+        PracticesAffirmed::new(
+            event_id(),
+            execution_id(),
+            slug("practices-discovery"),
+            "owner",
+            sections,
+            mandated.iter().map(|rule| (*rule).to_string()).collect(),
+            forbidden.iter().map(|rule| (*rule).to_string()).collect(),
+        )
+    }
+
+    /// メモリ層を載せたリードモデルへ 1 件だけ投影する。
+    fn run_with_memory(event: IntentExecutionEvent) -> ReadModel {
+        let mut read_model = model().with_memory(TEAM_MD, PROJECT_MD);
+        project(&[entry(event)], &plan(), &mut read_model).expect("投影");
+        read_model
+    }
+
+    /// 4 面すべてを描く — team.md の節置換・project.md の追記・状態ファイル 2 欄・監査 1 行。
+    #[test]
+    fn a_promotion_writes_all_four_faces() {
+        let read_model = run_with_memory(IntentExecutionEvent::PracticesAffirmed(affirmed(
+            vec![PromotedSection::new("Way of Working", "trunk-based.\n\n")],
+            &["ALWAYS review. (affirmed 2026-09-05)"],
+            &["NEVER force-push. (affirmed 2026-09-05)"],
+        )));
+
+        let memory = read_model.memory().expect("面は載っている");
+        assert!(memory.is_dirty(), "書き替えたので dirty である");
+        assert_eq!(
+            memory.team(),
+            "\
+# Team
+
+## Way of Working
+trunk-based.
+
+## Walking Skeleton
+old skeleton.
+
+## Code Style
+old style.
+"
+        );
+        // 追記は**次の `## ` 見出しの直前**に入る (upstream `appendUnderHeading` — 節末尾の
+        // 空行の後ろ)。既存行との間に空行が残るのは upstream の実バイトどおりである。
+        assert_eq!(
+            memory.project(),
+            "\
+# Project
+
+## Mandated
+
+ALWAYS review. (affirmed 2026-09-05)
+## Forbidden
+
+NEVER force-push. (affirmed 2026-09-05)
+## Corrections
+"
+        );
+
+        // 状態ファイルは 2 欄 — `Practices Affirmed Timestamp` は骨格に無いので挿入される。
+        assert!(
+            read_model
+                .state()
+                .contains("- **Practices Affirmed Timestamp**: 2026-08-21T09:14:07Z\n"),
+            "{}",
+            read_model.state()
+        );
+        assert!(
+            read_model
+                .state()
+                .contains("- **Last Updated**: 2026-08-21T09:14:07Z\n"),
+            "{}",
+            read_model.state()
+        );
+
+        // 監査 1 行 — 欄の並びは upstream `:3733-3738` の構築順である。
+        assert_eq!(audit_events(&read_model), ["PRACTICES_AFFIRMED"]);
+        assert!(
+            read_model.appended_audit().contains(
+                "**Affirming User**: owner\n**Sections Written**: Way of Working\n**Mandated Rules Appended**: 1\n**Forbidden Rules Appended**: 1\n"
+            ),
+            "{}",
+            read_model.appended_audit()
+        );
+    }
+
+    /// 空の昇格でも 4 欄を描く — `Sections Written` は**空値のまま欄を描く**。
+    #[test]
+    fn an_empty_promotion_still_renders_every_audit_field() {
+        let read_model = run_with_memory(IntentExecutionEvent::PracticesAffirmed(affirmed(
+            Vec::new(),
+            &[],
+            &[],
+        )));
+        assert!(
+            read_model.appended_audit().contains(
+                "**Affirming User**: owner\n**Sections Written**: \n**Mandated Rules Appended**: 0\n**Forbidden Rules Appended**: 0\n"
+            ),
+            "{}",
+            read_model.appended_audit()
+        );
+        // 何も書き替えていなくても、昇格の事実そのものは面を触る (dirty)。
+        assert!(read_model.memory().is_some_and(MemoryFaces::is_dirty));
+    }
+
+    /// 節は宣言順に置き換わる (5 節のうち 2 節だけを持つ昇格)。
+    #[test]
+    fn every_promoted_section_is_replaced_in_order() {
+        let read_model = run_with_memory(IntentExecutionEvent::PracticesAffirmed(affirmed(
+            vec![
+                PromotedSection::new("Way of Working", "A\n\n"),
+                PromotedSection::new("Code Style", "B\n"),
+            ],
+            &[],
+            &[],
+        )));
+        let memory = read_model.memory().expect("面は載っている");
+        assert!(
+            memory
+                .team()
+                .contains("## Way of Working\nA\n\n## Walking Skeleton")
+        );
+        assert!(memory.team().ends_with("## Code Style\nB\n"));
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Sections Written**: Way of Working, Code Style\n"),
+            "{}",
+            read_model.appended_audit()
+        );
+    }
+
+    /// 既に同じ印付き行が在れば足さない (at-least-once の再投影で重複しない)。
+    #[test]
+    fn a_rule_already_present_is_not_appended_twice() {
+        let live =
+            "# Project\n\n## Mandated\nALWAYS review. (affirmed 2026-09-05)\n\n## Forbidden\n";
+        let mut read_model = model().with_memory(TEAM_MD, live);
+        project(
+            &[entry(IntentExecutionEvent::PracticesAffirmed(affirmed(
+                Vec::new(),
+                &["ALWAYS review. (affirmed 2026-09-05)"],
+                &[],
+            )))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        let memory = read_model.memory().expect("面は載っている");
+        assert_eq!(
+            memory
+                .project()
+                .matches("ALWAYS review. (affirmed 2026-09-05)")
+                .count(),
+            1,
+            "{}",
+            memory.project()
+        );
+    }
+
+    /// メモリ層が載っていなければ fail-closed で止まる。
+    #[test]
+    fn a_promotion_without_the_memory_faces_is_refused() {
+        let mut read_model = model();
+        let error = project(
+            &[entry(IntentExecutionEvent::PracticesAffirmed(affirmed(
+                Vec::new(),
+                &[],
+                &[],
+            )))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("面が無ければ描けない");
+        assert_eq!(error, ProjectionError::MemoryFilesMissing);
+        assert_eq!(error.to_string(), "memory files missing");
+    }
+
+    /// 置換先・追記先の見出しが無ければ、どちらのファイルかを名指して止まる。
+    #[test]
+    fn a_missing_memory_heading_names_the_file_and_the_heading() {
+        let mut read_model = model().with_memory("# Team\n", PROJECT_MD);
+        let error = project(
+            &[entry(IntentExecutionEvent::PracticesAffirmed(affirmed(
+                vec![PromotedSection::new("Deployment", "none.\n")],
+                &[],
+                &[],
+            )))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("見出しが無ければ描けない");
+        assert_eq!(
+            error,
+            ProjectionError::MemoryHeadingMissing {
+                file: "team.md",
+                heading: "## Deployment".to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "memory heading missing: ## Deployment in team.md"
+        );
+
+        let mut read_model = model().with_memory(TEAM_MD, "# Project\n\n## Corrections\n");
+        let error = project(
+            &[entry(IntentExecutionEvent::PracticesAffirmed(affirmed(
+                Vec::new(),
+                &["ALWAYS x. (affirmed 2026-09-05)"],
+                &[],
+            )))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("見出しが無ければ描けない");
+        assert_eq!(
+            error,
+            ProjectionError::MemoryHeadingMissing {
+                file: "project.md",
+                heading: "## Mandated".to_string(),
+            }
+        );
+    }
+
+    /// 状態ファイルに `## Project Information` が無ければ、そのファイルを名指して止まる。
+    #[test]
+    fn a_state_file_without_the_project_information_section_is_refused() {
+        let mut read_model = ReadModel::new("## Runtime State\n- **Revision Count**: 0\n")
+            .with_memory(TEAM_MD, PROJECT_MD);
+        let error = project(
+            &[entry(IntentExecutionEvent::PracticesAffirmed(affirmed(
+                Vec::new(),
+                &[],
+                &[],
+            )))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("挿入先の見出しが無ければ描けない");
+        assert_eq!(
+            error,
+            ProjectionError::MemoryHeadingMissing {
+                file: "aidlc-state.md",
+                heading: "## Project Information".to_string(),
+            }
+        );
+    }
+
+    /// メモリ層を触らないイベントは面を dirty にしない (mtime を動かさないため)。
+    #[test]
+    fn an_event_that_touches_no_memory_face_leaves_it_clean() {
+        let mut read_model = model().with_memory(TEAM_MD, PROJECT_MD);
+        project(
+            &[entry(IntentExecutionEvent::ReviewRequested(
+                ReviewRequested::new(
+                    event_id(),
+                    execution_id(),
+                    slug("first"),
+                    "aidlc-quality-agent",
+                    1,
+                    false,
+                ),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        let memory = read_model.memory().expect("面は載っている");
+        assert!(!memory.is_dirty());
+        assert_eq!(memory.team(), TEAM_MD);
+        assert_eq!(memory.project(), PROJECT_MD);
     }
 }

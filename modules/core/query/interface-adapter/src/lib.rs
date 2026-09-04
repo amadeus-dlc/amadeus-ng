@@ -37,6 +37,7 @@
 
 mod continue_token_dto;
 mod definition_dao_impl;
+mod definition_stage_dao_impl;
 mod execution_dao_impl;
 mod jump_dao_impl;
 mod jump_phase_dao_impl;
@@ -60,6 +61,7 @@ pub use read_model_daos::ReadModelDaos;
 
 // 実 Gateway (DAO 実装) — ポート (trait) は `core_query_use_case::orchestration` が所有する。
 pub use definition_dao_impl::DefinitionDaoImpl;
+pub use definition_stage_dao_impl::DefinitionStageDaoImpl;
 pub use execution_dao_impl::ExecutionDaoImpl;
 pub use jump_dao_impl::JumpDaoImpl;
 pub use jump_phase_dao_impl::JumpPhaseDaoImpl;
@@ -78,9 +80,10 @@ pub use state_file_dao_impl::StateFileDaoImpl;
 
 // テスト用 in-memory 実装 (合成ルートとその周辺のテストが実 I/O 無しで組むための口)。
 pub use memory::{
-    InMemoryDefinitionDao, InMemoryExecutionDao, InMemoryJumpDao, InMemoryJumpPhaseDao,
-    InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao, InMemoryScopeChangeDao,
-    InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao, InMemorySteeringPlanDao,
+    InMemoryDefinitionDao, InMemoryDefinitionStageDao, InMemoryExecutionDao, InMemoryJumpDao,
+    InMemoryJumpPhaseDao, InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao,
+    InMemoryScopeChangeDao, InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao,
+    InMemorySteeringPlanDao,
 };
 
 // 継続トークンの封緘・開封 (輸送形の境界)。

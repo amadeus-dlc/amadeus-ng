@@ -27,9 +27,10 @@ use core_command_domain::orchestration::{
     CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal, ReportRequest,
     ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, Verdict,
 };
-use core_command_domain::workflow_definition::StageSlug;
+use core_command_domain::workflow_definition::{PRACTICES_DISCOVERY_SLUG, StageSlug};
 use core_command_domain::workspace::{
-    EventType, ShardName, SpaceName, StateVersionClassification, StateVersionKind, StorePath,
+    EventType, PracticesPromotion, PromotionPlanError, ShardName, SpaceName,
+    StateVersionClassification, StateVersionKind, StorePath,
 };
 use core_command_interface_adapter::orchestration::{
     CompiledDefinitionRepositoryImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
@@ -38,14 +39,18 @@ use core_command_interface_adapter::orchestration::{
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
     CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase,
-    DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase, RecordReviewUseCase,
+    DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
+    PracticesPromotionRequest, PromotePracticesUseCase, RecordReviewUseCase,
     RecordSingleStageRunUseCase, RecordSkeletonStanceUseCase, ReviewLogError, ReviewLogKind,
     ReviewLogOutcome, ReviewLogRequest, SingleStageRunError, SkeletonStanceError,
 };
-use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
+use core_infrastructure::canon_json::{
+    JsonValue, Number, ObjectMembers, SerializationProfile, serialize,
+};
 use core_query_interface_adapter::{ReadModelDaos, StateFileDaoImpl, verify_continue_token};
 use core_query_use_case::orchestration::{
-    Directive, FindExecutionUseCase, FindStateFileUseCase, NextTurnInput, StageSlugView,
+    Directive, FindDefinitionStageUseCase, FindExecutionUseCase, FindStateFileUseCase,
+    NextTurnInput, StageSlugView,
 };
 use core_read_model_updater::orchestration::{
     JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
@@ -140,6 +145,13 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         Request::UnknownLogVerb { given } => {
             Completion::refused(wording::unknown_log_subcommand(given.as_deref()))
         }
+        Request::StatePracticesPromote(args) => practices_promote(&layout, &args).await,
+        Request::StateNotWired { verb } => {
+            Completion::refused(wording::state_verb_not_wired(&verb))
+        }
+        Request::UnknownStateVerb { given } => {
+            Completion::refused(wording::unknown_state_subcommand(given.as_deref()))
+        }
     }
 }
 
@@ -209,7 +221,8 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
 /// | 5 `--result` の有無・既知値 | ○ | — |
 /// | 6 実行カーソルの有無 | ○ | — |
 /// | 7〜10・13・forward 表 | — | ○ |
-/// | 11 completion-evidence / 12 practices 受領証 | 未配線（裁定待ち） | — |
+/// | 11 completion-evidence | 未配線（slice 2） | — |
+/// | 12 practices 受領証 | — | ○（`approve_gate` の段 12 — b49） |
 async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 読む面（状態ファイル・実行行）が最新でないと段 1 と段 4 が古い値で判断する。
     // 書いた事実を落とすのはコミットの後（末尾の `catch_up`）である。
@@ -656,6 +669,12 @@ fn commit_refusal(raw: &str, error: &CommitError) -> String {
         CommitError::Refused(refusal) => report_refusal(raw, refusal),
         // 段 11 — レビュアー受領証の欠落だけは `aidlc-state.ts approve` の stderr 逐語を
         // 包み文の中に置く（upstream も spawn 先の出力をそのまま挟む — b46 の既存形）。
+        // 段 12 — 昇格受領証の欠落は **orchestrate 自身の** error directive である
+        // （upstream は `aidlc-state approve` を spawn する前に断るので、包み文に入らない）。
+        CommitError::Transition {
+            error: CommandError::PracticesReceiptMissing(_),
+            ..
+        } => wording::PRACTICES_RECEIPT_MISSING.to_string(),
         CommitError::Transition {
             step,
             stage,
@@ -933,6 +952,249 @@ fn review_refusal(
         }
         other => wording::review_log_failed(stage, &chained(other)),
     }
+}
+
+/// `aidlc-state practices-promote` — 承認された実践をメモリ層の正本へ書き写す（b49 / B10）。
+///
+/// 段の順序は upstream `handlePracticesPromote`（ピン `3c3146cf` `aidlc-state.ts:3511-3770`）と
+/// 同順である: フラグ文法 →（`--target-dir` の未配線拒否）→ アクティブ intent →
+/// Step 1 ensemble 証跡 → Step 2 ドラフト読取 → Step 3 正本読取 → Step 4 昇格内容の計算 →
+/// 記録 → 投影 → stdout JSON 1 行。
+///
+/// **失敗はすべて stderr + exit 1** である（`Completion::refused`）— upstream の `error()` は
+/// directive を出さない。失敗時の `PRACTICES_OVERRIDE` 行は本 build では描かない（逸脱台帳）。
+async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> Completion {
+    // 段 0 — 2 つの必須フラグ（upstream `:3520-3524`）。
+    let (Some(team_practices), Some(discovered_rules)) =
+        (args.team_practices(), args.discovered_rules())
+    else {
+        return Completion::refused(wording::PROMOTE_USAGE.to_string());
+    };
+    // 未配線の 1 面（own wording — 書込先は投影が持つ）。
+    if args.target_dir().is_some() {
+        return Completion::refused(wording::PROMOTE_TARGET_DIR_NOT_WIRED.to_string());
+    }
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return Completion::refused(message),
+    };
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        // 不在 = まだ鋳造していない。
+        Ok(None) => return Completion::refused(wording::PROMOTE_WITHOUT_INTENT.to_string()),
+        // 在るのに読めない・壊れているは**不在と混ぜない**（`report` 段 6 と同じ規律）。
+        Err(error) => {
+            return Completion::refused(wording::unreadable_execution_cursor(&error.to_string()));
+        }
+    };
+    // 定義の面（practices ステージの宣言と support agents）を読む前に投影を追いつかせる。
+    catch_up_before_reading(layout).await;
+    let support_agents = match practices_support_agents(layout, &store) {
+        Ok(agents) => agents,
+        Err(message) => return Completion::refused(message),
+    };
+    // Step 1 — hub-and-spoke の証跡を書込の直前に取り直す（ゲート開放後に消えうる）。
+    if let Err(message) = verify_ensemble(team_practices, discovered_rules, &support_agents) {
+        return Completion::refused(message);
+    }
+    // Step 2 / 3 — ドラフト 2 本と正本 2 本を読む（どちらも fail-closed）。
+    let team_md_path = layout.memory_dir().join("team.md");
+    let project_md_path = layout.memory_dir().join("project.md");
+    let drafts = read_pair(
+        Path::new(team_practices),
+        Path::new(discovered_rules),
+        &[
+            wording::promote_team_practices_not_found(team_practices),
+            wording::promote_discovered_rules_not_found(discovered_rules),
+        ],
+        wording::promote_unreadable_drafts,
+    );
+    let (team_practices_draft, discovered_rules_draft) = match drafts {
+        Ok(pair) => pair,
+        Err(message) => return Completion::refused(message),
+    };
+    let targets = read_pair(
+        &team_md_path,
+        &project_md_path,
+        &[
+            wording::promote_team_md_not_found(&team_md_path.to_string_lossy()),
+            wording::promote_project_md_not_found(&project_md_path.to_string_lossy()),
+        ],
+        wording::promote_unreadable_targets,
+    );
+    let (team_md, project_md) = match targets {
+        Ok(pair) => pair,
+        Err(message) => return Completion::refused(message),
+    };
+    // Step 4 — 昇格内容の計算は純関数である（判断ではなく計算 — 設計 §1）。
+    let occurred_at = Utc::now();
+    let promotion = match PracticesPromotion::plan(
+        &team_practices_draft,
+        &discovered_rules_draft,
+        &team_md,
+        &project_md,
+        occurred_at.date_naive(),
+    ) {
+        Ok(promotion) => promotion,
+        Err(error) => return Completion::refused(promotion_plan_refusal(&error)),
+    };
+
+    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+        IntentExecutionRepositoryImpl::open(&store),
+        IntentRepositoryImpl::open(&store),
+    ) else {
+        return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
+    };
+    let request = PracticesPromotionRequest::new(promotion.clone(), args.affirming_user());
+    if let Err(error) = PromotePracticesUseCase::new(intent_execution_repository, intent_repository)
+        .execute(&execution_id, &request, occurred_at)
+        .await
+    {
+        return Completion::refused(wording::promote_failed(&chained(&error)));
+    }
+    // 書いた事実をリードモデルへ落とす（メモリ層 2 本・状態ファイル・監査行はこの投影で
+    // 現れる）。
+    if let Err(error) = catch_up(layout).await {
+        return Completion::refused(wording::orchestrate_failure(&error));
+    }
+    Completion::emitted(promote_line(
+        &promotion,
+        &occurred_at,
+        &team_md_path.to_string_lossy(),
+        &project_md_path.to_string_lossy(),
+    ))
+}
+
+/// practices-discovery ステージの support agents（グラフに無ければ拒否）。
+///
+/// クエリ側の `read_definition_stage` を slug で 1 引当する — 「そのステージがグラフに在るか」
+/// は**行が引けたかどうか**であり、判断はここに無い（`coding-rules/cqrs-boundaries.md`）。
+fn practices_support_agents(layout: &Layout, store: &StorePath) -> Result<Vec<String>, String> {
+    let unreadable =
+        |cause: &str| wording::read_model_unreadable(&store.as_path().to_string_lossy(), cause);
+    let definition_id = definition_id(layout)?;
+    let daos = ReadModelDaos::open(store.as_path())
+        .map_err(|error| unreadable(&error.kind().to_string()))?;
+    let found = FindDefinitionStageUseCase::new(daos.definition_stage())
+        .execute(definition_id.as_str(), PRACTICES_DISCOVERY_SLUG)
+        .map_err(|error| unreadable(&error.kind().to_string()))?;
+    let Some(row) = found else {
+        return Err(wording::promote_failed(wording::PROMOTE_STAGE_ABSENT));
+    };
+    crate::directive_drawing::strings("support_agents", row.support_agents())
+}
+
+/// Step 1 — ドラフト 2 本が同じディレクトリに在り、宣言された support agents の
+/// contributions が揃っていることを確かめる（upstream `:3564-3586`）。
+fn verify_ensemble(
+    team_practices: &str,
+    discovered_rules: &str,
+    support_agents: &[String],
+) -> Result<(), String> {
+    let draft_dir = Path::new(team_practices).parent();
+    if Path::new(discovered_rules).parent() != draft_dir {
+        return Err(wording::promote_failed(
+            wording::PROMOTE_DRAFTS_MUST_SHARE_DIR,
+        ));
+    }
+    let draft_dir = draft_dir.unwrap_or_else(|| Path::new(""));
+    let missing: Vec<String> = support_agents
+        .iter()
+        .filter_map(|agent| {
+            let contribution = draft_dir.join("contributions").join(format!("{agent}.md"));
+            match std::fs::read_to_string(&contribution) {
+                Err(_) => Some(wording::promote_missing_contribution(agent)),
+                Ok(text) => {
+                    let first = text.split('\n').next().unwrap_or_default().trim();
+                    (first != format!("**Collaborator:** {agent}"))
+                        .then(|| wording::promote_missing_identity_marker(agent))
+                }
+            }
+        })
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(wording::promote_failed(
+            &wording::promote_incomplete_ensemble(&missing.join("; ")),
+        ))
+    }
+}
+
+/// 2 本のファイルを読む — 不在は個別の逐語、読めないのは共通の逐語（upstream の 2 段）。
+fn read_pair(
+    first: &Path,
+    second: &Path,
+    not_found: &[String; 2],
+    unreadable: fn(&str) -> String,
+) -> Result<(String, String), String> {
+    for (path, message) in [(first, &not_found[0]), (second, &not_found[1])] {
+        if !path.exists() {
+            return Err(wording::promote_failed(message));
+        }
+    }
+    let read = |path: &Path| {
+        std::fs::read_to_string(path)
+            .map_err(|error| wording::promote_failed(&unreadable(&error.to_string())))
+    };
+    Ok((read(first)?, read(second)?))
+}
+
+/// 昇格内容の計算の拒否を逐語へ写す（見出し不在の 2 形）。
+fn promotion_plan_refusal(error: &PromotionPlanError) -> String {
+    match error {
+        PromotionPlanError::TeamHeadingMissing(heading) => {
+            wording::promote_failed(&wording::promote_replace_section_failed(heading))
+        }
+        PromotionPlanError::ProjectHeadingMissing(heading) => wording::promote_failed(
+            &wording::promote_append_failed(heading.trim_start_matches("## ")),
+        ),
+    }
+}
+
+/// 成功の素の JSON 1 行（upstream `:3759-3769` の鍵順）。
+fn promote_line(
+    promotion: &PracticesPromotion,
+    occurred_at: &chrono::DateTime<Utc>,
+    team_md: &str,
+    project_guardrails: &str,
+) -> String {
+    let mut emitted = ObjectMembers::new();
+    emitted.insert(
+        "emitted",
+        JsonValue::String(EventType::PracticesAffirmed.as_str().to_string()),
+    );
+    emitted.insert(
+        "sections_written",
+        JsonValue::Array(
+            promotion
+                .sections_written()
+                .into_iter()
+                .map(|heading| JsonValue::String(heading.to_string()))
+                .collect(),
+        ),
+    );
+    emitted.insert(
+        "mandated_appended",
+        JsonValue::Number(Number::PosInt(u64::from(promotion.mandated_appended()))),
+    );
+    emitted.insert(
+        "forbidden_appended",
+        JsonValue::Number(Number::PosInt(u64::from(promotion.forbidden_appended()))),
+    );
+    emitted.insert(
+        "affirmed_at",
+        JsonValue::String(occurred_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+    );
+    emitted.insert("team_md", JsonValue::String(team_md.to_string()));
+    emitted.insert(
+        "project_guardrails",
+        JsonValue::String(project_guardrails.to_string()),
+    );
+    serialize(
+        &JsonValue::Object(emitted),
+        SerializationProfile::ContractCompact,
+    )
 }
 
 /// `park` — 実行を現在地で止め、投影してから止まった位置を名乗る。
@@ -1395,7 +1657,11 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
     let clone_id = crate::clone_identity::load_or_mint(&layout.aidlc_root())
         .map_err(|error| format!("clone id: {error}"))?;
     let shard = ShardName::of(&host_name(), &clone_id);
-    let targets = ProjectionTargets::new(state_file, audit_dir.join(shard.as_str()));
+    let targets = ProjectionTargets::new(
+        state_file,
+        audit_dir.join(shard.as_str()),
+        layout.memory_dir(),
+    );
     // 参照入力 (memory 層) はジャーナルとは別の入口である — 規則の編集はイベントを
     // 伴わないので、読取先を明示的に渡す。
     let steering = SteeringSource::new(layout.memory_dir());

@@ -14,7 +14,7 @@
 //!
 //! # 1 表 1 ポート 1 View
 //!
-//! 12 のポートはそれぞれ `read_*` 表を**ちょうど 1 つ**引く (オーナー裁定 2026-09-03 —
+//! 13 のポートはそれぞれ `read_*` 表を**ちょうど 1 つ**引く (オーナー裁定 2026-09-03 —
 //! `coding-rules/cqrs-boundaries.md` 規則 6「表の形と読み方」)。JOIN も副問合せも非正規化の
 //! 焼き込みも無く、関連は行が運ぶ FK 列で表す。複数の表にまたがる答えは**ユースケースが
 //! FK をたどって**組むので、組み立て View は `port/` の住人ではない。
@@ -43,6 +43,7 @@
 
 // 契約 (trait) と、そのポート面のエラー
 mod definition_dao;
+mod definition_stage_dao;
 mod execution_dao;
 mod jump_dao;
 mod jump_phase_dao;
@@ -61,6 +62,7 @@ mod steering_plan_dao;
 mod read_view;
 
 pub use definition_dao::DefinitionDao;
+pub use definition_stage_dao::DefinitionStageDao;
 pub use execution_dao::ExecutionDao;
 pub use jump_dao::JumpDao;
 pub use jump_phase_dao::JumpPhaseDao;
@@ -77,6 +79,7 @@ pub use steering_plan_dao::SteeringPlanDao;
 pub use read_model_read_error::ReadModelReadError;
 
 pub use read_view::{
-    DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView, NextAnswerView, PhaseEntryView,
-    RunStageView, ScopeChangeView, ScopeView, SteeringPartView, SteeringPlanView,
+    DefinitionStageView, DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView,
+    NextAnswerView, PhaseEntryView, RunStageView, ScopeChangeView, ScopeView, SteeringPartView,
+    SteeringPlanView,
 };

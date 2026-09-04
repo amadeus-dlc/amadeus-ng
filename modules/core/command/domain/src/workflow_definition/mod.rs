@@ -121,6 +121,9 @@ pub use workflow_definition::WorkflowDefinition;
 // ビルダー
 pub use stage_node::StageNodeBuilder;
 
+// 逐語定数
+pub use stage_slug::PRACTICES_DISCOVERY_SLUG;
+
 // エラー
 pub use definition_revision_error::DefinitionRevisionError;
 pub use lineage_mismatch::LineageMismatch;

@@ -34,7 +34,10 @@ fn unreadable_row(column: &str, value: &str) -> String {
 }
 
 /// 1 行 JSON の文字列配列を開く (`support_agents` / `consumes_rel` / … の列)。
-fn strings(column: &str, encoded: &str) -> Result<Vec<String>, String> {
+///
+/// `runtime` の昇格経路も `read_definition_stage.support_agents` を同じ形で開くので、
+/// クレート内へ公開する（列の開き方を 2 か所に書かない）。
+pub(crate) fn strings(column: &str, encoded: &str) -> Result<Vec<String>, String> {
     let JsonValue::Array(items) = parse(encoded).map_err(|_| unreadable_row(column, encoded))?
     else {
         return Err(unreadable_row(column, encoded));

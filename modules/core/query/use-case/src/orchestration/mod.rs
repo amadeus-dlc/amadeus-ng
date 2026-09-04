@@ -50,6 +50,7 @@ mod directive_digest;
 mod directive_schema;
 mod engine_command;
 mod find_continuation_use_case;
+mod find_definition_stage_use_case;
 mod find_definition_use_case;
 mod find_execution_use_case;
 mod find_jump_use_case;
@@ -135,12 +136,13 @@ pub use next_turn_input::NextTurnInput;
 pub use noun_family::NounFamily;
 pub use noun_token::NounToken;
 
-// ポート (trait) — 構造化リードモデル (`read_*` 表) を引く 12 の DAO。**1 表 1 ポート**で、
+// ポート (trait) — 構造化リードモデル (`read_*` 表) を引く 13 の DAO。**1 表 1 ポート**で、
 // 動詞は読取 (`find`) だけ (`coding-rules/cqrs-boundaries.md` 規則 6 /
 // `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
 pub use port::{
-    DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao, RunStageDao,
-    ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao, SteeringPlanDao,
+    DefinitionDao, DefinitionStageDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao,
+    PhaseEntryDao, RunStageDao, ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao,
+    SteeringPlanDao,
 };
 
 // ポート (trait) — upstream 互換の人間可読リードモデル (`aidlc-state.md`) を生テキストで
@@ -149,8 +151,9 @@ pub use port::StateFileDao;
 
 // 行の写し (1 表 1 View)。
 pub use port::{
-    DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView, NextAnswerView, PhaseEntryView,
-    RunStageView, ScopeChangeView, ScopeView, SteeringPartView, SteeringPlanView,
+    DefinitionStageView, DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView,
+    NextAnswerView, PhaseEntryView, RunStageView, ScopeChangeView, ScopeView, SteeringPartView,
+    SteeringPlanView,
 };
 
 // 複数の表にまたがる答えの**組み立て View**。DAO が返す型ではない (ユースケースが FK を
@@ -161,6 +164,7 @@ pub use steering_delivery_view::SteeringDeliveryView;
 
 // ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ)。
 pub use find_continuation_use_case::FindContinuationUseCase;
+pub use find_definition_stage_use_case::FindDefinitionStageUseCase;
 pub use find_definition_use_case::FindDefinitionUseCase;
 pub use find_execution_use_case::FindExecutionUseCase;
 pub use find_jump_use_case::FindJumpUseCase;

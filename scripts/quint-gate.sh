@@ -70,7 +70,8 @@ if quint run "${ENGINE_LOOP}" --seed 0x1a2b3c --max-samples 2000 --max-steps 40 
     gate_lifecycle_preconditions parked_position parked_marker_status \
     unpark_restores_position stale_rereport_yields_done stale_rereport_frame \
     at_most_one_active single_run_frame stance_frame \
-    approve_requires_terminal_receipt review_attempt_floor review_budget review_frame; then
+    approve_requires_terminal_receipt review_attempt_floor review_budget review_frame \
+    approve_requires_practices_receipt practices_receipt_floor promote_frame; then
   record "invariants run: engine_loop" "PASS"
 else
   record "invariants run: engine_loop" "FAIL"
@@ -120,7 +121,8 @@ run_witness() {
 }
 
 for w in w_repark w_single_run w_stance_recorded \
-         w_review_requested w_verdict_terminal w_approved_reviewed w_retry_review; do
+         w_review_requested w_verdict_terminal w_approved_reviewed w_retry_review \
+         w_practices_affirmed w_approved_practices; do
   run_witness "${ENGINE_LOOP}" "0x303" 2000 40 "${w}"
 done
 

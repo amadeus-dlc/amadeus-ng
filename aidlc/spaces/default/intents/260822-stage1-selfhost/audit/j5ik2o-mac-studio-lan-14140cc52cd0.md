@@ -776,3 +776,88 @@
 **Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-04T16:48:28Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T16:49:12Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T16:50:15Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T16:51:14Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T16:54:39Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-04T16:58:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9e83dd12fc7edb0a
+**Message**: b48（レビュー受領証）の実装を検証してPR #104を開き、CI緑を確認してmainにマージ済み、Issue #7も更新しました。次はb49（段12: PRACTICES_AFFIRMED受領証とpractices-promote動詞）への着手可否を決めてください。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T17:09:10Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-04T17:10:06Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-utility
+**Command**: aidlc-utility --version
+**Error**: Unknown command "undefined". Run `aidlc-utility help` for what this tool can do.\n\nAvailable commands: help, version, status, doctor, intent-create, intent, space, space-create, codekb-path, codekb-snapshot, codekb-publish, project-description, document-input, codekb-scope-diff, detect, select-plugins, plugin-list, plugin-sync, plugin-validate, plugin-build, recompose, scope-change, config-change, config-get, config-list, set-status, detect-scope, resolve-env-scope, scope-table, stage-table, upgrade\nCommon options: [--project-dir <path>] [--scope <scope>] [--json]
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T17:14:04Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-04T17:26:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae85eb7a62e695525
+**Message**: b48 は PR #104 でマージ済み。いまは b49（practices-discovery の受領証と practices-promote 動詞）を設計確定のうえ Opus サブエージェントに実装委譲中で、完了報告が届いたら差分レビューとゲート再計測をしてから PR を出します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-04T18:31:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b49-impl
+**Agent ID**: ab49-impl-ae8afc654ee1cd57
+**Message**: b49 の実装が完了しました。すべての受入基準を満たしています。\n\n## (a) 変更ファイル一覧\n\n**ドメイン** `modules/core/command/domain/`\n- 新規: `workspace/{markdown_sections,heading_not_found,practices_promotion,promoted_section,promotion_plan_err
+
+---

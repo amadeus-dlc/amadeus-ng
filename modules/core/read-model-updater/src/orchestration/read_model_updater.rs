@@ -181,8 +181,22 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             let state = crate::workspace::read_state_file(self.targets.state_file())
                 .map_err(CatchUpError::StateFileRead)?;
             let mut read_model = ReadModel::new(state);
+            // メモリ層は**在るとは限らない面**である（b49）。2 本とも在るときだけ載せる —
+            // 片方だけ在るのは載せない（存在の検査の正本は動詞側にある）。
+            if let Some((team, project)) = self.read_memory_faces()? {
+                read_model = read_model.with_memory(team, project);
+            }
             crate::workspace::project(unprojected, &plan, &mut read_model)?;
 
+            // 書く順は upstream の Step 5〜7 の写しである: project.md → team.md →
+            // 状態ファイル → 監査シャード。project.md が先なのは、そちらの書込が失敗しても
+            // team.md が無傷で残るからである（ピン `3c3146cf` `aidlc-state.ts:3705-3723`）。
+            // メモリ層は**書き替えたときだけ**書く — 人が編集する正本でもあるので、
+            // 触っていないキャッチアップが mtime を動かしてはならない。
+            if let Some(memory) = read_model.memory().filter(|memory| memory.is_dirty()) {
+                write_memory_file(self.targets.project_md(), memory.project())?;
+                write_memory_file(self.targets.team_md(), memory.team())?;
+            }
             crate::workspace::write_state_file(self.targets.state_file(), read_model.state())
                 .map_err(CatchUpError::StateFileWrite)?;
             crate::workspace::append_audit_shard(
@@ -199,6 +213,20 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             .advance_checkpoint(&self.projection, last, &tables)
             .await?;
         Ok(last)
+    }
+
+    /// メモリ層 2 本の本文（**両方在るときだけ**）。
+    ///
+    /// 2 本が揃っていないのは正常である — 昇格を 1 度も打っていない workspace には
+    /// そもそも投影する面が要らない。在るのに読めないのは blocking で、`MemoryFileRead`
+    /// として止める（読めないまま進むと受領証だけが立って正本が古いままになる）。
+    fn read_memory_faces(&self) -> Result<Option<(String, String)>, CatchUpError> {
+        let team = self.targets.team_md();
+        let project = self.targets.project_md();
+        if !team.exists() || !project.exists() {
+            return Ok(None);
+        }
+        Ok(Some((read_memory_file(team)?, read_memory_file(project)?)))
     }
 
     /// 参照入力が動いていれば steering の面を作り直す。
@@ -257,4 +285,31 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         self.plan = Some(plan.clone());
         Ok(plan)
     }
+}
+
+/// メモリ層のファイルを 1 本読む（在るのに読めないのは blocking）。
+fn read_memory_file(path: &std::path::Path) -> Result<String, CatchUpError> {
+    std::fs::read_to_string(path).map_err(|error| CatchUpError::MemoryFileRead {
+        path: path.display().to_string(),
+        kind: error.kind(),
+    })
+}
+
+/// メモリ層のファイルを 1 本、原子的に置き換える。
+///
+/// 書き手は状態ファイルと同じ `write_atomic`（tmp+rename + W_OK バリア）である — メモリ層も
+/// 「読んで書き換える置換面」であり、部分書き込みが残ってはならない点も同じだからである。
+/// 材料はこちらで詰め直す（あちらの read-only 文言は状態ファイルを名指すため）。
+fn write_memory_file(path: &std::path::Path, content: &str) -> Result<(), CatchUpError> {
+    crate::workspace::write_state_file(path, content).map_err(|error| {
+        CatchUpError::MemoryFileWrite {
+            path: path.display().to_string(),
+            detail: match error {
+                crate::workspace::StateFileWriteError::ReadOnlyTarget { .. } => {
+                    "read-only target".to_string()
+                }
+                crate::workspace::StateFileWriteError::Io { message } => message,
+            },
+        }
+    })
 }

@@ -32,6 +32,7 @@
 //!
 //! [`ReadModelReadError`]: super::ReadModelReadError
 
+mod definition_stage_view;
 mod definition_summary_view;
 mod execution_view;
 mod jump_phase_view;
@@ -44,6 +45,7 @@ mod scope_view;
 mod steering_part_view;
 mod steering_plan_view;
 
+pub use definition_stage_view::DefinitionStageView;
 pub use definition_summary_view::DefinitionSummaryView;
 pub use execution_view::ExecutionView;
 pub use jump_phase_view::JumpPhaseView;

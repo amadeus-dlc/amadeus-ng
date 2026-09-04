@@ -2,6 +2,13 @@
 //! イベントソーシング形の `IntentExecution` に **decide → apply** 経路で再生し、全ステップで
 //! 状態射影を突き合わせる (BR2.5)。
 //! フィクスチャは `tests/conformance/fixtures/engine_loop/` にコミット済み (#meta 正規化済み)。
+//!
+//! # 合成計画の slug (b49)
+//!
+//! モデル v2.6 は `practicesStage` を init で 1 つ選ぶ (`-1` = 計画に無い)。合成計画では
+//! **その位置のステージだけ `practices-discovery` を名乗る** — 集約は段 12 の対象を slug で
+//! 見つけるからである (`IntentExecution::practices_stage`)。他の位置は従来どおり
+//! `stage-<n>` である。
 //! トレースの各遷移は `lastAction` で駆動する (lastAction 規約)。
 //!
 //! # 遷移面と観測面 (b26 で分割し b38 で統合)
@@ -51,10 +58,10 @@ use core_command_domain::orchestration::{
     StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ReviewCapValue, ReviewPolicy,
-    StageNumber, StageSlug, WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction,
+    ReviewCapValue, ReviewPolicy, StageNumber, StageSlug, WorkflowDefinitionId,
 };
-use core_command_domain::workspace::CheckboxState;
+use core_command_domain::workspace::{CheckboxState, PracticesPromotion};
 use serde_json::Value;
 
 /// ITF 再生は時計を持たない — `occurred_at` は固定値でよい (集約は値を素通しする)。
@@ -139,6 +146,10 @@ struct ModelState {
     pending: Vec<Vec<u32>>,
     /// `terminal` — `ReviewAttempt::has_terminal(policy)` の射影。
     terminal: Vec<bool>,
+    /// `practicesStage` — `IntentExecution::practices_stage()` の射影（`-1` = 計画に無い）。
+    practices_stage: i64,
+    /// `affirmed` — `practices_affirmed[practicesStage]`（他のステージは常に false）。
+    affirmed: bool,
     plan: Vec<PlanAction>,
     overlay: Vec<PlanAction>,
     conditional: Vec<bool>,
@@ -166,6 +177,8 @@ fn parse_state(v: &Value) -> ModelState {
         req_count: map_to_vec(&v["reqCount"], n, |c| u32::try_from(bigint(c)).unwrap()),
         pending: map_to_vec(&v["pending"], n, set_of_ints),
         terminal: map_to_vec(&v["terminal"], n, |b| b.as_bool().unwrap()),
+        practices_stage: bigint(&v["practicesStage"]),
+        affirmed: v["affirmed"].as_bool().unwrap(),
         plan: map_to_vec(&v["plan"], n, plan_of),
         overlay: map_to_vec(&v["overlay"], n, plan_of),
         conditional: map_to_vec(&v["conditional"], n, |b| b.as_bool().unwrap()),
@@ -176,6 +189,16 @@ fn parse_state(v: &Value) -> ModelState {
 
 fn slug(index: usize) -> StageSlug {
     StageSlug::parse(&format!("stage-{index}")).unwrap()
+}
+
+/// 合成計画のステージ slug — モデルが選んだ `practicesStage` の位置だけ
+/// `practices-discovery` を名乗る（集約はその slug で受領証のステージを見つける — b49）。
+fn slug_at(practices_stage: i64, index: usize) -> StageSlug {
+    if i64::try_from(index).unwrap() == practices_stage {
+        StageSlug::parse(PRACTICES_DISCOVERY_SLUG).unwrap()
+    } else {
+        slug(index)
+    }
 }
 
 fn synthetic_id() -> WorkflowDefinitionId {
@@ -200,7 +223,7 @@ fn synthetic_stages(m: &ModelState) -> Vec<StageEntry> {
                 PhaseId::Construction
             };
             StageEntry::new(
-                slug(index),
+                slug_at(m.practices_stage, index),
                 phase,
                 *action,
                 *conditional,
@@ -284,6 +307,12 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
             attempt.has_terminal(&policy_of(m, s)),
             m.terminal[s],
             "step {step}: terminal[{s}]"
+        );
+        // モデルは受領証を 1 bit へ射影する — practices ステージ以外は決して立たない。
+        assert_eq!(
+            agg.practices_affirmed(stage),
+            Some(i64::try_from(s).unwrap() == m.practices_stage && m.affirmed),
+            "step {step}: practices_affirmed[{s}]"
         );
     }
     assert_eq!(agg.cursor().to_usize(), m.cursor, "step {step}: cursor");
@@ -486,7 +515,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 let policy = policy_of(m, s);
                 agg.request_review(
                     &intent,
-                    &slug(s),
+                    &slug_at(m.practices_stage, s),
                     Some(&policy),
                     "r",
                     m.req_count[s],
@@ -504,8 +533,16 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                     .unwrap();
                 let iteration = prev.pending[s][0];
                 let policy = policy_of(m, s);
-                agg.request_review(&intent, &slug(s), Some(&policy), "r", iteration, true, at())
-                    .unwrap();
+                agg.request_review(
+                    &intent,
+                    &slug_at(m.practices_stage, s),
+                    Some(&policy),
+                    "r",
+                    iteration,
+                    true,
+                    at(),
+                )
+                .unwrap();
             }
             "record_verdict" => {
                 // 判定待ちが 1 つ減ったステージと、その消えた通し番号が対象である。
@@ -527,7 +564,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 let policy = policy_of(m, s);
                 agg.record_review_verdict(
                     &intent,
-                    &slug(s),
+                    &slug_at(m.practices_stage, s),
                     Some(&policy),
                     "r",
                     iteration,
@@ -535,6 +572,13 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                     at(),
                 )
                 .unwrap();
+            }
+            "promote_practices" => {
+                // 昇格の**内容**（置換する節・印付き規則行）はモデルの持ち物ではない —
+                // 投影の材料であって状態ではないので、空の昇格で駆動すれば射影は一致する
+                // （モデルヘッダ v2.6 の対応表）。
+                agg.affirm_practices(&intent, &PracticesPromotion::default(), "r", at())
+                    .unwrap();
             }
             "set_autonomy" => {
                 // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
@@ -564,7 +608,7 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
             count += 1;
         }
     }
-    assert!(count >= 13, "expected committed fixtures, found {count}");
+    assert!(count >= 14, "expected committed fixtures, found {count}");
     // アクション網羅: 全アクションが少なくとも 1 つのコミット済みトレースに現れること。
     // 初回 6 シードの探索は report_revised / report_skipped を一度も踏んでおらず、該当
     // アームは fixture に対して死文だった。report_revised は負形式インライン不変条件
@@ -600,6 +644,10 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
         "request_review",
         "retry_review",
         "record_verdict",
+        // b49 (#7 キュー 5 の残り / B10) で追加した 1 アクション。trace-0x808 が
+        // `not(w_approved_practices)`（practices-discovery のゲートの実際の承認）で
+        // 狙い撃ちして採取した経路を持つ。
+        "promote_practices",
     ] {
         assert!(
             seen.contains(action),

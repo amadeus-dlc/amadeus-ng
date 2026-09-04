@@ -51,16 +51,17 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, ReviewCompleted, ReviewRequested,
-    ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
-    StageEntry, StageRevised, StageSkipped, StartRequest, Unparked, WorkspaceScan,
+    IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed, Recomposed, ReviewCompleted,
+    ReviewRequested, ReviewVerdict, SingleStageRunCommitted, SkeletonStance,
+    SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
+    Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
     ExecutionKind, PhaseId, PlanAction, ScopeGrid, StageGraph, StageMode, StageNodeBuilder,
     StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
-use core_command_domain::workspace::{CheckboxState, SpaceName, StorePath};
+use core_command_domain::workspace::{CheckboxState, PromotedSection, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionAggregateKeyDto, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
     IntentRepositoryImpl, SnapshotStrategy, WorkflowDefinitionRepositoryImpl,
@@ -390,7 +391,7 @@ impl RealProjection {
         // (このモデルが抽象するのは実行のストリームだけである)。
         let memory_dir = dir.path().join("memory");
         RealProjection {
-            targets: ProjectionTargets::new(state_file, audit_shard),
+            targets: ProjectionTargets::new(state_file, audit_shard, memory_dir.clone()),
             memory_dir,
             _dir: dir,
             read_model_seq: 0,
@@ -989,6 +990,15 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             "aidlc-quality-agent",
             2,
             ReviewVerdict::NotReady,
+        )),
+        IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
+            ev(),
+            agg(),
+            slug("practices-discovery"),
+            "owner",
+            vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
+            vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
+            vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
         )),
     ]
 }

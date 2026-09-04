@@ -47,6 +47,13 @@ pub struct IntentExecutionDto {
     /// 集約の完全コンストラクタが検査するので、欄不在のときだけ計画長へ広げる。
     #[serde(default)]
     review_attempts: Vec<ReviewAttemptDto>,
+    /// ステージごとの現在の試行で昇格が成功したか（ステージ順。b49 / B10）。
+    ///
+    /// 欄を持たない行は**全ステージ false** で読む — 後方互換のための緩和ではなく、
+    /// 「欄が無い = まだ昇格していない」という正規の意味である。長さの整合は集約の完全
+    /// コンストラクタが検査するので、欄不在のときだけ計画長へ広げる。
+    #[serde(default)]
+    practices_affirmed: Vec<bool>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     seq_nr: usize,
@@ -158,6 +165,11 @@ impl IntentExecutionDto {
                 .filter_map(|stage| execution.review_attempt(stage))
                 .map(ReviewAttemptDto::of)
                 .collect(),
+            practices_affirmed: stages
+                .clone()
+                .filter_map(|value| execution.stage_index(value))
+                .filter_map(|stage| execution.practices_affirmed(stage))
+                .collect(),
             approved: stages
                 .clone()
                 .filter_map(|value| execution.stage_index(value))
@@ -213,6 +225,12 @@ impl IntentExecutionDto {
                 .map(ReviewAttemptDto::to_domain)
                 .collect::<Result<Vec<_>, DtoDecodeError>>()?
         };
+        // 欄不在の行は「まだ昇格していない」— 計画長ぶんの false で読む。
+        let practices_affirmed = if self.practices_affirmed.is_empty() {
+            vec![false; stage_keys.len()]
+        } else {
+            self.practices_affirmed.clone()
+        };
         IntentExecution::new(
             id,
             intent_id,
@@ -228,6 +246,7 @@ impl IntentExecutionDto {
                 .map(|raw| skeleton_stance_of(raw, "skeleton_stance"))
                 .transpose()?,
             review_attempts,
+            practices_affirmed,
             self.approved.clone(),
             self.revision_count.clone(),
             self.seq_nr,

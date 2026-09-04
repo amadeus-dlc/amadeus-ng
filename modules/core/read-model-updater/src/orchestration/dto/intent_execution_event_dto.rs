@@ -1,4 +1,4 @@
-//! ドメインイベント 15 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
+//! ドメインイベント 16 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -23,6 +23,7 @@ use super::gate_opened_dto::GateOpenedDto;
 use super::gate_rejected_dto::GateRejectedDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
+use super::practices_affirmed_dto::PracticesAffirmedDto;
 use super::recomposed_dto::RecomposedDto;
 use super::review_completed_dto::ReviewCompletedDto;
 use super::review_requested_dto::ReviewRequestedDto;
@@ -66,6 +67,8 @@ pub enum IntentExecutionEventDto {
     ReviewRequested(ReviewRequestedDto),
     /// レビュアーの判定の記録。
     ReviewCompleted(ReviewCompletedDto),
+    /// 承認された実践がメモリ層の正本へ書き写された事実。
+    PracticesAffirmed(PracticesAffirmedDto),
 }
 
 /// イベント識別子の復号 (全変種が共有する private 補助 — 主たる従属先はこのファイル)。
@@ -146,6 +149,9 @@ impl IntentExecutionEventDto {
             IntentExecutionEvent::ReviewCompleted(payload) => {
                 IntentExecutionEventDto::ReviewCompleted(ReviewCompletedDto::of(payload))
             }
+            IntentExecutionEvent::PracticesAffirmed(payload) => {
+                IntentExecutionEventDto::PracticesAffirmed(PracticesAffirmedDto::of(payload))
+            }
             IntentExecutionEvent::SkeletonStanceRecorded(payload) => {
                 IntentExecutionEventDto::SkeletonStanceRecorded(SkeletonStanceRecordedDto::of(
                     payload,
@@ -202,6 +208,9 @@ impl IntentExecutionEventDto {
             }
             IntentExecutionEventDto::ReviewCompleted(payload) => {
                 IntentExecutionEvent::ReviewCompleted(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::PracticesAffirmed(payload) => {
+                IntentExecutionEvent::PracticesAffirmed(payload.to_domain()?)
             }
             IntentExecutionEventDto::SkeletonStanceRecorded(payload) => {
                 IntentExecutionEvent::SkeletonStanceRecorded(payload.to_domain()?)

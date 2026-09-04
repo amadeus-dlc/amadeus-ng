@@ -13,6 +13,7 @@
 
 mod audit_block;
 mod audit_shard;
+mod memory_faces;
 mod projection;
 mod read_model;
 mod resolved_plan;
@@ -22,6 +23,7 @@ mod state_writers;
 mod wording;
 
 // 純粋投影核とその作業面（二層構造の下側 — ストレージを知らない）
+pub use memory_faces::MemoryFaces;
 pub use projection::{ProjectionError, project};
 pub use read_model::ReadModel;
 pub use resolved_plan::{PlannedStage, ResolvedPlan};
@@ -38,6 +40,6 @@ pub use state_file_write_error::{StateFileWriteError, write_atomic as write_stat
 
 // 状態ファイルの writer 4 種 + 読取（純粋な string→string — 11-workspace §2.3）
 pub use state_writers::{
-    FieldNotFound, HeadingNotFound, find_field, with_field, with_field_if_present,
-    with_field_or_insert, without_field,
+    FieldNotFound, find_field, with_field, with_field_if_present, with_field_or_insert,
+    without_field,
 };
