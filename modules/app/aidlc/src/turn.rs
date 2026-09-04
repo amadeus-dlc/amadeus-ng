@@ -2288,16 +2288,9 @@ mod tests {
                 .expect("定義行を落とす");
         }
 
-        /// 答えの綴りを差し替える (`park` は本ビルドで未配線なので行を直接置く)。
-        fn rewrite_decision_kind(&self, request_kind: &str, decision_kind: &str) {
-            let connection = rusqlite::Connection::open(self.store_path()).expect("ストア");
-            let changed = connection
-                .execute(
-                    "UPDATE read_next_answer SET decision_kind = ?1 WHERE request_kind = ?2",
-                    rusqlite::params![decision_kind, request_kind],
-                )
-                .expect("答えの綴りを差し替える");
-            assert_eq!(changed, 1, "その要求の形の行はちょうど 1 つある");
+        /// 実行を実際に park する (`aidlc-orchestrate park` の実駆動)。
+        async fn park(&self) {
+            self.invoke("aidlc-orchestrate", &["park"]).await;
         }
     }
 
@@ -2351,10 +2344,12 @@ mod tests {
     }
 
     /// park 中の `--resume` は、park を外す命令を名指してから再実行せよと言う。
+    ///
+    /// 答えの綴りは注入せず、`park` を実駆動して投影させたものを読む (handoff-b44 の約束)。
     #[tokio::test]
     async fn a_resume_on_a_parked_workflow_names_the_unpark_command_first() {
         let workspace = Workspace::minted().await;
-        workspace.rewrite_decision_kind("resume", "unpark-then-resume");
+        workspace.park().await;
         let layout = workspace.layout();
 
         assert_eq!(
@@ -2548,10 +2543,12 @@ mod tests {
     }
 
     /// park している実行は、素の `next` でも位置を名乗って止まる。
+    ///
+    /// 答えの綴りは注入せず、`park` を実駆動して投影させたものを読む (handoff-b44 の約束)。
     #[tokio::test]
     async fn a_parked_execution_stops_the_bare_next_at_its_stage() {
         let workspace = Workspace::minted().await;
-        workspace.rewrite_decision_kind("bare", "parked");
+        workspace.park().await;
         let layout = workspace.layout();
 
         let directive = next(&layout, &NextTurnInput::new());

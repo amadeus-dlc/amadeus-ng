@@ -189,6 +189,31 @@ pub fn parked(stage: &str) -> String {
     format!("Workflow parked at \"{stage}\". Resume with /aidlc --resume.")
 }
 
+/// `park` の失敗の中継形（upstream `aidlc-orchestrate.ts:8252`）。
+///
+/// upstream の `handlePark` は `aidlc-state.ts park` を spawn し、非ゼロ終了なら
+/// その stderr／stdout を `Cannot park the workflow: <detail>` に**そのまま**包んで
+/// error directive で返す。材料はこちらではユースケースの失敗の `Display` である。
+#[must_use]
+pub fn park_refused(detail: &str) -> String {
+    format!("Cannot park the workflow: {detail}")
+}
+
+/// park の拒否 1 — autonomous な構築ラン（upstream `aidlc-state.ts:1712-1714`）。
+///
+/// 無人の autonomous ランには再開する人間が居ないので、そもそも止めてはならない
+/// （issue #365 のガード）。ハイフンは upstream のまま ASCII の `-` である。
+pub const PARK_REFUSED_AUTONOMOUS: &str = "Refusing to park: Construction Autonomy Mode is autonomous. An unattended autonomous run has no human to resume it and must keep moving - do not park it.";
+
+/// park の拒否 2 — 完了済み（upstream `aidlc-state.ts:1742`）。
+pub const PARK_NOTHING_TO_PARK: &str = "Workflow is already Completed - nothing to park.";
+
+/// park の拒否 3 — 実行がまだ鋳造されていない。
+///
+/// upstream に対応する逐語は無い（あちらは状態ファイル不在時に `readStateFile` の失敗文を
+/// 中継する）。`report` の同型の拒否と綴りを揃えてある。
+pub const PARK_WITHOUT_EXECUTION: &str = "No workflow execution to park. Run `next` first.";
+
 /// 分岐 2.6 — park 中の `--resume`。
 #[must_use]
 pub fn unpark_then_resume(spelled: &str) -> String {
@@ -521,6 +546,29 @@ mod tests {
         assert_eq!(
             parked("domain-design"),
             "Workflow parked at \"domain-design\". Resume with /aidlc --resume."
+        );
+    }
+
+    /// park の失敗は中継形に包まれ、upstream 逐語 2 形をそのまま運ぶ。
+    #[test]
+    fn the_park_refusals_are_relayed_verbatim_inside_the_wrapper() {
+        assert_eq!(
+            park_refused(PARK_REFUSED_AUTONOMOUS),
+            "Cannot park the workflow: Refusing to park: Construction Autonomy Mode is autonomous. \
+An unattended autonomous run has no human to resume it and must keep moving - do not park it."
+        );
+        assert_eq!(
+            park_refused(PARK_NOTHING_TO_PARK),
+            "Cannot park the workflow: Workflow is already Completed - nothing to park."
+        );
+        assert_eq!(
+            park_refused(PARK_WITHOUT_EXECUTION),
+            "Cannot park the workflow: No workflow execution to park. Run `next` first."
+        );
+        // 材料が何であれ包み方は 1 つである (upstream は spawn の出力をそのまま挟む)。
+        assert_eq!(
+            park_refused("repository: conflict"),
+            "Cannot park the workflow: repository: conflict"
         );
     }
 

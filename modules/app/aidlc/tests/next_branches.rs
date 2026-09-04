@@ -122,6 +122,12 @@ impl Workspace {
         assert_eq!(completion.code(), 0, "鋳造は通る: {completion:?}");
     }
 
+    /// 実行を実際に park する（`aidlc-orchestrate park` の実駆動）。
+    async fn park(&self) {
+        let completion = self.invoke("aidlc-orchestrate", &["park"]).await;
+        assert_eq!(completion.code(), 0, "park は通る: {completion:?}");
+    }
+
     /// カーソルのステージを 1 つ進める（ゲート付きなので承認の報告になる）。
     async fn report(&self, result: &str) {
         let completion = self
@@ -752,9 +758,9 @@ they left off. Run a fresh `next` to restart delivery from part 1."
 // ---------------------------------------------------------------------------
 // 引けない媒体・壊れた投影 — 実 CLI からは作れない状態を、ストアを直接いじって作る
 //
-// `park` は本ビルドで未配線であり、リードモデルは RMU が書いた正しいものしか存在しない。
-// ここだけはストアの行を直接置き、コントローラが「行が無い」と「引けない」を混ぜないこと、
-// および park の答えを描けることを固定する。
+// リードモデルは RMU が書いた正しいものしか存在しない。ここだけはストアを直接壊し、
+// コントローラが「行が無い」と「引けない」を混ぜないことを固定する（park している答えは
+// `park` の実駆動で作れるようになった — b45）。
 // ---------------------------------------------------------------------------
 
 impl Workspace {
@@ -771,17 +777,6 @@ impl Workspace {
     fn block_store(&self) {
         fs::remove_file(self.store_path()).expect("ストア");
         fs::create_dir(self.store_path()).expect("塞ぐ");
-    }
-
-    fn rewrite_decision_kind(&self, request_kind: &str, decision_kind: &str) {
-        let connection = rusqlite::Connection::open(self.store_path()).expect("ストア");
-        let changed = connection
-            .execute(
-                "UPDATE read_next_answer SET decision_kind = ?1 WHERE request_kind = ?2",
-                rusqlite::params![decision_kind, request_kind],
-            )
-            .expect("答えの綴りを差し替える");
-        assert_eq!(changed, 1, "その要求の形の行はちょうど 1 つある");
     }
 }
 
@@ -859,11 +854,13 @@ async fn an_unreadable_scope_catalog_stops_the_explicit_scope_check() {
 }
 
 /// park している実行は、位置を名乗って止まる（`parked` directive はステージも運ぶ）。
+///
+/// 答えの綴りは注入せず、`park` を実駆動して投影させたものを読む（handoff-b44 の約束）。
 #[tokio::test]
 async fn a_parked_execution_stops_the_bare_next_at_its_stage() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
-    workspace.rewrite_decision_kind("bare", "parked");
+    workspace.park().await;
 
     let directive = workspace.next(&[]).await;
 
@@ -876,11 +873,14 @@ async fn a_parked_execution_stops_the_bare_next_at_its_stage() {
 }
 
 /// park 位置の綴りが slug として読めなければ、park ではなく未知ステージとして拒む。
+///
+/// これは**壊れた投影の注入**である — 実駆動では作れない行なので、`park` してから
+/// `read_next_answer` の綴りだけを直接壊す。
 #[tokio::test]
 async fn a_parked_answer_with_an_unreadable_slug_is_refused() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
-    workspace.rewrite_decision_kind("bare", "parked");
+    workspace.park().await;
     let connection = rusqlite::Connection::open(workspace.store_path()).expect("ストア");
     connection
         .execute(

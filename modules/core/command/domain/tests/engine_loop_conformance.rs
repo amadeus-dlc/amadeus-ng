@@ -341,6 +341,12 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 agg.jump(&intent, target, at()).unwrap();
             }
             "park" => {
+                // 再スタンプ (park 済みへの park) はモデルでも `lastAction == "park"` なので、
+                // 合成アクション名 `repark` を立てて網羅アサートの対象にする — この経路を
+                // 含むフィクスチャが失われたら赤くなる。
+                if agg.parked_active() {
+                    seen.insert("repark".to_string());
+                }
                 agg.park(&intent, at()).unwrap();
                 assert_directive(m, "DParked", i);
             }
@@ -402,6 +408,8 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
         "jump_backward",
         "jump_redo",
         "park",
+        // 合成アクション — park 済みへの park (再スタンプ)。trace-0x303 が持つ。
+        "repark",
         "unpark",
         "recompose",
         "set_autonomy",

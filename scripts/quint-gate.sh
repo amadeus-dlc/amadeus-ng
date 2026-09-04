@@ -67,8 +67,9 @@ done
 log_step "invariants run: engine_loop"
 if quint run "${ENGINE_LOOP}" --seed 0x1a2b3c --max-samples 2000 --max-steps 40 \
   --invariants no_run_stage_for_skip cursor_in_scope no_gate_bypass \
-    gate_lifecycle_preconditions parked_position unpark_restores_position \
-    stale_rereport_yields_done stale_rereport_frame at_most_one_active; then
+    gate_lifecycle_preconditions parked_position parked_marker_status \
+    unpark_restores_position stale_rereport_yields_done stale_rereport_frame \
+    at_most_one_active; then
   record "invariants run: engine_loop" "PASS"
 else
   record "invariants run: engine_loop" "FAIL"
@@ -107,6 +108,10 @@ run_witness() {
     record "witness ${witness} (${model})" "PASS"
   fi
 }
+
+for w in w_repark; do
+  run_witness "${ENGINE_LOOP}" "0x303" 2000 40 "${w}"
+done
 
 for w in w_block w_cap_release_interactive w_parked_auto_block w_seed2 w_sig_reset; do
   run_witness "${STOP_HOOK}" "0x9" 3000 60 "${w}"

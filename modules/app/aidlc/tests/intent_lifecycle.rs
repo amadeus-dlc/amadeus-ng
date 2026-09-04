@@ -8,6 +8,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use aidlc::execution_cursor::ExecutionCursor;
+use chrono::Utc;
+use core_command_domain::orchestration::AutonomyMode;
+use core_command_domain::workspace::{SpaceName, StorePath};
+use core_command_interface_adapter::orchestration::{
+    IntentExecutionRepositoryImpl, IntentRepositoryImpl,
+};
+use core_command_use_case::orchestration::{IntentExecutionRepository as _, IntentRepository as _};
 use core_infrastructure::canon_json::{JsonValue, parse};
 
 struct Workspace {
@@ -81,6 +89,40 @@ impl Workspace {
                 .expect("行数は非負")
         };
         (count("="), count("<>"))
+    }
+
+    /// この record が握る実行を autonomous へ切り替える（`set-autonomy` は未配線 — #72）。
+    ///
+    /// テストダブルではなく**実物のリポジトリ**を開いて `switch_autonomy` を store する。
+    /// 集約側の遷移とジャーナルへの書込みを実駆動で通すことで、その後の `park` が読むのは
+    /// 「本当に autonomous になった歴史」になる。
+    async fn switch_to_autonomous(&self) {
+        let record = self.record_dir().expect("カーソルが据わっている");
+        let execution_id = ExecutionCursor::read(&record)
+            .expect("実行カーソルは読める")
+            .expect("実行カーソルは据わっている")
+            .execution_id()
+            .clone();
+        let space = SpaceName::parse("default").expect("既定の空間名");
+        let store = StorePath::for_space(&self.path("aidlc"), &space);
+        let mut execution_repository =
+            IntentExecutionRepositoryImpl::open(&store).expect("ストアは開ける");
+        let intent_repository = IntentRepositoryImpl::open(&store).expect("ストアは開ける");
+        let mut aggregate = execution_repository
+            .find_by_id(&execution_id)
+            .await
+            .expect("実行は再構成できる");
+        let intent = intent_repository
+            .find_by_id(aggregate.intent_id())
+            .await
+            .expect("計画は引ける");
+        let event = aggregate
+            .switch_autonomy(&intent, AutonomyMode::Autonomous, Utc::now())
+            .expect("Running な実行はモードを切り替えられる");
+        execution_repository
+            .store(&event, &aggregate)
+            .await
+            .expect("切替は書ける");
     }
 
     fn write_definition(&self) {
@@ -321,9 +363,134 @@ async fn an_unknown_result_is_refused_verbatim() {
     );
 }
 
-/// park は**ビジネス拒否**として stdout に出る（未配線でも自己防衛拒否ではない）。
+/// `park` はカーソル位置にマーカーを据え、投影が読み面 2 面へ落ちる（#74）。
+///
+/// 続けてもう一度 `park` を打つと**再スタンプ**になる — upstream の `handlePark` は park 済み
+/// でも成功し、`Parked` 時刻を上書き・`WORKFLOW_PARKED` を再 emit する。状態ファイルの
+/// `Parked` 行は置き直しなので 1 本のままで、監査ブロックだけが 2 つになる。
 #[tokio::test]
-async fn park_is_refused_as_a_business_error_on_stdout() {
+async fn parking_stamps_the_marker_and_projects_both_faces() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "parked");
+    // 誕生のカーソルは最初のゲート付きステージなので、park の位置はそこである。
+    assert_eq!(string_of(&directive, "stage"), "domain-design");
+    assert_eq!(
+        string_of(&directive, "reason"),
+        "Workflow parked at \"domain-design\". Resume with /aidlc --resume."
+    );
+
+    // 読み面 1: 状態ファイルの `## Runtime State` に 2 行が入る。
+    let state = workspace.state_file().expect("投影済み");
+    assert!(state.contains("- **Parked**: "), "{state}");
+    assert!(
+        state.contains("- **Parked At Stage**: domain-design"),
+        "{state}"
+    );
+    // 読み面 2: 監査シャードに `WORKFLOW_PARKED` ブロックが 1 つ追記される。
+    let audit = workspace.audit_shard().expect("監査シャード");
+    assert_eq!(audit.matches("WORKFLOW_PARKED").count(), 1, "{audit}");
+    assert!(audit.contains("**Stage**: domain-design"), "{audit}");
+
+    // 再スタンプ — park 済みでも成功する。
+    let again = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(again.code(), 0, "{again:?}");
+    assert_eq!(string_of(&line_of(&again), "kind"), "parked");
+    let audit = workspace.audit_shard().expect("監査シャード");
+    assert_eq!(
+        audit.matches("WORKFLOW_PARKED").count(),
+        2,
+        "再 emit されて 2 ブロックになる: {audit}"
+    );
+    let state = workspace.state_file().expect("投影済み");
+    assert_eq!(
+        state.matches("- **Parked**: ").count(),
+        1,
+        "マーカーは置き直しなので 1 行のまま: {state}"
+    );
+}
+
+/// 完了済みのワークフローは park できない（upstream 逐語を中継形で包む）。
+#[tokio::test]
+async fn parking_a_completed_workflow_is_refused_verbatim() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    // ゲート付き 2 段（domain-design / contract-design）を畳んで Completed にする。
+    for _ in 0..2 {
+        let completion = invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["report", "--result", "completed"],
+        )
+        .await;
+        assert_eq!(completion.code(), 0, "{completion:?}");
+    }
+    // 計画を使い切った証拠 — ゲート付き 2 段が両方 `[x]` になっている。
+    // （読み面の `- **Status**:` はまだ `Running` のまま — ワークフロー完了の投影は
+    //   未実装であり、b45 のスコープ外である。書き面が Completed であることは、下の
+    //   park が upstream 逐語 2「already Completed」で拒まれることが示す。）
+    let state = workspace.state_file().expect("投影済み");
+    assert!(state.contains("- [x] domain-design"), "{state}");
+    assert!(state.contains("- [x] contract-design"), "{state}");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Cannot park the workflow: Workflow is already Completed - nothing to park."
+    );
+}
+
+/// autonomous な構築ランは park を拒む（無人のランには再開する人間が居ない）。
+///
+/// `set-autonomy` はまだ配線されていない（#72）ので、モードの切替はリポジトリを直接開いて
+/// `switch_autonomy` を store する — テストダブルではなく**実物のリポジトリ経由の実駆動**で
+/// ある。
+#[tokio::test]
+async fn parking_an_autonomous_run_is_refused_verbatim() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    workspace.switch_to_autonomous().await;
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Cannot park the workflow: Refusing to park: Construction Autonomy Mode is autonomous. \
+An unattended autonomous run has no human to resume it and must keep moving - do not park it."
+    );
+}
+
+/// 実行がまだ鋳造されていなければ park する対象が無い（ビジネス拒否）。
+#[tokio::test]
+async fn parking_without_an_execution_is_refused() {
     let workspace = Workspace::create();
 
     let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
@@ -333,7 +500,7 @@ async fn park_is_refused_as_a_business_error_on_stdout() {
     assert_eq!(string_of(&directive, "kind"), "error");
     assert_eq!(
         string_of(&directive, "message"),
-        "Cannot park the workflow: park is not wired in this build."
+        "Cannot park the workflow: No workflow execution to park. Run `next` first."
     );
 }
 
@@ -840,6 +1007,14 @@ async fn an_invalid_active_space_is_refused_rather_than_defaulted() {
         string_of(&line_of(&reported), "message").starts_with("The active space \"../escape\""),
         "{reported:?}"
     );
+
+    // `park` も同じ判断で止まる（書込動詞なので `report` と同じ形である）。
+    let parked = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+    assert_eq!(parked.code(), 0);
+    assert!(
+        string_of(&line_of(&parked), "message").starts_with("The active space \"../escape\""),
+        "{parked:?}"
+    );
 }
 
 /// `--review` は鋳造から状態ファイルまで貫通する。
@@ -1136,5 +1311,88 @@ async fn skipping_a_stage_the_plan_marks_execute_is_rejected() {
     assert_eq!(
         string_of(&directive, "message"),
         "Transition rejected: command: stage 1 is not skippable"
+    );
+}
+
+/// 実行カーソルが在るのに読めなければ、park も**不在と混ぜず**に読取失敗を答える。
+#[tokio::test]
+async fn parking_against_a_broken_execution_cursor_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 0, "ビジネス拒否は exit 0");
+    let message = string_of(&line_of(&completion), "message");
+    assert!(
+        message.starts_with("Cannot park the workflow: The execution cursor cannot be read"),
+        "{message}"
+    );
+    assert!(
+        message.contains("malformed execution cursor at"),
+        "{message}"
+    );
+}
+
+/// イベントストアが開けなければ park は**自己防衛拒否**で止まる（媒体の失敗）。
+#[tokio::test]
+async fn parking_against_an_unopenable_event_store_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    // カーソルは据わったまま、ストアの置き場だけをディレクトリで塞ぐ。
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    fs::remove_file(&store).expect("ストア");
+    fs::create_dir(&store).expect("塞ぐ");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert_eq!(
+        completion.diagnostic(),
+        Some("aidlc-orchestrate: cannot open the event store")
+    );
+}
+
+/// 書いたあとに投影が回らなければ、park は**自己防衛拒否**で止まる（握り潰さない）。
+///
+/// 描けなければ利用者には park した位置が何も見えないままになるので、`report` と同じ規律で
+/// 失敗を surface する。
+#[tokio::test]
+async fn a_projection_that_cannot_run_after_the_park_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo run"],
+    )
+    .await;
+    // clone id の置き場をディレクトリで塞ぐと、投影のシャード名が解決できなくなる。
+    let clone_id = workspace.path("aidlc/.aidlc-clone-id");
+    fs::remove_file(&clone_id).expect("clone id");
+    fs::create_dir(&clone_id).expect("塞ぐ");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: clone id:"),
+        "{completion:?}"
     );
 }
