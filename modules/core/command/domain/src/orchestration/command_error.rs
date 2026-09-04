@@ -34,6 +34,54 @@ pub enum CommandError {
     /// 通番が `usize::MAX` に達しており、新しいイベントを採番できない (通番枯渇)。
     /// 実運用では到達しない規模だが、境界を暗黙の飽和にしない (NFR4.3)。
     SequenceExhausted,
+    /// レビュー会計の対象 slug が実行の計画に無い (b48 / B10)。
+    ///
+    /// [`InvalidTarget`] とは別物である — あちらは「計画上の位置は在るが不正」であり、
+    /// こちらは「その名前を計画が知らない」。
+    ///
+    /// [`InvalidTarget`]: CommandError::InvalidTarget
+    UnknownStage(String),
+    /// そのステージはレビュアーを宣言していない (実効クラスの解決が `None` を返した)。
+    NoDeclaredReviewer(StageIndex),
+    /// `--reviewer` が宣言と食い違う (打ち間違い、または conductor の自己認証)。
+    ReviewerMismatch {
+        /// 対象ステージ。
+        stage: StageIndex,
+        /// 定義が宣言しているレビュアー。
+        declared: String,
+    },
+    /// 依頼がこの試行のレビュー予算を超えた (upstream `reviewBudgetMessage`)。
+    ReviewBudgetExceeded {
+        /// 対象ステージ。
+        stage: StageIndex,
+        /// 予算を超えた通し番号 (要求値、または次に来るはずだった値)。
+        ordinal: u32,
+        /// この試行の予算 (advisory は 1、adversarial は `reviewer_max_iterations`)。
+        budget: u32,
+    },
+    /// 依頼の通し番号がこの試行の順序と合わない。
+    ReviewOutOfSequence {
+        /// 対象ステージ。
+        stage: StageIndex,
+        /// 要求された通し番号。
+        iteration: u32,
+        /// この試行が期待する通し番号 (数え上げ済みの依頼数 + 1)。
+        expected: u32,
+    },
+    /// その通し番号の依頼が判定待ちとして残っていない (判定形と retry 形の両方が使う)。
+    NoPendingReview {
+        /// 対象ステージ。
+        stage: StageIndex,
+        /// 名指された通し番号。
+        iteration: u32,
+    },
+    /// レビュアーを宣言したステージの承認に、この試行の終端受領証が無い (段 11)。
+    ReviewReceiptMissing {
+        /// 承認しようとしたステージ。
+        stage: StageIndex,
+        /// 宣言されているレビュアー。
+        reviewer: String,
+    },
 }
 
 impl fmt::Display for CommandError {
@@ -49,6 +97,37 @@ impl fmt::Display for CommandError {
             CommandError::NotSkippable(stage) => write!(f, "stage {stage} is not skippable"),
             CommandError::NotStale(stage) => write!(f, "stage {stage} is not a stale re-report"),
             CommandError::InvalidTarget(stage) => write!(f, "invalid target stage {stage}"),
+            CommandError::UnknownStage(slug) => write!(f, "unknown stage {slug}"),
+            CommandError::NoDeclaredReviewer(stage) => {
+                write!(f, "stage {stage} declares no reviewer")
+            }
+            CommandError::ReviewerMismatch { stage, declared } => {
+                write!(f, "stage {stage} declares reviewer {declared}")
+            }
+            CommandError::ReviewBudgetExceeded {
+                stage,
+                ordinal,
+                budget,
+            } => write!(
+                f,
+                "stage {stage} review request {ordinal} exceeds budget {budget}"
+            ),
+            CommandError::ReviewOutOfSequence {
+                stage,
+                iteration,
+                expected,
+            } => write!(
+                f,
+                "stage {stage} review iteration {iteration} is out of sequence (expected {expected})"
+            ),
+            CommandError::NoPendingReview { stage, iteration } => write!(
+                f,
+                "stage {stage} has no pending review iteration {iteration}"
+            ),
+            CommandError::ReviewReceiptMissing { stage, reviewer } => write!(
+                f,
+                "stage {stage} has no terminal review receipt from {reviewer}"
+            ),
             CommandError::RefusedUnderAutonomy => f.write_str("refused under autonomous mode"),
             CommandError::SequenceExhausted => {
                 f.write_str("sequence exhausted: seq_nr is at usize::MAX")
@@ -87,6 +166,61 @@ mod tests {
         assert_eq!(
             CommandError::SequenceExhausted.to_string(),
             "sequence exhausted: seq_nr is at usize::MAX"
+        );
+    }
+
+    /// b48 のレビュー拒否 7 形も**材料だけ**を綴る（逐語は app が組む）。
+    #[test]
+    fn the_review_rejections_carry_material_not_wording() {
+        assert_eq!(
+            CommandError::UnknownStage("nowhere".to_string()).to_string(),
+            "unknown stage nowhere"
+        );
+        assert_eq!(
+            CommandError::NoDeclaredReviewer(StageIndex::new(1)).to_string(),
+            "stage 1 declares no reviewer"
+        );
+        assert_eq!(
+            CommandError::ReviewerMismatch {
+                stage: StageIndex::new(1),
+                declared: "aidlc-quality-agent".to_string(),
+            }
+            .to_string(),
+            "stage 1 declares reviewer aidlc-quality-agent"
+        );
+        assert_eq!(
+            CommandError::ReviewBudgetExceeded {
+                stage: StageIndex::new(2),
+                ordinal: 3,
+                budget: 2,
+            }
+            .to_string(),
+            "stage 2 review request 3 exceeds budget 2"
+        );
+        assert_eq!(
+            CommandError::ReviewOutOfSequence {
+                stage: StageIndex::new(2),
+                iteration: 3,
+                expected: 1,
+            }
+            .to_string(),
+            "stage 2 review iteration 3 is out of sequence (expected 1)"
+        );
+        assert_eq!(
+            CommandError::NoPendingReview {
+                stage: StageIndex::new(1),
+                iteration: 2,
+            }
+            .to_string(),
+            "stage 1 has no pending review iteration 2"
+        );
+        assert_eq!(
+            CommandError::ReviewReceiptMissing {
+                stage: StageIndex::new(1),
+                reviewer: "aidlc-quality-agent".to_string(),
+            }
+            .to_string(),
+            "stage 1 has no terminal review receipt from aidlc-quality-agent"
         );
     }
 

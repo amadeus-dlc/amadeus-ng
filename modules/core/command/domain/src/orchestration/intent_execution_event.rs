@@ -1,4 +1,4 @@
-//! `IntentExecutionEvent` — 13 変種のドメインイベント (C5、entities.md)。
+//! `IntentExecutionEvent` — 15 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -32,6 +32,8 @@ mod gate_rejected;
 mod jumped;
 mod parked;
 mod recomposed;
+mod review_completed;
+mod review_requested;
 mod single_stage_run_committed;
 mod skeleton_stance_recorded;
 mod stage_revised;
@@ -46,6 +48,8 @@ pub use gate_rejected::GateRejected;
 pub use jumped::Jumped;
 pub use parked::Parked;
 pub use recomposed::Recomposed;
+pub use review_completed::ReviewCompleted;
+pub use review_requested::ReviewRequested;
 pub use single_stage_run_committed::SingleStageRunCommitted;
 pub use skeleton_stance_recorded::SkeletonStanceRecorded;
 pub use stage_revised::StageRevised;
@@ -53,7 +57,7 @@ pub use stage_skipped::StageSkipped;
 pub use started::Started;
 pub use unparked::Unparked;
 
-/// 13 変種のドメインイベント (C5)。
+/// 15 変種のドメインイベント (C5)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。
@@ -98,6 +102,10 @@ pub enum IntentExecutionEvent {
     SingleStageRunCommitted(SingleStageRunCommitted),
     /// conductor が分類した walking-skeleton stance の記録。
     SkeletonStanceRecorded(SkeletonStanceRecorded),
+    /// レビュアーの差し向け (受領証の対の左半分)。
+    ReviewRequested(ReviewRequested),
+    /// レビュアーの判定の記録 (受領証の対の右半分)。
+    ReviewCompleted(ReviewCompleted),
 }
 
 impl IntentExecutionEvent {
@@ -118,6 +126,8 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::AutonomyModeSet(payload) => payload.id(),
             IntentExecutionEvent::SingleStageRunCommitted(payload) => payload.id(),
             IntentExecutionEvent::SkeletonStanceRecorded(payload) => payload.id(),
+            IntentExecutionEvent::ReviewRequested(payload) => payload.id(),
+            IntentExecutionEvent::ReviewCompleted(payload) => payload.id(),
         }
     }
 
@@ -140,6 +150,8 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::AutonomyModeSet(payload) => payload.aggregate_id(),
             IntentExecutionEvent::SingleStageRunCommitted(payload) => payload.aggregate_id(),
             IntentExecutionEvent::SkeletonStanceRecorded(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::ReviewRequested(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::ReviewCompleted(payload) => payload.aggregate_id(),
         }
     }
 }
@@ -153,7 +165,9 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::orchestration::{AutonomyMode, SkeletonStance, StageDisplay, StageEntry};
+    use crate::orchestration::{
+        AutonomyMode, ReviewVerdict, SkeletonStance, StageDisplay, StageEntry,
+    };
     use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
 
     use super::super::intent_id::IntentId;
@@ -192,7 +206,7 @@ mod tests {
         )
     }
 
-    /// 13 変種を 1 つずつ (同じ id / aggregate_id で組む)。
+    /// 15 変種を 1 つずつ (同じ id / aggregate_id で組む)。
     fn every_variant() -> Vec<IntentExecutionEvent> {
         vec![
             IntentExecutionEvent::Started(started()),
@@ -248,6 +262,22 @@ mod tests {
                 evid(),
                 agg(),
                 SkeletonStance::On,
+            )),
+            IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+                "aidlc-product-lead-agent",
+                1,
+                false,
+            )),
+            IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+                "aidlc-product-lead-agent",
+                1,
+                ReviewVerdict::Ready,
             )),
         ]
     }
@@ -368,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn the_thirteen_variants_are_matched_exhaustively() {
+    fn the_fifteen_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
         const fn name(payload: &IntentExecutionEvent) -> &'static str {
@@ -386,6 +416,8 @@ mod tests {
                 IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
                 IntentExecutionEvent::SingleStageRunCommitted(_) => "SingleStageRunCommitted",
                 IntentExecutionEvent::SkeletonStanceRecorded(_) => "SkeletonStanceRecorded",
+                IntentExecutionEvent::ReviewRequested(_) => "ReviewRequested",
+                IntentExecutionEvent::ReviewCompleted(_) => "ReviewCompleted",
             }
         }
         let expected = [
@@ -402,10 +434,12 @@ mod tests {
             "AutonomyModeSet",
             "SingleStageRunCommitted",
             "SkeletonStanceRecorded",
+            "ReviewRequested",
+            "ReviewCompleted",
         ];
         let named: Vec<&'static str> = every_variant().iter().map(name).collect();
         assert_eq!(named, expected);
         let distinct: HashSet<&'static str> = named.iter().copied().collect();
-        assert_eq!(distinct.len(), 13);
+        assert_eq!(distinct.len(), 15);
     }
 }

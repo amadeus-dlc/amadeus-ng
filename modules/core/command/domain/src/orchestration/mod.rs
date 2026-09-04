@@ -3,7 +3,7 @@
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
-//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (10 コマンド) は
+//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (15 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
 //! 再構成は `replay` (ジャーナル全再生 — 先頭は `Started`) であり、memento 型は持たない
@@ -21,6 +21,10 @@
 //! | `park` / `unpark` | `Parked` / `Unparked` |
 //! | `recompose` | `Recomposed` |
 //! | `switch_autonomy` | `AutonomyModeSet` |
+//! | `record_single_stage_run` | `SingleStageRunCommitted` (**適用はフレーム空** — 仕様 I10) |
+//! | `record_skeleton_stance` | `SkeletonStanceRecorded` |
+//! | `request_review` | `ReviewRequested` (`retry` は適用がフレーム空) |
+//! | `record_review_verdict` | `ReviewCompleted` |
 //!
 //! `jump_resolve` / `stale_report` はクエリ (書込なし) で、いずれも**書込の前段ガード**である
 //! — jump の方向導出と、カーソル通過済み completed への再報告の受理可否。「次に何をすべきか」
@@ -88,6 +92,9 @@ mod report_decision;
 mod report_no_op;
 mod report_refusal;
 mod report_request;
+mod review_attempt;
+mod review_closure;
+mod review_verdict;
 mod skeleton_stance;
 mod stage_display;
 mod stage_entry;
@@ -97,6 +104,7 @@ mod start_request;
 mod state_binding;
 mod status;
 mod transition_step;
+mod unknown_review_verdict;
 mod unknown_stance;
 mod unknown_verdict;
 mod verdict;
@@ -113,6 +121,9 @@ pub use intent_id::IntentId;
 pub use jump_direction::JumpDirection;
 pub use phase_boundary::PhaseBoundary;
 pub use report_request::ReportRequest;
+pub use review_attempt::ReviewAttempt;
+pub use review_closure::ReviewClosure;
+pub use review_verdict::ReviewVerdict;
 pub use skeleton_stance::SkeletonStance;
 pub use stage_display::StageDisplay;
 pub use stage_entry::StageEntry;
@@ -141,13 +152,13 @@ pub use report_decision::ReportDecision;
 pub use report_no_op::ReportNoOp;
 pub use state_binding::StateBinding;
 
-// ドメインイベント (C5 の語彙 — 11 変種)。輸送のメタデータ (識別子・通番・発生時刻・
+// ドメインイベント (C5 の語彙 — 15 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
 // (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
 pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
-    Started, Unparked,
+    Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
+    StageRevised, StageSkipped, Started, Unparked,
 };
 // intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
 // `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。
@@ -162,6 +173,7 @@ pub use intent_id_error::IntentIdError;
 pub use invalid_mode_arg::InvalidModeArg;
 pub use plan_error::PlanError;
 pub use report_refusal::ReportRefusal;
+pub use unknown_review_verdict::UnknownReviewVerdict;
 pub use unknown_stance::UnknownStance;
 pub use unknown_verdict::UnknownVerdict;
 

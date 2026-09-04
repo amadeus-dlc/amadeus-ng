@@ -3,6 +3,30 @@
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.5 (2026-09-04): レビュー受領証 (REVIEW_REQUESTED / REVIEW_COMPLETED) の会計と、
+//   承認ゲートの受領証ガードをモデル化 (#51 / B10 / b48) — 状態変数 5 本
+//   (reviewed / advisory / reqCount / pending / terminal) とスナップショット 3 本
+//   (prevReqCount / prevPending / prevTerminal) を足し、アクション 3 本
+//   (actRequestReview / actRetryReview / actRecordVerdict) を追加した。actReportForward には
+//   受領証ガード (gated ∧ reviewed ⟹ terminal) が付き、フロア (試行を空に戻す位置) を
+//   forward / skipped の新カーソル・reject のカーソル・jump 3 種の全ステージへ入れた。
+//   不変条件 approve_requires_terminal_receipt / review_attempt_floor / review_budget /
+//   review_frame と witness w_review_requested / w_verdict_terminal / w_approved_reviewed /
+//   w_retry_review を追加。
+//
+//   抽象化の対応表 (Rust 側 IntentExecution / ReviewPolicy との射影):
+//     reviewed(s)      ↔ そのステージがレビュアーを宣言し実効クラスが none でない
+//                        (Rust: `policy.is_some() && policy.requires_receipt()`)。
+//                        false は「宣言なし」と「実効クラス none」の両方を畳んだもので、
+//                        どちらも依頼は budget 0 で拒まれ承認は受領証を要求しない
+//     advisory(s)      ↔ 実効クラスが advisory (budget 1、1 パスで終端)。
+//                        false かつ reviewed なら adversarial (budget = BUDGET)
+//     reqCount(s)      ↔ ReviewAttempt::request_count()
+//     pending(s)       ↔ ReviewAttempt::pending() (判定待ちの通し番号の集合)
+//     terminal(s)      ↔ ReviewAttempt::has_terminal(policy) — 判定の値そのものは
+//                        持たず「終端受領証が在るか」の 1 bit に射影する
+//     retry-pending    ↔ actRetryReview (フレーム空 — 呼び直しは依頼に数えず、
+//                        判定待ち集合も既にその番号を含む)
 // v2.4 (2026-09-04): --single 隔離実行と walking-skeleton stance の分類往復をモデル化
 //   (#73 / b47) — 状態変数 stanceRecorded を足し、フレーム空アクション actSingleRun
 //   (全状態変数が不変) と actRecordSkeletonStance (stanceRecorded だけを立てる) を追加した。
@@ -89,12 +113,18 @@
 //   - actSingleRun に cursor' = cursor + 1 を注入 (フレーム空の破壊) → single_run_frame が検出
 //   - actRecordSkeletonStance に checkbox' = checkbox.set(cursor, CompletedBox) を注入
 //     (stanceRecorded 以外への波及) → stance_frame が検出
+// 検査力の確認 (mutation テスト、v2.5 = b48 の受領証会計で実施):
+//   - actReportForward の受領証ガードを外す → approve_requires_terminal_receipt が検出
+//   - actReject のリセットを外す → review_attempt_floor が検出
+//   - actRequestReview の上限ガードを外す → review_budget が検出
+//   - actRetryReview で reqCount を +1 する → review_frame が検出
 //
 // E4 トレーサビリティ (10-orchestration.md §6 から参照される定義名):
 //   engine_loop::no_run_stage_for_skip / cursor_in_scope / no_gate_bypass /
 //   gate_lifecycle_preconditions / parked_position / parked_marker_status /
 //   unpark_restores_position / stale_rereport_yields_done / stale_rereport_frame /
-//   at_most_one_active / single_run_frame / stance_frame
+//   at_most_one_active / single_run_frame / stance_frame /
+//   approve_requires_terminal_receipt / review_attempt_floor / review_budget / review_frame
 
 module engine_loop {
   pure val N = 5
@@ -117,6 +147,12 @@ module engine_loop {
   var lastDirective: DirectiveKind
   var lastAction: str                // ITF リプレイ駆動用
   var stanceRecorded: bool           // walking-skeleton stance が記録済みか (#73)
+  // --- レビュー受領証 (b48 / B10)。reviewed / advisory は init で選んで以後凍結する静的材料
+  var reviewed: int -> bool          // レビュアー宣言あり ∧ 実効クラス != none
+  var advisory: int -> bool          // 実効クラスが advisory (budget 1)
+  var reqCount: int -> int           // この試行で数え上げた依頼の回数
+  var pending: int -> Set[int]       // 判定待ちの通し番号
+  var terminal: int -> bool          // この試行に終端受領証が在るか
 
   // 前状態スナップショット (フレーム条件検査用。全アクションが snapshot と合成される)
   var prevCheckbox: int -> CheckboxState
@@ -127,6 +163,16 @@ module engine_loop {
   var prevParkedAt: int
   var prevAutonomous: bool
   var prevStanceRecorded: bool
+  var prevReqCount: int -> int
+  var prevPending: int -> Set[int]
+  var prevTerminal: int -> bool
+
+  // レビュー予算 — adversarial は reviewer_max_iterations (既定 2)、advisory は 1 パス
+  pure val BUDGET = 2
+  def budget(s: int): int = if (advisory.get(s)) 1 else BUDGET
+  def attemptEmpty(s: int): bool = and {
+    reqCount.get(s) == 0, pending.get(s) == Set(), not(terminal.get(s))
+  }
 
   def gated(s: int): bool = s != 0
   def effectivePlan(s: int): PlanAction = overlay.get(s)
@@ -152,6 +198,10 @@ module engine_loop {
   action init = {
     nondet execSet = STAGES.powerset().oneOf()
     nondet condSet = STAGES.powerset().oneOf()
+    // レビューの静的材料。init で 1 度だけ選び、以後どのアクションでも動かない
+    // (定義 × scope × override から解決される値の射影 — 実行中は変わらない)。
+    nondet reviewedSet = STAGES.powerset().oneOf()
+    nondet advisorySet = STAGES.powerset().oneOf()
     val p = STAGES.mapBy(s => if (s == 0 or execSet.contains(s)) Execute else SkipPlan)
     val firstReal = STAGES.filter(s => s > 0 and p.get(s) == Execute)
       .fold(-1, (acc, s) => if (acc == -1 or s < acc) s else acc)
@@ -174,6 +224,12 @@ module engine_loop {
       lastDirective' = DNone,
       lastAction' = "init",
       stanceRecorded' = false,
+      // stage 0 (initialization) はレビュアーを宣言しない — 非ゲートだからである。
+      reviewed' = STAGES.mapBy(s => s != 0 and reviewedSet.contains(s)),
+      advisory' = STAGES.mapBy(s => advisorySet.contains(s)),
+      reqCount' = STAGES.mapBy(s => 0),
+      pending' = STAGES.mapBy(s => Set()),
+      terminal' = STAGES.mapBy(s => false),
       prevCheckbox' = cb0,
       prevCursor' = cur0,
       prevOverlay' = p,
@@ -182,6 +238,9 @@ module engine_loop {
       prevParkedAt' = -1,
       prevAutonomous' = false,
       prevStanceRecorded' = false,
+      prevReqCount' = STAGES.mapBy(s => 0),
+      prevPending' = STAGES.mapBy(s => Set()),
+      prevTerminal' = STAGES.mapBy(s => false),
     }
   }
 
@@ -194,6 +253,9 @@ module engine_loop {
     prevParkedAt' = parkedAt,
     prevAutonomous' = autonomous,
     prevStanceRecorded' = stanceRecorded,
+    prevReqCount' = reqCount,
+    prevPending' = pending,
+    prevTerminal' = terminal,
   }
 
   // next: 読み取り専用。in-flight なら run-stage (実効 SKIP なら error)、
@@ -209,6 +271,8 @@ module engine_loop {
       else
         (if (nextInScope(cursor) == -1) DDone else DRunStage(nextInScope(cursor))),
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "next",
   }
 
@@ -220,6 +284,8 @@ module engine_loop {
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DParked,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "next_parked",
   }
 
@@ -231,6 +297,8 @@ module engine_loop {
     all {
       status == Running,
       or { checkbox.get(s) == InProgress, checkbox.get(s) == AwaitingApproval },
+      // 段 11 — レビュアーを宣言したゲートは現在の試行の終端受領証を要する (b48)。
+      (gated(s) and reviewed.get(s)) implies terminal.get(s),
       approved' = if (gated(s)) approved.set(s, true) else approved,
       checkbox' =
         if (nxt == -1) checkbox.set(s, CompletedBox)
@@ -241,6 +309,11 @@ module engine_loop {
       parkedAt' = parkedAt, autonomous' = autonomous,
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      // フロア — 次ステージに立つ (STAGE_STARTED 相当) とその試行は空に戻る。
+      reqCount' = if (nxt == -1) reqCount else reqCount.set(nxt, 0),
+      pending' = if (nxt == -1) pending else pending.set(nxt, Set()),
+      terminal' = if (nxt == -1) terminal else terminal.set(nxt, false),
       lastAction' = "report_forward",
     }
   }
@@ -256,6 +329,8 @@ module engine_loop {
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "report_awaiting_approval",
   }
 
@@ -269,6 +344,11 @@ module engine_loop {
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    // フロア — 差し戻しは受領証の会計を数え直しにする (GATE_REJECTED)。
+    reqCount' = reqCount.set(cursor, 0),
+    pending' = pending.set(cursor, Set()),
+    terminal' = terminal.set(cursor, false),
     lastAction' = "report_rejected",
   }
 
@@ -281,6 +361,8 @@ module engine_loop {
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "report_revised",
   }
 
@@ -301,6 +383,11 @@ module engine_loop {
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      // フロア — 読み飛ばしも次ステージを立てるので、その試行は空に戻る。
+      reqCount' = if (nxt == -1) reqCount else reqCount.set(nxt, 0),
+      pending' = if (nxt == -1) pending else pending.set(nxt, Set()),
+      terminal' = if (nxt == -1) terminal else terminal.set(nxt, false),
       lastAction' = "report_skipped",
     }
   }
@@ -318,6 +405,8 @@ module engine_loop {
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastAction' = "report_stale",
     }
   }
@@ -341,6 +430,12 @@ module engine_loop {
       approved' = approved,
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
+      // (fail-closed over precise)。全ステージの試行を空へ戻す。
+      reqCount' = STAGES.mapBy(u => 0),
+      pending' = STAGES.mapBy(u => Set()),
+      terminal' = STAGES.mapBy(u => false),
       lastAction' = "jump_forward",
     }
   }
@@ -361,6 +456,12 @@ module engine_loop {
       status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
+      // (fail-closed over precise)。全ステージの試行を空へ戻す。
+      reqCount' = STAGES.mapBy(u => 0),
+      pending' = STAGES.mapBy(u => Set()),
+      terminal' = STAGES.mapBy(u => false),
       lastAction' = "jump_backward",
     }
   }
@@ -375,6 +476,12 @@ module engine_loop {
     autonomous' = autonomous,
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
+    // (fail-closed over precise)。全ステージの試行を空へ戻す。
+    reqCount' = STAGES.mapBy(u => 0),
+    pending' = STAGES.mapBy(u => Set()),
+    terminal' = STAGES.mapBy(u => false),
     lastAction' = "jump_redo",
   }
 
@@ -394,6 +501,8 @@ module engine_loop {
     approved' = approved,
     lastDirective' = DParked,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "park",
   }
 
@@ -406,6 +515,8 @@ module engine_loop {
     approved' = approved,
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "unpark",
   }
 
@@ -423,6 +534,8 @@ module engine_loop {
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastAction' = "recompose",
     }
   }
@@ -435,6 +548,8 @@ module engine_loop {
     parkedAt' = parkedAt, approved' = approved,
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "set_autonomy",
   }
 
@@ -446,6 +561,8 @@ module engine_loop {
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DDone,
     stanceRecorded' = stanceRecorded,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "done_stutter",
   }
 
@@ -462,6 +579,8 @@ module engine_loop {
   action actRecordSkeletonStance = all {
     cursor == skeletonGateStage,
     stanceRecorded' = true,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
     plan' = plan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
@@ -484,8 +603,77 @@ module engine_loop {
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastDirective' = DNone,
       lastAction' = "single_run",
+    }
+  }
+
+  // --- レビュー受領証の 3 アクション (b48 / B10) ---
+  //
+  // 本流の状態 (カーソル・checkbox・Status・park・overlay・autonomy・承認履歴・stance) は
+  // どれも動かさない — upstream の `aidlc-log review` は監査行を足すだけで状態ファイルを
+  // 書かないからである。それを review_frame が検査する。
+
+  // 依頼 (REVIEW_REQUESTED): レビュアーを宣言したステージで、予算の残りがあるときだけ通る。
+  // 通し番号は「数え上げ済みの依頼数 + 1」に固定されている (upstream の順序ガード)。
+  action actRequestReview = {
+    nondet s = STAGES.oneOf()
+    all {
+      reviewed.get(s),
+      reqCount.get(s) + 1 <= budget(s),
+      reqCount' = reqCount.set(s, reqCount.get(s) + 1),
+      pending' = pending.set(s, pending.get(s).union(Set(reqCount.get(s) + 1))),
+      terminal' = terminal,
+      reviewed' = reviewed, advisory' = advisory,
+      plan' = plan, overlay' = overlay, conditional' = conditional,
+      checkbox' = checkbox, cursor' = cursor, status' = status,
+      parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
+      stanceRecorded' = stanceRecorded,
+      lastDirective' = DNone,
+      lastAction' = "request_review",
+    }
+  }
+
+  // 呼び直し (Retry: pending-request): 判定待ちの依頼をもう一度差し向けるだけで、
+  // 依頼の回数には数えない (upstream `:810-812`)。**全状態変数が不変**である。
+  action actRetryReview = {
+    nondet s = STAGES.oneOf()
+    nondet i = pending.get(s).oneOf()
+    all {
+      pending.get(s) != Set(),
+      i >= 1,
+      reqCount' = reqCount, pending' = pending, terminal' = terminal,
+      reviewed' = reviewed, advisory' = advisory,
+      plan' = plan, overlay' = overlay, conditional' = conditional,
+      checkbox' = checkbox, cursor' = cursor, status' = status,
+      parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
+      stanceRecorded' = stanceRecorded,
+      lastDirective' = DNone,
+      lastAction' = "retry_review",
+    }
+  }
+
+  // 判定 (REVIEW_COMPLETED): 開いている依頼にだけ対応する。判定の値そのものは持たず、
+  // 「終端受領証が在るか」の 1 bit へ射影する — READY、advisory の 1 パス、または
+  // 上限到達の NOT-READY が終端である (upstream `terminalReviewVerdict`)。
+  action actRecordVerdict = {
+    nondet s = STAGES.oneOf()
+    nondet i = pending.get(s).oneOf()
+    nondet ready = Bool.oneOf()
+    all {
+      pending.get(s) != Set(),
+      pending' = pending.set(s, pending.get(s).exclude(Set(i))),
+      terminal' = terminal.set(s, terminal.get(s) or ready or advisory.get(s) or i >= BUDGET),
+      reqCount' = reqCount,
+      reviewed' = reviewed, advisory' = advisory,
+      plan' = plan, overlay' = overlay, conditional' = conditional,
+      checkbox' = checkbox, cursor' = cursor, status' = status,
+      parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
+      stanceRecorded' = stanceRecorded,
+      lastDirective' = DNone,
+      lastAction' = "record_verdict",
     }
   }
 
@@ -508,6 +696,9 @@ module engine_loop {
     all { snapshot, actDoneStutter },
     all { snapshot, actRecordSkeletonStance },
     all { snapshot, actSingleRun },
+    all { snapshot, actRequestReview },
+    all { snapshot, actRetryReview },
+    all { snapshot, actRecordVerdict },
   }
 
   // === 不変条件 (DoD — ADR 0003 決定 7) ===
@@ -599,6 +790,52 @@ module engine_loop {
     approved == prevApproved,
   }
 
+  // === b48: レビュー受領証の不変条件 ===
+
+  // 段 11 — レビュアーを宣言したゲート付きステージの承認は、その時点で終端受領証を
+  // 持っていた (前状態スナップショットで見る — 承認そのものが次ステージのフロアを
+  // 動かすため、承認後の値ではなく承認直前の値が正しい前提である)。
+  val approve_requires_terminal_receipt =
+    (lastAction == "report_forward" and gated(prevCursor) and reviewed.get(prevCursor))
+      implies prevTerminal.get(prevCursor)
+
+  // 試行のフロア — 差し戻しはカーソルを、ジャンプ 3 種は全ステージを、前進と読み飛ばしは
+  // 動いた先の新カーソルを空へ戻す。
+  val review_attempt_floor = and {
+    (lastAction == "report_rejected") implies attemptEmpty(cursor),
+    (lastAction == "jump_forward" or lastAction == "jump_backward" or lastAction == "jump_redo")
+      implies STAGES.forall(s => attemptEmpty(s)),
+    ((lastAction == "report_forward" or lastAction == "report_skipped") and cursor != prevCursor)
+      implies attemptEmpty(cursor),
+  }
+
+  // 予算と通し番号の健全性 — 依頼数は予算を超えず、判定待ちの番号は [1, reqCount] に居る。
+  val review_budget = STAGES.forall(s => and {
+    reqCount.get(s) <= budget(s),
+    pending.get(s).forall(i => i >= 1 and i <= reqCount.get(s)),
+  })
+
+  // 受領証の記録は本流の状態を動かさない (フレーム条件)。呼び直しは受領証の会計すら
+  // 動かさない。
+  val review_frame = and {
+    (lastAction == "request_review" or lastAction == "record_verdict"
+      or lastAction == "retry_review") implies and {
+      cursor == prevCursor,
+      status == prevStatus,
+      checkbox == prevCheckbox,
+      overlay == prevOverlay,
+      parkedAt == prevParkedAt,
+      autonomous == prevAutonomous,
+      approved == prevApproved,
+      stanceRecorded == prevStanceRecorded,
+    },
+    (lastAction == "retry_review") implies and {
+      reqCount == prevReqCount,
+      pending == prevPending,
+      terminal == prevTerminal,
+    },
+  }
+
   // === 到達性 witness (負形式で検査 — ADR 0003 決定 7) ===
 
   // 再スタンプ経路が実在する: park 済み (prevParkedAt != -1) の状態から park を打てる
@@ -610,4 +847,19 @@ module engine_loop {
 
   // stance 記録の経路が実在する (同上 — stance_frame の空虚成立を防ぐ)
   val w_stance_recorded = lastAction == "record_skeleton_stance"
+
+  // 依頼の経路が実在する (review_budget / review_frame の空虚成立を防ぐ)
+  val w_review_requested = lastAction == "request_review"
+
+  // 終端受領証に到達する経路が実在する (承認ガードが通れる歴史が在る)
+  val w_verdict_terminal =
+    (lastAction == "record_verdict") and STAGES.exists(s => terminal.get(s))
+
+  // **レビュアーを宣言したゲートを実際に承認する**経路が実在する —
+  // approve_requires_terminal_receipt が空虚に成立していないことの証拠である。
+  val w_approved_reviewed =
+    (lastAction == "report_forward") and gated(prevCursor) and reviewed.get(prevCursor)
+
+  // 呼び直しの経路が実在する (review_frame の後半の空虚成立を防ぐ)
+  val w_retry_review = lastAction == "retry_review"
 }

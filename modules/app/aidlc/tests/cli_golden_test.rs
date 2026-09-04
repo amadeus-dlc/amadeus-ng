@@ -321,6 +321,24 @@ fn recorded_for_synthetic_graph(case: &str) -> String {
     recorded(case).replace(RECORDED_SLUG, SYNTHETIC_SLUG)
 }
 
+/// advisory 1 パスの受領証（依頼 → READY 判定）を積む（b48 の段 11 を通すため）。
+async fn record_advisory_receipt(workspace: &Workspace, stage: &str) {
+    for extra in [Vec::new(), vec!["--verdict", "READY"]] {
+        let mut argv = vec![
+            "review",
+            "--stage",
+            stage,
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1",
+        ];
+        argv.extend_from_slice(&extra);
+        let completion = workspace.invoke("aidlc-log", &argv).await;
+        assert_eq!(completion.code(), 0, "受領証は積める: {completion:?}");
+    }
+}
+
 /// `report` を 1 回叩いて出た 1 行を返す。
 async fn report_line(workspace: &Workspace, args: &[&str]) -> String {
     let mut argv = vec!["report"];
@@ -357,6 +375,12 @@ async fn the_report_directives_match_the_recorded_cases_after_the_slug_substitut
         report_line(&workspace, &["--result", "awaiting-approval"]).await,
         recorded_for_synthetic_graph("report/awaiting-approval-repeat")
     );
+
+    // 承認の前に受領証を積む — 合成グラフの `domain-design` は
+    // `reviewer: aidlc-architecture-reviewer-agent` / `review_class: advisory` を宣言するので、
+    // b48 以降は現在の試行の終端受領証が無ければ approve が段 11 で拒まれる。advisory は
+    // 1 パスで終端なので、依頼 1 回 + 判定 1 回で足りる。
+    record_advisory_receipt(&workspace, SYNTHETIC_SLUG).await;
 
     // 承認 — 採取時と同じく `[?]` からの承認なので、コミットする段は `approve` 1 つである。
     assert_eq!(

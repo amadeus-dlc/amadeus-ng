@@ -72,7 +72,7 @@ async fn write_four(repository: &mut Repository) -> IntentExecution {
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
+        aggregate.approve_gate(&intent(), None, Some("ok".to_string()), at())
     })
     .await;
     advance(repository, &held, |aggregate| {
@@ -216,7 +216,7 @@ async fn writing_resumes_from_the_persisted_version_after_a_crash() {
     // 誕生 = 初期化完了済み (issue #76) 以降、カーソルは常にゲート付きステージなので次の
     // 1 手は承認である (非ゲート完了の分岐は b42 で撤去した — #85 = A)。
     let event = aggregate
-        .approve_gate(&intent(), Some("ok".to_string()), at())
+        .approve_gate(&intent(), None, Some("ok".to_string()), at())
         .expect("次のコマンド");
     assert_eq!(aggregate.seq_nr(), 5);
     repository.store(&event, &aggregate).await.expect("5 件目");

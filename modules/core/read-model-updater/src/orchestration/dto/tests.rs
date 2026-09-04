@@ -14,9 +14,9 @@
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
-    IntentId, Jumped, Parked, Recomposed, SingleStageRunCommitted, SkeletonStance,
-    SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
-    Started, Unparked, WorkspaceScan,
+    IntentId, Jumped, Parked, Recomposed, ReviewCompleted, ReviewRequested, ReviewVerdict,
+    SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry,
+    StageRevised, StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -128,7 +128,7 @@ const INTENT_ROW: &str = r#"{"Created":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff00
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
 const STARTED_ROW: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 11 変種を、逐語で固定した綴りと組で並べる。
+/// 全 15 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -207,6 +207,28 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 SkeletonStance::On,
             )),
             r#"{"SkeletonStanceRecorded":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stance":"On"}}"#,
+        ),
+        (
+            IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+                event_id(),
+                execution_id(),
+                slug("intent-capture"),
+                "aidlc-product-lead-agent",
+                2,
+                true,
+            )),
+            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true}}"#,
+        ),
+        (
+            IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+                event_id(),
+                execution_id(),
+                slug("intent-capture"),
+                "aidlc-product-lead-agent",
+                2,
+                ReviewVerdict::NotReady,
+            )),
+            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady"}}"#,
         ),
         (
             IntentExecutionEvent::Parked(Parked::new(
@@ -293,6 +315,43 @@ fn every_skeleton_stance_spelling_round_trips_and_the_closed_set_is_enforced() {
     }
 
     let tampered = r#"{"SkeletonStanceRecorded":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stance":"scope-dependent"}}"#;
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(tampered).expect("JSON としては読める");
+    assert!(decoded.to_domain().is_err(), "閉集合の外は拒む");
+}
+
+/// 判定の綴りは**行の面**の語彙であり、ドメインの `READY` / `NOT-READY` とは別である。
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_review_verdict_spelling_is_the_row_vocabulary_not_the_domain_one() {
+    for (verdict, spelling) in [
+        (ReviewVerdict::Ready, "Ready"),
+        (ReviewVerdict::NotReady, "NotReady"),
+    ] {
+        let event = IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+            event_id(),
+            execution_id(),
+            slug("intent-capture"),
+            "aidlc-product-lead-agent",
+            1,
+            verdict,
+        ));
+        let json = serde_json::to_string(&IntentExecutionEventDto::of(&event))
+            .expect("DTO は直列化できる");
+        assert!(
+            json.contains(&format!(r#""verdict":"{spelling}""#)),
+            "{json}"
+        );
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&json).expect("記録済みの行は読める");
+        assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
+    }
+
+    // 監査行の綴り (`READY`) は行の面では読めない — 面が違う。
+    let tampered = r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":1,"verdict":"READY"}}"#;
     let decoded: IntentExecutionEventDto =
         serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "閉集合の外は拒む");

@@ -282,7 +282,7 @@ mod tests {
     async fn a_completed_workflow_is_refused_by_the_aggregate() {
         let (intent, mut aggregate) = at_the_first_gate(2);
         aggregate
-            .approve_gate(&intent, None, at())
+            .approve_gate(&intent, None, None, at())
             .expect("最後のゲートは承認できる");
         assert_eq!(aggregate.status(), Status::Completed);
         let mut subject = use_case((intent, aggregate), 2);

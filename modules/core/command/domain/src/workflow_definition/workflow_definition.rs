@@ -55,6 +55,9 @@ use super::lineage_mismatch::LineageMismatch;
 use super::phase_id::PhaseId;
 use super::plan_action::PlanAction;
 use super::redefine_error::RedefineError;
+use super::review_cap_value::ReviewCapValue;
+use super::review_class::ReviewClass;
+use super::review_policy::ReviewPolicy;
 use super::scope_cost::ScopeCost;
 use super::scope_grid::ScopeGrid;
 use super::scope_metadata::ScopeMetadata;
@@ -63,6 +66,7 @@ use super::stage_node::StageNode;
 use super::stage_route::StageRoute;
 use super::stage_slug::StageSlug;
 use super::unknown_scope::UnknownScope;
+use super::unknown_stage::UnknownStage;
 use super::workflow_definition_event::Defined;
 use super::workflow_definition_event::Redefined;
 use super::workflow_definition_event::WorkflowDefinitionEvent;
@@ -454,6 +458,62 @@ impl WorkflowDefinition {
             gates,
             per_unit_stages,
         ))
+    }
+
+    /// このステージのレビュー方針を解決する (upstream `resolveReviewClass` +
+    /// budget 導出 + `for_each` の読み)。
+    ///
+    /// 3 入力の **low-wins** 合成である (`aidlc-lib.ts:8753-8770`): ステージの宣言を
+    /// スコープの `review_cap:` と実行の `--review` override が**下げるだけ**で、上げることは
+    /// できない。順位は `none < advisory < adversarial` (upstream `REVIEW_RANK`) — 型
+    /// [`ReviewCapValue`] の**派生 `Ord` はこの順位ではない**ので、合成は `min` ではなく
+    /// [`ReviewCapValue::weaker`] で書く。
+    ///
+    /// `reviewer` を宣言していてクラスを宣言していないステージは **adversarial** 扱いである
+    /// (upstream `node.review_class ?? "adversarial"`)。逆に `reviewer` が無いステージは
+    /// どんな cap / override でもレビュアーを生やせないので `Ok(None)` を返す。
+    ///
+    /// 未知スコープの `review_cap` は「上限なし」として扱う — `scope_metadata` が `None` を
+    /// 返すだけであり、upstream の `loadScopeMetadata()[scope]?.reviewCap` も同じ形である。
+    ///
+    /// # Errors
+    ///
+    /// グラフがその slug を知らなければ `UnknownStage` を返す。**「知らない」と「reviewer 宣言
+    /// なし」を混ぜない** — upstream は同じ文言で断るが、材料としては別の事実である。
+    pub fn review_policy(
+        &self,
+        stage: &StageSlug,
+        scope: &str,
+        review_override: Option<ReviewCapValue>,
+    ) -> Result<Option<ReviewPolicy>, UnknownStage> {
+        let node = self
+            .graph
+            .get(stage)
+            .ok_or_else(|| UnknownStage::new(stage.as_str()))?;
+        let Some(reviewer) = node.reviewer() else {
+            return Ok(None);
+        };
+        // 宣言されたクラス — `reviewer` があってクラスが無ければ adversarial (upstream の `??`)。
+        let declared =
+            node.review_class()
+                .map_or(ReviewCapValue::Adversarial, |class| match class {
+                    ReviewClass::Advisory => ReviewCapValue::Advisory,
+                    ReviewClass::Adversarial => ReviewCapValue::Adversarial,
+                });
+        // low-wins: cap も override も**下げるだけ**なので、弱いほうへ畳む。
+        // 派生した `Ord` は強度順ではないので `min` は使わない (型の doc を参照)。
+        let capped = self
+            .scope_metadata(scope)
+            .and_then(ScopeMetadata::review_cap)
+            .map_or(declared, |cap| declared.weaker(cap));
+        let effective = review_override.map_or(capped, |value| capped.weaker(value));
+        Ok(Some(ReviewPolicy::new(
+            reviewer,
+            effective,
+            node.reviewer_max_iterations()
+                .unwrap_or(ReviewPolicy::DEFAULT_MAX_ITERATIONS),
+            node.for_each() == Some(PER_UNIT_FOR_EACH),
+        )))
     }
 
     /// ステージの route 同一性 — 対象ステージと、その scope の in-scope ステージ列。
@@ -1314,5 +1374,187 @@ mod tests {
             .expect("内容が違えば改訂できる");
         assert_eq!(revised.aggregate_id(), definition.id());
         assert_ne!(genesis.id(), revised.id(), "採番が重複した");
+    }
+    // ---- b48: review_policy (レビュー方針の解決) ----
+
+    /// レビュアーを宣言したノード (クラス・上限は任意)。
+    fn reviewed_node(
+        name: &str,
+        class: Option<ReviewClass>,
+        max_iterations: Option<u32>,
+        for_each: Option<&str>,
+    ) -> StageNode {
+        let mut builder = StageNodeBuilder::new(
+            slug(name),
+            StageNumber::parse("1.1").unwrap(),
+            name.to_string(),
+            PhaseId::Ideation,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .scopes(vec!["alpha".to_string()])
+        .reviewer("aidlc-quality-agent".to_string());
+        if let Some(class) = class {
+            builder = builder.review_class(class);
+        }
+        if let Some(max_iterations) = max_iterations {
+            builder = builder.reviewer_max_iterations(max_iterations);
+        }
+        if let Some(for_each) = for_each {
+            builder = builder.for_each(for_each.to_string());
+        }
+        builder.build()
+    }
+
+    /// レビュアー宣言ありのノード 1 本 + 宣言なし 1 本を持つ定義。
+    fn reviewed_definition(
+        class: Option<ReviewClass>,
+        max_iterations: Option<u32>,
+        for_each: Option<&str>,
+        cap: Option<ReviewCapValue>,
+    ) -> WorkflowDefinition {
+        let graph = StageGraph::new(vec![
+            reviewed_node("intent-capture", class, max_iterations, for_each),
+            node("requirements", "1.2", PhaseId::Ideation, &["alpha"]),
+        ])
+        .unwrap();
+        let grid = ScopeGrid::from_graph(&graph);
+        let mut scopes = BTreeMap::new();
+        let mut metadata = ScopeMetadata::new("alpha").unwrap();
+        if let Some(cap) = cap {
+            metadata = metadata.with_review_cap(cap);
+        }
+        scopes.insert("alpha".to_string(), metadata);
+        WorkflowDefinition::define(id("claude"), &bundle("claude", graph, grid, scopes), at())
+            .unwrap()
+            .0
+    }
+
+    /// レビュアーを宣言しないステージには方針が無い — cap も override もレビュアーを
+    /// 生やせない (upstream `resolveReviewClass` の doc)。
+    #[test]
+    fn a_stage_without_a_reviewer_has_no_policy_whatever_the_cap_says() {
+        let definition = reviewed_definition(None, None, None, Some(ReviewCapValue::Adversarial));
+        assert_eq!(
+            definition
+                .review_policy(
+                    &slug("requirements"),
+                    "alpha",
+                    Some(ReviewCapValue::Adversarial)
+                )
+                .unwrap(),
+            None
+        );
+    }
+
+    /// 定義がその slug を知らなければ `Err` — 「宣言なし」と混ぜない。
+    #[test]
+    fn an_unknown_slug_is_refused_rather_than_reported_as_no_reviewer() {
+        let definition = reviewed_definition(None, None, None, None);
+        let error = definition
+            .review_policy(&slug("nowhere"), "alpha", None)
+            .unwrap_err();
+        assert_eq!(error, UnknownStage::new("nowhere"));
+        assert_eq!(error.as_str(), "nowhere");
+    }
+
+    /// 宣言 × cap × override の min() 表 (low-wins — `aidlc-lib.ts:8753-8770`)。
+    #[test]
+    fn the_effective_class_is_the_minimum_of_the_three_inputs() {
+        use ReviewCapValue::{Adversarial, Advisory, None as NoneCap};
+        // (宣言クラス, cap, override) → 実効クラス
+        /// (宣言クラス, scope の cap, `--review` override, 期待する実効クラス)。
+        type Row = (
+            Option<ReviewClass>,
+            Option<ReviewCapValue>,
+            Option<ReviewCapValue>,
+            ReviewCapValue,
+        );
+        let table: [Row; 9] = [
+            // クラス無宣言は adversarial 扱い (upstream の `?? "adversarial"`)。
+            (None, None, None, Adversarial),
+            (Some(ReviewClass::Adversarial), None, None, Adversarial),
+            (Some(ReviewClass::Advisory), None, None, Advisory),
+            // cap は下げるだけ。
+            (
+                Some(ReviewClass::Adversarial),
+                Some(Advisory),
+                None,
+                Advisory,
+            ),
+            (
+                Some(ReviewClass::Advisory),
+                Some(Adversarial),
+                None,
+                Advisory,
+            ),
+            (Some(ReviewClass::Adversarial), Some(NoneCap), None, NoneCap),
+            // override も下げるだけ。
+            (
+                Some(ReviewClass::Adversarial),
+                None,
+                Some(Advisory),
+                Advisory,
+            ),
+            (
+                Some(ReviewClass::Advisory),
+                None,
+                Some(Adversarial),
+                Advisory,
+            ),
+            // cap と override の両方が効く場合は最小が勝つ。
+            (
+                Some(ReviewClass::Adversarial),
+                Some(Advisory),
+                Some(NoneCap),
+                NoneCap,
+            ),
+        ];
+        for (class, cap, review_override, expected) in table {
+            let definition = reviewed_definition(class, None, None, cap);
+            let policy = definition
+                .review_policy(&slug("intent-capture"), "alpha", review_override)
+                .unwrap()
+                .expect("レビュアーを宣言しているので方針が在る");
+            assert_eq!(
+                policy.effective(),
+                expected,
+                "class = {class:?}, cap = {cap:?}, override = {review_override:?}"
+            );
+            assert_eq!(policy.reviewer(), "aidlc-quality-agent");
+        }
+    }
+
+    /// 上限と per-unit は宣言をそのまま運ぶ (既定は 2 / false)。
+    #[test]
+    fn the_iteration_cap_and_the_per_unit_flag_come_from_the_node() {
+        let default = reviewed_definition(None, None, None, None);
+        let policy = default
+            .review_policy(&slug("intent-capture"), "alpha", None)
+            .unwrap()
+            .expect("方針が在る");
+        assert_eq!(policy.max_iterations(), 2);
+        assert!(!policy.per_unit());
+        assert_eq!(policy.budget(), 2);
+
+        let declared = reviewed_definition(None, Some(4), Some("unit-of-work"), None);
+        let policy = declared
+            .review_policy(&slug("intent-capture"), "alpha", None)
+            .unwrap()
+            .expect("方針が在る");
+        assert_eq!(policy.max_iterations(), 4);
+        assert!(policy.per_unit());
+        assert_eq!(policy.budget(), 4);
+    }
+
+    /// 未知スコープの cap は「上限なし」— `scope_metadata` が `None` を返すだけである。
+    #[test]
+    fn an_unknown_scope_imposes_no_cap() {
+        let definition = reviewed_definition(None, None, None, Some(ReviewCapValue::None));
+        let policy = definition
+            .review_policy(&slug("intent-capture"), "no-such-scope", None)
+            .unwrap()
+            .expect("方針が在る");
+        assert_eq!(policy.effective(), ReviewCapValue::Adversarial);
     }
 }

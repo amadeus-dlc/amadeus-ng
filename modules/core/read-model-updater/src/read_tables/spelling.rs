@@ -80,6 +80,13 @@ pub(crate) const fn jump_refusal(error: &CommandError) -> &'static str {
         CommandError::InvalidTarget(_) => "invalid-target",
         CommandError::RefusedUnderAutonomy => "refused-under-autonomy",
         CommandError::SequenceExhausted => "sequence-exhausted",
+        CommandError::UnknownStage(_) => "unknown-stage",
+        CommandError::NoDeclaredReviewer(_) => "no-declared-reviewer",
+        CommandError::ReviewerMismatch { .. } => "reviewer-mismatch",
+        CommandError::ReviewBudgetExceeded { .. } => "review-budget-exceeded",
+        CommandError::ReviewOutOfSequence { .. } => "review-out-of-sequence",
+        CommandError::NoPendingReview { .. } => "no-pending-review",
+        CommandError::ReviewReceiptMissing { .. } => "review-receipt-missing",
     }
 }
 
@@ -240,7 +247,48 @@ mod tests {
             ]
         );
 
-        // 8 変種の綴りは互いに重ならない — 重なれば行から理由を読み分けられない。
+        // b48 で加わった 7 変種も同じ扱いである — レビュー会計の拒否は `jump_resolve` からは
+        // 返らないが、閉集合の綴りは丸めずに全部固定する。
+        let review = [
+            jump_refusal(&CommandError::UnknownStage("nowhere".to_string())),
+            jump_refusal(&CommandError::NoDeclaredReviewer(stage)),
+            jump_refusal(&CommandError::ReviewerMismatch {
+                stage,
+                declared: "aidlc-quality-agent".to_string(),
+            }),
+            jump_refusal(&CommandError::ReviewBudgetExceeded {
+                stage,
+                ordinal: 3,
+                budget: 2,
+            }),
+            jump_refusal(&CommandError::ReviewOutOfSequence {
+                stage,
+                iteration: 3,
+                expected: 1,
+            }),
+            jump_refusal(&CommandError::NoPendingReview {
+                stage,
+                iteration: 1,
+            }),
+            jump_refusal(&CommandError::ReviewReceiptMissing {
+                stage,
+                reviewer: "aidlc-quality-agent".to_string(),
+            }),
+        ];
+        assert_eq!(
+            review,
+            [
+                "unknown-stage",
+                "no-declared-reviewer",
+                "reviewer-mismatch",
+                "review-budget-exceeded",
+                "review-out-of-sequence",
+                "no-pending-review",
+                "review-receipt-missing",
+            ]
+        );
+
+        // 15 変種の綴りは互いに重ならない — 重なれば行から理由を読み分けられない。
         let all = [
             jump_refusal(&CommandError::IntentMismatch),
             jump_refusal(&CommandError::NotRunning),
@@ -250,6 +298,13 @@ mod tests {
             refusals[1],
             refusals[2],
             refusals[3],
+            review[0],
+            review[1],
+            review[2],
+            review[3],
+            review[4],
+            review[5],
+            review[6],
         ];
         let distinct: std::collections::BTreeSet<&str> = all.iter().copied().collect();
         assert_eq!(distinct.len(), all.len(), "拒否理由の綴りは 1 対 1");

@@ -3,7 +3,7 @@
 //! ドメイン側の `as_str` / `parse` は流用しない (`mod.rs` の「綴りの正本はここにある」)。
 //! ここの綴りを変えると既に書かれた行が読めなくなるので、対応表は逐語テストで固定する。
 
-use core_command_domain::orchestration::{AutonomyMode, SkeletonStance, Status};
+use core_command_domain::orchestration::{AutonomyMode, ReviewVerdict, SkeletonStance, Status};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewClass,
     RuleScope, SkeletonDefault, StageMode,
@@ -272,6 +272,29 @@ pub(super) fn skeleton_stance_of(
         "On" => Ok(SkeletonStance::On),
         "Off" => Ok(SkeletonStance::Off),
         "ScopeDependent" => Ok(SkeletonStance::ScopeDependent),
+        other => Err(DtoDecodeError::malformed(field, other)),
+    }
+}
+
+/// レビュー判定の綴り (行の面)。
+///
+/// ドメインの `ReviewVerdict::as_str` (`READY` / `NOT-READY`) は **CLI と監査行の面**の
+/// 綴りであり、行の面はこちらである (このモジュールの doc「綴りの正本はここにある」)。
+pub(super) const fn review_verdict_spelling(value: ReviewVerdict) -> &'static str {
+    match value {
+        ReviewVerdict::Ready => "Ready",
+        ReviewVerdict::NotReady => "NotReady",
+    }
+}
+
+/// レビュー判定の復号。
+pub(super) fn review_verdict_of(
+    raw: &str,
+    field: &'static str,
+) -> Result<ReviewVerdict, DtoDecodeError> {
+    match raw {
+        "Ready" => Ok(ReviewVerdict::Ready),
+        "NotReady" => Ok(ReviewVerdict::NotReady),
         other => Err(DtoDecodeError::malformed(field, other)),
     }
 }

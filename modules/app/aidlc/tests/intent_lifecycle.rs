@@ -18,6 +18,9 @@ use core_command_interface_adapter::orchestration::{
 use core_command_use_case::orchestration::{IntentExecutionRepository as _, IntentRepository as _};
 use core_infrastructure::canon_json::{JsonValue, parse};
 
+/// 合成グラフが宣言するレビュアー (b48)。
+const REVIEWER: &str = "aidlc-architecture-reviewer-agent";
+
 struct Workspace {
     root: tempfile::TempDir,
 }
@@ -49,6 +52,19 @@ impl Workspace {
         // steering 連鎖ではなく素の run-stage を出す。この試験が見たいのは `gate` の 3 値
         // だけなので、連鎖を挟まない最短形にする。
         fs::create_dir_all(workspace.path("aidlc/spaces/default/intents")).expect("intents");
+        workspace
+    }
+
+    /// `domain-design` にレビュアーを宣言した合成グラフ (b48 — 受領証の往復を見る用)。
+    ///
+    /// `class` は `review_class:` の値 (`None` = 宣言なし = adversarial 扱い)、`cap` は
+    /// scope の `review_cap:` である。
+    fn with_reviewer(class: Option<&str>, cap: Option<&str>) -> Workspace {
+        let workspace = Workspace {
+            root: tempfile::tempdir().expect("一時ディレクトリ"),
+        };
+        workspace.write_reviewed_definition(class, cap);
+        workspace.write_memory_and_store_dir();
         workspace
     }
 
@@ -209,6 +225,57 @@ impl Workspace {
         fs::write(
             scopes.join("aidlc-classic.md"),
             "---\nname: classic\n---\n\n# Classic\n",
+        )
+        .expect("scope identity");
+    }
+
+    /// `domain-design` にレビュアーを宣言した 3 段の合成グラフ (b48)。
+    fn write_reviewed_definition(&self, class: Option<&str>, cap: Option<&str>) {
+        let data = self.path(".claude/tools/data");
+        let scopes = self.path(".claude/scopes");
+        fs::create_dir_all(&data).expect("data");
+        fs::create_dir_all(&scopes).expect("scopes");
+        fs::write(
+            data.join("harness.json"),
+            r#"{"name":"claude","harnessDir":".claude","rulesSubdir":"rules"}"#,
+        )
+        .expect("harness.json");
+        let node = |slug: &str, number: &str, name: &str, phase: &str, extra: &str| {
+            format!(
+                r#"{{"slug":"{slug}","number":"{number}","name":"{name}","phase":"{phase}",
+                     "execution":"ALWAYS","mode":"inline","lead_agent":"orchestrator",
+                     "scopes":["classic"]{extra}}}"#
+            )
+        };
+        let class = class.map_or(String::new(), |class| {
+            format!(r#","review_class":"{class}""#)
+        });
+        let reviewed = format!(r#","reviewer":"{REVIEWER}"{class}"#);
+        fs::write(
+            data.join("stage-graph.json"),
+            format!(
+                "[{},{},{}]",
+                node("state-init", "0.1", "State Init", "initialization", ""),
+                node(
+                    "domain-design",
+                    "1.1",
+                    "Domain Design",
+                    "inception",
+                    &reviewed
+                ),
+                node("contract-design", "1.2", "Contract Design", "inception", ""),
+            ),
+        )
+        .expect("stage-graph.json");
+        fs::write(
+            data.join("scope-grid.json"),
+            r#"{"classic":{"stages":{"state-init":"EXECUTE","domain-design":"EXECUTE","contract-design":"EXECUTE"}}}"#,
+        )
+        .expect("scope-grid.json");
+        let cap = cap.map_or(String::new(), |cap| format!("review_cap: {cap}\n"));
+        fs::write(
+            scopes.join("aidlc-classic.md"),
+            format!("---\nname: classic\n{cap}---\n\n# Classic\n"),
         )
         .expect("scope identity");
     }
@@ -3087,5 +3154,851 @@ async fn a_revising_stage_cannot_be_reported_as_a_forward_completion() {
     assert_eq!(
         message,
         "Stage \"domain-design\" is revising; report commits forward completions only."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// b48: レビュー受領証 (#51 / B10)
+// ---------------------------------------------------------------------------
+
+/// `aidlc-log review` を 1 回叩く。
+async fn log_review(workspace: &Workspace, args: &[&str]) -> aidlc::runtime::Completion {
+    let mut argv = vec!["review"];
+    argv.extend_from_slice(args);
+    invoke(workspace, "aidlc-log", &argv).await
+}
+
+/// 依頼 1 件（成功を確かめて stdout の 1 行を返す）。
+async fn request_review(workspace: &Workspace, iteration: &str) -> String {
+    let completion = log_review(
+        workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            iteration,
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 0, "依頼は通る: {completion:?}");
+    completion.line().expect("stdout に 1 行が要る").to_string()
+}
+
+/// 判定 1 件（成功を確かめて stdout の 1 行を返す）。
+async fn record_verdict(workspace: &Workspace, iteration: &str, verdict: &str) -> String {
+    let completion = log_review(
+        workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            iteration,
+            "--verdict",
+            verdict,
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 0, "判定は通る: {completion:?}");
+    completion.line().expect("stdout に 1 行が要る").to_string()
+}
+
+/// 依頼 → 判定 → 承認の一巡が通り、監査台帳に受領証 2 行が並ぶ。
+#[tokio::test]
+async fn the_review_round_trip_lets_the_gate_be_approved_and_records_both_rows() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    assert_eq!(
+        request_review(&workspace, "1").await,
+        r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design"}"#
+    );
+    assert_eq!(
+        record_verdict(&workspace, "1", "READY").await,
+        r#"{"emitted":"REVIEW_COMPLETED","stage":"domain-design"}"#
+    );
+
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "{body}");
+    assert!(
+        body.starts_with("Committed gate-start + approve for \"domain-design\""),
+        "{body}"
+    );
+
+    // 監査台帳に受領証 2 行が upstream のフィールド順で並ぶ。
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(audit.contains("**Event**: REVIEW_REQUESTED\n"), "{audit}");
+    assert!(
+        audit.contains(&format!(
+            "**Stage**: domain-design\n**Reviewer**: {REVIEWER}\n**Iteration**: 1\n"
+        )),
+        "{audit}"
+    );
+    assert!(
+        audit.contains(&format!(
+            "**Stage**: domain-design\n**Reviewer**: {REVIEWER}\n**Iteration**: 1\n**Verdict**: READY\n"
+        )),
+        "{audit}"
+    );
+}
+
+/// 受領証が無い承認は段 11 で拒まれる（`aidlc-state.ts approve` の逐語を包み文に入れて）。
+#[tokio::test]
+async fn approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbatim() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error", "{body}");
+    assert_eq!(
+        body,
+        format!(
+            "Transition rejected by aidlc-state.ts approve for \"domain-design\": \
+Refusing to complete \"domain-design\": it declares a reviewer ({REVIEWER}) but no fresh \
+REVIEW_COMPLETED is recorded for it. Invoke the reviewer (stage-protocol-reviewer.md §12a) and \
+record the verdict with `aidlc-log.ts review --stage domain-design --reviewer {REVIEWER} \
+--verdict <READY|NOT-READY>` before completing. Terminal ordering: apply any fixes FIRST, then \
+run the reviewer, record the receipt, and stop editing produces[] artifacts - a later write to \
+one invalidates the receipt and re-opens this refusal. Do not apply suggestions riding on a \
+READY verdict; surface them at the gate instead."
+        )
+    );
+}
+
+/// adversarial の NOT-READY は 1 回目では終端にならず、上限の 2 回目で終端になる。
+#[tokio::test]
+async fn an_adversarial_not_ready_only_becomes_terminal_at_the_iteration_cap() {
+    let workspace = Workspace::with_reviewer(Some("adversarial"), None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    request_review(&workspace, "1").await;
+    record_verdict(&workspace, "1", "NOT-READY").await;
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error", "1 回目の NOT-READY は終端ではない: {body}");
+
+    request_review(&workspace, "2").await;
+    record_verdict(&workspace, "2", "NOT-READY").await;
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "上限到達の NOT-READY は終端である: {body}");
+}
+
+/// advisory は 1 パスで終端になる（NOT-READY でも承認が通る）。
+#[tokio::test]
+async fn an_advisory_pass_is_terminal_at_the_first_verdict() {
+    let workspace = Workspace::with_reviewer(Some("advisory"), None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    request_review(&workspace, "1").await;
+    record_verdict(&workspace, "1", "NOT-READY").await;
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "{body}");
+
+    // 予算 1 なので 2 回目の依頼は断られる（advisory の言い回し）。
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "contract-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Cannot record review: stage \"contract-design\" has no declared reviewer.")
+    );
+}
+
+/// scope の `review_cap: none` は受領証の要求そのものを解く。
+#[tokio::test]
+async fn a_scope_cap_of_none_waives_the_receipt_entirely() {
+    let workspace = Workspace::with_reviewer(None, Some("none"));
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "実効 none は受領証を要らない: {body}");
+}
+
+/// 呼び直しは `retry` を載せた JSON を返し、依頼の回数には数えない。
+#[tokio::test]
+async fn a_retry_pending_request_reports_the_retry_and_does_not_spend_the_budget() {
+    let workspace = Workspace::with_reviewer(Some("adversarial"), None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    request_review(&workspace, "1").await;
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+            "--retry-pending",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(
+        completion.line(),
+        Some(r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#)
+    );
+    // 呼び直しは数えないので、次の通常依頼は依然として 2 番である。
+    request_review(&workspace, "2").await;
+    // 監査台帳に `Retry` 行が並ぶ。
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(audit.contains("**Retry**: pending-request\n"), "{audit}");
+}
+
+/// 予算超過・順序違反・対にならない判定・宣言不一致の 4 拒否（逐語）。
+#[tokio::test]
+async fn the_review_refusals_are_verbatim() {
+    let workspace = Workspace::with_reviewer(Some("adversarial"), None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    // 順序違反 — 1 番から始まらない。
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "2",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "Refusing REVIEW_REQUESTED for \"domain-design\": iteration 2 is out of sequence; \
+expected 1 from the current audit attempt."
+        )
+    );
+
+    // 予算超過 — 上限 2 を超える通し番号。
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "3",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "Refusing REVIEW_REQUESTED for \"domain-design\": review request 3 exceeds this \
+stage's review budget (2). The review loop is exhausted - present the gate with the unresolved \
+findings for the human's decision instead of another review pass."
+        )
+    );
+
+    // 対にならない判定。
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+            "--verdict",
+            "READY",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "Refusing REVIEW_COMPLETED for \"domain-design\": no unmatched REVIEW_REQUESTED \
+iteration 1 exists in the current audit attempt."
+        )
+    );
+
+    // 対にならない呼び直し。
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+            "--retry-pending",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "Refusing review retry for \"domain-design\": no unmatched REVIEW_REQUESTED \
+iteration 1 exists in the current audit attempt."
+        )
+    );
+
+    // 宣言不一致。
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            "someone-else",
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some(&*format!(
+            "Cannot record review for \"domain-design\": reviewer \"someone-else\" does not \
+match the declared reviewer \"{REVIEWER}\"."
+        ))
+    );
+}
+
+/// 構文段の拒否（フラグ文法・必須フラグ・セレクタ・未配線 2 面・値の閉集合）。
+#[tokio::test]
+async fn the_review_syntax_guards_refuse_in_the_upstream_order() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    async fn refusal(workspace: &Workspace, args: &[&str]) -> String {
+        let completion = log_review(workspace, args).await;
+        assert_eq!(completion.code(), 1, "{completion:?}");
+        completion
+            .diagnostic()
+            .expect("stderr に逐語が要る")
+            .to_string()
+    }
+
+    // フラグ文法 — 値が必要なフラグに値が無い。
+    assert_eq!(
+        refusal(&workspace, &["--stage"]).await,
+        "--stage expects a value, got end of arguments."
+    );
+    assert_eq!(
+        refusal(&workspace, &["--stage", "--reviewer"]).await,
+        "--stage expects a value, got another flag: \"--reviewer\". Did you forget the value?"
+    );
+    // 必須フラグ。
+    assert_eq!(refusal(&workspace, &[]).await, "Missing --stage <slug>");
+    assert_eq!(
+        refusal(&workspace, &["--stage", "domain-design"]).await,
+        "Missing --reviewer <agent>"
+    );
+    // セレクタは受け付けない。
+    assert_eq!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--intent",
+                "x"
+            ]
+        )
+        .await,
+        "The review command does not accept --intent/--space selectors. Switch to the target \
+workspace first."
+    );
+    // 未配線の 2 面（own wording）。
+    assert!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--unit",
+                "b48"
+            ]
+        )
+        .await
+        .contains("the --unit receipt is not wired in this build")
+    );
+    assert!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--single"
+            ]
+        )
+        .await
+        .contains("the --single receipt is not wired in this build")
+    );
+    // 通し番号は正整数（依頼形 / 判定形で文言が分かれる）。
+    assert_eq!(
+        refusal(
+            &workspace,
+            &["--stage", "domain-design", "--reviewer", REVIEWER]
+        )
+        .await,
+        "REVIEW_REQUESTED requires --iteration <positive integer>."
+    );
+    assert_eq!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--iteration",
+                "0"
+            ]
+        )
+        .await,
+        "REVIEW_REQUESTED requires --iteration <positive integer>."
+    );
+    assert_eq!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--verdict",
+                "READY"
+            ]
+        )
+        .await,
+        "REVIEW_COMPLETED requires --iteration <positive integer>."
+    );
+    // `--retry-pending` と `--verdict` の併用。
+    assert_eq!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--iteration",
+                "1",
+                "--verdict",
+                "READY",
+                "--retry-pending"
+            ]
+        )
+        .await,
+        "--retry-pending cannot be combined with --verdict."
+    );
+    // 判定の閉集合。
+    assert_eq!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--iteration",
+                "1",
+                "--verdict",
+                "maybe"
+            ]
+        )
+        .await,
+        "Unknown --verdict \"maybe\". Accepted: READY, NOT-READY."
+    );
+    // 未知の slug は「宣言が無い」と同じ答えである（upstream の `find` が空振りするだけ）。
+    assert_eq!(
+        refusal(
+            &workspace,
+            &[
+                "--stage",
+                "nowhere",
+                "--reviewer",
+                REVIEWER,
+                "--iteration",
+                "1"
+            ]
+        )
+        .await,
+        "Cannot record review: stage \"nowhere\" has no declared reviewer."
+    );
+    // slug が文法違反でも、依頼形の `--iteration` 検査が先に出る（upstream は
+    // `handleReview` の `:983-985` で `loadContext` より前に通し番号を検査する）。
+    assert_eq!(
+        refusal(
+            &workspace,
+            &["--stage", "Not A Slug", "--reviewer", REVIEWER]
+        )
+        .await,
+        "REVIEW_REQUESTED requires --iteration <positive integer>."
+    );
+}
+
+/// 記録面の未知動詞と未配線動詞は stderr + exit 1 である。
+#[tokio::test]
+async fn the_log_face_refuses_unknown_and_unwired_verbs() {
+    let workspace = Workspace::with_reviewer(None, None);
+
+    let completion = invoke(&workspace, "aidlc-log", &["frobnicate"]).await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Unknown subcommand: frobnicate. Valid: decision, answer, link, review")
+    );
+
+    let completion = invoke(&workspace, "aidlc-log", &[]).await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Unknown subcommand: undefined. Valid: decision, answer, link, review")
+    );
+
+    for verb in ["decision", "answer", "link"] {
+        let completion = invoke(&workspace, "aidlc-log", &[verb]).await;
+        assert_eq!(completion.code(), 1);
+        assert_eq!(
+            completion.diagnostic(),
+            Some(&*format!(
+                "Cannot record a {verb} event: the aidlc-log {verb} verb is not wired in this \
+build. Only `review` is available."
+            ))
+        );
+    }
+}
+
+/// 鋳造前のワークスペースは「アクティブな intent が無い」で断る。
+#[tokio::test]
+async fn a_review_without_an_active_intent_is_refused() {
+    let workspace = Workspace::with_reviewer(None, None);
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Cannot resolve the active intent for review logging.")
+    );
+}
+
+/// 差し戻しは試行のフロアである — 受領証を積み直さないと再承認できない。
+#[tokio::test]
+async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_again() {
+    let workspace = Workspace::with_reviewer(Some("advisory"), None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    request_review(&workspace, "1").await;
+    record_verdict(&workspace, "1", "READY").await;
+    report_directive(
+        &workspace,
+        &["--result", "rejected", "--reason", "Sharpen the design."],
+    )
+    .await;
+    report_directive(&workspace, &["--result", "revised"]).await;
+
+    // 差し戻しで試行が空に戻っているので、承認は再び拒まれる。
+    let (kind, _) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error", "差し戻し後は受領証を積み直す");
+
+    // 通し番号も数え直しなので 1 番から始まる。
+    request_review(&workspace, "1").await;
+    record_verdict(&workspace, "1", "READY").await;
+    let (kind, _) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "積み直した受領証で承認が通る");
+}
+
+/// 壊れた実行カーソルは「不在」と混ぜない（`report` 段 6 と同じ規律）。
+#[tokio::test]
+async fn a_review_on_a_broken_execution_cursor_names_the_medium_failure() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("カーソルが据わっている");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert!(
+        completion
+            .diagnostic()
+            .expect("stderr に逐語が要る")
+            .starts_with("The execution cursor cannot be read"),
+        "{completion:?}"
+    );
+}
+
+/// 文法外の slug も「宣言が無い」と同じ答えである（upstream の `find` は空振りするだけ）。
+#[tokio::test]
+async fn a_review_stage_outside_the_slug_grammar_reads_as_no_declared_reviewer() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "Not A Slug",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Cannot record review: stage \"Not A Slug\" has no declared reviewer.")
+    );
+}
+
+/// 空の `--iteration` も正整数の文法から外れる。
+#[tokio::test]
+async fn an_empty_iteration_is_outside_the_positive_integer_grammar() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("REVIEW_REQUESTED requires --iteration <positive integer>.")
+    );
+}
+
+/// 空間名が壊れていれば、レビューの記録もストアを開かずに断る。
+#[tokio::test]
+async fn a_review_under_an_invalid_active_space_is_refused_before_the_store() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("空間カーソルを壊す");
+
+    let completion = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert!(
+        completion
+            .diagnostic()
+            .expect("stderr に逐語が要る")
+            .starts_with("The active space \"../escape\""),
+        "{completion:?}"
     );
 }

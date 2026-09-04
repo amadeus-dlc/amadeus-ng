@@ -35,7 +35,7 @@ pub(crate) async fn seed<R: IntentExecutionRepository>(repository: &mut R) -> In
     })
     .await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
+        aggregate.approve_gate(&intent(), None, Some("ok".to_string()), at())
     })
     .await;
     advance(repository, &held, |aggregate| {

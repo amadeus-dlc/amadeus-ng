@@ -25,11 +25,11 @@ use std::path::Path;
 use chrono::Utc;
 use core_command_domain::orchestration::{
     CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal, ReportRequest,
-    SkeletonStance, StartRequest, TransitionStep, Verdict,
+    ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, Verdict,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{
-    ShardName, SpaceName, StateVersionClassification, StateVersionKind, StorePath,
+    EventType, ShardName, SpaceName, StateVersionClassification, StateVersionKind, StorePath,
 };
 use core_command_interface_adapter::orchestration::{
     CompiledDefinitionRepositoryImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
@@ -38,9 +38,9 @@ use core_command_interface_adapter::orchestration::{
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
     CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase,
-    DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
-    RecordSingleStageRunUseCase, RecordSkeletonStanceUseCase, SingleStageRunError,
-    SkeletonStanceError,
+    DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase, RecordReviewUseCase,
+    RecordSingleStageRunUseCase, RecordSkeletonStanceUseCase, ReviewLogError, ReviewLogKind,
+    ReviewLogOutcome, ReviewLogRequest, SingleStageRunError, SkeletonStanceError,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::{ReadModelDaos, StateFileDaoImpl, verify_continue_token};
@@ -134,6 +134,11 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
                 "Unknown subcommand: {}",
                 given.as_deref().unwrap_or("(none)")
             )))
+        }
+        Request::LogReview(args) => log_review(&layout, &args).await,
+        Request::LogNotWired { verb } => Completion::refused(wording::log_verb_not_wired(&verb)),
+        Request::UnknownLogVerb { given } => {
+            Completion::refused(wording::unknown_log_subcommand(given.as_deref()))
         }
     }
 }
@@ -269,15 +274,26 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         args.reason().map(str::to_string),
         human_presence_guard(),
     );
-    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+    let (
+        Ok(intent_execution_repository),
+        Ok(intent_repository),
+        Ok(workflow_definition_repository),
+    ) = (
         IntentExecutionRepositoryImpl::open(&store),
         IntentRepositoryImpl::open(&store),
-    ) else {
+        WorkflowDefinitionRepositoryImpl::open(&store),
+    )
+    else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
-    let outcome = CommitVerdictUseCase::new(intent_execution_repository, intent_repository)
-        .execute(&execution_id, request, Utc::now())
-        .await;
+    // 段 11 のレビュー方針は定義から引く（Approve 段だけが読む — b48）。
+    let outcome = CommitVerdictUseCase::new(
+        intent_execution_repository,
+        intent_repository,
+        workflow_definition_repository,
+    )
+    .execute(&execution_id, request, Utc::now())
+    .await;
     let directive = match outcome {
         Ok(outcome) => outcome,
         Err(error) => return emit_error(commit_refusal(raw, &error)),
@@ -638,6 +654,17 @@ fn no_op_directive(scope: &str, no_op: &ReportNoOp) -> Directive {
 fn commit_refusal(raw: &str, error: &CommitError) -> String {
     match error {
         CommitError::Refused(refusal) => report_refusal(raw, refusal),
+        // 段 11 — レビュアー受領証の欠落だけは `aidlc-state.ts approve` の stderr 逐語を
+        // 包み文の中に置く（upstream も spawn 先の出力をそのまま挟む — b46 の既存形）。
+        CommitError::Transition {
+            step,
+            stage,
+            error: CommandError::ReviewReceiptMissing { reviewer, .. },
+        } => wording::transition_rejected_by(
+            step.subcommand(),
+            stage.as_str(),
+            &wording::reviewer_precondition(stage.as_str(), reviewer),
+        ),
         CommitError::Transition { step, stage, error } => {
             wording::transition_rejected_by(step.subcommand(), stage.as_str(), &chained(error))
         }
@@ -694,6 +721,217 @@ fn gate_precondition(verdict: Verdict, stage: &str, state: &str) -> String {
         Verdict::Rejected => wording::gate_reject_precondition(stage, state),
         // 集約が `GatePrecondition` に載せる verdict は gate 系 3 語だけである。
         _ => wording::gate_revise_precondition(stage, state),
+    }
+}
+
+/// `aidlc-log review` — レビュー受領証の対を記録する（b48 / B10）。
+///
+/// 段の順序は upstream `handleReview`（ピン `3c3146cf` `aidlc-log.ts:900-1168`）と同順である:
+/// フラグ文法 → `--stage` 必須 → `--reviewer` 必須 → セレクタ拒否 → アクティブ intent →
+/// (`--unit` / `--single` の未配線拒否) → 依頼形なら `--iteration`、判定形なら
+/// `--retry-pending` 併用 → `--iteration` → `--verdict` の閉集合 → 記録。
+///
+/// **失敗はすべて stderr + exit 1** である（`Completion::refused`）— upstream の `error()` は
+/// directive を出さない。`ERROR_LOGGED` 行は本 build では描かない（逸脱台帳）。
+async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completion {
+    // 段 0 — フラグ文法そのものの違反（値が必要なフラグに値が無い）。
+    if let Some(refusal) = args.parse_error() {
+        return Completion::refused(refusal.to_string());
+    }
+    let Some(stage) = args.stage() else {
+        return Completion::refused(wording::REVIEW_REQUIRES_STAGE.to_string());
+    };
+    let Some(reviewer) = args.reviewer() else {
+        return Completion::refused(wording::REVIEW_REQUIRES_REVIEWER.to_string());
+    };
+    if args.intent().is_some() || args.space().is_some() {
+        return Completion::refused(wording::REVIEW_TAKES_NO_SELECTORS.to_string());
+    }
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return Completion::refused(message),
+    };
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        // 不在 = まだ鋳造していない。upstream の `activeIntent` が空振りした形である。
+        Ok(None) => return Completion::refused(wording::REVIEW_WITHOUT_INTENT.to_string()),
+        // 在るのに読めない・壊れているは**不在と混ぜない**（`report` 段 6 と同じ規律）。
+        Err(error) => {
+            return Completion::refused(wording::unreadable_execution_cursor(&error.to_string()));
+        }
+    };
+    // 未配線の 2 面（own wording — upstream には対応する拒否が無い）。
+    if args.unit().is_some() {
+        return Completion::refused(wording::REVIEW_UNIT_NOT_WIRED.to_string());
+    }
+    if args.is_single() {
+        return Completion::refused(wording::REVIEW_SINGLE_NOT_WIRED.to_string());
+    }
+    // 通し番号と依頼形／判定形の分岐は slug の解析より**先**である。upstream の
+    // `handleReview` は依頼形を `:983-985`、判定形を `:1124-1134` で検査し、どちらも
+    // 宣言・一致を読む `loadContext` の前に置く。
+    let (iteration, kind) = match review_log_input(args) {
+        Ok(input) => input,
+        Err(refusal) => return Completion::refused(refusal),
+    };
+    // slug の文法違反は「グラフがその名前を知らない」と同じ答えである（upstream の
+    // `loadStageGraphAll().find(...)` は空振りするだけ）。
+    let Ok(slug) = StageSlug::parse(stage) else {
+        return Completion::refused(wording::stage_has_no_declared_reviewer(stage));
+    };
+    let (
+        Ok(intent_execution_repository),
+        Ok(intent_repository),
+        Ok(workflow_definition_repository),
+    ) = (
+        IntentExecutionRepositoryImpl::open(&store),
+        IntentRepositoryImpl::open(&store),
+        WorkflowDefinitionRepositoryImpl::open(&store),
+    )
+    else {
+        return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
+    };
+    let request = ReviewLogRequest::new(slug, reviewer, iteration, kind);
+    let recorded = RecordReviewUseCase::new(
+        intent_execution_repository,
+        intent_repository,
+        workflow_definition_repository,
+    )
+    .execute(&execution_id, &request, Utc::now())
+    .await;
+    let outcome = match recorded {
+        Ok(outcome) => outcome,
+        Err(error) => return Completion::refused(review_refusal(stage, reviewer, args, &error)),
+    };
+    // 書いた事実をリードモデルへ落とす（監査 1 行はこの投影で台帳に現れる）。
+    if let Err(error) = catch_up(layout).await {
+        return Completion::refused(wording::orchestrate_failure(&error));
+    }
+    Completion::emitted(review_log_line(stage, outcome))
+}
+
+/// 通し番号と、依頼形／判定形の分岐（分岐は `--verdict` の有無だけで決まる — upstream `:983`）。
+///
+/// `--iteration` は**両方の形**でここが検査する。upstream は依頼形を `:983-985`、判定形を
+/// `:1124-1134` で検査し、いずれも宣言・一致を読む `loadContext` より前に置くので、
+/// 文法違反の slug と通し番号の欠落が重なったときは通し番号の逐語が先に出る。
+fn review_log_input(args: &crate::cli::ReviewArgs) -> Result<(u32, ReviewLogKind), String> {
+    let Some(raw) = args.verdict() else {
+        let Some(iteration) = positive_iteration(args.iteration()) else {
+            return Err(wording::REVIEW_REQUEST_REQUIRES_ITERATION.to_string());
+        };
+        return Ok((
+            iteration,
+            ReviewLogKind::Request {
+                retry_pending: args.is_retry_pending(),
+            },
+        ));
+    };
+    if args.is_retry_pending() {
+        return Err(wording::REVIEW_RETRY_WITH_VERDICT.to_string());
+    }
+    // upstream は `--iteration` を検査してから `--verdict` を閉集合に当てる（`:1124-1134`）。
+    let Some(iteration) = positive_iteration(args.iteration()) else {
+        return Err(wording::REVIEW_COMPLETED_REQUIRES_ITERATION.to_string());
+    };
+    let verdict = ReviewVerdict::parse(raw)
+        .map_err(|unknown| wording::unknown_review_verdict(unknown.as_str()))?;
+    Ok((iteration, ReviewLogKind::Verdict(verdict)))
+}
+
+/// `--iteration` の閉じた文法 — upstream の `/^[1-9][0-9]*$/` と同じである。
+///
+/// `u32` に収まらない巨大値は飽和させる。JS の `Number()` はそのまま巨大な値になり
+/// 「予算超過」で断られるので、飽和させても同じ答えに落ちる。
+fn positive_iteration(raw: Option<&str>) -> Option<u32> {
+    let raw = raw?;
+    let mut chars = raw.chars();
+    let first = chars.next()?;
+    if !('1'..='9').contains(&first) || !chars.all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(raw.parse::<u32>().unwrap_or(u32::MAX))
+}
+
+/// 成功の素の JSON 1 行（upstream `:1112-1117` / `:1168`）。
+///
+/// `aidlc-log` 面は directive プロトコルに参加しないので、`aidlc-utility` と同じく
+/// 契約 JSON をそのまま出す（直列化は canon-json を通す — BR1.7）。
+fn review_log_line(stage: &str, outcome: ReviewLogOutcome) -> String {
+    let mut emitted = ObjectMembers::new();
+    match outcome {
+        ReviewLogOutcome::Requested { retry } => {
+            emitted.insert(
+                "emitted",
+                JsonValue::String(EventType::ReviewRequested.as_str().to_string()),
+            );
+            emitted.insert("stage", JsonValue::String(stage.to_string()));
+            if retry {
+                emitted.insert("retry", JsonValue::String("pending-request".to_string()));
+            }
+        }
+        ReviewLogOutcome::Completed => {
+            emitted.insert(
+                "emitted",
+                JsonValue::String(EventType::ReviewCompleted.as_str().to_string()),
+            );
+            emitted.insert("stage", JsonValue::String(stage.to_string()));
+        }
+    }
+    serialize(
+        &JsonValue::Object(emitted),
+        SerializationProfile::ContractCompact,
+    )
+}
+
+/// 受領証の記録の拒否を逐語へ写す。
+///
+/// 逐語を選ぶのは**出す側**である（`coding-rules/error-handling.md`）。集約が運ぶのは
+/// 材料だけなので、`NoPendingReview` が判定形と retry 形で言い回しを分けるのもここである。
+fn review_refusal(
+    stage: &str,
+    reviewer: &str,
+    args: &crate::cli::ReviewArgs,
+    error: &ReviewLogError,
+) -> String {
+    match error {
+        // 「定義がその slug を知らない」と「宣言が無い」は upstream では同じ文言である。
+        ReviewLogError::UnknownStage(_)
+        | ReviewLogError::Command {
+            error: CommandError::UnknownStage(_) | CommandError::NoDeclaredReviewer(_),
+            ..
+        } => wording::stage_has_no_declared_reviewer(stage),
+        ReviewLogError::Command {
+            error: CommandError::ReviewerMismatch { declared, .. },
+            ..
+        } => wording::reviewer_does_not_match(stage, reviewer, declared),
+        ReviewLogError::Command {
+            error:
+                CommandError::ReviewBudgetExceeded {
+                    ordinal, budget, ..
+                },
+            ..
+        } => wording::review_budget_exceeded(stage, *ordinal, *budget),
+        ReviewLogError::Command {
+            error:
+                CommandError::ReviewOutOfSequence {
+                    iteration,
+                    expected,
+                    ..
+                },
+            ..
+        } => wording::review_out_of_sequence(stage, *iteration, *expected),
+        ReviewLogError::Command {
+            error: CommandError::NoPendingReview { iteration, .. },
+            ..
+        } => {
+            if args.is_retry_pending() {
+                wording::review_retry_without_request(stage, *iteration)
+            } else {
+                wording::review_completed_without_request(stage, *iteration)
+            }
+        }
+        other => wording::review_log_failed(stage, &chained(other)),
     }
 }
 
@@ -1281,6 +1519,83 @@ mod tests {
         fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
             Some(self.cause.as_ref())
         }
+    }
+
+    // ---- b48: レビュー受領証の私有ヘルパ ----
+
+    /// `--iteration` は upstream の `/^[1-9][0-9]*$/` と同じ文法である。
+    #[test]
+    fn the_iteration_grammar_matches_the_upstream_regexp() {
+        assert_eq!(positive_iteration(Some("1")), Some(1));
+        assert_eq!(positive_iteration(Some("12")), Some(12));
+        // 欠落・空・0 始まり・符号・非数字・空白は全部外である。
+        for raw in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("01"),
+            Some("+1"),
+            Some("-1"),
+            Some("1x"),
+            Some(" 1"),
+        ] {
+            assert_eq!(positive_iteration(raw), None, "{raw:?}");
+        }
+        // `u32` に収まらない値は飽和する（予算超過で断られるので答えは同じである）。
+        assert_eq!(positive_iteration(Some("99999999999")), Some(u32::MAX));
+    }
+
+    /// 受領証の拒否は材料ごとに逐語が分かれ、それ以外は中継形へ落ちる。
+    #[test]
+    fn the_review_refusal_falls_back_to_the_relay_form_for_anything_else() {
+        let args = crate::cli::ReviewArgs::default();
+        let message = review_refusal(
+            "domain-design",
+            "aidlc-quality-agent",
+            &args,
+            &ReviewLogError::CorruptReviewOverride("Adversarial".to_string()),
+        );
+        assert_eq!(
+            message,
+            "Failed to record the review receipt for \"domain-design\": \
+corrupt review override: Adversarial"
+        );
+    }
+
+    /// 定義がその slug を知らない場合は「宣言が無い」と同じ逐語である。
+    #[test]
+    fn a_slug_the_definition_does_not_know_reads_as_no_declared_reviewer() {
+        let args = crate::cli::ReviewArgs::default();
+        let stage = StageSlug::parse("nowhere").expect("文法内の slug");
+        assert_eq!(
+            review_refusal(
+                "nowhere",
+                "aidlc-quality-agent",
+                &args,
+                &ReviewLogError::UnknownStage(stage),
+            ),
+            "Cannot record review: stage \"nowhere\" has no declared reviewer."
+        );
+    }
+
+    /// 成功の JSON は動詞で 2 形（呼び直しだけ `retry` を足す）。
+    #[test]
+    fn the_review_log_line_adds_the_retry_only_for_a_retry() {
+        assert_eq!(
+            review_log_line(
+                "domain-design",
+                ReviewLogOutcome::Requested { retry: false }
+            ),
+            r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design"}"#
+        );
+        assert_eq!(
+            review_log_line("domain-design", ReviewLogOutcome::Requested { retry: true }),
+            r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#
+        );
+        assert_eq!(
+            review_log_line("domain-design", ReviewLogOutcome::Completed),
+            r#"{"emitted":"REVIEW_COMPLETED","stage":"domain-design"}"#
+        );
     }
 
     #[test]

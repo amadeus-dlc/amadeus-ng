@@ -836,6 +836,174 @@ pub fn transition_not_wired(sub: &str, stage: &str) -> String {
     format!("Cannot commit {sub} for \"{stage}\": the {sub} transition is not wired in this build.")
 }
 
+// ---------------------------------------------------------------------------
+// `aidlc-log`（対話イベントの記録面 — b48 / B10）
+// ---------------------------------------------------------------------------
+
+/// 記録面の未知サブコマンド（upstream `aidlc-log.ts:1206` 逐語）。
+#[must_use]
+pub fn unknown_log_subcommand(given: Option<&str>) -> String {
+    format!(
+        "Unknown subcommand: {}. Valid: decision, answer, link, review",
+        given.unwrap_or("undefined")
+    )
+}
+
+/// 認識はするが**この build に無い**記録動詞（own wording）。
+///
+/// upstream に対応する逐語は無い — あちらは 4 動詞すべてを持つ。b46 が導入した
+/// 「not wired in this build」の言い回しに揃えてある（[`transition_not_wired`] と同型）。
+#[must_use]
+pub fn log_verb_not_wired(verb: &str) -> String {
+    format!(
+        "Cannot record a {verb} event: the aidlc-log {verb} verb is not wired in this build. \
+Only `review` is available."
+    )
+}
+
+/// 値が必要なフラグに値が無い（upstream `parseFlags` `:106` 逐語）。
+#[must_use]
+pub fn flag_expects_a_value(flag: &str) -> String {
+    format!("{flag} expects a value, got end of arguments.")
+}
+
+/// 値が必要なフラグの次がまたフラグだった（同 `:110` 逐語）。
+#[must_use]
+pub fn flag_expects_a_value_got_flag(flag: &str, value: &str) -> String {
+    format!("{flag} expects a value, got another flag: \"{value}\". Did you forget the value?")
+}
+
+/// `--stage` が無い（upstream `handleReview` `:902` 逐語）。
+pub const REVIEW_REQUIRES_STAGE: &str = "Missing --stage <slug>";
+
+/// `--reviewer` が無い（同 `:903` 逐語）。
+pub const REVIEW_REQUIRES_REVIEWER: &str = "Missing --reviewer <agent>";
+
+/// `--intent` / `--space` セレクタは受け付けない（同 `:906` 逐語）。
+pub const REVIEW_TAKES_NO_SELECTORS: &str = "The review command does not accept --intent/--space selectors. Switch to the target workspace first.";
+
+/// アクティブな intent が解決できない（同 `:914` 逐語）。
+pub const REVIEW_WITHOUT_INTENT: &str = "Cannot resolve the active intent for review logging.";
+
+/// per-unit の受領証は**この build に無い**（own wording）。
+///
+/// upstream の `--unit` は per-unit ステージの受領証を 1 unit ごとに数えるが、unit の
+/// ライフサイクル自体が本 build には無い（slice 2）。b46 の「not wired in this build」に揃える。
+pub const REVIEW_UNIT_NOT_WIRED: &str = "Cannot record a per-unit review: the --unit receipt is not wired in this build. Record the stage-level review instead (omit --unit).";
+
+/// 隔離実行の受領証は**この build に無い**（own wording）。
+///
+/// upstream の `--single` は受領証を疑似ワークフローへ閉じ込めるが、そのためには試行の
+/// 区切りを `Workflow` ごとに分ける会計が要る（slice 2）。
+pub const REVIEW_SINGLE_NOT_WIRED: &str = "Cannot record a single-stage review: the --single receipt is not wired in this build. An isolated run records no review receipt.";
+
+/// 依頼形に `--iteration` が無い／正整数でない（upstream `:985` 逐語）。
+pub const REVIEW_REQUEST_REQUIRES_ITERATION: &str =
+    "REVIEW_REQUESTED requires --iteration <positive integer>.";
+
+/// `--retry-pending` と `--verdict` の併用（同 `:1122` 逐語）。
+pub const REVIEW_RETRY_WITH_VERDICT: &str = "--retry-pending cannot be combined with --verdict.";
+
+/// 判定形に `--iteration` が無い／正整数でない（同 `:1125` 逐語）。
+pub const REVIEW_COMPLETED_REQUIRES_ITERATION: &str =
+    "REVIEW_COMPLETED requires --iteration <positive integer>.";
+
+/// `--verdict` が閉集合の外（同 `:1131-1133` 逐語 — 一覧は `VALID_VERDICTS` の挿入順）。
+#[must_use]
+pub fn unknown_review_verdict(given: &str) -> String {
+    format!("Unknown --verdict \"{given}\". Accepted: READY, NOT-READY.")
+}
+
+/// レビュアー宣言が無いステージ（同 `:928` 逐語）。
+#[must_use]
+pub fn stage_has_no_declared_reviewer(stage: &str) -> String {
+    format!("Cannot record review: stage \"{stage}\" has no declared reviewer.")
+}
+
+/// `--reviewer` が宣言と食い違う（同 `:931-934` 逐語）。
+#[must_use]
+pub fn reviewer_does_not_match(stage: &str, given: &str, declared: &str) -> String {
+    format!(
+        "Cannot record review for \"{stage}\": reviewer \"{given}\" does not match the \
+declared reviewer \"{declared}\"."
+    )
+}
+
+/// 依頼がレビュー予算を超えた（upstream `reviewBudgetMessage` `:833-843` 逐語 — 2 形）。
+#[must_use]
+pub fn review_budget_exceeded(stage: &str, ordinal: u32, budget: u32) -> String {
+    let tail = if budget == 1 {
+        "This review runs as a single advisory pass - do not re-invoke the reviewer; \
+quote its findings at the approval gate for the human to triage."
+    } else {
+        "The review loop is exhausted - present the gate with the unresolved findings \
+for the human's decision instead of another review pass."
+    };
+    format!(
+        "Refusing REVIEW_REQUESTED for \"{stage}\": review request {ordinal} exceeds \
+this stage's review budget ({budget}). {tail}"
+    )
+}
+
+/// 依頼の通し番号が順序と合わない（upstream `:1098-1100` 逐語）。
+#[must_use]
+pub fn review_out_of_sequence(stage: &str, iteration: u32, expected: u32) -> String {
+    format!(
+        "Refusing REVIEW_REQUESTED for \"{stage}\": iteration {iteration} is out of sequence; \
+expected {expected} from the current audit attempt."
+    )
+}
+
+/// 判定形に対応する依頼が無い（upstream `:1142-1144` 逐語）。
+#[must_use]
+pub fn review_completed_without_request(stage: &str, iteration: u32) -> String {
+    format!(
+        "Refusing REVIEW_COMPLETED for \"{stage}\": no unmatched REVIEW_REQUESTED \
+iteration {iteration} exists in the current audit attempt."
+    )
+}
+
+/// retry 形に対応する依頼が無い（upstream `:1054-1055` 逐語）。
+#[must_use]
+pub fn review_retry_without_request(stage: &str, iteration: u32) -> String {
+    format!(
+        "Refusing review retry for \"{stage}\": no unmatched REVIEW_REQUESTED \
+iteration {iteration} exists in the current audit attempt."
+    )
+}
+
+/// 段 11 — レビュアーを宣言したステージに終端受領証が無い
+/// （upstream `reviewerPreconditionError` `aidlc-state.ts:2026-2037` 逐語）。
+///
+/// この文言は `aidlc-state.ts approve` の stderr であり、`report` からは
+/// [`transition_rejected_by`] の包み文の中に現れる（b46 の既存形）。
+#[must_use]
+pub fn reviewer_precondition(stage: &str, reviewer: &str) -> String {
+    format!(
+        "Refusing to complete \"{stage}\": it declares a reviewer ({reviewer}) but no fresh \
+REVIEW_COMPLETED is recorded for it. Invoke the reviewer (stage-protocol-reviewer.md §12a) and \
+record the verdict with `aidlc-log.ts review --stage {stage} --reviewer {reviewer} --verdict \
+<READY|NOT-READY>` before completing. Terminal ordering: apply any fixes FIRST, then run the \
+reviewer, record the receipt, and stop editing produces[] artifacts - a later write to one \
+invalidates the receipt and re-opens this refusal. Do not apply suggestions riding on a READY \
+verdict; surface them at the gate instead."
+    )
+}
+
+/// 受領証の記録に失敗した（own wording — 中継形）。
+///
+/// upstream は `emitError` が `ERROR_LOGGED` 行を描いてから stderr に出すが、本 build は
+/// その行を描かない（既存の拒否と同じ扱い、逸脱台帳）。
+#[must_use]
+pub fn review_log_failed(stage: &str, detail: &str) -> String {
+    let detail = detail.trim();
+    if detail.is_empty() {
+        format!("Failed to record the review receipt for \"{stage}\".")
+    } else {
+        format!("Failed to record the review receipt for \"{stage}\": {detail}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -858,6 +1026,138 @@ mod tests {
         assert_eq!(
             skeleton_stance_failed("functional-design", "disk full"),
             "Failed to record skeleton stance for \"functional-design\": disk full"
+        );
+    }
+
+    // ---- b48: レビュー受領証の逐語 ----
+
+    /// 記録面の未知動詞は upstream の `undefined` まで含めて逐語である（`:1206`）。
+    #[test]
+    fn the_unknown_log_subcommand_line_names_the_given_verb_or_undefined() {
+        assert_eq!(
+            unknown_log_subcommand(Some("frobnicate")),
+            "Unknown subcommand: frobnicate. Valid: decision, answer, link, review"
+        );
+        assert_eq!(
+            unknown_log_subcommand(None),
+            "Unknown subcommand: undefined. Valid: decision, answer, link, review"
+        );
+    }
+
+    /// 予算超過は 2 形 — budget 1 は advisory の言い回し、それ以外は反駁ループの言い回し。
+    #[test]
+    fn the_budget_refusal_switches_its_tail_at_a_budget_of_one() {
+        let advisory = review_budget_exceeded("domain-design", 2, 1);
+        assert!(
+            advisory.starts_with(
+                "Refusing REVIEW_REQUESTED for \"domain-design\": review request 2 exceeds \
+this stage's review budget (1). "
+            ),
+            "{advisory}"
+        );
+        assert!(
+            advisory.ends_with(
+                "This review runs as a single advisory pass - do not re-invoke the reviewer; \
+quote its findings at the approval gate for the human to triage."
+            ),
+            "{advisory}"
+        );
+
+        let adversarial = review_budget_exceeded("domain-design", 3, 2);
+        assert!(
+            adversarial.ends_with(
+                "The review loop is exhausted - present the gate with the unresolved findings \
+for the human's decision instead of another review pass."
+            ),
+            "{adversarial}"
+        );
+    }
+
+    /// `NoPendingReview` は動詞で言い回しが分かれる（判定形 / 呼び直し形）。
+    #[test]
+    fn the_unmatched_request_refusal_differs_between_the_verdict_and_the_retry_form() {
+        assert_eq!(
+            review_completed_without_request("domain-design", 1),
+            "Refusing REVIEW_COMPLETED for \"domain-design\": no unmatched REVIEW_REQUESTED \
+iteration 1 exists in the current audit attempt."
+        );
+        assert_eq!(
+            review_retry_without_request("domain-design", 1),
+            "Refusing review retry for \"domain-design\": no unmatched REVIEW_REQUESTED \
+iteration 1 exists in the current audit attempt."
+        );
+    }
+
+    /// 順序違反は要求値と期待値の両方を名指しする。
+    #[test]
+    fn the_out_of_sequence_refusal_names_both_ordinals() {
+        assert_eq!(
+            review_out_of_sequence("domain-design", 3, 1),
+            "Refusing REVIEW_REQUESTED for \"domain-design\": iteration 3 is out of sequence; \
+expected 1 from the current audit attempt."
+        );
+    }
+
+    /// 宣言不一致は「与えられた名前」と「宣言された名前」を並べる。
+    #[test]
+    fn the_reviewer_mismatch_names_both_the_given_and_the_declared_agent() {
+        assert_eq!(
+            reviewer_does_not_match("domain-design", "me", "aidlc-quality-agent"),
+            "Cannot record review for \"domain-design\": reviewer \"me\" does not match the \
+declared reviewer \"aidlc-quality-agent\"."
+        );
+    }
+
+    /// 段 11 の逐語は `aidlc-state.ts approve` の stderr そのものである（`:2026-2037`）。
+    #[test]
+    fn the_reviewer_precondition_is_the_upstream_state_refusal_verbatim() {
+        let message = reviewer_precondition("domain-design", "aidlc-quality-agent");
+        assert!(
+            message.starts_with(
+                "Refusing to complete \"domain-design\": it declares a reviewer \
+(aidlc-quality-agent) but no fresh REVIEW_COMPLETED is recorded for it."
+            ),
+            "{message}"
+        );
+        assert!(
+            message.contains(
+                "record the verdict with `aidlc-log.ts review --stage domain-design --reviewer \
+aidlc-quality-agent --verdict <READY|NOT-READY>` before completing."
+            ),
+            "{message}"
+        );
+        assert!(
+            message.ends_with(
+                "Do not apply suggestions riding on a READY verdict; surface them at the gate \
+instead."
+            ),
+            "{message}"
+        );
+    }
+
+    /// 記録の失敗は材料が空なら「.」で閉じる（b47 の 2 形と同じ作法）。
+    #[test]
+    fn the_review_log_failure_closes_with_a_period_when_there_is_no_material() {
+        assert_eq!(
+            review_log_failed("domain-design", "  "),
+            "Failed to record the review receipt for \"domain-design\"."
+        );
+        assert_eq!(
+            review_log_failed("domain-design", "disk full"),
+            "Failed to record the review receipt for \"domain-design\": disk full"
+        );
+    }
+
+    /// フラグ文法の 2 形は upstream の `parseFlags` そのままである。
+    #[test]
+    fn the_flag_grammar_refusals_are_verbatim() {
+        assert_eq!(
+            flag_expects_a_value("--stage"),
+            "--stage expects a value, got end of arguments."
+        );
+        assert_eq!(
+            flag_expects_a_value_got_flag("--stage", "--reviewer"),
+            "--stage expects a value, got another flag: \"--reviewer\". Did you forget the value?"
         );
     }
 

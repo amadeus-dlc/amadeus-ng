@@ -41,6 +41,8 @@ mod kinds_codec;
 mod parked_dto;
 mod recomposed_dto;
 mod redefined_dto;
+mod review_completed_dto;
+mod review_requested_dto;
 mod single_stage_run_committed_dto;
 mod skeleton_stance_recorded_dto;
 mod stage_revised_dto;

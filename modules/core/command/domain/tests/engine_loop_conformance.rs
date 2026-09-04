@@ -47,12 +47,12 @@
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, Created, EngineSignal, Intent, IntentEventId, IntentExecution, IntentExecutionId,
-    IntentId, NextRequest, SkeletonStance, StageDisplay, StageEntry, StageIndex, StartRequest,
-    Status, WorkspaceScan,
+    IntentId, NextRequest, ReviewVerdict, SkeletonStance, StageDisplay, StageEntry, StageIndex,
+    StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
-    WorkflowDefinitionId,
+    BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, ReviewCapValue, ReviewPolicy,
+    StageNumber, StageSlug, WorkflowDefinitionId,
 };
 use core_command_domain::workspace::CheckboxState;
 use serde_json::Value;
@@ -98,6 +98,18 @@ fn checkbox_of(v: &Value) -> CheckboxState {
     }
 }
 
+/// `Set[int]` の #set を昇順の Vec へ（ITF の集合は順序を約束しないのでソートする）。
+fn set_of_ints(v: &Value) -> Vec<u32> {
+    let mut out: Vec<u32> = v["#set"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| u32::try_from(bigint(item)).unwrap())
+        .collect();
+    out.sort_unstable();
+    out
+}
+
 fn plan_of(v: &Value) -> PlanAction {
     match tag(v) {
         "Execute" => PlanAction::Execute,
@@ -117,6 +129,16 @@ struct ModelState {
     autonomous: bool,
     /// `stanceRecorded` — 集約の `skeleton_stance().is_some()` に対応する射影。
     stance_recorded: bool,
+    /// `reviewed` — レビュアー宣言あり ∧ 実効クラス != none（モデルヘッダ v2.5 の対応表）。
+    reviewed: Vec<bool>,
+    /// `advisory` — 実効クラスが advisory（false かつ `reviewed` なら adversarial）。
+    advisory: Vec<bool>,
+    /// `reqCount` — `ReviewAttempt::request_count()`。
+    req_count: Vec<u32>,
+    /// `pending` — `ReviewAttempt::pending()`（昇順の Vec で比較する）。
+    pending: Vec<Vec<u32>>,
+    /// `terminal` — `ReviewAttempt::has_terminal(policy)` の射影。
+    terminal: Vec<bool>,
     plan: Vec<PlanAction>,
     overlay: Vec<PlanAction>,
     conditional: Vec<bool>,
@@ -139,6 +161,11 @@ fn parse_state(v: &Value) -> ModelState {
         parked_at: bigint(&v["parkedAt"]),
         autonomous: v["autonomous"].as_bool().unwrap(),
         stance_recorded: v["stanceRecorded"].as_bool().unwrap(),
+        reviewed: map_to_vec(&v["reviewed"], n, |b| b.as_bool().unwrap()),
+        advisory: map_to_vec(&v["advisory"], n, |b| b.as_bool().unwrap()),
+        req_count: map_to_vec(&v["reqCount"], n, |c| u32::try_from(bigint(c)).unwrap()),
+        pending: map_to_vec(&v["pending"], n, set_of_ints),
+        terminal: map_to_vec(&v["terminal"], n, |b| b.as_bool().unwrap()),
         plan: map_to_vec(&v["plan"], n, plan_of),
         overlay: map_to_vec(&v["overlay"], n, plan_of),
         conditional: map_to_vec(&v["conditional"], n, |b| b.as_bool().unwrap()),
@@ -203,6 +230,23 @@ fn index(agg: &IntentExecution, value: usize) -> StageIndex {
     agg.stage_index(value).unwrap()
 }
 
+/// モデルの静的材料（`reviewed` / `advisory`）から合成のレビュー方針を組む。
+///
+/// `reviewed(s) == false` は「レビュアー宣言なし」と「実効クラス none」を畳んだ抽象なので、
+/// 実効 `none` の方針として組む — どちらも依頼は budget 0 で拒まれ、承認は受領証を
+/// 要求しない（モデルヘッダ v2.5 の対応表）。
+fn policy_of(m: &ModelState, stage: usize) -> ReviewPolicy {
+    let effective = if !m.reviewed[stage] {
+        ReviewCapValue::None
+    } else if m.advisory[stage] {
+        ReviewCapValue::Advisory
+    } else {
+        ReviewCapValue::Adversarial
+    };
+    // `BUDGET = 2` はモデルの `pure val` — Rust 側の `reviewer_max_iterations` に対応する。
+    ReviewPolicy::new("r", effective, 2, false)
+}
+
 fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
     let n = agg.stage_count();
     assert_eq!(n, m.plan.len(), "step {step}: stage count");
@@ -222,6 +266,24 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
             agg.approved(stage),
             Some(m.approved[s]),
             "step {step}: approved[{s}]"
+        );
+        let attempt = agg
+            .review_attempt(stage)
+            .unwrap_or_else(|| panic!("step {step}: review attempt[{s}] は在る"));
+        assert_eq!(
+            attempt.request_count(),
+            m.req_count[s],
+            "step {step}: reqCount[{s}]"
+        );
+        assert_eq!(
+            attempt.pending().iter().copied().collect::<Vec<u32>>(),
+            m.pending[s],
+            "step {step}: pending[{s}]"
+        );
+        assert_eq!(
+            attempt.has_terminal(&policy_of(m, s)),
+            m.terminal[s],
+            "step {step}: terminal[{s}]"
         );
     }
     assert_eq!(agg.cursor().to_usize(), m.cursor, "step {step}: cursor");
@@ -345,7 +407,13 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 // 前進はゲート承認だけである (BR1.3)。誕生が initialization を完了済みにする
                 // (b34) ので、カーソルは常にゲート付きステージに立つ — 非ゲート完了の
                 // コマンドは b42 で撤去した (#85 = A)。
-                agg.approve_gate(&intent, None, at()).unwrap();
+                //
+                // 段 11 のレビュー方針は**承認するステージ**のものである。モデルの
+                // `actReportForward` のガード (gated ∧ reviewed ⟹ terminal) が通っている
+                // ので、受領証ガードもここで通る (b48)。
+                let policy = policy_of(prev, prev.cursor);
+                agg.approve_gate(&intent, Some(&policy), None, at())
+                    .unwrap();
                 assert_directive(m, "DDone", i);
             }
             "report_awaiting_approval" => {
@@ -409,6 +477,65 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 agg.record_skeleton_stance(&intent, SkeletonStance::On, at())
                     .unwrap();
             }
+            "request_review" => {
+                // モデルは対象を nondet に選ぶ — 依頼数が 1 増えたステージが対象である。
+                // 通し番号は「数え上げ済みの依頼数 + 1」= 増えたあとの値に固定されている。
+                let s = (0..prev.req_count.len())
+                    .find(|&s| m.req_count[s] == prev.req_count[s] + 1)
+                    .unwrap();
+                let policy = policy_of(m, s);
+                agg.request_review(
+                    &intent,
+                    &slug(s),
+                    Some(&policy),
+                    "r",
+                    m.req_count[s],
+                    false,
+                    at(),
+                )
+                .unwrap();
+            }
+            "retry_review" => {
+                // 呼び直しはフレーム空 — モデルは (s, i) を nondet に選ぶが、選ばれた値は
+                // 状態のどこにも現れない (`review_frame` が不変を固定する)。判定待ちが
+                // 在るステージを 1 つ選び、その最小の通し番号を打てば十分である。
+                let s = (0..prev.pending.len())
+                    .find(|&s| !prev.pending[s].is_empty())
+                    .unwrap();
+                let iteration = prev.pending[s][0];
+                let policy = policy_of(m, s);
+                agg.request_review(&intent, &slug(s), Some(&policy), "r", iteration, true, at())
+                    .unwrap();
+            }
+            "record_verdict" => {
+                // 判定待ちが 1 つ減ったステージと、その消えた通し番号が対象である。
+                let s = (0..prev.pending.len())
+                    .find(|&s| m.pending[s].len() + 1 == prev.pending[s].len())
+                    .unwrap();
+                let iteration = *prev.pending[s]
+                    .iter()
+                    .find(|value| !m.pending[s].contains(value))
+                    .unwrap();
+                // モデルは判定の値を持たず「終端になったか」の 1 bit だけを動かす。
+                // false → true なら READY（どのクラスでも終端）、それ以外は NOT-READY で
+                // 射影が一致する（既に終端なら値はどちらでもよい）。
+                let verdict = if m.terminal[s] && !prev.terminal[s] {
+                    ReviewVerdict::Ready
+                } else {
+                    ReviewVerdict::NotReady
+                };
+                let policy = policy_of(m, s);
+                agg.record_review_verdict(
+                    &intent,
+                    &slug(s),
+                    Some(&policy),
+                    "r",
+                    iteration,
+                    verdict,
+                    at(),
+                )
+                .unwrap();
+            }
             "set_autonomy" => {
                 // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
                 let mode = if m.autonomous {
@@ -437,7 +564,7 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
             count += 1;
         }
     }
-    assert!(count >= 11, "expected committed fixtures, found {count}");
+    assert!(count >= 13, "expected committed fixtures, found {count}");
     // アクション網羅: 全アクションが少なくとも 1 つのコミット済みトレースに現れること。
     // 初回 6 シードの探索は report_revised / report_skipped を一度も踏んでおらず、該当
     // アームは fixture に対して死文だった。report_revised は負形式インライン不変条件
@@ -467,6 +594,12 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
         // (`not(w_single_run)` / `not(w_stance_recorded)`) で狙い撃ちして採取した経路を持つ。
         "single_run",
         "record_skeleton_stance",
+        // b48 (#51 / B10) で追加した 3 アクション。trace-0x606 が
+        // `not(w_approved_reviewed)`（レビュアーを宣言したゲートの実際の承認）、
+        // trace-0x707 が `not(w_retry_review)` で狙い撃ちして採取した経路を持つ。
+        "request_review",
+        "retry_review",
+        "record_verdict",
     ] {
         assert!(
             seen.contains(action),

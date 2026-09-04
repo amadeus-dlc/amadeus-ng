@@ -348,7 +348,7 @@ fn running_events() -> (IntentExecution, Vec<(usize, IntentExecutionEvent)>) {
         .expect("ゲートは開く");
     events.push((aggregate.seq_nr(), opened));
     let approved = aggregate
-        .approve_gate(&intent, Some("ok".to_string()), at())
+        .approve_gate(&intent, None, Some("ok".to_string()), at())
         .expect("ゲートは承認される");
     events.push((aggregate.seq_nr(), approved));
     (aggregate, events)
@@ -1081,7 +1081,7 @@ fn at_the_skeleton_gate() -> (IntentExecution, Vec<(usize, IntentExecutionEvent)
     // 索引 1 → 2 → 3 → 4 (functional-design) までゲートを通す。
     for _ in 0..3 {
         let approved = aggregate
-            .approve_gate(&intent, None, at())
+            .approve_gate(&intent, None, None, at())
             .expect("ゲートは承認される");
         events.push((aggregate.seq_nr(), approved));
     }

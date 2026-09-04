@@ -398,6 +398,51 @@ pub(crate) fn definition_content(
     (graph, grid, scopes)
 }
 
+/// **実行の計画と同じ slug** を持つ定義の genesis の対。
+///
+/// `definition_content` の合成グラフは `stage-<n>` を名乗るので、`stages()` が組む計画
+/// (`state-init` / `intent-capture` / `scope-definition`) とは slug が噛み合わない。段 11 の
+/// レビュー方針は**計画のステージ slug で定義を引く**ので (b48)、承認まで通す配線テストは
+/// 計画と同じ slug の定義を要する。レビュアーは 1 つも宣言しない — 受領証を要求しない
+/// 経路を見るためである。
+#[must_use]
+pub(crate) fn plan_definition_genesis() -> (WorkflowDefinition, WorkflowDefinitionEvent) {
+    let nodes = stages()
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            StageNodeBuilder::new(
+                entry.slug().clone(),
+                StageNumber::parse(&format!("{}.{}", entry.phase().index(), index + 1))
+                    .expect("契約テストのステージ番号は文法内"),
+                "Stage".to_string(),
+                entry.phase(),
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .scopes(vec!["classic".to_string()])
+            .build()
+        })
+        .collect();
+    let graph = StageGraph::new(nodes).expect("契約テストのグラフは検証を通る");
+    let grid = ScopeGrid::from_graph(&graph);
+    let scopes = [(
+        "classic".to_string(),
+        ScopeMetadata::new("classic").expect("契約テストの scope メタデータ"),
+    )]
+    .into_iter()
+    .collect();
+    let compiled = CompiledDefinition::compile(
+        CompiledDefinitionId::parse("claude").expect("契約テストの配布束 id"),
+        graph,
+        grid,
+        scopes,
+    )
+    .0;
+    WorkflowDefinition::define(definition_id(), &compiled, at())
+        .expect("契約テストの配布束は同じ系譜")
+}
+
 /// 定義の genesis の (集約, 誕生イベント) の対 (`WorkflowDefinition::define` が返す形)。
 #[must_use]
 pub(crate) fn definition_genesis() -> (WorkflowDefinition, WorkflowDefinitionEvent) {
@@ -409,7 +454,22 @@ pub(crate) fn definition_genesis() -> (WorkflowDefinition, WorkflowDefinitionEve
 pub(crate) async fn store_definition_genesis<R: WorkflowDefinitionRepository>(
     repository: &mut R,
 ) -> WorkflowDefinition {
-    let (aggregate, event) = definition_genesis();
+    store_definition(repository, definition_genesis()).await
+}
+
+/// 計画と同じ slug の定義を 1 件書き、握り直した結果を返す (段 11 を通す配線テスト用)。
+pub(crate) async fn store_plan_definition<R: WorkflowDefinitionRepository>(
+    repository: &mut R,
+) -> WorkflowDefinition {
+    store_definition(repository, plan_definition_genesis()).await
+}
+
+/// 定義の対を 1 件書き、握り直した結果を返す。
+async fn store_definition<R: WorkflowDefinitionRepository>(
+    repository: &mut R,
+    genesis: (WorkflowDefinition, WorkflowDefinitionEvent),
+) -> WorkflowDefinition {
+    let (aggregate, event) = genesis;
     repository.store(&event, &aggregate).await.expect("store");
     repository
         .find_by_id(aggregate.id())

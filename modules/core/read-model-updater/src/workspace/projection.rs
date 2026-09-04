@@ -23,8 +23,8 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, JumpDirection,
-    Jumped, Parked, PhaseBoundary, Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded,
-    StageRevised, StageSkipped,
+    Jumped, Parked, PhaseBoundary, Recomposed, ReviewCompleted, ReviewRequested,
+    SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
@@ -98,6 +98,14 @@ mod key {
     pub(super) const STAGES_IN_SCOPE: &str = "Stages in Scope";
     /// `**Workflow**:`（隔離実行の疑似ワークフロー ID — ピン `3c3146cf` `:5326-5343`）。
     pub(super) const WORKFLOW: &str = "Workflow";
+    /// `**Reviewer**:`（レビュー受領証 — ピン `3c3146cf` `aidlc-log.ts:916-919`）。
+    pub(super) const REVIEWER: &str = "Reviewer";
+    /// `**Iteration**:`（同 `:988` / `:1128`）。
+    pub(super) const ITERATION: &str = "Iteration";
+    /// `**Verdict**:`（同 `:1135`）。
+    pub(super) const VERDICT: &str = "Verdict";
+    /// `**Retry**:`（判定待ちの依頼の呼び直し — 同 `:1058`）。
+    pub(super) const RETRY: &str = "Retry";
     /// `**Mode**:`。**upstream の実行出力としては採れない**（`cli/set-autonomy` は失敗経路
     /// しか捉えていない）。ピン `3c3146cf` の配布シェルには
     /// `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込む経路が 1 つも無く、
@@ -169,6 +177,9 @@ mod field {
 ///
 /// `with_field_or_insert` は `## ` を自分で前置するので、ここは見出し名だけを持つ。
 const RUNTIME_STATE_HEADING: &str = "Runtime State";
+
+/// `**Retry**:` の唯一の値（upstream `fields.Retry = "pending-request"` — `:1058`）。
+const RETRY_PENDING_REQUEST: &str = "pending-request";
 
 /// 空のステージ集合を描く逐語（`**Stages added**: none`）。
 const NONE_LITERAL: &str = "none";
@@ -369,6 +380,12 @@ fn project_one(
         }
         IntentExecutionEvent::SkeletonStanceRecorded(recorded) => {
             skeleton_stance_recorded(recorded, read_model)
+        }
+        IntentExecutionEvent::ReviewRequested(requested) => {
+            review_requested(requested, at, read_model)
+        }
+        IntentExecutionEvent::ReviewCompleted(completed) => {
+            review_completed(completed, at, read_model)
         }
     }
 }
@@ -1250,6 +1267,52 @@ fn skeleton_stance_recorded(
     Ok(())
 }
 
+/// `ReviewRequested` → `REVIEW_REQUESTED` の**監査 1 行だけ**。
+///
+/// フィールドの並びは upstream `handleReview` の `fields` 構築順が正本である（ピン
+/// `3c3146cf` `aidlc-log.ts:916-919` の `Stage` / `Reviewer` → `:988` の `Iteration` →
+/// `:1058` の `Retry`）。`Unit` / `Workflow` は本 build では繰延（`--unit` / `--single` の
+/// 受領証は未配線）なので描かない。
+///
+/// 状態ファイル・`Last Updated`・チェックボックス・`read_*` 表は**一切動かさない** —
+/// upstream の `aidlc-log review` は `emitAudit` しか呼ばないからである。
+fn review_requested(
+    requested: &ReviewRequested,
+    at: &DateTime<Utc>,
+    read_model: &mut ReadModel,
+) -> Result<(), ProjectionError> {
+    let mut fields = AuditFields::new()
+        .with(key(key::STAGE)?, requested.stage().as_str())
+        .with(key(key::REVIEWER)?, requested.reviewer())
+        .with(key(key::ITERATION)?, &requested.iteration().to_string());
+    if requested.is_retry() {
+        fields = fields.with(key(key::RETRY)?, RETRY_PENDING_REQUEST);
+    }
+    read_model.append_audit(&render_audit_block(EventType::ReviewRequested, at, &fields));
+    Ok(())
+}
+
+/// `ReviewCompleted` → `REVIEW_COMPLETED` の**監査 1 行だけ**。
+///
+/// フィールドの並びは upstream `:916-919` / `:1128` / `:1135` の構築順である。
+/// `Artifact Fingerprint` / `Source Fingerprint` は繰延（設計 §1 — 凍結検査に属する）。
+fn review_completed(
+    completed: &ReviewCompleted,
+    at: &DateTime<Utc>,
+    read_model: &mut ReadModel,
+) -> Result<(), ProjectionError> {
+    read_model.append_audit(&render_audit_block(
+        EventType::ReviewCompleted,
+        at,
+        &AuditFields::new()
+            .with(key(key::STAGE)?, completed.stage().as_str())
+            .with(key(key::REVIEWER)?, completed.reviewer())
+            .with(key(key::ITERATION)?, &completed.iteration().to_string())
+            .with(key(key::VERDICT)?, completed.verdict().as_str()),
+    ));
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // 共有の断片
 // ---------------------------------------------------------------------------
@@ -1740,8 +1803,8 @@ mod tests {
 
     use core_command_domain::orchestration::{
         AutonomyModeSet, Intent, IntentEventId, IntentExecutionEventId, IntentExecutionId,
-        IntentId, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
-        StageEntry, StartRequest, Started, WorkspaceScan,
+        IntentId, ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded,
+        StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
@@ -2076,6 +2139,103 @@ mod tests {
                 .state()
                 .contains("- **Skeleton Stance**: scope-dependent\n")
         );
+    }
+
+    // ---- b48: レビュー受領証 (#51 / B10) ----
+
+    #[test]
+    fn a_review_request_appends_one_audit_row_in_the_upstream_field_order() {
+        let before = model();
+        let read_model = run(IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+            event_id(),
+            execution_id(),
+            slug("first"),
+            "aidlc-quality-agent",
+            1,
+            false,
+        )));
+        assert_eq!(audit_events(&read_model), ["REVIEW_REQUESTED"]);
+        let appended = read_model.appended_audit();
+        assert!(
+            appended.contains(
+                "**Stage**: first\n**Reviewer**: aidlc-quality-agent\n**Iteration**: 1\n"
+            ),
+            "フィールドはこの順 (upstream `:916-919` / `:988`): {appended}"
+        );
+        // 呼び直しでなければ `Retry` は載らない。
+        assert!(!appended.contains("**Retry**:"), "{appended}");
+        // 状態ファイルは 1 バイトも動かない (`aidlc-log review` は emitAudit だけである)。
+        assert_eq!(read_model.state(), before.state());
+    }
+
+    #[test]
+    fn a_retried_review_request_adds_the_retry_field_last() {
+        let read_model = run(IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+            event_id(),
+            execution_id(),
+            slug("first"),
+            "aidlc-quality-agent",
+            2,
+            true,
+        )));
+        assert!(
+            read_model.appended_audit().contains(
+                "**Stage**: first\n**Reviewer**: aidlc-quality-agent\n**Iteration**: 2\n**Retry**: pending-request\n"
+            ),
+            "{}",
+            read_model.appended_audit()
+        );
+    }
+
+    #[test]
+    fn a_review_verdict_appends_one_audit_row_ending_with_the_verdict() {
+        let before = model();
+        let read_model = run(IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+            event_id(),
+            execution_id(),
+            slug("second"),
+            "aidlc-architecture-reviewer-agent",
+            2,
+            ReviewVerdict::NotReady,
+        )));
+        assert_eq!(audit_events(&read_model), ["REVIEW_COMPLETED"]);
+        assert!(
+            read_model.appended_audit().contains(
+                "**Stage**: second\n**Reviewer**: aidlc-architecture-reviewer-agent\n**Iteration**: 2\n**Verdict**: NOT-READY\n"
+            ),
+            "{}",
+            read_model.appended_audit()
+        );
+        // 成果物 fingerprint の 2 欄は繰延である (設計 §1)。
+        assert!(
+            !read_model.appended_audit().contains("Fingerprint"),
+            "{}",
+            read_model.appended_audit()
+        );
+        assert_eq!(read_model.state(), before.state());
+    }
+
+    /// 受領証は**計画に無いステージ**でも描ける — 監査行に載るのは slug だけで、
+    /// 担当エージェントのような計画由来の材料を要さないからである。
+    #[test]
+    fn a_receipt_for_a_stage_outside_the_plan_still_renders_its_row() {
+        let mut read_model = model();
+        project(
+            &[entry(IntentExecutionEvent::ReviewRequested(
+                ReviewRequested::new(
+                    event_id(),
+                    execution_id(),
+                    slug("nowhere"),
+                    "aidlc-quality-agent",
+                    1,
+                    false,
+                ),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("受領証の投影は計画を引かない");
+        assert_eq!(audit_events(&read_model), ["REVIEW_REQUESTED"]);
     }
 
     #[test]

@@ -13,6 +13,7 @@
 //! | --- | --- | --- |
 //! | `aidlc-orchestrate` | エンジン | `next` / `continue` / `report` / `park` |
 //! | `aidlc-utility` | ユーティリティ | `intent-create`（b29 の範囲） |
+//! | `aidlc-log` | 対話イベントの記録 | `review`（b48 の範囲） |
 //! | `aidlc` | トップ | 上の 4 動詞をそのまま通す（top-passthrough） |
 //!
 //! **ディスパッチャの noun 形（`aidlc <noun> <verb>` の 30 経路）は実装していない。**
@@ -30,9 +31,11 @@ mod intent_create_args;
 mod invocation;
 mod report_args;
 mod request;
+mod review_args;
 
 pub use face::Face;
 pub use intent_create_args::IntentCreateArgs;
 pub use invocation::Invocation;
 pub use report_args::ReportArgs;
 pub use request::{Request, parse};
+pub use review_args::ReviewArgs;

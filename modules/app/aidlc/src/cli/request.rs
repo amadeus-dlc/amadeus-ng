@@ -15,6 +15,7 @@ use core_query_use_case::orchestration::NextTurnInput;
 use super::face::Face;
 use super::intent_create_args::{IntentCreateArgs, parse_intent_create};
 use super::report_args::{ReportArgs, parse_report};
+use super::review_args::{ReviewArgs, parse_review};
 
 /// 型付きの要求。
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +40,18 @@ pub enum Request {
     },
     /// ユーティリティ面の未知動詞 — 同上。
     UnknownUtilityVerb {
+        /// 与えられた動詞（無ければ `None`）。
+        given: Option<String>,
+    },
+    /// `aidlc-log review` — フラグ一式。
+    LogReview(ReviewArgs),
+    /// `aidlc-log <decision|answer|link>` — **この build に無い**（自己防衛拒否）。
+    LogNotWired {
+        /// 認識はしているが配線されていない動詞。
+        verb: String,
+    },
+    /// 記録面の未知動詞 — 同上。
+    UnknownLogVerb {
         /// 与えられた動詞（無ければ `None`）。
         given: Option<String>,
     },
@@ -69,6 +82,15 @@ pub fn parse(face: Face, args: &[String]) -> Request {
             Request::IntentCreate(parse_intent_create(rest))
         }
         (Face::Utility, given) => Request::UnknownUtilityVerb {
+            given: given.map(str::to_string),
+        },
+        (Face::Log, Some("review")) => Request::LogReview(parse_review(rest)),
+        // 認識はする 3 動詞。upstream にはあるが本 build には無い（b46 の「not wired in this
+        // build」層と同じ扱い — 未知動詞の逐語に混ぜると「綴りが違う」と読まれる）。
+        (Face::Log, Some(verb @ ("decision" | "answer" | "link"))) => Request::LogNotWired {
+            verb: verb.to_string(),
+        },
+        (Face::Log, given) => Request::UnknownLogVerb {
             given: given.map(str::to_string),
         },
     }
