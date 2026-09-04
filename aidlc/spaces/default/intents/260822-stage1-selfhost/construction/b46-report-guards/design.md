@@ -37,7 +37,7 @@
 
 1. **段 1 state-version guard**: `<record>/aidlc-state.md` があれば（0 バイトも「ある」）`State Version` を分類し、`ok` 以外は
    `error` directive。読むのはクエリ側 `StateFileDao`（新設、record の状態ファイルの生テキストを返す DAO — 媒体はファイル。
-   port は `StateFileDao { fn read(&self) -> Result<Option<String>, ReadModelReadError> }`、View は生テキスト）+
+   port は `StateFileDao { fn find(&self) -> Result<Option<String>, ReadModelReadError> }`、View は生テキスト）+
    `FindStateFileUseCase`。分類は domain の `StateVersionClassification::classify(&text)`（app は domain に依存してよい）。
    `version()` アクセサが無ければ足す。文言は `wording::incompatible_state_version(kind, version)` — ピン
    `aidlc-lib.ts classifyStateVersion` の 3 形（unparseable / future / past、`CURRENT_STATE_VERSION = "8"`）を逐語で。
