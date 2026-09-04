@@ -51,9 +51,9 @@
 //!
 //! モデルの `gated(s) = s != 0` は最後の行の抽象である。ITF 準拠テスト
 //! (`tests/engine_loop_conformance.rs`) はその合成計画で駆動し、実グラフの 3 ステージ側は集約の
-//! ユニットテストが固定する。**モデルの `lastDirective` (観測面) はここでは照合しない** —
-//! directive を出すのはクエリ側なので、その ITF はクエリ側の
-//! `core-query-use-case/tests/engine_loop_ladder_conformance.rs` が担う (b26 段階 2 の分割)。
+//! ユニットテストが固定する。**モデルの `lastDirective` (観測面) も同じファイルが照合する** —
+//! b26 段階 2 でクエリ側の ITF へ切り出したが、b38 で集約が返す [`EngineSignal`] との
+//! 突き合わせ (`assert_signal`) へ復帰させ、クエリ側の準拠テストは b44 で削除された。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_domain::orchestration::<型>` で安定する
