@@ -36,15 +36,15 @@ mod support;
 use std::io::ErrorKind;
 
 use core_query_interface_adapter::{
-    InMemoryDefinitionDao, InMemoryExecutionDao, InMemoryJumpDao, InMemoryJumpPhaseDao,
-    InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao, InMemoryScopeChangeDao,
-    InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao, InMemorySteeringPlanDao,
-    ReadModelDaos,
+    InMemoryDefinitionDao, InMemoryDefinitionStageDao, InMemoryExecutionDao, InMemoryJumpDao,
+    InMemoryJumpPhaseDao, InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao,
+    InMemoryScopeChangeDao, InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao,
+    InMemorySteeringPlanDao, ReadModelDaos,
 };
 use core_query_use_case::orchestration::{
-    DefinitionDao, ExecutionDao, GateField, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao,
-    ReadModelReadError, RunStageDao, ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao,
-    SteeringPlanDao,
+    DefinitionDao, DefinitionStageDao, ExecutionDao, GateField, JumpDao, JumpPhaseDao,
+    NextAnswerDao, PhaseEntryDao, ReadModelReadError, RunStageDao, ScopeChangeDao, ScopeDao,
+    ScopeKeywordDao, SteeringPartDao, SteeringPlanDao,
 };
 
 use support::{DEFINITION, EXECUTION, Fixture, INTENT, doubles};
@@ -755,6 +755,39 @@ fn the_scope_change_contract_holds_on_the_double() {
     contract_scope_change(&doubles::scope_change(&fixture));
 }
 
+/// グラフのステージ 1 行 (引けないこと自体が「グラフに無い」の答え)。
+fn contract_definition_stage<D: DefinitionStageDao>(dao: &D) {
+    let found = dao.find(DEFINITION, "intent-capture").unwrap().unwrap();
+    assert_eq!(found.stage_slug(), "intent-capture");
+    assert_eq!(found.support_agents(), r#"["aidlc-design-agent"]"#);
+    // 支援エージェントを宣言しないノードは空配列を運ぶ (欄の不在ではない)。
+    assert_eq!(
+        dao.find(DEFINITION, "state-init")
+            .unwrap()
+            .unwrap()
+            .support_agents(),
+        "[]"
+    );
+    assert_eq!(
+        dao.find(DEFINITION, "practices-discovery").unwrap(),
+        None,
+        "グラフに無い slug は行が無い"
+    );
+    assert_eq!(dao.find(ABSENT_DEFINITION, "intent-capture").unwrap(), None);
+}
+
+#[test]
+fn the_definition_stage_contract_holds_on_the_store() {
+    let fixture = Fixture::projected();
+    contract_definition_stage(&daos(fixture.store()).definition_stage());
+}
+
+#[test]
+fn the_definition_stage_contract_holds_on_the_double() {
+    let fixture = Fixture::projected();
+    contract_definition_stage(&doubles::definition_stage(&fixture));
+}
+
 #[test]
 fn the_definition_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
@@ -860,6 +893,10 @@ fn a_failing_double_reports_the_read_failure_from_every_verb() {
     );
     assert_eq!(
         InMemoryDefinitionDao::failing(error.clone()).find(DEFINITION),
+        Err(error.clone())
+    );
+    assert_eq!(
+        InMemoryDefinitionStageDao::failing(error.clone()).find(DEFINITION, "intent-capture"),
         Err(error)
     );
 }
@@ -880,5 +917,11 @@ fn an_empty_double_answers_absent_rather_than_failing() {
     assert_eq!(
         InMemoryScopeDao::empty().find_all(DEFINITION).unwrap(),
         Vec::new()
+    );
+    assert_eq!(
+        InMemoryDefinitionStageDao::empty()
+            .find(DEFINITION, "intent-capture")
+            .unwrap(),
+        None
     );
 }

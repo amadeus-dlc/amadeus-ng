@@ -14,14 +14,15 @@
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
-    IntentId, Jumped, Parked, Recomposed, ReviewCompleted, ReviewRequested, ReviewVerdict,
-    SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry,
-    StageRevised, StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
+    IntentId, Jumped, Parked, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested,
+    ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
+    StageEntry, StageRevised, StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
+use core_command_domain::workspace::PromotedSection;
 
 use super::{DtoDecodeError, IntentEventDto, IntentExecutionEventDto};
 
@@ -128,7 +129,7 @@ const INTENT_ROW: &str = r#"{"Created":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff00
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
 const STARTED_ROW: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 15 変種を、逐語で固定した綴りと組で並べる。
+/// 全 16 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -229,6 +230,18 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 ReviewVerdict::NotReady,
             )),
             r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady"}}"#,
+        ),
+        (
+            IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
+                event_id(),
+                execution_id(),
+                slug("practices-discovery"),
+                "owner",
+                vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
+                vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
+                vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
+            )),
+            r#"{"PracticesAffirmed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"practices-discovery","affirming_user":"owner","sections":[{"heading":"Way of Working","body":"trunk-based.\n"}],"mandated":["ALWAYS review. (affirmed 2026-09-05)"],"forbidden":["NEVER force-push. (affirmed 2026-09-05)"]}}"#,
         ),
         (
             IntentExecutionEvent::Parked(Parked::new(
@@ -481,6 +494,7 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
         let tampered = expected
             .replace(r#""intent-capture""#, r#""Not A Slug""#)
             .replace(r#""state-init""#, r#""Not A Slug""#)
+            .replace(r#""practices-discovery""#, r#""Not A Slug""#)
             .replace(r#""scope-definition""#, r#""Not A Slug""#);
         let decoded: IntentExecutionEventDto =
             serde_json::from_str(&tampered).expect("JSON としては読める");

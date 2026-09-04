@@ -12,15 +12,16 @@
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    ReviewAttempt, ReviewCompleted, ReviewRequested, ReviewVerdict, SingleStageRunCommitted,
-    SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped,
-    StartRequest, Started, WorkspaceScan,
+    IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked,
+    PracticesAffirmed, Recomposed, ReviewAttempt, ReviewCompleted, ReviewRequested, ReviewVerdict,
+    SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry,
+    StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
+use core_command_domain::workspace::PromotedSection;
 
 use core_command_domain::orchestration::{
     IntentEvent, IntentEventId, IntentExecutionEventId, Unparked,
@@ -123,7 +124,7 @@ fn intent() -> Intent {
 /// intent 面 (`INTENT_BODY` の `stages`) と同一である。
 const STARTED_BODY: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 15 変種を、逐語で固定した綴りと組で並べる。
+/// 全 16 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -257,6 +258,18 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             )),
             r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady"}}"#,
         ),
+        (
+            IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
+                execution_event_id(),
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                slug("practices-discovery"),
+                "owner",
+                vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
+                vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
+                vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
+            )),
+            r#"{"PracticesAffirmed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"practices-discovery","affirming_user":"owner","sections":[{"heading":"Way of Working","body":"trunk-based.\n"}],"mandated":["ALWAYS review. (affirmed 2026-09-05)"],"forbidden":["NEVER force-push. (affirmed 2026-09-05)"]}}"#,
+        ),
     ]
 }
 
@@ -265,7 +278,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 /// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
 /// 最初のゲート付きステージ (索引 1) である。**ワイヤの形** (項目名・並び) は変わって
 /// いない — 変わったのは誕生時の状態そのものである。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -492,6 +505,7 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
         let tampered = expected
             .replace(r#""intent-capture""#, r#""Not A Slug""#)
             .replace(r#""state-init""#, r#""Not A Slug""#)
+            .replace(r#""practices-discovery""#, r#""Not A Slug""#)
             .replace(r#""scope-definition""#, r#""Not A Slug""#);
         let decoded: IntentExecutionEventDto =
             serde_json::from_str(&tampered).expect("JSON としては読める");
@@ -530,6 +544,7 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
         AutonomyMode::Gated,
         Some(SkeletonStance::Off),
         vec![ReviewAttempt::default(); 3],
+        vec![false; 3],
         vec![false; 3],
         vec![0; 3],
         1,
@@ -594,6 +609,7 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
             ReviewAttempt::default(),
         ],
         vec![false; 3],
+        vec![false; 3],
         vec![0; 3],
         1,
         at(),
@@ -635,6 +651,24 @@ fn a_snapshot_row_without_the_review_attempts_field_reads_as_never_requested() {
                 .and_then(|index| rebuilt.review_attempt(index)),
             Some(&ReviewAttempt::default()),
             "全ステージが空の試行で読める"
+        );
+    }
+}
+
+#[test]
+fn a_snapshot_row_without_the_practices_field_reads_as_never_promoted() {
+    // 「欄が無い = まだ昇格していない」という正規の意味である (b49 設計 §2.4)。
+    let without = GENESIS_SNAPSHOT.replace(r#""practices_affirmed":[false,false,false],"#, "");
+    assert_ne!(without, GENESIS_SNAPSHOT, "欄を落とせている");
+    let decoded: IntentExecutionDto = serde_json::from_str(&without).expect("欄が無くても読める");
+    let rebuilt = decoded.to_domain().expect("ドメインへ戻せる");
+    for stage in 0..3 {
+        assert_eq!(
+            rebuilt
+                .stage_index(stage)
+                .and_then(|index| rebuilt.practices_affirmed(index)),
+            Some(false),
+            "全ステージが未昇格で読める"
         );
     }
 }

@@ -56,9 +56,9 @@ pub use journal_entry::JournalEntry;
 // 読む側の永続化 DTO (側ごと専用化 — coding-rules/cqrs-boundaries.md)。
 pub use dto::{
     AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
-    IntentEventDto, IntentExecutionEventDto, JumpedDto, ParkedDto, RecomposedDto,
-    SingleStageRunCommittedDto, SkeletonStanceRecordedDto, StageRevisedDto, StageSkippedDto,
-    StartedDto, WorkflowDefinitionEventDto,
+    IntentEventDto, IntentExecutionEventDto, JumpedDto, ParkedDto, PracticesAffirmedDto,
+    RecomposedDto, SingleStageRunCommittedDto, SkeletonStanceRecordedDto, StageRevisedDto,
+    StageSkippedDto, StartedDto, WorkflowDefinitionEventDto,
 };
 
 pub use catch_up_error::CatchUpError;

@@ -3,7 +3,7 @@
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
-//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (15 コマンド) は
+//! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (16 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
 //! 再構成は `replay` (ジャーナル全再生 — 先頭は `Started`) であり、memento 型は持たない
@@ -25,6 +25,7 @@
 //! | `record_skeleton_stance` | `SkeletonStanceRecorded` |
 //! | `request_review` | `ReviewRequested` (`retry` は適用がフレーム空) |
 //! | `record_review_verdict` | `ReviewCompleted` |
+//! | `affirm_practices` | `PracticesAffirmed` (practices-discovery の受領証 — b49) |
 //!
 //! `jump_resolve` / `stale_report` はクエリ (書込なし) で、いずれも**書込の前段ガード**である
 //! — jump の方向導出と、カーソル通過済み completed への再報告の受理可否。「次に何をすべきか」
@@ -152,13 +153,13 @@ pub use report_decision::ReportDecision;
 pub use report_no_op::ReportNoOp;
 pub use state_binding::StateBinding;
 
-// ドメインイベント (C5 の語彙 — 15 変種)。輸送のメタデータ (識別子・通番・発生時刻・
+// ドメインイベント (C5 の語彙 — 16 変種)。輸送のメタデータ (識別子・通番・発生時刻・
 // 型判別子) は本家 v3 の `EventEnvelope` が運ぶので、ここには純粋なドメイン内容だけがある
 // (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
 pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
-    StageRevised, StageSkipped, Started, Unparked,
+    PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted,
+    SkeletonStanceRecorded, StageRevised, StageSkipped, Started, Unparked,
 };
 // intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
 // `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。

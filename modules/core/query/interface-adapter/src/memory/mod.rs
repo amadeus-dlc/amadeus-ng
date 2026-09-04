@@ -6,7 +6,7 @@
 //!
 //! # 行を持ち、鍵で引く
 //!
-//! `read_*` 表を引く 12 本のダブルは **1 表ぶんの行を持ち、ポートが宣言した鍵で引く**。
+//! `read_*` 表を引く 13 本のダブルは **1 表ぶんの行を持ち、ポートが宣言した鍵で引く**。
 //! 握った答えを鍵によらず返す形にしないのは、**同じ契約を両実装に課す**ためである
 //! (`coding-rules/good-examples.md` §契約テスト) — 契約テストはジェネリック関数 1 本を
 //! SQLite 実装とここのダブルに同一に走らせるので、鍵を見ないダブルでは「鍵が当たらなければ
@@ -26,6 +26,7 @@
 //! 本 mod 自体が private。公開はクレート root のファサードが再輸出する。
 
 mod in_memory_definition_dao;
+mod in_memory_definition_stage_dao;
 mod in_memory_execution_dao;
 mod in_memory_jump_dao;
 mod in_memory_jump_phase_dao;
@@ -38,8 +39,9 @@ mod in_memory_scope_keyword_dao;
 mod in_memory_steering_part_dao;
 mod in_memory_steering_plan_dao;
 
-// 構造化リードモデル (`read_*` 表) を引く 12 ポートのダブル (b43)。
+// 構造化リードモデル (`read_*` 表) を引く 13 ポートのダブル (b43 / b49)。
 pub use in_memory_definition_dao::InMemoryDefinitionDao;
+pub use in_memory_definition_stage_dao::InMemoryDefinitionStageDao;
 pub use in_memory_execution_dao::InMemoryExecutionDao;
 pub use in_memory_jump_dao::InMemoryJumpDao;
 pub use in_memory_jump_phase_dao::InMemoryJumpPhaseDao;

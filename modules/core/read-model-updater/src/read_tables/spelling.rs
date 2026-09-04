@@ -87,6 +87,7 @@ pub(crate) const fn jump_refusal(error: &CommandError) -> &'static str {
         CommandError::ReviewOutOfSequence { .. } => "review-out-of-sequence",
         CommandError::NoPendingReview { .. } => "no-pending-review",
         CommandError::ReviewReceiptMissing { .. } => "review-receipt-missing",
+        CommandError::PracticesReceiptMissing(_) => "practices-receipt-missing",
     }
 }
 
@@ -274,6 +275,8 @@ mod tests {
                 stage,
                 reviewer: "aidlc-quality-agent".to_string(),
             }),
+            // b49 で加わった 1 変種（段 12 の昇格受領証）も同じ扱いである。
+            jump_refusal(&CommandError::PracticesReceiptMissing(stage)),
         ];
         assert_eq!(
             review,
@@ -285,10 +288,11 @@ mod tests {
                 "review-out-of-sequence",
                 "no-pending-review",
                 "review-receipt-missing",
+                "practices-receipt-missing",
             ]
         );
 
-        // 15 変種の綴りは互いに重ならない — 重なれば行から理由を読み分けられない。
+        // 16 変種の綴りは互いに重ならない — 重なれば行から理由を読み分けられない。
         let all = [
             jump_refusal(&CommandError::IntentMismatch),
             jump_refusal(&CommandError::NotRunning),
@@ -305,6 +309,7 @@ mod tests {
             review[4],
             review[5],
             review[6],
+            review[7],
         ];
         let distinct: std::collections::BTreeSet<&str> = all.iter().copied().collect();
         assert_eq!(distinct.len(), all.len(), "拒否理由の綴りは 1 対 1");

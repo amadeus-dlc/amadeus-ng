@@ -25,9 +25,9 @@ use core_command_domain::orchestration::{
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
-    DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewClass, ScopeGrid,
-    ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
-    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    DefinitionRevision, ExecutionKind, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction,
+    ReviewCapValue, ReviewClass, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder,
+    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
 
 use super::port::CompiledDefinitionRepository;
@@ -459,6 +459,51 @@ pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentExecution, IntentExe
 ///
 /// 値は**生のまま**運ぶ — 閉集合の検査は鋳造時に済んでいるので、壊れた値を持つ歴史も
 /// ここでは作れる (`CorruptReviewOverride` の経路を踏むため)。
+/// 索引 1 が `practices-discovery` の `stage_count` 段の合成計画で開始する (b49)。
+///
+/// 索引 0 は initialization、索引 1 以降は inception — [`genesis`] と同じ形で、slug だけが
+/// 違う。集約は段 12 の対象を slug で見つけるので、この 1 点だけが要る。
+pub(crate) fn genesis_with_practices(
+    stage_count: usize,
+) -> (Intent, IntentExecution, IntentExecutionEvent) {
+    let stages = (0..stage_count)
+        .map(|index| {
+            let phase = if index == 0 {
+                PhaseId::Initialization
+            } else {
+                PhaseId::Inception
+            };
+            let slug = if index == 1 {
+                StageSlug::parse(PRACTICES_DISCOVERY_SLUG).expect("フィクスチャの slug は文法内")
+            } else {
+                slug(index)
+            };
+            StageEntry::new(
+                slug,
+                phase,
+                PlanAction::Execute,
+                false,
+                display(index, phase),
+            )
+        })
+        .collect();
+    let intent = Intent::from((
+        Created::new(
+            intent_event_id(),
+            intent(),
+            definition_id(),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("フィクスチャの定義 revision"),
+            StartRequest::new("classic", "practices promotion"),
+            stages,
+            scan(),
+        ),
+        at(),
+    ));
+    let (execution, event) = IntentExecution::start(execution_id(), &intent, at());
+    (intent, execution, event)
+}
+
 pub(crate) fn genesis_with_review(
     stage_count: usize,
     review: &str,

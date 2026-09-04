@@ -1,8 +1,29 @@
-// engine_loop.qnt — orchestration コンテキスト第一陣モデル (slice 1, v2)
+// engine_loop.qnt — orchestration コンテキスト第一陣モデル (slice 1, v2.6)
 //
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.6 (2026-09-05): 昇格受領証 (PRACTICES_AFFIRMED) と、practices-discovery の承認ガードを
+//   モデル化 (#7 キュー 5 の残り / B10 / b49) — 状態変数 2 本 (practicesStage / affirmed) と
+//   スナップショット 1 本 (prevAffirmed) を足し、アクション actPromotePractices を追加した。
+//   actReportForward には段 12 のガード (cursor == practicesStage ⟹ affirmed) が付き、
+//   フロア (受領証を落とす位置) を forward / skipped の新カーソル・reject のカーソル・
+//   jump 3 種へ入れた (レビュー受領証と同じ FLOOR 集合 — upstream の
+//   hasFreshPracticesAffirmationReceipt は STAGE_STARTED / GATE_REJECTED / STAGE_REVISING を
+//   見るが、STAGE_REVISING を emit するのは reject の対と approve の revision backstop だけで、
+//   本モデルの actReject がその対を 1 アクションで表す)。不変条件
+//   approve_requires_practices_receipt / practices_receipt_floor / promote_frame と
+//   witness w_practices_affirmed / w_approved_practices を追加。
+//
+//   抽象化の対応表 (Rust 側 IntentExecution との射影):
+//     practicesStage ↔ IntentExecution::practices_stage() — 計画上の practices-discovery の
+//                      位置。init で 1 度選んで以後凍結する静的材料であり、-1 は
+//                      「計画にそのステージが無い」(段 12 が空回りする歴史) を表す。
+//                      stage 0 (initialization) は非ゲートなので選ばない
+//     affirmed       ↔ practices_affirmed[practicesStage] — 他のステージの受領証は
+//                      決して立たないので 1 bit へ射影する。昇格の**内容**
+//                      (置換する節・印付き規則行) は投影の材料であって状態ではないので
+//                      モデルは持たない
 // v2.5 (2026-09-04): レビュー受領証 (REVIEW_REQUESTED / REVIEW_COMPLETED) の会計と、
 //   承認ゲートの受領証ガードをモデル化 (#51 / B10 / b48) — 状態変数 5 本
 //   (reviewed / advisory / reqCount / pending / terminal) とスナップショット 3 本
@@ -118,13 +139,18 @@
 //   - actReject のリセットを外す → review_attempt_floor が検出
 //   - actRequestReview の上限ガードを外す → review_budget が検出
 //   - actRetryReview で reqCount を +1 する → review_frame が検出
+// 検査力の確認 (mutation テスト、v2.6 = b49 の昇格受領証で実施。対照の無変異は [ok]):
+//   - actReportForward の段 12 ガードを外す → approve_requires_practices_receipt が検出
+//   - actReject の昇格受領証リセットを外す → practices_receipt_floor が検出
+//   - actPromotePractices で cursor を +1 する → promote_frame が検出
 //
 // E4 トレーサビリティ (10-orchestration.md §6 から参照される定義名):
 //   engine_loop::no_run_stage_for_skip / cursor_in_scope / no_gate_bypass /
 //   gate_lifecycle_preconditions / parked_position / parked_marker_status /
 //   unpark_restores_position / stale_rereport_yields_done / stale_rereport_frame /
 //   at_most_one_active / single_run_frame / stance_frame /
-//   approve_requires_terminal_receipt / review_attempt_floor / review_budget / review_frame
+//   approve_requires_terminal_receipt / review_attempt_floor / review_budget / review_frame /
+//   approve_requires_practices_receipt / practices_receipt_floor / promote_frame
 
 module engine_loop {
   pure val N = 5
@@ -153,6 +179,9 @@ module engine_loop {
   var reqCount: int -> int           // この試行で数え上げた依頼の回数
   var pending: int -> Set[int]       // 判定待ちの通し番号
   var terminal: int -> bool          // この試行に終端受領証が在るか
+  // --- 昇格受領証 (b49 / B10)。practicesStage は init で選んで以後凍結する静的材料
+  var practicesStage: int            // practices-discovery の位置 (-1 = 計画に無い)
+  var affirmed: bool                 // その試行で昇格 (practices-promote) が成功したか
 
   // 前状態スナップショット (フレーム条件検査用。全アクションが snapshot と合成される)
   var prevCheckbox: int -> CheckboxState
@@ -166,6 +195,7 @@ module engine_loop {
   var prevReqCount: int -> int
   var prevPending: int -> Set[int]
   var prevTerminal: int -> bool
+  var prevAffirmed: bool
 
   // レビュー予算 — adversarial は reviewer_max_iterations (既定 2)、advisory は 1 パス
   pure val BUDGET = 2
@@ -202,6 +232,9 @@ module engine_loop {
     // (定義 × scope × override から解決される値の射影 — 実行中は変わらない)。
     nondet reviewedSet = STAGES.powerset().oneOf()
     nondet advisorySet = STAGES.powerset().oneOf()
+    // practices-discovery の位置。stage 0 (initialization) は非ゲートなので選ばない。
+    // -1 = そのステージが計画に無い形 (段 12 が空回りする歴史)。
+    nondet practicesPick = STAGES.filter(s => s > 0).union(Set(-1)).oneOf()
     val p = STAGES.mapBy(s => if (s == 0 or execSet.contains(s)) Execute else SkipPlan)
     val firstReal = STAGES.filter(s => s > 0 and p.get(s) == Execute)
       .fold(-1, (acc, s) => if (acc == -1 or s < acc) s else acc)
@@ -230,6 +263,8 @@ module engine_loop {
       reqCount' = STAGES.mapBy(s => 0),
       pending' = STAGES.mapBy(s => Set()),
       terminal' = STAGES.mapBy(s => false),
+      practicesStage' = practicesPick,
+      affirmed' = false,
       prevCheckbox' = cb0,
       prevCursor' = cur0,
       prevOverlay' = p,
@@ -241,6 +276,7 @@ module engine_loop {
       prevReqCount' = STAGES.mapBy(s => 0),
       prevPending' = STAGES.mapBy(s => Set()),
       prevTerminal' = STAGES.mapBy(s => false),
+      prevAffirmed' = false,
     }
   }
 
@@ -256,6 +292,7 @@ module engine_loop {
     prevReqCount' = reqCount,
     prevPending' = pending,
     prevTerminal' = terminal,
+    prevAffirmed' = affirmed,
   }
 
   // next: 読み取り専用。in-flight なら run-stage (実効 SKIP なら error)、
@@ -272,6 +309,7 @@ module engine_loop {
         (if (nextInScope(cursor) == -1) DDone else DRunStage(nextInScope(cursor))),
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "next",
   }
@@ -285,6 +323,7 @@ module engine_loop {
     lastDirective' = DParked,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "next_parked",
   }
@@ -299,6 +338,8 @@ module engine_loop {
       or { checkbox.get(s) == InProgress, checkbox.get(s) == AwaitingApproval },
       // 段 11 — レビュアーを宣言したゲートは現在の試行の終端受領証を要する (b48)。
       (gated(s) and reviewed.get(s)) implies terminal.get(s),
+      // 段 12 — practices-discovery の承認は現在の試行の昇格受領証を要する (b49)。
+      (s == practicesStage) implies affirmed,
       approved' = if (gated(s)) approved.set(s, true) else approved,
       checkbox' =
         if (nxt == -1) checkbox.set(s, CompletedBox)
@@ -310,7 +351,9 @@ module engine_loop {
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage,
       // フロア — 次ステージに立つ (STAGE_STARTED 相当) とその試行は空に戻る。
+      affirmed' = if (nxt != -1 and nxt == practicesStage) false else affirmed,
       reqCount' = if (nxt == -1) reqCount else reqCount.set(nxt, 0),
       pending' = if (nxt == -1) pending else pending.set(nxt, Set()),
       terminal' = if (nxt == -1) terminal else terminal.set(nxt, false),
@@ -330,6 +373,7 @@ module engine_loop {
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "report_awaiting_approval",
   }
@@ -345,7 +389,9 @@ module engine_loop {
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage,
     // フロア — 差し戻しは受領証の会計を数え直しにする (GATE_REJECTED)。
+    affirmed' = if (cursor == practicesStage) false else affirmed,
     reqCount' = reqCount.set(cursor, 0),
     pending' = pending.set(cursor, Set()),
     terminal' = terminal.set(cursor, false),
@@ -362,6 +408,7 @@ module engine_loop {
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "report_revised",
   }
@@ -384,7 +431,9 @@ module engine_loop {
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage,
       // フロア — 読み飛ばしも次ステージを立てるので、その試行は空に戻る。
+      affirmed' = if (nxt != -1 and nxt == practicesStage) false else affirmed,
       reqCount' = if (nxt == -1) reqCount else reqCount.set(nxt, 0),
       pending' = if (nxt == -1) pending else pending.set(nxt, Set()),
       terminal' = if (nxt == -1) terminal else terminal.set(nxt, false),
@@ -406,6 +455,7 @@ module engine_loop {
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastAction' = "report_stale",
     }
@@ -431,8 +481,10 @@ module engine_loop {
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage,
       // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
       // (fail-closed over precise)。全ステージの試行を空へ戻す。
+      affirmed' = false,
       reqCount' = STAGES.mapBy(u => 0),
       pending' = STAGES.mapBy(u => Set()),
       terminal' = STAGES.mapBy(u => false),
@@ -457,8 +509,10 @@ module engine_loop {
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage,
       // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
       // (fail-closed over precise)。全ステージの試行を空へ戻す。
+      affirmed' = false,
       reqCount' = STAGES.mapBy(u => 0),
       pending' = STAGES.mapBy(u => Set()),
       terminal' = STAGES.mapBy(u => false),
@@ -477,8 +531,10 @@ module engine_loop {
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage,
     // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
     // (fail-closed over precise)。全ステージの試行を空へ戻す。
+    affirmed' = false,
     reqCount' = STAGES.mapBy(u => 0),
     pending' = STAGES.mapBy(u => Set()),
     terminal' = STAGES.mapBy(u => false),
@@ -502,6 +558,7 @@ module engine_loop {
     lastDirective' = DParked,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "park",
   }
@@ -516,6 +573,7 @@ module engine_loop {
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "unpark",
   }
@@ -535,6 +593,7 @@ module engine_loop {
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastAction' = "recompose",
     }
@@ -549,6 +608,7 @@ module engine_loop {
     lastDirective' = DNone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "set_autonomy",
   }
@@ -562,6 +622,7 @@ module engine_loop {
     lastDirective' = DDone,
     stanceRecorded' = stanceRecorded,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "done_stutter",
   }
@@ -580,6 +641,7 @@ module engine_loop {
     cursor == skeletonGateStage,
     stanceRecorded' = true,
     reviewed' = reviewed, advisory' = advisory,
+    practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     plan' = plan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
@@ -604,6 +666,7 @@ module engine_loop {
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       stanceRecorded' = stanceRecorded,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastDirective' = DNone,
       lastAction' = "single_run",
@@ -627,6 +690,7 @@ module engine_loop {
       pending' = pending.set(s, pending.get(s).union(Set(reqCount.get(s) + 1))),
       terminal' = terminal,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
       plan' = plan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
@@ -646,6 +710,7 @@ module engine_loop {
       i >= 1,
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
       plan' = plan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
@@ -668,6 +733,7 @@ module engine_loop {
       terminal' = terminal.set(s, terminal.get(s) or ready or advisory.get(s) or i >= BUDGET),
       reqCount' = reqCount,
       reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
       plan' = plan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
@@ -675,6 +741,27 @@ module engine_loop {
       lastDirective' = DNone,
       lastAction' = "record_verdict",
     }
+  }
+
+  // --- 昇格受領証のアクション (b49 / B10) ---
+  //
+  // 昇格 (`aidlc-state practices-promote`) は memory 層の 2 ファイルを書いて監査行を足すだけで、
+  // 本流の状態 (カーソル・checkbox・Status・park・overlay・autonomy・承認履歴・stance) も
+  // レビュー会計も動かさない — それを promote_frame が検査する。受理に本流の状態を見ない
+  // のは upstream の handlePracticesPromote に status ガードが 1 つも無いからである。
+  // 再昇格は受理する (上書き — 冪等に true のまま)。
+  action actPromotePractices = all {
+    practicesStage != -1,
+    affirmed' = true,
+    practicesStage' = practicesStage,
+    reviewed' = reviewed, advisory' = advisory,
+    reqCount' = reqCount, pending' = pending, terminal' = terminal,
+    plan' = plan, overlay' = overlay, conditional' = conditional,
+    checkbox' = checkbox, cursor' = cursor, status' = status,
+    parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
+    stanceRecorded' = stanceRecorded,
+    lastDirective' = DNone,
+    lastAction' = "promote_practices",
   }
 
   action step = any {
@@ -699,6 +786,7 @@ module engine_loop {
     all { snapshot, actRequestReview },
     all { snapshot, actRetryReview },
     all { snapshot, actRecordVerdict },
+    all { snapshot, actPromotePractices },
   }
 
   // === 不変条件 (DoD — ADR 0003 決定 7) ===
@@ -836,6 +924,39 @@ module engine_loop {
     },
   }
 
+  // === b49: 昇格受領証の不変条件 ===
+
+  // 段 12 — practices-discovery の承認は、その時点で昇格受領証を持っていた
+  // (前状態スナップショットで見る — 承認そのものが次ステージのフロアを動かすため、
+  // 承認後の値ではなく承認直前の値が正しい前提である)。
+  val approve_requires_practices_receipt =
+    (lastAction == "report_forward" and prevCursor == practicesStage) implies prevAffirmed
+
+  // 試行のフロア — 差し戻しは practices ステージの受領証を、ジャンプ 3 種は無条件に、
+  // 前進と読み飛ばしはカーソルが practices ステージへ動いたときに落とす。
+  val practices_receipt_floor = and {
+    (lastAction == "report_rejected" and cursor == practicesStage) implies not(affirmed),
+    (lastAction == "jump_forward" or lastAction == "jump_backward" or lastAction == "jump_redo")
+      implies not(affirmed),
+    ((lastAction == "report_forward" or lastAction == "report_skipped")
+      and cursor != prevCursor and cursor == practicesStage) implies not(affirmed),
+  }
+
+  // 昇格は本流の状態も stance もレビュー会計も動かさない (フレーム条件)。
+  val promote_frame = (lastAction == "promote_practices") implies and {
+    cursor == prevCursor,
+    status == prevStatus,
+    checkbox == prevCheckbox,
+    overlay == prevOverlay,
+    parkedAt == prevParkedAt,
+    autonomous == prevAutonomous,
+    approved == prevApproved,
+    stanceRecorded == prevStanceRecorded,
+    reqCount == prevReqCount,
+    pending == prevPending,
+    terminal == prevTerminal,
+  }
+
   // === 到達性 witness (負形式で検査 — ADR 0003 決定 7) ===
 
   // 再スタンプ経路が実在する: park 済み (prevParkedAt != -1) の状態から park を打てる
@@ -862,4 +983,12 @@ module engine_loop {
 
   // 呼び直しの経路が実在する (review_frame の後半の空虚成立を防ぐ)
   val w_retry_review = lastAction == "retry_review"
+
+  // 昇格の経路が実在する (promote_frame の空虚成立を防ぐ)
+  val w_practices_affirmed = lastAction == "promote_practices"
+
+  // **practices-discovery のゲートを実際に承認する**経路が実在する —
+  // approve_requires_practices_receipt が空虚に成立していないことの証拠である。
+  val w_approved_practices =
+    (lastAction == "report_forward") and prevCursor == practicesStage
 }

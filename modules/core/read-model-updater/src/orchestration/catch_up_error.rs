@@ -20,6 +20,23 @@ pub enum CatchUpError {
     StateFileWrite(StateFileWriteError),
     /// 監査シャードへ追記できなかった。
     AuditShardWrite(AuditShardWriteError),
+    /// メモリ層のファイルが**在るのに読めない**（b49）。
+    ///
+    /// 2 本が揃っていないのは正常（昇格の投影が要らない workspace）だが、在るのに読めない
+    /// のは blocking である — 読めないまま進むと受領証だけが立って正本が古いままになる。
+    MemoryFileRead {
+        /// 読めなかったファイルのパス。
+        path: String,
+        /// OS が言った理由の分類。
+        kind: std::io::ErrorKind,
+    },
+    /// メモリ層のファイルを書けなかった（b49）。
+    MemoryFileWrite {
+        /// 書けなかったファイルのパス。
+        path: String,
+        /// 失敗の材料（read-only バリア、または OS の I/O 文言）。
+        detail: String,
+    },
     /// 描くべき差分はあるのに、解決済み計画の材料がジャーナルに無い。
     ///
     /// 計画（表示属性・走査結果）の正本は intent 自身の誕生記録（`Created`）であり、どの
@@ -70,6 +87,12 @@ impl core::fmt::Display for CatchUpError {
             }
             CatchUpError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
             CatchUpError::AuditShardWrite(inner) => write!(f, "audit shard write: {inner}"),
+            CatchUpError::MemoryFileRead { path, kind } => {
+                write!(f, "memory file read: {kind:?} at {path}")
+            }
+            CatchUpError::MemoryFileWrite { path, detail } => {
+                write!(f, "memory file write: {detail} at {path}")
+            }
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
             CatchUpError::MixedIntents => f.write_str("mixed intents"),
             CatchUpError::ReadTables(inner) => write!(f, "read tables: {inner}"),
@@ -102,7 +125,9 @@ impl std::error::Error for CatchUpError {
             | CatchUpError::StateFileWrite(_)
             | CatchUpError::PlanUnavailable
             | CatchUpError::MixedIntents
-            | CatchUpError::SteeringRead { .. } => None,
+            | CatchUpError::SteeringRead { .. }
+            | CatchUpError::MemoryFileRead { .. }
+            | CatchUpError::MemoryFileWrite { .. } => None,
         }
     }
 }
@@ -159,6 +184,30 @@ mod tests {
                 .to_string(),
             "park section missing"
         );
+    }
+
+    /// b49 のメモリ層 2 変種は材料を自分の `Display` に持ち、連鎖の先は無い。
+    #[test]
+    fn the_memory_layer_failures_render_their_material_and_end_the_chain() {
+        let read = CatchUpError::MemoryFileRead {
+            path: "memory/team.md".to_string(),
+            kind: std::io::ErrorKind::IsADirectory,
+        };
+        assert_eq!(
+            read.to_string(),
+            "memory file read: IsADirectory at memory/team.md"
+        );
+        assert!(std::error::Error::source(&read).is_none());
+
+        let write = CatchUpError::MemoryFileWrite {
+            path: "memory/project.md".to_string(),
+            detail: "read-only target".to_string(),
+        };
+        assert_eq!(
+            write.to_string(),
+            "memory file write: read-only target at memory/project.md"
+        );
+        assert!(std::error::Error::source(&write).is_none());
     }
 
     #[test]

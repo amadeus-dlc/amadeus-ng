@@ -3,20 +3,32 @@
 //! ドリフト」)、`with_field_or_insert` は指定 `## Heading` 末尾に bullet を追記、`without_field`
 //! は bullet 行ごと削除 (不在は no-op)。フィールド行文法は `- **<Field>**:[ \t]*(.*)`。
 //!
-//! `FieldNotFound` / `HeadingNotFound` は独立ファイルに 1 型 1 ファイルで置く
-//! (`one-public-type`)。子モジュール `state_writers::{field_not_found, heading_not_found}`
-//! （`state_writers/{field_not_found,heading_not_found}.rs`）として所有し、ここから
-//! `pub use` で再輸出する — 兄弟ファイルを跨いだ利便再エクスポートではなく、通常のファサード
-//! （`mod.rs` と同型の所有連鎖）である (`coding-rules/module-visibility.md`)。
-//! `super::state_writers::{FieldNotFound, ..}` のような直接参照はこの形のまま変わらない。
+//! `FieldNotFound` は独立ファイルに 1 型 1 ファイルで置く (`one-public-type`)。子モジュール
+//! `state_writers::field_not_found`（`state_writers/field_not_found.rs`）として所有し、
+//! ここから `pub use` で再輸出する — 兄弟ファイルを跨いだ利便再エクスポートではなく、通常の
+//! ファサード（`mod.rs` と同型の所有連鎖）である (`coding-rules/module-visibility.md`)。
+//!
+//! # 節末尾への挿入はドメインの `append_under_heading` に寄せる（b49）
+//!
+//! `with_field_or_insert` の挿入経路は upstream の `setOrInsertField` がそのまま
+//! `appendUnderHeading` を呼ぶ形である（`aidlc-lib.ts:6612`）。b49 でその機構を
+//! ドメインの `workspace::append_under_heading` に置いたので、ここは**同じ関数へ委譲**する
+//! （同じ意味論の実装を 2 つ並立させない — `coding-rules/no-backward-compatibility.md`）。
+//! 拒否の型も同じ [`HeadingNotFound`] である。
+//!
+//! **これは挙動の是正でもある**: 旧実装は挿入位置を節末尾の**空行より前**へ巻き戻していたが、
+//! upstream は次の `## ` 見出しの**直前**（空行の後ろ）へ入れる — ゴールデン
+//! `cli/park/park/state.diff` の実バイトがその形である。
+//!
+//! [`HeadingNotFound`]: core_command_domain::workspace::HeadingNotFound
+
+use core_command_domain::workspace::{HeadingNotFound, append_under_heading};
 
 use super::wording as msg;
 
 mod field_not_found;
-mod heading_not_found;
 
 pub use field_not_found::FieldNotFound;
-pub use heading_not_found::HeadingNotFound;
 
 /// フィールド読取 (`getField`) — 最初に一致した行の値を trim して返す。
 #[must_use]
@@ -44,10 +56,14 @@ pub fn with_field(content: &str, field: &str, value: &str) -> Result<String, Fie
 }
 
 /// 存在すれば置換、不在なら指定 `## Heading` セクションの末尾に bullet を追記
-/// (フィールド不在はエラーではなく挿入)。
+/// (フィールド不在はエラーではなく挿入 — upstream `setOrInsertField` `:6599-6613`)。
+///
+/// 挿入位置は次の `## ` 見出しの**直前**である（機構は
+/// [`append_under_heading`] が持つ — b49 でドメインへ寄せた）。
+///
 /// # Errors
 ///
-/// 指定 `## Heading` が存在しなければ `HeadingNotFound` (見出し名を逐語で添える)。
+/// 指定 `## Heading` が存在しなければ `HeadingNotFound` (見出しの綴りを逐語で添える)。
 pub fn with_field_or_insert(
     content: &str,
     heading: &str,
@@ -57,35 +73,11 @@ pub fn with_field_or_insert(
     if let Some(replaced) = replace_field(content, field, value) {
         return Ok(replaced);
     }
-    let heading_line = format!("## {heading}");
-    let lines: Vec<&str> = content.lines().collect();
-    let start = lines
-        .iter()
-        .position(|l| l.trim_end() == heading_line)
-        .ok_or_else(|| HeadingNotFound::new(heading))?;
-    // セクション末尾 = 次の `## ` 見出しの直前 (末尾の空行の前に挿入)
-    let mut end = lines.len();
-    for (i, l) in lines.iter().enumerate().skip(start + 1) {
-        if l.starts_with("## ") {
-            end = i;
-            break;
-        }
-    }
-    let mut insert_at = end;
-    while insert_at > start + 1 {
-        // ループ不変条件 (`insert_at <= end <= lines.len()`) により範囲外にはならない —
-        // break 分岐には到達しない。
-        let Some(prev) = lines.get(insert_at - 1) else {
-            break;
-        };
-        if !prev.trim().is_empty() {
-            break;
-        }
-        insert_at -= 1;
-    }
-    let mut out: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-    out.insert(insert_at, format!("- **{field}**: {value}"));
-    Ok(rejoin(&out, content))
+    append_under_heading(
+        content,
+        &format!("## {heading}"),
+        &format!("- **{field}**: {value}\n"),
+    )
 }
 
 /// bullet 行ごと削除 (不在は no-op)。
@@ -161,8 +153,11 @@ mod tests {
         assert!(ok.contains("- **Status**: Completed"));
     }
 
+    /// 挿入は**次の `## ` 見出しの直前**に入る（節末尾の空行の後ろ）。upstream の
+    /// `setOrInsertField` → `appendUnderHeading` と同じ位置であり、ゴールデン
+    /// `cli/park/park/state.diff` の実バイトもこの形である（b49 で是正）。
     #[test]
-    fn with_field_or_insert_appends_at_the_end_of_the_named_section() {
+    fn with_field_or_insert_appends_immediately_before_the_next_heading() {
         let out = with_field_or_insert(
             SAMPLE,
             "Project Information",
@@ -174,16 +169,16 @@ mod tests {
 ## Project Information
 - **Project**: demo
 - **Scope**: feature
-- **Parked**: 2026-08-22T00:00:00Z
 
+- **Parked**: 2026-08-22T00:00:00Z
 ## Current Status
 - **Status**: Running
 ";
         assert_eq!(out, expected);
-        // 不在見出しは、その見出し名を逐語で添えて拒否する
+        // 不在見出しは、その見出しの綴りを逐語で添えて拒否する（`## ` を含む完全形）。
         let err = with_field_or_insert(SAMPLE, "No Such Heading", "F", "v").unwrap_err();
-        assert_eq!(err.as_str(), "No Such Heading");
-        assert_eq!(err, HeadingNotFound::new("No Such Heading"));
+        assert_eq!(err.as_str(), "## No Such Heading");
+        assert_eq!(err, HeadingNotFound::new("## No Such Heading"));
     }
 
     #[test]

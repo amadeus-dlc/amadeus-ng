@@ -75,6 +75,12 @@ pub enum CommandError {
         /// 名指された通し番号。
         iteration: u32,
     },
+    /// practices-discovery の承認に、この試行の昇格受領証が無い (段 12、b49)。
+    ///
+    /// 材料はステージ位置だけである — 「どのレビュアーか」に相当する材料が無く、
+    /// 逐語 (`Cannot approve "practices-discovery" before practices-promote succeeds. …`) は
+    /// ステージ名すら固定なので、出す側が全部持つ。
+    PracticesReceiptMissing(StageIndex),
     /// レビュアーを宣言したステージの承認に、この試行の終端受領証が無い (段 11)。
     ReviewReceiptMissing {
         /// 承認しようとしたステージ。
@@ -124,6 +130,9 @@ impl fmt::Display for CommandError {
                 f,
                 "stage {stage} has no pending review iteration {iteration}"
             ),
+            CommandError::PracticesReceiptMissing(stage) => {
+                write!(f, "stage {stage} has no practices promotion receipt")
+            }
             CommandError::ReviewReceiptMissing { stage, reviewer } => write!(
                 f,
                 "stage {stage} has no terminal review receipt from {reviewer}"
@@ -166,6 +175,15 @@ mod tests {
         assert_eq!(
             CommandError::SequenceExhausted.to_string(),
             "sequence exhausted: seq_nr is at usize::MAX"
+        );
+    }
+
+    /// b49 の昇格受領証の拒否も**材料だけ**を綴る（逐語は app が組む）。
+    #[test]
+    fn the_practices_receipt_rejection_carries_material_not_wording() {
+        assert_eq!(
+            CommandError::PracticesReceiptMissing(StageIndex::new(1)).to_string(),
+            "stage 1 has no practices promotion receipt"
         );
     }
 

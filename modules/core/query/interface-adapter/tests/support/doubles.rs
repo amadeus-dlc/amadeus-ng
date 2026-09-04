@@ -10,14 +10,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use core_query_interface_adapter::{
-    InMemoryDefinitionDao, InMemoryExecutionDao, InMemoryJumpDao, InMemoryJumpPhaseDao,
-    InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao, InMemoryScopeChangeDao,
-    InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao, InMemorySteeringPlanDao,
-    ReadModelDaos,
+    InMemoryDefinitionDao, InMemoryDefinitionStageDao, InMemoryExecutionDao, InMemoryJumpDao,
+    InMemoryJumpPhaseDao, InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao,
+    InMemoryScopeChangeDao, InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao,
+    InMemorySteeringPlanDao, ReadModelDaos,
 };
 use core_query_use_case::orchestration::{
-    DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao, RunStageDao,
-    ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao, SteeringPlanDao,
+    DefinitionDao, DefinitionStageDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao,
+    PhaseEntryDao, RunStageDao, ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao,
+    SteeringPlanDao,
 };
 
 use super::{DEFINITION, EXECUTION, Fixture};
@@ -201,6 +202,18 @@ pub(crate) fn definition(fixture: &Fixture) -> InMemoryDefinitionDao {
     let mut double = InMemoryDefinitionDao::empty();
     if let Some(view) = source.find(DEFINITION).unwrap() {
         double = double.with_row(DEFINITION, view);
+    }
+    double
+}
+
+/// `read_definition_stage` の行を写したダブル。
+pub(crate) fn definition_stage(fixture: &Fixture) -> InMemoryDefinitionStageDao {
+    let source = daos(fixture).definition_stage();
+    let mut double = InMemoryDefinitionStageDao::empty();
+    for slug in ["state-init", "intent-capture", "requirements-analysis"] {
+        if let Some(view) = source.find(DEFINITION, slug).unwrap() {
+            double = double.with_row(DEFINITION, view);
+        }
     }
     double
 }

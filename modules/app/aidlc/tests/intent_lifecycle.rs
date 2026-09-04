@@ -21,6 +21,12 @@ use core_infrastructure::canon_json::{JsonValue, parse};
 /// 合成グラフが宣言するレビュアー (b48)。
 const REVIEWER: &str = "aidlc-architecture-reviewer-agent";
 
+/// ジャーナルに居ない実行の識別子 (b49 — ポートの失敗を見る用)。
+const ABSENT_EXECUTION: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
+
+/// `practices-discovery` が宣言する支援エージェント (b49)。
+const PRACTICES_SUPPORT_AGENTS: [&str; 2] = ["aidlc-developer-agent", "aidlc-quality-agent"];
+
 struct Workspace {
     root: tempfile::TempDir,
 }
@@ -68,6 +74,22 @@ impl Workspace {
         workspace
     }
 
+    /// `practices-discovery` を持つ 3 段の合成グラフ (b49 — 昇格の往復を見る用)。
+    ///
+    /// 支援エージェントは 2 本宣言する (contributions の検査を見るため)。memory 層には
+    /// `team.md` / `project.md` の正本を置き、ドラフト 2 本と contributions は
+    /// `<root>/drafts/` に置く。
+    fn with_practices() -> Workspace {
+        let workspace = Workspace {
+            root: tempfile::tempdir().expect("一時ディレクトリ"),
+        };
+        workspace.write_practices_definition();
+        workspace.write_memory_and_store_dir();
+        workspace.write_memory_targets();
+        workspace.write_drafts();
+        workspace
+    }
+
     fn with_execution(execution: &str) -> Workspace {
         let workspace = Workspace {
             root: tempfile::tempdir().expect("一時ディレクトリ"),
@@ -83,6 +105,56 @@ impl Workspace {
         fs::write(memory.join("org.md"), "# Org\n\n規則なし。\n").expect("org.md");
         // ストアの親 (`intents/`) は upstream の既存ディレクトリ扱いなので先に作る。
         fs::create_dir_all(self.path("aidlc/spaces/default/intents")).expect("intents");
+    }
+
+    /// メモリ層の正本 2 本 (b49 — 昇格の書込先)。
+    fn write_memory_targets(&self) {
+        let memory = self.path("aidlc/spaces/default/memory");
+        fs::write(
+            memory.join("team.md"),
+            "# Team\n\n## Way of Working\nold way.\n\n## Walking Skeleton\nold skeleton.\n\n## Testing Posture\nold posture.\n\n## Deployment\nold deployment.\n\n## Code Style\nold style.\n",
+        )
+        .expect("team.md");
+        fs::write(
+            memory.join("project.md"),
+            "# Project\n\n## Mandated\n\n## Forbidden\n\n## Corrections\n",
+        )
+        .expect("project.md");
+    }
+
+    /// ドラフト 2 本と contributions 2 本 (b49 — 昇格の材料)。
+    fn write_drafts(&self) {
+        let drafts = self.path("drafts");
+        fs::create_dir_all(drafts.join("contributions")).expect("contributions");
+        fs::write(
+            drafts.join("team-practices.md"),
+            "## Way of Working\ntrunk-based.\n",
+        )
+        .expect("team-practices.md");
+        fs::write(
+            drafts.join("discovered-rules.md"),
+            "## Mandated\nALWAYS review.\n\n## Forbidden\nNEVER force-push.\n",
+        )
+        .expect("discovered-rules.md");
+        for agent in PRACTICES_SUPPORT_AGENTS {
+            fs::write(
+                drafts.join("contributions").join(format!("{agent}.md")),
+                format!("**Collaborator:** {agent}\n\n所見。\n"),
+            )
+            .expect("contribution");
+        }
+    }
+
+    fn draft(&self, name: &str) -> String {
+        self.path("drafts")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn memory_file(&self, name: &str) -> String {
+        fs::read_to_string(self.path("aidlc/spaces/default/memory").join(name))
+            .expect("memory のファイルは読める")
     }
 
     fn path(&self, relative: &str) -> PathBuf {
@@ -276,6 +348,55 @@ impl Workspace {
         fs::write(
             scopes.join("aidlc-classic.md"),
             format!("---\nname: classic\n{cap}---\n\n# Classic\n"),
+        )
+        .expect("scope identity");
+    }
+
+    /// `practices-discovery` を持つ 3 段の合成グラフ (b49)。
+    fn write_practices_definition(&self) {
+        let data = self.path(".claude/tools/data");
+        let scopes = self.path(".claude/scopes");
+        fs::create_dir_all(&data).expect("data");
+        fs::create_dir_all(&scopes).expect("scopes");
+        fs::write(
+            data.join("harness.json"),
+            r#"{"name":"claude","harnessDir":".claude","rulesSubdir":"rules"}"#,
+        )
+        .expect("harness.json");
+        let agents = PRACTICES_SUPPORT_AGENTS
+            .map(|agent| format!("\"{agent}\""))
+            .join(",");
+        let node = |slug: &str, number: &str, name: &str, phase: &str, extra: &str| {
+            format!(
+                r#"{{"slug":"{slug}","number":"{number}","name":"{name}","phase":"{phase}",
+                     "execution":"ALWAYS","mode":"inline","lead_agent":"orchestrator",
+                     "scopes":["classic"]{extra}}}"#
+            )
+        };
+        fs::write(
+            data.join("stage-graph.json"),
+            format!(
+                "[{},{},{}]",
+                node("state-init", "0.1", "State Init", "initialization", ""),
+                node(
+                    "practices-discovery",
+                    "1.1",
+                    "Practices Discovery",
+                    "inception",
+                    &format!(r#","support_agents":[{agents}]"#)
+                ),
+                node("contract-design", "1.2", "Contract Design", "inception", ""),
+            ),
+        )
+        .expect("stage-graph.json");
+        fs::write(
+            data.join("scope-grid.json"),
+            r#"{"classic":{"stages":{"state-init":"EXECUTE","practices-discovery":"EXECUTE","contract-design":"EXECUTE"}}}"#,
+        )
+        .expect("scope-grid.json");
+        fs::write(
+            scopes.join("aidlc-classic.md"),
+            "---\nname: classic\n---\n\n# Classic\n",
         )
         .expect("scope identity");
     }
@@ -3999,6 +4120,585 @@ async fn a_review_under_an_invalid_active_space_is_refused_before_the_store() {
             .diagnostic()
             .expect("stderr に逐語が要る")
             .starts_with("The active space \"../escape\""),
+        "{completion:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// b49: 昇格受領証 (#7 キュー 5 の残り / B10)
+// ---------------------------------------------------------------------------
+
+/// `aidlc-state <verb>` を 1 回叩く。
+async fn state_verb(workspace: &Workspace, args: &[&str]) -> aidlc::runtime::Completion {
+    invoke(workspace, "aidlc-state", args).await
+}
+
+/// 昇格を 1 回打つ（既定のドラフト 2 本）。
+async fn promote(workspace: &Workspace) -> aidlc::runtime::Completion {
+    let team = workspace.draft("team-practices.md");
+    let rules = workspace.draft("discovered-rules.md");
+    state_verb(
+        workspace,
+        &[
+            "practices-promote",
+            "--team-practices",
+            &team,
+            "--discovered-rules",
+            &rules,
+            "--affirming-user",
+            "owner",
+        ],
+    )
+    .await
+}
+
+/// 鋳造して昇格の準備が整ったワークスペース。
+async fn minted_practices() -> Workspace {
+    let workspace = Workspace::with_practices();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "practices",
+        ],
+    )
+    .await;
+    workspace
+}
+
+/// 昇格 → 4 面 → 承認の一巡が通る。
+#[tokio::test]
+async fn the_promotion_writes_the_memory_layer_and_opens_the_gate() {
+    let workspace = minted_practices().await;
+
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 0, "昇格は通る: {completion:?}");
+    let line = completion.line().expect("stdout に 1 行が要る").to_string();
+    assert!(
+        line.starts_with(
+            r#"{"emitted":"PRACTICES_AFFIRMED","sections_written":["Way of Working"],"mandated_appended":1,"forbidden_appended":1,"affirmed_at":""#
+        ),
+        "{line}"
+    );
+    assert!(
+        line.contains(r#""team_md":"#) && line.contains(r#""project_guardrails":"#),
+        "{line}"
+    );
+
+    // team.md の節が置き換わる（他の 4 節は据え置き）。
+    let team = workspace.memory_file("team.md");
+    assert!(team.contains("## Way of Working\ntrunk-based.\n"), "{team}");
+    assert!(team.contains("## Code Style\nold style.\n"), "{team}");
+
+    // project.md に印付きの行が並ぶ。
+    let project = workspace.memory_file("project.md");
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    assert!(
+        project.contains(&format!("ALWAYS review. (affirmed {today})")),
+        "{project}"
+    );
+    assert!(
+        project.contains(&format!("NEVER force-push. (affirmed {today})")),
+        "{project}"
+    );
+
+    // 状態ファイルのタイムスタンプは stdout の `affirmed_at` と同じ値である
+    // （upstream の 2 部受領証は状態ファイルの値と監査行の時刻を突き合わせる）。
+    let affirmed_at = string_of(&parse(&line).expect("JSON として読める"), "affirmed_at");
+    let state = workspace.state_file().expect("状態ファイルは在る");
+    assert!(
+        state.contains(&format!(
+            "- **Practices Affirmed Timestamp**: {affirmed_at}\n"
+        )),
+        "{state}"
+    );
+    assert!(
+        state.contains(&format!("- **Last Updated**: {affirmed_at}\n")),
+        "{state}"
+    );
+
+    // 監査行は upstream のフィールド順で 1 行。
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(audit.contains("**Event**: PRACTICES_AFFIRMED\n"), "{audit}");
+    assert!(
+        audit.contains(
+            "**Affirming User**: owner\n**Sections Written**: Way of Working\n**Mandated Rules Appended**: 1\n**Forbidden Rules Appended**: 1\n"
+        ),
+        "{audit}"
+    );
+
+    // 受領証が立ったので承認が通る。
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "practices-discovery",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "{body}");
+}
+
+/// 受領証が無い承認は段 12 で断られる（orchestrate 自身の error directive）。
+#[tokio::test]
+async fn approving_practices_discovery_without_a_promotion_is_refused_verbatim() {
+    let workspace = minted_practices().await;
+
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "practices-discovery",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error", "{body}");
+    assert_eq!(
+        body,
+        "Cannot approve \"practices-discovery\" before practices-promote succeeds. Run \
+aidlc-state.ts practices-promote after the human approves; it records Practices Affirmed \
+Timestamp and a fresh PRACTICES_AFFIRMED receipt for this stage attempt, then report --result \
+approved --user-input \"<exact choice>\"."
+    );
+}
+
+/// 差し戻しは受領証を落とす — 積み直さないと承認できない。
+#[tokio::test]
+async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed() {
+    let workspace = minted_practices().await;
+    promote(&workspace).await;
+
+    // 差し戻しも再入も `print` の directive である（遷移は 1 つコミットされる）。
+    let (kind, _) = report_directive(
+        &workspace,
+        &["--result", "rejected", "--reason", "Sharpen the practices."],
+    )
+    .await;
+    assert_eq!(kind, "print");
+    let (kind, _) = report_directive(&workspace, &["--result", "revised"]).await;
+    assert_eq!(kind, "print");
+
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "practices-discovery",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error", "差し戻しは受領証を落とす: {body}");
+
+    // 積み直せば通る。
+    assert_eq!(promote(&workspace).await.code(), 0);
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "practices-discovery",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "{body}");
+}
+
+/// 再昇格は正本に重複を積まない（印付き行の trim 一致で除かれる）。
+#[tokio::test]
+async fn a_second_promotion_does_not_duplicate_the_stamped_rules() {
+    let workspace = minted_practices().await;
+    assert_eq!(promote(&workspace).await.code(), 0);
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    // 2 回目は足す規則が無い（既在なので除かれる）。
+    let line = completion.line().expect("stdout に 1 行").to_string();
+    assert!(
+        line.contains(r#""mandated_appended":0,"forbidden_appended":0"#),
+        "{line}"
+    );
+    let project = workspace.memory_file("project.md");
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    assert_eq!(
+        project
+            .matches(&format!("ALWAYS review. (affirmed {today})"))
+            .count(),
+        1,
+        "{project}"
+    );
+    // 節の置換は毎回行われる（同じ本文なので結果は同じ）。
+    assert!(
+        workspace
+            .memory_file("team.md")
+            .contains("## Way of Working\ntrunk-based.\n")
+    );
+}
+
+/// 昇格の拒否 — 構文段と Step 1〜4 の逐語。
+#[tokio::test]
+async fn the_promotion_refusals_are_verbatim() {
+    let workspace = minted_practices().await;
+    let team = workspace.draft("team-practices.md");
+    let rules = workspace.draft("discovered-rules.md");
+
+    let refusal = |completion: aidlc::runtime::Completion| -> String {
+        assert_eq!(completion.code(), 1, "{completion:?}");
+        completion.diagnostic().expect("stderr に 1 行").to_string()
+    };
+
+    // 必須フラグの欠落（2 形とも同じ usage）。
+    assert_eq!(
+        refusal(state_verb(&workspace, &["practices-promote"]).await),
+        "Usage: aidlc-state.ts practices-promote --team-practices <path> --discovered-rules <path> [--affirming-user <name>] [--target-dir <path>]"
+    );
+    assert_eq!(
+        refusal(
+            state_verb(
+                &workspace,
+                &["practices-promote", "--team-practices", &team]
+            )
+            .await
+        ),
+        "Usage: aidlc-state.ts practices-promote --team-practices <path> --discovered-rules <path> [--affirming-user <name>] [--target-dir <path>]"
+    );
+
+    // `--target-dir` は未配線。
+    assert_eq!(
+        refusal(
+            state_verb(
+                &workspace,
+                &[
+                    "practices-promote",
+                    "--team-practices",
+                    &team,
+                    "--discovered-rules",
+                    &rules,
+                    "--target-dir",
+                    "/tmp/elsewhere",
+                ]
+            )
+            .await
+        ),
+        "Cannot redirect the promotion: --target-dir is not wired in this build. The affirmed practices are written to the active space's memory directory."
+    );
+
+    // ドラフト 2 本の親ディレクトリが違う。
+    let elsewhere = workspace
+        .path("elsewhere.md")
+        .to_string_lossy()
+        .into_owned();
+    fs::write(&elsewhere, "## Mandated\n").expect("elsewhere");
+    assert_eq!(
+        refusal(
+            state_verb(
+                &workspace,
+                &[
+                    "practices-promote",
+                    "--team-practices",
+                    &team,
+                    "--discovered-rules",
+                    &elsewhere,
+                ]
+            )
+            .await
+        ),
+        "practices-promote failed: team-practices and discovered-rules drafts must share one stage directory"
+    );
+
+    // contributions の 2 形（不在 / identity marker 違い）。
+    let contributions = workspace.path("drafts/contributions");
+    fs::remove_file(contributions.join("aidlc-developer-agent.md")).expect("消す");
+    fs::write(contributions.join("aidlc-quality-agent.md"), "所見。\n").expect("書く");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        "practices-promote failed: ensemble evidence is incomplete: \
+aidlc-developer-agent (no contribution file); \
+aidlc-quality-agent (missing identity-marker first line)"
+    );
+    workspace.write_drafts();
+
+    // ドラフトが無い。
+    fs::remove_file(&team).expect("消す");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        format!("practices-promote failed: team-practices draft not found: {team}")
+    );
+    workspace.write_drafts();
+    fs::remove_file(&rules).expect("消す");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        format!("practices-promote failed: discovered-rules draft not found: {rules}")
+    );
+    workspace.write_drafts();
+
+    // 正本が無い。
+    let team_md = workspace.path("aidlc/spaces/default/memory/team.md");
+    fs::remove_file(&team_md).expect("消す");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        format!(
+            "practices-promote failed: team.md not found at {}",
+            team_md.display()
+        )
+    );
+    workspace.write_memory_targets();
+    let project_md = workspace.path("aidlc/spaces/default/memory/project.md");
+    fs::remove_file(&project_md).expect("消す");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        format!(
+            "practices-promote failed: project.md not found at {}",
+            project_md.display()
+        )
+    );
+    workspace.write_memory_targets();
+
+    // 正本に置換先の見出しが無い。
+    fs::write(&team_md, "# Team\n\n## Deployment\nx.\n").expect("書く");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        "practices-promote failed: replaceSection failed on team.md for \"## Way of Working\": \
+replaceSection: heading not found: ## Way of Working"
+    );
+    workspace.write_memory_targets();
+
+    // 正本に追記先の見出しが無い。
+    fs::write(&project_md, "# Project\n\n## Corrections\n").expect("書く");
+    assert_eq!(
+        refusal(promote(&workspace).await),
+        "practices-promote failed: appendUnderHeading failed on Mandated: \
+appendUnderHeading: heading not found: ## Mandated"
+    );
+}
+
+/// practices-discovery を持たないグラフでは、昇格は Step 1 で断られる。
+#[tokio::test]
+async fn a_graph_without_practices_discovery_refuses_the_promotion() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "no-practices",
+        ],
+    )
+    .await;
+    let drafts = workspace.path("drafts");
+    fs::create_dir_all(&drafts).expect("drafts");
+    fs::write(drafts.join("team-practices.md"), "## Way of Working\nx.\n").expect("draft");
+    fs::write(drafts.join("discovered-rules.md"), "## Mandated\n").expect("draft");
+
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "practices-promote failed: practices-discovery is absent from the compiled stage graph"
+        )
+    );
+}
+
+/// 鋳造前の昇格は「アクティブ intent が無い」で断られる。
+#[tokio::test]
+async fn a_promotion_without_an_active_intent_is_refused() {
+    let workspace = Workspace::with_practices();
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Cannot resolve the active intent for practices promotion.")
+    );
+}
+
+/// 状態面の未知動詞と、認識はするが未配線の動詞。
+#[tokio::test]
+async fn the_state_face_refuses_unknown_and_unwired_verbs() {
+    let workspace = Workspace::with_practices();
+
+    let completion = state_verb(&workspace, &["frobnicate"]).await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "Unknown subcommand: frobnicate. Valid: get, set, set-skeleton-stance, \
+set-construction-iteration, checkbox, count, advance, finalize, complete-workflow, gate-start, \
+approve, reject, revise, skip, resume, acknowledge-compaction, reuse-artifact, lookup, \
+practices-event, practices-promote, fork, merge, park, unpark"
+        )
+    );
+
+    let completion = state_verb(&workspace, &[]).await;
+    assert_eq!(completion.code(), 1);
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("Unknown subcommand: undefined. Valid: ")),
+        "{completion:?}"
+    );
+
+    for verb in ["approve", "practices-event", "park", "unit"] {
+        let completion = state_verb(&workspace, &[verb]).await;
+        assert_eq!(completion.code(), 1);
+        assert_eq!(
+            completion.diagnostic(),
+            Some(
+                format!(
+                    "Cannot run aidlc-state {verb}: the {verb} subcommand is not wired in this \
+build. Only `practices-promote` is available."
+                )
+                .as_str()
+            )
+        );
+    }
+}
+
+/// 実行カーソルが壊れているのは「不在」と混ぜない。
+#[tokio::test]
+async fn a_promotion_on_a_broken_execution_cursor_names_the_medium_failure() {
+    let workspace = minted_practices().await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-a-uuid\n").expect("壊す");
+
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("The execution cursor cannot be read")),
+        "{completion:?}"
+    );
+}
+
+/// 昇格の媒体失敗 3 形 — 壊れた active-space、読めないドラフト、読めない正本。
+#[tokio::test]
+async fn a_promotion_surfaces_every_medium_failure() {
+    // active-space が空間名の文法外なら、ストアを開く前に断る。
+    let workspace = minted_practices().await;
+    fs::write(workspace.path("aidlc/active-space"), "Not A Space\n").expect("空間名を壊す");
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line
+                .starts_with("The active space \"Not A Space\" is not a valid space name.")),
+        "{completion:?}"
+    );
+
+    // ドラフトが「在るのに読めない」（位置にディレクトリが居る）。
+    let workspace = minted_practices().await;
+    let team = workspace.draft("team-practices.md");
+    fs::remove_file(&team).expect("消す");
+    fs::create_dir(&team).expect("ディレクトリを置く");
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion.diagnostic().is_some_and(
+            |line| line.starts_with("practices-promote failed: could not read drafts: ")
+        ),
+        "{completion:?}"
+    );
+
+    // 正本が「在るのに読めない」（同上）。
+    let workspace = minted_practices().await;
+    let team_md = workspace.path("aidlc/spaces/default/memory/team.md");
+    fs::remove_file(&team_md).expect("消す");
+    fs::create_dir(&team_md).expect("ディレクトリを置く");
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion.diagnostic().is_some_and(
+            |line| line.starts_with("practices-promote failed: could not read targets: ")
+        ),
+        "{completion:?}"
+    );
+}
+
+/// カーソルが指す実行がジャーナルに居なければ、ユースケースの失敗が材料ごと上がる。
+#[tokio::test]
+async fn a_promotion_against_an_absent_execution_relays_the_repository_failure() {
+    let workspace = minted_practices().await;
+    let record = workspace.record_dir().expect("record");
+    let cursor = fs::read_to_string(record.join(".aidlc-execution")).expect("カーソルは読める");
+    let intent_line = cursor.lines().nth(1).expect("2 行目は intent id");
+    fs::write(
+        record.join(".aidlc-execution"),
+        format!("{ABSENT_EXECUTION}\n{intent_line}\n"),
+    )
+    .expect("別の実行を指す");
+
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("practices-promote failed: repository: ")),
+        "{completion:?}"
+    );
+}
+
+/// 昇格の後に投影が回らなければ、書いた事実が見えないままなので拒否する。
+#[tokio::test]
+async fn a_projection_that_cannot_run_after_the_promotion_is_refused() {
+    let workspace = minted_practices().await;
+    // clone id の置き場をディレクトリで塞ぐと、投影のシャード名が解決できなくなる。
+    let clone_id = workspace.path("aidlc/.aidlc-clone-id");
+    fs::remove_file(&clone_id).expect("clone id");
+    fs::create_dir(&clone_id).expect("塞ぐ");
+
+    let completion = promote(&workspace).await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: clone id:"),
+        "{completion:?}"
+    );
+}
+
+/// 定義の面が読めなければ、ストアの置き場を名指して断る（グラフの不在と混ぜない）。
+#[tokio::test]
+async fn a_promotion_names_the_unreadable_read_model_instead_of_an_absent_stage() {
+    let workspace = minted_practices().await;
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    let connection = rusqlite::Connection::open(&store).expect("ストアは開ける");
+    connection
+        .execute_batch(
+            "DROP TABLE read_definition_stage; \
+             CREATE TABLE read_definition_stage (id TEXT PRIMARY KEY);",
+        )
+        .expect("リードモデルの表は置き換えられる");
+
+    let completion = promote(&workspace).await;
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("Read model not readable at ")),
         "{completion:?}"
     );
 }

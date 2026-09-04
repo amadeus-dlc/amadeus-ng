@@ -17,13 +17,14 @@ use std::rc::Rc;
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     Created, GateOpened, Intent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StageRevised, StartRequest, Started,
-    WorkspaceScan,
+    IntentExecutionId, IntentId, PracticesAffirmed, StageDisplay, StageEntry, StageRevised,
+    StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
+use core_command_domain::workspace::PromotedSection;
 use core_read_model_updater::orchestration::{
     CatchUpError, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
     ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
@@ -53,7 +54,14 @@ const STATE: &str = "\
 
 ## Stage Progress
 - [-] practices-discovery — EXECUTE
+
+## Current Status
+- **Last Updated**: 2026-08-20T00:00:00Z
 ";
+
+/// メモリ層の正本 2 本（b49 — 昇格の書込先）。
+const TEAM_MD: &str = "# Team\n\n## Way of Working\nold way.\n";
+const PROJECT_MD: &str = "# Project\n\n## Mandated\n\n## Forbidden\n";
 
 const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 
@@ -323,6 +331,11 @@ impl Fixture {
         std::fs::write(self.memory_dir.join(relative), text).expect("規則を書く");
     }
 
+    /// memory 層のファイルを 1 本読む。
+    fn rule(&self, relative: &str) -> String {
+        std::fs::read_to_string(self.memory_dir.join(relative)).expect("規則は読める")
+    }
+
     /// memory 層のファイルを 1 本消す。
     fn remove_rule(&self, relative: &str) {
         std::fs::remove_file(self.memory_dir.join(relative)).expect("規則を消す");
@@ -343,7 +356,11 @@ impl Fixture {
     }
 
     fn targets(&self) -> ProjectionTargets {
-        ProjectionTargets::new(self.state_file.clone(), self.audit_shard.clone())
+        ProjectionTargets::new(
+            self.state_file.clone(),
+            self.audit_shard.clone(),
+            self.memory_dir.clone(),
+        )
     }
 
     fn updater(
@@ -385,6 +402,38 @@ impl Fixture {
             self.steering_source(),
         );
         (updater, spy)
+    }
+
+    /// 参照入力 (steering) を**別のディレクトリ**に向けて組む。
+    ///
+    /// 取得ループは投影面 (`ProjectionTargets`) と参照入力 (`SteeringSource`) を別の引数で
+    /// 受け取る。両者が同じ memory ディレクトリを指すのは合成ルートの配線であって、ループの
+    /// 契約ではない — 投影面の読取失敗だけを孤立させて観測するにはここを分ける。
+    fn updater_with_isolated_steering(
+        &self,
+        journal: Vec<JournalEntry>,
+        intents: Vec<(u64, Intent)>,
+        steering_dir: PathBuf,
+    ) -> ReadModelUpdater<FakeReader> {
+        let mut checkpoints = BTreeMap::new();
+        if !journal.is_empty() {
+            checkpoints.insert(projection(), GlobalSeqNr::new(2));
+        }
+        ReadModelUpdater::new(
+            FakeReader {
+                journal,
+                intents,
+                checkpoints,
+                tables: Rc::new(RefCell::new(None)),
+                late_row: Rc::new(RefCell::new(None)),
+                reads: Rc::new(RefCell::new(0)),
+                steering: Rc::clone(&self.steering),
+                steering_writes: Rc::clone(&self.steering_writes),
+            },
+            projection(),
+            self.targets(),
+            SteeringSource::new(steering_dir),
+        )
     }
 
     /// 1 回目の読取の後に 1 行だけ届く読み手で組む (書込との競合の再現)。
@@ -589,6 +638,218 @@ async fn the_targets_are_carried_as_one_pair() {
     let updater = fixture.updater(Vec::new(), Vec::new());
     assert_eq!(updater.targets().state_file(), fixture.state_file);
     assert_eq!(updater.targets().audit_shard(), fixture.audit_shard);
+    assert_eq!(
+        updater.targets().team_md(),
+        fixture.memory_dir.join("team.md")
+    );
+    assert_eq!(
+        updater.targets().project_md(),
+        fixture.memory_dir.join("project.md")
+    );
+}
+
+// ---- b49: メモリ層の投影面 ----
+
+/// 昇格の事実（節 1 つ + 規則 1 本ずつ）。
+fn practices_affirmed() -> IntentExecutionEvent {
+    IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
+        event_id(),
+        execution_id(),
+        slug("practices-discovery"),
+        "owner",
+        vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
+        vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
+        Vec::new(),
+    ))
+}
+
+/// メモリ層 2 本を書いたフィクスチャで昇格を 1 件投影する。
+#[tokio::test]
+async fn a_promotion_rewrites_the_memory_layer_and_the_other_faces() {
+    let fixture = Fixture::new();
+    fixture.write_rule("team.md", TEAM_MD);
+    fixture.write_rule("project.md", PROJECT_MD);
+    let mut updater = fixture.updater(
+        vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
+        intents(),
+    );
+
+    updater.catch_up().await.expect("キャッチアップ");
+
+    assert_eq!(
+        fixture.rule("team.md"),
+        "# Team\n\n## Way of Working\ntrunk-based.\n"
+    );
+    assert_eq!(
+        fixture.rule("project.md"),
+        "# Project\n\n## Mandated\n\nALWAYS review. (affirmed 2026-09-05)\n## Forbidden\n"
+    );
+    assert!(
+        fixture
+            .state()
+            .contains("- **Practices Affirmed Timestamp**: 2026-08-21T09:14:07Z\n"),
+        "{}",
+        fixture.state()
+    );
+    assert!(
+        std::fs::read_to_string(&fixture.audit_shard)
+            .expect("シャードは在る")
+            .contains("**Event**: PRACTICES_AFFIRMED\n")
+    );
+}
+
+/// メモリ層 2 本が揃っていなければ載せない — 昇格を描けと言われたら fail-closed で止まる。
+#[tokio::test]
+async fn a_promotion_without_both_memory_files_is_refused_and_nothing_advances() {
+    let fixture = Fixture::new();
+    // team.md だけ在る（片方だけは載せない）。
+    fixture.write_rule("team.md", TEAM_MD);
+    let mut updater = fixture.updater(
+        vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
+        intents(),
+    );
+
+    let error = updater.catch_up().await.expect_err("面が無ければ描けない");
+    assert_eq!(error.to_string(), "projection: memory files missing");
+    assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
+    assert_eq!(fixture.rule("team.md"), TEAM_MD, "正本に触らない");
+}
+
+/// メモリ層を触らないキャッチアップは 2 本の mtime を動かさない（dirty のときだけ書く）。
+#[tokio::test]
+async fn a_catch_up_that_touches_no_memory_face_leaves_both_files_untouched() {
+    let fixture = Fixture::new();
+    fixture.write_rule("team.md", TEAM_MD);
+    fixture.write_rule("project.md", PROJECT_MD);
+    let before = (
+        modified(&fixture.memory_dir.join("team.md")),
+        modified(&fixture.memory_dir.join("project.md")),
+    );
+    let mut updater = fixture.updater(journal(), intents());
+
+    updater.catch_up().await.expect("キャッチアップ");
+
+    assert_eq!(fixture.rule("team.md"), TEAM_MD);
+    assert_eq!(fixture.rule("project.md"), PROJECT_MD);
+    assert_eq!(
+        (
+            modified(&fixture.memory_dir.join("team.md")),
+            modified(&fixture.memory_dir.join("project.md")),
+        ),
+        before,
+        "書き替えていない面は 1 バイトも書かない"
+    );
+}
+
+/// 在るのに読めないメモリ層は blocking である（不在と混ぜない）。
+///
+/// 参照入力 (steering) は別のディレクトリへ向けてある — 同じ memory ディレクトリを指すと
+/// `catch_up_steering` が先に同じファイルで倒れ、投影面の読取失敗だけを観測できない。
+#[tokio::test]
+async fn a_memory_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
+    let fixture = Fixture::new();
+    // `team.md` の位置にディレクトリを置く — `exists()` は真だが `read_to_string` は失敗する。
+    std::fs::create_dir(fixture.memory_dir.join("team.md")).expect("ディレクトリを置く");
+    fixture.write_rule("project.md", PROJECT_MD);
+    let isolated = fixture.memory_dir.join("isolated");
+    std::fs::create_dir_all(&isolated).expect("参照入力の置き場");
+    let mut updater = fixture.updater_with_isolated_steering(
+        vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
+        intents(),
+        isolated,
+    );
+
+    let error = updater
+        .catch_up()
+        .await
+        .expect_err("在るのに読めないので止まる");
+    assert!(
+        error.to_string().starts_with("memory file read: "),
+        "{error}"
+    );
+    assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
+}
+
+/// 書けないメモリ層も blocking である（read-only バリア）。
+#[cfg(unix)]
+#[tokio::test]
+async fn a_read_only_memory_file_stops_the_catch_up_with_its_material() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new();
+    fixture.write_rule("team.md", TEAM_MD);
+    fixture.write_rule("project.md", PROJECT_MD);
+    let project = fixture.memory_dir.join("project.md");
+    let mut permissions = std::fs::metadata(&project).unwrap().permissions();
+    permissions.set_mode(0o444);
+    std::fs::set_permissions(&project, permissions).unwrap();
+
+    let mut updater = fixture.updater(
+        vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
+        intents(),
+    );
+    let error = updater.catch_up().await.expect_err("書けないので止まる");
+    assert!(
+        error
+            .to_string()
+            .starts_with("memory file write: read-only target at "),
+        "{error}"
+    );
+
+    // 後片付け（tempdir の削除が permission に引っかからないように戻す）。
+    let mut permissions = std::fs::metadata(&project).unwrap().permissions();
+    permissions.set_mode(0o644);
+    std::fs::set_permissions(&project, permissions).unwrap();
+    // project.md が先なので team.md は無傷のままである。
+    assert_eq!(fixture.rule("team.md"), TEAM_MD);
+}
+
+/// 置き場そのものが書けないときは OS の I/O 文言を材料に運ぶ。
+#[cfg(unix)]
+#[tokio::test]
+async fn a_memory_directory_that_cannot_be_written_stops_the_catch_up_with_the_io_material() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new();
+    fixture.write_rule("team.md", TEAM_MD);
+    fixture.write_rule("project.md", PROJECT_MD);
+    // 置き場を読取専用にする — ファイル自体は書けるが、原子的書込の一時ファイルが作れない。
+    let mut permissions = std::fs::metadata(&fixture.memory_dir)
+        .unwrap()
+        .permissions();
+    permissions.set_mode(0o555);
+    std::fs::set_permissions(&fixture.memory_dir, permissions).unwrap();
+
+    let mut updater = fixture.updater(
+        vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
+        intents(),
+    );
+    let error = updater
+        .catch_up()
+        .await
+        .expect_err("置き場が書けないので止まる");
+
+    // 後片付け（tempdir の削除が permission に引っかからないように戻す）。
+    let mut permissions = std::fs::metadata(&fixture.memory_dir)
+        .unwrap()
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&fixture.memory_dir, permissions).unwrap();
+
+    let rendered = error.to_string();
+    assert!(rendered.starts_with("memory file write: "), "{rendered}");
+    assert!(
+        !rendered.contains("read-only target"),
+        "read-only バリアではなく I/O の材料が上がる: {rendered}"
+    );
+}
+
+/// ファイルの最終更新時刻（`dirty` でない面を書いていないことの観測点）。
+fn modified(path: &std::path::Path) -> std::time::SystemTime {
+    std::fs::metadata(path)
+        .expect("メタデータは読める")
+        .modified()
+        .expect("mtime は読める")
 }
 
 #[tokio::test]

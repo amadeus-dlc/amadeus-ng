@@ -49,8 +49,8 @@ use super::intent::Intent;
 use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
-    StageRevised, StageSkipped, Started, Unparked,
+    PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted,
+    SkeletonStanceRecorded, StageRevised, StageSkipped, Started, Unparked,
 };
 use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
@@ -72,8 +72,10 @@ use super::state_binding::StateBinding;
 use super::status::Status;
 use super::transition_step::TransitionStep;
 use super::verdict::Verdict;
-use crate::workflow_definition::{ExecutionKind, PhaseId, PlanAction, ReviewPolicy, StageSlug};
-use crate::workspace::CheckboxState;
+use crate::workflow_definition::{
+    ExecutionKind, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction, ReviewPolicy, StageSlug,
+};
+use crate::workspace::{CheckboxState, PracticesPromotion};
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_compact};
 
 /// 前進 (`approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
@@ -146,6 +148,15 @@ pub struct IntentExecution {
     /// 状態遷移 — 次ステージへの前進・差し戻し・ジャンプ — が決めるので、鮮度の判断は
     /// この集約に閉じる (設計 §1)。欄が無い歴史は全て空で読む。
     review_attempts: Vec<ReviewAttempt>,
+    /// ステージごとの**現在の試行**で昇格 (practices-promote) が成功したか
+    /// (計画と同じ長さ。genesis は全て false)。
+    ///
+    /// 真になるのは practices-discovery の添字だけだが、フロア (試行の区切り) を
+    /// `approved` / `review_attempts` と同じ形で扱えるよう計画長で持つ。upstream は
+    /// 状態ファイルのタイムスタンプと監査行の 2 部受領証を突き合わせるが、こちらでは
+    /// 集約の状態が正本であり、状態ファイル・監査行はその投影である (b49 設計 §1)。
+    /// 欄が無い歴史は全て false で読む。
+    practices_affirmed: Vec<bool>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     seq_nr: usize,
@@ -266,6 +277,7 @@ impl IntentExecution {
         autonomy: AutonomyMode,
         skeleton_stance: Option<SkeletonStance>,
         review_attempts: Vec<ReviewAttempt>,
+        practices_affirmed: Vec<bool>,
         approved: Vec<bool>,
         revision_count: Vec<u32>,
         seq_nr: usize,
@@ -279,6 +291,7 @@ impl IntentExecution {
             ("overlay", overlay.len()),
             ("checkbox", checkbox.len()),
             ("review_attempts", review_attempts.len()),
+            ("practices_affirmed", practices_affirmed.len()),
             ("approved", approved.len()),
             ("revision_count", revision_count.len()),
         ] {
@@ -326,6 +339,7 @@ impl IntentExecution {
             autonomy,
             skeleton_stance,
             review_attempts,
+            practices_affirmed,
             approved,
             revision_count,
             seq_nr,
@@ -471,6 +485,26 @@ impl IntentExecution {
     #[must_use]
     pub fn review_attempt(&self, stage: StageIndex) -> Option<&ReviewAttempt> {
         self.review_attempts.get(stage.to_usize())
+    }
+
+    /// 計画上の practices-discovery ステージの位置 (無ければ `None`)。
+    ///
+    /// upstream の 3 ツールと同じく slug のリテラル ([`PRACTICES_DISCOVERY_SLUG`]) で探す —
+    /// 定義は「どのステージが practices か」を宣言しないからである (b49 設計 §2.1)。
+    ///
+    /// [`PRACTICES_DISCOVERY_SLUG`]: crate::workflow_definition::PRACTICES_DISCOVERY_SLUG
+    #[must_use]
+    pub fn practices_stage(&self) -> Option<StageIndex> {
+        self.stage_keys
+            .iter()
+            .position(|key| key.slug().as_str() == PRACTICES_DISCOVERY_SLUG)
+            .map(StageIndex::new)
+    }
+
+    /// 名指しステージの**現在の試行**で昇格が成功しているか。範囲外は `None`。
+    #[must_use]
+    pub fn practices_affirmed(&self, stage: StageIndex) -> Option<bool> {
+        self.practices_affirmed.get(stage.to_usize()).copied()
     }
 
     /// walking-skeleton ゲートのステージ — **静的計画**で Construction フェーズの最初の
@@ -663,6 +697,24 @@ impl IntentExecution {
         }
     }
 
+    /// practices-discovery の承認に、現在の試行の昇格受領証を要求する (段 12、b49)。
+    ///
+    /// 他のステージには何も要求しない — 段 12 は practices-discovery 専用のガードである
+    /// (upstream `handleReport` の `slug === "practices-discovery"` — ピン `3c3146cf`
+    /// `aidlc-orchestrate.ts:5772-5784`)。upstream は状態ファイルのタイムスタンプと監査行を
+    /// 突き合わせるが、こちらは同じ試行の中で `PracticesAffirmed` が起きたかを集約の状態に
+    /// 問う (設計 §1 — 偽造の余地が upstream より狭い)。
+    fn require_practices_receipt(&self, stage: StageIndex) -> Result<(), CommandError> {
+        if self.practices_stage() != Some(stage) {
+            return Ok(());
+        }
+        if self.practices_affirmed(stage) == Some(true) {
+            Ok(())
+        } else {
+            Err(CommandError::PracticesReceiptMissing(stage))
+        }
+    }
+
     /// レビュアーを宣言したステージの承認に、現在の試行の終端受領証を要求する (段 11)。
     ///
     /// 実効クラスが `none` に落ちた実行は受領証を要求しない — 「レビュアーを呼ぶな」と
@@ -765,6 +817,13 @@ impl IntentExecution {
     /// 呼出側 (ユースケース) はフロー制御だけを担い、判断は集約に閉じる
     /// (オーナー統一ルール「集約は FSM」)。
     ///
+    /// # 昇格受領証のガード (段 12、b49)
+    ///
+    /// practices-discovery の承認には、**現在の試行**で昇格 (`aidlc-state practices-promote`)
+    /// が成功していることが要る。検査は段 11 (レビュー受領証) の**前**である — upstream の
+    /// 段 12 は orchestrate 自身のガードであり、`aidlc-state approve` の
+    /// `verifyReviewerPrecondition` を spawn する前に効く (ピン `:5772-5784`)。
+    ///
     /// # レビュー受領証のガード (段 11、b48)
     ///
     /// `policy` はこのステージのレビュー方針である (`None` = レビュアー宣言なし)。実効
@@ -775,8 +834,9 @@ impl IntentExecution {
     ///
     /// # Errors
     ///
-    /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反、レビュアーを宣言した
-    /// ステージに終端受領証が無い (`ReviewReceiptMissing`) を拒否する。
+    /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反、practices-discovery に
+    /// 昇格受領証が無い (`PracticesReceiptMissing`)、レビュアーを宣言したステージに終端
+    /// 受領証が無い (`ReviewReceiptMissing`) を拒否する。
     pub fn approve_gate(
         &mut self,
         intent: &Intent,
@@ -787,6 +847,7 @@ impl IntentExecution {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
+        self.require_practices_receipt(stage)?;
         self.require_review_receipt(stage, policy)?;
         let material = GateApproved::new(
             IntentExecution::next_event_id(),
@@ -1246,6 +1307,52 @@ impl IntentExecution {
         self.commit(IntentExecutionEvent::ReviewCompleted(material), occurred_at)
     }
 
+    /// 承認された実践をメモリ層の正本へ書き写した事実を記録する — `PracticesAffirmed`
+    /// (`aidlc-state practices-promote`、b49 / B10)。
+    ///
+    /// 受け取る [`PracticesPromotion`] は**計算済みの材料**である (ドラフト 2 本 × 正本 2 本 ×
+    /// 日付の純関数。合成ルートがファイルを読んで組む)。集約が決めるのは「受け取ってよいか」
+    /// と「どのステージの受領証が立つか」だけであり、内容の計算はしない (設計 §1)。
+    ///
+    /// # 本流の状態は見ない
+    ///
+    /// upstream の `handlePracticesPromote` には status ガードが 1 つも無い —
+    /// メモリ層の 2 ファイルを書いて監査行を足すだけだからである。したがって Completed /
+    /// park 中 / autonomous でも受理する (`record_single_stage_run` / `request_review` と
+    /// 同じ受理集合)。再昇格も受理する (上書き — upstream も何度でも emit する)。
+    ///
+    /// # Errors
+    ///
+    /// intent の取り違え (`IntentMismatch`)、計画に practices-discovery が無い
+    /// (`UnknownStage`)。
+    pub fn affirm_practices(
+        &mut self,
+        intent: &Intent,
+        promotion: &PracticesPromotion,
+        affirming_user: &str,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        let stage = self
+            .practices_stage()
+            .ok_or_else(|| CommandError::UnknownStage(PRACTICES_DISCOVERY_SLUG.to_string()))?;
+        let material = PracticesAffirmed::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+            affirming_user,
+            promotion.sections().to_vec(),
+            promotion.mandated().to_vec(),
+            promotion.forbidden().to_vec(),
+        );
+        self.commit(
+            IntentExecutionEvent::PracticesAffirmed(material),
+            occurred_at,
+        )
+    }
+
     /// レビュー会計 2 コマンドが共有するガード 1〜3 (取り違え → 未知 slug → 宣言 → 一致)。
     fn guard_review<'policy>(
         &self,
@@ -1324,7 +1431,7 @@ impl IntentExecution {
         *self = next;
     }
 
-    /// 15 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
+    /// 16 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
     fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
@@ -1348,7 +1455,8 @@ impl IntentExecution {
                 self.mark_stage(stage, CheckboxState::Revising);
                 // 差し戻しはレビュー試行のフロアである (upstream `freshReviewReceipts` の
                 // FLOOR 4 つのうち `GATE_REJECTED`)。人間が「直せ」と言った時点で、
-                // それまでの受領証は次の試行には効かない。
+                // それまでの受領証は次の試行には効かない。昇格受領証も同じ位置で落ちる
+                // (upstream `hasFreshPracticesAffirmationReceipt` の FLOOR — b49)。
                 self.reset_attempt(stage);
                 // 改訂回数はイベントに載らない — 差し戻しという事実から +1 を導く (BR1.4)。
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
@@ -1371,6 +1479,9 @@ impl IntentExecution {
                 // fail-closed over precise: 跳んだ先も跳ぶ前も、受領証は数え直しになる。
                 for attempt in &mut self.review_attempts {
                     attempt.reset();
+                }
+                for affirmed in &mut self.practices_affirmed {
+                    *affirmed = false;
                 }
             }
             IntentExecutionEvent::Parked(parked) => {
@@ -1420,14 +1531,30 @@ impl IntentExecution {
                     attempt.record_verdict(completed.iteration(), completed.verdict());
                 }
             }
+            IntentExecutionEvent::PracticesAffirmed(affirmed) => {
+                let stage = self.resolve(affirmed.stage())?;
+                // 再昇格は上書き — upstream も何度でも emit する。書き写す内容は投影の
+                // 材料であって集約の状態ではないので、立てるのは受領証の 1 bit だけである。
+                if let Some(slot) = self.practices_affirmed.get_mut(stage.to_usize()) {
+                    *slot = true;
+                }
+            }
         }
         Ok(())
     }
 
-    /// 名指しステージのレビュー試行を空へ戻す (フロア)。
+    /// 名指しステージの**現在の試行**を空へ戻す (フロア — 開始・差し戻し・ジャンプ)。
+    ///
+    /// 落ちるのはレビュー会計と昇格受領証の**両方**である。どちらも「その試行の中で
+    /// 起きたか」で鮮度を測るので、試行の区切りは共通である (upstream の
+    /// `freshReviewReceipts` / `hasFreshPracticesAffirmationReceipt` は同じ FLOOR 集合を
+    /// 見る — b48 / b49)。
     fn reset_attempt(&mut self, stage: StageIndex) {
         if let Some(attempt) = self.review_attempts.get_mut(stage.to_usize()) {
             attempt.reset();
+        }
+        if let Some(affirmed) = self.practices_affirmed.get_mut(stage.to_usize()) {
+            *affirmed = false;
         }
     }
 
@@ -2081,6 +2208,7 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
             None,
             vec![ReviewAttempt::default(); count],
             vec![false; count],
+            vec![false; count],
             vec![0; count],
             1,
             occurred_at,
@@ -2123,7 +2251,7 @@ mod tests {
         StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
         WorkflowDefinition, WorkflowDefinitionId,
     };
-    use crate::workspace::CheckboxState;
+    use crate::workspace::{CheckboxState, PromotedSection};
     use std::collections::BTreeMap;
 
     use CheckboxState::{AwaitingApproval, Completed, InProgress, Pending, Revising, Skipped};
@@ -2308,6 +2436,15 @@ mod tests {
                 .switch_autonomy(&self.intent, mode, occurred_at)
         }
 
+        fn affirm_practices(
+            &mut self,
+            promotion: &PracticesPromotion,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .affirm_practices(&self.intent, promotion, "owner", occurred_at)
+        }
+
         fn apply_event(
             &mut self,
             seq_nr: usize,
@@ -2367,6 +2504,7 @@ mod tests {
             autonomy,
             None,
             vec![ReviewAttempt::default(); stage_count],
+            vec![false; stage_count],
             approved,
             vec![0; stage_count],
             1,
@@ -2766,6 +2904,7 @@ mod tests {
             AutonomyMode::Gated,
             None,
             vec![ReviewAttempt::default(); 3],
+            vec![false; 3],
             vec![false; 3],
             vec![0; 3],
             1,
@@ -4091,6 +4230,7 @@ mod tests {
             None,
             vec![ReviewAttempt::default(); count],
             vec![false; count],
+            vec![false; count],
             vec![0; count],
             1,
             occurred(),
@@ -4292,6 +4432,10 @@ mod tests {
             vec![ReviewAttempt::default(); source.stage_count()],
             (0..source.stage_count())
                 .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.practices_affirmed(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.approved(stage))
                 .collect(),
             (0..source.stage_count())
@@ -4332,6 +4476,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
                 1,
                 *source.last_updated_at()
             )
@@ -4351,6 +4496,7 @@ mod tests {
                 source.autonomy(),
                 None,
                 vec![ReviewAttempt::default(); 3],
+                vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
                 1,
@@ -4374,6 +4520,7 @@ mod tests {
                 None,
                 vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
+                vec![false; 3],
                 vec![0; 3],
                 1,
                 *source.last_updated_at()
@@ -4394,6 +4541,7 @@ mod tests {
                 source.autonomy(),
                 None,
                 vec![ReviewAttempt::default(); 3],
+                vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
                 1,
@@ -4416,6 +4564,7 @@ mod tests {
                 None,
                 vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
+                vec![false; 3],
                 vec![0; 3],
                 1,
                 *source.last_updated_at()
@@ -4435,6 +4584,7 @@ mod tests {
                 source.autonomy(),
                 None,
                 vec![ReviewAttempt::default(); 3],
+                vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
                 0,
@@ -4606,6 +4756,7 @@ mod tests {
                 source.autonomy(),
                 None,
                 vec![ReviewAttempt::default(); 3],
+                vec![false; 3],
                 approved,
                 vec![0, 0, 0],
                 1,
@@ -5380,6 +5531,10 @@ mod tests {
                 .collect(),
             (0..source.stage_count())
                 .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.practices_affirmed(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.approved(stage))
                 .collect(),
             (0..source.stage_count())
@@ -5410,6 +5565,7 @@ mod tests {
             AutonomyMode::Gated,
             None,
             vec![ReviewAttempt::default(); 2],
+            vec![false; 3],
             vec![false; 3],
             vec![0; 3],
             1,
@@ -5702,5 +5858,377 @@ mod tests {
         assert_ne!(first.id(), second.id());
         assert_eq!(first.aggregate_id(), second.aggregate_id());
         assert_eq!(first.aggregate_id(), run.id());
+    }
+
+    // ---- b49: 昇格受領証 (practices-discovery、段 12) ----
+
+    /// 索引 1 が `practices-discovery` の合成計画で開始する。
+    ///
+    /// 索引 0 は initialization (誕生で `[x]`)、索引 1 以降は inception (ゲート付き) —
+    /// 他のヘルパと同じ形である。
+    fn practices_run(stage_count: usize) -> Run {
+        practices_run_at(stage_count, 1, &vec![false; stage_count])
+    }
+
+    /// `practices` の位置と CONDITIONAL 宣言を名指しした合成計画で開始する。
+    fn practices_run_at(stage_count: usize, practices: usize, conditional: &[bool]) -> Run {
+        let stages: Vec<StageEntry> = (0..stage_count)
+            .map(|i| {
+                let phase = if i == 0 {
+                    PhaseId::Initialization
+                } else {
+                    PhaseId::Inception
+                };
+                let slug = if i == practices {
+                    StageSlug::parse(PRACTICES_DISCOVERY_SLUG).unwrap()
+                } else {
+                    slug(i)
+                };
+                StageEntry::new(
+                    slug,
+                    phase,
+                    Execute,
+                    conditional.get(i).copied().unwrap_or(false),
+                    display(&format!("{}.{}", phase.index(), i + 1)),
+                )
+            })
+            .collect();
+        Run::start(Intent::from((
+            Created::new(
+                intent_event_id(),
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                stages,
+                scan(),
+            ),
+            occurred(),
+        )))
+    }
+
+    /// 合成の昇格 (節 1 つと規則 1 本ずつ — 投影の材料が載ることを見る)。
+    fn promotion() -> PracticesPromotion {
+        PracticesPromotion::plan(
+            "## Way of Working\ntrunk-based.\n",
+            "## Mandated\nALWAYS review.\n\n## Forbidden\nNEVER force-push.\n",
+            "# Team\n\n## Way of Working\nold.\n",
+            "# Project\n\n## Mandated\n\n## Forbidden\n",
+            chrono::NaiveDate::from_ymd_opt(2026, 9, 5).unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// 誕生直後はどのステージも受領証を持たない。範囲外は `None`。
+    #[test]
+    fn a_fresh_execution_has_no_practices_receipt_anywhere() {
+        let run = practices_run(3);
+        for stage in 0..run.stage_count() {
+            assert_eq!(
+                run.execution.practices_affirmed(StageIndex::new(stage)),
+                Some(false)
+            );
+        }
+        assert_eq!(
+            run.execution
+                .practices_affirmed(StageIndex::new(run.stage_count())),
+            None
+        );
+        assert_eq!(run.execution.practices_stage(), Some(StageIndex::new(1)));
+    }
+
+    /// 計画に practices-discovery が無ければ位置は `None`。
+    #[test]
+    fn a_plan_without_practices_discovery_has_no_practices_stage() {
+        assert_eq!(all_exec(3).execution.practices_stage(), None);
+    }
+
+    /// 昇格は取り違えを断り、計画に無ければ `UnknownStage` で断る。
+    #[test]
+    fn the_promotion_guards_reject_a_foreign_intent_and_a_plan_without_the_stage() {
+        let mut run = practices_run(3);
+        let other = plan(1, &[Execute, Execute], &[false, false]);
+        assert_eq!(
+            run.execution
+                .affirm_practices(&other, &promotion(), "owner", occurred()),
+            Err(CommandError::IntentMismatch)
+        );
+
+        let mut without = all_exec(3);
+        assert_eq!(
+            without.affirm_practices(&promotion(), occurred()),
+            Err(CommandError::UnknownStage(
+                PRACTICES_DISCOVERY_SLUG.to_string()
+            ))
+        );
+    }
+
+    /// 昇格の材料はそのままイベントに載る (投影がドラフトを読み直さずに描けるため)。
+    #[test]
+    fn the_promotion_material_rides_on_the_event() {
+        let mut run = practices_run(3);
+        let event = run.affirm_practices(&promotion(), occurred()).unwrap();
+        let IntentExecutionEvent::PracticesAffirmed(affirmed) = &event else {
+            panic!("PracticesAffirmed を期待した: {event:?}");
+        };
+        assert_eq!(affirmed.stage().as_str(), PRACTICES_DISCOVERY_SLUG);
+        assert_eq!(affirmed.affirming_user(), "owner");
+        assert_eq!(affirmed.sections().len(), 1);
+        assert_eq!(
+            affirmed.sections().first().map(PromotedSection::heading),
+            Some("Way of Working")
+        );
+        assert_eq!(
+            affirmed.mandated(),
+            ["ALWAYS review. (affirmed 2026-09-05)".to_string()]
+        );
+        assert_eq!(
+            affirmed.forbidden(),
+            ["NEVER force-push. (affirmed 2026-09-05)".to_string()]
+        );
+        assert_eq!(
+            run.execution.practices_affirmed(StageIndex::new(1)),
+            Some(true)
+        );
+        assert_eq!(affirmed.aggregate_id(), run.id());
+    }
+
+    /// 本流の状態は見ない — park 中・autonomous・Completed でも受理する。
+    #[test]
+    fn the_promotion_is_accepted_regardless_of_the_main_workflow_state() {
+        let mut parked = practices_run(3);
+        parked.park(occurred()).unwrap();
+        assert!(parked.affirm_practices(&promotion(), occurred()).is_ok());
+
+        let mut autonomous = practices_run(3);
+        autonomous
+            .switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
+        assert!(
+            autonomous
+                .affirm_practices(&promotion(), occurred())
+                .is_ok()
+        );
+
+        // 最終ステージを承認して Completed にした実行でも受理する。
+        let mut completed = practices_run(2);
+        completed
+            .affirm_practices(&promotion(), occurred())
+            .unwrap();
+        completed.approve_gate(None, occurred()).unwrap();
+        assert_eq!(completed.status(), Status::Completed);
+        assert!(completed.affirm_practices(&promotion(), occurred()).is_ok());
+    }
+
+    /// 再昇格は上書き (受領証は真のまま — upstream も何度でも emit する)。
+    #[test]
+    fn a_second_promotion_overwrites_the_receipt() {
+        let mut run = practices_run(3);
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        run.affirm_practices(&PracticesPromotion::default(), occurred())
+            .unwrap();
+        assert_eq!(
+            run.execution.practices_affirmed(StageIndex::new(1)),
+            Some(true)
+        );
+    }
+
+    /// 段 12 — practices-discovery の承認は現在の試行の受領証を要する。
+    #[test]
+    fn the_practices_gate_refuses_the_approval_until_the_promotion_lands() {
+        let mut run = practices_run(3);
+        assert_eq!(
+            run.approve_gate(None, occurred()),
+            Err(CommandError::PracticesReceiptMissing(StageIndex::new(1)))
+        );
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        assert!(run.approve_gate(None, occurred()).is_ok());
+    }
+
+    /// 段 12 は practices-discovery **だけ**に効く (他のステージの承認は素通り)。
+    #[test]
+    fn the_practices_gate_touches_no_other_stage() {
+        let mut run = practices_run(3);
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        run.approve_gate(None, occurred()).unwrap();
+        // カーソルは索引 2 (practices ではない) — 受領証は要らない。
+        assert_eq!(run.cursor(), StageIndex::new(2));
+        assert!(run.approve_gate(None, occurred()).is_ok());
+    }
+
+    /// 段 12 は段 11 より**先**に効く (受領証もレビュアーも無い承認は段 12 で止まる)。
+    #[test]
+    fn the_practices_gate_fires_before_the_review_receipt_gate() {
+        let mut run = practices_run(3);
+        let policy = adversarial();
+        let intent = run.intent.clone();
+        assert_eq!(
+            run.execution
+                .approve_gate(&intent, Some(&policy), None, occurred()),
+            Err(CommandError::PracticesReceiptMissing(StageIndex::new(1)))
+        );
+    }
+
+    /// フロア — 前進で立った次ステージ・差し戻し・ジャンプ 3 種で受領証は落ちる。
+    #[test]
+    fn the_receipt_falls_at_every_floor() {
+        // 差し戻し。
+        let mut rejected = practices_run(3);
+        rejected.affirm_practices(&promotion(), occurred()).unwrap();
+        rejected
+            .reject_gate(Some("fix it".to_string()), occurred())
+            .unwrap();
+        assert_eq!(
+            rejected.execution.practices_affirmed(StageIndex::new(1)),
+            Some(false)
+        );
+
+        // 前進 — 立った次ステージの受領証が落ちる。practices を索引 2 に置き、先に
+        // 受領証を立ててから索引 1 を承認すると、カーソルが索引 2 に立った時点で落ちる。
+        let mut forward = practices_run_at(3, 2, &[false; 3]);
+        forward.affirm_practices(&promotion(), occurred()).unwrap();
+        assert_eq!(
+            forward.execution.practices_affirmed(StageIndex::new(2)),
+            Some(true)
+        );
+        forward.approve_gate(None, occurred()).unwrap();
+        assert_eq!(forward.cursor(), StageIndex::new(2));
+        assert_eq!(
+            forward.execution.practices_affirmed(StageIndex::new(2)),
+            Some(false)
+        );
+
+        // ジャンプ — 全ステージが落ちる。
+        let mut jumped = practices_run(3);
+        jumped.affirm_practices(&promotion(), occurred()).unwrap();
+        jumped.jump(StageIndex::new(2), occurred()).unwrap();
+        for stage in 0..jumped.stage_count() {
+            assert_eq!(
+                jumped.execution.practices_affirmed(StageIndex::new(stage)),
+                Some(false)
+            );
+        }
+    }
+
+    /// 読み飛ばしも次ステージを立てるので、その受領証は落ちる。
+    #[test]
+    fn a_skip_floors_the_receipt_of_the_stage_it_lands_on() {
+        // practices は索引 2、索引 1 は CONDITIONAL (読み飛ばせる)。
+        let mut run = practices_run_at(3, 2, &[false, true, false]);
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        assert_eq!(
+            run.execution.practices_affirmed(StageIndex::new(2)),
+            Some(true)
+        );
+        run.skip_stage("out of scope".to_string(), occurred())
+            .unwrap();
+        assert_eq!(run.cursor(), StageIndex::new(2));
+        assert_eq!(
+            run.execution.practices_affirmed(StageIndex::new(2)),
+            Some(false)
+        );
+    }
+
+    /// 差し戻し後のゲート再入 (`revise`) はフロアでは**ない** — 受領証は残る。
+    #[test]
+    fn a_revision_re_entry_is_not_a_floor() {
+        let mut run = practices_run(3);
+        run.reject_gate(Some("fix it".to_string()), occurred())
+            .unwrap();
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        run.revise_stage(occurred()).unwrap();
+        assert_eq!(
+            run.execution.practices_affirmed(StageIndex::new(1)),
+            Some(true)
+        );
+        assert!(run.approve_gate(None, occurred()).is_ok());
+    }
+
+    /// park / unpark / autonomy / 隔離実行 / stance は受領証に触らない。
+    #[test]
+    fn the_frame_empty_commands_leave_the_receipt_alone() {
+        let mut run = practices_run(3);
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        run.record_single_stage_run(StageIndex::new(2), occurred())
+            .unwrap();
+        run.park(occurred()).unwrap();
+        run.unpark(occurred()).unwrap();
+        run.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
+        assert_eq!(
+            run.execution.practices_affirmed(StageIndex::new(1)),
+            Some(true)
+        );
+    }
+
+    /// 再構成 (完全コンストラクタ) は受領証を復元し、長さの食い違いを断る。
+    #[test]
+    fn the_full_constructor_round_trips_and_length_checks_the_receipt_vector() {
+        let mut run = practices_run(3);
+        run.affirm_practices(&promotion(), occurred()).unwrap();
+        let source = run.execution.clone();
+        let rebuilt = IntentExecution::new(
+            source.id().clone(),
+            source.intent_id().clone(),
+            source.stage_keys().to_vec(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.effective_plan(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.checkbox(stage))
+                .collect(),
+            source.cursor().to_usize(),
+            source.status(),
+            source.parked_at().map(StageIndex::to_usize),
+            source.autonomy(),
+            source.skeleton_stance(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.review_attempt(stage))
+                .cloned()
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.practices_affirmed(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.approved(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.revision_count(stage))
+                .collect(),
+            source.seq_nr(),
+            *source.last_updated_at(),
+        )
+        .expect("組み直せる");
+        assert_eq!(rebuilt, source);
+
+        let error = IntentExecution::new(
+            source.id().clone(),
+            source.intent_id().clone(),
+            source.stage_keys().to_vec(),
+            vec![Execute; 3],
+            vec![Completed, InProgress, Pending],
+            1,
+            Status::Running,
+            None,
+            AutonomyMode::Gated,
+            None,
+            vec![ReviewAttempt::default(); 3],
+            vec![false; 2],
+            vec![false; 3],
+            vec![0; 3],
+            1,
+            occurred(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid intent execution: practices_affirmed length 2 does not match 3 stages"
+        );
     }
 }

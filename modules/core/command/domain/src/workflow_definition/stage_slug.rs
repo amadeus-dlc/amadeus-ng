@@ -5,6 +5,13 @@ use std::fmt;
 
 use super::stage_slug_error::StageSlugError;
 
+/// practices-discovery ステージの slug。
+///
+/// upstream は 3 つのツールとも**リテラルで持つ** (`findStageBySlug("practices-discovery")` /
+/// `slug === "practices-discovery"`)。定義集約のクエリにはしない — 定義は「どのステージが
+/// practices か」を宣言しないからである (b49 設計 §2.1)。
+pub const PRACTICES_DISCOVERY_SLUG: &str = "practices-discovery";
+
 /// パース済みの stage slug (Always Valid — 不正値はこの型に存在しない)。
 ///
 /// `Ord` は生文字列の辞書順。数値順の語彙は `StageNumber` が持つ (両者を混同しないこと)。
