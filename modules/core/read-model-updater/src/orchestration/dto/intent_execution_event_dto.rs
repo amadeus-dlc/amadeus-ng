@@ -1,4 +1,4 @@
-//! ドメインイベント 13 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
+//! ドメインイベント 15 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -24,6 +24,8 @@ use super::gate_rejected_dto::GateRejectedDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
+use super::review_completed_dto::ReviewCompletedDto;
+use super::review_requested_dto::ReviewRequestedDto;
 use super::single_stage_run_committed_dto::SingleStageRunCommittedDto;
 use super::skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 use super::stage_revised_dto::StageRevisedDto;
@@ -60,6 +62,10 @@ pub enum IntentExecutionEventDto {
     SingleStageRunCommitted(SingleStageRunCommittedDto),
     /// walking-skeleton stance の記録。
     SkeletonStanceRecorded(SkeletonStanceRecordedDto),
+    /// レビュアーの差し向け。
+    ReviewRequested(ReviewRequestedDto),
+    /// レビュアーの判定の記録。
+    ReviewCompleted(ReviewCompletedDto),
 }
 
 /// イベント識別子の復号 (全変種が共有する private 補助 — 主たる従属先はこのファイル)。
@@ -134,6 +140,12 @@ impl IntentExecutionEventDto {
                     payload,
                 ))
             }
+            IntentExecutionEvent::ReviewRequested(payload) => {
+                IntentExecutionEventDto::ReviewRequested(ReviewRequestedDto::of(payload))
+            }
+            IntentExecutionEvent::ReviewCompleted(payload) => {
+                IntentExecutionEventDto::ReviewCompleted(ReviewCompletedDto::of(payload))
+            }
             IntentExecutionEvent::SkeletonStanceRecorded(payload) => {
                 IntentExecutionEventDto::SkeletonStanceRecorded(SkeletonStanceRecordedDto::of(
                     payload,
@@ -184,6 +196,12 @@ impl IntentExecutionEventDto {
             }
             IntentExecutionEventDto::SingleStageRunCommitted(payload) => {
                 IntentExecutionEvent::SingleStageRunCommitted(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::ReviewRequested(payload) => {
+                IntentExecutionEvent::ReviewRequested(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::ReviewCompleted(payload) => {
+                IntentExecutionEvent::ReviewCompleted(payload.to_domain()?)
             }
             IntentExecutionEventDto::SkeletonStanceRecorded(payload) => {
                 IntentExecutionEvent::SkeletonStanceRecorded(payload.to_domain()?)

@@ -30,11 +30,13 @@ mod support;
 use core_command_domain::orchestration::{ReportRequest, Verdict};
 use core_command_domain::workspace::CheckboxState;
 use core_command_interface_adapter::orchestration::{
-    IntentExecutionRepositoryImpl, IntentRepositoryImpl,
+    IntentExecutionRepositoryImpl, IntentRepositoryImpl, WorkflowDefinitionRepositoryImpl,
 };
 use core_command_use_case::orchestration::{CommitVerdictUseCase, IntentExecutionRepository};
 
-use support::{at, execution_id, intent, store_genesis, store_intent_genesis};
+use support::{
+    at, execution_id, intent, store_genesis, store_intent_genesis, store_plan_definition,
+};
 
 #[tokio::test]
 async fn the_use_case_commits_a_transition_through_the_real_repository() {
@@ -56,10 +58,19 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     let mut intent_repository = IntentRepositoryImpl::in_memory();
     store_intent_genesis(&mut intent_repository).await;
 
-    // ポートは 2 本注入する（改訂 10）。ユースケースは計画を自分で引くので、`execute` に
+    // 定義側も実 Repository に預ける — 段 11 のレビュー方針は Approve 段で定義から引く
+    // (b48)。このフィクスチャの定義はレビュアーを宣言しないので受領証は要らない。
+    let mut workflow_definition_repository = WorkflowDefinitionRepositoryImpl::in_memory();
+    store_plan_definition(&mut workflow_definition_repository).await;
+
+    // ポートは 3 本注入する（改訂 10 + b48）。ユースケースは計画を自分で引くので、`execute` に
     // `&Intent` は渡らない — 引数は集約 ID と値オブジェクトだけである
     // (`coding-rules/use-case-rules.md` §2b)。
-    let mut use_case = CommitVerdictUseCase::new(intent_execution_repository, intent_repository);
+    let mut use_case = CommitVerdictUseCase::new(
+        intent_execution_repository,
+        intent_repository,
+        workflow_definition_repository,
+    );
     use_case
         .execute(
             &execution_id(),

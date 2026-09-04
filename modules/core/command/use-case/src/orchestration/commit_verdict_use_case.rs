@@ -5,13 +5,14 @@ use core_command_domain::orchestration::{
     Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, ReportDecision, ReportNoOp,
     ReportRequest, TransitionStep,
 };
-use core_command_domain::workflow_definition::StageSlug;
+use core_command_domain::workflow_definition::{ReviewCapValue, ReviewPolicy, StageSlug};
 
 use super::commit_error::CommitError;
 use super::commit_outcome::CommitOutcome;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
+use super::port::WorkflowDefinitionRepository;
 
 /// コンダクタが報告した結末（[`ReportRequest`]）を 1 つの遷移としてコミットする。
 ///
@@ -45,9 +46,14 @@ use super::port::RepositoryError;
 /// `dyn` は使わない（`coding-rules/use-case-rules.md` §2）。結線（実物 / インメモリの選択）は
 /// 合成ルートだけが行い、ユースケースはポートの trait しか知らない。
 #[derive(Debug)]
-pub struct CommitVerdictUseCase<E: IntentExecutionRepository, I: IntentRepository> {
+pub struct CommitVerdictUseCase<
+    E: IntentExecutionRepository,
+    I: IntentRepository,
+    D: WorkflowDefinitionRepository,
+> {
     intent_execution_repository: E,
     intent_repository: I,
+    workflow_definition_repository: D,
 }
 
 /// [`CommitVerdictUseCase::attempt`] 1 回分の結末。
@@ -69,20 +75,27 @@ enum AttemptOutcome {
     },
 }
 
-impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, I> {
-    /// ポートの実装を 2 つ注入する。
+impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRepository>
+    CommitVerdictUseCase<E, I, D>
+{
+    /// ポートの実装を 3 つ注入する。
     ///
     /// **ユースケースはリポジトリを保持し、`execute` の内部で使う** (改訂 10 のオーナー裁定)。
     /// 以前は Controller が `&Intent` を読んで渡していたが、あれは I8 — 読取専用ユースケース
     /// (`Next`) 専用のパターン — の誤適用だった (`coding-rules/use-case-rules.md` §4 の射程)。
+    ///
+    /// 定義ポート `D` は **Approve 段だけ**が使う（レビュー方針の解決 — b48 / 段 11）。
+    /// 他の段は定義を読まないので、この注入が I/O を増やすのは承認経路だけである。
     #[must_use]
     pub const fn new(
         intent_execution_repository: E,
         intent_repository: I,
-    ) -> CommitVerdictUseCase<E, I> {
+        workflow_definition_repository: D,
+    ) -> CommitVerdictUseCase<E, I, D> {
         CommitVerdictUseCase {
             intent_execution_repository,
             intent_repository,
+            workflow_definition_repository,
         }
     }
 
@@ -198,11 +211,18 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
             ReportDecision::Commit { stage, steps } => (stage, steps),
         };
 
+        // 段 11 のレビュー方針は **Approve 段のときだけ**引く（他の段は定義を読まない）。
+        let policy = if steps.contains(&TransitionStep::Approve) {
+            self.review_policy(&intent, &stage).await?
+        } else {
+            None
+        };
         let event = Self::commit_steps(
             &intent,
             &mut aggregate,
             &stage,
             &steps,
+            policy.as_ref(),
             request,
             occurred_at,
         )?;
@@ -240,6 +260,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
         aggregate: &mut IntentExecution,
         stage: &StageSlug,
         steps: &[TransitionStep],
+        policy: Option<&ReviewPolicy>,
         request: &ReportRequest,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommitError> {
@@ -271,6 +292,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
                 // truthy 判定）。空白だけの値は渡すので、`trim` ではなく空判定である。
                 aggregate.approve_gate(
                     intent,
+                    policy,
                     request
                         .user_input()
                         .filter(|text| !text.is_empty())
@@ -295,6 +317,39 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
         })
     }
 
+    /// 承認しようとしているステージのレビュー方針を定義から解決する（段 11 の材料）。
+    ///
+    /// `--review` override は intent が生値で運ぶ。閉集合で受けて鋳造しているので、ここで
+    /// 復号に失敗するのは**壊れた歴史**である（`CorruptReviewOverride`）。
+    ///
+    /// # Errors
+    ///
+    /// 定義の再構成の失敗（`DefinitionRepository`）、定義がその slug を知らない
+    /// （`UnknownDefinitionStage`）、壊れた `--review` 値（`CorruptReviewOverride`）。
+    async fn review_policy(
+        &self,
+        intent: &Intent,
+        stage: &StageSlug,
+    ) -> Result<Option<ReviewPolicy>, CommitError> {
+        let definition = self
+            .workflow_definition_repository
+            .find_by_id(intent.definition_id())
+            .await
+            .map_err(CommitError::DefinitionRepository)?;
+        let review_override = intent
+            .review()
+            .map(|raw| {
+                ReviewCapValue::parse(raw)
+                    .map_err(|_| CommitError::CorruptReviewOverride(raw.to_string()))
+            })
+            .transpose()?;
+        definition
+            .review_policy(stage, intent.scope(), review_override)
+            .map_err(|_| CommitError::UnknownDefinitionStage {
+                stage: stage.clone(),
+            })
+    }
+
     /// no-op 3 形が名指しするステージ。
     const fn no_op_stage(no_op: &ReportNoOp) -> &StageSlug {
         match no_op {
@@ -315,6 +370,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
     pub(crate) const fn intent_repository(&self) -> &I {
         &self.intent_repository
     }
+
+    /// 注入された定義ポートの実装（「定義を読むのは Approve 段だけ」の観測点 — b48）。
+    #[cfg(test)]
+    pub(crate) const fn workflow_definition_repository(&self) -> &D {
+        &self.workflow_definition_repository
+    }
 }
 
 #[cfg(test)]
@@ -328,15 +389,19 @@ mod tests {
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
     use super::super::port::RepositoryError;
     use super::super::test_support::{
-        InMemoryIntentExecutionRepository, InMemoryIntentRepository, absent_execution, at,
-        execution_id, genesis, slug, start_from_plan,
+        InMemoryIntentExecutionRepository, InMemoryIntentRepository,
+        InMemoryWorkflowDefinitionRepository, absent_execution, at, definition,
+        definition_with_reviewer, execution_id, genesis, genesis_with_review, slug,
+        start_from_plan,
     };
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
         CommandError, Intent, IntentExecution, IntentExecutionEvent, ReportNoOp, ReportRefusal,
         ReportRequest, TransitionStep, Verdict,
     };
-    use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
+    use core_command_domain::workflow_definition::{
+        PhaseId, PlanAction, StageSlug, WorkflowDefinition,
+    };
 
     /// カーソルが最初のゲート付きステージに立っている実行。
     ///
@@ -346,9 +411,13 @@ mod tests {
         (intent, aggregate)
     }
 
-    /// テストの主体 — 2 本のポートを注入したユースケース。
+    /// テストの主体 — 3 本のポートを注入したユースケース。
     struct Subject {
-        use_case: CommitVerdictUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository>,
+        use_case: CommitVerdictUseCase<
+            InMemoryIntentExecutionRepository,
+            InMemoryIntentRepository,
+            InMemoryWorkflowDefinitionRepository,
+        >,
     }
 
     impl Subject {
@@ -369,14 +438,30 @@ mod tests {
         const fn intent_repository(&self) -> &InMemoryIntentRepository {
             self.use_case.intent_repository()
         }
+
+        const fn workflow_definition_repository(&self) -> &InMemoryWorkflowDefinitionRepository {
+            self.use_case.workflow_definition_repository()
+        }
     }
 
     fn use_case(pair: (Intent, IntentExecution), version: usize) -> Subject {
+        // 既定の定義はレビュアーを宣言しない — 段 11 の受領証は要らない (b48)。
+        use_case_with(pair, version, definition)
+    }
+
+    /// 定義を差し替えられる形 (段 11 のレビュー受領証を見るテスト用)。
+    fn use_case_with(
+        pair: (Intent, IntentExecution),
+        version: usize,
+        definition_of: impl Fn(usize) -> WorkflowDefinition,
+    ) -> Subject {
         let (intent, aggregate) = pair;
+        let definition = definition_of(intent.stage_count());
         Subject {
             use_case: CommitVerdictUseCase::new(
                 InMemoryIntentExecutionRepository::holding(aggregate, version),
                 InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(definition),
             ),
         }
     }
@@ -606,7 +691,7 @@ mod tests {
         // BR1.9 — カーソル通過済み completed への再報告は冪等。判断は集約の forward 表。
         let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .approve_gate(&intent, Some("Approve".to_string()), at())
+            .approve_gate(&intent, None, Some("Approve".to_string()), at())
             .expect("最初のゲートは承認できる");
         let mut subject = use_case((intent, aggregate), 2);
         let outcome = subject
@@ -628,7 +713,7 @@ mod tests {
     async fn a_re_report_of_a_completed_workflow_commits_nothing() {
         let (intent, mut aggregate) = at_the_first_gate(2);
         aggregate
-            .approve_gate(&intent, Some("Approve".to_string()), at())
+            .approve_gate(&intent, None, Some("Approve".to_string()), at())
             .expect("最後のゲートは承認できる");
         let mut subject = use_case((intent, aggregate), 2);
         let outcome = subject
@@ -799,6 +884,7 @@ mod tests {
         let mut use_case = CommitVerdictUseCase::new(
             InMemoryIntentExecutionRepository::holding(aggregate, 7),
             InMemoryIntentRepository::empty(),
+            InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
         let err = use_case
             .execute(&execution_id(), forward(), at())
@@ -819,6 +905,7 @@ mod tests {
                     aggregate, 7, 1,
                 ),
                 InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(definition(3)),
             ),
         };
         subject
@@ -838,6 +925,7 @@ mod tests {
         let mut subject = CommitVerdictUseCase::new(
             InMemoryIntentExecutionRepository::empty(),
             InMemoryIntentRepository::holding(intent),
+            InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
         let err = subject
             .execute(&absent_execution(), forward(), at())
@@ -859,6 +947,7 @@ mod tests {
                     aggregate, 7, 1,
                 ),
                 InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(definition(3)),
             ),
         };
         let outcome = subject
@@ -890,7 +979,7 @@ mod tests {
         let (intent, held) = at_the_first_gate(3);
         let mut advanced = held.clone();
         advanced
-            .approve_gate(&intent, Some("Approve".to_string()), at())
+            .approve_gate(&intent, None, Some("Approve".to_string()), at())
             .expect("競合相手の承認は通る");
         assert_ne!(
             advanced.cursor(),
@@ -904,6 +993,7 @@ mod tests {
                     held, advanced, 7,
                 ),
                 InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(definition(3)),
             ),
         };
         let outcome = subject
@@ -938,6 +1028,7 @@ mod tests {
                     aggregate, 7, 2,
                 ),
                 InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(definition(3)),
             ),
         };
         let err = subject
@@ -957,5 +1048,146 @@ mod tests {
             "3 回目は打たない"
         );
         assert!(subject.intent_execution_repository().committed().is_empty());
+    }
+    // ---- b48: 段 11 のレビュー受領証 (#51 / B10) ----
+
+    /// 索引 1 にレビュアーを宣言した定義 (クラス宣言なし = adversarial 扱い)。
+    fn reviewed_definition(stage_count: usize) -> WorkflowDefinition {
+        definition_with_reviewer(stage_count, 1, "aidlc-quality-agent", None, None, None)
+    }
+
+    /// 定義を読むのは **Approve 段だけ**である — 他の段は I/O を増やさない。
+    #[tokio::test]
+    async fn only_the_approve_step_reads_the_definition() {
+        // 差し戻し（Reject 段）は定義を読まない。
+        let mut subject = use_case(at_the_first_gate(3), 7);
+        subject
+            .execute(
+                ReportRequest::new(
+                    Verdict::Rejected,
+                    Some(slug(1)),
+                    None,
+                    Some("直せ".to_string()),
+                    true,
+                ),
+                at(),
+            )
+            .await
+            .expect("差し戻しは通る");
+        assert_eq!(
+            subject.workflow_definition_repository().lookups(),
+            0,
+            "Reject 段は定義を読まない"
+        );
+
+        // 承認（Approve 段）は 1 試行につき 1 回だけ読む。
+        let mut subject = use_case(at_the_first_gate(3), 7);
+        subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect("承認は通る");
+        assert_eq!(
+            subject.workflow_definition_repository().lookups(),
+            1,
+            "Approve 段は 1 試行につき 1 回だけ読む"
+        );
+    }
+
+    /// レビュアーを宣言したステージは、受領証が無ければ段 11 で拒まれる。
+    #[tokio::test]
+    async fn a_reviewer_bearing_stage_without_a_receipt_is_refused_at_the_approval_gate() {
+        let mut subject = use_case_with(at_the_first_gate(3), 7, reviewed_definition);
+
+        let err = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect_err("受領証が無ければ承認できない");
+
+        assert!(
+            matches!(
+                &err,
+                CommitError::Transition {
+                    step: TransitionStep::Approve,
+                    stage,
+                    error: CommandError::ReviewReceiptMissing { reviewer, .. },
+                } if stage == &slug(1) && reviewer == "aidlc-quality-agent"
+            ),
+            "段 11 の材料をそのまま伝播する: {err:?}"
+        );
+        assert!(
+            subject.intent_execution_repository().committed().is_empty(),
+            "拒まれた承認は何もコミットしない"
+        );
+    }
+
+    /// 実効クラスが `none` に落ちた実行は受領証を要求しない
+    /// （`--review none` の override — upstream `verifyReviewerPrecondition` `:1810-1812`）。
+    #[tokio::test]
+    async fn an_effective_none_override_waives_the_receipt() {
+        let (intent, aggregate, _) = genesis_with_review(3, "none");
+        let mut subject = use_case_with((intent, aggregate), 7, reviewed_definition);
+
+        subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect("実効 none は受領証を要らない");
+    }
+
+    /// 壊れた `--review` の値は「壊れた歴史」として surface する。
+    #[tokio::test]
+    async fn a_corrupt_review_override_is_surfaced_rather_than_defaulted() {
+        let (intent, aggregate, _) = genesis_with_review(3, "Adversarial");
+        let mut subject = use_case_with((intent, aggregate), 7, reviewed_definition);
+
+        let err = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect_err("閉集合の外は既定へ落とさない");
+        assert!(
+            matches!(&err, CommitError::CorruptReviewOverride(raw) if raw == "Adversarial"),
+            "{err:?}"
+        );
+    }
+
+    /// 定義がそのステージを知らなければ、承認は既定へ落とさず断る。
+    #[tokio::test]
+    async fn a_stage_the_definition_does_not_know_refuses_the_approval() {
+        // 定義は 1 段だけ (`stage-0`) — 実行の計画 (3 段) のカーソル `stage-1` を知らない。
+        // 判断 (`report_dispatch`) は計画で解決するので通り、段 11 の定義照会だけが落ちる。
+        let mut subject = use_case_with(at_the_first_gate(3), 7, |_| definition(1));
+
+        let err = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect_err("定義に無いステージは承認できない");
+
+        assert!(
+            matches!(&err, CommitError::UnknownDefinitionStage { stage } if stage == &slug(1)),
+            "{err:?}"
+        );
+    }
+
+    /// 定義ポートの失敗はそのまま伝播する（握り潰さない）。
+    #[tokio::test]
+    async fn a_definition_port_failure_is_propagated_verbatim() {
+        let (intent, aggregate) = at_the_first_gate(3);
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding(aggregate, 7),
+                InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::empty(),
+            ),
+        };
+        let err = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect_err("定義が無ければ承認できない");
+        assert!(
+            matches!(
+                &err,
+                CommitError::DefinitionRepository(RepositoryError::NotFound { .. })
+            ),
+            "{err:?}"
+        );
     }
 }

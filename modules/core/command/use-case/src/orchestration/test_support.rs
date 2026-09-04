@@ -25,9 +25,9 @@ use core_command_domain::orchestration::{
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
-    DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph,
-    StageMode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
-    WorkflowDefinitionEvent, WorkflowDefinitionId,
+    DefinitionRevision, ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewClass, ScopeGrid,
+    ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber, StageSlug,
+    WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
 
 use super::port::CompiledDefinitionRepository;
@@ -145,6 +145,61 @@ pub(crate) fn definition(stage_count: usize) -> WorkflowDefinition {
         .0
 }
 
+/// レビュアーを 1 段だけ宣言した `stage_count` 段の定義 (b48 の受領証テスト用)。
+///
+/// `stage` にレビュアーを宣言し、`class` を載せる (`None` = クラス宣言なし = adversarial
+/// 扱い)。`review_cap` はスコープ `classic` の上限で、`None` は上限なしである。
+pub(crate) fn definition_with_reviewer(
+    stage_count: usize,
+    stage: usize,
+    reviewer: &str,
+    class: Option<ReviewClass>,
+    max_iterations: Option<u32>,
+    review_cap: Option<ReviewCapValue>,
+) -> WorkflowDefinition {
+    let nodes = (0..stage_count)
+        .map(|index| {
+            let phase = if index == 0 {
+                PhaseId::Initialization
+            } else {
+                PhaseId::Inception
+            };
+            let mut builder = StageNodeBuilder::new(
+                slug(index),
+                StageNumber::parse(&format!("{}.{}", phase.index(), index + 1))
+                    .expect("フィクスチャのステージ番号は文法内"),
+                "Stage".to_string(),
+                phase,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .scopes(vec!["classic".to_string()]);
+            if index == stage {
+                builder = builder.reviewer(reviewer.to_string());
+                if let Some(class) = class {
+                    builder = builder.review_class(class);
+                }
+                if let Some(max_iterations) = max_iterations {
+                    builder = builder.reviewer_max_iterations(max_iterations);
+                }
+            }
+            builder.build()
+        })
+        .collect();
+    let graph = StageGraph::new(nodes).expect("フィクスチャのグラフは検証を通る");
+    let grid = ScopeGrid::from_graph(&graph);
+    let mut scopes = BTreeMap::new();
+    let mut metadata = ScopeMetadata::new("classic").expect("フィクスチャの scope メタデータ");
+    if let Some(cap) = review_cap {
+        metadata = metadata.with_review_cap(cap);
+    }
+    scopes.insert("classic".to_string(), metadata);
+    let compiled = CompiledDefinition::compile(compiled_definition_id(), graph, grid, scopes).0;
+    WorkflowDefinition::define(definition_id(), &compiled, at())
+        .expect("フィクスチャの配布束は同じ系譜")
+        .0
+}
+
 /// `stage_count` 段の配布束 (genesis の対の左)。内容版は内容から導出されるので、段数が
 /// 違えば内容版も違う — 改訂を見るテストは段数を変える。
 pub(crate) fn compiled(stage_count: usize) -> CompiledDefinition {
@@ -166,6 +221,8 @@ pub(crate) fn compiled_definition_id() -> CompiledDefinitionId {
 pub(crate) struct InMemoryWorkflowDefinitionRepository {
     stored: Option<(WorkflowDefinition, usize)>,
     committed: Vec<WorkflowDefinitionEvent>,
+    /// これまでに引かれた回数 (どの段が定義を読むかの観測点 — b48)。
+    lookups: std::cell::Cell<usize>,
     /// 読取を破損で失敗させる台本 (`corrupt()` が立てる)。
     corrupt: bool,
     /// 書込に割り込む別の書き手の回数 (`holding_behind_a_concurrent_write` が立てる)。
@@ -180,6 +237,7 @@ impl InMemoryWorkflowDefinitionRepository {
         InMemoryWorkflowDefinitionRepository {
             stored,
             committed: Vec::new(),
+            lookups: std::cell::Cell::new(0),
             corrupt: false,
             interrupting_writes: 0,
         }
@@ -218,6 +276,7 @@ impl InMemoryWorkflowDefinitionRepository {
         InMemoryWorkflowDefinitionRepository {
             stored: None,
             committed: Vec::new(),
+            lookups: std::cell::Cell::new(0),
             corrupt: true,
             interrupting_writes: 0,
         }
@@ -227,6 +286,11 @@ impl InMemoryWorkflowDefinitionRepository {
     pub(crate) fn committed(&self) -> &[WorkflowDefinitionEvent] {
         &self.committed
     }
+
+    /// これまでに引かれた回数 (「定義を読むのは Approve 段だけ」の観測点 — b48)。
+    pub(crate) fn lookups(&self) -> usize {
+        self.lookups.get()
+    }
 }
 
 impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
@@ -234,6 +298,7 @@ impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
         &self,
         id: &WorkflowDefinitionId,
     ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
+        self.lookups.set(self.lookups.get() + 1);
         if self.corrupt {
             return Err(RepositoryError::Corrupt {
                 id: id.clone(),
@@ -388,6 +453,47 @@ pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentExecution, IntentExe
         })
         .collect();
     start_from_plan(&plan)
+}
+
+/// `--review <値>` を運ぶ intent と、その genesis (b48 の override テスト用)。
+///
+/// 値は**生のまま**運ぶ — 閉集合の検査は鋳造時に済んでいるので、壊れた値を持つ歴史も
+/// ここでは作れる (`CorruptReviewOverride` の経路を踏むため)。
+pub(crate) fn genesis_with_review(
+    stage_count: usize,
+    review: &str,
+) -> (Intent, IntentExecution, IntentExecutionEvent) {
+    let stages = (0..stage_count)
+        .map(|index| {
+            let phase = if index == 0 {
+                PhaseId::Initialization
+            } else {
+                PhaseId::Inception
+            };
+            StageEntry::new(
+                slug(index),
+                phase,
+                PlanAction::Execute,
+                false,
+                display(index, phase),
+            )
+        })
+        .collect();
+    let intent = Intent::from((
+        Created::new(
+            intent_event_id(),
+            intent(),
+            WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64)))
+                .expect("フィクスチャの定義 revision"),
+            StartRequest::new("classic", "report use case").with_review(review),
+            stages,
+            scan(),
+        ),
+        at(),
+    ));
+    let (execution, event) = IntentExecution::start(execution_id(), &intent, at());
+    (intent, execution, event)
 }
 
 /// 索引 0 = initialization、索引 1 以降 = construction の 3 段計画。

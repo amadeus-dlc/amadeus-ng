@@ -1,4 +1,4 @@
-//! ドメインイベント 13 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
+//! ドメインイベント 15 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -9,8 +9,8 @@
 use core_command_domain::orchestration::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
     IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    SingleStageRunCommitted, SkeletonStanceRecorded, StageEntry, StageRevised, StageSkipped,
-    Started, Unparked,
+    ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded, StageEntry,
+    StageRevised, StageSkipped, Started, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use super::autonomy_mode_set_dto::AutonomyModeSetDto;
 use super::dto_decode_error::DtoDecodeError;
 use super::dto_vocabulary::{
-    autonomy_of, autonomy_spelling, skeleton_stance_of, skeleton_stance_spelling,
+    autonomy_of, autonomy_spelling, review_verdict_of, review_verdict_spelling, skeleton_stance_of,
+    skeleton_stance_spelling,
 };
 use super::gate_approved_dto::GateApprovedDto;
 use super::gate_opened_dto::GateOpenedDto;
@@ -27,6 +28,8 @@ use super::intent_dto::StageEntryDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
+use super::review_completed_dto::ReviewCompletedDto;
+use super::review_requested_dto::ReviewRequestedDto;
 use super::single_stage_run_committed_dto::SingleStageRunCommittedDto;
 use super::skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 use super::stage_revised_dto::StageRevisedDto;
@@ -63,6 +66,10 @@ pub enum IntentExecutionEventDto {
     SingleStageRunCommitted(SingleStageRunCommittedDto),
     /// walking-skeleton stance の記録。
     SkeletonStanceRecorded(SkeletonStanceRecordedDto),
+    /// レビュアーの差し向け。
+    ReviewRequested(ReviewRequestedDto),
+    /// レビュアーの判定の記録。
+    ReviewCompleted(ReviewCompletedDto),
 }
 
 /// イベント識別子の復号。
@@ -187,6 +194,26 @@ impl IntentExecutionEventDto {
                     stance: skeleton_stance_spelling(payload.stance()).to_string(),
                 })
             }
+            IntentExecutionEvent::ReviewRequested(payload) => {
+                IntentExecutionEventDto::ReviewRequested(ReviewRequestedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                    stage: slug_spelling(payload.stage()),
+                    reviewer: payload.reviewer().to_string(),
+                    iteration: payload.iteration(),
+                    retry: payload.is_retry(),
+                })
+            }
+            IntentExecutionEvent::ReviewCompleted(payload) => {
+                IntentExecutionEventDto::ReviewCompleted(ReviewCompletedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                    stage: slug_spelling(payload.stage()),
+                    reviewer: payload.reviewer().to_string(),
+                    iteration: payload.iteration(),
+                    verdict: review_verdict_spelling(payload.verdict()).to_string(),
+                })
+            }
         }
     }
 
@@ -297,6 +324,26 @@ impl IntentExecutionEventDto {
                     event_id_of(&payload.id)?,
                     aggregate_id_of(&payload.aggregate_id)?,
                     skeleton_stance_of(&payload.stance, "stance")?,
+                ))
+            }
+            IntentExecutionEventDto::ReviewRequested(payload) => {
+                IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                    payload.reviewer.clone(),
+                    payload.iteration,
+                    payload.retry,
+                ))
+            }
+            IntentExecutionEventDto::ReviewCompleted(payload) => {
+                IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                    payload.reviewer.clone(),
+                    payload.iteration,
+                    review_verdict_of(&payload.verdict, "verdict")?,
                 ))
             }
         })

@@ -13,8 +13,9 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry,
-    StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    ReviewAttempt, ReviewCompleted, ReviewRequested, ReviewVerdict, SingleStageRunCommitted,
+    SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped,
+    StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -122,7 +123,7 @@ fn intent() -> Intent {
 /// intent 面 (`INTENT_BODY` の `stages`) と同一である。
 const STARTED_BODY: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 13 変種を、逐語で固定した綴りと組で並べる。
+/// 全 15 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -234,6 +235,28 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             )),
             r#"{"SkeletonStanceRecorded":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stance":"ScopeDependent"}}"#,
         ),
+        (
+            IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+                execution_event_id(),
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                slug("intent-capture"),
+                "aidlc-product-lead-agent",
+                2,
+                true,
+            )),
+            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true}}"#,
+        ),
+        (
+            IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+                execution_event_id(),
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                slug("intent-capture"),
+                "aidlc-product-lead-agent",
+                2,
+                ReviewVerdict::NotReady,
+            )),
+            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady"}}"#,
+        ),
     ]
 }
 
@@ -242,7 +265,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 /// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
 /// 最初のゲート付きステージ (索引 1) である。**ワイヤの形** (項目名・並び) は変わって
 /// いない — 変わったのは誕生時の状態そのものである。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -506,6 +529,7 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
         None,
         AutonomyMode::Gated,
         Some(SkeletonStance::Off),
+        vec![ReviewAttempt::default(); 3],
         vec![false; 3],
         vec![0; 3],
         1,
@@ -526,6 +550,93 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
             .skeleton_stance(),
         Some(SkeletonStance::Off)
     );
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn the_review_attempts_round_trip_through_the_snapshot() {
+    // 依頼 1 件が判定待ち、依頼 2 件目が NOT-READY で閉じた試行を索引 1 に置く。
+    let intent = intent();
+    let (aggregate, _) = IntentExecution::start(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        &intent,
+        at(),
+    );
+    let attempt = ReviewAttempt::restored(
+        2,
+        [1u32].into_iter().collect(),
+        vec![core_command_domain::orchestration::ReviewClosure::new(
+            2,
+            ReviewVerdict::NotReady,
+        )],
+    );
+    let aggregate = IntentExecution::new(
+        aggregate.id().clone(),
+        aggregate.intent_id().clone(),
+        aggregate.stage_keys().to_vec(),
+        vec![PlanAction::Execute; 3],
+        vec![
+            core_command_domain::workspace::CheckboxState::Completed,
+            core_command_domain::workspace::CheckboxState::InProgress,
+            core_command_domain::workspace::CheckboxState::Pending,
+        ],
+        1,
+        core_command_domain::orchestration::Status::Running,
+        None,
+        AutonomyMode::Gated,
+        None,
+        vec![
+            ReviewAttempt::default(),
+            attempt.clone(),
+            ReviewAttempt::default(),
+        ],
+        vec![false; 3],
+        vec![0; 3],
+        1,
+        at(),
+    )
+    .expect("組める");
+
+    let json =
+        serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
+    assert!(
+        json.contains(r#""review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":2,"pending":[1],"closed":[{"iteration":2,"verdict":"NotReady"}]},{"requests":0,"pending":[],"closed":[]}]"#),
+        "試行のワイヤ形式が変わった: {json}"
+    );
+
+    let decoded: IntentExecutionDto = serde_json::from_str(&json).expect("読める");
+    let rebuilt = decoded.to_domain().expect("ドメインへ戻せる");
+    assert_eq!(
+        rebuilt
+            .stage_index(1)
+            .and_then(|stage| rebuilt.review_attempt(stage)),
+        Some(&attempt),
+        "試行がそのまま戻る"
+    );
+}
+
+#[test]
+fn a_snapshot_row_without_the_review_attempts_field_reads_as_never_requested() {
+    // 「欄が無い = まだ 1 度も依頼していない」という正規の意味である (b48 設計 §5)。
+    let without = GENESIS_SNAPSHOT.replace(
+        r#""review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"#,
+        "",
+    );
+    assert_ne!(without, GENESIS_SNAPSHOT, "欄を落とせている");
+    let decoded: IntentExecutionDto = serde_json::from_str(&without).expect("欄が無くても読める");
+    let rebuilt = decoded.to_domain().expect("ドメインへ戻せる");
+    for stage in 0..3 {
+        assert_eq!(
+            rebuilt
+                .stage_index(stage)
+                .and_then(|index| rebuilt.review_attempt(index)),
+            Some(&ReviewAttempt::default()),
+            "全ステージが空の試行で読める"
+        );
+    }
 }
 
 #[test]

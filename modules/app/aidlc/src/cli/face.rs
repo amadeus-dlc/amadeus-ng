@@ -7,6 +7,8 @@ pub enum Face {
     Orchestrate,
     /// `aidlc-utility`。
     Utility,
+    /// `aidlc-log`（対話イベントの記録面 — b48 で `review` 動詞だけが配線されている）。
+    Log,
 }
 
 impl Face {
@@ -20,6 +22,7 @@ impl Face {
         let name = name.strip_suffix(".exe").unwrap_or(name);
         match name {
             "aidlc-utility" => Face::Utility,
+            "aidlc-log" => Face::Log,
             _ => Face::Orchestrate,
         }
     }
@@ -34,6 +37,9 @@ mod tests {
         assert_eq!(Face::of("aidlc-utility"), Face::Utility);
         assert_eq!(Face::of("/usr/local/bin/aidlc-utility"), Face::Utility);
         assert_eq!(Face::of("aidlc-utility.exe"), Face::Utility);
+        assert_eq!(Face::of("aidlc-log"), Face::Log);
+        assert_eq!(Face::of("/usr/local/bin/aidlc-log"), Face::Log);
+        assert_eq!(Face::of("aidlc-log.exe"), Face::Log);
         assert_eq!(Face::of("aidlc-orchestrate"), Face::Orchestrate);
         assert_eq!(Face::of("aidlc"), Face::Orchestrate);
         // 未知の名前はエンジンに倒す（配布物の既定の顔）。

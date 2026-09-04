@@ -51,9 +51,9 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, SingleStageRunCommitted,
-    SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped,
-    StartRequest, Unparked, WorkspaceScan,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, ReviewCompleted, ReviewRequested,
+    ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
+    StageEntry, StageRevised, StageSkipped, StartRequest, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -304,7 +304,7 @@ fn next_command(aggregate: &mut IntentExecution) -> IntentExecutionEvent {
     let result = if checkbox == CheckboxState::InProgress {
         aggregate.open_gate(&intent(), vec!["artifact.md".to_string()], at())
     } else {
-        aggregate.approve_gate(&intent(), None, at())
+        aggregate.approve_gate(&intent(), None, None, at())
     };
     result.expect("合成計画はフィクスチャ長ぶんのコマンドを受け付ける (STAGES の見積り)")
 }
@@ -917,7 +917,7 @@ fn both_sides_write_the_definition_payload_with_the_same_bytes() {
     }
 }
 
-/// 実行イベント 11 変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
+/// 実行イベント 15 変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
 fn every_execution_variant() -> Vec<IntentExecutionEvent> {
     let ev = || IntentExecutionEventId::generate();
     let agg = execution_id;
@@ -973,6 +973,22 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             ev(),
             agg(),
             SkeletonStance::ScopeDependent,
+        )),
+        IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
+            ev(),
+            agg(),
+            slug("stage-1"),
+            "aidlc-quality-agent",
+            2,
+            true,
+        )),
+        IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
+            ev(),
+            agg(),
+            slug("stage-1"),
+            "aidlc-quality-agent",
+            2,
+            ReviewVerdict::NotReady,
         )),
     ]
 }

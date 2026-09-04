@@ -84,7 +84,7 @@ async fn seed(repository: &mut Repository) -> IntentExecution {
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
+        aggregate.approve_gate(&intent(), None, Some("ok".to_string()), at())
     })
     .await
 }
@@ -645,7 +645,7 @@ async fn the_strategy_refreshes_the_snapshot_every_n_events() {
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 2 は基底を書き直す");
     let held = advance(&mut repository, &held, |aggregate| {
-        aggregate.approve_gate(&intent(), Some("ok".to_string()), at())
+        aggregate.approve_gate(&intent(), None, Some("ok".to_string()), at())
     })
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 3 はイベントのみ");

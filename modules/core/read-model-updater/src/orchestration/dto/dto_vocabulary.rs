@@ -5,7 +5,7 @@
 //! 書く側の同名モジュールとも共有しない (`mod.rs` の側ごと専用化)。両者が一致していることは
 //! 横断適合テストが固定する。
 
-use core_command_domain::orchestration::{AutonomyMode, SkeletonStance};
+use core_command_domain::orchestration::{AutonomyMode, ReviewVerdict, SkeletonStance};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewClass,
     RuleScope, SkeletonDefault, StageMode,
@@ -229,9 +229,44 @@ pub(crate) fn skeleton_stance_of(
     }
 }
 
+/// レビュー判定の綴り (ジャーナル面)。
+///
+/// ドメインの `ReviewVerdict::as_str` (`READY` / `NOT-READY`) は **CLI と監査行の面**の
+/// 綴りであり、行の面はこちらである (このモジュールの doc)。
+pub(crate) const fn review_verdict_spelling(value: ReviewVerdict) -> &'static str {
+    match value {
+        ReviewVerdict::Ready => "Ready",
+        ReviewVerdict::NotReady => "NotReady",
+    }
+}
+
+/// レビュー判定の復号。
+pub(crate) fn review_verdict_of(
+    raw: &str,
+    field: &'static str,
+) -> Result<ReviewVerdict, DtoDecodeError> {
+    match raw {
+        "Ready" => Ok(ReviewVerdict::Ready),
+        "NotReady" => Ok(ReviewVerdict::NotReady),
+        other => Err(DtoDecodeError::malformed(field, other)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_review_verdict_spelling_round_trips() {
+        for value in ReviewVerdict::ALL {
+            assert_eq!(
+                review_verdict_of(review_verdict_spelling(value), "verdict").unwrap(),
+                value
+            );
+        }
+        // ドメイン面の綴り (`READY`) は行の面では読めない — 面が違う。
+        assert!(review_verdict_of("READY", "verdict").is_err());
+    }
 
     #[test]
     fn every_definition_spelling_round_trips() {

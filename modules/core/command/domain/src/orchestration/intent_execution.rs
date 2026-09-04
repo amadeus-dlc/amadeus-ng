@@ -49,8 +49,8 @@ use super::intent::Intent;
 use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
-    Started, Unparked,
+    Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
+    StageRevised, StageSkipped, Started, Unparked,
 };
 use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
@@ -62,6 +62,8 @@ use super::report_decision::ReportDecision;
 use super::report_no_op::ReportNoOp;
 use super::report_refusal::ReportRefusal;
 use super::report_request::ReportRequest;
+use super::review_attempt::ReviewAttempt;
+use super::review_verdict::ReviewVerdict;
 use super::skeleton_stance::SkeletonStance;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
@@ -70,7 +72,7 @@ use super::state_binding::StateBinding;
 use super::status::Status;
 use super::transition_step::TransitionStep;
 use super::verdict::Verdict;
-use crate::workflow_definition::{ExecutionKind, PhaseId, PlanAction, StageSlug};
+use crate::workflow_definition::{ExecutionKind, PhaseId, PlanAction, ReviewPolicy, StageSlug};
 use crate::workspace::CheckboxState;
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_compact};
 
@@ -137,6 +139,13 @@ pub struct IntentExecution {
     /// ゲートは決まらない (`GateDecision::Unresolved`)。欄が無い歴史は `None` で読む —
     /// 後方互換ではなく「未記録」という正規の意味である。
     skeleton_stance: Option<SkeletonStance>,
+    /// ステージごとの**現在の試行**のレビュー会計 (計画と同じ長さ。genesis は全て空)。
+    ///
+    /// 受領証の鮮度は「その試行の中で依頼 → 判定が対になったか」だけで決まる
+    /// (オーナー裁定 2026-09-04 = (i) 順序だけ)。試行の区切り (フロア) は同じ集約の
+    /// 状態遷移 — 次ステージへの前進・差し戻し・ジャンプ — が決めるので、鮮度の判断は
+    /// この集約に閉じる (設計 §1)。欄が無い歴史は全て空で読む。
+    review_attempts: Vec<ReviewAttempt>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     seq_nr: usize,
@@ -256,6 +265,7 @@ impl IntentExecution {
         parked_at: Option<usize>,
         autonomy: AutonomyMode,
         skeleton_stance: Option<SkeletonStance>,
+        review_attempts: Vec<ReviewAttempt>,
         approved: Vec<bool>,
         revision_count: Vec<u32>,
         seq_nr: usize,
@@ -268,6 +278,7 @@ impl IntentExecution {
         for (name, actual) in [
             ("overlay", overlay.len()),
             ("checkbox", checkbox.len()),
+            ("review_attempts", review_attempts.len()),
             ("approved", approved.len()),
             ("revision_count", revision_count.len()),
         ] {
@@ -314,6 +325,7 @@ impl IntentExecution {
             parked_at: parked_at.map(StageIndex::new),
             autonomy,
             skeleton_stance,
+            review_attempts,
             approved,
             revision_count,
             seq_nr,
@@ -450,6 +462,15 @@ impl IntentExecution {
     #[must_use]
     pub const fn skeleton_stance(&self) -> Option<SkeletonStance> {
         self.skeleton_stance
+    }
+
+    /// 名指しステージの**現在の試行**のレビュー会計。範囲外は `None`。
+    ///
+    /// 判断 (終端受領証が在るか) は [`ReviewAttempt::has_terminal`] が持つので、呼出側は
+    /// これを読んで自前で数え直さない (`coding-rules/tell-dont-ask.md`)。
+    #[must_use]
+    pub fn review_attempt(&self, stage: StageIndex) -> Option<&ReviewAttempt> {
+        self.review_attempts.get(stage.to_usize())
     }
 
     /// walking-skeleton ゲートのステージ — **静的計画**で Construction フェーズの最初の
@@ -642,6 +663,31 @@ impl IntentExecution {
         }
     }
 
+    /// レビュアーを宣言したステージの承認に、現在の試行の終端受領証を要求する (段 11)。
+    ///
+    /// 実効クラスが `none` に落ちた実行は受領証を要求しない — 「レビュアーを呼ぶな」と
+    /// 言われた実行に受領証を求めるのは矛盾だからである (upstream `:1810-1812`)。
+    fn require_review_receipt(
+        &self,
+        stage: StageIndex,
+        policy: Option<&ReviewPolicy>,
+    ) -> Result<(), CommandError> {
+        let Some(policy) = policy.filter(|policy| policy.requires_receipt()) else {
+            return Ok(());
+        };
+        let has_terminal = self
+            .review_attempt(stage)
+            .is_some_and(|attempt| attempt.has_terminal(policy));
+        if has_terminal {
+            Ok(())
+        } else {
+            Err(CommandError::ReviewReceiptMissing {
+                stage,
+                reviewer: policy.reviewer().to_string(),
+            })
+        }
+    }
+
     /// ガードを通過したイベントを自身に適用して返す (BR1.1)。
     ///
     /// 通番と発生時刻は**適用の引数**であって、イベントに載る材料ではない (ADR-010 / B7 —
@@ -675,7 +721,7 @@ impl IntentExecution {
         IntentExecutionEventId::generate()
     }
 
-    // ---- W2: decide (10 コマンド、1 コマンド 1 イベント) ----
+    // ---- W2: decide (15 コマンド、1 コマンド 1 イベント) ----
     //
     // 以下のコマンドはすべて `Result<IntentExecutionEvent, CommandError>` を返す —
     // 「集約の `&mut self` コマンドは必ず単一のドメインイベントを戻り値で返す」という規則
@@ -719,18 +765,29 @@ impl IntentExecution {
     /// 呼出側 (ユースケース) はフロー制御だけを担い、判断は集約に閉じる
     /// (オーナー統一ルール「集約は FSM」)。
     ///
+    /// # レビュー受領証のガード (段 11、b48)
+    ///
+    /// `policy` はこのステージのレビュー方針である (`None` = レビュアー宣言なし)。実効
+    /// クラスが `none` でないなら、**現在の試行の終端受領証**が要る — upstream の
+    /// `verifyReviewerPrecondition` (ピン `3c3146cf` `aidlc-state.ts:1775-1944`) を、監査台帳の
+    /// 読み返しではなく集約状態の再生に置き換えたものである。検査の位置も upstream と同じで、
+    /// state 検査 (checkbox 前提) の**後**・状態変更の前に置く。
+    ///
     /// # Errors
     ///
-    /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反を拒否する。
+    /// 非受理、非ゲートステージ (`InvalidTarget`)、checkbox 前提違反、レビュアーを宣言した
+    /// ステージに終端受領証が無い (`ReviewReceiptMissing`) を拒否する。
     pub fn approve_gate(
         &mut self,
         intent: &Intent,
+        policy: Option<&ReviewPolicy>,
         user_input: Option<String>,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let stage = self.guard_running_for(intent)?;
         self.require_gated(stage)?;
         self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)?;
+        self.require_review_receipt(stage, policy)?;
         let material = GateApproved::new(
             IntentExecution::next_event_id(),
             self.id.clone(),
@@ -1060,6 +1117,168 @@ impl IntentExecution {
         )
     }
 
+    /// レビュアーの差し向けを記録する — `ReviewRequested` (`aidlc-log review`、b48 / B10)。
+    ///
+    /// ガードの順序は upstream `handleReview` (ピン `3c3146cf` `aidlc-log.ts:900-1118`) の
+    /// 順序どおりである: 取り違え → 未知 slug → レビュアー宣言 → レビュアー一致 →
+    /// (retry 形) 判定待ちの存在 / (通常形) 予算 → 通し番号の順序。
+    ///
+    /// # 本流の状態は見ない
+    ///
+    /// upstream の `handleReview` には status ガードが 1 つも無い — 監査行を足すだけだから
+    /// である。したがって Completed / park 中 / autonomous でも受理する
+    /// (`record_single_stage_run` と同じ受理集合)。
+    ///
+    /// # `retry` の適用はフレーム空である
+    ///
+    /// `Retry: pending-request` の依頼は「差し向けたのに判定が返らなかった依頼の呼び直し」で
+    /// あり、依頼の回数には数えない (upstream `:810-812` の `if (Retry !== "pending-request")
+    /// requestCount++`)。判定待ち集合も既にその通し番号を含んでいるので、適用は何も動かさない。
+    ///
+    /// # Errors
+    ///
+    /// intent の取り違え (`IntentMismatch`)、計画に無い slug (`UnknownStage`)、レビュアー
+    /// 宣言なし (`NoDeclaredReviewer`)、レビュアー不一致 (`ReviewerMismatch`)、判定待ちが
+    /// 無い retry (`NoPendingReview`)、予算超過 (`ReviewBudgetExceeded`)、順序違反
+    /// (`ReviewOutOfSequence`)。
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "upstream `handleReview` の入力そのもの — 対象・方針・レビュアー・通し番号・\
+                  呼び直しの 5 材料はどれも独立しており、束ねる VO を作ると集約の外に\
+                  「引数の袋」ができるだけである"
+    )]
+    pub fn request_review(
+        &mut self,
+        intent: &Intent,
+        stage: &StageSlug,
+        policy: Option<&ReviewPolicy>,
+        reviewer: &str,
+        iteration: u32,
+        retry_pending: bool,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let (target, policy) = self.guard_review(intent, stage, policy, reviewer)?;
+        let attempt = self.attempt_at(target)?;
+        if retry_pending {
+            if !attempt.is_pending(iteration) {
+                return Err(CommandError::NoPendingReview {
+                    stage: target,
+                    iteration,
+                });
+            }
+        } else {
+            let budget = policy.budget();
+            let expected = attempt.request_count().saturating_add(1);
+            if iteration > budget {
+                return Err(CommandError::ReviewBudgetExceeded {
+                    stage: target,
+                    ordinal: iteration,
+                    budget,
+                });
+            }
+            if expected > budget {
+                return Err(CommandError::ReviewBudgetExceeded {
+                    stage: target,
+                    ordinal: expected,
+                    budget,
+                });
+            }
+            if iteration != expected {
+                return Err(CommandError::ReviewOutOfSequence {
+                    stage: target,
+                    iteration,
+                    expected,
+                });
+            }
+        }
+        let material = ReviewRequested::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(target)?,
+            reviewer,
+            iteration,
+            retry_pending,
+        );
+        self.commit(IntentExecutionEvent::ReviewRequested(material), occurred_at)
+    }
+
+    /// レビュアーの判定を記録する — `ReviewCompleted` (`aidlc-log review --verdict`)。
+    ///
+    /// 受理できるのは**開いている依頼に対する判定**だけである — upstream の
+    /// `freshReviewReceipts` は `pendingRequests` に無い `REVIEW_COMPLETED` を捨てるので
+    /// (`aidlc-lib.ts:5182-5184`)、対にならない判定は受領証として数えられない。ここでは
+    /// 拒否として明示する (`handleReview` `:1140-1145` の逐語がその拒否である)。
+    ///
+    /// # Errors
+    ///
+    /// [`IntentExecution::request_review`] のガード 1〜4 と同じ (`IntentMismatch` /
+    /// `UnknownStage` / `NoDeclaredReviewer` / `ReviewerMismatch`)、および判定待ちが無い
+    /// (`NoPendingReview`)。
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "[`IntentExecution::request_review`] と同じ理由（材料が独立している）"
+    )]
+    pub fn record_review_verdict(
+        &mut self,
+        intent: &Intent,
+        stage: &StageSlug,
+        policy: Option<&ReviewPolicy>,
+        reviewer: &str,
+        iteration: u32,
+        verdict: ReviewVerdict,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let (target, _) = self.guard_review(intent, stage, policy, reviewer)?;
+        if !self.attempt_at(target)?.is_pending(iteration) {
+            return Err(CommandError::NoPendingReview {
+                stage: target,
+                iteration,
+            });
+        }
+        let material = ReviewCompleted::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(target)?,
+            reviewer,
+            iteration,
+            verdict,
+        );
+        self.commit(IntentExecutionEvent::ReviewCompleted(material), occurred_at)
+    }
+
+    /// レビュー会計 2 コマンドが共有するガード 1〜3 (取り違え → 未知 slug → 宣言 → 一致)。
+    fn guard_review<'policy>(
+        &self,
+        intent: &Intent,
+        stage: &StageSlug,
+        policy: Option<&'policy ReviewPolicy>,
+        reviewer: &str,
+    ) -> Result<(StageIndex, &'policy ReviewPolicy), CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        let target = self
+            .stage_keys
+            .iter()
+            .position(|key| key.slug() == stage)
+            .map(StageIndex::new)
+            .ok_or_else(|| CommandError::UnknownStage(stage.as_str().to_string()))?;
+        let policy = policy.ok_or(CommandError::NoDeclaredReviewer(target))?;
+        if policy.reviewer() != reviewer {
+            return Err(CommandError::ReviewerMismatch {
+                stage: target,
+                declared: policy.reviewer().to_string(),
+            });
+        }
+        Ok((target, policy))
+    }
+
+    /// 名指しステージの試行 (索引は `guard_review` が束縛済みなので実際には必ず在る)。
+    fn attempt_at(&self, stage: StageIndex) -> Result<&ReviewAttempt, CommandError> {
+        self.review_attempt(stage)
+            .ok_or(CommandError::InvalidTarget(stage))
+    }
+
     // ---- W3: apply (リプレイと通常実行の同一経路 — BR2.1 / BR2.3) ----
 
     /// イベントを 1 つ適用する。通常実行 (decide 経由) とリプレイの唯一の状態遷移経路。
@@ -1105,7 +1324,7 @@ impl IntentExecution {
         *self = next;
     }
 
-    /// 13 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
+    /// 15 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
     fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
@@ -1127,6 +1346,10 @@ impl IntentExecution {
             IntentExecutionEvent::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
                 self.mark_stage(stage, CheckboxState::Revising);
+                // 差し戻しはレビュー試行のフロアである (upstream `freshReviewReceipts` の
+                // FLOOR 4 つのうち `GATE_REJECTED`)。人間が「直せ」と言った時点で、
+                // それまでの受領証は次の試行には効かない。
+                self.reset_attempt(stage);
                 // 改訂回数はイベントに載らない — 差し戻しという事実から +1 を導く (BR1.4)。
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = slot.saturating_add(1);
@@ -1143,6 +1366,12 @@ impl IntentExecution {
             }
             IntentExecutionEvent::Jumped(jumped) => {
                 self.apply_jump(jumped)?;
+                // ジャンプは**ステージ非依存**のフロアである (upstream の `STAGE_JUMPED` は
+                // `auditBlockField(Stage)` を見ずに floor を更新する — `aidlc-lib.ts:5075-5078`)。
+                // fail-closed over precise: 跳んだ先も跳ぶ前も、受領証は数え直しになる。
+                for attempt in &mut self.review_attempts {
+                    attempt.reset();
+                }
             }
             IntentExecutionEvent::Parked(parked) => {
                 let stage = self.resolve(parked.stage())?;
@@ -1175,8 +1404,31 @@ impl IntentExecution {
             IntentExecutionEvent::SkeletonStanceRecorded(recorded) => {
                 self.skeleton_stance = Some(recorded.stance());
             }
+            IntentExecutionEvent::ReviewRequested(requested) => {
+                let stage = self.resolve(requested.stage())?;
+                // retry の適用は**フレーム空** — 呼び直しは依頼の回数に数えない
+                // (upstream `aidlc-log.ts:810-812`) し、判定待ち集合も既にその番号を含む。
+                if !requested.is_retry()
+                    && let Some(attempt) = self.review_attempts.get_mut(stage.to_usize())
+                {
+                    attempt.record_request(requested.iteration());
+                }
+            }
+            IntentExecutionEvent::ReviewCompleted(completed) => {
+                let stage = self.resolve(completed.stage())?;
+                if let Some(attempt) = self.review_attempts.get_mut(stage.to_usize()) {
+                    attempt.record_verdict(completed.iteration(), completed.verdict());
+                }
+            }
         }
         Ok(())
+    }
+
+    /// 名指しステージのレビュー試行を空へ戻す (フロア)。
+    fn reset_attempt(&mut self, stage: StageIndex) {
+        if let Some(attempt) = self.review_attempts.get_mut(stage.to_usize()) {
+            attempt.reset();
+        }
     }
 
     fn apply_jump(&mut self, jumped: &Jumped) -> Result<(), ApplyError> {
@@ -1248,6 +1500,10 @@ impl IntentExecution {
             Some(next) => {
                 self.mark_stage(next, CheckboxState::InProgress);
                 self.cursor = next;
+                // 次ステージに立つ = upstream の `STAGE_STARTED` — レビュー試行のフロアで
+                // ある (`freshReviewReceipts` の FLOOR 4 つのうちの 1 つ)。前の試行で
+                // 数えた依頼は新しいステージには効かない。
+                self.reset_attempt(next);
             }
             None => self.status = Status::Completed,
         }
@@ -1823,6 +2079,7 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
             None,
             AutonomyMode::Gated,
             None,
+            vec![ReviewAttempt::default(); count],
             vec![false; count],
             vec![0; count],
             1,
@@ -1862,9 +2119,9 @@ mod tests {
     };
     use crate::workflow_definition::{
         BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
-        ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
-        StageNode, StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition,
-        WorkflowDefinitionId,
+        ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewPolicy, ScopeGrid, ScopeMetadata,
+        StageGraph, StageMode, StageNode, StageNodeBuilder, StageNumber, StageSlug,
+        WorkflowDefinition, WorkflowDefinitionId,
     };
     use crate::workspace::CheckboxState;
     use std::collections::BTreeMap;
@@ -1985,7 +2242,7 @@ mod tests {
             occurred_at: DateTime<Utc>,
         ) -> Result<IntentExecutionEvent, CommandError> {
             self.execution
-                .approve_gate(&self.intent, user_input, occurred_at)
+                .approve_gate(&self.intent, None, user_input, occurred_at)
         }
 
         fn reject_gate(
@@ -2109,6 +2366,7 @@ mod tests {
             None,
             autonomy,
             None,
+            vec![ReviewAttempt::default(); stage_count],
             approved,
             vec![0; stage_count],
             1,
@@ -2507,6 +2765,7 @@ mod tests {
             None,
             AutonomyMode::Gated,
             None,
+            vec![ReviewAttempt::default(); 3],
             vec![false; 3],
             vec![0; 3],
             1,
@@ -3052,7 +3311,7 @@ mod tests {
         let mut w = all_exec(3);
         assert_eq!(
             w.execution
-                .approve_gate(&foreign_plan(3), None, occurred())
+                .approve_gate(&foreign_plan(3), None, None, occurred())
                 .unwrap_err(),
             CommandError::IntentMismatch
         );
@@ -3067,7 +3326,7 @@ mod tests {
         assert_eq!(shorter.id(), w.intent_id(), "識別子は一致している前提");
         assert_eq!(
             w.execution
-                .approve_gate(&shorter, None, occurred())
+                .approve_gate(&shorter, None, None, occurred())
                 .unwrap_err(),
             CommandError::IntentMismatch
         );
@@ -3085,7 +3344,9 @@ mod tests {
             CommandError::IntentMismatch
         );
         assert_eq!(
-            w.execution.approve_gate(&foreign, None, at0).unwrap_err(),
+            w.execution
+                .approve_gate(&foreign, None, None, at0)
+                .unwrap_err(),
             CommandError::IntentMismatch
         );
         assert_eq!(
@@ -3828,6 +4089,7 @@ mod tests {
             None,
             AutonomyMode::Gated,
             None,
+            vec![ReviewAttempt::default(); count],
             vec![false; count],
             vec![0; count],
             1,
@@ -4027,6 +4289,7 @@ mod tests {
             source.parked_at().map(StageIndex::to_usize),
             source.autonomy(),
             None,
+            vec![ReviewAttempt::default(); source.stage_count()],
             (0..source.stage_count())
                 .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.approved(stage))
@@ -4068,6 +4331,7 @@ mod tests {
                 None,
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
                 1,
                 *source.last_updated_at()
             )
@@ -4086,6 +4350,7 @@ mod tests {
                 None,
                 source.autonomy(),
                 None,
+                vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
                 vec![0; 3],
                 1,
@@ -4107,6 +4372,7 @@ mod tests {
                 None,
                 source.autonomy(),
                 None,
+                vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
                 vec![0; 3],
                 1,
@@ -4127,6 +4393,7 @@ mod tests {
                 Some(9),
                 source.autonomy(),
                 None,
+                vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
                 vec![0; 3],
                 1,
@@ -4147,6 +4414,7 @@ mod tests {
                 None,
                 source.autonomy(),
                 None,
+                vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
                 vec![0; 3],
                 1,
@@ -4166,6 +4434,7 @@ mod tests {
                 None,
                 source.autonomy(),
                 None,
+                vec![ReviewAttempt::default(); 3],
                 vec![false; 3],
                 vec![0; 3],
                 0,
@@ -4336,6 +4605,7 @@ mod tests {
                 None,
                 source.autonomy(),
                 None,
+                vec![ReviewAttempt::default(); 3],
                 approved,
                 vec![0, 0, 0],
                 1,
@@ -4490,6 +4760,666 @@ mod tests {
         );
         assert_eq!(other.seq_nr(), 1);
         assert_ne!(other.state_binding(), birth);
+    }
+
+    // ---- b48: レビュー受領証 (#51 / B10) ----
+
+    /// 合成のレビュー方針 (レビュアー名は `r` で固定 — 逐語は app が組む)。
+    fn policy(effective: ReviewCapValue, max_iterations: u32) -> ReviewPolicy {
+        ReviewPolicy::new("r", effective, max_iterations, false)
+    }
+
+    /// adversarial (budget = 2) の既定方針。
+    fn adversarial() -> ReviewPolicy {
+        policy(ReviewCapValue::Adversarial, 2)
+    }
+
+    /// 依頼を 1 件打つ (カーソルのステージに対して)。
+    fn request_at(
+        run: &mut Run,
+        stage: usize,
+        policy: &ReviewPolicy,
+        iteration: u32,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let slug = run.stages()[stage].slug().clone();
+        let intent = run.intent.clone();
+        run.execution.request_review(
+            &intent,
+            &slug,
+            Some(policy),
+            "r",
+            iteration,
+            false,
+            occurred(),
+        )
+    }
+
+    /// 判定を 1 件打つ。
+    fn verdict_at(
+        run: &mut Run,
+        stage: usize,
+        policy: &ReviewPolicy,
+        iteration: u32,
+        verdict: ReviewVerdict,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let slug = run.stages()[stage].slug().clone();
+        let intent = run.intent.clone();
+        run.execution.record_review_verdict(
+            &intent,
+            &slug,
+            Some(policy),
+            "r",
+            iteration,
+            verdict,
+            occurred(),
+        )
+    }
+
+    /// 名指しステージの試行。
+    fn attempt_of(run: &Run, stage: usize) -> ReviewAttempt {
+        run.execution
+            .review_attempt(StageIndex::new(stage))
+            .cloned()
+            .expect("計画上のステージには試行が在る")
+    }
+
+    /// 依頼 → 判定の対を積んで終端受領証を作る。
+    fn record_terminal_receipt(run: &mut Run, stage: usize, policy: &ReviewPolicy) {
+        request_at(run, stage, policy, 1).expect("1 回目の依頼は通る");
+        verdict_at(run, stage, policy, 1, ReviewVerdict::Ready).expect("判定は通る");
+    }
+
+    #[test]
+    fn a_fresh_execution_has_an_empty_review_attempt_for_every_stage() {
+        let run = at_gate_with(InProgress);
+        for stage in 0..run.stage_count() {
+            assert_eq!(attempt_of(&run, stage), ReviewAttempt::default());
+        }
+        // 範囲外は `None`。
+        assert!(
+            run.execution
+                .review_attempt(StageIndex::new(run.stage_count()))
+                .is_none()
+        );
+    }
+
+    /// 依頼はガード 6 形を持つ (upstream `handleReview` の順序どおり)。
+    #[test]
+    fn the_request_guards_reject_in_the_upstream_order() {
+        let mut run = at_gate_with(InProgress);
+        let known = run.stages()[1].slug().clone();
+        let intent = run.intent.clone();
+        let adversarial = adversarial();
+
+        // 1. 取り違え — 別 intent を渡す。
+        assert_eq!(
+            run.execution
+                .request_review(
+                    &foreign_plan(3),
+                    &known,
+                    Some(&adversarial),
+                    "r",
+                    1,
+                    false,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        // 1b. 計画に無い slug。
+        let unknown = StageSlug::parse("nowhere").unwrap();
+        assert_eq!(
+            run.execution
+                .request_review(
+                    &intent,
+                    &unknown,
+                    Some(&adversarial),
+                    "r",
+                    1,
+                    false,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::UnknownStage("nowhere".to_string())
+        );
+        // 2. レビュアー宣言なし。
+        assert_eq!(
+            run.execution
+                .request_review(&intent, &known, None, "r", 1, false, occurred())
+                .unwrap_err(),
+            CommandError::NoDeclaredReviewer(StageIndex::new(1))
+        );
+        // 3. レビュアー不一致 — 材料は宣言側の名前である。
+        assert_eq!(
+            run.execution
+                .request_review(
+                    &intent,
+                    &known,
+                    Some(&adversarial),
+                    "someone-else",
+                    1,
+                    false,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::ReviewerMismatch {
+                stage: StageIndex::new(1),
+                declared: "r".to_string(),
+            }
+        );
+        // 4. 判定待ちが無い retry。
+        assert_eq!(
+            run.execution
+                .request_review(
+                    &intent,
+                    &known,
+                    Some(&adversarial),
+                    "r",
+                    1,
+                    true,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::NoPendingReview {
+                stage: StageIndex::new(1),
+                iteration: 1,
+            }
+        );
+        // 5. 予算超過 — 要求値そのものが超えている形。
+        assert_eq!(
+            request_at(&mut run, 1, &adversarial, 3).unwrap_err(),
+            CommandError::ReviewBudgetExceeded {
+                stage: StageIndex::new(1),
+                ordinal: 3,
+                budget: 2,
+            }
+        );
+        // 6. 順序違反 — 予算内だが期待値と違う。
+        assert_eq!(
+            request_at(&mut run, 1, &adversarial, 2).unwrap_err(),
+            CommandError::ReviewOutOfSequence {
+                stage: StageIndex::new(1),
+                iteration: 2,
+                expected: 1,
+            }
+        );
+        // どの拒否も何もコミットしていない。
+        assert_eq!(attempt_of(&run, 1), ReviewAttempt::default());
+    }
+
+    /// 予算 0 (実効 none) では 1 回目の依頼も通らない — 次に来る番号が予算を超える形。
+    #[test]
+    fn an_effective_none_policy_refuses_the_very_first_request() {
+        let mut run = at_gate_with(InProgress);
+        let none = policy(ReviewCapValue::None, 2);
+        assert_eq!(
+            request_at(&mut run, 1, &none, 1).unwrap_err(),
+            CommandError::ReviewBudgetExceeded {
+                stage: StageIndex::new(1),
+                ordinal: 1,
+                budget: 0,
+            }
+        );
+    }
+
+    /// 数え上げ済みの依頼が予算に達していれば、要求値が予算内でも断る
+    /// (upstream の `expected > budget` の枝)。
+    #[test]
+    fn a_spent_budget_refuses_the_next_ordinal_it_would_have_taken() {
+        let mut run = at_gate_with(InProgress);
+        let advisory = policy(ReviewCapValue::Advisory, 2);
+        request_at(&mut run, 1, &advisory, 1).expect("advisory の 1 パスは通る");
+        assert_eq!(
+            request_at(&mut run, 1, &advisory, 1).unwrap_err(),
+            CommandError::ReviewBudgetExceeded {
+                stage: StageIndex::new(1),
+                ordinal: 2,
+                budget: 1,
+            }
+        );
+    }
+
+    /// 受理した依頼は回数を 1 つ進め、判定待ちに載る。
+    #[test]
+    fn an_accepted_request_counts_once_and_becomes_pending() {
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        let event = request_at(&mut run, 1, &adversarial, 1).expect("1 回目は通る");
+        assert!(matches!(
+            &event,
+            IntentExecutionEvent::ReviewRequested(requested)
+                if requested.stage() == run.stages()[1].slug()
+                    && requested.reviewer() == "r"
+                    && requested.iteration() == 1
+                    && !requested.is_retry()
+        ));
+        let attempt = attempt_of(&run, 1);
+        assert_eq!(attempt.request_count(), 1);
+        assert!(attempt.is_pending(1));
+        assert!(attempt.closed().is_empty());
+    }
+
+    /// 呼び直し (`--retry-pending`) の適用は**フレーム空**である。
+    #[test]
+    fn a_retry_of_a_pending_request_changes_nothing_but_the_journal() {
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        request_at(&mut run, 1, &adversarial, 1).expect("1 回目は通る");
+        let before = run.execution.clone();
+
+        let slug = run.stages()[1].slug().clone();
+        let intent = run.intent.clone();
+        let event = run
+            .execution
+            .request_review(&intent, &slug, Some(&adversarial), "r", 1, true, occurred())
+            .expect("判定待ちの呼び直しは通る");
+        assert!(matches!(
+            &event,
+            IntentExecutionEvent::ReviewRequested(requested) if requested.is_retry()
+        ));
+        // 通番と発生時刻以外は `==` のまま — 呼び直しは依頼に数えない。
+        assert_eq!(
+            run.execution.clone().with_seq_nr(before.seq_nr()),
+            before,
+            "呼び直しの適用はフレーム空である"
+        );
+    }
+
+    /// 判定は開いている依頼にだけ対応する。
+    #[test]
+    fn a_verdict_needs_an_open_request_with_the_same_ordinal() {
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        assert_eq!(
+            verdict_at(&mut run, 1, &adversarial, 1, ReviewVerdict::Ready).unwrap_err(),
+            CommandError::NoPendingReview {
+                stage: StageIndex::new(1),
+                iteration: 1,
+            }
+        );
+        request_at(&mut run, 1, &adversarial, 1).expect("1 回目は通る");
+        // 番号が違えば依頼と対にならない。
+        assert_eq!(
+            verdict_at(&mut run, 1, &adversarial, 2, ReviewVerdict::Ready).unwrap_err(),
+            CommandError::NoPendingReview {
+                stage: StageIndex::new(1),
+                iteration: 2,
+            }
+        );
+        let event = verdict_at(&mut run, 1, &adversarial, 1, ReviewVerdict::NotReady)
+            .expect("対になる判定は通る");
+        assert!(matches!(
+            &event,
+            IntentExecutionEvent::ReviewCompleted(completed)
+                if completed.iteration() == 1 && completed.verdict() == ReviewVerdict::NotReady
+        ));
+        let attempt = attempt_of(&run, 1);
+        assert!(!attempt.is_pending(1));
+        assert_eq!(attempt.closed().len(), 1);
+    }
+
+    /// 判定 2 コマンドのガード 1〜3 は依頼と同じである。
+    #[test]
+    fn the_verdict_shares_the_first_three_request_guards() {
+        let mut run = at_gate_with(InProgress);
+        let known = run.stages()[1].slug().clone();
+        let intent = run.intent.clone();
+        let adversarial = adversarial();
+        assert_eq!(
+            run.execution
+                .record_review_verdict(
+                    &foreign_plan(3),
+                    &known,
+                    Some(&adversarial),
+                    "r",
+                    1,
+                    ReviewVerdict::Ready,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(
+            run.execution
+                .record_review_verdict(
+                    &intent,
+                    &known,
+                    None,
+                    "r",
+                    1,
+                    ReviewVerdict::Ready,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::NoDeclaredReviewer(StageIndex::new(1))
+        );
+        assert_eq!(
+            run.execution
+                .record_review_verdict(
+                    &intent,
+                    &known,
+                    Some(&adversarial),
+                    "other",
+                    1,
+                    ReviewVerdict::Ready,
+                    occurred()
+                )
+                .unwrap_err(),
+            CommandError::ReviewerMismatch {
+                stage: StageIndex::new(1),
+                declared: "r".to_string(),
+            }
+        );
+    }
+
+    /// レビューの記録は本流の状態 (Completed / park 中 / autonomous) を見ない。
+    #[test]
+    fn the_review_ledger_accepts_regardless_of_the_main_workflow_state() {
+        for (label, mut run) in [
+            (
+                "park 中",
+                staged(
+                    3,
+                    1,
+                    &[(1, InProgress)],
+                    Status::Running,
+                    AutonomyMode::Gated,
+                ),
+            ),
+            (
+                "autonomous",
+                staged(
+                    3,
+                    1,
+                    &[(1, InProgress)],
+                    Status::Running,
+                    AutonomyMode::Autonomous,
+                ),
+            ),
+            (
+                "Completed",
+                staged(
+                    3,
+                    2,
+                    &[(1, Completed), (2, Completed)],
+                    Status::Completed,
+                    AutonomyMode::Gated,
+                ),
+            ),
+        ] {
+            if label == "park 中" {
+                run.execution
+                    .park(&run.intent.clone(), occurred())
+                    .expect("park できる");
+            }
+            let adversarial = adversarial();
+            request_at(&mut run, 1, &adversarial, 1)
+                .unwrap_or_else(|error| panic!("{label} でも依頼は通る: {error:?}"));
+        }
+    }
+
+    /// 承認の受領証ガード — 実効クラスとその試行の判定で決まる。
+    #[test]
+    fn the_approval_receipt_guard_follows_the_effective_class() {
+        // (a) レビュアー宣言なし = 方針なし → 受領証は要らない。
+        let mut run = at_gate_with(InProgress);
+        run.approve_gate(None, occurred())
+            .expect("宣言が無ければ受領証は要らない");
+
+        // (b) 実効 none → 受領証は要らない。
+        let mut run = at_gate_with(InProgress);
+        let none = policy(ReviewCapValue::None, 2);
+        let intent = run.intent.clone();
+        run.execution
+            .approve_gate(&intent, Some(&none), None, occurred())
+            .expect("実効 none は受領証を要らない");
+
+        // (c) adversarial の 1 回目 NOT-READY は終端ではない → 拒む。
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        request_at(&mut run, 1, &adversarial, 1).expect("1 回目の依頼は通る");
+        verdict_at(&mut run, 1, &adversarial, 1, ReviewVerdict::NotReady).expect("判定は通る");
+        let intent = run.intent.clone();
+        assert_eq!(
+            run.execution
+                .approve_gate(&intent, Some(&adversarial), None, occurred())
+                .unwrap_err(),
+            CommandError::ReviewReceiptMissing {
+                stage: StageIndex::new(1),
+                reviewer: "r".to_string(),
+            }
+        );
+        // 2 回目 (上限到達) の NOT-READY は終端になる → 通る。
+        request_at(&mut run, 1, &adversarial, 2).expect("2 回目の依頼は通る");
+        verdict_at(&mut run, 1, &adversarial, 2, ReviewVerdict::NotReady).expect("判定は通る");
+        let intent = run.intent.clone();
+        run.execution
+            .approve_gate(&intent, Some(&adversarial), None, occurred())
+            .expect("上限到達の NOT-READY は終端受領証である");
+
+        // (d) advisory は 1 回の NOT-READY で終端になる。
+        let mut run = at_gate_with(InProgress);
+        let advisory = policy(ReviewCapValue::Advisory, 2);
+        request_at(&mut run, 1, &advisory, 1).expect("1 パスは通る");
+        verdict_at(&mut run, 1, &advisory, 1, ReviewVerdict::NotReady).expect("判定は通る");
+        let intent = run.intent.clone();
+        run.execution
+            .approve_gate(&intent, Some(&advisory), None, occurred())
+            .expect("advisory の 1 パスは常に終端である");
+
+        // (e) 受領証が 1 つも無ければ拒む。
+        let mut run = at_gate_with(InProgress);
+        let intent = run.intent.clone();
+        assert_eq!(
+            run.execution
+                .approve_gate(&intent, Some(&adversarial), None, occurred())
+                .unwrap_err(),
+            CommandError::ReviewReceiptMissing {
+                stage: StageIndex::new(1),
+                reviewer: "r".to_string(),
+            }
+        );
+    }
+
+    /// 受領証ガードは checkbox 前提の**後**に効く (upstream と同じ位置)。
+    #[test]
+    fn the_receipt_guard_runs_after_the_checkbox_precondition() {
+        let mut run = at_gate_with(Pending);
+        let intent = run.intent.clone();
+        let adversarial = adversarial();
+        assert!(matches!(
+            run.execution
+                .approve_gate(&intent, Some(&adversarial), None, occurred())
+                .unwrap_err(),
+            CommandError::CheckboxPrecondition { .. }
+        ));
+    }
+
+    /// フロア — 前進で立った次ステージの試行は空に戻る。
+    #[test]
+    fn advancing_to_the_next_stage_empties_its_review_attempt() {
+        let mut run = staged(
+            3,
+            1,
+            &[(1, InProgress)],
+            Status::Running,
+            AutonomyMode::Gated,
+        );
+        let adversarial = adversarial();
+        // 次ステージ (索引 2) に先回りで依頼を積んでおく。
+        request_at(&mut run, 2, &adversarial, 1).expect("先回りの依頼も受理される");
+        assert_eq!(attempt_of(&run, 2).request_count(), 1);
+        // カーソル (索引 1) の承認で索引 2 に立つ。
+        record_terminal_receipt(&mut run, 1, &adversarial);
+        let intent = run.intent.clone();
+        run.execution
+            .approve_gate(&intent, Some(&adversarial), None, occurred())
+            .expect("終端受領証が在れば通る");
+
+        assert_eq!(run.cursor().to_usize(), 2);
+        assert_eq!(attempt_of(&run, 2), ReviewAttempt::default());
+        // 承認したステージ自身の試行は残る (フロアは「立った先」だけである)。
+        assert!(attempt_of(&run, 1).has_terminal(&adversarial));
+    }
+
+    /// フロア — 読み飛ばしも次ステージを立てるので、その試行は空に戻る。
+    #[test]
+    fn skipping_to_the_next_stage_empties_its_review_attempt() {
+        // カーソル (索引 1) を CONDITIONAL にした計画 — 読み飛ばしの受理条件を満たす。
+        let adversarial = adversarial();
+        let mut run = start_with(1, &[Execute; 3], &[false, true, false]);
+        request_at(&mut run, 2, &adversarial, 1).expect("先回りの依頼も受理される");
+        assert_eq!(attempt_of(&run, 2).request_count(), 1);
+        let intent = run.intent.clone();
+        run.execution
+            .skip_stage(&intent, "conditional".to_string(), occurred())
+            .expect("CONDITIONAL は読み飛ばせる");
+        assert_eq!(run.cursor().to_usize(), 2);
+        assert_eq!(attempt_of(&run, 2), ReviewAttempt::default());
+    }
+
+    /// フロア — 差し戻しはそのステージの試行を空に戻す。
+    #[test]
+    fn a_gate_rejection_empties_the_attempt_of_the_stage_it_names() {
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        record_terminal_receipt(&mut run, 1, &adversarial);
+        assert!(attempt_of(&run, 1).has_terminal(&adversarial));
+
+        run.reject_gate(Some("直せ".to_string()), occurred())
+            .expect("差し戻せる");
+        assert_eq!(attempt_of(&run, 1), ReviewAttempt::default());
+    }
+
+    /// フロア — 差し戻し後の再入 (`StageRevised`) は試行を空にしない。
+    #[test]
+    fn re_entering_the_gate_keeps_the_attempt_that_the_rejection_started() {
+        let mut run = at_gate_with(Revising);
+        let adversarial = adversarial();
+        request_at(&mut run, 1, &adversarial, 1).expect("差し戻し後の依頼は通る");
+        run.revise_stage(occurred()).expect("再入できる");
+        assert_eq!(attempt_of(&run, 1).request_count(), 1);
+    }
+
+    /// フロア — ジャンプ 3 種は**全ステージ**の試行を空に戻す (fail-closed over precise)。
+    #[test]
+    fn every_jump_empties_the_attempt_of_every_stage() {
+        for target in [2usize, 1, 1] {
+            let mut run = staged(
+                3,
+                if target == 2 { 1 } else { 2 },
+                &[(1, InProgress), (2, Pending)],
+                Status::Running,
+                AutonomyMode::Gated,
+            );
+            let adversarial = adversarial();
+            request_at(&mut run, 1, &adversarial, 1).expect("依頼は通る");
+            request_at(&mut run, 2, &adversarial, 1).expect("依頼は通る");
+            let intent = run.intent.clone();
+            run.execution
+                .jump(&intent, StageIndex::new(target), occurred())
+                .expect("跳べる");
+            for stage in 0..run.stage_count() {
+                assert_eq!(
+                    attempt_of(&run, stage),
+                    ReviewAttempt::default(),
+                    "ジャンプは全ステージのフロアである (target = {target}, stage = {stage})"
+                );
+            }
+        }
+    }
+
+    /// フロア — 隔離実行・stance・park・autonomy は試行に触らない。
+    #[test]
+    fn the_non_floor_events_leave_every_review_attempt_alone() {
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        request_at(&mut run, 1, &adversarial, 1).expect("依頼は通る");
+        let before = attempt_of(&run, 1);
+
+        let intent = run.intent.clone();
+        run.execution
+            .record_single_stage_run(&intent, StageIndex::new(2), occurred())
+            .expect("隔離実行は記録できる");
+        run.execution
+            .switch_autonomy(&intent, AutonomyMode::Autonomous, occurred())
+            .expect("autonomy は切り替えられる");
+        assert_eq!(attempt_of(&run, 1), before);
+    }
+
+    /// 再構成 — スナップショットから組み直しても試行が復元される。
+    #[test]
+    fn the_review_attempts_survive_a_rebuild_through_the_full_constructor() {
+        let mut run = at_gate_with(InProgress);
+        let adversarial = adversarial();
+        request_at(&mut run, 1, &adversarial, 1).expect("依頼は通る");
+        verdict_at(&mut run, 1, &adversarial, 1, ReviewVerdict::Ready).expect("判定は通る");
+
+        let source = run.execution.clone();
+        let rebuilt = IntentExecution::new(
+            source.id().clone(),
+            source.intent_id().clone(),
+            source.stage_keys().to_vec(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.effective_plan(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.checkbox(stage))
+                .collect(),
+            source.cursor().to_usize(),
+            source.status(),
+            source.parked_at().map(StageIndex::to_usize),
+            source.autonomy(),
+            source.skeleton_stance(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.review_attempt(stage))
+                .cloned()
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.approved(stage))
+                .collect(),
+            (0..source.stage_count())
+                .filter_map(|value| source.stage_index(value))
+                .filter_map(|stage| source.revision_count(stage))
+                .collect(),
+            source.seq_nr(),
+            *source.last_updated_at(),
+        )
+        .expect("組み直せる");
+        assert_eq!(rebuilt, source);
+        assert!(attempt_of(&run, 1).has_terminal(&adversarial));
+    }
+
+    /// 完全コンストラクタは試行の長さも検査する。
+    #[test]
+    fn a_review_attempt_vector_of_the_wrong_length_is_refused() {
+        let source = at_gate_with(InProgress).execution;
+        let error = IntentExecution::new(
+            source.id().clone(),
+            source.intent_id().clone(),
+            source.stage_keys().to_vec(),
+            vec![Execute; 3],
+            vec![Completed, InProgress, Pending],
+            1,
+            Status::Running,
+            None,
+            AutonomyMode::Gated,
+            None,
+            vec![ReviewAttempt::default(); 2],
+            vec![false; 3],
+            vec![0; 3],
+            1,
+            occurred(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid intent execution: review_attempts length 2 does not match 3 stages"
+        );
     }
 
     use proptest::prelude::*;

@@ -3,7 +3,7 @@
 use std::fmt;
 
 use core_command_domain::orchestration::{CommandError, ReportRefusal, TransitionStep};
-use core_command_domain::workflow_definition::StageSlug;
+use core_command_domain::workflow_definition::{StageSlug, WorkflowDefinitionId};
 
 use core_command_domain::orchestration::{IntentExecutionId, IntentId};
 
@@ -49,6 +49,20 @@ pub enum CommitError {
         /// その段の対象ステージ。
         stage: StageSlug,
     },
+    /// 定義の再構成の失敗（ポートからそのまま伝播 — 段 11 のレビュー方針を引くとき）。
+    DefinitionRepository(RepositoryError<WorkflowDefinitionId>),
+    /// 承認しようとしたステージを**定義が知らない**（b48 / 段 11）。
+    ///
+    /// 実行の計画は定義から作られるので通常は起きない。定義が改訂されて slug が消えた
+    /// 歴史でだけ到達する。
+    UnknownDefinitionStage {
+        /// 定義に無かったステージ。
+        stage: StageSlug,
+    },
+    /// intent が運ぶ `--review` の値が閉集合の外だった（壊れた歴史）。
+    ///
+    /// `--review` は鋳造時に閉集合で受けているので、ここに来るのは記録の破損である。
+    CorruptReviewOverride(String),
 }
 
 impl fmt::Display for CommitError {
@@ -69,6 +83,15 @@ impl fmt::Display for CommitError {
                 step.subcommand(),
                 stage.as_str()
             ),
+            CommitError::DefinitionRepository(error) => {
+                write!(f, "workflow definition repository: {error}")
+            }
+            CommitError::UnknownDefinitionStage { stage } => {
+                write!(f, "the definition has no stage {}", stage.as_str())
+            }
+            CommitError::CorruptReviewOverride(raw) => {
+                write!(f, "corrupt review override: {raw}")
+            }
         }
     }
 }
@@ -85,8 +108,11 @@ impl std::error::Error for CommitError {
             CommitError::IntentRepository(error) => Some(error),
             CommitError::Refused(refusal) => Some(refusal),
             CommitError::Transition { error, .. } => Some(error),
+            CommitError::DefinitionRepository(error) => Some(error),
             // ユースケース自身の失敗 — 材料 (段と slug) は自分の `Display` にある。
-            CommitError::UnwiredTransition { .. } => None,
+            CommitError::UnwiredTransition { .. }
+            | CommitError::UnknownDefinitionStage { .. }
+            | CommitError::CorruptReviewOverride(_) => None,
         }
     }
 }
@@ -134,6 +160,33 @@ mod tests {
             error.to_string(),
             format!("repository: not found: {execution_id}")
         );
+    }
+
+    /// b48 の 3 変種も材料だけを綴り、ポートの失敗だけが連鎖を続ける。
+    #[test]
+    fn the_definition_side_failures_carry_their_material() {
+        let definition_id =
+            core_command_domain::workflow_definition::WorkflowDefinitionId::parse("claude")
+                .expect("系譜名");
+        let repository = CommitError::DefinitionRepository(RepositoryError::NotFound {
+            id: definition_id.clone(),
+        });
+        assert_eq!(
+            repository.to_string(),
+            format!("workflow definition repository: not found: {definition_id}")
+        );
+        assert!(std::error::Error::source(&repository).is_some());
+
+        let unknown = CommitError::UnknownDefinitionStage { stage: stage() };
+        assert_eq!(
+            unknown.to_string(),
+            "the definition has no stage practices-discovery"
+        );
+        assert!(std::error::Error::source(&unknown).is_none());
+
+        let corrupt = CommitError::CorruptReviewOverride("Adversarial".to_string());
+        assert_eq!(corrupt.to_string(), "corrupt review override: Adversarial");
+        assert!(std::error::Error::source(&corrupt).is_none());
     }
 
     #[test]

@@ -380,7 +380,9 @@ mod conformance {
 
         // 3. ジャーナルだけへの追記 — スナップショットは進まないので、復元はリプレイを通る。
         let mut aggregate = restored.aggregate;
-        let approved = aggregate.approve_gate(&intent(), None, at(2)).unwrap();
+        let approved = aggregate
+            .approve_gate(&intent(), None, None, at(2))
+            .unwrap();
         store
             .persist_event(envelope(&aggregate, &approved), restored.version)
             .await
