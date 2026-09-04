@@ -34,4 +34,4 @@
 - **`in-memory` ダブルが `Conflict` 以外の store 失敗を返せない**ため `park_use_case.rs` の `Err(other)` 腕 1 行が未カバー。
 
 ## 次
-#7 キュー 5: #73 report の 13 段ガード・`--single`・`--skeleton-stance`・`--user-input`（B10 述語はレシートの鮮度検査のみ、#51 = A）。
+Issue #7 のキュー 5: #73 report の 13 段ガード・`--single`・`--skeleton-stance`・`--user-input`（B10 述語はレシートの鮮度検査のみ、#51 = A）。

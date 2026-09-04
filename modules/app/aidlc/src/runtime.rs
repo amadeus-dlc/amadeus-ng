@@ -309,7 +309,7 @@ fn park_refusal(error: &ParkError) -> String {
         ParkError::Command(CommandError::NotRunning) => {
             wording::park_refused(wording::PARK_NOTHING_TO_PARK)
         }
-        other => wording::park_refused(&other.to_string()),
+        other => wording::park_refused(&chained(other)),
     }
 }
 
@@ -1102,6 +1102,31 @@ mod tests {
         assert_eq!(
             park_refusal(&error),
             format!("Cannot park the workflow: repository: not found: {execution_id}")
+        );
+    }
+
+    /// 封筒が運ぶ原因連鎖（`Error::source`）も中継形へ載せる — `Corrupt` は分類しか
+    /// `Display` に書かず、実材料（`undecodable payload` 等）は連鎖にあるからである
+    /// （裁定 6。upstream も spawn の stderr を丸ごと挟むので診断材料は落とさない）。
+    #[test]
+    fn a_park_failure_relays_its_source_chain_into_the_detail() {
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
+        let error = ParkError::Repository(RepositoryError::Corrupt {
+            id: execution_id,
+            seq_nr: Some(3),
+            source: Box::new(std::io::Error::other("undecodable payload")),
+        });
+
+        let detail = park_refusal(&error);
+
+        assert!(
+            detail.starts_with("Cannot park the workflow: repository: "),
+            "{detail}"
+        );
+        assert!(
+            detail.ends_with(" caused by undecodable payload"),
+            "{detail}"
         );
     }
 
