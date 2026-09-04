@@ -99,13 +99,22 @@ fi
 run_witness() {
   local model="$1" seed="$2" max_samples="$3" max_steps="$4" witness="$5"
   log_step "witness (negated): ${model} :: ${witness}"
-  if quint run "${model}" --seed "${seed}" --max-samples "${max_samples}" \
-    --max-steps "${max_steps}" --invariant "not(${witness})" >/dev/null 2>&1; then
-    # exit code == 0 -> [ok] -> not(witness) が常に成立 -> witness の経路が見つからない -> fail
+  # 終了コードではなく**出力の判定語**で分岐する。quint は解析・型検査エラーや未知の名前
+  # (witness 名の typo) でも非 0 で終わるため、終了コードだけを見ると「エラー = 反例あり =
+  # PASS」と誤判定する (PR #101 の CodeRabbit 指摘)。
+  local output
+  output="$(quint run "${model}" --seed "${seed}" --max-samples "${max_samples}" \
+    --max-steps "${max_steps}" --invariant "not(${witness})" 2>&1)" || true
+  if grep -q '\[violation\]' <<<"${output}"; then
+    # [violation] -> not(witness) の反例 = witness が成立する経路が実在 -> pass
+    record "witness ${witness} (${model})" "PASS"
+  elif grep -q '\[ok\]' <<<"${output}"; then
+    # [ok] -> not(witness) が常に成立 -> witness の経路が見つからない -> fail
     record "witness ${witness} (${model})" "FAIL"
   else
-    # exit code != 0 -> [violation] -> not(witness) の反例 = witness が成立する経路が実在 -> pass
-    record "witness ${witness} (${model})" "PASS"
+    # どちらでもない = quint 自体が走れていない (構文・型・未知の名前)。理由を見せて fail。
+    printf '%s\n' "${output}" | tail -n 5 >&2
+    record "witness ${witness} (${model}) — quint error" "FAIL"
   fi
 }
 

@@ -19,6 +19,10 @@
   `Directive::Parked` を描く（投影直後に行が無いのは自己防衛拒否 = exit 1）。b29 の未配線ハンドラと文言を撤去。
 - **テスト**: 新規 24 本（domain 3・use-case 13・app 統合 7・app 単体 4）。CLI ゴールデン `cli/park/park` の 3 値バイト一致。
   b44 が行を直接置いていた parked 系 3 本を `park` の実駆動へ置換（handoff-b44 の約束を履行）。
+- **Quint ゲートの硬化（PR #101 の CodeRabbit 差分外指摘）**: `run_witness` が `quint run` の非 0 終了を無条件に
+  「反例あり = PASS」としていたため、witness 名の typo や型エラーでも PASS になる穴があった（b45 以前から）。
+  出力の判定語（`[violation]` = PASS / `[ok]` = FAIL / どちらも無し = quint エラーで FAIL、末尾 5 行を表示）で
+  分岐する形に直し、typo 名で FAIL・`w_repark` で PASS を実測。
 - **仕様**: `docs/specs/10-orchestration.md` §10 に「park の実装ノート」（受理順序・再スタンプ・順序 3 は構造的に発生不能で
   逸脱ではない・失敗の中継形）。逸脱台帳は追記なし。
 
