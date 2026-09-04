@@ -337,7 +337,7 @@ async fn single_requires_a_stage() {
     assert_eq!(kind(&directive), "error");
     assert_eq!(
         field(&directive, "message"),
-        "--single requires --stage <slug>."
+        "--single requires --stage <slug>. A stage-runner runs exactly one named stage."
     );
 }
 

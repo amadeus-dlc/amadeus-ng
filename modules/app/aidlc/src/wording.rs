@@ -170,8 +170,26 @@ pub const NO_STATE: &str = "No workflow state found (no active intent). Start on
 pub const NEW_INTENT_BLANK: &str =
     "`next --new-intent` requires a nonblank new-work description after the confirmed scope.";
 
-/// 分岐 4b — `--single` にステージが無い。
-pub const SINGLE_REQUIRES_STAGE: &str = "--single requires --stage <slug>.";
+/// 分岐 4b — `--single` にステージが無い (upstream `:3014-3016` 逐語)。
+pub const SINGLE_REQUIRES_STAGE: &str =
+    "--single requires --stage <slug>. A stage-runner runs exactly one named stage.";
+
+/// 分岐 4b — `--single` と `--phase` の併用 (upstream `:3008-3010` 逐語)。
+pub const SINGLE_WITH_PHASE: &str =
+    "Cannot use --single with --phase. --single runs one stage; pass --stage <slug>.";
+
+/// 分岐 4b / 段 2 — initialization ステージの隔離実行 (upstream `SINGLE_INIT_ERROR` `:4440-4441` 逐語)。
+///
+/// `next --single` と `report --single` の**両方**が同じ定数を使う (upstream も同じ 1 定数)。
+pub const SINGLE_INIT: &str = "Cannot run an initialization stage with --single. Initialization is bootstrap (it creates the intent + state); it runs automatically when you start a workflow (describe what to build, e.g. /aidlc \"build the auth service\").";
+
+/// 分岐 4b — その scope では読み飛ばされるステージ (upstream `:4463-4465` 逐語)。
+#[must_use]
+pub fn stage_skipped_for_scope(stage: &str, scope: &str) -> String {
+    format!(
+        "Stage \"{stage}\" is skipped for scope \"{scope}\". Choose a different stage or change scope."
+    )
+}
 
 /// `--label` の畳み方を conductor へ伝える一文 (upstream `:889-890` 逐語)。
 ///
@@ -499,16 +517,34 @@ pub fn single_unknown_result(given: &str) -> String {
 /// `next --single` 側の同名ガード ([`SINGLE_REQUIRES_STAGE`]) とは**別の文言**である。
 pub const SINGLE_REPORT_REQUIRES_STAGE: &str = "report --single must not advance the main workflow. Pass --stage <slug> to commit the single stage's synthetic-id pair; --single never writes the main workflow's Current Stage.";
 
-/// 段 2 — 単独ステージの報告は**この build では未配線**である (b47 で配線する)。
-///
-/// upstream に対応する逐語は無い（あちらは `handleSingleReport` が監査の対を書く）。b29 の
-/// park と同じ層で「本流は絶対に進めない」(I10) を保ったまま断るための診断である。
+/// 段 2 — 隔離実行の対を記録できた (upstream `:5355-5359` 逐語)。
 #[must_use]
-pub fn single_report_not_wired(stage: &str) -> String {
+pub fn single_run_committed(stage: &str) -> String {
     format!(
-        "Cannot complete isolated stage \"{stage}\": single-stage reporting is not wired in this build."
+        "Single-stage run of \"{stage}\" committed under synthetic workflow \
+\"single-stage:{stage}\". The main workflow's Current Stage is untouched."
     )
 }
+
+/// 段 2 — 対を記録できなかった (upstream `:5346-5349` 逐語)。
+///
+/// upstream は spawn の stderr / stdout を `detail` に載せ、空なら `"."` で閉じる。
+/// こちらの材料はユースケースの失敗の `Display` 連鎖である。
+#[must_use]
+pub fn single_pair_failed(stage: &str, detail: &str) -> String {
+    let detail = detail.trim();
+    if detail.is_empty() {
+        format!("Failed to record single-stage lifecycle pair for \"{stage}\".")
+    } else {
+        format!("Failed to record single-stage lifecycle pair for \"{stage}\": {detail}")
+    }
+}
+
+/// 段 2 — 実行カーソルが無い (upstream に対応する逐語は無い — あちらは監査へ直接追記する)。
+///
+/// 隔離実行の対も**その intent の記録の中で起きた事実**なので、鋳造前のワークスペースには
+/// 書けない (オーナー裁定 2026-09-04 = B)。中継形に材料として載せる。
+pub const SINGLE_WITHOUT_EXECUTION: &str = "no active intent record";
 
 /// 段 3 — `--skeleton-stance` の値が閉集合の外 (upstream `:4948-4950` 逐語)。
 #[must_use]
@@ -522,12 +558,33 @@ walking-skeleton stance classified from the team's ## Walking Skeleton prose)."
 /// 段 3 — 状態ファイルが無い (upstream `:4959` 逐語。ダッシュは U+2014)。
 pub const SKELETON_STANCE_WITHOUT_STATE: &str = "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for.";
 
-/// 段 3 — skeleton stance の記録は**この build では未配線**である (b47 で配線する)。
+/// 段 3 — stance を記録できた (upstream `:5004-5006` 逐語)。
 #[must_use]
-pub fn skeleton_stance_not_wired(stance: &str) -> String {
+pub fn skeleton_stance_recorded(stance: &str, stage: &str) -> String {
     format!(
-        "Cannot record skeleton stance \"{stance}\": skeleton-stance reporting is not wired in this build."
+        "Recorded walking-skeleton stance \"{stance}\" for \"{stage}\". \
+Re-run `next` to continue — the gate is now determined."
     )
+}
+
+/// 段 3 — 現在地が skeleton-gate ステージでない (upstream `:4985-4986` 逐語。ダッシュは U+2014)。
+#[must_use]
+pub fn not_the_skeleton_gate(stage: &str, scope: &str) -> String {
+    format!(
+        "Current stage \"{stage}\" is not the skeleton-gate stage for scope \"{scope}\" — \
+a skeleton stance is only reported for the first Construction Bolt's gate."
+    )
+}
+
+/// 段 3 — 記録に失敗した (upstream `:4998-5000` 逐語)。
+#[must_use]
+pub fn skeleton_stance_failed(stage: &str, detail: &str) -> String {
+    let detail = detail.trim();
+    if detail.is_empty() {
+        format!("Failed to record skeleton stance for \"{stage}\".")
+    } else {
+        format!("Failed to record skeleton stance for \"{stage}\": {detail}")
+    }
 }
 
 /// 段 4 — 再開の報告に `--stage` が付いた (upstream `:5388-5389` 逐語)。
@@ -782,6 +839,27 @@ pub fn transition_not_wired(sub: &str, stage: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 材料が空なら文を「.」で閉じ、在れば「: 材料」で続ける（upstream の三項）。
+    #[test]
+    fn the_two_b47_failure_lines_close_with_a_period_when_there_is_no_material() {
+        assert_eq!(
+            single_pair_failed("contract-design", "  "),
+            "Failed to record single-stage lifecycle pair for \"contract-design\"."
+        );
+        assert_eq!(
+            single_pair_failed("contract-design", "disk full"),
+            "Failed to record single-stage lifecycle pair for \"contract-design\": disk full"
+        );
+        assert_eq!(
+            skeleton_stance_failed("functional-design", ""),
+            "Failed to record skeleton stance for \"functional-design\"."
+        );
+        assert_eq!(
+            skeleton_stance_failed("functional-design", "disk full"),
+            "Failed to record skeleton stance for \"functional-design\": disk full"
+        );
+    }
 
     /// 引数が無いときは `(none)` を描く（upstream の `?? "(none)"`）。
     #[test]

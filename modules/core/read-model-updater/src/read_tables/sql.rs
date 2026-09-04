@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS read_execution (
   parked_active    INTEGER NOT NULL,
   accepts_commands INTEGER NOT NULL,
   autonomy         TEXT    NOT NULL,
+  skeleton_stance  TEXT,
   seq_nr           INTEGER NOT NULL,
   last_updated_at  TEXT    NOT NULL,
   state_binding    TEXT    NOT NULL,
@@ -203,7 +204,7 @@ CREATE TABLE IF NOT EXISTS read_next_answer (
   decision_kind TEXT    NOT NULL,
   stage_index   INTEGER,
   stage_slug    TEXT,
-  gated         INTEGER,
+  gate          TEXT,
   checkbox      TEXT,
   run_stage_id  TEXT,
   as_of         INTEGER NOT NULL
@@ -236,6 +237,7 @@ CREATE TABLE IF NOT EXISTS read_run_stage (
   support_agents           TEXT    NOT NULL,
   mode                     TEXT    NOT NULL,
   gate_default             INTEGER NOT NULL,
+  in_scope                 INTEGER NOT NULL,
   inline_context_paths_rel TEXT    NOT NULL,
   stage_file_rel           TEXT    NOT NULL,
   memory_path_rel          TEXT    NOT NULL,
@@ -591,8 +593,8 @@ pub(crate) fn replace_all(
             "INSERT INTO read_execution
              (id, intent_id, scope, status, cursor_index, cursor_slug,
               parked_at_index, parked_at_slug, parked_active, accepts_commands, autonomy,
-              seq_nr, last_updated_at, state_binding, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+              skeleton_stance, seq_nr, last_updated_at, state_binding, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 row.id(),
                 row.intent_id(),
@@ -605,6 +607,7 @@ pub(crate) fn replace_all(
                 row.parked_active(),
                 row.accepts_commands(),
                 row.autonomy(),
+                row.skeleton_stance(),
                 integer(row.seq_nr())?,
                 row.last_updated_at(),
                 row.state_binding(),
@@ -638,7 +641,7 @@ pub(crate) fn replace_all(
     for row in tables.next_answers() {
         transaction.execute(
             "INSERT INTO read_next_answer
-             (id, execution_id, request_kind, decision_kind, stage_index, stage_slug, gated,
+             (id, execution_id, request_kind, decision_kind, stage_index, stage_slug, gate,
               checkbox, run_stage_id, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -648,7 +651,7 @@ pub(crate) fn replace_all(
                 row.decision_kind(),
                 optional_integer(row.stage_index())?,
                 row.stage_slug(),
-                row.gated(),
+                row.gate(),
                 row.checkbox(),
                 row.run_stage_id(),
                 as_of
@@ -677,12 +680,12 @@ pub(crate) fn replace_all(
         transaction.execute(
             "INSERT INTO read_run_stage
              (id, definition_id, scope, stage_slug, phase, steering_plan_id, lead_agent,
-              support_agents, mode, gate_default, inline_context_paths_rel, stage_file_rel,
-              memory_path_rel, consumes_rel, produces_rel, sensors_applicable, reviewer,
-              reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
+              support_agents, mode, gate_default, in_scope, inline_context_paths_rel,
+              stage_file_rel, memory_path_rel, consumes_rel, produces_rel, sensors_applicable,
+              reviewer, reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
               route_digest, directive_digest, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
             params![
                 row.id(),
                 row.definition_id(),
@@ -694,6 +697,7 @@ pub(crate) fn replace_all(
                 row.support_agents(),
                 row.mode(),
                 row.gate_default(),
+                row.in_scope(),
                 row.inline_context_paths_rel(),
                 row.stage_file_rel(),
                 row.memory_path_rel(),

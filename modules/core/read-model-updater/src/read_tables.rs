@@ -186,6 +186,13 @@ impl ReadTables {
                         .or_insert(scope.as_str());
                 }
                 let mut in_scope_order = 0_usize;
+                // スコープグリッドの EXECUTE セル (静的) — run-stage の行にも載せる。
+                let execute_cells: BTreeSet<&str> = definition
+                    .stages_in_scope(scope)
+                    .into_iter()
+                    .filter(|(_, _, action)| *action == Some(PlanAction::Execute))
+                    .map(|(slug, _, _)| slug.as_str())
+                    .collect();
                 for (slug, _, action) in definition.stages_in_scope(scope) {
                     let order = if action == Some(PlanAction::Execute) {
                         let current = in_scope_order;
@@ -213,6 +220,7 @@ impl ReadTables {
                         node,
                         &definition.stage_route(scope, node),
                         next_in_scope_name(definition, scope, node),
+                        execute_cells.contains(node.slug().as_str()),
                     ));
                 }
             }

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use core_command_domain::orchestration::{Intent, IntentExecution, NextDecision};
+use core_command_domain::orchestration::{GateDecision, Intent, IntentExecution, NextDecision};
 
 use super::request_kind::RequestKind;
 use super::row_id;
@@ -36,7 +36,7 @@ pub struct NextAnswerRow {
     decision_kind: String,
     stage_index: Option<usize>,
     stage_slug: Option<String>,
-    gated: Option<bool>,
+    gate: Option<String>,
     checkbox: Option<String>,
     run_stage_id: Option<String>,
 }
@@ -55,9 +55,13 @@ impl NextAnswerRow {
         kind: RequestKind,
         run_stage_ids: &BTreeSet<&str>,
     ) -> NextAnswerRow {
-        let decision = execution.next_decision(&kind.to_request());
-        let (stage_index, gated, checkbox) = match decision {
-            NextDecision::RunStage { stage, gate } => (Some(stage.to_usize()), Some(gate), None),
+        let decision = execution.next_decision(intent, &kind.to_request());
+        let (stage_index, gate, checkbox) = match decision {
+            NextDecision::RunStage { stage, gate } => (
+                Some(stage.to_usize()),
+                Some(GateDecision::spelling(gate).to_string()),
+                None,
+            ),
             NextDecision::Parked { stage } => (Some(stage.to_usize()), None, None),
             NextDecision::RecoverSkipInconsistency { stage, checkbox }
             | NextDecision::InconsistentSkip { stage, checkbox } => (
@@ -88,7 +92,7 @@ impl NextAnswerRow {
             decision_kind: spelling::decision_kind(&decision).to_string(),
             stage_index,
             stage_slug,
-            gated,
+            gate,
             checkbox,
             run_stage_id,
         }
@@ -136,10 +140,14 @@ impl NextAnswerRow {
         self.stage_slug.as_deref()
     }
 
-    /// `run-stage` のときだけ在る — そのステージがゲート付きか。
+    /// `run-stage` のときだけ在る — そのステージのゲート判断の綴り
+    /// (`gated` / `ungated` / `unresolved`)。
+    ///
+    /// 綴りの正本はドメインの [`GateDecision::spelling`] である — 3 値であって真偽値では
+    /// ないので、列も `INTEGER` ではなく `TEXT` である (b47 / #73)。
     #[must_use]
-    pub const fn gated(&self) -> Option<bool> {
-        self.gated
+    pub fn gate(&self) -> Option<&str> {
+        self.gate.as_deref()
     }
 
     /// 不整合 2 形のときだけ在る — 観測 checkbox の綴り。

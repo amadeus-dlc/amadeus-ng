@@ -42,7 +42,7 @@ use core_query_interface_adapter::{
     ReadModelDaos,
 };
 use core_query_use_case::orchestration::{
-    DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao,
+    DefinitionDao, ExecutionDao, GateField, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao,
     ReadModelReadError, RunStageDao, ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao,
     SteeringPlanDao,
 };
@@ -89,7 +89,7 @@ fn contract_next_answer<D: NextAnswerDao>(dao: &D) {
         Some("intent-capture"),
         "state-init のゲートを開けた実行の次の一手 (答えは書込側の集約が決めている)"
     );
-    assert_eq!(bare.gated(), Some(true));
+    assert_eq!(bare.gate(), Some(GateField::Gated));
     assert_eq!(bare.checkbox(), None, "まだ着手していないので印は無い");
     assert_eq!(
         bare.execution_id(),
@@ -106,7 +106,7 @@ fn contract_next_answer<D: NextAnswerDao>(dao: &D) {
     assert_eq!(resume.decision_kind(), "resume-menu");
     assert_eq!(resume.stage_index(), None);
     assert_eq!(resume.stage_slug(), None);
-    assert_eq!(resume.gated(), None);
+    assert_eq!(resume.gate(), None);
     assert_eq!(resume.run_stage_id(), None);
 
     // 自由記述は新しい仕事の振り分けであって、いまの実行のステージではない。
@@ -131,7 +131,7 @@ fn contract_next_answer_parked<D: NextAnswerDao>(dao: &D) {
         Some("intent-capture"),
         "park の答えは位置を名乗る"
     );
-    assert_eq!(parked.gated(), None, "止まっているのでゲートの別が無い");
+    assert_eq!(parked.gate(), None, "止まっているのでゲートの別が無い");
     assert_eq!(
         parked.run_stage_id(),
         None,

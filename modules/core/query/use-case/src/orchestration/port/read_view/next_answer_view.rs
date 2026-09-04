@@ -1,5 +1,7 @@
 //! `NextAnswerView` — `read_next_answer` 1 行の写し (`next` の答え 1 つ)。
 
+use super::super::super::gate_field::GateField;
+
 /// `read_next_answer` の 1 行 (自然キー `execution_id` × `request_kind` は UNIQUE 索引)。
 ///
 /// # 判断はここに無い
@@ -25,7 +27,7 @@ pub struct NextAnswerView {
     decision_kind: String,
     stage_index: Option<u32>,
     stage_slug: Option<String>,
-    gated: Option<bool>,
+    gate: Option<String>,
     checkbox: Option<String>,
     execution_id: String,
     run_stage_id: Option<String>,
@@ -38,7 +40,7 @@ impl NextAnswerView {
         decision_kind: String,
         stage_index: Option<u32>,
         stage_slug: Option<String>,
-        gated: Option<bool>,
+        gate: Option<String>,
         checkbox: Option<String>,
         execution_id: String,
         run_stage_id: Option<String>,
@@ -47,7 +49,7 @@ impl NextAnswerView {
             decision_kind,
             stage_index,
             stage_slug,
-            gated,
+            gate,
             checkbox,
             execution_id,
             run_stage_id,
@@ -72,10 +74,14 @@ impl NextAnswerView {
         self.stage_slug.as_deref()
     }
 
-    /// `run-stage` のときだけ在る — そのステージがゲート付きか。
+    /// `run-stage` のときだけ在る — そのステージのゲート判断 3 値。
+    ///
+    /// 行が運ぶのは綴り (`gated` / `ungated` / `unresolved`) で、ここが公開言語 B14 の
+    /// [`GateField`] へ写す。閉集合の外・NULL はどちらも `None` — 呼出側は定義側の
+    /// 静的既定 (`read_run_stage.gate_default`) へ落ちる。
     #[must_use]
-    pub const fn gated(&self) -> Option<bool> {
-        self.gated
+    pub fn gate(&self) -> Option<GateField> {
+        self.gate.as_deref().and_then(GateField::parse)
     }
 
     /// 不整合 2 形のときだけ在る — 観測 checkbox の綴り。

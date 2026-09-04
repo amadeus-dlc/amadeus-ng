@@ -1,4 +1,4 @@
-//! `IntentExecutionEvent` — 11 変種のドメインイベント (C5、entities.md)。
+//! `IntentExecutionEvent` — 13 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -32,6 +32,8 @@ mod gate_rejected;
 mod jumped;
 mod parked;
 mod recomposed;
+mod single_stage_run_committed;
+mod skeleton_stance_recorded;
 mod stage_revised;
 mod stage_skipped;
 mod started;
@@ -44,12 +46,14 @@ pub use gate_rejected::GateRejected;
 pub use jumped::Jumped;
 pub use parked::Parked;
 pub use recomposed::Recomposed;
+pub use single_stage_run_committed::SingleStageRunCommitted;
+pub use skeleton_stance_recorded::SkeletonStanceRecorded;
 pub use stage_revised::StageRevised;
 pub use stage_skipped::StageSkipped;
 pub use started::Started;
 pub use unparked::Unparked;
 
-/// 11 変種のドメインイベント (C5)。
+/// 13 変種のドメインイベント (C5)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。
@@ -90,6 +94,10 @@ pub enum IntentExecutionEvent {
     Recomposed(Recomposed),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSet),
+    /// 隔離実行 (`--single`) の疑似ワークフロー ID 付き対の記録 (**適用はフレーム空**)。
+    SingleStageRunCommitted(SingleStageRunCommitted),
+    /// conductor が分類した walking-skeleton stance の記録。
+    SkeletonStanceRecorded(SkeletonStanceRecorded),
 }
 
 impl IntentExecutionEvent {
@@ -108,6 +116,8 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::Unparked(payload) => payload.id(),
             IntentExecutionEvent::Recomposed(payload) => payload.id(),
             IntentExecutionEvent::AutonomyModeSet(payload) => payload.id(),
+            IntentExecutionEvent::SingleStageRunCommitted(payload) => payload.id(),
+            IntentExecutionEvent::SkeletonStanceRecorded(payload) => payload.id(),
         }
     }
 
@@ -128,6 +138,8 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::Unparked(payload) => payload.aggregate_id(),
             IntentExecutionEvent::Recomposed(payload) => payload.aggregate_id(),
             IntentExecutionEvent::AutonomyModeSet(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::SingleStageRunCommitted(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::SkeletonStanceRecorded(payload) => payload.aggregate_id(),
         }
     }
 }
@@ -141,7 +153,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::orchestration::{AutonomyMode, StageDisplay, StageEntry};
+    use crate::orchestration::{AutonomyMode, SkeletonStance, StageDisplay, StageEntry};
     use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
 
     use super::super::intent_id::IntentId;
@@ -180,7 +192,7 @@ mod tests {
         )
     }
 
-    /// 11 変種を 1 つずつ (同じ id / aggregate_id で組む)。
+    /// 13 変種を 1 つずつ (同じ id / aggregate_id で組む)。
     fn every_variant() -> Vec<IntentExecutionEvent> {
         vec![
             IntentExecutionEvent::Started(started()),
@@ -226,6 +238,16 @@ mod tests {
                 evid(),
                 agg(),
                 AutonomyMode::Autonomous,
+            )),
+            IntentExecutionEvent::SingleStageRunCommitted(SingleStageRunCommitted::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+            )),
+            IntentExecutionEvent::SkeletonStanceRecorded(SkeletonStanceRecorded::new(
+                evid(),
+                agg(),
+                SkeletonStance::On,
             )),
         ]
     }
@@ -346,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn the_eleven_variants_are_matched_exhaustively() {
+    fn the_thirteen_variants_are_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
         const fn name(payload: &IntentExecutionEvent) -> &'static str {
@@ -362,6 +384,8 @@ mod tests {
                 IntentExecutionEvent::Unparked(_) => "Unparked",
                 IntentExecutionEvent::Recomposed(_) => "Recomposed",
                 IntentExecutionEvent::AutonomyModeSet(_) => "AutonomyModeSet",
+                IntentExecutionEvent::SingleStageRunCommitted(_) => "SingleStageRunCommitted",
+                IntentExecutionEvent::SkeletonStanceRecorded(_) => "SkeletonStanceRecorded",
             }
         }
         let expected = [
@@ -376,10 +400,12 @@ mod tests {
             "Unparked",
             "Recomposed",
             "AutonomyModeSet",
+            "SingleStageRunCommitted",
+            "SkeletonStanceRecorded",
         ];
         let named: Vec<&'static str> = every_variant().iter().map(name).collect();
         assert_eq!(named, expected);
         let distinct: HashSet<&'static str> = named.iter().copied().collect();
-        assert_eq!(distinct.len(), 11);
+        assert_eq!(distinct.len(), 13);
     }
 }

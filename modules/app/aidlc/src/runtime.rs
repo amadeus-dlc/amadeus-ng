@@ -39,6 +39,8 @@ use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
     CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase,
     DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
+    RecordSingleStageRunUseCase, RecordSkeletonStanceUseCase, SingleStageRunError,
+    SkeletonStanceError,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::{ReadModelDaos, StateFileDaoImpl, verify_continue_token};
@@ -197,7 +199,7 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
 /// | 段 | ここ | 集約 |
 /// | --- | --- | --- |
 /// | 1 state-version guard | ○ | — |
-/// | 2 `--single` / 3 `--skeleton-stance` | ○（本体は b47） | — |
+/// | 2 `--single` / 3 `--skeleton-stance` | ○（構文段） | ○（受理と記録） |
 /// | 4 resume ルーティング | ○ | — |
 /// | 5 `--result` の有無・既知値 | ○ | — |
 /// | 6 実行カーソルの有無 | ○ | — |
@@ -215,11 +217,11 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 段 2 — `--single`。本流の遷移サブコマンドへ落ちることを構造的に不可能にするため、
     // 主経路より先に解決する（I10）。
     if args.is_single() {
-        return single_report(args);
+        return single_report(layout, args).await;
     }
     // 段 3 — `--skeleton-stance`。stance の報告は verdict を持たないので段 5 より先。
     if let Some(stance) = args.skeleton_stance() {
-        return skeleton_stance_report(layout, stance);
+        return skeleton_stance_report(layout, stance).await;
     }
     // 段 4 — 再開の選択。遷移をコミットしないのでルーティングだけで終わる。
     let raw = args.result();
@@ -316,30 +318,155 @@ fn state_version_guard(layout: &Layout) -> Option<String> {
     }
 }
 
-/// 段 2 — `--single` の構文検証（本体の配線は b47）。
-fn single_report(args: &crate::cli::ReportArgs) -> Completion {
+/// 段 2 — `--single`。隔離実行の疑似ワークフロー ID 付き対をコミットする（#73 / I10）。
+///
+/// 段の順序は upstream `handleSingleReport`（ピン `:5261-5361`）と同順である:
+/// result 必須 → FORWARD のみ → `--stage` 必須 → 未知 → initialization →（evidence は
+/// slice 2）→ 記録。**本流の遷移サブコマンドへは 1 度も落ちない** — 打つコマンドは
+/// `record_single_stage_run` だけで、その適用はフレーム空である。
+async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     let Some(raw) = args.result() else {
         return emit_error(wording::single_requires_result());
     };
     if Verdict::parse(raw) != Ok(Verdict::Forward) {
         return emit_error(wording::single_unknown_result(raw));
     }
+    // 空判定は trim しない — upstream の `flags.stage.length === 0` と同じである。
     let Some(stage) = args.stage().filter(|value| !value.is_empty()) else {
         return emit_error(wording::SINGLE_REPORT_REQUIRES_STAGE.to_string());
     };
-    // 本流は絶対に進めない（I10）— 未配線であることを名指しして止まる。
-    emit_error(wording::single_report_not_wired(stage))
+    let Ok(slug) = StageSlug::parse(stage) else {
+        return emit_error(wording::unknown_stage(stage));
+    };
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return emit_error(message),
+    };
+    // 隔離実行の対も**その intent の記録の中で起きた事実**なので、記録が要る。
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        Ok(None) => {
+            return emit_error(wording::single_pair_failed(
+                stage,
+                wording::SINGLE_WITHOUT_EXECUTION,
+            ));
+        }
+        Err(error) => {
+            return emit_error(wording::single_pair_failed(
+                stage,
+                &wording::unreadable_execution_cursor(&error.to_string()),
+            ));
+        }
+    };
+    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+        IntentExecutionRepositoryImpl::open(&store),
+        IntentRepositoryImpl::open(&store),
+    ) else {
+        return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
+    };
+    if let Err(error) =
+        RecordSingleStageRunUseCase::new(intent_execution_repository, intent_repository)
+            .execute(&execution_id, &slug, Utc::now())
+            .await
+    {
+        return emit_error(single_run_refusal(stage, &error));
+    }
+    // 書いた事実をリードモデルへ落とす（監査 2 行はこの投影で台帳に現れる）。
+    if let Err(error) = catch_up(layout).await {
+        return Completion::refused(wording::orchestrate_failure(&error));
+    }
+    emit(Ok((
+        Directive::Done {
+            reason: Some(wording::single_run_committed(stage)),
+        },
+        Vec::new(),
+    )))
 }
 
-/// 段 3 — `--skeleton-stance` の構文検証と state 必須（本体の配線は b47）。
-fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
+/// 隔離実行の拒否を逐語へ写す。
+///
+/// 逐語を選ぶのは**出す側**である（`coding-rules/error-handling.md`）。集約が運ぶのは
+/// `InvalidTarget` という材料だけなので、initialization の逐語はここで当てる。
+fn single_run_refusal(stage: &str, error: &SingleStageRunError) -> String {
+    match error {
+        SingleStageRunError::UnknownStage { .. } => wording::unknown_stage(stage),
+        SingleStageRunError::Command {
+            error: CommandError::InvalidTarget(_),
+            ..
+        } => wording::SINGLE_INIT.to_string(),
+        other => wording::single_pair_failed(stage, &chained(other)),
+    }
+}
+
+/// 段 3 — `--skeleton-stance`。分類の往復の受け口（#73）。
+///
+/// 値検証 → state 必須 → 記録 → 投影 → 「`next` をもう一度」の print、という順序は
+/// upstream `handleSkeletonStanceReport`（ピン `:4943-5008`）と同順である。
+async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
     let Ok(stance) = SkeletonStance::parse(stance) else {
         return emit_error(wording::unknown_skeleton_stance(stance));
     };
     if !state_file_present(layout) {
         return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string());
     }
-    emit_error(wording::skeleton_stance_not_wired(stance.as_str()))
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return emit_error(message),
+    };
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        // 不在 = まだ鋳造していない。状態ファイルだけが在る形も同じ答えである。
+        Ok(None) => return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string()),
+        // 在るのに読めない・壊れているは**不在と混ぜない**（`report` 段 6 と同じ規律）。
+        // 現在地を名乗れないので、材料をそのまま出す。
+        Err(error) => return emit_error(wording::unreadable_execution_cursor(&error.to_string())),
+    };
+    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+        IntentExecutionRepositoryImpl::open(&store),
+        IntentRepositoryImpl::open(&store),
+    ) else {
+        return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
+    };
+    // 成功の逐語は現在地を名乗る（upstream は状態ファイルの `Current Stage` を読む）。
+    // 媒体の失敗はここより前で surface 済みなので、行が引けないのは「記録する先が無い」である。
+    let Some((current_stage, _)) = current_execution_view(layout) else {
+        return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string());
+    };
+    if let Err(error) =
+        RecordSkeletonStanceUseCase::new(intent_execution_repository, intent_repository)
+            .execute(&execution_id, stance, Utc::now())
+            .await
+    {
+        return emit_error(skeleton_stance_refusal(&current_stage, &error));
+    }
+    if let Err(error) = catch_up(layout).await {
+        return Completion::refused(wording::orchestrate_failure(&error));
+    }
+    emit(Ok((
+        Directive::Print {
+            message: wording::skeleton_stance_recorded(stance.as_str(), &current_stage),
+        },
+        Vec::new(),
+    )))
+}
+
+/// stance の記録の拒否を逐語へ写す。
+///
+/// 拒否の材料（現在地と scope）は**封筒が運んできたもの**を使う — 拒否した瞬間に集約が見て
+/// いた値だからである。`fallback` は行から引いた現在地で、封筒が名乗れないときにだけ使う。
+fn skeleton_stance_refusal(fallback: &str, error: &SkeletonStanceError) -> String {
+    match error {
+        // 集約が返す `InvalidTarget` は「現在地が skeleton-gate ステージでない」だけである。
+        SkeletonStanceError::Command {
+            stage,
+            scope,
+            error: CommandError::InvalidTarget(_),
+        } => wording::not_the_skeleton_gate(
+            stage.as_ref().map_or(fallback, StageSlug::as_str),
+            scope,
+        ),
+        other => wording::skeleton_stance_failed(fallback, &chained(other)),
+    }
 }
 
 /// 段 4 — 再開の選択をルーティングする（遷移はコミットしない）。

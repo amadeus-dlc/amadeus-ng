@@ -45,6 +45,7 @@ pub struct RunStageRow {
     support_agents: String,
     mode: String,
     gate_default: bool,
+    in_scope: bool,
     inline_context_paths_rel: String,
     stage_file_rel: String,
     memory_path_rel: String,
@@ -75,6 +76,7 @@ impl RunStageRow {
         node: &StageNode,
         route: &StageRoute,
         next_stage_name: Option<&str>,
+        in_scope: bool,
     ) -> RunStageRow {
         let phase_dir = node.phase().as_str();
         let slug = node.slug().as_str();
@@ -95,6 +97,7 @@ impl RunStageRow {
             support_agents: json_column::strings(node.support_agents()),
             mode: node.mode().as_str().to_string(),
             gate_default: StageKey::new(node.slug().clone(), node.phase()).is_gated(),
+            in_scope,
             inline_context_paths_rel: json_column::strings(&inline_context_paths(node)),
             consumes_rel: json_column::strings(
                 &node
@@ -189,6 +192,17 @@ impl RunStageRow {
     #[must_use]
     pub const fn gate_default(&self) -> bool {
         self.gate_default
+    }
+
+    /// このスコープの EXECUTE サブグラフの一員か (**静的グリッド**の値)。
+    ///
+    /// `--single` の「そのステージはこの scope では読み飛ばされる」ガードが要る材料である
+    /// (upstream `emitSingleRunStage` の `subgraphForScope` 検査 — ピン `:4461-4468`)。
+    /// recompose のオーバレイは実行の持ち物なのでここには載らない — この行は
+    /// **定義 × scope だけで決まる**。
+    #[must_use]
+    pub const fn in_scope(&self) -> bool {
+        self.in_scope
     }
 
     /// ハーネス根からの相対で並べたエージェントペルソナの 1 行 JSON 配列。

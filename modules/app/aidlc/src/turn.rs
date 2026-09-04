@@ -20,7 +20,7 @@ use core_query_use_case::orchestration::{
     FindDefinitionUseCase, FindExecutionUseCase, FindJumpUseCase, FindNextAnswerUseCase,
     FindPhaseEntryUseCase, FindRunStageUseCase, FindScopeChangeUseCase, FindScopeKeywordUseCase,
     FindScopeUseCase, FindSteeringUseCase, GateField, JumpView, NextTurnInput, NextTurnView,
-    ReadModelReadError, RunStageView, ScopeDao, ScopeSlugView, ScopeView, StageSlugView,
+    PhaseView, ReadModelReadError, RunStageView, ScopeDao, ScopeSlugView, ScopeView, StageSlugView,
     SteeringDeliveryView,
 };
 
@@ -464,8 +464,18 @@ impl<'a> Turn<'a> {
         None
     }
 
-    /// 分岐 4b — 単一ステージ隔離モード。
+    /// 分岐 4b — 単一ステージ隔離モード (upstream `emitSingleRunStage` — ピン `:4443-4489`)。
+    ///
+    /// ガードは upstream と同順である: `--phase` 併用 → `--stage` 必須 → 未知 →
+    /// initialization → scope 外。**state は 1 度も読まない**ので、本流のカーソルは
+    /// 構造的に動かしようがない (仕様 I10 の `next` 側の半分)。
     fn single(&self, input: &NextTurnInput, scope: &ScopeSlugView) -> Directive {
+        // 1 ステージを走らせる動詞なので、範囲を指す `--phase` とは排他である。
+        if input.phase().is_some() {
+            return Directive::Error {
+                message: wording::SINGLE_WITH_PHASE.to_string(),
+            };
+        }
         let Some(stage) = input.stage() else {
             return Directive::Error {
                 message: wording::SINGLE_REQUIRES_STAGE.to_string(),
@@ -480,9 +490,18 @@ impl<'a> Turn<'a> {
             Ok(None) => Directive::Error {
                 message: wording::unknown_stage(stage),
             },
-            Ok(Some(row)) => {
-                self.deliver(&row, scope, gate_of(row.gate_default()), true, None, None)
+            // 初期化は鋳造の一部であり、隔離実行の意味を持たない (jump の init ガードと同型)。
+            Ok(Some(row)) if PhaseView::parse(row.phase()) == Ok(PhaseView::Initialization) => {
+                Directive::Error {
+                    message: wording::SINGLE_INIT.to_string(),
+                }
             }
+            // scope の EXECUTE サブグラフの外は走らせない (行の値 — ここに判断は無い)。
+            Ok(Some(row)) if !row.in_scope() => Directive::Error {
+                message: wording::stage_skipped_for_scope(row.stage_slug(), scope.as_str()),
+            },
+            // gate / next_stage の強制は `directive_drawing::run_stage` の single 経路が持つ。
+            Ok(Some(row)) => self.deliver(&row, scope, GateField::Ungated, true, None, None),
         }
     }
 
@@ -710,7 +729,7 @@ impl<'a> Turn<'a> {
                 Some(row) => self.deliver(
                     row,
                     scope,
-                    gate_of(answer.gated().unwrap_or(row.gate_default())),
+                    answer.gate().unwrap_or_else(|| gate_of(row.gate_default())),
                     false,
                     Some(view.execution().state_binding()),
                     view.plan().map(|plan| {
@@ -1118,7 +1137,7 @@ mod tests {
             decision_kind.to_string(),
             Some(1),
             stage_slug.map(str::to_string),
-            Some(true),
+            Some("gated".to_string()),
             checkbox.map(str::to_string),
             "execution-1".to_string(),
             None,
@@ -1968,6 +1987,7 @@ mod tests {
             "orchestrator".to_string(),
             "[]".to_string(),
             "inline".to_string(),
+            true,
             true,
             "[]".to_string(),
             "domain-design.md".to_string(),

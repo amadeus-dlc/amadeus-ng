@@ -5,6 +5,7 @@
 //! 避ける)。RMU はこの答えをリードモデル (`read_next_answer`) へ投影し、クエリ側はそれを
 //! 読んで返すだけになる (`coding-rules/cqrs-boundaries.md` 規則 3 / 6 の 2026-09-02 追記)。
 
+use super::gate_decision::GateDecision;
 use super::stage_index::StageIndex;
 use crate::workspace::CheckboxState;
 
@@ -15,8 +16,8 @@ pub enum NextDecision {
     RunStage {
         /// 走らせるステージ。
         stage: StageIndex,
-        /// そのステージがゲート付きか (`phase != initialization` — BR1.3)。
-        gate: bool,
+        /// そのステージのゲート判断 3 値 (BR1.3 + walking-skeleton の分類往復)。
+        gate: GateDecision,
     },
     /// ループの停止 (完了・エピローグ・冪等な終端)。
     Done,
@@ -55,13 +56,20 @@ mod tests {
     fn run_stage_and_the_error_arms_carry_the_stage() {
         let decision = NextDecision::RunStage {
             stage: StageIndex::new(2),
-            gate: true,
+            gate: GateDecision::Gated,
         };
         assert_eq!(
             decision,
             NextDecision::RunStage {
                 stage: StageIndex::new(2),
-                gate: true
+                gate: GateDecision::Gated
+            }
+        );
+        assert_ne!(
+            decision,
+            NextDecision::RunStage {
+                stage: StageIndex::new(2),
+                gate: GateDecision::Unresolved
             }
         );
         let inconsistent = NextDecision::InconsistentSkip {

@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::dto_decode_error::DtoDecodeError;
 use super::dto_vocabulary::{
     autonomy_of, autonomy_spelling, checkbox_of, checkbox_spelling, phase_of, phase_spelling,
-    plan_action_of, plan_action_spelling, status_of, status_spelling,
+    plan_action_of, plan_action_spelling, skeleton_stance_of, skeleton_stance_spelling, status_of,
+    status_spelling,
 };
 
 /// スナップショット行の形。**フィールド名と並びが契約**である。
@@ -32,6 +33,12 @@ pub struct IntentExecutionDto {
     status: String,
     parked_at: Option<usize>,
     autonomy: String,
+    /// conductor が分類した walking-skeleton stance (`null` = 未記録)。
+    ///
+    /// 欄を持たない行は `None` で読む — 後方互換のための緩和ではなく、
+    /// **「欄が無い = まだ分類していない」という正規の意味**である (b47 設計 §2)。
+    #[serde(default)]
+    skeleton_stance: Option<String>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     seq_nr: usize,
@@ -82,6 +89,9 @@ impl IntentExecutionDto {
             status: status_spelling(execution.status()).to_string(),
             parked_at: execution.parked_at().map(StageIndex::to_usize),
             autonomy: autonomy_spelling(execution.autonomy()).to_string(),
+            skeleton_stance: execution
+                .skeleton_stance()
+                .map(|stance| skeleton_stance_spelling(stance).to_string()),
             approved: stages
                 .clone()
                 .filter_map(|value| execution.stage_index(value))
@@ -138,6 +148,10 @@ impl IntentExecutionDto {
             status_of(&self.status)?,
             self.parked_at,
             autonomy_of(&self.autonomy)?,
+            self.skeleton_stance
+                .as_deref()
+                .map(|raw| skeleton_stance_of(raw, "skeleton_stance"))
+                .transpose()?,
             self.approved.clone(),
             self.revision_count.clone(),
             self.seq_nr,

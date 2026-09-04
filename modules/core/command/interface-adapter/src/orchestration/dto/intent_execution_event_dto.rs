@@ -1,4 +1,4 @@
-//! ドメインイベント 11 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
+//! ドメインイベント 13 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -8,15 +8,18 @@
 
 use core_command_domain::orchestration::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageEntry,
-    StageRevised, StageSkipped, Started, Unparked,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
+    SingleStageRunCommitted, SkeletonStanceRecorded, StageEntry, StageRevised, StageSkipped,
+    Started, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode_set_dto::AutonomyModeSetDto;
 use super::dto_decode_error::DtoDecodeError;
-use super::dto_vocabulary::{autonomy_of, autonomy_spelling};
+use super::dto_vocabulary::{
+    autonomy_of, autonomy_spelling, skeleton_stance_of, skeleton_stance_spelling,
+};
 use super::gate_approved_dto::GateApprovedDto;
 use super::gate_opened_dto::GateOpenedDto;
 use super::gate_rejected_dto::GateRejectedDto;
@@ -24,6 +27,8 @@ use super::intent_dto::StageEntryDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
+use super::single_stage_run_committed_dto::SingleStageRunCommittedDto;
+use super::skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
@@ -54,6 +59,10 @@ pub enum IntentExecutionEventDto {
     Recomposed(RecomposedDto),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSetDto),
+    /// 隔離実行 (`--single`) の疑似ワークフロー ID 付き対の記録。
+    SingleStageRunCommitted(SingleStageRunCommittedDto),
+    /// walking-skeleton stance の記録。
+    SkeletonStanceRecorded(SkeletonStanceRecordedDto),
 }
 
 /// イベント識別子の復号。
@@ -164,6 +173,20 @@ impl IntentExecutionEventDto {
                     mode: autonomy_spelling(payload.mode()).to_string(),
                 })
             }
+            IntentExecutionEvent::SingleStageRunCommitted(payload) => {
+                IntentExecutionEventDto::SingleStageRunCommitted(SingleStageRunCommittedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                    stage: slug_spelling(payload.stage()),
+                })
+            }
+            IntentExecutionEvent::SkeletonStanceRecorded(payload) => {
+                IntentExecutionEventDto::SkeletonStanceRecorded(SkeletonStanceRecordedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                    stance: skeleton_stance_spelling(payload.stance()).to_string(),
+                })
+            }
         }
     }
 
@@ -260,6 +283,20 @@ impl IntentExecutionEventDto {
                     event_id_of(&payload.id)?,
                     aggregate_id_of(&payload.aggregate_id)?,
                     autonomy_of(&payload.mode)?,
+                ))
+            }
+            IntentExecutionEventDto::SingleStageRunCommitted(payload) => {
+                IntentExecutionEvent::SingleStageRunCommitted(SingleStageRunCommitted::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                ))
+            }
+            IntentExecutionEventDto::SkeletonStanceRecorded(payload) => {
+                IntentExecutionEvent::SkeletonStanceRecorded(SkeletonStanceRecorded::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    skeleton_stance_of(&payload.stance, "stance")?,
                 ))
             }
         })

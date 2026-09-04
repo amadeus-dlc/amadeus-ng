@@ -3,7 +3,7 @@
 //! ドメイン側の `as_str` / `parse` は流用しない (`mod.rs` の「綴りの正本はここにある」)。
 //! ここの綴りを変えると既に書かれた行が読めなくなるので、対応表は逐語テストで固定する。
 
-use core_command_domain::orchestration::{AutonomyMode, Status};
+use core_command_domain::orchestration::{AutonomyMode, SkeletonStance, Status};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewClass,
     RuleScope, SkeletonDefault, StageMode,
@@ -247,6 +247,32 @@ pub(super) fn review_cap_of(raw: &str) -> Result<ReviewCapValue, DtoDecodeError>
         "Advisory" => Ok(ReviewCapValue::Advisory),
         "None" => Ok(ReviewCapValue::None),
         other => Err(DtoDecodeError::malformed("review_cap", other)),
+    }
+}
+
+/// walking-skeleton stance の綴り。
+///
+/// ドメインの `SkeletonStance::as_str` (`on` / `off` / `scope-dependent`) は
+/// **CLI と状態ファイルの面**の綴りであり、ジャーナル・スナップショット行の面はこちらが
+/// 正本である (このモジュールの doc — 綴りは面ごとに独立させる)。
+pub(super) const fn skeleton_stance_spelling(value: SkeletonStance) -> &'static str {
+    match value {
+        SkeletonStance::On => "On",
+        SkeletonStance::Off => "Off",
+        SkeletonStance::ScopeDependent => "ScopeDependent",
+    }
+}
+
+/// walking-skeleton stance の復号。
+pub(super) fn skeleton_stance_of(
+    raw: &str,
+    field: &'static str,
+) -> Result<SkeletonStance, DtoDecodeError> {
+    match raw {
+        "On" => Ok(SkeletonStance::On),
+        "Off" => Ok(SkeletonStance::Off),
+        "ScopeDependent" => Ok(SkeletonStance::ScopeDependent),
+        other => Err(DtoDecodeError::malformed(field, other)),
     }
 }
 

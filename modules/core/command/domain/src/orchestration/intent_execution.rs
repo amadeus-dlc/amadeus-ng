@@ -44,11 +44,13 @@ use chrono::{DateTime, Utc};
 use super::apply_error::ApplyError;
 use super::autonomy_mode::AutonomyMode;
 use super::command_error::CommandError;
+use super::gate_decision::GateDecision;
 use super::intent::Intent;
 use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageRevised, StageSkipped, Started, Unparked,
+    Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
+    Started, Unparked,
 };
 use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
@@ -60,6 +62,7 @@ use super::report_decision::ReportDecision;
 use super::report_no_op::ReportNoOp;
 use super::report_refusal::ReportRefusal;
 use super::report_request::ReportRequest;
+use super::skeleton_stance::SkeletonStance;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::stage_key::StageKey;
@@ -128,6 +131,12 @@ pub struct IntentExecution {
     status: Status,
     parked_at: Option<StageIndex>,
     autonomy: AutonomyMode,
+    /// conductor が分類した walking-skeleton の stance (`None` = 往復がまだ済んでいない)。
+    ///
+    /// エンジンが計算できない唯一のゲート値なので、記録されるまで skeleton-gate ステージの
+    /// ゲートは決まらない (`GateDecision::Unresolved`)。欄が無い歴史は `None` で読む —
+    /// 後方互換ではなく「未記録」という正規の意味である。
+    skeleton_stance: Option<SkeletonStance>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     seq_nr: usize,
@@ -246,6 +255,7 @@ impl IntentExecution {
         status: Status,
         parked_at: Option<usize>,
         autonomy: AutonomyMode,
+        skeleton_stance: Option<SkeletonStance>,
         approved: Vec<bool>,
         revision_count: Vec<u32>,
         seq_nr: usize,
@@ -303,6 +313,7 @@ impl IntentExecution {
             status,
             parked_at: parked_at.map(StageIndex::new),
             autonomy,
+            skeleton_stance,
             approved,
             revision_count,
             seq_nr,
@@ -433,6 +444,32 @@ impl IntentExecution {
     #[must_use]
     pub const fn autonomy(&self) -> AutonomyMode {
         self.autonomy
+    }
+
+    /// 記録済みの walking-skeleton stance (`None` = 分類の往復がまだ済んでいない)。
+    #[must_use]
+    pub const fn skeleton_stance(&self) -> Option<SkeletonStance> {
+        self.skeleton_stance
+    }
+
+    /// walking-skeleton ゲートのステージ — **静的計画**で Construction フェーズの最初の
+    /// EXECUTE ステージ (upstream `isSkeletonGateStage` = `firstInScopeStageOfPhase`)。
+    ///
+    /// 判定に使うのは [`Intent`] の静的グリッドであって recompose のオーバレイでは**ない** —
+    /// upstream の `subgraphForScope` は静的サブグラフを歩くからである。Construction の
+    /// EXECUTE ステージが 1 つも無い計画、および intent の取り違えは `None`。
+    #[must_use]
+    pub fn skeleton_gate_stage(&self, intent: &Intent) -> Option<StageIndex> {
+        if !self.matches(intent) {
+            return None;
+        }
+        intent
+            .stages()
+            .iter()
+            .position(|entry| {
+                entry.phase() == PhaseId::Construction && entry.plan_action() == PlanAction::Execute
+            })
+            .map(StageIndex::new)
     }
 
     /// 名指しステージの checkbox マーカー。範囲外は `None`。
@@ -949,6 +986,80 @@ impl IntentExecution {
         )
     }
 
+    /// 隔離実行の記録 — `SingleStageRunCommitted` (仕様 I10 / #73)。
+    ///
+    /// # 本流の状態は 1 つも動かない
+    ///
+    /// このコマンドが起こす事実の**適用はフレーム空**である — カーソル・checkbox・`Status`・
+    /// park・overlay・autonomy・承認履歴のいずれも変わらない。隔離実行が本流を進められない
+    /// という仕様 I10 は、遷移ポートを注入しないことではなく**この適用の空虚さ**で保証する
+    /// (オーナー裁定 2026-09-04 = B。Quint `single_run_frame` と単体テストが対で固定する)。
+    ///
+    /// # `guard_running_for` を使わない
+    ///
+    /// 隔離実行は本流の状態 (Completed / park 中 / autonomous) に依らず受理される — upstream の
+    /// `handleSingleReport` は状態ファイルを 1 度も読まず、監査の対を書くだけだからである
+    /// (ピン `3c3146cf` `:5261-5361`)。取り違えだけは他コマンドと同じく入口で照合する。
+    ///
+    /// 計画に無い slug は呼出側 (ユースケース) が `slug → index` の解決で断る。
+    ///
+    /// # Errors
+    ///
+    /// intent の取り違え (`IntentMismatch`)、initialization フェーズ・範囲外のステージ
+    /// (`InvalidTarget`)。
+    pub fn record_single_stage_run(
+        &mut self,
+        intent: &Intent,
+        stage: StageIndex,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        // 非ゲート = initialization フェーズ (BR1.3)。範囲外もここで落ちる。
+        self.require_gated(stage)?;
+        let material = SingleStageRunCommitted::new(
+            IntentExecution::next_event_id(),
+            self.id.clone(),
+            self.slug_of(stage)?,
+        );
+        self.commit(
+            IntentExecutionEvent::SingleStageRunCommitted(material),
+            occurred_at,
+        )
+    }
+
+    /// conductor が分類した walking-skeleton stance の記録 — `SkeletonStanceRecorded` (#73)。
+    ///
+    /// 受理できるのは**カーソルが skeleton-gate ステージに立っているとき**だけである
+    /// (upstream `handleSkeletonStanceReport` の防御 — ピン `:4964-4989`)。再記録は受理する
+    /// (上書き — upstream の `setOrInsertField` と同じ意味論)。park 中・autonomous でも
+    /// 拒まない — ピンにもそのガードは無い。
+    ///
+    /// # Errors
+    ///
+    /// intent の取り違え (`IntentMismatch`)、カーソルが skeleton-gate ステージでない
+    /// (`InvalidTarget`)。
+    pub fn record_skeleton_stance(
+        &mut self,
+        intent: &Intent,
+        stance: SkeletonStance,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        if self.skeleton_gate_stage(intent) != Some(self.cursor) {
+            return Err(CommandError::InvalidTarget(self.cursor));
+        }
+        let material =
+            SkeletonStanceRecorded::new(IntentExecution::next_event_id(), self.id.clone(), stance);
+        self.commit(
+            IntentExecutionEvent::SkeletonStanceRecorded(material),
+            occurred_at,
+        )
+    }
+
     // ---- W3: apply (リプレイと通常実行の同一経路 — BR2.1 / BR2.3) ----
 
     /// イベントを 1 つ適用する。通常実行 (decide 経由) とリプレイの唯一の状態遷移経路。
@@ -994,7 +1105,7 @@ impl IntentExecution {
         *self = next;
     }
 
-    /// 11 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
+    /// 13 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
     fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
@@ -1056,6 +1167,13 @@ impl IntentExecution {
             }
             IntentExecutionEvent::AutonomyModeSet(set) => {
                 self.autonomy = set.mode();
+            }
+            IntentExecutionEvent::SingleStageRunCommitted(_) => {
+                // **フレーム空** — 隔離実行は本流の状態を 1 つも動かさない (仕様 I10、
+                // オーナー裁定 2026-09-04)。監査 2 行を描くのは投影側の仕事である。
+            }
+            IntentExecutionEvent::SkeletonStanceRecorded(recorded) => {
+                self.skeleton_stance = Some(recorded.stance());
             }
         }
         Ok(())
@@ -1243,7 +1361,7 @@ impl IntentExecution {
     /// `--resume` → 自由記述 → 完了済み → カーソルが着手済み (実効 SKIP なら不整合 2 形) →
     /// 次の in-scope ステージ (無ければ `Done`)。
     #[must_use]
-    pub fn next_decision(&self, request: &NextRequest) -> NextDecision {
+    pub fn next_decision(&self, intent: &Intent, request: &NextRequest) -> NextDecision {
         if self.parked_active() && !request.is_reentry() {
             return if request.is_resume() {
                 NextDecision::UnparkThenResume
@@ -1281,16 +1399,33 @@ impl IntentExecution {
             }
             return NextDecision::RunStage {
                 stage: cursor,
-                gate: self.is_gated(cursor),
+                gate: self.gate_decision(intent, cursor),
             };
         }
         match self.next_in_scope(cursor) {
             Some(stage) => NextDecision::RunStage {
                 stage,
-                gate: self.is_gated(stage),
+                gate: self.gate_decision(intent, stage),
             },
             None => NextDecision::Done,
         }
+    }
+
+    /// 名指したステージのゲート判断 3 値 (upstream `computeGate` — ピン `:1756-1771`)。
+    ///
+    /// initialization は `Ungated`、skeleton-gate ステージで stance 未記録なら `Unresolved`、
+    /// それ以外は `Gated` である。stance が記録済みなら upstream の `resolveSkeletonGate` が
+    /// **どの stance でも** `true` を返すので `Gated` になる — 往復が稼ぐのは
+    /// 「分類したうえで決めた」という決定性であって、値が stance ごとに割れることではない
+    /// (ピン `:1371-1416` のコメント)。
+    fn gate_decision(&self, intent: &Intent, stage: StageIndex) -> GateDecision {
+        if !self.is_gated(stage) {
+            return GateDecision::Ungated;
+        }
+        if self.skeleton_gate_stage(intent) == Some(stage) && self.skeleton_stance.is_none() {
+            return GateDecision::Unresolved;
+        }
+        GateDecision::Gated
     }
 
     // ---- 判断 (書込なし) — 報告のディスパッチ ----
@@ -1369,7 +1504,12 @@ impl IntentExecution {
     }
 
     /// カーソルが指すステージの slug (添字帳から — 不変条件により必ず在る)。
-    fn cursor_slug(&self) -> Option<&StageSlug> {
+    /// カーソル位置の slug（添字帳を引くだけ — 判断ではない）。
+    ///
+    /// 添字帳は計画と同じ長さで、カーソルは完全コンストラクタが範囲を保証しているので
+    /// 実際には必ず在る。`Option` なのは**型がそれを知らない**からである。
+    #[must_use]
+    pub fn cursor_slug(&self) -> Option<&StageSlug> {
         self.stage_keys
             .get(self.cursor.to_usize())
             .map(StageKey::slug)
@@ -1682,6 +1822,7 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
             Status::Running,
             None,
             AutonomyMode::Gated,
+            None,
             vec![false; count],
             vec![0; count],
             1,
@@ -1797,6 +1938,36 @@ mod tests {
 
         fn gated(&self, stage: StageIndex) -> Option<bool> {
             self.execution.gated(&self.intent, stage)
+        }
+
+        #[expect(
+            clippy::trivially_copy_pass_by_ref,
+            reason = "集約の公開 API と同じ署名にする — 転送ヘルパが形を変えると呼出側の読みがずれる"
+        )]
+        fn next_decision(&self, request: &NextRequest) -> NextDecision {
+            self.execution.next_decision(&self.intent, request)
+        }
+
+        fn skeleton_gate_stage(&self) -> Option<StageIndex> {
+            self.execution.skeleton_gate_stage(&self.intent)
+        }
+
+        fn record_single_stage_run(
+            &mut self,
+            stage: StageIndex,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .record_single_stage_run(&self.intent, stage, occurred_at)
+        }
+
+        fn record_skeleton_stance(
+            &mut self,
+            stance: SkeletonStance,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution
+                .record_skeleton_stance(&self.intent, stance, occurred_at)
         }
 
         fn open_gate(
@@ -1937,6 +2108,7 @@ mod tests {
             status,
             None,
             autonomy,
+            None,
             approved,
             vec![0; stage_count],
             1,
@@ -2334,6 +2506,7 @@ mod tests {
             Status::Running,
             None,
             AutonomyMode::Gated,
+            None,
             vec![false; 3],
             vec![0; 3],
             1,
@@ -2954,6 +3127,239 @@ mod tests {
         );
     }
 
+    // ---- b47: 隔離実行 (`--single`) と walking-skeleton stance ----
+
+    /// initialization 1 + inception 1 + construction 2 の合成計画で開始する。
+    ///
+    /// skeleton-gate ステージ (Construction フェーズの最初の EXECUTE) を持つ最小形である。
+    fn with_construction(actions: &[PlanAction]) -> Run {
+        start_with_phases(
+            &[
+                PhaseId::Initialization,
+                PhaseId::Inception,
+                PhaseId::Construction,
+                PhaseId::Construction,
+            ],
+            actions,
+        )
+    }
+
+    #[test]
+    fn an_isolated_run_records_the_stage_without_moving_the_workflow() {
+        // I10 の実体 — `SingleStageRunCommitted` の適用は**フレーム空**である。
+        // `commit` は通番と発生時刻だけを動かすので、発生時刻を現在値と同じにし通番を
+        // 戻せば、集約は適用前と `==` になる (これがフレーム空の定義そのものである)。
+        let mut w = all_exec(3);
+        let before = w.execution.clone();
+        let at_now = *before.last_updated_at();
+
+        let event = w.record_single_stage_run(at(&w, 2), at_now).unwrap();
+
+        let IntentExecutionEvent::SingleStageRunCommitted(committed) = &event else {
+            panic!("SingleStageRunCommitted を期待した");
+        };
+        assert_eq!(committed.stage(), &slug(2));
+        assert_eq!(committed.aggregate_id(), before.id());
+        assert_eq!(w.seq_nr(), before.seq_nr() + 1, "歴史は 1 件伸びる");
+        assert_eq!(
+            w.execution.clone().with_seq_nr(before.seq_nr()),
+            before,
+            "通番以外は 1 つも動かない (フレーム空)"
+        );
+    }
+
+    #[test]
+    fn an_isolated_run_is_accepted_regardless_of_the_main_workflows_state() {
+        // upstream の `handleSingleReport` は状態ファイルを 1 度も読まない — 完了済み・
+        // park 中・autonomous のいずれでも監査の対を書く。
+        let mut completed = all_exec(2);
+        completed.approve_gate(None, occurred()).unwrap();
+        assert_eq!(completed.status(), Status::Completed);
+        assert!(
+            completed
+                .record_single_stage_run(at(&completed, 1), occurred())
+                .is_ok()
+        );
+
+        let mut parked = all_exec(3);
+        parked.park(occurred()).unwrap();
+        assert!(parked.parked_active());
+        assert!(
+            parked
+                .record_single_stage_run(at(&parked, 2), occurred())
+                .is_ok()
+        );
+
+        let mut autonomous = all_exec(3);
+        autonomous
+            .switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
+        assert!(
+            autonomous
+                .record_single_stage_run(at(&autonomous, 2), occurred())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn an_isolated_run_refuses_initialization_out_of_range_and_a_foreign_intent() {
+        let mut w = all_exec(3);
+        assert_eq!(
+            w.record_single_stage_run(at(&w, 0), occurred())
+                .unwrap_err(),
+            CommandError::InvalidTarget(at(&w, 0)),
+            "initialization は隔離実行の対象にならない"
+        );
+        let out_of_range = StageIndex::new(99);
+        assert_eq!(
+            w.record_single_stage_run(out_of_range, occurred())
+                .unwrap_err(),
+            CommandError::InvalidTarget(out_of_range)
+        );
+        assert_eq!(
+            w.execution
+                .record_single_stage_run(&foreign_plan(3), at(&w, 1), occurred())
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+        assert_eq!(w.seq_nr(), 1, "拒否では歴史が伸びない");
+    }
+
+    #[test]
+    fn the_skeleton_gate_stage_is_the_first_construction_execute_of_the_static_grid() {
+        let w = with_construction(&[Execute, Execute, Execute, Execute]);
+        assert_eq!(w.skeleton_gate_stage(), Some(at(&w, 2)));
+
+        // 静的グリッドが SKIP なら、その次の Construction EXECUTE が gate である。
+        let mut skipped_first = with_construction(&[Execute, Execute, Skip, Execute]);
+        assert_eq!(
+            skipped_first.skeleton_gate_stage(),
+            Some(at(&skipped_first, 3))
+        );
+        // recompose のオーバレイは見ない — 判定の材料は静的計画だけである。
+        let target = at(&skipped_first, 2);
+        skipped_first.recompose(&[target], occurred()).unwrap();
+        assert_eq!(
+            skipped_first.effective_plan(target),
+            Some(Execute),
+            "オーバレイは反転している"
+        );
+        assert_eq!(
+            skipped_first.skeleton_gate_stage(),
+            Some(at(&skipped_first, 3)),
+            "それでも skeleton-gate は静的グリッドのまま"
+        );
+
+        // Construction が 1 つも無い計画には skeleton gate が無い。
+        assert_eq!(all_exec(3).skeleton_gate_stage(), None);
+        // 他人の計画からは答えない。
+        let w = all_exec(3);
+        assert_eq!(w.execution.skeleton_gate_stage(&foreign_plan(3)), None);
+    }
+
+    #[test]
+    fn the_skeleton_gate_stays_unresolved_until_the_stance_is_recorded() {
+        let mut w = with_construction(&[Execute, Execute, Execute, Execute]);
+        // カーソルは inception のステージ — ゲートは決まっている。
+        assert_eq!(
+            w.next_decision(&NextRequest::default()),
+            NextDecision::RunStage {
+                stage: at(&w, 1),
+                gate: GateDecision::Gated
+            }
+        );
+        w.approve_gate(None, occurred()).unwrap();
+        assert_eq!(w.cursor(), at(&w, 2), "カーソルは skeleton-gate ステージへ");
+        assert_eq!(
+            w.next_decision(&NextRequest::default()),
+            NextDecision::RunStage {
+                stage: at(&w, 2),
+                gate: GateDecision::Unresolved
+            },
+            "stance 未記録のあいだゲートは決まらない"
+        );
+
+        let event = w
+            .record_skeleton_stance(SkeletonStance::On, occurred())
+            .unwrap();
+        let IntentExecutionEvent::SkeletonStanceRecorded(recorded) = &event else {
+            panic!("SkeletonStanceRecorded を期待した");
+        };
+        assert_eq!(recorded.stance(), SkeletonStance::On);
+        assert_eq!(w.skeleton_stance(), Some(SkeletonStance::On));
+        assert_eq!(
+            w.next_decision(&NextRequest::default()),
+            NextDecision::RunStage {
+                stage: at(&w, 2),
+                gate: GateDecision::Gated
+            },
+            "記録後はどの stance でも決まった真になる"
+        );
+    }
+
+    #[test]
+    fn every_stance_resolves_the_gate_to_gated() {
+        // upstream の `resolveSkeletonGate` は 3 値のいずれでも `true` を返す (ピン :1398-1416)。
+        for stance in [
+            SkeletonStance::On,
+            SkeletonStance::Off,
+            SkeletonStance::ScopeDependent,
+        ] {
+            let mut w = with_construction(&[Execute, Execute, Execute, Execute]);
+            w.approve_gate(None, occurred()).unwrap();
+            w.record_skeleton_stance(stance, occurred()).unwrap();
+            assert_eq!(
+                w.next_decision(&NextRequest::default()),
+                NextDecision::RunStage {
+                    stage: at(&w, 2),
+                    gate: GateDecision::Gated
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_recorded_stance_is_overwritten_by_a_later_one() {
+        let mut w = with_construction(&[Execute, Execute, Execute, Execute]);
+        w.approve_gate(None, occurred()).unwrap();
+        w.record_skeleton_stance(SkeletonStance::On, occurred())
+            .unwrap();
+        w.record_skeleton_stance(SkeletonStance::Off, occurred())
+            .unwrap();
+        assert_eq!(w.skeleton_stance(), Some(SkeletonStance::Off));
+    }
+
+    #[test]
+    fn a_stance_reported_away_from_the_skeleton_gate_is_refused() {
+        let mut w = with_construction(&[Execute, Execute, Execute, Execute]);
+        // カーソルは inception のステージ — skeleton-gate ではない。
+        assert_eq!(
+            w.record_skeleton_stance(SkeletonStance::On, occurred())
+                .unwrap_err(),
+            CommandError::InvalidTarget(at(&w, 1))
+        );
+        assert_eq!(w.skeleton_stance(), None);
+        assert_eq!(w.seq_nr(), 1, "拒否では歴史が伸びない");
+
+        // Construction が無い計画は skeleton-gate 自体が無いので常に拒む。
+        let mut without = all_exec(3);
+        assert_eq!(
+            without
+                .record_skeleton_stance(SkeletonStance::On, occurred())
+                .unwrap_err(),
+            CommandError::InvalidTarget(without.cursor())
+        );
+
+        // 他人の計画も拒む。
+        let mut w = with_construction(&[Execute, Execute, Execute, Execute]);
+        assert_eq!(
+            w.execution
+                .record_skeleton_stance(&foreign_plan(4), SkeletonStance::On, occurred())
+                .unwrap_err(),
+            CommandError::IntentMismatch
+        );
+    }
+
     #[test]
     fn the_queries_that_need_the_plan_refuse_a_foreign_intent() {
         let w = all_exec(3);
@@ -3421,6 +3827,7 @@ mod tests {
             Status::Running,
             None,
             AutonomyMode::Gated,
+            None,
             vec![false; count],
             vec![0; count],
             1,
@@ -3619,6 +4026,7 @@ mod tests {
             source.status(),
             source.parked_at().map(StageIndex::to_usize),
             source.autonomy(),
+            None,
             (0..source.stage_count())
                 .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.approved(stage))
@@ -3657,10 +4065,11 @@ mod tests {
                 source.status(),
                 None,
                 source.autonomy(),
+                None,
                 Vec::new(),
                 Vec::new(),
                 1,
-                *source.last_updated_at(),
+                *source.last_updated_at()
             )
             .is_err()
         );
@@ -3676,10 +4085,11 @@ mod tests {
                 source.status(),
                 None,
                 source.autonomy(),
+                None,
                 vec![false; 3],
                 vec![0; 3],
                 1,
-                *source.last_updated_at(),
+                *source.last_updated_at()
             )
             .is_err()
         );
@@ -3696,10 +4106,11 @@ mod tests {
                 source.status(),
                 None,
                 source.autonomy(),
+                None,
                 vec![false; 3],
                 vec![0; 3],
                 1,
-                *source.last_updated_at(),
+                *source.last_updated_at()
             )
             .is_err()
         );
@@ -3715,10 +4126,11 @@ mod tests {
                 source.status(),
                 Some(9),
                 source.autonomy(),
+                None,
                 vec![false; 3],
                 vec![0; 3],
                 1,
-                *source.last_updated_at(),
+                *source.last_updated_at()
             )
             .is_err()
         );
@@ -3734,10 +4146,11 @@ mod tests {
                 source.status(),
                 None,
                 source.autonomy(),
+                None,
                 vec![false; 3],
                 vec![0; 3],
                 1,
-                *source.last_updated_at(),
+                *source.last_updated_at()
             )
             .is_err()
         );
@@ -3752,10 +4165,11 @@ mod tests {
                 source.status(),
                 None,
                 source.autonomy(),
+                None,
                 vec![false; 3],
                 vec![0; 3],
                 0,
-                *source.last_updated_at(),
+                *source.last_updated_at()
             )
             .is_err()
         );
@@ -3855,7 +4269,7 @@ mod tests {
             w.next_decision(&NextRequest::default()),
             NextDecision::RunStage {
                 stage: first,
-                gate: true
+                gate: GateDecision::Gated
             }
         );
         // (1) park 中
@@ -3873,7 +4287,7 @@ mod tests {
             w.next_decision(&NextRequest::new(false, true, false)),
             NextDecision::RunStage {
                 stage: first,
-                gate: true
+                gate: GateDecision::Gated
             }
         );
         w.unpark(occurred()).unwrap();
@@ -3893,7 +4307,7 @@ mod tests {
             w.next_decision(&NextRequest::default()),
             NextDecision::RunStage {
                 stage: at(&w, 2),
-                gate: true
+                gate: GateDecision::Gated
             }
         );
         // (4) completed
@@ -3921,6 +4335,7 @@ mod tests {
                 Status::Running,
                 None,
                 source.autonomy(),
+                None,
                 approved,
                 vec![0, 0, 0],
                 1,
@@ -3934,10 +4349,10 @@ mod tests {
             vec![false, false, false],
         );
         assert_eq!(
-            walked.next_decision(&NextRequest::default()),
+            walked.next_decision(&w.intent, &NextRequest::default()),
             NextDecision::RunStage {
                 stage: at(&walked, 1),
-                gate: true
+                gate: GateDecision::Gated
             },
             "終了済みカーソルは読み飛ばし、次の in-scope を指す"
         );
@@ -3948,7 +4363,7 @@ mod tests {
             vec![false, true, false],
         );
         assert_eq!(
-            done.next_decision(&NextRequest::default()),
+            done.next_decision(&w.intent, &NextRequest::default()),
             NextDecision::Done,
             "終了済みカーソルの先に in-scope が無ければ Done"
         );

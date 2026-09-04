@@ -1,7 +1,7 @@
 //! `ExecutionRow` — `read_execution` の 1 行 (実行 1 本の現在状態)。
 
 use chrono::SecondsFormat;
-use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex};
+use core_command_domain::orchestration::{Intent, IntentExecution, SkeletonStance, StageIndex};
 
 use super::spelling;
 use super::stage_lookup::slug_at;
@@ -25,6 +25,7 @@ pub struct ExecutionRow {
     parked_active: bool,
     accepts_commands: bool,
     autonomy: String,
+    skeleton_stance: Option<String>,
     seq_nr: usize,
     last_updated_at: String,
     state_binding: String,
@@ -51,6 +52,9 @@ impl ExecutionRow {
             parked_active: execution.parked_active(),
             accepts_commands: execution.accepts_commands(),
             autonomy: execution.autonomy().as_state_field().to_string(),
+            skeleton_stance: execution
+                .skeleton_stance()
+                .map(|stance| SkeletonStance::as_str(stance).to_string()),
             seq_nr: execution.seq_nr(),
             last_updated_at: execution
                 .last_updated_at()
@@ -123,6 +127,15 @@ impl ExecutionRow {
     #[must_use]
     pub fn autonomy(&self) -> &str {
         &self.autonomy
+    }
+
+    /// 記録済みの walking-skeleton stance (未記録は NULL)。
+    ///
+    /// 綴りはドメインの [`SkeletonStance::as_str`] — 状態ファイルの `Skeleton Stance` 欄と
+    /// **同じ面**の値なので、綴りもそちらに揃える (`on` / `off` / `scope-dependent`)。
+    #[must_use]
+    pub fn skeleton_stance(&self) -> Option<&str> {
+        self.skeleton_stance.as_deref()
     }
 
     /// 集約内の通番 (歴史がどこまで進んだか)。

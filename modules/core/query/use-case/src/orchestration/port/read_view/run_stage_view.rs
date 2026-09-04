@@ -35,6 +35,7 @@ pub struct RunStageView {
     support_agents: String,
     mode: String,
     gate_default: bool,
+    in_scope: bool,
     inline_context_paths_rel: String,
     stage_file_rel: String,
     memory_path_rel: String,
@@ -51,7 +52,7 @@ pub struct RunStageView {
 }
 
 impl RunStageView {
-    /// 23 列をそのまま束ねる (**この型の唯一の構築経路**)。
+    /// 24 列をそのまま束ねる (**この型の唯一の構築経路**)。
     ///
     /// ビルダーを立てないのは、この型が**行の写し**であり任意フィールドが無いからである
     /// (`StageView` がビルダーを持つのは 28 フィールドの多くが省略可能で既定値を要する
@@ -74,6 +75,7 @@ impl RunStageView {
         support_agents: String,
         mode: String,
         gate_default: bool,
+        in_scope: bool,
         inline_context_paths_rel: String,
         stage_file_rel: String,
         memory_path_rel: String,
@@ -99,6 +101,7 @@ impl RunStageView {
             support_agents,
             mode,
             gate_default,
+            in_scope,
             inline_context_paths_rel,
             stage_file_rel,
             memory_path_rel,
@@ -173,6 +176,15 @@ impl RunStageView {
     #[must_use]
     pub const fn gate_default(&self) -> bool {
         self.gate_default
+    }
+
+    /// この scope の EXECUTE サブグラフの一員か (**静的グリッド**の値)。
+    ///
+    /// `--single` は「この scope では読み飛ばされるステージ」を拒む (公開言語の逐語は
+    /// 出す側が持つ)。judgment ではなく行の値である。
+    #[must_use]
+    pub const fn in_scope(&self) -> bool {
+        self.in_scope
     }
 
     /// ハーネス根からの相対で並ぶ inline context パスの 1 行 JSON 配列。

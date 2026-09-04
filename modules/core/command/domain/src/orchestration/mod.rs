@@ -63,6 +63,7 @@ mod apply_error;
 mod autonomy_mode;
 mod command_error;
 mod engine_signal;
+mod gate_decision;
 mod intent;
 mod intent_error;
 mod intent_event;
@@ -133,6 +134,7 @@ pub use status::Status;
 
 // 集約のクエリ (判断) の入出力 — RMU が投影し、クエリ側は読むだけ (2026-09-02 裁定)。
 pub use engine_signal::EngineSignal;
+pub use gate_decision::GateDecision;
 pub use next_decision::NextDecision;
 pub use next_request::NextRequest;
 pub use report_decision::ReportDecision;
@@ -144,7 +146,8 @@ pub use state_binding::StateBinding;
 // (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
 pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageRevised, StageSkipped, Started, Unparked,
+    Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
+    Started, Unparked,
 };
 // intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
 // `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。

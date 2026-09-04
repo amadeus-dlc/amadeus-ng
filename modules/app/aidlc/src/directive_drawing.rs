@@ -80,9 +80,16 @@ fn under(base: &str, column: &str, encoded: &str) -> Result<Vec<String>, String>
 
 /// `read_run_stage` 1 行 + 要求のピンから `run-stage` を組む。
 ///
-/// `gate` は**呼出側が決める** — 答えの行が `gated` を運ぶ分岐 (ハッピーパス) はその値、
-/// 行を持たない分岐 (`--single` / state なし jump) は行の `gate_default` である。どちらも
-/// 行の値であって、ここで計算するものではない。
+/// `gate` は**呼出側が決める** — 答えの行が `gate` を運ぶ分岐 (ハッピーパス) はその値、
+/// 行を持たない state なし jump は行の `gate_default` である。どちらも行の値であって、
+/// ここで計算するものではない。
+///
+/// # `--single` の 2 点だけはここで強制する
+///
+/// 隔離実行の directive は `gate: false` と `next_stage` 不在で確定している (upstream
+/// `emitSingleRunStage` — ピン `:4485-4487`)。隔離実行には本流の承認ライフサイクルが無く、
+/// 「次のステージ」も無いからである。呼出側の渡し値に依らずここで潰すのは、経路が増えても
+/// この 2 点が破れないようにするためである。
 ///
 /// # Errors
 ///
@@ -99,6 +106,8 @@ pub(crate) fn run_stage(
     let record = record.to_string_lossy().into_owned();
     let harness = layout.harness_dir().to_string_lossy().into_owned();
     let stages = layout.stage_library_dir().to_string_lossy().into_owned();
+    // 隔離実行に承認ライフサイクルは無い (ピン `directive.gate = false`)。
+    let gate = if single { GateField::Ungated } else { gate };
     let slug = StageSlugView::parse(row.stage_slug())
         .map_err(|_| unreadable_row("stage_slug", row.stage_slug()))?;
     let phase = PhaseView::parse(row.phase()).map_err(|_| unreadable_row("phase", row.phase()))?;
@@ -122,7 +131,10 @@ pub(crate) fn run_stage(
     .with_produces(under(&record, "produces_rel", row.produces_rel())?)
     .with_sensors(strings("sensors_applicable", row.sensors_applicable())?)
     .with_protocol_modules(strings("protocol_modules", row.protocol_modules())?);
-    if let Some(name) = row.next_stage_name() {
+    // 隔離実行は 1 ステージで止まるので次のステージを名乗らない (ピン `next_stage = null`)。
+    if let Some(name) = row.next_stage_name()
+        && !single
+    {
         builder = builder.with_next_stage(name);
     }
     if let (Some(reviewer), Some(class)) = (row.reviewer(), row.review_class()) {
@@ -335,6 +347,7 @@ mod tests {
                 self.support_agents,
                 self.mode,
                 true,
+                true,
                 self.inline_context_paths_rel,
                 "domain-design.md".to_string(),
                 "inception/domain-design/memory.md".to_string(),
@@ -467,15 +480,42 @@ mod tests {
         sound.consumes_rel = r#"["inception/brief.md"]"#.to_string();
 
         let directive =
-            run_stage(&sound.build(), &layout, GateField::Gated, true).expect("全列が正しい");
+            run_stage(&sound.build(), &layout, GateField::Gated, false).expect("全列が正しい");
 
         assert_eq!(directive.stage().as_str(), "domain-design");
         assert_eq!(directive.next_stage(), Some("Contract Design"));
-        assert!(directive.is_single());
+        assert!(!directive.is_single());
+        assert_eq!(directive.gate(), GateField::Gated);
         let consumes = directive.consumes();
         assert!(
             consumes[0].ends_with("/inception/brief.md"),
             "record を前置する: {consumes:?}"
+        );
+    }
+
+    /// 隔離実行は `gate: false` と `next_stage` 不在で確定している (ピン `:4485-4487`)。
+    ///
+    /// 呼出側が何を渡してもここで潰す — 経路が増えてもこの 2 点は破れない。
+    #[test]
+    fn a_single_run_forces_an_ungated_directive_without_a_next_stage() {
+        let root = tempfile::tempdir().expect("一時ディレクトリ");
+        let layout = layout_with_record(&root);
+        let mut sound = Row::sound();
+        sound.review_class = Some("adversarial".to_string());
+
+        let directive =
+            run_stage(&sound.build(), &layout, GateField::Gated, true).expect("全列が正しい");
+
+        assert!(directive.is_single());
+        assert_eq!(
+            directive.gate(),
+            GateField::Ungated,
+            "隔離実行に承認ライフサイクルは無い"
+        );
+        assert_eq!(
+            directive.next_stage(),
+            None,
+            "1 ステージで止まるので次を名乗らない"
         );
     }
 
