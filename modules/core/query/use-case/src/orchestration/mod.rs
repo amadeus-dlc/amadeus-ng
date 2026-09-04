@@ -59,6 +59,7 @@ mod find_run_stage_use_case;
 mod find_scope_change_use_case;
 mod find_scope_keyword_use_case;
 mod find_scope_use_case;
+mod find_state_file_use_case;
 mod find_steering_use_case;
 mod gate_field;
 mod load_steering_directive;
@@ -142,6 +143,10 @@ pub use port::{
     ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao, SteeringPlanDao,
 };
 
+// ポート (trait) — upstream 互換の人間可読リードモデル (`aidlc-state.md`) を生テキストで
+// 引く 1 本。表ではないので View も持たない (`port/mod.rs` の例外条項)。
+pub use port::StateFileDao;
+
 // 行の写し (1 表 1 View)。
 pub use port::{
     DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView, NextAnswerView, PhaseEntryView,
@@ -165,6 +170,7 @@ pub use find_run_stage_use_case::FindRunStageUseCase;
 pub use find_scope_change_use_case::FindScopeChangeUseCase;
 pub use find_scope_keyword_use_case::FindScopeKeywordUseCase;
 pub use find_scope_use_case::FindScopeUseCase;
+pub use find_state_file_use_case::FindStateFileUseCase;
 pub use find_steering_use_case::FindSteeringUseCase;
 
 // 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側が組む)

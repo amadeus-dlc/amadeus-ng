@@ -72,7 +72,10 @@ pub fn render_audit_block(
 }
 
 /// 秒精度 ISO 8601 UTC (`2026-08-21T09:14:07Z`)。
-fn iso8601_seconds(at: &DateTime<Utc>) -> String {
+/// 秒精度の ISO 8601（upstream `isoTimestamp()` の観測面）。
+///
+/// 監査行の `**Timestamp**:` と、状態ファイルの `- **Last Updated**:` が同じ綴りを使う。
+pub(super) fn iso8601_seconds(at: &DateTime<Utc>) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 

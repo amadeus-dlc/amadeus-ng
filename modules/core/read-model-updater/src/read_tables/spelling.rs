@@ -35,16 +35,11 @@ pub(crate) const fn status(value: Status) -> &'static str {
 }
 
 /// checkbox の 6 値 (状態ファイル上のマーカー文字とは別の面 — 行のキーは語である)。
+///
+/// 綴りの正本は `CheckboxState` 自身である (b46 — 逐語文言と読取面が同じ語を要るので
+/// ドメインの 1 か所に寄せた)。ここは所有者へ委譲するだけで、写像は持たない。
 pub(crate) const fn checkbox(value: CheckboxState) -> &'static str {
-    // amadeus-lint: allow(checkbox-vocabulary) 分類の再実装ではなく**読取面の綴り表**である — 全 6 変種の網羅写像で判断を 1 つも含まず、腕が欠ければビルドが落ちる
-    match value {
-        CheckboxState::Pending => "pending",
-        CheckboxState::InProgress => "in-progress",
-        CheckboxState::AwaitingApproval => "awaiting-approval",
-        CheckboxState::Revising => "revising",
-        CheckboxState::Completed => "completed",
-        CheckboxState::Skipped => "skipped",
-    }
+    value.spelling()
 }
 
 /// `next_decision` の 8 分岐。

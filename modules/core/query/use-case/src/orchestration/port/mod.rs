@@ -8,6 +8,10 @@
 //! **DTO/DAO ポートは一つのパッケージである**。DAO の契約とその契約が返す DTO は同じ理由で
 //! 変わる (読取対象のリードモデルが変わったとき) ので、変更の単位を 1 ディレクトリに揃える。
 //!
+//! 例外は `StateFileDao` 1 本である — 引く先が `read_*` 表ではなく **upstream 互換の
+//! 人間可読リードモデル** (`aidlc-state.md`) なので、返すのは列の写しではなく生テキストで
+//! ある。読取動詞しか持たない点は同じである。
+//!
 //! # 1 表 1 ポート 1 View
 //!
 //! 12 のポートはそれぞれ `read_*` 表を**ちょうど 1 つ**引く (オーナー裁定 2026-09-03 —
@@ -49,6 +53,7 @@ mod run_stage_dao;
 mod scope_change_dao;
 mod scope_dao;
 mod scope_keyword_dao;
+mod state_file_dao;
 mod steering_part_dao;
 mod steering_plan_dao;
 
@@ -65,6 +70,7 @@ pub use run_stage_dao::RunStageDao;
 pub use scope_change_dao::ScopeChangeDao;
 pub use scope_dao::ScopeDao;
 pub use scope_keyword_dao::ScopeKeywordDao;
+pub use state_file_dao::StateFileDao;
 pub use steering_part_dao::SteeringPartDao;
 pub use steering_plan_dao::SteeringPlanDao;
 

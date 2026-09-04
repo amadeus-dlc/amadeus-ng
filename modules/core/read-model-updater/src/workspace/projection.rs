@@ -33,7 +33,7 @@ use core_command_domain::workspace::{
 use chrono::{DateTime, Utc};
 use core_command_domain::workspace::EventType;
 
-use super::audit_block::render_audit_block;
+use super::audit_block::{iso8601_seconds, render_audit_block};
 use super::read_model::ReadModel;
 use super::resolved_plan::{PlannedStage, ResolvedPlan};
 use super::state_writers::{FieldNotFound, find_field, with_field};
@@ -135,6 +135,10 @@ mod field {
     pub(super) const STAGES_TO_EXECUTE: &str = "Stages to Execute";
     /// `- **Stages to Skip**:`。
     pub(super) const STAGES_TO_SKIP: &str = "Stages to Skip";
+    /// `- **Status**:`（`Running` / `Completed` — 集約の `Status` と同じ 2 値）。
+    pub(super) const STATUS: &str = "Status";
+    /// `- **Last Updated**:`（値はイベントの発生時刻 — 投影は壁時計を読まない）。
+    pub(super) const LAST_UPDATED: &str = "Last Updated";
 
     /// `## Phase Progress` の 1 行のラベル（`- **Inception**:`）。
     ///
@@ -186,6 +190,15 @@ const JUMP_BOUNDARY_VERIFICATION: &str = "Traceability verification on jump";
 /// 走査して 1 つも完了ステージが見つからなかったときの `- **Last Completed Stage**:`
 /// （upstream がジャンプ経路にだけ置いている既定値）。
 const NO_EARLIER_COMPLETION: &str = "state-init";
+
+/// ワークフロー完了後の `- **Status**:`（upstream `complete-workflow` `:2473`）。
+const STATUS_COMPLETED: &str = "Completed";
+/// ワークフロー完了後の `- **Next Action**:`（同 `:2478`）。
+const WORKFLOW_COMPLETE_ACTION: &str = "Workflow complete";
+/// 到達点の無いフェーズ境界の `**To phase**:`（同 `:2507` / skip 経路 `:3216`）。
+const END_PHASE: &str = "(end)";
+/// 到達点の無いフェーズ境界の `**Phase boundary**:` の右辺（同 `:2511` / `:3117`）。
+const END_BOUNDARY: &str = "end";
 
 /// 初期化 3 ステージが描く固有行の対応（upstream の出荷グラフに固定）。
 const INITIALIZATION_ROWS: [(&str, EventType); 3] = [
@@ -684,7 +697,14 @@ fn gate_approved(
         append_phase_boundary(read_model, at, plan, boundary, &completed)?;
         set_phase_progress_for_advance(read_model, boundary)?;
     }
-    leave_for(read_model, at, plan, next.as_ref())
+    leave_for(
+        read_model,
+        at,
+        plan,
+        next.as_ref(),
+        stage,
+        Completion::Approved,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -707,7 +727,16 @@ fn stage_skipped(
     ));
     set_checkbox(read_model, skipped.stage().as_str(), CheckboxState::Skipped)?;
     let next = next_in_effective_scope(read_model, plan, skipped.stage());
-    leave_for(read_model, at, plan, next.as_ref())
+    leave_for(
+        read_model,
+        at,
+        plan,
+        next.as_ref(),
+        skipped.stage(),
+        Completion::Skipped {
+            reason: skipped.reason(),
+        },
+    )
 }
 
 /// `Jumped` → 読み飛ばした各ステージの `STAGE_SKIPPED` + (フェーズ境界) + `STAGE_JUMPED`
@@ -1204,24 +1233,109 @@ fn stage_started_row(stage: &PlannedStage, at: &DateTime<Utc>) -> Result<String,
     ))
 }
 
+/// ワークフローを畳んだ経路（`WORKFLOW_COMPLETED` の材料が違う）。
+///
+/// upstream では完了の後始末が 2 か所にある — ゲート承認は `handleApprove` が
+/// `handleCompleteWorkflow` へ自己委譲し（`aidlc-state.ts:2839-2844`）、ルーティングされた
+/// 読み飛ばしは `handleSkip --route` が自分で書く（同 `:3167-3232`）。書く欄は同じだが、
+/// `WORKFLOW_COMPLETED` の `Details` と `Reason` が違うので、経路を型で運ぶ。
+#[derive(Debug, Clone, Copy)]
+enum Completion<'a> {
+    /// 承認が最後の in-scope ステージを畳んだ（`complete-workflow`）。
+    Approved,
+    /// 読み飛ばしが最後の in-scope ステージを畳んだ（`skip --route`）。
+    Skipped {
+        /// 読み飛ばしの理由（`WORKFLOW_COMPLETED` の `Reason` になる）。
+        reason: &'a str,
+    },
+}
+
 /// 次ステージへ移る（次が無ければワークフロー完了）。
 fn leave_for(
     read_model: &mut ReadModel,
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     next: Option<&StageSlug>,
+    completed: &StageSlug,
+    completion: Completion<'_>,
 ) -> Result<(), ProjectionError> {
     match next {
         Some(slug) => enter_stage(read_model, at, plan, slug),
-        None => {
-            read_model.append_audit(&render_audit_block(
-                EventType::WorkflowCompleted,
-                at,
-                &AuditFields::new(),
-            ));
-            Ok(())
-        }
+        None => complete_workflow(read_model, at, plan, completed, completion),
     }
+}
+
+/// ワークフロー完了の投影 — 状態 7 欄 + フェーズ行 + 監査 3 行。
+///
+/// upstream `aidlc-state.ts handleCompleteWorkflow`（`:2415-2560`）と
+/// `handleSkip --route` の完了枝（`:3167-3232`）を写したものである。
+///
+/// # `STAGE_COMPLETED` はここでは描かない
+///
+/// upstream の `complete-workflow` は `alreadyMarkedCompleted && stageCompletedAlreadyAudited`
+/// のとき `STAGE_COMPLETED` を再 emit しない（`:2498`）。承認経路は直前の `approve` が
+/// `Stage <Name> approved by gate` を既に書いており、読み飛ばし経路は `STAGE_SKIPPED` しか
+/// 書かない（読み飛ばしは完了ではない）。したがって `Final stage <Name> completed` の行は
+/// **report からは到達しない** — 到達するのは `complete-workflow` を直に叩く経路だけで、
+/// それはこの build に無い（b42 で撤去）。
+fn complete_workflow(
+    read_model: &mut ReadModel,
+    at: &DateTime<Utc>,
+    plan: &ResolvedPlan,
+    completed: &StageSlug,
+    completion: Completion<'_>,
+) -> Result<(), ProjectionError> {
+    let stage = plan.find(completed).ok_or_else(|| unknown(completed))?;
+    let phase = stage.phase();
+    // 完了数はチェックボックスの数え直しである（読み飛ばしは `[S]` なので増えない）。
+    let completed_count = completed_count(read_model);
+
+    set_field(read_model, field::COMPLETED, &completed_count)?;
+    set_field(read_model, field::STATUS, STATUS_COMPLETED)?;
+    set_field(read_model, field::LAST_UPDATED, &iso8601_seconds(at))?;
+    set_field(read_model, field::IN_PROGRESS, NONE_LITERAL)?;
+    set_field(read_model, field::NEXT_STAGE, NONE_LITERAL)?;
+    set_field(read_model, field::NEXT_ACTION, WORKFLOW_COMPLETE_ACTION)?;
+    // 最終フェーズの行は前進側の境界処理では倒れない（ステージ間の境界でしか発火しない）
+    // ので、ここで `Verified` にする（upstream `:2483` / `:3172`）。
+    set_field(read_model, &field::phase_row(phase), phase_status::VERIFIED)?;
+
+    read_model.append_audit(&render_audit_block(
+        EventType::PhaseCompleted,
+        at,
+        &AuditFields::new()
+            .with(key(key::FROM_PHASE)?, phase.as_str())
+            .with(key(key::TO_PHASE)?, END_PHASE)
+            .with(key(key::STAGES_COMPLETED)?, &completed_count),
+    ));
+    read_model.append_audit(&render_audit_block(
+        EventType::PhaseVerified,
+        at,
+        &AuditFields::new().with(
+            key(key::PHASE_BOUNDARY)?,
+            &format!("{}{BOUNDARY_ARROW}{END_BOUNDARY}", phase.as_str()),
+        ),
+    ));
+    let scope = plan.scope();
+    let mut fields = AuditFields::new().with(key(key::SCOPE)?, scope);
+    fields = match completion {
+        Completion::Approved => fields.with(
+            key(key::DETAILS)?,
+            &format!("Scope: {scope}, {completed_count} stages completed"),
+        ),
+        Completion::Skipped { reason } => fields
+            .with(
+                key(key::DETAILS)?,
+                &format!("Scope: {scope}, final stage {completed} skipped"),
+            )
+            .with(key(key::REASON)?, reason),
+    };
+    read_model.append_audit(&render_audit_block(
+        EventType::WorkflowCompleted,
+        at,
+        &fields,
+    ));
+    Ok(())
 }
 
 /// ステージを開始する — `STAGE_STARTED` 行と、現在位置まわりの状態フィールド。
@@ -1642,6 +1756,8 @@ mod tests {
 - **Lifecycle Phase**: INITIALIZATION
 - **Current Stage**: state-init
 - **Next Stage**: first
+- **Status**: Running
+- **Last Updated**: 2026-08-20T00:00:00Z
 
 ## Session Resume Point
 - **Last Completed Stage**: 
@@ -1757,6 +1873,15 @@ mod tests {
         );
     }
 
+    /// 監査シャードに現れたイベント名の列。
+    fn audit_events(read_model: &ReadModel) -> Vec<&str> {
+        read_model
+            .appended_audit()
+            .lines()
+            .filter_map(|line| line.strip_prefix("**Event**: "))
+            .collect()
+    }
+
     #[test]
     fn approving_the_last_stage_completes_the_workflow_instead_of_starting_one() {
         // 次は導出 — second の後の実効 EXECUTE は無い (late は SKIP) ので完了行になる。
@@ -1766,10 +1891,68 @@ mod tests {
             slug("second"),
             None,
         )));
+        // 承認の 2 行に続いて、完了の 3 行が upstream の順序で並ぶ
+        // (`aidlc-state.ts handleApprove` → `handleCompleteWorkflow` の委譲、`:2839-2844`)。
+        assert_eq!(
+            audit_events(&read_model),
+            [
+                "GATE_APPROVED",
+                "STAGE_COMPLETED",
+                "PHASE_COMPLETED",
+                "PHASE_VERIFIED",
+                "WORKFLOW_COMPLETED",
+            ]
+        );
+        // `STAGE_COMPLETED` は承認が既に書いた 1 本だけ — 完了側は再 emit しない (`:2498`)。
         assert!(
             read_model
                 .appended_audit()
-                .contains("**Event**: WORKFLOW_COMPLETED")
+                .contains("**Details**: Stage Some Title approved by gate")
+        );
+        assert!(
+            !read_model
+                .appended_audit()
+                .contains("**Details**: Final stage"),
+            "承認経路では `Final stage <Name> completed` は描かれない"
+        );
+        for row in [
+            "**From phase**: inception",
+            "**To phase**: (end)",
+            "**Stages completed**: 1",
+            "**Phase boundary**: inception → end",
+            "**Scope**: classic",
+            "**Details**: Scope: classic, 1 stages completed",
+        ] {
+            assert!(
+                read_model.appended_audit().contains(row),
+                "{row}:\n{}",
+                read_model.appended_audit()
+            );
+        }
+        // 完了は `Reason` を持たない (承認経路の `--reason` はこの build に無い)。
+        assert!(!read_model.appended_audit().contains("**Reason**"));
+        for field in [
+            "- **Status**: Completed",
+            "- **Last Updated**: 2026-08-21T09:14:07Z",
+            "- **In Progress**: none",
+            "- **Next Stage**: none",
+            "- **Next Action**: Workflow complete",
+            "- **Last Completed Stage**: second",
+            "- **Completed**: 1",
+            "- **Inception**: Verified",
+        ] {
+            assert!(
+                read_model.state().contains(field),
+                "{field}:\n{}",
+                read_model.state()
+            );
+        }
+        // 完了は `Current Stage` を書かない — 実運用では既に最終 slug を指しており、この
+        // フィクスチャでは骨格の値 (`state-init`) のままである (upstream も書き換えない)。
+        assert!(
+            read_model
+                .state()
+                .contains("- **Current Stage**: state-init")
         );
         assert!(
             !read_model
@@ -1895,12 +2078,54 @@ mod tests {
             &mut read_model,
         )
         .expect("投影");
+        // 読み飛ばしの 1 行に続いて完了の 3 行 (`aidlc-state.ts handleSkip --route` の
+        // 完了枝、`:3212-3232`)。`STAGE_COMPLETED` は描かれない — 読み飛ばしは完了ではない。
+        assert_eq!(
+            audit_events(&read_model),
+            [
+                "STAGE_SKIPPED",
+                "PHASE_COMPLETED",
+                "PHASE_VERIFIED",
+                "WORKFLOW_COMPLETED",
+            ]
+        );
+        for row in [
+            "**From phase**: inception",
+            "**To phase**: (end)",
+            // `[S]` は完了数に入らない — 倒れているのは state-init と first の 2 本である。
+            "**Stages completed**: 2",
+            "**Phase boundary**: inception → end",
+            "**Scope**: classic",
+            "**Details**: Scope: classic, final stage second skipped",
+            "**Reason**: not needed",
+        ] {
+            assert!(
+                read_model.appended_audit().contains(row),
+                "{row}:\n{}",
+                read_model.appended_audit()
+            );
+        }
+        assert!(read_model.state().contains("- [S] second — EXECUTE"));
+        for field in [
+            "- **Status**: Completed",
+            "- **In Progress**: none",
+            "- **Next Stage**: none",
+            "- **Next Action**: Workflow complete",
+            "- **Completed**: 2",
+            "- **Inception**: Verified",
+        ] {
+            assert!(
+                read_model.state().contains(field),
+                "{field}:\n{}",
+                read_model.state()
+            );
+        }
+        // 読み飛ばしは最終完了ステージを動かさない (upstream も書かない)。
         assert!(
             read_model
-                .appended_audit()
-                .contains("**Event**: WORKFLOW_COMPLETED")
+                .state()
+                .contains("- **Last Completed Stage**: \n")
         );
-        assert!(read_model.state().contains("- [S] second — EXECUTE"));
     }
 
     #[test]

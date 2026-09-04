@@ -442,6 +442,343 @@ pub const STALE_CONTINUATION: &str = "This stage or its rules changed while they
 /// 存在しない部の要求。
 pub const PART_NOT_EXIST: &str = "This request asks for a part of the stage rules that does not exist. Run a fresh `next` to restart delivery from part 1.";
 
+// ---------------------------------------------------------------------------
+// `report` の逐語 — 13 段ガードが出す文言 (契約マップ
+// `docs/specs/research/orchestration-report-guards.md` §1 が正本、逐語はピン `3c3146cf` の
+// `aidlc-orchestrate.ts handleReport` / `handleResumeReport` / `aidlc-lib.ts`)。
+// ---------------------------------------------------------------------------
+
+/// 段 1 — 版が読めない状態ファイル (upstream `aidlc-lib.ts:10628-10634` 逐語)。
+pub const INCOMPATIBLE_STATE_UNPARSEABLE: &str = "Incompatible workflow state: the State Version field is missing, empty, or unparseable in aidlc-state.md, so this state cannot be matched to the current v8 stage graph and cannot be advanced safely. Archive your workspace ('mv aidlc aidlc.archive') and start a fresh workflow (describe what to build), or finish this workflow on the prior shell. Run `/aidlc --doctor` for the full diagnosis.";
+
+/// 段 1 — この build より新しい版 (upstream `aidlc-lib.ts:10647-10652` 逐語)。
+#[must_use]
+pub fn incompatible_state_future(version: &str) -> String {
+    format!(
+        "Incompatible workflow state: State Version {version} is newer than the current v8 stage \
+graph this build understands, so it cannot be advanced safely. Upgrade the framework to a build \
+that ships state schema v{version} (or newer), or finish this workflow on the shell that produced \
+it. Run `/aidlc --doctor` for the full diagnosis."
+    )
+}
+
+/// 段 1 — この build より古い版 (upstream `aidlc-lib.ts:10658-10666` 逐語)。
+#[must_use]
+pub fn incompatible_state_past(version: &str) -> String {
+    format!(
+        "Incompatible workflow state: State Version {version} predates the current v8 stage graph. \
+v8 renamed the Inception `application-design` stage to `domain-design` and inserted \
+`contract-design`, so this state's stage rows no longer match the graph and cannot be advanced \
+safely. Archive your workspace ('mv aidlc aidlc.v{version}-archive') and start a fresh workflow \
+(describe what to build), or finish this workflow on the prior shell. Run `/aidlc --doctor` for \
+the full diagnosis."
+    )
+}
+
+/// 段 2 — `--single` に `--result` が無い (upstream `:5266-5270` 逐語)。
+#[must_use]
+pub fn single_requires_result() -> String {
+    format!(
+        "report --single requires --result <outcome>. Accepted: {} (the verdict for the single \
+stage just run).",
+        core_command_domain::orchestration::FORWARD_RESULTS.join(", ")
+    )
+}
+
+/// 段 2 — `--single` に前進以外の `--result` が来た (upstream `:5274-5277` 逐語)。
+#[must_use]
+pub fn single_unknown_result(given: &str) -> String {
+    format!(
+        "Unknown --result \"{given}\". report commits forward outcomes only; accepted: {}.",
+        core_command_domain::orchestration::FORWARD_RESULTS.join(", ")
+    )
+}
+
+/// 段 2 — `--single` に `--stage` が無い (upstream `:5283-5286` 逐語)。
+///
+/// `next --single` 側の同名ガード ([`SINGLE_REQUIRES_STAGE`]) とは**別の文言**である。
+pub const SINGLE_REPORT_REQUIRES_STAGE: &str = "report --single must not advance the main workflow. Pass --stage <slug> to commit the single stage's synthetic-id pair; --single never writes the main workflow's Current Stage.";
+
+/// 段 2 — 単独ステージの報告は**この build では未配線**である (b47 で配線する)。
+///
+/// upstream に対応する逐語は無い（あちらは `handleSingleReport` が監査の対を書く）。b29 の
+/// park と同じ層で「本流は絶対に進めない」(I10) を保ったまま断るための診断である。
+#[must_use]
+pub fn single_report_not_wired(stage: &str) -> String {
+    format!(
+        "Cannot complete isolated stage \"{stage}\": single-stage reporting is not wired in this build."
+    )
+}
+
+/// 段 3 — `--skeleton-stance` の値が閉集合の外 (upstream `:4948-4950` 逐語)。
+#[must_use]
+pub fn unknown_skeleton_stance(given: &str) -> String {
+    format!(
+        "Unknown --skeleton-stance \"{given}\". Accepted: on, off, scope-dependent (the \
+walking-skeleton stance classified from the team's ## Walking Skeleton prose)."
+    )
+}
+
+/// 段 3 — 状態ファイルが無い (upstream `:4959` 逐語。ダッシュは U+2014)。
+pub const SKELETON_STANCE_WITHOUT_STATE: &str = "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for.";
+
+/// 段 3 — skeleton stance の記録は**この build では未配線**である (b47 で配線する)。
+#[must_use]
+pub fn skeleton_stance_not_wired(stance: &str) -> String {
+    format!(
+        "Cannot record skeleton stance \"{stance}\": skeleton-stance reporting is not wired in this build."
+    )
+}
+
+/// 段 4 — 再開の報告に `--stage` が付いた (upstream `:5388-5389` 逐語)。
+pub const RESUME_TAKES_NO_STAGE: &str =
+    "A resume-choice report is not a stage transition; omit --stage.";
+
+/// 段 4 — `--user-input` が無い (upstream `:5394-5395` 逐語)。
+pub const RESUME_REQUIRES_USER_INPUT: &str =
+    "report --result resumed requires --user-input with the human's resume choice.";
+
+/// 段 4 — 状態ファイルが無い (upstream `:5403` 逐語。ダッシュは**ASCII の** `-`)。
+pub const RESUME_WITHOUT_STATE: &str =
+    "No active intent workflow state found (aidlc-state.md is absent) - nothing to resume.";
+
+/// 段 4 — `Current Stage` が読めない (upstream `:5410` 逐語。ダッシュは ASCII の `-`)。
+pub const RESUME_WITHOUT_CURRENT_STAGE: &str =
+    "State file has no Current Stage field - cannot resume from the last checkpoint.";
+
+/// 段 4 の選択肢 2 — やり直し (upstream `:5428` 逐語)。
+///
+/// 命令の綴りは**逸脱台帳 #1 の写像**である。upstream は
+/// `bun <harness>/tools/aidlc-jump.ts execute --target …` を名指すが、こちらはマルチコールの
+/// 正準形 `aidlc-jump` を名指す（`next/stage-jump-print` と同じ扱い —
+/// `cli_golden_test.rs` の「駆動できないケース」を参照）。
+#[must_use]
+pub fn resume_redo(stage: &str, scope: &str) -> String {
+    format!(
+        "Redo accepted at \"{stage}\". Run `aidlc-jump execute --target {stage} --direction redo \
+--scope {scope}` to reset the current stage, then re-run `next` to start it over."
+    )
+}
+
+/// 段 4 の選択肢 3 — ジャンプ (upstream `:5434` 逐語)。
+pub const RESUME_JUMP: &str = "Jump accepted. Ask the human which stage to jump to, then re-run `next --stage <slug>`; the direction and the target are worked out and checked for you.";
+
+/// 段 4 の選択肢 4 — 新規開始 (upstream `:5440` 逐語)。
+pub const RESUME_START_FRESH: &str = "Start-fresh accepted. Confirm the new work's scope and description with the human, then run `next --new-intent --scope <scope> \"<description>\"` — the existing workflow stays in place and the new intent starts alongside it.";
+
+/// 段 4 の選択肢 1 — チェックポイントからの再開 (upstream `:5450` 逐語)。
+#[must_use]
+pub fn resume_from_checkpoint(stage: &str) -> String {
+    format!(
+        "Resume choice accepted at \"{stage}\". Re-run `next` to continue from the last checkpoint."
+    )
+}
+
+/// 段 4 — どの選択肢にも当たらない (upstream `:5455` 逐語)。
+///
+/// 埋めるのは**正規化前の生値**である（upstream も `flags.userInput` をそのまま埋める）。
+#[must_use]
+pub fn unrecognized_resume_choice(given: &str) -> String {
+    format!(
+        "Unrecognized resume choice \"{given}\". Accepted choices: 1/resume from last checkpoint, \
+2/redo the current stage, 3/jump to a stage, or 4/start fresh."
+    )
+}
+
+/// 段 5 — `--result` が無い (upstream `:5529-5531` 逐語)。
+#[must_use]
+pub fn report_requires_result() -> String {
+    format!(
+        "report requires --result <outcome>. Accepted: {} (the verdict for the stage just acted on).",
+        core_command_domain::orchestration::ACCEPTED_RESULTS.join(", ")
+    )
+}
+
+/// 段 6 — 実行がまだ鋳造されていない (upstream `:5551` 逐語。ダッシュは U+2014)。
+pub const REPORT_WITHOUT_STATE: &str = "No active intent workflow state found (aidlc-state.md is absent) — nothing to report a transition for.";
+
+/// 段 7〜8 — 名指しされたステージが解決できない (upstream `:5588` 逐語。ダッシュは U+2014)。
+///
+/// upstream は「グラフに無い」(`:5588`) と「状態ファイルに行が無い」(`:5596`) を分けるが、
+/// こちらの計画は 1 つ（intent が持つ解決済み計画）なので同じ文言に落ちる。slug の文法から
+/// 外れた `--stage` もここで断る。
+#[must_use]
+pub fn reported_stage_not_in_graph(given: &str) -> String {
+    format!(
+        "Internal: reported stage \"{given}\" is not in the compiled graph — cannot commit its transition."
+    )
+}
+
+/// 段 9 — `skipped` に明示の `--stage` が無い (upstream `:5609` 逐語)。
+pub const SKIP_REQUIRES_EXPLICIT_STAGE: &str =
+    "report --result skipped requires an explicit nonblank --stage <slug>.";
+
+/// 段 9 — CONDITIONAL でも実効 SKIP でもない (upstream `:5616` 逐語)。
+#[must_use]
+pub fn skip_not_conditional(stage: &str, execution: &str) -> String {
+    format!(
+        "Stage \"{stage}\" is execution: {execution}; only a CONDITIONAL stage can report skipped."
+    )
+}
+
+/// 段 9 — `--reason` が空 (upstream `:5623` 逐語)。
+pub const SKIP_REQUIRES_REASON: &str =
+    "report --result skipped requires a nonblank --reason <text>.";
+
+/// 段 9 — カーソル以外を名指しした (upstream `:5629-5630` 逐語)。
+#[must_use]
+pub fn skip_must_name_cursor(stage: &str, current: &str) -> String {
+    format!(
+        "Cannot skip stage \"{stage}\": Current Stage is \"{current}\". \
+A skip report must name the active stage exactly."
+    )
+}
+
+/// 段 9 — checkbox が受理集合の外 (upstream `:5640` 逐語)。
+#[must_use]
+pub fn skip_precondition(stage: &str, state: &str) -> String {
+    format!(
+        "Stage \"{stage}\" is {state}; only an active, revising, or interrupted skipped stage can be routed as skipped."
+    )
+}
+
+/// 段 10 — 非ゲートステージが gate 系を名乗った (upstream `:5677` 逐語)。
+#[must_use]
+pub fn ungated_stage(stage: &str, result: &str) -> String {
+    format!("Stage \"{stage}\" is an ungated initialization stage; it cannot report {result}.")
+}
+
+/// 段 10 — `awaiting-approval` の前提違反 (upstream `:5706` 逐語)。
+#[must_use]
+pub fn gate_open_precondition(stage: &str, state: &str) -> String {
+    format!("Stage \"{stage}\" is {state}; only an in-progress stage can open a gate.")
+}
+
+/// 段 10 — `rejected` の前提違反 (upstream `:5717` 逐語)。
+#[must_use]
+pub fn gate_reject_precondition(stage: &str, state: &str) -> String {
+    format!(
+        "Stage \"{stage}\" is {state}; only an active or awaiting-approval stage can be rejected."
+    )
+}
+
+/// 段 10 — `revised` の前提違反 (upstream `:5732` 逐語)。
+#[must_use]
+pub fn gate_revise_precondition(stage: &str, state: &str) -> String {
+    format!("Stage \"{stage}\" is {state}; only a revising stage can re-enter its gate.")
+}
+
+/// 段 10 — `rejected` にフィードバックが無い (upstream `:5724` 逐語)。
+#[must_use]
+pub fn reject_requires_feedback(stage: &str) -> String {
+    format!(
+        "report --result rejected for \"{stage}\" requires nonblank --user-input or --reason feedback."
+    )
+}
+
+/// 段 13 — 人間の選択が無い (upstream `:5794` 逐語)。
+#[must_use]
+pub fn human_presence_required(result: &str, stage: &str) -> String {
+    format!(
+        "report --result {result} for \"{stage}\" requires --user-input with the human's exact approval choice."
+    )
+}
+
+/// forward 表 — `[S]` / `[R]` は前進の完了ではない (upstream `:5815` 逐語)。
+#[must_use]
+pub fn forward_commits_completions_only(stage: &str, state: &str) -> String {
+    format!("Stage \"{stage}\" is {state}; report commits forward completions only.")
+}
+
+/// forward 表 — `[ ]` はまだ走っていない (upstream `:5823` 逐語)。
+#[must_use]
+pub fn still_pending(stage: &str) -> String {
+    format!("Stage \"{stage}\" is still pending. Run the stage before reporting it complete.")
+}
+
+/// forward 表 — ゲート未開放の `[-]` は明示 `--stage` を要する (upstream `:5868-5870` 逐語)。
+#[must_use]
+pub fn in_progress_requires_explicit_stage(stage: &str) -> String {
+    format!(
+        "Stage \"{stage}\" is still in-progress. To approve a gated stage that has not entered \
+awaiting-approval, report the acted directive explicitly with --stage \"{stage}\" so the engine \
+cannot mistake a freshly advanced Current Stage for the completed one."
+    )
+}
+
+/// 遷移をコミットしない結末が集約まで届いた（upstream に対応する逐語は無い）。
+///
+/// 合成ルートは段 4 で `resume` / `resumed` を振り分けるので、通常は到達しない。
+pub const RESUME_IS_ROUTED: &str = "Resume is routed, not committed. Run a fresh `next --resume`.";
+
+/// 成功 — gate 系 3 語 (upstream `:5748-5750` 逐語)。
+#[must_use]
+pub fn recorded_result(result: &str, stage: &str) -> String {
+    format!("Recorded {result} for \"{stage}\".")
+}
+
+/// 成功 — ルーティングされた読み飛ばし (upstream `:5662-5664` 逐語)。
+#[must_use]
+pub fn committed_skip(stage: &str, scope: &str) -> String {
+    format!(
+        "Committed skip for \"{stage}\" (scope: {scope}). State routed forward; run next to continue."
+    )
+}
+
+/// 成功 — 前進 (upstream `:5923-5925` 逐語)。`subs` は段の綴りを ` + ` で継いだもの。
+#[must_use]
+pub fn committed_transition(subs: &str, stage: &str, scope: &str) -> String {
+    format!(
+        "Committed {subs} for \"{stage}\" (scope: {scope}). State advanced; run next to continue."
+    )
+}
+
+/// no-op — 既に開いているゲート (upstream `:5701` 逐語)。
+#[must_use]
+pub fn already_awaiting_approval(stage: &str) -> String {
+    format!("Stage \"{stage}\" is already awaiting approval.")
+}
+
+/// no-op — カーソルが先へ移った通過済みステージ (upstream `:5855-5856` 逐語)。
+#[must_use]
+pub fn already_completed_moved_on(stage: &str, current: &str, scope: &str) -> String {
+    format!(
+        "Stage \"{stage}\" is already completed and the workflow has moved on to \"{current}\" \
+(scope: {scope}); idempotent re-report, no transition needed."
+    )
+}
+
+/// no-op — 完了済みワークフロー (upstream `:5834` 逐語 + `NEW_WORK_HINT`)。
+#[must_use]
+pub fn workflow_already_completed(stage: &str, scope: &str) -> String {
+    format!(
+        "Workflow is already completed at \"{stage}\" (scope: {scope}); no transition was needed.{NEW_WORK_HINT}"
+    )
+}
+
+/// 遷移が集約に拒否された (upstream `:5903-5904` 逐語 — 中継形)。
+///
+/// upstream は spawn 先の非ゼロ終了の出力をそのまま挟み、出力が空なら `.` で閉じる。
+#[must_use]
+pub fn transition_rejected_by(sub: &str, stage: &str, detail: &str) -> String {
+    let tail = if detail.is_empty() {
+        ".".to_string()
+    } else {
+        format!(": {detail}")
+    };
+    format!("Transition rejected by aidlc-state.ts {sub} for \"{stage}\"{tail}")
+}
+
+/// 判断が名指しした段に対応する集約コマンドが**この build に無い**。
+///
+/// upstream に対応する逐語は無い — あちらは `advance` / `complete-workflow` を持っている。
+/// こちらは非ゲート完了のパイプラインを b42 で撤去した（#85 = A）ので、初期化ステージだけが
+/// in-scope の縮退計画でだけこの断りが出る。b47 の未配線 2 形と同じ言い回しに揃えてある。
+#[must_use]
+pub fn transition_not_wired(sub: &str, stage: &str) -> String {
+    format!("Cannot commit {sub} for \"{stage}\": the {sub} transition is not wired in this build.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

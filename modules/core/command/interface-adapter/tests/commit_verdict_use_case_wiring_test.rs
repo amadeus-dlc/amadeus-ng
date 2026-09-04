@@ -27,13 +27,12 @@
 
 mod support;
 
+use core_command_domain::orchestration::{ReportRequest, Verdict};
 use core_command_domain::workspace::CheckboxState;
 use core_command_interface_adapter::orchestration::{
     IntentExecutionRepositoryImpl, IntentRepositoryImpl,
 };
-use core_command_use_case::orchestration::{
-    CommitVerdictUseCase, IntentExecutionRepository, ReportedTransition,
-};
+use core_command_use_case::orchestration::{CommitVerdictUseCase, IntentExecutionRepository};
 
 use support::{at, execution_id, intent, store_genesis, store_intent_genesis};
 
@@ -64,8 +63,17 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     use_case
         .execute(
             &execution_id(),
-            None,
-            ReportedTransition::Forward { user_input: None },
+            // `[-]` のゲートは明示 `--stage` を要する（forward 表）。ここで見たいのは
+            // 判断ではなく**実物のストアを通したコミット**である。
+            ReportRequest::new(
+                Verdict::Forward,
+                held.stage_keys()
+                    .get(held.cursor().to_usize())
+                    .map(|key| key.slug().clone()),
+                Some("Approve".to_string()),
+                None,
+                true,
+            ),
             at(),
         )
         .await

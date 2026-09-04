@@ -51,6 +51,7 @@ mod run_stage_dao_impl;
 mod scope_change_dao_impl;
 mod scope_dao_impl;
 mod scope_keyword_dao_impl;
+mod state_file_dao_impl;
 mod steering_part_dao_impl;
 mod steering_plan_dao_impl;
 
@@ -70,6 +71,10 @@ pub use scope_dao_impl::ScopeDaoImpl;
 pub use scope_keyword_dao_impl::ScopeKeywordDaoImpl;
 pub use steering_part_dao_impl::SteeringPartDaoImpl;
 pub use steering_plan_dao_impl::SteeringPlanDaoImpl;
+
+// upstream 互換の人間可読リードモデル (`aidlc-state.md`) を読む実 Gateway。SQLite の
+// `read_*` 表とは別の面なので `ReadModelDaos` の住人ではない (b46)。
+pub use state_file_dao_impl::StateFileDaoImpl;
 
 // テスト用 in-memory 実装 (合成ルートとその周辺のテストが実 I/O 無しで組むための口)。
 pub use memory::{

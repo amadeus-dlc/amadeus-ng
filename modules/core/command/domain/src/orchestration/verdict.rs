@@ -25,6 +25,9 @@ pub enum Verdict {
     Skipped,
 }
 
+/// `--single` が受理する前進 4 語 (upstream `FORWARD_RESULTS` — 提示順も逐語)。
+pub const FORWARD_RESULTS: &[&str] = &["approved", "completed", "complete", "done"];
+
 /// 受理語の正準列挙 (エラーメッセージ描画用 — 順序も upstream の提示順)。
 pub const ACCEPTED_RESULTS: &[&str] = &[
     "approved",
@@ -40,6 +43,19 @@ pub const ACCEPTED_RESULTS: &[&str] = &[
 ];
 
 impl Verdict {
+    /// ゲートのライフサイクルを報告する 3 語か (`awaiting-approval` / `rejected` / `revised`)。
+    ///
+    /// 非ゲートステージがこの 3 語を名乗れないという判定 (段 10、ピン `:5674-5680`) の材料で
+    /// ある。分類は本型が所有する — 呼出側で変種集合を再列挙しない
+    /// (`coding-rules/tell-dont-ask.md`)。
+    #[must_use]
+    pub const fn is_gate_lifecycle(self) -> bool {
+        matches!(
+            self,
+            Verdict::AwaitingApproval | Verdict::Rejected | Verdict::Revised
+        )
+    }
+
     /// # Errors
     ///
     /// 受理 10 語以外は `UnknownVerdict` で拒否する (逐語の拒否文言は Presenter 側)。
@@ -63,6 +79,35 @@ mod tests {
     #[test]
     fn the_four_forward_synonyms_normalize_to_one_verdict() {
         for s in ["approved", "completed", "complete", "done"] {
+            assert_eq!(Verdict::parse(s), Ok(Verdict::Forward));
+        }
+    }
+
+    #[test]
+    fn only_the_three_gate_words_are_gate_lifecycle() {
+        for s in ["awaiting-approval", "rejected", "revised"] {
+            assert!(Verdict::parse(s).unwrap().is_gate_lifecycle(), "{s}");
+        }
+        for s in [
+            "approved",
+            "completed",
+            "complete",
+            "done",
+            "resume",
+            "resumed",
+            "skipped",
+        ] {
+            assert!(!Verdict::parse(s).unwrap().is_gate_lifecycle(), "{s}");
+        }
+    }
+
+    #[test]
+    fn the_forward_words_are_the_first_four_accepted_ones() {
+        assert_eq!(
+            FORWARD_RESULTS,
+            ACCEPTED_RESULTS.iter().take(4).copied().collect::<Vec<_>>()
+        );
+        for s in FORWARD_RESULTS {
             assert_eq!(Verdict::parse(s), Ok(Verdict::Forward));
         }
     }

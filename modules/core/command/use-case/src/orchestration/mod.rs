@@ -11,6 +11,7 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod commit_error;
+mod commit_outcome;
 mod commit_verdict_use_case;
 mod create_intent_error;
 mod create_intent_use_case;
@@ -19,7 +20,6 @@ mod define_workflow_use_case;
 mod park_error;
 mod park_use_case;
 mod port;
-mod reported_transition;
 #[cfg(test)]
 mod test_support;
 
@@ -47,7 +47,9 @@ pub use commit_verdict_use_case::CommitVerdictUseCase;
 pub use create_intent_use_case::CreateIntentUseCase;
 pub use define_workflow_use_case::DefineWorkflowUseCase;
 pub use park_use_case::ParkUseCase;
-pub use reported_transition::ReportedTransition;
+
+// ユースケースの成功が運ぶ材料（逐語文言は出す側が組む）。
+pub use commit_outcome::CommitOutcome;
 
 // エラー
 pub use commit_error::CommitError;

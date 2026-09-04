@@ -24,23 +24,26 @@ use std::path::Path;
 
 use chrono::Utc;
 use core_command_domain::orchestration::{
-    CommandError, IntentExecutionId, IntentId, StartRequest, Verdict,
+    CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal, ReportRequest,
+    SkeletonStance, StartRequest, TransitionStep, Verdict,
 };
 use core_command_domain::workflow_definition::StageSlug;
-use core_command_domain::workspace::{ShardName, SpaceName, StorePath};
+use core_command_domain::workspace::{
+    ShardName, SpaceName, StateVersionClassification, StateVersionKind, StorePath,
+};
 use core_command_interface_adapter::orchestration::{
     CompiledDefinitionRepositoryImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
     WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
 };
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
-    CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase, DefineWorkflowUseCase,
-    IntentRepository as _, ParkError, ParkUseCase, ReportedTransition,
+    CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase,
+    DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
-use core_query_interface_adapter::{ReadModelDaos, verify_continue_token};
+use core_query_interface_adapter::{ReadModelDaos, StateFileDaoImpl, verify_continue_token};
 use core_query_use_case::orchestration::{
-    Directive, FindExecutionUseCase, NextTurnInput, StageSlugView,
+    Directive, FindExecutionUseCase, FindStateFileUseCase, NextTurnInput, StageSlugView,
 };
 use core_read_model_updater::orchestration::{
     JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
@@ -185,71 +188,363 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
     Ok((turn::resume(layout, verified.as_ref()), bytes))
 }
 
-/// `report` — 報告された結末を 1 つの遷移としてコミットし、投影で読み面へ落とす。
+/// `report` — 13 段ガードを順に通し、決まった遷移をコミットして投影で読み面へ落とす。
 ///
-/// **13 段ガードのうち実装しているのは verdict の正規化だけ**である。`--single` 分岐・
-/// state-version ガード・turn-shape マーカー・completion-evidence などは後続 Bolt。
+/// 段の順序は upstream `handleReport`（ピン `:5464-5927`）と同順である。**状態の値で決まる
+/// 分岐はここに 1 つも無い** — 合成ルートが持つのは値の有無・既知値・env で決まる構文的な段
+/// だけで、対象の解決から先の判断は集約のクエリ `report_dispatch` に閉じている（設計 §1）。
+///
+/// | 段 | ここ | 集約 |
+/// | --- | --- | --- |
+/// | 1 state-version guard | ○ | — |
+/// | 2 `--single` / 3 `--skeleton-stance` | ○（本体は b47） | — |
+/// | 4 resume ルーティング | ○ | — |
+/// | 5 `--result` の有無・既知値 | ○ | — |
+/// | 6 実行カーソルの有無 | ○ | — |
+/// | 7〜10・13・forward 表 | — | ○ |
+/// | 11 completion-evidence / 12 practices 受領証 | 未配線（裁定待ち） | — |
 async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
-    let Some(raw) = args.result() else {
-        return emit_error("report requires --result <outcome>.".to_string());
+    // 読む面（状態ファイル・実行行）が最新でないと段 1 と段 4 が古い値で判断する。
+    // 書いた事実を落とすのはコミットの後（末尾の `catch_up`）である。
+    catch_up_before_reading(layout).await;
+
+    // 段 1 — state-version guard。**すべての report 経路**に効かせるので最初に通す。
+    if let Some(refusal) = state_version_guard(layout) {
+        return emit_error(refusal);
+    }
+    // 段 2 — `--single`。本流の遷移サブコマンドへ落ちることを構造的に不可能にするため、
+    // 主経路より先に解決する（I10）。
+    if args.is_single() {
+        return single_report(args);
+    }
+    // 段 3 — `--skeleton-stance`。stance の報告は verdict を持たないので段 5 より先。
+    if let Some(stance) = args.skeleton_stance() {
+        return skeleton_stance_report(layout, stance);
+    }
+    // 段 4 — 再開の選択。遷移をコミットしないのでルーティングだけで終わる。
+    let raw = args.result();
+    if raw.is_some_and(|value| Verdict::parse(value) == Ok(Verdict::Resume)) {
+        return resume_report(layout, args);
+    }
+    // 段 5 — verdict は必須で、閉集合の外は硬いエラーである。
+    let Some(raw) = raw else {
+        return emit_error(wording::report_requires_result());
     };
     let verdict = match Verdict::parse(raw) {
         Ok(verdict) => verdict,
-        Err(unknown) => {
-            return emit_error(wording::unknown_result(unknown.as_str()));
-        }
+        Err(unknown) => return emit_error(wording::unknown_result(unknown.as_str())),
     };
-    // `resume` は遷移をコミットしない — ルーティングなので**ユースケースへ届く手前で**分岐する
-    // （`coding-rules/use-case-rules.md` §3 / `ReportedTransition` の doc）。
-    let Some(transition) = transition_of(verdict, args) else {
-        return emit_error(
-            "Resume is routed, not committed. Run a fresh `next --resume`.".to_string(),
-        );
+    // 段 7 の構文半分 — 空白だけの `--stage` は「無い」と同じ（upstream の `trim()`）。
+    let explicit = explicit_stage(args);
+    let stage = match explicit {
+        None => None,
+        Some(raw) => match StageSlug::parse(raw) {
+            Ok(slug) => Some(slug),
+            Err(_) => return emit_error(wording::reported_stage_not_in_graph(raw)),
+        },
     };
-    let Some(stage) = parse_stage(args) else {
-        return emit_error("The --stage value is not a stage slug.".to_string());
-    };
+    // 段 9 の構文半分 — `skipped` は明示・非空の `--stage` を要する（集約より前）。
+    if verdict == Verdict::Skipped && stage.is_none() {
+        return emit_error(wording::SKIP_REQUIRES_EXPLICIT_STAGE.to_string());
+    }
     let store = match store_path(layout) {
         Ok(store) => store,
         Err(message) => return emit_error(message),
     };
+    // 段 6 — 実行カーソルが無い = まだ鋳造していない（fresh なワークスペースの正常な姿）。
     let execution_id = match active_execution(layout) {
         Ok(Some(cursor)) => cursor.execution_id().clone(),
-        // 不在 = まだ鋳造していない（fresh なワークスペースの正常な姿）。
-        Ok(None) => {
-            return emit_error(
-                "No workflow execution to report against. Run `next` first.".to_string(),
-            );
-        }
+        Ok(None) => return emit_error(wording::REPORT_WITHOUT_STATE.to_string()),
         // 在るのに読めない・壊れているは**不在と混ぜない** — 畳むと壊れた record の上で
-        // 作業が続く。文言は出す側が組み、材料（分類とパス）はエラーの `Display` から取る。
-        Err(error) => {
-            return emit_error(wording::unreadable_execution_cursor(&error.to_string()));
-        }
+        // 作業が続く。
+        Err(error) => return emit_error(wording::unreadable_execution_cursor(&error.to_string())),
     };
+    // 段 13 の env — 判定そのものは集約が持つ（ここは観測を載せるだけ）。
+    let request = ReportRequest::new(
+        verdict,
+        stage,
+        args.user_input().map(str::to_string),
+        args.reason().map(str::to_string),
+        human_presence_guard(),
+    );
     let (Ok(intent_execution_repository), Ok(intent_repository)) = (
         IntentExecutionRepositoryImpl::open(&store),
         IntentRepositoryImpl::open(&store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
-    if let Err(error) = CommitVerdictUseCase::new(intent_execution_repository, intent_repository)
-        .execute(&execution_id, stage.as_ref(), transition, Utc::now())
-        .await
-    {
-        return emit_error(wording::transition_rejected(&error.to_string()));
-    }
+    let outcome = CommitVerdictUseCase::new(intent_execution_repository, intent_repository)
+        .execute(&execution_id, request, Utc::now())
+        .await;
+    let directive = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => return emit_error(commit_refusal(raw, &error)),
+    };
     // 書いた事実をリードモデルへ落とす（U7 の責務「コマンド末尾の RMU 起動」）。
     // ここは握り潰さない — 描けなければ利用者には何も見えないままになる。
     if let Err(error) = catch_up(layout).await {
         return Completion::refused(wording::orchestrate_failure(&error));
     }
-    emit(Ok((
-        Directive::Done {
-            reason: Some(format!("reported {raw}")),
+    emit(Ok((committed_directive(raw, &directive), Vec::new())))
+}
+
+/// 段 1 — 状態ファイルの `State Version` を分類し、`ok` 以外の逐語を返す。
+///
+/// 状態ファイルが無ければ何も言わない（`None`）— upstream の `loadStateFileIfPresent` が
+/// `null` を返す場合と同じで、鋳造前のワークスペースは正常な姿である。**0 バイトは「在る」**
+/// なので分類にかかる（ピン `:5479-5481`）。
+fn state_version_guard(layout: &Layout) -> Option<String> {
+    let state_file = layout.state_file()?;
+    let found = FindStateFileUseCase::new(StateFileDaoImpl::new(&state_file)).execute();
+    let content = match found {
+        Ok(Some(content)) => content,
+        Ok(None) => return None,
+        Err(error) => {
+            return Some(wording::read_model_unreadable(
+                &state_file.to_string_lossy(),
+                &error.kind().to_string(),
+            ));
+        }
+    };
+    let classified = StateVersionClassification::classify(&content);
+    let version = classified.version().unwrap_or_default();
+    match classified.kind() {
+        StateVersionKind::Ok => None,
+        StateVersionKind::Unparseable => Some(wording::INCOMPATIBLE_STATE_UNPARSEABLE.to_string()),
+        StateVersionKind::Past => Some(wording::incompatible_state_past(version)),
+        StateVersionKind::Future => Some(wording::incompatible_state_future(version)),
+    }
+}
+
+/// 段 2 — `--single` の構文検証（本体の配線は b47）。
+fn single_report(args: &crate::cli::ReportArgs) -> Completion {
+    let Some(raw) = args.result() else {
+        return emit_error(wording::single_requires_result());
+    };
+    if Verdict::parse(raw) != Ok(Verdict::Forward) {
+        return emit_error(wording::single_unknown_result(raw));
+    }
+    let Some(stage) = args.stage().filter(|value| !value.is_empty()) else {
+        return emit_error(wording::SINGLE_REPORT_REQUIRES_STAGE.to_string());
+    };
+    // 本流は絶対に進めない（I10）— 未配線であることを名指しして止まる。
+    emit_error(wording::single_report_not_wired(stage))
+}
+
+/// 段 3 — `--skeleton-stance` の構文検証と state 必須（本体の配線は b47）。
+fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
+    let Ok(stance) = SkeletonStance::parse(stance) else {
+        return emit_error(wording::unknown_skeleton_stance(stance));
+    };
+    if !state_file_present(layout) {
+        return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string());
+    }
+    emit_error(wording::skeleton_stance_not_wired(stance.as_str()))
+}
+
+/// 段 4 — 再開の選択をルーティングする（遷移はコミットしない）。
+fn resume_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
+    if explicit_stage(args).is_some() {
+        return emit_error(wording::RESUME_TAKES_NO_STAGE.to_string());
+    }
+    let Some(user_input) = args.user_input().filter(|text| !text.trim().is_empty()) else {
+        return emit_error(wording::RESUME_REQUIRES_USER_INPUT.to_string());
+    };
+    if !state_file_present(layout) {
+        return emit_error(wording::RESUME_WITHOUT_STATE.to_string());
+    }
+    let Some(view) = current_execution_view(layout) else {
+        return emit_error(wording::RESUME_WITHOUT_CURRENT_STAGE.to_string());
+    };
+    let (stage, scope) = view;
+    // 数字の応答キーを先に正規化してから意味で照合する（写像の持ち主はエンジンである —
+    // ピン `:5417-5424`）。
+    let raw = user_input.trim().to_lowercase();
+    let choice = match raw.as_str() {
+        "1" => "resume from last checkpoint",
+        "2" => "redo the current stage",
+        "3" => "jump to a stage",
+        "4" => "start fresh",
+        other => other,
+    };
+    let message = if choice.contains("redo") {
+        wording::resume_redo(&stage, &scope)
+    } else if choice.contains("jump") {
+        wording::RESUME_JUMP.to_string()
+    } else if choice.contains("fresh") || choice.contains("start over") {
+        wording::RESUME_START_FRESH.to_string()
+    } else if choice.contains("resume")
+        || choice.contains("checkpoint")
+        || choice.contains("continue")
+    {
+        wording::resume_from_checkpoint(&stage)
+    } else {
+        // 拒否は**正規化前の生値**を埋める（upstream も `flags.userInput` をそのまま出す）。
+        return emit_error(wording::unrecognized_resume_choice(user_input));
+    };
+    emit(Ok((Directive::Print { message }, Vec::new())))
+}
+
+/// 空白だけの `--stage` は「無い」と同じ（upstream の `flags.stage?.trim()`）。
+fn explicit_stage(args: &crate::cli::ReportArgs) -> Option<&str> {
+    args.stage()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+/// 段 13 の env — `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1` でだけガードが外れる。
+fn human_presence_guard() -> bool {
+    std::env::var("AIDLC_SKIP_HUMAN_PRESENCE_GUARD")
+        .ok()
+        .as_deref()
+        != Some("1")
+}
+
+/// 状態ファイルが**在る**か（0 バイトも「在る」— ピン `:5479-5481`）。
+fn state_file_present(layout: &Layout) -> bool {
+    layout.state_file().is_some_and(|state_file| {
+        FindStateFileUseCase::new(StateFileDaoImpl::new(&state_file))
+            .execute()
+            .is_ok_and(|found| found.is_some())
+    })
+}
+
+/// 実行行から現在地 slug と scope を引く（どちらも欠ければ `None`）。
+fn current_execution_view(layout: &Layout) -> Option<(String, String)> {
+    let store = store_path(layout).ok()?;
+    let execution_id = active_execution(layout).ok()??.execution_id().clone();
+    let daos = ReadModelDaos::open(store.as_path()).ok()?;
+    let found = FindExecutionUseCase::new(daos.execution())
+        .execute(execution_id.as_str())
+        .ok()??;
+    let stage = found.cursor_slug()?.to_string();
+    Some((stage, found.scope().to_string()))
+}
+
+/// 成功 3 形を directive へ写す（`raw` は報告された生の語）。
+fn committed_directive(raw: &str, outcome: &CommitOutcome) -> Directive {
+    match outcome {
+        CommitOutcome::Committed {
+            stage,
+            scope,
+            steps,
+        } => committed_transition(raw, stage.as_str(), scope, steps),
+        CommitOutcome::NoOp { scope, no_op, .. } => no_op_directive(scope, no_op),
+    }
+}
+
+/// コミットした段の列を逐語へ写す。
+///
+/// gate 系 3 段は `print`（`Recorded <result> for "<slug>".`）、読み飛ばしと前進は `done`。
+fn committed_transition(
+    raw: &str,
+    stage: &str,
+    scope: &str,
+    steps: &[TransitionStep],
+) -> Directive {
+    match steps {
+        [TransitionStep::GateStart | TransitionStep::Reject | TransitionStep::Revise] => {
+            Directive::Print {
+                message: wording::recorded_result(raw, stage),
+            }
+        }
+        [TransitionStep::Skip] => Directive::Done {
+            reason: Some(wording::committed_skip(stage, scope)),
         },
-        Vec::new(),
-    )))
+        other => Directive::Done {
+            reason: Some(wording::committed_transition(
+                &other
+                    .iter()
+                    .map(|step| step.subcommand())
+                    .collect::<Vec<_>>()
+                    .join(" + "),
+                stage,
+                scope,
+            )),
+        },
+    }
+}
+
+/// no-op 3 形を directive へ写す。
+fn no_op_directive(scope: &str, no_op: &ReportNoOp) -> Directive {
+    match no_op {
+        ReportNoOp::AlreadyAwaiting { stage } => Directive::Print {
+            message: wording::already_awaiting_approval(stage.as_str()),
+        },
+        ReportNoOp::AlreadyCompletedMovedOn { stage, current } => Directive::Done {
+            reason: Some(wording::already_completed_moved_on(
+                stage.as_str(),
+                current.as_str(),
+                scope,
+            )),
+        },
+        ReportNoOp::WorkflowAlreadyCompleted { stage } => Directive::Done {
+            reason: Some(wording::workflow_already_completed(stage.as_str(), scope)),
+        },
+    }
+}
+
+/// 失敗を逐語へ写す（`raw` は報告された生の語 — upstream も `flags.result` を埋める）。
+fn commit_refusal(raw: &str, error: &CommitError) -> String {
+    match error {
+        CommitError::Refused(refusal) => report_refusal(raw, refusal),
+        CommitError::Transition { step, stage, error } => {
+            wording::transition_rejected_by(step.subcommand(), stage.as_str(), &chained(error))
+        }
+        CommitError::UnwiredTransition { step, stage } => {
+            wording::transition_not_wired(step.subcommand(), stage.as_str())
+        }
+        // 再構成・計画取得の失敗は upstream に対応する逐語が無い（あちらはファイルを読む
+        // だけである）— 中継形に材料を載せる。
+        other => wording::transition_rejected(&chained(other)),
+    }
+}
+
+/// 集約の判断による拒否 13 形を逐語へ写す。
+fn report_refusal(raw: &str, refusal: &ReportRefusal) -> String {
+    match refusal {
+        ReportRefusal::UnknownStage { named } => wording::reported_stage_not_in_graph(named),
+        ReportRefusal::RoutedVerdict { .. } => wording::RESUME_IS_ROUTED.to_string(),
+        ReportRefusal::SkipNotConditional { stage, execution } => {
+            wording::skip_not_conditional(stage.as_str(), execution.as_str())
+        }
+        ReportRefusal::SkipRequiresReason { .. } => wording::SKIP_REQUIRES_REASON.to_string(),
+        ReportRefusal::SkipMustNameCursor { named, current } => {
+            wording::skip_must_name_cursor(named.as_str(), current.as_str())
+        }
+        ReportRefusal::SkipPrecondition { stage, actual } => {
+            wording::skip_precondition(stage.as_str(), actual.spelling())
+        }
+        ReportRefusal::UngatedStage { stage, .. } => wording::ungated_stage(stage.as_str(), raw),
+        ReportRefusal::GatePrecondition {
+            stage,
+            verdict,
+            actual,
+        } => gate_precondition(*verdict, stage.as_str(), actual.spelling()),
+        ReportRefusal::RejectRequiresFeedback { stage } => {
+            wording::reject_requires_feedback(stage.as_str())
+        }
+        ReportRefusal::HumanPresence { stage, .. } => {
+            wording::human_presence_required(raw, stage.as_str())
+        }
+        ReportRefusal::ForwardCommitsCompletionsOnly { stage, actual } => {
+            wording::forward_commits_completions_only(stage.as_str(), actual.spelling())
+        }
+        ReportRefusal::StillPending { stage } => wording::still_pending(stage.as_str()),
+        ReportRefusal::InProgressRequiresExplicitStage { stage } => {
+            wording::in_progress_requires_explicit_stage(stage.as_str())
+        }
+    }
+}
+
+/// gate 系 3 語の前提違反は語ごとに文言が違う（ピン `:5706` / `:5717` / `:5732`）。
+fn gate_precondition(verdict: Verdict, stage: &str, state: &str) -> String {
+    match verdict {
+        Verdict::AwaitingApproval => wording::gate_open_precondition(stage, state),
+        Verdict::Rejected => wording::gate_reject_precondition(stage, state),
+        // 集約が `GatePrecondition` に載せる verdict は gate 系 3 語だけである。
+        _ => wording::gate_revise_precondition(stage, state),
+    }
 }
 
 /// `park` — 実行を現在地で止め、投影してから止まった位置を名乗る。
@@ -342,34 +637,6 @@ fn parked_directive(
         message: wording::parked(stage.as_str()),
         stage,
     })
-}
-
-/// 報告された結末に材料を貼り付ける（`resume` はここに無い — 手前で分岐済み）。
-fn transition_of(verdict: Verdict, args: &crate::cli::ReportArgs) -> Option<ReportedTransition> {
-    Some(match verdict {
-        Verdict::AwaitingApproval => ReportedTransition::AwaitingApproval {
-            artifacts: Vec::new(),
-        },
-        Verdict::Forward => ReportedTransition::Forward {
-            user_input: args.user_input().map(str::to_string),
-        },
-        Verdict::Rejected => ReportedTransition::Rejected {
-            feedback: args.user_input().map(str::to_string),
-        },
-        Verdict::Revised => ReportedTransition::Revised,
-        Verdict::Skipped => ReportedTransition::Skipped {
-            reason: args.reason().unwrap_or_default().to_string(),
-        },
-        Verdict::Resume => return None,
-    })
-}
-
-/// `--stage` を型付きの slug へ写す。省略は `None`（カーソルに作用する — 有無が契約）。
-fn parse_stage(args: &crate::cli::ReportArgs) -> Option<Option<StageSlug>> {
-    match args.stage() {
-        None => Some(None),
-        Some(raw) => StageSlug::parse(raw).ok().map(Some),
-    }
 }
 
 /// この record が指す実行を**実行カーソルから**引く。
@@ -1264,36 +1531,298 @@ mod tests {
         );
     }
 
-    /// 報告された結末は、それぞれ別の遷移へ写り、材料（`--user-input` / `--reason`）を
-    /// 落とさない。`resume` だけは遷移にならない（ルーティングなので手前で分岐する）。
+    /// 構文的な段は `ReportArgs` の値だけで決まる — 空白だけの `--stage` は「無い」と同じ。
     #[test]
-    fn every_verdict_maps_to_its_transition_with_its_material() {
+    fn a_blank_explicit_stage_reads_as_absent() {
+        assert_eq!(explicit_stage(&report_args(&[])), None);
+        assert_eq!(explicit_stage(&report_args(&["--stage", "  "])), None);
+        assert_eq!(
+            explicit_stage(&report_args(&["--stage", " domain-design "])),
+            Some("domain-design")
+        );
+    }
+
+    /// gate 系 3 語の前提違反は語ごとに別の逐語になる（同じ材料でも文言が違う）。
+    #[test]
+    fn each_gate_verdict_has_its_own_precondition_wording() {
+        assert_eq!(
+            gate_precondition(Verdict::AwaitingApproval, "domain-design", "revising"),
+            "Stage \"domain-design\" is revising; only an in-progress stage can open a gate."
+        );
+        assert_eq!(
+            gate_precondition(Verdict::Rejected, "domain-design", "revising"),
+            "Stage \"domain-design\" is revising; only an active or awaiting-approval stage can be rejected."
+        );
+        assert_eq!(
+            gate_precondition(Verdict::Revised, "domain-design", "in-progress"),
+            "Stage \"domain-design\" is in-progress; only a revising stage can re-enter its gate."
+        );
+    }
+
+    use core_command_domain::workflow_definition::ExecutionKind;
+    use core_command_domain::workspace::CheckboxState;
+
+    /// 拒否 13 形が upstream の逐語へ 1:1 で写る（`raw` は報告された生の語）。
+    ///
+    /// 合成ルートは**材料を文言にするだけ**である — どれを返すかを決めたのは集約である。
+    #[test]
+    fn every_report_refusal_renders_its_upstream_wording() {
+        let slug = |value: &str| StageSlug::parse(value).expect("フィクスチャの slug");
+        let cases: [(ReportRefusal, &str); 13] = [
+            (
+                ReportRefusal::UnknownStage {
+                    named: "nope".to_string(),
+                },
+                "Internal: reported stage \"nope\" is not in the compiled graph — cannot commit its transition.",
+            ),
+            (
+                ReportRefusal::RoutedVerdict {
+                    verdict: Verdict::Resume,
+                },
+                "Resume is routed, not committed. Run a fresh `next --resume`.",
+            ),
+            (
+                ReportRefusal::SkipNotConditional {
+                    stage: slug("domain-design"),
+                    execution: ExecutionKind::Always,
+                },
+                "Stage \"domain-design\" is execution: ALWAYS; only a CONDITIONAL stage can report skipped.",
+            ),
+            (
+                ReportRefusal::SkipRequiresReason {
+                    stage: slug("domain-design"),
+                },
+                "report --result skipped requires a nonblank --reason <text>.",
+            ),
+            (
+                ReportRefusal::SkipMustNameCursor {
+                    named: slug("domain-design"),
+                    current: slug("contract-design"),
+                },
+                "Cannot skip stage \"domain-design\": Current Stage is \"contract-design\". A skip report must name the active stage exactly.",
+            ),
+            (
+                ReportRefusal::SkipPrecondition {
+                    stage: slug("domain-design"),
+                    actual: CheckboxState::Pending,
+                },
+                "Stage \"domain-design\" is pending; only an active, revising, or interrupted skipped stage can be routed as skipped.",
+            ),
+            (
+                ReportRefusal::UngatedStage {
+                    stage: slug("state-init"),
+                    verdict: Verdict::Rejected,
+                },
+                "Stage \"state-init\" is an ungated initialization stage; it cannot report rejected.",
+            ),
+            (
+                ReportRefusal::GatePrecondition {
+                    stage: slug("domain-design"),
+                    verdict: Verdict::AwaitingApproval,
+                    actual: CheckboxState::Revising,
+                },
+                "Stage \"domain-design\" is revising; only an in-progress stage can open a gate.",
+            ),
+            (
+                ReportRefusal::RejectRequiresFeedback {
+                    stage: slug("domain-design"),
+                },
+                "report --result rejected for \"domain-design\" requires nonblank --user-input or --reason feedback.",
+            ),
+            (
+                ReportRefusal::HumanPresence {
+                    stage: slug("domain-design"),
+                    verdict: Verdict::Forward,
+                },
+                "report --result rejected for \"domain-design\" requires --user-input with the human's exact approval choice.",
+            ),
+            (
+                ReportRefusal::ForwardCommitsCompletionsOnly {
+                    stage: slug("domain-design"),
+                    actual: CheckboxState::Skipped,
+                },
+                "Stage \"domain-design\" is skipped; report commits forward completions only.",
+            ),
+            (
+                ReportRefusal::StillPending {
+                    stage: slug("contract-design"),
+                },
+                "Stage \"contract-design\" is still pending. Run the stage before reporting it complete.",
+            ),
+            (
+                ReportRefusal::InProgressRequiresExplicitStage {
+                    stage: slug("domain-design"),
+                },
+                "Stage \"domain-design\" is still in-progress. To approve a gated stage that has not entered awaiting-approval, report the acted directive explicitly with --stage \"domain-design\" so the engine cannot mistake a freshly advanced Current Stage for the completed one.",
+            ),
+        ];
+        for (refusal, expected) in cases {
+            // `raw` は報告された生の語である — upstream も `flags.result` を埋める（正規化した
+            // `Verdict` からは `approved` と `completed` を区別して戻せない）。
+            assert_eq!(
+                report_refusal("rejected", &refusal),
+                expected,
+                "{refusal:?}"
+            );
+        }
+    }
+
+    /// 集約コマンドの拒否は upstream の中継形になり、失敗した段と対象を名乗る。
+    #[test]
+    fn a_refused_transition_is_relayed_with_the_step_that_failed() {
+        let stage = StageSlug::parse("domain-design").expect("slug");
+        assert_eq!(
+            commit_refusal(
+                "approved",
+                &CommitError::Transition {
+                    step: TransitionStep::Approve,
+                    stage,
+                    error: CommandError::NotRunning,
+                }
+            ),
+            "Transition rejected by aidlc-state.ts approve for \"domain-design\": not running"
+        );
+        // 材料が空なら upstream は `.` で閉じる。
+        assert_eq!(
+            wording::transition_rejected_by("skip", "domain-design", ""),
+            "Transition rejected by aidlc-state.ts skip for \"domain-design\"."
+        );
+    }
+
+    /// この build に無い段は、読み替えずに名指しして断る（b42 で撤去した 2 段）。
+    #[test]
+    fn an_unwired_step_is_named_rather_than_re_read() {
+        let stage = StageSlug::parse("state-init").expect("slug");
+        assert_eq!(
+            commit_refusal(
+                "completed",
+                &CommitError::UnwiredTransition {
+                    step: TransitionStep::CompleteWorkflow,
+                    stage: stage.clone(),
+                }
+            ),
+            "Cannot commit complete-workflow for \"state-init\": the complete-workflow transition is not wired in this build."
+        );
+        assert_eq!(
+            commit_refusal(
+                "completed",
+                &CommitError::UnwiredTransition {
+                    step: TransitionStep::Advance,
+                    stage,
+                }
+            ),
+            "Cannot commit advance for \"state-init\": the advance transition is not wired in this build."
+        );
+    }
+
+    /// 再構成・計画取得の失敗は upstream に対応する逐語が無いので中継形に材料を載せる。
+    #[test]
+    fn a_rehydration_failure_falls_back_to_the_relay_form() {
+        let message = commit_refusal(
+            "approved",
+            &CommitError::Repository(
+                core_command_use_case::orchestration::RepositoryError::NotFound {
+                    id: IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000")
+                        .expect("UUIDv7"),
+                },
+            ),
+        );
+        assert!(
+            message.starts_with("Transition rejected: repository: not found: "),
+            "{message}"
+        );
+    }
+
+    /// 成功 3 形 — gate 系は `print`、読み飛ばしと前進は `done`。
+    #[test]
+    fn every_commit_outcome_renders_its_directive() {
+        let stage = StageSlug::parse("domain-design").expect("slug");
+        let committed = |steps: Vec<TransitionStep>| CommitOutcome::Committed {
+            stage: stage.clone(),
+            scope: "classic".to_string(),
+            steps,
+        };
         assert!(matches!(
-            transition_of(Verdict::AwaitingApproval, &report_args(&[])),
-            Some(ReportedTransition::AwaitingApproval { artifacts }) if artifacts.is_empty()
+            committed_directive("awaiting-approval", &committed(vec![TransitionStep::GateStart])),
+            Directive::Print { message } if message == "Recorded awaiting-approval for \"domain-design\"."
         ));
         assert!(matches!(
-            transition_of(Verdict::Forward, &report_args(&["--user-input", "go ahead"])),
-            Some(ReportedTransition::Forward { user_input: Some(text) }) if text == "go ahead"
+            committed_directive("rejected", &committed(vec![TransitionStep::Reject])),
+            Directive::Print { message } if message == "Recorded rejected for \"domain-design\"."
         ));
         assert!(matches!(
-            transition_of(Verdict::Rejected, &report_args(&["--user-input", "not yet"])),
-            Some(ReportedTransition::Rejected { feedback: Some(text) }) if text == "not yet"
+            committed_directive("revised", &committed(vec![TransitionStep::Revise])),
+            Directive::Print { message } if message == "Recorded revised for \"domain-design\"."
         ));
         assert!(matches!(
-            transition_of(Verdict::Revised, &report_args(&[])),
-            Some(ReportedTransition::Revised)
+            committed_directive("skipped", &committed(vec![TransitionStep::Skip])),
+            Directive::Done { reason: Some(reason) }
+                if reason == "Committed skip for \"domain-design\" (scope: classic). State routed forward; run next to continue."
         ));
         assert!(matches!(
-            transition_of(Verdict::Skipped, &report_args(&["--reason", "out of scope"])),
-            Some(ReportedTransition::Skipped { reason }) if reason == "out of scope"
+            committed_directive("approved", &committed(vec![TransitionStep::Approve])),
+            Directive::Done { reason: Some(reason) }
+                if reason == "Committed approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
         ));
-        // 材料が無ければ空で運ぶ（`--reason` 無しの skipped は理由なしの skip）。
         assert!(matches!(
-            transition_of(Verdict::Skipped, &report_args(&[])),
-            Some(ReportedTransition::Skipped { reason }) if reason.is_empty()
+            committed_directive(
+                "approved",
+                &committed(vec![TransitionStep::GateStartRecovered, TransitionStep::Approve])
+            ),
+            Directive::Done { reason: Some(reason) }
+                if reason == "Committed gate-start + approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
         ));
-        assert!(transition_of(Verdict::Resume, &report_args(&[])).is_none());
+    }
+
+    /// no-op 3 形 — 既開ゲートは `print`、残り 2 つは `done`。
+    #[test]
+    fn every_no_op_renders_its_directive() {
+        let stage = StageSlug::parse("domain-design").expect("slug");
+        let current = StageSlug::parse("contract-design").expect("slug");
+        let no_op = |no_op: ReportNoOp| CommitOutcome::NoOp {
+            stage: stage.clone(),
+            scope: "classic".to_string(),
+            no_op,
+        };
+        assert!(matches!(
+            committed_directive("awaiting-approval", &no_op(ReportNoOp::AlreadyAwaiting { stage: stage.clone() })),
+            Directive::Print { message } if message == "Stage \"domain-design\" is already awaiting approval."
+        ));
+        assert!(matches!(
+            committed_directive(
+                "approved",
+                &no_op(ReportNoOp::AlreadyCompletedMovedOn { stage: stage.clone(), current })
+            ),
+            Directive::Done { reason: Some(reason) }
+                if reason == "Stage \"domain-design\" is already completed and the workflow has moved on to \"contract-design\" (scope: classic); idempotent re-report, no transition needed."
+        ));
+        let Directive::Done {
+            reason: Some(reason),
+        } = committed_directive(
+            "approved",
+            &no_op(ReportNoOp::WorkflowAlreadyCompleted {
+                stage: stage.clone(),
+            }),
+        )
+        else {
+            panic!("done を期待した")
+        };
+        assert!(
+            reason.starts_with(
+                "Workflow is already completed at \"domain-design\" (scope: classic); no transition was needed."
+            ),
+            "{reason}"
+        );
+        assert!(
+            reason.contains("If this input is genuinely NEW, unrelated work"),
+            "{reason}"
+        );
+    }
+
+    /// 段 13 の env — 立てていなければガードは効いたままである。
+    #[test]
+    fn the_human_presence_guard_is_on_unless_the_environment_switches_it_off() {
+        assert!(human_presence_guard());
     }
 
     /// `report` の引数を実際のパーサから組む（テスト専用の抜け道を作らない）。
@@ -1463,14 +1992,29 @@ mod tests {
         )
         .await;
         let layout = Layout::resolve(root.path());
-        let state_file = layout.state_file().expect("状態ファイル");
-        // 骨格の置き場をディレクトリで塞ぐ（コマンド側は通るが、投影は書き込めない）。
-        std::fs::remove_file(&state_file).expect("骨格");
-        std::fs::create_dir(&state_file).expect("塞ぐ");
+        // 監査シャードの置き場をファイルで塞ぐ（コマンド側は通るが、投影は書き込めない）。
+        // 骨格そのものは塞がない — 段 1 の state-version guard が先に読むので、そちらを
+        // 壊すとコミットまで届かず「コミット後の投影」を見たことにならない。
+        let audit_dir = layout.audit_dir().expect("監査ディレクトリ");
+        std::fs::remove_dir_all(&audit_dir).expect("監査ディレクトリ");
+        std::fs::write(&audit_dir, "not a directory").expect("塞ぐ");
 
-        let completion = report(&layout, &report_args(&["--result", "approved"])).await;
+        let completion = report(
+            &layout,
+            // `[-]` のゲートは明示 `--stage` を要する（forward 表）— ここで見たいのは
+            // 判断ではなく「コミット後に投影が落ちたときの出口」である。
+            &report_args(&[
+                "--result",
+                "approved",
+                "--user-input",
+                "A",
+                "--stage",
+                "domain-design",
+            ]),
+        )
+        .await;
 
-        assert_eq!(completion.code(), 1);
+        assert_eq!(completion.code(), 1, "{completion:?}");
         assert!(
             completion
                 .diagnostic()
