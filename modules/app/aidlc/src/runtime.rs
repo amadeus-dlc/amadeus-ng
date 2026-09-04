@@ -23,7 +23,9 @@
 use std::path::Path;
 
 use chrono::Utc;
-use core_command_domain::orchestration::{IntentExecutionId, IntentId, StartRequest, Verdict};
+use core_command_domain::orchestration::{
+    CommandError, IntentExecutionId, IntentId, StartRequest, Verdict,
+};
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{ShardName, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
@@ -33,11 +35,13 @@ use core_command_interface_adapter::orchestration::{
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
     CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase, DefineWorkflowUseCase,
-    IntentRepository as _, ReportedTransition,
+    IntentRepository as _, ParkError, ParkUseCase, ReportedTransition,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
-use core_query_interface_adapter::verify_continue_token;
-use core_query_use_case::orchestration::{Directive, NextTurnInput};
+use core_query_interface_adapter::{ReadModelDaos, verify_continue_token};
+use core_query_use_case::orchestration::{
+    Directive, FindExecutionUseCase, NextTurnInput, StageSlugView,
+};
 use core_read_model_updater::orchestration::{
     JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
 };
@@ -115,17 +119,7 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         Request::Next(input) => emit(next(&layout, *input).await),
         Request::Continue { token } => emit(resume(&layout, &token).await),
         Request::Report(args) => report(&layout, &args).await,
-        // park はドメインのガードが upstream の拒否 3 態を表現しきれていないため未配線
-        // （実測: autonomous は表現済み、Completed と「すでに park 済み」が `NotRunning` に
-        // 畳まれ、しかも upstream は再 park を**成功**させる）。upstream の `handlePark` 自身が
-        // park の失敗を stdout の error directive で返す（`aidlc-orchestrate.ts:5976`）ので、
-        // 未配線もその層に合わせる — 自己防衛拒否ではない。
-        Request::Park => emit(Ok((
-            Directive::Error {
-                message: "Cannot park the workflow: park is not wired in this build.".to_string(),
-            },
-            Vec::new(),
-        ))),
+        Request::Park => park(&layout).await,
         Request::IntentCreate(args) => create_intent(&layout, &args).await,
         Request::UnknownOrchestrateVerb { given } => {
             Completion::refused(wording::unknown_orchestrate_subcommand(given.as_deref()))
@@ -256,6 +250,98 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         },
         Vec::new(),
     )))
+}
+
+/// `park` — 実行を現在地で止め、投影してから止まった位置を名乗る。
+///
+/// upstream の `handlePark`（`aidlc-orchestrate.ts:8233-8261`）と同じ二段構えである:
+/// 変更は `aidlc-state.ts park` に閉じ、失敗はその出力を `Cannot park the workflow: <detail>`
+/// に包んだ **error directive（stdout・exit 0）** で返し、成功したら**状態ファイルを読み直して**
+/// `Parked At Stage` を名乗る。こちらもコマンド → RMU → クエリの経路で同じ形になる。
+async fn park(layout: &Layout) -> Completion {
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return emit_error(message),
+    };
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        // 不在 = まだ鋳造していない（fresh なワークスペースの正常な姿）。
+        Ok(None) => return emit_error(wording::park_refused(wording::PARK_WITHOUT_EXECUTION)),
+        // 在るのに読めない・壊れているは**不在と混ぜない**（`report` と同じ規律）。
+        Err(error) => {
+            return emit_error(wording::park_refused(
+                &wording::unreadable_execution_cursor(&error.to_string()),
+            ));
+        }
+    };
+    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+        IntentExecutionRepositoryImpl::open(&store),
+        IntentRepositoryImpl::open(&store),
+    ) else {
+        return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
+    };
+    if let Err(error) = ParkUseCase::new(intent_execution_repository, intent_repository)
+        .execute(&execution_id, Utc::now())
+        .await
+    {
+        return emit_error(park_refusal(&error));
+    }
+    // 書いた事実をリードモデルへ落とす。ここは握り潰さない — 描けなければ park した位置も
+    // 読めない（`report` と同じ規律）。
+    if let Err(error) = catch_up(layout).await {
+        return Completion::refused(wording::orchestrate_failure(&error));
+    }
+    match parked_directive(&store, &execution_id) {
+        Ok(directive) => emit(Ok((directive, Vec::new()))),
+        Err(refusal) => refusal,
+    }
+}
+
+/// 集約の拒否 2 形だけを upstream 逐語へ写し、それ以外は中継形の材料にする。
+///
+/// 逐語を選ぶのは**出す側**の仕事である（`coding-rules/error-handling.md`）。ドメインは
+/// `RefusedUnderAutonomy` / `NotRunning` という材料しか運ばない。
+fn park_refusal(error: &ParkError) -> String {
+    match error {
+        ParkError::Command(CommandError::RefusedUnderAutonomy) => {
+            wording::park_refused(wording::PARK_REFUSED_AUTONOMOUS)
+        }
+        ParkError::Command(CommandError::NotRunning) => {
+            wording::park_refused(wording::PARK_NOTHING_TO_PARK)
+        }
+        other => wording::park_refused(&chained(other)),
+    }
+}
+
+/// 投影された行から park した位置を引いて `parked` directive を組む。
+///
+/// upstream も mutation のあとに状態ファイルの `Parked At Stage` を読み直す — こちらは同じ
+/// 事実を**構造化リードモデル**（`read_execution.parked_at_slug`）から引く。行が無い・slug が
+/// 無い・引けないのは**投影直後には起こりえない**（起きたら実装の穴）ので、利用者向けの
+/// ビジネス拒否ではなく自己防衛拒否として `Err` を返す。
+fn parked_directive(
+    store: &StorePath,
+    execution_id: &IntentExecutionId,
+) -> Result<Directive, Completion> {
+    let broken = |detail: &str| {
+        Completion::refused(wording::orchestrate_failure(&format!(
+            "the park marker was not projected: {detail}"
+        )))
+    };
+    let daos =
+        ReadModelDaos::open(store.as_path()).map_err(|error| broken(&error.kind().to_string()))?;
+    let found = FindExecutionUseCase::new(daos.execution())
+        .execute(execution_id.as_str())
+        .map_err(|error| broken(&error.kind().to_string()))?
+        .ok_or_else(|| broken("the execution row is missing"))?;
+    let slug = found
+        .parked_at_slug()
+        .ok_or_else(|| broken("the row carries no parked stage"))?;
+    let stage = StageSlugView::parse(slug).map_err(|_| broken("the parked stage is not a slug"))?;
+    Ok(Directive::Parked {
+        message: wording::parked(stage.as_str()),
+        stage,
+    })
 }
 
 /// 報告された結末に材料を貼り付ける（`resume` はここに無い — 手前で分岐済み）。
@@ -999,6 +1085,114 @@ mod tests {
             Request::IntentCreate(args) => args,
             other => panic!("intent-create へ行く: {other:?}"),
         }
+    }
+
+    /// 集約が拒んだ 2 形以外は、失敗の `Display` をそのまま中継形の材料にする。
+    ///
+    /// upstream の `handlePark` も spawn した subcommand の出力を丸ごと挟むだけなので、
+    /// 逐語を持たない失敗はここで言い換えない。
+    #[test]
+    fn a_park_failure_outside_the_two_verbatim_forms_is_relayed_as_material() {
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
+        let error = ParkError::Repository(RepositoryError::NotFound {
+            id: execution_id.clone(),
+        });
+
+        assert_eq!(
+            park_refusal(&error),
+            format!("Cannot park the workflow: repository: not found: {execution_id}")
+        );
+    }
+
+    /// 封筒が運ぶ原因連鎖（`Error::source`）も中継形へ載せる — `Corrupt` は分類しか
+    /// `Display` に書かず、実材料（`undecodable payload` 等）は連鎖にあるからである
+    /// （裁定 6。upstream も spawn の stderr を丸ごと挟むので診断材料は落とさない）。
+    #[test]
+    fn a_park_failure_relays_its_source_chain_into_the_detail() {
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
+        let error = ParkError::Repository(RepositoryError::Corrupt {
+            id: execution_id,
+            seq_nr: Some(3),
+            source: Box::new(std::io::Error::other("undecodable payload")),
+        });
+
+        let detail = park_refusal(&error);
+
+        assert!(
+            detail.starts_with("Cannot park the workflow: repository: "),
+            "{detail}"
+        );
+        assert!(
+            detail.ends_with(" caused by undecodable payload"),
+            "{detail}"
+        );
+    }
+
+    /// 集約の拒否 2 形は upstream 逐語へ写す（材料の `Display` は表に出ない）。
+    #[test]
+    fn the_two_aggregate_refusals_map_onto_the_upstream_verbatim() {
+        assert_eq!(
+            park_refusal(&ParkError::Command(CommandError::RefusedUnderAutonomy)),
+            wording::park_refused(wording::PARK_REFUSED_AUTONOMOUS)
+        );
+        assert_eq!(
+            park_refusal(&ParkError::Command(CommandError::NotRunning)),
+            wording::park_refused(wording::PARK_NOTHING_TO_PARK)
+        );
+    }
+
+    /// park の直後に投影が読めないのは**実装の穴**なので、自己防衛拒否で止まる。
+    ///
+    /// 3 形（開けない・引けない・行が無い）はいずれも CLI からは作れない状態である。ここでは
+    /// 引当の口だけを直接叩いて、どれもビジネス拒否へ流れないことを固定する。
+    #[tokio::test]
+    async fn a_park_marker_that_was_not_projected_is_a_self_defence_refusal() {
+        let root = minimal_workspace();
+        let space = SpaceName::parse("default").expect("既定の空間名");
+        let store = StorePath::for_space(&root.path().join("aidlc"), &space);
+        let execution_id =
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7");
+
+        // ストアそのものが無い = 引当の口が開かない。
+        let refusal = parked_directive(&store, &execution_id).expect_err("開けない");
+        assert_eq!(refusal.code(), 1);
+        assert!(
+            refusal
+                .diagnostic()
+                .unwrap_or_default()
+                .starts_with("aidlc-orchestrate: the park marker was not projected: "),
+            "{refusal:?}"
+        );
+
+        // 開けるが引けない = 表が無い（空ファイルは SQLite にとって空のデータベースである）。
+        std::fs::create_dir_all(root.path().join("aidlc/spaces/default/intents")).expect("intents");
+        std::fs::write(store.as_path(), b"").expect("空のストア");
+        let refusal = parked_directive(&store, &execution_id).expect_err("表が無い");
+        assert_eq!(refusal.code(), 1);
+        assert_eq!(refusal.line(), None, "stdout には何も出さない");
+
+        // 表も行もあるが park していない = マーカーの列が空。
+        let args = intent_create_args(&["--scope", "classic", "--label", "demo"]);
+        let layout = Layout::resolve(root.path());
+        std::fs::remove_file(store.as_path()).expect("空のストアを退ける");
+        let minted = create_intent(&layout, &args).await;
+        assert_eq!(minted.code(), 0, "{minted:?}");
+        // 配置はカーソルを解決時に読むので、鋳造のあとに引き直す。
+        let minted_layout = Layout::resolve(root.path());
+        let record = minted_layout.record_dir().expect("カーソルが据わっている");
+        let minted_id = ExecutionCursor::read(record)
+            .expect("実行カーソルは読める")
+            .expect("実行カーソルは据わっている")
+            .execution_id()
+            .clone();
+        let refusal = parked_directive(&store, &minted_id).expect_err("park していない");
+        assert_eq!(refusal.code(), 1);
+
+        // 行そのものが無い = 別の実行を名指している。
+        let refusal = parked_directive(&store, &execution_id).expect_err("行が無い");
+        assert_eq!(refusal.code(), 1);
     }
 
     /// 骨格を書けなければ**自己防衛拒否**で止まる — 投影は既存行を書き換えるので、骨格が

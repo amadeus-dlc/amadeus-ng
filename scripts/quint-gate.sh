@@ -67,8 +67,9 @@ done
 log_step "invariants run: engine_loop"
 if quint run "${ENGINE_LOOP}" --seed 0x1a2b3c --max-samples 2000 --max-steps 40 \
   --invariants no_run_stage_for_skip cursor_in_scope no_gate_bypass \
-    gate_lifecycle_preconditions parked_position unpark_restores_position \
-    stale_rereport_yields_done stale_rereport_frame at_most_one_active; then
+    gate_lifecycle_preconditions parked_position parked_marker_status \
+    unpark_restores_position stale_rereport_yields_done stale_rereport_frame \
+    at_most_one_active; then
   record "invariants run: engine_loop" "PASS"
 else
   record "invariants run: engine_loop" "FAIL"
@@ -98,15 +99,28 @@ fi
 run_witness() {
   local model="$1" seed="$2" max_samples="$3" max_steps="$4" witness="$5"
   log_step "witness (negated): ${model} :: ${witness}"
-  if quint run "${model}" --seed "${seed}" --max-samples "${max_samples}" \
-    --max-steps "${max_steps}" --invariant "not(${witness})" >/dev/null 2>&1; then
-    # exit code == 0 -> [ok] -> not(witness) が常に成立 -> witness の経路が見つからない -> fail
+  # 終了コードではなく**出力の判定語**で分岐する。quint は解析・型検査エラーや未知の名前
+  # (witness 名の typo) でも非 0 で終わるため、終了コードだけを見ると「エラー = 反例あり =
+  # PASS」と誤判定する (PR #101 の CodeRabbit 指摘)。
+  local output
+  output="$(quint run "${model}" --seed "${seed}" --max-samples "${max_samples}" \
+    --max-steps "${max_steps}" --invariant "not(${witness})" 2>&1)" || true
+  if grep -q '\[violation\]' <<<"${output}"; then
+    # [violation] -> not(witness) の反例 = witness が成立する経路が実在 -> pass
+    record "witness ${witness} (${model})" "PASS"
+  elif grep -q '\[ok\]' <<<"${output}"; then
+    # [ok] -> not(witness) が常に成立 -> witness の経路が見つからない -> fail
     record "witness ${witness} (${model})" "FAIL"
   else
-    # exit code != 0 -> [violation] -> not(witness) の反例 = witness が成立する経路が実在 -> pass
-    record "witness ${witness} (${model})" "PASS"
+    # どちらでもない = quint 自体が走れていない (構文・型・未知の名前)。理由を見せて fail。
+    printf '%s\n' "${output}" | tail -n 5 >&2
+    record "witness ${witness} (${model}) — quint error" "FAIL"
   fi
 }
+
+for w in w_repark; do
+  run_witness "${ENGINE_LOOP}" "0x303" 2000 40 "${w}"
+done
 
 for w in w_block w_cap_release_interactive w_parked_auto_block w_seed2 w_sig_reset; do
   run_witness "${STOP_HOOK}" "0x9" 3000 60 "${w}"

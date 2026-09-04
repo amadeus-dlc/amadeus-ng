@@ -780,18 +780,42 @@ impl IntentExecution {
 
     /// park マーカーの設置 — `Parked` (autonomous 下は拒否 — BR1.7)。
     ///
+    /// # park だけは受理述語 ([`IntentExecution::accepts_commands`]) を使わない
+    ///
+    /// upstream の `handlePark` (`.claude/tools/aidlc-state.ts:1685-1760`) は park 済みの
+    /// ワークフローを**成功**させ、`Parked` 時刻を上書き・`Parked At Stage` を書き直し・
+    /// `WORKFLOW_PARKED` を再 emit する (**再スタンプ**)。受理述語 (BR1.0 = Running ∧
+    /// ¬park 済み) を使うと再 park が `NotRunning` に畳まれてしまうので、park は自分の
+    /// 受理述語を持つ。他コマンドが共有する `accepts_commands` は触らない。
+    ///
+    /// 判定順序も upstream の順序どおりである — autonomy (順序 1) が Completed (順序 2) に
+    /// 勝つ。upstream の順序 3 (`Current Stage` 不在) は Always Valid の帰結として構造的に
+    /// 発生不能である (カーソルは不変条件 `cursor_in_scope` により常に計画上の位置を指す)。
+    ///
+    /// 再スタンプは同じ位置に同じ値を書くだけなので、不変条件 `parked_position`
+    /// (park の位置 = カーソル) は保たれる — park 中はカーソルを動かすコマンドがすべて
+    /// `NotRunning` で拒まれるためである。
+    ///
     /// # Errors
     ///
-    /// 非受理 (`NotRunning`)、autonomous 中 (`RefusedUnderAutonomy`)。
+    /// autonomous 中 (`RefusedUnderAutonomy`)、Completed (`NotRunning`)。
     pub fn park(
         &mut self,
         intent: &Intent,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        let stage = self.guard_running_for(intent)?;
+        // 取り違えガードは他コマンドと同じく入口 1 か所 (`guard_running_for` の前半に相当)。
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
         if self.autonomy.is_autonomous() {
             return Err(CommandError::RefusedUnderAutonomy);
         }
+        // Status は Running | Completed の 2 値なので、非 Running == Completed である。
+        if !self.status.is_running() {
+            return Err(CommandError::NotRunning);
+        }
+        let stage = self.cursor;
         let material = Parked::new(
             IntentExecution::next_event_id(),
             self.id.clone(),
@@ -2269,7 +2293,51 @@ mod tests {
     }
 
     #[test]
-    fn every_command_but_unpark_is_refused_while_parked() {
+    fn parking_an_already_parked_execution_restamps_the_marker() {
+        // upstream の `handlePark` は park 済みでも成功し、`Parked` 時刻を上書き・
+        // `Parked At Stage` を書き直し・`WORKFLOW_PARKED` を再 emit する (再スタンプ)。
+        // したがって park だけは受理述語 (`accepts_commands`) を使わない。
+        let mut w = all_exec(3);
+        w.park(occurred()).unwrap();
+        let marker = w.parked_at();
+        let seq_before = w.seq_nr();
+
+        let event = w.park(occurred()).unwrap();
+
+        let IntentExecutionEvent::Parked(parked) = &event else {
+            panic!("expected Parked");
+        };
+        assert_eq!(parked.stage(), &slug(1), "位置は同じカーソルのまま");
+        assert_eq!(w.parked_at(), marker, "マーカーは動かない");
+        assert!(w.parked_active(), "park 済みのまま");
+        assert_eq!(w.seq_nr(), seq_before + 1, "イベントは 1 本増える");
+    }
+
+    #[test]
+    fn parking_a_completed_workflow_is_refused_as_not_running() {
+        // upstream 順序 2: `Status: Completed` は「park するものが無い」。Status は
+        // Running | Completed の 2 値なので、非 Running == Completed である。
+        let mut w = all_exec(2);
+        w.approve_gate(None, occurred()).unwrap();
+        assert_eq!(w.status(), Status::Completed);
+
+        assert_eq!(w.park(occurred()), Err(CommandError::NotRunning));
+    }
+
+    #[test]
+    fn the_autonomy_refusal_wins_over_a_completed_workflow() {
+        // upstream 順序 1 (autonomy) は順序 2 (Completed) より先に判定される。
+        let mut w = all_exec(2);
+        w.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
+        w.approve_gate(None, occurred()).unwrap();
+        assert_eq!(w.status(), Status::Completed);
+
+        assert_eq!(w.park(occurred()), Err(CommandError::RefusedUnderAutonomy));
+    }
+
+    #[test]
+    fn every_command_but_park_and_unpark_is_refused_while_parked() {
         let mut w = all_exec(4);
         w.park(occurred()).unwrap();
         let target = at(&w, 2);
@@ -2291,7 +2359,6 @@ mod tests {
             Err(CommandError::NotRunning)
         );
         assert_eq!(w.jump(target, occurred()), Err(CommandError::NotRunning));
-        assert_eq!(w.park(occurred()), Err(CommandError::NotRunning));
         assert_eq!(
             w.recompose(&[target], occurred()),
             Err(CommandError::NotRunning)

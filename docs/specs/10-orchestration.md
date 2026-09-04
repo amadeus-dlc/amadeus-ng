@@ -240,6 +240,8 @@ upstream の engine は変異を sibling CLI への subprocess spawn で合成�
 
 **M12 の裁定（2026-08-22 オーナー決定）**: upstream 既知バグ M12（birth が `Construction Autonomy Mode` 行を書かず、`setFieldStrict` を使う set-autonomy が新規 state ファイルで必ず `State update failed: Field not found …` で失敗する — upstream 03 の文書化済み discrepancy）は**修正する**。birth で行を書く（または挿入つき書込で修復する）。これは仕様レベルの逸脱（分類: バグ修正）として逸脱台帳 #2 に記録し、ゴールデン互換テストはこの 1 点のみ期待値を分岐させる。
 
+**park の実装ノート（2026-09-04、#74 / b45）**: upstream `aidlc-state.ts handlePark`（`3c3146cf`）の受理は「autonomous → Completed → `Current Stage` 不在」の順で拒否し、それ以外は**park 済みでも成功**させる（`Parked` の時刻を上書き・`Parked At Stage` を書き直し・`WORKFLOW_PARKED` を再 emit する**再スタンプ**）。Rust 実装はこれを集約 `IntentExecution::park` の park 専用受理述語（autonomy → `Status` の順、`parked_active()` は見ない）と `ParkUseCase`（find → park → store、CQS で戻り値なし）で持ち、失敗は upstream と同じ層 — stdout の `error` directive `Cannot park the workflow: <detail>`、exit 0 — で中継する（逐語 1: `Refusing to park: Construction Autonomy Mode is autonomous. An unattended autonomous run has no human to resume it and must keep moving - do not park it.`、逐語 2: `Workflow is already Completed - nothing to park.`）。成功時の `parked` directive の `stage` は、upstream が mutation 後に状態ファイルを読み直すのと同じく、RMU が投影した `read_execution.parked_at_slug` をクエリ側（`FindExecutionUseCase`）で読んで描く。**upstream の 3 形目 `State file has no Current Stage - cannot park.` は Always Valid の帰結として構造的に発生不能**（カーソルは不変条件 `cursor_in_scope` により常に計画上の位置を指す） — M12 と同型の upstream 側限定経路であり、逸脱ではないので逸脱台帳には載せない。Quint `engine_loop.qnt` の `actPark` も同じ意味論（`WorkflowParked` からの再 park を許容）へ改訂し、到達性 witness `w_repark` と mutation 検査、ITF フィクスチャ再採取（`trace-0x303`）を b45 で実施した。`accepts_commands()`（BR1.0）は他コマンド共有のため不変。
+
 ## 11. 未決事項
 
 - engine のターンコンテキスト解決（並行セッション時）— ADR 0004 の宿題。ここで確定する。

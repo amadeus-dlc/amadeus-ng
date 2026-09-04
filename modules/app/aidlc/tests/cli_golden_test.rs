@@ -1,6 +1,6 @@
 //! CLI ゴールデン — 採取済みの `next` / `continue` の実行出力と突き合わせる。
 //!
-//! 入力は `tests/golden/upstream-3c3146cf/cli/{next,continue}/` — ピン留めコミット
+//! 入力は `tests/golden/upstream-3c3146cf/cli/{next,continue,park}/` — ピン留めコミット
 //! `3c3146cf` (v2.6.40) の配布シェルを bun で実行して採った stdout である
 //! (`scripts/goldens/recapture-cli.sh`)。ゴールデンの更新は**upstream ピン更新の intent で
 //! のみ**行う (BR2.5) ので、ここは読むだけである。
@@ -12,6 +12,7 @@
 //! | `continue/invalid-token` | **stdout をバイト一致**で固定 | 逐語文言だけの directive で、フィクスチャにも配置にも依らない |
 //! | `next/start` (`load-steering`) | **キー集合**を固定 | 中身 (`rules_content` / `bundle`) は採取時のワークスペースの memory 層に依存する |
 //! | `continue/load-steering` (終端 `run-stage`) | **キー集合**を固定 | 同上 (パスは配置に依存する) |
+//! | `park/park` | `kind` / `reason` / `stage` を**バイト一致**、残りはキー集合 | 採取時のカーソルと合成グラフのカーソルがどちらも `domain-design` なので値まで比べられる |
 //!
 //! # 駆動できないケース (黙って飛ばさない)
 //!
@@ -28,7 +29,8 @@
 //!
 //! upstream の `run-stage` は `conductor_persona` と `narration` を載せるが、こちらは
 //! どちらも載せない (b44 以前からの欠落 — `RunStageDirective` は `narration` の欄を持つが
-//! 設定する経路が無く、`conductor_persona` は欄すら無い)。**差を明示的に固定**しておく
+//! 設定する経路が無く、`conductor_persona` は欄すら無い)。`parked` も同じく `narration` を
+//! 載せない (`Directive::Parked` に欄が無い — b45 の対象外)。**差を明示的に固定**しておく
 //! ことで、別のキーが黙って落ちたらここが赤くなる。
 #![allow(clippy::expect_used, clippy::panic)]
 
@@ -52,6 +54,17 @@ fn recorded(case: &str) -> String {
         .unwrap_or_else(|error| panic!("ゴールデン {} が読めない: {error}", path.display()))
         .trim_end_matches('\n')
         .to_string()
+}
+
+/// 名指しキーの文字列値。
+fn string_of(line: &str, key: &str) -> String {
+    match parse(line).expect("ゴールデンは JSON") {
+        JsonValue::Object(members) => match members.get(key) {
+            Some(JsonValue::String(text)) => text.clone(),
+            other => panic!("{key} は文字列であるべき: {other:?}"),
+        },
+        other => panic!("オブジェクトであるべき: {other:?}"),
+    }
 }
 
 /// オブジェクトのキー集合 (順序は upstream の挿入順であって契約ではない — §キー順)。
@@ -250,5 +263,42 @@ async fn the_terminal_run_stage_keys_match_the_recorded_case_except_the_known_ga
             &"reviewer_max_iterations".to_string(),
         ],
         "採取済みケースに無いキーは、レビュア宣言に応じた任意の 3 つだけである"
+    );
+}
+
+/// `parked` directive — 値 3 つはバイト一致、欠落は既知の `narration` だけ。
+///
+/// 採取済みの `cli/park/park` は 33 ノードのグラフの `domain-design` で止まっている。こちらの
+/// 合成グラフでも誕生のカーソルは `domain-design`（最初のゲート付き in-scope ステージ）なので、
+/// `kind` / `reason` / `stage` の 3 値は 1 バイトも違わないところまで突き合わせられる。
+#[tokio::test]
+async fn the_parked_directive_matches_the_recorded_case_except_the_known_gap() {
+    let workspace = Workspace::create();
+    workspace.mint().await;
+
+    let completion = workspace.invoke("aidlc-orchestrate", &["park"]).await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let emitted = line(&completion);
+    let expected = recorded("park/park");
+    for key in ["kind", "reason", "stage"] {
+        assert_eq!(
+            string_of(&emitted, key),
+            string_of(&expected, key),
+            "{key} は採取済みケースとバイト一致する"
+        );
+    }
+    let missing: Vec<String> = keys(&expected)
+        .difference(&keys(&emitted))
+        .cloned()
+        .collect();
+    assert_eq!(
+        missing,
+        vec!["narration".to_string()],
+        "採取済みケースが載せるキーのうち、こちらが載せないのは既知の 1 つだけである"
+    );
+    assert!(
+        keys(&emitted).difference(&keys(&expected)).next().is_none(),
+        "採取済みケースに無いキーは足さない"
     );
 }

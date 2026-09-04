@@ -3,6 +3,10 @@
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.3 (2026-09-04): actPark のガードを `Running or WorkflowParked` へ緩和 (#74 / b45) —
+//   upstream handlePark は park 済みでも成功し Parked / Parked At Stage を書き直して
+//   WORKFLOW_PARKED を再 emit する (**再スタンプ**)。到達性 witness w_repark と
+//   不変条件 parked_marker_status を追加。
 // v2.2 (2026-09-01): 誕生 = 初期化完了済み (issue #76 / オーナー裁定) — init が stage 0 を
 //   CompletedBox で生み、カーソルは最初の in-scope 実ステージに立つ。書き面 (集約) と
 //   読み面 (RMU 誕生投影) の「いまどこ」を一致させ、誕生直後の report が initialization を
@@ -49,11 +53,19 @@
 // 検査力の確認 (mutation テスト、v2 で実施):
 //   - recompose 前方ガード除去 → cursor_in_scope が検出
 //   - actStaleReport への状態コミット注入 → stale_rereport_frame が検出
+// 検査力の確認 (mutation テスト、v2.3 = b45 の再スタンプ緩和で実施):
+//   - actPark の parkedAt' を -1 に変異 (マーカー脱落) → parked_position と
+//     unpark_restores_position が検出
+//   - actPark の status' を Running に変異 → parked_marker_status が検出。この変異は
+//     WorkflowParked を到達不能にするため parked_position / unpark_restores_position が
+//     空虚に成立してしまい、b45 以前の Running 限定ガードでも検出できない既存の穴だった。
+//     b45 で parked_marker_status を追加して塞いだ (統合判断 2026-09-04 — Fable 5 メインセッションの裁定、PR #7 キュー 4 の受入時にオーナー確認)。
 //
 // E4 トレーサビリティ (10-orchestration.md §6 から参照される定義名):
 //   engine_loop::no_run_stage_for_skip / cursor_in_scope / no_gate_bypass /
-//   gate_lifecycle_preconditions / parked_position / unpark_restores_position /
-//   stale_rereport_yields_done / stale_rereport_frame / at_most_one_active
+//   gate_lifecycle_preconditions / parked_position / parked_marker_status /
+//   unpark_restores_position / stale_rereport_yields_done / stale_rereport_frame /
+//   at_most_one_active
 
 module engine_loop {
   pure val N = 5
@@ -314,9 +326,14 @@ module engine_loop {
     lastAction' = "jump_redo",
   }
 
-  // park: autonomous 中は拒否 (unattended run has no human to resume it)
+  // park: autonomous 中は拒否 (unattended run has no human to resume it)。
+  // park 済みからの再 park も受理する — upstream の handlePark は park 済みを成功させ、
+  // Parked 時刻を上書き・Parked At Stage を書き直し・WORKFLOW_PARKED を再 emit する
+  // (**再スタンプ**。.claude/tools/aidlc-state.ts:1685-1760)。park 中はカーソルを動かす
+  // アクションがすべて status == Running を要求するので、再 park の parkedAt' = cursor は
+  // 常に同じ位置への再書き込みであり parked_position を保つ。
   action actPark = all {
-    status == Running,
+    or { status == Running, status == WorkflowParked },
     not(autonomous),
     status' = WorkflowParked,
     parkedAt' = cursor,
@@ -423,6 +440,13 @@ module engine_loop {
   // park 中は位置が固定されている
   val parked_position = (status == WorkflowParked) implies (parkedAt == cursor)
 
+  // マーカーが立っているなら status は WorkflowParked である (ヘッダの簡約規約
+  // 「3 値 status は『マーカー有 ∧ 位置一致』の合成状態のみを表す」をそのまま不変条件に
+  // したもの)。parked_position / unpark_restores_position は status == WorkflowParked を
+  // 前件に持つため、park が status を動かさない変異では空虚に成立してしまう。本条件は
+  // マーカー側を前件に置くので、その穴を塞ぐ (b45 / #74 — mutation テストで確認済み)。
+  val parked_marker_status = (parkedAt != -1) implies (status == WorkflowParked)
+
   // resume (unpark) 時、カーソルは park 時の位置のまま
   val unpark_restores_position = (lastAction == "unpark") implies (cursor == prevParkedAt)
 
@@ -448,4 +472,9 @@ module engine_loop {
     checkbox.get(s) == AwaitingApproval,
     checkbox.get(s) == Revising,
   }).size() <= 1
+
+  // === 到達性 witness (負形式で検査 — ADR 0003 決定 7) ===
+
+  // 再スタンプ経路が実在する: park 済み (prevParkedAt != -1) の状態から park を打てる
+  val w_repark = (lastAction == "park") and (prevParkedAt != -1)
 }
