@@ -182,3 +182,18 @@ CONDITIONAL でも実効 SKIP でもない → `SkipNotConditional`；reason 空
 - **`STAGE_COMPLETED` の `Final stage <Name> completed` 行**は report からは到達しない（承認経路は `approve` が既に書き、読み飛ばし
   経路は `STAGE_SKIPPED` のみ）。`complete-workflow` を直に叩く経路がこの build に無いため。
 - **`.coderabbit.yaml` のパースエラー**（PR #101 で CodeRabbit が警告。b46 対象外、設定の整備は別途）。
+
+### 設計との差分（実装レビューで受け入れたもの）
+
+1. `StateVersionClassification` の一致判定を**綴りの一致**へ是正（ピン `v === CURRENT_STATE_VERSION`。数値比較だと `008` が `ok` になり、upstream が `past` として拒む状態を通す）。`version()` が生トークンを運ぶため `Copy` を落とした。
+2. `ReportDecision::Commit` は `StageIndex` ではなく `StageSlug` を運ぶ（呼出側が要るのは逐語の材料。`Commit` に至る経路では対象は必ずカーソル）。
+3. `ReportRefusal` は 13 変種 — 設計の 12 に `RoutedVerdict`（`resume` が集約まで届いた場合。通常は段 4 で分岐するので到達しない）を足して判断を全域にした。
+4. `advance` / `complete-workflow` は初期化のみの縮退計画で到達しうるため、`CommitError::UnwiredTransition` として名指し、逐語 `Transition rejected by aidlc-state.ts <sub> for "<slug>": ... not wired in this build` を 1 つ創作した（upstream に対応する逐語は無い）。
+5. `StateFileDao` の動詞は `find`（設計の `read` は gateway-taxonomy の DAO 動詞に反する）。
+6. ポート失敗（再構成・計画取得）の中継は upstream に対応する逐語が無いので `Transition rejected: <chained>` の中継形。
+7. 段 13 の env carve-out（`AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1`）はプロセス内で `set_var` できない（unsafe 禁止）ため app 結合では踏めず、集約側 `the_human_presence_guard_has_two_carve_outs` で固定した。
+8. `catch_up_before_reading` をガード群の前に置いた（段 1 と段 4 が古い読み面で判断しないため）。
+9. `Last Updated` は完了投影でしか書かない（他の遷移の `Last Updated` は従来どおり未投影 — 別の所見）。
+10. `[S]` / 実効 SKIP の skip 腕は集約の不変条件（`StageSkipped` の適用が直ちにカーソルを送る）により到達不能 — 受理集合には残す。
+11. `CommitOutcome::NoOp` は `stage` を `no_op` と二重に持つ（設計リテラルどおり — 文言の材料の取り出しを一様にするため）。
+12. 完了投影が足す監査行は **3 本**（`PHASE_COMPLETED` → `PHASE_VERIFIED` → `WORKFLOW_COMPLETED`）。設計 §6 の「4 行」は直前イベントの `STAGE_COMPLETED`（approve が書く）を含めた数え方で、完了側は再 emit しない（upstream `:2498`）。

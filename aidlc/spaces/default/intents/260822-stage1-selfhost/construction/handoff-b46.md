@@ -39,6 +39,9 @@
   `Committed ... + ...`）。各レイヤーで赤を先に確認（domain: `ReportRequest` 未存在でコンパイルエラー / use-case: 新 API で先に
   書き替え / RMU: `Field not found: "Status"` で赤 / app: 旧逐語の 8 本が赤）。
 
+- **設計との差分 12 点**（`design.md` §9「設計との差分」）: 綴り一致の state-version、`ReportDecision` が slug、拒否 13 形、`UnwiredTransition` の創作逐語、`StateFileDao::find`、ポート失敗の中継形、env 抜け道は集約側で固定、`catch_up` をガード前に、`Last Updated` は完了時のみ、`[S]` skip 腕は到達不能、`NoOp` の二重 stage、完了投影の監査 3 行。
+- **ゴールデン**: 5 ケースは slug 1 語の置換でバイト一致（`the_report_directives_match_the_recorded_cases_after_the_slug_substitution`）。`completed-ungated` は構成不能、`approved-across-phases` は合成グラフに対応位置が無く `approved` と同型のためそちらが覆う。
+
 ## 積み残し（記録のみ、起票しない）
 - **b47**: `--single`（`SingleStageRun` — synthetic-id pair、遷移ポート非注入 = I10）と `--skeleton-stance`（新コマンド・イベント・skeleton-gate アンカー）。b46 は構文検証と逐語だけを持ち、本体は「not wired in this build」で止めている。
 - **b48（裁定済み）**: B10 のレシート鮮度（#51 = A）と段 12 の practices-discovery 受領証。オーナー裁定 2026-09-04（b46 中に質問）: **(A) 受領証は集約 `IntentExecution` のイベント**として取り込む（`record_review_receipt` → `ReviewReceiptRecorded`、監査行は RMU が投影、鮮度の判断は集約のクエリに閉じる）、**(i) 鮮度は順序だけ**（受領証が直近の開始・差し戻しより後。成果物ハッシュの照合は凍結検査として後続 intent）。受領証を書く動詞（`aidlc-audit append` 相当）の配線もこの Bolt に含める。
