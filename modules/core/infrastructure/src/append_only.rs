@@ -126,6 +126,24 @@ mod tests {
         assert!(open_append_only(&path).is_err());
     }
 
+    /// 書けない fd への追記は握り潰さず、そのまま I/O エラーとして上げる。
+    #[test]
+    fn append_all_surfaces_a_write_error_from_the_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("shard.md");
+        std::fs::write(&path, b"seed").unwrap();
+        // 読取専用に開いた fd への write は EBADF になる (0 バイト進捗ではない)。
+        let mut read_only = File::open(&path).unwrap();
+
+        let refused = append_all(&mut read_only, b"more").expect_err("書けない");
+
+        assert_ne!(
+            refused.kind(),
+            io::ErrorKind::WriteZero,
+            "進捗 0 ではなく書込そのものの失敗である: {refused}"
+        );
+    }
+
     #[test]
     fn append_all_writes_every_byte() {
         let dir = tempdir().unwrap();

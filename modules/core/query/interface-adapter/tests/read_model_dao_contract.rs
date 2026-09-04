@@ -607,9 +607,25 @@ fn contract_scope<D: ScopeDao>(dao: &D) {
         "既製 3 scope は upstream の定数の順で並ぶ"
     );
 
+    let catalog: Vec<String> = dao
+        .find_all(DEFINITION)
+        .unwrap()
+        .iter()
+        .map(|view| view.scope().to_string())
+        .collect();
+    assert_eq!(
+        catalog,
+        ["classic", "express", "feature"],
+        "カタログ全列は綴り順に並ぶ (拒否文言が並べる順そのもの)"
+    );
+
     assert_eq!(dao.find(DEFINITION, "nonsense").unwrap(), None);
     assert_eq!(dao.find(ABSENT_DEFINITION, "classic").unwrap(), None);
     assert!(dao.find_stock(ABSENT_DEFINITION).unwrap().is_empty());
+    assert!(
+        dao.find_all(ABSENT_DEFINITION).unwrap().is_empty(),
+        "取り込まれていない定義にはカタログが無い"
+    );
 }
 
 /// キーワードから scope 名 (1 列しか無いので View 型を立てない)。
@@ -755,6 +771,29 @@ fn the_definition_contract_holds_on_the_double() {
 // 読めない媒体 (契約の外 — 失敗の起点は実装で違う)
 // ---------------------------------------------------------------------------
 
+/// SQLite の接続は開くだけでは中身を読まない。開けたのに引けない媒体は、行の不在ではなく
+/// **読取失敗**として上がる (1 行を引く口も、0 行以上を引く口も同じ)。
+#[test]
+fn a_store_that_opens_but_is_not_a_database_is_a_read_failure_on_every_lookup() {
+    let dir = tempfile::tempdir().unwrap();
+    let garbage = dir.path().join("garbage.sqlite3");
+    std::fs::write(&garbage, b"not a sqlite database at all").unwrap();
+    let daos = ReadModelDaos::open(&garbage).expect("開くだけなら通る");
+
+    let one = daos
+        .definition()
+        .find(DEFINITION)
+        .expect_err("1 行を引く口も潰える");
+    assert_eq!(one.path(), Some(garbage.as_path()));
+
+    let many = daos
+        .scope()
+        .find_all(DEFINITION)
+        .expect_err("0 行以上を引く口も潰える");
+    assert_eq!(many.path(), Some(garbage.as_path()));
+    assert_eq!(many.kind(), one.kind(), "分類は媒体側の 1 本に収束する");
+}
+
 #[test]
 fn a_store_that_is_not_there_is_a_read_failure_not_an_absent_row() {
     let dir = tempfile::tempdir().unwrap();
@@ -801,6 +840,7 @@ fn a_failing_double_reports_the_read_failure_from_every_verb() {
     );
     let scope = InMemoryScopeDao::failing(error.clone());
     assert_eq!(scope.find(DEFINITION, "classic"), Err(error.clone()));
+    assert_eq!(scope.find_all(DEFINITION), Err(error.clone()));
     assert_eq!(
         scope.find_stock(DEFINITION),
         Err(error.clone()),
@@ -835,6 +875,10 @@ fn an_empty_double_answers_absent_rather_than_failing() {
     );
     assert_eq!(
         InMemoryScopeDao::empty().find_stock(DEFINITION).unwrap(),
+        Vec::new()
+    );
+    assert_eq!(
+        InMemoryScopeDao::empty().find_all(DEFINITION).unwrap(),
         Vec::new()
     );
 }

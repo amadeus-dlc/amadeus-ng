@@ -514,4 +514,162 @@ mod tests {
                 .ends_with("Fix the directory permissions, then run a fresh `next`.")
         );
     }
+
+    /// park の文言はステージ名を名乗り、再開の綴りを添える。
+    #[test]
+    fn the_parked_wording_names_the_stage_and_the_resume_spelling() {
+        assert_eq!(
+            parked("domain-design"),
+            "Workflow parked at \"domain-design\". Resume with /aidlc --resume."
+        );
+    }
+
+    /// park 中の `--resume` は「先に park を外せ」と綴りごと言う。
+    #[test]
+    fn the_unpark_wording_names_the_command_before_the_retry() {
+        assert_eq!(
+            unpark_then_resume("aidlc-orchestrate unpark"),
+            "This workflow is parked. Run `aidlc-orchestrate unpark` to clear the park marker, \
+then re-run `next --resume` to continue."
+        );
+    }
+
+    /// 未知 scope の拒否は有効 scope を綴り順のまま並べる。
+    #[test]
+    fn the_unknown_scope_wording_lists_the_valid_scopes_in_the_given_order() {
+        assert_eq!(
+            unknown_scope("nope", &["classic".to_string(), "express".to_string()]),
+            "Unknown scope \"nope\". Valid scopes: classic, express."
+        );
+    }
+
+    /// 環境変数の既定 scope が未知なら、変数名まで名乗って拒否する。
+    #[test]
+    fn the_invalid_env_scope_wording_names_the_environment_variable() {
+        assert_eq!(
+            invalid_env_scope("nope", &["classic".to_string()]),
+            "Invalid AWS_AIDLC_DEFAULT_SCOPE \"nope\". Valid scopes: classic."
+        );
+    }
+
+    /// per-unit が 0 のときコスト節に反復の節は付かない。
+    #[test]
+    fn the_cost_clause_omits_the_per_unit_phrase_when_no_stage_repeats() {
+        assert_eq!(cost_clause(12, 9, 4, 0), "9 of 12 stages, 4 approval gates");
+    }
+
+    /// 反復が 1 段なら単数形、2 段以上なら複数形になる。
+    #[test]
+    fn the_cost_clause_switches_between_the_singular_and_plural_per_unit_phrase() {
+        assert_eq!(
+            cost_clause(12, 9, 4, 1),
+            "9 of 12 stages, 4 approval gates, 1 stage repeats per unit of work in Construction"
+        );
+        assert_eq!(
+            cost_clause(12, 9, 4, 3),
+            "9 of 12 stages, 4 approval gates, 3 stages repeat per unit of work in Construction"
+        );
+    }
+
+    /// フェーズに in-scope のステージが無いときは、そのフェーズ名を名乗る。
+    #[test]
+    fn the_empty_phase_wording_names_the_phase() {
+        assert_eq!(
+            no_stage_in_phase("operation"),
+            "No in-scope stage found for phase \"operation\"."
+        );
+    }
+
+    /// scope 確認はコスト節を ` - ` で継ぐ（誕生 print の括弧ではない）。
+    #[test]
+    fn the_scope_confirm_wording_appends_the_cost_clause_with_a_dash() {
+        assert_eq!(
+            scope_confirm(
+                "bugfix",
+                "fix the login crash",
+                " - 4 of 9 stages, 1 approval gates"
+            ),
+            "This looks like \"bugfix\" work, so I'd run the \"bugfix\" plan for: \
+\"fix the login crash\" - 4 of 9 stages, 1 approval gates. \
+Say go ahead, name a different plan, or say \"compose\" and I'll tailor one to this task."
+        );
+    }
+
+    /// compose 提案は本文と既製 scope の例を並べる。
+    #[test]
+    fn the_compose_offer_wording_carries_the_text_and_the_stock_examples() {
+        assert_eq!(
+            compose_offer("do something odd", "\"express\", \"classic\""),
+            "None of the ready-made plans is an obvious fit for: \"do something odd\". \
+I can work out a plan tailored to this task (recommended: reply \"compose\"), \
+or you can pick one directly (e.g. \"express\", \"classic\"; see /aidlc --help for the full list)."
+        );
+    }
+
+    /// 読み取り専用ユーティリティは「ワークフローではない」と明示する。
+    #[test]
+    fn the_read_only_wording_forbids_advancing_the_workflow() {
+        assert_eq!(
+            read_only("aidlc-utility status"),
+            "Run `aidlc-utility status`, print its output verbatim, then stop. \
+This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
+        );
+    }
+
+    /// 終端ユーティリティは読み取り専用と 1 語だけ違う（`terminal`）。
+    #[test]
+    fn the_terminal_utility_wording_differs_from_the_read_only_one_by_a_single_word() {
+        let terminal = terminal_utility("aidlc-utility intent list");
+        assert!(
+            terminal.contains("This is a terminal utility, NOT workflow work"),
+            "{terminal}"
+        );
+        assert_eq!(
+            terminal.replace("a terminal utility", "a read-only utility"),
+            read_only("aidlc-utility intent list")
+        );
+    }
+
+    /// 回復可能な SKIP 不整合は、走らせるなと言い回復の綴りを名乗る。
+    #[test]
+    fn the_recover_skip_wording_names_the_stage_and_the_recovery_command() {
+        assert_eq!(
+            recover_skip(
+                "contract-design",
+                "aidlc-orchestrate report --result skipped"
+            ),
+            "Stage \"contract-design\" is SKIP in the approved workflow plan but is still the active cursor. \
+Do not run this stage. Run `aidlc-orchestrate report --result skipped` to recover the stale pointer, \
+then re-run `next` to continue."
+        );
+    }
+
+    /// 回復経路の無い SKIP 不整合は、カーソルの綴りをそのまま埋めて拒否する。
+    #[test]
+    fn the_inconsistent_skip_wording_quotes_the_checkbox_spelling() {
+        assert_eq!(
+            inconsistent_skip("contract-design", "in-progress"),
+            "Stage \"contract-design\" is SKIP in the approved workflow plan but its active cursor state is \"in-progress\". Refusing to emit run-stage; repair the inconsistent state before continuing."
+        );
+    }
+
+    /// stage-graph が読めないときは、所在と原因の両方を材料として置く。
+    #[test]
+    fn the_stage_graph_wording_carries_both_the_path_and_the_cause() {
+        assert_eq!(
+            stage_graph_not_readable("/w/.claude/tools/data/stage-graph.json", "not projected"),
+            "Stage graph not readable at /w/.claude/tools/data/stage-graph.json: not projected. \
+Reinstall the framework or re-run setup to restore the data file."
+        );
+    }
+
+    /// リードモデルが引けないときも材料（所在と分類）だけを運ぶ。
+    #[test]
+    fn the_read_model_wording_carries_both_the_path_and_the_cause() {
+        assert_eq!(
+            read_model_unreadable("/w/aidlc/spaces/default/read-model.sqlite3", "unreadable"),
+            "Read model not readable at /w/aidlc/spaces/default/read-model.sqlite3: unreadable. \
+Start a workflow (intent-create) to build it, then run `next` again."
+        );
+    }
 }

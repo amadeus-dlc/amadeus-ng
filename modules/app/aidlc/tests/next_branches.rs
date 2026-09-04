@@ -532,3 +532,385 @@ async fn a_finished_plan_stops_with_the_completion_reason() {
         "新規作業の出口案内が付く: {reason}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// state なしの群 — まだ何も鋳造していないワークスペース
+// ---------------------------------------------------------------------------
+
+/// 何も名指されていない素の `next` は、始め方を 2 通り案内して止まる。
+#[tokio::test]
+async fn a_bare_next_on_a_fresh_workspace_reports_that_there_is_no_state() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&[]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        "No workflow state found (no active intent). Start one by describing what to build \
+(/aidlc \"build the auth service\") or by naming a scope (/aidlc --scope <scope>)."
+    );
+}
+
+/// 明示 `--scope` は、その scope で鋳造する命令をコスト節つきで名指す。
+#[tokio::test]
+async fn an_explicit_scope_on_a_fresh_workspace_names_the_mint_command() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["--scope", "express"]).await;
+
+    assert_eq!(kind(&directive), "print");
+    let message = field(&directive, "message");
+    assert!(
+        message.contains("intent-create --scope express"),
+        "{message}"
+    );
+    assert!(
+        message.contains("then re-run `next` to continue."),
+        "同じセッションで続けてよい: {message}"
+    );
+}
+
+/// 位置引数が scope 名そのものなら、自由記述ではなくその scope の鋳造になる。
+#[tokio::test]
+async fn a_positional_scope_name_on_a_fresh_workspace_names_the_mint_command() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["express"]).await;
+
+    assert_eq!(kind(&directive), "print");
+    assert!(
+        field(&directive, "message").contains("intent-create --scope express"),
+        "{directive:?}"
+    );
+}
+
+/// キーワードが当たれば、その scope でよいかをコスト節つきで確認する。
+#[tokio::test]
+async fn a_keyword_on_a_fresh_workspace_asks_to_confirm_the_inferred_scope() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["classic-work"]).await;
+
+    assert_eq!(kind(&directive), "ask");
+    let question = field(&directive, "question");
+    assert!(
+        question.starts_with("This looks like \"classic\" work"),
+        "{question}"
+    );
+    assert!(question.contains("stages,"), "コスト節が付く: {question}");
+}
+
+/// どの既製 scope も当たらなければ compose を提案し、既製の綴りを例に挙げる。
+#[tokio::test]
+async fn free_text_that_matches_no_scope_offers_compose() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["frobnicate"]).await;
+
+    assert_eq!(kind(&directive), "ask");
+    let question = field(&directive, "question");
+    assert!(
+        question.starts_with("None of the ready-made plans is an obvious fit for: \"frobnicate\"."),
+        "{question}"
+    );
+    assert!(
+        question.contains("\"classic\""),
+        "既製の綴りを挙げる: {question}"
+    );
+}
+
+/// state が無い `--stage` は定義側の行を引くが、記録が無いので組み立てられない。
+#[tokio::test]
+async fn a_stateless_stage_jump_cannot_assemble_a_run_stage_without_a_record() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["--stage", "contract-design"]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        "No workspace record was resolved for run-stage assembly."
+    );
+}
+
+/// state が無くても initialization フェーズへは跳べない。
+#[tokio::test]
+async fn a_stateless_jump_into_initialization_is_refused() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["--stage", "state-init"]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert!(
+        field(&directive, "message").starts_with("Cannot jump to initialization stages."),
+        "{directive:?}"
+    );
+}
+
+/// state が無い `--phase` は、そのフェーズの入口を定義から引く。
+#[tokio::test]
+async fn a_stateless_phase_jump_resolves_the_entry_stage_of_that_phase() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["--phase", "inception"]).await;
+
+    assert_eq!(
+        kind(&directive),
+        "error",
+        "入口は引けるが記録が無いので組み立てられない: {directive:?}"
+    );
+    assert_eq!(
+        field(&directive, "message"),
+        "No workspace record was resolved for run-stage assembly."
+    );
+}
+
+/// in-scope のステージが 1 つも無いフェーズは、そのフェーズ名で拒む。
+#[tokio::test]
+async fn a_stateless_phase_jump_into_an_empty_phase_is_refused() {
+    let workspace = Workspace::create();
+
+    let directive = workspace.next(&["--phase", "operation"]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        "No in-scope stage found for phase \"operation\"."
+    );
+}
+
+/// state が無い `--single` も、記録が無ければ組み立てられない。
+#[tokio::test]
+async fn a_stateless_single_cannot_assemble_a_run_stage_without_a_record() {
+    let workspace = Workspace::create();
+
+    let directive = workspace
+        .next(&["--single", "--stage", "contract-design"])
+        .await;
+
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        "No workspace record was resolved for run-stage assembly."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `continue` — 連鎖の続きは token が運ぶ鍵だけで決まる
+// ---------------------------------------------------------------------------
+
+impl Workspace {
+    /// `continue` を 1 回打って出た directive を JSON で返す。
+    async fn resume(&self, token: &str) -> JsonValue {
+        let completion = self.invoke("aidlc-orchestrate", &["continue", token]).await;
+        assert_eq!(
+            completion.code(),
+            0,
+            "ビジネス経路は exit 0: {completion:?}"
+        );
+        parse(
+            completion
+                .line()
+                .unwrap_or_else(|| panic!("stdout に directive が要る: {completion:?}")),
+        )
+        .expect("directive は JSON")
+    }
+}
+
+/// 連鎖の第 1 部が渡す token で `continue` を打つと、台帳を添えた終端 run-stage になる。
+#[tokio::test]
+async fn a_continue_with_the_delivered_token_closes_the_chain() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    let first = workspace.next(&[]).await;
+    assert_eq!(kind(&first), "load-steering");
+    let token = field(&first, "continue_token");
+
+    let directive = workspace.resume(&token).await;
+
+    assert_eq!(kind(&directive), "run-stage");
+    assert_eq!(field(&directive, "stage"), "domain-design");
+}
+
+/// 開封できない token は原因を区別せず fail-closed の逐語になる。
+#[tokio::test]
+async fn a_continue_with_an_unopenable_token_fails_closed() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+
+    let directive = workspace.resume("not-a-token").await;
+
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        "Invalid steering continuation token: this stage's rules cannot be loaded from where \
+they left off. Run a fresh `next` to restart delivery from part 1."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 引けない媒体・壊れた投影 — 実 CLI からは作れない状態を、ストアを直接いじって作る
+//
+// `park` は本ビルドで未配線であり、リードモデルは RMU が書いた正しいものしか存在しない。
+// ここだけはストアの行を直接置き、コントローラが「行が無い」と「引けない」を混ぜないこと、
+// および park の答えを描けることを固定する。
+// ---------------------------------------------------------------------------
+
+impl Workspace {
+    fn store_path(&self) -> PathBuf {
+        self.path("aidlc/spaces/default/intents/.aidlc-store.sqlite")
+    }
+
+    /// ストアの中身を SQLite でないバイト列に置き換える (開けるが引けない状態)。
+    fn break_store(&self) {
+        fs::write(self.store_path(), b"not a sqlite database at all").expect("ストア");
+    }
+
+    /// ストアの置き場をディレクトリで塞ぐ (開くことすらできない状態)。
+    fn block_store(&self) {
+        fs::remove_file(self.store_path()).expect("ストア");
+        fs::create_dir(self.store_path()).expect("塞ぐ");
+    }
+
+    fn rewrite_decision_kind(&self, request_kind: &str, decision_kind: &str) {
+        let connection = rusqlite::Connection::open(self.store_path()).expect("ストア");
+        let changed = connection
+            .execute(
+                "UPDATE read_next_answer SET decision_kind = ?1 WHERE request_kind = ?2",
+                rusqlite::params![decision_kind, request_kind],
+            )
+            .expect("答えの綴りを差し替える");
+        assert_eq!(changed, 1, "その要求の形の行はちょうど 1 つある");
+    }
+}
+
+/// 空間名として成立しない active-space は、既定へ落とさず直し方を名指す。
+#[tokio::test]
+async fn an_invalid_active_space_names_the_cursor_file_to_fix() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    // record は解決できるが空間名が通らない状態にする（定義の下準備ではなく、引当の口を
+    // 開く段で止まることを見るため）。
+    let escaped = workspace.path("aidlc/escape/intents");
+    fs::create_dir_all(&escaped).expect("escaped intents");
+    fs::write(escaped.join("active-intent"), "260904-demo-abcd1234\n").expect("カーソル");
+    fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("space カーソル");
+
+    let directive = workspace.next(&[]).await;
+
+    assert_eq!(kind(&directive), "error");
+    let message = field(&directive, "message");
+    assert!(
+        message.starts_with("The active space \"../escape\" is not a valid space name."),
+        "{message}"
+    );
+    assert!(message.contains("aidlc/active-space"), "{message}");
+}
+
+/// リードモデルを開けなければ、所在と分類を材料に「引けない」と答える。
+#[tokio::test]
+async fn a_store_that_cannot_be_opened_is_reported_with_its_path() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    workspace.block_store();
+
+    let directive = workspace.next(&[]).await;
+
+    assert_eq!(kind(&directive), "error");
+    let message = field(&directive, "message");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
+    );
+    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
+}
+
+/// 開けても引けなければ、不在ではなく読取失敗を答える。
+#[tokio::test]
+async fn a_store_that_opens_but_cannot_be_read_is_a_read_failure() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    workspace.break_store();
+
+    let directive = workspace.next(&[]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert!(
+        field(&directive, "message").starts_with("Read model not readable at "),
+        "{directive:?}"
+    );
+}
+
+/// 明示 `--scope` の検証も、scope カタログを引けなければそこで潰える。
+#[tokio::test]
+async fn an_unreadable_scope_catalog_stops_the_explicit_scope_check() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    workspace.break_store();
+
+    let directive = workspace.next(&["--scope", "express"]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert!(
+        field(&directive, "message").starts_with("Read model not readable at "),
+        "{directive:?}"
+    );
+}
+
+/// park している実行は、位置を名乗って止まる（`parked` directive はステージも運ぶ）。
+#[tokio::test]
+async fn a_parked_execution_stops_the_bare_next_at_its_stage() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    workspace.rewrite_decision_kind("bare", "parked");
+
+    let directive = workspace.next(&[]).await;
+
+    assert_eq!(kind(&directive), "parked");
+    assert_eq!(field(&directive, "stage"), "domain-design");
+    assert_eq!(
+        field(&directive, "reason"),
+        "Workflow parked at \"domain-design\". Resume with /aidlc --resume."
+    );
+}
+
+/// park 位置の綴りが slug として読めなければ、park ではなく未知ステージとして拒む。
+#[tokio::test]
+async fn a_parked_answer_with_an_unreadable_slug_is_refused() {
+    let workspace = Workspace::create();
+    workspace.mint("classic").await;
+    workspace.rewrite_decision_kind("bare", "parked");
+    let connection = rusqlite::Connection::open(workspace.store_path()).expect("ストア");
+    connection
+        .execute(
+            "UPDATE read_next_answer SET stage_slug = 'Not A Slug' WHERE request_kind = 'bare'",
+            [],
+        )
+        .expect("綴りを壊す");
+
+    let directive = workspace.next(&[]).await;
+
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        "Unknown stage \"Not A Slug\". Run /aidlc --help for the full list."
+    );
+}
+
+/// 定義の下準備は 2 回目以降なにも書かない — 走査済み位置に新しいイベントが無ければ
+/// チェックポイントをそのまま返す（冪等）。
+#[tokio::test]
+async fn the_first_next_prepares_the_definition_only_once() {
+    let workspace = Workspace::create();
+
+    let first = workspace.next(&[]).await;
+    let second = workspace.next(&[]).await;
+
+    assert_eq!(kind(&first), "error", "state はまだ無い");
+    assert_eq!(
+        field(&second, "message"),
+        field(&first, "message"),
+        "2 回目も同じ答えになる"
+    );
+}

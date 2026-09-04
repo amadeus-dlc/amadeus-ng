@@ -18,7 +18,7 @@ EventStoreForSqlite を使わないといけない」。配布物の取込は**�
 「取込ポート」「暫定の足場」という位置づけごと消滅 — §1 是正の再是正・§2 の行追加・
 §5 の取込行削除）
 **適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）、b30（`WorkflowDefinitionRepositoryImpl` の ES 化と `DefinitionArtifactsClient` の新設）
-**機械強制**: レビュー基準（未リント化）。将来 `cargo lint` ルール候補は下記「機械強制の候補」
+**機械強制**: `cargo lint`（`port-naming` — use-case 層の `pub trait` はコマンド側 `XxxRepository` / クエリ側 `XxxDao` 以外を所見。`command-side-io` — `modules/core/command/**` の `*_repository_impl.rs` 以外に fs / 乱数 / プロセス / ネットワークの I/O が現れたら所見。いずれも 2026-09-04、GitHub #47 を b44 に折り込み）。Repository 名と集約名の照合・技術接頭辞の検出はレビュー基準のまま（下記「機械強制の候補」2・3）
 
 ## ルール
 
@@ -132,6 +132,24 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 
 集約の永続化を担うのは `IntentExecutionRepository` であり、`EventStore` はその下請けである。
 **ユースケースが `EventStore` を直接注入されることはない**（するなら Repository の意味が消える）。
+
+### 1d. コマンド側で外界に触るのは Repository 実装だけ（2026-09-04 機械強制、#47）
+
+§1 の帰結として、**コマンド側 3 クレート（domain / use-case / interface-adapter）で
+fs / 乱数 / プロセス / ネットワークの I/O に触ってよいのは `*_repository_impl.rs`（Repository
+実装）だけ**である。オーナー示唆 2026-08-30（GitHub #47）「コマンド側でリポジトリ以外の I/O
+責務を作ろうとしたら警告する仕組みが要る」を `cargo lint`（`command-side-io`）として機械化した。
+
+- **検出するもの**: `std::fs` / `std::process` / `std::net` と外部クレート `getrandom` /
+  `rand` / `rand_core` への経路（`use` ツリーの平坦化と完全修飾パス）。
+- **検出しないもの（正当）**: `std::io::Error` 単独（エラー型の写像）、`uuid::Uuid::now_v7()`
+  （集約内採番はオーナー裁定 2026-09-02 で正当 — [aggregate-commands.md](aggregate-commands.md)）、
+  `std::time::SystemTime`（Clock はアダプタ層の機構であり Gateway ではない — §1 の「機構」）、
+  `/tests/` と `#[cfg(test)]` 配下、doc コメント中の言及。
+- **例外**は理由付きの `// amadeus-lint: allow(command-side-io) — 理由` で通す。理由の無い
+  裸の allow は抑制にならない。
+- **意味レベルの疑義**（trait の名前は Repository だが実体が I/O 機構である等）は機械判定
+  できないのでレビュー基準のまま（#47 §4 のセンサー補完は未着手）。
 
 ### 3. ポート造語（Store / Reader / Writer / Source / Provider）は禁止
 
@@ -275,9 +293,9 @@ Repository 実装が本家ストアへ渡す永続化モデル（DTO）は `<対
 
 ## 機械強制の候補
 
-いずれも未実装。優先順は 型（E1）→ 既存 lint → `cargo lint` カスタムルール（赤例テスト必須）。
+1 は実装済み（2026-09-04、b44）。2・3 は未実装。優先順は 型（E1）→ 既存 lint → `cargo lint` カスタムルール（赤例テスト必須）。
 
-1. **ポート造語の検出**: use-case 層の `pub trait` 名が `Store` / `Reader` / `Writer` / `Source` / `Provider` で終わったら拒否。
+1. ~~**ポート造語の検出**: use-case 層の `pub trait` 名が `Store` / `Reader` / `Writer` / `Source` / `Provider` で終わったら拒否。~~ — **実装済み（`port-naming`、2026-09-04）**: 禁止語の黒リストではなく許可接尾辞の白リスト（コマンド側 `Repository` / クエリ側 `Dao`）で、上位互換として吸収した。外部システムクライアント（`XxxClient`）は現状ゼロで、作るときは理由付き allow で明示する。
 2. **Repository 名と集約名の照合**: `XxxRepository` の `Xxx` が `core-domain` に存在する集約ルート型名であることを検査（集約表を機械可読にする前提が要る）。
 3. **技術接頭辞の検出**: interface-adapter 層の `XxxRepository` 実装型名が `Fs` / `Sys` / `Db` 等で始まったら拒否（`XxxRepositoryImpl` のみ許可）。
 4. ~~**I8 の型強制**: `Next` ユースケースの構造体フィールドに Repository 型が現れないことを検査。~~ — **退役（2026-08-31・オーナー、b26 段階2）**: `next` はクエリ側へ移設され、コマンド側に `Next` ユースケースが存在しないため、検査対象ごと失効した。

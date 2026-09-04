@@ -16,7 +16,7 @@ use super::intent_execution_id_error::IntentExecutionIdError;
 /// 形は **UUIDv7 の正準表記**に限る —
 /// `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
 /// (小文字 36 字、version nibble は `7`、variant nibble は RFC の `10xx` = `8` / `9` / `a` / `b`)。
-/// 検査の正本は [`super::uuid_v7`] で `IntentId` と共有する (BR4.1)。
+/// 検査は `parse` が行い、`IntentId` と同じ形式規則に従う (BR4.1)。
 ///
 /// `Ord` は生文字列の辞書順。UUIDv7 の先頭 48 bit は Unix ミリ秒なので、この順序は
 /// ミリ秒粒度の作成順になる。型としては形式だけを保証し、時刻の妥当性は検証しない。

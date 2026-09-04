@@ -16,7 +16,7 @@ use super::projection_name::ProjectionName;
 /// 本 trait は RMU クレート (`core-read-model-updater`) が所有する
 /// (ADR-009 2026-08-28 / 2026-08-29 追記 — 呼ぶのは RMU だけなので中立クレートへ切り出さない)。
 /// RMU はライブラリ型を入口に出さないので、**本家の `EventEnvelope` をここから出さない** —
-/// 行の材料は我々が所有する [`JournalEntry`] に写して返す。
+/// 行の材料は我々が所有する [`JournalEntry`](super::JournalEntry) に写して返す。
 ///
 /// 真実源はジャーナルであり、投影は「チェックポイント以降を読んで描き、チェックポイントを
 /// 進める」だけで冪等に追いつける — その 2 性質 (順序・単調性) を本ポートが保証する

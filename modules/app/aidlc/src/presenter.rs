@@ -10,7 +10,7 @@
 //! | **自己防衛拒否** | 28KiB 超・未知動詞など、配線の不具合や暴走を外へ出さないための拒否 | **stderr + exit 1** |
 //!
 //! ビジネス拒否は [`Directive::Error`] そのものなので、この層はただ描くだけである。自己
-//! 防衛拒否だけがここの判断で、[`OversizeDirective`] がそれを表す。
+//! 防衛拒否だけがここの判断で、`OversizeDirective` がそれを表す。
 //!
 //! # malformed は表現不能である
 //!
@@ -83,7 +83,7 @@ impl Presenter {
     ///
     /// # Errors
     ///
-    /// 28KiB を超えたら [`OversizeDirective`]。呼出側は**何も stdout へ書かず**、
+    /// 28KiB を超えたら `OversizeDirective`。呼出側は**何も stdout へ書かず**、
     /// stderr へ逐語を出して exit 1 する。
     pub fn render(&self, directive: &Directive) -> Result<String, OversizeDirective> {
         // 契約 JSON の直列化は canon-json の 1 経路に固定されている (BR1.7 / ADR 0001

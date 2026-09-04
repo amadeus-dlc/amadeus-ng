@@ -149,7 +149,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
     /// まま再試行すると対象が「そのときのカーソル」に再解決されてしまい、競合相手が先に同じ
     /// ゲートを承認していた場合、**報告されていない次のステージ**へ `Forward` を打つ
     /// （次ステージは `[-]` なので BR1.3 により承認が通ってしまう）。名指しすれば、その状況は
-    /// [`is_stale_re_report`](CommitVerdictUseCase::is_stale_re_report) が通過済み no-op
+    /// `CommitVerdictUseCase::is_stale_re_report` が通過済み no-op
     /// （BR1.9）に畳み、カーソルが動いていない競合（`set-autonomy` 等）は名指し == カーソルで
     /// 通常経路に入る。再試行の意味論が「**同じ報告をもう一度**」に固定される。
     ///

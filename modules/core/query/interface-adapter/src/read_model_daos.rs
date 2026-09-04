@@ -30,7 +30,7 @@ use super::steering_plan_dao_impl::SteeringPlanDaoImpl;
 ///
 /// # 共有は不変共有である
 ///
-/// 束ねた [`ReadModelStore`] は読取専用で開いた接続であり、DAO はそれを読むだけである。
+/// 束ねた `ReadModelStore` は読取専用で開いた接続であり、DAO はそれを読むだけである。
 /// したがって共有に要るのは参照の複製だけで、内部可変性は要らない — `Rc` で足りる
 /// (`coding-rules/interior-mutability.md`「共有が不要な型を `*Shared` でラップしない」)。
 ///
