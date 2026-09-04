@@ -13,7 +13,8 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked, Recomposed,
-    StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry,
+    StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -121,7 +122,7 @@ fn intent() -> Intent {
 /// intent 面 (`INTENT_BODY` の `stages`) と同一である。
 const STARTED_BODY: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 11 変種を、逐語で固定した綴りと組で並べる。
+/// 全 13 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -217,6 +218,22 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             )),
             r#"{"AutonomyModeSet":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","mode":"Autonomous"}}"#,
         ),
+        (
+            IntentExecutionEvent::SingleStageRunCommitted(SingleStageRunCommitted::new(
+                execution_event_id(),
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                slug("intent-capture"),
+            )),
+            r#"{"SingleStageRunCommitted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture"}}"#,
+        ),
+        (
+            IntentExecutionEvent::SkeletonStanceRecorded(SkeletonStanceRecorded::new(
+                execution_event_id(),
+                IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                SkeletonStance::ScopeDependent,
+            )),
+            r#"{"SkeletonStanceRecorded":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stance":"ScopeDependent"}}"#,
+        ),
     ]
 }
 
@@ -225,7 +242,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 /// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
 /// 最初のゲート付きステージ (索引 1) である。**ワイヤの形** (項目名・並び) は変わって
 /// いない — 変わったのは誕生時の状態そのものである。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -457,6 +474,90 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
             serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき行: {tampered}");
     }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
+    // stance を記録した集約はスナップショット行に綴りを載せ、同じ値で戻る。
+    let intent = intent();
+    let (mut aggregate, _) = IntentExecution::start(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        &intent,
+        at(),
+    );
+    // フィクスチャの計画に Construction は無いので、集約のコマンドは通らない。行の形だけを
+    // 見たいので、記録済みの状態は完全コンストラクタから直に組む。
+    aggregate = IntentExecution::new(
+        aggregate.id().clone(),
+        aggregate.intent_id().clone(),
+        aggregate.stage_keys().to_vec(),
+        vec![PlanAction::Execute; 3],
+        vec![
+            core_command_domain::workspace::CheckboxState::Completed,
+            core_command_domain::workspace::CheckboxState::InProgress,
+            core_command_domain::workspace::CheckboxState::Pending,
+        ],
+        1,
+        core_command_domain::orchestration::Status::Running,
+        None,
+        AutonomyMode::Gated,
+        Some(SkeletonStance::Off),
+        vec![false; 3],
+        vec![0; 3],
+        1,
+        at(),
+    )
+    .expect("組める");
+    let json =
+        serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
+    assert!(
+        json.contains(r#""skeleton_stance":"Off""#),
+        "stance の綴りが行に載る: {json}"
+    );
+    let decoded: IntentExecutionDto = serde_json::from_str(&json).expect("読める");
+    assert_eq!(
+        decoded
+            .to_domain()
+            .expect("ドメインへ戻せる")
+            .skeleton_stance(),
+        Some(SkeletonStance::Off)
+    );
+}
+
+#[test]
+fn a_snapshot_row_without_the_stance_field_reads_as_not_yet_classified() {
+    // 「欄が無い = まだ分類していない」という正規の意味である (b47 設計 §2) — 後方互換の
+    // 緩和ではないので、綴りの検査は欄が在るときにだけ働く。
+    let without = GENESIS_SNAPSHOT.replace(r#""skeleton_stance":null,"#, "");
+    assert_ne!(without, GENESIS_SNAPSHOT, "欄を落とせている");
+    let decoded: IntentExecutionDto = serde_json::from_str(&without).expect("欄が無くても読める");
+    assert_eq!(
+        decoded
+            .to_domain()
+            .expect("ドメインへ戻せる")
+            .skeleton_stance(),
+        None
+    );
+}
+
+#[test]
+fn a_malformed_skeleton_stance_spelling_is_refused() {
+    let row = every_variant()
+        .into_iter()
+        .map(|(_, json)| json)
+        .find(|json| json.contains(r#""stance":"ScopeDependent""#))
+        .expect("その綴りを含む変種がある");
+    let tampered = row.replace(
+        r#""stance":"ScopeDependent""#,
+        r#""stance":"scope-dependent""#,
+    );
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(&tampered).expect("JSON としては読める");
+    assert!(decoded.to_domain().is_err(), "拒むべき値: scope-dependent");
 }
 
 #[test]

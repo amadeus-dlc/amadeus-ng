@@ -42,6 +42,7 @@ impl From<&NextDecision> for EngineSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestration::GateDecision;
     use crate::workspace::CheckboxState;
 
     #[test]
@@ -49,7 +50,7 @@ mod tests {
         assert_eq!(
             EngineSignal::from(&NextDecision::RunStage {
                 stage: StageIndex::new(4),
-                gate: false
+                gate: GateDecision::Ungated
             }),
             EngineSignal::RunStage(StageIndex::new(4))
         );

@@ -390,6 +390,18 @@ pub(crate) fn genesis(stage_count: usize) -> (Intent, IntentExecution, IntentExe
     start_from_plan(&plan)
 }
 
+/// 索引 0 = initialization、索引 1 以降 = construction の 3 段計画。
+///
+/// 誕生直後のカーソル (索引 1) が **skeleton-gate ステージ** (Construction フェーズの最初の
+/// EXECUTE) に一致するので、stance の記録が受理される最小形である。
+pub(crate) fn skeleton_gate_plan() -> (Intent, IntentExecution, IntentExecutionEvent) {
+    start_from_plan(&[
+        (PhaseId::Initialization, PlanAction::Execute, false),
+        (PhaseId::Construction, PlanAction::Execute, false),
+        (PhaseId::Construction, PlanAction::Execute, false),
+    ])
+}
+
 /// [`IntentExecutionRepository`] のインメモリ実装。
 ///
 /// 楽観 version は本家の実測どおり「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。

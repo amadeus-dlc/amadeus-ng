@@ -23,7 +23,8 @@
 
 use core_command_domain::orchestration::{
     AutonomyMode, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, JumpDirection,
-    Jumped, Parked, PhaseBoundary, Recomposed, StageRevised, StageSkipped,
+    Jumped, Parked, PhaseBoundary, Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded,
+    StageRevised, StageSkipped,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
@@ -36,7 +37,7 @@ use core_command_domain::workspace::EventType;
 use super::audit_block::{iso8601_seconds, render_audit_block};
 use super::read_model::ReadModel;
 use super::resolved_plan::{PlannedStage, ResolvedPlan};
-use super::state_writers::{FieldNotFound, find_field, with_field};
+use super::state_writers::{FieldNotFound, find_field, with_field, with_field_or_insert};
 use crate::orchestration::JournalEntry;
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,8 @@ mod key {
     pub(super) const STAGES_ADDED: &str = "Stages added";
     /// `**Stages in Scope**:`。
     pub(super) const STAGES_IN_SCOPE: &str = "Stages in Scope";
+    /// `**Workflow**:`（隔離実行の疑似ワークフロー ID — ピン `3c3146cf` `:5326-5343`）。
+    pub(super) const WORKFLOW: &str = "Workflow";
     /// `**Mode**:`。**upstream の実行出力としては採れない**（`cli/set-autonomy` は失敗経路
     /// しか捉えていない）。ピン `3c3146cf` の配布シェルには
     /// `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込む経路が 1 つも無く、
@@ -131,6 +134,8 @@ mod field {
     pub(super) const TOTAL_STAGES: &str = "Total Stages";
     /// `- **Construction Autonomy Mode**:`。
     pub(super) const AUTONOMY_MODE: &str = "Construction Autonomy Mode";
+    /// `- **Skeleton Stance**:`（骨格テンプレートに無いランタイム欄 — 無ければ挿入する）。
+    pub(super) const SKELETON_STANCE: &str = "Skeleton Stance";
     /// `- **Stages to Execute**:`。
     pub(super) const STAGES_TO_EXECUTE: &str = "Stages to Execute";
     /// `- **Stages to Skip**:`。
@@ -159,6 +164,11 @@ mod field {
         label
     }
 }
+
+/// ランタイム metadata の置き場（park マーカーと `Skeleton Stance` が入るセクション）。
+///
+/// `with_field_or_insert` は `## ` を自分で前置するので、ここは見出し名だけを持つ。
+const RUNTIME_STATE_HEADING: &str = "Runtime State";
 
 /// 空のステージ集合を描く逐語（`**Stages added**: none`）。
 const NONE_LITERAL: &str = "none";
@@ -353,6 +363,12 @@ fn project_one(
         }
         IntentExecutionEvent::AutonomyModeSet(mode) => {
             autonomy_mode_set(mode.mode(), at, read_model)
+        }
+        IntentExecutionEvent::SingleStageRunCommitted(committed) => {
+            single_stage_run_committed(committed, at, plan, read_model)
+        }
+        IntentExecutionEvent::SkeletonStanceRecorded(recorded) => {
+            skeleton_stance_recorded(recorded, read_model)
         }
     }
 }
@@ -1156,6 +1172,85 @@ fn autonomy_mode_set(
 }
 
 // ---------------------------------------------------------------------------
+// 隔離実行 (`--single`) と walking-skeleton stance (b47 / #73)
+// ---------------------------------------------------------------------------
+
+/// 隔離実行の疑似ワークフロー ID（監査行の `**Workflow**:` の値 — ピン `:5017-5019`）。
+///
+/// これは本物の `WORKFLOW_STARTED` の id では**ない**。監査台帳の対を「本流ではなく隔離実行の
+/// もの」と名乗らせるためだけに存在し、`<slug>` の並置で出所が読めるようにしてある。
+fn synthetic_workflow_id(slug: &StageSlug) -> String {
+    format!("single-stage:{}", slug.as_str())
+}
+
+/// `SingleStageRunCommitted` → `STAGE_STARTED` / `STAGE_COMPLETED` の**監査 2 行だけ**。
+///
+/// 状態ファイルのフィールドもチェックボックスも `read_*` 表も**一切動かさない** — 適用が
+/// フレーム空だからである（仕様 I10、オーナー裁定 2026-09-04）。`Last Updated` も触らない。
+/// 行の並びと各行のフィールド順は upstream `handleSingleReport` の
+/// `spawnAuditAppendBatch`（ピン `:5326-5343`）が正本である。
+fn single_stage_run_committed(
+    committed: &SingleStageRunCommitted,
+    at: &DateTime<Utc>,
+    plan: &ResolvedPlan,
+    read_model: &mut ReadModel,
+) -> Result<(), ProjectionError> {
+    let slug = committed.stage();
+    // 担当エージェントは計画の表示属性から引く（upstream は `node.lead_agent`）。
+    let agent = plan
+        .display_of(slug)
+        .map(|display| display.lead_agent().to_string())
+        .ok_or_else(|| unknown(slug))?;
+    let workflow = synthetic_workflow_id(slug);
+    read_model.append_audit(&render_audit_block(
+        EventType::StageStarted,
+        at,
+        &AuditFields::new()
+            .with(key(key::STAGE)?, slug.as_str())
+            .with(key(key::AGENT)?, &agent)
+            .with(key(key::WORKFLOW)?, &workflow),
+    ));
+    read_model.append_audit(&render_audit_block(
+        EventType::StageCompleted,
+        at,
+        &AuditFields::new()
+            .with(key(key::STAGE)?, slug.as_str())
+            .with(
+                key(key::DETAILS)?,
+                &format!("Single-stage run of {} completed", slug.as_str()),
+            )
+            .with(key(key::WORKFLOW)?, &workflow),
+    ));
+    Ok(())
+}
+
+/// `SkeletonStanceRecorded` → `## Runtime State` の `Skeleton Stance` 欄（**監査行なし**）。
+///
+/// upstream の `aidlc-state.ts set-skeleton-stance`（ピン `:703-733`）は監査行を出さず
+/// `Last Updated` も触らない — stance は状態機械の遷移ではなく、次の `next` が読む
+/// ランタイム metadata だからである。欄は骨格テンプレートに無いので
+/// **有れば置換・無ければセクション末尾へ挿入**する（upstream の `setOrInsertField`）。
+///
+/// # Errors
+///
+/// `## Runtime State` セクションが無ければ `ParkSectionMissing`（park マーカーと同じ
+/// 置き場なので、不在の意味も同じである）。
+fn skeleton_stance_recorded(
+    recorded: &SkeletonStanceRecorded,
+    read_model: &mut ReadModel,
+) -> Result<(), ProjectionError> {
+    let next = with_field_or_insert(
+        read_model.state(),
+        RUNTIME_STATE_HEADING,
+        field::SKELETON_STANCE,
+        recorded.stance().as_str(),
+    )
+    .map_err(|_| ProjectionError::ParkSectionMissing)?;
+    read_model.replace_state(next);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // 共有の断片
 // ---------------------------------------------------------------------------
 
@@ -1645,7 +1740,8 @@ mod tests {
 
     use core_command_domain::orchestration::{
         AutonomyModeSet, Intent, IntentEventId, IntentExecutionEventId, IntentExecutionId,
-        IntentId, StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
+        IntentId, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
+        StageEntry, StartRequest, Started, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
@@ -1871,6 +1967,129 @@ mod tests {
                 .state()
                 .contains("- **Construction Autonomy Mode**: autonomous\n")
         );
+    }
+
+    // ---- b47: 隔離実行 (`--single`) と walking-skeleton stance ----
+
+    #[test]
+    fn an_isolated_run_appends_the_two_audit_rows_verbatim_and_touches_nothing_else() {
+        let before = model();
+        let read_model = run(IntentExecutionEvent::SingleStageRunCommitted(
+            SingleStageRunCommitted::new(event_id(), execution_id(), slug("first")),
+        ));
+        // 監査 2 行が upstream の順序・フィールド順で並ぶ (ピン `:5326-5343`)。
+        assert_eq!(
+            audit_events(&read_model),
+            ["STAGE_STARTED", "STAGE_COMPLETED"]
+        );
+        let appended = read_model.appended_audit();
+        assert!(
+            appended.contains(
+                "**Stage**: first\n**Agent**: orchestrator\n**Workflow**: single-stage:first\n"
+            ),
+            "STAGE_STARTED の 3 フィールドはこの順: {appended}"
+        );
+        assert!(
+            appended.contains(
+                "**Stage**: first\n**Details**: Single-stage run of first completed\n**Workflow**: single-stage:first\n"
+            ),
+            "STAGE_COMPLETED の 3 フィールドはこの順: {appended}"
+        );
+        // 状態ファイルは 1 バイトも動かない (フレーム空 — 仕様 I10)。
+        assert_eq!(
+            read_model.state(),
+            before.state(),
+            "隔離実行は本流の状態ファイルを動かさない"
+        );
+    }
+
+    #[test]
+    fn an_isolated_run_of_a_stage_outside_the_plan_stops_instead_of_guessing_the_agent() {
+        let mut read_model = model();
+        let error = project(
+            &[entry(IntentExecutionEvent::SingleStageRunCommitted(
+                SingleStageRunCommitted::new(event_id(), execution_id(), slug("nowhere")),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("計画に無いステージ");
+        assert_eq!(
+            error,
+            ProjectionError::UnknownStage {
+                stage: "nowhere".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn recording_a_skeleton_stance_inserts_the_runtime_field_without_an_audit_row() {
+        let read_model = run(IntentExecutionEvent::SkeletonStanceRecorded(
+            SkeletonStanceRecorded::new(event_id(), execution_id(), SkeletonStance::On),
+        ));
+        // 骨格に無い欄なので `## Runtime State` の末尾へ挿入される。
+        assert!(
+            read_model.state().contains("- **Skeleton Stance**: on\n"),
+            "{}",
+            read_model.state()
+        );
+        // 監査行は出さない (upstream `set-skeleton-stance` は台帳を触らない)。
+        assert_eq!(audit_events(&read_model), Vec::<&str>::new());
+        // `Last Updated` も触らない。
+        assert!(
+            read_model
+                .state()
+                .contains("- **Last Updated**: 2026-08-20T00:00:00Z\n")
+        );
+    }
+
+    #[test]
+    fn a_second_stance_replaces_the_field_instead_of_appending_another_line() {
+        let mut read_model = model();
+        project(
+            &[entry(IntentExecutionEvent::SkeletonStanceRecorded(
+                SkeletonStanceRecorded::new(event_id(), execution_id(), SkeletonStance::On),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("1 回目");
+        project(
+            &[entry(IntentExecutionEvent::SkeletonStanceRecorded(
+                SkeletonStanceRecorded::new(
+                    event_id(),
+                    execution_id(),
+                    SkeletonStance::ScopeDependent,
+                ),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("2 回目");
+        assert_eq!(
+            read_model.state().matches("- **Skeleton Stance**:").count(),
+            1,
+            "行は 1 本のまま"
+        );
+        assert!(
+            read_model
+                .state()
+                .contains("- **Skeleton Stance**: scope-dependent\n")
+        );
+    }
+
+    #[test]
+    fn a_state_file_without_the_runtime_section_refuses_the_stance() {
+        let mut read_model = ReadModel::new("## Current Status\n- **Status**: Running\n");
+        let error = project(
+            &[entry(IntentExecutionEvent::SkeletonStanceRecorded(
+                SkeletonStanceRecorded::new(event_id(), execution_id(), SkeletonStance::Off),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect_err("置き場が無い");
+        assert_eq!(error, ProjectionError::ParkSectionMissing);
     }
 
     /// 監査シャードに現れたイベント名の列。

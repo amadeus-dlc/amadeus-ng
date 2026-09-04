@@ -20,6 +20,10 @@ mod define_workflow_use_case;
 mod park_error;
 mod park_use_case;
 mod port;
+mod record_single_stage_run_use_case;
+mod record_skeleton_stance_use_case;
+mod single_stage_run_error;
+mod skeleton_stance_error;
 #[cfg(test)]
 mod test_support;
 
@@ -47,6 +51,8 @@ pub use commit_verdict_use_case::CommitVerdictUseCase;
 pub use create_intent_use_case::CreateIntentUseCase;
 pub use define_workflow_use_case::DefineWorkflowUseCase;
 pub use park_use_case::ParkUseCase;
+pub use record_single_stage_run_use_case::RecordSingleStageRunUseCase;
+pub use record_skeleton_stance_use_case::RecordSkeletonStanceUseCase;
 
 // ユースケースの成功が運ぶ材料（逐語文言は出す側が組む）。
 pub use commit_outcome::CommitOutcome;
@@ -57,3 +63,5 @@ pub use create_intent_error::CreateIntentError;
 pub use define_workflow_error::DefineWorkflowError;
 pub use park_error::ParkError;
 pub use port::RepositoryError;
+pub use single_stage_run_error::SingleStageRunError;
+pub use skeleton_stance_error::SkeletonStanceError;

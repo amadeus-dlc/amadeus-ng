@@ -1,4 +1,4 @@
-//! `read_run_stage` の 23 列の選択句と行写像 (公開型ゼロの内部モジュール)。
+//! `read_run_stage` の 24 列の選択句と行写像 (公開型ゼロの内部モジュール)。
 //!
 //! [`RunStageDaoImpl`] の 3 つの動詞が同じ列を同じ並びで読むので、**列の並びを 1 か所に
 //! 閉じる**。並びが選択句と写像でずれると値が静かに入れ替わるので、両方をこのモジュールが
@@ -22,8 +22,9 @@ macro_rules! select_run_stage {
     ($where_clause:literal) => {
         concat!(
             "SELECT id, definition_id, scope, stage_slug, phase, steering_plan_id, \
-             lead_agent, support_agents, mode, gate_default, inline_context_paths_rel, \
-             stage_file_rel, memory_path_rel, consumes_rel, produces_rel, sensors_applicable, \
+             lead_agent, support_agents, mode, gate_default, in_scope, \
+             inline_context_paths_rel, stage_file_rel, memory_path_rel, consumes_rel, \
+             produces_rel, sensors_applicable, \
              reviewer, reviewer_max_iterations, review_class, protocol_modules, \
              next_stage_name, route_digest, directive_digest \
              FROM read_run_stage WHERE ",
@@ -34,7 +35,7 @@ macro_rules! select_run_stage {
 
 pub(crate) use select_run_stage;
 
-/// 23 列を 1 行の写しへ写す。
+/// 24 列を 1 行の写しへ写す。
 pub(crate) fn run_stage_row(row: &Row<'_>) -> rusqlite::Result<RunStageView> {
     Ok(RunStageView::new(
         row.get(0)?,
@@ -60,5 +61,6 @@ pub(crate) fn run_stage_row(row: &Row<'_>) -> rusqlite::Result<RunStageView> {
         row.get(20)?,
         row.get(21)?,
         row.get(22)?,
+        row.get(23)?,
     ))
 }

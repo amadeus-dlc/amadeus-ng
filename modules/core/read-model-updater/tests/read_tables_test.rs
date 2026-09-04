@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Recomposed, StageDisplay, StageEntry,
-    StartRequest, WorkspaceScan,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Recomposed, SkeletonStance, StageDisplay,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ConsumeDecl, Defined, DefinitionRevision, ExecutionKind, PhaseId,
@@ -34,7 +34,8 @@ use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry,
 };
 use core_read_model_updater::read_tables::{
-    MemoryRules, ReadTables, ReadTablesError, RequestKind, RunStageRow, SteeringTables,
+    ExecutionRow, MemoryRules, NextAnswerRow, ReadTables, ReadTablesError, RequestKind,
+    RunStageRow, SteeringTables,
 };
 
 const DEFINITION: &str = "claude";
@@ -153,7 +154,7 @@ fn saturated_node() -> StageNode {
     .build()
 }
 
-/// 改訂後のグラフ (4 ノード — 実行の計画と同じ slug 列)。
+/// 改訂後のグラフ (5 ノード — 実行の計画と同じ slug 列)。
 fn revised_graph() -> StageGraph {
     StageGraph::new(vec![
         StageNodeBuilder::new(
@@ -184,8 +185,20 @@ fn revised_graph() -> StageGraph {
             StageMode::Subagent,
         )
         .build(),
+        // Construction の最初の EXECUTE — walking-skeleton ゲートの位置 (b47 / #73)。
+        // 実行の計画 (`stages()`) と同じ slug 列にしておくことで、ゲートに立った
+        // `read_next_answer.run_stage_id` が実在する `read_run_stage.id` を指す。
+        StageNodeBuilder::new(
+            slug("functional-design"),
+            StageNumber::parse("3.1").expect("番号"),
+            "Functional Design".to_string(),
+            PhaseId::Construction,
+            ExecutionKind::Always,
+            StageMode::Subagent,
+        )
+        .build(),
     ])
-    .expect("4 ノードのグラフ")
+    .expect("5 ノードのグラフ")
 }
 
 /// `classic` だけが列を持つグリッド (`express` は列なし = zero-EXECUTE)。
@@ -195,6 +208,7 @@ fn revised_grid() -> ScopeGrid {
         (slug("intent-capture"), PlanAction::Execute),
         (slug("scope-definition"), PlanAction::Skip),
         (slug("requirements-analysis"), PlanAction::Execute),
+        (slug("functional-design"), PlanAction::Execute),
     ]
     .into_iter()
     .collect();
@@ -288,6 +302,14 @@ fn stages() -> Vec<StageEntry> {
             PlanAction::Execute,
             false,
             display("2.1", "Requirements Analysis", "aidlc-product-agent"),
+        ),
+        // Construction の最初の EXECUTE — walking-skeleton ゲートの位置 (b47 / #73)。
+        StageEntry::new(
+            slug("functional-design"),
+            PhaseId::Construction,
+            PlanAction::Execute,
+            false,
+            display("3.1", "Functional Design", "aidlc-architect-agent"),
         ),
     ]
 }
@@ -439,7 +461,7 @@ fn the_definition_row_mirrors_the_replayed_aggregate() {
     assert_eq!(row.stage_count(), definition.graph().len());
     assert_eq!(row.scope_count(), definition.scopes().len());
     // 改訂が畳まれていること (誕生の 1 ノード・0 スコープではない)。
-    assert_eq!(row.stage_count(), 4);
+    assert_eq!(row.stage_count(), 5);
     assert_eq!(row.scope_count(), 2);
 }
 
@@ -589,7 +611,7 @@ fn scope_stage_rows_number_only_the_execute_cells_in_document_order() {
             assert_eq!(row.in_scope_order(), None);
         }
     }
-    assert_eq!(order, 3, "classic の EXECUTE は 3 件");
+    assert_eq!(order, 4, "classic の EXECUTE は 4 件");
 
     // 列を持たない有効スコープは全行 action NULL。
     let express: Vec<_> = rows.iter().filter(|row| row.scope() == "express").collect();
@@ -617,7 +639,10 @@ fn scope_phase_entry_rows_exist_only_where_the_definition_answers_some() {
         .filter(|row| row.scope() == "classic")
         .map(|row| row.phase())
         .collect();
-    assert_eq!(classic, ["initialization", "ideation", "inception"]);
+    assert_eq!(
+        classic,
+        ["initialization", "ideation", "inception", "construction"]
+    );
     assert!(rows.iter().all(|row| row.scope() != "express"));
 }
 
@@ -758,7 +783,7 @@ fn next_answer_rows_cover_the_four_request_kinds() {
                         && row.request_kind() == kind.as_str()
                 })
                 .expect("4 kind すべてに行が在る");
-            let decision = aggregate.next_decision(&kind.to_request());
+            let decision = aggregate.next_decision(&intent(), &kind.to_request());
             // 決定の綴りと材料が集約の答えと一致する。
             assert_eq!(row.decision_kind(), decision_kind_of(&decision));
             assert_eq!(row.stage_index(), stage_of(&decision));
@@ -911,7 +936,7 @@ fn next_answer_rows_carry_the_observed_checkbox_of_both_skip_inconsistencies() {
     ] {
         let (aggregate, _) = skip_inconsistency_events(&id, open_the_gate);
         // 再入の読みだけが park 分岐を素通りして不整合に到達する。
-        let decision = aggregate.next_decision(&RequestKind::Reentry.to_request());
+        let decision = aggregate.next_decision(&intent(), &RequestKind::Reentry.to_request());
         assert_eq!(
             decision_kind_of(&decision),
             expected_kind,
@@ -931,7 +956,7 @@ fn next_answer_rows_carry_the_observed_checkbox_of_both_skip_inconsistencies() {
         assert_eq!(row.stage_slug(), Some("intent-capture"));
         // 不整合 2 形だけが観測 checkbox を運ぶ — ゲートは名指さない。
         assert_eq!(row.checkbox(), Some(expected_checkbox));
-        assert_eq!(row.gated(), None);
+        assert_eq!(row.gate(), None);
     }
 
     // 材料を運ばない分岐は checkbox 列を空のままにする (行に嘘を書かない)。
@@ -1040,7 +1065,177 @@ fn next_jump_phase_rows_mirror_first_in_scope_of_phase() {
         );
     }
     let phases: Vec<&str> = rows.iter().map(|row| row.phase()).collect();
-    assert_eq!(phases, ["initialization", "ideation", "inception"]);
+    assert_eq!(
+        phases,
+        ["initialization", "ideation", "inception", "construction"]
+    );
+}
+
+// ---- b47: gate の 3 綴りと skeleton stance ----
+
+/// walking-skeleton ゲートまでカーソルを進めた実行 (Construction の最初の EXECUTE に立つ)。
+fn at_the_skeleton_gate() -> (IntentExecution, Vec<(usize, IntentExecutionEvent)>) {
+    let intent = intent();
+    let (mut aggregate, started) = IntentExecution::start(execution_a(), &intent, at());
+    let mut events = vec![(aggregate.seq_nr(), started)];
+    // 索引 1 → 2 → 3 → 4 (functional-design) までゲートを通す。
+    for _ in 0..3 {
+        let approved = aggregate
+            .approve_gate(&intent, None, at())
+            .expect("ゲートは承認される");
+        events.push((aggregate.seq_nr(), approved));
+    }
+    (aggregate, events)
+}
+
+/// 単一の実行ストリームだけを持つ履歴 (定義と intent は共通の材料を使う)。
+fn history_of(events: Vec<(usize, IntentExecutionEvent)>) -> JournalBatch {
+    let mut rows = Vec::new();
+    let mut global = 3_u64;
+    for (seq_nr, event) in events {
+        rows.push(JournalEntry::new(
+            GlobalSeqNr::new(global),
+            execution_a(),
+            seq_nr,
+            at(),
+            event,
+        ));
+        global += 1;
+    }
+    let definitions = vec![
+        DefinitionEntry::new(
+            GlobalSeqNr::new(1),
+            definition_id(),
+            1,
+            at(),
+            defined_event(),
+        ),
+        DefinitionEntry::new(
+            GlobalSeqNr::new(2),
+            definition_id(),
+            2,
+            at(),
+            redefined_event(),
+        ),
+    ];
+    let scanned_to = GlobalSeqNr::new(global - 1);
+    JournalBatch::new(rows, vec![intent()], definitions, Some(scanned_to))
+}
+
+/// 素の要求に対する `read_next_answer` の 1 行。
+fn bare_answer(tables: &ReadTables) -> &NextAnswerRow {
+    tables
+        .next_answers()
+        .iter()
+        .find(|row| {
+            row.execution_id() == execution_a().as_str()
+                && row.request_kind() == RequestKind::Bare.as_str()
+        })
+        .expect("素の要求の行が在る")
+}
+
+#[test]
+fn the_gate_column_carries_the_three_spellings_of_the_domain_decision() {
+    // (1) 通常のゲート付きステージ — `gated`。
+    let (_, events) = running_events();
+    let tables = ReadTables::project(&history_of(events)).expect("投影できる");
+    assert_eq!(bare_answer(&tables).gate(), Some("gated"));
+
+    // (2) walking-skeleton ゲートに立って stance が未記録 — `unresolved`。
+    let (mut aggregate, mut events) = at_the_skeleton_gate();
+    let tables = ReadTables::project(&history_of(events.clone())).expect("投影できる");
+    let row = bare_answer(&tables);
+    assert_eq!(row.decision_kind(), "run-stage");
+    assert_eq!(row.stage_slug(), Some("functional-design"));
+    assert_eq!(
+        row.gate(),
+        Some("unresolved"),
+        "分類の往復が済むまでゲートは決まらない"
+    );
+    // 答えの FK は同じスナップショットに実在する静的グリッドの行を指す (1 表 1 引当で
+    // ユースケースが辿れること)。定義グラフとスコープ列に Construction の EXECUTE を
+    // 置いてあるので、ここは None に落ちない。
+    let gate_run_stage = tables
+        .run_stages()
+        .iter()
+        .find(|r| r.scope() == "classic" && r.stage_slug() == "functional-design")
+        .expect("skeleton-gate ステージの静的グリッド行が在る");
+    assert_eq!(row.run_stage_id(), Some(gate_run_stage.id()));
+    assert!(
+        gate_run_stage.in_scope(),
+        "classic の Construction 最初の EXECUTE はスコープ内である"
+    );
+
+    // (3) stance を記録すると `gated` へ決まる。
+    let recorded = aggregate
+        .record_skeleton_stance(&intent(), SkeletonStance::Off, at())
+        .expect("skeleton-gate では記録できる");
+    events.push((aggregate.seq_nr(), recorded));
+    let tables = ReadTables::project(&history_of(events)).expect("投影できる");
+    assert_eq!(bare_answer(&tables).gate(), Some("gated"));
+}
+
+#[test]
+fn the_execution_row_carries_the_recorded_skeleton_stance() {
+    let (mut aggregate, mut events) = at_the_skeleton_gate();
+    let tables = ReadTables::project(&history_of(events.clone())).expect("投影できる");
+    let row = tables
+        .executions()
+        .iter()
+        .find(|row| row.id() == execution_a().as_str())
+        .expect("実行の行が在る");
+    assert_eq!(row.skeleton_stance(), None, "未記録は NULL");
+
+    let recorded = aggregate
+        .record_skeleton_stance(&intent(), SkeletonStance::ScopeDependent, at())
+        .expect("記録できる");
+    events.push((aggregate.seq_nr(), recorded));
+    let tables = ReadTables::project(&history_of(events)).expect("投影できる");
+    let row = tables
+        .executions()
+        .iter()
+        .find(|row| row.id() == execution_a().as_str())
+        .expect("実行の行が在る");
+    assert_eq!(
+        row.skeleton_stance(),
+        Some("scope-dependent"),
+        "綴りは状態ファイル面と同じ"
+    );
+}
+
+#[test]
+fn an_isolated_run_leaves_every_read_row_where_it_was() {
+    // 適用がフレーム空なので、`read_*` 表は 1 列も動かない (仕様 I10)。
+    let (mut aggregate, mut events) = running_events();
+    let before = ReadTables::project(&history_of(events.clone())).expect("投影できる");
+    let committed = aggregate
+        .record_single_stage_run(
+            &intent(),
+            aggregate.stage_index(3).expect("索引 3 は在る"),
+            at(),
+        )
+        .expect("非 init は隔離実行できる");
+    events.push((aggregate.seq_nr(), committed));
+    let after = ReadTables::project(&history_of(events)).expect("投影できる");
+    assert_eq!(
+        after.next_answers(),
+        before.next_answers(),
+        "答えの行は動かない"
+    );
+    assert_eq!(
+        after.execution_stages(),
+        before.execution_stages(),
+        "ステージの行は動かない"
+    );
+    // 実行の行で動くのは通番と最終更新時刻だけである (歴史が 1 件伸びたため)。
+    let seq = |tables: &ReadTables| {
+        tables
+            .executions()
+            .iter()
+            .find(|row| row.id() == execution_a().as_str())
+            .map(ExecutionRow::seq_nr)
+    };
+    assert_eq!(seq(&after), seq(&before).map(|n| n + 1));
 }
 
 // ---- run-stage の材料 (定義 × scope × ステージ) ----
@@ -1231,6 +1426,11 @@ fn the_next_stage_name_is_the_display_name_of_the_next_execute_in_document_order
     );
     assert_eq!(
         run_stage_row(&tables, "classic", "requirements-analysis").next_stage_name(),
+        Some("Functional Design"),
+        "次段は後ろの最初の EXECUTE — フェーズをまたいでも同じ規則である"
+    );
+    assert_eq!(
+        run_stage_row(&tables, "classic", "functional-design").next_stage_name(),
         None,
         "最後の EXECUTE の後には次段が無い"
     );
@@ -1265,7 +1465,7 @@ fn the_route_digest_is_the_hash_of_the_whole_scope_membership() {
             )
             .stages_in_scope()
             .len(),
-        4,
+        5,
         "顔ぶれは EXECUTE で絞らない"
     );
 }

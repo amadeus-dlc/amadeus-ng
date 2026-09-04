@@ -51,8 +51,9 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageDisplay, StageEntry,
-    StageRevised, StageSkipped, StartRequest, Unparked, WorkspaceScan,
+    IntentExecutionId, IntentId, Jumped, Parked, Recomposed, SingleStageRunCommitted,
+    SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped,
+    StartRequest, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -963,6 +964,16 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             agg(),
             AutonomyMode::Autonomous,
         )),
+        IntentExecutionEvent::SingleStageRunCommitted(SingleStageRunCommitted::new(
+            ev(),
+            agg(),
+            slug("contract-design"),
+        )),
+        IntentExecutionEvent::SkeletonStanceRecorded(SkeletonStanceRecorded::new(
+            ev(),
+            agg(),
+            SkeletonStance::ScopeDependent,
+        )),
     ]
 }
 
@@ -973,7 +984,7 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
 #[test]
 fn every_execution_variant_written_by_the_command_side_is_read_back_by_the_projection() {
     // 両側の DTO は**同名の別の型**であり、一致は型ではなくこのテストが保証する
-    // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。b40 で全 11 変種に `id` と
+    // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。b40 で全変種に `id` と
     // `aggregate_id` が加わり、`Unparked` は単位変種から構造体へ変わったので、変種ごとに
     // 書いて読み戻す照合をここに置く (ITF 駆動の経路は park / jump / recompose を通らない)。
     for event in every_execution_variant() {

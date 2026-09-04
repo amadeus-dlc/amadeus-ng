@@ -5,7 +5,7 @@
 //! 書く側の同名モジュールとも共有しない (`mod.rs` の側ごと専用化)。両者が一致していることは
 //! 横断適合テストが固定する。
 
-use core_command_domain::orchestration::AutonomyMode;
+use core_command_domain::orchestration::{AutonomyMode, SkeletonStance};
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ExecutionKind, PhaseId, PlanAction, ReviewCapValue, ReviewClass,
     RuleScope, SkeletonDefault, StageMode,
@@ -201,6 +201,31 @@ pub(crate) fn review_cap_of(raw: &str) -> Result<ReviewCapValue, DtoDecodeError>
         "Advisory" => Ok(ReviewCapValue::Advisory),
         "None" => Ok(ReviewCapValue::None),
         other => Err(DtoDecodeError::malformed("review_cap", other)),
+    }
+}
+
+/// walking-skeleton stance の綴り (ジャーナル面)。
+///
+/// ドメインの `SkeletonStance::as_str` (`on` / `off` / `scope-dependent`) は **CLI と
+/// 状態ファイルの面**の綴りであり、行の面はこちらである (このモジュールの doc)。
+pub(crate) const fn skeleton_stance_spelling(value: SkeletonStance) -> &'static str {
+    match value {
+        SkeletonStance::On => "On",
+        SkeletonStance::Off => "Off",
+        SkeletonStance::ScopeDependent => "ScopeDependent",
+    }
+}
+
+/// walking-skeleton stance の復号。
+pub(crate) fn skeleton_stance_of(
+    raw: &str,
+    field: &'static str,
+) -> Result<SkeletonStance, DtoDecodeError> {
+    match raw {
+        "On" => Ok(SkeletonStance::On),
+        "Off" => Ok(SkeletonStance::Off),
+        "ScopeDependent" => Ok(SkeletonStance::ScopeDependent),
+        other => Err(DtoDecodeError::malformed(field, other)),
     }
 }
 

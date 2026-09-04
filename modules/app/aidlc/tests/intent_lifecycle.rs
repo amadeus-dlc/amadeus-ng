@@ -35,17 +35,38 @@ impl Workspace {
         Workspace::with_execution("CONDITIONAL")
     }
 
+    /// Construction フェーズを持つ合成グラフ (walking-skeleton ゲートの往復を見る用)。
+    ///
+    /// `functional-design` が Construction の最初の EXECUTE — すなわち skeleton-gate である。
+    /// `code-generation` は scope グリッドで SKIP にしてあり、`--single` の scope 外ガードの
+    /// 的にもなる。
+    fn with_construction() -> Workspace {
+        let workspace = Workspace {
+            root: tempfile::tempdir().expect("一時ディレクトリ"),
+        };
+        workspace.write_construction_definition();
+        // memory 層は**置かない** — 規則ファイルが無ければ配信計画が空になり、`next` は
+        // steering 連鎖ではなく素の run-stage を出す。この試験が見たいのは `gate` の 3 値
+        // だけなので、連鎖を挟まない最短形にする。
+        fs::create_dir_all(workspace.path("aidlc/spaces/default/intents")).expect("intents");
+        workspace
+    }
+
     fn with_execution(execution: &str) -> Workspace {
         let workspace = Workspace {
             root: tempfile::tempdir().expect("一時ディレクトリ"),
         };
         workspace.write_definition(execution);
-        let memory = workspace.path("aidlc/spaces/default/memory");
+        workspace.write_memory_and_store_dir();
+        workspace
+    }
+
+    fn write_memory_and_store_dir(&self) {
+        let memory = self.path("aidlc/spaces/default/memory");
         fs::create_dir_all(&memory).expect("memory");
         fs::write(memory.join("org.md"), "# Org\n\n規則なし。\n").expect("org.md");
         // ストアの親 (`intents/`) は upstream の既存ディレクトリ扱いなので先に作る。
-        fs::create_dir_all(workspace.path("aidlc/spaces/default/intents")).expect("intents");
-        workspace
+        fs::create_dir_all(self.path("aidlc/spaces/default/intents")).expect("intents");
     }
 
     fn path(&self, relative: &str) -> PathBuf {
@@ -183,6 +204,52 @@ impl Workspace {
         fs::write(
             data.join("scope-grid.json"),
             r#"{"classic":{"stages":{"state-init":"EXECUTE","domain-design":"EXECUTE","contract-design":"EXECUTE"}}}"#,
+        )
+        .expect("scope-grid.json");
+        fs::write(
+            scopes.join("aidlc-classic.md"),
+            "---\nname: classic\n---\n\n# Classic\n",
+        )
+        .expect("scope identity");
+    }
+
+    /// Construction を含む 4 段の合成グラフ (b47 — walking-skeleton ゲートの往復)。
+    fn write_construction_definition(&self) {
+        let data = self.path(".claude/tools/data");
+        let scopes = self.path(".claude/scopes");
+        fs::create_dir_all(&data).expect("data");
+        fs::create_dir_all(&scopes).expect("scopes");
+        fs::write(
+            data.join("harness.json"),
+            r#"{"name":"claude","harnessDir":".claude","rulesSubdir":"rules"}"#,
+        )
+        .expect("harness.json");
+        let node = |slug: &str, number: &str, name: &str, phase: &str| {
+            format!(
+                r#"{{"slug":"{slug}","number":"{number}","name":"{name}","phase":"{phase}",
+                     "execution":"ALWAYS","mode":"inline","lead_agent":"orchestrator",
+                     "scopes":["classic"]}}"#
+            )
+        };
+        fs::write(
+            data.join("stage-graph.json"),
+            format!(
+                "[{},{},{},{}]",
+                node("state-init", "0.1", "State Init", "initialization"),
+                node("domain-design", "1.1", "Domain Design", "inception"),
+                node(
+                    "functional-design",
+                    "3.1",
+                    "Functional Design",
+                    "construction"
+                ),
+                node("code-generation", "3.2", "Code Generation", "construction"),
+            ),
+        )
+        .expect("stage-graph.json");
+        fs::write(
+            data.join("scope-grid.json"),
+            r#"{"classic":{"stages":{"state-init":"EXECUTE","domain-design":"EXECUTE","functional-design":"EXECUTE","code-generation":"SKIP"}}}"#,
         )
         .expect("scope-grid.json");
         fs::write(
@@ -2056,9 +2123,9 @@ async fn a_zero_byte_state_file_is_refused_as_an_unreadable_version() {
     );
 }
 
-/// 段 2 — `--single` は構文を検証し、**本流を一歩も進めずに**未配線を名乗る（I10）。
+/// 段 2 — `--single` は構文を検証し、**本流を一歩も進めずに**対をコミットする（I10 / #73）。
 #[tokio::test]
-async fn the_single_report_validates_its_syntax_and_never_advances_the_main_workflow() {
+async fn the_single_report_commits_the_pair_without_advancing_the_main_workflow() {
     let workspace = Workspace::create();
     invoke(
         &workspace,
@@ -2089,6 +2156,31 @@ completed, complete, done."
 single stage's synthetic-id pair; --single never writes the main workflow's Current Stage."
     );
 
+    // 計画に無い slug は未知として断る。
+    let (kind, message) = report_directive(
+        &workspace,
+        &["--single", "--result", "approved", "--stage", "nowhere"],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Unknown stage \"nowhere\". Run /aidlc --help for the full list."
+    );
+
+    // initialization は隔離実行の対象にならない。
+    let (kind, message) = report_directive(
+        &workspace,
+        &["--single", "--result", "approved", "--stage", "state-init"],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Cannot run an initialization stage with --single."),
+        "{message}"
+    );
+
+    // 成功 — 監査 2 行だけが増え、状態ファイルは 1 バイトも動かない。
     let (kind, message) = report_directive(
         &workspace,
         &[
@@ -2096,25 +2188,60 @@ single stage's synthetic-id pair; --single never writes the main workflow's Curr
             "--result",
             "approved",
             "--stage",
-            "domain-design",
+            "contract-design",
         ],
     )
     .await;
-    assert_eq!(kind, "error");
+    assert_eq!(kind, "done");
     assert_eq!(
         message,
-        "Cannot complete isolated stage \"domain-design\": single-stage reporting is not wired in this build."
+        "Single-stage run of \"contract-design\" committed under synthetic workflow \
+\"single-stage:contract-design\". The main workflow's Current Stage is untouched."
     );
     assert_eq!(
         workspace.state_file().expect("投影済み"),
         before,
         "`--single` は本流の状態を 1 バイトも動かさない"
     );
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(
+        audit.contains("**Workflow**: single-stage:contract-design"),
+        "疑似ワークフロー ID で名乗る: {audit}"
+    );
+    assert!(
+        audit.contains("**Details**: Single-stage run of contract-design completed"),
+        "{audit}"
+    );
 }
 
-/// 段 3 — `--skeleton-stance` は値を検証し、state を要求してから未配線を名乗る。
+/// 段 2 — 鋳造前のワークスペースには隔離実行の対を書けない。
 #[tokio::test]
-async fn the_skeleton_stance_report_validates_its_value_and_requires_a_state_file() {
+async fn a_single_report_without_an_intent_record_names_the_missing_cursor() {
+    let workspace = Workspace::create();
+
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Failed to record single-stage lifecycle pair for \"contract-design\": \
+no active intent record"
+    );
+}
+
+/// 段 3 — `--skeleton-stance` は値を検証し、state を要求し、現在地を照合してから記録する。
+#[tokio::test]
+async fn the_skeleton_stance_report_validates_its_value_and_the_current_stage() {
     let workspace = Workspace::create();
 
     // state がまだ無い段階でも、値の検証が先に立つ（順序は upstream と同じ）。
@@ -2138,18 +2265,539 @@ walking-skeleton stance classified from the team's ## Walking Skeleton prose)."
     )
     .await;
     let before = workspace.state_file().expect("投影済み");
+    // この合成グラフに Construction は無い — 現在地は skeleton-gate ではありえない。
     let (kind, message) =
         report_directive(&workspace, &["--skeleton-stance", "scope-dependent"]).await;
     assert_eq!(kind, "error");
     assert_eq!(
         message,
-        "Cannot record skeleton stance \"scope-dependent\": skeleton-stance reporting is not wired in this build."
+        "Current stage \"domain-design\" is not the skeleton-gate stage for scope \"classic\" — \
+a skeleton stance is only reported for the first Construction Bolt's gate."
     );
     assert_eq!(
         workspace.state_file().expect("投影済み"),
         before,
-        "未配線の段は状態を 1 バイトも動かさない"
+        "拒否された段は状態を 1 バイトも動かさない"
     );
+}
+
+/// walking-skeleton の分類往復 — `unresolved` → stance 報告 → 決まったゲート（#73）。
+#[tokio::test]
+async fn the_skeleton_gate_round_trip_turns_unresolved_into_a_determined_gate() {
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 誕生直後のカーソルは inception の `domain-design` — ゲートは決まっている。
+    let directive = line_of(&invoke(&workspace, "aidlc-orchestrate", &["next"]).await);
+    assert_eq!(string_of(&directive, "stage"), "domain-design");
+    assert_eq!(gate_of(&directive), JsonValue::Bool(true));
+
+    // 承認して Construction の最初の EXECUTE (= skeleton gate) へ進む。
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "approve",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "done", "{message}");
+
+    let directive = line_of(&invoke(&workspace, "aidlc-orchestrate", &["next"]).await);
+    assert_eq!(string_of(&directive, "stage"), "functional-design");
+    assert_eq!(
+        gate_of(&directive),
+        JsonValue::String("unresolved".to_string()),
+        "分類の往復が済むまでゲートは決まらない"
+    );
+
+    // conductor が分類を返す。
+    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "on"]).await;
+    assert_eq!(kind, "print");
+    assert_eq!(
+        message,
+        "Recorded walking-skeleton stance \"on\" for \"functional-design\". \
+Re-run `next` to continue — the gate is now determined."
+    );
+    assert!(
+        workspace
+            .state_file()
+            .expect("投影済み")
+            .contains("- **Skeleton Stance**: on\n"),
+        "状態ファイルの `## Runtime State` に載る"
+    );
+
+    // 記録後はゲートが決まる。
+    let directive = line_of(&invoke(&workspace, "aidlc-orchestrate", &["next"]).await);
+    assert_eq!(string_of(&directive, "stage"), "functional-design");
+    assert_eq!(gate_of(&directive), JsonValue::Bool(true));
+}
+
+/// 分岐 4b — `next --single` の 5 つの拒否と、隔離 run-stage の形（#73）。
+#[tokio::test]
+async fn next_single_refuses_five_ways_and_emits_an_isolated_run_stage() {
+    let workspace = Workspace::with_construction();
+    // record が無いと run-stage の相対パスに基準を前置できないので、先に鋳造しておく。
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    // `--phase` との併用は排他である。
+    let directive = line_of(
+        &invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["next", "--single", "--phase", "construction"],
+        )
+        .await,
+    );
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Cannot use --single with --phase. --single runs one stage; pass --stage <slug>."
+    );
+
+    let directive = line_of(&invoke(&workspace, "aidlc-orchestrate", &["next", "--single"]).await);
+    assert_eq!(
+        string_of(&directive, "message"),
+        "--single requires --stage <slug>. A stage-runner runs exactly one named stage."
+    );
+
+    let directive = line_of(
+        &invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["next", "--single", "--stage", "nowhere"],
+        )
+        .await,
+    );
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Unknown stage \"nowhere\". Run /aidlc --help for the full list."
+    );
+
+    let directive = line_of(
+        &invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["next", "--single", "--stage", "state-init"],
+        )
+        .await,
+    );
+    assert!(
+        string_of(&directive, "message")
+            .starts_with("Cannot run an initialization stage with --single."),
+        "{directive:?}"
+    );
+
+    // scope グリッドで SKIP のステージは走らせない。
+    let directive = line_of(
+        &invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["next", "--single", "--stage", "code-generation"],
+        )
+        .await,
+    );
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Stage \"code-generation\" is skipped for scope \"classic\". \
+Choose a different stage or change scope."
+    );
+
+    // 成功 — `single: true` / `gate: false` / `next_stage` 不在。
+    let directive = line_of(
+        &invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["next", "--single", "--stage", "functional-design"],
+        )
+        .await,
+    );
+    assert_eq!(string_of(&directive, "kind"), "run-stage");
+    assert_eq!(string_of(&directive, "stage"), "functional-design");
+    assert_eq!(member_of(&directive, "single"), Some(JsonValue::Bool(true)));
+    assert_eq!(gate_of(&directive), JsonValue::Bool(false));
+    assert_eq!(
+        member_of(&directive, "next_stage"),
+        None,
+        "隔離実行は次のステージを名乗らない"
+    );
+}
+
+/// directive の `gate` フィールド (boolean か `"unresolved"` の 3 値)。
+fn gate_of(directive: &JsonValue) -> JsonValue {
+    member_of(directive, "gate").unwrap_or_else(|| panic!("gate が要る: {directive:?}"))
+}
+
+/// directive のメンバを 1 つ引く (不在は `None`)。
+fn member_of(directive: &JsonValue, key: &str) -> Option<JsonValue> {
+    match directive {
+        JsonValue::Object(members) => members.get(key).cloned(),
+        other => panic!("オブジェクトであるべき: {other:?}"),
+    }
+}
+
+/// 記録そのものが失敗したら、中継形に材料を載せて断る。
+///
+/// カーソルは文法内だがストアに居ない実行を指す — 再構成が `NotFound` になる形である。
+#[tokio::test]
+async fn a_record_failure_is_relayed_as_material_on_the_single_face() {
+    let absent = "018f3b2c-4d5e-7f60-8abc-def012345678";
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    let intent_id = workspace
+        .execution_cursor()
+        .expect("カーソルは在る")
+        .lines()
+        .nth(1)
+        .expect("2 行目は intent id")
+        .to_string();
+    fs::write(
+        record.join(".aidlc-execution"),
+        format!("{absent}\n{intent_id}\n"),
+    )
+    .expect("居ない実行を指す");
+
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with(
+            "Failed to record single-stage lifecycle pair for \"contract-design\": repository:"
+        ),
+        "{message}"
+    );
+}
+
+/// 投影された実行の行が引けなければ、stance は「記録する先が無い」として断る。
+///
+/// カーソルが歴史の無い実行を指す形（壊れた record）でだけ起きる — 状態ファイルが在っても
+/// 記録できる実行が無いことに変わりはないので、不在と同じ逐語で断る。
+#[tokio::test]
+async fn a_skeleton_stance_report_without_a_projected_execution_is_refused() {
+    let absent = "018f3b2c-4d5e-7f60-8abc-def012345678";
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    let intent_id = workspace
+        .execution_cursor()
+        .expect("カーソルは在る")
+        .lines()
+        .nth(1)
+        .expect("2 行目は intent id")
+        .to_string();
+    fs::write(
+        record.join(".aidlc-execution"),
+        format!("{absent}\n{intent_id}\n"),
+    )
+    .expect("居ない実行を指す");
+
+    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "on"]).await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for."
+    );
+}
+
+/// 文法外の `--stage` は、計画を引くまでもなく未知として断る。
+#[tokio::test]
+async fn a_single_report_with_a_malformed_stage_is_unknown() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    let (kind, message) = report_directive(
+        &workspace,
+        &["--single", "--result", "approved", "--stage", "Not A Slug"],
+    )
+    .await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Unknown stage \"Not A Slug\". Run /aidlc --help for the full list."
+    );
+}
+
+/// state ファイルは在るのに実行カーソルが無い形も「記録する先が無い」で断る。
+#[tokio::test]
+async fn a_skeleton_stance_report_without_an_execution_cursor_is_refused() {
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::remove_file(record.join(".aidlc-execution")).expect("カーソルを外す");
+
+    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "on"]).await;
+
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for."
+    );
+}
+
+/// `--single` は媒体の失敗を握り潰さない（カーソル破損・ストア不通・投影不能）。
+#[tokio::test]
+async fn a_single_report_surfaces_every_medium_failure() {
+    // (1) 壊れた実行カーソルは「不在」と混ぜない。
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with(
+            "Failed to record single-stage lifecycle pair for \"contract-design\": \
+The execution cursor cannot be read"
+        ),
+        "{message}"
+    );
+
+    // (2) ストアが開けなければ自己防衛拒否。
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    fs::remove_file(&store).expect("ストア");
+    fs::create_dir(&store).expect("塞ぐ");
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("aidlc-orchestrate: cannot open the event store")
+    );
+
+    // (3) 書いたあとに投影が回らなければ自己防衛拒否。
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let clone_id = workspace.path("aidlc/.aidlc-clone-id");
+    fs::remove_file(&clone_id).expect("clone id");
+    fs::create_dir(&clone_id).expect("塞ぐ");
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+}
+
+/// `--skeleton-stance` も媒体の失敗を握り潰さない。
+#[tokio::test]
+async fn a_skeleton_stance_report_surfaces_every_medium_failure() {
+    // (1) 壊れた実行カーソル — 状態ファイルは在るので値検証と state 検査は抜ける。
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "off"]).await;
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("The execution cursor cannot be read"),
+        "{message}"
+    );
+
+    // (2) ストアが開けなければ自己防衛拒否。
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    fs::remove_file(&store).expect("ストア");
+    fs::create_dir(&store).expect("塞ぐ");
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--skeleton-stance", "off"],
+    )
+    .await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        completion.diagnostic(),
+        Some("aidlc-orchestrate: cannot open the event store")
+    );
+}
+
+/// リードモデルの `read_execution` を**引けない形**に置き換える（イベントストアは無傷）。
+///
+/// 実 CLI からは作れない形なので、ここだけストアへ直接 SQL を打つ。表ごと落とすと
+/// `catch_up` の `CREATE TABLE IF NOT EXISTS` が空の表を建て直してしまい「行が無い」に
+/// なるので、**列が足りない表**を残して SELECT 自体を失敗させる。
+fn break_read_execution(workspace: &Workspace) {
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    let connection = rusqlite::Connection::open(&store).expect("ストアは開ける");
+    connection
+        .execute_batch(
+            "DROP TABLE read_execution; CREATE TABLE read_execution (id TEXT PRIMARY KEY);",
+        )
+        .expect("リードモデルの表は置き換えられる");
+}
+
+/// 引けないリードモデルは「記録する先が無い」と混ぜない（PR #103 レビュー指摘）。
+///
+/// 実行カーソルは読めてイベントストアも開けるのに、リードモデルの引当だけが落ちる形。
+/// ここを `None` へ畳むと「まだ鋳造していない」と同じ答えになり、壊れた媒体の上で
+/// 作業が続いてしまう。所在と分類を材料に「引けない」と言わせる。
+#[tokio::test]
+async fn a_skeleton_stance_report_names_the_unreadable_read_model() {
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 「開けるが引けない」形にする — イベントストアの表は無傷のまま、リードモデルの
+    // `read_execution` だけを引けなくする。ファイル全体を非 SQLite バイト列にすると
+    // イベントストアを開く段で止まってしまい、この経路には届かない。
+    break_read_execution(&workspace);
+    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "off"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
+    );
+    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
+    assert_ne!(
+        message,
+        "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for.",
+        "引けない媒体を不在の逐語へ畳んではならない"
+    );
+}
+
+/// 投影が回らなければ stance の記録も自己防衛拒否で止まる。
+#[tokio::test]
+async fn a_projection_that_cannot_run_after_the_stance_is_refused() {
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // skeleton-gate まで進めてから投影を塞ぐ（記録そのものは受理される位置にする）。
+    report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "approve",
+        ],
+    )
+    .await;
+    let clone_id = workspace.path("aidlc/.aidlc-clone-id");
+    fs::remove_file(&clone_id).expect("clone id");
+    fs::create_dir(&clone_id).expect("塞ぐ");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--skeleton-stance", "on"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1);
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
 }
 
 /// `skipped` の受理 — CONDITIONAL なステージはルーティングされ、完了数には入らない。
@@ -2325,6 +2973,83 @@ async fn a_resume_without_a_resolvable_cursor_is_refused() {
     assert_eq!(
         message,
         "State file has no Current Stage field - cannot resume from the last checkpoint."
+    );
+}
+
+/// 段 4 — 引けないリードモデルは「現在地が無い」と混ぜない（PR #103 レビュー指摘）。
+#[tokio::test]
+async fn a_resume_whose_read_model_cannot_be_read_names_the_store() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 「開けるが引けない」形にする（上と同じ細工）。状態ファイルは在るので段 4 の
+    // state 判定は通り、現在地の引当だけが落ちる。
+    break_read_execution(&workspace);
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
+    );
+    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
+    assert_ne!(
+        message, "State file has no Current Stage field - cannot resume from the last checkpoint.",
+        "引けない媒体を不在の逐語へ畳んではならない"
+    );
+}
+
+/// 段 4 — 壊れた実行カーソルは「現在地が無い」と混ぜない（PR #103 レビュー指摘）。
+#[tokio::test]
+async fn a_resume_with_a_broken_execution_cursor_names_the_cursor() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("The execution cursor cannot be read"),
+        "{message}"
+    );
+}
+
+/// 段 4 — リードモデルを**開けない**ときも所在を名指す（引けないときと同じ規律）。
+#[tokio::test]
+async fn a_resume_whose_store_cannot_be_opened_names_the_store() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 置き場をディレクトリで塞ぐ — 開くことすらできない形である。
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    fs::remove_file(&store).expect("ストア");
+    fs::create_dir(&store).expect("塞ぐ");
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
     );
 }
 

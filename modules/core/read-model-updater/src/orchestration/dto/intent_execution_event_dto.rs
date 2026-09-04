@@ -1,4 +1,4 @@
-//! ドメインイベント 11 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
+//! ドメインイベント 13 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形 (**読む側**)。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -24,6 +24,8 @@ use super::gate_rejected_dto::GateRejectedDto;
 use super::jumped_dto::JumpedDto;
 use super::parked_dto::ParkedDto;
 use super::recomposed_dto::RecomposedDto;
+use super::single_stage_run_committed_dto::SingleStageRunCommittedDto;
+use super::skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
@@ -54,6 +56,10 @@ pub enum IntentExecutionEventDto {
     Recomposed(RecomposedDto),
     /// 自律モードの設定。
     AutonomyModeSet(AutonomyModeSetDto),
+    /// 隔離実行 (`--single`) の疑似ワークフロー ID 付き対の記録。
+    SingleStageRunCommitted(SingleStageRunCommittedDto),
+    /// walking-skeleton stance の記録。
+    SkeletonStanceRecorded(SkeletonStanceRecordedDto),
 }
 
 /// イベント識別子の復号 (全変種が共有する private 補助 — 主たる従属先はこのファイル)。
@@ -123,6 +129,16 @@ impl IntentExecutionEventDto {
             IntentExecutionEvent::Recomposed(payload) => {
                 IntentExecutionEventDto::Recomposed(RecomposedDto::of(payload))
             }
+            IntentExecutionEvent::SingleStageRunCommitted(payload) => {
+                IntentExecutionEventDto::SingleStageRunCommitted(SingleStageRunCommittedDto::of(
+                    payload,
+                ))
+            }
+            IntentExecutionEvent::SkeletonStanceRecorded(payload) => {
+                IntentExecutionEventDto::SkeletonStanceRecorded(SkeletonStanceRecordedDto::of(
+                    payload,
+                ))
+            }
             IntentExecutionEvent::AutonomyModeSet(payload) => {
                 IntentExecutionEventDto::AutonomyModeSet(AutonomyModeSetDto::of(payload))
             }
@@ -165,6 +181,12 @@ impl IntentExecutionEventDto {
             }
             IntentExecutionEventDto::Recomposed(payload) => {
                 IntentExecutionEvent::Recomposed(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::SingleStageRunCommitted(payload) => {
+                IntentExecutionEvent::SingleStageRunCommitted(payload.to_domain()?)
+            }
+            IntentExecutionEventDto::SkeletonStanceRecorded(payload) => {
+                IntentExecutionEvent::SkeletonStanceRecorded(payload.to_domain()?)
             }
             IntentExecutionEventDto::AutonomyModeSet(payload) => {
                 IntentExecutionEvent::AutonomyModeSet(payload.to_domain()?)

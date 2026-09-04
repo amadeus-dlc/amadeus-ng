@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS read_execution (
   parked_active    INTEGER NOT NULL,
   accepts_commands INTEGER NOT NULL,
   autonomy         TEXT    NOT NULL,
+  skeleton_stance  TEXT,
   seq_nr           INTEGER NOT NULL,
   last_updated_at  TEXT    NOT NULL,
   state_binding    TEXT    NOT NULL,
@@ -203,7 +204,7 @@ CREATE TABLE IF NOT EXISTS read_next_answer (
   decision_kind TEXT    NOT NULL,
   stage_index   INTEGER,
   stage_slug    TEXT,
-  gated         INTEGER,
+  gate          TEXT,
   checkbox      TEXT,
   run_stage_id  TEXT,
   as_of         INTEGER NOT NULL
@@ -236,6 +237,7 @@ CREATE TABLE IF NOT EXISTS read_run_stage (
   support_agents           TEXT    NOT NULL,
   mode                     TEXT    NOT NULL,
   gate_default             INTEGER NOT NULL,
+  in_scope                 INTEGER NOT NULL,
   inline_context_paths_rel TEXT    NOT NULL,
   stage_file_rel           TEXT    NOT NULL,
   memory_path_rel          TEXT    NOT NULL,
@@ -355,6 +357,82 @@ const DELETE_STEERING_TABLES: &str = "
 DELETE FROM read_steering_plan;
 DELETE FROM read_steering_part;
 ";
+
+/// 読み面スキーマの版 (`PRAGMA user_version` に保存する値)。
+///
+/// **列の形を変えたら必ず 1 つ上げる。** `CREATE TABLE IF NOT EXISTS` は既存の表には
+/// 何もしないので、列を足す・落とす・型を変える改訂は旧スキーマの表が残ったままになり、
+/// `INSERT` が `no such column` で落ちる (b47 の `read_next_answer.gated INTEGER` →
+/// `gate TEXT` が実例)。版が動いていれば [`recreate_tables`] が落として作り直す。
+///
+/// 行の正本はジャーナルであって読み面ではないので、**作り直しは情報を失わない**。
+/// 「後方互換を残さない」(`coding-rules/no-backward-compatibility.md`) はコードの規則で
+/// あり、機械が読む媒体を捨てて描き直すのはその帰結である。
+pub(crate) const READ_SCHEMA_VERSION: i64 = 1;
+
+/// 17 表の `DROP` (版が動いたときだけ打つ — 索引は表と一緒に落ちる)。
+///
+/// 落とすのは `read_*` 17 表**だけ**である。ジャーナル (`journal`) とスナップショット
+/// (`snapshot`) は本家の表であり、チェックポイント表 (`amadeus_projection_checkpoint`) は
+/// Markdown 面と共有の位置なので、どちらもここには現れない。
+const DROP_TABLES: &str = "
+DROP TABLE IF EXISTS read_definition;
+DROP TABLE IF EXISTS read_definition_stage;
+DROP TABLE IF EXISTS read_definition_scope;
+DROP TABLE IF EXISTS read_definition_scope_keyword;
+DROP TABLE IF EXISTS read_definition_scope_stage;
+DROP TABLE IF EXISTS read_definition_scope_phase_entry;
+DROP TABLE IF EXISTS read_intent;
+DROP TABLE IF EXISTS read_intent_stage;
+DROP TABLE IF EXISTS read_execution;
+DROP TABLE IF EXISTS read_execution_stage;
+DROP TABLE IF EXISTS read_next_answer;
+DROP TABLE IF EXISTS read_next_jump;
+DROP TABLE IF EXISTS read_next_jump_phase;
+DROP TABLE IF EXISTS read_run_stage;
+DROP TABLE IF EXISTS read_scope_change;
+DROP TABLE IF EXISTS read_steering_plan;
+DROP TABLE IF EXISTS read_steering_part;
+";
+
+/// 保存されている読み面スキーマの版 (未設定の DB は `0`)。
+///
+/// `PRAGMA user_version` は SQLite がヘッダに持つ 32bit の欄で、本家の event-store も
+/// 我々のチェックポイント表も使っていない (実測。同じ DB ファイルの中で衝突しない)。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn read_schema_version(connection: &Connection) -> Result<i64, rusqlite::Error> {
+    connection.query_row("PRAGMA user_version", [], |row| row.get(0))
+}
+
+/// 読み面スキーマの版を書く。
+///
+/// `PRAGMA` は束縛変数を取れないので、値は `i64` として整形する (外から来る文字列は
+/// 通らないので SQL の注入面は無い)。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn set_schema_version(
+    connection: &Connection,
+    version: i64,
+) -> Result<(), rusqlite::Error> {
+    connection.execute_batch(&format!("PRAGMA user_version = {version}"))
+}
+
+/// 17 表を落として作り直す (版が動いたときの作り直し)。
+///
+/// 落とすのは `read_*` だけで、ジャーナル・スナップショット・チェックポイントは触らない。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn recreate_tables(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute_batch(DROP_TABLES)?;
+    ensure_tables(connection)
+}
 
 /// 17 表と索引を (無ければ) 作る。冪等なので何度呼んでもよい。
 ///
@@ -591,8 +669,8 @@ pub(crate) fn replace_all(
             "INSERT INTO read_execution
              (id, intent_id, scope, status, cursor_index, cursor_slug,
               parked_at_index, parked_at_slug, parked_active, accepts_commands, autonomy,
-              seq_nr, last_updated_at, state_binding, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+              skeleton_stance, seq_nr, last_updated_at, state_binding, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 row.id(),
                 row.intent_id(),
@@ -605,6 +683,7 @@ pub(crate) fn replace_all(
                 row.parked_active(),
                 row.accepts_commands(),
                 row.autonomy(),
+                row.skeleton_stance(),
                 integer(row.seq_nr())?,
                 row.last_updated_at(),
                 row.state_binding(),
@@ -638,7 +717,7 @@ pub(crate) fn replace_all(
     for row in tables.next_answers() {
         transaction.execute(
             "INSERT INTO read_next_answer
-             (id, execution_id, request_kind, decision_kind, stage_index, stage_slug, gated,
+             (id, execution_id, request_kind, decision_kind, stage_index, stage_slug, gate,
               checkbox, run_stage_id, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -648,7 +727,7 @@ pub(crate) fn replace_all(
                 row.decision_kind(),
                 optional_integer(row.stage_index())?,
                 row.stage_slug(),
-                row.gated(),
+                row.gate(),
                 row.checkbox(),
                 row.run_stage_id(),
                 as_of
@@ -677,12 +756,12 @@ pub(crate) fn replace_all(
         transaction.execute(
             "INSERT INTO read_run_stage
              (id, definition_id, scope, stage_slug, phase, steering_plan_id, lead_agent,
-              support_agents, mode, gate_default, inline_context_paths_rel, stage_file_rel,
-              memory_path_rel, consumes_rel, produces_rel, sensors_applicable, reviewer,
-              reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
+              support_agents, mode, gate_default, in_scope, inline_context_paths_rel,
+              stage_file_rel, memory_path_rel, consumes_rel, produces_rel, sensors_applicable,
+              reviewer, reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
               route_digest, directive_digest, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
             params![
                 row.id(),
                 row.definition_id(),
@@ -694,6 +773,7 @@ pub(crate) fn replace_all(
                 row.support_agents(),
                 row.mode(),
                 row.gate_default(),
+                row.in_scope(),
                 row.inline_context_paths_rel(),
                 row.stage_file_rel(),
                 row.memory_path_rel(),

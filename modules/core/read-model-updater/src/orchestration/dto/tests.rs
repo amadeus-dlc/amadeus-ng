@@ -14,8 +14,9 @@
 use core_command_domain::orchestration::{
     AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
     IntentEvent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
-    IntentId, Jumped, Parked, Recomposed, StageDisplay, StageEntry, StageRevised, StageSkipped,
-    StartRequest, Started, Unparked, WorkspaceScan,
+    IntentId, Jumped, Parked, Recomposed, SingleStageRunCommitted, SkeletonStance,
+    SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
+    Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -192,6 +193,22 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             r#"{"Jumped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","target":"intent-capture"}}"#,
         ),
         (
+            IntentExecutionEvent::SingleStageRunCommitted(SingleStageRunCommitted::new(
+                event_id(),
+                execution_id(),
+                slug("intent-capture"),
+            )),
+            r#"{"SingleStageRunCommitted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture"}}"#,
+        ),
+        (
+            IntentExecutionEvent::SkeletonStanceRecorded(SkeletonStanceRecorded::new(
+                event_id(),
+                execution_id(),
+                SkeletonStance::On,
+            )),
+            r#"{"SkeletonStanceRecorded":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stance":"On"}}"#,
+        ),
+        (
             IntentExecutionEvent::Parked(Parked::new(
                 event_id(),
                 execution_id(),
@@ -245,6 +262,40 @@ fn every_event_variant_round_trips_through_the_wire() {
             serde_json::from_str(expected).expect("記録済みの行は読める");
         assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
     }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn every_skeleton_stance_spelling_round_trips_and_the_closed_set_is_enforced() {
+    // 3 綴りが往復し、閉集合の外は行の復号で止まる (綴りの正本はこの側の語彙表である)。
+    for (stance, spelling) in [
+        (SkeletonStance::On, "On"),
+        (SkeletonStance::Off, "Off"),
+        (SkeletonStance::ScopeDependent, "ScopeDependent"),
+    ] {
+        let event = IntentExecutionEvent::SkeletonStanceRecorded(SkeletonStanceRecorded::new(
+            event_id(),
+            execution_id(),
+            stance,
+        ));
+        let json = serde_json::to_string(&IntentExecutionEventDto::of(&event))
+            .expect("DTO は直列化できる");
+        assert!(
+            json.contains(&format!(r#""stance":"{spelling}""#)),
+            "{json}"
+        );
+        let decoded: IntentExecutionEventDto =
+            serde_json::from_str(&json).expect("記録済みの行は読める");
+        assert_eq!(decoded.to_domain().expect("ドメインへ戻せる"), event);
+    }
+
+    let tampered = r#"{"SkeletonStanceRecorded":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stance":"scope-dependent"}}"#;
+    let decoded: IntentExecutionEventDto =
+        serde_json::from_str(tampered).expect("JSON としては読める");
+    assert!(decoded.to_domain().is_err(), "閉集合の外は拒む");
 }
 
 #[test]

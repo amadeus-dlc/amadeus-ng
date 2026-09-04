@@ -15,7 +15,7 @@ use super::read_model_store::ReadModelStore;
 /// とりわけ `stage_slug` から `read_run_stage` を引き直してはならない。RMU は決定が
 /// run-stage のときだけ `run_stage_id` を書くので、park や不整合 2 形 (`stage_slug` は
 /// 非 NULL) で引き直すと**行に無い関連**を作ることになる。
-const SELECT_NEXT_ANSWER: &str = "SELECT decision_kind, stage_index, stage_slug, gated, checkbox, \
+const SELECT_NEXT_ANSWER: &str = "SELECT decision_kind, stage_index, stage_slug, gate, checkbox, \
 execution_id, run_stage_id \
 FROM read_next_answer WHERE execution_id = ?1 AND request_kind = ?2";
 

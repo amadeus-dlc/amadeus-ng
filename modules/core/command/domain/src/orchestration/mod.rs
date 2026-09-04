@@ -51,9 +51,9 @@
 //!
 //! モデルの `gated(s) = s != 0` は最後の行の抽象である。ITF 準拠テスト
 //! (`tests/engine_loop_conformance.rs`) はその合成計画で駆動し、実グラフの 3 ステージ側は集約の
-//! ユニットテストが固定する。**モデルの `lastDirective` (観測面) はここでは照合しない** —
-//! directive を出すのはクエリ側なので、その ITF はクエリ側の
-//! `core-query-use-case/tests/engine_loop_ladder_conformance.rs` が担う (b26 段階 2 の分割)。
+//! ユニットテストが固定する。**モデルの `lastDirective` (観測面) も同じファイルが照合する** —
+//! b26 段階 2 でクエリ側の ITF へ切り出したが、b38 で集約が返す [`EngineSignal`] との
+//! 突き合わせ (`assert_signal`) へ復帰させ、クエリ側の準拠テストは b44 で削除された。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_domain::orchestration::<型>` で安定する
@@ -63,6 +63,7 @@ mod apply_error;
 mod autonomy_mode;
 mod command_error;
 mod engine_signal;
+mod gate_decision;
 mod intent;
 mod intent_error;
 mod intent_event;
@@ -133,6 +134,7 @@ pub use status::Status;
 
 // 集約のクエリ (判断) の入出力 — RMU が投影し、クエリ側は読むだけ (2026-09-02 裁定)。
 pub use engine_signal::EngineSignal;
+pub use gate_decision::GateDecision;
 pub use next_decision::NextDecision;
 pub use next_request::NextRequest;
 pub use report_decision::ReportDecision;
@@ -144,7 +146,8 @@ pub use state_binding::StateBinding;
 // (ADR-010 / B7 — 旧・自前の封筒とその識別子型は削除した)。
 pub use intent_execution_event::{
     AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    Recomposed, StageRevised, StageSkipped, Started, Unparked,
+    Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
+    Started, Unparked,
 };
 // intent 集約の誕生イベント (改訂 8 — `Intent` は集約である)。intent 自身のジャーナルへ
 // `store` する `IntentRepository` の実装はアダプタ層にある (issue #50)。

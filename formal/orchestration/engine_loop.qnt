@@ -3,6 +3,25 @@
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.4 (2026-09-04): --single 隔離実行と walking-skeleton stance の分類往復をモデル化
+//   (#73 / b47) — 状態変数 stanceRecorded を足し、フレーム空アクション actSingleRun
+//   (全状態変数が不変) と actRecordSkeletonStance (stanceRecorded だけを立てる) を追加した。
+//   フレーム条件 single_run_frame / stance_frame と到達性 witness w_single_run /
+//   w_stance_recorded を追加。
+//   **skeleton-gate ステージの抽象は skeletonGateStage = 静的計画 plan の最初の非 init
+//   EXECUTE ステージ** (`gated(s) = s != 0` と同じ「非 init = 実ステージ」の簡約の上に、
+//   Rust 側 IntentExecution::skeleton_gate_stage の「**静的**計画の Construction フェーズ
+//   最初の EXECUTE ステージ」を重ねたもの)。本モデルは Construction フェーズを持たないので、
+//   ITF 準拠テストは合成計画の索引 1 以降を Construction フェーズに割り当てて両者を
+//   一致させる。設計 §3 の当初案は `cursor == 1` だったが、これは**不忠実**だった —
+//   縮退誕生 (実ステージが全て静的 SKIP) から recompose でオーバレイを Execute に反転し
+//   索引 1 へ jump すると `cursor == 1` かつ `plan.get(1) == SkipPlan` に到達でき、この形で
+//   Rust の skeleton_gate_stage は None (または別索引) を返して InvalidTarget で拒む。
+//   quint の一時プローブ不変条件で反例を実測 (5000 サンプル中 290 トレース目で違反) し、
+//   ガードを静的計画由来へ改めた (b47 の実測裁定)。
+//   追補 (PR #103 レビュー): actRecordSkeletonStance の `status == Running` を撤去して
+//   実装の受理集合に揃え、actSingleRun の対象選択を `STAGES.oneOf()` + `gated(s)` の
+//   一段に統一した (以前は filter で非 init に絞ったうえで gated も課す二重ガード)。
 // v2.3 (2026-09-04): actPark のガードを `Running or WorkflowParked` へ緩和 (#74 / b45) —
 //   upstream handlePark は park 済みでも成功し Parked / Parked At Stage を書き直して
 //   WORKFLOW_PARKED を再 emit する (**再スタンプ**)。到達性 witness w_repark と
@@ -32,12 +51,18 @@
 //                    Stage」の合成状態のみを表す。stale-by-progress parked は slice 2
 //   DirectiveKind  ↔ Directive enum の観測射影 (run-stage/done/parked/error のみ、slice 1)
 //   approved       ↔ ゲート承認履歴 (GATE_APPROVED 監査行の射影)
+//   stanceRecorded ↔ skeleton_stance: Option<SkeletonStance> の「記録済みか」射影。
+//                    stance の 3 値 (on/off/scope-dependent) は未モデル化 — upstream の
+//                    resolveSkeletonGate はどの値でも同じ答え (gated) を返すため、
+//                    ゲート判定に効くのは「記録されたか」だけである
 //   lastAction     ↔ ITF リプレイ用アクション記録 (ADR 0003 決定 5 の lastAction 規約)
 //   prev*          ↔ (モデル専用) フレーム条件検査用の前状態スナップショット。Rust 対応物なし
 //
 // slice 1 の抽象化と既知の恒偽枝 (第二陣以降で精密化):
-//   - stage 0 = initialization (非ゲート・常時 EXECUTE・非 CONDITIONAL)。skeleton stance /
-//     gate:"unresolved" は未モデル化
+//   - stage 0 = initialization (非ゲート・常時 EXECUTE・非 CONDITIONAL)
+//   - skeleton stance は v2.4 で「記録されたか」だけをモデル化した。`next` が返す
+//     gate の 3 値 (gated / ungated / unresolved) 自体は依然として未モデル化 —
+//     観測射影 DirectiveKind の DRunStage(int) が gate 欄を運ばないからである
 //   - per-unit 反復・swarm・load-steering/continue_token・human-presence・Build-and-Test
 //     loop-back は未モデル化
 //   - recompose の 8 ガードのうち 4 (Running/非autonomous/pending/前方) のみ
@@ -60,12 +85,16 @@
 //     WorkflowParked を到達不能にするため parked_position / unpark_restores_position が
 //     空虚に成立してしまい、b45 以前の Running 限定ガードでも検出できない既存の穴だった。
 //     b45 で parked_marker_status を追加して塞いだ (統合判断 2026-09-04 — Fable 5 メインセッションの裁定、PR #7 キュー 4 の受入時にオーナー確認)。
+// 検査力の確認 (mutation テスト、v2.4 = b47 の 2 アクション追加で実施):
+//   - actSingleRun に cursor' = cursor + 1 を注入 (フレーム空の破壊) → single_run_frame が検出
+//   - actRecordSkeletonStance に checkbox' = checkbox.set(cursor, CompletedBox) を注入
+//     (stanceRecorded 以外への波及) → stance_frame が検出
 //
 // E4 トレーサビリティ (10-orchestration.md §6 から参照される定義名):
 //   engine_loop::no_run_stage_for_skip / cursor_in_scope / no_gate_bypass /
 //   gate_lifecycle_preconditions / parked_position / parked_marker_status /
 //   unpark_restores_position / stale_rereport_yields_done / stale_rereport_frame /
-//   at_most_one_active
+//   at_most_one_active / single_run_frame / stance_frame
 
 module engine_loop {
   pure val N = 5
@@ -87,6 +116,7 @@ module engine_loop {
   var approved: int -> bool          // ゲート承認履歴
   var lastDirective: DirectiveKind
   var lastAction: str                // ITF リプレイ駆動用
+  var stanceRecorded: bool           // walking-skeleton stance が記録済みか (#73)
 
   // 前状態スナップショット (フレーム条件検査用。全アクションが snapshot と合成される)
   var prevCheckbox: int -> CheckboxState
@@ -96,6 +126,7 @@ module engine_loop {
   var prevStatus: WorkflowStatus
   var prevParkedAt: int
   var prevAutonomous: bool
+  var prevStanceRecorded: bool
 
   def gated(s: int): bool = s != 0
   def effectivePlan(s: int): PlanAction = overlay.get(s)
@@ -103,6 +134,13 @@ module engine_loop {
   def isInFlight(cb: CheckboxState): bool = or {
     cb == Pending, cb == InProgress, cb == AwaitingApproval, cb == Revising
   }
+  // skeleton-gate ステージ = **静的計画** plan の最初の非 init EXECUTE ステージ。
+  // -1 = 該当なし (全ての実ステージが静的 SKIP = 縮退誕生)。overlay (recompose の結果) は
+  // 見ない — upstream の isSkeletonGateStage は静的サブグラフを歩くからである
+  // (Rust 側 IntentExecution::skeleton_gate_stage と同じ規則)。
+  val skeletonGateStage: int = STAGES.filter(s => s > 0 and plan.get(s) == Execute)
+    .fold(-1, (acc, s) => if (acc == -1 or s < acc) s else acc)
+
   def nextInScope(after: int): int =
     STAGES.filter(s => s > after and inScope(s))
       .fold(-1, (acc, s) => if (acc == -1 or s < acc) s else acc)
@@ -135,6 +173,7 @@ module engine_loop {
       approved' = ap0,
       lastDirective' = DNone,
       lastAction' = "init",
+      stanceRecorded' = false,
       prevCheckbox' = cb0,
       prevCursor' = cur0,
       prevOverlay' = p,
@@ -142,6 +181,7 @@ module engine_loop {
       prevStatus' = Running,
       prevParkedAt' = -1,
       prevAutonomous' = false,
+      prevStanceRecorded' = false,
     }
   }
 
@@ -153,6 +193,7 @@ module engine_loop {
     prevStatus' = status,
     prevParkedAt' = parkedAt,
     prevAutonomous' = autonomous,
+    prevStanceRecorded' = stanceRecorded,
   }
 
   // next: 読み取り専用。in-flight なら run-stage (実効 SKIP なら error)、
@@ -167,6 +208,7 @@ module engine_loop {
         (if (effectivePlan(cursor) == SkipPlan) DError else DRunStage(cursor))
       else
         (if (nextInScope(cursor) == -1) DDone else DRunStage(nextInScope(cursor))),
+    stanceRecorded' = stanceRecorded,
     lastAction' = "next",
   }
 
@@ -177,6 +219,7 @@ module engine_loop {
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DParked,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "next_parked",
   }
 
@@ -197,6 +240,7 @@ module engine_loop {
       plan' = plan, overlay' = overlay, conditional' = conditional,
       parkedAt' = parkedAt, autonomous' = autonomous,
       lastDirective' = DDone,
+      stanceRecorded' = stanceRecorded,
       lastAction' = "report_forward",
     }
   }
@@ -211,6 +255,7 @@ module engine_loop {
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "report_awaiting_approval",
   }
 
@@ -223,6 +268,7 @@ module engine_loop {
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "report_rejected",
   }
 
@@ -234,6 +280,7 @@ module engine_loop {
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "report_revised",
   }
 
@@ -253,6 +300,7 @@ module engine_loop {
       plan' = plan, overlay' = overlay, conditional' = conditional,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DDone,
+      stanceRecorded' = stanceRecorded,
       lastAction' = "report_skipped",
     }
   }
@@ -269,6 +317,7 @@ module engine_loop {
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DDone,
+      stanceRecorded' = stanceRecorded,
       lastAction' = "report_stale",
     }
   }
@@ -291,6 +340,7 @@ module engine_loop {
       status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
       approved' = approved,
       lastDirective' = DNone,
+      stanceRecorded' = stanceRecorded,
       lastAction' = "jump_forward",
     }
   }
@@ -310,6 +360,7 @@ module engine_loop {
       plan' = plan, overlay' = overlay, conditional' = conditional,
       status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
       lastDirective' = DNone,
+      stanceRecorded' = stanceRecorded,
       lastAction' = "jump_backward",
     }
   }
@@ -323,6 +374,7 @@ module engine_loop {
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous,
     lastDirective' = DNone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "jump_redo",
   }
 
@@ -341,6 +393,7 @@ module engine_loop {
     checkbox' = checkbox, cursor' = cursor, autonomous' = autonomous,
     approved' = approved,
     lastDirective' = DParked,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "park",
   }
 
@@ -352,6 +405,7 @@ module engine_loop {
     checkbox' = checkbox, cursor' = cursor, autonomous' = autonomous,
     approved' = approved,
     lastDirective' = DNone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "unpark",
   }
 
@@ -368,6 +422,7 @@ module engine_loop {
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DNone,
+      stanceRecorded' = stanceRecorded,
       lastAction' = "recompose",
     }
   }
@@ -379,6 +434,7 @@ module engine_loop {
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, approved' = approved,
     lastDirective' = DNone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "set_autonomy",
   }
 
@@ -389,7 +445,48 @@ module engine_loop {
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DDone,
+    stanceRecorded' = stanceRecorded,
     lastAction' = "done_stutter",
+  }
+
+  // record-skeleton-stance: conductor が分類した walking-skeleton stance の記録 (#73)。
+  // 受理できるのはカーソルが skeleton-gate ステージに立っているときだけ (upstream の
+  // handleSkeletonStanceReport の防御)。skeleton-gate ステージの抽象は skeletonGateStage
+  // (静的計画の最初の非 init EXECUTE ステージ) — ヘッダ v2.4 の簡約注記を参照。
+  // 再記録は受理する (上書き — 冪等に true のまま)。
+  // 動かすのは stanceRecorded だけであり、それを stance_frame が検査する。
+  // ガードは skeleton-gate 位置だけである — Rust の record_skeleton_stance も取り違えと
+  // この位置しか見ず、park 中・完了後を拒まない (ピンにもそのガードは無い)。v2.4 当初は
+  // `status == Running` で狭めていたが、モデルを実装の受理集合に揃えて撤去した
+  // (PR #103 のレビュー指摘)。
+  action actRecordSkeletonStance = all {
+    cursor == skeletonGateStage,
+    stanceRecorded' = true,
+    plan' = plan, overlay' = overlay, conditional' = conditional,
+    checkbox' = checkbox, cursor' = cursor, status' = status,
+    parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
+    lastDirective' = DNone,
+    lastAction' = "record_skeleton_stance",
+  }
+
+  // single-stage run: 隔離実行 (`report --single`) の疑似ワークフロー ID 付き対の記録 (#73)。
+  // 本流の状態 (Completed / park 中 / autonomous) に依らず受理され、**状態変数を 1 つも
+  // 動かさない** — これが仕様 I10 (--single は本流を進められない) の強制手段であり、
+  // single_run_frame が検査するフレーム条件そのものである (設計 §0 の裁定 B)。
+  // 対象ステージは全ステージから nondet に選び、initialization の拒否は `gated(s)` が
+  // 単独で担う — これは Rust の record_single_stage_run が持つ唯一のガード
+  // (require_gated = 非 initialization) の写しである。選ばれた値は状態に現れない。
+  action actSingleRun = {
+    nondet s = STAGES.oneOf()
+    all {
+      gated(s),
+      plan' = plan, overlay' = overlay, conditional' = conditional,
+      checkbox' = checkbox, cursor' = cursor, status' = status,
+      parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
+      stanceRecorded' = stanceRecorded,
+      lastDirective' = DNone,
+      lastAction' = "single_run",
+    }
   }
 
   action step = any {
@@ -409,6 +506,8 @@ module engine_loop {
     all { snapshot, actRecompose },
     all { snapshot, actSetAutonomy },
     all { snapshot, actDoneStutter },
+    all { snapshot, actRecordSkeletonStance },
+    all { snapshot, actSingleRun },
   }
 
   // === 不変条件 (DoD — ADR 0003 決定 7) ===
@@ -473,8 +572,42 @@ module engine_loop {
     checkbox.get(s) == Revising,
   }).size() <= 1
 
+  // 隔離実行 (--single) は本流の状態を 1 つも動かさない (フレーム条件 — 仕様 I10 の
+  // 強制手段)。観測用の lastDirective / lastAction は更新される — 検査対象は本流の
+  // 状態変数だけである。
+  // 設計 §0 の裁定 B: 疑似ワークフロー ID 付きの対を IntentExecution のイベントとして
+  // 記録するので、「本流を進めない」ことは適用のフレーム空性で保証するしかない。
+  val single_run_frame = (lastAction == "single_run") implies and {
+    cursor == prevCursor,
+    status == prevStatus,
+    checkbox == prevCheckbox,
+    overlay == prevOverlay,
+    parkedAt == prevParkedAt,
+    autonomous == prevAutonomous,
+    approved == prevApproved,
+    stanceRecorded == prevStanceRecorded,
+  }
+
+  // stance の記録が動かすのは stanceRecorded だけである (フレーム条件)。
+  val stance_frame = (lastAction == "record_skeleton_stance") implies and {
+    cursor == prevCursor,
+    status == prevStatus,
+    checkbox == prevCheckbox,
+    overlay == prevOverlay,
+    parkedAt == prevParkedAt,
+    autonomous == prevAutonomous,
+    approved == prevApproved,
+  }
+
   // === 到達性 witness (負形式で検査 — ADR 0003 決定 7) ===
 
   // 再スタンプ経路が実在する: park 済み (prevParkedAt != -1) の状態から park を打てる
   val w_repark = (lastAction == "park") and (prevParkedAt != -1)
+
+  // 隔離実行の経路が実在する (フレーム空アクションが到達可能でなければ
+  // single_run_frame は空虚に成立してしまう)
+  val w_single_run = lastAction == "single_run"
+
+  // stance 記録の経路が実在する (同上 — stance_frame の空虚成立を防ぐ)
+  val w_stance_recorded = lastAction == "record_skeleton_stance"
 }

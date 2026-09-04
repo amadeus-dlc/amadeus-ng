@@ -13,3 +13,35 @@ pub enum GateField {
     /// walking-skeleton 判定が要る非決定ケース (`"unresolved"`)。
     Unresolved,
 }
+
+impl GateField {
+    /// リードモデル `read_next_answer.gate` の綴りから起こす。
+    ///
+    /// 綴りの正本はコマンド側の `GateDecision::spelling` である — 型は側ごとに別だが
+    /// (`coding-rules/cqrs-boundaries.md`)、行に書かれる 3 語は同じ 1 つの語彙である。
+    /// 閉集合の外は `None` — 行が語彙の外の値を持つのは RMU の破損であり、読む側は
+    /// 「値が無い」として扱って定義側の静的既定へ落ちる。
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<GateField> {
+        match raw {
+            "gated" => Some(GateField::Gated),
+            "ungated" => Some(GateField::Ungated),
+            "unresolved" => Some(GateField::Unresolved),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_three_spellings_parse_and_anything_else_is_absent() {
+        assert_eq!(GateField::parse("gated"), Some(GateField::Gated));
+        assert_eq!(GateField::parse("ungated"), Some(GateField::Ungated));
+        assert_eq!(GateField::parse("unresolved"), Some(GateField::Unresolved));
+        assert_eq!(GateField::parse("true"), None);
+        assert_eq!(GateField::parse(""), None);
+    }
+}

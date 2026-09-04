@@ -4,19 +4,38 @@
 //! フィクスチャは `tests/conformance/fixtures/engine_loop/` にコミット済み (#meta 正規化済み)。
 //! トレースの各遷移は `lastAction` で駆動する (lastAction 規約)。
 //!
-//! # 遷移面と観測面の分割 (b26 段階 2)
+//! # 遷移面と観測面 (b26 で分割し b38 で統合)
 //!
 //! 本ファイルが担うのは**遷移面**である — 各アクションが集約の状態をモデルどおりに動かすこと
 //! (`assert_projection` の frame 等価)。モデルの `lastDirective` が表す**観測面**
-//! (「次に何をせよと言うか」) はここでは照合しない: directive を出すのは読むだけの動詞であり
-//! クエリ側の責務なので (`coding-rules/cqrs-boundaries.md` 規則 5〜7)、その ITF は
-//! `core-query-use-case/tests/engine_loop_ladder_conformance.rs` が同じフィクスチャで担う。
-//! **アクション網羅のアサートは両ファイルで維持する** — 分割で片側の網羅が緩まないように。
+//! (「次に何をせよと言うか」) は b26 段階 2 で一度クエリ側の ITF へ切り出したが、**観測面の ITF は
+//! クエリ側にはもう無い** — b38 で本ファイルの `assert_signal` (集約が返す `EngineSignal` との
+//! 突き合わせ) へ復帰させ、クエリ側の準拠テストは b44 で削除された。遷移面・観測面・アクション
+//! 網羅のアサートは、いずれも本ファイル 1 枚が担う。
 //!
 //! モデルの `gated(s) = s != 0` は **initialization フェーズ 1 ステージだけを持つ合成計画**への
-//! 抽象である。ここではその合成計画 (索引 0 = initialization、以降 = inception) を
+//! 抽象である。ここではその合成計画 (索引 0 = initialization、**索引 1 以降 = construction**) を
 //! `Intent::create` へ直接与え、その対の左を `IntentExecution::start` に渡して集約を作る。実グラフの initialization が
 //! 3 ステージであることは、集約側のユニットテスト (`gated = phase != initialization`) が固定する。
+//!
+//! # 索引 1 以降を construction に割り当てる理由 (b47 / #73)
+//!
+//! モデル v2.4 の `skeletonGateStage` は「**静的計画** `plan` の最初の非 init EXECUTE ステージ」
+//! である。これは Rust 側 [`IntentExecution::skeleton_gate_stage`] の「静的計画の
+//! **Construction フェーズ**の最初の EXECUTE ステージ」を、Construction フェーズを持たない
+//! モデルへ畳んだ抽象である。両者を一致させるには合成計画の非 init ステージが
+//! すべて construction でなければならない — 以前の inception 割当のままだと Rust 側は
+//! `skeleton_gate_stage() == None` を返し、`record_skeleton_stance` が常に
+//! `InvalidTarget` で拒否されて再生が赤くなる。
+//!
+//! 割当を変えても `gated` の抽象 (`s != 0` ↔ `phase != initialization`) は不変である —
+//! inception も construction もゲート付きだからである。したがって既存の全アームは
+//! 影響を受けない。
+//!
+//! なお当初の設計案は skeleton-gate を `cursor == 1` と畳む案だったが、これは不忠実
+//! だった: 縮退誕生から recompose + jump で `cursor == 1` かつ `plan[1] == SkipPlan` に
+//! 到達できてしまう。実際、再採取したフィクスチャで `record_skeleton_stance` が現れるのは
+//! `trace-0xd4` の cursor 3 と `trace-0x505` の cursor 2 であり、**どちらも索引 1 ではない**。
 
 // テストコードでは unwrap を許可 (オーナー規約)。integration test のヘルパは
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -28,8 +47,8 @@
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     AutonomyMode, Created, EngineSignal, Intent, IntentEventId, IntentExecution, IntentExecutionId,
-    IntentId, NextRequest, StageDisplay, StageEntry, StageIndex, StartRequest, Status,
-    WorkspaceScan,
+    IntentId, NextRequest, SkeletonStance, StageDisplay, StageEntry, StageIndex, StartRequest,
+    Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -96,6 +115,8 @@ struct ModelState {
     status: String,
     parked_at: i64,
     autonomous: bool,
+    /// `stanceRecorded` — 集約の `skeleton_stance().is_some()` に対応する射影。
+    stance_recorded: bool,
     plan: Vec<PlanAction>,
     overlay: Vec<PlanAction>,
     conditional: Vec<bool>,
@@ -117,6 +138,7 @@ fn parse_state(v: &Value) -> ModelState {
         status: tag(&v["status"]).to_string(),
         parked_at: bigint(&v["parkedAt"]),
         autonomous: v["autonomous"].as_bool().unwrap(),
+        stance_recorded: v["stanceRecorded"].as_bool().unwrap(),
         plan: map_to_vec(&v["plan"], n, plan_of),
         overlay: map_to_vec(&v["overlay"], n, plan_of),
         conditional: map_to_vec(&v["conditional"], n, |b| b.as_bool().unwrap()),
@@ -137,7 +159,8 @@ fn synthetic_revision() -> DefinitionRevision {
     DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap()
 }
 
-/// モデルの初期 plan / conditional から合成計画を作る (索引 0 = initialization)。
+/// モデルの初期 plan / conditional から合成計画を作る
+/// (索引 0 = initialization、索引 1 以降 = construction — 冒頭 doc の理由を参照)。
 fn synthetic_stages(m: &ModelState) -> Vec<StageEntry> {
     m.plan
         .iter()
@@ -147,7 +170,7 @@ fn synthetic_stages(m: &ModelState) -> Vec<StageEntry> {
             let phase = if index == 0 {
                 PhaseId::Initialization
             } else {
-                PhaseId::Inception
+                PhaseId::Construction
             };
             StageEntry::new(
                 slug(index),
@@ -207,6 +230,13 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
         m.autonomous,
         "step {step}: autonomy"
     );
+    // モデルは stance の値 (on/off/scope-dependent) を持たず「記録済みか」だけを持つ
+    // (モデルヘッダ v2.4 の対応表)。突き合わせるのはその射影である。
+    assert_eq!(
+        agg.skeleton_stance().is_some(),
+        m.stance_recorded,
+        "step {step}: stanceRecorded"
+    );
     let parked = agg
         .parked_at()
         .map_or(-1, |p| i64::try_from(p.to_usize()).unwrap());
@@ -231,8 +261,8 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
 /// 判断は集約が所有する (仕様 10 §2.3。2026-09-02 の裁定でクエリ側から復帰)。RMU は
 /// この同じクエリを呼んでリードモデルへ投影するので、ここで固定した対応がそのまま
 /// `read_next_answer` の正しさの根拠になる。
-fn assert_signal(agg: &IntentExecution, m: &ModelState, step: usize) {
-    let decision = agg.next_decision(&NextRequest::default());
+fn assert_signal(agg: &IntentExecution, intent: &Intent, m: &ModelState, step: usize) {
+    let decision = agg.next_decision(intent, &NextRequest::default());
     let signal = EngineSignal::from(&decision);
     match (signal, m.directive_tag.as_str()) {
         (EngineSignal::RunStage(s), "DRunStage") => {
@@ -300,7 +330,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
         match m.last_action.as_str() {
             // 観測アクション (状態不変)。集約の判断をモデルの directive と突き合わせる
             // (観測面)。frame 等価 (観測は状態を動かさない) は末尾の assert_projection が担う。
-            "next" | "next_parked" | "done_stutter" => assert_signal(&agg, m, i),
+            "next" | "next_parked" | "done_stutter" => assert_signal(&agg, &intent, m, i),
             "report_stale" => {
                 // モデルは nondet に stale 対象を選ぶ — 前状態から有効な対象を 1 つ選んで
                 // メンバーシップ検査 (frame 等価は assert_projection が担う)。ガードは受理可否
@@ -360,6 +390,25 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                     .unwrap();
                 agg.recompose(&intent, &[index(&agg, s)], at()).unwrap();
             }
+            "single_run" => {
+                // 隔離実行はフレーム空 — モデルは対象を nondet に選ぶが、選ばれた値は
+                // 状態のどこにも現れない (`single_run_frame` が全状態変数の不変を固定する)。
+                // よってテスト側は固定の非 init ステージを打てば十分である。索引 1 を選ぶ
+                // 理由は「合成計画で必ず存在する最小の非 init ステージ」だからで、
+                // `record_single_stage_run` の唯一のガード (非 init = ゲート付き) を必ず通る。
+                agg.record_single_stage_run(&intent, index(&agg, 1), at())
+                    .unwrap();
+            }
+            "record_skeleton_stance" => {
+                // モデルは「記録済みか」の 1 bit しか持たないので、値は代表として On を打つ
+                // (upstream の resolveSkeletonGate はどの stance でも同じ答えを返すため、
+                // ゲート判定に効くのは記録の有無だけ — モデルヘッダ v2.4 の対応表)。
+                // カーソルが skeleton-gate ステージに立っていることはモデルのガード
+                // (`cursor == skeletonGateStage`) が保証しており、合成計画の索引 1 以降を
+                // construction に割り当てることで Rust 側の導出と一致する (冒頭 doc)。
+                agg.record_skeleton_stance(&intent, SkeletonStance::On, at())
+                    .unwrap();
+            }
             "set_autonomy" => {
                 // モデルはトグル — 反転後の値を switch_autonomy に渡す (BR2.5)。
                 let mode = if m.autonomous {
@@ -388,12 +437,13 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
             count += 1;
         }
     }
-    assert!(count >= 6, "expected committed fixtures, found {count}");
+    assert!(count >= 11, "expected committed fixtures, found {count}");
     // アクション網羅: 全アクションが少なくとも 1 つのコミット済みトレースに現れること。
     // 初回 6 シードの探索は report_revised / report_skipped を一度も踏んでおらず、該当
-    // アームは fixture に対して死文だった。負形式インライン不変条件
-    // (--invariant 'not(lastAction == "...")') で採取した trace-0x101 / trace-0x202 で
-    // 補完済み — 稀アクションを含む fixture の消失退行をここで防ぐ。
+    // アームは fixture に対して死文だった。report_revised は負形式インライン不変条件
+    // (`--invariant 'not(lastAction == "report_revised")'`) で狙い撃ちした trace-0x101 が、
+    // report_skipped は素の採取である trace-0xe5 が持つ (b47 の再採取後の実測)。稀アクションを
+    // 含む fixture の消失退行をここで防ぐ。
     for action in [
         "next",
         "next_parked",
@@ -413,6 +463,10 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
         "unpark",
         "recompose",
         "set_autonomy",
+        // b47 (#73) で追加した 2 アクション。trace-0x404 / trace-0x505 が負形式 witness
+        // (`not(w_single_run)` / `not(w_stance_recorded)`) で狙い撃ちして採取した経路を持つ。
+        "single_run",
+        "record_skeleton_stance",
     ] {
         assert!(
             seen.contains(action),
