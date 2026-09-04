@@ -36,13 +36,8 @@ use core_command_use_case::orchestration::{
     IntentRepository as _, ReportedTransition,
 };
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
-use core_query_interface_adapter::{
-    DefinitionPaths, ExecutionStateDaoImpl, MemoryRulesDaoImpl, WorkflowDefinitionDaoImpl,
-    verify_continue_token,
-};
-use core_query_use_case::orchestration::{
-    ContinueUseCase, Directive, NextTurnInput, NextUseCase, WorkspaceLayout,
-};
+use core_query_interface_adapter::verify_continue_token;
+use core_query_use_case::orchestration::{Directive, NextTurnInput};
 use core_read_model_updater::orchestration::{
     JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
 };
@@ -53,6 +48,7 @@ use crate::layout::Layout;
 use crate::presenter::{DIRECTIVE_MAX_BYTES, Presenter};
 use crate::record_name;
 use crate::steering::SteeringKey;
+use crate::turn;
 use crate::wording;
 
 /// 投影の名前（チェックポイントの鍵）。
@@ -155,16 +151,23 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
     }
 }
 
-/// `next` — リードモデルを追いつかせてからラダーを回す。
+/// `next` — 初回だけ定義を準備し、リードモデルを追いつかせてから構造化面を引く。
 async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u8>), String> {
-    catch_up_before_reading(layout).await;
     // 鍵は `next` だけが鋳造する（I8 の例外 1 — steering MAC キー）。
     let key = SteeringKey::resolve(layout.project_dir(), layout.record_dir());
     let bytes = key
         .mint_for_next()
         .map_err(|error| key_wording(&key, &error))?;
-    let directive = use_case(layout).execute(&with_layout(layout, input));
-    Ok((directive, bytes))
+
+    // 配布物やストアを読まなくても答えが決まる拒否・ユーティリティは、初回準備より先に返す。
+    if let Some(directive) = turn::pre_guard(&input) {
+        return Ok((directive, bytes));
+    }
+    if layout.record_dir().is_none() {
+        prepare_definition_for_first_read(layout).await?;
+    }
+    catch_up_before_reading(layout).await;
+    Ok((turn::next(layout, &input), bytes))
 }
 
 /// `continue` — 鍵は**読むだけ**。無ければ・壊れていれば fail-closed（I12）。
@@ -185,14 +188,7 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
         Err(error) => return Err(key_wording(&key, &error)),
     };
     let verified = verify_continue_token(&bytes, token).ok();
-    let input = with_layout(layout, NextTurnInput::new());
-    let directive = ContinueUseCase::new(
-        workflow_definition_dao(layout),
-        execution_state_dao(layout),
-        memory_rules_dao(layout),
-    )
-    .execute(verified, &input);
-    Ok((directive, bytes))
+    Ok((turn::resume(layout, verified.as_ref()), bytes))
 }
 
 /// `report` — 報告された結末を 1 つの遷移としてコミットし、投影で読み面へ落とす。
@@ -536,6 +532,38 @@ async fn ensure_defined(
     .map_err(|error| diagnose("cannot read the compiled definition", &error))
 }
 
+/// 最初の `next` が読む定義行を、intent の記録を作る前に用意する。
+///
+/// 書込ユースケースと RMU を起動するのは合成ルートの前処理であり、クエリ側ユースケースは
+/// 引き続き構造化リードモデルを読むだけである。intent が生まれる前は Markdown の投影先が
+/// 無いため、この時点では定義イベントから構造化面だけを描く。
+async fn prepare_definition_for_first_read(layout: &Layout) -> Result<(), String> {
+    let store = store_path(layout)?;
+    let workflow_definition_repository = WorkflowDefinitionRepositoryImpl::open(&store)
+        .map_err(|error| diagnose("cannot open the workflow definition repository", &error))?;
+    let definition_id =
+        definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    let compiled_definition_id =
+        compiled_definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    ensure_defined(
+        layout,
+        workflow_definition_repository,
+        &compiled_definition_id,
+        &definition_id,
+        Utc::now(),
+    )
+    .await?;
+
+    let projection =
+        ProjectionName::parse(PROJECTION).map_err(|error| format!("projection name: {error:?}"))?;
+    let mut journal_reader = JournalReaderImpl::open(&store)
+        .map_err(|error| diagnose("cannot open the definition journal", &error))?;
+    ReadModelUpdater::catch_up_structured(&mut journal_reader, &projection)
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("definition projection: {error}"))
+}
+
 fn build_request(scope: &str, args: &IntentCreateArgs, review: Option<&str>) -> StartRequest {
     let mut request = StartRequest::new(scope, args.arguments().unwrap_or_default());
     if let Some(depth) = args.depth() {
@@ -704,48 +732,6 @@ fn compiled_definition_id(
 ) -> Result<core_command_domain::workflow_definition::CompiledDefinitionId, String> {
     core_command_domain::workflow_definition::CompiledDefinitionId::parse(harness_name(layout))
         .map_err(|error| format!("cannot resolve the compiled definition id: {error:?}"))
-}
-
-fn use_case(
-    layout: &Layout,
-) -> NextUseCase<WorkflowDefinitionDaoImpl, ExecutionStateDaoImpl, MemoryRulesDaoImpl> {
-    NextUseCase::new(
-        workflow_definition_dao(layout),
-        execution_state_dao(layout),
-        memory_rules_dao(layout),
-    )
-}
-
-fn workflow_definition_dao(layout: &Layout) -> WorkflowDefinitionDaoImpl {
-    WorkflowDefinitionDaoImpl::new(DefinitionPaths::new(
-        layout.definition_data_dir(),
-        layout.scopes_dir(),
-    ))
-}
-
-fn execution_state_dao(layout: &Layout) -> ExecutionStateDaoImpl {
-    ExecutionStateDaoImpl::new(
-        layout
-            .record_dir()
-            .map(Path::to_path_buf)
-            .unwrap_or_default(),
-    )
-}
-
-fn memory_rules_dao(layout: &Layout) -> MemoryRulesDaoImpl {
-    MemoryRulesDaoImpl::new(layout.memory_dir())
-}
-
-/// ラダーへ渡す観測にワークスペース配置を載せる。
-fn with_layout(layout: &Layout, input: NextTurnInput) -> NextTurnInput {
-    input.with_layout(WorkspaceLayout::new(
-        layout
-            .record_dir()
-            .map(|dir| dir.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        layout.stage_library_dir().to_string_lossy().into_owned(),
-        layout.agent_dir().to_string_lossy().into_owned(),
-    ))
 }
 
 /// 鍵の失敗を逐語文言へ写す（3 形 — upstream `aidlc-orchestrate.ts:2323/2331/2350`）。
@@ -927,6 +913,8 @@ mod tests {
 
     #[derive(PartialEq, Eq)]
     enum Step {
+        /// どの手も失敗させない（ダブルが素通しであることを固定するための対照）。
+        Nothing,
         WriteState,
         WriteExecutionCursor,
         PointAt,
@@ -1168,5 +1156,324 @@ mod tests {
     #[test]
     fn the_running_machine_reports_a_host() {
         assert!(!host_name().is_empty(), "実機のホスト名が読めない");
+    }
+
+    /// どの手も失敗させないダブルは素通しである — 他の 3 つのテストが観測する失敗が
+    /// ダブル自身ではなく**注入した 1 手**から来ていることの対照になる。
+    #[tokio::test]
+    async fn the_records_double_is_transparent_when_no_step_is_injected() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent_with(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+            &FailingAt(Step::Nothing),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        assert_eq!(completion.diagnostic(), None);
+        assert!(
+            Layout::resolve(root.path()).record_dir().is_some(),
+            "カーソルは実 I/O で据わる"
+        );
+    }
+
+    /// `--project-dir` が無ければ、渡された作業ディレクトリがワークスペース根になる。
+    #[tokio::test]
+    async fn the_working_directory_is_the_workspace_root_when_no_project_dir_is_given() {
+        let root = minimal_workspace();
+
+        let completion = run(
+            "aidlc-utility",
+            &[
+                "intent-create".to_string(),
+                "--scope".to_string(),
+                "classic".to_string(),
+                "--label".to_string(),
+                "demo".to_string(),
+            ],
+            root.path(),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        assert!(
+            Layout::resolve(root.path()).record_dir().is_some(),
+            "cwd の下に record が生まれる"
+        );
+    }
+
+    /// 定義が名乗らない scope では鋳造できない（ユースケースの拒否をそのまま運ぶ）。
+    #[tokio::test]
+    async fn minting_an_intent_with_a_scope_the_definition_does_not_declare_is_refused() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent(
+            &layout,
+            &intent_create_args(&["--scope", "nope", "--label", "demo"]),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 1);
+        assert_eq!(completion.line(), None, "stdout には何も出さない");
+        assert!(
+            completion
+                .diagnostic()
+                .unwrap_or_default()
+                .starts_with("aidlc-orchestrate: "),
+            "{completion:?}"
+        );
+    }
+
+    /// イベントストアを開けなければ、報告は自己防衛拒否で止まる。
+    #[tokio::test]
+    async fn a_report_against_an_unopenable_event_store_is_refused() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+        create_intent(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+        )
+        .await;
+        // ストアの置き場をディレクトリで塞ぐ（開く時点で潰える）。
+        let store = root
+            .path()
+            .join("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+        std::fs::remove_file(&store).expect("ストア");
+        std::fs::create_dir(&store).expect("塞ぐ");
+
+        let completion = report(
+            &Layout::resolve(root.path()),
+            &report_args(&["--result", "approved"]),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 1);
+        assert_eq!(
+            completion.diagnostic(),
+            Some("aidlc-orchestrate: cannot open the event store")
+        );
+    }
+
+    /// 書いた事実を描けなければ握り潰さない — 利用者には何も見えないままになるからである。
+    #[tokio::test]
+    async fn a_projection_that_cannot_land_after_a_commit_is_refused() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+        create_intent(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+        )
+        .await;
+        let layout = Layout::resolve(root.path());
+        let state_file = layout.state_file().expect("状態ファイル");
+        // 骨格の置き場をディレクトリで塞ぐ（コマンド側は通るが、投影は書き込めない）。
+        std::fs::remove_file(&state_file).expect("骨格");
+        std::fs::create_dir(&state_file).expect("塞ぐ");
+
+        let completion = report(&layout, &report_args(&["--result", "approved"])).await;
+
+        assert_eq!(completion.code(), 1);
+        assert!(
+            completion
+                .diagnostic()
+                .unwrap_or_default()
+                .starts_with("aidlc-orchestrate: "),
+            "{completion:?}"
+        );
+    }
+
+    /// 定義の下準備でストアを開けなければ、`next` は逐語の拒否になる。
+    #[tokio::test]
+    async fn a_first_next_that_cannot_open_the_store_reports_the_failure() {
+        let root = minimal_workspace();
+        let store = root
+            .path()
+            .join("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+        std::fs::create_dir_all(&store).expect("塞ぐ");
+
+        let completion = run("aidlc-orchestrate", &["next".to_string()], root.path()).await;
+
+        assert_eq!(
+            completion.code(),
+            0,
+            "ビジネス経路は exit 0: {completion:?}"
+        );
+        let line = completion.line().unwrap_or_default();
+        assert!(line.contains("\"error\""), "{line}");
+    }
+
+    /// 空間名として成立しない active-space では、下準備の時点でストアの所在が決まらない。
+    #[tokio::test]
+    async fn a_first_next_under_an_invalid_active_space_is_refused_by_name() {
+        let root = minimal_workspace();
+        std::fs::write(root.path().join("aidlc/active-space"), "../escape\n").expect("space");
+
+        let completion = run("aidlc-orchestrate", &["next".to_string()], root.path()).await;
+
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        let line = completion.line().unwrap_or_default();
+        assert!(line.contains("is not a valid space name"), "{line}");
+    }
+
+    /// `continue` の鍵が無ければ、原因を区別せず fail-closed の逐語になる。
+    #[tokio::test]
+    async fn a_continue_without_a_key_fails_closed() {
+        let root = minimal_workspace();
+
+        let completion = run(
+            "aidlc-orchestrate",
+            &["continue".to_string(), "not-a-token".to_string()],
+            root.path(),
+        )
+        .await;
+
+        assert_eq!(
+            completion.code(),
+            0,
+            "ビジネス拒否は exit 0: {completion:?}"
+        );
+        assert!(
+            completion
+                .line()
+                .unwrap_or_default()
+                .contains("Invalid steering continuation token"),
+            "{completion:?}"
+        );
+    }
+
+    /// 受理されない `--result` は directive の error として stdout に出る（自己防衛拒否ではない）。
+    #[tokio::test]
+    async fn an_unknown_result_is_emitted_as_a_business_error() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+
+        let completion = report(&layout, &report_args(&["--result", "ok"])).await;
+
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        assert!(
+            completion
+                .line()
+                .unwrap_or_default()
+                .contains("Unknown --result"),
+            "{completion:?}"
+        );
+    }
+
+    /// 配布物を読めなければ定義を確立できず、鋳造はそこで止まる。
+    #[tokio::test]
+    async fn an_unreadable_compiled_definition_stops_the_mint() {
+        let root = minimal_workspace();
+        std::fs::remove_file(root.path().join(".claude/tools/data/stage-graph.json"))
+            .expect("配布物");
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 1);
+        assert!(
+            completion
+                .diagnostic()
+                .unwrap_or_default()
+                .contains("cannot read the compiled definition"),
+            "{completion:?}"
+        );
+    }
+
+    /// ジャーナルを開けなければ投影は進めない（`next` はその手前の読取で答えを出す）。
+    #[tokio::test]
+    async fn a_blocked_store_stops_the_catch_up_before_reading() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+        create_intent(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+        )
+        .await;
+        let store = root
+            .path()
+            .join("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+        std::fs::remove_file(&store).expect("ストア");
+        std::fs::create_dir(&store).expect("塞ぐ");
+
+        let completion = run("aidlc-orchestrate", &["next".to_string()], root.path()).await;
+
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        assert!(
+            completion
+                .line()
+                .unwrap_or_default()
+                .contains("Read model not readable at "),
+            "{completion:?}"
+        );
+    }
+
+    /// `--scope` の無い `intent-create` は、必須フラグを名指して拒む。
+    #[tokio::test]
+    async fn minting_without_a_scope_names_the_missing_flag() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent(&layout, &intent_create_args(&["--label", "demo"])).await;
+
+        assert_eq!(completion.code(), 1);
+        assert_eq!(
+            completion.diagnostic(),
+            Some("aidlc-orchestrate: intent-create requires --scope <name>.")
+        );
+    }
+
+    /// 閉集合を外れた `--review` は、意味の無い上限を焼き込む前に拒む。
+    #[tokio::test]
+    async fn minting_with_an_unknown_review_class_is_refused_before_anything_is_written() {
+        let root = minimal_workspace();
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent(
+            &layout,
+            &intent_create_args(&[
+                "--scope", "classic", "--label", "demo", "--review", "strict",
+            ]),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 1);
+        assert_eq!(
+            completion.diagnostic(),
+            Some("Unknown review class: \"strict\". Valid: adversarial, advisory, none.")
+        );
+        assert_eq!(Layout::resolve(root.path()).record_dir(), None);
+    }
+
+    /// 記録ディレクトリを作れなければ、何も作らずに拒む。
+    #[tokio::test]
+    async fn a_record_directory_that_cannot_be_created_stops_the_mint() {
+        let root = minimal_workspace();
+        let intents = root.path().join("aidlc/spaces/default/intents");
+        std::fs::remove_dir_all(&intents).expect("既存の intents を退ける");
+        std::fs::write(&intents, "not a directory\n").expect("同名のファイル");
+        let layout = Layout::resolve(root.path());
+
+        let completion = create_intent(
+            &layout,
+            &intent_create_args(&["--scope", "classic", "--label", "demo"]),
+        )
+        .await;
+
+        assert_eq!(completion.code(), 1);
+        assert!(
+            completion
+                .diagnostic()
+                .unwrap_or_default()
+                .starts_with("aidlc-orchestrate: cannot create the record directory:"),
+            "{completion:?}"
+        );
     }
 }

@@ -1,6 +1,6 @@
 //! `ScopeKeywordDao` の実 Gateway — キーワードから scope 名を引く。
 
-use std::path::Path;
+use std::rc::Rc;
 
 use core_query_use_case::orchestration::{ReadModelReadError, ScopeKeywordDao};
 
@@ -14,19 +14,17 @@ const SELECT_SCOPE_OF_KEYWORD: &str =
 /// キーワードに割り当たった scope 名を返す実装。
 #[derive(Debug)]
 pub struct ScopeKeywordDaoImpl {
-    store: ReadModelStore,
+    store: Rc<ReadModelStore>,
 }
 
 impl ScopeKeywordDaoImpl {
-    /// 構造化リードモデルのストアを読取専用で開く。
+    /// 1 要求ぶんの共有ストアを受け取る (**この型の唯一の構築経路**)。
     ///
-    /// # Errors
-    ///
-    /// ストアを開けない ([`ReadModelReadError`])。
-    pub fn open(path: &Path) -> Result<ScopeKeywordDaoImpl, ReadModelReadError> {
-        Ok(ScopeKeywordDaoImpl {
-            store: ReadModelStore::open(path)?,
-        })
+    /// 開くのは [`super::ReadModelDaos`] 1 か所で、12 実装はその 1 接続を分け合う。
+    /// 実装ごとに開くと、多段の引当が別々のスナップショットを見る余地が残る。
+    #[must_use]
+    pub(crate) const fn new(store: Rc<ReadModelStore>) -> ScopeKeywordDaoImpl {
+        ScopeKeywordDaoImpl { store }
     }
 }
 

@@ -992,3 +992,149 @@ async fn creating_an_intent_without_a_scope_is_refused() {
     assert_eq!(completion.line(), None);
     assert!(workspace.record_dir().is_none(), "何も作らない");
 }
+
+/// 定義が名乗らない scope では鋳造できない — 自己防衛拒否（stderr・exit 1）で止まる。
+#[tokio::test]
+async fn minting_with_a_scope_the_definition_does_not_declare_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "nope", "--label", "demo"],
+    )
+    .await;
+
+    assert_eq!(completion.code(), 1, "自己防衛拒否: {completion:?}");
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: "),
+        "{completion:?}"
+    );
+    assert_eq!(workspace.record_dir(), None, "記録は残らない");
+}
+
+/// 定義の下準備でストアを開けなければ、最初の `next` はその失敗を逐語で運ぶ。
+#[tokio::test]
+async fn a_first_next_that_cannot_open_the_store_reports_the_failure() {
+    let workspace = Workspace::create();
+    fs::create_dir_all(workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite"))
+        .expect("塞ぐ");
+
+    let completion = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+
+    assert_eq!(
+        completion.code(),
+        0,
+        "ビジネス経路は exit 0: {completion:?}"
+    );
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert!(
+        string_of(&directive, "message").contains("cannot open the workflow definition repository"),
+        "{directive:?}"
+    );
+}
+
+/// `--project-dir` が無ければ、渡された作業ディレクトリがワークスペース根になる。
+#[tokio::test]
+async fn the_working_directory_is_the_workspace_root_when_no_project_dir_is_given() {
+    let workspace = Workspace::create();
+
+    let completion = aidlc::runtime::run(
+        "aidlc-utility",
+        &[
+            "intent-create".to_string(),
+            "--scope".to_string(),
+            "classic".to_string(),
+            "--label".to_string(),
+            "demo".to_string(),
+        ],
+        workspace.project_dir(),
+    )
+    .await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert!(
+        workspace.record_dir().is_some(),
+        "cwd の下に record が生まれる"
+    );
+}
+
+/// ゲート付きステージの往復 — 承認待ち → 差戻し → 改訂 → 承認を実 CLI で歩き、集約の
+/// 遷移ガードが実際に噛み合うことを見る（`report` は結末ごとに別の遷移へ写る）。
+#[tokio::test]
+async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approved() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    for outcome in ["awaiting-approval", "rejected", "revised", "approved"] {
+        let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+        assert_eq!(next.code(), 0, "{outcome} の直前の next: {next:?}");
+
+        let completion = invoke(
+            &workspace,
+            "aidlc-orchestrate",
+            &["report", "--result", outcome],
+        )
+        .await;
+
+        assert_eq!(
+            completion.code(),
+            0,
+            "{outcome} は受理される: {completion:?}"
+        );
+        let directive = line_of(&completion);
+        assert_eq!(string_of(&directive, "kind"), "done");
+        assert_eq!(
+            string_of(&directive, "reason"),
+            format!("reported {outcome}")
+        );
+    }
+
+    let state = workspace.state_file().expect("骨格");
+    assert!(
+        state.contains("contract-design"),
+        "承認でカーソルが次のステージへ進む: {state}"
+    );
+}
+
+/// 計画が EXECUTE と言っているステージは飛ばせない — 集約の拒否を逐語で中継する。
+#[tokio::test]
+async fn skipping_a_stage_the_plan_marks_execute_is_rejected() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "skipped", "--reason", "out of scope"],
+    )
+    .await;
+
+    assert_eq!(
+        completion.code(),
+        0,
+        "ビジネス拒否は exit 0: {completion:?}"
+    );
+    let directive = line_of(&completion);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Transition rejected: command: stage 1 is not skippable"
+    );
+}

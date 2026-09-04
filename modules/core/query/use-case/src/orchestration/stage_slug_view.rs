@@ -5,7 +5,7 @@ use super::stage_slug_error::StageSlugError;
 
 /// パース済みの stage slug (不正値はこの型に存在しない)。
 ///
-/// `Ord` は生文字列の辞書順。数値順の語彙は [`super::StageNumberView`] が持つ。
+/// `Ord` は生文字列の辞書順。数値順の語彙 (stage 番号) はこの型には無く、順序の判断は集約側にある。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StageSlugView(String);
 

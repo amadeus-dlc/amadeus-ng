@@ -1,16 +1,16 @@
 //! `PartIndex` — 配信部の索引 (1 始まり)。
 //!
-//! 算術は公開しない — 進めるのは `next()` だけ、範囲判定は [`SteeringPlan`] のクエリだけが
-//! 行う (取り違え防止)。
+//! 算術は公開しない — 進めるのは `next()` だけ。範囲判定はクエリ側では行わない (RMU が
+//! 投影した行の写し [`SteeringPlanView`] を読むだけ — 取り違え防止)。
 //!
-//! [`SteeringPlan`]: super::SteeringPlan
+//! [`SteeringPlanView`]: super::SteeringPlanView
 
 /// 配信部の索引 (1 始まり)。
 ///
-/// 算術は公開しない — 進めるのは `next()` だけ、範囲判定は [`SteeringPlan`] のクエリだけが
-/// 行う (取り違え防止)。
+/// 算術は公開しない — 進めるのは `next()` だけ。範囲判定はクエリ側では行わない (RMU が
+/// 投影した行の写し [`SteeringPlanView`] を読むだけ — 取り違え防止)。
 ///
-/// [`SteeringPlan`]: super::SteeringPlan
+/// [`SteeringPlanView`]: super::SteeringPlanView
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PartIndex(u32);
 

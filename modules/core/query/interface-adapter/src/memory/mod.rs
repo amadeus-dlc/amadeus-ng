@@ -20,13 +20,11 @@
 //! 増えない (引けない媒体に読める行は無い)。
 //!
 //! use-case 層の単体テストはこれらを使えない (層 = クレートで依存が物理強制されており、
-//! use-case はアダプタを知らない) — 向こう側のフェイクは
-//! `core_query_use_case` の `orchestration::test_fixtures` にある。ここのダブルは
+//! use-case はアダプタを知らない) — 向こう側のフェイクは `tests/` に置く。ここのダブルは
 //! **アダプタ層とその上 (合成ルート)** のためのものである。
 //!
 //! 本 mod 自体が private。公開はクレート root のファサードが再輸出する。
 
-mod execution_state_dao;
 mod in_memory_definition_dao;
 mod in_memory_execution_dao;
 mod in_memory_jump_dao;
@@ -39,12 +37,6 @@ mod in_memory_scope_dao;
 mod in_memory_scope_keyword_dao;
 mod in_memory_steering_part_dao;
 mod in_memory_steering_plan_dao;
-mod memory_rules_dao;
-mod workflow_definition_dao;
-
-pub use execution_state_dao::InMemoryExecutionStateDao;
-pub use memory_rules_dao::InMemoryMemoryRulesDao;
-pub use workflow_definition_dao::InMemoryWorkflowDefinitionDao;
 
 // 構造化リードモデル (`read_*` 表) を引く 12 ポートのダブル (b43)。
 pub use in_memory_definition_dao::InMemoryDefinitionDao;

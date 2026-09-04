@@ -25,6 +25,18 @@ pub trait ScopeDao {
         scope: &str,
     ) -> Result<Option<ScopeView>, ReadModelReadError>;
 
+    /// 定義 1 本の scope 列を**綴り順**でまとめて引く。
+    ///
+    /// 有効な scope にしか行が無いので、これが「この定義で名乗れる scope の全体」である。
+    /// 未知 scope の拒否文言が並べる一覧の材料であり、**呼び手は選ばない** — 引いた行を
+    /// そのまま並べる。並びを綴り順に固定するのは、行に順序の列が無いためである
+    /// (`read_definition_scope` は位置を持たない)。
+    ///
+    /// # Errors
+    ///
+    /// リードモデルを引けない ([`ReadModelReadError`])。
+    fn find_all(&self, definition_id: &str) -> Result<Vec<ScopeView>, ReadModelReadError>;
+
     /// 既製 3 scope をまとめて引く ([`ScopeDao::STOCK_SCOPES`] の順、引けたものだけ)。
     ///
     /// [`ScopeDao::find`] を定数の並び順に 3 回呼ぶだけの引当である。どれが引けたかは

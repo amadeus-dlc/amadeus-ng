@@ -10,7 +10,7 @@
 //! | **自己防衛拒否** | 28KiB 超・未知動詞など、配線の不具合や暴走を外へ出さないための拒否 | **stderr + exit 1** |
 //!
 //! ビジネス拒否は [`Directive::Error`] そのものなので、この層はただ描くだけである。自己
-//! 防衛拒否だけがここの判断で、[`OversizeDirective`] がそれを表す。
+//! 防衛拒否だけがここの判断で、`OversizeDirective` がそれを表す。
 //!
 //! # malformed は表現不能である
 //!
@@ -26,9 +26,19 @@
 //! upstream は `JSON.stringify(validateDirective(d).data)` で、`data` は**検証した
 //! オブジェクトそのもの**（作り直さない）。したがってキー順は upstream の各構築点の
 //! 挿入順であって、契約として固定されたものではない。ここでは
-//! `aidlc-directive.ts` の interface 宣言順に合わせてある。**バイト一致は未検証**である —
-//! 0b ゴールデンの CLI 面は採取できておらず（`tests/golden/upstream-3c3146cf/cli/
-//! cases-missing.json`）、突き合わせる相手が存在しない。
+//! `aidlc-directive.ts` の interface 宣言順に合わせてある。
+//!
+//! # ゴールデンとの突き合わせ（b44 で配線した）
+//!
+//! CLI 面のゴールデンは `tests/golden/upstream-3c3146cf/cli/` に 28 ケース採取済みで、
+//! `modules/app/aidlc/tests/cli_golden_test.rs` が突き合わせる。**バイト一致で固定できるのは
+//! 逐語文言だけの directive**（`continue/invalid-token`）で、`load-steering` と `run-stage` は
+//! **キー集合**を固定する（中身は採取時のワークスペースの memory 層と配置に依存するため）。
+//! どのケースが駆動できないか（逸脱台帳 #1 のコマンド綴り・vendored されていない scope
+//! identity・state なし群）はそのテストのモジュール doc に列挙してある。
+//!
+//! 既知の欠落 2 つ — upstream の `run-stage` が載せる `conductor_persona` と `narration` を
+//! こちらは載せない（b44 以前から。同テストが差を明示的に固定している）。
 
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::mint_continue_token;
@@ -73,7 +83,7 @@ impl Presenter {
     ///
     /// # Errors
     ///
-    /// 28KiB を超えたら [`OversizeDirective`]。呼出側は**何も stdout へ書かず**、
+    /// 28KiB を超えたら `OversizeDirective`。呼出側は**何も stdout へ書かず**、
     /// stderr へ逐語を出して exit 1 する。
     pub fn render(&self, directive: &Directive) -> Result<String, OversizeDirective> {
         // 契約 JSON の直列化は canon-json の 1 経路に固定されている (BR1.7 / ADR 0001

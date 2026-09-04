@@ -12,7 +12,6 @@
 
 use super::noun_token::NounToken;
 use super::read_only_verb::ReadOnlyVerb;
-use super::workspace_layout::WorkspaceLayout;
 
 /// `next` 1 回分の観測。フィールドは private + アクセサ、構築はビルダー (材料が多いため)。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -34,7 +33,6 @@ pub struct NextTurnInput {
     env_default_scope: Option<String>,
     kiro_latch_bare_next: bool,
     records_exist_without_cursor: bool,
-    layout: Option<WorkspaceLayout>,
 }
 
 impl NextTurnInput {
@@ -163,13 +161,6 @@ impl NextTurnInput {
         self
     }
 
-    /// ワークスペース配置を伴う。
-    #[must_use]
-    pub fn with_layout(mut self, layout: WorkspaceLayout) -> NextTurnInput {
-        self.layout = Some(layout);
-        self
-    }
-
     // ---- 観測面 ----
 
     /// フラグのパース失敗。
@@ -273,12 +264,6 @@ impl NextTurnInput {
     pub const fn records_exist_without_cursor(&self) -> bool {
         self.records_exist_without_cursor
     }
-
-    /// ワークスペース配置。
-    #[must_use]
-    pub const fn layout(&self) -> Option<&WorkspaceLayout> {
-        self.layout.as_ref()
-    }
 }
 
 #[cfg(test)]
@@ -306,7 +291,6 @@ mod tests {
         assert_eq!(input.env_default_scope(), None);
         assert!(!input.is_kiro_latch_bare_next());
         assert!(!input.records_exist_without_cursor());
-        assert_eq!(input.layout(), None);
     }
 
     #[test]
@@ -331,12 +315,7 @@ mod tests {
             .with_new_intent("new work")
             .with_env_default_scope("mvp")
             .with_kiro_latch_bare_next()
-            .with_records_without_cursor()
-            .with_layout(WorkspaceLayout::new(
-                "record".to_string(),
-                "stages".to_string(),
-                "agents".to_string(),
-            ));
+            .with_records_without_cursor();
         assert_eq!(input.parse_error(), Some("boom"));
         assert_eq!(input.review(), Some("advisory"));
         assert_eq!(input.read_only(), Some(ReadOnlyVerb::Status));
@@ -361,17 +340,5 @@ mod tests {
         assert_eq!(input.env_default_scope(), Some("mvp"));
         assert!(input.is_kiro_latch_bare_next());
         assert!(input.records_exist_without_cursor());
-        assert_eq!(
-            input.layout().map(WorkspaceLayout::record_dir),
-            Some("record")
-        );
-        assert_eq!(
-            input.layout().map(WorkspaceLayout::stage_library_dir),
-            Some("stages")
-        );
-        assert_eq!(
-            input.layout().map(WorkspaceLayout::agent_dir),
-            Some("agents")
-        );
     }
 }

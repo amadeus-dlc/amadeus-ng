@@ -9,7 +9,11 @@
 //! 経由せず内部構造をそのまま公開する `pub` フィールドを禁じる。R4 はカプセル化の単位を
 //! ファイル構成で支える — 1 ファイル 1 公開型 (「モジュール private ≒ struct private」の
 //! 成立条件、abstract-data-type.md)。R5 は CQRS の読取側の規律 — クエリ側 DAO の SQL が
-//! 1 文で 2 表以上を読んでいないか (1 表 1 引当、cqrs-boundaries.md 規則 6)。
+//! 1 文で 2 表以上を読んでいないか (1 表 1 引当、cqrs-boundaries.md 規則 6)。R6 は
+//! アプリケーション境界の語彙 — use-case 層の公開ポート名がコマンド側 `XxxRepository` /
+//! クエリ側 `XxxDao` に収まっているか (造語ポートの禁止、gateway-taxonomy.md §1/§3/§5)。
+//! R7 はその裏返しで、コマンド側で外界に触ってよいのは Repository 実装だけ、という責務境界を
+//! fs / 乱数 / プロセス / ネットワークの使用箇所で押さえる (gateway-taxonomy.md §1)。
 
 use std::collections::BTreeSet;
 
@@ -46,6 +50,28 @@ pub(crate) const RULE_ONE_PUBLIC_TYPE: &str = "one-public-type";
 /// ソース上のリテラル SQL だけで、属性 (doc コメント) のリテラルは見ない — doc が「JOIN」と
 /// 書いただけで鳴らないようにするため。
 pub(crate) const RULE_DAO_SINGLE_TABLE: &str = "dao-single-table";
+/// R6: use-case 層の公開ポート名が側の規約から外れている
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md` §1/§3/§5 —
+/// コマンド側は `XxxRepository`、クエリ側は `XxxDao`。造語ポート (`Store` / `Reader` /
+/// `Writer` / `Source` / `Provider`) の禁止、オーナー裁定 2026-08-22・改訂 2026-08-31)。
+///
+/// 検出境界: **use-case 層** ([`COMMAND_USE_CASE_SCOPE`] / [`QUERY_USE_CASE_SCOPE`]) の
+/// **無制限 `pub` の trait** に限る (R4 と同じ可視性境界)。domain / interface-adapter /
+/// RMU / app は射程外 — アダプタ層の機構 trait (`Clock` / `WorkspaceScanner`) はポートでは
+/// なく注入シームであり (§1 の「機構は Gateway ではない」)、RMU の `JournalReader` は
+/// §1c の永続化基盤ポートとして名指しで例外に置かれているから。外部システムクライアント
+/// (`XxxClient`) のような正当な非 Repository ポートは理由付き allow で通す。
+pub(crate) const RULE_PORT_NAMING: &str = "port-naming";
+/// R7: コマンド側の Repository 実装以外に fs / 乱数 / プロセス / ネットワークの I/O がある
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md` §1d —
+/// コマンド側で外界に触るのは Repository 実装だけ、GitHub #47・オーナー示唆 2026-08-30)。
+///
+/// 検出境界: **コマンド側 3 クレート** ([`COMMAND_SCOPE`]) の非テストコードのうち、
+/// [`REPOSITORY_IMPL_SUFFIX`] で終わるファイルを除いた全部。検出するのは
+/// [`IO_STD_MODULES`] と [`IO_RANDOM_CRATES`] への経路 (`use` ツリーの平坦化と完全修飾パス)
+/// だけで、`std::io` 単独 (エラー型の写像)・`std::time` (Clock はアダプタ層の機構)・
+/// `uuid` (集約内採番はオーナー裁定 2026-09-02 で正当) は鳴らない。
+pub(crate) const RULE_COMMAND_SIDE_IO: &str = "command-side-io";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
 /// b32 の 1 ファイル 1 公開型分割で `checkbox.rs` から `checkbox_state.rs` へ移った
@@ -55,6 +81,20 @@ const CHECKBOX_OWNER: &str = "modules/core/command/domain/src/workspace/checkbox
 /// R5 の射程。クエリ側の DAO 実装だけが「1 表 1 引当」の対象である
 /// (コマンド側・RMU・app は別の責務を持つ)。
 const QUERY_ADAPTER_SCOPE: &str = "modules/core/query/interface-adapter/src/";
+
+/// R6 の射程 (コマンド側)。ここの公開 trait はアプリケーション境界のポートである。
+const COMMAND_USE_CASE_SCOPE: &str = "modules/core/command/use-case/src/";
+/// R6 の射程 (クエリ側)。読む先が集約ではなくリードモデルなので `Dao` を名乗る。
+const QUERY_USE_CASE_SCOPE: &str = "modules/core/query/use-case/src/";
+
+/// R7 の射程。コマンド側 3 クレート (domain / use-case / interface-adapter) をまとめて覆う。
+const COMMAND_SCOPE: &str = "modules/core/command/";
+/// R7 の唯一の除外。Repository 実装だけが外界に触ってよい (gateway-taxonomy §1d)。
+const REPOSITORY_IMPL_SUFFIX: &str = "_repository_impl.rs";
+/// R7 が検出する `std::<name>` の I/O モジュール。
+const IO_STD_MODULES: [&str; 3] = ["fs", "process", "net"];
+/// R7 が検出する乱数クレート。ID 採番は `uuid` の責務なので、ここに `uuid` は入らない。
+const IO_RANDOM_CRATES: [&str; 3] = ["getrandom", "rand", "rand_core"];
 
 const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished / is_active) を使う。\
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
@@ -66,6 +106,13 @@ const ONE_PUBLIC_TYPE_HELP: &str = "公開型ごとに型名の snake_case の�
 aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)";
 const DAO_SINGLE_TABLE_HELP: &str = "表ごとに DAO を分け、FK はユースケースがたどる — \
 aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md (規則 6: DAO は 1 表 1 引当)";
+const PORT_NAMING_HELP: &str = "ポートは集約名 + Repository (コマンド側) / リードモデル名 + Dao \
+(クエリ側) で名付ける。外部システムクライアント (XxxClient) のような正当な非 Repository ポートは \
+`// amadeus-lint: allow(port-naming) — 理由` で理由を明示する — \
+aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md";
+const COMMAND_SIDE_IO_HELP: &str = "I/O は Repository 実装 (*_repository_impl.rs) へ移す。\
+正当な例外は `// amadeus-lint: allow(command-side-io) — 理由` で理由を明示する — \
+aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +140,9 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     let mut visitor = Visitor {
         checkbox_rule: !path.ends_with(CHECKBOX_OWNER),
         dao_rule: path.starts_with(QUERY_ADAPTER_SCOPE),
+        port_side: port_side_of(&path),
+        io_rule: is_command_side_io_scope(&path),
+        io_lines: BTreeSet::new(),
         findings: Vec::new(),
     };
     visitor.visit_file(&file);
@@ -111,6 +161,49 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
 /// `/tests/` を含むパスは統合テスト。
 fn is_test_path(path: &str) -> bool {
     path.contains("/tests/") || path.starts_with("tests/")
+}
+
+/// R6 の射程判定 — このファイルがどちら側の use-case 層か (どちらでもなければ `None`)。
+fn port_side_of(path: &str) -> Option<PortSide> {
+    if path.starts_with(COMMAND_USE_CASE_SCOPE) {
+        Some(PortSide::Command)
+    } else if path.starts_with(QUERY_USE_CASE_SCOPE) {
+        Some(PortSide::Query)
+    } else {
+        None
+    }
+}
+
+/// R7 の射程判定 — コマンド側で、かつ Repository 実装ではないファイル。
+fn is_command_side_io_scope(path: &str) -> bool {
+    path.starts_with(COMMAND_SCOPE) && !path.ends_with(REPOSITORY_IMPL_SUFFIX)
+}
+
+/// R6 の側。ポートの接尾辞と、外れたときに示す期待をこの型が持つ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PortSide {
+    /// コマンド側 — 読む先は集約なので `XxxRepository`。
+    Command,
+    /// クエリ側 — 読む先はリードモデルなので `XxxDao`。
+    Query,
+}
+
+impl PortSide {
+    /// 公開ポート名に要求する接尾辞。
+    const fn suffix(self) -> &'static str {
+        match self {
+            PortSide::Command => "Repository",
+            PortSide::Query => "Dao",
+        }
+    }
+
+    /// 所見に添える「本来こうである」の一言。
+    const fn expectation(self) -> &'static str {
+        match self {
+            PortSide::Command => "コマンド側のポートは集約名 + Repository だけ",
+            PortSide::Query => "クエリ側の読取ポートはリードモデル名 + Dao だけ",
+        }
+    }
 }
 
 /// R4: ファイルのトップレベルにある無制限 `pub` の型宣言を文書順に集め、
@@ -187,6 +280,11 @@ fn has_reason(rest: &str) -> bool {
 struct Visitor {
     checkbox_rule: bool,
     dao_rule: bool,
+    /// R6 の射程。`None` なら use-case 層ではないので検査しない。
+    port_side: Option<PortSide>,
+    io_rule: bool,
+    /// R7 を報告済みの行。1 行に複数の I/O 経路が綴られても所見は 1 件に畳む。
+    io_lines: BTreeSet<usize>,
     findings: Vec<Finding>,
 }
 
@@ -217,6 +315,42 @@ impl Visitor {
                 help: DAO_SINGLE_TABLE_HELP,
             });
         }
+    }
+
+    /// R6: 射程内の無制限 `pub trait` 名を接尾辞で検査する。
+    fn check_port_name(&mut self, line: usize, name: &str) {
+        let Some(side) = self.port_side else {
+            return;
+        };
+        if name.ends_with(side.suffix()) {
+            return;
+        }
+        self.findings.push(Finding {
+            rule: RULE_PORT_NAMING,
+            line,
+            message: format!(
+                "use-case 層の pub trait `{name}` が `{}` で終わらない — {} (gateway-taxonomy 違反)",
+                side.suffix(),
+                side.expectation()
+            ),
+            help: PORT_NAMING_HELP,
+        });
+    }
+
+    /// R7: I/O 経路 1 つ分を報告する。同じ行の 2 件目以降は捨てる。
+    fn push_command_side_io(&mut self, line: usize, label: &str) {
+        if !self.io_rule || !self.io_lines.insert(line) {
+            return;
+        }
+        self.findings.push(Finding {
+            rule: RULE_COMMAND_SIDE_IO,
+            line,
+            message: format!(
+                "コマンド側の `{label}` — fs / 乱数 / プロセス / ネットワークの I/O は \
+Repository 実装 (`*_repository_impl.rs`) だけに置く (gateway-taxonomy §1 違反)"
+            ),
+            help: COMMAND_SIDE_IO_HELP,
+        });
     }
 
     fn push_public_field(&mut self, line: usize, name: &str) {
@@ -305,6 +439,51 @@ impl<'ast> Visit<'ast> for Visitor {
             }
         }
         syn::visit::visit_expr_match(self, node);
+    }
+
+    /// R6: 無制限 `pub` の trait 宣言。行は `pub` トークンの行 — 抑制コメントを
+    /// doc コメントの後・宣言の直前行に置ける位置で報告する (R3 / R4 と同じ規約)。
+    fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
+        if matches!(node.vis, syn::Visibility::Public(_)) {
+            let line = node.vis.span().start().line;
+            self.check_port_name(line, &node.ident.to_string());
+        }
+        syn::visit::visit_item_trait(self, node);
+    }
+
+    /// R7 (a): `use` 文。ツリーを平坦化して 1 本ずつのパスに直してから判定する
+    /// (`use std::{fs, io};` / `use std::fs::{self, File};` を取り違えないため)。
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        if self.io_rule {
+            let line = node.use_token.span().start().line;
+            let mut prefix = Vec::new();
+            let mut paths = Vec::new();
+            flatten_use_tree(&node.tree, &mut prefix, &mut paths);
+            for segments in &paths {
+                if let Some(label) = io_label(segments, true) {
+                    self.push_command_side_io(line, &label);
+                }
+            }
+        }
+        syn::visit::visit_item_use(self, node);
+    }
+
+    /// R7 (b): 式・型・パターン中の完全修飾パス (`std::fs::read_to_string` など)。
+    /// `use` ツリーは [`syn::Path`] を持たないので、(a) と二重に数えることはない。
+    fn visit_path(&mut self, node: &'ast syn::Path) {
+        if self.io_rule
+            && let Some(first) = node.segments.first()
+        {
+            let segments: Vec<String> = node
+                .segments
+                .iter()
+                .map(|seg| seg.ident.to_string())
+                .collect();
+            if let Some(label) = io_label(&segments, false) {
+                self.push_command_side_io(first.ident.span().start().line, &label);
+            }
+        }
+        syn::visit::visit_path(self, node);
     }
 
     /// R3: struct のフィールド (名前付き / tuple) が無制限の `pub` を持つ。
@@ -465,6 +644,58 @@ fn collect_concat_sql_in_tokens(tokens: &TokenStream, out: &mut Vec<(usize, Stri
     }
 }
 
+/// `use` ツリーを 1 本ずつの完全パス (セグメント列) へ平坦化する。
+///
+/// `use std::fs::{self, File};` は `["std","fs","self"]` と `["std","fs","File"]` の 2 本に
+/// なり、どちらも先頭 2 つが `std::fs` なので同じ判定に落ちる。`use std::fs::*;` の glob は
+/// その時点の接頭辞 (`["std","fs"]`) を 1 本として積む。
+fn flatten_use_tree(tree: &syn::UseTree, prefix: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
+    match tree {
+        syn::UseTree::Path(node) => {
+            prefix.push(node.ident.to_string());
+            flatten_use_tree(&node.tree, prefix, out);
+            prefix.pop();
+        }
+        syn::UseTree::Name(node) => {
+            prefix.push(node.ident.to_string());
+            out.push(prefix.clone());
+            prefix.pop();
+        }
+        syn::UseTree::Rename(node) => {
+            prefix.push(node.ident.to_string());
+            out.push(prefix.clone());
+            prefix.pop();
+        }
+        syn::UseTree::Glob(_) => out.push(prefix.clone()),
+        syn::UseTree::Group(node) => {
+            for item in &node.items {
+                flatten_use_tree(item, prefix, out);
+            }
+        }
+    }
+}
+
+/// R7 の判定本体 — セグメント列が I/O 経路なら、所見に載せる表示名を返す。
+///
+/// `bare_crate_ok` は `use` 文でだけ真にする。式の中の 1 セグメントは
+/// **クレート名ではなく変数名でもありうる** (`let rand = ..; rand + 1`) ので、完全修飾パス側は
+/// 2 セグメント以上 (`rand::thread_rng`) を要求して誤検出を避ける。
+fn io_label(segments: &[String], bare_crate_ok: bool) -> Option<String> {
+    let first = segments.first()?;
+    if first == "std" {
+        let second = segments.get(1)?;
+        return IO_STD_MODULES
+            .contains(&second.as_str())
+            .then(|| format!("std::{second}"));
+    }
+    if !bare_crate_ok && segments.len() < 2 {
+        return None;
+    }
+    IO_RANDOM_CRATES
+        .contains(&first.as_str())
+        .then(|| first.clone())
+}
+
 /// パターン中の `CheckboxState::<Variant>` を集める補助 visitor。
 struct PatternVariants {
     variants: BTreeSet<String>,
@@ -604,6 +835,21 @@ mod tests {
         "modules/core/query/interface-adapter/src/tests/dao_fixtures.rs";
     /// 射程外 — RMU は 15 表を 1 バッチで差し替えるのが仕事。
     const RMU_PATH: &str = "modules/core/read-model-updater/src/read_tables/sql.rs";
+    /// R6 の射程 (コマンド側 use-case)。
+    const COMMAND_USE_CASE_PATH: &str =
+        "modules/core/command/use-case/src/orchestration/port/intent_repository.rs";
+    /// R6 の射程 (クエリ側 use-case)。
+    const QUERY_USE_CASE_PATH: &str =
+        "modules/core/query/use-case/src/orchestration/port/run_stage_dao.rs";
+    /// 射程内だが `/tests/` を含むパス (コマンド側 use-case)。
+    const COMMAND_USE_CASE_TEST_PATH: &str =
+        "modules/core/command/use-case/src/tests/port_fixtures.rs";
+    /// R7 の唯一の除外 — Repository 実装だけが外界に触ってよい。
+    const REPOSITORY_IMPL_PATH: &str =
+        "modules/core/command/interface-adapter/src/orchestration/intent_repository_impl.rs";
+    /// R7 の射程 (コマンド側アダプタ層で Repository 実装ではないファイル)。
+    const COMMAND_ADAPTER_PATH: &str =
+        "modules/core/command/interface-adapter/src/workspace_scanner.rs";
 
     fn check(path: &str, source: &str) -> Vec<Finding> {
         check_source(path, source).expect("テストのソースは構文解析できること")
@@ -1438,6 +1684,420 @@ JOIN read_intent i ON i.id = e.intent_id WHERE e.id = ?1";
         assert_eq!(
             rules(&check(QUERY_ADAPTER_PATH, source)),
             vec![RULE_DAO_SINGLE_TABLE],
+            "理由の無い裸の allow は抑制しない"
+        );
+    }
+
+    // ---- R6 赤例 (造語ポート — 2026-08-22 裁定時に実在した形と側の取り違え) ----
+
+    #[test]
+    fn r6_detects_a_reader_port_on_the_command_side() {
+        // 実在形: 裁定前の `StageGraphReader` (現 `WorkflowDefinitionRepository`)。
+        let source = r#"
+/// 定義グラフを読む。
+pub trait StageGraphReader {
+    fn read(&self) -> String;
+}
+"#;
+        let findings = check(COMMAND_USE_CASE_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_PORT_NAMING]);
+        assert_eq!(findings[0].line, 3, "pub トークンの行を指すこと");
+        assert!(
+            findings[0].message.contains("`StageGraphReader`")
+                && findings[0].message.contains("`Repository`"),
+            "trait 名と期待する接尾辞を message に含めること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r6_detects_a_store_port_on_the_command_side() {
+        // 実在形: 裁定で削除された `StateFileStore`。
+        let source = r#"
+pub trait WorkflowStore {
+    fn write(&self);
+}
+"#;
+        let findings = check(COMMAND_USE_CASE_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_PORT_NAMING]);
+        assert!(findings[0].message.contains("`WorkflowStore`"));
+    }
+
+    #[test]
+    fn r6_detects_a_dao_port_on_the_command_side() {
+        // 側の取り違え: `Dao` はクエリ側の語彙。コマンド側が読むのは集約である。
+        let source = r#"
+pub trait DefinitionDao {
+    fn find(&self);
+}
+"#;
+        let findings = check(COMMAND_USE_CASE_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_PORT_NAMING]);
+        assert!(
+            findings[0].message.contains("集約名 + Repository"),
+            "コマンド側の期待を message に書くこと: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r6_detects_a_repository_port_on_the_query_side() {
+        // 側の取り違え: クエリ側が読むのはリードモデルなので Repository とは名乗らない。
+        let source = r#"
+pub trait ExecutionRepository {
+    fn find(&self);
+}
+"#;
+        let findings = check(QUERY_USE_CASE_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_PORT_NAMING]);
+        assert!(
+            findings[0].message.contains("`Dao`")
+                && findings[0].message.contains("リードモデル名 + Dao"),
+            "クエリ側の期待を message に書くこと: {}",
+            findings[0].message
+        );
+    }
+
+    // ---- R6 緑例 ---------------------------------------------------------
+
+    #[test]
+    fn r6_allows_the_conforming_port_name_on_each_side() {
+        let command = r#"
+pub trait IntentRepository {
+    fn find_by_id(&self);
+    fn store(&self);
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, command).is_empty());
+
+        let query = r#"
+pub trait RunStageDao {
+    fn find(&self);
+}
+"#;
+        assert!(check(QUERY_USE_CASE_PATH, query).is_empty());
+    }
+
+    #[test]
+    fn r6_ignores_restricted_and_private_traits() {
+        // R4 と同じ可視性境界 — pub(crate) 以下はアプリケーション境界のポートではない。
+        let restricted = r#"
+pub(crate) trait Helper {
+    fn help(&self);
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, restricted).is_empty());
+
+        let private = r#"
+trait Reader {
+    fn read(&self);
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, private).is_empty());
+    }
+
+    #[test]
+    fn r6_is_scoped_to_the_use_case_layers() {
+        // 機構 trait (Clock / WorkspaceScanner) はアダプタ層に居るのでポートではない。
+        let source = r#"
+pub trait WorkspaceScanner {
+    fn scan(&self);
+}
+"#;
+        assert!(check(ADAPTER_PATH, source).is_empty());
+        assert!(check(DOMAIN_PATH, source).is_empty());
+        // §1c の永続化基盤ポート `JournalReader` は名指しの例外 — RMU も射程外。
+        assert!(check(RMU_PATH, source).is_empty());
+        assert_eq!(
+            rules(&check(COMMAND_USE_CASE_PATH, source)),
+            vec![RULE_PORT_NAMING],
+            "同じソースが射程内では鳴ること (射程外の緑が空振りでない証明)"
+        );
+    }
+
+    #[test]
+    fn r6_ignores_cfg_test_modules_and_test_paths() {
+        let cfg_test = r#"
+#[cfg(test)]
+mod tests {
+    pub trait FakeReader {
+        fn read(&self);
+    }
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, cfg_test).is_empty());
+
+        let bare = r#"
+pub trait FakeReader {
+    fn read(&self);
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_TEST_PATH, bare).is_empty());
+        assert_eq!(
+            rules(&check(COMMAND_USE_CASE_PATH, bare)),
+            vec![RULE_PORT_NAMING],
+            "同じソースが射程内の非テストパスでは鳴ること"
+        );
+    }
+
+    #[test]
+    fn r6_is_suppressed_by_a_matching_allow_comment_with_reason() {
+        let source = r#"
+// amadeus-lint: allow(port-naming) — 外部システムクライアント (GitHub API との RPC)
+pub trait GitHubPullRequestClient {
+    fn open(&self);
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, source).is_empty());
+
+        let bare = r#"
+// amadeus-lint: allow(port-naming)
+pub trait GitHubPullRequestClient {
+    fn open(&self);
+}
+"#;
+        assert_eq!(
+            rules(&check(COMMAND_USE_CASE_PATH, bare)),
+            vec![RULE_PORT_NAMING],
+            "理由の無い裸の allow は抑制しない"
+        );
+    }
+
+    // ---- R7 赤例 (#47 が塞ぐ形) --------------------------------------------
+
+    #[test]
+    fn r7_detects_a_use_of_std_fs_in_the_use_case_layer() {
+        let source = r#"
+use std::fs;
+
+fn read(path: &str) -> String {
+    fs::read_to_string(path).unwrap_or_default()
+}
+"#;
+        let findings = check(COMMAND_USE_CASE_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_COMMAND_SIDE_IO]);
+        assert_eq!(findings[0].line, 2, "use トークンの行を指すこと");
+        assert!(
+            findings[0].message.contains("`std::fs`"),
+            "検出した経路を message に含めること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r7_detects_a_fully_qualified_std_fs_call_in_the_domain() {
+        // domain も射程 — 集約がディスクを読み始めたらそこで設計が壊れている。
+        let source = r#"
+fn read(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+"#;
+        let findings = check(DOMAIN_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_COMMAND_SIDE_IO]);
+        assert_eq!(findings[0].line, 3, "パスの行を指すこと");
+    }
+
+    #[test]
+    fn r7_detects_fs_hidden_in_a_use_group() {
+        let source = r#"
+use std::{fs, io};
+"#;
+        let findings = check(COMMAND_USE_CASE_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![RULE_COMMAND_SIDE_IO],
+            "グループを平坦化して fs を見つけ、io は見逃すこと"
+        );
+        assert!(findings[0].message.contains("`std::fs`"));
+    }
+
+    #[test]
+    fn r7_detects_a_self_import_inside_a_use_group() {
+        let source = r#"
+use std::fs::{self, File};
+"#;
+        assert_eq!(
+            rules(&check(COMMAND_USE_CASE_PATH, source)),
+            vec![RULE_COMMAND_SIDE_IO],
+            "self と File の 2 本に平坦化されても所見は 1 件"
+        );
+    }
+
+    #[test]
+    fn r7_detects_random_number_generation() {
+        let imported = r#"
+use rand::Rng;
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, imported)),
+            vec![RULE_COMMAND_SIDE_IO]
+        );
+
+        let qualified = r#"
+fn fill(buf: &mut [u8]) {
+    getrandom::getrandom(buf).ok();
+}
+"#;
+        let findings = check(DOMAIN_PATH, qualified);
+        assert_eq!(rules(&findings), vec![RULE_COMMAND_SIDE_IO]);
+        assert!(findings[0].message.contains("`getrandom`"));
+    }
+
+    #[test]
+    fn r7_detects_process_spawning_and_network_access() {
+        let process = r#"
+fn head() -> bool {
+    std::process::Command::new("git").status().is_ok()
+}
+"#;
+        let findings = check(COMMAND_ADAPTER_PATH, process);
+        assert_eq!(rules(&findings), vec![RULE_COMMAND_SIDE_IO]);
+        assert!(findings[0].message.contains("`std::process`"));
+
+        let network = r#"
+use std::net::TcpStream;
+"#;
+        let findings = check(COMMAND_ADAPTER_PATH, network);
+        assert_eq!(rules(&findings), vec![RULE_COMMAND_SIDE_IO]);
+        assert!(findings[0].message.contains("`std::net`"));
+    }
+
+    // ---- R7 緑例 ---------------------------------------------------------
+
+    #[test]
+    fn r7_exempts_repository_implementations() {
+        // 実在形: compiled_definition_repository_impl.rs が配布 3 ファイルを読む。
+        let source = r#"
+use std::fs;
+
+fn read(path: &str) -> String {
+    fs::read_to_string(path).unwrap_or_default()
+}
+"#;
+        assert!(
+            check(REPOSITORY_IMPL_PATH, source).is_empty(),
+            "Repository 実装だけが外界に触ってよい"
+        );
+        assert_eq!(
+            rules(&check(COMMAND_ADAPTER_PATH, source)),
+            vec![RULE_COMMAND_SIDE_IO],
+            "同じソースが同じ層の非 Repository 実装では鳴ること"
+        );
+    }
+
+    #[test]
+    fn r7_ignores_cfg_test_modules_and_test_paths() {
+        let cfg_test = r#"
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    fn fixture() -> String {
+        fs::read_to_string("f").unwrap_or_default()
+    }
+}
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, cfg_test).is_empty());
+
+        let bare = r#"
+use std::fs;
+"#;
+        assert!(check(COMMAND_USE_CASE_TEST_PATH, bare).is_empty());
+        assert_eq!(
+            rules(&check(COMMAND_USE_CASE_PATH, bare)),
+            vec![RULE_COMMAND_SIDE_IO],
+            "同じソースが射程内の非テストパスでは鳴ること"
+        );
+    }
+
+    #[test]
+    fn r7_is_scoped_to_the_command_side() {
+        // クエリ側 DAO 実装と RMU は自分でリードモデル (SQLite) を読むのが仕事。
+        let source = r#"
+use std::fs;
+"#;
+        assert!(check(QUERY_ADAPTER_PATH, source).is_empty());
+        assert!(check(QUERY_USE_CASE_PATH, source).is_empty());
+        assert!(check(RMU_PATH, source).is_empty());
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_COMMAND_SIDE_IO],
+            "同じソースがコマンド側では鳴ること"
+        );
+    }
+
+    #[test]
+    fn r7_allows_error_mapping_clocks_and_id_generation() {
+        // `std::io` 単独はエラー型の写像、`std::time` は Clock の材料 (アダプタ層の機構)、
+        // `Uuid::now_v7()` は集約内採番 (オーナー裁定 2026-09-02) — いずれも正当。
+        let source = r#"
+use std::io;
+use std::time::SystemTime;
+use uuid::Uuid;
+
+fn stamp() -> String {
+    let _ = SystemTime::now();
+    let _: Option<io::Error> = None;
+    uuid::Uuid::now_v7().as_hyphenated().to_string()
+}
+
+fn generate() -> Uuid {
+    Uuid::now_v7()
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r7_does_not_mistake_a_local_binding_for_a_random_crate() {
+        // 式の中の 1 セグメントは変数名でもありうる — 完全修飾パス側は 2 セグメント要求。
+        let source = r#"
+fn pick(rand: u8) -> u8 {
+    rand + 1
+}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r7_reports_one_finding_per_line() {
+        let source = r#"
+fn copy(a: &str, b: &str) { let _ = std::fs::read_to_string(a); let _ = std::fs::write(b, ""); }
+"#;
+        assert_eq!(
+            rules(&check(DOMAIN_PATH, source)),
+            vec![RULE_COMMAND_SIDE_IO],
+            "同一行に複数の I/O があっても所見は 1 件"
+        );
+    }
+
+    #[test]
+    fn r7_ignores_io_paths_mentioned_in_doc_comments() {
+        // doc は属性 (`#[doc = "..."]`) なので走査から外れる — R5 と同じ扱い。
+        let source = r#"
+//! この層では `std::fs` を使わない (gateway-taxonomy §1d)。
+
+/// `std::process::Command` を直接叩かず Repository 実装へ寄せる。
+fn note() {}
+"#;
+        assert!(check(DOMAIN_PATH, source).is_empty());
+    }
+
+    #[test]
+    fn r7_is_suppressed_by_a_matching_allow_comment_with_reason() {
+        let source = r#"
+// amadeus-lint: allow(command-side-io) — 合成ルートへ移すまでの暫定 (次 Bolt で解消)
+use std::fs;
+"#;
+        assert!(check(COMMAND_USE_CASE_PATH, source).is_empty());
+
+        let bare = r#"
+// amadeus-lint: allow(command-side-io)
+use std::fs;
+"#;
+        assert_eq!(
+            rules(&check(COMMAND_USE_CASE_PATH, bare)),
+            vec![RULE_COMMAND_SIDE_IO],
             "理由の無い裸の allow は抑制しない"
         );
     }

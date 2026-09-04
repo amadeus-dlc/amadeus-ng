@@ -42,7 +42,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |
 | [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化） |
-| [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない。ES Repository は `store` / `find_by_id`（ADR-006） | レビュー基準 |
+| [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない。ES Repository は `store` / `find_by_id`（ADR-006）。**コマンド側で外界（fs / 乱数 / プロセス / ネットワーク）に触るのは Repository 実装だけ**（§1d、2026-09-04） | `cargo lint`（`port-naming` — use-case 層の `pub trait` はコマンド側 `XxxRepository` / クエリ側 `XxxDao` のみ。`command-side-io` — `modules/core/command/**` の `*_repository_impl.rs` 以外に fs / 乱数 / プロセス / ネットワークの I/O が現れたら所見。2026-09-04、#47 / b44）。Repository 名と集約名の照合・技術接頭辞はレビュー基準 |
 | [use-case-rules.md](use-case-rules.md) | DIP（trait のみ依存）・スタティックバインディング既定・ユースケース間呼出禁止 | Cargo クレート分離 |
 | [error-handling.md](error-handling.md) | 失敗はモジュールごとの手実装エラー enum — `Display` は材料のみ、利用者向け文言はアダプタ層（message-catalog）、thiserror / anyhow 不使用 | `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（workspace lints） |
 | [interior-mutability.md](interior-mutability.md) | 内部可変性は既定で禁止 — 可変操作はまず `&mut self`。`&self` の裏に `RefCell`/`Cell`/ロックを置く「`&self` への偽装」は禁止。`&self` + 内部可変性には**強い理由**が要る（立証責任は採る側。現在認められている例外はロックを取り合うメソッドのみ、条件付き）。並行してロックを取りたい場合は `SharedLock`/`SharedRwLock` を持つ `*Shared` ラッパーへ閉じる（手書きの `Rc<RefCell<_>>`/`Arc<Mutex<_>>` は禁止） | レビュー基準 |
@@ -81,6 +81,19 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 （将来の例外は理由付き allow で通す）、(2) 赤例 4 形（素の文字列リテラルの JOIN /
 `concat!` 内の JOIN / `macro_rules!` 本体内 `concat!` の JOIN / `EXISTS` 副問合せ）を
 b43 の作業ツリーの現物から採ってテストに同梱、(3) 検出と JOIN 解体を b43 の同一 Bolt で着地。
+
+**更新 2026-09-04**: `port-naming`（use-case 層の `pub trait` はコマンド側 `XxxRepository` /
+クエリ側 `XxxDao` のみ — [gateway-taxonomy.md](gateway-taxonomy.md) §1・§3・§5）と
+`command-side-io`（`modules/core/command/**` の `*_repository_impl.rs` 以外に fs / 乱数 /
+プロセス / ネットワークの I/O が現れたら所見 — 同 §1d）が加わり実装済みは **6 本**。
+どちらも GitHub #47（オーナー示唆 2026-08-30「コマンド側でリポジトリ以外の I/O 責務を作ろうと
+したら警告する仕組みが要る」）を是正 Bolt 3 後半（b44）に折り込んだもので、下表の待ち行列には
+並んでいない。着手条件 1〜3 の充足: (1) #47 の文言に留保が無く、正当な例外（外部システム
+クライアント `XxxClient` / 理由のある I/O）は理由付き allow で通す、(2) 赤例（R6 4 形 / R7 6 形）と
+「同じソースが射程内では鳴る」対を同梱、(3) 導入時点の既存違反は 0 件（是正対象なし — 検出だけが
+先行して CI が赤になる状態は生じない）。[gateway-taxonomy.md](gateway-taxonomy.md)「機械強制の
+候補」1（ポート造語の検出）は `port-naming` が上位互換（禁止語の黒リストではなく許可接尾辞の
+白リスト）として吸収した。
 
 そこで、**順序と着手条件をここ 1 箇所で管理する**。個々の規則に「予定」と書き足すのをやめる
 （規則側は「レビュー基準」か「`cargo lint`（ルール名）」のどちらかだけを書く）。

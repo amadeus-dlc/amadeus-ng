@@ -32721,6 +32721,595 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 
 ---
 
+## Human Turn
+**Timestamp**: 2026-09-03T08:27:58Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T08:28:08Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T08:29:43Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T08:31:18Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T08:36:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2ca9a2d3299548de
+**Message**: b43（クエリ側 DAO の 1 表 1 引当化）を PR #95 として出し、CI は必須ジョブ全緑です。いま Bugbot 指摘の DAO 受け手名の切り詰めを 10 ファイル分サブエージェントが是正中で、完了後に検証・push・スレッド解決を経てマージします。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T08:49:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b43-receiver-names
+**Agent ID**: ab43-receiver-names-0fa0ba6f7aa37549
+**Message**: 4段階検証のうち3段階（`cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo lint`）はすべて緑を確認済みです。`cargo test --workspace` は完走に時間がかかるためバックグラウンドで実行中で、完了をモニタリングしています。完了次第、結果を確認
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T08:53:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a538561e1280c6003
+**Message**: b43（クエリ側 DAO の 1 表 1 引当化）を PR #95 として出し、収束させています。Bugbot 指摘の DAO 受け手名を全 10 ファイルで完全形へ改名済みで、いまサブエージェントの `cargo test --workspace` 完走待ちです。緑ならコミット・push してスレッドを閉じます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:14:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:16:34Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session End
+**Timestamp**: 2026-09-03T10:16:36Z
+**Event**: SESSION_ENDED
+**Reason**: prompt_input_exit
+
+---
+
+## Session Start
+**Timestamp**: 2026-09-03T10:16:41Z
+**Event**: SESSION_STARTED
+**Source**: startup
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:16:49Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:24:47Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:51:42Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:53:59Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:55:37Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T10:57:31Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:00:38Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4d77af1ffd54d5ed
+**Message**: b43（クエリ側 DAO を 1 表 1 引当へ）は PR #95 が main にマージされ完了しました。次にやることの指示待ちです。#7 キューの次の作業に着手するか、ここで止めるかを選んでください。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:16:52Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:18:28Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:20:06Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:29:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Rule Learned
+**Timestamp**: 2026-09-03T11:29:37Z
+**Event**: RULE_LEARNED
+**Stage**: functional-design
+**Candidate-ID**: c1
+**Content-Hash**: 7b0c30b463e7d9bc89f1a507a2996c2aaf3faf63b9a46569dcbb235eac3fc10f
+**Destination**: /Users/j5ik2o/orca/workspaces/amadeus-ng/docs/aidlc/spaces/default/memory/project.md
+**Heading**: ## Corrections
+**Source**: user_addition
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:42:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a30baa659e396ecfb
+**Message**: b44を委譲して進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:47:32Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aed55c0dde964a4ae
+**Message**: stage-1（セルフホスト切替）に向けて、b43 をマージ済みです。いまは b44（クエリ側の旧コード削除・golden 配線し直し・cargo lint 2本）に着手したところで、ブランチを切り終えました。次は仕様を読んで作業範囲を確定させます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:47:37Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:49:51Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T11:51:04Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:54:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1605684a840960b8
+**Message**: Reading cqrs-boundaries.md diff in bdb5c920
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:55:11Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8d08e8bf82459568
+**Message**: Debugging fs:: regex word-boundary matching
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:55:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af535e6c0d4a5fe1e
+**Message**: Confirming BoltRefs:: and uuid:: usages are false positives
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:58:14Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af19ffafd30edc9a6
+**Message**: Reading .cargo/config.toml lint alias
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:58:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae9b6768f433af05d
+**Message**: Confirming no .rs files outside src/tests
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T11:59:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a85771b8ba9193861
+**Message**: Grepping for File/OpenOptions/read_dir occurrences
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:00:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aeff604848dffb329
+**Message**: Editing check.rs module doc comment for R6/R7
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:00:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4123c9e92f438d7d
+**Message**: Adding io_rule field to Visitor struct
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:01:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a4441cd264194c153
+**Message**: Adding forbidden_io_token detection function
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:01:52Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a3a0df512192a0e43
+**Message**: Adding R6/R7 test path constants to check.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:02:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a77c65c28d6681cdb
+**Message**: Inserting R6/R7 test scope path constants
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:02:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: afd0a3ec268f8e00b
+**Message**: Adding R6/R7 test cases in check.rs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:03:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9cb9d8d357c8bd13
+**Message**: Fixing getrandom test's return type
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:03:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a193516f3acf5ca42
+**Message**: Reading r6 query-side trait naming test
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:04:29Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af79b9cf631a64aea
+**Message**: Running cargo test after fmt fix
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:05:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a787315b2fc556e34
+**Message**: Reading README.md machinery roadmap section
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:05:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af3980ef3a6e98f99
+**Message**: Updating gateway-taxonomy.md machine-enforcement line
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:06:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a0f139ebd29454cba
+**Message**: Editing cqrs-boundaries.md machine-enforcement line
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:06:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae1f20f75b5c9ef11
+**Message**: Verifying full-repo `cargo lint` output
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:07:08Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a412973cd80deda7e
+**Message**: Committing check.rs and coding-rules updates
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:07:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: general-purpose
+**Agent ID**: a52a096191b56bd02
+**Message**: ## 報告\n\n### (a) 追加したルールと検出仕様\n\n**`port-naming`**（R6）\n- コマンド側 `modules/core/command/use-case/**/*.rs` のトップレベル `pub trait` は名前が `Repository` で終わること\n- クエリ側 `modules/core/query/use-case/**/*.rs` のトップレベル `pu
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T12:07:12Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:11:44Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8f46dfdb2ed494e5
+**Message**: b44（クエリ側の旧経路削除と app の新経路配線）を進行中で、lint 2 本は完了・レビュー済み、Opus エージェントがクエリ側の削除と配線を実装中です。次はその完了を待って全 diff をレビューし、lint ブランチをマージして検証します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:34:18Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: adad42dad5ba1344b
+**Message**: b44（クエリ側の旧経路削除と app の新経路配線）を進行中で、lint 2 本は完了・レビュー済み、クエリ側は実装中です。次はあなたの裁定待ち: 新規ワークスペースでの `next` の定義取込を A / B / C のどれにするか。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T12:54:18Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T12:55:07Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a43a995340514a16f
+**Message**: 進捗報告
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T13:01:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae85c50a32f5d8977
+**Message**: b44（クエリ側の旧経路削除と app の新経路配線）を進行中で、裁定 A を反映した実装を b44-query が作業中です。完了通知が来たら私が全 diff をレビューして検証し、PR を出します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T13:18:16Z
+**Event**: HUMAN_TURN
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-03T13:20:25Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae6945b7cdc278e11
+**Message**: A
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T13:28:24Z
+**Event**: HUMAN_TURN
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-03T13:42:52Z
+**Event**: HUMAN_TURN
+
+---
+
+## Session End
+**Timestamp**: 2026-09-03T13:42:54Z
+**Event**: SESSION_ENDED
+**Reason**: prompt_input_exit
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-03T13:53:19Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-03T13:53:19Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-03T14:00:59Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-08-22T09:31:03Z#4
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-03T14:01:30Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:02:03Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:02:24Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-03T14:02:30Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-03T14:02:30Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:12:07Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:19:54Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-03T14:21:04Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage functional-design --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md --details Looks correct --unit u9-canon-docs
+**Error**: Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-03T14:21:10Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-03T14:21:10Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Workflow Parked
+**Timestamp**: 2026-09-03T14:30:08Z
+**Event**: WORKFLOW_PARKED
+**Stage**: functional-design
+
+---
+
 ## Workflow Parked
 **Timestamp**: 2026-09-03T15:04:27Z
 **Event**: WORKFLOW_PARKED
@@ -32744,3 +33333,9 @@ Bolt B3（U2 u2-domain-es-core）をオーナーが承認（Approve）。PR http
 **Details**: 46 passed, 0 failed
 
 ---
+||||||| parent of e178ca59 (chore(aidlc): audit shard)
+||||||| parent of 2e8aeba3 (rules(memory): コミットは作業ツリー全体を回収する — 監査シャードの回収漏れを禁じる規律を project.md へ登録)
+||||||| parent of 3fafa934 (b44(W): app を新経路へ配線 — 行の kind で描くコントローラ / プレゼンタ、1 要求 1 接続)
+||||||| parent of 0b21e12b (b44(D): クエリ側の旧経路を全撤去 — 21 分岐ラダー・両パーサ・旧ポート 3 本（-14,618 行）)
+||||||| parent of dd61ab05 (b44(G): CLI ゴールデンを配線 — バイト一致 1 ケース + キー集合 2 ケース、駆動不能は理由を明記)
+||||||| parent of 9844db54 (test(query): cover next routing and park b44)

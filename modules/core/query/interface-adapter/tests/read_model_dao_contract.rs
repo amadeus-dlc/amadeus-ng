@@ -36,12 +36,10 @@ mod support;
 use std::io::ErrorKind;
 
 use core_query_interface_adapter::{
-    DefinitionDaoImpl, ExecutionDaoImpl, InMemoryDefinitionDao, InMemoryExecutionDao,
-    InMemoryJumpDao, InMemoryJumpPhaseDao, InMemoryNextAnswerDao, InMemoryPhaseEntryDao,
-    InMemoryRunStageDao, InMemoryScopeChangeDao, InMemoryScopeDao, InMemoryScopeKeywordDao,
-    InMemorySteeringPartDao, InMemorySteeringPlanDao, JumpDaoImpl, JumpPhaseDaoImpl,
-    NextAnswerDaoImpl, PhaseEntryDaoImpl, RunStageDaoImpl, ScopeChangeDaoImpl, ScopeDaoImpl,
-    ScopeKeywordDaoImpl, SteeringPartDaoImpl, SteeringPlanDaoImpl,
+    InMemoryDefinitionDao, InMemoryExecutionDao, InMemoryJumpDao, InMemoryJumpPhaseDao,
+    InMemoryNextAnswerDao, InMemoryPhaseEntryDao, InMemoryRunStageDao, InMemoryScopeChangeDao,
+    InMemoryScopeDao, InMemoryScopeKeywordDao, InMemorySteeringPartDao, InMemorySteeringPlanDao,
+    ReadModelDaos,
 };
 use core_query_use_case::orchestration::{
     DefinitionDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao,
@@ -50,6 +48,14 @@ use core_query_use_case::orchestration::{
 };
 
 use support::{DEFINITION, EXECUTION, Fixture, INTENT, doubles};
+
+/// 1 要求ぶんの読取専用接続を開き、12 実装をその上に建てる。
+///
+/// b44 で実装ごとの `open` は廃止された — 開く口は [`ReadModelDaos`] 1 か所で、12 実装は
+/// その 1 接続を分け合う (多段の引当が同じスナップショットを見るため)。
+fn daos(store: &std::path::Path) -> ReadModelDaos {
+    ReadModelDaos::open(store).expect("フィクスチャのストアは開ける")
+}
 
 /// 投影されていない実行の識別子 (どの鍵にも当たらない)。
 const ABSENT_EXECUTION: &str = "0190ffff-0000-7000-8000-000000000000";
@@ -156,7 +162,7 @@ fn contract_next_answer_parked<D: NextAnswerDao>(dao: &D) {
 #[test]
 fn the_next_answer_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_next_answer(&NextAnswerDaoImpl::open(fixture.store()).unwrap());
+    contract_next_answer(&daos(fixture.store()).next_answer());
 }
 
 #[test]
@@ -168,7 +174,7 @@ fn the_next_answer_contract_holds_on_the_double() {
 #[test]
 fn the_parked_next_answer_contract_holds_on_the_store() {
     let fixture = Fixture::parked();
-    contract_next_answer_parked(&NextAnswerDaoImpl::open(fixture.store()).unwrap());
+    contract_next_answer_parked(&daos(fixture.store()).next_answer());
 }
 
 #[test]
@@ -235,7 +241,7 @@ fn contract_execution_parked<D: ExecutionDao>(dao: &D) {
 #[test]
 fn the_execution_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_execution(&ExecutionDaoImpl::open(fixture.store()).unwrap());
+    contract_execution(&daos(fixture.store()).execution());
 }
 
 #[test]
@@ -247,7 +253,7 @@ fn the_execution_contract_holds_on_the_double() {
 #[test]
 fn the_parked_execution_contract_holds_on_the_store() {
     let fixture = Fixture::parked();
-    contract_execution_parked(&ExecutionDaoImpl::open(fixture.store()).unwrap());
+    contract_execution_parked(&daos(fixture.store()).execution());
 }
 
 #[test]
@@ -383,7 +389,7 @@ fn contract_run_stage<D: RunStageDao>(dao: &D) {
 #[test]
 fn the_run_stage_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_run_stage(&RunStageDaoImpl::open(fixture.store()).unwrap());
+    contract_run_stage(&daos(fixture.store()).run_stage());
 }
 
 #[test]
@@ -445,10 +451,7 @@ fn contract_steering_part<D: SteeringPartDao>(dao: &D, plan_id: &str) {
 fn the_steering_plan_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
     let plan_id = doubles::ideation_plan_id(&fixture);
-    contract_steering_plan(
-        &SteeringPlanDaoImpl::open(fixture.store()).unwrap(),
-        &plan_id,
-    );
+    contract_steering_plan(&daos(fixture.store()).steering_plan(), &plan_id);
 }
 
 #[test]
@@ -462,10 +465,7 @@ fn the_steering_plan_contract_holds_on_the_double() {
 fn the_steering_part_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
     let plan_id = doubles::ideation_plan_id(&fixture);
-    contract_steering_part(
-        &SteeringPartDaoImpl::open(fixture.store()).unwrap(),
-        &plan_id,
-    );
+    contract_steering_part(&daos(fixture.store()).steering_part(), &plan_id);
 }
 
 #[test]
@@ -530,7 +530,7 @@ fn contract_jump_phase<D: JumpPhaseDao>(dao: &D) {
 #[test]
 fn the_jump_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_jump(&JumpDaoImpl::open(fixture.store()).unwrap());
+    contract_jump(&daos(fixture.store()).jump());
 }
 
 #[test]
@@ -542,7 +542,7 @@ fn the_jump_contract_holds_on_the_double() {
 #[test]
 fn the_jump_phase_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_jump_phase(&JumpPhaseDaoImpl::open(fixture.store()).unwrap());
+    contract_jump_phase(&daos(fixture.store()).jump_phase());
 }
 
 #[test]
@@ -607,9 +607,25 @@ fn contract_scope<D: ScopeDao>(dao: &D) {
         "既製 3 scope は upstream の定数の順で並ぶ"
     );
 
+    let catalog: Vec<String> = dao
+        .find_all(DEFINITION)
+        .unwrap()
+        .iter()
+        .map(|view| view.scope().to_string())
+        .collect();
+    assert_eq!(
+        catalog,
+        ["classic", "express", "feature"],
+        "カタログ全列は綴り順に並ぶ (拒否文言が並べる順そのもの)"
+    );
+
     assert_eq!(dao.find(DEFINITION, "nonsense").unwrap(), None);
     assert_eq!(dao.find(ABSENT_DEFINITION, "classic").unwrap(), None);
     assert!(dao.find_stock(ABSENT_DEFINITION).unwrap().is_empty());
+    assert!(
+        dao.find_all(ABSENT_DEFINITION).unwrap().is_empty(),
+        "取り込まれていない定義にはカタログが無い"
+    );
 }
 
 /// キーワードから scope 名 (1 列しか無いので View 型を立てない)。
@@ -694,7 +710,7 @@ fn contract_definition<D: DefinitionDao>(dao: &D) {
 #[test]
 fn the_scope_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_scope(&ScopeDaoImpl::open(fixture.store()).unwrap());
+    contract_scope(&daos(fixture.store()).scope());
 }
 
 #[test]
@@ -706,7 +722,7 @@ fn the_scope_contract_holds_on_the_double() {
 #[test]
 fn the_scope_keyword_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_scope_keyword(&ScopeKeywordDaoImpl::open(fixture.store()).unwrap());
+    contract_scope_keyword(&daos(fixture.store()).scope_keyword());
 }
 
 #[test]
@@ -718,7 +734,7 @@ fn the_scope_keyword_contract_holds_on_the_double() {
 #[test]
 fn the_phase_entry_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_phase_entry(&PhaseEntryDaoImpl::open(fixture.store()).unwrap());
+    contract_phase_entry(&daos(fixture.store()).phase_entry());
 }
 
 #[test]
@@ -730,7 +746,7 @@ fn the_phase_entry_contract_holds_on_the_double() {
 #[test]
 fn the_scope_change_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_scope_change(&ScopeChangeDaoImpl::open(fixture.store()).unwrap());
+    contract_scope_change(&daos(fixture.store()).scope_change());
 }
 
 #[test]
@@ -742,7 +758,7 @@ fn the_scope_change_contract_holds_on_the_double() {
 #[test]
 fn the_definition_contract_holds_on_the_store() {
     let fixture = Fixture::projected();
-    contract_definition(&DefinitionDaoImpl::open(fixture.store()).unwrap());
+    contract_definition(&daos(fixture.store()).definition());
 }
 
 #[test]
@@ -755,11 +771,34 @@ fn the_definition_contract_holds_on_the_double() {
 // 読めない媒体 (契約の外 — 失敗の起点は実装で違う)
 // ---------------------------------------------------------------------------
 
+/// SQLite の接続は開くだけでは中身を読まない。開けたのに引けない媒体は、行の不在ではなく
+/// **読取失敗**として上がる (1 行を引く口も、0 行以上を引く口も同じ)。
+#[test]
+fn a_store_that_opens_but_is_not_a_database_is_a_read_failure_on_every_lookup() {
+    let dir = tempfile::tempdir().unwrap();
+    let garbage = dir.path().join("garbage.sqlite3");
+    std::fs::write(&garbage, b"not a sqlite database at all").unwrap();
+    let daos = ReadModelDaos::open(&garbage).expect("開くだけなら通る");
+
+    let one = daos
+        .definition()
+        .find(DEFINITION)
+        .expect_err("1 行を引く口も潰える");
+    assert_eq!(one.path(), Some(garbage.as_path()));
+
+    let many = daos
+        .scope()
+        .find_all(DEFINITION)
+        .expect_err("0 行以上を引く口も潰える");
+    assert_eq!(many.path(), Some(garbage.as_path()));
+    assert_eq!(many.kind(), one.kind(), "分類は媒体側の 1 本に収束する");
+}
+
 #[test]
 fn a_store_that_is_not_there_is_a_read_failure_not_an_absent_row() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-store.sqlite3");
-    let error = NextAnswerDaoImpl::open(&missing).expect_err("開けない");
+    let error = ReadModelDaos::open(&missing).expect_err("開けない");
     assert_eq!(error.path(), Some(missing.as_path()));
 }
 
@@ -801,6 +840,7 @@ fn a_failing_double_reports_the_read_failure_from_every_verb() {
     );
     let scope = InMemoryScopeDao::failing(error.clone());
     assert_eq!(scope.find(DEFINITION, "classic"), Err(error.clone()));
+    assert_eq!(scope.find_all(DEFINITION), Err(error.clone()));
     assert_eq!(
         scope.find_stock(DEFINITION),
         Err(error.clone()),
@@ -835,6 +875,10 @@ fn an_empty_double_answers_absent_rather_than_failing() {
     );
     assert_eq!(
         InMemoryScopeDao::empty().find_stock(DEFINITION).unwrap(),
+        Vec::new()
+    );
+    assert_eq!(
+        InMemoryScopeDao::empty().find_all(DEFINITION).unwrap(),
         Vec::new()
     );
 }

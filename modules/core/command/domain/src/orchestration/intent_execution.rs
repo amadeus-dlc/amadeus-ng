@@ -650,12 +650,13 @@ impl IntentExecution {
         self.commit(IntentExecutionEvent::GateOpened(material), occurred_at)
     }
 
-    /// 承認ゲートの通過 — `GateApproved`。フェーズ境界は**集約が自分の計画から導出する**。
+    /// 承認ゲートの通過 — `GateApproved`。フェーズ境界の交差はイベントに書かない — 投影側
+    /// (RMU) が計画 (`ResolvedPlan`) の出発点と到達点のフェーズ差から導出する。
     ///
     /// `open_gate` を省いた in-progress からの承認も受理する (BR1.3)。
     ///
-    /// 導出は [`IntentExecution::crossed_phase_boundary`] が持つ。呼出側 (ユースケース) は
-    /// フロー制御だけを担い、判断は集約に閉じる (オーナー統一ルール「集約は FSM」)。
+    /// 呼出側 (ユースケース) はフロー制御だけを担い、判断は集約に閉じる
+    /// (オーナー統一ルール「集約は FSM」)。
     ///
     /// # Errors
     ///

@@ -69,6 +69,42 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         &self.steering
     }
 
+    /// Markdown の投影先がまだ無い初回起動で、構造化面だけを最新化する。
+    ///
+    /// fresh workspace では intent の記録ディレクトリも `aidlc-state.md` もまだ存在しないが、
+    /// 最初の `next` は定義・scope・費用の行を読めなければ `intent-create` を名指せない。
+    /// その初回起動だけがこの入口を使う。通常の実行では [`Self::catch_up`] が Markdown 面と
+    /// 構造化面を同じ履歴断面から一緒に描く。
+    ///
+    /// # Errors
+    ///
+    /// ジャーナル・チェックポイントの読取、構造化投影、またはチェックポイントと行の
+    /// 同一トランザクション更新に失敗した場合。
+    pub async fn catch_up_structured(
+        journal_reader: &mut R,
+        projection: &ProjectionName,
+    ) -> Result<GlobalSeqNr, CatchUpError> {
+        let checkpoint = journal_reader.checkpoint(projection).await?;
+        if journal_reader
+            .events_after(checkpoint)
+            .await?
+            .scanned_to()
+            .is_none()
+        {
+            return Ok(checkpoint);
+        }
+
+        let history = journal_reader.events_after(GlobalSeqNr::ZERO).await?;
+        let Some(last) = history.scanned_to() else {
+            return Ok(checkpoint);
+        };
+        let tables = ReadTables::project(&history)?;
+        journal_reader
+            .advance_checkpoint(projection, last, &tables)
+            .await?;
+        Ok(last)
+    }
+
     /// チェックポイント以降を読んで描き、チェックポイントを進める。
     ///
     /// 戻り値は前進後のチェックポイントである。差分が空なら**何も書かず**現在値を返す。

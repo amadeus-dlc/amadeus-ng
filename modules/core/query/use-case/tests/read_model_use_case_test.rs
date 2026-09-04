@@ -726,6 +726,14 @@ fn scope_view(scope: &str) -> ScopeView {
 }
 
 impl ScopeDao for FakeScopeDao {
+    /// 綴り順で並べた 2 列 (`feature` は [`FakeScopeDao::find`] が持たないので現れない)。
+    fn find_all(&self, definition_id: &str) -> Result<Vec<ScopeView>, ReadModelReadError> {
+        if definition_id != DEFINITION {
+            return Ok(Vec::new());
+        }
+        Ok(["classic", "express"].into_iter().map(scope_view).collect())
+    }
+
     fn find(
         &self,
         definition_id: &str,
