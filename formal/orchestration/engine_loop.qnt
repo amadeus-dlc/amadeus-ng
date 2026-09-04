@@ -19,6 +19,9 @@
 //   Rust の skeleton_gate_stage は None (または別索引) を返して InvalidTarget で拒む。
 //   quint の一時プローブ不変条件で反例を実測 (5000 サンプル中 290 トレース目で違反) し、
 //   ガードを静的計画由来へ改めた (b47 の実測裁定)。
+//   追補 (PR #103 レビュー): actRecordSkeletonStance の `status == Running` を撤去して
+//   実装の受理集合に揃え、actSingleRun の対象選択を `STAGES.oneOf()` + `gated(s)` の
+//   一段に統一した (以前は filter で非 init に絞ったうえで gated も課す二重ガード)。
 // v2.3 (2026-09-04): actPark のガードを `Running or WorkflowParked` へ緩和 (#74 / b45) —
 //   upstream handlePark は park 済みでも成功し Parked / Parked At Stage を書き直して
 //   WORKFLOW_PARKED を再 emit する (**再スタンプ**)。到達性 witness w_repark と
@@ -452,11 +455,11 @@ module engine_loop {
   // (静的計画の最初の非 init EXECUTE ステージ) — ヘッダ v2.4 の簡約注記を参照。
   // 再記録は受理する (上書き — 冪等に true のまま)。
   // 動かすのは stanceRecorded だけであり、それを stance_frame が検査する。
-  // `status == Running` は本モデルの狭め (Rust の record_skeleton_stance は park 中・
-  // 完了後も拒まない — ピンにもそのガードは無い)。狭い側は準拠再生を減らすだけで
-  // 実装の受理集合を偽らないので安全である。
+  // ガードは skeleton-gate 位置だけである — Rust の record_skeleton_stance も取り違えと
+  // この位置しか見ず、park 中・完了後を拒まない (ピンにもそのガードは無い)。v2.4 当初は
+  // `status == Running` で狭めていたが、モデルを実装の受理集合に揃えて撤去した
+  // (PR #103 のレビュー指摘)。
   action actRecordSkeletonStance = all {
-    status == Running,
     cursor == skeletonGateStage,
     stanceRecorded' = true,
     plan' = plan, overlay' = overlay, conditional' = conditional,
@@ -470,11 +473,11 @@ module engine_loop {
   // 本流の状態 (Completed / park 中 / autonomous) に依らず受理され、**状態変数を 1 つも
   // 動かさない** — これが仕様 I10 (--single は本流を進められない) の強制手段であり、
   // single_run_frame が検査するフレーム条件そのものである (設計 §0 の裁定 B)。
-  // 対象ステージは非 init のいずれか (nondet) だが、選ばれた値は状態に現れない。
-  // `gated(s)` は Rust の record_single_stage_run が持つ唯一のガード
-  // (require_gated = 非 initialization) の写しである。
+  // 対象ステージは全ステージから nondet に選び、initialization の拒否は `gated(s)` が
+  // 単独で担う — これは Rust の record_single_stage_run が持つ唯一のガード
+  // (require_gated = 非 initialization) の写しである。選ばれた値は状態に現れない。
   action actSingleRun = {
-    nondet s = STAGES.filter(s => s != 0).oneOf()
+    nondet s = STAGES.oneOf()
     all {
       gated(s),
       plan' = plan, overlay' = overlay, conditional' = conditional,
@@ -569,7 +572,9 @@ module engine_loop {
     checkbox.get(s) == Revising,
   }).size() <= 1
 
-  // 隔離実行 (--single) は本流を 1 つも動かさない (フレーム条件 — 仕様 I10 の強制手段)。
+  // 隔離実行 (--single) は本流の状態を 1 つも動かさない (フレーム条件 — 仕様 I10 の
+  // 強制手段)。観測用の lastDirective / lastAction は更新される — 検査対象は本流の
+  // 状態変数だけである。
   // 設計 §0 の裁定 B: 疑似ワークフロー ID 付きの対を IntentExecution のイベントとして
   // 記録するので、「本流を進めない」ことは適用のフレーム空性で保証するしかない。
   val single_run_frame = (lastAction == "single_run") implies and {

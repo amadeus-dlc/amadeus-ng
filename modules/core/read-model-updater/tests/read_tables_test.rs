@@ -154,7 +154,7 @@ fn saturated_node() -> StageNode {
     .build()
 }
 
-/// 改訂後のグラフ (4 ノード — 実行の計画と同じ slug 列)。
+/// 改訂後のグラフ (5 ノード — 実行の計画と同じ slug 列)。
 fn revised_graph() -> StageGraph {
     StageGraph::new(vec![
         StageNodeBuilder::new(
@@ -185,8 +185,20 @@ fn revised_graph() -> StageGraph {
             StageMode::Subagent,
         )
         .build(),
+        // Construction の最初の EXECUTE — walking-skeleton ゲートの位置 (b47 / #73)。
+        // 実行の計画 (`stages()`) と同じ slug 列にしておくことで、ゲートに立った
+        // `read_next_answer.run_stage_id` が実在する `read_run_stage.id` を指す。
+        StageNodeBuilder::new(
+            slug("functional-design"),
+            StageNumber::parse("3.1").expect("番号"),
+            "Functional Design".to_string(),
+            PhaseId::Construction,
+            ExecutionKind::Always,
+            StageMode::Subagent,
+        )
+        .build(),
     ])
-    .expect("4 ノードのグラフ")
+    .expect("5 ノードのグラフ")
 }
 
 /// `classic` だけが列を持つグリッド (`express` は列なし = zero-EXECUTE)。
@@ -196,6 +208,7 @@ fn revised_grid() -> ScopeGrid {
         (slug("intent-capture"), PlanAction::Execute),
         (slug("scope-definition"), PlanAction::Skip),
         (slug("requirements-analysis"), PlanAction::Execute),
+        (slug("functional-design"), PlanAction::Execute),
     ]
     .into_iter()
     .collect();
@@ -448,7 +461,7 @@ fn the_definition_row_mirrors_the_replayed_aggregate() {
     assert_eq!(row.stage_count(), definition.graph().len());
     assert_eq!(row.scope_count(), definition.scopes().len());
     // 改訂が畳まれていること (誕生の 1 ノード・0 スコープではない)。
-    assert_eq!(row.stage_count(), 4);
+    assert_eq!(row.stage_count(), 5);
     assert_eq!(row.scope_count(), 2);
 }
 
@@ -598,7 +611,7 @@ fn scope_stage_rows_number_only_the_execute_cells_in_document_order() {
             assert_eq!(row.in_scope_order(), None);
         }
     }
-    assert_eq!(order, 3, "classic の EXECUTE は 3 件");
+    assert_eq!(order, 4, "classic の EXECUTE は 4 件");
 
     // 列を持たない有効スコープは全行 action NULL。
     let express: Vec<_> = rows.iter().filter(|row| row.scope() == "express").collect();
@@ -626,7 +639,10 @@ fn scope_phase_entry_rows_exist_only_where_the_definition_answers_some() {
         .filter(|row| row.scope() == "classic")
         .map(|row| row.phase())
         .collect();
-    assert_eq!(classic, ["initialization", "ideation", "inception"]);
+    assert_eq!(
+        classic,
+        ["initialization", "ideation", "inception", "construction"]
+    );
     assert!(rows.iter().all(|row| row.scope() != "express"));
 }
 
@@ -1136,6 +1152,19 @@ fn the_gate_column_carries_the_three_spellings_of_the_domain_decision() {
         Some("unresolved"),
         "分類の往復が済むまでゲートは決まらない"
     );
+    // 答えの FK は同じスナップショットに実在する静的グリッドの行を指す (1 表 1 引当で
+    // ユースケースが辿れること)。定義グラフとスコープ列に Construction の EXECUTE を
+    // 置いてあるので、ここは None に落ちない。
+    let gate_run_stage = tables
+        .run_stages()
+        .iter()
+        .find(|r| r.scope() == "classic" && r.stage_slug() == "functional-design")
+        .expect("skeleton-gate ステージの静的グリッド行が在る");
+    assert_eq!(row.run_stage_id(), Some(gate_run_stage.id()));
+    assert!(
+        gate_run_stage.in_scope(),
+        "classic の Construction 最初の EXECUTE はスコープ内である"
+    );
 
     // (3) stance を記録すると `gated` へ決まる。
     let recorded = aggregate
@@ -1397,6 +1426,11 @@ fn the_next_stage_name_is_the_display_name_of_the_next_execute_in_document_order
     );
     assert_eq!(
         run_stage_row(&tables, "classic", "requirements-analysis").next_stage_name(),
+        Some("Functional Design"),
+        "次段は後ろの最初の EXECUTE — フェーズをまたいでも同じ規則である"
+    );
+    assert_eq!(
+        run_stage_row(&tables, "classic", "functional-design").next_stage_name(),
         None,
         "最後の EXECUTE の後には次段が無い"
     );
@@ -1431,7 +1465,7 @@ fn the_route_digest_is_the_hash_of_the_whole_scope_membership() {
             )
             .stages_in_scope()
             .len(),
-        4,
+        5,
         "顔ぶれは EXECUTE で絞らない"
     );
 }

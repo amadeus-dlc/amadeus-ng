@@ -2714,6 +2714,54 @@ async fn a_skeleton_stance_report_surfaces_every_medium_failure() {
     );
 }
 
+/// リードモデルの `read_execution` を**引けない形**に置き換える（イベントストアは無傷）。
+///
+/// 実 CLI からは作れない形なので、ここだけストアへ直接 SQL を打つ。表ごと落とすと
+/// `catch_up` の `CREATE TABLE IF NOT EXISTS` が空の表を建て直してしまい「行が無い」に
+/// なるので、**列が足りない表**を残して SELECT 自体を失敗させる。
+fn break_read_execution(workspace: &Workspace) {
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    let connection = rusqlite::Connection::open(&store).expect("ストアは開ける");
+    connection
+        .execute_batch(
+            "DROP TABLE read_execution; CREATE TABLE read_execution (id TEXT PRIMARY KEY);",
+        )
+        .expect("リードモデルの表は置き換えられる");
+}
+
+/// 引けないリードモデルは「記録する先が無い」と混ぜない（PR #103 レビュー指摘）。
+///
+/// 実行カーソルは読めてイベントストアも開けるのに、リードモデルの引当だけが落ちる形。
+/// ここを `None` へ畳むと「まだ鋳造していない」と同じ答えになり、壊れた媒体の上で
+/// 作業が続いてしまう。所在と分類を材料に「引けない」と言わせる。
+#[tokio::test]
+async fn a_skeleton_stance_report_names_the_unreadable_read_model() {
+    let workspace = Workspace::with_construction();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 「開けるが引けない」形にする — イベントストアの表は無傷のまま、リードモデルの
+    // `read_execution` だけを引けなくする。ファイル全体を非 SQLite バイト列にすると
+    // イベントストアを開く段で止まってしまい、この経路には届かない。
+    break_read_execution(&workspace);
+    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "off"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
+    );
+    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
+    assert_ne!(
+        message,
+        "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for.",
+        "引けない媒体を不在の逐語へ畳んではならない"
+    );
+}
+
 /// 投影が回らなければ stance の記録も自己防衛拒否で止まる。
 #[tokio::test]
 async fn a_projection_that_cannot_run_after_the_stance_is_refused() {
@@ -2925,6 +2973,83 @@ async fn a_resume_without_a_resolvable_cursor_is_refused() {
     assert_eq!(
         message,
         "State file has no Current Stage field - cannot resume from the last checkpoint."
+    );
+}
+
+/// 段 4 — 引けないリードモデルは「現在地が無い」と混ぜない（PR #103 レビュー指摘）。
+#[tokio::test]
+async fn a_resume_whose_read_model_cannot_be_read_names_the_store() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 「開けるが引けない」形にする（上と同じ細工）。状態ファイルは在るので段 4 の
+    // state 判定は通り、現在地の引当だけが落ちる。
+    break_read_execution(&workspace);
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
+    );
+    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
+    assert_ne!(
+        message, "State file has no Current Stage field - cannot resume from the last checkpoint.",
+        "引けない媒体を不在の逐語へ畳んではならない"
+    );
+}
+
+/// 段 4 — 壊れた実行カーソルは「現在地が無い」と混ぜない（PR #103 レビュー指摘）。
+#[tokio::test]
+async fn a_resume_with_a_broken_execution_cursor_names_the_cursor() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("The execution cursor cannot be read"),
+        "{message}"
+    );
+}
+
+/// 段 4 — リードモデルを**開けない**ときも所在を名指す（引けないときと同じ規律）。
+#[tokio::test]
+async fn a_resume_whose_store_cannot_be_opened_names_the_store() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    // 置き場をディレクトリで塞ぐ — 開くことすらできない形である。
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    fs::remove_file(&store).expect("ストア");
+    fs::create_dir(&store).expect("塞ぐ");
+
+    let (kind, message) =
+        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
+
+    assert_eq!(kind, "error");
+    assert!(
+        message.starts_with("Read model not readable at "),
+        "{message}"
     );
 }
 

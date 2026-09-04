@@ -72,7 +72,8 @@ use super::dto::{
     DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
 };
 use crate::read_tables::{
-    ReadTables, SteeringTables, ensure_tables, replace_all, replace_steering,
+    READ_SCHEMA_VERSION, ReadTables, SteeringTables, ensure_tables, read_schema_version,
+    recreate_tables, replace_all, replace_steering, set_schema_version,
 };
 use core_command_domain::workspace::StorePath;
 
@@ -117,6 +118,10 @@ const UPSERT_CHECKPOINT: &str =
        last_global_seq = excluded.last_global_seq,
        anchor_aid = excluded.anchor_aid,
        anchor_seq_nr = excluded.anchor_seq_nr";
+
+/// 進んだチェックポイントの本数 (読み面の作り直しが要るストアかの判別に使う)。
+const SELECT_ADVANCED_CHECKPOINTS: &str =
+    "SELECT COUNT(*) FROM amadeus_projection_checkpoint WHERE last_global_seq > 0";
 
 /// 集約に属さない行 (チェックポイント・カーソル) の識別子欄に置く印。
 const NO_AGGREGATE: &str = "-";
@@ -209,7 +214,7 @@ impl JournalReaderImpl {
         // 読取側の接続はストアファイルを**作らない** (SQLITE_OPEN_CREATE を外す)。
         // 存在しないパスは空 DB を作って NotFound を返すのではなく、open 自体が失敗する
         // (B6 CodeRabbit #511)。書込は checkpoint 表があるので READ_WRITE は残す。
-        let connection = Connection::open_with_flags(
+        let mut connection = Connection::open_with_flags(
             path.as_path(),
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_URI
@@ -229,8 +234,9 @@ impl JournalReaderImpl {
             .execute_batch(CREATE_CHECKPOINT_TABLE)
             .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
         // 構造化リードモデルの 17 表も我々の表である (本家の DDL とは衝突しない
-        // `read_` 接頭)。チェックポイント表と同じく冪等な `CREATE TABLE IF NOT EXISTS`。
-        ensure_tables(&connection).map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+        // `read_` 接頭)。版が一致していれば冪等な `CREATE TABLE IF NOT EXISTS` だけ、
+        // 動いていれば落として作り直しジャーナルから描き直す。
+        JournalReaderImpl::ensure_read_schema(&mut connection, path.as_path())?;
         Ok(JournalReaderImpl {
             path: path.clone(),
             connection,
@@ -241,6 +247,129 @@ impl JournalReaderImpl {
     #[must_use]
     pub const fn path(&self) -> &StorePath {
         &self.path
+    }
+
+    /// 読み面 17 表を**版付きで**用意する (取得ループの入口 = 開く段で 1 度)。
+    ///
+    /// `PRAGMA user_version` に [`READ_SCHEMA_VERSION`] を持ち、保存値が現行と同じなら
+    /// 冪等な `CREATE TABLE IF NOT EXISTS` だけを打つ。違うときは 17 表を落として作り直し、
+    /// **その場でジャーナル全履歴から描き直す**。
+    ///
+    /// # なぜ作り直しが要るか
+    ///
+    /// `CREATE TABLE IF NOT EXISTS` は既存の表に何もしない。列の形が変わる改訂
+    /// (b47 の `read_next_answer.gated INTEGER` → `gate TEXT`) を旧スキーマのストアへ
+    /// 持ち込むと、表は旧いまま残り `INSERT` が `no such column` で落ちる。行の正本は
+    /// ジャーナルなので、読み面は捨てて描き直せる。
+    ///
+    /// # なぜチェックポイントを戻さないか
+    ///
+    /// チェックポイントは Markdown 面 (状態ファイル・監査シャード) と**共有**である。
+    /// 戻すと未投影区間が全履歴になり、監査シャードに同じブロックがもう一度並ぶ
+    /// ([`crate::orchestration::ReadModelUpdater::catch_up`] の「書いてから進める」)。
+    /// 読み面だけを作り直したいので、ここで全履歴を引いて `replace_all` し、
+    /// チェックポイントには触れない。参照入力由来の 2 表 (`read_steering_*`) は空のまま
+    /// 戻るが、次の `catch_up` が保存済み `source_digest` を `None` と見て描き直す。
+    ///
+    /// # 描き直すのは「投影済みのストア」だけ
+    ///
+    /// チェックポイントがまだ 1 つも進んでいないストア (鋳造直後・未投影) には作り直す
+    /// 中身が無く、次の `catch_up` が全履歴から普通に描く。開く段で毎回ジャーナル全体を
+    /// 復号すると、読むだけの動詞まで復号の失敗で倒れるようになるので、**進んだ
+    /// チェックポイントが在るときだけ**その場の描き直しに入る。
+    fn ensure_read_schema(
+        connection: &mut Connection,
+        path: &Path,
+    ) -> Result<(), JournalReadError> {
+        // SQLite の失敗はどれも同じ写像なので、写す口は 1 つに束ねる。
+        let io = |error: rusqlite::Error| map_sqlite_error(&error, path);
+        let stored = read_schema_version(connection).map_err(io)?;
+        if stored == READ_SCHEMA_VERSION {
+            return ensure_tables(connection).map_err(io);
+        }
+        recreate_tables(connection).map_err(io)?;
+        if !JournalReaderImpl::projected_before(connection, path)? {
+            return set_schema_version(connection, READ_SCHEMA_VERSION).map_err(io);
+        }
+        let history = JournalReaderImpl::scan_from(connection, path, GlobalSeqNr::ZERO)?;
+        // 描けない歴史 (切り落とし・復号不能) は作り直しでも直らない — 版を上げずに止める。
+        let tables = ReadTables::project(&history)
+            .map_err(|_| corrupt_error(NO_AGGREGATE, None, CorruptCause::InvariantViolation))?;
+        // 行の全差し替えと版の記録は同じ Tx に閉じる — 途中で落ちたら版も上がらず、
+        // 次の起動が同じ作り直しをやり直す。
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(io)?;
+        replace_all(&transaction, &tables).map_err(io)?;
+        set_schema_version(&transaction, READ_SCHEMA_VERSION).map_err(io)?;
+        transaction.commit().map_err(io)
+    }
+
+    /// このストアで投影が 1 度でも進んだか (進んだチェックポイントが在るか)。
+    ///
+    /// 読み面の作り直しが要るのは、**旧スキーマの表がすでに描かれている**ストアだけで
+    /// ある。未投影のストアは作り直す中身を持たない。
+    fn projected_before(connection: &Connection, path: &Path) -> Result<bool, JournalReadError> {
+        let count: i64 = connection
+            .query_row(SELECT_ADVANCED_CHECKPOINTS, [], |row| row.get(0))
+            .map_err(|error| map_sqlite_error(&error, path))?;
+        Ok(count > 0)
+    }
+
+    /// ジャーナルを `after` の先から走査する (同期の核)。
+    ///
+    /// [`JournalReader::events_after`] の本体そのものであり、開く段のスキーマ作り直し
+    /// ([`JournalReaderImpl::ensure_read_schema`]) も同じ核を使う — 版が動いたときに
+    /// 読み面を全履歴から描き直すのに、非同期の口を通す必要が無いためである。
+    fn scan_from(
+        connection: &Connection,
+        path: &Path,
+        after: GlobalSeqNr,
+    ) -> Result<JournalBatch, JournalReadError> {
+        let from = to_i64(after.to_u64())?;
+        let rows = {
+            let mut statement = connection
+                .prepare(SELECT_EVENTS_AFTER)
+                .map_err(|error| map_sqlite_error(&error, path))?;
+            let mapped = statement
+                .query_map(params![from], |row| {
+                    Ok(JournalRow {
+                        rowid: row.get::<_, i64>(0)?,
+                        aggregate_id: row.get::<_, String>(1)?,
+                        seq_nr: row.get::<_, i64>(2)?,
+                        payload: row.get::<_, Vec<u8>>(3)?,
+                        occurred_at: row.get::<_, i64>(4)?,
+                        manifest: row.get::<_, String>(5)?,
+                    })
+                })
+                .map_err(|error| map_sqlite_error(&error, path))?;
+            let mut collected = Vec::new();
+            for row in mapped {
+                collected.push(row.map_err(|error| map_sqlite_error(&error, path))?);
+            }
+            collected
+        };
+
+        let scanned_to = rows
+            .last()
+            .map(|row| to_u64(row.rowid, &row.aggregate_id).map(GlobalSeqNr::new))
+            .transpose()?;
+        let mut entries = Vec::new();
+        let mut intents = Vec::new();
+        let mut definitions = Vec::new();
+        for row in &rows {
+            // 同居する 3 ストリームを判別子で振り分ける (issue #50 / #56、定義は 2026-08-31)。
+            if row.manifest == DEFINITION_EVENT_MANIFEST {
+                definitions.push(decode_definition_row(row)?);
+                continue;
+            }
+            if row.manifest == INTENT_EVENT_MANIFEST {
+                intents.push(decode_intent_row(row)?);
+            } else {
+                entries.push(decode_entry(row)?);
+            }
+        }
+        Ok(JournalBatch::new(entries, intents, definitions, scanned_to))
     }
 
     /// 現在のチェックポイント (未登録は `ZERO`)。読取・前進の両方が使う。
@@ -553,51 +682,7 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 
 impl JournalReader for JournalReaderImpl {
     async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
-        let from = to_i64(after.to_u64())?;
-        let rows = {
-            let mut statement = self
-                .connection
-                .prepare(SELECT_EVENTS_AFTER)
-                .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
-            let mapped = statement
-                .query_map(params![from], |row| {
-                    Ok(JournalRow {
-                        rowid: row.get::<_, i64>(0)?,
-                        aggregate_id: row.get::<_, String>(1)?,
-                        seq_nr: row.get::<_, i64>(2)?,
-                        payload: row.get::<_, Vec<u8>>(3)?,
-                        occurred_at: row.get::<_, i64>(4)?,
-                        manifest: row.get::<_, String>(5)?,
-                    })
-                })
-                .map_err(|error| map_sqlite_error(&error, self.path.as_path()))?;
-            let mut collected = Vec::new();
-            for row in mapped {
-                collected.push(row.map_err(|error| map_sqlite_error(&error, self.path.as_path()))?);
-            }
-            collected
-        };
-
-        let scanned_to = rows
-            .last()
-            .map(|row| to_u64(row.rowid, &row.aggregate_id).map(GlobalSeqNr::new))
-            .transpose()?;
-        let mut entries = Vec::new();
-        let mut intents = Vec::new();
-        let mut definitions = Vec::new();
-        for row in &rows {
-            // 同居する 3 ストリームを判別子で振り分ける (issue #50 / #56、定義は 2026-08-31)。
-            if row.manifest == DEFINITION_EVENT_MANIFEST {
-                definitions.push(decode_definition_row(row)?);
-                continue;
-            }
-            if row.manifest == INTENT_EVENT_MANIFEST {
-                intents.push(decode_intent_row(row)?);
-            } else {
-                entries.push(decode_entry(row)?);
-            }
-        }
-        Ok(JournalBatch::new(entries, intents, definitions, scanned_to))
+        JournalReaderImpl::scan_from(&self.connection, self.path.as_path(), after)
     }
 
     async fn checkpoint(

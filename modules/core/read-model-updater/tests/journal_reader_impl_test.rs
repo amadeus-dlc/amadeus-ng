@@ -1196,3 +1196,174 @@ async fn a_second_advance_replaces_every_row_instead_of_appending() {
         .expect("件数");
     assert_eq!(second, first, "差し替えであって追記ではない");
 }
+
+// ---------------------------------------------------------------------------
+// 読み面スキーマの版管理 (PR #103 レビュー指摘)
+// ---------------------------------------------------------------------------
+
+/// `read_next_answer` を b47 以前の形 (`gated INTEGER`) に戻し、版も戻す。
+///
+/// 実 CLI からは作れない断面なので、ここだけストアへ直接 DDL を打つ。旧スキーマのまま
+/// `CREATE TABLE IF NOT EXISTS` が走ると表は旧いまま残り、`INSERT` が `no such column` で
+/// 落ちる — それが版管理の無い世界で起きることである。
+fn regress_to_the_old_schema(fixture: &Fixture) {
+    fixture
+        .raw()
+        .execute_batch(
+            "DROP TABLE read_next_answer;
+             CREATE TABLE read_next_answer (
+               id            TEXT    PRIMARY KEY,
+               execution_id  TEXT    NOT NULL,
+               request_kind  TEXT    NOT NULL,
+               decision_kind TEXT    NOT NULL,
+               stage_index   INTEGER,
+               stage_slug    TEXT,
+               gated         INTEGER,
+               checkbox      TEXT,
+               run_stage_id  TEXT,
+               as_of         INTEGER NOT NULL
+             );
+             PRAGMA user_version = 0;",
+        )
+        .expect("旧スキーマへ戻せる");
+}
+
+/// 保存済みの版が違えば、17 表を作り直してジャーナルから描き直す。
+#[tokio::test]
+async fn a_store_left_on_the_old_read_schema_is_rebuilt_from_the_journal() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed_definition(&fixture.path).await;
+    seed(&mut store).await;
+
+    // いったん現行スキーマで投影しておく (= チェックポイントが進んだストアにする)。
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+    let projected: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_next_answer", [], |row| {
+            row.get(0)
+        })
+        .expect("件数");
+    assert!(projected > 0, "前提: 現行スキーマでは行が入る");
+    drop(journal_reader);
+
+    // 旧スキーマへ戻す — この形のまま INSERT すると `no such column: gate` で落ちる。
+    regress_to_the_old_schema(&fixture);
+
+    // 取得ループの入口 (= 開く段) が版の差を見て作り直す。
+    let journal_reader = fixture.journal_reader();
+    drop(journal_reader);
+
+    let raw = fixture.raw();
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("版");
+    assert_eq!(version, 1, "作り直したら版を記録する");
+    let rebuilt: i64 = raw
+        .query_row("SELECT COUNT(*) FROM read_next_answer", [], |row| {
+            row.get(0)
+        })
+        .expect("件数");
+    assert_eq!(rebuilt, projected, "ジャーナルから同じ行が描き直される");
+    let gate: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('read_next_answer') WHERE name = 'gate'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("列");
+    assert_eq!(gate, 1, "新しい列名で作り直されている");
+}
+
+/// 版が一致していれば 1 表も落とさない (毎回の作り直しは行を捨てる無駄である)。
+#[tokio::test]
+async fn a_store_already_on_the_current_read_schema_is_not_dropped() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+    drop(journal_reader);
+    // 投影が書かない印を 1 行置く — 落として作り直せば消える。
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO read_scope_change(id, execution_id, scope, kind, as_of)
+             VALUES ('sentinel', 'e', 's', 'k', 0)",
+            [],
+        )
+        .expect("印を置ける");
+
+    let journal_reader = fixture.journal_reader();
+    drop(journal_reader);
+
+    let survived: i64 = fixture
+        .raw()
+        .query_row(
+            "SELECT COUNT(*) FROM read_scope_change WHERE id = 'sentinel'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("件数");
+    assert_eq!(survived, 1, "版が同じなら表は落とさない");
+}
+
+/// 作り直しの途中で歴史が読めなければ、版を上げずに止める。
+///
+/// 版だけ先に上げてしまうと、次の起動は「もう作り直した」と判断して旧い読み面のまま
+/// 進んでしまう。壊れた材料は作り直しでも直らないので、開く段でそのまま倒れる。
+#[tokio::test]
+async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_version() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+
+    // チェックポイントを進めておく (作り直しの対象になるストアにする)。
+    let mut journal_reader = fixture.journal_reader();
+    let tables = seeded_tables(&journal_reader).await;
+    let last = tables.as_of().expect("走査位置");
+    journal_reader
+        .advance_checkpoint(&projection(), last, &tables)
+        .await
+        .expect("前進");
+    drop(journal_reader);
+
+    regress_to_the_old_schema(&fixture);
+    // 版を戻したうえで歴史も壊す — 作り直しは読取の段で倒れる。
+    fixture
+        .raw()
+        .execute("UPDATE journal SET payload = X'7B6E6F74206A736F6E'", [])
+        .expect("payload を壊す");
+
+    let error = JournalReaderImpl::open(&fixture.path).expect_err("壊れた歴史は描き直せない");
+    assert!(
+        matches!(
+            error,
+            JournalReadError::Corrupt {
+                cause: CorruptCause::UndecodablePayload,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    let version: i64 = fixture
+        .raw()
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("版");
+    assert_eq!(version, 0, "描き直せていないなら版も上げない");
+}

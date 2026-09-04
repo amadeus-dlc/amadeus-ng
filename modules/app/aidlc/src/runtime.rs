@@ -429,8 +429,12 @@ async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
     };
     // 成功の逐語は現在地を名乗る（upstream は状態ファイルの `Current Stage` を読む）。
     // 媒体の失敗はここより前で surface 済みなので、行が引けないのは「記録する先が無い」である。
-    let Some((current_stage, _)) = current_execution_view(layout) else {
-        return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string());
+    let current_stage = match current_execution_view(layout) {
+        Ok(Some((stage, _))) => stage,
+        // 不在 = 記録する先が無い。
+        Ok(None) => return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string()),
+        // 媒体の失敗は不在と混ぜない — 材料をそのまま出す。
+        Err(message) => return emit_error(message),
     };
     if let Err(error) =
         RecordSkeletonStanceUseCase::new(intent_execution_repository, intent_repository)
@@ -480,10 +484,13 @@ fn resume_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     if !state_file_present(layout) {
         return emit_error(wording::RESUME_WITHOUT_STATE.to_string());
     }
-    let Some(view) = current_execution_view(layout) else {
-        return emit_error(wording::RESUME_WITHOUT_CURRENT_STAGE.to_string());
+    let (stage, scope) = match current_execution_view(layout) {
+        Ok(Some(view)) => view,
+        // 不在 = 現在地を名乗れない（鋳造前・投影前）。
+        Ok(None) => return emit_error(wording::RESUME_WITHOUT_CURRENT_STAGE.to_string()),
+        // 媒体の失敗は不在と混ぜない — 材料をそのまま出す。
+        Err(message) => return emit_error(message),
     };
-    let (stage, scope) = view;
     // 数字の応答キーを先に正規化してから意味で照合する（写像の持ち主はエンジンである —
     // ピン `:5417-5424`）。
     let raw = user_input.trim().to_lowercase();
@@ -536,16 +543,32 @@ fn state_file_present(layout: &Layout) -> bool {
     })
 }
 
-/// 実行行から現在地 slug と scope を引く（どちらも欠ければ `None`）。
-fn current_execution_view(layout: &Layout) -> Option<(String, String)> {
-    let store = store_path(layout).ok()?;
-    let execution_id = active_execution(layout).ok()??.execution_id().clone();
-    let daos = ReadModelDaos::open(store.as_path()).ok()?;
+/// 実行行から現在地 slug と scope を引く。
+///
+/// **失敗と不在を混ぜない**（`report` 段 6 と同じ規律）。媒体を開けない・引けないは
+/// `Err(<診断文言>)` として材料を運び、`Ok(None)` は**不在**だけを意味する —
+/// 実行カーソルが無い（まだ鋳造していない）、実行行がまだ投影されていない、
+/// 行に `cursor_slug` が無い、の 3 形である。呼び出し側は不在を各段の逐語へ、
+/// 失敗をそのまま error directive へ写す。
+fn current_execution_view(layout: &Layout) -> Result<Option<(String, String)>, String> {
+    let store = store_path(layout)?;
+    let unreadable =
+        |cause: &str| wording::read_model_unreadable(&store.as_path().to_string_lossy(), cause);
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        Ok(None) => return Ok(None),
+        Err(error) => return Err(wording::unreadable_execution_cursor(&error.to_string())),
+    };
+    let daos = ReadModelDaos::open(store.as_path())
+        .map_err(|error| unreadable(&error.kind().to_string()))?;
     let found = FindExecutionUseCase::new(daos.execution())
         .execute(execution_id.as_str())
-        .ok()??;
-    let stage = found.cursor_slug()?.to_string();
-    Some((stage, found.scope().to_string()))
+        .map_err(|error| unreadable(&error.kind().to_string()))?;
+    let Some(found) = found else { return Ok(None) };
+    let Some(stage) = found.cursor_slug() else {
+        return Ok(None);
+    };
+    Ok(Some((stage.to_string(), found.scope().to_string())))
 }
 
 /// 成功 3 形を directive へ写す（`raw` は報告された生の語）。

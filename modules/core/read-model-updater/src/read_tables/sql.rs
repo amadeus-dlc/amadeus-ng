@@ -358,6 +358,82 @@ DELETE FROM read_steering_plan;
 DELETE FROM read_steering_part;
 ";
 
+/// 読み面スキーマの版 (`PRAGMA user_version` に保存する値)。
+///
+/// **列の形を変えたら必ず 1 つ上げる。** `CREATE TABLE IF NOT EXISTS` は既存の表には
+/// 何もしないので、列を足す・落とす・型を変える改訂は旧スキーマの表が残ったままになり、
+/// `INSERT` が `no such column` で落ちる (b47 の `read_next_answer.gated INTEGER` →
+/// `gate TEXT` が実例)。版が動いていれば [`recreate_tables`] が落として作り直す。
+///
+/// 行の正本はジャーナルであって読み面ではないので、**作り直しは情報を失わない**。
+/// 「後方互換を残さない」(`coding-rules/no-backward-compatibility.md`) はコードの規則で
+/// あり、機械が読む媒体を捨てて描き直すのはその帰結である。
+pub(crate) const READ_SCHEMA_VERSION: i64 = 1;
+
+/// 17 表の `DROP` (版が動いたときだけ打つ — 索引は表と一緒に落ちる)。
+///
+/// 落とすのは `read_*` 17 表**だけ**である。ジャーナル (`journal`) とスナップショット
+/// (`snapshot`) は本家の表であり、チェックポイント表 (`amadeus_projection_checkpoint`) は
+/// Markdown 面と共有の位置なので、どちらもここには現れない。
+const DROP_TABLES: &str = "
+DROP TABLE IF EXISTS read_definition;
+DROP TABLE IF EXISTS read_definition_stage;
+DROP TABLE IF EXISTS read_definition_scope;
+DROP TABLE IF EXISTS read_definition_scope_keyword;
+DROP TABLE IF EXISTS read_definition_scope_stage;
+DROP TABLE IF EXISTS read_definition_scope_phase_entry;
+DROP TABLE IF EXISTS read_intent;
+DROP TABLE IF EXISTS read_intent_stage;
+DROP TABLE IF EXISTS read_execution;
+DROP TABLE IF EXISTS read_execution_stage;
+DROP TABLE IF EXISTS read_next_answer;
+DROP TABLE IF EXISTS read_next_jump;
+DROP TABLE IF EXISTS read_next_jump_phase;
+DROP TABLE IF EXISTS read_run_stage;
+DROP TABLE IF EXISTS read_scope_change;
+DROP TABLE IF EXISTS read_steering_plan;
+DROP TABLE IF EXISTS read_steering_part;
+";
+
+/// 保存されている読み面スキーマの版 (未設定の DB は `0`)。
+///
+/// `PRAGMA user_version` は SQLite がヘッダに持つ 32bit の欄で、本家の event-store も
+/// 我々のチェックポイント表も使っていない (実測。同じ DB ファイルの中で衝突しない)。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn read_schema_version(connection: &Connection) -> Result<i64, rusqlite::Error> {
+    connection.query_row("PRAGMA user_version", [], |row| row.get(0))
+}
+
+/// 読み面スキーマの版を書く。
+///
+/// `PRAGMA` は束縛変数を取れないので、値は `i64` として整形する (外から来る文字列は
+/// 通らないので SQL の注入面は無い)。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn set_schema_version(
+    connection: &Connection,
+    version: i64,
+) -> Result<(), rusqlite::Error> {
+    connection.execute_batch(&format!("PRAGMA user_version = {version}"))
+}
+
+/// 17 表を落として作り直す (版が動いたときの作り直し)。
+///
+/// 落とすのは `read_*` だけで、ジャーナル・スナップショット・チェックポイントは触らない。
+///
+/// # Errors
+///
+/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
+pub(crate) fn recreate_tables(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute_batch(DROP_TABLES)?;
+    ensure_tables(connection)
+}
+
 /// 17 表と索引を (無ければ) 作る。冪等なので何度呼んでもよい。
 ///
 /// 索引は表と同じ口で作る — 表だけ在って UNIQUE 索引が無い断面を作ると、自然キーの

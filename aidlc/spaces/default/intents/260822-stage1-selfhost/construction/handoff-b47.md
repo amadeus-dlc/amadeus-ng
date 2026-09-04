@@ -40,6 +40,8 @@ skeleton stance も `IntentExecution` のコマンドとイベント（A）。I1
 
 - **設計との差分 8 点**（`design.md` §9「設計との差分」）: 実装先行の層は mutation で red を代替、`next_decision(&Intent)` の署名、名指しステージに対するゲート判定、`Option<StageSlug>`、`read_run_stage.in_scope`、`report --single` の拒否順、`ungated` の未到達、網羅コメントの実測合わせ。
 
+- **PR #103 のレビュー対応 5 件**（`design.md` §9「PR #103 の CodeRabbit 指摘への対応」）: Quint ガード撤去と `actSingleRun` の選択域、`current_execution_view` の失敗分離、**読み面スキーマの版管理**（`PRAGMA user_version`、不一致なら `read_*` 17 表を作り直し、チェックポイントは戻さずその場で描き直す）、fixture の 5 ノード化。
+
 ## 積み残し（記録のみ、起票しない）
 - **b48（裁定済み）**: B10 のレシート鮮度（#51 = A）と段 12 の practices-discovery 受領証 — (A) 受領証は `IntentExecution` のイベント
   `ReviewReceiptRecorded`、(i) 鮮度は順序だけ。受領証を書く動詞（`aidlc-audit append` 相当）の配線を含む。#7 キュー 5 の残り。

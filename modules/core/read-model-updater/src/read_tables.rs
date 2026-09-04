@@ -107,7 +107,10 @@ pub use steering_tables::SteeringTables;
 pub use unsplittable_section::UnsplittableSection;
 
 // 表の DDL と全差し替えは取得ループ (`JournalReaderImpl`) だけが呼ぶ内部の口である。
-pub(crate) use sql::{ensure_tables, replace_all, replace_steering};
+pub(crate) use sql::{
+    READ_SCHEMA_VERSION, ensure_tables, read_schema_version, recreate_tables, replace_all,
+    replace_steering, set_schema_version,
+};
 
 /// 1 回の投影で作った `read_*` 表の全行。
 ///

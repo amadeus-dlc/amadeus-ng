@@ -53,9 +53,11 @@
   `plan[1] == SkipPlan`。Rust の `skeleton_gate_stage` は静的計画を見るので `None` を返し準拠再生が赤になる）が 4 シードで
   即座に見つかり、静的計画由来へ改めた（設計の訂正 2026-09-04。再採取フィクスチャの実測でも stance の記録位置は cursor 3 / 2 で
   索引 1 ではない）。合成計画のフェーズ割当は「索引 0 = Initialization、1 以降 = Construction」（`gated(s) = s != 0` の抽象は不変）。
-- `actRecordSkeletonStance`: guard `status == Running and cursor == skeletonGateStage`、`stanceRecorded' = true`、他は不変、
-  `lastAction' = "record_skeleton_stance"`（`status == Running` はモデルが狭い側 — Rust は park 中・完了後も拒まないが、準拠再生を
-  減らすだけで実装の受理集合を偽らない）。
+- `actRecordSkeletonStance`: guard **`cursor == skeletonGateStage` だけ**、`stanceRecorded' = true`、他は不変、
+  `lastAction' = "record_skeleton_stance"`。~~`status == Running`~~ は PR #103 の CodeRabbit 指摘で外した — 実装 `record_skeleton_stance` は
+  取り違えと skeleton-gate 位置しか見ず park 中・完了後も拒まないので、モデルを狭くしておく理由が無い（モデルは実装の受理集合と一致させる）。
+- `actSingleRun`: `nondet s = STAGES.oneOf()` から選び `gated(s)` が initialization を拒む（同指摘 — `filter(s != 0)` との二重を解消）。
+  `single_run_frame` の注記は「本流の状態を動かさない（`lastDirective` / `lastAction` は更新される）」。
 - `actSingleRun`: `nondet s = STAGES.filter(s => s != 0).oneOf()`、**全状態変数不変**（`stanceRecorded` も）、`lastDirective' = DNone`、
   `lastAction' = "single_run"`。
 - 不変条件: `single_run_frame`（`lastAction == "single_run"` ⇒ cursor / status / checkbox / overlay / parkedAt / autonomous / approved /
@@ -91,6 +93,9 @@
 - `read_next_answer`: `gated INTEGER NULL` を **`gate TEXT NULL`**（綴り `gated` / `ungated` / `unresolved`、run-stage 以外は NULL）に置換。
   綴りの正本は domain の `GateDecision::spelling()`。クエリ側 `NextAnswerView::gate() -> Option<GateField>`（`GateField::parse`）。
 - `read_run_stage.gate_default` は不変。
+- **読み面スキーマの版管理**（PR #103 の CodeRabbit 指摘、Major）: 列の変更（`gated` → `gate`）で既存ストアの `read_*` 表が旧スキーマのまま残り INSERT が
+  落ちるため、`PRAGMA user_version` に `READ_SCHEMA_VERSION` を持ち、`catch_up` の入口で不一致なら `read_*` 17 表を DROP → CREATE →
+  投影チェックポイントをリセットしてジャーナルから作り直す（ジャーナル表・スナップショット表は触らない）。
 
 ## 6. app（`modules/app/aidlc`）
 
@@ -195,3 +200,11 @@ quint run $M --seed 0x505 --max-samples 2000 --max-steps 40 --invariant 'not(w_s
 6. `report --single` の拒否順は「実行カーソル不在 → 未知ステージ / initialization」。ピンは未知 → initialization → 記録（記録先の不在は spawn の失敗として最後に出る）。差が出るのは「記録が無く、かつ stage も不正」の組合せだけ。
 7. `read_next_answer.gate` の `ungated` 綴りは現状の経路（誕生 = 初期化完了済み）では到達しない — 3 値の完全性のために残す。
 8. 準拠テストの網羅コメントを実測に合わせた（`report_revised` は 0x101、`report_skipped` は 0xe5 が持つ）。
+
+### PR #103 の CodeRabbit 指摘への対応（5 件、すべて妥当）
+
+1. **Quint**: `actRecordSkeletonStance` の `status == Running` を撤去（実装は park 中・完了後も受理）。`actSingleRun` は `STAGES.oneOf()` から選び `gated(s)` 単独で initialization を拒む。`single_run_frame` の注記を「本流の状態を動かさない（`lastDirective` / `lastAction` は更新）」へ。mutation 2 件を再実行して検出を再確認（対照は `[ok]`）。**フィクスチャ 11 本を §9 のコマンドで再採取** — ガード撤去で stance の到達断面が増え、`0x101`（40 状態、stance 5）と `0xe5`（stance 6、cursor 1）が新たに stance を含む。19 アクション網羅は維持。
+2. **`current_execution_view`**: `Result<Option<(String, String)>, String>` へ。`ReadModelDaos::open` / `FindExecutionUseCase::execute` の失敗は `read_model_unreadable`、実行カーソルの破損は `unreadable_execution_cursor`、不在 3 形（カーソルなし / 実行行なし / `cursor_slug` なし）だけが `Ok(None)`。結合テスト 4 本（故障注入は「列が足りない `read_execution` を残す」— ストアを壊す形はイベントストアを開く段で先に止まり、表を落とす形は `CREATE TABLE IF NOT EXISTS` が空表を建て直して「行なし」に化けるため）。
+3. **読み面スキーマの版管理**: `READ_SCHEMA_VERSION = 1` を `PRAGMA user_version` に持ち、`JournalReaderImpl::open` で照合。不一致なら `read_*` 17 表を DROP → CREATE。**投影チェックポイントは戻さない** — チェックポイントは Markdown 面（状態ファイル・監査シャード）と共有で、戻すと監査シャードに同じブロックがもう一度並ぶ。代わりに、**進んだチェックポイントが在るストアだけ**その場で全履歴を引いて `replace_all` で読み面を描き直す（行の差し替えと版の記録は同一 Tx。未投影のストアは通常の `catch_up` が全履歴から描く。無条件にすると開く段で毎回ジャーナル全体を復号し、破損ジャーナルを読むだけの動詞まで倒れる — 既存テスト 7 本が赤になって判明）。参照入力由来の 2 表は空で戻り、次の `catch_up` が `source_digest = None` と見て描き直す。テスト 3 本（旧スキーマからの描き直し、版一致では落とさない、描き直し中に歴史が読めなければ版を上げない）。
+4. **`read_tables_test` の定義 fixture**: `functional-design`（Construction 3.1）を追加し、skeleton gate に立った `NextAnswerRow.run_stage_id` が対応する `read_run_stage.id` を指し `in_scope` であることを検証（5 ノード化で既存期待値 4 件を更新）。
+5. 検証（修正後）: fmt / clippy / lint 緑、`cargo test --workspace` 49 ターゲット 1,866 本、`scripts/quint-gate.sh` 20 ステップ PASS、カバレッジ 99.12%。
