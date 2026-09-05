@@ -226,3 +226,40 @@ fn unexpected_audit_suffix_is_preserved_as_a_conflict() {
         "original\nunrelated user text\n"
     );
 }
+
+#[test]
+fn target_binding_keeps_roles_and_file_ownership_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.md");
+    let audit = dir.path().join("audit.md");
+    let memory = dir.path().join("memory");
+    let targets = ProjectionTargets::new(&state, &audit, &memory);
+    let plan = PublicationBatch::rebuild(GlobalSeqNr::ZERO, GlobalSeqNr::ZERO, vec![])
+        .for_targets(&targets)
+        .unwrap();
+    assert!(plan.matches_targets(&targets));
+    assert!(
+        !plan.matches_targets(&ProjectionTargets::new(&audit, &state, &memory)),
+        "同じパス集合でも役割の入替えを拒否する"
+    );
+    let foreign = PublicationBatch::rebuild(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::ZERO,
+        vec![PublicationFile::replacement(
+            &dir.path().join("foreign.md"),
+            "before",
+            "after",
+        )],
+    )
+    .for_targets(&targets)
+    .unwrap();
+    assert!(
+        !foreign.matches_targets(&targets),
+        "束縛だけが正しくても所有外のファイルを拒否する"
+    );
+    let invalid = dir.path().join(std::ffi::OsString::from_vec(vec![0xff]));
+    assert!(
+        !plan.matches_targets(&ProjectionTargets::new(invalid, &audit, &memory)),
+        "損失なく記録できない対象に一致しない"
+    );
+}

@@ -1521,3 +1521,70 @@ async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
         assert!(!fixture.root.path().join("other-memory").exists());
     }
 }
+
+/// 保存媒体の制約が壊れても、共有headの不正値でファイルを公開しない。
+#[tokio::test]
+async fn damaged_shared_head_fields_refuse_publication_until_explicit_rebuild() {
+    for corruption in [
+        "UPDATE amadeus_read_model_head SET position=-1",
+        "UPDATE amadeus_read_model_head SET generation=0",
+        "UPDATE amadeus_read_model_head SET revision='foreign-transform'",
+        "UPDATE amadeus_read_model_head SET content_digest='tampered'",
+    ] {
+        let fixture = Fixture::new();
+        let mut reader = fixture.reader();
+        reader
+            .publish(&projection(), &fixture.batch(), &empty_tables())
+            .await
+            .unwrap();
+        let audit = fs::read(&fixture.audit).unwrap();
+        fixture
+            .raw()
+            .execute_batch(&format!(
+                "PRAGMA ignore_check_constraints=ON; {corruption};"
+            ))
+            .unwrap();
+        let candidate = PublicationBatch::rebuild(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::ZERO,
+            vec![PublicationFile::replacement(
+                &fixture.state,
+                "after\n",
+                "next\n",
+            )],
+        )
+        .for_targets(&fixture.targets())
+        .unwrap();
+        assert!(
+            matches!(
+                reader
+                    .publish(&projection(), &candidate, &empty_tables())
+                    .await,
+                Err(CatchUpError::Read(JournalReadError::Corrupt { .. }))
+            ),
+            "{corruption}"
+        );
+        assert_eq!(
+            fs::read_to_string(&fixture.state).unwrap(),
+            "after\n",
+            "{corruption}"
+        );
+        assert_eq!(fs::read(&fixture.audit).unwrap(), audit, "{corruption}");
+        assert_eq!(
+            reader.checkpoint(&projection()).await.unwrap(),
+            GlobalSeqNr::ZERO
+        );
+        reader.rebuild_read_model().unwrap();
+        let pending = reader
+            .pending_publication(&projection())
+            .await
+            .unwrap()
+            .unwrap();
+        reader
+            .publish(&projection(), &pending, &empty_tables())
+            .await
+            .unwrap();
+        assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "next\n");
+        assert_eq!(fs::read(&fixture.audit).unwrap(), audit);
+    }
+}

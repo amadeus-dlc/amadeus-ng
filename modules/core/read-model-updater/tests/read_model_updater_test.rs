@@ -1199,3 +1199,27 @@ async fn the_memory_layer_is_read_before_the_journal_difference_is_probed() {
     assert_eq!(fixture.steering_writes(), 1);
     assert_eq!(fixture.steering().expect("steering 面").plans().len(), 5);
 }
+
+/// 計画の材料を安全に読めなければ、公開要求すら作らず全ファイルを保持する。
+#[tokio::test]
+async fn an_invalid_audit_target_prevents_any_file_or_plan_publication() {
+    let fixture = Fixture::new();
+    std::fs::create_dir_all(&fixture.audit_shard).unwrap();
+    let state = fixture.state();
+    let (mut updater, published_tables) = fixture.spied_updater(journal(), intents());
+    assert_eq!(
+        updater.catch_up().await,
+        Err(CatchUpError::PublicationConflict {
+            path: fixture.audit_shard.clone()
+        })
+    );
+    assert_eq!(fixture.state(), state);
+    assert!(fixture.audit_shard.is_dir());
+    assert!(fixture.publications.borrow().is_empty());
+    assert!(published_tables.borrow().is_none());
+    std::fs::remove_dir(&fixture.audit_shard).unwrap();
+    updater.catch_up().await.unwrap();
+    let audit = fixture.shard();
+    updater.catch_up().await.unwrap();
+    assert_eq!(fixture.shard(), audit);
+}
