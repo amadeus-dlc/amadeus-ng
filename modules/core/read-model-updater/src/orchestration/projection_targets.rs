@@ -38,6 +38,16 @@ impl ProjectionTargets {
         }
     }
 
+    /// 束縛ダイジェストと所有検査が共有する、順序付きの対象一覧。
+    pub(super) fn owned_paths(&self) -> [&Path; 4] {
+        [
+            self.state_file(),
+            self.audit_shard(),
+            self.project_md(),
+            self.team_md(),
+        ]
+    }
+
     /// 状態ファイル（`aidlc-state.md`）の場所。
     #[must_use]
     pub fn state_file(&self) -> &Path {

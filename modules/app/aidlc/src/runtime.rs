@@ -2230,6 +2230,243 @@ corrupt review override: Adversarial"
         root
     }
 
+    /// 後段ガードの直前まで、実ストアで鋳造と事前復旧を完了する。
+    async fn recovered_test_layout(root: &tempfile::TempDir) -> Layout {
+        let completion = create_intent(
+            &Layout::resolve(root.path()),
+            &intent_create_args(&["--scope", "classic", "--label", "race"]),
+        )
+        .await;
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        let layout = Layout::resolve(root.path());
+        catch_up_before_reading(&layout)
+            .await
+            .expect("競合前の復旧は成功する");
+        layout
+    }
+
+    fn journal_count_at(path: &Path) -> i64 {
+        rusqlite::Connection::open(path)
+            .expect("真実記録を開く")
+            .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+            .expect("イベント件数")
+    }
+
+    fn assert_late_read_error(completion: &Completion, expected: &str) {
+        assert_eq!(
+            completion.code(),
+            0,
+            "後段の読取拒否はerror directive: {completion:?}"
+        );
+        assert_eq!(completion.diagnostic(), None);
+        let value: serde_json::Value =
+            serde_json::from_str(completion.line().expect("error directive")).expect("JSON");
+        assert_eq!(
+            value.get("kind").and_then(serde_json::Value::as_str),
+            Some("error")
+        );
+        assert_eq!(
+            value.get("message").and_then(serde_json::Value::as_str),
+            Some(expected)
+        );
+    }
+
+    /// 復旧成功はその後のファイル差替えを防げない。後段の2ガードも読取不能を区別する。
+    #[tokio::test]
+    async fn a_state_file_replaced_after_recovery_keeps_its_path_and_cause() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        let state = layout.state_file().expect("投影先");
+        assert_eq!(state_version_guard(&layout), None);
+        assert_eq!(autonomy_field_guard(&layout), None);
+        let original = std::fs::read(&state).expect("公開済み状態");
+        std::fs::remove_file(&state).expect("別の利用者が状態を置き換える");
+        std::fs::create_dir(&state).expect("同名ディレクトリ");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            state.display(),
+            std::io::ErrorKind::IsADirectory
+        );
+        assert_eq!(state_version_guard(&layout), Some(expected.clone()));
+        assert_eq!(autonomy_field_guard(&layout), Some(expected));
+        assert!(state.is_dir(), "後段ガードは障害を上書きしない");
+        assert_eq!(journal_count_at(store.as_path()), before);
+        std::fs::remove_dir(&state).expect("障害除去");
+        std::fs::write(&state, original).expect("公開済み状態を戻す");
+        assert_eq!(state_version_guard(&layout), None);
+        assert_eq!(autonomy_field_guard(&layout), None);
+    }
+
+    /// 復旧後に別接続が実行表を壊しても、再開とstanceは不在の逐語や成功へ畳まない。
+    #[tokio::test]
+    async fn a_read_table_broken_after_recovery_stops_resume_and_stance() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        assert_eq!(
+            current_execution_view(&layout).expect("競合前は読める"),
+            Some(("domain-design".into(), "classic".into()))
+        );
+        let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+        concurrent
+            .execute_batch(
+                "DROP TABLE read_execution; CREATE TABLE read_execution (id TEXT PRIMARY KEY);",
+            )
+            .expect("後段読取の前に表を破損");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            store.as_path().display(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(current_execution_view(&layout), Err(expected.clone()));
+        assert_late_read_error(
+            &resume_report(
+                &layout,
+                &report_args(&["--result", "resumed", "--user-input", "1"]),
+            ),
+            &expected,
+        );
+        assert_late_read_error(&skeleton_stance_report(&layout, "on").await, &expected);
+        assert_eq!(
+            journal_count_at(store.as_path()),
+            before,
+            "後段で拒否してイベントを残さない"
+        );
+    }
+
+    /// 復旧後にストアの置き場が塞がれた場合も、現在地の不在とは区別する。
+    #[tokio::test]
+    async fn a_store_blocked_after_recovery_is_named_by_the_late_query() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        let saved = store.as_path().with_extension("preserved.sqlite");
+        std::fs::rename(store.as_path(), &saved).expect("真実記録を保持した障害注入");
+        std::fs::create_dir(store.as_path()).expect("ストアを塞ぐ");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            store.as_path().display(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(current_execution_view(&layout), Err(expected.clone()));
+        assert_late_read_error(
+            &resume_report(
+                &layout,
+                &report_args(&["--result", "resumed", "--user-input", "1"]),
+            ),
+            &expected,
+        );
+        assert!(store.as_path().is_dir());
+        assert_eq!(journal_count_at(&saved), before);
+    }
+
+    /// スコープの表を別接続が破損した場合、昇格先のステージ不在として隠さない。
+    #[tokio::test]
+    async fn a_definition_table_broken_after_recovery_keeps_the_promotions_read_error() {
+        let root = minimal_workspace();
+        for relative in [
+            ".claude/tools/data/stage-graph.json",
+            ".claude/tools/data/scope-grid.json",
+        ] {
+            let path = root.path().join(relative);
+            let content = std::fs::read_to_string(&path).expect("合成定義");
+            std::fs::write(
+                path,
+                content.replace("domain-design", "practices-discovery"),
+            )
+            .expect("昇格ステージを持つ合成定義");
+        }
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        assert_eq!(
+            practices_support_agents(&layout, &store).expect("競合前は宣言を読める"),
+            Vec::<String>::new()
+        );
+        let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+        concurrent.execute_batch("DROP TABLE read_definition_stage; CREATE TABLE read_definition_stage (id TEXT PRIMARY KEY);").expect("昇格先の読取前に表を破損");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            store.as_path().display(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(practices_support_agents(&layout, &store), Err(expected));
+        assert_eq!(journal_count_at(store.as_path()), before);
+    }
+
+    /// 隔離実行とstanceでも、コミット後の公開失敗を成功にせず次の復旧へ委ねる。
+    #[tokio::test]
+    async fn specialized_reports_surface_publication_failure_after_the_event_commit() {
+        for single in [true, false] {
+            let root = minimal_workspace();
+            let graph = root.path().join(".claude/tools/data/stage-graph.json");
+            let content = std::fs::read_to_string(&graph).expect("合成定義");
+            std::fs::write(
+                graph,
+                content.replace("\"phase\":\"inception\"", "\"phase\":\"construction\""),
+            )
+            .expect("skeleton gateを持つ定義");
+            let layout = recovered_test_layout(&root).await;
+            let store = store_path(&layout).expect("store");
+            let before = journal_count_at(store.as_path());
+            let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+            let checkpoint = || {
+                concurrent.query_row("SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'", [], |row| row.get::<_, i64>(0)).expect("公開位置")
+            };
+            let before_position = checkpoint();
+            concurrent.execute_batch(&format!("CREATE TRIGGER fail_late_publication BEFORE INSERT ON amadeus_publication WHEN NEW.target_position > {before_position} BEGIN SELECT RAISE(ABORT,'publication unavailable'); END;")).expect("コミット後の公開を失敗させる");
+            let completion = if single {
+                single_report(
+                    &layout,
+                    &report_args(&[
+                        "--single",
+                        "--result",
+                        "approved",
+                        "--stage",
+                        "domain-design",
+                    ]),
+                )
+                .await
+            } else {
+                skeleton_stance_report(&layout, "on").await
+            };
+            assert_eq!(completion.code(), 1, "{completion:?}");
+            assert_eq!(completion.line(), None);
+            assert_eq!(
+                completion.diagnostic(),
+                Some(
+                    format!(
+                        "aidlc-orchestrate: projection: read: io: Other at {}",
+                        store.as_path().display()
+                    )
+                    .as_str()
+                )
+            );
+            assert_eq!(
+                journal_count_at(store.as_path()),
+                before + 1,
+                "真実はコミット済み"
+            );
+            assert_eq!(checkpoint(), before_position, "未公開の位置へ進めない");
+            concurrent
+                .execute_batch("DROP TRIGGER fail_late_publication")
+                .expect("公開障害を除去");
+            catch_up_before_reading(&layout)
+                .await
+                .expect("保存済みイベントから回復");
+            assert_eq!(
+                journal_count_at(store.as_path()),
+                before + 1,
+                "復旧でイベントを増やさない"
+            );
+            assert_eq!(checkpoint(), before_position + 1);
+        }
+    }
+
     /// `intent-create` の引数を実際のパーサから組む。
     fn intent_create_args(extra: &[&str]) -> IntentCreateArgs {
         let mut argv: Vec<String> = vec!["intent-create".to_string()];

@@ -19,7 +19,7 @@ R-01〜R-03に加え、以下のR-04/R-05も2026-09-05の修正・再レビュ�
 検収: as_of=targetでも候補の内容が既存面と異なるケースは成功しない。functional-spec.mdのW8とBR5.3の判断が一致する。
 
 
-## 2026-09-06 — 実装同期の追記
+## 2026-09-06 JST — 実装同期の追記
 
 上記R-04/R-05とREADY判定は2026-09-05の記録として変更していない。以下はその後の実装との同期であり、新しいReview判定ではない。
 
@@ -28,4 +28,4 @@ R-01〜R-03に加え、以下のR-04/R-05も2026-09-05の修正・再レビュ�
 - U7の`catch_up_before_reading`から失敗を伝播する。`next` / `resume`はerror directive・exit 0、`report` / `practices_promote` / `set_autonomy`はrefused・exit 1で停止する。
 - エラー変換をSQLiteの`at_store`とファイルI/Oの`at_output`へ集約した。比較用SAVEPOINTの失敗、共有行の型破損、古いpredecessor、確定中のhead喪失の契約試験を追加した。
 
-直近の取得処理とCLIの変更を合わせた全workspaceの検証件数とカバレッジは未測定。結果は[implementation-report.md](../implementation-report.md)へ統合後に記録する。
+統合版 `9b4a6d55` の全workspaceは2,200件成功、相対カバレッジは未達。その後のレビュー修正は再検証中。対象コミット別の結果は[implementation-report.md](../implementation-report.md)へ統合後に記録する。

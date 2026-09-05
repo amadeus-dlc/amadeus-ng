@@ -236,19 +236,10 @@ impl JournalReaderImpl {
         if schema_changed {
             super::shared_projection::invalidate(&connection, path.as_path())?;
         }
-        let mut reader = JournalReaderImpl {
+        Ok(JournalReaderImpl {
             path: path.clone(),
             connection,
-        };
-        if super::shared_projection::read(&reader.connection, path.as_path())?
-            .is_some_and(|head| !head.is_current())
-        {
-            reader.rebuild_read_model().map_err(|error| match error {
-                super::CatchUpError::Read(inner) => inner,
-                _ => corrupt_error(NO_AGGREGATE, None, CorruptCause::ProjectionSnapshotMismatch),
-            })?;
-        }
-        Ok(reader)
+        })
     }
 
     /// 読んでいるストアファイルの場所。
@@ -918,6 +909,15 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 }
 
 impl JournalReader for JournalReaderImpl {
+    fn prepare_read_model(&mut self) -> Result<(), super::CatchUpError> {
+        if super::shared_projection::read(&self.connection, self.path.as_path())?
+            .is_some_and(|head| !head.is_current())
+        {
+            self.rebuild_read_model()?;
+        }
+        Ok(())
+    }
+
     async fn pending_publication(
         &self,
         projection: &ProjectionName,

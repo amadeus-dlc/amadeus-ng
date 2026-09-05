@@ -207,6 +207,10 @@ struct FakeReader {
 }
 
 impl JournalReader for FakeReader {
+    fn prepare_read_model(&mut self) -> Result<(), CatchUpError> {
+        Ok(())
+    }
+
     async fn pending_publication(
         &self,
         projection: &ProjectionName,
@@ -256,11 +260,7 @@ impl JournalReader for FakeReader {
         candidate: &PublicationBatch,
         tables: &ReadTables,
     ) -> Result<(), CatchUpError> {
-        let previous = self.publications.borrow().get(projection).cloned();
-        let batch = previous
-            .filter(|(batch, _)| batch.from() == candidate.from() && batch.to() == candidate.to())
-            .map(|(batch, _)| batch)
-            .unwrap_or_else(|| candidate.clone());
+        let batch = candidate.clone();
         self.publications
             .borrow_mut()
             .insert(projection.clone(), (batch.clone(), false));
@@ -662,22 +662,6 @@ async fn regenerating_from_zero_twice_yields_identical_bytes() {
         (fixture.state(), fixture.shard())
     };
     assert_eq!(run().await, run().await);
-}
-
-/// 出力だけが保存され、チェックポイント確定前に停止した状態からの再開。
-#[tokio::test]
-async fn retrying_an_old_checkpoint_preserves_existing_audit_bytes() {
-    let fixture = Fixture::new();
-    let mut first = fixture.updater(journal(), intents());
-    first.catch_up().await.expect("最初の出力");
-    let state = fixture.state();
-    let audit = fixture.shard();
-
-    // 同じ出力先を保持し、読み手のチェックポイントだけを元の位置で開き直す。
-    let mut recovered = fixture.updater(journal(), intents());
-    recovered.catch_up().await.expect("古い位置からの再開");
-    assert_eq!(fixture.state(), state);
-    assert_eq!(fixture.shard(), audit, "反映済み監査行を再追記しない");
 }
 
 #[tokio::test]

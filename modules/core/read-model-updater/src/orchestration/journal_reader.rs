@@ -30,6 +30,13 @@ use super::{CatchUpError, PublicationBatch};
               自動 trait 境界を書けないという注意喚起は本 trait では設計どおりである。"
 )]
 pub trait JournalReader {
+    /// 公開処理を始める前に、旧変換規約の共有面を現行履歴から再生成する。
+    /// 読取専用のopenでは実行しない。
+    ///
+    /// # Errors
+    /// 再生成時の履歴・投影・書込失敗を元の分類で返す。
+    fn prepare_read_model(&mut self) -> Result<(), CatchUpError>;
+
     /// 未完了のファイル公開計画を取得する。
     ///
     /// # Errors

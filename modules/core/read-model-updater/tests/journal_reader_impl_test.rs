@@ -784,6 +784,8 @@ async fn publication_survives_process_termination() {
     let reader = fixture.journal_reader();
     drop(reader);
     std::fs::write(fixture._dir.path().join("published-state.md"), "before\n").unwrap();
+    // applyが先に監査を書き、CTEがINSERTをポーリング窓（600×5ms）より長く止める。
+    // CTEが窓内に完走すると先にcommitされるため、反復回数の縮小はこの試験を不安定にする。
     fixture.raw().execute_batch("CREATE TRIGGER hold_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT sum(n) FROM (WITH RECURSIVE counter(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM counter WHERE n<1500000000) SELECT n FROM counter); END").unwrap();
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([

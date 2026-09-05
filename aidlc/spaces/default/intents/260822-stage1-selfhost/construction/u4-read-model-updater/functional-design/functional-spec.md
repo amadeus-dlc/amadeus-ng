@@ -7,7 +7,7 @@ FR1.1 の監査投影と横断読取、FR5.4 の監査描画側、NFR1 の観測
 出典は [Unit定義](../../../inception/units-generation/unit-of-work.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[要求](../../../inception/requirements-analysis/requirements.md)、[構成](../../../inception/domain-design/components.md)、[共有契約](../../../inception/contract-design/contract-summary.md)、[確認回答](functional-design-questions.md)。
 データと判断規則の正本は [entities.md](entities.md) と [rules.md](rules.md)。本書は手順と状態遷移の正本で、関係図と規則一覧は派生表示である。
 
-2026-09-06 の実装同期を反映する。PublicationBatch と、OutputPlanを具体化したPublicationFileによる保存・照合・再開は作業ツリーに実装済みである。直近の同呼出し内の追加イベント処理とCLIの失敗伝播を含む、全workspaceの検証件数とカバレッジは未測定。末尾のReviewは2026-09-05時点の設計判定の記録として保持する。
+2026-09-06 JST の実装同期を反映する。PublicationBatch と、OutputPlanを具体化したPublicationFileによる保存・照合・再開は作業ツリーに実装済みである。直近の同呼出し内の追加イベント処理とCLIの失敗伝播を含む、全workspaceの検証件数とカバレッジは未測定。末尾のReviewは2026-09-05時点の設計判定の記録として保持する。
 
 ## 2. 境界と入力
 
@@ -109,6 +109,10 @@ U3 の集約再構成は確定済みの「最新スナップショット＋そ�
 
 例: 計画Bが断面120を公開した後に計画A（断面100）が確定する場合、共有面は120のまま、Aの個別位置は100、A.served_byは120の共有世代となる。Aが未完計画の復旧中なら、同じ取得呼出しの別計画で後続行を反映する。共有面の行同士が異なる断面になることや、Aのために120を100へ戻すことは許さない。
 
+### 共有面の変換規約更新
+
+`open`は旧変換規約のheadだけを理由に全履歴を再投影しない。公開の入口である`catch_up`／`catch_up_structured`が`prepare_read_model`を呼び、必要なら書込トランザクション内で再生成してから通常処理を続ける。履歴破損は`Read`、投影不能は`ReadTables`の分類を保持する。既存のDDL版移行は別の初期化責務である。
+
 ## 4. 処理管理記録の状態遷移
 
 PublicationBatch は投影実行の管理記録であり、業務上の集約や AI-DLC のステージを追加するものではない。
@@ -207,15 +211,15 @@ erDiagram
 
 | 項目 | 作業ツリーの実装 | 検証・残る作業 |
 |---|---|---|
-| 取得・計画 | `catch_up`が保存済みの終点を先に確定し、同じ呼出しで後続を別計画として処理する | 同呼出し内の分離と、後続失敗でも旧commitを保持する契約試験を更新。最新の全体結果は未測定 |
+| 取得・計画 | `catch_up`が保存済みの終点を先に確定し、同じ呼出しで後続を別計画として処理する | 同呼出し内の分離と、後続失敗でも旧commitを保持する契約試験を更新。統合版2,200件の成功と、その後の再検証を実装記録で区別 |
 | 計画保存と公開 | `prepare`で計画を耐久化し、privateな`publish_prepared`が次のTxで世代・位置を再照合して公開する | 実SQLite別接続で、同一要求の完了、別世代への置換、位置の前進、古いpredecessorの拒否を検証 |
 | ファイルの保全 | `PublicationFile`が保存バイトと現物を照合する。prefix／suffixの余剰部分は直接取得し、利用者本文を保持する | 追記途中、削除、曖昧な変更、読取・書込拒否、診断情報の契約試験を追加 |
 | 共有構造化面 | 型付き内容ダイジェストとheadで整合性を確認し、古い候補で新しい面を戻さない | REAL／BLOB破損からの再生成、同位置比較の途中失敗、CP書込中のhead喪失とrollbackを検証 |
-| 復旧とU7 | `catch_up_before_reading`が失敗を伝播し、第5節のdirective／refused契約で処理を止める | 破損した保存計画を与えるCLI試験を追加。直近変更後の統合結果は未測定 |
+| 復旧とU7 | `catch_up_before_reading`が失敗を伝播し、第5節のdirective／refused契約で処理を止める | 破損した保存計画を与えるCLI試験を追加。統合版のCLI470件成功。レビュー修正は再検証中 |
 | 共有 C3/C5/C6 | U4の`JournalReader`へ保存計画の取得・公開を追加し、重複を許容せず復旧する | 共有契約との表現差、保全期間、整理手順は引き続き確認対象 |
 | 旧イベント表 | C5等には旧イベントIDや古いペイロードの記述が残る | 現行イベント・後続裁定・ゴールデンとの対応を個別に確認する |
 
-実装と契約試験の詳細は[implementation-report.md](../implementation-report.md)に記録する。直近のU4／U7変更を含む全workspaceの検証件数とカバレッジは未測定であり、過去の成功値を最新結果として扱わない。以下のReview節は過去の設計判定を保存したもので、今回の実装同期に対する新しい判定ではない。
+実装と契約試験の詳細は[implementation-report.md](../implementation-report.md)に記録する。2026-09-06 JSTの統合版 `9b4a6d55` は51スイート2,200件が成功し、同headのCIでも成功した。一方、相対カバレッジは99.01854%対99.13907%で未達である。その後のレビュー修正は再検証中とし、結果を実装記録へ追記する。以下のReview節は過去の設計判定を保存したもので、今回の実装同期に対する新しい判定ではない。
 
 ## Review
 

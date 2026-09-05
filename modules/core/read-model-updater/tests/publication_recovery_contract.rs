@@ -145,7 +145,8 @@ async fn malformed_saved_plans_are_rejected_without_modifying_files() {
         assert_eq!(fs::read(&fixture.audit).unwrap(), audit, "{corruption}");
         assert_eq!(
             reader.checkpoint(&projection()).await.unwrap(),
-            GlobalSeqNr::ZERO
+            GlobalSeqNr::ZERO,
+            "{corruption}"
         );
     }
 }
@@ -720,7 +721,7 @@ async fn a_shared_head_cannot_claim_missing_history_or_overflow_its_generation()
 }
 
 #[tokio::test]
-async fn opening_an_old_transform_rebuilds_its_shared_rows_from_history() {
+async fn an_old_transform_is_rebuilt_at_the_write_boundary() {
     let fixture = Fixture::new();
     support::seed_intent(&fixture.store).await;
     let mut reader = fixture.reader();
@@ -740,6 +741,13 @@ async fn opening_an_old_transform_rebuilds_its_shared_rows_from_history() {
         .unwrap();
 
     let mut reopened = fixture.reader();
+    let untouched: i64 = fixture
+        .raw()
+        .query_row("SELECT count(*) FROM read_intent", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(untouched, 0, "openだけでは全履歴を投影しない");
+    assert_eq!(reopened.checkpoint(&projection()).await.unwrap(), last);
+    core_read_model_updater::orchestration::ReadModelUpdater::<JournalReaderImpl>::catch_up_structured(&mut reopened, &projection()).await.unwrap();
 
     // 同位置の正しい断面を再提示できることが、再生成された内容一致の検収。
     reopened
@@ -806,7 +814,7 @@ async fn a_legacy_unverified_head_must_match_its_reconstructed_rows() {
 }
 
 #[tokio::test]
-async fn reopening_an_old_transform_refuses_history_that_cannot_be_reprojected() {
+async fn preparing_an_old_transform_preserves_history_failure_classification() {
     for corrupt_payload in [false, true] {
         let fixture = Fixture::new();
         // Intentの誕生を欠く実行ストリームだけを保存する。
@@ -824,10 +832,19 @@ async fn reopening_an_old_transform_refuses_history_that_cannot_be_reprojected()
         }
         drop(reader);
 
-        assert!(matches!(
-            JournalReaderImpl::open(&fixture.store),
-            Err(JournalReadError::Corrupt { .. })
-        ));
+        let mut reopened = JournalReaderImpl::open(&fixture.store).expect("openでは再投影しない");
+        let failure = reopened.prepare_read_model().unwrap_err();
+        if corrupt_payload {
+            assert!(matches!(
+                failure,
+                CatchUpError::Read(JournalReadError::Corrupt { .. })
+            ));
+        } else {
+            assert!(
+                matches!(failure, CatchUpError::ReadTables(_)),
+                "{failure:?}"
+            );
+        }
         assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
     }
 }

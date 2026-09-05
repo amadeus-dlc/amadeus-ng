@@ -85,6 +85,7 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         journal_reader: &mut R,
         projection: &ProjectionName,
     ) -> Result<GlobalSeqNr, CatchUpError> {
+        journal_reader.prepare_read_model()?;
         let checkpoint = journal_reader.checkpoint(projection).await?;
         if journal_reader
             .events_after(checkpoint)
@@ -140,10 +141,11 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     ///
     /// ジャーナルの読取・チェックポイントの失敗（`Read`）、投影核が描けなかった
     /// （`Projection`）、状態ファイルを読めない（`StateFileRead`）・書けない
-    /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）、構造化投影核が
+    /// （`StateFileWrite`）、公開先を読めない・追記できない（`PublicationIo`）、構造化投影核が
     /// 歴史の切り落としを見つけた（`ReadTables`）、参照入力の規則ファイルが在るのに読めない
     /// （`SteeringRead`）・刻めない（`SteeringPack`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
+        self.journal_reader.prepare_read_model()?;
         if let Some(batch) = self
             .journal_reader
             .pending_publication(&self.projection)
@@ -217,10 +219,9 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             // team.md が無傷で残るからである（ピン `3c3146cf` `aidlc-state.ts:3705-3723`）。
             // メモリ層は**書き替えたときだけ**書く — 人が編集する正本でもあるので、
             // 触っていないキャッチアップが mtime を動かしてはならない。
-            if let Some(memory) = read_model.memory() {
-                let (team, project) = memory_before
-                    .as_ref()
-                    .ok_or(CatchUpError::PlanUnavailable)?;
+            if let (Some((team, project)), Some(memory)) =
+                (memory_before.as_ref(), read_model.memory())
+            {
                 files.push(PublicationFile::memory(
                     self.targets.project_md(),
                     project,

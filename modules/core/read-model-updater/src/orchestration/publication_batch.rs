@@ -85,12 +85,7 @@ impl PublicationBatch {
         targets: &super::ProjectionTargets,
     ) -> Result<PublicationBatch, CatchUpError> {
         let mut paths = Vec::new();
-        for path in [
-            targets.state_file(),
-            targets.audit_shard(),
-            targets.project_md(),
-            targets.team_md(),
-        ] {
+        for path in targets.owned_paths() {
             paths.push(core_infrastructure::canon_json::JsonValue::String(
                 path.to_str()
                     .ok_or_else(|| CatchUpError::PublicationConflict {
@@ -183,15 +178,9 @@ impl PublicationBatch {
     /// 保存済みの出力先が、呼出元の所有する対象だけかを検査する。
     #[must_use]
     pub fn matches_targets(&self, targets: &super::ProjectionTargets) -> bool {
-        self.files.iter().all(|file| {
-            [
-                targets.state_file(),
-                targets.audit_shard(),
-                targets.project_md(),
-                targets.team_md(),
-            ]
-            .contains(&file.path())
-        })
+        self.files
+            .iter()
+            .all(|file| targets.owned_paths().contains(&file.path()))
     }
 
     /// 入力を読み始めた確定位置。

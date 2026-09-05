@@ -4,7 +4,7 @@
 
 [要求](../../../inception/requirements-analysis/requirements.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[Unit定義](../../../inception/units-generation/unit-of-work.md)、[共有契約](../../../inception/contract-design/contract-summary.md)、[構成](../../../inception/domain-design/components.md)、[確認回答](functional-design-questions.md) を根拠とする。cqrs-boundaries は active space の coding-rules/cqrs-boundaries.md を指す。
 
-BR3.1〜BR3.4は、計画の先行保存・出力照合・確定を扱う。2026-09-06の実装同期では、保存済み計画の復旧後も同じ取得呼出しで後続へ進むことと、復旧失敗をU7が指示や変異の前に伝播することを明確にした。
+BR3.1〜BR3.4は、計画の先行保存・出力照合・確定を扱う。2026-09-06 JSTの実装同期では、保存済み計画の復旧後も同じ取得呼出しで後続へ進むことと、復旧失敗をU7が指示や変異の前に伝播することを明確にした。
 
 ## 規則の正本
 
