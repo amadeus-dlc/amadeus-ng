@@ -28,6 +28,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # 読取レコード (`JournalEntry`) が運ぶ発生時刻 (`DateTime<Utc>` — ADR-010)。
 chrono = { workspace = true }
+# 公開要求は履歴位置が同じ再生成でも区別する。既存のUUIDv7を再利用する。
+uuid = { workspace = true, features = ["v7"] }
 
 [dev-dependencies]
 tempfile = "3"

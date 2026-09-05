@@ -30,7 +30,11 @@ mod journal_reader_impl;
 mod projection_name;
 mod projection_name_error;
 mod projection_targets;
+mod publication_batch;
+mod publication_file;
+mod publication_store;
 mod read_model_updater;
+mod shared_projection;
 mod steering_source;
 mod store_failure;
 
@@ -40,6 +44,8 @@ pub use journal_reader_impl::JournalReaderImpl;
 
 // 取得ループ (RMU コンポーネント本体 — 二層構造の上側)
 pub use projection_targets::ProjectionTargets;
+pub use publication_batch::PublicationBatch;
+pub use publication_file::PublicationFile;
 pub use read_model_updater::ReadModelUpdater;
 pub use steering_source::SteeringSource;
 

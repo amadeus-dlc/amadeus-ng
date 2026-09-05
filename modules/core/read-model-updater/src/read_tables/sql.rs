@@ -334,23 +334,23 @@ CREATE INDEX IF NOT EXISTS read_steering_part_plan
 /// ジャーナル由来 15 表の全差し替えの `DELETE` (DDL と同じ順)。
 ///
 /// steering の 2 表はここに**含めない** — 別の投影単位であり、別 Tx で差し替わる。
-const DELETE_TABLES: &str = "
-DELETE FROM read_definition;
-DELETE FROM read_definition_stage;
-DELETE FROM read_definition_scope;
-DELETE FROM read_definition_scope_keyword;
-DELETE FROM read_definition_scope_stage;
-DELETE FROM read_definition_scope_phase_entry;
-DELETE FROM read_intent;
-DELETE FROM read_intent_stage;
-DELETE FROM read_execution;
-DELETE FROM read_execution_stage;
-DELETE FROM read_next_answer;
-DELETE FROM read_next_jump;
-DELETE FROM read_next_jump_phase;
-DELETE FROM read_run_stage;
-DELETE FROM read_scope_change;
-";
+const JOURNAL_TABLES: &[&str] = &[
+    "read_definition",
+    "read_definition_stage",
+    "read_definition_scope",
+    "read_definition_scope_keyword",
+    "read_definition_scope_stage",
+    "read_definition_scope_phase_entry",
+    "read_intent",
+    "read_intent_stage",
+    "read_execution",
+    "read_execution_stage",
+    "read_next_answer",
+    "read_next_jump",
+    "read_next_jump_phase",
+    "read_run_stage",
+    "read_scope_change",
+];
 
 /// 参照入力由来 2 表の全差し替えの `DELETE`。
 const DELETE_STEERING_TABLES: &str = "
@@ -463,7 +463,9 @@ pub(crate) fn replace_all(
     transaction: &Transaction<'_>,
     tables: &ReadTables,
 ) -> Result<(), rusqlite::Error> {
-    transaction.execute_batch(DELETE_TABLES)?;
+    for table in JOURNAL_TABLES {
+        transaction.execute(&format!("DELETE FROM {table}"), [])?;
+    }
     // 「いつ時点の行か」はスナップショット全体の性質なので、全表に同じ値を書く。
     let as_of = integer(
         usize::try_from(
@@ -872,6 +874,69 @@ pub(crate) fn replace_steering(
     }
 
     Ok(())
+}
+
+/// 同じ公開位置の候補が現在の行集合と一致するかを、外部へ公開せず比較する。
+pub(crate) fn matches_rows(
+    transaction: &Transaction<'_>,
+    tables: &ReadTables,
+) -> Result<bool, rusqlite::Error> {
+    let actual = read_row_values(transaction)?;
+    transaction.execute_batch("SAVEPOINT amadeus_compare_projection")?;
+    let expected = (|| {
+        replace_all(transaction, tables)?;
+        read_row_values(transaction)
+    })();
+    let cleanup = transaction.execute_batch(
+        "ROLLBACK TO amadeus_compare_projection; RELEASE amadeus_compare_projection",
+    );
+    let expected = expected?;
+    cleanup?;
+    Ok(actual == expected)
+}
+
+type TableValues = Vec<Vec<rusqlite::types::Value>>;
+
+/// SQLiteの型・値・表順・行順を含む内容同一性。大きな整数もバイト列として扱う。
+pub(crate) fn content_digest(connection: &Connection) -> Result<String, rusqlite::Error> {
+    use rusqlite::types::Value;
+    let material = read_row_values(connection)?
+        .into_iter()
+        .map(|table| {
+            table
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|value| match value {
+                            Value::Null => (0_u8, Vec::new()),
+                            Value::Integer(value) => (1, value.to_be_bytes().to_vec()),
+                            Value::Real(value) => (2, value.to_bits().to_be_bytes().to_vec()),
+                            Value::Text(value) => (3, value.into_bytes()),
+                            Value::Blob(value) => (4, value),
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let json = core_infrastructure::canon_json::to_value(&(JOURNAL_TABLES, material))
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    Ok(core_infrastructure::canon_json::hash_compact(&json).rendered())
+}
+
+fn read_row_values(connection: &rusqlite::Connection) -> Result<Vec<TableValues>, rusqlite::Error> {
+    let mut tables = Vec::new();
+    for table in JOURNAL_TABLES {
+        let mut statement = connection.prepare(&format!("SELECT * FROM {table} ORDER BY id"))?;
+        let columns = statement.column_count();
+        let rows = statement.query_map([], |row| {
+            (0..columns)
+                .map(|column| row.get(column))
+                .collect::<Result<Vec<rusqlite::types::Value>, _>>()
+        })?;
+        tables.push(rows.collect::<Result<TableValues, _>>()?);
+    }
+    Ok(tables)
 }
 
 #[cfg(test)]
@@ -1293,12 +1358,12 @@ mod tests {
         // `DELETE` が 1 表でも欠けると、その表だけ古い行が残る (全差し替えの穴)。
         for name in TABLES {
             assert!(
-                DELETE_TABLES.contains(&format!("DELETE FROM {name};")),
+                JOURNAL_TABLES.contains(&name),
                 "{name} の DELETE が抜けている"
             );
         }
         assert_eq!(
-            DELETE_TABLES.matches("DELETE FROM").count(),
+            JOURNAL_TABLES.len(),
             TABLES.len(),
             "DELETE の本数と表の数が一致する"
         );

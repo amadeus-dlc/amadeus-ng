@@ -10,6 +10,18 @@ use super::journal_read_error::JournalReadError;
 /// キャッチアップの失敗。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatchUpError {
+    /// 計画の前提とファイル内容が一致しない。
+    PublicationConflict {
+        /// 内容が計画の前提と一致しない対象。
+        path: std::path::PathBuf,
+    },
+    /// 公開計画の対象ファイルを読めない・書けない。
+    PublicationIo {
+        /// 操作に失敗した対象。
+        path: std::path::PathBuf,
+        /// OSが返した失敗分類。
+        kind: std::io::ErrorKind,
+    },
     /// ジャーナルの読取・チェックポイントの失敗。
     Read(JournalReadError),
     /// 投影核が描けなかった。
@@ -80,6 +92,12 @@ pub enum CatchUpError {
 impl core::fmt::Display for CatchUpError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            CatchUpError::PublicationConflict { path } => {
+                write!(f, "publication conflict: {}", path.display())
+            }
+            CatchUpError::PublicationIo { path, kind } => {
+                write!(f, "publication io: {kind:?} at {}", path.display())
+            }
             CatchUpError::Read(inner) => write!(f, "read: {inner}"),
             CatchUpError::Projection(inner) => write!(f, "projection: {inner}"),
             CatchUpError::StateFileRead(inner) => {
@@ -121,7 +139,9 @@ impl std::error::Error for CatchUpError {
             CatchUpError::AuditShardWrite(inner) => Some(inner),
             CatchUpError::ReadTables(inner) => Some(inner),
             CatchUpError::SteeringPack(inner) => Some(inner),
-            CatchUpError::StateFileRead(_)
+            CatchUpError::PublicationConflict { .. }
+            | CatchUpError::PublicationIo { .. }
+            | CatchUpError::StateFileRead(_)
             | CatchUpError::StateFileWrite(_)
             | CatchUpError::PlanUnavailable
             | CatchUpError::MixedIntents
