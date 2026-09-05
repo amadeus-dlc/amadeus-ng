@@ -242,14 +242,18 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     if let Some(refusal) = state_version_guard(layout) {
         return emit_error(refusal);
     }
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return emit_error(message),
+    };
     // 段 2 — `--single`。本流の遷移サブコマンドへ落ちることを構造的に不可能にするため、
     // 主経路より先に解決する（I10）。
     if args.is_single() {
-        return single_report(layout, args).await;
+        return single_report(layout, args, &store).await;
     }
     // 段 3 — `--skeleton-stance`。stance の報告は verdict を持たないので段 5 より先。
     if let Some(stance) = args.skeleton_stance() {
-        return skeleton_stance_report(layout, stance).await;
+        return skeleton_stance_report(layout, stance, &store).await;
     }
     // 段 4 — 再開の選択。遷移をコミットしないのでルーティングだけで終わる。
     let raw = args.result();
@@ -277,10 +281,6 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     if verdict == Verdict::Skipped && stage.is_none() {
         return emit_error(wording::SKIP_REQUIRES_EXPLICIT_STAGE.to_string());
     }
-    let store = match store_path(layout) {
-        Ok(store) => store,
-        Err(message) => return emit_error(message),
-    };
     // 段 6 — 実行カーソルが無い = まだ鋳造していない（fresh なワークスペースの正常な姿）。
     let execution_id = match active_execution(layout) {
         Ok(Some(cursor)) => cursor.execution_id().clone(),
@@ -363,7 +363,11 @@ fn state_version_guard(layout: &Layout) -> Option<String> {
 /// result 必須 → FORWARD のみ → `--stage` 必須 → 未知 → initialization →（evidence は
 /// slice 2）→ 記録。**本流の遷移サブコマンドへは 1 度も落ちない** — 打つコマンドは
 /// `record_single_stage_run` だけで、その適用はフレーム空である。
-async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
+async fn single_report(
+    layout: &Layout,
+    args: &crate::cli::ReportArgs,
+    store: &StorePath,
+) -> Completion {
     let Some(raw) = args.result() else {
         return emit_error(wording::single_requires_result());
     };
@@ -376,10 +380,6 @@ async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Comple
     };
     let Ok(slug) = StageSlug::parse(stage) else {
         return emit_error(wording::unknown_stage(stage));
-    };
-    let store = match store_path(layout) {
-        Ok(store) => store,
-        Err(message) => return emit_error(message),
     };
     // 隔離実行の対も**その intent の記録の中で起きた事実**なので、記録が要る。
     let execution_id = match active_execution(layout) {
@@ -398,8 +398,8 @@ async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Comple
         }
     };
     let (Ok(intent_execution_repository), Ok(intent_repository)) = (
-        IntentExecutionRepositoryImpl::open(&store),
-        IntentRepositoryImpl::open(&store),
+        IntentExecutionRepositoryImpl::open(store),
+        IntentRepositoryImpl::open(store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
@@ -441,17 +441,13 @@ fn single_run_refusal(stage: &str, error: &SingleStageRunError) -> String {
 ///
 /// 値検証 → state 必須 → 記録 → 投影 → 「`next` をもう一度」の print、という順序は
 /// upstream `handleSkeletonStanceReport`（ピン `:4943-5008`）と同順である。
-async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
+async fn skeleton_stance_report(layout: &Layout, stance: &str, store: &StorePath) -> Completion {
     let Ok(stance) = SkeletonStance::parse(stance) else {
         return emit_error(wording::unknown_skeleton_stance(stance));
     };
     if !state_file_present(layout) {
         return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string());
     }
-    let store = match store_path(layout) {
-        Ok(store) => store,
-        Err(message) => return emit_error(message),
-    };
     let execution_id = match active_execution(layout) {
         Ok(Some(cursor)) => cursor.execution_id().clone(),
         // 不在 = まだ鋳造していない。状態ファイルだけが在る形も同じ答えである。
@@ -461,8 +457,8 @@ async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
         Err(error) => return emit_error(wording::unreadable_execution_cursor(&error.to_string())),
     };
     let (Ok(intent_execution_repository), Ok(intent_repository)) = (
-        IntentExecutionRepositoryImpl::open(&store),
-        IntentRepositoryImpl::open(&store),
+        IntentExecutionRepositoryImpl::open(store),
+        IntentRepositoryImpl::open(store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
@@ -2332,7 +2328,10 @@ corrupt review override: Adversarial"
             ),
             &expected,
         );
-        assert_late_read_error(&skeleton_stance_report(&layout, "on").await, &expected);
+        assert_late_read_error(
+            &skeleton_stance_report(&layout, "on", &store).await,
+            &expected,
+        );
         assert_eq!(
             journal_count_at(store.as_path()),
             before,
@@ -2373,9 +2372,10 @@ corrupt review override: Adversarial"
                     "--stage",
                     "domain-design",
                 ]),
+                &store,
             )
             .await,
-            skeleton_stance_report(&layout, "on").await,
+            skeleton_stance_report(&layout, "on", &store).await,
         ] {
             assert_eq!(completion.code(), 1, "{completion:?}");
             assert_eq!(completion.line(), None);
@@ -2453,10 +2453,11 @@ corrupt review override: Adversarial"
                         "--stage",
                         "domain-design",
                     ]),
+                    &store,
                 )
                 .await
             } else {
-                skeleton_stance_report(&layout, "on").await
+                skeleton_stance_report(&layout, "on", &store).await
             };
             assert_eq!(completion.code(), 1, "{completion:?}");
             assert_eq!(completion.line(), None);
@@ -2534,9 +2535,10 @@ corrupt review override: Adversarial"
                     "--stage",
                     "domain-design",
                 ]),
+                &store,
             )
             .await,
-            skeleton_stance_report(&layout, "on").await,
+            skeleton_stance_report(&layout, "on", &store).await,
         ] {
             assert_eq!(completion.code(), 0, "{completion:?}");
             let value: serde_json::Value =
@@ -2570,6 +2572,7 @@ corrupt review override: Adversarial"
                 "--stage",
                 "domain-design",
             ]),
+            &store,
         )
         .await;
         let value: serde_json::Value = serde_json::from_str(completion.line().unwrap()).unwrap();
