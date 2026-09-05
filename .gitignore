@@ -1,6 +1,14 @@
 /target
 /target-*/
 
+# 配布元は submodule で固定する（利用者の global ignore より優先）。
+!/vendor/
+!/vendor/aidlc-workflows
+
+# 配布物更新時の退避・排他ロック（作業ツリーごと）。
+/.aidlc-sync/
+.kimi-code/local.toml
+
 # AI-DLC — the committed-vs-ignored split (workspace layout, re-rooted under aidlc/).
 # Rule of thumb (vision §5.1): per-user session CURSORS and machine-local
 # runtime/derived state are ignored; everything that is the shared work —

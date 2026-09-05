@@ -1,0 +1,35 @@
+--- a/.claude/settings.json
++++ b/.claude/settings.json
+@@ -21,14 +21,8 @@
+   },
+   "env": {
+     "AWS_AIDLC_DEFAULT_SCOPE": "classic",
+-    "CLAUDE_CODE_USE_BEDROCK": "1",
+-    "AWS_REGION": "us-east-1",
+-    "ANTHROPIC_DEFAULT_FABLE_MODEL": "global.anthropic.claude-fable-5[1m]",
+-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "global.anthropic.claude-opus-4-8[1m]",
+-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "global.anthropic.claude-sonnet-4-6[1m]",
+-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "global.anthropic.claude-haiku-4-5-20251001-v1:0"
++    "CLAUDE_CODE_USE_BEDROCK": "0"
+   },
+-  "model": "opus[1m]",
+   "effortLevel": "xhigh",
+   "hooks": {
+     "PreToolUse": [
+--- a/.claude/settings.local.json.example
++++ b/.claude/settings.local.json.example
+@@ -2,12 +2,9 @@
+   "_comment": "Copy to settings.local.json (gitignored) for personal overrides. These take precedence over settings.json.",
+   "env": {
+     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "85",
+-    "_comment_AWS_REGION": "Override the Bedrock region (shipped default is us-east-1 in settings.json). Required for Bedrock — Claude Code does not read it from ~/.aws. See docs/guide/01-getting-started.md § AWS Bedrock Setup.",
+-    "AWS_REGION": "us-east-1",
+-    "_comment_AWS_PROFILE": "Set your AWS SSO/credential profile here (kept out of shared settings.json so it doesn't leak). Uncomment and set if you authenticate via a named profile.",
+     "_comment_AWS_AIDLC_DEFAULT_SCOPE": "Pre-set default scope for /aidlc workflows. Valid: enterprise, feature, mvp, poc, bugfix, refactor, infra, security-patch, classic, workshop, express. Applies at workflow init only. See docs/guide/13-customization.md § Per-Project Default Scope.",
+-    "AWS_AIDLC_DEFAULT_SCOPE": "classic"
++    "AWS_AIDLC_DEFAULT_SCOPE": "classic",
++    "CLAUDE_CODE_USE_BEDROCK": "0"
+   },
+-  "model": "opus[1m]",
+   "effortLevel": "xhigh"
+ }

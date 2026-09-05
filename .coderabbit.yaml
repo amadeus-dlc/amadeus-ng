@@ -4,20 +4,7 @@ early_access: false
 enable_free_tier: true
 
 tone_instructions: |
-  簡潔かつ具体的にレビューすること。
-  このプロジェクトは AI-DLC ワークフローの Rust 再実装であり、クリーンアーキテクチャ
-  （層 = クレート、依存は Cargo.toml の不在により物理的に内向き強制）と DDD / イベント
-  ソーシングを採る。層をまたぐ依存の漏れ（use-case や domain が永続化技術を知る、
-  アダプタの型が公開面に露出する）は最優先で指摘すること。
-  集約は FSM として設計する — 状態・状態遷移（&mut self コマンド、ガード付き Err 拒否）・
-  判断（クエリメソッド）を同じ集約型に閉じ込め、ユースケースは進行管理のみでビジネス
-  ロジックを持たない。導出ロジックを独立ドメインサービスやユースケースに置く設計は指摘する。
-  コーディング規則の正本は aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ にあり、
-  1 ルール 1 ファイルで運用している。Repository の造語禁止・技術接頭辞禁止、フィールドと
-  モジュールのデフォルト private、ドメイン同値関係は Eq/PartialEq で表現、エラーは
-  モジュールごとの手実装 enum + fmt::Display 手実装（thiserror / anyhow は不使用）。
-  プロダクトコードでの unwrap / expect は禁止（テストのみ clippy.toml で許容）。
-  テストは red-green-refactor（TDD）で書き、テストピラミッドを意識した配分にする。
+  日本語で簡潔かつ具体的にレビューし、指摘には根拠と修正方針を添えること。
 
 reviews:
   profile: assertive
@@ -31,9 +18,53 @@ reviews:
   poem: false
   abort_on_close: true
 
+  path_instructions:
+    - path: "**/*.rs"
+      instructions: |
+        簡潔かつ具体的にレビューすること。
+        このプロジェクトは AI-DLC ワークフローの Rust 再実装であり、クリーンアーキテクチャ
+        （層 = クレート、依存は Cargo.toml の不在により物理的に内向き強制）と DDD / イベント
+        ソーシングを採る。層をまたぐ依存の漏れ（use-case や domain が永続化技術を知る、
+        アダプタの型が公開面に露出する）は最優先で指摘すること。
+        集約は FSM として設計する — 状態・状態遷移（&mut self コマンド、ガード付き Err 拒否）・
+        判断（クエリメソッド）を同じ集約型に閉じ込め、ユースケースは進行管理のみでビジネス
+        ロジックを持たない。導出ロジックを独立ドメインサービスやユースケースに置く設計は指摘する。
+        コーディング規則の正本は aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ にあり、
+        1 ルール 1 ファイルで運用している。Repository の造語禁止・技術接頭辞禁止、フィールドと
+        モジュールのデフォルト private、ドメイン同値関係は Eq/PartialEq で表現、エラーは
+        モジュールごとの手実装 enum + fmt::Display 手実装（thiserror / anyhow は不使用）。
+        プロダクトコードでの unwrap / expect は禁止（テストのみ clippy.toml で許容）。
+        テストは red-green-refactor（TDD）で書き、テストピラミッドを意識した配分にする。
+
   path_filters:
     # ハーネスのシェルは framework の配布物であり、本プロジェクトの source ではない。
-    - "!.claude/**"
+    - "!.claude/agents/**"
+    - "!.claude/aidlc-common/**"
+    - "!.claude/hooks/**"
+    - "!.claude/knowledge/**"
+    - "!.claude/scopes/**"
+    - "!.claude/sensors/**"
+    - "!.claude/skills/**"
+    - "!.claude/tools/**"
+    - "!.kimi-code/agents/**"
+    - "!.kimi-code/aidlc-common/**"
+    - "!.kimi-code/hooks/**"
+    - "!.kimi-code/knowledge/**"
+    - "!.kimi-code/scopes/**"
+    - "!.kimi-code/sensors/**"
+    - "!.kimi-code/skills/**"
+    - "!.kimi-code/tools/**"
+    - "!scripts/aidlc-sync/installed.json"
+    - "!.codex/agents/**"
+    - "!.codex/aidlc-common/**"
+    - "!.codex/knowledge/**"
+    - "!.codex/scopes/**"
+    - "!.codex/sensors/**"
+    - "!.codex/skills/**"
+    - "!.codex/tools/**"
+    - "!.codex/hooks/aidlc-*.ts"
+    - "!.agents/skills/aidlc*/**"
+    - "!vendor/**"
     - "!target/**"
     # 監査シャードとワークフロー状態は engine が append/更新する生成物であり、
     # 手で直すものではない（修正提案はカテゴリ誤りになる）。
