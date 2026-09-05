@@ -210,12 +210,14 @@ jobs:
       ci_ref: 9cf0e9a8cd74c72de704763025003ed3b7608c65
 
   # 集約ジョブ。ruleset の required checks は check / quint / coverage に加えて「CI Success」を要求する。
+  # 配布物の同期・回帰テストも、この集約を通じてマージをブロックする。
   # pull_request では review-thread-resolution の成功も要求し、merge_group / workflow_dispatch では
   # skipped を許容する（merge queue が詰まらない）。audit は advisory（required 外）のままここでは要求しない。
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
     needs:
+      - aidlc-distribution
       - check
       - quint
       - coverage
@@ -231,6 +233,7 @@ jobs:
               exit 1
             fi
           }
+          require_result "aidlc-distribution" "${{ needs['aidlc-distribution'].result }}"
           require_result "check" "${{ needs.check.result }}"
           require_result "quint" "${{ needs.quint.result }}"
           require_result "coverage" "${{ needs.coverage.result }}"
