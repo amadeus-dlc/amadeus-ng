@@ -531,19 +531,23 @@ mod tests {
             ),
             defined_at(),
         ));
-        assert_eq!(
-            other_intent.resolve_review_policy(&definition, &stage),
-            Err(IntentReviewError::DefinitionMismatch)
-        );
+        let refusal = other_intent
+            .resolve_review_policy(&definition, &stage)
+            .unwrap_err();
+        assert_eq!(refusal, IntentReviewError::DefinitionMismatch);
+        assert_eq!(refusal.to_string(), "definition mismatch");
+        assert!(std::error::Error::source(&refusal).is_none());
     }
 
     #[test]
     fn review_resolution_refuses_unknown_stages_and_invalid_overrides() {
         let definition = single_stage_definition();
-        assert_eq!(
-            intent().resolve_review_policy(&definition, &StageSlug::parse("unknown").unwrap()),
-            Err(IntentReviewError::UnknownStage)
-        );
+        let unknown = intent()
+            .resolve_review_policy(&definition, &StageSlug::parse("unknown").unwrap())
+            .unwrap_err();
+        assert_eq!(unknown, IntentReviewError::UnknownStage);
+        assert_eq!(unknown.to_string(), "unknown definition stage");
+        assert!(std::error::Error::source(&unknown).is_none());
         let corrupted = Intent::from((
             Created::new(
                 intent_event_id(),
@@ -556,10 +560,15 @@ mod tests {
             ),
             defined_at(),
         ));
+        let invalid = corrupted
+            .resolve_review_policy(&definition, &StageSlug::parse("state-init").unwrap())
+            .unwrap_err();
         assert_eq!(
-            corrupted.resolve_review_policy(&definition, &StageSlug::parse("state-init").unwrap()),
-            Err(IntentReviewError::InvalidOverride("invalid".into()))
+            invalid,
+            IntentReviewError::InvalidOverride("invalid".into())
         );
+        assert_eq!(invalid.to_string(), "invalid review override: invalid");
+        assert!(std::error::Error::source(&invalid).is_none());
         assert_eq!(
             intent().resolve_review_policy(&definition, &StageSlug::parse("state-init").unwrap()),
             Ok(None)

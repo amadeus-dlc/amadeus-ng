@@ -431,7 +431,39 @@ mod tests {
         }
     }
 
-    // ---- 経路ごとの正常系（効果と戻り値の両方で観測する） ----
+    // ---- 経路ごとの結果（効果と戻り値の両方で観測する） ----
+
+    #[tokio::test]
+    async fn an_unrelated_definition_is_reported_with_its_cause_before_any_write() {
+        use super::super::test_support::{definition_id, genesis_referencing_other_definition};
+        use core_command_domain::orchestration::IntentReviewError;
+        let (intent, aggregate) = genesis_referencing_other_definition();
+        let mut subject = Subject {
+            use_case: CommitVerdictUseCase::new(
+                InMemoryIntentExecutionRepository::holding(aggregate, 1),
+                InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(definition(3))
+                    .misdirecting_related_lookup(definition_id()),
+            ),
+        };
+        let refusal = subject
+            .execute(named(Verdict::Forward, &slug(1)), at())
+            .await
+            .expect_err("取り違えた定義では承認しない");
+        assert!(matches!(
+            &refusal,
+            CommitError::ReviewPolicy(IntentReviewError::DefinitionMismatch)
+        ));
+        assert_eq!(refusal.to_string(), "review policy: definition mismatch");
+        assert_eq!(
+            std::error::Error::source(&refusal)
+                .unwrap()
+                .downcast_ref::<IntentReviewError>(),
+            Some(&IntentReviewError::DefinitionMismatch)
+        );
+        assert_eq!(subject.intent_execution_repository().store_attempts(), 0);
+        assert!(subject.intent_execution_repository().committed().is_empty());
+    }
 
     #[tokio::test]
     async fn an_awaiting_approval_report_opens_the_gate() {
