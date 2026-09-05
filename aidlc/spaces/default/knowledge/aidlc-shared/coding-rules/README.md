@@ -38,7 +38,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | --- | --- | --- |
 | [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod`。**1 ファイル 1 公開型**（2026-09-01 改訂 — 全層へ拡張） | 部分的（`cargo lint` の no-public-fields / one-public-type） |
 | [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
-| [tell-dont-ask.md](tell-dont-ask.md) | getter は存在してよいが濫用禁止 — 判断は状態の所有者へ。**アクセサを `value()`/`inner()`/`raw()` と名乗って内部型を意識させない**（2026-08-24 追記） | `cargo lint`（checkbox-vocabulary） |
+| [tell-dont-ask.md](tell-dont-ask.md) | **ユースケースからドメインのgetterを呼ばない**。アダプタ層でのgetterは合法（2026-09-05）。判断は状態の所有者へ。`value()`/`inner()`/`raw()`で内部型を意識させない | `cargo lint`（checkbox-vocabulary / use-case-domain-getter） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |
 | [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化） |
@@ -126,4 +126,3 @@ b43 の作業ツリーの現物から採ってテストに同梱、(3) 検出と
 `interior-mutability` / `command-query-separation` / `module-visibility` / `use-case-rules` /
 `gateway-taxonomy` / `error-handling`（thiserror・anyhow 禁止）の各候補。
 **上の 4 本を実装してから、改めて条件 1〜3 に照らして判断する。** それまで「予定」とは書かない。
-

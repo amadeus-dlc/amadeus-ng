@@ -45,7 +45,7 @@
     {
       "id": "NFR1",
       "status": "OK",
-      "target": "BR1.0, BR1.2, BR1.6, BR1.7, BR1.8, BR2.3, BR2.5"
+      "target": "BR1.0, BR1.2, BR1.3, BR1.4, BR1.5, BR1.6, BR1.7, BR1.8, BR1.9, BR2.3, BR2.5"
     },
     {
       "id": "NFR3",
@@ -57,12 +57,12 @@
     {
       "id": "BR2.4",
       "status": "N/A",
-      "target": "イベント語彙の方針（C5 との整合）— 要求 ID を持たない横断規則"
+      "target": "イベント語彙と封筒の境界（現行16変種、後続裁定を反映）— 要求 ID を持たない横断規則"
     },
     {
       "id": "BR5.1",
       "status": "N/A",
-      "target": "StageIndex の型規則（Q2 = A、設計監査 C17 / C18 の恒久解）"
+      "target": "StageIndex の型保証と検査付き構築境界（Q2 の目的を維持）"
     },
     {
       "id": "BR5.4",

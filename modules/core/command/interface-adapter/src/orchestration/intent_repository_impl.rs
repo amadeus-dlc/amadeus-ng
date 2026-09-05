@@ -31,7 +31,7 @@
 
 use std::io::ErrorKind;
 
-use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
+use core_command_domain::orchestration::{Intent, IntentEvent, IntentExecution, IntentId};
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 use event_store_adapter_rs::event_envelope::EventEnvelope;
@@ -254,6 +254,13 @@ impl<S> IntentRepository for IntentRepositoryImpl<S>
 where
     S: EventStore<AID = IntentAggregateKeyDto, A = IntentDto, P = IntentEventDto>,
 {
+    async fn find_for_execution(
+        &self,
+        execution: &IntentExecution,
+    ) -> Result<Intent, RepositoryError<IntentId>> {
+        self.find_by_id(execution.intent_id()).await
+    }
+
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         // 本家 example (`user_account_repository.rs`) と同型 — スナップショット行 (ある時点の
         // 集約) を基底に、その通番より後のイベントだけを差分再生する (オーナー裁定 2026-08-30)。
@@ -366,8 +373,8 @@ where
         let IntentEvent::Created(created) = event;
         let seq_nr = FIRST_SEQ_NR;
         // イベントと集約の照合 — intent のイベントは誕生の材料 (= 集約の全状態) を運ぶので、
-        // 対の取り違えが型で構成不能にならない (実行イベントとの違い — あちらは識別子を
-        // 運ばない)。誕生記録から起こした集約と一致しない対は、journal と snapshot が別々の
+        // 対の取り違えは型だけでは防げない。誕生記録から起こした集約と一致しない対は、
+        // journal と snapshot が別々の
         // 歴史を語る書込になるため、呼出側の書込契約違反として拒む (CodeRabbit 指摘)。
         if Intent::from((created.clone(), *intent.created_at())) != *intent {
             return Err(RepositoryError::Corrupt {
@@ -611,6 +618,46 @@ mod tests {
             intent_repository.stored_version(&other_intent_id()).await,
             0,
             "行が無ければ 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn find_for_execution_preserves_corruption_details() {
+        let mut repository = intent_repository();
+        let (intent, event) = genesis();
+        repository.store(&event, &intent).await.expect("genesis");
+        let envelope = EventEnvelope::new(
+            IntentAggregateKeyDto::of(&intent_id()),
+            2,
+            at(),
+            IntentEventDto::of(&event, at()),
+        )
+        .with_manifest("foreign");
+        repository
+            .store
+            .persist_event(envelope, 1)
+            .await
+            .expect("破損行を追加する");
+        let (execution, _) = IntentExecution::start(
+            core_command_domain::orchestration::IntentExecutionId::parse(OTHER_INTENT)
+                .expect("UUIDv7"),
+            &intent,
+            at(),
+        );
+
+        let error = repository
+            .find_for_execution(&execution)
+            .await
+            .expect_err("破損を伝播する");
+
+        assert!(
+            matches!(&error, RepositoryError::Corrupt { id, seq_nr: Some(2), .. } if *id == intent_id())
+        );
+        assert_eq!(
+            std::error::Error::source(&error)
+                .expect("原因を保持する")
+                .to_string(),
+            "foreign manifest"
         );
     }
 

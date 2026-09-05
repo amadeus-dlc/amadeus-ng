@@ -26,9 +26,16 @@ pub enum ReportDecision {
         stage: StageSlug,
         /// upstream の `sequence` に対応する段の列 (1 段か、復旧の 2 段)。
         steps: Vec<TransitionStep>,
+        /// 判断に使用した計画のスコープ。
+        scope: String,
     },
     /// 何もコミットしない成功。
-    NoOp(ReportNoOp),
+    NoOp {
+        /// 状態を変更しない理由。
+        no_op: ReportNoOp,
+        /// 判断に使用した計画のスコープ。
+        scope: String,
+    },
 }
 
 #[cfg(test)]
@@ -42,12 +49,14 @@ mod tests {
     #[test]
     fn a_recovery_commit_names_two_steps_in_order() {
         let decision = ReportDecision::Commit {
+            scope: "classic".into(),
             stage: slug(),
             steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
         };
         assert_eq!(
             decision,
             ReportDecision::Commit {
+                scope: "classic".into(),
                 stage: slug(),
                 steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
             }
@@ -57,8 +66,12 @@ mod tests {
     #[test]
     fn a_no_op_is_not_a_commit() {
         assert_ne!(
-            ReportDecision::NoOp(ReportNoOp::AlreadyAwaiting { stage: slug() }),
+            ReportDecision::NoOp {
+                no_op: ReportNoOp::AlreadyAwaiting { stage: slug() },
+                scope: "classic".into()
+            },
             ReportDecision::Commit {
+                scope: "classic".into(),
                 stage: slug(),
                 steps: Vec::new(),
             }

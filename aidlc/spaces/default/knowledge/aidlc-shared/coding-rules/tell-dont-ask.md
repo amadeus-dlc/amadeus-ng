@@ -1,13 +1,42 @@
-# Tell, Don't Ask — getter は存在してよいが濫用禁止
+# Tell, Don't Ask — ユースケースはドメインのgetterを呼ばない
 
 **裁定日**: 2026-08-22（オーナー）
 **出典**: オーナー自作スキル [j5ik2o-tell-dont-ask](https://github.com/j5ik2o/ai-tools/tree/main/plugins/software-design/skills/j5ik2o-tell-dont-ask) / [j5ik2o-breach-encapsulation-naming](https://github.com/j5ik2o/ai-tools/tree/main/plugins/software-design/skills/j5ik2o-breach-encapsulation-naming)
 **適用例**: PR #12（reap 適格判定のドメイン抽出（退役済み — ADR-007 / Bolt B5。以後は履歴としての例）・CheckboxState 分類述語）
-**機械強制**: `cargo lint`（`checkbox-vocabulary`。ルール追加時は検出力を証明する赤例テスト必須）
+**機械強制**: `cargo lint`（`checkbox-vocabulary` / `use-case-domain-getter`。ルール追加時は検出力を証明する赤例テスト必須）
+
+## ユースケースでの禁止（2026-09-05 オーナー明確化）
+
+**ユースケースの実装から、集約・エンティティ・値オブジェクト・ドメインイベント等のgetterを呼んではならない。**
+分岐に使わず別のメソッドへ渡す場合も対象とする。`id()`、`intent_id()`、`scope()`、
+`as_str()`等、保持するデータを取り出すアクセサは名前の違いで許可しない。
+ユースケース内の補助関数へ呼出しを移しても違反は解消しない。
+
+インターフェイスアダプタ層でのgetter呼出しは合法である。永続化・外部表現への変換・描画など、
+境界の処理がデータを読むことまで禁止しない。ドメインにgetterを定義すること自体も禁止しない。
+
+分類・可否・次の動作を答えるドメインの述語や判断メソッド、状態を遷移させるコマンドはgetterではない。
+ただし、`is_`等へ改名しただけの生のbooleanフィールド取得はgetterである。
+ユースケース所有の入力型・クエリ側のView・標準型のメソッドは、このドメインgetter禁止の対象ではない。
+テストの状態検証は従来どおり対象外とする。
+
+`cargo lint`の `use-case-domain-getter` が、ドメイン型の定義と呼出先を照合して検出する。
+単なるメソッド名のブラックリストではなく、ドメインの保持データを返すメソッドが対象になる。
+検出範囲の詳細と構文解析の限界は `tools/lint` の実装・テストに記録する。
+
+是正例（2026-09-05）: `CommitVerdictUseCase` は入力getterを読み直して遷移を組み立てず、
+`ReportRequest::for_retry_at` と `IntentExecution::apply_report` に任せる。
+`Intent::resolve_review_policy` が依頼のスコープと指定を使ってレビュー方針を判断し、
+`record_single_stage_run` がステージ名から実行対象を解決する。添字を取る旧署名や別名は残さず、呼出側も一斉に改める。
+ユースケースは判断結果や拒否の文脈を受け取り、保存と再試行を進行管理する。
+関連取得の `find_for_execution` / `find_for_intent` はRepositoryへの依頼であり、
+adapterが参照IDを解決する。ここへドメイン判断を移してはならない。
 
 ## 適用領域（2026-08-22 オーナー明確化）
 
-本ルールが禁じるのは**ビジネスロジック領域**（ドメインの判断・ユースケースの分岐材料）での getter 濫用である。**I/O 境界での getter 使用は正当**であり対象外 — リポジトリ・Gateway の永続化、JSON 等への変換、Presenter の描画は、状態を外部表現へ写す場所であり getter なしには実装できない。つまり「getter を使うな」ではなく「**ビジネスロジックで getter から判断を組むな**」である。
+以下はドメイン内の判断とI/O境界に関する一般則である。ユースケースには上の2026-09-05裁定を優先し、
+分岐材料に使う場合に限らず、ドメインgetterの呼出しそのものを禁止する。
+リポジトリ・Gatewayの永続化、JSON等への変換、Presenterの描画でデータを読むことは合法である。
 
 ## ルール
 
@@ -28,7 +57,8 @@
 
 ## 不可避な公開の命名
 
-永続化・シリアライズ・テスト・framework glue のためにどうしても内部状態を晒すアクセサは `breach_encapsulation_of_x` と命名し、侵害を可視化する（採否は導入時にオーナー確認。導入すれば「breach アクセサの呼出はテスト/アダプタ層のみ」という lint ルールが型解決なしで書ける）。
+永続化・シリアライズ・テスト・framework glue のためにどうしても内部状態を晒すアクセサは `breach_encapsulation_of_x` と命名し、侵害を可視化する（この命名方式の採否は導入時にオーナー確認）。
+ユースケースでの呼出禁止は、この命名方式の採用を待たずに適用する。
 
 ## 集約所有の前提集合
 
@@ -59,4 +89,3 @@
 
 3 に落ちるのは、**プリミティブへ降りることが本当に必要な境界**（索引計算・ワイヤ表現・
 外部 API）だけである。1 や 2 で済むものを 3 で解決すると、名前が整うだけで漏洩は残る。
-

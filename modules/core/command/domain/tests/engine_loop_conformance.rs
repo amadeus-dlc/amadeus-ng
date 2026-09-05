@@ -492,8 +492,8 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 // 状態のどこにも現れない (`single_run_frame` が全状態変数の不変を固定する)。
                 // よってテスト側は固定の非 init ステージを打てば十分である。索引 1 を選ぶ
                 // 理由は「合成計画で必ず存在する最小の非 init ステージ」だからで、
-                // `record_single_stage_run` の唯一のガード (非 init = ゲート付き) を必ず通る。
-                agg.record_single_stage_run(&intent, index(&agg, 1), at())
+                // 合成計画での名前を渡せば、対象解決と非 init のガードを必ず通る。
+                agg.record_single_stage_run(&intent, &slug_at(m.practices_stage, 1), at())
                     .unwrap();
             }
             "record_skeleton_stance" => {

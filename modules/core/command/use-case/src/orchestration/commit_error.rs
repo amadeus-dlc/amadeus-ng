@@ -63,6 +63,8 @@ pub enum CommitError {
     ///
     /// `--review` は鋳造時に閉集合で受けているので、ここに来るのは記録の破損である。
     CorruptReviewOverride(String),
+    /// 関連付けた定義と依頼が一致しない等、レビュー方針の解決拒否。
+    ReviewPolicy(core_command_domain::orchestration::IntentReviewError),
 }
 
 impl fmt::Display for CommitError {
@@ -71,27 +73,22 @@ impl fmt::Display for CommitError {
             CommitError::Repository(error) => write!(f, "repository: {error}"),
             CommitError::IntentRepository(error) => write!(f, "intent repository: {error}"),
             CommitError::Refused(refusal) => write!(f, "refused: {refusal}"),
-            CommitError::Transition { step, stage, error } => write!(
-                f,
-                "transition {} for {}: {error}",
-                step.subcommand(),
-                stage.as_str()
-            ),
-            CommitError::UnwiredTransition { step, stage } => write!(
-                f,
-                "unwired transition {} for {}",
-                step.subcommand(),
-                stage.as_str()
-            ),
+            CommitError::Transition { step, stage, error } => {
+                write!(f, "transition {} for {}: {error}", step.subcommand(), stage)
+            }
+            CommitError::UnwiredTransition { step, stage } => {
+                write!(f, "unwired transition {} for {}", step.subcommand(), stage)
+            }
             CommitError::DefinitionRepository(error) => {
                 write!(f, "workflow definition repository: {error}")
             }
             CommitError::UnknownDefinitionStage { stage } => {
-                write!(f, "the definition has no stage {}", stage.as_str())
+                write!(f, "the definition has no stage {stage}")
             }
             CommitError::CorruptReviewOverride(raw) => {
                 write!(f, "corrupt review override: {raw}")
             }
+            CommitError::ReviewPolicy(error) => write!(f, "review policy: {error}"),
         }
     }
 }
@@ -109,6 +106,7 @@ impl std::error::Error for CommitError {
             CommitError::Refused(refusal) => Some(refusal),
             CommitError::Transition { error, .. } => Some(error),
             CommitError::DefinitionRepository(error) => Some(error),
+            CommitError::ReviewPolicy(error) => Some(error),
             // ユースケース自身の失敗 — 材料 (段と slug) は自分の `Display` にある。
             CommitError::UnwiredTransition { .. }
             | CommitError::UnknownDefinitionStage { .. }

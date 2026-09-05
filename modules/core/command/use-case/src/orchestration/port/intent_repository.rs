@@ -1,13 +1,14 @@
 //! `IntentRepository` ポート — 集約 `Intent` の Repository (改訂 10 で前倒し新設)。
 
-use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
+use core_command_domain::orchestration::{Intent, IntentEvent, IntentExecution, IntentId};
 
 use super::repository_error::RepositoryError;
 
 /// 集約 [`Intent`] の Repository (イベントソーシング形 — ADR-010 / issue #50)。
 ///
-/// 署名は**自集約の ID だけ**を取る (`coding-rules/gateway-taxonomy.md`)。動詞は本家
-/// ライブラリ (event-store-adapter-rs) の語彙に従い `store` / `find_by_id` である。
+/// 自集約の ID による取得に加え、実行が参照する intent の取得を提供する。
+/// 関連 ID の解決はアダプタが担い、再構成・永続化する対象は常に [`Intent`] だけである。
+/// 取得後の業務判断はドメインが担う。
 ///
 /// # intent 自身のジャーナルを持つ (issue #50)
 ///
@@ -43,6 +44,20 @@ pub trait IntentRepository {
     /// intent が無い (`NotFound`)、ストア I/O (`Io`)、ストアの記録の破損 (`Corrupt` — 原因は
     /// `source` 連鎖) を返す。
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>>;
+
+    /// 実行が参照する intent を、その intent のストリームから再構成して返す。
+    ///
+    /// 関連 ID の読取はアダプタが担い、既存の [`Self::find_by_id`] へ委譲する。
+    /// 実行の履歴や別の読取モデルから intent を復元しない。
+    ///
+    /// # Errors
+    ///
+    /// [`Self::find_by_id`] と同じ失敗を返す。`NotFound` / `Corrupt` の ID は参照先の
+    /// [`IntentId`] であり、実行の識別子ではない。
+    async fn find_for_execution(
+        &self,
+        execution: &IntentExecution,
+    ) -> Result<Intent, RepositoryError<IntentId>>;
 
     /// イベントを 1 件と、適用後の集約を永続化する。
     ///

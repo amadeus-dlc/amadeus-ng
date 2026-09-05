@@ -40,6 +40,7 @@
 //!
 //! [`CompiledDefinitionRepository`]: super::compiled_definition_repository::CompiledDefinitionRepository
 
+use core_command_domain::orchestration::Intent;
 use core_command_domain::workflow_definition::{
     WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
@@ -48,8 +49,9 @@ use super::repository_error::RepositoryError;
 
 /// 集約 `WorkflowDefinition` の Repository (イベントソーシング形 — ADR-010)。
 ///
-/// 署名は**自集約の ID だけ**を取る (`coding-rules/gateway-taxonomy.md`)。動詞は本家
-/// ライブラリ (event-store-adapter-rs) の語彙に従い `store` / `find_by_id` である。
+/// 自集約の ID による取得に加え、intent が参照する定義の取得を提供する。
+/// 関連 ID の解決はアダプタが担い、再構成・永続化する対象は常に定義だけである。
+/// 取得後のレビュー方針などの業務判断はドメインが担う。
 ///
 /// レシーバは CQS に従う (`coding-rules/command-query-separation.md`) — 読取は `&self`、
 /// 永続化は `&mut self`。
@@ -75,6 +77,20 @@ pub trait WorkflowDefinitionRepository {
     async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
+    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>>;
+
+    /// intent が参照する系譜の最新定義を、その定義のストリームから再構成して返す。
+    ///
+    /// 関連 ID の読取はアダプタが担い、既存の [`Self::find_by_id`] へ委譲する。
+    /// intent の作成時点の内容版への巻戻しや、別の読取モデルへの参照は行わない。
+    ///
+    /// # Errors
+    ///
+    /// [`Self::find_by_id`] と同じ失敗を返す。`NotFound` / `Corrupt` の ID は参照先の
+    /// [`WorkflowDefinitionId`] である。
+    async fn find_for_intent(
+        &self,
+        intent: &Intent,
     ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>>;
 
     /// イベントを 1 件と、適用後の集約を永続化する。
