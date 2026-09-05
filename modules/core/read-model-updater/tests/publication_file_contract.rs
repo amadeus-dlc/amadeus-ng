@@ -263,3 +263,48 @@ fn target_binding_keeps_roles_and_file_ownership_together() {
         "損失なく記録できない対象に一致しない"
     );
 }
+
+#[test]
+fn an_audit_parent_that_cannot_be_created_preserves_the_absent_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("locked");
+    fs::create_dir(&parent).unwrap();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o555)).unwrap();
+    let target = parent.join("missing/audit.md");
+    let error = PublicationFile::audit(&target, "event\n")
+        .unwrap()
+        .apply()
+        .unwrap_err();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(
+        error,
+        CatchUpError::PublicationIo {
+            path: target.clone(),
+            kind: ErrorKind::PermissionDenied
+        }
+    );
+    assert!(!target.parent().unwrap().exists());
+}
+
+#[test]
+fn a_parent_that_cannot_be_synced_does_not_report_durable_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("unreadable");
+    fs::create_dir(&parent).unwrap();
+    let target = parent.join("state.md");
+    fs::write(&target, "already applied").unwrap();
+    let plan = PublicationFile::replacement(&target, "before", "already applied");
+    // 探索は許すがディレクトリのopenを拒否し、ファイル読取後の親fsyncを失敗させる。
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o111)).unwrap();
+    let error = plan.apply().unwrap_err();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(
+        error,
+        CatchUpError::PublicationIo {
+            path: parent,
+            kind: ErrorKind::PermissionDenied
+        }
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), "already applied");
+    plan.apply().unwrap();
+}

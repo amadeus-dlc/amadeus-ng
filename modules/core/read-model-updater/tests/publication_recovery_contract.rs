@@ -1588,3 +1588,45 @@ async fn damaged_shared_head_fields_refuse_publication_until_explicit_rebuild() 
         assert_eq!(fs::read(&fixture.audit).unwrap(), audit);
     }
 }
+
+#[tokio::test]
+async fn restoration_refuses_a_saved_snapshot_that_does_not_own_its_files() {
+    let fixture = Fixture::new();
+    let mut reader = fixture.reader();
+    let foreign = fixture.root.path().join("foreign.md");
+    fs::write(&foreign, "other user's before").unwrap();
+    // 低水準の公開APIから、束縛と個別ファイルが食い違う保存状態を用意する。
+    let batch = PublicationBatch::rebuild(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::ZERO,
+        vec![PublicationFile::replacement(
+            &foreign,
+            "other user's before",
+            "other user's after",
+        )],
+    )
+    .for_targets(&fixture.targets())
+    .unwrap();
+    reader
+        .publish(&projection(), &batch, &empty_tables())
+        .await
+        .unwrap();
+    fs::remove_file(&foreign).unwrap();
+    assert!(matches!(
+        reader.restore_missing_files(&projection(), &fixture.targets()),
+        Err(CatchUpError::PublicationConflict { .. })
+    ));
+    assert!(!foreign.exists(), "所有外のファイルを復活させない");
+    assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+    assert!(
+        reader
+            .pending_publication(&projection())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

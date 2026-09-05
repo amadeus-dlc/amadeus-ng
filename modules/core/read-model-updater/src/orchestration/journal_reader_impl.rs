@@ -311,7 +311,9 @@ impl JournalReaderImpl {
             return Ok(false);
         };
         if !previous.matches_targets(targets) || !previous.uses_current_transform() {
-            return Ok(false);
+            return Err(super::CatchUpError::PublicationConflict {
+                path: self.path.as_path().to_path_buf(),
+            });
         }
         let mut missing = false;
         let mut files = Vec::new();
