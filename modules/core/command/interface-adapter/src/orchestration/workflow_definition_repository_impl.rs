@@ -429,6 +429,14 @@ where
         event: &WorkflowDefinitionEvent,
         definition: &WorkflowDefinition,
     ) -> Result<(), RepositoryError<WorkflowDefinitionId>> {
+        // 封筒の系譜とイベントの系譜は、独立した参照引数なので書込前に照合する。
+        if event.aggregate_id() != definition.id() {
+            return Err(RepositoryError::Corrupt {
+                id: definition.id().clone(),
+                seq_nr: Some(definition.seq_nr()),
+                source: Box::new(CorruptDetail::WriteContract),
+            });
+        }
         // 提示する版は集約が運んできたものである (書込直前に読み直さない — BR5.3)。
         let expected_version = definition.version();
         let envelope = WorkflowDefinitionRepositoryImpl::<S>::envelope(event, definition);
