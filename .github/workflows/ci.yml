@@ -36,7 +36,7 @@ jobs:
       - name: Verify distribution sync and local patches
         run: bun scripts/aidlc-sync.ts --check
       - name: Test distribution replacement and Codex input rewrites
-        run: bun test ./scripts/aidlc-sync.test.ts ./scripts/aidlc-harness.test.ts ./.codex/hooks/aidlc-codex-adapter.test.ts
+        run: bun test ./scripts/aidlc-sync.test.ts ./scripts/aidlc-harness.test.ts ./scripts/aidlc-unit-lifecycle.test.ts ./.codex/hooks/aidlc-codex-adapter.test.ts
 
   check:
     name: check
