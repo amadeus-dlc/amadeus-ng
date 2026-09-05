@@ -99,7 +99,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> PromotePracticesUseCase<
             .await?;
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
         let event = aggregate
             .affirm_practices(

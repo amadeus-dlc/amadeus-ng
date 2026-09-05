@@ -327,6 +327,21 @@ async fn a_journal_row_without_a_snapshot_row_is_corrupt() {
             .to_string(),
         "missing snapshot"
     );
+
+    let error = fixture
+        .repository()
+        .find_for_intent(&support::intent())
+        .await
+        .expect_err("関連取得も破損を伝播する");
+    assert!(
+        matches!(&error, RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == definition_id())
+    );
+    assert_eq!(
+        std::error::Error::source(&error)
+            .expect("原因を保持する")
+            .to_string(),
+        "missing snapshot"
+    );
 }
 
 #[tokio::test]
@@ -462,4 +477,12 @@ async fn a_sqlite_repository_reports_its_location_in_its_failures() {
         panic!("Io を期待した: {err:?}");
     };
     assert_eq!(path.as_deref(), Some(fixture.path.as_path()));
+
+    let error = repository
+        .find_for_intent(&support::intent())
+        .await
+        .expect_err("関連取得も I/O 失敗");
+    assert!(
+        matches!(error, RepositoryError::Io { path: Some(path), .. } if path == fixture.path.as_path())
+    );
 }

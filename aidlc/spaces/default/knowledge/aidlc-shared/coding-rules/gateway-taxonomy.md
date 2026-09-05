@@ -85,7 +85,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 集約は各コンテキスト仕様の宣言表が持っている（[`01-domain-model.md`](../../../../../../docs/specs/01-domain-model.md) §3 の集約候補、[`11-workspace.md`](../../../../../../docs/specs/11-workspace.md) §2.1、[`12-workflow-definition.md`](../../../../../../docs/specs/12-workflow-definition.md) §2.1）。Repository はそこに載っている集約ルート名をそのまま冠する。
 
 - `IntentExecution` → `IntentExecutionRepository`（~~`WorkflowExecution` → `WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29）
-- `Intent` → `IntentRepository`（U7 の intent-create 実装時に新設予定。**Repository は自分の集約・エンティティだけを I/O する** — `IntentRepository` は `Intent` のみ、`IntentExecutionRepository` は `IntentExecution` のみ。他方を復元して返すのも違反。**署名は自集約の ID だけを取る** — 他の集約・エンティティを引数にも戻り値にも出さない。再生に他エンティティの材料が要る場合、それは自ストリームの誕生イベントに記録されているはずであり、Impl がそこから内部復元する（`find_by_id(&IntentExecutionId)` が `Started` から再生用 `Intent` を組む実例 — オーナー確定 2026-08-29）（オーナー確認 2026-08-29）。再生・判断に他方のデータが要るときは `&` 参照のパラメータ渡し — [aggregate-references.md](aggregate-references.md)）
+- `Intent` → `IntentRepository`。**Repositoryは自分の集約だけを再構成・保存して返す**。`IntentRepository`はIntent、`IntentExecutionRepository`はIntentExecutionを扱い、別の集約を復元して返さない。基本の検索は自集約IDによる `find_by_id`。ユースケースでgetterを禁止する2026-09-05裁定への対応として、参照関係による `IntentRepository::find_for_execution(&IntentExecution)` と `WorkflowDefinitionRepository::find_for_intent(&Intent)` も許す。渡す集約は検索条件となる参照の所有者であり、adapterがその参照IDを読み、既存find_by_idへ委譲する。渡された側を再取得・保存する権限や、業務判断をRepositoryへ移す許可には広げない。ユースケースは依存先の取得を指示し、ドメインの判断には取得済み集約の参照を渡す（[aggregate-references.md](aggregate-references.md)）。
 - `CompiledDefinition` → `CompiledDefinitionRepository`（**新設 2026-09-02、b36** — 配布束の
   集約。識別子は自前の `CompiledDefinitionId`。`find_by_id` と `store` の両動詞（「書き込め
   ないと読み込めない」裁定）。媒体 = 配布 3 ファイルは実装の内部詳細で、graph / grid は

@@ -122,7 +122,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> ParkUseCase<E, I> {
         // なので（`coding-rules/aggregate-references.md`）、その ID で引く。
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
         let event = aggregate.park(&intent, occurred_at)?;
         match self

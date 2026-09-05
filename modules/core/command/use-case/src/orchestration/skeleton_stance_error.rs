@@ -47,11 +47,10 @@ impl fmt::Display for SkeletonStanceError {
                 stage,
                 scope,
                 error,
-            } => write!(
-                f,
-                "command for {} in scope {scope}: {error}",
-                stage.as_ref().map_or("(unknown stage)", StageSlug::as_str)
-            ),
+            } => match stage {
+                Some(stage) => write!(f, "command for {stage} in scope {scope}: {error}"),
+                None => write!(f, "command for (unknown stage) in scope {scope}: {error}"),
+            },
         }
     }
 }

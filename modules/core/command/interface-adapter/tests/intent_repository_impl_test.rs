@@ -272,6 +272,40 @@ async fn a_journal_row_without_a_snapshot_row_is_corrupt() {
             .to_string(),
         "missing snapshot"
     );
+
+    let error = fixture
+        .repository()
+        .find_for_execution(&support::genesis().0)
+        .await
+        .expect_err("関連取得も破損を伝播する");
+    assert!(
+        matches!(&error, RepositoryError::Corrupt { id, seq_nr: None, .. } if *id == intent_id())
+    );
+    assert_eq!(
+        std::error::Error::source(&error)
+            .expect("原因を保持する")
+            .to_string(),
+        "missing snapshot"
+    );
+}
+
+#[tokio::test]
+async fn find_for_execution_preserves_the_io_failure_location() {
+    let fixture = Fixture::new();
+    let repository = fixture.repository();
+    fixture
+        .raw()
+        .execute("DROP TABLE journal", [])
+        .expect("表を壊す");
+
+    let error = repository
+        .find_for_execution(&support::genesis().0)
+        .await
+        .expect_err("I/O 失敗");
+
+    assert!(
+        matches!(error, RepositoryError::Io { path: Some(path), .. } if path == fixture.path.as_path())
+    );
 }
 
 #[tokio::test]

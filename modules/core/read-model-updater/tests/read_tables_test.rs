@@ -1222,11 +1222,7 @@ fn an_isolated_run_leaves_every_read_row_where_it_was() {
     let (mut aggregate, mut events) = running_events();
     let before = ReadTables::project(&history_of(events.clone())).expect("投影できる");
     let committed = aggregate
-        .record_single_stage_run(
-            &intent(),
-            aggregate.stage_index(3).expect("索引 3 は在る"),
-            at(),
-        )
+        .record_single_stage_run(&intent(), &slug("requirements-analysis"), at())
         .expect("非 init は隔離実行できる");
     events.push((aggregate.seq_nr(), committed));
     let after = ReadTables::project(&history_of(events)).expect("投影できる");

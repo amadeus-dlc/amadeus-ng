@@ -294,6 +294,13 @@ impl InMemoryWorkflowDefinitionRepository {
 }
 
 impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
+    async fn find_for_intent(
+        &self,
+        intent: &Intent,
+    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
+        self.find_by_id(intent.definition_id()).await
+    }
+
     async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
@@ -755,6 +762,13 @@ impl InMemoryIntentRepository {
 }
 
 impl IntentRepository for InMemoryIntentRepository {
+    async fn find_for_execution(
+        &self,
+        execution: &IntentExecution,
+    ) -> Result<Intent, RepositoryError<IntentId>> {
+        self.find_by_id(execution.intent_id()).await
+    }
+
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         self.lookups.set(self.lookups.get() + 1);
         self.held

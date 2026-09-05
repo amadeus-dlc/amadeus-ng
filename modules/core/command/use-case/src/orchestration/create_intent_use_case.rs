@@ -88,6 +88,7 @@ where
             .workflow_definition_repository
             .find_by_id(definition_id)
             .await?;
+        let orphan = intent_id.clone();
         let (intent, born) = Intent::create(intent_id, &definition, request, scan, occurred_at)?;
         self.intent_repository.store(&born, &intent).await?;
         // intent が着地してから実行を開始する。逆順にすると、実行だけがストアに居て
@@ -99,10 +100,7 @@ where
         self.intent_execution_repository
             .store(&started, &execution)
             .await
-            .map_err(|error| CreateIntentError::ExecutionRepository {
-                orphan: intent.id().clone(),
-                error,
-            })?;
+            .map_err(|error| CreateIntentError::ExecutionRepository { orphan, error })?;
         Ok(())
     }
 }

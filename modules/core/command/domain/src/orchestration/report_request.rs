@@ -43,6 +43,18 @@ impl ReportRequest {
         }
     }
 
+    /// 楽観競合の再試行を、最初に判断した対象へ固定する。
+    #[must_use]
+    pub fn for_retry_at(&self, stage: StageSlug) -> ReportRequest {
+        Self::new(
+            self.verdict,
+            Some(stage),
+            self.user_input.clone(),
+            self.reason.clone(),
+            self.human_presence_guard,
+        )
+    }
+
     /// 報告された結末の分類。
     #[must_use]
     pub const fn verdict(&self) -> Verdict {
@@ -104,6 +116,29 @@ mod tests {
 
     fn slug(value: &str) -> StageSlug {
         StageSlug::parse(value).expect("フィクスチャの slug は文法内")
+    }
+
+    #[test]
+    fn retry_names_the_original_target_without_losing_observations() {
+        let original = ReportRequest::new(
+            Verdict::Rejected,
+            None,
+            Some(" input ".into()),
+            Some(" reason ".into()),
+            false,
+        );
+        let retry = original.for_retry_at(slug("domain-design"));
+        assert_eq!(
+            retry,
+            ReportRequest::new(
+                Verdict::Rejected,
+                Some(slug("domain-design")),
+                Some(" input ".into()),
+                Some(" reason ".into()),
+                false
+            )
+        );
+        assert_eq!(original.stage(), None);
     }
 
     #[test]

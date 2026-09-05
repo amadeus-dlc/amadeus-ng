@@ -27,6 +27,7 @@ use super::intent_event::Created;
 use super::intent_event::IntentEvent;
 use super::intent_event_id::IntentEventId;
 use super::intent_id::IntentId;
+use super::intent_review_error::IntentReviewError;
 use super::stage_display::StageDisplay;
 use super::stage_entry::StageEntry;
 use super::start_request::StartRequest;
@@ -37,6 +38,7 @@ use crate::workflow_definition::PlanAction;
 use crate::workflow_definition::UnknownScope;
 use crate::workflow_definition::WorkflowDefinition;
 use crate::workflow_definition::WorkflowDefinitionId;
+use crate::workflow_definition::{ReviewCapValue, ReviewPolicy, StageSlug};
 
 /// 静的な intent — 実行が何回起きても変わらない側 (Always Valid)。
 ///
@@ -59,6 +61,31 @@ pub struct Intent {
 }
 
 impl Intent {
+    /// intent のスコープと override に従い、対象ステージのレビュー方針を決める。
+    ///
+    /// # Errors
+    /// 定義の取り違え、未知ステージ、履歴内の不正な override を拒否する。
+    pub fn resolve_review_policy(
+        &self,
+        definition: &WorkflowDefinition,
+        stage: &StageSlug,
+    ) -> Result<Option<ReviewPolicy>, IntentReviewError> {
+        if definition.id() != &self.definition_id {
+            return Err(IntentReviewError::DefinitionMismatch);
+        }
+        let review_override = self
+            .start_request
+            .review()
+            .map(|raw| {
+                ReviewCapValue::parse(raw)
+                    .map_err(|_| IntentReviewError::InvalidOverride(raw.to_string()))
+            })
+            .transpose()?;
+        definition
+            .review_policy(stage, self.start_request.scope(), review_override)
+            .map_err(|_| IntentReviewError::UnknownStage)
+    }
+
     /// 新しい intent を作る (基本コンストラクタ = genesis — 対を返す)。
     ///
     /// **基本コンストラクタは全情報を受ける genesis である** (オーナー裁定 2026-08-30)。定義
@@ -428,6 +455,115 @@ mod tests {
         )
         .unwrap()
         .0
+    }
+
+    #[test]
+    fn review_resolution_applies_the_intents_scope_cap_and_override() {
+        use crate::workflow_definition::{ReviewCapValue, ReviewClass};
+        let node = StageNodeBuilder::new(
+            StageSlug::parse("state-init").unwrap(),
+            StageNumber::parse("0.1").unwrap(),
+            "State Init".into(),
+            PhaseId::Initialization,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .scopes(vec!["classic".into()])
+        .reviewer("quality-agent".into())
+        .review_class(ReviewClass::Adversarial)
+        .build();
+        let graph = StageGraph::new(vec![node]).unwrap();
+        let grid = ScopeGrid::from_graph(&graph);
+        let scopes = [(
+            "classic".into(),
+            ScopeMetadata::new("classic")
+                .unwrap()
+                .with_review_cap(ReviewCapValue::Advisory),
+        )]
+        .into_iter()
+        .collect();
+        let compiled = CompiledDefinition::compile(
+            CompiledDefinitionId::parse("claude").unwrap(),
+            graph,
+            grid,
+            scopes,
+        )
+        .0;
+        let definition = WorkflowDefinition::define(def_id(), &compiled, defined_at())
+            .unwrap()
+            .0;
+        let stage = StageSlug::parse("state-init").unwrap();
+        let (normal, _) =
+            Intent::create(id(), &definition, request(), scan(), defined_at()).unwrap();
+        assert_eq!(
+            normal
+                .resolve_review_policy(&definition, &stage)
+                .unwrap()
+                .unwrap()
+                .effective(),
+            ReviewCapValue::Advisory
+        );
+        let (overridden, _) = Intent::create(
+            id(),
+            &definition,
+            request().with_review("none"),
+            scan(),
+            defined_at(),
+        )
+        .unwrap();
+        assert_eq!(
+            overridden
+                .resolve_review_policy(&definition, &stage)
+                .unwrap()
+                .unwrap()
+                .effective(),
+            ReviewCapValue::None
+        );
+        let other_intent = Intent::from((
+            Created::new(
+                intent_event_id(),
+                id(),
+                WorkflowDefinitionId::parse("codex").unwrap(),
+                revision(),
+                request(),
+                stages(),
+                scan(),
+            ),
+            defined_at(),
+        ));
+        assert_eq!(
+            other_intent.resolve_review_policy(&definition, &stage),
+            Err(IntentReviewError::DefinitionMismatch)
+        );
+    }
+
+    #[test]
+    fn review_resolution_refuses_unknown_stages_and_invalid_overrides() {
+        let definition = single_stage_definition();
+        assert_eq!(
+            intent().resolve_review_policy(&definition, &StageSlug::parse("unknown").unwrap()),
+            Err(IntentReviewError::UnknownStage)
+        );
+        let corrupted = Intent::from((
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request().with_review("invalid"),
+                stages(),
+                scan(),
+            ),
+            defined_at(),
+        ));
+        assert_eq!(
+            corrupted.resolve_review_policy(&definition, &StageSlug::parse("state-init").unwrap()),
+            Err(IntentReviewError::InvalidOverride("invalid".into()))
+        );
+        assert_eq!(
+            intent().resolve_review_policy(&definition, &StageSlug::parse("state-init").unwrap()),
+            Ok(None)
+        );
     }
 
     #[test]

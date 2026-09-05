@@ -8,12 +8,49 @@
 //! 違い、ポートの面からは作れない。契約テストからは外し、実装固有のテスト
 //! (`intent_repository_impl_test.rs` の生 SQL) に置く。
 
+use core_command_domain::orchestration::{IntentEvent, IntentExecution};
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 
 use super::{
-    IntentStoreFixture, absent_intent_id, intent_genesis, intent_id, other_intent,
-    store_intent_genesis,
+    IntentStoreFixture, absent_intent_id, at, execution_id, intent_genesis, intent_id,
+    other_intent, other_intent_created, store_intent_genesis,
 };
+
+/// 実行が参照する intent を、同居する別の intent と取り違えずに再構成する。
+pub(crate) async fn find_for_execution_resolves_its_intent<F: IntentStoreFixture>(fixture: &F) {
+    let mut repository = fixture.open();
+    store_intent_genesis(&mut repository).await;
+    let expected = other_intent();
+    repository
+        .store(&IntentEvent::Created(other_intent_created()), &expected)
+        .await
+        .expect("別の intent も保存する");
+    let (execution, _) = IntentExecution::start(execution_id(), &expected, at());
+
+    let found = fixture
+        .reopen(&repository)
+        .find_for_execution(&execution)
+        .await
+        .expect("実行の参照先を再構成する");
+
+    assert_eq!(found, expected);
+}
+
+/// 関連先が保存されていなければ、その intent の ID を伴う `NotFound` を返す。
+pub(crate) async fn find_for_execution_reports_the_missing_intent<F: IntentStoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    store_intent_genesis(&mut repository).await;
+    let (execution, _) = IntentExecution::start(execution_id(), &other_intent(), at());
+
+    let error = repository
+        .find_for_execution(&execution)
+        .await
+        .expect_err("参照先は未保存");
+
+    assert!(matches!(error, RepositoryError::NotFound { id } if id == absent_intent_id()));
+}
 
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
 pub(crate) async fn open_twice_yields_independent_empty_stores<F: IntentStoreFixture>(fixture: &F) {

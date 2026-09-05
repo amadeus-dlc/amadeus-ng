@@ -1,9 +1,10 @@
 //! amadeus-lint — `cargo lint` で起動するリポジトリ専用リンター。
 //!
 //! 目的は `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/` に置いたオーナー裁定の**再発防止**。Tell, Don't Ask 系のルールは
-//! getter の存在そのものを咎めず、「他オブジェクトから状態を抜き出して所有者の判断を呼出側で
-//! 代行する」濫用パターンだけを検出する。加えてその前段として、アクセサを経由せず内部構造を
-//! 公開する `pub` フィールドを禁じる。ルール本体と検査力テストは [`check`] にある。
+//! R1 は分類語彙の再実装を検出する。R8 は use-case 層でドメイン getter を呼ぶこと自体を
+//! 禁じ、ドメインの getter 定義と interface-adapter 層の呼出しは許可する。加えて
+//! 内部構造を公開する `pub` フィールドなどを検査する。ルール本体と検査力テストは
+//! [`check`] と [`domain_getter`] にある。
 //!
 //! 使い方 (リポジトリルートから):
 //!
@@ -22,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 mod check;
+mod domain_getter;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -58,6 +60,7 @@ fn main() -> ExitCode {
 
     let mut findings = 0usize;
     let mut failed = false;
+    let mut sources = Vec::new();
     for file in &files {
         let relative = relative_slash_path(&root, file);
         let source = match std::fs::read_to_string(file) {
@@ -68,10 +71,16 @@ fn main() -> ExitCode {
                 continue;
             }
         };
-        match check_source(&relative, &source) {
-            Ok(file_findings) => {
+        sources.push((relative, source));
+    }
+    let domain_index = domain_getter::DomainIndex::build(&sources);
+    for (relative, source) in &sources {
+        match check_source(relative, source) {
+            Ok(mut file_findings) => {
+                file_findings.extend(domain_index.check(relative, source));
+                file_findings.sort_by_key(|finding| (finding.line, finding.rule));
                 for finding in &file_findings {
-                    report(&relative, finding);
+                    report(relative, finding);
                 }
                 findings += file_findings.len();
             }

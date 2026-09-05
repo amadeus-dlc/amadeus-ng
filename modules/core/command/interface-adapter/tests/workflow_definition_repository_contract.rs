@@ -108,6 +108,8 @@ macro_rules! contract_tests {
 }
 
 contract_tests!(
+    find_for_intent_returns_the_current_definition,
+    find_for_intent_reports_the_missing_definition,
     open_twice_yields_independent_empty_stores,
     round_trip,
     not_found,

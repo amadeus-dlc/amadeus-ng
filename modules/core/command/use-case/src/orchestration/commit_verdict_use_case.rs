@@ -2,10 +2,10 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, ReportDecision, ReportNoOp,
+    Intent, IntentExecutionId, IntentReviewError, ReportCommitError, ReportDecision, ReportNoOp,
     ReportRequest, TransitionStep,
 };
-use core_command_domain::workflow_definition::{ReviewCapValue, ReviewPolicy, StageSlug};
+use core_command_domain::workflow_definition::{ReviewPolicy, StageSlug};
 
 use super::commit_error::CommitError;
 use super::commit_outcome::CommitOutcome;
@@ -154,13 +154,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             AttemptOutcome::Settled(outcome) => Ok(outcome),
             // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」）。
             AttemptOutcome::Conflicted { target, .. } => {
-                let retried = ReportRequest::new(
-                    request.verdict(),
-                    Some(target),
-                    request.user_input().map(str::to_string),
-                    request.reason().map(str::to_string),
-                    request.human_presence_guard(),
-                );
+                let retried = request.for_retry_at(target);
                 match self.attempt(execution_id, &retried, occurred_at).await? {
                     AttemptOutcome::Settled(outcome) => Ok(outcome),
                     AttemptOutcome::Conflicted { conflict, .. } => {
@@ -195,20 +189,23 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
-        let scope = intent.scope().to_string();
 
         // 13 段ガードのうち状態で決まる段はすべてここで決着する（判断は集約に閉じる）。
-        let (stage, steps) = match aggregate.report_dispatch(&intent, request)? {
-            ReportDecision::NoOp(no_op) => {
+        let (stage, steps, scope) = match aggregate.report_dispatch(&intent, request)? {
+            ReportDecision::NoOp { no_op, scope } => {
                 return Ok(AttemptOutcome::Settled(CommitOutcome::NoOp {
                     stage: Self::no_op_stage(&no_op).clone(),
                     scope,
                     no_op,
                 }));
             }
-            ReportDecision::Commit { stage, steps } => (stage, steps),
+            ReportDecision::Commit {
+                stage,
+                steps,
+                scope,
+            } => (stage, steps, scope),
         };
 
         // 段 11 のレビュー方針は **Approve 段のときだけ**引く（他の段は定義を読まない）。
@@ -217,15 +214,19 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         } else {
             None
         };
-        let event = Self::commit_steps(
-            &intent,
-            &mut aggregate,
-            &stage,
-            &steps,
-            policy.as_ref(),
-            request,
-            occurred_at,
-        )?;
+        let event = aggregate
+            .apply_report(&intent, request, &steps, policy.as_ref(), occurred_at)
+            .map_err(|error| match error {
+                ReportCommitError::Transition { step, error } => CommitError::Transition {
+                    step,
+                    stage: stage.clone(),
+                    error,
+                },
+                ReportCommitError::Unwired { step } => CommitError::UnwiredTransition {
+                    step,
+                    stage: stage.clone(),
+                },
+            })?;
         match self
             .intent_execution_repository
             .store(&event, &aggregate)
@@ -244,79 +245,6 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         }
     }
 
-    /// 判断が名指しした段を打つ（**イベントは 1 つ**）。
-    ///
-    /// 状態遷移を起こすのは列の**最後の段**である。先行する `GateStartRecovered` は監査の
-    /// 見え方（`STAGE_AWAITING_APPROVAL` の `Recovered` 行）を決めるだけで、遷移そのものは
-    /// 続く `Approve` の 1 イベント（BR1.3 — `[-]` からの承認）が担う。したがってここでも
-    /// 「1 コマンド 1 イベント」は崩れない（`coding-rules/aggregate-commands.md`）。
-    ///
-    /// # Errors
-    ///
-    /// 集約がそのコマンドを拒否した（`Transition`）、この build に無い段だった
-    /// （`UnwiredTransition`）。
-    fn commit_steps(
-        intent: &Intent,
-        aggregate: &mut IntentExecution,
-        stage: &StageSlug,
-        steps: &[TransitionStep],
-        policy: Option<&ReviewPolicy>,
-        request: &ReportRequest,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<IntentExecutionEvent, CommitError> {
-        let (step, refused) = match steps {
-            [TransitionStep::GateStart] => (
-                TransitionStep::GateStart,
-                aggregate.open_gate(intent, Vec::new(), occurred_at),
-            ),
-            [TransitionStep::Reject] => (
-                TransitionStep::Reject,
-                aggregate.reject_gate(intent, request.feedback().map(str::to_string), occurred_at),
-            ),
-            [TransitionStep::Revise] => (
-                TransitionStep::Revise,
-                aggregate.revise_stage(intent, occurred_at),
-            ),
-            [TransitionStep::Skip] => (
-                TransitionStep::Skip,
-                aggregate.skip_stage(
-                    intent,
-                    request.reason().unwrap_or_default().trim().to_string(),
-                    occurred_at,
-                ),
-            ),
-            [TransitionStep::Approve]
-            | [TransitionStep::GateStartRecovered, TransitionStep::Approve] => (
-                TransitionStep::Approve,
-                // upstream の `approveArgs` は空文字列の `--user-input` を渡さない（JS の
-                // truthy 判定）。空白だけの値は渡すので、`trim` ではなく空判定である。
-                aggregate.approve_gate(
-                    intent,
-                    policy,
-                    request
-                        .user_input()
-                        .filter(|text| !text.is_empty())
-                        .map(str::to_string),
-                    occurred_at,
-                ),
-            ),
-            // `advance` / `complete-workflow` はこの build に対応する集約コマンドを持たない
-            // （非ゲート完了のパイプラインは b42 で撤去 — #85 = A）。空列は判断が返さない
-            // ので、名指しは先頭の段で足りる。
-            other => {
-                return Err(CommitError::UnwiredTransition {
-                    step: other.first().copied().unwrap_or(TransitionStep::Advance),
-                    stage: stage.clone(),
-                });
-            }
-        };
-        refused.map_err(|error| CommitError::Transition {
-            step,
-            stage: stage.clone(),
-            error,
-        })
-    }
-
     /// 承認しようとしているステージのレビュー方針を定義から解決する（段 11 の材料）。
     ///
     /// `--review` override は intent が生値で運ぶ。閉集合で受けて鋳造しているので、ここで
@@ -333,20 +261,17 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     ) -> Result<Option<ReviewPolicy>, CommitError> {
         let definition = self
             .workflow_definition_repository
-            .find_by_id(intent.definition_id())
+            .find_for_intent(intent)
             .await
             .map_err(CommitError::DefinitionRepository)?;
-        let review_override = intent
-            .review()
-            .map(|raw| {
-                ReviewCapValue::parse(raw)
-                    .map_err(|_| CommitError::CorruptReviewOverride(raw.to_string()))
-            })
-            .transpose()?;
-        definition
-            .review_policy(stage, intent.scope(), review_override)
-            .map_err(|_| CommitError::UnknownDefinitionStage {
-                stage: stage.clone(),
+        intent
+            .resolve_review_policy(&definition, stage)
+            .map_err(|error| match error {
+                IntentReviewError::UnknownStage => CommitError::UnknownDefinitionStage {
+                    stage: stage.clone(),
+                },
+                IntentReviewError::InvalidOverride(raw) => CommitError::CorruptReviewOverride(raw),
+                error @ IntentReviewError::DefinitionMismatch => CommitError::ReviewPolicy(error),
             })
     }
 

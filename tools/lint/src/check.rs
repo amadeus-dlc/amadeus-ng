@@ -14,6 +14,8 @@
 //! クエリ側 `XxxDao` に収まっているか (造語ポートの禁止、gateway-taxonomy.md §1/§3/§5)。
 //! R7 はその裏返しで、コマンド側で外界に触ってよいのは Repository 実装だけ、という責務境界を
 //! fs / 乱数 / プロセス / ネットワークの使用箇所で押さえる (gateway-taxonomy.md §1)。
+//! R8 は [`crate::domain_getter`] に分離し、use-case 層からのドメイン getter 呼出し自体を
+//! 禁止する。複数ファイルの型・getter 定義を索引するため、CLI が本検査の所見と合流する。
 
 use std::collections::BTreeSet;
 
@@ -159,7 +161,7 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
 }
 
 /// `/tests/` を含むパスは統合テスト。
-fn is_test_path(path: &str) -> bool {
+pub(super) fn is_test_path(path: &str) -> bool {
     path.contains("/tests/") || path.starts_with("tests/")
 }
 
@@ -251,7 +253,7 @@ fn one_public_type_findings(file: &syn::File) -> Vec<Finding> {
 /// 問わず、何か書いてあることだけを見る — 理由の**質**は機械には測れないのでレビューの仕事。
 ///
 /// rule-id が一致しない allow は抑制しない (別ルールの許可で塗り潰さないため)。
-fn is_suppressed(lines: &[&str], finding: &Finding) -> bool {
+pub(super) fn is_suppressed(lines: &[&str], finding: &Finding) -> bool {
     if finding.line < 2 {
         return false;
     }
@@ -746,7 +748,7 @@ fn collect_checkbox_variants_in_tokens(tokens: &TokenStream, out: &mut BTreeSet<
 /// `#[cfg(test)]` (`#[cfg(all(test, ..))]` を含む) が付いているか。
 /// 属性のトークン列に裸の識別子 `test` が現れるかで判定する
 /// (`cfg(feature = "test")` の `"test"` は Literal なので誤検出しない)。
-fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
+pub(super) fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
         if !attr.path().is_ident("cfg") {
             return false;
@@ -787,7 +789,7 @@ fn stream_has_test_outside_not(tokens: &TokenStream) -> bool {
 }
 
 /// `syn::Item` は `#[non_exhaustive]` なので、属性を持つ既知の変種だけを列挙する。
-fn item_attrs(item: &syn::Item) -> &[syn::Attribute] {
+pub(super) fn item_attrs(item: &syn::Item) -> &[syn::Attribute] {
     match item {
         syn::Item::Const(i) => &i.attrs,
         syn::Item::Enum(i) => &i.attrs,
@@ -808,7 +810,7 @@ fn item_attrs(item: &syn::Item) -> &[syn::Attribute] {
     }
 }
 
-fn impl_item_attrs(item: &syn::ImplItem) -> &[syn::Attribute] {
+pub(super) fn impl_item_attrs(item: &syn::ImplItem) -> &[syn::Attribute] {
     match item {
         syn::ImplItem::Const(i) => &i.attrs,
         syn::ImplItem::Fn(i) => &i.attrs,

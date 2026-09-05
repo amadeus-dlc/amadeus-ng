@@ -32,6 +32,8 @@
 
 use std::io::ErrorKind;
 
+use core_command_domain::orchestration::Intent;
+
 use core_command_domain::workflow_definition::{
     WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
@@ -317,6 +319,13 @@ where
             P = WorkflowDefinitionEventDto,
         >,
 {
+    async fn find_for_intent(
+        &self,
+        intent: &Intent,
+    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
+        self.find_by_id(intent.definition_id()).await
+    }
+
     async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
@@ -468,6 +477,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
+    use core_command_domain::orchestration::{IntentId, StartRequest, WorkspaceScan};
     use core_command_domain::workflow_definition::{
         CompiledDefinition, CompiledDefinitionId, DefinitionRevision, ExecutionKind, PhaseId,
         Redefined, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber,
@@ -785,6 +795,36 @@ mod tests {
                 }
             ),
             "照合の食い違いは破損として止まる: {failure:?}"
+        );
+
+        let (intent, _) = Intent::create(
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+            &definition,
+            StartRequest::new("classic", "contract"),
+            WorkspaceScan::new(
+                core_command_domain::workflow_definition::BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("走査結果"),
+            at(),
+        )
+        .expect("定義を参照する intent");
+        let related_failure = workflow_definition_repository
+            .find_for_intent(&intent)
+            .await
+            .expect_err("関連取得も同じ破損を伝播する");
+        assert!(
+            matches!(&related_failure, RepositoryError::Corrupt { id: got, seq_nr: Some(2), .. } if *got == id())
+        );
+        assert_eq!(
+            std::error::Error::source(&related_failure)
+                .expect("原因を保持する")
+                .to_string(),
+            std::error::Error::source(&failure)
+                .expect("ID 取得の原因")
+                .to_string(),
         );
     }
 

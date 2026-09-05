@@ -8,12 +8,83 @@
 //! 破損 (`MissingSnapshot` / 復号不能な行など) は、行を直接壊す手段がバックエンドごとに
 //! 違い、ポートの面からは作れない。契約テストからは外す。
 
+use core_command_domain::orchestration::{Created, Intent, StartRequest};
+use core_command_domain::workflow_definition::{
+    CompiledDefinition, CompiledDefinitionId, WorkflowDefinition,
+};
 use core_command_use_case::orchestration::{RepositoryError, WorkflowDefinitionRepository};
 
 use super::{
-    DefinitionStoreFixture, absent_definition_id, at, definition_bundle, definition_genesis,
-    definition_id, store_definition_genesis,
+    DefinitionStoreFixture, absent_definition_id, at, definition_bundle, definition_content,
+    definition_genesis, definition_id, intent, intent_event_id, intent_id, scan, stages,
+    store_definition_genesis,
 };
+
+/// intent の参照先を再構成し、intent 作成後の定義の改訂も反映する。
+pub(crate) async fn find_for_intent_returns_the_current_definition<F: DefinitionStoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    let (graph, grid, scopes) = definition_content(7);
+    let other_bundle = CompiledDefinition::compile(
+        CompiledDefinitionId::parse("kiro").expect("別の系譜"),
+        graph,
+        grid,
+        scopes,
+    )
+    .0;
+    let (other, created) = WorkflowDefinition::define(absent_definition_id(), &other_bundle, at())
+        .expect("別の定義を確立する");
+    repository
+        .store(&created, &other)
+        .await
+        .expect("別の定義も保存する");
+    let mut expected = store_definition_genesis(&mut repository).await;
+    let event = expected
+        .redefine(&definition_bundle(5), at())
+        .expect("改訂する");
+    repository
+        .store(&event, &expected)
+        .await
+        .expect("改訂を保存する");
+
+    let found = fixture
+        .reopen(&repository)
+        .find_for_intent(&intent())
+        .await
+        .expect("intent の参照先を再構成する");
+
+    assert_eq!(found.id(), &definition_id());
+    assert_eq!(found.revision(), definition_bundle(5).revision());
+    assert_eq!(found.seq_nr(), 2);
+}
+
+/// 関連先が保存されていなければ、その定義の ID を伴う `NotFound` を返す。
+pub(crate) async fn find_for_intent_reports_the_missing_definition<F: DefinitionStoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    store_definition_genesis(&mut repository).await;
+    let intent = Intent::from((
+        Created::new(
+            intent_event_id(),
+            intent_id(),
+            absent_definition_id(),
+            definition_bundle(3).revision().clone(),
+            StartRequest::new("classic", "contract"),
+            stages(),
+            scan(),
+        ),
+        at(),
+    ));
+
+    let error = repository
+        .find_for_intent(&intent)
+        .await
+        .expect_err("参照先は未保存");
+
+    assert!(matches!(error, RepositoryError::NotFound { id } if id == absent_definition_id()));
+}
 
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
 pub(crate) async fn open_twice_yields_independent_empty_stores<F: DefinitionStoreFixture>(

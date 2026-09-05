@@ -28,6 +28,8 @@ pub enum ReviewLogError {
     UnknownStage(StageSlug),
     /// intent が運ぶ `--review` の値が閉集合の外だった（壊れた歴史）。
     CorruptReviewOverride(String),
+    /// 関連付けた定義と依頼が一致しない等、レビュー方針の解決拒否。
+    ReviewPolicy(core_command_domain::orchestration::IntentReviewError),
     /// 集約がコマンドを拒否した（そのまま伝播）。
     Command {
         /// 拒否の対象ステージ。
@@ -46,13 +48,14 @@ impl fmt::Display for ReviewLogError {
                 write!(f, "workflow definition repository: {error}")
             }
             ReviewLogError::UnknownStage(stage) => {
-                write!(f, "the definition has no stage {}", stage.as_str())
+                write!(f, "the definition has no stage {stage}")
             }
             ReviewLogError::CorruptReviewOverride(raw) => {
                 write!(f, "corrupt review override: {raw}")
             }
+            ReviewLogError::ReviewPolicy(error) => write!(f, "review policy: {error}"),
             ReviewLogError::Command { stage, error } => {
-                write!(f, "command for {}: {error}", stage.as_str())
+                write!(f, "command for {stage}: {error}")
             }
         }
     }
@@ -65,6 +68,7 @@ impl std::error::Error for ReviewLogError {
             ReviewLogError::Repository(error) => Some(error),
             ReviewLogError::IntentRepository(error) => Some(error),
             ReviewLogError::DefinitionRepository(error) => Some(error),
+            ReviewLogError::ReviewPolicy(error) => Some(error),
             ReviewLogError::Command { error, .. } => Some(error),
             // ユースケース自身の失敗 — 材料は自分の `Display` にある。
             ReviewLogError::UnknownStage(_) | ReviewLogError::CorruptReviewOverride(_) => None,
