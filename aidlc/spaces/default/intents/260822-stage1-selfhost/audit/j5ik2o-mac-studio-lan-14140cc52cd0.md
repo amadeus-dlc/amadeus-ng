@@ -4200,3 +4200,122 @@
 **Message**: 一本化が完了しました。正規APIは次の1本です。\n\n```rust\nrecord_single_stage_run(\n    &mut self,\n    intent: &Intent,\n    stage: &StageSlug,\n    occurred_at: DateTime<Utc>,\n) -> Result<IntentExecutionEvent, SingleStageRunRe
 
 ---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T14:33:19Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-7f62-70c1-a1df-a43e9b177a55
+**Message**: 相対カバレッジゲートは **PASS** しました。\n\n| 計測 | 行カバレッジ |\n|---|---:|\n| 初回head | 98.558694% |\n| base | 98.647138% |\n| 最終head | **98.661010%** |\n\nbase比 **+0.013872ポイント**。許容誤差に頼らず上回りました。\n\n公開操作から返る拒否の診断・型付き原因連鎖・状態不変、誤っ
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T14:35:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-b036-7930-a36a-9584274cc380
+**Message**: 指定worktreeで完了しました。**改善しましたが、相対ゲートは未達です。**\n\n| 条件 | Line coverage |\n|---|---:|\n| 改善前 | 98.646714% |\n| 改善後 | 98.830135% |\n| 固定base `001b989b` | 99.130435% |\n\n82行の未到達を解消（605→523行）。許容0.01ppで通すには、現在の分母ではさらに
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T14:43:09Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-b036-7930-a36a-9584274cc380
+**Message**: 整理を完了しました。**保守性とカバレッジは改善しましたが、相対ゲートは未達です。**\n\n- 53個のSQLiteエラー変換クロージャを`SqliteResultExt::at_store`へ集約。分類・パス・SQL・トランザクション境界を維持。\n- 数値変換の同一エラー処理を集約。\n- steeringの実SQLite契約2件を先に通し、包含確認済みのFakeReader自己検証8件を退役。\n-
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T14:43:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: 01a0704a-64d7-74e3-917d-a3ec351c110e
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n指定worktreeの差分に重大な問題は見つかりませんでした。\n\n- `at_store` は従来と同じ `io_kind`・対象パスでエラーを変換し、SQL・Tx順序・成功値を変更していません。\n- 数値変換失敗も従来どおり `InvalidData` です。\n- 削除された8件はFakeReade
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T14:53:41Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-b036-7930-a36a-9584274cc380
+**Message**: 実装整理と競合検証を完了しました。\n\n- `strip_prefix`／`strip_suffix`で添字計算と二重検査を置換。ファイル保全規則とエラー分類を維持。\n- FSのI/O変換を`at_output`へ集約。\n- `prepare`とprivateな`publish_prepared`を分離し、実SQLiteで完了・置換・新世代・位置前進の4競合を検証。\n\nRMU461テスト、Clipp
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T15:00:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-b036-7930-a36a-9584274cc380
+**Message**: 残る5契約を確認しました。\n\n- 実際のConflict／Ioで診断文字列と`Error::source`を検証。\n- REAL／BLOB破損時の公開拒否と、再生成後の再開を検証。\n- SAVEPOINT比較の途中失敗で共有行・head・CPを保持。\n- 古いpredecessorに基づく解決計画を拒否。\n- CP書込み時のhead喪失でDBをロールバックし、保存済み計画から再開。\n\n**RMU全
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-05T15:09:33Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T15:12:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: 01a0704a-64d7-74e3-917d-a3ec351c110e
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n確認範囲に重大な欠陥は見つかりませんでした。\n\n- `next` / `resume` は復旧失敗を `error` directiveへ変換し、通常の読取へ進みません。変更対象のmutation経路もコマンド実行前に `refused` を返します。\n- pending計画は保存済み対象・cutを検
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T15:15:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-7f62-70c1-a1df-a43e9b177a55
+**Message**: 完了し、**編集を停止しました**。変更は [intent_lifecycle.rs](/Users/j5ik2o/orca/workspaces/amadeus-ng/fix-read-model-publication-recovery/modules/app/aidlc/tests/intent_lifecycle.rs) のみです。\n\n- 9件の旧期待を新契約へ更新し、原因・完全パス・イベ
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T15:16:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-b036-7930-a36a-9584274cc380
+**Message**: 5文書の同期を完了し、**編集を停止しました**。\n\n同呼出し内の最大2計画、後続失敗時の旧commit保持、CLIの失敗伝播、追加契約試験を反映しました。過去の数値・Review判定は保持し、最新workspace／coverageは未測定と明記しています。\n\n差分検査は成功。親側でcommit／rebaseへ進めます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T15:19:19Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: worker
+**Agent ID**: 01a071d7-7f62-70c1-a1df-a43e9b177a55
+**Message**: 完了し、**編集を停止しました**。変更は [next_branches.rs](/Users/j5ik2o/orca/workspaces/amadeus-ng/fix-read-model-publication-recovery/modules/app/aidlc/tests/next_branches.rs) のみです。\n\n4件の診断期待を更新し、原因分類・完全パス・イベント非追記を検証し
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-05T21:56:07Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-05T21:56:43Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-05T22:22:17Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---

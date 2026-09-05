@@ -15,13 +15,13 @@ entities:
   - name: JsonValue
     description: "メモリ上の JSON 値。オブジェクトのキー順を保持する（JS の挿入順に対応）。canon-json が読み書きの唯一の経路"
     attributes:
-      - { name: kind, type: enum, required: true, allowed_values: [null, boolean, number, string, array, object] }
+      - { name: kind, type: enum, required: true, allowed_values: ["null", boolean, number, string, array, object] }
       - { name: number_repr, type: enum, required: false, allowed_values: [integer, float], constraints: "kind = number のとき必須。契約型の数値は integer に固定（ADR 0001 決定 4）" }
       - { name: integer_value, type: integer(i64/u64), required: false, constraints: "非負の整数は u64、負の整数は i64 で保持する。小数・非有限は float。保持型と出力表記は別で、絶対値が 2^53 を超える整数の出力は BR1.3 の JS 互換丸めを適用" }
       - { name: float_value, type: float(f64), required: false, constraints: "非有限（NaN / ±Infinity）は直列化時に null" }
       - { name: string_value, type: string(UTF-8), required: false, constraints: "Unicode scalar value の列。対をなすサロゲートのJSONエスケープは単一の文字へ復号する。孤立サロゲートは保持できず、読取時に ParseError::Syntax で拒否（BR1.4）" }
       - { name: items, type: list<JsonValue>, required: false, constraints: "kind = array" }
-      - { name: members, type: ordered_list<(key: string, value: JsonValue)>, required: false, unique: key, constraints: "kind = object。順序 = 構築順（挿入順）" }
+      - { name: members, type: "ordered_list<(key: string, value: JsonValue)>", required: false, unique: key, constraints: "kind = object。順序 = 構築順（挿入順）" }
     constraints:
       - "members のキーは一意"
       - "構築後は不変（値オブジェクト）"
