@@ -27,7 +27,7 @@
 是正例（2026-09-05）: `CommitVerdictUseCase` は入力getterを読み直して遷移を組み立てず、
 `ReportRequest::for_retry_at` と `IntentExecution::apply_report` に任せる。
 `Intent::resolve_review_policy` が依頼のスコープと指定を使ってレビュー方針を判断し、
-`record_single_stage_run_named` がステージ名から実行対象を解決する。
+`record_single_stage_run` がステージ名から実行対象を解決する。添字を取る旧署名や別名は残さず、呼出側も一斉に改める。
 ユースケースは判断結果や拒否の文脈を受け取り、保存と再試行を進行管理する。
 関連取得の `find_for_execution` / `find_for_intent` はRepositoryへの依頼であり、
 adapterが参照IDを解決する。ここへドメイン判断を移してはならない。

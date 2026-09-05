@@ -53,6 +53,6 @@ getterの呼出しをユースケース内の別関数に移す、取得用メ�
 
 是正では、再試行対象の固定を `ReportRequest::for_retry_at`、レビュー方針を
 `Intent::resolve_review_policy`、報告の適用を `IntentExecution::apply_report`、
-名指しの隔離実行を `record_single_stage_run_named` へ任せた。報告判断・コマンド拒否は、
+名指しの隔離実行を `record_single_stage_run` へ任せた。報告判断・コマンド拒否は、
 応答に必要な文脈もドメイン側で生成する。関連参照の取得はRepositoryへ依頼し、
 IDを読む処理はinterface-adapter側に置いた。検出ルールと例外設定は緩めていない。

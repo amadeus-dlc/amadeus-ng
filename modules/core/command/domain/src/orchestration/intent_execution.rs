@@ -56,7 +56,6 @@ use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
-use super::named_stage_run_error::NamedStageRunError;
 use super::next_decision::NextDecision;
 use super::next_request::NextRequest;
 use super::report_commit_error::ReportCommitError;
@@ -66,6 +65,7 @@ use super::report_refusal::ReportRefusal;
 use super::report_request::ReportRequest;
 use super::review_attempt::ReviewAttempt;
 use super::review_verdict::ReviewVerdict;
+use super::single_stage_run_refusal::SingleStageRunRefusal;
 use super::skeleton_stance::SkeletonStance;
 use super::skeleton_stance_refusal::SkeletonStanceRefusal;
 use super::stage_entry::StageEntry;
@@ -1185,25 +1185,6 @@ impl IntentExecution {
         )
     }
 
-    /// 計画から名指しされたステージを解決し、隔離実行の事実を記録する。
-    ///
-    /// # Errors
-    /// 未知ステージ、intent の取り違え、initialization ステージを拒否する。
-    pub fn record_single_stage_run_named(
-        &mut self,
-        intent: &Intent,
-        stage: &StageSlug,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<IntentExecutionEvent, NamedStageRunError> {
-        let position = self
-            .stage_keys
-            .iter()
-            .position(|key| key.slug() == stage)
-            .ok_or(NamedStageRunError::UnknownStage)?;
-        self.record_single_stage_run(intent, StageIndex::new(position), occurred_at)
-            .map_err(NamedStageRunError::Command)
-    }
-
     /// 隔離実行の記録 — `SingleStageRunCommitted` (仕様 I10 / #73)。
     ///
     /// # 本流の状態は 1 つも動かない
@@ -1219,32 +1200,68 @@ impl IntentExecution {
     /// `handleSingleReport` は状態ファイルを 1 度も読まず、監査の対を書くだけだからである
     /// (ピン `3c3146cf` `:5261-5361`)。取り違えだけは他コマンドと同じく入口で照合する。
     ///
-    /// 名指しの実行は `record_single_stage_run_named` が計画から対象を解決する。
+    /// ステージ名からこの実行の対象を解決し、コマンド自身が受理条件を検査する。
     ///
     /// # Errors
     ///
-    /// intent の取り違え (`IntentMismatch`)、initialization フェーズ・範囲外のステージ
-    /// (`InvalidTarget`)。
+    /// intent の取り違え (`Command(IntentMismatch)`)、未知ステージ (`UnknownStage`)、
+    /// initialization フェーズ (`Command(InvalidTarget)`) を拒否する。
+    ///
+    /// # 公開境界
+    ///
+    /// 対象はステージ名で渡す。添字を受け取る公開コマンドは存在しない。
+    ///
+    /// ```compile_fail
+    /// use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex};
+    /// use chrono::{DateTime, Utc};
+    /// fn indexed(execution: &mut IntentExecution, intent: &Intent, stage: StageIndex, at: DateTime<Utc>) {
+    ///     execution.record_single_stage_run(intent, stage, at).unwrap();
+    /// }
+    /// ```
+    ///
+    /// 名指し専用の別名も公開しない。
+    ///
+    /// ```compile_fail
+    /// use core_command_domain::orchestration::{Intent, IntentExecution};
+    /// use core_command_domain::workflow_definition::StageSlug;
+    /// use chrono::{DateTime, Utc};
+    /// fn alias(execution: &mut IntentExecution, intent: &Intent, stage: &StageSlug, at: DateTime<Utc>) {
+    ///     execution.record_single_stage_run_named(intent, stage, at).unwrap();
+    /// }
+    /// ```
+    ///
+    /// 拒否型にも旧名の別名を設けない。
+    ///
+    /// ```compile_fail
+    /// use core_command_domain::orchestration::NamedStageRunError;
+    /// ```
     pub fn record_single_stage_run(
         &mut self,
         intent: &Intent,
-        stage: StageIndex,
+        stage: &StageSlug,
         occurred_at: DateTime<Utc>,
-    ) -> Result<IntentExecutionEvent, CommandError> {
+    ) -> Result<IntentExecutionEvent, SingleStageRunRefusal> {
         if !self.matches(intent) {
-            return Err(CommandError::IntentMismatch);
+            return Err(SingleStageRunRefusal::Command(CommandError::IntentMismatch));
         }
-        // 非ゲート = initialization フェーズ (BR1.3)。範囲外もここで落ちる。
-        self.require_gated(stage)?;
+        let position = self
+            .stage_keys
+            .iter()
+            .position(|key| key.slug() == stage)
+            .ok_or(SingleStageRunRefusal::UnknownStage)?;
+        let target = StageIndex::new(position);
+        self.require_gated(target)
+            .map_err(SingleStageRunRefusal::Command)?;
         let material = SingleStageRunCommitted::new(
             IntentExecution::next_event_id(),
             self.id.clone(),
-            self.slug_of(stage)?,
+            stage.clone(),
         );
         self.commit(
             IntentExecutionEvent::SingleStageRunCommitted(material),
             occurred_at,
         )
+        .map_err(SingleStageRunRefusal::Command)
     }
 
     /// conductor が分類した walking-skeleton stance の記録 — `SkeletonStanceRecorded` (#73)。
@@ -2559,15 +2576,6 @@ mod tests {
             self.execution.skeleton_gate_stage(&self.intent)
         }
 
-        fn record_single_stage_run(
-            &mut self,
-            stage: StageIndex,
-            occurred_at: DateTime<Utc>,
-        ) -> Result<IntentExecutionEvent, CommandError> {
-            self.execution
-                .record_single_stage_run(&self.intent, stage, occurred_at)
-        }
-
         fn record_skeleton_stance(
             &mut self,
             stance: SkeletonStance,
@@ -2753,7 +2761,7 @@ mod tests {
         let mut run = all_exec(3);
         let event = run
             .execution
-            .record_single_stage_run_named(&run.intent, &slug(2), occurred())
+            .record_single_stage_run(&run.intent, &slug(2), occurred())
             .unwrap();
         let IntentExecutionEvent::SingleStageRunCommitted(committed) = event else {
             panic!("single run expected")
@@ -2762,8 +2770,8 @@ mod tests {
         assert_eq!(run.cursor(), StageIndex::new(1));
         assert_eq!(
             run.execution
-                .record_single_stage_run_named(&run.intent, &slug(99), occurred()),
-            Err(NamedStageRunError::UnknownStage)
+                .record_single_stage_run(&run.intent, &slug(99), occurred()),
+            Err(SingleStageRunRefusal::UnknownStage)
         );
     }
 
@@ -3881,7 +3889,10 @@ mod tests {
         let before = w.execution.clone();
         let at_now = *before.last_updated_at();
 
-        let event = w.record_single_stage_run(at(&w, 2), at_now).unwrap();
+        let event = w
+            .execution
+            .record_single_stage_run(&w.intent, &slug(2), at_now)
+            .unwrap();
 
         let IntentExecutionEvent::SingleStageRunCommitted(committed) = &event else {
             panic!("SingleStageRunCommitted を期待した");
@@ -3905,7 +3916,8 @@ mod tests {
         assert_eq!(completed.status(), Status::Completed);
         assert!(
             completed
-                .record_single_stage_run(at(&completed, 1), occurred())
+                .execution
+                .record_single_stage_run(&completed.intent, &slug(1), occurred())
                 .is_ok()
         );
 
@@ -3914,7 +3926,8 @@ mod tests {
         assert!(parked.parked_active());
         assert!(
             parked
-                .record_single_stage_run(at(&parked, 2), occurred())
+                .execution
+                .record_single_stage_run(&parked.intent, &slug(2), occurred())
                 .is_ok()
         );
 
@@ -3924,33 +3937,40 @@ mod tests {
             .unwrap();
         assert!(
             autonomous
-                .record_single_stage_run(at(&autonomous, 2), occurred())
+                .execution
+                .record_single_stage_run(&autonomous.intent, &slug(2), occurred())
                 .is_ok()
         );
     }
 
     #[test]
-    fn an_isolated_run_refuses_initialization_out_of_range_and_a_foreign_intent() {
-        let mut w = all_exec(3);
+    fn an_isolated_run_refuses_initialization_unknown_stages_and_a_foreign_intent() {
+        let mut run = all_exec(3);
+        let before = run.execution.clone();
         assert_eq!(
-            w.record_single_stage_run(at(&w, 0), occurred())
-                .unwrap_err(),
-            CommandError::InvalidTarget(at(&w, 0)),
-            "initialization は隔離実行の対象にならない"
-        );
-        let out_of_range = StageIndex::new(99);
-        assert_eq!(
-            w.record_single_stage_run(out_of_range, occurred())
-                .unwrap_err(),
-            CommandError::InvalidTarget(out_of_range)
+            run.execution
+                .record_single_stage_run(&run.intent, &slug(0), occurred()),
+            Err(SingleStageRunRefusal::Command(CommandError::InvalidTarget(
+                StageIndex::new(0)
+            )))
         );
         assert_eq!(
-            w.execution
-                .record_single_stage_run(&foreign_plan(3), at(&w, 1), occurred())
-                .unwrap_err(),
-            CommandError::IntentMismatch
+            run.execution
+                .record_single_stage_run(&run.intent, &slug(99), occurred()),
+            Err(SingleStageRunRefusal::UnknownStage)
         );
-        assert_eq!(w.seq_nr(), 1, "拒否では歴史が伸びない");
+        assert_eq!(
+            run.execution
+                .record_single_stage_run(&foreign_plan(3), &slug(1), occurred()),
+            Err(SingleStageRunRefusal::Command(CommandError::IntentMismatch))
+        );
+        assert_eq!(
+            run.execution
+                .record_single_stage_run(&foreign_plan(3), &slug(99), occurred()),
+            Err(SingleStageRunRefusal::Command(CommandError::IntentMismatch)),
+            "他人の計画は名前の解決より先に拒否する"
+        );
+        assert_eq!(run.execution, before, "拒否は履歴も本流も変えない");
     }
 
     #[test]
@@ -6043,7 +6063,7 @@ mod tests {
 
         let intent = run.intent.clone();
         run.execution
-            .record_single_stage_run(&intent, StageIndex::new(2), occurred())
+            .record_single_stage_run(&intent, &slug(2), occurred())
             .expect("隔離実行は記録できる");
         run.execution
             .switch_autonomy(
@@ -6710,7 +6730,8 @@ mod tests {
     fn the_frame_empty_commands_leave_the_receipt_alone() {
         let mut run = practices_run(3);
         run.affirm_practices(&promotion(), occurred()).unwrap();
-        run.record_single_stage_run(StageIndex::new(2), occurred())
+        run.execution
+            .record_single_stage_run(&run.intent, &slug(2), occurred())
             .unwrap();
         run.park(occurred()).unwrap();
         run.unpark(occurred()).unwrap();

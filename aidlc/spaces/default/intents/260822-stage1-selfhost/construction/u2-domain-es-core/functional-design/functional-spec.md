@@ -47,8 +47,7 @@ Intent::create(id: IntentId, definition: &WorkflowDefinition,
 | jump(&Intent, StageIndex, t) / jump_resolve(&Intent, StageIndex) | Jumped / Result<JumpDirection, CommandError> |
 | park(&Intent, t) / unpark(&Intent, t) / recompose(&Intent, &[StageIndex], t) | Parked / Unparked / Recomposed |
 | switch_autonomy(&Intent, mode, &HumanTurns, guard: bool, t) | AutonomyModeSet |
-| record_single_stage_run(&Intent, StageIndex, t) | SingleStageRunCommitted |
-| record_single_stage_run_named(&Intent, &StageSlug, t) | Result<IntentExecutionEvent, NamedStageRunError>。名指しの対象を自己の添字帳で解決して隔離実行を記録 |
+| record_single_stage_run(&Intent, &StageSlug, t) | Result<IntentExecutionEvent, SingleStageRunRefusal>。名指しの対象を自己の添字帳で解決して隔離実行を記録 |
 | record_skeleton_stance(&Intent, stance, t) | Result<IntentExecutionEvent, SkeletonStanceRefusal>。拒否時はstage・scope・CommandErrorを文脈として返す |
 | apply_report(&Intent, &ReportRequest, &[TransitionStep], Option<&ReviewPolicy>, t) | Result<IntentExecutionEvent, ReportCommitError>。報告適用の段分岐と入力の正規化を所有し、成功時は単一イベント |
 | report_dispatch(&Intent, &ReportRequest) | ReportDecisionのCommit / NoOpに、判断対象のscopeも含めて返す |

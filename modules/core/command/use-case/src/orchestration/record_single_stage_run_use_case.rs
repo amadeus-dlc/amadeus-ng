@@ -1,7 +1,7 @@
 //! `RecordSingleStageRunUseCase` — 隔離実行 (`report --single`) の対を記録する（#73）。
 
 use chrono::{DateTime, Utc};
-use core_command_domain::orchestration::{IntentExecutionId, NamedStageRunError};
+use core_command_domain::orchestration::{IntentExecutionId, SingleStageRunRefusal};
 use core_command_domain::workflow_definition::StageSlug;
 
 use super::port::IntentExecutionRepository;
@@ -108,12 +108,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository> RecordSingleStageRunUseC
             .find_for_execution(&aggregate)
             .await?;
         let event = aggregate
-            .record_single_stage_run_named(&intent, stage, occurred_at)
+            .record_single_stage_run(&intent, stage, occurred_at)
             .map_err(|error| match error {
-                NamedStageRunError::UnknownStage => SingleStageRunError::UnknownStage {
+                SingleStageRunRefusal::UnknownStage => SingleStageRunError::UnknownStage {
                     slug: stage.clone(),
                 },
-                NamedStageRunError::Command(error) => SingleStageRunError::Command {
+                SingleStageRunRefusal::Command(error) => SingleStageRunError::Command {
                     stage: stage.clone(),
                     error,
                 },
