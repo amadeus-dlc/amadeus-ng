@@ -783,15 +783,41 @@ impl Workspace {
         self.path("aidlc/spaces/default/intents/.aidlc-store.sqlite")
     }
 
-    /// ストアの中身を SQLite でないバイト列に置き換える (開けるが引けない状態)。
-    fn break_store(&self) {
-        fs::write(self.store_path(), b"not a sqlite database at all").expect("ストア");
+    fn journal_rows(&self) -> i64 {
+        rusqlite::Connection::open(self.store_path())
+            .expect("真実記録を開く")
+            .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+            .expect("イベント数")
     }
 
-    /// ストアの置き場をディレクトリで塞ぐ (開くことすらできない状態)。
-    fn block_store(&self) {
-        fs::remove_file(self.store_path()).expect("ストア");
+    /// 真実記録を保持し、ストア位置へ SQLite でないバイト列を置く。
+    fn break_store(&self) -> PathBuf {
+        let saved = self.store_path().with_extension("preserved.sqlite");
+        fs::rename(self.store_path(), &saved).expect("障害前の真実記録を保持");
+        fs::write(self.store_path(), b"not a sqlite database at all").expect("ストア");
+        saved
+    }
+
+    /// 真実記録を保持し、ストアの置き場をディレクトリで塞ぐ。
+    fn block_store(&self) -> PathBuf {
+        let saved = self.store_path().with_extension("preserved.sqlite");
+        fs::rename(self.store_path(), &saved).expect("障害前の真実記録を保持");
         fs::create_dir(self.store_path()).expect("塞ぐ");
+        saved
+    }
+
+    fn restore_store(&self, saved: &Path) {
+        if self.store_path().is_dir() {
+            fs::remove_dir(self.store_path()).expect("障害ディレクトリを除去");
+        } else {
+            assert_eq!(
+                fs::read(self.store_path()).expect("破損内容"),
+                b"not a sqlite database at all",
+                "失敗した読み取りは破損ファイルを書き換えない"
+            );
+            fs::remove_file(self.store_path()).expect("破損ファイルを除去");
+        }
+        fs::rename(saved, self.store_path()).expect("真実記録を戻す");
     }
 }
 
@@ -800,6 +826,7 @@ impl Workspace {
 async fn an_invalid_active_space_names_the_cursor_file_to_fix() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
+    let before = workspace.journal_rows();
     // record は解決できるが空間名が通らない状態にする（定義の下準備ではなく、引当の口を
     // 開く段で止まることを見るため）。
     let escaped = workspace.path("aidlc/escape/intents");
@@ -811,11 +838,15 @@ async fn an_invalid_active_space_names_the_cursor_file_to_fix() {
 
     assert_eq!(kind(&directive), "error");
     let message = field(&directive, "message");
-    assert!(
-        message.starts_with("The active space \"../escape\" is not a valid space name."),
-        "{message}"
+    assert_eq!(
+        message,
+        "aidlc-orchestrate: The active space \"../escape\" is not a valid space name. Fix aidlc/active-space (or remove it to use the default space), then run the command again."
     );
-    assert!(message.contains("aidlc/active-space"), "{message}");
+    assert_eq!(workspace.journal_rows(), before, "既定空間へ書き込まない");
+    assert!(
+        !escaped.join(".aidlc-store.sqlite").exists(),
+        "不正な空間にもストアを作らない"
+    );
 }
 
 /// リードモデルを開けなければ、所在と分類を材料に「引けない」と答える。
@@ -823,17 +854,30 @@ async fn an_invalid_active_space_names_the_cursor_file_to_fix() {
 async fn a_store_that_cannot_be_opened_is_reported_with_its_path() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
-    workspace.block_store();
-
-    let directive = workspace.next(&[]).await;
-
-    assert_eq!(kind(&directive), "error");
-    let message = field(&directive, "message");
-    assert!(
-        message.starts_with("Read model not readable at "),
-        "{message}"
+    let before = workspace.journal_rows();
+    let saved = workspace.block_store();
+    let completion = workspace.invoke("aidlc-orchestrate", &["next"]).await;
+    assert_eq!(
+        completion.code(),
+        0,
+        "復旧拒否はerror directive: {completion:?}"
     );
-    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
+    assert_eq!(completion.diagnostic(), None);
+    let directive = parse(completion.line().expect("error directive")).expect("JSON");
+    assert_eq!(kind(&directive), "error");
+    assert_eq!(
+        field(&directive, "message"),
+        format!(
+            "aidlc-orchestrate: journal: io: NotFound at {}",
+            workspace.store_path().display()
+        )
+    );
+    workspace.restore_store(&saved);
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "復旧拒否でイベントを追記しない"
+    );
 }
 
 /// 開けても引けなければ、不在ではなく読取失敗を答える。
@@ -841,14 +885,29 @@ async fn a_store_that_cannot_be_opened_is_reported_with_its_path() {
 async fn a_store_that_opens_but_cannot_be_read_is_a_read_failure() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
-    workspace.break_store();
-
-    let directive = workspace.next(&[]).await;
-
+    let before = workspace.journal_rows();
+    let saved = workspace.break_store();
+    let completion = workspace.invoke("aidlc-orchestrate", &["next"]).await;
+    assert_eq!(
+        completion.code(),
+        0,
+        "復旧拒否はerror directive: {completion:?}"
+    );
+    assert_eq!(completion.diagnostic(), None);
+    let directive = parse(completion.line().expect("error directive")).expect("JSON");
     assert_eq!(kind(&directive), "error");
-    assert!(
-        field(&directive, "message").starts_with("Read model not readable at "),
-        "{directive:?}"
+    assert_eq!(
+        field(&directive, "message"),
+        format!(
+            "aidlc-orchestrate: journal: io: InvalidData at {}",
+            workspace.store_path().display()
+        )
+    );
+    workspace.restore_store(&saved);
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "復旧拒否でイベントを追記しない"
     );
 }
 
@@ -857,14 +916,31 @@ async fn a_store_that_opens_but_cannot_be_read_is_a_read_failure() {
 async fn an_unreadable_scope_catalog_stops_the_explicit_scope_check() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
-    workspace.break_store();
-
-    let directive = workspace.next(&["--scope", "express"]).await;
-
+    let before = workspace.journal_rows();
+    let saved = workspace.break_store();
+    let completion = workspace
+        .invoke("aidlc-orchestrate", &["next", "--scope", "express"])
+        .await;
+    assert_eq!(
+        completion.code(),
+        0,
+        "復旧拒否はerror directive: {completion:?}"
+    );
+    assert_eq!(completion.diagnostic(), None);
+    let directive = parse(completion.line().expect("error directive")).expect("JSON");
     assert_eq!(kind(&directive), "error");
-    assert!(
-        field(&directive, "message").starts_with("Read model not readable at "),
-        "{directive:?}"
+    assert_eq!(
+        field(&directive, "message"),
+        format!(
+            "aidlc-orchestrate: journal: io: InvalidData at {}",
+            workspace.store_path().display()
+        )
+    );
+    workspace.restore_store(&saved);
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "復旧拒否でイベントを追記しない"
     );
 }
 
