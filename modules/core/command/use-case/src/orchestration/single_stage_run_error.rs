@@ -42,10 +42,10 @@ impl fmt::Display for SingleStageRunError {
                 write!(f, "intent repository: {error}")
             }
             SingleStageRunError::UnknownStage { slug } => {
-                write!(f, "unknown stage: {}", slug.as_str())
+                write!(f, "unknown stage: {slug}")
             }
             SingleStageRunError::Command { stage, error } => {
-                write!(f, "command for {}: {error}", stage.as_str())
+                write!(f, "command for {stage}: {error}")
             }
         }
     }

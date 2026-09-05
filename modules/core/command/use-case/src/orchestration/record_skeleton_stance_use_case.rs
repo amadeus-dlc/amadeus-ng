@@ -83,18 +83,20 @@ impl<E: IntentExecutionRepository, I: IntentRepository> RecordSkeletonStanceUseC
             .await?;
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
-        // 拒否の文言の材料は「そのときの現在地」と scope である — 判断ではなく観測なので、
-        // コマンドを打つ前に控えておく。
-        let cursor = aggregate.cursor_slug().cloned();
-        let scope = intent.scope().to_string();
         let event = aggregate
             .record_skeleton_stance(&intent, stance, occurred_at)
-            .map_err(|error| SkeletonStanceError::Command {
-                stage: cursor,
-                scope,
-                error,
+            .map_err(|refusal| match refusal {
+                core_command_domain::orchestration::SkeletonStanceRefusal::Rejected {
+                    stage,
+                    scope,
+                    error,
+                } => SkeletonStanceError::Command {
+                    stage,
+                    scope,
+                    error,
+                },
             })?;
         match self
             .intent_execution_repository

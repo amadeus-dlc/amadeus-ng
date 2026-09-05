@@ -1,0 +1,33 @@
+{
+  "stage": "functional-design",
+  "unit": "u4-read-model-updater",
+  "upstream_ids": [
+    "FR1.1",
+    "FR5.4",
+    "NFR1",
+    "NFR3"
+  ],
+  "coverage": [
+    {
+      "id": "FR1.1",
+      "status": "OK",
+      "target": "BR1.1, BR2.1, BR2.2, BR2.3, BR3.2, BR4.1, BR4.4, BR5.1, BR5.2"
+    },
+    {
+      "id": "FR5.4",
+      "status": "OK",
+      "target": "BR2.1"
+    },
+    {
+      "id": "NFR1",
+      "status": "OK",
+      "target": "BR2.1, BR2.2, BR4.2, BR5.2, BR5.3"
+    },
+    {
+      "id": "NFR3",
+      "status": "OK",
+      "target": "BR1.2, BR1.3, BR3.1, BR3.2, BR3.3, BR3.4, BR4.1, BR4.3, BR4.4, BR5.1, BR5.2, BR5.3"
+    }
+  ],
+  "reverse": []
+}

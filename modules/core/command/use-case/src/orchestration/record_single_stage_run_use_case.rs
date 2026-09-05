@@ -1,7 +1,7 @@
 //! `RecordSingleStageRunUseCase` — 隔離実行 (`report --single`) の対を記録する（#73）。
 
 use chrono::{DateTime, Utc};
-use core_command_domain::orchestration::{IntentExecution, IntentExecutionId, StageIndex};
+use core_command_domain::orchestration::{IntentExecutionId, NamedStageRunError};
 use core_command_domain::workflow_definition::StageSlug;
 
 use super::port::IntentExecutionRepository;
@@ -105,18 +105,18 @@ impl<E: IntentExecutionRepository, I: IntentRepository> RecordSingleStageRunUseC
             .await?;
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
-        // 計画に無い slug はここで断る — 位置を持たない名前では集約のコマンドを呼べない。
-        let target =
-            resolve(&aggregate, stage).ok_or_else(|| SingleStageRunError::UnknownStage {
-                slug: stage.clone(),
-            })?;
         let event = aggregate
-            .record_single_stage_run(&intent, target, occurred_at)
-            .map_err(|error| SingleStageRunError::Command {
-                stage: stage.clone(),
-                error,
+            .record_single_stage_run_named(&intent, stage, occurred_at)
+            .map_err(|error| match error {
+                NamedStageRunError::UnknownStage => SingleStageRunError::UnknownStage {
+                    slug: stage.clone(),
+                },
+                NamedStageRunError::Command(error) => SingleStageRunError::Command {
+                    stage: stage.clone(),
+                    error,
+                },
             })?;
         match self
             .intent_execution_repository
@@ -136,17 +136,6 @@ impl<E: IntentExecutionRepository, I: IntentRepository> RecordSingleStageRunUseC
     pub(crate) const fn intent_execution_repository(&self) -> &E {
         &self.intent_execution_repository
     }
-}
-
-/// slug を実行の計画上の位置へ解決する（無ければ `None`）。
-///
-/// 添字帳は集約が持っているので、ここは**引くだけ**であり判断ではない。
-fn resolve(aggregate: &IntentExecution, stage: &StageSlug) -> Option<StageIndex> {
-    let position = aggregate
-        .stage_keys()
-        .iter()
-        .position(|key| key.slug() == stage)?;
-    aggregate.stage_index(position)
 }
 
 #[cfg(test)]

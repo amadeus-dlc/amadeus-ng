@@ -82,6 +82,758 @@ fn projection() -> ProjectionName {
     ProjectionName::parse("state-file").expect("投影名は kebab")
 }
 
+/// ファイル公開後の確定失敗を実SQLiteで発生させ、別接続から回復する。
+#[tokio::test]
+async fn publication_recovers_without_duplicate_bytes_after_checkpoint_failure() {
+    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    let fixture = Fixture::new();
+    seed(&mut fixture.store()).await;
+    let state = fixture._dir.path().join("state.md");
+    let audit = fixture._dir.path().join("audit.md");
+    std::fs::write(&state, "before\n").unwrap();
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::new(4),
+        vec![
+            PublicationFile::replacement(&state, "before\n", "after\n"),
+            PublicationFile::audit(&audit, "\n## Event\n**Event**: TEST\n").unwrap(),
+        ],
+    );
+    let mut reader = fixture.journal_reader();
+    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT, 'injected checkpoint failure'); END").unwrap();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &empty_tables())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), "after\n");
+    let written = std::fs::read(&audit).unwrap();
+    let saved = reader
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.request_id(), batch.request_id());
+    assert_eq!(saved.files(), batch.files());
+    assert!(saved.generation() > 0);
+    drop(reader);
+
+    fixture
+        .raw()
+        .execute_batch("DROP TRIGGER fail_checkpoint")
+        .unwrap();
+    let mut reopened = fixture.journal_reader();
+    let pending = reopened
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    reopened
+        .publish(&projection(), &pending, &empty_tables())
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&audit).unwrap(), written);
+    assert_eq!(
+        reopened.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::new(4)
+    );
+    assert!(
+        reopened
+            .pending_publication(&projection())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// 別投影の遅い確定で、既に公開された新しい構造化面を巻き戻さない。
+#[tokio::test]
+async fn an_older_projection_keeps_the_newer_shared_rows() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let mut reader = fixture.journal_reader();
+    let latest = seeded_tables(&reader).await;
+    let last = latest.as_of().unwrap();
+    let previous = GlobalSeqNr::new(last.to_u64() - 1);
+    let older = ReadTables::project(&reader.events_through(previous).await.unwrap()).unwrap();
+    let other = ProjectionName::parse("other-projection").unwrap();
+    reader
+        .advance_checkpoint(&other, last, &latest)
+        .await
+        .unwrap();
+    reader
+        .advance_checkpoint(&projection(), previous, &older)
+        .await
+        .unwrap();
+    let observed: i64 = fixture
+        .raw()
+        .query_row("SELECT as_of FROM read_execution LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(observed, u64_to_i64(last.to_u64()));
+    assert_eq!(reader.checkpoint(&projection()).await.unwrap(), previous);
+}
+
+#[tokio::test]
+async fn a_candidate_with_the_same_position_but_different_rows_is_refused() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let mut reader = fixture.journal_reader();
+    let expected = seeded_tables(&reader).await;
+    let last = expected.as_of().unwrap();
+    reader
+        .advance_checkpoint(&projection(), last, &expected)
+        .await
+        .unwrap();
+    let wrong = ReadTables::project(&JournalBatch::new(
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Some(last),
+    ))
+    .unwrap();
+    let other = ProjectionName::parse("wrong-projection").unwrap();
+    assert!(
+        reader
+            .advance_checkpoint(&other, last, &wrong)
+            .await
+            .is_err()
+    );
+    let count: i64 = fixture
+        .raw()
+        .query_row("SELECT COUNT(*) FROM read_execution", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(reader.checkpoint(&other).await.unwrap(), GlobalSeqNr::ZERO);
+}
+
+#[tokio::test]
+async fn a_missing_committed_file_is_restored_without_moving_the_cursor() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile,
+    };
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let state = fixture._dir.path().join("state.md");
+    let audit = fixture._dir.path().join("audit.md");
+    std::fs::write(&state, "before\n").unwrap();
+    let targets = ProjectionTargets::new(&state, &audit, fixture._dir.path().join("memory"));
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::new(5),
+        vec![
+            PublicationFile::replacement(&state, "before\n", "after\n"),
+            PublicationFile::audit(&audit, "\n**Event**: TEST\n").unwrap(),
+        ],
+    )
+    .for_targets(&targets)
+    .unwrap();
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    reader
+        .publish(&projection(), &batch, &tables)
+        .await
+        .unwrap();
+    let expected_audit = std::fs::read(&audit).unwrap();
+    std::fs::remove_file(&state).unwrap();
+    assert!(
+        reader
+            .restore_missing_files(&projection(), &targets)
+            .unwrap()
+    );
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), "after\n");
+    assert_eq!(std::fs::read(&audit).unwrap(), expected_audit);
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::new(5)
+    );
+    assert!(
+        !reader
+            .restore_missing_files(&projection(), &targets)
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn resolving_a_publication_preserves_user_additions_and_fences_the_old_request() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile,
+    };
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let state = fixture._dir.path().join("state.md");
+    let audit = fixture._dir.path().join("audit.md");
+    let targets = ProjectionTargets::new(&state, &audit, fixture._dir.path().join("memory"));
+    std::fs::write(&state, "before\n").unwrap();
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::new(5),
+        vec![
+            PublicationFile::replacement(&state, "before\n", "after\n"),
+            PublicationFile::audit(&audit, "\n**Event**: TEST\n").unwrap(),
+        ],
+    );
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &tables)
+            .await
+            .is_err()
+    );
+    let old = reader
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    let expected_audit = std::fs::read(&audit).unwrap();
+    std::fs::write(&state, "after\n# User addition\n").unwrap();
+    fixture
+        .raw()
+        .execute_batch("DROP TRIGGER fail_checkpoint")
+        .unwrap();
+    assert!(reader.publish(&projection(), &old, &tables).await.is_err());
+    assert!(reader.resolve_publication(&projection(), &targets).unwrap());
+    assert_eq!(
+        std::fs::read_to_string(&state).unwrap(),
+        "after\n# User addition\n"
+    );
+    assert_eq!(std::fs::read(&audit).unwrap(), expected_audit);
+    assert!(reader.publish(&projection(), &old, &tables).await.is_err());
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::new(5)
+    );
+}
+
+#[tokio::test]
+async fn a_structured_only_commit_keeps_the_file_restoration_snapshot() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile,
+    };
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let state = fixture._dir.path().join("state.md");
+    let audit = fixture._dir.path().join("audit.md");
+    let targets = ProjectionTargets::new(&state, &audit, fixture._dir.path().join("memory"));
+    std::fs::write(&state, "before\n").unwrap();
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    let first = tables.as_of().unwrap();
+    reader
+        .publish(
+            &projection(),
+            &PublicationBatch::new(
+                GlobalSeqNr::ZERO,
+                first,
+                vec![PublicationFile::replacement(&state, "before\n", "after\n")],
+            )
+            .for_targets(&targets)
+            .unwrap(),
+            &tables,
+        )
+        .await
+        .unwrap();
+    seed_definition(&fixture.path).await;
+    let newer = seeded_tables(&reader).await;
+    let last = newer.as_of().unwrap();
+    reader
+        .publish(
+            &projection(),
+            &PublicationBatch::new(first, last, Vec::new())
+                .for_targets(&targets)
+                .unwrap(),
+            &newer,
+        )
+        .await
+        .unwrap();
+    std::fs::remove_file(&state).unwrap();
+    assert!(
+        reader
+            .restore_missing_files(&projection(), &targets)
+            .unwrap()
+    );
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), "after\n");
+    assert_eq!(reader.checkpoint(&projection()).await.unwrap(), last);
+}
+
+#[tokio::test]
+async fn restoration_does_not_resurrect_a_user_deleted_memory_file() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile,
+    };
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let state = fixture._dir.path().join("state.md");
+    let memory = fixture._dir.path().join("memory");
+    std::fs::create_dir(&memory).unwrap();
+    let team = memory.join("team.md");
+    std::fs::write(&state, "before\n").unwrap();
+    std::fs::write(&team, "user rules\n").unwrap();
+    let targets = ProjectionTargets::new(&state, fixture._dir.path().join("audit.md"), &memory);
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    let last = tables.as_of().unwrap();
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        last,
+        vec![
+            PublicationFile::memory(&team, "user rules\n", "user rules\n"),
+            PublicationFile::replacement(&state, "before\n", "after\n"),
+        ],
+    )
+    .for_targets(&targets)
+    .unwrap();
+    reader
+        .publish(&projection(), &batch, &tables)
+        .await
+        .unwrap();
+    std::fs::remove_file(&state).unwrap();
+    std::fs::remove_file(&team).unwrap();
+    assert!(
+        reader
+            .restore_missing_files(&projection(), &targets)
+            .unwrap()
+    );
+    assert!(!team.exists());
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), "after\n");
+}
+
+#[tokio::test]
+async fn a_modified_persisted_publication_is_not_replayed() {
+    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    let fixture = Fixture::new();
+    seed(&mut fixture.store()).await;
+    let audit = fixture._dir.path().join("audit.md");
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::new(4),
+        vec![PublicationFile::audit(&audit, "\n**Event**: TEST\n").unwrap()],
+    );
+    let mut reader = fixture.journal_reader();
+    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &empty_tables())
+            .await
+            .is_err()
+    );
+    let written = std::fs::read(&audit).unwrap();
+    fixture
+        .raw()
+        .execute_batch("UPDATE amadeus_publication_file SET after_content=X'00'")
+        .unwrap();
+    assert!(reader.pending_publication(&projection()).await.is_err());
+    assert_eq!(std::fs::read(&audit).unwrap(), written);
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+}
+
+fn u64_to_i64(value: u64) -> i64 {
+    i64::try_from(value).unwrap()
+}
+
+#[tokio::test]
+async fn changing_targets_does_not_restore_files_from_the_previous_intent() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile,
+    };
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let a = fixture._dir.path().join("a.md");
+    let b = fixture._dir.path().join("b.md");
+    std::fs::write(&a, "before-a").unwrap();
+    std::fs::write(&b, "before-b").unwrap();
+    let targets_a = ProjectionTargets::new(
+        &a,
+        fixture._dir.path().join("audit-a.md"),
+        fixture._dir.path().join("memory"),
+    );
+    let targets_b = ProjectionTargets::new(
+        &b,
+        fixture._dir.path().join("audit-b.md"),
+        fixture._dir.path().join("memory"),
+    );
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    let last = tables.as_of().unwrap();
+    let first = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        last,
+        vec![PublicationFile::replacement(&a, "before-a", "after-a")],
+    )
+    .for_targets(&targets_a)
+    .unwrap();
+    reader
+        .publish(&projection(), &first, &tables)
+        .await
+        .unwrap();
+    assert!(
+        !reader
+            .restore_missing_files(&projection(), &targets_b)
+            .unwrap()
+    );
+    std::fs::remove_file(&a).unwrap();
+    seed_definition(&fixture.path).await;
+    let newer_tables = seeded_tables(&reader).await;
+    let newer = newer_tables.as_of().unwrap();
+    let second = PublicationBatch::new(
+        last,
+        newer,
+        vec![PublicationFile::replacement(&b, "before-b", "after-b")],
+    )
+    .for_targets(&targets_b)
+    .unwrap();
+    reader
+        .publish(&projection(), &second, &newer_tables)
+        .await
+        .unwrap();
+    assert!(!a.exists());
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "after-b");
+    assert!(
+        !reader
+            .restore_missing_files(&projection(), &targets_b)
+            .unwrap()
+    );
+    drop(reader);
+    let mut reopened = fixture.journal_reader();
+    assert!(
+        reopened
+            .restore_missing_files(&projection(), &targets_a)
+            .unwrap()
+    );
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "after-a");
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "after-b");
+    assert_eq!(reopened.checkpoint(&projection()).await.unwrap(), newer);
+}
+
+#[tokio::test]
+async fn an_older_candidate_cannot_confirm_a_damaged_newer_shared_view() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    let last = tables.as_of().unwrap();
+    let previous = GlobalSeqNr::new(last.to_u64() - 1);
+    let older = ReadTables::project(&reader.events_through(previous).await.unwrap()).unwrap();
+    let ahead = ProjectionName::parse("ahead").unwrap();
+    reader
+        .advance_checkpoint(&ahead, last, &tables)
+        .await
+        .unwrap();
+    fixture
+        .raw()
+        .execute("DELETE FROM read_execution", [])
+        .unwrap();
+    assert!(
+        reader
+            .advance_checkpoint(&projection(), previous, &older)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+    assert_eq!(reader.rebuild_read_model().unwrap(), last);
+    reader
+        .advance_checkpoint(&projection(), previous, &older)
+        .await
+        .unwrap();
+    let observed: i64 = fixture
+        .raw()
+        .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(observed, u64_to_i64(last.to_u64()));
+}
+
+#[tokio::test]
+async fn a_rebuild_retains_its_high_watermark_even_when_checkpoints_lag() {
+    let fixture = Fixture::new();
+    let mut store = fixture.store();
+    seed_intent(&fixture.path).await;
+    seed(&mut store).await;
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    let last = tables.as_of().unwrap();
+    let previous = GlobalSeqNr::new(last.to_u64() - 1);
+    let older = ReadTables::project(&reader.events_through(previous).await.unwrap()).unwrap();
+    reader
+        .advance_checkpoint(&projection(), previous, &older)
+        .await
+        .unwrap();
+    assert_eq!(reader.rebuild_read_model().unwrap(), last);
+    fixture
+        .raw()
+        .execute(
+            "DELETE FROM journal WHERE rowid=?1",
+            [u64_to_i64(last.to_u64())],
+        )
+        .unwrap();
+    assert!(reader.rebuild_read_model().is_err());
+    let observed: i64 = fixture
+        .raw()
+        .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(observed, u64_to_i64(last.to_u64()));
+}
+
+#[tokio::test]
+async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdater, SteeringSource,
+    };
+    let fixture = Fixture::new();
+    let _store = fixture.store();
+    let state = fixture._dir.path().join("state.md");
+    std::fs::write(&state, "before").unwrap();
+    let targets = ProjectionTargets::new(
+        &state,
+        fixture._dir.path().join("audit.md"),
+        fixture._dir.path().join("memory"),
+    );
+    let batch = PublicationBatch::rebuild(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::ZERO,
+        vec![PublicationFile::replacement(&state, "before", "after")],
+    )
+    .for_targets(&targets)
+    .unwrap();
+    let mut reader = fixture.journal_reader();
+    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &empty_tables())
+            .await
+            .is_err()
+    );
+    drop(reader);
+    fixture
+        .raw()
+        .execute_batch("DROP TRIGGER fail_checkpoint")
+        .unwrap();
+    let mut updater = ReadModelUpdater::new(
+        fixture.journal_reader(),
+        projection(),
+        targets,
+        SteeringSource::new(fixture._dir.path().join("memory")),
+    );
+    assert_eq!(updater.catch_up().await.unwrap(), GlobalSeqNr::ZERO);
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), "after");
+}
+
+/// 復旧中に追加されたイベントは、保存済み断面の確定後に次の周回で扱う。
+#[tokio::test]
+async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
+    use core_read_model_updater::orchestration::{
+        ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdater, SteeringSource,
+    };
+    let fixture = Fixture::new();
+    seed_intent(&fixture.path).await;
+    seed(&mut fixture.store()).await;
+    let mut reader = fixture.journal_reader();
+    let tables = seeded_tables(&reader).await;
+    let cut = tables.as_of().unwrap();
+    let state = fixture._dir.path().join("state.md");
+    let audit = fixture._dir.path().join("audit.md");
+    std::fs::write(&state, "before").unwrap();
+    let targets = ProjectionTargets::new(&state, &audit, fixture._dir.path().join("memory"));
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        cut,
+        vec![
+            PublicationFile::replacement(&state, "before", "after"),
+            PublicationFile::audit(&audit, "\n## Saved event\n").unwrap(),
+        ],
+    )
+    .for_targets(&targets)
+    .unwrap();
+    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &tables)
+            .await
+            .is_err()
+    );
+    let written = std::fs::read(&audit).unwrap();
+    drop(reader);
+    fixture
+        .raw()
+        .execute_batch("DROP TRIGGER fail_checkpoint")
+        .unwrap();
+    seed_definition(&fixture.path).await;
+    let mut updater = ReadModelUpdater::new(
+        fixture.journal_reader(),
+        projection(),
+        targets,
+        SteeringSource::new(fixture._dir.path().join("memory")),
+    );
+    assert_eq!(updater.catch_up().await.unwrap(), cut);
+    let served: i64 = fixture
+        .raw()
+        .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(served, u64_to_i64(cut.to_u64()));
+    assert_eq!(std::fs::read(&audit).unwrap(), written);
+    assert!(updater.catch_up().await.unwrap() > cut);
+    assert_eq!(std::fs::read(&audit).unwrap(), written);
+}
+
+/// 実プロセスをファイル反映後・SQLite確定前に終了させる。
+#[tokio::test]
+async fn publication_survives_process_termination() {
+    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    use std::process::{Command, Stdio};
+    if let Ok(root) = std::env::var("AMADEUS_PUBLICATION_TEST_CHILD") {
+        let root = std::path::PathBuf::from(root);
+        let path = StorePath::for_space(&root.join("aidlc"), &SpaceName::default());
+        let mut reader = JournalReaderImpl::open(&path).unwrap();
+        let batch = PublicationBatch::new(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::new(4),
+            vec![
+                PublicationFile::replacement(
+                    &root.join("published-state.md"),
+                    "before\n",
+                    "after\n",
+                ),
+                PublicationFile::audit(
+                    &root.join("published-audit.md"),
+                    "\n## Event\n**Event**: TEST\n",
+                )
+                .unwrap(),
+            ],
+        );
+        reader
+            .publish(&projection(), &batch, &empty_tables())
+            .await
+            .unwrap();
+        return;
+    }
+
+    let fixture = Fixture::new();
+    seed(&mut fixture.store()).await;
+    let reader = fixture.journal_reader();
+    drop(reader);
+    std::fs::write(fixture._dir.path().join("published-state.md"), "before\n").unwrap();
+    fixture.raw().execute_batch("CREATE TRIGGER hold_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT sum(n) FROM (WITH RECURSIVE counter(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM counter WHERE n<1500000000) SELECT n FROM counter); END").unwrap();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "publication_survives_process_termination",
+            "--nocapture",
+        ])
+        .env("AMADEUS_PUBLICATION_TEST_CHILD", fixture._dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let audit_path = fixture._dir.path().join("published-audit.md");
+    let expected = b"# AI-DLC Audit Log\n\n## Event\n**Event**: TEST\n";
+    let mut written = false;
+    for _ in 0..600 {
+        if std::fs::read(&audit_path).is_ok_and(|bytes| bytes == expected) {
+            written = true;
+            break;
+        }
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let _ = child.kill();
+    child.wait().unwrap();
+    assert!(written, "子プロセスが監査ファイルを反映した後で停止する");
+    fixture
+        .raw()
+        .execute_batch("DROP TRIGGER hold_checkpoint")
+        .unwrap();
+    let mut reopened = fixture.journal_reader();
+    assert_eq!(
+        reopened.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+    let pending = reopened
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    reopened
+        .publish(&projection(), &pending, &empty_tables())
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&audit_path).unwrap(), expected);
+    assert_eq!(
+        reopened.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::new(4)
+    );
+}
+
+#[tokio::test]
+async fn a_partial_audit_append_is_completed_from_the_saved_plan() {
+    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    let fixture = Fixture::new();
+    seed(&mut fixture.store()).await;
+    let audit = fixture._dir.path().join("audit.md");
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        GlobalSeqNr::new(4),
+        vec![PublicationFile::audit(&audit, "\n## Event\n**Event**: 日本語\n").unwrap()],
+    );
+    let mut reader = fixture.journal_reader();
+    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &empty_tables())
+            .await
+            .is_err()
+    );
+    let expected = std::fs::read(&audit).unwrap();
+    let partial = expected.len() - 2; // UTF-8文字の途中もバイト列として回復する。
+    std::fs::write(&audit, &expected[..partial]).unwrap();
+    drop(reader);
+    fixture
+        .raw()
+        .execute_batch("DROP TRIGGER fail_checkpoint")
+        .unwrap();
+    let mut reopened = fixture.journal_reader();
+    let pending = reopened
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    reopened
+        .publish(&projection(), &pending, &empty_tables())
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&audit).unwrap(), expected);
+}
+
 // ---------------------------------------------------------------------------
 // 差分読取 (BR1.4)
 // ---------------------------------------------------------------------------

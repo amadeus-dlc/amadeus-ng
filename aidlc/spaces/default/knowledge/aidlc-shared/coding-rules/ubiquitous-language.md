@@ -18,7 +18,7 @@
 「ドメインモデル」= `modules/core/domain/` の**集約・エンティティ・値オブジェクト・
 ドメインイベント・ドメインサービス**。具体的には:
 
-- 型名（`Intent` / `IntentExecution` / `IntentId` / `IntentExecutionId` / `StageSlug` / `PhaseBoundary` …。~~`WorkflowExecution`~~ → 分割・改名 2026-08-29 オーナー裁定 — **`Intent` は静的な intent の集約**（id・依頼文・scope・解決済み計画・定義参照・scan。作成時に `IntentEvent::Created` を吐き、変異は現状なし — 2026-08-30 オーナー裁定で「集約ではない構造体」の記述を上書き）、**`IntentExecution` が実行時文脈を持つ集約**（旧 WorkflowExecution の実体。cursor・checkbox・overlay・park 等 + 所有する intent）。**1 intent : n 実行**（Intent を元にIntentExecution は何回も起きる — オーナー裁定）なので実行は自前の `IntentExecutionId` を持つ。workflow の名は定義側 `WorkflowDefinition` の持ち物。旧 `WorkflowExecutionState` は `IntentExecutionSnapshot` に改名ののち、**2026-08-30 オーナー裁定で型ごと撤去** — 集約と構造同一の memento 双子は複製でしかなく、再構成はジャーナル全再生（`replay`）で行う）
+- 型名（`Intent` / `IntentExecution` / `IntentId` / `IntentExecutionId` / `StageSlug` / `PhaseBoundary` …。~~`WorkflowExecution`~~ → 分割・改名 2026-08-29 オーナー裁定 — **`Intent` は静的な intent の集約**（id・依頼文・scope・解決済み計画・定義参照・scan。作成時に `IntentEvent::Created` を吐き、変異は現状なし — 2026-08-30 オーナー裁定で「集約ではない構造体」の記述を上書き）、**`IntentExecution` が実行時文脈を持つ集約**（旧 WorkflowExecution の実体。cursor・checkbox・overlay・park 等 + 所有する intent）。**1 intent : n 実行**（Intent を元にIntentExecution は何回も起きる — オーナー裁定）なので実行は自前の `IntentExecutionId` を持つ。workflow の名は定義側 `WorkflowDefinition` の持ち物。旧 `WorkflowExecutionState` は `IntentExecutionSnapshot` に改名ののち、**2026-08-30 オーナー裁定で型ごと撤去** — 集約と構造同一の memento 双子は複製でしかなく、再構成は最新スナップショットと、その通番より後の差分イベントの `replay` で行う（再生方式は 2026-09-05 オーナー裁定で訂正。詳細は [aggregate-commands.md](aggregate-commands.md)））
 - フィールド名（アクセサ経由で公開される名前を含む — [field-visibility.md](field-visibility.md)）
 - メソッド名（コマンド・クエリの両方）
 - ドメインイベントの名前とそのペイロード

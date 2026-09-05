@@ -1,8 +1,8 @@
 //! `RecordReviewUseCase` — レビュー受領証の対を記録する（`aidlc-log review`、b48 / B10）。
 
 use chrono::{DateTime, Utc};
-use core_command_domain::orchestration::{Intent, IntentExecutionId};
-use core_command_domain::workflow_definition::{ReviewCapValue, ReviewPolicy};
+use core_command_domain::orchestration::{Intent, IntentExecutionId, IntentReviewError};
+use core_command_domain::workflow_definition::ReviewPolicy;
 
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
@@ -104,7 +104,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             .await?;
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
         let policy = self.review_policy(&intent, request).await?;
         let refused = match request.kind() {
@@ -158,18 +158,21 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     ) -> Result<Option<ReviewPolicy>, ReviewLogError> {
         let definition = self
             .workflow_definition_repository
-            .find_by_id(intent.definition_id())
+            .find_for_intent(intent)
             .await?;
-        let review_override = intent
-            .review()
-            .map(|raw| {
-                ReviewCapValue::parse(raw)
-                    .map_err(|_| ReviewLogError::CorruptReviewOverride(raw.to_string()))
+        intent
+            .resolve_review_policy(&definition, request.stage())
+            .map_err(|error| match error {
+                IntentReviewError::UnknownStage => {
+                    ReviewLogError::UnknownStage(request.stage().clone())
+                }
+                IntentReviewError::InvalidOverride(raw) => {
+                    ReviewLogError::CorruptReviewOverride(raw)
+                }
+                error @ IntentReviewError::DefinitionMismatch => {
+                    ReviewLogError::ReviewPolicy(error)
+                }
             })
-            .transpose()?;
-        definition
-            .review_policy(request.stage(), intent.scope(), review_override)
-            .map_err(|_| ReviewLogError::UnknownStage(request.stage().clone()))
     }
 
     /// 注入された実行ポートの実装（テストが**効果**を観測するための継ぎ目）。

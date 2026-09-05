@@ -56,8 +56,10 @@ use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
 use super::intent_id::IntentId;
 use super::jump_direction::JumpDirection;
+use super::named_stage_run_error::NamedStageRunError;
 use super::next_decision::NextDecision;
 use super::next_request::NextRequest;
+use super::report_commit_error::ReportCommitError;
 use super::report_decision::ReportDecision;
 use super::report_no_op::ReportNoOp;
 use super::report_refusal::ReportRefusal;
@@ -65,6 +67,7 @@ use super::report_request::ReportRequest;
 use super::review_attempt::ReviewAttempt;
 use super::review_verdict::ReviewVerdict;
 use super::skeleton_stance::SkeletonStance;
+use super::skeleton_stance_refusal::SkeletonStanceRefusal;
 use super::stage_entry::StageEntry;
 use super::stage_index::StageIndex;
 use super::stage_key::StageKey;
@@ -1182,6 +1185,25 @@ impl IntentExecution {
         )
     }
 
+    /// 計画から名指しされたステージを解決し、隔離実行の事実を記録する。
+    ///
+    /// # Errors
+    /// 未知ステージ、intent の取り違え、initialization ステージを拒否する。
+    pub fn record_single_stage_run_named(
+        &mut self,
+        intent: &Intent,
+        stage: &StageSlug,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, NamedStageRunError> {
+        let position = self
+            .stage_keys
+            .iter()
+            .position(|key| key.slug() == stage)
+            .ok_or(NamedStageRunError::UnknownStage)?;
+        self.record_single_stage_run(intent, StageIndex::new(position), occurred_at)
+            .map_err(NamedStageRunError::Command)
+    }
+
     /// 隔離実行の記録 — `SingleStageRunCommitted` (仕様 I10 / #73)。
     ///
     /// # 本流の状態は 1 つも動かない
@@ -1197,7 +1219,7 @@ impl IntentExecution {
     /// `handleSingleReport` は状態ファイルを 1 度も読まず、監査の対を書くだけだからである
     /// (ピン `3c3146cf` `:5261-5361`)。取り違えだけは他コマンドと同じく入口で照合する。
     ///
-    /// 計画に無い slug は呼出側 (ユースケース) が `slug → index` の解決で断る。
+    /// 名指しの実行は `record_single_stage_run_named` が計画から対象を解決する。
     ///
     /// # Errors
     ///
@@ -1237,6 +1259,21 @@ impl IntentExecution {
     /// intent の取り違え (`IntentMismatch`)、カーソルが skeleton-gate ステージでない
     /// (`InvalidTarget`)。
     pub fn record_skeleton_stance(
+        &mut self,
+        intent: &Intent,
+        stance: SkeletonStance,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, SkeletonStanceRefusal> {
+        self.commit_skeleton_stance(intent, stance, occurred_at)
+            .map_err(|error| SkeletonStanceRefusal::Rejected {
+                stage: self.cursor_slug().cloned(),
+                scope: intent.scope().to_string(),
+                error,
+            })
+    }
+
+    /// stance のガードを検査し、受理時だけ事実を記録する。
+    fn commit_skeleton_stance(
         &mut self,
         intent: &Intent,
         stance: SkeletonStance,
@@ -1948,13 +1985,75 @@ impl IntentExecution {
         }
         match verdict {
             Verdict::Skipped => self.dispatch_skip(intent, request, target, slug, checkbox),
-            Verdict::AwaitingApproval => Self::dispatch_gate_open(slug, checkbox),
-            Verdict::Rejected => Self::dispatch_gate_reject(request, slug, checkbox),
-            Verdict::Revised => Self::dispatch_gate_revise(slug, checkbox),
-            Verdict::Forward => self.dispatch_forward(request, target, slug, checkbox, gated),
+            Verdict::AwaitingApproval => Self::dispatch_gate_open(intent.scope(), slug, checkbox),
+            Verdict::Rejected => {
+                Self::dispatch_gate_reject(intent.scope(), request, slug, checkbox)
+            }
+            Verdict::Revised => Self::dispatch_gate_revise(intent.scope(), slug, checkbox),
+            Verdict::Forward => {
+                self.dispatch_forward(intent.scope(), request, target, slug, checkbox, gated)
+            }
             // 遷移をコミットしない結末は合成ルートが段 4 で振り分ける。
             Verdict::Resume => Err(ReportRefusal::RoutedVerdict { verdict }),
         }
+    }
+
+    /// report の判断を、観測値の正規化も含めて単一のイベントとして適用する。
+    ///
+    /// 先行する `GateStartRecovered` は監査上の復旧を表す。状態遷移は続く承認が担う。
+    ///
+    /// # Errors
+    /// コマンドのガード違反、または対応コマンドが無い遷移列を拒否する。
+    pub fn apply_report(
+        &mut self,
+        intent: &Intent,
+        request: &ReportRequest,
+        steps: &[TransitionStep],
+        policy: Option<&ReviewPolicy>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, ReportCommitError> {
+        let (step, outcome) = match steps {
+            [TransitionStep::GateStart] => (
+                TransitionStep::GateStart,
+                self.open_gate(intent, Vec::new(), occurred_at),
+            ),
+            [TransitionStep::Reject] => (
+                TransitionStep::Reject,
+                self.reject_gate(intent, request.feedback().map(str::to_string), occurred_at),
+            ),
+            [TransitionStep::Revise] => (
+                TransitionStep::Revise,
+                self.revise_stage(intent, occurred_at),
+            ),
+            [TransitionStep::Skip] => (
+                TransitionStep::Skip,
+                self.skip_stage(
+                    intent,
+                    request.reason().unwrap_or_default().trim().to_string(),
+                    occurred_at,
+                ),
+            ),
+            [TransitionStep::Approve]
+            | [TransitionStep::GateStartRecovered, TransitionStep::Approve] => (
+                TransitionStep::Approve,
+                // upstream の truthy 判定: 空文字は除外するが空白は逐語保持する。
+                self.approve_gate(
+                    intent,
+                    policy,
+                    request
+                        .user_input()
+                        .filter(|text| !text.is_empty())
+                        .map(str::to_string),
+                    occurred_at,
+                ),
+            ),
+            other => {
+                return Err(ReportCommitError::Unwired {
+                    step: other.first().copied().unwrap_or(TransitionStep::Advance),
+                });
+            }
+        };
+        outcome.map_err(|error| ReportCommitError::Transition { step, error })
     }
 
     /// 作用対象を決める — 明示 `--stage` が勝ち、無ければカーソル (段 7、ピン `:5556-5570`)。
@@ -2035,6 +2134,7 @@ impl IntentExecution {
             });
         }
         Ok(ReportDecision::Commit {
+            scope: intent.scope().to_string(),
             stage: slug,
             steps: vec![TransitionStep::Skip],
         })
@@ -2042,13 +2142,15 @@ impl IntentExecution {
 
     /// 段 10 — `awaiting-approval` (ピン `:5699-5710`)。
     fn dispatch_gate_open(
+        scope: &str,
         slug: StageSlug,
         checkbox: CheckboxState,
     ) -> Result<ReportDecision, ReportRefusal> {
         if checkbox == CheckboxState::AwaitingApproval {
-            return Ok(ReportDecision::NoOp(ReportNoOp::AlreadyAwaiting {
-                stage: slug,
-            }));
+            return Ok(ReportDecision::NoOp {
+                no_op: ReportNoOp::AlreadyAwaiting { stage: slug },
+                scope: scope.to_string(),
+            });
         }
         if checkbox != CheckboxState::InProgress {
             return Err(ReportRefusal::GatePrecondition {
@@ -2058,6 +2160,7 @@ impl IntentExecution {
             });
         }
         Ok(ReportDecision::Commit {
+            scope: scope.to_string(),
             stage: slug,
             steps: vec![TransitionStep::GateStart],
         })
@@ -2065,6 +2168,7 @@ impl IntentExecution {
 
     /// 段 10 — `rejected` (ピン `:5711-5728`)。
     fn dispatch_gate_reject(
+        scope: &str,
         request: &ReportRequest,
         slug: StageSlug,
         checkbox: CheckboxState,
@@ -2080,6 +2184,7 @@ impl IntentExecution {
             return Err(ReportRefusal::RejectRequiresFeedback { stage: slug });
         }
         Ok(ReportDecision::Commit {
+            scope: scope.to_string(),
             stage: slug,
             steps: vec![TransitionStep::Reject],
         })
@@ -2087,6 +2192,7 @@ impl IntentExecution {
 
     /// 段 10 — `revised` (ピン `:5729-5737`)。
     fn dispatch_gate_revise(
+        scope: &str,
         slug: StageSlug,
         checkbox: CheckboxState,
     ) -> Result<ReportDecision, ReportRefusal> {
@@ -2098,6 +2204,7 @@ impl IntentExecution {
             });
         }
         Ok(ReportDecision::Commit {
+            scope: scope.to_string(),
             stage: slug,
             steps: vec![TransitionStep::Revise],
         })
@@ -2111,6 +2218,7 @@ impl IntentExecution {
     /// 立ちうるからである。読み替えて別の遷移を打つより、名指しして呼出側に断らせる。
     fn dispatch_forward(
         &self,
+        scope: &str,
         request: &ReportRequest,
         target: StageIndex,
         slug: StageSlug,
@@ -2139,24 +2247,27 @@ impl IntentExecution {
                 })
             }
             CheckboxState::Pending => Err(ReportRefusal::StillPending { stage: slug }),
-            CheckboxState::Completed => Ok(self.dispatch_completed(slug, final_stage)),
+            CheckboxState::Completed => Ok(self.dispatch_completed(scope, slug, final_stage)),
             CheckboxState::InProgress if gated => {
                 if request.stage().is_none() {
                     return Err(ReportRefusal::InProgressRequiresExplicitStage { stage: slug });
                 }
                 Ok(ReportDecision::Commit {
+                    scope: scope.to_string(),
                     stage: slug,
                     // ゲートを開き直してから承認する (監査の `Recovered` 行はこの段が決める)。
                     steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
                 })
             }
             CheckboxState::AwaitingApproval if gated => Ok(ReportDecision::Commit {
+                scope: scope.to_string(),
                 stage: slug,
                 steps: vec![TransitionStep::Approve],
             }),
             // 非ゲートの着手済み — 誕生 = 初期化完了済み (b34) 以降は到達しない。
             CheckboxState::InProgress | CheckboxState::AwaitingApproval => {
                 Ok(ReportDecision::Commit {
+                    scope: scope.to_string(),
                     stage: slug,
                     steps: vec![Self::forward_tail(final_stage)],
                 })
@@ -2165,15 +2276,24 @@ impl IntentExecution {
     }
 
     /// forward 表の `[x]` の行 (ピン `:5828-5861`)。
-    fn dispatch_completed(&self, slug: StageSlug, final_stage: bool) -> ReportDecision {
+    fn dispatch_completed(
+        &self,
+        scope: &str,
+        slug: StageSlug,
+        final_stage: bool,
+    ) -> ReportDecision {
         if final_stage {
             if self.status.is_running() {
                 return ReportDecision::Commit {
+                    scope: scope.to_string(),
                     stage: slug,
                     steps: vec![TransitionStep::CompleteWorkflow],
                 };
             }
-            return ReportDecision::NoOp(ReportNoOp::WorkflowAlreadyCompleted { stage: slug });
+            return ReportDecision::NoOp {
+                no_op: ReportNoOp::WorkflowAlreadyCompleted { stage: slug },
+                scope: scope.to_string(),
+            };
         }
         // stale re-report ガード: カーソルが別ステージへ移って着手済みなら、これは復旧では
         // なく再生である (BR1.9)。我々の ES では「承認は済んだが advance 前」が原子的に
@@ -2184,12 +2304,16 @@ impl IntentExecution {
                 .is_some_and(|marker| marker != CheckboxState::Pending);
         if moved_on {
             let current = self.cursor_slug().unwrap_or(&slug).clone();
-            return ReportDecision::NoOp(ReportNoOp::AlreadyCompletedMovedOn {
-                stage: slug,
-                current,
-            });
+            return ReportDecision::NoOp {
+                no_op: ReportNoOp::AlreadyCompletedMovedOn {
+                    stage: slug,
+                    current,
+                },
+                scope: scope.to_string(),
+            };
         }
         ReportDecision::Commit {
+            scope: scope.to_string(),
             stage: slug,
             steps: vec![TransitionStep::Advance],
         }
@@ -2448,7 +2572,7 @@ mod tests {
             &mut self,
             stance: SkeletonStance,
             occurred_at: DateTime<Utc>,
-        ) -> Result<IntentExecutionEvent, CommandError> {
+        ) -> Result<IntentExecutionEvent, SkeletonStanceRefusal> {
             self.execution
                 .record_skeleton_stance(&self.intent, stance, occurred_at)
         }
@@ -2581,6 +2705,84 @@ mod tests {
         }
     }
 
+    #[test]
+    fn applying_a_recovered_approval_emits_one_event_and_preserves_input_rules() {
+        for (input, expected) in [("", None), ("  ", Some("  "))] {
+            let mut run = all_exec(3);
+            let request = ReportRequest::new(
+                Verdict::Forward,
+                Some(slug(1)),
+                Some(input.into()),
+                None,
+                false,
+            );
+            let event = run
+                .execution
+                .apply_report(
+                    &run.intent,
+                    &request,
+                    &[TransitionStep::GateStartRecovered, TransitionStep::Approve],
+                    None,
+                    occurred(),
+                )
+                .unwrap();
+            let IntentExecutionEvent::GateApproved(approved) = event else {
+                panic!("approval expected")
+            };
+            assert_eq!(approved.user_input(), expected);
+            assert_eq!(run.seq_nr(), 2);
+            assert_eq!(run.cursor(), StageIndex::new(2));
+        }
+    }
+
+    #[test]
+    fn report_decisions_carry_the_scope_of_the_plan() {
+        let run = all_exec(3);
+        assert!(
+            matches!(run.report_dispatch(&request(Verdict::AwaitingApproval)).unwrap(), ReportDecision::Commit { scope, .. } if scope == "classic")
+        );
+        let mut run = all_exec(3);
+        run.open_gate(Vec::new(), occurred()).unwrap();
+        assert!(
+            matches!(run.report_dispatch(&request(Verdict::AwaitingApproval)).unwrap(), ReportDecision::NoOp { scope, .. } if scope == "classic")
+        );
+    }
+
+    #[test]
+    fn a_named_single_run_resolves_the_plan_and_preserves_the_main_flow() {
+        let mut run = all_exec(3);
+        let event = run
+            .execution
+            .record_single_stage_run_named(&run.intent, &slug(2), occurred())
+            .unwrap();
+        let IntentExecutionEvent::SingleStageRunCommitted(committed) = event else {
+            panic!("single run expected")
+        };
+        assert_eq!(committed.stage(), &slug(2));
+        assert_eq!(run.cursor(), StageIndex::new(1));
+        assert_eq!(
+            run.execution
+                .record_single_stage_run_named(&run.intent, &slug(99), occurred()),
+            Err(NamedStageRunError::UnknownStage)
+        );
+    }
+
+    #[test]
+    fn a_stance_refusal_names_the_current_stage_and_scope() {
+        let mut run = all_exec(3);
+        assert_eq!(
+            run.execution
+                .record_skeleton_stance(&run.intent, SkeletonStance::On, occurred())
+                .unwrap_err(),
+            SkeletonStanceRefusal::Rejected {
+                stage: Some(slug(1)),
+                scope: "classic".into(),
+                error: CommandError::InvalidTarget(StageIndex::new(1))
+            }
+        );
+        assert_eq!(run.seq_nr(), 1);
+    }
+
     // ---- report_dispatch (仕様 10 §2.3 — 報告のディスパッチ) ----
 
     /// カーソルと checkbox を名指しして組む合成実行 (report の表テスト用)。
@@ -2644,7 +2846,7 @@ mod tests {
             ReportDecision::Commit { steps, .. } => {
                 steps.iter().map(|step| step.subcommand()).collect()
             }
-            ReportDecision::NoOp(_) => panic!("Commit を期待した: {decision:?}"),
+            ReportDecision::NoOp { .. } => panic!("Commit を期待した: {decision:?}"),
         }
     }
 
@@ -2659,15 +2861,18 @@ mod tests {
                     .map(|step| step.subcommand())
                     .collect::<Vec<_>>()
                     .join(" + "),
-                Ok(ReportDecision::NoOp(ReportNoOp::AlreadyAwaiting { .. })) => {
-                    "no-op:already-awaiting".to_string()
-                }
-                Ok(ReportDecision::NoOp(ReportNoOp::AlreadyCompletedMovedOn { .. })) => {
-                    "no-op:moved-on".to_string()
-                }
-                Ok(ReportDecision::NoOp(ReportNoOp::WorkflowAlreadyCompleted { .. })) => {
-                    "no-op:workflow-completed".to_string()
-                }
+                Ok(ReportDecision::NoOp {
+                    no_op: ReportNoOp::AlreadyAwaiting { .. },
+                    ..
+                }) => "no-op:already-awaiting".to_string(),
+                Ok(ReportDecision::NoOp {
+                    no_op: ReportNoOp::AlreadyCompletedMovedOn { .. },
+                    ..
+                }) => "no-op:moved-on".to_string(),
+                Ok(ReportDecision::NoOp {
+                    no_op: ReportNoOp::WorkflowAlreadyCompleted { .. },
+                    ..
+                }) => "no-op:workflow-completed".to_string(),
                 Err(ReportRefusal::GatePrecondition { .. }) => {
                     "refuse:gate-precondition".to_string()
                 }
@@ -2841,7 +3046,7 @@ mod tests {
         );
         assert!(matches!(
             run.report_dispatch(&request(Verdict::Forward)),
-            Ok(ReportDecision::NoOp(ReportNoOp::WorkflowAlreadyCompleted { stage }))
+            Ok(ReportDecision::NoOp { no_op: ReportNoOp::WorkflowAlreadyCompleted { stage }, .. })
                 if stage == slug(1)
         ));
     }
@@ -2865,7 +3070,7 @@ mod tests {
         );
         assert!(matches!(
             run.report_dispatch(&named),
-            Ok(ReportDecision::NoOp(ReportNoOp::AlreadyCompletedMovedOn { stage, current }))
+            Ok(ReportDecision::NoOp { no_op: ReportNoOp::AlreadyCompletedMovedOn { stage, current }, .. })
                 if stage == slug(1) && current == slug(2)
         ));
     }
@@ -3859,7 +4064,11 @@ mod tests {
         assert_eq!(
             w.record_skeleton_stance(SkeletonStance::On, occurred())
                 .unwrap_err(),
-            CommandError::InvalidTarget(at(&w, 1))
+            SkeletonStanceRefusal::Rejected {
+                stage: Some(slug(1)),
+                scope: "classic".into(),
+                error: CommandError::InvalidTarget(at(&w, 1))
+            }
         );
         assert_eq!(w.skeleton_stance(), None);
         assert_eq!(w.seq_nr(), 1, "拒否では歴史が伸びない");
@@ -3870,7 +4079,11 @@ mod tests {
             without
                 .record_skeleton_stance(SkeletonStance::On, occurred())
                 .unwrap_err(),
-            CommandError::InvalidTarget(without.cursor())
+            SkeletonStanceRefusal::Rejected {
+                stage: Some(slug(1)),
+                scope: "classic".into(),
+                error: CommandError::InvalidTarget(without.cursor())
+            }
         );
 
         // 他人の計画も拒む。
@@ -3879,7 +4092,11 @@ mod tests {
             w.execution
                 .record_skeleton_stance(&foreign_plan(4), SkeletonStance::On, occurred())
                 .unwrap_err(),
-            CommandError::IntentMismatch
+            SkeletonStanceRefusal::Rejected {
+                stage: Some(slug(1)),
+                scope: "classic".into(),
+                error: CommandError::IntentMismatch
+            }
         );
     }
 

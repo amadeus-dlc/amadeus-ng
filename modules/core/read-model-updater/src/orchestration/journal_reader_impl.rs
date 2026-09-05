@@ -97,7 +97,7 @@ const CREATE_CHECKPOINT_TABLE: &str = "CREATE TABLE IF NOT EXISTS amadeus_projec
 /// v3 で journal は `occurred_at` (epoch ナノ秒) と `manifest` (型判別子) を持つ。封筒の材料は
 /// 列から読む — payload には輸送のメタデータが入らなくなったためである (ADR-010 / B7)。
 const SELECT_EVENTS_AFTER: &str = "SELECT rowid, aid, seq_nr, payload, occurred_at, manifest
-     FROM journal WHERE rowid > ?1 ORDER BY rowid";
+     FROM journal WHERE rowid > ?1 AND (?2 IS NULL OR rowid <= ?2) ORDER BY rowid";
 
 /// 投影のチェックポイント。
 const SELECT_CHECKPOINT: &str = "SELECT last_global_seq, anchor_aid, anchor_seq_nr
@@ -127,7 +127,7 @@ const SELECT_ADVANCED_CHECKPOINTS: &str =
 const NO_AGGREGATE: &str = "-";
 
 /// rusqlite の失敗を `Io { kind, path }` へ写す (材料のみ — 文言は運ばない)。
-fn map_sqlite_error(error: &rusqlite::Error, path: &Path) -> JournalReadError {
+pub(super) fn map_sqlite_error(error: &rusqlite::Error, path: &Path) -> JournalReadError {
     JournalReadError::Io {
         kind: io_kind(error),
         path: Some(path.to_path_buf()),
@@ -135,7 +135,7 @@ fn map_sqlite_error(error: &rusqlite::Error, path: &Path) -> JournalReadError {
 }
 
 /// 行の材料を添えて `Corrupt` を組む。
-fn corrupt_error(
+pub(super) fn corrupt_error(
     aggregate_id: &str,
     seq_nr: Option<usize>,
     cause: CorruptCause,
@@ -236,17 +236,188 @@ impl JournalReaderImpl {
         // 構造化リードモデルの 17 表も我々の表である (本家の DDL とは衝突しない
         // `read_` 接頭)。版が一致していれば冪等な `CREATE TABLE IF NOT EXISTS` だけ、
         // 動いていれば落として作り直しジャーナルから描き直す。
+        let schema_changed = read_schema_version(&connection)
+            .map_err(|e| map_sqlite_error(&e, path.as_path()))?
+            != READ_SCHEMA_VERSION;
         JournalReaderImpl::ensure_read_schema(&mut connection, path.as_path())?;
-        Ok(JournalReaderImpl {
+        super::publication_store::initialize(&connection, path.as_path())?;
+        super::shared_projection::initialize(&connection, path.as_path())?;
+        if schema_changed {
+            super::shared_projection::invalidate(&connection, path.as_path())?;
+        }
+        let mut reader = JournalReaderImpl {
             path: path.clone(),
             connection,
-        })
+        };
+        if super::shared_projection::read(&reader.connection, path.as_path())?
+            .is_some_and(|head| !head.is_current())
+        {
+            reader.rebuild_read_model().map_err(|error| match error {
+                super::CatchUpError::Read(inner) => inner,
+                _ => corrupt_error(NO_AGGREGATE, None, CorruptCause::ProjectionSnapshotMismatch),
+            })?;
+        }
+        Ok(reader)
     }
 
     /// 読んでいるストアファイルの場所。
     #[must_use]
     pub const fn path(&self) -> &StorePath {
         &self.path
+    }
+
+    /// 新規イベントの有無によらず、現在の全履歴から共有構造化面を再生成する。
+    /// 個別ファイルのチェックポイントは変更しない。
+    ///
+    /// # Errors
+    /// 履歴欠落・破損、投影不能、DB更新の失敗。
+    pub fn rebuild_read_model(&mut self) -> Result<GlobalSeqNr, super::CatchUpError> {
+        let path = self.path.clone();
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| map_sqlite_error(&e, path.as_path()))?;
+        let history = Self::scan_from(&transaction, path.as_path(), GlobalSeqNr::ZERO)?;
+        let last = history.scanned_to().unwrap_or(GlobalSeqNr::ZERO);
+        let recorded: i64 = transaction
+            .query_row(
+                "SELECT COALESCE(MAX(last_global_seq),0) FROM amadeus_projection_checkpoint",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| map_sqlite_error(&e, path.as_path()))?;
+        let head = super::shared_projection::read(&transaction, path.as_path())?;
+        let published = match head {
+            Some(head) => head.position(),
+            None => super::shared_projection::known_position(&transaction, path.as_path())?,
+        };
+        let recorded = recorded.max(published);
+        if to_i64(last.to_u64())? < recorded {
+            return Err(
+                corrupt_error(NO_AGGREGATE, None, CorruptCause::CheckpointAnchorMismatch).into(),
+            );
+        }
+        let tables = ReadTables::project(&history)?;
+        replace_all(&transaction, &tables).map_err(|e| map_sqlite_error(&e, path.as_path()))?;
+        super::shared_projection::record(&transaction, path.as_path(), to_i64(last.to_u64())?)?;
+        transaction
+            .commit()
+            .map_err(|e| map_sqlite_error(&e, path.as_path()))?;
+        Ok(last)
+    }
+
+    /// 失われた出力を最後の確定済み計画から復元する。存在する本文は保持する。
+    ///
+    /// # Errors
+    /// 対象・確定位置の不一致、保存済み計画や履歴の破損、公開時の失敗。
+    pub fn restore_missing_files(
+        &mut self,
+        projection: &ProjectionName,
+        targets: &super::ProjectionTargets,
+    ) -> Result<bool, super::CatchUpError> {
+        if super::publication_store::pending(&self.connection, self.path.as_path(), projection)?
+            .is_some()
+        {
+            return Ok(false);
+        }
+        let target = super::PublicationBatch::rebuild(GlobalSeqNr::ZERO, GlobalSeqNr::ZERO, vec![])
+            .for_targets(targets)?;
+        let Some(binding) = target.target_binding() else {
+            return Ok(false);
+        };
+        let Some(previous) = super::publication_store::snapshot(
+            &self.connection,
+            self.path.as_path(),
+            projection,
+            binding,
+        )?
+        else {
+            return Ok(false);
+        };
+        if !previous.matches_targets(targets) || !previous.uses_current_transform() {
+            return Ok(false);
+        }
+        let mut missing = false;
+        let mut files = Vec::new();
+        for file in previous.files() {
+            if let Some((restored, absent)) = file.restore_missing()? {
+                missing |= absent;
+                files.push(restored);
+            }
+        }
+        if !missing {
+            return Ok(false);
+        }
+        let checkpoint = Self::read_checkpoint(&self.connection, projection, self.path.as_path())?;
+        if checkpoint < previous.to() {
+            return Err(super::CatchUpError::PublicationConflict {
+                path: self.path.as_path().to_path_buf(),
+            });
+        }
+        // 共有面は現在の履歴から修復し、個別ファイルは保存済み断面を回復する。
+        self.rebuild_read_model()?;
+        let history = Self::scan_range(
+            &self.connection,
+            self.path.as_path(),
+            GlobalSeqNr::ZERO,
+            Some(checkpoint),
+        )?;
+        let tables = ReadTables::project(&history)?;
+        let batch =
+            super::PublicationBatch::rebuild(checkpoint, checkpoint, files).for_targets(targets)?;
+        super::publication_store::publish(
+            &mut self.connection,
+            self.path.as_path(),
+            projection,
+            &batch,
+            &tables,
+        )?;
+        Ok(true)
+    }
+
+    /// 競合した未完計画を、現在内容を保持する新世代へ置換して再開する。
+    /// 自動的に対応を証明できない編集は競合のまま残す。
+    ///
+    /// # Errors
+    /// 対象不一致・曖昧な編集・履歴の破損・公開の失敗。
+    pub fn resolve_publication(
+        &mut self,
+        projection: &ProjectionName,
+        targets: &super::ProjectionTargets,
+    ) -> Result<bool, super::CatchUpError> {
+        let Some(previous) =
+            super::publication_store::pending(&self.connection, self.path.as_path(), projection)?
+        else {
+            return Ok(false);
+        };
+        if !previous.matches_targets(targets) {
+            return Err(super::CatchUpError::PublicationConflict {
+                path: targets.state_file().to_path_buf(),
+            });
+        }
+        let files = previous
+            .files()
+            .iter()
+            .map(super::PublicationFile::rebase)
+            .collect::<Result<Vec<_>, _>>()?;
+        let batch = super::PublicationBatch::rebuild(previous.from(), previous.to(), files)
+            .for_targets(targets)?
+            .replacing(previous.request_id());
+        let history = Self::scan_range(
+            &self.connection,
+            self.path.as_path(),
+            GlobalSeqNr::ZERO,
+            Some(previous.to()),
+        )?;
+        let tables = ReadTables::project(&history)?;
+        super::publication_store::publish(
+            &mut self.connection,
+            self.path.as_path(),
+            projection,
+            &batch,
+            &tables,
+        )?;
+        Ok(true)
     }
 
     /// 読み面 17 表を**版付きで**用意する (取得ループの入口 = 開く段で 1 度)。
@@ -321,18 +492,100 @@ impl JournalReaderImpl {
     /// [`JournalReader::events_after`] の本体そのものであり、開く段のスキーマ作り直し
     /// ([`JournalReaderImpl::ensure_read_schema`]) も同じ核を使う — 版が動いたときに
     /// 読み面を全履歴から描き直すのに、非同期の口を通す必要が無いためである。
+    pub(super) fn advance_on(
+        connection: &rusqlite::Transaction<'_>,
+        path: &Path,
+        projection: &ProjectionName,
+        to: GlobalSeqNr,
+        tables: &ReadTables,
+    ) -> Result<(), JournalReadError> {
+        let target = to_i64(to.to_u64())?;
+        let current = JournalReaderImpl::read_checkpoint(connection, projection, path)?;
+        if to < current {
+            return Err(JournalReadError::CheckpointRegression {
+                projection: projection.clone(),
+                current,
+                requested: to,
+            });
+        }
+        // 前進先の journal 行の識別子をアンカーとして併記する。journal に無い位置へは
+        // 進めない — 進めると以後の照合が必ず失敗する (ZERO はアンカー無し)。
+        let anchor: Option<(String, i64)> = if target == 0 {
+            None
+        } else {
+            let row: Option<(String, i64)> = connection
+                .query_row(SELECT_ANCHOR_ROW, params![target], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()
+                .map_err(|error| map_sqlite_error(&error, path))?;
+            match row {
+                Some(found) => Some(found),
+                None => {
+                    return Err(corrupt_error(
+                        NO_AGGREGATE,
+                        None,
+                        CorruptCause::CheckpointAnchorMismatch,
+                    ));
+                }
+            }
+        };
+        let (anchor_aid, anchor_seq_nr) = match &anchor {
+            Some((aid, seq_nr)) => (Some(aid.as_str()), Some(*seq_nr)),
+            None => (None, None),
+        };
+        // 行の全差し替えとチェックポイントの前進は**同じ Tx** である (裁定 §3)。
+        // 上の単調性・アンカー照合で早期 return したときは行も 1 つも変わっていない
+        // (Tx は commit されずに落ちる)。
+        // 個別カーソルが遅れていても、space共有の行集合は後退させない。
+        // 古い候補を確定する場合も、共有面の現物と耐久headの一致を検査する。
+        let head = super::shared_projection::verify(connection, path)?;
+        let shared = head.position();
+        if target == shared
+            && !crate::read_tables::matches_rows(connection, tables)
+                .map_err(|error| map_sqlite_error(&error, path))?
+        {
+            return Err(corrupt_error(
+                NO_AGGREGATE,
+                None,
+                CorruptCause::ProjectionSnapshotMismatch,
+            ));
+        }
+        if target > shared {
+            replace_all(connection, tables).map_err(|error| map_sqlite_error(&error, path))?;
+            super::shared_projection::record(connection, path, target)?;
+        }
+        connection
+            .execute(
+                UPSERT_CHECKPOINT,
+                params![projection.as_str(), target, anchor_aid, anchor_seq_nr],
+            )
+            .map_err(|error| map_sqlite_error(&error, path))?;
+        Ok(())
+    }
+
     fn scan_from(
         connection: &Connection,
         path: &Path,
         after: GlobalSeqNr,
     ) -> Result<JournalBatch, JournalReadError> {
+        Self::scan_range(connection, path, after, None)
+    }
+
+    pub(super) fn scan_range(
+        connection: &Connection,
+        path: &Path,
+        after: GlobalSeqNr,
+        through: Option<GlobalSeqNr>,
+    ) -> Result<JournalBatch, JournalReadError> {
+        let through = through.map(|value| to_i64(value.to_u64())).transpose()?;
         let from = to_i64(after.to_u64())?;
         let rows = {
             let mut statement = connection
                 .prepare(SELECT_EVENTS_AFTER)
                 .map_err(|error| map_sqlite_error(&error, path))?;
             let mapped = statement
-                .query_map(params![from], |row| {
+                .query_map(params![from, through], |row| {
                     Ok(JournalRow {
                         rowid: row.get::<_, i64>(0)?,
                         aggregate_id: row.get::<_, String>(1)?,
@@ -376,7 +629,7 @@ impl JournalReaderImpl {
     ///
     /// 正のチェックポイントは保存済みアンカー (aid, seq_nr) を journal の同 rowid と照合して
     /// から返す — 食い違いは `Corrupt (CheckpointAnchorMismatch)` (PR #30 レビュー裁定)。
-    fn read_checkpoint(
+    pub(super) fn read_checkpoint(
         connection: &Connection,
         projection: &ProjectionName,
         path: &Path,
@@ -681,6 +934,37 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 }
 
 impl JournalReader for JournalReaderImpl {
+    async fn pending_publication(
+        &self,
+        projection: &ProjectionName,
+    ) -> Result<Option<super::PublicationBatch>, JournalReadError> {
+        super::publication_store::pending(&self.connection, self.path.as_path(), projection)
+    }
+
+    async fn events_through(&self, to: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
+        Self::scan_range(
+            &self.connection,
+            self.path.as_path(),
+            GlobalSeqNr::ZERO,
+            Some(to),
+        )
+    }
+
+    async fn publish(
+        &mut self,
+        projection: &ProjectionName,
+        batch: &super::PublicationBatch,
+        tables: &ReadTables,
+    ) -> Result<(), super::CatchUpError> {
+        super::publication_store::publish(
+            &mut self.connection,
+            self.path.as_path(),
+            projection,
+            batch,
+            tables,
+        )
+    }
+
     async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
         JournalReaderImpl::scan_from(&self.connection, self.path.as_path(), after)
     }
@@ -698,63 +982,15 @@ impl JournalReader for JournalReaderImpl {
         to: GlobalSeqNr,
         tables: &ReadTables,
     ) -> Result<(), JournalReadError> {
-        let target = to_i64(to.to_u64())?;
         let path = self.path.clone();
-
-        // 読み取ってから書くので `BEGIN IMMEDIATE` で書込ロックを最初に取る (BR2.3)。
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
-
-        let current = JournalReaderImpl::read_checkpoint(&transaction, projection, path.as_path())?;
-        if to < current {
-            return Err(JournalReadError::CheckpointRegression {
-                projection: projection.clone(),
-                current,
-                requested: to,
-            });
-        }
-        // 前進先の journal 行の識別子をアンカーとして併記する。journal に無い位置へは
-        // 進めない — 進めると以後の照合が必ず失敗する (ZERO はアンカー無し)。
-        let anchor: Option<(String, i64)> = if target == 0 {
-            None
-        } else {
-            let row: Option<(String, i64)> = transaction
-                .query_row(SELECT_ANCHOR_ROW, params![target], |row| {
-                    Ok((row.get(0)?, row.get(1)?))
-                })
-                .optional()
-                .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
-            match row {
-                Some(found) => Some(found),
-                None => {
-                    return Err(corrupt_error(
-                        NO_AGGREGATE,
-                        None,
-                        CorruptCause::CheckpointAnchorMismatch,
-                    ));
-                }
-            }
-        };
-        let (anchor_aid, anchor_seq_nr) = match &anchor {
-            Some((aid, seq_nr)) => (Some(aid.as_str()), Some(*seq_nr)),
-            None => (None, None),
-        };
-        // 行の全差し替えとチェックポイントの前進は**同じ Tx** である (裁定 §3)。
-        // 上の単調性・アンカー照合で早期 return したときは行も 1 つも変わっていない
-        // (Tx は commit されずに落ちる)。
-        replace_all(&transaction, tables)
-            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
-        transaction
-            .execute(
-                UPSERT_CHECKPOINT,
-                params![projection.as_str(), target, anchor_aid, anchor_seq_nr],
-            )
-            .map_err(|error| map_sqlite_error(&error, path.as_path()))?;
+            .map_err(|e| map_sqlite_error(&e, path.as_path()))?;
+        Self::advance_on(&transaction, path.as_path(), projection, to, tables)?;
         transaction
             .commit()
-            .map_err(|error| map_sqlite_error(&error, path.as_path()))
+            .map_err(|e| map_sqlite_error(&e, path.as_path()))
     }
 
     async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
@@ -969,9 +1205,33 @@ mod tests {
         let upstream: Vec<&str> = tables
             .iter()
             .map(String::as_str)
-            .filter(|name| !name.starts_with("read_") && *name != CHECKPOINT_TABLE)
+            .filter(|name| {
+                !name.starts_with("read_")
+                    && *name != CHECKPOINT_TABLE
+                    && *name != "amadeus_publication"
+                    && *name != "amadeus_publication_file"
+                    && *name != "amadeus_publication_history"
+                    && *name != "amadeus_publication_history_file"
+                    && *name != "amadeus_publication_snapshot"
+                    && *name != "amadeus_publication_snapshot_file"
+                    && *name != "amadeus_read_model_head"
+            })
             .collect();
         assert_eq!(upstream, ["journal", "snapshot"], "本家の表は 2 つだけ");
+        for name in [
+            "amadeus_publication",
+            "amadeus_publication_file",
+            "amadeus_publication_history",
+            "amadeus_publication_history_file",
+            "amadeus_publication_snapshot",
+            "amadeus_publication_snapshot_file",
+            "amadeus_read_model_head",
+        ] {
+            assert!(
+                tables.iter().any(|table| table == name),
+                "公開計画の表がある: {name}"
+            );
+        }
         assert!(
             tables.iter().any(|name| name == CHECKPOINT_TABLE),
             "チェックポイント表がある"

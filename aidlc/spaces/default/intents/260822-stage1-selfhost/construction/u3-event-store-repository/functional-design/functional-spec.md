@@ -1,297 +1,210 @@
-# functional-spec — U3 SQLite EventStore と WorkflowExecutionRepository（`u3-event-store-repository`）
+# functional-spec — U3 イベントストアと IntentExecutionRepository
 
-> Functional Design（Construction 3.1）成果物（Unit: U3、kind: library、Bolt: B5）。出典: `entities.md` / `rules.md`（同ディレクトリ）、C3 / C6、ADR-001 / 003 /
-> 006 / 007、Bolt B3 実装（`modules/core/domain/src/orchestration/`）、`functional-design-questions.md`（Q1〜Q4 = A）。コードは署名の要点だけ（設計ステージ）。
+> 2026-09-05 是正。本文は現行の裁定・ポート・実装に同期した。末尾の Review は過去の記録として保持する。
+> 出典: `../../../inception/units-generation/unit-of-work.md`、
+> `../../../inception/units-generation/unit-of-work-story-map.md`、
+> `../../../inception/requirements-analysis/requirements.md`、
+> `../../../inception/contract-design/contract-summary.md`（C3 / C6）、
+> `../../../inception/domain-design/decisions.md`（ADR-001 / ADR-007 / ADR-010）、
+> `entities.md`、`rules.md`、`traceability.json`。
+> 既存 Review への対応と実測は `../correction-report.md` に記録する。
 
-> ## ⚠ 部分失効（2026-08-27 / ADR-010・Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）
->
-> 本書のうち **「自前の SQLite イベントストアを実装する」ことを前提にした記述は失効した**。
-> 該当は §1 の `event_store_impl.rs` / `schema.rs` / `wire/` / `memory/in_memory_event_store.rs` 行、
-> §2 のローカル `EventStore` / `EventStoreImpl` / `InMemoryWorkflowExecutionRepository` / `u64` 化、
-> §3.1（store の SQL 手順）、§3.2 の 1〜3（find_by_id の SQL 手順と `with_version`）、
-> §3.4（`within_write_transaction`）、§3.5（`PRAGMA user_version` によるスキーマ版検査）、
-> §4（ワイヤ形式の全体）、§5 の ITF 再生先、§7 の一部。各所に個別の失効注記を入れてある。
->
-> **失効していないもの**: ポート `WorkflowExecutionRepository` / `JournalReader` の面（§2 の該当行）、
-> §3.3（投影の差分読取の手順）、§5 の Quint モデル `journal_protocol.qnt` そのもの（**1 文字も
-> 変えずに通った** — 乗り換えの意味論的な検収）、§6 の退役チェックリスト（ADR-007 由来で B6 とは独立）。
->
-> 現在の正は実装（`modules/core/use-case/src/orchestration/`・`modules/core/interface-adapter/src/orchestration/`）と
-> [ADR-010](../../../inception/domain-design/decisions.md)、
-> [C3 / C6](../../../inception/contract-design/contract-summary.md)、
-> [developer-report-1 §6](../../esa-v2-migration/developer-report-1.md) /
-> [developer-report-2 §8](../../esa-v2-migration/developer-report-2.md)。
+## 1. 責務・配置・要求対応
 
-> ## ⚠ 追加失効（2026-08-29 / ADR-010・Bolt B7 — event-store-adapter-rs v3.0.0 EventEnvelope API へ乗り換え）
->
-> B6 で「失効していないもの」とされたポート面（§2）と ITF 再生先（§5）も、B7 でさらに変わった:
-> - **ポート署名**（§2）: `find_by_id` の戻り値が **再水和レコード `RehydratedWorkflowExecution`**
->   （集約 + ストア採番 version）に、`store` が `expected_version: usize` を明示引数に取る形に
->   変わった。楽観 version は集約と memento（`WorkflowExecutionState`）から削除され、集約の
->   **外**を持ち回る。
-> - **`check_preconditions` の消滅**（§3.1 の①前提検査）: イベントが識別子・通番を持たなくなった
->   （封筒はドメインで作らず Repository が組む）ため、「別集約のイベントを渡す」「通番を
->   食い違わせる」がそもそも書けなくなり、検査対象が構成不能になった。実行時検査 → 型強制の
->   置換（B6 で `seq_nr = 0` に対して行ったのと同型）。契約テスト
->   `a_sequence_that_disagrees_with_the_aggregate_is_refused` /
->   `mismatched_identity_is_refused` は削除した（検出力を落としたのではなく対象が消えた）。
-> - **ITF 再生先**（§5）: モデルは今回も 1 文字も変えていないが、`journal_protocol_conformance.rs`
->   の `Writer` が `version` を持つ形へ追従した（モデルの `loadedVersion` は再水和レコードの版へ
->   そのまま射影される）。
->
-> 現在の正は実装（`modules/core/use-case/src/orchestration/`・`modules/core/interface-adapter/src/orchestration/`）と
-> [ADR-010 2026-08-29 追記](../../../inception/domain-design/decisions.md)、
-> [developer-report-1（esa-v3-migration）](../../esa-v3-migration/developer-report-1.md)。
+U3 はイベントジャーナルへの書込と `IntentExecution` の再構成を担う。
+FR1 の主担当として子要求の対応を集約し、FR1.2（原子的保存と楽観競合制御）・FR1.3（Repository）を実装する。
+FR1.1 の監査投影・横断読取は U4 の担当であり、親要求への対応追加によって U3 へ移管しない。
+NFR3 の再構成は U3、投影の再生成は U4 が担う。
 
-## 1. 配置（クレート = 層）
-
-| 層 / クレート | モジュール（private mod + ファサード `pub use`） | 内容 |
+| 所有 | 現行の型・ファイル | 責務 |
 |---|---|---|
-| `core-use-case::orchestration` | `workflow_execution_repository.rs` / ~~`event_store.rs`~~ / `journal_reader.rs` / `repository_error.rs` / ~~`event_store_error.rs`~~ → `journal_read_error.rs` / `corrupt_cause.rs` / `global_seq_nr.rs` / `projection_name.rs` | ~~ポート 3 本~~ → **ポート 2 本**（2026-08-27 / ADR-010: ローカル `EventStore` ポートは削除、正本は本家 crate）、エラー 2 型 + CorruptCause、値 2 型（BR1.x） |
-| `core-use-case` | `workspace/`（mod ごと削除） | 退役（BR3.1） |
-| `core-domain::orchestration` | `intent_id.rs`（UUIDv7）、`workflow_execution_state.rs`（旧 snapshot）、`state_error.rs`（旧 snapshot_error）、`workflow_execution.rs`（state / from_state） | BR4.1 / BR4.3 |
-| `core-domain::workspace` | `intent_dir_name.rs`（新設）。`lock_protocol.rs` / `lock_identity.rs` 削除 | BR4.2 / BR3.1 |
-| `core-interface-adapter::orchestration` | ~~`event_store_impl.rs`（+ `schema.rs` DDL 定数、`wire/event_wire.rs`、`wire/state_wire.rs`）~~ / ~~`memory/in_memory_event_store.rs`~~ / ~~`memory/workflow_execution_repository.rs`~~ → **すべて削除**（2026-08-27 / ADR-010・Bolt B6 — 自前ストア約 5,480 行の撤去）。現在は `store_path.rs`、`store_failure.rs`、`workflow_execution_repository_impl.rs`、`journal_reader_impl.rs` | BR2.x |
-| `core-interface-adapter` | `clock.rs`（既存、Fake 付き）。`process_probe.rs` / `workspace/fs_workspace_lock.rs` 削除、`workspace/state_file_io.rs` は維持（U4） | BR2.6 / BR3.1 |
-| `infra-io` | `process_probe.rs` 削除 | BR3.1 |
-| `formal/orchestration` | `journal_protocol.qnt`（新）。`formal/workspace/audit_lock.qnt` 削除 | BR3.3 |
-| `tests/conformance/fixtures` | `journal_protocol/*.itf.json`（新）。`audit_lock/` 削除 | BR3.5 |
-| `tools/lint` | `reap-decision-locality` ルール削除（checkbox-vocabulary / no-public-fields は維持） | BR3.1 |
-| 依存 | workspace: ~~`rusqlite = { version = "0.3x", features = ["bundled"] }`~~ → ~~`event-store-adapter-rs = "=2.0.0"`（`sqlite` feature）~~ → **`event-store-adapter-rs = "=3.0.0"`（`sqlite` feature、2026-08-29 / Bolt B7）**（2026-08-27 / ADR-010。`rusqlite` は `JournalReaderImpl` の別接続用に adapter が直接持つ。バージョンは完全固定 — 本家スキーマに結合しているため）、`tokio = { version = "1", features = ["rt", "macros"] }`、`chrono`（本家 trait が `DateTime<Utc>` を要求 — NFR4.1 の再検討対象）、`serde`。adapter から `md5` 除去 | P6 |
+| core-command-use-case | orchestration/port/intent_execution_repository.rs、repository_error.rs | 集約 Repository の署名と共通エラー |
+| core-command-domain | IntentExecution / IntentExecutionEvent / IntentExecutionId、workspace の StorePath / IntentDirName | ドメイン遷移・識別・検査付き再構成 |
+| core-command-interface-adapter | orchestration/intent_execution_repository_impl.rs、snapshot_strategy.rs、dto/ | 本家ストアの利用、永続化DTO、差分再生への変換 |
+| core-read-model-updater | orchestration/journal_reader.rs、journal_reader_impl.rs、JournalBatch / JournalReadError / GlobalSeqNr / ProjectionName | U4 所有の横断読取・投影公開・チェックポイント |
+| 本家 event-store-adapter-rs =3.0.0 | EventStore / EventEnvelope / SnapshotEnvelope、SQLite / memory | journal・snapshot の格納、Tx、CAS、版の採番 |
+| app/aidlc のテスト | tests/journal_protocol_conformance.rs | 書込側とRMUを結合するITF適合検証 |
 
-ファサード（`pub use`）に旧名は残さない（module-visibility.md）。
+C3 の古い `WorkflowExecutionRepository` / `RehydratedWorkflowExecution` / 裸の `expected_version` を現行署名と読み替えない。
+B8 の RMU 移動と、現行ポート `modules/core/command/use-case/src/orchestration/port/intent_execution_repository.rs`
+の「楽観 version は集約が運ぶ」に記録された2026-08-30の裁定を以下に反映した。版の所有の根拠をC3のB13追記とはしない。
+自前 EventStore、旧 SQL 手順、`within_write_transaction`、domain の serde-memento は後継設計に含めない。
 
-## 2. ポートの形（C3 の具体化 — 差分のみ）
+## 2. 公開契約と版の持ち回り
 
-- ~~`WorkflowExecutionRepository::{find_by_id(&self, &IntentId), store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution)}`~~ → **失効（2026-08-29 / ADR-010・Bolt B7）**:
-  `find_by_id(&self, &IntentId) -> Result<RehydratedWorkflowExecution, _>`、
-  `store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution, expected_version: usize) -> Result<(), _>`。
-  楽観 version は集約から外れ、再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番
-  version）が持ち回る。`store` は `&mut self`（C3 も
-  2026-08-24 のオーナー裁定で `&self` → `&mut self` へ**改訂済み** — `contract-summary.md` §C3、`pending-revision.md` #9。
-  内部可変性の禁止に伴う変更で、正本は `coding-rules/interior-mutability.md` / `command-query-separation.md`）。
-- ~~`EventStore<AID, A, E>` の 4 メソッド — C3 どおり（`version: u64`、`seq_nr: u64`）。Repository 実装は `persist_event_and_snapshot` / `get_latest_snapshot_by_id` /
-  `get_events_by_id_since_seq_nr` を使う。~~
-  → **失効（2026-08-27 / ADR-010）**: ローカル `EventStore` ポートは削除。正本は本家
-  `event_store_adapter_rs::types::EventStore`（関連型 `AID` / `AG` / `EV`、数値は `usize`、エラーは
-  `EventStoreWriteError` / `EventStoreReadError`）。Repository 実装が使うメソッドは同じ 3 本である。
-- `JournalReader::{events_after(GlobalSeqNr), checkpoint(&ProjectionName), advance_checkpoint(&ProjectionName, GlobalSeqNr)}`。
-  （2026-08-27 改訂: エラー型は `JournalReadError`。`GlobalSeqNr` の実体は**本家 `journal` 表の `rowid`** である）
-- ~~`EventStoreImpl::open(path: StorePath, clock: C) -> Result<Self, EventStoreError>` / `within_write_transaction<T>(&mut self, f) -> Result<T, EventStoreError>`。~~
-  → **失効（2026-08-27 / ADR-010）**: `EventStoreImpl` ごと削除。`within_write_transaction` は本家が接続も
-  トランザクションも露出しないため実現できず、口ごと消えた（**登録簿の扱いは U7 で裁定**）。
-- ~~`WorkflowExecutionRepositoryImpl { store: EventStoreImpl<C> }` — `EventStoreImpl<C>` を直接所有する（内部可変性は使わない、coding-rules/interior-mutability.md）。
-  可変操作は `&mut self`。`event_store(&self) -> &EventStoreImpl<C>` / `event_store_mut(&mut self) -> &mut EventStoreImpl<C>` に分けて公開する。
-  `InMemoryWorkflowExecutionRepository { store: InMemoryEventStore }` も同形。~~
-  → **改訂（2026-08-27 / ADR-010）**: `WorkflowExecutionRepositoryImpl<S>`（`S` は本家 `EventStore` を満たす
-  バックエンド）が**ストアを単一所有**する。`open()` が SQLite、`in_memory()` が本家 memory を選び、
-  **実装コードは同一**。内部可変性を使わない方針（Query は `&self` / Command は `&mut self`）は不変。
-  テストダブル型 `InMemoryWorkflowExecutionRepository` は存在しない。ストアを外へ貸す
-  `event_store()` / `event_store_mut()` も無い（本家の口を素通しする必要が無くなったため）。
-- ~~数値パラメータは u64（C3 の usize を実ドメイン型に合わせて具体化 — C3 の改訂提案を所有者 U5 / U6 へ申し送り）。~~
-  → **失効・撤回（2026-08-27 / ADR-010）**: 本家の `usize` に戻した。借り物の契約を我々のドメイン型に
-  合わせて書き換えていたこと自体が `coding-rules/upstream-contracts.md` 違反だった。
-- `StorePath::for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath` / `as_path()`。
-- **（2026-08-27 追加）楽観 version はストアが採番する不透明トークン**（BR5.3 / ADR-010 追記 (1)）。
-  ~~`find_by_id` はストアが載せた値をそのまま保ち、`store` の期待値は `aggregate.version()` である。
-  genesis（`Event::is_created()` が真）だけは Gateway が**ストアへ渡す写しにのみ**初期値 1 を載せる
-  （呼出側の集約は動かない）。~~ → **失効（2026-08-29 / ADR-010・Bolt B7）**: version は集約から
-  外れた。`find_by_id` は再水和レコード `RehydratedWorkflowExecution` にストアが載せた値をそのまま
-  保つ。`store` の期待値は明示引数 `expected_version: usize`（genesis は `UNPERSISTED_VERSION` = 0）。
-  genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、新規・更新とも `persist_event_and_snapshot`
-  を呼ぶ（v3 の `persist_event` は snapshot の seq_nr を進めず Quint 不変条件
-  `snapshot_tracks_journal` を破るため）。`Conflict` の `actual` は競合時に `get_latest_snapshot_by_id`
-  を1回読み直して得る（本家は整形済み文字列しか返さないため。文言解析はしない）。
+```rust
+pub trait IntentExecutionRepository {
+    async fn find_by_id(
+        &self,
+        id: &IntentExecutionId,
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>>;
 
-## 3. フロー
+    async fn store(
+        &mut self,
+        event: &IntentExecutionEvent,
+        aggregate: &IntentExecution,
+    ) -> Result<(), RepositoryError<IntentExecutionId>>;
+}
+```
 
-### 3.1 store（BR1.3 / BR2.3）
+実装はストアを単一所有し、書込に `&mut self` を使う。追加の内部可変性は不要である。
+版の正本は `SnapshotEnvelope::version()`。読取で集約へ載せ、コマンド適用後も同じ版を保持し、
+`store` が `aggregate.version()` を期待値として本家へ渡す。
+`version` と `seq_nr` はともに `usize` だが意味が異なり、版を通番から導かない。
+書込直前の版の読み直しは楽観競合検出を失わせるため行わない。
+`store` の引数は参照なので、保存成功後に続けて保存する場合も `find_by_id` から取り直す。
 
-> **失効（2026-08-27 / ADR-010・Bolt B6）** — 下記 1〜5 は**自前ストアの SQL 手順**であり、本家へ
-> 乗り換えたことで我々の手順ではなくなった。~~現在の store は
-> ①前提検査（`event.id().intent_id() == aggregate.id()`、`event.seq_nr() == aggregate.seq_nr()`、
-> `event.seq_nr() >= 1`。**`aggregate.version() == event.seq_nr() - 1` の検査は削除** — version を
-> `seq_nr` から導く前提そのものが BR5.3 で否定された）→ ②genesis なら写しに初期 version 1 を載せる
-> → ③本家 `persist_event_and_snapshot(event, aggregate)` を 1 回呼ぶ、の 3 手である。~~ →
-> **失効（2026-08-29 / ADR-010・Bolt B7）**: ①の前提検査（`check_preconditions`）は**消滅**した。
-> イベントが識別子・通番を持たなくなった（封筒はドメインで作らず Repository が組む）ため、
-> 「別集約のイベントを渡す」「通番を食い違わせる」がそもそも書けなくなり、検査対象が構成不能に
-> なった（実行時検査 → 型強制の置換）。現在の store は ①genesis なら `expected_version` に
-> `UNPERSISTED_VERSION`（= 0）を渡す → ②Repository が集約から
-> `EventEnvelope::new(intent_id, aggregate.seq_nr(), *aggregate.last_updated_at(),
-> event).with_manifest("workflow-execution-event/1")` を組む → ③本家 `persist_event_and_snapshot(envelope,
-> aggregate.clone(), expected_version)` を 1 回呼ぶ（新規・更新とも同じ経路、分岐は封筒の
-> `seq_nr == 1` から導出）、の 3 手である。
-> イベント追記・スナップショット更新・楽観 version の CAS は**本家が同一 Tx で**行い、我々は接続も
-> Tx も持たない。競合は本家が `OptimisticLockError` で返し、我々が `Conflict { expected, actual }` へ
-> 写す（`actual` は競合時のみ `get_latest_snapshot_by_id` の読み直しで得る）。`ContractViolation`
-> （我々が封筒と `expected_version` を組み違えたとき）は `Corrupt(UndecodablePayload)` へ写す
-> （2026-08-29 / Bolt B7 追加）。
+`RepositoryError<Id>` は `NotFound { id }`、`Conflict { expected, actual }`、
+`Io { kind, path }`、`Corrupt { id, seq_nr, source }`。
+書込ポートの公開 `CorruptCause` は廃止され、原因は `Error::source` で連鎖する。
+RMU の `JournalReadError::Corrupt { cause }` は別契約であり混同しない。
+`JournalReader` の全署名は RMU の現行 trait を参照する。
 
-**（以下 1〜5 は失効した自前 SQL 手順の履歴記録 — 上記バナー参照。現行手順はバナー内の①②③）**
+## 3. 保存と再構成
 
-1. ~~前提検査: `event.intent_id() == aggregate.intent_id()`、`event.seq_nr() == aggregate.seq_nr()`、`event.seq_nr() >= 1`、`aggregate.version() == event.seq_nr() - 1`
-   （違えば `Corrupt(SequenceGap)` — 呼出側のバグ）。`expected = aggregate.version()`（find_by_id が `with_version` で載せた「永続化済みの最後の seq_nr」。
-   `apply_event` は version を変えない — B3 実装契約）、`new_version = event.seq_nr()`。genesis は expected 0 / new_version 1。~~
-2. ~~`BEGIN IMMEDIATE`。~~
-3. ~~`INSERT INTO journal(aggregate_id, seq_nr, schema_version, event_type, payload, occurred_at)`。UNIQUE 違反 → rollback、`Conflict { expected, actual: 現在 version }`。~~
-4. ~~`expected == 0` → `INSERT INTO snapshot(aggregate_id, version = new_version, seq_nr = new_version, schema_version, payload, updated_at)`（既存行があれば rollback + Conflict）。
-   それ以外 → `UPDATE snapshot SET version = new_version, seq_nr = new_version, payload = ?, updated_at = ? WHERE aggregate_id = ? AND version = expected`。影響 0 行 →
-   `SELECT version` で actual を読み rollback + `Conflict { expected, actual }`。~~
-5. ~~`COMMIT`。Io 失敗は `Io { kind, path }`。~~
+### 3.1 store（BR1.3 / BR2.3 / BR2.6）
 
-### 3.2 find_by_id（BR1.2）
+1. 呼出側は同一コマンドで得た単一イベントと適用後集約を渡す。イベントは `aggregate_id` を持つため、
+   別実行のイベントも同じ Rust 型で渡せる。「型により構成不能」という B7 の説明は撤回する。
+2. Repository は `event.aggregate_id() != aggregate.id()` を書込前に検査する。
+   不一致なら `Corrupt`（アダプタ私有の `WriteContract` を source に持つ）として I/O 前に拒否する。
+   この検査は ID の一致を保証する。同じ ID の任意イベントと集約状態が意味的に対応することまで証明するものではない。
+3. 本家封筒の外側 ID・通番・発生時刻を集約から、payload をイベント DTO から組む。
+   manifest は `intent-execution-event/1`、期待版は `aggregate.version()`。
+4. `seq_nr == 1` は必ず `persist_event_and_snapshot`。genesis の期待版は0で、本家が初期版を採番する。
+   以後は `SnapshotStrategy::wants_snapshot(seq_nr)` が真なら同関数、それ以外は `persist_event` を呼ぶ。
+5. 本家が Tx と CAS を実行する。成功しても呼出側の集約は変更しない。
+   競合は `Conflict` に写し、actual は診断のためだけに読取る（読めなければ0）。
+   符号化失敗・本家の書込契約違反は `Corrupt`、I/O は `Io`。再試行政策はユースケースに置く。
 
-> **部分失効（2026-08-27 / ADR-010・Bolt B6）** — 下記 1〜3 の **SQL 手順と `with_version` の記述は失効**。
-> 現在は ①本家 `get_latest_snapshot_by_id(aid)` → `None` なら `NotFound`（journal を数えて `MissingSnapshot`
-> を分ける判定は本家の口では書けないので、`Corrupt(MissingSnapshot)` の経路は縮んだ）→ ②本家
-> `get_events_by_id_since_seq_nr(aid, snapshot.seq_nr)`（**その番号を含む**。自前 trait の doc は
-> 「より後」と書いていたが本家は境界が 1 つ違う）→ ③自分自身の `seq_nr` 以下のイベントを読み飛ばして
-> 順に `apply_event`、である。
-> **`with_version` は削除された** — 復号はストアが載せた version をそのまま保つのであって、
-> Repository が `seq_nr` から載せ直すことはしない（BR5.3）。
-> スナップショット payload の復号も **serde がメメント（`WorkflowExecutionState`）を経由する**ので、
-> `from_state()` の不変条件検査を必ず通る（オーナー裁定 2026-08-27）。~~ステップ 4（集約を返す）は不変。~~
->
-> **2026-08-29 追記（Bolt B7）**: ステップ 4 も**変わった** — `find_by_id` は集約そのものではなく
-> **再水和レコード `RehydratedWorkflowExecution`**（集約 + ストアが載せた version、private
-> フィールド + アクセサ `aggregate()` / `version()` / `into_aggregate()`）を返す。リプレイの
-> 開始位置は集約自身の `seq_nr`（ストア側の写しと書込経路で必ず一致し、食い違えば `apply_event`
-> が `SequenceGap` で止める）。
+`SnapshotStrategy::every(NonZeroUsize)` の既定値は10。
+初回は設定に関係なく基底を作り、以後は通番が間隔の倍数であるときに基底を更新する。
+イベントのみ保存しても snapshot 行の楽観版は進むが、基底 payload と通番は維持される。
+間隔2で3イベント保存した場合、基底通番2・行の版3からイベント3を再生する。
+既定10では3イベント後も基底通番1であり、イベント2・3が差分になる。
 
-**（以下 1〜3 は失効した自前 SQL 手順・`with_version` の履歴記録 — 上記バナー参照。ステップ 4 のみ現行）**
+### 3.2 find_by_id（BR1.2 / BR1.5）
 
-1. ~~`SELECT version, seq_nr, schema_version, payload FROM snapshot WHERE aggregate_id = ?`。無ければ journal を数え、0 なら `NotFound { intent_id }`、1 以上なら
-   `Corrupt(MissingSnapshot)`。~~
-2. ~~StateWire を復号（schema_version 検査）→ `WorkflowExecution::from_state(state)`（Err → `Corrupt(InvariantViolation)`）→ `with_version(snapshot.version)`。~~
-3. ~~`SELECT … FROM journal WHERE aggregate_id = ? AND seq_nr > snapshot.seq_nr ORDER BY seq_nr` を復号して順に `apply_event`（Err → `Corrupt(SequenceGap | InvariantViolation)`）。
-   replay ループ終了後、Repository が明示的に `with_version(最後に適用した seq_nr)` を載せる（`apply_event` は version を変えない）。通常運転では 0 件
-   （スナップショットは毎 store 更新）。~~
-4. 集約を返す。
+1. 要求された `IntentExecutionId` で最新スナップショットを読む。
+2. 基底がない場合だけ、通番1を包含下限として同集約の journal を読む。
+   行がなければ `NotFound`、行が残っていれば `Corrupt`（MissingSnapshot）。
+   この照会自体が失敗した場合は、ストアの失敗を `Io` / `Corrupt` に写す。
+3. 基底 DTO の `to_domain()` を通し、検査付き再構成コンストラクタで復元する。
+   復号や基底の不変条件検査に失敗したら `Corrupt`。旧 `from_state` / domain serde 経路は使わない。
+4. `base.seq_nr() + 1` を包含下限として後続イベントだけを読み、昇順に検査する。
+   戻された差分の通番が連続していること、manifest が一致すること、
+   DTO がドメインに復号できること、payload の `aggregate_id` が要求 ID に一致することを確認する。
+   分類可能な違反は `Corrupt` とし、部分集約を返さない。
+5. `IntentExecution::replay(base, events).with_version(snapshot.version())` で再構成する。
+   DTO として成立したイベントでも未知ステージ等の壊れた遷移はドメインがクラッシュで停止する。
+   この境界を全て `Corrupt` に変換するとは約束しない。
 
-### 3.3 投影の差分読取（BR1.4、利用は U4）
+読取・検査の範囲は最新基底と、その通番を超える差分である。
+基底以前の journal を再検査・全履歴リプレイしない。
+戻された差分の途中欠落は検出するが、別の終端記録を使った末尾欠落の完全検出は行わない。
+journal を全削除した場合に古い基底だけが返るという既存試験は、この検出範囲を示す。
+ジャーナルの削除や欠落を許容したという新しい承認、監査完全性の証明には使わない。
 
-`checkpoint(name)` → `events_after(cp)` → 投影を描く → `advance_checkpoint(name, last_global)`。advance は単調。再生成時は行削除（別 API `reset_checkpoint` は本 Unit では作らない — U4 の設計）。
+## 4. 永続化表現と読取側の境界
 
-### 3.4 登録簿の直列化（BR2.4、利用は U7）
+集約・イベント・キーの永続化 DTO はアダプタが所有し、本家が serde で格納する。
+属性の正本は `modules/core/command/interface-adapter/src/orchestration/dto/` にある。
+ドメインは永続化知識から中立とし、DTO 復号を検査付きドメイン構築へ変換する。
+楽観版を集約 payload に複製せず、snapshot 行の列から受け渡す。
 
-> **全面失効（2026-08-27 / ADR-010・Bolt B6）— 代替は未定、U7 で裁定する。**
-> 本家 `EventStoreForSqlite` は `Connection` を内部保持し `from_connection` は private、`transaction()` も
-> `persist_*` の内部でしか使われない（調査済み）。したがって**本家経由では BR2.4 を実現できない**ため、
-> `within_write_transaction` は口ごと削除した。ADR-010 は「登録簿 `intents.json` をやめてジャーナルと同じ
-> DB のテーブルにし、RMU の投影対象にする」を筋と書いている（リードモデルをコマンド側が Tx で守る構造
-> 自体が CQRS の境界に反する — `coding-rules/cqrs-boundaries.md`）が、U7 の設計に踏み込むため
-> **本 Bolt では裁定していない**。「解決済み」ではなく**未決**である。
+旧「イベントに識別子はない」「状態は16/17属性のmemento」「未知フィールドは全て拒否」という表を
+現行ワイヤ契約へ流用しない。現在のイベントにはイベント ID と集約 ID があり、
+追加属性の省略時意味などは各 DTO の具体的な検査に従う。
+格納 payload と、U1 が担う upstream 観測面の正準 JSON は異なる契約である。
+RMU は専用 DTO と `JournalBatch` を使い、コマンド側の永続化 DTO を共有しない。
 
-~~`store.within_write_transaction(|tx| { read intents.json; mutate; atomic write; Ok(()) })` — Tx は `BEGIN IMMEDIATE` で開くため、同じ DB を開く別プロセスの store /
-登録簿変更は busy_timeout 内で直列化される。`f` が Err なら rollback（ファイル書込は tmp+rename で原子的、DB 側の変更は無い）。~~
+## 5. 検証モデルの適用範囲（BR3.3 / BR3.4 / BR3.5）
 
-### 3.5 open / 初期化（BR2.1 / BR2.2）
+`formal/orchestration/journal_protocol.qnt` は1集約・writer2・投影1、毎イベント基底更新を表す。
+`snapshot_tracks_journal` の `snapSeq == journalLen` はこの設定に限る。
+`modules/app/aidlc/tests/journal_protocol_conformance.rs` は `SnapshotStrategy::every(1)` を明示し、
+コミット済み ITF を Repository・JournalReaderImpl と結合して再生する。
+モデル内の版の算術は抽象化であり、Repository が版を通番から計算する規則ではない。
 
-> **失効（2026-08-27 / ADR-010・Bolt B6）** — 本家は `PRAGMA user_version` を使わないため、版の検査ごと
-> 廃止した（`EventStoreError::Schema` 変種も削除）。現在の `open` は
-> `EventStoreForSqlite::new(path)` を呼ぶだけで、表と索引は**本家が冪等に作る**（親ディレクトリは
-> upstream の既存 `intents/` なので我々は作らない — 無ければ `Io { kind: NotFound }`）。
-> 版の固定は ~~`event-store-adapter-rs = "=2.0.0"`~~ → **`event-store-adapter-rs = "=3.0.0"`**
-> （2026-08-29 / Bolt B7）の完全固定 ＋ スキーマガードテストが担う。`journal` の DDL に
-> `manifest TEXT NOT NULL DEFAULT ''` 列が加わり、我々の `SELECT` は
-> `rowid, aid, seq_nr, payload, occurred_at, manifest` を読む（occurred_at はナノ秒 epoch、
-> `DateTime<Utc>` との往復はアダプタ層）。
->
-> **`busy_timeout` は未決（U7 で裁定）**: 本家の接続には設定できない（接続を露出しないため）。
-> SQLite 既定の 0ms なので、別プロセスの並行書込は待たずに `SQLITE_BUSY`（我々の写像では
-> `Io { kind: WouldBlock }`）になる。従来は 5000ms 待っていたので、BR2.1 の実質的な後退である。
-> 我々が開く `JournalReaderImpl` 側の接続には 5000ms を設定済み。単一プロセス前提の現状は受容し、
-> **U7 の並行モデルと併せて再裁定**する。
+既定10や任意間隔Nでの保存分岐・差分再生は、このモデルの証明範囲に拡張しない。
+別の契約・実装テストで確認する。
+「モデルは以前変更せず通った」という履歴だけを現在の合格証拠にはしない。
 
-~~`Connection::open(path)` → `PRAGMA busy_timeout = 5000` → `PRAGMA user_version` → 0: DDL（C6）を実行し `user_version = 1`；1: 何もしない；他: `Schema { found, supported: 1 }`。~~
+## 6. 退役した設計
 
-## 4. ワイヤ形式（BR2.5、正準 JSON）
+ADR-007 の旧 mkdir ロック、ローカル EventStore trait、独自 SQLite DDL、
+`within_write_transaction`、旧ワイヤ型、domain serde-memento は再導入しない。
+旧 `WorkflowExecutionRepository` の名前や再水和専用の器も現行公開 API に残さない。
+登録簿の I/O と投影公開の詳細は、それぞれの所有 Unit の現行契約で扱う。
 
-> **全面失効（2026-08-27 / ADR-010・Bolt B6）** — 自前のワイヤ構造体（`wire/event_wire.rs` /
-> `wire/state_wire.rs`）はファイルごと削除した。ストアの payload は**本家が `serde_json::to_vec` で
-> 書く**（我々のコードは呼んでいない）ので、下記の表は「そういう形で書く」という規範ではなくなった。
-> 材料そのもの（各イベント型が何を載せるか）はドメイン型として残っており、下表は**参考の記録**として
-> 残す。差分として明示すべき点は次の 4 つ:
->
-> - **ストアの payload は契約 JSON（BR1.7 / canon-json）ではない**。契約 JSON の射程は upstream 観測面
->   （監査行・状態ファイル・directive）に限られる。この射程は coding-rules 正本への追記候補。
-> - **封筒は列に出ない** — `payload` 1 列に封筒ごと serde で書かれる。復号時に列から
->   `WorkflowExecutionEvent::new` を組み立てる経路は無い。
-> - **未知の変種・対応外の版の判別が消えた** — どちらも serde の復号失敗に畳まれ
->   `Corrupt(UndecodablePayload)` になる（`CorruptCause::UnknownEventType` / `SchemaVersion` は削除）。
->   ~~`schema_version` フィールド自体はイベント型に残るが、復号時に値を検査する経路は無い。~~ →
->   **失効（2026-08-29 / ADR-010・Bolt B7）**: 旧封筒 struct（id / schema_version / occurred_at
->   フィールドと `SCHEMA_VERSION` 定数・アクセサ）を削除したため、イベント型には残っていない。
->   後継はジャーナル列 manifest の値 `workflow-execution-event/1`（Repository が書き、
->   JournalReaderImpl が不一致・欠落を `Corrupt(UndecodablePayload)` で拒否）。
-> - **`StateWire` の値域検査（JSON の正確整数域 2^53 超の拒否）が無くなった**。ワイヤ構造体ごと
->   削除したためで、ストアファイルは upstream 非観測なので互換上の実害は無いと判断した。
+## 7. 検証と確認できた範囲
 
-### 4.1 イベント（journal.payload、`type` タグ）
-
-| type | 材料（フィールド名: 型） |
-|---|---|
-| `Started` | `definition_id: string`, `definition_revision: string`, `scope: string`, `request: string`, `depth: string \| null`, `test_strategy: string \| null`, `stages: [{slug, phase, plan_action, conditional}]` |
-| `StageCompleted` | `stage: string`, `next_stage: string \| null` |
-| `GateOpened` | `stage: string`, `artifacts: [string]` |
-| `GateApproved` | `stage: string`, `user_input: string \| null`, `next_stage: string \| null`, `phase_boundary: {from_phase: string, to_phase: string} \| null`（2026-08-27 訂正: pending-revision.md 項目 3 の裁定どおりの入れ子形に統一。実装 `PhaseBoundary { from_phase, to_phase }` の既定 serde 表現とも一致 — 新しい設計判断ではなく既存裁定への追従） |
-| `GateRejected` | `stage: string`, `feedback: string \| null`, `revision_count: u32` |
-| `StageRevised` / `StageSkipped` / `Parked` | `stage: string`（StageSkipped は `reason: string`, `next_stage: string \| null` も） |
-| `Jumped` | `direction: string`, `source: string`, `target: string`, `stages_reset: [string]`, `stages_skipped: [string]` |
-| `Unparked` | （材料なし `{}`） |
-| `Recomposed` | `skipped: [string]`, `added: [string]`, `stages_in_scope: [string]` |
-| `AutonomyModeSet` | `mode: string`（autonomous / gated） |
-
-~~封筒の `intent_id` / `seq_nr` / `schema_version` / `occurred_at` は列に出す（payload には含めない）。復号時に列の値から `WorkflowExecutionEvent::new` を組み立てる。~~ → ~~失効（2026-08-27 / ADR-010。封筒は payload に serde で同梱され、`intent_id` + `seq_nr` は `WorkflowExecutionEventId` にまとまった）~~ →
-**さらに失効（2026-08-29 / ADR-010・Bolt B7）**: ~~`WorkflowExecutionEventId`~~ 型はファイルごと
-削除した（106 行）。ドメインイベントは輸送メタデータを一切持たない素の serde 型（本家の語で
-payload）になり、識別子は本家封筒の `(aggregate_id, seq_nr)` が持つ。回帰テスト
-`the_serialized_event_carries_no_transport_metadata` が、payload JSON に seq_nr / occurred_at /
-~~schema_version~~ / aggregate_id / manifest のいずれも現れないことを固定する。
-
-### 4.2 状態（snapshot.payload、~~16 属性~~ → ~~17 属性~~ → **16 属性**（2026-08-29 / ADR-010・Bolt B7 — `version` 列を除去）。2026-08-27 / ADR-010 で `last_updated_at` を追加。数値は `u64` ではなく `usize`）
-
-`intent_id`, `definition_id`, `definition_revision`, `stages: [{slug, phase, plan_action, conditional}]`, `plan: [string]`, `overlay: [string]`, `conditional: [bool]`,
-`checkbox: [string]`（6 マーク）, `cursor: u64`, `status: string`（running / completed）, `parked_at: u64 \| null`, `autonomy: string`, `approved: [bool]`,
-`revision_count: [u32]`, `seq_nr: usize`, ~~`version: usize`~~（2026-08-29 削除 — 楽観 version は集約の外、`RehydratedWorkflowExecution` が持ち回る）, `last_updated_at`（2026-08-27 追加）。復号後は `from_state` の不変条件検査が最終防衛線であり、これは **serde 経路でも変わらない** — 集約の `Deserialize` は `#[serde(try_from = "WorkflowExecutionState")]` でメメントを経由するので `from_state()` の検査点を必ず通る（オーナー裁定 2026-08-27）。
-
-## 5. 検証モデル `journal_protocol.qnt`（BR3.3 / BR3.4 / BR3.5）
-
-- 定数: `WRITERS = 2`。状態: §rules BR3.3。`init`: journalLen = 0, snapVersion = 0, snapSeq = 0, checkpoint = 0, readModelSeq = 0, loadedVersion = 全 writer 0。
-- `store_ok(w)` は genesis（snapVersion == 0 かつ loadedVersion[w] == 0）も同じ規則で扱う（expected 0）。
-- 不変条件は状態遷移レベル（prev → current）で書く（`snapshot` アクションで prev を取る — audit_lock v2 と同じ型）。
-- mutation（code-summary に記録）: 各 invariant につき 1 変異 — 例: store_conflict が journalLen を増やす変異 → conflict_rejected 違反、store_ok のガード除去 →
-  no_lost_update 違反、catchup が checkpoint を減らす変異 → checkpoint_monotone 違反、catchup が readModelSeq を journalLen+1 にする変異 → truth_is_journal 違反 …。
-- ITF: `quint run … --out-itf` で 6 シード以上採取、`#meta` 正規化済みでコミット。再生先は ~~InMemoryEventStore~~ → **`WorkflowExecutionRepositoryImpl` + `JournalReaderImpl`**（2026-08-27 改訂 / ADR-010）+ フェイク投影（adapter tests）。**モデルは 1 文字も変えずに通った**（乗り換えの意味論的な検収）。**2026-08-29 追記（Bolt B7）**: v3.0.0 乗り換えでも再生先の型自体は同じ2つのまま変わらず、モデルも今回も1文字も変えていない。`Writer` が `version` を持つ形へ実装側（`journal_protocol_conformance.rs`）が追従し、モデルの `loadedVersion` は再水和レコード `RehydratedWorkflowExecution` の版へそのまま射影される。
-
-## 6. 退役チェックリスト（BR3.1 / BR3.2）
-
-use-case `workspace/` mod、adapter `workspace/fs_workspace_lock.rs` / `process_probe.rs`、domain `workspace/{lock_protocol,lock_identity}.rs` と `pub use`、
-infra-io `process_probe.rs`、tests `fs_workspace_lock_test.rs` / `audit_lock_conformance.rs`、`formal/workspace/audit_lock.qnt`、`tests/conformance/fixtures/audit_lock/`、
-`scripts/quint-gate.sh` の audit_lock ステップ（→ journal_protocol）、`tools/lint` の `reap-decision-locality`（ルール本体・HELP・赤例テスト・README の記述）、
-adapter `Cargo.toml` の `md5`。grep（BR3.1）で 0 件を確認。
-
-## 7. テスト設計（TDD、層ごと）
-
-| 層 | Red（先に書く） | 内容 |
+| 対象 | 根拠 | 確認内容 |
 |---|---|---|
-| Data model（use-case / domain） | 値型・エラー型 | GlobalSeqNr / ProjectionName / IntentId(UUIDv7) / IntentDirName の parse 受理・拒否（各 5〜8 本）、エラー Display の材料、`WorkflowExecutionState` 改名後の既存テスト緑 |
-| Repository（adapter） | 契約テスト（ジェネリック） | ラウンドトリップ（start → 数コマンド → store × n → 新インスタンスで find_by_id → state が等しい）、NotFound、Conflict（2 再水和の競合）、Corrupt（MissingSnapshot / UndecodablePayload / ~~SchemaVersion~~ → **失効**、2026-08-27 / ADR-010 で変種ごと削除）、events_after の順序、checkpoint 単調性・未登録 = ZERO、~~within_write_transaction の直列化（同一 DB 2 接続、busy_timeout 内）~~ → **失効**（口ごと削除。U7 で裁定）。**追加（2026-08-27）**: 同じ契約テストを SQLite と本家 memory の**両バックエンド**に課す（実装が同一なので同じ約束が課せる — BR2.7）、および**スキーマガード**（本家 `journal` の DDL・一意索引・rowid 前提の実測突合） |
-| Business logic（adapter） | ワイヤ | ~~PBT: 任意イベント / 状態の encode→decode 恒等、未知フィールド・未知 type の拒否、正準 JSON のバイト決定性~~ → **失効**（2026-08-27 / ADR-010: ワイヤ構造体ごと削除。直列化は本家の serde であり我々の検証対象ではない）。残るのはドメイン型の serde 往復と、**改竄した JSON が `from_state` の不変条件検査で弾かれること**の確認 |
-| API（adapter / formal） | ITF + クラッシュ再構成 | journal_protocol fixtures の再生（全アクション網羅）、クラッシュ再構成（store 後に接続を捨て、新接続で find_by_id → 同一 state）、~~SQLite スキーマ突合（PRAGMA table_info = C6）~~ → **本家 DDL のスキーマガード突合**（2026-08-27 改訂 / ADR-010） |
+| Repository 共通契約 | intent_execution_repository_contract.rs | memory / SQLite の保存・検索・競合・参照不変性、および別実行イベントの保存前拒否 |
+| 基底と差分 | intent_execution_repository_impl_test.rs | 初回必須、間隔2、古い基底からの差分再生、版維持 |
+| 破損境界 | 同実装テスト | 基底欠落、DTO破損、差分通番飛び、foreign manifest、別実行payload、未知ステージでのクラッシュ |
+| 基底以前の履歴 | 同実装テスト | 基底以前のforeign manifestを読まない、snapshot単独の復元。この範囲外の監査完全性は保証しない |
+| 形式規則 | intent_dir_name.rs のテスト | 連続ハイフンと空区間の拒否 |
+| モデル適合 | app/aidlc/tests/journal_protocol_conformance.rs | every(1) を明示したITF再生。既定10のモデル証明とはしない |
 
-既存スイート（engine_loop ITF、ゴールデン、WorkflowDefinitionRepository）は IntentId のリテラル置換と State 改名の追随のみ。
+2026-09-05 の R-07 是正では、別実行の Started と対象集約の組を渡す拒否期待が
+memory / SQLite の両方で失敗し、保存が `Ok(())` になることを親担当が実測した。
+書込前 ID 照合を追加した後、共通契約22件と実装固有23件の計45件が成功した。
+追加契約は genesis の双方 NotFound 維持と、更新拒否後の対象集約の元状態維持を確認する。
+これは ID 不一致の検出根拠であり、任意の同一 ID イベントと集約状態の対応を証明するものではない。
+正式な Review・承認操作はこの是正では行っていない。
 
-## 8. 未決・申し送り
+関連する保存境界も親担当が横断確認した。
+`WorkflowDefinitionRepositoryImpl` は別系譜の Defined と対象 definition を両バックエンドで保存していたため、
+同じ書込前 ID 照合を加えた。共通契約14件と実装固有12件の計26件が成功し、
+追加契約は新規・更新の拒否と状態維持を確認した。
+`IntentRepositoryImpl` は既に Created から再構成した集約全体を対象と照合しており、
+今回の2実装の検査欠落とは区別する。
 
-- U4: `reset_checkpoint`（再生成）と投影の描画。U5: Conflict の 1 回再試行。
-  U7: ~~`within_write_transaction` での birth / archive~~ → **登録簿（`intents.json`）の直列化機構そのものを
-  U7 で裁定する**（2026-08-27 / ADR-010 — 口が消えたため代替が未定。ADR-010 は「登録簿を SQLite の
-  テーブルへ移し RMU の投影対象にする」を筋と書いている）、`IntentDirName` の予約ラベル拒否。
-- **（2026-08-27 追加）U7: `busy_timeout` の再裁定** — 本家の接続には設定できず、並行書込は待たずに
-  `SQLITE_BUSY` になる。単一プロセス前提なら実害は無いので、U7 の並行モデルと併せて判断する。
-- **（2026-08-27 追加）`Clock` / `SystemClock` / `FakeClock` は残置したが現在利用者がいない** —
-  ストアが押印時刻をイベントの `occurred_at` から取るようになったため（本家の作法）。
-  ユースケース着手時に注入シームとして使われる想定。
-- 複数クローン間のジャーナル交換は後続 intent（P7）。
+## 8. 未解決と申し送り
+
+R-04〜R-09 の現行本文は `../correction-report.md` の対応表で追跡する。
+過去 Review の判定とステータスは書き換えず、是正完了と正式レビューの再判定を分ける。
+間欠スナップショットを含む一般モデルへの拡張は本是正の対象外であり、every(1)限定を明示している。
+この文書から新たなジャーナル削除許可、全履歴再生への変更、保存形式の再設計を導かない。
+
+## Review
+
+**Verdict:** NOT-READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-05T07:08:22Z
+**Iteration:** 1
+
+### Findings
+
+entities.md の旧番号 1〜3 を保持し、旧レビュー本体は変更していない。自前 SQL・ローカル EventStore・within_write_transaction・旧ワイヤ形式は、既存の失効注記どおり履歴として評価した。以下の新規所見は、失効していないとされる記述、後継として提示された記述、または現行契約への参照不足に対するものである。
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| 1 | Critical | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md > BR1.2・BR1.3・BR2.3 | 旧所見の version−1 算出は撤回済み。現行 store は aggregate.version() を期待値として渡し、genesis の version 0、更新成功、古い版の競合拒否は両バックエンドの契約テストで成功する。旧アンダーフロー・常時偽競合の原因は解消している。 | 追加対応なし。版を seq_nr から導く旧改善案は再採用しない。 | Resolved |
+| 2 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md > EventStore、および rules.md > BR1.1 | ローカル trait と u64 化は明示的に失効し、本家の usize に復帰した。現行 Repository ポートと実装の版・通番も usize。旧所見の型不一致は解消している。 | 追加対応なし。借用した契約の型を変更する旧案は再採用しない。 | Resolved |
+| 3 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md > WorkflowExecutionRepositoryImpl、および functional-spec.md > 第 2 節 | store は設計・現行ポート・実装とも &mut self であり、ストアを直接保持する。&self から &mut self を呼べないという旧問題はなく、内部可変性を追加する必要もない。 | 追加対応なし。 | Resolved |
+| R-04 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md > 第 1・2 節、および entities.md > Repository・JournalReader・RepositoryError | 後継として示す第 2 節は RehydratedWorkflowExecution と裸の expected_version 引数を現行形とするが、現行 IntentExecutionRepository は IntentExecutionId で集約そのものを返し、store(event, aggregate) が集約の版を使う。RepositoryError は ID 型を引数に取る共通型で、CorruptCause の公開分類はなく source 連鎖。JournalReader 一式の所有も、共有 C3 の B8 注記では RMU へ移動済みなのに本書の use-case / adapter 配置表は更新されていない。消費側が使う署名・依存先を一意に決められない。 | 後続裁定に沿って現行ポート・ID・版の持ち回り・エラー形・所有クレートを同期する。古い C3 の署名との差も明示し、読み手に実装からの推測を要求しない。 | New |
+| R-05 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md > 第 2 節・第 3.1 節・第 5 節、および rules.md > BR3.3 | 後継 store 手順は常に persist_event_and_snapshot を呼ぶとし、JournalProtocolModel は snapSeq == journalLen を約束する。一方、現行 SnapshotStrategy の既定は 10 イベントごとで、初回以外は persist_event 経路がある。既存テストでは N=2 の seq_nr=3 で snapshot.seq_nr=2、version=3、既定設定でも 3 イベント後の基底は seq_nr=1。差分再生は成功するが、「毎 store 更新」のモデルを既定実装全体の保証として扱えない。 | 初回必須・設定間隔・イベントのみ保存の分岐と再構成への影響を設計へ反映する。モデルの保証を毎回更新設定に限定するのか、間欠更新へ拡張するのかを明示し、対応する検証根拠を付ける。差分再生という確定方針自体は問い直さない。 | New |
+| R-06 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md > 第 3.2 節・第 7 節、および rules.md > BR1.2 | 第 3.2 節の後継説明は snapshot 不在を無条件 NotFound とし、MissingSnapshot を判別できないとするが、BR1.2.logic と現行実装は journal が残れば Corrupt とする。さらに現行は基底の DTO 復元後に base.seq_nr+1 からだけ読み、差分の通番・manifest・aggregate_id を検査する。旧 from_state / serde-memento を前提とした説明からは、基底以前を検査しない範囲、Corrupt とドメイン再生時のクラッシュの境界が読めない。 | 最新スナップショット＋後続差分を軸に、第 3.2 節と BR1.2 の欠落・復号・差分検査・失敗分類を統一する。journal 全削除時に古い基底が読めるという実測を、欠落許容の新たな承認とは扱わない。 | New |
+| R-07 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md > B7 追加失効注記・第 3.1 節 check_preconditions | 「イベントが識別子を持たないため別集約のイベントを渡せず、identity 検査は型で不要になった」という根拠が失効している。現行 IntentExecutionEvent は aggregate_id を持ち、store の event と aggregate は独立した参照引数なので、別実行から得た同型イベントを組み合わせることを型は防がない。現行 envelope は集約から外側 ID、イベントから payload を別々に組み、書込前に ID 照合を行わない。これは設計の型保証主張が成立しないという静的所見であり、不整合な対の保存実験は今回行っていない。 | 型保証という説明を撤回し、同じコマンドから得たイベントと適用後集約を渡す責任と保証箇所を明記する。書込境界の検査を要するかは、不整合な対の受入テストで現挙動を確認してから判断する。 | New |
+| R-08 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md > BR1.2・BR1.3、および traceability.json > upstream_ids・coverage | BR1.7 と BR5.3 を根拠として参照するが、この Unit の規則定義には存在しない。センサーはこの 2 件を orphan と報告したが、実態は未解決の規則参照である。また story-map では親 FR1 の主担当が U3 なのに対応表にはなく、成果物には unit-of-work-story-map への参照もない。 | 他 Unit の規則を意図するなら共有契約等の正確な出典へ置き換える。親 FR1 の文書上の集約対応と、要求割当表への参照を追加する。FR1.1 の実装担当を U3 に移さない。 | New |
+| R-09 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md > IntentDirName、および rules.md > BR4.2 | pending-revision 項目 2 の正規表現訂正が未反映。設計の式は 260822-a--b を受理するが、現行 IntentDirName::parse は空区間を拒否し、doc も連続ハイフンを認めない式を示す。 | 既存の改訂候補に沿って、entities と BR4.2 の正規表現を空区間拒否の形へ揃える。 | New |
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| aidlc-sensor-required-sections.ts（--stage functional-design、各 --output-path） | PASS: entities / rules / functional-spec、所見 0 | 追記前の H2 数は 3 / 2 / 8。内容の世代差は検査しない。 |
+| aidlc-sensor-upstream-coverage.ts（consumes 5 件、deliverables 3 件を明示） | FAIL: unit-of-work-story-map が未参照 | 質問票の参照は成果物側の参照を代替しない。R-08。 |
+| aidlc-sensor-traceability.ts | FAIL: missing_from_upstream_ids 36 件、orphans 2 件。他の gaps / missing_from_table / invalid_entries / invalid_targets は空 | 36 件中、親 FR1 は U3 主担当、残り 35 件は担当外。orphan 表示の BR1.7 / BR5.3 は定義ではなく本文中の未解決参照。R-08。 |
+| linter / type-check の適用判定 | 対象外・未実行 | 成果物に TS/JS/TSX コード出力や該当スニペットはない。 |
+| cargo test --locked -p core-command-interface-adapter --test intent_execution_repository_contract --test intent_execution_repository_impl_test | PASS: 20 + 23 = 43 件、失敗・無視 0 | memory / SQLite の正常保存・競合・再読取、間欠スナップショット、差分欠落・foreign manifest・別実行 ID の拒否等を再実行。試験が成功している実装を旧設計へ戻す理由にはならない。 |
+| 現行ポート・実装・SnapshotStrategy・journal_protocol.qnt の静的照合 | 差異を確認 | R-04〜R-07 の根拠。モデルは毎回更新を仮定し、実装は間欠更新を持つ。不整合な event/aggregate 対の保存後の挙動は未実測。 |
+| ITF 準拠・Quint ソルバー | 今回未実行 | 旧設計が挙げる再生先は移動しており、確認した command-interface-adapter と read-model-updater の直接候補パスには journal_protocol_conformance.rs がなかった。現行の所在は未確認で、テスト不存在や不合格とは断定しない。過去の「モデルは変更せず通った」を現在の証明に流用しない。 |
+| 旧所見と失効注記の照合 | 旧 1〜3 は Resolved | 自前 SQL の算出式・u64 化・内部可変性の追加案は再適用しない。within_write_transaction の代替未決という履歴も、実装済み／未実装を今回新たに断定する根拠には用いていない。 |
+
+### Summary
+
+旧 Critical は解消済みだが、未解消の Major 4・Minor 2 のため ADVISORY 判定は NOT-READY。Repository 関連の 43 テストは成功している。主な問題は、現行の署名・所有・更新頻度・破損判定へ追従していない設計記録と、現在は成立しない型保証の説明であり、未実測の保存経路を実装不具合と断定してはいない。

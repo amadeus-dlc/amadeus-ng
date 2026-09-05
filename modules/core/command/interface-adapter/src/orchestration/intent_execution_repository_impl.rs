@@ -30,9 +30,9 @@
 //! - **更新** — `seq_nr > 1` かつ `expected_version` は読取済みの版。`WHERE version = expected`
 //!   の CAS を通れば `version + 1` を記録する。
 //!
-//! どちらも `persist_event_and_snapshot` を使う。イベントのみの `persist_event` は
-//! snapshot 行の `seq_nr` 列を進めないため、Quint モデル `journal_protocol` の不変条件
-//! `snapshot_tracks_journal` (snapSeq == journalLen) を破る。
+//! 初回は `persist_event_and_snapshot` を使い、更新時は `SnapshotStrategy` の間隔に従う。
+//! 既定の間隔は10イベントで、その他の更新は `persist_event` により差分を保存する。
+//! `journal_protocol` の `snapshot_tracks_journal` は毎回更新する設定のモデルである。
 //!
 //! [`EventEnvelope`]: event_store_adapter_rs::event_envelope::EventEnvelope
 
@@ -225,11 +225,9 @@ where
 {
     /// 適用後の集約とドメインイベントから、本家のイベント封筒を組む。
     ///
-    /// 材料はすべて集約が持っている — 識別子、`commit` 成功後の `seq_nr` (= そのイベントの
-    /// 通番)、`last_updated_at` (= そのイベントの発生時刻)。**呼出側の不整合を検査する余地は
-    /// 無い**: 旧実装が見ていた「イベントと集約が同じ集約を指すか」「通番が一致するか」は、
-    /// イベントがその 2 つを持たなくなったことで**構成不能**になった (型による強制 — B6 で
-    /// `seq_nr = 0` に対して行ったのと同じ形)。
+    /// 封筒の識別子・通番・発生時刻は適用後集約から取り、payloadはイベントから作る。
+    /// 同じID型でも別の実行を指す組は構成できるため、`store` が集約IDの一致を先に検査する。
+    /// 通番と時刻はイベント本体に含まれず、適用後集約の値を使う。
     fn envelope(
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
@@ -445,6 +443,14 @@ where
         event: &IntentExecutionEvent,
         aggregate: &IntentExecution,
     ) -> Result<(), RepositoryError<IntentExecutionId>> {
+        // 同じID型でも別の実行のイベントを渡せる。封筒を作る前に対応を検証する。
+        if event.aggregate_id() != aggregate.id() {
+            return Err(RepositoryError::Corrupt {
+                id: aggregate.id().clone(),
+                seq_nr: Some(aggregate.seq_nr()),
+                source: Box::new(CorruptDetail::WriteContract),
+            });
+        }
         // 提示する版は集約が運んできたものである。
         let expected_version = aggregate.version();
         // 新規作成と更新の分岐は本家 v3 と同じ導出 — 封筒の `seq_nr == 1` が新規作成である。

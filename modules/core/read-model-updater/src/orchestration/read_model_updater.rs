@@ -27,6 +27,7 @@ use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::projection_targets::ProjectionTargets;
 use super::steering_source::SteeringSource;
+use super::{PublicationBatch, PublicationFile};
 
 /// ReadModelUpdater — チェックポイント以降のイベントをリードモデルへ流し込む差分関数。
 #[derive(Debug)]
@@ -109,13 +110,12 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     ///
     /// 戻り値は前進後のチェックポイントである。差分が空なら**何も書かず**現在値を返す。
     ///
-    /// # 書いてから進める（at-least-once）
+    /// # 計画を保存し、公開してから進める
     ///
     /// リードモデルをディスクへ落としてからチェックポイントを進める。逆順にすると、
-    /// 書込の直前で落ちたときに監査行が**永久に失われる** — 台帳にとって欠落は重複より重い。
-    /// 書込後・前進前に落ちた場合は同じ差分を再実行することになり、状態ファイルは同じ位置へ
-    /// 落ち着く（冪等）が、監査シャードには同じブロックがもう一度並ぶ。この非対称は
-    /// 「欠落しない」ことと引き換えに受け入れている。
+    /// 書込の直前で落ちたときに監査行が**永久に失われる**。その隙間を閉じるため、
+    /// 書込前後のバイトを持つ公開計画を先に耐久化する。書込後・前進前の停止からは
+    /// 保存済み計画と現物を照合し、反映済みを追記せず未反映部分だけを完了する。
     ///
     /// # 2 系統を 1 回で描く
     ///
@@ -125,8 +125,8 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// 「チェックポイントより後の行」として切り出す — **描く材料は 1 回の読取に揃える**。
     /// 2 つの読取に跨がると、その間に入った書込のぶんだけ両面の断面がずれ、行の `as_of` が
     /// チェックポイントを追い越す。差分読取は「進む先があるか」の探りにだけ使う。
-    /// 行の差し替えとチェックポイントの前進は `advance_checkpoint` の中で 1 トランザクション
-    /// に閉じる（裁定 §3）。
+    /// 公開計画の確定とチェックポイントの前進は `publish` の中で1トランザクションに
+    /// 閉じる。共有構造化面が別投影によって既に新しい場合は、その面を維持する。
     ///
     /// # 参照入力はジャーナルより先に見る
     ///
@@ -144,6 +144,27 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     /// 歴史の切り落としを見つけた（`ReadTables`）、参照入力の規則ファイルが在るのに読めない
     /// （`SteeringRead`）・刻めない（`SteeringPack`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
+        if let Some(batch) = self
+            .journal_reader
+            .pending_publication(&self.projection)
+            .await?
+        {
+            if !batch.matches_targets(&self.targets) {
+                return Err(CatchUpError::PublicationConflict {
+                    path: self.targets.state_file().to_path_buf(),
+                });
+            }
+            let history = self.journal_reader.events_through(batch.to()).await?;
+            if history.scanned_to().unwrap_or(GlobalSeqNr::ZERO) != batch.to() {
+                return Err(CatchUpError::PlanUnavailable);
+            }
+            let tables = ReadTables::project(&history)?;
+            self.journal_reader
+                .publish(&self.projection, &batch, &tables)
+                .await?;
+            self.catch_up_steering().await?;
+            return Ok(batch.to());
+        }
         self.catch_up_steering().await?;
 
         let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
@@ -176,15 +197,18 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         let unprojected = executions
             .split_at(executions.partition_point(|entry| entry.global_seq() <= checkpoint))
             .1;
+        let mut files = Vec::new();
         if !unprojected.is_empty() {
             let plan = self.resolve_plan(&history)?;
             let state = crate::workspace::read_state_file(self.targets.state_file())
                 .map_err(CatchUpError::StateFileRead)?;
+            let before_state = state.clone();
             let mut read_model = ReadModel::new(state);
             // メモリ層は**在るとは限らない面**である（b49）。2 本とも在るときだけ載せる —
             // 片方だけ在るのは載せない（存在の検査の正本は動詞側にある）。
-            if let Some((team, project)) = self.read_memory_faces()? {
-                read_model = read_model.with_memory(team, project);
+            let memory_before = self.read_memory_faces()?;
+            if let Some((team, project)) = &memory_before {
+                read_model = read_model.with_memory(team.clone(), project.clone());
             }
             crate::workspace::project(unprojected, &plan, &mut read_model)?;
 
@@ -193,24 +217,40 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             // team.md が無傷で残るからである（ピン `3c3146cf` `aidlc-state.ts:3705-3723`）。
             // メモリ層は**書き替えたときだけ**書く — 人が編集する正本でもあるので、
             // 触っていないキャッチアップが mtime を動かしてはならない。
-            if let Some(memory) = read_model.memory().filter(|memory| memory.is_dirty()) {
-                write_memory_file(self.targets.project_md(), memory.project())?;
-                write_memory_file(self.targets.team_md(), memory.team())?;
+            if let Some(memory) = read_model.memory() {
+                let (team, project) = memory_before
+                    .as_ref()
+                    .ok_or(CatchUpError::PlanUnavailable)?;
+                files.push(PublicationFile::memory(
+                    self.targets.project_md(),
+                    project,
+                    memory.project(),
+                ));
+                files.push(PublicationFile::memory(
+                    self.targets.team_md(),
+                    team,
+                    memory.team(),
+                ));
             }
-            crate::workspace::write_state_file(self.targets.state_file(), read_model.state())
-                .map_err(CatchUpError::StateFileWrite)?;
-            crate::workspace::append_audit_shard(
-                self.targets.audit_shard(),
-                read_model.appended_audit(),
-            )
-            .map_err(CatchUpError::AuditShardWrite)?;
+            files.push(PublicationFile::replacement(
+                self.targets.state_file(),
+                &before_state,
+                read_model.state(),
+            ));
+            if !read_model.appended_audit().is_empty() {
+                files.push(PublicationFile::audit(
+                    self.targets.audit_shard(),
+                    read_model.appended_audit(),
+                )?);
+            }
         }
 
         // 構造化面は差分投影ではなく全再計算である（同じ履歴から作る）。
         let tables = ReadTables::project(&history)?;
 
+        let batch = PublicationBatch::new(checkpoint, last, files).for_targets(&self.targets)?;
         self.journal_reader
-            .advance_checkpoint(&self.projection, last, &tables)
+            .publish(&self.projection, &batch, &tables)
             .await?;
         Ok(last)
     }
@@ -292,24 +332,5 @@ fn read_memory_file(path: &std::path::Path) -> Result<String, CatchUpError> {
     std::fs::read_to_string(path).map_err(|error| CatchUpError::MemoryFileRead {
         path: path.display().to_string(),
         kind: error.kind(),
-    })
-}
-
-/// メモリ層のファイルを 1 本、原子的に置き換える。
-///
-/// 書き手は状態ファイルと同じ `write_atomic`（tmp+rename + W_OK バリア）である — メモリ層も
-/// 「読んで書き換える置換面」であり、部分書き込みが残ってはならない点も同じだからである。
-/// 材料はこちらで詰め直す（あちらの read-only 文言は状態ファイルを名指すため）。
-fn write_memory_file(path: &std::path::Path, content: &str) -> Result<(), CatchUpError> {
-    crate::workspace::write_state_file(path, content).map_err(|error| {
-        CatchUpError::MemoryFileWrite {
-            path: path.display().to_string(),
-            detail: match error {
-                crate::workspace::StateFileWriteError::ReadOnlyTarget { .. } => {
-                    "read-only target".to_string()
-                }
-                crate::workspace::StateFileWriteError::Io { message } => message,
-            },
-        }
     })
 }

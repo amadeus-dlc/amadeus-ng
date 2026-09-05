@@ -601,6 +601,30 @@ async fn next_runs_against_the_freshly_created_intent() {
 }
 
 /// `report --result` が遷移をコミットし、投影が読み面へ落ちる。
+#[tokio::test]
+async fn next_restores_missing_projection_files_without_repeating_audit() {
+    let workspace = Workspace::create();
+    let created = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "recovery"],
+    )
+    .await;
+    assert_eq!(created.code(), 0, "{created:?}");
+    let state = workspace.state_file().expect("公開済み状態");
+    let audit = workspace.audit_shard().expect("公開済み監査");
+    let record = workspace.record_dir().expect("記録先");
+    fs::remove_file(record.join("aidlc-state.md")).expect("状態を失わせる");
+    fs::remove_dir_all(record.join("audit")).expect("監査出力を失わせる");
+    for _ in 0..2 {
+        let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+        assert_eq!(next.code(), 0, "{next:?}");
+        assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
+        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
+    }
+}
+
+/// `report --result` が遷移をコミットし、投影が読み面へ落ちる。
 ///
 /// # issue #76 是正済み — 書き面と読み面は誕生時から一致する
 ///

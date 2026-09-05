@@ -108,10 +108,13 @@ macro_rules! contract_tests {
 }
 
 contract_tests!(
+    find_for_intent_returns_the_current_definition,
+    find_for_intent_reports_the_missing_definition,
     open_twice_yields_independent_empty_stores,
     round_trip,
     not_found,
     a_duplicate_genesis_is_a_conflict,
     a_redefinition_advances_the_stream,
     a_write_that_presents_a_stale_version_conflicts,
+    an_event_from_another_definition_is_rejected_before_writing,
 );

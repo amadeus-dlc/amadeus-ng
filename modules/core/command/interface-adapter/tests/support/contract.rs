@@ -279,3 +279,49 @@ pub(crate) async fn a_genesis_with_a_non_zero_version_is_a_contract_violation<F:
         RepositoryError::NotFound { id } if id == execution_id()
     ));
 }
+
+/// 別の実行のイベントを渡しても、どちらの集約にも行を残さない。
+pub(crate) async fn an_event_from_another_execution_is_rejected_before_writing<F: StoreFixture>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    let (aggregate, _) = genesis();
+    let (mut other, foreign) = core_command_domain::orchestration::IntentExecution::start(
+        super::absent_execution_id(),
+        &intent(),
+        at(),
+    );
+    let error = repository
+        .store(&foreign, &aggregate)
+        .await
+        .expect_err("別実行のイベントは書込契約違反");
+    assert!(
+        matches!(error, RepositoryError::Corrupt { .. }),
+        "{error:?}"
+    );
+    for id in [execution_id(), super::absent_execution_id()] {
+        assert!(matches!(
+            repository.find_by_id(&id).await,
+            Err(RepositoryError::NotFound { .. })
+        ));
+    }
+    let held = store_genesis(&mut repository).await;
+    let mut candidate = held.clone();
+    candidate
+        .open_gate(&intent(), vec![], at())
+        .expect("対象を前進");
+    let foreign = other
+        .open_gate(&intent(), vec![], at())
+        .expect("別実行を前進");
+    assert!(matches!(
+        repository.store(&foreign, &candidate).await,
+        Err(RepositoryError::Corrupt { .. })
+    ));
+    assert_eq!(
+        repository
+            .find_by_id(&execution_id())
+            .await
+            .expect("元の状態を読める"),
+        held
+    );
+}

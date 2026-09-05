@@ -2,6 +2,14 @@
 > This file is kept up to date automatically while the stage runs. Add observations at the review step, not by editing here directly.
 
 ## Interpretations
+
+- 2026-09-05T11:19:18Z — U4の修正範囲を再確認後、R-01をrebuild世代と同位置確定、R-02をsupersededへの不可分な置換と反映済みブロックの引継ぎ、R-03をspace共有headとserved_byで具体化した。新しい共有面を古い候補へ戻さず、個別ファイルの位置と利用した共有世代を区別する。
+
+- 2026-09-05T07:23:07Z — U4 の要約確認後、入出力・公開計画・障害復旧・受入条件の4成果物を作成した。NFR3を重複許容へ緩めず、耐久的な公開計画と現物照合を必要な追加設計として明示した。現在の実装がこの契約を満たすとはしていない。
+
+- 2026-09-05T06:39:26Z — オーナーが最新スナップショットと差分イベントの再生を正と裁定したため、旧全再生規則を訂正した。保存判定の拒否は Python 書込の監査欠落と特定し、内容を維持した native apply_patch 保存で解消した。隔離環境の対照と実環境の双方で確認し、独立レビュー要求まで受理された。
+
+- 2026-09-05T06:26:11Z — U9 の欠落していた functional-spec を補完した。過去の完了報告を現在の証明にせず、明示された失効範囲・実装事実・設計記録の未反映を区別した。
 <!-- example: 2026-05-29T10:14:32Z — chose REST over GraphQL; the consuming team only needs CRUD, revisit if subscriptions land -->
 - 2026-08-30T13:30:00Z — [B16/是正] オーナーレビュー裁定 (3 原則: Domain Primitive 化・ユースケース層 = フロー制御・貧血補償コード禁止) で steering 連鎖を全面是正: ContinueToken の 18 フィールドを全て型化 (StageSlug/ScopeSlug/PartIndex/TokenVersion/UnitRef[UnitKind enum]/StageName/Bindings — state_aware+state_hash は Option<StateBinding> に畳み、予約フラグ f/w/z と導出可能な p はフィールド廃止で構成不能化)、too_many_arguments allow 撤去。ダイジェスト素材文字列 (material) を廃止し、対象を名前付き VO (StageRoute=定義クエリ・StatePosition[StoreVersion newtype]) で codec ポートの型付きメソッド 4 本に渡す形へ — 直列化は adapter で serde JSON (Debug 表現・区切り文字連結の欠陥を根絶)。scope_resolution はドメインへ移設 (判断ポリシー)、steering 分割/20KiB パックは adapter へ移設 (輸送知識、ポートは SteeringPlan を返す)、command_spelling は EngineCommand (ドメイン概念) + CommandSpelling ポート + adapter マルチコール実装に分離。steering_chain は解体: rebuild_with_pins/clone_with_rules → ドメイン RunStageDirective::with_pins/with_rules_in_context、emit_part の範囲外エラーは SteeringPart (計画クエリのみが構築) で表現不能化。ポート契約と契約依存型は use-case/orchestration/port/ に集約 (オーナー提案)。全ゲート緑 954 テスト・カバレッジ 98.77%
 - 2026-08-30T10:30:00Z — [B16/U6] U6 後半を実装: SteeringPlan（STEERING_TEXT_TARGET_BYTES=20KiB、見出し境界分割 + コードポイント後退分割）、ContinueToken（18 キー厳密型表・v=1）、HMAC-SHA256 封筒 {p,m}・base64url・timing-safe 検証の codec を interface-adapter に実装（鍵 .aidlc-steering-token-key は不在時ミント）。4 ダイジェスト束縛（bundle/directive/route/state）と fail-closed 6 形逐語を ContinueUseCase に実装。next 側は load-steering 連鎖の起点化 + run-stage への rules_in_context 台帳搭載。新依存 hmac/base64/getrandom（オーナー承認済み、暗号は adapter のみ）。分岐・連鎖テスト含む 123 use-case テスト、workspace 934 全緑、カバレッジ 98.79%（相対ゲート回復のため網羅 match テスト補完を含む）
@@ -18,9 +26,14 @@
 - 2026-08-22T11:42:39Z — [u1-canon-json-goldens] traceability センサーが『missing_from_upstream_ids: 34』を報告したが、これは stories.md 不在時にセンサーが requirements.md の全 FR を各 Unit の upstream_ids に要求する実装上の限界（Unit に割り当てられた FR だけを列挙するステージ定義と噛み合わない）; Unit スコープの FR7.x のみを列挙する方針を維持し、誤検知として扱う（units-generation と同じ上流センサーの限界。O5 と同様に upstream 報告候補）
 
 ## Tradeoffs
+
+- 2026-09-05T07:23:07Z — U4のファイル群を一瞬で切り替える保証は置かず、同じ計画から再開できる公開と、構造化面・確定位置の不可分な確定を分けた。具体的な保存場所・排他の実装・保全期間は後続設計で具体化し、既存C3/C6が新規操作を既に提供するとは扱わない。
 <!-- example: 2026-05-29T10:14:32Z — picked TDD over BDD this run; the team is unit-first and the domain is well-understood -->
 
 ## Open questions
+
+- 2026-09-05T06:26:11Z — aggregate-commands の全イベント再生規則に対し、IntentExecutionRepositoryImpl は保存状態からの差分再生を行う。U9 では規範と実装の不一致を記録し、是正方針を未決定として残した。
+- 2026-09-05T06:26:11Z — U9 のレビュー開始が「entities.md が回答確認後に保存されていない」と 2 回拒否された。現行要約は既存成果物の履歴保持を確認済みであり、同一内容の再保存でも拒否が継続した。doctor は 46 passed / 0 failed。独立レビューと Unit 完了は未実施。
 <!-- example: 2026-05-29T10:14:32Z — confirm the retention window with compliance before the next stage hardens the schema -->
 - 2026-08-22T11:47:37Z — [u1-canon-json-goldens] レビュー Minor 2（W2 に用途→ダイジェスト族の対応表: バンドル digest / directiveHash / route hash = compact-raw、approval fingerprint / contract_sha256 = canonical-prefixed）と Minor 3（integer_value の i64/u64 判別: 非負は u64 優先、それ以外 i64）は終端受領後のため未反映。functional-design のステージゲートで Request Changes か、code-generation の計画で吸収するかをオーナーが判断
 - 2026-08-22T17:10:00Z — [Interpretations] U10（packaging）は functional-design の成果物が適用外で、エンジンは「成果物なしで充足」と判定するが summary-confirmation の受領証は要求する（questions file 無しで error）; ゼロ質問 + 前提 P1/P2 の質問票を作り checkpoint を記録した。エンジンの per-unit 歩行は依存バッチ順（u1 → u10 → u2 → u9）で bolt-plan と異なる — オーナー裁定で U10 を B2 に前倒し（bolt-plan.md 改訂）

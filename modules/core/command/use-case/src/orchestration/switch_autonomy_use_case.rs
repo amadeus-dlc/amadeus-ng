@@ -98,7 +98,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> SwitchAutonomyUseCase<E,
             .await?;
         let intent = self
             .intent_repository
-            .find_by_id(aggregate.intent_id())
+            .find_for_execution(&aggregate)
             .await?;
         let event = aggregate
             .switch_autonomy(

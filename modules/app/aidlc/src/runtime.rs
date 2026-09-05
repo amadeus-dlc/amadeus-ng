@@ -68,6 +68,8 @@ use crate::wording;
 
 /// 投影の名前（チェックポイントの鍵）。
 const PROJECTION: &str = "orchestration";
+/// 初回の構造化面だけの進捗。ファイル側の未反映イベントを飛ばさない。
+const STRUCTURED_PROJECTION: &str = "orchestration-structured";
 
 /// 1 回の起動の結末。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1704,8 +1706,8 @@ async fn prepare_definition_for_first_read(layout: &Layout) -> Result<(), String
     )
     .await?;
 
-    let projection =
-        ProjectionName::parse(PROJECTION).map_err(|error| format!("projection name: {error:?}"))?;
+    let projection = ProjectionName::parse(STRUCTURED_PROJECTION)
+        .map_err(|error| format!("projection name: {error:?}"))?;
     let mut journal_reader = JournalReaderImpl::open(&store)
         .map_err(|error| diagnose("cannot open the definition journal", &error))?;
     ReadModelUpdater::catch_up_structured(&mut journal_reader, &projection)
@@ -1799,7 +1801,7 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
     };
     let projection =
         ProjectionName::parse(PROJECTION).map_err(|error| format!("projection name: {error:?}"))?;
-    let journal_reader = JournalReaderImpl::open(&store_path(layout)?)
+    let mut journal_reader = JournalReaderImpl::open(&store_path(layout)?)
         .map_err(|error| format!("journal: {error}"))?;
     let clone_id = crate::clone_identity::load_or_mint(&layout.aidlc_root())
         .map_err(|error| format!("clone id: {error}"))?;
@@ -1809,6 +1811,9 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
         audit_dir.join(shard.as_str()),
         layout.memory_dir(),
     );
+    journal_reader
+        .restore_missing_files(&projection, &targets)
+        .map_err(|error| format!("projection restoration: {error}"))?;
     // 参照入力 (memory 層) はジャーナルとは別の入口である — 規則の編集はイベントを
     // 伴わないので、読取先を明示的に渡す。
     let steering = SteeringSource::new(layout.memory_dir());

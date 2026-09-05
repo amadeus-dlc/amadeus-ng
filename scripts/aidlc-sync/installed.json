@@ -1162,7 +1162,7 @@
       "executable": false
     },
     ".claude/tools/aidlc-lib.ts": {
-      "sha256": "0453bee87caedfca721d2a3223241450ee9a20fce4f1774631eccad8f97c3fe2",
+      "sha256": "62c7fa1eb4b4935fddad7950d7d4dd9861e03c4ee63166ac73295ebb7e3dcf7c",
       "executable": false
     },
     ".claude/tools/aidlc-log.ts": {
@@ -2098,7 +2098,7 @@
       "executable": false
     },
     ".codex/tools/aidlc-lib.ts": {
-      "sha256": "0453bee87caedfca721d2a3223241450ee9a20fce4f1774631eccad8f97c3fe2",
+      "sha256": "62c7fa1eb4b4935fddad7950d7d4dd9861e03c4ee63166ac73295ebb7e3dcf7c",
       "executable": false
     },
     ".codex/tools/aidlc-log.ts": {
@@ -3158,7 +3158,7 @@
       "executable": false
     },
     ".kimi-code/tools/aidlc-lib.ts": {
-      "sha256": "0453bee87caedfca721d2a3223241450ee9a20fce4f1774631eccad8f97c3fe2",
+      "sha256": "62c7fa1eb4b4935fddad7950d7d4dd9861e03c4ee63166ac73295ebb7e3dcf7c",
       "executable": false
     },
     ".kimi-code/tools/aidlc-log.ts": {
