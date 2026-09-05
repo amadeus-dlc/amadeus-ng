@@ -54,7 +54,7 @@ U2の公開next_decisionには直接のID不一致Errがないが、現行RMUは
 
 [監査順序の修正](https://github.com/amadeus-dlc/amadeus-ng/pull/108)、[保存先ID照合](https://github.com/amadeus-dlc/amadeus-ng/pull/109)、[Tell Don’t Askと旧API撤去](https://github.com/amadeus-dlc/amadeus-ng/pull/110)はmainへ統合済み。
 
-[公開中断からの復旧](https://github.com/amadeus-dlc/amadeus-ng/pull/111)の最終コード `e1691a5325d3f0f492efa52d671ca5c3a0af7cc9` は、必須CIとレビュー指摘13件の解決を確認してマージキューへ投入した。
+[公開中断からの復旧](https://github.com/amadeus-dlc/amadeus-ng/pull/111)の最終コード `e1691a5325d3f0f492efa52d671ca5c3a0af7cc9` は、必須CIとレビュー指摘13件の解決を確認し、キュー内のCIも成功して `a37acecc16041238697c72f5a6e6bc07ef48a886` としてmainへ統合した。
 
 - カバレッジ計測内のワークスペース通常試験は41スイート2,216件成功、失敗・無視0。これはdoctestを含まない件数であり、分割前の表へ加算しない。
 - `check`（整形・Clippy・リンター・ワークスペース試験・リンター自己試験）、Quint、配布整合性、監査、レビュー検査、集約CIが成功。実行記録は[CI run 33997547304](https://github.com/amadeus-dlc/amadeus-ng/actions/runs/33997547304)。
