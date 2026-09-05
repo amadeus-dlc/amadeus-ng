@@ -1,5 +1,20 @@
 # AI-DLC on Codex CLI
 
+## このプロジェクトの配布元とハーネス
+
+配布元は `vendor/aidlc-workflows/` の Git submodule（`j5ik2o/aidlc-workflows`）で固定する。
+AWS Bedrock は使用しない。各ハーネスの通常のログイン・利用者設定を使用する。
+Claude は `.claude/`、Codex は `.codex/` と `.agents/`、Kimi は `.kimi-code/` を使用する。
+更新は `bun scripts/aidlc-sync.ts` で差分を確認し、`--apply` で適用する。
+配布ファイルを直接修正せず、必要な独自修正は `scripts/aidlc-sync/patches/` に記録する。
+設定保持・削除・検証の手順は `docs/aidlc-installation.md` を参照する。
+
+Kimi では `/skill:aidlc` を使用する。フックはユーザー設定
+`~/.kimi-code/config.toml` に `.kimi-code/hooks.snippet.toml` の登録が必要。
+Kimi は `@` インポートを解釈しないため、計画・レビュー時には
+`aidlc/spaces/<active-space>/memory/` の `org.md`、`team.md`、`project.md` と
+該当する `phases/<phase>.md` を読む。これらは３ハーネスで共有する正本である。
+
 This project uses AI-DLC (AI-Driven Development Life Cycle) under the OpenAI
 Codex CLI harness (minimum version 0.145.0). Invoke the orchestrator skill with
 `$aidlc` (or `/skills` → aidlc) followed by a scope or project description.
@@ -18,7 +33,7 @@ gate).
 
 - **Codex CLI ≥ 0.145.0**: earlier releases defer compact-source SessionStart after a mid-turn auto-compaction, so one model continuation can run without the restored workflow mission. Releases before 0.139.0 also lack reliable subagent role attribution and hyphenated agent-TOML resolution. `$aidlc --doctor` enforces the pin. Check with `codex --version`.
 - **bun**: Required for CLI tools and hook scripts (state management, audit logging, jump orchestration). Install via `curl -fsSL https://bun.sh/install | bash`. On Windows: `npm install -g bun` or `powershell -c "irm bun.sh/install.ps1 | iex"`. `bun` must be on your PATH for the non-interactive shells the harness spawns — these source `~/.zshenv` (zsh) or `~/.bashrc` (bash), NOT `~/.zshrc`.
-- **Model provider**: The shipped `.codex/config.toml` defaults to **Amazon Bedrock** — the session (and judgment-tier agents, which inherit it) on `openai.gpt-5.5`, balanced/templated agents pinned to `openai.gpt-5.6-terra` (the tier projection). Set your AWS profile/region under `[model_providers.amazon-bedrock.aws]` (shipped defaults `profile = "default"`, `region = "us-east-1"`); you need Bedrock model access and AWS credentials on the default SDK credential chain. For OpenAI auth instead, comment out `model_provider` and the `[model_providers]` block. Note: `web_search` is unavailable on Bedrock, so the market-research stage degrades gracefully.
+- **Model provider**: Codex のモデルと認証は利用者の設定を継承する。配布元はモデルやプロバイダーを固定しない。プロジェクト固有の context/effort は `.codex/config.toml` の設定を使用する。
 - **MCP servers (optional)**: Codex reads MCP server definitions from `[mcp_servers.<name>]` tables in `config.toml` (project `.codex/config.toml` or `~/.codex/config.toml`). The shipped config declares none — add the servers you need there. Credentials flow through your environment; a server you have no credentials for is simply unavailable and never blocks a workflow.
 - **Locking**: Audit log file locking is handled portably using mkdir-based locking in the system temp directory (no external dependencies).
 - **Hook permissions**: All 17 hooks are TypeScript (`.ts`) and run via `bun`. No executable bits required — works identically on macOS, Linux, and native Windows PowerShell.

@@ -1,0 +1,8 @@
+# パッチの空行にある先頭スペースは unified diff の文法。
+scripts/aidlc-sync/patches/*.patch whitespace=-blank-at-eol
+
+# 配布物・生成台帳は通常のレビューで折りたたむ。保持設定は表示する。
+.kimi-code/** linguist-generated=true
+.kimi-code/mcp.json linguist-generated=false
+.kimi-code/rules/aidlc.md linguist-generated=false
+scripts/aidlc-sync/installed.json linguist-generated=true
