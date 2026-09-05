@@ -11,14 +11,34 @@
 //! 自分で開くからである。
 
 use std::io::ErrorKind;
+use std::path::Path;
+
+use super::JournalReadError;
 
 use rusqlite::ErrorCode;
+
+/// SQLiteの操作結果を、対象ストアの場所を伴うRMUの失敗契約へ変換する。
+///
+/// SQLの実行、行の復号、トランザクションの確定が同じ分類規約を共有する。
+/// 成功値と操作順序には触れず、呼出元は失敗の分類やパス付与を繰り返さない。
+pub(super) trait SqliteResultExt<T> {
+    fn at_store(self, path: &Path) -> Result<T, JournalReadError>;
+}
+
+impl<T> SqliteResultExt<T> for rusqlite::Result<T> {
+    fn at_store(self, path: &Path) -> Result<T, JournalReadError> {
+        self.map_err(|error| JournalReadError::Io {
+            kind: io_kind(&error),
+            path: Some(path.to_path_buf()),
+        })
+    }
+}
 
 /// rusqlite の失敗を `std::io::ErrorKind` の語彙へ落とす。
 ///
 /// `SQLITE_BUSY` / `SQLITE_LOCKED` を `WouldBlock` に写すのは、これが「壊れた」ではなく
 /// 「いま他の書き手がいる」という**再実行で解ける**分類だからである (NFR3.5)。
-pub(crate) const fn io_kind(error: &rusqlite::Error) -> ErrorKind {
+const fn io_kind(error: &rusqlite::Error) -> ErrorKind {
     let rusqlite::Error::SqliteFailure(inner, _) = error else {
         return ErrorKind::Other;
     };

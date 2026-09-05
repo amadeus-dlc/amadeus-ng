@@ -524,6 +524,16 @@ async fn report_directive(workspace: &Workspace, args: &[&str]) -> (String, Stri
     (kind, body)
 }
 
+/// 自己防衛拒否は成功面を出さず、障害の分類と完全な所在を保つ。
+fn assert_refused_at(completion: &aidlc::runtime::Completion, prefix: &str, path: &Path) {
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(completion.line(), None, "拒否では成功directiveを出さない");
+    assert_eq!(
+        completion.diagnostic(),
+        Some(format!("{prefix}{}", path.display()).as_str())
+    );
+}
+
 fn string_of(value: &JsonValue, key: &str) -> String {
     match value {
         JsonValue::Object(members) => match members.get(key) {
@@ -598,6 +608,204 @@ async fn next_runs_against_the_freshly_created_intent() {
     // 誕生の投影が initialization を完了させ、最初のゲート付きステージへ着地している
     // ので、`next` が届けるのは `state-init` ではなく `domain-design` の規則である。
     assert_eq!(string_of(&directive, "stage"), "domain-design");
+}
+
+/// 破損した復旧計画は読取・書込の全入口を止め、真実記録や公開位置を変えない。
+#[tokio::test]
+async fn next_rejects_a_corrupt_restoration_plan_without_recreating_files() {
+    let workspace = Workspace::with_practices();
+    let created = invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "corrupt restoration",
+        ],
+    )
+    .await;
+    assert_eq!(created.code(), 0, "{created:?}");
+    let ready = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(ready.code(), 0, "{ready:?}");
+    let ready_directive = line_of(&ready);
+    assert_eq!(string_of(&ready_directive, "kind"), "load-steering");
+    let token = string_of(&ready_directive, "continue_token");
+    let before_journal = workspace.journal_rows();
+    let audit = workspace.audit_shard().expect("公開済み監査");
+    let record = workspace.record_dir().expect("記録先");
+    let path = StorePath::for_space(&workspace.path("aidlc"), &SpaceName::default());
+    let database = rusqlite::Connection::open(path.as_path()).expect("実ストアを開く");
+    let position = || {
+        database.query_row(
+        "SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'",
+        [], |row| row.get::<_, i64>(0),
+    ).expect("公開位置")
+    };
+    let before = position();
+    assert_eq!(database.execute(
+        "UPDATE amadeus_publication_snapshot SET plan_digest='corrupt' WHERE projection='orchestration'", [],
+    ).expect("保存計画の破損を注入"), 1);
+    fs::remove_file(record.join("aidlc-state.md")).expect("状態を失わせる");
+    let expected = format!(
+        "aidlc-orchestrate: projection restoration: read: io: InvalidData at {}",
+        path.as_path().display()
+    );
+    for args in [vec!["next"], vec!["continue", token.as_str()]] {
+        let completion = invoke(&workspace, "aidlc-orchestrate", &args).await;
+        assert_eq!(
+            completion.code(),
+            0,
+            "読み取り拒否はerror directive: {completion:?}"
+        );
+        assert_eq!(completion.diagnostic(), None);
+        let directive = line_of(&completion);
+        assert_eq!(string_of(&directive, "kind"), "error");
+        assert_eq!(string_of(&directive, "message"), expected);
+        assert!(!record.join("aidlc-state.md").exists());
+        assert_eq!(workspace.journal_rows(), before_journal);
+        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
+        assert_eq!(position(), before);
+    }
+    for args in [
+        vec!["report", "--result", "awaiting-approval"],
+        vec!["report", "--result", "resumed", "--user-input", "1"],
+        vec![
+            "report",
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+        vec!["report", "--skeleton-stance", "on"],
+    ] {
+        let completion = invoke(&workspace, "aidlc-orchestrate", &args).await;
+        assert_refused_at(
+            &completion,
+            "aidlc-orchestrate: projection restoration: read: io: InvalidData at ",
+            path.as_path(),
+        );
+        assert!(!record.join("aidlc-state.md").exists());
+        assert_eq!(workspace.journal_rows(), before_journal);
+        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
+        assert_eq!(position(), before);
+    }
+    for completion in [
+        promote(&workspace).await,
+        set_autonomy(&workspace, "gated").await,
+    ] {
+        assert_refused_at(
+            &completion,
+            "aidlc-orchestrate: projection restoration: read: io: InvalidData at ",
+            path.as_path(),
+        );
+        assert!(!record.join("aidlc-state.md").exists());
+        assert_eq!(workspace.journal_rows(), before_journal);
+        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
+        assert_eq!(position(), before);
+    }
+}
+
+/// イベント保存後だけpublicationを失敗させ、次の読み取りで一度だけ追いつく。
+#[tokio::test]
+async fn a_committed_report_survives_publication_failure_and_is_recovered_once() {
+    let workspace = minted().await;
+    let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    let database = rusqlite::Connection::open(&store).expect("実SQLiteストア");
+    let checkpoint = || {
+        database.query_row("SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'", [], |row| row.get::<_, i64>(0)).expect("公開位置")
+    };
+    let before_position = checkpoint();
+    let before_journal = workspace.journal_rows();
+    let before_state = workspace.state_file().expect("公開済み状態");
+    let before_audit = workspace.audit_shard().expect("公開済み監査");
+    database.execute_batch(&format!("CREATE TRIGGER fail_new_publication BEFORE INSERT ON amadeus_publication WHEN NEW.target_position > {before_position} BEGIN SELECT RAISE(ABORT,'publication unavailable after event commit'); END;")).expect("新イベントに対応する公開だけを失敗させる");
+
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: projection: read: io: Other at ",
+        &store,
+    );
+    let committed_journal = workspace.journal_rows();
+    assert_eq!(
+        committed_journal,
+        (before_journal.0, before_journal.1 + 1),
+        "イベント保存後の失敗である"
+    );
+    assert_eq!(checkpoint(), before_position, "公開完了位置を先行させない");
+    assert_eq!(
+        workspace.state_file().as_deref(),
+        Some(before_state.as_str())
+    );
+    assert_eq!(
+        workspace.audit_shard().as_deref(),
+        Some(before_audit.as_str())
+    );
+
+    database
+        .execute_batch("DROP TRIGGER fail_new_publication")
+        .expect("公開障害を除去");
+    let recovered = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(recovered.code(), 0, "{recovered:?}");
+    assert_eq!(recovered.diagnostic(), None);
+    assert_ne!(string_of(&line_of(&recovered), "kind"), "error");
+    assert_eq!(
+        workspace.journal_rows(),
+        committed_journal,
+        "復旧は新イベントを作らない"
+    );
+    assert_eq!(checkpoint(), before_position + 1);
+    let after_state = workspace.state_file().expect("復旧済み状態");
+    assert!(after_state.contains("- [?] domain-design"), "{after_state}");
+    let after_audit = workspace.audit_shard().expect("復旧済み監査");
+    assert_eq!(
+        after_audit.matches("STAGE_AWAITING_APPROVAL").count(),
+        before_audit.matches("STAGE_AWAITING_APPROVAL").count() + 1
+    );
+    let repeated = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(repeated.code(), 0, "{repeated:?}");
+    assert_ne!(string_of(&line_of(&repeated), "kind"), "error");
+    assert_eq!(workspace.journal_rows(), committed_journal);
+    assert_eq!(checkpoint(), before_position + 1);
+    assert_eq!(
+        workspace.state_file().as_deref(),
+        Some(after_state.as_str())
+    );
+    assert_eq!(
+        workspace.audit_shard().as_deref(),
+        Some(after_audit.as_str())
+    );
+}
+
+#[tokio::test]
+async fn next_restores_missing_projection_files_without_repeating_audit() {
+    let workspace = Workspace::create();
+    let created = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "recovery"],
+    )
+    .await;
+    assert_eq!(created.code(), 0, "{created:?}");
+    let state = workspace.state_file().expect("公開済み状態");
+    let audit = workspace.audit_shard().expect("公開済み監査");
+    let record = workspace.record_dir().expect("記録先");
+    fs::remove_file(record.join("aidlc-state.md")).expect("状態を失わせる");
+    fs::remove_dir_all(record.join("audit")).expect("監査出力を失わせる");
+    for _ in 0..2 {
+        let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+        assert_eq!(next.code(), 0, "{next:?}");
+        assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
+        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
+    }
 }
 
 /// `report --result` が遷移をコミットし、投影が読み面へ落ちる。
@@ -2850,7 +3058,9 @@ The execution cursor cannot be read"
     )
     .await;
     let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
-    fs::remove_file(&store).expect("ストア");
+    let before = workspace.journal_rows();
+    let saved = store.with_extension("saved.sqlite");
+    fs::rename(&store, &saved).expect("真実記録は保持して置き場を塞ぐ");
     fs::create_dir(&store).expect("塞ぐ");
     let completion = invoke(
         &workspace,
@@ -2866,12 +3076,16 @@ The execution cursor cannot be read"
     )
     .await;
     assert_eq!(completion.code(), 1);
-    assert_eq!(
-        completion.diagnostic(),
-        Some("aidlc-orchestrate: cannot open the event store")
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: journal: io: NotFound at ",
+        &store,
     );
+    fs::remove_dir(&store).expect("障害を除去");
+    fs::rename(&saved, &store).expect("真実記録を戻す");
+    assert_eq!(workspace.journal_rows(), before);
 
-    // (3) 書いたあとに投影が回らなければ自己防衛拒否。
+    // (3) 事前復旧が回らなければ、隔離実行を記録せず自己防衛拒否。
     let workspace = Workspace::create();
     invoke(
         &workspace,
@@ -2879,6 +3093,7 @@ The execution cursor cannot be read"
         &["intent-create", "--scope", "classic", "--label", "demo"],
     )
     .await;
+    let before = workspace.journal_rows();
     let clone_id = workspace.path("aidlc/.aidlc-clone-id");
     fs::remove_file(&clone_id).expect("clone id");
     fs::create_dir(&clone_id).expect("塞ぐ");
@@ -2897,6 +3112,17 @@ The execution cursor cannot be read"
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|message| message.starts_with("aidlc-orchestrate: clone id:")),
+        "{completion:?}"
+    );
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "事前復旧で止まり隔離実行を記録しない"
+    );
 }
 
 /// `--skeleton-stance` も媒体の失敗を握り潰さない。
@@ -2928,7 +3154,9 @@ async fn a_skeleton_stance_report_surfaces_every_medium_failure() {
     )
     .await;
     let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
-    fs::remove_file(&store).expect("ストア");
+    let before = workspace.journal_rows();
+    let saved = store.with_extension("saved.sqlite");
+    fs::rename(&store, &saved).expect("真実記録は保持して置き場を塞ぐ");
     fs::create_dir(&store).expect("塞ぐ");
     let completion = invoke(
         &workspace,
@@ -2937,10 +3165,14 @@ async fn a_skeleton_stance_report_surfaces_every_medium_failure() {
     )
     .await;
     assert_eq!(completion.code(), 1);
-    assert_eq!(
-        completion.diagnostic(),
-        Some("aidlc-orchestrate: cannot open the event store")
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: journal: io: NotFound at ",
+        &store,
     );
+    fs::remove_dir(&store).expect("障害を除去");
+    fs::rename(&saved, &store).expect("真実記録を戻す");
+    assert_eq!(workspace.journal_rows(), before);
 }
 
 /// リードモデルの `read_execution` を**引けない形**に置き換える（イベントストアは無傷）。
@@ -2975,25 +3207,29 @@ async fn a_skeleton_stance_report_names_the_unreadable_read_model() {
     // 「開けるが引けない」形にする — イベントストアの表は無傷のまま、リードモデルの
     // `read_execution` だけを引けなくする。ファイル全体を非 SQLite バイト列にすると
     // イベントストアを開く段で止まってしまい、この経路には届かない。
+    let before = workspace.journal_rows();
     break_read_execution(&workspace);
-    let (kind, message) = report_directive(&workspace, &["--skeleton-stance", "off"]).await;
-
-    assert_eq!(kind, "error");
-    assert!(
-        message.starts_with("Read model not readable at "),
-        "{message}"
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--skeleton-stance", "off"],
+    )
+    .await;
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: journal: io: Other at ",
+        &workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite"),
     );
-    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
-    assert_ne!(
-        message,
-        "No active intent workflow state found (aidlc-state.md is absent) — nothing to record a skeleton stance for.",
-        "引けない媒体を不在の逐語へ畳んではならない"
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "復旧に失敗したらイベントは書かない"
     );
 }
 
-/// 投影が回らなければ stance の記録も自己防衛拒否で止まる。
+/// 事前復旧が回らなければ stance は記録する前に自己防衛拒否で止まる。
 #[tokio::test]
-async fn a_projection_that_cannot_run_after_the_stance_is_refused() {
+async fn a_restoration_failure_prevents_the_stance_from_being_recorded() {
     let workspace = Workspace::with_construction();
     invoke(
         &workspace,
@@ -3014,6 +3250,7 @@ async fn a_projection_that_cannot_run_after_the_stance_is_refused() {
         ],
     )
     .await;
+    let before = workspace.journal_rows();
     let clone_id = workspace.path("aidlc/.aidlc-clone-id");
     fs::remove_file(&clone_id).expect("clone id");
     fs::create_dir(&clone_id).expect("塞ぐ");
@@ -3027,6 +3264,11 @@ async fn a_projection_that_cannot_run_after_the_stance_is_refused() {
 
     assert_eq!(completion.code(), 1);
     assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "事前復旧の失敗ではコミットしない"
+    );
 }
 
 /// `skipped` の受理 — CONDITIONAL なステージはルーティングされ、完了数には入らない。
@@ -3162,17 +3404,27 @@ async fn an_unreadable_state_file_is_reported_with_its_place_and_cause() {
         .expect("record")
         .join("aidlc-state.md");
     // 骨格の置き場をディレクトリで塞ぐ（在るが文字列として読めない）。
+    let before = workspace.journal_rows();
     fs::remove_file(&state_file).expect("骨格");
     fs::create_dir(&state_file).expect("塞ぐ");
 
-    let (kind, message) = report_directive(&workspace, &["--result", "approved"]).await;
-
-    assert_eq!(kind, "error");
-    assert!(
-        message.starts_with("Read model not readable at "),
-        "{message}"
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "approved"],
+    )
+    .await;
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: projection restoration: publication conflict: ",
+        &state_file,
     );
-    assert!(message.contains("aidlc-state.md"), "{message}");
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "復旧拒否でイベントを増やさない"
+    );
+    assert!(state_file.is_dir(), "障害箇所を勝手に上書きしない");
 }
 
 /// 段 4 — 状態ファイルは在るのに現在地が引けなければ、再開先を名乗れない。
@@ -3217,20 +3469,23 @@ async fn a_resume_whose_read_model_cannot_be_read_names_the_store() {
     .await;
     // 「開けるが引けない」形にする（上と同じ細工）。状態ファイルは在るので段 4 の
     // state 判定は通り、現在地の引当だけが落ちる。
+    let before = workspace.journal_rows();
     break_read_execution(&workspace);
-
-    let (kind, message) =
-        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
-
-    assert_eq!(kind, "error");
-    assert!(
-        message.starts_with("Read model not readable at "),
-        "{message}"
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "resumed", "--user-input", "1"],
+    )
+    .await;
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: journal: io: Other at ",
+        &workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite"),
     );
-    assert!(message.contains(".aidlc-store.sqlite"), "{message}");
-    assert_ne!(
-        message, "State file has no Current Stage field - cannot resume from the last checkpoint.",
-        "引けない媒体を不在の逐語へ畳んではならない"
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "復旧に失敗したらイベントは書かない"
     );
 }
 
@@ -3269,17 +3524,25 @@ async fn a_resume_whose_store_cannot_be_opened_names_the_store() {
     .await;
     // 置き場をディレクトリで塞ぐ — 開くことすらできない形である。
     let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
-    fs::remove_file(&store).expect("ストア");
+    let before = workspace.journal_rows();
+    let saved = store.with_extension("saved.sqlite");
+    fs::rename(&store, &saved).expect("真実記録は保持して置き場を塞ぐ");
     fs::create_dir(&store).expect("塞ぐ");
 
-    let (kind, message) =
-        report_directive(&workspace, &["--result", "resumed", "--user-input", "1"]).await;
-
-    assert_eq!(kind, "error");
-    assert!(
-        message.starts_with("Read model not readable at "),
-        "{message}"
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "resumed", "--user-input", "1"],
+    )
+    .await;
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: journal: io: NotFound at ",
+        &store,
     );
+    fs::remove_dir(&store).expect("障害を除去");
+    fs::rename(&saved, &store).expect("真実記録を戻す");
+    assert_eq!(workspace.journal_rows(), before);
 }
 
 /// forward 表 — 差し戻し中 (`[R]`) のステージは前進の完了ではない。
@@ -4664,16 +4927,18 @@ async fn a_promotion_surfaces_every_medium_failure() {
     // 正本が「在るのに読めない」（同上）。
     let workspace = minted_practices().await;
     let team_md = workspace.path("aidlc/spaces/default/memory/team.md");
+    let before = workspace.journal_rows();
     fs::remove_file(&team_md).expect("消す");
     fs::create_dir(&team_md).expect("ディレクトリを置く");
     let completion = promote(&workspace).await;
     assert_eq!(completion.code(), 1, "{completion:?}");
-    assert!(
-        completion.diagnostic().is_some_and(
-            |line| line.starts_with("practices-promote failed: could not read targets: ")
-        ),
-        "{completion:?}"
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: projection restoration: publication conflict: ",
+        &team_md,
     );
+    assert_eq!(workspace.journal_rows(), before);
+    assert!(team_md.is_dir(), "正本の障害を上書きしない");
 }
 
 /// カーソルが指す実行がジャーナルに居なければ、ユースケースの失敗が材料ごと上がる。
@@ -4699,11 +4964,12 @@ async fn a_promotion_against_an_absent_execution_relays_the_repository_failure()
     );
 }
 
-/// 昇格の後に投影が回らなければ、書いた事実が見えないままなので拒否する。
+/// 事前復旧が回らなければ、昇格を記録する前に拒否する。
 #[tokio::test]
-async fn a_projection_that_cannot_run_after_the_promotion_is_refused() {
+async fn a_restoration_failure_prevents_the_promotion_from_being_recorded() {
     let workspace = minted_practices().await;
     // clone id の置き場をディレクトリで塞ぐと、投影のシャード名が解決できなくなる。
+    let before = workspace.journal_rows();
     let clone_id = workspace.path("aidlc/.aidlc-clone-id");
     fs::remove_file(&clone_id).expect("clone id");
     fs::create_dir(&clone_id).expect("塞ぐ");
@@ -4719,6 +4985,11 @@ async fn a_projection_that_cannot_run_after_the_promotion_is_refused() {
             .starts_with("aidlc-orchestrate: clone id:"),
         "{completion:?}"
     );
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "事前復旧の失敗ではコミットしない"
+    );
 }
 
 /// 定義の面が読めなければ、ストアの置き場を名指して断る（グラフの不在と混ぜない）。
@@ -4726,6 +4997,7 @@ async fn a_projection_that_cannot_run_after_the_promotion_is_refused() {
 async fn a_promotion_names_the_unreadable_read_model_instead_of_an_absent_stage() {
     let workspace = minted_practices().await;
     let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
+    let before = workspace.journal_rows();
     let connection = rusqlite::Connection::open(&store).expect("ストアは開ける");
     connection
         .execute_batch(
@@ -4735,13 +5007,12 @@ async fn a_promotion_names_the_unreadable_read_model_instead_of_an_absent_stage(
         .expect("リードモデルの表は置き換えられる");
 
     let completion = promote(&workspace).await;
-    assert_eq!(completion.code(), 1, "{completion:?}");
-    assert!(
-        completion
-            .diagnostic()
-            .is_some_and(|line| line.starts_with("Read model not readable at ")),
-        "{completion:?}"
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: journal: io: Other at ",
+        &store,
     );
+    assert_eq!(workspace.journal_rows(), before);
 }
 
 // ---------------------------------------------------------------------------
@@ -5027,26 +5298,28 @@ async fn switching_names_the_unreadable_state_file_instead_of_an_absent_field() 
         .record_dir()
         .expect("record")
         .join("aidlc-state.md");
+    let before = workspace.journal_rows();
     fs::remove_file(&state).expect("状態ファイル");
     fs::create_dir(&state).expect("塞ぐ");
 
     let completion = set_autonomy(&workspace, "autonomous").await;
 
-    assert_eq!(completion.code(), 1, "{completion:?}");
-    assert!(
-        completion
-            .diagnostic()
-            .is_some_and(|line| line.starts_with("Read model not readable at ")),
-        "{completion:?}"
+    assert_refused_at(
+        &completion,
+        "aidlc-orchestrate: projection restoration: publication conflict: ",
+        &state,
     );
+    assert_eq!(workspace.journal_rows(), before);
+    assert!(state.is_dir());
 }
 
-/// 切替の後に投影が回らなければ、書いた事実が見えないままなので拒否する。
+/// 事前復旧が回らなければ、自律モードを切り替える前に拒否する。
 #[tokio::test]
-async fn a_projection_that_cannot_run_after_the_switch_is_refused() {
+async fn a_restoration_failure_prevents_the_autonomy_switch_from_being_recorded() {
     let workspace = minted().await;
     workspace.append_human_turn(FRESH_TURN);
     // clone id の置き場をディレクトリで塞ぐと、投影のシャード名が解決できなくなる。
+    let before = workspace.journal_rows();
     let clone_id = workspace.path("aidlc/.aidlc-clone-id");
     fs::remove_file(&clone_id).expect("clone id");
     fs::create_dir(&clone_id).expect("塞ぐ");
@@ -5061,6 +5334,11 @@ async fn a_projection_that_cannot_run_after_the_switch_is_refused() {
             .unwrap_or_default()
             .starts_with("aidlc-orchestrate: clone id:"),
         "{completion:?}"
+    );
+    assert_eq!(
+        workspace.journal_rows(),
+        before,
+        "事前復旧の失敗ではコミットしない"
     );
 }
 

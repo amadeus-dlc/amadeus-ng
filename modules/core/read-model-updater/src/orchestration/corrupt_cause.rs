@@ -24,6 +24,8 @@ pub enum CorruptCause {
     /// rowid の振り直し・ジャーナルの改変の兆候であり、このまま差分読取を続けると欠落・
     /// 重複が起きるため、静かな破損ではなく明示エラーで止める材料 (BR1.4)。
     CheckpointAnchorMismatch,
+    /// 同じ公開位置を名乗る構造化候補と現在の行集合が一致しない。
+    ProjectionSnapshotMismatch,
 }
 
 impl fmt::Display for CorruptCause {
@@ -32,6 +34,7 @@ impl fmt::Display for CorruptCause {
             CorruptCause::UndecodablePayload => "undecodable payload",
             CorruptCause::InvariantViolation => "invariant violation",
             CorruptCause::CheckpointAnchorMismatch => "checkpoint anchor mismatch",
+            CorruptCause::ProjectionSnapshotMismatch => "projection snapshot mismatch",
         })
     }
 }
@@ -42,6 +45,10 @@ mod tests {
 
     #[test]
     fn every_corrupt_cause_renders_its_material() {
+        assert_eq!(
+            CorruptCause::ProjectionSnapshotMismatch.to_string(),
+            "projection snapshot mismatch"
+        );
         assert_eq!(
             CorruptCause::UndecodablePayload.to_string(),
             "undecodable payload"
