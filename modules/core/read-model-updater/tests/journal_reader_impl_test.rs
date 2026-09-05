@@ -286,7 +286,9 @@ async fn resolving_a_publication_preserves_user_additions_and_fences_the_old_req
             PublicationFile::replacement(&state, "before\n", "after\n"),
             PublicationFile::audit(&audit, "\n**Event**: TEST\n").unwrap(),
         ],
-    );
+    )
+    .for_targets(&targets)
+    .unwrap();
     let mut reader = fixture.journal_reader();
     let tables = seeded_tables(&reader).await;
     fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();

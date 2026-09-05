@@ -24,8 +24,11 @@ impl Head {
     pub(super) const fn generation(&self) -> i64 {
         self.generation
     }
+    pub(super) const fn is_unverified(&self) -> bool {
+        !self.verified
+    }
     pub(super) fn is_current(&self) -> bool {
-        self.verified && self.revision == PublicationBatch::current_transform_revision()
+        self.revision == PublicationBatch::current_transform_revision()
     }
 }
 

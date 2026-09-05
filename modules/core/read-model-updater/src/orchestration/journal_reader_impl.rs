@@ -906,9 +906,19 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 
 impl JournalReader for JournalReaderImpl {
     fn prepare_read_model(&mut self) -> Result<(), super::CatchUpError> {
-        if super::shared_projection::read(&self.connection, self.path.as_path())?
-            .is_none_or(|head| !head.is_current())
-        {
+        let needs_rebuild =
+            match super::shared_projection::read(&self.connection, self.path.as_path())? {
+                None => true,
+                Some(head) => {
+                    !head.is_current()
+                        || (head.is_unverified()
+                            && super::shared_projection::known_position(
+                                &self.connection,
+                                self.path.as_path(),
+                            )? > 0)
+                }
+            };
+        if needs_rebuild {
             self.rebuild_read_model()?;
         }
         Ok(())
