@@ -160,12 +160,16 @@ impl PublicationBatch {
         }
     }
 
-    /// 保存済みの出力先が、呼出元の所有する対象だけかを検査する。
+    /// 全対象の束縛と、個々の出力先の所有が呼出元に一致するかを検査する。
     #[must_use]
     pub fn matches_targets(&self, targets: &super::ProjectionTargets) -> bool {
-        self.files
-            .iter()
-            .all(|file| targets.owned_paths().contains(&file.path()))
+        targets
+            .binding()
+            .is_ok_and(|binding| self.target_binding.as_deref() == Some(binding.as_str()))
+            && self
+                .files
+                .iter()
+                .all(|file| targets.owned_paths().contains(&file.path()))
     }
 
     /// 入力を読み始めた確定位置。

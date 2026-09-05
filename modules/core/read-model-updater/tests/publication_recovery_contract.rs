@@ -1399,3 +1399,125 @@ async fn resolution_refuses_corrupt_history_before_replacing_the_saved_plan() {
         GlobalSeqNr::ZERO
     );
 }
+
+#[tokio::test]
+async fn catch_up_repairs_a_lost_head_without_new_events_even_after_reopening() {
+    use core_read_model_updater::orchestration::{ReadModelUpdater, SteeringSource};
+    for reopen in [false, true] {
+        for structured in [false, true] {
+            let fixture = Fixture::new();
+            support::seed_intent(&fixture.store).await;
+            let mut reader = fixture.reader();
+            let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
+            let last = history.scanned_to().unwrap();
+            reader
+                .advance_checkpoint(&projection(), last, &ReadTables::project(&history).unwrap())
+                .await
+                .unwrap();
+            fixture
+                .raw()
+                .execute_batch("DELETE FROM amadeus_read_model_head; DELETE FROM read_intent")
+                .unwrap();
+            if reopen {
+                reader = fixture.reader();
+            }
+            if structured {
+                assert_eq!(
+                    ReadModelUpdater::<JournalReaderImpl>::catch_up_structured(
+                        &mut reader,
+                        &projection()
+                    )
+                    .await
+                    .unwrap(),
+                    last
+                );
+            } else {
+                let mut updater = ReadModelUpdater::new(
+                    reader,
+                    projection(),
+                    fixture.targets(),
+                    SteeringSource::new(fixture.root.path().join("memory")),
+                );
+                assert_eq!(updater.catch_up().await.unwrap(), last);
+            }
+            assert_eq!(fixture.shared_head().0, 1);
+            assert!(fixture.shared_head().4);
+            let count: i64 = fixture
+                .raw()
+                .query_row("SELECT count(*) FROM read_intent WHERE as_of=1", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1, "reopen={reopen}, structured={structured}");
+            assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
+            assert!(!fixture.audit.exists());
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
+    use core_read_model_updater::orchestration::{ReadModelUpdater, SteeringSource};
+    for with_state in [false, true] {
+        let fixture = Fixture::new();
+        let mut reader = fixture.reader();
+        let files = if with_state {
+            vec![PublicationFile::replacement(
+                &fixture.state,
+                "before\n",
+                "after\n",
+            )]
+        } else {
+            vec![]
+        };
+        let batch = PublicationBatch::rebuild(GlobalSeqNr::ZERO, GlobalSeqNr::ZERO, files)
+            .for_targets(&fixture.targets())
+            .unwrap();
+        assert!(batch.matches_targets(&fixture.targets()));
+        fixture.block_checkpoint();
+        assert!(
+            reader
+                .publish(&projection(), &batch, &empty_tables())
+                .await
+                .is_err()
+        );
+        fixture.unblock_checkpoint();
+        let saved = reader
+            .pending_publication(&projection())
+            .await
+            .unwrap()
+            .unwrap();
+        let original_state = fs::read(&fixture.state).unwrap();
+        let targets = ProjectionTargets::new(
+            &fixture.state,
+            fixture.root.path().join("another-audit.md"),
+            fixture.root.path().join("other-memory"),
+        );
+        assert!(
+            !saved.matches_targets(&targets),
+            "部分一致を所有の一致としない"
+        );
+        let mut updater = ReadModelUpdater::new(
+            reader,
+            projection(),
+            targets,
+            SteeringSource::new(fixture.root.path().join("other-memory")),
+        );
+        assert!(matches!(
+            updater.catch_up().await,
+            Err(CatchUpError::PublicationConflict { .. })
+        ));
+        let reader = fixture.reader();
+        assert_eq!(
+            reader.pending_publication(&projection()).await.unwrap(),
+            Some(saved)
+        );
+        assert_eq!(
+            reader.checkpoint(&projection()).await.unwrap(),
+            GlobalSeqNr::ZERO
+        );
+        assert_eq!(fs::read(&fixture.state).unwrap(), original_state);
+        assert!(!fixture.root.path().join("another-audit.md").exists());
+        assert!(!fixture.root.path().join("other-memory").exists());
+    }
+}

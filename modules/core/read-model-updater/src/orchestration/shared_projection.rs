@@ -25,7 +25,7 @@ impl Head {
         self.generation
     }
     pub(super) fn is_current(&self) -> bool {
-        self.revision == PublicationBatch::current_transform_revision()
+        self.verified && self.revision == PublicationBatch::current_transform_revision()
     }
 }
 

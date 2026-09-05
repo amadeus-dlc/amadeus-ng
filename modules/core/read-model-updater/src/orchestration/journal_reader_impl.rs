@@ -907,7 +907,7 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 impl JournalReader for JournalReaderImpl {
     fn prepare_read_model(&mut self) -> Result<(), super::CatchUpError> {
         if super::shared_projection::read(&self.connection, self.path.as_path())?
-            .is_some_and(|head| !head.is_current())
+            .is_none_or(|head| !head.is_current())
         {
             self.rebuild_read_model()?;
         }
