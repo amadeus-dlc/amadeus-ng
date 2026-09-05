@@ -1,0 +1,39 @@
+--- a/.claude/tools/aidlc-lib.ts
++++ b/.claude/tools/aidlc-lib.ts
+@@ -19656,7 +19656,9 @@
+     slug,
+     unitMajor,
+     unit,
+-    auditRows !== undefined,
++    // Supplied rows may be grouped by shard, just like a fresh audit read.
++    // Always order them before selecting a boundary; input presence is not order.
++    false,
+   );
+ }
+ 
+--- a/.codex/tools/aidlc-lib.ts
++++ b/.codex/tools/aidlc-lib.ts
+@@ -19656,7 +19656,9 @@
+     slug,
+     unitMajor,
+     unit,
+-    auditRows !== undefined,
++    // Supplied rows may be grouped by shard, just like a fresh audit read.
++    // Always order them before selecting a boundary; input presence is not order.
++    false,
+   );
+ }
+ 
+--- a/.kimi-code/tools/aidlc-lib.ts
++++ b/.kimi-code/tools/aidlc-lib.ts
+@@ -19656,7 +19656,9 @@
+     slug,
+     unitMajor,
+     unit,
+-    auditRows !== undefined,
++    // Supplied rows may be grouped by shard, just like a fresh audit read.
++    // Always order them before selecting a boundary; input presence is not order.
++    false,
+   );
+ }
+ 

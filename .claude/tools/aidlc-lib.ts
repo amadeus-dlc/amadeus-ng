@@ -19656,7 +19656,9 @@ export function latestMainWorkflowStageRunFloorForProject(
     slug,
     unitMajor,
     unit,
-    auditRows !== undefined,
+    // Supplied rows may be grouped by shard, just like a fresh audit read.
+    // Always order them before selecting a boundary; input presence is not order.
+    false,
   );
 }
 
