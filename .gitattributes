@@ -1,5 +1,5 @@
 # パッチの空行にある先頭スペースは unified diff の文法。
-scripts/aidlc-sync/patches/*.patch whitespace=-blank-at-eol
+scripts/aidlc-sync/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
 
 # 配布物・生成台帳は通常のレビューで折りたたむ。保持設定は表示する。
 .kimi-code/** linguist-generated=true

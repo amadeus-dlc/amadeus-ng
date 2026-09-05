@@ -2274,7 +2274,7 @@ function kimiAdapterRegistrations(toml: string): Array<{ event: string; target: 
   let cur: { event?: string; command?: string } | null = null;
   const flush = () => {
     if (cur?.event !== undefined && cur.command !== undefined) {
-      const t = cur.command.match(/aidlc-kimi-adapter\.ts\s+([a-z0-9-]+)/);
+      const t = cur.command.match(/aidlc-kimi-adapter\.ts["']?\s+([a-z0-9-]+)/);
       if (t) out.push({ event: cur.event, target: t[1] });
     }
   };
@@ -2761,28 +2761,35 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       // [[hooks]] table (event + a command naming that adapter target);
       // commented-out lines never count. When the snippet is unreadable the
       // check degrades to the bare any-registration probe.
-      const snippetPath = join(projectDir, harness, "hooks.snippet.toml");
-      const required = existsSync(snippetPath)
-        ? kimiAdapterRegistrations(readFileSync(snippetPath, "utf-8"))
-        : [];
-      const registered = kimiAdapterRegistrations(readFileSync(kimiConfigPath, "utf-8"));
-      const missing = required.filter(
-        (req) => !registered.some((r) => r.event === req.event && r.target === req.target),
-      );
-      if (missing.length > 0) {
+      try {
+        const snippetPath = join(projectDir, harness, "hooks.snippet.toml");
+        const required = existsSync(snippetPath)
+          ? kimiAdapterRegistrations(readFileSync(snippetPath, "utf-8"))
+          : [];
+        const registered = kimiAdapterRegistrations(readFileSync(kimiConfigPath, "utf-8"));
+        const missing = required.filter(
+          (req) => !registered.some((r) => r.event === req.event && r.target === req.target),
+        );
+        if (missing.length > 0) {
+          results.push({
+            pass: true,
+            label: `${kimiConfigPath} is missing ${missing.length} aidlc-kimi-adapter hook(s): ${missing.map((m) => `${m.event} → ${m.target}`).join(", ")} — append .kimi-code/hooks.snippet.toml to it`,
+          });
+        } else if (required.length === 0 && registered.length === 0) {
+          results.push({
+            pass: true,
+            label: `${kimiConfigPath} wires no aidlc-kimi-adapter hooks — append .kimi-code/hooks.snippet.toml to it`,
+          });
+        } else {
+          results.push({
+            pass: true,
+            label: `${kimiConfigPath} wires aidlc-kimi-adapter (hook wiring)`,
+          });
+        }
+      } catch (error) {
         results.push({
-          pass: true,
-          label: `${kimiConfigPath} is missing ${missing.length} aidlc-kimi-adapter hook(s): ${missing.map((m) => `${m.event} → ${m.target}`).join(", ")} — append .kimi-code/hooks.snippet.toml to it`,
-        });
-      } else if (required.length === 0 && registered.length === 0) {
-        results.push({
-          pass: true,
-          label: `${kimiConfigPath} wires no aidlc-kimi-adapter hooks — append .kimi-code/hooks.snippet.toml to it`,
-        });
-      } else {
-        results.push({
-          pass: true,
-          label: `${kimiConfigPath} wires aidlc-kimi-adapter (hook wiring)`,
+          pass: false,
+          label: `Kimi hook configuration could not be read: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
     }

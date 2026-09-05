@@ -593,6 +593,13 @@ export function renderRunner(scope: string, description: string): string {
   const dir = scopeRunnerDirName(scope, front ?? {});
   const activeHarnessDir = harnessDir();
   const harnessName = process.env.AIDLC_HARNESS_NAME?.trim();
+  const directories: Record<string, string> = {
+    claude: ".claude", codex: ".codex", kimi: ".kimi-code", cursor: ".cursor",
+    kiro: ".kiro", "kiro-ide": ".kiro", opencode: ".aidlc", copilot: ".aidlc",
+  };
+  if (harnessName && directories[harnessName] !== activeHarnessDir) {
+    throw new Error(`Harness mismatch: ${harnessName} cannot use ${activeHarnessDir}`);
+  }
   const isKimi = harnessName === "kimi" || activeHarnessDir === ".kimi-code";
   const entrySkill = activeHarnessDir === ".codex" ? "$aidlc" : isKimi ? "/skill:aidlc" : "/aidlc";
   const freshSessionFlow = (() => {

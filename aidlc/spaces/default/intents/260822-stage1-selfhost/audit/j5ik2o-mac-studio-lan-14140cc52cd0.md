@@ -1450,3 +1450,179 @@
 **Session**: 01a06f1e-c051-7383-b420-f57465e42885
 
 ---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:24:11Z
+**Event**: SENSOR_FIRED
+**Fire id**: d9bd5957
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:24:12Z
+**Event**: SENSOR_PASSED
+**Fire id**: d9bd5957
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+**Duration ms**: 703
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:24:12Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5ae1f338
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:24:12Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5ae1f338
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+**Duration ms**: 25
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:24:12Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8d50d7c7
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-kimi-hooks.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:24:13Z
+**Event**: SENSOR_PASSED
+**Fire id**: 8d50d7c7
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-kimi-hooks.ts
+**Duration ms**: 620
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:24:13Z
+**Event**: SENSOR_FIRED
+**Fire id**: 25437014
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-kimi-hooks.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:24:13Z
+**Event**: SENSOR_PASSED
+**Fire id**: 25437014
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-kimi-hooks.ts
+**Duration ms**: 26
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:25:39Z
+**Event**: SENSOR_FIRED
+**Fire id**: 1cea18df
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:25:39Z
+**Event**: SENSOR_PASSED
+**Fire id**: 1cea18df
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+**Duration ms**: 667
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:25:39Z
+**Event**: SENSOR_FIRED
+**Fire id**: c052530c
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:25:39Z
+**Event**: SENSOR_PASSED
+**Fire id**: c052530c
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+**Duration ms**: 24
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:26:01Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0cc8337b
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:26:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0cc8337b
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+**Duration ms**: 627
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:26:02Z
+**Event**: SENSOR_FIRED
+**Fire id**: 634a99c3
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:26:02Z
+**Event**: SENSOR_PASSED
+**Fire id**: 634a99c3
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+**Duration ms**: 25
+**Note**: script-error: exit-1
+
+---

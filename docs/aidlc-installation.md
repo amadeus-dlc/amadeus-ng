@@ -18,6 +18,8 @@
 このプロジェクトは **AWS Bedrock を使用しない**。各ハーネスの通常の認証設定を使う。
 Claude の配布設定・個人設定サンプルには `claude-without-bedrock.patch` を適用し、
 Bedrock の有効化とモデル ID・リージョンの初期指定を取り除く。
+新規導入時と個人設定サンプルには固定モデルを設定しない。既存の
+`.claude/settings.json` のモデル選択は利用者の設定として保持する。
 既存の設定や `.claude/settings.local.json` で Bedrock が有効になっていた場合は、
 同期スクリプトが更新前に拒否する。AWS の設計資料やエージェント名、任意の AWS MCP
 接続は Bedrock の有効化設定とは別であり、この更新では削除しない。
@@ -58,7 +60,7 @@ submodule の版は明示的に選ぶ。同期スクリプトは fetch や版比
 5. 検証し、新しいセッションで各ハーネスのフックと作業再開を確認する。
 
    ```sh
-   bun test ./scripts/aidlc-sync.test.ts ./.codex/hooks/aidlc-codex-adapter.test.ts
+   bun test ./scripts/aidlc-sync.test.ts ./scripts/aidlc-harness.test.ts ./.codex/hooks/aidlc-codex-adapter.test.ts
    bun scripts/aidlc-sync.ts --check
    bun .claude/tools/aidlc-utility.ts doctor
    bun .codex/tools/aidlc-utility.ts doctor
@@ -131,9 +133,22 @@ Claude はプロジェクトのフック設定を利用する。フック更新�
 Codex の `.codex/hooks.json` を変更した場合は、配布元の
 `docs/guide/harnesses/codex-cli.md` に従ってフックの信頼設定を再生成する。
 
-Kimi はプロジェクト内のフック登録を読まないため、各マシンで一度
-`.kimi-code/hooks.snippet.toml` のフックをユーザー設定へマージする。
-既存の登録を保ち、同じフックを重複登録しない。`KIMI_CODE_HOME` を使用する環境では
-そのディレクトリ、それ以外は `~/.kimi-code/config.toml` が対象となる。
-登録はユーザー全体に作用する。以後 snippet が変わった場合も、このマージが必要。
+Kimi は次のコマンドで登録する。
+
+```sh
+bun scripts/aidlc-kimi-hooks.ts --trust
+bun scripts/aidlc-kimi-hooks.ts --check
+```
+
+ユーザー所有の `~/.kimi-code/aidlc/aidlc-kimi-adapter.ts` が、
+`trusted-projects.json` にある実パスのプロジェクトだけへフックを転送する。
+登録外のプロジェクトではリポジトリ内のコードを実行しない。
+`KIMI_CODE_HOME` が指定されていれば、その下へ配置する。
+既存のユーザー設定とその他のフックを保持し、更新前のファイルを退避する。
+スニペットを直接ユーザー設定へ追記してはいけない。既存の管理ブロックは
+登録ツールが置き換える。管理ブロック外に旧 AI-DLC 登録があれば、重複解消を要求する。
+
+信頼登録は、この作業ツリー内のフック・ツールを実行してよいという明示的な許可である。
+新しい worktree は個別に登録する。許可を取り消すには、ユーザー所有の
+`trusted-projects.json` から対象の実パスを削除する。
 設定変更後は Kimi を再起動し、`/skill:aidlc --doctor` で確認する。

@@ -938,7 +938,7 @@
       "executable": false
     },
     ".claude/settings.local.json.example": {
-      "sha256": "7573ac76682351b9c7562cdda11e45007d741566e49b848ddccdb2fdbf661f18",
+      "sha256": "3fda605c245f745c861beddeffaaf70d17287ec4f406b83647ede9455a556efb",
       "executable": false
     },
     ".claude/skills/aidlc-approval-handoff/SKILL.md": {
@@ -1206,7 +1206,7 @@
       "executable": false
     },
     ".claude/tools/aidlc-runner-gen.ts": {
-      "sha256": "35c9f3cda80ffcd193967e4d6b7937f0e717d6708a2f3a366473aa26217b466e",
+      "sha256": "a68521a92e21b55fa802d6b7b4d5d51dcd5ab2fc074151eb6977ed1928014b2e",
       "executable": false
     },
     ".claude/tools/aidlc-runtime-paths.ts": {
@@ -1282,7 +1282,7 @@
       "executable": false
     },
     ".claude/tools/aidlc-utility.ts": {
-      "sha256": "75481f3f4a63c0136bca69f33df9b578f12ec8ed385f4c30e236eaf57de46a36",
+      "sha256": "822dd512cebcb2cc63cb8b936205d851a05a489dc77a925b96b9447afe88da2a",
       "executable": false
     },
     ".claude/tools/aidlc-validate.ts": {
@@ -2142,7 +2142,7 @@
       "executable": false
     },
     ".codex/tools/aidlc-runner-gen.ts": {
-      "sha256": "35c9f3cda80ffcd193967e4d6b7937f0e717d6708a2f3a366473aa26217b466e",
+      "sha256": "a68521a92e21b55fa802d6b7b4d5d51dcd5ab2fc074151eb6977ed1928014b2e",
       "executable": false
     },
     ".codex/tools/aidlc-runtime-paths.ts": {
@@ -2218,7 +2218,7 @@
       "executable": false
     },
     ".codex/tools/aidlc-utility.ts": {
-      "sha256": "75481f3f4a63c0136bca69f33df9b578f12ec8ed385f4c30e236eaf57de46a36",
+      "sha256": "822dd512cebcb2cc63cb8b936205d851a05a489dc77a925b96b9447afe88da2a",
       "executable": false
     },
     ".codex/tools/aidlc-validate.ts": {
@@ -2554,7 +2554,7 @@
       "executable": false
     },
     ".kimi-code/hooks.snippet.toml": {
-      "sha256": "0496bdde82b044d991bf4570e396a654ff8e0681eb6690138bda34f9b7494a39",
+      "sha256": "6e9f7ceba3387b9f2d6c87c664e7f95e640cfa7e7178391c1462f57b7887b0c6",
       "executable": false
     },
     ".kimi-code/hooks/aidlc-continue-workflow.ts": {
@@ -3202,7 +3202,7 @@
       "executable": false
     },
     ".kimi-code/tools/aidlc-runner-gen.ts": {
-      "sha256": "35c9f3cda80ffcd193967e4d6b7937f0e717d6708a2f3a366473aa26217b466e",
+      "sha256": "a68521a92e21b55fa802d6b7b4d5d51dcd5ab2fc074151eb6977ed1928014b2e",
       "executable": false
     },
     ".kimi-code/tools/aidlc-runtime-paths.ts": {
@@ -3278,7 +3278,7 @@
       "executable": false
     },
     ".kimi-code/tools/aidlc-utility.ts": {
-      "sha256": "75481f3f4a63c0136bca69f33df9b578f12ec8ed385f4c30e236eaf57de46a36",
+      "sha256": "822dd512cebcb2cc63cb8b936205d851a05a489dc77a925b96b9447afe88da2a",
       "executable": false
     },
     ".kimi-code/tools/aidlc-validate.ts": {
@@ -3396,7 +3396,7 @@
       "executable": false
     },
     ".claude/settings.json": {
-      "sha256": "82d1c75a432c8346f0370030b6c4d6420ee66abbaf764ad3b43d6f63e76b209a",
+      "sha256": "4d6190fc56a54aa11f20156b57e3337143a6e93e40ffe9321b58835122be4cfa",
       "executable": false
     },
     ".codex/config.toml": {
@@ -3412,11 +3412,11 @@
       "executable": false
     },
     ".kimi-code/mcp.json": {
-      "sha256": "5314da95387e5e6235d93bd8a9f314cba261b145da1edce01c90d96143fb95c8",
+      "sha256": "8c3a4ece88faf4c8f3f2453d2cc3c60880fbc17c574ef3478b42ef63ef614fae",
       "executable": false
     },
     ".kimi-code/rules/aidlc.md": {
-      "sha256": "7647eed01d3a68ad3347589c562e022e33cb2bd5f98060c3a1dc6e2d122edf64",
+      "sha256": "2ada1927a702cc9673c0c063b7a63644cb8ee7c8a8a233146af598b379fc424c",
       "executable": false
     }
   }

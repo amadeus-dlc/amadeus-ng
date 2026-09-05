@@ -9,8 +9,8 @@ Claude は `.claude/`、Codex は `.codex/` と `.agents/`、Kimi は `.kimi-cod
 配布ファイルを直接修正せず、必要な独自修正は `scripts/aidlc-sync/patches/` に記録する。
 設定保持・削除・検証の手順は `docs/aidlc-installation.md` を参照する。
 
-Kimi では `/skill:aidlc` を使用する。フックはユーザー設定
-`~/.kimi-code/config.toml` に `.kimi-code/hooks.snippet.toml` の登録が必要。
+Kimi では `/skill:aidlc` を使用する。`bun scripts/aidlc-kimi-hooks.ts --trust` で
+ユーザー所有のフックと、この作業ツリーの信頼登録を設定する。
 Kimi は `@` インポートを解釈しないため、計画・レビュー時には
 `aidlc/spaces/<active-space>/memory/` の `org.md`、`team.md`、`project.md` と
 該当する `phases/<phase>.md` を読む。これらは３ハーネスで共有する正本である。
@@ -38,7 +38,7 @@ gate).
 - **Locking**: Audit log file locking is handled portably using mkdir-based locking in the system temp directory (no external dependencies).
 - **Hook permissions**: All 17 hooks are TypeScript (`.ts`) and run via `bun`. No executable bits required — works identically on macOS, Linux, and native Windows PowerShell.
 - **Permissions**: `.codex/rules/default.rules` (Starlark prefix rules) pre-allows the deterministic core's exact command prefixes — `bun .codex/tools/`, `bun .codex/hooks/`, and `git worktree`/`commit`/`add` — so workflows run without per-call prompts. The sandbox is `workspace-write`; commands outside the allowlist prompt.
-- **Personal overrides**: Settings in `~/.codex/config.toml` merge over the project `.codex/config.toml`. Put machine-specific overrides (model, AWS profile/region, environment variables) there to avoid changing the shared project config.
+- **Personal overrides**: Settings in `~/.codex/config.toml` merge over the project `.codex/config.toml`. Put machine-specific overrides (model, authentication, environment variables) there to avoid changing the shared project config.
 
 ## What AI-DLC does for you
 
@@ -83,7 +83,7 @@ AI-DLC is open-world. Plugins under `plugins/<name>/` contribute additional stag
 
 ## Documentation
 
-For full documentation, see `docs/guide/` (User Guide), `docs/harness-engineering/` (Harness Engineer Guide), and `docs/reference/` (Developer Reference); start at `docs/README.md`. The Codex-specific guide (prerequisites, trust pre-seed, Bedrock config, the git-repo requirement) is `docs/guide/harnesses/codex-cli.md`.
+For full documentation, see `docs/guide/` (User Guide), `docs/harness-engineering/` (Harness Engineer Guide), and `docs/reference/` (Developer Reference); start at `docs/README.md`. The Codex-specific guide (prerequisites, hook trust, model inheritance, the git-repo requirement) is `docs/guide/harnesses/codex-cli.md`.
 ## What's different on this harness
 
 This is the same AI-DLC core that ships to every harness, rendered onto Codex CLI. On Codex:

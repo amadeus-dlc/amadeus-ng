@@ -1,6 +1,6 @@
 --- a/.claude/settings.json
 +++ b/.claude/settings.json
-@@ -21,12 +21,7 @@
+@@ -21,14 +21,8 @@
    },
    "env": {
      "AWS_AIDLC_DEFAULT_SCOPE": "classic",
@@ -12,11 +12,13 @@
 -    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 +    "CLAUDE_CODE_USE_BEDROCK": "0"
    },
-   "model": "opus[1m]",
+-  "model": "opus[1m]",
    "effortLevel": "xhigh",
+   "hooks": {
+     "PreToolUse": [
 --- a/.claude/settings.local.json.example
 +++ b/.claude/settings.local.json.example
-@@ -2,11 +2,9 @@
+@@ -2,12 +2,9 @@
    "_comment": "Copy to settings.local.json (gitignored) for personal overrides. These take precedence over settings.json.",
    "env": {
      "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "85",
@@ -28,5 +30,6 @@
 +    "AWS_AIDLC_DEFAULT_SCOPE": "classic",
 +    "CLAUDE_CODE_USE_BEDROCK": "0"
    },
-   "model": "opus[1m]",
+-  "model": "opus[1m]",
    "effortLevel": "xhigh"
+ }

@@ -23,6 +23,8 @@
   method file is added there, add a matching @-line below.
 -->
 
+# AI-DLC のルール参照
+
 Read these files for the standing practices when doing planning or review work
 outside an AI-DLC stage (paths relative to the workspace root):
 

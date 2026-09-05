@@ -6,6 +6,5 @@
     "AWS_AIDLC_DEFAULT_SCOPE": "classic",
     "CLAUDE_CODE_USE_BEDROCK": "0"
   },
-  "model": "opus[1m]",
   "effortLevel": "xhigh"
 }
