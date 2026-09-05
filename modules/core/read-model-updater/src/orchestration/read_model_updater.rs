@@ -162,8 +162,8 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             self.journal_reader
                 .publish(&self.projection, &batch, &tables)
                 .await?;
-            self.catch_up_steering().await?;
-            return Ok(batch.to());
+            // 保存済みの断面はここで確定した。追加イベントはその計画へ混ぜず、
+            // 下の通常処理で別の計画として公開してから呼出元へ戻る。
         }
         self.catch_up_steering().await?;
 

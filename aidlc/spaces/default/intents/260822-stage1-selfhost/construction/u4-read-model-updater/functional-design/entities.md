@@ -2,7 +2,7 @@
 
 ## 正本の範囲
 
-以下の YAML は本 Unit の入出力と処理管理記録の論理モデルである。PublicationBatch / OutputPlan は障害復旧のための追加設計であり、既存コードに実装済みとは扱わない。ドメインイベントや集約の所有は U2 に残す。
+以下のYAMLは本Unitの入出力と処理管理記録の論理モデルである。作業ツリーではPublicationBatchとPublicationFile、SQLiteの管理表が復旧を担う。論理上の属性とRustのフィールドを1対1には対応させず、実装との対応を末尾に記す。ドメインイベントや集約の所有はU2に残す。
 
 出典: [Unit定義](../../../inception/units-generation/unit-of-work.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[要求](../../../inception/requirements-analysis/requirements.md)、[構成](../../../inception/domain-design/components.md)、[契約](../../../inception/contract-design/contract-summary.md)、[確認回答](functional-design-questions.md)。
 
@@ -26,7 +26,7 @@ entities:
       - { name: position, type: "integer", required: true, constraints: "初期値0、確定時に単調非減少。再生成は同じ位置でも確定できる" }
       - { name: active_generation, type: "integer", required: true, constraints: "新規・再生成・置換の計画を受理するたびに増加。古い世代の書込を拒否する" }
   - name: PublicationBatch
-    description: "障害後に同じ出力を再開する管理記録。本設計で追加する契約であり現実装にはない。"
+    description: "障害後に同じ出力を再開する管理記録。保存済み終点は変更せず、後続の処理は別計画として識別する。"
     attributes:
       - { name: id, type: "identifier", required: true, constraints: "投影IDと世代の組。同じ履歴位置と規約版でも別計画を識別できる" }
       - { name: generation, type: "integer", required: true, constraints: "ProjectionCursor.active_generation と一致する世代だけが書ける" }
@@ -36,7 +36,7 @@ entities:
       - { name: replacement_id, type: "optional<identifier>", required: false, constraints: "superseded のとき置換先を示す。旧要求の再送にはこの状態を返すだけで書かない" }
       - { name: projection_id, type: "identifier", required: true, constraints: "ProjectionCursorへの参照" }
       - { name: start_position, type: "integer", required: true, constraints: "開始時の確定位置" }
-      - { name: target_position, type: "integer", required: true, constraints: "入力断面の末尾。incremental は開始位置より大きく、rebuild は開始位置以上。空履歴の0→0も許す" }
+      - { name: target_position, type: "integer", required: true, constraints: "入力断面の末尾。受理後は固定。incremental は開始位置より大きく、rebuild は開始位置以上。空履歴の0→0も許す" }
       - { name: transform_revision, type: "identifier", required: true, constraints: "出力計画を生成した規約版" }
       - { name: state, type: "enum", required: true, allowed_values: [prepared, publishing, committed, blocked, superseded] }
       - { name: plans, type: "list<OutputPlan>", required: true, constraints: "ファイル対象ごとの順序付き計画。構造化面だけの場合は空" }
@@ -61,7 +61,7 @@ entities:
       - { name: as_of, type: "integer", required: true, constraints: "公開済みの履歴位置。再生成でも後退させず、面の欠落時もこの位置を保持する" }
       - { name: generation, type: "integer", required: true, constraints: "同じ位置での再生成を含め、共有面を書き替えるたびに増加" }
       - { name: transform_revision, type: "identifier", required: true }
-      - { name: content_identity, type: "identifier", required: true, constraints: "行集合の同一性。欠落・破損した面を有効な既存面として流用しない" }
+      - { name: content_identity, type: "identifier", required: true, constraints: "SQLiteの型・値・表順・行順を含む行集合の同一性。REAL／BLOBへの型破損も検出し、欠落・破損した面を有効な既存面として流用しない" }
   - name: AuditBlock
     description: "1イベントから0個以上生成する監査ブロック。再試行の識別子は互換ファイルへ新たに印字しない。"
     attributes:
@@ -96,8 +96,19 @@ constraints:
   - "共有面の公開はspace単位、ファイル公開は対象集合単位で直列化する。共有面へ古い履歴位置を上書きしない"
   - "expected_content は書込開始前に耐久的に保持し、復旧中に現在の規則から作り直さない"
   - "他クローンの監査シャードと所有外部分を計画対象に含めない"
+  - "一つの取得呼出しは、保存済み計画の復旧と後続の別計画を最大2件まで直列に扱う。最終CPは後続計画の終点だが、先行計画のtarget_positionと確定記録は変えない"
+  - "後続計画の失敗は先行計画のcommitを取り消さない。失敗を返し、後続の未完計画があれば保持する"
 ```
 
 ## 派生表示と実装境界
 
-関係図と処理順序は [functional-spec.md](functional-spec.md)、判断条件は [rules.md](rules.md) を参照する。管理記録の格納方式・接続・排他の具体化は後続設計の対象であり、新しいストア製品や新しいロック方式をここで採用していない。
+関係図と処理順序は[functional-spec.md](functional-spec.md)、判断条件は[rules.md](rules.md)を参照する。
+
+| 論理モデル | 実装との対応 |
+|---|---|
+| PublicationBatch | 同名のRust型とSQLite管理表が要求ID・世代・対象束縛・保存終点・出力計画・完了履歴を保持する。構造化候補は保存終点までの履歴から復元して確定処理へ渡す |
+| OutputPlan | PublicationFileが対象パス、書込前後のバイト列、追記／置換とmemoryの扱いを保持する。反映状態は現物を照合して判断する |
+| ProjectionCursor | 個別チェックポイントと公開計画の世代で、処理位置と有効な書込者を識別する |
+| SharedProjectionHead | `amadeus_read_model_head`が共有面の位置・世代・規約版・型付き内容ダイジェスト・検証状態を保持する |
+
+計画の先行保存と公開・確定は別のSQLiteトランザクションであり、後半の`publish_prepared`が世代と位置を再検査する。SQL失敗のパスと分類は`at_store`で、ファイルI/Oは`at_output`で統一する。これらはエラー変換のためのprivateな操作で、新しいドメイン集約や公開APIを追加しない。

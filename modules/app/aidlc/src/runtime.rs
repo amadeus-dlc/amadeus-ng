@@ -190,13 +190,13 @@ async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u
     if layout.record_dir().is_none() {
         prepare_definition_for_first_read(layout).await?;
     }
-    catch_up_before_reading(layout).await;
+    catch_up_before_reading(layout).await?;
     Ok((turn::next(layout, &input), bytes))
 }
 
 /// `continue` — 鍵は**読むだけ**。無ければ・壊れていれば fail-closed（I12）。
 async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), String> {
-    catch_up_before_reading(layout).await;
+    catch_up_before_reading(layout).await?;
     let key = SteeringKey::resolve(layout.project_dir(), layout.record_dir());
     let bytes = match key.read_for_continue() {
         Ok(Some(bytes)) => bytes,
@@ -234,7 +234,9 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
 async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 読む面（状態ファイル・実行行）が最新でないと段 1 と段 4 が古い値で判断する。
     // 書いた事実を落とすのはコミットの後（末尾の `catch_up`）である。
-    catch_up_before_reading(layout).await;
+    if let Err(message) = catch_up_before_reading(layout).await {
+        return Completion::refused(message);
+    }
 
     // 段 1 — state-version guard。**すべての report 経路**に効かせるので最初に通す。
     if let Some(refusal) = state_version_guard(layout) {
@@ -996,7 +998,9 @@ async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> C
         }
     };
     // 定義の面（practices ステージの宣言と support agents）を読む前に投影を追いつかせる。
-    catch_up_before_reading(layout).await;
+    if let Err(message) = catch_up_before_reading(layout).await {
+        return Completion::refused(message);
+    }
     let support_agents = match practices_support_agents(layout, &store) {
         Ok(agents) => agents,
         Err(message) => return Completion::refused(message),
@@ -1248,7 +1252,9 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
         }
     };
     // 状態ファイルの欄を最新の投影で検査するため、読む前に追いつかせる。
-    catch_up_before_reading(layout).await;
+    if let Err(message) = catch_up_before_reading(layout).await {
+        return Completion::refused(message);
+    }
     // 外部の材料 — `HUMAN_TURN` はフックが監査シャードへ直接書く一次の事実であり、我々の
     // 投影ではない。読んで値オブジェクトにするだけで、**判断はしない**（設計 §1）。
     let turns = HumanTurns::find_in(&audit_ledger(layout));
@@ -1824,14 +1830,11 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
         .map_err(|error| format!("projection: {error}"))
 }
 
-/// **読み手の前**の追いつき — 失敗しても倒れない。
-///
-/// 投影が遅れていても、読み手は「その時点のリードモデル」で答えを出せるほうが、動詞ごと
-/// 落ちるより無害である（at-least-once の投影は次の呼出で追いつく）。**書込の後**は
-/// この限りではない — そちらは書いた事実が読み面へ落ちないと利用者に何も見えないので、
-/// 失敗を surface する。
-async fn catch_up_before_reading(layout: &Layout) {
-    let _ = catch_up(layout).await;
+/// 読む前に投影と復旧を完了する。失敗を隠して古い指示を返したり、次の書込へ進めたりしない。
+async fn catch_up_before_reading(layout: &Layout) -> Result<(), String> {
+    catch_up(layout)
+        .await
+        .map_err(|cause| wording::orchestrate_failure(&cause))
 }
 
 /// 現在のスペースのストアパス。
@@ -2858,15 +2861,17 @@ corrupt review override: Adversarial"
         .await;
 
         assert_eq!(completion.code(), 1);
-        assert_eq!(
-            completion.diagnostic(),
-            Some("aidlc-orchestrate: cannot open the event store")
+        assert!(
+            completion
+                .diagnostic()
+                .is_some_and(|message| message.contains("journal: io:")),
+            "{completion:?}"
         );
     }
 
-    /// 書いた事実を描けなければ握り潰さない — 利用者には何も見えないままになるからである。
+    /// 公開先の異常が既にあるときは、書込を始める前に拒否する。
     #[tokio::test]
-    async fn a_projection_that_cannot_land_after_a_commit_is_refused() {
+    async fn an_unwritable_projection_prevents_the_report_commit() {
         let root = minimal_workspace();
         let layout = Layout::resolve(root.path());
         create_intent(
@@ -2875,17 +2880,24 @@ corrupt review override: Adversarial"
         )
         .await;
         let layout = Layout::resolve(root.path());
-        // 監査シャードの置き場をファイルで塞ぐ（コマンド側は通るが、投影は書き込めない）。
-        // 骨格そのものは塞がない — 段 1 の state-version guard が先に読むので、そちらを
-        // 壊すとコミットまで届かず「コミット後の投影」を見たことにならない。
+        let database = rusqlite::Connection::open(store_path(&layout).expect("store").as_path())
+            .expect("database");
+        let event_count = || {
+            database
+                .query_row("SELECT COUNT(*) FROM journal", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("events")
+        };
+        let before = event_count();
+        // 公開先を塞ぎ、先行する復旧確認で新たなコマンド書込を拒否させる。
         let audit_dir = layout.audit_dir().expect("監査ディレクトリ");
         std::fs::remove_dir_all(&audit_dir).expect("監査ディレクトリ");
         std::fs::write(&audit_dir, "not a directory").expect("塞ぐ");
 
         let completion = report(
             &layout,
-            // `[-]` のゲートは明示 `--stage` を要する（forward 表）— ここで見たいのは
-            // 判断ではなく「コミット後に投影が落ちたときの出口」である。
+            // 報告自体は正当でも、先行する復旧を完了できなければ書き込まない。
             &report_args(&[
                 "--result",
                 "approved",
@@ -2898,6 +2910,11 @@ corrupt review override: Adversarial"
         .await;
 
         assert_eq!(completion.code(), 1, "{completion:?}");
+        assert_eq!(
+            event_count(),
+            before,
+            "公開先が壊れた状態で新しいイベントを書かない"
+        );
         assert!(
             completion
                 .diagnostic()
@@ -3008,7 +3025,7 @@ corrupt review override: Adversarial"
         );
     }
 
-    /// ジャーナルを開けなければ投影は進めない（`next` はその手前の読取で答えを出す）。
+    /// ジャーナルを開けなければ、古い読み面から通常指示を返さない。
     #[tokio::test]
     async fn a_blocked_store_stops_the_catch_up_before_reading() {
         let root = minimal_workspace();
@@ -3031,7 +3048,7 @@ corrupt review override: Adversarial"
             completion
                 .line()
                 .unwrap_or_default()
-                .contains("Read model not readable at "),
+                .contains("journal: io:"),
             "{completion:?}"
         );
     }

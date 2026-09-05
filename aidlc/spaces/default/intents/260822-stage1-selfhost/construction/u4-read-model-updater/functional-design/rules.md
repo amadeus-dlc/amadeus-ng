@@ -4,7 +4,7 @@
 
 [要求](../../../inception/requirements-analysis/requirements.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[Unit定義](../../../inception/units-generation/unit-of-work.md)、[共有契約](../../../inception/contract-design/contract-summary.md)、[構成](../../../inception/domain-design/components.md)、[確認回答](functional-design-questions.md) を根拠とする。cqrs-boundaries は active space の coding-rules/cqrs-boundaries.md を指す。
 
-BR3.1〜BR3.4 は障害後の冪等性を満たすための追加設計。現行の「ファイル追記後にチェックポイントを進める」実装だけでは満たせない。
+BR3.1〜BR3.4は、計画の先行保存・出力照合・確定を扱う。2026-09-06の実装同期では、保存済み計画の復旧後も同じ取得呼出しで後続へ進むことと、復旧失敗をU7が指示や変異の前に伝播することを明確にした。
 
 ## 規則の正本
 
@@ -15,7 +15,7 @@ rules:
     statement: "取得ループと純粋投影核を分離する"
     applies_to: ["JournalRecord","PublicationBatch"]
     trigger: "ジャーナルの取得時"
-    logic: "IF 投影を実行する THEN 取得・チェックポイント・書込は取得側が所有し、投影核は受け取ったイベント材料から出力を計算する"
+    logic: "IF 投影を実行する THEN 取得・チェックポイント・書込はU4の取得側が所有し、投影核は受け取ったイベント材料から出力を計算する。復旧と後続の駆動をU7のループへ移さない"
     violation: "責務を越えた依存を設計・依存検査で拒否"
     source: "FR1.1; cqrs-boundaries"
   - id: BR1.2
@@ -31,7 +31,7 @@ rules:
     statement: "すべての出力を同じ採取断面から計画する"
     applies_to: ["PublicationBatch","StructuredProjection"]
     trigger: "投影計画時"
-    logic: "IF 差分がある THEN 一つの確定した履歴断面を採取し、その末尾と出力の as_of を一致させる。採取後の追加イベントは次回に回す"
+    logic: "IF 差分がある THEN 計画ごとに一つの履歴断面を採取し、その末尾と出力のas_ofを一致させる。未完計画は保存済み終点で先に確定し、同じ呼出しで後続を別計画・別Txとして処理する。1呼出しは最大2計画で、後続計画の採取後に届いた行は次の呼出しへ回す"
     violation: "断面を一致させられなければ公開を開始しない"
     source: "NFR3"
   - id: BR2.1
@@ -111,8 +111,8 @@ rules:
     statement: "失敗を出力段階と対象付きで伝え、同じ入力から回復する"
     applies_to: ["PublicationBatch","OutputPlan"]
     trigger: "入力・変換・公開・確定の失敗時"
-    logic: "IF 処理が失敗する THEN 対象と段階を返し、未完計画を保持する。正常な空差分と破損・読取失敗を区別する"
-    violation: "欠落を空入力として継続しない"
+    logic: "IF 処理が失敗する THEN 対象と段階を返し、未完計画を保持する。正常な空差分と破損・読取失敗を区別する。旧計画の確定後に後続が失敗しても旧commitは保持する。U7は失敗を握りつぶさず、復旧未確認のまま通常の指示や変異へ進まない"
+    violation: "欠落を空入力として継続しない。next/resumeはerror directive・exit 0、report/practices_promote/set_autonomyはrefused・exit 1で止める"
     source: "NFR3"
   - id: BR4.4
     category: constraint
@@ -143,7 +143,7 @@ rules:
     statement: "共有構造化面をspace単位で公開し古い断面へ戻さない"
     applies_to: [SharedProjectionHead, StructuredProjection, PublicationBatch, ProjectionCursor]
     trigger: "通常・初回構造化のみ・再生成の確定時"
-    logic: "IF 同じ規約版の有効な共有面のas_ofがtarget未満 THEN 候補の行集合とheadを公開する。同値なら候補と既存の行集合の一致を検査し、一致時だけ共有面を維持してserved_byを記録し、不一致は破損として停止する。targetを超える場合は新しい共有面を維持してserved_byを記録する。欠落・破損は記録済み位置以上のrebuildで修復し、規約不一致は受理済みの版へ計画を置換する。いずれもheadの世代を排他下で検査する"
+    logic: "IF 同じ規約版の有効な共有面のas_ofがtarget未満 THEN 候補の行集合とheadを公開する。同値ならSQLiteの型を含めた行集合の一致をSAVEPOINT内で検査し、一致時だけ共有面を維持してserved_byを記録する。不一致は破損として停止し、比較中のSQL失敗は共有行・head・CPを保持する。targetを超える場合は新しい共有面を維持してserved_byを記録する。欠落・破損は記録済み位置以上のrebuildで修復し、規約不一致は受理済みの版へ計画を置換する。いずれもheadの世代を排他下で検査する"
     violation: "古い候補で共有面を後退させない。欠落した新しい面を古い候補で代用せず、再生成指定だけで規約版を変更しない"
     source: "NFR3; NFR1; 確認回答R-03; 仕様11号§4.1"
 ```

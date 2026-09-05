@@ -647,61 +647,104 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
     assert_eq!(std::fs::read_to_string(&state).unwrap(), "after");
 }
 
-/// 復旧中に追加されたイベントは、保存済み断面の確定後に次の周回で扱う。
+/// 保存済み断面を確定してから、別計画で追加分へ追いついて返す。
 #[tokio::test]
 async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
     use core_read_model_updater::orchestration::{
         ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdater, SteeringSource,
     };
-    let fixture = Fixture::new();
-    seed_intent(&fixture.path).await;
-    seed(&mut fixture.store()).await;
-    let mut reader = fixture.journal_reader();
-    let tables = seeded_tables(&reader).await;
-    let cut = tables.as_of().unwrap();
-    let state = fixture._dir.path().join("state.md");
-    let audit = fixture._dir.path().join("audit.md");
-    std::fs::write(&state, "before").unwrap();
-    let targets = ProjectionTargets::new(&state, &audit, fixture._dir.path().join("memory"));
-    let batch = PublicationBatch::new(
-        GlobalSeqNr::ZERO,
-        cut,
-        vec![
-            PublicationFile::replacement(&state, "before", "after"),
-            PublicationFile::audit(&audit, "\n## Saved event\n").unwrap(),
-        ],
-    )
-    .for_targets(&targets)
-    .unwrap();
-    fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
-    assert!(
-        reader
-            .publish(&projection(), &batch, &tables)
-            .await
-            .is_err()
-    );
-    let written = std::fs::read(&audit).unwrap();
-    drop(reader);
-    fixture
-        .raw()
-        .execute_batch("DROP TRIGGER fail_checkpoint")
+    for interrupt_tail in [false, true] {
+        let fixture = Fixture::new();
+        seed_intent(&fixture.path).await;
+        seed(&mut fixture.store()).await;
+        let mut reader = fixture.journal_reader();
+        let tables = seeded_tables(&reader).await;
+        let cut = tables.as_of().unwrap();
+        let state = fixture._dir.path().join("state.md");
+        let audit = fixture._dir.path().join("audit.md");
+        std::fs::write(&state, "before").unwrap();
+        let targets = ProjectionTargets::new(&state, &audit, fixture._dir.path().join("memory"));
+        let batch = PublicationBatch::new(
+            GlobalSeqNr::ZERO,
+            cut,
+            vec![
+                PublicationFile::replacement(&state, "before", "after"),
+                PublicationFile::audit(&audit, "\n## Saved event\n").unwrap(),
+            ],
+        )
+        .for_targets(&targets)
         .unwrap();
-    seed_definition(&fixture.path).await;
-    let mut updater = ReadModelUpdater::new(
-        fixture.journal_reader(),
-        projection(),
-        targets,
-        SteeringSource::new(fixture._dir.path().join("memory")),
-    );
-    assert_eq!(updater.catch_up().await.unwrap(), cut);
-    let served: i64 = fixture
-        .raw()
-        .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(served, u64_to_i64(cut.to_u64()));
-    assert_eq!(std::fs::read(&audit).unwrap(), written);
-    assert!(updater.catch_up().await.unwrap() > cut);
-    assert_eq!(std::fs::read(&audit).unwrap(), written);
+        fixture.raw().execute_batch("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'fault'); END").unwrap();
+        assert!(
+            reader
+                .publish(&projection(), &batch, &tables)
+                .await
+                .is_err()
+        );
+        let written = std::fs::read(&audit).unwrap();
+        drop(reader);
+        fixture
+            .raw()
+            .execute_batch("DROP TRIGGER fail_checkpoint")
+            .unwrap();
+        seed_definition(&fixture.path).await;
+        let mut updater = ReadModelUpdater::new(
+            fixture.journal_reader(),
+            projection(),
+            targets,
+            SteeringSource::new(fixture._dir.path().join("memory")),
+        );
+        // 定義のseedは鋳造と取込の2イベントを追記する。
+        let latest = GlobalSeqNr::new(cut.to_u64() + 2);
+        if interrupt_tail {
+            fixture.raw().execute_batch(&format!(
+                "CREATE TRIGGER fail_tail BEFORE INSERT ON amadeus_projection_checkpoint WHEN NEW.last_global_seq > {} BEGIN SELECT RAISE(ABORT,'tail failure'); END", cut.to_u64(),
+            )).unwrap();
+            assert!(updater.catch_up().await.is_err());
+            assert_eq!(
+                fixture
+                    .journal_reader()
+                    .checkpoint(&projection())
+                    .await
+                    .unwrap(),
+                cut,
+                "追加計画の確定失敗でも元cutのcommitは保持する"
+            );
+            let served: i64 = fixture
+                .raw()
+                .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(served, u64_to_i64(cut.to_u64()));
+            assert_eq!(std::fs::read(&audit).unwrap(), written);
+            fixture
+                .raw()
+                .execute_batch("DROP TRIGGER fail_tail")
+                .unwrap();
+        }
+        assert_eq!(updater.catch_up().await.unwrap(), latest);
+        let recovered: (i64, String, i64) = fixture.raw().query_row(
+            "SELECT target_position,state,served_position FROM amadeus_publication_history WHERE projection=?1 AND request_id=?2",
+            rusqlite::params![projection().as_str(), batch.request_id()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(
+            recovered,
+            (
+                u64_to_i64(cut.to_u64()),
+                "committed".to_string(),
+                u64_to_i64(cut.to_u64())
+            ),
+            "元の計画へ追加イベントを混ぜず先に確定する"
+        );
+        let served: i64 = fixture
+            .raw()
+            .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(served, u64_to_i64(latest.to_u64()));
+        assert_eq!(std::fs::read(&audit).unwrap(), written);
+        assert_eq!(updater.catch_up().await.unwrap(), latest);
+        assert_eq!(std::fs::read(&audit).unwrap(), written);
+    }
 }
 
 /// 実プロセスをファイル反映後・SQLite確定前に終了させる。
@@ -2118,4 +2161,55 @@ async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_versio
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("版");
     assert_eq!(version, 0, "描き直せていないなら版も上げない");
+}
+
+/// 参照入力をまだ投影していない実ストアは、出典を捏造しない。
+#[tokio::test]
+async fn an_unprojected_steering_face_has_no_source_yet() {
+    let fixture = Fixture::new();
+    let _store = fixture.store();
+    let reader = fixture.journal_reader();
+
+    assert_eq!(reader.steering_source_digest().await.unwrap(), None);
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+}
+
+/// steering の更新は実 SQLite へ確定するが、ジャーナルの確定位置は動かさない。
+#[tokio::test]
+async fn the_steering_face_is_replaced_on_its_own_and_names_its_source() {
+    use core_read_model_updater::read_tables::{MemoryRules, RuleContent, SteeringTables};
+    let fixture = Fixture::new();
+    seed(&mut fixture.store()).await;
+    let mut reader = fixture.journal_reader();
+    reader
+        .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &empty_tables())
+        .await
+        .unwrap();
+    let first = SteeringTables::pack(&MemoryRules::default()).unwrap();
+    reader.replace_steering(&first).await.unwrap();
+    let second = SteeringTables::pack(&MemoryRules::new(
+        vec![RuleContent::new(
+            "org.md".to_string(),
+            "# Organization\nChanged rule\n".to_string(),
+        )],
+        std::collections::BTreeMap::new(),
+    ))
+    .unwrap();
+    assert_ne!(first.source_digest(), second.source_digest());
+
+    reader.replace_steering(&second).await.unwrap();
+    drop(reader);
+
+    let reopened = fixture.journal_reader();
+    assert_eq!(
+        reopened.steering_source_digest().await.unwrap(),
+        Some(second.source_digest().to_string())
+    );
+    assert_eq!(
+        reopened.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::new(2)
+    );
 }

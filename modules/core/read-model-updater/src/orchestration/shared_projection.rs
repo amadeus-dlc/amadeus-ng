@@ -1,5 +1,6 @@
 //! space共通の構造化面の公開位置と内容同一性。
-use super::journal_reader_impl::{corrupt_error, map_sqlite_error};
+use super::journal_reader_impl::corrupt_error;
+use super::store_failure::SqliteResultExt;
 use super::{CorruptCause, GlobalSeqNr, JournalReadError, JournalReaderImpl, PublicationBatch};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::path::Path;
@@ -33,21 +34,19 @@ fn corrupt() -> JournalReadError {
 }
 
 pub(super) fn initialize(connection: &Connection, path: &Path) -> Result<(), JournalReadError> {
-    connection
-        .execute_batch(SCHEMA)
-        .map_err(|e| map_sqlite_error(&e, path))?;
+    connection.execute_batch(SCHEMA).at_store(path)?;
     connection
         .execute(
             "INSERT OR IGNORE INTO amadeus_read_model_head VALUES (1,0,1,?1,'',0)",
             [PublicationBatch::current_transform_revision()],
         )
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     Ok(())
 }
 
 pub(super) fn read(connection: &Connection, path: &Path) -> Result<Option<Head>, JournalReadError> {
     connection.query_row("SELECT position,generation,revision,content_digest,verified FROM amadeus_read_model_head WHERE singleton=1",[],|row|Ok(Head {position:row.get(0)?,generation:row.get(1)?,revision:row.get(2)?,digest:row.get(3)?,verified:row.get(4)?}))
-        .optional().map_err(|e|map_sqlite_error(&e,path))
+        .optional().at_store(path)
 }
 
 pub(super) fn invalidate(connection: &Connection, path: &Path) -> Result<(), JournalReadError> {
@@ -56,7 +55,7 @@ pub(super) fn invalidate(connection: &Connection, path: &Path) -> Result<(), Jou
             "UPDATE amadeus_read_model_head SET verified=0 WHERE singleton=1",
             [],
         )
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     Ok(())
 }
 
@@ -73,7 +72,7 @@ pub(super) fn known_position(
             [],
             |row| row.get(0),
         )
-        .map_err(|e| map_sqlite_error(&e, path))
+        .at_store(path)
 }
 
 pub(super) fn record(
@@ -85,11 +84,10 @@ pub(super) fn record(
         .map_or(0, |head| head.generation)
         .checked_add(1)
         .ok_or_else(corrupt)?;
-    let digest =
-        crate::read_tables::content_digest(transaction).map_err(|e| map_sqlite_error(&e, path))?;
+    let digest = crate::read_tables::content_digest(transaction).at_store(path)?;
     let revision = PublicationBatch::current_transform_revision();
     transaction.execute("INSERT INTO amadeus_read_model_head VALUES (1,?1,?2,?3,?4,1) ON CONFLICT(singleton) DO UPDATE SET position=excluded.position,generation=excluded.generation,revision=excluded.revision,content_digest=excluded.content_digest,verified=1",
-        params![position,generation,revision,digest]).map_err(|e|map_sqlite_error(&e,path))?;
+        params![position,generation,revision,digest]).at_store(path)?;
     Ok(Head {
         position,
         generation,
@@ -112,15 +110,12 @@ pub(super) fn verify(transaction: &Transaction<'_>, path: &Path) -> Result<Head,
             return Err(corrupt());
         }
         let expected = crate::read_tables::ReadTables::project(&history).map_err(|_| corrupt())?;
-        if !crate::read_tables::matches_rows(transaction, &expected)
-            .map_err(|e| map_sqlite_error(&e, path))?
-        {
+        if !crate::read_tables::matches_rows(transaction, &expected).at_store(path)? {
             return Err(corrupt());
         }
         return record(transaction, path, position);
     }
-    let actual =
-        crate::read_tables::content_digest(transaction).map_err(|e| map_sqlite_error(&e, path))?;
+    let actual = crate::read_tables::content_digest(transaction).at_store(path)?;
     if head.position < 0
         || head.generation <= 0
         || head.revision != PublicationBatch::current_transform_revision()
