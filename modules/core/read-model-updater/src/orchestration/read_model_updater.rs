@@ -64,12 +64,6 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         &self.targets
     }
 
-    /// 参照入力の読取先。
-    #[must_use]
-    pub const fn steering(&self) -> &SteeringSource {
-        &self.steering
-    }
-
     /// Markdown の投影先がまだ無い初回起動で、構造化面だけを最新化する。
     ///
     /// fresh workspace では intent の記録ディレクトリも `aidlc-state.md` もまだ存在しないが、
@@ -97,9 +91,9 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         }
 
         let history = journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-        let Some(last) = history.scanned_to() else {
-            return Ok(checkpoint);
-        };
+        let last = history
+            .scanned_to()
+            .ok_or(CatchUpError::HistoryDisappeared)?;
         let tables = ReadTables::project(&history)?;
         journal_reader
             .advance_checkpoint(projection, last, &tables)
@@ -187,9 +181,9 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         // 描く材料はすべてこの**1 回の読取**から採る — Markdown 面の差分・構造化面の行・
         // 前進先の 3 つが同じ断面を指す。
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-        let Some(last) = history.scanned_to() else {
-            return Ok(checkpoint);
-        };
+        let last = history
+            .scanned_to()
+            .ok_or(CatchUpError::HistoryDisappeared)?;
 
         // 未投影の実行イベントがあるときだけ描く。intent の行しか無い区間は書くものが
         // 無い — それでもチェックポイントは走査済み位置まで進める（intent 行を毎回

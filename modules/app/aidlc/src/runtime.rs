@@ -2491,6 +2491,95 @@ corrupt review override: Adversarial"
         }
     }
 
+    /// 読み面が正常でも集約snapshotが壊れていれば、各reportは真実への追記を拒否する。
+    #[tokio::test]
+    async fn reports_refuse_a_corrupt_aggregate_snapshot_without_mutation() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).unwrap();
+        let execution = active_execution(&layout)
+            .unwrap()
+            .unwrap()
+            .execution_id()
+            .as_str()
+            .to_owned();
+        let database = rusqlite::Connection::open(store.as_path()).unwrap();
+        let snapshot: Vec<u8> = database
+            .query_row(
+                "SELECT payload FROM snapshot WHERE aid=?1",
+                [&execution],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let before = journal_count_at(store.as_path());
+        let state = std::fs::read(layout.state_file().unwrap()).unwrap();
+        let audit = audit_ledger(&layout);
+        assert_eq!(
+            database
+                .execute(
+                    "UPDATE snapshot SET payload=X'00' WHERE aid=?1",
+                    [&execution]
+                )
+                .unwrap(),
+            1
+        );
+        for completion in [
+            report(&layout, &report_args(&["--result", "awaiting-approval"])).await,
+            single_report(
+                &layout,
+                &report_args(&[
+                    "--single",
+                    "--result",
+                    "approved",
+                    "--stage",
+                    "domain-design",
+                ]),
+            )
+            .await,
+            skeleton_stance_report(&layout, "on").await,
+        ] {
+            assert_eq!(completion.code(), 0, "{completion:?}");
+            let value: serde_json::Value =
+                serde_json::from_str(completion.line().unwrap()).unwrap();
+            assert_eq!(
+                value.get("kind").and_then(serde_json::Value::as_str),
+                Some("error")
+            );
+            let message = value
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap();
+            assert!(message.contains("corrupt"), "{message}");
+            assert!(message.contains(&execution), "{message}");
+            assert_eq!(journal_count_at(store.as_path()), before);
+            assert_eq!(std::fs::read(layout.state_file().unwrap()).unwrap(), state);
+            assert_eq!(audit_ledger(&layout), audit);
+        }
+        database
+            .execute(
+                "UPDATE snapshot SET payload=?1 WHERE aid=?2",
+                rusqlite::params![snapshot, execution],
+            )
+            .unwrap();
+        let completion = single_report(
+            &layout,
+            &report_args(&[
+                "--single",
+                "--result",
+                "approved",
+                "--stage",
+                "domain-design",
+            ]),
+        )
+        .await;
+        let value: serde_json::Value = serde_json::from_str(completion.line().unwrap()).unwrap();
+        assert_eq!(
+            value.get("kind").and_then(serde_json::Value::as_str),
+            Some("done")
+        );
+        assert_eq!(journal_count_at(store.as_path()), before + 1);
+    }
+
     /// `intent-create` の引数を実際のパーサから組む。
     fn intent_create_args(extra: &[&str]) -> IntentCreateArgs {
         let mut argv: Vec<String> = vec!["intent-create".to_string()];

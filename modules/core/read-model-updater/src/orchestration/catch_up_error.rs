@@ -52,6 +52,8 @@ pub enum CatchUpError {
     /// が無い、のどちらでも 1 行も描けない。ジャーナルが途中から切り落とされた兆候であり、
     /// 読み替えずに止める。
     PlanUnavailable,
+    /// 差分を観測した後の全履歴取得が空になった。
+    HistoryDisappeared,
     /// ジャーナルに**複数の intent** を指す実行が混在している。
     ///
     /// この取得ループは単一 intent の状態ファイル 1 面へ描く（`ProjectionTargets` は 1 組）。
@@ -107,6 +109,7 @@ impl core::fmt::Display for CatchUpError {
                 write!(f, "memory file write: {detail} at {path}")
             }
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
+            CatchUpError::HistoryDisappeared => f.write_str("history disappeared between reads"),
             CatchUpError::MixedIntents => f.write_str("mixed intents"),
             CatchUpError::ReadTables(inner) => write!(f, "read tables: {inner}"),
             CatchUpError::SteeringRead { path, kind } => {
@@ -138,6 +141,7 @@ impl std::error::Error for CatchUpError {
             | CatchUpError::StateFileRead(_)
             | CatchUpError::StateFileWrite(_)
             | CatchUpError::PlanUnavailable
+            | CatchUpError::HistoryDisappeared
             | CatchUpError::MixedIntents
             | CatchUpError::SteeringRead { .. }
             | CatchUpError::MemoryFileRead { .. }
@@ -233,6 +237,11 @@ mod tests {
 
     #[test]
     fn every_catch_up_failure_renders_its_material() {
+        assert_eq!(
+            CatchUpError::HistoryDisappeared.to_string(),
+            "history disappeared between reads"
+        );
+        assert!(std::error::Error::source(&CatchUpError::HistoryDisappeared).is_none());
         let read: CatchUpError = JournalReadError::Io {
             kind: std::io::ErrorKind::WouldBlock,
             path: None,

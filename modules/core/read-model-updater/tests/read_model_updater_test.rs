@@ -200,6 +200,7 @@ struct FakeReader {
     /// 現れる。ここではそれをフェイクで決定的に起こす。
     late_row: Rc<RefCell<Option<JournalEntry>>>,
     reads: Rc<RefCell<usize>>,
+    lose_history_after_probe: bool,
     /// 保存済みの steering 面 (差し替えのたびに丸ごと入れ替わる — 実装と同じ約束)。
     steering: Rc<RefCell<Option<SteeringTables>>>,
     /// steering 面を差し替えた回数 (再投影が走ったかどうかの観測点)。
@@ -279,6 +280,9 @@ impl JournalReader for FakeReader {
             *counter += 1;
             seen
         };
+        if reads > 0 && self.lose_history_after_probe {
+            return Ok(JournalBatch::empty());
+        }
         let mut rows = self.journal.clone();
         if reads >= 1
             && let Some(row) = self.late_row.borrow().clone()
@@ -462,6 +466,7 @@ impl Fixture {
                 tables: Rc::clone(&spy),
                 late_row: Rc::new(RefCell::new(None)),
                 reads: Rc::new(RefCell::new(0)),
+                lose_history_after_probe: false,
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
@@ -496,6 +501,7 @@ impl Fixture {
                 tables: Rc::new(RefCell::new(None)),
                 late_row: Rc::new(RefCell::new(None)),
                 reads: Rc::new(RefCell::new(0)),
+                lose_history_after_probe: false,
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
@@ -529,6 +535,7 @@ impl Fixture {
                 tables: Rc::clone(&spy),
                 late_row: Rc::new(RefCell::new(Some(late_row))),
                 reads: Rc::new(RefCell::new(0)),
+                lose_history_after_probe: false,
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
@@ -1222,4 +1229,50 @@ async fn an_invalid_audit_target_prevents_any_file_or_plan_publication() {
     let audit = fixture.shard();
     updater.catch_up().await.unwrap();
     assert_eq!(fixture.shard(), audit);
+}
+
+/// 差分を観測した直後に履歴が消えた場合、古い読取位置で成功したことにしない。
+#[tokio::test]
+async fn a_disappeared_history_is_not_a_successful_catch_up() {
+    for structured in [false, true] {
+        let fixture = Fixture::new();
+        let state = fixture.state();
+        let tables = Rc::new(RefCell::new(None));
+        let mut reader = FakeReader {
+            journal: journal(),
+            intents: intents(),
+            checkpoints: BTreeMap::from([(projection(), GlobalSeqNr::new(2))]),
+            lose_history_after_probe: true,
+            publications: Rc::clone(&fixture.publications),
+            tables: Rc::clone(&tables),
+            ..FakeReader::default()
+        };
+        let result = if structured {
+            let result =
+                ReadModelUpdater::<FakeReader>::catch_up_structured(&mut reader, &projection())
+                    .await;
+            assert_eq!(
+                reader.checkpoint(&projection()).await.unwrap(),
+                GlobalSeqNr::new(2)
+            );
+            result
+        } else {
+            let mut updater = ReadModelUpdater::new(
+                reader,
+                projection(),
+                fixture.targets(),
+                fixture.steering_source(),
+            );
+            updater.catch_up().await
+        };
+        assert_eq!(
+            result,
+            Err(CatchUpError::HistoryDisappeared),
+            "structured={structured}"
+        );
+        assert!(fixture.publications.borrow().is_empty());
+        assert!(tables.borrow().is_none());
+        assert_eq!(fixture.state(), state);
+        assert!(!fixture.audit_shard.exists());
+    }
 }
