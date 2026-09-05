@@ -19,7 +19,7 @@ cargo test --locked -p core-command-interface-adapter \
   --test intent_execution_repository_impl_test
 ```
 
-実測ログ: [repository-tests.log](repository-tests.log)。契約テスト 20 件（memory / SQLite）、実装固有テスト 23 件、合計 **43 件成功・0 件失敗・0 件無視**。全ワークスペースのテストは実施していない。
+実測ログはローカルの `repository-tests.log` に保存した（リポジトリには含めない）。再現コマンドと各条件の試験名は本書に記録する。契約テスト 20 件（memory / SQLite）、実装固有テスト 23 件、合計 **43 件成功・0 件失敗・0 件無視**。全ワークスペースのテストは実施していない。
 
 ## 対照と条件変更
 
