@@ -12,36 +12,36 @@
 ```yaml
 rules:
   - id: BR1.1
-    statement: "キー順はプロファイルが決める — contract-pretty / contract-compact は型のフィールド宣言順または動的マップの挿入順、hash-canonical は全オブジェクトキーを再帰的にソートする"
+    statement: "全プロファイルで integer-like キーを数値昇順で先頭に置く。残りは contract-pretty / contract-compact では宣言順または挿入順、hash-canonical では再帰的に UTF-16 順にする"
     category: constraint
     applies_to: [JsonValue, SerializationProfile]
     trigger: "serialize / hash の呼出時"
-    logic: "IF profile = hash-canonical THEN 各オブジェクトのキーを UTF-16 コード単位順（契約キーは ASCII のみ — バイト順と一致）で再帰的に整列 ELSE 宣言順/挿入順を保持"
+    logic: "各オブジェクトで BR1.2 の整数形式キーを先頭に置く。IF profile = hash-canonical THEN 残りのキーを UTF-16 コード単位順で再帰的に整列 ELSE 残りの宣言順/挿入順を保持。受入例 numeric-vs-string-order の 1,9,10,x は 1,10,9,x にしない"
     violation: "該当なし（内部規則）。キー順が規則と異なる出力はゴールデン不一致として検出"
     source: "FR7.3, ADR 0001 決定 2・3"
   - id: BR1.2
-    statement: "動的マップのキー順は ECMAScript の所有プロパティ順序を模倣する — integer-like キーは挿入順に関係なく数値昇順で先頭、残りは挿入順"
+    statement: "ECMAScript の所有プロパティ順序を全プロファイルに適用する — integer-like キーは数値昇順で先頭、残りは BR1.1 の順序"
     category: constraint
     applies_to: [JsonValue]
-    trigger: "contract-pretty / contract-compact の直列化"
-    logic: "IF キーが integer-like（0〜2^32-2 の正準十進表記）THEN 数値昇順で先頭に並べる ELSE 挿入順"
+    trigger: "全プロファイルの直列化"
+    logic: "IF キーが integer-like（0〜2^32-2 の正準十進表記）THEN 数値昇順で先頭に並べる ELSE BR1.1 のプロファイル別順序。01、-1、4294967295 は整数形式キーではない"
     violation: "契約 JSON に integer-like キーが現れる箇所は棚卸しし、写像を個別定義する（ADR 0001 決定 3）。未定義のまま現れたらゴールデン不一致で検出"
     source: "FR7.3, ADR 0001 決定 3（JS 実測）"
   - id: BR1.3
-    statement: "数値は整数を整数型で直列化し、浮動小数は ECMA-262 Number::toString 互換で書く — 指数閾値 1e21 / 1e-6、'e+' 書式、-0 は '0'、NaN / ±Infinity は null"
+    statement: "整数の保持型と出力表記を区別する。出力は JS の数値表記に合わせ、絶対値が 2^53 を超える整数は f64 に丸める。指数閾値 1e21 / 1e-6、'e+' 書式、-0 は '0'、NaN / ±Infinity は null"
     category: calculation
     applies_to: [JsonValue]
     trigger: "kind = number の直列化"
-    logic: "IF number_repr = integer THEN 十進表記 ELSE IF 非有限 THEN 'null' ELSE JS 互換の最短表記（1.0 → '1'、1e21 → '1e+21'）"
+    logic: "IF integer AND 絶対値 ≤ 2^53 THEN 十進表記 ELSE integer は f64 へ変換して浮動小数と同じ JS 互換最短表記を使う。非有限は null、負ゼロは 0。around-2p53 の 9007199254740993 → 9007199254740992、u64-range の最大値 → 18446744073709552000 を受入値とする"
     violation: "該当なし。不一致はゴールデン（負ゼロ・非有限・指数クラス）で検出"
     source: "FR7.3, ADR 0001 決定 4・受入条件 (b)(c)(d)"
   - id: BR1.4
-    statement: "文字列のエスケープは JSON.stringify の最小集合に限る — '\"'・'\\\\'・U+0000〜U+001F（\\b \\f \\n \\r \\t は短縮形、他は \\uXXXX）、孤立サロゲートは \\uXXXX。非 ASCII と '/' はエスケープしない"
+    statement: "UTF-8 で表せる文字列について JSON.stringify の最小エスケープを使う。二重引用符・バックスラッシュ・U+0000〜U+001F のみエスケープし、非 ASCII・斜線・U+2028/U+2029 はそのまま出力する"
     category: constraint
     applies_to: [JsonValue]
-    trigger: "kind = string の直列化"
-    logic: "上記の文字だけを置換し、それ以外は UTF-8 のまま出力"
-    violation: "不一致は非 ASCII・エスケープクラスのゴールデンで検出"
+    trigger: "文字列の読取・直列化"
+    logic: "有効な Unicode scalar value は最小集合だけをエスケープする。読取時の孤立サロゲートは ParseError::Syntax として拒否する。任意の JS UTF-16 文字列との完全互換は主張しない"
+    violation: "非 ASCII・エスケープクラスはゴールデンで検証し、孤立サロゲートは拒否テストで境界を固定する。互換範囲と根拠は functional-spec W3 を参照"
     source: "FR7.3, ADR 0001 受入条件 (e)"
   - id: BR1.5
     statement: "体裁はプロファイルで固定 — contract-pretty は 2 スペースインデント + メンバごとの改行 + ファイル末尾改行、contract-compact / hash-canonical は空白なし。空の配列/オブジェクトは '[]' / '{}'"
@@ -60,11 +60,11 @@ rules:
     violation: "hash-canonical 受入表（FR7.1）の行不一致"
     source: "FR7.1, FR7.3, ADR 0001 コンテキスト（2 族）"
   - id: BR1.7
-    statement: "canon-json 以外のクレートから serde_json の直列化関数（to_string / to_string_pretty / to_vec / to_writer 系）と契約経路の to_value を直接呼んではならない"
+    statement: "契約JSONの直列化と型付き値の変換は core-infrastructure::canon_json を通す。呼出側は同じクレート内でも serde_json の直列化関数（to_string / to_string_pretty / to_vec / to_writer 系）と to_value を直接呼ばない"
     category: policy
     applies_to: [workspace]
     trigger: "コンパイル（clippy disallowed-methods）"
-    logic: "IF 呼出元クレート ≠ canon-json AND 呼出が禁止関数 THEN clippy エラー"
+    logic: "禁止関数の直接呼出は clippy で拒否する。実装内部で必要な呼出は canon_json の変換・読取境界へ局所化する。契約外の永続化DTO等の例外は clippy 設定と該当箇所の理由付き許可で限定し、クレート全体を除外しない"
     violation: "CI の clippy（-D warnings）で拒否。Value の Display / format! 経由は残余ホール — レビューとゴールデンで補完"
     source: "ADR 0001 決定 5"
   - id: BR1.8

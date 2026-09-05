@@ -33,7 +33,7 @@ CLI 実行出力・状態ファイル差分・監査行には、採取のたび�
 
 [Answer]: A
 
-## Consolidated Summary Confirmation
+## 以前に確認済みのまとめ
 
 - ゴールデンの非決定値（Q1 = A）: 固定できるものは採取時に固定し、残り（タイムスタンプ `<TS>`、clone id `<CLONE>`、絶対パス `<ROOT>`、セッション ID `<SESSION>`）はプレースホルダに正規化してバイト比較。置換規則はゴールデン表の一部として固定し、再採取スクリプトも同じ規則を使う
 - CLI ゴールデンの範囲（Q2 = A）: next / report / continue / park の主要遷移（開始・awaiting-approval・approve・reject・revise・skip・jump・park/unpark・recompose・set-autonomy）+ フック 4 本の代表ケース（許可 / 拒否 / 無視 を 2〜3 件ずつ）。後続 Bolt で必要な経路は追加採取
@@ -45,3 +45,20 @@ Does this all look correct before I generate the artifact?
 - Request changes
 
 [Answer]: Looks correct
+
+## Consolidated Summary Confirmation
+
+2026-09-05の不整合是正。Q1/Q2の確定方針と採取済みゴールデンは維持する。
+
+- すべてのプロファイルで整数形式キーを数値昇順で先頭に配置する。残りのキーは正準ハッシュ用のみUTF-16順、それ以外は宣言順・挿入順とする。
+- 整数の保持型と出力時のJS互換丸めを区別する。2^53を超える整数も採取済みの出力・ハッシュに合わせる。
+- UTF-8で表せない孤立サロゲートは読取で拒否する。任意の外部JSONとの完全互換を根拠なく主張しない。
+- to_valueの変換失敗、用途ごとのハッシュ族、現行モジュールの依存境界を設計本文へ反映する。
+- 変更と根拠は `../correction-report.md`、実測対象は `core-infrastructure::canon_json` と採取済み32行のコーパス。過去のReview節は今回の承認として扱わない。
+
+Does this all look correct before I generate the artifact?
+
+- Looks correct
+- Request changes
+
+[Answer]:
