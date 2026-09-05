@@ -121,4 +121,5 @@ contract_tests!(
     a_write_from_a_stale_version_conflicts,
     a_write_from_the_rehydrated_version_succeeds,
     a_genesis_with_a_non_zero_version_is_a_contract_violation,
+    an_event_from_another_execution_is_rejected_before_writing,
 );

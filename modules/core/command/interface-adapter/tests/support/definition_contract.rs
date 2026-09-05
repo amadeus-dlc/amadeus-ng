@@ -159,3 +159,51 @@ pub(crate) async fn a_write_that_presents_a_stale_version_conflicts<F: Definitio
         "{err:?}"
     );
 }
+
+/// 別系譜のイベントと集約を組み合わせても、既存の定義を変更しない。
+pub(crate) async fn an_event_from_another_definition_is_rejected_before_writing<
+    F: DefinitionStoreFixture,
+>(
+    fixture: &F,
+) {
+    use core_command_domain::workflow_definition::{
+        CompiledDefinition, CompiledDefinitionId, WorkflowDefinition,
+    };
+    let other_bundle = |count| {
+        let (graph, grid, scopes) = super::definition_content(count);
+        CompiledDefinition::compile(
+            CompiledDefinitionId::parse("kiro").unwrap(),
+            graph,
+            grid,
+            scopes,
+        )
+        .0
+    };
+    let mut repository = fixture.open();
+    let (aggregate, _) = definition_genesis();
+    let (mut other, foreign) =
+        WorkflowDefinition::define(absent_definition_id(), &other_bundle(3), at()).unwrap();
+    let error = repository
+        .store(&foreign, &aggregate)
+        .await
+        .expect_err("別系譜のイベントを拒否");
+    assert!(
+        matches!(error, RepositoryError::Corrupt { .. }),
+        "{error:?}"
+    );
+    for id in [definition_id(), absent_definition_id()] {
+        assert!(matches!(
+            repository.find_by_id(&id).await,
+            Err(RepositoryError::NotFound { .. })
+        ));
+    }
+    let held = store_definition_genesis(&mut repository).await;
+    let mut candidate = held.clone();
+    candidate.redefine(&definition_bundle(5), at()).unwrap();
+    let foreign = other.redefine(&other_bundle(5), at()).unwrap();
+    assert!(matches!(
+        repository.store(&foreign, &candidate).await,
+        Err(RepositoryError::Corrupt { .. })
+    ));
+    assert_eq!(repository.find_by_id(&definition_id()).await.unwrap(), held);
+}

@@ -114,4 +114,5 @@ contract_tests!(
     a_duplicate_genesis_is_a_conflict,
     a_redefinition_advances_the_stream,
     a_write_that_presents_a_stale_version_conflicts,
+    an_event_from_another_definition_is_rejected_before_writing,
 );
