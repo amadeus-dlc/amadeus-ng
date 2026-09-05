@@ -27,7 +27,7 @@ use core_command_domain::workflow_definition::{
 use core_command_domain::workspace::PromotedSection;
 use core_read_model_updater::orchestration::{
     CatchUpError, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
-    ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
+    ProjectionName, ProjectionTargets, PublicationBatch, ReadModelUpdater, SteeringSource,
 };
 use core_read_model_updater::read_tables::{ReadTables, SteeringTables};
 use tempfile::TempDir;
@@ -183,6 +183,7 @@ fn journal() -> Vec<JournalEntry> {
 /// ループだけを孤立させるための読み手。
 #[derive(Debug, Default)]
 struct FakeReader {
+    publications: Rc<RefCell<BTreeMap<ProjectionName, (PublicationBatch, bool)>>>,
     journal: Vec<JournalEntry>,
     intents: Vec<(u64, Intent)>,
     checkpoints: BTreeMap<ProjectionName, GlobalSeqNr>,
@@ -206,6 +207,71 @@ struct FakeReader {
 }
 
 impl JournalReader for FakeReader {
+    async fn pending_publication(
+        &self,
+        projection: &ProjectionName,
+    ) -> Result<Option<PublicationBatch>, JournalReadError> {
+        Ok(self
+            .publications
+            .borrow()
+            .get(projection)
+            .filter(|(_, committed)| !committed)
+            .map(|(batch, _)| batch.clone()))
+    }
+
+    async fn events_through(&self, to: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
+        let rows: Vec<_> = self
+            .journal
+            .iter()
+            .filter(|entry| entry.global_seq() <= to)
+            .cloned()
+            .collect();
+        let intents: Vec<_> = self
+            .intents
+            .iter()
+            .filter(|(position, _)| GlobalSeqNr::new(*position) <= to)
+            .cloned()
+            .collect();
+        let last = rows
+            .last()
+            .map(JournalEntry::global_seq)
+            .into_iter()
+            .chain(
+                intents
+                    .iter()
+                    .map(|(position, _)| GlobalSeqNr::new(*position)),
+            )
+            .max();
+        Ok(JournalBatch::new(
+            rows,
+            intents.into_iter().map(|(_, intent)| intent).collect(),
+            Vec::new(),
+            last,
+        ))
+    }
+
+    async fn publish(
+        &mut self,
+        projection: &ProjectionName,
+        candidate: &PublicationBatch,
+        tables: &ReadTables,
+    ) -> Result<(), CatchUpError> {
+        let previous = self.publications.borrow().get(projection).cloned();
+        let batch = previous
+            .filter(|(batch, _)| batch.from() == candidate.from() && batch.to() == candidate.to())
+            .map(|(batch, _)| batch)
+            .unwrap_or_else(|| candidate.clone());
+        self.publications
+            .borrow_mut()
+            .insert(projection.clone(), (batch.clone(), false));
+        batch.apply()?;
+        self.advance_checkpoint(projection, batch.to(), tables)
+            .await?;
+        self.publications
+            .borrow_mut()
+            .insert(projection.clone(), (batch, true));
+        Ok(())
+    }
     async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
         let reads = {
             let mut counter = self.reads.borrow_mut();
@@ -299,6 +365,7 @@ fn projection() -> ProjectionName {
 
 /// 一時ディレクトリ上の書込先 2 面。
 struct Fixture {
+    publications: Rc<RefCell<BTreeMap<ProjectionName, (PublicationBatch, bool)>>>,
     _dir: TempDir,
     state_file: PathBuf,
     audit_shard: PathBuf,
@@ -317,6 +384,7 @@ impl Fixture {
         std::fs::create_dir_all(memory_dir.join("phases")).expect("memory 層を作る");
         std::fs::write(memory_dir.join("org.md"), "# Org\n").expect("規則を置く");
         Fixture {
+            publications: Rc::new(RefCell::new(BTreeMap::new())),
             _dir: dir,
             state_file,
             audit_shard,
@@ -396,6 +464,7 @@ impl Fixture {
                 reads: Rc::new(RefCell::new(0)),
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
+                publications: Rc::clone(&self.publications),
             },
             projection(),
             self.targets(),
@@ -429,6 +498,7 @@ impl Fixture {
                 reads: Rc::new(RefCell::new(0)),
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
+                publications: Rc::clone(&self.publications),
             },
             projection(),
             self.targets(),
@@ -461,6 +531,7 @@ impl Fixture {
                 reads: Rc::new(RefCell::new(0)),
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
+                publications: Rc::clone(&self.publications),
             },
             projection(),
             self.targets(),
@@ -591,6 +662,22 @@ async fn regenerating_from_zero_twice_yields_identical_bytes() {
         (fixture.state(), fixture.shard())
     };
     assert_eq!(run().await, run().await);
+}
+
+/// 出力だけが保存され、チェックポイント確定前に停止した状態からの再開。
+#[tokio::test]
+async fn retrying_an_old_checkpoint_preserves_existing_audit_bytes() {
+    let fixture = Fixture::new();
+    let mut first = fixture.updater(journal(), intents());
+    first.catch_up().await.expect("最初の出力");
+    let state = fixture.state();
+    let audit = fixture.shard();
+
+    // 同じ出力先を保持し、読み手のチェックポイントだけを元の位置で開き直す。
+    let mut recovered = fixture.updater(journal(), intents());
+    recovered.catch_up().await.expect("古い位置からの再開");
+    assert_eq!(fixture.state(), state);
+    assert_eq!(fixture.shard(), audit, "反映済み監査行を再追記しない");
 }
 
 #[tokio::test]

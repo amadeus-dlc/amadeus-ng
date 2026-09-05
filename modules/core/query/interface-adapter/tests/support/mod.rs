@@ -4,17 +4,14 @@
 //! ので、行は投影 (`ReadTables::project` / `SteeringTables::pack`) が実際に書いたものを
 //! 使う。DAO が読むのはその結果だけである。
 //!
-//! # ジャーナル表は最小の殻だけ用意する
-//!
-//! `JournalReaderImpl::open` は本家の `journal` 表の**存在**を検査する (存在しないパスに
-//! 空 DB を作らないため)。一方 `advance_checkpoint` は前進先が `GlobalSeqNr::ZERO` のとき
-//! アンカー行を引かないので、行の差し替えだけを行うのに本家ストアは要らない。したがって
-//! ここでは殻だけを作り、本家のイベントストアを dev-dependency に引かない — クエリ側の
-//! テストが書込側の DDL を知る必要は無い。
+//! ジャーナルには投影と同じ履歴を保存し、その走査済み位置で確定する。
+//! 空履歴の位置0へイベント処理済みの行を書き込む近道は使わない。
 
 // テストコードでは unwrap / expect / 添字を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+// ジャーナルpayloadは契約JSONではなく、永続化DTOのワイヤ形式である。
+#![allow(clippy::disallowed_methods)]
 
 pub(crate) mod doubles;
 
@@ -23,8 +20,8 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, Defined, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
@@ -34,8 +31,8 @@ use core_command_domain::workflow_definition::{
 };
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
-    DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry, JournalReader, JournalReaderImpl,
-    ProjectionName,
+    DefinitionEntry, GlobalSeqNr, IntentEventDto, IntentExecutionEventDto, JournalBatch,
+    JournalEntry, JournalReader, JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
 };
 use core_read_model_updater::read_tables::{MemoryRules, ReadTables, RuleContent, SteeringTables};
 use tempfile::TempDir;
@@ -209,20 +206,21 @@ fn stages() -> Vec<StageEntry> {
     ]
 }
 
+fn created() -> Created {
+    Created::new(
+        intent_event_id(),
+        intent_id(),
+        definition_id(),
+        revision(),
+        StartRequest::new("classic", "build the thing"),
+        stages(),
+        WorkspaceScan::new(BrownfieldGreenfield::Brownfield, "Rust", "tokio", "cargo")
+            .expect("単一行"),
+    )
+}
+
 fn intent() -> Intent {
-    Intent::from((
-        Created::new(
-            intent_event_id(),
-            intent_id(),
-            definition_id(),
-            revision(),
-            StartRequest::new("classic", "build the thing"),
-            stages(),
-            WorkspaceScan::new(BrownfieldGreenfield::Brownfield, "Rust", "tokio", "cargo")
-                .expect("単一行"),
-        ),
-        at(),
-    ))
+    Intent::from((created(), at()))
 }
 
 /// 実行 1 本の歴史 (`state-init` のゲートを開けた直後)。
@@ -249,7 +247,7 @@ fn execution_events(park: bool) -> Vec<(usize, IntentExecutionEvent)> {
 
 fn history(park: bool) -> JournalBatch {
     let mut executions = Vec::new();
-    let mut global = 2_u64;
+    let mut global = 3_u64;
     for (seq_nr, event) in execution_events(park) {
         executions.push(JournalEntry::new(
             GlobalSeqNr::new(global),
@@ -261,7 +259,7 @@ fn history(park: bool) -> JournalBatch {
         global += 1;
     }
     let definitions = vec![DefinitionEntry::new(
-        GlobalSeqNr::new(1),
+        GlobalSeqNr::new(2),
         definition_id(),
         1,
         at(),
@@ -290,6 +288,40 @@ fn memory_rules() -> MemoryRules {
         )],
         phases,
     )
+}
+
+fn persist_history(connection: &rusqlite::Connection, batch: &JournalBatch) {
+    let insert = |global: u64, aid: &str, seq: usize, manifest: &str, payload: Vec<u8>| {
+        connection.execute(
+            "INSERT INTO journal(rowid,aid,seq_nr,payload,occurred_at,manifest) VALUES (?1,?2,?3,?4,?5,?6)",
+            rusqlite::params![i64::try_from(global).unwrap(),aid,i64::try_from(seq).unwrap(),payload,at().timestamp_nanos_opt().unwrap(),manifest],
+        ).expect("投影と同じ履歴を保存");
+    };
+    insert(
+        1,
+        INTENT,
+        1,
+        "intent-event/1",
+        serde_json::to_vec(&IntentEventDto::of(&IntentEvent::Created(created()), at())).unwrap(),
+    );
+    for entry in batch.definitions() {
+        insert(
+            entry.global_seq().to_u64(),
+            DEFINITION,
+            entry.seq_nr(),
+            "workflow-definition-event/1",
+            serde_json::to_vec(&WorkflowDefinitionEventDto::of(entry.event())).unwrap(),
+        );
+    }
+    for entry in batch.executions() {
+        insert(
+            entry.global_seq().to_u64(),
+            EXECUTION,
+            entry.seq_nr(),
+            "intent-execution-event/1",
+            serde_json::to_vec(&IntentExecutionEventDto::of(entry.event())).unwrap(),
+        );
+    }
 }
 
 /// 投影済みのストア 1 つ。
@@ -322,18 +354,27 @@ impl Fixture {
             .expect("殻を作る接続")
             .execute_batch(JOURNAL_SHELL)
             .expect("journal の殻");
+        persist_history(&rusqlite::Connection::open(path.as_path()).unwrap(), batch);
 
         let tables = ReadTables::project(batch).expect("健全な履歴は投影できる");
         let steering = SteeringTables::pack(&memory_rules()).expect("規則束は分割できる");
         let projection = ProjectionName::parse("read-model").expect("投影名は kebab");
         let mut reader = JournalReaderImpl::open(&path).expect("Reader は開ける");
-        // `GlobalSeqNr::ZERO` への前進はアンカーを引かない — 行の差し替えだけが起きる。
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("current_thread ランタイム")
             .block_on(async {
+                let stored = reader
+                    .events_after(GlobalSeqNr::ZERO)
+                    .await
+                    .expect("保存履歴の読取");
+                assert_eq!(
+                    ReadTables::project(&stored).unwrap(),
+                    tables,
+                    "保存履歴と投影の断面が一致"
+                );
                 reader
-                    .advance_checkpoint(&projection, GlobalSeqNr::ZERO, &tables)
+                    .advance_checkpoint(&projection, batch.scanned_to().expect("履歴あり"), &tables)
                     .await
                     .expect("ジャーナル由来 15 表の差し替え");
                 reader

@@ -6,6 +6,7 @@ use super::global_seq_nr::GlobalSeqNr;
 use super::journal_batch::JournalBatch;
 use super::journal_read_error::JournalReadError;
 use super::projection_name::ProjectionName;
+use super::{CatchUpError, PublicationBatch};
 
 /// 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 ///
@@ -18,8 +19,8 @@ use super::projection_name::ProjectionName;
 /// RMU はライブラリ型を入口に出さないので、**本家の `EventEnvelope` をここから出さない** —
 /// 行の材料は我々が所有する [`JournalEntry`](super::JournalEntry) に写して返す。
 ///
-/// 真実源はジャーナルであり、投影は「チェックポイント以降を読んで描き、チェックポイントを
-/// 進める」だけで冪等に追いつける — その 2 性質 (順序・単調性) を本ポートが保証する
+/// 真実源はジャーナルである。差分の順序とチェックポイントの単調性に加え、ファイルの
+/// 書込前後を保存した公開計画によって、確定前に停止しても同じ出力を二重追記しない
 /// (BR1.4 / NFR3.4)。
 ///
 /// メソッドは `async fn` (AFIT)。`dyn` は使わず、`Send` / `Sync` 境界も要求しない。
@@ -29,6 +30,31 @@ use super::projection_name::ProjectionName;
               自動 trait 境界を書けないという注意喚起は本 trait では設計どおりである。"
 )]
 pub trait JournalReader {
+    /// 未完了のファイル公開計画を取得する。
+    ///
+    /// # Errors
+    /// 保存済み計画の読取・復号に失敗した場合。
+    async fn pending_publication(
+        &self,
+        projection: &ProjectionName,
+    ) -> Result<Option<PublicationBatch>, JournalReadError>;
+
+    /// 指定した断面までの全履歴を読む。復旧時に新しいイベントを混ぜない。
+    ///
+    /// # Errors
+    /// ジャーナルの読取・復号に失敗した場合。
+    async fn events_through(&self, to: GlobalSeqNr) -> Result<JournalBatch, JournalReadError>;
+
+    /// 計画を先に保存し、排他下でファイルを公開してから位置と構造化面を確定する。
+    ///
+    /// # Errors
+    /// 計画・ファイル・確定操作の失敗。未完計画は再開用に保持する。
+    async fn publish(
+        &mut self,
+        projection: &ProjectionName,
+        batch: &PublicationBatch,
+        tables: &ReadTables,
+    ) -> Result<(), CatchUpError>;
     /// `after` **より大きい** global 通番の行を昇順で走査して返す (全集約横断)。
     ///
     /// 返すのは [`JournalBatch`] — 実行のイベント行 ([`JournalEntry`]) と intent の誕生記録、
@@ -54,14 +80,15 @@ pub trait JournalReader {
         projection: &ProjectionName,
     ) -> Result<GlobalSeqNr, JournalReadError>;
 
-    /// 構造化リードモデルの行を差し替え、チェックポイントを `to` へ進める。
-    /// 同値は no-op、現在値未満は拒否 (単調 — BR1.4)。
+    /// 構造化リードモデルを検証・公開し、チェックポイントを `to` へ進める。
+    /// 共有面より新しければ差し替え、同値なら内容一致を確認し、古ければ共有面を維持する。
+    /// 個別チェックポイントの現在値未満は拒否する (単調 — BR1.4)。
     ///
     /// 巻き戻し (投影の再生成) は行削除で行う。本ポートには後退の口を置かない。
     ///
     /// # 行の差し替えと前進は 1 つの原子的な操作である
     ///
-    /// `tables` は全履歴からの再計算の結果であり、書込は**全行の差し替え**である。それと
+    /// `tables` は指定位置までの全履歴からの再計算の結果であり、更新時は全行を差し替える。それと
     /// チェックポイントの前進が別々にコミットされると、行だけ新しくてチェックポイントが
     /// 古い (次のキャッチアップで同じ差分をもう一度描く) か、逆に行が古いままチェック
     /// ポイントだけ進む (読取コマンドが永久に古い答えを見る) かのどちらかになる。
@@ -156,6 +183,35 @@ mod tests {
     }
 
     impl JournalReader for FakeReader {
+        async fn pending_publication(
+            &self,
+            _projection: &ProjectionName,
+        ) -> Result<Option<PublicationBatch>, JournalReadError> {
+            Ok(None)
+        }
+
+        async fn events_through(&self, to: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
+            let rows: Vec<_> = self
+                .journal
+                .iter()
+                .filter(|entry| entry.global_seq() <= to)
+                .cloned()
+                .collect();
+            let last = rows.last().map(JournalEntry::global_seq);
+            Ok(JournalBatch::new(rows, Vec::new(), Vec::new(), last))
+        }
+
+        async fn publish(
+            &mut self,
+            projection: &ProjectionName,
+            batch: &PublicationBatch,
+            tables: &ReadTables,
+        ) -> Result<(), CatchUpError> {
+            batch.apply()?;
+            self.advance_checkpoint(projection, batch.to(), tables)
+                .await?;
+            Ok(())
+        }
         async fn events_after(&self, after: GlobalSeqNr) -> Result<JournalBatch, JournalReadError> {
             let rows: Vec<JournalEntry> = self
                 .journal
