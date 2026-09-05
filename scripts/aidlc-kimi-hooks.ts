@@ -7,8 +7,17 @@ import { randomUUID } from "node:crypto";
 type Hook = { event: string; command: string; matcher?: string; timeout?: number };
 const begin = "# BEGIN amadeus-ng AI-DLC hooks";
 const end = "# END amadeus-ng AI-DLC hooks";
+/** シェルの単一引数として扱えるよう、パスを単一引用符で囲み、内部の引用符をエスケープする。 */
 const quote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
 
+/**
+ * Kimi のユーザー設定と信頼済みプロジェクト登録を検証、または更新する。
+ * apply=false は書込みを行わず、未同期なら例外にする。apply=true は projectPath の実パスを信頼登録し、
+ * ユーザー所有のディスパッチャとフック設定を配置する。既存設定と登録は退避し、管理ブロック以外を保持する。
+ * 不正な TOML・信頼リスト・マーカーや、管理ブロック外の重複登録は更新前に拒否する。
+ * 複数ファイルの置換は一括トランザクションではないため、途中失敗時は退避から復旧する。
+ * @param home KIMI_CODE_HOME、または利用者の .kimi-code ディレクトリ。
+ */
 export function configure(projectPath: string, home: string, apply: boolean): void {
   const project = realpathSync(projectPath);
   const directory = join(home, "aidlc");

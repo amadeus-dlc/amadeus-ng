@@ -8,7 +8,9 @@ import { forward } from "./aidlc-sync/kimi-trusted-adapter";
 const project = resolve(import.meta.dir, "..");
 const scratch: string[] = [];
 afterEach(() => { for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true }); });
+/** 信頼リストと比較できる実パスの一時ディレクトリを作り、テスト終了時の削除対象に登録する。 */
 function temp() { const path = realpathSync(mkdtempSync(join(tmpdir(), "aidlc-harness-"))); scratch.push(path); return path; }
+/** フック・設定のフィクスチャを、必要な親ディレクトリとともに配置する。 */
 function put(root: string, path: string, data: string) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), data); }
 
 test("ハーネス名と配置先が不一致なら runner 生成を拒否する", () => {

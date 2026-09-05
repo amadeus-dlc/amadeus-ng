@@ -23,39 +23,49 @@ export type Plan = {
   review: string[]; changed: boolean;
 };
 
+/** 指定ディレクトリで Git を実行し、文字コード変換せず標準出力を返す。失敗時は標準エラーで例外にする。 */
 function gitBytes(cwd: string, args: string[]): Buffer {
   const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim());
   return result.stdout;
 }
 
+/** Git のテキスト出力を UTF-8 として返す。バイナリの取得には gitBytes を使う。 */
 function git(cwd: string, args: string[]): string {
   return gitBytes(cwd, args).toString();
 }
 
+/** 配布ファイルの内容比較に使う SHA-256 を16進数で返す。 */
 function digest(data: Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
+/** 通常ファイルの内容ハッシュと実行権限の有無を、更新台帳用に取得する。 */
 function stamp(path: string): Stamp {
   return { sha256: digest(readFileSync(path)), executable: (lstatSync(path).mode & 0o111) !== 0 };
 }
 
+/** 両方のファイルが存在し、内容と実行権限が一致する場合だけ true を返す。 */
 function same(a: Stamp | undefined, b: Stamp | undefined): boolean {
   return !!a && !!b && a.sha256 === b.sha256 && a.executable === b.executable;
 }
 
+/** プロジェクト相対パスが、このスクリプトで同期するハーネス配下か判定する。 */
 function managed(path: string): boolean {
   return ROOTS.some(([, root]) => path.startsWith(`${root}/`));
 }
 
-// 配布物・旧台帳に不正なパスがあっても作業ツリーの外へ出ない。
+/** 管理対象外のパス、空のパス成分、親参照、バックスラッシュを拒否する。 */
 function validatePath(path: string): void {
   if (path.includes("\\") || path.split("/").some(p => !p || p === "." || p === "..") || !managed(path)) {
     throw new Error(`管理対象外のパス: ${path}`);
   }
 }
 
+/**
+ * 既存の各パス成分にシンボリックリンクがないことを確認し、連結したパスを返す。
+ * 未作成の成分は許容する。入力は呼出側で検証済みの相対パスに限り、範囲検証は validatePath が担う。
+ */
 export function safePath(root: string, path: string): string {
   let current = root;
   for (const part of path.split("/")) {
@@ -69,6 +79,7 @@ export function safePath(root: string, path: string): string {
   return current;
 }
 
+/** prefix 配下の通常ファイルを相対パスで列挙する。存在しないディレクトリは空配列、リンク等は例外にする。 */
 function walk(root: string, prefix: string): string[] {
   const path = safePath(root, prefix);
   if (!existsSync(path)) return [];
@@ -81,16 +92,19 @@ function walk(root: string, prefix: string): string[] {
   });
 }
 
+/** コピー先の親を作成し、ファイル内容と POSIX の許可ビットをコピーする。 */
 function copy(from: string, to: string): void {
   mkdirSync(dirname(to), { recursive: true });
   copyFileSync(from, to);
   chmodSync(to, lstatSync(from).mode & 0o777);
 }
 
+/** ファイル一覧をソートし、パスから内容ハッシュ・実行権限への対応表を作る。paths はその場でソートする。 */
 function inspect(root: string, paths: string[]): Record<string, Stamp> {
   return Object.fromEntries(paths.sort().map(path => [path, stamp(join(root, path))]));
 }
 
+/** 旧台帳の形式、管理パス、ハッシュ、権限フラグを検証し、不正なら更新計画の作成前に拒否する。 */
 function validateInventory(inventory: Inventory): void {
   if (inventory.format !== 1 || !inventory.files || !inventory.preserved) throw new Error("更新台帳の形式が不正です");
   for (const [path, entry] of Object.entries({ ...inventory.files, ...inventory.preserved })) {
@@ -101,6 +115,11 @@ function validateInventory(inventory: Inventory): void {
   }
 }
 
+/**
+ * 導入後に使われる設定が Bedrock を有効にしていないか検証する。
+ * 既存のプロジェクト設定と Claude の個人設定を優先し、未配置の設定だけ stage から読む。
+ * 設定の読込・解析に失敗した場合も例外とし、更新を進めない。
+ */
 export function validateProviders(project: string, stage: string): void {
   for (const path of [".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml"]) {
     const existing = safePath(project, path);
@@ -123,6 +142,11 @@ export function validateProviders(project: string, stage: string): void {
   }
 }
 
+/**
+ * 現在の導入物、パッチ適用済み配布物、旧台帳から、書込みを行わず更新計画を作る。
+ * 保持設定の変更は review に分け、管理外ファイルとの衝突や未登録のローカル変更は例外にする。
+ * 戻り値の inventory は適用成功後に保存する新しい台帳である。
+ */
 export function planSync(project: string, stage: string, previous: Inventory): Plan {
   validateInventory(previous);
   const paths = ROOTS.flatMap(([, root]) => walk(stage, root));
@@ -156,7 +180,7 @@ export function planSync(project: string, stage: string, previous: Inventory): P
   return { inventory, install, remove, review, changed };
 }
 
-// 初回移行だけ、旧配布元のファイル一覧と内容から所有権を確定する。
+/** 初回移行用に、旧配布コミットの追跡ファイルから台帳を復元する。配布物がない版やリンクは拒否する。 */
 function adopt(source: string, revision: string): Inventory {
   const files: Record<string, Stamp> = {}, preserved: Record<string, Stamp> = {};
   const commit = git(source, ["rev-parse", "--verify", `${revision}^{commit}`]).trim();
@@ -176,7 +200,12 @@ function adopt(source: string, revision: string): Inventory {
   return { format: 1, files, preserved };
 }
 
-// 作業ツリーへの書込みはこの関数だけ。先に退避し、削除→コピー→台帳の順で確定する。
+/**
+ * 検証済みの計画を、退避→管理ファイルの削除→コピー→台帳更新の順で適用する。
+ * 同期処理の導入先への書込みを担当し、成功時は退避先を返す。保持設定は未配置のものだけをコピーする。
+ * 適用中の例外では元のファイルと台帳の復元を試みる。強制終了・復元自体の失敗では退避からの手動復旧が必要。
+ * @param copyFile ファイルコピー処理。テストでコピー障害を再現するために差し替えられる。
+ */
 export function applyPlan(project: string, stage: string, plan: Plan, copyFile = copy): string {
   const backup = safePath(project, `.aidlc-sync/backups/${randomUUID()}`);
   const targets = [...new Set([...plan.remove, ...Object.keys(plan.inventory.files), ...plan.install, MANIFEST])];
@@ -212,6 +241,11 @@ export function applyPlan(project: string, stage: string, plan: Plan, copyFile =
   return backup;
 }
 
+/**
+ * CLI 引数を解釈し、固定された submodule の配布物を準備・検証して同期する。
+ * 既定は差分表示のみ。--check は差分があれば終了コード1、--apply は排他ロック下で計画を適用する。
+ * 一時配布物と取得済みロックは、成功・失敗にかかわらず解放する。
+ */
 function run(): void {
   const args = process.argv.slice(2);
   if (args.includes("--help")) {

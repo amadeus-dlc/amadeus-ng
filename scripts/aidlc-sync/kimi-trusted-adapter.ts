@@ -1,8 +1,12 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-// このファイルはユーザー所有ディレクトリへコピーして実行する。
-// 登録済みの実パス以外では、プロジェクト内のコードを一切起動しない。
+/**
+ * ユーザー所有の信頼リストに cwd の実パスがある場合だけ、プロジェクトのフックへイベントを転送する。
+ * 未登録・cwd 欠落・フック不在なら何も実行せず0を返し、転送した場合は子プロセスの終了コードを返す。
+ * 元の入力を標準入力へ渡し、標準出力・標準エラーは継承する。外部を指すフックのリンクや不正な JSON は例外にする。
+ * このディスパッチャと registryPath は、実行対象のリポジトリ外にある利用者所有のファイルとして配置する。
+ */
 export async function forward(raw: string, target: string, registryPath: string): Promise<number> {
   const payload = JSON.parse(raw);
   if (typeof payload.cwd !== "string" || !isAbsolute(payload.cwd) || !existsSync(payload.cwd)) return 0;

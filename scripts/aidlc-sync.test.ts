@@ -6,6 +6,7 @@ import { applyPlan, MANIFEST, planSync, validateProviders, type Inventory } from
 
 const scratch: string[] = [];
 afterEach(() => { for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true }); });
+/** テストごとに独立した導入先と配布物ディレクトリを作り、後片付けの対象として登録する。 */
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "aidlc-sync-test-"));
   scratch.push(root);
@@ -13,11 +14,14 @@ function fixture() {
   mkdirSync(project); mkdirSync(stage);
   return { project, stage };
 }
+/** フィクスチャの親ディレクトリを作り、指定内容のテキストファイルを配置する。 */
 function put(root: string, path: string, content: string) {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), content);
 }
+/** テスト間で状態を共有しない、初回導入用の空の台帳を返す。 */
 const empty = (): Inventory => ({ format: 1, files: {}, preserved: {} });
+/** フィクスチャを初回同期し、次回更新の検証に使う台帳を返す。 */
 function install(project: string, stage: string) {
   const plan = planSync(project, stage, empty());
   applyPlan(project, stage, plan);
