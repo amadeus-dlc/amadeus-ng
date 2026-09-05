@@ -23,7 +23,7 @@ use super::{CatchUpError, PublicationBatch};
 /// 書込前後を保存した公開計画によって、確定前に停止しても同じ出力を二重追記しない
 /// (BR1.4 / NFR3.4)。
 ///
-/// メソッドは `async fn` (AFIT)。`dyn` は使わず、`Send` / `Sync` 境界も要求しない。
+/// 取得・公開は `async fn` (AFIT)、開始時の準備は同期処理。`dyn` は使わず、`Send` / `Sync` 境界も要求しない。
 #[allow(
     async_fn_in_trait,
     reason = "Send 境界を意図的に要求しない設計 (C3 / Q3 = A — tokio current_thread)。\

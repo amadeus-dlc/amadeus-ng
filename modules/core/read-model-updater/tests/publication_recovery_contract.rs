@@ -1201,3 +1201,201 @@ async fn losing_the_shared_head_during_checkpoint_write_rolls_back_and_keeps_the
     assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "after\n");
     assert!(fixture.shared_head().4);
 }
+
+/// headが失われても、公開行の終点より古い履歴への巻戻りを拒否する。
+#[tokio::test]
+async fn rebuilding_without_a_head_preserves_the_known_published_cut() {
+    let fixture = Fixture::new();
+    support::seed_intent(&fixture.store).await;
+    let mut reader = fixture.reader();
+    let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
+    let last = history.scanned_to().unwrap();
+    reader
+        .advance_checkpoint(&projection(), last, &ReadTables::project(&history).unwrap())
+        .await
+        .unwrap();
+    fixture
+        .raw()
+        .execute_batch(
+            "DELETE FROM amadeus_read_model_head; DELETE FROM amadeus_projection_checkpoint",
+        )
+        .unwrap();
+    assert_eq!(reader.rebuild_read_model().unwrap(), last);
+    assert_eq!(fixture.shared_head().0, 1);
+    fixture
+        .raw()
+        .execute_batch("DELETE FROM amadeus_read_model_head; DELETE FROM journal")
+        .unwrap();
+    assert!(matches!(
+        reader.rebuild_read_model(),
+        Err(CatchUpError::Read(JournalReadError::Corrupt {
+            cause: core_read_model_updater::orchestration::CorruptCause::CheckpointAnchorMismatch,
+            ..
+        }))
+    ));
+    let rows: i64 = fixture
+        .raw()
+        .query_row("SELECT count(*) FROM read_intent WHERE as_of=1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(rows, 1, "公開済みの行を消して成功したことにしない");
+}
+
+/// 欠落ファイルの復元も、反映後の確定失敗から保存計画で再開できる。
+#[tokio::test]
+async fn an_interrupted_restoration_keeps_a_resumable_plan() {
+    let fixture = Fixture::new();
+    let mut reader = fixture.reader();
+    reader
+        .publish(&projection(), &fixture.batch(), &empty_tables())
+        .await
+        .unwrap();
+    let state = fs::read(&fixture.state).unwrap();
+    let audit = fs::read(&fixture.audit).unwrap();
+    fs::remove_file(&fixture.state).unwrap();
+    fixture.block_checkpoint();
+    let error = reader
+        .restore_missing_files(&projection(), &fixture.targets())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CatchUpError::Read(JournalReadError::Io {
+            kind: ErrorKind::Other,
+            ..
+        })
+    ));
+    assert_eq!(fs::read(&fixture.state).unwrap(), state);
+    assert_eq!(fs::read(&fixture.audit).unwrap(), audit);
+    let pending = reader
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    fixture.unblock_checkpoint();
+    reader
+        .publish(&projection(), &pending, &empty_tables())
+        .await
+        .unwrap();
+    assert!(
+        reader
+            .pending_publication(&projection())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !reader
+            .restore_missing_files(&projection(), &fixture.targets())
+            .unwrap()
+    );
+    assert_eq!(fs::read(&fixture.state).unwrap(), state);
+    assert_eq!(fs::read(&fixture.audit).unwrap(), audit);
+}
+
+/// 利用者編集を保持した解決計画が確定に失敗しても、新世代を再開できる。
+#[tokio::test]
+async fn an_interrupted_resolution_keeps_user_text_and_a_resumable_generation() {
+    let fixture = Fixture::new();
+    let mut reader = fixture.reader();
+    fixture.block_checkpoint();
+    assert!(
+        reader
+            .publish(&projection(), &fixture.batch(), &empty_tables())
+            .await
+            .is_err()
+    );
+    let initial = reader
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    let audit = fs::read(&fixture.audit).unwrap();
+    fs::write(&fixture.state, "after\nuser addition\n").unwrap();
+    assert!(matches!(
+        reader.resolve_publication(&projection(), &fixture.targets()),
+        Err(CatchUpError::Read(JournalReadError::Io {
+            kind: ErrorKind::Other,
+            ..
+        }))
+    ));
+    let replacement = reader
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(replacement.generation() > initial.generation());
+    assert_eq!(
+        fs::read_to_string(&fixture.state).unwrap(),
+        "after\nuser addition\n"
+    );
+    fixture.unblock_checkpoint();
+    reader
+        .publish(&projection(), &replacement, &empty_tables())
+        .await
+        .unwrap();
+    assert_eq!(fs::read(&fixture.audit).unwrap(), audit);
+    assert_eq!(
+        fs::read_to_string(&fixture.state).unwrap(),
+        "after\nuser addition\n"
+    );
+    assert!(
+        reader
+            .pending_publication(&projection())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// 解決計画を作る前に履歴の破損を検出し、未完計画と現物を保持する。
+#[tokio::test]
+async fn resolution_refuses_corrupt_history_before_replacing_the_saved_plan() {
+    let fixture = Fixture::new();
+    let mut reader = fixture.reader();
+    support::seed_intent(&fixture.store).await;
+    let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
+    let last = history.scanned_to().unwrap();
+    let tables = ReadTables::project(&history).unwrap();
+    let batch = PublicationBatch::new(
+        GlobalSeqNr::ZERO,
+        last,
+        vec![PublicationFile::replacement(
+            &fixture.state,
+            "before\n",
+            "after\n",
+        )],
+    )
+    .for_targets(&fixture.targets())
+    .unwrap();
+    fixture.block_checkpoint();
+    assert!(
+        reader
+            .publish(&projection(), &batch, &tables)
+            .await
+            .is_err()
+    );
+    let saved = reader
+        .pending_publication(&projection())
+        .await
+        .unwrap()
+        .unwrap();
+    fixture.unblock_checkpoint();
+    fixture
+        .raw()
+        .execute_batch("UPDATE journal SET payload=X'00'")
+        .unwrap();
+    assert!(matches!(
+        reader.resolve_publication(&projection(), &fixture.targets()),
+        Err(CatchUpError::Read(JournalReadError::Corrupt { .. }))
+    ));
+    assert_eq!(
+        reader.pending_publication(&projection()).await.unwrap(),
+        Some(saved)
+    );
+    assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "after\n");
+    assert_eq!(
+        reader.checkpoint(&projection()).await.unwrap(),
+        GlobalSeqNr::ZERO
+    );
+}

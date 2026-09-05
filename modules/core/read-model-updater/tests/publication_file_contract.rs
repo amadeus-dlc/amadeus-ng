@@ -17,6 +17,7 @@ fn an_empty_audit_does_not_create_an_output() {
     let path = dir.path().join("absent/audit.md");
     PublicationFile::audit(&path, "").unwrap().apply().unwrap();
     assert!(!path.exists());
+    assert!(!path.parent().unwrap().exists());
 }
 
 #[test]
@@ -224,12 +225,4 @@ fn unexpected_audit_suffix_is_preserved_as_a_conflict() {
         fs::read_to_string(&path).unwrap(),
         "original\nunrelated user text\n"
     );
-}
-
-#[test]
-fn an_empty_audit_append_does_not_create_a_file_or_its_parent() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("not-created/audit.md");
-    PublicationFile::audit(&path, "").unwrap().apply().unwrap();
-    assert!(!path.parent().unwrap().exists());
 }
