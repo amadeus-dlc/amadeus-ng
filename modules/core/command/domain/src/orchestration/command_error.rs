@@ -31,6 +31,14 @@ pub enum CommandError {
     InvalidTarget(StageIndex),
     /// autonomous 下で拒否されるコマンド (park / recompose — BR1.7 / BR1.8)。
     RefusedUnderAutonomy,
+    /// autonomous への**昇格**に、直近のゲート解決より後の人間の turn が無い (I11、b50)。
+    ///
+    /// 材料は無い — 逐語 (`Refusing to switch Construction to autonomous: …`) は文面が固定で
+    /// あり、出す側が全部持つ ([`PracticesReceiptMissing`] と同じ形)。降格 (autonomous →
+    /// gated) はこのガードを通らない。
+    ///
+    /// [`PracticesReceiptMissing`]: CommandError::PracticesReceiptMissing
+    HumanPresenceRequired,
     /// 通番が `usize::MAX` に達しており、新しいイベントを採番できない (通番枯渇)。
     /// 実運用では到達しない規模だが、境界を暗黙の飽和にしない (NFR4.3)。
     SequenceExhausted,
@@ -138,6 +146,7 @@ impl fmt::Display for CommandError {
                 "stage {stage} has no terminal review receipt from {reviewer}"
             ),
             CommandError::RefusedUnderAutonomy => f.write_str("refused under autonomous mode"),
+            CommandError::HumanPresenceRequired => f.write_str("human presence required"),
             CommandError::SequenceExhausted => {
                 f.write_str("sequence exhausted: seq_nr is at usize::MAX")
             }
@@ -159,6 +168,10 @@ mod tests {
         assert_eq!(
             CommandError::RefusedUnderAutonomy.to_string(),
             "refused under autonomous mode"
+        );
+        assert_eq!(
+            CommandError::HumanPresenceRequired.to_string(),
+            "human presence required"
         );
         assert_eq!(
             CommandError::NotSkippable(StageIndex::new(2)).to_string(),

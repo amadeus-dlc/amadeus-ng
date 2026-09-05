@@ -24,12 +24,12 @@ use std::path::Path;
 
 use chrono::Utc;
 use core_command_domain::orchestration::{
-    CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal, ReportRequest,
-    ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, Verdict,
+    AutonomyMode, CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal,
+    ReportRequest, ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, Verdict,
 };
 use core_command_domain::workflow_definition::{PRACTICES_DISCOVERY_SLUG, StageSlug};
 use core_command_domain::workspace::{
-    EventType, PracticesPromotion, PromotionPlanError, ShardName, SpaceName,
+    EventType, HumanTurns, PracticesPromotion, PromotionPlanError, ShardName, SpaceName,
     StateVersionClassification, StateVersionKind, StorePath,
 };
 use core_command_interface_adapter::orchestration::{
@@ -38,11 +38,12 @@ use core_command_interface_adapter::orchestration::{
 };
 use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
-    CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError, CreateIntentUseCase,
-    DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
+    AutonomySwitchRequest, CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError,
+    CreateIntentUseCase, DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
     PracticesPromotionRequest, PromotePracticesUseCase, RecordReviewUseCase,
     RecordSingleStageRunUseCase, RecordSkeletonStanceUseCase, ReviewLogError, ReviewLogKind,
     ReviewLogOutcome, ReviewLogRequest, SingleStageRunError, SkeletonStanceError,
+    SwitchAutonomyError, SwitchAutonomyUseCase,
 };
 use core_infrastructure::canon_json::{
     JsonValue, Number, ObjectMembers, SerializationProfile, serialize,
@@ -151,6 +152,11 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         }
         Request::UnknownStateVerb { given } => {
             Completion::refused(wording::unknown_state_subcommand(given.as_deref()))
+        }
+        Request::BoltSetAutonomy(args) => set_autonomy(&layout, &args).await,
+        Request::BoltNotWired { verb } => Completion::refused(wording::bolt_verb_not_wired(&verb)),
+        Request::UnknownBoltVerb { given } => {
+            Completion::refused(wording::unknown_bolt_subcommand(given.as_deref()))
         }
     }
 }
@@ -1191,6 +1197,147 @@ fn promote_line(
         "project_guardrails",
         JsonValue::String(project_guardrails.to_string()),
     );
+    serialize(
+        &JsonValue::Object(emitted),
+        SerializationProfile::ContractCompact,
+    )
+}
+
+/// `aidlc-bolt set-autonomy` — Construction の自律モードを切り替える（b50 / I11）。
+///
+/// 段の順序は upstream `handleSetAutonomy`（ピン `3c3146cf` `aidlc-bolt.ts:799-859`）と
+/// 同順である: フラグ文法 → `--mode` 必須 → `--mode` の閉集合 → アクティブ intent →
+/// （投影の追いつき）→ 監査台帳の読取 → 状態ファイルの欄検査 → 記録（昇格の presence ガードは
+/// 集約の中）→ 投影 → stdout JSON 1 行。
+///
+/// upstream は presence 検査・監査追記・状態書込を 1 つの `withAuditLock` に囲うが、こちらは
+/// **1 つのジャーナル追記**がその原子性を担う（ADR-007 のロック退役）— 2 つの付与が同じ turn を
+/// 消費する競合は、楽観 version が弾く。
+///
+/// **判断はここに 1 つも無い**。合成ルートが持つのは値の有無・既知値・env で決まる構文段と、
+/// 外部の材料（監査台帳の `HUMAN_TURN` 行）の読取だけで、昇格の可否は集約のガードに閉じている
+/// （設計 §1）。
+///
+/// **失敗はすべて stderr + exit 1** である（`Completion::refused`）— upstream の `error()` は
+/// directive を出さない。
+async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Completion {
+    // 段 0 — フラグ文法そのものの違反（値が必要なフラグに値が無い）。
+    if let Some(refusal) = args.parse_error() {
+        return Completion::refused(refusal.to_string());
+    }
+    let Some(raw_mode) = args.mode() else {
+        return Completion::refused(wording::SET_AUTONOMY_REQUIRES_MODE.to_string());
+    };
+    // 閉集合の検査は境界型が持つ（b26 以来消費者の無かった `AutonomyMode::parse` の着地）。
+    let Ok(mode) = AutonomyMode::parse(raw_mode) else {
+        return Completion::refused(wording::invalid_autonomy_mode(raw_mode));
+    };
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return Completion::refused(message),
+    };
+    let execution_id = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor.execution_id().clone(),
+        // 不在 = まだ鋳造していない。
+        Ok(None) => return Completion::refused(wording::SET_AUTONOMY_WITHOUT_INTENT.to_string()),
+        // 在るのに読めない・壊れているは**不在と混ぜない**（`report` 段 6 と同じ規律）。
+        Err(error) => {
+            return Completion::refused(wording::unreadable_execution_cursor(&error.to_string()));
+        }
+    };
+    // 状態ファイルの欄を最新の投影で検査するため、読む前に追いつかせる。
+    catch_up_before_reading(layout).await;
+    // 外部の材料 — `HUMAN_TURN` はフックが監査シャードへ直接書く一次の事実であり、我々の
+    // 投影ではない。読んで値オブジェクトにするだけで、**判断はしない**（設計 §1）。
+    let turns = HumanTurns::find_in(&audit_ledger(layout));
+    // 状態ファイルの欄検査（upstream `setFieldStrict` を書込前に通す形の写し — 構文段）。
+    if let Some(refusal) = autonomy_field_guard(layout) {
+        return Completion::refused(refusal);
+    }
+    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+        IntentExecutionRepositoryImpl::open(&store),
+        IntentRepositoryImpl::open(&store),
+    ) else {
+        return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
+    };
+    let request = AutonomySwitchRequest::new(mode, turns, human_presence_guard());
+    if let Err(error) = SwitchAutonomyUseCase::new(intent_execution_repository, intent_repository)
+        .execute(&execution_id, &request, Utc::now())
+        .await
+    {
+        return Completion::refused(switch_autonomy_refusal(&error));
+    }
+    // 書いた事実をリードモデルへ落とす（状態ファイルの `Construction Autonomy Mode` と
+    // 監査行 `AUTONOMY_MODE_SET` はこの投影で現れる）。
+    if let Err(error) = catch_up(layout).await {
+        return Completion::refused(wording::orchestrate_failure(&error));
+    }
+    Completion::emitted(set_autonomy_line(mode))
+}
+
+/// 監査シャードの連結バッファ（record が無ければ空）。
+///
+/// 列挙とファイル読取は投影側のヘルパが持つ（11-workspace §2.3 — シャードの I/O は投影の
+/// 責務であり、ドメインへは連結済みのバッファが渡る）。合成ルートは両側と RMU を知ってよい
+/// 唯一の場所である（`coding-rules/cqrs-boundaries.md`）。
+fn audit_ledger(layout: &Layout) -> String {
+    layout
+        .audit_dir()
+        .map(|dir| core_read_model_updater::workspace::read_all_audit_shards(&dir))
+        .unwrap_or_default()
+}
+
+/// 状態ファイルに `Construction Autonomy Mode` 欄が在るか（upstream `setFieldStrict` の検査）。
+///
+/// 逸脱台帳 #2 の M12 修正により誕生が欄を書くので、ここに掛かるのは**手編集で欄を消した
+/// ときだけ**である。状態ファイルそのものが無い（まだ鋳造していない）ときは検査しない —
+/// upstream の `readStateFile` はそこで別の失敗になるが、こちらは実行カーソルの段で既に
+/// 断っている。
+fn autonomy_field_guard(layout: &Layout) -> Option<String> {
+    let state_file = layout.state_file()?;
+    let found = FindStateFileUseCase::new(StateFileDaoImpl::new(&state_file)).execute();
+    let content = match found {
+        Ok(Some(content)) => content,
+        Ok(None) => return None,
+        Err(error) => {
+            return Some(wording::read_model_unreadable(
+                &state_file.to_string_lossy(),
+                &error.kind().to_string(),
+            ));
+        }
+    };
+    let prefix = format!("- **{}**:", wording::CONSTRUCTION_AUTONOMY_MODE_FIELD);
+    if content.lines().any(|line| line.starts_with(&prefix)) {
+        None
+    } else {
+        Some(wording::state_field_not_found(
+            wording::CONSTRUCTION_AUTONOMY_MODE_FIELD,
+        ))
+    }
+}
+
+/// 切替の拒否を逐語へ写す。
+///
+/// 逐語を選ぶのは**出す側**である（`coding-rules/error-handling.md`）。集約が運ぶのは
+/// `HumanPresenceRequired` という材料だけなので、I11 の長い逐語はここで当てる。
+fn switch_autonomy_refusal(error: &SwitchAutonomyError) -> String {
+    match error {
+        SwitchAutonomyError::Command(CommandError::HumanPresenceRequired) => {
+            wording::HUMAN_PRESENCE_REQUIRED.to_string()
+        }
+        other => wording::switch_autonomy_failed(&chained(other)),
+    }
+}
+
+/// 成功の素の JSON 1 行（upstream `:852-857` の鍵順）。
+fn set_autonomy_line(mode: AutonomyMode) -> String {
+    let mut emitted = ObjectMembers::new();
+    emitted.insert(
+        "emitted",
+        JsonValue::String(EventType::AutonomyModeSet.as_str().to_string()),
+    );
+    emitted.insert("mode", JsonValue::String(mode.as_state_field().to_string()));
+    emitted.insert("state_updated", JsonValue::Bool(true));
     serialize(
         &JsonValue::Object(emitted),
         SerializationProfile::ContractCompact,

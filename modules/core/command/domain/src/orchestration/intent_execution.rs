@@ -75,7 +75,7 @@ use super::verdict::Verdict;
 use crate::workflow_definition::{
     ExecutionKind, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction, ReviewPolicy, StageSlug,
 };
-use crate::workspace::{CheckboxState, PracticesPromotion};
+use crate::workspace::{CheckboxState, HumanTurns, PracticesPromotion};
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_compact};
 
 /// 前進 (`approve_gate`) と差し戻し (`reject_gate`) が受理する checkbox 集合。
@@ -159,6 +159,18 @@ pub struct IntentExecution {
     practices_affirmed: Vec<bool>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
+    /// 直近の**ゲート解決**の発生時刻 (`None` = まだ 1 度も解決していない)。
+    ///
+    /// 解決とは `GateApproved` / `GateRejected` / autonomous への `AutonomyModeSet` の 3 つで
+    /// ある (upstream `GATE_RESOLUTION_EVENTS` のうち我々のイベントに在るもの + 「Mode が
+    /// autonomous のときだけ数える」規則)。**これは集約自身の遷移**なので、監査シャード
+    /// (投影 = 遅延するリードモデル) から読まず自分の歴史から状態として持つ
+    /// (`coding-rules/cqrs-boundaries.md` 規則 4)。human presence ガード (I11) の片方の材料で
+    /// あり、もう片方 (`HUMAN_TURN`) は外部の入力として引数で渡ってくる。
+    ///
+    /// 欄が無い歴史は `None` で読む — 後方互換ではなく「まだ解決していない」という正規の
+    /// 意味である。
+    last_gate_resolution_at: Option<DateTime<Utc>>,
     seq_nr: usize,
     /// ストアが採番した楽観 version — **次の書込に提示する不透明トークン**である。
     ///
@@ -280,6 +292,7 @@ impl IntentExecution {
         practices_affirmed: Vec<bool>,
         approved: Vec<bool>,
         revision_count: Vec<u32>,
+        last_gate_resolution_at: Option<DateTime<Utc>>,
         seq_nr: usize,
         last_updated_at: DateTime<Utc>,
     ) -> Result<IntentExecution, IntentExecutionError> {
@@ -342,6 +355,7 @@ impl IntentExecution {
             practices_affirmed,
             approved,
             revision_count,
+            last_gate_resolution_at,
             seq_nr,
             version: IntentExecution::UNPERSISTED_VERSION,
             last_updated_at,
@@ -464,6 +478,16 @@ impl IntentExecution {
     #[must_use]
     pub const fn parked_at(&self) -> Option<StageIndex> {
         self.parked_at
+    }
+
+    /// 直近のゲート解決の発生時刻 (`None` = まだ 1 度も解決していない)。
+    ///
+    /// スナップショット DTO が読む。判断そのものは
+    /// [`IntentExecution::human_acted_since_gate`] が持つ — 生の時刻を外へ出すのは永続化の
+    /// ためだけである。
+    #[must_use]
+    pub const fn last_gate_resolution_at(&self) -> Option<DateTime<Utc>> {
+        self.last_gate_resolution_at
     }
 
     /// 現在の `Construction Autonomy Mode`。
@@ -1074,11 +1098,57 @@ impl IntentExecution {
         self.commit(IntentExecutionEvent::Recomposed(material), occurred_at)
     }
 
+    /// 直近のゲート解決より後に**本物の人間がタイプしたか** (I11 の述語、B9)。
+    ///
+    /// upstream `humanActedSinceGate` (`aidlc-lib.ts:3774-3854`) の写しである。材料は 2 つ
+    /// あって性質が違う:
+    ///
+    /// - **直近のゲート解決の時刻**は集約自身のイベント (`GateApproved` / `GateRejected` /
+    ///   autonomous への `AutonomyModeSet`) なので、自分の状態 `last_gate_resolution_at` から
+    ///   読む (`coding-rules/cqrs-boundaries.md` 規則 4 — 投影である監査シャードからは読まない)。
+    /// - **`HUMAN_TURN`** はフックがシャードへ直接書く一次の事実で我々のイベントの投影では
+    ///   ないので、外部の入力として `turns` を引数で受け取る
+    ///   (`coding-rules/aggregate-references.md`)。
+    ///
+    /// 段は 4 つ:
+    ///
+    /// 1. 追跡が有効でない台帳 (DocumentKB の来歴行だけ・そもそも台帳が無い) は `true` —
+    ///    presence を追跡していない環境に presence を要求しても答えは出ない
+    ///    (upstream の `events.length == 0 → !sawPresenceTrackingEvent`)。
+    /// 2. `HUMAN_TURN` が 1 つも無ければ `false`。
+    /// 3. ゲート解決がまだ無ければ `true` (最新の人間の行が「後」である)。
+    /// 4. 秒精度で比較し、**同秒は `false`** に倒す。upstream は同一シャード内の追記位置で
+    ///    タイを破るが、我々の解決時刻はジャーナルの発生時刻であって位置を持たない —
+    ///    「後だ」と証明できないものは拒否側に倒す (fail-closed。upstream より少し厳しいだけで、
+    ///    緩くはならない)。
+    #[must_use]
+    pub const fn human_acted_since_gate(&self, turns: &HumanTurns) -> bool {
+        if !turns.is_tracked() {
+            return true;
+        }
+        let Some(turn) = turns.latest() else {
+            return false;
+        };
+        let Some(resolution) = self.last_gate_resolution_at else {
+            return true;
+        };
+        // `turn` は秒精度なので、解決時刻も秒へ落として比べる (等しければ `false`)。
+        turn.timestamp() > resolution.timestamp()
+    }
+
     /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
     ///
     /// 方向は 2 つあり、仕様はそれぞれを**昇格**(gated → autonomous) と**降格**(その逆) と呼ぶ。
-    /// 本メソッドは両方向を受ける。**昇格だけが human presence を要する** (I11) が、その
-    /// ガードはユースケース層にある (監査台帳の射影が要る) — ここは状態変更のみ。
+    /// 本メソッドは両方向を受ける。**昇格だけが human presence を要する** (I11) —
+    /// autonomous はその後のゲートを全部自動で通す強い権限なので、付与そのものに新しい
+    /// 人間の turn を要求する。降格は無条件である (ゲートを戻すのに人手は要らない)。
+    ///
+    /// # 状態ガードは無い (b50、オーナー裁定 A)
+    ///
+    /// upstream `handleSetAutonomy` (ピン `3c3146cf` `aidlc-bolt.ts:799-859`) は状態ファイルを
+    /// 受理条件として読まない — park 中でも Completed でも切替は成功する。`--single` /
+    /// `aidlc-log review` / `aidlc-state practices-promote` と同じ受理集合であり、取り違えだけを
+    /// 入口で照合する。
     ///
     /// 発する監査イベント文字列 `AUTONOMY_MODE_SET` と CLI 動詞 `set-autonomy` は upstream の
     /// Published Language なので逐語で維持するが、**本メソッド名は外に出ない**のでドメインの語
@@ -1086,14 +1156,22 @@ impl IntentExecution {
     ///
     /// # Errors
     ///
-    /// 非受理なら `NotRunning`。
+    /// intent の取り違え (`IntentMismatch`)、昇格でガードが有効かつ人間の turn が無い
+    /// (`HumanPresenceRequired`)。
     pub fn switch_autonomy(
         &mut self,
         intent: &Intent,
         mode: AutonomyMode,
+        turns: &HumanTurns,
+        human_presence_guard: bool,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
-        self.guard_running_for(intent)?;
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        if mode.is_autonomous() && human_presence_guard && !self.human_acted_since_gate(turns) {
+            return Err(CommandError::HumanPresenceRequired);
+        }
         self.commit(
             IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
                 IntentExecution::next_event_id(),
@@ -1422,7 +1500,7 @@ impl IntentExecution {
             "apply_event: sequence gap (expected {expected}, actual {seq_nr})"
         );
         let mut next = self.clone();
-        next.mutate(event)
+        next.mutate(event, occurred_at)
             .unwrap_or_else(|error| panic!("apply_event: corrupted history — {error}"));
         next.seq_nr = seq_nr;
         next.last_updated_at = occurred_at;
@@ -1432,7 +1510,15 @@ impl IntentExecution {
     }
 
     /// 16 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
-    fn mutate(&mut self, event: &IntentExecutionEvent) -> Result<(), ApplyError> {
+    ///
+    /// `occurred_at` を受け取るのは、**ゲート解決の時刻そのものが状態**だからである
+    /// (`last_gate_resolution_at` — I11 の材料)。`last_updated_at` (適用の共通後始末) とは
+    /// 違って変種ごとに立つかどうかが決まるので、写すのは適用の中である。
+    fn mutate(
+        &mut self,
+        event: &IntentExecutionEvent,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<(), ApplyError> {
         match event {
             IntentExecutionEvent::Started(_) => {
                 // `Started` は genesis 専用 — 既存の集約には適用できない (BR2.2)。
@@ -1449,6 +1535,8 @@ impl IntentExecution {
                 self.record_approval(stage);
                 self.mark_stage(stage, CheckboxState::Completed);
                 self.advance_from(stage);
+                // 承認はゲート解決である (upstream `GATE_RESOLUTION_EVENTS`)。
+                self.last_gate_resolution_at = Some(occurred_at);
             }
             IntentExecutionEvent::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
@@ -1462,6 +1550,8 @@ impl IntentExecution {
                 if let Some(slot) = self.revision_count.get_mut(stage.to_usize()) {
                     *slot = slot.saturating_add(1);
                 }
+                // 差し戻しもゲート解決である (人間が「直せ」と答えた事実)。
+                self.last_gate_resolution_at = Some(occurred_at);
             }
             IntentExecutionEvent::StageRevised(revised) => {
                 let stage = self.resolve(revised.stage())?;
@@ -1507,6 +1597,12 @@ impl IntentExecution {
             }
             IntentExecutionEvent::AutonomyModeSet(set) => {
                 self.autonomy = set.mode();
+                // 昇格だけがゲート解決である — 付与はその人間の turn を消費する
+                // (upstream の「AUTONOMY_MODE_SET は Mode が autonomous のときだけ数える」)。
+                // 降格は解決ではないので、直前の解決時刻をそのまま残す。
+                if set.mode().is_autonomous() {
+                    self.last_gate_resolution_at = Some(occurred_at);
+                }
             }
             IntentExecutionEvent::SingleStageRunCommitted(_) => {
                 // **フレーム空** — 隔離実行は本流の状態を 1 つも動かさない (仕様 I10、
@@ -2210,6 +2306,8 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
             vec![false; count],
             vec![false; count],
             vec![0; count],
+            // genesis はまだ 1 度もゲートを解決していない。
+            None,
             1,
             occurred_at,
         )
@@ -2427,13 +2525,30 @@ mod tests {
             self.execution.recompose(&self.intent, flips, occurred_at)
         }
 
+        /// ガードを外した切替（presence の材料を持たない経路のテスト用）。
         fn switch_autonomy(
             &mut self,
             mode: AutonomyMode,
             occurred_at: DateTime<Utc>,
         ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.switch_autonomy(
+                &self.intent,
+                mode,
+                &HumanTurns::default(),
+                false,
+                occurred_at,
+            )
+        }
+
+        /// ガードを効かせた切替（I11 の検査用 — 台帳の証拠を渡す）。
+        fn switch_autonomy_guarded(
+            &mut self,
+            mode: AutonomyMode,
+            turns: &HumanTurns,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
             self.execution
-                .switch_autonomy(&self.intent, mode, occurred_at)
+                .switch_autonomy(&self.intent, mode, turns, true, occurred_at)
         }
 
         fn affirm_practices(
@@ -2507,6 +2622,7 @@ mod tests {
             vec![false; stage_count],
             approved,
             vec![0; stage_count],
+            None,
             1,
             occurred(),
         )
@@ -2907,6 +3023,7 @@ mod tests {
             vec![false; 3],
             vec![false; 3],
             vec![0; 3],
+            None,
             1,
             occurred(),
         );
@@ -3516,7 +3633,13 @@ mod tests {
         );
         assert_eq!(
             w.execution
-                .switch_autonomy(&foreign, AutonomyMode::Autonomous, at0)
+                .switch_autonomy(
+                    &foreign,
+                    AutonomyMode::Autonomous,
+                    &HumanTurns::default(),
+                    false,
+                    at0
+                )
                 .unwrap_err(),
             CommandError::IntentMismatch
         );
@@ -4007,6 +4130,204 @@ mod tests {
         assert_eq!(w.park(occurred()), Err(CommandError::RefusedUnderAutonomy));
     }
 
+    // ---- b50: human presence ガード (I11) と set-autonomy の受理集合 ----
+
+    /// 合成の監査台帳 — `(timestamp, event)` の並びを連結バッファの形にする。
+    fn ledger(rows: &[(&str, &str)]) -> String {
+        rows.iter()
+            .map(|(timestamp, event)| {
+                format!("\n## H\n**Timestamp**: {timestamp}\n**Event**: {event}\n")
+            })
+            .collect::<Vec<_>>()
+            .join("\n---\n")
+    }
+
+    /// 台帳の証拠。
+    fn turns(rows: &[(&str, &str)]) -> HumanTurns {
+        HumanTurns::find_in(&ledger(rows))
+    }
+
+    /// 追跡が有効でない台帳は fail-open — presence を測っていない環境に presence は問えない。
+    #[test]
+    fn an_untracked_ledger_reads_as_a_human_having_acted() {
+        let w = all_exec(3);
+        assert!(w.execution.human_acted_since_gate(&HumanTurns::default()));
+        assert!(w.execution.human_acted_since_gate(&turns(&[
+            ("2026-08-23T00:00:01Z", "DOCUMENT_INDEXED"),
+            ("2026-08-23T00:00:02Z", "DOCUMENT_REMOVED"),
+        ])));
+    }
+
+    /// 追跡が有効なのに `HUMAN_TURN` が 1 つも無ければ「人は居ない」。
+    #[test]
+    fn a_tracked_ledger_without_a_human_turn_reads_as_absent() {
+        let w = all_exec(3);
+        assert!(
+            !w.execution
+                .human_acted_since_gate(&turns(&[("2026-08-23T00:00:01Z", "STAGE_STARTED")]))
+        );
+    }
+
+    /// ゲート解決がまだ無ければ、`HUMAN_TURN` は必ず「後」である。
+    #[test]
+    fn a_human_turn_without_any_gate_resolution_reads_as_after() {
+        let w = all_exec(3);
+        assert_eq!(w.execution.last_gate_resolution_at(), None);
+        assert!(
+            w.execution
+                .human_acted_since_gate(&turns(&[("2026-08-23T00:00:01Z", "HUMAN_TURN")]))
+        );
+    }
+
+    /// 解決との前後は秒精度で決まり、**同秒は fail-closed** である。
+    #[test]
+    fn the_comparison_is_by_second_and_a_tie_fails_closed() {
+        let mut w = all_exec(3);
+        w.approve_gate(None, occurred()).unwrap();
+        assert_eq!(w.execution.last_gate_resolution_at(), Some(occurred()));
+
+        assert!(
+            w.execution
+                .human_acted_since_gate(&turns(&[("2026-08-23T00:00:01Z", "HUMAN_TURN")])),
+            "解決より後の turn は通る"
+        );
+        assert!(
+            !w.execution
+                .human_acted_since_gate(&turns(&[("2026-08-22T23:59:59Z", "HUMAN_TURN")])),
+            "解決より前の turn は通らない"
+        );
+        assert!(
+            !w.execution
+                .human_acted_since_gate(&turns(&[(AT_TEXT, "HUMAN_TURN")])),
+            "同秒は『後だ』と証明できないので拒否側へ倒す"
+        );
+    }
+
+    /// 昇格はガードが効いているとき、人間の turn が無ければ断られる。
+    #[test]
+    fn an_escalation_without_a_fresh_human_turn_is_refused() {
+        let mut w = all_exec(3);
+        let ledger = turns(&[("2026-08-23T00:00:01Z", "STAGE_STARTED")]);
+        assert_eq!(
+            w.switch_autonomy_guarded(AutonomyMode::Autonomous, &ledger, occurred()),
+            Err(CommandError::HumanPresenceRequired)
+        );
+        assert_eq!(w.autonomy(), AutonomyMode::Gated, "状態は 1 つも動かない");
+    }
+
+    /// 降格はガードを通らない（ゲートを戻すのに人手は要らない）。
+    #[test]
+    fn a_de_escalation_needs_no_human_turn() {
+        let mut w = all_exec(3);
+        let ledger = turns(&[("2026-08-23T00:00:01Z", "STAGE_STARTED")]);
+        w.switch_autonomy_guarded(AutonomyMode::Gated, &ledger, occurred())
+            .expect("降格は無条件に通る");
+        assert_eq!(w.autonomy(), AutonomyMode::Gated);
+    }
+
+    /// ガードが外れていれば昇格も通る（env `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1` の射影）。
+    #[test]
+    fn a_disabled_guard_lets_the_escalation_through() {
+        let mut w = all_exec(3);
+        w.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .expect("ガードが外れていれば通る");
+        assert_eq!(w.autonomy(), AutonomyMode::Autonomous);
+    }
+
+    /// 新しい turn が在れば昇格は通り、その turn は付与に消費される（次の昇格は断られる）。
+    #[test]
+    fn a_fresh_human_turn_grants_autonomy_and_is_consumed_by_the_grant() {
+        let mut w = all_exec(3);
+        let ledger = turns(&[("2026-08-23T00:00:01Z", "HUMAN_TURN")]);
+        w.switch_autonomy_guarded(AutonomyMode::Autonomous, &ledger, occurred())
+            .expect("新しい turn が在れば昇格は通る");
+        assert_eq!(w.autonomy(), AutonomyMode::Autonomous);
+        assert_eq!(
+            w.execution.last_gate_resolution_at(),
+            Some(occurred()),
+            "付与そのものがゲート解決として時刻を刻む"
+        );
+        // 1 度目の付与は turn (00:00:01Z) より**前**の時刻 (00:00:00Z) を刻んだので、同じ
+        // turn はまだ「解決より後」である。付与を turn より後の時刻で打つと、その turn は
+        // 使い切られる。
+        let later = occurred() + chrono::Duration::seconds(2);
+        w.switch_autonomy_guarded(AutonomyMode::Autonomous, &ledger, later)
+            .expect("2 度目も同じ材料で通る");
+        assert_eq!(
+            w.switch_autonomy_guarded(AutonomyMode::Autonomous, &ledger, later),
+            Err(CommandError::HumanPresenceRequired),
+            "付与が turn より後になった時点で、その turn はもう使えない"
+        );
+    }
+
+    /// 受理集合は状態に依らない — 完了後も autonomous 中も切替は通る（裁定 A）。
+    #[test]
+    fn the_switch_is_accepted_regardless_of_the_mainline_state() {
+        let mut w = all_exec(2);
+        w.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .expect("Running 中は通る");
+        w.approve_gate(None, occurred()).unwrap();
+        assert_eq!(w.status(), Status::Completed);
+        w.switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .expect("autonomous 中の再付与も通る");
+        w.switch_autonomy(AutonomyMode::Gated, occurred())
+            .expect("完了後の降格も通る");
+        assert_eq!(w.autonomy(), AutonomyMode::Gated);
+    }
+
+    /// 解決時刻が動く事実は 3 つ、動かない事実がその対である。
+    #[test]
+    fn only_the_three_resolutions_stamp_the_gate_resolution_time() {
+        // 承認。
+        let mut approved = all_exec(3);
+        assert_eq!(approved.execution.last_gate_resolution_at(), None);
+        approved.approve_gate(None, occurred()).unwrap();
+        assert_eq!(
+            approved.execution.last_gate_resolution_at(),
+            Some(occurred())
+        );
+
+        // 差し戻し。
+        let mut rejected = all_exec(3);
+        rejected.open_gate(Vec::new(), occurred()).unwrap();
+        assert_eq!(rejected.execution.last_gate_resolution_at(), None);
+        rejected.reject_gate(None, occurred()).unwrap();
+        assert_eq!(
+            rejected.execution.last_gate_resolution_at(),
+            Some(occurred())
+        );
+
+        // 昇格 (autonomous) は刻み、降格 (gated) は刻まない。
+        let mut switched = all_exec(3);
+        switched
+            .switch_autonomy(AutonomyMode::Gated, occurred())
+            .unwrap();
+        assert_eq!(
+            switched.execution.last_gate_resolution_at(),
+            None,
+            "降格は解決ではない"
+        );
+        let later = occurred() + chrono::Duration::seconds(5);
+        switched
+            .switch_autonomy(AutonomyMode::Autonomous, later)
+            .unwrap();
+        assert_eq!(switched.execution.last_gate_resolution_at(), Some(later));
+        let latest = later + chrono::Duration::seconds(5);
+        switched
+            .switch_autonomy(AutonomyMode::Gated, latest)
+            .unwrap();
+        assert_eq!(
+            switched.execution.last_gate_resolution_at(),
+            Some(later),
+            "降格は直前の解決時刻を残す"
+        );
+
+        // 他のイベント (park) は解決ではない。
+        let mut parked = all_exec(3);
+        parked.park(occurred()).unwrap();
+        assert_eq!(parked.execution.last_gate_resolution_at(), None);
+    }
+
     #[test]
     fn every_command_but_park_and_unpark_is_refused_while_parked() {
         let mut w = all_exec(4);
@@ -4034,11 +4355,12 @@ mod tests {
             w.recompose(&[target], occurred()),
             Err(CommandError::NotRunning)
         );
-        assert_eq!(
-            w.switch_autonomy(AutonomyMode::Autonomous, occurred()),
-            Err(CommandError::NotRunning)
-        );
         assert_eq!(w.stale_report(at(&w, 0)), Err(CommandError::NotRunning));
+        // set_autonomy は**受理集合の外**である (b50 裁定 A — upstream `handleSetAutonomy` は
+        // 状態ファイルを受理条件として読まない)。park 中でも切替は通り、park マーカーは残る。
+        w.switch_autonomy(AutonomyMode::Gated, occurred())
+            .expect("park 中でも自律モードは切り替えられる");
+        assert!(w.execution.parked_active(), "切替は park を解かない");
         w.unpark(occurred()).unwrap();
         assert!(w.accepts_commands());
     }
@@ -4232,6 +4554,7 @@ mod tests {
             vec![false; count],
             vec![false; count],
             vec![0; count],
+            None,
             1,
             occurred(),
         )
@@ -4442,11 +4765,17 @@ mod tests {
                 .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.revision_count(stage))
                 .collect(),
+            source.last_gate_resolution_at(),
             source.seq_nr(),
             *source.last_updated_at(),
         )
         .unwrap();
         assert_eq!(&rebuilt, source);
+        assert_eq!(
+            source.last_gate_resolution_at(),
+            Some(occurred()),
+            "承認はゲート解決として時刻を刻む"
+        );
     }
 
     #[test]
@@ -4477,6 +4806,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
+                None,
                 1,
                 *source.last_updated_at()
             )
@@ -4499,6 +4829,7 @@ mod tests {
                 vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
+                None,
                 1,
                 *source.last_updated_at()
             )
@@ -4522,6 +4853,7 @@ mod tests {
                 vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
+                None,
                 1,
                 *source.last_updated_at()
             )
@@ -4544,6 +4876,7 @@ mod tests {
                 vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
+                None,
                 1,
                 *source.last_updated_at()
             )
@@ -4566,6 +4899,7 @@ mod tests {
                 vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
+                None,
                 1,
                 *source.last_updated_at()
             )
@@ -4587,6 +4921,7 @@ mod tests {
                 vec![false; 3],
                 vec![false; 3],
                 vec![0; 3],
+                None,
                 0,
                 *source.last_updated_at()
             )
@@ -4759,6 +5094,7 @@ mod tests {
                 vec![false; 3],
                 approved,
                 vec![0, 0, 0],
+                None,
                 1,
                 *source.last_updated_at(),
             )
@@ -5493,7 +5829,13 @@ mod tests {
             .record_single_stage_run(&intent, StageIndex::new(2), occurred())
             .expect("隔離実行は記録できる");
         run.execution
-            .switch_autonomy(&intent, AutonomyMode::Autonomous, occurred())
+            .switch_autonomy(
+                &intent,
+                AutonomyMode::Autonomous,
+                &HumanTurns::default(),
+                false,
+                occurred(),
+            )
             .expect("autonomy は切り替えられる");
         assert_eq!(attempt_of(&run, 1), before);
     }
@@ -5541,6 +5883,7 @@ mod tests {
                 .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.revision_count(stage))
                 .collect(),
+            None,
             source.seq_nr(),
             *source.last_updated_at(),
         )
@@ -5568,6 +5911,7 @@ mod tests {
             vec![false; 3],
             vec![false; 3],
             vec![0; 3],
+            None,
             1,
             occurred(),
         )
@@ -6201,6 +6545,7 @@ mod tests {
                 .filter_map(|value| source.stage_index(value))
                 .filter_map(|stage| source.revision_count(stage))
                 .collect(),
+            None,
             source.seq_nr(),
             *source.last_updated_at(),
         )
@@ -6222,6 +6567,7 @@ mod tests {
             vec![false; 2],
             vec![false; 3],
             vec![0; 3],
+            None,
             1,
             occurred(),
         )

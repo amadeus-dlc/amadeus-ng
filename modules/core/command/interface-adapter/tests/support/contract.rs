@@ -11,6 +11,7 @@
 //! `journal_reader_impl_test.rs` が単独で持つ。
 
 use core_command_domain::orchestration::{AutonomyMode, IntentExecution};
+use core_command_domain::workspace::HumanTurns;
 
 use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
 
@@ -39,7 +40,13 @@ pub(crate) async fn seed<R: IntentExecutionRepository>(repository: &mut R) -> In
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.switch_autonomy(&intent(), AutonomyMode::Autonomous, at())
+        aggregate.switch_autonomy(
+            &intent(),
+            AutonomyMode::Autonomous,
+            &HumanTurns::default(),
+            false,
+            at(),
+        )
     })
     .await
 }

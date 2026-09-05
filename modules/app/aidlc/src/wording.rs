@@ -1147,9 +1147,109 @@ appendUnderHeading: heading not found: ## {label}"
 /// する**前**に効くので、[`transition_rejected_by`] の包み文には入らない）。
 pub const PRACTICES_RECEIPT_MISSING: &str = "Cannot approve \"practices-discovery\" before practices-promote succeeds. Run aidlc-state.ts practices-promote after the human approves; it records Practices Affirmed Timestamp and a fresh PRACTICES_AFFIRMED receipt for this stage attempt, then report --result approved --user-input \"<exact choice>\".";
 
+// ---------------------------------------------------------------------------
+// `aidlc-bolt`（Construction の Bolt 面 — b50 / I11）
+// ---------------------------------------------------------------------------
+
+/// Bolt 面の未知サブコマンド（upstream `aidlc-bolt.ts:908` 逐語）。
+#[must_use]
+pub fn unknown_bolt_subcommand(given: Option<&str>) -> String {
+    format!(
+        "Unknown subcommand: {}. Valid: start, complete, fail, abort, set-autonomy, \
+dispatch-event, hold-merge, release-merge",
+        given.unwrap_or("undefined")
+    )
+}
+
+/// 認識はするが**この build に無い** Bolt 動詞（own wording）。
+///
+/// upstream に対応する逐語は無い — あちらは 8 動詞すべてを持つ。b46 が導入した
+/// 「not wired in this build」の言い回しに揃えてある（[`state_verb_not_wired`] と同型）。
+#[must_use]
+pub fn bolt_verb_not_wired(verb: &str) -> String {
+    format!(
+        "Cannot run aidlc-bolt {verb}: the {verb} subcommand is not wired in this build. \
+Only `set-autonomy` is available."
+    )
+}
+
+/// `--mode` が無い（upstream `aidlc-bolt.ts:806` 逐語）。
+pub const SET_AUTONOMY_REQUIRES_MODE: &str = "Missing --mode <autonomous|gated>";
+
+/// `--mode` が 2 値のどちらでもない（同 `:808` 逐語）。
+#[must_use]
+pub fn invalid_autonomy_mode(given: &str) -> String {
+    format!("Invalid --mode: {given}. Must be 'autonomous' or 'gated'.")
+}
+
+/// アクティブな intent が解決できない（own wording）。
+///
+/// upstream は状態ファイルを暗黙に読んで倒れるので、対応する逐語が無い
+/// （[`PROMOTE_WITHOUT_INTENT`] と同型）。
+pub const SET_AUTONOMY_WITHOUT_INTENT: &str =
+    "Cannot resolve the active intent for the autonomy switch.";
+
+/// 状態ファイルに欄が無い（upstream `setFieldStrict` の throw を `handleSetAutonomy`
+/// `:840` が `State update failed: <message>` に包んだ形の逐語）。
+///
+/// 逸脱台帳 #2 の M12 修正により誕生が欄を書くので、到達するのは手編集で欄を消したときだけ
+/// である。
+#[must_use]
+pub fn state_field_not_found(field: &str) -> String {
+    format!(
+        "State update failed: Field not found in state file: \"{field}\". \
+Cannot update — refusing to silently no-op."
+    )
+}
+
+/// 状態ファイルの `Construction Autonomy Mode` 欄の見出し（`setFieldStrict` の検査対象）。
+pub const CONSTRUCTION_AUTONOMY_MODE_FIELD: &str = "Construction Autonomy Mode";
+
+/// 昇格に人間の turn が無い（upstream `handleSetAutonomy` `:824-830` 逐語）。
+pub const HUMAN_PRESENCE_REQUIRED: &str = "Refusing to switch Construction to autonomous: a real human has not acted since the last gate resolution, and autonomous mode is granted only by the human's ladder-prompt answer (it waives every later gate, so the grant itself needs a fresh human turn). Ask the human to confirm autonomous mode in a typed message, then retry. Do not log the ladder choice via aidlc-log answer; the choice is recorded by set-autonomy itself.";
+
+/// 切替そのものの失敗（own wording — upstream は `error(errorMessage(e))` の素通し）。
+#[must_use]
+pub fn switch_autonomy_failed(detail: &str) -> String {
+    format!("Failed to switch autonomy: {detail}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// b50 の Bolt 面の逐語。
+    #[test]
+    fn the_bolt_face_wordings_are_verbatim() {
+        assert_eq!(
+            unknown_bolt_subcommand(Some("frobnicate")),
+            "Unknown subcommand: frobnicate. Valid: start, complete, fail, abort, set-autonomy, \
+dispatch-event, hold-merge, release-merge"
+        );
+        assert_eq!(
+            unknown_bolt_subcommand(None),
+            "Unknown subcommand: undefined. Valid: start, complete, fail, abort, set-autonomy, \
+dispatch-event, hold-merge, release-merge"
+        );
+        assert_eq!(
+            bolt_verb_not_wired("start"),
+            "Cannot run aidlc-bolt start: the start subcommand is not wired in this build. \
+Only `set-autonomy` is available."
+        );
+        assert_eq!(
+            invalid_autonomy_mode("turbo"),
+            "Invalid --mode: turbo. Must be 'autonomous' or 'gated'."
+        );
+        assert_eq!(
+            state_field_not_found(CONSTRUCTION_AUTONOMY_MODE_FIELD),
+            "State update failed: Field not found in state file: \"Construction Autonomy Mode\". \
+Cannot update — refusing to silently no-op."
+        );
+        assert_eq!(
+            switch_autonomy_failed("repository: not found"),
+            "Failed to switch autonomy: repository: not found"
+        );
+    }
 
     /// b49 の昇格の逐語 — 理由は `practices-promote failed: ` に包まれる。
     #[test]

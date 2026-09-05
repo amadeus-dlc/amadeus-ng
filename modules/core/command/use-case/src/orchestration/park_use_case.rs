@@ -167,6 +167,7 @@ mod tests {
     use core_command_domain::orchestration::{
         AutonomyMode, CommandError, Intent, IntentExecution, IntentExecutionEvent, Status,
     };
+    use core_command_domain::workspace::HumanTurns;
 
     /// テストの主体 — 2 本のポートを注入したユースケース。
     struct Subject {
@@ -262,7 +263,13 @@ mod tests {
     async fn an_autonomous_run_is_refused_by_the_aggregate() {
         let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .switch_autonomy(&intent, AutonomyMode::Autonomous, at())
+            .switch_autonomy(
+                &intent,
+                AutonomyMode::Autonomous,
+                &HumanTurns::default(),
+                false,
+                at(),
+            )
             .expect("モード切替は通る");
         let mut subject = use_case((intent, aggregate), 2);
 

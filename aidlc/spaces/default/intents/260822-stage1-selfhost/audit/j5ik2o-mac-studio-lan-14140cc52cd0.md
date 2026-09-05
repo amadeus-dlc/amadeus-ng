@@ -861,3 +861,88 @@
 **Message**: b49 の実装が完了しました。すべての受入基準を満たしています。\n\n## (a) 変更ファイル一覧\n\n**ドメイン** `modules/core/command/domain/`\n- 新規: `workspace/{markdown_sections,heading_not_found,practices_promotion,promoted_section,promotion_plan_err
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-04T18:37:21Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-04T18:43:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8584aea7ab958397
+**Message**: b49（practices 受領証）を実装・検証し PR #105 を開き、レビュー判定ゲートの再評価と失敗した CI ジョブの再実行を待っています。次はゲートが緑になり次第、マージキューへ投入して Issue #7 キュー 5 を完了へ更新します。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T18:49:56Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T18:51:06Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T18:53:58Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-04T18:57:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a14a0b66f438c8cf8
+**Message**: stage-1 セルフホスト到達に向け、b48（レビュー受領証）と b49（practices 受領証）を実装・検証して PR #104 / #105 をマージし、Issue #7 キュー 5 を完了にしました。次は、b50（キュー 6: set-autonomy 面）に着手するか選んでください。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T22:51:41Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T23:34:43Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-04T23:39:06Z
+**Event**: HUMAN_TURN
+**Session**: 3e25ab37-ff4c-4fed-9e08-72429d270f8b
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-04T23:46:47Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad0d2783be0567b33
+**Message**: stage-1 セルフホスト化の #7 キューを Bolt 単位で消化中で、b48・b49 はマージ済み。いまは b50（#72 set-autonomy 面）の実装をサブエージェントに委譲して待機中で、完了報告が来たら差分レビューとゲート再計測をして PR を出します。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-05T00:24:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: b50-impl
+**Agent ID**: ab50-impl-7aa055a739519de9
+**Message**: b50 の実装が完了しました。全ゲート緑です。\n\n## (a) 変更ファイル一覧\n\n**新規 5 本**\n\n| 層 | ファイル |\n| --- | --- |\n| domain | `<project-dir>/modules/core/command/domain/src/workspace/human_turns.rs` —
+
+---

@@ -30,6 +30,7 @@ use core_command_domain::workflow_definition::{
     StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionEventId,
     WorkflowDefinitionId,
 };
+use core_command_domain::workspace::HumanTurns;
 use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry,
 };
@@ -360,7 +361,13 @@ fn parked_events() -> (IntentExecution, Vec<(usize, IntentExecutionEvent)>) {
     let (mut aggregate, started) = IntentExecution::start(execution_b(), &intent, at());
     let mut events = vec![(aggregate.seq_nr(), started)];
     let switched = aggregate
-        .switch_autonomy(&intent, AutonomyMode::Gated, at())
+        .switch_autonomy(
+            &intent,
+            AutonomyMode::Gated,
+            &HumanTurns::default(),
+            false,
+            at(),
+        )
         .expect("gated への切替は受理される");
     events.push((aggregate.seq_nr(), switched));
     let parked = aggregate.park(&intent, at()).expect("park は受理される");
@@ -862,7 +869,13 @@ fn skip_inconsistency_events(
         events.push((aggregate.seq_nr(), opened));
     }
     let switched = aggregate
-        .switch_autonomy(&intent, AutonomyMode::Gated, at())
+        .switch_autonomy(
+            &intent,
+            AutonomyMode::Gated,
+            &HumanTurns::default(),
+            false,
+            at(),
+        )
         .expect("gated への切替は受理される");
     events.push((aggregate.seq_nr(), switched));
     let parked = aggregate.park(&intent, at()).expect("park は受理される");

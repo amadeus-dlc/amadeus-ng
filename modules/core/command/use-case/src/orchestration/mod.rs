@@ -10,6 +10,7 @@
 //! 消費側のパスは `core_command_use_case::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
+mod autonomy_switch_request;
 mod commit_error;
 mod commit_outcome;
 mod commit_verdict_use_case;
@@ -32,6 +33,8 @@ mod review_log_outcome;
 mod review_log_request;
 mod single_stage_run_error;
 mod skeleton_stance_error;
+mod switch_autonomy_error;
+mod switch_autonomy_use_case;
 #[cfg(test)]
 mod test_support;
 
@@ -63,12 +66,14 @@ pub use promote_practices_use_case::PromotePracticesUseCase;
 pub use record_review_use_case::RecordReviewUseCase;
 pub use record_single_stage_run_use_case::RecordSingleStageRunUseCase;
 pub use record_skeleton_stance_use_case::RecordSkeletonStanceUseCase;
+pub use switch_autonomy_use_case::SwitchAutonomyUseCase;
 
 // ユースケースの成功が運ぶ材料（逐語文言は出す側が組む）。
 pub use commit_outcome::CommitOutcome;
 pub use review_log_outcome::ReviewLogOutcome;
 
 // ユースケースの入力 VO（正規化済みの値で受ける — `coding-rules/use-case-rules.md`）。
+pub use autonomy_switch_request::AutonomySwitchRequest;
 pub use practices_promotion_request::PracticesPromotionRequest;
 pub use review_log_kind::ReviewLogKind;
 pub use review_log_request::ReviewLogRequest;
@@ -83,3 +88,4 @@ pub use promote_practices_error::PromotePracticesError;
 pub use review_log_error::ReviewLogError;
 pub use single_stage_run_error::SingleStageRunError;
 pub use skeleton_stance_error::SkeletonStanceError;
+pub use switch_autonomy_error::SwitchAutonomyError;

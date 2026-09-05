@@ -19,7 +19,7 @@
 mod support;
 
 use core_command_domain::orchestration::{AutonomyMode, IntentExecution};
-use core_command_domain::workspace::{SpaceName, StorePath};
+use core_command_domain::workspace::{HumanTurns, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
 };
@@ -76,7 +76,13 @@ async fn write_four(repository: &mut Repository) -> IntentExecution {
     })
     .await;
     advance(repository, &held, |aggregate| {
-        aggregate.switch_autonomy(&intent(), AutonomyMode::Autonomous, at())
+        aggregate.switch_autonomy(
+            &intent(),
+            AutonomyMode::Autonomous,
+            &HumanTurns::default(),
+            false,
+            at(),
+        )
     })
     .await
 }

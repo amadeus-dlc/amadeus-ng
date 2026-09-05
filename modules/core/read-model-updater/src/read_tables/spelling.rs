@@ -88,6 +88,7 @@ pub(crate) const fn jump_refusal(error: &CommandError) -> &'static str {
         CommandError::NoPendingReview { .. } => "no-pending-review",
         CommandError::ReviewReceiptMissing { .. } => "review-receipt-missing",
         CommandError::PracticesReceiptMissing(_) => "practices-receipt-missing",
+        CommandError::HumanPresenceRequired => "human-presence-required",
     }
 }
 
@@ -292,12 +293,14 @@ mod tests {
             ]
         );
 
-        // 16 変種の綴りは互いに重ならない — 重なれば行から理由を読み分けられない。
+        // 17 変種の綴りは互いに重ならない — 重なれば行から理由を読み分けられない。
         let all = [
             jump_refusal(&CommandError::IntentMismatch),
             jump_refusal(&CommandError::NotRunning),
             jump_refusal(&CommandError::RefusedUnderAutonomy),
             jump_refusal(&CommandError::SequenceExhausted),
+            // b50 で加わった 1 変種（昇格の human presence ガード、I11）。
+            jump_refusal(&CommandError::HumanPresenceRequired),
             refusals[0],
             refusals[1],
             refusals[2],
