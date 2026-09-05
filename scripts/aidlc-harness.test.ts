@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { configure } from "./aidlc-kimi-hooks";
@@ -64,4 +64,13 @@ test("Kimi 登録は既存設定を保持し、二重登録せず、確認だけ
   expect(() => configure(root, home, false)).not.toThrow();
   const hooks = (Bun.TOML.parse(first) as { hooks: unknown[] }).hooks;
   expect(hooks.length).toBe(16);
+});
+
+test("信頼済みプロジェクトから外部ファイルへのシンボリックリンクを拒否する", async () => {
+  const root = temp(), outside = temp(), registry = join(root, "trusted-projects.json");
+  put(outside, "hook.ts", 'throw new Error("must not execute");');
+  mkdirSync(join(root, ".kimi-code/hooks"), { recursive: true });
+  symlinkSync(join(outside, "hook.ts"), join(root, ".kimi-code/hooks/aidlc-kimi-adapter.ts"));
+  writeFileSync(registry, JSON.stringify([root]));
+  await expect(forward(JSON.stringify({ cwd: root }), "test", registry)).rejects.toThrow("プロジェクトの外");
 });

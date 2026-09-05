@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 // このファイルはユーザー所有ディレクトリへコピーして実行する。
 // 登録済みの実パス以外では、プロジェクト内のコードを一切起動しない。
@@ -13,7 +13,7 @@ export async function forward(raw: string, target: string, registryPath: string)
   const adapter = join(project, ".kimi-code/hooks/aidlc-kimi-adapter.ts");
   if (!existsSync(adapter)) return 0;
   const path = relative(project, realpathSync(adapter));
-  if (path.startsWith("../") || isAbsolute(path)) throw new Error("信頼済みプロジェクトの外を指すフックは実行できません");
+  if (path.split(sep)[0] === ".." || isAbsolute(path)) throw new Error("信頼済みプロジェクトの外を指すフックは実行できません");
   const child = Bun.spawn([process.execPath, adapter, target], {
     cwd: project, stdin: "pipe", stdout: "inherit", stderr: "inherit",
   });
