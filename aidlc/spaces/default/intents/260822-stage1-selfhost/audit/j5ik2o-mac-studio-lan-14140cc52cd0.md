@@ -1626,3 +1626,108 @@
 **Note**: script-error: exit-1
 
 ---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-05T02:27:57Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .kimi-code/rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-05T02:27:57Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 44 passed, 1 failed
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:28:33Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5ae60e01
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:28:34Z
+**Event**: SENSOR_PASSED
+**Fire id**: 5ae60e01
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+**Duration ms**: 664
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:28:34Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9f676f18
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:28:34Z
+**Event**: SENSOR_PASSED
+**Fire id**: 9f676f18
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-sync/kimi-trusted-adapter.ts
+**Duration ms**: 26
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:28:34Z
+**Event**: SENSOR_FIRED
+**Fire id**: 80761703
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:28:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: 80761703
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+**Duration ms**: 652
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-05T02:28:35Z
+**Event**: SENSOR_FIRED
+**Fire id**: a0855072
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-05T02:28:35Z
+**Event**: SENSOR_PASSED
+**Fire id**: a0855072
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-harness.test.ts
+**Duration ms**: 23
+**Note**: script-error: exit-1
+
+---
