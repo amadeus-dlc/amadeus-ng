@@ -1,8 +1,20 @@
-// engine_loop.qnt — orchestration コンテキスト第一陣モデル (slice 1, v2.6)
+// engine_loop.qnt — orchestration コンテキスト第一陣モデル (slice 1, v2.7)
 //
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+// v2.7 (2026-09-05): set-autonomy の受理集合を upstream に揃えた (#72 / b50、オーナー裁定 A) —
+//   actSetAutonomy から status == Running を外した。upstream handleSetAutonomy
+//   (3c3146cf aidlc-bolt.ts:799-859) は状態ファイルを受理条件として読まないので、park 中でも
+//   Completed でも切替は成功する (--single / review / practices-promote と同じ受理集合)。
+//   新しい不変条件は無い — 変わったのは 1 アクションの enabled 条件だけであり、既存の
+//   不変条件 19 本 (とくに actPark の not(autonomous) ガードとの相互作用) が green のままで
+//   あることが検査である。
+//
+//   human presence ガード (I11) は**モデル外**である。判定の材料は監査台帳の HUMAN_TURN 行
+//   (フックが書く外部の入力) と集約の last_gate_resolution_at であり、どちらもこのモデルが
+//   抽象化している「エンジンループの核」の外にある。仕様 10 §6 I11 の強制手段は E2+E3
+//   (境界型 + 集約のガード + 単体 / end-to-end テスト) のままである。
 // v2.6 (2026-09-05): 昇格受領証 (PRACTICES_AFFIRMED) と、practices-discovery の承認ガードを
 //   モデル化 (#7 キュー 5 の残り / B10 / b49) — 状態変数 2 本 (practicesStage / affirmed) と
 //   スナップショット 1 本 (prevAffirmed) を足し、アクション actPromotePractices を追加した。
@@ -599,8 +611,8 @@ module engine_loop {
     }
   }
 
+  // 受理集合は状態に依らない (v2.7 / b50) — upstream は状態ファイルを読まない。
   action actSetAutonomy = all {
-    status == Running,
     autonomous' = not(autonomous),
     plan' = plan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,

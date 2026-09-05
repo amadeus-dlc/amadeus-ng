@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use aidlc::execution_cursor::ExecutionCursor;
 use chrono::Utc;
 use core_command_domain::orchestration::AutonomyMode;
-use core_command_domain::workspace::{SpaceName, StorePath};
+use core_command_domain::workspace::{HumanTurns, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionRepositoryImpl, IntentRepositoryImpl,
 };
@@ -188,6 +188,41 @@ impl Workspace {
         fs::read_to_string(entry.path()).ok()
     }
 
+    /// 監査シャードへ `HUMAN_TURN` を 1 行追記する（b50 — フックが書く一次の事実の代役）。
+    ///
+    /// この行は**我々のイベントの投影ではない**（フック `aidlc-record-human-turn.ts` が
+    /// シャードへ直接書く）。テストでも同じ形で、投影を経由せずファイルへ追記する。
+    fn append_human_turn(&self, timestamp: &str) {
+        let audit = self
+            .record_dir()
+            .expect("カーソルが据わっている")
+            .join("audit");
+        let entry = fs::read_dir(&audit)
+            .expect("監査ディレクトリは在る")
+            .filter_map(Result::ok)
+            .next()
+            .expect("シャードは 1 つ以上ある");
+        let mut content = fs::read_to_string(entry.path()).expect("シャードは読める");
+        content.push_str(&format!(
+            "\n## Human Turn\n**Timestamp**: {timestamp}\n**Event**: HUMAN_TURN\n\n---\n"
+        ));
+        fs::write(entry.path(), content).expect("シャードは書ける");
+    }
+
+    /// 状態ファイルから 1 行を落とす（欄の手編集の再現）。
+    fn strip_state_line(&self, prefix: &str) {
+        let path = self
+            .record_dir()
+            .expect("カーソルが据わっている")
+            .join("aidlc-state.md");
+        let content = fs::read_to_string(&path).expect("状態ファイルは読める");
+        let stripped: Vec<&str> = content
+            .lines()
+            .filter(|line| !line.starts_with(prefix))
+            .collect();
+        fs::write(&path, format!("{}\n", stripped.join("\n"))).expect("状態ファイルは書ける");
+    }
+
     /// ジャーナル行数を 2 つに割って数える — (定義ストリーム, それ以外)。
     ///
     /// 定義 id はハーネス名 (`claude`) なので、UUID を名乗る intent / 実行の 2 集約と同じ表に
@@ -235,7 +270,13 @@ impl Workspace {
             .await
             .expect("計画は引ける");
         let event = aggregate
-            .switch_autonomy(&intent, AutonomyMode::Autonomous, Utc::now())
+            .switch_autonomy(
+                &intent,
+                AutonomyMode::Autonomous,
+                &HumanTurns::default(),
+                false,
+                Utc::now(),
+            )
             .expect("Running な実行はモードを切り替えられる");
         execution_repository
             .store(&event, &aggregate)
@@ -4699,6 +4740,343 @@ async fn a_promotion_names_the_unreadable_read_model_instead_of_an_absent_stage(
         completion
             .diagnostic()
             .is_some_and(|line| line.starts_with("Read model not readable at ")),
+        "{completion:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// b50: `aidlc-bolt set-autonomy` と human presence ガード (#72 / I11)
+// ---------------------------------------------------------------------------
+
+/// `aidlc-bolt <verb>` を 1 回叩く。
+async fn bolt_verb(workspace: &Workspace, args: &[&str]) -> aidlc::runtime::Completion {
+    invoke(workspace, "aidlc-bolt", args).await
+}
+
+/// `set-autonomy --mode <mode>` を 1 回打つ。
+async fn set_autonomy(workspace: &Workspace, mode: &str) -> aidlc::runtime::Completion {
+    bolt_verb(workspace, &["set-autonomy", "--mode", mode]).await
+}
+
+/// 鋳造だけ済ませたワークスペース（自律モードは既定の `gated`）。
+async fn minted() -> Workspace {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "autonomy"],
+    )
+    .await;
+    workspace
+}
+
+/// 直近のゲート解決より後の人間の turn（実時刻より確実に後ろ）。
+const FRESH_TURN: &str = "2099-01-01T00:00:00Z";
+/// 直近のゲート解決より前の人間の turn。
+const STALE_TURN: &str = "2020-01-01T00:00:00Z";
+
+/// 人間の turn が無ければ昇格は逐語で断られる（I11）。
+#[tokio::test]
+async fn an_escalation_without_a_human_turn_is_refused_verbatim() {
+    let workspace = minted().await;
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "Refusing to switch Construction to autonomous: a real human has not acted since the last gate resolution, and autonomous mode is granted only by the human's ladder-prompt answer (it waives every later gate, so the grant itself needs a fresh human turn). Ask the human to confirm autonomous mode in a typed message, then retry. Do not log the ladder choice via aidlc-log answer; the choice is recorded by set-autonomy itself."
+        )
+    );
+    // 断られた実行は状態ファイルも監査台帳も動かさない。
+    let state = workspace.state_file().expect("状態ファイルは在る");
+    assert!(
+        state.contains("- **Construction Autonomy Mode**: gated\n"),
+        "{state}"
+    );
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(!audit.contains("AUTONOMY_MODE_SET"), "{audit}");
+}
+
+/// 新しい turn が在れば昇格が通り、両面（状態ファイル・監査台帳）へ落ちる。
+#[tokio::test]
+async fn a_fresh_human_turn_grants_autonomy_and_lands_on_both_faces() {
+    let workspace = minted().await;
+    workspace.append_human_turn(FRESH_TURN);
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(
+        completion.line(),
+        Some(r#"{"emitted":"AUTONOMY_MODE_SET","mode":"autonomous","state_updated":true}"#)
+    );
+    let state = workspace.state_file().expect("状態ファイルは在る");
+    assert!(
+        state.contains("- **Construction Autonomy Mode**: autonomous\n"),
+        "{state}"
+    );
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(audit.contains("**Event**: AUTONOMY_MODE_SET\n"), "{audit}");
+    assert!(audit.contains("**Mode**: autonomous\n"), "{audit}");
+}
+
+/// ゲート解決より古い turn しか無ければ断られる（付与がその turn を消費する）。
+#[tokio::test]
+async fn a_human_turn_older_than_the_last_gate_resolution_is_refused() {
+    let workspace = minted().await;
+    workspace.append_human_turn(STALE_TURN);
+    // 承認 = ゲート解決。ここで解決時刻が「いま」になる。
+    let (kind, body) = report_directive(
+        &workspace,
+        &[
+            "--result",
+            "approved",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "looks good",
+        ],
+    )
+    .await;
+    assert_ne!(kind, "error", "{body}");
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("Refusing to switch Construction to autonomous:")),
+        "{completion:?}"
+    );
+}
+
+/// 降格は人間の turn を要さない（ゲートを戻すのに人手は要らない）。
+#[tokio::test]
+async fn a_de_escalation_needs_no_human_turn() {
+    let workspace = minted().await;
+
+    let completion = set_autonomy(&workspace, "gated").await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(
+        completion.line(),
+        Some(r#"{"emitted":"AUTONOMY_MODE_SET","mode":"gated","state_updated":true}"#)
+    );
+    let audit = workspace.audit_shard().expect("監査シャードは在る");
+    assert!(audit.contains("**Mode**: gated\n"), "{audit}");
+}
+
+/// 受理集合は状態に依らない — park 中でも切替は通り、park マーカーは残る（裁定 A）。
+#[tokio::test]
+async fn the_switch_is_accepted_while_the_workflow_is_parked() {
+    let workspace = minted().await;
+    let parked = invoke(&workspace, "aidlc-orchestrate", &["park"]).await;
+    assert_eq!(parked.code(), 0, "{parked:?}");
+    workspace.append_human_turn(FRESH_TURN);
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    let state = workspace.state_file().expect("状態ファイルは在る");
+    assert!(
+        state.contains("- **Construction Autonomy Mode**: autonomous\n"),
+        "{state}"
+    );
+    assert!(state.contains("- **Parked**: "), "{state}");
+    assert!(
+        state.contains("- **Parked At Stage**: domain-design"),
+        "{state}"
+    );
+}
+
+/// `--mode` の 3 形の拒否（欠落・閉集合外・値なし）は逐語である。
+#[tokio::test]
+async fn the_mode_flag_refusals_are_verbatim() {
+    let workspace = minted().await;
+
+    let missing = bolt_verb(&workspace, &["set-autonomy"]).await;
+    assert_eq!(missing.code(), 1, "{missing:?}");
+    assert_eq!(
+        missing.diagnostic(),
+        Some("Missing --mode <autonomous|gated>")
+    );
+
+    let invalid = set_autonomy(&workspace, "turbo").await;
+    assert_eq!(invalid.code(), 1, "{invalid:?}");
+    assert_eq!(
+        invalid.diagnostic(),
+        Some("Invalid --mode: turbo. Must be 'autonomous' or 'gated'.")
+    );
+
+    let no_value = bolt_verb(&workspace, &["set-autonomy", "--mode"]).await;
+    assert_eq!(no_value.code(), 1, "{no_value:?}");
+    assert_eq!(
+        no_value.diagnostic(),
+        Some("--mode expects a value, got end of arguments.")
+    );
+}
+
+/// 状態ファイルの欄が消えていれば `setFieldStrict` の逐語で断る（逸脱台帳 #2 の M12）。
+#[tokio::test]
+async fn a_state_file_without_the_autonomy_field_is_refused_verbatim() {
+    let workspace = minted().await;
+    workspace.append_human_turn(FRESH_TURN);
+    workspace.strip_state_line("- **Construction Autonomy Mode**:");
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(
+        completion.diagnostic(),
+        Some(
+            "State update failed: Field not found in state file: \"Construction Autonomy Mode\". Cannot update — refusing to silently no-op."
+        )
+    );
+}
+
+/// 鋳造前の切替はアクティブ intent が無いので断られる（own wording）。
+#[tokio::test]
+async fn switching_before_any_intent_exists_is_refused() {
+    let workspace = Workspace::create();
+
+    let completion = set_autonomy(&workspace, "gated").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(
+        completion.diagnostic(),
+        Some("Cannot resolve the active intent for the autonomy switch.")
+    );
+}
+
+/// Bolt 面は未知動詞と未配線の 7 動詞を stderr で断る。
+#[tokio::test]
+async fn the_bolt_face_refuses_unknown_and_unwired_verbs_on_stderr() {
+    let workspace = minted().await;
+
+    let unknown = bolt_verb(&workspace, &["frobnicate"]).await;
+    assert_eq!(unknown.code(), 1, "{unknown:?}");
+    assert_eq!(
+        unknown.diagnostic(),
+        Some(
+            "Unknown subcommand: frobnicate. Valid: start, complete, fail, abort, set-autonomy, dispatch-event, hold-merge, release-merge"
+        )
+    );
+
+    let not_wired = bolt_verb(&workspace, &["start", "--name", "b1", "--batch", "1"]).await;
+    assert_eq!(not_wired.code(), 1, "{not_wired:?}");
+    assert_eq!(
+        not_wired.diagnostic(),
+        Some(
+            "Cannot run aidlc-bolt start: the start subcommand is not wired in this build. Only `set-autonomy` is available."
+        )
+    );
+}
+
+/// 集約の拒否**以外**の失敗は own wording の中継形で材料を運ぶ。
+#[tokio::test]
+async fn a_switch_against_an_absent_execution_relays_the_repository_failure() {
+    let workspace = minted().await;
+    workspace.append_human_turn(FRESH_TURN);
+    let record = workspace.record_dir().expect("record");
+    let cursor = fs::read_to_string(record.join(".aidlc-execution")).expect("カーソルは読める");
+    let intent_line = cursor.lines().nth(1).expect("2 行目は intent id");
+    fs::write(
+        record.join(".aidlc-execution"),
+        format!("{ABSENT_EXECUTION}\n{intent_line}\n"),
+    )
+    .expect("別の実行を指す");
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("Failed to switch autonomy: repository: ")),
+        "{completion:?}"
+    );
+}
+
+/// 実行カーソルが壊れているのは「不在」と混ぜない（`report` 段 6 と同じ規律）。
+#[tokio::test]
+async fn switching_against_a_broken_execution_cursor_is_refused() {
+    let workspace = minted().await;
+    let record = workspace.record_dir().expect("record");
+    fs::write(record.join(".aidlc-execution"), "not-an-id\nalso-not\n").expect("カーソルを壊す");
+
+    let completion = set_autonomy(&workspace, "gated").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("The execution cursor cannot be read")),
+        "{completion:?}"
+    );
+}
+
+/// 状態ファイルが読めなければ、その所在を名指して断る（欄の不在と混ぜない）。
+#[tokio::test]
+async fn switching_names_the_unreadable_state_file_instead_of_an_absent_field() {
+    let workspace = minted().await;
+    workspace.append_human_turn(FRESH_TURN);
+    let state = workspace
+        .record_dir()
+        .expect("record")
+        .join("aidlc-state.md");
+    fs::remove_file(&state).expect("状態ファイル");
+    fs::create_dir(&state).expect("塞ぐ");
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.starts_with("Read model not readable at ")),
+        "{completion:?}"
+    );
+}
+
+/// 切替の後に投影が回らなければ、書いた事実が見えないままなので拒否する。
+#[tokio::test]
+async fn a_projection_that_cannot_run_after_the_switch_is_refused() {
+    let workspace = minted().await;
+    workspace.append_human_turn(FRESH_TURN);
+    // clone id の置き場をディレクトリで塞ぐと、投影のシャード名が解決できなくなる。
+    let clone_id = workspace.path("aidlc/.aidlc-clone-id");
+    fs::remove_file(&clone_id).expect("clone id");
+    fs::create_dir(&clone_id).expect("塞ぐ");
+
+    let completion = set_autonomy(&workspace, "autonomous").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert_eq!(completion.line(), None, "stdout には何も出さない");
+    assert!(
+        completion
+            .diagnostic()
+            .unwrap_or_default()
+            .starts_with("aidlc-orchestrate: clone id:"),
+        "{completion:?}"
+    );
+}
+
+/// 空間名として成立しないカーソルは既定へ落とさず断る（指定と違う置き場へ書かない）。
+#[tokio::test]
+async fn switching_under_an_invalid_active_space_is_refused_by_name() {
+    let workspace = minted().await;
+    fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("空間カーソル");
+
+    let completion = set_autonomy(&workspace, "gated").await;
+
+    assert_eq!(completion.code(), 1, "{completion:?}");
+    assert!(
+        completion
+            .diagnostic()
+            .is_some_and(|line| line.contains("../escape")),
         "{completion:?}"
     );
 }

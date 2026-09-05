@@ -12,6 +12,9 @@ pub enum Face {
     /// `aidlc-state`（状態ファイルの書込面 — b49 で `practices-promote` 動詞だけが
     /// 配線されている）。
     State,
+    /// `aidlc-bolt`（Construction の Bolt 面 — b50 で `set-autonomy` 動詞だけが
+    /// 配線されている）。
+    Bolt,
 }
 
 impl Face {
@@ -27,6 +30,7 @@ impl Face {
             "aidlc-utility" => Face::Utility,
             "aidlc-log" => Face::Log,
             "aidlc-state" => Face::State,
+            "aidlc-bolt" => Face::Bolt,
             _ => Face::Orchestrate,
         }
     }
@@ -47,6 +51,9 @@ mod tests {
         assert_eq!(Face::of("aidlc-state"), Face::State);
         assert_eq!(Face::of("/usr/local/bin/aidlc-state"), Face::State);
         assert_eq!(Face::of("aidlc-state.exe"), Face::State);
+        assert_eq!(Face::of("aidlc-bolt"), Face::Bolt);
+        assert_eq!(Face::of("/usr/local/bin/aidlc-bolt"), Face::Bolt);
+        assert_eq!(Face::of("aidlc-bolt.exe"), Face::Bolt);
         assert_eq!(Face::of("aidlc-orchestrate"), Face::Orchestrate);
         assert_eq!(Face::of("aidlc"), Face::Orchestrate);
         // 未知の名前はエンジンに倒す（配布物の既定の顔）。

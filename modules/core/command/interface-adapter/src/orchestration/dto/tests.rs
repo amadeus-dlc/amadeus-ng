@@ -278,7 +278,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 /// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
 /// 最初のゲート付きステージ (索引 1) である。**ワイヤの形** (項目名・並び) は変わって
 /// いない — 変わったのは誕生時の状態そのものである。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"last_gate_resolution_at":null,"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -547,6 +547,7 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
         vec![false; 3],
         vec![false; 3],
         vec![0; 3],
+        None,
         1,
         at(),
     )
@@ -611,6 +612,7 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
         vec![false; 3],
         vec![false; 3],
         vec![0; 3],
+        None,
         1,
         at(),
     )
@@ -653,6 +655,47 @@ fn a_snapshot_row_without_the_review_attempts_field_reads_as_never_requested() {
             "全ステージが空の試行で読める"
         );
     }
+}
+
+#[test]
+fn a_snapshot_row_without_the_gate_resolution_field_reads_as_never_resolved() {
+    // 「欄が無い = まだ 1 度もゲートを解決していない」という正規の意味である (b50 設計 §5)。
+    let without = GENESIS_SNAPSHOT.replace(r#""last_gate_resolution_at":null,"#, "");
+    assert_ne!(without, GENESIS_SNAPSHOT, "欄を落とせている");
+    let decoded: IntentExecutionDto = serde_json::from_str(&without).expect("欄が無くても読める");
+    let rebuilt = decoded.to_domain().expect("ドメインへ戻せる");
+    assert_eq!(rebuilt.last_gate_resolution_at(), None);
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "契約 JSON ではなくワイヤ形式そのものの逐語固定 (BR1.7 の射程外)"
+)]
+#[test]
+fn a_snapshot_row_carries_the_gate_resolution_time_through_the_wire() {
+    // 承認を 1 件適用すると欄が立ち、往復してもそのまま戻る。
+    let (mut aggregate, _) = IntentExecution::start(
+        IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        &intent(),
+        at(),
+    );
+    aggregate
+        .approve_gate(&intent(), None, None, at())
+        .expect("承認は通る");
+    let json =
+        serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
+    assert!(
+        json.contains(r#""last_gate_resolution_at":"2026-08-23T00:00:00Z""#),
+        "解決時刻のワイヤ形式が変わった: {json}"
+    );
+    let decoded: IntentExecutionDto = serde_json::from_str(&json).expect("読める");
+    assert_eq!(
+        decoded
+            .to_domain()
+            .expect("ドメインへ戻せる")
+            .last_gate_resolution_at(),
+        aggregate.last_gate_resolution_at()
+    );
 }
 
 #[test]

@@ -61,7 +61,7 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction,
     ReviewCapValue, ReviewPolicy, StageNumber, StageSlug, WorkflowDefinitionId,
 };
-use core_command_domain::workspace::{CheckboxState, PracticesPromotion};
+use core_command_domain::workspace::{CheckboxState, HumanTurns, PracticesPromotion};
 use serde_json::Value;
 
 /// ITF 再生は時計を持たない — `occurred_at` は固定値でよい (集約は値を素通しする)。
@@ -587,7 +587,10 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 } else {
                     AutonomyMode::Gated
                 };
-                agg.switch_autonomy(&intent, mode, at()).unwrap();
+                // モデルは presence を持たない — 材料は空の台帳、ガードは外す
+                // (b50 設計 §3。I11 は E2+E3 の射程でモデル外)。
+                agg.switch_autonomy(&intent, mode, &HumanTurns::default(), false, at())
+                    .unwrap();
             }
             a => panic!("step {i}: unknown action {a}"),
         }

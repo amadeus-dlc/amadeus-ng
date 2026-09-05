@@ -17,6 +17,7 @@ use super::intent_create_args::{IntentCreateArgs, parse_intent_create};
 use super::promote_args::{PromoteArgs, parse_promote};
 use super::report_args::{ReportArgs, parse_report};
 use super::review_args::{ReviewArgs, parse_review};
+use super::set_autonomy_args::{SetAutonomyArgs, parse_set_autonomy};
 
 /// 型付きの要求。
 #[derive(Debug, Clone, PartialEq)]
@@ -68,7 +69,31 @@ pub enum Request {
         /// 与えられた動詞（無ければ `None`）。
         given: Option<String>,
     },
+    /// `aidlc-bolt set-autonomy` — フラグ一式。
+    BoltSetAutonomy(SetAutonomyArgs),
+    /// `aidlc-bolt <他の動詞>` — **この build に無い**（自己防衛拒否）。
+    BoltNotWired {
+        /// 認識はしているが配線されていない動詞。
+        verb: String,
+    },
+    /// Bolt 面の未知動詞 — 同上。
+    UnknownBoltVerb {
+        /// 与えられた動詞（無ければ `None`）。
+        given: Option<String>,
+    },
 }
+
+/// upstream の `aidlc-bolt` が受理するが**この build には無い**動詞
+/// （ピン `3c3146cf` `aidlc-bolt.ts:881-908` の switch から `set-autonomy` を除いた 7）。
+const RECOGNISED_BOLT_VERBS: [&str; 7] = [
+    "start",
+    "complete",
+    "fail",
+    "abort",
+    "dispatch-event",
+    "hold-merge",
+    "release-merge",
+];
 
 /// upstream の `aidlc-state` が受理するが**この build には無い**動詞
 /// （ピン `3c3146cf` `aidlc-state.ts:530-627` の switch から `practices-promote` を除いた 24）。
@@ -147,6 +172,15 @@ pub fn parse(face: Face, args: &[String]) -> Request {
             }
         }
         (Face::State, given) => Request::UnknownStateVerb {
+            given: given.map(str::to_string),
+        },
+        (Face::Bolt, Some("set-autonomy")) => Request::BoltSetAutonomy(parse_set_autonomy(rest)),
+        (Face::Bolt, Some(verb)) if RECOGNISED_BOLT_VERBS.contains(&verb) => {
+            Request::BoltNotWired {
+                verb: verb.to_string(),
+            }
+        }
+        (Face::Bolt, given) => Request::UnknownBoltVerb {
             given: given.map(str::to_string),
         },
     }
@@ -577,6 +611,53 @@ mod tests {
             parse(Face::Orchestrate, &argv(&["practices-promote"])),
             Request::UnknownOrchestrateVerb {
                 given: Some("practices-promote".to_string())
+            }
+        );
+    }
+
+    fn expect_set_autonomy(request: Request) -> SetAutonomyArgs {
+        match request {
+            Request::BoltSetAutonomy(flags) => flags,
+            other => panic!("set-autonomy へ行く: {other:?}"),
+        }
+    }
+
+    /// Bolt 面は `set-autonomy` だけを配線し、認識する 7 動詞は not-wired へ落とす。
+    #[test]
+    fn the_bolt_face_routes_the_wired_verb_and_recognises_the_rest() {
+        let flags = expect_set_autonomy(parse(
+            Face::Bolt,
+            &argv(&["set-autonomy", "--mode", "autonomous"]),
+        ));
+        assert_eq!(flags.mode(), Some("autonomous"));
+
+        for verb in RECOGNISED_BOLT_VERBS {
+            assert_eq!(
+                parse(Face::Bolt, &argv(&[verb])),
+                Request::BoltNotWired {
+                    verb: verb.to_string()
+                }
+            );
+        }
+        assert_eq!(
+            parse(Face::Bolt, &argv(&["frobnicate"])),
+            Request::UnknownBoltVerb {
+                given: Some("frobnicate".to_string())
+            }
+        );
+        assert_eq!(
+            parse(Face::Bolt, &[]),
+            Request::UnknownBoltVerb { given: None }
+        );
+    }
+
+    /// Bolt 面の動詞はエンジン面からは届かない（面が違えば未知動詞である）。
+    #[test]
+    fn set_autonomy_is_not_reachable_from_the_engine_face() {
+        assert_eq!(
+            parse(Face::Orchestrate, &argv(&["set-autonomy"])),
+            Request::UnknownOrchestrateVerb {
+                given: Some("set-autonomy".to_string())
             }
         );
     }

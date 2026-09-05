@@ -34,7 +34,7 @@ use core_command_domain::workflow_definition::{
     Redefined, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber,
     StageSlug, WorkflowDefinitionEvent, WorkflowDefinitionEventId, WorkflowDefinitionId,
 };
-use core_command_domain::workspace::StorePath;
+use core_command_domain::workspace::{HumanTurns, StorePath};
 use core_read_model_updater::orchestration::{
     IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
 };
@@ -287,7 +287,13 @@ pub(crate) async fn seed(store: &mut UpstreamStore) {
         .await;
     writer
         .advance(store, |aggregate| {
-            aggregate.switch_autonomy(&intent(), AutonomyMode::Autonomous, at())
+            aggregate.switch_autonomy(
+                &intent(),
+                AutonomyMode::Autonomous,
+                &HumanTurns::default(),
+                false,
+                at(),
+            )
         })
         .await;
 }

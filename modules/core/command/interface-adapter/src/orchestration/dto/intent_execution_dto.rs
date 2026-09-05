@@ -56,6 +56,12 @@ pub struct IntentExecutionDto {
     practices_affirmed: Vec<bool>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
+    /// 直近のゲート解決の発生時刻 (`null` = まだ 1 度も解決していない。b50 / I11)。
+    ///
+    /// 欄を持たない行は `None` で読む — 後方互換のための緩和ではなく、
+    /// 「欄が無い = まだ解決していない」という正規の意味である。
+    #[serde(default)]
+    last_gate_resolution_at: Option<DateTime<Utc>>,
     seq_nr: usize,
     last_updated_at: DateTime<Utc>,
 }
@@ -179,6 +185,7 @@ impl IntentExecutionDto {
                 .filter_map(|value| execution.stage_index(value))
                 .filter_map(|stage| execution.revision_count(stage))
                 .collect(),
+            last_gate_resolution_at: execution.last_gate_resolution_at(),
             seq_nr: execution.seq_nr(),
             last_updated_at: *execution.last_updated_at(),
         }
@@ -249,6 +256,7 @@ impl IntentExecutionDto {
             practices_affirmed,
             self.approved.clone(),
             self.revision_count.clone(),
+            self.last_gate_resolution_at,
             self.seq_nr,
             self.last_updated_at,
         )
