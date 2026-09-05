@@ -2360,6 +2360,27 @@ corrupt review override: Adversarial"
             ),
             &expected,
         );
+        for completion in [
+            single_report(
+                &layout,
+                &report_args(&[
+                    "--single",
+                    "--result",
+                    "approved",
+                    "--stage",
+                    "domain-design",
+                ]),
+            )
+            .await,
+            skeleton_stance_report(&layout, "on").await,
+        ] {
+            assert_eq!(completion.code(), 1, "{completion:?}");
+            assert_eq!(completion.line(), None);
+            assert_eq!(
+                completion.diagnostic(),
+                Some("aidlc-orchestrate: cannot open the event store")
+            );
+        }
         assert!(store.as_path().is_dir());
         assert_eq!(journal_count_at(&saved), before);
     }

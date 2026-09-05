@@ -254,3 +254,28 @@ fn read_regular(path: &Path) -> Result<Option<Vec<u8>>, CatchUpError> {
         Err(error) => Err(error).at_output(path),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 復号した計画の置換本文がUTF-8でなければ、元ファイルを壊さず拒否する。
+    #[test]
+    fn a_decoded_replacement_with_invalid_utf8_preserves_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.md");
+        fs::write(&path, "original").unwrap();
+        let plan = PublicationFile::restored(
+            path.clone(),
+            Some(b"original".to_vec()),
+            vec![0xff],
+            false,
+            false,
+        );
+        assert_eq!(
+            plan.apply(),
+            Err(CatchUpError::PublicationConflict { path: path.clone() })
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+    }
+}

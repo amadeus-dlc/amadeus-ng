@@ -208,3 +208,28 @@ fn targets_without_lossless_path_representation_are_rejected() {
         matches!(batch.for_targets(&targets), Err(CatchUpError::PublicationConflict { path }) if path == invalid)
     );
 }
+
+#[test]
+fn unexpected_audit_suffix_is_preserved_as_a_conflict() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audit.md");
+    fs::write(&path, "original\n").unwrap();
+    let plan = PublicationFile::audit(&path, "expected\n").unwrap();
+    fs::write(&path, "original\nunrelated user text\n").unwrap();
+    assert_eq!(
+        plan.apply(),
+        Err(CatchUpError::PublicationConflict { path: path.clone() })
+    );
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "original\nunrelated user text\n"
+    );
+}
+
+#[test]
+fn an_empty_audit_append_does_not_create_a_file_or_its_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("not-created/audit.md");
+    PublicationFile::audit(&path, "").unwrap().apply().unwrap();
+    assert!(!path.parent().unwrap().exists());
+}
