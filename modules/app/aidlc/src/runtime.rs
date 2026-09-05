@@ -323,10 +323,10 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     };
     // 書いた事実をリードモデルへ落とす（U7 の責務「コマンド末尾の RMU 起動」）。
     // ここは握り潰さない — 描けなければ利用者には何も見えないままになる。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    emit(Ok((committed_directive(raw, &directive), Vec::new())))
+    after_projection(layout, || {
+        emit(Ok((committed_directive(raw, &directive), Vec::new())))
+    })
+    .await
 }
 
 /// 段 1 — 状態ファイルの `State Version` を分類し、`ok` 以外の逐語を返す。
@@ -411,15 +411,15 @@ async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Comple
         return emit_error(single_run_refusal(stage, &error));
     }
     // 書いた事実をリードモデルへ落とす（監査 2 行はこの投影で台帳に現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    emit(Ok((
-        Directive::Done {
-            reason: Some(wording::single_run_committed(stage)),
-        },
-        Vec::new(),
-    )))
+    after_projection(layout, || {
+        emit(Ok((
+            Directive::Done {
+                reason: Some(wording::single_run_committed(stage)),
+            },
+            Vec::new(),
+        )))
+    })
+    .await
 }
 
 /// 隔離実行の拒否を逐語へ写す。
@@ -482,15 +482,15 @@ async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
     {
         return emit_error(skeleton_stance_refusal(&current_stage, &error));
     }
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    emit(Ok((
-        Directive::Print {
-            message: wording::skeleton_stance_recorded(stance.as_str(), &current_stage),
-        },
-        Vec::new(),
-    )))
+    after_projection(layout, || {
+        emit(Ok((
+            Directive::Print {
+                message: wording::skeleton_stance_recorded(stance.as_str(), &current_stage),
+            },
+            Vec::new(),
+        )))
+    })
+    .await
 }
 
 /// stance の記録の拒否を逐語へ写す。
@@ -833,10 +833,10 @@ async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completio
         Err(error) => return Completion::refused(review_refusal(stage, reviewer, args, &error)),
     };
     // 書いた事実をリードモデルへ落とす（監査 1 行はこの投影で台帳に現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    Completion::emitted(review_log_line(stage, outcome))
+    after_projection(layout, || {
+        Completion::emitted(review_log_line(stage, outcome))
+    })
+    .await
 }
 
 /// 通し番号と、依頼形／判定形の分岐（分岐は `--verdict` の有無だけで決まる — upstream `:983`）。
@@ -1066,15 +1066,15 @@ async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> C
     }
     // 書いた事実をリードモデルへ落とす（メモリ層 2 本・状態ファイル・監査行はこの投影で
     // 現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    Completion::emitted(promote_line(
-        &promotion,
-        &occurred_at,
-        &team_md_path.to_string_lossy(),
-        &project_md_path.to_string_lossy(),
-    ))
+    after_projection(layout, || {
+        Completion::emitted(promote_line(
+            &promotion,
+            &occurred_at,
+            &team_md_path.to_string_lossy(),
+            &project_md_path.to_string_lossy(),
+        ))
+    })
+    .await
 }
 
 /// practices-discovery ステージの support agents（グラフに無ければ拒否）。
@@ -1277,10 +1277,7 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
     }
     // 書いた事実をリードモデルへ落とす（状態ファイルの `Construction Autonomy Mode` と
     // 監査行 `AUTONOMY_MODE_SET` はこの投影で現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    Completion::emitted(set_autonomy_line(mode))
+    after_projection(layout, || Completion::emitted(set_autonomy_line(mode))).await
 }
 
 /// 監査シャードの連結バッファ（record が無ければ空）。
@@ -1388,13 +1385,11 @@ async fn park(layout: &Layout) -> Completion {
     }
     // 書いた事実をリードモデルへ落とす。ここは握り潰さない — 描けなければ park した位置も
     // 読めない（`report` と同じ規律）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    match parked_directive(&store, &execution_id) {
+    after_projection(layout, || match parked_directive(&store, &execution_id) {
         Ok(directive) => emit(Ok((directive, Vec::new()))),
         Err(refusal) => refusal,
-    }
+    })
+    .await
 }
 
 /// 集約の拒否 2 形だけを upstream 逐語へ写し、それ以外は中継形の材料にする。
@@ -1828,6 +1823,14 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|error| format!("projection: {error}"))
+}
+
+/// 更新結果は公開が完了してから作る。すべての更新動詞が同じ失敗境界を通る。
+async fn after_projection(layout: &Layout, published: impl FnOnce() -> Completion) -> Completion {
+    match catch_up(layout).await {
+        Ok(()) => published(),
+        Err(cause) => Completion::refused(wording::orchestrate_failure(&cause)),
+    }
 }
 
 /// 読む前に投影と復旧を完了する。失敗を隠して古い指示を返したり、次の書込へ進めたりしない。

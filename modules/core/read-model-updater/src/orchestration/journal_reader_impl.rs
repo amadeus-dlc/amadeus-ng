@@ -300,16 +300,12 @@ impl JournalReaderImpl {
         {
             return Ok(false);
         }
-        let target = super::PublicationBatch::rebuild(GlobalSeqNr::ZERO, GlobalSeqNr::ZERO, vec![])
-            .for_targets(targets)?;
-        let Some(binding) = target.target_binding() else {
-            return Ok(false);
-        };
+        let binding = targets.binding()?;
         let Some(previous) = super::publication_store::snapshot(
             &self.connection,
             self.path.as_path(),
             projection,
-            binding,
+            &binding,
         )?
         else {
             return Ok(false);

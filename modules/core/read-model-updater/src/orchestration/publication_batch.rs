@@ -84,22 +84,7 @@ impl PublicationBatch {
         mut self,
         targets: &super::ProjectionTargets,
     ) -> Result<PublicationBatch, CatchUpError> {
-        let mut paths = Vec::new();
-        for path in targets.owned_paths() {
-            paths.push(core_infrastructure::canon_json::JsonValue::String(
-                path.to_str()
-                    .ok_or_else(|| CatchUpError::PublicationConflict {
-                        path: path.to_path_buf(),
-                    })?
-                    .to_string(),
-            ));
-        }
-        self.target_binding = Some(
-            core_infrastructure::canon_json::hash_compact(
-                &core_infrastructure::canon_json::JsonValue::Array(paths),
-            )
-            .rendered(),
-        );
+        self.target_binding = Some(targets.binding()?);
         Ok(self)
     }
 
