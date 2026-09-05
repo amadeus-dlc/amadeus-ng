@@ -26,6 +26,9 @@ gateway-taxonomy / aggregate-referencesの正本に、関連取得の限定範�
 
 ## 検証
 
+以下は分割前の作業ツリー全体（復旧機構等の変更も含む）の実測記録である。
+変更単位へ切り分けた後は各ブランチとCIで別途検証し、この件数を個別の変更単位の件数とは扱わない。
+
 - cargo lint: 違反24件から0件、終了コード0。
 - cargo test --locked --workspace: 49スイート、2,157件成功、失敗・無視0。
 - cargo clippy --locked --workspace --all-targets -- -D warnings: 成功。

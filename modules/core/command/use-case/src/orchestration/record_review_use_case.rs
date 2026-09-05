@@ -285,7 +285,39 @@ mod tests {
         )
     }
 
-    /// 定型の 3 手 — 再構成 → 集約コマンド → `store`。
+    /// 関連取得で別の定義が返ったら、原因を保持して保存前に拒否する。
+    #[tokio::test]
+    async fn an_unrelated_definition_is_reported_with_its_cause_before_any_write() {
+        use super::super::test_support::{definition_id, genesis_referencing_other_definition};
+        use core_command_domain::orchestration::IntentReviewError;
+        let (intent, aggregate) = genesis_referencing_other_definition();
+        let mut subject = Subject {
+            use_case: RecordReviewUseCase::new(
+                InMemoryIntentExecutionRepository::holding(aggregate, 1),
+                InMemoryIntentRepository::holding(intent),
+                InMemoryWorkflowDefinitionRepository::holding(reviewed(None, None))
+                    .misdirecting_related_lookup(definition_id()),
+            ),
+        };
+        let refusal = subject
+            .execute(&request(1))
+            .await
+            .expect_err("取り違えた定義ではレビューを依頼しない");
+        assert!(matches!(
+            &refusal,
+            ReviewLogError::ReviewPolicy(IntentReviewError::DefinitionMismatch)
+        ));
+        assert_eq!(refusal.to_string(), "review policy: definition mismatch");
+        assert_eq!(
+            std::error::Error::source(&refusal)
+                .unwrap()
+                .downcast_ref::<IntentReviewError>(),
+            Some(&IntentReviewError::DefinitionMismatch)
+        );
+        assert_eq!(subject.intent_execution_repository().store_attempts(), 0);
+        assert!(subject.intent_execution_repository().committed().is_empty());
+    }
+
     #[tokio::test]
     async fn a_request_commits_a_review_requested_event() {
         let mut subject = use_case(reviewed(None, None));

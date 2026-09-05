@@ -101,6 +101,25 @@ pub(crate) fn definition_id() -> WorkflowDefinitionId {
     WorkflowDefinitionId::parse("claude").expect("フィクスチャの定義 id")
 }
 
+/// 別ハーネスの定義を参照する実行。関連取得の取り違えガードを検証する。
+pub(crate) fn genesis_referencing_other_definition() -> (Intent, IntentExecution) {
+    let (original, _, _) = genesis(3);
+    let intent = Intent::from((
+        Created::new(
+            intent_event_id(),
+            original.id().clone(),
+            WorkflowDefinitionId::parse("codex").expect("系譜名"),
+            original.definition_revision().clone(),
+            StartRequest::new("classic", "build it"),
+            original.stages().to_vec(),
+            scan(),
+        ),
+        at(),
+    ));
+    let (execution, _) = IntentExecution::start(execution_id(), &intent, at());
+    (intent, execution)
+}
+
 /// フィクスチャの定義内容版。
 /// `stage_count` 段の定義の 3 入力 — 索引 0 が initialization、以降 inception。
 ///
@@ -225,6 +244,8 @@ pub(crate) struct InMemoryWorkflowDefinitionRepository {
     lookups: std::cell::Cell<usize>,
     /// 読取を破損で失敗させる台本 (`corrupt()` が立てる)。
     corrupt: bool,
+    /// 関連取得の取り違えを再現する、参照先の差し替え。
+    related_lookup_id: Option<WorkflowDefinitionId>,
     /// 書込に割り込む別の書き手の回数 (`holding_behind_a_concurrent_write` が立てる)。
     interrupting_writes: usize,
 }
@@ -239,8 +260,15 @@ impl InMemoryWorkflowDefinitionRepository {
             committed: Vec::new(),
             lookups: std::cell::Cell::new(0),
             corrupt: false,
+            related_lookup_id: None,
             interrupting_writes: 0,
         }
+    }
+
+    /// 関連取得が異なる系譜を返す不具合を再現する。
+    pub(crate) fn misdirecting_related_lookup(mut self, id: WorkflowDefinitionId) -> Self {
+        self.related_lookup_id = Some(id);
+        self
     }
 
     /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
@@ -278,6 +306,7 @@ impl InMemoryWorkflowDefinitionRepository {
             committed: Vec::new(),
             lookups: std::cell::Cell::new(0),
             corrupt: true,
+            related_lookup_id: None,
             interrupting_writes: 0,
         }
     }
@@ -298,7 +327,12 @@ impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
         &self,
         intent: &Intent,
     ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
-        self.find_by_id(intent.definition_id()).await
+        self.find_by_id(
+            self.related_lookup_id
+                .as_ref()
+                .unwrap_or_else(|| intent.definition_id()),
+        )
+        .await
     }
 
     async fn find_by_id(

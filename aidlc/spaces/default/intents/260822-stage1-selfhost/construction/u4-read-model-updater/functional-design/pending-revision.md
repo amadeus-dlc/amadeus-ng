@@ -17,3 +17,15 @@ R-01〜R-03に加え、以下のR-04/R-05も2026-09-05の修正・再レビュ�
 反映済み: 有効な共有面について、as_ofがtarget未満なら候補を公開、同値なら候補の行集合との一致を検証して維持、超過なら新しい共有面を維持、と分けた。同値で内容が違う場合は破損として停止する。欠落・破損・規約不一致の既存条件は維持した。
 
 検収: as_of=targetでも候補の内容が既存面と異なるケースは成功しない。functional-spec.mdのW8とBR5.3の判断が一致する。
+
+
+## 2026-09-06 JST — 実装同期の追記
+
+上記R-04/R-05とREADY判定は2026-09-05の記録として変更していない。以下はその後の実装との同期であり、新しいReview判定ではない。
+
+- 保存済み終点までの復旧を先に確定し、同じ`catch_up`呼出しで追加分を別計画・別Txとして処理する。最大2計画とし、runtime側の駆動ループは追加しない。
+- 後続計画が失敗しても旧計画のcommitを保持し、呼出元には失敗を返す。復旧を確認できるまでは通常の指示や変異へ進めない。
+- U7の`catch_up_before_reading`から失敗を伝播する。`next` / `resume`はerror directive・exit 0、`report` / `practices_promote` / `set_autonomy`はrefused・exit 1で停止する。
+- エラー変換をSQLiteの`at_store`とファイルI/Oの`at_output`へ集約した。比較用SAVEPOINTの失敗、共有行の型破損、古いpredecessor、確定中のhead喪失の契約試験を追加した。
+
+統合版 `9b4a6d55` の全workspaceは2,200件成功、相対カバレッジは未達。その後のレビュー修正は再検証中。対象コミット別の結果は[implementation-report.md](../implementation-report.md)へ統合後に記録する。

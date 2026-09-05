@@ -46,6 +46,10 @@ mod tests {
     #[test]
     fn every_corrupt_cause_renders_its_material() {
         assert_eq!(
+            CorruptCause::ProjectionSnapshotMismatch.to_string(),
+            "projection snapshot mismatch"
+        );
+        assert_eq!(
             CorruptCause::UndecodablePayload.to_string(),
             "undecodable payload"
         );

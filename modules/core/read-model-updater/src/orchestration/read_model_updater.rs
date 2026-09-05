@@ -64,12 +64,6 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         &self.targets
     }
 
-    /// 参照入力の読取先。
-    #[must_use]
-    pub const fn steering(&self) -> &SteeringSource {
-        &self.steering
-    }
-
     /// Markdown の投影先がまだ無い初回起動で、構造化面だけを最新化する。
     ///
     /// fresh workspace では intent の記録ディレクトリも `aidlc-state.md` もまだ存在しないが、
@@ -85,6 +79,7 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         journal_reader: &mut R,
         projection: &ProjectionName,
     ) -> Result<GlobalSeqNr, CatchUpError> {
+        journal_reader.prepare_read_model()?;
         let checkpoint = journal_reader.checkpoint(projection).await?;
         if journal_reader
             .events_after(checkpoint)
@@ -96,9 +91,9 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         }
 
         let history = journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-        let Some(last) = history.scanned_to() else {
-            return Ok(checkpoint);
-        };
+        let last = history
+            .scanned_to()
+            .ok_or(CatchUpError::HistoryDisappeared)?;
         let tables = ReadTables::project(&history)?;
         journal_reader
             .advance_checkpoint(projection, last, &tables)
@@ -140,10 +135,11 @@ impl<R: JournalReader> ReadModelUpdater<R> {
     ///
     /// ジャーナルの読取・チェックポイントの失敗（`Read`）、投影核が描けなかった
     /// （`Projection`）、状態ファイルを読めない（`StateFileRead`）・書けない
-    /// （`StateFileWrite`）、監査シャードへ追記できない（`AuditShardWrite`）、構造化投影核が
+    /// （`StateFileWrite`）、公開先を読めない・追記できない（`PublicationIo`）、構造化投影核が
     /// 歴史の切り落としを見つけた（`ReadTables`）、参照入力の規則ファイルが在るのに読めない
     /// （`SteeringRead`）・刻めない（`SteeringPack`）。
     pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError> {
+        self.journal_reader.prepare_read_model()?;
         if let Some(batch) = self
             .journal_reader
             .pending_publication(&self.projection)
@@ -162,8 +158,8 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             self.journal_reader
                 .publish(&self.projection, &batch, &tables)
                 .await?;
-            self.catch_up_steering().await?;
-            return Ok(batch.to());
+            // 保存済みの断面はここで確定した。追加イベントはその計画へ混ぜず、
+            // 下の通常処理で別の計画として公開してから呼出元へ戻る。
         }
         self.catch_up_steering().await?;
 
@@ -185,9 +181,9 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         // 描く材料はすべてこの**1 回の読取**から採る — Markdown 面の差分・構造化面の行・
         // 前進先の 3 つが同じ断面を指す。
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-        let Some(last) = history.scanned_to() else {
-            return Ok(checkpoint);
-        };
+        let last = history
+            .scanned_to()
+            .ok_or(CatchUpError::HistoryDisappeared)?;
 
         // 未投影の実行イベントがあるときだけ描く。intent の行しか無い区間は書くものが
         // 無い — それでもチェックポイントは走査済み位置まで進める（intent 行を毎回
@@ -217,10 +213,9 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             // team.md が無傷で残るからである（ピン `3c3146cf` `aidlc-state.ts:3705-3723`）。
             // メモリ層は**書き替えたときだけ**書く — 人が編集する正本でもあるので、
             // 触っていないキャッチアップが mtime を動かしてはならない。
-            if let Some(memory) = read_model.memory() {
-                let (team, project) = memory_before
-                    .as_ref()
-                    .ok_or(CatchUpError::PlanUnavailable)?;
+            if let (Some((team, project)), Some(memory)) =
+                (memory_before.as_ref(), read_model.memory())
+            {
                 files.push(PublicationFile::memory(
                     self.targets.project_md(),
                     project,

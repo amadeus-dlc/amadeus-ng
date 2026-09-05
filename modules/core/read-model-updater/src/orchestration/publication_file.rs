@@ -110,21 +110,18 @@ impl PublicationFile {
             && (bytes.starts_with(&self.after) || (!self.append && bytes.ends_with(&self.after)))
         {
             bytes.to_vec()
-        } else if !self.append && !before.is_empty() && bytes.starts_with(before) {
+        } else if !self.append
+            && !before.is_empty()
+            && let Some(suffix) = bytes.strip_prefix(before)
+        {
             let mut merged = self.after.clone();
-            merged.extend_from_slice(bytes.get(before.len()..).ok_or_else(|| {
-                CatchUpError::PublicationConflict {
-                    path: self.path.clone(),
-                }
-            })?);
+            merged.extend_from_slice(suffix);
             merged
-        } else if !self.append && !before.is_empty() && bytes.ends_with(before) {
-            let mut merged = bytes
-                .get(..bytes.len() - before.len())
-                .ok_or_else(|| CatchUpError::PublicationConflict {
-                    path: self.path.clone(),
-                })?
-                .to_vec();
+        } else if !self.append
+            && !before.is_empty()
+            && let Some(prefix) = bytes.strip_suffix(before)
+        {
+            let mut merged = prefix.to_vec();
             merged.extend_from_slice(&self.after);
             merged
         } else {
@@ -169,31 +166,27 @@ impl PublicationFile {
         if self.append {
             let bytes = current.as_deref().unwrap_or_default();
             let before = self.before.as_deref().unwrap_or_default();
-            if !bytes.starts_with(before)
-                || !self.after.starts_with(bytes)
-                || (current.is_none() && self.before.is_some())
-            {
+            if !bytes.starts_with(before) || (current.is_none() && self.before.is_some()) {
                 return Err(CatchUpError::PublicationConflict {
                     path: self.path.clone(),
                 });
             }
-            let remainder =
-                self.after
-                    .get(bytes.len()..)
-                    .ok_or_else(|| CatchUpError::PublicationConflict {
-                        path: self.path.clone(),
-                    })?;
+            let Some(remainder) = self.after.strip_prefix(bytes) else {
+                return Err(CatchUpError::PublicationConflict {
+                    path: self.path.clone(),
+                });
+            };
             if remainder.is_empty() {
                 return Ok(());
             }
             if let Some(parent) = self.path.parent() {
-                fs::create_dir_all(parent).map_err(|e| failure(&self.path, &e))?;
+                fs::create_dir_all(parent).at_output(&self.path)?;
             }
             let mut file = core_infrastructure::append_only::open_append_only(&self.path)
-                .map_err(|e| failure(&self.path, &e))?;
+                .at_output(&self.path)?;
             core_infrastructure::append_only::append_all(&mut file, remainder)
-                .map_err(|e| failure(&self.path, &e))?;
-            file.sync_all().map_err(|e| failure(&self.path, &e))?;
+                .at_output(&self.path)?;
+            file.sync_all().at_output(&self.path)?;
         } else {
             if current != self.before {
                 return Err(CatchUpError::PublicationConflict {
@@ -225,21 +218,28 @@ impl PublicationFile {
     }
 }
 
-fn failure(path: &Path, error: &io::Error) -> CatchUpError {
-    CatchUpError::PublicationIo {
-        path: path.to_path_buf(),
-        kind: error.kind(),
+/// 公開先のI/O結果を、操作対象のパスとOSの分類を保持する失敗契約へ写す。
+trait PublicationIoResultExt<T> {
+    fn at_output(self, path: &Path) -> Result<T, CatchUpError>;
+}
+
+impl<T> PublicationIoResultExt<T> for io::Result<T> {
+    fn at_output(self, path: &Path) -> Result<T, CatchUpError> {
+        self.map_err(|error| CatchUpError::PublicationIo {
+            path: path.to_path_buf(),
+            kind: error.kind(),
+        })
     }
 }
 
 fn sync_output(path: &Path) -> Result<(), CatchUpError> {
     fs::File::open(path)
         .and_then(|file| file.sync_all())
-        .map_err(|e| failure(path, &e))?;
+        .at_output(path)?;
     if let Some(parent) = path.parent() {
         fs::File::open(parent)
             .and_then(|directory| directory.sync_all())
-            .map_err(|e| failure(parent, &e))?;
+            .at_output(parent)?;
     }
     Ok(())
 }
@@ -249,8 +249,33 @@ fn read_regular(path: &Path) -> Result<Option<Vec<u8>>, CatchUpError> {
         Ok(meta) if !meta.file_type().is_file() => Err(CatchUpError::PublicationConflict {
             path: path.to_path_buf(),
         }),
-        Ok(_) => fs::read(path).map(Some).map_err(|e| failure(path, &e)),
+        Ok(_) => fs::read(path).map(Some).at_output(path),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(failure(path, &error)),
+        Err(error) => Err(error).at_output(path),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 復号した計画の置換本文がUTF-8でなければ、元ファイルを壊さず拒否する。
+    #[test]
+    fn a_decoded_replacement_with_invalid_utf8_preserves_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.md");
+        fs::write(&path, "original").unwrap();
+        let plan = PublicationFile::restored(
+            path.clone(),
+            Some(b"original".to_vec()),
+            vec![0xff],
+            false,
+            false,
+        );
+        assert_eq!(
+            plan.apply(),
+            Err(CatchUpError::PublicationConflict { path: path.clone() })
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"original");
     }
 }

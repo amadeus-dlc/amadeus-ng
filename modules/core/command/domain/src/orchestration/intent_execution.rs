@@ -2744,6 +2744,83 @@ mod tests {
     }
 
     #[test]
+    fn report_refusals_preserve_the_cause_and_leave_the_execution_unchanged() {
+        let mut run = all_exec(3);
+        run.park(occurred()).unwrap();
+        let before = run.execution.clone();
+        let refusal = run
+            .execution
+            .apply_report(
+                &run.intent,
+                &request(Verdict::AwaitingApproval),
+                &[TransitionStep::GateStart],
+                None,
+                occurred(),
+            )
+            .unwrap_err();
+        assert_eq!(refusal.to_string(), "GateStart: not running");
+        assert_eq!(
+            std::error::Error::source(&refusal)
+                .unwrap()
+                .downcast_ref::<CommandError>(),
+            Some(&CommandError::NotRunning)
+        );
+        assert_eq!(run.execution, before);
+    }
+
+    #[test]
+    fn an_incomplete_recovery_sequence_is_refused_without_emitting_a_gate_event() {
+        let mut run = all_exec(3);
+        let before = run.execution.clone();
+        let refusal = run
+            .execution
+            .apply_report(
+                &run.intent,
+                &request(Verdict::Forward),
+                &[TransitionStep::GateStartRecovered],
+                None,
+                occurred(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            refusal,
+            ReportCommitError::Unwired {
+                step: TransitionStep::GateStartRecovered
+            }
+        );
+        assert_eq!(
+            refusal.to_string(),
+            "unwired transition: GateStartRecovered"
+        );
+        assert!(std::error::Error::source(&refusal).is_none());
+        assert_eq!(run.execution, before);
+    }
+
+    #[test]
+    fn isolated_run_diagnostics_distinguish_unknown_names_from_command_refusals() {
+        let mut run = all_exec(3);
+        let before = run.execution.clone();
+        let unknown = run
+            .execution
+            .record_single_stage_run(&run.intent, &slug(99), occurred())
+            .unwrap_err();
+        assert_eq!(unknown.to_string(), "unknown stage");
+        assert!(std::error::Error::source(&unknown).is_none());
+        let refused = run
+            .execution
+            .record_single_stage_run(&run.intent, &slug(0), occurred())
+            .unwrap_err();
+        assert_eq!(refused.to_string(), "invalid target stage 0");
+        assert_eq!(
+            std::error::Error::source(&refused)
+                .unwrap()
+                .downcast_ref::<CommandError>(),
+            Some(&CommandError::InvalidTarget(StageIndex::new(0)))
+        );
+        assert_eq!(run.execution, before);
+    }
+
+    #[test]
     fn report_decisions_carry_the_scope_of_the_plan() {
         let run = all_exec(3);
         assert!(
@@ -2778,17 +2855,30 @@ mod tests {
     #[test]
     fn a_stance_refusal_names_the_current_stage_and_scope() {
         let mut run = all_exec(3);
+        let before = run.execution.clone();
+        let refusal = run
+            .execution
+            .record_skeleton_stance(&run.intent, SkeletonStance::On, occurred())
+            .unwrap_err();
         assert_eq!(
-            run.execution
-                .record_skeleton_stance(&run.intent, SkeletonStance::On, occurred())
-                .unwrap_err(),
+            refusal,
             SkeletonStanceRefusal::Rejected {
                 stage: Some(slug(1)),
                 scope: "classic".into(),
                 error: CommandError::InvalidTarget(StageIndex::new(1))
             }
         );
-        assert_eq!(run.seq_nr(), 1);
+        assert_eq!(
+            refusal.to_string(),
+            "Some(StageSlug(\"stage-1\")) (classic): invalid target stage 1"
+        );
+        assert_eq!(
+            std::error::Error::source(&refusal)
+                .unwrap()
+                .downcast_ref::<CommandError>(),
+            Some(&CommandError::InvalidTarget(StageIndex::new(1)))
+        );
+        assert_eq!(run.execution, before);
     }
 
     // ---- report_dispatch (仕様 10 §2.3 — 報告のディスパッチ) ----

@@ -1,9 +1,7 @@
 //! `ReadModelUpdater::catch_up` の失敗。
 
 use crate::read_tables::{ReadTablesError, UnsplittableSection};
-use crate::workspace::{
-    AuditShardWriteError, ProjectionError, StateFileReadError, StateFileWriteError,
-};
+use crate::workspace::{ProjectionError, StateFileReadError, StateFileWriteError};
 
 use super::journal_read_error::JournalReadError;
 
@@ -30,8 +28,6 @@ pub enum CatchUpError {
     StateFileRead(StateFileReadError),
     /// 状態ファイルを書けなかった。
     StateFileWrite(StateFileWriteError),
-    /// 監査シャードへ追記できなかった。
-    AuditShardWrite(AuditShardWriteError),
     /// メモリ層のファイルが**在るのに読めない**（b49）。
     ///
     /// 2 本が揃っていないのは正常（昇格の投影が要らない workspace）だが、在るのに読めない
@@ -56,6 +52,8 @@ pub enum CatchUpError {
     /// が無い、のどちらでも 1 行も描けない。ジャーナルが途中から切り落とされた兆候であり、
     /// 読み替えずに止める。
     PlanUnavailable,
+    /// 差分を観測した後の全履歴取得が空になった。
+    HistoryDisappeared,
     /// ジャーナルに**複数の intent** を指す実行が混在している。
     ///
     /// この取得ループは単一 intent の状態ファイル 1 面へ描く（`ProjectionTargets` は 1 組）。
@@ -104,7 +102,6 @@ impl core::fmt::Display for CatchUpError {
                 write!(f, "state file read: {}", inner.message())
             }
             CatchUpError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
-            CatchUpError::AuditShardWrite(inner) => write!(f, "audit shard write: {inner}"),
             CatchUpError::MemoryFileRead { path, kind } => {
                 write!(f, "memory file read: {kind:?} at {path}")
             }
@@ -112,6 +109,7 @@ impl core::fmt::Display for CatchUpError {
                 write!(f, "memory file write: {detail} at {path}")
             }
             CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
+            CatchUpError::HistoryDisappeared => f.write_str("history disappeared between reads"),
             CatchUpError::MixedIntents => f.write_str("mixed intents"),
             CatchUpError::ReadTables(inner) => write!(f, "read tables: {inner}"),
             CatchUpError::SteeringRead { path, kind } => {
@@ -128,7 +126,7 @@ impl std::error::Error for CatchUpError {
     /// **封筒は連鎖を切ってはならない** — 内包した失敗が自分の `source` に材料を載せている
     /// 場合、ここで `None` を返すとその材料はこの型で行き止まりになる（裁定 6 の帰結）。
     ///
-    /// 連鎖できるのは本物のエラー型を包む 3 変種だけである。`StateFileRead` /
+    /// 連鎖するのは本物のエラー型を包む変種である。`StateFileRead` /
     /// `StateFileWrite` が包む型は `std::error::Error` ではなく**逐語文言を運ぶ値**であり
     /// （upstream 出力と 1 文字も違ってはならない文字列）、材料はこの型の `Display` が既に
     /// 描いている。`PlanUnavailable` / `MixedIntents` はループ自身の拒否で内包物を持たない。
@@ -136,7 +134,6 @@ impl std::error::Error for CatchUpError {
         match self {
             CatchUpError::Read(inner) => Some(inner),
             CatchUpError::Projection(inner) => Some(inner),
-            CatchUpError::AuditShardWrite(inner) => Some(inner),
             CatchUpError::ReadTables(inner) => Some(inner),
             CatchUpError::SteeringPack(inner) => Some(inner),
             CatchUpError::PublicationConflict { .. }
@@ -144,6 +141,7 @@ impl std::error::Error for CatchUpError {
             | CatchUpError::StateFileRead(_)
             | CatchUpError::StateFileWrite(_)
             | CatchUpError::PlanUnavailable
+            | CatchUpError::HistoryDisappeared
             | CatchUpError::MixedIntents
             | CatchUpError::SteeringRead { .. }
             | CatchUpError::MemoryFileRead { .. }
@@ -179,12 +177,12 @@ impl From<UnsplittableSection> for CatchUpError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::{AuditShardWriteError, StateFileReadError};
+    use crate::workspace::StateFileReadError;
 
     #[test]
     fn the_envelope_chains_to_the_failure_it_wraps() {
         // 封筒がここで連鎖を切ると、内包した失敗が自分の `source` に載せている材料へ
-        // 辿り着けなくなる。読取・投影・監査追記の 3 変種は本物のエラー型を包む。
+        // 辿り着けなくなる。読取・投影の変種は本物のエラー型を包む。
         let read: CatchUpError = JournalReadError::Io {
             kind: std::io::ErrorKind::WouldBlock,
             path: None,
@@ -239,6 +237,11 @@ mod tests {
 
     #[test]
     fn every_catch_up_failure_renders_its_material() {
+        assert_eq!(
+            CatchUpError::HistoryDisappeared.to_string(),
+            "history disappeared between reads"
+        );
+        assert!(std::error::Error::source(&CatchUpError::HistoryDisappeared).is_none());
         let read: CatchUpError = JournalReadError::Io {
             kind: std::io::ErrorKind::WouldBlock,
             path: None,
@@ -270,12 +273,32 @@ mod tests {
         );
         assert_eq!(CatchUpError::MixedIntents.to_string(), "mixed intents");
 
-        let shard_write = CatchUpError::AuditShardWrite(AuditShardWriteError::Io {
-            kind: std::io::ErrorKind::PermissionDenied,
-        });
+        for (failure, message) in [
+            (
+                CatchUpError::PublicationConflict {
+                    path: "/output".into(),
+                },
+                "publication conflict: /output",
+            ),
+            (
+                CatchUpError::PublicationIo {
+                    path: "/output".into(),
+                    kind: std::io::ErrorKind::PermissionDenied,
+                },
+                "publication io: PermissionDenied at /output",
+            ),
+        ] {
+            assert_eq!(failure.to_string(), message);
+            assert!(std::error::Error::source(&failure).is_none());
+        }
+        let steering: CatchUpError = UnsplittableSection::new("memory/org.md".into()).into();
         assert_eq!(
-            shard_write.to_string(),
-            "audit shard write: io: PermissionDenied"
+            steering.to_string(),
+            "steering pack: unsplittable section in memory/org.md"
+        );
+        assert_eq!(
+            std::error::Error::source(&steering).unwrap().to_string(),
+            "unsplittable section in memory/org.md"
         );
 
         let read_tables: CatchUpError = ReadTablesError::MissingGenesis {

@@ -38,6 +38,34 @@ impl ProjectionTargets {
         }
     }
 
+    /// 束縛ダイジェストと所有検査が共有する、順序付きの対象一覧。
+    pub(super) fn owned_paths(&self) -> [&Path; 4] {
+        [
+            self.state_file(),
+            self.audit_shard(),
+            self.project_md(),
+            self.team_md(),
+        ]
+    }
+
+    /// 所有対象を損失なく記録した束縛。ファイル変更がない計画にも同じ値を用いる。
+    pub(super) fn binding(&self) -> Result<String, super::CatchUpError> {
+        let mut paths = Vec::new();
+        for path in self.owned_paths() {
+            paths.push(core_infrastructure::canon_json::JsonValue::String(
+                path.to_str()
+                    .ok_or_else(|| super::CatchUpError::PublicationConflict {
+                        path: path.to_path_buf(),
+                    })?
+                    .to_string(),
+            ));
+        }
+        Ok(core_infrastructure::canon_json::hash_compact(
+            &core_infrastructure::canon_json::JsonValue::Array(paths),
+        )
+        .rendered())
+    }
+
     /// 状態ファイル（`aidlc-state.md`）の場所。
     #[must_use]
     pub fn state_file(&self) -> &Path {

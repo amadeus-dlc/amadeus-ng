@@ -190,13 +190,13 @@ async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u
     if layout.record_dir().is_none() {
         prepare_definition_for_first_read(layout).await?;
     }
-    catch_up_before_reading(layout).await;
+    catch_up_before_reading(layout).await?;
     Ok((turn::next(layout, &input), bytes))
 }
 
 /// `continue` — 鍵は**読むだけ**。無ければ・壊れていれば fail-closed（I12）。
 async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), String> {
-    catch_up_before_reading(layout).await;
+    catch_up_before_reading(layout).await?;
     let key = SteeringKey::resolve(layout.project_dir(), layout.record_dir());
     let bytes = match key.read_for_continue() {
         Ok(Some(bytes)) => bytes,
@@ -234,20 +234,26 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
 async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 読む面（状態ファイル・実行行）が最新でないと段 1 と段 4 が古い値で判断する。
     // 書いた事実を落とすのはコミットの後（末尾の `catch_up`）である。
-    catch_up_before_reading(layout).await;
+    if let Err(message) = catch_up_before_reading(layout).await {
+        return Completion::refused(message);
+    }
 
     // 段 1 — state-version guard。**すべての report 経路**に効かせるので最初に通す。
     if let Some(refusal) = state_version_guard(layout) {
         return emit_error(refusal);
     }
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return emit_error(message),
+    };
     // 段 2 — `--single`。本流の遷移サブコマンドへ落ちることを構造的に不可能にするため、
     // 主経路より先に解決する（I10）。
     if args.is_single() {
-        return single_report(layout, args).await;
+        return single_report(layout, args, &store).await;
     }
     // 段 3 — `--skeleton-stance`。stance の報告は verdict を持たないので段 5 より先。
     if let Some(stance) = args.skeleton_stance() {
-        return skeleton_stance_report(layout, stance).await;
+        return skeleton_stance_report(layout, stance, &store).await;
     }
     // 段 4 — 再開の選択。遷移をコミットしないのでルーティングだけで終わる。
     let raw = args.result();
@@ -275,10 +281,6 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     if verdict == Verdict::Skipped && stage.is_none() {
         return emit_error(wording::SKIP_REQUIRES_EXPLICIT_STAGE.to_string());
     }
-    let store = match store_path(layout) {
-        Ok(store) => store,
-        Err(message) => return emit_error(message),
-    };
     // 段 6 — 実行カーソルが無い = まだ鋳造していない（fresh なワークスペースの正常な姿）。
     let execution_id = match active_execution(layout) {
         Ok(Some(cursor)) => cursor.execution_id().clone(),
@@ -321,10 +323,10 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     };
     // 書いた事実をリードモデルへ落とす（U7 の責務「コマンド末尾の RMU 起動」）。
     // ここは握り潰さない — 描けなければ利用者には何も見えないままになる。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    emit(Ok((committed_directive(raw, &directive), Vec::new())))
+    after_projection(layout, || {
+        emit(Ok((committed_directive(raw, &directive), Vec::new())))
+    })
+    .await
 }
 
 /// 段 1 — 状態ファイルの `State Version` を分類し、`ok` 以外の逐語を返す。
@@ -361,7 +363,11 @@ fn state_version_guard(layout: &Layout) -> Option<String> {
 /// result 必須 → FORWARD のみ → `--stage` 必須 → 未知 → initialization →（evidence は
 /// slice 2）→ 記録。**本流の遷移サブコマンドへは 1 度も落ちない** — 打つコマンドは
 /// `record_single_stage_run` だけで、その適用はフレーム空である。
-async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
+async fn single_report(
+    layout: &Layout,
+    args: &crate::cli::ReportArgs,
+    store: &StorePath,
+) -> Completion {
     let Some(raw) = args.result() else {
         return emit_error(wording::single_requires_result());
     };
@@ -374,10 +380,6 @@ async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Comple
     };
     let Ok(slug) = StageSlug::parse(stage) else {
         return emit_error(wording::unknown_stage(stage));
-    };
-    let store = match store_path(layout) {
-        Ok(store) => store,
-        Err(message) => return emit_error(message),
     };
     // 隔離実行の対も**その intent の記録の中で起きた事実**なので、記録が要る。
     let execution_id = match active_execution(layout) {
@@ -396,8 +398,8 @@ async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Comple
         }
     };
     let (Ok(intent_execution_repository), Ok(intent_repository)) = (
-        IntentExecutionRepositoryImpl::open(&store),
-        IntentRepositoryImpl::open(&store),
+        IntentExecutionRepositoryImpl::open(store),
+        IntentRepositoryImpl::open(store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
@@ -409,15 +411,15 @@ async fn single_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Comple
         return emit_error(single_run_refusal(stage, &error));
     }
     // 書いた事実をリードモデルへ落とす（監査 2 行はこの投影で台帳に現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    emit(Ok((
-        Directive::Done {
-            reason: Some(wording::single_run_committed(stage)),
-        },
-        Vec::new(),
-    )))
+    after_projection(layout, || {
+        emit(Ok((
+            Directive::Done {
+                reason: Some(wording::single_run_committed(stage)),
+            },
+            Vec::new(),
+        )))
+    })
+    .await
 }
 
 /// 隔離実行の拒否を逐語へ写す。
@@ -439,17 +441,13 @@ fn single_run_refusal(stage: &str, error: &SingleStageRunError) -> String {
 ///
 /// 値検証 → state 必須 → 記録 → 投影 → 「`next` をもう一度」の print、という順序は
 /// upstream `handleSkeletonStanceReport`（ピン `:4943-5008`）と同順である。
-async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
+async fn skeleton_stance_report(layout: &Layout, stance: &str, store: &StorePath) -> Completion {
     let Ok(stance) = SkeletonStance::parse(stance) else {
         return emit_error(wording::unknown_skeleton_stance(stance));
     };
     if !state_file_present(layout) {
         return emit_error(wording::SKELETON_STANCE_WITHOUT_STATE.to_string());
     }
-    let store = match store_path(layout) {
-        Ok(store) => store,
-        Err(message) => return emit_error(message),
-    };
     let execution_id = match active_execution(layout) {
         Ok(Some(cursor)) => cursor.execution_id().clone(),
         // 不在 = まだ鋳造していない。状態ファイルだけが在る形も同じ答えである。
@@ -459,8 +457,8 @@ async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
         Err(error) => return emit_error(wording::unreadable_execution_cursor(&error.to_string())),
     };
     let (Ok(intent_execution_repository), Ok(intent_repository)) = (
-        IntentExecutionRepositoryImpl::open(&store),
-        IntentRepositoryImpl::open(&store),
+        IntentExecutionRepositoryImpl::open(store),
+        IntentRepositoryImpl::open(store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
@@ -480,15 +478,15 @@ async fn skeleton_stance_report(layout: &Layout, stance: &str) -> Completion {
     {
         return emit_error(skeleton_stance_refusal(&current_stage, &error));
     }
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    emit(Ok((
-        Directive::Print {
-            message: wording::skeleton_stance_recorded(stance.as_str(), &current_stage),
-        },
-        Vec::new(),
-    )))
+    after_projection(layout, || {
+        emit(Ok((
+            Directive::Print {
+                message: wording::skeleton_stance_recorded(stance.as_str(), &current_stage),
+            },
+            Vec::new(),
+        )))
+    })
+    .await
 }
 
 /// stance の記録の拒否を逐語へ写す。
@@ -831,10 +829,10 @@ async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completio
         Err(error) => return Completion::refused(review_refusal(stage, reviewer, args, &error)),
     };
     // 書いた事実をリードモデルへ落とす（監査 1 行はこの投影で台帳に現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    Completion::emitted(review_log_line(stage, outcome))
+    after_projection(layout, || {
+        Completion::emitted(review_log_line(stage, outcome))
+    })
+    .await
 }
 
 /// 通し番号と、依頼形／判定形の分岐（分岐は `--verdict` の有無だけで決まる — upstream `:983`）。
@@ -996,7 +994,9 @@ async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> C
         }
     };
     // 定義の面（practices ステージの宣言と support agents）を読む前に投影を追いつかせる。
-    catch_up_before_reading(layout).await;
+    if let Err(message) = catch_up_before_reading(layout).await {
+        return Completion::refused(message);
+    }
     let support_agents = match practices_support_agents(layout, &store) {
         Ok(agents) => agents,
         Err(message) => return Completion::refused(message),
@@ -1062,15 +1062,15 @@ async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> C
     }
     // 書いた事実をリードモデルへ落とす（メモリ層 2 本・状態ファイル・監査行はこの投影で
     // 現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    Completion::emitted(promote_line(
-        &promotion,
-        &occurred_at,
-        &team_md_path.to_string_lossy(),
-        &project_md_path.to_string_lossy(),
-    ))
+    after_projection(layout, || {
+        Completion::emitted(promote_line(
+            &promotion,
+            &occurred_at,
+            &team_md_path.to_string_lossy(),
+            &project_md_path.to_string_lossy(),
+        ))
+    })
+    .await
 }
 
 /// practices-discovery ステージの support agents（グラフに無ければ拒否）。
@@ -1248,7 +1248,9 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
         }
     };
     // 状態ファイルの欄を最新の投影で検査するため、読む前に追いつかせる。
-    catch_up_before_reading(layout).await;
+    if let Err(message) = catch_up_before_reading(layout).await {
+        return Completion::refused(message);
+    }
     // 外部の材料 — `HUMAN_TURN` はフックが監査シャードへ直接書く一次の事実であり、我々の
     // 投影ではない。読んで値オブジェクトにするだけで、**判断はしない**（設計 §1）。
     let turns = HumanTurns::find_in(&audit_ledger(layout));
@@ -1271,10 +1273,7 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
     }
     // 書いた事実をリードモデルへ落とす（状態ファイルの `Construction Autonomy Mode` と
     // 監査行 `AUTONOMY_MODE_SET` はこの投影で現れる）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    Completion::emitted(set_autonomy_line(mode))
+    after_projection(layout, || Completion::emitted(set_autonomy_line(mode))).await
 }
 
 /// 監査シャードの連結バッファ（record が無ければ空）。
@@ -1382,13 +1381,11 @@ async fn park(layout: &Layout) -> Completion {
     }
     // 書いた事実をリードモデルへ落とす。ここは握り潰さない — 描けなければ park した位置も
     // 読めない（`report` と同じ規律）。
-    if let Err(error) = catch_up(layout).await {
-        return Completion::refused(wording::orchestrate_failure(&error));
-    }
-    match parked_directive(&store, &execution_id) {
+    after_projection(layout, || match parked_directive(&store, &execution_id) {
         Ok(directive) => emit(Ok((directive, Vec::new()))),
         Err(refusal) => refusal,
-    }
+    })
+    .await
 }
 
 /// 集約の拒否 2 形だけを upstream 逐語へ写し、それ以外は中継形の材料にする。
@@ -1824,14 +1821,19 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
         .map_err(|error| format!("projection: {error}"))
 }
 
-/// **読み手の前**の追いつき — 失敗しても倒れない。
-///
-/// 投影が遅れていても、読み手は「その時点のリードモデル」で答えを出せるほうが、動詞ごと
-/// 落ちるより無害である（at-least-once の投影は次の呼出で追いつく）。**書込の後**は
-/// この限りではない — そちらは書いた事実が読み面へ落ちないと利用者に何も見えないので、
-/// 失敗を surface する。
-async fn catch_up_before_reading(layout: &Layout) {
-    let _ = catch_up(layout).await;
+/// 更新結果は公開が完了してから作る。すべての更新動詞が同じ失敗境界を通る。
+async fn after_projection(layout: &Layout, published: impl FnOnce() -> Completion) -> Completion {
+    match catch_up(layout).await {
+        Ok(()) => published(),
+        Err(cause) => Completion::refused(wording::orchestrate_failure(&cause)),
+    }
+}
+
+/// 読む前に投影と復旧を完了する。失敗を隠して古い指示を返したり、次の書込へ進めたりしない。
+async fn catch_up_before_reading(layout: &Layout) -> Result<(), String> {
+    catch_up(layout)
+        .await
+        .map_err(|cause| wording::orchestrate_failure(&cause))
 }
 
 /// 現在のスペースのストアパス。
@@ -2225,6 +2227,360 @@ corrupt review override: Adversarial"
         std::fs::write(memory.join("org.md"), "# Org\n").expect("org.md");
         std::fs::create_dir_all(root.path().join("aidlc/spaces/default/intents")).expect("intents");
         root
+    }
+
+    /// 後段ガードの直前まで、実ストアで鋳造と事前復旧を完了する。
+    async fn recovered_test_layout(root: &tempfile::TempDir) -> Layout {
+        let completion = create_intent(
+            &Layout::resolve(root.path()),
+            &intent_create_args(&["--scope", "classic", "--label", "race"]),
+        )
+        .await;
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        let layout = Layout::resolve(root.path());
+        catch_up_before_reading(&layout)
+            .await
+            .expect("競合前の復旧は成功する");
+        layout
+    }
+
+    fn journal_count_at(path: &Path) -> i64 {
+        rusqlite::Connection::open(path)
+            .expect("真実記録を開く")
+            .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+            .expect("イベント件数")
+    }
+
+    fn assert_late_read_error(completion: &Completion, expected: &str) {
+        assert_eq!(
+            completion.code(),
+            0,
+            "後段の読取拒否はerror directive: {completion:?}"
+        );
+        assert_eq!(completion.diagnostic(), None);
+        let value: serde_json::Value =
+            serde_json::from_str(completion.line().expect("error directive")).expect("JSON");
+        assert_eq!(
+            value.get("kind").and_then(serde_json::Value::as_str),
+            Some("error")
+        );
+        assert_eq!(
+            value.get("message").and_then(serde_json::Value::as_str),
+            Some(expected)
+        );
+    }
+
+    /// 復旧成功はその後のファイル差替えを防げない。後段の2ガードも読取不能を区別する。
+    #[tokio::test]
+    async fn a_state_file_replaced_after_recovery_keeps_its_path_and_cause() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        let state = layout.state_file().expect("投影先");
+        assert_eq!(state_version_guard(&layout), None);
+        assert_eq!(autonomy_field_guard(&layout), None);
+        let original = std::fs::read(&state).expect("公開済み状態");
+        std::fs::remove_file(&state).expect("別の利用者が状態を置き換える");
+        std::fs::create_dir(&state).expect("同名ディレクトリ");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            state.display(),
+            std::io::ErrorKind::IsADirectory
+        );
+        assert_eq!(state_version_guard(&layout), Some(expected.clone()));
+        assert_eq!(autonomy_field_guard(&layout), Some(expected));
+        assert!(state.is_dir(), "後段ガードは障害を上書きしない");
+        assert_eq!(journal_count_at(store.as_path()), before);
+        std::fs::remove_dir(&state).expect("障害除去");
+        std::fs::write(&state, original).expect("公開済み状態を戻す");
+        assert_eq!(state_version_guard(&layout), None);
+        assert_eq!(autonomy_field_guard(&layout), None);
+    }
+
+    /// 復旧後に別接続が実行表を壊しても、再開とstanceは不在の逐語や成功へ畳まない。
+    #[tokio::test]
+    async fn a_read_table_broken_after_recovery_stops_resume_and_stance() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        assert_eq!(
+            current_execution_view(&layout).expect("競合前は読める"),
+            Some(("domain-design".into(), "classic".into()))
+        );
+        let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+        concurrent
+            .execute_batch(
+                "DROP TABLE read_execution; CREATE TABLE read_execution (id TEXT PRIMARY KEY);",
+            )
+            .expect("後段読取の前に表を破損");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            store.as_path().display(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(current_execution_view(&layout), Err(expected.clone()));
+        assert_late_read_error(
+            &resume_report(
+                &layout,
+                &report_args(&["--result", "resumed", "--user-input", "1"]),
+            ),
+            &expected,
+        );
+        assert_late_read_error(
+            &skeleton_stance_report(&layout, "on", &store).await,
+            &expected,
+        );
+        assert_eq!(
+            journal_count_at(store.as_path()),
+            before,
+            "後段で拒否してイベントを残さない"
+        );
+    }
+
+    /// 復旧後にストアの置き場が塞がれた場合も、現在地の不在とは区別する。
+    #[tokio::test]
+    async fn a_store_blocked_after_recovery_is_named_by_the_late_query() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        let saved = store.as_path().with_extension("preserved.sqlite");
+        std::fs::rename(store.as_path(), &saved).expect("真実記録を保持した障害注入");
+        std::fs::create_dir(store.as_path()).expect("ストアを塞ぐ");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            store.as_path().display(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(current_execution_view(&layout), Err(expected.clone()));
+        assert_late_read_error(
+            &resume_report(
+                &layout,
+                &report_args(&["--result", "resumed", "--user-input", "1"]),
+            ),
+            &expected,
+        );
+        for completion in [
+            single_report(
+                &layout,
+                &report_args(&[
+                    "--single",
+                    "--result",
+                    "approved",
+                    "--stage",
+                    "domain-design",
+                ]),
+                &store,
+            )
+            .await,
+            skeleton_stance_report(&layout, "on", &store).await,
+        ] {
+            assert_eq!(completion.code(), 1, "{completion:?}");
+            assert_eq!(completion.line(), None);
+            assert_eq!(
+                completion.diagnostic(),
+                Some("aidlc-orchestrate: cannot open the event store")
+            );
+        }
+        assert!(store.as_path().is_dir());
+        assert_eq!(journal_count_at(&saved), before);
+    }
+
+    /// スコープの表を別接続が破損した場合、昇格先のステージ不在として隠さない。
+    #[tokio::test]
+    async fn a_definition_table_broken_after_recovery_keeps_the_promotions_read_error() {
+        let root = minimal_workspace();
+        for relative in [
+            ".claude/tools/data/stage-graph.json",
+            ".claude/tools/data/scope-grid.json",
+        ] {
+            let path = root.path().join(relative);
+            let content = std::fs::read_to_string(&path).expect("合成定義");
+            std::fs::write(
+                path,
+                content.replace("domain-design", "practices-discovery"),
+            )
+            .expect("昇格ステージを持つ合成定義");
+        }
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).expect("store");
+        let before = journal_count_at(store.as_path());
+        assert_eq!(
+            practices_support_agents(&layout, &store).expect("競合前は宣言を読める"),
+            Vec::<String>::new()
+        );
+        let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+        concurrent.execute_batch("DROP TABLE read_definition_stage; CREATE TABLE read_definition_stage (id TEXT PRIMARY KEY);").expect("昇格先の読取前に表を破損");
+        let expected = format!(
+            "Read model not readable at {}: {}. Start a workflow (intent-create) to build it, then run `next` again.",
+            store.as_path().display(),
+            std::io::ErrorKind::Other
+        );
+        assert_eq!(practices_support_agents(&layout, &store), Err(expected));
+        assert_eq!(journal_count_at(store.as_path()), before);
+    }
+
+    /// 隔離実行とstanceでも、コミット後の公開失敗を成功にせず次の復旧へ委ねる。
+    #[tokio::test]
+    async fn specialized_reports_surface_publication_failure_after_the_event_commit() {
+        for single in [true, false] {
+            let root = minimal_workspace();
+            let graph = root.path().join(".claude/tools/data/stage-graph.json");
+            let content = std::fs::read_to_string(&graph).expect("合成定義");
+            std::fs::write(
+                graph,
+                content.replace("\"phase\":\"inception\"", "\"phase\":\"construction\""),
+            )
+            .expect("skeleton gateを持つ定義");
+            let layout = recovered_test_layout(&root).await;
+            let store = store_path(&layout).expect("store");
+            let before = journal_count_at(store.as_path());
+            let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+            let checkpoint = || {
+                concurrent.query_row("SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'", [], |row| row.get::<_, i64>(0)).expect("公開位置")
+            };
+            let before_position = checkpoint();
+            concurrent.execute_batch(&format!("CREATE TRIGGER fail_late_publication BEFORE INSERT ON amadeus_publication WHEN NEW.target_position > {before_position} BEGIN SELECT RAISE(ABORT,'publication unavailable'); END;")).expect("コミット後の公開を失敗させる");
+            let completion = if single {
+                single_report(
+                    &layout,
+                    &report_args(&[
+                        "--single",
+                        "--result",
+                        "approved",
+                        "--stage",
+                        "domain-design",
+                    ]),
+                    &store,
+                )
+                .await
+            } else {
+                skeleton_stance_report(&layout, "on", &store).await
+            };
+            assert_eq!(completion.code(), 1, "{completion:?}");
+            assert_eq!(completion.line(), None);
+            assert_eq!(
+                completion.diagnostic(),
+                Some(
+                    format!(
+                        "aidlc-orchestrate: projection: read: io: Other at {}",
+                        store.as_path().display()
+                    )
+                    .as_str()
+                )
+            );
+            assert_eq!(
+                journal_count_at(store.as_path()),
+                before + 1,
+                "真実はコミット済み"
+            );
+            assert_eq!(checkpoint(), before_position, "未公開の位置へ進めない");
+            concurrent
+                .execute_batch("DROP TRIGGER fail_late_publication")
+                .expect("公開障害を除去");
+            catch_up_before_reading(&layout)
+                .await
+                .expect("保存済みイベントから回復");
+            assert_eq!(
+                journal_count_at(store.as_path()),
+                before + 1,
+                "復旧でイベントを増やさない"
+            );
+            assert_eq!(checkpoint(), before_position + 1);
+        }
+    }
+
+    /// 読み面が正常でも集約snapshotが壊れていれば、各reportは真実への追記を拒否する。
+    #[tokio::test]
+    async fn reports_refuse_a_corrupt_aggregate_snapshot_without_mutation() {
+        let root = minimal_workspace();
+        let layout = recovered_test_layout(&root).await;
+        let store = store_path(&layout).unwrap();
+        let execution = active_execution(&layout)
+            .unwrap()
+            .unwrap()
+            .execution_id()
+            .as_str()
+            .to_owned();
+        let database = rusqlite::Connection::open(store.as_path()).unwrap();
+        let snapshot: Vec<u8> = database
+            .query_row(
+                "SELECT payload FROM snapshot WHERE aid=?1",
+                [&execution],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let before = journal_count_at(store.as_path());
+        let state = std::fs::read(layout.state_file().unwrap()).unwrap();
+        let audit = audit_ledger(&layout);
+        assert_eq!(
+            database
+                .execute(
+                    "UPDATE snapshot SET payload=X'00' WHERE aid=?1",
+                    [&execution]
+                )
+                .unwrap(),
+            1
+        );
+        for completion in [
+            report(&layout, &report_args(&["--result", "awaiting-approval"])).await,
+            single_report(
+                &layout,
+                &report_args(&[
+                    "--single",
+                    "--result",
+                    "approved",
+                    "--stage",
+                    "domain-design",
+                ]),
+                &store,
+            )
+            .await,
+            skeleton_stance_report(&layout, "on", &store).await,
+        ] {
+            assert_eq!(completion.code(), 0, "{completion:?}");
+            let value: serde_json::Value =
+                serde_json::from_str(completion.line().unwrap()).unwrap();
+            assert_eq!(
+                value.get("kind").and_then(serde_json::Value::as_str),
+                Some("error")
+            );
+            let message = value
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap();
+            assert!(message.contains("corrupt"), "{message}");
+            assert!(message.contains(&execution), "{message}");
+            assert_eq!(journal_count_at(store.as_path()), before);
+            assert_eq!(std::fs::read(layout.state_file().unwrap()).unwrap(), state);
+            assert_eq!(audit_ledger(&layout), audit);
+        }
+        database
+            .execute(
+                "UPDATE snapshot SET payload=?1 WHERE aid=?2",
+                rusqlite::params![snapshot, execution],
+            )
+            .unwrap();
+        let completion = single_report(
+            &layout,
+            &report_args(&[
+                "--single",
+                "--result",
+                "approved",
+                "--stage",
+                "domain-design",
+            ]),
+            &store,
+        )
+        .await;
+        let value: serde_json::Value = serde_json::from_str(completion.line().unwrap()).unwrap();
+        assert_eq!(
+            value.get("kind").and_then(serde_json::Value::as_str),
+            Some("done")
+        );
+        assert_eq!(journal_count_at(store.as_path()), before + 1);
     }
 
     /// `intent-create` の引数を実際のパーサから組む。
@@ -2858,15 +3214,17 @@ corrupt review override: Adversarial"
         .await;
 
         assert_eq!(completion.code(), 1);
-        assert_eq!(
-            completion.diagnostic(),
-            Some("aidlc-orchestrate: cannot open the event store")
+        assert!(
+            completion
+                .diagnostic()
+                .is_some_and(|message| message.contains("journal: io:")),
+            "{completion:?}"
         );
     }
 
-    /// 書いた事実を描けなければ握り潰さない — 利用者には何も見えないままになるからである。
+    /// 公開先の異常が既にあるときは、書込を始める前に拒否する。
     #[tokio::test]
-    async fn a_projection_that_cannot_land_after_a_commit_is_refused() {
+    async fn an_unwritable_projection_prevents_the_report_commit() {
         let root = minimal_workspace();
         let layout = Layout::resolve(root.path());
         create_intent(
@@ -2875,17 +3233,24 @@ corrupt review override: Adversarial"
         )
         .await;
         let layout = Layout::resolve(root.path());
-        // 監査シャードの置き場をファイルで塞ぐ（コマンド側は通るが、投影は書き込めない）。
-        // 骨格そのものは塞がない — 段 1 の state-version guard が先に読むので、そちらを
-        // 壊すとコミットまで届かず「コミット後の投影」を見たことにならない。
+        let database = rusqlite::Connection::open(store_path(&layout).expect("store").as_path())
+            .expect("database");
+        let event_count = || {
+            database
+                .query_row("SELECT COUNT(*) FROM journal", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("events")
+        };
+        let before = event_count();
+        // 公開先を塞ぎ、先行する復旧確認で新たなコマンド書込を拒否させる。
         let audit_dir = layout.audit_dir().expect("監査ディレクトリ");
         std::fs::remove_dir_all(&audit_dir).expect("監査ディレクトリ");
         std::fs::write(&audit_dir, "not a directory").expect("塞ぐ");
 
         let completion = report(
             &layout,
-            // `[-]` のゲートは明示 `--stage` を要する（forward 表）— ここで見たいのは
-            // 判断ではなく「コミット後に投影が落ちたときの出口」である。
+            // 報告自体は正当でも、先行する復旧を完了できなければ書き込まない。
             &report_args(&[
                 "--result",
                 "approved",
@@ -2898,6 +3263,11 @@ corrupt review override: Adversarial"
         .await;
 
         assert_eq!(completion.code(), 1, "{completion:?}");
+        assert_eq!(
+            event_count(),
+            before,
+            "公開先が壊れた状態で新しいイベントを書かない"
+        );
         assert!(
             completion
                 .diagnostic()
@@ -3008,7 +3378,7 @@ corrupt review override: Adversarial"
         );
     }
 
-    /// ジャーナルを開けなければ投影は進めない（`next` はその手前の読取で答えを出す）。
+    /// ジャーナルを開けなければ、古い読み面から通常指示を返さない。
     #[tokio::test]
     async fn a_blocked_store_stops_the_catch_up_before_reading() {
         let root = minimal_workspace();
@@ -3031,7 +3401,7 @@ corrupt review override: Adversarial"
             completion
                 .line()
                 .unwrap_or_default()
-                .contains("Read model not readable at "),
+                .contains("journal: io:"),
             "{completion:?}"
         );
     }

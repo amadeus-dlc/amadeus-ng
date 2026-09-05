@@ -26,7 +26,7 @@
     {
       "id": "NFR3",
       "status": "OK",
-      "target": "BR1.2, BR1.3, BR3.1, BR3.2, BR3.3, BR3.4, BR4.1, BR4.3, BR4.4, BR5.1, BR5.2, BR5.3"
+      "target": "BR1.2, BR1.3, BR2.2, BR3.1, BR3.2, BR3.3, BR3.4, BR4.1, BR4.3, BR4.4, BR5.1, BR5.2, BR5.3"
     }
   ],
   "reverse": []

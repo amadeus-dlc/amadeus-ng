@@ -1,6 +1,6 @@
 //! SQLiteに計画を先行保存し、同じDBの書込排他下で公開・確定する。
 
-use super::journal_reader_impl::map_sqlite_error;
+use super::store_failure::SqliteResultExt;
 use super::{
     CatchUpError, GlobalSeqNr, JournalReadError, JournalReaderImpl, ProjectionName,
     PublicationBatch, PublicationFile,
@@ -41,9 +41,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS amadeus_publication (
  PRIMARY KEY(projection,target_binding,ordinal));";
 
 pub(super) fn initialize(connection: &Connection, path: &Path) -> Result<(), JournalReadError> {
-    connection
-        .execute_batch(SCHEMA)
-        .map_err(|e| map_sqlite_error(&e, path))
+    connection.execute_batch(SCHEMA).at_store(path)
 }
 
 pub(super) fn pending(
@@ -133,6 +131,7 @@ fn read(
     pending_only: bool,
     snapshot_binding: Option<&str>,
 ) -> Result<Option<PublicationBatch>, JournalReadError> {
+    let invalid_number = |_: std::num::TryFromIntError| invalid(path);
     let header_sql = if snapshot_binding.is_some() {
         "SELECT start_position,target_position,file_count,request_id,generation,rebuild_mode,format_version,plan_digest,target_binding,transform_revision FROM amadeus_publication_snapshot WHERE projection=?1 AND target_binding=?3 AND ?2=0"
     } else {
@@ -158,7 +157,7 @@ fn read(
             },
         )
         .optional()
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     let Some((start, end, count, id, generation, rebuild, version, digest, binding, revision)) =
         header
     else {
@@ -167,9 +166,9 @@ fn read(
     if version != 1 {
         return Err(invalid(path));
     }
-    let start = u64::try_from(start).map_err(|_| invalid(path))?;
-    let end = u64::try_from(end).map_err(|_| invalid(path))?;
-    let generation = u64::try_from(generation).map_err(|_| invalid(path))?;
+    let start = u64::try_from(start).map_err(invalid_number)?;
+    let end = u64::try_from(end).map_err(invalid_number)?;
+    let generation = u64::try_from(generation).map_err(invalid_number)?;
     if end < start || generation == 0 || uuid::Uuid::parse_str(&id).is_err() {
         return Err(invalid(path));
     }
@@ -178,9 +177,7 @@ fn read(
     } else {
         "SELECT ordinal,path,before_content,after_content,append_mode,memory_mode FROM amadeus_publication_file WHERE projection=?1 AND ?2 IS NULL ORDER BY ordinal"
     };
-    let mut statement = connection
-        .prepare(file_sql)
-        .map_err(|e| map_sqlite_error(&e, path))?;
+    let mut statement = connection.prepare(file_sql).at_store(path)?;
     let rows = statement
         .query_map(params![projection.as_str(), snapshot_binding], |r| {
             Ok((
@@ -194,10 +191,10 @@ fn read(
                 ),
             ))
         })
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     let mut files = Vec::new();
     for row in rows {
-        let (ordinal, file) = row.map_err(|e| map_sqlite_error(&e, path))?;
+        let (ordinal, file) = row.at_store(path)?;
         if usize::try_from(ordinal).ok() != Some(files.len()) || !file.path().is_absolute() {
             return Err(invalid(path));
         }
@@ -228,11 +225,11 @@ fn archive(
     superseded: bool,
 ) -> Result<(), JournalReadError> {
     transaction.execute("INSERT INTO amadeus_publication_history SELECT projection,generation,request_id,start_position,target_position,?2,served_position,served_generation FROM amadeus_publication WHERE projection=?1",
-        params![projection.as_str(),if superseded { "superseded" } else { "committed" }]).map_err(|e|map_sqlite_error(&e,path))?;
+        params![projection.as_str(),if superseded { "superseded" } else { "committed" }]).at_store(path)?;
     // 解決が必要だった未完計画の前後は保全する。通常の完了計画は要求IDと範囲だけ残す。
     if superseded {
         transaction.execute("INSERT INTO amadeus_publication_history_file SELECT f.projection,p.generation,f.ordinal,f.path,f.before_content,f.after_content,f.append_mode,f.memory_mode FROM amadeus_publication_file f JOIN amadeus_publication p ON f.projection=p.projection WHERE f.projection=?1",
-            [projection.as_str()]).map_err(|e|map_sqlite_error(&e,path))?;
+            [projection.as_str()]).at_store(path)?;
     }
     Ok(())
 }
@@ -243,9 +240,10 @@ fn prepare(
     projection: &ProjectionName,
     candidate: &PublicationBatch,
 ) -> Result<Option<PublicationBatch>, CatchUpError> {
+    let invalid_number = |_: std::num::TryFromIntError| invalid(path);
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     let archived: Option<String> = transaction
         .query_row(
             "SELECT state FROM amadeus_publication_history WHERE projection=?1 AND request_id=?2",
@@ -253,7 +251,7 @@ fn prepare(
             |r| r.get(0),
         )
         .optional()
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     if let Some(state) = archived {
         return if state == "committed" {
             Ok(None)
@@ -346,9 +344,9 @@ fn prepare(
             "DELETE FROM amadeus_publication_file WHERE projection=?1",
             [projection.as_str()],
         )
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     transaction.execute("INSERT INTO amadeus_publication VALUES (?1,?2,?3,0,?4,?5,?6,?7,1,?8,?9,?10,NULL,NULL) ON CONFLICT(projection) DO UPDATE SET start_position=excluded.start_position,target_position=excluded.target_position,committed=0,file_count=excluded.file_count,request_id=excluded.request_id,generation=excluded.generation,rebuild_mode=excluded.rebuild_mode,format_version=excluded.format_version,plan_digest=excluded.plan_digest,target_binding=excluded.target_binding,transform_revision=excluded.transform_revision,served_position=NULL,served_generation=NULL",
-        params![projection.as_str(),i64::try_from(candidate.from().to_u64()).map_err(|_|invalid(path))?,i64::try_from(candidate.to().to_u64()).map_err(|_|invalid(path))?,i64::try_from(accepted.files().len()).map_err(|_|invalid(path))?,candidate.request_id(),i64::try_from(generation).map_err(|_|invalid(path))?,candidate.is_rebuild(),digest,candidate.target_binding(),candidate.transform_revision()]).map_err(|e|map_sqlite_error(&e,path))?;
+        params![projection.as_str(),i64::try_from(candidate.from().to_u64()).map_err(invalid_number)?,i64::try_from(candidate.to().to_u64()).map_err(invalid_number)?,i64::try_from(accepted.files().len()).map_err(invalid_number)?,candidate.request_id(),i64::try_from(generation).map_err(invalid_number)?,candidate.is_rebuild(),digest,candidate.target_binding(),candidate.transform_revision()]).at_store(path)?;
     for (ordinal, file) in accepted.files().iter().enumerate() {
         if !file.path().is_absolute() {
             return Err(invalid(path).into());
@@ -358,7 +356,7 @@ fn prepare(
                 "INSERT INTO amadeus_publication_file VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![
                     projection.as_str(),
-                    i64::try_from(ordinal).map_err(|_| invalid(path))?,
+                    i64::try_from(ordinal).map_err(invalid_number)?,
                     file.path().to_str().ok_or_else(|| invalid(path))?,
                     file.before(),
                     file.after(),
@@ -366,11 +364,9 @@ fn prepare(
                     file.is_memory()
                 ],
             )
-            .map_err(|e| map_sqlite_error(&e, path))?;
+            .at_store(path)?;
     }
-    transaction
-        .commit()
-        .map_err(|e| map_sqlite_error(&e, path))?;
+    transaction.commit().at_store(path)?;
     Ok(Some(accepted))
 }
 
@@ -384,10 +380,22 @@ pub(super) fn publish(
     let Some(batch) = prepare(connection, path, projection, candidate)? else {
         return Ok(());
     };
+    publish_prepared(connection, path, projection, &batch, tables)
+}
+
+/// 耐久化済みの計画を再照合し、次のトランザクションで公開・確定する。
+/// 準備とこの再照合の間に別の書き手が完了・置換していても、古い計画では書かない。
+fn publish_prepared(
+    connection: &mut Connection,
+    path: &Path,
+    projection: &ProjectionName,
+    batch: &PublicationBatch,
+    tables: &ReadTables,
+) -> Result<(), CatchUpError> {
     // 計画は耐久化済み。比較開始から確定までDBの書込排他を保持する。
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     let Some(saved) = pending(&transaction, path, projection)? else {
         let current = latest(&transaction, path, projection)?;
         return if current
@@ -399,7 +407,7 @@ pub(super) fn publish(
             Err(conflict(path))
         };
     };
-    if saved != batch {
+    if &saved != batch {
         return Err(conflict(path));
     }
     let current = JournalReaderImpl::read_checkpoint(&transaction, projection, path)?;
@@ -415,26 +423,294 @@ pub(super) fn publish(
             "UPDATE amadeus_publication SET committed=1,served_position=?3,served_generation=?4 WHERE projection=?1 AND request_id=?2",
             params![projection.as_str(), saved.request_id(),head.position(),head.generation()],
         )
-        .map_err(|e| map_sqlite_error(&e, path))?;
+        .at_store(path)?;
     if let Some(binding) = saved.target_binding() {
         // 出力先ごとに最新の完了断面を残す。別intentの公開で復元材料を失わない。
         transaction.execute("DELETE FROM amadeus_publication_snapshot_file WHERE projection=?1 AND target_binding=?2",
-            params![projection.as_str(),binding]).map_err(|e|map_sqlite_error(&e,path))?;
+            params![projection.as_str(),binding]).at_store(path)?;
         transaction.execute("INSERT INTO amadeus_publication_snapshot SELECT projection,target_binding,start_position,target_position,file_count,request_id,generation,rebuild_mode,format_version,plan_digest,transform_revision FROM amadeus_publication WHERE projection=?1
             ON CONFLICT(projection,target_binding) DO UPDATE SET start_position=excluded.start_position,target_position=excluded.target_position,file_count=excluded.file_count,request_id=excluded.request_id,generation=excluded.generation,rebuild_mode=excluded.rebuild_mode,format_version=excluded.format_version,plan_digest=excluded.plan_digest,transform_revision=excluded.transform_revision",
-            [projection.as_str()]).map_err(|e|map_sqlite_error(&e,path))?;
+            [projection.as_str()]).at_store(path)?;
         transaction.execute("INSERT INTO amadeus_publication_snapshot_file SELECT projection,?2,ordinal,path,before_content,after_content,append_mode,memory_mode FROM amadeus_publication_file WHERE projection=?1",
-            params![projection.as_str(),binding]).map_err(|e|map_sqlite_error(&e,path))?;
+            params![projection.as_str(),binding]).at_store(path)?;
     }
-    transaction
-        .commit()
-        .map_err(|e| map_sqlite_error(&e, path))?;
+    transaction.commit().at_store(path)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use super::super::journal_reader_impl::tests::{birth_event, opened_store};
+    use crate::orchestration::{JournalBatch, JournalReader};
+    use core_command_domain::workspace::StorePath;
+
+    /// 既存の本家ストア用フィクスチャを共有し、両相は実SQLiteの別接続で動かす。
+    fn fixture() -> (tempfile::TempDir, StorePath, PathBuf, PublicationBatch) {
+        let dir = tempfile::tempdir().unwrap();
+        let (_store, path) = opened_store(&dir);
+        drop(JournalReaderImpl::open(&path).unwrap());
+        let state = dir.path().join("state.md");
+        std::fs::write(&state, "before\n").unwrap();
+        let batch = PublicationBatch::rebuild(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::ZERO,
+            vec![PublicationFile::replacement(&state, "before\n", "after\n")],
+        );
+        (dir, path, state, batch)
+    }
+
+    fn projection() -> ProjectionName {
+        ProjectionName::parse("publication-race").unwrap()
+    }
+
+    fn tables() -> ReadTables {
+        ReadTables::project(&JournalBatch::empty()).unwrap()
+    }
+
+    #[test]
+    fn another_writer_can_finish_the_same_prepared_request() {
+        let (_dir, path, state, candidate) = fixture();
+        let mut first = Connection::open(path.as_path()).unwrap();
+        let mut second = Connection::open(path.as_path()).unwrap();
+        let saved = prepare(&mut first, path.as_path(), &projection(), &candidate)
+            .unwrap()
+            .unwrap();
+        publish(
+            &mut second,
+            path.as_path(),
+            &projection(),
+            &candidate,
+            &tables(),
+        )
+        .unwrap();
+        std::fs::write(&state, "after\nuser addition\n").unwrap();
+
+        publish_prepared(&mut first, path.as_path(), &projection(), &saved, &tables()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&state).unwrap(),
+            "after\nuser addition\n"
+        );
+        assert!(
+            pending(&first, path.as_path(), &projection())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_replacement_that_finished_before_the_prepared_writer_is_not_overwritten() {
+        let (_dir, path, state, candidate) = fixture();
+        let mut first = Connection::open(path.as_path()).unwrap();
+        let mut second = Connection::open(path.as_path()).unwrap();
+        let saved = prepare(&mut first, path.as_path(), &projection(), &candidate)
+            .unwrap()
+            .unwrap();
+        let replacement = PublicationBatch::rebuild(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::ZERO,
+            vec![PublicationFile::replacement(
+                &state,
+                "before\n",
+                "replacement\n",
+            )],
+        )
+        .replacing(saved.request_id());
+        publish(
+            &mut second,
+            path.as_path(),
+            &projection(),
+            &replacement,
+            &tables(),
+        )
+        .unwrap();
+
+        let error = publish_prepared(&mut first, path.as_path(), &projection(), &saved, &tables())
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            CatchUpError::PublicationConflict {
+                path: path.as_path().to_path_buf()
+            }
+        );
+        assert_eq!(std::fs::read_to_string(&state).unwrap(), "replacement\n");
+        assert!(
+            pending(&first, path.as_path(), &projection())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            latest(&first, path.as_path(), &projection())
+                .unwrap()
+                .unwrap()
+                .request_id(),
+            replacement.request_id()
+        );
+    }
+
+    #[test]
+    fn a_newer_pending_generation_fences_the_previous_prepared_writer() {
+        let (_dir, path, state, candidate) = fixture();
+        let mut first = Connection::open(path.as_path()).unwrap();
+        let mut second = Connection::open(path.as_path()).unwrap();
+        let saved = prepare(&mut first, path.as_path(), &projection(), &candidate)
+            .unwrap()
+            .unwrap();
+        let replacement = PublicationBatch::rebuild(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::ZERO,
+            vec![PublicationFile::replacement(
+                &state,
+                "before\n",
+                "replacement\n",
+            )],
+        )
+        .replacing(saved.request_id());
+        let newer = prepare(&mut second, path.as_path(), &projection(), &replacement)
+            .unwrap()
+            .unwrap();
+        assert!(newer.generation() > saved.generation());
+
+        let error = publish_prepared(&mut first, path.as_path(), &projection(), &saved, &tables())
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            CatchUpError::PublicationConflict {
+                path: path.as_path().to_path_buf()
+            }
+        );
+        assert_eq!(std::fs::read_to_string(&state).unwrap(), "before\n");
+        assert_eq!(
+            pending(&first, path.as_path(), &projection()).unwrap(),
+            Some(newer.clone())
+        );
+        publish_prepared(
+            &mut second,
+            path.as_path(),
+            &projection(),
+            &newer,
+            &tables(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&state).unwrap(), "replacement\n");
+    }
+
+    #[test]
+    fn a_resolution_based_on_an_old_predecessor_cannot_replace_the_new_generation() {
+        let (_dir, path, state, candidate) = fixture();
+        let mut first = Connection::open(path.as_path()).unwrap();
+        let mut second = Connection::open(path.as_path()).unwrap();
+        let original = prepare(&mut first, path.as_path(), &projection(), &candidate)
+            .unwrap()
+            .unwrap();
+        // AはP1に基づく解決内容を作るが、まだ保存していない。
+        let first_resolution = PublicationBatch::rebuild(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::ZERO,
+            vec![PublicationFile::replacement(
+                &state,
+                "before\n",
+                "first resolution\n",
+            )],
+        )
+        .replacing(original.request_id());
+        // 先にBが同じP1を置換してP2を準備する。
+        let second_resolution = PublicationBatch::rebuild(
+            GlobalSeqNr::ZERO,
+            GlobalSeqNr::ZERO,
+            vec![PublicationFile::replacement(
+                &state,
+                "before\n",
+                "second resolution\n",
+            )],
+        )
+        .replacing(original.request_id());
+        let newer = prepare(
+            &mut second,
+            path.as_path(),
+            &projection(),
+            &second_resolution,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            prepare(&mut first, path.as_path(), &projection(), &first_resolution),
+            Err(CatchUpError::PublicationConflict {
+                path: path.as_path().to_path_buf()
+            })
+        );
+
+        assert_eq!(
+            pending(&first, path.as_path(), &projection()).unwrap(),
+            Some(newer.clone())
+        );
+        assert_eq!(std::fs::read_to_string(&state).unwrap(), "before\n");
+        publish_prepared(
+            &mut second,
+            path.as_path(),
+            &projection(),
+            &newer,
+            &tables(),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&state).unwrap(),
+            "second resolution\n"
+        );
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "本家スキーマへ復号可能なジャーナル行を追加するフィクスチャ (BR1.7の射程外)"
+    )]
+    #[tokio::test]
+    async fn a_checkpoint_advanced_between_phases_fences_the_prepared_writer() {
+        let (_dir, path, state, candidate) = fixture();
+        let mut first = Connection::open(path.as_path()).unwrap();
+        let saved = prepare(&mut first, path.as_path(), &projection(), &candidate)
+            .unwrap()
+            .unwrap();
+        let event = birth_event();
+        let payload = serde_json::to_vec(&crate::orchestration::IntentEventDto::of(
+            &event,
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+        ))
+        .unwrap();
+        // Aが空の履歴の再生成を準備した後にIntentが誕生し、Bがその断面を確定する。
+        first.execute(
+            "INSERT INTO journal(pkey,skey,aid,seq_nr,payload,occurred_at,manifest) VALUES (?1,'1',?1,1,?2,0,'intent-event/1')",
+            params![event.aggregate_id().as_str(), payload],
+        ).unwrap();
+        let mut second = JournalReaderImpl::open(&path).unwrap();
+        let history = second.events_after(GlobalSeqNr::ZERO).await.unwrap();
+        let last = history.scanned_to().unwrap();
+        let advanced = ReadTables::project(&history).unwrap();
+        second
+            .advance_checkpoint(&projection(), last, &advanced)
+            .await
+            .unwrap();
+
+        let error = publish_prepared(&mut first, path.as_path(), &projection(), &saved, &tables())
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            CatchUpError::PublicationConflict {
+                path: path.as_path().to_path_buf()
+            }
+        );
+        assert_eq!(std::fs::read_to_string(&state).unwrap(), "before\n");
+        assert_eq!(
+            pending(&first, path.as_path(), &projection()).unwrap(),
+            Some(saved)
+        );
+        assert_eq!(second.checkpoint(&projection()).await.unwrap(), last);
+    }
 
     #[test]
     fn a_valid_plan_from_an_old_transform_is_not_resumed() {

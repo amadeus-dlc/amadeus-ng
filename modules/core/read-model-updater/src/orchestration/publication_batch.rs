@@ -84,27 +84,7 @@ impl PublicationBatch {
         mut self,
         targets: &super::ProjectionTargets,
     ) -> Result<PublicationBatch, CatchUpError> {
-        let mut paths = Vec::new();
-        for path in [
-            targets.state_file(),
-            targets.audit_shard(),
-            targets.project_md(),
-            targets.team_md(),
-        ] {
-            paths.push(core_infrastructure::canon_json::JsonValue::String(
-                path.to_str()
-                    .ok_or_else(|| CatchUpError::PublicationConflict {
-                        path: path.to_path_buf(),
-                    })?
-                    .to_string(),
-            ));
-        }
-        self.target_binding = Some(
-            core_infrastructure::canon_json::hash_compact(
-                &core_infrastructure::canon_json::JsonValue::Array(paths),
-            )
-            .rendered(),
-        );
+        self.target_binding = Some(targets.binding()?);
         Ok(self)
     }
 
@@ -180,18 +160,16 @@ impl PublicationBatch {
         }
     }
 
-    /// 保存済みの出力先が、呼出元の所有する対象だけかを検査する。
+    /// 全対象の束縛と、個々の出力先の所有が呼出元に一致するかを検査する。
     #[must_use]
     pub fn matches_targets(&self, targets: &super::ProjectionTargets) -> bool {
-        self.files.iter().all(|file| {
-            [
-                targets.state_file(),
-                targets.audit_shard(),
-                targets.project_md(),
-                targets.team_md(),
-            ]
-            .contains(&file.path())
-        })
+        targets
+            .binding()
+            .is_ok_and(|binding| self.target_binding.as_deref() == Some(binding.as_str()))
+            && self
+                .files
+                .iter()
+                .all(|file| targets.owned_paths().contains(&file.path()))
     }
 
     /// 入力を読み始めた確定位置。
