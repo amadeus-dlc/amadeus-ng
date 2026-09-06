@@ -816,6 +816,17 @@ export function parseTestingContract(plan: string): TestingPostureContract | nul
   }
 }
 
+// 作業内容を保持したまま、表示上の完了チェックだけを正規化する。
+// コード・HTML・引用中の表記やテスト手順は承認対象のままにする。
+function planApprovalContent(plan: string): string {
+  const visible = visibleMarkdownLines(plan);
+  const task = /^( {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+)\[[xX]\](?=[ \t])/;
+  return plan.split(/(\r\n|\r|\n)/).map((line, index) => {
+    if (index % 2 !== 0 || !task.test(visible[index / 2] ?? "")) return line;
+    return line.replace(task, "$1[ ]");
+  }).join("");
+}
+
 export function approvalFingerprint(
   plan: string,
   instructions: string,
@@ -826,7 +837,7 @@ export function approvalFingerprint(
   >,
 ): string {
   return hashObject({
-    plan,
+    plan: planApprovalContent(plan),
     instructions,
     testing_contract: contractHash,
     target: authority.targetId,

@@ -30,12 +30,12 @@
 
 ## 3. 実行ステップ
 
-- [ ] Step 1. ランナーと設定を確認する。既存Cargo設定・preserve_order/float_roundtrip・固定シードを確認し、unit-test-instructionsのUnit限定3コマンドが実行できることを記録する。実行済みログを再利用する場合は日時と対象を明示する。
-- [ ] Step 2. 現行実装・既存試験・採取済み32行を、13件のBRと11件の詳細NFRに対応付ける。parse/parse_bytes/to_value、全プロファイルの整数形式キー優先、大整数丸め、UTF-8拒否境界、ハッシュ族を確認する。入力88ファイルの実測と、CLI/フックの未採取記録も確認する。
-- [ ] Step 3. mod.rsとparse.rsの説明コメントを是正する。旧クレート単位の説明をモジュール境界へ合わせ、直接構築値の深さ検査や巨大入力の保護を過大に保証しない。rustdoc例の振る舞いは維持する。
-- [ ] Step 4. Unit限定の単体・PBT・ゴールデン・rustdoc試験を実行し、件数と結果を記録する。コメントだけの修正に形式的な新規テストは追加しない。機能欠陥が判明した場合は本計画の範囲を超えて直さず、再現試験・Red→Green→Refactorの変更案を提示する。
-- [ ] Step 5. code-summaryを現在の事実に更新し、過去のTDD証跡を歴史として保存する。traceabilityの旧shared/canon-jsonパスを実在する現行ファイルへ改め、FR7/FR7.1〜FR7.3・全BR・全詳細NFRの対応を記録する。性能の数値目標を作らず、NFR5.1は観測時の測定手順への対応を明示する。source-manifestへ実際の変更パスを記録する。
-- [ ] Step 6. 差分を点検し、実行コード・期待値・依存・品質閾値に変更がないことを確認する。独立レビューへ引き渡す。親セッションがレビュー・Unit完了・次工程を処理する。
+- [x] Step 1. ランナーと設定を確認する。既存Cargo設定・preserve_order/float_roundtrip・固定シードを確認し、unit-test-instructionsのUnit限定3コマンドが実行できることを記録する。実行済みログを再利用する場合は日時と対象を明示する。
+- [x] Step 2. 現行実装・既存試験・採取済み32行を、13件のBRと11件の詳細NFRに対応付ける。parse/parse_bytes/to_value、全プロファイルの整数形式キー優先、大整数丸め、UTF-8拒否境界、ハッシュ族を確認する。入力88ファイルの実測と、CLI/フックの未採取記録も確認する。
+- [x] Step 3. mod.rsとparse.rsの説明コメントを是正する。旧クレート単位の説明をモジュール境界へ合わせ、直接構築値の深さ検査や巨大入力の保護を過大に保証しない。rustdoc例の振る舞いは維持する。
+- [x] Step 4. Unit限定の単体・PBT・ゴールデン・rustdoc試験を実行し、件数と結果を記録する。コメントだけの修正に形式的な新規テストは追加しない。機能欠陥が判明した場合は本計画の範囲を超えて直さず、再現試験・Red→Green→Refactorの変更案を提示する。
+- [x] Step 5. code-summaryを現在の事実に更新し、過去のTDD証跡を歴史として保存する。traceabilityの旧shared/canon-jsonパスを実在する現行ファイルへ改め、FR7/FR7.1〜FR7.3・全BR・全詳細NFRの対応を記録する。性能の数値目標を作らず、NFR5.1は観測時の測定手順への対応を明示する。source-manifestへ実際の変更パスを記録する。
+- [x] Step 6. 差分を点検し、実行コード・期待値・依存・品質閾値に変更がないことを確認する。独立レビューへ引き渡す。親セッションがレビュー・Unit完了・次工程を処理する。
 
 ## 4. Testing Contractの適用
 
@@ -132,3 +132,40 @@
   "contract_sha256": "sha256:303d9bb7b5d777d54a6761be9ed154d85d5bb3f2d6b9cce02f71f4ed1b3a4ff3"
 }
 ```
+
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-06T02:33:19Z
+**Iteration:** 1
+
+### Findings
+
+今回のコメント2ファイルと実装記録の是正を対象とした、1回のADVISORYレビューである。新規所見はない。
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+
+機能設計のR-08（重複キー規則の本文記載不足）は同設計の所見として保持する。旧code-summaryのReviewも履歴のまま保持し、過去のTDD証跡・公開面の承認や、欠落一覧の非空アサート・広いCLONE正規化・フック区分の可読性を、今回の成功から解消済みとは判定しない。今回のcode-summary第6・7節は、この境界と未検証範囲を明記している。
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| aidlc-sensor-required-sections（stage=code-generation、code-generation-plan.md / unit-test-instructions.md / code-summary.md） | PASS、findings_count=0、追記前H2数7 / 5 / 8 | 指定3文書の構造検査を実行した。 |
+| aidlc-sensor-traceability（同stage、traceability.json） | FAIL、findings_count=39 | missing_from_upstream_idsは他UnitのFR1〜FR6・FR8・FR9親子34件と共有NFR1〜NFR5。gaps / orphans / missing_from_table / invalid_entries / invalid_targetsはすべて空。センサー成功とは読み替えない。 |
+| U1割当・詳細要求の手動照合 | 一致、28件 | unit-of-workのU1とrequirementsのFR7親子4件、functional-designのBR13件、security-requirementsの詳細NFR11件を列挙済み。共有NFRのU1への適用は枝番で表現され、NFR3は永続化・投影を持たないため対象外。NFR2.1・NFR5.1のN/Aには今回の範囲と以後の手順がある。OKは実装先の対応であり、未実行の全体品質検査成功を意味しない。 |
+| git diff（modules/core/infrastructure/src/canon_json/mod.rs / parse.rs）と非コメント行・rustdoc例の機械比較 | コメントのみ、比較一致 | 実行コード・公開面・実行時文言・rustdoc例は不変。source-manifestの2パスと一致する。 |
+| 入力経路と設計の照合（mod.rs / parse.rs / value/json_value.rs） | 一致 | parseの深さ事前走査、127段受理・128段拒否、parse_bytesのUTF-8拒否からの委譲、to_valueの変換失敗を確認。直接構築値や巨大入力まで保護するとは保証していない。 |
+| 修正後の既存実行ログ（/tmp/u1-code-unit-after.log、/tmp/u1-code-golden-after.log、/tmp/u1-code-doc-after.log） | 87 + 16 + 1 = 104 passed、失敗・ignoredとも0 | 準備時の3ログと対象件数が一致。重複キー、孤立サロゲート、深さ境界、型付き変換失敗を含む。今回レビューでは再実行せず同セッションのログを確認した。別修正の47件は含めない。 |
+| golden_hash_canonical.rsとC7・受入表・来歴・欠落記録 | 一致 | 32行の3プロファイル・2族の全行比較を確認。固定ピン・CLI28件・フック14件と理由付き未採取2+1件は要約と一致する。コーパス読取は後続Unitの全実行経路比較の証明ではない。 |
+| nfr-input-measurements.jsonの独立再計算 | 全88ファイル一致、最大深さ7 | パス・バイト数・コンテナ深さをPythonで再計算し記録と一致。将来入力の上限保証とは扱わない。 |
+| Cargo・clippy・ツールチェーン・CI・coverage設定 | 記載と一致 | serde_jsonの2機能、モジュール依存3種、局所allow、unsafe forbid継承、Rust固定、CI権限と両ロックファイルのaudit設定、90%床・相対差0.01・固定シードを確認。全体CI・coverage・最新依存検査・性能は未実行。 |
+| linter / type-check | 対象外 | 対象成果物にTypeScript/JavaScriptのソース片はなく、アプリ変更はRustコメントのみ。 |
+| 計画本文のバイト境界 | 先頭17,450バイト不変 | 追記前SHA-256はa99ef337ed73ce4101bc9912f6d7549993dfee058cbf420bc39694ab4352df7d。本文を編集せず本Reviewだけを末尾に追加する。 |
+
+### Summary
+
+入力検証・互換範囲の説明が現在の設計と実装に揃い、今回の変更と再利用・歴史・未検証事項が区別されている。実行時の変更はなく、今回の限定範囲に新たな修正要求はない。

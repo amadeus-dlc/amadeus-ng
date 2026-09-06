@@ -1,0 +1,13 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-canon-json-goldens",
+  "version": 1,
+  "writes": [
+    {
+      "path": "modules/core/infrastructure/src/canon_json/mod.rs"
+    },
+    {
+      "path": "modules/core/infrastructure/src/canon_json/parse.rs"
+    }
+  ]
+}

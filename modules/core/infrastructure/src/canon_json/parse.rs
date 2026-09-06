@@ -1,4 +1,4 @@
-//! JSON 読取の唯一の境界 (W3 / NFR4.3) — 挿入順保持・深さ上限・エラー変種。
+//! JsonValue へのテキスト・バイト列の読取境界 (W3 / NFR4.3) — 挿入順保持・深さ上限。
 
 use std::fmt;
 
@@ -7,13 +7,14 @@ use crate::canon_json::value::{JsonValue, Number};
 /// ネスト深さの上限 (NFR4.3)。`serde_json` 既定の再帰上限と同じ値。
 ///
 /// **受け入れる最大段数は `MAX_DEPTH - 1` = 127 段**である。`serde_json` は 128 段目で
-/// 自前の再帰エラーを返すため、その 1 段手前でこちらが弾くことで、深すぎる入力は必ず
-/// [`ParseError::TooDeep`] になり `serde_json` の再帰エラーが表に出ない (決定的な拒否)。
+/// 自前の再帰エラーを返すため、読取に先立つ走査で 128 段目を
+/// [`ParseError::TooDeep`] として拒否する。文字列外のオブジェクト・配列を 1 段と数える。
 /// `serde_json::Deserializer::disable_recursion_limit` は使わず、上限の数値を
-/// このクレートが 1 か所で持つ (スタック枯渇の防止)。
+/// このモジュールが 1 か所で持つ。対象は [`parse`] / [`parse_bytes`] の読取経路だけであり、
+/// 入力バイト数や直接構築値の深さを制限するものではない。
 pub const MAX_DEPTH: usize = 128;
 
-/// 読取が失敗した理由。文言はアダプタ層 (message-catalog) が付ける — 本型は材料だけを保持する。
+/// 読取が失敗した理由。利用者向け文言は呼出側が組み立て、本型は診断用の材料を保持する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     /// JSON 文法違反。`offset` は入力先頭からのバイト位置。
@@ -23,7 +24,7 @@ pub enum ParseError {
         /// パーサが返した理由 (診断用)。
         detail: String,
     },
-    /// ネスト深さが上限を超えた。
+    /// ネスト深さが上限に達した。
     TooDeep {
         /// 適用された上限 ([`MAX_DEPTH`])。
         limit: usize,
@@ -46,12 +47,14 @@ impl fmt::Display for ParseError {
 
 /// JSON テキストを読み、オブジェクトのキー順 (挿入順) を保った [`JsonValue`] を返す。
 ///
-/// 読取はこの境界 1 か所に集約する — 呼出側はここを通った値だけを扱い、内部で再検証しない。
+/// JSON テキストからの読取を担う。型付き DTO の読取や `to_value`、直接構築した値が
+/// この関数の検証を通ったことを保証するものではない。
 ///
 /// # Errors
 ///
-/// 文法違反は [`ParseError::Syntax`]、ネスト深さが [`MAX_DEPTH`] を超える入力は
-/// [`ParseError::TooDeep`] を返す。深さは `serde_json` に渡す前に決定的に判定する。
+/// 文法違反・孤立サロゲートは [`ParseError::Syntax`]、ネスト深さが [`MAX_DEPTH`] に達する
+/// 入力は [`ParseError::TooDeep`] を返す。深さは `serde_json` に渡す前に判定する。
+/// 入力は UTF-8 の `&str` なので、この経路から [`ParseError::Encoding`] は返さない。
 pub fn parse(text: &str) -> Result<JsonValue, ParseError> {
     check_depth(text)?;
     let value: serde_json::Value =

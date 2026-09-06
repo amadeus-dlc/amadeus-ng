@@ -50,9 +50,9 @@ Q1のブランチ名と初回実装の手順は履歴として保持する。現
 
 計画準備時のUnit限定コマンドは87件＋16件＋rustdoc 1件の計104件が成功した。これは全体CI・性能・最新依存検査の成功を意味しない。
 
-[Approval Fingerprint]: sha256:1c014a6d88597c724d524bf1cab5cd1a022ed2f38b63b2bee2fb18883b3f714e
+[Approval Fingerprint]: sha256:dc02047c5e496d6aed8c870f4daa314b48d9dcd33d50544e5cf0fa90144de28b
 
 - Approve Plan — この計画で実コード生成に進む
 - Request Changes — 計画・テスト手順を修正する
 
-[Answer]:
+[Answer]: Approve Plan

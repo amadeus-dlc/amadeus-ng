@@ -67,6 +67,7 @@ import {
   isClaudeCodeHookInput,
   isoTimestamp,
   readActiveDirectiveMarker,
+  readPlanApprovalReceipt,
   recordHookDrop,
   releaseAuditLock,
   resolveBoltDag,
@@ -78,6 +79,7 @@ import {
   codeGenerationRecordDir,
   type CodeGenerationTarget,
   evaluateCodeGenerationApproval,
+  resolveCodeGenerationAuthority,
   promptTestingContractMarkers,
 } from "../tools/aidlc-testing-posture.ts";
 
@@ -735,6 +737,23 @@ export async function run(input: string): Promise<number> {
             !isTrustedRecordTarget(projectDir, candidate, approvalDir),
         );
         if (!outsideRecord && !mutation.opaqueShell) return 0;
+        // レビュー追記後も、開始済み生成のスコープ管理だけは完了できる。
+        // 通常の計画変更や他のワークスペース書込みは下の承認検証を通す。
+        const reviewDispatch = resolve(recordDir, ".aidlc-reviewer-dispatch.json");
+        if (
+          unit !== null && !mutation.opaqueShell && mutation.targets.length > 0 &&
+          mutation.targets.every((candidate) =>
+            candidate === reviewDispatch &&
+            isTrustedRecordTarget(projectDir, candidate, resolve(recordDir))
+          )
+        ) {
+          const authority = resolveCodeGenerationAuthority(projectDir, target);
+          const receipt = readPlanApprovalReceipt(projectDir, {
+            targetId: authority.targetId,
+            directiveEpoch: authority.directiveEpoch,
+          });
+          if (receipt?.status === "generation" && receipt.choice === "Approve Plan") return 0;
+        }
         const approval = evaluateCodeGenerationApproval(projectDir, target);
         const evidence: UnitEvidence = {
           unit,

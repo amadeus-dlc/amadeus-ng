@@ -5065,3 +5065,686 @@
 **Next Action**: ユーザー回答後にunit resumeし、Plan Approval回答を記入して同一sessionのplan-approval受領証を記録。成功後のみ承認済み計画を開発担当へ渡す
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-06T02:05:54Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Unit Resumed
+**Timestamp**: 2026-09-06T02:06:02Z
+**Event**: UNIT_RESUMED
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:06:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-questions.md
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T02:06:03Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage code-generation --checkpoint plan-approval --session 01a06f1e-c051-7383-b420-f57465e42885 --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md --details Approve Plan --unit u1-canon-json-goldens
+**Error**: Code Generation approval authority is unavailable because the active directive is missing, stale, or legacy; run a fresh `next`
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-06T02:06:20Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-06T02:06:20Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:07:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-questions.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:07:23Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T02:07:25Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: Approve this exact Code Generation plan?
+**Options**: Approve Plan,Request Changes
+**Checkpoint**: Code Generation Plan Approval
+**Plan Target**: unit:u1-canon-json-goldens
+**Intent**: 01a02785-1bd8-76eb-aeea-5aa303ebd5b6
+**Directive Epoch**: sha256:6e814e96c78e2a8a1424efe299a0c89b01488f8676d5dd15a8a7d888f974cc45
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Approval Fingerprint**: sha256:dc02047c5e496d6aed8c870f4daa314b48d9dcd33d50544e5cf0fa90144de28b
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md
+**Questions SHA-256**: 301c56de32f2835b352937a61b579bd9f6d0c544fcc88e1b424672d7ad6da36d
+**Prompt SHA-256**: 8b99d59731c40b1943fb3f71181e017b9d001ae73a8be670c8ad7c46d3baea9a
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T02:07:25Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: python3 - <<'PY'\nfrom pathlib import Path\np=Path('/tmp/aidlc-u1-resume-checkpoint.md');s=p.read_text();p.write_text('''# 2026-09-06 02:07Z 最新の上書き状態\nユーザーの直近1はApp
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T02:07:47Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:07:56Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-questions.md
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T02:07:56Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage code-generation --checkpoint plan-approval --session 01a06f1e-c051-7383-b420-f57465e42885 --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md --details Approve Plan --unit u1-canon-json-goldens
+**Error**: Refusing to record Plan Approval: Plan Approval requires the actual offered choice from this prompt and session
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-06T02:08:19Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-06T02:08:20Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T02:08:45Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Plan Approval Recorded
+**Timestamp**: 2026-09-06T02:08:51Z
+**Event**: PLAN_APPROVAL_RECORDED
+**Stage**: code-generation
+**Details**: Approve Plan
+**Unit**: u1-canon-json-goldens
+**Checkpoint**: Code Generation Plan Approval
+**Plan Target**: unit:u1-canon-json-goldens
+**Intent**: 01a02785-1bd8-76eb-aeea-5aa303ebd5b6
+**Directive Epoch**: sha256:6e814e96c78e2a8a1424efe299a0c89b01488f8676d5dd15a8a7d888f974cc45
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Approval Fingerprint**: sha256:dc02047c5e496d6aed8c870f4daa314b48d9dcd33d50544e5cf0fa90144de28b
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-questions.md
+**Questions SHA-256**: e96287ee649e744bd717b1eaca8d01a604d6cba41fc1555b262157c409c8ed68
+**Prompt SHA-256**: 8b99d59731c40b1943fb3f71181e017b9d001ae73a8be670c8ad7c46d3baea9a
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:11:22Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-plan.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-plan.md
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T02:11:48Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: cat modules/core/infrastructure/src/canon_json/digest.rs; sed -n '1,260p' modules/core/infrastructure/src/canon_json/writer.rs; cat modules/core/infrastructure/
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T02:12:00Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: sed -n '1,240p' modules/core/infrastructure/src/canon_json/writer.rs
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T02:13:06Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/modules/core/infrastructure/src/canon_json/mod.rs
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:13:14Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-plan.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-plan.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T02:14:53Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-summary-history-2026-08-22.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-summary-history-2026-08-22.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:16:03Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-summary.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-summary.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:16:22Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/traceability.json
+**Context**: construction > u1-canon-json-goldens > code-generation > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:16:23Z
+**Event**: SENSOR_FIRED
+**Fire id**: 9dd6fbff
+**Sensor ID**: traceability
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-06T02:16:23Z
+**Event**: SENSOR_FAILED
+**Fire id**: 9dd6fbff
+**Sensor ID**: traceability
+**Stage slug**: code-generation
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/code-generation/traceability-9dd6fbff.md
+**Findings count**: 39
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T02:16:23Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/source-manifest.json
+**Context**: construction > u1-canon-json-goldens > code-generation > source-manifest.json
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:16:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/code-generation-plan.md
+**Context**: construction > u1-canon-json-goldens > code-generation > code-generation-plan.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T02:17:05Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-developer-agent
+**Agent ID**: 01a0747a-535c-70d2-aee4-faa55c5ee3bb
+**Message**: 承認済みStep 1〜6を完了しました。\n\n- アプリ変更は`mod.rs`・`parse.rs`の説明コメントのみ。実行コード・API・エラーメッセージ・rustdoc例は不変です。\n- Unit限定試験は **104件成功**（単体・PBT87、ゴールデン16、rustdoc1）。ログは`/tmp/u1-code-{unit,golden,doc}-after.log`。\n- `code-su
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T02:17:17Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:7f36598850400dcfaa3bd64a2c0230fe2b31e948afd04820e315b7a6467401ca
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/code-generation/code-generation-plan.md
+**Review Appendix Offset**: 17450
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+**Source Fingerprint**: 0d0c7d775ed31508804b1ea8083bede1fc23e93007864067920367a6fd28f2d0
+**Unit Source Fingerprint**: sha256:c620b1e766094f7d3e71f7cc4c634aa289bfc66b0dda06daabe65e9c234710a9
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T02:17:37Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Write
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-reviewer-dispatch.json
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-06T02:18:58Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-06T02:18:58Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T02:18:59Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/review-handoff.md
+**Context**: construction > u1-canon-json-goldens > code-generation > review-handoff.md
+
+---
+
+## Unit Paused
+**Timestamp**: 2026-09-06T02:18:59Z
+**Event**: UNIT_PAUSED
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Reason**: 計画完了チェック後の承認検証がレビュー管理ファイル作成を拒否したため独立レビュー開始待ち
+**Next Action**: review-handoff.mdに記録した承認制御の阻害を解消し、pending review iteration 1の証拠を保持して独立レビューを実行する
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T02:19:43Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:20:57Z
+**Event**: SENSOR_FIRED
+**Fire id**: 3b4021f7
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:20:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: 3b4021f7
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 771
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:20:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: aa3acd8d
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:20:58Z
+**Event**: SENSOR_PASSED
+**Fire id**: aa3acd8d
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 25
+**Note**: script-error: exit-1
+
+---
+
+## Unit Resumed
+**Timestamp**: 2026-09-06T02:21:12Z
+**Event**: UNIT_RESUMED
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:24:12Z
+**Event**: SENSOR_FIRED
+**Fire id**: 60899da4
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:24:13Z
+**Event**: SENSOR_PASSED
+**Fire id**: 60899da4
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 756
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:24:13Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8365da00
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:24:13Z
+**Event**: SENSOR_PASSED
+**Fire id**: 8365da00
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 28
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:25:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: 41d480ef
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:25:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: 41d480ef
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 713
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:25:37Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8dd6d196
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:25:37Z
+**Event**: SENSOR_PASSED
+**Fire id**: 8dd6d196
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 24
+**Note**: script-error: exit-1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:26:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: 674431ec
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:26:46Z
+**Event**: SENSOR_PASSED
+**Fire id**: 674431ec
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 797
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:26:46Z
+**Event**: SENSOR_FIRED
+**Fire id**: b1eb3447
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:26:46Z
+**Event**: SENSOR_PASSED
+**Fire id**: b1eb3447
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 27
+**Note**: script-error: exit-1
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T02:28:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: default
+**Agent ID**: 01a0748a-e394-7c31-b859-385881aac0f5
+**Message**: 新規の不具合所見はありません。承認バイパスにつながる変更は、確認した範囲では見つかりませんでした。\n\n- [完了チェックの正規化](<project-dir>/.codex/tools/aidlc-testing-posture.ts:821)は、可視のタスク行の `[x]`／`[X]` のみを対象とし、本文・改行・テスト手順を保
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:29:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: dfe872fc
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:29:16Z
+**Event**: SENSOR_PASSED
+**Fire id**: dfe872fc
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 712
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T02:29:16Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0cb03043
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T02:29:16Z
+**Event**: SENSOR_PASSED
+**Fire id**: 0cb03043
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/aidlc-plan-progress.test.ts
+**Duration ms**: 24
+**Note**: script-error: exit-1
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T02:30:32Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Source Fingerprint**: 0d0c7d775ed31508804b1ea8083bede1fc23e93007864067920367a6fd28f2d0
+**Unit Source Fingerprint**: sha256:c620b1e766094f7d3e71f7cc4c634aa289bfc66b0dda06daabe65e9c234710a9
+**Retry**: pending-request
+**Artifact Fingerprint**: sha256:7f36598850400dcfaa3bd64a2c0230fe2b31e948afd04820e315b7a6467401ca
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/code-generation/code-generation-plan.md
+**Review Appendix Offset**: 17450
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T02:31:34Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/approval-control-repair.md
+**Context**: construction > u1-canon-json-goldens > approval-control-repair.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T02:34:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: 01a0748e-0aa3-7cd2-9c44-cd8755d6fc8d
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** READY\n\n新規所見なし。計画書末尾にReviewを1節追記し、既存本文17,450バイトの不変を確認しました。\n\n構造検査3件成功、既存ログ104件成功。参照センサーは39件不足を報告しましたが、U1対象28件と参照先は整合しています。旧所見・機能設計R-08は解消扱いせ
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T02:34:10Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:7f36598850400dcfaa3bd64a2c0230fe2b31e948afd04820e315b7a6467401ca
+**Artifact Fingerprint**: sha256:35510d3ed391e7257a21f36231c6c3f8391efa4c4980bd1148872f885cd3f075
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/code-generation/code-generation-plan.md
+**Review Appendix Offset**: 17450
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+**Request Source Fingerprint**: 0d0c7d775ed31508804b1ea8083bede1fc23e93007864067920367a6fd28f2d0
+**Source Fingerprint**: 0d0c7d775ed31508804b1ea8083bede1fc23e93007864067920367a6fd28f2d0
+**Unit Source Fingerprint**: sha256:c620b1e766094f7d3e71f7cc4c634aa289bfc66b0dda06daabe65e9c234710a9
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T02:34:10Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:34:40Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/code-generation/review-handoff.md
+**Context**: construction > u1-canon-json-goldens > code-generation > review-handoff.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:34:40Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/approval-control-repair.md
+**Context**: construction > u1-canon-json-goldens > approval-control-repair.md
+
+---
