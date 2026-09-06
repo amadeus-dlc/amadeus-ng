@@ -22,6 +22,77 @@ pub struct ScopeGrid {
 }
 
 impl ScopeGrid {
+    /// セル数。宣言済みの空列は数に含めない。
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.columns.values().map(BTreeMap::len).sum()
+    }
+    /// セルがないか。宣言済みの空列がある場合もtrue。
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.columns.values().all(BTreeMap::is_empty)
+    }
+    /// スコープ名・slugの辞書順でセルを参照する。範囲外はNone。走査時間は位置に比例する。
+    #[must_use]
+    pub fn at(&self, index: usize) -> Option<(&str, &StageSlug, PlanAction)> {
+        self.columns
+            .iter()
+            .flat_map(|(scope, column)| {
+                column
+                    .iter()
+                    .map(move |(slug, action)| (scope.as_str(), slug, *action))
+            })
+            .nth(index)
+    }
+    /// 条件に一致するセルを残す。宣言済みの列は空になっても保持する。
+    #[must_use]
+    pub fn filter(&self, mut predicate: impl FnMut(&str, &StageSlug, PlanAction) -> bool) -> Self {
+        Self::new(
+            self.columns
+                .iter()
+                .map(|(scope, column)| {
+                    let cells = column
+                        .iter()
+                        .filter(|(slug, action)| predicate(scope, slug, **action))
+                        .map(|(slug, action)| (slug.clone(), *action))
+                        .collect();
+                    (scope.clone(), cells)
+                })
+                .collect(),
+        )
+    }
+    /// セルの値だけを変換する。スコープ・slug・空列の有無を保持する。
+    #[must_use]
+    pub fn map(
+        &self,
+        mut transform: impl FnMut(&str, &StageSlug, PlanAction) -> PlanAction,
+    ) -> Self {
+        Self::new(
+            self.columns
+                .iter()
+                .map(|(scope, column)| {
+                    let cells = column
+                        .iter()
+                        .map(|(slug, action)| (slug.clone(), transform(scope, slug, *action)))
+                        .collect();
+                    (scope.clone(), cells)
+                })
+                .collect(),
+        )
+    }
+    /// スコープ名・slugの辞書順でセルを畳み込む。空列は呼出しを生じない。
+    pub fn fold_left<'a, A>(
+        &'a self,
+        initial: A,
+        mut fold: impl FnMut(A, &'a str, &'a StageSlug, PlanAction) -> A,
+    ) -> A {
+        self.columns.iter().fold(initial, |acc, (scope, column)| {
+            column
+                .iter()
+                .fold(acc, |acc, (slug, action)| fold(acc, scope, slug, *action))
+        })
+    }
+
     /// 読み取った列写像をそのまま保持する。コンポーザが書いた列も**逐語**で受け、
     /// 転置で上書きしたり欠損セルを補完したりしない (再コンパイルは読取側の責務ではない)。
     #[must_use]
@@ -114,6 +185,25 @@ impl ScopeGrid {
     }
 }
 
+impl core_infrastructure::collections::FirstClassCollection for ScopeGrid {
+    type Item<'a> = (&'a str, &'a StageSlug, PlanAction);
+    type Filtered = Self;
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn at(&self, index: usize) -> Option<Self::Item<'_>> {
+        Self::at(self, index)
+    }
+    fn fold_left<'a, A>(&'a self, initial: A, mut fold: impl FnMut(A, Self::Item<'a>) -> A) -> A {
+        Self::fold_left(self, initial, |acc, scope, slug, action| {
+            fold(acc, (scope, slug, action))
+        })
+    }
+    fn filter(&self, mut predicate: impl FnMut(Self::Item<'_>) -> bool) -> Self {
+        Self::filter(self, |scope, slug, action| predicate((scope, slug, action)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
@@ -125,6 +215,39 @@ mod tests {
         ExecutionKind, PhaseId, StageMode, StageNode, StageNodeBuilder, StageNumber,
     };
     use proptest::prelude::*;
+
+    #[test]
+    fn cell_operations_preserve_empty_columns_and_missing_values() {
+        let a = StageSlug::parse("a").unwrap();
+        let b = StageSlug::parse("b").unwrap();
+        let grid = ScopeGrid::new(BTreeMap::from([
+            (
+                "poc".to_string(),
+                BTreeMap::from([
+                    (a.clone(), PlanAction::Execute),
+                    (b.clone(), PlanAction::Skip),
+                ]),
+            ),
+            ("empty".to_string(), BTreeMap::new()),
+        ]));
+        let selected = grid.filter(|_, _, action| action == PlanAction::Execute);
+        assert_eq!(selected.action("poc", &b), None);
+        assert!(selected.contains_scope("empty"));
+        assert_eq!(selected.len(), 1);
+        assert_eq!(grid.at(1), Some(("poc", &b, PlanAction::Skip)));
+        assert_eq!(grid.at(usize::MAX), None);
+        assert_eq!(
+            grid.map(|_, _, _| PlanAction::Skip).action("poc", &a),
+            Some(PlanAction::Skip)
+        );
+        assert_eq!(grid.action("poc", &a), Some(PlanAction::Execute));
+        assert_eq!(
+            grid.fold_left(String::new(), |acc, _, slug, _| acc + slug.as_str()),
+            "ab"
+        );
+        assert!(ScopeGrid::default().is_empty());
+        assert_eq!(ScopeGrid::default().fold_left(4, |acc, _, _, _| acc + 1), 4);
+    }
 
     fn node(slug: &str, number: &str, phase: PhaseId, scopes: &[&str]) -> StageNode {
         StageNodeBuilder::new(

@@ -4,6 +4,10 @@
 
 ## 基本操作
 
+共通の読取・絞込み契約は `core_infrastructure::collections::FirstClassCollection` とする。要素の借用形は関連型、filterの結果は空を許すコレクション型で表す。mapは、異型変換や重複拒否等の結果型が型ごとに異なるため、各具体型の契約として定める。
+
+一般の順序付き列には `Collection<T>`（空を許す）と `NonEmptyCollection<T>`（先頭要素を必ず持つ）を使える。非空型はmap・非空列同士のcombineで非空を保ち、filter・divideではCollectionへ戻る。空列からの非空変換は失敗し得る。列のcombineは連結であり、集合の和集合と混同しない。
+
 必要な操作を `filter`・`map`・`fold_left`・`at` としてコレクション側に持たせる。RustではfoldLeftを慣用のsnake_caseで表記する。
 
 - `filter`: 元の順序と不変条件を保つコレクションを返す。空を許さない型では、空結果の扱いを明示する。
@@ -26,3 +30,21 @@
 型の不変条件、操作の境界値、順序・重複・空の扱いを単体試験と性質試験で固定する。業務上意味のある操作を優先し、使われない共通メソッド群を機械的に追加しない。
 
 現在は設計・レビュー基準。コレクション操作の一律なリンター強制は未実装であり、実装済みと主張しない。ユースケースのドメインgetter禁止は既存のTell Don't Ask規則を引き続き適用する。
+
+## 適用例（2026-09-06）
+
+| 型 | 操作と契約 |
+|---|---|
+| BoltRefs | empty・combine（和集合）・divide（差集合）・filter・map・fold_left・at。辞書順、重複なし。mapは参照名から参照名への変換で、不正な変換結果はResultで拒否する。atの走査時間は位置に比例する |
+| Checkboxes | filter・map・fold_left・at・find・has_completed。元の行順と重複行を維持する。従来の添字getはatへ置換。findは最初の一致、has_completedは同じslugの全行を考慮する |
+| OrderedAuditEvents | filter・fold_left・at。既存の時刻順と同秒の元位置を保持する。任意mapで時刻や位置を変更できる入口は追加しない |
+| AuditFields | combine・divide・filter・map・fold_left・at。挿入順・同名キーの後勝ち・Timestampの破棄・値の改行無害化を保持する |
+| ObjectMembers | combine・divide・filter・map・fold_left・at。挿入順・キー一意・同名キーの後勝ちを保持する |
+| StageGraph | filter・map・fold_left・at。filter後は文書順索引を再構築し、mapでslugが衝突すればResultで拒否する。combine/divideの衝突規則を推測で追加しない |
+| ScopeGrid | セル単位のfilter・map・fold_left・at。scope/slugの辞書順、欠落とSKIPの区別、宣言済み空列を保持する。列を消す集合演算とセル除去を混同しない |
+
+CheckboxesのmapはCheckboxEntryからCheckboxEntryへの変換であり、別の要素型へ写す場合の汎用コンテナではない。必要な変換先の型が定まった時点で、その型の不変条件を守る操作を設計する。順序付き列を便宜的な集合として扱わず、任意の重複排除・並べ替えは行わない。
+
+投影側のチェックボックス検索・完了判定はfind/has_completedを使い、人間の発話記録の集計はOrderedAuditEvents.fold_leftを使う。コレクション外での配列・イテレータ操作を減らす実例とする。各基本操作の内部でイテレータを使うことは禁止しない。
+
+既存7型のtrait適合は `modules/core/command/domain/tests/collection_contract_test.rs` と `modules/core/infrastructure/tests/collections_test.rs` で検査する。集合型以外のcombineは順序や後勝ちの規則を持つため交換法則を仮定しない。非空型に空の単位元はないので、非空型自身をMonoidとはみなさない。

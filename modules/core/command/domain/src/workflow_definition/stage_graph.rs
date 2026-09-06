@@ -21,6 +21,39 @@ pub struct StageGraph {
 }
 
 impl StageGraph {
+    /// 条件に一致するノードを文書順で保持し、索引を振り直す。
+    #[must_use]
+    pub fn filter(&self, mut predicate: impl FnMut(&StageNode) -> bool) -> Self {
+        let nodes: Vec<StageNode> = self
+            .nodes
+            .iter()
+            .filter(|node| predicate(node))
+            .cloned()
+            .collect();
+        let index = nodes
+            .iter()
+            .enumerate()
+            .map(|(position, node)| (node.slug().clone(), position))
+            .collect();
+        Self { nodes, index }
+    }
+
+    /// ノードを変換し、文書順を保って新しいグラフを検証する。
+    ///
+    /// # Errors
+    /// 変換後のslugが重複した場合はDuplicateSlug。
+    pub fn map(
+        &self,
+        transform: impl FnMut(&StageNode) -> StageNode,
+    ) -> Result<Self, StageGraphError> {
+        Self::new(self.nodes.iter().map(transform).collect())
+    }
+
+    /// 文書順で左から畳み込む。空なら初期値を返す。
+    pub fn fold_left<'a, A>(&'a self, initial: A, fold: impl FnMut(A, &'a StageNode) -> A) -> A {
+        self.nodes.iter().fold(initial, fold)
+    }
+
     /// 文書順のノード列からグラフを構成する。
     ///
     /// # Errors
@@ -131,6 +164,23 @@ impl StageGraph {
     }
 }
 
+impl core_infrastructure::collections::FirstClassCollection for StageGraph {
+    type Item<'a> = &'a StageNode;
+    type Filtered = Self;
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn at(&self, index: usize) -> Option<&StageNode> {
+        Self::at(self, index)
+    }
+    fn fold_left<'a, A>(&'a self, initial: A, fold: impl FnMut(A, &'a StageNode) -> A) -> A {
+        Self::fold_left(self, initial, fold)
+    }
+    fn filter(&self, predicate: impl FnMut(&StageNode) -> bool) -> Self {
+        Self::filter(self, predicate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
@@ -158,6 +208,38 @@ mod tests {
 
     fn slug(s: &str) -> StageSlug {
         StageSlug::parse(s).unwrap()
+    }
+
+    #[test]
+    fn collection_operations_rebuild_indices_and_reject_mapping_collisions() {
+        let graph = StageGraph::new(vec![
+            node("b", "1.2", PhaseId::Inception, &[]),
+            node("a", "1.1", PhaseId::Inception, &[]),
+        ])
+        .unwrap();
+        let selected = graph.filter(|node| node.slug() == &slug("a"));
+        assert_eq!(selected.index_of(&slug("a")), Some(0));
+        assert_eq!(selected.at(0).unwrap().slug(), &slug("a"));
+        assert_eq!(
+            graph.fold_left(String::new(), |acc, node| acc + node.slug().as_str()),
+            "ba"
+        );
+        let mapped = graph
+            .map(|node| node.clone().with_enabled(Some(false)))
+            .unwrap();
+        assert_eq!(mapped.at(0).unwrap().enabled(), Some(false));
+        assert_eq!(graph.at(0).unwrap().enabled(), None);
+        assert!(
+            graph
+                .map(|_| node("same", "1.1", PhaseId::Inception, &[]))
+                .is_err()
+        );
+        let empty = graph.filter(|_| false);
+        assert!(empty.is_empty());
+        let count = |acc, _: &StageNode| acc + 1;
+        assert_eq!(empty.fold_left(5, count), 5);
+        assert_eq!(graph.fold_left(5, count), 7);
+        assert!(empty.map(Clone::clone).unwrap().is_empty());
     }
 
     #[test]

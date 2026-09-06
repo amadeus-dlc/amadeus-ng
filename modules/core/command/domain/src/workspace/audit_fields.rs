@@ -20,6 +20,64 @@ const TIMESTAMP_KEY: &str = "Timestamp";
 pub struct AuditFields(Vec<(AuditFieldKey, AuditFieldValue)>);
 
 impl AuditFields {
+    /// 右側を優先して結合する。同じキーは最初の位置を保つ。
+    #[must_use]
+    pub fn combine(&self, other: &Self) -> Self {
+        other.fold_left(self.clone(), |out, key, value| {
+            out.with(key.clone(), value.as_str())
+        })
+    }
+
+    /// 他方と同じキーを除き、残るフィールドの順序を保つ。
+    #[must_use]
+    pub fn divide(&self, other: &Self) -> Self {
+        self.filter(|key, _| !other.0.iter().any(|(candidate, _)| candidate == key))
+    }
+
+    /// 条件に一致するフィールドを挿入順で返す。
+    #[must_use]
+    pub fn filter(
+        &self,
+        mut predicate: impl FnMut(&AuditFieldKey, &AuditFieldValue) -> bool,
+    ) -> Self {
+        self.fold_left(Self::new(), |out, key, value| {
+            if predicate(key, value) {
+                out.with(key.clone(), value.as_str())
+            } else {
+                out
+            }
+        })
+    }
+
+    /// キーと値を変換する。予約キーの破棄・改行の無害化・同名置換はwithと同じ。
+    #[must_use]
+    pub fn map(
+        &self,
+        mut transform: impl FnMut(&AuditFieldKey, &AuditFieldValue) -> (AuditFieldKey, String),
+    ) -> Self {
+        self.fold_left(Self::new(), |out, key, value| {
+            let (key, value) = transform(key, value);
+            out.with(key, &value)
+        })
+    }
+
+    /// 挿入順に左から畳み込む。空なら初期値を返す。
+    pub fn fold_left<'a, A>(
+        &'a self,
+        initial: A,
+        mut fold: impl FnMut(A, &'a AuditFieldKey, &'a AuditFieldValue) -> A,
+    ) -> A {
+        self.0
+            .iter()
+            .fold(initial, |acc, (key, value)| fold(acc, key, value))
+    }
+
+    /// 挿入順の添字で参照する。範囲外はNone。
+    #[must_use]
+    pub fn at(&self, index: usize) -> Option<(&AuditFieldKey, &AuditFieldValue)> {
+        self.0.get(index).map(|(key, value)| (key, value))
+    }
+
     /// 空のフィールド群。
     #[must_use]
     pub const fn new() -> AuditFields {
@@ -59,12 +117,66 @@ impl AuditFields {
     }
 }
 
+impl core_infrastructure::collections::FirstClassCollection for AuditFields {
+    type Item<'a> = (&'a AuditFieldKey, &'a AuditFieldValue);
+    type Filtered = Self;
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn at(&self, index: usize) -> Option<Self::Item<'_>> {
+        Self::at(self, index)
+    }
+    fn fold_left<'a, A>(&'a self, initial: A, mut fold: impl FnMut(A, Self::Item<'a>) -> A) -> A {
+        Self::fold_left(self, initial, |acc, key, value| fold(acc, (key, value)))
+    }
+    fn filter(&self, mut predicate: impl FnMut(Self::Item<'_>) -> bool) -> Self {
+        Self::filter(self, |key, value| predicate((key, value)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn key(raw: &str) -> AuditFieldKey {
         AuditFieldKey::parse(raw).expect("テストのキーは文法内")
+    }
+
+    #[test]
+    fn collection_operations_preserve_order_escape_and_reserved_keys() {
+        let left = AuditFields::new()
+            .with(key("Stage"), "one")
+            .with(key("Details"), "two");
+        let right = AuditFields::new()
+            .with(key("Stage"), "new\nline")
+            .with(key("Agent"), "three");
+        let combined = left.combine(&right);
+        assert_eq!(combined.at(0).unwrap().1.as_str(), "new\\nline");
+        assert_eq!(combined.at(2).unwrap().0.as_str(), "Agent");
+        assert_eq!(
+            combined.divide(&right),
+            left.filter(|key, _| key.as_str() == "Details")
+        );
+        assert_eq!(
+            left.fold_left(String::new(), |acc, key, _| acc + key.as_str()),
+            "StageDetails"
+        );
+        assert_eq!(
+            left.map(|_, value| (key("Shared"), value.as_str().to_string()))
+                .at(0)
+                .unwrap()
+                .1
+                .as_str(),
+            "two"
+        );
+        assert!(
+            left.map(|_, value| (key("Timestamp"), value.as_str().to_string()))
+                .is_empty()
+        );
+        assert!(left.at(usize::MAX).is_none());
+        assert_eq!(left.at(0).unwrap().1.as_str(), "one");
+        assert!(left.divide(&left).is_empty());
+        assert_eq!(left.combine(&AuditFields::new()), left);
     }
 
     #[test]

@@ -60,13 +60,14 @@ pub fn render_audit_block(
     block.push_str("**Event**: ");
     block.push_str(event.as_str());
     block.push('\n');
-    for (key, value) in fields.iter() {
+    let mut block = fields.fold_left(block, |mut block, key, value| {
         block.push_str("**");
         block.push_str(key.as_str());
         block.push_str("**: ");
         block.push_str(value.as_str());
         block.push('\n');
-    }
+        block
+    });
     block.push_str(BLOCK_TERMINATOR);
     block
 }

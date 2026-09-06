@@ -64,14 +64,13 @@ fn write_object(
         out.push_str("{}");
         return;
     }
-    let entries: Vec<(&str, &JsonValue)> = members.iter().collect();
     let order = canonical::member_order(members, profile.key_order());
 
     out.push('{');
     for (i, index) in order.into_iter().enumerate() {
-        // `order` の要素は必ず `entries` の有効な添字 (canonical::member_order が同じ
+        // `order` の要素は必ず `members` の有効な添字 (canonical::member_order が同じ
         // `members` から作る) — else 分岐には到達しない。
-        let Some(&(key, value)) = entries.get(index) else {
+        let Some((key, value)) = members.at(index) else {
             continue;
         };
         if i > 0 {
