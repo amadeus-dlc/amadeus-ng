@@ -1,6 +1,6 @@
 //! `GateOpened` — `IntentExecutionEvent::GateOpened` のペイロード。
 
-use crate::orchestration::{IntentExecutionEventId, IntentExecutionId};
+use crate::orchestration::{ArtifactPaths, IntentExecutionEventId, IntentExecutionId};
 use crate::workflow_definition::StageSlug;
 
 /// `GateOpened` のペイロード。`artifacts` は呼出側が渡す投影材料 (C5)。
@@ -9,7 +9,7 @@ pub struct GateOpened {
     id: IntentExecutionEventId,
     aggregate_id: IntentExecutionId,
     stage: StageSlug,
-    artifacts: Vec<String>,
+    artifacts: ArtifactPaths,
 }
 
 impl GateOpened {
@@ -19,7 +19,7 @@ impl GateOpened {
         id: IntentExecutionEventId,
         aggregate_id: IntentExecutionId,
         stage: StageSlug,
-        artifacts: Vec<String>,
+        artifacts: ArtifactPaths,
     ) -> GateOpened {
         GateOpened {
             id,
@@ -35,9 +35,9 @@ impl GateOpened {
         &self.stage
     }
 
-    /// レビュー対象の成果物パス列 (集約は検証せず載せるだけ)。
+    /// レビュー対象の成果物パス列 (集約は検証せず載せるだけ — 順序・重複を素通しする)。
     #[must_use]
-    pub fn artifacts(&self) -> &[String] {
+    pub const fn artifacts(&self) -> &ArtifactPaths {
         &self.artifacts
     }
 

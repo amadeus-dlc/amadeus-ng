@@ -6,8 +6,9 @@
 //! `IntentExecution` は **decide → 1 イベント → apply** で状態を進める。decide (16 コマンド) は
 //! ガードを全て通してからイベントを 1 つ構築し、`apply_event` で自身に適用して返す。状態を動かす
 //! のは `apply_event` だけなので、通常実行とリプレイは同一経路になる (BR1.1 / BR2.3)。
-//! 再構成は `replay` (ジャーナル全再生 — 先頭は `Started`) であり、memento 型は持たない
-//! (オーナー裁定 2026-08-30 — スナップショット行は状態の正本ではない)。
+//! 再構成は **最新スナップショットを基底に、その通番より後の差分イベントだけを畳み込む**
+//! `replay(snapshot, events)` である (BR2.3、本家 v3 サンプル同型)。スナップショットとは
+//! ある時点の集約そのものであり、memento 型は持たない (オーナー裁定 2026-08-30)。
 //!
 //! | コマンド | イベント |
 //! |---|---|
@@ -29,9 +30,9 @@
 //!
 //! `jump_resolve` / `stale_report` はクエリ (書込なし) で、いずれも**書込の前段ガード**である
 //! — jump の方向導出と、カーソル通過済み completed への再報告の受理可否。「次に何をすべきか」
-//! の判断 (旧 `next_decision`) はここには無い: `next` / `continue` は読むだけの動詞なので
-//! クエリ側 (`core_query_use_case::orchestration::ExecutionStateView::next_decision`) が
-//! 所有する (`coding-rules/cqrs-boundaries.md` 規則 5〜7、b26 段階 2)。
+//! の判断 [`IntentExecution::next_decision`] も**この集約が所有する** (2026-09-02 のオーナー
+//! 裁定でクエリ側から復帰 — クエリ側ユースケースは DAO で View を読んで返すだけであり、
+//! 計算結果は RMU が投影する。`coding-rules/cqrs-boundaries.md` 規則 3 / 6 の追記)。
 //!
 //! # ゲート判定はフェーズで決まる (BR1.3)
 //!
@@ -51,7 +52,7 @@
 //! | `parkedAt = -1` | `parked_at = None` |
 //! | `autonomous` | `autonomy = Autonomous` |
 //! | `actSetAutonomy` (トグル) | `switch_autonomy(反転値)` |
-//! | `actRecompose` (1 ステージ) | `recompose(&[stage])` (要素数 1) |
+//! | `actRecompose` (1 ステージ) | `recompose(StageIndexSet::singleton(stage))` |
 //! | stage 0 (非ゲート) | initialization 1 ステージだけを持つ合成計画の索引 0 |
 //!
 //! モデルの `gated(s) = s != 0` は最後の行の抽象である。ITF 準拠テスト

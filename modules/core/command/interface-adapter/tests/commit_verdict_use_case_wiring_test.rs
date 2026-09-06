@@ -78,9 +78,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
             // 判断ではなく**実物のストアを通したコミット**である。
             ReportRequest::new(
                 Verdict::Forward,
-                held.stage_keys()
-                    .get(held.cursor().to_usize())
-                    .map(|key| key.slug().clone()),
+                held.stage_key(held.cursor()).map(|key| key.slug().clone()),
                 Some("Approve".to_string()),
                 None,
                 true,
@@ -100,7 +98,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     assert_eq!(
         intent()
             .stages()
-            .get(after.cursor().to_usize())
+            .at(after.cursor())
             .expect("カーソルは範囲内")
             .slug()
             .as_str(),

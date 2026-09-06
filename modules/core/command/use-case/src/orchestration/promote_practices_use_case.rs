@@ -143,7 +143,7 @@ mod tests {
     };
     use super::PromotePracticesUseCase;
     use core_command_domain::orchestration::{CommandError, IntentExecutionEvent};
-    use core_command_domain::workspace::{PracticesPromotion, PromotedSection};
+    use core_command_domain::workspace::{PracticesPromotion, PromotedSection, RuleLines};
 
     fn request() -> PracticesPromotionRequest {
         PracticesPromotionRequest::new(promotion(), "owner")
@@ -187,12 +187,12 @@ mod tests {
         assert_eq!(affirmed.stage().as_str(), "practices-discovery");
         assert_eq!(affirmed.affirming_user(), "owner");
         assert_eq!(
-            affirmed.sections().first().map(PromotedSection::heading),
+            affirmed.sections().at(0).map(PromotedSection::heading),
             Some("Way of Working")
         );
         assert_eq!(
             affirmed.mandated(),
-            ["ALWAYS review. (affirmed 2026-09-05)".to_string()]
+            &RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()])
         );
     }
 

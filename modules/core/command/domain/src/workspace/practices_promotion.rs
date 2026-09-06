@@ -6,7 +6,9 @@ use chrono::NaiveDate;
 
 use super::markdown_sections::extract_section;
 use super::promoted_section::PromotedSection;
+use super::promoted_sections::PromotedSections;
 use super::promotion_plan_error::PromotionPlanError;
+use super::rule_lines::RuleLines;
 
 /// team.md が持つ 5 節 (upstream `TEAM_SECTIONS` `:3622-3628` の順序と綴り)。
 const TEAM_SECTIONS: [&str; 5] = [
@@ -29,9 +31,9 @@ const FORBIDDEN_HEADING: &str = "## Forbidden";
 /// 節も規則も無い昇格を `Sections Written: `（空）と 0 / 0 で受理する。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PracticesPromotion {
-    sections: Vec<PromotedSection>,
-    mandated: Vec<String>,
-    forbidden: Vec<String>,
+    sections: PromotedSections,
+    mandated: RuleLines,
+    forbidden: RuleLines,
 }
 
 impl PracticesPromotion {
@@ -49,7 +51,9 @@ impl PracticesPromotion {
     /// # Errors
     ///
     /// 正本 team.md に置換先の見出しが無い ([`PromotionPlanError::TeamHeadingMissing`])、
-    /// 正本 project.md に追記先の見出しが無い ([`PromotionPlanError::ProjectHeadingMissing`])。
+    /// 正本 project.md に追記先の見出しが無い ([`PromotionPlanError::ProjectHeadingMissing`])、
+    /// 置き換える節の見出しが重複した ([`PromotionPlanError::DuplicateSection`] — 見出しは固定
+    /// 5 種を順に 1 度ずつ見るので構成不能だが、[`PromotedSections`] の構築検査を握り潰さない)。
     pub fn plan(
         team_practices_draft: &str,
         discovered_rules_draft: &str,
@@ -102,34 +106,38 @@ impl PracticesPromotion {
         }
 
         Ok(PracticesPromotion {
-            sections,
-            mandated,
-            forbidden,
+            sections: PromotedSections::new(sections)?,
+            mandated: RuleLines::new(mandated),
+            forbidden: RuleLines::new(forbidden),
         })
     }
 
     /// 置き換える節 (team.md の書込順)。
     #[must_use]
-    pub fn sections(&self) -> &[PromotedSection] {
+    pub const fn sections(&self) -> &PromotedSections {
         &self.sections
     }
 
     /// `## Mandated` へ足す印付きの規則行。
     #[must_use]
-    pub fn mandated(&self) -> &[String] {
+    pub const fn mandated(&self) -> &RuleLines {
         &self.mandated
     }
 
     /// `## Forbidden` へ足す印付きの規則行。
     #[must_use]
-    pub fn forbidden(&self) -> &[String] {
+    pub const fn forbidden(&self) -> &RuleLines {
         &self.forbidden
     }
 
     /// 書き替えた節の見出し名の列 (stdout の `sections_written` / 監査行の材料)。
     #[must_use]
     pub fn sections_written(&self) -> Vec<&str> {
-        self.sections.iter().map(PromotedSection::heading).collect()
+        self.sections
+            .fold_left(Vec::new(), |mut headings, section| {
+                headings.push(section.heading());
+                headings
+            })
     }
 
     /// `## Mandated` へ足した規則の件数。
@@ -221,7 +229,7 @@ old.
             vec!["Way of Working", "Code Style"]
         );
         assert_eq!(
-            promotion.sections().first().map(PromotedSection::body),
+            promotion.sections().at(0).map(PromotedSection::body),
             Some("new.\n\n")
         );
     }
@@ -260,14 +268,14 @@ NEVER force-push.
         let promotion = PracticesPromotion::plan("", draft, TEAM_MD, PROJECT_MD, today()).unwrap();
         assert_eq!(
             promotion.mandated(),
-            [
+            &RuleLines::new(vec![
                 "ALWAYS ship tests. (affirmed 2026-09-05)".to_string(),
                 "ALWAYS review. (affirmed 2026-09-05)".to_string(),
-            ]
+            ])
         );
         assert_eq!(
             promotion.forbidden(),
-            ["NEVER force-push. (affirmed 2026-09-05)".to_string()]
+            &RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()])
         );
         assert_eq!(promotion.mandated_appended(), 2);
         assert_eq!(promotion.forbidden_appended(), 1);
@@ -291,7 +299,7 @@ NEVER force-push.
         let promotion = PracticesPromotion::plan("", draft, TEAM_MD, PROJECT_MD, today()).unwrap();
         assert_eq!(
             promotion.mandated(),
-            ["ALWAYS review. (affirmed 2026-09-05)".to_string()]
+            &RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()])
         );
     }
 

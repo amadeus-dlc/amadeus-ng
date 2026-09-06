@@ -1,10 +1,10 @@
 //! `ReviewAttempt` — ステージ 1 つの**現在の試行**におけるレビュー会計。
 
-use std::collections::BTreeSet;
-
 use crate::workflow_definition::ReviewPolicy;
 
+use super::pending_iterations::PendingIterations;
 use super::review_closure::ReviewClosure;
+use super::review_closures::ReviewClosures;
 use super::review_verdict::ReviewVerdict;
 
 /// ステージ 1 つの現在の試行（直近の開始・差し戻し・ジャンプ以降の区間）の会計。
@@ -18,8 +18,8 @@ use super::review_verdict::ReviewVerdict;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReviewAttempt {
     requests: u32,
-    pending: BTreeSet<u32>,
-    closed: Vec<ReviewClosure>,
+    pending: PendingIterations,
+    closed: ReviewClosures,
 }
 
 impl ReviewAttempt {
@@ -29,15 +29,24 @@ impl ReviewAttempt {
     /// `record_request` / `record_verdict` である。この口は DTO の復号だけが使う —
     /// 行の中身が壊れていれば集約の再構成がクラッシュするので、ここでは検査しない
     /// （壊れた歴史は回復せずクラッシュする — オーナー裁定 2026-08-30）。
+    ///
+    /// # 判定待ちだけ生の `Vec<u32>` を受ける（DTO 境界の理由付き例外）
+    ///
+    /// 判定待ちの集合 [`PendingIterations`] はこのクレートの外に出ない型
+    /// （`pub(crate)`・ファサード非公開）なので、アダプタ層が値を組んで渡す経路が無い。
+    /// そこで**この口だけ**が通し番号の並びを受け取り、内部で集合へ畳む。閉じた依頼
+    /// (`closed`) は公開型 [`ReviewClosures`] なので、そのまま値で受ける。
     #[must_use]
-    pub const fn restored(
-        requests: u32,
-        pending: BTreeSet<u32>,
-        closed: Vec<ReviewClosure>,
-    ) -> ReviewAttempt {
+    pub fn restored(requests: u32, pending: Vec<u32>, closed: ReviewClosures) -> ReviewAttempt {
         ReviewAttempt {
             requests,
-            pending,
+            pending: pending.into_iter().fold(
+                PendingIterations::empty(),
+                |mut iterations, iteration| {
+                    iterations.with(iteration);
+                    iterations
+                },
+            ),
             closed,
         }
     }
@@ -52,18 +61,24 @@ impl ReviewAttempt {
     /// その通し番号の依頼が判定待ちか。
     #[must_use]
     pub fn is_pending(&self, iteration: u32) -> bool {
-        self.pending.contains(&iteration)
+        self.pending.contains(iteration)
     }
 
     /// 判定待ちの通し番号（昇順）。
+    ///
+    /// 集合そのものはクレート外に出ない型なので、永続化境界へは並びとして渡す
+    /// （[`ReviewAttempt::restored`] の逆向き）。
     #[must_use]
-    pub const fn pending(&self) -> &BTreeSet<u32> {
-        &self.pending
+    pub fn pending_iterations(&self) -> Vec<u32> {
+        self.pending.fold_left(Vec::new(), |mut found, iteration| {
+            found.push(iteration);
+            found
+        })
     }
 
     /// 判定が返って閉じた依頼（記録順）。
     #[must_use]
-    pub fn closed(&self) -> &[ReviewClosure] {
+    pub const fn closed(&self) -> &ReviewClosures {
         &self.closed
     }
 
@@ -77,21 +92,19 @@ impl ReviewAttempt {
     /// 非終端の判定は単に終端ではないという扱いになる（設計 §2.3）。
     #[must_use]
     pub fn has_terminal(&self, policy: &ReviewPolicy) -> bool {
-        self.closed
-            .iter()
-            .any(|closure| policy.is_terminal(closure.verdict(), closure.iteration()))
+        self.closed.has_terminal(policy)
     }
 
     /// 新しい依頼を 1 件数える（通常の `REVIEW_REQUESTED`）。
     pub(super) fn record_request(&mut self, iteration: u32) {
         self.requests = self.requests.saturating_add(1);
-        self.pending.insert(iteration);
+        self.pending.with(iteration);
     }
 
     /// 判定を 1 件閉じる（`REVIEW_COMPLETED`）。
     pub(super) fn record_verdict(&mut self, iteration: u32, verdict: ReviewVerdict) {
-        self.pending.remove(&iteration);
-        self.closed.push(ReviewClosure::new(iteration, verdict));
+        self.pending.without(iteration);
+        self.closed.record(ReviewClosure::new(iteration, verdict));
     }
 
     /// 試行を空へ戻す（フロア — 開始・差し戻し・ジャンプ）。
@@ -113,7 +126,7 @@ mod tests {
     fn a_fresh_attempt_is_empty() {
         let attempt = ReviewAttempt::default();
         assert_eq!(attempt.request_count(), 0);
-        assert!(attempt.pending().is_empty());
+        assert!(attempt.pending_iterations().is_empty());
         assert!(attempt.closed().is_empty());
         assert!(!attempt.has_terminal(&policy(ReviewCapValue::Adversarial)));
     }
@@ -131,7 +144,7 @@ mod tests {
         assert!(!attempt.is_pending(1));
         assert_eq!(attempt.closed().len(), 1);
         assert_eq!(
-            attempt.closed().first().map(ReviewClosure::verdict),
+            attempt.closed().at(0).map(|closure| closure.verdict()),
             Some(ReviewVerdict::Ready)
         );
     }

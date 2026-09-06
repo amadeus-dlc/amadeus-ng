@@ -39,6 +39,19 @@ impl TransitionSteps {
         TransitionSteps { items: vec![step] }
     }
 
+    /// 復旧の 2 段 — ゲートを開き直してから承認する。
+    ///
+    /// upstream の `sequence` に現れる**唯一の 2 段**であり (`handleReport` 段 13 の
+    /// 「ゲート付き × `[-]`」の行)、2 つの段は異なるので重複は構造的に起こり得ない。
+    /// [`TransitionSteps::new`] の `Result` を呼出側で開かずに済むよう、この列だけは
+    /// 名前付きの全域構築子を持つ (プロダクトコードで `unwrap` を使わないため)。
+    #[must_use]
+    pub fn recovered_approval() -> TransitionSteps {
+        TransitionSteps {
+            items: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
+        }
+    }
+
     /// その段を含むか。
     #[must_use]
     pub fn contains(&self, step: TransitionStep) -> bool {
@@ -144,6 +157,15 @@ mod tests {
         assert_eq!(steps.at(1), Some(TransitionStep::Approve));
         assert_eq!(steps.at(2), None);
         assert_eq!(steps.at(usize::MAX), None);
+    }
+
+    /// 復旧の 2 段は名前で組める (重複が構造的に起き得ないので `Result` を返さない)。
+    #[test]
+    fn the_recovery_sequence_opens_the_gate_again_before_approving() {
+        let steps = TransitionSteps::recovered_approval();
+        assert!(steps.is_pair(TransitionStep::GateStartRecovered, TransitionStep::Approve));
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps, recovered_approve());
     }
 
     #[test]

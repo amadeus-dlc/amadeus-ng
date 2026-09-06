@@ -16,15 +16,16 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, GateOpened, Intent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, PracticesAffirmed, StageDisplay, StageEntry, StageRevised,
-    StartRequest, Started, WorkspaceScan,
+    ArtifactPaths, Created, GateOpened, Intent, IntentEventId, IntentExecutionEvent,
+    IntentExecutionEventId, IntentExecutionId, IntentId, PracticesAffirmed, StageDisplay,
+    StageEntries, StageEntry, StageRevised, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
 use core_command_domain::workspace::PromotedSection;
+use core_command_domain::workspace::{PromotedSections, RuleLines};
 use core_read_model_updater::orchestration::{
     CatchUpError, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
     ProjectionName, ProjectionTargets, PublicationBatch, ReadModelUpdater, SteeringSource,
@@ -117,11 +118,12 @@ fn genesis_intent() -> Intent {
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
             StartRequest::new("classic", "build it"),
-            vec![stage(
+            StageEntries::new(vec![stage(
                 "practices-discovery",
                 "2.2",
                 "aidlc-pipeline-deploy-agent",
-            )],
+            )])
+            .expect("フィクスチャの計画は不変条件を満たす"),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
                 "Unknown",
@@ -141,7 +143,7 @@ fn genesis() -> IntentExecutionEvent {
         event_id(),
         IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         intent.id().clone(),
-        intent.stages().to_vec(),
+        intent.stages().clone(),
     ))
 }
 
@@ -165,7 +167,7 @@ fn journal() -> Vec<JournalEntry> {
                 event_id(),
                 execution_id(),
                 slug("practices-discovery"),
-                Vec::new(),
+                ArtifactPaths::empty(),
             )),
         ),
         entry(
@@ -598,7 +600,7 @@ async fn a_row_that_lands_between_the_two_reads_is_drawn_on_both_faces_at_one_po
             event_id(),
             execution_id(),
             slug("practices-discovery"),
-            Vec::new(),
+            ArtifactPaths::empty(),
         )),
     );
     let (mut updater, spy) = fixture.racing_updater(journal(), intents(), late);
@@ -735,9 +737,13 @@ fn practices_affirmed() -> IntentExecutionEvent {
         execution_id(),
         slug("practices-discovery"),
         "owner",
-        vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
-        vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
-        Vec::new(),
+        PromotedSections::new(vec![PromotedSection::new(
+            "Way of Working",
+            "trunk-based.\n",
+        )])
+        .expect("見出しは 1 つ"),
+        RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
+        RuleLines::empty(),
     ))
 }
 
@@ -958,7 +964,7 @@ async fn a_journal_without_a_started_is_plan_unavailable() {
             event_id(),
             execution_id(),
             slug("practices-discovery"),
-            Vec::new(),
+            ArtifactPaths::empty(),
         )),
     )];
     let mut updater = fixture.updater(journal, intents());
@@ -982,7 +988,7 @@ async fn executions_of_two_different_intents_are_refused_as_mixed() {
                 event_id(),
                 IntentExecutionId::parse("0190cccc-dddd-7eee-8fff-000011112222").expect("UUIDv7"),
                 other,
-                genesis_intent().stages().to_vec(),
+                genesis_intent().stages().clone(),
             )),
         ),
         entry(
@@ -992,7 +998,7 @@ async fn executions_of_two_different_intents_are_refused_as_mixed() {
                 event_id(),
                 execution_id(),
                 slug("practices-discovery"),
-                Vec::new(),
+                ArtifactPaths::empty(),
             )),
         ),
     ];

@@ -38,8 +38,9 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionId,
-    IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    ArtifactPaths, Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionId, IntentId, StageDisplay, StageEntries, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -158,8 +159,8 @@ fn scan() -> WorkspaceScan {
 }
 
 /// initialization 1 ステージ + ゲート付き 2 ステージの合成計画 (BR2.5 と同じ流儀)。
-fn stages() -> Vec<StageEntry> {
-    vec![
+fn stages() -> StageEntries {
+    StageEntries::new(vec![
         StageEntry::new(
             slug("state-init"),
             PhaseId::Initialization,
@@ -181,7 +182,8 @@ fn stages() -> Vec<StageEntry> {
             false,
             display("2.1", "Requirements Analysis"),
         ),
-    ]
+    ])
+    .expect("フィクスチャの計画は不変条件を満たす")
 }
 
 fn intent() -> Intent {
@@ -270,7 +272,7 @@ where
 /// 適合検証の本体 — **バックエンドを問わない**。試験装置が開いたストアに同じ約束を課す。
 mod conformance {
     use super::{
-        CREATE_EXPECTED_VERSION, CheckboxState, EventEnvelope, EventStoreWriteError,
+        ArtifactPaths, CREATE_EXPECTED_VERSION, CheckboxState, EventEnvelope, EventStoreWriteError,
         IntentExecutionAggregateKeyDto, MANIFEST, StoreFixture, at, envelope, execution_id,
         find_by_id, genesis, intent, snapshot_of,
     };
@@ -352,7 +354,11 @@ mod conformance {
         // (create → 写し同時更新 → イベントのみ → 写し同時更新) は変えない。
         let mut aggregate = restored.aggregate;
         let opened = aggregate
-            .open_gate(&intent(), vec!["docs/x.md".to_string()], at(1))
+            .open_gate(
+                &intent(),
+                ArtifactPaths::new(vec!["docs/x.md".to_string()]),
+                at(1),
+            )
             .unwrap();
         store
             .persist_event_and_snapshot(
@@ -412,7 +418,11 @@ mod conformance {
         // 4. もう 1 度スナップショット同時更新 — 直前のリプレイ結果から続けられる。
         let mut aggregate = restored.aggregate;
         let opened = aggregate
-            .open_gate(&intent(), vec!["docs/y.md".to_string()], at(3))
+            .open_gate(
+                &intent(),
+                ArtifactPaths::new(vec!["docs/y.md".to_string()]),
+                at(3),
+            )
             .unwrap();
         store
             .persist_event_and_snapshot(
@@ -464,7 +474,11 @@ mod conformance {
             .await
             .unwrap();
         let opened = aggregate
-            .open_gate(&intent(), vec!["docs/x.md".to_string()], at(1))
+            .open_gate(
+                &intent(),
+                ArtifactPaths::new(vec!["docs/x.md".to_string()]),
+                at(1),
+            )
             .unwrap();
         store
             .persist_event_and_snapshot(envelope(&aggregate, &opened), snapshot_of(&aggregate), 1)

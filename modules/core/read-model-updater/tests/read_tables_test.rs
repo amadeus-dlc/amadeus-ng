@@ -19,9 +19,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Recomposed, SkeletonStance, StageDisplay,
-    StageEntry, StartRequest, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, Created, Intent, IntentEventId, IntentExecution,
+    IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, IntentId, Recomposed,
+    SkeletonStance, StageDisplay, StageEntries, StageEntry, StageSlugSet, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, ConsumeDecl, Defined, DefinitionRevision, ExecutionKind, PhaseId,
@@ -271,48 +272,52 @@ fn replayed_definition() -> WorkflowDefinition {
 
 // ---- intent ストリームの材料 ----
 
-fn stages() -> Vec<StageEntry> {
-    let display = |number: &str, name: &str, agent: &str| {
-        StageDisplay::new(StageNumber::parse(number).expect("番号"), name, agent).expect("単一行")
+fn stages() -> StageEntries {
+    let entries: Vec<StageEntry> = {
+        let display = |number: &str, name: &str, agent: &str| {
+            StageDisplay::new(StageNumber::parse(number).expect("番号"), name, agent)
+                .expect("単一行")
+        };
+        vec![
+            StageEntry::new(
+                slug("state-init"),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                display("0.1", "State Init", "orchestrator"),
+            ),
+            StageEntry::new(
+                slug("intent-capture"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.1", "Intent Capture", "aidlc-product-agent"),
+            ),
+            StageEntry::new(
+                slug("scope-definition"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                true,
+                display("1.4", "Scope Definition", "aidlc-product-agent"),
+            ),
+            StageEntry::new(
+                slug("requirements-analysis"),
+                PhaseId::Inception,
+                PlanAction::Execute,
+                false,
+                display("2.1", "Requirements Analysis", "aidlc-product-agent"),
+            ),
+            // Construction の最初の EXECUTE — walking-skeleton ゲートの位置 (b47 / #73)。
+            StageEntry::new(
+                slug("functional-design"),
+                PhaseId::Construction,
+                PlanAction::Execute,
+                false,
+                display("3.1", "Functional Design", "aidlc-architect-agent"),
+            ),
+        ]
     };
-    vec![
-        StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1", "State Init", "orchestrator"),
-        ),
-        StageEntry::new(
-            slug("intent-capture"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.1", "Intent Capture", "aidlc-product-agent"),
-        ),
-        StageEntry::new(
-            slug("scope-definition"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            true,
-            display("1.4", "Scope Definition", "aidlc-product-agent"),
-        ),
-        StageEntry::new(
-            slug("requirements-analysis"),
-            PhaseId::Inception,
-            PlanAction::Execute,
-            false,
-            display("2.1", "Requirements Analysis", "aidlc-product-agent"),
-        ),
-        // Construction の最初の EXECUTE — walking-skeleton ゲートの位置 (b47 / #73)。
-        StageEntry::new(
-            slug("functional-design"),
-            PhaseId::Construction,
-            PlanAction::Execute,
-            false,
-            display("3.1", "Functional Design", "aidlc-architect-agent"),
-        ),
-    ]
+    StageEntries::new(entries).expect("フィクスチャの計画は不変条件を満たす")
 }
 
 fn scan() -> WorkspaceScan {
@@ -345,7 +350,11 @@ fn running_events() -> (IntentExecution, Vec<(usize, IntentExecutionEvent)>) {
     let (mut aggregate, started) = IntentExecution::start(execution_a(), &intent, at());
     let mut events = vec![(aggregate.seq_nr(), started)];
     let opened = aggregate
-        .open_gate(&intent, vec!["intent.md".to_string()], at())
+        .open_gate(
+            &intent,
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
         .expect("ゲートは開く");
     events.push((aggregate.seq_nr(), opened));
     let approved = aggregate
@@ -689,7 +698,8 @@ fn intent_stage_rows_mirror_every_stage_entry() {
     let tables = tables();
     let rows = tables.intent_stages();
     assert_eq!(rows.len(), intent.stages().len());
-    for (index, entry) in intent.stages().iter().enumerate() {
+    let mut index = 0usize;
+    intent.stages().fold_left((), |(), entry| {
         let row = &rows[index];
         assert_eq!(row.intent_id(), intent.id().as_str());
         assert_eq!(row.stage_index(), index);
@@ -701,7 +711,8 @@ fn intent_stage_rows_mirror_every_stage_entry() {
         assert_eq!(row.name(), entry.display().name());
         assert_eq!(row.lead_agent(), entry.display().lead_agent());
         assert_eq!(row.gated(), entry.is_gated());
-    }
+        index = index.saturating_add(1);
+    });
 }
 
 #[test]
@@ -719,8 +730,7 @@ fn execution_rows_mirror_the_replayed_executions() {
         assert_eq!(
             row.cursor_slug(),
             aggregate
-                .stage_keys()
-                .get(aggregate.cursor().to_usize())
+                .stage_key(aggregate.cursor())
                 .map(|key| key.slug().as_str())
         );
         assert_eq!(
@@ -761,8 +771,9 @@ fn execution_stage_rows_mirror_the_per_stage_queries() {
     for (index, row) in rows.iter().enumerate() {
         let stage = aggregate.stage_index(index).expect("範囲内");
         assert_eq!(row.stage_index(), index);
-        assert_eq!(row.slug(), aggregate.stage_keys()[index].slug().as_str());
-        assert_eq!(row.phase(), aggregate.stage_keys()[index].phase().as_str());
+        let key = aggregate.stage_key(stage).expect("範囲内");
+        assert_eq!(row.slug(), key.slug().as_str());
+        assert_eq!(row.phase(), key.phase().as_str());
         assert_eq!(row.approved(), aggregate.approved(stage));
         assert_eq!(row.revision_count(), aggregate.revision_count(stage));
         assert_eq!(
@@ -790,14 +801,17 @@ fn next_answer_rows_cover_the_four_request_kinds() {
                         && row.request_kind() == kind.as_str()
                 })
                 .expect("4 kind すべてに行が在る");
-            let decision = aggregate.next_decision(&intent(), &kind.to_request());
+            let decision = aggregate
+                .next_decision(&intent(), &kind.to_request())
+                .expect("自分の intent を渡す");
             // 決定の綴りと材料が集約の答えと一致する。
             assert_eq!(row.decision_kind(), decision_kind_of(&decision));
             assert_eq!(row.stage_index(), stage_of(&decision));
             assert_eq!(
                 row.stage_slug(),
                 stage_of(&decision)
-                    .and_then(|index| aggregate.stage_keys().get(index))
+                    .and_then(|index| aggregate.stage_index(index))
+                    .and_then(|stage| aggregate.stage_key(stage))
                     .map(|key| key.slug().as_str())
             );
         }
@@ -864,7 +878,11 @@ fn skip_inconsistency_events(
     let mut events = vec![(aggregate.seq_nr(), started)];
     if open_the_gate {
         let opened = aggregate
-            .open_gate(&intent, vec!["intent.md".to_string()], at())
+            .open_gate(
+                &intent,
+                ArtifactPaths::new(vec!["intent.md".to_string()]),
+                at(),
+            )
             .expect("ゲートは開く");
         events.push((aggregate.seq_nr(), opened));
     }
@@ -882,14 +900,16 @@ fn skip_inconsistency_events(
     events.push((aggregate.seq_nr(), parked));
 
     // park 中にカーソルの slug をそのまま SKIP へ反転させる (改竄された歴史の再現)。
-    let cursor_slug = aggregate.stage_keys()[aggregate.cursor().to_usize()]
+    let cursor_slug = aggregate
+        .stage_key(aggregate.cursor())
+        .expect("カーソルは計画上の位置")
         .slug()
         .clone();
     let tampering = IntentExecutionEvent::Recomposed(Recomposed::new(
         event_id(),
         execution_id(),
-        vec![cursor_slug],
-        Vec::new(),
+        StageSlugSet::new([cursor_slug]),
+        StageSlugSet::empty(),
     ));
     let seq_nr = aggregate.seq_nr() + 1;
     aggregate = IntentExecution::replay(aggregate, [(seq_nr, at(), tampering.clone())]);
@@ -949,7 +969,9 @@ fn next_answer_rows_carry_the_observed_checkbox_of_both_skip_inconsistencies() {
     ] {
         let (aggregate, _) = skip_inconsistency_events(&id, open_the_gate);
         // 再入の読みだけが park 分岐を素通りして不整合に到達する。
-        let decision = aggregate.next_decision(&intent(), &RequestKind::Reentry.to_request());
+        let decision = aggregate
+            .next_decision(&intent(), &RequestKind::Reentry.to_request())
+            .expect("自分の intent を渡す");
         assert_eq!(
             decision_kind_of(&decision),
             expected_kind,
@@ -1000,7 +1022,12 @@ fn next_jump_rows_answer_every_target_index() {
             assert_eq!(row.target_index(), index);
             assert_eq!(
                 row.target_slug(),
-                aggregate.stage_keys()[index].slug().as_str()
+                aggregate
+                    .stage_index(index)
+                    .and_then(|stage| aggregate.stage_key(stage))
+                    .expect("範囲内")
+                    .slug()
+                    .as_str()
             );
             match aggregate.jump_resolve(&intent, target) {
                 Ok(direction) => {
@@ -1074,7 +1101,7 @@ fn next_jump_phase_rows_mirror_first_in_scope_of_phase() {
         assert_eq!(row.target_index(), expected.to_usize());
         assert_eq!(
             row.target_slug(),
-            Some(aggregate.stage_keys()[expected.to_usize()].slug().as_str())
+            aggregate.stage_key(expected).map(|key| key.slug().as_str())
         );
     }
     let phases: Vec<&str> = rows.iter().map(|row| row.phase()).collect();
@@ -1145,6 +1172,43 @@ fn bare_answer(tables: &ReadTables) -> &NextAnswerRow {
                 && row.request_kind() == RequestKind::Bare.as_str()
         })
         .expect("素の要求の行が在る")
+}
+
+/// 別 intent を渡した行の組み立ては答えを持たず、材料不足として `Err` を返す。
+///
+/// 集約のクエリ `next_decision` は 2026-09-06 の切替で取り違えガード (BR2.6) を持ち
+/// `Err(IntentMismatch)` を返すようになった。RMU はその `Err` を握り潰して部分的な行を
+/// 書かず、既存の材料不足 (`IntentUnavailable`) にそのまま写して上へ流す。
+#[test]
+fn a_foreign_intent_yields_no_answer_row_but_a_missing_material_error() {
+    let (execution, _) = running_events();
+    // 同じ計画で別 ID の intent を起こす (照合だけが違う)。
+    let foreign = Intent::from((
+        Created::new(
+            IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0009").expect("UUIDv7"),
+            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b7").expect("UUIDv7"),
+            definition_id(),
+            revision('1'),
+            StartRequest::new("classic", "build the thing")
+                .with_depth("standard")
+                .with_test_strategy("standard")
+                .with_review("adversarial"),
+            stages(),
+            scan(),
+        ),
+        at(),
+    ));
+    let error = NextAnswerRow::of(&execution, &foreign, RequestKind::Bare, &BTreeSet::new())
+        .expect_err("取り違えは行にならない");
+    assert_eq!(
+        error,
+        ReadTablesError::IntentUnavailable {
+            execution_id: execution_a().as_str().to_string(),
+            intent_id: intent_id().as_str().to_string(),
+        }
+    );
+    // 自分の intent なら従来どおり行になる (照合は行の前段のガードにすぎない)。
+    assert!(NextAnswerRow::of(&execution, &intent(), RequestKind::Bare, &BTreeSet::new()).is_ok());
 }
 
 #[test]

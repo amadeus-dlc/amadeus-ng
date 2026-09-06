@@ -24,7 +24,7 @@
 use core_command_domain::orchestration::{
     AutonomyMode, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, JumpDirection,
     Jumped, Parked, PhaseBoundary, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested,
-    SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
+    SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped, StageSlugSet,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
@@ -1077,11 +1077,15 @@ fn recomposed_event(
 ) -> Result<(), ProjectionError> {
     // 適用後の in-scope 数はイベントに載らない — 行末トークンを反転してから自分の行を
     // 数える (オーナー裁定 2026-08-30)。監査行の位置は従来と同じ (このイベントで 1 行)。
-    for slug in recomposed.skipped() {
-        set_suffix(read_model, slug.as_str(), PlanAction::Skip)?;
+    // 反転集合は**辞書順**なので、行末トークンの書き替えも監査行の綴りも、計画の位置で
+    // 文書順へ並べ直してから使う (監査行の逐語一致は U4 / U7 の NFR1 要求)。
+    let skipped = in_document_order(plan, recomposed.skipped());
+    let added = in_document_order(plan, recomposed.added());
+    for slug in &skipped {
+        set_suffix(read_model, slug, PlanAction::Skip)?;
     }
-    for slug in recomposed.added() {
-        set_suffix(read_model, slug.as_str(), PlanAction::Execute)?;
+    for slug in &added {
+        set_suffix(read_model, slug, PlanAction::Execute)?;
     }
     let in_scope = plan
         .stages()
@@ -1094,8 +1098,8 @@ fn recomposed_event(
         at,
         &AuditFields::new()
             .with(key(key::SCOPE)?, plan.scope())
-            .with(key(key::STAGES_SKIPPED)?, &stage_list(recomposed.skipped()))
-            .with(key(key::STAGES_ADDED)?, &stage_list(recomposed.added()))
+            .with(key(key::STAGES_SKIPPED)?, &stage_list(&skipped))
+            .with(key(key::STAGES_ADDED)?, &stage_list(&added))
             .with(key(key::STAGES_IN_SCOPE)?, &in_scope),
     ));
     rebuild_plan_rows(read_model, plan)
@@ -1401,9 +1405,10 @@ fn practices_affirmed(
 
     let sections = affirmed
         .sections()
-        .iter()
-        .map(PromotedSection::heading)
-        .collect::<Vec<&str>>()
+        .fold_left(Vec::new(), |mut headings, section| {
+            headings.push(PromotedSection::heading(section));
+            headings
+        })
         .join(LIST_SEPARATOR);
     read_model.append_audit(&render_audit_block(
         EventType::PracticesAffirmed,
@@ -1428,33 +1433,38 @@ fn rewrite_memory(
     memory: &MemoryFaces,
     affirmed: &PracticesAffirmed,
 ) -> Result<(String, String), ProjectionError> {
-    let mut team = memory.team().to_string();
-    for section in affirmed.sections() {
-        let heading = format!("{MEMORY_HEADING_PREFIX}{}", section.heading());
-        team = replace_section(&team, &heading, section.body()).map_err(|error| {
-            ProjectionError::MemoryHeadingMissing {
-                file: TEAM_MD,
-                heading: error.as_str().to_string(),
-            }
-        })?;
-    }
+    let team = affirmed.sections().fold_left(
+        Ok(memory.team().to_string()),
+        |team: Result<String, ProjectionError>, section| {
+            let heading = format!("{MEMORY_HEADING_PREFIX}{}", section.heading());
+            replace_section(&team?, &heading, section.body()).map_err(|error| {
+                ProjectionError::MemoryHeadingMissing {
+                    file: TEAM_MD,
+                    heading: error.as_str().to_string(),
+                }
+            })
+        },
+    )?;
     let mut project = memory.project().to_string();
     for (heading, rules) in [
         (MANDATED_HEADING, affirmed.mandated()),
         (FORBIDDEN_HEADING, affirmed.forbidden()),
     ] {
-        for rule in rules {
-            if project.split('\n').any(|line| line.trim() == rule) {
-                continue;
-            }
-            project =
+        project = rules.fold_left(
+            Ok(project),
+            |project: Result<String, ProjectionError>, rule| {
+                let project = project?;
+                if project.split('\n').any(|line| line.trim() == rule) {
+                    return Ok(project);
+                }
                 append_under_heading(&project, heading, &format!("{rule}\n")).map_err(|error| {
                     ProjectionError::MemoryHeadingMissing {
                         file: PROJECT_MD,
                         heading: error.as_str().to_string(),
                     }
-                })?;
-        }
+                })
+            },
+        )?;
     }
     Ok((team, project))
 }
@@ -1780,15 +1790,25 @@ const fn direction_spelling(direction: JumpDirection) -> &'static str {
 }
 
 /// ステージ集合を `**Stages ...**:` の値へ描く（空は逐語 `none`）。
-fn stage_list(stages: &[StageSlug]) -> String {
+fn stage_list(stages: &[String]) -> String {
     if stages.is_empty() {
         return NONE_LITERAL.to_string();
     }
-    stages
+    stages.join(LIST_SEPARATOR)
+}
+
+/// 反転した slug 集合を計画の**文書順**へ並べ直す。
+///
+/// [`StageSlugSet`] は辞書順である（集合として一意にするための順序であり、業務の順序では
+/// ない）。監査行 `**Stages skipped**:` と行末トークンの書き替えはどちらも upstream が
+/// 文書順で描くので、計画の位置で引き直してから使う — 型側の順序は変えない
+/// （委任 2 の申し送り、NFR1）。計画に無い slug は写さない。
+fn in_document_order(plan: &ResolvedPlan, slugs: &StageSlugSet) -> Vec<String> {
+    plan.stages()
         .iter()
-        .map(|slug| slug.as_str().to_string())
-        .collect::<Vec<_>>()
-        .join(LIST_SEPARATOR)
+        .filter(|stage| slugs.contains(stage.slug()))
+        .map(|stage| stage.slug().as_str().to_string())
+        .collect()
 }
 
 /// チェックボックスのマーカーだけを書き換える（接尾辞には触れない）。
@@ -1921,6 +1941,7 @@ mod park_marker {
 mod tests {
     use super::*;
     use core_command_domain::orchestration::Created;
+    use core_command_domain::workspace::{PromotedSections, RuleLines};
 
     /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
     fn event_id() -> IntentExecutionEventId {
@@ -1950,7 +1971,7 @@ mod tests {
     use core_command_domain::orchestration::{
         AutonomyModeSet, Intent, IntentEventId, IntentExecutionEventId, IntentExecutionId,
         IntentId, ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded,
-        StageDisplay, StageEntry, StartRequest, Started, WorkspaceScan,
+        StageDisplay, StageEntries, StageEntry, StartRequest, Started, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, WorkflowDefinitionId,
@@ -1990,7 +2011,7 @@ mod tests {
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
                 StartRequest::new("classic", "build it"),
-                vec![
+                StageEntries::new(vec![
                     stage(
                         "state-init",
                         "0.1",
@@ -2000,7 +2021,8 @@ mod tests {
                     stage("first", "2.1", PhaseId::Inception, PlanAction::Execute),
                     stage("second", "2.2", PhaseId::Inception, PlanAction::Execute),
                     stage("late", "4.1", PhaseId::Operation, PlanAction::Skip),
-                ],
+                ])
+                .expect("フィクスチャの計画は不変条件を満たす"),
                 WorkspaceScan::new(
                     BrownfieldGreenfield::Greenfield,
                     "Unknown",
@@ -2019,7 +2041,7 @@ mod tests {
             event_id(),
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7"),
             intent.id().clone(),
-            intent.stages().to_vec(),
+            intent.stages().clone(),
         )
     }
 
@@ -2803,8 +2825,8 @@ mod tests {
         let read_model = run(IntentExecutionEvent::Recomposed(Recomposed::new(
             event_id(),
             execution_id(),
-            Vec::new(),
-            vec![slug("late")],
+            StageSlugSet::empty(),
+            StageSlugSet::new([slug("late")]),
         )));
         // Execute 行は graph 順に組み直される（4.1 は末尾で、ここでは順序が変わらない）。
         assert!(
@@ -2822,6 +2844,85 @@ mod tests {
             read_model
                 .appended_audit()
                 .contains("**Stages skipped**: none\n")
+        );
+    }
+
+    /// 反転集合の綴りは**文書順**であって、集合型の辞書順ではない (NFR1 の逐語一致)。
+    ///
+    /// [`StageSlugSet`] は一意化のために辞書順で並ぶ。監査行と行末トークンの書き替えを
+    /// その順で書くと upstream の実バイトから外れるので、投影が計画の位置で並べ直す。
+    /// ここでは文書順と辞書順が**逆になる**計画 (`zulu` が `alpha` より前) を組み、
+    /// 並べ直しが効いていることを綴りの一致で固定する。
+    #[test]
+    fn the_recomposed_spelling_follows_the_document_order_not_the_alphabet() {
+        let intent = Intent::from((
+            Created::new(
+                intent_event_id(),
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "build it"),
+                StageEntries::new(vec![
+                    stage(
+                        "state-init",
+                        "0.1",
+                        PhaseId::Initialization,
+                        PlanAction::Execute,
+                    ),
+                    stage("zulu", "2.1", PhaseId::Inception, PlanAction::Execute),
+                    stage("alpha", "2.2", PhaseId::Inception, PlanAction::Execute),
+                ])
+                .expect("フィクスチャの計画は不変条件を満たす"),
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
+            ),
+            at(),
+        ));
+        let skeleton = "\
+## Scope Configuration
+- **Stages to Execute**: 0.1, 2.1, 2.2
+- **Stages to Skip**: none
+
+## Execution Plan Summary
+- **Total Stages**: 3
+
+## Stage Progress
+- [-] state-init — EXECUTE
+- [ ] zulu — EXECUTE
+- [ ] alpha — EXECUTE
+";
+        let mut read_model = ReadModel::new(skeleton);
+        project(
+            &[entry(IntentExecutionEvent::Recomposed(Recomposed::new(
+                event_id(),
+                IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7"),
+                // 集合の内部順は辞書順 (alpha, zulu) — 書き出しは文書順 (zulu, alpha)。
+                StageSlugSet::new([slug("alpha"), slug("zulu")]),
+                StageSlugSet::empty(),
+            )))],
+            &ResolvedPlan::of(&intent),
+            &mut read_model,
+        )
+        .expect("投影");
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Stages skipped**: zulu, alpha\n"),
+            "実際: {}",
+            read_model.appended_audit()
+        );
+        // Skip 行も同じ順で末尾へ足される (graph 順、`rebuild_plan_rows` の逐語規則)。
+        assert!(
+            read_model
+                .state()
+                .contains("- **Stages to Skip**: 2.1 (zulu), 2.2 (alpha)\n"),
+            "実際: {}",
+            read_model.state()
         );
     }
 
@@ -2929,9 +3030,9 @@ old style.
             execution_id(),
             slug("practices-discovery"),
             "owner",
-            sections,
-            mandated.iter().map(|rule| (*rule).to_string()).collect(),
-            forbidden.iter().map(|rule| (*rule).to_string()).collect(),
+            PromotedSections::new(sections).expect("フィクスチャの見出しは一意"),
+            RuleLines::new(mandated.iter().map(|rule| (*rule).to_string()).collect()),
+            RuleLines::new(forbidden.iter().map(|rule| (*rule).to_string()).collect()),
         )
     }
 

@@ -33,9 +33,10 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use core_command_domain::orchestration::{
-    Created, GateApproved, GateOpened, GateRejected, Intent, IntentEventId, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, Recomposed, StageDisplay,
-    StageEntry, StageRevised, StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
+    ArtifactPaths, Created, GateApproved, GateOpened, GateRejected, Intent, IntentEventId,
+    IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked,
+    Recomposed, StageDisplay, StageEntries, StageEntry, StageRevised, StageSkipped, StageSlugSet,
+    StartRequest, Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -153,7 +154,7 @@ fn genesis_intent() -> Intent {
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
             StartRequest::new(SCOPE, REQUEST),
-            stages,
+            StageEntries::new(stages).expect("出荷グラフの計画は不変条件を満たす"),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
                 "Unknown",
@@ -172,7 +173,7 @@ fn started() -> Started {
         event_id(),
         IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
         intent.id().clone(),
-        intent.stages().to_vec(),
+        intent.stages().clone(),
     )
 }
 
@@ -296,7 +297,7 @@ fn opening_a_gate_writes_the_awaiting_approval_row_and_moves_the_checkbox() {
             event_id(),
             execution_id(),
             slug("practices-discovery"),
-            vec![],
+            ArtifactPaths::empty(),
         )),
     );
 }
@@ -445,8 +446,8 @@ fn recomposing_keeps_existing_skip_entries_where_they_are() {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             event_id(),
             execution_id(),
-            vec![slug("deployment-execution"), slug("feedback-optimization")],
-            Vec::new(),
+            StageSlugSet::new([slug("deployment-execution"), slug("feedback-optimization")]),
+            StageSlugSet::empty(),
         )),
     );
 }
@@ -465,8 +466,8 @@ fn recomposing_back_into_scope_drops_the_annotated_entry_whole() {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             event_id(),
             execution_id(),
-            Vec::new(),
-            vec![slug("reverse-engineering")],
+            StageSlugSet::empty(),
+            StageSlugSet::new([slug("reverse-engineering")]),
         )),
         concat!(
             "- [ ] deployment-execution — SKIP\n",
@@ -483,8 +484,8 @@ fn recomposing_moves_a_stage_between_the_two_plan_lists() {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             event_id(),
             execution_id(),
-            vec![slug("incident-response")],
-            Vec::new(),
+            StageSlugSet::new([slug("incident-response")]),
+            StageSlugSet::empty(),
         )),
     );
 }

@@ -18,7 +18,7 @@
 
 mod support;
 
-use core_command_domain::orchestration::{AutonomyMode, IntentExecution};
+use core_command_domain::orchestration::{ArtifactPaths, AutonomyMode, IntentExecution};
 use core_command_domain::workspace::{HumanTurns, SpaceName, StorePath};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
@@ -68,7 +68,11 @@ impl Fixture {
 async fn write_four(repository: &mut Repository) -> IntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await;
     held = advance(repository, &held, |aggregate| {

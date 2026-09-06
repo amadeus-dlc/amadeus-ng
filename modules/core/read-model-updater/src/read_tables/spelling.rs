@@ -98,7 +98,7 @@ mod tests {
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
         IntentExecution, IntentExecutionEventId, IntentExecutionId, IntentId, StageDisplay,
-        StageEntry, StageIndex, Started,
+        StageEntries, StageEntry, StageIndex, Started,
     };
     use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
 
@@ -203,13 +203,14 @@ mod tests {
             "orchestrator",
         )
         .expect("単一行");
-        let stages = vec![StageEntry::new(
+        let stages = StageEntries::new(vec![StageEntry::new(
             StageSlug::parse("state-init").expect("slug は文法内"),
             PhaseId::Initialization,
             PlanAction::Execute,
             false,
             display,
-        )];
+        )])
+        .expect("フィクスチャの計画は不変条件を満たす");
         let started = Started::new(
             event_id(),
             IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("実行 id"),

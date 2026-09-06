@@ -1,6 +1,8 @@
 //! `CreatedDto` — `IntentEvent::Created` の材料 (intent ジャーナル行の payload)。
 
-use core_command_domain::orchestration::{Created, Intent, IntentEventId, IntentId, StageEntry};
+use core_command_domain::orchestration::{
+    Created, Intent, IntentEventId, IntentId, StageEntries, StageEntry,
+};
 use core_command_domain::workflow_definition::{DefinitionRevision, WorkflowDefinitionId};
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +46,10 @@ impl CreatedDto {
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
             start_request: StartRequestDto::of(&intent),
-            stages: intent.stages().iter().map(StageEntryDto::of).collect(),
+            stages: intent.stages().fold_left(Vec::new(), |mut rows, entry| {
+                rows.push(StageEntryDto::of(entry));
+                rows
+            }),
             scan: WorkspaceScanDto::of(intent.scan()),
             created_at: occurred_at,
         }
@@ -63,9 +68,9 @@ impl CreatedDto {
             .iter()
             .map(StageEntryDto::to_domain)
             .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
-        // 計画そのものの不変条件はドメインが持つ (`StageEntry::check_plan`) — 判断を DTO に
-        // 複製せず呼ぶだけにする (`Started` 面と同じ規律 — b40 で intent 面にも揃えた)。
-        StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
+        // 計画そのものの不変条件はドメインが持つ (`StageEntries::new` の構築検査) — 判断を
+        // DTO に複製せず、値を組む口を通すだけにする (`Started` 面と同じ規律)。
+        let stages = StageEntries::new(stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
         Ok(Created::new(
             IntentEventId::parse(&self.id)
                 .map_err(|_| DtoDecodeError::malformed("id", self.id.clone()))?,

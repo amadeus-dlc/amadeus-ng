@@ -17,13 +17,6 @@ pub(crate) struct PendingIterations {
     items: BTreeSet<u32>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "ReviewAttempt の内部列をこの型へ差し替えるのは委任 2（Step 2）— 型の新設と切替を別コミットに分ける計画上、この Bolt の途中では未使用になる"
-    )
-)]
 impl PendingIterations {
     /// まだ 1 件も依頼していない試行の集合。
     pub(crate) const fn empty() -> PendingIterations {
@@ -87,6 +80,9 @@ impl FirstClassCollection for PendingIterations {
     type Filtered = Self;
     fn len(&self) -> usize {
         Self::len(self)
+    }
+    fn is_empty(&self) -> bool {
+        Self::is_empty(self)
     }
     fn at(&self, index: usize) -> Option<Self::Item<'_>> {
         Self::at(self, index)

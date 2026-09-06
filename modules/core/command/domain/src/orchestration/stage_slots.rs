@@ -237,6 +237,17 @@ impl StageSlots {
         });
     }
 
+    /// 名指された位置の実効プランをまとめて書き替える (`Recomposed` の適用)。
+    ///
+    /// [`StageSlots::mark_all`] と同じく、この列に**在る位置だけ**を動かす集合演算である。
+    pub fn override_plan_all(&mut self, stages: &StageIndexSet, plan_action: PlanAction) {
+        stages.fold_left((), |(), stage| {
+            if let Some(slot) = self.items.get_mut(stage.to_usize()) {
+                slot.override_plan(plan_action);
+            }
+        });
+    }
+
     /// 名指された位置のゲート通過の記録をまとめて取り消す (巻き戻し・再合成)。
     ///
     /// [`StageSlots::mark_all`] と同じく、この列に在る位置だけを動かす。

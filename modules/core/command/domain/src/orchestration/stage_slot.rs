@@ -162,7 +162,9 @@ impl StageSlot {
 #[cfg(test)]
 mod tests {
     use super::StageSlot;
-    use crate::orchestration::{ReviewAttempt, ReviewClosure, ReviewVerdict, StageKey};
+    use crate::orchestration::{
+        ReviewAttempt, ReviewClosure, ReviewClosures, ReviewVerdict, StageKey,
+    };
     use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
     use crate::workspace::CheckboxState;
 
@@ -199,8 +201,8 @@ mod tests {
             3,
             ReviewAttempt::restored(
                 1,
-                [2].into_iter().collect(),
-                vec![ReviewClosure::new(1, ReviewVerdict::NotReady)],
+                vec![2],
+                ReviewClosures::new(vec![ReviewClosure::new(1, ReviewVerdict::NotReady)]),
             ),
             true,
         );

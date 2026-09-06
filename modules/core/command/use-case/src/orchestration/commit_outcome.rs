@@ -2,7 +2,7 @@
 //!
 //! [`CommitVerdictUseCase::execute`]: super::CommitVerdictUseCase::execute
 
-use core_command_domain::orchestration::{ReportNoOp, TransitionStep};
+use core_command_domain::orchestration::{ReportNoOp, TransitionSteps};
 use core_command_domain::workflow_definition::StageSlug;
 
 /// 報告が着地した形と、逐語文言を組むのに要る材料。
@@ -20,7 +20,7 @@ pub enum CommitOutcome {
         /// その実行が進めている scope。
         scope: String,
         /// コミットした段の列 (逐語 `<subs joined by " + ">` の材料)。
-        steps: Vec<TransitionStep>,
+        steps: TransitionSteps,
     },
     /// 何もコミットしなかった (**失敗ではない**)。
     NoOp {
@@ -50,17 +50,17 @@ mod tests {
         let outcome = CommitOutcome::Committed {
             stage: slug("domain-design"),
             scope: "classic".to_string(),
-            steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
+            steps: TransitionSteps::recovered_approval(),
         };
         let CommitOutcome::Committed { steps, scope, .. } = &outcome else {
             panic!("Committed を期待した")
         };
         assert_eq!(scope, "classic");
         assert_eq!(
-            steps
-                .iter()
-                .map(|step| step.subcommand())
-                .collect::<Vec<_>>(),
+            steps.fold_left(Vec::new(), |mut names, step| {
+                names.push(step.subcommand());
+                names
+            }),
             ["gate-start", "approve"]
         );
     }

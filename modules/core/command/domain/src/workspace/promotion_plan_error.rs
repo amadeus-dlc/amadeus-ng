@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use super::promoted_sections_error::PromotedSectionsError;
+
 /// 昇格の計画が組めなかった理由 (材料のみ — 逐語は出す側が組む)。
 ///
 /// upstream は `replaceSection` / `appendUnderHeading` の throw を捕まえて
@@ -13,6 +15,12 @@ pub enum PromotionPlanError {
     TeamHeadingMissing(String),
     /// 正本 project.md に、追記先の見出し (`## Mandated` / `## Forbidden`) が無い。
     ProjectHeadingMissing(String),
+    /// 置き換える節の見出しが重複した。
+    ///
+    /// 計画は固定 5 種の見出しを順に 1 度ずつ見るので**構成不能**だが、置き換える節の列
+    /// ([`super::PromotedSections`]) の構築検査を握り潰さないために変種を持つ
+    /// (プロダクトコードで `unwrap` を使わないため)。
+    DuplicateSection(String),
 }
 
 impl fmt::Display for PromotionPlanError {
@@ -24,11 +32,25 @@ impl fmt::Display for PromotionPlanError {
             PromotionPlanError::ProjectHeadingMissing(heading) => {
                 write!(f, "project.md has no heading {heading}")
             }
+            PromotionPlanError::DuplicateSection(heading) => {
+                write!(f, "duplicate promoted section {heading}")
+            }
         }
     }
 }
 
 impl std::error::Error for PromotionPlanError {}
+
+impl From<PromotedSectionsError> for PromotionPlanError {
+    /// 置き換える節の列が拒んだ形を、昇格の計画の拒否へ写す。
+    fn from(error: PromotedSectionsError) -> PromotionPlanError {
+        match error {
+            PromotedSectionsError::DuplicateHeading { heading } => {
+                PromotionPlanError::DuplicateSection(heading)
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -44,5 +66,29 @@ mod tests {
             PromotionPlanError::ProjectHeadingMissing("## Mandated".to_string()).to_string(),
             "project.md has no heading ## Mandated"
         );
+    }
+
+    /// 節の列の拒否は計画の拒否へそのまま写り、見出しの綴りを持ったまま届く。
+    #[test]
+    fn a_duplicate_section_arrives_as_the_plans_own_refusal() {
+        let inner = PromotedSectionsError::DuplicateHeading {
+            heading: "## Testing Posture".to_string(),
+        };
+        let error = PromotionPlanError::from(inner);
+        assert_eq!(
+            error,
+            PromotionPlanError::DuplicateSection("## Testing Posture".to_string())
+        );
+        assert_eq!(
+            error.to_string(),
+            "duplicate promoted section ## Testing Posture"
+        );
+    }
+
+    /// 拒否は材料を自分で持つので、原因の連鎖はここで終わる。
+    #[test]
+    fn the_refusal_owns_its_material_so_the_chain_ends_here() {
+        let error = PromotionPlanError::DuplicateSection("## Code Style".to_string());
+        assert!(std::error::Error::source(&error).is_none());
     }
 }

@@ -41,13 +41,8 @@ const CHECKBOX_LEGEND: &str = "<!-- Checkbox states: [ ] not started, [-] in pro
 #[must_use]
 pub fn compose(intent: &Intent, project_root: &str, started_at: &str) -> String {
     let scan = intent.scan();
-    let execute: Vec<&str> = in_scope(intent).map(|s| s.slug().as_str()).collect();
-    let skip: Vec<&str> = intent
-        .stages()
-        .iter()
-        .filter(|s| s.plan_action() == PlanAction::Skip)
-        .map(|s| s.slug().as_str())
-        .collect();
+    let execute = slugs_of(intent, PlanAction::Execute);
+    let skip = slugs_of(intent, PlanAction::Skip);
     let first = first_post_initialization(intent);
     let mut out = String::new();
 
@@ -62,7 +57,9 @@ pub fn compose(intent: &Intent, project_root: &str, started_at: &str) -> String 
     push_field(
         &mut out,
         "Active Agent",
-        first.map_or("", |s| s.display().lead_agent()),
+        first
+            .as_ref()
+            .map_or("", |entry| entry.display().lead_agent()),
     );
     push_field(&mut out, "Worktree Path", "");
     push_field(&mut out, "Bolt Refs", "");
@@ -118,7 +115,9 @@ pub fn compose(intent: &Intent, project_root: &str, started_at: &str) -> String 
 
     out.push_str("## Current Status\n");
     // 値は**大文字**のフェーズ名（投影の `field::LIFECYCLE_PHASE` の doc — `INCEPTION`）。
-    let lifecycle = first.map_or_else(String::new, |s| phase_label(s.phase()).to_uppercase());
+    let lifecycle = first.as_ref().map_or_else(String::new, |entry| {
+        phase_label(entry.phase()).to_uppercase()
+    });
     push_field(&mut out, "Lifecycle Phase", &lifecycle);
     push_field(&mut out, "Current Stage", "");
     push_field(&mut out, "Next Stage", "");
@@ -157,11 +156,9 @@ fn push_field(out: &mut String, name: &str, value: &str) {
 /// フェーズ見出しごとに、そのフェーズの実行対象ステージ行を並べる。
 fn push_stage_progress(out: &mut String, intent: &Intent) {
     for phase in PHASES {
-        let stages: Vec<&StageEntry> = intent
+        let stages = intent
             .stages()
-            .iter()
-            .filter(|s| s.phase() == phase && s.plan_action() == PlanAction::Execute)
-            .collect();
+            .filter(|entry| entry.phase() == phase && entry.plan_action() == PlanAction::Execute);
         if stages.is_empty() {
             continue;
         }
@@ -169,24 +166,36 @@ fn push_stage_progress(out: &mut String, intent: &Intent) {
             "\n### {} PHASE\n",
             phase_label(phase).to_uppercase()
         ));
-        for stage in stages {
+        stages.fold_left((), |(), stage| {
             out.push_str(&format!("- [ ] {} — EXECUTE\n", stage.slug().as_str()));
-        }
+        });
     }
     out.push('\n');
 }
 
-/// 実行対象（EXECUTE）のステージ。
-fn in_scope(intent: &Intent) -> impl Iterator<Item = &StageEntry> {
+/// 名指しの計画に一致するステージの slug 列（文書順）。
+///
+/// 計画は一級コレクションなので、絞込みはコレクション自身の `filter` に任せ、行を組むのに
+/// 要る綴りだけを取り出す（`coding-rules/first-class-collections.md`）。
+fn slugs_of(intent: &Intent, plan_action: PlanAction) -> Vec<String> {
     intent
         .stages()
-        .iter()
-        .filter(|s| s.plan_action() == PlanAction::Execute)
+        .filter(|entry| entry.plan_action() == plan_action)
+        .fold_left(Vec::new(), |mut slugs, entry| {
+            slugs.push(entry.slug().as_str().to_string());
+            slugs
+        })
 }
 
 /// initialization より後の最初の実行対象ステージ（着地先）。
-fn first_post_initialization(intent: &Intent) -> Option<&StageEntry> {
-    in_scope(intent).find(|s| s.phase() != PhaseId::Initialization)
+fn first_post_initialization(intent: &Intent) -> Option<StageEntry> {
+    intent
+        .stages()
+        .filter(|entry| {
+            entry.plan_action() == PlanAction::Execute && entry.phase() != PhaseId::Initialization
+        })
+        .at(0)
+        .cloned()
 }
 
 /// upstream の `phaseStatus` — initialization は Verified、着地先のフェーズは Active、
@@ -195,13 +204,16 @@ fn phase_status(intent: &Intent, phase: PhaseId) -> String {
     if phase == PhaseId::Initialization {
         return "Verified".to_string();
     }
-    if first_post_initialization(intent).is_some_and(|s| s.phase() == phase) {
+    if first_post_initialization(intent).is_some_and(|entry| entry.phase() == phase) {
         return "Active".to_string();
     }
-    if in_scope(intent).any(|s| s.phase() == phase) {
-        "Pending".to_string()
-    } else {
+    let in_scope = intent
+        .stages()
+        .filter(|entry| entry.plan_action() == PlanAction::Execute && entry.phase() == phase);
+    if in_scope.is_empty() {
         "Skipped".to_string()
+    } else {
+        "Pending".to_string()
     }
 }
 
@@ -222,7 +234,7 @@ mod tests {
 
     use super::*;
     use core_command_domain::orchestration::{
-        Created, IntentEventId, IntentId, StageDisplay, StartRequest, WorkspaceScan,
+        Created, IntentEventId, IntentId, StageDisplay, StageEntries, StartRequest, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -258,7 +270,7 @@ mod tests {
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
                 request,
-                stages,
+                StageEntries::new(stages).expect("フィクスチャの計画は不変条件を満たす"),
                 WorkspaceScan::new(BrownfieldGreenfield::Greenfield, "Rust", "None", "Cargo")
                     .expect("単一行"),
             ),

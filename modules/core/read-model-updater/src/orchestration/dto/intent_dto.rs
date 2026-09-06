@@ -9,7 +9,8 @@
 //! `coding-rules/abstract-data-type.md`)。
 
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEventId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEventId, IntentId, StageDisplay, StageEntries, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -90,7 +91,10 @@ impl IntentDto {
                 test_strategy: intent.test_strategy().map(str::to_string),
                 review: intent.review().map(str::to_string),
             },
-            stages: intent.stages().iter().map(StageEntryDto::of).collect(),
+            stages: intent.stages().fold_left(Vec::new(), |mut rows, entry| {
+                rows.push(StageEntryDto::of(entry));
+                rows
+            }),
             scan: WorkspaceScanDto::of(intent.scan()),
             created_at: occurred_at,
         }
@@ -111,9 +115,9 @@ impl IntentDto {
             .iter()
             .map(StageEntryDto::to_domain)
             .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
-        // 計画そのものの不変条件はドメインが持つ (`StageEntry::check_plan`) — 判断を DTO に
-        // 複製せず呼ぶだけにする。
-        StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
+        // 計画そのものの不変条件はドメインが持つ (`StageEntries::new` の構築検査) — 判断を
+        // DTO に複製せず、値を組む口を通すだけにする。
+        let stages = StageEntries::new(stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
         let mut request = StartRequest::new(
             self.start_request.scope.clone(),
             self.start_request.request.clone(),

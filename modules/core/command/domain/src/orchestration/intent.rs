@@ -29,6 +29,7 @@ use super::intent_event_id::IntentEventId;
 use super::intent_id::IntentId;
 use super::intent_review_error::IntentReviewError;
 use super::stage_display::StageDisplay;
+use super::stage_entries::StageEntries;
 use super::stage_entry::StageEntry;
 use super::start_request::StartRequest;
 use super::workspace_scan::WorkspaceScan;
@@ -55,7 +56,7 @@ pub struct Intent {
     definition_id: WorkflowDefinitionId,
     definition_revision: DefinitionRevision,
     start_request: StartRequest,
-    stages: Vec<StageEntry>,
+    stages: StageEntries,
     scan: WorkspaceScan,
     created_at: DateTime<Utc>,
 }
@@ -155,14 +156,13 @@ impl Intent {
                 display,
             ));
         }
-        Intent::check_plan(&stages)?;
         let created = Created::new(
             IntentEventId::generate(),
             id,
             definition.id().clone(),
             definition.revision().clone(),
             start_request,
-            stages,
+            StageEntries::new(stages)?,
             scan,
         );
         let intent = Intent::from((created.clone(), occurred_at));
@@ -196,15 +196,6 @@ impl Intent {
         match event {
             IntentEvent::Created(_) => {}
         }
-    }
-
-    /// 解決済み計画の不変条件 (genesis と再構成で完全に同一の 1 か所)。
-    ///
-    /// 検査の正本は計画を所有する型の [`StageEntry::check_plan`] で、ここはその結果を
-    /// intent の構築エラーへ写すだけである。実行の誕生記録 (`Started`) を復号する両側の
-    /// DTO も同じ 1 か所を通るので、計画の判断はリポジトリ全体で 1 実装しかない。
-    fn check_plan(stages: &[StageEntry]) -> Result<(), IntentError> {
-        StageEntry::check_plan(stages).map_err(IntentError::from)
     }
 
     /// この intent の識別子 (以後不変。`intents.json` の uuid にあたる)。
@@ -257,7 +248,7 @@ impl Intent {
 
     /// 文書順の解決済み計画。
     #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
+    pub const fn stages(&self) -> &StageEntries {
         &self.stages
     }
 
@@ -287,16 +278,10 @@ impl From<(Created, DateTime<Utc>)> for Intent {
     ///
     /// 発生時刻は封筒 (ジャーナル行のメタデータ) の持ち物なのでイベントは運ばず、
     /// 読み手が封筒から対にして渡す。構造体リテラルはここだけ — genesis
-    /// ([`Intent::create`]) もこの変換を通る。記録された歴史は書込時に検査済みである。
-    /// 万一壊れた歴史 (計画不変条件違反) を読んだ場合は回復せずクラッシュする
-    /// (オーナー裁定 2026-08-30 — 再構成は失敗を返さない。本家 v3 ではこの位置づけの
-    /// 検査自体が無く、serde 復号がそのまま集約になる)。
-    #[allow(
-        clippy::expect_used,
-        reason = "壊れた歴史は回復不能 — 再構成は失敗を返さずクラッシュする (オーナー裁定 2026-08-30)"
-    )]
+    /// ([`Intent::create`]) もこの変換を通る。計画の不変条件は誕生記録が運ぶ
+    /// [`StageEntries`] の構築時に済んでいる (非空・slug 一意・initialization は EXECUTE かつ
+    /// 無条件) ので、この変換に検査は残らない — 破れた計画はそもそもイベントに載らない。
     fn from((created, occurred_at): (Created, DateTime<Utc>)) -> Intent {
-        Intent::check_plan(&created.stages).expect("recorded history violates the plan invariants");
         Intent {
             id: created.aggregate_id,
             definition_id: created.definition_id,
@@ -318,7 +303,7 @@ mod tests {
         IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap()
     }
 
-    use crate::orchestration::{IntentId, StageDisplay, StageEntry, WorkspaceScan};
+    use crate::orchestration::{IntentId, PlanError, StageDisplay, StageEntry, WorkspaceScan};
     use crate::workflow_definition::{
         BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
         ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
@@ -376,8 +361,8 @@ mod tests {
         )
     }
 
-    fn stages() -> Vec<StageEntry> {
-        vec![
+    fn stages() -> StageEntries {
+        plan(vec![
             entry(
                 "state-init",
                 "0.1",
@@ -396,7 +381,12 @@ mod tests {
                 PhaseId::Ideation,
                 PlanAction::Skip,
             ),
-        ]
+        ])
+    }
+
+    /// テストの計画を組む (検査は `StageEntries::new` の 1 か所)。
+    fn plan(entries: Vec<StageEntry>) -> StageEntries {
+        StageEntries::new(entries).unwrap()
     }
 
     fn intent() -> Intent {
@@ -585,8 +575,30 @@ mod tests {
         assert_eq!(intent.request(), "build the thing");
         assert_eq!(intent.depth(), Some("standard"));
         assert_eq!(intent.test_strategy(), Some("balanced"));
-        assert_eq!(intent.stages(), stages().as_slice());
+        assert_eq!(intent.stages(), &stages());
         assert_eq!(intent.scan(), &scan());
+        // 上限の指定なしは `None` — 「指定なし」を既定値で埋めない。
+        assert_eq!(intent.review(), None);
+        // 鋳造の発生時刻は誕生の封筒の時刻そのもの。
+        assert_eq!(intent.created_at(), &defined_at());
+    }
+
+    /// 上限を指定して鋳造した intent はその綴りをそのまま返す。
+    #[test]
+    fn a_declared_review_cap_is_reported_back_verbatim() {
+        let intent = Intent::from((
+            Created::new(
+                intent_event_id(),
+                id(),
+                def_id(),
+                revision(),
+                request().with_review("adversarial"),
+                stages(),
+                scan(),
+            ),
+            defined_at(),
+        ));
+        assert_eq!(intent.review(), Some("adversarial"));
     }
 
     #[test]
@@ -594,121 +606,42 @@ mod tests {
         assert_eq!(intent().stage_count(), 3);
     }
 
+    /// 破れた計画は**イベントに載らない** — 誕生記録が運ぶ [`StageEntries`] の構築検査で
+    /// 止まるので、再構成 (`From<Created>`) が壊れた計画を読むこと自体が構成不能になった。
+    ///
+    /// 以前は同じ 4 形を `Intent::from` の panic で確かめていたが、検査点が計画を所有する型へ
+    /// 移った (BR5.5) ので、拒否の観測もそちらで行う。個々の Err の網羅は
+    /// `stage_entries.rs` のテストが持ち、ここは**この型の構築経路が同じ口を通る**ことを固定する。
     #[test]
-    #[should_panic(expected = "recorded history violates the plan invariants")]
-    fn an_empty_plan_crashes_reconstruction() {
-        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
-        let _ = Intent::from((
-            Created::new(
-                intent_event_id(),
-                id(),
-                def_id(),
-                revision(),
-                request(),
-                Vec::new(),
-                scan(),
-            ),
-            defined_at(),
-        ));
-    }
-
-    #[test]
-    #[should_panic(expected = "recorded history violates the plan invariants")]
-    fn a_first_stage_that_is_not_execute_crashes_reconstruction() {
-        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
-        // 先頭はカーソルの初期位置なので、実効 EXECUTE でなければ cursor_in_scope を破る。
-        let stages = vec![
-            entry(
-                "state-init",
-                "0.1",
+    fn a_broken_plan_never_reaches_the_birth_record() {
+        let init = |action, conditional| {
+            StageEntry::new(
+                StageSlug::parse("state-init").unwrap(),
                 PhaseId::Initialization,
-                PlanAction::Skip,
-            ),
-            entry(
-                "intent-capture",
-                "1.1",
-                PhaseId::Ideation,
-                PlanAction::Execute,
-            ),
-        ];
-        let _ = Intent::from((
-            Created::new(
-                intent_event_id(),
-                id(),
-                def_id(),
-                revision(),
-                request(),
-                stages,
-                scan(),
-            ),
-            defined_at(),
-        ));
-    }
-
-    #[test]
-    #[should_panic(expected = "recorded history violates the plan invariants")]
-    fn an_initialization_stage_folded_to_skip_crashes_reconstruction() {
-        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
-        let stages = vec![
-            entry(
-                "state-init",
-                "0.1",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-            ),
-            entry(
-                "state-detect",
-                "0.2",
-                PhaseId::Initialization,
-                PlanAction::Skip,
-            ),
-        ];
-        let _ = Intent::from((
-            Created::new(
-                intent_event_id(),
-                id(),
-                def_id(),
-                revision(),
-                request(),
-                stages,
-                scan(),
-            ),
-            defined_at(),
-        ));
-    }
-
-    #[test]
-    #[should_panic(expected = "recorded history violates the plan invariants")]
-    fn a_conditional_initialization_stage_crashes_reconstruction() {
-        // 再構成は失敗を返さない — 壊れた歴史はクラッシュが正 (オーナー裁定 2026-08-30)。
-        let conditional = StageEntry::new(
-            StageSlug::parse("state-detect").unwrap(),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            true,
-            StageDisplay::new(StageNumber::parse("0.2").unwrap(), "Stage", "orchestrator").unwrap(),
+                action,
+                conditional,
+                StageDisplay::new(StageNumber::parse("0.1").unwrap(), "Stage", "orchestrator")
+                    .unwrap(),
+            )
+        };
+        assert_eq!(StageEntries::new(Vec::new()), Err(PlanError::Empty));
+        assert_eq!(
+            StageEntries::new(vec![init(PlanAction::Skip, false)]),
+            Err(PlanError::InitializationMustExecute)
         );
-        let stages = vec![
-            entry(
-                "state-init",
-                "0.1",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-            ),
-            conditional,
-        ];
-        let _ = Intent::from((
-            Created::new(
-                intent_event_id(),
-                id(),
-                def_id(),
-                revision(),
-                request(),
-                stages,
-                scan(),
-            ),
-            defined_at(),
-        ));
+        assert_eq!(
+            StageEntries::new(vec![init(PlanAction::Execute, true)]),
+            Err(PlanError::InitializationMustBeUnconditional)
+        );
+        assert_eq!(
+            StageEntries::new(vec![
+                init(PlanAction::Execute, false),
+                init(PlanAction::Execute, false),
+            ]),
+            Err(PlanError::DuplicateSlug {
+                slug: "state-init".to_string(),
+            })
+        );
     }
 
     #[test]
@@ -736,7 +669,7 @@ mod tests {
                 def_id(),
                 revision(),
                 request(),
-                stages,
+                plan(stages),
                 scan(),
             ),
             defined_at(),
@@ -850,7 +783,7 @@ mod tests {
             ),
             defined_at(),
         ));
-        assert_eq!(intent.stages(), stages().as_slice());
+        assert_eq!(intent.stages(), &stages());
     }
 
     #[test]
@@ -872,7 +805,7 @@ mod tests {
                 intent.definition_id().clone(),
                 intent.definition_revision().clone(),
                 request(),
-                intent.stages().to_vec(),
+                intent.stages().clone(),
                 intent.scan().clone(),
             ),
             defined_at(),

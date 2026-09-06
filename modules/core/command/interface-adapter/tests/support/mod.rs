@@ -14,13 +14,13 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, Created, Intent, IntentEvent, IntentEventId, IntentExecution,
-    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest,
-    WorkspaceScan,
+    ArtifactPaths, CommandError, Created, Intent, IntentEvent, IntentEventId, IntentExecution,
+    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntries, StageEntry,
+    StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
-    ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode,
+    ExecutionKind, PhaseId, PlanAction, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNode,
     StageNodeBuilder, StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent,
     WorkflowDefinitionId,
 };
@@ -115,30 +115,33 @@ fn slug(value: &str) -> StageSlug {
 
 /// 3 ステージの合成計画 (索引 0 = initialization、1〜2 = ideation)。
 #[must_use]
-pub(crate) fn stages() -> Vec<StageEntry> {
-    vec![
-        StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1", "State Init"),
-        ),
-        StageEntry::new(
-            slug("intent-capture"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.1", "Intent Capture"),
-        ),
-        StageEntry::new(
-            slug("scope-definition"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.4", "Scope Definition"),
-        ),
-    ]
+pub(crate) fn stages() -> StageEntries {
+    let entries: Vec<StageEntry> = {
+        vec![
+            StageEntry::new(
+                slug("state-init"),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                display("0.1", "State Init"),
+            ),
+            StageEntry::new(
+                slug("intent-capture"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.1", "Intent Capture"),
+            ),
+            StageEntry::new(
+                slug("scope-definition"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.4", "Scope Definition"),
+            ),
+        ]
+    };
+    StageEntries::new(entries).expect("フィクスチャの計画は不変条件を満たす")
 }
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
@@ -238,7 +241,11 @@ pub(crate) async fn store_gate_opened<R: IntentExecutionRepository>(
     held: &IntentExecution,
 ) -> IntentExecution {
     advance(repository, held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await
 }
@@ -407,10 +414,9 @@ pub(crate) fn definition_content(
 /// 経路を見るためである。
 #[must_use]
 pub(crate) fn plan_definition_genesis() -> (WorkflowDefinition, WorkflowDefinitionEvent) {
-    let nodes = stages()
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| {
+    let nodes = stages().fold_left(Vec::new(), |mut nodes: Vec<StageNode>, entry| {
+        let index = nodes.len();
+        nodes.push(
             StageNodeBuilder::new(
                 entry.slug().clone(),
                 StageNumber::parse(&format!("{}.{}", entry.phase().index(), index + 1))
@@ -421,9 +427,10 @@ pub(crate) fn plan_definition_genesis() -> (WorkflowDefinition, WorkflowDefiniti
                 StageMode::Inline,
             )
             .scopes(vec!["classic".to_string()])
-            .build()
-        })
-        .collect();
+            .build(),
+        );
+        nodes
+    });
     let graph = StageGraph::new(nodes).expect("契約テストのグラフは検証を通る");
     let grid = ScopeGrid::from_graph(&graph);
     let scopes = [(

@@ -5,8 +5,8 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionId, IntentId, ReviewAttempt, ReviewClosure, StageIndex,
-    StageKey,
+    IntentExecution, IntentExecutionId, IntentId, ReviewAttempt, ReviewClosure, ReviewClosures,
+    StageIndex, StageKey, StageSlot, StageSlots,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -93,15 +93,14 @@ impl ReviewAttemptDto {
     fn of(attempt: &ReviewAttempt) -> ReviewAttemptDto {
         ReviewAttemptDto {
             requests: attempt.request_count(),
-            pending: attempt.pending().iter().copied().collect(),
-            closed: attempt
-                .closed()
-                .iter()
-                .map(|closure| ReviewClosureDto {
+            pending: attempt.pending_iterations(),
+            closed: attempt.closed().fold_left(Vec::new(), |mut rows, closure| {
+                rows.push(ReviewClosureDto {
                     iteration: closure.iteration(),
                     verdict: review_verdict_spelling(closure.verdict()).to_string(),
-                })
-                .collect(),
+                });
+                rows
+            }),
         }
     }
 
@@ -119,9 +118,44 @@ impl ReviewAttemptDto {
             .collect::<Result<Vec<_>, DtoDecodeError>>()?;
         Ok(ReviewAttempt::restored(
             self.requests,
-            self.pending.iter().copied().collect(),
-            closed,
+            self.pending.clone(),
+            ReviewClosures::new(closed),
         ))
+    }
+}
+
+/// 位置ごとの記録を行の 7 列へ展開する途中の受け皿 (この DTO の内部だけで使う)。
+///
+/// **ドメインの一級コレクションを行の形へ写す作業台**であって、リードモデルの表現ではない
+/// (`coding-rules/cqrs-boundaries.md`)。1 度の走査で 7 列を同時に埋めるので、列の長さは
+/// 構造的に揃う。
+#[derive(Debug, Default)]
+struct SlotColumns {
+    stages: Vec<StageKeyDto>,
+    overlay: Vec<String>,
+    checkbox: Vec<String>,
+    review_attempts: Vec<ReviewAttemptDto>,
+    practices_affirmed: Vec<bool>,
+    approved: Vec<bool>,
+    revision_count: Vec<u32>,
+}
+
+impl SlotColumns {
+    /// 1 位置ぶんの記録を 7 列へ足す。
+    fn push(&mut self, slot: &StageSlot) {
+        self.stages.push(StageKeyDto {
+            slug: slot.key().slug().as_str().to_string(),
+            phase: phase_spelling(slot.key().phase()).to_string(),
+        });
+        self.overlay
+            .push(plan_action_spelling(slot.plan_action()).to_string());
+        self.checkbox
+            .push(checkbox_spelling(slot.checkbox()).to_string());
+        self.review_attempts
+            .push(ReviewAttemptDto::of(slot.review_attempt()));
+        self.practices_affirmed.push(slot.practices_affirmed());
+        self.approved.push(slot.approved());
+        self.revision_count.push(slot.revision_count());
     }
 }
 
@@ -134,30 +168,20 @@ impl IntentExecutionDto {
     /// 作り直す (`coding-rules/no-backward-compatibility.md` — 使われない口を並立させない)。
     #[must_use]
     pub fn of(execution: &IntentExecution) -> IntentExecutionDto {
-        let stages = 0..execution.stage_count();
+        // 位置ごとの記録を 1 度だけ畳んで 7 列へ展開する — 列の長さは同じ走査から出るので、
+        // ここでずれることが構成上あり得ない (b51: 7 並列列 → `StageSlots`)。
+        let columns = execution
+            .slots()
+            .fold_left(SlotColumns::default(), |mut columns, slot| {
+                columns.push(slot);
+                columns
+            });
         IntentExecutionDto {
             id: execution.id().as_str().to_string(),
             intent_id: execution.intent_id().as_str().to_string(),
-            stages: execution
-                .stage_keys()
-                .iter()
-                .map(|key| StageKeyDto {
-                    slug: key.slug().as_str().to_string(),
-                    phase: phase_spelling(key.phase()).to_string(),
-                })
-                .collect(),
-            overlay: stages
-                .clone()
-                .filter_map(|value| execution.stage_index(value))
-                .filter_map(|stage| execution.effective_plan(stage))
-                .map(|action| plan_action_spelling(action).to_string())
-                .collect(),
-            checkbox: stages
-                .clone()
-                .filter_map(|value| execution.stage_index(value))
-                .filter_map(|stage| execution.checkbox(stage))
-                .map(|state| checkbox_spelling(state).to_string())
-                .collect(),
+            stages: columns.stages,
+            overlay: columns.overlay,
+            checkbox: columns.checkbox,
             cursor: execution.cursor().to_usize(),
             status: status_spelling(execution.status()).to_string(),
             parked_at: execution.parked_at().map(StageIndex::to_usize),
@@ -165,26 +189,10 @@ impl IntentExecutionDto {
             skeleton_stance: execution
                 .skeleton_stance()
                 .map(|stance| skeleton_stance_spelling(stance).to_string()),
-            review_attempts: stages
-                .clone()
-                .filter_map(|value| execution.stage_index(value))
-                .filter_map(|stage| execution.review_attempt(stage))
-                .map(ReviewAttemptDto::of)
-                .collect(),
-            practices_affirmed: stages
-                .clone()
-                .filter_map(|value| execution.stage_index(value))
-                .filter_map(|stage| execution.practices_affirmed(stage))
-                .collect(),
-            approved: stages
-                .clone()
-                .filter_map(|value| execution.stage_index(value))
-                .filter_map(|stage| execution.approved(stage))
-                .collect(),
-            revision_count: stages
-                .filter_map(|value| execution.stage_index(value))
-                .filter_map(|stage| execution.revision_count(stage))
-                .collect(),
+            review_attempts: columns.review_attempts,
+            practices_affirmed: columns.practices_affirmed,
+            approved: columns.approved,
+            revision_count: columns.revision_count,
             last_gate_resolution_at: execution.last_gate_resolution_at(),
             seq_nr: execution.seq_nr(),
             last_updated_at: *execution.last_updated_at(),
@@ -202,48 +210,74 @@ impl IntentExecutionDto {
             .map_err(|_| DtoDecodeError::malformed("id", &self.id))?;
         let intent_id = IntentId::parse(&self.intent_id)
             .map_err(|_| DtoDecodeError::malformed("intent_id", &self.intent_id))?;
-        let stage_keys = self
-            .stages
-            .iter()
-            .map(|key| {
-                Ok(StageKey::new(
-                    StageSlug::parse(&key.slug)
-                        .map_err(|_| DtoDecodeError::malformed("stages.slug", &key.slug))?,
-                    phase_of(&key.phase, "stages.phase")?,
-                ))
-            })
-            .collect::<Result<Vec<_>, DtoDecodeError>>()?;
-        let overlay = self
-            .overlay
-            .iter()
-            .map(|raw| plan_action_of(raw, "overlay"))
-            .collect::<Result<Vec<_>, DtoDecodeError>>()?;
-        let checkbox = self
-            .checkbox
-            .iter()
-            .map(|raw| checkbox_of(raw))
-            .collect::<Result<Vec<_>, DtoDecodeError>>()?;
-        // 欄不在の行は「まだ 1 度も依頼していない」— 計画長ぶんの空試行で読む。
+        let count = self.stages.len();
+        // 欄不在の行は「まだ 1 度も依頼していない」/「まだ昇格していない」— 添字帳の長さぶんの
+        // 既定値で読む。ここで広げておくと、以降は添字で 7 列を突き合わせるだけになる。
         let review_attempts = if self.review_attempts.is_empty() {
-            vec![ReviewAttempt::default(); stage_keys.len()]
+            vec![ReviewAttemptDto::default(); count]
         } else {
-            self.review_attempts
-                .iter()
-                .map(ReviewAttemptDto::to_domain)
-                .collect::<Result<Vec<_>, DtoDecodeError>>()?
+            self.review_attempts.clone()
         };
-        // 欄不在の行は「まだ昇格していない」— 計画長ぶんの false で読む。
         let practices_affirmed = if self.practices_affirmed.is_empty() {
-            vec![false; stage_keys.len()]
+            vec![false; count]
         } else {
             self.practices_affirmed.clone()
         };
+        // 7 列を添字で合わせて位置ごとの記録へ畳む。列の長さが食い違う行は
+        // `InvariantViolation` — 集約側では構成不能になった形なので、境界で断つ (層 (1))。
+        let mut slots = Vec::with_capacity(count);
+        for (index, key) in self.stages.iter().enumerate() {
+            let column = |present: bool| {
+                if present {
+                    Ok(())
+                } else {
+                    Err(DtoDecodeError::InvariantViolation)
+                }
+            };
+            let overlay = self
+                .overlay
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
+            let checkbox = self
+                .checkbox
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
+            let attempt = review_attempts
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
+            let affirmed = practices_affirmed
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
+            let approved = self
+                .approved
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
+            let revision_count = self
+                .revision_count
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
+            column(self.overlay.len() == count && self.checkbox.len() == count)?;
+            column(self.approved.len() == count && self.revision_count.len() == count)?;
+            column(review_attempts.len() == count && practices_affirmed.len() == count)?;
+            slots.push(StageSlot::new(
+                StageKey::new(
+                    StageSlug::parse(&key.slug)
+                        .map_err(|_| DtoDecodeError::malformed("stages.slug", &key.slug))?,
+                    phase_of(&key.phase, "stages.phase")?,
+                ),
+                plan_action_of(overlay, "overlay")?,
+                checkbox_of(checkbox)?,
+                *approved,
+                *revision_count,
+                attempt.to_domain()?,
+                *affirmed,
+            ));
+        }
+        let slots = StageSlots::new(slots).map_err(|_| DtoDecodeError::InvariantViolation)?;
         IntentExecution::new(
             id,
             intent_id,
-            stage_keys,
-            overlay,
-            checkbox,
+            slots,
             self.cursor,
             status_of(&self.status)?,
             self.parked_at,
@@ -252,10 +286,6 @@ impl IntentExecutionDto {
                 .as_deref()
                 .map(|raw| skeleton_stance_of(raw, "skeleton_stance"))
                 .transpose()?,
-            review_attempts,
-            practices_affirmed,
-            self.approved.clone(),
-            self.revision_count.clone(),
             self.last_gate_resolution_at,
             self.seq_nr,
             self.last_updated_at,

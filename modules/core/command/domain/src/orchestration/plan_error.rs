@@ -5,13 +5,13 @@ use std::fmt;
 /// 解決済み計画 (文書順の [`StageEntry`] 列) が満たすべき不変条件の違反
 /// (材料のみ — 利用者向け文言はアダプタ層)。
 ///
-/// 検査の正本は [`StageEntry::check_plan`] であり、intent の鋳造 ([`Intent::create`]) も
+/// 検査の正本は [`StageEntries::new`] であり、intent の鋳造 ([`Intent::create`]) も
 /// 実行の誕生記録の復号 (両側の `StartedDto`) も同じ 1 か所を通る。initialization
 /// フェーズの扱いは BR2.2 — 状態ファイルを起こす工程そのものなので、SKIP にも
 /// CONDITIONAL にもできない。
 ///
 /// [`StageEntry`]: crate::orchestration::StageEntry
-/// [`StageEntry::check_plan`]: crate::orchestration::StageEntry::check_plan
+/// [`StageEntries::new`]: crate::orchestration::StageEntries::new
 /// [`Intent::create`]: crate::orchestration::Intent::create
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanError {

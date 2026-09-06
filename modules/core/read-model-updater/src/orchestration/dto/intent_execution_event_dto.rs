@@ -11,7 +11,7 @@
 //! 委譲だけを行う (`coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型)。
 
 use core_command_domain::orchestration::{
-    IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+    IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, StageSlugSet,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use serde::{Deserialize, Serialize};
@@ -99,8 +99,20 @@ pub(crate) fn slug_of(raw: &str, field: &'static str) -> Result<StageSlug, DtoDe
 pub(crate) fn slugs_of(
     raw: &[String],
     field: &'static str,
-) -> Result<Vec<StageSlug>, DtoDecodeError> {
-    raw.iter().map(|value| slug_of(value, field)).collect()
+) -> Result<StageSlugSet, DtoDecodeError> {
+    let slugs = raw
+        .iter()
+        .map(|value| slug_of(value, field))
+        .collect::<Result<Vec<StageSlug>, DtoDecodeError>>()?;
+    Ok(StageSlugSet::new(slugs))
+}
+
+/// slug 集合を行の列へ写す (辞書順 — 文書順へ並べ直すのは投影側の責務)。
+pub(crate) fn slug_column(slugs: &StageSlugSet) -> Vec<String> {
+    slugs.fold_left(Vec::new(), |mut column, slug| {
+        column.push(slug_spelling(slug));
+        column
+    })
 }
 
 impl IntentExecutionEventDto {

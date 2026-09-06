@@ -2127,7 +2127,7 @@ pub(super) mod tests {
     /// intent 行のフィクスチャ (誕生の材料 = 検査付き再構成で戻る集約値)。
     fn birth_created() -> core_command_domain::orchestration::Created {
         use core_command_domain::orchestration::{
-            Created, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+            Created, IntentId, StageDisplay, StageEntries, StageEntry, StartRequest, WorkspaceScan,
         };
         use core_command_domain::workflow_definition::{
             BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -2139,7 +2139,7 @@ pub(super) mod tests {
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
             StartRequest::new("classic", "unit"),
-            vec![StageEntry::new(
+            StageEntries::new(vec![StageEntry::new(
                 StageSlug::parse("state-init").unwrap(),
                 PhaseId::Initialization,
                 PlanAction::Execute,
@@ -2150,7 +2150,8 @@ pub(super) mod tests {
                     "orchestrator",
                 )
                 .unwrap(),
-            )],
+            )])
+            .expect("フィクスチャの計画は不変条件を満たす"),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
                 "Unknown",
@@ -2518,25 +2519,17 @@ pub(super) mod tests {
         assert_eq!(decode_entry(&sound_row()).unwrap().seq_nr(), 2);
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "契約 JSON ではなく行のバイトそのものを組む (BR1.7 の射程外)"
-    )]
     #[test]
     fn an_execution_row_whose_birth_plan_is_broken_is_corrupt() {
         // 計画そのものの不変条件を破る誕生行は復号の境界で止まる — 通すと集約の再構成まで
         // 届いてクラッシュする。DTO 側の拒否 (`InvariantViolation`) がここで `Corrupt` に写る
         // ことを、この層の面で固定する。
-        use core_command_domain::orchestration::Started;
-        let broken = IntentExecutionEvent::Started(Started::new(
-            event_id(),
-            IntentExecutionId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("実行 id"),
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("intent id"),
-            Vec::new(),
-        ));
+        // 破れた計画は**ドメイン側で組めなくなった** (`StageEntries` の構築検査) ので、
+        // 行のバイトを直に組む — 実際に起こりうるのはディスクの行が壊れている場合である。
+        let payload = br#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[]}}"#;
         let row = JournalRow {
             seq_nr: 1,
-            payload: serde_json::to_vec(&IntentExecutionEventDto::of(&broken)).unwrap(),
+            payload: payload.to_vec(),
             ..sound_row()
         };
         assert_eq!(

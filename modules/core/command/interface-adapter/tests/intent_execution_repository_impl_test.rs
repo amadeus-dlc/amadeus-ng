@@ -15,7 +15,8 @@
 mod support;
 
 use core_command_domain::orchestration::{
-    GateApproved, IntentExecution, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+    ArtifactPaths, GateApproved, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
+    IntentExecutionId,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
@@ -80,7 +81,11 @@ impl Fixture {
 async fn seed(repository: &mut Repository) -> IntentExecution {
     let held = support::store_genesis(repository).await;
     let held = advance(repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await;
     advance(repository, &held, |aggregate| {
@@ -483,7 +488,11 @@ async fn a_journal_row_with_a_foreign_manifest_is_refused_before_replay() {
         .await
         .expect("握り直せる");
     advance(&mut repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await;
 
@@ -640,7 +649,11 @@ async fn the_strategy_refreshes_the_snapshot_every_n_events() {
     let held = support::store_genesis(&mut repository).await;
     assert_eq!(snapshot_seq(&fixture.raw()), 1);
     let held = advance(&mut repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 2 は基底を書き直す");
@@ -651,7 +664,11 @@ async fn the_strategy_refreshes_the_snapshot_every_n_events() {
     assert_eq!(snapshot_seq(&fixture.raw()), 2, "seq 3 はイベントのみ");
     assert_eq!(held.version(), 3, "イベントのみの書込でも版は進む");
     let held = advance(&mut repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["scope.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["scope.md".to_string()]),
+            at(),
+        )
     })
     .await;
     assert_eq!(snapshot_seq(&fixture.raw()), 4, "seq 4 は基底を書き直す");

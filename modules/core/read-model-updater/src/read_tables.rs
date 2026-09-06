@@ -236,9 +236,11 @@ impl ReadTables {
         let mut intent_stages = Vec::new();
         for intent in history.intents() {
             intents.push(IntentRow::of(intent));
-            for (index, entry) in intent.stages().iter().enumerate() {
-                intent_stages.push(IntentStageRow::of(intent.id(), index, entry));
-            }
+            intent_stages = intent.stages().fold_left(intent_stages, |mut rows, entry| {
+                let index = rows.len();
+                rows.push(IntentStageRow::of(intent.id(), index, entry));
+                rows
+            });
         }
 
         // 答えが指す run-stage は**この投影で立った行**でなければならない (届かない FK を
@@ -277,20 +279,23 @@ impl ReadTables {
                     ));
                 }
             }
-            // 位置は添字帳の索引からしか作れない (`StageIndex` の構築子は集約が持つ) ので、
-            // 引けた索引だけを対にして回す。添字帳の長さは stage_count と同じなので実際に
+            // 位置は記録の索引からしか作れない (`StageIndex` の構築子は集約が持つ) ので、
+            // 走査の途中で位置を組み直す。記録の長さは stage_count と同じなので実際に
             // 落ちる索引は無く、`filter_map` は「位置を作る」ためだけに在る。
-            for (key, stage) in execution
-                .stage_keys()
-                .iter()
-                .enumerate()
-                .filter_map(|(index, key)| execution.stage_index(index).map(|stage| (key, stage)))
-            {
-                execution_stages.push(ExecutionStageRow::of(&execution, intent, stage, key));
-                next_jumps.push(NextJumpRow::of(&execution, intent, stage, key));
-            }
+            let mut position = 0usize;
+            (execution_stages, next_jumps) = execution.slots().fold_left(
+                (execution_stages, next_jumps),
+                |(mut stages, mut jumps), slot| {
+                    if let Some(stage) = execution.stage_index(position) {
+                        stages.push(ExecutionStageRow::of(&execution, intent, stage, slot.key()));
+                        jumps.push(NextJumpRow::of(&execution, intent, stage, slot.key()));
+                    }
+                    position = position.saturating_add(1);
+                    (stages, jumps)
+                },
+            );
             for kind in RequestKind::ALL {
-                next_answers.push(NextAnswerRow::of(&execution, intent, kind, &run_stage_ids));
+                next_answers.push(NextAnswerRow::of(&execution, intent, kind, &run_stage_ids)?);
             }
             for phase in phases() {
                 if let Some(target) = execution.first_in_scope_of_phase(phase) {

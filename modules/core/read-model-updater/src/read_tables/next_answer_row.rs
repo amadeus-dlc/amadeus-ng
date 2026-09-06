@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use core_command_domain::orchestration::{GateDecision, Intent, IntentExecution, NextDecision};
 
+use super::read_tables_error::ReadTablesError;
 use super::request_kind::RequestKind;
 use super::row_id;
 use super::spelling;
@@ -48,14 +49,24 @@ impl NextAnswerRow {
     /// 行は定義 × scope × ステージで決まり、そのうち定義と scope は静的な intent が持つ。
     /// `run_stage_ids` はそのスナップショットに実在する `read_run_stage.id` の集合であり、
     /// **在る行しか指さない**ことをここで担保する (存在の照合であって判断ではない)。
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// 渡された intent がこの実行のものでないとき ([`ReadTablesError::IntentUnavailable`])。
+    /// 呼出側は実行の `intent_id` で引いた intent を渡すので実運用では起きないが、集約の
+    /// 取り違えガード (BR2.6) の `Err` を握り潰さずそのまま材料不足として上へ流す。
     pub fn of(
         execution: &IntentExecution,
         intent: &Intent,
         kind: RequestKind,
         run_stage_ids: &BTreeSet<&str>,
-    ) -> NextAnswerRow {
-        let decision = execution.next_decision(intent, &kind.to_request());
+    ) -> Result<NextAnswerRow, ReadTablesError> {
+        let decision = execution
+            .next_decision(intent, &kind.to_request())
+            .map_err(|_| ReadTablesError::IntentUnavailable {
+                execution_id: execution.id().as_str().to_string(),
+                intent_id: execution.intent_id().as_str().to_string(),
+            })?;
         let (stage_index, gate, checkbox) = match decision {
             NextDecision::RunStage { stage, gate } => (
                 Some(stage.to_usize()),
@@ -85,7 +96,7 @@ impl NextAnswerRow {
         } else {
             None
         };
-        NextAnswerRow {
+        Ok(NextAnswerRow {
             id: row_id::next_answer(execution.id().as_str(), kind.as_str()),
             execution_id: execution.id().as_str().to_string(),
             request_kind: kind.as_str().to_string(),
@@ -95,7 +106,7 @@ impl NextAnswerRow {
             gate,
             checkbox,
             run_stage_id,
-        }
+        })
     }
 
     /// 主キー — 自然キー (`execution_id`, `request_kind`) から導いた代理キー。

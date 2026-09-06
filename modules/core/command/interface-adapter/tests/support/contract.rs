@@ -10,7 +10,7 @@
 //! 全集約横断の読取とチェックポイント (`JournalReader`) は SQLite にしか無いので、
 //! `journal_reader_impl_test.rs` が単独で持つ。
 
-use core_command_domain::orchestration::{AutonomyMode, IntentExecution};
+use core_command_domain::orchestration::{ArtifactPaths, AutonomyMode, IntentExecution};
 use core_command_domain::workspace::HumanTurns;
 
 use core_command_use_case::orchestration::{IntentExecutionRepository, RepositoryError};
@@ -32,7 +32,11 @@ use super::{
 pub(crate) async fn seed<R: IntentExecutionRepository>(repository: &mut R) -> IntentExecution {
     let mut held = store_genesis(repository).await;
     held = advance(repository, &held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await;
     held = advance(repository, &held, |aggregate| {
@@ -183,7 +187,11 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
 
     let mut aggregate = first.clone();
     let event = aggregate
-        .open_gate(&intent(), vec!["scope.md".to_string()], at())
+        .open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["scope.md".to_string()]),
+            at(),
+        )
         .expect("索引 2 はゲート付きで in-progress");
     repository
         .store(&event, &aggregate)
@@ -192,7 +200,11 @@ pub(crate) async fn concurrent_rehydration_conflicts<F: StoreFixture>(fixture: &
 
     let mut aggregate = second.clone();
     let event = aggregate
-        .open_gate(&intent(), vec!["scope.md".to_string()], at())
+        .open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["scope.md".to_string()]),
+            at(),
+        )
         .expect("同じコマンド");
     let err = repository
         .store(&event, &aggregate)
@@ -228,7 +240,11 @@ pub(crate) async fn a_write_from_a_stale_version_conflicts<F: StoreFixture>(fixt
     // 握ったままの版 (genesis 時点) で次を書こうとする。
     let mut aggregate = stale.clone();
     let next = aggregate
-        .open_gate(&intent(), vec!["intent.md".to_string()], at())
+        .open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
         .expect("誕生のカーソルは索引 1 のゲート付きステージで in-progress");
     let err = repository
         .store(&next, &aggregate)
@@ -308,10 +324,10 @@ pub(crate) async fn an_event_from_another_execution_is_rejected_before_writing<F
     let held = store_genesis(&mut repository).await;
     let mut candidate = held.clone();
     candidate
-        .open_gate(&intent(), vec![], at())
+        .open_gate(&intent(), ArtifactPaths::new(vec![]), at())
         .expect("対象を前進");
     let foreign = other
-        .open_gate(&intent(), vec![], at())
+        .open_gate(&intent(), ArtifactPaths::new(vec![]), at())
         .expect("別実行を前進");
     assert!(matches!(
         repository.store(&foreign, &candidate).await,

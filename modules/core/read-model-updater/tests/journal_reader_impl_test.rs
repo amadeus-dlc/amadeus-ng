@@ -20,7 +20,7 @@
 mod support;
 
 use core_command_domain::orchestration::{
-    IntentExecution, IntentExecutionEvent, IntentExecutionEventId, Parked,
+    ArtifactPaths, IntentExecution, IntentExecutionEvent, IntentExecutionEventId, Parked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
@@ -1375,7 +1375,11 @@ async fn the_journal_interleaves_two_aggregates_in_commit_order() {
         .advance(&mut store, |aggregate| {
             // 誕生 = 初期化完了済み (issue #76) なので、genesis の次に打てるのは
             // カーソル (索引 1 のゲート付きステージ) の開放である。
-            aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+            aggregate.open_gate(
+                &intent(),
+                ArtifactPaths::new(vec!["intent.md".to_string()]),
+                at(),
+            )
         })
         .await;
 
@@ -1413,7 +1417,11 @@ async fn the_reader_observes_writes_made_after_it_was_opened() {
         .advance(&mut store, |aggregate| {
             // 誕生 = 初期化完了済み (issue #76) なので、genesis の次に打てるのは
             // カーソル (索引 1 のゲート付きステージ) の開放である。
-            aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+            aggregate.open_gate(
+                &intent(),
+                ArtifactPaths::new(vec!["intent.md".to_string()]),
+                at(),
+            )
         })
         .await;
 

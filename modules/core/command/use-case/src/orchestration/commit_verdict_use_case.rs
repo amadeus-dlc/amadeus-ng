@@ -209,7 +209,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         };
 
         // 段 11 のレビュー方針は **Approve 段のときだけ**引く（他の段は定義を読まない）。
-        let policy = if steps.contains(&TransitionStep::Approve) {
+        let policy = if steps.contains(TransitionStep::Approve) {
             self.review_policy(&intent, &stage).await?
         } else {
             None
@@ -321,8 +321,8 @@ mod tests {
     };
     use chrono::{DateTime, Utc};
     use core_command_domain::orchestration::{
-        CommandError, Intent, IntentExecution, IntentExecutionEvent, ReportNoOp, ReportRefusal,
-        ReportRequest, TransitionStep, Verdict,
+        ArtifactPaths, CommandError, Intent, IntentExecution, IntentExecutionEvent, ReportNoOp,
+        ReportRefusal, ReportRequest, TransitionStep, Verdict,
     };
     use core_command_domain::workflow_definition::{
         PhaseId, PlanAction, StageSlug, WorkflowDefinition,
@@ -425,7 +425,10 @@ mod tests {
     fn steps_of(outcome: &CommitOutcome) -> Vec<&'static str> {
         match outcome {
             CommitOutcome::Committed { steps, .. } => {
-                steps.iter().map(|step| step.subcommand()).collect()
+                steps.fold_left(Vec::new(), |mut names, step| {
+                    names.push(step.subcommand());
+                    names
+                })
             }
             CommitOutcome::NoOp { .. } => panic!("Committed を期待した: {outcome:?}"),
         }
@@ -493,7 +496,11 @@ mod tests {
         // upstream の `cli/report/awaiting-approval-repeat` は監査行も状態差分も空である。
         let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .open_gate(&intent, vec!["intent.md".to_string()], at())
+            .open_gate(
+                &intent,
+                ArtifactPaths::new(vec!["intent.md".to_string()]),
+                at(),
+            )
             .expect("最初の開放は通る");
         let mut subject = use_case((intent, aggregate), 2);
         let outcome = subject
@@ -530,7 +537,7 @@ mod tests {
     async fn a_forward_report_on_a_gated_stage_approves_the_gate() {
         let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .open_gate(&intent, Vec::new(), at())
+            .open_gate(&intent, ArtifactPaths::empty(), at())
             .expect("ゲートは開ける");
         let mut subject = use_case((intent, aggregate), 2);
         let outcome = subject
@@ -691,7 +698,7 @@ mod tests {
     async fn naming_the_cursor_explicitly_still_takes_the_normal_route() {
         let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .open_gate(&intent, Vec::new(), at())
+            .open_gate(&intent, ArtifactPaths::empty(), at())
             .expect("ゲートは開ける");
         let mut subject = use_case((intent, aggregate), 2);
         let outcome = subject
@@ -775,7 +782,7 @@ mod tests {
         // 集約の判断を通っても、park 中なら集約コマンドは `NotRunning` で拒む。
         let (intent, mut aggregate) = at_the_first_gate(3);
         aggregate
-            .open_gate(&intent, Vec::new(), at())
+            .open_gate(&intent, ArtifactPaths::empty(), at())
             .expect("ゲートは開ける");
         aggregate.park(&intent, at()).expect("park は通る");
         let mut subject = use_case((intent, aggregate), 3);

@@ -1,6 +1,6 @@
 //! `Started` の永続化 DTO (**読む側**)。
 
-use core_command_domain::orchestration::{IntentId, StageEntry, Started};
+use core_command_domain::orchestration::{IntentId, StageEntries, StageEntry, Started};
 use serde::{Deserialize, Serialize};
 
 use super::dto_decode_error::DtoDecodeError;
@@ -28,7 +28,10 @@ impl StartedDto {
             id: payload.id().as_str().to_string(),
             aggregate_id: payload.aggregate_id().as_str().to_string(),
             intent_id: payload.intent_id().as_str().to_string(),
-            stages: payload.stages().iter().map(StageEntryDto::of).collect(),
+            stages: payload.stages().fold_left(Vec::new(), |mut rows, entry| {
+                rows.push(StageEntryDto::of(entry));
+                rows
+            }),
         }
     }
 
@@ -43,10 +46,10 @@ impl StartedDto {
             .iter()
             .map(StageEntryDto::to_domain)
             .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
-        // 計画そのものの不変条件はドメインが持つ ([`StageEntry::check_plan`]) —
-        // 判断を DTO に複製せず呼ぶだけにする。ここで止めないと、破れた計画が集約の
-        // 再構成まで届いてクラッシュする (再構成は失敗を返さない)。
-        StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
+        // 計画そのものの不変条件はドメインが持つ ([`StageEntries::new`] の構築検査) —
+        // 判断を DTO に複製せず、値を組む口を通すだけにする。ここで止めないと、破れた計画が
+        // 集約の再構成まで届いてクラッシュする (再構成は失敗を返さない)。
+        let stages = StageEntries::new(stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
         Ok(Started::new(
             event_id_of(&self.id)?,
             aggregate_id_of(&self.aggregate_id)?,

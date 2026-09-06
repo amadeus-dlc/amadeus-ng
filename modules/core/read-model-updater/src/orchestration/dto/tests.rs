@@ -12,17 +12,18 @@
 )]
 
 use core_command_domain::orchestration::{
-    AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentEvent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
-    IntentId, Jumped, Parked, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested,
-    ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
-    StageEntry, StageRevised, StageSkipped, StartRequest, Started, Unparked, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected,
+    Intent, IntentEvent, IntentEventId, IntentExecutionEvent, IntentExecutionEventId,
+    IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed, Recomposed, ReviewCompleted,
+    ReviewRequested, ReviewVerdict, SingleStageRunCommitted, SkeletonStance,
+    SkeletonStanceRecorded, StageDisplay, StageEntries, StageEntry, StageRevised, StageSkipped,
+    StageSlugSet, StartRequest, Started, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_command_domain::workspace::PromotedSection;
+use core_command_domain::workspace::{PromotedSection, PromotedSections, RuleLines};
 
 use super::{DtoDecodeError, IntentEventDto, IntentExecutionEventDto};
 
@@ -62,30 +63,33 @@ fn display(number: &str, name: &str) -> StageDisplay {
     .expect("単一行")
 }
 
-fn stages() -> Vec<StageEntry> {
-    vec![
-        StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1", "State Init"),
-        ),
-        StageEntry::new(
-            slug("intent-capture"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.1", "Intent Capture"),
-        ),
-        StageEntry::new(
-            slug("scope-definition"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.4", "Scope Definition"),
-        ),
-    ]
+fn stages() -> StageEntries {
+    let entries: Vec<StageEntry> = {
+        vec![
+            StageEntry::new(
+                slug("state-init"),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                display("0.1", "State Init"),
+            ),
+            StageEntry::new(
+                slug("intent-capture"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.1", "Intent Capture"),
+            ),
+            StageEntry::new(
+                slug("scope-definition"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.4", "Scope Definition"),
+            ),
+        ]
+    };
+    StageEntries::new(entries).expect("フィクスチャの計画は不変条件を満たす")
 }
 
 /// intent の誕生イベント (行を組む材料)。
@@ -146,7 +150,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 event_id(),
                 execution_id(),
                 slug("intent-capture"),
-                vec!["a.md".to_string()],
+                ArtifactPaths::new(vec!["a.md".to_string()]),
             )),
             r#"{"GateOpened":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","artifacts":["a.md"]}}"#,
         ),
@@ -237,9 +241,13 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 execution_id(),
                 slug("practices-discovery"),
                 "owner",
-                vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
-                vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
-                vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
+                PromotedSections::new(vec![PromotedSection::new(
+                    "Way of Working",
+                    "trunk-based.\n",
+                )])
+                .expect("見出しは 1 つ"),
+                RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
+                RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()]),
             )),
             r#"{"PracticesAffirmed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"practices-discovery","affirming_user":"owner","sections":[{"heading":"Way of Working","body":"trunk-based.\n"}],"mandated":["ALWAYS review. (affirmed 2026-09-05)"],"forbidden":["NEVER force-push. (affirmed 2026-09-05)"]}}"#,
         ),
@@ -259,8 +267,8 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             IntentExecutionEvent::Recomposed(Recomposed::new(
                 event_id(),
                 execution_id(),
-                vec![slug("scope-definition")],
-                vec![slug("intent-capture")],
+                StageSlugSet::new([slug("scope-definition")]),
+                StageSlugSet::new([slug("intent-capture")]),
             )),
             r#"{"Recomposed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","skipped":["scope-definition"],"added":["intent-capture"]}}"#,
         ),
@@ -390,12 +398,14 @@ fn a_row_whose_plan_breaks_its_invariants_is_refused_at_the_decode_boundary() {
     assert_eq!(decoded.to_domain(), Err(DtoDecodeError::InvariantViolation));
 }
 
+/// 復号の境界を通り抜けた不変条件違反は**もう構成できない**。
+///
+/// 誕生記録 (`Created`) が運ぶ計画は [`StageEntries`] であり、その構築検査を通らない列は
+/// そもそもイベントに載らない (b51 の FCC 化)。以前はこの位置で `Intent::from` の panic を
+/// 見ていたが、検査点が計画を所有する型へ移ったので、観測も**組めないこと**へ移す。
+/// クラッシュ規律そのもの (壊れた歴史は回復せずクラッシュ) は変わっていない。
 #[test]
-#[should_panic(expected = "recorded history violates the plan invariants")]
-fn an_invariant_violation_that_slips_past_the_decode_boundary_crashes_reconstruction() {
-    // 復号の境界を通り抜けた不変条件違反は回復せずクラッシュが正である (オーナー裁定
-    // 2026-08-30 — 再構成は失敗を返さない)。b40 で境界の検査が増えたが、**クラッシュ規律
-    // そのものは変わらない**ことをここで固定する: 検査を経ない `Intent::from` は落ちる。
+fn an_invariant_violation_can_no_longer_slip_past_the_decode_boundary() {
     let broken = vec![StageEntry::new(
         slug("state-init"),
         PhaseId::Initialization,
@@ -403,24 +413,10 @@ fn an_invariant_violation_that_slips_past_the_decode_boundary_crashes_reconstruc
         false,
         display("0.1", "State Init"),
     )];
-    let _ = Intent::from((
-        Created::new(
-            intent_event_id(),
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            WorkflowDefinitionId::parse("claude").expect("定義 id"),
-            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new("classic", "contract"),
-            broken,
-            WorkspaceScan::new(
-                BrownfieldGreenfield::Greenfield,
-                "Unknown",
-                "Unknown",
-                "Unknown",
-            )
-            .expect("単一行"),
-        ),
-        at(),
-    ));
+    assert!(
+        StageEntries::new(broken).is_err(),
+        "先頭 initialization を SKIP に畳んだ計画は値として組めない"
+    );
 }
 
 #[test]
@@ -588,34 +584,31 @@ fn a_malformed_intent_row_is_refused() {
 
 #[test]
 fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
-    // 計画そのものの不変条件はドメイン (`StageEntry::check_plan`) が持つ。DTO はそれを呼ぶ
-    // だけで判断を複製しない。ここで止めないと、破れた計画が集約の再構成まで届いて
+    // 計画そのものの不変条件はドメイン (`StageEntries::new` の構築検査) が持つ。DTO はそれを
+    // 呼ぶだけで判断を複製しない。ここで止めないと、破れた計画が集約の再構成まで届いて
     // クラッシュする (再構成は失敗を返さない — オーナー裁定 2026-08-30)。
-    let init = StageEntry::new(
-        slug("state-init"),
-        PhaseId::Initialization,
-        PlanAction::Execute,
-        false,
-        display("0.1", "State Init"),
-    );
-    let skipped_head = StageEntry::new(
-        slug("intent-capture"),
-        PhaseId::Ideation,
-        PlanAction::Skip,
-        false,
-        display("1.1", "Intent Capture"),
-    );
-    for (label, plan) in [
-        ("空の計画", Vec::new()),
-        ("同じ slug が 2 回", vec![init.clone(), init]),
-        ("索引 0 が非 EXECUTE", vec![skipped_head]),
+    //
+    // 破れた計画は**ドメイン側で組めなくなった**ので、材料は行の JSON から直に作る — 実際に
+    // 起こりうるのは「ディスクの行が壊れている」場合であり、それがこの経路の入口である。
+    let row = |stages: &str| {
+        format!(
+            r#"{{"Started":{{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"{EXECUTION}","intent_id":"{INTENT}","stages":{stages}}}}}"#
+        )
+    };
+    let entry = |slug: &str, phase: &str, plan_action: &str, number: &str| {
+        format!(
+            r#"{{"slug":"{slug}","phase":"{phase}","plan_action":"{plan_action}","conditional":false,"display":{{"number":"{number}","name":"Stage","lead_agent":"orchestrator"}}}}"#
+        )
+    };
+    let init = entry("state-init", "Initialization", "Execute", "0.1");
+    let skipped_head = entry("intent-capture", "Ideation", "Skip", "1.1");
+    for (label, stages) in [
+        ("空の計画", "[]".to_string()),
+        ("同じ slug が 2 回", format!("[{init},{init}]")),
+        ("索引 0 が非 EXECUTE", format!("[{skipped_head}]")),
     ] {
-        let dto = IntentExecutionEventDto::of(&IntentExecutionEvent::Started(Started::new(
-            event_id(),
-            IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            plan,
-        )));
+        let dto: IntentExecutionEventDto =
+            serde_json::from_str(&row(&stages)).expect("形は DTO として読める");
         assert_eq!(
             dto.to_domain().expect_err("破れた計画は復号の境界で止める"),
             DtoDecodeError::InvariantViolation,

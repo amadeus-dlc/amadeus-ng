@@ -1,5 +1,7 @@
 //! `StageEntries` — 解決済み計画そのもの (BR5.5)。
 
+use std::collections::BTreeSet;
+
 use core_infrastructure::collections::{Collection, FirstClassCollection};
 
 use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
@@ -13,8 +15,8 @@ use super::stage_slug_set::StageSlugSet;
 /// 文書順の解決済み計画 (`Intent.stages` / `Created.stages` / `Started.stages` が共有する型)。
 ///
 /// 非空・slug 一意・initialization は EXECUTE かつ無条件、という計画そのものの不変条件を
-/// 構築時に確かめる (BR2.2 / BR1.5)。検査の正本は [`StageEntry::check_plan`] であり、intent の
-/// 鋳造も誕生記録の復号も同じ 1 か所を通る。
+/// 構築時に確かめる (BR2.2 / BR1.5)。**検査の正本はこの型の構築子 1 か所**であり、intent の
+/// 鋳造も誕生記録の復号も同じ口を通る — 計画を値として持てない構築経路は存在しない。
 ///
 /// 位置は生の `usize` ではなく [`StageIndex`] で問う (BR5.1) — 添字が別の実行のものであれば
 /// 範囲外として `None` になり、panic しない。絞込みは空になり得るので、結果は空を許す
@@ -32,7 +34,34 @@ impl StageEntries {
     /// 計画が空、先頭ステージが EXECUTE でない、initialization フェーズのステージが
     /// EXECUTE でないか CONDITIONAL、同じ slug が 2 回以上現れる場合は [`PlanError`]。
     pub fn new(items: Vec<StageEntry>) -> Result<StageEntries, PlanError> {
-        StageEntry::check_plan(&items)?;
+        match items.first() {
+            None => return Err(PlanError::Empty),
+            Some(first) if first.plan_action() != PlanAction::Execute => {
+                return Err(PlanError::InitializationMustExecute);
+            }
+            Some(_) => {}
+        }
+        for entry in &items {
+            if entry.phase() != PhaseId::Initialization {
+                continue;
+            }
+            if entry.plan_action() != PlanAction::Execute {
+                return Err(PlanError::InitializationMustExecute);
+            }
+            if entry.is_conditional() {
+                return Err(PlanError::InitializationMustBeUnconditional);
+            }
+        }
+        // slug はイベントのステージ参照の解決先 — 重複すると解決が常に前方だけを返し、
+        // 静かに誤った集約になる (BR1.5)。実行側の同じ検査は `StageSlots::new` が持つ。
+        let mut seen = BTreeSet::new();
+        for entry in &items {
+            if !seen.insert(entry.slug().as_str()) {
+                return Err(PlanError::DuplicateSlug {
+                    slug: entry.slug().as_str().to_string(),
+                });
+            }
+        }
         Ok(StageEntries { items })
     }
 
@@ -195,6 +224,76 @@ mod tests {
                 PlanAction::Skip,
                 false
             )])
+            .unwrap_err(),
+            PlanError::InitializationMustExecute
+        );
+    }
+
+    /// 先頭が SKIP の計画は拒む（`stage_entry.rs` から移設した検査 — 先頭は必ず実行される）。
+    #[test]
+    fn a_plan_whose_head_is_not_execute_is_rejected() {
+        assert_eq!(
+            StageEntries::new(vec![entry(
+                "intent-capture",
+                PhaseId::Ideation,
+                PlanAction::Skip,
+                false
+            )])
+            .unwrap_err(),
+            PlanError::InitializationMustExecute
+        );
+    }
+
+    /// 健全な計画は通る（`stage_entry.rs` から移設した検査）。
+    #[test]
+    fn a_sound_plan_passes_the_check() {
+        assert_eq!(
+            StageEntries::new(vec![
+                entry(
+                    "state-init",
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                    false
+                ),
+                entry(
+                    "intent-capture",
+                    PhaseId::Ideation,
+                    PlanAction::Execute,
+                    false
+                ),
+                entry(
+                    "scope-definition",
+                    PhaseId::Ideation,
+                    PlanAction::Skip,
+                    true
+                ),
+            ])
+            .map(|plan| plan.len()),
+            Ok(3)
+        );
+    }
+
+    /// 先頭ではない initialization ステージも EXECUTE でなければ拒む。
+    ///
+    /// 先頭の検査 (`match items.first()`) と走査の検査 (`for entry in &items`) は別の口である
+    /// — 先頭だけを見て通すと、2 番目以降の initialization が SKIP のまま計画に載ってしまう。
+    #[test]
+    fn an_initialization_stage_past_the_head_must_execute_too() {
+        assert_eq!(
+            StageEntries::new(vec![
+                entry(
+                    "state-init",
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                    false
+                ),
+                entry(
+                    "hooks-health",
+                    PhaseId::Initialization,
+                    PlanAction::Skip,
+                    false
+                ),
+            ])
             .unwrap_err(),
             PlanError::InitializationMustExecute
         );
