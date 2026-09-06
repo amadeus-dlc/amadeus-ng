@@ -18,7 +18,7 @@
 | ハッシュ | sha2のSHA-256、canonical-prefixed / compact-raw | W2の用途表どおり使う。暗号ライブラリの安全性を知名度で断言せず、固定依存と検査結果で評価する。認証用の署名ではない |
 | 性質検証 | 既存proptest、固定シード20260823 | 決定性と対象値域での出力安定性を検証する。正準化前後の値の完全一致や再ハッシュの冪等性とは区別する |
 | 採取 | `scripts/goldens/` の既存スクリプト、bun | ピン3c3146cfから採取する。bunは開発時ツール。採取時のバージョンは来歴へ記録する |
-| 保存先 | `tests/golden/upstream-3c3146cf/` | C7の確定配置。hash-canonical/cases.jsonのexpectedに3プロファイルの出力とハッシュを保持し、各familyのprovenance.json・cases-missing.jsonで来歴と欠落を管理する |
+| 保存先 | `tests/golden/upstream-3c3146cf/` | C7の確定配置。hash-canonical/cases.jsonのexpectedに3プロファイルの出力とハッシュを保持し、各familyのprovenance.jsonで来歴を管理する。hash-canonicalの欠落は同ファイルのmissing_cases、CLI/hooksの欠落は各cases-missing.jsonに記録する |
 | 機械強制 | clippy disallowed-methods | 契約JSONの直列化関数群・型付き値のto_valueをcanon_jsonへ集約する。変換内部や契約外の永続化DTO等の例外は理由付きで局所化し、クレート全体を免除しない |
 | その他のJSON方式 | 汎用JSON/JCSライブラリへの置換は行わない | upstreamの受入出力・数値・キー順が検収基準であり、別方式の標準準拠だけでは代替にならない |
 

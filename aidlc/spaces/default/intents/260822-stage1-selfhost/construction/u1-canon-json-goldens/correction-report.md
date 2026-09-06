@@ -28,3 +28,7 @@
 - 旧Review節は `functional-review-20260905.md` に保存した。旧ID 1・2・3はR-01・R-02・R-03に対応付けて引き継ぐ。所見の内容・判定の更新は独立レビューが行う。
 
 今回の実測は `cargo test --locked -p core-infrastructure canon_json` の87件と、`cargo test --locked -p core-infrastructure --test golden_hash_canonical --test golden_corpus_read` の16件で、いずれも失敗・無視は0件。後者では採取済み32行の正準化コーパスを比較した。upstreamの再採取やCLI全経路の比較は今回実施していない。
+
+## 2026-09-06の後続検証
+
+上記の初回検証とは別に、更新した単体テスト手順の `PROPTEST_RNG_SEED=20260823 cargo test --locked -p core-infrastructure --lib canon_json` を実行し、87 passed・0 failed・0 ignoredを確認した。結果はcode-generation/code-summary.md第5節に時刻・コマンド・ログを記録している。初回ログのコマンドを後から別のコマンドへ改変してはいない。

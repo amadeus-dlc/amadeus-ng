@@ -578,7 +578,7 @@
       "executable": false
     },
     ".claude/hooks/aidlc-plan-approval-guard.ts": {
-      "sha256": "ea86a22366bbc644cd62a4195d0211b57fa44e3eb0bfddbd3132a2d6fb7eac84",
+      "sha256": "bd4c5afbedd2916ccd22320b9fb3c30655f92530f2ef30671114795ffd43a03f",
       "executable": false
     },
     ".claude/hooks/aidlc-rebuild-stage-graph.ts": {
@@ -1690,7 +1690,7 @@
       "executable": false
     },
     ".codex/hooks/aidlc-plan-approval-guard.ts": {
-      "sha256": "ea86a22366bbc644cd62a4195d0211b57fa44e3eb0bfddbd3132a2d6fb7eac84",
+      "sha256": "bd4c5afbedd2916ccd22320b9fb3c30655f92530f2ef30671114795ffd43a03f",
       "executable": false
     },
     ".codex/hooks/aidlc-rebuild-stage-graph.ts": {
@@ -2578,7 +2578,7 @@
       "executable": false
     },
     ".kimi-code/hooks/aidlc-plan-approval-guard.ts": {
-      "sha256": "ea86a22366bbc644cd62a4195d0211b57fa44e3eb0bfddbd3132a2d6fb7eac84",
+      "sha256": "bd4c5afbedd2916ccd22320b9fb3c30655f92530f2ef30671114795ffd43a03f",
       "executable": false
     },
     ".kimi-code/hooks/aidlc-rebuild-stage-graph.ts": {
