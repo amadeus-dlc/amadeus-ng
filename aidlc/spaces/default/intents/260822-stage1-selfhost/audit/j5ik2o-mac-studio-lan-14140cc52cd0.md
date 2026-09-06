@@ -4626,3 +4626,201 @@
 **Next Action**: ユーザー回答後にunit resumeし、nfr-requirements質問票の最終回答とsummary-confirmationを記録。承認後に3成果物を更新し独立レビューへ進む
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-06T01:18:22Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Unit Resumed
+**Timestamp**: 2026-09-06T01:18:30Z
+**Event**: UNIT_RESUMED
+**Stage**: nfr-requirements
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T01:18:37Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u1-canon-json-goldens > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-06T01:18:37Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: e1fb9707217206441b1f10739e41d23c51286003ea6ff815ba190b4a9b76c9b3
+**Hash Scope**: confirmed-content-v1
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T01:19:54Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/security-requirements.md
+**Context**: construction > u1-canon-json-goldens > nfr-requirements > security-requirements.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T01:19:54Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u1-canon-json-goldens > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T01:19:54Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/traceability.json
+**Context**: construction > u1-canon-json-goldens > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T01:19:54Z
+**Event**: SENSOR_FIRED
+**Fire id**: 723babcd
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-06T01:19:54Z
+**Event**: SENSOR_FAILED
+**Fire id**: 723babcd
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-723babcd.md
+**Findings count**: 55
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T01:20:00Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:baf5c05d775af814421a2833abd171e328d7d5ae69f517502692456c086a7d12
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 8282
+**Review Appendix Prior Digest**: sha256:30e377c7de830015d1a904dd0339da67281623b5c3faebd5c156f9bf4f24e528
+**Review Appendix Prior Length**: 4330
+**Review Challenge**: review:7f6f633649a245248646fee3ae7673de
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T01:22:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: 01a0741a-51b9-7791-b5b0-4bae3c46e168
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\nPASSした正確なコマンドです。両引数とも、JSON配列ではなくカンマ区切りの文字列です。\n\n```sh\nbun .codex/tools/aidlc-sensor-upstream-coverage.ts --stage functional-design --output-path aidlc/s
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T01:23:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: 01a0744d-9685-74b3-9ed1-247b98b97ff4
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** READY\n\n- R-01・R-02はResolved。新規所見なし。\n- required-sections、upstream-coverage、traceabilityはすべてPASS。\n- 入力88ファイルの再計算が記録と一致。既存103試験の成功ログを確認。\n- 最新
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T01:23:38Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:baf5c05d775af814421a2833abd171e328d7d5ae69f517502692456c086a7d12
+**Artifact Fingerprint**: sha256:fb0ab15ffefcb90726d1499759f9e59567d05c17f18671a2bb65977d8e6a896c
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 8282
+**Review Appendix Prior Digest**: sha256:30e377c7de830015d1a904dd0339da67281623b5c3faebd5c156f9bf4f24e528
+**Review Appendix Prior Length**: 4330
+**Review Challenge**: review:7f6f633649a245248646fee3ae7673de
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T01:23:39Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-requirements
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-06T01:24:07Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-design
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T01:24:38Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-design
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/security-design.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/logical-components.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/traceability.json
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T01:24:38Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/nfr-design-questions.md
+**Context**: construction > u1-canon-json-goldens > nfr-design > nfr-design-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T01:24:39Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/nfr-design-questions.md
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Unit Paused
+**Timestamp**: 2026-09-06T01:24:39Z
+**Event**: UNIT_PAUSED
+**Stage**: nfr-design
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Reason**: 正準JSONの品質・安全性設計の修正要約の確認待ち
+**Next Action**: ユーザー回答後にnfr-design unit resumeし、質問票最終Answerとsummary-confirmationを記録。確認後に3成果物を改訂し独立レビューする
+
+---

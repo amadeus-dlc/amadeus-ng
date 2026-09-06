@@ -64,8 +64,8 @@ D6 互換の配当により、upstream `dist/claude/` の資産（33 ステー�
 - **Skeleton Stance**: off
 - **Active Unit**: u1-canon-json-goldens
 - **Unit State**: paused
-- **Unit Pause Reason**: 正準JSONの品質・安全性要件を現行実装と実測へ整合させる要約の確認待ち
-- **Unit Next Action**: ユーザー回答後にunit resumeし、nfr-requirements質問票の最終回答とsummary-confirmationを記録。承認後に3成果物を更新し独立レビューへ進む
+- **Unit Pause Reason**: 正準JSONの品質・安全性設計の修正要約の確認待ち
+- **Unit Next Action**: ユーザー回答後にnfr-design unit resumeし、質問票最終Answerとsummary-confirmationを記録。確認後に3成果物を改訂し独立レビューする
 ## Phase Progress
 <!-- Status values: Pending, Active, Verified, Skipped -->
 
@@ -127,7 +127,7 @@ Per unit: [TBD]
 - **Current Stage**: functional-design
 - **Next Stage**: nfr-requirements
 - **Status**: Running
-- **Last Updated**: 2026-09-06T00:30:07Z
+- **Last Updated**: 2026-09-06T01:24:39Z
 
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning
