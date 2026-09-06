@@ -2054,3 +2054,191 @@
 **Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
 
 ---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T17:28:59Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T17:32:37Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aebb5c2a53664c9dd
+**Message**: <analysis>\nChronological walk-through of this session segment (post-previous-compaction):\n\n1. Started with the nfr-design Artifact Re-use question for u2; user answered Modify. Recorded `reuse-artifac
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T17:36:38Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a04f4c2ae9892f6a6
+**Message**: U2 の code-generation（FCC 化と next_decision の ID 照合、Bolt b51）を進めており、集約・境界の一斉切替と受入の委任 2 が実行中です。完了通知が届いたら diff の全件レビューと受入の再実測に進みます。
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T18:17:11Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T18:19:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6a95080391d2d5d1
+**Message**: <analysis>\nLet me chronologically analyze this conversation.\n\n**The single user message** (from team-lead teammate) is the delegation brief. It instructed me to act as `aidlc-developer-agent` implemen
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T18:45:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u2-dev-4
+**Agent ID**: au2-dev-4-15b1d819eb8354b1
+**Message**: ステップ 2〜4 を完了しました。\n\n## コミット\n\n| SHA | 件名 |\n| --- | --- |\n| `dd20266a` | `refactor: switch the aggregates and boundaries onto the first-class collections` |\n\n67 ファイル、2329 挿入 / 1893 削除。計画は意味単位での分割を許していました
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T18:46:07Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T18:47:59Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T18:53:03Z
+**Event**: REVIEW_REQUESTED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:e44cb01aa3f558c917ebb8b53573b8aa44807d37821036e8b94be51c81a10864
+**Review Appendix Artifact**: construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Review Appendix Offset**: 41292
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+**Source Fingerprint**: 55d50299e67e96501d057d9c36aebf4666a61bf0b141f5ef563822ab68efa68c
+**Unit Source Fingerprint**: sha256:e8adb7a6321f8495b4d402ee794cc6bc5e04edfcc59826e6d8edafc4febefe1d
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T18:56:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad14a978f01c30471
+**Message**: U2（ドメイン ES コア）の Bolt b51 実装を進めており、委任 2 の切替コードは diff 全件レビューと受入の独立再測（全緑）を終えました。いまは独立レビューの判定待ちで、届き次第 Unit 完了を記録して PR を出します。
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T19:00:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-plan.md
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T19:01:01Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: cd <project-dir>\ngrep -c '^## Review' "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T19:01:42Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: set -e; REC=aidlc/spaces/default/intents/260822-stage1-selfhost; D=$REC/construction/u2-domain-es-core/code-generation; rm -f $REC/.aidlc-reviewer-dispatch.json
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T19:01:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u2-cg-review-1
+**Agent ID**: au2-cg-review-1-3ee0d556246c8575
+**Message**: ## レビュー完了報告\n\nU2（`u2-domain-es-core`）Code Generation ステージ、Bolt b51 の独立レビュー（advisory、iteration 1）を完了しました。\n\n**判定: READY**\n\n`aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-c
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T19:02:16Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: awk '/^## Review/,0' aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T19:02:18Z
+**Event**: REVIEW_COMPLETED
+**Stage**: code-generation
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:e44cb01aa3f558c917ebb8b53573b8aa44807d37821036e8b94be51c81a10864
+**Artifact Fingerprint**: sha256:ced729f601596b274b84f2624228173e23acf2f913ec096aff5362604b3576e2
+**Review Appendix Artifact**: construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Review Appendix Offset**: 41292
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+**Request Source Fingerprint**: 55d50299e67e96501d057d9c36aebf4666a61bf0b141f5ef563822ab68efa68c
+**Source Fingerprint**: 55d50299e67e96501d057d9c36aebf4666a61bf0b141f5ef563822ab68efa68c
+**Unit Source Fingerprint**: sha256:e8adb7a6321f8495b4d402ee794cc6bc5e04edfcc59826e6d8edafc4febefe1d
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T19:02:40Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: M=aidlc/spaces/default/intents/260822-stage1-selfhost/construction/code-generation/memory.md; T=$(date -u +%Y-%m-%dT%H:%M:%SZ); cat >> $M <<EOF\n- $T — [Interpre
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T19:02:41Z
+**Event**: UNIT_COMPLETED
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T19:03:13Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/code-generation/memory.md
+**Context**: construction > code-generation > memory.md
+
+---

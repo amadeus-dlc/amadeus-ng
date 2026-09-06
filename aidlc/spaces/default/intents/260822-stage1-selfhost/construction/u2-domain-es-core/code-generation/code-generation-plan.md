@@ -278,3 +278,37 @@ Testing Contract の層のうち API / エンドポイント層とフロント�
   "contract_sha256": "sha256:303d9bb7b5d777d54a6761be9ed154d85d5bb3f2d6b9cce02f71f4ed1b3a4ff3"
 }
 ```
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-06T19:00:09Z
+**Iteration:** 1
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action |
+|---|---|---|---|---|
+| R-01 | Minor | `code-summary.md` §7 申し送り 4・6、`functional-spec.md` §9 #5(a)、`nfr-design/security-design.md` / `nfr-design/logical-components.md` の `## Review`（2026-09-06、Verdict: NOT-READY） | 本計画 §2 は FCC 11 型の不変条件・操作・`Filtered`・エラー型を確定し、functional-design の NOT-READY 所見（R-01: TransitionSteps / ReviewAttempt の pending・closed / PromotedSections / RuleLines の型定義欠落、R-02: `core-command-use-case` と `engine_loop_conformance.rs` の追随漏れ、R-03: `StageSlugSet` の「文書順」不変条件が型の表現力を超える）を裁定 Q1/Q2 で実質的に解消し、実装（`stage_slug_set.rs` の doc、`projection.rs` の `in_document_order`、§3 追随表への `core-command-use-case` と `aidlc` app 追加）で裏付けている。ただし `entities.md` / `rules.md` / `functional-spec.md`（functional-design ゲート）と `security-design.md` / `logical-components.md`（nfr-design ゲート）本文はまだ更新されておらず、双方の `## Review` は 2026-09-06 時点の NOT-READY のまま残っている。fold-back は code-summary.md 自身が §7 で申し送り済みだが、この Bolt の完了時点で intent 記録内に 2 つの未解消 NOT-READY ゲートが残ることは、承認者が明示的に把握すべき事実である | functional-design と nfr-design の fold-back Bolt を近い将来に実施し、両ゲートの `## Review` を現状（このコード生成で確定した設計）に基づいて再判定する。それまでは `code-summary.md` §7 の申し送りが唯一の参照点であることを承認記録に明記する |
+| R-02 | Info | `code-summary.md` §8「コンダクタの diff レビュー」の留意点 2 件（`IntentExecutionDto::to_domain` の列長検査重複、`scaffold.rs::first_post_initialization` の `Option<StageEntry>` clone） | コンダクタ自身が機能・契約に影響しないと判定済みの軽微な非効率。独立検証でも同じ結論（`filter` が所有コレクションを返す設計上の制約に起因し、ホットパスではない） | 対応不要。次回この付近を触る Bolt で ついでに整理する程度でよい |
+
+### Validation Tool Results
+
+| ツール / コマンド | 結果 | 解釈 |
+|---|---|---|
+| `bun .claude/tools/aidlc-sensor-required-sections.ts`（plan / unit-test-instructions / code-summary） | 3 件とも `pass: true`、findings 0 | H2 構成は計画どおり（7 / 6 / 8 見出し） |
+| `bun .claude/tools/aidlc-sensor-traceability.ts`（traceability.json） | `pass: false`だが `gaps` / `orphans` / `missing_from_table` / `invalid_entries` / `invalid_targets` すべて 0、`missing_from_upstream_ids` 37 件 | `code-summary.md` §6 の申告と完全一致。37 件は他 Unit 所管 ID の既知ノイズで、U2 の対応関係自体に欠落・孤児・不正 target は無い |
+| `git diff --name-only origin/main..HEAD -- modules` vs `source-manifest.json` | ソート正規化後にバイト一致（78 パス） | 記録の整合は完全 |
+| `PROPTEST_RNG_SEED=20260823 cargo test -p core-command-domain` | 699 passed（lib）+ 2（契約）+ 1（ITF）+ 3（doc-test）、失敗 0 | `code-summary.md` の 591→699 と一致 |
+| `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo lint` | いずれも exit 0 | 受入 (a) と一致 |
+| `bash scripts/quint-gate.sh` | `[PASS] quint gate: all steps green`（typecheck 3・invariants 3・witness 16・quint test 2） | 受入 (a) と一致。モデル不変 |
+| `git diff --stat -- Cargo.lock Cargo.toml modules/core/command/domain/Cargo.toml` / `git diff --stat origin/main..HEAD -- tests formal scripts .github` | いずれも空 | 依存不変・fixture/モデル/スクリプト不変（受入 (f) と一致） |
+| `rg` による実測（`# Panics`、`stage_keys`/`check_plan`/`#[deprecated]`、`pub fn .*-> &\[`、`to_vec()`） | `# Panics` は `intent_execution.rs:347,1506,2364` + `workflow_definition.rs:213` の 4 か所のみ。他は 0 件 | 受入 (e)(g) および no-backward-compatibility 適合を実測で確認 |
+| `rg` による RMU/query の FCC 型保持検査（フィールド・戻り値型） | 0 件（テストフィクスチャの `-> StageEntries` 2 件のみ） | cqrs-boundaries 適合（RMU が FCC を定義・保持しない）を実測で確認 |
+| `tests/collection_contract_test.rs` の `check(..)` 登録 | 新設 9 型（StageEntries/StageSlots/StageIndexSet/StageSlugSet/ArtifactPaths/TransitionSteps/ReviewClosures/PromotedSections/RuleLines）を含む全登録を確認 | NFR2.5・受入と一致。`PendingIterations` はインライン契約検査（開発者報告の逸脱1）で妥当に代替 |
+| `stage_slug_set.rs` / `projection.rs::in_document_order` の実装確認 | `StageSlugSet` は `BTreeSet`（辞書順）、投影側が `plan.stages()` の順で並べ直す | functional-spec レビュー R-03 の懸念を「不変条件から文書順を外す」方向で実装により解消 |
+
+### Summary
+
+計画・設計判断・実装・記録のすべてで整合が取れており、承認済み計画からの逸脱 11 件はいずれもコンパイラ・lint・型安全性上の必然か、契約に影響しない範囲に収まっている。`next_decision` の `IntentMismatch` 化、FCC 11 型の新設と契約試験登録、`StageSlugSet` の辞書順と投影側の文書順並べ直し、兄弟クレート（`core-command-use-case` と `modules/app/aidlc` を含む）への追随、`# Panics` 3 箇所への収束など、直近の functional-design（NOT-READY）と nfr-design（NOT-READY）のレビュー所見のうち実装に関わる部分は、質問票 Q1/Q2 の裁定を経てこの Bolt で具体的に解消されている。テスト・カバレッジ・Quint ゲート・記録（`source-manifest.json` / `traceability.json`）の実測はすべて申告と一致した。唯一の留意点は、functional-design と nfr-design 双方の設計文書自体（entities.md / rules.md / functional-spec.md、security-design.md / logical-components.md）がまだ fold-back されておらず、それぞれの `## Review` が 2026-09-06 時点の NOT-READY のまま残っていること（R-01、Minor）。これは code-summary.md 自身が申し送り済みで、今回のコード生成の妥当性を損なうものではないため、承認をブロックしない。

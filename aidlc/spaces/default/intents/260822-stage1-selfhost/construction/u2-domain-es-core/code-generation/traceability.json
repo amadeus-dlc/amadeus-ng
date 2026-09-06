@@ -1,0 +1,302 @@
+{
+  "stage": "code-generation",
+  "unit": "u2-domain-es-core",
+  "upstream_ids": [
+    "FR8.3",
+    "FR8.4",
+    "FR1.3",
+    "FR2.1",
+    "FR3.1",
+    "FR3.3",
+    "BR1.0",
+    "BR1.1",
+    "BR1.2",
+    "BR1.3",
+    "BR1.4",
+    "BR1.5",
+    "BR1.6",
+    "BR1.7",
+    "BR1.8",
+    "BR1.9",
+    "BR2.1",
+    "BR2.2",
+    "BR2.3",
+    "BR2.4",
+    "BR2.5",
+    "BR2.6",
+    "BR3.1",
+    "BR3.2",
+    "BR3.3",
+    "BR4.1",
+    "BR4.2",
+    "BR5.1",
+    "BR5.2",
+    "BR5.3",
+    "BR5.4",
+    "BR5.5",
+    "NFR1.1",
+    "NFR1.2",
+    "NFR1.3",
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR2.4",
+    "NFR2.5",
+    "NFR3.1",
+    "NFR3.2",
+    "NFR3.3",
+    "NFR3.4",
+    "NFR4.1",
+    "NFR4.2",
+    "NFR4.3",
+    "NFR4.4",
+    "NFR4.5"
+  ],
+  "coverage": [
+    {
+      "id": "FR8.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/workflow_definition/plan_action.rs"
+    },
+    {
+      "id": "FR8.4",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/workflow_definition/workflow_definition.rs"
+    },
+    {
+      "id": "FR1.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "FR2.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "FR3.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/next_decision.rs"
+    },
+    {
+      "id": "FR3.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.0",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/stage_entry.rs"
+    },
+    {
+      "id": "BR1.4",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.5",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/stage_slots.rs"
+    },
+    {
+      "id": "BR1.6",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.7",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.8",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR1.9",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR2.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution_event.rs"
+    },
+    {
+      "id": "BR2.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/stage_entries.rs"
+    },
+    {
+      "id": "BR2.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR2.4",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution_event.rs"
+    },
+    {
+      "id": "BR2.5",
+      "status": "OK",
+      "target": "modules/core/command/domain/tests/engine_loop_conformance.rs"
+    },
+    {
+      "id": "BR2.6",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR3.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR3.2",
+      "status": "N/A",
+      "target": "状態非依存の分岐は U6 のユースケース前段（集約の責務外 — rules BR3.2）"
+    },
+    {
+      "id": "BR3.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR4.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/mod.rs"
+    },
+    {
+      "id": "BR4.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/workflow_definition/workflow_definition.rs"
+    },
+    {
+      "id": "BR5.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/stage_index.rs"
+    },
+    {
+      "id": "BR5.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR5.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "BR5.4",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/command_error.rs"
+    },
+    {
+      "id": "BR5.5",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/stage_slots.rs"
+    },
+    {
+      "id": "NFR1.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/tests/engine_loop_conformance.rs"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/stage_entries.rs"
+    },
+    {
+      "id": "NFR1.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution_event.rs"
+    },
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/developer-report-4.md"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "scripts/coverage.sh"
+    },
+    {
+      "id": "NFR2.4",
+      "status": "OK",
+      "target": "Cargo.toml"
+    },
+    {
+      "id": "NFR2.5",
+      "status": "OK",
+      "target": "modules/core/command/domain/tests/collection_contract_test.rs"
+    },
+    {
+      "id": "NFR3.1",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "NFR3.2",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/apply_error.rs"
+    },
+    {
+      "id": "NFR3.3",
+      "status": "OK",
+      "target": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs"
+    },
+    {
+      "id": "NFR3.4",
+      "status": "OK",
+      "target": "modules/core/read-model-updater/src/read_tables/next_answer_row.rs"
+    },
+    {
+      "id": "NFR4.1",
+      "status": "OK",
+      "target": "Cargo.lock"
+    },
+    {
+      "id": "NFR4.2",
+      "status": "OK",
+      "target": "rust-toolchain.toml"
+    },
+    {
+      "id": "NFR4.3",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "id": "NFR4.4",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/artifact_paths.rs"
+    },
+    {
+      "id": "NFR4.5",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/orchestration/command_error.rs"
+    }
+  ]
+}

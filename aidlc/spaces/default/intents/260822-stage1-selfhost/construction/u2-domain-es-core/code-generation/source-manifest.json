@@ -1,0 +1,241 @@
+{
+  "stage": "code-generation",
+  "unit": "u2-domain-es-core",
+  "version": 1,
+  "writes": [
+    {
+      "path": "modules/app/aidlc/src/runtime.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/scaffold.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/crash_reconstruction_test.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/journal_protocol_conformance.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/support/mod.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/apply_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/artifact_paths.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/command_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_event.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_event/created.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_opened.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/practices_affirmed.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/recomposed.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/started.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/mod.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/next_decision.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/pending_iterations.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/report_decision.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/review_attempt.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/review_closures.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_entries.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_entry.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_index_set.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slot.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slots.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slots_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slug_set.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/transition_steps.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/transition_steps_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/mod.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/practices_promotion.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/promoted_sections.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/promoted_sections_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/promotion_plan_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/rule_lines.rs"
+    },
+    {
+      "path": "modules/core/command/domain/tests/collection_contract_test.rs"
+    },
+    {
+      "path": "modules/core/command/domain/tests/engine_loop_conformance.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/created_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_event_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/tests.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/intent_execution_repository_impl.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/intent_repository_impl.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/commit_verdict_use_case_wiring_test.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/intent_execution_repository_impl_test.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/support/contract.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/support/mod.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/upstream_event_store_conformance.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/commit_outcome.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/commit_verdict_use_case.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/promote_practices_use_case.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/test_support.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/tests/support/mod.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/gate_opened_dto.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_execution_event_dto.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/practices_affirmed_dto.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/recomposed_dto.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/started_dto.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/tests.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/next_answer_row.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/spelling.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/stage_lookup.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/projection.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/resolved_plan.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/tests/journal_reader_impl_test.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/tests/projection_golden_test.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/tests/read_model_updater_test.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/tests/read_tables_test.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/tests/support/mod.rs"
+    }
+  ]
+}
