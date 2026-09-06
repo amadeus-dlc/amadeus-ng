@@ -5798,3 +5798,93 @@
 **Next Action**: ユーザー回答後にunit resumeし、質問票の最終Answerとsummary-confirmationを記録してU10の3成果物を更新・独立レビューする
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-06T07:28:50Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T07:29:07Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T07:32:58Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T07:35:55Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T07:41:08Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6dd9ce46
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-supplemental.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T07:41:09Z
+**Event**: SENSOR_PASSED
+**Fire id**: 6dd9ce46
+**Sensor ID**: linter
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-supplemental.ts
+**Duration ms**: 765
+**Note**: tool-unavailable
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T07:41:09Z
+**Event**: SENSOR_FIRED
+**Fire id**: bfeb0670
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-supplemental.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-06T07:41:09Z
+**Event**: SENSOR_PASSED
+**Fire id**: bfeb0670
+**Sensor ID**: type-check
+**Stage slug**: functional-design
+**Output path**: scripts/goldens/capture-supplemental.ts
+**Duration ms**: 23
+**Note**: script-error: exit-1
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T07:47:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: default
+**Agent ID**: 01a075ae-c1ba-7d33-95a5-08c02b55255f
+**Message**: 独立レビューの結果、対象差分に追加修正が必要な欠陥は見つかりませんでした。\n\n- CLONE置換の限定と回帰試験は、安定した記録名・固定ピンの差分を保持します。\n- missingの空配列許可、理由必須、来歴との件数照合は整合しています。\n- hookの14ケース分類は採取済み出力と一致し、上書きケースの誤名称も明記されています。\n- 補完採取は262ファイルのマニフェスト照合後、未変更のupst
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T07:50:14Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/residuals-20260906.md
+**Context**: residuals-20260906.md
+
+---

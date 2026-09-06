@@ -1,7 +1,7 @@
 {
   "version": 1,
   "description": "ゴールデン比較の正規化規則 (BR2.2)。期待値と実測値の双方に同じ規則を適用してからバイト比較する。規則はコーパスの一部であり、比較器 (テスト側) はこのファイルだけを読む。",
-  "rule_application": "規則は rules 配列の順に適用する。順序は意味を持つ — 環境固有の実行時値 (runtime-path / runtime-clone) を先に literal 置換で潰し、次に形の決まったパターン (regex) を当て、取りこぼしを拾う広めの regex を最後に置く。placeholder は <TS> / <CLONE> / <ROOT> / <SESSION> の 4 種に固定し (NFR1.3)、1 つの placeholder に複数の規則があってよい。replacement を持つ規則はマッチ全体をその文字列で置き換える (前後の文脈ごとマッチさせる規則のため)。持たない規則は placeholder そのもので置き換える。",
+  "rule_application": "規則は rules 配列の順に適用する。環境固有の実行時値 (runtime-path / runtime-clone) を先にliteral置換し、その後に時刻・セッションのパターンを適用する。cloneは実測して与えられた値だけを置換し、記録名や固定コミットを形から推測して置換しない。placeholderは<TS>/<CLONE>/<ROOT>/<SESSION>の4種。replacementがある規則はその文字列、ない規則はplaceholder自体でマッチを置換する。",
   "rules": [
     {
       "placeholder": "<ROOT>",
@@ -14,7 +14,7 @@
       "placeholder": "<CLONE>",
       "kind": "runtime-clone",
       "pattern": "監査シャードの basename と採取ホスト名 (比較器が実行時に与える)",
-      "description": "<host>-<clone> 形のシャード名そのもの。形から拾う下の regex では取り切れない実際の値を literal 置換で先に潰す (NFR4.4 のホスト名漏れ防止)",
+      "description": "採取時に実測したシャード名とホスト名だけをliteral置換する。cloneらしい形という理由だけで記録名や固定コミットを置換しない。",
       "applies_to": ["stdout", "state-diff", "audit", "stderr"]
     },
     {
@@ -53,13 +53,6 @@
       "pattern": "[A-Za-z0-9_-]{200,}",
       "description": "load-steering の継続トークン (base64url の不透明トークン)。記録ごとにランダムな鍵で MAC を張るため同じ入力でも毎回変わる。空白を含まない 200 文字以上の base64url 連続はゴールデン中このトークンしかない",
       "applies_to": ["stdout", "state-diff", "audit", "stderr"]
-    },
-    {
-      "placeholder": "<CLONE>",
-      "kind": "regex",
-      "pattern": "[A-Za-z0-9][A-Za-z0-9_.-]*-[0-9a-f]{8}",
-      "description": "監査シャード名 <host>-<clone> の形",
-      "applies_to": ["stdout", "state-diff", "audit"]
     }
   ],
   "families": {

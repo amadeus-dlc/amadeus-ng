@@ -39,6 +39,94 @@ const REQUIRED_HOOKS: &[&str] = &[
     "write-audit-log",
 ];
 
+/// フックの観測結果。記録用フックは拒否の判断を持たない。
+enum HookOutcome {
+    Allowed,
+    Ignored,
+    Rejected,
+    Blocked,
+    Recorded(&'static str),
+}
+
+#[test]
+fn hook_cases_cover_their_applicable_outcomes() {
+    use HookOutcome::{Allowed, Blocked, Ignored, Recorded, Rejected};
+    let expected = [
+        ("record-human-turn/active-workflow", Recorded("HUMAN_TURN")),
+        ("record-human-turn/no-workflow-ignored", Ignored),
+        ("state-transition-guard/allow-read-only-query", Allowed),
+        ("state-transition-guard/deny-delegated-lifecycle", Rejected),
+        (
+            "state-transition-guard/deny-direct-state-transition",
+            Rejected,
+        ),
+        ("state-transition-guard/ignore-non-bash-tool", Ignored),
+        ("stop-forwarding-loop/block-pending-directive", Blocked),
+        ("stop-forwarding-loop/no-workflow-ignored", Ignored),
+        ("stop-forwarding-loop/reentrant-ignored", Ignored),
+        (
+            "write-audit-log/artifact-created",
+            Recorded("ARTIFACT_CREATED"),
+        ),
+        (
+            "write-audit-log/artifact-updated-by-edit",
+            Recorded("ARTIFACT_UPDATED"),
+        ),
+        (
+            "write-audit-log/artifact-updated-by-overwrite",
+            Recorded("ARTIFACT_CREATED"),
+        ),
+        ("write-audit-log/ignore-outside-record", Ignored),
+        (
+            "write-audit-log/trusts-the-settings-matcher",
+            Recorded("ARTIFACT_CREATED"),
+        ),
+    ];
+    let rows = cases("hooks");
+    for (id, outcome) in expected {
+        let case = rows
+            .iter()
+            .find(|case| case.id() == id)
+            .unwrap_or_else(|| panic!("フックの観測ケース {id} が無い"));
+        let exit = case.read("exit").unwrap_or_default();
+        let stdout = case.read("stdout").unwrap_or_default();
+        let audit = case.read("audit.md").unwrap_or_default();
+        assert_eq!(
+            exit.trim(),
+            if matches!(outcome, Rejected) {
+                "2"
+            } else {
+                "0"
+            },
+            "{id}"
+        );
+        match outcome {
+            Recorded(event) => assert!(
+                audit.contains(&format!("**Event**: {event}")),
+                "{id}: {event} が無い"
+            ),
+            Blocked => {
+                let decision: serde_json::Value =
+                    serde_json::from_str(&stdout).expect("Stopの判定JSON");
+                assert_eq!(decision["decision"].as_str(), Some("block"), "{id}");
+                assert!(
+                    decision["reason"]
+                        .as_str()
+                        .is_some_and(|reason| !reason.is_empty())
+                );
+            }
+            Rejected => assert!(
+                !case.read("stderr").unwrap_or_default().trim().is_empty(),
+                "{id}"
+            ),
+            Allowed | Ignored => {
+                assert!(stdout.is_empty(), "{id}");
+                assert!(audit.is_empty(), "{id}");
+            }
+        }
+    }
+}
+
 /// cli 族の 1 ケースが必ず持つファイル (`stdout.json` / `stdout.txt` は排他なので別扱い)。
 const CLI_REQUIRED_FILES: &[&str] = &[
     "argv",
@@ -337,26 +425,125 @@ fn normalization_is_a_fixpoint_over_the_captured_corpus() {
 }
 
 #[test]
+fn normalization_preserves_stable_record_names_and_upstream_pins() {
+    let norm = Normalization::load();
+    let runtime = RuntimeValues::new(Vec::new(), vec!["build-host-deadbeef".to_string()]);
+    let input = "intents/example-1234abcd upstream-3c3146cf build-host-deadbeef";
+    let expected = "intents/example-1234abcd upstream-3c3146cf <CLONE>";
+    for family in ["cli", "hooks"] {
+        for channel in [
+            Channel::Stdout,
+            Channel::StateDiff,
+            Channel::Audit,
+            Channel::Stderr,
+        ] {
+            assert_eq!(norm.normalize(input, family, channel, &runtime), expected);
+        }
+    }
+}
+
+#[test]
 fn missing_cases_are_recorded_with_a_reason() {
     for family in ["cli", "hooks"] {
         let doc = read_json(&format!("{family}/cases-missing.json"));
-        let entries = doc["missing"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{family}: cases-missing.json の missing が配列でない"));
-        assert!(
-            !entries.is_empty(),
-            "{family}: 欠落ケースが 1 件も記録されていない"
+        assert_missing_cases(family, &doc);
+        let provenance = read_json(&format!("{family}/provenance.json"));
+        assert_eq!(
+            doc["missing"].as_array().map(Vec::len),
+            provenance["missing_case_count"]
+                .as_u64()
+                .map(|count| count as usize),
+            "{family}: 欠落一覧と来歴の件数が一致しない"
         );
-        for entry in entries {
-            for field in ["id", "reason", "evidence", "follow_up"] {
-                assert!(
-                    entry[field].as_str().is_some_and(|v| !v.trim().is_empty()),
-                    "{family}: 欠落ケース {} に {field} が無い (W4: 理由なき欠落は認めない)",
-                    entry["id"]
-                );
-            }
+    }
+}
+
+fn assert_missing_cases(family: &str, doc: &serde_json::Value) {
+    let entries = doc["missing"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{family}: cases-missing.json の missing が配列でない"));
+    for entry in entries {
+        for field in ["id", "reason", "evidence", "follow_up"] {
+            assert!(
+                entry[field].as_str().is_some_and(|v| !v.trim().is_empty()),
+                "{family}: 欠落ケース {} に {field} が無い (W4: 理由なき欠落は認めない)",
+                entry["id"]
+            );
         }
     }
+}
+
+#[test]
+fn a_complete_corpus_can_have_no_missing_cases() {
+    let doc = serde_json::from_str(r#"{"missing": []}"#).expect("空の欠落一覧");
+    assert_missing_cases("complete", &doc);
+}
+
+#[test]
+#[should_panic(expected = "reason")]
+fn an_outstanding_case_must_still_explain_its_reason() {
+    let doc = serde_json::from_str(
+        r#"{"missing": [{"id": "case", "evidence": "observed", "follow_up": "capture"}]}"#,
+    )
+    .expect("理由を欠く入力");
+    assert_missing_cases("incomplete", &doc);
+}
+
+#[test]
+fn previously_missing_paths_have_verified_supplemental_observations() {
+    let supplement = read_json("../supplemental-3c3146cf/cases.json");
+    assert_eq!(
+        supplement["upstream_commit"].as_str(),
+        Some("3c3146cfd7cef33020d48e8d48d4e80d0f8c2820")
+    );
+    assert_eq!(
+        supplement["fixture_kind"].as_str(),
+        Some("synthetic-preconditions")
+    );
+    let observations = supplement["cases"].as_array().expect("補完観測の配列");
+    for family in ["cli", "hooks"] {
+        let missing = read_json(&format!("{family}/cases-missing.json"));
+        for entry in missing["missing"].as_array().expect("未採取一覧") {
+            let id = format!("{family}/{}", entry["id"].as_str().expect("ケースID"));
+            assert!(
+                observations
+                    .iter()
+                    .any(|case| case["id"].as_str() == Some(&id)),
+                "{id}: 補完観測が無い"
+            );
+        }
+    }
+    let find = |id: &str| {
+        observations
+            .iter()
+            .find(|case| case["id"].as_str() == Some(id))
+            .expect("補完ケース")
+    };
+    let continuation = find("cli/continue/multi-part");
+    let parts = continuation["parts"].as_array().expect("配送パート");
+    assert!(parts.len() > 1);
+    let mut delivered = Vec::new();
+    for (index, part) in parts.iter().enumerate() {
+        assert_eq!(part["part"].as_u64(), Some(index as u64 + 1));
+        assert_eq!(part["parts"].as_u64(), Some(parts.len() as u64));
+        delivered.extend(
+            part["synthetic_rules"]
+                .as_array()
+                .expect("ルール番号")
+                .iter()
+                .map(|id| id.as_u64().expect("番号")),
+        );
+    }
+    assert_eq!(delivered, (0u64..240).collect::<Vec<_>>());
+    assert_eq!(continuation["final_kind"].as_str(), Some("run-stage"));
+    let mode = find("cli/set-autonomy/gated");
+    assert_eq!(mode["tool_generated_state_exit"].as_u64(), Some(1));
+    assert_eq!(mode["exit"].as_u64(), Some(0));
+    assert_eq!(mode["output"]["mode"].as_str(), Some("gated"));
+    assert_eq!(mode["output"]["state_updated"].as_bool(), Some(true));
+    let stop = find("hooks/stop-forwarding-loop/transcript-carve-out");
+    assert_eq!(stop["conversational"]["stdout"].as_str(), Some(""));
+    assert_eq!(stop["engine_engaged"]["decision"].as_str(), Some("block"));
 }
 
 #[test]

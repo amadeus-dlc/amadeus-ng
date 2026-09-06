@@ -6,7 +6,7 @@ Published Language（`12-workflow-definition.md` §3）を本家と同一に読�
 
 ## バイトを変更してはならない
 
-**このディレクトリの `*.json` は 1 バイトたりとも変更してはならない。**
+**upstreamの配布JSONと採取済みの入力・期待出力JSONは、1バイトたりとも変更してはならない。**
 整形・キー並べ替え・末尾改行の追加削除・BOM 付与のいずれも禁止する。
 これらのファイルは「本家が実際に配布しているバイト列」であることに価値があり、
 編集した瞬間にゴールデンとしての意味を失う。
@@ -15,6 +15,11 @@ Published Language（`12-workflow-definition.md` §3）を本家と同一に読�
 このディレクトリごと新しいコミット ID のディレクトリを作り、`docs/specs/00-policy.md` の
 ピン留め方針に従って差分を審査する。フォーマッタ・リンタ・エディタの自動整形が
 このディレクトリに掛からないよう注意すること。
+
+`normalization.json` はupstreamの出力ではなく、このリポジトリが手書きする比較設定である。
+差分を隠す誤った置換の修正は、誤検出を再現する試験と採取済み出力の固定点検証を伴って行う。
+2026-09-06、記録名・固定コミットまで消してしまうCLONEの形による推測を廃止し、
+実測して渡したシャード名・ホスト名だけを置換するようにした。採取済みの期待出力は変更していない。
 
 ## 出典
 
@@ -276,10 +281,21 @@ C2 が名指すフック 4 本と upstream の実装ファイルの対応。`set
 | `state-transition-guard` | `.claude/hooks/aidlc-state-transition-guard.ts` | `PreToolUse` |
 | `write-audit-log` | `.claude/hooks/aidlc-write-audit-log.ts` | `PostToolUse(Write\|Edit)` |
 
-各フックについて許可（終了コード 0）・拒否（終了コード 2 + stderr に理由）・無視
-（終了コード 0 で副作用なし）を 2〜3 件ずつ採ってある。`stop-forwarding-loop` の拒否は
-終了コード 2 ではなく **stdout の `{"decision":"block", "reason": …}` で表現される**
-（Claude Code の Stop フック契約）点が他の 3 本と違う。
+フックごとに適用される区分が異なる。全フックに許可・拒否・無視の3種類があるわけではない。
+
+| フック | 記録・許可 | 拒否 | 無視 |
+| --- | --- | --- | --- |
+| `record-human-turn` | active-workflowでHUMAN_TURNを記録 | 対象外（記録用フックで拒否判断を持たない） | no-workflow-ignored |
+| `write-audit-log` | 作成・更新・matcher委譲の4ケースで監査を記録 | 対象外（記録用フックで拒否判断を持たない） | ignore-outside-record |
+| `state-transition-guard` | allow-read-only-query | deny-delegated-lifecycle / deny-direct-state-transition（exit 2とstderr） | ignore-non-bash-tool |
+| `stop-forwarding-loop` | 対象外（単独の許可通知は出さない） | block-pending-directive（exit 0、stdoutのdecision:block） | no-workflow-ignored / reentrant-ignored |
+
+この対応は `golden_corpus_read.rs` のケース別検査で、終了コード・判定JSON・監査イベントと突き合わせる。
+`stop-forwarding-loop` の差止めは、Claude CodeのStop契約に従い、終了コード2ではなくstdoutの判定で表す。
+
+既存の `artifact-updated-by-overwrite` は名前と説明に反して、実測の監査行が
+`ARTIFACT_CREATED` である。採取済みバイトは保存し、このケースを上書き更新経路の検証済み証拠には使わない。
+更新経路の既存証拠は `artifact-updated-by-edit` の `ARTIFACT_UPDATED` である。
 
 #### 採取で分かった upstream の実測挙動
 
@@ -302,6 +318,9 @@ C2 が名指すフック 4 本と upstream の実装ファイルの対応。`set
 | 状態ファイルの `- **Next Action**:` は書き手で綴りが割れる。genesis（`intent-create`）は **slug**（`Execute practices-discovery`）、`advance` は**表示名**（`Execute Workspace Detection`） | `cli/intent-create/classic-scope`, `cli/report/completed-ungated` |
 
 #### 採取できなかったケース（W4）
+
+2026-09-06追記: 下記は初回採取時の記録である。現在は[補完観測](../supplemental-3c3146cf/README.md)で
+3経路を実行できている。合成入力の前提とツール単独生成の状態は区別し、既存観測は履歴として保存する。
 
 非対話で再現できなかった遷移は**値を捏造せず** `cases-missing.json` に理由・根拠・
 引き取り先つきで記録してある（cli 2 件、hooks 1 件）。

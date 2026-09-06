@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-09-06T07:41:10.784Z",
+  "command": "bun scripts/goldens/capture-supplemental.ts <verified-dist/claude> <output-dir>",
+  "upstream_commit": "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820",
+  "tree_manifest_sha256": "ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f",
+  "tree_file_count": 262,
+  "fixture_kind": "synthetic-preconditions",
+  "bun_version": "1.3.13",
+  "cases": [
+    "cli/continue/multi-part",
+    "cli/set-autonomy/gated",
+    "hooks/stop-forwarding-loop/transcript-carve-out"
+  ]
+}
