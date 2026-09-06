@@ -1,7 +1,6 @@
 //! `Recomposed` — `IntentExecutionEvent::Recomposed` のペイロード。
 
-use crate::orchestration::{IntentExecutionEventId, IntentExecutionId};
-use crate::workflow_definition::StageSlug;
+use crate::orchestration::{IntentExecutionEventId, IntentExecutionId, StageSlugSet};
 
 /// `Recomposed` のペイロード — 事実 (どの反転が起きたか) だけを運ぶ。
 ///
@@ -11,8 +10,8 @@ use crate::workflow_definition::StageSlug;
 pub struct Recomposed {
     id: IntentExecutionEventId,
     aggregate_id: IntentExecutionId,
-    skipped: Vec<StageSlug>,
-    added: Vec<StageSlug>,
+    skipped: StageSlugSet,
+    added: StageSlugSet,
 }
 
 impl Recomposed {
@@ -21,8 +20,8 @@ impl Recomposed {
     pub const fn new(
         id: IntentExecutionEventId,
         aggregate_id: IntentExecutionId,
-        skipped: Vec<StageSlug>,
-        added: Vec<StageSlug>,
+        skipped: StageSlugSet,
+        added: StageSlugSet,
     ) -> Recomposed {
         Recomposed {
             id,
@@ -32,15 +31,18 @@ impl Recomposed {
         }
     }
 
-    /// EXECUTE → SKIP に反転したステージ列。
+    /// EXECUTE → SKIP に反転したステージの集合 (辞書順)。
+    ///
+    /// 反転は位置ごとに独立なので集合で足りる。**文書順で描く投影は並べ直す**（計画の位置で
+    /// 引き直す）— 型側の順序は監査行の都合で変えない。
     #[must_use]
-    pub fn skipped(&self) -> &[StageSlug] {
+    pub const fn skipped(&self) -> &StageSlugSet {
         &self.skipped
     }
 
-    /// SKIP → EXECUTE に反転したステージ列。
+    /// SKIP → EXECUTE に反転したステージの集合 (辞書順)。
     #[must_use]
-    pub fn added(&self) -> &[StageSlug] {
+    pub const fn added(&self) -> &StageSlugSet {
         &self.added
     }
 

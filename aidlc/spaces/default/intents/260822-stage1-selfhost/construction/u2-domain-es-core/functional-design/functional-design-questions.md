@@ -88,7 +88,7 @@ Unparked / Recomposed / AutonomyModeSet）には「ゲートを経ない完了�
   に書き換え、`EngineSignal` は `NextDecision` から導出する（または `next_decision` の最小射影として維持）。新規の
   イベント／リプレイ性質は PBT（`apply_event` のリプレイ = decide 後の状態、1 コマンド 1 イベント）で固定する。
 
-## Consolidated Summary Confirmation
+## 以前に確認済みのまとめ（2026-08 の確認、2026-09-05 是正で一部上書き）
 
 - Q1 = A: `next_decision` は状態依存の分岐（park 2.5/2.6、進行中・SKIP 不整合・次 in-scope・完了 = 10、ジャンプ方向 7、
   resume メニュー要否 6、稼働中の自由記述 9c）を集約のクエリとし、状態非依存の分岐（フラグ・scope 検証・birth 前）は
@@ -99,6 +99,141 @@ Unparked / Recomposed / AutonomyModeSet）には「ゲートを経ない完了�
   （`Jumped` に全差分、`stale_report` / `next_decision` はクエリ）、PlanAction 完全移動の呼出側一覧、畳み込みの移設
   （`WorkflowDefinition` はグリッド照会のみ）、serde はドメインに入れない（snapshot 値オブジェクト + アクセサ、JSON は U3）、
   Quint / ITF 維持（`EngineSignal` は `NextDecision` から導出）
+
+Does this all look correct before I generate the artifact?
+
+- Looks correct
+- Request changes
+
+[Answer]: Looks correct
+
+## 2026-09-07 再走（Modify）— 是正後の差分に関する追加質問
+
+> 出典: 2026-09-05 の是正記録 `../correction-report.md`（残る差異 = `next_decision` の ID 照合）、オーナー裁定
+> 2026-09-06 のコーディング規則 `coding-rules/first-class-collections.md`（配列・イテレータを外へ取り出す前に
+> コレクション自身の操作で表す）、現行コード `modules/core/command/domain/src/orchestration/`（`Intent::stages()` /
+> `IntentExecution::stage_keys()` はスライス `&[..]` を返す。消費側は command interface-adapter の DTO 3 か所、
+> read-model-updater の `ResolvedPlan::of`（計画の写し）と `read_tables`（行生成・slug 引当）、および集約内の
+> `IntentExecution::skeleton_gate_stage` が `intent.stages().iter().position(..)` で判断）、
+> `next_decision(&Intent, &NextRequest) -> NextDecision`（全コマンドと `jump_resolve` / `skeleton_gate_stage` / `gated`
+> は `matches(intent)` で ID を照合するが、`next_decision` だけ照合が無い。現行の唯一の呼出側は read-model-updater の
+> `NextAnswerRow::of` で、`intent.id() == execution.intent_id()` で引いた Intent を渡す）。
+> Q1〜Q3・P1〜P6 は 2026-08 の記録であり、その後の裁定（Intent / IntentExecution 分離、16 変種、誕生時初期化完了、
+> 最新スナップショット + 差分再生）で上書きされた項目は是正済み本文が正である。再質問はしない。
+
+### Q4. 静的計画と添字帳のファーストクラスコレクション化（2026-09-06 規則の U2 への適用範囲）
+
+用語: 「静的計画」= Intent が誕生時に解決した全ステージの列（`Intent.stages`、StageEntry の並び）。「添字帳」=
+実行がイベントの slug を位置へ解決するための最小の列（`IntentExecution.stage_keys`、StageKey の並び）。
+「ファーストクラスコレクション」= 配列を生のまま外へ出さず、`at` / `filter` / `map` / `fold_left` と業務上の操作を
+自身に持つコレクション型（2026-09-06 のオーナー規則。適用済みは StageGraph / ScopeGrid / Checkboxes など 7 型で、
+上記 2 列は未適用）。現状は両方とも `&[..]` のスライスを公開しており、消費側が外で走査している。
+
+- A. 両方を導入する — orchestration に `StageEntries`（非空・slug 一意・文書順）と `StageKeys`（同じ不変条件）を
+  ファーストクラスコレクションとして新設し、`at` / `filter` / `fold_left` / `map`（slug 衝突は Result で拒否）に加え、
+  実際に使われる業務操作（slug → 位置、最初の Construction かつ EXECUTE の位置 = skeleton 対象、位置以降の列、
+  位置以降で最初の実効 EXECUTE）を持たせる。公開 getter はコレクション型を返し、要素列挙は DTO の符号化境界だけの
+  理由付き例外とする。集約内の判断（`skeleton_gate_stage` 等）はコレクションの操作で書く。実装は U2 の
+  code-generation で行い、read-model-updater 側の消費コード（`ResolvedPlan::of` / `read_tables`）の書換えも
+  同じ Bolt に含めて CI を緑に保つ — 推奨
+- B. A と同じ設計だが、read-model-updater 側の書換えは U4 の code-generation に繰り延べる（U2 の Bolt では
+  理由付きの移行用スライス accessor を一時的に残す）
+- C. 今回は導入しない — スライス公開を DTO / リードモデル境界の理由付き例外として設計に記録し、集約をまたぐ判断
+  （`skeleton_gate_stage`）だけを Intent 側の操作へ移す
+- X. Other (please specify)
+
+[Answer]: X — リードモデルでは使わないでください。コマンド側でドメインモデルの配列部分があるならFCCを使ってください。
+
+### Q5. `next_decision`（次に何をすべきかの判断）の Intent ID 照合（是正記録の残件 BR2.6）
+
+用語: 「ID 照合」= 集約が引数で受け取った別集約（Intent）が自分の参照先（`intent_id`）と一致するかを確かめ、
+不一致なら `IntentMismatch` の Err で拒否すること（`coding-rules/aggregate-references.md`）。全コマンドと
+書込前ガード（`jump_resolve`）は照合済み。`next_decision` だけ照合が無く、取り違えた Intent を渡されると skeleton
+ゲートの判断材料だけが別計画で計算される。是正記録は「所有範囲を越える API 整理の残件」として未解決にしている。
+
+- A. 戻り値を `Result<NextDecision, CommandError>` にし、不一致は `IntentMismatch` で拒否する（`jump_resolve` /
+  `report_dispatch` と同じ形）。呼出側（read-model-updater の `NextAnswerRow::of`）は Err を判断結果ではなく
+  投影の束縛不整合として扱う。実装は U2 の code-generation、呼出側の更新も同じ Bolt — 推奨
+- B. 戻り値は `NextDecision` のまま、照合は呼出側（ID で引いた Intent を渡す構成）の責務と設計に明記し、
+  `aggregate-references` からの容認された逸脱として記録する
+- C. `&Intent` 依存を外へ出す — 呼出側が `skeleton_gate_stage(intent)`（照合済み、不一致は None）で skeleton 対象を
+  求めて渡す `next_decision(skeleton_target: Option<StageIndex>, &NextRequest)` に変える（判断材料の組立てが
+  集約の外へ出るため非推奨）
+- X. Other (please specify)
+
+[Answer]: A
+
+### Q4a. FCC の結合（combine = 和集合 / 連結）と差集合（divide）の扱い（オーナー指摘による追問）
+
+指摘: 結合・差集合の高階操作が無い FCC は、結局イテレータで取り出して外で合成することになり、ロジックが分散する。
+実測: 規則 §「結合と差集合」は `combine` / `divide` を定めるが、共通 trait `FirstClassCollection` は `len` / `at` /
+`fold_left` / `filter` のみ。汎用 `Collection<T>` / `NonEmptyCollection<T>` と `BoltRefs` / `AuditFields` は
+`combine` / `divide` を持ち、`StageGraph` / `ScopeGrid` / `Checkboxes` / `OrderedAuditEvents` は持たない。
+
+- A. 型ごとの契約として、本設計の全 FCC に `combine` / `divide` を定める（列は連結 + slug 衝突は Result、集合は
+  和集合 / 差集合 + Monoid 則）。共通 trait への一律化は結果型と失敗条件が型ごとに異なるため今回は行わない — 推奨
+- B. 共通 trait `FirstClassCollection` にも `combine` / `divide`（結果型は関連型）を入れる方針にし、規則本文と既存 7 型の
+  改修を U2 の code-generation に加える
+- C. 反映案を修正する
+- X. Other (please specify)
+
+[Answer]: 1 (= A) — 最終的にはtraitに盛り込みたい
+
+Q4a の解釈: 今回は A（型ごとの契約）で進め、`combine` / `divide`（および `map`）を共通 trait へ盛り込む方向を
+オーナーの最終方針として設計と日誌に記録する（積み残し。Issue は起票しない。着手時期は別途裁定）。
+
+## 前提（2026-09-07 再走で確認する事項）
+
+- P7. **上流の古い再生方式の記述**: `components.md` 冒頭注記（2026-08-30）と `contract-summary.md` C3 の B13 追記
+  （2026-08-30）は「ジャーナル全再生」と書くが、オーナー裁定 2026-09-05（`coding-rules/aggregate-commands.md` の
+  再生方式の訂正）は「最新スナップショット + それより後の差分」である。U2 設計は 2026-09-05 裁定に従う（BR2.3）。
+  上流 2 ファイルの同期は本ステージの成果物外なので、intent 記録（本質問票と日誌）に積み残しとして書く（Issue は起票しない）。
+- P8. **コード冒頭説明の乖離**: `orchestration/mod.rs` の冒頭は「再構成はジャーナル全再生」「`next_decision` は
+  クエリ側（`ExecutionStateView`）が所有」と書くが、実コードは `IntentExecution::next_decision` を持ち、再生は
+  BR2.3 の形。これは設計変更ではなくドキュメント修正として code-generation への引継ぎ項目に載せる。
+- P9. **旧レビュー節の退避**: functional-spec.md 末尾の 2026-09-05 NOT-READY レビュー節（是正前の所見）は
+  `functional-spec-review-history-2026-09-05.md` へ原文のまま移し、本文冒頭から参照する。所見への対応は
+  是正記録のとおり反映済みであり、今回の独立レビューはこの是正済み本文に対して行う。
+- P10. **2026-09-06 のコレクション型の反映**: workflow_definition の StageGraph / ScopeGrid と workspace の
+  Checkboxes 等がファーストクラスコレクション契約（`FirstClassCollection`）を実装した事実を entities.md の
+  referenced_types と BR4.2 の注記に現行事実として記録する（残す 6 述語は変えない）。
+
+## Consolidated Summary Confirmation
+
+2026-09-07 再走（Modify）。Q1〜Q3・P1〜P6 の 2026-08 の確認と 2026-09-05 の是正済み本文は維持し、以下を追加で反映する。
+
+- Q4 = X（オーナー回答「リードモデルでは使わないでください。コマンド側でドメインモデルの配列部分があるなら FCC を使ってください」）:
+  コマンド側ドメインモデルの配列はすべてファーストクラスコレクション（FCC）にする。対象と型の設計（新規 BR5.5）:
+  静的計画 `Intent.stages` / `Created.stages` / `Started.stages` → `StageEntries`（非空・slug 一意・文書順）。
+  集約の位置ごとの並列 7 列（stage_keys / overlay / checkbox / approved / revision_count / review_attempts /
+  practices_affirmed）→ 位置ごとの進捗記録を 1 要素に持つ 1 つの FCC `StageSlots`（非空・slug 一意・文書順、
+  `StageIndex` で `at`。「長さが等しい」不変条件は型で消える）。`GateOpened.artifacts` → `ArtifactPaths`（順序保持・空可）。
+  `Recomposed.skipped / added` → `StageSlugSet`（重複なし・文書順）。`PracticesAffirmed` と `PracticesPromotion` の
+  sections / mandated / forbidden → `PromotedSections` / `RuleLines`（順序保持・重複なし）。`ReviewAttempt` の
+  pending / closed と `ReportDecision::Commit.steps` は値オブジェクト・判断結果の内部列として FCC 化の対象に含め、
+  各型が実際に使う操作（at / filter / fold_left / map + 業務操作）だけを持たせる。
+- Q4a = A（オーナー追問 2026-09-07「結合・差集合の高階操作が無いと結局イテレータで取り出してロジックが分散する」）:
+  本設計の全 FCC に `combine` / `divide` を型ごとの契約として定める（列は連結で slug 衝突は Result、集合は和集合 /
+  差集合と Monoid 則）。jump の位置集合の合成や受領証の一括リセットはこの演算で書く。オーナーの最終方針
+  「最終的には trait に盛り込みたい」（`combine` / `divide` / `map` を共通 trait `FirstClassCollection` へ）は
+  積み残しとして設計と日誌に記録し、今回の Bolt には含めない。
+- Q4 の境界規則: リードモデル側（read-model-updater / クエリ側）は FCC を使わず自前の平坦な表現へ写す。
+  DTO・リードモデル境界への要素列挙は `fold_left`（または理由を記した最後の手段のイテレータ公開）で行う。
+  集約をまたぐ判断（skeleton 対象の特定など）はコレクションの操作で書き、配列を外へ取り出さない。
+- Q5 = A: `next_decision(&Intent, &NextRequest)` は `Result<NextDecision, CommandError>` を返し、ID 不一致は
+  `IntentMismatch` で拒否する（`jump_resolve` / `report_dispatch` と同形）。呼出側（リードモデル更新器の
+  `NextAnswerRow::of`）は Err を判断結果ではなく投影の束縛不整合として扱う。BR2.6 の「残る差異」は裁定済みになる。
+- P7: 上流 `components.md` 冒頭注記と `contract-summary.md` C3 の B13 追記（いずれも 2026-08-30「ジャーナル全再生」）は
+  オーナー裁定 2026-09-05（最新スナップショット + 差分）で上書きされている。U2 設計は 2026-09-05 裁定に従い（BR2.3）、
+  上流 2 ファイルの同期は intent 記録の積み残しとして書く（Issue は起票しない）。
+- P8: `orchestration/mod.rs` 冒頭の旧説明（全再生、`next_decision` はクエリ側）はドキュメント修正として
+  code-generation への引継ぎ項目に載せる。
+- P9: functional-spec.md 末尾の 2026-09-05 NOT-READY レビュー節は `functional-spec-review-history-2026-09-05.md` へ
+  原文のまま移し、本文冒頭から参照する。今回の独立レビューは是正済み本文（+ 本再走の反映）に対して行う。
+- P10: 2026-09-06 に StageGraph / ScopeGrid / Checkboxes 等が `FirstClassCollection` 契約を実装した事実を
+  entities.md の referenced_types と BR4.2 の注記に記録する（残す 6 述語は変えない）。
+- 実装はすべて U2 の code-generation（再走）で行い、リードモデル側の消費コードの追随（境界列挙の書換え・
+  `next_decision` の Err 処理）も同じ Bolt に含めて CI を緑に保つ。
 
 Does this all look correct before I generate the artifact?
 

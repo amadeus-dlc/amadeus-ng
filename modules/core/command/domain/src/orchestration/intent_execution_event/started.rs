@@ -1,6 +1,6 @@
 //! `Started` — `IntentExecutionEvent::Started` のペイロード。
 
-use crate::orchestration::{IntentExecutionEventId, IntentExecutionId, IntentId, StageEntry};
+use crate::orchestration::{IntentExecutionEventId, IntentExecutionId, IntentId, StageEntries};
 
 /// `Started` のペイロード — genesis の材料 (実行の識別子・対象 intent の識別子・
 /// 解決済み計画の写し) を運ぶ。
@@ -23,7 +23,7 @@ pub struct Started {
     id: IntentExecutionEventId,
     aggregate_id: IntentExecutionId,
     intent_id: IntentId,
-    stages: Vec<StageEntry>,
+    stages: StageEntries,
 }
 
 impl Started {
@@ -33,7 +33,7 @@ impl Started {
         id: IntentExecutionEventId,
         aggregate_id: IntentExecutionId,
         intent_id: IntentId,
-        stages: Vec<StageEntry>,
+        stages: StageEntries,
     ) -> Started {
         Started {
             id,
@@ -65,7 +65,7 @@ impl Started {
 
     /// 開始時点の解決済み計画 (文書順)。
     #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
+    pub const fn stages(&self) -> &StageEntries {
         &self.stages
     }
 }

@@ -3,6 +3,8 @@
 
 ## Interpretations
 
+- 2026-09-06T15:44:38Z — U2 functional-design を Modify で再走した。2026-09-05 是正済み本文を出発点に、オーナー回答 Q4 = X「リードモデルでは使わない。コマンド側でドメインモデルの配列部分があるなら FCC を使う」を、コマンド側の全配列（静的計画・位置ごとの 7 並列列・イベント列ペイロード）のファーストクラスコレクション化（BR5.5、StageEntries / StageSlots / StageIndexSet / ArtifactPaths / StageSlugSet 等）と、リードモデル側の FCC 不使用・境界の fold_left 列挙として設計した。Q4a（オーナー追問「結合・差集合が無いとイテレータで取り出してロジックが分散する」）は型ごとの combine / divide 契約として反映し、共通 trait への一律化はオーナーの最終方針として積み残しに記録した。Q5 = A で next_decision を Result<NextDecision, CommandError>（IntentMismatch）に揃えた。上流 components.md / contract-summary C3 の「ジャーナル全再生」は 2026-09-05 裁定で上書き済みとして明示し、同期は積み残し（Issue は起票しない）。旧 NOT-READY レビュー節は functional-spec-review-history-2026-09-05.md へ退避した。
+
 - 2026-09-05T11:19:18Z — U4の修正範囲を再確認後、R-01をrebuild世代と同位置確定、R-02をsupersededへの不可分な置換と反映済みブロックの引継ぎ、R-03をspace共有headとserved_byで具体化した。新しい共有面を古い候補へ戻さず、個別ファイルの位置と利用した共有世代を区別する。
 
 - 2026-09-05T07:23:07Z — U4 の要約確認後、入出力・公開計画・障害復旧・受入条件の4成果物を作成した。NFR3を重複許容へ緩めず、耐久的な公開計画と現物照合を必要な追加設計として明示した。現在の実装がこの契約を満たすとはしていない。
@@ -22,10 +24,16 @@
 - 2026-08-22T11:36:16Z — [u1-canon-json-goldens] user-stories が Skip のため traceability.json の upstream_ids は AC ではなく U1 の FR（FR7.1/7.2/7.3）と NFR1 にし、target は rules.md の BR ID にする; センサーは AC を期待するため誤検知し得るが、story-map と同じ FR 連鎖で一貫させる
 
 ## Deviations
+- 2026-09-06T15:44:38Z — 要約確認の後に追問 Q4a を質問票へ追記したため、レビュー要求が「確認後に質問票が変わった」として拒否された。要約の回答欄を空へ戻し、Q4a を含めた要約を再提示して再確認・再記録し、成果物 4 本を Write / Edit ツールで保存し直して（Bash 書込は監査イベントを出さず「確認後に保存されていない」と判定される）受理された。教訓: 追問が出たら要約確認の前に質問票へ載せる。
+
+- 2026-09-06T15:44:38Z — U2 の advisory レビュー（iteration 1）は NOT-READY（Critical 0 / Major 3 / Minor 6 / Info 1）。Major は R-01（BR5.5 が挙げた 9 系統のうち TransitionSteps・ReviewAttempt の pending / closed・PromotedSections・RuleLines の 4 系統に entities.md の型定義が無い）、R-02（第 9 節 #3 の追随対象から core-command-use-case の commit_verdict_use_case.rs と ITF 準拠テスト engine_loop_conformance.rs が漏れ、CI 緑の宣言と両立しない）、R-03（StageSlugSet の「文書順」不変条件は StageSlug が順序情報を持たないため combine で維持できない — 辞書順へ改めるべき）。advisory は終端受領証であり成果物は凍結されるため、修正はステージゲートの Request Changes（U2 の改訂経路）で折り込む。U2 の code-generation 計画には R-01〜R-03 の解決（4 型の定義、use-case / ITF テストの追随、StageSlugSet 辞書順）を必須入力として載せる。
+
 <!-- example: 2026-05-29T10:14:32Z — skipped the optional caching layer the stage prose suggested; the dataset is small enough that it adds risk -->
 - 2026-08-22T11:42:39Z — [u1-canon-json-goldens] traceability センサーが『missing_from_upstream_ids: 34』を報告したが、これは stories.md 不在時にセンサーが requirements.md の全 FR を各 Unit の upstream_ids に要求する実装上の限界（Unit に割り当てられた FR だけを列挙するステージ定義と噛み合わない）; Unit スコープの FR7.x のみを列挙する方針を維持し、誤検知として扱う（units-generation と同じ上流センサーの限界。O5 と同様に upstream 報告候補）
 
 ## Tradeoffs
+
+- 2026-09-06T15:44:38Z — 位置ごとの 7 並列列は個別 FCC ではなく 1 つの StageSlots（1 要素 1 位置）に統合した。長さ一致の不変条件を型で消し、jump の一括更新を StageIndexSet の集合演算で書けるためだが、集約内部の全面改修と U4 側（ResolvedPlan / read_tables）の追随を U2 の code-generation Bolt に含める代償がある（PlanAction 完全移動の「呼出側一斉修正を同 Unit に含む」先例に倣う）。
 
 - 2026-09-05T07:23:07Z — U4のファイル群を一瞬で切り替える保証は置かず、同じ計画から再開できる公開と、構造化面・確定位置の不可分な確定を分けた。具体的な保存場所・排他の実装・保全期間は後続設計で具体化し、既存C3/C6が新規操作を既に提供するとは扱わない。
 <!-- example: 2026-05-29T10:14:32Z — picked TDD over BDD this run; the team is unit-first and the domain is well-understood -->

@@ -4,7 +4,7 @@ use core_command_domain::orchestration::Recomposed;
 use serde::{Deserialize, Serialize};
 
 use super::dto_decode_error::DtoDecodeError;
-use super::intent_execution_event_dto::{aggregate_id_of, event_id_of, slug_spelling, slugs_of};
+use super::intent_execution_event_dto::{aggregate_id_of, event_id_of, slug_column, slugs_of};
 
 /// `Recomposed` の材料。**`id` (イベント自身の識別子) と `aggregate_id`
 /// (どの集約の事実か) を先頭に置く並びが契約**である。
@@ -22,8 +22,8 @@ impl RecomposedDto {
         RecomposedDto {
             id: payload.id().as_str().to_string(),
             aggregate_id: payload.aggregate_id().as_str().to_string(),
-            skipped: payload.skipped().iter().map(slug_spelling).collect(),
-            added: payload.added().iter().map(slug_spelling).collect(),
+            skipped: slug_column(payload.skipped()),
+            added: slug_column(payload.added()),
         }
     }
 

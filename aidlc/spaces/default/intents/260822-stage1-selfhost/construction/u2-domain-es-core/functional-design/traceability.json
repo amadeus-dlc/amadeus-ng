@@ -68,6 +68,11 @@
       "id": "BR5.4",
       "status": "N/A",
       "target": "コーディング規則の適用（正本は coding-rules）"
+    },
+    {
+      "id": "BR5.5",
+      "status": "N/A",
+      "target": "コマンド側ドメインモデルの配列の FCC 化（coding-rules/first-class-collections.md、オーナー裁定 2026-09-06 / 2026-09-07）— 要求 ID を持たない横断規律"
     }
   ]
 }

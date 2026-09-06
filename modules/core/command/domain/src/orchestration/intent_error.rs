@@ -64,9 +64,9 @@ impl fmt::Display for IntentError {
 
 impl From<PlanError> for IntentError {
     /// 計画そのものの違反を intent の構築エラーへ写す。検査の正本は
-    /// [`StageEntry::check_plan`] であり、`Intent` はそれを呼ぶだけである。
+    /// [`StageEntries::new`] であり、`Intent` はその結果を写すだけである。
     ///
-    /// [`StageEntry::check_plan`]: crate::orchestration::StageEntry::check_plan
+    /// [`StageEntries::new`]: crate::orchestration::StageEntries::new
     fn from(error: PlanError) -> IntentError {
         match error {
             PlanError::Empty => IntentError::Empty,
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn every_plan_violation_maps_to_its_intent_rejection() {
-        // 計画の検査は `StageEntry::check_plan` が正本で、`Intent` はその結果を写すだけ
+        // 計画の検査は `StageEntries::new` が正本で、`Intent` はその結果を写すだけ
         // である。写し漏れがあれば拒否の意味が変わるので、対応を 1 か所で固定する。
         for (violation, expected, wording) in [
             (PlanError::Empty, IntentError::Empty, "empty stage list"),

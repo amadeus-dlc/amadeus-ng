@@ -2,13 +2,19 @@
 > This file is kept up to date automatically while the stage runs. Add observations at the review step, not by editing here directly.
 
 ## Interpretations
+- 2026-09-06T16:04:41Z — U2 nfr-requirements を Modify で再走した。2026-08-23 の旧世代 NFR（WorkflowExecution・12 変種・snapshot 値オブジェクト・「panic しない」・DefinitionMismatch・core-domain 配置・lints 48）を、後続裁定（Intent / IntentExecution 分離、16 変種、最新スナップショット + 差分再生、壊れた歴史は panic、IntentMismatch、BR5.5 FCC 化）と現行コード・U10 実測 CI（toolchain 1.95.0、lints 50、coverage 90 床 / 0.01 / seed 固定）へ同期し、新規 NFR2.5（FCC の契約試験ハーネス登録と Monoid 則・差集合則）を追加した。質問はなく前提 P7〜P12 を要約確認で確定。ドメインクレート単独のカバレッジを実測（行 98.66% / 関数 98.20% / リージョン 98.69%）し NFR2.3 の基準値にした。旧 READY レビュー節は履歴ファイルへ退避した。
+
 <!-- example: 2026-05-29T10:14:32Z — chose REST over GraphQL; the consuming team only needs CRUD, revisit if subscriptions land -->
 - 2026-08-22T11:48:53Z — [u1-canon-json-goldens] 質問ゼロで要約確認だけを取った; U1 は純粋ライブラリで適用 NFR（NFR1/NFR2/NFR4）の数値・方針は先行ステージと ADR 0001 で確定済みのため、構築フェーズの『質問は例外』方針に従い前提 4 点（技術選定・セキュリティ・品質・性能）の確認に置き換えた。kind = library のため成果物は security-requirements / tech-stack-decisions / traceability の 3 つ
 
 ## Deviations
+- 2026-09-06T16:04:41Z — U2 の advisory レビュー（iteration 1）は NOT-READY（Critical 0 / Major 3 / Minor 4 / Info 1）。精度は一致（依存・lints・toolchain・coverage 設定・16 変種・now_v7 の閉じ込め・現行署名）だが射程が不足: R-01 NFR2.5 の合格基準「read-model-updater に FCC 参照 0 件」は現行でも改修後でも成立しない（RMU は既存 FCC を参照し、StageEntries 化後は新設 FCC も境界で触る）— オーナー回答「リードモデルでは FCC を使わない」を機械判定へ誤って格上げした。R-02 NFR1.1 の追随対象から core-command-use-case（commit_verdict_use_case.rs / test_support.rs）が落ちた。R-03 next_decision の Result 化で壊れる呼出元（read-model-updater の next_answer_row.rs）が列挙されておらず、U2 の Bolt が兄弟クレートを改修する根拠が本文に無い。Minor に NFR2.4 の判定式が空振り（`\|` は rg でリテラル）を含む。advisory は終端受領証で成果物は凍結のため、修正はステージゲートの Request Changes で折り込み、U2 の nfr-design / code-generation の計画に R-01〜R-03 を必須入力として載せる。教訓（学習候補）: 「0 件」のような機械判定の合格基準は書く前に現行コードで実測する。
+
 <!-- example: 2026-05-29T10:14:32Z — skipped the optional caching layer the stage prose suggested; the dataset is small enough that it adds risk -->
 
 ## Tradeoffs
+- 2026-09-06T16:04:41Z — U2 の NFR は kind = library のため security-requirements / tech-stack-decisions / traceability の 3 本に限定し、性能・可用性・観測性の NFR は書かない（NFR5 非目標、観測面は U4 / U6 / U7）。code-generation の作業範囲（兄弟クレートの追随）は tech-stack-decisions §2 に列挙したが、security-requirements の合格基準にも同じ列挙が要る（R-02 / R-03）。
+
 <!-- example: 2026-05-29T10:14:32Z — picked TDD over BDD this run; the team is unit-first and the domain is well-understood -->
 
 ## Open questions

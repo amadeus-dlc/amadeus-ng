@@ -1,7 +1,7 @@
 //! `PracticesAffirmed` の永続化 DTO (**読む側**)。
 
 use core_command_domain::orchestration::PracticesAffirmed;
-use core_command_domain::workspace::PromotedSection;
+use core_command_domain::workspace::{PromotedSection, PromotedSections, RuleLines};
 use serde::{Deserialize, Serialize};
 
 use super::dto_decode_error::DtoDecodeError;
@@ -30,6 +30,14 @@ struct PromotedSectionDto {
     body: String,
 }
 
+/// 規則行の列を行の列へ写す (順序・重複はそのまま)。
+fn rule_column(lines: &RuleLines) -> Vec<String> {
+    lines.fold_left(Vec::new(), |mut column, line| {
+        column.push(line.to_string());
+        column
+    })
+}
+
 impl PracticesAffirmedDto {
     /// ドメインの公開アクセサだけを読んで DTO を組む (書き)。
     pub(super) fn of(payload: &PracticesAffirmed) -> PracticesAffirmedDto {
@@ -40,14 +48,15 @@ impl PracticesAffirmedDto {
             affirming_user: payload.affirming_user().to_string(),
             sections: payload
                 .sections()
-                .iter()
-                .map(|section| PromotedSectionDto {
-                    heading: section.heading().to_string(),
-                    body: section.body().to_string(),
-                })
-                .collect(),
-            mandated: payload.mandated().to_vec(),
-            forbidden: payload.forbidden().to_vec(),
+                .fold_left(Vec::new(), |mut rows, section| {
+                    rows.push(PromotedSectionDto {
+                        heading: section.heading().to_string(),
+                        body: section.body().to_string(),
+                    });
+                    rows
+                }),
+            mandated: rule_column(payload.mandated()),
+            forbidden: rule_column(payload.forbidden()),
         }
     }
 
@@ -58,12 +67,17 @@ impl PracticesAffirmedDto {
             aggregate_id_of(&self.aggregate_id)?,
             slug_of(&self.stage, "stage")?,
             self.affirming_user.clone(),
-            self.sections
-                .iter()
-                .map(|section| PromotedSection::new(section.heading.clone(), section.body.clone()))
-                .collect(),
-            self.mandated.clone(),
-            self.forbidden.clone(),
+            PromotedSections::new(
+                self.sections
+                    .iter()
+                    .map(|section| {
+                        PromotedSection::new(section.heading.clone(), section.body.clone())
+                    })
+                    .collect(),
+            )
+            .map_err(|_| DtoDecodeError::InvariantViolation)?,
+            RuleLines::new(self.mandated.clone()),
+            RuleLines::new(self.forbidden.clone()),
         ))
     }
 }

@@ -7,12 +7,13 @@
 //! `Unparked` はドメインの材料を持たないが識別子は運ぶので、単位変種ではなく構造体である。
 
 use core_command_domain::orchestration::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
+    ArtifactPaths, AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
     IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed,
     Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
-    StageEntry, StageRevised, StageSkipped, Started, Unparked,
+    StageEntries, StageEntry, StageRevised, StageSkipped, StageSlugSet, Started, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
+use core_command_domain::workspace::{PromotedSections, RuleLines};
 use serde::{Deserialize, Serialize};
 
 use super::autonomy_mode_set_dto::AutonomyModeSetDto;
@@ -96,8 +97,28 @@ fn slug_of(raw: &str, field: &'static str) -> Result<StageSlug, DtoDecodeError> 
 }
 
 /// ステージ参照の列の復号。
-fn slugs_of(raw: &[String], field: &'static str) -> Result<Vec<StageSlug>, DtoDecodeError> {
-    raw.iter().map(|value| slug_of(value, field)).collect()
+fn slugs_of(raw: &[String], field: &'static str) -> Result<StageSlugSet, DtoDecodeError> {
+    let slugs = raw
+        .iter()
+        .map(|value| slug_of(value, field))
+        .collect::<Result<Vec<StageSlug>, DtoDecodeError>>()?;
+    Ok(StageSlugSet::new(slugs))
+}
+
+/// 規則行の列を行の列へ写す (順序・重複はそのまま)。
+fn rule_column(lines: &RuleLines) -> Vec<String> {
+    lines.fold_left(Vec::new(), |mut column, line| {
+        column.push(line.to_string());
+        column
+    })
+}
+
+/// slug 集合を行の列へ写す (辞書順 — 文書順へ並べ直すのは投影側の責務)。
+fn slug_column(slugs: &StageSlugSet) -> Vec<String> {
+    slugs.fold_left(Vec::new(), |mut column, slug| {
+        column.push(slug_spelling(slug));
+        column
+    })
 }
 
 impl IntentExecutionEventDto {
@@ -110,7 +131,10 @@ impl IntentExecutionEventDto {
                     id: payload.id().as_str().to_string(),
                     aggregate_id: payload.aggregate_id().as_str().to_string(),
                     intent_id: payload.intent_id().as_str().to_string(),
-                    stages: payload.stages().iter().map(StageEntryDto::of).collect(),
+                    stages: payload.stages().fold_left(Vec::new(), |mut rows, entry| {
+                        rows.push(StageEntryDto::of(entry));
+                        rows
+                    }),
                 })
             }
             IntentExecutionEvent::GateOpened(payload) => {
@@ -118,7 +142,12 @@ impl IntentExecutionEventDto {
                     id: payload.id().as_str().to_string(),
                     aggregate_id: payload.aggregate_id().as_str().to_string(),
                     stage: slug_spelling(payload.stage()),
-                    artifacts: payload.artifacts().to_vec(),
+                    artifacts: payload
+                        .artifacts()
+                        .fold_left(Vec::new(), |mut paths, path| {
+                            paths.push(path.to_string());
+                            paths
+                        }),
                 })
             }
             IntentExecutionEvent::GateApproved(payload) => {
@@ -172,8 +201,8 @@ impl IntentExecutionEventDto {
                 IntentExecutionEventDto::Recomposed(RecomposedDto {
                     id: payload.id().as_str().to_string(),
                     aggregate_id: payload.aggregate_id().as_str().to_string(),
-                    skipped: payload.skipped().iter().map(slug_spelling).collect(),
-                    added: payload.added().iter().map(slug_spelling).collect(),
+                    skipped: slug_column(payload.skipped()),
+                    added: slug_column(payload.added()),
                 })
             }
             IntentExecutionEvent::AutonomyModeSet(payload) => {
@@ -225,11 +254,12 @@ impl IntentExecutionEventDto {
                     affirming_user: payload.affirming_user().to_string(),
                     sections: payload
                         .sections()
-                        .iter()
-                        .map(PromotedSectionDto::of)
-                        .collect(),
-                    mandated: payload.mandated().to_vec(),
-                    forbidden: payload.forbidden().to_vec(),
+                        .fold_left(Vec::new(), |mut rows, section| {
+                            rows.push(PromotedSectionDto::of(section));
+                            rows
+                        }),
+                    mandated: rule_column(payload.mandated()),
+                    forbidden: rule_column(payload.forbidden()),
                 })
             }
         }
@@ -248,10 +278,11 @@ impl IntentExecutionEventDto {
                     .iter()
                     .map(StageEntryDto::to_domain)
                     .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
-                // 計画そのものの不変条件はドメインが持つ (`StageEntry::check_plan`) —
-                // 判断を DTO に複製せず呼ぶだけにする。ここで止めないと、破れた計画が
-                // 集約の再構成まで届いてクラッシュする (再構成は失敗を返さない)。
-                StageEntry::check_plan(&stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
+                // 計画そのものの不変条件はドメインが持つ (`StageEntries::new` の構築検査) —
+                // 判断を DTO に複製せず、値を組む口を通すだけにする。ここで止めないと、
+                // 破れた計画が集約の再構成まで届いてクラッシュする (再構成は失敗を返さない)。
+                let stages =
+                    StageEntries::new(stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
                 IntentExecutionEvent::Started(Started::new(
                     event_id_of(&payload.id)?,
                     aggregate_id_of(&payload.aggregate_id)?,
@@ -265,7 +296,7 @@ impl IntentExecutionEventDto {
                     event_id_of(&payload.id)?,
                     aggregate_id_of(&payload.aggregate_id)?,
                     slug_of(&payload.stage, "stage")?,
-                    payload.artifacts.clone(),
+                    ArtifactPaths::new(payload.artifacts.clone()),
                 ))
             }
             IntentExecutionEventDto::GateApproved(payload) => {
@@ -370,13 +401,16 @@ impl IntentExecutionEventDto {
                     aggregate_id_of(&payload.aggregate_id)?,
                     slug_of(&payload.stage, "stage")?,
                     payload.affirming_user.clone(),
-                    payload
-                        .sections
-                        .iter()
-                        .map(PromotedSectionDto::to_domain)
-                        .collect(),
-                    payload.mandated.clone(),
-                    payload.forbidden.clone(),
+                    PromotedSections::new(
+                        payload
+                            .sections
+                            .iter()
+                            .map(PromotedSectionDto::to_domain)
+                            .collect(),
+                    )
+                    .map_err(|_| DtoDecodeError::InvariantViolation)?,
+                    RuleLines::new(payload.mandated.clone()),
+                    RuleLines::new(payload.forbidden.clone()),
                 ))
             }
         })

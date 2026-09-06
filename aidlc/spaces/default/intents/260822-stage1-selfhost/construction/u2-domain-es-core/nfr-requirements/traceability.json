@@ -17,7 +17,7 @@
     {
       "id": "NFR2",
       "status": "OK",
-      "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4"
+      "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5"
     },
     {
       "id": "NFR3",
@@ -32,7 +32,7 @@
     {
       "id": "NFR5",
       "status": "N/A",
-      "target": "性能は非目標（requirements.md NFR5、確認事項 P6）— U2 の replay は線形で計測しない"
+      "target": "性能は非目標（requirements.md NFR5、確認事項 P6 / 2026-09-07 再走でも維持）— U2 の差分再生は線形で計測しない"
     }
   ]
 }

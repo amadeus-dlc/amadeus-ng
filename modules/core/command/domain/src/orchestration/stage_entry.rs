@@ -1,8 +1,5 @@
 //! `StageEntry` — `Started` に載る解決済みの 1 ステージ分の計画 (entities.md StageEntry)。
 
-use std::collections::BTreeSet;
-
-use super::plan_error::PlanError;
 use super::stage_display::StageDisplay;
 use crate::workflow_definition::{PhaseId, PlanAction, StageSlug};
 
@@ -81,54 +78,6 @@ impl StageEntry {
     pub fn is_gated(&self) -> bool {
         self.phase != PhaseId::Initialization
     }
-
-    /// 文書順の計画そのものが満たすべき不変条件 (計画を所有する型の関連関数)。
-    ///
-    /// 同じ計画は intent の鋳造 ([`Intent::create`]) でも、実行の誕生記録 (`Started`) の
-    /// 復号でも同じ形を要求される。判断の正本をここ 1 か所に置き、呼び手 (集約・DTO) は
-    /// 複製しない (`coding-rules/domain-services.md` — 導出・判断はまず所有する型の関連
-    /// メソッドへ)。復号の境界で呼ぶのは、破れた計画をそのまま通すと集約の再構成
-    /// (`IntentExecution` の `From<(Started, _)>`) まで届いてクラッシュするからである
-    /// (再構成は失敗を返さない — オーナー裁定 2026-08-30)。
-    ///
-    /// # Errors
-    ///
-    /// 計画が空、先頭ステージが EXECUTE でない、initialization フェーズのステージが
-    /// EXECUTE でないか CONDITIONAL、同じ slug が 2 回以上現れる。
-    ///
-    /// [`Intent::create`]: crate::orchestration::Intent::create
-    pub fn check_plan(stages: &[StageEntry]) -> Result<(), PlanError> {
-        match stages.first() {
-            None => return Err(PlanError::Empty),
-            Some(first) if first.plan_action != PlanAction::Execute => {
-                return Err(PlanError::InitializationMustExecute);
-            }
-            Some(_) => {}
-        }
-        for entry in stages {
-            if entry.phase != PhaseId::Initialization {
-                continue;
-            }
-            if entry.plan_action != PlanAction::Execute {
-                return Err(PlanError::InitializationMustExecute);
-            }
-            if entry.conditional {
-                return Err(PlanError::InitializationMustBeUnconditional);
-            }
-        }
-        // slug はイベントのステージ参照の解決先 — 重複すると解決が常に前方だけを返し、
-        // 静かに誤った集約になる (BR1.5。集約側の同じ検査は `IntentExecution::new` が
-        // 添字帳 `StageKey` に対して持つ)。
-        let mut seen = BTreeSet::new();
-        for entry in stages {
-            if !seen.insert(entry.slug.as_str()) {
-                return Err(PlanError::DuplicateSlug {
-                    slug: entry.slug.as_str().to_string(),
-                });
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -191,132 +140,6 @@ mod tests {
     #[test]
     fn an_unconditional_entry_reports_it() {
         assert!(!entry(PhaseId::Inception, PlanAction::Skip, false).is_conditional());
-    }
-
-    /// 名前の違う 1 ステージ (計画の検査は slug の一意性も見る)。
-    fn entry_of(name: &str, phase: PhaseId, action: PlanAction, conditional: bool) -> StageEntry {
-        StageEntry::new(
-            StageSlug::parse(name).unwrap(),
-            phase,
-            action,
-            conditional,
-            display(),
-        )
-    }
-
-    #[test]
-    fn a_sound_plan_passes_the_check() {
-        let plan = vec![
-            entry_of(
-                "state-init",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-            ),
-            entry_of(
-                "intent-capture",
-                PhaseId::Ideation,
-                PlanAction::Execute,
-                false,
-            ),
-            entry_of(
-                "scope-definition",
-                PhaseId::Ideation,
-                PlanAction::Skip,
-                true,
-            ),
-        ];
-        assert_eq!(StageEntry::check_plan(&plan), Ok(()));
-    }
-
-    #[test]
-    fn an_empty_plan_is_refused() {
-        assert_eq!(StageEntry::check_plan(&[]), Err(PlanError::Empty));
-    }
-
-    #[test]
-    fn a_plan_whose_head_is_not_execute_is_refused() {
-        let plan = vec![entry_of(
-            "intent-capture",
-            PhaseId::Ideation,
-            PlanAction::Skip,
-            false,
-        )];
-        assert_eq!(
-            StageEntry::check_plan(&plan),
-            Err(PlanError::InitializationMustExecute)
-        );
-    }
-
-    #[test]
-    fn a_plan_that_skips_an_initialization_stage_is_refused() {
-        // 状態ファイルを起こす工程そのものなので SKIP にできない (BR2.2)。
-        let plan = vec![
-            entry_of(
-                "state-init",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-            ),
-            entry_of(
-                "workspace-detection",
-                PhaseId::Initialization,
-                PlanAction::Skip,
-                false,
-            ),
-        ];
-        assert_eq!(
-            StageEntry::check_plan(&plan),
-            Err(PlanError::InitializationMustExecute)
-        );
-    }
-
-    #[test]
-    fn a_plan_whose_initialization_stage_is_conditional_is_refused() {
-        let plan = vec![
-            entry_of(
-                "state-init",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-            ),
-            entry_of(
-                "workspace-detection",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                true,
-            ),
-        ];
-        assert_eq!(
-            StageEntry::check_plan(&plan),
-            Err(PlanError::InitializationMustBeUnconditional)
-        );
-    }
-
-    #[test]
-    fn a_plan_that_names_the_same_stage_twice_is_refused() {
-        // slug はステージ参照の解決先 — 重複すると解決が常に前方だけを返す (BR1.5)。
-        let plan = vec![
-            entry_of(
-                "state-init",
-                PhaseId::Initialization,
-                PlanAction::Execute,
-                false,
-            ),
-            entry_of(
-                "intent-capture",
-                PhaseId::Ideation,
-                PlanAction::Execute,
-                false,
-            ),
-            entry_of("intent-capture", PhaseId::Ideation, PlanAction::Skip, false),
-        ];
-        assert_eq!(
-            StageEntry::check_plan(&plan),
-            Err(PlanError::DuplicateSlug {
-                slug: "intent-capture".to_string(),
-            })
-        );
     }
 
     #[test]

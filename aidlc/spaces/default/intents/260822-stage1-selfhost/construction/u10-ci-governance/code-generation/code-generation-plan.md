@@ -1,138 +1,102 @@
-# code-generation-plan — U10 CI ガバナンス（`u10-ci-governance`）
+# code-generation-plan — U10 CI・品質管理の実装記録の是正
 
-> **上書き記録あり（2026-08-22 UTC）**: 承認後に確定した裁定・実態（`TOLERANCE` 暫定 0.05、除外 regex `(^|/)…`、ruleset 適用済み、toolchain 入力の導出）は
-> `superseding-decisions.md` が本計画の当該箇所を上書きする。本文は承認時の内容を保つ。
+> Unit: u10-ci-governance（kind: packaging）。2026-09-06の再確認計画。
+> 出典: `../nfr-requirements/security-requirements.md`・`tech-stack-decisions.md`（2026-09-06改訂、READY）、
+> `../nfr-design/security-design.md`（2026-09-06改訂、READY）、`../revision-baseline-20260906.md`、
+> `../ruleset-observed-20260906.json`、`../../../inception/requirements-analysis/requirements.md`（FR9.1〜9.5、NFR2、NFR4）、
+> `../../../inception/units-generation/unit-of-work.md`（U10の責務・境界・合格）、`code-generation-questions.md`。
+> 2026-08-22に承認した旧計画は `code-generation-plan-history-2026-08-22.md` に全文保存した。`superseding-decisions.md` が
+> 「本計画」と呼ぶのはその履歴ファイルである。
 
-> Code Generation（Construction 3.5）の計画（Unit: U10、kind: packaging、Bolt: B2、規模 M）。出典:
-> `../nfr-requirements/security-requirements.md`（NFR2.1〜2.5 / NFR4.1〜4.5）、`../nfr-requirements/tech-stack-decisions.md`、
-> `../nfr-design/security-design.md`（CI 4 ジョブ・ruleset 手順・ワークスペース設定・障害ドメイン、レビュー Minor 2 件）、
-> `../../../inception/requirements-analysis/requirements.md`（FR9.1〜9.5、NFR2 / NFR4）、`../../../inception/units-generation/
-> unit-of-work.md`（U10 の責務・境界・合格）、`../../../inception/contract-design/contract-summary.md`（U10 は契約面を
-> 持たない）、`../../../inception/delivery-planning/bolt-plan.md`（B2 = U10、2026-08-23 改訂）、`aidlc/spaces/default/knowledge/
-> aidlc-shared/coding-rules/`、`code-generation-questions.md`（Q1、Plan Approval）。
->
-> 実装はワークスペースルート（`.github/workflows/ci.yml`、`Cargo.toml`、`tools/lint/Cargo.toml`、`rust-toolchain.toml`、
-> `scripts/coverage.sh`、`scripts/governance/`）に書く。記録ディレクトリにはコードを置かない。**プロダクトコードは触らない**
-> （`unsafe_code` 昇格で赤になるクレートがあれば U7 — 現状 unsafe 使用ゼロ）。
+## 1. 目的と変更範囲
 
-## 1. 前提と範囲
+CI・品質管理の実装（`.github/workflows/ci.yml`、`.github/workflows/review-thread-resolution.yml`、`scripts/coverage.sh`、
+`rust-toolchain.toml`、`Cargo.toml`、`tools/lint/Cargo.toml`、`scripts/governance/`）はBolt B2（PR #25・#26）でmainへ
+反映済みであり、2026-09-06改訂の要件・設計と一致することを検証スクリプトで確認済み（`verify-ci-governance.sh --with-ruleset` 20項目成功）。
+一方、実装記録（`code-summary.md`・`traceability.json`）は2026-08-23の回復レビュー（NOT-READY: Critical 1・Major 2）以降凍結され、
+review-threadゲート・必須チェック4件化・許容差0.01への引き締めが反映されておらず、traceabilityのtargetに説明文が混在している。
 
-- **作るもの**: FR9.2（toolchain 固定・`unsafe_code` forbid 昇格・`permissions`・`cargo audit`）→ FR9.3（`tools/lint` の CI 3 ステップ）
-  → FR9.4（PBT シード固定・`TOLERANCE` 0.01）→ FR9.5（カバレッジ除外）→ FR9.1（ruleset に required checks + `merge_group`
-  トリガ）の順（story map の U10 実装順）。加えて検証スクリプト `scripts/governance/verify-ci-governance.sh`（packaging の
-  「テスト」— 設定の事実を機械検査する）。
-- **作らないもの**: FR9.6（エラーハンドリング規則の正本化 — U9）、Dependabot / SHA ピン留め（後続 intent）、`audit` の required 化
-  （運用後に再判断）、macOS CI / push トリガ（後続 intent）。
-- **ブランチ（Q1）**: PR は直列運用（team.md）。B2 のブランチ `bolt/b2-u10-ci-governance` は **PR #24（B1）が `main` に
-  squash-merge された後に `main` から切る**（Q1 = A）。#24 マージ前は計画承認まで進め、実装の委任はマージ後に行う。
-- **GitHub 設定の実行**: ruleset 変更はオーナー権限が要る。開発エージェントは手順スクリプトを書き `--dry-run` と `jq` 検証まで行い、
-  **実行はオーナー**（または `gh auth` がオーナー権限ならコンダクタが実行を提案して承認後に実行）。実行結果（前後 JSON）は
-  `<record>/construction/u10-ci-governance/code-generation/ruleset/` に保存する。
-- **受入**（unit-of-work U10）: CI 3 ジョブ緑、`cargo audit` clean、`gh api` で required checks が確認できる。正常系: 緑 PR が
-  merge queue を通って squash-merge 完走（本 Bolt の PR 自身で確認）。
+今回はワークスペースのファイルを変更しない。行うのは次の3点である。
 
-## 2. 変更の一覧（設計の写し — 実装の契約）
+1. 現行設定を改訂済み要件・設計へ照合し、Unit限定コマンドと受入の実測（カバレッジ2回測定・依存監査・unsafe不適合例の拒否）を実行して記録する。
+2. `code-summary.md` を現行の事実で書き直し、旧版を履歴として保存する。
+3. `traceability.json` の全15件を現行の実在ファイルへ対応付け、targetをパス単体にする。`source-manifest.json` を作る。
 
-| 対象 | 変更 | 要求 |
+変更しないもの: CI定義・スクリプト・品質閾値（絶対床90%、相対許容差0.01ポイント、シード20260823、除外は `main.rs` の1ファイル）・
+ruleset・依存・ツールチェーン・プロダクトコード。GitHubへの書込（ruleset変更、PR作成、コメント投稿）は行わない。
+FR9.6（エラー様式規則の正本化）はU9の責務であり扱わない。
+
+実装と要件・設計の不一致が新たに見つかった場合は、対象・再現手順・検査スクリプトへ追加する検出項目（Red）を含む変更案を報告し、
+計画の変更を受けてから扱う。本計画を根拠に他Unitや凍結済みの要件・設計成果物まで変更しない。上流要件のR-01（Markdown表2行の
+表示崩れ、Minor）は上流の所見として残し、本計画で解消扱いにしない。
+
+## 2. 所有するファイルと保持する成果
+
+| 区分 | 対象 | 扱い |
 |---|---|---|
-| `rust-toolchain.toml`（新規） | `[toolchain] channel = "1.95.0"`、`components = ["rustfmt", "clippy", "llvm-tools"]`、`profile = "minimal"` | NFR4.2 |
-| `Cargo.toml` | `[workspace.lints.rust]` に `unsafe_code = "forbid"` | NFR4.3 |
-| `tools/lint/Cargo.toml` | `[lints.rust]` に `unsafe_code = "forbid"` | NFR4.3 |
-| `.github/workflows/ci.yml` | `on:` に `merge_group: {}`; 直下に `permissions: contents: read`; toolchain を `dtolnay/rust-toolchain@master`（`components:` 撤去、`rust-toolchain.toml` 駆動）; `check` に `tools/lint` の fmt / clippy / test 3 ステップ; `coverage` は `pull_request` 時のみ `--base`、それ以外は絶対; 新規 `audit` ジョブ（`taiki-e/install-action@v2` `tool: cargo-audit` → `cargo audit` → `cargo audit --file tools/lint/Cargo.lock`） | NFR2.2 / 2.3 / 4.1 / 4.2 / 4.4 |
-| `scripts/coverage.sh` | `cargo llvm-cov` に `--ignore-filename-regex '^modules/app/aidlc/src/main\.rs$'`（相対パス基準 — tech-stack-decisions の表記を正本とする、nfr-design レビュー Minor 1）; `TOLERANCE=0.01`; `PROPTEST_RNG_SEED`（固定値、例 `20260823`）を計測時に export; コメントの較正根拠を更新 | NFR2.4 / 2.5 |
-| `.github/workflows/ci.yml`（`check` / `coverage`） | `env: PROPTEST_RNG_SEED: "20260823"` を `cargo test` / coverage 実行に適用（ローカルと CI で同じシード） | NFR2.4 |
-| `scripts/governance/ruleset-required-checks.sh`（新規） | `gh api` で ruleset「main」の前 JSON 取得 → `required_status_checks`（check / quint / coverage、strict）が**期待どおりのコンテキスト集合で**無ければ追加 / 補正した JSON を `PUT`（既存規則・`bypass_actors` 維持）→ 後 JSON 取得 → `jq` 検証。`--dry-run`（PUT しない）と `--out-dir <dir>`（前後 JSON の保存先）。冪等判定はコンテキスト集合の一致（nfr-design レビュー Minor 2） | NFR2.1 / 4.5 |
-| `scripts/governance/verify-ci-governance.sh`（新規） | packaging の「テスト」: (1) `rust-toolchain.toml` の channel / components、(2) `Cargo.toml` と `tools/lint/Cargo.toml` の `unsafe_code = "forbid"`、(3) `ci.yml` の `merge_group` / `permissions` / `audit` ジョブ / `tools/lint` 3 ステップ / `@master` toolchain、(4) `scripts/coverage.sh` の `TOLERANCE=0.01` / 除外 regex / `PROPTEST_RNG_SEED`、(5) `--with-ruleset` 指定時のみ `gh api` で required checks の存在（ネットワーク要）を検査し、失敗項目を列挙して非 0 終了 | 全要求の機械検査 |
+| ワークスペース設定（読取のみ） | `.github/workflows/ci.yml`、`.github/workflows/review-thread-resolution.yml`、`scripts/coverage.sh`、`rust-toolchain.toml`、`Cargo.toml`、`tools/lint/Cargo.toml`、`scripts/governance/{verify-ci-governance,ruleset-required-checks,toolchain-inputs}.sh` | 検証と照合のみ。差分を残さない（unsafe不適合例の確認で一時変更する場合も終了時に必ず戻す） |
+| Unit記録（更新） | `code-summary.md`、`traceability.json`、`source-manifest.json` | 現行の事実で書く。旧 `code-summary.md` は `code-summary-history-2026-08-23.md` に全文保存済み |
+| 計画と試験手順 | 本ファイル、`unit-test-instructions.md` | この計画承認の対象。完了チェック以外の変更が必要なら承認を更新。旧版は `*-history-2026-08-22.md` |
+| 履歴（変更しない） | `superseding-decisions.md`、`pending-revision.md`、`developer-brief-3.md`、`developer-report-3.md`、`ruleset/` 配下 | 過去の裁定・ブリーフ・前後JSONの記録としてそのまま保持 |
 
-## 3. テスト戦略（Testing Contract: tdd / standard の packaging への適用）
+過去のTDD証跡（2026-08-22のRed 1/14 → Green 15/0）、暫定許容差0.05、残差0.0175ポイントは歴史であり、今回の実施や現在の設定として
+記載しない。今回変更しない既存ファイルはcode-summaryの照合欄で示し、変更済みと偽らない。source-manifestには実際に作成・変更・削除した
+アプリケーション側パスだけを列挙する（今回の予定は空）。
 
-packaging Unit にはプロダクトコードの「層」が無い。Testing Contract の `plan_profile` を次のように写す（方法論は変えない）:
+## 3. 実行ステップ
 
-- **ランナー**: bash（`scripts/governance/verify-ci-governance.sh`）+ `cargo test --manifest-path tools/lint/Cargo.toml`（既存 31 本）+
-  `bash -n` 構文検査。最初の Red の前にランナーが走ることを確認（brownfield: `bash -n scripts/coverage.sh` は現時点で exit 0）。
-- **Red**: `verify-ci-governance.sh` を先に書き、現在のツリーに対して実行して**失敗項目一覧**（toolchain ファイル無し・
-  `unsafe_code` 未昇格・`merge_group` 無し・`permissions` 無し・`audit` 無し・`tools/lint` ステップ無し・`TOLERANCE=0.5`・除外無し・
-  `PROPTEST_RNG_SEED` 無し）を記録する。
-- **Green**: 変更を順に入れ、失敗項目が 1 つずつ消えることを記録。全項目 PASS で Green。
-- **Refactor**: スクリプトの重複整理、メッセージの日本語化、`shellcheck`（導入済みなら）。
-- **受入（Bolt の外側のゲート）**: CI 3 ジョブ + `audit` の実行結果、`scripts/coverage.sh` 2 回実行で差 0.00pp（NFR2.4）、
-  ruleset 変更後の正常系 PR 完走。
-- Standard 戦略の「コンポーネントごと 5〜8 本」は、`verify-ci-governance.sh` の検査項目（対象ファイルごとに 2〜5 項目、
-  合計 15 項目以上）と `tools/lint` 既存テスト 31 本で満たす。
+- [x] Step 1. ランナーと設定を確認する。`unit-test-instructions.md` のUnit限定コマンド（`bash -n` の個別実行、`verify-ci-governance.sh` の
+      既定と `--with-ruleset`、`toolchain-inputs.sh`、`tools/lint` の自己テスト）を実行し、件数・結果・完了日時を記録する。
+      `rustc -V` と `cargo llvm-cov --version`、`cargo audit --version` の有無も記録する。
+- [x] Step 2. 現行設定を要件FR9.1〜9.5・NFR2.1〜2.5・NFR4.1〜4.5と設計§2〜§5へ対応付ける。7ジョブとイベント別の集約条件、
+      review-thread-resolutionのジョブ別権限とSHA固定（呼出先・ci_refの一致）、必須4コンテキスト・strict・bypassなし・キュー設定
+      （`ruleset-observed-20260906.json`）、閾値・シード・除外式、toolchainの導出、`unsafe_code = "forbid"` の継承（全workspaceメンバーの
+      `lints.workspace = true` と `tools/lint` の個別宣言）を確認する。
+- [x] Step 3. 受入を実測する。(a) `bash scripts/coverage.sh` を同一リビジョン・同一ツールチェーン・同一シードで2回実行し、生のhead値と
+      差を記録する（差0.00ポイント未達なら未達のまま原因を記録し、閾値を変えない）。(b) `cargo audit` と
+      `cargo audit --file tools/lint/Cargo.lock` を実行し、結果・走査crate数・advisory DBの取得可否を記録する（未導入なら未実行として記録し
+      成功と書かない）。(c) workspaceメンバー1クレートと `tools/lint` に `unsafe` を含む一時変更を加えて `cargo check` が拒否することを
+      確認し、直後に変更を戻して `git status` で差分がないことを確認する。
+- [x] Step 4. `code-summary.md` を現行の事実で書き直す。実装済みファイル一覧（review-thread-resolution.ymlを含む）、7ジョブとCI Successの
+      集約条件、4コンテキスト、ジョブ別権限、SHA固定、閾値0.01、検査20項目、今回の実測、未検証範囲（全CI実行・キューの成功/失敗両経路の
+      実働・外部再利用ワークフロー内部）を区別して記す。過去の裁定（暫定0.05、除外regexの訂正、ruleset適用、PR #25/#26）は履歴として
+      `superseding-decisions.md` と履歴ファイルを参照する。
+- [x] Step 5. `traceability.json` を更新する。15件のIDを現行の実在ファイルへ対応付け、targetはワークスペース相対パス単体にし、日時・参照JSON
+      等の注記はcode-summary側へ移す。`bun .claude/tools/aidlc-sensor-traceability.ts` で `invalid_targets` が0であることを確認する
+      （`missing_from_upstream_ids` は他Unitの要求IDで、既知のノイズ）。`source-manifest.json` を strict schema で作る（`writes` は空配列）。
+- [x] Step 6. `git status` でワークスペース側に差分がないこと、記録側の変更が本ディレクトリに限られることを確認し、独立レビューへ引き渡す。
+      親セッションがレビュー・Unit完了・次工程・commit・pushを処理する。
 
-## 4. 実装ステップ（番号順）
+## 4. Testing Contractの適用
 
-### 4.0 コンダクタ（承認後・委任前）
+本Unitはpackagingで、プロダクトコードの層を持たない。今回は設定の再検証と記録の是正であり、新規プロダクションコード・新規テストはない。
+DB・Repository・業務判断・HTTP API・フロントエンドの実装用ステップは架空に実行しない。
 
-- [ ] Step 0. PR #24 のマージを確認 → `git switch main && git pull` → `bun .claude/tools/aidlc-bolt.ts start --name B2 --batch 1` →
-      `git switch -c bolt/b2-u10-ci-governance`。
+埋め込み契約のTDD方針は維持する。2026-08-22の実装では「設定の事実を機械検査する `verify-ci-governance.sh` を先に書き、現状でRed →
+設定変更でGreen」と写した（履歴ファイル§3）。今後、設定の振る舞いを変更する場合は同スクリプトへ検出項目を先に追加して失敗出力を
+記録してから設定を変え、成功中に整理する。既存成功ログから過去のRedを推定しない。
 
-### 4.1 骨格とランナー（開発エージェント）
+Standard戦略の「コンポーネントごと5〜8本」は、検査スクリプトの20項目（対象ファイルごとに2〜7項目）と `tools/lint` の既存自己テスト
+（件数は実行時の結果を記録し31本に固定しない）で満たしている。既存スイートは緑のまま維持する。必須CI、カバレッジ90%床、相対差0.01ポイント、
+固定シード20260823を維持する。Unit限定コマンドの成功を全CI・キュー完走・外部ワークフロー内部の検証の成功に読み替えない。
 
-- [ ] Step 1. `scripts/governance/` を作り、`verify-ci-governance.sh` の骨格（検査関数の枠、`--with-ruleset` オプション、
-      結果一覧と終了コード）を書く。`bash -n` で構文確認。`cargo test --manifest-path tools/lint/Cargo.toml` が走ることを確認
-      （既存 31 本緑）。
-- [ ] Step 2. **Red**: `verify-ci-governance.sh` の検査項目（§2 の (1)〜(4)）を実装し、現在のツリーで実行 → 失敗項目一覧を記録
-      （期待: toolchain / unsafe / merge_group / permissions / audit / tools-lint-steps / tolerance / ignore-regex / proptest-seed
-      の 9 項目が FAIL）。
+## 5. 要求からステップへの対応
 
-### 4.2 FR9.2 サプライチェーン（Green 1）
-
-- [ ] Step 3. `rust-toolchain.toml` 新規、`Cargo.toml` と `tools/lint/Cargo.toml` に `unsafe_code = "forbid"`、`ci.yml` に
-      `permissions: contents: read` と toolchain の `@master` 化、`audit` ジョブ追加。`cargo build --workspace` と
-      `cargo clippy --workspace --all-targets -- -D warnings` が緑（`tools/lint` も `--manifest-path` で確認）。検査を再実行し
-      該当 5 項目が PASS に変わることを記録。
-
-### 4.3 FR9.3 tools/lint の CI（Green 2）
-
-- [ ] Step 4. `check` ジョブに `tools/lint` の fmt / clippy / test 3 ステップを追加。ローカルで同じ 3 コマンドを実行して緑。
-      検査 1 項目 PASS。
-
-### 4.4 FR9.4 / FR9.5 カバレッジ（Green 3）
-
-- [ ] Step 5. `scripts/coverage.sh`: `PROPTEST_RNG_SEED` の export、`--ignore-filename-regex`、`TOLERANCE=0.01`、コメント更新。
-      `ci.yml` の `check` / `coverage` に `PROPTEST_RNG_SEED` env。ローカルで `bash scripts/coverage.sh` を 2 回実行し `head`
-      値が一致（差 0.00pp）することを記録（NFR2.4 の受入）。検査 3 項目 PASS。
-
-### 4.5 FR9.1 ruleset と merge queue（Green 4）
-
-- [ ] Step 6. `ci.yml` に `merge_group: {}` と coverage の条件分岐（`pull_request` のみ `--base`）。検査 1 項目 PASS。
-- [ ] Step 7. `scripts/governance/ruleset-required-checks.sh` を書く（`--dry-run` / `--out-dir`、コンテキスト集合で冪等判定、
-      前後 JSON 保存、`jq` 検証）。`--dry-run` で組み立て JSON を確認（PUT はしない）。`verify-ci-governance.sh --with-ruleset` は
-      この時点では FAIL のまま（実行前）— 記録。
-- [ ] Step 8. **Refactor**: スクリプト整理、`bash -n`、`shellcheck`（あれば）。全検査（ruleset 以外）PASS を再確認。
-
-### 4.6 品質ゲートとコミット
-
-- [ ] Step 9. `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo lint` → `cargo test --workspace`
-      → `tools/lint` 3 コマンド → `bash scripts/coverage.sh`（絶対ゲート）。意味単位でコミット（`chore(ci): …` / `chore(toolchain): …` /
-      `chore(coverage): …` / `chore(governance): …`）。push / PR はしない。
-
-### 4.7 コンダクタ / オーナー（委任後）
-
-- [ ] Step 10. ruleset 変更の実行: `scripts/governance/ruleset-required-checks.sh --out-dir <record>/construction/u10-ci-governance/
-      code-generation/ruleset/` をオーナー権限で実行（コンダクタが `gh auth status` でオーナー権限を確認できれば承認後に実行）。
-      `verify-ci-governance.sh --with-ruleset` PASS を記録。
-- [ ] Step 11. Bolt ゲート → PR 作成（`bolt/b2-u10-ci-governance` → `main`）→ PR の CI で `merge_group` を含む 4 ジョブの実行を確認 →
-      オーナーが merge queue でマージ（正常系の受入）。
-
-## 5. トレーサビリティ（要求 → ステップ）
-
-| 要求 | ステップ | 主な成果物 |
+| 要求 | Step | 確認対象 |
 |---|---|---|
-| FR9.1 / NFR2.1 / NFR4.5 | 6, 7, 10, 11 | `scripts/governance/ruleset-required-checks.sh`、`ci.yml`（merge_group）、ruleset 前後 JSON |
-| FR9.2 / NFR4.1 / NFR4.2 / NFR4.3 / NFR4.4 | 3 | `rust-toolchain.toml`、`Cargo.toml`、`tools/lint/Cargo.toml`、`ci.yml`（permissions / audit / toolchain） |
-| FR9.3 / NFR2.3 | 4 | `ci.yml`（check ジョブ） |
-| FR9.4 / NFR2.4 | 5 | `scripts/coverage.sh`（TOLERANCE / PROPTEST_RNG_SEED）、`ci.yml`（env） |
-| FR9.5 / NFR2.5 | 5 | `scripts/coverage.sh`（ignore regex） |
-| NFR2.2 | 6 | `ci.yml`（merge_group + coverage 分岐） |
-| 全要求の機械検査 | 1, 2, 8 | `scripts/governance/verify-ci-governance.sh` |
+| FR9.1、NFR2.1、NFR4.5 | 1・2・4・5 | ruleset観測JSON（4コンテキスト・strict・bypassなし・SQUASH/ALLGREEN/同時1件）、`ruleset-required-checks.sh` の比較・保存・送信項目、前後JSONの記録 |
+| FR9.2、NFR4.1・NFR4.2・NFR4.3 | 1〜5 | `rust-toolchain.toml` と `toolchain-inputs.sh` の導出、`rustc -V`、`cargo audit` ×2、`unsafe_code = "forbid"` の継承と不適合例の拒否、`permissions: contents: read` |
+| FR9.3、NFR2.3 | 1・2・4 | `check` ジョブのworkspace 4ステップと `tools/lint` 3ステップ、`tools/lint` 自己テストの件数 |
+| FR9.4、NFR2.4 | 1〜5 | `TOLERANCE=0.01`、`PROPTEST_RNG_SEED=20260823` の宣言（CIとローカル）、同一条件2回測定の生の値と差 |
+| FR9.5、NFR2.5 | 1〜4 | 除外式が `main.rs` 1ファイルのみ、絶対ゲート90%の結果 |
+| NFR2.2 | 2・4 | 7ジョブ、イベント別のCI Success集約条件（pull_requestではreview-thread success必須、merge_group/workflow_dispatchではskipped受理）、coverageの比較条件、`audit` の集約外 |
+| NFR4.4 | 2・4 | workflow既定 `contents: read`、review-thread-resolutionの個別権限5種、外部呼出先とci_refのSHA一致、トークン非出力 |
 
-## 6. 委任の形
+## 6. 作業の進め方
 
-- 1 回の委任（Step 1〜9）を aidlc-developer-agent へ。冒頭行 `AIDLC-UNIT: u10-ci-governance` と `AIDLC-TESTING-CONTRACT: <contract_sha256>`。
-  委任は PR #24 のマージ後（Q1 = A）。計画・質問票・本ファイルのバイト列は承認後に変更しない（指紋）。
-- ruleset の実行（Step 10）はオーナー権限の操作のため委任しない。
+計画承認後、開発担当が§2の範囲で実行する。ワークスペース設定は読取と一時的な不適合例の確認に限り、終了時に差分を残さない。
+他者の変更を戻さず、commit・push・GitHubへの書込・外部投稿は親セッションに任せる。旧Boltブランチの作成・ruleset適用・PR作成の手順は
+再実行しない。親セッションは全差分と検証結果を確認し、監査を含む作業ツリー全体を回収する。
 
 ## Testing Contract
 
@@ -206,3 +170,37 @@ packaging Unit にはプロダクトコードの「層」が無い。Testing Con
 }
 ```
 
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-06T14:56:14Z
+**Iteration:** 1
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Minor（提案） | `traceability.json` の `NFR4.3` 行 | `target` は `Cargo.toml` 単体である。NFR4.3 の受入基準（`../nfr-requirements/security-requirements.md` 行35）は「全workspaceメンバーのlints継承とtools/lintの個別宣言」の両方を要求しており、後者の正本は `tools/lint/Cargo.toml` である。`code-summary.md` §6・§8(c) では両ファイルと両経路の分離実測が記述されているため実害はないが、`traceability.json` 単体だけを読む場合は `tools/lint/Cargo.toml` 側の宣言箇所へたどれない。 | 現行のスキーマ制約（1 ID = 1 target）を踏まえ、必須ではないが、次回以降に schema が複数 target を許容するようになった場合は `tools/lint/Cargo.toml` も追加することを検討する。 | New |
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| `bun .claude/tools/aidlc-sensor-required-sections.ts`（`code-generation-plan.md`） | `pass:true`、H2 7件 | 文書形状は充足 |
+| `bun .claude/tools/aidlc-sensor-required-sections.ts`（`unit-test-instructions.md`） | `pass:true`、H2 5件 | 文書形状は充足 |
+| `bun .claude/tools/aidlc-sensor-required-sections.ts`（`code-summary.md`） | `pass:true`、H2 12件 | 文書形状は充足 |
+| `bun .claude/tools/aidlc-sensor-traceability.ts`（`traceability.json`） | `pass:false`（`invalid_targets`・`gaps`・`orphans`・`invalid_entries` はすべて0件。`missing_from_upstream_ids` 38件のみ） | `missing_from_upstream_ids` は依頼書が明記するとおり他Unitの要求ID（FR1〜FR8、NFR1・NFR3・NFR5等）と、本Unitの担当外である `FR9.6`（U9の責務）・上位ID（`FR9`・`NFR2`・`NFR4` 自体）であり、既知のノイズ。実質的な機械検証観点（target の実在性・重複・抜け漏れ）はすべて健全 |
+| `linter` / `type-check` センサー | 対象外 | 本ステージの生成物はMarkdown/JSONのみで、TS/JS生成コードが無いため非適用（依頼書の指示どおり） |
+| `bash scripts/governance/verify-ci-governance.sh`（引数なし、再実行） | `PASS 19 / FAIL 0` | `code-summary.md` §7の実測記載と一致。ライブ再検証で追認 |
+| `bash scripts/governance/verify-ci-governance.sh --with-ruleset`（再実行、`gh api` 読取のみ） | `PASS 20 / FAIL 0`。ruleset「main」(id=21190453) の必須チェックが `[CI Success\|check\|coverage\|quint]` + strict | `code-summary.md` §5・§7の記載と完全一致。GitHubへの書込は発生していない |
+| `bash scripts/governance/toolchain-inputs.sh`（再実行） | `channel=1.95.0` / `components=rustfmt,clippy,llvm-tools` | `rust-toolchain.toml`・`code-summary.md` §6・§7と一致 |
+| `rustc -V`（再実行） | `rustc 1.95.0 (59807616e 2026-04-14)` | `code-summary.md` §7の実行環境記載と一致 |
+| `cargo test --manifest-path tools/lint/Cargo.toml`（再実行） | `93 passed; 0 failed; 0 ignored` | `code-summary.md` §7・§11の「実測93本、旧31本に固定しない」という記載と完全一致 |
+| `cargo audit` / `cargo audit --file tools/lint/Cargo.lock`（再実行） | workspace: 125 crate dependencies、`tools/lint`: 5 crate dependencies、いずれも advisory DB 1239件読込 | `code-summary.md` §8(b)の件数と完全一致 |
+| `git status --short` によるワークスペース側差分の確認 | ワークスペースのアプリケーション側パスに変更なし（`aidlc/` 配下の記録ファイルのみ） | `source-manifest.json` の `writes: []` および計画・要約の「ワークスペースを変更していない」という記述と一致 |
+| ファイル存在確認 | `traceability.json` の6つの重複除去済み `target`（`scripts/governance/ruleset-required-checks.sh`、`rust-toolchain.toml`、`.github/workflows/ci.yml`、`scripts/coverage.sh`、`scripts/governance/toolchain-inputs.sh`、`Cargo.toml`）はすべて実在する | 「実在ファイル単体」の契約を満たす |
+
+### Summary
+
+`code-summary.md`・`traceability.json`・`unit-test-instructions.md`・`code-generation-plan.md` の記述を実ファイル（`.github/workflows/ci.yml`、`.github/workflows/review-thread-resolution.yml`、`scripts/coverage.sh`、`rust-toolchain.toml`、`Cargo.toml`、`tools/lint/Cargo.toml`、`scripts/governance/*.sh`）と照合し、さらに検証ツールと推奨コマンド（`verify-ci-governance.sh` 通常/`--with-ruleset`、`toolchain-inputs.sh`、`rustc -V`、`tools/lint` 自己テスト、`cargo audit` 2件）を実際に再実行してすべて記載どおりの結果を得た。2026-08-23の回復レビュー（NOT-READY: Critical 1・Major 2 — review-threadゲート未記載、traceabilityのtargetに注記混在、検査数値が古い）は、今回の`code-summary.md`が review-thread ゲート・4コンテキスト集約・ジョブ別権限を明記し、`traceability.json`の全15件のtargetがパス単体になり、検査数値が実測（19/20、自己テスト93本）に更新されていることで解消されている。過去の事実（暫定許容差0.05、旧31本、PR #25/#26の出来事）は履歴セクションに区別して記載されており、今回の実施と混同していない。上流要件のR-01（Markdown表の表示崩れ、Minor）は本ステージの成果物では表の外に式を出すことで同種の不具合を回避しており、上流の未解決所見として引き続き残るのみである。Critical・Majorに該当する所見はなく、Minorの提案が1件（traceability.jsonのスキーマ制約に起因する副次的な参照可能性の限界）のみで、いずれも承認判断を妨げない。

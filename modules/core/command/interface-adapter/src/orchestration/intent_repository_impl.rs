@@ -417,7 +417,7 @@ mod tests {
     }
 
     use core_command_domain::orchestration::{
-        Created, IntentEventId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+        Created, IntentEventId, StageDisplay, StageEntries, StageEntry, StartRequest, WorkspaceScan,
     };
     use core_command_domain::workflow_definition::{
         BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -448,7 +448,7 @@ mod tests {
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
             StartRequest::new("classic", "unit"),
-            vec![StageEntry::new(
+            StageEntries::new(vec![StageEntry::new(
                 StageSlug::parse("state-init").expect("slug"),
                 PhaseId::Initialization,
                 PlanAction::Execute,
@@ -459,7 +459,8 @@ mod tests {
                     "orchestrator",
                 )
                 .expect("単一行"),
-            )],
+            )])
+            .expect("フィクスチャの計画は不変条件を満たす"),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
                 "Unknown",

@@ -172,10 +172,11 @@ mod tests {
 
     use super::*;
     use crate::orchestration::{
-        AutonomyMode, ReviewVerdict, SkeletonStance, StageDisplay, StageEntry,
+        ArtifactPaths, AutonomyMode, ReviewVerdict, SkeletonStance, StageDisplay, StageEntries,
+        StageEntry, StageIndex, StageSlugSet,
     };
     use crate::workflow_definition::{PhaseId, PlanAction, StageNumber, StageSlug};
-    use crate::workspace::PromotedSection;
+    use crate::workspace::{PromotedSection, PromotedSections, RuleLines};
 
     use super::super::intent_id::IntentId;
 
@@ -198,7 +199,7 @@ mod tests {
             evid(),
             agg(),
             IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
-            vec![StageEntry::new(
+            StageEntries::new(vec![StageEntry::new(
                 slug("state-init"),
                 PhaseId::Initialization,
                 PlanAction::Execute,
@@ -209,7 +210,8 @@ mod tests {
                     "orchestrator",
                 )
                 .unwrap(),
-            )],
+            )])
+            .unwrap(),
         )
     }
 
@@ -221,7 +223,7 @@ mod tests {
                 evid(),
                 agg(),
                 slug("intent-capture"),
-                vec!["intent.md".to_string()],
+                ArtifactPaths::new(vec!["intent.md".to_string()]),
             )),
             IntentExecutionEvent::GateApproved(GateApproved::new(
                 evid(),
@@ -252,8 +254,8 @@ mod tests {
             IntentExecutionEvent::Recomposed(Recomposed::new(
                 evid(),
                 agg(),
-                vec![slug("market-research")],
-                Vec::new(),
+                StageSlugSet::new([slug("market-research")]),
+                StageSlugSet::empty(),
             )),
             IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
                 evid(),
@@ -291,9 +293,13 @@ mod tests {
                 agg(),
                 slug("practices-discovery"),
                 "owner",
-                vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
-                vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
-                vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
+                PromotedSections::new(vec![PromotedSection::new(
+                    "Way of Working",
+                    "trunk-based.\n",
+                )])
+                .unwrap(),
+                RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
+                RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()]),
             )),
         ]
     }
@@ -313,7 +319,10 @@ mod tests {
         );
         assert_eq!(started.stages().len(), 1);
         assert_eq!(
-            started.stages().first().map(StageEntry::slug),
+            started
+                .stages()
+                .at(StageIndex::new(0))
+                .map(StageEntry::slug),
             Some(&slug("state-init"))
         );
     }
@@ -324,10 +333,13 @@ mod tests {
             evid(),
             agg(),
             slug("intent-capture"),
-            vec!["intent.md".to_string()],
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
         );
         assert_eq!(opened.stage(), &slug("intent-capture"));
-        assert_eq!(opened.artifacts(), ["intent.md".to_string()]);
+        assert_eq!(
+            opened.artifacts(),
+            &ArtifactPaths::new(vec!["intent.md".to_string()])
+        );
 
         let approved = GateApproved::new(
             evid(),
@@ -368,8 +380,16 @@ mod tests {
         assert_eq!(unparked.id(), &evid());
         assert_eq!(unparked.aggregate_id(), &agg());
 
-        let recomposed = Recomposed::new(evid(), agg(), vec![slug("market-research")], Vec::new());
-        assert_eq!(recomposed.skipped(), [slug("market-research")]);
+        let recomposed = Recomposed::new(
+            evid(),
+            agg(),
+            StageSlugSet::new([slug("market-research")]),
+            StageSlugSet::empty(),
+        );
+        assert_eq!(
+            recomposed.skipped(),
+            &StageSlugSet::new([slug("market-research")])
+        );
         assert!(recomposed.added().is_empty());
 
         let mode = AutonomyModeSet::new(evid(), agg(), AutonomyMode::Autonomous);

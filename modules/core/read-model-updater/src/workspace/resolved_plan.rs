@@ -45,11 +45,10 @@ impl ResolvedPlan {
     #[must_use]
     pub fn of(intent: &Intent) -> ResolvedPlan {
         ResolvedPlan {
-            stages: intent
-                .stages()
-                .iter()
-                .map(PlannedStage::from_stage_entry)
-                .collect(),
+            stages: intent.stages().fold_left(Vec::new(), |mut stages, entry| {
+                stages.push(PlannedStage::from_stage_entry(entry));
+                stages
+            }),
             scan: intent.scan().clone(),
             scope: intent.scope().to_string(),
             request: intent.request().to_string(),
@@ -160,7 +159,7 @@ mod tests {
         IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001").expect("UUIDv7")
     }
     use core_command_domain::orchestration::{
-        Intent, IntentEventId, IntentId, StageEntry, StartRequest,
+        Intent, IntentEventId, IntentId, StageEntries, StageEntry, StartRequest,
     };
 
     use core_command_domain::workflow_definition::{
@@ -194,7 +193,7 @@ mod tests {
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
                 StartRequest::new("classic", "/aidlc Build a small ordering service"),
-                vec![
+                StageEntries::new(vec![
                     entry(
                         "state-init",
                         "0.3",
@@ -221,7 +220,8 @@ mod tests {
                         PhaseId::Inception,
                         PlanAction::Execute,
                     ),
-                ],
+                ])
+                .expect("フィクスチャの計画は不変条件を満たす"),
                 WorkspaceScan::new(
                     BrownfieldGreenfield::Greenfield,
                     "Unknown",

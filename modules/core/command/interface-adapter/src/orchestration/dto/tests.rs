@@ -8,20 +8,25 @@
     clippy::panic,
     reason = "想定外ケースの即時失敗はテストの検証手段である (house style)"
 )]
+#![allow(
+    clippy::indexing_slicing,
+    reason = "固定長のフィクスチャ配列を位置で読む (範囲外はテストの誤りであり即時失敗が正しい)"
+)]
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked,
-    PracticesAffirmed, Recomposed, ReviewAttempt, ReviewCompleted, ReviewRequested, ReviewVerdict,
-    SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntry,
-    StageRevised, StageSkipped, StartRequest, Started, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected,
+    Intent, IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, Jumped, Parked,
+    PracticesAffirmed, Recomposed, ReviewAttempt, ReviewClosures, ReviewCompleted, ReviewRequested,
+    ReviewVerdict, SingleStageRunCommitted, SkeletonStance, SkeletonStanceRecorded, StageDisplay,
+    StageEntries, StageEntry, StageKey, StageRevised, StageSkipped, StageSlot, StageSlots,
+    StageSlugSet, StartRequest, Started, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
     WorkflowDefinitionId,
 };
-use core_command_domain::workspace::PromotedSection;
+use core_command_domain::workspace::{PromotedSection, PromotedSections, RuleLines};
 
 use core_command_domain::orchestration::{
     IntentEvent, IntentEventId, IntentExecutionEventId, Unparked,
@@ -68,8 +73,8 @@ fn display(number: &str, name: &str) -> StageDisplay {
     .expect("単一行")
 }
 
-fn stages() -> Vec<StageEntry> {
-    vec![
+fn stages() -> StageEntries {
+    StageEntries::new(vec![
         StageEntry::new(
             slug("state-init"),
             PhaseId::Initialization,
@@ -91,7 +96,33 @@ fn stages() -> Vec<StageEntry> {
             false,
             display("1.4", "Scope Definition"),
         ),
-    ]
+    ])
+    .expect("フィクスチャの計画は不変条件を満たす")
+}
+
+/// 誕生した実行の添字帳を土台に、3 位置の記録を名指しの試行で組み直す (行の形だけを見る用)。
+fn synthetic_slots(source: &IntentExecution, attempts: &[ReviewAttempt; 3]) -> StageSlots {
+    let checkbox = [
+        core_command_domain::workspace::CheckboxState::Completed,
+        core_command_domain::workspace::CheckboxState::InProgress,
+        core_command_domain::workspace::CheckboxState::Pending,
+    ];
+    let slots = source
+        .slots()
+        .fold_left(Vec::new(), |mut slots: Vec<StageSlot>, slot| {
+            let index = slots.len();
+            slots.push(StageSlot::new(
+                StageKey::new(slot.key().slug().clone(), slot.key().phase()),
+                PlanAction::Execute,
+                checkbox[index],
+                false,
+                0,
+                attempts[index].clone(),
+                false,
+            ));
+            slots
+        });
+    StageSlots::new(slots).expect("フィクスチャの記録は不変条件を満たす")
 }
 
 fn intent() -> Intent {
@@ -141,7 +172,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 execution_event_id(),
                 IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
                 slug("intent-capture"),
-                vec!["a.md".to_string()],
+                ArtifactPaths::new(vec!["a.md".to_string()]),
             )),
             r#"{"GateOpened":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","artifacts":["a.md"]}}"#,
         ),
@@ -207,8 +238,8 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             IntentExecutionEvent::Recomposed(Recomposed::new(
                 execution_event_id(),
                 IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
-                vec![slug("scope-definition")],
-                vec![slug("intent-capture")],
+                StageSlugSet::new([slug("scope-definition")]),
+                StageSlugSet::new([slug("intent-capture")]),
             )),
             r#"{"Recomposed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","skipped":["scope-definition"],"added":["intent-capture"]}}"#,
         ),
@@ -264,9 +295,13 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
                 slug("practices-discovery"),
                 "owner",
-                vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
-                vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
-                vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
+                PromotedSections::new(vec![PromotedSection::new(
+                    "Way of Working",
+                    "trunk-based.\n",
+                )])
+                .expect("見出しは 1 つ"),
+                RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
+                RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()]),
             )),
             r#"{"PracticesAffirmed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"practices-discovery","affirming_user":"owner","sections":[{"heading":"Way of Working","body":"trunk-based.\n"}],"mandated":["ALWAYS review. (affirmed 2026-09-05)"],"forbidden":["NEVER force-push. (affirmed 2026-09-05)"]}}"#,
         ),
@@ -531,22 +566,19 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
     aggregate = IntentExecution::new(
         aggregate.id().clone(),
         aggregate.intent_id().clone(),
-        aggregate.stage_keys().to_vec(),
-        vec![PlanAction::Execute; 3],
-        vec![
-            core_command_domain::workspace::CheckboxState::Completed,
-            core_command_domain::workspace::CheckboxState::InProgress,
-            core_command_domain::workspace::CheckboxState::Pending,
-        ],
+        synthetic_slots(
+            &aggregate,
+            &[
+                ReviewAttempt::default(),
+                ReviewAttempt::default(),
+                ReviewAttempt::default(),
+            ],
+        ),
         1,
         core_command_domain::orchestration::Status::Running,
         None,
         AutonomyMode::Gated,
         Some(SkeletonStance::Off),
-        vec![ReviewAttempt::default(); 3],
-        vec![false; 3],
-        vec![false; 3],
-        vec![0; 3],
         None,
         1,
         at(),
@@ -583,35 +615,27 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
     );
     let attempt = ReviewAttempt::restored(
         2,
-        [1u32].into_iter().collect(),
-        vec![core_command_domain::orchestration::ReviewClosure::new(
-            2,
-            ReviewVerdict::NotReady,
-        )],
+        vec![1u32],
+        ReviewClosures::new(vec![
+            core_command_domain::orchestration::ReviewClosure::new(2, ReviewVerdict::NotReady),
+        ]),
     );
     let aggregate = IntentExecution::new(
         aggregate.id().clone(),
         aggregate.intent_id().clone(),
-        aggregate.stage_keys().to_vec(),
-        vec![PlanAction::Execute; 3],
-        vec![
-            core_command_domain::workspace::CheckboxState::Completed,
-            core_command_domain::workspace::CheckboxState::InProgress,
-            core_command_domain::workspace::CheckboxState::Pending,
-        ],
+        synthetic_slots(
+            &aggregate,
+            &[
+                ReviewAttempt::default(),
+                attempt.clone(),
+                ReviewAttempt::default(),
+            ],
+        ),
         1,
         core_command_domain::orchestration::Status::Running,
         None,
         AutonomyMode::Gated,
         None,
-        vec![
-            ReviewAttempt::default(),
-            attempt.clone(),
-            ReviewAttempt::default(),
-        ],
-        vec![false; 3],
-        vec![false; 3],
-        vec![0; 3],
         None,
         1,
         at(),
@@ -933,34 +957,31 @@ fn a_malformed_identifier_in_the_intent_journal_is_refused_with_its_field() {
 
 #[test]
 fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
-    // 計画そのものの不変条件はドメイン (`StageEntry::check_plan`) が持つ。DTO はそれを呼ぶ
+    // 計画そのものの不変条件はドメイン (`StageEntries::new` の構築検査) が持つ。DTO はそれを呼ぶ
     // だけで判断を複製しない。ここで止めないと、破れた計画が集約の再構成まで届いて
     // クラッシュする (再構成は失敗を返さない — オーナー裁定 2026-08-30)。
-    let init = StageEntry::new(
-        slug("state-init"),
-        PhaseId::Initialization,
-        PlanAction::Execute,
-        false,
-        display("0.1", "State Init"),
-    );
-    let skipped_head = StageEntry::new(
-        slug("intent-capture"),
-        PhaseId::Ideation,
-        PlanAction::Skip,
-        false,
-        display("1.1", "Intent Capture"),
-    );
-    for (label, plan) in [
-        ("空の計画", Vec::new()),
-        ("同じ slug が 2 回", vec![init.clone(), init]),
-        ("索引 0 が非 EXECUTE", vec![skipped_head]),
+    // 破れた計画は**ドメイン側で組めなくなった** (`StageEntries` の構築検査) ので、材料は
+    // 行の JSON から直に作る — 実際に起こりうるのは「ディスクの行が壊れている」場合であり、
+    // それがこの経路の入口である。
+    let row = |stages: &str| {
+        format!(
+            r#"{{"Started":{{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"{EXECUTION}","intent_id":"{INTENT}","stages":{stages}}}}}"#
+        )
+    };
+    let entry = |slug: &str, phase: &str, plan_action: &str, number: &str| {
+        format!(
+            r#"{{"slug":"{slug}","phase":"{phase}","plan_action":"{plan_action}","conditional":false,"display":{{"number":"{number}","name":"Stage","lead_agent":"orchestrator"}}}}"#
+        )
+    };
+    let init = entry("state-init", "Initialization", "Execute", "0.1");
+    let skipped_head = entry("intent-capture", "Ideation", "Skip", "1.1");
+    for (label, stages) in [
+        ("空の計画", "[]".to_string()),
+        ("同じ slug が 2 回", format!("[{init},{init}]")),
+        ("索引 0 が非 EXECUTE", format!("[{skipped_head}]")),
     ] {
-        let dto = IntentExecutionEventDto::of(&IntentExecutionEvent::Started(Started::new(
-            execution_event_id(),
-            IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
-            IntentId::parse(INTENT).expect("UUIDv7"),
-            plan,
-        )));
+        let dto: IntentExecutionEventDto =
+            serde_json::from_str(&row(&stages)).expect("形は DTO として読める");
         assert_eq!(
             dto.to_domain().expect_err("破れた計画は復号の境界で止める"),
             DtoDecodeError::InvariantViolation,
@@ -1004,7 +1025,7 @@ fn an_intent_snapshot_row_with_a_broken_spelling_is_refused_field_by_field() {
 
 #[test]
 fn an_intent_journal_row_whose_plan_breaks_its_invariants_is_refused() {
-    // 計画そのものの不変条件はドメイン (`StageEntry::check_plan`) が持つ。ジャーナル面の
+    // 計画そのものの不変条件はドメイン (`StageEntries::new` の構築検査) が持つ。ジャーナル面の
     // 復号がそれを呼ぶことで、破れた計画は集約の再構成まで届かない (b40 — `Started` 面と
     // 同じ規律を intent 面にも揃えた)。
     let row = format!(r#"{{"Created":{CREATED_BODY}}}"#);

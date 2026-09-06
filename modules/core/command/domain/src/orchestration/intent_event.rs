@@ -74,6 +74,7 @@ mod tests {
 
     use super::super::intent_id::IntentId;
     use super::super::stage_display::StageDisplay;
+    use super::super::stage_entries::StageEntries;
     use super::super::stage_entry::StageEntry;
     use super::super::start_request::StartRequest;
     use super::super::workspace_scan::WorkspaceScan;
@@ -97,7 +98,7 @@ mod tests {
             WorkflowDefinitionId::parse("claude").unwrap(),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).unwrap(),
             StartRequest::new("classic", "build the thing"),
-            stages,
+            StageEntries::new(stages).unwrap(),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
                 "Unknown",

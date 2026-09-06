@@ -49,19 +49,21 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected, Intent,
-    IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent, IntentExecutionEventId,
-    IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed, Recomposed, ReviewCompleted,
-    ReviewRequested, ReviewVerdict, SingleStageRunCommitted, SkeletonStance,
-    SkeletonStanceRecorded, StageDisplay, StageEntry, StageRevised, StageSkipped, StartRequest,
-    Unparked, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected,
+    Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed,
+    Recomposed, ReviewCompleted, ReviewRequested, ReviewVerdict, SingleStageRunCommitted,
+    SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntries, StageEntry, StageRevised,
+    StageSkipped, StageSlugSet, StartRequest, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
     ExecutionKind, PhaseId, PlanAction, ScopeGrid, StageGraph, StageMode, StageNodeBuilder,
     StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
-use core_command_domain::workspace::{CheckboxState, PromotedSection, SpaceName, StorePath};
+use core_command_domain::workspace::{
+    CheckboxState, PromotedSection, PromotedSections, RuleLines, SpaceName, StorePath,
+};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionAggregateKeyDto, IntentExecutionRepositoryImpl, IntentExecutionSqliteStore,
     IntentRepositoryImpl, SnapshotStrategy, WorkflowDefinitionRepositoryImpl,
@@ -238,29 +240,32 @@ impl Store {
 }
 
 /// 索引 0 = initialization (非ゲート)、以降 = inception (ゲート付き) の合成計画。
-fn stages() -> Vec<StageEntry> {
-    (0..STAGES)
-        .map(|index| {
-            let phase = if index == 0 {
-                PhaseId::Initialization
-            } else {
-                PhaseId::Inception
-            };
-            StageEntry::new(
-                StageSlug::parse(&format!("stage-{index}")).expect("合成 slug は文法内"),
-                phase,
-                PlanAction::Execute,
-                false,
-                StageDisplay::new(
-                    StageNumber::parse(&format!("{}.{}", phase.index(), index + 1))
-                        .expect("合成のステージ番号は文法内"),
-                    "Stage",
-                    "orchestrator",
+fn stages() -> StageEntries {
+    let entries: Vec<StageEntry> = {
+        (0..STAGES)
+            .map(|index| {
+                let phase = if index == 0 {
+                    PhaseId::Initialization
+                } else {
+                    PhaseId::Inception
+                };
+                StageEntry::new(
+                    StageSlug::parse(&format!("stage-{index}")).expect("合成 slug は文法内"),
+                    phase,
+                    PlanAction::Execute,
+                    false,
+                    StageDisplay::new(
+                        StageNumber::parse(&format!("{}.{}", phase.index(), index + 1))
+                            .expect("合成のステージ番号は文法内"),
+                        "Stage",
+                        "orchestrator",
+                    )
+                    .expect("単一行"),
                 )
-                .expect("単一行"),
-            )
-        })
-        .collect()
+            })
+            .collect()
+    };
+    StageEntries::new(entries).expect("フィクスチャの計画は不変条件を満たす")
 }
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
@@ -303,7 +308,11 @@ fn next_command(aggregate: &mut IntentExecution) -> IntentExecutionEvent {
     let cursor = aggregate.cursor();
     let checkbox = aggregate.checkbox(cursor).expect("カーソルは範囲内");
     let result = if checkbox == CheckboxState::InProgress {
-        aggregate.open_gate(&intent(), vec!["artifact.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["artifact.md".to_string()]),
+            at(),
+        )
     } else {
         aggregate.approve_gate(&intent(), None, None, at())
     };
@@ -562,7 +571,7 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
             held.definition_id().clone(),
             held.definition_revision().clone(),
             request_of(&held),
-            held.stages().to_vec(),
+            held.stages().clone(),
             held.scan().clone(),
         ));
         intent_repository
@@ -812,7 +821,7 @@ async fn the_intent_stream_written_by_the_command_side_keeps_every_optional_requ
             held.definition_id().clone(),
             held.definition_revision().clone(),
             request_of(&held),
-            held.stages().to_vec(),
+            held.stages().clone(),
             held.scan().clone(),
         ));
         repository
@@ -930,7 +939,7 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             ev(),
             agg(),
             slug("stage-1"),
-            vec!["artifact.md".to_string()],
+            ArtifactPaths::new(vec!["artifact.md".to_string()]),
         )),
         IntentExecutionEvent::GateApproved(GateApproved::new(
             ev(),
@@ -957,8 +966,8 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
         IntentExecutionEvent::Recomposed(Recomposed::new(
             ev(),
             agg(),
-            vec![slug("stage-1")],
-            Vec::new(),
+            StageSlugSet::new([slug("stage-1")]),
+            StageSlugSet::empty(),
         )),
         IntentExecutionEvent::AutonomyModeSet(AutonomyModeSet::new(
             ev(),
@@ -996,9 +1005,13 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             agg(),
             slug("practices-discovery"),
             "owner",
-            vec![PromotedSection::new("Way of Working", "trunk-based.\n")],
-            vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()],
-            vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()],
+            PromotedSections::new(vec![PromotedSection::new(
+                "Way of Working",
+                "trunk-based.\n",
+            )])
+            .expect("見出しは 1 つ"),
+            RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
+            RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()]),
         )),
     ]
 }

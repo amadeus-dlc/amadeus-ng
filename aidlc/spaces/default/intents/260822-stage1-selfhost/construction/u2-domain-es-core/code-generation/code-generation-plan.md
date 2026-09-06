@@ -1,208 +1,211 @@
-# code-generation-plan — U2 ドメイン ES コア（`u2-domain-es-core`）
+# code-generation-plan — U2 ドメイン ES コア（FCC 化と `next_decision` の ID 照合、Bolt b51）
 
-> Code Generation（Construction 3.5）の計画（Unit: U2、kind: library、Bolt: B3、規模 L）。出典:
-> `../functional-design/functional-spec.md`（§2 インターフェイス、W1〜W7、§4 状態遷移、§5 エラー）、`../functional-design/rules.md`
-> （BR1.0〜BR1.9 / BR2.1〜BR2.6 / BR3.1〜BR3.3 / BR4.1〜BR4.2 / BR5.1〜BR5.4）、`../functional-design/entities.md`（エンティティ正本）、
-> `../nfr-requirements/security-requirements.md`（NFR1.1〜NFR4.5）、`../nfr-requirements/tech-stack-decisions.md`、
-> `../nfr-design/security-design.md`、`../nfr-design/logical-components.md`（モジュール分割・テスト配置・B3 の範囲拡張）、
-> `../../../inception/contract-design/contract-summary.md`（C3 / C4（find_by_id）/ C5 / C6）、`../../../inception/domain-design/
-> decisions.md`（ADR-001〜008）、`../../../inception/units-generation/unit-of-work.md`（U2）、`../../../inception/requirements-analysis/
-> requirements.md`（FR1.3 / FR2.1 / FR3.1 / FR3.3 / FR8.3 / FR8.4、NFR1〜NFR4）、`../../../inception/delivery-planning/bolt-plan.md`（B3）、
-> `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/`（全規則）、`code-generation-questions.md`（Q1）。
+> Code Generation（Construction 3.5）の計画（Unit: U2 `u2-domain-es-core`、kind: library、規模 L）。**2026-09-07 再走（Modify）** —
+> 2026-08-23 に承認した旧計画（Bolt B3、`WorkflowExecution` の ES 化）は実装済みで、`code-generation-plan-history-2026-08-23.md` /
+> `unit-test-instructions-history-2026-08-23.md` / `code-summary-history-2026-08-23.md` / `traceability-history-2026-08-23.json` /
+> `code-generation-questions-history-2026-08-23.md` に全文保存した。本計画は 2026-09-05 是正・2026-09-07 再走後の機能設計と NFR 設計が
+> 現行コードに対して命じる差分（functional-spec §9 #1〜#4）を実装する。
 >
-> 実装はワークスペースルート（`modules/core/domain/`、`modules/core/use-case/`、`modules/core/interface-adapter/`、`tests/golden/`）に
-> 書く。記録ディレクトリにはコードを置かない。brownfield: 既存ファイルはその場で変更し、複製ファイルを作らない。**後方互換の
-> ための旧 API（`report_forward` / `gate_start` / `find()` 等）は残さない**（オーナー裁定 2026-08-23）。
+> 出典: `../functional-design/functional-spec.md`（§2 API、§9 引継ぎ、末尾レビュー R-01〜R-10）、`../functional-design/rules.md`
+> （BR1.1 / BR2.1〜BR2.6 / BR3.1 / BR5.1〜BR5.5）、`../functional-design/entities.md`（FCC 型の不変条件・操作）、
+> `../nfr-requirements/security-requirements.md`（NFR1.1〜NFR4.5、NFR2.5、末尾レビュー R-01〜R-08）、`../nfr-design/security-design.md`
+> （§2 検査点の二層、§6）、`../nfr-design/logical-components.md`（§1 置き場と追随表、§4 受入手順、末尾レビュー R-01〜R-07）、
+> `../../../inception/units-generation/unit-of-work.md`（U2）、`../../../inception/contract-design/contract-summary.md`（C3 / C5 / C6）、
+> `../../../inception/requirements-analysis/requirements.md`（FR8.3 / FR8.4、NFR1〜NFR4）、
+> `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/`（first-class-collections / module-visibility / field-visibility /
+> aggregate-commands / error-handling / tell-dont-ask / command-query-separation / cqrs-boundaries / no-backward-compatibility）、
+> `code-generation-questions.md`（P1〜P5、Q1〜Q2 の裁定）。
+>
+> 用語: **FCC** = ファーストクラスコレクション（配列を不変条件と操作を持つ専用型で包んだもの）。**DTO** = アダプタ層が保存・復元に
+> 使う写し。**RMU** = read-model-updater（イベントからリードモデルを投影するクレート）。**ITF 準拠テスト** = Quint モデルのトレースを
+> 集約に再生して突き合わせるテスト。
 
-## 1. 前提と範囲
+## 1. 目的と変更範囲
 
-- **作るもの**: (1) `core-domain` の `WorkflowExecution` をイベントソーシング形 FSM に全面改訂（decide / apply_event / snapshot /
-  from_snapshot / with_version、12 イベント、`StageIndex` / `StageEntry`、`NextRequest` / `NextDecision` / `EngineSignal`、エラー 4 型）。
-  (2) `PlanAction` の `workflow_definition` への完全移動（FR8.3）と `effective_plan_action` / `next_in_scope_stage` の削除（FR8.4）。
-  (3) `WorkflowDefinition` のエンティティ化 — `WorkflowDefinitionId` / `DefinitionRevision` の新設と `id()` / `revision()`（ADR-008）。
-  (4) C4 改訂の波及: `core-use-case` の `WorkflowDefinitionRepository::find_by_id(&WorkflowDefinitionId)`（`find()` 削除）と
-  `GraphReadError::{NotFound, HarnessIdentity}` の追加、`core-interface-adapter` の `WorkflowDefinitionRepositoryImpl`（id は
-  `<data_dir>/harness.json` の `name`、revision は 3 入力の正準 JSON の `sha256:`）と `InMemoryWorkflowDefinitionRepository`、
-  既存テスト（repository impl test / golden parity test）、ゴールデン dir への `harness.json`（upstream ピンの実バイト）。
-  (5) ITF 準拠テスト `engine_loop_conformance.rs` の新 API への書き換え。
-- **作らないもの**: Repository（`WorkflowExecutionRepository`、SQLite、EventStore — U3）、投影（U4）、ユースケース（U5 / U6）、
-  CLI（U7）、Quint モデルの改訂（不要 — BR2.5 の射影で 1:1）、仕様文書の改訂（12 号 §2.1 の識別子追記は U9）。
-- **ブランチ**: `origin/main`（#26 のスカッシュ `0092761`）から `bolt/b3-u2-domain-es-core` を切る。最初のコミットは aidlc 記録
-  （`aidlc/` 配下）、以降はコードのコミット（意味単位）。PR は Bolt ゲート承認後にコンダクタが 1 本だけ開く（直列運用、
-  squash-merge、コミット名 = Bolt slug）。開発エージェントは push / PR を行わない。
-- **定義の識別子（Q1）**: `WorkflowDefinitionId` の値は `<data_dir>/harness.json` の `name`（upstream ピンにも同ファイルあり —
-  `claude`）。Q1 = B なら `aidlc:<name>`。`DefinitionRevision` = `canon_json::hash_canonical(JsonValue{ "stage_graph": <stage-graph.json
-  の値>, "scope_grid": <scope-grid.json の値（欠損時は導出グリッドを直列化）>, "scopes": [<identity frontmatter を name 昇順>] })`
-  （`sha256:<hex64>`）。revision は値属性であって ID ではない。
-- **コーディング規則**（正本 `coding-rules/`）: フィールド既定 private（アクセサ公開）、型ファイル mod 既定 private（公開はコンテキスト
-  直下 mod.rs の `pub use` 列挙のみ、利便再エクスポート禁止 — `orchestration` は `PlanAction` を再輸出しない）、ドメイン同値は
-  `PartialEq` / `Eq`、`unwrap` / `expect` はプロダクトコード禁止、`missing_docs` deny、手実装エラー enum + `Display` + `Error`、
-  Tell-Don't-Ask（checkbox の分類は `CheckboxState` の述語、ゲート前提集合は `// amadeus-lint: allow(checkbox-vocabulary)` + 不変条件番号）、
-  集約は Repository を呼ばない、ユースケース層は trait のみに依存。
+**作るもの**（functional-spec §9 #1〜#4 の実装）:
 
-## 2. 公開 API（設計の写し — 実装の契約）
+1. **FCC の新設（BR5.5）** — `orchestration/` に `StageEntries` / `StageSlot` / `StageSlots` / `StageIndexSet` / `ArtifactPaths` /
+   `StageSlugSet` / `TransitionSteps` / `ReviewClosures` / `PendingIterations`（クレート内型）、`workspace/` に `PromotedSections` /
+   `RuleLines`。各型は §2 の不変条件・操作・エラー型を持ち、共通契約 `core_infrastructure::collections::FirstClassCollection`
+   （`len` / `is_empty` / `at` / `fold_left` / `filter`）を実装して既存ハーネス `tests/collection_contract_test.rs` に登録する。
+   `combine`（和集合）/ `divide`（差集合）は **集合型 2 つ（`StageIndexSet` / `StageSlugSet`）だけ**に実装し Monoid 則・差集合則を
+   性質試験で固定する（Q1 = A）。
+2. **集約・イベント・`PracticesPromotion` の切替** — `IntentExecution` の 7 並列列（`stage_keys` / `overlay` / `checkbox` /
+   `review_attempts` / `practices_affirmed` / `approved` / `revision_count`）を `slots: StageSlots` に統合し、`stage_keys()` を廃止して
+   `slots()` / `stage_key(StageIndex)` を公開する。`Intent::stages()` / `Created.stages` / `Started.stages` → `&StageEntries`、
+   `GateOpened.artifacts` / `open_gate` → `ArtifactPaths`、`Recomposed.skipped` / `added` → `StageSlugSet`、`recompose` → `StageIndexSet`、
+   `apply_report` / `ReportDecision::Commit.steps` → `TransitionSteps`、`ReviewAttempt` の `closed` → `ReviewClosures`・`pending` →
+   `PendingIterations`（Q2 = A）、`PracticesAffirmed` / `PracticesPromotion` の `sections` / `mandated` / `forbidden` →
+   `PromotedSections` / `RuleLines`。`StageEntry::check_plan(&[StageEntry])` と `Intent::check_plan` は `StageEntries::new` の構築検査へ移す。
+   生の `Vec` / `&[..]` の公開は DTO 境界の理由付き例外を除いて 0 件にする。
+3. **`next_decision` の Result 化（BR2.6 / BR3.1、Q5 = A）** — `Result<NextDecision, CommandError>` にし、`matches(intent)` 不一致を
+   `CommandError::IntentMismatch` で拒否する。
+4. **冒頭 doc の是正（§9 #4、NFR 設計レビュー R-03）** — `intent_execution.rs` 冒頭の「12 の decide コマンド」→ 16、「楽観 version は
+   持たない … `seq_nr` だけ」→「集約は不透明な版トークン `version` を持ち回る（`with_version` / `version()`）が採番はストアの責務
+   （ADR-010）」、「`# Panics` を持つ公開 API は無い」→ `replay` / `apply_event` / 誕生変換 `From<(Started, DateTime<Utc>)>` の 3 か所、
+   「memento」の旧説明を削除。`orchestration/mod.rs` 冒頭の「ジャーナル全再生」→ 最新スナップショット + 差分（BR2.3）、
+   「`next_decision` はクエリ側が所有」→ `IntentExecution::next_decision`、「`recompose(&[stage])`」→ `StageIndexSet`。
+5. **兄弟クレートへの追随（越境の裁定 — P8、NFR 設計レビュー R-01）** — §3 の実測一覧のとおり、`core-command-interface-adapter` /
+   `core-read-model-updater` / `core-command-use-case` / `aidlc`（app）と各クレートの `tests/` を同じ Bolt で追随させ、
+   ワークスペース全体を緑に保つ。リードモデル側（RMU / クエリ側）は FCC 型を**定義・保持しない**（読取専用の `fold_left` / `at` の
+   呼出は可）。DTO の列表現（正準 JSON のバイト）は変えない。
+6. **契約試験・性質試験・ITF の追随** — `tests/collection_contract_test.rs` へ新設型を登録、集合型の Monoid 則、列型の構築検査、
+   `next_decision` の `IntentMismatch` テスト、`tests/engine_loop_conformance.rs` の改修後 API への追随（Quint モデル v2.7 は不変）。
 
-```text
-// core_domain::orchestration（ファサード pub use のみ）
-WorkflowExecution::start(id: IntentId, def: &WorkflowDefinition, scope: &str, request: String)
-    -> Result<(WorkflowExecution, WorkflowExecutionEvent), StartError>     // Started を返す。def.id()/revision() を記録（検査しない）
-complete_stage(&mut self) / open_gate(&mut self, artifacts: Vec<String>) / approve_gate(&mut self, user_input: Option<String>, phase_boundary: Option<PhaseBoundary>)
-reject_gate(&mut self, feedback: Option<String>) / revise_stage(&mut self) / skip_stage(&mut self, reason: String)
-jump(&mut self, target: StageIndex) / park(&mut self) / unpark(&mut self) / recompose(&mut self, flips: &[StageIndex]) / set_autonomy(&mut self, AutonomyMode)
-    -> Result<WorkflowExecutionEvent, CommandError>                       // 1 コマンド 1 イベント、Err は状態不変
-apply_event(&mut self, &WorkflowExecutionEvent) -> Result<(), ApplyError>  // seq_nr 連続性 / UnknownStage / 不変条件
-next_decision(&self, &WorkflowDefinition, &NextRequest) -> Result<NextDecision, CommandError>   // DefinitionMismatch を検査
-jump_resolve(&self, StageIndex) -> Result<JumpDirection, CommandError>     stale_report(&self, StageIndex) -> Result<NextDecision, CommandError>
-snapshot(&self) -> WorkflowExecutionSnapshot    from_snapshot(WorkflowExecutionSnapshot) -> Result<Self, SnapshotError>   with_version(self, u64) -> Self
-stage_index(&self, usize) -> Option<StageIndex>  accepts_commands(&self) -> bool  definition_id() / definition_revision() / intent_id() / stages() / cursor() / checkbox(StageIndex) / approved(StageIndex) / effective_plan(StageIndex) / gated(StageIndex) / status() / parked_at() / autonomy() / revision_count(StageIndex) / seq_nr() / version() / stage_count()
-EngineSignal::from(&NextDecision)   // RunStage / Done / Parked / EngineError の導出（BR3.1）
-WorkflowExecutionEvent { intent_id, seq_nr, schema_version = 1, occurred_at, payload: 12 変種 }   // 封筒 + ペイロード、アクセサ公開
-StageIndex（集約だけが構築）、StageEntry { slug, phase, plan_action, conditional }、NextRequest { resume, reentry, free_text }、NextDecision（8 値）
-StartError { UnknownScope, Empty, InitializationMustExecute, InitializationMustBeUnconditional }
-CommandError { NotRunning, CheckboxPrecondition { stage, actual }, NotSkippable(StageIndex), NotStale(StageIndex), InvalidTarget(StageIndex), RefusedUnderAutonomy, DefinitionMismatch { expected, actual } }
-ApplyError { SequenceGap { expected, actual }, UnknownStage(StageSlug), InvariantViolation(String) }   SnapshotError { InvariantViolation(String) }
+**作らないもの**: Quint モデルの改訂、DTO の列構造・JSON バイトの変更、`combine` / `divide` / `map` の共通 trait への一律化
+（オーナーの最終方針、着手時期は別途裁定 — 積み残し）、上流 `components.md` / `contract-summary.md` C3 の「ジャーナル全再生」注記の
+同期（積み残し）、`workflow_definition` 文脈の改修（`WorkflowDefinition::replay` の `# Panics` は射程外）、依存クレートの追加
+（NFR4.1: runtime = `chrono` / `uuid` / `core-infrastructure`、dev = `proptest` / `serde_json` から増やさない）、`scripts/**` /
+`.github/**` の変更、GitHub への書込（PR 作成・コメントは親セッションが行う）。
 
-// core_domain::workflow_definition
-PlanAction（移動）、WorkflowDefinitionId（parse、非空）、DefinitionRevision（parse、`sha256:<hex64>`）
-WorkflowDefinition::new(id, revision, graph, grid, scopes)、id()、revision()   // effective_plan_action / next_in_scope_stage は削除
+**ブランチと PR（P3）**: 本ワークツリーのブランチ `stage1-selfhost`（`origin/main` `e8ca4a5f` から intent 記録 4 コミット先行、
+未 push、上流追跡なし）で作業する。開発エージェントは意味単位でコミットし、push / PR は行わない。Bolt 完了後に親セッションが push し
+PR 1 本（直列、タイトル = Bolt slug `b51: …`、squash-merge）を開き、収束ルール（必須 CI green ∧ unresolved = 0 ∧ 全コメント返信済み）で
+畳む。
 
-// core_use_case::orchestration
-trait WorkflowDefinitionRepository { fn find_by_id(&self, id: &WorkflowDefinitionId) -> Result<WorkflowDefinition, GraphReadError>; }
-GraphReadError += NotFound { expected: WorkflowDefinitionId, actual: WorkflowDefinitionId } / HarnessIdentity { path, cause }   // harness.json 欠落・不正
-```
+**コーディング規則の要点**（正本 `coding-rules/`）: フィールド既定 private + アクセサ（field-visibility）、型ファイル mod は private で公開は
+ファサード `mod.rs` の `pub use` のみ（module-visibility、利便再エクスポート禁止）、FCC は要素型を所有する文脈に置く、`unwrap` / `expect`
+はプロダクトコード禁止、`missing_docs` / `missing_panics_doc` deny、手実装 enum + `Display` + `std::error::Error`（error-handling、
+thiserror / anyhow 不使用）、CQS（コマンド = `&mut self` で戻り値なし or `Result<(), E>`、クエリ = `&self`）、内部可変性禁止、
+Tell-Don't-Ask（ユースケースは getter で組み立て直さず操作を依頼）、後方互換の旧 API は残さない（no-backward-compatibility）、
+ドメインの名前はユビキタス言語（`set_*` / `data` / `helper` 等を使わない）。
 
-設計からの差分（記録）: `occurred_at` はコマンド引数ではなく `WorkflowExecution::start` / 各 decide が受け取る `occurred_at: &str`（ISO 8601
-UTC の文字列、呼出側が時計から渡す）— 集約は時計を持たない（NFR3.1）。`IntentId` は既存 `workspace` コンテキストに無ければ
-`orchestration` に Domain Primitive として新設（`<kebab-slug>-<id8>` を parse）。`PhaseBoundary` は C5 の `phase_boundary` 投影材料の
-値レコード（`from_phase` / `to_phase`、呼出側供給 — 集約は検証しない）。`Status` は `workflow_execution.rs` のインライン定義から private mod
-`status.rs` に切り出す（module-visibility）。`skeleton_stance` / `verdict` は触らない。
+## 2. 設計の確定事項（本計画で確定し、functional-design ゲートの Request Changes で本文へ折り戻す）
 
-## 3. 規則の実装方針（BR → コード）
+機能設計レビュー R-01 / R-03 / R-04 / R-07 と NFR 要求レビュー R-05 / R-06 が未決とした点を、Q1 / Q2 の裁定に従って確定する。
 
-| 規則 | 実装 |
-|---|---|
-| BR1.0 accepts_commands | `fn accepts_commands(&self) -> bool { self.status == Running && self.parked_at != Some(self.cursor) }`。unpark 以外の decide は先頭でこれを検査し `NotRunning` |
-| BR1.1 1 コマンド 1 イベント | decide = ガード → イベント構築（`self.next_event(payload, occurred_at)`）→ `self.apply_event(&ev)`（Ok 前提）→ `Ok(ev)`。ガード不成立で `self` に触れない。PBT (a) decide 後 == 旧 + apply |
-| BR1.2 / BR1.3 / BR1.4 / BR1.5 | `gated(s) = stages[s].phase != PhaseId::Initialization`。`complete_stage` は非ゲートのみ（ゲートで呼ぶと `InvalidTarget`）、`approve_gate` は gated のみ、前提 checkbox は現行 FSM と同じ集合。`skip_stage` は InProgress / Revising ∧（conditional ∨ 実効 SKIP） |
-| BR1.6 jump | `jump_resolve` で検証（target < stage_count、非 initialization、in-scope、redo は cursor 非 initialization）→ `Jumped{direction, source, target, stages_reset, stages_skipped}`（slug 列）を構築、apply 側が direction / target から approved 消去を導出（backward: target 以降、redo: source） |
-| BR1.7 / BR1.8 | park は gated のみ → `Parked{stage}`、unpark は park 中のみ → `Unparked{}`、recompose は全件検査してから `Recomposed{skipped, added, stages_in_scope}`、set_autonomy → `AutonomyModeSet{mode}` |
-| BR1.9 | `stale_report(&self, s)`: accepts_commands ∧ s < cursor ∧ Completed ⇒ `Ok(NextDecision::Done)`、それ以外 `NotStale` / `NotRunning` |
-| BR2.1 / BR2.3 | 封筒 seq_nr = 現在値 + 1 でなければ `SequenceGap`。apply は一時状態に適用して不変条件を検証してから差し替え（Err で状態不変）。PBT (b) replay == execute |
-| BR2.2 Started | `start` は `is_valid_scope` → `stages_in_scope(scope)`（文書順・全ステージ・PhaseId）+ `graph().nodes()[i].execution()` の索引 zip で `StageEntry` 列。None → SKIP。initialization が SKIP / conditional なら Err。Started = {definition_id, definition_revision, scope, request, stages} |
-| BR2.4 / C5 | 変種 12（Started / StageCompleted / GateOpened / GateApproved / GateRejected / StageRevised / StageSkipped / Jumped / Parked / Unparked / Recomposed / AutonomyModeSet）、ペイロードは C5 + `c5_revision_proposal`。`revision_count` は集約フィールド（reject で +1）。網羅 match（`#[non_exhaustive]` 無し） |
-| BR2.5 ITF | `engine_loop_conformance.rs`: 合成 `WorkflowDefinitionId("itf")` / `DefinitionRevision("sha256:0…0")`、Quint の plan / conditional からステージ列を合成（索引 0 = initialization、他 = 任意の非 init フェーズ）。`report_forward` → 索引 0 は `complete_stage`、gated は `approve_gate`；`report_awaiting_approval` → `open_gate`；`report_rejected` → `reject_gate`；`report_revised` → `revise_stage`；`report_skipped` → `skip_stage`；`jump_*` → `jump`；`park` / `unpark`；`recompose`（1 要素）；`set_autonomy`（反転）；`next*` → `next_decision` + `EngineSignal::from`。合成定義の作り方は `WorkflowDefinition` を組み立てずに `WorkflowExecution::from_snapshot` 相当の合成 Started で集約を作る（ITF 用コンストラクタ `start_from_entries(...)` を `#[cfg(test)]`…ではなく、テスト側が `StageEntry` 列を直接与える公開関数 `WorkflowExecution::start_with_entries(id, definition_id, definition_revision, scope, request, entries)` を使う — `start` はこれに委譲） |
-| BR2.6 / ADR-008 | `start` は def.id()/revision() を記録、`next_decision` は id 不一致で `DefinitionMismatch`。Repository: `find_by_id(id)` は harness.json の name と一致しなければ `NotFound{expected: harness 側, actual: 要求}`… 注: `expected` = Repository が提供できる id、`actual` = 要求された id |
-| BR3.1 / BR3.3 | `next_decision` の優先順 (0) 定義 id → (1) park → (2) resume → (3) free_text → (4) completed → (5) in-flight ∧ SKIP → (6) in-flight → (7) next in-scope / Done。`EngineSignal::from` で 4 値へ導出。`jump_resolve` と `jump` の分離 |
-| BR4.1 / BR4.2 | `plan_action.rs` を `workflow_definition/` へ移動、`orchestration/mod.rs` から `mod plan_action` / `pub use` を削除、呼出側 10 ファイル（現行の `use crate::orchestration::PlanAction` → `crate::workflow_definition::PlanAction`）を一斉修正。`WorkflowDefinition::effective_plan_action` / `next_in_scope_stage` と対応テストを削除（テストは集約側 / `grid().action()` 照会に書き換え）。合格 grep: `grep -rnE 'enum PlanAction\|pub use .*PlanAction' modules/core/domain/src/orchestration` = 0 |
-| BR5.1 / BR5.2 / BR5.3 / BR5.4 | `StageIndex`（`usize` newtype、`Copy`、`Ord`、集約だけが構築 — `pub(crate)` コンストラクタ + `WorkflowExecution::stage_index`）。snapshot は全 16 属性、serde なし。`with_version` は値を置くだけ。エラーは手実装 + `std::error::Error` |
-| NFR2.2 PBT | 既存 PBT（`quint_invariants_hold_under_random_command_sequences` / `stale_report_never_mutates`）を新 API に移植し、(a) decide = 旧 + apply、(b) replay == execute、(c) seq_nr 単調 / SequenceGap、(d) Quint 不変条件、(e) Err 無副作用、(f) `from_snapshot(snapshot()) == self` を追加。既定 256 ケース・コマンド列 ≤ 60・合成定義（stage_count 2〜8、initialization 1〜3） |
-| NFR2.3 | Bolt 着手時に `cargo llvm-cov -p core-domain --summary-only` を 1 回取り、code-summary に基準値を記録（以後の下限） |
+| 型 | 置き場（`modules/core/command/domain/src/`）| 要素 / 表現 | 不変条件（構築検査で Err） | 操作（共通契約 + 業務操作） | `Filtered` | エラー型 | 用途（実測） |
+|---|---|---|---|---|---|---|---|
+| `StageEntries` | `orchestration/stage_entries.rs` | `StageEntry` の列（文書順） | 非空・slug 一意・initialization は EXECUTE かつ無条件（現行 `StageEntry::check_plan` の `PlanError` 4 変種をそのまま吸収） | `new(Vec<StageEntry>) -> Result<_, PlanError>`、`at(StageIndex)`、`position_of(&StageSlug) -> Option<StageIndex>`、`first_of(PhaseId, PlanAction)`、`fold_left`、`filter` | `Collection<StageEntry>` | `PlanError`（既存） | `Intent.stages` / `Created` / `Started`、skeleton ゲート判定、RMU の行生成、app の scaffold |
+| `StageSlot` | `orchestration/stage_slot.rs` | 位置 1 つの記録: `key: StageKey` / `plan_action: PlanAction`（overlay）/ `checkbox: CheckboxState` / `approved: bool` / `revision_count: u32` / `review_attempt: ReviewAttempt` / `practices_affirmed: bool` | なし（値の組） | `genesis(key, plan_action)`（Pending・未承認・0・空会計）、`new(全属性)`（DTO 境界）、アクセサ、コマンド `mark(CheckboxState)` / `record_approval` / `invalidate_approval` / `bump_revision` / `override_plan(PlanAction)` / `reset_attempt` / `record_review_request(u32)` / `record_review_verdict(u32, ReviewVerdict)` / `affirm_practices` | — | — | `StageSlots` の要素 |
+| `StageSlots` | `orchestration/stage_slots.rs` | `StageSlot` の列、添字 = `StageIndex` | 非空・長さ = stage_count・slug 一意 | `new(Vec<StageSlot>) -> Result<_, StageSlotsError>`（DTO 境界）、`genesis(&StageEntries)`（誕生時の全 Pending）、`at(StageIndex) -> Option<&StageSlot>`、`stage_key(StageIndex)`、`position_of(&StageSlug)`、`fold_left`、`filter`、位置指定コマンド（上記 `StageSlot` のコマンドを `StageIndex` 付きで）、一括コマンド `mark_all(&StageIndexSet, CheckboxState)` / `invalidate_approvals(&StageIndexSet)` / `reset_attempts_all()`（jump のフロア）| `Collection<StageSlot>` | `StageSlotsError`（新設: `Empty` / `DuplicateSlug`）| `IntentExecution.slots`、DTO の 7 列との相互変換（`fold_left` で展開、`new` で畳む）、ITF の射影 |
+| `StageIndexSet` | `orchestration/stage_index_set.rs` | `BTreeSet<StageIndex>`（昇順） | なし（空を許す） | `empty()`、`singleton`、`range(from, to)`、`contains`、`at`（昇順の添字）、`fold_left`、`filter`、**`combine`（和集合）/ `divide`（差集合）** — 空集合を単位元とする Monoid（結合・左右単位元・冪等・交換）と `A \ A = ∅` / `A \ ∅ = A` を性質試験 | `Self` | なし（全域） | `recompose` の入力（複数位置）、jump の読み飛ばし・巻き戻し・承認無効化の対象集合（現行 `Vec<StageIndex>` と range ループを置換） |
+| `ArtifactPaths` | `orchestration/artifact_paths.rs` | `String` の列（素通し、順序・重複を保持） | なし | `empty()`、`new(Vec<String>)`、`at`、`fold_left`、`filter` | `Self` | なし | `open_gate` の入力、`GateOpened.artifacts`、DTO |
+| `StageSlugSet` | `orchestration/stage_slug_set.rs` | `BTreeSet<StageSlug>`（辞書順） | なし（空を許す） | `empty()`、`new(impl IntoIterator<Item = StageSlug>)`、`contains`、`at`（辞書順）、`fold_left`、`filter`、**`combine` / `divide`**（Monoid 則・差集合則を性質試験） | `Self` | なし | `Recomposed.skipped` / `added`（`StageEntries::slugs_at(&StageIndexSet)` で位置集合から写す）、DTO |
+| `TransitionSteps` | `orchestration/transition_steps.rs` | `TransitionStep` の列（`report_dispatch` が決めた遷移順） | 重複なし | `new(Vec<TransitionStep>) -> Result<_, TransitionStepsError>`、`single(step)`、`contains(TransitionStep)`、`at`、`fold_left`、`filter`。`apply_report` の段分岐は名前付きクエリ（例 `is_single(step)` / `is_pair(a, b)`）か、理由を doc に書いた `pub(crate)` のスライス公開のどちらかで書く（開発者判断、`code-summary.md` に理由を記す） | `Self` | `TransitionStepsError`（`Duplicate`）| `ReportDecision::Commit.steps`、`apply_report` の入力、use-case の `contains(Approve)` |
+| `ReviewClosures` | `orchestration/review_closures.rs` | `ReviewClosure` の列（記録順） | なし | `empty()`、`new(Vec<ReviewClosure>)`（DTO 境界）、`record(ReviewClosure)`（コマンド）、`at`、`fold_left`、`filter`、`has_terminal(&ReviewPolicy)` | `Self` | なし | `ReviewAttempt.closed`、DTO（`intent_execution_dto.rs:98`）|
+| `PendingIterations` | `orchestration/pending_iterations.rs`（`pub(crate)`、ファサード非公開） | `BTreeSet<u32>` | なし | `empty()`、`with(u32)` / `without(u32)`（コマンド）、`contains`、`at`、`fold_left`、`filter` | `Self` | なし | `ReviewAttempt.pending`（外部に出ない）|
+| `PromotedSections` | `workspace/promoted_sections.rs` | `PromotedSection` の列（順序保持） | 見出し一意 | `new(Vec<PromotedSection>) -> Result<_, PromotedSectionsError>`、`at`、`fold_left`、`filter`、`headings()` は `fold_left` で書く | `Self` | `PromotedSectionsError`（`DuplicateHeading`）| `PracticesPromotion.sections`、`PracticesAffirmed.sections`、RMU の投影、DTO |
+| `RuleLines` | `workspace/rule_lines.rs` | `String` の列（素通し、順序・重複を保持） | なし | `empty()`、`new(Vec<String>)`、`at`、`fold_left`、`filter` | `Self` | なし | `PracticesPromotion` / `PracticesAffirmed` の `mandated` / `forbidden`、RMU の投影、DTO |
 
-## 4. 棚卸し（code-generation で確定し code-summary に記録する事項）
+補足の確定事項:
 
-- [ ] I1. ドメインクレート単独カバレッジの着手前基準値（`cargo llvm-cov -p core-domain --summary-only`）。
-- [ ] I2. `WorkflowExecution` / `EngineSignal` / `Status` / `PlanAction` の外部利用箇所（実測: ドメイン外の利用は doc コメントのみ、
-      `PlanAction` は 10 ファイル）— 実装後に再 grep して差分ゼロを確認。
-- [ ] I3. upstream ピン `3c3146cf` の `dist/claude/.claude/tools/data/harness.json` の実バイト（`{ "name": "claude", "harnessDir": ".claude",
-      "rulesSubdir": "rules" }`、HTTP 200 実測）をゴールデン dir に追加し README 表に行を足す（バイト不変規則は既存行に適用、追加は可）。
-- [ ] I4. `DefinitionRevision` の入力順序と JSON 形（§1）— 同一入力で 2 回 load して一致、`scope-grid.json` を 1 文字変えて不一致、のテスト。
-- [ ] I5. `IntentId` の既存有無（`workspace` コンテキストに `IntentSlug` 等があれば再利用し、無ければ新設）。
-- [ ] I6. `orchestration/mod.rs` の公開面の最終形（`pub use` 列挙 = entities.md / logical-components の公開面と一致）。
+- `IntentExecution::new` の引数は `(id, intent_id, slots: StageSlots, cursor: usize, status, parked_at, autonomy, skeleton_stance,
+  last_gate_resolution_at, seq_nr, last_updated_at)`。DTO（`IntentExecutionDto` の 7 列）は列ごとに `StageSlot::new` を組み、
+  `StageSlots::new` を通す。列の長さ不一致は DTO 側の `DtoDecodeError::InvariantViolation`（→ `RepositoryError::Corrupt`、C3）で、
+  現行と同じ失敗境界（層 (1)）に留まる。
+- `Recomposed` の投影順序: 現行は位置昇順（文書順）で `skipped` / `added` を描く。`StageSlugSet` は辞書順なので、RMU の投影
+  （`projection.rs:1097-1098` の `stage_list`）は `plan.stages()` の位置で並べ直してから描く。ゴールデン（`projection_golden_test.rs`）と
+  監査行の逐語一致は U4 / U7 の NFR1 要求であり、赤になったら文書順へ写す側を直し、`StageSlugSet` の順序を変えない。
+- 誕生変換 `From<(Started, DateTime<Utc>)>` は現行どおり panic（層 (2)）。`IntentExecution::new` の Err（層 (1)）との振り分けは
+  「DTO からの復元は `new`、イベントからの再生は誕生変換」— doc に 1 行書く（NFR 設計レビュー R-02）。
+- `version` は集約が持ち回る不透明トークン（`with_version` / `version()`）で、採番と比較はストアの責務（ADR-010）。
+  `unit-of-work.md` U2 の「version は失効」は「集約が採番しない」の意味であり、フィールドの不在ではない — doc に 1 行書く。
+- `next_decision` の Err を受ける RMU（`read_tables/next_answer_row.rs:58`）は既存のエラー型に写す（新変種が要れば追加）。RMU は
+  intent と execution を対で持つため実運用では起きず、テストで Err 経路を 1 本固定する。
 
-## 5. 実装ステップ（TDD、レイヤーごとに Red → Green → Refactor）
+## 3. 追随対象（実測 — 2026-09-07、`rg` による全ワークスペース走査）
 
-Testing Contract の `plan_profile.steps` を基線とし、ライブラリに存在しない層（Frontend）は省く。「Data model」= Domain Primitive と
-値オブジェクト・イベント・スナップショットの型、「Repository」= `WorkflowDefinitionRepository`（C4 改訂）、「Business logic」= 集約の
-decide / apply / クエリ、「API」= ファサードと ITF 準拠・実グラフテスト。各 Red では失敗するコマンド出力（失敗テスト名と要約行）を
-`code-summary.md` に記録してから Green に進む。
-
-### 5.0 コンダクタ（承認後・委任前）
-
-- [ ] Step 0. Bolt 開始とブランチ: `bun .claude/tools/aidlc-bolt.ts start --name B3 --batch 1` → `git switch -c bolt/b3-u2-domain-es-core origin/main`
-      → aidlc 記録を 1 コミット（`chore(aidlc): record U2 design, ADR-008 and the B3 plan`）。基準値 I1 を取得。
-
-### 5.1 workflow_definition 側（開発エージェント — 委任 1）
-
-- [ ] Step 1. 骨格: `plan_action.rs` を `workflow_definition/` へ移動し `workflow_definition/mod.rs` の `pub use` に追加、`orchestration/mod.rs`
-      から `mod plan_action` / `pub use plan_action::PlanAction` を削除、呼出側 10 ファイルの `use` を一斉修正。`cargo build --workspace`
-      緑、合格 grep = 0。`WorkflowDefinition::effective_plan_action` / `next_in_scope_stage` と依存テストを削除（`grid().action()` /
-      `stages_in_scope` への書き換え）。
-- [ ] Step 2. テストランナー確認: `cargo test -p core-domain`（実測 126 + ITF 2）、`cargo test -p core-use-case`、
-      `cargo test -p core-interface-adapter --test workflow_definition_repository_impl_test --test golden_parity_test` が走ることを確認し
-      `unit-test-instructions.md` のコマンドを確定。
-- [ ] Step 3. Data model — Red: `WorkflowDefinitionId`（非空・trim・`parse` 往復）、`DefinitionRevision`（`sha256:` + hex64 の形式検証、
-      `Display`）、`WorkflowDefinition::new(id, revision, …)` + `id()` / `revision()` のテスト（各 5〜8 本）。失敗出力を記録。
-- [ ] Step 4. Data model — Green: 最小実装（private フィールド + アクセサ、`PartialEq` / `Eq` / `Hash` / `Ord`、手実装 Display / Error）。
-- [ ] Step 5. Data model — Refactor: rustdoc、`must_use`、ファサード列挙。
-- [ ] Step 6. Repository — Red: `core-use-case` の trait を `find_by_id(&WorkflowDefinitionId)` に改訂（`find()` 削除）、
-      `GraphReadError::NotFound { expected, actual }` / `HarnessIdentity { path, cause }` を追加。`core-interface-adapter` のテスト:
-      (a) `find_by_id(id)` が harness.json の name と一致すれば id / revision 付きの定義を返す、(b) 不一致なら `NotFound`、
-      (c) harness.json 欠落 → `HarnessIdentity`、(d) revision は同一入力で安定・入力変更で変わる（I4）、(e) `InMemory…` も同じ契約、
-      (f) golden parity test が `find_by_id(WorkflowDefinitionId::parse("claude"))` で実グラフを読む。失敗出力を記録。
-- [ ] Step 7. Repository — Green: impl に `load_harness_identity()`（`<data_dir>/harness.json` → `name`）と revision 計算（`canon_json::to_value`
-      / `hash_canonical`、依存は既存）、`InMemory…` に id / revision の保持、ゴールデン dir に `harness.json`（I3）。
-- [ ] Step 8. Repository — Refactor: 逐語文言の材料（`HarnessIdentity` / `NotFound` の Display は材料のみ）、rustdoc、既存テストの
-      `find()` 呼出 13 箇所を `find_by_id` へ。品質ゲート（§5.4 Step 20 と同じ）を一度通してコミット。
-
-### 5.2 orchestration 側 — Data model（開発エージェント — 委任 2）
-
-- [ ] Step 9. Data model — Red: `StageIndex`（範囲保証、`Ord`）、`StageEntry`、`IntentId`（I5）、`WorkflowExecutionEvent`（封筒 + 12 変種の
-      構築・アクセサ・`PartialEq`）、`WorkflowExecutionSnapshot`（16 属性）、`NextRequest` / `NextDecision` / `EngineSignal::from`、
-      エラー 4 型の `Display` / `Error`（各 5〜8 本）。失敗出力を記録。
-- [ ] Step 10. Data model — Green: 最小実装（private + アクセサ、手実装エラー）。`Status` を `status.rs` に切り出し。
-- [ ] Step 11. Data model — Refactor: rustdoc、ファサード `pub use` 列挙の更新（旧 API 名は残さない）。
-
-### 5.3 orchestration 側 — Business logic（委任 2 続き）
-
-- [ ] Step 12. Business logic — Red: `start`（W1: 正常 / UnknownScope / InitializationMustExecute / Unconditional、Started の内容、
-      definition_id / revision の記録）、12 コマンドのガードと遷移（現行ユニットテスト 9 本を新 API へ移植 + 新規: complete_stage の
-      initialization 限定、approve_gate の open 省略経路、reject の revision_count、jump の stages_reset / stages_skipped、recompose 複数件、
-      unpark）、`apply_event`（SequenceGap / UnknownStage / 不変条件）、`from_snapshot` の各不変条件、`next_decision`（W4 の優先順 8 分岐 +
-      DefinitionMismatch + revision 差で Ok）、`jump_resolve` / `stale_report`。実グラフ索引テスト（initialization 3 ステージの合成 StageEntry
-      列で索引 0〜2 非ゲート / 3 ゲート / jump(1) = InvalidTarget）。失敗出力を記録。
-- [ ] Step 13. Business logic — Green: 集約本体（decide / apply / クエリ）。現行 FSM のガード集合は維持（`// amadeus-lint: allow(checkbox-vocabulary)`
-      + 不変条件番号）。
-- [ ] Step 14. Business logic — Refactor: apply の一時コピー方式の整理、重複ガードの関数化、rustdoc。テスト緑のまま。
-- [ ] Step 15. PBT（`workflow_execution.rs` 同居、`PROPTEST_RNG_SEED` 固定）: 性質 (a)〜(f)（§3 NFR2.2）。
-
-### 5.4 orchestration 側 — API（ファサード・ITF・品質ゲート）
-
-- [ ] Step 16. API — Red: `engine_loop_conformance.rs` を新 API に書き換え（BR2.5 の対応表）— 8 fixture 全緑になるまで Red。
-      `orchestration/mod.rs` の公開面がロジカル設計の列挙と一致することのテスト（`pub use` 行の読取 — canon-json と同じ方式）。
-- [ ] Step 17. API — Green: 不足のアクセサ / 変換（`EngineSignal::from`）、ITF 用 `start_with_entries`。
-- [ ] Step 18. API — Refactor: クレート rustdoc（`//!`）に ES 形・イベント 12 変種・射影表・gated = phase の説明、BR2.5 の注記。
-- [ ] Step 19. 棚卸し I2 / I6 と `cargo llvm-cov -p core-domain --summary-only`（I1 の基準値と比較）。
-- [ ] Step 20. 品質ゲート: `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo lint` →
-      `cargo test --workspace` → `bash scripts/coverage.sh`（絶対床）→ 合格 grep（BR4.1）= 0。コミットは意味単位
-      （`feat(core-domain): …` / `refactor(workflow-definition): …` / `test(itf): …`）。
-
-## 6. トレーサビリティ（要求 → ステップ）
-
-| 要求 / 規則 | ステップ | 主な成果物 |
+| クレート | 生産コード | テスト |
 |---|---|---|
-| FR8.3 PlanAction 完全移動 | 1, 19, 20 | `workflow_definition/plan_action.rs`、両 mod.rs、呼出側 10 ファイル |
-| FR8.4 畳み込み移設 | 1, 12〜14 | `workflow_definition.rs`（削除）、`workflow_execution.rs`（effective_plan） |
-| FR2.1 / FR3.1 / FR3.3 の土台（decide / next_decision） | 9〜18 | `orchestration/*.rs` |
-| FR1.3 の集約側（snapshot / replay） | 9, 12〜15 | `workflow_execution_snapshot.rs`、`apply_event` |
-| BR1.0〜BR1.9 / BR3.1〜BR3.3 | 12〜14 | `workflow_execution.rs` |
-| BR2.1〜BR2.4 | 9, 12〜15 | `workflow_execution_event.rs`、`apply_event`、PBT |
-| BR2.5 | 16, 17 | `tests/engine_loop_conformance.rs` |
-| BR2.6 / ADR-008 / C4 | 3〜8, 12 | `workflow_definition_id.rs`、`definition_revision.rs`、`workflow_definition_repository.rs`（trait）、`workflow_definition_repository_impl.rs`、`memory/workflow_definition_repository.rs`、`tests/golden/upstream-3c3146cf/harness.json` |
-| BR4.1 / BR4.2 | 1 | 同上 |
-| BR5.1〜BR5.4 | 9〜11 | `stage_index.rs`、`workflow_execution_snapshot.rs`、エラー 4 型 |
-| NFR1.1 / NFR1.2 / NFR1.3 | 12, 16, 17 | ITF、実グラフ索引テスト、網羅 match |
-| NFR2.1〜NFR2.4 | 全 Red/Green/Refactor、15, 19, 20 | Red 記録、PBT、カバレッジ基準値、品質ゲート |
-| NFR3.1〜NFR3.4 | 12〜15 | apply / from_snapshot / next_decision / snapshot |
-| NFR4.1〜NFR4.5 | 1, 4, 7, 20 | 依存不変（core-domain）、StageIndex、素通し、serde なし |
+| `core-command-domain` | `orchestration/{intent, intent_execution, intent_execution_event, stage_entry, review_attempt, report_decision}.rs`、`intent_event/created.rs`、`intent_execution_event/{started, gate_opened, recomposed, practices_affirmed}.rs`、`workspace/practices_promotion.rs`、`orchestration/mod.rs` / `workspace/mod.rs`（`pub use`）| インライン `#[cfg(test)]`（`intent_execution.rs` 約 60 箇所の `stages()` / `stage_keys()` / `closed()` / `skipped()`）、`tests/engine_loop_conformance.rs:356,449,488`、`tests/collection_contract_test.rs`（登録）|
+| `core-command-interface-adapter` | `src/orchestration/dto/{intent_dto.rs:85, created_dto.rs:47,68, intent_execution_dto.rs:98,142, intent_execution_event_dto.rs:113,121,175,176,227,231,232,254}` | `src/orchestration/dto/tests.rs:534,595`、`tests/{commit_verdict_use_case_wiring_test.rs:81,102, intent_execution_repository_impl_test.rs, upstream_event_store_conformance.rs, support/contract.rs, support/mod.rs}`（`open_gate(.., vec![..], ..)` 12 箇所）|
+| `core-read-model-updater` | `src/read_tables.rs:239,284`、`src/read_tables/{stage_lookup.rs:23, next_answer_row.rs:58}`、`src/workspace/resolved_plan.rs:49`、`src/workspace/projection.rs:466,477,542,581,853,875,908,1059,1080,1083,1087,1097,1098,1146,1157,1403,1416,1420,1432,1443,1444,1730`、`src/orchestration/dto/{intent_dto.rs:93,116, started_dto.rs:31,49, gate_opened_dto.rs:26, recomposed_dto.rs:25,26, practices_affirmed_dto.rs:42,49,50}` | `src/workspace/projection.rs:2022`、`src/workspace/resolved_plan.rs:246`、`tests/{projection_golden_test.rs:175,576, read_model_updater_test.rs:144,985, read_tables_test.rs（`stages()` / `stage_keys()` / `next_decision` / `open_gate` 15 箇所）, support/mod.rs:280, journal_reader_impl_test.rs:1378,1416}` |
+| `core-command-use-case` | `src/orchestration/commit_verdict_use_case.rs:196-218`（`report_dispatch` → `steps.contains` → `apply_report`）| `src/orchestration/commit_verdict_use_case.rs:496,533,694,778`、`src/orchestration/promote_practices_use_case.rs:190,194`、`src/orchestration/test_support.rs:114,856,889` |
+| `aidlc`（app、越境 4 つめのクレート）| `src/scaffold.rs:46,161,182`（`intent.stages().iter().filter(..)`）| `tests/{journal_protocol_conformance.rs:306,565,815, crash_reconstruction_test.rs:71, support/mod.rs:208}` |
+| `core-query-interface-adapter` | なし | `tests/support/mod.rs:238`（`open_gate`）|
 
-## 7. 委任の形
+RMU の `projection.rs` の `plan.stages()` は多くが `ResolvedPlan`（RMU 自前の平坦な計画表現、`resolved_plan.rs`）の呼出で、
+ドメインの `Intent::stages` とは別物である。着手時（Step 1）に `rg` で再走査し、ドメイン型の呼出だけを追随対象として確定する。
 
-- 委任 1（Step 1〜8: workflow_definition / Repository 側）と委任 2（Step 9〜20: orchestration 側）を同じ承認済み計画・同じ指紋の下で
-  **直列に** aidlc-developer-agent へ委任する。各委任の冒頭行は `AIDLC-UNIT: u2-domain-es-core` と `AIDLC-TESTING-CONTRACT: <contract_sha256>`。
-  委任 1 の終わりでワークスペースが緑（ビルド・テスト・lint）であること。
-- 開発エージェントは計画のチェックボックスを更新しない（計画バイトは承認後凍結 — 進捗はエージェントの報告ファイル
-  `developer-report-<n>.md` に書き、コンダクタが `code-summary.md` に統合する）。
-- 失敗時はコンダクタが halt-and-ask（retry / skip / abort）を出す。規模 L: 委任 1 が 1 日相当を超えそうならオーナーと分割を相談。
+## 4. 実行ステップ（Testing Contract の TDD 順序に沿う）
+
+チェックボックスは親セッション（コンダクタ）が検証後に付ける。開発エージェントは計画ファイルを編集せず、進捗と各 Red の失敗出力を
+`developer-report-<n>.md` に書く（P2）。
+
+- [ ] **Step 0. 基線とランナーの確認（委任 1 の冒頭）** — `git status` がクリーンで `origin/main..HEAD` が記録コミットのみであることを
+  確認。`unit-test-instructions.md` §2 の Unit 限定コマンドがそのまま走ることを実測し、テスト件数（`core-command-domain --lib` / ITF /
+  契約試験 / 兄弟クレートの対象テスト）と `PROPTEST_RNG_SEED=20260823 cargo llvm-cov --package core-command-domain --summary-only`
+  の行カバレッジ（基準値 98.66%、`--ignore-filename-regex 'modules/core/command/domain/src/(workflow_definition|workspace)/'` の
+  orchestration 単独値も）を記録する。`# Panics` の所在（`rg -n '# Panics' modules/core/command/domain/src`）と生の `Vec` / `&[..]` 公開
+  （`rg -n 'pub fn .*-> &\[' modules/core/command/domain/src/orchestration modules/core/command/domain/src/workspace`）を実測して報告に残す。
+- [ ] **Step 1. データモデル層 — FCC 11 型の新設（委任 1、Opus、追加のみで既存 API は触らない）** — 型ごとに Red（`#[cfg(test)]` の
+  失敗テスト: 構築検査の Err、`at` の範囲外 `None`、`fold_left` の順序、`filter` の結果型、集合型は Monoid 則・差集合則の proptest、
+  `TransitionSteps` の `Duplicate`、`PromotedSections` の `DuplicateHeading`）→ Green（最小実装）→ Refactor（緑のまま整理）。
+  `FirstClassCollection` を実装し `tests/collection_contract_test.rs` の `check(..)` に **空と非空の 2 例ずつ**登録する（非空型は非空例のみ）。
+  ファサード `orchestration/mod.rs` / `workspace/mod.rs` へ `pub use` を追加（`PendingIterations` は `pub(crate)` で非公開）。
+  受入: `PROPTEST_RNG_SEED=20260823 cargo test -p core-command-domain` 全緑、`cargo fmt --all --check` / `cargo clippy --workspace
+  --all-targets -- -D warnings` / `cargo lint` 緑、`git diff --stat` が `modules/core/command/domain/` に閉じている。コミット 1 つ
+  （`feat(domain): FCC 11 型を新設し契約試験へ登録`）。
+- [ ] **Step 2. ビジネスロジック層 — 集約・イベント・`PracticesPromotion` の切替と `next_decision` の Result 化（委任 2、Opus）** —
+  Red: (a) `next_decision` が `intent_id` 不一致で `Err(CommandError::IntentMismatch)`、一致で `Ok` を返す新規テスト（コンパイル失敗を
+  Red として記録）、(b) `Intent::stages()` / `slots()` / `stage_key()` / `open_gate(ArtifactPaths)` / `recompose(StageIndexSet)` /
+  `apply_report(&TransitionSteps)` / `ReviewAttempt::closed() -> &ReviewClosures` / `PracticesPromotion::sections() -> &PromotedSections`
+  を使う既存テストの書換え（コンパイル失敗の出力を記録）。Green: 7 並列列 → `slots`、`stage_keys()` 廃止、`StageEntry::check_plan` /
+  `Intent::check_plan` → `StageEntries::new`、jump の読み飛ばし・巻き戻し・承認無効化を `StageIndexSet` + `StageSlots` の一括コマンドで
+  書き直す、`Recomposed` を `StageEntries::slugs_at(&StageIndexSet)` で組む、`ReviewAttempt` の内部列を FCC へ、
+  `PracticesPromotion` / `PracticesAffirmed` の列を FCC へ。Refactor: 冒頭 doc の是正（§1 #4）、`resolve` / `mark_stage` /
+  `invalidate_approval` 等の内部ヘルパの整理。ITF 準拠テスト（`engine_loop_conformance.rs`）を改修後 API へ追随（モデル不変、
+  8 fixture 全緑）。受入: `PROPTEST_RNG_SEED=20260823 cargo test -p core-command-domain` 全緑（PBT 既存性質 + ITF + 契約試験）、
+  `rg -n 'pub fn .*-> &\[' modules/core/command/domain/src/orchestration modules/core/command/domain/src/workspace` が 0 件、
+  `rg -n 'stage_keys\(' modules/core/command/domain/src` が 0 件。この時点でワークスペースは赤（Step 3 で回復）。
+- [ ] **Step 3. データアクセス層 — DTO 境界と兄弟クレートの追随（委任 2、続き）** — Red: `core-command-interface-adapter` /
+  `core-read-model-updater` / `core-command-use-case` / `aidlc` の既存テスト（往復・ゴールデン・配線・クラッシュ再構成）がコンパイル
+  失敗する出力を記録。Green: §3 の追随（DTO の要素列挙は `fold_left`、7 列 ↔ `StageSlots` の相互変換、`ResolvedPlan::of` /
+  `read_tables` / `stage_lookup` の列挙を `fold_left` / `at` へ、`next_answer_row.rs` の Err 処理、`commit_verdict_use_case.rs` の
+  `contains` を `TransitionSteps` の操作へ、`scaffold.rs` の `filter` を `StageEntries::filter` / `fold_left` へ、`Recomposed` の投影順序を
+  文書順へ写す）。Refactor: 重複した列挙ヘルパの整理。受入: `PROPTEST_RNG_SEED=20260823 cargo test --workspace` 全緑、
+  `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo lint` 緑、`bash scripts/quint-gate.sh` 緑、
+  `rg -n 'StageEntries|StageSlots|StageIndexSet|StageSlugSet|ArtifactPaths|TransitionSteps|ReviewClosures|PromotedSections|RuleLines'
+  modules/core/read-model-updater/src modules/core/query` が**型の定義・保持**（struct フィールド・`let` 束縛の保持）を含まないことを
+  目視確認し報告に書く（読取専用の呼出は可）。コミットは意味単位（例: ドメイン切替 + ITF / DTO 境界 / RMU / use-case + app）で、各コミットで
+  `cargo check --workspace` が通らない場合は 1 コミットにまとめ、その旨を報告に書く。
+- [ ] **Step 4. 受入の実測（委任 2 の末尾で実施、コンダクタが再実測）** — (a) CI 4 ステップ（fmt / clippy / `cargo lint` /
+  `cargo test --workspace`）+ `scripts/quint-gate.sh` + `cargo audit`（ワークスペースと `tools/lint/Cargo.lock`）緑、(b)
+  `bash scripts/coverage.sh` を同一条件で 2 回実行し差 0.00 と絶対床 90% の PASS を記録、(c) `PROPTEST_RNG_SEED=20260823 cargo llvm-cov
+  --package core-command-domain --summary-only` の行カバレッジが基準値 98.66% を下回らない（orchestration 単独値も記録）、(d) BR4.1 の
+  判定式（`unit-test-instructions.md` §2）が 0 件で、検出力の裏取り（`workflow_definition` へ流すと 1 件以上）を記録、(e) `# Panics` の
+  所在が `intent_execution.rs` の 3 か所（`replay` / `apply_event` / 誕生変換）と `workflow_definition.rs:213` のままで増えていない、
+  (f) `modules/core/command/domain/Cargo.toml` と `Cargo.lock` が不変（`git diff --stat -- Cargo.lock modules/core/command/domain/Cargo.toml`
+  が空）、(g) 生の `Vec` / `&[..]` 公開 0 件（DTO 境界の `pub(super)` / `pub(crate)` は理由付きで許容し一覧を報告）。
+- [ ] **Step 5. 記録（コンダクタ）** — `code-summary.md`（作成・変更ファイル、設計判断、Step 4 の実測、計画からの逸脱、§2 の確定事項を
+  functional-design ゲートへ折り戻す一覧）、`source-manifest.json`（strict schema、`writes` に作成・変更・削除した全アプリケーション側パス）、
+  `traceability.json`（BR1.1〜BR5.5 / NFR1.1〜NFR4.5 の各 ID → 実在の実装・テストファイル 1 つ）、センサー（required-sections /
+  traceability）実行、独立レビュー（advisory、1 回）、Unit 完了、`git add -A` で作業ツリー全体を回収してコミット、push、PR 作成。
+
+Testing Contract の層のうち API / エンドポイント層とフロントエンド層は本 Unit（library）に存在しないため省く。環境 / ビルド設定の
+変更はない（依存追加なし）。ドキュメント層は Step 2 の doc 是正と Step 5 の記録で満たす。
+
+## 5. 要求からステップへの対応
+
+| 要求 / 規則 | Step | 確認対象 |
+|---|---|---|
+| BR5.5、Q4 / Q4a / Q1 / Q2、NFR2.5 | 1・2・3 | FCC 11 型、契約試験の登録、Monoid 則・差集合則の性質試験、生の `Vec` / `&[..]` 公開 0 件、RMU が FCC 型を定義・保持しない |
+| BR2.6 / BR3.1、Q5、NFR3.4 | 2・3 | `next_decision` の Result 化と `IntentMismatch` テスト、`next_answer_row.rs` の Err 処理 |
+| BR1.1 / BR2.1 / BR2.3、NFR2.2 / NFR3.1 | 2 | PBT 既存性質が改修後も緑、`apply_event` の純関数性、時計利用は `*EventId::generate` のみ |
+| BR2.5、NFR1.1 | 2 | ITF 準拠テストの追随（8 fixture、`EngineSignal` 照合）、Quint モデル v2.7 不変 |
+| BR1.3、NFR1.2 | 2 | 誕生が initialization 全段を Completed、実グラフ索引のテストが緑 |
+| BR2.4、NFR1.3 / NFR3.3 | 3 | 16 変種の網羅 match、DTO の列表現不変（往復・ゴールデン緑） |
+| BR5.1 / BR5.2、NFR3.2 / NFR4.3 / NFR4.5 | 2・4 | `StageIndex` の型保証、`new` の Err と誕生変換の panic の振り分け doc、`# Panics` 3 か所、`unwrap` / `expect` 0 件 |
+| BR4.1、FR8.3、NFR2.4 | 4 | 判定式 0 件 + 検出力の裏取り、CI 4 ステップ緑 |
+| NFR2.1 | 1〜3 | 各 Red の失敗出力を報告に記録、テスト先行のコミット順 |
+| NFR2.3 | 0・4 | クレート全体 98.66% 床、orchestration 単独値、`scripts/coverage.sh` 2 回同値 |
+| NFR4.1 / NFR4.2 | 4 | `Cargo.toml` / `Cargo.lock` 不変、`cargo audit` 緑、`unsafe_code = "forbid"` |
+| NFR4.4 | 1 | `ArtifactPaths` / `RuleLines` が素通し（順序・重複保持、加工なし） |
+| §9 #4、NFR 設計レビュー R-02 / R-03 | 2 | 冒頭 doc の是正 3 点 + memento、誕生変換の doc、`version` の doc |
+
+## 6. 委任と作業の進め方
+
+| 委任 | 担当モデル | 範囲 | 所有ファイル（書込） | 受入 |
+|---|---|---|---|---|
+| 委任 1（`developer-brief-3.md` → `developer-report-3.md`） | Opus | Step 0〜1 | `modules/core/command/domain/src/orchestration/{stage_entries, stage_slot, stage_slots, stage_slots_error, stage_index_set, artifact_paths, stage_slug_set, transition_steps, transition_steps_error, review_closures, pending_iterations}.rs`、`modules/core/command/domain/src/workspace/{promoted_sections, promoted_sections_error, rule_lines}.rs`、両 `mod.rs` の `pub use` 追加、`modules/core/command/domain/tests/collection_contract_test.rs` | Step 1 の受入 |
+| 委任 2（`developer-brief-4.md` → `developer-report-4.md`） | Opus | Step 2〜4 | 上記以外の `modules/core/command/domain/**`、`modules/core/command/interface-adapter/**`、`modules/core/read-model-updater/**`、`modules/core/command/use-case/**`、`modules/app/aidlc/**`、`modules/core/query/interface-adapter/tests/**`（テストのみ） | Step 2〜4 の受入 |
+| コンダクタ | Fable 5 | Step 5、各委任の diff 全件レビュー、受入の再実測、レビュー派遣、Unit 完了、コミット・push・PR | `aidlc/**` の記録 | センサー緑、独立レビューの受領 |
+
+委任 2 の作業が委任 1 の型定義の変更を要する場合（操作の不足・結果型の誤り）は、委任 2 が同じ Bolt 内で変更してよい（所有は時系列で
+引き継ぐ）。変更点は報告に列挙し、コンダクタが §2 の確定事項へ反映する。開発エージェントは push / PR / GitHub への書込を行わず、
+他者の変更を戻さず、`scripts/**` / `.github/**` / `formal/**` / `aidlc/**` を触らない。計画にない設計判断が要る場合は、実測ありの問題と
+案を報告に書いてコンダクタの裁定を待つ（ドメインサービスの新設・ドメインオブジェクト 4 種以外の追加は人間の裁定が必須）。
 
 ## Testing Contract
 
@@ -275,3 +278,37 @@ decide / apply / クエリ、「API」= ファサードと ITF 準拠・実グ�
   "contract_sha256": "sha256:303d9bb7b5d777d54a6761be9ed154d85d5bb3f2d6b9cce02f71f4ed1b3a4ff3"
 }
 ```
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-06T19:00:09Z
+**Iteration:** 1
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action |
+|---|---|---|---|---|
+| R-01 | Minor | `code-summary.md` §7 申し送り 4・6、`functional-spec.md` §9 #5(a)、`nfr-design/security-design.md` / `nfr-design/logical-components.md` の `## Review`（2026-09-06、Verdict: NOT-READY） | 本計画 §2 は FCC 11 型の不変条件・操作・`Filtered`・エラー型を確定し、functional-design の NOT-READY 所見（R-01: TransitionSteps / ReviewAttempt の pending・closed / PromotedSections / RuleLines の型定義欠落、R-02: `core-command-use-case` と `engine_loop_conformance.rs` の追随漏れ、R-03: `StageSlugSet` の「文書順」不変条件が型の表現力を超える）を裁定 Q1/Q2 で実質的に解消し、実装（`stage_slug_set.rs` の doc、`projection.rs` の `in_document_order`、§3 追随表への `core-command-use-case` と `aidlc` app 追加）で裏付けている。ただし `entities.md` / `rules.md` / `functional-spec.md`（functional-design ゲート）と `security-design.md` / `logical-components.md`（nfr-design ゲート）本文はまだ更新されておらず、双方の `## Review` は 2026-09-06 時点の NOT-READY のまま残っている。fold-back は code-summary.md 自身が §7 で申し送り済みだが、この Bolt の完了時点で intent 記録内に 2 つの未解消 NOT-READY ゲートが残ることは、承認者が明示的に把握すべき事実である | functional-design と nfr-design の fold-back Bolt を近い将来に実施し、両ゲートの `## Review` を現状（このコード生成で確定した設計）に基づいて再判定する。それまでは `code-summary.md` §7 の申し送りが唯一の参照点であることを承認記録に明記する |
+| R-02 | Info | `code-summary.md` §8「コンダクタの diff レビュー」の留意点 2 件（`IntentExecutionDto::to_domain` の列長検査重複、`scaffold.rs::first_post_initialization` の `Option<StageEntry>` clone） | コンダクタ自身が機能・契約に影響しないと判定済みの軽微な非効率。独立検証でも同じ結論（`filter` が所有コレクションを返す設計上の制約に起因し、ホットパスではない） | 対応不要。次回この付近を触る Bolt で ついでに整理する程度でよい |
+
+### Validation Tool Results
+
+| ツール / コマンド | 結果 | 解釈 |
+|---|---|---|
+| `bun .claude/tools/aidlc-sensor-required-sections.ts`（plan / unit-test-instructions / code-summary） | 3 件とも `pass: true`、findings 0 | H2 構成は計画どおり（7 / 6 / 8 見出し） |
+| `bun .claude/tools/aidlc-sensor-traceability.ts`（traceability.json） | `pass: false`だが `gaps` / `orphans` / `missing_from_table` / `invalid_entries` / `invalid_targets` すべて 0、`missing_from_upstream_ids` 37 件 | `code-summary.md` §6 の申告と完全一致。37 件は他 Unit 所管 ID の既知ノイズで、U2 の対応関係自体に欠落・孤児・不正 target は無い |
+| `git diff --name-only origin/main..HEAD -- modules` vs `source-manifest.json` | ソート正規化後にバイト一致（78 パス） | 記録の整合は完全 |
+| `PROPTEST_RNG_SEED=20260823 cargo test -p core-command-domain` | 699 passed（lib）+ 2（契約）+ 1（ITF）+ 3（doc-test）、失敗 0 | `code-summary.md` の 591→699 と一致 |
+| `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo lint` | いずれも exit 0 | 受入 (a) と一致 |
+| `bash scripts/quint-gate.sh` | `[PASS] quint gate: all steps green`（typecheck 3・invariants 3・witness 16・quint test 2） | 受入 (a) と一致。モデル不変 |
+| `git diff --stat -- Cargo.lock Cargo.toml modules/core/command/domain/Cargo.toml` / `git diff --stat origin/main..HEAD -- tests formal scripts .github` | いずれも空 | 依存不変・fixture/モデル/スクリプト不変（受入 (f) と一致） |
+| `rg` による実測（`# Panics`、`stage_keys`/`check_plan`/`#[deprecated]`、`pub fn .*-> &\[`、`to_vec()`） | `# Panics` は `intent_execution.rs:347,1506,2364` + `workflow_definition.rs:213` の 4 か所のみ。他は 0 件 | 受入 (e)(g) および no-backward-compatibility 適合を実測で確認 |
+| `rg` による RMU/query の FCC 型保持検査（フィールド・戻り値型） | 0 件（テストフィクスチャの `-> StageEntries` 2 件のみ） | cqrs-boundaries 適合（RMU が FCC を定義・保持しない）を実測で確認 |
+| `tests/collection_contract_test.rs` の `check(..)` 登録 | 新設 9 型（StageEntries/StageSlots/StageIndexSet/StageSlugSet/ArtifactPaths/TransitionSteps/ReviewClosures/PromotedSections/RuleLines）を含む全登録を確認 | NFR2.5・受入と一致。`PendingIterations` はインライン契約検査（開発者報告の逸脱1）で妥当に代替 |
+| `stage_slug_set.rs` / `projection.rs::in_document_order` の実装確認 | `StageSlugSet` は `BTreeSet`（辞書順）、投影側が `plan.stages()` の順で並べ直す | functional-spec レビュー R-03 の懸念を「不変条件から文書順を外す」方向で実装により解消 |
+
+### Summary
+
+計画・設計判断・実装・記録のすべてで整合が取れており、承認済み計画からの逸脱 11 件はいずれもコンパイラ・lint・型安全性上の必然か、契約に影響しない範囲に収まっている。`next_decision` の `IntentMismatch` 化、FCC 11 型の新設と契約試験登録、`StageSlugSet` の辞書順と投影側の文書順並べ直し、兄弟クレート（`core-command-use-case` と `modules/app/aidlc` を含む）への追随、`# Panics` 3 箇所への収束など、直近の functional-design（NOT-READY）と nfr-design（NOT-READY）のレビュー所見のうち実装に関わる部分は、質問票 Q1/Q2 の裁定を経てこの Bolt で具体的に解消されている。テスト・カバレッジ・Quint ゲート・記録（`source-manifest.json` / `traceability.json`）の実測はすべて申告と一致した。唯一の留意点は、functional-design と nfr-design 双方の設計文書自体（entities.md / rules.md / functional-spec.md、security-design.md / logical-components.md）がまだ fold-back されておらず、それぞれの `## Review` が 2026-09-06 時点の NOT-READY のまま残っていること（R-01、Minor）。これは code-summary.md 自身が申し送り済みで、今回のコード生成の妥当性を損なうものではないため、承認をブロックしない。

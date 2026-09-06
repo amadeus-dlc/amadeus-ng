@@ -9,8 +9,9 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    CommandError, Created, Intent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    ArtifactPaths, CommandError, Created, Intent, IntentEventId, IntentExecution,
+    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntries, StageEntry,
+    StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -89,8 +90,8 @@ fn slug(value: &str) -> StageSlug {
 
 /// 3 ステージの合成計画 (索引 0 = initialization、1〜2 = ideation)。
 #[must_use]
-pub(crate) fn stages() -> Vec<StageEntry> {
-    vec![
+pub(crate) fn stages() -> StageEntries {
+    StageEntries::new(vec![
         StageEntry::new(
             slug("state-init"),
             PhaseId::Initialization,
@@ -112,7 +113,8 @@ pub(crate) fn stages() -> Vec<StageEntry> {
             false,
             display("1.4", "Scope Definition"),
         ),
-    ]
+    ])
+    .expect("フィクスチャの計画は不変条件を満たす")
 }
 
 /// genesis の集約と `Started` イベント (`seq_nr` = 1。版はまだストアに無い)。
@@ -205,7 +207,11 @@ pub(crate) async fn store_gate_opened<R: IntentExecutionRepository>(
     held: &IntentExecution,
 ) -> IntentExecution {
     advance(repository, held, |aggregate| {
-        aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+        aggregate.open_gate(
+            &intent(),
+            ArtifactPaths::new(vec!["intent.md".to_string()]),
+            at(),
+        )
     })
     .await
 }

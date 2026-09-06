@@ -7,20 +7,20 @@
     "NFR4.1", "NFR4.2", "NFR4.3", "NFR4.4", "NFR4.5"
   ],
   "coverage": [
-    { "id": "FR9.1", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh（2026-08-22T23:43Z に適用済み — ruleset/after.json）" },
+    { "id": "FR9.1", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh" },
     { "id": "FR9.2", "status": "OK", "target": "rust-toolchain.toml" },
     { "id": "FR9.3", "status": "OK", "target": ".github/workflows/ci.yml" },
-    { "id": "FR9.4", "status": "Deferred", "target": "scripts/coverage.sh（PROPTEST_RNG_SEED 固定は実装済み。残ジッタ 0.0175pp（fs_workspace_lock の並行テスト由来）のため差 0.00pp は未達 — Bolt B2 ゲート裁定で TOLERANCE 暫定 0.05、U3 ロック退役後に 0.01）" },
+    { "id": "FR9.4", "status": "OK", "target": "scripts/coverage.sh" },
     { "id": "FR9.5", "status": "OK", "target": "scripts/coverage.sh" },
-    { "id": "NFR2.1", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh（適用済み。正常系: PR #25 が merge queue を完走）" },
+    { "id": "NFR2.1", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh" },
     { "id": "NFR2.2", "status": "OK", "target": ".github/workflows/ci.yml" },
     { "id": "NFR2.3", "status": "OK", "target": ".github/workflows/ci.yml" },
-    { "id": "NFR2.4", "status": "Deferred", "target": "scripts/coverage.sh（決定化は PBT 側で成立、非 PBT の並行テスト由来の 1 行ジッタが残る — 裁定済み: 暫定 0.05）" },
+    { "id": "NFR2.4", "status": "OK", "target": "scripts/coverage.sh" },
     { "id": "NFR2.5", "status": "OK", "target": "scripts/coverage.sh" },
     { "id": "NFR4.1", "status": "OK", "target": ".github/workflows/ci.yml" },
-    { "id": "NFR4.2", "status": "OK", "target": "rust-toolchain.toml" },
+    { "id": "NFR4.2", "status": "OK", "target": "scripts/governance/toolchain-inputs.sh" },
     { "id": "NFR4.3", "status": "OK", "target": "Cargo.toml" },
     { "id": "NFR4.4", "status": "OK", "target": ".github/workflows/ci.yml" },
-    { "id": "NFR4.5", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh（前後 JSON: ruleset/before.json / after.json）" }
+    { "id": "NFR4.5", "status": "OK", "target": "scripts/governance/ruleset-required-checks.sh" }
   ]
 }

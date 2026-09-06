@@ -5,6 +5,9 @@
 > [unit-of-work-story-map.md](../../../inception/units-generation/unit-of-work-story-map.md)、
 > 集約モデルは [entities.md](entities.md)。裁定の優先順位と根拠は [是正記録](../correction-report.md) に示す。
 > コード・モデルのパスは特記がなければリポジトリルート基準。
+>
+> 2026-09-07 再走（Modify、質問票 Q4 / Q4a / Q5・P7〜P10）: BR5.5（コマンド側の配列は FCC、結合・差集合を型ごとの契約に含める）を
+> 追加し、BR1.2 / BR2.2 / BR2.6 / BR3.1 / BR4.2 / BR5.4 を同期した。実装は U2 の code-generation 再走で行う。
 
 ## 1. 規則（正本）
 
@@ -31,7 +34,7 @@ rules:
     applies_to: [IntentExecution]
     trigger: "各遷移後"
     statement: "active = InProgress / AwaitingApproval / Revising。in-flight = active + Pending。Running の cursor は実効 EXECUTE、active は高々1"
-    logic: "添字帳と各状態列の長さを揃える。誕生の縮退形では cursor 0、active 0、Running のまま通常 next が Done"
+    logic: "位置ごとの記録は StageSlots の 1 要素であり、旧 7 列の長さ一致は型で保証される（BR5.5）。active の数は StageSlots.active_count。誕生の縮退形では cursor 0、active 0、Running のまま通常 next が Done"
     violation: "構築時は IntentExecutionError、壊れた履歴の適用は panic"
     source: "engine_loop.qnt cursor_in_scope / at_most_one_active"
   - id: BR1.3
@@ -103,7 +106,7 @@ rules:
     applies_to: [Intent, StageEntry, IntentExecutionEvent]
     trigger: "Intent::create / IntentExecution::start"
     statement: "Intent が定義参照・依頼・全ステージを文書順に解決する。grid の None は SKIP。conditional と display は同じ順序の graph.nodes から取る。initialization は EXECUTE かつ非 conditional"
-    logic: "create は計画検査後に Intent と Created を返す。start は実行ID・&Intent・時刻を受け、Started に intent_id と StageEntry 列を記録する。From<(Started, 時刻)> が誕生状態を導出し定義を要しない"
+    logic: "create は StageEntries.check_plan の計画検査後に Intent と Created を返す。start は実行ID・&Intent・時刻を受け、Started に intent_id と StageEntries を記録する。From<(Started, 時刻)> が StageEntries から StageSlots を導出して誕生状態を作り、定義を要しない"
     violation: "IntentError / PlanError。実行 start 自体は Result ではない"
     source: "後続 Intent 分離裁定、aggregate-commands の自己完結 genesis"
   - id: BR2.3
@@ -135,16 +138,16 @@ rules:
     applies_to: [Intent, IntentExecution, WorkflowDefinition]
     trigger: "集約参照"
     statement: "Intent → WorkflowDefinition は definition_id、IntentExecution → Intent は intent_id の ID 参照。定義の内容版は Intent の来歴であり、実行に定義オブジェクトや静的計画を埋め込まない"
-    logic: "コマンドは &Intent を照合し IntentMismatch で拒否。next_decision の現行戻り値は NextDecision で ID 不一致 Err は無い。参照先は一致させる原則を維持し、この差異を未解決として correction-report に記す"
-    violation: "next_decision が DefinitionMismatch を返すと記載しない。取り違えを許可した裁定とは解釈しない"
-    source: "aggregate-references、Intent / IntentExecution 分離裁定"
+    logic: "コマンド・書込前ガード（jump_resolve / stale_report の対象解決）・next_decision はすべて &Intent を照合し IntentMismatch で拒否する。next_decision は Result<NextDecision, CommandError> を返す（Q5 = A、2026-09-07。現行コードは NextDecision を直接返しており、code-generation で同期する）。呼出側（リードモデル更新器）は Err を判断結果ではなく投影の束縛不整合として扱う"
+    violation: "next_decision が DefinitionMismatch を返すと記載しない。ID 不一致で判断結果を返すのは違反"
+    source: "aggregate-references、Intent / IntentExecution 分離裁定、質問票 Q5"
   - id: BR3.1
     category: calculation
     applies_to: [IntentExecution, NextRequest, NextDecision]
-    trigger: "next_decision(&Intent, &NextRequest)"
-    statement: "優先順は park 活性かつ非再入 → resume → free_text → Completed → cursor の in-flight / 実効 SKIP → 次の in-scope → Done。&Intent は skeleton ゲートの静的計画判断に使用する"
-    logic: "RunStage は GateDecision を返す。initialization は Ungated、skeleton 対象かつ stance 未記録なら Unresolved、他は Gated。SKIP不整合は InProgress / Revising なら RecoverSkipInconsistency、それ以外なら InconsistentSkip"
-    violation: "ID 照合の制約は BR2.6。未使用予約引数という説明を置かない"
+    trigger: "next_decision(&Intent, &NextRequest) -> Result<NextDecision, CommandError>"
+    statement: "ID 照合の後、優先順は park 活性かつ非再入 → resume → free_text → Completed → cursor の in-flight / 実効 SKIP → 次の in-scope → Done。&Intent は skeleton ゲートの静的計画判断（StageEntries.first_of(Construction, EXECUTE)）に使用する"
+    logic: "RunStage は GateDecision を返す。initialization は Ungated、skeleton 対象かつ stance 未記録なら Unresolved、他は Gated。SKIP不整合は InProgress / Revising なら RecoverSkipInconsistency、それ以外なら InconsistentSkip。次の in-scope は StageSlots.next_effective_execute_after(cursor)"
+    violation: "IntentMismatch（BR2.6）。未使用予約引数という説明を置かない"
     source: "next ラダー、cqrs-boundaries、Quint v2.4"
   - id: BR3.2
     category: policy
@@ -175,7 +178,7 @@ rules:
     applies_to: [IntentExecution, WorkflowDefinition]
     trigger: "実効計画"
     statement: "畳み込みの所有者は IntentExecution.effective_plan(stage) = overlay。静的計画の所有者は Intent。WorkflowDefinition はグリッド照会と畳み込みを含まない述語を保持"
-    logic: "WorkflowDefinition の削除対象は effective_plan_action / next_in_scope_stage。残す述語は is_valid_scope / valid_scopes / scope_metadata / subgraph_for_scope / stages_in_scope / first_in_scope_stage_of_phase"
+    logic: "WorkflowDefinition の削除対象は effective_plan_action / next_in_scope_stage。残す述語は is_valid_scope / valid_scopes / scope_metadata / subgraph_for_scope / stages_in_scope / first_in_scope_stage_of_phase。2026-09-06 に StageGraph / ScopeGrid が FirstClassCollection 契約（at / filter / fold_left / map）を実装した事実は現行事実として記録するのみで、述語の増減はしない（P10）"
     violation: "既存述語の過剰削除、定義への overlay 再導入は違反"
     source: "FR8.4、ADR-002 / ADR-005"
   - id: BR5.1
@@ -206,10 +209,18 @@ rules:
     category: policy
     applies_to: [IntentExecution, IntentExecutionEvent, NextDecision]
     trigger: "実装規律"
-    statement: "private フィールド、所有ファサード、PartialEq / Eq、手実装エラー、decide / apply 分離を守る。イベント UUIDv7 生成と壊れた歴史の panic は明示裁定の射程で許可する"
+    statement: "private フィールド、所有ファサード、PartialEq / Eq、手実装エラー、decide / apply 分離、コマンド側配列の FCC 化（BR5.5）を守る。イベント UUIDv7 生成と壊れた歴史の panic は明示裁定の射程で許可する"
     logic: "coding-rules の最新裁定を優先し、古いコード doc や過去回答をその代用にしない"
     violation: "cargo lint / 型 / レビューで検査"
     source: "coding-rules README と各規則"
+  - id: BR5.5
+    category: policy
+    applies_to: [Intent, IntentExecution, IntentExecutionEvent, StageEntries, StageSlots, StageIndexSet, ArtifactPaths, StageSlugSet]
+    trigger: "コマンド側ドメインモデルの配列部分"
+    statement: "コマンド側ドメインモデルの配列はすべてファーストクラスコレクション（FCC）にする。対象: Intent.stages / Created.stages / Started.stages → StageEntries、IntentExecution の位置ごとの旧 7 並列列 → StageSlots、jump・recompose の位置集合 → StageIndexSet、GateOpened.artifacts → ArtifactPaths、Recomposed.skipped / added → StageSlugSet、PracticesAffirmed と PracticesPromotion の sections / mandated / forbidden → PromotedSections / RuleLines、ReviewAttempt の pending / closed と ReportDecision::Commit.steps も内部列として FCC 化する。リードモデル側（read-model-updater / クエリ側）は FCC を使わず自前の平坦な表現へ写す"
+    logic: "各 FCC は不変条件（非空・一意・順序）と at / filter / fold_left / map に加え combine / divide を型ごとの契約として持つ。文書順の列（StageEntries / StageSlots）の combine は連結で slug 衝突は Result で拒否、divide は他方に含まれる slug を除き空可の型へ戻る。集合（StageIndexSet / StageSlugSet）の combine は和集合・divide は差集合で空集合を単位元とする Monoid 則を試験する。順序付き列（ArtifactPaths / RuleLines）の combine は連結で重複を消さない。業務判断（skeleton 対象、次の実効 EXECUTE、jump の Skipped / Pending 戻し対象、受領証の一括リセット）はコレクションの操作と集合演算で書き、配列やイテレータを集約の外へ取り出さない。DTO・リードモデル境界への要素列挙は fold_left を優先し、イテレータ公開は理由を記した最後の手段"
+    violation: "生の Vec / スライスの公開、集約外での配列走査による判断、リードモデル側での FCC 使用は違反。使われない共通メソッド群の機械的追加も違反"
+    source: "coding-rules/first-class-collections.md（オーナー裁定 2026-09-06）、質問票 Q4 / Q4a（オーナー回答 2026-09-07）。combine / divide / map の共通 trait への一律化はオーナーの最終方針として積み残し（今回の Bolt に含めない）"
 ```
 
 ## 2. 規則の要約
@@ -231,8 +242,8 @@ rules:
 | BR2.3 | 同じ集約の最新スナップショットを基底に、event.seq_nr > snapshot.seq_nr の差分を昇順で適用する |
 | BR2.4 | 現行16変種と各ペイロードは entities.md の payloads が正本 |
 | BR2.5 | モデルは engine_loop.qnt v2.7 |
-| BR2.6 | Intent → WorkflowDefinition は definition_id、IntentExecution → Intent は intent_id の ID 参照 |
-| BR3.1 | 優先順は park 活性かつ非再入 → resume → free_text → Completed → cursor の in-flight / 実効 SKIP → 次の in-scope → Done |
+| BR2.6 | Intent → WorkflowDefinition は definition_id、IntentExecution → Intent は intent_id の ID 参照。next_decision も IntentMismatch を Err で返す |
+| BR3.1 | ID 照合の後、優先順は park 活性かつ非再入 → resume → free_text → Completed → cursor の in-flight / 実効 SKIP → 次の in-scope → Done（戻り値は Result） |
 | BR3.2 | フラグによる状態非依存の分類・birth・single の要求処理は U6 |
 | BR3.3 | jump_resolve(&Intent, target) は BR1.6 の受理検査と方向導出を行う書込なしクエリ |
 | BR4.1 | PlanAction は core-command-domain::workflow_definition が所有 |
@@ -240,7 +251,8 @@ rules:
 | BR5.1 | 集約の公開位置は StageIndex |
 | BR5.2 | domain に serde / ESA 直接依存・ストア trait・復号用 memento 双子型を置かない |
 | BR5.3 | version はストア採番の不透明な usize |
-| BR5.4 | private フィールド、所有ファサード、PartialEq / Eq、手実装エラー、decide / apply 分離を守る |
+| BR5.4 | private フィールド、所有ファサード、PartialEq / Eq、手実装エラー、decide / apply 分離、FCC 化を守る |
+| BR5.5 | コマンド側ドメインモデルの配列はすべて FCC（at / filter / fold_left / map / combine / divide + 業務操作）。リードモデル側は FCC を使わない |
 
 ## 3. Quint v2.7 との射影
 
@@ -250,8 +262,8 @@ rules:
 
 | モデル | 集約・テストの対応 |
 |---|---|
-| plan / conditional | 合成 Intent の静的 StageEntry。実行の保持状態には複製しない |
-| checkbox / overlay / approved | 各位置の checkbox / effective_plan / approved |
+| plan / conditional | 合成 Intent の静的 StageEntries の要素（StageEntry）。実行の保持状態には複製しない |
+| checkbox / overlay / approved | 各位置の StageSlot（checkbox / plan_action / approved）を StageSlots.at で読む |
 | cursor / parkedAt | cursor、parked_at（None は -1） |
 | Running / WorkflowParked / WorkflowCompleted | Running かつ非 park / park 活性 / Completed |
 | autonomous | autonomy().is_autonomous()。actSetAutonomy は現在値の反転を switch_autonomy に渡す |

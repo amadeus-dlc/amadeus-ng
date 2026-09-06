@@ -25,9 +25,9 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, Created, Intent, IntentEvent, IntentEventId, IntentExecution,
-    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest,
-    WorkspaceScan,
+    ArtifactPaths, AutonomyMode, CommandError, Created, Intent, IntentEvent, IntentEventId,
+    IntentExecution, IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntries,
+    StageEntry, StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, Defined, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
@@ -154,30 +154,33 @@ pub(crate) fn scan() -> WorkspaceScan {
 }
 
 /// 3 ステージの合成計画 (索引 0 = initialization、1〜2 = ideation)。
-pub(crate) fn stages() -> Vec<StageEntry> {
-    vec![
-        StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1", "State Init"),
-        ),
-        StageEntry::new(
-            slug("intent-capture"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.1", "Intent Capture"),
-        ),
-        StageEntry::new(
-            slug("scope-definition"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.4", "Scope Definition"),
-        ),
-    ]
+pub(crate) fn stages() -> StageEntries {
+    let entries: Vec<StageEntry> = {
+        vec![
+            StageEntry::new(
+                slug("state-init"),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                display("0.1", "State Init"),
+            ),
+            StageEntry::new(
+                slug("intent-capture"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.1", "Intent Capture"),
+            ),
+            StageEntry::new(
+                slug("scope-definition"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.4", "Scope Definition"),
+            ),
+        ]
+    };
+    StageEntries::new(entries).expect("フィクスチャの計画は不変条件を満たす")
 }
 
 /// intent の誕生イベント (`intent()` と同じ材料)。
@@ -277,7 +280,11 @@ pub(crate) async fn seed(store: &mut UpstreamStore) {
     let mut writer = JournalWriter::start(store, execution_id()).await;
     writer
         .advance(store, |aggregate| {
-            aggregate.open_gate(&intent(), vec!["intent.md".to_string()], at())
+            aggregate.open_gate(
+                &intent(),
+                ArtifactPaths::new(vec!["intent.md".to_string()]),
+                at(),
+            )
         })
         .await;
     writer

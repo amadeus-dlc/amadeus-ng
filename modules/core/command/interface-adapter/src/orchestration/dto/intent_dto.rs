@@ -9,7 +9,8 @@
 //! (共有 private 型は主たる従属先に置く — `coding-rules/abstract-data-type.md`)。
 
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEventId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    Created, Intent, IntentEventId, IntentId, StageDisplay, StageEntries, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
@@ -82,7 +83,10 @@ impl IntentDto {
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
             start_request: StartRequestDto::of(intent),
-            stages: intent.stages().iter().map(StageEntryDto::of).collect(),
+            stages: intent.stages().fold_left(Vec::new(), |mut rows, entry| {
+                rows.push(StageEntryDto::of(entry));
+                rows
+            }),
             scan: WorkspaceScanDto::of(intent.scan()),
             created_at: *intent.created_at(),
         }
@@ -112,6 +116,8 @@ impl IntentDto {
             .iter()
             .map(StageEntryDto::to_domain)
             .collect::<Result<Vec<StageEntry>, DtoDecodeError>>()?;
+        // 計画そのものの不変条件はドメインが持つ (`StageEntries::new` の構築検査)。
+        let stages = StageEntries::new(stages).map_err(|_| DtoDecodeError::InvariantViolation)?;
         let request = self.start_request.to_domain();
         Ok(Created::new(
             IntentEventId::generate(),

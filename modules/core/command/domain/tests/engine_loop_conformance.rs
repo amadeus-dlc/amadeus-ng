@@ -49,13 +49,18 @@
 // indexing_slicing も同じ理由 (固定長フィクスチャの添字参照) で file 単位の allow が要る。
 // panic! は想定外ケースの即時失敗という検証用途で使っており、テスト失敗のシグナルとして
 // 妥当なため同様に許容する。
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    AutonomyMode, Created, EngineSignal, Intent, IntentEventId, IntentExecution, IntentExecutionId,
-    IntentId, NextRequest, ReviewVerdict, SkeletonStance, StageDisplay, StageEntry, StageIndex,
-    StartRequest, Status, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, Created, EngineSignal, Intent, IntentEventId, IntentExecution,
+    IntentExecutionId, IntentId, NextRequest, ReviewVerdict, SkeletonStance, StageDisplay,
+    StageEntries, StageEntry, StageIndex, StageIndexSet, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction,
@@ -299,7 +304,7 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
             "step {step}: reqCount[{s}]"
         );
         assert_eq!(
-            attempt.pending().iter().copied().collect::<Vec<u32>>(),
+            attempt.pending_iterations(),
             m.pending[s],
             "step {step}: pending[{s}]"
         );
@@ -353,7 +358,9 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
 /// この同じクエリを呼んでリードモデルへ投影するので、ここで固定した対応がそのまま
 /// `read_next_answer` の正しさの根拠になる。
 fn assert_signal(agg: &IntentExecution, intent: &Intent, m: &ModelState, step: usize) {
-    let decision = agg.next_decision(intent, &NextRequest::default());
+    let decision = agg
+        .next_decision(intent, &NextRequest::default())
+        .expect("ITF は同じ intent で駆動する");
     let signal = EngineSignal::from(&decision);
     match (signal, m.directive_tag.as_str()) {
         (EngineSignal::RunStage(s), "DRunStage") => {
@@ -402,7 +409,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             synthetic_id(),
             synthetic_revision(),
             StartRequest::new("itf", "conformance"),
-            synthetic_stages(m0),
+            StageEntries::new(synthetic_stages(m0)).expect("合成計画は不変条件を満たす"),
             scan(),
         ),
         at(),
@@ -446,7 +453,8 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 assert_directive(m, "DDone", i);
             }
             "report_awaiting_approval" => {
-                agg.open_gate(&intent, Vec::new(), at()).unwrap();
+                agg.open_gate(&intent, ArtifactPaths::empty(), at())
+                    .unwrap();
             }
             "report_rejected" => {
                 agg.reject_gate(&intent, None, at()).unwrap();
@@ -485,7 +493,8 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 let s = (0..prev.overlay.len())
                     .find(|&s| prev.overlay[s] != m.overlay[s])
                     .unwrap();
-                agg.recompose(&intent, &[index(&agg, s)], at()).unwrap();
+                agg.recompose(&intent, &StageIndexSet::singleton(index(&agg, s)), at())
+                    .unwrap();
             }
             "single_run" => {
                 // 隔離実行はフレーム空 — モデルは対象を nondet に選ぶが、選ばれた値は

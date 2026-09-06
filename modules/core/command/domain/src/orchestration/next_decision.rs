@@ -93,6 +93,13 @@ mod tests {
                 NextDecision::InconsistentSkip { .. } => "InconsistentSkip",
             }
         }
+        assert_eq!(
+            name(&NextDecision::RunStage {
+                stage: StageIndex::new(0),
+                gate: GateDecision::Gated
+            }),
+            "RunStage"
+        );
         assert_eq!(name(&NextDecision::Done), "Done");
         assert_eq!(name(&NextDecision::ResumeMenu), "ResumeMenu");
         assert_eq!(name(&NextDecision::UnparkThenResume), "UnparkThenResume");

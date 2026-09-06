@@ -1,6 +1,6 @@
 //! `Created` — `IntentEvent::Created` のペイロード。
 
-use crate::orchestration::{IntentEventId, IntentId, StageEntry, StartRequest, WorkspaceScan};
+use crate::orchestration::{IntentEventId, IntentId, StageEntries, StartRequest, WorkspaceScan};
 use crate::workflow_definition::{DefinitionRevision, WorkflowDefinitionId};
 
 /// `Created` のペイロード — 作られた時点の intent の**内容 (値)** を運ぶ。
@@ -23,7 +23,7 @@ pub struct Created {
     pub(crate) definition_id: WorkflowDefinitionId,
     pub(crate) definition_revision: DefinitionRevision,
     pub(crate) start_request: StartRequest,
-    pub(crate) stages: Vec<StageEntry>,
+    pub(crate) stages: StageEntries,
     pub(crate) scan: WorkspaceScan,
 }
 
@@ -36,7 +36,7 @@ impl Created {
         definition_id: WorkflowDefinitionId,
         definition_revision: DefinitionRevision,
         start_request: StartRequest,
-        stages: Vec<StageEntry>,
+        stages: StageEntries,
         scan: WorkspaceScan,
     ) -> Created {
         Created {
@@ -84,7 +84,7 @@ impl Created {
 
     /// 解決済み計画 (文書順)。
     #[must_use]
-    pub fn stages(&self) -> &[StageEntry] {
+    pub const fn stages(&self) -> &StageEntries {
         &self.stages
     }
 

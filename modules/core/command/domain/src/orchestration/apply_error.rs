@@ -8,6 +8,7 @@
 
 use std::fmt;
 
+use super::stage_slots_error::StageSlotsError;
 use crate::workflow_definition::StageSlug;
 
 /// 適用ヘルパの失敗材料 (クラッシュ文言の部品になる)。適用前の状態は保たれる。
@@ -32,6 +33,17 @@ impl fmt::Display for ApplyError {
 
 impl std::error::Error for ApplyError {}
 
+impl From<StageSlotsError> for ApplyError {
+    /// 位置ごとの記録の列が拒んだ操作を、適用経路の失敗材料へ写す。
+    ///
+    /// 適用が呼ぶ位置は `resolve` / 区間集合が束縛済みなので `OutOfRange` は起きない。
+    /// それでも変換を持つのは、起きたときに**壊れた歴史**として `apply_event` の panic
+    /// 経路まで材料ごと届かせるためである (無言の no-op にしない)。
+    fn from(error: StageSlotsError) -> ApplyError {
+        ApplyError::InvariantViolation(error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,6 +59,18 @@ mod tests {
     fn the_invariant_violation_carries_the_reason() {
         let err = ApplyError::InvariantViolation("cursor_in_scope".to_string());
         assert_eq!(err.to_string(), "invariant violation: cursor_in_scope");
+    }
+
+    /// 列が拒んだ位置指定は、壊れた歴史として同じ経路へ流れる (無言の no-op にしない)。
+    #[test]
+    fn a_refused_position_becomes_broken_history() {
+        let error = ApplyError::from(StageSlotsError::OutOfRange {
+            stage: crate::orchestration::StageIndex::new(3),
+        });
+        assert_eq!(
+            error.to_string(),
+            "invariant violation: stage index out of range: 3"
+        );
     }
 
     #[test]

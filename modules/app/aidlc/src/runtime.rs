@@ -25,7 +25,8 @@ use std::path::Path;
 use chrono::Utc;
 use core_command_domain::orchestration::{
     AutonomyMode, CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal,
-    ReportRequest, ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, Verdict,
+    ReportRequest, ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, TransitionSteps,
+    Verdict,
 };
 use core_command_domain::workflow_definition::{PRACTICES_DISCOVERY_SLUG, StageSlug};
 use core_command_domain::workspace::{
@@ -621,32 +622,36 @@ fn committed_directive(raw: &str, outcome: &CommitOutcome) -> Directive {
 /// コミットした段の列を逐語へ写す。
 ///
 /// gate 系 3 段は `print`（`Recorded <result> for "<slug>".`）、読み飛ばしと前進は `done`。
-fn committed_transition(
-    raw: &str,
-    stage: &str,
-    scope: &str,
-    steps: &[TransitionStep],
-) -> Directive {
-    match steps {
-        [TransitionStep::GateStart | TransitionStep::Reject | TransitionStep::Revise] => {
-            Directive::Print {
-                message: wording::recorded_result(raw, stage),
-            }
-        }
-        [TransitionStep::Skip] => Directive::Done {
+fn committed_transition(raw: &str, stage: &str, scope: &str, steps: &TransitionSteps) -> Directive {
+    // 段の同定は名前付きクエリで行う（スライスの形合わせをやめる — BR5.5）。
+    let recorded = [
+        TransitionStep::GateStart,
+        TransitionStep::Reject,
+        TransitionStep::Revise,
+    ]
+    .into_iter()
+    .any(|step| steps.is_single(step));
+    if recorded {
+        return Directive::Print {
+            message: wording::recorded_result(raw, stage),
+        };
+    }
+    if steps.is_single(TransitionStep::Skip) {
+        return Directive::Done {
             reason: Some(wording::committed_skip(stage, scope)),
-        },
-        other => Directive::Done {
-            reason: Some(wording::committed_transition(
-                &other
-                    .iter()
-                    .map(|step| step.subcommand())
-                    .collect::<Vec<_>>()
-                    .join(" + "),
-                stage,
-                scope,
-            )),
-        },
+        };
+    }
+    Directive::Done {
+        reason: Some(wording::committed_transition(
+            &steps
+                .fold_left(Vec::new(), |mut names, step| {
+                    names.push(step.subcommand());
+                    names
+                })
+                .join(" + "),
+            stage,
+            scope,
+        )),
     }
 }
 
@@ -1157,6 +1162,11 @@ fn promotion_plan_refusal(error: &PromotionPlanError) -> String {
         PromotionPlanError::ProjectHeadingMissing(heading) => wording::promote_failed(
             &wording::promote_append_failed(heading.trim_start_matches("## ")),
         ),
+        // 見出しは固定 5 種を順に 1 度ずつ見るので構成不能だが、変種を握り潰さず
+        // 置換先の見出し名を材料にして断る (`error-handling.md` — 無言の失敗にしない)。
+        PromotionPlanError::DuplicateSection(heading) => {
+            wording::promote_failed(&wording::promote_replace_section_failed(heading))
+        }
     }
 }
 
@@ -2976,37 +2986,37 @@ corrupt review override: Adversarial"
     #[test]
     fn every_commit_outcome_renders_its_directive() {
         let stage = StageSlug::parse("domain-design").expect("slug");
-        let committed = |steps: Vec<TransitionStep>| CommitOutcome::Committed {
+        let committed = |steps: TransitionSteps| CommitOutcome::Committed {
             stage: stage.clone(),
             scope: "classic".to_string(),
             steps,
         };
         assert!(matches!(
-            committed_directive("awaiting-approval", &committed(vec![TransitionStep::GateStart])),
+            committed_directive("awaiting-approval", &committed(TransitionSteps::single(TransitionStep::GateStart))),
             Directive::Print { message } if message == "Recorded awaiting-approval for \"domain-design\"."
         ));
         assert!(matches!(
-            committed_directive("rejected", &committed(vec![TransitionStep::Reject])),
+            committed_directive("rejected", &committed(TransitionSteps::single(TransitionStep::Reject))),
             Directive::Print { message } if message == "Recorded rejected for \"domain-design\"."
         ));
         assert!(matches!(
-            committed_directive("revised", &committed(vec![TransitionStep::Revise])),
+            committed_directive("revised", &committed(TransitionSteps::single(TransitionStep::Revise))),
             Directive::Print { message } if message == "Recorded revised for \"domain-design\"."
         ));
         assert!(matches!(
-            committed_directive("skipped", &committed(vec![TransitionStep::Skip])),
+            committed_directive("skipped", &committed(TransitionSteps::single(TransitionStep::Skip))),
             Directive::Done { reason: Some(reason) }
                 if reason == "Committed skip for \"domain-design\" (scope: classic). State routed forward; run next to continue."
         ));
         assert!(matches!(
-            committed_directive("approved", &committed(vec![TransitionStep::Approve])),
+            committed_directive("approved", &committed(TransitionSteps::single(TransitionStep::Approve))),
             Directive::Done { reason: Some(reason) }
                 if reason == "Committed approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
         ));
         assert!(matches!(
             committed_directive(
                 "approved",
-                &committed(vec![TransitionStep::GateStartRecovered, TransitionStep::Approve])
+                &committed(TransitionSteps::recovered_approval())
             ),
             Directive::Done { reason: Some(reason) }
                 if reason == "Committed gate-start + approve for \"domain-design\" (scope: classic). State advanced; run next to continue."

@@ -3,7 +3,7 @@
 //! [`IntentExecution::report_dispatch`]: super::IntentExecution::report_dispatch
 
 use super::report_no_op::ReportNoOp;
-use super::transition_step::TransitionStep;
+use super::transition_steps::TransitionSteps;
 use crate::workflow_definition::StageSlug;
 
 /// 報告に対して**何をコミットするか**の閉集合。
@@ -25,7 +25,7 @@ pub enum ReportDecision {
         /// 作用対象のステージ。
         stage: StageSlug,
         /// upstream の `sequence` に対応する段の列 (1 段か、復旧の 2 段)。
-        steps: Vec<TransitionStep>,
+        steps: TransitionSteps,
         /// 判断に使用した計画のスコープ。
         scope: String,
     },
@@ -41,6 +41,7 @@ pub enum ReportDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestration::TransitionStep;
 
     fn slug() -> StageSlug {
         StageSlug::parse("domain-design").expect("slug は文法内")
@@ -51,14 +52,14 @@ mod tests {
         let decision = ReportDecision::Commit {
             scope: "classic".into(),
             stage: slug(),
-            steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
+            steps: TransitionSteps::recovered_approval(),
         };
         assert_eq!(
             decision,
             ReportDecision::Commit {
                 scope: "classic".into(),
                 stage: slug(),
-                steps: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
+                steps: TransitionSteps::recovered_approval(),
             }
         );
     }
@@ -73,7 +74,7 @@ mod tests {
             ReportDecision::Commit {
                 scope: "classic".into(),
                 stage: slug(),
-                steps: Vec::new(),
+                steps: TransitionSteps::single(TransitionStep::Advance),
             }
         );
     }

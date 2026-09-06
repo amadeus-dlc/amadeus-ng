@@ -7,6 +7,6 @@
     { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5" },
     { "id": "NFR3", "status": "N/A", "target": "U10 は永続化・投影を持たない — 監査完全性は U3 / U4 の要求" },
     { "id": "NFR4", "status": "OK", "target": "NFR4.1, NFR4.2, NFR4.3, NFR4.4, NFR4.5" },
-    { "id": "NFR5", "status": "N/A", "target": "性能は非目標（requirements.md Q5）— CI 実行時間の数値目標も立てない" }
+    { "id": "NFR5", "status": "N/A", "target": "U10のCI実行時間には数値目標を設けない。製品CLIの性能劣化測定要求を取り消さず、製品側のUnitで扱う（2026-09-06確認要約）" }
   ]
 }

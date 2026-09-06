@@ -20,8 +20,9 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    Created, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    ArtifactPaths, Created, Intent, IntentEvent, IntentEventId, IntentExecution,
+    IntentExecutionEvent, IntentExecutionId, IntentId, StageDisplay, StageEntries, StageEntry,
+    StartRequest, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, Defined, DefinitionRevision, ExecutionKind, PhaseId, PlanAction,
@@ -177,33 +178,37 @@ fn defined_event() -> WorkflowDefinitionEvent {
     ))
 }
 
-fn stages() -> Vec<StageEntry> {
-    let display = |number: &str, name: &str, agent: &str| {
-        StageDisplay::new(StageNumber::parse(number).expect("番号"), name, agent).expect("単一行")
+fn stages() -> StageEntries {
+    let entries: Vec<StageEntry> = {
+        let display = |number: &str, name: &str, agent: &str| {
+            StageDisplay::new(StageNumber::parse(number).expect("番号"), name, agent)
+                .expect("単一行")
+        };
+        vec![
+            StageEntry::new(
+                slug("state-init"),
+                PhaseId::Initialization,
+                PlanAction::Execute,
+                false,
+                display("0.1", "State Init", "orchestrator"),
+            ),
+            StageEntry::new(
+                slug("intent-capture"),
+                PhaseId::Ideation,
+                PlanAction::Execute,
+                false,
+                display("1.1", "Intent Capture", "aidlc-product-agent"),
+            ),
+            StageEntry::new(
+                slug("requirements-analysis"),
+                PhaseId::Inception,
+                PlanAction::Skip,
+                false,
+                display("2.1", "Requirements Analysis", "aidlc-product-agent"),
+            ),
+        ]
     };
-    vec![
-        StageEntry::new(
-            slug("state-init"),
-            PhaseId::Initialization,
-            PlanAction::Execute,
-            false,
-            display("0.1", "State Init", "orchestrator"),
-        ),
-        StageEntry::new(
-            slug("intent-capture"),
-            PhaseId::Ideation,
-            PlanAction::Execute,
-            false,
-            display("1.1", "Intent Capture", "aidlc-product-agent"),
-        ),
-        StageEntry::new(
-            slug("requirements-analysis"),
-            PhaseId::Inception,
-            PlanAction::Skip,
-            false,
-            display("2.1", "Requirements Analysis", "aidlc-product-agent"),
-        ),
-    ]
+    StageEntries::new(entries).expect("フィクスチャの計画は不変条件を満たす")
 }
 
 fn created() -> Created {
@@ -235,7 +240,11 @@ fn execution_events(park: bool) -> Vec<(usize, IntentExecutionEvent)> {
     let (mut aggregate, started) = IntentExecution::start(execution_id(), &intent, at());
     let mut events = vec![(aggregate.seq_nr(), started)];
     let opened = aggregate
-        .open_gate(&intent, vec!["state.md".to_string()], at())
+        .open_gate(
+            &intent,
+            ArtifactPaths::new(vec!["state.md".to_string()]),
+            at(),
+        )
         .expect("ゲートは開く");
     events.push((aggregate.seq_nr(), opened));
     if park {

@@ -21,7 +21,8 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     Created, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionId, IntentId, StageDisplay, StageEntry, StartRequest, WorkspaceScan,
+    IntentExecutionId, IntentId, StageDisplay, StageEntries, StageEntry, StartRequest,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
@@ -111,7 +112,7 @@ pub(crate) fn genesis_referencing_other_definition() -> (Intent, IntentExecution
             WorkflowDefinitionId::parse("codex").expect("系譜名"),
             original.definition_revision().clone(),
             StartRequest::new("classic", "build it"),
-            original.stages().to_vec(),
+            original.stages().clone(),
             scan(),
         ),
         at(),
@@ -461,7 +462,8 @@ pub(crate) fn start_from_plan(
                 display(index, *phase),
             )
         })
-        .collect();
+        .collect::<Vec<StageEntry>>();
+    let stages = StageEntries::new(stages).expect("フィクスチャの計画は不変条件を満たす");
     // 合成計画からの組み直しは完全コンストラクタ (IntentExecution::new) を通す — 検査点は genesis と
     // 同一である。
     let intent = Intent::from((
@@ -527,7 +529,8 @@ pub(crate) fn genesis_with_practices(
                 display(index, phase),
             )
         })
-        .collect();
+        .collect::<Vec<StageEntry>>();
+    let stages = StageEntries::new(stages).expect("フィクスチャの計画は不変条件を満たす");
     let intent = Intent::from((
         Created::new(
             intent_event_id(),
@@ -564,7 +567,8 @@ pub(crate) fn genesis_with_review(
                 display(index, phase),
             )
         })
-        .collect();
+        .collect::<Vec<StageEntry>>();
+    let stages = StageEntries::new(stages).expect("フィクスチャの計画は不変条件を満たす");
     let intent = Intent::from((
         Created::new(
             intent_event_id(),
@@ -853,7 +857,7 @@ mod tests {
             held.definition_id().clone(),
             held.definition_revision().clone(),
             StartRequest::new(held.scope(), held.request()),
-            held.stages().to_vec(),
+            held.stages().clone(),
             held.scan().clone(),
         ));
         intent_repository
@@ -886,7 +890,7 @@ mod tests {
             held.definition_id().clone(),
             held.definition_revision().clone(),
             StartRequest::new(held.scope(), "different request"),
-            held.stages().to_vec(),
+            held.stages().clone(),
             held.scan().clone(),
         ));
         let err = intent_repository

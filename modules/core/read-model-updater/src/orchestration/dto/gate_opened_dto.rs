@@ -1,6 +1,6 @@
 //! `GateOpened` の永続化 DTO (**読む側**)。
 
-use core_command_domain::orchestration::GateOpened;
+use core_command_domain::orchestration::{ArtifactPaths, GateOpened};
 use serde::{Deserialize, Serialize};
 
 use super::dto_decode_error::DtoDecodeError;
@@ -23,7 +23,12 @@ impl GateOpenedDto {
             id: payload.id().as_str().to_string(),
             aggregate_id: payload.aggregate_id().as_str().to_string(),
             stage: slug_spelling(payload.stage()),
-            artifacts: payload.artifacts().to_vec(),
+            artifacts: payload
+                .artifacts()
+                .fold_left(Vec::new(), |mut paths, path| {
+                    paths.push(path.to_string());
+                    paths
+                }),
         }
     }
 
@@ -33,7 +38,7 @@ impl GateOpenedDto {
             event_id_of(&self.id)?,
             aggregate_id_of(&self.aggregate_id)?,
             slug_of(&self.stage, "stage")?,
-            self.artifacts.clone(),
+            ArtifactPaths::new(self.artifacts.clone()),
         ))
     }
 }

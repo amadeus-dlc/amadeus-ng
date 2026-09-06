@@ -164,6 +164,8 @@ mod tests {
 
     #[test]
     fn the_guard_rejections_carry_material_not_wording() {
+        // 取り違えガード (BR2.6) — 別 intent を渡した全コマンドが共有する入口の拒否。
+        assert_eq!(CommandError::IntentMismatch.to_string(), "intent mismatch");
         assert_eq!(CommandError::NotRunning.to_string(), "not running");
         assert_eq!(
             CommandError::RefusedUnderAutonomy.to_string(),

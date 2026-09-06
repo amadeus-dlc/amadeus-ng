@@ -2,7 +2,7 @@
 
 use crate::orchestration::{IntentExecutionEventId, IntentExecutionId};
 use crate::workflow_definition::StageSlug;
-use crate::workspace::PromotedSection;
+use crate::workspace::{PromotedSections, RuleLines};
 
 /// 承認された実践がメモリ層の正本へ**書き写された**事実（監査行 `PRACTICES_AFFIRMED`）。
 ///
@@ -16,9 +16,9 @@ pub struct PracticesAffirmed {
     aggregate_id: IntentExecutionId,
     stage: StageSlug,
     affirming_user: String,
-    sections: Vec<PromotedSection>,
-    mandated: Vec<String>,
-    forbidden: Vec<String>,
+    sections: PromotedSections,
+    mandated: RuleLines,
+    forbidden: RuleLines,
 }
 
 impl PracticesAffirmed {
@@ -29,9 +29,9 @@ impl PracticesAffirmed {
         aggregate_id: IntentExecutionId,
         stage: StageSlug,
         affirming_user: impl Into<String>,
-        sections: Vec<PromotedSection>,
-        mandated: Vec<String>,
-        forbidden: Vec<String>,
+        sections: PromotedSections,
+        mandated: RuleLines,
+        forbidden: RuleLines,
     ) -> PracticesAffirmed {
         PracticesAffirmed {
             id,
@@ -58,19 +58,19 @@ impl PracticesAffirmed {
 
     /// team.md で置き換える節（書込順）。
     #[must_use]
-    pub fn sections(&self) -> &[PromotedSection] {
+    pub const fn sections(&self) -> &PromotedSections {
         &self.sections
     }
 
     /// `## Mandated` へ足す印付きの規則行。
     #[must_use]
-    pub fn mandated(&self) -> &[String] {
+    pub const fn mandated(&self) -> &RuleLines {
         &self.mandated
     }
 
     /// `## Forbidden` へ足す印付きの規則行。
     #[must_use]
-    pub fn forbidden(&self) -> &[String] {
+    pub const fn forbidden(&self) -> &RuleLines {
         &self.forbidden
     }
 
