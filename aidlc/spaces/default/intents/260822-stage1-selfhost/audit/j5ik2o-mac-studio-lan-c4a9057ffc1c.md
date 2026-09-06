@@ -1602,3 +1602,261 @@
 **Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-09-06T16:05:40Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-design
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:08:31Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:12:59Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:14:07Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T16:14:07Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T16:16:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a386755f83f0638da
+**Message**: <analysis>\nI need to chronologically capture this session's continuation: it began (after a prior compaction) with u2-domain-es-core functional-design pass, then nfr-requirements pass, then nfr-design
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T16:17:02Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-design
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:21:46Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Context**: construction > u2-domain-es-core > nfr-design > nfr-design-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T16:21:56Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: U2 nfr-design 2026-09-07 再走（Modify）: 質問なし、前提 P5〜P11（検査点の二層 / IntentMismatch と DefinitionMismatch / 新設 FCC の置き場 / 兄弟クレートへの追随 / テスト配置と受入手順 / 障害ドメイン / 旧レビュー節と pending-revision の退避）の要約確認を人間へ提示
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:22:26Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T16:22:30Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer --stage nfr-design --unit u2-domain-es-core --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md --details Looks correct
+**Error**: Summary confirmation section in aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md must contain exactly one `[Answer]:` line with Looks correct before this command runs.
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T16:22:35Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Context**: construction > u2-domain-es-core > nfr-design > nfr-design-questions.md
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-06T16:22:39Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/nfr-design-questions.md
+**Questions SHA-256**: 394a557354ace9bae35688dde8654c247bc781645c59c7b7d3dcd4be2cb2b3ba
+**Hash Scope**: confirmed-content-v1
+**Unit**: u2-domain-es-core
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:23:52Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+**Context**: construction > u2-domain-es-core > nfr-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T16:23:52Z
+**Event**: SENSOR_FIRED
+**Fire id**: a94b2bd6
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-06T16:23:52Z
+**Event**: SENSOR_FAILED
+**Fire id**: a94b2bd6
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-a94b2bd6.md
+**Findings count**: 79
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:25:58Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+**Context**: construction > u2-domain-es-core > nfr-design > logical-components.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:27:18Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/security-design.md
+**Context**: construction > u2-domain-es-core > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T16:27:52Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/logical-components.md
+**Context**: construction > u2-domain-es-core > nfr-design > logical-components.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:28:11Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-design/validation-20260907.md
+**Context**: construction > u2-domain-es-core > nfr-design > validation-20260907.md
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T16:29:30Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:38c1f90f2cf2a0b878454cbc00e9d5994efacf761baa5ef61a28645ae5374c05
+**Review Appendix Artifact**: construction/u2-domain-es-core/nfr-design/security-design.md
+**Review Appendix Offset**: 16077
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T16:29:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac976c260ac942b3a
+**Message**: レビューが終わったら続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T16:34:00Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aea94dc1796ce0890
+**Message**: U2（ドメイン ES コア）の NFR 設計を現行コードへ同期する再走中で、3 成果物を書き終え独立レビューを派遣済みです。次はレビュー結果を受け取って判定を記録し、日誌・Unit 完了・コミットへ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T16:38:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u2-nd-review-1
+**Agent ID**: au2-nd-review-1-2f72b05fa5d2d7e5
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** NOT-READY（advisory、iteration 1）\n\nレビュー節は `<project-dir>/aidlc/spaces/default/intents/260822-stag
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T16:38:19Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: NOT-READY
+**Request Fingerprint**: sha256:38c1f90f2cf2a0b878454cbc00e9d5994efacf761baa5ef61a28645ae5374c05
+**Artifact Fingerprint**: sha256:483cafb29019018767d65def419483695aff3af7181082c9b6907622039789d3
+**Review Appendix Artifact**: construction/u2-domain-es-core/nfr-design/security-design.md
+**Review Appendix Offset**: 16077
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T16:39:23Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/nfr-design/memory.md
+**Context**: construction > nfr-design > memory.md
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T16:39:28Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-design
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
