@@ -6,15 +6,21 @@
 
 - 2026-08-22T12:15:00Z — Plan Approval に先立ち、計画の形を左右する 2 点（Bolt ブランチと aidlc 記録のコミット方法 / ゴールデン配置）を質問票の Q1・Q2 として先に人間へ問う; project.md の是正学習「上流成果物間の矛盾は人間へ裁定」（C7 の `tests/goldens/` と既存 `tests/golden/upstream-3c3146cf/` の並立）に従う
 - 2026-08-22T12:15:00Z — 本ハーネス（2.6.54）の CLI には Plan Approval 指紋の機械ガードが無い（`grep fingerprint .claude/tools` は review 指紋のみ）; ステージ定義どおり `[Approval Fingerprint]` と `Approve Plan` の儀式は守り、非ゲート質問として `aidlc-log.ts decision/answer` で記録する
+- 2026-09-06T15:00:00Z — [u10-ci-governance] 委任 4（Opus）完了: ワークスペース側の差分ゼロ、Unit 限定コマンド全成功（検査 19/20、`tools/lint` 自己テスト 93 本）、受入の実測はカバレッジ 2 回とも 99.14022164135578%（差 0.00、NFR2.4 の受入目標を達成 — 旧 Deferred を解消）、`cargo audit` 2 件 clean（125 / 5 crate）、unsafe 不適合例の拒否 4 件（クレート属性経路と manifest lints 経路を分離確認）。要件・設計との不一致なし。code-summary / traceability（15 件すべて OK・パス単体、`invalid_targets` 0）/ source-manifest（writes 空）を確認のうえ独立レビューへ。advisory レビュー iteration 1 は READY、所見は Minor（提案）1 件のみ — R-01: traceability.json の NFR4.3 target が `Cargo.toml` 単体で `tools/lint/Cargo.toml` 側の宣言へたどれない（1 ID = 1 target のスキーマ制約に起因、code-summary §6・§8(c) に両経路を記載済み、ブロッキングではない）。ゲートで逐語提示する。UNIT_COMPLETED 14:58:55Z
+- 2026-09-06T15:00:00Z — [u10-ci-governance] 日誌追記の制約: レビュー節追記後は計画バイト列が承認指紋と一致しなくなり、承認ガードが unit 記録ディレクトリ外への書込（本日誌を含む）を拒否した。`unit complete` 後に追記した。学習候補: code-generation の日誌は Plan Approval 後〜レビュー追記前に書くか、Unit 完了後にまとめて書く
+- 2026-09-06T14:36:37Z — [u10-ci-governance] 2026-09-06 の再走（後方ジャンプ後）: Artifact Re-use は Modify（オーナー選択）。CI 設定の実装は main 反映済みで `verify-ci-governance.sh --with-ruleset` 20/20 のため、計画を「ワークスペース設定は変更せず、Unit 限定コマンドと受入（カバレッジ 2 回測定・cargo audit 2 件・unsafe 不適合例の拒否）を再実測し、凍結されていた code-summary / traceability を現行の事実へ同期、source-manifest（writes 空）を作る」に改訂した。旧計画・旧手順・旧要約は `*-history-2026-08-2x.md` に全文保存し、`superseding-decisions.md` の参照先とした
 
 ## Deviations
 
 - 2026-08-22T12:40:00Z — 委任ブリーフはルール束・計画・テスト手順を逐語で連結した記録内ファイル `developer-brief-1.md`（86KB）にまとめ、委任プロンプトでは先頭 2 行のマーカーと「全文 Read」指示 + 要点再掲にとどめた; ステージ定義の「ルール束を逐語で貼る」をファイル経由で満たす（トークン節約、Fable 5 委任方針）
 - 2026-08-22T12:40:00Z — Bolt B1 は worktree を使わず `main-sync` から `bolt/b1-u1-canon-json-goldens` を切った（Q1 = A、PR 直列・aidlc 記録を先頭コミットに同乗）; `aidlc-bolt.ts start --name B1 --batch 1`（worktree なし）で BOLT_STARTED を記録
+- 2026-09-06T14:36:37Z — [u10-ci-governance] 計画改訂後の `fingerprint --unit` が「active directive is missing, stale, or legacy」で拒否された（前セッションの指示が失効）。`next --resume` で load-steering 4 部 → run-stage を再取得し（承認 epoch 更新）、その指示の下で指紋 `73fb6047…` を生成した
+- 2026-09-06T14:36:37Z — [u10-ci-governance] Plan Approval の初回提示は選択肢ラベルに注釈と推奨印を付けた（「Approve Plan（この計画で進む）(Recommended)」）ため、`aidlc-log.ts answer --details "Approve Plan"` が「actual offered choice from this prompt and session」不一致で拒否された。`[Answer]:` を空に戻して decision を再記録し、ラベルを固定トークンそのもの（`Approve Plan` / `Request Changes`、注釈は説明欄）で再提示 → 受領（PLAN_APPROVAL_RECORDED）。学習候補: Plan Approval の提示ラベルは固定トークン単体にし、注釈・推奨は説明欄に書く
 
 ## Tradeoffs
 
 - 2026-08-22T12:40:00Z — 委任を 2 回（Step 1〜16 / Step 17〜19）に分け直列化; 1 回にまとめると文脈が長くゴールデン採取の品質が落ちるため。同一承認・同一指紋の下で行う
+- 2026-09-06T14:36:37Z — [u10-ci-governance] 委任は 1 回（aidlc-developer-agent、Opus）。ブリーフは規則束・計画・手順・改訂済み要件/設計を逐語連結した `developer-brief-4.md`（129KB）経由とし、プロンプトには先頭 2 行のマーカーと要点再掲を置いた。長時間のカバレッジ 2 回測定を含むため、報告は `developer-report-4.md` にも書かせて通知経路に依存しない形にした
 
 ## Open questions
 

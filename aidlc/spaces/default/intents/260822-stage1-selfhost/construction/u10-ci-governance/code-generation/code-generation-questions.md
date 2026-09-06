@@ -5,7 +5,10 @@
 > （B2 = U10、2026-08-23 改訂）、`aidlc/spaces/default/memory/team.md`（PR 直列運用、Bolt = PR、squash-merge）、実地確認
 > （PR #24 は CI 3 ジョブ緑・mergeStateStatus CLEAN・未マージ）。
 
-## 質問
+## 以前の質問（2026-08-22の記録）
+
+Q1のブランチ作成タイミングは履歴として保持する。現在は既存の実装を確認し記録を是正する再作業であり、旧Boltブランチの作成・
+ruleset適用・PR作成を再実行しない。今回の対象は末尾のPlan Approvalに示す。
 
 ### Q1. Bolt B2 のブランチを切るタイミング
 
@@ -20,12 +23,19 @@ PR #24（Bolt B1）は CI 緑でマージ可能な状態ですが未マージで
 
 ## Plan Approval
 
-対象: `code-generation-plan.md`（§4 の Step 0〜11、埋め込み Testing Contract `sha256:303d9bb7b5d777d54a6761be9ed154d85d5bb3f2d6b9cce02f71f4ed1b3a4ff3`）と
-`unit-test-instructions.md`（`scripts/governance/verify-ci-governance.sh` / `cargo test --manifest-path tools/lint/Cargo.toml` の Unit 限定コマンド）。
+2026-09-06の対象: `code-generation-plan.md` のStep 1〜6と、そのTesting Contract、および `unit-test-instructions.md`。
 
-[Approval Fingerprint]: sha256:7f0e1353ae14399ae2c8a4f8aa147ebe38a5376db0641c6f90bc1a24414f3c75
+ワークスペースのCI設定は変更しない。現行設定を改訂済み要件・設計へ照合し、Unit限定コマンド（検査20項目・`tools/lint` 自己テスト）と受入の
+実測（カバレッジ2回測定・`cargo audit` 2件・unsafe不適合例の拒否）を実行して記録する。`code-summary.md` を現行の事実で書き直し（旧版は
+履歴として保存済み）、`traceability.json` の15件を実在ファイルのパス単体へ対応付け、`source-manifest.json`（変更パスなし）を作る。
+不一致が判明した場合は、検査項目を先に追加する変更案を返して計画を改訂する。
 
-- Approve Plan — この計画で実装に進む（委任は Q1 のタイミングで）
+計画準備時の `verify-ci-governance.sh --with-ruleset` は20項目成功であった。これは全CI実行・キュー完走・依存監査・カバレッジ再測定の
+成功を意味しない。
+
+[Approval Fingerprint]: sha256:73fb6047d771f21ad6fa75a7cb9179c25d20dd34e637e9e3e0a03a60a4defe45
+
+- Approve Plan — この計画で実コード生成（検証と記録の是正）に進む
 - Request Changes — 計画・テスト手順を修正する
 
 [Answer]: Approve Plan

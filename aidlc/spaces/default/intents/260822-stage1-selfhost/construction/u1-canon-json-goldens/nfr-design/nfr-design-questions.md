@@ -2,8 +2,8 @@
 
 > NFR Design（Construction 3.3）の質問票（Unit: U1、kind: library）。出典: `../nfr-requirements/security-requirements.md`
 > （NFR1.x / NFR2.x / NFR4.x）、`../nfr-requirements/tech-stack-decisions.md`、`../functional-design/functional-spec.md`
-> （W1〜W5）、`../../../inception/contract-design/contract-summary.md`（C1 / C7）。性能の数値目標はないがNFR5.1の劣化測定・記録を適用する。scalability /
-> reliability / observability の常駐サービス向け要求は対象外で、本ステージの成果物は `security-design.md` /
+> （W1〜W5）、`../../../inception/contract-design/contract-summary.md`（C1 / C7）。performance / scalability /
+> reliability / observability の要求は kind = library のため存在せず、本ステージの成果物は `security-design.md` /
 > `logical-components.md` / `traceability.json` の 3 つ。
 >
 > **質問なし。** 設計パターンの選択余地（耐障害・スケール・キャッシュ・観測）は純粋ライブラリには無く、セキュリティ

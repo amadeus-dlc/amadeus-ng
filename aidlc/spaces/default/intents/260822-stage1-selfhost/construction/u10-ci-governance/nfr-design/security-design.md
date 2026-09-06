@@ -1,145 +1,180 @@
-# security-design — U10 CI ガバナンス（`u10-ci-governance`）
+# security-design — U10 CI・品質管理（`u10-ci-governance`）
 
-> NFR Design（Construction 3.3）成果物（Unit: U10、kind: packaging）。出典: `../nfr-requirements/security-requirements.md`
-> （NFR2.1〜2.5 品質ゲートの機械強制、NFR4.1〜4.5 サプライチェーン / 最小権限、STRIDE、レビュー Minor 3 件）、
-> `../nfr-requirements/tech-stack-decisions.md`（ruleset への required checks 追加、`merge_group` トリガ、toolchain 1.95.0、
-> `cargo audit` ×2、`unsafe_code` forbid 昇格、`permissions`、`tools/lint` CI、カバレッジ除外、PBT シード固定）、
-> `../../../inception/contract-design/contract-summary.md`（U10 は契約面を持たない — C1 / C2 に影響なし）、確認事項
-> `nfr-design-questions.md`（前提 P1〜P4、Looks correct）。
->
-> packaging Unit のため、設計 = CI ワークフロー・スクリプト・GitHub 設定の**形**と**障害ドメイン**の確定。
-> 設計ステージの制約に従い、設定の例示は ≤15 行の断片のみ（完全なファイルは code-generation で書く）。
-> logical-components は本 Unit の produces に無いため、論理コンポーネントは §5 に節として置く。
+> 2026-09-06改訂。更新済みの品質・安全性要件を、CI・設定管理・検証の設計に具体化する。今回更新する成果物は本書とtraceability.json。GitHub設定・コード・品質閾値は変更しない。
 
-## 1. 設計方針
+## Sources
 
-ガバナンスは **(a) 機械強制を GitHub 側（ruleset）と CI 側（ワークフロー）の 2 層で重ねる**、**(b) 変更は冪等な
-スクリプトで行い前後を記録する**、**(c) 外部依存の一時障害をマージ停止の原因にしない**、の 3 点で設計する。
-プロダクトコードは触らない（NFR 要求 §1 の境界）。
+- [Q1] `nfr-design-questions.md` の2026-09-06確認要約（Looks correct）。
+- [requirements] `../nfr-requirements/security-requirements.md` のNFR2.1〜2.5 / NFR4.1〜4.5。
+- [technology] `../nfr-requirements/tech-stack-decisions.md`。
+- [contracts] `../../../inception/contract-design/contract-summary.md`、`../../../inception/domain-design/components.md`。U10はpackagingであり、製品CLI・フックの外部契約C1/C2を所有しない。
+- [local] リポジトリルートの `.github/workflows/ci.yml`、`.github/workflows/review-thread-resolution.yml`、`scripts/coverage.sh`、`rust-toolchain.toml`、`Cargo.toml`、`tools/lint/Cargo.toml`、`scripts/governance/`（2026-09-06読取）。
+- [observed] `../ruleset-observed-20260906.json`。同日取得済みの設定記録であり、実働試験の代わりにはしない。
+- [history] `../code-generation/superseding-decisions.md`。暫定0.05などの旧裁定は過去の記録として区別する。
 
-## 2. CI ワークフロー（NFR2.2 / NFR2.3 / NFR2.5 / NFR4.1 / NFR4.2 / NFR4.4）
+## 1. 設計方針と境界
 
-- **トリガ**: `pull_request`（`branches: [main]`）+ `merge_group` + `workflow_dispatch`。merge queue は `merge_group` イベントで
-  required checks を要求するため必須（NFR2.2）。`concurrency.group` は `ci-${{ github.workflow }}-${{ github.ref }}` のまま
-  （`merge_group` の ref は `gh-readonly-queue/...` で PR の ref と衝突しない）。
-- **権限**: workflow 直下に `permissions: contents: read`（NFR4.4）。ジョブ個別の昇格なし。
-- **toolchain**: `dtolnay/rust-toolchain@master` に `rust-toolchain.toml`（`channel = "1.95.0"`、`components = ["rustfmt", "clippy", "llvm-tools"]`、
-  `profile = "minimal"`）から**導出した** `toolchain` / `components` 入力を渡す（NFR4.2。**実装時の実測**: `@master` は `toolchain:` 入力必須で
-  ファイルを自動では読まないため、`scripts/governance/toolchain-inputs.sh` が導出する — 正本は 1 つ）。ci.yml にバージョン・コンポーネントのリテラルは書かない。
-- **ジョブ**（required checks のコンテキスト名は既存の 3 つを維持）:
+CIは検査結果を計算し、GitHubのrulesetは必須結果とキュー条件をマージ判断へ適用する。設定の存在、検査の実行、結果の受理を分けて検証する。未実行・取消・取得失敗を成功へ読み替えない。
 
-| ジョブ | ステップ | required | 備考 |
+構成はCI定義、レビュー結果の再評価、品質設定、ruleset管理手順に分ける。外部依存にはAction・再利用ワークフロー、Rust/Node/Bun/Quintの配布元、crates.io、RustSec advisory DBがある。外部障害をマージ条件から隔離するのはauditだけで、他の必須検査が外部取得に失敗すればマージを止める。
+
+トークンは秘密情報として扱う。SHA固定は取得版を固定する手段であり、提供元やコードの無害性を保証しない。参照版の変更は差分レビューと検証を伴う変更提案で行う。新規クラウド資源・AWS Bedrock・製品の永続化機構は導入しない。
+
+## 2. CIの構成と結果の受理
+
+`ci.yml` はmain向けの変更提案、merge_group、workflow_dispatchで起動する。concurrencyはworkflow名とrefで分離し、同一組の古い実行を取り消す。取消の結果を合格として受理しない。
+
+| ジョブ | 責務 | 必須結果との関係 | 失敗時の扱い |
 |---|---|---|---|
-| `check` | `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo lint` → `cargo test --workspace` → **`cargo fmt --manifest-path tools/lint/Cargo.toml --all --check`** → **`cargo clippy --manifest-path tools/lint/Cargo.toml --all-targets -- -D warnings`** → **`cargo test --manifest-path tools/lint/Cargo.toml`** | はい | NFR2.3（太字が追加分）。`Swatinem/rust-cache` は既に `tools/lint -> target` を含む |
-| `quint` | `scripts/quint-gate.sh`（Node 22 + quint 0.32.0） | はい | 変更なし |
-| `coverage` | `pull_request`: `scripts/coverage.sh --base "origin/${{ github.base_ref }}"`。`merge_group` / `workflow_dispatch`: `scripts/coverage.sh`（絶対のみ） | はい | NFR2.4 / 2.5。`merge_group` は base ref を持たないため絶対ゲートのみ（PR 時に相対は済む） |
-| `audit` | `taiki-e/install-action@v2`（`tool: cargo-audit`）→ `cargo audit` → `cargo audit --file tools/lint/Cargo.lock` | **いいえ** | NFR4.1。advisory DB / ネットワークの一時障害で全マージが止まらないよう required 外（前提 P1）。赤は PR で可視、依存更新 PR で対応。運用 1 週間後に required 化を再判断 |
+| check | workspaceのfmt/clippy/cargo lint/test、tools/lintのmanifest-path指定fmt/clippy/test | checkとして直接必須、CI Successもsuccess必須 | 不合格としてマージを止める |
+| quint | Node 22 / Quint 0.32.0でquint-gate.shを実行 | quintとして直接必須、CI Successもsuccess必須 | モデル検査失敗・取得失敗を合格にしない |
+| coverage | coverage.shで絶対・条件付き相対ゲートを評価 | coverageとして直接必須、CI Successもsuccess必須 | 閾値未達・計測失敗を合格にしない |
+| aidlc-distribution | Bun 1.3.13で配布同期・ローカル修正と回帰試験を検査 | CI Success経由で必須 | 同期差分や回帰失敗でCI Successを止める |
+| review-thread-resolution | SHA固定の外部ワークフローで未解決スレッドを検査 | 変更提案でCI Successがsuccess必須 | 失敗・取消・未実行は合格にしない |
+| ci-success（表示名CI Success） | 上記結果をイベント別条件で集約 | CI Successとして直接必須 | always()で起動して結果を検査し、合わない結果を拒否 |
+| audit | workspaceとtools/lintのCargo.lockをcargo auditへ渡す | 直接必須にもCI Successにも含めない | 赤・未実行を可視化し、脆弱性対応と取得失敗の再実行を分ける |
 
-```yaml
-# ci.yml の形（例示、抜粋）
-on:
-  pull_request: { branches: [main] }
-  merge_group: {}
-  workflow_dispatch: {}
-permissions:
-  contents: read
-```
+### イベントごとの違い
 
-## 3. ruleset の変更（NFR2.1 / NFR4.5）
+| イベント | check/quint/coverage/aidlc-distribution | レビュー検査 | coverage比較 |
+|---|---|---|---|
+| pull_request | 全件success必須 | success必須 | 絶対90%とbaseに対する相対差 |
+| merge_group | 全件success必須 | skippedを受理 | 絶対90%のみ |
+| workflow_dispatch | 全件success必須 | skippedを受理 | 絶対90%のみ |
 
-- 対象: 既存 ruleset「main」（`deletion` / `non_fast_forward` / `merge_queue` SQUASH ALLGREEN）。classic branch protection は使わない。
-- 追加する規則: `required_status_checks` — `required_status_checks: [{context: "check"}, {context: "quint"}, {context: "coverage"}]`、
-  `strict_required_status_checks_policy: true`。既存規則と `bypass_actors: []` は維持。
-- 手順スクリプト `scripts/governance/ruleset-required-checks.sh`（bash + `gh api`、オーナー権限で実行）:
-  1. `GET /repos/{owner}/{repo}/rulesets/{id}` → `before.json` として記録ディレクトリ（`<record>/construction/u10-ci-governance/
-     code-generation/ruleset/`）に保存。
-  2. `rules[]` の `required_status_checks` が期待（3 コンテキスト + strict）と**一致していれば何もしない**（冪等判定は規則タイプの有無ではなく
-     コンテキスト集合 + strict フラグの一致 — レビュー Minor 2 の引き取り）。無い / ずれていれば追加・補正した JSON を組み立て
-     `PUT /repos/{owner}/{repo}/rulesets/{id}`（既存 3 規則と `bypass_actors` を載せ直す — PUT は `rules[]` を全置換）。
-  3. `GET` し直して `after.json` を保存し、3 コンテキストの存在を `jq` で検証して終了コードに反映。
-- 受入（正常系 — NFR 要求レビュー Minor 3 の引き取り）: required checks 追加後、緑の PR 1 本（本 Bolt の PR 自身で可）が
-  merge queue を通って squash-merge まで完走すること。否定系: 赤のまま queue に入れた PR がマージされないこと（実地 1 回）。
+CI Successは `needs` の結果を検査する。基本4検査のskippedやcancelledは受理しない。レビュー検査をスキップできるのは、変更提案以外の2イベントである。auditの先行コマンドが失敗して後続のtools/lint検査が走らなかった場合、そのロックファイルの監査は未実行として扱い、再実行で確認する。
 
-```text
-# 追加する規則（例示）
-{ "type": "required_status_checks",
-  "parameters": { "strict_required_status_checks_policy": true,
-    "required_status_checks": [ {"context":"check"}, {"context":"quint"}, {"context":"coverage"} ] } }
-```
+### レビュー結果の再評価
 
-## 4. ワークスペース設定（NFR4.2 / NFR4.3 / NFR2.4 / NFR2.5）
+`review-thread-resolution.yml` はレビュー・コメントの作成/変更/削除等、15分間隔、手動実行を契機に、同じ外部ワークフローで `Check unresolved comments` の状態を再評価する。手動指定では対象番号を指定でき、無指定は外部ワークフローへ空の入力を渡す。
 
-- `rust-toolchain.toml`（新規）: `[toolchain] channel = "1.95.0"`、`components = ["rustfmt", "clippy", "llvm-tools"]`、`profile = "minimal"`。
-- `Cargo.toml`: `[workspace.lints.rust]` に `unsafe_code = "forbid"` を追加。クレート個別の `#![forbid(unsafe_code)]` は残してよい
-  （重複は無害）。`tools/lint/Cargo.toml` の `[lints.rust]` に `unsafe_code = "forbid"`。
-- `scripts/coverage.sh`: `measure_line_coverage` の `cargo llvm-cov --workspace ...` に `--ignore-filename-regex '(^|/)modules/app/aidlc/src/main\.rs$'`
-  を追加（ファイル 1 本に限定、NFR2.5。**実装時の実測**: llvm-cov はカバレッジデータに絶対パスを記録するため tech-stack-decisions §1 の
-  `^modules/...` 単独アンカーは不活性 — `(^|/)` で実効化、2026-08-22 UTC）。`TOLERANCE` は承認値 0.01 → 実装時の残ジッタ 0.0175pp により
-  **暫定 0.05**（Bolt B2 ゲート裁定、U3 ロック退役後に 0.01）。コメントの較正根拠を更新。
-- PBT シード固定（NFR2.4）: **(a) 環境変数 `PROPTEST_RNG_SEED` を採用**（proptest 1.11 の `RngSeed::Fixed`、テストコード変更なし — code-generation で確定）。検討した候補は (a) 環境変数 `PROPTEST_RNG_SEED`
-  （`scripts/coverage.sh` と CI で固定値を与える。proptest 1.11 で対応していれば最小変更）、(b) テスト側ヘルパで
-  `TestRunner::new_with_rng(config, TestRng::from_seed(RngAlgorithm::ChaCha, &SEED))` を用いる（テストコードの変更が要る —
-  境界「プロダクトコードは触らない」には抵触しないが core-domain のテストを触る）。(a) を第一候補とする。
-  受入は 2 回計測の差 0.00pp。
+再評価するコミットステータスと、`ci.yml` の実行時に集約したCI Successは別の出力である。再評価だけで既に完了したCI Successも自動更新されるとは、このローカル定義だけから保証しない。スレッドの解決・再開後にどの結果が更新され、最新のマージ条件へ反映されるかを実働検証で確認する。
 
-## 5. 論理コンポーネントと障害ドメイン（前提 P4）
+## 3. 権限・秘密情報・外部コード
 
-| コンポーネント | 置き場 | 障害 | 影響範囲（ブラストラディウス） | 手当て |
-|---|---|---|---|---|
-| CI ワークフロー | `.github/workflows/ci.yml` | 設定誤り・ステップ赤 | 当該 PR のみ（マージ不可） | PR 内で修正。`workflow_dispatch` で手動再実行可 |
-| `audit` ジョブ | 同上 | advisory DB / ネットワーク障害 | 当該 PR の `audit` 赤のみ（required 外なのでマージは止まらない） | 再実行。真の advisory は依存更新 PR |
-| ruleset「main」 | GitHub 設定 | 誤設定（コンテキスト名の綴り違い等） | **全 PR のマージ停止** | 手順スクリプトの前後 JSON、`jq` 検証、正常系 PR の完走確認。誤設定時は `before.json` から復元（`PUT`） |
-| toolchain 固定 | `rust-toolchain.toml` | 指定版の取得失敗 / ローカルとの不一致 | 全ジョブ赤 | `rustup` が自動取得。更新は PR でのみ |
-| workspace lints | `Cargo.toml` / `tools/lint/Cargo.toml` | `unsafe_code` forbid で既存コードが赤 | 全ジョブ赤 | 現状 unsafe 使用ゼロ（practices-discovery 実測）。赤なら U7 で修正（境界） |
-| カバレッジゲート | `scripts/coverage.sh` | 除外 regex の誤り / 決定化されていない揺れ | `coverage` ジョブ赤 | 除外はファイル 1 本、2 回計測で差 0.00pp を受入 |
+`ci.yml` のworkflow既定はcontents: readであり、追加権限はreview-thread-resolutionに限定する。別ファイルの再評価ワークフローでは、workflowとrefreshジョブに同じレビュー用権限を明示する。
 
-共有資源: GitHub Actions のランナーとキャッシュ（`Swatinem/rust-cache`）のみ。秘密情報なし（`GITHUB_TOKEN` read）。
+| 対象 | 宣言する権限 | 目的と境界 |
+|---|---|---|
+| ci.ymlの通常ジョブ | contents: read | ソース・依存取得と検査。既定をwriteに広げない |
+| ci.ymlのreview-thread-resolution | contents: read、issues: read、pull-requests: read、checks: write、statuses: write | レビューの読取と検査・状態の反映。外部ワークフローへ与える権限として明示 |
+| review-thread-resolution.ymlのrefresh | 同上 | レビュー状態の再評価。別ワークフローの権限であり「全workflowが読取専用」とは記述しない |
 
-## 6. 要求への対応
+両レビュー呼出の参照版とci_refは、以下の同一SHAを使う。
 
-| 要求 | 設計上の手当て |
-|---|---|
-| NFR2.1 | ruleset に `required_status_checks`（3 コンテキスト、strict）を冪等スクリプトで追加、否定系 + 正常系の実地確認（§3） |
-| NFR2.2 | `merge_group` トリガ追加、coverage は merge_group 時に絶対ゲートのみ（§2） |
-| NFR2.3 | `check` ジョブに `tools/lint` の fmt / clippy / test（§2） |
-| NFR2.4 | `TOLERANCE=0.01` + PBT シード固定（§4、手段は code-generation で確定） |
-| NFR2.5 | `--ignore-filename-regex` で `main.rs` のみ除外（§4） |
-| NFR4.1 | `audit` ジョブ（2 ロックファイル、required 外）（§2） |
-| NFR4.2 | `rust-toolchain.toml` 1.95.0 + `dtolnay/rust-toolchain@master`（§2 / §4） |
-| NFR4.3 | `[workspace.lints.rust] unsafe_code = "forbid"` + `tools/lint` 個別（§4） |
-| NFR4.4 | `permissions: contents: read`（§2） |
-| NFR4.5 | 前後 JSON を記録する手順スクリプト（§3） |
+`9cf0e9a8cd74c72de704763025003ed3b7608c65`
 
-## 7. 見送り（後続 intent）
+呼出先は `j5ik2o/ci/.github/workflows/review-thread-resolution.yml`。更新時は参照版とci_refの一致、権限差分、入力・出力の契約、解決/未解決/検査不能の結果を確認する。トークンをログ・保存JSON・成果物へ出力しない。
 
-- Dependabot（`github-actions` / `cargo`）と GitHub Actions の SHA ピン留め — practices-discovery の裁定どおり本 intent では
-  見送り（NFR 要求レビュー Minor 1 の引き取り — 対称に明記）。
-- `audit` の required 化 — 運用 1 週間後に再判断（§2）。
+配布検証ジョブのcheckout/setup-bunもSHA固定され、同ジョブのcheckoutはpersist-credentials=false。その他にはタグ/ブランチ参照が残る。特定ジョブの設定を全ジョブへ一般化しない。全Actionの一括SHA固定とDependabot導入は既存裁定により見送る。
+
+## 4. rulesetの管理と復旧
+
+観測済みのruleset「main」は4コンテキスト（check/quint/coverage/CI Success）、strict=true、bypassなし。deletion・non_fast_forward・merge_queueを維持し、キューはSQUASH・ALLGREEN・同時1件とする。
+
+管理手順の置き場は `scripts/governance/ruleset-required-checks.sh`。設計上の操作順は次のとおり。
+
+1. 名前から対象を解決し、現在のJSONを取得してbefore.jsonに保存する。認証情報は保存しない。
+2. 必須コンテキストの集合とstrictを比較する。一致すればPUTを実行しない。
+3. 不一致なら、既存rulesからrequired_status_checksだけを置換し、他の規則・conditions・bypass_actorsを保持した送信用JSONを作る。dry-runでは予定JSONを確認する。
+4. 権限を持つ担当者が変更し、再取得したafter.jsonで結果を確認する。既存スクリプトの自動検査はコンテキスト集合・strict・保護規則の存在を確認するため、キューの具体値やbypassの不変性は前後JSONの比較でも確認する。
+5. 必須検査失敗時にマージを止める経路と、全成功時にキューを完走する経路を実働で確認し、対象版・実行結果を保存する。
+
+変更には保存先を明示し、記録欠落を避ける。誤設定時は管理者が現在値とbefore.jsonを比較し、並行して行われた正当な変更を上書きしないよう復元対象を決める。GET結果にはPUT非対応のフィールドも含まれるため、before.jsonを無加工でPUTしない。復元後も再取得・差分確認・成功/失敗両経路の検証を行う。
+
+今回は要件に合う設定が観測されているため、設計更新のためのGitHub書込は行わない。
+
+## 5. 品質設定と再現性
+
+Rust版と構成要素は `rust-toolchain.toml` を正本にする。channel=1.95.0、components=rustfmt/clippy/llvm-tools、profile=minimal。CIはtoolchain-inputs.shからchannel/componentsを導出して渡す。ローカルとCIの実際の版一致は別途ログで検証する。
+
+unsafe_code=forbidはworkspace.lints.rustで定義し、各メンバーのlints.workspace=trueで継承する。tools/lintは独立クレートなので個別のlints.rustへ同じ禁止を宣言する。ルートに書いただけで全クレートへ適用済みとは判断しない。
+
+カバレッジの正本はcoverage.shで、CI側も同じシードを宣言する。
+
+| 項目 | 値・方式 | 検証 |
+|---|---|---|
+| 絶対床 | 90.0% | workspaceの計測値が床以上 |
+| 相対許容差 | 0.01ポイント | head >= base - 0.01。base比較は変更提案時 |
+| シード | PROPTEST_RNG_SEED=20260823 | CIとローカル・headとbaseで同じ値 |
+| 明示除外 | modules/app/aidlc/src/main.rsの1ファイルのみ | 下記の式が計測へ渡り、他ファイルやクレートを除外しない |
+| 再現性 | 同一コード・版・シードの2回測定 | 生のhead値と差を記録し、差0.00ポイントの受入目標への達否を判定 |
+
+除外式は表の区切りと混同されないよう、表の外に記載する。
+
+`(^|/)modules/app/aidlc/src/main\.rs$`
+
+シード固定は必要条件であり、再現性の実証ではない。取得失敗・計測失敗・残る非決定性は未達として記録する。tools/lintはworkspace外で、90%床の対象には含めない。過去の暫定0.05・旧ロック試験由来の残差は履歴として保持し、現在の0.01と混同しない。
+
+## 6. 論理コンポーネントと障害の影響範囲
+
+| コンポーネント | 配置 | 障害の影響 | 手当て |
+|---|---|---|---|
+| CI検査とCI Success | ci.yml | 個別実行の不合格。共有設定の誤りは同じ定義を使う複数実行へ波及する | 原因の検査単位を識別し、設定修正後に対象版を再検証 |
+| レビュー検査・再評価 | ci.yml、review-thread-resolution.yml、外部固定版 | 対象変更のマージ阻止。外部実装・共通設定の障害や誤検知は複数の変更へ波及し得る | 対象・コミット・入力と出力を照合し、結果の更新経路を確認 |
+| audit | ci.yml | 監査失敗/未実行は可視化されるが単独ではマージを止めない | 脆弱性対応と外部取得失敗を区別し、両ロックファイルの結果を確認 |
+| ruleset | GitHub | 誤設定は全対象マージの停止または誤許可を招く | 前後JSON、差分確認、必要時の復旧と両経路の実働検証 |
+| ツールチェーン・lints | TOML、導出スクリプト | 主にRustを使うcheck/coverage/auditへ影響。全ジョブが同じ障害になるとは限らない | 正本と導出入力・継承先を確認 |
+| カバレッジ | coverage.sh | coverage不合格からCI Success・マージ条件へ伝播 | 対象ファイル・閾値・比較条件・再現性を確認 |
+
+共有資源はランナー・キャッシュだけではない。外部配布元、再利用ワークフロー、トークンの権限、リポジトリ設定も共有の依存・境界である。キャッシュがあることを取得成功や検査成功の根拠にしない。
+
+## 7. 要求対応と検証計画
+
+| 要求 | 設計箇所 | 検証方法 |
+|---|---|---|
+| NFR2.1 | §4 必須4コンテキストとキュー | 設定JSON、失敗時停止と全成功時完走 |
+| NFR2.2 | §2 イベント別集約 | 各イベントの結果・取消・スキップ、レビュー再評価の反映 |
+| NFR2.3 | §2 check | workspaceとtools/lintの各検査ログ |
+| NFR2.4 | §5 同条件計測 | 生の2回測定値、差、head/baseの比較 |
+| NFR2.5 | §5 除外と床 | 除外範囲と絶対ゲート |
+| NFR4.1 | §2 audit | 両ロックファイルの実行・未実行・失敗の識別 |
+| NFR4.2 | §5 正本と導出 | ローカル/CIのRust版一致 |
+| NFR4.3 | §5 lints継承 | 全メンバーと独立クレートの宣言、unsafe不適合例の拒否 |
+| NFR4.4 | §3 権限と外部コード | ジョブ別権限、固定版の一致、秘密情報の非出力 |
+| NFR4.5 | §4 設定管理 | 前後JSON、変更対象・実行者・結果、復旧手順 |
+
+設定確認にはverify-ci-governance.shを使う。その成功は設定の存在の証拠であり、全CI・カバレッジ2回測定・依存監査・キュー完走・レビュー再評価の実働成功を意味しない。今回の設計更新ではそれらを実施せず、後続の受入項目として残す。
+
+上流要件のR-01（Markdown表2行の表示崩れ）は上流文書のレビュー所見として残る。本設計では正規表現を表の外へ置き、表示崩れを持ち込まない。上流所見を本設計の完了だけで解消扱いにしない。
+
+## Assumptions & Open Questions
+
+None.
+
 
 ## Review
 
-**Verdict:** NOT-READY
+**Verdict:** READY
 **Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-08-23T01:19:03Z
-**Iteration:** 2（advisory, recovery, unit: u10-ci-governance）
+**Date:** 2026-09-06T14:08:56Z
+**Iteration:** 1
+**Request Challenge:** review:8656c6b1637c9f1712c8de1943c19cf7
 
 ### Findings
 
-| # | Severity | Location | Finding | Recommendation |
-|---|---|---|---|---|
-| 1 | Major | §2（CI ワークフロー ジョブ表）／§5（論理コンポーネント表） | `.github/workflows/ci.yml` には `review-thread-resolution`（`j5ik2o/ci` の再利用ワークフロー `review-thread-resolution.yml` を SHA `9cf0e9a8cd74c72de704763025003ed3b7608c65` で呼び出す）と `ci-success`（`check`/`quint`/`coverage`/`review-thread-resolution` の結果を集約する `needs` ジョブ）の 2 ジョブが実在するが、§2 のジョブ表・§5 のコンポーネント表のどちらにも行がない。オーナー指示（`superseding-decisions.md` #9、2026-08-23T00:40Z）による追加で、`.github/workflows/review-thread-resolution.yml` も新設されている。 | §2 に `review-thread-resolution` と `ci-success` の行を追加し（トリガ条件 `pull_request` のみ／`merge_group` では `review-thread-resolution` の `skipped` を許容、`ci-success` が最終ゲート）、§5 に「CI Review Thread Gate」をコンポーネントとして追加して障害ドメイン（レビュースレッド未解決 PR のマージ阻止・ボットコメント誤検知時の影響範囲）を記述する。 |
-| 2 | Major | §2「権限」／§5「共有資源」 | §2 は「ジョブ個別の昇格なし」、§5 は「秘密情報なし（`GITHUB_TOKEN` read）」と明記しているが、実装では `review-thread-resolution` ジョブがジョブレベルで `permissions: { contents: read, checks: write, issues: read, pull-requests: read, statuses: write }` を個別付与しており、両記述と矛盾する（`ci.yml` 該当ジョブ、`.github/workflows/review-thread-resolution.yml` も同じ 5 権限）。セキュリティ設計文書内の権限モデルに関する断定が実態と食い違っている。 | §2 の「ジョブ個別の昇格なし」を「`review-thread-resolution` ジョブのみ `checks: write` / `statuses: write` / `issues: read` / `pull-requests: read` を個別付与（レビュースレッド状態をコミットステータスへ反映するため）」に訂正し、§5 の「秘密情報なし」も同様に訂正する。 |
-| 3 | Major | §3（ruleset 変更）／`traceability.json` NFR2.1 | §3 の本文（「required checks のコンテキスト名は既存の 3 つを維持」）と例示 JSON、および `traceability.json` の NFR2.1 `target` はいずれも `required_status_checks` を `check` / `quint` / `coverage` の 3 コンテキストとしているが、実際の ruleset（`code-generation/ruleset/2026-08-23-ci-success/after.json`、`updated_at: 2026-08-23T09:15:41+09:00`）と `scripts/governance/ruleset-required-checks.sh` の `REQUIRED_CONTEXTS="check,quint,coverage,CI Success"` はいずれも 4 コンテキスト（+ `CI Success`）を要求している。 | §3 の本文・例示 JSON を 4 コンテキスト（`check` / `quint` / `coverage` / `CI Success`）に更新し、`traceability.json` NFR2.1 の `target` も同期する。 |
-| 4 | Minor | §1（信頼境界）／§5 | 新規の外部再利用ワークフロー `j5ik2o/ci/.github/workflows/review-thread-resolution.yml`（サードパーティ組織リポジトリ、SHA ピン留め）が、CI ワークフローの信頼境界として設計のどこにも分析されていない。SHA ピン留め自体は健全な選択だが、「なぜこの外部ワークフローを信頼するか」「更新時の検証手順」は§1/§4のどの上流 NFR にも対応が無い（本 intent の NFR2.x/NFR4.x はこの機能追加より前に確定した要求）。 | §1 または §5 に「外部再利用ワークフローの信頼境界」を一項目として追加し、SHA 更新時の検証手順（例: 差分レビュー必須）を明記する。あわせて上流の `security-requirements.md` 側で対応する NFR ID の新設を検討する（本 intent の nfr-requirements ゲートで扱うべき事項として申し送り）。 |
+advisory（承認判断の参考となる独立レビュー）として、現在の設計本文に新規所見はない。上流nfr-requirementsのR-01は別文書の未解決所見として保持し、この判定で解消扱いにしない。
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| - | - | - | No findings | No action required | Resolved |
 
 ### Validation Tool Results
 
 | Tool | Result | Interpretation |
 |---|---|---|
-| `aidlc-sensor-traceability.ts --stage nfr-design` | `{"pass":true,"gaps":[],"orphans":[],"findings_count":0}` | 構造的には全 NFR ID（NFR2.1〜2.5 / NFR4.1〜4.5）に coverage エントリと非空の `target` があり合格。ただし `target` の**内容が実装と一致しているか**まではこのセンサーの検証範囲外 — 上記所見 #3 はセンサー通過後に手動突合で発見した不一致 |
-| `aidlc-sensor-required-sections.ts --stage nfr-design` | `{"pass":true,"h2_count":7,"findings_count":0}` | H2 見出し 7 個（登録済み既定の ≥2 を満たす）で合格 |
-| 実装照合（`ci.yml` / `review-thread-resolution.yml` / `ruleset/2026-08-23-ci-success/after.json` / `scripts/governance/*.sh` / `scripts/coverage.sh` / `rust-toolchain.toml` / `Cargo.toml` / `tools/lint/Cargo.toml`） | TOLERANCE=0.05・`(^|/)modules/app/aidlc/src/main\.rs$`・`rust-toolchain.toml`（1.95.0 / rustfmt,clippy,llvm-tools）・`unsafe_code = "forbid"`（両 Cargo.toml）・`PROPTEST_RNG_SEED`・ruleset 冪等判定ロジックは設計と**一致**。`review-thread-resolution` / `ci-success` ジョブと required checks 4 コンテキストは設計と**不一致**（所見 #1〜#3） | iteration 1→2 で意図された更新（TOLERANCE・regex・toolchain 導出・PBT シード・ruleset 適用実績・UTC 表記）は正しく反映済み。その後のオーナー指示（CI Review Thread Gate、2026-08-23T00:40Z）が未反映という新規ギャップ |
+| required-sections | PASS、H2=9、findings_count=0 | レビュー追記前のsecurity-design本文の構造を確認。 |
+| upstream-coverage | PASS、未参照0 | 今回解決済みのsecurity-requirements・tech-stack-decisions・contract-summaryを指定し、security-design・traceabilityの成果物集合で検査した。 |
+| traceability | PASS、gaps/orphans/invalid_targets等すべて0 | 対象UnitのNFR詳細要求と対応表に欠落・不正参照はない。 |
+| 要求ID・設計節の独立照合 | PASS、10件 | 上流要求行、upstream_ids、coverageのID集合が一致し、各targetの設計節が本文に存在する。 |
+| Bun.markdown.htmlによる表の描画確認 | PASS、本文6表 | HTMLへ描画した各表の全行がヘッダーと同じ列数（順に4/4/3/3/4/3列）。正規表現は表外にあり、上流R-01の表示崩れを持ち込んでいない。 |
+| linter / type-check | 適用外 | 対象はMarkdown/JSON設計文書で、TS/JS等の実コード・対象スニペットはない。コード検査成功とは扱わない。 |
+| 現行CI・設定との照合 | 一致 | CIの7ジョブ、3イベント別の集約条件、audit必須外、別ワークフローの再評価と権限、2呼出のSHA/ci_ref一致、4必須コンテキスト、strictとキュー設定を確認した。 |
+| 品質設定・管理手順との照合 | 一致 | Rust 1.95.0と構成要素の導出、unsafe禁止の適用方法、シード20260823、0.01ポイント、90%床、main.rsのみの除外、rulesetスクリプトの比較・保存・送信項目と検査範囲を確認した。 |
+| 上流境界との照合 | 一致 | U10はCI・設定管理のpackagingであり、製品外部契約C1/C2や製品の永続化責務を新たに所有していない。 |
 
 ### Summary
 
-TOLERANCE・カバレッジ除外正規表現・toolchain 導出・PBT シード固定・ruleset 冪等判定など、iteration 1 からの既知の更新は実装と正しく同期している。一方で、それより後にオーナー指示で追加された CI Review Thread Gate（`review-thread-resolution` ジョブ・`ci-success` 集約ジョブ・外部再利用ワークフロー・required checks の 4 コンテキスト化）が `security-design.md` のどのセクションにも反映されておらず、§2/§5 の「ジョブ個別の昇格なし」「秘密情報なし」という明示的な記述は実装と矛盾している（所見 #1〜#3、Major 3 件）。いずれも実装済みコードとの単純な同期作業で解消できる範囲だが、セキュリティ設計文書が実際の権限モデル・必須チェック集合について誤った断定をしている状態は看過できないため、advisory 目安（Major ≤ 2 で READY）に従い NOT-READY とする。人間の承認ゲートでは、この同期修正を Request Changes として本ステージへ差し戻すか、次サイクルの回復レビューへ申し送るかの判断を推奨する。
+設計は10件の詳細要求を、具体的なCI定義・設定管理・復旧・受入方法へ対応付けている。レビュー状態の再評価と完了済みCI Successの更新を同一視せず、外部実装の未観測部分や実働未確認事項を区別しているためREADYとする。
+
+本レビューではGitHub書込、全CI実行、依存監査、カバレッジ2回測定、キュー完走試験、外部再利用ワークフロー内部の検証を行っていない。それらは本文§7の後続検証として残る。

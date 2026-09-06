@@ -4,6 +4,7 @@
 ## Interpretations
 <!-- example: 2026-05-29T10:14:32Z — chose REST over GraphQL; the consuming team only needs CRUD, revisit if subscriptions land -->
 - 2026-08-22T11:56:32Z — [u1-canon-json-goldens] 質問ゼロで前提 3 点（セキュリティ設計・論理コンポーネント・障害ドメイン）の確認のみ; kind = library で performance/scalability/reliability/observability の要求が無く、成果物は security-design / logical-components / traceability。NFR 要求レビューの Minor 1（深さ上限 128 の互換影響）は P1 に『実測深さの棚卸し』として引き取った
+- 2026-09-06T14:15:11Z — [Interpretations] [u10-ci-governance] 前セッションはレビュー結果の記録直前に中断していた（REVIEW_REQUESTED iteration 1 は未照合、security-design.md 末尾には Request Challenge 一致・READY の完全な `## Review` 節が残存）。再派遣せず、その節を検証のうえ終端受領として記録した — 記録ツールが要求時バイトと接尾辞の単一所有節を検証するため、再派遣は不要と判断
 
 ## Deviations
 <!-- example: 2026-05-29T10:14:32Z — skipped the optional caching layer the stage prose suggested; the dataset is small enough that it adds risk -->
@@ -27,6 +28,7 @@
 - 2026-08-22T17:25:00Z — [Interpretations] U10（packaging）の nfr-design: produces は security-design + traceability の 2 つ（logical-components は produces 外）— 論理コンポーネント（CI ジョブ・スクリプト・ruleset の境界と障害ドメイン）は security-design 内の節に置く。`audit` ジョブを required checks に含めない判断（外部 advisory DB の一時障害で全マージが止まるのを避ける）を前提 P1 として人間確認へ
 - 2026-08-22T17:28:00Z — [Interpretations] proptest 1.11.0 のソース（config.rs:40 `PROPTEST_RNG_SEED`、`RngSeed::Fixed(u64)`）で環境変数によるシード固定が実在することを確認 — NFR2.4 の決定化は `scripts/coverage.sh` と CI で `PROPTEST_RNG_SEED` を固定値に設定するだけで足り、テストコードの変更は不要（security-design §4 の第一候補 (a) が成立）
 - 2026-08-22T17:31:00Z — [Open questions] U10 nfr-design レビュー READY（Minor 2）: (1) カバレッジ除外 regex の表記が tech-stack-decisions（`^` アンカー + 相対パス基準）と設計で逐語不一致 → code-generation 計画で正本を 1 つに確定（`modules/app/aidlc/src/main\.rs$`、cargo llvm-cov の相対パス基準） (2) ruleset 冪等スクリプトは規則タイプの有無だけでなく required コンテキスト集合の一致で収束判定する → 計画に反映
+- 2026-09-06T14:15:11Z — [Open questions] [u10-ci-governance] 書込時センサー traceability が Current Stage（functional-design）のキーで発火し、FR/AC 系 ID 不在の所見 49 件（advisory）を出した。unit-major 走行では directive.stage（nfr-design）と Current Stage が食い違うため、書込時センサーのステージ解決は誤キーになる。レビュアーが nfr-design で実行した traceability は PASS。所見は無視したが、フックのステージ解決は後続 intent で扱う候補
 
 ## 2026-08-23T00:30Z — U10 nfr-design-questions.md を確認済みバイトへ復元
 - PR #25 レビュー指摘の引き取り（ecb2307）で人間確認済みの質問ファイルを書き換えてしまい、エンジンが「確認後に変更」を検出してステージ完了を拒否した。

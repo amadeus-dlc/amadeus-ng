@@ -62,10 +62,6 @@ D6 互換の配当により、upstream `dist/claude/` の資産（33 ステー�
 
 - **Construction Iteration**: unit-major
 - **Skeleton Stance**: off
-- **Active Unit**: u10-ci-governance
-- **Unit State**: paused
-- **Unit Pause Reason**: CI・品質管理の要件を現状へ整合する要約の確認待ち
-- **Unit Next Action**: ユーザー回答後にunit resumeし、質問票の最終Answerとsummary-confirmationを記録してU10の3成果物を更新・独立レビューする
 ## Phase Progress
 <!-- Status values: Pending, Active, Verified, Skipped -->
 
@@ -127,7 +123,7 @@ Per unit: [TBD]
 - **Current Stage**: functional-design
 - **Next Stage**: nfr-requirements
 - **Status**: Running
-- **Last Updated**: 2026-09-06T02:36:37Z
+- **Last Updated**: 2026-09-06T14:58:55Z
 
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning
