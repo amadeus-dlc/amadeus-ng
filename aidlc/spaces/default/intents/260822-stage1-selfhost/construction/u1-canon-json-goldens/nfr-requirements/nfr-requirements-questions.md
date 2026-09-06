@@ -10,7 +10,9 @@
 > NFR5（性能は非目標）は本 Unit に固有の要求を持たない。構築フェーズの質問は本当の空白だけに絞る方針に従い、
 > 次の前提を確認して成果物へ進む。
 
-## 前提（確認事項）
+## 以前の前提（2026-08-22の記録）
+
+以下のP1〜P4は当時の記録として保存する。現行実装との不整合は末尾の2026-09-06確認要約で明示し、以前の回答を今回の確認に流用しない。
 
 - P1. 技術選定: sha256 は `sha2`（pure Rust・RustSec 既知脆弱性なし・広く使われる）、JSON の読取は既存の
   `serde` + `serde_json`（`preserve_order` をワークスペース全体で有効化 — ADR 0001 決定 3）、数値と文字列の
@@ -24,7 +26,7 @@
   PBT（ラウンドトリップ: parse → serialize の決定性、hash の冪等性）。
 - P4. 性能（NFR5）: 数値目標なし。ワンショット CLI の 1 回の直列化は KiB 規模で、計測は行わない。
 
-## Consolidated Summary Confirmation
+## 以前に確認済みのまとめ
 
 - U1 に固有の NFR 質問はなし。適用 NFR は NFR1（upstream 互換 — 3 プロファイルのバイト一致をゴールデンで固定）、NFR2（品質ゲート）、NFR4（サプライチェーン: sha2 / serde / serde_json のみ追加、unsafe forbid、cargo audit clean）
 - 技術選定（P1）: sha2、serde + serde_json（preserve_order 有効）、JS 互換の自前ライタ。bun は開発時のみ
@@ -38,3 +40,20 @@ Does this all look correct before I generate the artifact?
 - Request changes
 
 [Answer]: Looks correct
+
+## Consolidated Summary Confirmation
+
+2026-09-06の再確認。既存の非機能要求と今回確認した機能設計に合わせ、品質・安全性・技術選定の3成果物を更新する。
+
+- 配置は `core-infrastructure::canon_json`、ゴールデンは `tests/golden/upstream-3c3146cf/` とする。旧スタブ名や `tests/goldens/` へ戻さない。ドメインへの依存がないことと、外部クレートへの依存を区別する。
+- 数値・キー順・孤立サロゲートの扱いと、用途別のハッシュ族は確認済みの機能設計に従う。JSON読取では `preserve_order` に加えて既存の `float_roundtrip` を維持し、大整数や非有限数を含む任意の値の完全往復は保証しない。
+- 深さはオブジェクト・配列を1段として127段まで受け入れ、128段以上は拒否する。固定コーパス内のJSON88ファイルの最大深さは7、最大サイズは81,850バイト。正準化ケースのうちJSON文字列入力29件も最大深さ7。JavaScriptで構築する残り3件はこのJSON入力測定の対象外とする。観測済みの入力範囲と将来の任意入力を区別し、深さ制限だけで巨大入力のメモリ枯渇も防げるとは主張しない。
+- 秘密情報・個人情報をゴールデンへ保存しないという要求を維持する。使い捨て環境と正規化だけで混入がないと断言せず、採取データと来歴を点検する。純粋な変換処理にはネットワーク・認証・永続化の責務を追加しない。
+- TDD、カバレッジ90%床・相対差0.01、固定シード、必須CI、unsafe forbid、依存検査を維持する。実行ログがある検証と未実行の検証を区別し、根拠なく「既知脆弱性なし」「全CLI経路検証済み」と記載しない。性能の数値目標は追加せず、劣化が観測された場合は測定してintent記録へ残す。
+
+Does this all look correct before I generate the artifact?
+
+- Looks correct
+- Request changes
+
+[Answer]:

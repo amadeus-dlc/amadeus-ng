@@ -13,7 +13,7 @@
 ```yaml
 entities:
   - name: JsonValue
-    description: "メモリ上の JSON 値。オブジェクトのキー順を保持する（JS の挿入順に対応）。canon-json が読み書きの唯一の経路"
+    description: "メモリ上の JSON 値。オブジェクトのキー順を保持する（JS の挿入順に対応）。canon-json がこの値モデルの直列化・読取の経路"
     attributes:
       - { name: kind, type: enum, required: true, allowed_values: ["null", boolean, number, string, array, object] }
       - { name: number_repr, type: enum, required: false, allowed_values: [integer, float], constraints: "kind = number のとき必須。契約型の数値は integer に固定（ADR 0001 決定 4）" }
@@ -76,13 +76,13 @@ entities:
       - "cases は family ごとに最低 1 件。hash-canonical は入力クラス別（ADR 0001 受入条件 2）に全クラスを網羅"
 
 relationships:
-  - { from: Digest, to: JsonValue, cardinality: "one-to-one", description: "Digest は 1 つの JsonValue の直列化バイト列から決定的に計算される" }
+  - { from: JsonValue, to: Digest, cardinality: "one-to-many", description: "1 つの JsonValue からプロファイルに応じた Digest を計算できる。ハッシュの逆引きや値の一意な復元を意味しない" }
   - { from: GoldenCase, to: SerializationProfile, cardinality: "many-to-one", description: "hash-canonical 族のケースは hash-canonical プロファイルで検証、cli/hook 族は contract-compact（stdout）と contract-pretty（ディスク成果物）で検証" }
 ```
 
 ## 2. 要約
 
-- **JsonValue** は挿入順を保持する不変の JSON 値で、読み書きの唯一の入口。数値は整数優先（契約型は整数に固定）。
+- **JsonValue** は挿入順を保持する不変の JSON 値で、この値モデルの読取・直列化をcanon-jsonに集約する。数値は整数優先（契約型は整数に固定）。
 - **SerializationProfile** は 3 値の閉集合。体裁（インデント・末尾改行）とキー順（宣言/挿入順 vs 再帰ソート）を決める。
 - **Digest** は 2 族（正準 = `sha256:` 接頭辞、非正準 = 生 hex）で、どのプロファイルのバイト列から計算するかが固定。
 - **GoldenCase / GoldenCorpus / NormalizationRule** は upstream から採取した正解データとその比較規則。正規化規則は

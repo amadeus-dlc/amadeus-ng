@@ -4319,3 +4319,310 @@
 **Session**: 01a06f1e-c051-7383-b420-f57465e42885
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-05T23:42:55Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-05T23:51:22Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-design-questions.md
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Unit Paused
+**Timestamp**: 2026-09-05T23:52:14Z
+**Event**: UNIT_PAUSED
+**Stage**: functional-design
+**Unit**: u1-canon-json-goldens
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+**Reason**: 正準JSON設計の修正後要約に対する確認待ち
+**Next Action**: ユーザー回答後にunit resumeし、質問票の回答とsummary-confirmation受領証を記録してU1設計の独立レビューへ進む
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T00:20:09Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T00:20:25Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Unit Resumed
+**Timestamp**: 2026-09-06T00:22:12Z
+**Event**: UNIT_RESUMED
+**Stage**: functional-design
+**Unit**: u1-canon-json-goldens
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-06T00:22:19Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-design-questions.md
+**Questions SHA-256**: 5d5f3de9495fd4a2ca5225767172f18f2d5d298ed732a1a5687dbc39b3b26c9c
+**Hash Scope**: confirmed-content-v1
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-06T00:22:30Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-06T00:22:30Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T00:23:19Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --unit u1-canon-json-goldens --reviewer aidlc-architecture-reviewer-agent --iteration 1
+**Error**: Cannot start review for "functional-design": this stage's output document <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/entities.md was not saved after the confirmed answers. Save the document after confirmation, then continue.
+
+---
+
+## Guardrail Loaded
+**Timestamp**: 2026-09-06T00:23:25Z
+**Event**: GUARDRAIL_LOADED
+**Scope**: all
+**Path**: .codex/aidlc-rules/
+**Rule count**: 7
+
+---
+
+## Health Check
+**Timestamp**: 2026-09-06T00:23:25Z
+**Event**: HEALTH_CHECKED
+**Request**: /aidlc --doctor
+**Details**: 46 passed, 0 failed
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:23:48Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/entities.md
+**Context**: construction > u1-canon-json-goldens > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:23:49Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md
+**Context**: construction > u1-canon-json-goldens > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:23:49Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md
+**Context**: construction > u1-canon-json-goldens > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:23:49Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/traceability.json
+**Context**: construction > u1-canon-json-goldens > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T00:23:49Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2113d785
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-06T00:23:49Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2113d785
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-2113d785.md
+**Findings count**: 34
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T00:23:53Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:8446aef35191c64b0a00000de43eeace63b20e373cd63cf04effc569007cc937
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/functional-design/functional-spec.md
+**Review Appendix Offset**: 10203
+**Review Appendix Prior Digest**: sha256:e99ac4bd4a37ff45f24380fc702eb6430932a842e8e7d101cd374cebbf326ee3
+**Review Appendix Prior Length**: 8579
+**Review Challenge**: review:abb6da86e9c815820fb407d4d72d895f
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:24:06Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md
+**Context**: construction > u1-canon-json-goldens > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:25:01Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/correction-report.md
+**Context**: construction > u1-canon-json-goldens > correction-report.md
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-06T00:26:34Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: functional-design
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T00:27:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: 01a0741a-51b9-7791-b5b0-4bae3c46e168
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** READY\n\nfunctional-spec.md末尾へレビューを追記しました。既存10,204バイトは変更していません。\n\n- R-01〜R-07：すべてResolved。\n- R-08：Minor。重複キーの「最後の値を採用し、最初の位置を保持する」規則をW3へ明記する必
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T00:28:03Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u1-canon-json-goldens
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:8446aef35191c64b0a00000de43eeace63b20e373cd63cf04effc569007cc937
+**Artifact Fingerprint**: sha256:a282cdb31723ce0478a6da3325e7d6dc9a582273c6eb42d18d694309d8bcc03d
+**Review Appendix Artifact**: construction/u1-canon-json-goldens/functional-design/functional-spec.md
+**Review Appendix Offset**: 10203
+**Review Appendix Prior Digest**: sha256:e99ac4bd4a37ff45f24380fc702eb6430932a842e8e7d101cd374cebbf326ee3
+**Review Appendix Prior Length**: 8579
+**Review Challenge**: review:abb6da86e9c815820fb407d4d72d895f
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T00:28:10Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u1-canon-json-goldens
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-06T00:29:05Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T00:29:30Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log --help
+**Error**: Unknown subcommand: --help. Valid: decision, answer, link, review
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T00:29:30Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-requirements
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/security-requirements.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/tech-stack-decisions.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/traceability.json
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T00:29:48Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u1-canon-json-goldens > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T00:30:06Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u1-canon-json-goldens
+
+---
+
+## Unit Paused
+**Timestamp**: 2026-09-06T00:30:07Z
+**Event**: UNIT_PAUSED
+**Stage**: nfr-requirements
+**Unit**: u1-canon-json-goldens
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Reason**: 正準JSONの品質・安全性要件を現行実装と実測へ整合させる要約の確認待ち
+**Next Action**: ユーザー回答後にunit resumeし、nfr-requirements質問票の最終回答とsummary-confirmationを記録。承認後に3成果物を更新し独立レビューへ進む
+
+---
