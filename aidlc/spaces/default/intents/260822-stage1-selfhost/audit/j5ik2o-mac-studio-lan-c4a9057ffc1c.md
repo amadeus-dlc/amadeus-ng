@@ -1396,3 +1396,209 @@
 **Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:45:58Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-06T15:46:52Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:48:56Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T15:49:30Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-requirements
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:50:26Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T15:50:34Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:50:59Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-06T15:51:07Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: 811230fadd0527edebc0ec5237a9f808dc82c3ba6a666e3a742a56fffcd6d9af
+**Hash Scope**: confirmed-content-v1
+**Unit**: u2-domain-es-core
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T15:53:38Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > security-requirements.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T15:54:37Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T15:54:42Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+**Context**: construction > u2-domain-es-core > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T15:54:42Z
+**Event**: SENSOR_FIRED
+**Fire id**: 5989f388
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-06T15:54:42Z
+**Event**: SENSOR_FAILED
+**Fire id**: 5989f388
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-5989f388.md
+**Findings count**: 68
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T15:56:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > security-requirements.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T15:56:18Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/nfr-requirements/validation-20260907.md
+**Context**: construction > u2-domain-es-core > nfr-requirements > validation-20260907.md
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T15:56:22Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:3f29eef5902ffd00bbdf0211c5f2191589265c4a48ee333ee502493c29621f66
+**Review Appendix Artifact**: construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 20284
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:56:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab979c5e35c9e02fa
+**Message**: レビュー担当の判定待ちです。届き次第、日誌を記録して Unit を完了し、次（u2 の NFR 設計）へ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:59:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6c7a5e293d8f1359
+**Message**: AI-DLC の Construction を u2-domain-es-core（ドメイン ES 中核）で進めており、機能設計を完了して NFR 要求を現行裁定へ同期済みです。今は独立レビューの判定待ちで、届き次第 Unit を完了して NFR 設計へ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T16:04:14Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u2-nfr-review-1
+**Agent ID**: au2-nfr-review-1-02f1e1fc7a41aecc
+**Message**: レビューを完了し、`security-requilrements.md` 末尾に `## Review` 節を 1 つだけ追記しました（追記のみ、他ファイルは未変更）。\n\n**Verdict: NOT-READY**（advisory、iteration 1）\n\n**所見 8 件**: Major 3、Minor 4、Info 1\n\n**主要所見 3 件**\n\n- **R-01（Major）** 
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T16:04:37Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: NOT-READY
+**Request Fingerprint**: sha256:3f29eef5902ffd00bbdf0211c5f2191589265c4a48ee333ee502493c29621f66
+**Artifact Fingerprint**: sha256:23e57f519368f9b993d9ebcb4f004c0ff557b9c10ef99493a1d2744b2387cb87
+**Review Appendix Artifact**: construction/u2-domain-es-core/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 20284
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T16:05:07Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-requirements
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
