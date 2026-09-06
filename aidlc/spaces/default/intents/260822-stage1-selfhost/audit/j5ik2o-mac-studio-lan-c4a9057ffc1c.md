@@ -1860,3 +1860,197 @@
 **Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
 
 ---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T16:39:56Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: 
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T16:40:23Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: 
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-06T16:42:22Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: ls aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/code-generation/ aidlc/spaces/default/intents/260822-stage1-selfhost/const
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-06T16:43:29Z
+**Event**: UNIT_STARTED
+**Stage**: code-generation
+**Unit**: u2-domain-es-core
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:48:50Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T16:49:14Z
+**Event**: ARTIFACT_REUSED
+**Stage**: code-generation
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-summary.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/traceability.json
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:54:50Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-plan.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-plan.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:55:41Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/unit-test-instructions.md
+**Context**: construction > u2-domain-es-core > code-generation > unit-test-instructions.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T16:57:33Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T16:57:38Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: Approve this exact Code Generation plan?
+**Options**: Approve Plan,Request Changes
+**Checkpoint**: Code Generation Plan Approval
+**Plan Target**: unit:u2-domain-es-core
+**Intent**: 01a02785-1bd8-76eb-aeea-5aa303ebd5b6
+**Directive Epoch**: sha256:f308dac1644f7611d21502bdcc4aacd3e9e2f074dd727b2c62cf9c1f865b4a6b
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Approval Fingerprint**: sha256:dd1170c1a75b16e30a351f34d9f4ff57164bcbe65482361e94e6909de7f0634d
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Questions SHA-256**: f1c625f46e9a8701fa380308060a96852072bbaea2c5a7dd930b3528460252b3
+**Prompt SHA-256**: f1c625f46e9a8701fa380308060a96852072bbaea2c5a7dd930b3528460252b3
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:58:46Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T16:59:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aaa715f5d0d72cd57
+**Message**: A
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T16:59:34Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T17:00:05Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T17:00:13Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Context**: construction > u2-domain-es-core > code-generation > code-generation-questions.md
+
+---
+
+## Plan Approval Recorded
+**Timestamp**: 2026-09-06T17:00:18Z
+**Event**: PLAN_APPROVAL_RECORDED
+**Stage**: code-generation
+**Details**: Approve Plan
+**Unit**: u2-domain-es-core
+**Checkpoint**: Code Generation Plan Approval
+**Plan Target**: unit:u2-domain-es-core
+**Intent**: 01a02785-1bd8-76eb-aeea-5aa303ebd5b6
+**Directive Epoch**: sha256:f308dac1644f7611d21502bdcc4aacd3e9e2f074dd727b2c62cf9c1f865b4a6b
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Approval Fingerprint**: sha256:dd1170c1a75b16e30a351f34d9f4ff57164bcbe65482361e94e6909de7f0634d
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/code-generation/code-generation-questions.md
+**Questions SHA-256**: c1e975a3544a10cbd8405864360f667f61c43bd967e687f78bae3fc66a51715f
+**Prompt SHA-256**: f1c625f46e9a8701fa380308060a96852072bbaea2c5a7dd930b3528460252b3
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T17:03:22Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/code-generation/memory.md
+**Context**: construction > code-generation > memory.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T17:06:41Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: adca4fa9d4c95739e
+**Message**: U2 の FCC 化と ID 照合の実装 Bolt を進めており、計画承認後に委任 1（FCC 11 型の新設）を開発エージェントへ送って完了待ちです。次は届いた差分と受入を検証し、委任 2 へ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T17:25:28Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u2-dev-3
+**Agent ID**: au2-dev-3-4df892cb6aef78a2
+**Message**: 委任 1（Step 0〜1）を完了しました。受入 1〜5 すべて PASS、設計判断が要る問題は 0 件です。\n\n**受入の結果**\n\n| 項目 | 結果 |\n|---|---|\n| テスト（`-p core-command-domain`） | lib 591 → 693、契約試験 1 → 2、ITF 1、doc 3、全緑 |\n| fmt / clippy / `cargo lint` | すべ
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T17:25:51Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
