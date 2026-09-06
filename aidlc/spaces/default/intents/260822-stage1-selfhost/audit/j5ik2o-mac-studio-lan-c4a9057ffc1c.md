@@ -998,3 +998,401 @@
 **Context**: construction > code-generation > memory.md
 
 ---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T15:02:35Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:04:55Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8fb55355285bab50
+**Message**: <analysis>\nThis conversation is a continuation (post-compaction) of an AI-DLC orchestration session. The user invoked `/model` then `/aidlc --resume`. The previous compaction summary covered u10 nfr-d
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-06T15:05:50Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u2-domain-es-core
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:09:55Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T15:10:00Z
+**Event**: ARTIFACT_REUSED
+**Stage**: functional-design
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T15:10:30Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log
+**Error**: Unknown subcommand: undefined. Valid: decision, answer, link, review
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T15:10:50Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log decision
+**Error**: Missing --stage <slug>
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T15:10:51Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer
+**Error**: Missing --stage <slug>
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T15:12:25Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: I've created 2 questions at aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md. How would you like to answer them?
+**Options**: Guide me,I'll edit the file,Chat
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:12:40Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-06T15:12:47Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: Guide me
+**Unit**: u2-domain-es-core
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T15:12:47Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Q4 静的計画と添字帳のファーストクラスコレクション化 / Q5 next_decision の Intent ID 照合
+**Options**: Q4: A 両方導入し U4 側の書換えも同じ Bolt,B 設計は同じで U4 側は繰り延べ,C 今回は導入せず例外として記録,X Other; Q5: A Result で IntentMismatch 拒否,B 呼出側責務として逸脱記録,C 判断材料を外から渡す,X Other
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:15:20Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-06T15:16:06Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: Q4 = X (Other): リードモデルでは使わないでください。コマンド側でドメインモデルの配列部分があるならFCCを使ってください。 / Q5 = A. Result にして IntentMismatch で拒否 (Recommended)
+**Unit**: u2-domain-es-core
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T15:17:51Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log decision --stage functional-design --unit u2-domain-es-core --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md --decision Does this all look correct before I generate the artifact? --options Looks correct,Request changes
+**Error**: Summary confirmation section in aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md must contain exactly one `[Answer]:` line with a blank value before this command runs.
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T15:18:05Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:18:34Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-06T15:18:40Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md
+**Questions SHA-256**: b4b3d8548433d656f5ff7267c2918b85fccf4149c8ea6b5183ab9b447da680e2
+**Hash Scope**: confirmed-content-v1
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:20:17Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:21:16Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ada41dd7cf83e7f5d
+**Message**: A で進めて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:21:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae791a6475558ef92
+**Message**: A で進めてください
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:21:47Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T15:22:00Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Q4a FCC の結合（combine）・差集合（divide）を BR5.5 でどう扱うか
+**Options**: A 型ごとの契約として combine/divide を全 FCC に定め残りの成果物更新を続ける（推奨）,B 共通 trait FirstClassCollection にも combine/divide を入れる方針にする,C 反映案を修正
+**Unit**: u2-domain-es-core
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-06T15:22:00Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: 1 (= A) — 最終的にはtraitに盛り込みたい
+**Unit**: u2-domain-es-core
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T15:26:40Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u2-domain-es-core
+**Error**: Cannot start review for "functional-design": <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md changed after the human confirmed its summary. First repair the questions file: reset the existing consolidated-summary `[Answer]:` tag to blank and remove or repair every invalid or duplicate post-summary section named by the validation error. Only then re-present the consolidated summary and record a fresh confirmation with `aidlc-log.ts decision --checkpoint summary-confirmation --stage "functional-design" --unit "u2-domain-es-core" --questions-file "<path>" --decision "Does this all look correct?"`; end the turn, wait for the human's response, update the recorded answer, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage "functional-design" --unit "u2-domain-es-core" --questions-file "<path>" --details "Looks correct"`. Re-save each generated artifact, rerun the section-12a reviewer when this stage declares one, then retry the stage completion command. If a completion gate is already open or a terminal section-12a receipt freezes artifact writes, instead present Request Changes and end the turn. After a fresh human turn choosing it, run `aidlc-orchestrate.ts report --stage "functional-design" --result rejected --user-input "Request Changes" --reason "<requested changes>"`; then revise and re-confirm the summary, re-save the artifacts, rerun the reviewer, and report `--result revised`.
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T15:26:53Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md
+**Unit**: u2-domain-es-core
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T15:33:19Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-06T15:33:27Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-design-questions.md
+**Questions SHA-256**: 278ed8af9ab4aacd931b5d6810e862498f3d8a0f31289fd0a173da1b050178db
+**Hash Scope**: confirmed-content-v1
+**Unit**: u2-domain-es-core
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-06T15:33:27Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u2-domain-es-core
+**Error**: Cannot start review for "functional-design": this stage's output document <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md was not saved after the confirmed answers. Save the document after confirmation, then continue.
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T15:34:01Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T15:34:03Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/entities.md
+**Context**: construction > u2-domain-es-core > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T15:34:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/rules.md
+**Context**: construction > u2-domain-es-core > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T15:34:08Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Context**: construction > u2-domain-es-core > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T15:34:11Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/functional-spec.md
+**Context**: construction > u2-domain-es-core > functional-design > functional-spec.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T15:34:19Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+**Context**: construction > u2-domain-es-core > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-06T15:34:19Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8197ffa8
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-06T15:34:19Z
+**Event**: SENSOR_FAILED
+**Fire id**: 8197ffa8
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-8197ffa8.md
+**Findings count**: 32
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-06T15:34:23Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:53f39f85652569988d19240b12c7d91defbfd7fe1e4799eb7342c23a94e76d1c
+**Review Appendix Artifact**: construction/u2-domain-es-core/functional-design/functional-spec.md
+**Review Appendix Offset**: 24252
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:38:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab23d515ff0f793fa
+**Message**: stage-1 セルフホスト intent の再開中で、いま u2-domain-es-core の機能設計を FCC 化と next_decision の ID 照合で更新し、独立レビューに出しています。次はレビュー判定を受けて Unit を完了し、次の指示へ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T15:42:46Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u2-fd-review-1
+**Agent ID**: au2-fd-review-1-3f4ed26c2ee06fd2
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict: NOT-READY**（advisory、iteration 1）\n\n所見は 10 件。内訳は Critical 0、Major 3、Minor 6、Info 1。`## Review` 節は対象成果物の末尾に 1 つだけ追記し、それ以前のバイトは変更していません。他ファイルの書
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-06T15:44:00Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u2-domain-es-core
+**Iteration**: 1
+**Verdict**: NOT-READY
+**Request Fingerprint**: sha256:53f39f85652569988d19240b12c7d91defbfd7fe1e4799eb7342c23a94e76d1c
+**Artifact Fingerprint**: sha256:1ec8f80c9c4be6569bd883a0305a5e2837d08478940ef5589f8e158ed5a5d325
+**Review Appendix Artifact**: construction/u2-domain-es-core/functional-design/functional-spec.md
+**Review Appendix Offset**: 24252
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-06T15:45:22Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u2-domain-es-core
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
