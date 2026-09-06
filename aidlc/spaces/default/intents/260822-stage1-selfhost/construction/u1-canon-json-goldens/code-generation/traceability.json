@@ -2,6 +2,7 @@
   "stage": "code-generation",
   "unit": "u1-canon-json-goldens",
   "upstream_ids": [
+    "FR7",
     "FR7.1",
     "FR7.2",
     "FR7.3",
@@ -27,9 +28,15 @@
     "NFR4.1",
     "NFR4.2",
     "NFR4.3",
-    "NFR4.4"
+    "NFR4.4",
+    "NFR5.1"
   ],
   "coverage": [
+    {
+      "id": "FR7",
+      "status": "OK",
+      "target": "modules/core/infrastructure/tests/golden_hash_canonical.rs"
+    },
     {
       "id": "FR7.1",
       "status": "OK",
@@ -43,37 +50,37 @@
     {
       "id": "FR7.3",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/lib.rs"
+      "target": "modules/core/infrastructure/src/canon_json/mod.rs"
     },
     {
       "id": "BR1.1",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/canonical.rs"
+      "target": "modules/core/infrastructure/src/canon_json/canonical.rs"
     },
     {
       "id": "BR1.2",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/canonical.rs"
+      "target": "modules/core/infrastructure/src/canon_json/canonical.rs"
     },
     {
       "id": "BR1.3",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/writer.rs"
+      "target": "modules/core/infrastructure/src/canon_json/writer.rs"
     },
     {
       "id": "BR1.4",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/writer.rs"
+      "target": "modules/core/infrastructure/src/canon_json/writer.rs"
     },
     {
       "id": "BR1.5",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/writer.rs"
+      "target": "modules/core/infrastructure/src/canon_json/writer.rs"
     },
     {
       "id": "BR1.6",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/digest.rs"
+      "target": "modules/core/infrastructure/src/canon_json/digest.rs"
     },
     {
       "id": "BR1.7",
@@ -93,17 +100,17 @@
     {
       "id": "BR2.2",
       "status": "OK",
-      "target": "modules/shared/canon-json/tests/support/mod.rs"
+      "target": "modules/core/infrastructure/tests/support/mod.rs"
     },
     {
       "id": "BR2.3",
       "status": "OK",
-      "target": "modules/shared/canon-json/tests/golden_hash_canonical.rs"
+      "target": "modules/core/infrastructure/tests/golden_hash_canonical.rs"
     },
     {
       "id": "BR2.4",
       "status": "OK",
-      "target": "tests/golden/upstream-3c3146cf/cli/provenance.json"
+      "target": "modules/core/infrastructure/tests/golden_corpus_read.rs"
     },
     {
       "id": "BR2.5",
@@ -113,52 +120,57 @@
     {
       "id": "NFR1.1",
       "status": "OK",
-      "target": "modules/shared/canon-json/tests/golden_hash_canonical.rs"
+      "target": "modules/core/infrastructure/tests/golden_hash_canonical.rs"
     },
     {
       "id": "NFR1.2",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/digest.rs"
+      "target": "modules/core/infrastructure/src/canon_json/digest.rs"
     },
     {
       "id": "NFR1.3",
       "status": "OK",
-      "target": "modules/shared/canon-json/tests/golden_corpus_read.rs"
+      "target": "modules/core/infrastructure/tests/golden_corpus_read.rs"
     },
     {
       "id": "NFR2.1",
-      "status": "OK",
-      "target": "modules/shared/canon-json/tests/golden_hash_canonical.rs"
+      "status": "N/A",
+      "target": "今回はコメントと記録の是正だけで新規プロダクションコードがなく、今回のRed/Greenは対象外。過去のTDD記録はcode-summary-history-2026-08-22.mdに保存し、今回の成功ログから推定しない。以後の振る舞い変更には承認済みTesting ContractのRed→Green→Refactorを適用する。"
     },
     {
       "id": "NFR2.2",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/lib.rs"
+      "target": "scripts/coverage.sh"
     },
     {
       "id": "NFR2.3",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/writer.rs"
+      "target": "modules/core/infrastructure/src/canon_json/parse.rs"
     },
     {
       "id": "NFR4.1",
       "status": "OK",
-      "target": "modules/shared/canon-json/Cargo.toml"
+      "target": "modules/core/infrastructure/Cargo.toml"
     },
     {
       "id": "NFR4.2",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/lib.rs"
+      "target": "Cargo.toml"
     },
     {
       "id": "NFR4.3",
       "status": "OK",
-      "target": "modules/shared/canon-json/src/parse.rs"
+      "target": "modules/core/infrastructure/src/canon_json/parse.rs"
     },
     {
       "id": "NFR4.4",
       "status": "OK",
-      "target": "tests/golden/upstream-3c3146cf/hooks/provenance.json"
+      "target": "scripts/goldens/recapture-cli.sh"
+    },
+    {
+      "id": "NFR5.1",
+      "status": "N/A",
+      "target": "数値性能目標・性能機能の新設は対象外。劣化が観測された場合は入力・サイズ・深さ、環境・版、比較対象、計測方法・反復条件を揃えて測定しintent記録へ残す。手順はcode-summary.md第7節に記録。今回ベンチマークは未実行で試験時間を性能結果としない。"
     }
   ]
 }

@@ -1,213 +1,65 @@
-# code-generation-plan — U1 canon-json とゴールデン（`u1-canon-json-goldens`）
+# code-generation-plan — U1 正準JSONの実装記録の是正
 
-> Code Generation（Construction 3.5）の計画（Unit: U1、kind: library、Bolt: B1、規模 M）。出典:
-> `../functional-design/functional-spec.md`（W1〜W5、インターフェイス）、`../functional-design/rules.md`（BR1.1〜BR1.8 /
-> BR2.1〜BR2.5）、`../functional-design/entities.md`、`../nfr-requirements/security-requirements.md`（NFR1.x / NFR2.x /
-> NFR4.x）、`../nfr-requirements/tech-stack-decisions.md`、`../nfr-design/security-design.md`、
-> `../nfr-design/logical-components.md`、`../../../inception/contract-design/contract-summary.md`（C7 — Q2 = A で layout
-> 改訂済み）、`../../../inception/units-generation/unit-of-work.md`（U1）、`../../../inception/requirements-analysis/
-> requirements.md`（FR7.1〜7.3、NFR1/NFR2/NFR4）、`docs/adr/0001-canonical-json-serializer.md`、
-> `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/`（全規則）、`code-generation-questions.md`（Q1 = A、Q2 = A）。
->
-> 実装はワークスペースルート（`modules/shared/canon-json/`、`tests/golden/upstream-3c3146cf/`、`scripts/goldens/`）に書く。
-> 記録ディレクトリにはコードを置かない。brownfield: 既存ファイルはその場で変更し、複製ファイルを作らない。
+> Unit: u1-canon-json-goldens。2026-09-06の再確認計画。
+> 出典: `../functional-design/functional-spec.md`・`rules.md`・`entities.md`、
+> `../nfr-requirements/security-requirements.md`・`tech-stack-decisions.md`、
+> `../nfr-design/security-design.md`・`logical-components.md`、
+> `../../../inception/contract-design/contract-summary.md`、
+> `../../../inception/units-generation/unit-of-work.md`、
+> `../../../inception/requirements-analysis/requirements.md`。
 
-## 1. 前提と範囲
+## 1. 目的と変更範囲
 
-- **作るもの**: (1) `canon-json` クレートの実体化（既存スタブ `modules/shared/canon-json/`）。(2) upstream ピン
-  `3c3146cf`（v2.6.40）から採取したゴールデン（hash-canonical 受入表 = FR7.1、CLI / フック実行出力 = FR7.2）と
-  再採取スクリプト。(3) ゴールデン比較器（テスト側）。
-- **作らないもの**: 他 Unit のコード（U3 の WorkflowDefinitionRepositoryImpl の `serde_json` → canon-json 置換、
-  U6 の continue_token、U7 の CLI）。ADR 0001「未確定事項」の確定記述は U9（canon-docs）へ引き渡す（採取値は
-  ゴールデン README に記録して渡す）。`cargo audit` / `rust-toolchain.toml` / `unsafe_code` の workspace lint 昇格は U10。
-- **ブランチ（Q1 = A）**: `main-sync` から `bolt/b1-u1-canon-json-goldens` を切る。最初のコミットは aidlc 記録
-  （`aidlc/` 配下）のみ、以降はコードのコミット。PR は Bolt ゲート承認後にコンダクタが 1 本だけ開く（直列運用）。
-  開発エージェントは push / PR を行わない。
-- **ゴールデン配置（Q2 = A）**: `tests/golden/upstream-3c3146cf/{hash-canonical,cli,hooks}/`。既存の
-  `stage-graph.json` / `scope-grid.json` と README は同ディレクトリ直下のまま**バイト不変**（README の規定）。
-  README には節を追記する（既存文のバイトは変えない）。
-- **採取環境**: bun 1.3.13、ネットワーク有り（`raw.githubusercontent.com/awslabs/aidlc-workflows/3c3146cf…` は
-  HTTP 200 を実測）。upstream ピンのコードを**実行して**採取する（BR2.1）。採取に失敗したケースは欠落として
-  記録し、捏造しない（W4 のエラー経路）。
-- **コーディング規則**（正本 `coding-rules/`）: フィールド既定 private（アクセサ公開）、モジュール既定 private
-  （公開は `lib.rs` の `pub use` 列挙のみ、利便再エクスポート禁止）、ドメイン同値は `PartialEq`/`Eq`、`unwrap` /
-  `expect` はプロダクトコード禁止、`missing_docs` deny（全公開要素に rustdoc）、thiserror / anyhow は使わず手実装
-  エラー enum + `fmt::Display`。Tell-Don't-Ask。Repository 語彙の造語禁止（本 Unit に Repository は無い）。
+既存のcore-infrastructure::canon_jsonと採取済みコーパスを、更新済み設計・品質要件に照らして確認する。実装は旧スタブから作り直さず、API別名・後方互換ラッパーを追加しない。期待出力・固定ピン・依存・CI基準を変更しない。
 
-## 2. 公開 API（設計の写し — 実装の契約）
+ソースの予定変更は `modules/core/infrastructure/src/canon_json/mod.rs` と `parse.rs` の説明コメントだけである。「全入力がparseを通る」「契約JSONには孤立サロゲートが現れないので実害なし」などの過大な保証を、確認済みの経路・値域・127/128段境界に合わせる。エラーメッセージを含む実行時の振る舞いは変更しない。
 
-`modules/shared/canon-json/src/lib.rs` が公開するのは次だけ（`pub use` 列挙。モジュール `value` / `profile` / `writer` /
-`canonical` / `digest` / `parse` はすべて private）:
+実装との不一致が新たに見つかった場合は、問題を再現する試験と変更案を報告し、計画の変更を受けてから扱う。本計画を根拠に他Unitや凍結済みの設計成果物まで変更しない。機能設計R-08（重複キー動作の記載不足）は最終の機能設計承認時の所見として残っており、今回の計画でその承認を代行しない。
 
-```text
-JsonValue { Null, Bool(bool), Number(Number), String(String), Array(Vec<JsonValue>), Object(ObjectMembers) }
-Number { PosInt(u64), NegInt(i64), Float(f64) }            // 非負は u64 優先、負は i64、小数・非有限は f64
-ObjectMembers                                               // 挿入順保持・キー一意（同名挿入は値を置換し位置は維持 = JS）
-SerializationProfile { ContractPretty, ContractCompact, HashCanonical }  // indent() / trailing_newline() / key_order() / purpose()
-Digest { family(), hex(), rendered() }   DigestFamily { CanonicalPrefixed, CompactRaw }
-ParseError { Syntax { offset, detail }, TooDeep { limit }, Encoding }   ToValueError
-serialize(&JsonValue, SerializationProfile) -> String
-hash_canonical(&JsonValue) -> Digest            // "sha256:" + hex（hash-canonical 出力の UTF-8 バイト列）
-hash_compact(&JsonValue) -> Digest              // 生 hex（contract-compact 出力の UTF-8 バイト列）
-parse(&str) -> Result<JsonValue, ParseError>    // 挿入順保持、深さ上限 128（TooDeep）
-parse_bytes(&[u8]) -> Result<JsonValue, ParseError>   // 不正 UTF-8 → Encoding
-to_value<T: Serialize>(&T) -> Result<JsonValue, ToValueError>   // 型付き struct → 宣言順（契約経路の唯一の変換点）
-```
+## 2. 所有するファイルと保持する成果
 
-設計からの差分（記録）: functional-spec §2 は `to_value -> JsonValue` だが、`serde_json::to_value` は失敗し得る
-（非文字列キーのマップ等）ため `Result` で返す（`unwrap` 禁止の帰結）。`parse_bytes` は `ParseError::Encoding` を
-到達可能にするために追加する。
-
-## 3. 規則の実装方針（BR → コード）
-
-| 規則 | 実装 |
-|---|---|
-| BR1.1 / BR1.2 キー順 | contract-*: integer-like キー（0〜2^32-2 の正準十進表記）を数値昇順で先頭、残りは挿入/宣言順。hash-canonical: integer-like を数値昇順で先頭、残りを **UTF-16 コード単位順**（`encode_utf16` で比較）。upstream の `canonicalize` は `Object.keys().sort()` → `Object.fromEntries` なので、integer-like 先頭は JS のプロパティ順により hash-canonical でも成立する — ゴールデンで固定 |
-| BR1.3 数値 | `PosInt` / `NegInt` は十進。ただし **|v| > 2^53** の整数は JS が f64 として扱うため f64 経路（`v as f64`）で書く（JS の丸めと一致）。`Float`: 非有限 → `null`、`0.0` / `-0.0` → `0`、それ以外は `format!("{:e}")` の最短桁 + 指数から ECMA-262 `Number::toString`（k, n 規則: 1e-6 ≤ \|x\| < 1e21 は非指数表記、それ以外は `d.ddde±N`、`e+` 書式）を組み立てる |
-| BR1.4 エスケープ | `"`, `\\`, U+0000〜U+001F（`\b \f \n \r \t` 短縮、他は `\u00xx` 小文字 hex）。非 ASCII と `/` と U+2028/2029 は生出力。孤立サロゲートは Rust 文字列に存在しないため該当なし（入力側: serde_json は `"\ud800"` を拒否 → `ParseError::Syntax`。既知の非対称として README に記録、契約 JSON には現れない） |
-| BR1.5 体裁 | pretty = 2 スペース・`"key": value`・メンバごと改行・末尾 `\n`・空は `[]` / `{}`。compact / canonical = 空白なし |
-| BR1.6 ダイジェスト | `sha2::Sha256` で直列化文字列の UTF-8 バイト列をハッシュ。`Digest::rendered()` が族ごとの表記 |
-| BR1.7 直接呼び出し禁止 | ルート `clippy.toml` の `disallowed-methods` に `serde_json::to_string` / `to_string_pretty` / `to_vec` / `to_vec_pretty` / `to_writer` / `to_writer_pretty` / `to_value` を登録（reason に canon-json 経由を明記）。canon-json 内の唯一の呼出点（`to_value`、`from_str` は禁止対象外）は `#[allow(clippy::disallowed_methods)]` + 理由コメント。既存コードに禁止関数の呼出があれば棚卸しして code-summary に列挙し、lint が赤になる箇所だけ最小修正（他 Unit の設計には踏み込まない） |
-| BR1.8 preserve_order | `[workspace.dependencies]` に `serde_json = { version = "1", features = ["preserve_order"] }`・`serde = { version = "1", features = ["derive"] }`・`sha2`・`proptest` を置き、既存クレート（core-domain dev-dep、core-interface-adapter）も `serde_json.workspace = true` に揃える（フィーチャ統合をクレート単独ビルドでも保証） |
-| NFR4.3 深さ上限 | `parse` 前に文字列リテラル外の `{` `[` を数える軽量スキャンで深さ > 128 を `TooDeep { limit: 128 }` として決定的に拒否（serde_json 既定の再帰上限と同値。`disable_recursion_limit` は使わない）。上限は `const` で 1 か所 |
-| BR2.1 来歴 | 各コーパスに `provenance.json`（upstream commit、取得 URL、抽出スニペットの sha256、captured_at、command、bun version）。ケース単位でも `provenance` を持つ |
-| BR2.2 正規化 | 比較器 `normalize()`: `<TS>`（ISO 8601 UTC）、`<CLONE>`（`<host>-<clone>` シャード名）、`<ROOT>`（作業ツリー絶対パス）、`<SESSION>`（セッション ID）。規則は `tests/golden/upstream-3c3146cf/normalization.json` に固定し、期待値・実測値の双方に適用 |
-| BR2.3 受入表 | 入力クラス: ネスト / integer-like キー（混在・ソート） / 非有限数 / 負ゼロ / 指数表記（1e21, 1e-7, 123e-20 など閾値の両側） / 2^53 超の整数 / 非 ASCII 文字列 / エスケープ（制御文字・`"`・`\\`・`/`・U+2028） / 空の配列・オブジェクト / 型付き struct のフィールド順 / 浮動小数の整数値（1.0） |
-| BR2.4 CLI 範囲 | next（開始）・report awaiting-approval / approved / rejected / revised・continue（load-steering）・skip・jump・park / unpark・recompose・set-autonomy、フック 4 本 × 許可 / 拒否 / 無視 2〜3 件 |
-| BR2.5 更新方針 | README に「ピン更新 intent でのみ更新」を明記。更新手順 = 再採取スクリプト |
-
-## 4. 棚卸し（code-generation で確定し code-summary に記録する事項）
-
-- [ ] I1. 契約 JSON の実測最大ネスト深さ（`tests/golden/upstream-3c3146cf/*.json`、`.claude/tools/data/*.json`、
-      `.claude/tools/data/scopes/`、ゴールデン入力）が 128 を十分下回ること（想定 10 段未満）。
-- [ ] I2. 契約 JSON に integer-like キーが現れないこと（現れる場合は箇所と写像を記録）。
-- [ ] I3. 契約 JSON のキーが ASCII のみであること（UTF-16 順 = バイト順の前提）。
-- [ ] I4. 契約 JSON に浮動小数フィールドが現れないこと（現れる場合は一覧）。
-- [ ] I5. ワークスペース内の `serde_json::to_*` / `to_value` 直接呼出の棚卸し（lint 導入の影響範囲）。
-- [ ] I6. `preserve_order` 有効化で既存テスト（ITF 準拠 2 本の `serde_json::Value` 利用）が緑のままであること。
-- [ ] I7. `components.md` の CanonJson `external_dependencies: []` を実依存（sha2 / serde / serde_json）へ更新
-      （記録側、コンダクタが実施 — nfr-design レビュー Minor 1）。
-
-## 5. 実装ステップ（TDD、レイヤーごとに Red → Green → Refactor）
-
-Testing Contract の `plan_profile.steps` を基線とし、ライブラリに存在しない層（Repository / Frontend）は省く。
-「Data model」= 値・プロファイル・ダイジェストの型、「Business logic」= writer / canonical / digest / parse、
-「API」= ファサードと `to_value`。各 Red ステップでは失敗するコマンド出力（失敗テスト名と要約行）を
-`code-summary.md` に記録してから Green に進む。
-
-### 5.0 コンダクタ（承認後・委任前）
-
-- [ ] Step 0. Bolt 開始と ブランチ: `bun .claude/tools/aidlc-bolt.ts start --name B1 --batch 1` →
-      `git switch -c bolt/b1-u1-canon-json-goldens`（`main-sync` から）→ aidlc 記録を 1 コミット
-      （`chore(aidlc): record inception and U1 design for stage-1 self-host`）。
-
-### 5.1 骨格（開発エージェント — 委任 1）
-
-- [ ] Step 1. プロジェクト構造と設定: `Cargo.toml` の `[workspace.dependencies]` に serde / serde_json(preserve_order) /
-      sha2 / proptest を追加し、`core-domain`（dev-dep）・`core-interface-adapter` を `.workspace = true` に揃える。
-      `modules/shared/canon-json/Cargo.toml` に `serde` / `serde_json` / `sha2`（runtime）、`proptest`（dev）を追加。
-      `clippy.toml` に `disallowed-methods`（BR1.7）。`lib.rs` に private モジュール 6 本の空殻と `pub use` 列挙の枠。
-      `cargo build -p canon-json` と `cargo clippy --workspace --all-targets -- -D warnings` が緑（I5 / I6 の棚卸しを
-      ここで実施）。
-- [ ] Step 2. テストランナー確認: `cargo test -p canon-json`（brownfield — 実測済み: 0 tests, exit 0）。
-      統合テストの置き場 `modules/shared/canon-json/tests/` と、ゴールデンを `env!("CARGO_MANIFEST_DIR")/../../../
-      tests/golden/upstream-3c3146cf/` で読む経路を決め、`unit-test-instructions.md` のコマンドで走ることを確認。
-
-### 5.2 ゴールデン採取 — hash-canonical 受入表（FR7.1 / BR2.1 / BR2.3）
-
-- [ ] Step 3. 再採取スクリプト: `scripts/goldens/recapture-hash-canonical.sh`（bash, `set -euo pipefail`）と
-      `scripts/goldens/capture-hash-canonical.ts`（bun）。手順: 使い捨てディレクトリに upstream ピン
-      `3c3146cfd7cef33020d48e8d48d4e80d0f8c2820` の `dist/claude/.claude/tools/aidlc-testing-posture.ts` を取得 →
-      `canonicalize` / `sha256` / `hashObject`（upstream 仕様 09-cli-tools.md §8.4 が指す `:104-123`）をスニペットとして
-      抽出し sha256 で照合（期待値はスクリプトに固定） → `export` を付けた一時モジュールとして bun から import →
-      入力クラス（§3 BR2.3 行）ごとに JS 値を評価し、`JSON.stringify(canonicalize(v))` / `hashObject(v)`（正準族）、
-      `JSON.stringify(v)` と `sha256(JSON.stringify(v))` 生 hex（非正準族）、`JSON.stringify(v, null, 2) + "\n"`
-      （pretty）を採る → `tests/golden/upstream-3c3146cf/hash-canonical/cases.json` と `provenance.json` に書く。
-      入力は JSON テキスト（`input`）で表し、JSON で表せない NaN / ±Infinity のクラスだけ `input_js`（JS 式文字列）
-      + Rust 側の構築手順（`construct`）を持つ。ケース ID は `hash-canonical/<class>/<case>`。
-- [ ] Step 4. 採取の実行とレビュー: スクリプトを実行してコーパスを生成し、`git diff` で内容を目視（秘密情報・
-      絶対パス無し）。`README.md` に「採取ゴールデン」節を追記（採取手順・来歴・正規化規則・更新方針 BR2.5・
-      既知の非対称: 孤立サロゲート）。
-
-### 5.3 canon-json — Data model 層（value / profile / digest の型）
-
-- [ ] Step 5. Red: `JsonValue` / `Number` / `ObjectMembers`（挿入順・同名置換・アクセサ）、`SerializationProfile`
-      3 値の属性（indent / trailing_newline / key_order / purpose）、`Digest` / `DigestFamily` の `rendered()`、
-      `ParseError` / `ToValueError` の `Display` を対象に失敗テスト（各コンポーネント 5〜8 本）を書き、失敗出力を記録。
-- [ ] Step 6. Green: 最小実装（フィールド private + アクセサ、`PartialEq` 導出、手実装 `Display`）。
-- [ ] Step 7. Refactor: 命名・rustdoc（`missing_docs`）・`must_use` 整理。テスト緑のまま。
-
-### 5.4 canon-json — Business logic 層（writer / canonical / digest / parse）
-
-- [ ] Step 8. Red: (a) ゴールデン受入表テスト `tests/golden_hash_canonical.rs` — 全行で hash-canonical 出力と
-      `sha256:` ダイジェスト、compact 出力と生 hex、pretty 出力を比較（失敗 = 行ごとの diff を表示）。
-      (b) ユニット: 数値表記クラス（整数・2^53 超・1.0・1e21 / 1e-7 境界・負ゼロ・非有限）、エスケープクラス、
-      キー順（integer-like 混在・UTF-16 順）、体裁（pretty の入れ子・空）、parse（不正 JSON の offset、深さ 128 超
-      → TooDeep、`parse_bytes` の不正 UTF-8 → Encoding、重複キーは後勝ち・位置維持）。失敗出力を記録。
-- [ ] Step 9. Green: writer（プロファイル分岐・数値ライタ・最小エスケープ・体裁）、canonical（再帰ソート）、
-      digest（sha2）、parse（深さスキャン → `serde_json::from_str` preserve_order → `JsonValue` 変換）。
-- [ ] Step 10. Refactor: 数値ライタの分離、重複排除、rustdoc。ゴールデン全行一致・ユニット緑のまま。
-- [ ] Step 11. PBT（proptest、`src/` 同居）: 決定性（同入力 → 同出力）、`parse(serialize(v, compact)) == v`
-      （NaN を含まない生成器）、`hash_canonical` の冪等性、canonical ソートの冪等性。ケース数は既定（シード固定は U10）。
-
-### 5.5 canon-json — API 層（ファサードと to_value）
-
-- [ ] Step 12. Red: `#[derive(Serialize)]` の struct が宣言順の `JsonValue` になること（ネスト・`Option` の `None`
-      スキップ有無は serde の既定どおり — テストで固定）、`to_value` の失敗経路（非文字列キーのマップ → `ToValueError`）、
-      ファサードが設計の列挙どおりの項目だけを公開していること（`lib.rs` を読む軽量テスト or doc test）。
-- [ ] Step 13. Green: `to_value`（`serde_json::to_value` → `JsonValue` 変換、`#[allow(clippy::disallowed_methods)]`
-      + 理由コメント）、`lib.rs` の `pub use` 列挙。
-- [ ] Step 14. Refactor: クレート rustdoc（`//!`）に 3 プロファイル・2 族・禁止規則・深さ上限を記す。
-
-### 5.6 棚卸しと品質ゲート（委任 1 の締め）
-
-- [ ] Step 15. 棚卸し I1〜I6 を実施し結果を `code-summary.md` 用に報告（小さな検査テスト or bun/シェルのワンライナー。
-      数値はすべて実測）。
-- [ ] Step 16. 品質ゲート: `cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` →
-      `cargo lint` → `cargo test --workspace` → `cargo llvm-cov -p canon-json --summary-only`（導入済みなら。
-      canon-json は 100% 近傍を目標、床 90%）。コミットは意味単位（`feat(canon-json): …` / `test(goldens): …`）。
-
-### 5.7 ゴールデン採取 — CLI / フック実行出力（FR7.2 / BR2.4 — 委任 2）
-
-- [ ] Step 17. 再採取スクリプト `scripts/goldens/recapture-cli.sh` + `capture-cli.ts`: 使い捨てディレクトリに upstream
-      ピンを取得（`git init && git fetch --depth 1 origin 3c3146cf… && git checkout FETCH_HEAD`、失敗時は raw 取得に
-      フォールバック）→ `dist/claude/` を使い捨てワークスペースへ配置 → BR2.4 の主要遷移を bun で順に実行
-      （`AIDLC_SKIP_HUMAN_PRESENCE_GUARD` 等、非対話化に必要な env を記録）→ 各ステップの stdout JSON・
-      `aidlc-state.md` 差分・監査シャード差分を採り、`normalization.json` の規則で正規化 →
-      `tests/golden/upstream-3c3146cf/cli/<verb>/<case>/{argv,stdin,stdout.json,state.diff,audit.md}`。
-      フック 4 本（stop-forwarding-loop / record-human-turn / state-transition-guard / write-audit-log に対応する
-      upstream のフックファイル）に代表 stdin JSON を与え `hooks/<hook>/<case>/{stdin.json,exit,stderr}`。
-      非対話で再現できない遷移は**欠落として**`cases-missing.json` に理由つきで記録（捏造しない。後続 Bolt U6 / U7 で追加）。
-- [ ] Step 18. 比較器の整備: `modules/shared/canon-json/tests/support/`（または dev-dependency のテスト支援モジュール）に
-      `normalize()`・コーパス読取・行ごと diff を置き、cli / hooks 族は「読めて正規化できる」ことまでをテストで固定
-      （実装突合せは U6 / U7）。README に cli / hooks 節を追記。
-- [ ] Step 19. 品質ゲート再実行（Step 16 と同じ）とコミット。
-
-## 6. トレーサビリティ（ストーリー → ステップ）
-
-| 要求 / 規則 | ステップ | 主な成果物 |
+| 区分 | 対象 | 扱い |
 |---|---|---|
-| FR7.1 受入表採取 | 3, 4 | `scripts/goldens/recapture-hash-canonical.sh`, `capture-hash-canonical.ts`, `tests/golden/upstream-3c3146cf/hash-canonical/cases.json` |
-| FR7.2 CLI / フックゴールデン | 17, 18 | `scripts/goldens/recapture-cli.sh`, `capture-cli.ts`, `tests/golden/upstream-3c3146cf/{cli,hooks}/` |
-| FR7.3 canon-json 実装（受入表全行一致） | 5〜14 | `modules/shared/canon-json/src/*.rs`, `tests/golden_hash_canonical.rs` |
-| BR1.1〜BR1.6 | 8〜10 | `writer.rs`, `canonical.rs`, `digest.rs` |
-| BR1.7 | 1, 13 | `clippy.toml`, `value.rs`（allow 箇所） |
-| BR1.8 | 1 | `Cargo.toml`（workspace.dependencies） |
-| BR2.1 / BR2.2 / BR2.5 | 3, 4, 17, 18 | `provenance.json`, `normalization.json`, README |
-| BR2.3 | 3, 8 | `cases.json`, `tests/golden_hash_canonical.rs` |
-| BR2.4 | 17 | `tests/golden/upstream-3c3146cf/cli/`, `hooks/` |
-| NFR1.1〜1.3 | 3, 8〜10, 18 | ゴールデン + 比較器 |
-| NFR2.1〜2.3 | 5, 8, 11, 16 | Red 記録、カバレッジ、PBT |
-| NFR4.1 / NFR4.2 | 1 | `Cargo.toml`（依存 3 つ）、`#![forbid(unsafe_code)]` 維持 |
-| NFR4.3 | 8, 9 | `parse.rs`（深さスキャン・ParseError） |
-| NFR4.4 | 4, 17 | 正規化・README・目視 |
+| ソースコメント | modules/core/infrastructure/src/canon_json/mod.rs、parse.rs | 入力経路・深さ・文字列・依存境界の説明を修正 |
+| 実装と既存試験 | modules/core/infrastructure/src/canon_json/、同クレートtests/golden_hash_canonical.rs・golden_corpus_read.rs・support/mod.rs | 読取確認と試験。実装や試験を同じ内容で再生成しない |
+| 固定データと採取手順 | tests/golden/upstream-3c3146cf/、scripts/goldens/ | C7の配置・来歴・未採取記録・入力測定との対応を確認。再採取・期待値更新なし |
+| Unit記録 | code-summary.md、traceability.json、source-manifest.json | 現行ファイルへの対応と今回実行した検証を記録 |
+| 計画と試験手順 | このファイル、unit-test-instructions.md | この計画承認の対象。完了チェック以外の変更が必要なら承認を更新 |
 
-## 7. 委任の形
+既存code-summaryの歴史的な作成パス・Red/Green記録は、今回の事実と混ぜず保存する。過去の実装を今回新規に作ったと記載しない。source-manifestには実際に作成・変更・削除したアプリケーション側パスを列挙する。今回変更しない既存コードはcode-summaryの再利用欄で示し、変更済みと偽らない。
 
-- 委任 1（Step 1〜16）と委任 2（Step 17〜19）を同じ承認済み計画・同じ指紋の下で**直列に** aidlc-developer-agent へ
-  委任する（1 回の委任に詰め込むと文脈が長すぎるため）。各委任の冒頭行は `AIDLC-UNIT: u1-canon-json-goldens` と
-  `AIDLC-TESTING-CONTRACT: <contract_sha256>`。
-- 失敗時はコンダクタが halt-and-ask（retry / skip / abort）を出す。
+## 3. 実行ステップ
+
+- [x] Step 1. ランナーと設定を確認する。既存Cargo設定・preserve_order/float_roundtrip・固定シードを確認し、unit-test-instructionsのUnit限定3コマンドが実行できることを記録する。実行済みログを再利用する場合は日時と対象を明示する。
+- [x] Step 2. 現行実装・既存試験・採取済み32行を、13件のBRと11件の詳細NFRに対応付ける。parse/parse_bytes/to_value、全プロファイルの整数形式キー優先、大整数丸め、UTF-8拒否境界、ハッシュ族を確認する。入力88ファイルの実測と、CLI/フックの未採取記録も確認する。
+- [x] Step 3. mod.rsとparse.rsの説明コメントを是正する。旧クレート単位の説明をモジュール境界へ合わせ、直接構築値の深さ検査や巨大入力の保護を過大に保証しない。rustdoc例の振る舞いは維持する。
+- [x] Step 4. Unit限定の単体・PBT・ゴールデン・rustdoc試験を実行し、件数と結果を記録する。コメントだけの修正に形式的な新規テストは追加しない。機能欠陥が判明した場合は本計画の範囲を超えて直さず、再現試験・Red→Green→Refactorの変更案を提示する。
+- [x] Step 5. code-summaryを現在の事実に更新し、過去のTDD証跡を歴史として保存する。traceabilityの旧shared/canon-jsonパスを実在する現行ファイルへ改め、FR7/FR7.1〜FR7.3・全BR・全詳細NFRの対応を記録する。性能の数値目標を作らず、NFR5.1は観測時の測定手順への対応を明示する。source-manifestへ実際の変更パスを記録する。
+- [x] Step 6. 差分を点検し、実行コード・期待値・依存・品質閾値に変更がないことを確認する。独立レビューへ引き渡す。親セッションがレビュー・Unit完了・次工程を処理する。
+
+## 4. Testing Contractの適用
+
+本Unitはbrownfieldで、既存の値モデル・変換・公開APIの実装と試験がある。今回は説明と検証記録の是正で、新規プロダクションコードはない。DB・Repository・業務判断・HTTP API・フロントエンドの新設もないため、それらの実装用ステップを架空に実行しない。
+
+埋め込み契約のTDD方針は維持する。今後振る舞いの変更を行う場合、対象レイヤーで実行可能な試験を先に用意し、失敗出力を記録してから最小修正し、成功中に整理する。既存成功ログから過去のRedを推定しない。
+
+既存のStandard相当の境界試験・性質検証・統合試験を保持する。必須CI、カバレッジ90%床、相対差0.01ポイント、固定シード20260823を維持する。全体の品質ゲートは統合時の検証であり、Unit試験の成功を全体CI・最新依存検査・性能測定の成功に読み替えない。
+
+## 5. 要求からステップへの対応
+
+| 要求・規則 | Step | 確認対象 |
+|---|---|---|
+| FR7.1、BR2.1・BR2.3・BR2.5 | 2・4・5 | 採取済み32行、来歴、固定ピン、全行比較 |
+| FR7.2、BR2.2・BR2.4、NFR1.3・NFR4.4 | 2・4・5 | CLI/フックコーパス、比較器、正規化、未採取記録 |
+| FR7.3、BR1.1〜BR1.6、NFR1.1・NFR1.2 | 2〜5 | キー順・数値・文字列・体裁・ハッシュ族 |
+| BR1.7・BR1.8、NFR4.1・NFR4.2 | 1〜3・5 | モジュール境界、Cargo機能、局所許可、依存検査設定 |
+| NFR4.3 | 2〜5 | parse/parse_bytes/to_value、127/128段、変換エラー |
+| NFR2.1〜NFR2.3 | 1・4〜6 | Testing Contract、既存試験、品質閾値、履歴 |
+| NFR5.1 | 5 | 劣化を観測した場合の入力・環境・比較条件・測定記録 |
+
+## 6. 作業の進め方
+
+計画承認後、開発担当が上記ファイルの範囲で実行する。他者の変更を戻さず、commit・push・外部投稿は親セッションに任せる。現在の作業履歴と監査を保持し、過去のmain-syncや旧Boltブランチの作成手順を再実行しない。親セッションは全差分と検証を確認し、監査を含む作業ツリー全体を回収する。
 
 ## Testing Contract
 
@@ -281,3 +133,39 @@ Testing Contract の `plan_profile.steps` を基線とし、ライブラリに�
 }
 ```
 
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-06T02:33:19Z
+**Iteration:** 1
+
+### Findings
+
+今回のコメント2ファイルと実装記録の是正を対象とした、1回のADVISORYレビューである。新規所見はない。
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+
+機能設計のR-08（重複キー規則の本文記載不足）は同設計の所見として保持する。旧code-summaryのReviewも履歴のまま保持し、過去のTDD証跡・公開面の承認や、欠落一覧の非空アサート・広いCLONE正規化・フック区分の可読性を、今回の成功から解消済みとは判定しない。今回のcode-summary第6・7節は、この境界と未検証範囲を明記している。
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| aidlc-sensor-required-sections（stage=code-generation、code-generation-plan.md / unit-test-instructions.md / code-summary.md） | PASS、findings_count=0、追記前H2数7 / 5 / 8 | 指定3文書の構造検査を実行した。 |
+| aidlc-sensor-traceability（同stage、traceability.json） | FAIL、findings_count=39 | missing_from_upstream_idsは他UnitのFR1〜FR6・FR8・FR9親子34件と共有NFR1〜NFR5。gaps / orphans / missing_from_table / invalid_entries / invalid_targetsはすべて空。センサー成功とは読み替えない。 |
+| U1割当・詳細要求の手動照合 | 一致、28件 | unit-of-workのU1とrequirementsのFR7親子4件、functional-designのBR13件、security-requirementsの詳細NFR11件を列挙済み。共有NFRのU1への適用は枝番で表現され、NFR3は永続化・投影を持たないため対象外。NFR2.1・NFR5.1のN/Aには今回の範囲と以後の手順がある。OKは実装先の対応であり、未実行の全体品質検査成功を意味しない。 |
+| git diff（modules/core/infrastructure/src/canon_json/mod.rs / parse.rs）と非コメント行・rustdoc例の機械比較 | コメントのみ、比較一致 | 実行コード・公開面・実行時文言・rustdoc例は不変。source-manifestの2パスと一致する。 |
+| 入力経路と設計の照合（mod.rs / parse.rs / value/json_value.rs） | 一致 | parseの深さ事前走査、127段受理・128段拒否、parse_bytesのUTF-8拒否からの委譲、to_valueの変換失敗を確認。直接構築値や巨大入力まで保護するとは保証していない。 |
+| 修正後の既存実行ログ（/tmp/u1-code-unit-after.log、/tmp/u1-code-golden-after.log、/tmp/u1-code-doc-after.log） | 87 + 16 + 1 = 104 passed、失敗・ignoredとも0 | 準備時の3ログと対象件数が一致。重複キー、孤立サロゲート、深さ境界、型付き変換失敗を含む。今回レビューでは再実行せず同セッションのログを確認した。別修正の47件は含めない。 |
+| golden_hash_canonical.rsとC7・受入表・来歴・欠落記録 | 一致 | 32行の3プロファイル・2族の全行比較を確認。固定ピン・CLI28件・フック14件と理由付き未採取2+1件は要約と一致する。コーパス読取は後続Unitの全実行経路比較の証明ではない。 |
+| nfr-input-measurements.jsonの独立再計算 | 全88ファイル一致、最大深さ7 | パス・バイト数・コンテナ深さをPythonで再計算し記録と一致。将来入力の上限保証とは扱わない。 |
+| Cargo・clippy・ツールチェーン・CI・coverage設定 | 記載と一致 | serde_jsonの2機能、モジュール依存3種、局所allow、unsafe forbid継承、Rust固定、CI権限と両ロックファイルのaudit設定、90%床・相対差0.01・固定シードを確認。全体CI・coverage・最新依存検査・性能は未実行。 |
+| linter / type-check | 対象外 | 対象成果物にTypeScript/JavaScriptのソース片はなく、アプリ変更はRustコメントのみ。 |
+| 計画本文のバイト境界 | 先頭17,450バイト不変 | 追記前SHA-256はa99ef337ed73ce4101bc9912f6d7549993dfee058cbf420bc39694ab4352df7d。本文を編集せず本Reviewだけを末尾に追加する。 |
+
+### Summary
+
+入力検証・互換範囲の説明が現在の設計と実装に揃い、今回の変更と再利用・歴史・未検証事項が区別されている。実行時の変更はなく、今回の限定範囲に新たな修正要求はない。

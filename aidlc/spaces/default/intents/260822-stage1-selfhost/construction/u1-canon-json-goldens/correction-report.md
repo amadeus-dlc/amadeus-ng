@@ -17,3 +17,18 @@
 通常の設計レビュー要求は、新しい試行に対する人間の要約確認が記録されていないため拒否された。以前の質問票にはLooks correctがあるが、今回の試行の承認として再記録していない。実際に記録されていない承認を補ったり、ステージ完了扱いにしたりはしていない。
 
 実行済みワークスペース試験には、正準JSONの単体試験、32行の採取済みコーパスの各プロファイル・ダイジェスト比較も含まれ、すべて成功した。詳細な全体結果は隣接するU4の `implementation-report.md` を参照する。
+
+## 2026-09-06の確認後の更新
+
+上記は2026-09-05時点の経緯である。2026-09-06、ユーザーが修正後要約の「Looks correct」を選択し、質問票と確認記録を保存した。今回の確認を以前の承認から推定してはいない。
+
+- 規則の要約表を正本の整数形式キー・大整数丸め・孤立サロゲート拒否と揃えた。
+- 配布定義の責務を現行の `CompiledDefinitionRepositoryImpl` に修正した。同アダプタの型付きDTO読取（`serde_json::from_str`）と、canon_json経由の契約JSON書出しを区別した。
+- 値からダイジェストへの関係を導出図と揃え、ハッシュから入力を復元する契約ではないことを明記した。
+- 旧Review節は `functional-review-20260905.md` に保存した。旧ID 1・2・3はR-01・R-02・R-03に対応付けて引き継ぐ。所見の内容・判定の更新は独立レビューが行う。
+
+今回の実測は `cargo test --locked -p core-infrastructure canon_json` の87件と、`cargo test --locked -p core-infrastructure --test golden_hash_canonical --test golden_corpus_read` の16件で、いずれも失敗・無視は0件。後者では採取済み32行の正準化コーパスを比較した。upstreamの再採取やCLI全経路の比較は今回実施していない。
+
+## 2026-09-06の後続検証
+
+上記の初回検証とは別に、更新した単体テスト手順の `PROPTEST_RNG_SEED=20260823 cargo test --locked -p core-infrastructure --lib canon_json` を実行し、87 passed・0 failed・0 ignoredを確認した。結果はcode-generation/code-summary.md第5節に時刻・コマンド・ログを記録している。初回ログのコマンドを後から別のコマンドへ改変してはいない。

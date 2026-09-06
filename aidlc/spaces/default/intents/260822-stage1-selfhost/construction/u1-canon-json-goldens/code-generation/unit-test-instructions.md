@@ -1,64 +1,40 @@
-# unit-test-instructions — U1 canon-json とゴールデン（`u1-canon-json-goldens`）
+# unit-test-instructions — U1 正準JSON
 
-> Code Generation（Construction 3.5）の単体テスト手順（Unit: U1、kind: library）。出典: `code-generation-plan.md`
-> （Testing Contract: methodology tdd / strategy standard / scope classic）、`aidlc/spaces/default/memory/team.md`
-> Testing Posture（TDD、カバレッジ 90% 床、`cargo test --workspace` / `cargo-llvm-cov`）、
-> `../nfr-requirements/security-requirements.md`（NFR2.1〜2.3）、`../nfr-design/logical-components.md` §4（テスト配置）。
->
-> **すべてのコマンドは本 Unit（クレート `canon-json`）に限定する。** Build and Test は Unit ごとにここのコマンドを
-> 実行するため、`cargo test --workspace` のような全体コマンドは本ファイルには書かない（品質ゲートとしての全体実行は
-> 計画 Step 16 / 19 の範囲）。
+> 対象: u1-canon-json-goldens。現行code-generation-planとTesting Contract、NFR2.1〜NFR2.3、
+> nfr-design/logical-components.md §4に従う。以下はすべて本Unitに限定する。
 
-## 1. フレームワークと設定
+## 1. ランナーと設定
 
-- テストランナー: Rust 標準（`cargo test`）。追加設定ファイル不要（`Cargo.toml` の `[dev-dependencies]` に
-  `proptest`（workspace 経由）を置く）。
-- ユニットテスト: 各モジュールのインライン `#[cfg(test)] mod tests`（`clippy.toml` によりテスト内の `unwrap` /
-  `expect` は許可）。
-- 統合テスト（受入）: `modules/shared/canon-json/tests/golden_hash_canonical.rs`（受入表の全行比較）、
-  `modules/shared/canon-json/tests/golden_corpus_read.rs`（cli / hooks コーパスの読取と正規化 — 委任 2 で追加）。
-  テスト支援（コーパス読取・`normalize()`・行 diff）は `modules/shared/canon-json/tests/support/mod.rs`。
-- PBT: `proptest`、各モジュールの `#[cfg(test)]` 内（決定性・往復・冪等性）。
+Rust標準のcargo testを使い、追加のランナーや設定は導入しない。Rustのバージョンはrust-toolchain.toml、依存はCargo.lockを正本とする。proptestは既存の開発依存で、シード20260823を明示する。serde_jsonのpreserve_orderとfloat_roundtripを維持する。
 
-## 2. 実行コマンド（本 Unit 限定）
+単体・PBTはmodules/core/infrastructure/src/canon_json/、結合試験は同クレートのtests/golden_hash_canonical.rsとgolden_corpus_read.rs、比較器はtests/support/mod.rsにある。
 
-最初の Red の前に走ることを確認済み（brownfield 実測 2026-08-22: `running 0 tests` / exit 0）:
+## 2. Unit限定コマンド
 
-```bash
-cargo test -p canon-json
+ワークスペースルートで実行する。単体試験のcanon_jsonフィルタは同クレートの別機能の試験を除く。ゴールデンは対象ファイルを明示し、rustdocはcanon_jsonを指定する。
+
+```sh
+PROPTEST_RNG_SEED=20260823 cargo test --locked -p core-infrastructure --lib canon_json
+PROPTEST_RNG_SEED=20260823 cargo test --locked -p core-infrastructure --test golden_hash_canonical --test golden_corpus_read
+PROPTEST_RNG_SEED=20260823 cargo test --locked -p core-infrastructure --doc canon_json
 ```
 
-用途別:
+今回の計画準備時の結果は/tmp/u1-plan-unit-baseline.log・/tmp/u1-plan-golden-baseline.log・/tmp/u1-plan-doc-baseline.logに記録し、実行担当が結果を確認してcode-summaryへ日付・件数・対象を残す。ログが失われた場合は上記コマンドで再確認する。ソースコメント更新後はrustdocを含め、同じコマンドで確認する。
 
-```bash
-cargo test -p canon-json --lib                          # インラインユニット + PBT のみ
-cargo test -p canon-json --test golden_hash_canonical   # hash-canonical 受入表の全行比較（FR7.3 の合格判定）
-cargo test -p canon-json --test golden_corpus_read      # cli / hooks コーパスの読取・正規化（委任 2 以降）
-cargo test -p canon-json --doc                          # rustdoc 例
-```
+## 3. 合格基準と検証範囲
 
-Red の記録: 失敗するテストを書いたら上記コマンドを実行し、`test result: FAILED. N passed; M failed` の要約行と失敗
-テスト名を `code-summary.md` に写す（TDD の証跡、NFR2.1）。
+各コマンドが成功し、対象試験が0件に減っていないことを確認する。現行単体・PBTは87件、ゴールデンは7+9件で、受入表の32行を3プロファイル・2族で比較する。rustdocの件数は実際の出力から記録する。期待値を書き換えて成功させない。
 
-## 3. 期待するテスト量とカバレッジ
+同一入力の決定性と対象値域での出力安定性を検証し、大整数や非有限数を含む任意値の完全往復は要求しない。127/128段の境界・不正UTF-8・孤立サロゲート・型付き変換失敗を既存試験で確認する。
 
-- Standard 戦略: コンポーネント（value / profile / writer / canonical / digest / parse / facade+to_value / 比較器）
-  ごとに 5〜8 本のユニットテスト、境界（ゴールデン読取）に統合テスト。目安 50〜70 本 + PBT 4 本 + 受入表の行数。
-- カバレッジ: ワークスペース床 90%（`scripts/coverage.sh`）。canon-json 単体は 100% 近傍を目標:
-  `cargo llvm-cov -p canon-json --summary-only`（`cargo-llvm-cov` 導入済みの環境で）。
-- ゴールデン受入表は**全行一致**が合格（1 行でも不一致なら FR7.3 不合格。実装を直し、ゴールデンは直さない）。
+ワークスペースのカバレッジ床は90%、相対差の許容は0.01ポイント。閾値・除外を緩和しない。Unit試験の成功は全体カバレッジ、全CLI経路、最新依存検査、性能測定の代替ではない。全体検証をUnitごとに繰り返すコマンドはここへ置かない。
 
-## 4. モック・スタブの方針
+## 4. データとテスト支援
 
-- 使わない。canon-json は純粋関数群で外部 I/O を持たない。
-- ゴールデンがオラクル（フィクスチャ）。ネットワークはテストでは使わない（再採取スクリプトのみが使う）。
+採取済みデータはtests/golden/upstream-3c3146cf/を読取専用で使用する。パス解決は既存tests/support/mod.rsの実装を利用し、旧クレート配置の相対パスをコピーしない。正規化は期待値と実測値の双方へ同じ規則を適用する。
 
-## 5. テストデータ
+変換処理の試験に外部ネットワークやモックは不要。CLI/フックはコーパス読取・正規化・欠落理由の確認であり、実際の全経路実行とは区別する。既存の一時ファイル利用やPBT生成器を再実装しない。
 
-- ゴールデン: `tests/golden/upstream-3c3146cf/hash-canonical/cases.json`（+ `provenance.json`）、
-  `cli/<verb>/<case>/…`、`hooks/<hook>/<case>/…`、正規化規則 `normalization.json`。テストからは
-  `concat!(env!("CARGO_MANIFEST_DIR"), "/../../../tests/golden/upstream-3c3146cf")` で解決する。
-- ゴールデンは**読み取り専用**。更新は upstream ピン更新の intent でのみ（BR2.5）。
-- PBT の生成器: NaN / ±Infinity を含まない `JsonValue`（往復性質用）と、含む生成器（非有限 → `null` の性質用）を
-  分ける。失敗ケースは proptest の既定どおり `proptest-regressions/` に残す（コミット対象）。
-- 一時ファイルは不要（`tempfile` は使わない）。
+## 5. 失敗時
+
+失敗名・コマンド・出力を記録する。コメント修正以外の機能欠陥なら、対象レイヤーの再現試験を先に用意する変更案を親セッションへ返し、計画を更新する。今回の記録是正のために実装を壊して人工的なRedを作らない。

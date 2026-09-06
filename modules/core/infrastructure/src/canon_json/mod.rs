@@ -4,11 +4,13 @@
 //! 直列化の力学は**言語拡張（infrastructure）**であり、ドメインも相手方システムの契約も知らない
 //! （upstream 互換のバイト挙動は「JSON の書き方」の仕様であって、プロトコル結合ではない）。
 //!
-//! upstream (JS の `JSON.stringify` / `hashObject`) と**バイト一致**する JSON の読み書きと
-//! ダイジェスト計算を提供する。契約 JSON の読み書きはすべてこのクレートを経由し、
-//! 呼出側は `serde_json` の直列化関数と `to_value` を直接呼ばない (BR1.7 — `clippy.toml` の
-//! `disallowed-methods` で機械強制。読取の `from_str` は禁止対象外だが、深さ上限を持つ
-//! [`parse`] を通すこと)。
+//! JSON の読み書きとダイジェスト計算を提供し、upstream (JS の `JSON.stringify` /
+//! `hashObject`) との出力バイト一致を採取済み受入表で検証する。契約 JSON の直列化と
+//! 型付き値の変換は本モジュールを経由する (BR1.7 — `clippy.toml` の `disallowed-methods` で
+//! 呼出側の `serde_json` 直列化関数・`to_value` の直接利用を制限)。型付き DTO の読取は
+//! アダプタ側の境界であり、`serde_json::from_str` 等を利用できる。
+//! 本モジュールのランタイム依存は serde・serde_json・sha2。所属クレートの別機能の依存とは
+//! 区別する。serde_json の `preserve_order` と `float_roundtrip` は workspace で有効にする。
 //!
 //! # 3 つの直列化プロファイル (ADR 0001 決定 2)
 //!
@@ -43,15 +45,21 @@
 //!
 //! # 読取の境界と深さ上限 (NFR4.3)
 //!
-//! 入力検証は [`parse`] / [`parse_bytes`] の 1 か所に集約する。ネストは
-//! [`MAX_DEPTH`] `- 1` = 127 段までを受け入れ、それ以上は [`ParseError::TooDeep`] として
-//! 決定的に拒否する (`serde_json` の再帰エラーが表に出る前に弾く — スタック枯渇の防止)。
+//! [`parse`] は JSON テキストの構文と深さを検証する。文字列外のオブジェクト・配列を
+//! 1 段として数え、127 段までを受け入れ、[`MAX_DEPTH`] = 128 段目で
+//! [`ParseError::TooDeep`] を返す。深さ検査は serde_json の読取より先に行う。
+//! [`parse_bytes`] は不正 UTF-8 を [`ParseError::Encoding`] で拒否し、成功後に parse へ委譲する。
+//! [`to_value`] は型付き値の変換失敗を [`ToValueError`] で返すが、parse の深さ検査は通らない。
+//! [`JsonValue`] の直接構築も同様である。入力バイト数の上限は設けておらず、巨大な平坦入力や
+//! 深い構築値によるメモリ・スタック枯渇まで保護するものではない。
 //!
 //! # 既知の非対称
 //!
 //! JS の `JSON.stringify` は孤立サロゲート (対にならない U+D800〜U+DFFF) を `\udXXX` として
 //! 書けるが、Rust の `String` は UTF-8 の不変条件によりそれを保持できない。`"\ud800"` は
-//! 読取段階で [`ParseError::Syntax`] になる。契約 JSON には現れない形なので実害はない。
+//! 読取段階で [`ParseError::Syntax`] になる。対をなすサロゲートのエスケープは復号できる。
+//! 互換性の確認範囲は採取済み受入表と UTF-8 で保持できる値域であり、孤立サロゲートを含む
+//! 任意の外部 JSON との完全互換は保証しない。
 //!
 //! # 例
 //!

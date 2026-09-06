@@ -578,7 +578,7 @@
       "executable": false
     },
     ".claude/hooks/aidlc-plan-approval-guard.ts": {
-      "sha256": "a3a5a7e1d113bff47c14e93a346250977adb53303d1890d117cb5fd32ec683d1",
+      "sha256": "bd4c5afbedd2916ccd22320b9fb3c30655f92530f2ef30671114795ffd43a03f",
       "executable": false
     },
     ".claude/hooks/aidlc-rebuild-stage-graph.ts": {
@@ -1266,7 +1266,7 @@
       "executable": false
     },
     ".claude/tools/aidlc-testing-posture.ts": {
-      "sha256": "c06fb41743d9c10c5d50f88530096db8a1a5e5c8f61468855cfbdab39ee2c4f0",
+      "sha256": "b9979b82c6f440e558a1fa0564132d5dd51db46363ffc63ff10968e8ce32f558",
       "executable": false
     },
     ".claude/tools/aidlc-tiers.ts": {
@@ -1690,7 +1690,7 @@
       "executable": false
     },
     ".codex/hooks/aidlc-plan-approval-guard.ts": {
-      "sha256": "a3a5a7e1d113bff47c14e93a346250977adb53303d1890d117cb5fd32ec683d1",
+      "sha256": "bd4c5afbedd2916ccd22320b9fb3c30655f92530f2ef30671114795ffd43a03f",
       "executable": false
     },
     ".codex/hooks/aidlc-rebuild-stage-graph.ts": {
@@ -2202,7 +2202,7 @@
       "executable": false
     },
     ".codex/tools/aidlc-testing-posture.ts": {
-      "sha256": "c06fb41743d9c10c5d50f88530096db8a1a5e5c8f61468855cfbdab39ee2c4f0",
+      "sha256": "b9979b82c6f440e558a1fa0564132d5dd51db46363ffc63ff10968e8ce32f558",
       "executable": false
     },
     ".codex/tools/aidlc-tiers.ts": {
@@ -2578,7 +2578,7 @@
       "executable": false
     },
     ".kimi-code/hooks/aidlc-plan-approval-guard.ts": {
-      "sha256": "a3a5a7e1d113bff47c14e93a346250977adb53303d1890d117cb5fd32ec683d1",
+      "sha256": "bd4c5afbedd2916ccd22320b9fb3c30655f92530f2ef30671114795ffd43a03f",
       "executable": false
     },
     ".kimi-code/hooks/aidlc-rebuild-stage-graph.ts": {
@@ -3262,7 +3262,7 @@
       "executable": false
     },
     ".kimi-code/tools/aidlc-testing-posture.ts": {
-      "sha256": "c06fb41743d9c10c5d50f88530096db8a1a5e5c8f61468855cfbdab39ee2c4f0",
+      "sha256": "b9979b82c6f440e558a1fa0564132d5dd51db46363ffc63ff10968e8ce32f558",
       "executable": false
     },
     ".kimi-code/tools/aidlc-tiers.ts": {

@@ -10,7 +10,9 @@
 > 計画（`code-generation-plan.md`）の形を左右する 2 点だけを先に問う。それ以外（モジュール分割・依存・TDD 順序・
 > clippy 設定・棚卸し項目）は上流成果物から一意に決まるため質問しない。
 
-## 質問
+## 以前の質問（2026-08-22の記録）
+
+Q1のブランチ名と初回実装の手順は履歴として保持する。現在は既存の実装を確認する再作業であり、旧ブランチ作成や初回採取を再実行しない。今回の対象は末尾のPlan Approvalに示す。
 
 ### Q1. Bolt B1 のブランチと aidlc 記録のコミット方法
 
@@ -42,10 +44,13 @@
 
 ## Plan Approval
 
-対象: `code-generation-plan.md`（§5 の Step 0〜19、埋め込み Testing Contract `sha256:303d9bb7b5d777d54a6761be9ed154d85d5bb3f2d6b9cce02f71f4ed1b3a4ff3`）と
-`unit-test-instructions.md`（`cargo test -p canon-json` 系の Unit 限定コマンド）。
+2026-09-06の対象: `code-generation-plan.md`のStep 1〜6と、そのTesting Contract、および`unit-test-instructions.md`。
 
-[Approval Fingerprint]: sha256:f56763a1817a68c0304f3ded5546551f675f54f47fa8cf4a80e39b7ed69c36ff
+現行のcore-infrastructure::canon_jsonを再利用し、mod.rs・parse.rsの説明コメントを更新する。既存の単体・PBT・ゴールデン・rustdoc試験を現行パスで確認し、code-summary・traceability・source-manifestを現行実装に合わせる。振る舞い・公開API・固定データ・依存・品質基準は変更しない。機能欠陥が判明した場合は、再現試験を先に置く変更案を返して計画を改訂する。
+
+計画準備時のUnit限定コマンドは87件＋16件＋rustdoc 1件の計104件が成功した。これは全体CI・性能・最新依存検査の成功を意味しない。
+
+[Approval Fingerprint]: sha256:dc02047c5e496d6aed8c870f4daa314b48d9dcd33d50544e5cf0fa90144de28b
 
 - Approve Plan — この計画で実コード生成に進む
 - Request Changes — 計画・テスト手順を修正する

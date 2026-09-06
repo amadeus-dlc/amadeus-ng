@@ -1,38 +1,35 @@
-# tech-stack-decisions — U1 canon-json とゴールデン（`u1-canon-json-goldens`）
+# tech-stack-decisions — U1 正準JSONとゴールデン
 
-> NFR Requirements（Construction 3.2）成果物（Unit: U1、kind: library）。出典: `../functional-design/functional-spec.md`、
-> `../functional-design/rules.md`、`../../../inception/requirements-analysis/requirements.md`（NFR1 / NFR4、制約 C1〜C2）、
-> `../../../inception/contract-design/contract-summary.md`（C7）、`aidlc/spaces/default/codekb/docs/technology-stack.md`
-> （既存: Rust edition 2024、serde 1.0.229、serde_json 1.0.151、proptest 1.11.0、`canon-json` はスタブ）、
-> `docs/adr/0001-canonical-json-serializer.md`、確認事項 `nfr-requirements-questions.md`（前提 P1）。
+> 出典: `../functional-design/functional-spec.md`、`../functional-design/rules.md`、
+> `../../../inception/requirements-analysis/requirements.md`、`../../../inception/contract-design/contract-summary.md`（C7）、
+> `nfr-requirements-questions.md` の2026-09-06確認済み要約。
+> 現行の `Cargo.toml`、`modules/core/infrastructure/Cargo.toml`、`clippy.toml` と実装を根拠にする。
+> ADR 0001の初期クレート配置・採取予定の記述は履歴として扱い、ここでは現行の機能設計と確定済みC7を適用する。
 
-## 1. 選定
+## 1. 選定と境界
 
-| 領域 | 選定 | 理由 | 代替案（不採用の理由） |
-|---|---|---|---|
-| クレート配置 | 既存スタブ `modules/shared/canon-json`（`canon-json`）を実体化。依存ゼロ層（components.md CanonJson） | ADR 0001 決定 1（単一クレート）。層 = クレートで直接呼び出し禁止を機械化しやすい | 新クレート名: 既存スタブと ADR 0005 の構成を変えない |
-| JSON 読取 | `serde` + `serde_json`（既存依存。`preserve_order` フィーチャをワークスペース全体で有効） | 挿入順保持が JS 互換の前提（ADR 0001 決定 3）。既存のワイヤ構造体と共有 | 自前パーサ: 保守コストに見合わない。`json` / `simd-json`: 依存追加と互換リスク |
-| 書き出し | canon-json 内の**自前ライタ**（3 プロファイル、キー順・体裁・数値・エスケープを BR1.1〜BR1.5 で実装） | serde_json の既定フォーマッタは `1.0` / 指数表記 / 非有限の扱いが JS と異なる（ADR 0001 決定 4） | `serde_json::to_string*` の直接利用: 禁止（BR1.7、clippy disallowed-methods）。`ryu` 既定: JS の閾値・`e+` 書式と不一致 |
-| 正準化 | 再帰キーソート（UTF-16 コード単位順 = ASCII ではバイト順）を hash-canonical プロファイルの直列化時に適用 | hashObject 互換（ADR 0001 決定 2） | RFC 8785（JCS）クレート（`serde_jcs` 等）: upstream が JCS ではない（ADR 0001 代替案で不採用） |
-| ハッシュ | `sha2`（SHA-256） | pure Rust、広く監査済み、`cargo audit` 既知問題なし、依存木が小さい | `ring`: C/asm を含み依存が重い。`openssl`: システム依存 |
-| 数値表現 | 契約型の数値は i64/u64。浮動小数が現れる箇所のみ ECMA-262 `Number::toString` 互換ライタ（指数閾値 1e21 / 1e-6、`e+`、`-0` → `0`、非有限 → `null`） | ADR 0001 決定 4。符号判別は「非負は u64 優先、それ以外は i64」（functional-design レビュー Minor 3 の回答） | f64 経由の一律表現: `"1.0"` 化で互換が壊れる |
-| PBT | `proptest`（既存） | 往復・決定性・冪等性の性質検証 | — |
-| ゴールデン採取 | 再採取スクリプト（シェル + bun、upstream ピン `3c3146cf` の dist ツールを使い捨てワークスペースで実行）。bun は開発時ツールでプロダクト依存にしない（D1） | 前提 A3（bun は本リポジトリで動く）。来歴をコーパスに記録（BR2.1） | 手動採取: 再現性がない |
-| ゴールデン配置 | `tests/goldens/{hash-canonical,cli,hooks}/...`（contract-summary C7 の layout。hash-canonical は `{ input, expected_output, expected_sha256 }`） | C7 契約どおり。他 Unit のテストが共有フィクスチャとして読む | テストコードへの埋め込み: 更新・レビューが難しい |
-| 機械強制 | clippy `disallowed-methods` で `serde_json::to_string` / `to_string_pretty` / `to_vec` / `to_vec_pretty` / `to_writer` / `to_writer_pretty` と契約経路の `to_value` を canon-json 以外で拒否 | ADR 0001 決定 5。型（E1）→ 既存 lint → `cargo lint` の優先順に従い既存 lint で実現 | `cargo lint` 新ルール: 既存 lint で足りる |
+| 領域 | 選定 | 理由・制約 |
+|---|---|---|
+| 配置 | `core-infrastructure::canon_json`（`modules/core/infrastructure/src/canon_json/`） | ドメインに依存しない変換部品。旧shared/canon-jsonへ戻す別名や互換ラッパーを作らない |
+| 読取 | serde + serde_json、`preserve_order` と `float_roundtrip` をworkspaceで有効化 | 挿入順と浮動小数の読取精度を保持する。深さ・UTF-8の境界はsecurity-requirements NFR4.3に従う |
+| 型付き値の変換 | `to_value` → `Result<JsonValue, ToValueError>` | JSONキーにできない型等の変換失敗を伝播する。型付きDTOのデシリアライズはアダプタで行える |
+| 書出し | 既存の専用ライタ、3プロファイル | すべてのオブジェクトで整数形式キーが数値順で先頭。残りはhash-canonicalでUTF-16順、それ以外は宣言・挿入順。汎用フォーマッタへの置換は受入バイトを変える |
+| 数値 | 非負整数u64、負整数i64、浮動小数f64 | 保持型と出力表記を分ける。2^53超の整数はf64へ丸めてJS互換出力。非有限数はnull、負ゼロは0。任意値の完全往復を約束しない |
+| ハッシュ | sha2のSHA-256、canonical-prefixed / compact-raw | W2の用途表どおり使う。暗号ライブラリの安全性を知名度で断言せず、固定依存と検査結果で評価する。認証用の署名ではない |
+| 性質検証 | 既存proptest、固定シード20260823 | 決定性と対象値域での出力安定性を検証する。正準化前後の値の完全一致や再ハッシュの冪等性とは区別する |
+| 採取 | `scripts/goldens/` の既存スクリプト、bun | ピン3c3146cfから採取する。bunは開発時ツール。採取時のバージョンは来歴へ記録する |
+| 保存先 | `tests/golden/upstream-3c3146cf/` | C7の確定配置。hash-canonical/cases.jsonのexpectedに3プロファイルの出力とハッシュを保持し、各familyのprovenance.jsonで来歴を管理する。hash-canonicalの欠落は同ファイルのmissing_cases、CLI/hooksの欠落は各cases-missing.jsonに記録する |
+| 機械強制 | clippy disallowed-methods | 契約JSONの直列化関数群・型付き値のto_valueをcanon_jsonへ集約する。変換内部や契約外の永続化DTO等の例外は理由付きで局所化し、クレート全体を免除しない |
+| その他のJSON方式 | 汎用JSON/JCSライブラリへの置換は行わない | upstreamの受入出力・数値・キー順が検収基準であり、別方式の標準準拠だけでは代替にならない |
 
-## 2. 依存の差分（予定）
+## 2. 現在の依存と品質設定
 
-| クレート | 追加先 | 種別 | 備考 |
-|---|---|---|---|
-| `sha2` | `modules/shared/canon-json` | runtime | 新規 |
-| `serde` / `serde_json`（`preserve_order`） | `modules/shared/canon-json`（+ ワークスペース features） | runtime | 既存依存の適用範囲拡大。`preserve_order` は Cargo のフィーチャ統合で全体に効く |
-| `proptest` | dev-dependency | dev | 既存 |
+canon_jsonが使うランタイム依存はserde・serde_json・sha2で、追加は不要。所属クレートには他機能のためlibc・hmac・base64等もあるが、このモジュールの責務とは区別する。proptestとゴールデン比較用regexは開発依存である。採用バージョンの正本はCargo.lockで、過去のCodeKBの番号を現行版として転載しない。
 
-`cargo audit`（U10）で clean を維持し、`rust-toolchain.toml` 固定（U10）後も同じバージョンでビルドできること。
+workspaceのunsafe_code forbid、rust-toolchain.toml、CIの最小権限とcargo auditを維持する。外部クレート内部までunsafe不使用とは主張しない。カバレッジは90%床・相対差0.01ポイント、固定シードはscripts/coverage.shとCIで揃える。依存更新時は両ロックファイルを検査し、その実行結果を根拠として扱う。
 
-## 3. 未決（後続で確定）
+## 3. 検証と今後の扱い
 
-- `preserve_order` 有効化による既存 `serde_json::Value` 利用箇所（core-interface-adapter のワイヤ構造体）への
-  影響確認 — 型付き struct 中心のため影響は小さい見込み。code-generation の計画で棚卸し。
-- bun のバージョン固定（再採取スクリプト内に記録）。
+preserve_orderとfloat_roundtripは既に有効。正準JSON87試験とgolden16試験の成功を確認済みだが、この文書更新で最新のcargo auditや全CLI経路検査を実行したとはしない。採取済みhash-canonicalの来歴はbun 1.3.13を記録する。再採取時は実際に使ったバージョンとコマンドを記録する。
+
+入力の実測範囲・拒否境界・巨大入力に残る制約はsecurity-requirements §4に示す。性能の数値目標は追加せず、観測された劣化を測定してintent記録へ残す。既存のピンや期待値の更新、依存・値モデルの拡張は、それぞれの変更理由と検証を必要とする。

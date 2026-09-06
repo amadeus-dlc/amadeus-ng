@@ -7,6 +7,8 @@
 
 ## 規則が衝突したら（優先順）
 
+2026-09-06追加: [ファーストクラスコレクションの操作](first-class-collections.md) — filter/map/fold_left/at、型の意味に沿ったcombine/divideを優先し、イテレータ公開は最後の手段とする。設計・レビュー基準として適用する。
+
 規則が 13 本になり、全文を頭に入れて衝突を裁定する前提は成立しない。**読み替えて進まず、
 その場で正本を直す**（`project.md` Corrections「上流成果物の矛盾は読み替えず裁定を求める」）。
 どちらが正かは次の順で決める。
@@ -40,6 +42,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
 | [tell-dont-ask.md](tell-dont-ask.md) | **ユースケースからドメインのgetterを呼ばない**。アダプタ層でのgetterは合法（2026-09-05）。判断は状態の所有者へ。`value()`/`inner()`/`raw()`で内部型を意識させない | `cargo lint`（checkbox-vocabulary / use-case-domain-getter） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
+| [first-class-collections.md](first-class-collections.md) | コレクション操作を優先し、イテレータ公開は最後の手段。例外は理由付きの境界処理のみ | 設計・レビュー基準（全型への一律lintは未実装） |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |
 | [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化） |
 | [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない。ES Repository は `store` / `find_by_id`（ADR-006）。**コマンド側で外界（fs / 乱数 / プロセス / ネットワーク）に触るのは Repository 実装だけ**（§1d、2026-09-04） | `cargo lint`（`port-naming` — use-case 層の `pub trait` はコマンド側 `XxxRepository` / クエリ側 `XxxDao` のみ。`command-side-io` — `modules/core/command/**` の `*_repository_impl.rs` 以外に fs / 乱数 / プロセス / ネットワークの I/O が現れたら所見。2026-09-04、#47 / b44）。Repository 名と集約名の照合・技術接頭辞はレビュー基準 |
