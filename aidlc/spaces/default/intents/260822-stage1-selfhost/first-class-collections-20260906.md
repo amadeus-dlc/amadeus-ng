@@ -1,5 +1,7 @@
 # ファーストクラスコレクションの操作と呼出側の是正
 
+> 以下の初回3型の適用に続き、オーナーの横展開・共通trait・非空型の指示を追加反映した。最新の対象表は `collection-rollout-inventory.md`、追加結果は末尾を参照。
+
 2026-09-06、オーナーのcombine/divide/filter/map/foldLeft/atの提案と継続指示に基づき、既存型へ適用した。Rustの名前はfold_leftとする。イテレータを最後の手段とする規則を具体的な操作へ反映する。
 
 ## 変更
@@ -39,3 +41,11 @@ BoltRefsの新API不在、OrderedAuditEventsの新API不在、mapが空集合の
 - origin/mainが引き続きf67268022aefa01c8a65cee11b0f459bae721d33であることを確認。同コミットの直前実測99.13072110635495%（/tmp/residual-coverage.log）との差は-0.009909278868292404ポイントで、許容0.01以内。基準側は同じコミットの測定済み結果を再利用し、今回は再計測していない。
 
 差分では、findの「最初の一致」とhas_completedの「いずれかの一致」を区別したため、重複slugの既存動作を維持する。HumanTurnsは無効な時刻をNoneとして比較から除外し、DocumentKB行だけでは追跡を有効にしない既存動作を保つ。ユースケースへのgetter追加はない。
+
+## 共通traitと非空型を含む追加の横展開
+
+FirstClassCollectionはlen/is_empty/at/fold_left/filterと要素の借用形・絞込結果型を定める。既存7型へ適用し、Collection<T>とNonEmptyCollection<T>を追加した。非空型のmapは非空を保ち、filter/divideは空を許す型へ戻る。型付きの変換失敗や順序制約は各具体型に残す。
+
+全体試験2,241件が成功し、追加した非空filterのcompile-fail doctestも成功した。Clippy・cargo lint・rustfmt検査が成功。最終カバレッジは99.14022164135578%で、90%床と実測済みmain基準99.13072110635495%を満たす。初回3型の測定値とは別の、横展開後の結果である。
+
+先行する承認制御・コーパス修正は [PR #113](https://github.com/amadeus-dlc/amadeus-ng/pull/113) として分離した。元worktreeのGit管理領域が書込不可のため、書込可能な独立チェックアウトでコミットと公開を行う。元の作業ファイルは保持する。
