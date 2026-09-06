@@ -5888,3 +5888,181 @@
 **Context**: residuals-20260906.md
 
 ---
+
+## Session Resume
+**Timestamp**: 2026-09-06T09:45:55Z
+**Event**: SESSION_RESUMED
+**Source**: resume
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T09:45:56Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T10:08:00Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T10:13:54Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/first-class-collections-20260906.md
+**Context**: first-class-collections-20260906.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T10:14:30Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/first-class-collections-20260906.md
+**Context**: first-class-collections-20260906.md
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T10:23:18Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T10:23:54Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T10:28:49Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-06T10:45:54Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/collection-rollout-inventory.md
+**Context**: collection-rollout-inventory.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T10:50:14Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/first-class-collections-20260906.md
+**Context**: first-class-collections-20260906.md
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:12:07Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T11:12:19Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:15:09Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:55:43Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:56:14Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:56:55Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:57:13Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:57:44Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:58:55Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:59:21Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T11:59:25Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T12:17:46Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T12:17:51Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T12:22:52Z
+**Event**: HUMAN_TURN
+**Session**: 01a06f1e-c051-7383-b420-f57465e42885
+
+---
