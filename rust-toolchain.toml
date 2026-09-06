@@ -3,7 +3,8 @@
 # floating stable では上流の stable 更新だけで CI が突然赤になる。channel を明示して
 # ローカルと CI の rustc を同一にする。更新は PR でのみ行う (運用規範)。
 #
-# CI は `dtolnay/rust-toolchain@master` を `toolchain:` 入力なしで使い、このファイルを読む。
+# CI は scripts/governance/toolchain-inputs.sh でこのファイルを読み、
+# dtolnay/rust-toolchain@master の toolchain / components 入力へ渡す。
 # components はワークフローではなくここで一元管理する:
 #   rustfmt / clippy — check ジョブ、llvm-tools — coverage ジョブ (cargo-llvm-cov の要件)。
 [toolchain]

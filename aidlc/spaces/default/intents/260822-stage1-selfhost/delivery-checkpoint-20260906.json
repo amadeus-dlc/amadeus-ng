@@ -1,0 +1,29 @@
+{
+  "base_commit": "53b5667e52ed7d28a395458afb3fe254911b1b45",
+  "pull_requests": [
+    {
+      "mergeCommit": {
+        "oid": "e4f3cb381524a67fd29f33b14b9b4d843c77806c"
+      },
+      "mergedAt": "2026-09-06T10:50:23Z",
+      "state": "MERGED",
+      "url": "https://github.com/amadeus-dlc/amadeus-ng/pull/113"
+    },
+    {
+      "mergeCommit": {
+        "oid": "c06c1de4a18bea8618aee3a0edf20d2d480ae924"
+      },
+      "mergedAt": "2026-09-06T11:00:26Z",
+      "state": "MERGED",
+      "url": "https://github.com/amadeus-dlc/amadeus-ng/pull/114"
+    },
+    {
+      "mergeCommit": {
+        "oid": "53b5667e52ed7d28a395458afb3fe254911b1b45"
+      },
+      "mergedAt": "2026-09-06T11:10:55Z",
+      "state": "MERGED",
+      "url": "https://github.com/amadeus-dlc/amadeus-ng/pull/115"
+    }
+  ]
+}

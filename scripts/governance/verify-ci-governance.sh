@@ -241,7 +241,7 @@ check_ci_workflow() {
 
   # レビュースレッドのゲート (オーナー指示 2026-08-22 UTC): 未解決のレビューコメントを残した PR を
   # マージさせない。ci.yml の review-thread-resolution ジョブ (pull_request のみ、j5ik2o/ci の再利用
-  # ワークフローを SHA 固定で呼ぶ) と、check / quint / coverage + ゲートを束ねる CI Success 集約ジョブ。
+  # ワークフローを SHA 固定で呼ぶ) と、aidlc-distribution / check / quint / coverage + ゲートを束ねる CI Success 集約ジョブ。
   local rt_ok=0
   grep -Eq '^[[:space:]]*review-thread-resolution:' "${CI_FILE}" || rt_ok=1
   grep -Eq "uses: j5ik2o/ci/.github/workflows/review-thread-resolution.yml@[0-9a-f]{40}" "${CI_FILE}" || rt_ok=1
@@ -253,12 +253,12 @@ check_ci_workflow() {
   local cs_ok=0
   grep -Eq '^[[:space:]]*ci-success:' "${CI_FILE}" || cs_ok=1
   grep -Eq '^[[:space:]]*name: CI Success' "${CI_FILE}" || cs_ok=1
-  for dep in check quint coverage review-thread-resolution; do
+  for dep in aidlc-distribution check quint coverage review-thread-resolution; do
     grep -Eq "^[[:space:]]*- ${dep}\$" "${CI_FILE}" || cs_ok=1
+    grep -Fq "require_result \"${dep}\"" "${CI_FILE}" || cs_ok=1
   done
-  grep -q 'require_result "review-thread-resolution"' "${CI_FILE}" || cs_ok=1
   expect "${cs_ok}" "ci-success-aggregate" \
-    "CI Success 集約ジョブが check / quint / coverage と review-thread-resolution (pull_request のみ必須) を束ねている" \
+    "CI Success 集約ジョブが aidlc-distribution / check / quint / coverage と review-thread-resolution (pull_request のみ必須) を束ねている" \
     "CI Success 集約ジョブが無い / needs か require_result が揃っていない"
 
   if [[ -f ".github/workflows/review-thread-resolution.yml" ]] \
