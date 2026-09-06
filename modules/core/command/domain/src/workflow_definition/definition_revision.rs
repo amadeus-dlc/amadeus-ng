@@ -70,7 +70,13 @@ impl DefinitionRevision {
         let mut input = ObjectMembers::new();
         input.insert(
             "stage_graph",
-            JsonValue::Array(graph.nodes().iter().map(project_node).collect()),
+            JsonValue::Array(graph.fold_left(
+                Vec::with_capacity(graph.len()),
+                |mut nodes, node| {
+                    nodes.push(project_node(node));
+                    nodes
+                },
+            )),
         );
         input.insert("scope_grid", project_grid(grid));
         input.insert(

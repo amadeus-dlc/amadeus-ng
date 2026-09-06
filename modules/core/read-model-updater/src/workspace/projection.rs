@@ -863,8 +863,7 @@ fn jumped_event(
     let checkboxes = Checkboxes::parse(read_model.state());
     let state_of = |slug: &StageSlug| {
         checkboxes
-            .iter()
-            .find(|entry| entry.slug() == slug.as_str())
+            .find(slug.as_str())
             .map(core_command_domain::workspace::CheckboxEntry::state)
     };
     match direction {
@@ -1062,10 +1061,7 @@ fn last_completion_before(
         .take_while(|stage| stage.slug() != target)
     {
         let slug = stage.slug().as_str();
-        if checkboxes
-            .iter()
-            .any(|entry| entry.slug() == slug && entry.state() == CheckboxState::Completed)
-        {
+        if checkboxes.has_completed(slug) {
             found = slug;
         }
     }
@@ -1133,8 +1129,7 @@ fn rebuild_plan_rows(
     let checkboxes = Checkboxes::parse(read_model.state());
     let effective = |stage: &PlannedStage| -> PlanAction {
         checkboxes
-            .iter()
-            .find(|entry| entry.slug() == stage.slug().as_str())
+            .find(stage.slug().as_str())
             .and_then(|entry| match entry.rest().trim() {
                 "EXECUTE" => Some(PlanAction::Execute),
                 "SKIP" => Some(PlanAction::Skip),
@@ -1717,8 +1712,7 @@ fn completed_count(read_model: &ReadModel) -> String {
 /// **リードモデル自身**である — `rebuild_plan_rows` と同じ読み方 (状態の正本は自分の行)。
 fn effective_action(read_model: &ReadModel, stage: &PlannedStage) -> PlanAction {
     Checkboxes::parse(read_model.state())
-        .iter()
-        .find(|entry| entry.slug() == stage.slug().as_str())
+        .find(stage.slug().as_str())
         .and_then(|entry| match entry.rest().trim() {
             "EXECUTE" => Some(PlanAction::Execute),
             "SKIP" => Some(PlanAction::Skip),

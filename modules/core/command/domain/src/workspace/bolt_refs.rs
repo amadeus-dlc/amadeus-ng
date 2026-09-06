@@ -17,6 +17,69 @@ pub const EMPTY_LIST_LITERAL: &str = "[empty list]";
 pub struct BoltRefs(BTreeSet<String>);
 
 impl BoltRefs {
+    /// 和集合の単位元となる空集合。
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    /// 両方の参照を含む和集合。重複を除き辞書順に並べる。
+    #[must_use]
+    pub fn combine(&self, other: &Self) -> Self {
+        Self(self.0.union(&other.0).cloned().collect())
+    }
+
+    /// 他方に含まれる参照を除いた差集合。元の集合は変更しない。
+    #[must_use]
+    pub fn divide(&self, other: &Self) -> Self {
+        Self(self.0.difference(&other.0).cloned().collect())
+    }
+
+    /// 条件に一致する参照の集合。
+    #[must_use]
+    pub fn filter(&self, mut predicate: impl FnMut(&str) -> bool) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|slug| predicate(slug))
+                .cloned()
+                .collect(),
+        )
+    }
+
+    /// 参照を変換し、重複を除いて辞書順の集合を作る。
+    ///
+    /// # Errors
+    ///
+    /// 変換結果が空・空集合の予約語・前後空白・改行・リストの区切り文字を含む場合はMalformed。
+    /// 元の集合は変換の成功・失敗にかかわらず変更しない。
+    pub fn map(&self, mut transform: impl FnMut(&str) -> String) -> Result<Self, BoltRefsError> {
+        let mut mapped = BTreeSet::new();
+        for slug in &self.0 {
+            let next = transform(slug);
+            if next.is_empty()
+                || next == "empty list"
+                || next.trim() != next
+                || next.contains([',', '[', ']', '\n', '\r'])
+            {
+                return Err(BoltRefsError::Malformed(next));
+            }
+            mapped.insert(next);
+        }
+        Ok(Self(mapped))
+    }
+
+    /// 辞書順に左から畳み込む。空なら初期値を返す。
+    pub fn fold_left<'a, A>(&'a self, initial: A, mut fold: impl FnMut(A, &'a str) -> A) -> A {
+        self.0.iter().fold(initial, |acc, slug| fold(acc, slug))
+    }
+
+    /// 辞書順の位置で参照する。範囲外はNone。走査時間は位置に比例する。
+    #[must_use]
+    pub fn at(&self, index: usize) -> Option<&str> {
+        self.0.iter().nth(index).map(String::as_str)
+    }
+
     /// 受理形: `""` / `[empty list]` / `[a, b]` (upstream `parseRefsList`)。
     /// # Errors
     ///
@@ -96,10 +159,46 @@ impl fmt::Display for BoltRefs {
     }
 }
 
+impl core_infrastructure::collections::FirstClassCollection for BoltRefs {
+    type Item<'a> = &'a str;
+    type Filtered = Self;
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn at(&self, index: usize) -> Option<&str> {
+        Self::at(self, index)
+    }
+    fn fold_left<'a, A>(&'a self, initial: A, fold: impl FnMut(A, &'a str) -> A) -> A {
+        Self::fold_left(self, initial, fold)
+    }
+    fn filter(&self, predicate: impl FnMut(&str) -> bool) -> Self {
+        Self::filter(self, predicate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn collection_operations_preserve_set_semantics_and_leave_inputs_unchanged() {
+        let left = BoltRefs::parse("[b, a]").unwrap();
+        let right = BoltRefs::parse("[c, b]").unwrap();
+        assert_eq!(left.combine(&right).emit(), "[a, b, c]");
+        assert_eq!(left.divide(&right).emit(), "[a]");
+        assert_eq!(left.filter(|slug| slug == "b").emit(), "[b]");
+        assert_eq!(
+            left.map(|slug| format!("{slug}-done")).unwrap().emit(),
+            "[a-done, b-done]"
+        );
+        assert_eq!(left.fold_left(String::new(), |acc, slug| acc + slug), "ab");
+        assert_eq!(left.at(0), Some("a"));
+        assert_eq!(left.at(usize::MAX), None);
+        assert_eq!(BoltRefs::empty().at(0), None);
+        assert_eq!(left.emit(), "[a, b]");
+        assert_eq!(right.emit(), "[b, c]");
+    }
 
     #[test]
     fn removal_and_the_observation_faces_agree_with_the_set() {
@@ -166,6 +265,29 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn union_obeys_monoid_and_set_laws(
+            a in proptest::collection::btree_set("[a-z]{1,4}", 0..6),
+            b in proptest::collection::btree_set("[a-z]{1,4}", 0..6),
+            c in proptest::collection::btree_set("[a-z]{1,4}", 0..6),
+        ) {
+            let refs = |values: BTreeSet<String>| {
+                if values.is_empty() {
+                    BoltRefs::empty()
+                } else {
+                    BoltRefs::parse(&format!("[{}]", values.into_iter().collect::<Vec<_>>().join(", "))).expect("生成したslug集合")
+                }
+            };
+            let (a, b, c) = (refs(a), refs(b), refs(c));
+            prop_assert_eq!(a.combine(&b).combine(&c), a.combine(&b.combine(&c)));
+            prop_assert_eq!(&a.combine(&BoltRefs::empty()), &a);
+            prop_assert_eq!(&BoltRefs::empty().combine(&a), &a);
+            prop_assert_eq!(&a.combine(&a), &a);
+            prop_assert_eq!(a.combine(&b), b.combine(&a));
+            prop_assert_eq!(a.divide(&a), BoltRefs::empty());
+            prop_assert_eq!(a.divide(&BoltRefs::empty()), a);
+        }
+
         /// emit → parse → emit の round-trip は不動点 (決定的直列化)。
         #[test]
         fn emit_parse_round_trip_is_a_fixed_point(
@@ -177,5 +299,33 @@ mod tests {
             let reparsed = BoltRefs::parse(&emitted).unwrap();
             prop_assert_eq!(reparsed.emit(), emitted);
         }
+    }
+
+    #[test]
+    fn map_rejects_invalid_refs_and_deduplicates_collisions() {
+        let refs = BoltRefs::parse("[a, b]").unwrap();
+        for invalid in ["", "empty list", " a", "a ", "a,b", "[a]", "a\nb", "a\rb"] {
+            assert_eq!(
+                refs.map(|_| invalid.to_string()),
+                Err(BoltRefsError::Malformed(invalid.to_string()))
+            );
+        }
+        assert_eq!(refs.map(|_| "same".to_string()).unwrap().emit(), "[same]");
+        let count = |acc, _: &str| acc + 1;
+        assert_eq!(BoltRefs::empty().fold_left(7, count), 7);
+        assert_eq!(refs.fold_left(7, count), 9);
+        assert!(refs.filter(|_| false).is_empty());
+        assert_eq!(refs.at(1), Some("b"));
+        assert_eq!(refs.at(2), None);
+        let mut calls = 0;
+        let mut transform = |_: &str| {
+            calls += 1;
+            "same".to_string()
+        };
+        let mapped = BoltRefs::empty().map(&mut transform).unwrap();
+        assert!(mapped.is_empty());
+        assert_eq!(refs.map(&mut transform).unwrap().len(), 1);
+        assert_eq!(calls, 2);
+        assert_eq!(refs.emit(), "[a, b]");
     }
 }
