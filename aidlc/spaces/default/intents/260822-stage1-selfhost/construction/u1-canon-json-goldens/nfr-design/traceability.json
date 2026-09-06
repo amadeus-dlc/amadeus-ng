@@ -1,17 +1,74 @@
 {
   "stage": "nfr-design",
   "unit": "u1-canon-json-goldens",
-  "upstream_ids": ["NFR1.1", "NFR1.2", "NFR1.3", "NFR2.1", "NFR2.2", "NFR2.3", "NFR4.1", "NFR4.2", "NFR4.3", "NFR4.4"],
+  "upstream_ids": [
+    "NFR1.1",
+    "NFR1.2",
+    "NFR1.3",
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR4.1",
+    "NFR4.2",
+    "NFR4.3",
+    "NFR4.4",
+    "NFR5.1"
+  ],
   "coverage": [
-    { "id": "NFR1.1", "status": "OK", "target": "純粋な直列化関数 + 3 プロファイル + ゴールデン先行（security-design §3、logical-components writer/profile）" },
-    { "id": "NFR1.2", "status": "OK", "target": "Digest { family } による族の型固定 + 用途→族表（security-design §3、logical-components digest）" },
-    { "id": "NFR1.3", "status": "OK", "target": "正規化 4 種のみ・規則はコーパス固定（security-design §3、logical-components ゴールデン比較器）" },
-    { "id": "NFR2.1", "status": "OK", "target": "ゴールデン先行 TDD（logical-components §4 テスト配置）" },
-    { "id": "NFR2.2", "status": "OK", "target": "カバレッジ 90% 床 — ユニット + PBT + ゴールデンの 3 層配置（logical-components §4）" },
-    { "id": "NFR2.3", "status": "OK", "target": "proptest による決定性・往復・冪等性（logical-components §4）" },
-    { "id": "NFR4.1", "status": "OK", "target": "依存 3 つ（sha2 / serde / serde_json）・cargo audit・Cargo.lock 固定（security-design §4）" },
-    { "id": "NFR4.2", "status": "OK", "target": "unsafe_code forbid（security-design §4）" },
-    { "id": "NFR4.3", "status": "OK", "target": "parse 境界 1 か所・ParseError 変種（Syntax/TooDeep/Encoding）・深さ上限 128 + 実測棚卸し（security-design §2）" },
-    { "id": "NFR4.4", "status": "OK", "target": "使い捨てワークスペース採取・正規化・レビュー・ログなし（security-design §5）" }
+    {
+      "id": "NFR1.1",
+      "status": "OK",
+      "target": "security-design §2・§3：入力境界と3プロファイル・32行比較"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "OK",
+      "target": "security-design §3：族の識別、用途表と族別テスト"
+    },
+    {
+      "id": "NFR1.3",
+      "status": "OK",
+      "target": "security-design §5：規則限定の正規化と欠落記録"
+    },
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "logical-components §4・security-design §6：レイヤーごとのTDD"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "security-design §6：90%床・相対差0.01ポイントと必須CI"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "security-design §6・logical-components §4：決定性と対象値域の出力安定性"
+    },
+    {
+      "id": "NFR4.1",
+      "status": "OK",
+      "target": "security-design §4：依存と両ロックファイルの検査"
+    },
+    {
+      "id": "NFR4.2",
+      "status": "OK",
+      "target": "security-design §4：unsafe forbid・ツールチェーン固定・CI最小権限"
+    },
+    {
+      "id": "NFR4.3",
+      "status": "OK",
+      "target": "security-design §2：parse / parse_bytes / to_valueの検証と127/128段の境界"
+    },
+    {
+      "id": "NFR4.4",
+      "status": "OK",
+      "target": "security-design §5：採取物全体の点検と来歴"
+    },
+    {
+      "id": "NFR5.1",
+      "status": "OK",
+      "target": "security-design §6・logical-components §4：性能劣化時の測定と記録"
+    }
   ]
 }

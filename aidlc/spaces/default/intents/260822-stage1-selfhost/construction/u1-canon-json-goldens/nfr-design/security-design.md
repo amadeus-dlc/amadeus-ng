@@ -1,108 +1,113 @@
-# security-design — U1 canon-json とゴールデン（`u1-canon-json-goldens`）
+# security-design — U1 正準JSONとゴールデン
 
-> NFR Design（Construction 3.3）成果物（Unit: U1、kind: library）。出典: `../nfr-requirements/security-requirements.md`
-> （NFR1.1〜1.3 / NFR2.1〜2.3 / NFR4.1〜4.4、STRIDE）、`../nfr-requirements/tech-stack-decisions.md`（sha2 / serde +
-> serde_json preserve_order / 自前ライタ / clippy disallowed-methods）、`../functional-design/functional-spec.md`（W1〜W5）、
-> `../../../inception/contract-design/contract-summary.md`（C1 / C7）、確認事項 `nfr-design-questions.md`（前提 P1〜P3）。
-> performance / scalability / reliability / observability の要求・設計は kind = library のため存在しない。
->
-> 設計ステージの制約に従い、コードは ≤15 行の例示のみ。
+> NFR Design（Unit: u1-canon-json-goldens、kind: library）。出典:
+> `../nfr-requirements/security-requirements.md`、`../nfr-requirements/tech-stack-decisions.md`、
+> `../functional-design/functional-spec.md`、`../../../inception/contract-design/contract-summary.md`（C1/C7）。
+> `nfr-design-questions.md` の2026-09-06確認済み要約に基づく。
+> 論理配置は `logical-components.md`、入力実測は `../nfr-input-measurements.json`。
 
 ## 1. 設計方針
 
-U1 はネットワーク・認証・認可・永続化を持たない純粋ライブラリ。セキュリティ設計は 3 点に絞る:
-**(a) 入力検証を 1 つの境界に集約する**、**(b) 出力を決定的にする**（規則に従えば同じ入力は同じバイト列 — ゴールデン
-で固定）、**(c) サプライチェーンを最小に保つ**。
+純粋な変換処理を `core-infrastructure::canon_json` に置く。検証を入力経路ごとに明示し、決定的な出力を受入表で確認する。ネットワーク・認証・永続化・クラウド資源は導入しない。失敗を返すこととプロセス障害を隔離することを区別する。
 
-## 2. 入力検証の設計（NFR4.3）
+## 2. 入力経路と検証（NFR4.3）
 
-- 境界は `parse(text) -> Result<JsonValue, ParseError>` の 1 か所。呼出側はこの境界を通った `JsonValue` だけを扱い、
-  内部で再検証しない（境界を信頼する）。
-- `ParseError` は変種で原因を区別する（文言はアダプタ層で付ける — 材料のみ保持）:
-  - `Syntax { offset, detail }` — 不正 JSON
-  - `TooDeep { limit: 128 }` — 再帰深さ上限（serde_json 既定 128）超過。スタック枯渇の防止
-  - `Encoding` — 不正 UTF-8
-- 深さ上限と互換（NFR 要求レビュー Minor 1 の引き取り）: upstream の `JSON.parse` はエンジンのスタック依存で 128 段
-  超も読めるため、128 段超の契約 JSON が存在すれば拒否 vs 成功の非互換になる。code-generation の計画で対象の契約
-  JSON 群（stage-graph / scope-grid / scopes / directive / ゴールデン入力）の**実測最大深さ**を棚卸しし、十分に浅い
-  （想定: 10 段未満）ことを確認する。超える場合のみ上限を引き上げる（`serde_json::Deserializer::disable_recursion_limit`
-  は使わない — 上限の数値を設定で持つ）。
-- 非有限数（NaN / ±Infinity）は入力として JSON に現れない（JSON 文法外）。出力側で f64 から生じ得る場合は BR1.3 で
-  `null` に決定的に落とす。制御文字は BR1.4 の最小エスケープで決定的に処理。
+| 経路 | 処理 | 通常の失敗 |
+|---|---|---|
+| parse(&str) | 文字列リテラル内とエスケープを区別して深さを事前検査し、JSONを読んで挿入順を保持する | 不正構文・孤立サロゲートはSyntax、128段目に達した入力はTooDeep |
+| parse_bytes(&[u8]) | UTF-8として検査し、成功後にparseへ委譲する | 不正UTF-8はEncoding、以降はparseと同じ |
+| to_value(&T) | 型付き値をJSON値へ変換し、変換不能な型を拒否する | ToValueError |
+| JsonValueの直接構築 | 型の値域に従って構築する | parseの構文・深さ検査を通ったとは扱わない |
 
-```text
-// 境界の形（例示）
-fn parse(text: &str) -> Result<JsonValue, ParseError>;   // 唯一の入口
-enum ParseError { Syntax { offset: usize, detail: String }, TooDeep { limit: usize }, Encoding }
-```
+ParseErrorはSyntax { offset, detail }、TooDeep { limit }、Encodingを持つ。Syntaxのoffsetはバイト位置。parseの引数は既にUTF-8の&strなので、その経路からEncodingが生じるとは記載しない。to_valueは深さ制限を代替せず、プログラム構築値の任意の深さまで保護するとはしない。
 
-## 3. 出力の決定性（NFR1.1 / NFR1.2 / NFR1.3）
+MAX_DEPTHは128、受入最大段数は127。文字列外のオブジェクト・配列を1段として数え、128段目でTooDeep { limit: 128 }を返す。上限を入力に応じて自動で引き上げたり、serde_jsonの再帰制限を無効化したりしない。
 
-- 直列化は純粋関数（同じ `JsonValue` + 同じプロファイル → 同じバイト列）。乱数・時刻・環境変数に依存しない。
-- ダイジェストは直列化バイト列から計算し、族ごとのプロファイル（正準族 = hash-canonical、非正準族 = contract-compact）を
-  型で固定する（`Digest { family, hex }` — 族の取り違えを型で防ぐ）。用途 → 族の対応表は functional-spec W2 の補遺として
-  code-generation の計画に載せる（functional-design レビュー Minor 2 の引き取り）。
-- ゴールデン比較はプレースホルダ 4 種（<TS>/<CLONE>/<ROOT>/<SESSION>）だけを正規化し、規則はコーパスに固定する。
+採取済みJSON88ファイルとJSON文字列入力29ケースは最大深さ7だった（測定対象・方法は `../nfr-input-measurements.json`）。JavaScript構築の3ケースをこの測定へ含めない。これは採取済み入力が上限内である証拠であり、将来の全入力や巨大な平坦入力のメモリ安全性を保証するものではない。
 
-## 4. サプライチェーン（NFR4.1 / NFR4.2）
+## 3. 出力とハッシュの選択（NFR1.1〜NFR1.3）
 
-- 追加依存は `sha2`（ハッシュ）・`serde` / `serde_json`（読取、`preserve_order`）のみ。`cargo audit`（U10 で CI 追加）の
-  対象。バージョンは `Cargo.lock` で固定。
-- `unsafe_code = "forbid"`（U10 でワークスペース lint へ昇格）。canon-json は unsafe を使わない。
-- `serde_json` の直列化関数の直接呼び出しは clippy `disallowed-methods` で canon-json 以外から拒否（BR1.7）。
-- bun（ゴールデン採取）は開発時ツール。プロダクトの依存木に入れない（D1）。
+同じJsonValue・同じプロファイルから同じバイト列を生成する。全プロファイルで整数形式キーを数値昇順で先頭に置き、残りだけをhash-canonicalでUTF-16順にする。大整数のJS互換丸め、負ゼロ、非有限数、最小エスケープは機能設計BR1.1〜BR1.6に従う。
 
-## 5. 秘密情報・データ（NFR4.4）
+DigestFamilyはダイジェスト族の識別情報を運ぶ。利用者が誤った関数を選ぶことまで型だけで防げるとはしない。W2の用途表と族別テストを併用する。
 
-- 秘密情報・PII を扱わない。ゴールデンは使い捨てワークスペースで採取し、正規化でホスト名・パス・ID を除く。
-  レビューで目視確認（BR2.1 の来歴と併せて）。
-- ログ出力なし（ライブラリはログを書かない。診断は呼出側の `AIDLC_LOG`）。
+| 用途 | 呼出と出力 |
+|---|---|
+| contract_sha256・approval fingerprint | hash_canonical、sha256:接頭辞付き |
+| bundle hash・directiveHash・route hash・配送冪等digest | hash_compact、生hex |
 
-## 6. 失敗の扱い（前提 P3）
+これらのハッシュは内容比較の材料であり、送信者の認証や改変防止の署名ではない。採取済み32行の3プロファイル・2族を比較する。CLI/フックの実行結果比較は後続Unitが担い、コーパス読取の成功を全経路検証に読み替えない。
 
-- 失敗はすべて `Result` で呼出側に返す。`unwrap` / `expect` はプロダクトコードで禁止（workspace lint）。
-- 沈黙の失敗なし: ゴールデン不一致はテスト失敗、採取失敗は欠落として記録（捏造しない）。
+## 4. 依存と直列化境界（NFR4.1・NFR4.2）
+
+canon_jsonが使用するランタイム依存はserde・serde_json・sha2。serde_jsonはpreserve_orderとfloat_roundtripを有効にする。所属クレート内の別機能の依存と、canon_json自身の依存を区別する。共有components.mdのCanonJson.external_dependenciesも現在この3依存を記載している。
+
+契約JSONの直列化関数群とto_valueの直接呼出しをclippy disallowed-methodsで制限する。変換内部・契約外の永続化DTO等に必要な例外は理由付きの局所許可とし、クレート全体を免除しない。型付きDTOのデシリアライズはアダプタの責務として残す。
+
+Cargo.lock、workspace unsafe_code forbid、rust-toolchain.toml、CI最小権限を維持し、workspaceとtools/lintの依存検査を実行する。外部クレート内部までunsafe不使用とは保証しない。最新の検査成功は、実行結果がある場合だけ記録する。bunは採取用の開発時ツールである。
+
+## 5. 採取物と情報の扱い（NFR4.4・NFR1.3）
+
+使い捨て環境で採取し、コーパスの規則に従って時刻・clone・root・sessionを期待値と実測値の双方で正規化する。未加工値と正規化後の差分を確認し、機能差を隠す置換を追加しない。
+
+入力・出力・監査・来歴を含めて秘密情報・個人情報・環境固有値の残存を点検する。正規化だけを情報不在の証明にしない。来歴にはピン・日時・実行コマンド・ツールバージョンを残す。採取失敗や未採取は理由付きで記録し、期待値を捏造しない。ライブラリ自身はログを書かず、診断情報の表示・保存は呼出側が扱う。
+
+## 6. 失敗・品質・性能（NFR2.x・NFR5.1）
+
+読取と型付き変換の通常エラーはResultで呼出側へ返し、同じ入力を自動で再試行しない。serializeとhashは構築済み値に対する計算であり、非有限数のnull化は仕様上の変換である。割当失敗や深い直接構築値によるプロセス障害までResultで回収・隔離できるとはしない。
+
+新規コードはレイヤーごとのTDD、固定シードのPBT、採取済み受入表で検証する。カバレッジ90%床・相対差0.01ポイントと必須CIを維持する。任意値の完全往復や再ハッシュの冪等性ではなく、対象値域での出力安定性と同一入力の決定性を検証する。
+
+性能目標を新設せず、劣化が観測された場合は入力・実行環境・比較対象・計測方法を記録して測定する。試験の実行時間を性能ベンチマークの代用にしない。
 
 ## 7. 要求への対応
 
 | 要求 | 設計上の手当て |
 |---|---|
-| NFR1.1 | 純粋な直列化関数 + 3 プロファイル + ゴールデン先行（§3） |
-| NFR1.2 | `Digest { family }` で族を型固定、用途 → 族表（§3） |
-| NFR1.3 | 正規化 4 種のみ、規則はコーパス固定（§3） |
-| NFR2.1 / NFR2.2 / NFR2.3 | ゴールデン先行 TDD、カバレッジ 90% 床、PBT（往復・決定性・冪等性） — logical-components §3 のテスト配置 |
-| NFR4.1 / NFR4.2 | 依存 3 つ・cargo audit・unsafe forbid（§4） |
-| NFR4.3 | parse 境界 1 か所・ParseError 変種・深さ上限 128 + 実測棚卸し（§2） |
-| NFR4.4 | 使い捨てワークスペース採取・正規化・レビュー（§5） |
+| NFR1.1 | §2の入力境界、§3の3プロファイルと32行比較 |
+| NFR1.2 | §3の族の識別・用途表・族別テスト |
+| NFR1.3 | §3の決定性、§5の規則限定の正規化と欠落記録 |
+| NFR2.1 | §6のレイヤーごとのTDD、logical-components §4の検証配置 |
+| NFR2.2 | §6のカバレッジとCI基準 |
+| NFR2.3 | §6の対象値域を限定した性質検証 |
+| NFR4.1 | §4の依存・ロックファイル・依存検査 |
+| NFR4.2 | §4のunsafe forbid・ツールチェーン・CI権限 |
+| NFR4.3 | §2の入力経路別検証と127/128段の境界 |
+| NFR4.4 | §5の採取物全体の点検・来歴 |
+| NFR5.1 | §6の劣化時の測定と記録 |
+
 
 ## Review
 
 **Verdict:** READY
 **Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-08-22T12:07:54Z
-**Iteration:** 1（advisory, unit: u1-canon-json-goldens）
+**Date:** 2026-09-06T01:29:31Z
+**Iteration:** 1
+**Request Challenge:** review:40f7ea78ddb26fa8228a31d8ab87abb8
 
 ### Findings
 
-| # | Severity | Location | Finding | Recommendation |
-|---|---|---|---|---|
-| 1 | Minor | security-design.md §4／logical-components.md §1（vs `inception/domain-design/components.md` CanonJson エントリ） | 上流の `components.md` は CanonJson の `external_dependencies: []` を明示しているが、本 Unit の nfr-design（security-design §4、tech-stack-decisions §1〜2）は `sha2` / `serde` / `serde_json` を実際の外部クレート依存として新規追加している。前段の nfr-requirements レビューは `depends_on: []`（内部コンポーネント間依存）と外部クレート依存が別軸であることを確認済みだが、`external_dependencies: []` というフィールド自体の陳腐化には触れていない。設計そのものは矛盾しないが、上流の inception 成果物が古い値のまま残る点は棚卸し漏れのリスクになる。 | code-generation の計画（すでに §2 で棚卸し事項を list 済み）に一行追加し、`components.md` の `external_dependencies` を実体化後に更新する対象として明記する。 |
-| 2 | Minor | security-design.md §4 | `serde_json` の直接呼び出し禁止を「直列化関数」に限定して記述しており、`rules.md` BR1.7 が同じ clippy `disallowed-methods` で禁止している「契約経路の `to_value`」への言及が抜けている。設計は矛盾していないが、この成果物単体を読む実装者には禁止範囲が直列化関数だけに見える。 | §4 の当該箇条に「契約経路の `to_value` の直接呼び出しも同じ機構で禁止する（BR1.7）」を一言追記する。 |
+1回のADVISORYレビューとして既存IDを引き継いだ。既存2件は解消済みで、新規所見はない。
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/security-design.md > 第4節、および aidlc/spaces/default/intents/260822-stage1-selfhost/inception/domain-design/components.md > CanonJson.external_dependencies | 共有コンポーネント表はserde・serde_json（preserve_order、float_roundtrip）・sha2を列挙済み。設計第4節と現行Cargo.tomlの依存用途に一致し、内部依存depends_on=[]との区別も維持されている。更新対象の記載漏れという旧所見は、上流の更新自体が完了したため解消している。 | 追加対応なし。依存変更時は共有表と実装の対応を維持する。 | Resolved |
+| R-02 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/nfr-design/security-design.md > 第4節「契約JSONの直列化関数群とto_value」 | to_valueの直接呼出しも制限対象として明記された。functional-spec第2節・tech-stack-decisionsの機械強制欄と一致し、clippy.tomlにはserde_json::to_valueの禁止、value/json_value.rsには変換点の理由付き局所許可が実在する。 | 追加対応なし。契約外の例外も理由付きの局所許可に限定する。 | Resolved |
 
 ### Validation Tool Results
 
-本ステージの `sensors`（required-sections / upstream-coverage / linter / type-check / traceability）はいずれも自動実行可能な CLI ツールとして本レビューには提供されておらず、実行結果は無い。以下は手動でのクロスチェック結果。
-
-| チェック | 結果 | 所見 |
+| Tool | Result | Interpretation |
 |---|---|---|
-| traceability.json の 10 件（NFR1.1〜1.3 / NFR2.1〜2.3 / NFR4.1〜4.4）が security-design.md / logical-components.md の該当節に実在するか | 一致 | 全 target が指す §（security-design §2〜§5、logical-components §1・§4）は実在し、内容も要求と矛盾しない |
-| 前段 security-requirements.md レビュー Minor 1（深さ上限 128 の upstream 互換影響）の引き取り状況 | 引き取り済み | security-design §2 に「契約 JSON の実測最大深さを code-generation で棚卸し」を明記しており、未対応のまま放置されていない |
-| logical-components のモジュール分割（value/profile/writer/canonical/digest/parse + facade）と `coding-rules/module-visibility.md`（mod は private、公開は facade の `pub use` 列挙、利便再エクスポート禁止）の整合 | 整合 | 6 モジュールすべて private・`lib.rs` の `pub use` 列挙のみを公開面とし、便宜的な再エクスポートを設計していない |
-| logical-components §1 のゴールデン配置と `inception/contract-design/contract-summary.md` C7（`tests/goldens/{hash-canonical,cli,hooks}/...`）の整合 | 一致 | layout・owner（U1）・consumers（U6/U7）の記述が C7 と食い違わない |
-| ADR 0001（単一クレート・自前ライタ・serde_json 直接呼び出し禁止）との整合（tech-stack-decisions.md 経由） | 整合 | クレート配置・書き出し方式・機械強制の選定理由が ADR の決定と代替案却下理由に対応している |
-| コード例示が ≤15 行制約を守っているか | 準拠 | security-design.md 中のコードブロックは 1 件（4 行）のみ |
-| infrastructure-design SKIP との整合（logical-components §5） | 整合 | U1 はインフラ資源を持たないため引き渡し事項なしと明記しており、CI（U10）側の関係のみ記載 |
+| aidlc-sensor-required-sections（stage=nfr-design、security-design.md / logical-components.md） | PASS、追記前H2数7 / 5、findings_count=0 | 指定された2設計文書の構造検査を実行した。 |
+| aidlc-sensor-upstream-coverage（consumes=security-requirements,tech-stack-decisions,functional-spec,contract-summary、deliverables=security-design,logical-components） | PASS、unreferenced=[]、findings_count=0 | scanned_filesも指定2文書に限定されている。 |
+| aidlc-sensor-traceability（U1 nfr-design/traceability.json） | PASS、findings_count=0 | 全11件の要求が列挙され、対応する設計節に解決する。 |
+| C1・C7・CanonJsonの共有契約との照合 | 一致 | ハッシュの用途は機能設計W2、コーパスの配置・ピン・所有・更新方針はC7に対応する。後続UnitのCLI実行比較とU1の比較器を区別している。 |
+| mod.rs・parse.rs・canonical.rs・digest.rs・value/json_value.rsの限定照合 | 一致 | 公開面、UTF-8検査からparseへの委譲、127段受理・128段拒否、to_valueの変換失敗、全プロファイルの整数形式キー優先、2族の計算経路が設計と一致する。プログラム構築値やプロセス障害まで深さ検査・Resultで保護するとはしていない。 |
+| JSON入力の独立再計算（Python、固定コーパス内のみ） | 記録と全88ファイル一致 | 各ファイルのパス・バイト数・深さがnfr-input-measurements.jsonと一致し、最大深さ7。受入表32行のうちJSON文字列入力29件も最大深さ7で、構築入力3件は別扱いになる。 |
+| 既存実行ログ（/tmp/u1-resume-unit-tests.log、/tmp/u1-resume-golden-tests.log） | 87 + 16 passed、0 failed | 同セッションのログを確認。golden_hash_canonical.rsは3プロファイル・2族の全行比較を実装している。コード未変更のため再試験は行っていない。 |
+| Cargo.toml・クレート依存・clippy.toml・rust-toolchain.toml・CI・coverage設定 | 本文の設定記述と一致 | serde_jsonの2機能、unsafe forbid継承、Rust 1.95.0固定、contents: read、両ロックファイルのcargo audit実行設定、90%床・相対差0.01・シード20260823を確認。現在のCI成功・最新依存検査成功を証明するものではない。 |
+| linter / type-check | 対象外 | 対象2文書にはTypeScript/JavaScriptのコード片がない。 |
 
 ### Summary
 
-セキュリティ設計・論理コンポーネント分割・traceability はいずれも上流の NFR 要求・functional-design・coding-rules・ADR 0001 と矛盾なく、実装者が追加で設計判断を仰ぐ必要はない。上流成果物（`components.md`）のフィールド陳腐化と BR1.7 の記述範囲に軽微な精度上の抜けがあるが、いずれも Minor でブロッキングではない。
+確認済み要件に沿って、入力経路ごとの検証、純粋な変換処理の配置、失敗伝播と隔離の限界、品質検証を具体化している。既存2件は解消され、未実行の最新脆弱性検査・性能測定・全CLI経路検証を成功扱いしていないためREADYとする。
