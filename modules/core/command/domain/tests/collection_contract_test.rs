@@ -1,10 +1,15 @@
 //! 一級コレクション型への横展開漏れと共通契約を検証する。
+use core_command_domain::orchestration::{
+    ArtifactPaths, ReviewClosure, ReviewClosures, ReviewVerdict, StageDisplay, StageEntries,
+    StageEntry, StageIndexSet, StageSlots, StageSlugSet, TransitionStep, TransitionSteps,
+};
 use core_command_domain::workflow_definition::{
-    ExecutionKind, PhaseId, ScopeGrid, StageGraph, StageMode, StageNodeBuilder, StageNumber,
-    StageSlug,
+    ExecutionKind, PhaseId, PlanAction, ScopeGrid, StageGraph, StageMode, StageNodeBuilder,
+    StageNumber, StageSlug,
 };
 use core_command_domain::workspace::{
-    AuditFieldKey, AuditFields, BoltRefs, Checkboxes, OrderedAuditEvents,
+    AuditFieldKey, AuditFields, BoltRefs, Checkboxes, OrderedAuditEvents, PromotedSection,
+    PromotedSections, RuleLines,
 };
 use core_infrastructure::collections::FirstClassCollection;
 use std::collections::BTreeMap;
@@ -70,12 +75,75 @@ fn all_domain_collection_types_share_the_traversal_contract() {
     check(
         &ScopeGrid::new(BTreeMap::from([(
             "poc".to_string(),
-            BTreeMap::from([(
-                slug,
-                core_command_domain::workflow_definition::PlanAction::Execute,
-            )]),
+            BTreeMap::from([(slug, PlanAction::Execute)]),
         )])),
         1,
     );
     check(&ScopeGrid::default(), 0);
+}
+
+#[test]
+fn the_orchestration_and_workspace_collections_share_the_traversal_contract() {
+    // clippy の unwrap 許可はテスト本体に閉じるので、合成は関数内のクロージャで組む。
+    let entry = |name: &str, phase: PhaseId, plan_action: PlanAction| {
+        StageEntry::new(
+            StageSlug::parse(name).unwrap(),
+            phase,
+            plan_action,
+            false,
+            StageDisplay::new(StageNumber::parse("0.1").unwrap(), "Stage", "orchestrator").unwrap(),
+        )
+    };
+    // 2 ステージの合成計画（先頭は initialization = EXECUTE かつ無条件）。
+    let plan = StageEntries::new(vec![
+        entry("state-init", PhaseId::Initialization, PlanAction::Execute),
+        entry("intent-capture", PhaseId::Ideation, PlanAction::Execute),
+    ])
+    .unwrap();
+    check(&plan, 2);
+    check(&StageSlots::genesis(&plan), 2);
+
+    // StageIndex の公開構築経路は計画の位置解決である（`StageIndex::new` はクレート内）。
+    let position = plan
+        .position_of(&StageSlug::parse("intent-capture").unwrap())
+        .unwrap();
+    check(&StageIndexSet::singleton(position), 1);
+    check(&StageIndexSet::empty(), 0);
+    check(&plan.slugs_at(&StageIndexSet::singleton(position)), 1);
+    check(&StageSlugSet::empty(), 0);
+
+    check(&ArtifactPaths::new(vec!["requirements.md".to_string()]), 1);
+    check(&ArtifactPaths::empty(), 0);
+
+    check(
+        &TransitionSteps::new(vec![
+            TransitionStep::GateStartRecovered,
+            TransitionStep::Approve,
+        ])
+        .unwrap(),
+        2,
+    );
+    check(&TransitionSteps::new(Vec::new()).unwrap(), 0);
+
+    check(
+        &ReviewClosures::new(vec![ReviewClosure::new(1, ReviewVerdict::Ready)]),
+        1,
+    );
+    check(&ReviewClosures::empty(), 0);
+
+    check(
+        &PromotedSections::new(vec![PromotedSection::new(
+            "Way of Working",
+            "trunk-based.\n",
+        )])
+        .unwrap(),
+        1,
+    );
+    check(&PromotedSections::new(Vec::new()).unwrap(), 0);
+
+    check(
+        &RuleLines::new(vec!["ALWAYS write tests first".to_string()]),
+        1,
+    );
+    check(&RuleLines::empty(), 0);
 }
