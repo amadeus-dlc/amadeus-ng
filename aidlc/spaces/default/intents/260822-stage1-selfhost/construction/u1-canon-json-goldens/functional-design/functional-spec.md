@@ -26,7 +26,7 @@ to_value<T: Serialize>(t: &T) -> Result<JsonValue, ToValueError>               /
 
 - 型付き契約型（stage-graph / scope-grid / directive 等）は struct のフィールド宣言順で JsonValue になる（BR1.1）。
 - 動的マップ（serde_json::Map 相当）は preserve_order で挿入順を保持し、直列化時に BR1.2 の順序規則を適用する。
-- 呼出側は `serde_json` を直接呼ばない（BR1.7）。
+- 契約JSONの直列化・型付き値の変換は、このモジュールを通す（BR1.7）。アダプタによる型付きDTOへの読取は別の境界であり、`serde_json::from_str` 等を利用できる。
 
 ## 3. ワークフロー
 
@@ -52,14 +52,14 @@ to_value<T: Serialize>(t: &T) -> Result<JsonValue, ToValueError>               /
 | contract_sha256・approval fingerprint | hash_canonical / canonical-prefixed | sha256: + 小文字hex |
 | bundle hash・directiveHash・route hash・ルール配送の冪等digest | hash_compact / compact-raw | 小文字hex |
 
-- 事後条件: 同じ入力なら同じダイジェスト。
+- 事後条件: 同じ入力・同じ族なら同じダイジェスト。ダイジェストから入力値を復元する契約は持たない。
 
 ### W3 — 契約 JSON の読取（parse）
 
 1. テキストを JSON として読み、オブジェクトのキー順を保持した `JsonValue` を作る。
 2. 不正 JSON は `ParseError`（位置と理由を材料として保持 — 文言化はアダプタ層）。
 3. 対をなすサロゲートのエスケープはUnicode文字に復号する。孤立サロゲートはUTF-8の値モデルに保持できないため `ParseError::Syntax` で拒否する。深さ127段までを受け入れ、128段以上は `TooDeep` とする。
-- 利用箇所: stage-graph / scope-grid / scopes の読取（WorkflowDefinitionRepositoryImpl — U3 既存）、ゴールデン比較。
+- 利用箇所: ゴールデン比較など、順序を保持した汎用JSON値が必要な読取。U3の配布定義を読む責務は `CompiledDefinitionRepositoryImpl` にあり、現行の型付きDTO読取には `serde_json::from_str` を使う。同アダプタは契約JSONの書出しで `to_value` / `serialize` を利用する。
 - 互換保証の範囲: FR7.3/C7が指定する採取済み受入表の全行一致と、UTF-8で表せる値の読み書き。型付き入力の文字列はこの値域に入る。孤立サロゲートを含む任意の外部JSONまで同値とはしない。既存実装の「契約JSONには現れない」という注記だけを、将来の全入力を保証する証拠として扱わない。その入力を扱う拡張にはUTF-16を保持する値モデルと受入ケースの追加が必要になる。
 
 型付き値を受ける `to_value` は、JSONオブジェクトのキーへ変換できない複合型などを `ToValueError` として返す。呼出側は入力・型を修正し、同じ値の自動リトライはしない。
@@ -128,41 +128,45 @@ BR2.1 採取 + 来歴 / BR2.2 正規化比較 / BR2.3 受入表網羅 / BR2.4 CL
 FR7.1 → BR2.1, BR2.3（受入表の採取）。FR7.2 → BR2.1, BR2.2, BR2.4（CLI/フックゴールデン）。
 FR7.3 → BR1.1〜BR1.6（実装規則）+ BR2.3（合格基準）。NFR1 の正準化面 → BR1.1〜BR1.6。
 
+
 ## Review
 
-**Verdict:** NOT-READY
+**Verdict:** READY
 **Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-09-05T07:00:29Z
+**Date:** 2026-09-06T00:27:00Z
 **Iteration:** 1
-**Request Challenge:** review:8763a6305d40c2cc847be8ae1e5d58c5
+**Request Challenge:** review:abb6da86e9c815820fb407d4d72d895f
 
 ### Findings
 
-旧レビューの数値番号 1〜3 はそのまま保持する。旧 context の「No findings」は解消証拠として用いず、退避された旧レビューと現物を照合した。新規所見は R-04 以降とする。
+本レビューは1回の ADVISORY 評価である。過去の ID を引き継ぎ、現在の本文・共有契約・実装・受入データで解消状況を確認した。未解決は Minor 1件で、Critical / Major の未解決はない。
 
 | ID | Severity | Location | Finding | Required action | Status |
 |---|---|---|---|---|---|
-| 1 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md > BR2.3、および entities.md > GoldenCase.expected | 旧所見は C7 の受入表が入力とハッシュだけを宣言していた点。現在の contract-summary.md > C7 は cases.json の expected に canonical_output / canonical_digest 等を明記し、2026-08-22 の訂正理由も記録している。実コーパスの 32 行と比較テストもこの形を使っている。 | 追加対応なし。現行 C7 とコーパスの対応を維持する。 | Resolved |
-| 2 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md > W2 | 用途とダイジェスト族の対応表は依然ない。ADR 0001 と現行 canon_json/mod.rs は contract_sha256・approval fingerprint を canonical-prefixed、bundle hash・directiveHash・route hash・配送冪等 digest を compact-raw と区別しているが、W2 は用途を一括列挙する。実装側の説明は改善されているものの、本書だけでは選択が曖昧なままである。 | W2 に用途と族の対応を明記し、根拠となる ADR の区分を参照する。 | Unresolved |
-| 3 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/entities.md > JsonValue.integer_value | i64/u64 の判別規則は設計に未記載。現行 value/number.rs は非負を PosInt(u64)、負を NegInt(i64)、小数・非有限を Float と説明し、numbers_prefer_unsigned_then_signed_then_float テストも成功する。実装では決着しているが、論理モデルへの反映がない。 | 非負・負・浮動小数の判別規則を entities の制約へ反映する。大整数の出力丸めは R-05 と区別して記述する。 | Unresolved |
-| R-04 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md > BR1.1・BR1.2、および functional-spec.md > W1 手順 2 | BR1.1 は hash-canonical の全キーを UTF-16 順に整列し、BR1.2 の整数形式キー優先を contract-pretty / contract-compact に限定する。しかしコーパス hash-canonical/integer-like/numeric-vs-string-order の canonical_output はキー順 1,9,10,x であり、文字列順の 1,10,9,x ではない。現行 canonical.rs は全プロファイルで整数形式キーを数値昇順で先頭に置き、残りだけを再帰ソートする。設計を文字どおり再実装すると、U1 自身のゴールデンとハッシュ互換が壊れる。 | BR1.2 の適用を全プロファイルへ広げ、BR1.1 と W1 に「整数形式キーを数値昇順で先頭、残りを UTF-16 順」の二段階を明記する。実コーパスの上記例を境界条件として参照する。 | New |
-| R-05 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md > BR1.3.logic | integer なら常に十進表記する規則には、JS の正確整数範囲を超えた値の丸めがない。コーパス hash-canonical/large-int/around-2p53 は入力 9007199254740993 の出力を 9007199254740992 に固定し、u64-range では u64 最大値の出力が 18446744073709552000 になる。現行 writer の整数範囲テストと全行比較は成功しており、仕様どおりの正確な整数出力へ戻すと受入値に一致しなくなる。 | BR1.3 に整数の保持型と出力時の JS 互換丸めを分けて定義し、2^53 周辺・u64 上限付近のゴールデンを根拠として明示する。 | New |
-| R-06 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/entities.md > JsonValue.string_value、および rules.md > BR1.4 | string_value は UTF-8 と定義する一方、BR1.4 は孤立サロゲートをエスケープして出力することを要求する。孤立サロゲートはこの値モデルで保持できず、両方を同時に実装できない。現行 mod.rs はこの非対称を明示し、lone_surrogate_escapes_are_rejected_as_syntax_errors テストは読取拒否を固定する。現行実装が対応していない入力まで、設計は互換保証している。 | 対象契約に孤立サロゲートが現れないという根拠を明記したうえで、UTF-8 入力の拒否境界と互換保証範囲を BR1.4・W3 に反映する。対応を要するなら値モデルの変更が必要であり、実装の存在だけで要求を縮小しない。 | New |
-| R-07 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md > 第 2 節 to_value・第 5 節エラー一覧 | to_value を失敗しない JsonValue 返却として宣言しているが、現行 value/json_value.rs は Result<JsonValue, ToValueError> を返す。タプルをキーにしたマップの変換拒否は maps_with_non_string_keys_are_rejected テストで確認できる。唯一の型付き変換境界の失敗経路が設計から落ちている。 | インターフェイス例とエラー一覧に変換失敗を追加し、呼出側へ返す材料とリトライの扱いを明記する。 | New |
+| R-01 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md > BR2.3、および entities.md > GoldenCase.expected | 出力文字列とダイジェストの両方を検証する契約は整合している。共有 contract-summary.md > C7 が canonical_output / canonical_digest を明記し、実コーパス32行と golden_hash_canonical.rs の全行比較も両方を検証する。旧来の2フィールド省略表記との不一致は解消済み。 | 追加対応なし。C7と受入表の一致を維持する。 | Resolved |
+| R-02 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md > W2 用途と族の対応表 | contract_sha256・approval fingerprint は canonical-prefixed、bundle hash・directiveHash・route hash・ルール配送の冪等digest は compact-raw と明記された。docs/adr/0001-canonical-json-serializer.md > コンテキスト、および canon_json/mod.rs の2族表と一致する。 | 追加対応なし。用途を追加するときも族を明記する。 | Resolved |
+| R-03 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/entities.md > JsonValue.integer_value | 非負はu64、負はi64、小数・非有限はfloatと定義され、保持型と出力時の丸めを区別している。canon_json/value/number.rs・parse.rs の変換順、および numbers_prefer_unsigned_then_signed_then_float の成功ログと対応する。 | 追加対応なし。保持型の判別とBR1.3の出力規則を区別した記述を維持する。 | Resolved |
+| R-04 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md > BR1.1・BR1.2、および functional-spec.md > W1 手順2 | 全プロファイルで整数形式キーを数値昇順で先頭に置き、残りだけをプロファイル別に並べる二段階が明記された。受入ケース hash-canonical/integer-like/numeric-vs-string-order の実出力は1,9,10,xで、canon_json/canonical.rs > member_order と一致する。FR7.3の受入値に反する旧規則は解消済み。 | 追加対応なし。整数形式キーの上限・非正準十進表記の境界ケースを維持する。 | Resolved |
+| R-05 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/rules.md > BR1.3.logic | 絶対値が2^53を超える整数をf64へ変換してJS互換表記にする規則と、around-2p53 / u64-range の受入値が追加された。実コーパスの9007199254740993 → 9007199254740992、u64最大値 → 18446744073709552000と一致し、全行比較と整数範囲テストの成功ログも確認した。 | 追加対応なし。保持値の正確さと出力バイトの互換を別々に扱う。 | Resolved |
+| R-06 | Major | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/entities.md > JsonValue.string_value、rules.md > BR1.4、および functional-spec.md > W3 | UTF-8で保持できるUnicode scalar valueと、孤立サロゲートをSyntaxで拒否する境界が揃った。最新の確認済みQ&Aもこの境界を明示している。FR7.3/C7の32行一致と型付き文字列の値域を根拠とし、任意の外部JSONへの完全互換は主張しないため、実装の存在だけで要求を縮小した状態ではない。parse.rsの拒否テスト成功も確認した。 | 追加対応なし。孤立サロゲート対応を将来追加する場合は、値モデルと受入ケースを合わせて変更する。 | Resolved |
+| R-07 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md > 第2節 to_value・W3末尾・第5節エラー一覧 | to_valueのResult返却、複合型キー等の変換失敗、呼出側への材料返却、同じ値を自動リトライしない方針が明記された。value/json_value.rsとToValueErrorの公開境界に整合し、maps_with_non_string_keys_are_rejectedの成功ログも確認した。 | 追加対応なし。呼出側は変換エラーを伝播し、入力・型を修正する。 | Resolved |
+| R-08 | Minor | aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u1-canon-json-goldens/functional-design/functional-spec.md > W3 手順1、および entities.md > JsonValue.members | W3は順序保持、membersはキー一意と定めるが、入力JSONに同じキーが複数回現れた場合の統合規則が未記載。現行parse.rsの duplicate_keys_are_last_wins_at_the_first_position は、入力 {"a":1,"b":2,"a":3} を順序a,b・値a=3にする挙動を固定している。本文だけでは拒否・先勝ち・後勝ちの選択が残る。 | W3に「最後の値を採用し、キーの位置は最初の出現位置を保持する」と明記し、既存の重複キーテストを根拠として参照する。 | New |
 
 ### Validation Tool Results
 
 | Tool | Result | Interpretation |
 |---|---|---|
-| aidlc-sensor-required-sections.ts（--stage functional-design、各 --output-path） | PASS: entities / rules / functional-spec、所見 0 | 追記前の H2 数は 2 / 2 / 8。文面と実測値の一致までは検査しない。 |
-| aidlc-sensor-upstream-coverage.ts（consumes 5 件・deliverables 3 件を明示） | PASS: unreferenced 0 | Unit 定義・要求割当・要求・構成・共有契約への参照がある。 |
-| aidlc-sensor-traceability.ts | FAIL: missing_from_upstream_ids 34 件。gaps / orphans / invalid_entries / invalid_targets / missing_from_table は空 | 欠落一覧は FR1〜FR6・FR8・FR9 系で、共有 story-map 上の U1 担当外。U1 の FR7・FR7.1〜7.3 と 13 BR は対応し、対象 Unit の要求欠落としては計上しない。 |
-| linter / type-check の適用判定 | 対象外・未実行 | 成果物に TS/JS/TSX のコード出力や該当スニペットがない。Rust 全体の lint 成功は主張しない。 |
-| cargo test --locked -p core-infrastructure canon_json | PASS: 87 件、失敗・無視 0 | キー順・整数範囲・符号・孤立サロゲート拒否・変換エラーを含む現行実装の単体・性質テスト。統合テストはこのフィルタでは実行されないため次行で別途実行した。 |
-| cargo test --locked -p core-infrastructure --test golden_hash_canonical --test golden_corpus_read | PASS: 7 + 9 = 16 件、失敗・無視 0 | 32 行の正準化コーパスについて 3 プロファイルと 2 ハッシュ族を比較し、CLI/フックコーパスの読取・範囲・正規化も確認。CLI 実装との全経路比較や upstream の再採取は今回行っていない。 |
-| C7 と cases.json / provenance.json の現物照合 | 一致 | 旧所見 1 は解消。ピンと採取手順の記録があり、出力文字列とハッシュの両方を保持する。 |
-| ER 図・状態遷移の机上確認 | 軽微な補足余地あり | Digest と値の関係を方向付きで読める。failing から再比較成功への遷移は W5 の再比較指示にはあるが状態表に明示されない。Mermaid パーサ検査は未実行。 |
+| aidlc-sensor-required-sections（entities.md / rules.md / functional-spec.md、stage=functional-design） | PASS、H2数は追記前に2 / 2 / 8、findings_count=0 | 指定された3設計文書の構造検査を実行した。 |
+| aidlc-sensor-upstream-coverage（consumes=unit-of-work,unit-of-work-story-map,requirements,components,contract-summary、deliverables=entities,rules,functional-spec） | PASS、unreferenced=[]、findings_count=0 | 正確に5入力・3設計文書を対象とし、上流参照を確認した。 |
+| aidlc-sensor-traceability（U1 functional-design/traceability.json） | FAIL、findings_count=34 | missing_from_upstream_idsにFR1〜FR6・FR8・FR9とその子だけを報告した。gaps / orphans / missing_from_table / invalid_entries / invalid_targetsはすべて空。共有story-mapの他Unit割当をU1にも要求する検出であり、PASSへの読み替えはしない。 |
+| U1割当の手動突合（story-map → traceability.json → rules.md） | 一致 | U1割当のFR7 / FR7.1 / FR7.2 / FR7.3は4件とも存在し、全OK targetがBRに解決する。13規則のうち10規則はcoverage、BR1.7 / BR1.8 / BR2.5は理由付きreverseで説明される。NFR1の主担当は共有story-mapでU7、U1の正準化面は第8節に明記されている。 |
+| 既存canon_jsonテストの実行ログ（/tmp/u1-resume-unit-tests.log） | 87 passed、0 failed | 同一セッションの成功ログを確認。キー順・整数境界・孤立サロゲート拒否・変換失敗・重複キー・深さ127/128の境界を含む。コード未変更のため再実行していない。 |
+| 既存goldenテストの実行ログ（/tmp/u1-resume-golden-tests.log） | 16 passed、0 failed（読取9件、hash-canonical7件） | canonical / compact / prettyの出力と2族のダイジェストについて32行の全行比較を確認。CLI/フックは読取・正規化・範囲の検証であり、後続Unitの実行出力一致を証明するものではない。 |
+| C7のコーパス・来歴・未採取記録の確認 | 受入表32行、hash-canonicalのmissing_cases=[] | CLIのset-autonomy正常系・continue複数part、フックのtranscript-carve-outには理由付き未採取記録がある。W4の欠落明示・後続ケース追加方針に対応する。全CLI/フック分岐が検証済みとは評価しない。 |
+| 指定統合点のスポットチェック（CompiledDefinitionRepositoryImpl） | W3と一致 | 型付き読取はserde_json::from_str、契約JSONの書出しはto_value → serialize(ContractPretty)。U1から他Unitへの内部依存はなく、共有CanonJsonのdepends_on=[]に沿う。兄弟construction成果物は読んでいない。 |
+| Mermaid ER図 | 目視確認のみ、専用パーサによる構文検証は未実施 | mmdcとローカル解決可能なmermaidパッケージが見つからなかった。図の型名・関連方向とテキスト代替を照合したが、レンダリング成功までは保証しない。依存は追加していない。 |
+| linter / type-check | 対象外 | 指定センサーが対象とするTypeScript/JavaScriptのコード片は設計3文書にない。 |
 
 ### Summary
 
-未解消の Critical 0・Major 3・Minor 3 のため ADVISORY 判定は NOT-READY。現行実装とゴールデン検証は成功しているが、保存済みの振る舞い仕様には、それを再実装すると互換性を失うキー順・大整数・文字列表現の契約差が残る。実装を古い設計へ戻さず、実測と契約の根拠に沿って設計を同期する必要がある。
+キー順・整数丸め・文字列表現・変換失敗の矛盾は解消され、確認済みの互換範囲と受入表を使って実装できる設計になった。残る所見は重複キーの読取規則を本文へ明記するMinor 1件であり、規定の判定基準によりREADYとする。

@@ -1,0 +1,468 @@
+{
+  "method": "オブジェクト・配列を1段、スカラーを0段として再帰計数。JSONファイル全体とケース内のJSON文字列入力を別々に測定。input_js+constructの3件はJSON文字列入力の測定対象外。",
+  "json_file_count": 88,
+  "max_depth": 7,
+  "largest": {
+    "path": "tests/golden/upstream-3c3146cf/stage-graph.json",
+    "bytes": 81850,
+    "container_depth": 4
+  },
+  "pinned_definition_files": [
+    {
+      "path": "tests/golden/upstream-3c3146cf/scope-grid.json",
+      "bytes": 13509,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/stage-graph.json",
+      "bytes": 81850,
+      "container_depth": 4
+    }
+  ],
+  "embedded_input_max_depth": 7,
+  "embedded_input_count": 29,
+  "files": [
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/cases-missing.json",
+      "bytes": 2331,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/continue/invalid-token/case.json",
+      "bytes": 432,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/continue/invalid-token/stdout.json",
+      "bytes": 180,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/continue/load-steering/case.json",
+      "bytes": 411,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/continue/load-steering/stdout.json",
+      "bytes": 8974,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/intent-create/classic-scope/case.json",
+      "bytes": 474,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-backward/case.json",
+      "bytes": 542,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-backward/stdout.json",
+      "bytes": 382,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-forward/case.json",
+      "bytes": 381,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-forward/stdout.json",
+      "bytes": 238,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-forward-across-phases/case.json",
+      "bytes": 575,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-forward-across-phases/stdout.json",
+      "bytes": 371,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-forward-to-conditional/case.json",
+      "bytes": 449,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/execute-forward-to-conditional/stdout.json",
+      "bytes": 243,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/resolve-forward/case.json",
+      "bytes": 417,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/jump/resolve-forward/stdout.json",
+      "bytes": 223,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/after-approval/case.json",
+      "bytes": 390,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/after-approval/stdout.json",
+      "bytes": 15775,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/no-active-intent/case.json",
+      "bytes": 463,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/no-active-intent/stdout.json",
+      "bytes": 382,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/stage-jump-print/case.json",
+      "bytes": 443,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/stage-jump-print/stdout.json",
+      "bytes": 210,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/start/case.json",
+      "bytes": 412,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/next/start/stdout.json",
+      "bytes": 15773,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/park/park/case.json",
+      "bytes": 347,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/park/park/stdout.json",
+      "bytes": 226,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/practices-promote/affirm/case.json",
+      "bytes": 459,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/practices-promote/affirm/stdout.json",
+      "bytes": 245,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/provenance.json",
+      "bytes": 906,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/recompose/add-restores-conditional/case.json",
+      "bytes": 699,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/recompose/rejected-starved-input/case.json",
+      "bytes": 434,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/recompose/skip-one/case.json",
+      "bytes": 383,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/recompose/skip-two-appends-in-graph-order/case.json",
+      "bytes": 677,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/approved/case.json",
+      "bytes": 371,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/approved/stdout.json",
+      "bytes": 129,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/approved-across-phases/case.json",
+      "bytes": 789,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/approved-across-phases/stdout.json",
+      "bytes": 127,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/awaiting-approval/case.json",
+      "bytes": 410,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/awaiting-approval/stdout.json",
+      "bytes": 85,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/awaiting-approval-repeat/case.json",
+      "bytes": 464,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/awaiting-approval-repeat/stdout.json",
+      "bytes": 89,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/completed-ungated/case.json",
+      "bytes": 517,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/completed-ungated/stdout.json",
+      "bytes": 128,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/rejected/case.json",
+      "bytes": 368,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/rejected/stdout.json",
+      "bytes": 76,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/revised/case.json",
+      "bytes": 396,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/report/revised/stdout.json",
+      "bytes": 75,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/set-autonomy/state-field-absent/case.json",
+      "bytes": 523,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/skip/skipped/case.json",
+      "bytes": 389,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/skip/skipped/stdout.json",
+      "bytes": 125,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/unpark/unpark/case.json",
+      "bytes": 373,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/cli/unpark/unpark/stdout.json",
+      "bytes": 36,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/harness.json",
+      "bytes": 76,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hash-canonical/cases.json",
+      "bytes": 36290,
+      "container_depth": 7
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hash-canonical/provenance.json",
+      "bytes": 979,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/cases-missing.json",
+      "bytes": 613,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/provenance.json",
+      "bytes": 1159,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/record-human-turn/active-workflow/case.json",
+      "bytes": 530,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/record-human-turn/active-workflow/stdin.json",
+      "bytes": 73,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/record-human-turn/no-workflow-ignored/case.json",
+      "bytes": 545,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/record-human-turn/no-workflow-ignored/stdin.json",
+      "bytes": 56,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/allow-read-only-query/case.json",
+      "bytes": 512,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/allow-read-only-query/stdin.json",
+      "bytes": 122,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/deny-delegated-lifecycle/case.json",
+      "bytes": 590,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/deny-delegated-lifecycle/stdin.json",
+      "bytes": 160,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/deny-direct-state-transition/case.json",
+      "bytes": 580,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/deny-direct-state-transition/stdin.json",
+      "bytes": 140,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/ignore-non-bash-tool/case.json",
+      "bytes": 536,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/state-transition-guard/ignore-non-bash-tool/stdin.json",
+      "bytes": 91,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/stop-forwarding-loop/block-pending-directive/case.json",
+      "bytes": 581,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/stop-forwarding-loop/block-pending-directive/stdin.json",
+      "bytes": 107,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/stop-forwarding-loop/no-workflow-ignored/case.json",
+      "bytes": 554,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/stop-forwarding-loop/no-workflow-ignored/stdin.json",
+      "bytes": 107,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/stop-forwarding-loop/reentrant-ignored/case.json",
+      "bytes": 536,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/stop-forwarding-loop/reentrant-ignored/stdin.json",
+      "bytes": 106,
+      "container_depth": 1
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/artifact-created/case.json",
+      "bytes": 512,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/artifact-created/stdin.json",
+      "bytes": 179,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/artifact-updated-by-edit/case.json",
+      "bytes": 539,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/artifact-updated-by-edit/stdin.json",
+      "bytes": 178,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/artifact-updated-by-overwrite/case.json",
+      "bytes": 623,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/artifact-updated-by-overwrite/stdin.json",
+      "bytes": 181,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/ignore-outside-record/case.json",
+      "bytes": 509,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/ignore-outside-record/stdin.json",
+      "bytes": 100,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/trusts-the-settings-matcher/case.json",
+      "bytes": 644,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/hooks/write-audit-log/trusts-the-settings-matcher/stdin.json",
+      "bytes": 172,
+      "container_depth": 2
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/normalization.json",
+      "bytes": 4374,
+      "container_depth": 4
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/scope-grid.json",
+      "bytes": 13509,
+      "container_depth": 3
+    },
+    {
+      "path": "tests/golden/upstream-3c3146cf/stage-graph.json",
+      "bytes": 81850,
+      "container_depth": 4
+    }
+  ],
+  "measured_on": "2026-09-06",
+  "scope": "tests/golden/upstream-3c3146cf/ 配下のJSON88ファイルと、hash-canonicalのinputを持つ29ケース。将来の任意入力の上限を意味しない。"
+}

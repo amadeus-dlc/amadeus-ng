@@ -16,7 +16,9 @@
 > **ブロッキングの質問なし。** 要求値は practices-discovery のインタビュー裁定（Q4〜Q8）と requirements.md FR9 で
 > 確定済み。実地確認で分かった 2 点（前提 P1・P2）を含む前提を確認して成果物へ進む。
 
-## 前提（確認事項）
+## 以前の前提（2026-08-23の記録）
+
+以下のP1〜P8は当時の記録。現在の設定と異なる点は末尾の2026-09-06確認要約で更新し、以前の回答を今回の確認に流用しない。
 
 - P1. **branch protection の実態**（実地 `gh api`、2026-08-23）: `main` には classic branch protection は無い（404）が、
   **ruleset「main」（active）** が既に存在し、`deletion` / `non_fast_forward` / `merge_queue`（SQUASH、ALLGREEN、
@@ -46,7 +48,7 @@
 - P8. **境界**: プロダクトコードは触らない（`unsafe_code` 昇格で赤になるクレートがあれば U7 で直す）。GitHub 設定
   （ruleset 変更）はオーナー権限が要る — `gh api` の手順をスクリプト化してオーナーが実行、結果を `gh api` で確認する。
 
-## Consolidated Summary Confirmation
+## 以前に確認済みのまとめ
 
 - U10 に NFR の質問はなし（packaging — 性能 / スケール / 信頼性 / 観測の要求は存在しない）。要求値は FR9 と
   practices-discovery の裁定で確定済み
@@ -61,3 +63,20 @@ Does this all look correct before I generate the artifact?
 - Request changes
 
 [Answer]: Looks correct
+
+## Consolidated Summary Confirmation
+
+2026-09-06、CI・品質管理の要件3成果物を現行設定と承認済み方針へ整合させる。今回の要件整理ではGitHub設定や品質閾値を変更しない。
+
+- mainのrulesetは既にactiveで、必須チェックはcheck・quint・coverage・CI Successの4つ、strict有効、bypassなし。マージキューはSQUASH・ALLGREEN・同時1件。取得結果は `../ruleset-observed-20260906.json` に保存した。合格条件には失敗時にマージを止める経路と、全緑時にキューを完走する経路の両方を記載する。
+- CI Successは基本の3チェックに加え、配布物の同期・回帰試験と、変更提案時の未解決レビュースレッド検査を集約する。merge_groupではレビュースレッド検査のskippedを許容する。auditジョブは既存裁定どおり別のadvisoryとして実行し、未実行・失敗を成功に読み替えない。
+- workflow既定はcontents: read。review-thread-resolutionだけにchecks/statusesのwriteとissues/pull-requestsのreadを付与している事実、SHA固定の外部再利用ワークフローとの信頼境界を記載する。トークンは秘密情報であり、ログへ出さない。「全ジョブ読取専用」「秘密情報なし」という過大な説明を修正する。
+- カバレッジ90%床・相対差0.01ポイント・固定シード20260823・main.rsだけの除外を維持する。暫定0.05は過去の裁定として区別する。再現性の受入は実測結果で判断し、今回まだ再計測していないものを達成済みと主張しない。
+- Rust 1.95.0固定、workspaceとtools/lint双方の品質・依存検査を現行設定として記載する。測定可能な合格条件と、更新を変更提案経由で行う運用規範を分ける。ActionのSHA固定は実際の適用範囲を示し、全件固定とは主張しない。Dependabot導入見送りは既存裁定として明記する。
+
+Does this all look correct before I generate the artifact?
+
+- Looks correct
+- Request changes
+
+[Answer]:

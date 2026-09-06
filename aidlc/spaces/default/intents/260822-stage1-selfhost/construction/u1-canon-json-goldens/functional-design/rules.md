@@ -5,7 +5,7 @@
 > （FR7、NFR1）、`../../../inception/domain-design/components.md`（CanonJson）、`../../../inception/contract-design/contract-summary.md`
 > （C7）、`docs/adr/0001-canonical-json-serializer.md`（決定 1〜6、受入条件 (a)〜(e)）、確認質問 `functional-design-questions.md`。
 >
-> 下の fenced `yaml` が正本。BR1.x = 直列化・ハッシュの規則、BR2.x = ゴールデンの規則。
+> 下の fenced `yaml` が正本。BR1.x = 直列化・ハッシュの規則、BR2.x = ゴールデンの規則。要約表も同じ制約を表す。
 
 ## 1. 規則（正本）
 
@@ -122,13 +122,13 @@ rules:
 
 | ID | 区分 | 一言 | 出典 |
 |---|---|---|---|
-| BR1.1 | constraint | キー順はプロファイルが決める（hash-canonical のみ再帰ソート） | FR7.3 / ADR 0001 |
-| BR1.2 | constraint | 動的マップは ECMAScript のプロパティ順（integer-like 先頭） | FR7.3 / ADR 0001 |
-| BR1.3 | calculation | 整数は整数型、浮動小数は JS 互換、非有限は null、-0 は 0 | FR7.3 / ADR 0001 (b)(c)(d) |
-| BR1.4 | constraint | エスケープは JSON.stringify の最小集合 | FR7.3 / ADR 0001 (e) |
+| BR1.1 | constraint | 整数形式キーは数値順で先頭、残りはプロファイル別 | FR7.3 / ADR 0001 |
+| BR1.2 | constraint | 全プロファイルで整数形式キーを優先（0〜2^32-2） | FR7.3 / ADR 0001 |
+| BR1.3 | calculation | 保持型と出力を区別し、2^53超の整数もJS互換丸めを適用 | FR7.3 / ADR 0001 (b)(c)(d) |
+| BR1.4 | constraint | UTF-8文字列は最小エスケープ、孤立サロゲートは読取拒否 | FR7.3 / ADR 0001 (e) |
 | BR1.5 | constraint | 体裁はプロファイル固定（pretty = 2 スペース + 末尾改行） | FR7.3 / ADR 0001 |
 | BR1.6 | calculation | ダイジェスト 2 族（`sha256:` 接頭辞 / 生 hex） | FR7.1 / FR7.3 |
-| BR1.7 | policy | serde_json 直接呼び出し禁止（clippy） | ADR 0001 決定 5 |
+| BR1.7 | policy | 契約JSONの直列化・型付き値変換はcanon_json経由（clippy） | ADR 0001 決定 5 |
 | BR1.8 | policy | preserve_order 常時有効 | ADR 0001 決定 3 |
 | BR2.1 | policy | ゴールデンは upstream 実行採取 + 来歴必須 | FR7.1 / FR7.2 |
 | BR2.2 | constraint | 非決定値はプレースホルダ正規化して比較 | FR7.2 / Q1 |

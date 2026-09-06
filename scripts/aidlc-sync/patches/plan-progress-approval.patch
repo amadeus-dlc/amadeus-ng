@@ -1,0 +1,213 @@
+--- a/.claude/tools/aidlc-testing-posture.ts
++++ b/.claude/tools/aidlc-testing-posture.ts
+@@ -816,6 +816,17 @@
+   }
+ }
+ 
++// 作業内容を保持したまま、表示上の完了チェックだけを正規化する。
++// コード・HTML・引用中の表記やテスト手順は承認対象のままにする。
++function planApprovalContent(plan: string): string {
++  const visible = visibleMarkdownLines(plan);
++  const task = /^( {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+)\[[xX]\](?=[ \t])/;
++  return plan.split(/(\r\n|\r|\n)/).map((line, index) => {
++    if (index % 2 !== 0 || !task.test(visible[index / 2] ?? "")) return line;
++    return line.replace(task, "$1[ ]");
++  }).join("");
++}
++
+ export function approvalFingerprint(
+   plan: string,
+   instructions: string,
+@@ -826,7 +837,7 @@
+   >,
+ ): string {
+   return hashObject({
+-    plan,
++    plan: planApprovalContent(plan),
+     instructions,
+     testing_contract: contractHash,
+     target: authority.targetId,
+--- a/.codex/tools/aidlc-testing-posture.ts
++++ b/.codex/tools/aidlc-testing-posture.ts
+@@ -816,6 +816,17 @@
+   }
+ }
+ 
++// 作業内容を保持したまま、表示上の完了チェックだけを正規化する。
++// コード・HTML・引用中の表記やテスト手順は承認対象のままにする。
++function planApprovalContent(plan: string): string {
++  const visible = visibleMarkdownLines(plan);
++  const task = /^( {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+)\[[xX]\](?=[ \t])/;
++  return plan.split(/(\r\n|\r|\n)/).map((line, index) => {
++    if (index % 2 !== 0 || !task.test(visible[index / 2] ?? "")) return line;
++    return line.replace(task, "$1[ ]");
++  }).join("");
++}
++
+ export function approvalFingerprint(
+   plan: string,
+   instructions: string,
+@@ -826,7 +837,7 @@
+   >,
+ ): string {
+   return hashObject({
+-    plan,
++    plan: planApprovalContent(plan),
+     instructions,
+     testing_contract: contractHash,
+     target: authority.targetId,
+--- a/.kimi-code/tools/aidlc-testing-posture.ts
++++ b/.kimi-code/tools/aidlc-testing-posture.ts
+@@ -816,6 +816,17 @@
+   }
+ }
+ 
++// 作業内容を保持したまま、表示上の完了チェックだけを正規化する。
++// コード・HTML・引用中の表記やテスト手順は承認対象のままにする。
++function planApprovalContent(plan: string): string {
++  const visible = visibleMarkdownLines(plan);
++  const task = /^( {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+)\[[xX]\](?=[ \t])/;
++  return plan.split(/(\r\n|\r|\n)/).map((line, index) => {
++    if (index % 2 !== 0 || !task.test(visible[index / 2] ?? "")) return line;
++    return line.replace(task, "$1[ ]");
++  }).join("");
++}
++
+ export function approvalFingerprint(
+   plan: string,
+   instructions: string,
+@@ -826,7 +837,7 @@
+   >,
+ ): string {
+   return hashObject({
+-    plan,
++    plan: planApprovalContent(plan),
+     instructions,
+     testing_contract: contractHash,
+     target: authority.targetId,
+--- a/.claude/hooks/aidlc-plan-approval-guard.ts
++++ b/.claude/hooks/aidlc-plan-approval-guard.ts
+@@ -67,6 +67,7 @@
+   isClaudeCodeHookInput,
+   isoTimestamp,
+   readActiveDirectiveMarker,
++  readPlanApprovalReceipt,
+   recordHookDrop,
+   releaseAuditLock,
+   resolveBoltDag,
+@@ -78,6 +79,7 @@
+   codeGenerationRecordDir,
+   type CodeGenerationTarget,
+   evaluateCodeGenerationApproval,
++  resolveCodeGenerationAuthority,
+   promptTestingContractMarkers,
+ } from "../tools/aidlc-testing-posture.ts";
+ 
+@@ -735,6 +737,23 @@
+             !isTrustedRecordTarget(projectDir, candidate, approvalDir),
+         );
+         if (!outsideRecord && !mutation.opaqueShell) return 0;
++        // レビュー追記後も、開始済み生成のスコープ管理だけは完了できる。
++        // 通常の計画変更や他のワークスペース書込みは下の承認検証を通す。
++        const reviewDispatch = resolve(recordDir, ".aidlc-reviewer-dispatch.json");
++        if (
++          unit !== null && !mutation.opaqueShell && mutation.targets.length > 0 &&
++          mutation.targets.every((candidate) =>
++            candidate === reviewDispatch &&
++            isTrustedRecordTarget(projectDir, candidate, resolve(recordDir))
++          )
++        ) {
++          const authority = resolveCodeGenerationAuthority(projectDir, target);
++          const receipt = readPlanApprovalReceipt(projectDir, {
++            targetId: authority.targetId,
++            directiveEpoch: authority.directiveEpoch,
++          });
++          if (receipt?.status === "generation" && receipt.choice === "Approve Plan") return 0;
++        }
+         const approval = evaluateCodeGenerationApproval(projectDir, target);
+         const evidence: UnitEvidence = {
+           unit,
+--- a/.codex/hooks/aidlc-plan-approval-guard.ts
++++ b/.codex/hooks/aidlc-plan-approval-guard.ts
+@@ -67,6 +67,7 @@
+   isClaudeCodeHookInput,
+   isoTimestamp,
+   readActiveDirectiveMarker,
++  readPlanApprovalReceipt,
+   recordHookDrop,
+   releaseAuditLock,
+   resolveBoltDag,
+@@ -78,6 +79,7 @@
+   codeGenerationRecordDir,
+   type CodeGenerationTarget,
+   evaluateCodeGenerationApproval,
++  resolveCodeGenerationAuthority,
+   promptTestingContractMarkers,
+ } from "../tools/aidlc-testing-posture.ts";
+ 
+@@ -735,6 +737,23 @@
+             !isTrustedRecordTarget(projectDir, candidate, approvalDir),
+         );
+         if (!outsideRecord && !mutation.opaqueShell) return 0;
++        // レビュー追記後も、開始済み生成のスコープ管理だけは完了できる。
++        // 通常の計画変更や他のワークスペース書込みは下の承認検証を通す。
++        const reviewDispatch = resolve(recordDir, ".aidlc-reviewer-dispatch.json");
++        if (
++          unit !== null && !mutation.opaqueShell && mutation.targets.length > 0 &&
++          mutation.targets.every((candidate) =>
++            candidate === reviewDispatch &&
++            isTrustedRecordTarget(projectDir, candidate, resolve(recordDir))
++          )
++        ) {
++          const authority = resolveCodeGenerationAuthority(projectDir, target);
++          const receipt = readPlanApprovalReceipt(projectDir, {
++            targetId: authority.targetId,
++            directiveEpoch: authority.directiveEpoch,
++          });
++          if (receipt?.status === "generation" && receipt.choice === "Approve Plan") return 0;
++        }
+         const approval = evaluateCodeGenerationApproval(projectDir, target);
+         const evidence: UnitEvidence = {
+           unit,
+--- a/.kimi-code/hooks/aidlc-plan-approval-guard.ts
++++ b/.kimi-code/hooks/aidlc-plan-approval-guard.ts
+@@ -67,6 +67,7 @@
+   isClaudeCodeHookInput,
+   isoTimestamp,
+   readActiveDirectiveMarker,
++  readPlanApprovalReceipt,
+   recordHookDrop,
+   releaseAuditLock,
+   resolveBoltDag,
+@@ -78,6 +79,7 @@
+   codeGenerationRecordDir,
+   type CodeGenerationTarget,
+   evaluateCodeGenerationApproval,
++  resolveCodeGenerationAuthority,
+   promptTestingContractMarkers,
+ } from "../tools/aidlc-testing-posture.ts";
+ 
+@@ -735,6 +737,23 @@
+             !isTrustedRecordTarget(projectDir, candidate, approvalDir),
+         );
+         if (!outsideRecord && !mutation.opaqueShell) return 0;
++        // レビュー追記後も、開始済み生成のスコープ管理だけは完了できる。
++        // 通常の計画変更や他のワークスペース書込みは下の承認検証を通す。
++        const reviewDispatch = resolve(recordDir, ".aidlc-reviewer-dispatch.json");
++        if (
++          unit !== null && !mutation.opaqueShell && mutation.targets.length > 0 &&
++          mutation.targets.every((candidate) =>
++            candidate === reviewDispatch &&
++            isTrustedRecordTarget(projectDir, candidate, resolve(recordDir))
++          )
++        ) {
++          const authority = resolveCodeGenerationAuthority(projectDir, target);
++          const receipt = readPlanApprovalReceipt(projectDir, {
++            targetId: authority.targetId,
++            directiveEpoch: authority.directiveEpoch,
++          });
++          if (receipt?.status === "generation" && receipt.choice === "Approve Plan") return 0;
++        }
+         const approval = evaluateCodeGenerationApproval(projectDir, target);
+         const evidence: UnitEvidence = {
+           unit,
