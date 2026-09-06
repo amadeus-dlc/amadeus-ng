@@ -5748,3 +5748,53 @@
 **Context**: construction > u1-canon-json-goldens > approval-control-repair.md
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-09-06T02:35:13Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u10-ci-governance
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-06T02:36:35Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-requirements
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-requirements/security-requirements.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-requirements/tech-stack-decisions.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-requirements/traceability.json
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-06T02:36:36Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u10-ci-governance > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-06T02:36:36Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u10-ci-governance/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u10-ci-governance
+
+---
+
+## Unit Paused
+**Timestamp**: 2026-09-06T02:36:37Z
+**Event**: UNIT_PAUSED
+**Stage**: nfr-requirements
+**Unit**: u10-ci-governance
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+**Reason**: CI・品質管理の要件を現状へ整合する要約の確認待ち
+**Next Action**: ユーザー回答後にunit resumeし、質問票の最終Answerとsummary-confirmationを記録してU10の3成果物を更新・独立レビューする
+
+---
