@@ -19,7 +19,10 @@ const MAX_ARRAY_INDEX: u64 = (u32::MAX as u64) - 1;
 
 /// メンバを書き出す順序を、挿入順の添字列として返す。
 pub(crate) fn member_order(members: &ObjectMembers, order: KeyOrder) -> Vec<usize> {
-    let keys: Vec<&str> = members.iter().map(|(key, _)| key).collect();
+    let keys = members.fold_left(Vec::with_capacity(members.len()), |mut keys, key, _| {
+        keys.push(key);
+        keys
+    });
 
     // 1. integer-like キーを数値昇順で先頭へ。
     let mut indexed: Vec<(usize, u64)> = keys

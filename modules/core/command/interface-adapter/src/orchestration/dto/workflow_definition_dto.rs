@@ -196,7 +196,10 @@ impl DefinitionContentDto {
         scopes: &BTreeMap<String, ScopeMetadata>,
     ) -> DefinitionContentDto {
         DefinitionContentDto {
-            graph: graph.nodes().iter().map(StageNodeDto::of).collect(),
+            graph: graph.fold_left(Vec::with_capacity(graph.len()), |mut nodes, node| {
+                nodes.push(StageNodeDto::of(node));
+                nodes
+            }),
             grid: grid
                 .columns()
                 .iter()

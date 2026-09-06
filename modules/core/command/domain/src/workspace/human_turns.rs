@@ -2,7 +2,6 @@
 
 use chrono::{DateTime, Utc};
 
-use super::audit_event_record::AuditEventRecord;
 use super::audit_events::{EventCategory, EventType};
 use super::ordered_audit_events::OrderedAuditEvents;
 
@@ -43,14 +42,17 @@ impl HumanTurns {
     #[must_use]
     pub fn find_in(buffer: &str) -> HumanTurns {
         let events = OrderedAuditEvents::find_in(buffer);
-        let tracked = events
-            .iter()
-            .any(|record| record.event().category() != EventCategory::Documents);
-        let latest = events
-            .iter()
-            .filter(|record| record.event() == EventType::HumanTurn)
-            .filter_map(AuditEventRecord::instant)
-            .max();
+        let (latest, tracked) = events.fold_left((None, false), |(latest, tracked), record| {
+            let latest = if record.event() == EventType::HumanTurn {
+                latest.max(record.instant())
+            } else {
+                latest
+            };
+            (
+                latest,
+                tracked || record.event().category() != EventCategory::Documents,
+            )
+        });
         HumanTurns { latest, tracked }
     }
 

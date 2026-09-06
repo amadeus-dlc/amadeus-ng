@@ -32,7 +32,7 @@ pub struct Checkboxes(Vec<CheckboxEntry>);
 
 impl Checkboxes {
     /// Stage Progress 行のパース。文法に一致しない行は黙って無視する
-    /// (upstream 同等の寛容パース — 唯一の構築子)。
+    /// (upstream 同等の寛容パース)。filter/mapはパース済みの列から新しい列を作る。
     #[must_use]
     pub fn parse(content: &str) -> Checkboxes {
         let mut out = Vec::new();
@@ -49,6 +49,47 @@ impl Checkboxes {
         self.0.iter()
     }
 
+    /// 条件に一致する行を、元の順序で保持する。
+    #[must_use]
+    pub fn filter(&self, mut predicate: impl FnMut(&CheckboxEntry) -> bool) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|entry| predicate(entry))
+                .cloned()
+                .collect(),
+        )
+    }
+
+    /// 各行を変換し、同じ順序のチェックボックス列を返す。
+    #[must_use]
+    pub fn map(&self, transform: impl FnMut(&CheckboxEntry) -> CheckboxEntry) -> Self {
+        Self(self.0.iter().map(transform).collect())
+    }
+
+    /// 行順に左から畳み込む。空なら初期値を返す。
+    pub fn fold_left<'a, A>(
+        &'a self,
+        initial: A,
+        fold: impl FnMut(A, &'a CheckboxEntry) -> A,
+    ) -> A {
+        self.0.iter().fold(initial, fold)
+    }
+
+    /// slugに一致する最初の行。重複行の順序を変更しない。
+    #[must_use]
+    pub fn find(&self, slug: &str) -> Option<&CheckboxEntry> {
+        self.0.iter().find(|entry| entry.slug() == slug)
+    }
+
+    /// 同じslugの行のうち、完了済みの行があるか。
+    #[must_use]
+    pub fn has_completed(&self, slug: &str) -> bool {
+        self.0
+            .iter()
+            .any(|entry| entry.slug() == slug && entry.state() == CheckboxState::Completed)
+    }
+
     /// 行数。
     #[must_use]
     pub const fn len(&self) -> usize {
@@ -63,17 +104,16 @@ impl Checkboxes {
 
     /// 位置指定の参照（範囲外は `None`）。
     #[must_use]
-    pub fn get(&self, index: usize) -> Option<&CheckboxEntry> {
+    pub fn at(&self, index: usize) -> Option<&CheckboxEntry> {
         self.0.get(index)
     }
 
     /// `Completed` フィールド同期のための集計 (upstream `countCheckboxes`)。
     #[must_use]
     pub fn count_completed(&self) -> usize {
-        self.0
-            .iter()
-            .filter(|e| e.state() == CheckboxState::Completed)
-            .count()
+        self.fold_left(0, |count, entry| {
+            count + usize::from(entry.state() == CheckboxState::Completed)
+        })
     }
 
     /// marker のみを書き換える (rest と suffix には触れない — 互いに素なフィールド編集)。
@@ -165,13 +205,73 @@ impl Checkboxes {
     }
 }
 
+impl core_infrastructure::collections::FirstClassCollection for Checkboxes {
+    type Item<'a> = &'a CheckboxEntry;
+    type Filtered = Self;
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn at(&self, index: usize) -> Option<&CheckboxEntry> {
+        Self::at(self, index)
+    }
+    fn fold_left<'a, A>(&'a self, initial: A, fold: impl FnMut(A, &'a CheckboxEntry) -> A) -> A {
+        Self::fold_left(self, initial, fold)
+    }
+    fn filter(&self, predicate: impl FnMut(&CheckboxEntry) -> bool) -> Self {
+        Self::filter(self, predicate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::indexing_slicing)]
+    #[test]
+    fn completed_lookup_considers_all_duplicate_rows_but_find_uses_the_first() {
+        let entries = Checkboxes::parse("- [ ] a — SKIP\n- [x] a — EXECUTE\n");
+        assert!(entries.has_completed("a"));
+        assert!(!entries.has_completed("missing"));
+        assert_eq!(entries.find("a").unwrap().state(), CheckboxState::Pending);
+    }
+    #[test]
+    fn collection_operations_keep_order_and_return_a_collection() {
+        use super::*;
+        let entries = Checkboxes::parse("- [x] a — EXECUTE\n- [ ] b — SKIP\n- [x] c — EXECUTE\n");
+        let completed = entries.filter(|entry| entry.state() == CheckboxState::Completed);
+        assert_eq!(completed.len(), 2);
+        assert_eq!(completed.at(1).unwrap().slug(), "c");
+        assert_eq!(
+            completed.fold_left(String::new(), |acc, entry| acc + entry.slug()),
+            "ac"
+        );
+        let renamed = completed.map(|entry| {
+            CheckboxEntry::new(
+                entry.state(),
+                format!("{}-copy", entry.slug()),
+                entry.rest(),
+            )
+        });
+        assert_eq!(renamed.at(0).unwrap().slug(), "a-copy");
+        assert_eq!(entries.at(0).unwrap().slug(), "a");
+        assert!(entries.at(usize::MAX).is_none());
+        assert!(entries.filter(|_| false).at(0).is_none());
+        assert_eq!(entries.find("b").unwrap().state(), CheckboxState::Pending);
+        assert!(entries.find("absent").is_none());
+        let empty = entries.filter(|_| false);
+        let count = |acc, _: &CheckboxEntry| acc + 1;
+        assert_eq!(empty.fold_left(7, count), 7);
+        assert_eq!(entries.fold_left(7, count), 10);
+        let mut calls = 0;
+        let mut transform = |entry: &CheckboxEntry| {
+            calls += 1;
+            entry.clone()
+        };
+        assert!(empty.map(&mut transform).is_empty());
+        assert_eq!(entries.map(&mut transform), entries);
+        assert_eq!(calls, 3);
+    }
 
     // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
     // allow)。
-    #![allow(clippy::indexing_slicing)]
-
     use super::*;
 
     /// checkbox 行の文法を外れた行は checkbox として読まない (材料が揃わない行を拾わない)。
@@ -218,17 +318,17 @@ not a checkbox line
     fn parses_all_six_marker_states_and_ignores_non_matching_lines() {
         let entries = Checkboxes::parse(SAMPLE);
         assert_eq!(entries.len(), 6);
-        assert_eq!(entries.get(0).unwrap().state(), CheckboxState::Completed);
-        assert_eq!(entries.get(1).unwrap().state(), CheckboxState::InProgress);
-        assert_eq!(entries.get(2).unwrap().state(), CheckboxState::Pending);
+        assert_eq!(entries.at(0).unwrap().state(), CheckboxState::Completed);
+        assert_eq!(entries.at(1).unwrap().state(), CheckboxState::InProgress);
+        assert_eq!(entries.at(2).unwrap().state(), CheckboxState::Pending);
         assert_eq!(
-            entries.get(3).unwrap().state(),
+            entries.at(3).unwrap().state(),
             CheckboxState::AwaitingApproval
         );
-        assert_eq!(entries.get(4).unwrap().state(), CheckboxState::Revising);
-        assert_eq!(entries.get(5).unwrap().state(), CheckboxState::Skipped);
-        assert_eq!(entries.get(0).unwrap().slug(), "intent-capture");
-        assert_eq!(entries.get(2).unwrap().rest(), "Domain Modeling — SKIP");
+        assert_eq!(entries.at(4).unwrap().state(), CheckboxState::Revising);
+        assert_eq!(entries.at(5).unwrap().state(), CheckboxState::Skipped);
+        assert_eq!(entries.at(0).unwrap().slug(), "intent-capture");
+        assert_eq!(entries.at(2).unwrap().rest(), "Domain Modeling — SKIP");
     }
 
     #[test]
@@ -238,7 +338,7 @@ not a checkbox line
         assert_eq!(slugs, ["a", "b"]);
         assert_eq!(entries.len(), 2);
         assert!(!entries.is_empty());
-        assert!(entries.get(9).is_none(), "範囲外は None");
+        assert!(entries.at(9).is_none(), "範囲外は None");
     }
 
     #[test]

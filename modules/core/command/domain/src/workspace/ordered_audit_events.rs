@@ -25,13 +25,41 @@ const BLOCK_SEPARATOR: &str = "\n---\n";
 
 /// 順序付きのイベント列（W15 の E1 装置）。
 ///
-/// **外から構築できず、並べ替えもできない**。[`OrderedAuditEvents::find_in`] を通ったものだけがこの型に
-/// なるので、「順序規則を通っていない列」を順序付きとして扱う経路が存在しない。読み手が
+/// **外から任意の列を構築できず、並べ替えもできない**。[`OrderedAuditEvents::find_in`] による
+/// 読取と、その結果の順序を保つfilterだけがこの型を作る。「順序規則を通っていない列」を
+/// 順序付きとして扱う経路は存在しない。読み手が
 /// 手元で `sort` を掛け直して規則を上書きすることもできない（`Vec` を返さない理由）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderedAuditEvents(Vec<AuditEventRecord>);
 
 impl OrderedAuditEvents {
+    /// 条件に一致するイベントを保持する。時刻順と同秒内の元の位置は変えない。
+    #[must_use]
+    pub fn filter(&self, mut predicate: impl FnMut(&AuditEventRecord) -> bool) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|record| predicate(record))
+                .cloned()
+                .collect(),
+        )
+    }
+
+    /// 古いイベントから順に畳み込む。空なら初期値を返す。
+    pub fn fold_left<'a, A>(
+        &'a self,
+        initial: A,
+        fold: impl FnMut(A, &'a AuditEventRecord) -> A,
+    ) -> A {
+        self.0.iter().fold(initial, fold)
+    }
+
+    /// 順序規則適用後の位置で参照する。範囲外はNone。
+    #[must_use]
+    pub fn at(&self, index: usize) -> Option<&AuditEventRecord> {
+        self.0.get(index)
+    }
+
     /// 古い順に走査する。
     pub fn iter(&self) -> impl Iterator<Item = &AuditEventRecord> {
         self.0.iter()
@@ -82,6 +110,23 @@ impl OrderedAuditEvents {
     }
 }
 
+impl core_infrastructure::collections::FirstClassCollection for OrderedAuditEvents {
+    type Item<'a> = &'a AuditEventRecord;
+    type Filtered = Self;
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn at(&self, index: usize) -> Option<&AuditEventRecord> {
+        Self::at(self, index)
+    }
+    fn fold_left<'a, A>(&'a self, initial: A, fold: impl FnMut(A, &'a AuditEventRecord) -> A) -> A {
+        Self::fold_left(self, initial, fold)
+    }
+    fn filter(&self, predicate: impl FnMut(&AuditEventRecord) -> bool) -> Self {
+        Self::filter(self, predicate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::audit_events::EventType;
@@ -97,6 +142,30 @@ mod tests {
 
     fn names(ordered: &OrderedAuditEvents) -> Vec<&'static str> {
         ordered.iter().map(|r| r.event().as_str()).collect()
+    }
+
+    #[test]
+    fn filtering_and_folding_preserve_timestamp_and_tie_order() {
+        let ordered = OrderedAuditEvents::find_in(&ledger(&[
+            block("2026-08-21T09:00:02Z", "HUMAN_TURN"),
+            block("2026-08-21T09:00:01Z", "GATE_APPROVED"),
+            block("2026-08-21T09:00:01Z", "HUMAN_TURN"),
+        ]));
+        let turns = ordered.filter(|record| record.event() == EventType::HumanTurn);
+        assert_eq!(turns.at(0).unwrap().position(), 2);
+        assert_eq!(turns.at(1).unwrap().position(), 0);
+        assert!(turns.at(usize::MAX).is_none());
+        assert_eq!(
+            turns.fold_left(String::new(), |acc, record| acc
+                + &record.position().to_string()),
+            "20"
+        );
+        assert_eq!(ordered.len(), 3);
+        let empty = ordered.filter(|_| false);
+        assert!(empty.latest().is_none());
+        let count = |acc, _: &AuditEventRecord| acc + 1;
+        assert_eq!(empty.fold_left(3, count), 3);
+        assert_eq!(ordered.fold_left(3, count), 6);
     }
 
     #[test]
