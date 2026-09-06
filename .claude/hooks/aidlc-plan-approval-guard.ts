@@ -737,11 +737,11 @@ export async function run(input: string): Promise<number> {
             !isTrustedRecordTarget(projectDir, candidate, approvalDir),
         );
         if (!outsideRecord && !mutation.opaqueShell) return 0;
-        // レビュー追記後も、開始済み生成のスコープ管理だけは完了できる。
-        // 通常の計画変更や他のワークスペース書込みは下の承認検証を通す。
+        // レビュー追記後は生成開始済みの管理ファイル削除だけを許可する。
+        // 作成・上書きは現在の計画指紋を含む承認検証を必ず通す。
         const reviewDispatch = resolve(recordDir, ".aidlc-reviewer-dispatch.json");
         if (
-          unit !== null && !mutation.opaqueShell && mutation.targets.length > 0 &&
+          toolName === "Bash" && unit !== null && !mutation.opaqueShell && mutation.targets.length > 0 &&
           mutation.targets.every((candidate) =>
             candidate === reviewDispatch &&
             isTrustedRecordTarget(projectDir, candidate, resolve(recordDir))
@@ -752,7 +752,13 @@ export async function run(input: string): Promise<number> {
             targetId: authority.targetId,
             directiveEpoch: authority.directiveEpoch,
           });
-          if (receipt?.status === "generation" && receipt.choice === "Approve Plan") return 0;
+          const { shellCommandInvocations } = await import("./aidlc-review-freeze.ts");
+          const invocations = shellCommandInvocations(mutation.shellCommand ?? "");
+          const removal = invocations.length === 1 &&
+            normalizedCommandName(invocations[0].name) === "rm" &&
+            invocations[0].args.filter((arg) => arg !== "--").length === 1 &&
+            resolve(cwd, invocations[0].args.filter((arg) => arg !== "--")[0]) === reviewDispatch;
+          if (removal && receipt?.status === "generation" && receipt.choice === "Approve Plan") return 0;
         }
         const approval = evaluateCodeGenerationApproval(projectDir, target);
         const evidence: UnitEvidence = {

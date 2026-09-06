@@ -31,7 +31,8 @@ async function approvedProject(harness: string) {
     tool_input: { command: `rm -- ${paths.map(path => `'${path.replaceAll("'", "'\\''")}'`).join(" ")}` },
   });
   for (const args of [["init", "-q"], ["config", "user.email", "tests@example.com"], ["config", "user.name", "Tests"], ["add", "-A"], ["commit", "-qm", "baseline"]]) {
-    expect(run(["git", ...args]).exitCode).toBe(0);
+    const result = run(["git", ...args]);
+    expect(result.exitCode, result.stdout.toString() + result.stderr.toString()).toBe(0);
   }
   const lib = await import(`../${harness}/tools/aidlc-lib.ts`);
   const posture = await import(`../${harness}/tools/aidlc-testing-posture.ts`);
@@ -111,7 +112,7 @@ for (const harness of [".claude", ".codex", ".kimi-code"]) {
       }
       writeFileSync(fixture.planPath, `${fixture.plan}\n## Review\n\n**Verdict:** READY\n`);
       const cleanup = fixture.guard(join(fixture.record, ".aidlc-reviewer-dispatch.json"));
-      expect(cleanup.exitCode, cleanup.stderr.toString()).toBe(0);
+      expect(cleanup.exitCode, cleanup.stderr.toString()).toBe(2);
       expect(fixture.remove([join(fixture.record, ".aidlc-reviewer-dispatch.json")]).exitCode).toBe(0);
       expect(fixture.remove([join(fixture.record, ".aidlc-reviewer-dispatch.json"), join(fixture.project, "src/example.ts")]).exitCode).toBe(2);
       expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(2);
@@ -123,6 +124,7 @@ for (const harness of [".claude", ".codex", ".kimi-code"]) {
       rmSync(linked);
       writeFileSync(fixture.planPath, fixture.plan.replace("Implement", "Publish without tests"));
       expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(2);
+      expect(fixture.guard(join(fixture.record, ".aidlc-reviewer-dispatch.json")).exitCode).toBe(2);
       fixture.reissue();
       expect(fixture.guard(join(fixture.record, ".aidlc-reviewer-dispatch.json")).exitCode).toBe(2);
     }, 30000);
