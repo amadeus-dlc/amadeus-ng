@@ -4,6 +4,17 @@ use core_infrastructure::collections::{Collection, FirstClassCollection, NonEmpt
 use proptest::prelude::*;
 
 #[test]
+fn map_can_return_borrowed_values_without_cloning_elements() {
+    let values = Collection::new(vec!["first".to_string(), "second".to_string()]);
+    let borrowed = values.map(String::as_str);
+    assert_eq!(borrowed, Collection::new(vec!["first", "second"]));
+    let values = NonEmptyCollection::new("first".to_string(), vec!["second".to_string()]);
+    let borrowed = values.map(String::as_str);
+    assert_eq!(*borrowed.first(), "first");
+    assert_eq!(borrowed.at(1), Some(&"second"));
+}
+
+#[test]
 fn empty_and_non_empty_results_are_distinct() {
     let empty = Collection::<i32>::new(Vec::new());
     assert!(NonEmptyCollection::try_from(empty).is_err());

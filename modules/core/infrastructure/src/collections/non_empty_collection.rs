@@ -47,7 +47,7 @@ impl<T> NonEmptyCollection<T> {
     }
     /// 要素数を保って変換し、非空の結果を返す。
     #[must_use]
-    pub fn map<U>(&self, mut transform: impl FnMut(&T) -> U) -> NonEmptyCollection<U> {
+    pub fn map<'a, U>(&'a self, mut transform: impl FnMut(&'a T) -> U) -> NonEmptyCollection<U> {
         let first = transform(&self.first);
         NonEmptyCollection::new(first, self.rest.iter().map(transform).collect())
     }

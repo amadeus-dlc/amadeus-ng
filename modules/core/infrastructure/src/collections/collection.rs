@@ -35,7 +35,7 @@ impl<T> Collection<T> {
     }
     /// 順序を保って異なる要素型へ写す。
     #[must_use]
-    pub fn map<U>(&self, transform: impl FnMut(&T) -> U) -> Collection<U> {
+    pub fn map<'a, U>(&'a self, transform: impl FnMut(&'a T) -> U) -> Collection<U> {
         Collection::new(self.items.iter().map(transform).collect())
     }
     /// 左から畳み込む。空なら初期値。
