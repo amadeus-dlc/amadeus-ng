@@ -11,7 +11,7 @@ on:
   merge_group: {}
   workflow_dispatch: {}
 
-# NFR4.4 (least privilege): CI は読取だけで足りる。ジョブ個別の昇格はしない。
+# NFR4.4: 既定は読取専用。review-thread-resolution のみ、下記の個別権限を付与する。
 permissions:
   contents: read
 
