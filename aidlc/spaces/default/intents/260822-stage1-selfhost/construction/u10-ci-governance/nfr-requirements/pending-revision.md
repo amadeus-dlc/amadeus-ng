@@ -1,5 +1,9 @@
 # pending-revision — U10 nfr-requirements（ステージゲートの Request Changes で適用する改訂案）
 
+> **2026-09-06 更新**: 以下は2026-08-23時点の改訂案を履歴として保存したもの。現在の適用手順には使わない。
+> 最新の改訂基準は [CI・品質管理の引継ぎ](../revision-baseline-20260906.md) を参照する。
+> 特にカバレッジ許容差を0.05へ戻す記述、配布物検証を含まないCI集約条件、再現性を再計測なしに達成済みとする記述は適用しない。
+
 > 回復レビュー（iteration 2、2026-08-23、READY: Major 2 / Minor 3）の所見を是正する編集案。終端の受領が凍結している（review-freeze フック）
 > ため、nfr-requirements ステージゲートで人間が Request Changes を選んだ直後にこのとおり `security-requirements.md` / `tech-stack-decisions.md` /
 > `traceability.json` を改訂し、レビュアーを再実行する。本ファイルは produces ではない（作業メモ）。
