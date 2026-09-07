@@ -3242,3 +3242,230 @@
 **Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:35:09Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-07T01:39:17Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-design
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T01:39:17Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: U9 nfr-design の既存成果物（2026-08-23 版 security-design.md / traceability.json / pending-revision.md）をどう扱うか
+**Options**: Modify,Keep,Redo from scratch
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:40:38Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-07T01:41:38Z
+**Event**: QUESTION_ANSWERED
+**Stage**: nfr-design
+**Details**: Modify
+**Unit**: u9-canon-docs
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T01:41:38Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-design
+**Decision**: modify
+**Artifacts**: security-design.md,traceability.json,pending-revision.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:42:09Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/nfr-design-questions.md
+**Context**: construction > u9-canon-docs > nfr-design > nfr-design-questions.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:42:17Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/nfr-design-questions.md
+**Context**: construction > u9-canon-docs > nfr-design > nfr-design-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T01:42:28Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/nfr-design-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:43:10Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:43:23Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/nfr-design-questions.md
+**Context**: construction > u9-canon-docs > nfr-design > nfr-design-questions.md
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T01:43:37Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/nfr-design-questions.md
+**Questions SHA-256**: a9d5063d4d689cbbe0ea62aad6839ebbf3951b8d7c9d0589ed6a68ed3afd09e0
+**Hash Scope**: confirmed-content-v1
+**Unit**: u9-canon-docs
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T01:46:05Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/security-design.md
+**Context**: construction > u9-canon-docs > nfr-design > security-design.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T01:46:15Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/traceability.json
+**Context**: construction > u9-canon-docs > nfr-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T01:46:15Z
+**Event**: SENSOR_FIRED
+**Fire id**: 8285c0f1
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T01:46:15Z
+**Event**: SENSOR_FAILED
+**Fire id**: 8285c0f1
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-8285c0f1.md
+**Findings count**: 72
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:46:19Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/pending-revision.md
+**Context**: construction > u9-canon-docs > nfr-design > pending-revision.md
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T01:47:22Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:edd32965a8a706452319c3b1e8b79a9df79535de92fc582d733dcf92e499a2f1
+**Review Appendix Artifact**: construction/u9-canon-docs/nfr-design/security-design.md
+**Review Appendix Offset**: 19609
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:52:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a478cfa7144064b1e
+**Message**: U9（正本・仕様の canon 追従）の NFR Design 再走を進めており、成果物 2 点を書き終えてレビュアーの advisory レビュー待ちです。結果を受けて Unit 完了とコミットを行い、Code Generation へ進みます。
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:58:15Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-design/security-design.md
+**Context**: construction > u9-canon-docs > nfr-design > security-design.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:58:34Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u9-nfrd-reviewer
+**Agent ID**: au9-nfrd-reviewer-49ab0335538d6b85
+**Message**: The `## Review` section is appended exactly once, as required. The review is complete.\n\n## Summary\n\n**Verdict: READY** (0 Critical, 0 Major, 1 Minor).\n\nI verified the U9 nfr-design re-run of `security
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T01:58:53Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:edd32965a8a706452319c3b1e8b79a9df79535de92fc582d733dcf92e499a2f1
+**Artifact Fingerprint**: sha256:52d263b69185a1439044ff7af701b7870547c7c6f7a03911a2ffd2806ef7e383
+**Review Appendix Artifact**: construction/u9-canon-docs/nfr-design/security-design.md
+**Review Appendix Offset**: 19609
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T01:59:29Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-design
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
