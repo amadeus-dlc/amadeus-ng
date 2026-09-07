@@ -1,8 +1,0 @@
-{
-  "stage": "code-generation",
-  "unit": "u3-event-store-repository",
-  "version": 1,
-  "writes": [
-    { "path": "formal/orchestration/journal_protocol.qnt" }
-  ]
-}

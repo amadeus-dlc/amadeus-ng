@@ -3,8 +3,8 @@
 //!
 //! 入力は `tests/golden/upstream-3c3146cf/{stage-graph.json,scope-grid.json}` — ピン留めコミット
 //! `3c3146cf` (v2.6.40) の `dist/claude/.claude/tools/data/` からバイト無変更で持ってきたもの。
-//! 期待値はすべて採取レポート `docs/specs/research/golden-3c3146cf-graph-dist.md` の実測に由来する
-//! （推測値は 1 つも無い）。
+//! 期待値はすべて採取レポート (旧 `docs/specs/research/golden-3c3146cf-graph-dist.md`、2026-09-07 に
+//! 削除した) の実測に由来する（推測値は 1 つも無い）。以後は本ファイルのアサート値が正本である。
 //!
 //! # 2026-08-31: 検収する経路が伸びた（オーナー裁定の ES 転換）
 //!

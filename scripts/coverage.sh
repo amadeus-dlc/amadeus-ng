@@ -18,7 +18,7 @@
 # 計測対象・除外方針:
 #   - `cargo llvm-cov --workspace` の既定に従い、workspace 全クレートのプロダクトコードを
 #     対象とする。テストコード自体は cargo-llvm-cov の既定で計測対象に含まれない。
-#   - `formal/` (Quint モデル) と `docs/` は Rust クレートではないため、workspace の
+#   - `formal/` (Quint モデル) や `vendor/` は Rust クレートではないため、workspace の
 #     コンパイル対象に含まれず、自然に計測対象外となる。
 #   - 明示的な除外は composition root (`modules/app/aidlc/src/main.rs`) の 1 ファイルだけ
 #     (NFR2.5)。配線コードはテストで駆動する対象ではないため床の計算から外す。それ以外は

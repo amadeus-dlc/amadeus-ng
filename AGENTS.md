@@ -7,7 +7,9 @@ AWS Bedrock は使用しない。各ハーネスの通常のログイン・利�
 Claude は `.claude/`、Codex は `.codex/` と `.agents/`、Kimi は `.kimi-code/` を使用する。
 更新は `bun scripts/aidlc-sync.ts` で差分を確認し、`--apply` で適用する。
 配布ファイルを直接修正せず、必要な独自修正は `scripts/aidlc-sync/patches/` に記録する。
-設定保持・削除・検証の手順は `docs/aidlc-installation.md` を参照する。
+設定保持・削除・検証の手順は `bun scripts/aidlc-sync.ts --help` の案内（`--check` / `--apply` /
+`--adopt-from` / `--accept-preserved`）と `scripts/aidlc-sync/installed.json` に従う（手書きの `docs/` は
+2026-09-07 に削除した）。
 
 Kimi では `/skill:aidlc` を使用する。`bun scripts/aidlc-kimi-hooks.ts --trust` で
 ユーザー所有のフックと、この作業ツリーの信頼登録を設定する。

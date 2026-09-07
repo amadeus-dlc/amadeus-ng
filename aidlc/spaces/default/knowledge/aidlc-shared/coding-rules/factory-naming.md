@@ -4,7 +4,8 @@
 **出典**: オーナー提示の命名表（Java 由来）を Rust へ翻訳したもの
 **適用例**: U3（Bolt B5）— `EventStoreImpl::open` / `StorePath::for_space` / `WorkflowExecution::start` ほか（履歴: 旧名 `WorkflowExecution` は B12 2026-08-30 で `Intent` + `IntentExecution` へ分割・改名され、現行は `IntentExecution::start` — 実測 `modules/core/command/domain/src/orchestration/intent_execution.rs:225`）。
 命名監査の結果と、表の動詞へ矯正**しない**と決めた 25 件の反例カタログは
-`<record>/construction/u3-event-store-repository/code-generation/naming-audit-report.md`。
+[good-examples.md](good-examples.md) §反例カタログ（監査レポート本体は旧 intent 記録
+`construction/u3-event-store-repository/code-generation/naming-audit-report.md` にあったが 2026-09-07 に削除した）。
 **機械強制**: `cargo lint` ルール化候補（下記「機械化の候補」）。現状はレビュー基準
 
 ## 基本コンストラクタと補助コンストラクタ（オーナー明言 2026-08-24 — Scala の実践を Rust へ）

@@ -2,7 +2,8 @@
 //
 // 対象: エンジンループの核 — カーソル×CheckboxState×PlanAction(overlay 合成)×ゲート×
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
-//       02-orchestration-engine.md を抽象化 (根拠: docs/specs/research/orchestration-*.md)。
+//       02-orchestration-engine.md を抽象化 (根拠: ピン 3c3146cf の配布資産。旧契約マップ
+//       docs/specs/research/ は 2026-09-07 に削除した)。
 // v2.7 (2026-09-05): set-autonomy の受理集合を upstream に揃えた (#72 / b50、オーナー裁定 A) —
 //   actSetAutonomy から status == Running を外した。upstream handleSetAutonomy
 //   (3c3146cf aidlc-bolt.ts:799-859) は状態ファイルを受理条件として読まないので、park 中でも

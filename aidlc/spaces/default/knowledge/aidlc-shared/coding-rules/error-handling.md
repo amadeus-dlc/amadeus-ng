@@ -30,7 +30,8 @@
 - **適用（2026-08-31 オーナー裁定、b26 段階2）**: `WorkflowDefinitionRepository` も本則へ
   収束した — ポート専用エラー `GraphReadError`（6 変種）を**廃止**し、
   `RepositoryError<WorkflowDefinitionId>` 1 本にした（リポジトリにビジネスロジックエラーを
-  扱わせない）。upstream 逐語文言（`docs/specs/12-workflow-definition.md` §4/§6 が規範）の
+  扱わせない）。upstream 逐語文言（ピン `3c3146cf` の配布資産の文言が規範。旧 `docs/specs/12-workflow-definition.md`
+  §4/§6 は 2026-09-07 に削除した）の
   所有は**クエリ側へ移った** — 「文言は出す側が持つ」の帰結であり、コマンド側のポートは
   材料すら持たず「壊れていた」としか言わない。
 

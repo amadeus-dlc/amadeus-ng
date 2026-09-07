@@ -1,5 +1,11 @@
 # 規則整合監査 2026-08-24
 
+> **注記（2026-09-07）**: 本文書は 2026-08-24〜26 時点の監査記録であり、そのまま残す。本文中の
+> `docs/specs/`・`naming-audit-report.md`（intent 記録）・`project.md` / `team.md` の引用は、2026-09-07 の
+> 再出発（`docs/` と intent 記録の削除、memory 層の初期化）により参照先が存在しない。現行の正本は
+> coding-rules 本体と、upstream 契約についてはゴールデン `tests/golden/upstream-3c3146cf/` と配布元
+> `vendor/aidlc-workflows/` である。
+
 **監査実施**: 2026-08-26T12:16Z（JST 21:16）/ 独立レビュア（aidlc-architecture-reviewer-agent）
 **対象**: `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/` の 15 ファイル全文
 **注記**: 監査中に対象ファイルが更新されている（`README.md` 21:13、`factory-naming.md` /

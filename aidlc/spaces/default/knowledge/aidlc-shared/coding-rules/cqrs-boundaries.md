@@ -107,9 +107,11 @@ SQLite の `read_*` 表）。規則 3 と規則 6 に追記。b26 / b27 が `nex
    SQLite のほうが自由度が高い、というオーナー裁定）。**クエリ側が (1) を逆パースして自分で
    計算することは禁止**（b26 / b27 の誤り — `next` の 21 分岐ラダー・スコープ解決・steering
    分割・トークン照合をクエリ側に置いた。是正の仕様は
-   `<record>/construction/query-side-audit/read-model-spec.md`）。
+   旧 intent 記録 `construction/query-side-audit/read-model-spec.md` にあったが 2026-09-07 に削除した。
+   現行の正本は実装 `modules/core/read-model-updater/src/lib.rs` のクレート doc）。
 
-   **構造化リードモデル（`read_*` 表）の正本は仕様 11 §4.1**（追記 2026-09-02、b39 / ADR-011）:
+   **構造化リードモデル（`read_*` 表）の正本は `modules/core/read-model-updater/src/lib.rs` のクレート doc**
+   （追記 2026-09-02、b39 / ADR-011。旧 `docs/specs/11-workspace.md` §4.1 は 2026-09-07 に削除した）:
    CLI 読取コマンドが読むリードモデルは、イベントストアと同じ SQLite ファイルの `read_*` 表で、
    RMU が集約を `replay` で起こしクエリメソッドの答えを非正規化して書く。行の値はすべて集約の
    クエリの写しであり、RMU にもクエリ側にも判断は無い。DAO はキーで引くだけ（`WHERE` は可、
@@ -240,8 +242,8 @@ scopes）を運ぶ**（旧 `Defined` は id と内容版だけを運び「内容
 ## 機械強制 — クレート境界
 
 依存規則は**クレートを分けて `Cargo.toml` に相手を書かない**ことで強制する。本プロジェクトが
-層の依存強制に採っている機構がこれであり（team.md「依存は Cargo.toml の不在により物理的に
-内向き強制」）、CQRS 境界にだけ適用しない理由はない。
+層の依存強制に採っている機構がこれであり（依存は Cargo.toml の不在により物理的に
+内向きへ強制される）、CQRS 境界にだけ適用しない理由はない。
 
 **モジュール分割（同一クレート内の `mod`）では強制にならない。** `pub(crate)` で相互参照できて
 しまうので、規律だけが頼りになる。

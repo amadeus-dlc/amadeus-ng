@@ -6,8 +6,8 @@
 # (toolchain 固定・workspace lints・CI ワークフロー・カバレッジゲート・GitHub ruleset)
 # が U10 の要求どおりかを検査し、失敗項目を列挙して非 0 で終了する。
 #
-# 検査対象と要求 ID (../../aidlc/spaces/default/intents/260822-stage1-selfhost/
-# construction/u10-ci-governance/nfr-requirements/security-requirements.md):
+# 検査対象と要求 ID (旧 intent 記録 u10-ci-governance の security-requirements.md に由来。
+# 記録は 2026-09-07 に削除したため、要求 ID は本スクリプトの検査項目名として残す):
 #   rust-toolchain.toml          NFR4.2
 #   Cargo.toml / tools/lint      NFR4.3
 #   .github/workflows/ci.yml     NFR2.2 / NFR2.3 / NFR2.4 / NFR4.1 / NFR4.2 / NFR4.4

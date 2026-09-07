@@ -143,8 +143,8 @@ pub fn unreadable_execution_cursor(cause: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// `next` の逐語 — 21 分岐ラダーが出す文言 (契約マップ
-// `docs/specs/research/orchestration-next-ladder.md` §1 が正本)。
+// `next` の逐語 — 21 分岐ラダーが出す文言 (ピン `3c3146cf` の `aidlc-orchestrate.ts` と
+// `tests/golden/upstream-3c3146cf/cli/` が正本。旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
 //
 // b44 でクエリ側 (`NextUseCase::wording`) からここへ移した。**行の `kind` に従って描くのは
 // 出す側の仕事**であり、クエリ側は綴り (`decision_kind` 等) を運ぶだけである
@@ -461,9 +461,9 @@ pub const STALE_CONTINUATION: &str = "This stage or its rules changed while they
 pub const PART_NOT_EXIST: &str = "This request asks for a part of the stage rules that does not exist. Run a fresh `next` to restart delivery from part 1.";
 
 // ---------------------------------------------------------------------------
-// `report` の逐語 — 13 段ガードが出す文言 (契約マップ
-// `docs/specs/research/orchestration-report-guards.md` §1 が正本、逐語はピン `3c3146cf` の
-// `aidlc-orchestrate.ts handleReport` / `handleResumeReport` / `aidlc-lib.ts`)。
+// `report` の逐語 — 13 段ガードが出す文言 (逐語はピン `3c3146cf` の
+// `aidlc-orchestrate.ts handleReport` / `handleResumeReport` / `aidlc-lib.ts` が正本。
+// 旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
 // ---------------------------------------------------------------------------
 
 /// 段 1 — 版が読めない状態ファイル (upstream `aidlc-lib.ts:10628-10634` 逐語)。
