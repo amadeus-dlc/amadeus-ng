@@ -1,0 +1,11 @@
+{
+  "stage": "code-generation",
+  "unit": "u9-canon-docs",
+  "version": 1,
+  "writes": [
+    { "path": "docs/specs/01-domain-model.md" },
+    { "path": "docs/specs/10-orchestration.md" },
+    { "path": "docs/specs/11-workspace.md" },
+    { "path": "docs/specs/12-workflow-definition.md" }
+  ]
+}

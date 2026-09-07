@@ -31,7 +31,7 @@
 |---|---|---|---|---|---|---|
 | U1 | `u1-canon-json-goldens` | canon-json とゴールデン採取 | library | M | embedded | FR7.1, FR7.2, FR7.3, NFR1（正準化面） |
 | U2 | `u2-domain-es-core` | ドメイン ES コア（集約 FSM・ドメインイベント・PlanAction 完全移動） | library | L | embedded | FR8.3, FR8.4（+ FR1/FR2/FR3 の土台） |
-| U3 | `u3-event-store-repository` | SQLite EventStore と WorkflowExecutionRepository | library | L | embedded | FR1.2, FR1.3, NFR3（書く側） |
+| U3 | `u3-event-store-repository` | SQLite EventStore と WorkflowExecutionRepository（改名: `IntentExecutionRepository` — B12 2026-08-30。実測 `use-case/src/orchestration/port/intent_execution_repository.rs`） | library | L | embedded | FR1.2, FR1.3, NFR3（書く側） |
 | U4 | `u4-read-model-updater` | ReadModelUpdater（状態ファイル・監査シャード投影） | library | M | embedded | FR1.1, NFR3（描く側）, FR5.4 の投影側 |
 | U5 | `u5-report-use-case` | report ユースケース | library | M | embedded | FR2.1, FR2.2 |
 | U6 | `u6-next-continue-use-case` | next / continue ユースケース | library | L | embedded | FR3.1, FR3.2, FR3.3 |
@@ -61,7 +61,7 @@
   （`modules/core/command/domain` — ドメインはコマンド側の持ち物。`coding-rules/cqrs-boundaries.md`）
   の `WorkflowExecution` を ES 形の FSM にする — ドメインイベント語彙
   （`WorkflowExecutionEvent`、コマンドと 1:1 の 11 変種程度）、decide（`&mut self` コマンドが単一イベントを返す）
-  / `apply_event` 分離、~~`version` /~~ `seq_nr` 保持（`version` は**失効（2026-08-29 / ADR-010・Bolt B7）**: 楽観 version は集約の外へ — `RehydratedWorkflowExecution` が持ち回る）、`next_decision` クエリメソッド（ADR-002）、有効プラン
+  / `apply_event` 分離、~~`version` /~~ `seq_nr` 保持（`version` は**失効（2026-08-29 / ADR-010・Bolt B7）**: 楽観 version は集約の外へ — `RehydratedWorkflowExecution` が持ち回る）（**この失効注記自体が再失効 — 2026-08-30 / B13**: 楽観 version は**集約の内側**に戻った（`version: usize` フィールド、`version()` / `with_version()`、`UNPERSISTED_VERSION = 0`）。`Rehydrated*` / `StatePosition` / `StoreVersion` は撤去され、`store` に `expected_version` 引数は無い。実測 `port/mod.rs:15-18` / `intent_execution.rs`）、`next_decision` クエリメソッド（ADR-002）、有効プラン
   畳み込みの集約メソッド化（FR8.4 / R2）、`PlanAction` の `workflow_definition` への**完全移動**（FR8.3 /
   ADR-005 改訂 — 再輸出なし、呼出側パスの一斉修正を同 Unit に含む）。
 - **境界**: ~~`core-domain`~~ → **失効（2026-08-29 / Bolt B8）**: `core-command-domain`
@@ -80,7 +80,7 @@
   （store = イベント + スナップショット永続化、find_by_id = 最新スナップショット + seq_nr 以降 replay）を
   実装する。mkdir ロック機構（`FsWorkspaceLock` / `WorkspaceLock` / `LockProtocol` / `reap_eligible` /
   `OwnerStamp`）を退役し、`audit_lock.qnt` を「ジャーナル / スナップショット / version / チェックポイント協定」
-  の検証モデルへ改訂する（ADR-007）。`InMemoryWorkflowExecutionRepository` を先に書く（gateway-taxonomy §6）。
+  の検証モデルへ改訂する（ADR-007）。`InMemoryWorkflowExecutionRepository` を先に書く（gateway-taxonomy §6）。（**失効 — ADR-010 / B12 2026-08-30**: 独自 EventStore スキーマは採らず、ジャーナル / スナップショットは本家 event-store-adapter-rs（ピン `=3.0.0`）が所有する。インメモリ形は自作ダブルではなくアダプタ層の `IntentExecutionRepositoryImpl::in_memory()`（本家 memory バックエンド）が唯一の公開形である — オーナー裁定 2026-08-31、gateway-taxonomy §5 / §6。実測 `intent_execution_repository_impl.rs:182`）
   → **失効（2026-08-29 / Bolt B8。同日中の是正を in-place 反映）**: `core-interface-adapter` は
   コマンド側と中間クレート RMU に分割された。`WorkflowExecutionRepositoryImpl` は
   **`core-command-interface-adapter`**（本 Unit の実体）が引き続き所有し、`JournalReaderImpl`
@@ -88,7 +88,7 @@
   `cqrs-boundaries.md`）**`core-read-model-updater`**（U4）へ移動済み（`crate-structure-proposal.md`
   §1、`construction/u4-read-model-updater/developer-report-1.md` §1、
   `developer-report-2.md` §1 の再改名）。
-- **境界**: ポート trait（`WorkflowExecutionRepository`、EventStore 同形 trait）はユースケース層に置く
+- **境界**: ポート trait（`WorkflowExecutionRepository`、EventStore 同形 trait）はユースケース層に置く（**改名 — B12 2026-08-30**: 現行名は `IntentExecutionRepository`。置き場（use-case 層の `port/`）は現行どおりで、同形の EventStore ローカル trait は ADR-010 で廃止された。実測 `use-case/src/orchestration/port/`）
   （U5/U6 より先に本 Unit が定義する）。ドメイン型（イベント・集約）は U2 のものを使う。投影は持たない。
 - **合格**: FR1.2（改訂版 `audit_lock.qnt` ITF 準拠）、FR1.3（store → find_by_id ラウンドトリップ）、
   クラッシュ再構成（ジャーナル → 集約）テスト（NFR3 の書く側）。
@@ -141,7 +141,7 @@
 - **境界**: ユースケース層。ビジネスロジック禁止（判断は U2 の集約）。trait のみ依存（DIP）、静的束縛。
   ユースケース間呼出禁止。
 - **合格**: FR2.1（0a 契約マップ一致 + `engine_loop` ITF 準拠）、FR2.2。
-- **実装ノート**: テストは `XxxUseCase<InMemoryWorkflowExecutionRepository>` の素の値で組む。
+- **実装ノート**: テストは `XxxUseCase<InMemoryWorkflowExecutionRepository>` の素の値で組む。（**改名 — B12 2026-08-30 / オーナー裁定 2026-08-31**: 現行名は `InMemoryIntentExecutionRepository` で、これは use-case クレートの `#[cfg(test)]` に住む **crate 私有の trait フェイク**である（DIP のクレート分離により use-case はアダプタ層を dev-dependency にも書けないため、そこでの唯一の手段。実測 `use-case/src/orchestration/test_support.rs:1-17` / `orchestration/mod.rs:38-39`）。**公開のインメモリ実装はアダプタ層の `XxxRepositoryImpl<S>::in_memory()`**（本家 memory バックエンド）が正で、自作 HashMap ダブルはそれ以外で禁止。クエリ側の公開テストダブルは `InMemoryXxxDao` 13 本である）
 
 ### U6 — `u6-next-continue-use-case`（library, L）
 

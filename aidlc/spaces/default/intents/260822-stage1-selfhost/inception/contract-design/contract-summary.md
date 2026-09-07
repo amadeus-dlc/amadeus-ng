@@ -15,10 +15,10 @@
 |---|---|---|---|---|
 | C1 | U7 `u7-cli-dispatcher-hooks`（CLI バイナリ `aidlc`） | External: Claude Code ハーネス（スキル・フック登録・statusline） | プロセス起動（argv/stdin → stdout の directive JSON・逐語文言 + 終了コード）と、動詞が書く upstream 互換ファイル（状態ファイル・監査シャード） | U7（正本 = upstream 仕様 D6 + U1 ゴールデン。破壊的変更は逸脱台帳 + ADR） |
 | C2 | U7（フック 4 本のサブコマンド） | External: Claude Code フック機構（PreToolUse / PostToolUse / Stop / UserPromptSubmit） | stdin JSON → 終了コード（0 許可 / 2 拒否）+ stderr 理由 + 副作用（監査行） | U7（正本 = upstream フック契約 + U1 ゴールデン） |
-| C3 | U3 `u3-event-store-repository`（実装） | U5 `u5-report-use-case` / U6 `u6-next-continue-use-case` / U7（composition root） | Rust trait（同一プロセス、静的束縛）: `WorkflowExecutionRepository` / `JournalReader`（~~EventStore 同形 trait~~ → 失効。2026-08-27 / ADR-010 — 本家 `event_store_adapter_rs::types::EventStore` が正本になったため、我々は定義しない） | U5/U6（使う側 = ユースケース層）。U3 は準拠 |
-| C4 | U3（既存 `WorkflowDefinitionRepositoryImpl`） | U6（`next` が定義集約を参照） | Rust trait `WorkflowDefinitionRepository`（2026-08-23 改訂: `find()` → `find_by_id(&WorkflowDefinitionId)`、ADR-008） | U6（使う側） |
-| C5 | U2 `u2-domain-es-core`（イベント語彙） / U4 `u4-read-model-updater`（投影規則） | U4（投影）/ U3（ジャーナルへ保存）/ U7（コマンド末尾で投影起動） | 同一プロセスの型（`WorkflowExecutionEvent`）+ 投影規則表（イベント → 監査行・状態ファイル差分） | 語彙 = U2、投影規則 = U4 |
-| C6 | U3（SQLite ストア） | U4（チェックポイント以降の差分読取・チェックポイント更新） | shared-schema: SQLite DDL（~~journal / snapshot / checkpoint の 3 表~~ → 失効。2026-08-27 / ADR-010 — 本家の `journal` / `snapshot` ＋ 我々の `amadeus_projection_checkpoint`） | U3（我々の表のみ。本家 2 表の正本は upstream） |
+| C3 | U3 `u3-event-store-repository`（実装） | U5 `u5-report-use-case` / U6 `u6-next-continue-use-case` / U7（composition root） | Rust trait（同一プロセス、静的束縛）: コマンド側ポート 4 本 `IntentExecutionRepository`（~~`WorkflowExecutionRepository`~~ — 改名 B12 2026-08-30）/ `IntentRepository` / `WorkflowDefinitionRepository` / `CompiledDefinitionRepository` と、RMU 所有の `JournalReader`（~~EventStore 同形 trait~~ → 失効。2026-08-27 / ADR-010 — 本家 `event_store_adapter_rs::types::EventStore` が正本になったため、我々は定義しない） | U5/U6（使う側 = ユースケース層）。U3 は準拠 |
+| C4 | U3（既存 `WorkflowDefinitionRepositoryImpl`） | U6（`next` が定義集約を参照。読取は 2026-08-31 以降クエリ側 `Find*` へ移設） | Rust trait `WorkflowDefinitionRepository`（2026-08-23 改訂: `find()` → `find_by_id(&WorkflowDefinitionId)`、ADR-008。動詞は現行 3 本 = `find_by_id` / `find_for_intent(&Intent)` / `store` — 実測 2026-09-07） | U6（使う側） |
+| C5 | U2 `u2-domain-es-core`（イベント語彙） / U4 `u4-read-model-updater`（投影規則） | U4（投影）/ U3（ジャーナルへ保存）/ U7（コマンド末尾で投影起動） | 同一プロセスの型（`IntentExecutionEvent` 16 変種 — ~~`WorkflowExecutionEvent`~~ から改名・拡張 B12 2026-08-30。ほかに `IntentEvent` 1 / `WorkflowDefinitionEvent` 2 / `CompiledDefinitionEvent` 4）+ 投影規則表（イベント → 監査行・状態ファイル差分） | 語彙 = U2、投影規則 = U4 |
+| C6 | U3（SQLite ストア） | U4（チェックポイント以降の差分読取・チェックポイント更新・`read_*` の投影）/ クエリ側 DAO（`read_*` の読取） | shared-schema: SQLite DDL（~~journal / snapshot / checkpoint の 3 表~~ → 失効。2026-08-27 / ADR-010 — 本家の `journal` / `snapshot` ＋ 我々の `amadeus_projection_checkpoint` / `amadeus_read_model_head` / publication 系 6 表 / リードモデルの `read_*` 17 表。実測 2026-09-07） | U3（我々の表のみ。本家 2 表の正本は upstream） |
 | C7 | U1 `u1-canon-json-goldens`（正解データ） | U6 / U7 のテスト（CLI 出力・状態ファイル差分・監査行・hash-canonical 受入表の突合） | 共有フィクスチャ（リポジトリ内の固定ファイル） | U1（更新は upstream ピン更新の別 intent） |
 
 外部契約は C1・C2 のみ（Q1 = A）。SQLite ファイル（C6）と内部ポート（C3〜C5）は外部契約ではない。
@@ -45,7 +45,7 @@ verbs:                                # ROUTES 表（U7 所有）。stage-1 の�
 stdout:
   next|continue: directive JSON（下記 directive）を 1 行。28 KiB 上限（超過時は load-steering で分割）
   report: "{ kind: done|print|error, ... }" の JSON
-  print系: 逐語文言（message-catalog）— LLM の分岐条件になる文言はバイト一致
+  print系: 逐語文言（~~message-catalog~~ → **出す側の `wording` モジュール** — 独立クレートは 2026-08-29 に解体し、文言は出す側が持つ。CLI 面は `modules/app/aidlc/src/wording.rs`、状態ファイル面は `modules/core/read-model-updater/src/workspace/wording.rs`。実測 2026-09-07）— LLM の分岐条件になる文言はバイト一致
 directive:
   kinds: [load-steering, run-stage, dispatch-subagent, invoke-swarm, present-gate, ask, print, error, done, parked]  # 10 種の閉集合（directive-schema クレート）
   load-steering: { stage, bundle: "sha256:<hex>", part, parts, rules_content: [{path, text}], continue_token }
@@ -65,7 +65,7 @@ files_written:                        # 互換ファイル = リードモデル�
 ```
 
 エラー・リトライ（Q6 = A）: 終了コードと文言は upstream 互換。ローカル I/O のみのためタイムアウトは設けない。
-内部の楽観 version 競合が 2 回続いた場合は exit 1 + 逐語のエラー文言（文言は message-catalog に新設、
+内部の楽観 version 競合が 2 回続いた場合は exit 1 + 逐語のエラー文言（文言は ~~message-catalog~~ → **出す側の `wording`**（`modules/app/aidlc/src/wording.rs`）に新設、
 逸脱台帳の対象外 — upstream に同状況が存在しないため）。
 
 ### C2 — フック 4 本（外部）
@@ -94,7 +94,43 @@ hooks:
 compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互換。正本 = upstream フック実装の観測契約 + U1 ゴールデン
 ```
 
-### C3 — ポート trait: `WorkflowExecutionRepository` と `JournalReader`（内部、Rust trait が正本）
+### C3 — ポート trait: コマンド側 Repository 4 本と `JournalReader`（内部、Rust trait が正本。旧題「~~`WorkflowExecutionRepository` と `JournalReader`~~」— 改名 B12 2026-08-30）
+
+> **2026-09-07 現行化（U9 再走 — 以下が現行。下の trait 全文と各追記は v2 / v3 世代の履歴である）**:
+> コマンド側のポートは **4 本**あり、いずれも `core-command-use-case` の `orchestration/port/` に住む
+> （実測 `port/mod.rs`）。すべて `async fn` である。
+>
+> | ポート | 動詞 |
+> |---|---|
+> | `IntentExecutionRepository` | `find_by_id(&IntentExecutionId) -> Result<IntentExecution, RepositoryError<IntentExecutionId>>` / `store(&mut self, event: &IntentExecutionEvent, aggregate: &IntentExecution) -> Result<(), RepositoryError<IntentExecutionId>>` |
+> | `IntentRepository` | `find_by_id(&IntentId)` / `find_for_execution(&IntentExecution)` / `store` |
+> | `WorkflowDefinitionRepository` | `find_by_id(&WorkflowDefinitionId)` / `find_for_intent(&Intent)` / `store` |
+> | `CompiledDefinitionRepository` | `find_by_id(&CompiledDefinitionId)` / `store` |
+>
+> 変更点は 3 つ。① **改名・分割**: ~~`WorkflowExecutionRepository`~~ → `IntentExecutionRepository`
+> （集約の 2 分割に追随。B12 2026-08-30）。`IntentRepository` / `CompiledDefinitionRepository` が
+> 増えた。② **楽観 version は集約の内側へ戻った**（B13 2026-08-30）— `store` に
+> ~~`expected_version: usize`~~ 引数は無く、提示する版は `aggregate.version()` である
+> （実測 `intent_execution_repository_impl.rs:455` の `let expected_version = aggregate.version();`）。
+> ~~`RehydratedWorkflowExecution`~~ / ~~`RehydratedIntentExecution`~~ / ~~`StatePosition`~~ /
+> ~~`StoreVersion`~~ は**すべて撤去済み**で、型としてはコードに 0 件である（`port/mod.rs:15-18` の
+> doc に廃止の言及が残るだけ）。③ **エラーはジェネリック 1 本** `RepositoryError<Id>`
+> （`NotFound` / `Conflict` / `Io` / `Corrupt` の 4 変種。`Corrupt` の分類はアダプタ私有で
+> `Error::source` 連鎖が運ぶ — error-handling.md「Repository エラーはジェネリック 1 本」）。
+> `JournalReader` は **RMU クレート（`core-read-model-updater`）が所有**し、メソッドは **9 本 =
+> `async fn` 8**（`events_after` / `events_through` / `checkpoint` / `advance_checkpoint` /
+> `publish` / `pending_publication` / `steering_source_digest` / `replace_steering`）**+ 同期の
+> `fn prepare_read_model(&mut self) -> Result<(), CatchUpError>` 1 本**（実測
+> `orchestration/journal_reader.rs:38`）。「`async fn` 9」ではない。
+> テストダブルは 3 層である — (1) **公開のインメモリ実装はアダプタ層の
+> `XxxRepositoryImpl<S>::in_memory()`**（本家 memory バックエンド。実測
+> `intent_execution_repository_impl.rs:182`）、(2) 自作 HashMap ダブルはそれ以外で禁止
+> （オーナー裁定 2026-08-31）、(3) 例外として use-case 層の `#[cfg(test)]` に `pub(crate)` の
+> trait フェイク 4 つ（`InMemoryIntentExecutionRepository` /
+> `InMemoryIntentRepository` / `InMemoryWorkflowDefinitionRepository` /
+> `InMemoryCompiledDefinitionRepository`）が住む — DIP のクレート分離により use-case は
+> `core-command-interface-adapter` を dev-dependency にも書けず、そこには本家ストアが届かない
+> ためである（実測 `use-case/src/orchestration/test_support.rs:1-17` / `orchestration/mod.rs:38-39`）。
 
 > **2026-08-27 改訂（ADR-010 / Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）**:
 > 本節が定義していた**ローカル `EventStore` 同形 trait は失効**した。イベントストアの契約は
@@ -106,8 +142,7 @@ compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互
 > [`developer-report-1.md` §6](../../construction/esa-v2-migration/developer-report-1.md)・
 > [`developer-report-2.md` §8](../../construction/esa-v2-migration/developer-report-2.md)。
 
-ユースケース層（`core-use-case`）が所有する trait は `WorkflowExecutionRepository` と `JournalReader` の 2 本。
-実装 `…Impl` は `core-interface-adapter`（U3）。動詞 `store` は ES 拡張語彙（ADR-006。正本注記は U9 FR8.1）。
+~~ユースケース層（`core-use-case`）が所有する trait は `WorkflowExecutionRepository` と `JournalReader` の 2 本。実装 `…Impl` は `core-interface-adapter`（U3）。~~ → **改訂（B8 2026-08-29 / B12 2026-08-30 / 実測 2026-09-07）**: `core-command-use-case` が所有するのは Repository ポート 4 本で、`JournalReader` は RMU クレートへ移った。実装 `…Impl` は `core-command-interface-adapter`（U3）。動詞 `store` は ES 拡張語彙（ADR-006。正本注記は U9 FR8.1）。
 
 > **2026-08-28 改訂（オーナー裁定 — RMU が `JournalReader` を呼ぶ）**: `JournalReader` と読取側語彙
 > （`ProjectionName` / `GlobalSeqNr` / `JournalReadError`）の**所有は RMU クレート（U4）へ移す**。
@@ -155,8 +190,11 @@ compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互
 > 裁定 2、[`developer-report-2.md`](../../construction/u4-read-model-updater/developer-report-2.md) §1
 > （~~`core-query-read-model-updater`~~ → `core-read-model-updater` 改名）。
 
+以下の trait 全文は **v2 世代の履歴**である（現行は本節冒頭の 2026-09-07 現行化の表を見よ）。
+
 ```rust
-// core-command-use-case（旧 core-use-case。U5/U6 が所有、U3 が準拠 — 2026-08-29 / Bolt B8 で改名）
+// 履歴（v2 世代）— core-command-use-case（旧 core-use-case。U5/U6 が所有、U3 が準拠 —
+// 2026-08-29 / Bolt B8 で改名）。現行名は IntentExecutionRepository（B12 2026-08-30 改名）。
 pub trait WorkflowExecutionRepository {
     /// 集約を再水和する。最新スナップショット + seq_nr 以降のイベントを replay。
     /// # Errors
@@ -212,7 +250,7 @@ Repository 実装（ユースケースはトランザクションを持たない
 ④ ~~`InMemoryWorkflowExecutionRepository` は同じ trait を満たし、テストは `XxxUseCase<InMemory…>` で組む~~
 → **失効**（2026-08-27 / ADR-010）。テストダブル型は無く、`WorkflowExecutionRepositoryImpl::in_memory()` が
 **本家の memory バックエンド**を内包する（実装コードは SQLite と同一で、バックエンドだけが違う）。
-テストは `XxxUseCase<WorkflowExecutionRepositoryImpl<EventStoreForMemory<…>>>` で組む。
+テストは `XxxUseCase<IntentExecutionRepositoryImpl<EventStoreForMemory<…>>>` で組む（改名 B12 2026-08-30）。**訂正（実測 2026-09-07）**: 「テストダブル型は無く」は use-case 層について正確ではない — 公開のインメモリ実装が `XxxRepositoryImpl<S>::in_memory()` である点はそのとおりだが、use-case クレートの `#[cfg(test)]` には DIP 制約下の単体テスト専用の `pub(crate)` trait フェイク 4 つ（`InMemoryIntentExecutionRepository` ほか）が住む（`test_support.rs:1-17`）。
 ⑤ `dyn` は使わない（静的束縛、use-case-rules §2）。
 ⑥ **楽観 version はストアが採番する不透明トークン**であり、ドメインも Repository も解釈・比較しない
 （2026-08-27 追加 / ADR-010 追記 (1)・BR5.3。この性質自体は不変）。~~genesis（`Event::is_created()` が真）だけは
@@ -223,9 +261,14 @@ genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、`store` �
 `expected_version: usize`（genesis は `UNPERSISTED_VERSION` = 0）を取る。
 
 > **2026-08-30 追記（Bolt B13 — ES 再構成の全面整列、オーナー裁定）**: 再構成の意味論が変わった。
-> ① `find_by_id` は ~~最新スナップショット + seq_nr 以降のイベントを replay~~ → **ジャーナル全再生**
+> ① `find_by_id` は ~~最新スナップショット + seq_nr 以降のイベントを replay~~ → ~~**ジャーナル全再生**
 > （`IntentExecution::replay` — 先頭は `Started`）。スナップショット行は**版の正本（envelope の
-> version）と存在検査（BR1.2）にだけ**使い、payload は読取に使わない（状態の正本はイベント列）。
+> version）と存在検査（BR1.2）にだけ**使い、payload は読取に使わない（状態の正本はイベント列）。~~
+> — **この①は失効（2026-09-05 オーナー裁定 / 実測 2026-09-07）**: 再生方式は**最新スナップショットを
+> 基底に、その `seq_nr` より後の差分イベントだけを通番順に適用する**形に戻った
+> （`IntentExecution::replay(snapshot, events)`。実装は `get_latest_snapshot_by_id` →
+> `get_events_by_id_since_seq_nr` → `replay(base, events).with_version(version)` — 実測
+> `intent_execution_repository_impl.rs:336-438`）。②〜④は現行のまま有効である。
 > `IntentExecutionSnapshot` / `from_snapshot` / `snapshot()` は型ごと撤去。
 > ② 再構成は**失敗を返さない** — 壊れた歴史（通番の飛び・未知ステージ・不変条件違反・先頭が
 > `Started` でない）はクラッシュが正。`Corrupt` に残る分類は復号・ストア整合レベル（読めない・foreign
@@ -238,9 +281,24 @@ genesis / 更新の分岐は封筒の `seq_nr == 1` から導出し、`store` �
 
 ### C4 — ポート trait: `WorkflowDefinitionRepository`（2026-08-23 改訂 — ADR-008）
 
+> **2026-09-07 現行化（U9 再走）**: 動詞は **3 本**になり、下の `find_by_id` 1 本だけの trait 全文は
+> 履歴である。現行は `find_by_id(&WorkflowDefinitionId)` / `find_for_intent(&Intent)` /
+> `store(&event, &definition)`（すべて `async fn`。実測
+> `use-case/src/orchestration/port/workflow_definition_repository.rs:63-114`）。`find_for_intent` は
+> ユースケースでドメインの getter を呼ばないための関連取得で、アダプタが intent の参照 ID を読み
+> `find_by_id` へ委譲する（オーナー裁定 2026-09-05、gateway-taxonomy §2）。`store` は 2026-08-31
+> （b30）に追加され、この Repository も**イベントストアを内包する ES Repository** になった —
+> ~~3 入力をファイルから読んで集約を組み立てる~~ 旧実装は同日に破棄された（配布 3 ファイルは
+> 別集約 `CompiledDefinition` の永続表現であり、その Repository が扱う）。エラーは
+> ~~`GraphReadError`（6 変種）~~ → **失効（2026-08-31 / b26）**: `RepositoryError<WorkflowDefinitionId>`
+> 1 本へ収束した（リポジトリにビジネスロジックエラーを扱わせない）。
+> 呼出側が `WorkflowDefinitionId` を得る経路のうち (a) は ~~`WorkflowExecution::definition_id()`~~ →
+> **`Intent::definition_id()`**（B12 2026-08-30 の 2 集約分割で、定義を指す参照は静的な `Intent` 側が
+> 持つ。実測 `orchestration/intent.rs`）。
+
 `WorkflowDefinition` はエンティティ（集約ルート、12 号 §2.1）なので識別子 `WorkflowDefinitionId`（内容が変わっても不変の系譜 ID — Repository 実装が
 harness.json の `name` から付与）と内容版 `DefinitionRevision`（3 入力の正準 JSON の `sha256:` — 値属性、識別子ではない）を持つ。既存の引数なし `find()` は
-**廃止**（後方互換の併存なし — オーナー裁定 2026-08-23）。`WorkflowExecution` は定義を `definition_id` で間接参照する（C5 `Started`）。
+**廃止**（後方互換の併存なし — オーナー裁定 2026-08-23）。~~`WorkflowExecution`~~ → **`Intent`** が定義を `definition_id` で間接参照する（B12 2026-08-30 の 2 集約分割で、定義への参照は静的な `Intent` 側の属性になった。実測 `orchestration/intent.rs`）。
 
 ```rust
 pub trait WorkflowDefinitionRepository {
@@ -255,6 +313,28 @@ pub trait WorkflowDefinitionRepository {
 harness.json から組み立てた値から渡す。`next_decision` は引数の定義の id が `definition_id` と一致しなければ `Err(DefinitionMismatch)`（U2 BR2.6）。
 
 ### C5 — ドメインイベント語彙と投影規則（内部）
+
+> **2026-09-07 現行化（U9 再走）**: イベント族は 4 つで、変種は合わせて **16 / 1 / 2 / 4** である
+> （実測 `modules/core/command/domain/src/orchestration/`・`workflow_definition/`）。
+>
+> | 族 | 変種 |
+> |---|---|
+> | `IntentExecutionEvent`（~~`WorkflowExecutionEvent`~~ — 改名 B12 2026-08-30。~~11 変種~~ → **16 変種**） | `Started` / `GateOpened` / `GateApproved` / `GateRejected` / `StageRevised` / `StageSkipped` / `Jumped` / `Parked` / `Unparked` / `Recomposed` / `AutonomyModeSet` / `SingleStageRunCommitted` / `SkeletonStanceRecorded` / `ReviewRequested` / `ReviewCompleted` / `PracticesAffirmed` |
+> | `IntentEvent`（新設 B12） | `Created`（1 変種。intent の全属性を運ぶ） |
+> | `WorkflowDefinitionEvent` | `Defined` / `Redefined`（2 変種） |
+> | `CompiledDefinitionEvent`（新設 b36 2026-09-02） | `Compiled` / `Recompiled` / `ScopeRegistered` / `PluginSelectionApplied`（4 変種） |
+>
+> ~~`StageCompleted`~~ は撤去済み（b42、#85 = A）。監査語彙の `EventType::StageCompleted` は
+> リードモデル側の語として残る（両者は別物 — 監査行 86 語はドメインイベント語彙ではない）。
+> **ドメインイベントはエンティティである**（オーナー裁定 2026-09-02）— 全変種が自前の
+> `id: XxxEventId`（UUIDv7、採番は集約のコマンド内）と、どの集約の事実かを示す
+> `aggregate_id: XxxId` を**別々のフィールド**で持つ。集約の ID をイベントの `id` に流用した
+> ~~`Started { id: IntentExecutionId }`~~ の形は誤りとして是正済みである。`seq_nr` /
+> `occurred_at` は従来どおり本家封筒（ジャーナル行の列）が運ぶ。
+> `Started` は `id` / `aggregate_id` / `intent_id` / `stages: StageEntries`（解決済み計画の写し）を
+> 運び、`From<(Started, DateTime<Utc>)>` が誕生状態を導く唯一の経路である（b39 2026-09-02 —
+> 集約の歴史は自ストリームだけで再生できなければならないため）。走査結果と表示属性は
+> `Created` が運ぶ。**投影規則（`projects_to`）と監査行の逐語性は 1 文字も変わっていない。**
 
 コマンドと 1:1 のドメインイベント（U2 所有）。`schema_version: 1` を全イベントに予約（Q5 = A）。
 投影（U4 所有）は 1 イベント → upstream 監査行 N 行 + 状態ファイル差分。監査行の見出し・フィールド順は
@@ -366,6 +446,33 @@ rules:
 
 ### C6 — SQLite スキーマ（内部、shared-schema）
 
+> **2026-09-07 現行化（U9 再走）**: 同じ SQLite ファイルに、本家所有の 2 表と**我々の表**が同居する。
+> 我々の表は下記の `amadeus_projection_checkpoint` 1 つだけではなくなった（実測
+> `modules/core/read-model-updater/src/` の `CREATE TABLE IF NOT EXISTS` 全件）。
+>
+> - **リードモデルの `read_*` 17 表**（b39 / b41、2026-09-02〜。正本は仕様 11 §4.1 / ADR-011）:
+>   `read_definition` / `read_definition_stage` / `read_definition_scope` /
+>   `read_definition_scope_keyword` / `read_definition_scope_stage` /
+>   `read_definition_scope_phase_entry` / `read_intent` / `read_intent_stage` / `read_execution` /
+>   `read_execution_stage` / `read_next_answer` / `read_next_jump` / `read_next_jump_phase` /
+>   `read_run_stage` / `read_scope_change` / `read_steering_plan` / `read_steering_part`。
+>   RMU が集約を `replay` で起こしクエリメソッドの答えを非正規化して書き、クエリ側の DAO が
+>   **1 表 1 引当**で読む。主キーは 1 列 `id`、自然キーの重複防止は UNIQUE、関連は FK 列
+>   （オーナー裁定 2026-09-03）。ジャーナル由来の表は `catch_up` ごとに全差し替えし、
+>   チェックポイント前進と**同一トランザクション**。参照入力由来の steering 2 表だけは
+>   `source_digest` の比較で変化時に**別トランザクション**で差し替える。
+> - **`amadeus_read_model_head`**: 読み面の先頭位置（`as_of`）を持つ我々の表。
+> - **publication 系 6 表**: `amadeus_publication` / `amadeus_publication_file` /
+>   `amadeus_publication_history` / `amadeus_publication_history_file` /
+>   `amadeus_publication_snapshot` / `amadeus_publication_snapshot_file`。公開は
+>   `prepare` → `publish` の 2 トランザクションで、1 回の `catch_up` は最大 2 計画である
+>   （実測 `orchestration/publication_store.rs`）。
+> - **`amadeus_projection_checkpoint`**: `(aid, seq_nr)` のアンカーを併記し、不一致は
+>   `Corrupt(CheckpointAnchorMismatch)` で拒む。
+>
+> 読み面のスキーマ版は `PRAGMA user_version` で持つ（本家の 2 表は引き続き `user_version` を
+> 使わず、ピン `=3.0.0` とスキーマガードテストで固定する）。
+
 > **2026-08-27 全面改訂（ADR-010 / Bolt B6 — event-store-adapter-rs v2.0.0 へ乗り換え）**:
 > ~~我々が定義した 3 表（`journal` / `snapshot` / `checkpoint`）~~ → **失効**。`journal` と `snapshot` は
 > **本家 v2.0.0 のスキーマ**に置き換わり、**正本は upstream**（我々は所有しない）。我々の表は
@@ -411,7 +518,7 @@ CREATE TABLE snapshot (
   aid             TEXT    NOT NULL,
   seq_nr          INTEGER NOT NULL,                  -- このスナップショットが含む最後の seq_nr
   version         INTEGER NOT NULL,                  -- 楽観 version（本家が採番する不透明トークン — BR5.3）
-  payload         BLOB    NOT NULL,                  -- 集約の状態の写し（16 属性 — 2026-08-29 / Bolt B7 で version 列を除去）を serde
+  payload         BLOB    NOT NULL,                  -- 集約の状態の写し（~~16 属性~~ → **12 属性**。B12 2026-08-30 の 2 集約分割と旧 7 並列列の StageSlots 統合、B13 2026-08-30 の version 復帰の結果。実測 intent_execution.rs）を serde
   last_updated_at INTEGER NOT NULL,
   PRIMARY KEY (pkey, skey)
 );
@@ -474,7 +581,7 @@ change_policy: upstream ピン更新の intent でのみ更新。差分は逸脱
 | Contract | Question | Blocks |
 |---|---|---|
 | C1 | SQLite ストアファイルの配置（`<record>/.aidlc-store.sqlite` か `aidlc/.aidlc-store/` か）と `.gitignore` への追記先 | U3（ストア初期化）、U9（逸脱台帳の文言） |
-| C1 | 楽観 version 競合が 2 回続いた場合の逐語文言（新設。upstream に同状況なし）の文面 | U7（message-catalog 配線） |
+| C1 | 楽観 version 競合が 2 回続いた場合の逐語文言（新設。upstream に同状況なし）の文面 | U7（~~message-catalog~~ → 出す側の `wording` への配線。解体 2026-08-29 / 実測 2026-09-07） |
 | C2 | フック 4 本それぞれの stdin JSON の厳密なスキーマ（upstream の Claude Code フック入力の写し）— ゴールデン採取で確定 | U1（採取）、U7（実装） |
 | ~~C3~~ | ~~`EventStore` trait のジェネリクス境界（`AID: Clone + Eq`, `E: Serialize` 等）と `EventStoreError` の変種 — event-store-adapter-rs の同形性をどこまで取るか~~ → **解決（2026-08-27 / ADR-010）**: 同形性を取るのではなく**本家 crate に直接依存して実装する**（Conformist）。境界もエラー型も本家のものをそのまま受け入れる | — |
 | C3 / C6 | `within_write_transaction`（登録簿 `intents.json` の read-modify-write を Tx で守る口）は**削除済み** — 本家は接続も Tx も露出しないため実現できない。ADR-010 は「登録簿を SQLite へ移す」を筋と書いているが、**U7 で裁定**する（本 Bolt では未決） | U7 |

@@ -2,7 +2,7 @@
 
 **裁定日**: 2026-08-23（オーナー）
 **参考**: [fraktor-rs `cqs-principle.md`](https://github.com/j5ik2o/fraktor-rs/blob/main/.agents/rules/rust/cqs-principle.md)（オーナー指示により本プロジェクト向けに翻案）
-**適用例**: U3（Bolt B5）— `EventStore::persist_event(&mut self) -> Result<(), E>` / `JournalReader::advance_checkpoint(&mut self) -> Result<(), E>` は適合。`WorkflowExecutionRepository::store(&self)` は違反で是正
+**適用例**: U3（Bolt B5）— `EventStore::persist_event(&mut self) -> Result<(), E>` / `JournalReader::advance_checkpoint(&mut self) -> Result<(), E>` は適合。`WorkflowExecutionRepository::store(&self)` は違反で是正（履歴: 旧名 — B12 2026-08-30 で `IntentExecutionRepository` に改名済み）
 **機械強制**: `cargo lint` ルール化予定
 **関連**: [interior-mutability.md](interior-mutability.md)（CQS 違反を消す目的で `&self` + 内部可変性へ逃げてはならない）
 

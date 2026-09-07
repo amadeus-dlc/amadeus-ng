@@ -7,9 +7,7 @@
 
 ## 規則が衝突したら（優先順）
 
-2026-09-06追加: [ファーストクラスコレクションの操作](first-class-collections.md) — filter/map/fold_left/at、型の意味に沿ったcombine/divideを優先し、イテレータ公開は最後の手段とする。設計・レビュー基準として適用する。
-
-規則が 13 本になり、全文を頭に入れて衝突を裁定する前提は成立しない。**読み替えて進まず、
+規則が 22 本になり、全文を頭に入れて衝突を裁定する前提は成立しない。**読み替えて進まず、
 その場で正本を直す**（`project.md` Corrections「上流成果物の矛盾は読み替えず裁定を求める」）。
 どちらが正かは次の順で決める。
 
@@ -42,12 +40,12 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
 | [tell-dont-ask.md](tell-dont-ask.md) | **ユースケースからドメインのgetterを呼ばない**。アダプタ層でのgetterは合法（2026-09-05）。判断は状態の所有者へ。`value()`/`inner()`/`raw()`で内部型を意識させない | `cargo lint`（checkbox-vocabulary / use-case-domain-getter） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
-| [first-class-collections.md](first-class-collections.md) | コレクション操作を優先し、イテレータ公開は最後の手段。例外は理由付きの境界処理のみ | 設計・レビュー基準（全型への一律lintは未実装） |
+| [first-class-collections.md](first-class-collections.md) | コレクション操作（`filter` / `map` / `fold_left` / `at`）を優先し、型の意味に沿った `combine` / `divide` を先に選ぶ。イテレータ公開は最後の手段で、例外は理由付きの境界処理のみ（裁定日 2026-09-06 — 従来この告知は「規則が衝突したら」節の中に置かれていたが、一覧表の本行へ畳んだ） | 設計・レビュー基準（全型への一律lintは未実装） |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |
 | [module-visibility.md](module-visibility.md) | mod はデフォルト private — 公開はファサードの `pub use` 経由。利便性のための再エクスポートはどこでも禁止（所有元が読めなくなる） | `unreachable_pub`（私有 mod 化で実効化） |
 | [gateway-taxonomy.md](gateway-taxonomy.md) | Gateway 責務は Repository と外部システムクライアントの 2 つ — Repository 名は集約名から取る（Store/Reader/Writer 造語と媒体名は禁止）。機構（時計・ID・プロセス生存）は Gateway ではない。ES Repository は `store` / `find_by_id`（ADR-006）。**コマンド側で外界（fs / 乱数 / プロセス / ネットワーク）に触るのは Repository 実装だけ**（§1d、2026-09-04） | `cargo lint`（`port-naming` — use-case 層の `pub trait` はコマンド側 `XxxRepository` / クエリ側 `XxxDao` のみ。`command-side-io` — `modules/core/command/**` の `*_repository_impl.rs` 以外に fs / 乱数 / プロセス / ネットワークの I/O が現れたら所見。2026-09-04、#47 / b44）。Repository 名と集約名の照合・技術接頭辞はレビュー基準 |
 | [use-case-rules.md](use-case-rules.md) | DIP（trait のみ依存）・スタティックバインディング既定・ユースケース間呼出禁止 | Cargo クレート分離 |
-| [error-handling.md](error-handling.md) | 失敗はモジュールごとの手実装エラー enum — `Display` は材料のみ、利用者向け文言はアダプタ層（message-catalog）、thiserror / anyhow 不使用 | `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（workspace lints） |
+| [error-handling.md](error-handling.md) | 失敗はモジュールごとの手実装エラー enum — `Display` は材料のみ、利用者向け文言は**出す側の `wording` モジュール**（合成ルート `aidlc` と RMU の投影ライタ）、thiserror / anyhow 不使用（2026-08-29 の文言カタログ解体後の形へ同期 — 本文 error-handling.md の該当箇条と一致。実測 `modules/app/aidlc/src/wording.rs` / `modules/core/read-model-updater/src/workspace/wording.rs`） | `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（workspace lints） |
 | [interior-mutability.md](interior-mutability.md) | 内部可変性は既定で禁止 — 可変操作はまず `&mut self`。`&self` の裏に `RefCell`/`Cell`/ロックを置く「`&self` への偽装」は禁止。`&self` + 内部可変性には**強い理由**が要る（立証責任は採る側。現在認められている例外はロックを取り合うメソッドのみ、条件付き）。並行してロックを取りたい場合は `SharedLock`/`SharedRwLock` を持つ `*Shared` ラッパーへ閉じる（手書きの `Rc<RefCell<_>>`/`Arc<Mutex<_>>` は禁止） | レビュー基準 |
 | [command-query-separation.md](command-query-separation.md) | Query は `&self` + 戻り値、Command は `&mut self` + 戻り値なし or `Result<(), E>`。分離不能ならオーナー許可のうえ理由をコメントに書く | レビュー基準 |
 | [no-backward-compatibility.md](no-backward-compatibility.md) | 後方互換のコードを残さない — `#[deprecated]`・旧名エイリアス・`pub use .. as`・互換口の並立を禁止。改名や署名変更は呼出側ごと一斉に直す（未配布のため互換の対価が無い。upstream 互換は別問題） | レビュー基準（機械化ロードマップ 4） |
@@ -112,8 +110,8 @@ b43 の作業ツリーの現物から採ってテストに同梱、(3) 検出と
 
 | 順 | ルール | 根拠となる規則 | 着手条件の充足 |
 | --- | --- | --- | --- |
-| 1 | **構造体リテラルは型ごとに 1 箇所** | [factory-naming.md](factory-naming.md)（基本コンストラクタ） | 反例ほぼ無し。是正対象は `WorkflowExecutionState` の 1 型 |
-| 2 | **`pub(crate)` / `pub(super)` フィールド**（`no-public-fields` の境界拡張） | [field-visibility.md](field-visibility.md) | 例外を認めない裁定済み。是正対象は 1 と同じ型 — **同じ Bolt で 1 と一緒に** |
+| 1 | **構造体リテラルは型ごとに 1 箇所** | [factory-naming.md](factory-naming.md)（基本コンストラクタ） | 反例ほぼ無し。~~是正対象は `WorkflowExecutionState` の 1 型~~ — 是正済み（B13 2026-08-30。メメント型は廃止され型ごと消滅した。現行の再構成は `IntentExecution::replay(snapshot, events)` と、アダプタの DTO から起こす `IntentExecution::new` — 実測 `modules/core/command/domain/src/orchestration/intent_execution.rs:352`）。着手条件 3（既存違反の是正と同じ Bolt で着地）の対象は次に見つかった反例で決める |
+| 2 | **`pub(crate)` / `pub(super)` フィールド**（`no-public-fields` の境界拡張） | [field-visibility.md](field-visibility.md) | 例外を認めない裁定済み。~~是正対象は 1 と同じ型~~ — 是正済み（同上、B13 2026-08-30 で型ごと消滅） |
 | 3 | **inherent な `fn from(`** | [factory-naming.md](factory-naming.md) | 反例無し。現状の違反 0 件なので単独で着地できる |
 | 4 | **`#[deprecated]` の検出** | [no-backward-compatibility.md](no-backward-compatibility.md) | 反例無し。現状の違反 0 件 |
 

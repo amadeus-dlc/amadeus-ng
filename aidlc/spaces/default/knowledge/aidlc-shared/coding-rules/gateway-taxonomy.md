@@ -17,7 +17,7 @@ EventStoreForSqlite を使わないといけない」。配布物の取込は**�
 なり、読み書きは通常の `CompiledDefinitionRepository` / `CompiledDefinitionRepositoryImpl`。
 「取込ポート」「暫定の足場」という位置づけごと消滅 — §1 是正の再是正・§2 の行追加・
 §5 の取込行削除）
-**適用例**: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）、b30（`WorkflowDefinitionRepositoryImpl` の ES 化と `DefinitionArtifactsClient` の新設）
+**適用例**（履歴 — 旧名を含む適用の記録）: Gateway 責務再設計 PR（`StateFileStore` ポート削除 / `StageGraphReader` → `WorkflowDefinitionRepository` / Clock・ProcessProbe のアダプタ層退去）、b27（`WorkflowDefinitionDao` / `ExecutionStateDao` / `MemoryRulesDao` の 3 ポートとその実装）、b30（`WorkflowDefinitionRepositoryImpl` の ES 化と `DefinitionArtifactsClient` の新設）
 **機械強制**: `cargo lint`（`port-naming` — use-case 層の `pub trait` はコマンド側 `XxxRepository` / クエリ側 `XxxDao` 以外を所見。`command-side-io` — `modules/core/command/**` の `*_repository_impl.rs` 以外に fs / 乱数 / プロセス / ネットワークの I/O が現れたら所見。いずれも 2026-09-04、GitHub #47 を b44 に折り込み）。Repository 名と集約名の照合・技術接頭辞の検出はレビュー基準のまま（下記「機械強制の候補」2・3）
 
 ## ルール
@@ -220,7 +220,7 @@ DAO は集約を扱わないのでその根拠自体が当たらない。対の�
 > **改訂 2026-08-24（オーナー裁定）**: 本節は当初「CQRS は採用しない（まず素の DDD）」だった。
 > その後 ADR-001 でイベントソーシングを、**ADR-003「SQLite ストア + upstream 互換ファイルは
 > リードモデル + RMU」/ ADR-004「状態ファイルはリードモデル」で読取モデルの分離を採用**したため、
-> 前提が失効した。書込モデル（集約 `WorkflowExecution` + `EventStore` のジャーナル/スナップショット）と
+> 前提が失効した。書込モデル（集約 `IntentExecution` + `EventStore` のジャーナル/スナップショット。集約名は B12 2026-08-30 の分割・改名に追従 — 実測 `modules/core/command/domain/src/orchestration/intent_execution.rs`）と
 > 読取モデル（`aidlc-state.md` と監査シャード。`ReadModelUpdater` がチェックポイント以降の
 > イベントを投影して更新）は**実際に分かれている**。節の本体（読取専用を型で保証する 2 手段）は
 > CQRS の採否とは独立に有効なので、前提の記述だけを差し替えて残す。
@@ -287,7 +287,7 @@ Repository 実装が本家ストアへ渡す永続化モデル（DTO）は `<対
 
 | 旧 | 新 | 理由 |
 | --- | --- | --- |
-| `core_use_case::workspace::StateFileStore`（ポート） | 削除 → B-2 の `WorkflowExecutionRepository` | ポート造語 + 媒体名。実装 `FsStateFileStore` は `workspace::state_file_io`（private mod・`pub(crate)`）へ降格し、Repository 実装の内部部品になった |
+| `core_use_case::workspace::StateFileStore`（ポート） | 削除 → B-2 の `WorkflowExecutionRepository` | ポート造語 + 媒体名。実装 `FsStateFileStore` は `workspace::state_file_io`（private mod・`pub(crate)`）へ降格し、Repository 実装の内部部品になった（履歴 — 移行先の名は B12 2026-08-30 で `IntentExecutionRepository` に改名済み） |
 | `core_use_case::orchestration::StageGraphReader` | `WorkflowDefinitionRepository` | Reader 造語 + ファイル名由来。集約は 3 入力を束ねた `WorkflowDefinition`（12 §2.1 で集約ルートへ昇格） |
 | `core_use_case::workspace::Clock` / `ProcessProbe` | `core_interface_adapter::{Clock, ProcessProbe}` | どのユースケースも消費しない。`FsWorkspaceLock` の注入シームにすぎず、機構は Infrastructure 責務 |
 
@@ -296,7 +296,7 @@ Repository 実装が本家ストアへ渡す永続化モデル（DTO）は `<対
 1 は実装済み（2026-09-04、b44）。2・3 は未実装。優先順は 型（E1）→ 既存 lint → `cargo lint` カスタムルール（赤例テスト必須）。
 
 1. ~~**ポート造語の検出**: use-case 層の `pub trait` 名が `Store` / `Reader` / `Writer` / `Source` / `Provider` で終わったら拒否。~~ — **実装済み（`port-naming`、2026-09-04）**: 禁止語の黒リストではなく許可接尾辞の白リスト（コマンド側 `Repository` / クエリ側 `Dao`）で、上位互換として吸収した。外部システムクライアント（`XxxClient`）は現状ゼロで、作るときは理由付き allow で明示する。
-2. **Repository 名と集約名の照合**: `XxxRepository` の `Xxx` が `core-domain` に存在する集約ルート型名であることを検査（集約表を機械可読にする前提が要る）。
+2. **Repository 名と集約名の照合**: `XxxRepository` の `Xxx` が `core-command-domain` に存在する集約ルート型名であることを検査（集約表を機械可読にする前提が要る。クレート名は CQRS のクレート分離に追従 — 実測 `modules/core/command/domain/Cargo.toml` `name = "core-command-domain"`）。
 3. **技術接頭辞の検出**: interface-adapter 層の `XxxRepository` 実装型名が `Fs` / `Sys` / `Db` 等で始まったら拒否（`XxxRepositoryImpl` のみ許可）。
 4. ~~**I8 の型強制**: `Next` ユースケースの構造体フィールドに Repository 型が現れないことを検査。~~ — **退役（2026-08-31・オーナー、b26 段階2）**: `next` はクエリ側へ移設され、コマンド側に `Next` ユースケースが存在しないため、検査対象ごと失効した。
 
