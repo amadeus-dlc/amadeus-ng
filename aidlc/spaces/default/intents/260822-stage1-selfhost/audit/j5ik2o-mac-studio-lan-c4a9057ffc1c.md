@@ -5128,3 +5128,348 @@
 **Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-09-07T06:15:17Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-design
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-07T06:15:18Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T06:17:30Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a05da668d2ceba810
+**Message**: <analysis>\nThe conversation continued from a prior compaction summary. Chronology in this segment:\n\n1. Started by attempting `aidlc-log.ts review` for U3 FD — refused: no fresh summary-confirmation. B
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T06:20:01Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: U3 nfr-design の既存成果物 3 点（security-design.md / logical-components.md / traceability.json、2026-08-23 B5 版 + 2026-08-27/29 の部分失効注記）を現行コードで実測したところ、検査点（旧 from_state 1 段 → 現行 DTO to_domain + IntentExecution::new + 差分行検査 + replay クラッシュ境界）・依存（旧「domain に serde/ESA」→ 現行は adapter のみ）・ESA ピン（=2.0.0 → =3.0.0）・論理コンポーネント名（旧クレート名・CorruptCause・adapter の journal_reader_impl）・テスト配置（ITF は app/aidlc）・NFR ID 集合（18 → 20）が失効している。既存成果物をどう扱うか
+**Options**: Keep,Modify,Redo from scratch
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T06:20:27Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-07T06:20:43Z
+**Event**: QUESTION_ANSWERED
+**Stage**: nfr-design
+**Details**: Modify (Recommended)
+**Unit**: u3-event-store-repository
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T06:20:43Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state reuse-artifact u3-event-store-repository --decision modify --artifacts security-design,logical-components,traceability
+**Error**: Unknown stage: u3-event-store-repository
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T06:21:47Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-design
+**Decision**: modify
+**Artifacts**: security-design,logical-components,traceability
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:23:11Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/nfr-design-questions.md
+**Context**: construction > u3-event-store-repository > nfr-design > nfr-design-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T06:23:15Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/nfr-design-questions.md
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T06:24:30Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:24:35Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/nfr-design-questions.md
+**Context**: construction > u3-event-store-repository > nfr-design > nfr-design-questions.md
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T06:24:41Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/nfr-design-questions.md
+**Questions SHA-256**: 112aed118d47499eee8dc7c2ca2db372040f4be8f1fcf72ead6df51501981367
+**Hash Scope**: confirmed-content-v1
+**Unit**: u3-event-store-repository
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:25:56Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/review-history-20260823.md
+**Context**: construction > u3-event-store-repository > nfr-design > review-history-20260823.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:28:57Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:30:14Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/logical-components.md
+**Context**: construction > u3-event-store-repository > nfr-design > logical-components.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:30:27Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/traceability.json
+**Context**: construction > u3-event-store-repository > nfr-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T06:30:27Z
+**Event**: SENSOR_FIRED
+**Fire id**: 22415f77
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T06:30:27Z
+**Event**: SENSOR_FAILED
+**Fire id**: 22415f77
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-22415f77.md
+**Findings count**: 81
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:04Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:07Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:09Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:14Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:16Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:19Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:23Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/logical-components.md
+**Context**: construction > u3-event-store-repository > nfr-design > logical-components.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:29Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/logical-components.md
+**Context**: construction > u3-event-store-repository > nfr-design > logical-components.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:51Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:31:53Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/security-design.md
+**Context**: construction > u3-event-store-repository > nfr-design > security-design.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:32:20Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-reviewer-dispatch.json
+**Context**: .aidlc-reviewer-dispatch.json
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T06:32:24Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:5b41171f23bb1405e46416fe7aba244f557ca9813e846a8db329dcf64460d285
+**Review Appendix Artifact**: construction/u3-event-store-repository/nfr-design/security-design.md
+**Review Appendix Offset**: 25706
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T06:37:49Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a39771d11d74e659c
+**Message**: U3 の NFR 設計を現行コードに合わせて Modify で書き直し、成果物 3 点とセンサー・テストは完了済みです。派遣中の独立レビューの結果が届いたら所見を検証し、Unit 完了とコミットへ進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T06:43:38Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u3-nd-reviewer
+**Agent ID**: au3-nd-reviewer-45a8ae4a1710ea67
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\nU3 の nfr-design を advisory レビューし、判定は **READY**（Critical 0 / Major 1 / Minor 1 / Info 4）。`security-design.md` の末尾に `## Review` 節を 1 回だけ追記した。\n\n## 所見\n\n- *
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T06:44:18Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:5b41171f23bb1405e46416fe7aba244f557ca9813e846a8db329dcf64460d285
+**Artifact Fingerprint**: sha256:52f276c2d65bfd873d6d7409b793a05ae364b2427f3509689d15e65f0d34e7ef
+**Review Appendix Artifact**: construction/u3-event-store-repository/nfr-design/security-design.md
+**Review Appendix Offset**: 25706
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:45:18Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-design/pending-revision.md
+**Context**: construction > u3-event-store-repository > nfr-design > pending-revision.md
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T06:45:32Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-design
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
