@@ -160,7 +160,7 @@ handoff 16 本、`inception/domain-design/decisions.md`（ADR-001〜011）を 4 
 | P5 | コマンド側ユースケース 9: CommitVerdict（= report。`execute(&IntentExecutionId, ReportRequest, at) -> Result<CommitOutcome{Committed / NoOp}, CommitError>`、Approve 段だけ定義を読む、競合は再構成から 1 回だけ再試行）/ CreateIntent / DefineWorkflow / Park / PromotePractices / RecordReview / RecordSingleStageRun / RecordSkeletonStance / SwitchAutonomy。`execute` の引数は ID と値オブジェクトのみ。`Next` / `Continue` はコマンド側に存在しない | shift #58-59 #64、late #38 #55 | ✓ |
 | P6 | クエリ側: ユースケース 13（`Find*`: NextAnswer / Continuation / RunStage / Steering / Definition / DefinitionStage / Scope / ScopeKeyword / PhaseEntry / Jump / Execution / ScopeChange / StateFile）は `dao.find(key) → View` のみで判断・導出・選択・文言を持たない。DAO ポート 14（動詞 `find`）、SQL はリテラルで 1 表 1 引当（`cargo lint dao-single-table`）、実装 = SQLite DAO 14 + `InMemoryXxxDao` 13、1 要求 1 読取専用接続を `Rc` 共有。クエリ側クレートはドメインに依存しない | late #17-#21 #25、shift #38 | ✓ |
 | P7 | 文言（利用者向け逐語）は出す側の `wording` モジュール（app / RMU）。要求の形で決まる分岐はコントローラ、状態の値で決まる分岐は行の kind をプレゼンタが描く。app は状態の値で決まる分岐を持たない | late #21 #35、shift #24 | ✓ `app/src/wording.rs`、`rmu/workspace/wording.rs` |
-| P8 | 合成ルート（`aidlc`）は読取前と書込後に RMU `catch_up` を**同期**呼出する（駆動ループ・spawn は持たない）。実行カーソル `<record>/.aidlc-execution` を intent-create が書き、`definition_id` は `"claude"` 固定 | late #22、other #27 | ✓ `runtime.rs:194,200,238`、`execution_cursor.rs:32` |
+| P8 | 合成ルート（`aidlc`）は読取前と書込後に RMU `catch_up` を **await で直列に**呼ぶ（駆動ループ・`tokio::spawn` は持たない。ポート・ユースケース・RMU は ADR-006 どおり `async fn`、ランタイムは tokio current_thread — 「同期」と書いた箇所は「別タスクに切り出さない」の意味であり、関数が同期という意味ではない。2026-09-07 追加実測で用語を訂正）。実行カーソル `<record>/.aidlc-execution` を intent-create が書き、`definition_id` は `"claude"` 固定 | late #22、other #27 | ✓ `runtime.rs:194,200,238`、`execution_cursor.rs:32` |
 | P9 | CLI 面: `aidlc` マルチコール。動詞 next / continue / report / park / compose / init / intent-create / link / decision / answer / review / set-autonomy / practices-promote、面 `aidlc-bolt`（set-autonomy のみ）/ `aidlc-log`（review のみ）/ `aidlc-state`（practices-promote のみ）/ `aidlc-utility`。未配線: unpark / jump / recompose / フック 4 本 / doctor / 他動詞 | late #56 #63 #71 | ✓ 動詞表実測 |
 
 ### 4.3 RMU とリードモデル（11 号 §2.3 / §4.1、C5 / C6）
@@ -219,7 +219,7 @@ unpark / jump / recompose のユースケースと CLI 配線、フック 4 本�
 | `DefinitionRevision` の計算主体 | command-domain-audit 2026-08-29「Repository / 投影側」 | b36 2026-09-02「ドメインが導出」 | **ドメイン**（`of_content`） |
 | `StageSlugSet` の順序 | U2 entities「文書順」 | b51 計画「辞書順」 | **辞書順**、RMU で並べ直し |
 | skeleton 対象 | U2 rules §3 射影表「最初の非 init EXECUTE」 | rules BR「`first_of(Construction, EXECUTE)`」 | **Construction の最初の EXECUTE** |
-| RMU の駆動 | u5 decisions-1「非同期タスク、join 2 箇所」 | b39 以降「合成ルートが `catch_up` を呼ぶだけ」 | **同期呼出**（spawn なし） |
+| RMU の駆動 | u5 decisions-1「非同期タスク、join 2 箇所」 | b39 以降「合成ルートが `catch_up` を呼ぶだけ」 | **await 直列呼出**（`tokio::spawn` なし。関数は `async fn` のまま — ADR-006 有効） |
 | Directive の kind 数 | 10 号 §2.2 / C1「10 種」 | — | `DirectiveKind` 10、`Directive` 構築可能 7 |
 | RMU とジャーナル | ADR-009 初稿「RMU はジャーナルを読まない」 | 2026-08-28 改訂「RMU が取得ループ」 | **RMU が読む**（`JournalReader` 所有） |
 | `CommitVerdictUseCase` の戻り値 | u5 decisions-1「`Result<(), CommitError>`」 | b46「`CommitOutcome` 3 形」 | `Result<CommitOutcome{2 形}, CommitError>` |
@@ -234,3 +234,28 @@ unpark / jump / recompose のユースケースと CLI 配線、フック 4 本�
 **訂正（2026-09-07 追加実測）**: 旧 manifest 綴り `workflow-execution-event/1` の残存 4 件（10 号 :51、`decisions.md:473`、`contract-summary.md` :285 / :305 / :388）は**すべて打消し線つきの履歴**（「B12 改名追従 2026-08-30」注記あり）であり、改訂対象ではない。要約確認で「直す」と述べた点を本行で訂正する。また coding-rules で `WorkflowExecution` を含む行のうち aggregate-references:62 / cqrs-boundaries:30 / field-visibility:46 / good-examples:84 / ubiquitous-language:21 は履歴（「旧」「~~」「実測」）であり触らない。
 
 **U9 では扱わない**（別 Unit / 別 Bolt の記録として残す）: U2 / U3 / U1 / U10 の設計本文の折り戻し（各 Unit のゲート）、`query-side-audit/read-model-spec.md` と `inventory.md`（Bolt 記録）、`formal/orchestration/journal_protocol.qnt` のコメント 5 行（コード扱い — 別途 1 行 PR か U6 / U7 の Bolt で）、codekb 2 文書、`docs/CLAUDE.md`、CI 設定の裁定（cargo doc 等）。
+
+**追加実測（2026-09-07、Unit 完了後）— 高リスク箇所の再点検で見つかった訂正 2 件**:
+
+1. **「同期」の用語**: ポート 4（`async fn` 計 18）・`JournalReader`（`async fn` 9）・ユースケース `execute` は `async fn` で、tokio（current_thread、`Cargo.toml:142`）上で
+   動く。ADR-006「async は初期化から、ドメインは同期」は**有効**。本書と rules.md BR3.3 (g) が「同期 `catch_up`」と書いたのは「別タスクに spawn しない・await で直列」の意味で
+   あり、仕様本文には「`async fn`、駆動ループ・spawn なし、合成ルートが await で順に呼ぶ」と書く（「同期」と書かない）。rules.md はレビュー受領後のため本書と日誌に記録し、
+   文書改訂 Bolt の委譲ブリーフと functional-design ゲートで訂正を明示する。
+2. **ADR-010 の失効注記の欠落**: `decisions.md:476-478` は「楽観 version は集約の外（`RehydratedWorkflowExecution`）、`store` は `expected_version` 引数」と現在形で書き、
+   B13（2026-08-30 — version を集約内へ、`Rehydrated*` 撤去、`expected_version` 引数なし）の失効注記が無い。BR3.7 (d)「`decisions.md` は変更しない」は誤りで、
+   ADR-010 の当該段落に `~~…~~ — 失効（2026-08-30 / B13、version は集約内 `version()` / `with_version()`）` の注記を **P4 (e)** として追加する。
+
+3. **レビュー所見 R-01（nfr-requirements iteration 1、Major）は却下** — 実測で反証: `gateway-taxonomy.md:299` に `core-domain`、`module-visibility.md:11` に
+   `core_domain::{workspace, orchestration, workflow_definition}`、`:21` に `core_domain::workspace::CheckboxState`、`use-case-rules.md:11` に `core-use-case` /
+   `core-interface-adapter` が**現に書かれている**（旧クレート名）。現行クレート名は `core-command-domain` / `core-command-use-case` / `core-command-interface-adapter`
+   （`modules/*/Cargo.toml` `name =` 実測 10 件）、`core-command-domain` の `lib.rs:29-31` に `pub mod orchestration / workflow_definition / workspace` が現存し、
+   `CheckboxState` も現存（243 箇所）。所見は §2.5 の表の『現行文言』列（今その行に書いてある語）と『コード』列（置換後の語）を読み違えたもの。
+   ただし読み違えが起きた事実は、委譲ブリーフに「行番号だけ」を渡す危険を示す — Bolt へは §2.5 の 3 列（所在 / 現行文言 / コード）を丸ごと渡す。
+4. **レビュー所見 R-02（同、Major）は採用し、範囲を広げる** — BR5.1 (c) の sentinel 10 語 grep（履歴マーカー除外後）を実行すると **44 件**: coding-rules 12 +
+   `CONSISTENCY-AUDIT-2026-08-24.md` 4 + 仕様 4 号 28（10 号 9 / 11 号 5 / 01 号 6 / 12 号 8）。BR1.6 の 12 行と BR3.3 の 4 号全文改訂で消えないものが **12 件**残る:
+   coding-rules の履歴的言及 8 行（`command-query-separation.md:5` / `interior-mutability.md:5` / `field-visibility.md:46` / `factory-naming.md:5` / `:99` /
+   `error-handling.md:12` / `gateway-taxonomy.md:20` / `:290` — BR1.6 logic が「触らない」とした行を含む）と CONSISTENCY-AUDIT 4 行。NFR2.2「0 件」は現行計画では到達不能。
+   **推奨する裁定（オーナー確認待ち）**: (a) `CONSISTENCY-AUDIT-*.md` は日付つき監査記録として `research/` と同様に grep 範囲から外す（BR5.1 (c) 訂正）、
+   (b) 履歴的言及 8 行は本文を変えず履歴マーカー（「旧」など既定 5 語のいずれか）を付けて除外条件に乗せる（BR1.6 logic「触らない」→「マーカー付与のみ」、対象 12 行 6 ファイル → 20 行 9 ファイル）。
+   代替は除外語彙に「解体」「削除」を足す案だが、現行規範で「削除する」と書く行も除外してしまい検査が緩むので不採用を推奨。
+   nfr-requirements の成果物はレビュー確定後で凍結されているため本文には反映せず（review-freeze）、ゲートで所見として提示し、NFR Design の委譲ブリーフに折り込む。

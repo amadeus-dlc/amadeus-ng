@@ -2816,3 +2816,429 @@
 **Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-09-07T01:12:38Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T01:12:38Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: 既存の U9 NFR Requirements 成果物 3 点（security-requirements / tech-stack-decisions / traceability、2026-08-23 B4 版）の扱い
+**Options**: Modify,Keep,Redo from scratch
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:13:33Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-07T01:13:41Z
+**Event**: QUESTION_ANSWERED
+**Stage**: nfr-requirements
+**Details**: Modify（実測どおり更新、推奨）
+**Unit**: u9-canon-docs
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T01:13:41Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-requirements
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T01:14:21Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:15:47Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T01:15:58Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: 685b0051a19131b1f3349792ded5505248a7677014ed941e7af166d217a51f55
+**Hash Scope**: confirmed-content-v1
+**Unit**: u9-canon-docs
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T01:17:36Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Context**: construction > u9-canon-docs > nfr-requirements > security-requirements.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T01:18:03Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u9-canon-docs > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T01:18:07Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+**Context**: construction > u9-canon-docs > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T01:18:07Z
+**Event**: SENSOR_FIRED
+**Fire id**: 36c336b0
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T01:18:07Z
+**Event**: SENSOR_FAILED
+**Fire id**: 36c336b0
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-36c336b0.md
+**Findings count**: 63
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T01:18:41Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:0dbdb3969001eeab1ca13758ce9d7548723f6a1285a7a13c3d1da1bfc728e185
+**Review Appendix Artifact**: construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 12948
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:19:58Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: <project-dir>
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:20:01Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: <project-dir>
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:20:16Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab13aa7995968c80f
+**Message**: Reading security-requirements.md content
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:20:43Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:20:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af285042c568b811a
+**Message**: Verifying CI job names in ci.yml
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:21:01Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:21:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a08166a12b426fdfd
+**Message**: Grepping coding-rules for sentinel violations
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:21:47Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:21:53Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aae2e2c096bb7c77b
+**Message**: Checking module-visibility.md for message_catalog
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:22:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a998741a5802c275c
+**Message**: Verifying StateFileStore mentions in gateway-taxonomy.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:22:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a22897c348fb8684c
+**Message**: そのまま続行して
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:22:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a64415d3500506b23
+**Message**: Checking BR1.6 target lines in coding-rules files
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:23:03Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:23:29Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:23:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a88ac1bde4592ef77
+**Message**: Confirming "core-command-domain" absence via grep
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:23:41Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a826cc61d0f70b77e
+**Message**: レビュー結果が出たら続けて
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:23:51Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: <project-dir>
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:24:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a625d474dd63c5e65
+**Message**: Running required-sections sensor on security-requirements.md
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:24:13Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:24:35Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a321cf74abefbf0c0
+**Message**: Counting pipe columns in NFR2.4 row
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:25:00Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:25:07Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ab63d08f14af31811
+**Message**: Listing coding-rules directory files
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:25:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: abb375c5c1997d81f
+**Message**: Reading prior Review section content
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:25:50Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Context**: construction > u9-canon-docs > nfr-requirements > security-requirements.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:26:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: a5daed3f515e497ef
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n`security-requirements.md` 末尾に `## Review` セクションを追記しました（iteration 1、advisory）。\n\n**Verdict:** READY（Critical 0、Major 2 は人間が承認前に重みづける所見として記載）\n\n**所見件数**: 
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:26:15Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-07T01:26:15Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:28:58Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6d57de5faef9a723
+**Message**: <analysis>\nThis conversation continues an AI-DLC workflow (intent `260822-stage1-selfhost`, Construction, unit-major). The prior compaction summary covered the U9 functional-design rerun preparation. 
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T01:31:53Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:0dbdb3969001eeab1ca13758ce9d7548723f6a1285a7a13c3d1da1bfc728e185
+**Artifact Fingerprint**: sha256:986a13ae3b5c5fe2268e2268c6011bc62d64dcb949131c3a2943217d75cb6270
+**Review Appendix Artifact**: construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 12948
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T01:33:12Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/nfr-requirements/security-requirements.md
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T01:33:55Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-requirements
+**Unit**: u9-canon-docs
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
