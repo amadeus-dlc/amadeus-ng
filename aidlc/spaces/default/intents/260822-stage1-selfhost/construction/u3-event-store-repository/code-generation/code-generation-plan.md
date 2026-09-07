@@ -1,170 +1,151 @@
-# code-generation-plan — U3 SQLite EventStore と WorkflowExecutionRepository（`u3-event-store-repository`）
+# code-generation-plan — U3 イベントストアと IntentExecutionRepository（`u3-event-store-repository`）
 
-> Code Generation（Construction 3.5）の計画（Unit: U3、kind: library、Bolt: B5、規模 L）。出典: `../functional-design/{entities,rules,functional-spec}.md`（BR1.1〜BR5.2、
-> レビュー所見 1〜3 反映済み）と `pending-revision.md`、`../nfr-requirements/{security-requirements,tech-stack-decisions}.md` と `pending-revision.md`（項目 1 TOLERANCE、
-> 2 lint 昇格、3 audit advisory）、`../nfr-design/{security-design,logical-components}.md`、`../../../inception/contract-design/contract-summary.md`（C3 / C6）と
-> `pending-revision.md`（C3 u64）、`../../../inception/units-generation/unit-of-work.md`（U3）、`../../../inception/delivery-planning/bolt-plan.md`（B5）、
-> `../../u2-domain-es-core/functional-design/pending-revision.md`（項目 8 / 9）、Bolt B3 実装（`modules/core/domain/src/orchestration/`）、`code-generation-questions.md`
-> （Q1 = A: `indexing_slicing` / `panic` の lint 昇格）。
+> Unit: U3（kind: library）。**2026-09-07 の再走（Modify）計画**。出典: `../functional-design/{functional-spec,rules,entities}.md`（2026-09-05 是正・
+> 2026-09-07 再レビュー READY）、`../nfr-requirements/{security-requirements,tech-stack-decisions}.md`（2026-09-07 再走 READY、NFR1.1〜NFR4.7）、
+> `../nfr-design/{security-design,logical-components}.md`（2026-09-07 再走 READY）、`../../../inception/contract-design/contract-summary.md`（C3 / C6）、
+> `../../../inception/units-generation/unit-of-work.md`（U3）、`../../../inception/requirements-analysis/requirements.md`（FR1.2 / FR1.3 / NFR3）、
+> `code-generation-questions.md`。2026-08-23 に承認した旧計画（Bolt B5 = PR #29、指紋 `04a8a9e1…`）は `code-generation-plan-history-2026-08-23.md` に
+> 全文保存した。旧テスト手順・旧質問票・旧要約・旧 traceability も同名の `*-history-2026-08-23.*` に保存済み。
 
-## 1. 前提と範囲
+## 1. 目的と変更範囲
 
-- **ブランチ / PR**: `bolt/b5-u3-event-store-repository`（`origin/main` db6c0a1 起点、作成済み・記録コミット持越し済み）。PR は 1 本直列、squash-merge、コミット名 = Bolt slug。
-  記録コミット → コードコミットの順。CodeRabbit の指摘は全件返信 + 修正 + resolve（review-thread gate）。
-- **実測基線（2026-08-23、`origin/main`）**: テスト約 335、カバレッジは `scripts/coverage.sh` の base（着手時に採取）、`indexing_slicing` / `panic` 警告 120（索引 118 +
-  スライス 2、`panic!` 0 — `-W` 実測。うち `lock_protocol.rs` 13 と `audit_lock_conformance.rs` 5 は退役で消える）。
-- **範囲（FD BR）**: BR1.x ポート、BR2.x SQLite ストア + Repository 実装 + InMemory、BR3.x ロック退役 + Quint モデル `journal_protocol.qnt` + ITF、BR4.x U2 是正
-  （`IntentId` UUIDv7 / `IntentDirName` / `WorkflowExecutionState` 改名 — メソッドも `state()` / `from_state()`）、BR5.x 仕様・正本の同期と合格条件。
-- **取り込む pending-revision**: NFR 要求 1（`scripts/coverage.sh` TOLERANCE 0.05 → 0.01 + コメント更新）、2（Q1 = A: `clippy::indexing_slicing` / `clippy::panic` を
-  `[workspace.lints.clippy]` に deny 追加し既存コードを是正 — テストは `#![allow]` を file / mod 単位で）、3（`cargo audit` は advisory ジョブ — 緑を確認して
-  code-summary に記録）、contract-design（C3 の数値型は u64 — Rust trait が正本）、FD（`entities.md` の `## Review` 履歴はゲートで処理）。
-- **数値型**: seq_nr / version / GlobalSeqNr は `u64`。rusqlite への受け渡しは `i64` に明示変換（`u64::try_from` / `i64::try_from`、失敗は `Corrupt`）。
-- **設計に無い判断**: 推測で進めず `developer-report-<n>.md` の「設計質問」に書く（B3 / B4 の運用）。
+U3 の実装（`IntentExecutionRepositoryImpl<S>`・永続化 DTO・`SnapshotStrategy`・`store_failure`・`StorePath`・`journal_protocol.qnt`・
+ITF 適合・クラッシュ再構成）は Bolt B5（PR #29）で main に入り、その後 B7（PR #31、本家 event-store-adapter-rs v3 `EventEnvelope` API）・
+B12 / B13（集約分割 `Intent` + `IntentExecution`・版の内側化、2026-08-30）・b40（イベント ID）・2026-09-05 是正（書込前 ID 照合）を経て現行の形に
+なっている。2026-09-07 に再走した設計 3 段は現行コードを実測して書かれ、行番号・件数・依存はすべて一致した（各成果物の末尾レビュー READY）。
+ワークスペースのコードは `origin/main` = `f2b6b6a9` と同一である（`git diff --stat origin/main HEAD -- modules tests formal scripts Cargo.toml
+Cargo.lock .github tools` が空、計画準備時の実測）。
 
-## 2. 公開 API（設計の写し — 実装の契約）
+計画準備で見つかった設計と実物の不一致は **1 件**だけである: `formal/orchestration/journal_protocol.qnt` の凡例コメント（モデル型 ↔ Rust 対応表、
+ADR 0003 決定 6）が B12 以前の旧名を使っている — `:10` / `:11` の `WorkflowExecution::version()` / `::seq_nr()`、`:15` / `:22` / `:23` の
+`WorkflowExecutionRepository::find_by_id` / `::store`。`WorkflowExecution` の文字列は `modules tests scripts .github Cargo.toml tools` で 0 件で、
+現行名は `IntentExecution` / `IntentExecutionRepository`（`intent_execution.rs:254` `with_version`、use-case `port/intent_execution_repository.rs`）。
+functional-spec §5（`:137`「旧 `WorkflowExecutionRepository` の名前を現行公開 API に残さない」）と BR5.1（仕様・正本の同期）に照らし、凡例だけが
+取り残されている。同じ凡例の U4 側の名前（`:12` `JournalReader::checkpoint(ProjectionName)`、`:25` `events_after` / `advance_checkpoint`）は現行
+`read-model-updater/src/orchestration/journal_reader.rs:77,85,109` と一致するので触らない。
 
-- `core_use_case::orchestration`: `trait WorkflowExecutionRepository { async fn find_by_id(&self, &IntentId) -> Result<WorkflowExecution, RepositoryError>; async fn store(&mut self, &WorkflowExecutionEvent, &WorkflowExecution) -> Result<(), RepositoryError>; }`（2026-08-23 改訂: `&self` → `&mut self`。オーナー裁定、正本 `coding-rules/command-query-separation.md`）、
-  `trait EventStore<AID, A, E> { async fn persist_event(&mut self, &E, version: u64); async fn persist_event_and_snapshot(&mut self, &E, &A); async fn get_latest_snapshot_by_id(&self, &AID) -> Result<Option<A>, _>; async fn get_events_by_id_since_seq_nr(&self, &AID, seq_nr: u64) -> Result<Vec<E>, _>; }`（戻りは `EventStoreError`）、
-  `trait JournalReader { async fn events_after(&self, GlobalSeqNr) -> Result<Vec<(GlobalSeqNr, WorkflowExecutionEvent)>, _>; async fn checkpoint(&self, &ProjectionName) -> Result<GlobalSeqNr, _>; async fn advance_checkpoint(&mut self, &ProjectionName, GlobalSeqNr) -> Result<(), _>; }`、
-  `RepositoryError { NotFound { intent_id }, Conflict { expected, actual }, Io { kind, path }, Corrupt { aggregate_id, seq_nr, cause } }`、
-  `EventStoreError { Conflict, Io, Corrupt { aggregate_id: String, .. }, Schema { found, supported }, CheckpointRegression { projection, current, requested } }`、
-  `CorruptCause { MissingSnapshot, UndecodablePayload, UnknownEventType, SchemaVersion, InvariantViolation, SequenceGap }`、`GlobalSeqNr(u64)`（`ZERO`）、`ProjectionName`（kebab ≤ 64）。
-- `core_interface_adapter::orchestration`: `EventStoreImpl::open(StorePath, C: Clock) -> Result<Self, EventStoreError>`、`within_write_transaction(&mut self, f)`、
-  `StorePath::for_space(&Path, &SpaceName)`、`WorkflowExecutionRepositoryImpl { store: EventStoreImpl<C> }`（直接所有）、`memory::{InMemoryEventStore, InMemoryWorkflowExecutionRepository}`。
-- `core_domain`: `orchestration::{IntentId（UUIDv7）, WorkflowExecutionState, WorkflowExecutionStateBuilder, StateError}`、`WorkflowExecution::{state, from_state}`、`workspace::IntentDirName`。
-- 意味論は FD functional-spec §3（store / find_by_id / 差分読取 / 登録簿直列化 / open）、ワイヤは §4、モデルは §5。
+今回のワークスペース側の変更は**この 1 ファイル・コメント 5 行だけ**とし、プロダクトコード・テスト・依存・スクリプト・CI・Quint の状態機械本体
+（var / action / 不変条件 / witness）は変更しない。行うのは次の 5 点である。
 
-## 3. 規則の実装方針（BR → ステップ）
+1. Unit 限定コマンド（`unit-test-instructions.md` §2）と受入（BR5.2、NFR2.3 / NFR2.4 / NFR2.5 / NFR4.1）を実測して記録する。
+2. 再走した設計 3 段の主張（検査点の関数・行番号・テスト名、コンポーネント配置と依存、件数）を現行コードで照合し、一致・不一致の表を作る。
+3. `journal_protocol.qnt` の凡例 5 行を現行名へ追従させ、`scripts/quint-gate.sh`（typecheck・不変条件 8・witness 4）と ITF 適合テストで検証する。
+4. `code-summary.md` を現行の事実で書き直す（B5 の TDD 証跡・裁定表・コミット列は履歴ファイルに残し、本版は「現行の実装がどう検証されたか」を書く）。
+5. `traceability.json` を現行 ID（FR1.2 / FR1.3 / NFR3、BR1.1〜BR5.2 の 23 件、NFR1.1〜NFR4.7 の 20 件 = 46 件）の**実在ファイル**へ対応付け、
+   `source-manifest.json`（`writes` = `journal_protocol.qnt` 1 件）を作る。
 
-| BR | 方針 | ステップ |
+変更しないもの: `modules/` 配下のプロダクトコードとテスト、`Cargo.toml` / `Cargo.lock`、`tests/conformance/`（ITF fixture はコメントを含まないため
+凡例変更の影響を受けない）、`scripts/`、`.github/`、`docs/specs/`（`WorkflowExecution` の残り 4 ファイルは取り消し線付きの履歴記述で U9 の所有）、
+凍結中の設計文書（FD / NFR 要求 / NFR 設計 — 各 `pending-revision.md` の確定文面はステージゲートの Request Changes 経路で折り戻す）、他 Unit の記録、
+上流の `requirements.md`（NFR3 の失効はオーナー裁定待ち）。GitHub への書込（PR 作成・コメント）は委任先では行わない。
+
+照合で不一致が**新たに**見つかった場合は、対象・再現手順・**先に書く Red テスト案**を `developer-report-11.md` に報告し、計画の変更を受けてから
+扱う。本計画を根拠に凡例 5 行以外のコードを直さない。U7 の裁定事項 3 件（複数プロセスの並行モデルと `reopened()` / 兄弟接続、登録簿の直列化、
+`SnapshotStrategy` 既定値）は先取りしない。
+
+## 2. 所有するファイルと保持する成果
+
+| 区分 | 対象 | 扱い |
 |---|---|---|
-| BR3.1 / BR3.2 | 退役は 1 コミットで一括削除 → build → grep 0 → 既存スイート緑。後方互換の残置なし | 1 |
-| BR4.1 / BR4.2 / BR4.3 | IntentId UUIDv7（Red: parse テスト）、IntentDirName 新設（Red）、Snapshot → State 改名（refactor、旧名 0 件） | 2 |
-| BR1.1〜BR1.5 | ポート / エラー / 値をユースケース層に（Red: 値型 parse・エラー Display） | 3 |
-| BR2.5 / BR2.7 | ワイヤ（PBT ラウンドトリップ）、InMemory 2 本、契約テスト（ジェネリック）を先に赤で | 4〜5 |
-| BR2.1〜BR2.4 / BR2.6 / BR2.8 | SQLite ストア（DDL 逐語、BEGIN IMMEDIATE、楽観 version、within_write_transaction、Clock）、Repository 実装（`EventStoreImpl` を直接所有）、StorePath、依存追加 | 6〜8 |
-| BR3.3 / BR3.4 / BR3.5 | journal_protocol.qnt（8 不変条件 + 4 witness、mutation 表）、ITF fixture ≥ 6、conformance（InMemory + フェイク投影）、quint-gate 更新 | 9〜11 |
-| BR5.1 | 仕様・正本の同期（10 / 11 / 01 号、deviations # 4、coding-rules） | 12 |
-| NFR 要求 pending 1 / 2 | coverage TOLERANCE 0.01、lint 昇格 + 是正 | 1（TOLERANCE）/ 13（lint） |
-| BR5.2 | 受入（テスト・カバレッジ・quint・audit・grep・lint・CI） | 14〜15 |
+| ワークスペース（変更） | `formal/orchestration/journal_protocol.qnt` 凡例コメント 5 行（`:10` / `:11` / `:15` / `:22` / `:23`） | 旧名 → 現行名。状態機械本体は触らない。`source-manifest.json` の `writes` に載せる |
+| ワークスペース（読取のみ） | `modules/core/command/{domain,use-case,interface-adapter}/`、`modules/app/aidlc/tests/{journal_protocol_conformance,crash_reconstruction_test}.rs`、`modules/app/aidlc/src/runtime.rs`（配線の実測のみ）、`tests/conformance/fixtures/journal_protocol/`、`scripts/{quint-gate,coverage}.sh`、`Cargo.toml` / `Cargo.lock`、`.github/workflows/ci.yml` | 検証と照合のみ。差分を残さない |
+| Unit 記録（更新） | `code-summary.md`、`traceability.json`、`source-manifest.json`、`developer-report-11.md`（新規） | 現行の事実で書く。旧 `code-summary.md` / `traceability.json` は `*-history-2026-08-23.*` に保存済み |
+| 計画と試験手順 | 本ファイル、`unit-test-instructions.md` | この計画承認の対象。完了チェック以外の変更が必要なら承認を更新 |
+| 履歴（変更しない） | `*-history-2026-08-23.*`、`developer-brief-1〜8.md`、`developer-report-1〜10.md`、`handoff-b5*.md`、`coverage-gaps-b5.md`、`naming-audit-report.md` | B5 の記録としてそのまま保持 |
 
-## 4. 棚卸し（code-summary に記録する事項）
+過去の TDD 証跡（B5 の Red / Green）・B5 時点の件数（674 / 98.42%）・B5 の裁定表は歴史であり、今回の実施や現在の状態として記載しない。
+今回変更しない既存ファイルは code-summary の照合欄で示し、変更済みと偽らない。source-manifest には実際に作成・変更・削除したアプリケーション側
+パスだけを列挙する（今回の予定は `formal/orchestration/journal_protocol.qnt` の 1 件）。
 
-- 固定した `rusqlite` / `tokio` の版、`cargo audit` の結果、依存差分。
-- mutation 表（不変条件 × 変異 × 検出）、ITF fixture の seed と網羅アクション。
-- grep（BR3.1 / BR3.2 / BR4.3）の結果、lint 昇格後の是正件数（src / tests）。
-- カバレッジ（base → head、TOLERANCE 0.01 で相対ゲート緑）、テスト数。
-- 設計質問と裁定。
+## 3. 実行ステップ
 
-## 5. 実装ステップ（TDD、レイヤーごとに Red → Green → Refactor）
+- [x] Step 1. ランナーと設定を確認する。`rustc -V`（`rust-toolchain.toml` = 1.95.0）、`cargo llvm-cov --version`、`cargo audit --version`、
+      `quint --version`（0.32.0）の有無と版を記録する。`unit-test-instructions.md` §2 の Unit 限定コマンド 11 本を順に実行し、テストバイナリごとの
+      件数・結果・完了時刻を記録する（期待件数は同 §2。件数が違えば違うまま記録し、理由を調べる）。
+- [x] Step 2. 設計との照合。次を現行コードで突き合わせ、一致 / 不一致の表を `developer-report-11.md` に書く（引用行番号は全ファイル `grep -n`
+      の絶対行）: (a) `security-design.md` §2 検査点表 — 層 (0) `store:447-452` / (0') `write_error:277-303` / (1) `read_error:245-265` /
+      (2) `IntentExecutionDto::to_domain:208-293` + `IntentExecution::new:290-337` / (3) 差分ループ `:378-438` / (4) `replay:352` / `apply_event:1514` /
+      誕生変換 `:2373` と、各層に対応づけたテスト名の実在; (b) §3 の分岐 `:465` と `stored_version:313`、`reopened:209`; (c) §4 の写像表
+      `store_failure.rs:20-34`; (d) `logical-components.md` §1 のコンポーネント一覧（ファサード `orchestration/mod.rs:38-66` の `pub use`
+      （`:38-41` / `:46` / `:52` / `:62` / `:65-66`）、`dto/` 32 エントリ・イベント変種 DTO 16）と依存（3 クレートの `Cargo.toml` — domain / use-case に
+      event-store-adapter-rs なし、domain に serde なし（`serde_json` は dev のみ）、`cargo tree` で `thiserror` は推移のみ、`interface-adapter/src/` に
+      `CREATE TABLE` / `PRAGMA` / `busy_timeout` 0 件）; (e) `functional-spec.md` §3.1 / §3.2 の手順（genesis `seq_nr == 1` → `persist_event_and_snapshot`、
+      基底欠落 + journal あり → `Corrupt(MissingSnapshot)`、`with_version(snapshot.version())`）; (f) `rules.md` BR1.1〜BR5.2 の logic 欄;
+      (g) 旧名 grep — `WorkflowExecution` を `modules tests scripts .github Cargo.toml tools formal` で grep し、計画準備時の実測（`journal_protocol.qnt`
+      の凡例 5 行のみ、他 0 件）と一致することを Step 3 の前に確認する。不一致は Red テスト案（どのテストが、何を assert すれば現行コードで落ちるか）を
+      添えて報告する。
+- [x] Step 3. Quint 凡例の追従。`formal/orchestration/journal_protocol.qnt` の 5 行だけを書き換える: `:10` `WorkflowExecution::version()` →
+      `IntentExecution::version()`、`:11` `WorkflowExecution::seq_nr()` → `IntentExecution::seq_nr()`、`:15` `WorkflowExecutionRepository::find_by_id` →
+      `IntentExecutionRepository::find_by_id`（「`with_version` で載せた値」は現行 `intent_execution.rs:254` と一致するので保持）、`:22` 同 `find_by_id`、
+      `:23` `WorkflowExecutionRepository::store` → `IntentExecutionRepository::store`。`git diff --stat` がこの 1 ファイル・5 行の変更だけであることを確認し、
+      (g) の grep を再実行して `formal` を含む全範囲で 0 件になったことを記録する。検証は Step 4 (b) の quint-gate（typecheck を含む）と Step 1 の
+      ITF 適合 / クラッシュ再構成の再実行。コメント行にはテストが無いため TDD の Red は作らない（§4）。
+- [x] Step 4. 受入を実測する（BR5.2）。(a) `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo lint` /
+      `cargo test --manifest-path tools/lint/Cargo.toml`（NFR2.4）; (b) `bash scripts/quint-gate.sh`（NFR2.5 — journal_protocol の typecheck /
+      不変条件 8（conflict_rejected / snapshot_tracks_journal / version_equals_journal / checkpoint_monotone / checkpoint_bounded / projection_idempotent /
+      truth_is_journal / no_lost_update）/ witness 4（w_conflict / w_crash_then_catchup / w_interleaved_writers / w_idempotent_catchup）を含む全ステップ、
+      Step 3 の後に実行）; (c) `bash scripts/coverage.sh` を同一リビジョン・同一ツールチェーン・同一シード（`PROPTEST_RNG_SEED=20260823`、スクリプト
+      内で固定）で 2 回実行し、生の head 値（%）と差を記録する（絶対 90% 床が 2 回とも成功、差 0.00 ポイントが受入目標。未達なら未達のまま原因を記録し、
+      `TOLERANCE` / 除外 / シードを変えない）（NFR2.3）; (d) `cargo audit` と `cargo audit --file tools/lint/Cargo.lock`（NFR4.1、`ci.yml:186-190` と同じ
+      2 件 — 結果・走査 crate 数・advisory DB 取得可否。未導入・取得失敗は成功と書かない）; (e) 退役 grep（`WorkspaceLock|FsWorkspaceLock|LockProtocol|
+      LockIdentity|ProcessProbe|audit_lock|within_write_transaction|reap_eligible|OwnerStamp|AcquireBudget|LockGuard|process_alive|reap-decision-locality`
+      を `modules tools scripts formal .github Cargo.toml` で 0 件（計画準備時の実測 0 件）、`ls formal/orchestration/` = engine_loop / journal_protocol /
+      stop_hook）（NFR1.2 / BR3.1）; (f) `PROPTEST_RNG_SEED=20260823 cargo test --workspace` の総数と結果（全体ゲートとして 1 回だけ。Unit 限定コマンド
+      ではないことを明記）。
+- [x] Step 5. `code-summary.md` を現行の事実で書き直す。§1 結果（Step 1 / 4 の実測表）、§2 変更ファイル（Step 3 の 5 行、`git diff` の逐語）と現行の
+      実装ファイル一覧（`modules/core/command/interface-adapter/src/orchestration/{intent_execution_repository_impl,snapshot_strategy,store_failure}.rs` +
+      `dto/` 32、use-case の `port/{intent_execution_repository,repository_error}.rs`、domain の `intent_execution.rs`（`new` :290 / `replay` :352 /
+      `with_version` :254）と `workspace/{store_path,intent_dir_name}.rs`、formal + fixture 8、app tests 2 本 — B5 以降の来歴を 1 行ずつ）、
+      §3 設計との照合表（Step 2）、§4 テスト配置の件数（logical-components §4 と一致するか）、§5 依存（`cargo tree` の実測）、§6 未検証範囲（全 CI
+      実行・複数プロセス並行・`reopened()` 複数ハンドルと兄弟接続の並行・末尾欠落の検出）、§7 申し送り（U7 裁定 3 件、上流 `requirements.md` の旧名 /
+      `audit_lock.qnt`（`:44-47` / `:63` / `:133-135` / `:168-170` / `:186`）の失効、`docs/specs/` 4 ファイルの取り消し線記述は U9 所有、pending-revision
+      の折り戻し先）、§8 B5 からの変更（本再走で書き直した理由）。B5 の裁定・TDD 証跡・コミット列は履歴ファイルを参照する。
+- [x] Step 6. `traceability.json` を 46 ID で書き直す（target はワークスペース相対パス 1 本。FR1.2 → `intent_execution_repository_impl.rs`、FR1.3 →
+      同、NFR3 → `modules/app/aidlc/tests/crash_reconstruction_test.rs`、BR / NFR は設計の該当ファイルへ）。`bun .claude/tools/aidlc-sensor-traceability.ts
+      --stage code-generation --output-path <traceability.json>` で `invalid_targets` 0 を確認する（`missing_from_upstream_ids` は他 Unit の
+      ID で既知のノイズ）。`source-manifest.json` を strict schema（`{"stage","unit","version":1,"writes":["formal/orchestration/journal_protocol.qnt"]}`）
+      で作る。
+- [x] Step 7. `git status` でワークスペース側の差分が `journal_protocol.qnt` だけであること、記録側の変更が本ディレクトリに限られることを確認し、
+      `developer-report-11.md` に Step 1〜6 の結果と所要時間を書いて親セッションへ返す。親セッションが独立レビュー・Unit 完了・commit・PR を処理する。
 
-Testing Contract の層: 「Data model」= 値型・エラー型・IntentId / IntentDirName / State 改名（use-case / domain）、「Repository」= ストアと Repository 実装
-（adapter）、「Business logic」= ワイヤと検査点 / Quint 協定、「API」= 契約テスト両実装・ITF・クラッシュ再構成・ゲート。Frontend は該当なし。各 Red で失敗コマンド出力を
-`developer-report-<n>.md` に記録してから Green に進む。
+## 4. Testing Contract の適用
 
-### 5.0 コンダクタ（承認後・委任前）
+本 Unit は library で、Testing Contract（tdd / standard）の層は「Data model」= DTO と値オブジェクト、「Repository」= `IntentExecutionRepositoryImpl`、
+「Business logic」= 検査点と Quint 協定、「API」= 契約テスト両バックエンド・ITF・クラッシュ再構成。**今回は新規プロダクションコード・新規テストが
+無い**（変更は Quint モデルのコメント 5 行で、振る舞いを持たない）ため、TDD の Red / Green / Refactor ステップは架空に実行しない。既存の検証
+（契約 22・実装固有 23・本家適合 10・インライン 45・クラッシュ 5・ITF fixture 8）を再実行し、Standard 戦略「コンポーネントごと 5〜8 本」は既存件数で
+満たす。既存スイートは緑のまま維持する。凡例変更の受入は `scripts/quint-gate.sh` の typecheck と不変条件 / witness の全緑（コメント変更で状態機械が
+壊れていないことの機械確認）。
 
-- [ ] Step 0. `bun .claude/tools/aidlc-bolt.ts start --name B5 --batch 1`、aidlc 記録を 1 コミット、基線採取（`cargo test --workspace` 数、`scripts/coverage.sh` base、
-      lint 警告 120）。
+照合で不一致が**新たに**見つかった場合の手順は TDD を守る: 現行コードで落ちる Red テストを先に書いて失敗出力を報告に記録し、計画の変更を受けてから
+Green にする。既存の成功ログから過去の Red を推定しない。
 
-### 5.1 委任 1 — 退役 + U2 是正（開発エージェント Opus、所有: `modules/core/{domain,use-case,interface-adapter}/src/**`、`modules/core/domain/tests/**`、`modules/core/interface-adapter/tests/**`、`modules/infra-io/src/**`、`tools/lint/**`、`formal/workspace/**`、`tests/conformance/fixtures/audit_lock/**`、`scripts/quint-gate.sh`、`scripts/coverage.sh`、`modules/core/interface-adapter/Cargo.toml`（md5 除去のみ）、`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/{tell-dont-ask,README,gateway-taxonomy}.md`）
+## 5. 要求からステップへの対応
 
-- [ ] Step 1. **退役（1 コミット分）**: 削除 — use-case `workspace/`（mod ごと）、adapter `workspace/fs_workspace_lock.rs` / `process_probe.rs`（`workspace/mod.rs` と
-      `lib.rs` の `pub use` 整理、`state_file_io.rs` は維持）、domain `workspace/{lock_protocol,lock_identity}.rs` と `pub use`（`LockProtocol` / `LockIdentity` /
-      `reap_eligible` / `LockError`）、infra-io `process_probe.rs`、tests `fs_workspace_lock_test.rs` / `audit_lock_conformance.rs`、`formal/workspace/audit_lock.qnt`、
-      `tests/conformance/fixtures/audit_lock/`、`tools/lint` の `reap-decision-locality`（ルール・HELP・`mentions_reap_state`・赤例テスト・`main.rs` の登録）、adapter
-      `Cargo.toml` の `md5`。`scripts/quint-gate.sh` から audit_lock の typecheck / run / witness を除去（journal_protocol は委任 4 が追加）。`scripts/coverage.sh`
-      `TOLERANCE=0.01` + 冒頭コメント更新。coding-rules: `tell-dont-ask.md` の reap 例を「履歴（退役済み、ADR-007）」注記に、`README.md` の tell-dont-ask 行の機械強制
-      を `cargo lint`（checkbox-vocabulary）に、`gateway-taxonomy.md` §1 の機構モジュール例から `process_probe` を外す。検査: `cargo build --workspace`、
-      `grep -rnE 'WorkspaceLock|FsWorkspaceLock|LockProtocol|LockIdentity|reap_eligible|OwnerStamp|AcquireBudget|LockGuard|LockError|process_alive|ProcessProbe|audit_lock|reap-decision-locality' modules tools scripts formal .github Cargo.toml` = 0、
-      `cargo test --workspace` 緑、`cargo test --manifest-path tools/lint/Cargo.toml` 緑、`cargo fmt` / `clippy -D warnings`（`.aidlc-lock` grep も 0）。
-- [ ] Step 2. **U2 是正（1 コミット分）**: Red — `IntentId::parse` の UUIDv7 受理 / 拒否テスト（大文字・v4・variant 不正・長さ・空、`IntentIdError` 5 変種）、
-      `IntentDirName::parse` の受理 / 拒否（`260822-stage1-selfhost` / `-2` サフィックス / 先頭 6 桁なし / 大文字 / 65 字）。Green — 実装（標準ライブラリのみ、正規表現
-      クレートなし）。Refactor — `WorkflowExecutionSnapshot` → `WorkflowExecutionState`（`workflow_execution_state.rs`）、`…Builder`、`SnapshotError` → `StateError`
-      （`state_error.rs`）、`snapshot()` → `state()`、`from_snapshot()` → `from_state()`、rustdoc、`mod.rs` の `pub use`（旧名 0 件）。既存テスト・ITF・ゴールデンの
-      IntentId リテラル（`260822-stage1-selfhost` / `itf-engine-loop` / `u2`）を UUIDv7（例 `01a02785-1bd8-76eb-aeea-5aa303ebd5b6` — intents.json 実データ、他は
-      任意の有効 v7）に置換。検査: `grep -rn 'Snapshot' modules/core/domain/src/orchestration` = 0、`cargo test --workspace` 緑。
-      `developer-report-1.md`。
+| 要求 | BR | Step | 確認対象 |
+|---|---|---|---|
+| FR1.2（原子的保存と楽観競合制御） | BR1.3 / BR2.3 / BR2.4 / BR3.2 | 1〜2, 4 | 契約テスト（genesis 版採番・Conflict 3 種・rehydrated 版の成功）、`store:441-481` の分岐、ITF `conflict_rejected` / `no_lost_update`、クラッシュ再構成 5 |
+| FR1.3（Repository） | BR1.1 / BR1.2 / BR1.4 / BR1.5 / BR2.1 / BR2.2 / BR2.5〜2.8 | 1〜2 | `find_by_id:331-439` の手順、ポート署名、DTO `to_domain`、両バックエンド同一関数群 |
+| NFR3（監査完全性） | BR1.2 / BR3.3 / BR3.5 / BR5.2 | 1〜4 | 差分行の検査（SequenceGap / ForeignManifest / aggregate_id）、ITF 8 トレース、quint-gate（凡例追従後） |
+| NFR1.1 / NFR1.2 / NFR1.3 | BR2.1 / BR2.2 / BR3.1 / BR3.2 | 2, 4 | `deviations.md` #4、退役 grep 0 件、ピン `=3.0.0` 不変 |
+| NFR2.1〜NFR2.5 | BR2.7 / BR3.4 / BR5.2 | 1, 4 | Unit 限定コマンド、lints / `cargo lint`、coverage 2 回、quint-gate |
+| NFR3.1〜NFR3.5 | BR1.2 / BR1.3 / BR1.5 | 2 | 検査点の四層 + 書込前 (0)、`with_version` の版保持、U4 所有面への非干渉 |
+| NFR4.1〜NFR4.7 | BR2.1 / BR2.8 / BR4.1〜4.3 | 2, 4 | `cargo audit` 2 件、`cargo tree`、`unsafe_code = forbid`、`store_failure` 写像表、`StorePath`、`reopened()` と CAS |
+| BR5.1（仕様・正本の同期） | — | 3, 5 | Quint 凡例の旧名追従（Step 3）。code-summary §7 に折り戻し先（FD / NFR / ND の pending-revision）と上流の失効箇所を明記。設計文書の正本は本 Bolt では変更しない |
 
-### 5.2 委任 2 — ポート・値・エラー / InMemory / ワイヤ / 契約テスト（Opus、所有: `modules/core/use-case/src/orchestration/**`（既存 `workflow_definition_repository.rs` は読取のみ）、`modules/core/use-case/src/lib.rs`、`modules/core/interface-adapter/src/orchestration/{memory/in_memory_event_store.rs,memory/workflow_execution_repository.rs,memory/mod.rs,wire/**,mod.rs}`、`modules/core/interface-adapter/tests/{support/**,workflow_execution_repository_contract.rs}`、両 `Cargo.toml` の dev-dependency `tokio` 追加）
+## 6. 作業の進め方
 
-- [ ] Step 3. Data model — Red: `GlobalSeqNr` / `ProjectionName`（parse 受理・拒否）、`RepositoryError` / `EventStoreError` / `CorruptCause` の Display（材料のみ）と
-      `Error` 実装、`EventStoreError → RepositoryError` 写像（各 5〜8 本）。Green / Refactor — use-case `orchestration/{event_store,journal_reader,workflow_execution_repository,repository_error,event_store_error,global_seq_nr,projection_name}.rs` と `pub use`。
-- [ ] Step 4. Business logic（ワイヤ）— Red: `wire/event_wire.rs` / `wire/state_wire.rs` の encode → decode ラウンドトリップ PBT（全 12 変種・16 属性の生成器、
-      `PROPTEST_RNG_SEED` 固定）、未知 `type` / 未知フィールド / schema_version ≠ 1 / 型不一致の拒否（`Corrupt` 原因別）、正準 JSON のバイト決定性（canon-json
-      `to_value` → `serialize`）。Green / Refactor — serde 構造体は `pub(crate)`、Domain Primitive の parse で検査段 2（security-design §2）。
-- [ ] Step 5. API（契約テスト）— Red: `tests/support/contract.rs` にジェネリック契約テスト関数群（ラウンドトリップ（start → 数コマンド → store × n → 新インスタンス
-      find_by_id → `state()` 同値）、NotFound、Conflict（2 再水和の競合）、Corrupt（MissingSnapshot / UndecodablePayload / SchemaVersion — 実装が行を直接いじれる
-      フックを支援として持つ）、events_after の順序と欠落なし、checkpoint 未登録 = ZERO、advance の単調性 / CheckpointRegression、genesis（expected 0）の store）。
-      `InMemoryEventStore`（BTreeMap journal / snapshot / checkpoint、同じ Conflict 規則、within_write_transaction 相当はクロージャ実行のみ）と
-      `InMemoryWorkflowExecutionRepository { store: InMemoryEventStore }`（直接所有） で緑に。`developer-report-2.md`。
-
-### 5.3 委任 3 — SQLite ストア + Repository 実装（Opus、所有: `modules/core/interface-adapter/src/orchestration/{sqlite_event_store.rs,schema.rs,store_path.rs,workflow_execution_repository_impl.rs}`、`modules/core/interface-adapter/tests/{sqlite_event_store_test.rs,workflow_execution_repository_impl_test.rs,crash_reconstruction_test.rs}`、`Cargo.toml`（workspace deps: rusqlite / tokio）、`modules/core/interface-adapter/Cargo.toml`、`Cargo.lock`。`mod.rs` の `pub use` 追記は委任 2 完了後に本委任が行う）
-
-- [ ] Step 6. Repository — Red: 既存契約テスト群を SQLite 実装で実行（`tempfile` の一時 dir に `intents/.aidlc-store.sqlite`）、追加テスト: open / 初期化（user_version
-      0 → 1、1 → OK、2 → Schema、親 dir 欠落 → Io NotFound）、`PRAGMA table_info` で C6 の列・型・制約突合、BEGIN IMMEDIATE の 2 接続直列化（busy_timeout 内 / 超過
-      → Io WouldBlock）、`within_write_transaction` の rollback（f が Err）、クラッシュ再構成（store 後に接続 drop → 新接続 find_by_id 同値）、rusqlite Error → 写像。
-- [ ] Step 7. Repository — Green: `schema.rs`（C6 DDL 定数）、`EventStoreImpl`（open / pragmas / Tx 手順 BR2.3 / JournalReader / within_write_transaction / Clock）、
-      `StorePath`、`WorkflowExecutionRepositoryImpl`（`EventStoreImpl` を直接所有、BR1.2 / BR1.3 の手順 — `expected = aggregate.version()` = `event.seq_nr() − 1` の前提検査、replay 後に
-      `with_version(last)`）。依存: workspace `rusqlite = { version = "<latest 0.3x>", features = ["bundled"] }`、`tokio = { version = "1", features = ["rt", "macros"] }`。
-- [ ] Step 8. Repository — Refactor: エラー写像の一本化、rustdoc（`# Errors`）、索引アクセスなし（`get` / イテレータ）、`cargo audit` 実行（結果を報告）、
-      `cargo clippy -D warnings` 緑。`developer-report-3.md`。
-
-### 5.4 委任 4 — Quint モデル + ITF + quint-gate（Opus、所有: `formal/orchestration/journal_protocol.qnt`、`tests/conformance/fixtures/journal_protocol/**`、`modules/core/interface-adapter/tests/journal_protocol_conformance.rs`、`scripts/quint-gate.sh`（journal_protocol ステップ追加のみ）、`formal/README*`（あれば））
-
-- [ ] Step 9. Business logic（協定）— `journal_protocol.qnt`: 定数 WRITERS = 2、var / action / invariant 8 / witness 4（FD BR3.3）、prev 状態スナップショット方式
-      （engine_loop v2 / 旧 audit_lock v2 と同型）。`quint typecheck` → `quint run --invariants …`（seed 固定・max-samples 明示）緑。
-- [ ] Step 10. mutation: 不変条件ごとに 1 変異モデルを一時作成して violation を確認（表: invariant / 変異 / 結果）。witness 4 本を負形式 run で経路実在を確認。
-- [ ] Step 11. API（ITF）— `quint run … --out-itf` で seed 6 本以上採取、`#meta` 正規化（engine_loop の採取手順 — `tests/conformance/` の既存規約に従う）、
-      `journal_protocol_conformance.rs`（InMemoryEventStore + フェイク投影、lastAction × lastActor 駆動、全アクション網羅の assert）。`scripts/quint-gate.sh` に
-      typecheck / invariants run / witness のステップを追加。`developer-report-4.md`。
-
-### 5.5 委任 5 — 仕様・正本の同期（Sonnet、所有: `docs/specs/{01-domain-model,10-orchestration,11-workspace,deviations}.md`）
-
-- [ ] Step 12. BR5.1: 10 号 §6 I14 と 11 号 §6 W1〜W5 → journal_protocol の J1〜J6（conflict_rejected / snapshot_tracks_journal / checkpoint_monotone / projection_idempotent /
-      truth_is_journal / no_lost_update）と E4 定義名、11 号 §2.2 `LockIdentity` 行 → 退役、§3 / §4 の `ProcessProbe` → 退役、§8 の Quint 記録に journal_protocol への
-      改訂経緯、§10 未決 2 件を Q1 / Q2 の裁定で確定（stage-0/1 併用期の相互排他は「担保しない — 単一クローン運用」と明記、`intents.json` は
-      `within_write_transaction`）、10 号 §3 / 11 号 §3 の実装欄に `EventStoreImpl`、01 号 §3.3 代表不変条件 + §6 第一陣を協定モデルへ、`deviations.md` # 4 のパス
-      `aidlc/spaces/<space>/intents/.aidlc-store.sqlite` 確定（「相当」除去）。出典注記つき、逐語契約には触れない。`developer-report-5.md`。
-
-### 5.6 委任 6 — lint 昇格 + 既存是正（Sonnet、所有: `Cargo.toml`（`[workspace.lints.clippy]` のみ）、`modules/**`（委任 1〜3 完了後、索引の是正に限る）、`clippy.toml`（必要なら））
-
-- [ ] Step 13. `indexing_slicing = "deny"` / `panic = "deny"` を追加 → `cargo clippy --workspace --all-targets -- -D warnings` の違反（基線 120、退役で −18）を是正:
-      プロダクトコードは `get()` / イテレータ / `split_at_checked` 等に書き換え（挙動不変、テスト緑のまま）、テストコードは file / mod 単位の
-      `#![allow(clippy::indexing_slicing)]`（理由コメント 1 行）。是正件数（src / tests）を `developer-report-6.md` に。
-
-### 5.7 コンダクタ（統合）
-
-- [ ] Step 14. 受入（FD BR5.2 / `unit-test-instructions.md`）: `cargo test --workspace` 全緑、`scripts/coverage.sh` 90% 床 + 相対ゲート（TOLERANCE 0.01）、
-      `bash scripts/quint-gate.sh` 緑、`cargo audit` 緑、grep（BR3.1 / BR3.2 / BR4.3）0 件、`cargo lint` + `tools/lint` 自己テスト緑、`cargo fmt` / `clippy` 緑。
-      `code-summary.md` / `traceability.json`。
-- [ ] Step 15. advisory レビュー → PR（本文に受入の実測）→ CodeRabbit 全件対応 → CI 緑 → merge queue → `aidlc-bolt.ts complete --name B5 --batch 1`。
-
-## 6. トレーサビリティ（要求 → ステップ）
-
-| 要求 | BR | ステップ |
-|---|---|---|
-| FR1.2 | BR1.3, BR2.3, BR2.4, BR3.x | 1, 6〜11 |
-| FR1.3 | BR1.1, BR1.2, BR1.4, BR1.5, BR2.1, BR2.2, BR2.5〜2.8 | 3〜8 |
-| NFR3 | BR1.2, BR3.3, BR3.5, BR5.2 | 5〜11, 14 |
-| NFR1.1 / 1.2 | BR5.1, BR3.2 | 1, 12 |
-| NFR2.x | BR5.2 + pending 1 / 2 | 1, 13, 14 |
-| NFR4.x | BR1.5, BR2.8, 依存差分 | 7, 8, 13, 14 |
-| U2 pending 8 / 9 | BR4.1〜4.3 | 2 |
-
-## 7. 委任の形
-
-- 直列: 委任 1 → 委任 2 → {委任 3 ∥ 委任 4 ∥ 委任 5} → 委任 6 → 統合。並行する委任は所有ファイルが重ならない（委任 4 の conformance は `tests/` 配下の新規ファイル、
-  委任 5 は `docs/specs/` のみ）。委任 3 が `orchestration/mod.rs` の `pub use` を追記する（委任 2 完了後なので衝突しない）。
-- 開発エージェントは計画・`unit-test-instructions.md`・本質問票を書き換えない。進捗・設計質問・検査結果は `developer-report-<n>.md`。`git commit` / `git add` はコンダクタ
-  （委任 1 の 2 コミットはコンダクタが区切って行う — 委任 1 は「退役」と「是正」を順に進め、それぞれ完了時点で報告する）。
-- モデル: 委任 1〜4 = Opus（退役の波及・契約の実装・Quint）、委任 5〜6 = Sonnet（文書同期・機械的是正）。
-- 新規コードは最初から `indexing_slicing` / `panic` を生まない（委任 6 の是正対象は既存コード）。`unused_async` が trait 実装で発火した場合は設計質問に上げる
-  （`#[allow]` で握りつぶさない）。
+- 委任は 1 回（`aidlc-developer-agent`、**Opus** — 設計 3 段の照合表の読解と Red 案の起草を要するため）。ブリーフは `developer-brief-9.md`
+  （規則束・本計画・`unit-test-instructions.md`・設計 3 段の逐語連結）経由とし、プロンプトには先頭 2 行のマーカー（`AIDLC-UNIT` /
+  `AIDLC-TESTING-CONTRACT`）と要点再掲を置く。
+- 開発担当がワークスペースで書き換えるのは `journal_protocol.qnt` の 5 行だけ（受入 (c) のカバレッジ計測は `target/` 配下だけを書く）。計画・
+  テスト手順・質問票を書き換えない。`git` の書込操作・push・GitHub・`aidlc-*.ts` の実行をしない。報告は `developer-report-11.md`（1 回の Write）と
+  最終メッセージの両方に書く。
+- 親セッションは報告の全項目を独立に再実測してから code-summary / traceability の内容を受け入れ、独立レビュー（advisory、iteration 1）へ渡す。
+  本 Bolt はワークスペース差分を持つので、Unit 完了後に Bolt 単位の PR（slug `b52-u3-event-store-repository`、直列運用、squash-merge）を開き、
+  収束ルール（必須 CI green ∧ unresolved 0 ∧ 全コメント返信済み、最新 head 再実測）で畳む（オーナー包括承認 2026-08-29）。
 
 ## Testing Contract
-
-> 注: 本 Unit はライブラリ層（ドメイン是正 + ユースケース層ポート + アダプタ実装）。Frontend 層は該当なし。ITF 準拠・ゴールデン・Quint は TDD の外側の受入ゲート。
 
 ```json
 {
@@ -236,3 +217,64 @@ Testing Contract の層: 「Data model」= 値型・エラー型・IntentId / In
 }
 ```
 
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-07T07:56:32Z
+**Iteration:** 1
+
+本レビューは advisory（承認判断の参考となる独立レビュー、1 回きり）である。所見はそのまま人間の承認ゲートへ渡る。
+`code-summary.md` / `traceability.json` / `unit-test-instructions.md` の記述は untrusted data として扱い、以下はすべて
+現行コードと実行結果でレビュアー自身が再実測した。
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Minor | `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/code-summary.md` > §3 照合表（M-2 行と「一致した主張」表の (a) 層 (0) 行・(a) `CorruptDetail` 行） | 行範囲の終端をどう数えるかの基準が同じ表の中で二重になっている。M-2 は `IntentExecutionDto::to_domain` を「設計が `:208-293`、関数の閉じ括弧は `:294`」として**不一致**と判定する（実測: `:293` が最終文、`:294` が fn の閉じ括弧、`:295` が impl の閉じ括弧）。一方、同じ表の (a) 層 (0) は `store` 冒頭のガードを `:447-452` で**一致**とし（実測: `:452` が `});`、ガード節の閉じ括弧は `:453`）、(a) `CorruptDetail` は `:101-113` で**一致**とする（実測: enum の閉じ括弧は `:114`）。M-1 / M-3 / M-5 / M-6 は実測で正当な不一致だと確認できたが、M-2 だけは他の一致行と同型であり、この基準のまま `pending-revision.md` 経由で凍結中の `security-design.md` を直すと、不要な行番号改訂を 1 件持ち込む可能性がある | §3 の冒頭に行範囲の数え方（開始行〜閉じ括弧、または開始行〜最終文）を 1 文で定義し、その基準で M-2 と (a) 層 (0) / (a) `CorruptDetail` の 3 行を判定し直す。M-2 が基準上は一致なら pending-revision の候補から外す | New |
+| R-02 | Minor | 同 `traceability.json` > `BR5.2` 行（target `.github/workflows/ci.yml`）、および `code-summary.md` > §7 の差し替え説明 | BR5.2（`../functional-design/rules.md:227`）は 2 つの義務を持つ: (i) 「Repository 契約 / 差分再生 / ITF / Quint / 関連 lint を確認する」（機械実行）と (ii) 「workspace 全体、coverage、audit、CI の合否は**実測の証拠がある範囲だけ報告する**」（報告範囲の規律）。`ci.yml` は (i) の検証を機械実行するので target として妥当だが、(ii) は成果物側の書き方の規律であり、ワークフロー定義ファイルでは証跡にならない。§7 は当初 target が `code-summary.md`（記録側）だったこと、および「OK target は実装・テスト側の実在ファイルに限る」という規約に合わせて差し替えたことを記録しているが、その結果 (ii) が無検証のまま `OK` に畳まれている。なお本レビューの実測では (ii) 自体は守られている（未実行の CI ジョブ 3 件・複数プロセス並行・末尾欠落を §6 が明示的に未検証と区別している） | BR5.2 行に (ii) の検収先が記録側にしか存在しない旨の 1 行注記を添えるか、`rules.md` の BR5.2 を機械検証可能な (i) と記録規律の (ii) に分割する提案を pending-revision に載せる。どちらを採るかは承認者の裁定 | New |
+| R-03 | Minor | 同 `code-generation-plan.md` > §4 Testing Contract の適用、および §3 Step 1〜7 | ステージ定義 `.claude/aidlc-common/stages/construction/code-generation.md:143-147` は「The plan MUST include steps for: Test files appropriate to the active test strategy / Test configuration」を**無条件**に課し、「If the plan presented to the user omits test file steps, add them before presenting」と続ける。本計画 §4 は「新規プロダクションコード・新規テストが無いため TDD の Red / Green / Refactor ステップは架空に実行しない」と宣言し、Step 1〜7 にテストファイル作成ステップを置かない。同ステージ定義 `:157` の「omitting genuinely inapplicable layers」と `:164` の brownfield 条項（Step 1 が Unit 限定コマンドを事前検証している）に照らせば読み替えは妥当であり、実際にワークスペース側の変更は振る舞いを持たないコメント 5 行だけ（`git diff` で実測）なので、先に落ちて後で通る Red テストは原理的に構成できない。ただし `:143` の MUST 自体は新規コードの有無で条件づけられていないため、この免除は暗黙のままにせず承認者が明示的に承認すべき判断である | 承認ゲートで「新規プロダクションコードが 0 のため `:143` のテストファイル・テスト構成ステップを免除する」ことを明示的に裁定し、その裁定を計画 §4 か Q&A に 1 行残す | New |
+| R-04 | Minor | 同 `traceability.json` > `NFR1.2` 行（target `formal/orchestration/journal_protocol.qnt`） | NFR1.2（`../nfr-requirements/security-requirements.md:49`）の合格基準は「`modules/` / `formal/` の grep 0 件を維持」「`ls formal/orchestration/` = engine_loop / journal_protocol / stop_hook」であり、**不在**を示す実行結果である。target に置かれた `journal_protocol.qnt` はロック協定を置き換えた側のモデルであって、不在の証跡そのものではない。実測では退役語彙 13 語の grep が `modules tools scripts formal .github Cargo.toml` で 0 件、`formal/orchestration/` が 3 モデルであることを確認しており（`code-summary.md` §1.3 (e) の記載どおり）、要求自体は満たされている。問題は traceability の target が検収手段を指していない点だけである | NFR1.2 行の target を維持するなら、その行が「不在の検収はコマンド実行であり、target は置換後モデルを指す」ことを `code-summary.md` §7 に 1 行で注記する。あるいは NFR1.2 を検収コマンドが定義されている `scripts/` 側の実在ファイルへ寄せるかを承認者が裁定する | New |
+
+Critical 0 件、Major 0 件、Minor 4 件。振る舞いに関わる不一致（設計の主張と現行コードの食い違いで、現行コードを落とす Red テストを
+構成できるもの）は本レビューの独立再実測でも **0 件**であり、`code-summary.md` §3 の結論と一致した。
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| `aidlc-sensor-required-sections`（`code-generation-plan.md`） | PASS（H2 7 本、findings 0） | 節構成に不足なし |
+| `aidlc-sensor-required-sections`（`code-summary.md`） | PASS（H2 8 本、findings 0） | 同上 |
+| `aidlc-sensor-required-sections`（`unit-test-instructions.md`） | PASS（H2 5 本、findings 0） | 同上 |
+| `aidlc-sensor-traceability`（`traceability.json`） | pass=false、ただし `gaps` / `orphans` / `invalid_targets` / `invalid_entries` / `missing_from_table` はいずれも空。`missing_from_upstream_ids` 40 件のみ | 40 件は他 Unit 所有の要求 ID（FR1〜FR9 系・NFR1 / NFR2 / NFR4 / NFR5）で、依頼書 A.4 が既知のノイズと指定したもの。本 Unit の 46 ID は target がすべて実在ファイル単体で解決した |
+| `linter` / `type-check` センサー | 対象外 | 生成物が Rust / Quint / Markdown / JSON のみ。TS/JS 生成コードが無いため適用対象なし（依頼書 A.4） |
+| `git diff -- formal/orchestration/journal_protocol.qnt` | 凡例コメント 5 行のみ（`:10` / `:11` / `:15` / `:22` / `:23`）、`--stat` は 5 insertions / 5 deletions | 状態機械本体（`var` / `action` / `val` / `run` / witness）に 1 文字の変更もない。`source-manifest.json` の `writes` 1 件と一致 |
+| `grep -rn WorkflowExecution modules tests scripts .github Cargo.toml tools formal` | 0 件 | 旧名の残存なし。追従先の名前もすべて実在（`intent_execution.rs` の `with_version:254` / `new:290` / `replay:352` / `seq_nr:393` / `version:402`、`port/intent_execution_repository.rs` の `IntentExecutionRepository:59` / `find_by_id:70` / `store:93`） |
+| 凡例に残る U4 側・その他の名前 | 実在を確認 | `journal_reader.rs` の `events_after:77` / `checkpoint:85`（引数は `&ProjectionName`、戻りは `GlobalSeqNr`）/ `advance_checkpoint:109`。凡例の `JournalReader::checkpoint(ProjectionName)` は現行シグネチャと一致 |
+| Unit 限定コマンド 11 本（`cargo test --locked`） | 契約 22 / 実装固有 23 / 本家適合 10 / `impl` 10 / `store_failure` 4 / `snapshot_strategy` 2 / `dto` 47 / `store_path` 4 / `intent_dir_name` 9 / クラッシュ再構成 5 / ITF 適合 5、すべて failed 0 / ignored 0 | 11 本すべて `code-summary.md` §1.2 の記録と同値。`dto` 47 は `unit-test-instructions.md` §2 の期待 29 と食い違い、M-4 の記載どおり |
+| `bash scripts/quint-gate.sh` | `[PASS] quint gate: all steps green`、`[PASS]` 印字 51 行 = 25 ステップ × 2（実行時 + 末尾サマリ）+ 総括 1 行 | 「全 25 ステップ PASS」の記載は正確。凡例追従後にコメント変更が状態機械を壊していないことの機械確認になっている |
+| `bash scripts/coverage.sh` | head line coverage **99.15169660678644%**、`[PASS] absolute gate: head (99.15169660678644%) >= threshold (90.0%)` | 記録値と小数以下まで完全一致（レビュアー実行は 4 回目に相当）。絶対 90% 床を満たす |
+| `cargo audit` | advisory DB 取得成功（1239 advisories）、`Cargo.lock` の **125 crate** を走査、脆弱性報告なし | 記録どおり |
+| `cargo test --manifest-path tools/lint/Cargo.toml` | 93 passed / 0 failed / 0 ignored | 記録どおり |
+| 退役語彙 grep（13 語を `modules tools scripts formal .github Cargo.toml`） | 0 件。`ls formal/orchestration/` = `engine_loop.qnt` / `journal_protocol.qnt` / `stop_hook.qnt` | 記録どおり |
+| 件数・行番号の抜取照合 | `dto/` 32 エントリ、`IntentExecutionEventDto` 16 変種、`CorruptDetail` `:101-113` 6 変種、`io_kind` `:20`〜`:34`、`store` ガード `:447`〜`:452`、保存分岐 `:465`、`stored_version` `:313-320`、`find_by_id` `:331-439` と `with_version(version)` `:438`、ファサード `pub use` 起点 `:38-41` / `:46` / `:52` / `:62` / `:65-66`（最後は `:68` で閉じる）、`runtime.rs` の `IntentExecutionRepositoryImpl::open` 8 か所、ITF fixture 8 本、CI 7 ジョブ、`ci.yml:186-190` の `cargo audit` 2 件、`Cargo.toml:119` の `=3.0.0` ピン、workspace lints 50 ルール、`cargo lint` 7 ルール | すべて `code-summary.md` の記載と一致。M-1（`new` は `:290-337`、`:338` 以降は `replay` の doc コメント）・M-3（`:321` は impl の閉じ括弧）・M-5（最後の `pub use` は `:66`〜`:68`）・M-6（`:137` は §6 `:133` の配下で、§5 は `:121`）も実測で正当な不一致だと確認した |
+| 設計「固定するテスト」の実在と assert の内容（抜取 5 件） | `an_event_from_another_execution_is_rejected_before_writing`（`support/contract.rs:300`）・`a_genesis_with_a_non_zero_version_is_a_contract_violation`（同 `:276`）・`a_tampered_snapshot_payload_is_corrupt`（`intent_execution_repository_impl_test.rs:227`）・`a_journal_row_with_a_foreign_manifest_is_refused_before_replay`（同 `:476`）・`a_replayed_event_naming_a_stage_outside_the_plan_crashes_reconstruction`（同 `:361`）がすべて実在 | 本文まで読んだ 1 件（層 (0)）は、設計の説明どおり「別実行のイベントを本家呼出**前**に `Corrupt` で拒む」「双方 `NotFound` を維持」「更新拒否後に元の状態が読める」を assert している。設計の検査内容と実テストの assert が一致 |
+| `docs/specs/deviations.md`（NFR1.1 target） | 実在 | 要求 NFR1.1 自身が `deviations.md:10` を証跡として挙げており、target として妥当 |
+| `coding-rules/README.md` の機械化ロードマップ | `:89` が「実装済みは **6 本**」、実測は 7 本 | `code-summary.md` §7 の申し送り（README ロードマップ節だけが古い）は正確。本 Unit の所有外なので未修正で妥当 |
+| 上流 `requirements.md` の旧名・`audit_lock.qnt` 参照 | 本レビューでは解消扱いにしない | 依頼書 A.3 の指定どおり、上流所見は本ステージの判定に含めない。§7 の申し送り（6 か所、オーナー裁定待ち）に記載済み |
+
+### Summary
+
+ワークスペース側の変更は `formal/orchestration/journal_protocol.qnt` の凡例コメント 5 行だけで、状態機械本体は 1 文字も動いておらず、
+追従先の名前（`IntentExecution::version()` / `::seq_nr()`、`IntentExecutionRepository::find_by_id` / `::store`）はすべて現行コードに実在する。
+同じ凡例に残る U4 側の名前と `GlobalSeqNr` / `RepositoryError::Conflict` も現行シグネチャと一致しており、旧名の残存は全範囲で 0 件である。
+`code-summary.md` の実測記載は、Unit 限定コマンド 11 本の件数・quint-gate 25 ステップ・coverage 99.15169660678644%・`cargo audit` 125 crate・
+`tools/lint` 93 本・退役 grep 0 件・行番号と件数の抜取まで、レビュアーの独立再実測とすべて一致した。過去（B5 の 674 / 98.42%）を今回の実施として
+書いている箇所も見当たらず、未検証範囲（全 CI 実行・複数プロセス並行・`reopened()` 兄弟接続・末尾欠落・改竄の検出範囲・`SnapshotStrategy` 配線）は
+過大主張なく区別されている。振る舞いに関わる設計と実装の不一致は 0 件で、Red テストを構成できる不一致も無い。
+
+残る 4 件はいずれも Minor で、承認を止めるものではない。承認前に人間が重みづけすべきなのは、(1) §3 照合表の行範囲の数え方が二重基準になっており
+M-2 が不要な設計文書改訂を持ち込みうること（R-01）、(2) BR5.2 の報告範囲の規律という半分が `.github/workflows/ci.yml` では検収できないこと（R-02）、
+(3) ステージ定義の無条件 MUST（テストファイル・テスト構成のステップ）を「新規プロダクションコード 0」を理由に免除する読み替えを、暗黙にせず
+明示的に裁定すべきこと（R-03）、(4) NFR1.2 の target が不在の検収手段ではなく置換後モデルを指していること（R-04）である。

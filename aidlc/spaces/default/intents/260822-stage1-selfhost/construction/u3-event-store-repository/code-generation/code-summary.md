@@ -1,387 +1,217 @@
-# code-summary — U3 イベントストアと実行 Repository（`u3-event-store-repository`、Bolt B5）
+# code-summary — U3 イベントストアと IntentExecutionRepository（`u3-event-store-repository`）
 
-> Code Generation（Construction 3.5）の完了報告。出典: `code-generation-plan.md`、`unit-test-instructions.md`、`developer-report-1..7.md`、
-> `../../code-generation/memory.md`（裁定の記録）。ブランチ `bolt/b5-u3-event-store-repository`、起点 `origin/main`（db6c0a1）。
+> Unit: U3（kind: library）。**2026-09-07 再走（Modify）版**。本版は「現行の実装が何であり、どう検証されたか」を書く。
+> Bolt B5（PR #29）当時の TDD 証跡・裁定表・コミット列・件数（674 / 98.42%）は歴史であり、
+> `code-summary-history-2026-08-23.md` に全文保存した。ここには現在の状態として再掲しない。
+> 実測は 2026-09-07 16:18〜16:41 JST、ワークツリー `stage1-selfhost`（HEAD `7ad3d7b9`。コードは `origin/main` = `f2b6b6a9` と同一 —
+> `git diff --stat origin/main HEAD -- modules tests formal scripts Cargo.toml Cargo.lock .github tools` が空）。
+> 実行記録の逐語は `developer-report-11.md`。
 
-## 1. 結果
+## 1. 結果（実測）
 
-| 項目 | 実測 |
-| --- | --- |
-| `cargo test --workspace` | **674 passed / 0 failed**（基線 471 → 委任 1 で 448（退役 −37・是正 +14）→ 549 → 623 → 664 → 674） |
-| `cargo test --manifest-path tools/lint/Cargo.toml` | 25 passed / 0 failed（ルール削除で 31 → 25） |
-| `cargo fmt --all --check` | exit 0（出力なし） |
-| `cargo clippy --workspace --all-targets -- -D warnings` | 警告 0、exit 0 |
-| `cargo lint` | exit 0（出力なし） |
-| `bash scripts/quint-gate.sh` | `[PASS] quint gate: all steps green`（invariants 3 モデル + witness 12 本 + 決定的シナリオ） |
-| `bash scripts/coverage.sh --base origin/main` | `[PASS] absolute gate` **98.39%** ≥ 90.0%、`[PASS] relative gate` head 98.39% ≥ base 97.39% − 0.01（+1.01pt） |
-| `cargo audit` / `cargo audit --file tools/lint/Cargo.lock` | 脆弱性 **0 件**（advisory DB 1225 件、100 crates / 5 crates） |
-| 退役語 grep（`WorkspaceLock` ほか 13 語 / `aidlc-lock`） | **出力 0**（`modules tools scripts formal .github Cargo.toml`） |
-| `Snapshot` grep（`modules/core/domain/src/orchestration`） | **出力 0**（`WorkflowExecutionState` へ改名済み、BR4.3） |
+### 1.1 環境
 
-受入 BR5.2 は全項目 PASS。委任 7 の時点で赤だった相対ゲート（head 96.81% < base 97.39%）は、退役で消えたテスト 37 本の分の
-分母比と新規アダプタコードのエラー経路未カバーが原因だった。テスト 41 本を足して head 98.42%（+1.03pt）で回復した。
+| 項目 | 版 |
+|---|---|
+| `rustc -V` | 1.95.0 (59807616e 2026-04-14)（`rust-toolchain.toml` の固定と一致） |
+| `cargo llvm-cov --version` | 0.8.5 |
+| `cargo audit --version` | cargo-audit-audit 0.22.2 |
+| `quint --version` | 0.32.0 |
 
-## 2. 作成・変更ファイル（`git diff --stat origin/main..HEAD`、99 ファイル / +10,088 / −2,890）
+### 1.2 Unit 限定コマンド 11 本（`unit-test-instructions.md` §2）
 
-### 2.1 退役（削除、委任 1）— ADR-007「ロック退役」
+すべて終了コード 0・`failed` 0・`ignored` 0（11 本を `&&` で連結した実行が完走）。
 
-`formal/workspace/audit_lock.qnt`(−366) と ITF fixture 7 本、`modules/core/domain/src/workspace/lock_protocol.rs`(−600) /
-`lock_identity.rs`(−74)、`modules/core/interface-adapter/src/workspace/fs_workspace_lock.rs`(−810) / `process_probe.rs`(−87)、
-`modules/core/use-case/src/workspace/workspace_lock.rs`(−104)、`modules/infra-io/src/process_probe.rs`(−62)、
-`modules/core/domain/tests/audit_lock_conformance.rs`(−148)、`tests/fs_workspace_lock_test.rs`(−220) ほか計 17 ファイル。
-ファサード・`scripts/quint-gate.sh`・仕様正本も同期。
+| # | コマンド（`cargo test --locked` に続く部分） | passed | 計画準備時の期待 | 判定 |
+|---|---|---|---|---|
+| 1 | `-p core-command-interface-adapter --test intent_execution_repository_contract` | 22 | 22 | 一致 |
+| 2 | `-p core-command-interface-adapter --test intent_execution_repository_impl_test` | 23 | 23 | 一致 |
+| 3 | `-p core-command-interface-adapter --test upstream_event_store_conformance` | 10 | 10 | 一致 |
+| 4 | `-p core-command-interface-adapter --lib orchestration::intent_execution_repository_impl` | 10 | 10 | 一致 |
+| 5 | `-p core-command-interface-adapter --lib orchestration::store_failure` | 4 | 4 | 一致 |
+| 6 | `-p core-command-interface-adapter --lib orchestration::snapshot_strategy` | 2 | 2 | 一致 |
+| 7 | `-p core-command-interface-adapter --lib orchestration::dto` | 47 | 29 | **不一致（テスト手順の集計漏れ。§3 M-4）** |
+| 8 | `-p core-command-domain --lib workspace::store_path` | 4 | 4 | 一致 |
+| 9 | `-p core-command-domain --lib workspace::intent_dir_name` | 9 | 9 | 一致 |
+| 10 | `-p aidlc --test crash_reconstruction_test` | 5 | 5 | 一致 |
+| 11 | `-p aidlc --test journal_protocol_conformance` | 5 | 5 | 一致 |
 
-### 2.2 U2 是正（委任 1）— BR4.1〜4.3
+Step 3（Quint 凡例の追従）の**後**に再実行した 2 本も同値で緑である。
 
-`intent_id.rs`（kebab → UUIDv7、+253/−…）、`workspace/intent_dir_name.rs`（新規 +246、`<slug>-<id8>` の綴り規則）、
-`workflow_execution_snapshot.rs` → `workflow_execution_state.rs`、`snapshot_error.rs` → `state_error.rs`、
-`workflow_execution.rs`（+183）。
+| コマンド | passed | 完了時刻 |
+|---|---|---|
+| `-p aidlc --test journal_protocol_conformance`（凡例追従後） | 5 | 16:25:16 JST |
+| `-p aidlc --test crash_reconstruction_test`（凡例追従後） | 5 | 16:25:19 JST |
 
-### 2.3 use-case 層（新規、委任 2）— ポート・値・エラー
+### 1.3 受入（計画 Step 4）
 
-`orchestration/event_store.rs`(+230) / `event_store_error.rs`(+270) / `journal_reader.rs`(+210) /
-`workflow_execution_repository.rs`(+171) / `repository_error.rs`(+307) / `global_seq_nr.rs`(+90) / `projection_name.rs`(+196)。
+| 受入 | コマンド | 結果 |
+|---|---|---|
+| (a) NFR2.4 | `cargo fmt --all --check` | 終了コード 0 |
+| (a) NFR2.4 | `cargo clippy --workspace --all-targets -- -D warnings` | 終了コード 0（警告なし） |
+| (a) NFR2.4 | `cargo lint` | 終了コード 0（所見 0 件） |
+| (a) NFR2.4 | `cargo test --manifest-path tools/lint/Cargo.toml` | 93 passed / 0 failed / 0 ignored、終了コード 0 |
+| (b) NFR2.5 | `bash scripts/quint-gate.sh`（凡例追従の**後**） | `[PASS] quint gate: all steps green` — typecheck 3 / 不変条件 run 3 / witness 18 / 決定的シナリオ 1 の全 25 ステップ PASS |
+| (c) NFR2.3 | `bash scripts/coverage.sh` 1 回目 | head line coverage **99.15169660678644%**、`[PASS] absolute gate ... >= 90.0%` |
+| (c) NFR2.3 | `bash scripts/coverage.sh` 2 回目 | head line coverage **99.15169660678644%**、`[PASS]`。**差 0.00 ポイント**（受入目標を満たす） |
+| (d) NFR4.1 | `cargo audit` | 終了コード 0。advisory DB 取得成功（`https://github.com/RustSec/advisory-db.git`）、1239 advisories 読込、`Cargo.lock` の **125 crate** を走査、脆弱性報告なし |
+| (d) NFR4.1 | `cargo audit --file tools/lint/Cargo.lock` | 終了コード 0。同 DB、`tools/lint/Cargo.lock` の **5 crate** を走査、脆弱性報告なし |
+| (e) NFR1.2 / BR3.1 | 退役語彙 grep（13 語を `modules tools scripts formal .github Cargo.toml`） | **0 件**。`ls formal/orchestration/` = `engine_loop.qnt` / `journal_protocol.qnt` / `stop_hook.qnt` の 3 つだけ |
+| (f) 全体ゲート | `PROPTEST_RNG_SEED=20260823 cargo test --workspace` | **2354 passed / 0 failed / 0 ignored**（`test result:` 行 54 本の合計）、終了コード 0、実時間 26.42 秒（ビルド温存時） |
 
-### 2.4 アダプタ層（新規、委任 2・3）
+(f) は Unit 限定コマンドではなく、CI `check` ジョブ相当の全体ゲートである。
 
-- ワイヤ: `wire/event_wire.rs`(+835) / `wire/state_wire.rs`(+568) / `wire/mod.rs`(+498)
-- InMemory: `memory/in_memory_event_store.rs`(+703) / `memory/workflow_execution_repository.rs`(+140)
-- SQLite: `event_store_impl.rs`(+971) / `schema.rs`(+179) / `store_path.rs`(+91) / `workflow_execution_repository_impl.rs`(+149)
+コンダクタの独立再実測（2026-09-07 07:45〜07:58 UTC、同一ワークツリー・凡例追従後）: Unit 限定コマンドのうち契約 22 / 実装固有 23 /
+本家適合 10 / `orchestration::dto` 47 / クラッシュ再構成 5 / ITF 適合 5 が同値で緑、`cargo fmt --all --check` / `cargo clippy --workspace
+--all-targets -- -D warnings` / `cargo lint` が終了コード 0、`tools/lint` 自己テスト 93、`bash scripts/quint-gate.sh` が `[PASS] quint gate: all
+steps green`、`bash scripts/coverage.sh` 3 回目も **99.15169660678644%**（差 0.00）、`cargo audit` 2 件が 125 / 5 crate で報告なし、退役 grep と
+旧名 grep が 0 件、`git diff` が凡例 5 行のみ — 開発担当の報告と全項目一致した。
 
-### 2.5 形式検証（新規、委任 4）
+quint-gate の内訳（`scripts/quint-gate.sh` 実測）: `journal_protocol.qnt` は typecheck 1 + 不変条件 run 1（`conflict_rejected` /
+`snapshot_tracks_journal` / `version_equals_journal` / `checkpoint_monotone` / `checkpoint_bounded` / `projection_idempotent` /
+`truth_is_journal` / `no_lost_update` の 8 本を 1 回の `quint run` に載せる）+ witness 4（`w_conflict` / `w_crash_then_catchup` /
+`w_interleaved_writers` / `w_idempotent_catchup`、反転判定）。残りは `engine_loop` / `stop_hook`（U2 / 他 Unit の所有）である。
 
-`formal/orchestration/journal_protocol.qnt`(+254)、ITF fixture 8 本（`tests/conformance/fixtures/journal_protocol/`）、
-`tests/journal_protocol_conformance.rs`(+474)、`scripts/quint-gate.sh`(+35/−…)。
+## 2. 変更したファイルと現行の実装ファイル
 
-### 2.6 テスト
+### 2.1 本 Bolt で変更したもの（1 ファイル・5 行）
 
-`tests/event_store_impl_test.rs`(+1,008) / `workflow_execution_repository_impl_test.rs`(+434) /
-`workflow_execution_repository_contract.rs`(+145) / `support/contract.rs`(+307) / `support/mod.rs`(+108) /
-`crash_reconstruction_test.rs`(+202) / `in_memory_workflow_execution_repository_test.rs`(+200、委任 7)。
+`formal/orchestration/journal_protocol.qnt` の**凡例コメントだけ**。状態機械本体（`var` / `action` / `val` / `run` / witness）は
+1 文字も変えていない。`git diff --stat` = `1 file changed, 5 insertions(+), 5 deletions(-)`。
 
-### 2.7 lint 昇格（委任 6）と仕様同期（委任 5）
+```diff
+-//   snapVersion   ↔ snapshot 表の version 列 = WorkflowExecution::version() (楽観 version)
+-//   snapSeq       ↔ snapshot 表の seq_nr 列 = WorkflowExecution::seq_nr() (適用済みイベント数)
++//   snapVersion   ↔ snapshot 表の version 列 = IntentExecution::version() (楽観 version)
++//   snapSeq       ↔ snapshot 表の seq_nr 列 = IntentExecution::seq_nr() (適用済みイベント数)
+-//                   = WorkflowExecutionRepository::find_by_id が with_version で載せた値
++//                   = IntentExecutionRepository::find_by_id が with_version で載せた値
+-//   load(w)           ↔ WorkflowExecutionRepository::find_by_id (未書込なら genesis を持つ)
+-//   store_ok(w)       ↔ WorkflowExecutionRepository::store が Ok (Tx 内で journal + snapshot)
++//   load(w)           ↔ IntentExecutionRepository::find_by_id (未書込なら genesis を持つ)
++//   store_ok(w)       ↔ IntentExecutionRepository::store が Ok (Tx 内で journal + snapshot)
+```
 
-`Cargo.toml`（`indexing_slicing` / `panic` を workspace deny へ昇格）と src 5 ファイル 8 箇所の是正、
-`docs/specs/01-domain-model.md` / `10-orchestration.md` / `11-workspace.md` / `deviations.md`。
+同じ凡例の U4 側の名前（`JournalReader::checkpoint(ProjectionName)`、`events_after` / `advance_checkpoint`）は現行
+`read-model-updater/src/orchestration/journal_reader.rs` と一致するので触っていない。
 
-## 3. TDD の記録（各 Red の失敗出力 — 詳細は developer-report-1 §B-1 / -2 §A / -3 §A）
+旧名 `WorkflowExecution` の grep 結果: 追従**前**は `journal_protocol.qnt` の `:10` / `:11` / `:15` / `:22` / `:23` の 5 行だけ
+（`modules tests scripts .github Cargo.toml tools formal` の他は 0 件）、追従**後**は同じ範囲で **0 件**。
 
-| 委任 | Red | Green |
-| --- | --- | --- |
-| 1（U2 是正） | `cargo test -p core-domain` — `E0432 unresolved import IntentDirName` ほか **36 errors**。`IntentId` 実装後の 2 段目で kebab リテラルを使う既存テスト 15 件が実行時に落ち、置換対象が機械的に洗い出された | 448 全緑 |
-| 2（ポート・ワイヤ・InMemory・契約） | レイヤーごとに 3 回。Step 3 は `cargo test -p core-use-case` の `E0432` **8 件**（`EventStore` / `JournalReader` / `WorkflowExecutionRepository` / `GlobalSeqNr` / `ProjectionName` / `CorruptCause` + `EventStoreError` / `ProjectionNameError` / `RepositoryError`）、Step 4 はワイヤ、Step 5 は契約テスト | 549 全緑 |
-| 3（SQLite ストア + Repository 実装） | `cargo test -p core-interface-adapter` — 4 テストターゲットすべてが `E0432`（`SqliteEventStore` / `StorePath` / `WorkflowExecutionRepositoryImpl` が存在しない） | 623 全緑 |
-| 7（カバレッジ回復） | 既存実装に対する追加テストのため Red-first は適用外（挙動の追加ではなく未踏経路の固定） | 664 全緑 |
-| 8（内部可変性の除去） | **Red-first を適用**。シグニチャ変更なので先にテスト側だけを新シグニチャへ書き換え、`cargo test -p core-use-case` / `-p core-interface-adapter` のコンパイルエラーを実測（`developer-report-8.md` §2）。公開セマンティクスの変更（`InMemoryEventStore` の `Clone` が「同じ状態への別ハンドル」→「値の深い複製」）を固定する `a_clone_carries_the_rows_but_not_the_mutable_state` もこの Red に含まれる | 664 全緑（同数） |
-| 9（契約テスト装置の是正） | **Red-first を適用**。両実装の分岐（`open()` の空でなさ、`reader()` / `reopen()` の生存性）を検出する失敗テストを先に書き、実測してから直した（`developer-report-9.md` §1） | 674 全緑 |
+### 2.2 現行の実装ファイル（本 Bolt では変更していない — 来歴を 1 行ずつ）
 
-Rust では新規型がコンパイルエラーになり `test result: FAILED` 行が出ないため、U1 で採用した「コンパイルエラーの実測出力を Red の証跡とする」
-方式（memory.md 2026-08-22T13:35:00Z）を踏襲した。
+| ファイル | 行数 | 来歴 |
+|---|---|---|
+| `modules/core/command/interface-adapter/src/orchestration/intent_execution_repository_impl.rs` | 822 | B5（PR #29）で新設 → B7 で本家 v3 `EventEnvelope` へ → B12 / B13 で改名・版の内側化 → 2026-09-05 書込前 ID 照合（PR #109）→ b51（PR #118） |
+| 同 `snapshot_strategy.rs` | 58 | B5 で新設（既定 10、`every(NonZeroUsize)`）。以後変更なし |
+| 同 `store_failure.rs` | 124 | B5 で新設（rusqlite code → `std::io::ErrorKind`）。`io_kind` は `:20-34` |
+| 同 `dto/`（32 エントリ） | — | B12 / B13 で `wire` から DTO へ全面移行。イベント変種 DTO 16 種（`IntentExecutionEventDto` の腕数と一致） |
+| 同 `orchestration/mod.rs` ファサード | — | 実装 mod は private、公開は `pub use`（`:38-41` / `:46` / `:52` / `:62` / `:65-66` 起点。最後の `pub use` は `:68` で閉じる） |
+| `modules/core/command/use-case/src/orchestration/port/intent_execution_repository.rs` | 201 | ポート trait（AFIT、`find_by_id(&self)` / `store(&mut self)`）。B13 で現行名 |
+| 同 `port/repository_error.rs` | 168 | `RepositoryError<Id>` — `NotFound` / `Conflict` / `Io` / `Corrupt { id, seq_nr, source }` |
+| `modules/core/command/domain/src/orchestration/intent_execution.rs` | — | `new` `:290-337`、`replay` `:352`、`apply_event` `:1514`、`with_version` `:254`、誕生変換 `From<(Started, DateTime<Utc>)>` の `fn from` `:2373` |
+| `modules/core/command/domain/src/workspace/store_path.rs` | 91 | `StorePath::for_space`。生の `PathBuf` を受けない |
+| 同 `workspace/intent_dir_name.rs` | 208 | `IntentDirName` の文法（6 桁日付 + 区切り + 小文字 slug、連続ハイフン / 空区間 / 大文字 / 64 字超を拒否） |
+| `formal/orchestration/journal_protocol.qnt` + `tests/conformance/fixtures/journal_protocol/`（8 トレース） | — | 本 Bolt の変更対象（凡例 5 行のみ）。fixture は 8 本で不変 |
+| `modules/app/aidlc/tests/journal_protocol_conformance.rs` | — | ITF 再生（`SnapshotStrategy::every(1)` 明示、`:226-228`） |
+| `modules/app/aidlc/tests/crash_reconstruction_test.rs` | — | クラッシュ再構成 5 件 |
 
-## 4. 主要な実装判断（設計との差分 — 設計側の反映対象）
+## 3. 設計との照合（計画 Step 2）
 
-裁定はすべて `../../code-generation/memory.md` の U3 エントリに記録済み。FD pending 番号は `../functional-design/` の追補待ち項目。
+不一致は **6 件**で、いずれも**設計文書側の行番号・件数の引用精度**の問題である。現行コードの振る舞いと設計の主張が食い違う箇所は
+**0 件**であり、したがって「現行コードで落ちる Red テスト」を構成できる不一致は無い（詳細と根拠は `developer-report-11.md` §2）。
+本 Bolt では計画どおり凡例 5 行以外のコード・設計文書を変更していない。
 
-| # | 差分 | 裁定 |
-| --- | --- | --- |
-| 1 | **`SqliteEventStore` → `EventStoreImpl` に改名**。設計（entities.md / functional-spec §1 / 計画 §2）は `SqliteEventStore` を明示していたが、coding-rules `gateway-taxonomy.md` §5「技術接頭辞禁止 — 格納形式は実装の内部詳細」に抵触し、`Sqlite` がファサードの公開 API に出ていた | 改名を採用（ADR-003 の語に合わせる）。仕様 10/11 号・`components.md` も同期（FD pending 7） |
-| 2 | **`open_with_busy_timeout` を公開面に追加**。設計は `open(path, clock)` のみ。`busy_timeout` 超過の `Io(WouldBlock)` を現実的な時間で観測するには待たされる側の timeout を短くするしかない（既定 5000ms のままだと 1 本 5 秒） | 公開を受容。`open` は `DEFAULT_BUSY_TIMEOUT = 5000ms` に委譲するので BR2.1 は満たす（FD pending 5） |
-| 3 | **`UPDATE snapshot` の SET に `schema_version` を含めた**。BR2.3 の SET 一覧には無い | 含める。現状 `SCHEMA_VERSION` は 1 固定で観測差ゼロだが、将来版を上げたとき「payload は新版・列は旧版」の静かな破損経路が残るため（FD pending 6） |
-| 4 | **スナップショット payload の `version` は新 version に揃える**。委任 2 の設計質問 4 | 新 version に統一（InMemory / SQLite 双方、FD pending 4） |
-| 5 | **`persist_event` に version 検査を入れた**。BR2.3 の逐語は「(1) のみ」 | 両実装が同じ意味論であることを記録に残す（FD pending 8） |
-| 6 | **`phase_boundary` の入れ子**（委任 2 の設計質問 2） | FD pending 3 |
-| 7 | ~~**`EventStoreImpl` を `Rc<RefCell<Connection>>` の共有ハンドル**にする**~~ → **撤回**。`EventStoreImpl` は `Connection` を**直接所有**し、内部可変性も手書き `Clone` も持たない。書込は `&mut self`、読取は `&self` | **2026-08-23 撤回・差替（オーナー裁定）**。当初の採用理由は「`await` を跨いで `RefCell` の借用を持たない」ことだったが、`&mut self` で設計すればその問題は最初から生じない。`&self` の裏に可変性を隠すのは「`&self` への偽装」であり禁止 — 正本 `coding-rules/interior-mutability.md` / `command-query-separation.md`。委任 8 で是正（`developer-report-8.md`）|
-| 8 | **`from_event_store` の写像**（Repository が EventStore の観測を `RepositoryError` へ写す規則） | 採用 |
-| 9 | **委任 1 は 2 コミット分割を諦めて 1 コミット**（`mod.rs` の依存で中間状態がビルド不能） | 受容 |
-| 10 | **`ErrorCode` → `ErrorKind` の写像**を明示（`DatabaseBusy`/`DatabaseLocked` → `WouldBlock`、`CannotOpen`/`NotFound` → `NotFound`、`PermissionDenied`/`ReadOnly`/`AuthorizationForStatementDenied` → `PermissionDenied`、`DatabaseCorrupt`/`NotADatabase` → `InvalidData`、`OperationInterrupted` → `Interrupted`、他 → `Other`） | 採用（`DiskFull` に対応する安定 `ErrorKind` が無いため `Other`） |
-| 11 | **ISO 8601 整形は自前の純関数**（`chrono` / `time` を足さない、NFR4.1 依存最小化） | 採用 |
-| 12 | **`journal_mode` は既定（`delete`）のまま**。WAL は `-wal` / `-shm` を増やし逸脱台帳 #4 のパスが 1 本で済まなくなる | 採用（BR2.1 どおり） |
+| ID | 対象 | 設計の主張 | 実測 | 判定 |
+|---|---|---|---|---|
+| M-1 | `security-design.md` §2 (2) | `IntentExecution::new` は `intent_execution.rs:290-345` | `new` は `:290-337`（`:338-345` は `replay` の doc コメント） | 不一致（終端 +8 行） |
+| M-2 | `security-design.md` §2 (2) | `IntentExecutionDto::to_domain` は `dto/intent_execution_dto.rs:208-293` | 最終文は `:293`、関数の閉じ括弧は `:294` | 不一致（終端 −1 行） |
+| M-3 | `security-design.md` §3 | `stored_version` は `:313-321` | `:313-320`（`:321` は `impl` ブロックの閉じ括弧） | 不一致（終端 +1 行） |
+| M-4 | `unit-test-instructions.md` §2 | `dto` の属性合計は 29 | `--lib orchestration::dto` の実行は 47。`dto/tests.rs` が 29、残り 18 は同ディレクトリ 6 ファイル（`dto_vocabulary` 6 / `workflow_definition_dto` 6 / `dto_decode_error` 2 / `intent_execution_aggregate_key_dto` 2 / `intent_aggregate_key_dto` 1 / `workflow_definition_aggregate_key_dto` 1） | 不一致（フィルタ範囲の集計漏れ。`security-design.md` §2 の「`dto/tests.rs` 29 件」は正しい） |
+| M-5 | 計画 §3 Step 2 (d) | ファサードは `orchestration/mod.rs:38-66` | 起点 5 か所は完全一致。最後の `pub use` は `:66` に始まり `:68` で閉じる | 不一致（範囲終端のみ） |
+| M-6 | `developer-brief-9.md` | 「旧 `WorkflowExecutionRepository` の名前を現行公開 API に残さない」は functional-spec **§5** `:137` | 行番号 `:137` は正しいが、その行は **§6 退役した設計**（§5 は `:121`、§6 は `:133`） | 不一致（節番号のみ） |
 
-## 5. テスト
+一致した主張（抜粋。すべて `grep -n` と実行結果で確認した）:
 
-- **単体**（インライン `#[cfg(test)]`）: ワイヤの型拒否・エラー `Display`・写像・整形の純関数など。
-- **契約テスト**（`workflow_execution_repository_contract.rs` + `support/contract.rs`）: **12 本**を InMemory / SQLite の
-  両実装に対して同一に走らせ、片方だけ通る経路を残さない（BR2.7）。実装に破壊用フックを開けない方針（BR2.8）は維持。
-- **SQLite 固有**: 27 本（スキーマ刻印、Tx 手順、楽観 version、`busy_timeout`、Io 写像）+ `Impl` 10 本 + **クラッシュ再構成 5 本**。
-- **PBT**（proptest 1.11.0）: ワイヤの往復。`PROPTEST_RNG_SEED` 固定で決定的。
-- **ITF 準拠**（`journal_protocol_conformance.rs`）: Quint トレース 8 本を集約に再生して状態射影を突合。
-- **カバレッジ**: 絶対 98.42%（床 90.0%）、相対 +1.03pt。除外は追加していない（adapter に除外なし）。
+| 項目 | 設計の主張 | 実測 |
+|---|---|---|
+| (a) 層 (0) 書込前 ID 照合 | `store` 冒頭 `:447-452` | `if event.aggregate_id() != aggregate.id()` `:447`、`});` `:452` — 一致 |
+| (a) 層 (0') 書込契約 | `write_error` `:277-303` | 一致（`SerializationError` / `ContractViolation` → `Corrupt(WriteContract)`） |
+| (a) 層 (1) ストア復号 | `read_error` `:245-265` | 一致（`DeserializationError` → `Corrupt { seq_nr: None, StoreDeserialization }`） |
+| (a) 層 (3) 差分ループ | `find_by_id` `:331-439`、差分 `:378-438` | `find_by_id` `:331-439`、`let delta` `:378`、`replay` 行 `:438` — 一致 |
+| (a) 層 (4) クラッシュ境界 | `replay:352` / `apply_event:1514` / 誕生変換 `:2373`、`# Panics` は 3 か所（正本 `:40-41`） | 一致（`# Panics` は `:347` / `:1506` / `:2364` の 3 か所のみ） |
+| (a) `CorruptDetail` | `:101-113`、6 変種 | 一致 |
+| (a) 固定するテスト名 | 契約 2 本・実装固有 9 本 | すべて実在（`intent_execution_repository_impl_test.rs` の関数 23 本を列挙して確認） |
+| (b) 保存経路の分岐 | 分岐は `:465`、`stored_version` `:313`、`reopened` `:209-215` | 一致（`let outcome = if aggregate.seq_nr() == 1 \|\| self.strategy.wants_snapshot(...)` が `:465`） |
+| (c) 障害写像表 | `store_failure.rs:20-34` | `const fn io_kind` `:20`、閉じ括弧 `:34` — 完全一致 |
+| (d) DTO | `dto/` 32 エントリ、イベント変種 16 | `ls` で 32、`IntentExecutionEventDto` の腕 16 — 一致 |
+| (d) 依存 | domain に serde / ESA なし（`serde_json` は dev のみ）、use-case に ESA / adapter なし、`thiserror` は推移のみ | `Cargo.toml` 実測で一致。`cargo tree -i thiserror` = `event-store-adapter-rs v3.0.0` 経由のみ |
+| (d) 境界 | `interface-adapter/src/` に `CREATE TABLE` / `PRAGMA` / `busy_timeout` が 0 件 | grep 0 件 — 一致 |
+| (e) `store` / `find_by_id` の手順 | functional-spec §3.1 1〜5 / §3.2 1〜5 | 逐条で一致（genesis `seq_nr == 1` → `persist_event_and_snapshot`、基底欠落 + journal あり → `Corrupt(MissingSnapshot)`、`version = snapshot.version()` を `:364` で束ね `:438` で `with_version(version)`） |
+| (f) `rules.md` BR1.1〜BR5.2 | 23 本 | 23 本すべて現行コード・テストと整合。BR4.1（小文字 36 字・version 7・variant RFC4122）は `intent_execution_id.rs:40-41` とテスト `:72` / `:156`、BR4.2 の受理 / 拒否例は `intent_dir_name.rs:91-92` / `:131` / `:168` / `:173` で確認 |
+| (g) 旧名 grep | 凡例 5 行のみ、他 0 件 | 一致（追従後は全範囲 0 件） |
+| §3 合成ルート | `runtime.rs` の `open` 呼出は 8 か所、いずれもコマンド単位 | 8 か所（`report` / `single_report` / `skeleton_stance_report` / `log_review` / `practices_promote` / `set_autonomy` / `park` / `mint_intent`）— 一致 |
+| §5 / NFR2.4 | `cargo lint` 7 ルール | 7 本すべて実在（`port-naming` / `command-side-io` / `no-public-fields` / `one-public-type` / `dao-single-table` / `checkbox-vocabulary` / `use-case-domain-getter`） |
+| NFR2.4 | 検査点 lint は `Cargo.toml:39-44` | `unwrap_used` `:39` / `expect_used` `:40` / `indexing_slicing` `:43` / `panic` `:44` — 完全一致 |
+| NFR2.5 | ITF は `every(1)` 明示（`:226-227`）、fixture 8 | 一致（`SnapshotStrategy::every(NonZeroUsize::new(1))` が `:226-228`、fixture 8 本） |
+| NFR4.1 | `ci.yml:186-190` に `cargo audit` 2 件 | 一致 |
+| CI | 7 ジョブ | `aidlc-distribution` / `check` / `quint` / `coverage` / `audit` / `review-thread-resolution` / `ci-success` — 一致 |
 
-### 5.1 Quint モデル `journal_protocol.qnt` の検査力（ADR 0003 決定 7 の DoD）
+## 4. テスト配置の件数（`logical-components.md` §4 との照合）
 
-named invariant 8 本それぞれに変異モデルを一時ディレクトリで作り、その invariant **単独**の
-`quint run --seed 0x5e1 --max-samples 5000 --max-steps 50 --invariant <inv>` が violation を出すことを確認した — **8/8 検出**。
+| 種別 | 設計の件数 | 実測 | 判定 |
+|---|---|---|---|
+| 契約テスト（両バックエンド） | 11 関数 × 2 | 22 実行 | 一致 |
+| 実装固有 | 23 | 23 | 一致 |
+| 本家適合 | 5 × 2 | 10 実行 | 一致 |
+| インライン `impl` | 10 | 10 | 一致 |
+| インライン `store_failure` | 4 | 4 | 一致 |
+| インライン `snapshot_strategy` | 2 | 2 | 一致 |
+| インライン `dto/tests.rs` | 29 | 29 属性（ただし `orchestration::dto` フィルタの実行は 47。§3 M-4） | 一致（フィルタ範囲は不一致） |
+| クラッシュ再構成 | 5 | 5 | 一致 |
+| ITF 適合 | 8 トレース | fixture 8 本 | 一致 |
+| ゲート | CI 7 ジョブ | 7 ジョブ | 一致 |
 
-| # | invariant | 変異 | 結果 |
-| --- | --- | --- | --- |
-| m1 | `conflict_rejected` | `store_conflict` がジャーナルに 1 行書く（rollback 漏れ） | DETECTED |
-| m2 | `snapshot_tracks_journal` | `store_ok` がスナップショットの `seq_nr` を進め忘れる | DETECTED |
-| m3 | `version_equals_journal` | `store_ok` が楽観 version を進め忘れる | DETECTED |
-| m4 | `checkpoint_monotone` | `catchup` がチェックポイントを 1 つ後退させる | DETECTED |
-| m5 | `checkpoint_bounded` | `catchup` がチェックポイントをジャーナルより先へ進める | DETECTED |
-| m6 | `projection_idempotent` | `catchup` が読むものが無くても投影を 1 つ進める | DETECTED |
-| m7 | `truth_is_journal` | `catchup` が投影をジャーナルより 1 つ先へ進める | DETECTED |
-| m8 | `no_lost_update` | `store_ok` の楽観 version ガードを外す | DETECTED |
+配置はテストピラミッド（ユニット層が厚く、結合は境界ごと、E2E は最小）を保っている。
 
-witness 4 本（`w_conflict` / `w_crash_then_catchup` / `w_interleaved_writers` / `w_idempotent_catchup`）は負形式 run で経路実在を確認。
+## 5. 依存（実測）
 
-### 5.2 ITF fixture（8 本、`tests/conformance/fixtures/journal_protocol/`）
+| クレート | 依存 | dev 依存 |
+|---|---|---|
+| `core-command-domain` | `chrono`、`uuid`（v7）、`core-infrastructure` | `proptest`、`serde_json` |
+| `core-command-use-case` | `core-command-domain`、`chrono` | `tokio` |
+| `core-command-interface-adapter` | `core-command-use-case`、`core-command-domain`、`core-infrastructure`、`rusqlite`、`serde`、`serde_json`、`chrono`、`event-store-adapter-rs`（`sqlite` feature） | `tempfile`、`tokio` |
 
-| fixture | 状態数 | load | store_ok | store_conflict | catchup | crash | idle |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `trace-0xa1` | 41 | 5 | 7 | 3 | 6 | 10 | 9 |
-| `trace-0xb2` | 41 | 8 | 8 | 3 | 7 | 8 | 6 |
-| `trace-0xc3` | 41 | 6 | 8 | 1 | 7 | 10 | 8 |
-| `trace-0xd4` | 41 | 8 | 8 | 1 | 8 | 8 | 7 |
-| `trace-0xe5` | 41 | 11 | 5 | 0 | 8 | 11 | 5 |
-| `trace-0xf6` | 41 | 14 | 4 | 0 | 7 | 9 | 6 |
-| `trace-0x101` | 41 | 9 | 8 | 2 | 8 | 8 | 5 |
-| `trace-0x202` | 41 | 6 | 8 | 3 | 8 | 9 | 6 |
-| **合計** | | 67 | 56 | 13 | 59 | 73 | 52 |
+- 本家のピンは `Cargo.toml:119` の `event-store-adapter-rs = "=3.0.0"` で不変（NFR4.1）。
+- `thiserror` はワークスペースの直接依存ではなく `event-store-adapter-rs v3.0.0` 経由の推移依存のみ（`cargo tree -p core-command-interface-adapter -i thiserror` 実測）。error-handling 規則（thiserror / anyhow 不使用）は保たれている。
+- ドメインの永続化中立は `Cargo.toml` の不在（serde / ESA なし）で機械強制されている。
+- ワークスペース lints は **50 ルール**（`[workspace.lints.clippy]` 44 deny + `[workspace.lints.rust]` 4 deny + `unsafe_code = "forbid"` 1 + `[workspace.lints.rustdoc]` 1 deny）。`team.md` と本 Bolt のブリーフ前文が記す「47 本 deny」は現行と合わない（`developer-report-11.md` §2 の注記を参照。本 Bolt では memory を変更しない）。
 
-**6 本以上**（8 本）・**全 6 アクション網羅**。準拠テストが全アクション網羅を assert しているので、稀アクションを含む fixture の
-消失退行は CI で落ちる。8 本すべてモデルから再採取 → 正規化した内容がコミット済みファイルとバイト一致することを確認済み。
+## 6. 未検証範囲
 
-### 5.3 lint 昇格の是正（委任 6）
+本 Bolt の実測が示していないもの。設計（`security-design.md` §2 / §3、`functional-spec.md` §7）が未検証と明記しているものと同じである。
 
-`clippy::indexing_slicing` / `clippy::panic` を `[workspace.lints.clippy]` の deny へ昇格。プロダクトコードは
-**5 ファイル 8 箇所**を是正（`canon-json/{canonical,digest,writer}.rs` 各 2、`infra-io/append_only.rs` 1、
-`domain/workspace/state_writers.rs` 1）。いずれも `unwrap`/`expect`/`panic!` を使わず `.get()` + `if let` / `let-else` /
-安全な既定値（到達しない旨のコメント付き）で処理し、canon-json はゴールデン（バイト互換）緑を確認。
-テスト側は **19 スコープ**の file/mod 単位 `#![allow(...)]` に理由コメントを添えた。
-
-### 5.4 カバレッジの残り（委任 7、到達不能 12 行）
-
-`workflow_definition_repository_impl.rs` 563（`serialize_grid` の else — `scope_names()` は同じ `columns` の鍵集合）、
-596-597 / 599-602（`compute_revision` の `map_err` 2 本 — 入力に失敗経路が無く `sha256:<hex64>` は必ず parse 可）、
-749（非 UTF-8 ファイル名 — macOS/APFS は作成自体を拒否）、`wire/event_wire.rs` 425（`EVENT_TYPES.contains` 通過後の `_` 腕）、
-510 と `wire/state_wire.rs` 257 / 273（テストヘルパ自身の `panic!` 分岐）。
-それ以外の 8 ファイルは**未カバー 0 行**。
-
-## 6. 計画からの逸脱
-
-1. **委任 1 を 2 コミットに分けられなかった**（退役 → U2 是正）。`workspace/mod.rs` の `pub use` 依存で中間状態がビルド不能になるため 1 コミットにした。
-2. **委任 3・4・5 を並行ディスパッチした**（計画は直列）。書込スコープが重ならない（実装 / formal / docs）ことを確認したうえでの短縮。
-3. **`SqliteEventStore` の改名は委任 3 完了後にコンダクタが統合として実施**（委任内の作業ではない）。
-4. **委任 7（カバレッジ回復）は計画に無い追加委任**。相対ゲートの許容誤差を本 Bolt で 0.5pp → 0.01 に引き締めた結果として必要になった。
-5. **委任 2 と 7 のあいだで park / 再開が 1 回入った**（コンテキスト都合、`handoff-b5.md`）。成果物への影響は無い。
-6. **オーナー裁定により内部可変性を全廃した**（委任 8、2026-08-24）。計画・設計は当初 `RefCell` による
-   `&self` → `&mut self` の橋渡しを前提にしていたが、規則が新設され（`coding-rules/interior-mutability.md` /
-   `command-query-separation.md`）撤回された。計画本文の 5 箇所を同期し Plan Approval を再承認
-   （指紋 `38d7646c…` → `04a8a9e1…`）。設計文書は C3 を含め 16 箇所を同期した。
-7. **Bolt スコープ外の変更が 2 件、本 PR に相乗りしている**（レビュー iteration 2 の Minor 所見 7）。
-   - `.coderabbit.yaml`（新規）: CodeRabbit がファイル数上限でスキップされたため追加した。上限判定は
-     path_filters 適用**前**の生の変更ファイル数で行われる（実測）ので本 PR は救えないが、次の PR から効く。
-   - `.claude/tools/aidlc-lib.ts` / `aidlc-state.ts`: 回復レビュー予算の unit スコープ化。
-     **これは本 Bolt を完了させるための前提条件**だった — 兄弟 unit（u10）が消費した回復枠のせいで
-     U3 のレビューが構造的に要求できず、この修正なしには本 Bolt のレビュー自体が実施できなかった。
-     したがって「後から別 PR へ切り出す」ことは順序上できない。どの CI ジョブからも到達しない
-     （`ci.yml` は cargo のみ、`.claude/tools/` にテストスイートは無い）ため、機械的な裏取りは無く、
-     人間の確認に委ねる。`.claude/` は upstream AI-DLC ハーネスの vendored コピーであり、本修正は
-     upstream からの差分になる。取り扱いはオーナー裁定。
+- **CI の全ジョブ実行**: ローカルで走らせたのは `check` 相当（fmt / clippy / lint / test）・`quint` 相当・`coverage` 相当・`audit` 相当である。`aidlc-distribution` / `review-thread-resolution` / `ci-success` と、マージキューの完走は未実行。
+- **複数プロセスの並行書込**: 本家接続に `busy_timeout` を設定できないため待たずに `SQLITE_BUSY` → `Io { kind: WouldBlock }` になる、という設計上の記述は、単一プロセス内のテストでは実証していない。
+- **`reopened()` 複数ハンドルと兄弟接続の並行**: 直列化の実体が本家 CAS であることは契約テスト（`concurrent_rehydration_conflicts` / `genesis_twice_conflicts`）が単一プロセスで示すのみ。並行モデルは U7 の裁定に繰り延べ。
+- **末尾欠落の検出**: 差分の途中欠落は層 (3) が捕まえるが、末尾行の消失は別の終端記録が無いため検出できない（BR1.2、意図された範囲）。
+- **改竄の検出範囲**: 不変条件を満たす形への書き換え（別の妥当なステージ・判定への差し替え）は検出せずそのまま再生する。暗号学的完全性は要求外（NFR4.4 / R-05）。
+- **`SnapshotStrategy` の合成ルート配線**: 既定 10 のまま `runtime.rs` から設定されていない（`grep SnapshotStrategy modules/app/aidlc/src/` = 0 件）。値の確定は U7。
 
 ## 7. 申し送り
 
-1. **`&mut self` 化が下流に課す排他借用の制約**（U4 / U5 / U6 / U7 — 本 Bolt で新たに生じたもの）。
-   `WorkflowExecutionRepositoryImpl` は `EventStoreImpl` を**単一所有**し、`JournalReader` は
-   `EventStoreImpl` に実装されている。したがって U4 の投影キャッチアップは
-   `repository.event_store_mut()` 経由でしか到達できない。帰結:
-   - **U4 / U5 / U6 は同時にストアへ生きたハンドルを持てない。** U4 は `JournalReader` を
-     長寿命フィールドとして保持できず、必要になるたびに Repository から借りる形になる。
-   - **U7（composition root）の結線は厳密に逐次になる。** ユースケース（U5 / U6）と投影（U4）へ
-     同時にリポジトリを貸すことはできない（`unit-of-work.md:127` の「ユースケース・Repository 実装・
-     投影を結線する」を、借用が重ならない順序で組む必要がある）。
-   - **撤回前の共有ハンドル設計ではこれは無償だった。** 内部可変性の禁止（オーナー裁定 2026-08-24）は
-     この可搬性を意図的に手放した対価として、借用チェッカによる排他の保証を得た取引である。
-   - **同時性が本当に必要になった場合の正規手段**は、`modules/shared/` に `SharedLock<T>` /
-     `SharedRwLock<T>` を 1 度だけ起こし、`*Shared` ラッパーへ内部可変性を閉じること
-     （`coding-rules/interior-mutability.md`）。`Rc<RefCell<T>>` / `Arc<Mutex<T>>` の手書きは禁止。
-     **投機的に作らない** — 必要が実際に生じた時点で、U4 / U7 の設計者が判断する。
-2. **ファクトリ命名の全面適用**（本 Bolt で完了）。オーナー裁定 2026-08-24 で
-   `coding-rules/factory-naming.md` を新設し（コンストラクタ相当は `fn new(..) -> Self` に統一、
-   それ以外は用途で選ぶ）、**リポジトリ全体の違反を是正した**。当初は「U3 スコープ外は別 Bolt」と
-   したが、規則が main に入るまさにそのコミットで規則自身が名指しする違反を残すのは筋が通らない
-   ため撤回した（オーナー指摘 — `AutonomyMode::read_state` は変換なのに I/O を思わせる名前だった）。
-   - `StorePath::for_space(root, space)` → `of`（複数の値を集約）
-   - `InMemoryWorkflowExecutionRepository::{new(), with_store(s)}` → `new(s)` + `Default`
-     （SQLite 実装 `WorkflowExecutionRepositoryImpl::new(store)` と同形。BR2.7 の対称性も揃う）
-   - `ShardName::compose(host, clone_id)` → `of`
-   - `JumpDirection::derive(cursor, target)` → `of`
-   - `ScopeGrid::derive_from_graph(&StageGraph)` → `from_graph`（他の型からの変換）
-   - `AutonomyMode::read_state(Option<&str>)` → `from_state_field`（I/O をしないことを名前で示す）
-   - `parse_mode_arg(&str)`（自由関数）→ `AutonomyMode::parse`（他の `parse` と同形）
-   - `NextRequest::plain()` → `impl Default`
-   - `SpaceName::default_space()` → `impl Default`
+- **U7 の裁定 3 件**（`tech-stack-decisions` §3 / `contract-summary` §4）: (1) 複数プロセスの並行モデルと `reopened()` 複数ハンドルの扱い、(2) 登録簿 `intents.json` の直列化（旧 `within_write_transaction` は退役済み）、(3) `SnapshotStrategy` 既定値の確定。本 Unit はいずれも先取りしていない。
+- **上流 `requirements.md` の失効**: `:9` / `:44-47` / `:63` / `:133-135` / `:168-170` / `:186` が旧名 `WorkflowExecution` / `WorkflowExecutionRepository`・退役した `audit_lock.qnt` のまま残る（NFR 設計レビュー R-06 は `:133-135` のみを挙げたが、実測では 6 か所）。本 Bolt では直していない（オーナー裁定待ち — 後方ジャンプで上流を改訂するか、失効注記だけを付すか）。
+- **`docs/specs/` の 4 ファイル**に残る `WorkflowExecution` は取り消し線付きの履歴記述であり **U9 の所有**。本 Bolt の追従対象外（今回の grep 範囲にも入れていない）。
+- **凍結中の設計文書の折り戻し先**: 機能設計 / NFR 要求 / NFR 設計の各 `pending-revision.md` に確定文面を置き、ステージゲートの Request Changes 経路で折り戻す。§3 の M-1〜M-3（`security-design.md` の行番号 3 件）と M-4（`unit-test-instructions.md` の `dto` 件数）はこの経路に載せる候補である。`traceability.json` の BR5.2 は当初 `code-summary.md`（記録側）を target にしていたが、OK target は実装・テスト側の実在ファイルに限るというステージ規約に合わせ、受入を機械実行する `.github/workflows/ci.yml` へ差し替えた（コンダクタ判断）。
+- **`coding-rules/README.md` の機械化ロードマップ**が「実装済みは 6 本」（2026-09-04 更新）と書くが、実測は 7 本（`use-case-domain-getter` が 2026-09-05 に加わっている）。同 README の一覧表側は既に 7 本目を載せており、ロードマップ節の本文だけが古い。coding-rules は本 Unit の所有ではないため直していない。
+- **カバレッジの現況**: 実測 99.15%（絶対床 90% に対し十分な余裕）。`team.md` が記す 94.87〜95.29% は B5 当時の値であり、現行と乖離している。
 
-   既に適合していたもの: `PhaseId::from_index` / `CheckboxState::from_marker` /
-   `WorkflowExecution::from_state` / `RepositoryError::from_event_store` / `EventStoreImpl::open` /
-   `WorkflowExecution::start`（ドメイン語を優先）。
-   **未同期として残るのは `aidlc/spaces/default/codekb/` の 2 文書**（`api-documentation.md` /
-   `architecture.md`）— これは RE が観測コミットに紐づけて生成するスナップショットであり、
-   手編集ではなく RE の diff-refresh で更新するものなので触っていない。
-3. **命名監査の是正（本 Bolt で完了）** — `naming-audit-report.md` の 10 件（High 2 / Medium 5 /
-   Low 3）を全件是正した。根は 1 つで、upstream（TypeScript）の可変オブジェクト前提の関数名が
-   Rust の「新しい値を作って返す」自由関数に貼られたまま残っていたこと。
-   `set_field` → `with_field_if_present`（危険な no-op に長い名前）/ `set_field_strict` → `with_field`
-   （安全な側が短い名前に反転）/ `set_or_insert_field` → `with_field_or_insert` /
-   `remove_field` → `without_field` / `get_field` → `find_field`（C-GETTER）/
-   `checkbox::set_checkbox` → `with_checkbox_marker`（エラー型も `CheckboxUpdateError`）/
-   `StageEntryWire::to_entry` → `parse_entry` / `read_error_message` → `graph_read_error_message` /
-   `corrupt` → `corrupt_error`（**3 箇所。監査は 2 箇所と記載していた取り漏らし**）/
-   `start_with_entries` → `start_from_plan_unchecked`（**検査を落とす入口**であることを名前に出す）/
-   `StorePath::of` → `for_space`（**F8 — コンダクタの過剰適用を撤回**）/ `open_exclusive_new` →
-   `create_new_file` / `message_catalog` の 6 本に `_message`（**監査の 5 本 + 取り漏らし 1 本**）。
-   **据え置いた 25 件**（`hash_canonical` / `serialize` / `WorkflowExecution::start` / `encode`/`decode`
-   ほか）は監査 §3 が反例カタログとして記録している — 表の動詞へ矯正すると情報が減るため。
-   `WorkflowExecution::set_checkbox` は `&mut self` の真正のコマンドなので改名していない。
-4. **`WorkflowExecutionState` に基本コンストラクタを 1 本立てる**（別 Bolt、オーナー裁定
-   2026-08-24「次でよい」）。当初 3 つの別課題として記録していたが、**単一の作業**である
-   （`factory-naming.md` §「基本コンストラクタと補助コンストラクタ」）:
-   **構造体リテラルが 2 箇所に現れている**（Builder の中と、集約の `state()` の中）=
-   基本コンストラクタが無い。`pub(crate)` フィールドがそれを可能にしている。
-   基本コンストラクタを 1 本立てれば、リテラルが 1 箇所に集約され、フィールドを private に
-   できる。**ビルダー自体は残してよい** — 鎖メソッドは `mut self -> Self` のファクトリ
-   メソッドであって setter ではない（オーナー訂正 2026-08-24。当初「Builder の setter 12 本を
-   廃止」と書いていたのは私の誤り）。ビルダーに要る是正は 2 点だけ: `build()` が基本
-   コンストラクタを呼ぶ形にすること（いまはビルダーがリテラルを直接書いている）と、
-   裸のフィールド名の鎖メソッドを `with_*` へ改名すること（`plan(x)` は「plan を返す」に
-   読める）。`StageNodeBuilder` の 21 本も同じ改名対象。そもそも引数が多すぎるなら
-   値オブジェクトへ束ね直すのが先。
-   - **構築**: `WorkflowExecutionState::new(..)` は `Self` ではなく `WorkflowExecutionStateBuilder`
-     を返し（`factory-naming.md` 違反）、Builder にフィールド名そのままの setter が 12 本ある。
-     オーナー原則「完全コンストラクタがあれば `set_xxx` は不要」に照らして違反。
-     非テスト 44 箇所・鎖呼出 59 箇所。
-   - **読取**: フィールド 16 本が `pub(crate)` で、**アクセサが 17 本すでにあるのに**直接アクセスが
-     52 箇所ある（`workflow_execution.rs` 48 / `workflow_execution_event.rs` 3 /
-     `scope_grid.rs` 1）。入口が二重で、フィールドを 1 つ変えると 52 箇所が壊れる。
-     `cargo lint` の `no-public-fields` は**意図的に `pub` だけを見て `pub(crate)` を見逃す**
-     設計（「同一クレート内の実装詳細共有にのみ許す」条件付き許可）で、その許可が骨抜きに
-     使われている。**lint の検出境界を `pub(crate)` まで広げるかも同時に判断する**。
-   - 単なる改名では済まない — 完全コンストラクタ化は引数 16 個超を生むので、値オブジェクトへの
-     束ね直しとセットで設計が要る。`WorkflowExecutionState` は集約のスナップショット払い出し形
-     なので、ワイヤ形式・ITF フィクスチャとの対応も見る。U2 の型なので U2 の後続 Bolt。
-5. **`state_writers` は「`mod` をカプセル化の単位と見た結果」** — 命名でも配置でもなく設計の問題
-   （オーナー明言 2026-08-24、`abstract-data-type.md` §「カプセル化の単位は `struct` であって
-   `mod` ではない」）。`&str -> String` の自由関数が並ぶモジュールで、型が振る舞いを持っていない。
-   次 Bolt では**その手続きが本当はどの型の振る舞いなのか**から問い直す（モジュール名を
-   `state_fields` に変える、`shared/` へ移す、といった対処は原因に届かない）。
-   `docs/specs/11-workspace.md:64` が表の行名に使っているので仕様同期とセット。旧: 関数がすべて `with_*` /
-   `find_field` になった結果、「書き手」を名乗るモジュールの中身が純粋な `&str -> String` に
-   なっている。`docs/specs/11-workspace.md:64` が表の行名に使っているため、仕様同期とセットで
-   別 Bolt に。加えて**そもそも純粋な文字列変換が `core/domain` に置かれている配置の妥当性**も
-   未検証（`shared/` の汎用部品ではないか — 命名ではなく層の問題）。
-6. **CQRS の依存境界を ADR-009 / `coding-rules/cqrs-boundaries.md` で確定**（オーナー裁定
-   2026-08-24、U4 準備）。コマンド側とクエリ側は相互に依存せず、**RMU が要るのはドメイン
-   イベントだけ**（受信する側であり、ジャーナルを読みに行く側ではない）。境界はクレート分離で
-   物理強制する。**U4 の責務改訂が要る** — `unit-of-work.md` の U4 からジャーナル読取と
-   チェックポイント前進を外して合成ルート（U7）へ移し、U4 は純粋な投影に絞って独立クレートに
-   する（`embedded` から変更）。U3 の成果物は無傷。
-7. **fixture 鮮度ゲートが未実装**（ADR 0003 決定 4）。今回は手作業で「再採取 → 正規化 → バイト一致」を確認したが、機械強制が無い。
-   `engine_loop` / `journal_protocol` 双方に効く横断の穴として後続 Bolt へ。
-8. ~~**C3 の `usize` → `u64`**（`GlobalSeqNr` 周辺の桁幅）— 契約側の確定待ち。~~ → **解消済み**（2026-08-24 のオーナー裁定で `contract-summary.md` §C3 を `u64` へ改訂。code-generation レビュー iteration 1 の Major 所見 1 もこれで閉じた）。
-9. **`within_write_transaction` が `rusqlite::Transaction` を公開面に露出させる**。設計どおりの署名だが、利用者（U7 の登録簿処理）が
-   `rusqlite` を直接名指しすることになる。**U7 の設計時に再確認**。
-10. **U4 の `reset_checkpoint`** — 投影のリセット口はまだポートに無い。U4（read model updater）で扱う。
-11. **U5 の `Conflict` 再試行**方針（楽観 version 衝突時のリトライ回数・バックオフ）は U5 で決める。
-12. **相対ゲートの許容誤差 0.01pp は base 側の実測ゆらぎより狭い可能性がある**。同じ `origin/main` を同じシードで 3 回計測して
-   最大差 0.012pp（97.39995 / 97.38797 / 97.38797）。PBT のシードは固定済みなので、残るゆらぎ源は `busy_timeout` 超過や FS 待ちのような
-   タイミング依存テストと推測される。今回は +1.03pt なので影響しないが、head と base が拮抗した Bolt では偽陽性の赤を出しうる。
-   ゆらぎ源の特定を後続 intent へ申し送る。
-13. **`cargo llvm-cov` は `src/**` のインライン `#[cfg(test)] mod tests` も計測対象に含む**。テストヘルパに未実行の分岐（`panic!` する else 腕）を
-   作るとカバレッジを下げる副作用がある。`scripts/coverage.sh` の除外方針（composition root のみ）を見直すなら論点になる。
-14. **`scope_file_paths` は名前だけを見てディレクトリも候補に入れる**。`aidlc-x.md` という名のディレクトリがあると `read_to_string` が失敗し
-   `GraphReadError::ScopeFile` で致命になる（今回テストで固定）。upstream 側の態度は未確認（`load_scopes` の `TODO(spec: 12 §11)` と同性質）。
-15. **`workflow_definition_repository_impl.rs:749`（非 UTF-8 ファイル名）は未カバーのまま**。CI（ubuntu）でだけ走る
-   `#[cfg(target_os = "linux")]` テストを足す案はあるが、「ローカルで実行されないテスト」を増やす是非はオーナー裁定が要る。
+## 8. B5 版（2026-08-23）からの変更
 
-## 8. 依存（版・`cargo audit`）
+本版は B5 の記録を上書きするのではなく、**役割を分けた**。
 
-- 追加: `rusqlite 0.40.2`（`features = ["bundled"]`、`cargo search` 実測の最新安定版）→ `libsqlite3-sys 0.38.2`（同梱ビルド）。
-- 既存: `tokio 1.53.1`（委任 2 が dev-dependency として追加済み）、`proptest 1.11.0`。
-- ホストターゲットで実際にコンパイルされる推移依存（`cargo tree -e normal --target <host>` 実測）:
-  `bitflags 2.13.1` / `fallible-iterator 0.3.0` / `fallible-streaming-iterator 0.1.9` / `hashlink 0.12.1` /
-  `hashbrown 0.17.1`（既存）/ `libsqlite3-sys 0.38.2` / `smallvec 1.15.2`。ビルド依存は `cc` / `pkg-config` / `vcpkg` / `find-msvc-tools`。
-- `Cargo.lock` に増える `thiserror` / `wasm-bindgen*` / `js-sys` / `sqlite-wasm-rs` / `rsqlite-vfs` は **wasm ターゲット専用**で
-  本リポジトリのビルドには入らない（coding-rules の「thiserror 不使用」に抵触しない — 自前のエラー型は従来どおり手実装 enum）。
-- `cargo audit`: **exit 0 / 0 件**（advisory DB 1225 件、workspace 100 crates）。`--file tools/lint/Cargo.lock` も 5 crates で **0 件**。
-
-## 9. コミット（ブランチ `bolt/b5-u3-event-store-repository`、`origin/main` 起点）
-
-| コミット | 内容 |
-| --- | --- |
-| `69f7f4e` | ロック系の退役 + U2 是正（委任 1） |
-| `3f6db5a` | ポート・値・エラー（use-case）、ワイヤ、InMemory ストア / Repository、契約テスト（委任 2） |
-| `8cfc36e` | 仕様・正本の同期（委任 5）— 10/11/01 号の不変条件表を journal_protocol へ、LockIdentity / ProcessProbe 退役、未決 2 件確定、deviations #4 パス確定 |
-| `249d831` | 仕様の残注記を整理（State 改名完了の注記除去、責務記述のロック退役注記） |
-| `6ce9e83` | journal_protocol.qnt（不変条件 8 / witness 4、mutation 8/8）+ ITF fixture 8 本 + conformance + quint-gate（委任 4） |
-| `d96aa38` | SQLite ストア（C6 逐語、BEGIN IMMEDIATE、楽観 version、JournalReader、`within_write_transaction`）+ `WorkflowExecutionRepositoryImpl` + `StorePath` + rusqlite 0.40.2（委任 3） |
-| `ac204a7` | 委任 4/5 の報告と裁定（aidlc 記録） |
-| `48a0a2a` | 委任 3 の報告と裁定（`EventStoreImpl` 改名を予約） |
-| `071f175` | clippy `indexing_slicing` / `panic` を workspace deny へ昇格し既存コードを是正（委任 6） |
-| `93de46d` | `SqliteEventStore` → `EventStoreImpl` に改名（gateway-taxonomy §5 / ADR-003）— 仕様 10/11 号・`components.md` も同期 |
-| `328efc9` | `journal_protocol.qnt` の冒頭コメントから退役語を除去（BR3.1 grep 0 件） |
-| `dae1d3d` | カバレッジ穴のマップ、developer-brief-7、traceability.json |
-| `989b2ae` | park（handoff-b5.md、委任 6 報告、状態） |
-| `190dcb2` | カバレッジ相対ゲートの回復 — 未カバー 161 行中 149 行をテストで固定（委任 7） |
-| `b5b9b38` | `.coderabbit.yaml` を追加 — レビュー対象を編集可能な source に絞る |
-| `2f0405f` | **内部可変性の除去** — Repository の書込を `&mut self` に、`RefCell` / `Rc` を全廃（委任 8） |
-| `fb7240f` | ハーネス修正 — 回復レビューの予算を unit スコープにする |
-| `adbe9d3` | レビュー所見 1 / 6 の是正 — C3 の矛盾記述と CodeRabbit 除外理由 |
-
-上表はコード・仕様・設定のコミット（14 本）。ほかに aidlc 記録のコミットがあり、ブランチ全体では
-**40 コミット** / 99 ファイル / **+10,088** / −2,890（`git diff --stat origin/main..HEAD -- modules tests formal scripts .github Cargo.toml Cargo.lock docs`）。
-
-## Review
-
-**Verdict:** NOT-READY
-**Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-08-23T21:37:57Z
-**Iteration:** 2
-
-本パスは **advisory**（単発・修正ループ無し）。判定行は人間の承認ゲートへの情報提供であり、ゲートを塞ぐものではない。
-
-**主眼だった内部可変性の除去は完全に達成されている。** 実装の正しさに関わる所見は 1 件も無い。以下の Major 3 件はすべて
-**後続 Unit（U4 / U5 / U6 / U7）への引き継ぎ面**の欠落であり、直すのは文書 3 箇所とテスト装置 1 箇所である。
-
-### Findings
-
-| # | Severity | Location | Finding | Recommendation |
-|---|---|---|---|---|
-| 1 | Major | `functional-design/functional-spec.md:26-27` | 本文が改訂済みの共有契約 C3 と矛盾する。「`store` は `&mut self`（**C3 は `&self` のまま未改訂** — `pending-revision.md` #9、U5 / U6 着手前にオーナー裁定が要る）」と書かれているが、`inception/contract-design/contract-summary.md:112-118` は既に `async fn store(&mut self, …)` を載せ、2026-08-23 のオーナー裁定注記も付いている。`pending-revision.md` #9 自身も「C3 … は、オーナー裁定（2026-08-23）により `&mut self` / `u64` へ改訂済み」と書いている。本 Unit の「ポートの形」を最初に読む U5 / U6 の実装者は、既に下りている裁定を再度求めに行くか、`&self` 前提で実装しかねない | `functional-spec.md:27` の括弧内を「C3 は 2026-08-23 のオーナー裁定で `&mut self` へ改訂済み（`pending-revision.md` #9）」に差し替える |
-| 2 | Major | `code-summary.md` §7（申し送り） | `&mut self` 化が下流に課す**排他借用の制約**がどこにも申し送られていない。`WorkflowExecutionRepositoryImpl` は `EventStoreImpl` を単一所有し、`JournalReader` は `EventStoreImpl` に実装されているので、U4 の投影キャッチアップは `repository.event_store_mut()` 経由でしか到達できない。したがって U7（composition root — `unit-of-work.md:127`「ユースケース（U5/U6）・Repository 実装（U3）・投影（U4）を結線する」）は、ユースケースと投影に**同時に**リポジトリを貸せない。結線は厳密に逐次でなければならず、U4 は `JournalReader` を長寿命フィールドとして保持できない。撤回前の共有ハンドル設計ではこれは無償だった。`interior-mutability.md` は逃げ道（`modules/shared/` の `SharedLock` / `*Shared`、必要が実際に生じた時点で新設）を明示しているが、その判断が U4 / U7 の設計者の手元に移ったことを告げる記述が本 Unit の成果物に無い。§7 の 3（U7 の `Transaction` 露出）・4（U4 の `reset_checkpoint`）・5（U5 の `Conflict` 再試行）はいずれもこの点に触れていない | §7 に 1 項追加し、(a) U4 / U5 / U6 が同時にストアへ生きたハンドルを持てないこと、(b) U7 の結線が逐次になること、(c) 同時性が本当に必要になった場合の正規手段は `modules/shared/` の `SharedLock` 新設であること（投機的に作らない）、を明記する |
-| 3 | Major | `tests/support/mod.rs:38-51`、`tests/workflow_execution_repository_contract.rs:31-47,92-96,113-135` | 両実装の契約試験装置の意味論が分岐し、doc が自己矛盾している。(a) trait doc は `open()` を「**空のストア**を指す新しい Repository を開く」と定義するが、`InMemoryFixture::open()` は毎回空の新ストアを返す一方、`SqliteFixture::open()` は**同じファイル**を開く（2 回目以降は空でない）。現状 `open()` を 2 回呼ぶテストが無いため 24 本すべて緑だが、次にそれを書いた契約テストは両実装で違う挙動をする。(b) `SqliteFixture` 自身の doc（`:92-96`、今回未更新）は `open()` を「in-memory 側の**ハンドル複製**に対応する」と説明し続けているが、in-memory 側にハンドル複製はもう無い。(c) `reader()` は SQLite では**生きた接続**、in-memory では**その時点の写し**である。trait doc の「どちらも『それまでに書き終えた行が見える別インスタンス』という**同じ観測**になる」は、現行テストが使う「書いてから開き直す」順序でのみ真で、逆順（先に reader を取り、後から書く）では SQLite だけが書込を観測する。C3 ④ により `InMemoryWorkflowExecutionRepository` は U5 / U6 のテストダブル正本なので、この非対称は後から in-memory 緑 / SQLite 赤（またはその逆）を生む型である。BR2.7「両実装に同じ約束を課す」の保証はレビュー前より弱くなっており、12 本の契約テストのどれもこの差を検出できない | (a)(b) `open()` の doc と `SqliteFixture` の doc を実挙動に合わせる。(c) reader の生存性をどちらかに決めて契約テストで固定する（先に reader を取り、後から Repository で書き、reader から見えるか／見えないかを両実装に同じく課す）。両立しないなら、その差を trait doc に**逸脱として明記**し BR2.7 の適用範囲を書き下す |
-| 4 | Minor | `code-summary.md:24`（§2 見出し）、`:216-218`（§9 末尾） | 実測値が古い。「99 ファイル / +10,042 / −2,890」「32 コミット」とあるが、いま計測すると 99 ファイル / **+10,088** / −2,890、**39 コミット**（`git rev-list --count origin/main..HEAD`）。§9 のコミット表は本イテレーションの 3 コミット（`b5b9b38` .coderabbit.yaml、`2f0405f` **内部可変性の除去 = 本レビューの対象**、`d792819` ハーネス）を載せていない。§4 #7 が裁定を記録しているので変更自体は文書化されているが、§9 は「何が出荷されたか」の記録である | §2 見出しと §9 末尾の数値を再計測値へ、コミット表に 3 行追加 |
-| 5 | Minor | `code-summary.md` §3（TDD の記録） | 委任 8 の行が無い。委任 8 は公開セマンティクスの変更（`InMemoryEventStore` の `Clone` が「同じ状態への別ハンドル」→「値の深い複製」）を固定する新規テスト `a_clone_carries_the_rows_but_not_the_mutable_state` を足しているが、red-first だったか否かの記載が無い。委任 7 には「Red-first は適用外」の明示行があるだけに、委任 8 の空白は目立つ（team.md Testing Posture / project.md Mandated の red-green-refactor） | §3 に委任 8 の行を足し、red-first の適用可否を明示する |
-| 6 | Minor | `.coderabbit.yaml:39` | 除外理由が同じ PR の実態と矛盾する。`- "!aidlc/spaces/*/intents/**"` の根拠として「ワークフロー記録は append-only の工程・監査成果物であって**編集可能な source ではない**」と書かれているが、本ブランチはそのパス配下の `functional-design/` / `nfr-design/` / `contract-design/` を 16 箇所手で編集している。実害として、所見 #1 の欠陥クラス（設計散文が契約から乖離する）がちょうど自動レビューの視界外に落ちる | 除外を監査シャード・`aidlc-state.md` など真に生成物である範囲へ絞るか、「編集可能な source ではない」という理由付けを外す |
-| 7 | Minor | `.claude/tools/aidlc-lib.ts:4753-5297`、`.claude/tools/aidlc-state.ts:2091-2103`、`.coderabbit.yaml`（新規） | Bolt の宣言スコープ（`u3-event-store-repository`）外の変更が同じ PR に相乗りしている。ハーネス変更はレビュー台帳の予算計上を変える挙動変更だが、**どの CI ジョブからも到達しない**（`ci.yml` は cargo のみ、`.claude/tools/` にテストスイートは無い）。読んだ限り整合している — 狭めた `sourceRecoverySpent` の唯一の消費点 `aidlc-log.ts:1042-1044` は `sourceScopeStale`（= `newestSourceUnit === flags.unit`）で守られており狭め方と一致する、`aidlc-state.ts:2100` はマップ全体を読んで従来の「いずれかが消費済みなら true」を保っている — が、機械的な裏取りは無い | 人間が承認前に意識する。ハーネス変更を別 PR に分けるか、相乗りを承知のうえで通すかの判断 |
-
-### Validation Tool Results
-
-| Tool / Check | Result | Interpretation |
-|---|---|---|
-| `cargo fmt --all --check` | exit 0（出力なし） | PASS |
-| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0、warning/error 行 **0** | PASS |
-| `cargo lint` | exit 0（出力なし） | PASS |
-| `PROPTEST_RNG_SEED=20260823 cargo test --workspace` | exit 0、**664 passed / 0 failed / 0 ignored**（テストバイナリ 31 本） | PASS。§1 の申告 664 と一致 |
-| `bash scripts/quint-gate.sh` | `[PASS] quint gate: all steps green` | PASS。`journal_protocol` の witness 4 本を含め全ステップ緑 |
-| `cargo audit` | exit 0（100 crates） | PASS |
-| `cargo audit --file tools/lint/Cargo.lock` | exit 0（5 crates） | PASS |
-| `grep -rnE "RefCell\|Cell<\|Rc<\|Arc<\|Mutex<\|RwLock<" modules/` | **3 件、すべて doc コメント**（`workflow_execution_repository_impl.rs:29`、`event_store_impl.rs:5`、`use-case/…/workflow_execution_repository.rs:18` — いずれも「使わない」旨の説明） | PASS。内部可変性は実コードから完全に消えている |
-| 後方互換の残骸 grep（`#[deprecated]` / `pub use … as` / 旧名型エイリアス / `SqliteEventStore` / `WorkspaceLock` / `LockIdentity` / `ProcessProbe` / `WorkflowExecutionSnapshot`） | **0 件** | PASS。`no-backward-compatibility.md` 適合 |
-| `traceability.json` | 44/44 の upstream ID を網羅、status はすべて `OK`、**target に現れる全ファイルパスがディスク上に実在** | PASS |
-| 層依存（`rusqlite` が内側層に漏れていないか） | `modules/core/domain/` / `modules/core/use-case/` に `rusqlite` の出現 **0**。両クレートの `Cargo.toml` にも非依存 | PASS。クリーンアーキテクチャの内向き依存が維持されている |
-| `bash scripts/coverage.sh --base origin/main` | **未実行**（約 5 分。コンダクタ実測 head 98.39% / base 97.39% を採用） | 再実行の必要を認めなかった — 今回の差分はレシーバ変更中心で新規未踏経路がほぼ無く、緑余裕 +1.0pt を覆す性質ではない |
-
-### 主眼項目の確認結果（差分レビューとしての回答）
-
-- **内部可変性の除去**: 完了。`EventStoreImpl` は `Connection` と `C` を直接所有し、手書き `Clone` は削除、`Debug` は接続を隠す。`WorkflowExecutionRepositoryImpl` / `InMemoryWorkflowExecutionRepository` は `RefCell` を捨て、`event_store(&self) -> &_` / `event_store_mut(&mut self) -> &mut _` に分離。所有権も別ハンドルも配っていない。
-- **CQS 適合**: 3 ポートすべて適合。Query（`find_by_id` / `get_latest_snapshot_by_id` / `get_events_by_id_since_seq_nr` / `events_after` / `checkpoint`）は `&self` + 戻り値、Command（`store` / `persist_event` / `persist_event_and_snapshot` / `advance_checkpoint`）は `&mut self` + `Result<(), E>`。逸脱は `within_write_transaction(&mut self, f) -> Result<T, _>` の 1 本のみで、これは `command-query-separation.md`「許容される違反」表の `with_write` 相当（ロック区間をクロージャ内に閉じたまま結果を返す）に該当し、`rusqlite::Transaction` の露出は §7-3 で既に申し送り済み。
-- **挙動の非変化**: 確認済み。`persist_event_and_snapshot` は `TransactionBehavior::Immediate`（BEGIN IMMEDIATE）→ (1) ジャーナル追記の UNIQUE 違反判定 → **rollback 前に `current_version` で `actual` を読む** → (2) genesis は INSERT / 以降は `WHERE version = expected` の UPDATE（`affected == 0` で同じく `actual` を読む）→ (3) 成功経路のみ COMMIT、の順序が保存されている。`advance_checkpoint` の単調ガード、`schema_version` の SET 同梱、`journal_mode` 既定（`delete`）、`busy_timeout` 既定 5000ms、`ErrorCode` → `ErrorKind` 写像はいずれも無改変（差分は `self.connection.borrow_mut()` → `self.connection` の機械的置換とブロックスコープの解消のみ）。
-- **`InMemoryEventStore` の `Clone` の意味変化**: `a_clone_carries_the_rows_but_not_the_mutable_state` が「写した時点の行は引き継ぐ／写した後の追記は写しに及ばない」を両方向で固定しており、固定として十分。`interior-mutability.md` 禁止パターン「`Clone` が同じ可変状態を指す別ハンドルを配る型」には該当しなくなった。ただし契約装置側の帰結は所見 #3 のとおり。
-- **後方互換の残骸**: 無し（上表）。
-- **traceability 44 件**: すべて実在・充足（上表）。
-- **ハーネス修正**: 意図した unit スコープ化以外の挙動変更は認められない（所見 #7 に読み取り根拠を記載）。
-
-### Summary
-
-内部可変性の撤回そのものは、正本 3 本（`interior-mutability.md` / `command-query-separation.md` / `no-backward-compatibility.md`）に照らして**完全かつ忠実**である — `RefCell` / `Rc` / 手書き `Clone` は実コードから消え、CQS は 3 ポートとも適合し、トランザクション手順・楽観 version・エラー写像・スキーマ刻印は無改変で、7 種の機械検証（fmt / clippy / cargo lint / 664 テスト / quint / audit ×2）がすべて緑、層依存の漏れも後方互換の残骸も 0 件である。判定が NOT-READY なのは実装の欠陥ではなく、**この設計変更が後続 Unit に課した制約が引き継ぎ面に書かれていない**ためである: 共有契約 C3 の改訂状態を本文が否定しており（#1）、`&mut self` 化が U7 の結線と U4 の投影に課す排他借用の制約が申し送られておらず（#2）、U5 / U6 のテストダブル正本となる in-memory 装置の「開き直し」が SQLite と別物になった（#3）。いずれも文書 3 箇所とテスト装置 1 箇所の修正で解消し、コードの書き直しは要さない。
+- B5 の TDD 証跡（Red / Green の逐語）、当時の件数（674 テスト / 98.42%）、裁定表、コミット列は歴史であり `code-summary-history-2026-08-23.md` に全文保存した。本版はそれらを「現在の実施」として再掲しない。
+- 本版は 2026-09-07 時点の実測だけを書く。B7（本家 v3）・B12 / B13（集約分割と版の内側化）・b40（イベント ID）・2026-09-05 是正（書込前 ID 照合）・b51 を経た**現行の実装**が対象である。
+- 本再走で書き直した理由は、旧版がクレート名・型名（`core-interface-adapter` / `WorkflowExecutionRepository` / `wire` / `CorruptCause`）ごと現行と食い違っており、記録として読めば誤誘導になるためである。
+- 本 Bolt が実際に変更したワークスペース側のファイルは `formal/orchestration/journal_protocol.qnt` の凡例 5 行のみで、`source-manifest.json` の `writes` もこの 1 件だけである。
