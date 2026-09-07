@@ -82,6 +82,34 @@ ADR / 契約で確定した次の事項も同じ B4 で仕様へ追従させる�
   functional-spec.md（文書改訂の手順・失敗時の扱い・完了条件）/ traceability.json（FR8.1 / FR8.2 / FR9.6 → BR）。
   現行のステージ契約では spec kind にも functional-spec.md が必須のため、旧前提「作らない」を置き換える。
 
+## 再走時の追問（2026-09-07 — functional-design ステージ差し戻し後の U9 再走）
+
+> 前回（B4、2026-08-23）の文書改訂は PR #28 でマージ済み。2026-09-05 の補完（PR #112）で functional-spec を追加し、レビュー READY（R-01 Major / R-02・R-03 Minor）。
+> 本再走は、その所見と保留改訂（`pending-revision.md` 5 項目）、および U2 再走（b51、PR #118）で確定した現行の正に、U9 の設計記録と改訂指示を同期させる。
+
+### Q4. U9 再走の Bolt の範囲（実測: `gap-measurement-20260907.md`）
+
+オーナー指示（2026-09-07）「あいまいな提案するな。コードを実測して提案しろ。現状のコードを基準だろ」に従い、`main` `02cacea2` のコードを基準に
+正本・仕様・共有契約のずれを行単位で実測した（`gap-measurement-20260907.md` §1 コード現状、§2 ずれ一覧、§3 パッケージ）。要点:
+
+- コード: 集約 4（`Intent` 7 属性 / `IntentExecution` 12 属性・コマンド 15・イベント 16 / `WorkflowDefinition` / `CompiledDefinition`）、FCC 16 型、
+  コマンド側ポート 4・ユースケース 9、クエリ側ユースケース 13・DAO 14、RMU `read_*` 17 表、再構成 = 最新スナップショット + 差分再生、楽観 version は集約の内側。
+- 仕様 4 号: `WorkflowExecution` 37 件のうち要改訂 ≈ 46 行（10 号 20 / 12 号 9 / 11 号 8 / 01 号 9）+ 冒頭注記 2 種 × 4 号。10 号 §2.1 は属性数・コマンド数・
+  イベント数・version の置き場・`next_decision` の署名・memento の 6 点でコードと食い違う。11 号 / 01 号の workspace 集約 3 つは未実装（「予定」の明記が要る）。
+- coding-rules: 6 ファイル 10 箇所（クレート旧名・message-catalog・存在しないエラー型・`InMemoryXxxRepository`）。
+- 共有契約: `components.md` は全面改訂級（クエリ側・RMU 表・`CompiledDefinition` / `Intent` が無い、全再生注記）、`contract-summary.md` は C1 / C3 / C4 / C5 / C6 / §4。
+
+既存記録の扱いは **Modify**（既存 4 点を土台に更新、履歴は残す）とする — Keep は R-01 の古い YAML を残し、Redo は B4 の回答・レビュー履歴を失うため、
+「現状のコードを基準」と両立しない。
+
+- A. P1 + P2 + P3 + P4 を U9 再走の 1 Bolt で行う（文書のみ・コード変更なし。委譲 2 派遣: 派遣 1 = coding-rules + 仕様 4 号、派遣 2 = components + contract-summary。
+  受入 = §2 の各行がコードと一致・sentinel 0 件・`git diff -- modules tools scripts .github Cargo.*` 空）（推奨）
+- B. P1 + P2 + P3 を U9 Bolt、P4（Inception 共有契約 2 本）は次の Bolt に分ける（PR を小さく保つ）
+- C. P1 + P2 のみ（仕様・共有契約は後続 intent）
+- X. Other (please specify)
+
+[Answer]: A（オーナー回答逐語 2026-09-07: 「正しさを実装コードもテストも仕様も常に検証してね。鵜呑みにしないでほしい。A」— 検証規律として BR5.3 に規則化し、§13 学習候補にも載せる）
+
 ## Consolidated Summary Confirmation
 
 - Q1 = A: FR9.6 のエラーハンドリング様式規則は改訂ドラフトのまま `coding-rules/error-handling.md` として追加（材料のみ・文言はアダプタ層・Display / Error 手実装・
@@ -107,6 +135,19 @@ ADR / 契約で確定した次の事項も同じ B4 で仕様へ追従させる�
 - 古い記述を現在の設計へ戻さない。後続の確定裁定（集約名の変更、イベント列からの再構成、CQRS の責務分離など）と照合し、根拠だけでは解消できない矛盾は改訂前に確認する。
 - `pending-revision.md` に残る改訂候補と既存レビューの所見は、確認が必要な事項として仕様書に明示し、未対応を完了扱いにしない。
 - 前回の要約確認は 2026-08-23T04:47:15Z の監査記録に保存されている。今回は、後から追加された P3 の `functional-spec.md` を含む補完範囲を確認する。
+
+**再走時の確認範囲（2026-09-07 — 差し戻し後の U9 再走、Q4 = A）**
+
+- Q1〜Q3・追加 1・2・2026-09-05 の補完範囲は当時の回答として保持し、2026-09-05 の要約確認（監査記録に保存）をやり直さない。今回は Q4 で確定した再走範囲だけを確認する。
+- 基準は現行コード（`main` `02cacea2`）。提案・改訂はすべて `gap-measurement-20260907.md` の行単位の実測（§1〜§2）を根拠にし、記録・仕様・レビュー本文の主張は鵜呑みにせず、実装コード・テスト・仕様で検証してから採用する（BR5.3 として規則化）。
+- Bolt / Unit 記録は construction 配下 29 ディレクトリ・224 ファイル + handoff 16 本 + ADR-001〜011 を 4 区画で全数探索した（`survey-20260907/` 4 台帳）。そこから拾った裁定は 1 件ずつコードで実否を確認し、統合版を同文書 §4（O1〜O15 / P1〜P9 / R1〜R7 / W1〜W5 / S1〜S4 / K1〜K6、未実装 §4.7、矛盾の裁き §4.8 13 件）に載せた。この §4 が仕様の「正しい姿」の正本になる。
+- P1 設計記録の同期: `rules.md`（BR1.1〜BR3.6 に status / 履歴、BR1.5 = gateway-taxonomy §1b 一般形は実施済み、BR1.6 = coding-rules 10 箇所、BR2.5 範囲 5 箇所、BR3.3 / BR3.7 / BR4.1 / BR4.2 / BR5.1 改訂、BR5.3 新設）、`entities.md`（再走属性、contract-summary / factory-naming / module-visibility のインスタンス追加、旧 Review は履歴化）、`functional-spec.md`（§1 再走範囲、§2 入力、§5 / §6 を 2026-09-07 の実測へ、旧 Review を履歴節へ）、`traceability.json`（FR8 親行 = R-03、BR5.3 等の reverse）。pending-revision 5 項目と R-01〜R-03 を閉じる。
+- P2 coding-rules: 現行 10 箇所（README:50、error-handling 行 4 / 37、gateway-taxonomy :223 / :299、factory-naming :47 / :84、module-visibility :11 / :12 / :21、use-case-rules :11 / :36）の旧名 `WorkflowExecution` 系を現行名へ。規則の意味は変えない。
+- P3 仕様 4 号の全文追従: 10 号 §2.1（Intent + IntentExecution、12 + 7 属性、コマンド 15、イベント 16、version 集約内、差分再生、`next_decision` の `Result` / `IntentMismatch`、FCC）と §3 ポート表、12 号、11 号（RMU 二層・17 表・同期 catch_up）、01 号（§3 集約表、§7.1 原則追記: FCC / ドメイン永続化中立 / CQRS クレート境界 / DAO 1 表 1 引当 / ドメインイベント = エンティティ / スナップショット + 差分再生と壊れた歴史のクラッシュ）。B12 読み替え注記・B13 優先順位注記は本文へ畳み込む。未実装（§4.7）は「予定」と明記。10 号 :51 の旧 manifest 綴りを直す。仕様から一度も参照されていない coding-rules 12 本へ相互参照を付ける。
+- P4 共有契約 2 本の現行化: `components.md` 全面（クレート 10 / RMU 中間クレート / クエリ側 13 + 14）、`contract-summary.md` C1 / C3 / C4 / C5 / C6 / §4（旧 manifest 綴り 2 行、未決 1 件は §4 に残す）。加えて `decisions.md:473` の旧 manifest 綴り、`unit-of-work.md` U3 の失効記述への注記。
+- 扱わない（§5）: U1 / U2 / U3 / U10 の設計本文、Bolt 記録（read-model-spec / inventory）、`formal/orchestration/journal_protocol.qnt` のコメント 5 行（コード扱い — 別 Bolt へ）、codekb・docs/CLAUDE.md・CI 設定の裁定。
+- 文書のみ・コード変更なし。実装は委譲 2 派遣（P2 + P3 の 10 号・01 号 / P3 の 11 号・12 号 + P4）、書込スコープは非重複、diff 全件レビューと最終検証はメインが行う。完了条件 = BR5.1（grep 範囲 `coding-rules/*.md` + `docs/specs/*.md`、sentinel 0 件、`git diff --stat -- modules tools scripts .github Cargo.toml Cargo.lock` が空、§2 / §4 の各行が文書と一致）。
+- 成果物は Modify（`reuse-artifact functional-design --decision modify` 記録済み）。次ステージは U9 の NFR Requirements。
 
 Does this all look correct before I generate the artifact?
 

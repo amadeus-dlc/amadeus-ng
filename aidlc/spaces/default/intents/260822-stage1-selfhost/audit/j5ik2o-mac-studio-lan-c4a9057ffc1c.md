@@ -2242,3 +2242,577 @@
 **Context**: construction > code-generation > memory.md
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:04:46Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:04:46Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:05:47Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:06:49Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:07:50Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:08:02Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:08:03Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T19:11:57Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad65ea521bc9fae02
+**Message**: U2 の FCC 化（Bolt b51）は実装・受入・独立レビュー READY まで完了し、PR #118 をマージキューに投入済みです。マージされ次第、ローカルを main に合わせてワークフローの次の一手へ進めます。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T19:12:14Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T19:16:56Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac55fa72250f579b7
+**Message**: Stage-1 セルフホスト切替の Construction を進めており、U2 の再走 Bolt b51 は PR #118 として main へマージ済みです。次は U9（canon-docs）の functional-design へ進むかの選択待ちです。
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T22:34:13Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-06T22:37:35Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-06T22:40:24Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aebb5bb4d1efe8e81
+**Message**: <analysis>\nLet me chronologically trace the conversation after the previous summary boundary.\n\n1. Context: Prior summary established the state: AI-DLC workflow, intent `260822-stage1-selfhost`, U2 cod
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-06T23:55:55Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T00:12:55Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T00:13:00Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T00:14:06Z
+**Event**: ARTIFACT_REUSED
+**Stage**: functional-design
+**Decision**: modify
+**Artifacts**: entities.md,rules.md,functional-spec.md,traceability.json
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-07T00:14:09Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T00:14:10Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log --help
+**Error**: Unknown subcommand: --help. Valid: decision, answer, link, review
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T00:16:32Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log decision
+**Error**: Missing --stage <slug>
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T00:16:32Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log answer
+**Error**: Missing --stage <slug>
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:18:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af3550e6d5498ab42
+**Message**: 探索エージェント 4 体（後期 Bolt b39〜b50 + handoff 16 本 / 基盤転換 esa・intent 分割・query-side 監査・ADR / U2・U3 の 79 ファイル / U1・U4・U9・U10 + coding-rules 一覧）が記録を全数読んでいます。戻ってきた裁定台帳は 1 行ずつコードで実否を確認してから、`gap-measurement-202609
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:24:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-shift-bolts
+**Agent ID**: asurvey-shift-bolts-b1369d32673626fd
+**Message**: 調査を完了しました。以下が実測に基づく台帳です。\n\nパス短縮: `$I` = `aidlc/spaces/default/intents/260822-stage1-selfhost`（以下すべてリポジトリ相対、行番号は `grep -n` / `awk` 実測）。\n\n## 裁定台帳\n\n| # | 日付 | 裁定（1 文、平易に） | 出典 path:line | 影響する仕様・共有契約の節 | 
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:25:27Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8f2e2ec0b4afdafd
+**Message**: 続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:25:31Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-u2-u3
+**Agent ID**: asurvey-u2-u3-8003b911f2a51650
+**Message**: U2 と U3 の記録を全数読みました。設計本文・是正記録・質問票の回答・計画・成果要約・申し送り・レビュー所見を対象にしています。\n\nパス短縮: `U2/` = `aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u2-domain-es-core/`、`U3/` = 同 `construction/u3-event
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:26:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ac10114dcb60da90f
+**Message**: 続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:27:42Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-shift-bolts
+**Agent ID**: asurvey-shift-bolts-b1369d32673626fd
+**Message**: 書き出し完了 121
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:27:59Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-late-bolts
+**Agent ID**: asurvey-late-bolts-a64d8c16afb96e16
+**Message**: 調査を完了しました。b39〜b50 の設計記録・ハンドオフ 16 本・整合性記録 2 本・ステージ日誌を全数読み、行番号は `awk`/`grep` で実測しています。\n\n以下、`C` = `aidlc/spaces/default/intents/260822-stage1-selfhost/construction` と略記します。記録の記述は「主張」として写しており、正しさの判定はしていませ
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:28:02Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-other-units
+**Agent ID**: asurvey-other-units-be12eb9df970dd37
+**Message**: 調査を完了しました。以下が結果です。\n\n## 裁定台帳\n\nR = `aidlc/spaces/default/intents/260822-stage1-selfhost/construction`、K = `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules`（パスはリポジトリ相対）。\n\n| # | 日付 | 裁定（1文） | 出典 
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:28:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-u2-u3
+**Agent ID**: asurvey-u2-u3-8003b911f2a51650
+**Message**: 書き出し完了 134
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:30:23Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a90905487d65b1c3d
+**Message**: 続けて
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:30:41Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-late-bolts
+**Agent ID**: asurvey-late-bolts-a64d8c16afb96e16
+**Message**: 書き出し完了 120
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:30:48Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-other-units
+**Agent ID**: asurvey-other-units-be12eb9df970dd37
+**Message**: 書き出し完了 140
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:31:17Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-late-bolts
+**Agent ID**: asurvey-late-bolts-a64d8c16afb96e16
+**Message**: 書き出し完了 120（裁定台帳 79 行、3 節すべて含む）
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:31:21Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: survey-other-units
+**Agent ID**: asurvey-other-units-be12eb9df970dd37
+**Message**: 書き出し完了 140（ファイルは 32,643 バイト、4 見出しすべてと台帳 62 行が揃っています）
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:31:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: af038f74bd4764946
+**Message**: 台帳が揃ったら統合して要約確認まで進めて
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-07T00:36:28Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T00:40:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a1acc23483340ffdd
+**Message**: <analysis>\nChronology of this context window (continuation of the summarized session):\n\n1. Session resumed mid-task: U9 `u9-canon-docs` functional-design run-stage (unit-major, receipt mode, `gate: fa
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T00:41:13Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Unit**: u9-canon-docs
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T00:46:04Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T00:46:13Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-design-questions.md
+**Questions SHA-256**: 346d7f1a60ebeade43bddd5a81fa3dcecca4c85152024e747238557621a6c91d
+**Hash Scope**: confirmed-content-v1
+**Unit**: u9-canon-docs
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T00:58:55Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u9-canon-docs
+**Error**: Cannot start review for "functional-design": this stage's output document <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md was not saved after the confirmed answers. Save the document after confirmation, then continue.
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:00:37Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/rules.md
+**Context**: construction > u9-canon-docs > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:00:40Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/entities.md
+**Context**: construction > u9-canon-docs > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:00:44Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-spec.md
+**Context**: construction > u9-canon-docs > functional-design > functional-spec.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T01:00:53Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+**Context**: construction > u9-canon-docs > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T01:00:53Z
+**Event**: SENSOR_FIRED
+**Fire id**: 6f95defc
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T01:00:53Z
+**Event**: SENSOR_FAILED
+**Fire id**: 6f95defc
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-6f95defc.md
+**Findings count**: 34
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T01:01:07Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:9f525742519ff7412a89612fe1e18699d11d53d4c25567574312bc8c08e36e29
+**Review Appendix Artifact**: construction/u9-canon-docs/functional-design/functional-spec.md
+**Review Appendix Offset**: 17412
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:03:06Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ae32b83520e9869d1
+**Message**: Reading rules.md contents
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:03:35Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:03:38Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad1a94add5376bb45
+**Message**: Verifying IntentExecution struct fields
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:04:08Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:04:11Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: aaa601a6d68eace90
+**Message**: Confirming next_decision signature match
+
+---
+
+## Reviewer Scope Blocked
+**Timestamp**: 2026-09-07T01:04:30Z
+**Event**: REVIEWER_SCOPE_BLOCKED
+**Tool**: Bash
+**Target**: .
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:04:43Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a5cb0b8c07a660fa7
+**Message**: Counting Find* use case files
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:05:15Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad6a04e69039d283f
+**Message**: Grepping WorkflowExecutionState in modules/
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:05:47Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a24b099f0557b1ad7
+**Message**: Reading pending-revision.md contents
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:06:20Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2f98b60190ba4e9a
+**Message**: Getting UTC timestamp for review
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T01:06:51Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/functional-design/functional-spec.md
+**Context**: construction > u9-canon-docs > functional-design > functional-spec.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T01:07:04Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: aidlc-architecture-reviewer-agent
+**Agent ID**: aff80d09ab3209acf
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n`functional-spec.md` の末尾に `## Review` セクションを追記しました（Verdict: READY、Iteration 1）。\n\n## 要旨\n\n**Verdict: READY**（Critical 0、Major 0、Minor 2 新規）\n\nコード基準コミット `m
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T01:07:04Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T01:07:35Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u9-canon-docs
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:9f525742519ff7412a89612fe1e18699d11d53d4c25567574312bc8c08e36e29
+**Artifact Fingerprint**: sha256:6f5d123388f35bbaa03bebe369d57a946371f22a1008e86ac4981acfd5a04b1c
+**Review Appendix Artifact**: construction/u9-canon-docs/functional-design/functional-spec.md
+**Review Appendix Offset**: 17412
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T01:07:45Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u9-canon-docs
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
