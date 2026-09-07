@@ -62,6 +62,10 @@ D6 互換の配当により、upstream `dist/claude/` の資産（33 ステー�
 
 - **Construction Iteration**: unit-major
 - **Skeleton Stance**: off
+- **Active Unit**: u4-read-model-updater
+- **Unit State**: paused
+- **Unit Pause Reason**: オーナー指示 2026-09-07: 文書再走を一旦止め、現状を main へマージする。U4 NFR 要求の実測は完了、確認票・成果物は未生成
+- **Unit Next Action**: オーナー裁定（intent の切り直し、または最小手順での再開）の後に U4 nfr-requirements を resume する。実測結果は construction/nfr-requirements/memory.md に記録
 ## Phase Progress
 <!-- Status values: Pending, Active, Verified, Skipped -->
 
@@ -123,7 +127,7 @@ Per unit: [TBD]
 - **Current Stage**: functional-design
 - **Next Stage**: nfr-requirements
 - **Status**: Running
-- **Last Updated**: 2026-09-07T09:04:03Z
+- **Last Updated**: 2026-09-07T09:20:07Z
 
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning
