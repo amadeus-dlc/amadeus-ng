@@ -6149,3 +6149,737 @@
 **Context**: construction > code-generation > memory.md
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:04:05Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:05:41Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:06:12Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-07T08:07:32Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:07:38Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-07T08:07:38Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T08:10:36Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8109a82efb38b287
+**Message**: <analysis>\nThe conversation continues an AI-DLC workflow session (intent 260822-stage1-selfhost, unit-major Construction). The previous summary left off at U3 code-generation Step 2 (Modify decision r
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:18:39Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:18:39Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T08:24:12Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/gap-measurement-20260907.md
+**Context**: construction > u4-read-model-updater > functional-design > gap-measurement-20260907.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T08:24:55Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U4 functional-design の既存成果物 4 点（entities.md / rules.md / functional-spec.md / traceability.json、2026-09-05 READY + 2026-09-06 実装同期、最終コミット f6726802 #112）を現行 HEAD 52fce820 で実測した（gap-measurement-20260907.md）。f6726802 以降に RMU クレートへ触ったコミットが 2 本（#114 コレクション契約、b51 #118 FCC 化 + intent 取り違えガード、21 ファイル +568/−342）あり、設計に無い振る舞いが 2 件（G-1: Recomposed の Stages skipped/added を計画の文書順で出す in_document_order、G-2: NextAnswerRow::of が集約の IntentMismatch を ReadTablesError::IntentUnavailable として伝播）、設計本文が現行の排他方式と食い違う箇所が 1 件（G-3: W2.1/BR3.4「照合開始から確定まで排他を保持・ファイル正準パス順」に対し実装は BEGIN IMMEDIATE の Tx 2 段 + 確定 Tx での再検査によるフェンシング、ファイルロック 0 件）、論理属性の対応が未記載のもの（G-4/G-5: state 5 値は committed 0/1 + history state のみで blocked は PublicationConflict の返却、replacement_id/resolution/inherited_blocks は列なし、anchor/verified が設計に無い）、W6/W7 の入口 rebuild_read_model/resolve_publication が app 未配線（G-6）、W8 表の行 4/5 の分類名（G-7）、§7 の検証数値が 09-06 時点（G-8: 現行 RMU 481 件 / workspace 2,354 件）。一方 W1〜W8・§5 の U7 表・BR 17 本の骨格は現行コードと一致。この扱いを Keep / Modify / Redo from scratch のいずれにするか
+**Options**: Keep,Modify,Redo from scratch
+**Unit**: u4-read-model-updater
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:27:35Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-07T08:28:06Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: Modify (Recommended)
+**Unit**: u4-read-model-updater
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T08:28:06Z
+**Event**: ARTIFACT_REUSED
+**Stage**: functional-design
+**Decision**: modify
+**Artifacts**: entities,rules,functional-spec,traceability
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:28:19Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T08:31:07Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-design-questions.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-design-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T08:31:23Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: U4 functional-design 再走（Modify）の生成前確認 — 現行 HEAD 52fce820 を正として entities / rules / functional-spec を G-1〜G-8 の範囲で改訂し、traceability・実装・契約本文は変更しない。b51 追従 2 件（RECOMPOSED 列挙順 = 文書順、IntentUnavailable の分類）、排他の言い直し（Tx 2 段 + 確定 Tx 再検査）、状態 5 値と論理属性の実現、W6/W7 の入口と配線、W8 表の分類名、§7 実測行。契約側 1 件は contract-design pending-revision へ折り戻し、U7 側 1 件は申し送り
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-design-questions.md
+**Unit**: u4-read-model-updater
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:33:47Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:33:56Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-design-questions.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-design-questions.md
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T08:34:02Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-design-questions.md
+**Questions SHA-256**: f07df31d5b101ca7689ce387f7d28d3a8c73249cc8ff31b291832fb5109be0ee
+**Hash Scope**: confirmed-content-v1
+**Unit**: u4-read-model-updater
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:34:44Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:19Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:24Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:26Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:29Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:32Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:35Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:37Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:41Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:45Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:48Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:51Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:37:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:38:29Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Context**: construction > u4-read-model-updater > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:38:47Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Context**: construction > u4-read-model-updater > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:38:52Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Context**: construction > u4-read-model-updater > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:38:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Context**: construction > u4-read-model-updater > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:01Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Context**: construction > u4-read-model-updater > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Context**: construction > u4-read-model-updater > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:11Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:20Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:23Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:29Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:32Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:39Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:39:55Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:40:05Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:40:22Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:40:24Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+**Context**: construction > u4-read-model-updater > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T08:40:24Z
+**Event**: SENSOR_FIRED
+**Fire id**: 167a47f7
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T08:40:24Z
+**Event**: SENSOR_FAILED
+**Fire id**: 167a47f7
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-167a47f7.md
+**Findings count**: 36
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:40:51Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+**Context**: construction > u4-read-model-updater > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T08:40:51Z
+**Event**: SENSOR_FIRED
+**Fire id**: 61f81e58
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T08:40:51Z
+**Event**: SENSOR_FAILED
+**Fire id**: 61f81e58
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-61f81e58.md
+**Findings count**: 36
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T08:43:07Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/reviewer-brief-1.md
+**Context**: construction > u4-read-model-updater > functional-design > reviewer-brief-1.md
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T08:43:13Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u4-read-model-updater
+**Error**: Cannot start review iteration 1 for "functional-design" because the next iteration is 2. Retry with --iteration 2.
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T08:43:37Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u4-read-model-updater
+**Iteration**: 2
+**Recovery**: stale-receipt
+**Recovery Cause**: artifact
+**Artifact Fingerprint**: sha256:710f689f0f3796eeb5fe9f13efb839d8d7060539cfef2bb9f70c1d338f9bf105
+**Review Appendix Artifact**: construction/u4-read-model-updater/functional-design/functional-spec.md
+**Review Appendix Offset**: 34872
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T08:49:01Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: ad2d9c11ae7f8f2a0
+**Message**: AI-DLC の U4（リードモデル更新器）機能設計を現行コードへ追従させる改訂を終え、独立レビューを待っています。レビュー結果を再実測して判定を記録し、U4 の nfr-requirements に進みます。
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T08:52:28Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Context**: construction > u4-read-model-updater > functional-design > functional-spec.md
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T08:52:38Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T08:53:12Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u4-fd-reviewer
+**Agent ID**: au4-fd-reviewer-e8211fcb1624c954
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict: NOT-READY**（advisory のため、この判定はゲートを塞がず人間の重みづけの材料です）\n\n## 所見（6 件、重大度順）\n\n| ID | 重大度 | 一行要旨 |\n|---|---|---|\n| R-01 | Critical | ファイル適用は Tx 2 の**内
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T08:54:53Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u4-read-model-updater
+**Iteration**: 2
+**Verdict**: NOT-READY
+**Request Fingerprint**: sha256:710f689f0f3796eeb5fe9f13efb839d8d7060539cfef2bb9f70c1d338f9bf105
+**Artifact Fingerprint**: sha256:29c684a03613520d6da7aef180117a377cf6721b5242fd711982cb34d7b31c9a
+**Review Appendix Artifact**: construction/u4-read-model-updater/functional-design/functional-spec.md
+**Review Appendix Offset**: 34872
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:21Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:24Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:26Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:30Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:33Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:35Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/functional-spec.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:39Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:43Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:45Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/rules.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:48Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:52Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:54Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:56Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/entities.md
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Review Freeze Blocked
+**Timestamp**: 2026-09-07T08:56:59Z
+**Event**: REVIEW_FREEZE_BLOCKED
+**Tool**: Edit
+**Target**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/traceability.json
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T08:58:40Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u4-read-model-updater/functional-design/reviewer-brief-2.md
+**Context**: construction > u4-read-model-updater > functional-design > reviewer-brief-2.md
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T08:59:55Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 3 --unit u4-read-model-updater
+**Error**: Cannot start another review for "functional-design": the one recovery review was already used, and this stage's output document changed again afterward. This stage is mid-revision; the way to restart it cleanly is a redo jump: /aidlc --stage functional-design (your recorded answers survive; you will re-confirm the summary once). Only a human Request Changes decision resets the review attempt; do not record that rejection on the human's behalf.
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T09:04:03Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u4-read-model-updater
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
