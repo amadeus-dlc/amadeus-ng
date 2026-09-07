@@ -8,7 +8,7 @@
 
 ユースケースが依存してよいのは**ポートの trait**（`XxxRepository` 等）とドメイン層だけ。`XxxRepositoryImpl` などの実装への依存は禁止。結線（実物/InMemory の選択）は **composition root だけ**が行う。
 
-本リポジトリでは層 = クレートなので、`core-use-case` の `Cargo.toml` に `core-interface-adapter` が無いことがこの規則の機械強制になっている（import した瞬間 E0432）。
+本リポジトリでは層 = クレートなので、`core-command-use-case` の `Cargo.toml` に `core-command-interface-adapter` が無いことがこの規則の機械強制になっている（import した瞬間 E0432）。**dev-dependency にも書けない** — テストのためだけの依存でも同じ辺が張られるので、DIP のクレート分離強制が壊れ、依存も循環する（実測 `modules/core/command/use-case/Cargo.toml`: `[dependencies]` は `core-command-domain` / `chrono`、`[dev-dependencies]` は `tokio` のみ。クレート名は CQRS のクレート分離に追従 — B12 以降）。
 
 ## 2. バインディングはスタティックが既定
 
@@ -33,7 +33,13 @@ impl<E: IntentExecutionRepository, I: IntentRepository> CommitVerdictUseCase<E, 
 
 **例の差し替え 2026-08-31（オーナー裁定、b26 段階2 完了）**: 旧例は `NextUseCase<R: WorkflowDefinitionRepository>` だったが、`next` / `continue` のような**読むだけ**の動詞はクエリ側（`modules/core/query/use-case` / `modules/core/query/interface-adapter`）へ移設済みであり、コマンド側に `NextUseCase` は存在しない（[cqrs-boundaries.md](cqrs-boundaries.md) 規則 5〜7 + 追補、§4 の再々裁定）。**コマンド側に残るユースケースは書き込むものだけ**なので、例も実在する書込ユースケース `CommitVerdictUseCase` に差し替えた。`WorkflowDefinitionRepository` が消えたわけではない — `find_by_id` と `store` の両動詞を持つ**通常のリポジトリ**としてコマンド側に残る（`store` の実装は定義を変更する最初のユースケースと同じ Bolt で書く — 先行実装しない）。
 
-- **既定はジェネリクス（単相化）**。理由: ①`dyn` の object safety 制約で**契約の設計が歪む**のを防ぐ（`-> impl Iterator`・関連型・ジェネリックメソッドが使える）②ワンショット CLI で実装は実質 2 つ（Impl + InMemory）— 単相化コストは無視できる ③テストが `XxxUseCase<InMemoryXxxRepository>` の素の値で組める ④配線ミスがコンパイル時に落ちる（E1 文化）。
+- **既定はジェネリクス（単相化）**。理由: ①`dyn` の object safety 制約で**契約の設計が歪む**のを防ぐ（`-> impl Iterator`・関連型・ジェネリックメソッドが使える）②ワンショット CLI で実装の数が少なく、単相化コストは無視できる ③テストがポート実装の素の値で組める ④配線ミスがコンパイル時に落ちる（E1 文化）。
+
+  **ポート実装の 3 層（オーナー裁定 2026-08-31 / ADR-010、2026-09-07 実測）**: 自作 HashMap のテストダブルは禁止で、置き場は次の 3 つだけである。
+
+  1. **本番のコマンド側 Gateway** — `XxxRepositoryImpl<S>`（`modules/core/command/interface-adapter/src/orchestration/*_repository_impl.rs`）。型引数 `S` がバックエンドで、`open()` が SQLite、`in_memory()` が本家 event-store-adapter-rs の memory バックエンドを選ぶ。**公開のインメモリ実装はこれが正**であり、実装コードは SQLite と 1 行も違わないので同じ契約テストを両方に課せる（実測 `intent_execution_repository_impl.rs:182` / `intent_repository_impl.rs:156` / `workflow_definition_repository_impl.rs:177`）。
+  2. **use-case クレート内の `#[cfg(test)]` フェイク** — `InMemoryIntentExecutionRepository` / `InMemoryIntentRepository` / `InMemoryWorkflowDefinitionRepository` / `InMemoryCompiledDefinitionRepository`（`modules/core/command/use-case/src/orchestration/test_support.rs`、`pub(crate)`、`orchestration/mod.rs:38-39` で `#[cfg(test)]`）。**上記 §1 の DIP 制約下でユースケースを単体テストするための唯一の手段**である — アダプタ層を dev-dependency にも書けないので、本家ストアはこのクレートに届かない。禁止の対象外はこの用途だけで、他所で自作ダブルを書いてはならない。
+  3. **クエリ側の公開テストダブル** — `InMemoryXxxDao` 13 本（`modules/core/query/interface-adapter/src/memory/`）。DAO はリードモデルを読むだけなのでイベントストアを要さない。
 - **`dyn` を使ってよいのは**: 機構シーム（Gateway 実装内部の `Arc<dyn Clock>` 等 — 複数インスタンスで fake を共有する用途）と、将来ディスパッチャが多数のユースケースを一様保持する必要が実際に生じた**その境界だけ**。ユースケース自身の設計には持ち込まない。
 
 ## 2b. execute の引数は集約 ID と値オブジェクトのみ — 集約インスタンスを渡さない

@@ -473,9 +473,13 @@ WorkflowExecution 集約ルート（ADR-004 に吸収・精密化）、PlanActio
   `intent-execution-event/1`（~~workflow-execution-event/1~~ — B12 改名追従 2026-08-30）」で、Repository が書き、JournalReaderImpl が不一致・欠落を
   `Corrupt(UndecodablePayload)` で拒否する（版を上げる規約は C5 参照）。
 
-  楽観 `version` は集約と memento（`WorkflowExecutionState`）から削除し、**集約の外**を持ち回る
+  ~~楽観 `version` は集約と memento（`WorkflowExecutionState`）から削除し、**集約の外**を持ち回る
   形にした — `find_by_id` は再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番
-  version）を返し、`store` は `expected_version: usize` を引数に取る。
+  version）を返し、`store` は `expected_version: usize` を引数に取る。~~
+  — 失効（2026-08-30 / B13: 楽観 version は集約の内側 — `version: usize` フィールド、
+  `version()` / `with_version()`、`UNPERSISTED_VERSION = 0`。`Rehydrated*` / `StatePosition` /
+  `StoreVersion` は撤去、`store(&mut self, &event, &aggregate)` に `expected_version` 引数は無い。
+  実測 `port/mod.rs:15-18` / `intent_execution_repository_impl.rs:455`）
 
   **経緯（TOCTOU）**: 初稿の「更新は `persist_event(envelope, snapshot.version())`」は、
   `store` の引数に version が無いため store 内で最新スナップショットを読み直す形にしかならず、

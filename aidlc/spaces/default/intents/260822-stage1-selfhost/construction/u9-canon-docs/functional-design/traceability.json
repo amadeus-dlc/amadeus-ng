@@ -1,16 +1,18 @@
 {
   "stage": "functional-design",
   "unit": "u9-canon-docs",
-  "upstream_ids": ["FR8.1", "FR8.2", "FR9.6"],
+  "upstream_ids": ["FR8", "FR8.1", "FR8.2", "FR9.6"],
   "coverage": [
-    { "id": "FR8.1", "status": "OK", "target": "BR1.1, BR1.2, BR1.3, BR1.4, BR4.2" },
-    { "id": "FR8.2", "status": "OK", "target": "BR2.1, BR2.2, BR2.3, BR2.4, BR2.5, BR3.1, BR3.2, BR3.3, BR3.4" },
+    { "id": "FR8", "status": "OK", "target": "BR3.3, BR3.7, BR5.1", "note": "親要求（正本・仕様の canon 追従）。U9 は文書部分（FR8.1 / FR8.2 / FR9.6）を担い、FR8.3 / FR8.4（コード側の所有移動）は U2 の責務 — story-map 第 1・3 節。R-03（2026-09-05）で追加" },
+    { "id": "FR8.1", "status": "OK", "target": "BR1.1, BR1.2, BR1.3, BR1.4, BR1.5, BR1.6, BR4.2" },
+    { "id": "FR8.2", "status": "OK", "target": "BR2.1, BR2.2, BR2.3, BR2.4, BR2.5, BR3.1, BR3.2, BR3.3, BR3.4, BR3.7" },
     { "id": "FR9.6", "status": "OK", "target": "BR4.1, BR4.2" }
   ],
   "reverse": [
-    { "id": "BR3.5", "status": "N/A", "target": "オーナー質問（WorkspaceModel は集約か、2026-08-23）への回答から追加 — components.md の縮退（要求 ID を持たない設計裁定）" },
-    { "id": "BR3.6", "status": "N/A", "target": "オーナー確認（ドメインモデルの原則、2026-08-23）から追加 — 01 号 §7 の明記（要求 ID を持たない設計裁定）" },
-    { "id": "BR5.1", "status": "N/A", "target": "U9 の合格条件（unit-of-work / bolt-plan B4）— 横断の検証規則" },
-    { "id": "BR5.2", "status": "N/A", "target": "改訂の作法（制約 C4、00-policy §2）— 横断の方針" }
+    { "id": "BR3.5", "status": "N/A", "target": "オーナー質問（WorkspaceModel は集約か、2026-08-23）への回答から追加 — superseded、BR3.7 に吸収" },
+    { "id": "BR3.6", "status": "N/A", "target": "オーナー確認（ドメインモデルの原則、2026-08-23）から追加 — 01 号 §7.1（done、本再走で BR3.3 (h) が 6 件追記）" },
+    { "id": "BR5.1", "status": "N/A", "target": "U9 の合格条件（unit-of-work / pending-revision 3・4）— 横断の検証規則" },
+    { "id": "BR5.2", "status": "N/A", "target": "改訂の作法（制約 C4、00-policy §2）— 横断の方針" },
+    { "id": "BR5.3", "status": "N/A", "target": "検証規律（Q4 = A、オーナー 2026-09-07「実装コードもテストも仕様も常に検証」「bolt か unit を全部探索」）— 横断の方針、§13 学習候補" }
   ]
 }

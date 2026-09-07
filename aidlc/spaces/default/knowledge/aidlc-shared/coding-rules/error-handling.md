@@ -1,7 +1,7 @@
 # エラーハンドリング様式 — モジュールごとの手実装エラー enum
 
 **裁定日**: 2026-08-23（オーナー、FD Q1 = A）
-**適用例**: Bolt B1 / B3 のエラー型（core-domain `CommandError` / `ApplyError` / `StartError` / `SnapshotError`、~~core-use-case `GraphReadError`~~ → 廃止 2026-08-31・b26 段階2。下記「Repository エラーはジェネリック 1 本」を参照）
+**適用例**: `core-command-domain` の手実装エラー型 — 公開 enum 33 本（実測 `grep -rn 'pub enum [A-Za-z]*Error' modules/core/command/domain/src/` = 33。代表: `CommandError` / `IntentError` / `IntentReviewError` / `PlanError` / `ReportCommitError` / `StageSlotsError` / `TransitionStepsError` / `PromotionPlanError` / `RedefineError` / `RecompileError`）に加え、クレート私有の `pub(crate) enum ApplyError`（`orchestration/apply_error.rs:16` — 適用の内部配管が運ぶ失敗材料）と、材料を 1 つ持つ `pub struct IntentExecutionError`（`orchestration/intent_execution_error.rs:14` — DTO からの再構成 `IntentExecution::new` の拒否）がある（2026-09-07 実測）。~~`StartError` / `SnapshotError`~~ は現存しない — 旧名であり、集約の分割・改名（B12 / B13 2026-08-30）で失効した。~~core-use-case `GraphReadError`~~ → 廃止 2026-08-31・b26 段階2、`RepositoryError<Id>` 1 本へ収束（下記「Repository エラーはジェネリック 1 本」を参照）
 **機械強制**: `missing_errors_doc` / `missing_panics_doc` / `unwrap_used` / `expect_used` deny（`Cargo.toml` workspace lints）。`thiserror` / `anyhow` 禁止は `cargo lint` ルール候補（赤例テスト必須）
 
 ## ルール
@@ -9,7 +9,7 @@
 - ドメイン層・ユースケース層の失敗はモジュールごとの**手実装エラー enum** で表現する。
 - `thiserror` / `anyhow` 等のエラーハンドリング外部クレートには依存しない。
 - 各エラー enum は `std::fmt::Display` と `std::error::Error` を手実装する。
-- `Display` は**材料**（ID・索引・状態・原因）だけを描く開発者向けの診断表示であり、利用者向けの逐語文言（upstream 互換面）は**出す側の `wording` モジュール**（アダプタ層・RMU の投影ライタ — 2026-08-29 の message-catalog 解体後の形）が組み立てる — ドメイン層に文言を持ち込まない。
+- `Display` は**材料**（ID・索引・状態・原因）だけを描く開発者向けの診断表示であり、利用者向けの逐語文言（upstream 互換面）は**出す側の `wording` モジュール**（アダプタ層・RMU の投影ライタ — 旧 message-catalog を 2026-08-29 に解体した後の形）が組み立てる — ドメイン層に文言を持ち込まない。
 - 変種フィールドは材料のみ（`stage`, `actual`, `expected`, `path`, `cause` など）で、`String` の文言を運ぶ変種を作らない。
 - fallible な公開関数には `# Errors` セクションを付ける（`missing_errors_doc` deny）。
 - `# Panics` を要する公開関数は作らない（範囲は型で保証 — `StageIndex` 等）。

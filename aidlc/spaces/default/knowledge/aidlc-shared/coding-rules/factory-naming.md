@@ -2,7 +2,7 @@
 
 **裁定日**: 2026-08-24（オーナー）
 **出典**: オーナー提示の命名表（Java 由来）を Rust へ翻訳したもの
-**適用例**: U3（Bolt B5）— `EventStoreImpl::open` / `StorePath::for_space` / `WorkflowExecution::start` ほか。
+**適用例**: U3（Bolt B5）— `EventStoreImpl::open` / `StorePath::for_space` / `WorkflowExecution::start` ほか（履歴: 旧名 `WorkflowExecution` は B12 2026-08-30 で `Intent` + `IntentExecution` へ分割・改名され、現行は `IntentExecution::start` — 実測 `modules/core/command/domain/src/orchestration/intent_execution.rs:225`）。
 命名監査の結果と、表の動詞へ矯正**しない**と決めた 25 件の反例カタログは
 `<record>/construction/u3-event-store-repository/code-generation/naming-audit-report.md`。
 **機械強制**: `cargo lint` ルール化候補（下記「機械化の候補」）。現状はレビュー基準
@@ -43,10 +43,14 @@ Scala が言語で強制している性質を Rust に持ち込む — 補助コ
 `parse` が基本コンストラクタで、リテラル `StageSlug(..)` は `parse` の中の 1 箇所だけに現れる。
 検証を迂回する `new` は存在しない。**正しい形**。
 
-反例（2026-08-24 実測、次 Bolt で是正）:
-`WorkflowExecutionState` はリテラルが **2 箇所**（Builder の中と、集約の `state()` の中）に
-現れ、基本コンストラクタが無い。`pub(crate)` フィールドがそれを可能にしていた
+反例（2026-08-24 実測）— **是正済み（B13 2026-08-30、型ごと消滅）**:
+~~`WorkflowExecutionState` はリテラルが **2 箇所**（Builder の中と、集約の `state()` の中）に
+現れ、基本コンストラクタが無い。`pub(crate)` フィールドがそれを可能にしていた~~
 （[abstract-data-type.md](abstract-data-type.md) / [field-visibility.md](field-visibility.md)）。
+メメント型と `state()` / `from_state()` は廃止され、この反例は現存しない。現行の再構成経路は
+`IntentExecution::replay(snapshot, events)`（:352）と、アダプタの DTO から起こす検査付き
+`IntentExecution::new`（:290）の 2 つで、構造体リテラル `IntentExecution { .. }` は `new` の中の
+**1 箇所**（:319）だけである（実測 `modules/core/command/domain/src/orchestration/intent_execution.rs`）。
 
 ### ビルダーの鎖メソッドは setter ではない — ファクトリメソッドである
 
@@ -81,7 +85,9 @@ let new_person = person.to_builder().with_first_name("kato").build();
 `build()` が基本を通るので、何度往復しても不変条件の確立場所は 1 箇所である。
 
 小さい型なら、ビルダーを挟まず**値型に直接 `with_*`** を置いてよい
-（`ScopeMetadata::with_depth` / `WorkflowExecution::with_version` が本リポジトリの例）。
+（`ScopeMetadata::with_depth`（`scope_metadata.rs:45`）/ `IntentExecution::with_version`
+（`intent_execution.rs:254`）/ `WorkflowDefinition::with_version`（`workflow_definition.rs:273`）が
+本リポジトリの例 — B12 2026-08-30 の集約分割・改名に追従）。
 フィールドが増えて `with_*` が値型を埋め尽くしはじめたら、ビルダーへ移す合図である。
 
 ### ビルダーは基本コンストラクタを置き換えない
@@ -96,7 +102,7 @@ setter は 1 つも無い。違いは命名だけ:
 | 型 | 命名 | 判定 |
 | --- | --- | --- |
 | `ScopeMetadata::with_depth` ほか 5 本 | `with_` あり | **正しい** |
-| `WorkflowExecutionStateBuilder::plan` ほか 12 本 | 裸のフィールド名 | `with_*` へ |
+| `WorkflowExecutionStateBuilder::plan` ほか 12 本（履歴 — 型ごと消滅、B13 2026-08-30） | 裸のフィールド名 | `with_*` へ |
 | `StageNodeBuilder::condition` ほか 21 本 | 裸のフィールド名 | `with_*` へ |
 
 ## 原則

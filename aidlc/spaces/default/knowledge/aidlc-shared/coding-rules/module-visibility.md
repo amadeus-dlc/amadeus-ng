@@ -8,8 +8,8 @@
 
 - **`mod` はデフォルト private**。`pub mod` の連鎖はファイル構成（型ごとのファイル分割）をそのまま公開 API に漏らし、内部整理が破壊的変更になる — モジュール性喪失の温床。
 - **`pub mod` を許すのは名前空間として意味を持つ階層だけ**:
-  - 境界づけられたコンテキスト（`core_domain::{workspace, orchestration, workflow_definition}` 等） — ユビキタス言語の所属を示す情報であり隠さない
-  - 共有クレートの語彙名前空間（`message_catalog::{state, lock, bolt}`、`infra_io::{atomic, append_only, fs_meta}`）
+  - 境界づけられたコンテキスト（`core_command_domain::{orchestration, workflow_definition, workspace}` 等） — ユビキタス言語の所属を示す情報であり隠さない（実測 `modules/core/command/domain/src/lib.rs:29-31` の `pub mod`）
+  - 共有クレートの語彙名前空間（`core_infrastructure::{canon_json, collections, codec, atomic, append_only, fs_meta, secret_file}` — 実測 `modules/core/infrastructure/src/lib.rs:20-26`。旧例の `message_catalog::{state, lock, bolt}` / `infra_io::{atomic, append_only, fs_meta}` はどちらも現存しない — 文言カタログは 2026-08-29 に解体され、文言は出す側の `wording` へ移った）
 - コンテキストの**内側**の型ファイル mod は private にし、mod.rs（ファサード）で **`pub use` を意図的に列挙**する。mod.rs は「キュレーションされた公開 API 宣言」になる。
 
 ```rust
@@ -18,7 +18,7 @@ mod stage_slug;                       // private — ファイル構成は内部
 pub use stage_slug::StageSlug;        // 公開 API はここで列挙
 ```
 
-- **昇格の運用**: 利用者からの妥当な利用が発生したときに `pub use` へ追加する（先回りで全公開しない）。消費側のパスはコンテキスト直下（`core_domain::workspace::CheckboxState`）で安定し、ファイル分割の変更が非破壊になる。
+- **昇格の運用**: 利用者からの妥当な利用が発生したときに `pub use` へ追加する（先回りで全公開しない）。消費側のパスはコンテキスト直下（`core_command_domain::workspace::CheckboxState` — 実測 `modules/core/command/domain/src/workspace/checkbox_state.rs`）で安定し、ファイル分割の変更が非破壊になる。
 - クレート内の兄弟コンテキストからの参照も**ファサード経由**（private mod は親サブツリー外から見えないため、自然に強制される）。
 - **利便性のための再エクスポートはどこでも禁止**（オーナー裁定 2026-08-22）。`pub use` を書いてよいのは**所有コンテキストのファサード（コンテキスト直下の mod.rs）だけ**。別コンテキストが他所有の型を「便利だから」「後方互換のため」と再輸出すること（`orchestration::PlanAction` のようなエイリアス再輸出を含む）、クレート root や任意モジュールでの寄せ集め再輸出（prelude 的な `pub use` 束）は禁止 — 型の所有元が消費側のパスから読めなくなり、構造（どのコンテキストが何を所有するか）が読めなくなるため。所有を移すときは**完全移動**（呼出側のパスを一斉に直す）で行い、エイリアス再輸出で先送りしない。
 

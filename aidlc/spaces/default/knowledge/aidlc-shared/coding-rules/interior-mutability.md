@@ -2,7 +2,7 @@
 
 **裁定日**: 2026-08-23（オーナー）
 **参考**: [fraktor-rs `immutability-policy.md`](https://github.com/j5ik2o/fraktor-rs/blob/main/.agents/rules/rust/immutability-policy.md)（オーナー指示により本プロジェクト向けに翻案）
-**適用例**: U3（Bolt B5）— `WorkflowExecutionRepository::store` が `&self` + `RefCell<EventStoreImpl<C>>`、`EventStoreImpl` が手書きの `Rc<RefCell<Connection>>` 共有ハンドルだったのをオーナー指摘で是正
+**適用例**（履歴 — 旧名を含む是正の記録）: U3（Bolt B5）— `WorkflowExecutionRepository::store` が `&self` + `RefCell<EventStoreImpl<C>>`、`EventStoreImpl` が手書きの `Rc<RefCell<Connection>>` 共有ハンドルだったのをオーナー指摘で是正（ポート名は B12 2026-08-30 で `IntentExecutionRepository` に改名済み）
 **機械強制**: `cargo lint` ルール化予定（候補は下記「機械化の候補」）
 
 ## 原則
