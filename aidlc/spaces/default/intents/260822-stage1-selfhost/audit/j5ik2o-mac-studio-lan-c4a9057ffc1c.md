@@ -4919,3 +4919,212 @@
 **Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
 
 ---
+
+## Unit Started
+**Timestamp**: 2026-09-07T05:44:09Z
+**Event**: UNIT_STARTED
+**Stage**: nfr-requirements
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T05:46:14Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: U3 nfr-requirements の既存成果物 3 点（security-requirements.md / tech-stack-decisions.md / traceability.json、2026-08-23 B5 時点）の扱い — 現行コードとの乖離を実測した結果を踏まえて Keep / Modify / Redo from scratch のいずれにするか
+**Options**: Keep,Modify,Redo from scratch
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T05:48:04Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Session End
+**Timestamp**: 2026-09-07T05:48:18Z
+**Event**: SESSION_ENDED
+**Reason**: other
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-07T05:49:55Z
+**Event**: QUESTION_ANSWERED
+**Stage**: nfr-requirements
+**Details**: Modify (Recommended)
+**Unit**: u3-event-store-repository
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T05:49:56Z
+**Event**: ARTIFACT_REUSED
+**Stage**: nfr-requirements
+**Decision**: modify
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T05:50:54Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > nfr-requirements-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T05:51:10Z
+**Event**: DECISION_RECORDED
+**Stage**: nfr-requirements
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T05:56:12Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T05:56:34Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: nfr-requirements
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/nfr-requirements-questions.md
+**Questions SHA-256**: c64ec4961267bf32f55c91072d890a43aa6b581d8a36455f3de5e36fcf232344
+**Hash Scope**: confirmed-content-v1
+**Unit**: u3-event-store-repository
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T05:59:58Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Context**: construction > u3-event-store-repository > nfr-requirements > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T05:59:58Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2be32a85
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T05:59:58Z
+**Event**: SENSOR_FAILED
+**Fire id**: 2be32a85
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-2be32a85.md
+**Findings count**: 65
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:00:33Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/tech-stack-decisions.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > tech-stack-decisions.md
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T06:02:18Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > security-requirements.md
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T06:03:25Z
+**Event**: REVIEW_REQUESTED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:f06e8ec4e498dee15ca4b0113aec9da40562380bfdcad6d7d19a12c4d62962d6
+**Review Appendix Artifact**: construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 23169
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T06:08:03Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a8ca15a612999a2be
+**Message**: AI-DLC の unit-major 再走を進めており、U3（イベントストア/Repository）の機能設計は完了、NFR 要求 3 点を現行コード実測で書き直して独立レビューに回した。次はレビュー判定を記録して Unit 完了・コミットへ進む。
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T06:12:02Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Context**: construction > u3-event-store-repository > nfr-requirements > security-requirements.md
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T06:12:40Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u3-nfr-reviewer
+**Agent ID**: au3-nfr-reviewer-ef5ca8e544191977
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict:** READY（Critical 0 / Major 2 / Minor 4）\n\n`## Review` 節を `security-requirements.md` 末尾へ 1 つだけ追記しました。追記以外に変更したファイルはありません。`git status` はセッション開始
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T06:14:27Z
+**Event**: REVIEW_COMPLETED
+**Stage**: nfr-requirements
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:f06e8ec4e498dee15ca4b0113aec9da40562380bfdcad6d7d19a12c4d62962d6
+**Artifact Fingerprint**: sha256:0ff00bbcb69304cea0fc2ef6308baada799f282a37982bdc7003ef1c828dedc1
+**Review Appendix Artifact**: construction/u3-event-store-repository/nfr-requirements/security-requirements.md
+**Review Appendix Offset**: 23169
+**Review Appendix Prior Digest**: none
+**Review Appendix Prior Length**: 0
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T06:14:27Z
+**Event**: UNIT_COMPLETED
+**Stage**: nfr-requirements
+**Unit**: u3-event-store-repository
+**Run floor**: STAGE_JUMPED:2026-09-05T10:38:08Z#5
+
+---

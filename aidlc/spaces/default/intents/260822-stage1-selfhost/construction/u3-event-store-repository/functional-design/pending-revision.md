@@ -113,5 +113,5 @@
     reverse では両者を「要求 ID を持たない」N/A にしている。適用文面: reverse の BR5.1 を `{"status": "OK", "target": "FR1"}`、BR5.2 を
     `{"status": "OK", "target": "NFR3"}` に改め、横断方針の説明文は story-map 備考へ移す（教訓「OK target は単一 ID」）。
 15. **R-14（Minor）§7 にクラッシュ再構成の検証行が無い**: unit-of-work の U3 合格条件 3 つのうち「クラッシュ後の再構成」に対応する行が §7 の表に無い。
-    `modules/app/aidlc/tests/crash_reconstruction_test.rs` に 11 件実在。適用文面: §7 表に
-    「| クラッシュ再構成 | app/aidlc/tests/crash_reconstruction_test.rs | 途中停止後の journal / snapshot からの再構成（11 件） |」を追加。
+    `modules/app/aidlc/tests/crash_reconstruction_test.rs` に実在（**5 件** — コンダクタ再実測 2026-09-07 `cargo test --locked -p aidlc --test crash_reconstruction_test` = 5 passed。レビュアー R-14 の「11 件」は誤り）。適用文面: §7 表に
+    「| クラッシュ再構成 | app/aidlc/tests/crash_reconstruction_test.rs | 途中停止後の journal / snapshot からの再構成（5 件） |」を追加。
