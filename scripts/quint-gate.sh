@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# scripts/quint-gate.sh — ADR 0003 決定 4 の毎 PR ゲート (docs/adr/0003-quint-operations.md)
+# scripts/quint-gate.sh — formal/ の Quint モデルに対する毎 PR ゲート
+# (旧 ADR 0003 決定 4。ADR 文書は 2026-09-07 に削除した)
 # quint CLI 0.32.0 前提。
 #
 # 実行するチェック (1 つでも失敗したら exit 1。全ステップを最後まで実行してから判定する):

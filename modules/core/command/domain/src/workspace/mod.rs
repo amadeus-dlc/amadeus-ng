@@ -1,5 +1,6 @@
-//! workspace コンテキスト (11-workspace.md) — 永続化機構の Domain Primitive と純関数サービス。
-//! upstream 契約の逐語根拠は docs/specs/research/workspace-*.md。
+//! workspace コンテキスト — 永続化機構の Domain Primitive と純関数サービス。
+//! upstream 契約の逐語根拠はピン `3c3146cf` の配布資産と `tests/golden/upstream-3c3146cf/`
+//! (旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
 //!
 //! **描画はここに無い** (11-workspace §2.3)。状態ファイル・監査ブロックを**描く**純関数
 //! (`state_writers` / `render_audit_block`) は ES 化により投影の責務へ移った — 描くのは

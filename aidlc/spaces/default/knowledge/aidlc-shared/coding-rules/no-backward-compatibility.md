@@ -29,7 +29,7 @@
 
 ## 対象外
 
-- **upstream 互換**は別問題である。`docs/specs/` が定める upstream（AI-DLC ワークフロー本体）との
+- **upstream 互換**は別問題である。ゴールデン `tests/golden/upstream-3c3146cf/`（ピン `3c3146cf` = v2.6.40 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`が定める upstream（AI-DLC ワークフロー本体）との
   観測可能な契約は維持する。本ルールが禁じるのは**自分のコードの中の**互換口であって、
   upstream が観測する振る舞いの互換ではない。
 - 監査証跡・履歴記述（過去のレビュー所見、`pending-revision.md`、`deviations.md` の記録）は

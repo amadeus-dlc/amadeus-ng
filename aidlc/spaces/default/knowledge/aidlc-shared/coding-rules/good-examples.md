@@ -79,7 +79,8 @@ pub const fn with_skeleton(mut self, skeleton: SkeletonDefault) -> ScopeMetadata
 
 ## 反例カタログ — 表の動詞へ矯正してはいけない 25 件
 
-**[`<record>/construction/u3-event-store-repository/code-generation/naming-audit-report.md`](../../../intents/260822-stage1-selfhost/construction/u3-event-store-repository/code-generation/naming-audit-report.md)** §3
+旧 intent 記録 `construction/u3-event-store-repository/code-generation/naming-audit-report.md` §3（2026-09-07 に
+削除した。25 件の全文は残っておらず、以下の要旨が現行の記録である）
 
 `hash_canonical` / `serialize` / `IntentExecution::start`（旧 `WorkflowExecution::start`） / `encode`・`decode` /
 `open_append_only` など、[factory-naming.md](factory-naming.md) の表の動詞になっていないが

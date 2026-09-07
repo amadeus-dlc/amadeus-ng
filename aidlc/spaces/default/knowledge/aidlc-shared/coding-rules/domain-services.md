@@ -3,8 +3,9 @@
 **裁定日**: 2026-08-29（オーナー）
 **関連**: [abstract-data-type.md](abstract-data-type.md)（土台 — 型は操作で定義される）、
 [factory-naming.md](factory-naming.md)（構築規則は型が所有する）、
-project.md Corrections「集約は FSM — 導出ロジックを独立ドメインサービスやユースケースに
-置かない」（2026-08-22 横展開）の一般化
+オーナー統一ルール 2026-08-22「集約は FSM — 導出ロジックを独立ドメインサービスやユースケースに
+置かない」（[good-examples.md](good-examples.md) §集約。旧 memory 層 `project.md` Corrections に記録されていたが、
+memory 層は 2026-09-07 に初期化した）の一般化
 **機械強制**: レビュー基準
 
 ## 原則

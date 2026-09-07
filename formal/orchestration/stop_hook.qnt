@@ -4,7 +4,7 @@
 //       conductor がターンを終えようとすると next をプローブし、PENDING なら decision:block、
 //       carve-out (固定順の許可経路) が勝てば allow、無限ブロックは no-progress cap が解放する。
 //       upstream aidlc-workflows v2 @ 3c3146cf の 07-hooks.md §7 を抽象化
-//       (根拠: docs/specs/research/orchestration-directives-verbs.md §8)。
+//       (根拠: ピン 3c3146cf の配布資産。旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
 //
 // モデル型 ↔ Rust Domain Primitive 対応表 (ADR 0003 決定 6):
 //   sig            ↔ ProgressSignature (stage::stateSha(Last Updated 除外)::directiveFingerprint) の抽象 (int)

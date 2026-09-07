@@ -1,5 +1,6 @@
-//! orchestration コンテキスト (10-orchestration.md) — 「次に何が起こるか」の Domain Primitive
-//! と `IntentExecution` 集約。upstream 契約の逐語根拠は docs/specs/research/orchestration-*.md。
+//! orchestration コンテキスト — 「次に何が起こるか」の Domain Primitive
+//! と `IntentExecution` 集約。upstream 契約の逐語根拠はピン `3c3146cf` の配布資産と
+//! `tests/golden/upstream-3c3146cf/` (旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!

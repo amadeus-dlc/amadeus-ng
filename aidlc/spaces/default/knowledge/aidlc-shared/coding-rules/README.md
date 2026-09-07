@@ -2,16 +2,17 @@
 
 オーナー裁定で確定した**リポジトリ横断の設計ルール**を置く。特定エージェントのプライベートメモリには置かない（アクセスできない主体が出るため）。1 ルール 1 ファイル。ルールを追加・改訂したら本 README の一覧も更新する。
 
-各ルールには裁定日・適用例（PR）・機械強制の有無（`cargo lint` ルール / clippy / 型）を記す。**設計の前提はまずスキル正典から** — 設計・命名・配置を自分で考える前に、インストール済みの j5ik2o-* 設計スキル（software-design プラグイン約 29 本。`j5ik2o-ddd-repository-design` / `-repository-placement` / `-custom-linter-creator` 等）を列挙し、該当スキルの SKILL.md と references/ を**先に**読む。前提はスキルに書いてある（実例: Reader 造語と `load` メソッドはどちらもスキル未読のまま設計して差し戻された）。**オーナーの指摘（裁定）は可能な限り機械的な強制へ落とし込む** — 優先順は 型（E1）→ 既存 lint（clippy / rustc）→ `cargo lint` カスタムルール。カスタムルールは検出力を証明する赤例テストが必須（Quint ゲートと同じ DoD）。仕様（upstream 互換の観測可能契約）は `docs/specs/` が正本であり、ここに置くのは**書き方のルール**である。
+各ルールには裁定日・適用例（PR）・機械強制の有無（`cargo lint` ルール / clippy / 型）を記す。**設計の前提はまずスキル正典から** — 設計・命名・配置を自分で考える前に、インストール済みの j5ik2o-* 設計スキル（software-design プラグイン約 29 本。`j5ik2o-ddd-repository-design` / `-repository-placement` / `-custom-linter-creator` 等）を列挙し、該当スキルの SKILL.md と references/ を**先に**読む。前提はスキルに書いてある（実例: Reader 造語と `load` メソッドはどちらもスキル未読のまま設計して差し戻された）。**オーナーの指摘（裁定）は可能な限り機械的な強制へ落とし込む** — 優先順は 型（E1）→ 既存 lint（clippy / rustc）→ `cargo lint` カスタムルール。カスタムルールは検出力を証明する赤例テストが必須（Quint ゲートと同じ DoD）。仕様（upstream 互換の観測可能契約）の正本はゴールデン `tests/golden/upstream-3c3146cf/`（ピン `3c3146cf` = v2.6.40 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`であり（手書きの `docs/specs/` は 2026-09-07 に削除した）、ここに置くのは**書き方のルール**である。
 
 
 ## 規則が衝突したら（優先順）
 
 規則が 22 本になり、全文を頭に入れて衝突を裁定する前提は成立しない。**読み替えて進まず、
-その場で正本を直す**（`project.md` Corrections「上流成果物の矛盾は読み替えず裁定を求める」）。
+その場で正本を直す**（上流成果物の矛盾は読み替えず裁定を求める、というオーナー規律 2026-08-22 の適用。
+旧 memory 層 `project.md` の Corrections に記録されていたが、memory 層は 2026-09-07 に初期化したため本節が正本である）。
 どちらが正かは次の順で決める。
 
-1. **観測互換**（`docs/specs/` の upstream 契約）— これだけは設計規則より上。
+1. **観測互換**（ゴールデン `tests/golden/upstream-3c3146cf/`（ピン `3c3146cf` = v2.6.40 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`が定める upstream 契約）— これだけは設計規則より上。
    Published Language の逐語は常に勝つ。
 2. **「例外を認めない」と明記した規則** — 現在は [field-visibility.md](field-visibility.md) のみ
    （ただし「例外なし」は**射程の中で**の話。射程外＝対象外は各規則の §射程 / §対象外 を見る）。

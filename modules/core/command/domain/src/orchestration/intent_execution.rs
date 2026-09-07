@@ -561,7 +561,7 @@ impl IntentExecution {
     /// 最初のステージ」は recompose で動く。該当が無ければ `None`。
     ///
     /// upstream の `--phase <name>` は「そのフェーズの最初のステージへ跳ぶ」動詞であり
-    /// (`docs/upstream/specs/02-orchestration-engine.ja.md` §8 の `emitJumpDirective`)、
+    /// (ピン `3c3146cf` の `aidlc-orchestrate.ts` の `emitJumpDirective`)、
     /// その目的地の導出が本クエリである。跳べるかどうか (初期化ガード・方向) は
     /// [`IntentExecution::jump_resolve`] が別途決める。
     #[must_use]

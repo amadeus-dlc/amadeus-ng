@@ -124,8 +124,6 @@ knowledge_base:
       - "CLAUDE.md"
       - "aidlc/spaces/default/memory/**/*.md"
       - "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/*.md"
-      - "docs/specs/00-policy.md"
-      - "docs/adr/*.md"
 
 chat:
   auto_reply: true
