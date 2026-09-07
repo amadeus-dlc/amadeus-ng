@@ -1,5 +1,8 @@
 # U4 リードモデル更新 — 機能設計の補完確認
 
+> 2026-09-05 の補完（初回 + レビュー後修正）の確認記録に、2026-09-07 の再走（unit-major 反復、既存成果物 Modify）の確認を追記した。
+> 再走の根拠は実測記録 [gap-measurement-20260907.md](gap-measurement-20260907.md)（基準 = 作業ツリー HEAD `52fce820`、RMU クレートは `origin/main` と同一）。
+
 ## 根拠と対象
 
 - [Unit 定義](../../../inception/units-generation/unit-of-work.md): U4 の責務、独立クレート、U7 からの起動。
@@ -19,7 +22,7 @@
 
 NFR3 の冪等な再生成とこの観測結果には差がある。古い開発報告にある「欠落より重複を許容」という担当者判断だけで、要求を緩めたとは扱わない。
 
-## Consolidated Summary Confirmation
+## 2026-09-05 の確認（履歴 — 初回補完とレビュー後修正）
 
 - 補完する成果物は entities.md、rules.md、functional-spec.md、traceability.json。既存コードの作り直しからは始めず、要求・後続裁定・現物の対応を整理する。
 - 対象は取得と投影の責務、監査・状態ファイル・構造化リードモデルの出力、チェックポイント前進、初回起動、参照規則の変更、障害後の再実行。コードの偶然の形だけを設計根拠にしない。
@@ -35,7 +38,25 @@ NFR3 の冪等な再生成とこの観測結果には差がある。古い開発
 - R-03: 同じspaceの共有構造化面に、個別カーソルとは別の公開世代・位置を持たせる。断面120の後に100を公開して後退させない。同じ変換規約の有効な共有面が既に新しければそれを維持し、ファイル側の計画とカーソルを確定して参照した共有世代を記録する。規約不一致や破損は再生成へ回す。
 - 3点の対応をエンティティ・規則・手順・状態表・受入シナリオへ一貫して反映し、再レビューする。アプリケーションの実装変更はこの機能設計修正には含めない。
 
-初回の補完方針は Looks correct で確認済み。今回の再確認はレビュー所見3点の修正範囲を対象とする。
+初回の補完方針は Looks correct で確認済み。2026-09-05 の再確認（レビュー所見3点の修正範囲）も Looks correct で確認済み（当時の記録: `[Answer]: Looks correct`）。
+
+## 再走 2026-09-07 — 前提（確認事項）
+
+再走ではオーナー裁定「現状のコードを基準」に従い、現行コードを正として設計を追従させる（gap-measurement §3 の G-1〜G-8）。人間の裁定を要する新しい基盤選択は無い。
+
+- P1. **基準と範囲**: 基準は HEAD `52fce820`（RMU は `origin/main` と同一）。改訂するのは entities.md / rules.md / functional-spec.md の 3 文書。traceability.json は変更起因なし（upstream 4 ID → BR 17 本）。実装・テスト・共有契約本文は変更しない。
+- P2. **b51 由来の追従 2 件**: (G-1) `Recomposed` の監査行 `Stages skipped` / `Stages added` は計画の**文書順**で並べる（`in_document_order`、辞書順にしない）— BR2.1 と `AuditBlock.fields` に明記。上流契約（`audit-format.md` / contract-summary の RECOMPOSED）は順序に沈黙しているため、contract-design の pending-revision へ「列挙順 = 文書順」の追記案を折り戻す。(G-2) 構造化面の生成で集約 `next_decision` が別 intent を拒否した判断は `ReadTablesError::IntentUnavailable` として投影不能に分類し、RMU で判断し直さない — §5 の分類と BR2.3 に明記。
+- P3. **排他の言い直し（G-3）**: W2 手順 1 / BR3.4 / entities 制約の「照合開始から確定まで排他を保持・ファイルを正準パス順にロック・対象集合単位で直列化」を、現行の**ストア単位の書込 Tx 2 段（prepare / publish_prepared、`BEGIN IMMEDIATE`）+ 確定 Tx での再検査（pending 行・request_id・確定位置・共有 head）による古い書き手の遮断**に改める。ファイル単位のロックは存在せず、ストア（= space）単位のロックが包含する。中間のファイル適用は Tx 外で行い、Tx 2 の再検査が不一致なら古い計画で書かない。
+- P4. **状態と属性の実現（G-4 / G-5）**: §4 状態表に「実現」列を足し、`prepared` / `publishing` は `committed=0` で区別しない、`blocked` は永続状態ではなく `CatchUpError::PublicationConflict { path }` の返却（pending 計画は保持）、`committed` / `superseded` は `amadeus_publication.committed` と `amadeus_publication_history.state` と明記。entities「派生表示と実装境界」を属性単位の対応表（論理属性 ↔ 列 / フィールド / 導出）へ拡張し、列の無い `replacement_id` / `resolution` / `inherited_blocks` / `before_identity` / `after_identity` / `audit_blocks` は「導出」または「全バイト」と書く。`ProjectionCursor` に `anchor_aid` / `anchor_seq_nr`、`SharedProjectionHead` に `verified` を追加する。論理モデルの名前（PublicationBatch / OutputPlan / ProjectionCursor / SharedProjectionHead / AuditBlock）は維持する。
+- P5. **入口と配線（G-6 / G-7）**: W6 / W7 に入口（`rebuild_read_model` / `restore_missing_files` / `resolve_publication`）と U7 配線の有無を書く（`resolve_publication` と `rebuild_read_model` は app 未配線、契約テストで検収 — 配線は U7 の裁定事項として申し送り、本再走では裁定を求めない）。W8 表の行 4 / 5 を現行の分類名（`Corrupt(ProjectionSnapshotMismatch)` で停止、`prepare_read_model` が入口で旧規約 head を再生成）で書き直す。
+- P6. **検証状況と Review の扱い（G-8）**: §7 に 2026-09-07 の実測行（RMU 9 バイナリ 481 件、workspace 2,354 件）を追加し、旧数値は日付付きで残す。旧 `## Review`（2026-09-05 READY）は `review-history-20260905.md` へ退避済みで、再走の独立レビュー（advisory、iteration 1）を新たに受ける。
+
+## Consolidated Summary Confirmation
+
+- 現行コード HEAD `52fce820` を正として、entities.md / rules.md / functional-spec.md を G-1〜G-8 の範囲で改訂する（Modify）。traceability.json・実装・テスト・共有契約本文は変更しない。
+- b51 の追従 2 件（RECOMPOSED の列挙順 = 文書順、`IntentUnavailable` の分類）、排他方式の言い直し（Tx 2 段 + 確定 Tx 再検査、ファイルロック無し）、状態 5 値と論理属性の実現の明記（blocked はエラー返却、列の無い属性は導出）、W6 / W7 の入口と配線状況、W8 表の分類名、§7 の 2026-09-07 実測行を反映する。
+- 契約側 1 件（RECOMPOSED の列挙順）は contract-design の pending-revision へ折り戻し、U7 側 1 件（`resolve_publication` / `rebuild_read_model` の配線）は申し送りにとどめ、本再走で裁定は求めない。
+- 旧 Review 節は `review-history-20260905.md` に退避済み。改訂後にセンサー（required-sections / upstream-coverage）を再実行し、独立レビュー（advisory、iteration 1）を受ける。
 
 Does this all look correct before I generate the artifact?
 

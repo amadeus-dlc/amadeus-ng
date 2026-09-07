@@ -4,7 +4,7 @@
 
 [要求](../../../inception/requirements-analysis/requirements.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[Unit定義](../../../inception/units-generation/unit-of-work.md)、[共有契約](../../../inception/contract-design/contract-summary.md)、[構成](../../../inception/domain-design/components.md)、[確認回答](functional-design-questions.md) を根拠とする。cqrs-boundaries は active space の coding-rules/cqrs-boundaries.md を指す。
 
-BR3.1〜BR3.4は、計画の先行保存・出力照合・確定を扱う。2026-09-06 JSTの実装同期では、保存済み計画の復旧後も同じ取得呼出しで後続へ進むことと、復旧失敗をU7が指示や変異の前に伝播することを明確にした。2026-09-07 の再走（Modify、現行コード HEAD `52fce820`）では BR2.1（列挙値の文書順）・BR2.3（`IntentUnavailable` の分類）・BR3.4（ストア単位の書込 Tx 2 段と確定時の再検査）・BR5.3（欠落・破損と旧規約版の扱い）を現行コードに追従させた（[gap-measurement-20260907.md](gap-measurement-20260907.md) G-1〜G-3 / G-7）。
+BR3.1〜BR3.4は、計画の先行保存・出力照合・確定を扱う。2026-09-06 JSTの実装同期では、保存済み計画の復旧後も同じ取得呼出しで後続へ進むことと、復旧失敗をU7が指示や変異の前に伝播することを明確にした。2026-09-07 の再走（Modify、現行コード `b9be20f6` = `main` の #120 squash コミット。実測時の作業ツリー `52fce820` と RMU クレートは同一バイト）では BR2.1（列挙値の文書順）・BR2.3（`IntentUnavailable` の分類）・BR3.4（ストア単位の書込 Tx 2 段と確定時の再検査）・BR5.3（欠落・破損と旧規約版の扱い）を現行コードに追従させた（[gap-measurement-20260907.md](gap-measurement-20260907.md) G-1〜G-3 / G-7）。
 
 ## 規則の正本
 
@@ -39,7 +39,7 @@ rules:
     statement: "監査の語彙・フィールド順・時刻・文言を観測契約に揃える"
     applies_to: ["AuditBlock"]
     trigger: "監査ブロック生成時"
-    logic: "IF 対応するイベントを描く THEN 契約で定めた行列を、発生時刻と確定した表示材料から生成する。列挙値（Recomposed の Stages skipped / Stages added などステージの一覧）は計画の文書順で並べ、集合の辞書順にしない（b51、in_document_order。上流契約は順序に沈黙しており contract-design へ明記を折り戻す）。未対応語彙を成功したことにしない"
+    logic: "IF 対応するイベントを描く THEN 契約で定めた行列を、発生時刻と確定した表示材料から生成する。列挙値（Recomposed の Stages skipped / Stages added などステージの一覧）は計画の文書順で並べ、集合の辞書順にしない。計画に含まれないslugは監査行へ写さない（b51、in_document_order。上流契約は順序に沈黙しており contract-design へ明記を折り戻す）。未対応語彙を成功したことにしない"
     violation: "比較不一致または投影不能として扱う"
     source: "FR1.1; FR5.4（描画側）; NFR1"
   - id: BR2.2
@@ -87,7 +87,7 @@ rules:
     statement: "同じ対象へ競合する計画を適用しない"
     applies_to: ["ProjectionCursor","PublicationBatch","OutputPlan"]
     trigger: "開始・復旧・確定時"
-    logic: "IF 未完計画がある THEN 復旧またはBR5.2の置換を先に行う。排他はストア（space）単位のSQLite書込Tx（BEGIN IMMEDIATE）で、計画の保存（prepare、Tx 1）と公開の確定（publish_prepared、Tx 2）の2段に分け、ファイル適用はTx外で行う。Tx 2でpending行のrequest_id・確定位置・共有head・対象所有（target_binding）を再検査し、別の書き手が完了・置換・前進させた計画では書かない。ファイル単位・正準パス順のロックは持たない。supersededや古い世代の書込を拒否する"
+    logic: "IF 未完計画がある THEN 復旧またはBR5.2の置換を先に行う。排他はストア（space）単位のSQLite書込Tx（BEGIN IMMEDIATE）で、計画の保存（prepare、Tx 1）と公開の確定（publish_prepared、Tx 2）の2段に分ける。Tx 2はpending行のrequest_id・確定位置・共有head・対象所有（target_binding）を先に再検査し、そのあと同じTxの中でファイルを適用して確定まで書込ロックを保持する。Tx 1とTx 2の間に別の書き手が完了・置換・前進させた計画では書かない。ファイル単位・正準パス順のロックは持たない。supersededや古い世代の書込を拒否する"
     violation: "競合を返し既存計画を保持する"
     source: "NFR3"
   - id: BR4.1

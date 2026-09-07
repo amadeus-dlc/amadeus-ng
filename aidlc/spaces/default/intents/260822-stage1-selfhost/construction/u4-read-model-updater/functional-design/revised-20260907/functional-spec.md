@@ -7,7 +7,7 @@ FR1.1 の監査投影と横断読取、FR5.4 の監査描画側、NFR1 の観測
 出典は [Unit定義](../../../inception/units-generation/unit-of-work.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[要求](../../../inception/requirements-analysis/requirements.md)、[構成](../../../inception/domain-design/components.md)、[共有契約](../../../inception/contract-design/contract-summary.md)、[確認回答](functional-design-questions.md)。
 データと判断規則の正本は [entities.md](entities.md) と [rules.md](rules.md)。本書は手順と状態遷移の正本で、関係図と規則一覧は派生表示である。
 
-2026-09-06 JST の実装同期に続き、2026-09-07 の再走（unit-major 反復、Modify）で現行コード HEAD `52fce820`（RMU クレートは `origin/main` と同一）を正として追従させた。根拠は [gap-measurement-20260907.md](gap-measurement-20260907.md)（G-1〜G-8）。PublicationBatch と、OutputPlanを具体化したPublicationFileによる保存・照合・再開は実装済みである。2026-09-05 の Review 節は [review-history-20260905.md](review-history-20260905.md) へ退避した。
+2026-09-06 JST の実装同期に続き、2026-09-07 の再走（unit-major 反復、Modify）で現行コード `b9be20f6`（`main` の #120 squash コミット。実測時の作業ツリー `52fce820` と `modules/core/read-model-updater/` は同一バイト）を正として追従させた。本書の `b9be20f6` はこのコミットを指す。根拠は [gap-measurement-20260907.md](gap-measurement-20260907.md)（G-1〜G-8）。PublicationBatch と、OutputPlanを具体化したPublicationFileによる保存・照合・再開は実装済みである。2026-09-05 の Review 節は [review-history-20260905.md](review-history-20260905.md) へ退避した。
 
 ## 2. 境界と入力
 
@@ -40,7 +40,7 @@ U3 の集約再構成は確定済みの「最新スナップショット＋そ�
 
 ### W2 — 計画の公開と確定
 
-1. 更新権はストア（= space）単位の SQLite 書込トランザクション（`BEGIN IMMEDIATE`）で取る。ファイル単位・正準パス順のロックは持たない — ストアの書込ロックが同じ space の全投影対象を包含する。排他は 2 段で、計画の保存（`prepare`、Tx 1）と公開の確定（`publish_prepared`、Tx 2）の間にファイル適用を Tx 外で行う。Tx 2 は pending 行が同じ request_id のままか、確定位置と共有 head が計画時と一致するか、対象束縛が一致するかを再検査し、別の書き手が完了・置換・前進させていれば古い計画では書かない（フェンシング）。通常・再生成・構造化のみ・置換のすべてがこの 2 段を使う。superseded や古い世代の計画は再開しない。共有面の受理済み規約版と異なる計画はファイル書込前に競合として返す（規約版が古い head は公開の入口 `prepare_read_model` が再生成する）。
+1. 更新権はストア（= space）単位の SQLite 書込トランザクション（`BEGIN IMMEDIATE`）で取る。ファイル単位・正準パス順のロックは持たない — ストアの書込ロックが同じ space の全投影対象を包含する。排他は 2 段で、計画の保存（`prepare`、Tx 1）が pending 行を耐久化して commit し、公開の確定（`publish_prepared`、Tx 2）が pending 行が同じ request_id のままか、確定位置と共有 head が計画時と一致するか、対象束縛が一致するかを**先に再検査**し、そのあと同じ Tx の中でファイルを適用（`PublicationBatch::apply`）し、`advance_on` と committed の確定まで書込ロックを保持して commit する。Tx 1 と Tx 2 の間に別の書き手が完了・置換・前進させていれば、再検査で古い計画では書かない（フェンシング）。通常・再生成・構造化のみ・置換のすべてがこの 2 段を使う。superseded や古い世代の計画は再開しない。共有面の受理済み規約版と異なる計画はファイル書込前に競合として返す（規約版が古い head は公開の入口 `prepare_read_model` が再生成する）。
 2. 計画にあるファイルを順番に照合して適用する。実践昇格がある場合は project、team、状態、監査の順序を維持する。変更がないファイルは書かない。
 3. 対象の内容が適用前なら計画を適用する。適用後と一致するなら既に反映済みと扱い、追記しない。追記が途中で終わった場合は、適用前の厳密なバイト列に計画された追記の接頭辞が続くと確認できたときだけ残りを補完する。
 4. 上記のいずれでもない内容は競合である。既存本文を消去したり、末尾の似た行を削除したり、現在の規則で計画を作り直したりせず、`CatchUpError::PublicationConflict { path }` を返して停止する（本書の blocked はこの返却を指し、永続状態ではない — §4）。pending 計画は保持し、次回の照合または W7 の置換で扱う。
@@ -73,10 +73,10 @@ U3 の集約再構成は確定済みの「最新スナップショット＋そ�
 
 ### W6 — 再生成と横断読取
 
-入口（HEAD `52fce820`）: 共有面だけの再生成は `JournalReaderImpl::rebuild_read_model`（チェックポイント不変。app からは未配線で、契約テストで検収）、欠落した出力ファイルの復元は `JournalReaderImpl::restore_missing_files`（最後の確定計画から復元。U7 の `catch_up` が毎回 `ReadModelUpdater::catch_up` の前に呼ぶ）、規約版が古い共有 head の再生成は `prepare_read_model`（公開の入口で毎回）。
+入口（`b9be20f6`）: 共有面だけの再生成は `JournalReaderImpl::rebuild_read_model`（チェックポイント不変。app からは未配線で、契約テストで検収）、欠落した出力ファイルの復元は `JournalReaderImpl::restore_missing_files`（最後の確定計画から復元。U7 の `catch_up` が毎回 `ReadModelUpdater::catch_up` の前に呼ぶ）、規約版が古い共有 head の再生成は `prepare_read_model`（公開の入口で毎回）。
 
 1. 再生成は新しい request_id と mode=rebuild を持つ独立した要求として受ける。同じ要求の再送は同じ計画へ戻し、committed の計画を再利用して再生成したことにはしない。
-2. 未完計画があれば先に W3 / W7 で解決する。確定位置、共有面の公開位置、所有範囲を読み、必要な履歴を取得する。target_position は個別確定位置と共有面の記録済み位置の両方以上とする。履歴が不足するなら破損として停止し、位置を巻き戻さない。
+2. 未完計画があれば先に W3 / W7 で解決する。確定位置、共有面の公開位置、所有範囲を読み、必要な履歴を取得する。target_position は個別確定位置と共有面の記録済み位置の両方以上とする。履歴が不足するなら停止し（保存済み計画の終点まで届かなければ `PlanUnavailable`、アンカー不一致なら `Corrupt`）、位置を巻き戻さない。
 3. 再生成する所有部分は、対象断面までの履歴から完全な出力を計算する。監査は全ブロックを無条件追記せず、所有部分の再構築または確認済み接頭辞への不足分適用として計画する。既存出力・欠落・部分書込のいずれかを before_identity に記録し、expected_content と after_identity も確定する。利用者部分は現物または利用可能な保全データから保持し、欠落した利用者本文を捏造しない。この計算に失敗した場合は、新しいprepared計画もactive_generationの変更も公開しない。
 4. 完全な出力計画と構造化候補が揃ってから、W1手順8と同じ排他・再検査を行い、新しい世代を採番する。request_id、完全な再生成計画、active_generationの更新を不可分に受理する。例えば位置100・末尾100・状態ファイル欠落なら、100→100の新世代を作る。空履歴の0→0も表現できる。受理後に停止しても、保存済みの確定バイトだけでW3から再開できる。
 5. W2で公開する。個別位置は同じ値でも、計画世代を確定できる。構造化面が欠落している場合は、記録済みの共有位置以上で行集合とheadを再公開する。確定後の同じ要求の再送は無操作となる。
@@ -87,7 +87,7 @@ U3 の集約再構成は確定済みの「最新スナップショット＋そ�
 
 ### W7 — 利用者の変更を保持した計画の置換
 
-入口（HEAD `52fce820`）: `JournalReaderImpl::resolve_publication` — 競合した未完計画を、現在内容を保持する新世代へ置換して再開する。app（U7）からは未配線で、契約テスト（`publication_recovery_contract` 12 件）で検収する。配線の要否は U7 の裁定事項として申し送る。以下の blocked は永続状態ではなく `PublicationConflict` の返却を指す（§4）。
+入口（`b9be20f6`）: `JournalReaderImpl::resolve_publication` — 競合した未完計画を、現在内容を保持する新世代へ置換して再開する。app（U7）からは未配線で、契約テスト（`publication_recovery_contract` の 33 件のうち `resolve_publication` を呼ぶ 7 件）で検収する。配線の要否は U7 の裁定事項として申し送る。以下の blocked は永続状態ではなく `PublicationConflict` の返却を指す（§4）。
 
 1. blocked の原因と現在内容を調べ、保持する利用者部分と、旧計画のどの監査ブロックがどこまで反映されたかを特定する。旧計画に保存したバイト列・管理境界・イベントIDとブロック順序・出力範囲を用いる。同じ文言の行があるだけでは反映済みと推定しない。
 2. 解決内容を resolution として記録する。現物との対応を一意に証明できない場合は blocked のままとし、保全データから所有部分を復元する等の解決を先に行う。未確認のブロックを引継ぎ対象にしない。
@@ -123,10 +123,10 @@ U3 の集約再構成は確定済みの「最新スナップショット＋そ�
 
 PublicationBatch は投影実行の管理記録であり、業務上の集約や AI-DLC のステージを追加するものではない。
 
-| 現在 | 条件 | 次 | 効果 | 実現（HEAD `52fce820`） |
+| 現在 | 条件 | 次 | 効果 | 実現（`b9be20f6`） |
 |---|---|---|---|---|
 | 未作成 | 入力断面と出力計画の保存に成功 | prepared | 外部出力はまだ変えない | `prepare`（Tx 1）が `amadeus_publication` に `committed=0` の行を書く。generation は直前世代 + 1 |
-| prepared | 対象の更新権と現在位置を確認 | publishing | 同じ計画を適用開始 | 区別しない（`committed=0` のまま `PublicationBatch::apply` を Tx 外で実行） |
+| prepared | 対象の更新権と現在位置を確認 | publishing | 同じ計画を適用開始 | 区別しない（`committed=0` のまま。`publish_prepared` の Tx 2 が再検査のあと同じ Tx 内で `PublicationBatch::apply` を実行する） |
 | publishing | 一部出力済みで停止 | publishing | 保存済み計画を保持、再開時は現物照合 | 次回の `pending_publication` が同じ行を返し、`apply` が現物と before / after を照合 |
 | prepared / publishing | 前提と異なる内容・所有を検出 | blocked | 出力・確定位置の追加更新を停止 | 永続状態ではない。`CatchUpError::PublicationConflict { path }` を返し、pending 行は保持 |
 | blocked | 内容の扱いを解決し、同じ計画の前提が再び成立 | publishing | 再照合して続行 | 次回の `catch_up` / `restore_missing_files` が同じ pending 行を再照合 |
@@ -167,7 +167,7 @@ PublicationBatch は投影実行の管理記録であり、業務上の集約や
 | 共有面120が欠落し、古い候補100が残る | 記録済み位置120を保持。120以上の共有rebuild後に候補100を再評価 |
 | 同じ位置の再生成後に古い世代で確定を試みる | head・計画の世代を再検査して拒否または最新の有効面を維持。再生成結果を古いバイトへ戻さない |
 
-入力の不正、投影材料の欠落、計画保存失敗、対象競合、ファイル読書失敗、確定失敗を区別して返す。現行の分類（HEAD `52fce820`、`CatchUpError` 14 変種）: `Read(JournalReadError)`（`Io` / `Corrupt { aggregate_id, seq_nr, cause: CorruptCause }` / `CheckpointRegression`。`CorruptCause` は `UndecodablePayload` / `InvariantViolation` / `CheckpointAnchorMismatch` / `ProjectionSnapshotMismatch`）が入力の不正・破損と確定時の整合失敗、`ReadTables(ReadTablesError)`（`MissingGenesis` = 先頭が誕生記録でない、`IntentUnavailable` = 実行が指す intent が履歴に無い、または集約 `next_decision` が別 intent として拒否した — b51）と `Projection(ProjectionError)` が投影材料の欠落・投影不能、`PlanUnavailable`（`Started` / `Created` が無く 1 行も描けない）/ `HistoryDisappeared`（差分観測後の全履歴が空）/ `MixedIntents`（複数 intent を指す実行の混在 — Markdown 面の契約）が採取断面の不整合、`PublicationConflict { path }` が対象競合（blocked の返却）、`PublicationIo` / `StateFileRead` / `StateFileWrite` / `MemoryFileRead` / `MemoryFileWrite` がファイル読書失敗、`SteeringRead` / `SteeringPack` が参照規則の読取・整形失敗。計画保存・確定の SQL 失敗は `at_store` が対象パスと `ErrorKind` へ写して `Read(Io)` で返る。エラー表示に必要な対象・位置・原因を保持する。集約が拒否した判断を RMU で判断し直さず、`IntentUnavailable` として材料不足に分類する（BR2.3）。U7の`catch_up_before_reading`はこの失敗を呼出元へ伝え、古い読み面から通常の指示を返すフォールバックを行わない。
+入力の不正、投影材料の欠落、計画保存失敗、対象競合、ファイル読書失敗、確定失敗を区別して返す。現行の分類（`b9be20f6`、`CatchUpError` 14 変種）: `Read(JournalReadError)`（`Io` / `Corrupt { aggregate_id, seq_nr, cause: CorruptCause }` / `CheckpointRegression`。`CorruptCause` は `UndecodablePayload` / `InvariantViolation` / `CheckpointAnchorMismatch` / `ProjectionSnapshotMismatch`）が入力の不正・破損と確定時の整合失敗、`ReadTables(ReadTablesError)`（`MissingGenesis` = 先頭が誕生記録でない、`IntentUnavailable` = 実行が指す intent が履歴に無い、または集約 `next_decision` が別 intent として拒否した — b51）と `Projection(ProjectionError)` が投影材料の欠落・投影不能、`PlanUnavailable`（`Started` / `Created` が無く 1 行も描けない `read_model_updater.rs:319`、または保存済み計画の終点まで履歴が届かない `:155` — W3 / W6 手順 2 の履歴不足はこの分類で停止する）/ `HistoryDisappeared`（差分観測後の全履歴が空）/ `MixedIntents`（複数 intent を指す実行の混在 — Markdown 面の契約）が採取断面の不整合、`PublicationConflict { path }` が対象競合（blocked の返却）、`PublicationIo` / `StateFileRead` / `StateFileWrite` / `MemoryFileRead` / `MemoryFileWrite` がファイル読書失敗、`SteeringRead` / `SteeringPack` が参照規則の読取・整形失敗。計画保存・確定の SQL 失敗は `at_store` が対象パスと `ErrorKind` へ写して `Read(Io)` で返る。エラー表示に必要な対象・位置・原因を保持する。集約が拒否した判断を RMU で判断し直さず、`IntentUnavailable` として材料不足に分類する（BR2.3）。U7の`catch_up_before_reading`はこの失敗を呼出元へ伝え、古い読み面から通常の指示を返すフォールバックを行わない。
 
 | U7の呼出元 | 復旧・投影の失敗時 |
 |---|---|
@@ -230,41 +230,5 @@ erDiagram
 
 実装と契約試験の詳細は[implementation-report.md](../implementation-report.md)に記録する。2026-09-06 JSTの統合版 `9b4a6d55` は51スイート2,200件が成功し、同headのCIでも成功した。一方、相対カバレッジは99.01854%対99.13907%で未達である。その後の最終コード `e1691a53` は相対カバレッジを含むCIが成功し、mainへ統合済みである。最新結果は実装記録の「収束ループ完了」に記す。
 
-2026-09-07（再走、HEAD `52fce820`）の実測: `cargo test --locked -p core-read-model-updater` は 9 バイナリ 481 件（lib 295 / audit_block_golden 1 / cross_shard_read 5 / journal_reader_impl 46 / projection_golden 18 / publication_file_contract 13 / publication_recovery_contract 33 / read_model_updater 31 / read_tables 39）、workspace 全体は 2,354 件（b52 で `PROPTEST_RNG_SEED=20260823 cargo test --workspace`）、failed 0。2026-09-05 の Review 節は [review-history-20260905.md](review-history-20260905.md) に退避した（当時の判定であり、本再走の判定ではない）。
-
-## Review
-
-**Verdict:** NOT-READY
-**Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-09-07T08:50:32Z
-**Iteration:** 2
-
-advisory（承認判断の参考となる独立レビュー）の 1 回きりのパスであり、修正と再レビューのループは持たない。所見はすべて 2026-09-07 時点の作業ツリーで実測した（`origin/main` = `b9be20f6`、`modules/core/read-model-updater/` は `52fce820` と同一バイト。`git diff --stat 52fce820 HEAD -- modules/core/read-model-updater/` は空）。
-
-### Findings
-
-| ID | Severity | Location | Finding | Required action | Status |
-|---|---|---|---|---|---|
-| R-01 | Critical | `functional-spec.md` > §3 W2 手順 1 および §4 状態表の prepared→publishing 行、`rules.md` > BR3.4.logic、`entities.md` > 派生表示と実装境界の末尾段落 | 4 か所が「Tx 1 と Tx 2 の間にファイル適用を Tx 外で行い、そののち Tx 2 が再検査する」と書くが、現行コードは順序も Tx 境界も逆である。`orchestration/publication_store.rs:397` が Tx 2 を `BEGIN IMMEDIATE` で開き、401-417 で再検査（`pending`、`saved != batch`、チェックポイント、`shared_projection::verify`）、418 で `saved.apply()`、419 で `advance_on`、437 で `commit` する。`PublicationBatch::apply` の製品コード呼出は 418 の 1 か所だけで（`grep -rn "\.apply()" modules/core/read-model-updater/src/` の 3 件は 418 と自身の内部 `publication_batch.rs:199`、テスト用 `publication_file.rs:276`）、Tx 1 と Tx 2 の間に適用は存在しない。帰結は 2 つ — ストア（space）単位の書込ロックが全ファイル I/O の間ずっと保持される、および再検査が適用の前であって後ではない。本再走が G-3 で「現行コードへ追従させた」と述べた排他機構そのものが、コードと逆向きに記述されている | W2 手順 1、§4 状態表の当該行、BR3.4.logic、entities 末尾段落を「Tx 2 が再検査してから同じ Tx の中でファイルを適用し、`advance_on` と確定まで同一 Tx で行う」に書き替え、書込ロックがファイル I/O 中も保持されるという帰結を明記する | New |
-| R-02 | Minor | `functional-spec.md` > §3 W7 冒頭の入口記述 | 「契約テスト（`publication_recovery_contract` 12 件）で検収する」の 12 がどの数え方でも実測と合わない。同ファイルの `#[tokio::test]` は 33 件（`cargo test --locked -p core-read-model-updater --test publication_recovery_contract -- --list` が `33 tests`）、`resolve_publication` を呼ぶテスト関数は 7 件（呼出箇所は 8）。§7 の「`publication_recovery_contract` 33」とも整合しない。`resolve_publication` の U7 未配線を申し送りにとどめる裁定はこの検収件数を根拠にしているため、数値の裏取りが要る | 12 を実測値へ置換し、何を数えた値か（ファイル全体か `resolve_publication` 経路か）を併記する | New |
-| R-03 | Minor | 3 文書に散在する `52fce820`（`functional-spec.md` §1・§4 表見出し・W6・W7・§7、`entities.md` 正本の範囲・属性対応表見出し、`rules.md` 正本と出典） | `git merge-base --is-ancestor 52fce820 origin/main` が偽。`52fce820` は squash 前のブランチ側コミットで、`main` 上の対応コミットは `b9be20f6`（`#120`）である。新規クローンからこの SHA は解決できない。§1 冒頭だけが「RMU クレートは `origin/main` と同一」と補っており実体は追えるが、他の 6 か所は SHA 単独で参照している | `b9be20f6`（`main` の squash コミット）を併記するか置換し、実測の再現手順を fresh clone から辿れるようにする | New |
-| R-04 | Minor | `traceability.json` > coverage の FR1.1 エントリ | `rules.md` の BR4.2 は `source: "FR1.1; NFR1"` だが、`traceability.json` の FR1.1 の target 一覧に BR4.2 が無い（NFR1 側には有る）。BR 17 本の `source` と coverage 4 件を全数突合した結果、不一致はこの 1 件のみ。traceability センサーは `gaps` / `orphans` / `missing_from_table` / `invalid_entries` / `invalid_targets` がすべて空で通るため、機械では検知されない | FR1.1 の target へ BR4.2 を追加するか、BR4.2 の `source` から FR1.1 を落として正本間を一致させる | New |
-| R-05 | Minor | `rules.md` > BR2.1.logic、`entities.md` > `AuditBlock.fields` の制約 | 両者は「列挙値は計画の文書順で並べ、集合の辞書順にしない」とだけ書く。しかし `in_document_order`（`workspace/projection.rs:1806-1812`）は `plan.stages()` 側を走査して `slugs.contains(...)` で絞るため、計画に含まれない slug は監査行から脱落する（実装のドキュメンテーションコメントも「計画に無い slug は写さない」と明記）。NFR1 の逐語互換に関わる振る舞いが設計に現れていない | BR2.1 と entities の当該制約へ「計画に含まれない slug は監査行へ写さない」を明記する | New |
-| R-06 | Minor | `functional-spec.md` > §5 の分類一覧（`PlanUnavailable` の説明） | `PlanUnavailable` を「`Started` / `Created` が無く 1 行も描けない」とのみ説明するが、製品コードの返却は 2 か所ある。`orchestration/read_model_updater.rs:319`（`resolve_plan` の失敗、本文どおり）と `:155`（保存済み計画の `to()` まで履歴が届かないとき）である。後者は §5 にも W3 にも記述が無く、W6 手順 2 の「履歴が不足するなら破損として停止」とも分類が異なる | §5 の分類説明へ、保存済み計画の履歴切り落としも `PlanUnavailable` になることを追記する | New |
-
-### Validation Tool Results
-
-| Tool | Result | Interpretation |
-|---|---|---|
-| `aidlc-sensor-required-sections`（`functional-spec.md`） | PASS（`h2_count` 7、`findings_count` 0） | テンプレート未供給のため H2 の構造検査のみ。所見なし |
-| `aidlc-sensor-required-sections`（`entities.md`） | PASS（`h2_count` 3、`findings_count` 0） | 同上 |
-| `aidlc-sensor-required-sections`（`rules.md`） | PASS（`h2_count` 3、`findings_count` 0） | 同上 |
-| `aidlc-sensor-upstream-coverage` | PASS（`unreferenced` 空、`findings_count` 0） | `consumes` 5 本すべてが `functional-spec.md` から参照されている |
-| `aidlc-sensor-traceability` | `pass:false`、`findings_count` 36 | 36 件はすべて `missing_from_upstream_ids`（共有 story-map 上の他 Unit の要求 ID）で既知のノイズ。`gaps` / `orphans` / `missing_from_table` / `invalid_entries` / `invalid_targets` はすべて空。R-04 はこの検査が拾わない層の不一致である |
-| `linter` センサー | 対象外 | 生成物が Markdown / JSON のみで TS/JS の生成コードが無い |
-| `cargo test --locked -p core-read-model-updater` | 9 バイナリ 481 件 passed、0 failed | 内訳も §7 の記載と一致（lib 295 / audit_block_golden 1 / cross_shard_read 5 / journal_reader_impl 46 / projection_golden 18 / publication_file_contract 13 / publication_recovery_contract 33 / read_model_updater 31 / read_tables 39）。workspace 全体 2,354 件は本レビューでは再実行していない |
-
-### Summary
-
-主要な懸念は R-01 で、本再走が「現行コードを正として追従させた」と宣言した排他機構そのもの（ファイル適用の Tx 内外と、再検査と適用の前後関係）がコードと逆向きに書かれている。他の 5 件は数値・コミット参照・分類の精度に関する所見で、設計の骨格は健全である。G-1（`in_document_order` による `Recomposed` の文書順）、G-2（`IntentUnavailable` の `ReadTables::project` からの伝播）、G-4（§4 の実現列、blocked = `PublicationConflict` の返却）、G-5（`ProjectionCursor` の anchor 2 属性、`SharedProjectionHead.verified`、`read_*` 15 表 + steering 2 表）、G-6（W6 / W7 の入口と U7 配線 — `restore_missing_files` は `runtime.rs:1822` で `ReadModelUpdater::catch_up` の前に毎回呼ばれ、`rebuild_read_model` / `resolve_publication` は runtime から未配線）、G-7（W8 の `advance_on` 三分岐と BR5.3 の分類名）、G-8（§7 の実測行）、および `CatchUpError` 14 変種の過不足なしはいずれも実測で裏が取れた。RECOMPOSED の列挙順を上流契約が定めていないという主張も正しく（`audit-format.md:93` は必須フィールドのみ、`contract-summary` :433-436 は payload の形のみ）、その折り戻しは `inception/contract-design/pending-revision.md` の項目 2 に文面案付きで既に着地しているため、扱いは妥当である。
+2026-09-07（再走、`b9be20f6`）の実測: `cargo test --locked -p core-read-model-updater` は 9 バイナリ 481 件（lib 295 / audit_block_golden 1 / cross_shard_read 5 / journal_reader_impl 46 / projection_golden 18 / publication_file_contract 13 / publication_recovery_contract 33 / read_model_updater 31 / read_tables 39）、workspace 全体は 2,354 件（b52 で `PROPTEST_RNG_SEED=20260823 cargo test --workspace`）、failed 0。2026-09-05 の Review 節は [review-history-20260905.md](review-history-20260905.md) に退避した（当時の判定であり、本再走の判定ではない）。
 

@@ -2,7 +2,7 @@
 
 ## 正本の範囲
 
-以下のYAMLは本Unitの入出力と処理管理記録の論理モデルである。作業ツリーではPublicationBatchとPublicationFile、SQLiteの管理表が復旧を担う。論理上の属性とRustのフィールドを1対1には対応させず、実装との対応を末尾に記す。ドメインイベントや集約の所有はU2に残す。2026-09-07 の再走（Modify、現行コード HEAD `52fce820`）で、列の無い論理属性を「導出」と明記し、ProjectionCursor の anchor 2 属性と SharedProjectionHead の verified を追加した（[gap-measurement-20260907.md](gap-measurement-20260907.md) G-4 / G-5）。
+以下のYAMLは本Unitの入出力と処理管理記録の論理モデルである。作業ツリーではPublicationBatchとPublicationFile、SQLiteの管理表が復旧を担う。論理上の属性とRustのフィールドを1対1には対応させず、実装との対応を末尾に記す。ドメインイベントや集約の所有はU2に残す。2026-09-07 の再走（Modify、現行コード `b9be20f6` = `main` の #120 squash コミット。実測時の作業ツリー `52fce820` と RMU クレートは同一バイト）で、列の無い論理属性を「導出」と明記し、ProjectionCursor の anchor 2 属性と SharedProjectionHead の verified を追加した（[gap-measurement-20260907.md](gap-measurement-20260907.md) G-4 / G-5）。
 
 出典: [Unit定義](../../../inception/units-generation/unit-of-work.md)、[要求割当](../../../inception/units-generation/unit-of-work-story-map.md)、[要求](../../../inception/requirements-analysis/requirements.md)、[構成](../../../inception/domain-design/components.md)、[契約](../../../inception/contract-design/contract-summary.md)、[確認回答](functional-design-questions.md)。
 
@@ -71,7 +71,7 @@ entities:
       - { name: event_id, type: "identifier", required: true, constraints: "JournalRecordへの参照" }
       - { name: ordinal, type: "integer", required: true, constraints: "同イベント内の出力順、0以上" }
       - { name: heading, type: "string", required: true, constraints: "採用された監査語彙" }
-      - { name: fields, type: "ordered_record", required: true, constraints: "契約に定めたフィールド順。列挙値（Recomposed の Stages skipped / Stages added などステージの一覧）は計画の文書順で並べ、集合の辞書順にしない（b51）" }
+      - { name: fields, type: "ordered_record", required: true, constraints: "契約に定めたフィールド順。列挙値（Recomposed の Stages skipped / Stages added などステージの一覧）は計画の文書順で並べ、集合の辞書順にしない。計画に含まれない slug は監査行へ写さない（b51）" }
       - { name: rendered, type: "bytes", required: true, constraints: "時刻と表示材料を含む決定的な出力" }
   - name: StructuredProjection
     description: "同じ入力断面から計算した読取用の行集合。行の実スキーマは仕様11号の構造化面を参照する。"
@@ -96,7 +96,7 @@ constraints:
   - "prepared / publishing / blocked の計画は投影対象ごとに高々1件。superseded は終端で再開不可"
   - "AuditBlock の (event_id, ordinal) は出力計画内で一意。これは出力ファイルの新フィールドではない"
   - "候補の StructuredProjection.as_of は計画のtarget_positionと同一。確定時の有効な共有面は同じ規約版でtarget_position以上、served_byが利用した共有世代を特定する"
-  - "共有面の公開も個別計画の確定も、ストア（space）単位のSQLite書込Txで直列化する。ファイル単位・正準パス順のロックは持たず、計画の保存（Tx 1）と確定（Tx 2）の間はTx 2の再検査（pending行のrequest_id・確定位置・共有head）で古い書き手を遮断する。共有面へ古い履歴位置を上書きしない"
+  - "共有面の公開も個別計画の確定も、ストア（space）単位のSQLite書込Txで直列化する。ファイル単位・正準パス順のロックは持たない。Tx 2は再検査（pending行のrequest_id・確定位置・共有head・target_binding）のあと同じTx内でファイルを適用し、確定まで書込ロックを保持する。Tx 1とTx 2の間に割り込んだ別の書き手の計画では書かない。共有面へ古い履歴位置を上書きしない"
   - "expected_content は書込開始前に耐久的に保持し、復旧中に現在の規則から作り直さない"
   - "他クローンの監査シャードと所有外部分を計画対象に含めない"
   - "一つの取得呼出しは、保存済み計画の復旧と後続の別計画を最大2件まで直列に扱う。最終CPは後続計画の終点だが、先行計画のtarget_positionと確定記録は変えない"
@@ -114,7 +114,7 @@ constraints:
 | ProjectionCursor | 個別チェックポイントと公開計画の世代で、処理位置と有効な書込者を識別する |
 | SharedProjectionHead | `amadeus_read_model_head`が共有面の位置・世代・規約版・型付き内容ダイジェスト・検証状態を保持する |
 
-属性単位の対応（2026-09-07、HEAD `52fce820`。「列」= SQLite 管理表の列、「フィールド」= Rust 型のフィールド、「導出」= 保存せず計算または照合で得る）:
+属性単位の対応（2026-09-07、`b9be20f6`。「列」= SQLite 管理表の列、「フィールド」= Rust 型のフィールド、「導出」= 保存せず計算または照合で得る）:
 
 | 論理属性 | 実装 | 種別 |
 |---|---|---|
@@ -145,4 +145,4 @@ constraints:
 | SteeringProjection.source_identity / rows / source_paths | `SteeringTables.source_digest` / `plans` + `parts` + `chunks` / `SteeringSource.memory_dir` 配下の適用順 | フィールド + 列 |
 | JournalRecord | `JournalEntry { global_seq, execution_id, seq_nr, occurred_at, event }`（event_id は event が持つ）。intent 行は `Intent`、定義行は `DefinitionEntry` として `JournalBatch` に分かれる | フィールド |
 
-計画の先行保存と公開・確定は別のSQLiteトランザクション（いずれも `BEGIN IMMEDIATE`、ストア単位の書込ロック）であり、前半の`prepare`が pending 行を耐久化し、ファイル適用を Tx 外で行ったのち、後半の`publish_prepared`が pending 行の request_id・確定位置・共有 head を再検査してから確定する。ファイル単位のロックは持たない。SQL失敗のパスと分類は`at_store`で、ファイルI/Oは`at_output`で統一する。これらはエラー変換のためのprivateな操作で、新しいドメイン集約や公開APIを追加しない。
+計画の先行保存と公開・確定は別のSQLiteトランザクション（いずれも `BEGIN IMMEDIATE`、ストア単位の書込ロック）であり、前半の`prepare`が pending 行を耐久化し、後半の`publish_prepared`が pending 行の request_id・確定位置・共有 head を再検査してから同じ Tx の中でファイルを適用し（`saved.apply()`）、`advance_on` と確定まで書込ロックを保持して commit する。ファイル単位のロックは持たない。SQL失敗のパスと分類は`at_store`で、ファイルI/Oは`at_output`で統一する。これらはエラー変換のためのprivateな操作で、新しいドメイン集約や公開APIを追加しない。
