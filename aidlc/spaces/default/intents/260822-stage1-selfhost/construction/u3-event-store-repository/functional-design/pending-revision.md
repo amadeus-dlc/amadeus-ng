@@ -80,3 +80,38 @@
 2. **`thiserror` が推移依存に入った**（本家経由）。我々が直接使わない方針は不変だが、
    「推移依存として存在する」ことを正本に注記したい。
 3. **`IntentId::value()` と `as_str()` の並立**（委任 1 §7 D、B6 でも未処理）。
+
+---
+
+## 追記 2026-09-07 — unit-major 再走（Keep）の再レビュー READY と新規所見
+
+- **経緯**: 4 成果物（entities / rules / functional-spec / traceability、2026-09-05 #112 是正版）を **Keep**（本文無変更、オーナー会話回答）で再採用し、
+  独立レビュー iteration 1（advisory、challenge `review:30b70b9a25be173ec55f85af6cdb7893`）は **READY**（Critical 0 / Major 1 / Minor 4）。
+  前回（2026-09-05 NOT-READY）の ID 1〜3 / R-04〜R-09 は**全件 Resolved**（レビュアーが現行 HEAD `f2b6b6a9` で実測）。
+  旧 `## Review` 節はレビュー要求の付録規則（付録は 1 節のみ）により `functional-spec.md` 末尾から切り離し、`review-history-20260905.md` へ退避した。
+- **上記「引き続き有効」項目 1〜3 の現状**: 項目 1（`## Review` の扱い）→ 2026-09-07 の READY 節に置き換わり履歴は退避ファイルへ（**解消**）。
+  項目 2（BR4.2 の正規表現）→ 本文・実装テスト `intent_dir_name.rs:165-168` と一致、R-09 Resolved（**解消**）。
+  項目 3（§4.1 の入れ子形）→ 2026-08-27 追記どおり反映済み（**解消**）。有効な旧項目は残っていない。
+
+### 新規所見（次の U3 FD 書込機会で適用 — per-unit・gate false のため承認ゲートには載らない）
+
+11. **R-11（Major）派生ビューの欠落**: `functional-spec.md` に、ステージ定義が求める ER 図（`entities.md` の YAML から派生する mermaid `erDiagram`）と
+    規則要約（`rules.md` からの派生表）が無い（本文の mermaid 0 件、required-sections センサーは雛形未配備のため検出しない）。
+    適用文面: §2 の直後に「### 2a. エンティティ関係（派生ビュー — 正本は entities.md）」として `IntentExecution` / `IntentExecutionEvent` /
+    `IntentExecutionId` / `SnapshotEnvelope` / `EventEnvelope` / `IntentExecutionRepositoryImpl<S>` / `SnapshotStrategy` の関係を `erDiagram` で描き
+    テキスト代替を併記、§5 の直後に「### 5a. 規則要約（派生ビュー — 正本は rules.md）」として BR1.1〜BR5.2（23 本）の 1 行要約表を置く。
+12. **R-10（Minor）components.md の未参照**: upstream-coverage センサーが `unreferenced: ["components"]` で FAIL（既定重大度 advisory）。
+    この Unit で `components.md` に触れているのは質問票だけで、呼称も退役名 `PersistenceGateways`（現行名 `CommandGateways`）。
+    適用文面: functional-spec §1 の所有表の直後に「上流の論理コンポーネント対応: `../../../inception/domain-design/components.md` の `CommandGateways`
+    （Repository 実装と本家ストアの接続）および `CoreInfrastructure`」の 1 行を足す。質問票の呼称は AI 記述（人間の逐語回答ではない）のため
+    「（現行名 `CommandGateways`）」の括弧注記を添えてよい。
+13. **R-12（Minor）§7 の Definition 側件数の鮮度**: 「共通契約 14 件と実装固有 12 件の計 26 件」は 2026-09-05 時点の値。#110（`a1ddb37d`）で
+    契約マクロにテスト 2 名が増え、現行 HEAD の実測は `workflow_definition_repository_contract` 18 件 + `workflow_definition_repository_impl_test`
+    12 件 = **30 件**（コンダクタ再実測 2026-09-07、`cargo test --locked -p core-command-interface-adapter --test …`）。U3 側の「22 + 23 = 45 件」は一致。
+    適用文面: 「計 26 件（2026-09-05 時点。2026-09-07 再実測は契約 18 + 実装 12 = 30 件）」。
+14. **R-13（Minor）traceability.json の BR5.1 / BR5.2 二重登録**: coverage で FR1 の target に BR5.1、NFR3 の target に BR5.2 を置きながら、
+    reverse では両者を「要求 ID を持たない」N/A にしている。適用文面: reverse の BR5.1 を `{"status": "OK", "target": "FR1"}`、BR5.2 を
+    `{"status": "OK", "target": "NFR3"}` に改め、横断方針の説明文は story-map 備考へ移す（教訓「OK target は単一 ID」）。
+15. **R-14（Minor）§7 にクラッシュ再構成の検証行が無い**: unit-of-work の U3 合格条件 3 つのうち「クラッシュ後の再構成」に対応する行が §7 の表に無い。
+    `modules/app/aidlc/tests/crash_reconstruction_test.rs` に実在（**5 件** — コンダクタ再実測 2026-09-07 `cargo test --locked -p aidlc --test crash_reconstruction_test` = 5 passed。レビュアー R-14 の「11 件」は誤り）。適用文面: §7 表に
+    「| クラッシュ再構成 | app/aidlc/tests/crash_reconstruction_test.rs | 途中停止後の journal / snapshot からの再構成（5 件） |」を追加。

@@ -7,20 +7,20 @@
 //
 // モデル型 ↔ Rust Domain Primitive 対応表 (ADR 0003 決定 6):
 //   journalLen    ↔ journal 表の行数 (単一集約なので global 通番 GlobalSeqNr の最大値と一致)
-//   snapVersion   ↔ snapshot 表の version 列 = WorkflowExecution::version() (楽観 version)
-//   snapSeq       ↔ snapshot 表の seq_nr 列 = WorkflowExecution::seq_nr() (適用済みイベント数)
+//   snapVersion   ↔ snapshot 表の version 列 = IntentExecution::version() (楽観 version)
+//   snapSeq       ↔ snapshot 表の seq_nr 列 = IntentExecution::seq_nr() (適用済みイベント数)
 //   checkpoint    ↔ checkpoint 表の global 通番 = JournalReader::checkpoint(ProjectionName)
 //   readModelSeq  ↔ 投影 (U4) が描き終えた最後の global 通番。本モデルは値だけを持つ
 //   loadedVersion ↔ writer ごとの「再水和した集約が載せている版」
-//                   = WorkflowExecutionRepository::find_by_id が with_version で載せた値
+//                   = IntentExecutionRepository::find_by_id が with_version で載せた値
 //   lastAction    ↔ ITF リプレイ用アクション記録 (ADR 0003 決定 5 の lastAction 規約)
 //   lastActor     ↔ 同上。writer を一意に選ぶための添字 (lastAction × lastActor で駆動する)
 //   prev*         ↔ (モデル専用) 状態遷移レベル不変条件のための前状態スナップショット。
 //                   Rust 対応物なし
 //
 // アクション ↔ Rust ポート操作:
-//   load(w)           ↔ WorkflowExecutionRepository::find_by_id (未書込なら genesis を持つ)
-//   store_ok(w)       ↔ WorkflowExecutionRepository::store が Ok (Tx 内で journal + snapshot)
+//   load(w)           ↔ IntentExecutionRepository::find_by_id (未書込なら genesis を持つ)
+//   store_ok(w)       ↔ IntentExecutionRepository::store が Ok (Tx 内で journal + snapshot)
 //   store_conflict(w) ↔ 同 store が Err(RepositoryError::Conflict) — 状態を変えない
 //   catchup           ↔ JournalReader::events_after + advance_checkpoint
 //   crash             ↔ Tx 済み・投影未反映のままプロセスが落ちる (状態不変のマーカー)

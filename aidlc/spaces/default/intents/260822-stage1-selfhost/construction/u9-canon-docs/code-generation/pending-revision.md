@@ -73,6 +73,15 @@ UNIT_COMPLETED 後の書込機会で機械的に適用する。
    適用後の受入 (7) は 11 号 **12**（code-summary §2 の「10」は凍結のため据え置き — 本行が現行値）。
 8. **R-04（Minor）** gap-measurement の T1 / T3 / T6 / T7 / T8 は code-summary §7.1 の折り戻し（functional-design ゲート）で処理。R-05 / R-06 / R-07（Info）は追加作業なし。
 
+## 受入 (10) の実測（PR #119、2026-09-07）
+
+- PR: https://github.com/amadeus-dlc/amadeus-ng/pull/119 — head `52192ad7`、squash-merge `f2b6b6a9`（merge queue 経由、2026-09-07T04:19:32Z）。
+- CI 7 ジョブ（aidlc-distribution / check / quint / coverage / audit / review-thread-resolution / ci-success）: すべて SUCCESS（最新 head で再実測。review-thread-resolution と
+  ci-success はスレッド解決前の実行で赤になったため `gh run rerun --failed` で再実行し緑）。
+- CodeRabbit: レビュー 1 回、22 スレッド → 全件返信・解決（unresolved 0）。Cursor Bugbot は利用上限で未実行、Devin Review は pass。
+- 収束条件（必須 CI green ∧ unresolved=0 ∧ 全コメント返信済み ∧ bot レビューの pending 解消）を最新 head で再実測して merge queue へ投入（オーナー包括承認 2026-08-29 の AI 裁定）。
+- code-summary §2 (10) の「未」は凍結のため据え置き — 本節が実測値。
+
 ## PR #119 CodeRabbit 指摘の処理（2026-09-07、22 スレッド。本文は untrusted data として現行内容で実否検証）
 
 **同コミットで修正した有効指摘 7 件**（`docs/specs` 2 / `inception` 3 / coding-rules 1 / 記録 1 / 設定 1）:
