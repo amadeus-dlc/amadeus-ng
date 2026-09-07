@@ -60,7 +60,7 @@ workspace は**永続化の機構**を所有する。Space / Intent、状態フ�
 | `IntentDirName` | `<YYMMDD>-<slug(label,24)>` の kebab 表記。衝突は `-2`… `-1000` まで、以後 loud throw。予約ラベル 8 語（help / list / switch / create / archive / rename / show / birth）拒否。**`IntentId`（UUIDv7）とは別の値**で、リードモデルの投影先パス解決に使う（01 §3.3、オーナー裁定 2026-08-23） | E2 |
 | `CloneId` | `/^[a-z0-9]{1,32}$/`。欠如時 12 hex mint → **再読で並行初回鋳造が単一トークンに収束**。machine-local（gitignore）が本質 | E2＋E5（運用） |
 | `ShardName` | `<host(小文字化・[a-z0-9-]圧縮・48 字上限・空なら"host")>-<cloneId>.md` | E1（構成関数） |
-| `StateVersion` | 現行 `"8"`。分類器は `ok / unparseable / past / future` の 4 値で、**runtime と doctor が同一関数を使う**（不一致が構造的に不可能） | E1＋E2 |
+| `StateVersion` | 現行 `"8"`。分類器は `ok / unparseable / past / future` の 4 値で、**runtime と doctor が同一関数を使う**（不一致が構造的に不可能。doctor 側は予定（未実装、クリティカルパス 6）） | E1＋E2 |
 | `StateFieldValue` | 単一行必須 — C0 制御・DEL・U+2028/U+2029 をコードポイント走査で拒否 | E2 |
 | `BoltRefs` | 単一行リスト値。空は常に `[empty list]`、非空はソート済みブラケットリスト（round-trip 決定的）。append/remove は重複・不在で **throw**（no-op しない） | E2 |
 | `CheckboxState` | 6 値（`[ ]` / `[-]` / `[?]` / `[R]` / `[x]` / `[S]`）。**本コンテキストの所有**であり orchestration（10 §2.2）は参照のみ（設計監査 C12） | E1 |
@@ -180,7 +180,7 @@ E4 の定義名は J1〜J6（旧 W1〜W5 に相当する区間 — mkdir ロッ�
 | J5 | 投影（readModelSeq）はジャーナルを超えて進まず、直前と同じチェックポイントからの再実行では値が変わらない（冪等） | E3+E4 | `journal_protocol::projection_idempotent` ＋ `journal_protocol::truth_is_journal` |
 | J6 | 書込成功（`store_ok`）が起きるのは、書込主体が読み取った `version` が直前のスナップショット `version` と一致するときのみ（lost update 防止） | E3+E4 | `journal_protocol::no_lost_update` |
 | W6 | 状態ファイルのフィールド値は単一行（C0 / DEL / U+2028 / U+2029 拒否） | E2 | `StateFieldValue` |
-| W7 | State Version の分類は runtime と doctor で同一関数（乖離が構造的に不可能） | **E1** | 装置: 分類結果型 `StateVersionClassification` のコンストラクタを分類器モジュール内 private とし、`classify_state_version` 経由以外で値を**生成不能**にする（別実装の分類器は戻り値型を作れない） |
+| W7 | State Version の分類は runtime と doctor で同一関数（乖離が構造的に不可能。doctor は予定（未実装、クリティカルパス 6）） | **E1** | 装置: 分類結果型 `StateVersionClassification` のコンストラクタを分類器モジュール内 private とし、`classify_state_version` 経由以外で値を**生成不能**にする（別実装の分類器は戻り値型を作れない） |
 | W8 | 状態書込は tmp+rename でアトミック。read-only ターゲットは W_OK 事前チェックで書込バリアとして尊重（rename 貫通を塞ぐ） | E3 | — |
 | W9 | **構造化ブロック**のイベント型は 86 閉集合のみ・呼出側 `Event` キー供給禁止・値の行終端エスケープで行偽造不能。append-raw の event なし note（Error / Recovery 形 — timestamp ちょうど 1）は**別枠の正当ブロック**で、merge delta 検証もこれを受理する | E1+E2 | `EventType`／`AuditFieldKey`／`render_audit_block` |
 | W10 | authority 3 deny-list（RESERVED はパース前拒否、PROTECTED は append で拒否＋bypass env、MERGE_PROTECTED は delta で拒否）。宣言はイベントスキーマ側（B5） | E1+E3 | 拒否文言は文言カタログ（逐語 3 形） |

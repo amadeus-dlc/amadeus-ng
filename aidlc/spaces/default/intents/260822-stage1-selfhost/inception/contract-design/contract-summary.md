@@ -153,7 +153,10 @@ compat: 発火条件・stdout/stderr 文言・ブロック挙動は upstream 互
 
 > **2026-08-29 追記（Bolt B7 — event-store-adapter-rs v3.0.0 EventEnvelope API への乗り換え、
 > ADR-010）**: trait の所有・移動計画（上記）は変わらないが、**署名が v3 形へ変わった**。下記の
-> trait 全文は B6 時点（v2.0.0 世代）の記録であり、現行は次のとおり:
+> trait 全文は B6 時点（v2.0.0 世代）の記録であり、~~現行は次のとおり~~ → **この追記自体が B13
+> （2026-08-30）で失効した履歴**である — 楽観 version は集約の内側へ戻り、`Rehydrated*` / `StatePosition`
+> / `StoreVersion` は撤去、`store` に `expected_version` 引数は無い（現行 4 ポートの署名は本節冒頭の表。
+> U9 再走 2026-09-07 で注記）。B7 時点の記録は次のとおりだった:
 > - `find_by_id(&IntentId) -> Result<WorkflowExecution, RepositoryError>` →
 >   `find_by_id(&IntentId) -> Result<RehydratedWorkflowExecution, RepositoryError>`。楽観 version は
 >   集約から外れ、再水和レコード `RehydratedWorkflowExecution`（集約 + ストア採番 version、private
@@ -500,8 +503,13 @@ rules:
 > スキーマガードのピンは v3 DDL へ張り替えた。
 
 ```sql
--- 本家 event-store-adapter-rs v2.0.0 が接続確立時に冪等に作る 2 表（正本は upstream。我々は
--- 所有せず、DDL も発行しない）。ピン `=2.0.0` とスキーマガードテストで固定する。
+-- 【履歴（B6 時点、v2.0.0 世代の DDL）】本家 event-store-adapter-rs が接続確立時に冪等に作る 2 表
+-- （正本は upstream。我々は所有せず、DDL も発行しない）。
+-- 現行ピンは `=3.0.0`（Cargo.toml / Cargo.lock）で、v3 では journal に
+--   manifest        TEXT    NOT NULL DEFAULT ''   -- 封筒の種別（例 intent-execution-event/1）
+-- が加わる（上の本文と、実測 read-model-updater/src/orchestration/journal_reader_impl.rs:99 の
+-- `SELECT rowid, aid, seq_nr, payload, occurred_at, manifest`）。それ以外の列・索引は v2 と同じ。
+-- U9 再走 2026-09-07 で注記（PR #119 CodeRabbit 指摘）。
 CREATE TABLE journal (
   pkey            TEXT    NOT NULL,                  -- 本家の書込アドレス
   skey            TEXT    NOT NULL,

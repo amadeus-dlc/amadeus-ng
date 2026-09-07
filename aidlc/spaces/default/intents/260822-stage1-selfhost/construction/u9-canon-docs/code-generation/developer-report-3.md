@@ -215,7 +215,7 @@ gap-measurement §2.1 / §2.4 / §2.5 の表には行が無い。**メインの 
 
 BR3.3 (j) は「一度も仕様から参照されていない coding-rules 12 本へ、該当節から相互参照を付ける」とするが、
 ブリーフの作業表（A-3 / A-4）にはこの項目の行が無い。**01 号 §7.1 の原則追記（BR が明示的に許した節の新設）の中で、
-原則の内容と直接対応する 14 本**に相互参照を張った — abstract-data-type / aggregate-references / command-query-separation /
+原則の内容と直接対応する 15 本**（初稿の「14 本」は数え誤り — PR #119 CodeRabbit 指摘で列挙 15 件に合わせて訂正）に相互参照を張った — abstract-data-type / aggregate-references / command-query-separation /
 cqrs-boundaries / domain-object-kinds / domain-persistence-neutrality / domain-services / error-handling /
 field-visibility / first-class-collections / infrastructure-layer / interior-mutability / module-visibility /
 ubiquitous-language / upstream-contracts。

@@ -90,7 +90,7 @@
   `developer-report-2.md` §1 の再改名）。
 - **境界**: ポート trait（`WorkflowExecutionRepository`、EventStore 同形 trait）はユースケース層に置く（**改名 — B12 2026-08-30**: 現行名は `IntentExecutionRepository`。置き場（use-case 層の `port/`）は現行どおりで、同形の EventStore ローカル trait は ADR-010 で廃止された。実測 `use-case/src/orchestration/port/`）
   （U5/U6 より先に本 Unit が定義する）。ドメイン型（イベント・集約）は U2 のものを使う。投影は持たない。
-- **合格**: FR1.2（改訂版 `audit_lock.qnt` ITF 準拠）、FR1.3（store → find_by_id ラウンドトリップ）、
+- **合格**: FR1.2（改訂版 `audit_lock.qnt` ITF 準拠）（**失効 — `audit_lock.qnt` は退役済み。現行の受入モデルは `formal/orchestration/journal_protocol.qnt`（ジャーナル / スナップショット / version / チェックポイント協定）。実測 `ls formal/orchestration/` = engine_loop / journal_protocol / stop_hook。U9 再走 2026-09-07 注記**）、FR1.3（store → find_by_id ラウンドトリップ）、
   クラッシュ再構成（ジャーナル → 集約）テスト（NFR3 の書く側）。
 - **実装ノート**: `store` は ES 拡張語彙（ADR-006。正本注記は U9 FR8.1 が同梱）。逸脱台帳に「SQLite ファイル
   追加・ロック dir 非生成」を登録。Clock は機構モジュール（Gateway に数えない）。
