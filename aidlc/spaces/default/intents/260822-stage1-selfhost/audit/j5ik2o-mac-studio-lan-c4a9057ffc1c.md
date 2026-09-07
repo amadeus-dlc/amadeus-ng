@@ -4402,3 +4402,520 @@
 **Context**: construction > code-generation > memory.md
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:12:23Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:12:24Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:13:43Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:13:44Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:13:57Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:13:57Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:14:32Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:14:41Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:14:42Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:15:14Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T04:15:26Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a2498060c4c3f8b98
+**Message**: CI 緑になったらマージして次のステージへ進めて
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:15:34Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:15:47Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:16:56Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:17:23Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:20:07Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T04:20:08Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T04:21:28Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u9-canon-docs/code-generation/pending-revision.md
+**Context**: construction > u9-canon-docs > code-generation > pending-revision.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T04:21:36Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/code-generation/memory.md
+**Context**: construction > code-generation > memory.md
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T04:22:28Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state unit --help
+**Error**: Usage: aidlc-state.ts unit <start|pause|resume|complete> --stage <slug> --unit <name> [--reason <text>] [--next-action <text>] [--wave]
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T04:22:46Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log --help
+**Error**: Unknown subcommand: --help. Valid: decision, answer, link, review
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T04:23:24Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state
+**Error**: Unknown subcommand: undefined. Valid: get, set, set-skeleton-stance, set-construction-iteration, set-unit-ownership, set-unit-gate-rhythm, refresh-unit-progress, sync-unit-scope-stage, fold-unit-merge, checkbox, count, advance, finalize, complete-workflow, gate-start, approve, reject, revise, skip, resume, acknowledge-compaction, reuse-artifact, lookup, practices-event, practices-promote, fork, merge, unit, park, unpark
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T04:24:38Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state reuse-artifact
+**Error**: Usage: aidlc-state.ts reuse-artifact <slug> --decision <keep|modify|redo> --artifacts <csv> [--repo <repo>] [--single]
+
+---
+
+## Unit Started
+**Timestamp**: 2026-09-07T04:26:59Z
+**Event**: UNIT_STARTED
+**Stage**: functional-design
+**Unit**: u3-event-store-repository
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T04:29:18Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: 既存の U3 Functional Design 成果物 4 点（entities / rules / functional-spec / traceability、2026-09-05 #112 是正版）の扱い
+**Options**: Keep,Modify,Redo from scratch
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T05:16:52Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Question Answered
+**Timestamp**: 2026-09-07T05:17:11Z
+**Event**: QUESTION_ANSWERED
+**Stage**: functional-design
+**Details**: Keep (Recommended)
+**Unit**: u3-event-store-repository
+
+---
+
+## Artifact Reused
+**Timestamp**: 2026-09-07T05:17:13Z
+**Event**: ARTIFACT_REUSED
+**Stage**: functional-design
+**Decision**: keep
+**Artifacts**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md,aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+
+---
+
+## Artifact Created
+**Timestamp**: 2026-09-07T05:17:20Z
+**Event**: ARTIFACT_CREATED
+**Tool**: Write
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-reviewer-dispatch.json
+**Context**: .aidlc-reviewer-dispatch.json
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T05:17:30Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u3-event-store-repository
+**Error**: Cannot start review for "functional-design": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage functional-design --unit "u3-event-store-repository" --details "Looks correct" after the human responds.
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:17:48Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/functional-design/memory.md
+**Context**: construction > functional-design > memory.md
+
+---
+
+## Session Compacted
+**Timestamp**: 2026-09-07T05:17:49Z
+**Event**: SESSION_COMPACTED
+**Current Stage**: functional-design
+**State Validity**: valid
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T05:20:22Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a9210be3a0ec66dff
+**Message**: <analysis>\nThe conversation continues an AI-DLC forwarding loop for intent `260822-stage1-selfhost`. I need to chronologically capture:\n\n1. Start (post-compaction): reviewer dispatch for U9 code-gener
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T05:20:36Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log decision --help
+**Error**: --help expects a value, got end of arguments.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T05:20:51Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log decision --stage functional-design --unit u3-event-store-repository --checkpoint summary-confirmation --questions-file aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md --decision Does this all look correct before I generate the artifact? --options Looks correct,Request changes
+**Error**: Summary confirmation section in aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md must contain exactly one `[Answer]:` line with a blank value before this command runs.
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-07T05:21:09Z
+**Event**: DECISION_RECORDED
+**Stage**: functional-design
+**Decision**: Does this all look correct before I generate the artifact?
+**Options**: Looks correct,Request changes
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Unit**: u3-event-store-repository
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-07T05:23:39Z
+**Event**: HUMAN_TURN
+**Session**: bdae4b2f-d1d9-470f-bf7c-df8853392e07
+
+---
+
+## Summary Confirmation Recorded
+**Timestamp**: 2026-09-07T05:23:49Z
+**Event**: SUMMARY_CONFIRMATION_RECORDED
+**Stage**: functional-design
+**Details**: Looks correct
+**Checkpoint**: Consolidated Summary Confirmation
+**Questions File**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-design-questions.md
+**Questions SHA-256**: 1c8cd9792bf5cb7324a91b6f74df2e5eb9c1995ef2675ecba4c581a3bb18dc25
+**Hash Scope**: confirmed-content-v1
+**Unit**: u3-event-store-repository
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T05:23:49Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u3-event-store-repository
+**Error**: Cannot start review for "functional-design": this stage's output document <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md was not saved after the confirmed answers. Save the document after confirmation, then continue.
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-07T05:23:57Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-log
+**Command**: aidlc-log review --stage functional-design --reviewer aidlc-architecture-reviewer-agent --iteration 1 --unit u3-event-store-repository
+**Error**: Cannot start review for "functional-design": this stage's output document <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md was not saved after the confirmed answers. Save the document after confirmation, then continue.
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:20Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Context**: construction > u3-event-store-repository > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:21Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:24Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:25Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Context**: construction > u3-event-store-repository > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T05:25:25Z
+**Event**: SENSOR_FIRED
+**Fire id**: 0b0e45b9
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T05:25:25Z
+**Event**: SENSOR_FAILED
+**Fire id**: 0b0e45b9
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-0b0e45b9.md
+**Findings count**: 35
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:31Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/entities.md
+**Context**: construction > u3-event-store-repository > functional-design > entities.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:33Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/rules.md
+**Context**: construction > u3-event-store-repository > functional-design > rules.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:35Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/functional-spec.md
+**Context**: construction > u3-event-store-repository > functional-design > functional-spec.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:25:36Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Context**: construction > u3-event-store-repository > functional-design > traceability.json
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-07T05:25:36Z
+**Event**: SENSOR_FIRED
+**Fire id**: e007f8ff
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-07T05:25:36Z
+**Event**: SENSOR_FAILED
+**Fire id**: e007f8ff
+**Sensor ID**: traceability
+**Stage slug**: functional-design
+**Output path**: aidlc/spaces/default/intents/260822-stage1-selfhost/construction/u3-event-store-repository/functional-design/traceability.json
+**Detail path**: aidlc/spaces/default/intents/260822-stage1-selfhost/.aidlc-sensors/functional-design/traceability-e007f8ff.md
+**Findings count**: 35
+
+---
+
+## Review Requested
+**Timestamp**: 2026-09-07T05:25:44Z
+**Event**: REVIEW_REQUESTED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Artifact Fingerprint**: sha256:6fea2e4693b4b7e53a9e0a936ed3d4233e99e3e2d7991940ae140b7b147634d4
+**Review Appendix Artifact**: construction/u3-event-store-repository/functional-design/functional-spec.md
+**Review Appendix Offset**: 13135
+**Review Appendix Prior Digest**: sha256:d5dbb07227dbd23362a7ef4ec99868a1f798ef3cda0bb54412ab04f02bd24c75
+**Review Appendix Prior Length**: 10634
+**Review Challenge**: review:30b70b9a25be173ec55f85af6cdb7893
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T05:33:47Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: 
+**Agent ID**: a6bb937d20ac94028
+**Message**: AI-DLC の unit-major 再走で U3（イベントストア／Repository）の機能設計を Keep のまま独立レビューに回し、レビュアーの判定待ちです。判定が返ったら記録して Unit 完了とコミットに進みます。
+
+---
+
+## Subagent Completed
+**Timestamp**: 2026-09-07T05:38:45Z
+**Event**: SUBAGENT_COMPLETED
+**Agent Type**: u3-fd-reviewer
+**Agent ID**: au3-fd-reviewer-a496c6a4190862cd
+**Message**: **Reviewer:** aidlc-architecture-reviewer-agent\n\n**Verdict: READY**（Critical 0 / Major 1 / Minor 4）\n\n`functional-spec.md` 末尾に `## Review` 節をちょうど 1 つ追記しました。それ以外のファイルは 1 バイトも変更していません。`git status` で u3 配
+
+---
+
+## Review Completed
+**Timestamp**: 2026-09-07T05:39:23Z
+**Event**: REVIEW_COMPLETED
+**Stage**: functional-design
+**Reviewer**: aidlc-architecture-reviewer-agent
+**Unit**: u3-event-store-repository
+**Iteration**: 1
+**Verdict**: READY
+**Request Fingerprint**: sha256:6fea2e4693b4b7e53a9e0a936ed3d4233e99e3e2d7991940ae140b7b147634d4
+**Artifact Fingerprint**: sha256:590ec4ec551fa0e13bcf6825fee73ce803037e57e21710e9c50a35f9477b9568
+**Review Appendix Artifact**: construction/u3-event-store-repository/functional-design/functional-spec.md
+**Review Appendix Offset**: 13135
+**Review Appendix Prior Digest**: sha256:d5dbb07227dbd23362a7ef4ec99868a1f798ef3cda0bb54412ab04f02bd24c75
+**Review Appendix Prior Length**: 10634
+**Review Challenge**: review:30b70b9a25be173ec55f85af6cdb7893
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-07T05:40:27Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260822-stage1-selfhost/construction/functional-design/memory.md
+**Context**: construction > functional-design > memory.md
+
+---
+
+## Unit Completed
+**Timestamp**: 2026-09-07T05:41:38Z
+**Event**: UNIT_COMPLETED
+**Stage**: functional-design
+**Unit**: u3-event-store-repository
+**Run floor**: GATE_REJECTED:2026-09-05T11:29:05Z#2
+
+---
