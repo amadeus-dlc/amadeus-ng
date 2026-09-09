@@ -630,7 +630,7 @@
       "executable": false
     },
     ".claude/hooks/review-freeze-command.ts": {
-      "sha256": "ef85d009280c2dde17ea61b9cd8fc1cc9d44a44eff15e08b0048c19877ba2cdf",
+      "sha256": "27db2ad629eabd62b051ce414f4cc74d4cc34a46d2b16ab0de839ffd4da45fd6",
       "executable": false
     },
     ".claude/knowledge/aidlc-architect-agent/adr-template.md": {
@@ -1742,7 +1742,7 @@
       "executable": false
     },
     ".codex/hooks/review-freeze-command.ts": {
-      "sha256": "ef85d009280c2dde17ea61b9cd8fc1cc9d44a44eff15e08b0048c19877ba2cdf",
+      "sha256": "27db2ad629eabd62b051ce414f4cc74d4cc34a46d2b16ab0de839ffd4da45fd6",
       "executable": false
     },
     ".codex/knowledge/aidlc-architect-agent/adr-template.md": {
@@ -2630,7 +2630,7 @@
       "executable": false
     },
     ".kimi-code/hooks/review-freeze-command.ts": {
-      "sha256": "ef85d009280c2dde17ea61b9cd8fc1cc9d44a44eff15e08b0048c19877ba2cdf",
+      "sha256": "27db2ad629eabd62b051ce414f4cc74d4cc34a46d2b16ab0de839ffd4da45fd6",
       "executable": false
     },
     ".kimi-code/knowledge/aidlc-architect-agent/adr-template.md": {
