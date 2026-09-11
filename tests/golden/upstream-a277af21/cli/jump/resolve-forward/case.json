@@ -1,0 +1,13 @@
+{
+  "id": "cli/jump/resolve-forward",
+  "family": "cli",
+  "verb": "jump",
+  "case": "resolve-forward",
+  "description": "前方ジャンプの可否と影響範囲を問い合わせる (状態は変えない)",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

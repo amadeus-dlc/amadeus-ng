@@ -1,0 +1,490 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-summary-visibility.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/summary-visibility.json"
+  ],
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "normalization": "none",
+  "observations": [
+    {
+      "id": "plain",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "fenced-only",
+      "content": "# Questions\n\n```md\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n```\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCmBgYG1kCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdApgYGAK",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": null,
+      "hash_error": "missing required H2 section \"Consolidated Summary Confirmation\""
+    },
+    {
+      "id": "commented-only",
+      "content": "# Questions\n\n<!--\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n-->\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCjwhLS0KIyMgQ29uc29saWRhdGVkIFN1bW1hcnkgQ29uZmlybWF0aW9uCltBbnN3ZXJdOiBMb29rcyBjb3JyZWN0Ci0tPgo=",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": null,
+      "hash_error": "missing required H2 section \"Consolidated Summary Confirmation\""
+    },
+    {
+      "id": "commented-heading-after-assumption",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<!--\n## Commented Example\n-->\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPCEtLQojIyBDb21tZW50ZWQgRXhhbXBsZQotLT4K",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "pre-only",
+      "content": "# Questions\n\n<pre>\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n</pre>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCjxwcmU+CiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAo8L3ByZT4K",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": null,
+      "hash_error": "missing required H2 section \"Consolidated Summary Confirmation\""
+    },
+    {
+      "id": "pre-heading-after-assumption",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<pre>\n## Literal example\n</pre>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPHByZT4KIyMgTGl0ZXJhbCBleGFtcGxlCjwvcHJlPgo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "answer-in-html-attribute",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n<div data-example=\"\n[Answer]: Looks correct\n\">literal</div>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgo8ZGl2IGRhdGEtZXhhbXBsZT0iCltBbnN3ZXJdOiBMb29rcyBjb3JyZWN0CiI+bGl0ZXJhbDwvZGl2Pgo=",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": "65b702886183dc1e2a9e6537dfb9745ffa07169e8f9fd9be65fc2220a07c9dad",
+      "hash_error": null
+    },
+    {
+      "id": "answer-after-unclosed-tag",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\nSummary: adopt <foo\n[Answer]: Looks correct\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpTdW1tYXJ5OiBhZG9wdCA8Zm9vCltBbnN3ZXJdOiBMb29rcyBjb3JyZWN0Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "29cc221cf03d72a618eb554275d862c78dc7b3e03f9d9a5fb9561559bba4a5a8",
+      "hash_error": null
+    },
+    {
+      "id": "setext-heading-after-assumption",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\nInjected heading\n---\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKSW5qZWN0ZWQgaGVhZGluZwotLS0K",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported Setext H2 heading \"Injected heading\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "comment-before-horizontal-rule",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<!-- comment-only -->\n---\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPCEtLSBjb21tZW50LW9ubHkgLS0+Ci0tLQo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "html-heading-after-assumption",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<h2>Injected heading</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPGgyPkluamVjdGVkIGhlYWRpbmc8L2gyPgo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "html-heading-in-quoted-attribute",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<div data-example=\"<h2>literal</h2>\">container</div>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPGRpdiBkYXRhLWV4YW1wbGU9IjxoMj5saXRlcmFsPC9oMj4iPmNvbnRhaW5lcjwvZGl2Pgo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "list-continuation-unclosed-fence",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- item\n  ~~~text\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSBpdGVtCiAgfn5+dGV4dAoKIyMgUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwoKW0Fuc3dlcl06IEEuIE1hbnVhbCByZXZpZXcK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "list-continuation-unclosed-comment",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- item\n  <!--\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSBpdGVtCiAgPCEtLQoKIyMgUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwoKW0Fuc3dlcl06IEEuIE1hbnVhbCByZXZpZXcK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "quoted-heading-after-assumption",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> ## Injected heading\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiAjIyBJbmplY3RlZCBoZWFkaW5nCg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H2 heading \"Injected heading\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "quoted-assumption-is-not-a-root-section",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n> ## Assumption Confirmation\n> [Answer]: A. Accept assumptions\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKPiAjIyBBc3N1bXB0aW9uIENvbmZpcm1hdGlvbgo+IFtBbnN3ZXJdOiBBLiBBY2NlcHQgYXNzdW1wdGlvbnMK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H2 heading \"Assumption Confirmation\" after the consolidated summary; only Q<n>, \"Requested Changes Feedback\", or one \"Assumption Confirmation\" section may follow"
+    },
+    {
+      "id": "multiline-code-comment",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n`literal comment example\n<!-- marker inside code\nstill literal code`\n## Q3. Fabricated question\n\n[Answer]: A. Fabricated\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKYGxpdGVyYWwgY29tbWVudCBleGFtcGxlCjwhLS0gbWFya2VyIGluc2lkZSBjb2RlCnN0aWxsIGxpdGVyYWwgY29kZWAKIyMgUTMuIEZhYnJpY2F0ZWQgcXVlc3Rpb24KCltBbnN3ZXJdOiBBLiBGYWJyaWNhdGVkCg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "ff71a4062b3af6644e8887c72190b672b574a4d78a1baa5a0993dc3fb13a05cc",
+      "hash_error": null
+    },
+    {
+      "id": "answer-in-multiline-code",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n`literal example\n[Answer]: Looks correct\nend`\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpgbGl0ZXJhbCBleGFtcGxlCltBbnN3ZXJdOiBMb29rcyBjb3JyZWN0CmVuZGAK",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": "40e6a34d0f4208f77464dbc9321882ad9858c741602e0cfc61f92d3b767686fb",
+      "hash_error": null
+    },
+    {
+      "id": "heading-stops-multiline-code",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n`literal\n## Q3. Fabricated question `\n\n[Answer]: A. Fabricated\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKYGxpdGVyYWwKIyMgUTMuIEZhYnJpY2F0ZWQgcXVlc3Rpb24gYAoKW0Fuc3dlcl06IEEuIEZhYnJpY2F0ZWQK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9e23c31be6a07a18bfef64cc759c42ff20cae469e4703d8fba61c1f866caa786",
+      "hash_error": null
+    },
+    {
+      "id": "closing-hash-heading",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation ###\n[Answer]: Looks correct\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbiAjIyMKW0Fuc3dlcl06IExvb2tzIGNvcnJlY3QK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "8d5d5f33e2ab5a89c43275b67e7138b46d279b764e5b496e3a3f63dd56dd38c5",
+      "hash_error": null
+    },
+    {
+      "id": "hash-without-whitespace-is-title-text",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation###\n[Answer]: Looks correct\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbiMjIwpbQW5zd2VyXTogTG9va3MgY29ycmVjdAo=",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": null,
+      "hash_error": "missing required H2 section \"Consolidated Summary Confirmation\""
+    },
+    {
+      "id": "bom-before-summary",
+      "content": "﻿## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+      "content_base64": "77u/IyMgQ29uc29saWRhdGVkIFN1bW1hcnkgQ29uZmlybWF0aW9uCltBbnN3ZXJdOiBMb29rcyBjb3JyZWN0Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "61c15c76a95999d60f5faf87b3da60fd79b70c6697190f2a4303d299c69785a2",
+      "hash_error": null
+    },
+    {
+      "id": "literal-nul-does-not-make-a-heading",
+      "content": "##\u0000 Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+      "content_base64": "IyMAIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAo=",
+      "expected_answer": "Looks correct",
+      "answer": null,
+      "hash": null,
+      "hash_error": "missing required H2 section \"Consolidated Summary Confirmation\""
+    },
+    {
+      "id": "setext-after-unclosed-attribute",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<div data-example=\"\nInjected heading\n---\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPGRpdiBkYXRhLWV4YW1wbGU9IgpJbmplY3RlZCBoZWFkaW5nCi0tLQo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported Setext H2 heading \"\u0001Injected heading\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "html-heading-after-unclosed-attribute",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<div data-example=\"\n<h2>Injected heading</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPGRpdiBkYXRhLWV4YW1wbGU9Igo8aDI+SW5qZWN0ZWQgaGVhZGluZzwvaDI+Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "list-item-tilde",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- ~~~text\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSB+fn50ZXh0CgojIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/CgpbQW5zd2VyXTogQS4gTWFudWFsIHJldmlldwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "blockquote-tilde",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> ~~~text\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiB+fn50ZXh0CgojIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/CgpbQW5zd2VyXTogQS4gTWFudWFsIHJldmlldwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "list-item-backtick",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n * ```\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKICogYGBgCgojIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/CgpbQW5zd2VyXTogQS4gTWFudWFsIHJldmlldwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "list-item-comment",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- <!--\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSA8IS0tCgojIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/CgpbQW5zd2VyXTogQS4gTWFudWFsIHJldmlldwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "blockquote-comment",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> <!--\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiA8IS0tCgojIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/CgpbQW5zd2VyXTogQS4gTWFudWFsIHJldmlldwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "lazy-list-fence",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- item\ncontinued paragraph\n  ~~~text\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSBpdGVtCmNvbnRpbnVlZCBwYXJhZ3JhcGgKICB+fn50ZXh0CgojIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/CgpbQW5zd2VyXTogQS4gTWFudWFsIHJldmlldwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "lazy-quote-fence",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> item\n  ~~~text\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiBpdGVtCiAgfn5+dGV4dAoKIyMgUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwoKW0Fuc3dlcl06IEEuIE1hbnVhbCByZXZpZXcK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "quote-following-fence",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> item\n~~~text\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiBpdGVtCn5+fnRleHQKCiMjIFEzLiBXaGljaCBmYWxsYmFjayBzaG91bGQgYmUgdXNlZD8KCltBbnN3ZXJdOiBBLiBNYW51YWwgcmV2aWV3Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "lazy-quote-comment",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> item\n  <!--\n\n## Q3. Which fallback should be used?\n\n[Answer]: A. Manual review\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiBpdGVtCiAgPCEtLQoKIyMgUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwoKW0Fuc3dlcl06IEEuIE1hbnVhbCByZXZpZXcK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "9bfb178d91ad689733ae529aeb6bd81b356040016ad4abf9911313feea0a39c3",
+      "hash_error": null
+    },
+    {
+      "id": "h1",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n# Q3. Which fallback should be used?\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H1 heading \"Q3. Which fallback should be used?\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "h3",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n### Q3. Which fallback should be used?\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKIyMjIFEzLiBXaGljaCBmYWxsYmFjayBzaG91bGQgYmUgdXNlZD8K",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H3 heading \"Q3. Which fallback should be used?\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "setext-h1",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\nQ3. Which fallback should be used?\n=================================\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0K",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported Setext H1 heading \"Q3. Which fallback should be used?\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "wrapped-html",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<div><h2>Q3. Which fallback should be used?</h2></div>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPGRpdj48aDI+UTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPzwvaDI+PC9kaXY+Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "multiline-html",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n<h2\nclass=question>Q3. Which fallback should be used?</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPGgyCmNsYXNzPXF1ZXN0aW9uPlEzLiBXaGljaCBmYWxsYmFjayBzaG91bGQgYmUgdXNlZD88L2gyPgo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "indented-html",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n   <h2>Q3. Which fallback should be used?</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKICAgPGgyPlEzLiBXaGljaCBmYWxsYmFjayBzaG91bGQgYmUgdXNlZD88L2gyPgo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "list-heading",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- ## Q3. Which fallback should be used?\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSAjIyBRMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H2 heading \"Q3. Which fallback should be used?\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "nested-list-heading",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n- Parent item\n  - ## Q3. Which fallback should be used?\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKLSBQYXJlbnQgaXRlbQogIC0gIyMgUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H2 heading \"Q3. Which fallback should be used?\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "deep-quote-heading",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> > > > > > > > > ## Q3. Which fallback should be used?\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiA+ID4gPiA+ID4gPiA+ID4gIyMgUTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPwo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H2 heading \"Q3. Which fallback should be used?\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "quoted-feedback",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n> ## Requested Changes Feedback\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKPiAjIyBSZXF1ZXN0ZWQgQ2hhbmdlcyBGZWVkYmFjawo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported H2 heading \"Requested Changes Feedback\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "inline-html",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\nVisible text <h2>Q3. Which fallback should be used?</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKVmlzaWJsZSB0ZXh0IDxoMj5RMy4gV2hpY2ggZmFsbGJhY2sgc2hvdWxkIGJlIHVzZWQ/PC9oMj4K",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "double-escaped-html",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n\\\\<h2>Q3. Which fallback should be used?</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKXFw8aDI+UTMuIFdoaWNoIGZhbGxiYWNrIHNob3VsZCBiZSB1c2VkPzwvaDI+Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": null,
+      "hash_error": "unsupported HTML H2 heading \"<h2>\" after \"Assumption Confirmation\"; only Q<n> or \"Requested Changes Feedback\" sections may follow"
+    },
+    {
+      "id": "literal-html-code",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n`<h2>Literal example</h2>`\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKYDxoMj5MaXRlcmFsIGV4YW1wbGU8L2gyPmAK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "literal-html-link",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n[example](<h2>)\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKW2V4YW1wbGVdKDxoMj4pCg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "literal-escaped-html",
+      "content": "# Questions\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Assumption Confirmation\n[Answer]: A. Accept assumptions\n\n\\<h2>Literal example</h2>\n",
+      "content_base64": "IyBRdWVzdGlvbnMKCiMjIENvbnNvbGlkYXRlZCBTdW1tYXJ5IENvbmZpcm1hdGlvbgpbQW5zd2VyXTogTG9va3MgY29ycmVjdAoKIyMgQXNzdW1wdGlvbiBDb25maXJtYXRpb24KW0Fuc3dlcl06IEEuIEFjY2VwdCBhc3N1bXB0aW9ucwoKXDxoMj5MaXRlcmFsIGV4YW1wbGU8L2gyPgo=",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "1dbbe0c59aafc4bd40784e70072fb84e7da28baf30652fe17dad5d0f2022cb9f",
+      "hash_error": null
+    },
+    {
+      "id": "bom-before-summary-answer",
+      "content": "## Consolidated Summary Confirmation\n[Answer]: ﻿Looks correct\n",
+      "content_base64": "IyMgQ29uc29saWRhdGVkIFN1bW1hcnkgQ29uZmlybWF0aW9uCltBbnN3ZXJdOiDvu79Mb29rcyBjb3JyZWN0Cg==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "d4310900c921d876836804c8c79dd6be8e3baf12541c3a3a101e50bafc2970b2",
+      "hash_error": null
+    },
+    {
+      "id": "nel-before-summary-answer",
+      "content": "## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+      "content_base64": "IyMgQ29uc29saWRhdGVkIFN1bW1hcnkgQ29uZmlybWF0aW9uCltBbnN3ZXJdOiDChUxvb2tzIGNvcnJlY3QK",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "0e961ba40903181f838dd2632c056ddfbd13aaf3c4c1bd74f40927d237cc61d4",
+      "hash_error": null
+    },
+    {
+      "id": "trailing-bom-after-summary",
+      "content": "## Consolidated Summary Confirmation\n[Answer]: Looks correct\n﻿",
+      "content_base64": "IyMgQ29uc29saWRhdGVkIFN1bW1hcnkgQ29uZmlybWF0aW9uCltBbnN3ZXJdOiBMb29rcyBjb3JyZWN0Cu+7vw==",
+      "expected_answer": "Looks correct",
+      "answer": "Looks correct",
+      "hash": "b69ae8d5b545fdb2125014873984236bf703f366a5293a3696b52605e66c89a8",
+      "hash_error": null
+    }
+  ]
+}

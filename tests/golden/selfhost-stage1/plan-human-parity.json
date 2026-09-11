@@ -1,0 +1,65 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-plan-human-parity.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/plan-human-parity.json"
+  ],
+  "native_binary_sha256": "dd23ad8b757a247621b07c85732300e415c0e09491be07831cac964bed0876a8",
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "comparison": {
+    "response": "exact bytes",
+    "normalization": [],
+    "scope": "実際のbugfix進行でCode Generationへ到達した同じworkspace。nativeが受けた同じ提示と標準ラベルApprove Planを本家のrecord-human-turnへ渡し、実行前のresponse不在と実行後の新規生成を確認し、全responseバイトを比較する。"
+  },
+  "observations": [
+    {
+      "input": {
+        "project_dir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmp47hVSO/workspace",
+        "stdin": "{\"session_id\":\"stage1-session\",\"prompt\":\"Approve Plan\"}",
+        "challenge": {
+          "version": 1,
+          "targetId": "stage:code-generation",
+          "intentId": "01a080e7-3127-78f1-aff6-d63e67d82d47",
+          "directiveEpoch": "sha256:7a172d40c01977058491e2d8af4b91bad66ab0ddd39f4916d22cf150ac7ed8f8",
+          "runFloor": "STAGE_STARTED:2026-09-08T12:03:52Z#1",
+          "fingerprint": "sha256:62c3c6428e7e6651c79c510e10bba3d52814466036bab8118679d199d61faf3d",
+          "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+          "promptSha256": "353c4af803227eb490877bb61b3ef6dd984e5d2c6237999f129fb239fa563a41",
+          "sourceFloor": "ab0e716385ea33a6c5d89857db7426e18f4878449bdea47606101e526102ebd2",
+          "markerRevision": 1,
+          "session": "stage1-session",
+          "challengeId": "sha256:8dc6cbfe89622b3da32241d3817952abda9170f839fe34a5028c9c2e8bbda643",
+          "options": [
+            "Approve Plan",
+            "Request Changes"
+          ],
+          "requireExactOptionLabels": false,
+          "hashedOptionLabels": false
+        }
+      },
+      "native": {
+        "exit_code": 0,
+        "stdout_base64": "",
+        "stderr_base64": "",
+        "response_base64": "ewogICJ2ZXJzaW9uIjogMSwKICAic2Vzc2lvbiI6ICJzdGFnZTEtc2Vzc2lvbiIsCiAgImNoYWxsZW5nZUlkIjogInNoYTI1Njo4ZGM2Y2JmZTg5NjIyYjNkYTMyMjQxZDM4MTc5NTJhYmRhOTE3MGY4MzlmZTM0YTUwMjhjOWMyZThiYmRhNjQzIiwKICAiY2hvaWNlIjogIkFwcHJvdmUgUGxhbiIsCiAgInJlc3BvbnNlU2hhMjU2IjogIjA2YTI2ZjE4NjY0ZWM4M2Y2OTM4N2ZjNDQ5MGRiNzA5MDAxZTY0OWRkMWUzMzZlYTQ2ZDdkNjc3MDFmOTJhZjkiCn0K"
+      },
+      "upstream": {
+        "exit_code": 0,
+        "stdout_base64": "",
+        "stderr_base64": "",
+        "response_base64": "ewogICJ2ZXJzaW9uIjogMSwKICAic2Vzc2lvbiI6ICJzdGFnZTEtc2Vzc2lvbiIsCiAgImNoYWxsZW5nZUlkIjogInNoYTI1Njo4ZGM2Y2JmZTg5NjIyYjNkYTMyMjQxZDM4MTc5NTJhYmRhOTE3MGY4MzlmZTM0YTUwMjhjOWMyZThiYmRhNjQzIiwKICAiY2hvaWNlIjogIkFwcHJvdmUgUGxhbiIsCiAgInJlc3BvbnNlU2hhMjU2IjogIjA2YTI2ZjE4NjY0ZWM4M2Y2OTM4N2ZjNDQ5MGRiNzA5MDAxZTY0OWRkMWUzMzZlYTQ2ZDdkNjc3MDFmOTJhZjkiCn0K"
+      }
+    }
+  ]
+}

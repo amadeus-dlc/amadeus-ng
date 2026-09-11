@@ -1,0 +1,42 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "fixture_kind": "新しいbugfixの記録にbyte FFを渡す合成入力。保護されたsession/responseは無い",
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "observations": [
+    {
+      "id": "ff-anonymous-human-turn",
+      "input": {
+        "argv": [
+          "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+          "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/aidlc-human-utf8-YueZAu/workspace/.claude/hooks/aidlc-record-human-turn.ts"
+        ],
+        "stdin_base64": "/w==",
+        "environment": {
+          "PATH": "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "HOME": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/aidlc-human-utf8-YueZAu/workspace/aidlc/.capture-home",
+          "LANG": "C.UTF-8",
+          "LC_ALL": "C.UTF-8",
+          "TZ": "UTC",
+          "CLAUDE_PROJECT_DIR": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/aidlc-human-utf8-YueZAu/workspace",
+          "AIDLC_PROJECT_DIR": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/aidlc-human-utf8-YueZAu/workspace"
+        }
+      },
+      "output": {
+        "exit_code": 0,
+        "stdout_base64": "",
+        "stderr_base64": ""
+      },
+      "appended_audit_base64": "CiMjIEh1bWFuIFR1cm4KKipUaW1lc3RhbXAqKjogMjAyNi0wOS0wOFQwNzo0Mjo1N1oKKipFdmVudCoqOiBIVU1BTl9UVVJOCgotLS0K",
+      "state_unchanged": true
+    }
+  ]
+}

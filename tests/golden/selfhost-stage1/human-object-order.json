@@ -1,0 +1,67 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/hooks/aidlc-record-human-turn.ts",
+  "extracted_body_sha256": "c02398dce7896997d9292b1f885f088ac014c382affc60853fcd3b378a411b20",
+  "capture_method": "関数本文を変更せずTypeScriptとして実行。JSONの原入力文字列のキー順も保持する。番号文字列の承認済み差分は別コーパス。",
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-human-object-order.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/human-object-order.json"
+  ],
+  "normalization": [],
+  "observations": [
+    {
+      "id": "1",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"2\":\"Approve Plan\",\"1\":\"Request Changes\"}}",
+      "response": "Request Changes"
+    },
+    {
+      "id": "2",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"4294967295\":\"Approve Plan\",\"4294967294\":\"Request Changes\"}}",
+      "response": "Request Changes"
+    },
+    {
+      "id": "3",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"01\":\"Approve Plan\",\"1\":\"Request Changes\"}}",
+      "response": "Request Changes"
+    },
+    {
+      "id": "4",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"-1\":\"Approve Plan\",\"1\":\"Request Changes\"}}",
+      "response": "Request Changes"
+    },
+    {
+      "id": "5",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"b\":\"Approve Plan\",\"a\":\"Request Changes\"}}",
+      "response": "Approve Plan"
+    },
+    {
+      "id": "6",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"1\":\"Request Changes\",\"answer\":\"Approve Plan\"}}",
+      "response": "Approve Plan"
+    },
+    {
+      "id": "7",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"foo\":{\"2\":\"Approve Plan\",\"1\":\"Request Changes\"}}}",
+      "response": "Request Changes"
+    },
+    {
+      "id": "8",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"2\":\"Request Changes\",\"1\":\"\"}}",
+      "response": "Request Changes"
+    },
+    {
+      "id": "9",
+      "stdin": "{\"session_id\":\"s\",\"prompt\":{\"4294967295\":\"Approve Plan\",\"a\":\"Request Changes\"}}",
+      "response": "Approve Plan"
+    }
+  ]
+}

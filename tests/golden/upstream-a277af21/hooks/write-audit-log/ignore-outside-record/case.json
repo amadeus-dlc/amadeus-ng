@@ -1,0 +1,14 @@
+{
+  "id": "hooks/write-audit-log/ignore-outside-record",
+  "family": "hooks",
+  "hook": "write-audit-log",
+  "case": "ignore-outside-record",
+  "upstream_hook_file": ".claude/hooks/aidlc-write-audit-log.ts",
+  "description": "記録ディレクトリの外への書込は監査に残さない",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

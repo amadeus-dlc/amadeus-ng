@@ -1,0 +1,14 @@
+{
+  "id": "hooks/stop-forwarding-loop/reentrant-ignored",
+  "family": "hooks",
+  "hook": "stop-forwarding-loop",
+  "case": "reentrant-ignored",
+  "upstream_hook_file": ".claude/hooks/aidlc-continue-workflow.ts",
+  "description": "自分が差し止めた結果の再入 (stop_hook_active) は無視して素通しする",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

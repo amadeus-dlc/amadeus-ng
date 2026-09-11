@@ -1,0 +1,873 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/observe-plan-readiness.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace",
+    "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+    "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/.aidlc-sessions/plan-approval/receipt-9b88474f8a1357267ffb339d574f835a2b82db08d1bebdfd08006ae36218125f.json",
+    "/tmp/amadeus-plan-readiness.json"
+  ],
+  "normalization": [],
+  "observations": [
+    {
+      "id": "approved",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": true,
+        "unit": null,
+        "reason": "approved",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": true,
+        "receiptValid": true,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "missing-receipt",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": null,
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "no current protected Plan Approval receipt matches this prompt, session response, target, directive epoch, and source floor",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": true,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "changed-source-before-generation",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "414fdddcb9332314c64e27030a4ca729f9163cb14bea230bd2fa1fafc9b32fa7",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "no current protected Plan Approval receipt matches this prompt, session response, target, directive epoch, and source floor",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": true,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "generation-with-changed-source",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "generation"
+      },
+      "current_source": "414fdddcb9332314c64e27030a4ca729f9163cb14bea230bd2fa1fafc9b32fa7",
+      "expected": {
+        "ok": true,
+        "unit": null,
+        "reason": "approved",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": true,
+        "receiptValid": true,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "generation-with-changed-plan",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\nChanged plan\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "generation"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "the Plan Approval fingerprint does not match the active intent, target, directive epoch, plan, test instructions, and Testing Contract",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:1159989e74b378e28ca168400ed79fd8a97e8b071e871f6b00e86335a5006ae3",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "generation-with-changed-questions",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "generation"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "no current protected Plan Approval receipt matches this prompt, session response, target, directive epoch, and source floor",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": true,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "generation-with-changed-current-contract",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "Methodology: tdd\n",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "generation"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "the approved Testing Contract is stale because memory, scope, test strategy, or project type changed",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": false,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": null,
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "missing-plan",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "code-generation-plan.md is missing or empty",
+        "planExists": false,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": false,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": null,
+        "approvalFingerprint": null,
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "empty-instructions",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": " \n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "unit-test-instructions.md is missing or empty",
+        "planExists": true,
+        "instructionsExist": false,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": null,
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "invalid-contract",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\nNo contract\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "code-generation-plan.md has no valid ## Testing Contract JSON block",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": false,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": null,
+        "approvalFingerprint": null,
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "unanswered",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]:\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "Plan Approval is not explicitly answered Approve Plan",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": false,
+        "contractValid": true,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "changed-fingerprint",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "the Plan Approval fingerprint does not match the active intent, target, directive epoch, plan, test instructions, and Testing Contract",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "changed-answered-document",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "no current protected Plan Approval receipt matches this prompt, session response, target, directive epoch, and source floor",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": true,
+        "fingerprintValid": true,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    },
+    {
+      "id": "changed-current-contract",
+      "authority": {
+        "unit": null,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "stageDir": "/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/.tmpZBvDIo/workspace/aidlc/spaces/default/intents/260908-smoke/construction/code-generation",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1
+      },
+      "context": {
+        "scope": "bugfix",
+        "testStrategy": "minimal",
+        "projectType": "greenfield"
+      },
+      "sections": {
+        "org": "",
+        "team": "Methodology: tdd\n",
+        "project": ""
+      },
+      "documents": {
+        "plan": "# Plan\n\n## Testing Contract\n\n```json\n{\n  \"version\": 1,\n  \"methodology\": \"test-after\",\n  \"source\": \"fallback\",\n  \"ordering\": \"Implement each testable layer, then write and run that layer's tests.\",\n  \"scope\": \"bugfix\",\n  \"test_strategy\": \"minimal\",\n  \"project_type\": \"greenfield\",\n  \"applicable_notes\": [],\n  \"obligations\": {\n    \"strategy\": \"minimal\",\n    \"strategy_volume\": [\n      \"One verifiable test per requirement at the narrowest effective level.\",\n      \"At least one happy-path unit test per component.\",\n      \"Unit tests are the default; a bugfix/security scope floor may require an integration or E2E regression when that is the narrowest level that reproduces the defect.\"\n    ],\n    \"scope_floor\": [\n      \"Include a targeted regression for the bug or vulnerability.\",\n      \"Keep the existing test suite green.\"\n    ],\n    \"combination_rule\": \"Apply every selected-strategy obligation and every scope-floor obligation; neither replaces the other, and a targeted scope regression may add the narrowest necessary test type beyond the strategy default.\"\n  },\n  \"plan_profile\": {\n    \"methodology\": \"test-after\",\n    \"runner_step\": \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n    \"runner_ready_before_first_test\": true,\n    \"testable_layers\": [\n      \"Data model / database behavior\",\n      \"Repository / data access\",\n      \"Business logic\",\n      \"API / endpoint\",\n      \"Frontend behavior\"\n    ],\n    \"steps\": [\n      \"Project structure and production configuration skeleton.\",\n      \"Bootstrap the minimal test runner/configuration and record the exact unit-scoped command.\",\n      \"Data model / database behavior - implement.\",\n      \"Data model / database behavior - write and run its tests after implementation.\",\n      \"Repository / data access - implement.\",\n      \"Repository / data access - write and run its tests after implementation.\",\n      \"Business logic - implement.\",\n      \"Business logic - write and run its tests after implementation.\",\n      \"API / endpoint - implement.\",\n      \"API / endpoint - write and run its tests after implementation.\",\n      \"Frontend behavior - implement.\",\n      \"Frontend behavior - write and run its tests after implementation.\",\n      \"Environment/build configuration.\",\n      \"Documentation and traceability.\"\n    ]\n  },\n  \"input_sha256\": \"sha256:ebd85f7c050372c01aebb9386303025c99712c858567c1bfe379721ebf263378\",\n  \"contract_sha256\": \"sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450\"\n}\n```\n\n## Steps\n- [ ] Implement\n",
+        "instructions": "# Instructions\nRun cargo test.\n",
+        "questions": "## Plan Approval\n[Approval Fingerprint]: sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e\nA. Approve Plan\nB. Request Changes\n[Answer]: Approve Plan\n",
+        "questions_file": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md"
+      },
+      "receipt": {
+        "version": 1,
+        "targetId": "stage:code-generation",
+        "intentId": "01a080b8-3454-7401-a446-cbc57cbda683",
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed",
+        "runFloor": "STAGE_STARTED:2026-09-08T11:12:32Z#1",
+        "fingerprint": "sha256:3b4e4bec3417c02c46fb4596e14f0aae9e329b229edfc2e999b9ea089172776e",
+        "questionsFile": "aidlc/spaces/default/intents/260908-smoke/construction/code-generation/code-generation-questions.md",
+        "promptSha256": "72ec02c4865b0eb24f38b3d671a0d22a5c37f52ae382792ddf356d55c2678f32",
+        "sourceFloor": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "markerRevision": 1,
+        "session": "stage1-session",
+        "challengeId": "sha256:2fbbc6b8d81da03532514629d8f3cef41ccfbceeeb543e266a6c724de1b69180",
+        "choice": "Approve Plan",
+        "questionsSha256": "d3ffc44905885062fca1151b5fdf2b779d80e481e9ef02229a4b18c7844248b5",
+        "certifiedSourceSha256": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+        "status": "approved"
+      },
+      "current_source": "8bf7899a6c37831072c69cf8360765317616d22248ea5cb076fa20fae8c3d521",
+      "expected": {
+        "ok": false,
+        "unit": null,
+        "reason": "the approved Testing Contract is stale because memory, scope, test strategy, or project type changed",
+        "planExists": true,
+        "instructionsExist": true,
+        "approved": true,
+        "contractValid": false,
+        "fingerprintValid": false,
+        "receiptValid": false,
+        "contractHash": "sha256:90c022fb0317d3e56ab1fe1bf5c51c9f983440a62377e701c7b414d88e198450",
+        "approvalFingerprint": null,
+        "directiveEpoch": "sha256:f5b2f12422d50202955b1ddaa826d566b7d889fd8adb6ab0bd29cbdefac936ed"
+      }
+    }
+  ]
+}

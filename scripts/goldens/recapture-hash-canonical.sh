@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # hash-canonical 受入表の再採取 (FR7.1 / BR2.1 / BR2.5)。
 #
-# upstream ピン `3c3146cf` の `dist/claude/.claude/tools/aidlc-testing-posture.ts` を
+# upstream ピン `a277af21` の `dist/claude/.claude/tools/aidlc-testing-posture.ts` を
 # 取得し、`canonicalize` / `sha256` / `hashObject` の 3 関数をスニペットとして抽出、
 # sha256 で照合してから bun で実行し、期待値を採る。
 #
@@ -13,19 +13,20 @@
 set -euo pipefail
 
 readonly UPSTREAM_REPO="https://github.com/awslabs/aidlc-workflows"
-readonly UPSTREAM_COMMIT="3c3146cfd7cef33020d48e8d48d4e80d0f8c2820"
-readonly UPSTREAM_VERSION="v2.6.40"
+readonly UPSTREAM_COMMIT="a277af218f0df7f325d3b8be7b6d90fce2c5bd40"
+readonly UPSTREAM_VERSION="2.7.1"
 readonly SOURCE_PATH="dist/claude/.claude/tools/aidlc-testing-posture.ts"
 readonly SOURCE_URL="https://raw.githubusercontent.com/awslabs/aidlc-workflows/${UPSTREAM_COMMIT}/${SOURCE_PATH}"
 
 # ピン留めコミットにおける実測値。どちらかがずれたら upstream 側が動いたということなので停止する。
-readonly EXPECTED_SOURCE_SHA256="99528925754da70e42106a35b52e5769001539042d07d0eecb5e0aa256196cb9"
-readonly SNIPPET_LINES="104-123"
+readonly EXPECTED_SOURCE_SHA256="c06fb41743d9c10c5d50f88530096db8a1a5e5c8f61468855cfbdab39ee2c4f0"
+readonly SNIPPET_LINES="160-179"
 readonly EXPECTED_SNIPPET_SHA256="c8894a433d620538e1701f178b8542528603f012b98680b6b79233f70704418f"
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly OUT_DIR="${REPO_ROOT}/tests/golden/upstream-3c3146cf/hash-canonical"
+readonly OUT_DIR="${1:-${REPO_ROOT}/tests/golden/upstream-a277af21/hash-canonical}"
+[[ ! -e "${OUT_DIR}" ]] || { echo "error: 採取先は新規ディレクトリを指定してください" >&2; exit 1; }
 readonly COMMAND="bash scripts/goldens/recapture-hash-canonical.sh"
 
 need() {
@@ -44,7 +45,11 @@ workdir="$(mktemp -d)"
 trap 'rm -rf "${workdir}"' EXIT
 
 echo "==> upstream ${UPSTREAM_COMMIT} から ${SOURCE_PATH} を取得"
-curl -fsSL -o "${workdir}/aidlc-testing-posture.ts" "${SOURCE_URL}"
+if [[ -n "${2:-}" ]]; then
+  cp "$2/.claude/tools/aidlc-testing-posture.ts" "${workdir}/aidlc-testing-posture.ts"
+else
+  curl -fsSL -o "${workdir}/aidlc-testing-posture.ts" "${SOURCE_URL}"
+fi
 
 actual_source_sha256="$(sha256_of "${workdir}/aidlc-testing-posture.ts")"
 if [[ "${actual_source_sha256}" != "${EXPECTED_SOURCE_SHA256}" ]]; then
@@ -97,4 +102,5 @@ bun "${SCRIPT_DIR}/capture-hash-canonical.ts" \
   "${OUT_DIR}" \
   "${workdir}/meta.json"
 
+cp "${workdir}/snippet.ts" "${OUT_DIR}/source-snippet.ts"
 echo "==> 完了"

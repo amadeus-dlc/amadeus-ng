@@ -1,0 +1,39 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-source-fingerprint.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/source-fingerprint.json"
+  ],
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "normalization": "none",
+  "observations": [
+    {
+      "id": "regular-files-and-shell-exclusions",
+      "files": {
+        "src/lib.rs": "pub fn example() {}\n",
+        "README.md": "# Example\n",
+        "target/output.txt": "generated output\n",
+        "aidlc/spaces/default/memory/org.md": "# Rules\n",
+        ".claude/tools/data/harness.json": "{\"name\":\"claude\"}\n",
+        ".claude/tools/local.ts": "export const harness = true;\n"
+      },
+      "fingerprint": "2458797ef6b0d9c29fd9bc0b2dffc22f549b6b56c97708ab32cfbbd0a3c8cd46"
+    },
+    {
+      "id": "empty-workspace",
+      "files": {},
+      "fingerprint": "a02d44fbfada7cc1d3fff4d0c33408d08ec39f90136323e3ca7b927e51e436c4"
+    }
+  ]
+}

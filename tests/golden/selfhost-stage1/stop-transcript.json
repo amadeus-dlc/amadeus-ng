@@ -1,0 +1,451 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/hooks/aidlc-continue-workflow.ts",
+  "source_sha256": "690cef095212f870a40109a5fa3260d21bf3516ae58b00b02b5c6685ae3cc252",
+  "capture_method": "固定配布の複製にexport文のみ追加。関数本文・isEngineToolCall等の依存は無変更。Claude形式だけを採取。",
+  "normalization": [],
+  "observations": [
+    {
+      "id": "empty",
+      "transcript": "",
+      "conversational": false
+    },
+    {
+      "id": "broken-lines",
+      "transcript": "{\nnot-json\n",
+      "conversational": false
+    },
+    {
+      "id": "scalars",
+      "transcript": "null\n[]\n3\ntrue\n\"text\"\n",
+      "conversational": false
+    },
+    {
+      "id": "assistant-only",
+      "transcript": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"回答\"}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "human-text",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "human-empty-text",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "human-text-block",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"質問\"}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "human-null-text-block",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":null}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "image-only",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"source\":{}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "meta-only",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"prompt\"},\"isMeta\":true}\n",
+      "conversational": false
+    },
+    {
+      "id": "meta-number-is-not-true",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"prompt\"},\"isMeta\":1}\n",
+      "conversational": true
+    },
+    {
+      "id": "type-role-mismatch",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"assistant\",\"content\":\"質問\"}}\n",
+      "conversational": false
+    },
+    {
+      "id": "engine-after-human",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "new-human-after-engine",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"別の質問\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "tool-result-is-not-human",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"content\":\"result\"}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "mixed-tool-result-is-not-human",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"質問\"},{\"type\":\"tool_result\",\"content\":\"result\"}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "meta-after-engine",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"追記\"},\"isMeta\":true}\n",
+      "conversational": false
+    },
+    {
+      "id": "wrapped-feedback",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback: continue\"}}\n",
+      "conversational": false
+    },
+    {
+      "id": "raw-feedback",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"The AIDLC workflow has a pending step; follow the workflow loop\"}}\n",
+      "conversational": false
+    },
+    {
+      "id": "raw-without-loop-phrase",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"The AIDLC workflow has a pending step\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "bom-feedback",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"﻿Stop hook feedback: continue\"}}\n",
+      "conversational": false
+    },
+    {
+      "id": "nel-is-not-js-whitespace",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback: continue\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "split-feedback-blocks",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Stop hook \"},{\"type\":\"text\",\"text\":\"feedback: continue\"}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "assistant-text-is-not-tool",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"aidlc next\"}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "assistant-string-is-not-tool",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":\"aidlc next\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "assistant-wrong-role",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "other-harness-shape",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",\"name\":\"Bash\",\"arguments\":\"aidlc next\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "partial-tail-keeps-engine",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]}}\n{\"type\":",
+      "conversational": false
+    },
+    {
+      "id": "lone-surrogate-human",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"\\ud800\"}}\n",
+      "conversational": true
+    },
+    {
+      "id": "lone-surrogate-in-unused-field",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}]},\"unused\":\"\\udfff\"}\n",
+      "conversational": false
+    },
+    {
+      "id": "overflow-in-unused-field",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next\"}}]},\"unused\":1e9999}\n",
+      "conversational": false
+    },
+    {
+      "id": "invalid-line-after-human",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"unfinished\":\n",
+      "conversational": true
+    },
+    {
+      "id": "command-1",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"git status\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-2",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"cat aidlc-state.md\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-3",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-log decision\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-4",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-utility intent-create\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-5",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate.ts next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-6",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate.ts report\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-7",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate.ts park\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-8",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate.ts next --status\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-9",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate.ts report --status\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-10",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate.ts --help\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-11",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-state.ts get\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-12",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-state.ts approve\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-13",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-state.ts checkbox\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-14",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-state.ts unknown\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-15",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-jump.ts --status\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-16",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-jump.ts execute\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-17",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-unit.ts status\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-18",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-unit.ts start --status\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-19",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-20",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next --doctor\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-21",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc report --status\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-22",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc park --help\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-23",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc orchestrate next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-24",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc orchestrate next --help\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-25",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc orchestrate park\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-26",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc orchestrate unknown\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-27",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc state init\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-28",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc state show\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-29",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc state set-status\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-30",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc unit status\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-31",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc unit start --status\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-32",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc jump --version\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-33",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc jump execute\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-34",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc bolt start\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-35",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc swarm --help\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-36",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next --status && aidlc report\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-37",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next --status; aidlc park\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-38",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next --status || aidlc state approve\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-39",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc-orchestrate & report\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-40",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"echo 'aidlc next'\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-41",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next --status-extra\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-42",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next --status_report\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-43",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"üaidlc next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-44",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"xaidlc next\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-45",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"xaidlc-orchestrate next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-46",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc﻿next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "command-47",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlcnext\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "command-48",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc\\nnext\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "shell-case-insensitive",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"sHeLl\",\"input\":{\"command\":\"aidlc next\"}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "named-engine-tool",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"aidlc-orchestrate next\",\"input\":{\"command\":null}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "other-tool-command-ignored",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"command\":\"aidlc next\"}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "single-command-array",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":[\"aidlc next\"]}}]}}\n",
+      "conversational": false
+    },
+    {
+      "id": "split-command-array",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":[\"aidlc\",\"next\"]}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "null-command",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":null}}]}}\n",
+      "conversational": true
+    },
+    {
+      "id": "multiple-blocks",
+      "transcript": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"この状態を説明して\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"作業\"},{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"aidlc next\"}}]}}\n",
+      "conversational": false
+    }
+  ]
+}

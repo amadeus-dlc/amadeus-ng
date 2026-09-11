@@ -1,0 +1,1 @@
+Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.

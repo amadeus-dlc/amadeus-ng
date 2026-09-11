@@ -1,0 +1,14 @@
+{
+  "id": "hooks/record-human-turn/active-workflow",
+  "family": "hooks",
+  "hook": "record-human-turn",
+  "case": "active-workflow",
+  "upstream_hook_file": ".claude/hooks/aidlc-record-human-turn.ts",
+  "description": "人間の発話ターンを HUMAN_TURN 監査行として記録する (本文は読まない)",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

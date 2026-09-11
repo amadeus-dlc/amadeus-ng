@@ -1,0 +1,65 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/tools/aidlc-steering.ts",
+  "capture_method": "固定本家の公開isSubstantiveRuleTextを直接呼出し。原文は変更しない。",
+  "normalization": [],
+  "observations": [
+    {
+      "id": "org-heading",
+      "text": "# Org\n",
+      "substantive": false
+    },
+    {
+      "id": "phase-heading",
+      "text": "# Inception\n",
+      "substantive": false
+    },
+    {
+      "id": "org-rule",
+      "text": "# Org\n\nALWAYS keep the audit record.\n",
+      "substantive": true
+    },
+    {
+      "id": "phase-rule",
+      "text": "# Inception\n\nALWAYS confirm the scope.\n",
+      "substantive": true
+    },
+    {
+      "id": "comments-only",
+      "text": "# Org\n<!-- draft rule -->\n---\n",
+      "substantive": false
+    },
+    {
+      "id": "authored-quote",
+      "text": "> ALWAYS confirm scope.\n",
+      "substantive": true
+    },
+    {
+      "id": "bom-only",
+      "text": "﻿",
+      "substantive": false
+    },
+    {
+      "id": "nel-only",
+      "text": "",
+      "substantive": true
+    },
+    {
+      "id": "bom-heading",
+      "text": "﻿# Heading\n",
+      "substantive": false
+    },
+    {
+      "id": "nel-line",
+      "text": "\n",
+      "substantive": true
+    }
+  ]
+}

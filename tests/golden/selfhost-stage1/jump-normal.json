@@ -1,0 +1,84 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-jump-normal.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/jump-normal.json"
+  ],
+  "observations": [
+    {
+      "id": "resolve",
+      "args": [
+        "resolve",
+        "--stage",
+        "code-generation"
+      ],
+      "exit": 0,
+      "stdout": "{\"target_slug\":\"code-generation\",\"target_phase\":\"CONSTRUCTION\",\"target_number\":\"3.5\",\"target_name\":\"Code Generation\",\"current_slug\":\"reverse-engineering\",\"current_number\":\"2.1\",\"direction\":\"forward\",\"affected_stages\":[\"requirements-analysis\"],\"valid\":true}\n",
+      "stderr": "",
+      "audit": ""
+    },
+    {
+      "id": "redo",
+      "args": [
+        "execute",
+        "--target",
+        "reverse-engineering",
+        "--direction",
+        "redo"
+      ],
+      "exit": 0,
+      "stdout": "{\"direction\":\"redo\",\"target\":\"reverse-engineering\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[],\"stages_reset\":[\"reverse-engineering\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+      "stderr": "",
+      "audit": "\n## Stage Jump\n**Timestamp**: <TS>\n**Event**: STAGE_JUMPED\n**Direction**: REDO\n**Source**: reverse-engineering\n**Target**: reverse-engineering\n**Scope**: bugfix\n**Details**: REDO jump from reverse-engineering to reverse-engineering (2.1). Scope: bugfix.\n**Source Baseline**: sha256:2e0028c9374072433a165157c4376f00b28a3603032f67d6fcfccf85cb860af2\n\n---\n\n## Stage Start\n**Timestamp**: <TS>\n**Event**: STAGE_STARTED\n**Stage**: reverse-engineering\n**Agent**: aidlc-developer-agent\n**Source Baseline**: sha256:2e0028c9374072433a165157c4376f00b28a3603032f67d6fcfccf85cb860af2\n\n---\n"
+    },
+    {
+      "id": "forward",
+      "args": [
+        "execute",
+        "--target",
+        "code-generation",
+        "--direction",
+        "forward"
+      ],
+      "exit": 0,
+      "stdout": "{\"direction\":\"forward\",\"target\":\"code-generation\",\"target_phase\":\"CONSTRUCTION\",\"stages_skipped\":[\"requirements-analysis\",\"reverse-engineering\"],\"stages_reset\":[],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+      "stderr": "",
+      "audit": "\n## Stage Skip\n**Timestamp**: <TS>\n**Event**: STAGE_SKIPPED\n**Stage**: requirements-analysis\n**Reason**: Skipped by jump to code-generation (forward)\n**Skip Kind**: jump\n\n---\n\n## Stage Skip\n**Timestamp**: <TS>\n**Event**: STAGE_SKIPPED\n**Stage**: reverse-engineering\n**Reason**: Skipped by jump to code-generation (forward)\n**Skip Kind**: jump\n\n---\n\n## Phase Completion\n**Timestamp**: <TS>\n**Event**: PHASE_COMPLETED\n**From phase**: inception\n**To phase**: construction\n**Stages completed**: 3\n**Details**: Phase boundary crossed via forward jump\n\n---\n\n## Phase Verification\n**Timestamp**: <TS>\n**Event**: PHASE_VERIFIED\n**Phase boundary**: inception → construction\n**Details**: Traceability verification on jump\n\n---\n\n## Phase Start\n**Timestamp**: <TS>\n**Event**: PHASE_STARTED\n**Phase**: construction\n**Scope**: bugfix\n\n---\n\n## Stage Jump\n**Timestamp**: <TS>\n**Event**: STAGE_JUMPED\n**Direction**: FORWARD\n**Source**: reverse-engineering\n**Target**: code-generation\n**Scope**: bugfix\n**Details**: FORWARD jump from reverse-engineering to code-generation (3.5). Scope: bugfix.\n**Source Baseline**: sha256:2e0028c9374072433a165157c4376f00b28a3603032f67d6fcfccf85cb860af2\n\n---\n\n## Stage Start\n**Timestamp**: <TS>\n**Event**: STAGE_STARTED\n**Stage**: code-generation\n**Agent**: aidlc-developer-agent\n**Source Baseline**: sha256:2e0028c9374072433a165157c4376f00b28a3603032f67d6fcfccf85cb860af2\n\n---\n"
+    },
+    {
+      "id": "backward",
+      "args": [
+        "execute",
+        "--target",
+        "requirements-analysis",
+        "--direction",
+        "backward"
+      ],
+      "exit": 0,
+      "stdout": "{\"direction\":\"backward\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[],\"stages_reset\":[\"requirements-analysis\",\"code-generation\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+      "stderr": "",
+      "audit": "\n## Phase Completion\n**Timestamp**: <TS>\n**Event**: PHASE_COMPLETED\n**From phase**: construction\n**To phase**: inception\n**Stages completed**: 3\n**Details**: Phase boundary crossed via backward jump\n\n---\n\n## Phase Verification\n**Timestamp**: <TS>\n**Event**: PHASE_VERIFIED\n**Phase boundary**: construction → inception\n**Details**: Traceability verification on jump\n\n---\n\n## Phase Start\n**Timestamp**: <TS>\n**Event**: PHASE_STARTED\n**Phase**: inception\n**Scope**: bugfix\n\n---\n\n## Stage Jump\n**Timestamp**: <TS>\n**Event**: STAGE_JUMPED\n**Direction**: BACKWARD\n**Source**: code-generation\n**Target**: requirements-analysis\n**Scope**: bugfix\n**Details**: BACKWARD jump from code-generation to requirements-analysis (2.3). Scope: bugfix.\n**Changed Upstream Artifacts**: [\"<RECORD>/inception/requirements-analysis/requirements-analysis-questions.md\",\"<RECORD>/inception/requirements-analysis/requirements.md\"]\n**Invalidated Downstream Artifacts**: [\"<RECORD>/construction/code-generation/code-summary.md\"]\n**Invalidated Downstream Reviews**: [\"<RECORD>/construction/code-generation/code-summary.md#Review\"]\n**Source Baseline**: sha256:2e0028c9374072433a165157c4376f00b28a3603032f67d6fcfccf85cb860af2\n\n---\n\n## Stage Start\n**Timestamp**: <TS>\n**Event**: STAGE_STARTED\n**Stage**: requirements-analysis\n**Agent**: aidlc-product-agent\n**Source Baseline**: sha256:2e0028c9374072433a165157c4376f00b28a3603032f67d6fcfccf85cb860af2\n\n---\n"
+    },
+    {
+      "id": "missing-target",
+      "args": [
+        "execute",
+        "--direction",
+        "forward"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "{\"error\":\"Usage: execute --target <slug> --direction <forward|backward|redo> [--scope <scope>]\"}\n",
+      "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-jump\n**Command**: aidlc-jump execute --direction forward\n**Error**: Usage: execute --target <slug> --direction <forward|backward|redo> [--scope <scope>]\n\n---\n"
+    }
+  ]
+}

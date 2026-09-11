@@ -1,0 +1,211 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "hook_sha256": "f916db841a5399b07ac6ebeb2f924aa1c51bdbb3da880ff20af5067c405b2c6e",
+  "capture_method": "固定元のcontext/recovery/drift/rebind/cold/probeの式を原文のまま実行。表示材料は判断済み。ファイルIO・session帰属・発火判定を検証する採取ではない。",
+  "normalization": [],
+  "rebind_cases": [
+    {
+      "was": "original",
+      "live": "another",
+      "instruction": "run `/aidlc intent original`",
+      "expected": "INTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names another. Move the shared cursor back to original? [Y/n] - on Yes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\n"
+    },
+    {
+      "was": "original",
+      "live": "(none)",
+      "instruction": "first run `/aidlc space other`; after it completes, run `/aidlc intent original`",
+      "expected": "INTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names (none). Move the shared cursor back to original? [Y/n] - on Yes, first run `/aidlc space other`; after it completes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\n"
+    }
+  ],
+  "observations": [
+    {
+      "id": "active",
+      "kind": "workflow",
+      "input": {
+        "scope": "bugfix",
+        "session": "session-a",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "Execute Code Generation",
+        "rebind_offer": "",
+        "unit_line": "",
+        "recovery": false,
+        "uncompiled_stages": []
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nScope: bugfix\\nRuntime Session: session-a\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: Execute Code Generation\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "no-session",
+      "kind": "workflow",
+      "input": {
+        "scope": "bugfix",
+        "session": "",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "Execute Code Generation",
+        "rebind_offer": "",
+        "unit_line": "",
+        "recovery": false,
+        "uncompiled_stages": []
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nScope: bugfix\\nRuntime Session: (unavailable)\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: Execute Code Generation\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "empty-fields",
+      "kind": "workflow",
+      "input": {
+        "scope": "",
+        "session": "session-a",
+        "phase": "",
+        "stage": "",
+        "status": "",
+        "agent": "",
+        "last": "",
+        "next": "",
+        "rebind_offer": "",
+        "unit_line": "",
+        "recovery": false,
+        "uncompiled_stages": []
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nScope: \\nRuntime Session: session-a\\nLifecycle Phase: \\nCurrent Stage: \\nStatus: \\nActive Agent: \\nLast Completed: \\nNext Action: \\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "unicode",
+      "kind": "workflow",
+      "input": {
+        "scope": "日本語",
+        "session": "session-😀",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "行1\n行2\t\"引用\"\\末尾",
+        "rebind_offer": "",
+        "unit_line": "",
+        "recovery": false,
+        "uncompiled_stages": []
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nScope: 日本語\\nRuntime Session: session-😀\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: 行1\\n行2\\t\\\"引用\\\"\\\\末尾\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "recovery",
+      "kind": "workflow",
+      "input": {
+        "scope": "bugfix",
+        "session": "session-a",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "Execute Code Generation",
+        "rebind_offer": "",
+        "unit_line": "",
+        "recovery": true,
+        "uncompiled_stages": []
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nScope: bugfix\\nRuntime Session: session-a\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: Execute Code Generation\\nNOTE: A compaction recovery breadcrumb exists at .aidlc-recovery.md — check if state was preserved correctly.\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "rebind",
+      "kind": "workflow",
+      "input": {
+        "scope": "bugfix",
+        "session": "session-a",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "Execute Code Generation",
+        "rebind_offer": "INTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names another. Move the shared cursor back to original? [Y/n] - on Yes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\n",
+        "unit_line": "",
+        "recovery": false,
+        "uncompiled_stages": []
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nINTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names another. Move the shared cursor back to original? [Y/n] - on Yes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\\nScope: bugfix\\nRuntime Session: session-a\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: Execute Code Generation\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "drift",
+      "kind": "workflow",
+      "input": {
+        "scope": "bugfix",
+        "session": "session-a",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "Execute Code Generation",
+        "rebind_offer": "",
+        "unit_line": "",
+        "recovery": false,
+        "uncompiled_stages": [
+          "inception/new-stage.md",
+          "construction/追加.md"
+        ]
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nScope: bugfix\\nRuntime Session: session-a\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: Execute Code Generation\\nNOTE: 2 stage file(s) on disk are not in the compiled stage graph and will NOT execute: inception/new-stage.md, construction/追加.md. Run `bun .claude/tools/aidlc-graph.ts compile` to include them, then start a fresh workflow (an in-flight workflow keeps its original stage set).\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "all-notices",
+      "kind": "workflow",
+      "input": {
+        "scope": "bugfix",
+        "session": "session-a",
+        "phase": "CONSTRUCTION",
+        "stage": "code-generation",
+        "status": "Running",
+        "agent": "aidlc-developer-agent",
+        "last": "requirements-analysis",
+        "next": "Execute Code Generation",
+        "rebind_offer": "INTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names (none). Move the shared cursor back to original? [Y/n] - on Yes, first run `/aidlc space other`; after it completes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\n",
+        "unit_line": "Active Unit: u2 (paused; reason: review; next: continue)\n",
+        "recovery": true,
+        "uncompiled_stages": [
+          "construction/new.md"
+        ]
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC WORKFLOW ACTIVE\\nINTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names (none). Move the shared cursor back to original? [Y/n] - on Yes, first run `/aidlc space other`; after it completes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\\nScope: bugfix\\nRuntime Session: session-a\\nLifecycle Phase: CONSTRUCTION\\nCurrent Stage: code-generation\\nStatus: Running\\nActive Agent: aidlc-developer-agent\\nLast Completed: requirements-analysis\\nNext Action: Execute Code Generation\\nActive Unit: u2 (paused; reason: review; next: continue)\\nNOTE: A compaction recovery breadcrumb exists at .aidlc-recovery.md — check if state was preserved correctly.\\nNOTE: 1 stage file(s) on disk are not in the compiled stage graph and will NOT execute: construction/new.md. Run `bun .claude/tools/aidlc-graph.ts compile` to include them, then start a fresh workflow (an in-flight workflow keeps its original stage set).\\nOn BARE /aidlc re-entry, offer the user the standard resume options (Resume / Redo / Jump / Start Fresh). Explicit /aidlc --resume already selects Resume: do NOT offer the menu; forward --resume unchanged and continue directly. Check the active intent's aidlc-state.md for full context.\\n\\nFORWARDING-LOOP DISCIPLINE (non-negotiable — the engine owns ALL routing):\\n- The engine binary (`aidlc-orchestrate.ts`) is the ONLY authority on the next move. You run it, you do EXACTLY what its one directive says, you commit with `report`, you repeat. You never re-derive routing yourself.\\n- STEP 1 — YOUR VERY FIRST ACTION: take everything the user typed after `/aidlc` and append it to the first `next` call UNCHANGED. The flags ARE the user's intent; dropping them sends the workflow to the wrong place. `/aidlc --phase ideation` → you MUST run `next --phase ideation`, never bare `next`. `/aidlc --stage X` → `next --stage X`. `/aidlc` alone → `next`. Before running that first `next`, verify: if the user's message contained `--phase`/`--stage`/`--scope`/`--depth`/freeform text, it MUST appear on your `next` command — a bare `next` when the user gave arguments is a bug.\\n- When a directive is `{kind:\\\"print\\\"}` whose message names a command to run (e.g. `aidlc-jump.ts execute ...`, a scope/config change, or `init`): that named command is your IMMEDIATE next tool call. Run THAT EXACT command FIRST. Do NOT run `next` again, do NOT read more files, do NOT plan a stage — until the named command has run. Re-running the engine before it is a protocol violation that silently skips the move.\"}\n"
+    },
+    {
+      "id": "cold/session-a",
+      "kind": "runtime",
+      "input": {
+        "session": "session-a"
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC Runtime Session: session-a\\nUse this exact value for any Plan Approval --session argument in this conversation.\"}\n"
+    },
+    {
+      "id": "cold/日本語-😀\"",
+      "kind": "runtime",
+      "input": {
+        "session": "日本語-😀\""
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC Runtime Session: 日本語-😀\\\"\\nUse this exact value for any Plan Approval --session argument in this conversation.\"}\n"
+    },
+    {
+      "id": "probe",
+      "kind": "probe",
+      "input": {
+        "session": "session-a",
+        "offer": "INTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names another. Move the shared cursor back to original? [Y/n] - on Yes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\n"
+      },
+      "stdout": "{\"additionalContext\":\"AIDLC Runtime Session: session-a\\nINTENT REBIND OFFER: This conversation is bound to original, but the shared cursor names another. Move the shared cursor back to original? [Y/n] - on Yes, run `/aidlc intent original`; on No, keep working original through this session binding. This changes only machine-local navigation.\\n\"}\n"
+    }
+  ]
+}

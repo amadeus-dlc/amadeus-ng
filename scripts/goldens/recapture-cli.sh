@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CLI 主要遷移とフック代表ケースの実行出力ゴールデンの再採取 (FR7.2 / BR2.1 / BR2.4 / BR2.5)。
 #
-# upstream ピン `3c3146cf` の配布シェル `dist/claude/` を使い捨てディレクトリへ取得し、
+# upstream ピン `a277af21` の配布シェル `dist/claude/` を使い捨てディレクトリへ取得し、
 # ツリー全体の sha256 マニフェストを期待値と照合してから、**そのピンのコードを bun で
 # 実行して** 出力を採る (インストール済みの別バージョンのシェルは使わない)。
 #
@@ -17,20 +17,21 @@
 set -euo pipefail
 
 readonly UPSTREAM_REPO="https://github.com/awslabs/aidlc-workflows"
-readonly UPSTREAM_COMMIT="3c3146cfd7cef33020d48e8d48d4e80d0f8c2820"
-readonly UPSTREAM_VERSION="v2.6.40"
+readonly UPSTREAM_COMMIT="a277af218f0df7f325d3b8be7b6d90fce2c5bd40"
+readonly UPSTREAM_VERSION="2.7.1"
 readonly DIST_PATH="dist/claude"
 readonly TARBALL_URL="https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/${UPSTREAM_COMMIT}"
 
 # ピン留めコミットにおける実測値。`dist/claude/` 配下の全ファイルを
 # `<sha256>  <dist/claude からの相対パス>` の行にし、パスで LC_ALL=C ソートしたテキストの
 # sha256。ずれたら upstream 側が動いたということなので停止する。
-readonly EXPECTED_FILE_COUNT="262"
-readonly EXPECTED_MANIFEST_SHA256="ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f"
+readonly EXPECTED_FILE_COUNT="277"
+readonly EXPECTED_MANIFEST_SHA256="282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly OUT_DIR="${REPO_ROOT}/tests/golden/upstream-3c3146cf"
+readonly OUT_DIR="${1:-${REPO_ROOT}/tests/golden/upstream-a277af21}"
+[[ ! -e "${OUT_DIR}" ]] || { echo "error: 採取先は新規ディレクトリを指定してください" >&2; exit 1; }
 readonly COMMAND="bash scripts/goldens/recapture-cli.sh"
 
 need() {
@@ -82,7 +83,10 @@ fetch_via_tarball() {
 }
 
 echo "==> upstream ${UPSTREAM_COMMIT} の ${DIST_PATH} を取得"
-if fetch_via_git; then
+if [[ -n "${2:-}" ]]; then
+  cp -R "$2" "${workdir}/dist-claude"
+  fetch_method="verified local distribution"
+elif fetch_via_git; then
   echo "    取得方法: SHA 指定の shallow fetch"
 elif fetch_via_tarball; then
   echo "    取得方法: codeload tarball (shallow fetch 失敗のためフォールバック)"
@@ -132,10 +136,25 @@ cat >"${workdir}/meta.json" <<JSON
 }
 JSON
 
+bun -e 'const fs=require("node:fs"); const [path,...args]=process.argv.slice(1); const meta=JSON.parse(fs.readFileSync(path,"utf8")); meta.capture_argv=["bash","scripts/goldens/recapture-cli.sh",...args.filter(Boolean)]; fs.writeFileSync(path,JSON.stringify(meta,null,2)+"\n");' "${workdir}/meta.json" "${OUT_DIR}" "${2:-}"
+
+mkdir -p "${workdir}/corpus"
+cp "${SCRIPT_DIR}/normalization.json" "${workdir}/corpus/normalization.json"
+cp "${workdir}/manifest.txt" "${workdir}/corpus/source-manifest.sha256"
+cp "${workdir}/meta.json" "${workdir}/corpus/source.json"
+cp -R "${workdir}/dist-claude/.claude/tools/data" "${workdir}/corpus/data"
 echo "==> bun ${bun_version} で採取 -> ${OUT_DIR}/{cli,hooks}"
 bun "${SCRIPT_DIR}/capture-cli.ts" \
   "${workdir}/dist-claude" \
-  "${OUT_DIR}" \
+  "${workdir}/corpus" \
   "${workdir}/meta.json"
 
+bun "${SCRIPT_DIR}/capture-supplemental.ts" "${workdir}/dist-claude" "${workdir}/corpus/supplemental"
+bash "${SCRIPT_DIR}/recapture-hash-canonical.sh" "${workdir}/corpus/hash-canonical" "${workdir}/dist-claude"
+bun "${SCRIPT_DIR}/capture-stage1.ts" "${workdir}/dist-claude" "${workdir}/corpus/stage1"
+bun "${SCRIPT_DIR}/capture-extensions.ts" "${workdir}/dist-claude" "${workdir}/corpus"
+bun "${SCRIPT_DIR}/prepare-corpus.ts" "${workdir}/corpus"
+bun "${SCRIPT_DIR}/verify-corpus.ts" "${workdir}/corpus"
+mkdir -p "$(dirname "${OUT_DIR}")"
+mv "${workdir}/corpus" "${OUT_DIR}"
 echo "==> 完了"

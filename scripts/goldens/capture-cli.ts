@@ -2,20 +2,20 @@
 /**
  * CLI 主要遷移とフック代表ケースの実行出力ゴールデンの採取 (FR7.2 / BR2.1 / BR2.4)。
  *
- * upstream ピン `3c3146cf` の配布シェル `dist/claude/` を使い捨てワークスペースに置き、
+ * upstream ピン `a277af21` の配布シェル `dist/claude/` を使い捨てワークスペースに置き、
  * そのピンのツールを **実行して** 観測を採る。各ケースで採るもの:
  *
  * - cli 族   … argv / stdin / stdout / stderr / 終了コード / `aidlc-state.md` の差分 / 監査行の追記分
  * - hook 族  … stdin JSON / stdout / stderr / 終了コード / 監査行の追記分
  *
- * 観測はすべて `normalization.json` の規則 (BR2.2) で正規化してから書く。非対話で
+ * 生観測は observations.json に保存し、従来形式の表示用ファイルも併記する。非対話で
  * 再現できない遷移は `cases-missing.json` に理由付きで記録し、値を捏造しない (W4)。
  *
  * 呼び出しは `scripts/goldens/recapture-cli.sh` 経由 (ピンの取得と sha256 照合は
  * シェル側の責務)。
  */
 
-import { spawnSync } from "node:child_process";
+import { captureObservation, isolatedEnvironment } from "./capture-observation";
 import {
   cpSync,
   existsSync,
@@ -31,6 +31,17 @@ import {
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import assert from "node:assert/strict";
+import { UPSTREAM, verifySource } from "./upstream-source";
+
+const observations: ReturnType<typeof captureObservation>[] = [];
+function runCaptured(executable: string, argv: string[], options: { cwd: string; input?: string; encoding?: string; env: Record<string, string> }) {
+  const observation = captureObservation({ root: options.cwd, argv: [executable, ...argv], stdin: options.input, environment: options.env });
+  observations.push(observation);
+  assert.equal(observation.output.error, null, "採取プロセスの起動失敗");
+  assert.equal(observation.output.signal, null, "採取プロセスがsignalで終了");
+  return { status: observation.output.exit_code, stdout: observation.output.stdout, stderr: observation.output.stderr };
+}
 
 // --- 正規化 (BR2.2) ---------------------------------------------------------
 
@@ -298,6 +309,10 @@ function main(): void {
   }
 
   const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as Record<string, unknown>;
+  assert.equal(meta.upstream_commit, UPSTREAM.commit, "採取元コミットが不一致");
+  verifySource(distDir);
+  assert(!outDir.includes("upstream-3c3146cf"), "旧採取コーパスは上書きしない");
+  for (const path of ["cli", "hooks", "observations.json"]) assert(!existsSync(join(outDir, path)), `既存の採取結果は上書きしない: ${path}`);
   const norm = JSON.parse(
     readFileSync(join(outDir, "normalization.json"), "utf-8"),
   ) as Normalization;
@@ -308,6 +323,8 @@ function main(): void {
 
   const cliCount = captureCli(distDir, outDir, norm, meta, capturedAt, missingCli);
   const hookCount = captureHooks(distDir, outDir, norm, meta, capturedAt, missingHooks);
+
+  writeFileSync(join(outDir, "observations.json"), JSON.stringify(observations, null, 2) + "\n");
 
   scanForLeaks(join(outDir, "cli"));
   scanForLeaks(join(outDir, "hooks"));
@@ -528,7 +545,7 @@ function captureCli(
     {
       id: "set-autonomy/state-field-absent",
       description:
-        "ピン 3c3146cf の intent-create が起こす状態ファイルには Construction Autonomy Mode 行が無いため、set-autonomy は終了コード 1 で拒否される",
+        "本家 2.7.1（ピン a277af21）の intent-create が起こす状態ファイルには Construction Autonomy Mode 行が無いため、set-autonomy は終了コード 1 で拒否される",
       tool: "aidlc-bolt.ts",
       args: ["set-autonomy", "--mode", "gated"],
     },
@@ -614,7 +631,7 @@ function captureCli(
     }
 
     const before = { state: stateText(ws), audit: auditText(ws) };
-    const result = spawnSync(
+    const result = runCaptured(
       "bun",
       [join(ws.dir, ".claude/tools", step.tool), ...args, "--project-dir", ws.dir],
       {
@@ -622,7 +639,7 @@ function captureCli(
         input: step.stdin ?? "",
         encoding: "utf-8",
         env: {
-          ...process.env,
+          ...isolatedEnvironment(ws.dir),
           CLAUDE_PROJECT_DIR: ws.dir,
           AIDLC_PROJECT_DIR: ws.dir,
           ...NON_INTERACTIVE_ENV,
@@ -706,23 +723,6 @@ function captureCli(
     captured++;
   }
 
-  missing.push({
-    id: "set-autonomy/gated",
-    reason:
-      "set-autonomy の正常系はピン 3c3146cf では非対話でも対話でも到達できない — 配布シェルのどの動詞・どの遷移も `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込まないため、setFieldStrict が行の不在を検出して終了コード 1 で止まる。行を手で足せば通るが、それは upstream の挙動ではなく採取者の捏造になる",
-    evidence:
-      "dist/claude/ 全 262 ファイルの走査結果 (2026-08-29 再確認): (1) 状態ファイルを起こす唯一のテンプレート aidlc-utility.ts:4229 に当該行が無い、(2) setField / setFieldStrict は行が無ければ no-op か throw で挿入しない、(3) 行を挿入できる唯一の関数 setOrInsertField の呼出先は Merge-Held / Skeleton Stance / Construction Iteration / Practices Affirmed Timestamp / Parked / Parked At Stage / Active Unit / Unit State / Unit Pause Reason / Unit Next Action の 10 種のみ、(4) aidlc-state.ts set も setField 経由。当該行を規定しているのは LLM 向けの契約文書 knowledge/aidlc-shared/state-template.md だけで、ツールはこれを読まない。実測は cli/set-autonomy/state-field-absent",
-    follow_up:
-      "upstream 側の欠落 (テンプレートと契約文書の食い違い) なので逸脱台帳へ記録する。AUTONOMY_MODE_SET の監査行のフィールドキーはピンのソース (aidlc-bolt.ts の emitAudit 呼出) からしか読めず、実行出力としては採れない。ピン更新時に当該行がテンプレートへ入ったら採り直す",
-  });
-  missing.push({
-    id: "continue/multi-part",
-    reason:
-      "規則束が 28 KiB 上限を超えたときの分割配送 (parts > 1) を非対話で再現できなかった — 配布シェルの既定メモリでは規則束が 1 パートに収まり part=1/parts=1 にしかならない",
-    evidence: "next/start の stdout が parts=1。分割には 28 KiB を超える memory/*.md を持つワークスペースが要る",
-    follow_up: "U6 (next / continue ユースケース) で分割の合成入力を用意して採取する",
-  });
-
   mkdirSync(familyDir, { recursive: true });
   writeFileSync(
     join(familyDir, "cases-missing.json"),
@@ -796,7 +796,7 @@ function captureHooks(
   const bare = makeWorkspace(distDir, "hooks-bare");
 
   // active 側だけ intent を起こす。
-  spawnSync(
+  const initialized = runCaptured(
     "bun",
     [
       join(active.dir, ".claude/tools/aidlc-utility.ts"),
@@ -813,9 +813,11 @@ function captureHooks(
     {
       cwd: active.dir,
       encoding: "utf-8",
-      env: { ...process.env, CLAUDE_PROJECT_DIR: active.dir, AIDLC_PROJECT_DIR: active.dir, ...NON_INTERACTIVE_ENV },
+      env: { ...isolatedEnvironment(active.dir), ...NON_INTERACTIVE_ENV },
     },
   );
+
+  assert.equal(initialized.status, 0, initialized.stderr);
 
   const artifact = (ws: Workspace, name: string): string =>
     join(ws.dir, recordRel(ws), "inception/practices-discovery", name);
@@ -986,12 +988,12 @@ function captureHooks(
 
     const stdin = step.stdin(ws);
     const before = auditText(ws);
-    const result = spawnSync("bun", [join(ws.dir, ".claude/hooks", step.hookFile)], {
+    const result = runCaptured("bun", [join(ws.dir, ".claude/hooks", step.hookFile)], {
       cwd: ws.dir,
       input: stdin,
       encoding: "utf-8",
       env: {
-        ...process.env,
+        ...isolatedEnvironment(ws.dir),
         CLAUDE_PROJECT_DIR: ws.dir,
         AIDLC_PROJECT_DIR: ws.dir,
         ...NON_INTERACTIVE_ENV,
@@ -1043,14 +1045,6 @@ function captureHooks(
     );
     captured++;
   }
-
-  missing.push({
-    id: "stop-forwarding-loop/transcript-carve-out",
-    reason:
-      "会話ターンの切り出し (transcript を読んで会話だけのターンを差し止めない判定) は本物のトランスクリプト JSONL を要するため非対話で再現できなかった",
-    evidence: "採取では transcript_path に /dev/null を渡している",
-    follow_up: "U7 (フックのサブコマンド) でトランスクリプトの合成入力を用意して採取する",
-  });
 
   mkdirSync(familyDir, { recursive: true });
   writeFileSync(

@@ -8,7 +8,12 @@ const projects: string[] = [];
 afterAll(() => { for (const project of projects) rmSync(project, { recursive: true, force: true }); });
 
 // 承認チャレンジと人間回答は使い捨てプロジェクト内でのみ生成する。
-async function approvedProject(harness: string) {
+async function planApprovalProject(harness: string, prompt = "Approve Plan", options: {
+  choice?: "Approve Plan" | "Request Changes";
+  humanSession?: string;
+  reissue?: boolean;
+  rejected?: boolean;
+} = {}) {
   const project = mkdtempSync(join(tmpdir(), "aidlc-plan-progress-"));
   projects.push(project);
   cpSync(resolve(harness, "tools"), join(project, harness, "tools"), { recursive: true });
@@ -55,14 +60,20 @@ async function approvedProject(harness: string) {
   audit.appendAuditEntry("SESSION_STARTED", { Source: "startup", Session: session }, project);
   const identity = ["--stage", "code-generation", "--checkpoint", "plan-approval", "--questions-file", questions, "--session", session, "--unit", unit];
   const log = join(project, harness, "tools/aidlc-log.ts");
-  const decision = run([process.execPath, log, "decision", ...identity, "--decision", "Approve this exact Code Generation plan?", "--options", "Approve Plan,Request Changes"]);
+  const decisionArgs = [process.execPath, log, "decision", ...identity, "--decision", "Approve this exact Code Generation plan?", "--options", "Approve Plan,Request Changes"];
+  const decision = run(decisionArgs);
   expect(decision.exitCode, decision.stdout.toString() + decision.stderr.toString()).toBe(0);
-  const human = run([process.execPath, join(project, harness, "hooks/aidlc-record-human-turn.ts")], { hook_event_name: "UserPromptSubmit", session_id: session, prompt: "Approve Plan" });
+  const human = run([process.execPath, join(project, harness, "hooks/aidlc-record-human-turn.ts")], { hook_event_name: "UserPromptSubmit", session_id: options.humanSession ?? session, prompt });
   expect(human.exitCode, human.stderr.toString()).toBe(0);
-  writeFileSync(questions, readFileSync(questions, "utf8").replace("[Answer]:", "[Answer]: Approve Plan"));
-  const answer = run([process.execPath, log, "answer", ...identity, "--details", "Approve Plan"]);
-  expect(answer.exitCode, answer.stdout.toString() + answer.stderr.toString()).toBe(0);
-  posture.beginCodeGeneration(project, { unit });
+  if (options.reissue) {
+    const reissued = run(decisionArgs);
+    expect(reissued.exitCode, reissued.stdout.toString() + reissued.stderr.toString()).toBe(0);
+  }
+  const choice = options.choice ?? "Approve Plan";
+  writeFileSync(questions, readFileSync(questions, "utf8").replace("[Answer]:", `[Answer]: ${choice}`));
+  const answer = run([process.execPath, log, "answer", ...identity, "--details", choice]);
+  expect(answer.exitCode, answer.stdout.toString() + answer.stderr.toString()).toBe(options.rejected ? 1 : 0);
+  if (!options.rejected && choice === "Approve Plan") posture.beginCodeGeneration(project, { unit });
   const reissue = () => lib.writeActiveDirectiveMarker(project, { kind: "run-stage", stage: "code-generation", unit, state_sha256: createHash("sha256").update(state).digest("hex") });
   return { project, record, planPath, plan, guard, remove, reissue };
 }
@@ -79,6 +90,34 @@ for (const harness of [".claude", ".codex", ".kimi-code"]) {
   const { approvalFingerprint } = await import(`../${harness}/tools/aidlc-testing-posture.ts`);
   const fingerprint = (plan: string) => approvalFingerprint(plan, "unit tests", "sha256:contract", authority);
   describe(`${harness}: 計画承認と作業進捗`, () => {
+    test("番号1の人間回答を計画承認として記録できる", async () => {
+      const fixture = await planApprovalProject(harness, "1");
+      expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(0);
+    }, 30000);
+    test("番号2は修正要求として記録し生成を許可しない", async () => {
+      const fixture = await planApprovalProject(harness, "2", { choice: "Request Changes" });
+      expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(2);
+    }, 30000);
+    test("未知番号や別表記の数値を承認に丸めない", async () => {
+      for (const prompt of ["0", "3", "1.0", "1e0", "true"]) {
+        const fixture = await planApprovalProject(harness, prompt, { rejected: true });
+        expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(2);
+      }
+    }, 30000);
+    test("別セッションの番号回答は承認に使えない", async () => {
+      const fixture = await planApprovalProject(harness, "1", { humanSession: "another-session", rejected: true });
+      expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(2);
+    }, 30000);
+    test("再提示前の番号回答は新しい質問を承認しない", async () => {
+      const fixture = await planApprovalProject(harness, "1", { reissue: true, rejected: true });
+      expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(2);
+    }, 30000);
+    test("JSONの回答欄と引用文字列でも番号を保持する", async () => {
+      for (const prompt of ['"1"', JSON.stringify({ answers: { approval: { answers: ["1"] } } })]) {
+        const fixture = await planApprovalProject(harness, prompt);
+        expect(fixture.guard(join(fixture.project, "src/example.ts")).exitCode).toBe(0);
+      }
+    }, 30000);
     const plan = "# Plan\n\n- [ ] Step 1. Inspect\n- [ ] Step 2. Verify\n";
     test("完了チェックだけでは承認を失効させない", () => {
       expect(fingerprint(plan.replace("[ ] Step 1", "[x] Step 1"))).toBe(fingerprint(plan));
@@ -104,7 +143,7 @@ for (const harness of [".claude", ".codex", ".kimi-code"]) {
       }
     });
     test("承認後のチェック更新でも次の編集とレビュー準備を許可する", async () => {
-      const fixture = await approvedProject(harness);
+      const fixture = await planApprovalProject(harness);
       writeFileSync(fixture.planPath, fixture.plan.replace("[ ] Step 1", "[x] Step 1"));
       for (const path of [join(fixture.project, "src/example.ts"), join(fixture.record, ".aidlc-reviewer-dispatch.json")]) {
         const result = fixture.guard(path);

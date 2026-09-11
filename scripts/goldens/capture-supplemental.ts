@@ -5,9 +5,11 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writ
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import assert from "node:assert/strict";
+import { UPSTREAM, verifySource } from "./upstream-source";
+import { captureObservation } from "./capture-observation";
 
-const PIN = "3c3146cfd7cef33020d48e8d48d4e80d0f8c2820";
-const MANIFEST = "ea223c423bebf32cd240d45b645fcd9649efc0d19592de75fd48565a6ded0b9f";
+const PIN = UPSTREAM.commit;
+const MANIFEST = UPSTREAM.manifest;
 const digest = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
 
 function files(root: string): string[] {
@@ -20,21 +22,20 @@ function files(root: string): string[] {
 
 export function capture(dist: string) {
   const paths = files(dist).sort((a, b) => Buffer.compare(Buffer.from(relative(dist, a)), Buffer.from(relative(dist, b))));
-  assert.equal(paths.length, 262);
-  const manifest = paths.map(path => `${digest(readFileSync(path))}  ${relative(dist, path).replaceAll("\\", "/")}\n`).join("");
-  assert.equal(digest(manifest), MANIFEST, "固定ピンの配布物マニフェストが不一致");
+  verifySource(dist);
   const root = mkdtempSync(join(tmpdir(), "aidlc-supplemental-"));
   try {
     cpSync(join(dist, ".claude"), join(root, ".claude"), { recursive: true });
     cpSync(join(dist, "aidlc"), join(root, "aidlc"), { recursive: true });
-    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("AIDLC_") && !key.startsWith("AWS_AIDLC_")));
-    Object.assign(env, { CLAUDE_PROJECT_DIR: root, AIDLC_DISABLE_USAGE_TRACKING: "1" });
+    const observations: ReturnType<typeof captureObservation>[] = [];
     function run(file: string, args: string[] = [], input?: object) {
-      const result = Bun.spawnSync([process.execPath, join(root, ".claude", file), ...args], {
-        cwd: root, env, stdout: "pipe", stderr: "pipe",
-        ...(input ? { stdin: Buffer.from(JSON.stringify(input)) } : {}),
-      });
-      return { exit: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+      const observation = captureObservation({ root, argv: [process.execPath, join(root, ".claude", file), ...args],
+        stdin: input ? JSON.stringify(input) : "", environment: { AIDLC_DISABLE_USAGE_TRACKING: "1" } });
+      observations.push(observation);
+      const result = observation.output;
+      assert.equal(result.error, null);
+      assert.equal(result.signal, null);
+      return { exit: result.exit_code, stdout: result.stdout, stderr: result.stderr };
     }
     const init = run("tools/aidlc-utility.ts", ["intent-create", "--label", "golden", "--scope", "classic", "--project-dir", root]);
     assert.equal(init.exit, 0, init.stderr);
@@ -93,6 +94,7 @@ export function capture(dist: string) {
     return {
       upstream_commit: PIN, tree_manifest_sha256: MANIFEST, tree_file_count: paths.length,
       fixture_kind: "synthetic-preconditions", bun_version: Bun.version,
+      observations,
       cases: [
         { id: "cli/continue/multi-part", setup: "project.mdへ240個の合成ルールを追加。各ルールの本文はdeterministicを25回繰り返す。", parts, final_kind: directive.kind, delivered_rules: 240 },
         { id: "cli/set-autonomy/gated", setup: "契約テンプレートのConstruction Autonomy Mode行をautonomousで明示的に追加。ツール単独生成とは区別。", tool_generated_state_exit: missingMode.exit, exit: mode.exit, output: modeOutput },

@@ -1,0 +1,161 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/hooks/aidlc-continue-workflow.ts",
+  "source_sha256": "690cef095212f870a40109a5fa3260d21bf3516ae58b00b02b5c6685ae3cc252",
+  "capture_method": "検証済み固定配布の複製にexport文のみ追記。関数本文・依存関数は無変更。公開directiveのcontinue_token/rules_contentを本家内部引数名へ写す。",
+  "normalization": [],
+  "observations": [
+    {
+      "id": "run",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "run-stage",
+        "stage": "code-generation"
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::783eb39eb527d5b172eb28cb3d9115aee41d5b88fb1958ac5377ec2547f32ab5",
+      "reason": "The AIDLC workflow has a pending step (a run-stage directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a run-stage directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "run-reverse-engineering",
+      "state": "# State\n- **Current Stage**: reverse-engineering\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] reverse-engineering — EXECUTE\n",
+      "directive": {
+        "kind": "run-stage",
+        "stage": "reverse-engineering"
+      },
+      "signature": "reverse-engineering::bdbc44eadf287d43bbd57eb34bc4a18ac16851559283ff8f00e4720c6f59bced::73841d8a87b8f825229a8f7d071a44d52e1eff5600e3a6840c839769a87feedc",
+      "reason": "The AIDLC workflow has a pending step (a run-stage directive for \"reverse-engineering\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a run-stage directive for \\\"reverse-engineering\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "timestamp-only",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T01:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "run-stage",
+        "stage": "code-generation"
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::783eb39eb527d5b172eb28cb3d9115aee41d5b88fb1958ac5377ec2547f32ab5",
+      "reason": "The AIDLC workflow has a pending step (a run-stage directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a run-stage directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "real-state-change",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [?] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "run-stage",
+        "stage": "code-generation"
+      },
+      "signature": "code-generation::477ca07bb138409e1533aa86963f6601e008f35899d84fbaf4cbd95e732b36eb::783eb39eb527d5b172eb28cb3d9115aee41d5b88fb1958ac5377ec2547f32ab5",
+      "reason": "The AIDLC workflow has a pending step (a run-stage directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a run-stage directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "steering",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "load-steering",
+        "stage": "code-generation",
+        "part": 1,
+        "parts": 2,
+        "continue_token": "opaque-token",
+        "rules_content": [
+          {
+            "path": "memory/team.md",
+            "text": "## Team\n原文を保つ。\n"
+          }
+        ]
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::ecce2b28b791c1903b39122c047e79f2b3fb24ce0111ff5a2827d1435cb93520",
+      "reason": "The AIDLC workflow still has rules to load for \"code-generation\". Preserve this step-two continuation command, but do not run it yet: `bun .claude/tools/aidlc-orchestrate.ts continue \"opaque-token\"` First, apply every path/text entry in the exact `rules_content` payload below. Second, run the preserved command and keep following each load-steering step it returns, applying its rule chunk before every continuation, until it answers `run-stage`. Do not summarise or narrate these rule chunks to the user.\n\n[{\"path\":\"memory/team.md\",\"text\":\"## Team\\n原文を保つ。\\n\"}]",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow still has rules to load for \\\"code-generation\\\". Preserve this step-two continuation command, but do not run it yet: `bun .claude/tools/aidlc-orchestrate.ts continue \\\"opaque-token\\\"` First, apply every path/text entry in the exact `rules_content` payload below. Second, run the preserved command and keep following each load-steering step it returns, applying its rule chunk before every continuation, until it answers `run-stage`. Do not summarise or narrate these rule chunks to the user.\\n\\n[{\\\"path\\\":\\\"memory/team.md\\\",\\\"text\\\":\\\"## Team\\\\n原文を保つ。\\\\n\\\"}]\"}\n"
+    },
+    {
+      "id": "next-part",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "load-steering",
+        "stage": "code-generation",
+        "part": 2,
+        "parts": 2,
+        "continue_token": "another-token",
+        "rules_content": []
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::3b5a41045d62e5b00f9a4f94c13cd33f9eed7ba1919b15373b48a01d99f68555",
+      "reason": "The AIDLC workflow still has rules to load for \"code-generation\". Preserve this step-two continuation command, but do not run it yet: `bun .claude/tools/aidlc-orchestrate.ts continue \"another-token\"` First, apply every path/text entry in the exact `rules_content` payload below. Second, run the preserved command and keep following each load-steering step it returns, applying its rule chunk before every continuation, until it answers `run-stage`. Do not summarise or narrate these rule chunks to the user.\n\n[]",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow still has rules to load for \\\"code-generation\\\". Preserve this step-two continuation command, but do not run it yet: `bun .claude/tools/aidlc-orchestrate.ts continue \\\"another-token\\\"` First, apply every path/text entry in the exact `rules_content` payload below. Second, run the preserved command and keep following each load-steering step it returns, applying its rule chunk before every continuation, until it answers `run-stage`. Do not summarise or narrate these rule chunks to the user.\\n\\n[]\"}\n"
+    },
+    {
+      "id": "unit",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "run-stage",
+        "stage": "code-generation",
+        "unit": "u2-workflow-authority"
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::96e9367a3b8911b4c44fcc9d584c613866bd8c3605a9ea88416b6116209a0ac2",
+      "reason": "The AIDLC workflow has a pending step (a run-stage directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a run-stage directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "dispatch",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "dispatch-subagent",
+        "stage": "code-generation",
+        "worker": "aidlc-developer-agent",
+        "repo": "service"
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::66992cb2daf1bd3c2be5a31999d2bc352bd8acf75e7c3eaa0962765d6bb42c57",
+      "reason": "The AIDLC workflow has a pending step (a dispatch-subagent directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a dispatch-subagent directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "swarm",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "invoke-swarm",
+        "stage": "code-generation",
+        "units": [
+          "u1",
+          "u2"
+        ],
+        "wave": {
+          "id": "wave-1",
+          "parallel": true
+        }
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::d52fbaed745d1e90d08249c8a1416c4fdf708c75b5944ab3c35e1d17bb3802fb",
+      "reason": "The AIDLC workflow has a pending step (a invoke-swarm directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a invoke-swarm directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "irrelevant-message",
+      "state": "# State\n- **Current Stage**: code-generation\n- **Last Updated**: 2026-09-09T00:00:00Z\n- [-] code-generation — EXECUTE\n",
+      "directive": {
+        "kind": "run-stage",
+        "stage": "code-generation",
+        "message": "changed display only"
+      },
+      "signature": "code-generation::0d4117dd7d9d42bb0f5f57793d14c54697511aa62e955f7b575d7183ac26c53a::783eb39eb527d5b172eb28cb3d9115aee41d5b88fb1958ac5377ec2547f32ab5",
+      "reason": "The AIDLC workflow has a pending step (a run-stage directive for \"code-generation\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a run-stage directive for \\\"code-generation\\\"). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    },
+    {
+      "id": "no-stage",
+      "state": "# State\n",
+      "directive": {
+        "kind": "error"
+      },
+      "signature": "::fd7857a92e47cc4600220c9a1b4acb5a9dd6001985dc0baa6b2f35e684543584::f4825a128f093ab8f375eb5dfea32851e5ee99ac28f6f7515c86966cc4e68d62",
+      "reason": "The AIDLC workflow has a pending step (a error directive). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.",
+      "stdout": "{\"decision\":\"block\",\"reason\":\"The AIDLC workflow has a pending step (a error directive). You have not finished the workflow loop yet. Run `bun .claude/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `aidlc-orchestrate report --stage <stage> --result <outcome>` to record the outcome. Repeat until it answers `done`. If you meant to pause this workflow instead and pick it up in a later session, run `bun .claude/tools/aidlc-orchestrate.ts park` to stop cleanly between stages - never mark a stage complete just to end the turn.\"}\n"
+    }
+  ]
+}

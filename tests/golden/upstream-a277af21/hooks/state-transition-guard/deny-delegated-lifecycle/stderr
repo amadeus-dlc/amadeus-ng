@@ -1,0 +1,1 @@
+Delegated agent "aidlc-developer-agent" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.
